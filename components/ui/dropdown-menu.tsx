@@ -100,7 +100,7 @@ const DropdownMenuSubTrigger = React.forwardRef<
     {...props}
   >
     {children}
-    <CaretRight size={12} className="shrink-0 text-[var(--color-text-faint)]" />
+    <CaretRight aria-hidden size={12} className="shrink-0 text-[var(--color-text-faint)]" />
   </DropdownMenuPrimitive.SubTrigger>
 ))
 DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayName

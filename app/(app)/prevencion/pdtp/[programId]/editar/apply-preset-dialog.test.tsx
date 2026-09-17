@@ -132,7 +132,9 @@ describe("ApplyPresetDialog", () => {
       fireEvent.click(screen.getByRole("button", { name: "Aplicar" }))
     })
 
-    expect(screen.getByRole("checkbox", { name: /N°1 — Tiene una planificación hecha a mano/ })).toBeInTheDocument()
+    // El nombre de la actividad debe verse, no sólo su número: el usuario
+    // decide qué reemplazar leyendo la actividad, no un id.
+    expect(screen.getByRole("checkbox", { name: /N°1 — Actividad A — Tiene una planificación hecha a mano/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Reemplazar manuales" })).toBeInTheDocument()
     // No se reenvía nada todavía: sigue habiendo una sola llamada, y el
     // diálogo sigue abierto esperando la decisión del usuario.
@@ -181,6 +183,54 @@ describe("ApplyPresetDialog", () => {
     expect(secondCall.activityIds).toEqual(["a"])
     expect(secondCall.replaceConfirmedActivityIds).toEqual(["a"])
     expect(secondCall).not.toHaveProperty("replaceConfirmed")
+    expect(mockToast.success).toHaveBeenCalledWith(expect.stringMatching(/1 actividad actualizada/))
+  })
+
+  it("mientras confirma el reemplazo, muestra carga de verdad (no vuelve a ver el formulario del preset)", async () => {
+    let resolveSecondCall!: (value: unknown) => void
+    mockApply
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          applied: [],
+          skippedConflicts: [{ activityId: "a", n: 1, reason: "manual_schedule_would_be_replaced" }],
+        },
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecondCall = resolve }))
+
+    render(
+      <ApplyPresetDialog
+        programId="prog-1"
+        open
+        onOpenChange={() => {}}
+        activities={ACTIVITIES}
+        horizon={DEFAULT_SCHEDULE_HORIZON}
+      />,
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Aplicar" }))
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Reemplazar manuales" }))
+    })
+
+    // Durante el viaje al servidor, la pantalla de conflicto se queda (no
+    // reaparece el formulario del preset con "Cancelar" habilitado) y el
+    // botón muestra carga de verdad: texto propio y `aria-busy`, no sólo
+    // `disabled`.
+    const loadingButton = screen.getByRole("button", { name: "Reemplazando…" })
+    expect(loadingButton).toHaveAttribute("aria-busy", "true")
+    expect(loadingButton).toBeDisabled()
+    expect(screen.getByRole("button", { name: "No reemplazar" })).toBeDisabled()
+    expect(screen.getByRole("checkbox", { name: /N°1/ })).toBeDisabled()
+    expect(screen.queryByLabelText("Patrón")).not.toBeInTheDocument()
+
+    await act(async () => {
+      resolveSecondCall({ ok: true, data: { applied: ["a"], skippedConflicts: [] } })
+    })
+
     expect(mockToast.success).toHaveBeenCalledWith(expect.stringMatching(/1 actividad actualizada/))
   })
 

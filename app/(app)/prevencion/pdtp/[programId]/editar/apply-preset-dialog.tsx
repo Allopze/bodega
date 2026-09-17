@@ -22,13 +22,14 @@ import {
   type PdtpSchedulePresetKey,
   type PdtpSchedulePresetParams,
 } from "@/lib/services/pdtp/schedule-presets"
+// `import type`: se borra por completo en el bundle de cliente (Next/SWC lo
+// elide porque es un tipo, no un valor), así que traer el tipo desde el
+// mismo módulo que el servicio usa —aunque ese módulo importe `@/db`— no
+// arrastra nada al navegador. Derivarlo así, en vez de duplicar la unión de
+// motivos a mano, evita que un motivo nuevo se degrade en silencio al texto
+// genérico de `describeScheduleBatchSkipReason`.
+import type { PdtpScheduleBatchSkipReason } from "@/lib/services/pdtp/schedule-batch"
 import { applyPdtpSchedulePresetAction } from "../../actions"
-
-export type PdtpScheduleBatchSkipReason =
-  | "manual_schedule_would_be_replaced"
-  | "not_scheduled_mode"
-  | "retired"
-  | "preset_produced_no_cells"
 
 type SkipEntry = { activityId: string; n: number; reason: PdtpScheduleBatchSkipReason }
 
@@ -226,12 +227,21 @@ type BatchActionResult = {
  *      ids que quedaron marcados — nunca la selección original completa.
  *
  * El resultado final (aplicadas/omitidas) se comunica con un toast, no
- * quedándose en una pantalla dentro del diálogo: `router.refresh()` REMONTA
- * el editor completo (`PdtpBuilderTabs` vive bajo una `key` en `page.tsx`
- * cuyo árbol se recompone al refrescar), así que cualquier estado que este
- * diálogo mantuviera para mostrarse DESPUÉS del refresh desaparecería con él
- * sin que el usuario llegara a verlo — un toast vive en un contenedor global
- * ajeno a ese árbol y sí sobrevive.
+ * quedándose en una pantalla dentro del diálogo. Motivo: en pruebas E2E
+ * reales se observó, de forma intermitente, que el botón "Cerrar" de una
+ * pantalla de resultado quedaba "detached from the DOM" justo después de
+ * aplicar — el nodo desaparecía antes de que Playwright llegara a clicarlo.
+ * NO es la `key={initialSection ?? "default"}` de `PdtpBuilderTabs` en
+ * `page.tsx` (esa `key` no cambia con `router.refresh()`, que no toca los
+ * search params, así que no remonta nada por sí sola — ver el comentario de
+ * esa `key` en `builder-tabs.tsx`, que existe para navegar entre secciones,
+ * no para esto). La causa real no se determinó — candidatos sin confirmar
+ * son el `revalidatePath` de la acción o la reconciliación del payload de
+ * la Server Action — así que este diseño no depende de resolverla: un toast
+ * vive en un contenedor global ajeno al árbol de esta página, y el diálogo
+ * se cierra en el mismo tick en que se decide el resultado final, antes de
+ * que cualquier re-render posterior (cualquiera sea su causa) tenga chance
+ * de afectarlo.
  */
 export function ApplyPresetDialog({
   programId,
@@ -308,7 +318,7 @@ export function ApplyPresetDialog({
   }
 
   function finish(finalApplied: number, finalOtherSkips: SkipEntry[]) {
-    const base = `${finalApplied} ${pluralize(finalApplied, "actividad")} actualizada(s).`
+    const base = `${finalApplied} ${pluralize(finalApplied, "actividad actualizada", "actividades actualizadas")}.`
     if (finalOtherSkips.length === 0) {
       toast.success(base)
     } else {
@@ -349,7 +359,13 @@ export function ApplyPresetDialog({
     const ids = [...confirmSelected]
     if (ids.length === 0) return
     setErrorMessage(null)
-    setManualConflicts(null)
+    // No se limpia `manualConflicts` acá: hacerlo antes de que vuelva la
+    // respuesta mostraba de nuevo el formulario del preset con "Cancelar"
+    // habilitado durante el viaje al servidor, como si la decisión de
+    // reemplazo nunca se hubiera tomado. La pantalla de conflicto se queda
+    // (con los controles deshabilitados, ver más abajo) hasta que
+    // `handleResult` la reemplace por la respuesta real —una nueva lista de
+    // conflictos, si los hay, o el cierre del diálogo si no.
     startTransition(async () => {
       const result = await applyPdtpSchedulePresetAction({
         programId,
@@ -364,6 +380,11 @@ export function ApplyPresetDialog({
   }
 
   const activityCount = activities.length
+  // La lista de conflictos sólo trae `activityId`/`n`/`reason` (ver
+  // `PdtpScheduleBatchResult`); el nombre sale de la selección que este
+  // diálogo ya tiene en memoria, para que el usuario decida qué reemplazar
+  // leyendo la actividad, no sólo un número.
+  const activityById = new Map(activities.map((activity) => [activity.id, activity]))
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -373,7 +394,7 @@ export function ApplyPresetDialog({
           <DialogDescription>
             {manualConflicts
               ? "Algunas actividades tienen planificación hecha a mano."
-              : `Se aplicará a ${activityCount} ${pluralize(activityCount, "actividad")} seleccionada(s).`}
+              : `Se aplicará a ${activityCount} ${pluralize(activityCount, "actividad seleccionada", "actividades seleccionadas")}.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -389,15 +410,19 @@ export function ApplyPresetDialog({
               Elige cuáles reemplazar. Sólo se reemplaza lo que dejes marcado; el resto conserva su planificación manual.
             </p>
             <ul className="max-h-56 space-y-1 overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border)] p-2">
-              {manualConflicts.map((skip) => (
-                <li key={skip.activityId}>
-                  <Checkbox
-                    label={`N°${skip.n} — ${describeScheduleBatchSkipReason(skip.reason)}`}
-                    checked={confirmSelected.has(skip.activityId)}
-                    onChange={(event) => toggleConfirm(skip.activityId, event.target.checked)}
-                  />
-                </li>
-              ))}
+              {manualConflicts.map((skip) => {
+                const activityName = activityById.get(skip.activityId)?.activity
+                return (
+                  <li key={skip.activityId}>
+                    <Checkbox
+                      label={`N°${skip.n}${activityName ? ` — ${activityName}` : ""} — ${describeScheduleBatchSkipReason(skip.reason)}`}
+                      checked={confirmSelected.has(skip.activityId)}
+                      disabled={pending}
+                      onChange={(event) => toggleConfirm(skip.activityId, event.target.checked)}
+                    />
+                  </li>
+                )
+              })}
             </ul>
             {otherSkips.length > 0 && (
               <ul className="space-y-1 text-xs text-[var(--color-text-muted)]">
@@ -442,11 +467,16 @@ export function ApplyPresetDialog({
               {/* Las manuales que el usuario decide NO reemplazar quedan
                   mencionadas en el aviso final igual que cualquier otra
                   omisión — "no reemplazar" no es "olvidar que existían". */}
-              <Button type="button" variant="secondary" onClick={() => finish(appliedCount, [...otherSkips, ...(manualConflicts ?? [])])}>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={pending}
+                onClick={() => finish(appliedCount, [...otherSkips, ...(manualConflicts ?? [])])}
+              >
                 No reemplazar
               </Button>
-              <Button type="button" disabled={pending || confirmSelected.size === 0} onClick={confirmReplace}>
-                Reemplazar manuales
+              <Button type="button" disabled={pending || confirmSelected.size === 0} aria-busy={pending} onClick={confirmReplace}>
+                {pending ? "Reemplazando…" : "Reemplazar manuales"}
               </Button>
             </>
           ) : (

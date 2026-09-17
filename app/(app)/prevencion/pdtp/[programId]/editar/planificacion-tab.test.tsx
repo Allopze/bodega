@@ -5,7 +5,8 @@ import type { ReactNode } from "react"
 import type { pdtpActivities, pdtpActivitySchedule } from "@/db/schema"
 import { PlanificacionTab } from "./builder-tabs"
 import { ScheduleOverview } from "./tabs/planificacion-tab"
-import { deriveScheduleHorizon } from "@/lib/services/pdtp/recurrence"
+import { DEFAULT_SCHEDULE_HORIZON, deriveScheduleHorizon } from "@/lib/services/pdtp/recurrence"
+import { presetToCells, presetToRule } from "@/lib/services/pdtp/schedule-presets"
 
 const { mockUpdate, mockApplyPreset, mockRefresh } = vi.hoisted(() => ({
   mockUpdate: vi.fn(),
@@ -116,6 +117,51 @@ describe("PlanificacionTab: atajos, totales y validación", () => {
     expect(screen.getByTitle("Ene · Semana 1")).toHaveValue("1")
     expect(screen.getByTitle("Dic · Semana 4")).toHaveValue("1")
     expect(screen.getAllByText("48").length).toBeGreaterThanOrEqual(2)
+  })
+
+  it("aplicar un preset por fila persiste la regla junto con las celdas: la actividad queda 'rule', no 'Manual'", async () => {
+    const { rerender } = render(<PlanificacionTab programId="program-1" year={2027} activities={ACTIVITIES} schedule={SCHEDULE} />)
+
+    openRowMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Semanal" }))
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500) })
+
+    expect(mockUpdate).toHaveBeenCalledTimes(1)
+    const [call] = mockUpdate.mock.calls[0]!
+    // Antes de este arreglo, el atajo por fila sólo mandaba `scheduleOverrides`
+    // — la regla nunca se guardaba y la actividad quedaba "Manual" pese a
+    // venir de un preset con nombre.
+    expect(call.recurrenceRule).toEqual(presetToRule("weekly", {}))
+
+    // Simula la vuelta del servidor tras guardar: la actividad ahora trae esa
+    // regla, y sus celdas son exactamente la proyección de esa regla.
+    const weeklyRule = presetToRule("weekly", {})
+    const updatedActivities = [
+      { ...ACTIVITIES[0], recurrenceRule: weeklyRule },
+    ] as unknown as Array<typeof pdtpActivities.$inferSelect>
+    const weeklyCells = presetToCells("weekly", {}, DEFAULT_SCHEDULE_HORIZON).map((cell) => ({
+      activityId: "act-1", ...cell,
+    })) as unknown as Array<typeof pdtpActivitySchedule.$inferSelect>
+    rerender(<PlanificacionTab programId="program-1" year={2027} activities={updatedActivities} schedule={weeklyCells} />)
+
+    expect(screen.queryByText("Manual")).not.toBeInTheDocument()
+  })
+
+  it("'Limpiar fila' cancela un preset recién aplicado y sin guardar: el autoguardado no manda su regla", async () => {
+    render(<PlanificacionTab programId="program-1" year={2027} activities={ACTIVITIES} schedule={SCHEDULE} />)
+
+    openRowMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Semanal" }))
+    openRowMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Limpiar fila" }))
+    fireEvent.click(screen.getByRole("button", { name: "Limpiar" }))
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500) })
+
+    expect(mockUpdate).toHaveBeenCalledTimes(1)
+    const [call] = mockUpdate.mock.calls[0]!
+    expect(call).not.toHaveProperty("recurrenceRule")
   })
 
   it("el preset 'Mensual, semana N' (con parámetros) llena una semana por mes tras abrir su submenú y aplicar", () => {
@@ -284,7 +330,7 @@ describe("PlanificacionTab: selección múltiple y aplicación masiva de presets
 
     fireEvent.click(screen.getByRole("button", { name: "Aplicar patrón…" }))
     const dialog = screen.getByRole("dialog", { name: "Aplicar patrón de planificación" })
-    expect(dialog).toHaveTextContent("2 actividades seleccionada(s)")
+    expect(dialog).toHaveTextContent("2 actividades seleccionadas")
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Aplicar" }))

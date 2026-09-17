@@ -35,6 +35,7 @@ import {
 import {
   PDTP_SCHEDULE_PRESETS,
   presetToCells,
+  presetToRule,
   type PdtpSchedulePresetKey,
   type PdtpSchedulePresetParams,
 } from "@/lib/services/pdtp/schedule-presets"
@@ -203,6 +204,14 @@ export function PlanificacionTab({ programId, year, periodStart, periodEnd, acti
   }
 
   const allVisibleSelected = visibleActivities.length > 0 && visibleActivities.every((activity) => selectedIds.has(activity.id))
+  const someVisibleSelected = visibleActivities.some((activity) => selectedIds.has(activity.id))
+  // `indeterminate` no es un atributo HTML: hay que fijarlo imperativamente
+  // sobre el nodo (mismo patrón que `vehicle-table.tsx`/`product-list.tsx`).
+  const selectAllRef = React.useRef<HTMLInputElement>(null)
+  React.useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someVisibleSelected && !allVisibleSelected
+  }, [someVisibleSelected, allVisibleSelected])
+
   function toggleSelectAllVisible(checked: boolean) {
     setSelectedIds((current) => {
       const next = new Set(current)
@@ -343,6 +352,7 @@ export function PlanificacionTab({ programId, year, periodStart, periodEnd, acti
               <TableHead rowSpan={2} className="sticky left-0 z-20 min-w-[18rem] bg-[var(--color-surface-2)] text-left">
                 <div className="flex items-center gap-2">
                   <Checkbox
+                    ref={selectAllRef}
                     label="Seleccionar todas las actividades visibles"
                     labelHidden
                     checked={allVisibleSelected}
@@ -532,6 +542,17 @@ function PlanificacionRow({ activity, initial, horizon, weeks, source, onStateCh
   // cambia sola, así que el reintento automático del autoguardado giraría para
   // siempre. Se detiene el autoguardado y se pide recargar explícitamente.
   const [conflict, setConflict] = React.useState(false)
+  // Regla a guardar junto con las celdas del preset recién aplicado por esta
+  // fila. `undefined` = "sin cambio de regla pendiente": el autoguardado no
+  // toca `recurrenceRule` (una edición manual de celda no debe alterar la
+  // regla existente). Se fija SOLO al aplicar un preset del menú de la fila
+  // — los 7 presets que aparecen ahí siempre tienen regla (`punctual`, el
+  // único sin ella, queda fuera de este menú a propósito). Sin esto, el
+  // atajo por fila sólo escribía celdas: la actividad quedaba clasificada
+  // "Manual" pese a venir de un preset con nombre, y un lote posterior la
+  // trataba como `manual_schedule_would_be_replaced` — pidiendo confirmar el
+  // reemplazo de una planificación que nunca fue manual.
+  const [pendingRule, setPendingRule] = React.useState<PdtpRecurrenceRule | null | undefined>(undefined)
   const savedFingerprint = React.useMemo(() => scheduleFingerprint(initial), [initial])
   const currentFingerprint = React.useMemo(() => scheduleFingerprint(values), [values])
   const isDirty = currentFingerprint !== savedFingerprint
@@ -565,10 +586,14 @@ function PlanificacionRow({ activity, initial, horizon, weeks, source, onStateCh
   function applyPresetKey(key: PdtpSchedulePresetKey, params: PdtpSchedulePresetParams) {
     // `presetToCells` es la misma función que usa el aplicador masivo
     // (Tarea 2.3): el atajo de una sola fila y el lote de muchas nunca
-    // pueden dar celdas distintas para el mismo preset+parámetros.
+    // pueden dar celdas distintas para el mismo preset+parámetros. La regla
+    // se guarda junto con las celdas en el próximo autoguardado (ver
+    // `pendingRule` más arriba) para que la actividad quede clasificada
+    // "rule", no "Manual".
     setValues(cellsToValues(presetToCells(key, params, horizon)))
     setDrafts({})
     setMenuOpen(false)
+    setPendingRule(presetToRule(key, params))
   }
 
   const { status, error, saveNow } = useDebouncedAutosave({
@@ -584,9 +609,14 @@ function PlanificacionRow({ activity, initial, horizon, weeks, source, onStateCh
         activityId: activity.id,
         scheduleOverrides: valuesToCells(values),
         expectedScheduleFingerprint: savedFingerprint,
+        ...(pendingRule !== undefined ? { recurrenceRule: pendingRule } : {}),
       })
-      if (result.ok) router.refresh()
-      else if ((result.data as { scheduleConflict?: unknown } | undefined)?.scheduleConflict) setConflict(true)
+      if (result.ok) {
+        router.refresh()
+        setPendingRule(undefined)
+      } else if ((result.data as { scheduleConflict?: unknown } | undefined)?.scheduleConflict) {
+        setConflict(true)
+      }
       return result
     },
   })
@@ -648,7 +678,15 @@ function PlanificacionRow({ activity, initial, horizon, weeks, source, onStateCh
           description={`Se quitarán las ${Object.values(values).filter((value) => value > 0).length} semanas planificadas de esta actividad. Es la cantidad que el indicador de cumplimiento usa como denominador.`}
           confirmLabel="Limpiar"
           variant="destructive"
-          onConfirm={() => { setValues({}); setDrafts({}); setClearing(false) }}
+          onConfirm={() => {
+            setValues({})
+            setDrafts({})
+            // Limpiar cancela cualquier preset recién aplicado y aún sin
+            // guardar: sin esto, el próximo autoguardado enviaría la regla
+            // de ese preset junto con una matriz vacía.
+            setPendingRule(undefined)
+            setClearing(false)
+          }}
         />
       </TableCell>
       {horizon.months.map((month) => (
