@@ -6,7 +6,14 @@ export type PdtpPeriod = {
   week: number
 }
 
-export type PdtpActivityStatus = "pending" | "executed" | "overdue" | "not_scheduled"
+/**
+ * `not_performed` no es "sin ejecución": es "sin ejecución **con un motivo
+ * declarado**" (un desvío `not_performed` activo en el mes, ver
+ * `deviations.ts`). El planificado sigue en pie y la actividad sigue contando
+ * en cero para el indicador; lo que cambia es que la faena ya explicó por qué,
+ * así que no se la sigue tratando como deuda silenciosa.
+ */
+export type PdtpActivityStatus = "pending" | "executed" | "overdue" | "not_scheduled" | "not_performed"
 
 /**
  * Filtro de estado del visor de actividades: los cuatro estados reales de
@@ -74,18 +81,43 @@ export function filterPdtpRowsFromActivation<T extends PdtpPeriodRow>(
 }
 
 /**
+ * Cuántos desvíos `not_performed` activos tiene la actividad en cada mes
+ * (índice 0 = enero). Lo arma `sheets.ts` a partir de `deviationRows` de la
+ * costura única; omitirlo deja el comportamiento previo a los desvíos.
+ */
+export type PdtpActivityStatusOptions = { monthlyNotPerformed?: number[] }
+
+/** Un mes con un "no realizada" declarado ya está explicado: no es deuda muda. */
+function hasDeclaredNotPerformed(options: PdtpActivityStatusOptions | undefined, monthIndex: number): boolean {
+  return (options?.monthlyNotPerformed?.[monthIndex] ?? 0) > 0
+}
+
+/**
  * Derive the status of a single activity for a given period.
  *
  * Status rules:
  * - 'not_scheduled': nothing planned this month (monthlyPlanned[month - 1] is 0 or undefined)
  * - 'executed': something executed this month (monthlyExecuted[month - 1] > 0)
+ * - 'not_performed': nada ejecutado este mes, pero hay un desvío "no
+ *   realizada" activo que declara el motivo (`options.monthlyNotPerformed`)
  * - 'overdue': planned in an earlier month with nothing executed
  * - 'pending': planned this month, not executed, no earlier unexecuted months
+ *
+ * Una ejecución gana sobre la declaración: si el mes tiene ejecutado > 0 el
+ * estado es `executed` aunque quede un desvío colgando (de hecho
+ * `markPdtpExecution` retira el `not_performed` al registrar cantidad > 0).
+ *
+ * Un mes **anterior** con un `not_performed` declarado no produce `overdue`:
+ * la deuda está explicada y la actividad no se arrastra como atrasada mes a
+ * mes por algo que ya tiene motivo registrado. Lo que no cambia es el
+ * indicador: `compliance.ts` sigue contando esa celda en cero (el planificado
+ * no se toca), y este estado sólo describe cómo se muestra.
  */
 export function deriveActivityStatus(
   monthlyPlanned: number[],
   monthlyExecuted: number[],
   period: PdtpPeriod,
+  options?: PdtpActivityStatusOptions,
 ): PdtpActivityStatus {
   const currentMonthPlanned = monthlyPlanned[period.month - 1] ?? 0
   const currentMonthExecuted = monthlyExecuted[period.month - 1] ?? 0
@@ -100,11 +132,15 @@ export function deriveActivityStatus(
     return "executed"
   }
 
+  if (hasDeclaredNotPerformed(options, period.month - 1)) {
+    return "not_performed"
+  }
+
   // Check if there are any earlier unexecuted planned months
   for (let i = 0; i < period.month - 1; i++) {
     const planned = monthlyPlanned[i] ?? 0
     const executed = monthlyExecuted[i] ?? 0
-    if (planned > 0 && executed === 0) {
+    if (planned > 0 && executed === 0 && !hasDeclaredNotPerformed(options, i)) {
       return "overdue"
     }
   }
@@ -117,17 +153,22 @@ export function deriveActivityStatus(
  * Count how many past months have planned but zero executed activity.
  * Used to derive badge severity (e.g. "Atrasado · 2 meses").
  * Returns 0 if status is not "overdue".
+ *
+ * Misma regla que `deriveActivityStatus`: un mes con "no realizada" declarada
+ * no engrosa el contador — si lo hiciera, el badge diría "Atrasado · 2 meses"
+ * sobre meses que el propio badge de estado ya dejó de considerar atrasados.
  */
 export function countOverdueMonths(
   monthlyPlanned: number[],
   monthlyExecuted: number[],
   period: PdtpPeriod,
+  options?: PdtpActivityStatusOptions,
 ): number {
   let count = 0
   for (let i = 0; i < period.month - 1; i++) {
     const planned = monthlyPlanned[i] ?? 0
     const executed = monthlyExecuted[i] ?? 0
-    if (planned > 0 && executed === 0) count++
+    if (planned > 0 && executed === 0 && !hasDeclaredNotPerformed(options, i)) count++
   }
   return count
 }
@@ -155,6 +196,13 @@ export function countOverdueMonths(
  * siendo "en cero" para el indicador, aunque la tabla ya la muestre como
  * hecha. Este desacople causó un bug real (ronda 2/5, tarea 1.4): el filtro
  * excluía actividades que el indicador seguía contando en cero.
+ *
+ * **No recibe `monthlyNotPerformed` a propósito**: un desvío "no realizada"
+ * declara el motivo pero no toca el planificado, así que la actividad sigue
+ * en cero para `compliance.ts` (`zeroActivityIds`). Pasarle las opciones
+ * haría que el filtro "En cero" del visor dejara de mostrar justamente las
+ * actividades que el indicador cuenta — el desacople que este helper existe
+ * para evitar.
  */
 export function isPdtpActivityZeroThisMonth(
   activity: { indicatorMode?: string | null },

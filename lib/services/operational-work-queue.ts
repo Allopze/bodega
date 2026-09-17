@@ -15,6 +15,7 @@ import {
   pdtpActivities,
   pdtpActivitySchedule,
   pdtpActivityWorksiteExclusions,
+  pdtpExecutionDeviations,
   pdtpExecutions,
   pdtpObligations,
   pdtpProgramWorksites,
@@ -952,6 +953,32 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
                 AND ${pdtpExecutions.month} = ${pdtpActivitySchedule.month}
                 AND ${pdtpExecutions.executedQuantity} > 0
                 AND ${pdtpExecutions.status} IN ('submitted', 'approved')
+            )
+            -- Desvíos por celda (Fase 3). Esta fuente NO pasa por
+            -- loadProgramScheduleAndExecutions —arma su propio SQL para poder
+            -- resolver el mes impago dentro del motor— así que la exclusión
+            -- hay que escribirla acá, correlacionada a la MISMA celda
+            -- (actividad × faena × año/mes/semana) y sólo para desvíos
+            -- activos:
+            --
+            --  · not_applicable: esa semana dejó de exigirse.
+            --  · reprogrammed:   el trabajo se movió; la deuda ya no está acá.
+            --  · not_performed:  sigue debiéndose, pero con motivo declarado;
+            --                    volver a pedirlo en la cola es ruido sobre
+            --                    algo que el responsable ya respondió.
+            --
+            -- Limitación conocida y aceptada: la celda DESTINO de una
+            -- reprogramación sólo produce tarea si además tiene su propia fila
+            -- de planificación. El cálculo de cumplimiento sí la ve (la costura
+            -- única la crea); esta cola no la inventa.
+            AND NOT EXISTS (
+              SELECT 1 FROM ${pdtpExecutionDeviations}
+              WHERE ${pdtpExecutionDeviations.activityId} = ${pdtpActivities.id}
+                AND ${pdtpExecutionDeviations.worksiteId} = ${worksites.id}
+                AND ${pdtpExecutionDeviations.year} = ${pdtpActivitySchedule.year}
+                AND ${pdtpExecutionDeviations.month} = ${pdtpActivitySchedule.month}
+                AND ${pdtpExecutionDeviations.week} = ${pdtpActivitySchedule.week}
+                AND ${pdtpExecutionDeviations.status} = 'active'
             )
         ) impago
         WHERE impago.mes IS NOT NULL

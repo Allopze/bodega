@@ -48,6 +48,30 @@ export type PdtpSheetView = {
      * contando como en cero (bug encontrado en la ronda 2/5 de la tarea 1.4).
      */
     approvedMonthlyExecuted: number[]
+    /**
+     * Cuántos desvíos "no realizada" activos tiene la actividad en cada mes
+     * (índice 0 = enero) para esta faena. Alimenta `deriveActivityStatus`
+     * (estado `not_performed`) y `countOverdueMonths`. No altera
+     * `effectiveMonthlyPlanned`: un `not_performed` declara el motivo, no
+     * cambia lo exigido — a diferencia de `not_applicable`/`reprogrammed`,
+     * que ya vienen aplicados en el planificado por la costura única.
+     */
+    monthlyNotPerformed: number[]
+    /**
+     * Desvíos activos de esta actividad en la faena, tal como los devolvió
+     * `loadProgramScheduleAndExecutions` (ya filtrados por exclusión y
+     * vigencia) y recortados desde la activación del programa. La vista
+     * agregada concatena los de todas las faenas del alcance.
+     */
+    deviations: Array<{
+      id: string
+      month: number
+      week: number
+      kind: string
+      reason: string
+      targetMonth: number | null
+      targetWeek: number | null
+    }>
     executions: Array<{
       id: string
       year: number
@@ -90,6 +114,31 @@ export type PdtpAggregatedSheetView = Omit<PdtpSheetView, "activities"> & {
   worksiteSummaries: Array<{ worksiteId: string; planned: number; executed: number }>
 }
 
+type DeviationRow = Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["deviationRows"][number]
+
+/** Proyección de un desvío para la vista: sin ids de usuario ni estado interno. */
+function toSheetDeviation(row: DeviationRow): PdtpSheetView["activities"][number]["deviations"][number] {
+  return {
+    id: row.id,
+    month: row.month,
+    week: row.week,
+    kind: row.kind,
+    reason: row.reason,
+    targetMonth: row.targetMonth,
+    targetWeek: row.targetWeek,
+  }
+}
+
+/** Conteo mensual (12 posiciones) de desvíos "no realizada" de un set de filas. */
+function monthlyNotPerformedFrom(rows: DeviationRow[]): number[] {
+  const monthly = Array.from({ length: 12 }, () => 0)
+  for (const row of rows) {
+    if (row.kind !== "not_performed") continue
+    monthly[row.month - 1] = (monthly[row.month - 1] ?? 0) + 1
+  }
+  return monthly
+}
+
 export async function getPdtpAggregatedSheetViewByProgram(
   programId: string,
   sheetCode: string,
@@ -121,7 +170,19 @@ export async function getPdtpAggregatedSheetViewByProgram(
     ...entry,
     scheduleRows: filterPdtpRowsFromActivation(entry.scheduleRows, program.activatedAt),
     executionRows: filterPdtpRowsFromActivation(entry.executionRows, program.activatedAt),
+    deviationRows: filterPdtpRowsFromActivation(entry.deviationRows, program.activatedAt),
   }))
+  // La vista agregada mezcla faenas: los desvíos se concatenan (cada uno
+  // pertenece a una faena concreta) y "no realizada" se suma, igual que
+  // `planned`/`executed`.
+  const deviationsByActivity = new Map<string, DeviationRow[]>()
+  for (const { deviationRows } of effectivePerWorksite) {
+    for (const row of deviationRows) {
+      const rows = deviationsByActivity.get(row.activityId) ?? []
+      rows.push(row)
+      deviationsByActivity.set(row.activityId, rows)
+    }
+  }
   const activityById = new Map(activityRows.map((activity) => [activity.id, activity]))
   const schedulesByActivity = new Map<string, Array<typeof pdtpActivitySchedule.$inferSelect>>()
   const executionsByActivity = new Map<string, Array<typeof pdtpExecutions.$inferSelect>>()
@@ -180,7 +241,7 @@ export async function getPdtpAggregatedSheetViewByProgram(
     for (const row of effectiveExecutionsByActivity.get(activity.id) ?? []) {
       if (row.status === "approved") effectiveMonthlyExecuted[row.month - 1]! += row.executedQuantity
     }
-    const activityWorksiteSummaries = effectivePerWorksite.map(({ worksiteId, scheduleRows, executionRows }) => {
+    const activityWorksiteSummaries = effectivePerWorksite.map(({ worksiteId, scheduleRows, executionRows, deviationRows }) => {
       const plannedByMonth = Array.from({ length: 12 }, () => 0)
       const executedByMonth = Array.from({ length: 12 }, () => 0)
       for (const row of scheduleRows) if (row.activityId === activity.id) plannedByMonth[row.month - 1]! += row.plannedQuantity
@@ -189,9 +250,14 @@ export async function getPdtpAggregatedSheetViewByProgram(
         worksiteId,
         planned: plannedByMonth.reduce((sum, value) => sum + value, 0),
         executed: executedByMonth.reduce((sum, value) => sum + value, 0),
-        status: deriveActivityStatus(plannedByMonth, executedByMonth, period),
+        status: deriveActivityStatus(plannedByMonth, executedByMonth, period, {
+          monthlyNotPerformed: monthlyNotPerformedFrom(
+            deviationRows.filter((row) => row.activityId === activity.id),
+          ),
+        }),
       }
     })
+    const activityDeviations = deviationsByActivity.get(activity.id) ?? []
     activities.push({
       ...activity,
       schedule,
@@ -205,6 +271,8 @@ export async function getPdtpAggregatedSheetViewByProgram(
       // que `isPdtpActivityZeroThisMonth` espera para no depender de que cada
       // vista use el mismo criterio "por casualidad".
       approvedMonthlyExecuted: effectiveMonthlyExecuted,
+      monthlyNotPerformed: monthlyNotPerformedFrom(activityDeviations),
+      deviations: activityDeviations.map(toSheetDeviation),
       totalPlanned: monthlyPlanned.reduce((sum, value) => sum + value, 0),
       totalExecuted: monthlyExecuted.reduce((sum, value) => sum + value, 0),
       effectiveTotalPlanned: effectiveMonthlyPlanned.reduce((sum, value) => sum + value, 0),
@@ -247,6 +315,16 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
   // vigencia vive en campos `effective*`, usados sólo por estados y KPI.
   const scheduleRows = loaded.scheduleRows
   const executionRows = loaded.executionRows
+  // Los desvíos ya vienen filtrados por exclusión y vigencia desde la costura
+  // única; acá sólo se recortan desde la activación, igual que el resto de lo
+  // que la vista muestra como "efectivo".
+  const deviationRows = filterPdtpRowsFromActivation(loaded.deviationRows, program.activatedAt)
+  const deviationsByActivity = new Map<string, DeviationRow[]>()
+  for (const row of deviationRows) {
+    const current = deviationsByActivity.get(row.activityId) ?? []
+    current.push(row)
+    deviationsByActivity.set(row.activityId, current)
+  }
 
   const activityById = new Map(activityRows.map((a) => [a.id, a]))
   const scheduleByActivity = new Map<string, Array<typeof pdtpActivitySchedule.$inferSelect>>()
@@ -310,9 +388,13 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
       approvedMonthlyExecuted[execution.month - 1] = (approvedMonthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
     }
 
+    const activityDeviations = deviationsByActivity.get(activity.id) ?? []
+
     activities.push({
       ...activity, schedule, effectiveSchedule, monthlyPlanned, monthlyExecuted,
       effectiveMonthlyPlanned, effectiveMonthlyExecuted, approvedMonthlyExecuted,
+      monthlyNotPerformed: monthlyNotPerformedFrom(activityDeviations),
+      deviations: activityDeviations.map(toSheetDeviation),
       totalPlanned: monthlyPlanned.reduce((s, v) => s + v, 0),
       totalExecuted: monthlyExecuted.reduce((s, v) => s + v, 0),
       effectiveTotalPlanned: effectiveMonthlyPlanned.reduce((s, v) => s + v, 0),

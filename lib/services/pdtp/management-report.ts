@@ -19,6 +19,15 @@ export type PdtpManagementReportActivityRow = {
   percent: number | null
   meetsTarget: boolean
   responsibles: string[]
+  /**
+   * Desvíos activos de la actividad dentro del período filtrado. Responde la
+   * pregunta que el reporte dejaba abierta: una actividad "En desviación"
+   * ¿quedó así porque nadie hizo nada, o porque se declaró por qué? Los tres
+   * tipos ya están reflejados en `planned`/`executed` a través de la costura
+   * única (`not_applicable` y `reprogrammed` cambian el planificado;
+   * `not_performed` no), así que este conteo no corrige el avance: lo explica.
+   */
+  deviations: { notPerformed: number; notApplicable: number; reprogrammed: number }
 }
 
 export type PdtpManagementReportFilters = {
@@ -129,12 +138,26 @@ export async function getPdtpManagementReport(input: {
   const activityIds = scheduledActivities.map((a) => a.id)
   const loaded = activityIds.length > 0
     ? await loadProgramScheduleAndExecutions(activityIds, program.year, input.worksiteId)
-    : { scheduleRows: [], executionRows: [] }
+    : { scheduleRows: [], executionRows: [], deviationRows: [] }
   const scheduleRows = filterPdtpRowsFromActivation(loaded.scheduleRows, program.activatedAt)
   const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, program.activatedAt)
+  const deviationRows = filterPdtpRowsFromActivation(loaded.deviationRows, program.activatedAt)
   const approvedExecutions = executionRows.filter((row) => row.status === "approved")
 
   const inPeriod = (month: number) => (filters.monthFrom === undefined || month >= filters.monthFrom) && (filters.monthTo === undefined || month <= filters.monthTo)
+
+  const deviationsByActivity = new Map<string, { notPerformed: number; notApplicable: number; reprogrammed: number }>()
+  for (const row of deviationRows) {
+    // Se cuenta por la celda de ORIGEN: una reprogramación se declara sobre la
+    // semana que no se va a cumplir, y ésa es la que el filtro de meses
+    // selecciona. Contarla además en el destino la duplicaría.
+    if (!inPeriod(row.month)) continue
+    const entry = deviationsByActivity.get(row.activityId) ?? { notPerformed: 0, notApplicable: 0, reprogrammed: 0 }
+    if (row.kind === "not_performed") entry.notPerformed += 1
+    else if (row.kind === "not_applicable") entry.notApplicable += 1
+    else entry.reprogrammed += 1
+    deviationsByActivity.set(row.activityId, entry)
+  }
 
   const plannedByActivity = new Map<string, number>()
   for (const row of scheduleRows) {
@@ -162,6 +185,7 @@ export async function getPdtpManagementReport(input: {
         percent,
         meetsTarget,
         responsibles: responsible.display ? [responsible.display] : [],
+        deviations: deviationsByActivity.get(activity.id) ?? { notPerformed: 0, notApplicable: 0, reprogrammed: 0 },
       }
     })
     .filter((row) => {

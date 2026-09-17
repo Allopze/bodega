@@ -187,6 +187,79 @@ describe("cola operacional — actividades programadas del PDTP", () => {
       .where(eq(schema.pdtpActivityWorksiteExclusions.id, "excl-pdtpq"))
   })
 
+  /**
+   * Fase 3: esta fuente no pasa por `loadProgramScheduleAndExecutions` (arma
+   * su propio SQL para resolver el mes impago dentro del motor), así que la
+   * exclusión por desvíos vive en la consulta y hay que probarla acá. Los
+   * tipos sacan la celda de la cola por razones distintas —"no se exige",
+   * "se movió", "ya hay motivo declarado"— y los tres dejan de pedir lo mismo
+   * que la faena acaba de responder.
+   */
+  it("una actividad con 'no aplica' este mes no aparece en la cola de esa faena", async () => {
+    await inMemoryDb.insert(schema.pdtpExecutionDeviations).values({
+      id: "dev-pdtpq-na", activityId: "act-pdtpq-jt", worksiteId: worksiteB,
+      year, month, week: 1, kind: "not_applicable",
+      reason: "La faena B no tiene el frente de trabajo asociado este mes.",
+      status: "active", createdByUserId: "user-pdtpq", createdAt: now,
+    })
+    const items = await pdtpItems(makeSession(["jefe_terreno"]))
+    expect(items.map((item) => item.worksiteId)).toEqual([worksiteA])
+    await inMemoryDb.delete(schema.pdtpExecutionDeviations)
+      .where(eq(schema.pdtpExecutionDeviations.id, "dev-pdtpq-na"))
+  })
+
+  it("un 'no realizada' con motivo declarado tampoco se vuelve a pedir", async () => {
+    await inMemoryDb.insert(schema.pdtpExecutionDeviations).values({
+      id: "dev-pdtpq-np", activityId: "act-pdtpq-jt", worksiteId: worksiteA,
+      year, month, week: 1, kind: "not_performed",
+      reason: "Suspensión de faena por alerta meteorológica declarada.",
+      status: "active", createdByUserId: "user-pdtpq", createdAt: now,
+    })
+    const items = await pdtpItems(makeSession(["jefe_terreno"]))
+    expect(items.map((item) => item.worksiteId)).toEqual([worksiteB])
+    await inMemoryDb.delete(schema.pdtpExecutionDeviations)
+      .where(eq(schema.pdtpExecutionDeviations.id, "dev-pdtpq-np"))
+  })
+
+  it("un desvío retirado deja de tapar la celda: el trabajo se vuelve a deber", async () => {
+    await inMemoryDb.insert(schema.pdtpExecutionDeviations).values({
+      id: "dev-pdtpq-out", activityId: "act-pdtpq-jt", worksiteId: worksiteA,
+      year, month, week: 1, kind: "not_applicable",
+      reason: "Motivo declarado y luego revertido por la jefatura.",
+      status: "withdrawn", createdByUserId: "user-pdtpq", createdAt: now,
+      withdrawnByUserId: "user-pdtpq", withdrawnAt: now,
+      withdrawReason: "El frente de trabajo sí estaba habilitado.",
+    })
+    const items = await pdtpItems(makeSession(["jefe_terreno"]))
+    expect(new Set(items.map((item) => item.worksiteId))).toEqual(new Set([worksiteA, worksiteB]))
+    await inMemoryDb.delete(schema.pdtpExecutionDeviations)
+      .where(eq(schema.pdtpExecutionDeviations.id, "dev-pdtpq-out"))
+  })
+
+  /**
+   * El desvío es por celda, no por mes: si la actividad se planifica dos
+   * semanas del mismo mes y sólo una se declara, la otra sigue debiéndose. Un
+   * `NOT EXISTS` correlacionado sólo por mes la habría tapado entera.
+   */
+  it("un desvío en una semana no tapa otra semana planificada del mismo mes", async () => {
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+      id: "sch-jt-w3", activityId: "act-pdtpq-jt", year, month, week: 3,
+      plannedQuantity: 1, sourceColumn: "test",
+    })
+    await inMemoryDb.insert(schema.pdtpExecutionDeviations).values({
+      id: "dev-pdtpq-w1", activityId: "act-pdtpq-jt", worksiteId: worksiteA,
+      year, month, week: 1, kind: "not_applicable",
+      reason: "La semana 1 no tenía frente de trabajo habilitado.",
+      status: "active", createdByUserId: "user-pdtpq", createdAt: now,
+    })
+    const items = await pdtpItems(makeSession(["jefe_terreno"], [worksiteA]))
+    expect(items.map((item) => item.worksiteId)).toEqual([worksiteA])
+    await inMemoryDb.delete(schema.pdtpExecutionDeviations)
+      .where(eq(schema.pdtpExecutionDeviations.id, "dev-pdtpq-w1"))
+    await inMemoryDb.delete(schema.pdtpActivitySchedule)
+      .where(eq(schema.pdtpActivitySchedule.id, "sch-jt-w3"))
+  })
+
   it("un programa que no está activo no genera trabajo", async () => {
     await inMemoryDb.update(schema.pdtpPrograms).set({ status: "draft" })
       .where(eq(schema.pdtpPrograms.id, programId))

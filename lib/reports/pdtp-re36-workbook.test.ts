@@ -392,6 +392,86 @@ describe("renderPdtpRe36Workbook", () => {
     expect(names).toEqual(["PDTP GENERAL", "CPHS", "Desvíos"])
   })
 
+  /**
+   * Fase 3 (desvíos por celda). El modelo del documento
+   * (`buildPdtpRe36Document`) ya no deja `deviations` vacío ni `cell.note` sin
+   * usar: una celda "no realizada" se imprime con `E = 0` y la nota del
+   * motivo, y el anexo "Desvíos" lista cada declaración. Estos casos prueban
+   * el renderizador contra un documento que trae esos datos; que el modelo los
+   * calcule bien se prueba aparte, en los PGlite del servicio.
+   */
+  describe("desvíos", () => {
+    function withDeviation(): PdtpRe36Document {
+      const doc = buildFixtureDocument()
+      const general = doc.sheets[0]!
+      // Mes 1 semana 2 de la actividad N°2: planificada, sin ejecutar y con
+      // motivo declarado (el fixture base ya la trae con `p: 1, e: 0`).
+      general.rows[1]!.cells[1] = { p: 1, e: 0, note: "No realizada: Faena suspendida por alerta meteorológica." }
+      doc.deviations = [
+        {
+          n: 2,
+          activity: "Reunión en faena con CPHS",
+          month: 1,
+          week: 2,
+          kind: "No realizada",
+          reason: "Faena suspendida por alerta meteorológica.",
+          targetMonth: null,
+          targetWeek: null,
+          recordedBy: "Prevencionista de faena",
+          recordedAt: "12-01-2026",
+        },
+      ]
+      return doc
+    }
+
+    it("una celda no realizada se escribe con E = 0 y la nota del motivo", () => {
+      const workbook = renderPdtpRe36Workbook(withDeviation())
+      const ws = workbook.getWorksheet("PDTP GENERAL")!
+      // Segunda fila de datos (actividad N°2), mes 1 semana 2.
+      const row = RE36_LAYOUT.firstDataRow + 1
+      const eCell = ws.getCell(re36CellAddress(1, 2, "E", row))
+      expect(eCell.value).toBe(0)
+      // La nota se adjunta a la celda que sí tiene valor escrito: E, porque
+      // `e !== null`. Si sólo hubiera P, iría a P.
+      expect(JSON.stringify(eCell.note)).toContain("Faena suspendida por alerta meteorológica")
+    })
+
+    it("la hoja Desvíos lista una fila por declaración, con el tipo en castellano", () => {
+      const workbook = renderPdtpRe36Workbook(withDeviation())
+      const ws = workbook.getWorksheet("Desvíos")!
+      expect(String(ws.getCell("A1").value)).toBe("N°")
+      expect(String(ws.getCell("E1").value)).toBe("Tipo")
+      expect(ws.getCell("A2").value).toBe(2)
+      expect(String(ws.getCell("B2").value)).toBe("Reunión en faena con CPHS")
+      expect(ws.getCell("C2").value).toBe(1)
+      expect(ws.getCell("D2").value).toBe(2)
+      // "No realizada", no `not_performed`: el enum de la columna no sale del
+      // servicio (PRODUCT.md — nada de enums crudos en lo que lee el mandante).
+      expect(String(ws.getCell("E2").value)).toBe("No realizada")
+      expect(String(ws.getCell("F2").value)).toContain("alerta meteorológica")
+      // Sin destino (no es una reprogramación) la columna muestra un guion, no
+      // una celda vacía que se confunda con "falta el dato".
+      expect(String(ws.getCell("G2").value)).toBe("—")
+      expect(String(ws.getCell("H2").value)).toBe("Prevencionista de faena")
+      expect(String(ws.getCell("I2").value)).toBe("12-01-2026")
+    })
+
+    it("una reprogramación muestra el destino en la columna Destino", () => {
+      const doc = withDeviation()
+      doc.deviations = [{
+        ...doc.deviations[0]!,
+        kind: "Reprogramada",
+        targetMonth: 3,
+        targetWeek: 1,
+        reason: "La actividad se traslada por cambio de turno de la faena.",
+      }]
+      const workbook = renderPdtpRe36Workbook(doc)
+      const ws = workbook.getWorksheet("Desvíos")!
+      expect(String(ws.getCell("E2").value)).toBe("Reprogramada")
+      expect(String(ws.getCell("G2").value)).toBe("Mes 3 Sem 1")
+    })
+  })
+
   it("platformIndicators se imprime solo en la hoja general, no en las de cargo", () => {
     const workbook = renderPdtpRe36Workbook(buildFixtureDocument())
     const general = workbook.getWorksheet("PDTP GENERAL")!

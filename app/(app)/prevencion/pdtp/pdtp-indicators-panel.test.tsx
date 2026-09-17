@@ -19,11 +19,11 @@ const DATA: PdtpComplianceIndicators = {
   year: 2026,
   target: 0.85,
   monthly: Array.from({ length: 12 }, (_, i) => {
-    if (i === 0) return { month: 1, planned: 10, executed: 9, percent: 0.9, zeroActivities: 0, zeroActivityIds: [] }
+    if (i === 0) return { month: 1, planned: 10, executed: 9, percent: 0.9, zeroActivities: 0, zeroActivityIds: [], declaredNotPerformed: 0 }
     // Febrero: dos actividades planificadas sin ninguna ejecución aprobada —
     // el caso que esta columna existe para exponer.
-    if (i === 1) return { month: 2, planned: 10, executed: 0, percent: 0, zeroActivities: 2, zeroActivityIds: ["act-1", "act-2"] }
-    return { month: i + 1, planned: 0, executed: 0, percent: null, zeroActivities: 0, zeroActivityIds: [] }
+    if (i === 1) return { month: 2, planned: 10, executed: 0, percent: 0, zeroActivities: 2, zeroActivityIds: ["act-1", "act-2"], declaredNotPerformed: 1 }
+    return { month: i + 1, planned: 0, executed: 0, percent: null, zeroActivities: 0, zeroActivityIds: [], declaredNotPerformed: 0 }
   }),
   quarterly: [
     { quarter: 1, planned: 20, executed: 9, percent: 0.45 },

@@ -46,6 +46,20 @@ export type PdtpComplianceMonth = {
    * consultar cuáles son.
    */
   zeroActivityIds: string[]
+  /**
+   * Cuántas celdas (actividad × semana) de este mes tienen un desvío "no
+   * realizada" activo declarado en la faena. **No cambia nada del cálculo**:
+   * un `not_performed` deja el planificado intacto a propósito y la actividad
+   * sigue contando en `zeroActivities`. Existe para poder decir, junto al
+   * porcentaje, cuánto de lo que quedó en cero tiene un motivo registrado y
+   * cuánto es silencio — que es una diferencia de gestión, no de fórmula.
+   *
+   * `not_applicable` y `reprogrammed` no se cuentan acá: ésos sí transforman
+   * el planificado y ya están reflejados en `planned` gracias a la costura
+   * única (`loadProgramScheduleAndExecutions`). Contarlos además sería
+   * mostrar dos veces el mismo ajuste.
+   */
+  declaredNotPerformed: number
 }
 
 export type PdtpComplianceIndicators = {
@@ -214,7 +228,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   if (activityRows.length === 0) {
     return {
       programId: program.id, year, target: program.complianceTarget,
-      monthly: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, planned: 0, executed: 0, percent: null, zeroActivities: 0, zeroActivityIds: [] })),
+      monthly: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, planned: 0, executed: 0, percent: null, zeroActivities: 0, zeroActivityIds: [], declaredNotPerformed: 0 })),
       quarterly: Array.from({ length: 4 }, (_, i) => ({ quarter: i + 1, planned: 0, executed: 0, percent: null })),
       annual: { planned: 0, executed: 0, percent: null, zeroActivityMonths: 0, zeroActivityIds: [] },
       lastExecutionUpdatedAt: null,
@@ -226,6 +240,14 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   const loaded = await loadProgramScheduleAndExecutions(allActivityIds, year, worksiteId)
   const scheduleRows = filterPdtpRowsFromActivation(loaded.scheduleRows, program.activatedAt)
   const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, program.activatedAt)
+  // Métrica, no insumo del cálculo: los desvíos que transforman el
+  // planificado ya vienen aplicados en `scheduleRows` desde la costura única.
+  // Acá sólo se cuentan los "no realizada" por mes para exponerlos.
+  const declaredNotPerformedByMonth = Array.from({ length: 12 }, () => 0)
+  for (const row of filterPdtpRowsFromActivation(loaded.deviationRows, program.activatedAt)) {
+    if (row.kind !== "not_performed") continue
+    declaredNotPerformedByMonth[row.month - 1] = (declaredNotPerformedByMonth[row.month - 1] ?? 0) + 1
+  }
   // El cumplimiento formal solo incorpora ejecuciones validadas. Las
   // submitted siguen visibles en el tablero operativo y en aprobaciones.
   const approvedExecutionRows = executionRows.filter((row) => row.status === "approved")
@@ -402,7 +424,11 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     const planned = coveragePlanned + restPlanned
     const executed = coverageExecuted + Math.min(restRawExecuted, restPlanned)
     const percent = planned > 0 ? Math.round((executed / planned) * 100) / 100 : null
-    return { month, planned, executed, percent, zeroActivities: zeroActivityIds.length, zeroActivityIds }
+    return {
+      month, planned, executed, percent,
+      zeroActivities: zeroActivityIds.length, zeroActivityIds,
+      declaredNotPerformed: declaredNotPerformedByMonth[i] ?? 0,
+    }
   })
 
   const quarterly = Array.from({ length: 4 }, (_, q) => {
@@ -476,6 +502,10 @@ export async function getPdtpComplianceIndicatorsForScope(
       percent: planned > 0 ? Math.round((executed / planned) * 100) / 100 : null,
       zeroActivities: zeroActivityIds.length,
       zeroActivityIds,
+      // Suma, no unión: cada desvío es un evento de una faena concreta sobre
+      // una celda concreta. Dos faenas que declaran "no realizada" la misma
+      // actividad son dos declaraciones, no una.
+      declaredNotPerformed: resolved.reduce((sum, entry) => sum + entry.monthly[i]!.declaredNotPerformed, 0),
     }
   })
   const quarterly = Array.from({ length: 4 }, (_, q) => {

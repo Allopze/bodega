@@ -24,6 +24,15 @@ import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 import { recordAudit } from "@/lib/audit"
 
+/** "2 no realizadas · 1 reprogramada", o "Sin desvíos". Nunca el enum crudo. */
+function describeDeviations(deviations: { notPerformed: number; notApplicable: number; reprogrammed: number }): string {
+  const parts: string[] = []
+  if (deviations.notPerformed > 0) parts.push(`${deviations.notPerformed} no realizada${deviations.notPerformed === 1 ? "" : "s"}`)
+  if (deviations.notApplicable > 0) parts.push(`${deviations.notApplicable} no aplica`)
+  if (deviations.reprogrammed > 0) parts.push(`${deviations.reprogrammed} reprogramada${deviations.reprogrammed === 1 ? "" : "s"}`)
+  return parts.length > 0 ? parts.join(" · ") : "Sin desvíos"
+}
+
 function parseFilters(url: URL): PdtpManagementReportFilters {
   const filters: PdtpManagementReportFilters = {}
   const responsibleSlug = url.searchParams.get("responsable")
@@ -124,6 +133,9 @@ export async function GET(request: NextRequest) {
       { header: "Avance", key: "percent", width: 12 },
       { header: "Estado", key: "status", width: 16 },
       { header: "Responsables", key: "responsibles", width: 40 },
+      // Explica el avance sin corregirlo: los tres tipos ya están reflejados
+      // en Planificado/Ejecutado por la costura única.
+      { header: "Desvíos declarados", key: "deviations", width: 34 },
       { header: "Ver registros", key: "href", width: 60 },
     ]
     for (const row of report.activities) {
@@ -135,12 +147,13 @@ export async function GET(request: NextRequest) {
         percent: row.percent !== null ? `${Math.round(row.percent * 100)}%` : "Sin datos",
         status: row.meetsTarget ? "Cumple meta" : "En desviación",
         responsibles: safe(row.responsibles.join(", ")),
+        deviations: describeDeviations(row.deviations),
         href: `${url.origin}/prevencion/pdtp/${report.programId}?faena=${report.worksiteId}#registros-pdtp`,
       })
     }
     summary.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }
     summary.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } }
-    summary.autoFilter = { from: "A1", to: "H1" }
+    summary.autoFilter = { from: "A1", to: "I1" }
 
     const indicators = workbook.addWorksheet("Indicadores")
     indicators.columns = [

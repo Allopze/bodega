@@ -80,7 +80,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   // enlace compartido o un remount del árbol volvían el filtro a "Todas".
   // Mismo patrón que actividades/page.tsx.
   const requestedStatus = Array.isArray(query.estado) ? query.estado[0] : query.estado
-  const statusFilter: PdtpActivityStatusFilter | "all" = ["executed", "pending", "overdue", "not_scheduled", "en_cero"].includes(requestedStatus ?? "")
+  const statusFilter: PdtpActivityStatusFilter | "all" = ["executed", "pending", "overdue", "not_scheduled", "not_performed", "en_cero"].includes(requestedStatus ?? "")
     ? requestedStatus as PdtpActivityStatusFilter
     : "all"
   const renderedAt = new Date().toISOString()

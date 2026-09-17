@@ -194,6 +194,20 @@ export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId }: {
                         ) : (
                           <span className="text-[var(--color-text-faint)]">0</span>
                         )}
+                        {/* Un "no realizada" declarado no baja el planificado
+                            (por diseño: la celda se sigue exigiendo), así que
+                            la actividad sigue contando en "En cero". Esta
+                            anotación separa el cero con motivo registrado del
+                            cero en silencio, que es la distinción que importa
+                            al revisar el mes. */}
+                        {m.declaredNotPerformed > 0 && (
+                          <span
+                            className="ml-1 whitespace-nowrap text-[10px] font-normal text-[var(--color-text-faint)]"
+                            title="Semanas del mes con un desvío «no realizada» declarado. Queda el motivo registrado; lo planificado no cambia."
+                          >
+                            ({m.declaredNotPerformed} con motivo)
+                          </span>
+                        )}
                       </TableCellNum>
                       <TableCell className="px-2 py-1.5">
                         {meetsTarget && <CheckCircle size={13} className="text-[var(--color-success)]" />}

@@ -57,7 +57,7 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
     ? "semana"
     : one(query.vista) === "anual" || isGlobalViewer ? "anual" : "semana"
   const requestedStatus = one(query.estado)
-  const statusFilter: PdtpActivityStatusFilter | "all" = ["executed", "pending", "overdue", "not_scheduled", "en_cero"].includes(requestedStatus ?? "")
+  const statusFilter: PdtpActivityStatusFilter | "all" = ["executed", "pending", "overdue", "not_scheduled", "not_performed", "en_cero"].includes(requestedStatus ?? "")
     ? requestedStatus as PdtpActivityStatusFilter
     : "all"
 

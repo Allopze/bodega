@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 import {
+  countOverdueMonths,
   currentPdtpPeriod,
   deriveActivityStatus,
   filterPdtpRowsFromActivation,
+  isPdtpActivityZeroThisMonth,
   isPdtpPeriodOnOrAfterActivation,
   type PdtpPeriod,
 } from "@/lib/services/pdtp/period"
@@ -158,5 +160,78 @@ describe("deriveActivityStatus", () => {
 
     const status = deriveActivityStatus(monthlyPlanned, monthlyExecuted, period)
     expect(status).toBe("pending")
+  })
+})
+
+/**
+ * Fase 3 (desvíos por celda). `monthlyNotPerformed` cuenta los desvíos "no
+ * realizada" activos por mes: no tocan lo planificado (eso lo hacen
+ * `not_applicable` y `reprogrammed`, y ya viene aplicado desde la costura
+ * única), sólo declaran el motivo. Lo que estos casos fijan es dónde SÍ
+ * cambia el resultado (estado del mes, arrastre de atraso) y dónde NO
+ * (el criterio "en cero" del indicador).
+ */
+describe("deriveActivityStatus — desvíos 'no realizada'", () => {
+  const period: PdtpPeriod = { year: 2026, month: 7, week: 1 }
+  const zeros = () => Array.from({ length: 12 }, () => 0)
+  const at = (month: number, value: number) => {
+    const arr = zeros()
+    arr[month - 1] = value
+    return arr
+  }
+
+  it("declara 'no realizada' el mes en curso planificado, sin ejecutar y con motivo", () => {
+    const status = deriveActivityStatus(at(7, 1), zeros(), period, { monthlyNotPerformed: at(7, 1) })
+    expect(status).toBe("not_performed")
+  })
+
+  it("una ejecución del mes gana sobre la declaración: sigue siendo 'ejecutado'", () => {
+    const status = deriveActivityStatus(at(7, 1), at(7, 2), period, { monthlyNotPerformed: at(7, 1) })
+    expect(status).toBe("executed")
+  })
+
+  it("sin planificación en el mes, un desvío no inventa estado: sigue 'no programada'", () => {
+    const status = deriveActivityStatus(zeros(), zeros(), period, { monthlyNotPerformed: at(7, 1) })
+    expect(status).toBe("not_scheduled")
+  })
+
+  it("un mes anterior con 'no realizada' declarada no arrastra el atraso", () => {
+    const planned = zeros()
+    planned[2] = 1 // marzo planificado sin ejecutar
+    planned[6] = 1 // julio, el mes en curso
+    expect(deriveActivityStatus(planned, zeros(), period)).toBe("overdue")
+    expect(deriveActivityStatus(planned, zeros(), period, { monthlyNotPerformed: at(3, 1) })).toBe("pending")
+  })
+
+  it("un mes anterior sin declarar sigue produciendo atraso aunque otro sí esté declarado", () => {
+    const planned = zeros()
+    planned[2] = 1 // marzo: declarado
+    planned[4] = 1 // mayo: en silencio
+    planned[6] = 1
+    const status = deriveActivityStatus(planned, zeros(), period, { monthlyNotPerformed: at(3, 1) })
+    expect(status).toBe("overdue")
+  })
+
+  it("countOverdueMonths no cuenta los meses ya declarados", () => {
+    const planned = zeros()
+    planned[2] = 1
+    planned[4] = 1
+    planned[6] = 1
+    expect(countOverdueMonths(planned, zeros(), period)).toBe(2)
+    expect(countOverdueMonths(planned, zeros(), period, { monthlyNotPerformed: at(3, 1) })).toBe(1)
+  })
+
+  it("sin opciones, el comportamiento es exactamente el previo a los desvíos", () => {
+    const planned = at(7, 1)
+    expect(deriveActivityStatus(planned, zeros(), period, {})).toBe("pending")
+    expect(deriveActivityStatus(planned, zeros(), period, { monthlyNotPerformed: undefined })).toBe("pending")
+  })
+
+  it("una 'no realizada' declarada sigue contando en cero para el indicador", () => {
+    // `isPdtpActivityZeroThisMonth` no recibe `monthlyNotPerformed` a
+    // propósito: el planificado no cambió, así que `compliance.ts` sigue
+    // contando la actividad en `zeroActivityIds` y el filtro del visor tiene
+    // que mostrar lo mismo que el indicador cuenta.
+    expect(isPdtpActivityZeroThisMonth({ indicatorMode: "planned_vs_completed" }, at(7, 1), zeros(), period)).toBe(true)
   })
 })

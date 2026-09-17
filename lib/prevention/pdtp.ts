@@ -58,3 +58,28 @@ export function pdtpActionStatusVariant(estado: string, vencida: boolean): "defa
     default:           return "default"
   }
 }
+
+/**
+ * Tipos de desvío por celda (`pdtp_execution_deviations.kind`). Vive acá, no
+ * en `lib/services/pdtp/deviations.ts`, porque las etiquetas las consume la
+ * UI cliente y ese módulo importa `@/db` — arrastrarlo al bundle del
+ * navegador por tres strings no corresponde.
+ */
+export type PdtpDeviationKindValue = "not_performed" | "not_applicable" | "reprogrammed"
+
+export const PDTP_DEVIATION_KIND_LABELS: Record<PdtpDeviationKindValue, string> = {
+  not_performed: "No realizada",
+  not_applicable: "No aplica",
+  reprogrammed: "Reprogramada",
+}
+
+/** Descripción corta de lo que cada tipo hace con lo planificado. */
+export const PDTP_DEVIATION_KIND_HINTS: Record<PdtpDeviationKindValue, string> = {
+  not_performed: "La semana se sigue exigiendo y queda registrado por qué no se hizo.",
+  not_applicable: "La semana deja de exigirse: sale del cálculo de cumplimiento.",
+  reprogrammed: "Lo planificado se traslada a otra semana del mismo año.",
+}
+
+export function pdtpDeviationKindLabel(kind: string): string {
+  return PDTP_DEVIATION_KIND_LABELS[kind as PdtpDeviationKindValue] ?? kind
+}

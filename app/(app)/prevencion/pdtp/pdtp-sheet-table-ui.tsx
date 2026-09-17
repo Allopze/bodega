@@ -23,14 +23,21 @@ const STATUS_BADGE: Record<PdtpActivityStatus, StatusConfig> = {
   pending: { label: "Pendiente", variant: "default" },
   overdue: { label: "Atrasado", variant: "danger" },
   not_scheduled: { label: "No programada en este período", variant: "outline" },
+  // Ámbar, no rojo: hay un motivo declarado. Sigue sin ejecutarse y sigue
+  // contando en cero para el indicador, pero no es lo mismo que una deuda
+  // sin explicación.
+  not_performed: { label: "No realizada (con motivo)", variant: "warning" },
 }
 
 export function PdtpStatusBadge({
   status,
   overdueMonths = 0,
+  /** Motivos declarados del mes; se muestran en el tooltip del badge "No realizada". */
+  notPerformedReasons,
 }: {
   status: PdtpActivityStatus
   overdueMonths?: number
+  notPerformedReasons?: string[]
 }) {
   const { label, variant } = STATUS_BADGE[status]
 
@@ -41,11 +48,23 @@ export function PdtpStatusBadge({
 
   const showDot = status === "overdue" || status === "pending"
 
-  return (
+  const badge = (
     <MetaBadge meta={{ label: displayLabel, variant }} dot={showDot} size={status === "overdue" && overdueMonths > 0 ? "lg" : "default"}>
       {displayLabel}
     </MetaBadge>
   )
+
+  // El badge dice que hay un motivo; el tooltip dice cuál. Sin esto, "con
+  // motivo" obliga a abrir otra vista para saber de qué motivo se habla.
+  if (status === "not_performed" && notPerformedReasons && notPerformedReasons.length > 0) {
+    return (
+      <Tooltip side="top" content={notPerformedReasons.join(" · ")}>
+        <span className="inline-flex">{badge}</span>
+      </Tooltip>
+    )
+  }
+
+  return badge
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +270,10 @@ export type PdtpStatusCounts = {
   pending: number
   overdue: number
   not_scheduled: number
+  /** Actividades con un desvío "no realizada" declarado este mes. Es una
+   * quinta categoría exclusiva (sale de `deriveActivityStatus`), a diferencia
+   * de `zero`. */
+  not_performed: number
   /** `pending ∪ overdue`, excluidas `coverage`/`closed_on_time` — el mismo
    * criterio que `zeroActivityIds` en `compliance.ts`. Se superpone a
    * `pending`/`overdue` a propósito (no es una quinta categoría exclusiva):
@@ -279,10 +302,17 @@ export function PdtpActivitySummary({
     variant: "success" | "signal" | "danger" | "neutral"
     title?: string
   }> = [
-    { key: "all", label: "Todas", count: counts.executed + counts.pending + counts.overdue + counts.not_scheduled, variant: "neutral" },
+    { key: "all", label: "Todas", count: counts.executed + counts.pending + counts.overdue + counts.not_scheduled + counts.not_performed, variant: "neutral" },
     { key: "executed", label: "Ejecutadas", count: counts.executed, variant: "success" },
     { key: "pending", label: "Pendientes", count: counts.pending, variant: "signal" },
     { key: "overdue", label: "Atrasadas", count: counts.overdue, variant: "danger" },
+    {
+      key: "not_performed",
+      label: "No realizadas",
+      count: counts.not_performed,
+      variant: "signal",
+      title: "Planificadas este mes, sin ejecutar y con un motivo declarado. Siguen contando en el indicador: el motivo se registra, lo planificado no cambia.",
+    },
     {
       key: "en_cero",
       label: "En cero",

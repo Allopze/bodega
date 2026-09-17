@@ -38,6 +38,9 @@ import { listPdtpObjectives } from "./objectives"
 import { filterPdtpRowsFromActivation } from "./period"
 import { getPdtpProgram } from "./programs"
 import { listPdtpProgramSheets } from "./sheet-management"
+import { MONTH_LABELS } from "./constants"
+import { pdtpDeviationKindLabel } from "@/lib/prevention/pdtp"
+import { chileDateParts } from "@/lib/utils"
 
 const MONTHS = 12
 const WEEKS_PER_MONTH = 4
@@ -103,6 +106,19 @@ function toCanonicalIso(value: string | null | undefined): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
 }
 
+/**
+ * `DD-MM-AAAA` en hora de Chile. El documento lo lee gente en faena: una
+ * marca de tiempo UTC adelantaría el día entre las 20:00 y la medianoche
+ * chilena, y un desvío declarado "hoy" aparecería fechado mañana.
+ */
+function formatChileDay(value: string | null | undefined): string {
+  if (!value) return "—"
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return "—"
+  const { year, month, day } = chileDateParts(parsed)
+  return `${String(day).padStart(2, "0")}-${String(month).padStart(2, "0")}-${year}`
+}
+
 export type PdtpRe36Cell = { p: number | null; e: number | null; note?: string }
 
 export type PdtpRe36Row = {
@@ -148,6 +164,12 @@ export type PdtpRe36Band = { code: string | null; name: string; fromRow: number;
  */
 export type PdtpRe36Sheet = { code: string; label: string; rows: PdtpRe36Row[]; bands: PdtpRe36Band[] }
 
+/**
+ * Una fila de la hoja "Desvíos". Todo lo que el renderizador escribe tal cual
+ * ya viene en castellano: `kind` es la etiqueta ("No realizada", "No aplica",
+ * "Reprogramada"), no el enum de la columna, y `recordedAt` es la fecha en
+ * hora de Chile (`DD-MM-AAAA`), no un ISO en UTC.
+ */
 export type PdtpRe36DeviationRow = {
   n: number
   activity: string
@@ -214,9 +236,13 @@ export type PdtpRe36Document = {
   changeControl: Array<{ at: string; atIso: string | null; description: string; actor: string | null }>
   glossary: Array<{ code: string; label: string }>
   legend: { onDemand: string; e0: string; eGte1: string }
-  /** Fase 3: desvíos (reprogramaciones, incumplimientos justificados). Vacío
-   * hasta esa fase — declarado ahora para que el tipo no cambie cuando se
-   * llene. */
+  /**
+   * Desvíos activos declarados en esta faena, ordenados por celda. Es el
+   * anexo que explica por qué una celda tiene `E = 0`, por qué otra perdió su
+   * `P`, o de dónde salió una cantidad que el catálogo no planificaba ahí.
+   * Los desvíos retirados no aparecen: su rastro vive en `pdtp_change_log`
+   * (y por esa vía en `changeControl`), no en el anexo del documento vigente.
+   */
   deviations: PdtpRe36DeviationRow[]
 }
 
@@ -367,6 +393,49 @@ export async function buildPdtpRe36Document(input: {
     executedByCell.set(key, (executedByCell.get(key) ?? 0) + cell.executedQuantity)
   }
 
+  // ── Desvíos ───────────────────────────────────────────────────────────────
+  //
+  // El efecto sobre `P` ya viene aplicado: `loadProgramScheduleAndExecutions`
+  // es la costura única y `scheduleRows` sale de ahí con las celdas
+  // `not_applicable` eliminadas y las `reprogrammed` movidas. Acá NO se
+  // recalcula nada de eso — sólo se anota, que es lo que el documento le debe
+  // a quien lo audita: un `P` que desaparece o aparece sin explicación es
+  // indistinguible de un error de planificación.
+  //
+  // El único valor que este bloque escribe es el `E = 0` del `not_performed`:
+  // "se reportó la semana y no se ejecutó" es exactamente lo que la leyenda
+  // del formato define como `E = 0` (`legend.e0`), y dejarlo vacío haría que
+  // esa semana se leyera como "no se reportó".
+  const deviationRows = filterPdtpRowsFromActivation(loaded.deviationRows, program.activatedAt)
+    .filter((row) => !excludedActivityIds.has(row.activityId))
+  const cellKeyOf = (activityId: string, month: number, week: number) => `${activityId}:${month}:${week}`
+  const notesByCell = new Map<string, string[]>()
+  const reportedNotExecutedCells = new Set<string>()
+  const addCellNote = (activityId: string, month: number, week: number, note: string) => {
+    const key = cellKeyOf(activityId, month, week)
+    const notes = notesByCell.get(key) ?? []
+    notes.push(note)
+    notesByCell.set(key, notes)
+  }
+  const weekLabel = (month: number, week: number) => `${MONTH_LABELS[month - 1] ?? month} semana ${week}`
+  for (const deviation of deviationRows) {
+    if (deviation.kind === "not_performed") {
+      reportedNotExecutedCells.add(cellKeyOf(deviation.activityId, deviation.month, deviation.week))
+      addCellNote(deviation.activityId, deviation.month, deviation.week, `No realizada: ${deviation.reason}`)
+    } else if (deviation.kind === "not_applicable") {
+      addCellNote(deviation.activityId, deviation.month, deviation.week, `No aplica esta semana: ${deviation.reason}`)
+    } else if (deviation.targetMonth !== null && deviation.targetWeek !== null) {
+      addCellNote(
+        deviation.activityId, deviation.month, deviation.week,
+        `Reprogramada a ${weekLabel(deviation.targetMonth, deviation.targetWeek)}: ${deviation.reason}`,
+      )
+      addCellNote(
+        deviation.activityId, deviation.targetMonth, deviation.targetWeek,
+        `Recibe lo planificado de ${weekLabel(deviation.month, deviation.week)} (reprogramación): ${deviation.reason}`,
+      )
+    }
+  }
+
   const objectives = await listPdtpObjectives(input.programId)
   const objectiveById = new Map(objectives.map((objective) => [objective.id, objective]))
   const hasObjectives = objectives.length > 0
@@ -401,9 +470,13 @@ export async function buildPdtpRe36Document(input: {
           const key = `${activity.id}:${month}:${week}`
           const p = plannedByCell.get(key)
           const e = executedByCell.get(key)
+          const notes = notesByCell.get(key)
           cells[cellIndex(month, week)] = {
             p: p === undefined ? null : p,
-            e: e === undefined ? null : e,
+            // Sin ejecución pero con "no realizada" declarada: `E = 0`
+            // explícito (se reportó la semana y no se ejecutó), no vacío.
+            e: e === undefined ? (reportedNotExecutedCells.has(key) ? 0 : null) : e,
+            ...(notes ? { note: notes.join("\n") } : {}),
           }
         }
       }
@@ -502,10 +575,32 @@ export async function buildPdtpRe36Document(input: {
   if (program.approvedByJdprUserId) userIds.add(program.approvedByJdprUserId)
   if (program.approvedByLegalUserId) userIds.add(program.approvedByLegalUserId)
   for (const row of documentHistoryRows) if (row.linkedUserId) userIds.add(row.linkedUserId)
+  for (const row of deviationRows) userIds.add(row.createdByUserId)
   const userRows = userIds.size > 0
     ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, [...userIds]))
     : []
   const userNameById = new Map(userRows.map((user) => [user.id, user.name]))
+
+  // Anexo de desvíos, en el mismo orden en que se leen las celdas del
+  // cronograma (N° de actividad, mes, semana) y no por fecha de registro: el
+  // auditor llega acá desde una celda concreta, no desde una bitácora.
+  const deviations: PdtpRe36DeviationRow[] = deviationRows
+    .map((row) => {
+      const activity = activityById.get(row.activityId)
+      return {
+        n: activity?.n ?? 0,
+        activity: activity?.activity ?? "Actividad no encontrada",
+        month: row.month,
+        week: row.week,
+        kind: pdtpDeviationKindLabel(row.kind),
+        reason: row.reason,
+        targetMonth: row.targetMonth,
+        targetWeek: row.targetWeek,
+        recordedBy: userNameById.get(row.createdByUserId) ?? "Usuario no encontrado",
+        recordedAt: formatChileDay(row.createdAt),
+      }
+    })
+    .sort((a, b) => a.n - b.n || a.month - b.month || a.week - b.week)
 
   const elaborationHistory = documentHistoryRows.find((row) => row.entryKind === "elaboration")
   const reviewHistory = documentHistoryRows.find((row) => row.entryKind === "review")
@@ -649,6 +744,6 @@ export async function buildPdtpRe36Document(input: {
       e0: "E = 0: se reportó la semana y no se ejecutó.",
       eGte1: "E ≥ 1: se ejecutó (bandera de cumplimiento o conteo de registros, según la actividad).",
     },
-    deviations: [],
+    deviations,
   }
 }

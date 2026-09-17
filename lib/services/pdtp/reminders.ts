@@ -94,9 +94,20 @@ export async function findPdtpWeeklyPending(period: PdtpPeriod = currentPdtpPeri
   if (allWorksites.length === 0) return []
 
   const targetResults = await Promise.all(allWorksites.map(async (ws) => {
-    const { scheduleRows, executionRows } = await loadProgramScheduleAndExecutions(activityIds, period.year, ws.id)
+    const { scheduleRows, executionRows, deviationRows } = await loadProgramScheduleAndExecutions(activityIds, period.year, ws.id)
     const executedActivityIds = new Set(
       executionRows
+        .filter((row) => row.month === period.month && row.week === period.week)
+        .map((row) => row.activityId),
+    )
+    // Un desvío activo en ESTA celda ya respondió por la semana: `not_applicable`
+    // y `reprogrammed` además borraron/movieron el planificado en la costura
+    // única (así que esas actividades ni siquiera llegan al filtro de abajo),
+    // y `not_performed` deja el planificado en pie a propósito. Recordarle a
+    // la faena algo que acaba de declarar con motivo convierte el recordatorio
+    // en ruido, y el ruido es lo que hace que se deje de leer.
+    const declaredActivityIds = new Set(
+      deviationRows
         .filter((row) => row.month === period.month && row.week === period.week)
         .map((row) => row.activityId),
     )
@@ -108,6 +119,7 @@ export async function findPdtpWeeklyPending(period: PdtpPeriod = currentPdtpPeri
           && row.week === period.week
           && row.plannedQuantity > 0
           && !executedActivityIds.has(row.activityId)
+          && !declaredActivityIds.has(row.activityId)
         ) {
           activityIds.push(row.activityId)
         }
