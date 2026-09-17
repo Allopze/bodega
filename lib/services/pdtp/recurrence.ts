@@ -74,6 +74,16 @@ const FREQUENCY_LABELS: Record<PdtpRecurrenceFrequency, string> = {
  * viene, o `[weekOfMonth]` si no —el comportamiento histórico previo a este
  * campo—. Centraliza esa caída para que `projectRecurrenceToLegacySchedule` y
  * `describePdtpRecurrence` no puedan divergir en cómo la calculan.
+ *
+ * El recorte a `weeksPerMonth` es **deliberado y silencioso**, misma
+ * estrategia que ya existía para `weekOfMonth` antes de este campo: no
+ * lanza ni avisa. Con un horizonte de período parcial que declare menos de
+ * 4 semanas por mes (`weeksPerMonth < 4`), una regla quincenal como
+ * `weeks: [2, 4]` puede colapsar a una sola semana efectiva (`4` se recorta a
+ * `weeksPerMonth`, coincide con `2` si `weeksPerMonth === 2`, y el `Set`
+ * las deduplica) — el patrón deja de ser quincenal sin que nada lo señale.
+ * Quien construya la UI de período parcial debe tenerlo presente: ver el
+ * test "documenta el colapso silencioso" en `pdtp-recurrence.test.ts`.
  */
 export function resolveWeeks(rule: PdtpRecurrenceRule, weeksPerMonth: number): number[] {
   const clampedWeeksPerMonth = Math.min(4, Math.max(1, Math.trunc(weeksPerMonth || 4)))
@@ -165,19 +175,23 @@ function monthsRangeLabel(months: number[]): string {
 
 /**
  * Etiqueta legible de la frecuencia, incluyendo los dos patrones que `weeks`
- * y `months` permiten expresar sin una frecuencia nueva: quincenal (`monthly`
- * con dos semanas) y campaña (`weekly` acotado a un subconjunto de meses).
+ * y `months` permiten expresar sin una frecuencia nueva: campaña (`weekly`
+ * acotado a un subconjunto de meses) y más de una semana por ocurrencia, que
+ * el motor admite en **cualquier** frecuencia no-`weekly` (`monthly`,
+ * `quarterly`, `semiannual`, `annual`, `custom`) y por tanto también debe
+ * describirse en todas — `{quarterly, weeks:[1,3]}`, por ejemplo, duplica
+ * las celdas proyectadas (8 en vez de 4) y el texto tiene que contarlo, no
+ * solo el caso `monthly` (que además conserva el nombre coloquial
+ * "quincenal" cuando son exactamente dos semanas).
  */
 function frequencyLabel(rule: PdtpRecurrenceRule, weeksPerMonth: number): string {
-  if (rule.frequency === "weekly" && rule.months && rule.months.length > 0) {
-    return `campaña ${monthsRangeLabel(rule.months)}`
+  if (rule.frequency === "weekly") {
+    return rule.months && rule.months.length > 0 ? `campaña ${monthsRangeLabel(rule.months)}` : FREQUENCY_LABELS.weekly
   }
-  if (rule.frequency === "monthly") {
-    const weeks = resolveWeeks(rule, weeksPerMonth)
-    if (weeks.length === 2) return `quincenal (${weeksLabel(weeks)})`
-    if (weeks.length > 2) return `mensual (${weeksLabel(weeks)})`
-  }
-  return FREQUENCY_LABELS[rule.frequency]
+  const weeks = resolveWeeks(rule, weeksPerMonth)
+  if (weeks.length <= 1) return FREQUENCY_LABELS[rule.frequency]
+  if (rule.frequency === "monthly" && weeks.length === 2) return `quincenal (${weeksLabel(weeks)})`
+  return `${FREQUENCY_LABELS[rule.frequency]} (${weeksLabel(weeks)})`
 }
 
 export function describePdtpRecurrence(rule: PdtpRecurrenceRule, horizon: PdtpScheduleHorizon = DEFAULT_SCHEDULE_HORIZON): string {

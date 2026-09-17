@@ -192,6 +192,39 @@ describe("PDTP recurrence rules", () => {
     expect(describePdtpRecurrence({ frequency: "monthly", interval: 1, plannedQuantity: 1, weekOfMonth: 2 }))
       .toContain("frecuencia mensual")
   })
+
+  it("`{quarterly, weeks:[1,3]}` duplica las celdas (8 en vez de 4) y el texto lo menciona, no solo `monthly`", () => {
+    const rule = { frequency: "quarterly" as const, interval: 1, plannedQuantity: 1, weekOfMonth: 1, weeks: [1, 3] }
+    const cells = projectRecurrenceToLegacySchedule(rule)
+    expect(cells).toHaveLength(8)
+    expect(new Set(cells.map((cell) => cell.week))).toEqual(new Set([1, 3]))
+    expect(describePdtpRecurrence(rule)).toContain("trimestral (semanas 1 y 3)")
+
+    // Mismo requisito para semiannual, annual y custom: el motor las admite,
+    // así que el texto también debe contarlas.
+    expect(describePdtpRecurrence({ frequency: "semiannual", interval: 1, plannedQuantity: 1, weekOfMonth: 1, weeks: [2, 4] }))
+      .toContain("semestral (semanas 2 y 4)")
+    expect(describePdtpRecurrence({ frequency: "annual", interval: 1, plannedQuantity: 1, weekOfMonth: 1, weeks: [1, 2] }))
+      .toContain("anual (semanas 1 y 2)")
+    expect(describePdtpRecurrence({ frequency: "custom", interval: 1, plannedQuantity: 1, weekOfMonth: 1, months: [3], weeks: [1, 3] }))
+      .toContain("en meses seleccionados (semanas 1 y 3)")
+  })
+
+  it("documenta el colapso silencioso: `weeks:[2,4]` sobre un horizonte con weeksPerMonth=2 pierde una semana", () => {
+    // Mismo recorte deliberado que ya existía para `weekOfMonth`: con menos
+    // de 4 semanas por mes en el horizonte (ej. período parcial), `weeks`
+    // se recorta a ese máximo y puede colapsar. Aquí `4` se recorta a `2`,
+    // coincide con el `2` ya presente, y el patrón deja de ser quincenal sin
+    // avisar — no es un bug de esta tarea, es la extensión del comportamiento
+    // ya documentado en `resolveWeeks`.
+    const horizon = { months: [1, 2, 3], weeksPerMonth: 2 }
+    const cells = projectRecurrenceToLegacySchedule(
+      { frequency: "monthly", interval: 1, plannedQuantity: 1, weekOfMonth: 1, weeks: [2, 4] },
+      horizon,
+    )
+    expect(cells).toHaveLength(3)
+    expect(cells.every((cell) => cell.week === 2)).toBe(true)
+  })
 })
 
 describe("PDTP schedule source derivation", () => {
