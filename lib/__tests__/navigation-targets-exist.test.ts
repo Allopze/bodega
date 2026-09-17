@@ -68,7 +68,8 @@ describe("destinos de navegación", () => {
   /**
    * G17: los destinos de las actividades del PDTP viven fuera de `AREA_TREE`,
    * así que el test anterior no los cubre. `/prevencion/constancias` llevó meses
-   * en pie como un 404 sin que ningún test lo detectara.
+   * en pie como un 404 sin que ningún test lo detectara; ahora existe y queda
+   * cubierto por la comprobación de rutas declaradas.
    *
    * Antes esto leía el literal SQL del `CASE` de `operational-work-queue.ts`.
    * Ese `CASE` ya no decide el destino —lo hace `resolvePdtpFulfillmentTarget`

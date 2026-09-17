@@ -103,6 +103,7 @@ beforeEach(async () => {
     year: PROGRAM_YEAR,
     title: `PDTP ${PROGRAM_YEAR} test`,
     status: "active",
+    appliesToAllWorksites: true,
     elaboratedByName: "Prevencionista Test",
     elaboratedByTitle: "Experto en Prevención",
     creationMode: "blank",
@@ -250,6 +251,7 @@ describe("accreditPdtpFromEvent", () => {
       .where(eq(schema.pdtpActivities.id, ACT_ID))
     await inMemoryDb.insert(schema.pdtpPrograms).values({
       id: nextProgramId, version: 1, year: PROGRAM_YEAR + 1, title: "Programa siguiente", status: "active",
+      appliesToAllWorksites: true,
       elaboratedByName: "Prevencionista Test", elaboratedByTitle: "Experto en Prevención", creationMode: "blank",
       complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
@@ -303,6 +305,23 @@ describe("accreditPdtpFromEvent", () => {
     expect(execution!.status).toBe("submitted")
     expect(execution!.month).toBe(4)  // Abril
     expect(execution!.executedQuantity).toBe(1)
+  })
+
+  it("no acredita un programa activo sin membresía ni alcance corporativo", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ appliesToAllWorksites: false })
+      .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+
+    await expect(accreditPdtpFromEvent({
+      sourceType: "inspeccion",
+      sourceId: "run-no-scope",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
+    })).rejects.toThrow(/no declara alcance corporativo ni una membresía/)
+
+    await expect(inMemoryDb.select().from(schema.pdtpExecutions)).resolves.toHaveLength(0)
   })
 
   it("es idempotente: un segundo llamado con el mismo sourceId no duplica", async () => {
@@ -449,12 +468,13 @@ describe("accreditPdtpFromEvent", () => {
       addedAt: new Date().toISOString(),
     })
 
+    // Sin `programId`: el campo es ignorado por la resolución (ver JSDoc de
+    // `AccreditationInput.programId`), así que no aporta nada pasarlo acá.
     await expect(accreditPdtpFromEvent({
       sourceType: "inspeccion",
       sourceId: "run-outside-membership",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      programId: PROGRAM_ID,
       occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
       autoApproveByUserId: USER_ID,
     })).rejects.toThrow(/no pertenece al programa/)
@@ -724,6 +744,127 @@ describe("evento fuera del año del programa", () => {
     const [row] = await inMemoryDb.select().from(schema.pdtpExecutions)
     expect(row!.year).toBe(PROGRAM_YEAR)
     expect(row!.month).toBe(1)
+  })
+})
+
+describe("corte efectivo entre revisiones del programa", () => {
+  it("mantiene un hecho previo en v1 aunque se reintente después de activar v2", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    const v2Id = "pdtp-2026-v2"
+    const v2ActivityId = `${v2Id}-a-042`
+    const v2ActivatedAt = `${PROGRAM_YEAR}-07-01T00:00:00.000Z`
+
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ status: "closed", activatedAt: `${PROGRAM_YEAR}-01-01T00:00:00.000Z` })
+      .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+    await inMemoryDb.insert(schema.pdtpPrograms).values({
+      id: v2Id,
+      version: 2,
+      year: PROGRAM_YEAR,
+      title: `PDTP ${PROGRAM_YEAR} revisión v2`,
+      status: "active",
+      appliesToAllWorksites: true,
+      elaboratedByName: "Prevencionista Test",
+      elaboratedByTitle: "Experto en Prevención",
+      creationMode: "blank",
+      complianceTarget: 0.9,
+      pesoEjecucion: 0.5,
+      pesoVerificacion: 0.3,
+      pesoCierre: 0.2,
+      activatedAt: v2ActivatedAt,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+    await inMemoryDb.insert(schema.pdtpActivities).values({
+      id: v2ActivityId,
+      programId: v2Id,
+      n: ACT_N,
+      activity: "Inspección de extintores v2",
+      program: "Prevención PDTP 2026",
+      responsibleSlugs: ["prevencionista"],
+      responsibleDisplay: "Prevencionista",
+      scheduleMode: "triggered",
+      scheduleClassificationStatus: "confirmed",
+      sourceSheetRow: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+
+    const beforeCutover = await accreditPdtpFromEvent({
+      sourceType: "capacitacion",
+      sourceId: "cutover-before",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: `${PROGRAM_YEAR}-06-30T23:59:00.000Z`,
+    })
+    const afterCutover = await accreditPdtpFromEvent({
+      sourceType: "capacitacion",
+      sourceId: "cutover-after",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: `${PROGRAM_YEAR}-07-01T00:01:00.000Z`,
+    })
+    const retriedBeforeCutover = await accreditPdtpFromEvent({
+      sourceType: "capacitacion",
+      sourceId: "cutover-before",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      // El reintento conserva la fecha operacional del hecho; la hora de
+      // procesamiento no debe cambiar la versión que lo acredita.
+      occurredAt: `${PROGRAM_YEAR}-06-30T23:59:00.000Z`,
+    })
+
+    expect(beforeCutover.accredited[0]).toMatchObject({ activityId: ACT_ID, created: true })
+    expect(afterCutover.accredited[0]).toMatchObject({ activityId: v2ActivityId, created: true })
+    expect(retriedBeforeCutover.accredited[0]).toMatchObject({ activityId: ACT_ID, created: false })
+    expect(retriedBeforeCutover.accredited.some((item) => item.activityId === v2ActivityId)).toBe(false)
+  })
+
+  it("no vuelve a v1 cuando un hecho posterior queda fuera del alcance de v2", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    const v2Id = "pdtp-2026-v2-scope"
+    const v2ActivatedAt = `${PROGRAM_YEAR}-07-01T00:00:00.000Z`
+
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ status: "closed", activatedAt: `${PROGRAM_YEAR}-01-01T00:00:00.000Z` })
+      .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+    await inMemoryDb.insert(schema.pdtpPrograms).values({
+      id: v2Id,
+      version: 2,
+      year: PROGRAM_YEAR,
+      title: `PDTP ${PROGRAM_YEAR} revisión v2 con alcance restringido`,
+      status: "active",
+      appliesToAllWorksites: false,
+      elaboratedByName: "Prevencionista Test",
+      elaboratedByTitle: "Experto en Prevención",
+      creationMode: "blank",
+      complianceTarget: 0.9,
+      pesoEjecucion: 0.5,
+      pesoVerificacion: 0.3,
+      pesoCierre: 0.2,
+      activatedAt: v2ActivatedAt,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+    await inMemoryDb.insert(schema.pdtpProgramWorksites).values({
+      id: "pdtp-2026-v2-scope-ws-1",
+      programId: v2Id,
+      worksiteId: WS_ID,
+      isActive: true,
+      addedByUserId: null,
+      addedAt: new Date().toISOString(),
+    })
+
+    await expect(accreditPdtpFromEvent({
+      sourceType: "capacitacion",
+      sourceId: "cutover-outside-v2-scope",
+      worksiteId: "ws-2",
+      activityNumbers: [ACT_N],
+      occurredAt: `${PROGRAM_YEAR}-07-01T00:01:00.000Z`,
+    })).rejects.toThrow(/no pertenece al programa|no declara alcance corporativo/)
+
+    const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(executions).toHaveLength(0)
   })
 })
 

@@ -6,7 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 import type { pdtpPrograms } from "@/db/schema"
 import type { PdtpChecklistTemplate } from "@/lib/services/prevention-pdtp"
-import type { PdtpBaseComparison } from "@/lib/services/prevention-pdtp"
+import type { PdtpBaseComparison, PdtpRevisionDiff } from "@/lib/services/prevention-pdtp"
+import { RevisionDiffDecisions } from "../revision-diff-decisions"
 
 import type { PdtpActivityRow } from "./types"
 
@@ -17,8 +18,10 @@ export function ReviewTab({
   responsibleCatalog,
   visibleWorksites,
   memberWorksiteIds,
+  appliesToAllWorksites,
   activityWorksiteExclusions,
   baseComparison,
+  revisionDiffDecisions,
 }: {
   program: typeof pdtpPrograms.$inferSelect
   activities: PdtpActivityRow[]
@@ -26,8 +29,10 @@ export function ReviewTab({
   responsibleCatalog: Array<{ slug: string; displayName: string }>
   visibleWorksites: Array<{ id: string; name: string; code: string }>
   memberWorksiteIds: string[]
+  appliesToAllWorksites: boolean
   activityWorksiteExclusions: Array<{ activityId: string; worksiteId: string; reason: string }>
-  baseComparison: PdtpBaseComparison | null
+  baseComparison: (PdtpBaseComparison | PdtpRevisionDiff) | null
+  revisionDiffDecisions: Array<{ activityIdentity: string; decision: "applied" | "kept"; decidedAt: string }>
 }) {
   const activeActivities = activities.filter((activity) => activity.status === "active")
   const missingSchedule = activeActivities.filter((activity) => (activity.scheduleMode ?? "scheduled") === "scheduled" && !activity.recurrenceRule && activity.sourceSheetRow === 0).length
@@ -56,7 +61,7 @@ export function ReviewTab({
         {checks.map((check) => (
           <li key={check.label} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
             <span className="font-medium text-[var(--color-text)]">{check.label}</span>
-            <span className={check.ok ? "text-[var(--color-success)]" : "text-[var(--color-signal-ink)]"}>{check.ok ? "Completo" : check.detail}</span>
+            <span className={check.ok ? "text-[var(--color-success-ink)]" : "text-[var(--color-signal-ink)]"}>{check.ok ? "Completo" : check.detail}</span>
           </li>
         ))}
       </ul>
@@ -68,14 +73,23 @@ export function ReviewTab({
         responsibleCatalog={responsibleCatalog}
         visibleWorksites={visibleWorksites}
         memberWorksiteIds={memberWorksiteIds}
+        appliesToAllWorksites={appliesToAllWorksites}
         exclusions={activityWorksiteExclusions}
       />
-      {baseComparison && <BaseComparisonPanel comparison={baseComparison} />}
+      {baseComparison && <BaseComparisonPanel comparison={baseComparison} programId={program.id} decisions={revisionDiffDecisions} />}
     </section>
   )
 }
 
-function BaseComparisonPanel({ comparison }: { comparison: PdtpBaseComparison }) {
+function BaseComparisonPanel({
+  comparison,
+  programId,
+  decisions,
+}: {
+  comparison: PdtpBaseComparison | PdtpRevisionDiff
+  programId: string
+  decisions: Array<{ activityIdentity: string; decision: "applied" | "kept"; decidedAt: string }>
+}) {
   const metrics = [
     ["Agregadas", comparison.addedActivities],
     ["Retiradas", comparison.retiredActivities],
@@ -88,7 +102,7 @@ function BaseComparisonPanel({ comparison }: { comparison: PdtpBaseComparison })
     <div className="border-t border-[var(--color-border)] px-4 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h4 className="text-h3 text-[var(--color-text)]">Cambios frente a la Base 2026</h4>
+          <h4 className="text-h3 text-[var(--color-text)]">Cambios frente a la Base vigente</h4>
           <p className="mt-1 text-xs text-[var(--color-text-muted)]">
             Revisión {comparison.sourceRevision} · digest {comparison.sourceDigest.slice(0, 12)}…
           </p>
@@ -105,6 +119,9 @@ function BaseComparisonPanel({ comparison }: { comparison: PdtpBaseComparison })
           </div>
         ))}
       </dl>
+      {"items" in comparison && comparison.items.length > 0 && (
+        <RevisionDiffDecisions programId={programId} items={comparison.items} decisions={decisions} />
+      )}
     </div>
   )
 }
@@ -115,21 +132,24 @@ function BaseComparisonPanel({ comparison }: { comparison: PdtpBaseComparison })
  * y `audienceRoles`, que ya son datos generales por actividad (no una tabla
  * especial por hoja). La dimensión de faena reutiliza `pdtpProgramWorksites`
  * (membresía) y `pdtpActivityWorksiteExclusions` (excepción puntual), ya
- * cargadas por la página del editor — sin faena seleccionada, o sin ninguna
- * de las dos props recibida (compatibilidad), el filtro por faena no se
- * muestra y el resultado es idéntico al de antes.
+ * cargadas por la página del editor. La ausencia de membresías sólo equivale
+ * a alcance corporativo cuando `appliesToAllWorksites` lo declara; un alcance
+ * pendiente queda vacío para no presentar como ejecutable una faena que no
+ * está habilitada.
  */
 export function AudiencePreviewPanel({
   activities,
   responsibleCatalog,
   visibleWorksites = [],
   memberWorksiteIds = [],
+  appliesToAllWorksites,
   exclusions = [],
 }: {
   activities: PdtpActivityRow[]
   responsibleCatalog: Array<{ slug: string; displayName: string }>
   visibleWorksites?: Array<{ id: string; name: string; code: string }>
   memberWorksiteIds?: string[]
+  appliesToAllWorksites: boolean
   exclusions?: Array<{ activityId: string; worksiteId: string }>
 }) {
   const ALL = "__all__"
@@ -141,7 +161,9 @@ export function AudiencePreviewPanel({
   const audienceRoles = [...new Set(activities.flatMap((activity) => (Array.isArray(activity.audienceRoles) ? activity.audienceRoles as string[] : [])))].sort()
 
   const worksiteSelected = worksiteId !== ALL
-  const worksiteCanOperate = !worksiteSelected || memberWorksiteIds.length === 0 || memberWorksiteIds.includes(worksiteId)
+  const worksiteCanOperate = !worksiteSelected || (memberWorksiteIds.length > 0
+    ? memberWorksiteIds.includes(worksiteId)
+    : appliesToAllWorksites)
   const excludedActivityIds = new Set(worksiteSelected ? exclusions.filter((e) => e.worksiteId === worksiteId).map((e) => e.activityId) : [])
 
   const filtered = !worksiteCanOperate ? [] : activities.filter((activity) => {

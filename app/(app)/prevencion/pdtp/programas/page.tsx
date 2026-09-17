@@ -42,6 +42,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
         members.map((member) => member.worksiteId),
         scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : [],
         worksiteIds,
+        program.appliesToAllWorksites,
       )
       return [program.id, await getPdtpComplianceIndicatorsForScope(program.id, effectiveIds)] as const
     } catch {
@@ -100,7 +101,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
             const indicators = complianceByProgram.get(program.id)
             const statusLabel = pdtpProgramStatusLabel(program.status)
             const statusClass = program.status === "active"
-              ? "bg-[var(--color-success-tint)] text-[var(--color-success)]"
+              ? "bg-[var(--color-success-tint)] text-[var(--color-success-ink)]"
               : program.status === "closed"
                 ? "bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)]"
                 : "bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)]"
@@ -109,7 +110,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
               <div key={program.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-shadow hover:shadow-md">
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="font-semibold text-[var(--color-text)]">{program.title}</p>
+                    <p className="font-semibold text-[var(--color-text)]">{program.title} <span className="font-mono text-xs font-normal text-[var(--color-text-muted)]">v{program.version}</span></p>
                     <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
                       Año {program.year}
                     </p>
@@ -120,7 +121,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
                 </div>
                 <div className="mt-3 flex items-center gap-4 text-xs text-[var(--color-text-subtle)]">
                   {indicators?.annual && (
-                    <span title={`Ejecutado / planificado agregado sobre ${indicators.worksiteCount} faena(s) autorizada(s)`}>
+                    <span title={`Plan / ejecutado agregado sobre ${indicators.worksiteCount} faena(s) autorizada(s)`}>
                       Cumplimiento ({indicators.worksiteCount} {pluralize(indicators.worksiteCount, "faena")}): {indicators.annual.percent !== null ? `${Math.round(indicators.annual.percent * 100)}%` : "—"}
                     </span>
                   )}

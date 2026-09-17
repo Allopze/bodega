@@ -1,4 +1,4 @@
-import { SERVER_LIST_FILTER_PARAMS } from "@/components/ui/server-list-filters"
+import { SERVER_LIST_FILTER_PARAMS } from "@/components/ui/server-list-filters.constants"
 
 /**
  * REQ-004 (auditoría 2026-09-14): la señal "Urgencia crítica" del encabezado

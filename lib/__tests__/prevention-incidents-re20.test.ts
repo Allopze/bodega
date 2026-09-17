@@ -87,6 +87,7 @@ beforeEach(async () => {
     version: 1,
     title: `PDTP ${PROGRAM_YEAR} RE-20 Test`,
     status: "active",
+    appliesToAllWorksites: true,
     elaboratedByName: "Investigador",
     elaboratedByTitle: "Experto SST",
     creationMode: "blank",

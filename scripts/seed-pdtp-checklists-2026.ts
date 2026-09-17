@@ -32,7 +32,7 @@
  */
 import postgres from "postgres"
 import { drizzle } from "drizzle-orm/postgres-js"
-import { and, eq } from "drizzle-orm"
+import { and, desc, eq } from "drizzle-orm"
 import { loadEnvConfig } from "@next/env"
 import * as schema from "../db/schema"
 import { INSPECCION_TALLER } from "../lib/sst/definitions/inspeccion-taller"
@@ -137,23 +137,15 @@ async function main() {
 
   console.log(`Siembra de plantillas PDTP ${PROGRAM_YEAR} (Fase A+C) — ${DRY_RUN ? "[DRY RUN]" : "escribiendo"}`)
 
-  // Resolver programa 2026 activo; si no hay activo, usar la versión máxima.
-  // Misma heurística intencional de reminders.ts: preferir status='active'
-  // para no sombrear el programa real con un draft más nuevo.
-  let [program] = await db.select().from(schema.pdtpPrograms)
-    .where(and(
-      eq(schema.pdtpPrograms.year, PROGRAM_YEAR),
-      eq(schema.pdtpPrograms.status, "active"),
-    ))
-    .limit(1)
-
-  if (!program) {
-    console.warn(`  No hay programa ${PROGRAM_YEAR} con status='active'; usando la versión máxima del año.`)
-    const candidates = await db.select().from(schema.pdtpPrograms)
-      .where(eq(schema.pdtpPrograms.year, PROGRAM_YEAR))
-      .orderBy(schema.pdtpPrograms.version)
-    program = candidates[candidates.length - 1]
-  }
+  // Una revisión borrador es la única versión que puede recibir una plantilla
+  // nueva. La v1 activa permanece como expediente; preferirla aquí dejaba la
+  // v+1 clonada sin el checklist y luego el servicio rechazaba la escritura.
+  const candidates = await db.select().from(schema.pdtpPrograms)
+    .where(eq(schema.pdtpPrograms.year, PROGRAM_YEAR))
+    .orderBy(desc(schema.pdtpPrograms.version))
+  const program = candidates.find((candidate) => candidate.status === "draft")
+    ?? candidates.find((candidate) => candidate.status === "active")
+    ?? candidates[0]
 
   if (!program) {
     console.error(`  ✗ No existe ningún programa PDTP para el año ${PROGRAM_YEAR}.`)

@@ -84,7 +84,7 @@ describe("desactivar una faena la retira del programa preventivo", () => {
       hashedPassword: "hash", isActive: true, createdAt: now, updatedAt: now,
     })
     await inMemoryDb.insert(schema.pdtpPrograms).values({
-      id: programId, year: 2026, version: 1, title: "Programa", status: "active",
+      id: programId, year: 2026, version: 1, title: "Programa", status: "active", appliesToAllWorksites: true,
       elaboratedByName: "Test", elaboratedByTitle: "Prevención",
       createdAt: now, updatedAt: now,
     })

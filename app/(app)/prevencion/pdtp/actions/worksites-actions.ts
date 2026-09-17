@@ -27,9 +27,9 @@ function fail(e: unknown): ActionState {
 }
 
 /**
- * Reemplaza la membresía de faenas del programa. Vaciar la lista vuelve al
- * comportamiento histórico (todas las faenas del scope), no borra el
- * programa. Solo editable en `draft`.
+ * Reemplaza la membresía de faenas del programa. Vaciar la lista declara el
+ * alcance corporativo de forma explícita, no borra el programa. Solo editable
+ * en `draft`.
  */
 export async function setPdtpProgramWorksitesAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:pdtp:program:manage")
@@ -42,6 +42,7 @@ export async function setPdtpProgramWorksitesAction(input: unknown): Promise<Act
       parsed.worksiteIds,
       guard.session.user.id,
       worksiteScope.mode === "all" ? "all" : worksiteScope.ids,
+      parsed.worksiteIds.length === 0,
     )
     revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }

@@ -3,6 +3,7 @@ import { and, asc, eq, inArray } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
   pdtpActivities,
+  pdtpActivityExecutorAssignments,
   pdtpActivityScheduleOverrides,
   pdtpActivityWorksiteExclusions,
   pdtpActivityWorksiteParams,
@@ -22,6 +23,26 @@ import {
 type QueryClient = Tx | typeof db
 type JsonPrimitive = string | number | boolean | null
 type StableJson = JsonPrimitive | StableJson[] | { [key: string]: StableJson }
+
+/** Forma del snapshot, independiente del número de revisión del programa. */
+export const CURRENT_PDTP_CONTENT_SCHEMA_VERSION = 15
+
+/**
+ * Versión de esquema más antigua que este builder sabe reconstruir con
+ * exactitud a partir de las columnas actuales.
+ *
+ * Sólo tres cambios de forma están efectivamente deshechos por versión más
+ * abajo: `executorAssignments` (≥13), `mechanism` (≥14) y la declaración de
+ * alcance corporativo (≥15). Los cambios de las
+ * versiones 9 a 12 (`expected_subject_count` fuera de la huella, `subject_source`,
+ * `dueHours`, las capacidades del padrón) están para siempre incorporados sin
+ * condición — no hay forma de "apagarlos" para reproducir cómo se veía la
+ * huella antes de esos cambios. Eso significa que la única versión anterior a
+ * 13 cuya forma original coincide con lo que este código produce hoy es la 12
+ * (la última antes de que empezara a haber ramas por versión); 9, 10 y 11 no
+ * son reconstruibles. Ver `computePdtpProgramContentDigestForStoredVersion`.
+ */
+export const MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION = 12
 
 function stableJson(value: unknown): StableJson {
   if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
@@ -48,7 +69,9 @@ export type PdtpProgramContentSnapshot = ReturnType<typeof stableJson>
 export async function buildPdtpProgramContentSnapshot(
   programId: string,
   client: QueryClient = db,
+  options: { schemaVersion?: number } = {},
 ): Promise<PdtpProgramContentSnapshot> {
+  const schemaVersion = options.schemaVersion ?? CURRENT_PDTP_CONTENT_SCHEMA_VERSION
   const [program] = await client.select({
     id: pdtpPrograms.id,
     year: pdtpPrograms.year,
@@ -78,6 +101,7 @@ export async function buildPdtpProgramContentSnapshot(
     pesoEjecucion: pdtpPrograms.pesoEjecucion,
     pesoVerificacion: pdtpPrograms.pesoVerificacion,
     pesoCierre: pdtpPrograms.pesoCierre,
+    appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites,
   }).from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
 
@@ -105,6 +129,7 @@ export async function buildPdtpProgramContentSnapshot(
     dueDays: pdtpActivities.dueDays,
     dueHours: pdtpActivities.dueHours,
     evidenceRequirement: pdtpActivities.evidenceRequirement,
+    mechanism: pdtpActivities.mechanism,
     indicatorMode: pdtpActivities.indicatorMode,
     // El método se firma —de qué población se mide— aunque el conteo no:
     // ver la nota de `activityWorksiteAdjustments` más abajo.
@@ -234,6 +259,17 @@ export async function buildPdtpProgramContentSnapshot(
         .orderBy(asc(pdtpActivityWorksiteExclusions.activityId), asc(pdtpActivityWorksiteExclusions.worksiteId))
     : []
 
+  // Los ejecutores son una decisión de contenido: la firma debe probar no
+  // sólo qué se prometió, sino qué roles podían acreditar ese hecho.
+  const executorAssignments = activityIds.length > 0
+    ? await client.select({
+        activityId: pdtpActivityExecutorAssignments.activityId,
+        roleId: pdtpActivityExecutorAssignments.roleId,
+      }).from(pdtpActivityExecutorAssignments)
+        .where(inArray(pdtpActivityExecutorAssignments.activityId, activityIds))
+        .orderBy(asc(pdtpActivityExecutorAssignments.activityId), asc(pdtpActivityExecutorAssignments.roleId))
+    : []
+
   /**
    * `expected_subject_count` NO entra en la huella, a diferencia del resto de la
    * fila.
@@ -298,6 +334,8 @@ export async function buildPdtpProgramContentSnapshot(
     .where(eq(pdtpRoleLegendEntries.programId, programId))
     .orderBy(asc(pdtpRoleLegendEntries.code))
 
+  const { appliesToAllWorksites, ...legacyProgram } = program
+
   return stableJson({
     // 12: las capacidades que definen `trabajadores_capacidad` entran al
     // snapshot. Cambiarlas altera quién forma el padrón y requiere otra firma.
@@ -309,12 +347,26 @@ export async function buildPdtpProgramContentSnapshot(
     // 9: `expected_subject_count` salió de `activityWorksiteAdjustments`. Un
     // snapshot con otra forma tiene que declarar otra versión, o dos
     // definiciones distintas comparten número y la huella deja de ser
-    // interpretable. Ninguna firma existente se invalida: no hay programas
-    // firmados (confirmado el 2026-09-02).
-    schemaVersion: 12,
-    program,
+    // interpretable.
+    //
+    // Los cuatro cambios de arriba (9 a 12) están incorporados sin condición:
+    // no hay una rama `schemaVersion >= N` que los deshaga, así que este
+    // builder reproduce la forma exacta de una huella firmada en la versión
+    // 12 (que ya los tenía todos), pero NO la de una firmada en 9, 10 u 11.
+    // `computePdtpProgramContentDigestForStoredVersion` rechaza explícitamente
+    // esas versiones más viejas en vez de devolver un digest que no va a
+    // coincidir con nada — ver `MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION`.
+    // 14: `mechanism` se incorpora al compromiso de destino operativo; antes
+    // se omitía del snapshot aunque ya existiera en la actividad.
+    // 15: la declaración explícita de alcance corporativo distingue un
+    // programa que cubre todas las faenas de un borrador aún sin alcance.
+    schemaVersion,
+    program: schemaVersion >= 15 ? { ...legacyProgram, appliesToAllWorksites } : legacyProgram,
     approvalSteps,
-    activities: activities.map(({ id: _id, ...activity }) => activity),
+    activities: activities.map(({ id: _id, mechanism, ...activity }) => ({
+      ...activity,
+      ...(schemaVersion >= 14 ? { mechanism } : {}),
+    })),
     schedules: schedules.map(({ activityId, ...schedule }) => ({ activityNumber: activityNumberById.get(activityId), ...schedule })),
     views: sheets.map(({ id: _id, ...sheet }) => sheet),
     memberships: memberships.map(({ sheetId, activityId, ...membership }) => ({
@@ -337,6 +389,12 @@ export async function buildPdtpProgramContentSnapshot(
       activityNumber: activityNumberById.get(activityId),
       ...exclusion,
     })),
+    ...(schemaVersion >= 13 ? {
+      executorAssignments: executorAssignments.map(({ activityId, roleId }) => ({
+        activityNumber: activityNumberById.get(activityId),
+        roleId,
+      })),
+    } : {}),
     activityWorksiteAdjustments: activityWorksiteAdjustments.map(({ activityId, ...adjustment }) => ({
       activityNumber: activityNumberById.get(activityId),
       ...adjustment,
@@ -351,8 +409,83 @@ export async function buildPdtpProgramContentSnapshot(
 export async function computePdtpProgramContentDigest(
   programId: string,
   client: QueryClient = db,
+  options: { schemaVersion?: number } = {},
 ): Promise<{ digest: string; snapshot: PdtpProgramContentSnapshot }> {
-  const snapshot = await buildPdtpProgramContentSnapshot(programId, client)
+  const snapshot = await buildPdtpProgramContentSnapshot(programId, client, options)
   const digest = createHash("sha256").update(JSON.stringify(snapshot)).digest("hex")
   return { digest, snapshot }
+}
+
+function storedContentSchemaVersion(value: unknown): number | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const candidate = (value as { schemaVersion?: unknown }).schemaVersion
+  return typeof candidate === "number" && Number.isInteger(candidate) && candidate >= 1
+    ? candidate
+    : undefined
+}
+
+/**
+ * Un programa firmado en un esquema que este builder ya no sabe reconstruir
+ * (ver `MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION`). No es un drift de
+ * contenido: es que el código actual no puede reproducir la forma exacta con
+ * la que se firmó, así que cualquier comparación de digest sería ruido, no
+ * una señal real de que el programa cambió.
+ */
+export class PdtpUnreconstructibleContentSchemaError extends Error {
+  constructor(
+    public readonly programId: string,
+    public readonly storedSchemaVersion: number,
+  ) {
+    super(
+      `El programa ${programId} tiene una huella firmada en el esquema ${storedSchemaVersion}, `
+      + `anterior al mínimo que este código sabe reconstruir (${MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION}). `
+      + "No se puede verificar ni recomponer esa firma con las columnas actuales.",
+    )
+    this.name = "PdtpUnreconstructibleContentSchemaError"
+  }
+}
+
+/**
+ * La fila tiene una huella firmada, pero no conserva la versión de esquema
+ * con la que se calculó. No se puede asumir la versión actual: hacerlo puede
+ * producir una comparación aparentemente válida con una forma distinta a la
+ * que aprobó el operador.
+ */
+export class PdtpContentSchemaVersionMissingError extends Error {
+  constructor(public readonly programId: string) {
+    super(
+      `El programa ${programId} tiene una huella firmada sin versión de esquema declarada. `
+      + "No se puede verificar la firma histórica de forma segura; crea una revisión v+1 para recomponerla.",
+    )
+    this.name = "PdtpContentSchemaVersionMissingError"
+  }
+}
+
+/**
+ * Verifica una huella reconstruyendo la forma con la que fue firmada
+ * originalmente, según la versión de esquema declarada en `reviewSnapshotJson`.
+ *
+ * Sólo funciona para `schemaVersion >= MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION`:
+ * por debajo de eso, el builder no tiene cómo deshacer los cambios de forma
+ * de las versiones 9 a 11 (ver el comentario en `buildPdtpProgramContentSnapshot`)
+ * y devolvería un digest que no coincide con nada, indistinguible de un drift
+ * real de contenido. En ese caso se lanza `PdtpUnreconstructibleContentSchemaError`
+ * en vez de comparar huellas que no se pueden comparar.
+ */
+export async function computePdtpProgramContentDigestForStoredVersion(
+  programId: string,
+  client: QueryClient = db,
+): Promise<{ digest: string; snapshot: PdtpProgramContentSnapshot; schemaVersion: number }> {
+  const [program] = await client.select({ reviewSnapshotJson: pdtpPrograms.reviewSnapshotJson })
+    .from(pdtpPrograms)
+    .where(eq(pdtpPrograms.id, programId))
+    .limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  const schemaVersion = storedContentSchemaVersion(program.reviewSnapshotJson)
+  if (schemaVersion === undefined) throw new PdtpContentSchemaVersionMissingError(programId)
+  if (schemaVersion < MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION) {
+    throw new PdtpUnreconstructibleContentSchemaError(programId, schemaVersion)
+  }
+  const result = await computePdtpProgramContentDigest(programId, client, { schemaVersion })
+  return { ...result, schemaVersion }
 }

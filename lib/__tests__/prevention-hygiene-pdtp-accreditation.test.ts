@@ -132,6 +132,7 @@ beforeEach(async () => {
     year: PROGRAM_YEAR,
     title: `PDTP ${PROGRAM_YEAR} higiene`,
     status: "active",
+    appliesToAllWorksites: true,
     elaboratedByName: "Prevencionista Higiene",
     elaboratedByTitle: "Experto en Prevención",
     creationMode: "blank",

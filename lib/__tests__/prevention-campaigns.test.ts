@@ -75,6 +75,7 @@ beforeEach(async () => {
     version: 1,
     title: `PDTP ${PROGRAM_YEAR} Campañas Test`,
     status: "active",
+    appliesToAllWorksites: true,
     elaboratedByName: "Prevencionista",
     elaboratedByTitle: "Experto",
     creationMode: "blank",

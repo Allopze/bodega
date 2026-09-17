@@ -46,10 +46,13 @@ const mockReorderPdtpActivities = vi.hoisted(() => vi.fn(async () => undefined))
 const mockSetPdtpActivityOverride = vi.hoisted(() => vi.fn(async () => undefined))
 const mockDeletePdtpActivityOverride = vi.hoisted(() => vi.fn(async () => undefined))
 const mockCreateAnnualPdtpProgram = vi.hoisted(() => vi.fn(async () => ({ programId: "prog-1", created: true })))
+const mockCreatePdtpRevision = vi.hoisted(() => vi.fn(async () => ({ programId: "prog-2", program: { id: "prog-2", status: "draft" } })))
+const mockDecidePdtpRevisionDiff = vi.hoisted(() => vi.fn(async () => undefined))
 const mockUpdatePdtpProgram = vi.hoisted(() => vi.fn(async () => undefined))
 const mockDeletePdtpProgram = vi.hoisted(() => vi.fn(async () => undefined))
 const mockCreatePdtpSheet = vi.hoisted(() => vi.fn(async () => undefined))
 const mockDeletePdtpSheet = vi.hoisted(() => vi.fn(async () => undefined))
+const mockSetPdtpActivityExecutorAssignments = vi.hoisted(() => vi.fn(async () => undefined))
 const mockReconcilePdtpDeclaredActor = vi.hoisted(() => vi.fn(async () => undefined))
 const mockRevalidatePath = vi.hoisted(() => vi.fn())
 
@@ -82,10 +85,13 @@ vi.mock("@/lib/services/prevention-pdtp", () => ({
   setPdtpActivityOverride: mockSetPdtpActivityOverride,
   deletePdtpActivityOverride: mockDeletePdtpActivityOverride,
   createAnnualPdtpProgram: mockCreateAnnualPdtpProgram,
+  createPdtpRevision: mockCreatePdtpRevision,
+  decidePdtpRevisionDiff: mockDecidePdtpRevisionDiff,
   updatePdtpProgram: mockUpdatePdtpProgram,
   deletePdtpProgram: mockDeletePdtpProgram,
   createPdtpSheet: mockCreatePdtpSheet,
   deletePdtpSheet: mockDeletePdtpSheet,
+  setPdtpActivityExecutorAssignments: mockSetPdtpActivityExecutorAssignments,
   reconcilePdtpDeclaredActor: mockReconcilePdtpDeclaredActor,
   PdtpScheduleConflictError: MockPdtpScheduleConflictError,
 }))
@@ -108,10 +114,13 @@ import {
   addPdtpActivityAction,
   setPdtpActivityOverrideFormAction,
   createPdtpProgramAction,
+  createPdtpRevisionAction,
+  decidePdtpRevisionDiffAction,
   updatePdtpProgramAction,
   deletePdtpProgramAction,
   createPdtpSheetAction,
   deletePdtpSheetAction,
+  setPdtpActivityExecutorAssignmentsAction,
   deletePdtpActivityAction,
   reorderPdtpActivitiesAction,
   addPdtpActivityFormAction,
@@ -149,6 +158,20 @@ beforeEach(() => {
 })
 
 describe("Program lifecycle actions", () => {
+  it("rechaza un origen de revisión vacío antes de llamar al servicio", async () => {
+    const res = await createPdtpRevisionAction("   ")
+    expect(res).toEqual({ ok: false, message: "Programa de origen no válido." })
+    expect(mockCreatePdtpRevision).not.toHaveBeenCalled()
+  })
+
+  it("crea la revisión v+1 y revalida el origen y el borrador", async () => {
+    const res = await createPdtpRevisionAction(" prog-1 ")
+    expect(res).toEqual({ ok: true, programId: "prog-2", programStatus: "draft" })
+    expect(mockCreatePdtpRevision).toHaveBeenCalledWith({ sourceProgramId: "prog-1", userId: "user-1" })
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/prevencion/pdtp/prog-1")
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/prevencion/pdtp/prog-2")
+  })
+
   it("submitPdtpProgramForReviewAction exige su permiso y congela la versión", async () => {
     const res = await submitPdtpProgramForReviewAction("prog-1")
     expect(res.ok).toBe(true)
@@ -601,6 +624,50 @@ describe("Program CRUD actions", () => {
     expect(mockDeletePdtpProgram).toHaveBeenCalledWith("prog-1")
   })
 
+  it("normaliza la identidad de una diferencia antes de aplicarla", async () => {
+    const res = await decidePdtpRevisionDiffAction({
+      programId: " prog-1 ",
+      activityIdentity: " catalog:act-1 ",
+      decision: "kept",
+    })
+
+    expect(res).toEqual({ ok: true })
+    expect(mockDecidePdtpRevisionDiff).toHaveBeenCalledWith({
+      programId: "prog-1",
+      activityIdentity: "catalog:act-1",
+      decision: "kept",
+      userId: "user-1",
+    })
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/editar")
+  })
+
+})
+
+describe("Executor assignment actions", () => {
+  it("rechaza payloads nulos o con identificadores vacíos sin lanzar una excepción", async () => {
+    const action = setPdtpActivityExecutorAssignmentsAction as unknown as (input: unknown) => Promise<{ ok: boolean }>
+
+    await expect(action(null)).resolves.toEqual({ ok: false, message: "Los ejecutores seleccionados no son válidos." })
+    await expect(action({ programId: "  ", activityId: "activity-1", roleIds: [] })).resolves.toEqual({ ok: false, message: "Los ejecutores seleccionados no son válidos." })
+    expect(mockSetPdtpActivityExecutorAssignments).not.toHaveBeenCalled()
+  })
+
+  it("normaliza identificadores y reemplaza los ejecutores de la actividad", async () => {
+    const res = await setPdtpActivityExecutorAssignmentsAction({
+      programId: " prog-1 ",
+      activityId: " activity-1 ",
+      roleIds: [" role-1 ", "role-1"],
+    })
+
+    expect(res).toEqual({ ok: true })
+    expect(mockSetPdtpActivityExecutorAssignments).toHaveBeenCalledWith({
+      programId: "prog-1",
+      activityId: "activity-1",
+      roleIds: ["role-1"],
+      userId: "user-1",
+    })
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/editar")
+  })
 })
 
 describe("Sheet CRUD actions", () => {

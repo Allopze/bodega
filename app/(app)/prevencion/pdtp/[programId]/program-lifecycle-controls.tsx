@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { Tooltip } from "@/components/ui/tooltip"
 import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
@@ -15,7 +16,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
-import type { ActionState } from "@/lib/validation/prevention"
+import { useOperation } from "@/lib/hooks/use-operation"
 import { pdtpProgramStatusLabel } from "@/lib/prevention/pdtp"
 import {
   activatePdtpProgramAction,
@@ -96,8 +97,8 @@ export function ProgramLifecycleControls({
    *  pliega dentro de la misma tarjeta en vez de vivir en un bloque aparte. */
   children?: React.ReactNode
 }) {
-  const [pending, startTransition] = React.useTransition()
-  const [error, setError] = React.useState<string | null>(null)
+  const router = useRouter()
+  const { pending, run } = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
   const statusVariant = STATUS_VARIANT[program.status] ?? "outline"
   const steps: ApprovalStepProgress[] = approvalSteps ?? [
     {
@@ -112,14 +113,6 @@ export function ProgramLifecycleControls({
     },
   ]
   const pendingStep = steps.find((step) => step.isRequired && step.decision?.decision !== "approved")
-
-  function run(action: () => Promise<ActionState>) {
-    setError(null)
-    startTransition(async () => {
-      const result = await action()
-      if (!result.ok) setError(result.message ?? "No se pudo completar la acción.")
-    })
-  }
 
   const canDecideCurrentStep = program.status === "in_review" && !!pendingStep?.canDecide
   const canArchive = ["in_review", "rejected", "closed"].includes(program.status) && permissions.canManageLifecycle
@@ -229,8 +222,6 @@ export function ProgramLifecycleControls({
           />
         ))}
       </div>
-
-      {error && <p role="alert" className="border-t border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-4 py-2 text-sm text-[var(--color-danger-ink)]">{error}</p>}
 
       {children}
     </section>

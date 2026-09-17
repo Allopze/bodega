@@ -215,7 +215,14 @@ function effectiveFromFor(periodStart: string, periodEnd: string) {
 
 async function main() {
   const programs = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.year, PROGRAM_YEAR))
-  const program = programs.find((item) => item.status === "active") ?? programs.at(-1)
+  const orderedPrograms = [...programs].sort((a, b) => b.version - a.version)
+  // Una revisión v+1 abierta es la única versión que este script puede
+  // completar. La v1 activa queda como evidencia firmada; elegirla primero
+  // haría que el deploy sólo informara el cambio y dejara la revisión nueva
+  // incompleta.
+  const program = orderedPrograms.find((item) => item.status === "draft")
+    ?? orderedPrograms.find((item) => item.status === "active")
+    ?? orderedPrograms[0]
   if (!program) bail(`No existe ningún programa PDTP para el año ${PROGRAM_YEAR}.`)
 
   const actorUserId = await resolveActorUserId().catch((err: unknown) => {
@@ -318,8 +325,8 @@ async function main() {
 
   // Meta de cobertura: vive por faena (`pdtp_activity_worksite_params`), no en
   // `pdtp_activities`, así que aquí sí hace falta resolver a qué faenas
-  // aplica el programa — misma regla que el resto del PDTP: sin membresía
-  // declarada en `pdtp_program_worksites`, todas las faenas activas.
+  // aplica el programa — misma regla que el resto del PDTP: sin membresía,
+  // sólo las cubre todas si el programa declara alcance corporativo.
   if (COVERAGE_TARGETS.length > 0) {
     const [allWorksites, memberships] = await Promise.all([
       db.select({ id: worksites.id }).from(worksites).where(eq(worksites.isActive, true)),
@@ -328,6 +335,7 @@ async function main() {
     ])
     const applicableWorksiteIds = resolveProgramWorksiteIds(
       memberships.map((m) => m.worksiteId), "all", allWorksites.map((w) => w.id),
+      program.appliesToAllWorksites,
     )
 
     for (const item of COVERAGE_TARGETS) {

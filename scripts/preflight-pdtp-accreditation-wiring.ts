@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url"
 import { resolve } from "node:path"
-import { and, count, eq, inArray } from "drizzle-orm"
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
@@ -176,7 +176,11 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
   // mismo se desincronizan, y el que avisa termina mintiendo.
   const [program] = await db.select({ id: pdtpPrograms.id }).from(pdtpPrograms)
     .where(inArray(pdtpPrograms.status, ["active", "draft", "in_review"]))
-    .orderBy(pdtpPrograms.year)
+    .orderBy(
+      sql`CASE ${pdtpPrograms.status} WHEN 'active' THEN 0 WHEN 'in_review' THEN 1 ELSE 2 END`,
+      desc(pdtpPrograms.year),
+      desc(pdtpPrograms.version),
+    )
   let coverageIssues: PdtpFulfillmentCoverageIssue[] = []
   let worksitesWithoutEmergencyPlan: string[] = []
 
@@ -191,7 +195,7 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
   }
 
   const destinationsToReview = coverageIssues
-    .filter((issue) => issue.status === "destination_review")
+    .filter((issue) => issue.status === "executor_required" || issue.status === "executor_permission_gap")
     .map((issue) => ({ n: issue.n, activity: issue.activity, reason: issue.reason }))
 
   const coverageIssuesBlockingLifecycle = coverageIssues.filter((issue) => pdtpCoverageIssueBlocksLifecycle(issue.status))
@@ -220,11 +224,11 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
   const blockingErrored = fulfillmentBacklog === null
     ? 0
     : fulfillmentBacklog.errored - fulfillmentBacklog.erroredWaitingOnActivation
-  // `decision_required` y `destination_review` no cuentan como cableado
-  // faltante: el padrón manual es una decisión válida y el mapa de destinos es
-  // en buena parte segregación de deberes. Todo lo demás sí.
+  // `decision_required` no cuenta como cableado faltante: el padrón manual es
+  // una decisión válida. Los flujos segregados no llegan como issue; los
+  // ejecutores pendientes o sin permiso sí son una brecha accionable.
   const wiringGapIssues = coverageIssues.filter(
-    (issue) => issue.status !== "decision_required" && issue.status !== "destination_review",
+    (issue) => issue.status !== "decision_required",
   )
   const ok = gaps.length === 0
     && activitiesWithoutApprovedInstrument.length === 0
@@ -250,7 +254,7 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
 /**
  * Los grants se leen de la base y no del manifest: el manifest es la semilla y
  * lo que decide si alguien entra es lo que `sync-rbac` dejó cargado. Mismo
- * criterio que `permissionsByRoleName` en la compuerta.
+ * criterio que la lectura de permisos reales de la compuerta.
  */
 async function buildResponsibleExecutionReport(programId: string): Promise<ResponsibleExecutionReport> {
   const [activities, catalog, grants] = await Promise.all([

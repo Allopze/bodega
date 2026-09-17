@@ -23,6 +23,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { PdtpSheetTable } from "../pdtp-sheet-table"
 import { PdtpPeriodPicker, PdtpProgramPicker, PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker, PdtpYearPicker } from "../pdtp-sheet-table-ui"
 import { buildPdtpActivitiesHref, resolvePdtpYear, resolveSelectedWorksiteId } from "../pdtp-context"
+import { CreatePdtpRevisionButton } from "../[programId]/create-pdtp-revision-button"
 
 export const metadata: Metadata = { title: "Actividades del programa preventivo" }
 
@@ -74,8 +75,13 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
     programMembers.map((member) => member.worksiteId),
     scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : [],
     scopedWorksites.map((worksite) => worksite.id),
+    program.appliesToAllWorksites,
   ))
   const worksites = scopedWorksites.filter((worksite) => effectiveWorksiteIds.has(worksite.id))
+  const hasUndeclaredActiveScope = program.status === "active"
+    && !program.appliesToAllWorksites
+    && programMembers.length === 0
+  const hasNoAccessibleWorksites = worksites.length === 0 && !hasUndeclaredActiveScope
   const selectedWorksiteId = requestedWorksite
     ? resolveSelectedWorksiteId(requestedWorksite, worksites)
     : (!isGlobalViewer && worksites.length === 1 ? worksites[0]!.id : undefined)
@@ -94,7 +100,7 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
     week: Number.isInteger(requestedWeek) && requestedWeek >= 1 && requestedWeek <= 5 ? requestedWeek : basePeriod.week,
   }
   const requiresWorksiteSelection = !isGlobalViewer && !selectedWorksiteId && worksites.length > 1 && viewMode === "semana"
-  const view = requiresWorksiteSelection
+  const view = hasUndeclaredActiveScope || hasNoAccessibleWorksites || requiresWorksiteSelection
     ? null
     : selectedWorksiteId
       ? await getPdtpSheetViewByProgram(program.id, sheetCode, selectedWorksiteId)
@@ -116,7 +122,7 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
 
   const faenaChips = aggregateView?.worksiteSummaries.map((summary) => {
     const worksite = worksites.find((item) => item.id === summary.worksiteId)
-    return <span key={summary.worksiteId} title={`${summary.executed} ejecutadas de ${summary.planned} instancias planificadas del año en ${worksite?.name ?? "la faena"}`} className="rounded-full border border-[var(--color-border)] px-2 py-1">{worksite?.name ?? "Faena"}: {summary.executed}/{summary.planned} ejec.</span>
+    return <span key={summary.worksiteId} title={`${summary.planned} instancias exigibles y ${summary.executed} ejecutadas; histórico completo: ${summary.historicalPlanned} / ${summary.historicalExecuted} en ${worksite?.name ?? "la faena"}`} className="rounded-full border border-[var(--color-border)] px-2 py-1">{worksite?.name ?? "Faena"}: Plan {summary.planned} · ejecutado {summary.executed} <span className="text-[var(--color-text-faint)]">(exigible)</span></span>
   })
 
   return (
@@ -132,7 +138,7 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
         <div className="flex flex-wrap items-end gap-3 border-y border-[var(--color-border)] py-3">
           <PdtpYearPicker current={year} years={allPrograms.map((item) => item.year)} hrefBase={VIEWER_HREF} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />
           <PdtpPeriodPicker month={currentPeriod.month} week={currentPeriod.week} hrefBase={VIEWER_HREF} programId={program.id} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} year={year} status={statusFilter} />
-          <PdtpProgramPicker current={program.id} programs={programs.map((item) => ({ id: item.id, title: item.title, year: item.year }))} hrefBase={VIEWER_HREF} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />
+          <PdtpProgramPicker current={program.id} programs={programs.map((item) => ({ id: item.id, title: item.title, year: item.year, version: item.version }))} hrefBase={VIEWER_HREF} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />
           {sheets.length > 0 ? (
             <PdtpSheetPicker current={sheetCode} options={sheets.map((sheet) => ({ code: sheet.code, label: sheet.label }))} programId={program.id} worksiteId={selectedWorksiteId} viewMode={viewMode} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />
           ) : (
@@ -144,7 +150,25 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
           <div className="w-full lg:ml-auto lg:w-auto"><PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={program.id} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} /></div>
         </div>
 
-        {requiresWorksiteSelection ? <EmptyState compact title="Selecciona una faena para comenzar" description="Puedes consultar la vista anual, pero debes elegir una faena para revisar su evidencia o registrar ejecución." /> : !view ? <EmptyState compact tone="warning" title={sheets.length === 0 ? "Este programa aún no tiene una hoja de actividades" : `No se puede mostrar «${selectedSheet?.label ?? sheetCode}»`} description={sheets.length === 0 ? `Agrega una hoja y sus actividades a «${program.title}» para que la faena pueda registrar ejecución.` : `La hoja seleccionada no está disponible para «${program.title}». Revisa la configuración del programa y vuelve a esta misma vista.`} action={<Button asChild size="sm"><Link href={canRepairProgram ? editProgramHref : `/prevencion/pdtp/programas?anio=${year}`}>{canRepairProgram ? "Gestionar programa" : "Volver a programas"}</Link></Button>} /> : (
+        {hasUndeclaredActiveScope ? (
+          <EmptyState
+            compact
+            tone="warning"
+            title="Alcance de faenas no declarado"
+            description={canManageProgram
+              ? "La versión activa no tiene faenas asignadas ni declara alcance corporativo. Crea una revisión v+1 para definir dónde se puede ejecutar."
+              : "La versión activa no tiene faenas asignadas ni declara alcance corporativo. Solicita a quien administra el programa que cree una revisión v+1."}
+            action={canManageProgram ? <CreatePdtpRevisionButton sourceProgramId={program.id} /> : undefined}
+          />
+        ) : hasNoAccessibleWorksites ? (
+          <EmptyState
+            compact
+            tone="warning"
+            title="Sin faenas accesibles para este programa"
+            description="No tienes una faena de este programa dentro de tu alcance autorizado. Solicita la asignación correspondiente antes de consultar o registrar trabajo."
+            action={<Button asChild size="sm" variant="secondary"><Link href={`/prevencion/pdtp/${program.id}`}>Revisar programa</Link></Button>}
+          />
+        ) : requiresWorksiteSelection ? <EmptyState compact title="Selecciona una faena para comenzar" description="Puedes consultar la vista anual, pero debes elegir una faena para revisar su evidencia o registrar ejecución." /> : !view ? <EmptyState compact tone="warning" title={sheets.length === 0 ? "Este programa aún no tiene una hoja de actividades" : `No se puede mostrar «${selectedSheet?.label ?? sheetCode}»`} description={sheets.length === 0 ? `Agrega una hoja y sus actividades a «${program.title}» para que la faena pueda registrar ejecución.` : `La hoja seleccionada no está disponible para «${program.title}». Revisa la configuración del programa y vuelve a esta misma vista.`} action={<Button asChild size="sm"><Link href={canRepairProgram ? editProgramHref : `/prevencion/pdtp/programas?anio=${year}`}>{canRepairProgram ? "Gestionar programa" : "Volver a programas"}</Link></Button>} /> : (
           <>
             {/* Móvil: los 9 chips eran ~4 filas antes del contenido; van tras un
                 expander (UI/UX 2026-08-05, MV-2). En escritorio caben en una línea. */}

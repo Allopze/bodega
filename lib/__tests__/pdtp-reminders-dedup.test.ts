@@ -40,7 +40,7 @@ describe("findPdtpWeeklyPending", () => {
       { id: "ws-inactive", name: "Faena histórica", code: "OLD", isActive: false },
     ])
     await inMemoryDb.insert(schema.pdtpPrograms).values({
-      id: "program-2026", year: 2026, version: 1, status: "active", title: "PDTP 2026",
+      id: "program-2026", year: 2026, version: 1, status: "active", appliesToAllWorksites: true, title: "PDTP 2026",
       elaboratedByName: "Prevención", elaboratedByTitle: "PR", activatedAt: "2026-07-08T15:00:00.000Z",
       createdAt: now, updatedAt: now,
     })

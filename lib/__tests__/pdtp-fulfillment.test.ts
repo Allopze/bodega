@@ -52,6 +52,7 @@ const {
   resolvePdtpFulfillmentTarget,
   assertPdtpFulfillmentCoverage,
 } = await import("@/lib/services/pdtp/fulfillment")
+const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
 const { countPdtpFulfillmentBacklog, describePdtpRejection } = await import("@/lib/services/pdtp/backlog")
 const { computePdtpProgramContentDigest } = await import("@/lib/services/pdtp/content-digest")
 
@@ -64,10 +65,10 @@ const PROGRAM_ID = "pdtp-fulfill-v1"
 const ACT_N = 42
 const ACT_ID = `${PROGRAM_ID}-a-042`
 
-async function seedProgram(status: "draft" | "active") {
+async function seedProgram(status: "draft" | "active", version = 1) {
   await inMemoryDb.insert(schema.pdtpPrograms).values({
-    id: PROGRAM_ID, version: 1, year: PROGRAM_YEAR, title: `PDTP ${PROGRAM_YEAR} fulfillment`,
-    status, elaboratedByName: "Prevencionista", elaboratedByTitle: "Experto en Prevención",
+    id: PROGRAM_ID, version, year: PROGRAM_YEAR, title: `PDTP ${PROGRAM_YEAR} fulfillment`,
+    status, appliesToAllWorksites: true, elaboratedByName: "Prevencionista", elaboratedByTitle: "Experto en Prevención",
     creationMode: "blank", complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   })
@@ -76,6 +77,7 @@ async function seedProgram(status: "draft" | "active") {
 beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpExecutions)
+  await inMemoryDb.delete(schema.pdtpActivityExecutorAssignments)
   await inMemoryDb.delete(schema.pdtpActivityWorksiteParams)
   await inMemoryDb.delete(schema.pdtpActivityWorksiteExclusions)
   await inMemoryDb.delete(schema.pdtpProgramWorksites)
@@ -125,6 +127,16 @@ async function seedActivity(overrides: Partial<typeof schema.pdtpActivities.$inf
   })
 }
 
+async function seedExecutor(roleId = "role-prf") {
+  await inMemoryDb.insert(schema.pdtpActivityExecutorAssignments).values({
+    id: `executor-${roleId}`,
+    activityId: ACT_ID,
+    roleId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  })
+}
+
 describe("recordPdtpFulfillmentEvent — el hecho no se pierde", () => {
   it("deja el evento en pending sin programa activo, en vez de perderlo", async () => {
     await seedProgram("draft")
@@ -150,13 +162,14 @@ describe("recordPdtpFulfillmentEvent — el hecho no se pierde", () => {
 
     const result = await recordPdtpFulfillmentEvent({
       sourceType: "campana", sourceId: "campana-2", worksiteId: WS_ID,
-      activityNumbers: [ACT_N], occurredAt: new Date().toISOString(),
+      activityNumbers: [ACT_N], programId: "programo-sugerido-por-conector", occurredAt: new Date().toISOString(),
     })
     expect(result?.accredited).toHaveLength(1)
 
     const [event] = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
       .where(eq(schema.pdtpFulfillmentEvents.sourceId, "campana-2"))
     expect(event?.status).toBe("accredited")
+    expect(event?.programId).toBe(PROGRAM_ID)
 
     const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
       .where(eq(schema.pdtpExecutions.activityId, ACT_ID))
@@ -430,7 +443,7 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
     expect(issues).toEqual([expect.objectContaining({ n: 99, status: "config_required" })])
   })
 
-  it("un enganche ejecutable que aún cae a la planilla genérica es code_gap", async () => {
+  it("un enganche ejecutable que aún cae a la planilla genérica es destination_not_configured", async () => {
     await seedProgram("draft")
     await seedActivity({ mechanism: "enganche", n: 99 })
     const now = new Date().toISOString()
@@ -442,7 +455,7 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
     })
 
     const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
-    expect(issues).toEqual([expect.objectContaining({ n: 99, status: "code_gap" })])
+    expect(issues).toEqual([expect.objectContaining({ n: 99, status: "destination_not_configured" })])
     expect(issues[0]!.reason).toMatch(/destino operativo/i)
   })
 
@@ -486,7 +499,9 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
   it("un enganche declarado en STRUCTURALLY_WIRED_ACTIVITY_NUMBERS pasa (N°35, MIPER)", async () => {
     await seedProgram("draft")
     await seedActivity({ mechanism: "enganche", n: 35 })
-    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([
+      expect.objectContaining({ n: 35, status: "segregated_valid", destinationModule: "riesgos" }),
+    ])
   })
 
   it("una plantilla en borrador declara el número pero no lo vuelve ejecutable", async () => {
@@ -518,14 +533,11 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
       approvedByUserId: USER_ID, approvedAt: now,
     })
 
-    // El destino de la N°24 (Inspecciones) es otra pregunta —`destination_review`,
-    // no bloqueante, y ya cubierta por el test de arriba con el mismo n=24—; lo
-    // que este test verifica es específicamente que aprobar la plantilla apague
-    // el `instrument_required`/`config_required`, no que la actividad quede sin
-    // ningún issue.
+    // En una v1 histórica no se inventan ejecutores. Este test verifica que
+    // aprobar la plantilla apague específicamente `instrument_required`/
+    // `config_required`; v+1 cubre la asignación explícita abajo.
     const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
-    const blockingIssues = issues.filter((issue) => issue.n === 24 && issue.status !== "destination_review")
-    expect(blockingIssues).toEqual([])
+    expect(issues.filter((issue) => issue.n === 24)).toEqual([])
   })
 
   it("la N°84 exige un plan en TODAS las faenas del programa, no en cualquiera", async () => {
@@ -555,9 +567,8 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
       status: "draft", version: 1, pdtpActivityNumbers: [84],
       createdByUserId: USER_ID, createdAt: now, updatedAt: now,
     })
-    // Ya no hay problema de configuración. Queda un `destination_review`, que
-    // es otra cosa y no bloquea: el responsable del fixture no tiene el permiso
-    // de simulacros.
+    // Ya no hay problema de configuración. La v1 histórica conserva sus
+    // responsables sin fabricar ejecutores para la actividad.
     expect((await assertPdtpFulfillmentCoverage(PROGRAM_ID)).filter((i) => i.status === "config_required")).toEqual([])
   })
 
@@ -615,14 +626,11 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
    * y no aplica al acto que la acredita: la N°52 cierra con el acta de
    * trabajador nuevo, que exige `sst:close`, y su responsable no lo tiene. Es
    * lo que la compuerta dejaba pasar sin decir nada. */
-  it("una compuesta cuyo acto acreditador no tiene dueño sale a revisión", async () => {
+  it("una compuesta histórica no recibe ejecutores inventados", async () => {
     await seedProgram("draft")
     await seedActivity({ mechanism: "compuesta", n: 52 })
     const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
-    expect(issues).toEqual([
-      expect.objectContaining({ n: 52, status: "destination_review" }),
-    ])
-    expect(issues[0]!.reason).toMatch(/sst:close/)
+    expect(issues).toEqual([])
   })
 
   it("la N°43 la declara el tipo de documento al publicar", async () => {
@@ -640,7 +648,9 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
       id: "sstdt-pts", categorySlug: "gestion_preventiva", code: "PTS", name: "Procedimiento de trabajo seguro",
       pdtpActivityNumbers: [43], createdAt: now, updatedAt: now,
     })
-    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([
+      expect.objectContaining({ n: 43, status: "segregated_valid", destinationModule: "documentacion" }),
+    ])
   })
 
   it("la N°36 declarada sólo en la columna de acuse también cuenta como cableada", async () => {
@@ -659,10 +669,7 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
     expect((await assertPdtpFulfillmentCoverage(PROGRAM_ID)).filter((i) => i.status === "config_required")).toEqual([])
   })
 
-  it("un enganche cuyo responsable no tiene el permiso del destino se reporta, no bloquea", async () => {
-    // El mapa de destinos es nuevo y buena parte de lo que encuentra es
-    // segregación de deberes, no grants faltantes. Promoverlo a bloqueante
-    // antes de que alguien revise la lista sería repetir el episodio de la N°84.
+  it("un enganche histórico no convierte al responsable en ejecutor", async () => {
     await seedProgram("draft")
     // La N°24 se cumple en Inspecciones y exige `inspections:execute`; el rol
     // del fixture sólo tiene el permiso de constancias.
@@ -677,18 +684,112 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
       pdtpActivityNumbers: [24],
     })
 
-    const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
-    expect(issues).toEqual([expect.objectContaining({ n: 24, status: "destination_review" })])
-    expect(issues[0]!.reason).toContain("inspecciones")
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
   })
 
-  it("una actividad de enganche segregada a propósito no se reporta", async () => {
+  it("una revisión v+1 exige un ejecutor antes de enviarse a revisión", async () => {
+    await seedProgram("draft", 2)
+    await seedActivity({ mechanism: "constancia" })
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([
+      expect.objectContaining({ n: ACT_N, status: "executor_required", requiredPermission: "prevention:constancias:execute" }),
+    ])
+  })
+
+  it("acredita cada hecho en la versión vigente en su fecha, aunque se reintente después", async () => {
+    await seedProgram("active", 1)
+    await seedActivity({ id: `${PROGRAM_ID}-v1-a-042` })
+    await inMemoryDb.update(schema.pdtpPrograms).set({
+      status: "closed",
+      activatedAt: "2026-01-01T00:00:00.000Z",
+    }).where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+    await inMemoryDb.insert(schema.pdtpPrograms).values({
+      id: "pdtp-fulfill-v2",
+      version: 2,
+      year: PROGRAM_YEAR,
+      title: `PDTP ${PROGRAM_YEAR} fulfillment v2`,
+      status: "active",
+      appliesToAllWorksites: true,
+      sourceProgramId: PROGRAM_ID,
+      sourceContentVersion: 1,
+      elaboratedByName: "Prevencionista",
+      elaboratedByTitle: "Experto en Prevención",
+      creationMode: "blank",
+      complianceTarget: 0.9,
+      pesoEjecucion: 0.5,
+      pesoVerificacion: 0.3,
+      pesoCierre: 0.2,
+      activatedAt: "2026-06-01T00:00:00.000Z",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+    await inMemoryDb.insert(schema.pdtpActivities).values({
+      id: "pdtp-fulfill-v2-a-042",
+      programId: "pdtp-fulfill-v2",
+      n: ACT_N,
+      activity: "Inspección de extintores v2",
+      program: "Prevención PDTP",
+      responsibleSlugs: ["prevencionista"],
+      responsibleDisplay: "Prevencionista",
+      scheduleMode: "scheduled",
+      scheduleClassificationStatus: "confirmed",
+      mechanism: "constancia",
+      evidenceRequirement: "Registro verificable",
+      sourceSheetRow: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+
+    const beforeCutover = await accreditPdtpFromEvent({
+      sourceType: "campana",
+      sourceId: "cutover-before",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-05-31T12:00:00.000Z",
+    })
+    const afterCutover = await accreditPdtpFromEvent({
+      sourceType: "campana",
+      sourceId: "cutover-after",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-06-01T12:00:00.000Z",
+    })
+
+    expect(beforeCutover.accredited).toEqual([
+      expect.objectContaining({ activityId: `${PROGRAM_ID}-v1-a-042`, activityN: ACT_N }),
+    ])
+    expect(afterCutover.accredited).toEqual([
+      expect.objectContaining({ activityId: "pdtp-fulfill-v2-a-042", activityN: ACT_N }),
+    ])
+  })
+
+  it("una revisión v+1 distingue ejecutor sin permiso de uno válido", async () => {
+    await seedProgram("draft", 2)
+    await seedActivity({ mechanism: "enganche", n: 24 })
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: "tpl-v2-24", code: "inspeccion-v2", versionLabel: "01", status: "approved",
+      name: "Inspección v2", kind: "inspection", executorOfRecord: "platform_user",
+      definitionSnapshot: {}, contentHash: "v".repeat(64), pdtpActivityNumbers: [24],
+      authorUserId: USER_ID, approvedByUserId: USER_ID, approvedAt: now, createdAt: now, updatedAt: now,
+    })
+    await seedExecutor()
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([
+      expect.objectContaining({ n: 24, status: "executor_permission_gap", requiredPermission: "prevention:inspections:execute" }),
+    ])
+    await inMemoryDb.insert(schema.permissions).values({ id: "perm-inspections-execute", name: "prevention:inspections:execute", module: "prevention" })
+    await inMemoryDb.insert(schema.rolePermissions).values({ roleId: "role-prf", permissionId: "perm-inspections-execute" })
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
+  })
+
+  it("una actividad de enganche segregada a propósito queda explícita como válida", async () => {
     // La N°83 la redacta el prevencionista de faena y la firma otra persona:
     // `approveEmergencyPlan` rechaza que coincidan. Exigirle el permiso de
     // aprobar contradiría esa regla.
     await seedProgram("draft")
     await seedActivity({ mechanism: "enganche", n: 83 })
-    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([
+      expect.objectContaining({ n: 83, status: "segregated_valid", destinationModule: "emergencias" }),
+    ])
   })
 
   it("cobertura sin padrón declarado es decision_required, no bloqueante", async () => {
@@ -717,23 +818,25 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
 })
 
 describe("compuerta 81/81 — permiso en el módulo destino (2026-09-03)", () => {
-  it("una constancia cuyo responsable no puede entrar a Constancias es permission_gap", async () => {
-    await seedProgram("draft")
+  it("una constancia v+1 cuyo ejecutor no puede entrar a Constancias es executor_permission_gap", async () => {
+    await seedProgram("draft", 2)
     await seedActivity({ mechanism: "constancia", evidenceRequirement: "Registro verificable" })
-    // Se le quita al rol el permiso del módulo donde la constancia se marca.
+    await seedExecutor()
+    // Se le quita al ejecutor el permiso del módulo donde la constancia se marca.
     await inMemoryDb.delete(schema.rolePermissions).where(eq(schema.rolePermissions.permissionId, "perm-constancias-execute"))
 
     const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
     expect(issues).toEqual([expect.objectContaining({
       n: ACT_N,
-      status: "permission_gap",
-      reason: expect.stringContaining("prevention:constancias:execute"),
+      status: "executor_permission_gap",
+      requiredPermission: "prevention:constancias:execute",
     })])
   })
 
-  it("con el permiso cargado, la misma actividad pasa la compuerta", async () => {
-    await seedProgram("draft")
+  it("con ejecutor y permiso cargados, la misma actividad v+1 pasa la compuerta", async () => {
+    await seedProgram("draft", 2)
     await seedActivity({ mechanism: "constancia", evidenceRequirement: "Registro verificable" })
+    await seedExecutor()
     expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
   })
 
@@ -746,7 +849,9 @@ describe("compuerta 81/81 — permiso en el módulo destino (2026-09-03)", () =>
     await seedActivity({ mechanism: "enganche", n: 35, id: `${PROGRAM_ID}-a-035` })
 
     const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
-    expect(issues.filter((issue) => issue.n === 35)).toEqual([])
+    expect(issues.filter((issue) => issue.n === 35)).toEqual([
+      expect.objectContaining({ status: "segregated_valid" }),
+    ])
   })
 })
 
@@ -783,6 +888,47 @@ describe("countPdtpFulfillmentBacklog — el libro de cumplimiento hecho visible
     const backlog = await countPdtpFulfillmentBacklog(PROGRAM_ID)
     expect(backlog.errored).toBe(0)
     expect(backlog.lastError).toBeNull()
+  })
+
+  it("respeta el alcance visible de la sesión al mostrar un programa sin membresías", async () => {
+    await seedProgram("draft")
+    await seedActivity()
+    await inMemoryDb.insert(schema.worksites).values({ id: "ws-outside", name: "Faena externa", code: "EXT", isActive: true })
+    await recordPdtpFulfillmentEvent({
+      sourceType: "campana", sourceId: "campana-visible", worksiteId: WS_ID,
+      activityNumbers: [ACT_N], occurredAt: new Date().toISOString(),
+    })
+    await recordPdtpFulfillmentEvent({
+      sourceType: "campana", sourceId: "campana-oculta", worksiteId: "ws-outside",
+      activityNumbers: [ACT_N], occurredAt: new Date().toISOString(),
+    })
+
+    const scoped = await countPdtpFulfillmentBacklog(PROGRAM_ID, { worksiteIds: [WS_ID] })
+    expect(scoped.errored).toBe(1)
+    expect(scoped.recentRejected).toHaveLength(0)
+
+    const emptyScope = await countPdtpFulfillmentBacklog(PROGRAM_ID, { worksiteIds: [] })
+    expect(emptyScope.errored).toBe(0)
+  })
+
+  it("limita un programa corporativo a faenas activas al contar el libro", async () => {
+    await seedProgram("draft")
+    await seedActivity()
+    await inMemoryDb.insert(schema.worksites).values({
+      id: "ws-inactive", name: "Faena desactivada", code: "OFF", isActive: false,
+    })
+    await recordPdtpFulfillmentEvent({
+      sourceType: "campana", sourceId: "campana-corporativa-activa", worksiteId: WS_ID,
+      activityNumbers: [ACT_N], occurredAt: new Date().toISOString(),
+    })
+    await recordPdtpFulfillmentEvent({
+      sourceType: "campana", sourceId: "campana-corporativa-inactiva", worksiteId: "ws-inactive",
+      activityNumbers: [ACT_N], occurredAt: new Date().toISOString(),
+    })
+
+    const backlog = await countPdtpFulfillmentBacklog(PROGRAM_ID)
+    expect(backlog.errored).toBe(1)
+    expect(backlog.lastError).toMatch(/programa PDTP activo/i)
   })
 
   /**
@@ -835,16 +981,31 @@ describe("countPdtpFulfillmentBacklog — el libro de cumplimiento hecho visible
     await seedProgram("draft")
     await seedActivity()
 
+    const current = await computePdtpProgramContentDigest(PROGRAM_ID)
     await inMemoryDb.update(schema.pdtpPrograms)
-      .set({ contentDigest: "0".repeat(64) })
+      .set({ contentDigest: "0".repeat(64), reviewSnapshotJson: current.snapshot })
       .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
     expect((await countPdtpFulfillmentBacklog(PROGRAM_ID)).digestDrift).toBe(true)
 
-    const { digest } = await computePdtpProgramContentDigest(PROGRAM_ID)
+    const { digest, snapshot } = current
     await inMemoryDb.update(schema.pdtpPrograms)
-      .set({ contentDigest: digest })
+      .set({ contentDigest: digest, reviewSnapshotJson: snapshot })
       .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
     expect((await countPdtpFulfillmentBacklog(PROGRAM_ID)).digestDrift).toBe(false)
+  })
+
+  it("expone una huella histórica sin esquema como no verificable, no como drift", async () => {
+    await seedProgram("active")
+    await seedActivity()
+
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ contentDigest: "f".repeat(64), reviewSnapshotJson: null })
+      .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+
+    const backlog = await countPdtpFulfillmentBacklog(PROGRAM_ID)
+    expect(backlog.digestDrift).toBe(false)
+    expect(backlog.digestVerificationUnavailable).toBe(true)
+    expect(backlog.digestVerificationMessage).toMatch(/sin versión de esquema declarada/i)
   })
 })
 
@@ -875,5 +1036,52 @@ describe("getPdtpCoverageReport — el informe desagregado", () => {
     await seedActivity()
     const report = await getPdtpCoverageReport(PROGRAM_ID)
     expect(report).toMatchObject({ total: 1, ready: 1, groups: [] })
+  })
+
+  it("un flujo segregado se muestra, pero sigue contando como listo", async () => {
+    const { getPdtpCoverageReport } = await import("@/lib/services/pdtp/lifecycle")
+    await seedProgram("draft")
+    await seedActivity({ mechanism: "enganche", n: 83 })
+
+    const report = await getPdtpCoverageReport(PROGRAM_ID)
+    expect(report).toMatchObject({ total: 1, ready: 1 })
+    expect(report.groups).toEqual([
+      expect.objectContaining({ status: "segregated_valid", blocks: false, issues: [expect.objectContaining({ n: 83 })] }),
+    ])
+  })
+
+  it("acota los nombres de faena del informe al alcance solicitado", async () => {
+    const { getPdtpCoverageReport } = await import("@/lib/services/pdtp/lifecycle")
+    const outsideWorksiteId = "ws-fulfill-outside"
+    await inMemoryDb.insert(schema.worksites).values({
+      id: outsideWorksiteId,
+      name: "Faena fuera del alcance",
+      code: "FOA",
+      isActive: true,
+    })
+    await seedProgram("draft")
+    await seedActivity({ n: 84, mechanism: "enganche" })
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.preventionEmergencyPlans).values({
+      id: "plan-fulfill-visible",
+      worksiteId: WS_ID,
+      code: "PE-VISIBLE",
+      title: "Plan de emergencia visible",
+      status: "approved",
+      version: 1,
+      pdtpActivityNumbers: [84],
+      createdByUserId: USER_ID,
+      approvedByUserId: USER_ID,
+      approvedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    const globalReport = await getPdtpCoverageReport(PROGRAM_ID)
+    const globalIssue = globalReport.groups.flatMap((group) => group.issues).find((issue) => issue.n === 84)
+    expect(globalIssue?.reason).toContain("Faena fuera del alcance")
+
+    const scopedReport = await getPdtpCoverageReport(PROGRAM_ID, { worksiteIds: [WS_ID] })
+    expect(scopedReport).toMatchObject({ total: 1, ready: 1, groups: [] })
   })
 })

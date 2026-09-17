@@ -126,7 +126,13 @@ async function resolveActorUserId(): Promise<string> {
 
 async function main() {
   const programs = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.year, PROGRAM_YEAR))
-  const program = programs.find((item) => item.status === "active") ?? programs.at(-1)
+  const orderedPrograms = [...programs].sort((a, b) => b.version - a.version)
+  // Las faenas de una revisión borrador sí se pueden ajustar; la versión
+  // activa se conserva como expediente firmado y sólo queda como fallback
+  // informativo cuando aún no existe una revisión abierta.
+  const program = orderedPrograms.find((item) => item.status === "draft")
+    ?? orderedPrograms.find((item) => item.status === "active")
+    ?? orderedPrograms[0]
   if (!program) bail(`No existe ningún programa PDTP para el año ${PROGRAM_YEAR}.`)
 
   const actorUserId = await resolveActorUserId().catch((err: unknown) => {

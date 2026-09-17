@@ -27,7 +27,7 @@
 
 import { and, eq } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { pdtpProgramWorksites, worksites } from "@/db/schema"
+import { pdtpProgramWorksites, pdtpPrograms, worksites } from "@/db/schema"
 import {
   accreditPdtpFromEvent,
   PdtpNoActiveProgramError,
@@ -357,10 +357,10 @@ export async function onEmergencyDrillCompleted(input: {
  * Riesgos"— es autorreferente: se cumple con la firma de Legal y RRHH sobre
  * este mismo programa, así que nadie tiene que marcarla a mano.
  *
- * Acredita en **todas** las faenas del programa, no en una sola: la planilla y
- * el % de cumplimiento son por faena, y un programa aprobado lo está para
- * todas. Sin membresía declarada aplica a todas las faenas activas, misma
- * regla que `resolveProgramWorksiteIds`.
+ * Acredita en **todas** las faenas declaradas del programa, no en una sola: la
+ * planilla y el % de cumplimiento son por faena. Sin membresía sólo expande a
+ * todas las faenas activas cuando el programa declaró alcance corporativo;
+ * una versión sin alcance no inventa acreditaciones.
  *
  * Idempotente por construcción: la clave del motor incluye `sourceId`, que acá
  * es el id del programa.
@@ -369,16 +369,24 @@ export async function onPdtpProgramLegallyApproved(input: {
   programId: string
   approvedAt: string
 }): Promise<void> {
-  const members = await db.select({ worksiteId: pdtpProgramWorksites.worksiteId })
-    .from(pdtpProgramWorksites)
-    .where(and(
-      eq(pdtpProgramWorksites.programId, input.programId),
-      eq(pdtpProgramWorksites.isActive, true),
-    ))
+  const [[program], members] = await Promise.all([
+    db.select({ appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites })
+      .from(pdtpPrograms)
+      .where(eq(pdtpPrograms.id, input.programId))
+      .limit(1),
+    db.select({ worksiteId: pdtpProgramWorksites.worksiteId })
+      .from(pdtpProgramWorksites)
+      .where(and(
+        eq(pdtpProgramWorksites.programId, input.programId),
+        eq(pdtpProgramWorksites.isActive, true),
+      )),
+  ])
 
   const worksiteIds = members.length > 0
     ? members.map((row) => row.worksiteId)
-    : (await db.select({ id: worksites.id }).from(worksites).where(eq(worksites.isActive, true))).map((row) => row.id)
+    : program?.appliesToAllWorksites
+      ? (await db.select({ id: worksites.id }).from(worksites).where(eq(worksites.isActive, true))).map((row) => row.id)
+      : []
 
   for (const worksiteId of worksiteIds) {
     await safeAccredit({

@@ -1,9 +1,9 @@
-import { and, eq, isNull, ne } from "drizzle-orm"
+import { and, desc, eq, isNull, ne } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpProgramWorksites, pdtpPrograms } from "@/db/schema"
 import { addPdtpChangeLogEntry } from "./helpers"
-import { computePdtpProgramContentDigest } from "./content-digest"
-import { assertPdtpFulfillmentCoverage, type PdtpFulfillmentCoverageIssue } from "./fulfillment"
+import { computePdtpProgramContentDigest, computePdtpProgramContentDigestForStoredVersion } from "./content-digest"
+import { assertPdtpFulfillmentCoverage, type PdtpCoverageScope, type PdtpFulfillmentCoverageIssue } from "./fulfillment"
 import {
   assertAllRequiredPdtpApprovalStepsApproved,
   decidePdtpApprovalStep,
@@ -19,9 +19,9 @@ import {
  * Sólo están las dos que se arreglan DENTRO del programa: una actividad sin
  * mecanismo de acreditación clasificado (o cuyo destino todavía cae a la
  * planilla genérica) no tiene dónde cumplirse, y una cuyo responsable no mapea
- * a un rol real —o mapea a uno sin permiso en el módulo donde el trabajo se
- * registra— no tiene quién la cumpla. Ninguna se resuelve fuera del PDTP, así
- * que dejarlas pasar sería prometer trabajo imposible.
+ * a un rol real o cuyo destino no tiene un ejecutor acreditador válido no tiene
+ * quién la cumpla. Ninguna se resuelve fuera del PDTP, así que dejarlas pasar
+ * sería prometer trabajo imposible.
  *
  * El resto se informa y no frena nada. `config_required` e `instrument_required`
  * apuntan a instrumentos EXTERNOS —un curso, una plantilla, una campaña, un
@@ -30,15 +30,18 @@ import {
  * el programa inutilizable hasta tener el catálogo completo, cuando lo que
  * corresponde es lo contrario: se activa y se usa, y esas actividades
  * simplemente no acreditan cumplimiento mientras su instrumento no exista o no
- * esté vigente. `decision_required` y `destination_review` nunca frenaron nada.
+ * esté vigente. `decision_required` nunca frena nada.
  */
 const BLOCKING_COVERAGE_LABELS = {
   code_gap: "sin mecanismo de acreditación clasificado",
+  destination_not_configured: "sin destino operativo configurado",
   // Cubre los dos casos que la compuerta clasifica igual: el responsable no
   // mapea a ningún rol, o mapea a uno que no tiene permiso en el módulo
   // donde el trabajo se registra. Decir sólo "no mapea a un rol real" mentía
   // en el segundo caso, que es el más común.
   permission_gap: "sin un responsable que pueda registrar el cumplimiento",
+  executor_required: "sin rol ejecutor para acreditar el hecho",
+  executor_permission_gap: "con ejecutores sin permiso para acreditar el hecho",
 } satisfies Partial<Record<PdtpFulfillmentCoverageIssue["status"], string>>
 
 type BlockingCoverageStatus = keyof typeof BLOCKING_COVERAGE_LABELS
@@ -96,7 +99,7 @@ async function requireProgram(programId: string) {
 export async function getActivePdtpProgram(year: number) {
   const [program] = await db.select().from(pdtpPrograms).where(
     and(eq(pdtpPrograms.year, year), eq(pdtpPrograms.status, "active")),
-  ).limit(1)
+  ).orderBy(desc(pdtpPrograms.version)).limit(1)
   return program ?? null
 }
 
@@ -159,10 +162,11 @@ export type PdtpCoverageReport = {
     status: PdtpFulfillmentCoverageIssue["status"]
     label: string
     /**
-     * `true` sólo para lo que se arregla dentro del programa —`code_gap` y
-     * `permission_gap`— y frena por igual el envío a revisión y la activación.
+     * `true` sólo para lo que se arregla dentro del programa —`code_gap`,
+     * `destination_not_configured`, `permission_gap` y la configuración de ejecutores— y frena por igual el
+     * envío a revisión y la activación.
      * Ver `pdtpCoverageIssueBlocksLifecycle`. Lo demás se muestra para que el operador
-     * sepa qué actividades no van a acreditar cumplimiento todavía.
+     * distinga pendientes de configuración de flujos segregados ya válidos.
      */
     blocks: boolean
     issues: PdtpFulfillmentCoverageIssue[]
@@ -171,11 +175,14 @@ export type PdtpCoverageReport = {
 
 const COVERAGE_STATUS_LABELS: Record<PdtpFulfillmentCoverageIssue["status"], string> = {
   ready: "Listas",
+  segregated_valid: "Flujo segregado válido",
   code_gap: "Sin mecanismo de acreditación clasificado",
+  destination_not_configured: "Sin destino operativo configurado",
   config_required: "Sin la configuración que su enganche o constancia necesita",
   permission_gap: "Sin un responsable que pueda registrar el cumplimiento",
+  executor_required: "Sin ejecutor acreditador configurado",
+  executor_permission_gap: "Con ejecutor sin permiso en el destino",
   decision_required: "Midiéndose por cobertura sin padrón declarado",
-  destination_review: "Con un destino de enganche por revisar",
   instrument_required: "Con instrumento declarado pero no vigente (plantilla, curso o plan sin aprobar/publicar)",
 }
 
@@ -183,15 +190,19 @@ const COVERAGE_STATUS_LABELS: Record<PdtpFulfillmentCoverageIssue["status"], str
  * El informe por actividad de la compuerta, para mostrarlo antes de decidir la
  * activación. `getPdtpSubmitReviewBlockers` colapsa lo mismo a una línea por
  * clasificación —es lo que cabe en un mensaje de error—, así que sin esto la
- * clasificación existía en el tipo y nadie podía verla desagregada: había que
- * ir a leer la base actividad por actividad, que es exactamente el trabajo que
- * la compuerta vino a evitar.
+ * clasificación existía en el tipo y había que leer la base actividad por
+ * actividad. El ciclo de vida consulta la cobertura completa; las vistas
+ * autenticadas pueden pasar el alcance visible para no revelar nombres de
+ * faenas fuera de los permisos del usuario.
  */
-export async function getPdtpCoverageReport(programId: string): Promise<PdtpCoverageReport> {
+export async function getPdtpCoverageReport(
+  programId: string,
+  options?: PdtpCoverageScope,
+): Promise<PdtpCoverageReport> {
   const [activities, issues] = await Promise.all([
     db.select({ id: pdtpActivities.id }).from(pdtpActivities)
       .where(and(eq(pdtpActivities.programId, programId), eq(pdtpActivities.status, "active"))),
-    assertPdtpFulfillmentCoverage(programId),
+    assertPdtpFulfillmentCoverage(programId, db, options),
   ])
   const byStatus = new Map<PdtpFulfillmentCoverageIssue["status"], PdtpFulfillmentCoverageIssue[]>()
   for (const issue of issues) {
@@ -199,7 +210,11 @@ export async function getPdtpCoverageReport(programId: string): Promise<PdtpCove
     list.push(issue)
     byStatus.set(issue.status, list)
   }
-  const withIssues = new Set(issues.map((issue) => issue.n))
+  // `segregated_valid` es una confirmación positiva del contrato, no una
+  // brecha. Se muestra en el desglose, pero no reduce el contador de listas.
+  const withIssues = new Set(issues
+    .filter((issue) => issue.status !== "segregated_valid")
+    .map((issue) => issue.n))
   return {
     total: activities.length,
     ready: activities.length - withIssues.size,
@@ -331,7 +346,7 @@ export async function activatePdtpProgram(programId: string, userId: string) {
     const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
     if (!program) throw new Error("Programa PDTP no encontrado.")
     if (program.status === "active" && program.activatedByUserId === userId && program.contentDigest) {
-      const { digest } = await computePdtpProgramContentDigest(programId, tx)
+      const { digest } = await computePdtpProgramContentDigestForStoredVersion(programId, tx)
       if (digest !== program.contentDigest) throw new Error("El contenido activo no coincide con la versión firmada.")
       return program
     }
@@ -372,7 +387,7 @@ export async function activatePdtpProgram(programId: string, userId: string) {
     }
 
     await assertAllRequiredPdtpApprovalStepsApproved(programId, program.contentVersion, program.contentDigest, tx)
-    const { digest } = await computePdtpProgramContentDigest(programId, tx)
+    const { digest } = await computePdtpProgramContentDigestForStoredVersion(programId, tx)
     if (digest !== program.contentDigest) {
       throw new Error("El contenido actual no coincide con la versión firmada. Debe abrirse una nueva revisión.")
     }

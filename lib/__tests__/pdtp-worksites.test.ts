@@ -62,16 +62,17 @@ async function createDraftProgramWithActivity(year: number) {
 }
 
 describe("PDTP multifaena: membresía y exclusiones", () => {
-  it("resolveProgramWorksiteIds: sin membresía declarada, aplica a todo el scope del usuario", async () => {
+  it("resolveProgramWorksiteIds: sin membresía declarada, sólo aplica a todo el scope si el programa lo declara", async () => {
     const { resolveProgramWorksiteIds } = await import("@/lib/services/pdtp/worksites")
-    expect(resolveProgramWorksiteIds([], ["ws-1", "ws-2"], ["ws-1", "ws-2", "ws-3"])).toEqual(["ws-1", "ws-2"])
-    expect(resolveProgramWorksiteIds([], "all", ["ws-1", "ws-2", "ws-3"])).toEqual(["ws-1", "ws-2", "ws-3"])
+    expect(resolveProgramWorksiteIds([], ["ws-1", "ws-2"], ["ws-1", "ws-2", "ws-3"], true)).toEqual(["ws-1", "ws-2"])
+    expect(resolveProgramWorksiteIds([], "all", ["ws-1", "ws-2", "ws-3"], true)).toEqual(["ws-1", "ws-2", "ws-3"])
+    expect(resolveProgramWorksiteIds([], "all", ["ws-1", "ws-2", "ws-3"], false)).toEqual([])
   })
 
   it("resolveProgramWorksiteIds: con membresía, solo la intersección con el scope (nunca amplía)", async () => {
     const { resolveProgramWorksiteIds } = await import("@/lib/services/pdtp/worksites")
-    expect(resolveProgramWorksiteIds(["ws-1", "ws-2"], ["ws-1"], ["ws-1", "ws-2", "ws-3"])).toEqual(["ws-1"])
-    expect(resolveProgramWorksiteIds(["ws-2"], ["ws-1"], ["ws-1", "ws-2", "ws-3"])).toEqual([])
+    expect(resolveProgramWorksiteIds(["ws-1", "ws-2"], ["ws-1"], ["ws-1", "ws-2", "ws-3"], true)).toEqual(["ws-1"])
+    expect(resolveProgramWorksiteIds(["ws-2"], ["ws-1"], ["ws-1", "ws-2", "ws-3"], true)).toEqual([])
   })
 
   it("lista para la UI solo las faenas miembro que también están dentro del alcance", async () => {
@@ -97,16 +98,68 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     const { setPdtpProgramWorksites, assertPdtpWorksiteCanOperateProgram } = await import("@/lib/services/pdtp/worksites")
     const { program } = await createDraftProgramWithActivity(2040)
 
-    // Sin membresía: cualquier faena puede operar.
+    // El fixture legado declara alcance corporativo, por eso cualquier faena
+    // puede operar mientras se prepara el programa.
     await expect(assertPdtpWorksiteCanOperateProgram(program.id, "ws-3")).resolves.toBeUndefined()
 
     await setPdtpProgramWorksites(program.id, ["ws-1", "ws-2"], "user-1")
     await expect(assertPdtpWorksiteCanOperateProgram(program.id, "ws-1")).resolves.toBeUndefined()
     await expect(assertPdtpWorksiteCanOperateProgram(program.id, "ws-3")).rejects.toThrow(/no está habilitada/)
 
-    // Vaciar la membresía vuelve al comportamiento histórico (todas).
+    // Vaciar la membresía conserva el alcance corporativo declarado del fixture.
     await setPdtpProgramWorksites(program.id, [], "user-1")
     await expect(assertPdtpWorksiteCanOperateProgram(program.id, "ws-3")).resolves.toBeUndefined()
+  })
+
+  it("un programa activo sin membresía ni alcance corporativo falla cerrado", async () => {
+    const { assertPdtpWorksiteCanOperateProgram } = await import("@/lib/services/pdtp/worksites")
+    const { program } = await createDraftProgramWithActivity(2041)
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ status: "active", appliesToAllWorksites: false })
+      .where(eq(schema.pdtpPrograms.id, program.id))
+
+    await expect(assertPdtpWorksiteCanOperateProgram(program.id, "ws-1"))
+      .rejects.toThrow(/no declara alcance corporativo ni una membresía/)
+  })
+
+  it("la vista de una faena no expone planificación fuera del alcance del programa", async () => {
+    const { getPdtpSheetViewByProgram, setPdtpProgramWorksites } = await import("@/lib/services/prevention-pdtp")
+    const { program, activity } = await createDraftProgramWithActivity(2044)
+    const [sheet] = await inMemoryDb.select().from(schema.pdtpSheets)
+      .where(eq(schema.pdtpSheets.programId, program.id))
+      .limit(1)
+    expect(sheet).toBeDefined()
+    await inMemoryDb.insert(schema.pdtpSheetActivities).values({
+      id: "scope-view-sheet-activity",
+      sheetId: sheet!.id,
+      sheetCode: sheet!.code,
+      activityId: activity.id,
+      sheetRow: 1,
+      displayOrder: 1,
+    })
+    await setPdtpProgramWorksites(program.id, ["ws-1"], "user-1", "all")
+
+    await expect(getPdtpSheetViewByProgram(program.id, sheet!.code, "ws-1"))
+      .resolves.toEqual(expect.objectContaining({ program: expect.objectContaining({ id: program.id }) }))
+    await expect(getPdtpSheetViewByProgram(program.id, sheet!.code, "ws-2"))
+      .resolves.toBeNull()
+  })
+
+  it("no permite escribir ajustes por faena en un programa sin alcance declarado", async () => {
+    const { setPdtpActivityWorksiteAdjustment } = await import("@/lib/services/pdtp/worksites")
+    const { program, activity } = await createDraftProgramWithActivity(2049)
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ appliesToAllWorksites: false })
+      .where(eq(schema.pdtpPrograms.id, program.id))
+
+    await expect(setPdtpActivityWorksiteAdjustment({
+      activityId: activity.id,
+      worksiteId: "ws-1",
+      excluded: false,
+      reason: "No debe configurarse fuera de un alcance declarado.",
+      expectedSubjectCount: 10,
+    }, "user-1", "all"))
+      .rejects.toThrow(/no declara alcance corporativo ni una membresía/)
   })
 
   it("solo un usuario con alcance global puede reemplazar la membresía del programa", async () => {
@@ -142,13 +195,13 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     expect(ws1Activities.map((a) => a.id)).toContain(activity.id)
   })
 
-  it("agregar membresía o una exclusión cambia el digest firmable (schemaVersion 12)", async () => {
+  it("agregar membresía o una exclusión cambia el digest firmable (versión de esquema vigente)", async () => {
     const { setPdtpProgramWorksites, excludeActivityForWorksite } = await import("@/lib/services/pdtp/worksites")
-    const { computePdtpProgramContentDigest } = await import("@/lib/services/pdtp/content-digest")
+    const { computePdtpProgramContentDigest, CURRENT_PDTP_CONTENT_SCHEMA_VERSION } = await import("@/lib/services/pdtp/content-digest")
     const { program, activity } = await createDraftProgramWithActivity(2042)
 
     const baseline = await computePdtpProgramContentDigest(program.id)
-    expect(baseline.snapshot).toMatchObject({ schemaVersion: 12 })
+    expect(baseline.snapshot).toMatchObject({ schemaVersion: CURRENT_PDTP_CONTENT_SCHEMA_VERSION })
 
     await setPdtpProgramWorksites(program.id, ["ws-1"], "user-1")
     const afterMembership = await computePdtpProgramContentDigest(program.id)
@@ -161,7 +214,7 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
 
   it("cambiar las capacidades del padrón modifica el contenido firmable", async () => {
     const { updatePdtpActivity } = await import("@/lib/services/pdtp/activities")
-    const { computePdtpProgramContentDigest } = await import("@/lib/services/pdtp/content-digest")
+    const { computePdtpProgramContentDigest, CURRENT_PDTP_CONTENT_SCHEMA_VERSION } = await import("@/lib/services/pdtp/content-digest")
     const { program, activity } = await createDraftProgramWithActivity(2051)
 
     await updatePdtpActivity({
@@ -172,7 +225,7 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     }, "user-1")
     const driversOnly = await computePdtpProgramContentDigest(program.id)
     expect(driversOnly.snapshot).toMatchObject({
-      schemaVersion: 12,
+      schemaVersion: CURRENT_PDTP_CONTENT_SCHEMA_VERSION,
       activities: [expect.objectContaining({
         subjectSource: "trabajadores_capacidad",
         subjectCapabilityCodes: ["drives_vehicle"],
@@ -409,8 +462,11 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     expect(aggregate?.monthlyTotals[0]).toMatchObject({ planned: 2, executed: 2 })
     expect(aggregate?.activities[0]).toMatchObject({ totalPlanned: 2, totalExecuted: 2, executions: [] })
     expect(aggregate?.activities[0]?.worksiteSummaries).toEqual([
-      expect.objectContaining({ worksiteId: "ws-1", planned: 2, executed: 2, status: "executed" }),
-      expect.objectContaining({ worksiteId: "ws-2", planned: 0, executed: 0, status: "not_scheduled" }),
+      expect.objectContaining({ worksiteId: "ws-1", planned: 2, executed: 2, historicalPlanned: 2, historicalExecuted: 2, status: "executed" }),
+      // La exclusión por faena aplica a ambas lecturas; histórico distingue
+      // sólo el corte de activación, no vuelve a incluir una actividad que no
+      // corresponde a esta faena.
+      expect.objectContaining({ worksiteId: "ws-2", planned: 0, executed: 0, historicalPlanned: 0, historicalExecuted: 0, status: "not_scheduled" }),
     ])
     expect(JSON.stringify(aggregate)).not.toContain("Evidencia privada")
     expect(JSON.stringify(aggregate)).not.toContain("Borrador privado")

@@ -2094,6 +2094,20 @@
       "when": 1789485717800,
       "tag": "0298_nasty_bastion",
       "breakpoints": true
+    },
+    {
+      "idx": 299,
+      "version": "7",
+      "when": 1789571625065,
+      "tag": "0299_cold_devos",
+      "breakpoints": true
+    },
+    {
+      "idx": 300,
+      "version": "7",
+      "when": 1789588055913,
+      "tag": "0300_nifty_namorita",
+      "breakpoints": true
     }
   ]
 }

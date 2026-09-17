@@ -1,4 +1,4 @@
-export type { PdtpAggregateActivityWorksite, PdtpAggregatedSheetView, PdtpSheetView } from "./sheets"
+export type { PdtpAggregateActivityWorksite, PdtpAggregateWorksiteSummary, PdtpAggregatedSheetView, PdtpSheetView } from "./sheets"
 export type { PdtpComplianceMonth, PdtpComplianceIndicators, PdtpCategoryCompliance } from "./compliance"
 export type { PdtpActivityUpdateInput, PdtpActivityAddInput, PdtpScheduleConflictDetail } from "./activities"
 export { PdtpScheduleConflictError } from "./activities"
@@ -52,7 +52,21 @@ export {
   PDTP_BASE_2026_TEMPLATE_CODE,
 } from "./templates"
 export { getActivePdtpProgram } from "./lifecycle"
-export { buildPdtpProgramContentSnapshot, computePdtpProgramContentDigest } from "./content-digest"
+export {
+  listPdtpExecutorRoleOptions,
+  listPdtpActivityExecutorAssignments,
+  setPdtpActivityExecutorAssignments,
+} from "./executors"
+export type { PdtpExecutorRoleOption, PdtpActivityExecutorAssignmentView } from "./executors"
+export {
+  CURRENT_PDTP_CONTENT_SCHEMA_VERSION,
+  MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION,
+  PdtpContentSchemaVersionMissingError,
+  PdtpUnreconstructibleContentSchemaError,
+  buildPdtpProgramContentSnapshot,
+  computePdtpProgramContentDigest,
+  computePdtpProgramContentDigestForStoredVersion,
+} from "./content-digest"
 export {
   pdtpSubmitReviewBlockers,
   getPdtpSubmitReviewBlockers,
@@ -121,7 +135,7 @@ export {
 export type { PdtpActivityWorksiteAdjustmentInput } from "./worksites"
 export { cleanupPdtpEvidenceOrphans } from "./evidence-gc"
 export type { CleanupPdtpEvidenceOrphansOptions, CleanupPdtpEvidenceOrphansResult } from "./evidence-gc"
-export { createAnnualPdtpProgram, updatePdtpProgram, listPdtpPrograms, getPdtpProgram, deletePdtpProgram } from "./programs"
+export { createAnnualPdtpProgram, createPdtpRevision, updatePdtpProgram, listPdtpPrograms, getPdtpProgram, deletePdtpProgram } from "./programs"
 /** @internal Fixture helper; product code must use createAnnualPdtpProgram. */
 export { createLegacyPdtpProgramForTests } from "./programs"
 export { stagePdtpXlsxImport, applyPdtpImportBatch, cancelPdtpImportBatch, finalizePdtpImportBootstrap, rollbackPdtpImportBatch, getPdtpImportBatch, linkPdtpImportCandidate } from "./imports"
@@ -178,8 +192,10 @@ export { getPdtpIntegralCompliance, getPdtpIntegralComplianceForScope } from "./
 
 export type { PdtpManagementReport, PdtpManagementReportFilters, PdtpManagementReportActivityRow } from "./management-report"
 export { getPdtpManagementReport, resolveActivePdtpProgramId } from "./management-report"
-export type { PdtpBaseComparison } from "./base-comparison"
-export { comparePdtpProgramToSourceBase } from "./base-comparison"
+export type { PdtpBaseComparison, PdtpRevisionDiff } from "./base-comparison"
+export { comparePdtpProgramToSourceBase, comparePdtpRevisionToCurrentBase } from "./base-comparison"
+export type { PdtpRevisionDiffDecisionView } from "./revision-diff-decisions"
+export { decidePdtpRevisionDiff, listPdtpRevisionDiffDecisions } from "./revision-diff-decisions"
 
 export type { PdtpAuditDossier } from "./audit-dossier"
 export { getPdtpAuditDossier } from "./audit-dossier"

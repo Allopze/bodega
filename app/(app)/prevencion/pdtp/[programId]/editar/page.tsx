@@ -16,6 +16,11 @@ import {
   listPdtpActivityWorksiteParams,
   loadPdtpOverrides,
   comparePdtpProgramToSourceBase,
+  comparePdtpRevisionToCurrentBase,
+  listPdtpRevisionDiffDecisions,
+  getPdtpCoverageReport,
+  listPdtpActivityExecutorAssignments,
+  listPdtpExecutorRoleOptions,
 } from "@/lib/services/prevention-pdtp"
 import { db } from "@/db"
 import { worksites } from "@/db/schema"
@@ -30,7 +35,7 @@ export const metadata: Metadata = { title: "Editar programa PDTP" }
 
 type Props = {
   params: Promise<{ programId: string }>
-  searchParams: Promise<{ volver?: string | string[] }>
+  searchParams: Promise<{ volver?: string | string[]; seccion?: string | string[] }>
 }
 
 export default async function PdtpEditProgramPage({ params, searchParams }: Props) {
@@ -42,12 +47,13 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
   const { programId } = await params
   const query = await searchParams
   const returnHref = resolvePdtpActivitiesReturnHref(Array.isArray(query.volver) ? query.volver[0] : query.volver)
+  const initialSection = Array.isArray(query.seccion) ? query.seccion[0] : query.seccion
   const program = await getPdtpProgram(programId)
   if (!program) notFound()
   if (program.status !== "draft") redirect(`/prevencion/pdtp/${programId}`)
 
   const worksiteScope = resolveWorksiteScope(session)
-  const [sheets, activities, checklists, responsibleCatalog, catalogActivities, visibleWorksites, programWorksites, baseComparison] = await Promise.all([
+  const [sheets, activities, checklists, responsibleCatalog, catalogActivities, visibleWorksites, programWorksites, baseComparison, coverageReport, executorAssignments, executorRoleOptions] = await Promise.all([
     listPdtpProgramSheets(programId),
     listPdtpProgramActivities(programId),
     listProgramActiveChecklists(programId),
@@ -61,7 +67,15 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
             : and(eq(worksites.isActive, true), inArray(worksites.id, worksiteScope.ids)))
           .orderBy(worksites.name),
     listPdtpProgramWorksites(programId),
-    comparePdtpProgramToSourceBase(programId),
+    program.version > 1
+      ? comparePdtpRevisionToCurrentBase(programId)
+      : comparePdtpProgramToSourceBase(programId),
+    getPdtpCoverageReport(
+      programId,
+      worksiteScope.mode === "all" ? undefined : { worksiteIds: worksiteScope.ids },
+    ),
+    listPdtpActivityExecutorAssignments(programId),
+    listPdtpExecutorRoleOptions(),
   ])
   const activityIds = activities.map((activity) => activity.id)
   const [activityWorksiteExclusions, schedule, activityWorksiteParams, activityScheduleOverrides] = await Promise.all([
@@ -70,6 +84,11 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
     listPdtpActivityWorksiteParams(activityIds),
     loadPdtpOverrides(activityIds, program.year),
   ])
+  const revisionDiffDecisions = program.version > 1 && baseComparison
+    && "baseTemplateVersionId" in baseComparison
+    && typeof baseComparison.baseTemplateVersionId === "string"
+    ? await listPdtpRevisionDiffDecisions(programId, baseComparison.baseTemplateVersionId)
+    : []
 
   return (
     <PageContainer>
@@ -87,6 +106,7 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
         actions={returnHref ? <Button asChild size="sm" variant="secondary"><Link href={returnHref}>Volver a actividades</Link></Button> : undefined}
       />
       <PdtpBuilderTabs
+        key={initialSection ?? "default"}
         program={program}
         sheets={sheets}
         activities={activities}
@@ -111,6 +131,11 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
         userId={session.user.id}
         canDelete={can(session, "prevention:pdtp:program:manage")}
         baseComparison={baseComparison}
+        coverageIssues={coverageReport.groups.flatMap((group) => group.issues)}
+        executorAssignments={executorAssignments}
+        executorRoleOptions={executorRoleOptions}
+        revisionDiffDecisions={revisionDiffDecisions}
+        initialStep={initialSection}
       />
     </PageContainer>
   )

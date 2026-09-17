@@ -65,7 +65,7 @@ const WORKER_ID = "worker-epp-delivery-1"
 async function seedProgram() {
   await inMemoryDb.insert(schema.pdtpPrograms).values({
     id: PROGRAM_ID, version: 1, year: PROGRAM_YEAR, title: `PDTP ${PROGRAM_YEAR} entrega EPP`,
-    status: "active", elaboratedByName: "Prevencionista", elaboratedByTitle: "Experto en Prevención",
+    status: "active", appliesToAllWorksites: true, elaboratedByName: "Prevencionista", elaboratedByTitle: "Experto en Prevención",
     creationMode: "blank", complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   })
