@@ -1,5 +1,5 @@
 import { and, eq, inArray, notInArray, sql } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type Tx } from "@/db"
 import { pdtpActivities, pdtpActivityChecklists, pdtpActivitySchedule, pdtpCatalogActivities, pdtpCatalogActivityRevisions, pdtpObjectives, pdtpPrograms, pdtpSheetActivities, workerCapabilities } from "@/db/schema"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId, resolveSheetForProgram } from "./helpers"
 import {
@@ -11,6 +11,7 @@ import {
   scheduleCellsFingerprint,
   type PdtpRecurrenceRule,
   type PdtpScheduleCell,
+  type PdtpScheduleDiff,
   type PdtpScheduleHorizon,
   type PdtpScheduleSource,
 } from "./recurrence"
@@ -120,6 +121,137 @@ function resolveScheduleWrite({ input, activity, horizon }: {
     cells: nextMode === "scheduled" && nextRule ? projectRecurrenceToLegacySchedule(nextRule, horizon) : [],
     origin: "rule_projection",
   }
+}
+
+export type PdtpScheduleWriteResult = {
+  /** Celdas vigentes ANTES de esta escritura (para construir el `before` del changelog del llamador). */
+  currentCells: PdtpScheduleCell[]
+  /** De dónde salía la planificación vigente antes de escribir. */
+  currentSource: PdtpScheduleSource
+  /** `null` si `cells` venía `undefined` (el llamador no pidió cambiar el calendario). */
+  scheduleDiff: PdtpScheduleDiff | null
+}
+
+/**
+ * Núcleo transaccional de toda escritura del calendario de una actividad:
+ * bloquea la fila (`SELECT … FOR UPDATE`), lee las celdas vigentes del año,
+ * valida `expectedFingerprint` contra ellas (huella obsoleta ⇒
+ * `schedule_changed_elsewhere`), protege una planificación manual de ser
+ * reemplazada por una proyección sin confirmación explícita
+ * (`manual_schedule_would_be_replaced`) y, si nada de eso rechaza la
+ * escritura, reemplaza las celdas del año por `cells` (borra las que sobran,
+ * upsertea las nuevas).
+ *
+ * Extraído de `updatePdtpActivity` (Tarea 2.3) para que la aplicación masiva
+ * de presets (`schedule-batch.ts`) reutilice exactamente la misma lógica de
+ * conflicto por actividad en vez de reimplementarla. El único cambio de
+ * orden respecto al código original es que aquí la escritura de celdas
+ * ocurre en una sola llamada (antes: los chequeos corrían antes de
+ * `tx.update(pdtpActivities)` y el borrado/upsert de celdas después); ambas
+ * partes están dentro de la misma transacción, así que un throw en cualquier
+ * punto revierte todo por igual — el orden relativo no cambia qué queda
+ * commiteado ni qué error se lanza. `updatePdtpActivity` mantiene su
+ * secuencia observable idéntica: mismos chequeos, mismas condiciones, mismos
+ * `PdtpScheduleConflictError`.
+ *
+ * `guardAgainstManualOverwrite` reemplaza la condición original
+ * `scheduleWriteOrigin === "rule_projection"`: `updatePdtpActivity` la pasa
+ * ya calculada así (comportamiento idéntico bit a bit). El aplicador masivo
+ * (`applyPdtpSchedulePresetToActivities`) la fija siempre en `true`, incluso
+ * para el preset `punctual` sin regla — decisión de esa tarea, no heredada de
+ * aquí: ver el comentario en `schedule-batch.ts`.
+ */
+export async function writePdtpActivitySchedule(tx: Tx, params: {
+  activityId: string
+  programYear: number
+  horizon: PdtpScheduleHorizon
+  /** Modo y regla vigentes ANTES de esta escritura (para derivar `currentSource`). */
+  currentScheduleMode: "scheduled" | "on_demand" | "triggered"
+  currentRecurrenceRule: PdtpRecurrenceRule | null
+  /** `undefined` = no tocar el calendario (mismo significado que `effectiveSchedule` en `resolveScheduleWrite`). */
+  cells: PdtpScheduleCell[] | undefined
+  guardAgainstManualOverwrite: boolean
+  replaceConfirmed: boolean
+  expectedFingerprint?: string | null
+}): Promise<PdtpScheduleWriteResult> {
+  const { activityId, programYear, horizon, currentScheduleMode, currentRecurrenceRule, cells, guardAgainstManualOverwrite, replaceConfirmed, expectedFingerprint } = params
+
+  // Bloquea la fila antes de leer el calendario: la comprobación de "esto
+  // borraría trabajo manual" no vale nada si otra transacción puede cambiar
+  // las celdas entre la lectura y la escritura. Mismo patrón que
+  // retirePdtpActivity.
+  await tx.select({ id: pdtpActivities.id }).from(pdtpActivities)
+    .where(eq(pdtpActivities.id, activityId)).for("update")
+
+  const currentCells = (await tx.select().from(pdtpActivitySchedule).where(and(
+    eq(pdtpActivitySchedule.activityId, activityId),
+    eq(pdtpActivitySchedule.year, programYear),
+  ))).map((row) => ({ month: row.month, week: row.week, plannedQuantity: Number(row.plannedQuantity) }))
+  const currentSource = derivePdtpScheduleSource({
+    cells: currentCells,
+    scheduleMode: currentScheduleMode,
+    recurrenceRule: currentRecurrenceRule,
+    horizon,
+  })
+
+  if (expectedFingerprint != null && expectedFingerprint !== scheduleCellsFingerprint(currentCells)) {
+    throw new PdtpScheduleConflictError({
+      reason: "schedule_changed_elsewhere",
+      scheduleSource: currentSource,
+      currentCellCount: currentCells.length,
+      nextCellCount: cells?.length ?? currentCells.length,
+      removedCellCount: 0,
+      currentPlannedTotal: currentCells.reduce((sum, cell) => sum + cell.plannedQuantity, 0),
+      nextPlannedTotal: (cells ?? currentCells).reduce((sum, cell) => sum + cell.plannedQuantity, 0),
+    })
+  }
+
+  const scheduleDiff = cells === undefined ? null : diffScheduleCells(currentCells, cells)
+  if (scheduleDiff && guardAgainstManualOverwrite && currentSource !== "rule" && !replaceConfirmed) {
+    // La proyección de la recurrencia solo puede pisar una planificación que
+    // ella misma generó. Si las celdas vigentes no coinciden con la regla
+    // guardada, alguien las ajustó a mano y hace falta un sí explícito.
+    const destructive = scheduleDiff.removedCells.length > 0
+      || scheduleDiff.changedCells.some((cell) => cell.to < cell.from)
+    if (destructive) {
+      throw new PdtpScheduleConflictError({
+        reason: "manual_schedule_would_be_replaced",
+        scheduleSource: currentSource,
+        currentCellCount: currentCells.length,
+        nextCellCount: cells!.length,
+        removedCellCount: scheduleDiff.removedCells.length,
+        currentPlannedTotal: scheduleDiff.currentPlannedTotal,
+        nextPlannedTotal: scheduleDiff.nextPlannedTotal,
+      })
+    }
+  }
+
+  if (cells !== undefined && scheduleDiff) {
+    // El set entrante es autoritativo para el año del programa: borra
+    // celdas existentes que ya no aparecen (semana quitada en la UI) antes
+    // de upsertear las que sí. Antes esto solo insertaba/actualizaba y
+    // dejaba cantidades planificadas obsoletas en la DB.
+    const keptIds = cells.map((cell) => pdtpScheduleId(activityId, programYear, cell.month, cell.week))
+    await tx.delete(pdtpActivitySchedule).where(keptIds.length === 0
+      ? and(eq(pdtpActivitySchedule.activityId, activityId), eq(pdtpActivitySchedule.year, programYear))
+      : and(
+          eq(pdtpActivitySchedule.activityId, activityId),
+          eq(pdtpActivitySchedule.year, programYear),
+          notInArray(pdtpActivitySchedule.id, keptIds),
+        ))
+    for (const cell of cells) {
+      await tx.insert(pdtpActivitySchedule).values({
+        id: pdtpScheduleId(activityId, programYear, cell.month, cell.week),
+        activityId, year: programYear, month: cell.month, week: cell.week,
+        plannedQuantity: cell.plannedQuantity, sourceColumn: "manual",
+      }).onConflictDoUpdate({
+        target: [pdtpActivitySchedule.activityId, pdtpActivitySchedule.year, pdtpActivitySchedule.month, pdtpActivitySchedule.week],
+        set: { plannedQuantity: cell.plannedQuantity, sourceColumn: "manual" },
+      })
+    }
+  }
+
+  return { currentCells, currentSource, scheduleDiff }
 }
 
 export async function listPdtpProgramScheduleForYear(activityIds: string[], year: number) {
@@ -347,57 +479,20 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
   // silenciosa de cantidad planificada, que es el denominador del indicador—
   // y sin entrada de changelog que lo dejara trazado.
   return db.transaction(async (tx) => {
-    // Bloquea la fila antes de leer el calendario: la comprobación de "esto
-    // borraría trabajo manual" no vale nada si otra transacción puede cambiar
-    // las celdas entre la lectura y la escritura. Mismo patrón que
-    // retirePdtpActivity.
-    await tx.select({ id: pdtpActivities.id }).from(pdtpActivities)
-      .where(eq(pdtpActivities.id, input.activityId)).for("update")
-
-    const currentCells = (await tx.select().from(pdtpActivitySchedule).where(and(
-      eq(pdtpActivitySchedule.activityId, input.activityId),
-      eq(pdtpActivitySchedule.year, program.year),
-    ))).map((row) => ({ month: row.month, week: row.week, plannedQuantity: Number(row.plannedQuantity) }))
-    const currentSource = derivePdtpScheduleSource({
-      cells: currentCells,
-      scheduleMode: activity.scheduleMode as "scheduled" | "on_demand" | "triggered",
-      recurrenceRule: activity.recurrenceRule as PdtpRecurrenceRule | null,
+    const { currentCells, currentSource, scheduleDiff } = await writePdtpActivitySchedule(tx, {
+      activityId: input.activityId,
+      programYear: program.year,
       horizon,
+      currentScheduleMode: activity.scheduleMode as "scheduled" | "on_demand" | "triggered",
+      currentRecurrenceRule: activity.recurrenceRule as PdtpRecurrenceRule | null,
+      cells: effectiveSchedule,
+      // Comportamiento idéntico al original: la protección de planificación
+      // manual sólo aplicaba cuando la escritura venía de proyectar una
+      // regla, nunca cuando venía de la matriz manual (`scheduleOverrides`).
+      guardAgainstManualOverwrite: scheduleWriteOrigin === "rule_projection",
+      replaceConfirmed: Boolean(input.scheduleReplaceConfirmed),
+      expectedFingerprint: input.expectedScheduleFingerprint,
     })
-
-    if (input.expectedScheduleFingerprint != null
-      && input.expectedScheduleFingerprint !== scheduleCellsFingerprint(currentCells)) {
-      throw new PdtpScheduleConflictError({
-        reason: "schedule_changed_elsewhere",
-        scheduleSource: currentSource,
-        currentCellCount: currentCells.length,
-        nextCellCount: effectiveSchedule?.length ?? currentCells.length,
-        removedCellCount: 0,
-        currentPlannedTotal: currentCells.reduce((sum, cell) => sum + cell.plannedQuantity, 0),
-        nextPlannedTotal: (effectiveSchedule ?? currentCells).reduce((sum, cell) => sum + cell.plannedQuantity, 0),
-      })
-    }
-
-    const scheduleDiff = effectiveSchedule === undefined ? null : diffScheduleCells(currentCells, effectiveSchedule)
-    if (scheduleDiff && scheduleWriteOrigin === "rule_projection" && currentSource !== "rule"
-      && !input.scheduleReplaceConfirmed) {
-      // La proyección de la recurrencia solo puede pisar una planificación que
-      // ella misma generó. Si las celdas vigentes no coinciden con la regla
-      // guardada, alguien las ajustó a mano y hace falta un sí explícito.
-      const destructive = scheduleDiff.removedCells.length > 0
-        || scheduleDiff.changedCells.some((cell) => cell.to < cell.from)
-      if (destructive) {
-        throw new PdtpScheduleConflictError({
-          reason: "manual_schedule_would_be_replaced",
-          scheduleSource: currentSource,
-          currentCellCount: currentCells.length,
-          nextCellCount: effectiveSchedule!.length,
-          removedCellCount: scheduleDiff.removedCells.length,
-          currentPlannedTotal: scheduleDiff.currentPlannedTotal,
-          nextPlannedTotal: scheduleDiff.nextPlannedTotal,
-        })
-      }
-    }
 
     const [updated] = await tx.update(pdtpActivities).set(updates).where(eq(pdtpActivities.id, input.activityId)).returning()
     if (!updated) throw new Error("No se pudo actualizar la actividad PDTP.")
@@ -413,28 +508,6 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
       after.scheduleRemovedCellCount = scheduleDiff.removedCells.length
       after.schedulePlannedTotal = { from: scheduleDiff.currentPlannedTotal, to: scheduleDiff.nextPlannedTotal }
       if (input.scheduleReplaceConfirmed) after.scheduleReplaceConfirmed = true
-      // El set entrante es autoritativo para el año del programa: borra
-      // celdas existentes que ya no aparecen (semana quitada en la UI) antes
-      // de upsertear las que sí. Antes esto solo insertaba/actualizaba y
-      // dejaba cantidades planificadas obsoletas en la DB.
-      const keptIds = effectiveSchedule.map((cell) => pdtpScheduleId(input.activityId, program.year, cell.month, cell.week))
-      await tx.delete(pdtpActivitySchedule).where(keptIds.length === 0
-        ? and(eq(pdtpActivitySchedule.activityId, input.activityId), eq(pdtpActivitySchedule.year, program.year))
-        : and(
-            eq(pdtpActivitySchedule.activityId, input.activityId),
-            eq(pdtpActivitySchedule.year, program.year),
-            notInArray(pdtpActivitySchedule.id, keptIds),
-          ))
-      for (const cell of effectiveSchedule) {
-        await tx.insert(pdtpActivitySchedule).values({
-          id: pdtpScheduleId(input.activityId, program.year, cell.month, cell.week),
-          activityId: input.activityId, year: program.year, month: cell.month, week: cell.week,
-          plannedQuantity: cell.plannedQuantity, sourceColumn: "manual",
-        }).onConflictDoUpdate({
-          target: [pdtpActivitySchedule.activityId, pdtpActivitySchedule.year, pdtpActivitySchedule.month, pdtpActivitySchedule.week],
-          set: { plannedQuantity: cell.plannedQuantity, sourceColumn: "manual" },
-        })
-      }
     }
 
     if (Object.keys(after).length > 0) {

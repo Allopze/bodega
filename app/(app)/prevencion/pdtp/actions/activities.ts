@@ -11,6 +11,7 @@ import {
   addPdtpActivity,
   duplicatePdtpActivity,
   batchUpdatePdtpActivities,
+  applyPdtpSchedulePresetToActivities,
   retirePdtpActivity,
   reorderPdtpActivities,
   setPdtpActivityOverride,
@@ -28,6 +29,7 @@ import {
   pdtpActivityDeleteSchema,
   pdtpActivityDuplicateSchema,
   pdtpActivityBatchUpdateSchema,
+  pdtpSchedulePresetBatchSchema,
   pdtpActivityReorderSchema,
   pdtpActivityWorksiteAdjustmentSchema,
   pdtpReconcileDeclaredActorSchema,
@@ -132,6 +134,21 @@ export async function batchUpdatePdtpActivitiesAction(input: unknown): Promise<A
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+export async function applyPdtpSchedulePresetAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  try {
+    const parsed = pdtpSchedulePresetBatchSchema.parse(input)
+    const result = await applyPdtpSchedulePresetToActivities(parsed, guard.session.user.id)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}`)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
+    return { ok: true, data: { applied: result.applied, skippedConflicts: result.skippedConflicts } }
   } catch (e) {
     return fail(e)
   }

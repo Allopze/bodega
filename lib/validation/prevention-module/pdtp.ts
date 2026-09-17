@@ -326,6 +326,36 @@ export const pdtpActivityBatchUpdateSchema = z.object({
   message: "Selecciona al menos un cambio para aplicar",
 })
 
+/** Las 8 llaves de `PdtpSchedulePresetKey` (lib/services/pdtp/schedule-presets.ts),
+ *  duplicadas aquí a propósito: la validación no importa del servicio (ver el
+ *  resto de este archivo, que tampoco importa `PdtpRecurrenceRule`). */
+export const pdtpSchedulePresetKeySchema = z.enum([
+  "weekly", "daily", "monthly_week", "biweekly_13", "biweekly_24", "quarterly", "campaign", "punctual",
+])
+
+const pdtpSchedulePresetCellSchema = z.object({
+  month: z.coerce.number().int().min(1).max(12),
+  week: z.coerce.number().int().min(1).max(4),
+})
+
+export const pdtpSchedulePresetParamsSchema = z.object({
+  weekOfMonth: z.coerce.number().int().min(1).max(4).optional(),
+  plannedQuantity: z.coerce.number().min(0).max(100000).optional(),
+  monthFrom: z.coerce.number().int().min(1).max(12).optional(),
+  monthTo: z.coerce.number().int().min(1).max(12).optional(),
+  /** Exclusivo de `punctual`; el máximo espeja `MAX_SCHEDULE_CELLS` (12 meses × 4 semanas). */
+  cells: z.array(pdtpSchedulePresetCellSchema).max(MAX_SCHEDULE_CELLS).optional(),
+})
+
+export const pdtpSchedulePresetBatchSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+  activityIds: z.array(z.string().min(1)).min(1, "Selecciona al menos una actividad").max(200),
+  preset: pdtpSchedulePresetKeySchema,
+  params: pdtpSchedulePresetParamsSchema.default({}),
+  mode: z.enum(["replace", "fill_empty"]),
+  replaceConfirmed: z.boolean().optional(),
+})
+
 export const pdtpActivityReorderSchema = z.object({
   programId: z.string().min(1, "Programa requerido"),
   orderedIds: z.array(z.string().min(1)).min(1, "Al menos una actividad"),
