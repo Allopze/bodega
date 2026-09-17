@@ -59,6 +59,16 @@ export {
 } from "./executors"
 export type { PdtpExecutorRoleOption, PdtpActivityExecutorAssignmentView } from "./executors"
 export {
+  PDTP_2026_OBJECTIVES,
+  pdtpObjectiveForLegacyNumber,
+  listPdtpObjectives,
+  upsertPdtpObjective,
+  deletePdtpObjective,
+  reorderPdtpObjectives,
+  setPdtpActivityObjective,
+} from "./objectives"
+export type { PdtpObjective } from "./objectives"
+export {
   CURRENT_PDTP_CONTENT_SCHEMA_VERSION,
   MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION,
   PdtpUnreconstructibleContentSchemaError,

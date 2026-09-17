@@ -1,6 +1,6 @@
 import { and, eq, inArray, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpActivityChecklists, pdtpActivitySchedule, pdtpCatalogActivities, pdtpCatalogActivityRevisions, pdtpPrograms, pdtpSheetActivities, workerCapabilities } from "@/db/schema"
+import { pdtpActivities, pdtpActivityChecklists, pdtpActivitySchedule, pdtpCatalogActivities, pdtpCatalogActivityRevisions, pdtpObjectives, pdtpPrograms, pdtpSheetActivities, workerCapabilities } from "@/db/schema"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId, resolveSheetForProgram } from "./helpers"
 import {
   derivePdtpScheduleSource,
@@ -135,6 +135,8 @@ export type PdtpActivityUpdateInput = {
   notes?: string
   responsibleSlugs?: string[]
   responsibleDisplay?: string
+  /** Objetivo del programa (RE-36) al que responde la actividad; `null` desasigna. */
+  objectiveId?: string | null
   audienceRoles?: string[]
   scheduleMode?: "scheduled" | "on_demand" | "triggered"
   scheduleClassificationStatus?: "confirmed" | "needs_review"
@@ -196,6 +198,18 @@ export type PdtpActivityBatchUpdateInput = {
   responsibleSlugs?: string[]
   responsibleDisplay?: string
   evidenceRequirement?: string | null
+  /** Objetivo del programa (RE-36) a asignar a las N actividades; `null` desasigna. */
+  objectiveId?: string | null
+}
+
+/** El objetivo, si viene definido, debe pertenecer al mismo programa que la actividad (FK compuesta). */
+async function assertPdtpObjectiveBelongsToProgram(objectiveId: string | null | undefined, programId: string): Promise<void> {
+  if (!objectiveId) return
+  const [objective] = await db.select({ id: pdtpObjectives.id })
+    .from(pdtpObjectives)
+    .where(and(eq(pdtpObjectives.id, objectiveId), eq(pdtpObjectives.programId, programId)))
+    .limit(1)
+  if (!objective) throw new Error("El objetivo seleccionado no existe en este programa.")
 }
 
 export async function batchUpdatePdtpActivities(input: PdtpActivityBatchUpdateInput, userId: string) {
@@ -211,10 +225,13 @@ export async function batchUpdatePdtpActivities(input: PdtpActivityBatchUpdateIn
   if (activities.some((activity) => activity.status === "retired")) {
     throw new Error("Las actividades retiradas no admiten cambios.")
   }
+  if (input.objectiveId !== undefined) await assertPdtpObjectiveBelongsToProgram(input.objectiveId, input.programId)
+
   const updates: Partial<typeof pdtpActivities.$inferInsert> = { updatedAt: new Date().toISOString() }
   if (input.responsibleSlugs !== undefined) updates.responsibleSlugs = input.responsibleSlugs
   if (input.responsibleDisplay !== undefined) updates.responsibleDisplay = input.responsibleDisplay
   if (input.evidenceRequirement !== undefined) updates.evidenceRequirement = input.evidenceRequirement
+  if (input.objectiveId !== undefined) updates.objectiveId = input.objectiveId
   if (Object.keys(updates).length === 1) throw new Error("Selecciona al menos un cambio para aplicar.")
 
   // Cambio + changelog en la misma transacción: `pdtp_change_log` es el control
@@ -259,6 +276,9 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
   if (input.subjectSource !== undefined || input.subjectCapabilityCodes !== undefined) {
     await validateCapabilitySubjectConfiguration(nextSubjectSource, nextSubjectCapabilityCodes)
   }
+  if (input.objectiveId !== undefined && input.objectiveId !== activity.objectiveId) {
+    await assertPdtpObjectiveBelongsToProgram(input.objectiveId, activity.programId)
+  }
 
   const now = new Date().toISOString()
   const before: Record<string, unknown> = {}
@@ -281,6 +301,10 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
   if (input.responsibleDisplay !== undefined && input.responsibleDisplay !== activity.responsibleDisplay) {
     before.responsibleDisplay = activity.responsibleDisplay; after.responsibleDisplay = input.responsibleDisplay
     updates.responsibleDisplay = input.responsibleDisplay
+  }
+  if (input.objectiveId !== undefined && input.objectiveId !== activity.objectiveId) {
+    before.objectiveId = activity.objectiveId; after.objectiveId = input.objectiveId
+    updates.objectiveId = input.objectiveId
   }
   const configurableFields = [
     "audienceRoles", "scheduleMode", "scheduleClassificationStatus", "recurrenceRule", "triggerType", "triggerDescription",

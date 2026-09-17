@@ -7,6 +7,7 @@ import {
   pdtpApprovalSteps,
   pdtpExecutions,
   pdtpImportBatches,
+  pdtpObjectives,
   pdtpProgramTemplates,
   pdtpProgramTemplateVersions,
   pdtpPrograms,
@@ -320,15 +321,40 @@ export async function instantiatePdtpTemplateVersion(input: {
     }))
   }
 
+  // Los objetivos (RE-36) se materializan antes que las actividades: la FK
+  // compuesta exige que `objectiveId` apunte a un objetivo del mismo
+  // programa, así que hay que crearlos primero y resolver cada actividad por
+  // `objectiveCode` (la huella no persiste ids internos, ver content-digest).
+  const objectives = records(snapshot.objectives)
+  const objectiveIdByCode = new Map<string, string>()
+  if (objectives.length > 0) {
+    await input.client.insert(pdtpObjectives).values(objectives.map((objective, index) => {
+      const code = stringValue(objective.code, `obj-${index + 1}`)
+      const id = `pdtp-objective-${nanoid()}`
+      objectiveIdByCode.set(code, id)
+      return {
+        id,
+        programId: input.targetProgramId,
+        code,
+        name: stringValue(objective.name, code),
+        displayOrder: numberValue(objective.displayOrder, index),
+        createdAt: now,
+        updatedAt: now,
+      }
+    }))
+  }
+
   if (activities.length > 0) {
     await input.client.insert(pdtpActivities).values(activities.map((activity, index) => {
       const n = numberValue(activity.n, index + 1)
       const id = pdtpActivityId(input.targetProgramId, n)
       activityIdByNumber.set(n, id)
+      const objectiveCode = typeof activity.objectiveCode === "string" ? activity.objectiveCode : undefined
       return {
         id,
         programId: input.targetProgramId,
         n,
+        objectiveId: objectiveCode ? (objectiveIdByCode.get(objectiveCode) ?? null) : null,
         catalogActivityId: typeof activity.catalogActivityId === "string" ? activity.catalogActivityId : null,
         catalogRevision: typeof activity.catalogRevision === "number" ? activity.catalogRevision : null,
         displayOrder: numberValue(activity.displayOrder, n),

@@ -12,6 +12,7 @@ import {
   pdtpActivitySchedule,
   pdtpDocumentHistory,
   pdtpImportBatches,
+  pdtpObjectives,
   pdtpPrograms,
   pdtpProgramWorksites,
   pdtpRoleLegendEntries,
@@ -25,14 +26,15 @@ type JsonPrimitive = string | number | boolean | null
 type StableJson = JsonPrimitive | StableJson[] | { [key: string]: StableJson }
 
 /** Forma del snapshot, independiente del número de revisión del programa. */
-export const CURRENT_PDTP_CONTENT_SCHEMA_VERSION = 14
+export const CURRENT_PDTP_CONTENT_SCHEMA_VERSION = 15
 
 /**
  * Versión de esquema más antigua que este builder sabe reconstruir con
  * exactitud a partir de las columnas actuales.
  *
- * Sólo dos cambios de forma están efectivamente deshechos por versión más
- * abajo: `executorAssignments` (≥13) y `mechanism` (≥14). Los cambios de las
+ * Sólo tres cambios de forma están efectivamente deshechos por versión más
+ * abajo: `executorAssignments` (≥13), `mechanism` (≥14) y `objectives` /
+ * `activities[].objectiveCode` (≥15). Los cambios de las
  * versiones 9 a 12 (`expected_subject_count` fuera de la huella, `subject_source`,
  * `dueHours`, las capacidades del padrón) están para siempre incorporados sin
  * condición — no hay forma de "apagarlos" para reproducir cómo se veía la
@@ -108,6 +110,7 @@ export async function buildPdtpProgramContentSnapshot(
     n: pdtpActivities.n,
     catalogActivityId: pdtpActivities.catalogActivityId,
     catalogRevision: pdtpActivities.catalogRevision,
+    objectiveId: pdtpActivities.objectiveId,
     displayOrder: pdtpActivities.displayOrder,
     status: pdtpActivities.status,
     retiredReason: pdtpActivities.retiredReason,
@@ -332,6 +335,22 @@ export async function buildPdtpProgramContentSnapshot(
     .where(eq(pdtpRoleLegendEntries.programId, programId))
     .orderBy(asc(pdtpRoleLegendEntries.code))
 
+  // Los objetivos del programa (RE-36) son un compromiso de contenido: a qué
+  // objetivo estratégico responde cada actividad. Sólo se consultan cuando la
+  // huella pedida ya los incluye, para no gastar una consulta al reconstruir
+  // una versión anterior que nunca los tuvo.
+  const objectives = schemaVersion >= 15
+    ? await client.select({
+        id: pdtpObjectives.id,
+        code: pdtpObjectives.code,
+        name: pdtpObjectives.name,
+        displayOrder: pdtpObjectives.displayOrder,
+      }).from(pdtpObjectives)
+        .where(eq(pdtpObjectives.programId, programId))
+        .orderBy(asc(pdtpObjectives.displayOrder), asc(pdtpObjectives.code))
+    : []
+  const objectiveCodeById = new Map(objectives.map((objective) => [objective.id, objective.code]))
+
   return stableJson({
     // 12: las capacidades que definen `trabajadores_capacidad` entran al
     // snapshot. Cambiarlas altera quién forma el padrón y requiere otra firma.
@@ -354,12 +373,18 @@ export async function buildPdtpProgramContentSnapshot(
     // coincidir con nada — ver `MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION`.
     // 14: `mechanism` se incorpora al compromiso de destino operativo; antes
     // se omitía del snapshot aunque ya existiera en la actividad.
+    // 15: el objetivo del programa (RE-36) entra al compromiso firmado —
+    // tanto el catálogo de objetivos (`objectives`) como a cuál responde cada
+    // actividad (`activities[].objectiveCode`, resuelto por código en vez del
+    // id interno para que la huella no dependa de un identificador accidental
+    // de persistencia).
     schemaVersion,
     program,
     approvalSteps,
-    activities: activities.map(({ id: _id, mechanism, ...activity }) => ({
+    activities: activities.map(({ id: _id, mechanism, objectiveId, ...activity }) => ({
       ...activity,
       ...(schemaVersion >= 14 ? { mechanism } : {}),
+      ...(schemaVersion >= 15 ? { objectiveCode: objectiveId ? objectiveCodeById.get(objectiveId) ?? null : null } : {}),
     })),
     schedules: schedules.map(({ activityId, ...schedule }) => ({ activityNumber: activityNumberById.get(activityId), ...schedule })),
     views: sheets.map(({ id: _id, ...sheet }) => sheet),
@@ -388,6 +413,9 @@ export async function buildPdtpProgramContentSnapshot(
         activityNumber: activityNumberById.get(activityId),
         roleId,
       })),
+    } : {}),
+    ...(schemaVersion >= 15 ? {
+      objectives: objectives.map(({ id: _id, ...objective }) => objective),
     } : {}),
     activityWorksiteAdjustments: activityWorksiteAdjustments.map(({ activityId, ...adjustment }) => ({
       activityNumber: activityNumberById.get(activityId),

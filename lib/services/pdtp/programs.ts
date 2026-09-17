@@ -11,6 +11,7 @@ import {
   pdtpActivityWorksiteParams,
   pdtpDocumentHistory,
   pdtpImportBatches,
+  pdtpObjectives,
   pdtpPrograms,
   pdtpProgramWorksites,
   pdtpSheetActivities,
@@ -401,6 +402,32 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
           }))).onConflictDoNothing()
         }
 
+        // Los objetivos (RE-36) se clonan antes que las actividades: la FK
+        // compuesta `pdtp_activities_objective_same_program_fk` exige que el
+        // `objectiveId` de una actividad apunte a un objetivo del MISMO
+        // programa, así que copiar el id del objetivo origen tal cual violaría
+        // esa restricción. Se remapea por posición (mismo código, id nuevo).
+        const sourceObjectives = await tx.select().from(pdtpObjectives)
+          .where(eq(pdtpObjectives.programId, sourceProgram.id))
+          .orderBy(pdtpObjectives.displayOrder, pdtpObjectives.code)
+        const objectiveIdMap = new Map<string, string>()
+        if (sourceObjectives.length > 0) {
+          const copiedObjectives = sourceObjectives.map((objective) => {
+            const newObjectiveId = `pdtp-objective-${nanoid()}`
+            objectiveIdMap.set(objective.id, newObjectiveId)
+            return {
+              id: newObjectiveId,
+              programId,
+              code: objective.code,
+              name: objective.name,
+              displayOrder: objective.displayOrder,
+              createdAt: now,
+              updatedAt: now,
+            }
+          })
+          await tx.insert(pdtpObjectives).values(copiedObjectives)
+        }
+
         // "Duplicar programa" es estructura completa, no solo hojas: copia
         // actividades + planificación + a qué hoja pertenece cada una. La
         // planificación se reancla al año del programa nuevo (`year`),
@@ -419,6 +446,7 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
           copiedActivities.push({
             id: newActivityId, programId, n: activity.n, displayOrder: activity.displayOrder,
             catalogActivityId: activity.catalogActivityId, catalogRevision: activity.catalogRevision,
+            objectiveId: activity.objectiveId ? (objectiveIdMap.get(activity.objectiveId) ?? null) : null,
             status: activity.status, retiredReason: activity.retiredReason,
             retiredEffectiveFrom: activity.retiredEffectiveFrom,
             retiredByUserId: activity.retiredByUserId, retiredAt: activity.retiredAt,
