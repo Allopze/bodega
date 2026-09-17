@@ -319,7 +319,7 @@ export function ImportExcelSection({ programId, visibleWorksites, catalogActivit
       )}
       {state?.message && (
         <p role="status" className={`mt-3 rounded-[var(--radius)] border px-3 py-2 text-sm ${state.ok
-          ? "border-[var(--color-success-line)] bg-[var(--color-success-tint)] text-[var(--color-success)]"
+          ? "border-[var(--color-success-line)] bg-[var(--color-success-tint)] text-[var(--color-success-ink)]"
           : "border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] text-[var(--color-danger)]"}`}>
           {state.message}
         </p>

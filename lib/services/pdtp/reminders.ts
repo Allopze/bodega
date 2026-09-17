@@ -8,7 +8,7 @@
  * (calca de sst-weekly-alerts).
  */
 
-import { and, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities, pdtpExecutions, pdtpObligationReminders, pdtpPrograms, pdtpProgramWorksites,
@@ -55,6 +55,7 @@ export async function findPdtpWeeklyPending(period: PdtpPeriod = currentPdtpPeri
     .select()
     .from(pdtpPrograms)
     .where(and(eq(pdtpPrograms.year, period.year), eq(pdtpPrograms.status, "active")))
+    .orderBy(desc(pdtpPrograms.version))
     .limit(1)
   if (!program) return []
   // Una consulta retrospectiva (o un cron desfasado) no puede reclamar trabajo
@@ -90,7 +91,7 @@ export async function findPdtpWeeklyPending(period: PdtpPeriod = currentPdtpPeri
   const memberIds = new Set(memberRows.map((row) => row.worksiteId))
   const allWorksites = memberIds.size > 0
     ? visibleWorksites.filter((worksite) => memberIds.has(worksite.id))
-    : visibleWorksites
+    : program.appliesToAllWorksites ? visibleWorksites : []
   if (allWorksites.length === 0) return []
 
   const targetResults = await Promise.all(allWorksites.map(async (ws) => {
@@ -138,6 +139,7 @@ export async function runPdtpWeeklyReminders(period: PdtpPeriod = currentPdtpPer
     .select()
     .from(pdtpPrograms)
     .where(and(eq(pdtpPrograms.year, period.year), eq(pdtpPrograms.status, "active")))
+    .orderBy(desc(pdtpPrograms.version))
     .limit(1)
   if (!program) {
     logger.info("[pdtp/reminders] no active program found, skipping")

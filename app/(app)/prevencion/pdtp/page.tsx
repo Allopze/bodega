@@ -31,6 +31,7 @@ import {
 } from "./pdtp-dashboard-charts"
 import { PdtpDashboardChartsLazy } from "./pdtp-dashboard-charts-lazy"
 import { pdtpProgramStatusLabel } from "@/lib/prevention/pdtp"
+import { CreatePdtpRevisionButton } from "./[programId]/create-pdtp-revision-button"
 
 export const metadata: Metadata = { title: "Dashboard de Cumplimiento (PDTP SG-SST)" }
 
@@ -89,12 +90,17 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   const mustChooseProgram = !focusProgram && programsForYear.length > 1
   const currentPeriod = currentPdtpPeriod()
   let effectiveWorksites = scopedWorksites
+  let hasUndeclaredActiveScope = false
   if (focusProgram) {
     const members = await listPdtpProgramWorksites(focusProgram.id)
+    hasUndeclaredActiveScope = focusProgram.status === "active"
+      && !focusProgram.appliesToAllWorksites
+      && members.length === 0
     const effectiveIds = new Set(resolveProgramWorksiteIds(
       members.map((member) => member.worksiteId),
       scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : [],
       scopedWorksites.map((worksite) => worksite.id),
+      focusProgram.appliesToAllWorksites,
     ))
     effectiveWorksites = scopedWorksites.filter((worksite) => effectiveIds.has(worksite.id))
     selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, effectiveWorksites)
@@ -274,13 +280,27 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
           )}
         </div>
       ) : effectiveWorksites.length === 0 ? (
-        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-12 text-center shadow-xs">
-          <p className="font-semibold text-[var(--color-text)]">Sin faenas asignadas a tu usuario</p>
-          <p className="mx-auto mt-1 max-w-prose text-sm text-[var(--color-text-muted)]">
-            El cumplimiento se calcula sobre las faenas que tienes autorizadas y hoy no
-            tienes ninguna. Pide a un administrador que te asigne al menos una faena.
-          </p>
-        </div>
+        hasUndeclaredActiveScope ? (
+          <div className="rounded-xl border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-4 py-8 text-center shadow-xs" role="alert">
+            <p className="font-semibold text-[var(--color-warning-ink)]">Alcance de faenas no declarado</p>
+            <p className="mx-auto mt-1 max-w-prose text-sm text-[var(--color-text-muted)]">
+              La versión activa no tiene faenas asignadas ni declara alcance corporativo. No recibirá nuevas acreditaciones hasta que una revisión v+1 defina su cobertura.
+            </p>
+            <div className="mt-4">
+              {canManageProgram
+                ? <CreatePdtpRevisionButton sourceProgramId={focusProgram.id} />
+                : <span className="text-xs text-[var(--color-text-subtle)]">Solicita a quien administra el programa que cree la revisión v+1.</span>}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-12 text-center shadow-xs">
+            <p className="font-semibold text-[var(--color-text)]">Sin faenas asignadas a tu usuario</p>
+            <p className="mx-auto mt-1 max-w-prose text-sm text-[var(--color-text-muted)]">
+              El cumplimiento se calcula sobre las faenas que tienes autorizadas y hoy no
+              tienes ninguna. Pide a un administrador que te asigne al menos una faena.
+            </p>
+          </div>
+        )
       ) : (
         <div className="space-y-6">
           {/* 4 Tiles KPI Principales */}
@@ -289,7 +309,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
               label="Ejecutadas"
               value={String(executedCount)}
               detail={`Ejecuciones registradas en ${year}`}
-              icon={<ShieldCheck size={22} className="text-[var(--color-success)]" />}
+              icon={<ShieldCheck size={22} className="text-[var(--color-success-ink)]" />}
               href={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "anual", "executed", currentPeriod) : undefined}
             />
             <KpiCard
@@ -306,7 +326,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
               label="Atrasadas"
               value={String(overdueActivityCount)}
               detail="Actividades que requieren revisión prioritaria"
-              icon={<ListChecks size={22} className="text-[var(--color-info)]" />}
+              icon={<ListChecks size={22} className="text-[var(--color-info-ink)]" />}
               href={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "semana", "overdue", currentPeriod) : undefined}
             />
             <KpiCard

@@ -7,7 +7,7 @@
  * la cola operacional (D12) ya enviaba a los responsables a esa URL, así que
  * cada tarjeta de constancia en /pendientes terminaba en un 404.
  */
-import { and, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpPrograms, pdtpProgramWorksites, worksites } from "@/db/schema"
 import { currentPdtpPeriod, filterPdtpRowsFromActivation, pdtpActivationPeriod, type PdtpPeriod } from "./period"
@@ -46,7 +46,11 @@ export type PdtpConstanciaView = {
  */
 export async function listPdtpConstanciaActivities(scope: WorksiteScope): Promise<PdtpConstanciaView | null> {
   if (scope !== "all" && scope.length === 0) return null
-  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.status, "active")).limit(1)
+  const period = currentPdtpPeriod()
+  const [program] = await db.select().from(pdtpPrograms)
+    .where(and(eq(pdtpPrograms.status, "active"), eq(pdtpPrograms.year, period.year)))
+    .orderBy(desc(pdtpPrograms.version))
+    .limit(1)
   if (!program) return null
 
   const activities = await db.select().from(pdtpActivities).where(and(
@@ -71,6 +75,7 @@ export async function listPdtpConstanciaActivities(scope: WorksiteScope): Promis
     members.map((member) => member.worksiteId),
     scope,
     allActiveWorksites.map((worksite) => worksite.id),
+    program.appliesToAllWorksites,
   )
   if (worksiteIds.length === 0) return empty
 
@@ -78,7 +83,6 @@ export async function listPdtpConstanciaActivities(scope: WorksiteScope): Promis
     .from(worksites).where(inArray(worksites.id, worksiteIds))
   const worksiteNameById = new Map(worksiteRows.map((worksite) => [worksite.id, worksite.name]))
 
-  const period = currentPdtpPeriod()
   const activityById = new Map(activities.map((activity) => [activity.id, activity]))
   const debts: PdtpConstanciaDebt[] = []
 

@@ -64,7 +64,7 @@ function PdtpCreateProgramFields({
         <section aria-labelledby="base-heading" className="border-t border-[var(--color-border)] pt-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex gap-2.5">
-              <FileXls size={20} className="mt-0.5 shrink-0 text-[var(--color-success)]" aria-hidden />
+              <FileXls size={20} className="mt-0.5 shrink-0 text-[var(--color-success-ink)]" aria-hidden />
               <div>
                 <h2 id="base-heading" className="text-sm font-semibold text-[var(--color-text)]">Base preventiva para {year}</h2>
                 <p className="mt-0.5 max-w-2xl text-sm text-[var(--color-text-muted)]">
@@ -72,7 +72,7 @@ function PdtpCreateProgramFields({
                   aprobaciones y ajustes por faena comenzarán vacíos.
                 </p>
                 <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
-                  <CheckCircle size={14} weight="fill" className="text-[var(--color-success)]" aria-hidden />
+                  <CheckCircle size={14} weight="fill" className="text-[var(--color-success-ink)]" aria-hidden />
                   Revisión {baseRevision.version} · {baseRevision.activityCount} actividades ·{" "}
                   <span title={baseRevision.contentDigest}>contenido firmado</span>
                 </p>

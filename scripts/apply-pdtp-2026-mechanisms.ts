@@ -24,6 +24,7 @@
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpPrograms } from "@/db/schema"
+import { assertPdtpProgramEditableState } from "@/lib/services/pdtp/helpers"
 
 const PROGRAM_YEAR = 2026
 const DRY_RUN = process.env.PDTP_MECHANISMS_DRY_RUN === "true"
@@ -163,10 +164,23 @@ const ASSIGNMENTS: Array<{ mechanism: Mechanism; numbers: readonly number[] }> =
 
 async function main() {
   const programs = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.year, PROGRAM_YEAR))
-  const program = programs.find((item) => item.status === "active") ?? programs.at(-1)
+  const orderedPrograms = [...programs].sort((a, b) => b.version - a.version)
+  // Clasificar es una edición del contenido del programa. Si existe una
+  // revisión borrador se completa allí; el activo firmado sólo se consulta.
+  const program = orderedPrograms.find((item) => item.status === "draft")
+    ?? orderedPrograms.find((item) => item.status === "active")
+    ?? orderedPrograms[0]
   if (!program) bail(`No existe ningún programa PDTP para el año ${PROGRAM_YEAR}.`)
 
-  console.log(`Mecanismos PDTP ${PROGRAM_YEAR} — ${DRY_RUN ? "[DRY RUN]" : "escribiendo"}`)
+  let locked = false
+  try {
+    assertPdtpProgramEditableState(program)
+  } catch {
+    locked = true
+  }
+  const planOnly = DRY_RUN || locked
+
+  console.log(`Mecanismos PDTP ${PROGRAM_YEAR} — ${DRY_RUN ? "[DRY RUN]" : locked ? "[SÓLO LECTURA: programa firmado]" : "escribiendo"}`)
   console.log(`  Programa: ${program.id} (status=${program.status})`)
   console.log("")
 
@@ -193,7 +207,7 @@ async function main() {
       console.log(`  · ${mechanism}: sin cambios (${numbers.length} declaradas).`)
       continue
     }
-    if (!DRY_RUN) {
+    if (!planOnly) {
       await db.update(pdtpActivities).set({ mechanism, updatedAt: new Date().toISOString() })
         .where(and(
           eq(pdtpActivities.programId, program.id),
@@ -213,6 +227,9 @@ async function main() {
   console.log(`Resumen: ${changed} actividad(es) actualizada(s) sobre ${activas.length} activas.`)
   if (sinClasificar.length > 0) console.warn(`⚠ Sin clasificar: ${sinClasificar.join(", ")}`)
   if (inexistentes.length > 0) console.warn(`⚠ Declaradas pero no están activas en el programa: ${inexistentes.join(", ")}`)
+  if (locked && changed > 0) {
+    bail(`El programa ${program.id} está bloqueado; se detectaron ${changed} clasificación(es) que requieren una revisión v+1.`)
+  }
   process.exit(0)
 }
 

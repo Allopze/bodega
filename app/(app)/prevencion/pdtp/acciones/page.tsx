@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -14,7 +15,10 @@ import { listScopedWorksites } from "@/lib/services/ppa"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { AccionesTable } from "./acciones-table"
+import { CreatePdtpRevisionButton } from "../[programId]/create-pdtp-revision-button"
 
 export const metadata: Metadata = { title: "Medidas del programa" }
 
@@ -52,15 +56,21 @@ export default async function PdtpAccionesPage({ searchParams }: Props) {
   const year = Number.isInteger(requestedYear) && requestedYear >= 2024 && requestedYear <= 2100 ? requestedYear : currentPdtpPeriod().year
   const requestedProgram = requestedProgramId ? await getPdtpProgram(requestedProgramId) : null
   const program = requestedProgram?.year === year ? requestedProgram : await getActivePdtpProgram(year)
+  const programMembers = program ? await listPdtpProgramWorksites(program.id) : []
   const effectiveWorksiteIds = program
     ? resolveProgramWorksiteIds(
-        (await listPdtpProgramWorksites(program.id)).map((member) => member.worksiteId),
+        programMembers.map((member) => member.worksiteId),
         worksiteIds,
         worksites.map((worksite) => worksite.id),
+        program.appliesToAllWorksites,
       )
     : []
   const effectiveWorksiteId = worksiteId && effectiveWorksiteIds.includes(worksiteId) ? worksiteId : undefined
   const effectiveWorksites = worksites.filter((worksite) => effectiveWorksiteIds.includes(worksite.id))
+  const hasUndeclaredActiveScope = program?.status === "active"
+    && !program.appliesToAllWorksites
+    && programMembers.length === 0
+  const hasNoAccessibleWorksites = Boolean(program) && effectiveWorksites.length === 0 && !hasUndeclaredActiveScope
 
   const [items, activities] = program
     ? await Promise.all([
@@ -91,6 +101,22 @@ export default async function PdtpAccionesPage({ searchParams }: Props) {
 
       {!program ? (
         <p className="text-sm text-(--color-text-muted)">No hay un programa PDTP activo para {year}.</p>
+      ) : hasUndeclaredActiveScope ? (
+        <EmptyState
+          tone="warning"
+          title="Alcance de faenas no declarado"
+          description={canManage
+            ? "La versión activa no tiene faenas asignadas ni declara alcance corporativo. Crea una revisión v+1 para definir dónde se puede ejecutar."
+            : "La versión activa no tiene faenas asignadas ni declara alcance corporativo. Solicita a quien administra el programa que cree una revisión v+1."}
+          action={canManage ? <CreatePdtpRevisionButton sourceProgramId={program.id} /> : undefined}
+        />
+      ) : hasNoAccessibleWorksites ? (
+        <EmptyState
+          tone="warning"
+          title="Sin faenas accesibles para este programa"
+          description="No tienes una faena de este programa dentro de tu alcance autorizado. Solicita la asignación correspondiente antes de revisar sus medidas correctivas."
+          action={<Button asChild size="sm" variant="secondary"><Link href={`/prevencion/pdtp/${program.id}`}>Revisar programa</Link></Button>}
+        />
       ) : (
         <AccionesTable
           items={items}

@@ -1,7 +1,11 @@
-import { and, count, desc, eq, inArray, like } from "drizzle-orm"
+import { and, count, desc, eq, inArray, like, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpFulfillmentEvents, pdtpPrograms, pdtpProgramWorksites } from "@/db/schema"
-import { computePdtpProgramContentDigestForStoredVersion } from "@/lib/services/pdtp/content-digest"
+import { pdtpFulfillmentEvents, pdtpPrograms, pdtpProgramWorksites, worksites } from "@/db/schema"
+import {
+  computePdtpProgramContentDigestForStoredVersion,
+  PdtpContentSchemaVersionMissingError,
+  PdtpUnreconstructibleContentSchemaError,
+} from "@/lib/services/pdtp/content-digest"
 import { NO_ACTIVE_PROGRAM_LAST_ERROR_TAG } from "@/lib/services/pdtp/fulfillment"
 
 /**
@@ -50,10 +54,17 @@ export function describePdtpRejection(resultJson: unknown): string {
  * escribe `program_id` en la rama de éxito—, así que filtrar por programa
  * dejaría exactamente los eventos que este panel existe para mostrar fuera
  * del conteo. Cuando el programa declara membresía, sí se restringen a esas
- * faenas; de lo contrario se conserva el comportamiento histórico global.
+ * faenas; para un programa corporativo explícito se consulta el universo
+ * activo. Si el programa quedó sin alcance, el libro deja los eventos sin
+ * filtrar para hacer visible el riesgo y permitir su reconciliación; eso no
+ * convierte a la versión en ejecutable ni acredita hechos automáticamente.
+ * La pantalla puede pasar además las faenas visibles de la sesión: en ese
+ * caso el conteo se intersecta con ese alcance y nunca expone el libro de otra
+ * faena a un usuario restringido. El preflight omite ese filtro para conservar
+ * su diagnóstico global.
  * `digestDrift` compara la huella de ESTE programa contra lo firmado.
  */
-export async function countPdtpFulfillmentBacklog(programId: string): Promise<{
+export async function countPdtpFulfillmentBacklog(programId: string, options?: { worksiteIds?: string[] }): Promise<{
   pending: number
   errored: number
   /**
@@ -75,14 +86,45 @@ export async function countPdtpFulfillmentBacklog(programId: string): Promise<{
   erroredWaitingOnActivation: number
   lastError: string | null
   digestDrift: boolean
+  /** La firma existe, pero su esquema histórico no permite verificarla aún. */
+  digestVerificationUnavailable: boolean
+  digestVerificationMessage: string | null
 }> {
-  const programMembers = await db.select({ worksiteId: pdtpProgramWorksites.worksiteId })
-    .from(pdtpProgramWorksites)
-    .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true)))
-  const memberScope = programMembers.length > 0
-    ? inArray(pdtpFulfillmentEvents.worksiteId, programMembers.map((row) => row.worksiteId))
+  const [[programScope], programMembers, activeWorksites] = await Promise.all([
+    db.select({ appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites })
+      .from(pdtpPrograms)
+      .where(eq(pdtpPrograms.id, programId))
+      .limit(1),
+    db.select({ worksiteId: pdtpProgramWorksites.worksiteId })
+      .from(pdtpProgramWorksites)
+      .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true))),
+    db.select({ id: worksites.id })
+      .from(worksites)
+      .where(eq(worksites.isActive, true)),
+  ])
+  const visibleWorksiteIds = options?.worksiteIds
+  const visibleWorksiteSet = visibleWorksiteIds ? new Set(visibleWorksiteIds) : null
+  // Una versión corporativa explícita no tiene filas de membresía por diseño,
+  // pero sí tiene un universo ejecutable: las faenas activas. Sin este límite,
+  // el libro contaba eventos de faenas desactivadas (y podía mezclar datos de
+  // otros alcances) porque `memberScope` quedaba indefinido.
+  const memberIds = programMembers.length > 0
+    ? programMembers.map((row) => row.worksiteId)
+    : programScope?.appliesToAllWorksites
+      ? activeWorksites.map((row) => row.id)
+      : []
+  const hasProgramScope = programMembers.length > 0 || Boolean(programScope?.appliesToAllWorksites)
+  const scopedEventWorksiteIds = visibleWorksiteSet
+    ? (hasProgramScope
+      ? memberIds.filter((worksiteId) => visibleWorksiteSet.has(worksiteId))
+      : [...visibleWorksiteSet])
+    : memberIds
+  const memberScope = (programMembers.length > 0 || programScope?.appliesToAllWorksites || visibleWorksiteIds)
+    ? scopedEventWorksiteIds.length > 0
+      ? inArray(pdtpFulfillmentEvents.worksiteId, scopedEventWorksiteIds)
+      : sql`false`
     : undefined
-  const [[pendingRow], [erroredRow], [erroredWaitingRow], [rejectedRow], rejectedRows, [lastErrorEvent], [program]] = await Promise.all([
+  const [[pendingRow], [erroredRow], [erroredWaitingRow], [rejectedRow], rejectedRows, [lastErrorEvent], [programDigest]] = await Promise.all([
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
       .where(and(eq(pdtpFulfillmentEvents.status, "pending"), memberScope)),
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
@@ -116,9 +158,20 @@ export async function countPdtpFulfillmentBacklog(programId: string): Promise<{
   // Un programa sin huella firmada (todavía en borrador) no tiene contra qué
   // derivar: `contentDigest` nulo es "no hay firma", no "deriva sin medir".
   let digestDrift = false
-  if (program?.contentDigest) {
-    const { digest } = await computePdtpProgramContentDigestForStoredVersion(programId)
-    digestDrift = digest !== program.contentDigest
+  let digestVerificationUnavailable = false
+  let digestVerificationMessage: string | null = null
+  if (programDigest?.contentDigest) {
+    try {
+      const { digest } = await computePdtpProgramContentDigestForStoredVersion(programId)
+      digestDrift = digest !== programDigest.contentDigest
+    } catch (error) {
+      if (error instanceof PdtpContentSchemaVersionMissingError || error instanceof PdtpUnreconstructibleContentSchemaError) {
+        digestVerificationUnavailable = true
+        digestVerificationMessage = error.message
+      } else {
+        throw error
+      }
+    }
   }
 
   return {
@@ -134,5 +187,7 @@ export async function countPdtpFulfillmentBacklog(programId: string): Promise<{
     erroredWaitingOnActivation: Number(erroredWaitingRow?.total ?? 0),
     lastError: lastErrorEvent?.lastError ?? null,
     digestDrift,
+    digestVerificationUnavailable,
+    digestVerificationMessage,
   }
 }

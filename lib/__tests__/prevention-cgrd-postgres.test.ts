@@ -118,7 +118,7 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
   ])
   await database.insert(schema.pdtpPrograms).values({
     id: "pdtp-grdpg-v1", version: 1, year: 2026, title: "PDTP 2026 CGRD-postgres",
-    status: "active", elaboratedByName: "Prevencionista", elaboratedByTitle: "Experto en Prevención",
+    status: "active", appliesToAllWorksites: true, elaboratedByName: "Prevencionista", elaboratedByTitle: "Experto en Prevención",
     creationMode: "blank", complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
     createdAt: now, updatedAt: now,
   })

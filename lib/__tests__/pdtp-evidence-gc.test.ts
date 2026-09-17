@@ -68,7 +68,7 @@ describe("cleanupPdtpEvidenceOrphans", () => {
       id: "w1", name: "W1", code: "W1", isActive: true,
     })
     await inMemoryDb.insert(schema.pdtpPrograms).values({
-      id: "prog-1", year: 2026, version: 1, status: "active", title: "T",
+      id: "prog-1", year: 2026, version: 1, status: "active", appliesToAllWorksites: true, title: "T",
       elaboratedByName: "X", elaboratedByTitle: "Y",
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     })

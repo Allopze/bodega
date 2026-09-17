@@ -70,7 +70,10 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
     program.version > 1
       ? comparePdtpRevisionToCurrentBase(programId)
       : comparePdtpProgramToSourceBase(programId),
-    getPdtpCoverageReport(programId),
+    getPdtpCoverageReport(
+      programId,
+      worksiteScope.mode === "all" ? undefined : { worksiteIds: worksiteScope.ids },
+    ),
     listPdtpActivityExecutorAssignments(programId),
     listPdtpExecutorRoleOptions(),
   ])

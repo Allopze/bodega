@@ -54,7 +54,7 @@ beforeEach(async () => {
     { id: "ws-oficina", name: "Oficina Central", code: "OFI", isActive: true },
   ])
   await inMemoryDb.insert(schema.pdtpPrograms).values({
-    id: "prog-life", year: 2026, version: 1, title: "Programa", status: "active",
+    id: "prog-life", year: 2026, version: 1, title: "Programa", status: "active", appliesToAllWorksites: true,
     elaboratedByName: "Test", elaboratedByTitle: "Prevención", createdAt: now, updatedAt: now,
   })
   await inMemoryDb.insert(schema.pdtpProgramWorksites).values({

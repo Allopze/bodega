@@ -288,7 +288,7 @@ export function GuidedActivityForm({
       </FieldGroup>
 
       {message && <p role="status" className={cn("rounded-lg border px-3 py-2 text-sm", message.ok
-        ? "border-[var(--color-success-line)] bg-[var(--color-success-tint)] text-[var(--color-success)]"
+        ? "border-[var(--color-success-line)] bg-[var(--color-success-tint)] text-[var(--color-success-ink)]"
         : "border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] text-[var(--color-danger)]")}>{message.text}</p>}
 
       <div className="flex justify-end border-t border-[var(--color-border)] pt-4">

@@ -118,6 +118,11 @@ export function PdtpProgressRing({
     : pct >= 80 ? "var(--color-success)"
     : pct >= 50 ? "var(--color-warning-ink)"
     : "var(--color-danger)"
+  const textColor =
+    percent === null ? "var(--color-text-faint)"
+    : pct >= 80 ? "var(--color-success-ink)"
+    : pct >= 50 ? "var(--color-warning-ink)"
+    : "var(--color-danger)"
 
   return (
     <svg
@@ -159,7 +164,7 @@ export function PdtpProgressRing({
         fontSize={size < 50 ? "10" : "11"}
         fontFamily="var(--font-mono, monospace)"
         fontWeight="600"
-        fill={color}
+        fill={textColor}
       >
         {percent === null ? "—" : `${Math.round(pct)}%`}
       </text>
@@ -182,7 +187,7 @@ const METRIC_ACCENT: Record<MetricVariant, string> = {
 
 const METRIC_VALUE_COLOR: Record<MetricVariant, string> = {
   neutral: "text-[var(--color-text)]",
-  success: "text-[var(--color-success)]",
+  success: "text-[var(--color-success-ink)]",
   warning: "text-[var(--color-warning-ink)]",
   danger: "text-[var(--color-danger)]",
 }
@@ -352,6 +357,67 @@ export function PdtpDensityToggle({
         )}
       </button>
     </Tooltip>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// PdtpPlanViewToggle — semántica de las cifras de la planilla anual
+// ---------------------------------------------------------------------------
+
+export type PdtpPlanViewMode = "historico" | "exigible"
+
+const PLAN_VIEW_MODE_KEY = "pdtp-plan-view-mode"
+const planViewModeParse = (stored: string): PdtpPlanViewMode | null => (
+  stored === "historico" || stored === "exigible" ? stored : null
+)
+
+/**
+ * La planilla conserva dos lecturas legítimas del mismo programa:
+ * - histórico completo: todas las semanas registradas, útil para auditoría;
+ * - exigible desde activación: la misma base que usan estado y KPI.
+ *
+ * La preferencia se comparte entre la vista consolidada y la vista de una
+ * faena para que cambiar el filtro no cambie silenciosamente la semántica.
+ */
+export function usePdtpPlanViewMode(): [PdtpPlanViewMode, (next: PdtpPlanViewMode) => void] {
+  return useLocalStorageState<PdtpPlanViewMode>(PLAN_VIEW_MODE_KEY, "historico", planViewModeParse)
+}
+
+export function PdtpPlanViewToggle({
+  mode,
+  onChange,
+}: {
+  mode: PdtpPlanViewMode
+  onChange: (next: PdtpPlanViewMode) => void
+}) {
+  const items: Array<{ key: PdtpPlanViewMode; label: string }> = [
+    { key: "historico", label: "Histórico completo" },
+    { key: "exigible", label: "Exigible desde activación" },
+  ]
+
+  return (
+    <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Semántica de las cifras de la planilla">
+      <span className="mr-1 text-[11px] font-medium text-[var(--color-text-subtle)]">Cifras:</span>
+      {items.map((item) => {
+        const active = item.key === mode
+        return (
+          <button
+            key={item.key}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(item.key)}
+            className={[
+              "min-h-11 rounded-md border px-2.5 py-1 text-[11px] transition-colors",
+              active
+                ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] font-semibold text-[var(--color-text)]"
+                : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]",
+            ].join(" ")}
+          >
+            {item.label}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 

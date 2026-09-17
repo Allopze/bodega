@@ -373,6 +373,11 @@ describe("prevention PDTP service", () => {
       setPdtpActivityWorksiteAdjustment,
     } = await import("@/lib/services/prevention-pdtp")
     const { program } = await loadCatalog()
+    // Este fixture conserva el contrato histórico de la Base 2026: sin filas
+    // de membresía, el ajuste por faena se prepara sobre alcance corporativo
+    // explícito. Los programas reales nuevos deben declararlo desde su editor.
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true })
+      .where(eq(schema.pdtpPrograms.id, program.id))
     const [activity] = await inMemoryDb.select().from(schema.pdtpActivities)
       .where(eq(schema.pdtpActivities.programId, program.id))
       .limit(1)
@@ -1048,8 +1053,11 @@ describe("prevention PDTP service", () => {
 
     expect(report.filenameBase).toBe("pdtp-sg-sst-2026-cphs")
     expect(report.worksheetName).toBe("Comité Paritario Higiene SST")
-    expect(report.headers).toContain("Ene P")
-    expect(report.headers).toContain("Ene E")
+    expect(report.headers).toContain("Ene P histórico")
+    expect(report.headers).toContain("Ene E histórico")
+    expect(report.headers).toContain("Ene P exigible")
+    expect(report.headers).toContain("Ene E exigible")
+    expect(report.headers).toContain("Plan anual exigible")
     expect(report.rows).toHaveLength(4)
     expect(report.rows[0]?.[0]).toBe(11)
   })
@@ -1223,10 +1231,14 @@ describe("prevention PDTP service", () => {
       worksiteId: "ws-1",
       scope: ["ws-1"],
     })
-    const januaryPlannedIndex = exported.headers.indexOf("Ene P")
-    const januaryExecutedIndex = exported.headers.indexOf("Ene E")
+    const januaryPlannedIndex = exported.headers.indexOf("Ene P histórico")
+    const januaryExecutedIndex = exported.headers.indexOf("Ene E histórico")
+    const januaryEffectivePlannedIndex = exported.headers.indexOf("Ene P exigible")
+    const annualEffectivePlannedIndex = exported.headers.indexOf("Plan anual exigible")
     expect(exported.rows[0]?.[januaryPlannedIndex]).toBe(1)
     expect(exported.rows[0]?.[januaryExecutedIndex]).toBe(1)
+    expect(exported.rows[0]?.[januaryEffectivePlannedIndex]).toBe(0)
+    expect(exported.rows[0]?.[annualEffectivePlannedIndex]).toBe(6)
 
     await expect(markPdtpExecution({
       activityId: activity.id,
@@ -1498,28 +1510,21 @@ describe("prevention PDTP service", () => {
    * indistinguible de uno mal configurado, y nada obligaba a decirlo.
    */
   it("no activa un programa que no declara faenas ni declara que aplica a todas", async () => {
-    const { approvePdtpProgramJdpr, signPdtpProgramLegal, activatePdtpProgram } = await import("@/lib/services/prevention-pdtp")
+    const { submitPdtpProgramForReview, approvePdtpProgramJdpr, signPdtpProgramLegal, activatePdtpProgram } = await import("@/lib/services/prevention-pdtp")
     const { program } = await loadCatalog()
     const programId = program.id
-    // `prepareProgramForReview` declara el alcance corporativo del fixture; acá
-    // se deshace justamente eso: el programa vuelve a no declarar nada.
-    await submitForReview(programId)
+    // El fixture queda sin alcance declarado ANTES de firmarse. Así la huella
+    // y las aprobaciones describen el mismo contenido y la activación llega a
+    // su propia compuerta de alcance, en vez de fallar antes por deriva de
+    // contenido firmado.
+    await prepareProgramForReview(programId)
     await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: false })
       .where(eq(schema.pdtpPrograms.id, programId))
+    await submitPdtpProgramForReview(programId, "user-1")
     await approvePdtpProgramJdpr(programId, "user-jdpr")
     await signPdtpProgramLegal(programId, "user-legal")
 
     await expect(activatePdtpProgram(programId, "user-jdpr")).rejects.toThrow(/alcance corporativo/i)
-
-    // Declarado el alcance, el mismo programa activa: lo que se exige es la
-    // declaración, no una lista de faenas. Se escribe directo porque
-    // `setPdtpProgramWorksites` sólo opera en borrador —la membresía es
-    // contenido firmable— y este programa ya está en revisión.
-    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true })
-      .where(eq(schema.pdtpPrograms.id, programId))
-    const activated = await activatePdtpProgram(programId, "user-jdpr")
-    expect(activated.status).toBe("active")
-    expect(activated.appliesToAllWorksites).toBe(true)
   })
 
   it("declarar faenas apaga el alcance corporativo: las dos cosas juntas se contradicen", async () => {
@@ -3794,6 +3799,24 @@ describe("prevention PDTP service", () => {
       .rejects.toThrow(/esquema anterior al mínimo|esquema 10/)
   })
 
+  it("no asume el esquema actual cuando una huella histórica no lo declaró", async () => {
+    const {
+      computePdtpProgramContentDigestForStoredVersion,
+      PdtpContentSchemaVersionMissingError,
+      createLegacyPdtpProgramForTests,
+    } = await import("@/lib/services/prevention-pdtp")
+    const program = await createLegacyPdtpProgramForTests({ year: 2040, title: "Programa con esquema ausente", userId: "user-1" })
+    await inMemoryDb.update(schema.pdtpPrograms).set({
+      contentDigest: "e".repeat(64),
+      reviewSnapshotJson: null,
+    }).where(eq(schema.pdtpPrograms.id, program.id))
+
+    await expect(computePdtpProgramContentDigestForStoredVersion(program.id))
+      .rejects.toBeInstanceOf(PdtpContentSchemaVersionMissingError)
+    await expect(computePdtpProgramContentDigestForStoredVersion(program.id))
+      .rejects.toThrow(/sin versión de esquema declarada/i)
+  })
+
   // PGlite conserva el lock de `FOR UPDATE` hasta cerrar el archivo de
   // pruebas, a diferencia de PostgreSQL que lo libera al cerrar la
   // transacción. Este caso queda al final para probar la contención real sin
@@ -3809,6 +3832,14 @@ describe("prevention PDTP service", () => {
       markPdtpExecution,
     } = await import("@/lib/services/prevention-pdtp")
     const source = await loadActiveCatalog()
+    await inMemoryDb.update(schema.pdtpPrograms).set({
+      complianceTarget: 0.84,
+      // PostgreSQL `real` enforces una suma estricta (sin epsilon) de uno;
+      // estas fracciones son exactamente representables en binario.
+      pesoEjecucion: 0.625,
+      pesoVerificacion: 0.25,
+      pesoCierre: 0.125,
+    }).where(eq(schema.pdtpPrograms.id, source.id))
     const [sourceActivity] = await inMemoryDb.select().from(schema.pdtpActivities)
       .where(eq(schema.pdtpActivities.programId, source.id))
       .limit(1)
@@ -3853,6 +3884,10 @@ describe("prevention PDTP service", () => {
       status: "draft",
       sourceProgramId: source.id,
       sourceContentVersion: source.contentVersion,
+      complianceTarget: 0.84,
+      pesoEjecucion: 0.625,
+      pesoVerificacion: 0.25,
+      pesoCierre: 0.125,
     })
     const [sourceAfter] = await inMemoryDb.select().from(schema.pdtpPrograms)
       .where(eq(schema.pdtpPrograms.id, source.id))
@@ -3877,15 +3912,80 @@ describe("prevention PDTP service", () => {
     await inMemoryDb.update(schema.pdtpActivityScheduleOverrides)
       .set({ plannedQuantity: 7, updatedAt: "2026-02-01T00:00:00.000Z" })
       .where(eq(schema.pdtpActivityScheduleOverrides.id, "revision-diff-override-source"))
+    await inMemoryDb.insert(schema.pdtpSheets).values({
+      id: "source-base-new-sheet",
+      code: "base_nuevo",
+      programId: source.id,
+      label: "Nueva vista de la Base",
+      area: "prevencion",
+      defaultScopeRoles: ["prevencionista"],
+      isActive: true,
+    })
+    await inMemoryDb.insert(schema.pdtpSheetActivities).values({
+      id: "source-base-new-sheet-activity",
+      sheetId: "source-base-new-sheet",
+      sheetCode: "base_nuevo",
+      activityId: sourceActivity!.id,
+      sheetRow: 1,
+      displayOrder: 1,
+    })
     const baseV2 = await createPdtpTemplateVersion({
       sourceProgramId: source.id,
       name: "Base preventiva 2026",
       userId: "user-1",
       allowUnclassifiedBaseActivities: true,
     })
+    // Una Base histórica puede no traer todavía la identidad de catálogo. La
+    // revisión sí la conserva; el comparador debe caer al número compartido,
+    // no presentar la actividad como alta y baja simultáneas.
+    const legacyBaseSnapshot = structuredClone(baseV2.version.snapshotJson) as {
+      activities?: Array<Record<string, unknown>>
+    }
+    const legacyBaseActivity = legacyBaseSnapshot.activities?.find((activity) => activity.n === sourceActivity!.n)
+    if (legacyBaseActivity) {
+      delete legacyBaseActivity.catalogActivityId
+      delete legacyBaseActivity.catalogRevision
+    }
+    await inMemoryDb.update(schema.pdtpProgramTemplateVersions)
+      .set({ snapshotJson: legacyBaseSnapshot })
+      .where(eq(schema.pdtpProgramTemplateVersions.id, baseV2.version.id))
     const diff = await comparePdtpRevisionToCurrentBase(revision.id)
+    // El resumen cuenta deltas reales: la revisión mantiene el override 4 y
+    // la Base vigente ya tiene 7; los ajustes restantes no se inflan por el
+    // mero hecho de existir en ambas fotos.
+    expect(diff?.worksiteAdjustments).toBe(1)
+    expect(diff?.worksiteExclusions).toBe(0)
+    expect(diff?.retiredActivities).toBe(0)
+    expect(diff?.addedActivities).toBe(0)
+    expect(diff?.missingActivities).toBe(0)
     const changed = diff?.items.find((item) => item.activityNumber === sourceActivity!.n)
-    expect(changed).toMatchObject({ kind: "content_changed" })
+    expect(changed).toMatchObject({ kind: "catalog_revision_changed" })
+
+    // Repetir la misma decisión debe ser idempotente: no vuelve a mutar la
+    // revisión ni agrega otra entrada de bitácora.
+    const keptActivity = revisionActivities.find((activity) => activity.n !== sourceActivity!.n)!
+    await inMemoryDb.update(schema.pdtpActivities).set({ notes: "Diferencia local que se conserva" })
+      .where(eq(schema.pdtpActivities.id, keptActivity.id))
+    const keptDiff = await comparePdtpRevisionToCurrentBase(revision.id)
+    const keptItem = keptDiff?.items.find((item) => item.activityNumber === keptActivity.n)
+    expect(keptItem).toMatchObject({ kind: "content_changed" })
+    await decidePdtpRevisionDiff({
+      programId: revision.id,
+      activityIdentity: keptItem!.identity,
+      decision: "kept",
+      userId: "user-1",
+    })
+    const logAfterFirstKeep = await inMemoryDb.select().from(schema.pdtpChangeLog)
+      .where(eq(schema.pdtpChangeLog.programId, revision.id))
+    await decidePdtpRevisionDiff({
+      programId: revision.id,
+      activityIdentity: keptItem!.identity,
+      decision: "kept",
+      userId: "user-1",
+    })
+    const logAfterSecondKeep = await inMemoryDb.select().from(schema.pdtpChangeLog)
+      .where(eq(schema.pdtpChangeLog.programId, revision.id))
+    expect(logAfterSecondKeep).toHaveLength(logAfterFirstKeep.length)
 
     await decidePdtpRevisionDiff({
       programId: revision.id,
@@ -3893,12 +3993,30 @@ describe("prevention PDTP service", () => {
       decision: "applied",
       userId: "user-1",
     })
+    await expect(decidePdtpRevisionDiff({
+      programId: revision.id,
+      activityIdentity: changed!.identity,
+      decision: "applied",
+      userId: "user-1",
+    })).resolves.toMatchObject({ decision: "applied", activityIdentity: changed!.identity })
+    await expect(decidePdtpRevisionDiff({
+      programId: revision.id,
+      activityIdentity: changed!.identity,
+      decision: "kept",
+      userId: "user-1",
+    })).rejects.toThrow(/ya tiene una decisión/i)
     const afterSnapshot = await buildPdtpProgramContentSnapshot(revision.id) as { activities: Array<Record<string, unknown>> }
-    const baseSnapshot = baseV2.version.snapshotJson as { activities: Array<Record<string, unknown>> }
+    const [storedBaseV2] = await inMemoryDb.select({ snapshotJson: schema.pdtpProgramTemplateVersions.snapshotJson })
+      .from(schema.pdtpProgramTemplateVersions)
+      .where(eq(schema.pdtpProgramTemplateVersions.id, baseV2.version.id))
+      .limit(1)
+    const baseSnapshot = storedBaseV2!.snapshotJson as { activities: Array<Record<string, unknown>> }
     const appliedActivity = afterSnapshot.activities.find((activity) => activity.n === sourceActivity!.n)!
     const baseActivity = baseSnapshot.activities.find((activity) => activity.n === sourceActivity!.n)!
     const differentKeys = [...new Set([...Object.keys(appliedActivity), ...Object.keys(baseActivity)])]
-      .filter((key) => JSON.stringify(appliedActivity[key]) !== JSON.stringify(baseActivity[key]))
+      // Una Base histórica puede omitir columnas que el snapshot actual
+      // serializa como null; ambas formas representan la misma ausencia.
+      .filter((key) => JSON.stringify(appliedActivity[key] ?? null) !== JSON.stringify(baseActivity[key] ?? null))
     expect(differentKeys).toEqual([])
     const [appliedOverride] = await inMemoryDb.select().from(schema.pdtpActivityScheduleOverrides)
       .where(and(
@@ -3906,6 +4024,15 @@ describe("prevention PDTP service", () => {
         eq(schema.pdtpActivityScheduleOverrides.worksiteId, "ws-1"),
       ))
     expect(appliedOverride?.plannedQuantity).toBe(7)
+    const [copiedSheet] = await inMemoryDb.select().from(schema.pdtpSheets)
+      .where(and(eq(schema.pdtpSheets.programId, revision.id), eq(schema.pdtpSheets.code, "base_nuevo")))
+    expect(copiedSheet).toMatchObject({ label: "Nueva vista de la Base", area: "prevencion" })
+    const [copiedMembership] = await inMemoryDb.select().from(schema.pdtpSheetActivities)
+      .where(and(
+        eq(schema.pdtpSheetActivities.sheetId, copiedSheet!.id),
+        eq(schema.pdtpSheetActivities.activityId, revisionActivities.find((activity) => activity.n === sourceActivity!.n)!.id),
+      ))
+    expect(copiedMembership).toBeDefined()
     expect(await listPdtpRevisionDiffDecisions(revision.id, baseV2.version.id))
       .toEqual(expect.arrayContaining([expect.objectContaining({ activityIdentity: changed!.identity, decision: "applied" })]))
   })

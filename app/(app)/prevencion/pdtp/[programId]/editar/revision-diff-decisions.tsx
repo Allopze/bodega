@@ -51,9 +51,21 @@ export function RevisionDiffDecisions({
                 {item.changedSections && item.changedSections.length > 0 ? ` · ${item.changedSections.map(revisionSectionLabel).join(", ")}` : ""}
               </span>
               <span className="flex items-center gap-2">
-                {decision?.decision === "kept" && <span className="text-[var(--color-text-muted)]">Conservada</span>}
-                <Button size="sm" variant="secondary" loading={operation.pending} onClick={() => decide(item, "kept")}>Conservar</Button>
-                <Button size="sm" loading={operation.pending} onClick={() => decide(item, "applied")}>Aplicar Base</Button>
+                {decision?.decision === "kept" && <span className="text-[var(--color-text-muted)]" role="status">Conservada</span>}
+                {decision?.decision === "applied" && <span className="text-[var(--color-success-ink)]" role="status">Aplicada desde la Base</span>}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={operation.pending}
+                  disabled={operation.pending || !!decision}
+                  onClick={() => decide(item, "kept")}
+                >Conservar</Button>
+                <Button
+                  size="sm"
+                  loading={operation.pending}
+                  disabled={operation.pending || !!decision}
+                  onClick={() => decide(item, "applied")}
+                >Aplicar Base</Button>
               </span>
             </li>
           )

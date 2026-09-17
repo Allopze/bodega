@@ -230,15 +230,15 @@ export function MetadataTab({ program, canDelete, activities = [] }: {
 }
 
 /**
- * Membresía de faenas del programa. Sin ninguna seleccionada, el programa
- * aplica a todas las faenas del scope del usuario (comportamiento por
- * defecto, retrocompatible con todo programa existente) — seleccionar
- * faenas aquí las restringe a esas, no crea copias del programa.
+ * Membresía de faenas del programa. Sin ninguna seleccionada, el operador
+ * declara explícitamente que el programa aplica a todas las faenas autorizadas;
+ * seleccionar faenas aquí lo restringe a esas, sin crear copias del programa.
  */
-export function WorksiteScopePanel({ programId, visibleWorksites, memberWorksiteIds }: {
+export function WorksiteScopePanel({ programId, visibleWorksites, memberWorksiteIds, appliesToAllWorksites }: {
   programId: string
   visibleWorksites: Array<{ id: string; name: string; code: string }>
   memberWorksiteIds: string[]
+  appliesToAllWorksites: boolean
 }) {
   const router = useRouter()
   const [selected, setSelected] = React.useState<string[]>(memberWorksiteIds)
@@ -248,15 +248,18 @@ export function WorksiteScopePanel({ programId, visibleWorksites, memberWorksite
   // `memberWorksiteIds` es un array: trae identidad nueva en cada render del
   // padre, así que un efecto con esa dep re-adoptaba el valor del servidor y
   // borraba la selección sin guardar cada vez que otra fila hacía router.refresh().
-  // Se compara por contenido y se ajusta durante el render.
+  // Se compara por contenido y sólo se re-adopta cuando el servidor realmente
+  // cambió la membresía; no se actualiza estado durante el render.
   const savedMembers = JSON.stringify([...memberWorksiteIds].sort())
-  const [lastSavedMembers, setLastSavedMembers] = React.useState(savedMembers)
-  if (lastSavedMembers !== savedMembers) {
-    setLastSavedMembers(savedMembers)
+  const lastSavedMembersRef = React.useRef(savedMembers)
+  React.useEffect(() => {
+    if (lastSavedMembersRef.current === savedMembers) return
+    lastSavedMembersRef.current = savedMembers
     setSelected(memberWorksiteIds)
-  }
+  }, [memberWorksiteIds, savedMembers])
 
   const isDirty = JSON.stringify([...selected].sort()) !== savedMembers
+    || (selected.length === 0 && !appliesToAllWorksites)
 
   function toggle(worksiteId: string) {
     setSelected((current) => current.includes(worksiteId) ? current.filter((id) => id !== worksiteId) : [...current, worksiteId])
@@ -279,7 +282,7 @@ export function WorksiteScopePanel({ programId, visibleWorksites, memberWorksite
       <CardHeader>
         <CardTitle>Faenas que cubre este programa</CardTitle>
         <CardDescription className="text-xs">
-          Sin ninguna faena marcada, el programa aplica a todas tus faenas autorizadas. Marca faenas solo si este programa no debe cubrirlas todas.
+          Sin ninguna faena marcada, guarda para declarar alcance corporativo sobre todas tus faenas autorizadas. Marca faenas solo si este programa no debe cubrirlas todas.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -304,8 +307,10 @@ export function WorksiteScopePanel({ programId, visibleWorksites, memberWorksite
         <p className={isDirty ? "text-xs font-medium text-[var(--color-warning-ink)]" : "text-xs text-[var(--color-text-muted)]"}>
           {isDirty
             ? "Cambios sin guardar."
-            : selected.length === 0
+            : selected.length === 0 && appliesToAllWorksites
               ? `Aplica a todas las faenas autorizadas (${visibleWorksites.length}).`
+              : selected.length === 0
+                ? "Alcance corporativo pendiente de declarar."
               : `${selected.length} de ${visibleWorksites.length} faenas marcadas.`}
         </p>
         <Button type="button" size="sm" disabled={pending || !isDirty} onClick={save}>{pending ? "Guardando..." : "Guardar faenas"}</Button>

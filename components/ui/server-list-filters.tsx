@@ -8,15 +8,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { SavedViews } from "@/components/ui/saved-views"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
+import { SERVER_LIST_FILTER_PARAMS } from "@/components/ui/server-list-filters.constants"
 
 export interface ServerListFilterOption {
   value: string
   label: string
 }
 
-export const SERVER_LIST_FILTER_PARAMS = [
-  "q", "estado", "urgencia", "faena", "proveedor", "factura", "desde", "hasta", "solicitud",
-] as const
+// Re-exportado por compatibilidad: el resto del código ya lo importa desde
+// aquí. El valor real vive en server-list-filters.constants.ts (sin "use
+// client") para que el código de servidor también pueda usarlo — ver ese
+// archivo para el porqué.
+export { SERVER_LIST_FILTER_PARAMS }
 
 interface SearchParamsLike {
   get(name: string): string | null

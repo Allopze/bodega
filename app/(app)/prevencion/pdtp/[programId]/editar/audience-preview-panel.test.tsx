@@ -32,12 +32,12 @@ afterEach(() => cleanup())
 
 describe("AudiencePreviewPanel", () => {
   it("shows every activity when no filter is selected", () => {
-    render(<AudiencePreviewPanel activities={ACTIVITIES} responsibleCatalog={RESPONSIBLES} />)
+    render(<AudiencePreviewPanel activities={ACTIVITIES} responsibleCatalog={RESPONSIBLES} appliesToAllWorksites />)
     expect(screen.getByText("3 de 3 actividad(es) visibles para esta combinación.")).toBeDefined()
   })
 
   it("filters to the activities matching the selected responsable", () => {
-    render(<AudiencePreviewPanel activities={ACTIVITIES} responsibleCatalog={RESPONSIBLES} />)
+    render(<AudiencePreviewPanel activities={ACTIVITIES} responsibleCatalog={RESPONSIBLES} appliesToAllWorksites />)
     fireEvent.click(screen.getByLabelText("Responsable"))
     fireEvent.click(screen.getByText("Jefatura Chome"))
     expect(screen.getByText("2 de 3 actividad(es) visibles para esta combinación.")).toBeDefined()
@@ -46,14 +46,14 @@ describe("AudiencePreviewPanel", () => {
   })
 
   it("filters to the activities matching the selected audiencia", () => {
-    render(<AudiencePreviewPanel activities={ACTIVITIES} responsibleCatalog={RESPONSIBLES} />)
+    render(<AudiencePreviewPanel activities={ACTIVITIES} responsibleCatalog={RESPONSIBLES} appliesToAllWorksites />)
     fireEvent.click(screen.getByLabelText("Audiencia"))
     fireEvent.click(screen.getByText("subgerente"))
     expect(screen.getByText("2 de 3 actividad(es) visibles para esta combinación.")).toBeDefined()
   })
 
   it("does not show a faena filter when no worksites are passed (backward compatible)", () => {
-    render(<AudiencePreviewPanel activities={ACTIVITIES} responsibleCatalog={RESPONSIBLES} />)
+    render(<AudiencePreviewPanel activities={ACTIVITIES} responsibleCatalog={RESPONSIBLES} appliesToAllWorksites />)
     expect(screen.queryByLabelText("Faena")).toBeNull()
   })
 
@@ -64,6 +64,7 @@ describe("AudiencePreviewPanel", () => {
       <AudiencePreviewPanel
         activities={ACTIVITIES}
         responsibleCatalog={RESPONSIBLES}
+        appliesToAllWorksites
         visibleWorksites={WORKSITES}
         exclusions={[{ activityId: "a1", worksiteId: "ws-1" }]}
       />,
@@ -81,6 +82,21 @@ describe("AudiencePreviewPanel", () => {
         responsibleCatalog={RESPONSIBLES}
         visibleWorksites={WORKSITES}
         memberWorksiteIds={["ws-2"]}
+        appliesToAllWorksites={false}
+      />,
+    )
+    fireEvent.click(screen.getByLabelText("Faena"))
+    fireEvent.click(screen.getByText("Faena Uno"))
+    expect(screen.getByText(/no está habilitada para este programa/)).toBeDefined()
+  })
+
+  it("does not treat an empty membership as corporate scope when it is undeclared", () => {
+    render(
+      <AudiencePreviewPanel
+        activities={ACTIVITIES}
+        responsibleCatalog={RESPONSIBLES}
+        visibleWorksites={WORKSITES}
+        appliesToAllWorksites={false}
       />,
     )
     fireEvent.click(screen.getByLabelText("Faena"))

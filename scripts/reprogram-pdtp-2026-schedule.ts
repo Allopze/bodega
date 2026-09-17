@@ -176,7 +176,8 @@ async function main() {
   }
 
   const programs = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.year, PROGRAM_YEAR))
-  const resolvedProgram = programs.find((item) => item.status === "draft") ?? programs.at(-1)
+  const orderedPrograms = [...programs].sort((a, b) => b.version - a.version)
+  const resolvedProgram = orderedPrograms.find((item) => item.status === "draft") ?? orderedPrograms[0]
   if (!resolvedProgram) bail(`No existe ningún programa PDTP para el año ${PROGRAM_YEAR}.`)
 
   // El calendario base es contenido firmado: sólo se puede reescribir en

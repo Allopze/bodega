@@ -40,7 +40,7 @@ async function seedBaseFixtures() {
     id: "w1", name: "Faena A", code: "FA", isActive: true,
   })
   await inMemoryDb.insert(schema.pdtpPrograms).values({
-    id: "prog-1", year: 2026, version: 1, status: "active", title: "T",
+    id: "prog-1", year: 2026, version: 1, status: "active", appliesToAllWorksites: true, title: "T",
     elaboratedByName: "X", elaboratedByTitle: "Y",
     createdAt: NOW(), updatedAt: NOW(),
   })

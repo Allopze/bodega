@@ -18,8 +18,9 @@
  *
  * 2. **Destino disperso.** El `CASE` que decide a dónde manda `/pendientes`
  *    una actividad vive incrustado en el SQL de
- *    `lib/services/operational-work-queue.ts` y produce hoy un 404 real
- *    (`/prevencion/constancias` no existe). `resolvePdtpFulfillmentTarget` es
+ *    `lib/services/operational-work-queue.ts`; antes producía un 404 real
+ *    (`/prevencion/constancias` no existía). La ruta ya existe, pero
+ *    `resolvePdtpFulfillmentTarget` sigue siendo
  *    el único lugar que debe decidir eso, para que `/pendientes`, el tablero y
  *    la planilla consuman la misma respuesta.
  *
@@ -337,7 +338,11 @@ export async function recordPdtpFulfillmentEvent(input: AccreditationInput & {
     await db.update(pdtpFulfillmentEvents).set({
       status: result.accredited.length > 0 ? "accredited" : "rejected",
       resultJson: result as unknown as Record<string, unknown>,
-      programId: input.programId ?? null,
+      // La versión efectiva la resolvió el motor a partir de faena + fecha.
+      // Nunca persistir la sugerencia del conector: un reintento de un hecho
+      // anterior a v+1 puede resolverse legítimamente en v1 aunque el caller
+      // todavía traiga el id de v2, y el reconciliador no trae ningún id.
+      programId: result.resolvedProgramId ?? null,
       updatedAt: now,
     }).where(eq(pdtpFulfillmentEvents.id, eventId))
     if (result.skippedNotFound.length > 0) {
@@ -582,7 +587,7 @@ export type PdtpFulfillmentTarget = {
 /**
  * El destino externo por mecanismo, sin depender del `worksiteId` — es el
  * mismo `CASE` que hoy vive incrustado en `operational-work-queue.ts:778-791`
- * y produce el 404 de `/prevencion/constancias`. Único lugar que debe decidir
+ * y antes producía el 404 de `/prevencion/constancias`. Único lugar que debe decidir
  * esto; `/pendientes`, el tablero y la planilla consumen esta respuesta.
  */
 export function resolvePdtpFulfillmentTarget(
@@ -633,8 +638,12 @@ export function resolvePdtpFulfillmentTarget(
 
 export type PdtpFulfillmentCoverageStatus =
   | "ready"
+  /** El contrato operativo acredita el hecho en un flujo segregado válido. */
+  | "segregated_valid"
   | "config_required"
   | "code_gap"
+  /** El mecanismo existe, pero no hay un destino operativo configurable. */
+  | "destination_not_configured"
   | "permission_gap"
   /** El destino requiere acreditar un hecho y todavía no se eligió quién lo hace. */
   | "executor_required"
@@ -650,14 +659,14 @@ export type PdtpFulfillmentCoverageStatus =
    * sin versión `published`, y la N°84 necesita un plan `approved` para poder
    * programar un simulacro.
    *
-   * **Bloquea la activación y sólo advierte al enviar a revisión.** Enviar a
-   * revisión es sobre el contenido firmado —el catálogo de actividades—;
-   * activar es sobre que el programa sea ejecutable. La separación no crea un
-   * candado circular: aprobar plantillas, publicar versiones de curso y
-   * aprobar planes de emergencia no tocan ninguna tabla `pdtp_*`, así que toda
-   * esa configuración puede resolverse entre el envío a revisión y la
-   * activación sin invalidar las firmas (`computePdtpProgramContentDigest`
-   * sólo lee tablas `pdtp_*`).
+   * **No bloquea el envío ni la activación; queda visible como riesgo operativo.**
+   * Enviar a revisión es sobre el contenido firmado —el catálogo de
+   * actividades— y activar sólo bloquea lo que no tiene destino o ejecutor
+   * dentro del programa. La separación no crea un candado circular: aprobar
+   * plantillas, publicar versiones de curso y aprobar planes de emergencia no
+   * tocan ninguna tabla `pdtp_*`, así que toda esa configuración puede
+   * resolverse entre el envío a revisión y la activación sin invalidar las
+   * firmas (`computePdtpProgramContentDigest` sólo lee tablas `pdtp_*`).
    */
   | "instrument_required"
 
@@ -832,16 +841,39 @@ async function activityNumbersDeclaredPerWorksite(client: QueryClient): Promise<
 
 /**
  * Faenas contra las que se exige la declaración por faena: las miembros del
- * programa, o todas las activas cuando el programa no declara membresía —que es
- * el mismo criterio con que el motor decide si una faena puede operarlo.
+ * programa, o todas las activas cuando el programa declaró alcance corporativo.
+ * Un programa sin miembros y sin esa declaración devuelve un denominador vacío
+ * (la activación lo bloquea por separado), para no presentar cobertura de una
+ * versión que todavía no tiene alcance ejecutable.
  */
-async function programWorksiteIds(client: QueryClient, programId: string): Promise<string[]> {
-  const members = await client.select({ worksiteId: pdtpProgramWorksites.worksiteId })
-    .from(pdtpProgramWorksites)
-    .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true)))
-  if (members.length > 0) return members.map((row) => row.worksiteId)
+export type PdtpCoverageScope = { worksiteIds?: string[] }
+
+async function programWorksiteIds(
+  client: QueryClient,
+  programId: string,
+  options?: PdtpCoverageScope,
+): Promise<string[]> {
+  const visibleWorksiteIds = options?.worksiteIds
+  const visibleWorksiteSet = visibleWorksiteIds ? new Set(visibleWorksiteIds) : null
+  const [[program], members] = await Promise.all([
+    client.select({ appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites })
+      .from(pdtpPrograms)
+      .where(eq(pdtpPrograms.id, programId))
+      .limit(1),
+    client.select({ worksiteId: pdtpProgramWorksites.worksiteId })
+      .from(pdtpProgramWorksites)
+      .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true))),
+  ])
+  if (members.length > 0) {
+    return members
+      .map((row) => row.worksiteId)
+      .filter((worksiteId) => !visibleWorksiteSet || visibleWorksiteSet.has(worksiteId))
+  }
+  if (!program?.appliesToAllWorksites) return []
   const active = await client.select({ id: worksites.id }).from(worksites).where(eq(worksites.isActive, true))
-  return active.map((row) => row.id)
+  return active
+    .map((row) => row.id)
+    .filter((worksiteId) => !visibleWorksiteSet || visibleWorksiteSet.has(worksiteId))
 }
 
 /**
@@ -975,9 +1007,16 @@ function instrumentIssueFor(
  * promete trabajo sin ofrecer dónde realizarlo.
  *
  * Devuelve la lista de problemas encontrados (vacía = compuerta pasada). No
- * lanza: el llamador decide si un problema bloquea o sólo se muestra.
+ * lanza: el llamador decide si un problema bloquea o sólo se muestra. Las
+ * compuertas de ciclo de vida omiten `options` para evaluar el programa
+ * completo; las vistas autenticadas pueden pasar el alcance visible para no
+ * exponer nombres de faenas fuera de la sesión.
  */
-export async function assertPdtpFulfillmentCoverage(programId: string, client: QueryClient = db): Promise<PdtpFulfillmentCoverageIssue[]> {
+export async function assertPdtpFulfillmentCoverage(
+  programId: string,
+  client: QueryClient = db,
+  options?: PdtpCoverageScope,
+): Promise<PdtpFulfillmentCoverageIssue[]> {
   const [program] = await client.select({ version: pdtpPrograms.version, status: pdtpPrograms.status })
     .from(pdtpPrograms)
     .where(eq(pdtpPrograms.id, programId))
@@ -1008,7 +1047,7 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
     activityNumbersDeclaredGlobally(client),
     activityNumbersDeclaredPerWorksite(client),
     usablePdtpInstrumentNumbers(client),
-    programWorksiteIds(client, programId),
+    programWorksiteIds(client, programId, options),
     client.select({ id: worksites.id, name: worksites.name }).from(worksites),
     client.select().from(pdtpResponsibleCatalog),
     client.select({
@@ -1107,8 +1146,26 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
     )
     if (target.kind === "fallback") {
       issues.push({
-        n: activity.n, activity: activity.activity, status: "code_gap",
+        n: activity.n, activity: activity.activity, status: "destination_not_configured",
         reason: "No tiene un destino operativo concreto: todavía cae a la planilla genérica del PDTP.",
+      })
+      continue
+    }
+
+    // Un flujo segregado no es una brecha de permiso: el contrato exige que
+    // quien planifica no sea quien acredita o aprueba el hecho. Exponerlo
+    // como estado explícito evita que el panel lo confunda con una actividad
+    // "lista" por accidente o con un ejecutor que falte.
+    const contractDestination = activity.mechanism === "enganche" || activity.mechanism === "compuesta"
+      ? engancheDestinationFor(activity.n)
+      : null
+    if (contractDestination?.segregated) {
+      issues.push({
+        n: activity.n,
+        activity: activity.activity,
+        status: "segregated_valid",
+        reason: `Flujo segregado válido: ${contractDestination.segregated}`,
+        destinationModule: contractDestination.module,
       })
       continue
     }

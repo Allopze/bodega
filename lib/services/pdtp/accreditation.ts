@@ -75,6 +75,10 @@ export type PdtpAccreditationSourceType =
   | "cgrd"
 
 export type AccreditationResult = {
+  /** Programa que el motor resolvió por faena y fecha efectiva. Nunca se toma
+   * del `programId` opcional del conector: ese campo sólo documenta intención
+   * y puede quedar obsoleto cuando una revisión v+1 toma el corte. */
+  resolvedProgramId?: string
   /** Ejecuciones creadas o actualizadas (una por actividad acreditada). */
   accredited: Array<{ activityId: string; activityN: number; executionId: string; created: boolean }>
   /** Actividades omitidas porque están excluidas de la faena (R4). */
@@ -281,7 +285,9 @@ async function resolvePdtpActiveProgramForEvent(
   }
   const applicable = programs.filter((candidate) => {
     const members = membersByProgram.get(candidate.id) ?? []
-    return members.length === 0 || members.includes(input.worksiteId)
+    return members.length > 0
+      ? members.includes(input.worksiteId)
+      : candidate.appliesToAllWorksites
   })
   const occurredAtMs = Date.parse(input.occurredAt)
   const sameYear = programs.filter((candidate) => candidate.year === occurredYear)
@@ -295,12 +301,14 @@ async function resolvePdtpActiveProgramForEvent(
       const byActivation = Date.parse(right.activatedAt ?? "1970-01-01T00:00:00.000Z") - Date.parse(left.activatedAt ?? "1970-01-01T00:00:00.000Z")
       return byActivation || right.version - left.version
     })
-  const effective = effectiveForDate.filter((candidate) => applicable.some((match) => match.id === candidate.id))
-  // Si sólo hay versiones que no cubren la faena, se conserva la versión
-  // temporalmente correcta para que la validación inferior explique el
-  // problema de membresía, en lugar de disfrazarlo como "sin programa".
-  const program = effective[0]
-    ?? effectiveForDate[0]
+  // El corte temporal fija una sola versión: la última que ya estaba vigente
+  // cuando ocurrió el hecho. No se busca una versión anterior que sí cubra la
+  // faena, porque eso permitiría que un evento posterior a v2 volviera a v1
+  // sólo porque v2 restringió su alcance. La validación de membresía de abajo
+  // debe explicar ese rechazo y dejar el evento en el libro de cumplimiento.
+  // Si no existe una versión del año, conservamos un programa de otro año sólo
+  // para devolver `skippedOutOfPeriod` con contexto, como antes.
+  const program = effectiveForDate[0]
     ?? (sameYear.length === 0 ? applicable[0] ?? null : null)
 
   if (!program) {
@@ -322,6 +330,9 @@ async function resolvePdtpActiveProgramForEvent(
     ))
   if (explicitMemberships.length > 0 && !explicitMemberships.some((member) => member.worksiteId === input.worksiteId)) {
     throw new Error(`La faena ${input.worksiteId} no pertenece al programa ${program.id}.`)
+  }
+  if (explicitMemberships.length === 0 && !program.appliesToAllWorksites) {
+    throw new Error(`El programa ${program.id} no declara alcance corporativo ni una membresía de faena.`)
   }
 
   // El programa resuelto tiene que cubrir el año en que ocurrió el evento. La
@@ -491,6 +502,7 @@ export async function accreditPdtpFromEvent(
 
   if (activityRows.length === 0) {
     return {
+      resolvedProgramId: program.id,
       accredited: [], skippedExcluded: [], skippedNotFound,
       ...(catalogActivityIds.length > 0 ? { skippedCatalogNotFound } : {}),
     }
@@ -515,6 +527,7 @@ export async function accreditPdtpFromEvent(
 
   if (eligibleActivities.length === 0) {
     return {
+      resolvedProgramId: program.id,
       accredited: [], skippedExcluded, skippedNotFound,
       ...(catalogActivityIds.length > 0 ? { skippedCatalogNotFound } : {}),
     }
@@ -646,6 +659,7 @@ export async function accreditPdtpFromEvent(
   )
 
   return {
+    resolvedProgramId: program.id,
     accredited, skippedExcluded, skippedNotFound,
     ...(catalogActivityIds.length > 0 ? { skippedCatalogNotFound } : {}),
   }

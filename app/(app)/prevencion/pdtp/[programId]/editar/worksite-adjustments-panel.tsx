@@ -43,6 +43,7 @@ export function WorksiteAdjustmentsPanel({
   schedule,
   visibleWorksites,
   memberWorksiteIds,
+  appliesToAllWorksites,
   exclusions,
   params,
   overrides,
@@ -52,12 +53,13 @@ export function WorksiteAdjustmentsPanel({
   schedule: PdtpScheduleRow[]
   visibleWorksites: Worksite[]
   memberWorksiteIds: string[]
+  appliesToAllWorksites: boolean
   exclusions: Exclusion[]
   params: WorksiteParam[]
   overrides: ScheduleOverride[]
   responsibleCatalog: Responsible[]
 }) {
-  const eligibleWorksites = memberWorksiteIds.length === 0
+  const eligibleWorksites = appliesToAllWorksites
     ? visibleWorksites
     : visibleWorksites.filter((worksite) => memberWorksiteIds.includes(worksite.id))
   const [worksiteId, setWorksiteId] = React.useState(eligibleWorksites[0]?.id ?? "")
@@ -67,7 +69,7 @@ export function WorksiteAdjustmentsPanel({
     return (
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
         <p className="text-sm font-medium text-[var(--color-text)]">No hay faenas disponibles</p>
-        <p className="mt-1 text-sm text-[var(--color-text-muted)]">Habilita una faena en el alcance del programa para definir ajustes.</p>
+        <p className="mt-1 text-sm text-[var(--color-text-muted)]">Define primero el alcance del programa (faenas específicas o alcance corporativo) para poder configurar ajustes.</p>
       </div>
     )
   }

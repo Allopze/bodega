@@ -78,7 +78,9 @@ export async function setPdtpActivityExecutorAssignments(input: {
   roleIds: string[]
   userId: string
 }) {
-  const roleIds = [...new Set(input.roleIds.filter(Boolean))]
+  const roleIds = [...new Set(input.roleIds
+    .map((roleId) => typeof roleId === "string" ? roleId.trim() : "")
+    .filter(Boolean))]
   return db.transaction(async (tx) => {
     const [program] = await tx.select().from(pdtpPrograms)
       .where(eq(pdtpPrograms.id, input.programId)).limit(1)

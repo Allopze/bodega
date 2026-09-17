@@ -29,7 +29,7 @@ afterEach(() => {
 
 describe("WorksiteScopePanel", () => {
   it("saves the toggled worksite selection as the new program membership", async () => {
-    render(<WorksiteScopePanel programId="program-1" visibleWorksites={WORKSITES} memberWorksiteIds={[]} />)
+    render(<WorksiteScopePanel programId="program-1" visibleWorksites={WORKSITES} memberWorksiteIds={[]} appliesToAllWorksites />)
 
     expect(screen.getByText("Aplica a todas las faenas autorizadas (2).")).toBeDefined()
     fireEvent.click(screen.getByRole("checkbox", { name: /Faena Uno/ }))
@@ -41,7 +41,7 @@ describe("WorksiteScopePanel", () => {
 
   it("shows an action error without refreshing", async () => {
     mockSetWorksites.mockResolvedValueOnce({ ok: false, message: "Sin alcance global." })
-    render(<WorksiteScopePanel programId="program-1" visibleWorksites={WORKSITES} memberWorksiteIds={[]} />)
+    render(<WorksiteScopePanel programId="program-1" visibleWorksites={WORKSITES} memberWorksiteIds={[]} appliesToAllWorksites />)
 
     fireEvent.click(screen.getByRole("checkbox", { name: /Faena Uno/ }))
     fireEvent.click(screen.getByRole("button", { name: "Guardar faenas" }))

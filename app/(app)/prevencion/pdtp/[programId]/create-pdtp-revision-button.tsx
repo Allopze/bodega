@@ -15,12 +15,15 @@ export function CreatePdtpRevisionButton({ sourceProgramId }: { sourceProgramId:
         const result = await createPdtpRevisionAction(sourceProgramId)
         return {
           ...result,
-          data: result.programId ? { programId: result.programId } : undefined,
+          data: result.programId
+            ? { programId: result.programId, programStatus: result.programStatus }
+            : undefined,
         }
       },
       (result) => {
         const programId = typeof result.data?.programId === "string" ? result.data.programId : undefined
-        if (programId) router.push(`/prevencion/pdtp/${programId}/editar`)
+        const programStatus = typeof result.data?.programStatus === "string" ? result.data.programStatus : "draft"
+        if (programId) router.push(programStatus === "draft" ? `/prevencion/pdtp/${programId}/editar` : `/prevencion/pdtp/${programId}`)
       },
     )
   }
