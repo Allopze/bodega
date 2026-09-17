@@ -134,10 +134,11 @@ export function countOverdueMonths(
 
 /**
  * "En cero" en el mes de `period`: la actividad tenía planificación ese mes
- * y ninguna ejecución aprobada. Es exactamente el criterio de
+ * y ninguna ejecución **aprobada**. Es exactamente el criterio de
  * `PdtpComplianceMonth.zeroActivityIds` en `compliance.ts` (rama "resto" del
- * bucle mensual: `p > 0 && rawExecuted === 0`), llevado al visor de
- * actividades para que el enlace del indicador muestre lo mismo que cuenta.
+ * bucle mensual: `p > 0 && rawExecuted === 0`, y `rawExecuted` ahí solo suma
+ * `approvedExecutionRows`), llevado al visor de actividades para que el
+ * enlace del indicador muestre lo mismo que cuenta.
  *
  * `pending` y `overdue` son ambos "cero ejecución este mes" para
  * `deriveActivityStatus` — la única diferencia entre ellos es si además hay
@@ -146,14 +147,22 @@ export function countOverdueMonths(
  * `coverage` y `closed_on_time` quedan excluidos, igual que en
  * `compliance.ts`: tienen su propia regla todo-o-nada y un cero ahí significa
  * "no se acreditó el padrón/plazo", no "no se hizo nada".
+ *
+ * `approvedMonthlyExecuted` **debe** venir filtrado a solo `status ===
+ * "approved"` — no pasar `effectiveMonthlyExecuted` de `PdtpSheetView`, que
+ * cuenta cualquier estado (`submitted` incluida) y es correcto para la tabla
+ * pero no para este filtro: una ejecución enviada y aún sin aprobar sigue
+ * siendo "en cero" para el indicador, aunque la tabla ya la muestre como
+ * hecha. Este desacople causó un bug real (ronda 2/5, tarea 1.4): el filtro
+ * excluía actividades que el indicador seguía contando en cero.
  */
 export function isPdtpActivityZeroThisMonth(
   activity: { indicatorMode?: string | null },
   monthlyPlanned: number[],
-  monthlyExecuted: number[],
+  approvedMonthlyExecuted: number[],
   period: PdtpPeriod,
 ): boolean {
   if (activity.indicatorMode === "coverage" || activity.indicatorMode === "closed_on_time") return false
-  const status = deriveActivityStatus(monthlyPlanned, monthlyExecuted, period)
+  const status = deriveActivityStatus(monthlyPlanned, approvedMonthlyExecuted, period)
   return status === "pending" || status === "overdue"
 }

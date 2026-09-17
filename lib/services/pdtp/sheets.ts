@@ -33,6 +33,21 @@ export type PdtpSheetView = {
     effectiveTotalExecuted: number
     effectiveMonthlyPlanned: number[]
     effectiveMonthlyExecuted: number[]
+    /**
+     * Igual que `effectiveMonthlyExecuted` (recorte de vigencia) pero contando
+     * **solo** ejecuciones `approved` — el mismo criterio que
+     * `compliance.ts` (`approvedExecutionRows = executionRows.filter(row =>
+     * row.status === "approved")`). No reemplaza a `effectiveMonthlyExecuted`:
+     * esa sigue mostrando cualquier estado (una `submitted` cuenta como
+     * "ejecutado" en la tabla, correcto — el usuario quiere ver que hay
+     * trabajo cargado esperando aprobación) para los badges y la tabla.
+     * Este campo existe solo para que `isPdtpActivityZeroThisMonth`
+     * (`period.ts`) cuente lo mismo que cuenta el indicador de cumplimiento:
+     * antes de este campo, una ejecución `submitted` sin aprobar hacía que
+     * el filtro "en_cero" excluyera una actividad que el indicador sí seguía
+     * contando como en cero (bug encontrado en la ronda 2/5 de la tarea 1.4).
+     */
+    approvedMonthlyExecuted: number[]
     executions: Array<{
       id: string
       year: number
@@ -185,6 +200,11 @@ export async function getPdtpAggregatedSheetViewByProgram(
       monthlyExecuted,
       effectiveMonthlyPlanned,
       effectiveMonthlyExecuted,
+      // Este camino (agregado) ya filtraba `effectiveMonthlyExecuted` a solo
+      // `approved` (líneas de arriba); es el mismo array, solo con el nombre
+      // que `isPdtpActivityZeroThisMonth` espera para no depender de que cada
+      // vista use el mismo criterio "por casualidad".
+      approvedMonthlyExecuted: effectiveMonthlyExecuted,
       totalPlanned: monthlyPlanned.reduce((sum, value) => sum + value, 0),
       totalExecuted: monthlyExecuted.reduce((sum, value) => sum + value, 0),
       effectiveTotalPlanned: effectiveMonthlyPlanned.reduce((sum, value) => sum + value, 0),
@@ -264,6 +284,10 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
     const monthlyExecuted = Array.from({ length: 12 }, () => 0)
     const effectiveMonthlyPlanned = Array.from({ length: 12 }, () => 0)
     const effectiveMonthlyExecuted = Array.from({ length: 12 }, () => 0)
+    // Solo `approved` — igual criterio que `compliance.ts`. Vive aparte de
+    // `effectiveMonthlyExecuted` (que sigue sumando cualquier estado para la
+    // tabla) porque este alimenta `isPdtpActivityZeroThisMonth`, no un badge.
+    const approvedMonthlyExecuted = Array.from({ length: 12 }, () => 0)
 
     for (const cell of schedule) {
       monthlyPlanned[cell.month - 1] = (monthlyPlanned[cell.month - 1] ?? 0) + cell.plannedQuantity
@@ -277,13 +301,18 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
     for (const cell of effectiveSchedule) {
       effectiveMonthlyPlanned[cell.month - 1] = (effectiveMonthlyPlanned[cell.month - 1] ?? 0) + cell.plannedQuantity
     }
-    for (const execution of filterPdtpRowsFromActivation(activityExecutions, program.activatedAt)) {
+    const effectiveActivityExecutions = filterPdtpRowsFromActivation(activityExecutions, program.activatedAt)
+    for (const execution of effectiveActivityExecutions) {
       effectiveMonthlyExecuted[execution.month - 1] = (effectiveMonthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
+    }
+    for (const execution of effectiveActivityExecutions) {
+      if (execution.status !== "approved") continue
+      approvedMonthlyExecuted[execution.month - 1] = (approvedMonthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
     }
 
     activities.push({
       ...activity, schedule, effectiveSchedule, monthlyPlanned, monthlyExecuted,
-      effectiveMonthlyPlanned, effectiveMonthlyExecuted,
+      effectiveMonthlyPlanned, effectiveMonthlyExecuted, approvedMonthlyExecuted,
       totalPlanned: monthlyPlanned.reduce((s, v) => s + v, 0),
       totalExecuted: monthlyExecuted.reduce((s, v) => s + v, 0),
       effectiveTotalPlanned: effectiveMonthlyPlanned.reduce((s, v) => s + v, 0),

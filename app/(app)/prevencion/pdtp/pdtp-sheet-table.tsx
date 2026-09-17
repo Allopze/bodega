@@ -182,7 +182,11 @@ export function PdtpSheetTable({
       counts[s]++
       // `zero` se superpone a `pending`/`overdue` (ver el comentario de
       // `PdtpStatusCounts`): se recalcula aparte, no se deriva de `counts[s]`.
-      if (isPdtpActivityZeroThisMonth(activity, activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod)) {
+      // Usa `approvedMonthlyExecuted`, no `effectiveMonthlyExecuted`: el
+      // indicador de cumplimiento (`compliance.ts`) solo cuenta ejecuciones
+      // `approved`, así que una `submitted` sin aprobar no debe sacar a la
+      // actividad de "en cero" aunque la tabla ya la muestre como ejecutada.
+      if (isPdtpActivityZeroThisMonth(activity, activity.effectiveMonthlyPlanned, activity.approvedMonthlyExecuted, currentPeriod)) {
         counts.zero++
       }
     }
@@ -193,12 +197,14 @@ export function PdtpSheetTable({
   // `PdtpActivityStatus` exacto: es `pending ∪ overdue` sin `coverage`/
   // `closed_on_time`, el mismo criterio que `zeroActivityIds` en
   // `compliance.ts` — de ahí que use su propio predicado en vez de comparar
-  // contra `deriveActivityStatus(...) === statusFilter`.
+  // contra `deriveActivityStatus(...) === statusFilter`, y que mire
+  // `approvedMonthlyExecuted` (solo `approved`) en vez de
+  // `effectiveMonthlyExecuted` (cualquier estado, lo que la tabla muestra).
   const filteredActivities = statusFilter === "all"
     ? sourceActivities
     : statusFilter === "en_cero"
       ? sourceActivities.filter((activity) =>
-          isPdtpActivityZeroThisMonth(activity, activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod),
+          isPdtpActivityZeroThisMonth(activity, activity.effectiveMonthlyPlanned, activity.approvedMonthlyExecuted, currentPeriod),
         )
       : sourceActivities.filter((activity) =>
           deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod) === statusFilter,

@@ -10,7 +10,6 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { PdtpIndicatorsPanel } from "./pdtp-indicators-panel"
-import { buildPdtpActivitiesHref } from "./pdtp-context"
 import type { PdtpComplianceIndicators, PdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
 
 afterEach(cleanup)
@@ -153,11 +152,17 @@ describe("PdtpIndicatorsPanel — render compacto actual", () => {
     // coverage/closed_on_time) y la vista anual — no "overdue" a secas, que
     // escondería el caso más común (pending sin mes anterior en cero), ni
     // "semana", que filtraría además por la semana de HOY.
+    //
+    // La URL se afirma literal (no reconstruida con `buildPdtpActivitiesHref`
+    // en el propio test): así el test no depende de que el helper serialice
+    // los parámetros de la misma forma que espera esta aserción — un test
+    // complementario (`pdtp-sheet-table.test.tsx`, describe "filtro 'En
+    // cero'") ya verifica el destino real (qué muestra el visor).
     const febRow = within(details).getByText("Feb").closest("tr")!
     const zeroLink = within(febRow).getByText("2").closest("a")!
     expect(zeroLink).toHaveAttribute(
       "href",
-      buildPdtpActivitiesHref({ programa: "prog-1", anio: "2026", faena: "ws-1", vista: "anual", estado: "en_cero", mes: 2 }),
+      "/prevencion/pdtp/actividades?programa=prog-1&faena=ws-1&vista=anual&anio=2026&estado=en_cero&mes=2",
     )
 
     // Enero no tiene actividades en cero: se muestra "0" sin enlace.

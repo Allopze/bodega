@@ -96,19 +96,60 @@ async function seedApprovedExecution(
   executedQuantity: number,
   week = 1,
 ) {
+  await seedExecution(activityId, worksiteId, year, month, executedQuantity, "approved", week)
+}
+
+/** Como `seedApprovedExecution`, pero con el estado explícito — para los
+ * casos que necesitan una ejecución `submitted` (enviada, sin aprobar). */
+async function seedExecution(
+  activityId: string,
+  worksiteId: string,
+  year: number,
+  month: number,
+  executedQuantity: number,
+  status: "draft" | "submitted" | "approved" | "rejected",
+  week = 1,
+) {
   await inMemoryDb.insert(schema.pdtpExecutions).values({
-    id: `exec-${activityId}-${worksiteId}-${year}-${month}-${week}`,
+    id: `exec-${activityId}-${worksiteId}-${year}-${month}-${week}-${status}`,
     activityId,
     worksiteId,
     year,
     month,
     week,
     executedQuantity,
-    status: "approved",
+    status,
     executedByUserId: USER_ID,
     createdAt: now(),
     updatedAt: now(),
   })
+}
+
+/**
+ * `getPdtpSheetViewByProgram` exige que las actividades pertenezcan a una
+ * hoja del programa (`pdtpSheetActivities`). Se crea program-scoped: cascada
+ * al borrar el programa en `beforeEach`, sin limpieza aparte.
+ */
+async function seedSheetMembership(programId: string, sheetCode: string, activityIds: string[]) {
+  const sheetId = `sheet-${programId}-${sheetCode}`
+  await inMemoryDb.insert(schema.pdtpSheets).values({
+    id: sheetId,
+    code: sheetCode,
+    programId,
+    label: "General",
+    area: "General",
+    defaultScopeRoles: [],
+  })
+  await inMemoryDb.insert(schema.pdtpSheetActivities).values(
+    activityIds.map((activityId, index) => ({
+      id: `${sheetId}-m-${index}`,
+      sheetId,
+      sheetCode,
+      activityId,
+      sheetRow: index + 1,
+      displayOrder: index + 1,
+    })),
+  )
 }
 
 beforeEach(async () => {
@@ -247,5 +288,68 @@ describe("Actividades planificadas en cero junto al cumplimiento mensual", () =>
     // (2 + 1 = 3): `shared` está en cero en ambas y cuenta una sola vez.
     expect(new Set(may.zeroActivityIds)).toEqual(new Set([shared, onlyInA]))
     expect(may.zeroActivities).toBe(2)
+  })
+
+  /**
+   * Ronda 2/5: el visor de actividades (`getPdtpSheetViewByProgram`) no
+   * tenía ningún test que ejercitara este camino con ejecuciones de estado
+   * real. El filtro "en cero" del visor (`isPdtpActivityZeroThisMonth`) se
+   * alimentaba de `effectiveMonthlyExecuted`, que cuenta cualquier estado —
+   * correcto para lo que la tabla MUESTRA (una `submitted` es trabajo
+   * cargado, se ve como "Ejecutado"), pero no para lo que el indicador de
+   * cumplimiento CUENTA (solo `approved`, `compliance.ts` línea ~212). Una
+   * actividad con una única ejecución `submitted` aparecía "Ejecutado" en la
+   * tabla y quedaba afuera del filtro "en cero", pese a que el indicador la
+   * seguía contando en cero — el mismo agujero que esta tarea existía para
+   * cerrar, con otra causa. `approvedMonthlyExecuted` (nuevo campo de
+   * `PdtpSheetView`) es lo que arregla esto: solo suma `approved`.
+   */
+  it("getPdtpSheetViewByProgram: el filtro 'en cero' solo cuenta ejecuciones aprobadas, igual que el indicador", async () => {
+    const { getPdtpSheetViewByProgram } = await import("@/lib/services/pdtp/sheets")
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    const { isPdtpActivityZeroThisMonth } = await import("@/lib/services/pdtp/period")
+
+    const programId = "pdtp-zero-prog-4"
+    const worksiteId = "ws-zero-4"
+    const sheetCode = "pdtp_general"
+    await inMemoryDb.insert(schema.worksites).values({ id: worksiteId, name: "Faena Zero 4", code: "FZ4", isActive: true })
+    await seedProgram(programId, 2036)
+
+    // Espejo: misma cantidad planificada y ejecutada, un solo estado distinto.
+    const actSubmitted = "act-zero-submitted"
+    const actApproved = "act-zero-approved"
+    await seedActivity(programId, actSubmitted, 1)
+    await seedActivity(programId, actApproved, 2)
+    await seedSchedule(actSubmitted, 2036, 6, 1)
+    await seedSchedule(actApproved, 2036, 6, 1)
+    await seedSheetMembership(programId, sheetCode, [actSubmitted, actApproved])
+    await seedExecution(actSubmitted, worksiteId, 2036, 6, 1, "submitted")
+    await seedExecution(actApproved, worksiteId, 2036, 6, 1, "approved")
+
+    const view = await getPdtpSheetViewByProgram(programId, sheetCode, worksiteId)
+    const period = { year: 2036, month: 6, week: 1 }
+    const submittedActivity = view!.activities.find((a) => a.id === actSubmitted)!
+    const approvedActivity = view!.activities.find((a) => a.id === actApproved)!
+
+    // La tabla no cambia: una `submitted` sigue contando para la presentación.
+    expect(submittedActivity.effectiveMonthlyExecuted[5]).toBe(1)
+    // Pero el campo que alimenta el filtro solo mira lo aprobado.
+    expect(submittedActivity.approvedMonthlyExecuted[5]).toBe(0)
+    expect(
+      isPdtpActivityZeroThisMonth(submittedActivity, submittedActivity.effectiveMonthlyPlanned, submittedActivity.approvedMonthlyExecuted, period),
+    ).toBe(true)
+
+    expect(approvedActivity.effectiveMonthlyExecuted[5]).toBe(1)
+    expect(approvedActivity.approvedMonthlyExecuted[5]).toBe(1)
+    expect(
+      isPdtpActivityZeroThisMonth(approvedActivity, approvedActivity.effectiveMonthlyPlanned, approvedActivity.approvedMonthlyExecuted, period),
+    ).toBe(false)
+
+    // Y coincide con lo que el indicador de cumplimiento cuenta el mismo
+    // mes — la razón de ser de este test.
+    const compliance = await getPdtpComplianceIndicators(programId, worksiteId)
+    const june = compliance!.monthly[5]!
+    expect(june.zeroActivityIds).toContain(actSubmitted)
+    expect(june.zeroActivityIds).not.toContain(actApproved)
   })
 })

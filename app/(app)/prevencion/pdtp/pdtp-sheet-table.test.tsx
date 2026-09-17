@@ -29,6 +29,13 @@ function makeActivity(
   monthlyExecuted: number[],
   executions: PdtpSheetView["activities"][number]["executions"] = [],
   notes: string | null = null,
+  // Por defecto igual a `monthlyExecuted`: la mayoría de los fixtures de este
+  // archivo no distingue estado de ejecución, y antes de la ronda 2/5 de la
+  // tarea 1.4 no hacía falta. Un test que sí quiera modelar una ejecución
+  // `submitted` sin aprobar pasa un arreglo distinto acá (ver "filtro 'En
+  // cero'" más abajo) — `effectiveMonthlyExecuted` (lo que muestra la tabla)
+  // no cambia, solo lo que ve `isPdtpActivityZeroThisMonth`.
+  approvedMonthlyExecuted: number[] = monthlyExecuted,
 ): PdtpSheetView["activities"][number] {
   const totalPlanned = monthlyPlanned.reduce((s, v) => s + v, 0)
   const totalExecuted = monthlyExecuted.reduce((s, v) => s + v, 0)
@@ -47,6 +54,7 @@ function makeActivity(
     monthlyExecuted,
     effectiveMonthlyPlanned: monthlyPlanned,
     effectiveMonthlyExecuted: monthlyExecuted,
+    approvedMonthlyExecuted,
     totalPlanned,
     totalExecuted,
     effectiveTotalPlanned: totalPlanned,
@@ -299,6 +307,39 @@ describe("PdtpSheetTable — filtro 'En cero'", () => {
     expect(screen.getByText("Pendiente en cero 2")).toBeInTheDocument()
     expect(screen.getByText("Atrasada en cero 2")).toBeInTheDocument()
     expect(screen.queryByText("Ejecutada 2")).not.toBeInTheDocument()
+  })
+
+  /**
+   * Bug real de la ronda 2/5: `isPdtpActivityZeroThisMonth` se alimentaba de
+   * `effectiveMonthlyExecuted`, que cuenta cualquier estado de ejecución
+   * (correcto para la tabla — una `submitted` sin aprobar sigue siendo
+   * "trabajo cargado" y se muestra como tal). El indicador de cumplimiento
+   * (`compliance.ts`) solo cuenta `approved`, así que una actividad con una
+   * única ejecución `submitted` aparecía como "Ejecutado" en la tabla y
+   * quedaba afuera del filtro "en cero" — pese a que el indicador la seguía
+   * contando en cero. Este test fija que el filtro usa `approvedMonthlyExecuted`,
+   * no lo que se ve en pantalla.
+   */
+  it("una ejecución enviada pero no aprobada sigue en cero para el filtro, aunque la tabla la muestre como ejecutada", () => {
+    const submittedNotApproved = makeActivity(
+      "act-submitted-not-approved",
+      "6",
+      "Enviada sin aprobar",
+      withPlanned(7, 1),
+      withPlanned(7, 1), // effectiveMonthlyExecuted: la tabla la muestra ejecutada.
+      [],
+      null,
+      ZERO12, // approvedMonthlyExecuted: nada aprobado todavía.
+    )
+    const view = makeView([submittedNotApproved])
+    render(<PdtpSheetTable view={view} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+
+    // La presentación no cambió: la tabla la sigue mostrando como ejecutada.
+    const row = screen.getByText("Enviada sin aprobar").closest("tr")!
+    expect(within(row).getByText("Ejecutado")).toBeInTheDocument()
+
+    // Pero el chip "En cero" (y el filtro que lo respalda) la cuenta.
+    expect(screen.getByText("En cero 1")).toBeInTheDocument()
   })
 })
 
