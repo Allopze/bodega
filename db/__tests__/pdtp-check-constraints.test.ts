@@ -20,6 +20,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.pdtpActivityWorksiteAssignees)
   await inMemoryDb.delete(schema.pdtpPeriodClosures)
   await inMemoryDb.delete(schema.pdtpActivityScheduleOverrides)
   await inMemoryDb.delete(schema.pdtpExecutionDeviations)
@@ -515,6 +516,101 @@ describe("PDTP CHECK constraints SQL", () => {
     it("un segundo cierre del mismo programa, faena, año y mes viola el índice único", async () => {
       await insertClosure({ id: "close-a" })
       await expectCheckViolation(insertClosure({ id: "close-b" }), "pdtp_period_closures_period_unique")
+    })
+  })
+  /* ── Asignación nominal por faena (Fase 5) ──────────────────────────────── */
+  describe("pdtp_activity_worksite_assignees", () => {
+    function insertAssignee(overrides: Partial<{
+      id: string
+      activityId: string
+      worksiteId: string
+      userId: string
+      roleId: string | null
+      validFrom: string
+      validUntil: string | null
+      note: string | null
+      createdByUserId: string
+    }> = {}) {
+      const now = new Date().toISOString()
+      return inMemoryDb.insert(schema.pdtpActivityWorksiteAssignees).values({
+        id: overrides.id ?? "asg-1",
+        activityId: overrides.activityId ?? "a1",
+        worksiteId: overrides.worksiteId ?? "w1",
+        userId: overrides.userId ?? "u1",
+        roleId: overrides.roleId === undefined ? null : overrides.roleId,
+        validFrom: overrides.validFrom ?? "2026-03-01",
+        validUntil: overrides.validUntil === undefined ? null : overrides.validUntil,
+        note: overrides.note ?? null,
+        createdByUserId: overrides.createdByUserId ?? "u1",
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+
+    it("acepta una asignación vigente sin cierre (sanity)", async () => {
+      await insertAssignee()
+    })
+
+    it("acepta una vigencia cerrada en una fecha posterior al inicio", async () => {
+      await insertAssignee({ validUntil: "2026-05-31" })
+    })
+
+    it("acepta una vigencia cerrada el mismo día en que empezó", async () => {
+      await insertAssignee({ validFrom: "2026-03-01", validUntil: "2026-03-01" })
+    })
+
+    it("rechaza una vigencia que termina antes de empezar", async () => {
+      await expectCheckViolation(
+        insertAssignee({ validFrom: "2026-03-01", validUntil: "2026-02-28" }),
+        "pdtp_activity_worksite_assignees_validity_check",
+      )
+    })
+
+    it("una segunda asignación vigente de la misma persona en la misma celda viola el índice parcial", async () => {
+      await insertAssignee({ id: "asg-a" })
+      await expectCheckViolation(
+        insertAssignee({ id: "asg-b" }),
+        "pdtp_activity_worksite_assignees_open_unique",
+      )
+    })
+
+    it("una asignación cerrada no bloquea abrir una nueva de la misma persona", async () => {
+      // El historial es justamente el punto: quien fue responsable en marzo
+      // sigue registrado cuando vuelve a serlo en junio.
+      await insertAssignee({ id: "asg-cerrada", validFrom: "2026-03-01", validUntil: "2026-05-31" })
+      await insertAssignee({ id: "asg-nueva", validFrom: "2026-06-01" })
+    })
+
+    it("dos personas distintas pueden estar vigentes a la vez en la misma celda (turnos)", async () => {
+      await inMemoryDb.insert(schema.users).values({
+        id: "u2", name: "U2", email: "u2@test", hashedPassword: "x", isActive: true,
+      }).onConflictDoNothing()
+      await insertAssignee({ id: "asg-turno-a", userId: "u1" })
+      await insertAssignee({ id: "asg-turno-b", userId: "u2" })
+    })
+
+    it("borrar la actividad arrastra sus asignaciones (cascade)", async () => {
+      await insertAssignee({ id: "asg-cascade" })
+      await inMemoryDb.delete(schema.pdtpActivities).where(eq(schema.pdtpActivities.id, "a1"))
+      const rows = await inMemoryDb.select().from(schema.pdtpActivityWorksiteAssignees)
+      expect(rows).toHaveLength(0)
+    })
+
+    it("no deja borrar la cuenta de quien fue responsable (restrict)", async () => {
+      // Sin `restrict`, desactivar a una persona borraría el registro de que
+      // era la responsable — exactamente lo que el historial existe para
+      // conservar.
+      await inMemoryDb.insert(schema.users).values({
+        id: "u3", name: "U3", email: "u3@test", hashedPassword: "x", isActive: true,
+      }).onConflictDoNothing()
+      // El creador es otro: así el único FK que puede bloquear el borrado de
+      // `u1` es el de `user_id`, y el nombre del constraint que se afirma es
+      // el que se quiere probar.
+      await insertAssignee({ id: "asg-restrict", userId: "u1", createdByUserId: "u3" })
+      await expectCheckViolation(
+        inMemoryDb.delete(schema.users).where(eq(schema.users.id, "u1")),
+        "pdtp_activity_worksite_assignees_user_id_users_id_fk",
+      )
     })
   })
 })

@@ -1109,6 +1109,71 @@ export const pdtpActivityWorksiteParams = pgTable("pdtp_activity_worksite_params
   )`),
 ])
 
+/* ── PDTP Asignación nominal por faena (Fase 5) ──────────────────────────── */
+/**
+ * Quién, con nombre y apellido, responde por una actividad del programa en una
+ * faena concreta.
+ *
+ * El programa firmado dice el CARGO ("Jefe de terreno"), no la persona, y eso
+ * es correcto: el documento sobrevive a la rotación. Pero la cola de pendientes
+ * derivaba el dueño sólo del cargo, así que con dos jefes de terreno en la
+ * misma faena la fila le aparecía a los dos y ninguno sabía si era suya. Esta
+ * tabla es la capa de OPERACIÓN encima del documento: nombra a la persona sin
+ * tocar el contenido.
+ *
+ * **No entra en la huella firmada** (`lib/services/pdtp/content-digest.ts`):
+ * asignar una actividad a alguien no es un cambio de contenido y no debe abrir
+ * una revisión v+1, igual que los overrides de meta y los desvíos por celda.
+ *
+ * **Vigencia por fecha, no por bandera.** Cuando alguien deja de ser el
+ * responsable, la fila no se borra: se le pone `valid_until`. Quién respondía
+ * por la actividad en la semana que el fiscalizador pregunta es exactamente lo
+ * que un `DELETE` haría imposible de contestar. El índice único parcial cuida
+ * que haya una sola asignación abierta por (actividad, faena, persona); varias
+ * personas a la vez sí se permiten, que es el caso de los turnos.
+ *
+ * `roleId` es informativo: deja registrado con qué rol se ofreció a esa persona
+ * como candidata. No manda sobre la visibilidad —esa la decide `userId`— y por
+ * eso admite `SET NULL` si el rol se elimina.
+ */
+export const pdtpActivityWorksiteAssignees = pgTable("pdtp_activity_worksite_assignees", {
+  id:              text("id").primaryKey(),
+  // FK con nombre explícito: el que Drizzle derivaría
+  // (`..._activity_id_pdtp_activities_id_fk`) mide 66 caracteres y Postgres lo
+  // truncaría a 63 — `scripts/verify-migration-chain.mjs` lo rechaza.
+  activityId:      text("activity_id").notNull(),
+  worksiteId:      text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
+  // `restrict`: borrar una cuenta no puede borrar en silencio el registro de
+  // quién era responsable. Una persona que se va se cierra por vigencia.
+  userId:          text("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  roleId:          text("role_id").references(() => roles.id, { onDelete: "set null" }),
+  validFrom:       date("valid_from", { mode: "string" }).notNull(),
+  validUntil:      date("valid_until", { mode: "string" }),
+  note:            text("note"),
+  createdByUserId: text("created_by_user_id").references(() => users.id),
+  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.activityId],
+    foreignColumns: [pdtpActivities.id],
+    name: "pdtp_activity_worksite_assignees_activity_fk",
+  }).onDelete("cascade"),
+  // Una sola asignación ABIERTA por persona y celda actividad×faena. El
+  // historial cerrado (`valid_until IS NOT NULL`) se acumula sin estorbar.
+  uniqueIndex("pdtp_activity_worksite_assignees_open_unique")
+    .on(table.activityId, table.worksiteId, table.userId)
+    .where(sql`valid_until IS NULL`),
+  // "Qué le toca a esta persona en esta faena" — la pregunta de /pendientes.
+  index("pdtp_activity_worksite_assignees_worksite_user_idx").on(table.worksiteId, table.userId),
+  // "Quién responde por esta actividad acá" — la pregunta de la planilla y del RE-36.
+  index("pdtp_activity_worksite_assignees_activity_worksite_idx").on(table.activityId, table.worksiteId),
+  check(
+    "pdtp_activity_worksite_assignees_validity_check",
+    sql`${table.validUntil} IS NULL OR ${table.validUntil} >= ${table.validFrom}`,
+  ),
+])
+
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const pdtpProgramsRelations = relations(pdtpPrograms, ({ many, one }) => ({
   elaboratedByUser: one(users, { fields: [pdtpPrograms.elaboratedByUserId], references: [users.id] }),
@@ -1135,6 +1200,13 @@ export const pdtpProgramWorksitesRelations = relations(pdtpProgramWorksites, ({ 
   program: one(pdtpPrograms, { fields: [pdtpProgramWorksites.programId], references: [pdtpPrograms.id] }),
   worksite: one(worksites, { fields: [pdtpProgramWorksites.worksiteId], references: [worksites.id] }),
   addedByUser: one(users, { fields: [pdtpProgramWorksites.addedByUserId], references: [users.id] }),
+}))
+
+export const pdtpActivityWorksiteAssigneesRelations = relations(pdtpActivityWorksiteAssignees, ({ one }) => ({
+  activity: one(pdtpActivities, { fields: [pdtpActivityWorksiteAssignees.activityId], references: [pdtpActivities.id] }),
+  worksite: one(worksites, { fields: [pdtpActivityWorksiteAssignees.worksiteId], references: [worksites.id] }),
+  user: one(users, { fields: [pdtpActivityWorksiteAssignees.userId], references: [users.id] }),
+  role: one(roles, { fields: [pdtpActivityWorksiteAssignees.roleId], references: [roles.id] }),
 }))
 
 export const pdtpActivityWorksiteExclusionsRelations = relations(pdtpActivityWorksiteExclusions, ({ one }) => ({
@@ -1346,6 +1418,8 @@ export type PdtpActivityScheduleOverride = typeof pdtpActivityScheduleOverrides.
 export type NewPdtpActivityScheduleOverride = typeof pdtpActivityScheduleOverrides.$inferInsert
 export type PdtpProgramWorksite = typeof pdtpProgramWorksites.$inferSelect
 export type NewPdtpProgramWorksite = typeof pdtpProgramWorksites.$inferInsert
+export type PdtpActivityWorksiteAssignee = typeof pdtpActivityWorksiteAssignees.$inferSelect
+export type NewPdtpActivityWorksiteAssignee = typeof pdtpActivityWorksiteAssignees.$inferInsert
 export type PdtpActivityWorksiteExclusion = typeof pdtpActivityWorksiteExclusions.$inferSelect
 export type NewPdtpActivityWorksiteExclusion = typeof pdtpActivityWorksiteExclusions.$inferInsert
 

@@ -2143,6 +2143,13 @@
       "when": 1789684082395,
       "tag": "0305_minor_penance",
       "breakpoints": true
+    },
+    {
+      "idx": 306,
+      "version": "7",
+      "when": 1789687142077,
+      "tag": "0306_icy_vin_gonzales",
+      "breakpoints": true
     }
   ]
 }
