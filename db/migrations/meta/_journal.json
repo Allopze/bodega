@@ -2108,6 +2108,13 @@
       "when": 1789588055913,
       "tag": "0300_nifty_namorita",
       "breakpoints": true
+    },
+    {
+      "idx": 301,
+      "version": "7",
+      "when": 1789609782624,
+      "tag": "0301_third_franklin_richards",
+      "breakpoints": true
     }
   ]
 }

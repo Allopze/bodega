@@ -1,5 +1,6 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
+import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -25,6 +26,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpSheetActivities)
   await inMemoryDb.delete(schema.pdtpSheets)
   await inMemoryDb.delete(schema.pdtpActivities)
+  await inMemoryDb.delete(schema.pdtpObjectives)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
   await inMemoryDb.delete(schema.pdtpChangeLog)
   await inMemoryDb.delete(schema.pdtpPrograms)
@@ -36,14 +38,23 @@ beforeEach(async () => {
  * Helper: ejecuta `fn` y devuelve el `message` del error principal y del
  * `cause` concatenado. Vitest's `.toThrow(regex)` no inspecciona `cause`,
  * por eso hacemos match manual.
+ *
+ * Cuando se pasa `constraintName`, el match es contra el nombre exacto del
+ * constraint (p. ej. "pdtp_objectives_code_check") en vez del patrón laxo
+ * genérico: un patrón laxo lo satisface cualquier otra violación y el test
+ * pasaría sin llegar nunca al CHECK o FK que quiere probar.
  */
-async function expectCheckViolation(promise: Promise<unknown>): Promise<void> {
+async function expectCheckViolation(promise: Promise<unknown>, constraintName?: string): Promise<void> {
   let thrown: unknown = null
   try { await promise } catch (e) { thrown = e }
   expect(thrown).toBeTruthy()
   const cause = (thrown as { cause?: { message?: string } }).cause
   const msg = `${(thrown as Error).message}\n${cause?.message ?? ""}`
-  expect(msg).toMatch(/check|constraint|violates|Failing row/i)
+  if (constraintName) {
+    expect(msg).toContain(constraintName)
+  } else {
+    expect(msg).toMatch(/check|constraint|violates|Failing row/i)
+  }
 }
 
 describe("PDTP CHECK constraints SQL", () => {
@@ -165,5 +176,51 @@ describe("PDTP CHECK constraints SQL", () => {
         plannedQuantity: -1, sourceColumn: "x",
       } as never),
     )
+  })
+
+  describe("pdtp_objectives", () => {
+    function insertObjective(overrides: {
+      id?: string
+      programId?: string
+      code: string
+      name: string
+    }) {
+      const now = new Date().toISOString()
+      return inMemoryDb.insert(schema.pdtpObjectives).values({
+        id: overrides.id ?? "obj-1",
+        programId: overrides.programId ?? "p1",
+        code: overrides.code,
+        name: overrides.name,
+        createdAt: now,
+        updatedAt: now,
+      } as never)
+    }
+
+    it("rechaza código vacío o en blanco", async () => {
+      await expectCheckViolation(insertObjective({ code: " ", name: "X" }), "pdtp_objectives_code_check")
+    })
+
+    it("rechaza nombre vacío o en blanco", async () => {
+      await expectCheckViolation(insertObjective({ code: "1", name: " " }), "pdtp_objectives_name_check")
+    })
+
+    it("un objetivo de otro programa es rechazado por la FK compuesta", async () => {
+      const now = new Date().toISOString()
+      // Segundo programa real y distinto de p1: la FK compuesta debe comparar
+      // programId, no solo el id del objetivo.
+      await inMemoryDb.insert(schema.pdtpPrograms).values({
+        id: "p2", year: 2026, version: 2, status: "active", title: "T2",
+        elaboratedByName: "X", elaboratedByTitle: "Y",
+        createdAt: now, updatedAt: now,
+      })
+      await insertObjective({ id: "p2-obj-1", programId: "p2", code: "1", name: "Otro" })
+
+      await expectCheckViolation(
+        inMemoryDb.update(schema.pdtpActivities)
+          .set({ objectiveId: "p2-obj-1" })
+          .where(eq(schema.pdtpActivities.id, "a1")),
+        "pdtp_activities_objective_same_program_fk",
+      )
+    })
   })
 })

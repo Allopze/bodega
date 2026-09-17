@@ -352,12 +352,34 @@ export const pdtpAccreditationBindings = pgTable("pdtp_accreditation_bindings", 
   check("pdtp_accreditation_bindings_event_type_check", sql`${table.eventType} IN ('execute', 'review', 'publish', 'acknowledge', 'close', 'complete_drill')`),
 ])
 
+/**
+ * Objetivo del programa (banda vertical del Excel RE-36 que agrupa
+ * actividades). Declarada aquí, antes de `pdtpActivities`, porque su FK
+ * compuesta referencia estas columnas.
+ */
+export const pdtpObjectives = pgTable("pdtp_objectives", {
+  id:           text("id").primaryKey(),
+  programId:    text("program_id").notNull().references(() => pdtpPrograms.id, { onDelete: "cascade" }),
+  code:         text("code").notNull(),
+  name:         text("name").notNull(),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:    timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("pdtp_objectives_program_code_unique").on(table.programId, table.code),
+  uniqueIndex("pdtp_objectives_program_id_unique").on(table.programId, table.id),
+  check("pdtp_objectives_code_check", sql`length(trim(${table.code})) > 0`),
+  check("pdtp_objectives_name_check", sql`length(trim(${table.name})) > 0`),
+  check("pdtp_objectives_display_order_check", sql`${table.displayOrder} >= 0`),
+])
+
 export const pdtpActivities = pgTable("pdtp_activities", {
   id:                 text("id").primaryKey(),
   programId:          text("program_id").notNull().references(() => pdtpPrograms.id, { onDelete: "cascade" }),
   n:                  integer("n").notNull(),
   catalogActivityId:  text("catalog_activity_id"),
   catalogRevision:    integer("catalog_revision"),
+  objectiveId:        text("objective_id"),
   displayOrder:       integer("display_order").notNull().default(0),
   status:             text("status").notNull().default("active"),
   retiredReason:      text("retired_reason"),
@@ -439,6 +461,12 @@ export const pdtpActivities = pgTable("pdtp_activities", {
     foreignColumns: [pdtpCatalogActivityRevisions.catalogActivityId, pdtpCatalogActivityRevisions.revision],
     name: "pdtp_activities_catalog_revision_fk",
   }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.programId, table.objectiveId],
+    foreignColumns: [pdtpObjectives.programId, pdtpObjectives.id],
+    name: "pdtp_activities_objective_same_program_fk",
+  }).onDelete("set null"),
+  index("pdtp_activities_program_objective_idx").on(table.programId, table.objectiveId),
   index("pdtp_activities_program_display_order_idx").on(table.programId, table.displayOrder),
   check("pdtp_activities_n_check", sql`${table.n} >= 1`),
   check("pdtp_activities_catalog_revision_pair_check", sql`(${table.catalogActivityId} IS NULL) = (${table.catalogRevision} IS NULL)`),
@@ -947,6 +975,7 @@ export const pdtpProgramsRelations = relations(pdtpPrograms, ({ many, one }) => 
   archivedByUser: one(users, { fields: [pdtpPrograms.archivedByUserId], references: [users.id] }),
   lastReopenedByUser: one(users, { fields: [pdtpPrograms.lastReopenedByUserId], references: [users.id] }),
   activities: many(pdtpActivities),
+  objectives: many(pdtpObjectives),
   changeLog: many(pdtpChangeLog),
   sheets: many(pdtpSheets),
   approvalSteps: many(pdtpApprovalSteps),
@@ -1009,8 +1038,14 @@ export const pdtpApprovalDecisionsRelations = relations(pdtpApprovalDecisions, (
   actor: one(users, { fields: [pdtpApprovalDecisions.actorUserId], references: [users.id] }),
 }))
 
+export const pdtpObjectivesRelations = relations(pdtpObjectives, ({ one, many }) => ({
+  program: one(pdtpPrograms, { fields: [pdtpObjectives.programId], references: [pdtpPrograms.id] }),
+  activities: many(pdtpActivities),
+}))
+
 export const pdtpActivitiesRelations = relations(pdtpActivities, ({ one, many }) => ({
   program: one(pdtpPrograms, { fields: [pdtpActivities.programId], references: [pdtpPrograms.id] }),
+  objective: one(pdtpObjectives, { fields: [pdtpActivities.objectiveId], references: [pdtpObjectives.id] }),
   schedule: many(pdtpActivitySchedule),
   executions: many(pdtpExecutions),
   obligations: many(pdtpObligations),
@@ -1126,6 +1161,8 @@ export type PdtpRoleLegendEntry = typeof pdtpRoleLegendEntries.$inferSelect
 export type NewPdtpRoleLegendEntry = typeof pdtpRoleLegendEntries.$inferInsert
 export type PdtpResponsibleCatalog = typeof pdtpResponsibleCatalog.$inferSelect
 export type NewPdtpResponsibleCatalog = typeof pdtpResponsibleCatalog.$inferInsert
+export type PdtpObjective = typeof pdtpObjectives.$inferSelect
+export type NewPdtpObjective = typeof pdtpObjectives.$inferInsert
 export type PdtpActivity = typeof pdtpActivities.$inferSelect
 export type NewPdtpActivity = typeof pdtpActivities.$inferInsert
 export type PdtpActivitySchedule = typeof pdtpActivitySchedule.$inferSelect
