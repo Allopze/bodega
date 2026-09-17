@@ -66,7 +66,7 @@ test.describe.serial("PDTP anual — ajustes, Base y retiro", () => {
   test("muestra la comparación contra la revisión Base 2026", async ({ page }) => {
     await page.getByRole("tab", { name: /Revisión/ }).click()
 
-    await expect(page.getByRole("heading", { name: "Cambios frente a la Base 2026" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Cambios frente a la Base vigente" })).toBeVisible()
     await expect(page.getByText(/Revisión 1/)).toBeVisible()
     await expect(page.getByText("Agregadas")).toBeVisible()
     await expect(page.getByText("Ajustes por faena", { exact: true })).toBeVisible()
