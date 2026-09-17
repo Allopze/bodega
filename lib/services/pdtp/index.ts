@@ -107,7 +107,16 @@ export {
 export type { PdtpApprovalStepInput, PdtpApprovalSegregationRule } from "./approval-flow"
 export { getPdtpAggregatedSheetViewByProgram, getPdtpSheetView, getPdtpSheetViewByProgram, buildPdtpExport } from "./sheets"
 export { markPdtpExecution, approvePdtpExecution, rejectPdtpExecution, listPendingPdtpExecutions, getPendingPdtpApprovalsForView, getPdtpChangeLog } from "./executions"
-export { getPdtpComplianceIndicators, getPdtpComplianceIndicatorsForScope, getPdtpComplianceByCategoryForScope } from "./compliance"
+export {
+  getPdtpComplianceIndicators, getPdtpComplianceIndicatorsForScope, getPdtpComplianceByCategoryForScope,
+  effectiveApprovedExecutionsByCell,
+} from "./compliance"
+export {
+  buildPdtpRe36Document,
+} from "./re36-document"
+export type {
+  PdtpRe36Document, PdtpRe36Sheet, PdtpRe36Row, PdtpRe36Cell, PdtpRe36Band, PdtpRe36DeviationRow,
+} from "./re36-document"
 export {
   PDTP_SUBJECT_SOURCES,
   isFlowSubjectSource,
