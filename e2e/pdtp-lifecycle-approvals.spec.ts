@@ -24,7 +24,15 @@ test.describe("PDTP — Ciclo de vida y aprobaciones", () => {
     // La reorganización del sidebar (4 grupos, renombres canónicos DS 44) dejó
     // la etiqueta en "Programa de trabajo": el grupo "Programa" ya da el
     // contexto y no necesita repetir la sigla.
-    await expect(page.getByRole("link", { name: "Programa de trabajo" })).toBeVisible()
+    //
+    // El sidebar (`aria-label="Navegación"`) tiene su propio ítem "Programa de
+    // trabajo" además del breadcrumb (`aria-label="Navegación estructural"`):
+    // un locator sin acotar resuelve a los dos y viola el modo estricto en
+    // cuanto el sidebar hidrata, así que el resultado dependía de qué tan
+    // rápido montara — a veces la aserción ya había pasado, a veces no.
+    await expect(
+      page.getByRole("navigation", { name: "Navegación estructural" }).getByRole("link", { name: "Programa de trabajo" }),
+    ).toBeVisible()
   })
 
   test("la página de aprobaciones muestra la tabla o el estado sin pendientes", async ({ page }) => {
