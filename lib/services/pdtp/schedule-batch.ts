@@ -12,7 +12,11 @@ import {
 } from "./recurrence"
 import { presetToCells, presetToRule, type PdtpSchedulePresetKey, type PdtpSchedulePresetParams } from "./schedule-presets"
 
-export type PdtpScheduleBatchSkipReason = "manual_schedule_would_be_replaced" | "not_scheduled_mode" | "retired"
+export type PdtpScheduleBatchSkipReason =
+  | "manual_schedule_would_be_replaced"
+  | "not_scheduled_mode"
+  | "retired"
+  | "preset_produced_no_cells"
 
 export type PdtpScheduleBatchInput = {
   programId: string
@@ -20,10 +24,17 @@ export type PdtpScheduleBatchInput = {
   preset: PdtpSchedulePresetKey
   params: PdtpSchedulePresetParams
   mode: "replace" | "fill_empty"
-  /** Autoriza reemplazar, actividad por actividad, una planificación ajustada
-   *  a mano por las celdas del preset. Sin esto, esa actividad no se toca y
-   *  queda en `skippedConflicts` con motivo `manual_schedule_would_be_replaced`. */
-  replaceConfirmed?: boolean
+  /**
+   * Ids explícitos —no un booleano de lote— cuya planificación manual el
+   * usuario ya revisó y confirmó reemplazar. Sólo estos se eximen de
+   * `manual_schedule_would_be_replaced`; cualquier otra actividad que
+   * resulte tener fuente manual se salta igual, aunque el lote traiga esta
+   * lista. Un booleano "confirmar reemplazo" autorizaría a pisar cualquier
+   * actividad que se hubiera vuelto manual entre que el usuario revisó la
+   * selección y confirmó, no sólo las que de verdad vio (Ronda de arreglos
+   * 1/5, arreglo barato #2).
+   */
+  replaceConfirmedActivityIds?: string[]
 }
 
 export type PdtpScheduleBatchResult = {
@@ -56,11 +67,20 @@ export type PdtpScheduleBatchResult = {
  * también en `recurrenceRule` de la actividad, para que
  * `derivePdtpScheduleSource` la clasifique después como `"rule"` — si no se
  * escribiera, una edición manual posterior de una sola celda no tendría
- * forma de saber que "rompió" el patrón del preset.
+ * forma de saber que "rompió" el patrón del preset. `recurrenceRule` se
+ * escribe SIEMPRE que la actividad quedó aplicada, incluido `null` para
+ * `punctual`, para no dejar una regla vieja colgando de una actividad que
+ * pasó de fuente `"rule"` a manual.
  *
  * El horizonte de proyección sale del programa (`deriveScheduleHorizon`),
  * no del año calendario: un programa con período parcial no recibe celdas
- * fuera de su período.
+ * fuera de su período. Un preset que —con ese horizonte— no produce NINGUNA
+ * celda (un `punctual` sin selección, o un rango de meses que no intersecta
+ * el período del programa) no se escribe: la actividad va a
+ * `skippedConflicts` con motivo `preset_produced_no_cells`, en vez de que
+ * `writePdtpActivitySchedule` interprete "cero celdas" como "borra todo el
+ * calendario del año" (lo hace, y sin guard para una actividad de fuente
+ * `"rule"` — no hay planificación manual que proteger).
  *
  * Todo en una transacción: si una actividad falla por una razón que no sea
  * un conflicto conocido (`manual_schedule_would_be_replaced`), la excepción
@@ -85,15 +105,19 @@ export async function applyPdtpSchedulePresetToActivities(
   const horizon = deriveScheduleHorizon(program)
   const rule = presetToRule(input.preset, input.params)
   const presetCells = presetToCells(input.preset, input.params, horizon)
-  const replaceConfirmed = Boolean(input.replaceConfirmed)
+  const confirmedIds = new Set(input.replaceConfirmedActivityIds ?? [])
   const now = new Date().toISOString()
 
   return db.transaction(async (tx) => {
-    // Bloquea las N actividades del lote de una sola vez: el resto de la
-    // transacción lee y escribe sobre filas ya bloqueadas, así que ninguna
-    // puede cambiar bajo los pies del lote mientras dura.
+    // Bloquea las N actividades del lote de una sola vez, en un orden fijo
+    // (`ORDER BY id`): sin esto, dos lotes concurrentes con selecciones
+    // solapadas pueden pedir el lock en orden distinto y interbloquearse
+    // (Ronda de arreglos 1/5, arreglo barato #3). El resto de la transacción
+    // lee y escribe sobre filas ya bloqueadas, así que ninguna puede cambiar
+    // bajo los pies del lote mientras dura.
     const activityRows = await tx.select().from(pdtpActivities)
       .where(and(eq(pdtpActivities.programId, input.programId), inArray(pdtpActivities.id, uniqueIds)))
+      .orderBy(pdtpActivities.id)
       .for("update")
     if (activityRows.length !== uniqueIds.length) {
       throw new Error("La selección contiene actividades ajenas al programa.")
@@ -145,6 +169,21 @@ export async function applyPdtpSchedulePresetToActivities(
         if (currentSource !== "none") continue
       }
 
+      // Un preset que no produjo ninguna celda (p. ej. `punctual` sin
+      // `params.cells`, o un rango de meses que no intersecta el horizonte
+      // del programa) NO se escribe. `writePdtpActivitySchedule` con
+      // `cells: []` toma la rama "borra todo lo que sobra": para una
+      // actividad de fuente `"rule"` no hay guard que lo frene (el guard sólo
+      // protege planificación MANUAL), así que sin este chequeo el lote
+      // borraba el calendario completo en silencio (Ronda de arreglos 1/5,
+      // Important 1). El Zod ya exige `cells` no vacío para `punctual`, pero
+      // el caso de rango-fuera-de-horizonte sólo se puede detectar aquí, con
+      // el horizonte real del programa en la mano.
+      if (presetCells.length === 0) {
+        skippedConflicts.push({ activityId, n: activity.n, reason: "preset_produced_no_cells" })
+        continue
+      }
+
       let writeResult: Awaited<ReturnType<typeof writePdtpActivitySchedule>>
       try {
         writeResult = await writePdtpActivitySchedule(tx, {
@@ -155,7 +194,7 @@ export async function applyPdtpSchedulePresetToActivities(
           currentRecurrenceRule,
           cells: presetCells,
           guardAgainstManualOverwrite: true,
-          replaceConfirmed,
+          replaceConfirmed: confirmedIds.has(activityId),
           expectedFingerprint: null,
         })
       } catch (error) {
@@ -169,12 +208,15 @@ export async function applyPdtpSchedulePresetToActivities(
         throw error
       }
 
-      // `updatedAt` se toca siempre que la actividad quedó aplicada, aunque el
-      // preset no tenga regla (`punctual`): su calendario cambió igual, sólo
-      // que en otra tabla. `recurrenceRule` sólo se escribe cuando el preset
-      // la trae — `punctual` la deja intacta a propósito (ver JSDoc).
-      const activityUpdate: Partial<typeof pdtpActivities.$inferInsert> = { updatedAt: now }
-      if (rule) activityUpdate.recurrenceRule = rule
+      // `updatedAt` se toca siempre que la actividad quedó aplicada.
+      // `recurrenceRule` se escribe SIEMPRE que el preset se aplicó —
+      // incluido `null` para `punctual` — para no dejar una regla obsoleta
+      // colgando de una actividad que pasó de fuente "rule" a manual (Ronda
+      // de arreglos 1/5, arreglo barato #1); antes sólo se escribía `if
+      // (rule)`, así que un `punctual` sobre una actividad que venía de una
+      // regla conservaba esa regla vieja aunque ya no describiera el
+      // calendario vigente.
+      const activityUpdate: Partial<typeof pdtpActivities.$inferInsert> = { updatedAt: now, recurrenceRule: rule }
       await tx.update(pdtpActivities).set(activityUpdate).where(eq(pdtpActivities.id, activityId))
 
       applied.push(activityId)
@@ -182,12 +224,20 @@ export async function applyPdtpSchedulePresetToActivities(
         activityId,
         n: activity.n,
         before: { schedule: writeResult.currentCells, recurrenceRule: currentRecurrenceRule },
-        after: { schedule: presetCells, recurrenceRule: rule ?? currentRecurrenceRule },
+        after: { schedule: presetCells, recurrenceRule: rule },
       })
     }
 
     if (applied.length > 0) {
-      const note = `Preset "${input.preset}" (${input.mode === "fill_empty" ? "solo vacías" : "reemplazo"}) aplicado a ${applied.length} actividad(es); ${skippedConflicts.length} en conflicto conocido.`
+      // Separadas en el texto: "retired"/"not_scheduled_mode" no son
+      // conflictos (nunca fueron candidatas), sólo "manual_..." y
+      // "preset_produced_no_cells" lo son de verdad — de lo contrario la
+      // nota infla el conteo de "conflicto" con actividades que ni siquiera
+      // se intentaron (Ronda de arreglos 1/5, opcional).
+      const knownConflicts = skippedConflicts.filter((skip) =>
+        skip.reason === "manual_schedule_would_be_replaced" || skip.reason === "preset_produced_no_cells").length
+      const notEligible = skippedConflicts.length - knownConflicts
+      const note = `Preset "${input.preset}" (${input.mode === "fill_empty" ? "solo vacías" : "reemplazo"}) aplicado a ${applied.length} actividad(es); ${knownConflicts} en conflicto conocido; ${notEligible} no elegible(s) (retirada o modo no planificable).`
       await addPdtpChangeLogEntry(
         input.programId,
         program.version,

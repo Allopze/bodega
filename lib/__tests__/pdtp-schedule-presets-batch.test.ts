@@ -119,7 +119,7 @@ describe("PDTP: aplicación masiva de presets de planificación", () => {
     }
   })
 
-  it("una actividad con celdas manuales entra en skippedConflicts sin replaceConfirmed, y se aplica con él", async () => {
+  it("una actividad con celdas manuales entra en skippedConflicts sin confirmación explícita, y se aplica cuando su id está en replaceConfirmedActivityIds", async () => {
     const { applyPdtpSchedulePresetToActivities } = await import("@/lib/services/prevention-pdtp")
     const program = await createDraftProgram(2082)
     const activity = await addScheduledActivity(program.id)
@@ -144,19 +144,114 @@ describe("PDTP: aplicación masiva de presets de planificación", () => {
     expect(untouched).toHaveLength(1)
     expect(Number(untouched[0]!.plannedQuantity)).toBe(3)
 
+    // Confirmar el id de OTRA actividad no autoriza a ésta: la lista es
+    // explícita por actividad, no un booleano de lote.
+    const wrongConfirmation = await applyPdtpSchedulePresetToActivities({
+      programId: program.id,
+      activityIds: [activity.id],
+      preset: "weekly",
+      params: {},
+      mode: "replace",
+      replaceConfirmedActivityIds: ["otra-actividad-cualquiera"],
+    }, "user-1")
+    expect(wrongConfirmation.applied).toEqual([])
+    expect(wrongConfirmation.skippedConflicts).toEqual([{ activityId: activity.id, n: activity.n, reason: "manual_schedule_would_be_replaced" }])
+
     const confirmed = await applyPdtpSchedulePresetToActivities({
       programId: program.id,
       activityIds: [activity.id],
       preset: "weekly",
       params: {},
       mode: "replace",
-      replaceConfirmed: true,
+      replaceConfirmedActivityIds: [activity.id],
     }, "user-1")
     expect(confirmed.applied).toEqual([activity.id])
     expect(confirmed.skippedConflicts).toEqual([])
 
     const [row] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.id, activity.id))
     expect(row?.recurrenceRule).toEqual({ frequency: "weekly", interval: 1, plannedQuantity: 1, weekOfMonth: 1 })
+  })
+
+  it("un rango de meses fuera del horizonte del programa no borra el calendario vigente", async () => {
+    // Ronda de arreglos 1/5, Important 1: sin este chequeo,
+    // `writePdtpActivitySchedule` con `cells: []` borraba TODO el calendario
+    // del año — y para una actividad de fuente "rule" no hay guard que lo
+    // frene (el guard sólo protege planificación manual).
+    const { applyPdtpSchedulePresetToActivities, presetToCells, presetToRule } = await import("@/lib/services/prevention-pdtp")
+    const { deriveScheduleHorizon, scheduleCellsFingerprint } = await import("@/lib/services/pdtp/recurrence")
+    const program = await createDraftProgram(2089)
+    await inMemoryDb.update(schema.pdtpPrograms).set({
+      periodStart: `${program.year}-03-01`,
+      periodEnd: `${program.year}-06-30`,
+    }).where(eq(schema.pdtpPrograms.id, program.id))
+    const activity = await addScheduledActivity(program.id)
+
+    // Le damos primero una planificación de fuente "rule" real, dentro del
+    // período del programa.
+    await applyPdtpSchedulePresetToActivities({
+      programId: program.id,
+      activityIds: [activity.id],
+      preset: "monthly_week",
+      params: { weekOfMonth: 2, monthFrom: 3, monthTo: 6 },
+      mode: "replace",
+    }, "user-1")
+    const horizon = deriveScheduleHorizon(program)
+    const expectedFingerprint = scheduleCellsFingerprint(presetToCells("monthly_week", { weekOfMonth: 2, monthFrom: 3, monthTo: 6 }, horizon))
+    const before = await scheduleCellsOf(activity.id, program.year)
+    expect(scheduleCellsFingerprint(before.map((c) => ({ month: c.month, week: c.week, plannedQuantity: Number(c.plannedQuantity) })))).toBe(expectedFingerprint)
+    expect(before.length).toBeGreaterThan(0)
+
+    // Ahora un preset cuyo rango (enero-febrero) no interseca el período del
+    // programa (marzo-junio): produce cero celdas sobre este horizonte.
+    const result = await applyPdtpSchedulePresetToActivities({
+      programId: program.id,
+      activityIds: [activity.id],
+      preset: "campaign",
+      params: { monthFrom: 1, monthTo: 2 },
+      mode: "replace",
+    }, "user-1")
+
+    expect(result.applied).toEqual([])
+    expect(result.skippedConflicts).toEqual([{ activityId: activity.id, n: activity.n, reason: "preset_produced_no_cells" }])
+
+    // El calendario y la regla anteriores siguen intactos.
+    const after = await scheduleCellsOf(activity.id, program.year)
+    expect(scheduleCellsFingerprint(after.map((c) => ({ month: c.month, week: c.week, plannedQuantity: Number(c.plannedQuantity) })))).toBe(expectedFingerprint)
+    const [row] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.id, activity.id))
+    expect(row?.recurrenceRule).toEqual(presetToRule("monthly_week", { weekOfMonth: 2, monthFrom: 3, monthTo: 6 }))
+  })
+
+  it("el preset puntual sin celdas seleccionadas no borra el calendario vigente", async () => {
+    const { applyPdtpSchedulePresetToActivities } = await import("@/lib/services/prevention-pdtp")
+    const program = await createDraftProgram(2090)
+    const activity = await addScheduledActivity(program.id)
+    await applyPdtpSchedulePresetToActivities({
+      programId: program.id,
+      activityIds: [activity.id],
+      preset: "weekly",
+      params: {},
+      mode: "replace",
+    }, "user-1")
+    const before = await scheduleCellsOf(activity.id, program.year)
+    expect(before.length).toBeGreaterThan(0)
+
+    // El Zod de la acción exige `cells` no vacío para `punctual`, pero el
+    // servicio se llama aquí directo (como en el resto de esta suite) — la
+    // protección tiene que estar también en el servicio, no sólo en la
+    // frontera de validación.
+    const result = await applyPdtpSchedulePresetToActivities({
+      programId: program.id,
+      activityIds: [activity.id],
+      preset: "punctual",
+      params: {},
+      mode: "replace",
+    }, "user-1")
+
+    expect(result.applied).toEqual([])
+    expect(result.skippedConflicts).toEqual([{ activityId: activity.id, n: activity.n, reason: "preset_produced_no_cells" }])
+
+    const after = await scheduleCellsOf(activity.id, program.year)
+    expect(after.length).toBe(before.length)
   })
 
   it("fill_empty sólo toca actividades sin calendario, no las ya planificadas", async () => {

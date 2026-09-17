@@ -338,13 +338,33 @@ const pdtpSchedulePresetCellSchema = z.object({
   week: z.coerce.number().int().min(1).max(4),
 })
 
+/** Exclusivo de `punctual`; el máximo espeja `MAX_SCHEDULE_CELLS` (12 meses ×
+ *  4 semanas). Misma protección contra (mes, semana) duplicados que
+ *  `scheduleCellArraySchema` más arriba: dos celdas repetidas producen el
+ *  mismo id determinista y una pisa a la otra en silencio. */
+const pdtpSchedulePresetCellArraySchema = z.array(pdtpSchedulePresetCellSchema).max(MAX_SCHEDULE_CELLS).superRefine((cells, ctx) => {
+  const seen = new Set<string>()
+  for (const cell of cells) {
+    const key = `${cell.month}-${cell.week}`
+    if (seen.has(key)) {
+      ctx.addIssue({ code: "custom", message: `Semana repetida en la planificación (mes ${cell.month}, semana ${cell.week})` })
+      return
+    }
+    seen.add(key)
+  }
+})
+
 export const pdtpSchedulePresetParamsSchema = z.object({
   weekOfMonth: z.coerce.number().int().min(1).max(4).optional(),
-  plannedQuantity: z.coerce.number().min(0).max(100000).optional(),
+  // `.positive()`, no `.min(0)`: alineado con `pdtpRecurrenceRuleSchema`, a
+  // donde este valor va a parar vía `presetToRule`. Con 0 la proyección lo
+  // clampa y las celdas se descartan por no ser positivas — para una
+  // actividad de fuente "rule" eso escribía el calendario entero en cero sin
+  // que nadie lo confirmara (Ronda de arreglos 1/5, Important 2).
+  plannedQuantity: z.coerce.number().positive().max(100000).optional(),
   monthFrom: z.coerce.number().int().min(1).max(12).optional(),
   monthTo: z.coerce.number().int().min(1).max(12).optional(),
-  /** Exclusivo de `punctual`; el máximo espeja `MAX_SCHEDULE_CELLS` (12 meses × 4 semanas). */
-  cells: z.array(pdtpSchedulePresetCellSchema).max(MAX_SCHEDULE_CELLS).optional(),
+  cells: pdtpSchedulePresetCellArraySchema.optional(),
 })
 
 export const pdtpSchedulePresetBatchSchema = z.object({
@@ -353,7 +373,28 @@ export const pdtpSchedulePresetBatchSchema = z.object({
   preset: pdtpSchedulePresetKeySchema,
   params: pdtpSchedulePresetParamsSchema.default({}),
   mode: z.enum(["replace", "fill_empty"]),
-  replaceConfirmed: z.boolean().optional(),
+  /**
+   * Ids explícitos que el usuario confirmó reemplazar (ver `n`/actividad que
+   * ya vio en pantalla) — no un booleano de lote. Un booleano "confirmar
+   * reemplazo" autorizaría a pisar cualquier actividad que se haya vuelto
+   * manual entre que el usuario revisó la selección y confirmó, no sólo las
+   * que de verdad mostró (Ronda de arreglos 1/5, arreglo barato #2). Sólo
+   * los ids de esta lista se eximen de `manual_schedule_would_be_replaced`.
+   */
+  replaceConfirmedActivityIds: z.array(z.string().min(1)).max(200).optional(),
+}).superRefine((value, ctx) => {
+  // `punctual` no tiene regla: sus celdas SON el input. Sin esta exigencia,
+  // un `punctual` sin `cells` (o con `cells: []`) proyecta cero celdas y
+  // `applyPdtpSchedulePresetToActivities` lo trata como
+  // `preset_produced_no_cells` — evitable pidiéndolo en el formulario en vez
+  // de descubrirlo en el servicio (Ronda de arreglos 1/5, Important 1).
+  if (value.preset === "punctual" && !value.params.cells?.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["params", "cells"],
+      message: "El preset puntual requiere al menos una celda seleccionada",
+    })
+  }
 })
 
 export const pdtpActivityReorderSchema = z.object({
