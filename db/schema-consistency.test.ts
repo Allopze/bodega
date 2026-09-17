@@ -223,6 +223,50 @@ describe("database schema consistency", () => {
       VALUES ('movement-invalid-type-check', ${fixture.worksiteId}, ${fixture.productId}, 'impossible', 1, 0, 1, ${fixture.userId}, NOW())
     `)).rejects.toThrow()
   })
+
+  /**
+   * I3b (QA 2026-09-17, ronda de arreglos 2/5 de la tarea 1.2 PDTP): ancla en
+   * el esquema el `ON DELETE` de columna específica que la migración
+   * `0302_pdtp_objective_fk_set_null_column.sql` le dio a
+   * `pdtp_activities_objective_same_program_fk` y que `db/schema/prevention/pdtp.ts`
+   * NO puede expresar (`ForeignKeyBuilder.onDelete()` sólo acepta un string
+   * de acción, sin lista de columnas). El snapshot de `drizzle-kit` tampoco
+   * lo distingue — `0301_snapshot.json` y `0302_snapshot.json` son
+   * idénticos en esa FK — así que nada en la cadena de migraciones detecta
+   * si la 0302 se revierte. Este test es esa red: borra el OBJETIVO (no el
+   * programa, que ya cubre `lib/__tests__/pdtp-objectives.test.ts`) y prueba
+   * que la actividad sobrevive con `objective_id` en NULL y, sobre todo,
+   * `program_id` intacto. Si alguien regenera la FK a la forma sin columna
+   * (`ON DELETE SET NULL` a secas), este test se cae con 23502
+   * ("null value in column program_id").
+   */
+  it("borrar un objetivo PDTP deja objective_id en NULL sin tocar program_id (FK 0302)", async () => {
+    await db.execute(sql`
+      INSERT INTO pdtp_programs (id, year, version, title, elaborated_by_name, elaborated_by_title, created_at, updated_at)
+      VALUES ('program-objective-fk-check', 2090, 1, 'Programa constraint', 'Prevencionista', 'Prevencionista', NOW(), NOW())
+    `)
+    await db.execute(sql`
+      INSERT INTO pdtp_objectives (id, program_id, code, name, display_order, created_at, updated_at)
+      VALUES ('objective-fk-check', 'program-objective-fk-check', '1', 'Objetivo constraint', 0, NOW(), NOW())
+    `)
+    await db.execute(sql`
+      INSERT INTO pdtp_activities (
+        id, program_id, n, activity, program, responsible_slugs, responsible_display,
+        objective_id, source_sheet_row, created_at, updated_at
+      )
+      VALUES (
+        'activity-objective-fk-check', 'program-objective-fk-check', 1, 'Actividad constraint', 'Programa constraint',
+        '[]'::jsonb, 'Responsable constraint', 'objective-fk-check', 0, NOW(), NOW()
+      )
+    `)
+
+    await db.execute(sql`DELETE FROM pdtp_objectives WHERE id = 'objective-fk-check'`)
+
+    const rows = await db.execute(sql`
+      SELECT program_id, objective_id FROM pdtp_activities WHERE id = 'activity-objective-fk-check'
+    `)
+    expect(rows.rows).toEqual([{ program_id: "program-objective-fk-check", objective_id: null }])
+  })
 })
 
 async function insertOperationalConstraintFixture(suffix: string) {

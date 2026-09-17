@@ -461,6 +461,25 @@ export const pdtpActivities = pgTable("pdtp_activities", {
     foreignColumns: [pdtpCatalogActivityRevisions.catalogActivityId, pdtpCatalogActivityRevisions.revision],
     name: "pdtp_activities_catalog_revision_fk",
   }).onDelete("restrict"),
+  // ⚠️ Esta declaración SUBREPRESENTA la constraint real. `ForeignKeyBuilder
+  // .onDelete()` de Drizzle sólo acepta un string de acción ("cascade" |
+  // "set null" | ...) — no hay forma de listar columnas — así que esta línea
+  // sólo puede decir "ON DELETE SET NULL" a secas. En la base de datos, la
+  // migración `0302_pdtp_objective_fk_set_null_column.sql` la redeclaró como
+  // `ON DELETE SET NULL ("objective_id")` (columna específica, PG15+): sin
+  // eso, Postgres nulifica TODAS las columnas de la FK compuesta al borrar
+  // el objetivo referenciado, incluida `program_id`, que es NOT NULL, y
+  // revienta con 23502 (ver I3, ronda de arreglos de la tarea 1.2 PDTP).
+  // El snapshot de `drizzle-kit` tampoco distingue las dos formas —
+  // `0301_snapshot.json` y `0302_snapshot.json` son idénticos en esta FK—,
+  // así que NO hay ninguna herramienta que detecte una regeneración
+  // accidental. Si algún día se regenera esta FK desde este archivo (p. ej.
+  // `drizzle-kit generate` tras tocar esta tabla), va a volver a la forma
+  // rota sin lista de columnas — hay que reescribir la migración generada a
+  // mano con `ON DELETE SET NULL ("objective_id")`, igual que la 0302. La
+  // red de seguridad es `db/schema-consistency.test.ts` ("borrar un objetivo
+  // PDTP deja objective_id en NULL sin tocar program_id"): si esto se
+  // revierte, ese test se cae.
   foreignKey({
     columns: [table.programId, table.objectiveId],
     foreignColumns: [pdtpObjectives.programId, pdtpObjectives.id],
