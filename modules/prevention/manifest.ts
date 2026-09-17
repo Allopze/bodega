@@ -18,6 +18,7 @@ export const preventionModule = {
     "prevention:pdtp:action:manage",
     "prevention:pdtp:action:verify",
     "prevention:pdtp:obligation:cancel",
+    "prevention:pdtp:close_period",
     "prevention:constancias:view",
     "prevention:constancias:execute",
     "prevention:alcotest:view",
@@ -145,6 +146,7 @@ export const preventionModule = {
     "prevention:pdtp:action:manage":    { id: "p-prev-pdtp-act-manage", description: "Crear/editar acciones correctivas y su seguimiento en el PDTP" },
     "prevention:pdtp:action:verify":    { id: "p-prev-pdtp-act-verify", description: "Verificar el cierre de acciones correctivas del PDTP" },
     "prevention:pdtp:obligation:cancel": { id: "p-prev-pdtp-obl-cancel", description: "Cancelar necesidades y eventos del PDTP" },
+    "prevention:pdtp:close_period": { id: "p-prev-pdtp-close-period", description: "Cerrar y reabrir el mes del Programa de Trabajo Preventivo por faena, congelando su foto" },
     // Permiso propio (no `prevention:pdtp:execute`): quien sólo deja
     // constancias no debe poder tocar el resto de la planilla, y viceversa.
     "prevention:constancias:view":    { id: "p-prev-constancias-view",    description: "Ver el submódulo de Constancias del Programa de Trabajo Preventivo" },
@@ -583,6 +585,7 @@ export const preventionModule = {
     { roleSlug: "prevencionista",      permission: "prevention:pdtp:override:manage" },
     { roleSlug: "prevencionista",      permission: "prevention:pdtp:submit_review" },
     { roleSlug: "prevencionista",      permission: "prevention:pdtp:approve" },
+    { roleSlug: "prevencionista",      permission: "prevention:pdtp:close_period" },
     { roleSlug: "jefa_chome",          permission: "prevention:pdtp:view" },
     { roleSlug: "jefa_chome",          permission: "prevention:pdtp:approve" },
     { roleSlug: "jefa_chome",          permission: "prevention:pdtp:sign_legal" },
@@ -590,6 +593,7 @@ export const preventionModule = {
     { roleSlug: "jefa_chome",          permission: "prevention:pdtp:lifecycle:manage" },
     { roleSlug: "prevencionista_faena", permission: "prevention:pdtp:view" },
     { roleSlug: "prevencionista_faena", permission: "prevention:pdtp:execute" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:pdtp:close_period" },
     { roleSlug: "admin_contrato",      permission: "prevention:pdtp:view" },
     { roleSlug: "admin_contrato",      permission: "prevention:pdtp:execute" },
     { roleSlug: "jefe_terreno",        permission: "prevention:pdtp:view" },
@@ -618,6 +622,7 @@ export const preventionModule = {
     { roleSlug: "administrador",       permission: "prevention:pdtp:approve" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:sign_legal" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:activate" },
+    { roleSlug: "administrador",       permission: "prevention:pdtp:close_period" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:lifecycle:manage" },
     // PDTP — Checklist / Plan de acción / Seguimiento
     { roleSlug: "prevencionista",      permission: "prevention:pdtp:checklist:manage" },

@@ -20,6 +20,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.pdtpPeriodClosures)
   await inMemoryDb.delete(schema.pdtpActivityScheduleOverrides)
   await inMemoryDb.delete(schema.pdtpExecutionDeviations)
   await inMemoryDb.delete(schema.pdtpExecutions)
@@ -415,6 +416,105 @@ describe("PDTP CHECK constraints SQL", () => {
       // Mismo activityId/worksiteId/year/month/week que el anterior, pero el
       // índice único parcial sólo mira las filas `status = 'active'`.
       await insertDeviation({ id: "dev-new-active" })
+    })
+  })
+
+  /* ── Cierres mensuales por faena (Fase 4) ───────────────────────────────── */
+  describe("pdtp_period_closures", () => {
+    function insertClosure(overrides: Partial<{
+      id: string
+      programId: string
+      worksiteId: string
+      year: number
+      month: number
+      status: string
+      version: number
+      digest: string
+      closeReason: string
+      reopenedByUserId: string | null
+      reopenedAt: string | null
+      reopenReason: string | null
+    }> = {}) {
+      const now = new Date().toISOString()
+      return inMemoryDb.insert(schema.pdtpPeriodClosures).values({
+        id: overrides.id ?? "pdtp-close-p1-w1-2026-01",
+        programId: overrides.programId ?? "p1",
+        worksiteId: overrides.worksiteId ?? "w1",
+        year: overrides.year ?? 2026,
+        month: overrides.month ?? 1,
+        status: overrides.status ?? "closed",
+        version: overrides.version ?? 1,
+        snapshotJson: { schemaVersion: 1 },
+        digest: overrides.digest ?? "a".repeat(64),
+        closedByUserId: "u1",
+        closedAt: now,
+        closeReason: overrides.closeReason ?? "Cierre del mes revisado con jefatura de faena.",
+        reopenedByUserId: overrides.reopenedByUserId ?? null,
+        reopenedAt: overrides.reopenedAt ?? null,
+        reopenReason: overrides.reopenReason ?? null,
+        distributionJson: [],
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+
+    it("acepta un cierre válido (sanity)", async () => {
+      await insertClosure()
+    })
+
+    it("rechaza el mes 13", async () => {
+      await expectCheckViolation(insertClosure({ month: 13 }), "pdtp_period_closures_month_check")
+    })
+
+    it("rechaza el mes 0", async () => {
+      await expectCheckViolation(insertClosure({ month: 0 }), "pdtp_period_closures_month_check")
+    })
+
+    it("rechaza un año fuera de 2024-2100", async () => {
+      await expectCheckViolation(insertClosure({ year: 2023 }), "pdtp_period_closures_year_check")
+    })
+
+    it("rechaza un digest más corto que 64 caracteres", async () => {
+      await expectCheckViolation(insertClosure({ digest: "abc123" }), "pdtp_period_closures_digest_check")
+    })
+
+    it("rechaza un estado que no sea 'closed' ni 'reopened'", async () => {
+      await expectCheckViolation(insertClosure({ status: "abierto" }), "pdtp_period_closures_status_check")
+    })
+
+    it("rechaza una versión menor que 1", async () => {
+      await expectCheckViolation(insertClosure({ version: 0 }), "pdtp_period_closures_version_check")
+    })
+
+    it("rechaza un motivo de cierre de menos de 10 caracteres", async () => {
+      await expectCheckViolation(insertClosure({ closeReason: "corto" }), "pdtp_period_closures_close_reason_check")
+    })
+
+    it("rechaza 'reopened' sin actor, fecha ni motivo", async () => {
+      await expectCheckViolation(insertClosure({ status: "reopened" }), "pdtp_period_closures_reopened_check")
+    })
+
+    it("rechaza 'reopened' con motivo demasiado corto", async () => {
+      const now = new Date().toISOString()
+      await expectCheckViolation(
+        insertClosure({ status: "reopened", reopenedByUserId: "u1", reopenedAt: now, reopenReason: "corto" }),
+        "pdtp_period_closures_reopened_check",
+      )
+    })
+
+    it("acepta 'reopened' con actor, fecha y motivo válidos", async () => {
+      const now = new Date().toISOString()
+      await insertClosure({
+        status: "reopened",
+        reopenedByUserId: "u1",
+        reopenedAt: now,
+        reopenReason: "Se reabre para corregir una ejecución cargada con la semana equivocada.",
+      })
+    })
+
+    it("un segundo cierre del mismo programa, faena, año y mes viola el índice único", async () => {
+      await insertClosure({ id: "close-a" })
+      await expectCheckViolation(insertClosure({ id: "close-b" }), "pdtp_period_closures_period_unique")
     })
   })
 })

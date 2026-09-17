@@ -97,6 +97,10 @@ export type NotificationType =
   | "ti_ticket_created"
   | "ti_ticket_assigned"
   | "ti_ticket_resolved"
+  // Cierre mensual del Programa de Trabajo Preventivo por faena (Fase 4, G7):
+  // la foto congelada del mes se distribuye a jefatura y responsables por
+  // notificación y correo, con enlace al detalle del cierre y su descarga.
+  | "pdtp_period_closed"
 
 export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),

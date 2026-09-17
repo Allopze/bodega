@@ -737,6 +737,69 @@ export const pdtpExecutionDeviations = pgTable("pdtp_execution_deviations", {
 ])
 
 /**
+ * Cierre mensual del programa por faena (Fase 4, G4).
+ *
+ * Un cierre existe para una sola cosa: que meses después alguien pueda
+ * regenerar **exactamente** el documento que se firmó, sin depender de lo que
+ * la base viva diga hoy. Por eso `snapshot_json` no es una caché sino el
+ * producto: el RE-36 completo, los indicadores, el reporte de gestión, los
+ * desvíos y el avance por objetivo, congelados al corte del mes. El export
+ * del cierre se renderiza desde esa foto, nunca reconsultando.
+ *
+ * `digest` es el sha256 del JSON canónico de la foto. No entra en la huella
+ * firmada del programa (`content-digest.ts`): un cierre es un hecho
+ * operacional posterior a la firma, igual que overrides y desvíos. Sirve para
+ * responder una sola pregunta —"¿cambió algo del mes desde que se cerró?"—
+ * recomputando la foto y comparando (`driftedSinceClose`), que es lo que
+ * permite que la acreditación por integración siga entrando a un mes cerrado
+ * sin mentir sobre lo que se distribuyó.
+ *
+ * `status = 'reopened'` conserva el snapshot: reabrir no borra la foto que ya
+ * se distribuyó, sólo vuelve a permitir escrituras. Un cierre posterior
+ * incrementa `version` y reemplaza la foto.
+ */
+export const pdtpPeriodClosures = pgTable("pdtp_period_closures", {
+  id:                 text("id").primaryKey(),
+  programId:          text("program_id").notNull().references(() => pdtpPrograms.id, { onDelete: "cascade" }),
+  /** `restrict`: un cierre es evidencia distribuida; borrar la faena que lo
+   * originó lo dejaría sin sujeto. Las faenas se desactivan, no se borran. */
+  worksiteId:         text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
+  year:               integer("year").notNull(),
+  month:              integer("month").notNull(),
+  status:             text("status").notNull().default("closed"),
+  version:            integer("version").notNull().default(1),
+  snapshotJson:       jsonb("snapshot_json").notNull(),
+  digest:             text("digest").notNull(),
+  closedByUserId:     text("closed_by_user_id").notNull().references(() => users.id),
+  closedAt:           timestamp("closed_at", { withTimezone: true, mode: "string" }).notNull(),
+  closeReason:        text("close_reason").notNull(),
+  reopenedByUserId:   text("reopened_by_user_id").references(() => users.id),
+  reopenedAt:         timestamp("reopened_at", { withTimezone: true, mode: "string" }),
+  reopenReason:       text("reopen_reason"),
+  /** Momento del último envío por notificación/correo, o NULL si nunca se
+   * distribuyó. Reenviar lo actualiza; el `dedupeKey` por versión impide que
+   * un reenvío duplique la notificación de quien ya la tiene. */
+  distributedAt:      timestamp("distributed_at", { withTimezone: true, mode: "string" }),
+  distributionJson:   jsonb("distribution_json").notNull().default([]),
+  createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("pdtp_period_closures_period_unique").on(table.programId, table.worksiteId, table.year, table.month),
+  index("pdtp_period_closures_worksite_period_idx").on(table.worksiteId, table.year, table.month),
+  check("pdtp_period_closures_year_check", sql`${table.year} BETWEEN 2024 AND 2100`),
+  check("pdtp_period_closures_month_check", sql`${table.month} BETWEEN 1 AND 12`),
+  check("pdtp_period_closures_status_check", sql`${table.status} IN ('closed', 'reopened')`),
+  check("pdtp_period_closures_version_check", sql`${table.version} >= 1`),
+  // sha256 en hexadecimal: 64 caracteres. Un digest recortado o vacío haría
+  // que `driftedSinceClose` comparara contra basura y siempre diera "cambió".
+  check("pdtp_period_closures_digest_check", sql`length(${table.digest}) = 64`),
+  check("pdtp_period_closures_close_reason_check", sql`length(trim(${table.closeReason})) >= 10`),
+  // Mismo patrón que el retiro de un desvío: el estado terminal no existe sin
+  // quién, cuándo y por qué.
+  check("pdtp_period_closures_reopened_check", sql`${table.status} <> 'reopened' OR (${table.reopenedByUserId} IS NOT NULL AND ${table.reopenedAt} IS NOT NULL AND length(trim(COALESCE(${table.reopenReason}, ''))) >= 10)`),
+])
+
+/**
  * Libro durable de eventos de cumplimiento (Fase 2 de la plataforma de
  * cumplimiento, 2026-09-02).
  *
@@ -1168,6 +1231,13 @@ export const pdtpExecutionDeviationsRelations = relations(pdtpExecutionDeviation
   withdrawnByUser: one(users, { fields: [pdtpExecutionDeviations.withdrawnByUserId], references: [users.id] }),
 }))
 
+export const pdtpPeriodClosuresRelations = relations(pdtpPeriodClosures, ({ one }) => ({
+  program: one(pdtpPrograms, { fields: [pdtpPeriodClosures.programId], references: [pdtpPrograms.id] }),
+  worksite: one(worksites, { fields: [pdtpPeriodClosures.worksiteId], references: [worksites.id] }),
+  closedByUser: one(users, { fields: [pdtpPeriodClosures.closedByUserId], references: [users.id] }),
+  reopenedByUser: one(users, { fields: [pdtpPeriodClosures.reopenedByUserId], references: [users.id] }),
+}))
+
 export const pdtpFulfillmentEventsRelations = relations(pdtpFulfillmentEvents, ({ one }) => ({
   worksite: one(worksites, { fields: [pdtpFulfillmentEvents.worksiteId], references: [worksites.id] }),
   program: one(pdtpPrograms, { fields: [pdtpFulfillmentEvents.programId], references: [pdtpPrograms.id] }),
@@ -1260,6 +1330,8 @@ export type PdtpExecution = typeof pdtpExecutions.$inferSelect
 export type NewPdtpExecution = typeof pdtpExecutions.$inferInsert
 export type PdtpExecutionDeviation = typeof pdtpExecutionDeviations.$inferSelect
 export type NewPdtpExecutionDeviation = typeof pdtpExecutionDeviations.$inferInsert
+export type PdtpPeriodClosure = typeof pdtpPeriodClosures.$inferSelect
+export type NewPdtpPeriodClosure = typeof pdtpPeriodClosures.$inferInsert
 export type PdtpObligation = typeof pdtpObligations.$inferSelect
 export type NewPdtpObligation = typeof pdtpObligations.$inferInsert
 export type PdtpObligationReminder = typeof pdtpObligationReminders.$inferSelect
