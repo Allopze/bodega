@@ -118,3 +118,20 @@ cerrada.
    plataforma como mini-tabla, `quarterFormula` default `"ratio"` en vez de
    `"average"`, filas heredadas de documentCode/glosario) siguen abiertas sin
    cambios de esta tarea — ver `task-1.5-report.md`/`task-1.6-report.md`.
+
+## Verificación de recálculo con LibreOffice (2026-09-17, cierre de la brecha)
+
+La brecha declarada en este informe —"no se pudo verificar que las fórmulas recalculen porque LibreOffice no está instalado"— **queda cerrada**. Se ejecutó LibreOffice en un contenedor (`linuxserver/libreoffice`, `soffice` en `/usr/bin/soffice`) sobre libros generados por `renderPdtpRe36Buffer` con un documento de 4 actividades en 3 objetivos, una de ellas a demanda, dos hojas (general y de cargo) y un texto que empieza con `=` en el control de cambios.
+
+| Comprobación | Resultado |
+|---|---|
+| Apertura y conversión por LibreOffice | sin diálogo de reparación, ambos modos |
+| Errores de fórmula (`#REF!`, `#DIV/0!`, `#VALUE!`, `#NAME?`, `#N/A`…) | **0** |
+| Totales `SUM` por semana | P = 0, 1, 0, 2 · E = 0, 1, 0, 1 — correctos |
+| `%` semanal con `IFERROR` | emite `""` en las semanas sin planificación, no error |
+| `%` trimestral, modo `ratio` (ΣE/ΣP, el default) | **0,80** |
+| `%` trimestral, modo `average` (réplica del Excel legado) | **0,875** |
+
+La diferencia de 0,075 entre ambos modos es la demostración numérica del defecto P-4 del informe comparativo: promediar porcentajes semanales infla el cumplimiento respecto de dividir los totales. El default `ratio` es deliberado; `average` queda disponible para quien necesite la réplica literal de la planilla histórica.
+
+Queda **fuera** de esta verificación el aspecto visual (resolución de conflictos de formato condicional, apariencia del achurado), que ninguna herramienta disponible evalúa sin abrir el archivo a ojo.
