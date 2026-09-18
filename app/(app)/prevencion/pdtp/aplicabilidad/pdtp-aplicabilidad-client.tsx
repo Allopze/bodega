@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Check, SlidersHorizontal, X } from "@phosphor-icons/react"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { pdtpIndicatorModeLabel, pdtpScheduleModeLabel } from "@/lib/prevention/pdtp"
 import { setPdtpActivityWorksiteAdjustmentAction } from "../actions"
 
 export type AplicabilidadActivity = {
@@ -173,8 +174,8 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1">
-                      <MetaBadge meta={{ label: act.scheduleMode, variant: "outline" }} className="w-fit text-[10px]" />
-                      <span className="text-xs text-[var(--color-text-muted)] font-mono">{act.indicatorMode}</span>
+                      <MetaBadge meta={{ label: pdtpScheduleModeLabel(act.scheduleMode), variant: "outline" }} className="w-fit text-[10px]" />
+                      <span className="text-xs text-[var(--color-text-muted)]">{pdtpIndicatorModeLabel(act.indicatorMode)}</span>
                     </div>
                   </TableCell>
                   <TableCell>

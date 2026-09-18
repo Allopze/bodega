@@ -31,11 +31,15 @@ const PRIORITY_LABELS: Record<Priority, string> = {
 
 export interface PriorityBadgeProps {
   priority: Priority | string
+  /** Etiqueta explícita, para dominios con su propio vocabulario de prioridad
+   *  (p. ej. PDTP: "Alta"/"Media"/"Baja") que no coincide con `PRIORITY_LABELS`.
+   *  Sin ella, se usa la etiqueta por defecto de `priority`. */
+  label?: string
   size?: React.ComponentProps<typeof Badge>["size"]
   className?: string
 }
 
-export function PriorityBadge({ priority, size = "sm", className }: PriorityBadgeProps) {
+export function PriorityBadge({ priority, label, size = "sm", className }: PriorityBadgeProps) {
   const key = (priority in PRIORITY_VARIANT ? priority : "normal") as Priority
   const variant = PRIORITY_VARIANT[key]
   return (
@@ -47,7 +51,7 @@ export function PriorityBadge({ priority, size = "sm", className }: PriorityBadg
       dot={key === "critical" || key === "high"}
       className={className}
     >
-      {PRIORITY_LABELS[key]}
+      {label ?? PRIORITY_LABELS[key]}
     </Badge>
   )
 }

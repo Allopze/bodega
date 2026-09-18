@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button"
 import { Plus } from "@phosphor-icons/react/dist/ssr"
 import { buildPdtpProgramHref, resolvePdtpYear } from "../pdtp-context"
 import { PdtpYearPicker } from "../pdtp-sheet-table-ui"
-import { pdtpProgramStatusLabel } from "@/lib/prevention/pdtp"
+import { MetaBadge } from "@/components/states/state-badge"
+import { pdtpProgramStatusLabel, pdtpProgramStatusVariant } from "@/lib/prevention/pdtp"
 import { pluralize } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Programas anuales" }
@@ -99,12 +100,6 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {programs.map((program) => {
             const indicators = complianceByProgram.get(program.id)
-            const statusLabel = pdtpProgramStatusLabel(program.status)
-            const statusClass = program.status === "active"
-              ? "bg-[var(--color-success-tint)] text-[var(--color-success-ink)]"
-              : program.status === "closed"
-                ? "bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)]"
-                : "bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)]"
 
             return (
               <div key={program.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-shadow hover:shadow-md">
@@ -115,9 +110,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
                       Año {program.year}
                     </p>
                   </div>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass}`}>
-                    {statusLabel}
-                  </span>
+                  <MetaBadge meta={{ label: pdtpProgramStatusLabel(program.status), variant: pdtpProgramStatusVariant(program.status) }} dot />
                 </div>
                 <div className="mt-3 flex items-center gap-4 text-xs text-[var(--color-text-subtle)]">
                   {indicators?.annual && (

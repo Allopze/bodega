@@ -1,3 +1,5 @@
+import type { Priority } from "@/components/ui/priority-badge"
+
 /**
  * Vocabulario único del PDTP (TASK-UI-012).
  *
@@ -22,6 +24,26 @@ export const PDTP_PROGRAM_STATUS_LABELS: Record<PdtpProgramStatus, string> = {
 /** Un estado desconocido se muestra tal cual: preferimos un dato raro visible a uno silenciado. */
 export function pdtpProgramStatusLabel(status: string): string {
   return PDTP_PROGRAM_STATUS_LABELS[status as PdtpProgramStatus] ?? status
+}
+
+/**
+ * Variant de presentación para el estado del programa. Vivía duplicado como un
+ * `STATUS_VARIANT` local en `program-lifecycle-controls.tsx` y, por separado,
+ * como un ternario de 3 casillas en el listado de programas — el mismo
+ * programa se veía "Borrador" (sans, minúscula) en la lista y "BORRADOR"
+ * (mono, mayúscula) en el detalle, porque sólo el detalle pasaba por
+ * `MetaBadge`. Un único mapa evita ambas cosas.
+ */
+export function pdtpProgramStatusVariant(status: string): "default" | "warning" | "danger" | "success" | "outline" {
+  switch (status as PdtpProgramStatus) {
+    case "draft": return "default"
+    case "in_review": return "warning"
+    case "rejected": return "danger"
+    case "active": return "success"
+    case "closed": return "outline"
+    case "archived": return "outline"
+    default: return "outline"
+  }
 }
 
 export type PdtpExecutionStatus = "draft" | "submitted" | "approved" | "rejected"
@@ -82,4 +104,64 @@ export const PDTP_DEVIATION_KIND_HINTS: Record<PdtpDeviationKindValue, string> =
 
 export function pdtpDeviationKindLabel(kind: string): string {
   return PDTP_DEVIATION_KIND_LABELS[kind as PdtpDeviationKindValue] ?? kind
+}
+
+/**
+ * Cuándo debe realizarse una actividad (`pdtp_activities.schedule_mode`).
+ * Se imprimía crudo (`scheduled`) en la tabla de Aplicabilidad; el copy en
+ * español ya existía suelto en el constructor de actividades y en la pestaña
+ * de planificación, sin un mapa compartido entre ambos.
+ */
+export type PdtpScheduleMode = "scheduled" | "on_demand" | "triggered"
+
+export const PDTP_SCHEDULE_MODE_LABELS: Record<PdtpScheduleMode, string> = {
+  scheduled: "Con frecuencia",
+  on_demand: "A demanda",
+  triggered: "Por evento",
+}
+
+export function pdtpScheduleModeLabel(mode: string): string {
+  return PDTP_SCHEDULE_MODE_LABELS[mode as PdtpScheduleMode] ?? mode
+}
+
+/**
+ * Cómo se mide el cumplimiento de una actividad
+ * (`pdtp_activities.indicator_mode`). Se imprimía crudo
+ * (`planned_vs_completed`) en la tabla de Aplicabilidad; no existía copy en
+ * español para estos 5 valores en ningún otro lugar del código.
+ */
+export type PdtpIndicatorMode = "planned_vs_completed" | "closed_on_time" | "completed_count" | "not_applicable" | "coverage"
+
+export const PDTP_INDICATOR_MODE_LABELS: Record<PdtpIndicatorMode, string> = {
+  planned_vs_completed: "Planificado vs. ejecutado",
+  closed_on_time: "Cerrado a tiempo",
+  completed_count: "Cantidad ejecutada",
+  not_applicable: "No aplica",
+  coverage: "Cobertura",
+}
+
+export function pdtpIndicatorModeLabel(mode: string): string {
+  return PDTP_INDICATOR_MODE_LABELS[mode as PdtpIndicatorMode] ?? mode
+}
+
+/**
+ * Prioridad de una medida/acción correctiva (`alta`/`media`/`baja`, en
+ * español). Se imprimía cruda en un `MetaBadge` con `variant: "outline"` fijo
+ * — siempre gris, sin importar el valor. `PriorityBadge` existe para evitar
+ * exactamente esta clase de bug, pero sus claves (`critical|high|normal|low`)
+ * y sus etiquetas por defecto ("Normal") no coinciden con las palabras que ya
+ * usa el selector de filtro de la misma pantalla ("Alta"/"Media"/"Baja") — de
+ * ahí el `label` explícito en vez de dejar que `PriorityBadge` elija el suyo.
+ */
+export type PdtpActionPriority = "alta" | "media" | "baja"
+
+const PDTP_PRIORITY_PRESENTATION: Record<PdtpActionPriority, { priority: Priority; label: string }> = {
+  alta: { priority: "high", label: "Alta" },
+  media: { priority: "normal", label: "Media" },
+  baja: { priority: "low", label: "Baja" },
+}
+
+/** Una prioridad desconocida cae a "media": mismo default que ya usa el servicio al derivarla. */
+export function pdtpPriorityPresentation(prioridad: string | undefined): { priority: Priority; label: string } {
+  return PDTP_PRIORITY_PRESENTATION[prioridad as PdtpActionPriority] ?? PDTP_PRIORITY_PRESENTATION.media
 }

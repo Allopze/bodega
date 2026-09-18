@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Tooltip } from "@/components/ui/tooltip"
-import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
-import { pdtpProgramStatusLabel } from "@/lib/prevention/pdtp"
+import { pdtpProgramStatusLabel, pdtpProgramStatusVariant } from "@/lib/prevention/pdtp"
 import {
   activatePdtpProgramAction,
   archivePdtpProgramAction,
@@ -55,16 +55,6 @@ type ApprovalStepProgress = {
   decision: { decision: string; decidedAt: string } | null
 }
 
-// El texto viene del vocabulario compartido; aquí sólo vive el color.
-const STATUS_VARIANT: Record<string, StateMetaInput["variant"]> = {
-  draft: "default",
-  in_review: "warning",
-  rejected: "danger",
-  active: "success",
-  closed: "outline",
-  archived: "outline",
-}
-
 function nextStep(program: ProgramLifecycle, pendingStep: ApprovalStepProgress | undefined, submitBlockers: string[]): string {
   if (program.status === "draft") {
     return submitBlockers.length > 0
@@ -99,7 +89,7 @@ export function ProgramLifecycleControls({
 }) {
   const router = useRouter()
   const { pending, run } = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
-  const statusVariant = STATUS_VARIANT[program.status] ?? "outline"
+  const statusVariant = pdtpProgramStatusVariant(program.status)
   const steps: ApprovalStepProgress[] = approvalSteps ?? [
     {
       id: `${program.id}-approval-jdpr`, code: "jdpr", label: "Revisión JDPR", isRequired: true,
