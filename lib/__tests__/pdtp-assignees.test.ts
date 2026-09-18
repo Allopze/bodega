@@ -127,7 +127,11 @@ beforeEach(async () => {
     kind: "rbac_role", isActive: true,
   })
   await inMemoryDb.insert(schema.pdtpPrograms).values({
-    id: PROGRAM_ID, year: 2026, version: 1, status: "active", title: "PDTP 2026",
+    // El fixture no declara membresía de faena a propósito (las dos faenas
+    // tienen que ser operables para distinguir candidatos de una y de otra),
+    // así que el programa activo declara alcance corporativo: sin eso
+    // `assertPdtpWorksiteCanOperateProgram` falla cerrado.
+    id: PROGRAM_ID, year: 2026, version: 1, status: "active", appliesToAllWorksites: true, title: "PDTP 2026",
     elaboratedByName: "Prevención", elaboratedByTitle: "PR",
     createdAt: NOW, updatedAt: NOW,
   })

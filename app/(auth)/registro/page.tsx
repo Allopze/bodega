@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { BrandMark } from "@/components/layout/brand-mark"
 import { and, eq, isNull } from "drizzle-orm"
+import { AuthShell } from "@/components/layout/auth-shell"
 import { db } from "@/db"
 import { userInvitations } from "@/db/schema"
 import { getUserCount, hashInvitationToken } from "@/lib/auth/bootstrap"
@@ -56,36 +56,27 @@ export default async function RegistroPage({ searchParams }: RegistroPageProps) 
   }
 
   return (
-    <main className="min-h-[100dvh] flex items-center justify-center bg-[var(--color-bg)] px-6 py-12">
-      <div className="w-full max-w-sm rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] border border-[var(--color-border)] p-8">
-        <div className="mb-8">
-          <BrandMark variant="light" size={36} subtitle titleSize="base" />
-        </div>
-
-        <h1 className="font-display text-xl font-semibold text-[var(--color-text)]">
-          {mode === "bootstrap" ? "Crear primer administrador" : "Completar registro"}
-        </h1>
-        <p className="mb-6 mt-1 text-sm text-[var(--color-text-muted)]">
-          {mode === "bootstrap"
-            ? "No hay usuarios activos en el sistema. Esta primera cuenta tendrá control administrativo."
-            : "Define tu contraseña para activar el acceso otorgado por el administrador."}
-        </p>
-
-        <RegisterForm
-          token={token}
-          mode={mode}
-          initialName={initialName}
-          initialEmail={initialEmail}
-          inviteError={inviteError}
-          inviteNotice={inviteNotice}
-        />
-
-        <p className="mt-5 text-center text-xs text-[var(--color-text-subtle)]">
-          <Link href="/login" className="text-[var(--color-primary-ink)] hover:underline">
-            Volver a iniciar sesión
-          </Link>
-        </p>
-      </div>
-    </main>
+    <AuthShell
+      title={mode === "bootstrap" ? "Crear primer administrador" : "Completar registro"}
+      subtitle={
+        mode === "bootstrap"
+          ? "No hay usuarios activos en el sistema. Esta primera cuenta tendrá control administrativo."
+          : "Define tu contraseña para activar el acceso otorgado por el administrador."
+      }
+      footer={
+        <Link href="/login" className="hover:text-text">
+          Volver a iniciar sesión
+        </Link>
+      }
+    >
+      <RegisterForm
+        token={token}
+        mode={mode}
+        initialName={initialName}
+        initialEmail={initialEmail}
+        inviteError={inviteError}
+        inviteNotice={inviteNotice}
+      />
+    </AuthShell>
   )
 }

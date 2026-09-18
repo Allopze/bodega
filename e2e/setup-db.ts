@@ -2145,6 +2145,14 @@ async function main() {
     year: 2026,
     version: 1,
     status: "active",
+    // Alcance corporativo explícito. Desde que `resolveProgramWorksiteIds` y
+    // `assertPdtpWorksiteCanOperateProgram` fallan cerrado, un programa activo
+    // sin membresía en `pdtp_program_worksites` y sin esta declaración no
+    // tiene ninguna faena operable: el visor, el reporte de gestión, los
+    // desvíos, el cierre mensual y la exportación quedan todos en su estado
+    // vacío. Este fixture no declara membresía a propósito —los specs eligen
+    // libremente entre las faenas sembradas—, así que la declaración va acá.
+    appliesToAllWorksites: true,
     title: "Programa PDTP E2E",
     elaboratedByName: "Admin E2E",
     elaboratedByTitle: "Prevencionista",
@@ -2156,6 +2164,11 @@ async function main() {
     year: 2027,
     version: 1,
     status: "draft",
+    // Igual que el programa activo: sin membresía ni alcance corporativo
+    // declarado, "Ajustes por faena" abre en "No hay faenas disponibles" y el
+    // visor anual no lista ninguna actividad, porque
+    // `resolveProgramWorksiteIds` devuelve vacío.
+    appliesToAllWorksites: true,
     title: "Programa anual PDTP 2027 E2E",
     periodStart: "2027-01-01",
     periodEnd: "2027-12-31",

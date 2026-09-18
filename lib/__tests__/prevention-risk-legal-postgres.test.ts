@@ -1176,7 +1176,7 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
     { id: "cphs-meet-a-cancelled", code: "CPHS-A-002", committeeId: "cphs-risk-a", scheduledFor: now, agenda: "Sesión suspendida.", status: "cancelled", cancellationReason: "Sin quórum en la fecha convocada.", createdByUserId: "risk-author", createdAt: now, updatedAt: now },
     { id: "cphs-meet-b", code: "CPHS-B-001", committeeId: "cphs-risk-b", scheduledFor: now, agenda: "Sesión del comité de otra faena.", status: "scheduled", createdByUserId: "risk-author", createdAt: now, updatedAt: now },
   ])
-  await database.insert(schema.pdtpPrograms).values({ id: "pdtp-risk-program", year: 2026, version: 1, status: "active", title: "PDTP pruebas P0-05", elaboratedByUserId: "risk-author", elaboratedByName: "Autor", elaboratedByTitle: "Prevencionista", createdAt: now, updatedAt: now })
+  await database.insert(schema.pdtpPrograms).values({ id: "pdtp-risk-program", year: 2026, version: 1, status: "active", appliesToAllWorksites: true, title: "PDTP pruebas P0-05", elaboratedByUserId: "risk-author", elaboratedByName: "Autor", elaboratedByTitle: "Prevencionista", createdAt: now, updatedAt: now })
   await database.insert(schema.pdtpActivities).values([
     { id: "pdtp-risk-activity", programId: "pdtp-risk-program", n: 1, activity: "Verificar control de ingeniería", program: "MIPER", responsibleSlugs: ["prevencion"], responsibleDisplay: "Prevención", sourceSheetRow: 1, createdAt: now, updatedAt: now },
     { id: "pdtp-legal-activity", programId: "pdtp-risk-program", n: 2, activity: "Revisar evidencia legal", program: "Legal", responsibleSlugs: ["prevencion"], responsibleDisplay: "Prevención", sourceSheetRow: 2, createdAt: now, updatedAt: now },

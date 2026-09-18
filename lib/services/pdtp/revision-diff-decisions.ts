@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm"
+import { and, eq, inArray, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
   pdtpActivities,
@@ -17,7 +17,7 @@ import {
   roles,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { comparePdtpRevisionToCurrentBase, type PdtpRevisionDiff } from "./base-comparison"
+import { comparePdtpRevisionToCurrentBase, pdtpActivityIdentityMatches, type PdtpRevisionDiff } from "./base-comparison"
 import { pdtpActivityChecklistId } from "./checklist-domain"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
 import { getCurrentPdtpBase2026Version } from "./templates"
@@ -44,18 +44,12 @@ function stringValue(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback
 }
 
-function activityIdentity(activity: SnapshotRecord) {
-  return typeof activity.catalogActivityId === "string" && activity.catalogActivityId
-    ? `catalog:${activity.catalogActivityId}`
-    : `number:${String(activity.n)}`
-}
-
 function activityValues(activity: SnapshotRecord, now: string, objectiveIdByCode: Map<string, string>) {
   return {
     catalogActivityId: typeof activity.catalogActivityId === "string" ? activity.catalogActivityId : null,
     catalogRevision: typeof activity.catalogRevision === "number" ? activity.catalogRevision : null,
     // El objetivo se resuelve por código, no por id: la Base declara
-    // `objectiveCode` (ver content-digest.ts, ≥15), y el id real depende de
+    // `objectiveCode` (ver content-digest.ts, ≥16), y el id real depende de
     // qué objetivo con ese código tenga ESTE programa — nunca el id del
     // objetivo en el programa de la Base, que violaría la FK compuesta
     // `pdtp_activities_objective_same_program_fk`. Un código que ya no
@@ -105,7 +99,10 @@ async function upsertDecision(input: {
   now: string
   client: QueryClient
 }) {
-  const [existing] = await input.client.select({ id: pdtpRevisionDiffDecisions.id })
+  const [existing] = await input.client.select({
+    id: pdtpRevisionDiffDecisions.id,
+    decision: pdtpRevisionDiffDecisions.decision,
+  })
     .from(pdtpRevisionDiffDecisions)
     .where(and(
       eq(pdtpRevisionDiffDecisions.programId, input.programId),
@@ -114,15 +111,12 @@ async function upsertDecision(input: {
     ))
     .limit(1)
   if (existing) {
-    await input.client.update(pdtpRevisionDiffDecisions).set({
-      decision: input.decision,
-      decidedByUserId: input.userId,
-      decidedAt: input.now,
-      updatedAt: input.now,
-    }).where(eq(pdtpRevisionDiffDecisions.id, existing.id))
-    return
+    if (existing.decision !== input.decision) {
+      throw new Error("Esta diferencia ya tiene una decisión; no se puede cambiar después de aplicarla o conservarla.")
+    }
+    return false
   }
-  await input.client.insert(pdtpRevisionDiffDecisions).values({
+  const [inserted] = await input.client.insert(pdtpRevisionDiffDecisions).values({
     id: `pdtp-revision-diff-${nanoid()}`,
     programId: input.programId,
     baseTemplateVersionId: input.baseTemplateVersionId,
@@ -132,7 +126,31 @@ async function upsertDecision(input: {
     decidedAt: input.now,
     createdAt: input.now,
     updatedAt: input.now,
-  })
+  }).onConflictDoNothing({
+    target: [
+      pdtpRevisionDiffDecisions.programId,
+      pdtpRevisionDiffDecisions.baseTemplateVersionId,
+      pdtpRevisionDiffDecisions.activityIdentity,
+    ],
+  }).returning({ id: pdtpRevisionDiffDecisions.id })
+  if (inserted) return true
+
+  // Otra transacción pudo decidir la misma diferencia después de la lectura
+  // inicial. La inserción atómica evita que esa carrera se convierta en un
+  // error de índice único; todavía rechazamos una decisión opuesta.
+  const [concurrent] = await input.client.select({ decision: pdtpRevisionDiffDecisions.decision })
+    .from(pdtpRevisionDiffDecisions)
+    .where(and(
+      eq(pdtpRevisionDiffDecisions.programId, input.programId),
+      eq(pdtpRevisionDiffDecisions.baseTemplateVersionId, input.baseTemplateVersionId),
+      eq(pdtpRevisionDiffDecisions.activityIdentity, input.activityIdentity),
+    ))
+    .limit(1)
+  if (!concurrent) throw new Error("No se pudo confirmar la decisión del comparativo.")
+  if (concurrent.decision !== input.decision) {
+    throw new Error("Esta diferencia ya tiene una decisión; no se puede cambiar después de aplicarla o conservarla.")
+  }
+  return false
 }
 
 export type PdtpRevisionDiffDecisionView = {
@@ -169,7 +187,6 @@ export async function decidePdtpRevisionDiff(input: {
   const comparison = await comparePdtpRevisionToCurrentBase(input.programId)
   if (!comparison) throw new Error("No existe una Base preventiva vigente para comparar esta revisión.")
   const item = comparison.items.find((candidate) => candidate.identity === input.activityIdentity)
-  if (!item) throw new Error("La diferencia ya no existe frente a la Base vigente. Actualiza la revisión antes de decidir.")
 
   return db.transaction(async (tx) => {
     const [program] = await tx.select().from(pdtpPrograms)
@@ -180,9 +197,37 @@ export async function decidePdtpRevisionDiff(input: {
       throw new Error("Las decisiones contra la Base sólo se aplican en una revisión v+1.")
     }
 
+    // Una aplicación exitosa puede hacer desaparecer el ítem del comparativo.
+    // Consultar primero la decisión persistida vuelve a ser idempotente incluso
+    // en ese caso; una decisión opuesta sigue siendo un conflicto explícito.
+    const [storedDecision] = await tx.select({ decision: pdtpRevisionDiffDecisions.decision })
+      .from(pdtpRevisionDiffDecisions)
+      .where(and(
+        eq(pdtpRevisionDiffDecisions.programId, program.id),
+        eq(pdtpRevisionDiffDecisions.baseTemplateVersionId, comparison.baseTemplateVersionId),
+        eq(pdtpRevisionDiffDecisions.activityIdentity, input.activityIdentity),
+      ))
+      .limit(1)
+    if (storedDecision) {
+      if (storedDecision.decision !== input.decision) {
+        throw new Error("Esta diferencia ya tiene una decisión; no se puede cambiar después de aplicarla o conservarla.")
+      }
+      return { decision: storedDecision.decision as DiffDecision, activityIdentity: input.activityIdentity }
+    }
+    if (!item) throw new Error("La diferencia ya no existe frente a la Base vigente. Actualiza la revisión antes de decidir.")
+
+    // La comparación se calculó antes de abrir esta transacción. La Base puede
+    // haber avanzado mientras el operador confirmaba la decisión; conservar
+    // una diferencia contra una revisión vieja sería tan inconsistente como
+    // aplicarla. Se valida para ambos caminos (Aplicar y Conservar).
+    const base = await getCurrentPdtpBase2026Version(tx)
+    if (!base || base.version.id !== comparison.baseTemplateVersionId) {
+      throw new Error("La Base preventiva cambió mientras se revisaba la diferencia. Actualiza la pantalla e inténtalo otra vez.")
+    }
+
     const now = new Date().toISOString()
     if (input.decision === "kept") {
-      await upsertDecision({
+      const inserted = await upsertDecision({
         programId: program.id,
         baseTemplateVersionId: comparison.baseTemplateVersionId,
         activityIdentity: item.identity,
@@ -191,6 +236,7 @@ export async function decidePdtpRevisionDiff(input: {
         now,
         client: tx,
       })
+      if (!inserted) return { decision: "kept" as const, activityIdentity: item.identity }
       await addPdtpChangeLogEntry(
         program.id,
         program.version,
@@ -204,15 +250,21 @@ export async function decidePdtpRevisionDiff(input: {
       return { decision: "kept" as const, activityIdentity: item.identity }
     }
 
-    const base = await getCurrentPdtpBase2026Version(tx)
-    if (!base || base.version.id !== comparison.baseTemplateVersionId) {
-      throw new Error("La Base preventiva cambió mientras se revisaba la diferencia. Actualiza la pantalla e inténtalo otra vez.")
-    }
+    const inserted = await upsertDecision({
+      programId: program.id,
+      baseTemplateVersionId: comparison.baseTemplateVersionId,
+      activityIdentity: item.identity,
+      decision: "applied",
+      userId: input.userId,
+      now,
+      client: tx,
+    })
+    if (!inserted) return { decision: "applied" as const, activityIdentity: item.identity }
     const snapshot = base.version.snapshotJson as SnapshotRecord
-    const baseActivity = records(snapshot.activities).find((activity) => activityIdentity(activity) === item.identity)
+    const baseActivity = records(snapshot.activities).find((activity) => pdtpActivityIdentityMatches(activity, item.identity))
     const currentActivities = await tx.select().from(pdtpActivities)
       .where(eq(pdtpActivities.programId, program.id))
-    const currentActivity = currentActivities.find((activity) => activityIdentity(activity as unknown as SnapshotRecord) === item.identity)
+    const currentActivity = currentActivities.find((activity) => pdtpActivityIdentityMatches(activity as unknown as SnapshotRecord, item.identity))
 
     if (item.kind === "only_in_revision") {
       if (!currentActivity) throw new Error("La actividad de la revisión ya no existe.")
@@ -314,8 +366,33 @@ export async function decidePdtpRevisionDiff(input: {
       }
 
       await tx.delete(pdtpSheetActivities).where(eq(pdtpSheetActivities.activityId, activityId))
-      const sheets = await tx.select({ id: pdtpSheets.id, code: pdtpSheets.code }).from(pdtpSheets)
+      const existingSheets = await tx.select({ id: pdtpSheets.id, code: pdtpSheets.code }).from(pdtpSheets)
         .where(eq(pdtpSheets.programId, program.id))
+      const existingSheetCodes = new Set(existingSheets.map((sheet) => sheet.code))
+      const missingBaseSheets = records(snapshot.views)
+        .map((view) => ({
+          code: stringValue(view.code),
+          label: stringValue(view.label),
+          area: stringValue(view.area, "prevencion"),
+          defaultScopeRoles: strings(view.defaultScopeRoles),
+          isActive: view.isActive !== false,
+        }))
+        .filter((view) => view.code.length > 0 && !existingSheetCodes.has(view.code))
+      if (missingBaseSheets.length > 0) {
+        await tx.insert(pdtpSheets).values(missingBaseSheets.map((view) => ({
+          id: `${program.id}-${view.code}`,
+          code: view.code,
+          programId: program.id,
+          label: view.label || view.code,
+          area: view.area,
+          defaultScopeRoles: view.defaultScopeRoles,
+          isActive: view.isActive,
+        }))).onConflictDoNothing()
+      }
+      const sheets = missingBaseSheets.length > 0
+        ? await tx.select({ id: pdtpSheets.id, code: pdtpSheets.code }).from(pdtpSheets)
+          .where(eq(pdtpSheets.programId, program.id))
+        : existingSheets
       const sheetIdByCode = new Map(sheets.map((sheet) => [sheet.code, sheet.id]))
       const memberships = records(snapshot.memberships).filter((membership) => numberValue(membership.activityNumber) === activityNumber)
       const membershipRows = memberships.flatMap((membership, index) => {
@@ -377,26 +454,33 @@ export async function decidePdtpRevisionDiff(input: {
       const baseParams = records(snapshot.activityWorksiteAdjustments)
         .filter((adjustment) => numberValue(adjustment.activityNumber) === activityNumber)
       const baseParamWorksites = new Set(baseParams.map((param) => stringValue(param.worksiteId)))
-      for (const row of existingParams) {
-        if (!baseParamWorksites.has(row.worksiteId)) {
-          if (row.expectedSubjectCount === null) {
-            await tx.delete(pdtpActivityWorksiteParams).where(eq(pdtpActivityWorksiteParams.id, row.id))
-          } else {
-            await tx.update(pdtpActivityWorksiteParams).set({
-              targetCoveragePercent: null,
-              responsibleSlugs: null,
-              responsibleDisplay: null,
-              responsibleReason: null,
-              updatedByUserId: input.userId,
-              updatedAt: now,
-            }).where(eq(pdtpActivityWorksiteParams.id, row.id))
-          }
-        }
+      const staleParams = existingParams.filter((row) => !baseParamWorksites.has(row.worksiteId))
+      const staleIdsToDelete = staleParams
+        .filter((row) => row.expectedSubjectCount === null)
+        .map((row) => row.id)
+      if (staleIdsToDelete.length > 0) {
+        await tx.delete(pdtpActivityWorksiteParams)
+          .where(inArray(pdtpActivityWorksiteParams.id, staleIdsToDelete))
       }
-      for (const param of baseParams) {
+      const staleIdsToClear = staleParams
+        .filter((row) => row.expectedSubjectCount !== null)
+        .map((row) => row.id)
+      if (staleIdsToClear.length > 0) {
+        await tx.update(pdtpActivityWorksiteParams).set({
+          targetCoveragePercent: null,
+          responsibleSlugs: null,
+          responsibleDisplay: null,
+          responsibleReason: null,
+          updatedByUserId: input.userId,
+          updatedAt: now,
+        }).where(inArray(pdtpActivityWorksiteParams.id, staleIdsToClear))
+      }
+      const baseParamValues = [...new Map(baseParams.map((param) => {
         const worksiteId = stringValue(param.worksiteId)
-        const existing = existingParams.find((row) => row.worksiteId === worksiteId)
-        const values = {
+        return [worksiteId, {
+          id: `pdtp-worksite-param-${nanoid()}`,
+          activityId,
+          worksiteId,
           expectedSubjectCount: expectedByWorksite.get(worksiteId) ?? null,
           targetCoveragePercent: typeof param.targetCoveragePercent === "number" ? param.targetCoveragePercent : null,
           responsibleSlugs: Array.isArray(param.responsibleSlugs) && strings(param.responsibleSlugs).length > 0
@@ -405,20 +489,23 @@ export async function decidePdtpRevisionDiff(input: {
           responsibleDisplay: typeof param.responsibleDisplay === "string" ? param.responsibleDisplay : null,
           responsibleReason: typeof param.responsibleReason === "string" ? param.responsibleReason : null,
           updatedByUserId: input.userId,
+          createdAt: now,
           updatedAt: now,
-        }
-        if (existing) {
-          await tx.update(pdtpActivityWorksiteParams).set(values)
-            .where(eq(pdtpActivityWorksiteParams.id, existing.id))
-        } else {
-          await tx.insert(pdtpActivityWorksiteParams).values({
-            id: `pdtp-worksite-param-${nanoid()}`,
-            activityId,
-            worksiteId,
-            ...values,
-            createdAt: now,
-          })
-        }
+        }]
+      })).values()]
+      if (baseParamValues.length > 0) {
+        await tx.insert(pdtpActivityWorksiteParams).values(baseParamValues).onConflictDoUpdate({
+          target: [pdtpActivityWorksiteParams.activityId, pdtpActivityWorksiteParams.worksiteId],
+          set: {
+            expectedSubjectCount: sql`excluded.expected_subject_count`,
+            targetCoveragePercent: sql`excluded.target_coverage_percent`,
+            responsibleSlugs: sql`excluded.responsible_slugs`,
+            responsibleDisplay: sql`excluded.responsible_display`,
+            responsibleReason: sql`excluded.responsible_reason`,
+            updatedByUserId: sql`excluded.updated_by_user_id`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+        })
       }
 
       await tx.delete(pdtpActivityScheduleOverrides).where(eq(pdtpActivityScheduleOverrides.activityId, activityId))
@@ -440,15 +527,6 @@ export async function decidePdtpRevisionDiff(input: {
       }
     }
 
-    await upsertDecision({
-      programId: program.id,
-      baseTemplateVersionId: comparison.baseTemplateVersionId,
-      activityIdentity: item.identity,
-      decision: "applied",
-      userId: input.userId,
-      now,
-      client: tx,
-    })
     await addPdtpChangeLogEntry(
       program.id,
       program.version,

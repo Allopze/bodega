@@ -7,6 +7,7 @@ import { useActionState, useEffect } from "react"
 import { CheckCircle } from "@phosphor-icons/react"
 import { signIn } from "next-auth/react"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
@@ -45,19 +46,12 @@ export function RegisterForm({ token, mode, initialName, initialEmail, inviteErr
 
   if (isSuccess) {
     return (
-      <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
-        <div className="flex items-start gap-3">
-          <CheckCircle size={22} weight="fill" className="mt-0.5 shrink-0 text-[var(--color-primary)]" />
-          <div>
-            <h1 className="font-display text-lg font-semibold text-[var(--color-text)]">Cuenta creada</h1>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Iniciando sesión automáticamente...
-            </p>
-            <Button asChild className="mt-4" size="sm" variant="secondary">
-              <Link href="/login">Ir al inicio de sesión</Link>
-            </Button>
-          </div>
-        </div>
+      <div className="flex flex-col items-center gap-4 py-4 text-center">
+        <CheckCircle size={40} weight="fill" className="text-success" />
+        <p className="text-sm text-text-subtle">Cuenta creada. Iniciando sesión automáticamente...</p>
+        <Link href="/login" className="text-sm text-[var(--color-primary-ink)] hover:underline">
+          Ir al inicio de sesión
+        </Link>
       </div>
     )
   }
@@ -75,18 +69,18 @@ export function RegisterForm({ token, mode, initialName, initialEmail, inviteErr
       <input type="hidden" name="token" value={token} />
 
       {tokenError && (
-        <p className="mb-4 rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">
+        <Callout tone="danger" role="alert" className="mb-4">
           {tokenError}
-        </p>
+        </Callout>
       )}
       {!tokenError && inviteNotice && (
-        <p className="mb-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+        <Callout tone="info" role="status" className="mb-4">
           {inviteNotice}
-        </p>
+        </Callout>
       )}
 
       <FieldGroup>
-        <Field label="Nombre completo" htmlFor="name" required error={state.fieldErrors?.name?.[0]}>
+        <Field label="Nombre completo" htmlFor="name" error={state.fieldErrors?.name?.[0]}>
           <Input
             id="name"
             name="name"
@@ -99,7 +93,7 @@ export function RegisterForm({ token, mode, initialName, initialEmail, inviteErr
           />
         </Field>
 
-        <Field label="Correo electrónico" htmlFor="email" required error={state.fieldErrors?.email?.[0]}>
+        <Field label="Correo electrónico" htmlFor="email" error={state.fieldErrors?.email?.[0]}>
           <Input
             id="email"
             name="email"
@@ -113,7 +107,7 @@ export function RegisterForm({ token, mode, initialName, initialEmail, inviteErr
           />
         </Field>
 
-        <Field label="Contraseña" htmlFor="password" required error={state.fieldErrors?.password?.[0]}>
+        <Field label="Contraseña" htmlFor="password" error={state.fieldErrors?.password?.[0]}>
           <Input
             id="password"
             name="password"
@@ -129,7 +123,6 @@ export function RegisterForm({ token, mode, initialName, initialEmail, inviteErr
         <Field
           label="Confirmar contraseña"
           htmlFor="confirmPassword"
-          required
           error={state.fieldErrors?.confirmPassword?.[0]}
         >
           <Input
@@ -146,9 +139,9 @@ export function RegisterForm({ token, mode, initialName, initialEmail, inviteErr
       </FieldGroup>
 
       {state.message && !state.ok && !state.fieldErrors && (
-        <p className="mt-3 text-sm text-[var(--color-danger)]" role="alert">
+        <Callout tone="danger" role="alert" className="mt-3">
           {state.message}
-        </p>
+        </Callout>
       )}
 
       <Button type="submit" className="mt-5 w-full" size="lg" disabled={disabledByInvite}>

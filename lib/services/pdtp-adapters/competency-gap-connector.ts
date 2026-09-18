@@ -21,7 +21,7 @@
  * actividad de esa forma queda cubierto sin tocar este archivo.
  */
 
-import { and, eq, inArray, isNotNull } from "drizzle-orm"
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpPrograms, preventionTrainingCourses } from "@/db/schema"
 import { computeCompetencyGapsForScope } from "@/lib/services/prevention-training-gaps"
@@ -107,8 +107,14 @@ export async function sweepCompetencyGapObligations(): Promise<CompetencyGapSwee
   const occurredAt = new Date().toISOString()
   // El actor se hereda del programa activo, una sola vez: es el mismo para todo
   // el barrido y resolverlo por brecha serían N consultas idénticas.
+  // El barrido puede coexistir con programas activos de otros años. Elegir el
+  // primer activo sin año/version dejaba obligaciones del año corriente
+  // atribuidas al autor de una versión histórica.
+  const occurredYear = chileDateParts(occurredAt).year
   const [program] = await db.select({ id: pdtpPrograms.id }).from(pdtpPrograms)
-    .where(eq(pdtpPrograms.status, "active")).limit(1)
+    .where(and(eq(pdtpPrograms.status, "active"), eq(pdtpPrograms.year, occurredYear)))
+    .orderBy(desc(pdtpPrograms.version))
+    .limit(1)
   const actorUserId = program ? await resolvePdtpProgramActorUserId(program.id) : null
 
   for (const gap of gaps) {

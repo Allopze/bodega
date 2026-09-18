@@ -17,7 +17,10 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }))
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  window.localStorage.clear()
+})
 
 const CURRENT_PERIOD: PdtpPeriod = { year: 2026, month: 7, week: 2 }
 
@@ -204,6 +207,39 @@ describe("PdtpSheetTable — weekly filter", () => {
     expect(within(row).getByText("Pendiente")).toBeInTheDocument()
     expect(within(row).queryByText(/Atrasado/)).not.toBeInTheDocument()
     expect(row.lastElementChild).toHaveTextContent("2")
+  })
+
+  it("explicita y permite cambiar entre cifras históricas y exigibles", () => {
+    const activity = makeActivity(
+      "act-semantic-mode",
+      "8",
+      "Actividad con corte de activación",
+      [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+      ZERO12,
+    )
+    activity.effectiveSchedule = [{ month: 7, week: 2, plannedQuantity: 1 }] as never
+    activity.effectiveMonthlyPlanned = withPlanned(7, 1)
+    activity.effectiveTotalPlanned = 1
+
+    render(<PdtpSheetTable
+      view={makeView([activity])}
+      viewMode="anual"
+      currentPeriod={CURRENT_PERIOD}
+      sheetCode="pdtp_general"
+    />)
+
+    const historicalButton = screen.getByRole("button", { name: "Histórico completo" })
+    const effectiveButton = screen.getByRole("button", { name: "Exigible desde activación" })
+    expect(historicalButton).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByText("Plan / ejecutado")).toBeInTheDocument()
+    expect(screen.getByText(/incluye todas las semanas registradas/)).toBeInTheDocument()
+    expect(screen.getByText("Actividad con corte de activación").closest("tr")!.lastElementChild).toHaveTextContent("2")
+
+    fireEvent.click(effectiveButton)
+
+    expect(effectiveButton).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByText(/sólo las semanas exigibles/)).toBeInTheDocument()
+    expect(screen.getByText("Actividad con corte de activación").closest("tr")!.lastElementChild).toHaveTextContent("1")
   })
 
   it("uses user-facing period and status labels in the annual execution details", () => {

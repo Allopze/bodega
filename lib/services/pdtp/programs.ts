@@ -26,7 +26,7 @@ import { pdtpActivityChecklistId } from "./checklist-domain"
 import { getCurrentPdtpBase2026Version, getPdtpTemplateVersion, instantiatePdtpTemplateVersion } from "./templates"
 
 type LegacyPdtpProgramCreateInput = {
-  year: number; title: string; userId: string; copySheetsFromProgramId?: string; templateVersionId?: string; revisionFromProgramId?: string
+  year: number; title: string; userId: string; copySheetsFromProgramId?: string; templateVersionId?: string; revisionFromProgramId?: string; appliesToAllWorksites?: boolean
 }
 
 export async function createAnnualPdtpProgram(input: { year: number; userId: string }) {
@@ -117,10 +117,14 @@ export async function createAnnualPdtpProgram(input: { year: number; userId: str
 export async function createLegacyPdtpProgramForTests(input: LegacyPdtpProgramCreateInput) {
   const now = new Date().toISOString()
   const MAX_ATTEMPTS = 8
+  // Este constructor sólo existe para conservar fixtures históricos. Antes de
+  // PDTP-003 una instancia sin filas de membresía significaba alcance global;
+  // los tests que lo usan deben seguir declarando ese contrato por defecto.
+  const legacyInput = { ...input, appliesToAllWorksites: input.appliesToAllWorksites ?? true }
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      return await createPdtpProgramAttempt(input, now)
+      return await createPdtpProgramAttempt(legacyInput, now)
     } catch (e) {
       // Violación de unique(year, version): otra creación concurrente para
       // el mismo año ganó la carrera del número de versión (el SELECT
@@ -250,7 +254,11 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
         indicatorFormula: sourceProgram?.indicatorFormula ?? null,
         indicatorPeriodicity: sourceProgram?.indicatorPeriodicity ?? null,
         measurementOwner: sourceProgram?.measurementOwner ?? null,
-        appliesToAllWorksites: sourceProgram?.appliesToAllWorksites ?? false,
+        complianceTarget: sourceProgram?.complianceTarget ?? 0.9,
+        pesoEjecucion: sourceProgram?.pesoEjecucion ?? 0.5,
+        pesoVerificacion: sourceProgram?.pesoVerificacion ?? 0.3,
+        pesoCierre: sourceProgram?.pesoCierre ?? 0.2,
+        appliesToAllWorksites: sourceProgram?.appliesToAllWorksites ?? input.appliesToAllWorksites ?? false,
         creationMode: templateVersion ? "template" : sourceProgram ? "program_copy" : "blank",
         sourceProgramId: templateVersion?.sourceProgramId ?? sourceProgram?.id ?? null,
         sourceContentVersion: templateVersion?.sourceContentVersion ?? sourceProgram?.contentVersion ?? null,

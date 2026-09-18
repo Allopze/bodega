@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useActionState } from "react"
 import { WarningCircle, CheckCircle } from "@phosphor-icons/react"
+import { Callout } from "@/components/ui/callout"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -38,7 +39,6 @@ export function ResetPasswordForm({ token }: { token: string }) {
         <Field
           label="Nueva contraseña"
           htmlFor="password"
-          required
           error={fieldErrors["password"]?.[0]}
         >
           <Input
@@ -54,7 +54,6 @@ export function ResetPasswordForm({ token }: { token: string }) {
         <Field
           label="Confirmar contraseña"
           htmlFor="confirmPassword"
-          required
           error={fieldErrors["confirmPassword"]?.[0]}
         >
           <Input
@@ -69,10 +68,14 @@ export function ResetPasswordForm({ token }: { token: string }) {
       </FieldGroup>
 
       {state.message && !state.ok && (
-        <div role="alert" className="mt-3 flex items-start gap-2 rounded-(--radius) bg-[var(--color-danger-tint)] border border-[var(--color-danger-line)] px-3 py-2.5 animate-in fade-in duration-150">
-          <WarningCircle size={16} weight="fill" className="mt-0.5 shrink-0 text-danger" />
-          <p className="text-sm text-[var(--color-danger-ink)]">{state.message}</p>
-        </div>
+        <Callout
+          tone="danger"
+          role="alert"
+          icon={<WarningCircle size={16} weight="fill" />}
+          className="mt-3 animate-in fade-in duration-150"
+        >
+          {state.message}
+        </Callout>
       )}
 
       <Button
@@ -83,12 +86,6 @@ export function ResetPasswordForm({ token }: { token: string }) {
       >
         {isPending ? "Guardando..." : "Establecer nueva contraseña"}
       </Button>
-
-      <div className="mt-6 pt-5 border-t border-border text-center">
-        <Link href="/login" className="text-xs text-text-subtle hover:text-text">
-          ← Volver al inicio de sesión
-        </Link>
-      </div>
     </form>
   )
 }

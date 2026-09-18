@@ -30,6 +30,9 @@ import {
   PdtpActivitySummary,
   PdtpDensityToggle,
   usePdtpDensity,
+  PdtpPlanViewToggle,
+  usePdtpPlanViewMode,
+  type PdtpPlanViewMode,
   formatQuantity,
   usePdtpMonthWindow,
   type PdtpStatusCounts,
@@ -64,9 +67,14 @@ function PdtpExecutionBadges({ exec }: { exec: ExecutionForBadges }) {
   )
 }
 
-function PdtpAggregateBreakdown({ summaries, worksiteNames, bare = false }: { summaries: PdtpAggregateActivityWorksite[]; worksiteNames: Record<string, string>; bare?: boolean }) {
+function PdtpAggregateBreakdown({ summaries, worksiteNames, planViewMode, bare = false }: { summaries: PdtpAggregateActivityWorksite[]; worksiteNames: Record<string, string>; planViewMode: PdtpPlanViewMode; bare?: boolean }) {
   if (summaries.length === 0) return null
-  const chips = <div className="mt-1 flex flex-wrap gap-1.5">{summaries.map((summary) => <MetaBadge key={summary.worksiteId} meta={{ label: `${worksiteNames[summary.worksiteId] ?? "Faena"}: Plan ${summary.planned} · ejecutado ${summary.executed} · ${summary.status === "executed" ? "Ejecutada" : summary.status === "overdue" ? "Atrasada" : summary.status === "pending" ? "Pendiente" : "No programada"}`, variant: "outline" }} />)}</div>
+  const chips = <div className="mt-1 flex flex-wrap gap-1.5">{summaries.map((summary) => {
+    const planned = planViewMode === "historico" ? summary.historicalPlanned : summary.planned
+    const executed = planViewMode === "historico" ? summary.historicalExecuted : summary.executed
+    const statusLabel = summary.status === "executed" ? "Ejecutada" : summary.status === "overdue" ? "Atrasada" : summary.status === "pending" ? "Pendiente" : "No programada"
+    return <MetaBadge key={summary.worksiteId} meta={{ label: `${worksiteNames[summary.worksiteId] ?? "Faena"}: Plan ${formatQuantity(planned)} · ejecutado ${formatQuantity(executed)} · Estado exigible: ${statusLabel}`, variant: "outline" }} />
+  })}</div>
   // `bare`: sin <details> propio, para vivir dentro del expander único de la
   // vista anual (UI/UX 2026-08-05, B1b — antes había dos expanders por fila).
   if (bare) return chips
@@ -221,8 +229,13 @@ export function PdtpSheetTable({
 
   React.useEffect(() => setStatusFilter(initialStatusFilter), [initialStatusFilter])
   const [density, toggleDensity] = usePdtpDensity()
+  const [planViewMode, setPlanViewMode] = usePdtpPlanViewMode()
   const [visibleMonths, monthsExpanded, toggleMonthsExpanded] = usePdtpMonthWindow(currentPeriod.month)
   const effectiveFrom = pdtpActivationPeriod(view.program.activatedAt)
+  const aggregatePlanViewMode: PdtpPlanViewMode = viewMode === "anual" ? planViewMode : "exigible"
+  const planViewDescription = planViewMode === "historico"
+    ? "Plan / ejecutado incluye todas las semanas registradas aplicables a la faena; el estado sigue lo exigible desde la activación."
+    : "Plan / ejecutado y estado consideran sólo las semanas exigibles desde la activación; las exclusiones por faena se respetan en ambos modos."
 
   const plannedQuantityForCurrentWeek = (activity: PdtpSheetView["activities"][number]) =>
     activity.effectiveSchedule
@@ -326,15 +339,24 @@ export function PdtpSheetTable({
           />
           <PdtpDensityToggle density={density} onToggle={toggleDensity} />
           {viewMode === "anual" && (
-            <button
-              type="button"
-              onClick={toggleMonthsExpanded}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-            >
-              {monthsExpanded ? "Colapsar meses" : `Ver todos los meses (${visibleMonths.length}/12)`}
-            </button>
+            <>
+              <PdtpPlanViewToggle mode={planViewMode} onChange={setPlanViewMode} />
+              <button
+                type="button"
+                onClick={toggleMonthsExpanded}
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+              >
+                {monthsExpanded ? "Colapsar meses" : `Ver todos los meses (${visibleMonths.length}/12)`}
+              </button>
+            </>
           )}
         </div>
+      )}
+
+      {viewMode === "anual" && sourceActivities.length > 0 && (
+        <p id="pdtp-plan-view-description" className="text-xs text-[var(--color-text-muted)]">
+          {planViewDescription}
+        </p>
       )}
 
       {viewMode === "semana" ? (
@@ -396,7 +418,7 @@ export function PdtpSheetTable({
                                   <span>{activity.notes.length > 100 ? `${activity.notes.slice(0, 100)}…` : activity.notes}</span>
                                 </p>
                               )}
-                              {!worksiteId && <PdtpAggregateBreakdown summaries={aggregateSummaries(activity) ?? []} worksiteNames={aggregateWorksiteNames} />}
+                              {!worksiteId && <PdtpAggregateBreakdown summaries={aggregateSummaries(activity) ?? []} planViewMode={aggregatePlanViewMode} worksiteNames={aggregateWorksiteNames} />}
                               {/* Los desvíos del mes viven bajo la actividad,
                                   no detrás de un ícono: explican por qué la
                                   celda de esta semana se ve como se ve. */}
@@ -503,7 +525,7 @@ export function PdtpSheetTable({
             <p id="pdtp-horizontal-scroll-hint" className="mb-2 text-xs text-[var(--color-text-muted)] sm:hidden">
               Desliza horizontalmente para revisar más semanas y columnas.
             </p>
-            <TableRoot stickyHeader aria-describedby="pdtp-horizontal-scroll-hint">
+            <TableRoot stickyHeader aria-describedby="pdtp-horizontal-scroll-hint pdtp-plan-view-description">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -511,9 +533,18 @@ export function PdtpSheetTable({
                   <TableHead className="sticky left-12 z-20 min-w-[22rem] bg-[var(--color-surface-2)] shadow-[1px_0_0_var(--color-border)]">Actividad</TableHead>
                   <TableHead>Estado</TableHead>
                   {visibleMonths.map((mi) => (
-                    <TableHead key={mi} className="text-right">{MONTH_LABELS[(PDTP_MONTHS[mi] ?? mi + 1) - 1]}</TableHead>
+                    <TableHead
+                      key={mi}
+                      className="text-right"
+                      title={`Plan / ejecutado · ${planViewMode === "historico" ? "histórico completo" : "exigible desde activación"}`}
+                    >
+                      {MONTH_LABELS[(PDTP_MONTHS[mi] ?? mi + 1) - 1]}
+                    </TableHead>
                   ))}
-                  <TableHead className="min-w-[7.5rem] text-right">Plan / ejecutado</TableHead>
+                  <TableHead className="min-w-[7.5rem] text-right" title={planViewDescription}>
+                    <span className="block">Plan / ejecutado</span>
+                    <span className="block text-[10px] font-normal text-[var(--color-text-muted)]">{planViewMode === "historico" ? "Histórico" : "Exigible"}</span>
+                  </TableHead>
                   {canOperate && worksiteId && <TableHead className="w-48">Registrar</TableHead>}
                   {canApprove && worksiteId && pendingApprovals.length > 0 && <TableHead className="min-w-[10rem]">Aprobar</TableHead>}
                 </TableRow>
@@ -557,7 +588,7 @@ export function PdtpSheetTable({
                                   <p>{activity.program}</p>
                                   <PdtpResponsibleChips display={activity.responsibleDisplay} />
                                   <PdtpAssigneeChip names={(assigneesByActivity[activity.id] ?? EMPTY_ASSIGNEE_LIST).map((person) => person.name)} />
-                                  {!worksiteId && <PdtpAggregateBreakdown bare summaries={aggregateSummaries(activity) ?? []} worksiteNames={aggregateWorksiteNames} />}
+                                  {!worksiteId && <PdtpAggregateBreakdown bare summaries={aggregateSummaries(activity) ?? []} planViewMode={aggregatePlanViewMode} worksiteNames={aggregateWorksiteNames} />}
                                 </div>
                               </details>
                               {worksiteId && activity.executions.length > 0 && (
@@ -599,8 +630,8 @@ export function PdtpSheetTable({
                             <PdtpStatusBadge status={status} overdueMonths={overdueMonths} notPerformedReasons={notPerformedReasonsForMonth(activity, currentPeriod.month)} />
                           </TableCell>
                           {visibleMonths.map((mi) => {
-                            const planned = activity.monthlyPlanned[mi] ?? 0
-                            const executed = activity.monthlyExecuted[mi] ?? 0
+                            const planned = (planViewMode === "historico" ? activity.monthlyPlanned : activity.effectiveMonthlyPlanned)[mi] ?? 0
+                            const executed = (planViewMode === "historico" ? activity.monthlyExecuted : activity.effectiveMonthlyExecuted)[mi] ?? 0
                             return (
                               <TableCellNum
                                 key={mi}
@@ -611,14 +642,14 @@ export function PdtpSheetTable({
                               >
                                 <div className="whitespace-nowrap">
                                   <span>{formatQuantity(planned)}</span>
-                                  <span className="text-[11px] text-[var(--color-success)]"> / {formatQuantity(executed)}</span>
+                                  <span className="text-[11px] text-[var(--color-success-ink)]"> / {formatQuantity(executed)}</span>
                                   <PdtpDeviationMonthMark deviations={deviationsForMonth(activity, (PDTP_MONTHS[mi] ?? mi + 1))} />
                                 </div>
                               </TableCellNum>
                             )
                           })}
                           <TableCellNum className={`font-semibold whitespace-nowrap ${rowPy}`}>
-                            {formatQuantity(activity.totalPlanned)}<span className="text-[var(--color-success)]"> / {formatQuantity(activity.totalExecuted)}</span>
+                            {formatQuantity(planViewMode === "historico" ? activity.totalPlanned : activity.effectiveTotalPlanned)}<span className="text-[var(--color-success-ink)]"> / {formatQuantity(planViewMode === "historico" ? activity.totalExecuted : activity.effectiveTotalExecuted)}</span>
                           </TableCellNum>
                           {canOperate && worksiteId && (
                             <TableCell className={rowPy}>
@@ -641,7 +672,7 @@ export function PdtpSheetTable({
                                   year={view.program.year}
                                   defaultMonth={currentPeriod.month}
                                   defaultWeek={currentPeriod.week}
-                                  globalQuantity={activity.monthlyPlanned[currentPeriod.month - 1] ?? 0}
+                                  globalQuantity={(planViewMode === "historico" ? activity.monthlyPlanned : activity.effectiveMonthlyPlanned)[currentPeriod.month - 1] ?? 0}
                                   hoja={sheetCode}
                                 />}
                                 {/* Asignar es por faena: sin faena seleccionada

@@ -1,4 +1,4 @@
-export type { PdtpAggregateActivityWorksite, PdtpAggregatedSheetView, PdtpSheetView } from "./sheets"
+export type { PdtpAggregateActivityWorksite, PdtpAggregateWorksiteSummary, PdtpAggregatedSheetView, PdtpSheetView } from "./sheets"
 export type { PdtpComplianceMonth, PdtpComplianceIndicators, PdtpCategoryCompliance } from "./compliance"
 export type { PdtpActivityUpdateInput, PdtpActivityAddInput, PdtpScheduleConflictDetail } from "./activities"
 export { PdtpScheduleConflictError } from "./activities"
@@ -71,6 +71,7 @@ export type { PdtpObjective } from "./objectives"
 export {
   CURRENT_PDTP_CONTENT_SCHEMA_VERSION,
   MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION,
+  PdtpContentSchemaVersionMissingError,
   PdtpUnreconstructibleContentSchemaError,
   buildPdtpProgramContentSnapshot,
   computePdtpProgramContentDigest,

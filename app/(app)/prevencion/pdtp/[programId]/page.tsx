@@ -17,7 +17,7 @@ import {
 } from "@/lib/services/prevention-pdtp"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { listCatalogActivities } from "@/lib/services/pdtp/catalog-activities"
-import { getPendingPdtpApprovalsForView, getPdtpChangeLog, listAccessiblePdtpProgramWorksites } from "@/lib/services/pdtp"
+import { getPendingPdtpApprovalsForView, getPdtpChangeLog, listAccessiblePdtpProgramWorksites, listPdtpProgramWorksites } from "@/lib/services/pdtp"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -34,13 +34,15 @@ import { PdtpSheetTable } from "../pdtp-sheet-table"
 import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-sheet-table-ui"
 import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
 import { PdtpImportExcelDialog } from "../pdtp-import-excel-dialog"
+import { countPdtpFulfillmentBacklog } from "@/lib/services/pdtp/backlog"
 import { resolveSelectedWorksiteId } from "../pdtp-context"
 import type { PdtpActivityStatusFilter } from "@/lib/services/pdtp/period"
 import { CoverageReportPanel } from "./coverage-report-panel"
-import { FulfillmentBacklogPanel } from "./fulfillment-backlog-panel"
+import { FulfillmentBacklogPanel, shouldOfferPdtpRevision } from "./fulfillment-backlog-panel"
 import { ProgramLifecycleControls } from "./program-lifecycle-controls"
 import { ReconcileDeclaredActorButton } from "./reconcile-declared-actor-button"
 import { PdtpPeriodCloseButton } from "./period-close-button"
+import { CreatePdtpRevisionButton } from "./create-pdtp-revision-button"
 
 export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SST" }
 
@@ -91,7 +93,11 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | "all" =
     scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
-  const worksites = await listAccessiblePdtpProgramWorksites(programId, worksiteIds)
+  const coverageScope = worksiteIds === "all" ? undefined : { worksiteIds }
+  const [worksites, programWorksites] = await Promise.all([
+    listAccessiblePdtpProgramWorksites(programId, worksiteIds),
+    listPdtpProgramWorksites(programId),
+  ])
   const selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, worksites)
   const [[view, indicators, integral], approvalProgress] = await Promise.all([
     selectedWorksiteId
@@ -117,8 +123,9 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   // el trabajo que le queda por delante.
   const [submitBlockers, coverageReport] = await Promise.all([
     program.status === "draft" ? getPdtpSubmitReviewBlockers(programId) : Promise.resolve([] as string[]),
-    getPdtpCoverageReport(programId),
+    getPdtpCoverageReport(programId, coverageScope),
   ])
+  const hasBlockingCoverageIssues = coverageReport.groups.some((group) => group.blocks)
 
   const canApprove = can(session, "prevention:pdtp:approve")
   const canClosePeriod = can(session, "prevention:pdtp:close_period")
@@ -138,6 +145,20 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const canManageLifecycle = can(session, "prevention:pdtp:lifecycle:manage")
   const canExecute = can(session, "prevention:pdtp:execute")
   const canManageProgram = can(session, "prevention:pdtp:program:manage")
+  const hasUndeclaredActiveScope = program.status === "active"
+    && !program.appliesToAllWorksites
+    && programWorksites.length === 0
+  const hasNoAccessibleWorksites = worksites.length === 0 && !hasUndeclaredActiveScope
+  const backlogWorksiteIds = hasUndeclaredActiveScope && scope.mode === "all"
+    ? undefined
+    : worksites.map((worksite) => worksite.id)
+  const backlog = await countPdtpFulfillmentBacklog(programId, { worksiteIds: backlogWorksiteIds })
+  const hasDigestRevisionIssue = backlog.digestDrift || backlog.digestVerificationUnavailable
+  const showRevisionCta = shouldOfferPdtpRevision({
+    digestDrift: hasDigestRevisionIssue,
+    programStatus: program.status,
+    canManageProgram,
+  }) || (canManageProgram && program.status === "active" && (hasUndeclaredActiveScope || hasBlockingCoverageIssues))
   const catalogActivities = canManageProgram && program.status === "draft" ? await listCatalogActivities() : []
   const exportBaseHref = `/api/prevencion/pdtp/export?programId=${programId}&hoja=${sheetCode}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}&year=${program.year}`
   const exportRe36Href = `${exportBaseHref}&formato=re36`
@@ -158,6 +179,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         }
         actions={
           <>
+            {showRevisionCta && <CreatePdtpRevisionButton sourceProgramId={programId} />}
             {/* Botón visible de importación: solo en borrador y con permiso de
                 gestión. Antes este flujo estaba escondido tras Editar → Revisión
                 → "Vistas avanzadas", y el usuario no lo encontraba. */}
@@ -266,6 +288,15 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
             </p>
           </section>
         )}
+        {hasUndeclaredActiveScope && (
+          <section className="rounded-xl border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-4 py-3" role="alert">
+            <p className="text-sm font-semibold text-[var(--color-warning-ink)]">Alcance de faenas no declarado</p>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Esta versión activa no tiene faenas asignadas ni declara alcance corporativo. No recibirá nuevas acreditaciones hasta que una revisión v+1 defina su cobertura.
+            </p>
+            {!canManageProgram && <p className="mt-3 text-xs text-[var(--color-text-subtle)]">Solicita a quien administra el programa que cree la revisión v+1.</p>}
+          </section>
+        )}
         {/* Program lifecycle status block, con la metadata del documento importado plegada dentro */}
         <CoverageReportPanel
           report={coverageReport}
@@ -274,7 +305,11 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
           canManageProgram={canManageProgram}
           canManageRoles={can(session, "admin:roles")}
         />
-        <FulfillmentBacklogPanel programId={programId} canManageProgram={canManageProgram} programStatus={program.status} />
+        <FulfillmentBacklogPanel
+          programId={programId}
+          worksiteIds={backlogWorksiteIds}
+          backlog={backlog}
+        />
 
         <ProgramLifecycleControls
           program={program}
@@ -314,7 +349,16 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
           </p>
         )}
 
-        {!selectedWorksiteId && worksites.length > 1 ? (
+        {hasNoAccessibleWorksites ? (
+          <EmptyState
+            compact
+            align="start"
+            tone="warning"
+            title="Sin faenas accesibles para este programa"
+            description="No tienes una faena de este programa dentro de tu alcance autorizado. Solicita la asignación correspondiente antes de consultar o registrar trabajo."
+            action={<Button asChild size="sm" variant="secondary"><Link href="/prevencion/pdtp/programas">Volver a programas</Link></Button>}
+          />
+        ) : hasUndeclaredActiveScope ? null : !selectedWorksiteId && worksites.length > 1 ? (
           <EmptyState
             compact
             align="start"
@@ -394,7 +438,7 @@ async function PdtpDocumentMetadataSection({ programId, canReconcile }: { progra
                 <div className="min-w-0 text-[var(--color-text-muted)]">
                   <p>{entry.declaredActorName || entry.description || "Sin persona declarada"}</p>
                   {(entry.declaredActorTitle || entry.declaredAtText) && <p className="mt-0.5 text-xs">{[entry.declaredActorTitle, entry.declaredAtText].filter(Boolean).join(" · ")}</p>}
-                  {linkedUserName && <p className="mt-1 text-xs text-[var(--color-success)]">Reconciliado con {linkedUserName}</p>}
+                  {linkedUserName && <p className="mt-1 text-xs text-[var(--color-success-ink)]">Reconciliado con {linkedUserName}</p>}
                 </div>
                 <div className="flex items-center gap-2">
                   {adapterCode && <MetaBadge meta={{ label: adapterCode, variant: "outline" }} />}

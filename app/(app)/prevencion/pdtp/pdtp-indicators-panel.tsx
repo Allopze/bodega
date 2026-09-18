@@ -94,12 +94,12 @@ export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId }: {
                 <span className={cn(
                   "font-mono text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight",
                   annual.percent !== null && annual.percent >= target
-                    ? "text-[var(--color-success)]"
+                    ? "text-[var(--color-success-ink)]"
                     : "text-[var(--color-text)]"
                 )}>
                   {fmtPct(annual.percent)}
                 </span>
-                <span className="mb-1 text-xs text-[var(--color-text-subtle)]">{annual.executed}/{annual.planned}</span>
+                <span className="mb-1 text-xs text-[var(--color-text-subtle)]">Plan {annual.planned} · ejecutado {annual.executed}</span>
               </div>
               <ComplianceBar value={annual.percent} target={target} />
             </div>
@@ -146,7 +146,7 @@ export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId }: {
               <div key={q.quarter} className="min-w-[6rem] flex-1 rounded-(--radius) border border-[var(--color-border)] px-3 py-2">
                 <span className="text-eyebrow">{QUARTER_LABELS[q.quarter - 1]}</span>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums">
-                  <span className={meetsTarget ? "text-[var(--color-success)]" : "text-[var(--color-text)]"}>{fmtPct(q.percent)}</span>
+                  <span className={meetsTarget ? "text-[var(--color-success-ink)]" : "text-[var(--color-text)]"}>{fmtPct(q.percent)}</span>
                 </div>
                 <ComplianceBar value={q.percent} target={target} />
               </div>
@@ -160,8 +160,8 @@ export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId }: {
               <TableHeader>
                 <TableRow>
                   <TableHead className="pl-1 pr-3">Mes</TableHead>
-                  <TableHead className="text-right">Prog.</TableHead>
-                  <TableHead className="text-right">Ejec.</TableHead>
+                  <TableHead className="text-right">Plan</TableHead>
+                  <TableHead className="text-right">Ejecutado</TableHead>
                   <TableHead className="text-right">%</TableHead>
                   <TableHead className="text-right" title={ZERO_ACTIVITIES_COLUMN_TITLE}>En cero</TableHead>
                   <TableHead>Meta</TableHead>
@@ -179,7 +179,7 @@ export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId }: {
                       </TableCell>
                       <TableCellNum className="px-2 py-1.5 text-xs">{m.planned}</TableCellNum>
                       <TableCellNum className="px-2 py-1.5 text-xs">{m.executed}</TableCellNum>
-                      <TableCellNum className={cn("px-2 py-1.5 text-xs font-semibold", meetsTarget ? "text-[var(--color-success)]" : m.executed > 0 ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text-faint)]")}>
+                      <TableCellNum className={cn("px-2 py-1.5 text-xs font-semibold", meetsTarget ? "text-[var(--color-success-ink)]" : m.executed > 0 ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text-faint)]")}>
                         {fmtPct(m.percent)}
                       </TableCellNum>
                       <TableCellNum className="px-2 py-1.5 text-xs">
@@ -210,7 +210,7 @@ export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId }: {
                         )}
                       </TableCellNum>
                       <TableCell className="px-2 py-1.5">
-                        {meetsTarget && <CheckCircle size={13} className="text-[var(--color-success)]" />}
+                        {meetsTarget && <CheckCircle size={13} className="text-[var(--color-success-ink)]" />}
                       </TableCell>
                     </TableRow>
                   )

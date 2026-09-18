@@ -1,9 +1,9 @@
-import { and, eq, isNull, ne } from "drizzle-orm"
+import { and, desc, eq, isNull, ne } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpProgramWorksites, pdtpPrograms } from "@/db/schema"
 import { addPdtpChangeLogEntry } from "./helpers"
 import { computePdtpProgramContentDigest, computePdtpProgramContentDigestForStoredVersion } from "./content-digest"
-import { assertPdtpFulfillmentCoverage, type PdtpFulfillmentCoverageIssue } from "./fulfillment"
+import { assertPdtpFulfillmentCoverage, type PdtpCoverageScope, type PdtpFulfillmentCoverageIssue } from "./fulfillment"
 import {
   assertAllRequiredPdtpApprovalStepsApproved,
   decidePdtpApprovalStep,
@@ -34,6 +34,7 @@ import {
  */
 const BLOCKING_COVERAGE_LABELS = {
   code_gap: "sin mecanismo de acreditación clasificado",
+  destination_not_configured: "sin destino operativo configurado",
   // Cubre los dos casos que la compuerta clasifica igual: el responsable no
   // mapea a ningún rol, o mapea a uno que no tiene permiso en el módulo
   // donde el trabajo se registra. Decir sólo "no mapea a un rol real" mentía
@@ -98,7 +99,7 @@ async function requireProgram(programId: string) {
 export async function getActivePdtpProgram(year: number) {
   const [program] = await db.select().from(pdtpPrograms).where(
     and(eq(pdtpPrograms.year, year), eq(pdtpPrograms.status, "active")),
-  ).limit(1)
+  ).orderBy(desc(pdtpPrograms.version)).limit(1)
   return program ?? null
 }
 
@@ -161,10 +162,11 @@ export type PdtpCoverageReport = {
     status: PdtpFulfillmentCoverageIssue["status"]
     label: string
     /**
-     * `true` sólo para lo que se arregla dentro del programa —`code_gap` y
-     * `permission_gap`— y frena por igual el envío a revisión y la activación.
+     * `true` sólo para lo que se arregla dentro del programa —`code_gap`,
+     * `destination_not_configured`, `permission_gap` y la configuración de ejecutores— y frena por igual el
+     * envío a revisión y la activación.
      * Ver `pdtpCoverageIssueBlocksLifecycle`. Lo demás se muestra para que el operador
-     * sepa qué actividades no van a acreditar cumplimiento todavía.
+     * distinga pendientes de configuración de flujos segregados ya válidos.
      */
     blocks: boolean
     issues: PdtpFulfillmentCoverageIssue[]
@@ -173,7 +175,9 @@ export type PdtpCoverageReport = {
 
 const COVERAGE_STATUS_LABELS: Record<PdtpFulfillmentCoverageIssue["status"], string> = {
   ready: "Listas",
+  segregated_valid: "Flujo segregado válido",
   code_gap: "Sin mecanismo de acreditación clasificado",
+  destination_not_configured: "Sin destino operativo configurado",
   config_required: "Sin la configuración que su enganche o constancia necesita",
   permission_gap: "Sin un responsable que pueda registrar el cumplimiento",
   executor_required: "Sin ejecutor acreditador configurado",
@@ -186,15 +190,19 @@ const COVERAGE_STATUS_LABELS: Record<PdtpFulfillmentCoverageIssue["status"], str
  * El informe por actividad de la compuerta, para mostrarlo antes de decidir la
  * activación. `getPdtpSubmitReviewBlockers` colapsa lo mismo a una línea por
  * clasificación —es lo que cabe en un mensaje de error—, así que sin esto la
- * clasificación existía en el tipo y nadie podía verla desagregada: había que
- * ir a leer la base actividad por actividad, que es exactamente el trabajo que
- * la compuerta vino a evitar.
+ * clasificación existía en el tipo y había que leer la base actividad por
+ * actividad. El ciclo de vida consulta la cobertura completa; las vistas
+ * autenticadas pueden pasar el alcance visible para no revelar nombres de
+ * faenas fuera de los permisos del usuario.
  */
-export async function getPdtpCoverageReport(programId: string): Promise<PdtpCoverageReport> {
+export async function getPdtpCoverageReport(
+  programId: string,
+  options?: PdtpCoverageScope,
+): Promise<PdtpCoverageReport> {
   const [activities, issues] = await Promise.all([
     db.select({ id: pdtpActivities.id }).from(pdtpActivities)
       .where(and(eq(pdtpActivities.programId, programId), eq(pdtpActivities.status, "active"))),
-    assertPdtpFulfillmentCoverage(programId),
+    assertPdtpFulfillmentCoverage(programId, db, options),
   ])
   const byStatus = new Map<PdtpFulfillmentCoverageIssue["status"], PdtpFulfillmentCoverageIssue[]>()
   for (const issue of issues) {
@@ -202,7 +210,11 @@ export async function getPdtpCoverageReport(programId: string): Promise<PdtpCove
     list.push(issue)
     byStatus.set(issue.status, list)
   }
-  const withIssues = new Set(issues.map((issue) => issue.n))
+  // `segregated_valid` es una confirmación positiva del contrato, no una
+  // brecha. Se muestra en el desglose, pero no reduce el contador de listas.
+  const withIssues = new Set(issues
+    .filter((issue) => issue.status !== "segregated_valid")
+    .map((issue) => issue.n))
   return {
     total: activities.length,
     ready: activities.length - withIssues.size,

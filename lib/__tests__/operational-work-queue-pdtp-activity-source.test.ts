@@ -89,7 +89,7 @@ describe("cola operacional — actividades programadas del PDTP", () => {
       { slug: "prf", displayName: "Prevencionista PDTPQ", roleName: "prevencionista_faena", kind: "rbac_role", isActive: true },
     ])
     await inMemoryDb.insert(schema.pdtpPrograms).values({
-      id: programId, year, version: 1, title: "Programa PDTPQ", status: "active",
+      id: programId, year, version: 1, title: "Programa PDTPQ", status: "active", appliesToAllWorksites: true,
       periodStart: `${year}-01-01`, periodEnd: `${year}-12-31`,
       elaboratedByName: "Test PDTPQ", elaboratedByTitle: "Prevención",
       createdAt: now, updatedAt: now,
@@ -156,9 +156,17 @@ describe("cola operacional — actividades programadas del PDTP", () => {
     expect(items.some((item) => item.sourceId.startsWith("act-pdtpq-ondemand:"))).toBe(false)
   })
 
-  it("sin membresía de faenas declarada, aplica a todas las del alcance", async () => {
+  it("con alcance corporativo explícito y sin membresía, aplica a todas las del alcance", async () => {
     const items = await pdtpItems(makeSession(["jefe_terreno"]))
     expect(new Set(items.map((item) => item.worksiteId))).toEqual(new Set([worksiteA, worksiteB]))
+  })
+
+  it("no inventa trabajo para un programa activo sin alcance declarado", async () => {
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: false })
+      .where(eq(schema.pdtpPrograms.id, programId))
+    expect(await pdtpItems(makeSession(["jefe_terreno"]))).toHaveLength(0)
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true })
+      .where(eq(schema.pdtpPrograms.id, programId))
   })
 
   it("respeta el alcance de faenas del usuario", async () => {

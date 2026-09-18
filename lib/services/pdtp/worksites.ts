@@ -2,13 +2,12 @@
  * lib/services/pdtp/worksites.ts
  *
  * Membresía de faenas de un programa y exclusiones de actividad por faena.
- * Sin membresía declarada (`pdtpProgramWorksites` vacío), un programa
- * aplica a todas las faenas del scope del usuario — el comportamiento
- * histórico, retrocompatible con todo programa existente. Con membresía,
- * solo esas faenas lo ven, heredando todas sus actividades menos las
- * exclusiones puntuales (`pdtpActivityWorksiteExclusions`). No se crean
- * copias del programa por faena: ambas tablas son proyecciones sobre la
- * misma definición.
+ * Sin membresía declarada (`pdtpProgramWorksites` vacío), un programa sólo
+ * aplica a todas las faenas cuando `appliesToAllWorksites` lo declara
+ * explícitamente. Con membresía, solo esas faenas lo ven, heredando todas sus
+ * actividades menos las exclusiones puntuales
+ * (`pdtpActivityWorksiteExclusions`). No se crean copias del programa por
+ * faena: ambas tablas son proyecciones sobre la misma definición.
  */
 
 import { and, eq, inArray, sql } from "drizzle-orm"
@@ -31,7 +30,8 @@ import {
 import { nanoid } from "@/lib/id"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, assertWorksiteAccess, type WorksiteScope } from "./helpers"
 
-/** Faenas miembro de un programa. Vacío = sin membresía declarada = todas las del scope. */
+/** Faenas miembro de un programa. La ausencia de filas sólo equivale a todas
+ * las faenas cuando el programa declaró explícitamente alcance corporativo. */
 export async function listPdtpProgramWorksites(programId: string): Promise<PdtpProgramWorksite[]> {
   return db.select().from(pdtpProgramWorksites)
     .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true)))
@@ -113,23 +113,27 @@ export async function setPdtpProgramWorksites(
 
 /**
  * Faenas efectivas de un programa dentro del scope de un usuario: sin
- * membresía declarada, todo el scope; con membresía, la intersección entre
- * el scope y las faenas miembro. Nunca amplía el scope del usuario.
+ * membresía declarada, todo el scope sólo cuando el programa declara alcance
+ * corporativo; con membresía, la intersección entre el scope y las faenas
+ * miembro. Nunca amplía el scope del usuario.
  */
 export function resolveProgramWorksiteIds(
   memberWorksiteIds: string[],
   scope: WorksiteScope,
   allScopedWorksiteIds: string[],
+  appliesToAllWorksites: boolean,
 ): string[] {
   const scoped = scope === "all" ? allScopedWorksiteIds : scope
-  if (memberWorksiteIds.length === 0) return scoped
+  if (memberWorksiteIds.length === 0) return appliesToAllWorksites ? scoped : []
   const members = new Set(memberWorksiteIds)
   return scoped.filter((id) => members.has(id))
 }
 
 /**
  * Faenas que la UI puede ofrecer para un programa: activas, dentro del alcance
- * del usuario y, cuando existe membresía explícita, miembros del programa.
+ * del usuario y, cuando existe membresía explícita, miembros del programa. Un
+ * programa sin miembros sólo ofrece faenas si declaró alcance corporativo;
+ * esto evita que el detalle operativo maquille una configuración incompleta.
  */
 export async function listAccessiblePdtpProgramWorksites(
   programId: string,
@@ -137,7 +141,7 @@ export async function listAccessiblePdtpProgramWorksites(
 ): Promise<Array<{ id: string; name: string; code: string }>> {
   if (scope !== "all" && scope.length === 0) return []
 
-  const [scopedWorksites, members] = await Promise.all([
+  const [scopedWorksites, members, [program]] = await Promise.all([
     db.select({ id: worksites.id, name: worksites.name, code: worksites.code })
       .from(worksites)
       .where(scope === "all"
@@ -145,11 +149,16 @@ export async function listAccessiblePdtpProgramWorksites(
         : and(eq(worksites.isActive, true), inArray(worksites.id, scope)))
       .orderBy(worksites.name),
     listPdtpProgramWorksites(programId),
+    db.select({ appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites })
+      .from(pdtpPrograms)
+      .where(eq(pdtpPrograms.id, programId))
+      .limit(1),
   ])
   const effectiveIds = new Set(resolveProgramWorksiteIds(
     members.map((row) => row.worksiteId),
     scope,
     scopedWorksites.map((row) => row.id),
+    program?.appliesToAllWorksites ?? false,
   ))
 
   return scopedWorksites.filter((worksite) => effectiveIds.has(worksite.id))
@@ -315,13 +324,23 @@ export async function syncPdtpCphsHeadcountExclusion(
 
 /**
  * Actividades efectivas de un programa para una faena concreta: todas menos
- * sus exclusiones puntuales. No resuelve si la faena puede ver el programa
- * en absoluto — eso es `resolveProgramWorksiteIds`, a nivel de membresía.
+ * sus exclusiones puntuales. También respeta el alcance declarado para evitar
+ * que una lectura operativa trate como global una versión sin configuración.
  */
 export async function resolvePdtpEffectiveActivitiesForWorksite(programId: string, worksiteId: string): Promise<PdtpActivity[]> {
-  const activities = await db.select().from(pdtpActivities)
-    .where(and(eq(pdtpActivities.programId, programId), eq(pdtpActivities.status, "active")))
-    .orderBy(pdtpActivities.displayOrder, pdtpActivities.n)
+  const [[program], activities] = await Promise.all([
+    db.select({ status: pdtpPrograms.status, appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites })
+      .from(pdtpPrograms)
+      .where(eq(pdtpPrograms.id, programId))
+      .limit(1),
+    db.select().from(pdtpActivities)
+      .where(and(eq(pdtpActivities.programId, programId), eq(pdtpActivities.status, "active")))
+      .orderBy(pdtpActivities.displayOrder, pdtpActivities.n),
+  ])
+  if (!program) return []
+  const members = await listPdtpProgramWorksites(programId)
+  if (members.length === 0 && (program.status === "active" || program.status === "closed") && !program.appliesToAllWorksites) return []
+  if (members.length > 0 && !members.some((member) => member.worksiteId === worksiteId)) return []
   if (activities.length === 0) return activities
   const excluded = await db.select({ activityId: pdtpActivityWorksiteExclusions.activityId })
     .from(pdtpActivityWorksiteExclusions)
@@ -335,12 +354,25 @@ export async function resolvePdtpEffectiveActivitiesForWorksite(programId: strin
 
 /**
  * Verifica que una faena pueda operar un programa: si el programa declara
- * membresía, la faena debe ser miembro. Sin membresía declarada, cualquier
- * faena del scope ya validado por el llamador puede operar. Falla cerrado:
- * lanza si la faena no está autorizada para este programa.
+ * membresía, la faena debe ser miembro. Sin membresía, sólo un programa con
+ * alcance corporativo explícito puede operar en cualquier faena. Falla
+ * cerrado: lanza si la faena no está autorizada para este programa.
  */
 export async function assertPdtpWorksiteCanOperateProgram(programId: string, worksiteId: string): Promise<void> {
-  const members = await listPdtpProgramWorksites(programId)
+  const [[program], members] = await Promise.all([
+    db.select({ status: pdtpPrograms.status, appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites })
+      .from(pdtpPrograms)
+      .where(eq(pdtpPrograms.id, programId))
+      .limit(1),
+    listPdtpProgramWorksites(programId),
+  ])
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  // Un borrador puede seguir usando esta primitiva para preparar configuración;
+  // ningún hecho operacional se acepta en ese estado. Para un programa vigente,
+  // una membresía vacía sin declaración corporativa debe fallar cerrado.
+  if (members.length === 0 && (program.status === "active" || program.status === "closed") && !program.appliesToAllWorksites) {
+    throw new Error("Esta faena no está habilitada: el programa no declara alcance corporativo ni una membresía de faena.")
+  }
   if (members.length === 0) return
   if (!members.some((m) => m.worksiteId === worksiteId)) {
     throw new Error("Esta faena no está habilitada para operar este programa PDTP.")
@@ -525,6 +557,9 @@ export async function setPdtpActivityWorksiteAdjustment(
     if (!activity || activity.programId !== program.id) throw new Error("Actividad PDTP no encontrada.")
     if (!worksite) throw new Error("La faena seleccionada no existe o está inactiva.")
     if (activity.status === "retired") throw new Error("Una actividad retirada no admite ajustes por faena.")
+    if (members.length === 0 && !program.appliesToAllWorksites) {
+      throw new Error("Esta faena no está habilitada: el programa no declara alcance corporativo ni una membresía de faena.")
+    }
     if (members.length > 0 && !members.some((member) => member.worksiteId === input.worksiteId)) {
       throw new Error("Esta faena no está habilitada para operar este programa PDTP.")
     }

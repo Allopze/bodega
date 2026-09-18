@@ -35,7 +35,23 @@ export async function clearRateLimits() {
   }
 }
 
-/** Log in as an E2E user (admin by default) and verify we land on dashboard. */
+/**
+ * Log in as an E2E user (admin by default) and verify we land on dashboard.
+ *
+ * **`exact: true` no es decorativo: quitarlo tumba la suite entera.**
+ * `getByLabel` y el `name` de `getByRole` buscan por **subcadena**, y casi
+ * todos los specs de este repo entran por esta función. Cuando `/login` sumó
+ * un botón para revelar la contraseña, su primer rótulo —"Mostrar
+ * contraseña"— contenía "Contraseña": `getByLabel("Contraseña")` pasó a
+ * resolver dos nodos y el `fill` moría por strict mode, no en un spec sino en
+ * los ~99 que pasan por acá. El rótulo se renombró, pero el modo laxo dejaba
+ * la trampa armada para el siguiente control que se acerque a esas palabras.
+ * Con `exact` sólo calza el nombre accesible completo.
+ *
+ * Se mantiene `getByLabel` en vez de `#email`/`#password` a propósito: así la
+ * prueba sigue verificando que el label está asociado al control. Un selector
+ * por id pasa igual con el etiquetado roto.
+ */
 export async function login(page: Page, email = "admin@e2e.chome.cl", password = "chome2026") {
   // Todos los workers comparten la misma IP y la misma tabla `rate_limits`, así
   // que mientras `negative-flows.spec.ts` acumula fallos a propósito para
@@ -45,9 +61,9 @@ export async function login(page: Page, email = "admin@e2e.chome.cl", password =
   for (const attempt of [1, 2]) {
     await clearRateLimits()
     await page.goto("/login")
-    await page.getByLabel("Correo electrónico").fill(email)
-    await page.getByLabel("Contraseña").fill(password)
-    await page.getByRole("button", { name: "Ingresar" }).click()
+    await page.getByLabel("Correo electrónico", { exact: true }).fill(email)
+    await page.getByLabel("Contraseña", { exact: true }).fill(password)
+    await page.getByRole("button", { name: "Ingresar", exact: true }).click()
     try {
       await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 })
       return

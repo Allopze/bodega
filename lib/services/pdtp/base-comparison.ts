@@ -16,6 +16,44 @@ function recordMap(rows: RecordValue[], key: (row: RecordValue) => string) {
   return new Map(rows.map((row) => [key(row), row]))
 }
 
+function canonicalRecord(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalRecord)
+  if (!value || typeof value !== "object") return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, canonicalRecord(item)]),
+  )
+}
+
+function changedRowCount(
+  currentRows: RecordValue[],
+  sourceRows: RecordValue[],
+  currentKey: (row: RecordValue) => string,
+  sourceKey: (row: RecordValue) => string = currentKey,
+  projection: (row: RecordValue) => unknown = (row) => row,
+) {
+  const current = new Map(currentRows.map((row) => [currentKey(row), JSON.stringify(canonicalRecord(projection(row)))]))
+  const source = new Map(sourceRows.map((row) => [sourceKey(row), JSON.stringify(canonicalRecord(projection(row)))]))
+  const keys = new Set([...current.keys(), ...source.keys()])
+  return [...keys].filter((rowKey) => current.get(rowKey) !== source.get(rowKey)).length
+}
+
+function changedSharedRowCount(
+  currentRows: RecordValue[],
+  sourceRows: RecordValue[],
+  currentKey: (row: RecordValue) => string,
+  projection: (row: RecordValue) => unknown,
+  sourceKey: (row: RecordValue) => string = currentKey,
+) {
+  const current = recordMap(currentRows, currentKey)
+  const source = recordMap(sourceRows, sourceKey)
+  return [...current.keys()]
+    .filter((rowKey) => source.has(rowKey))
+    .filter((rowKey) => JSON.stringify(canonicalRecord(projection(current.get(rowKey)!)))
+      !== JSON.stringify(canonicalRecord(projection(source.get(rowKey)!)))).length
+}
+
 function activityComparable(activity: RecordValue) {
   const {
     status: _status,
@@ -38,14 +76,109 @@ function snapshotSchemaVersion(snapshot: RecordValue) {
     : undefined
 }
 
-function scheduleKey(row: RecordValue) {
-  return `${row.activityNumber}:${row.month}:${row.week}`
+type PairedActivityIdentityMaps = {
+  current: Map<string, RecordValue>
+  source: Map<string, RecordValue>
+  currentByNumber: Map<string, string>
+  sourceByNumber: Map<string, string>
+}
+
+/**
+ * A snapshot may predate the catalog identity columns. When exactly one side
+ * has `catalogActivityId`, fall back to the shared activity number so the
+ * comparison keeps the same activity instead of reporting a false add/remove.
+ * If both sides have different catalog identities, the difference is real and
+ * remains an add/remove pair.
+ */
+function pairedActivityIdentityMaps(currentSnapshot: RecordValue, sourceSnapshot: RecordValue): PairedActivityIdentityMaps {
+  const currentActivities = records(currentSnapshot.activities)
+  const sourceActivities = records(sourceSnapshot.activities)
+  const currentByNumber = new Map(currentActivities.map((activity) => [String(activity.n), activity]))
+  const sourceByNumber = new Map(sourceActivities.map((activity) => [String(activity.n), activity]))
+  const currentByCatalog = new Map(currentActivities
+    .filter((activity) => typeof activity.catalogActivityId === "string" && activity.catalogActivityId)
+    .map((activity) => [String(activity.catalogActivityId), activity]))
+  const sourceByCatalog = new Map(sourceActivities
+    .filter((activity) => typeof activity.catalogActivityId === "string" && activity.catalogActivityId)
+    .map((activity) => [String(activity.catalogActivityId), activity]))
+
+  function identityFor(activity: RecordValue, counterpartByNumber: Map<string, RecordValue>, counterpartByCatalog: Map<string, RecordValue>) {
+    const catalogId = typeof activity.catalogActivityId === "string" && activity.catalogActivityId
+      ? activity.catalogActivityId
+      : null
+    if (!catalogId) return `number:${String(activity.n)}`
+    if (counterpartByCatalog.has(catalogId)) return `catalog:${catalogId}`
+    const counterpart = counterpartByNumber.get(String(activity.n))
+    if (counterpart && !(typeof counterpart.catalogActivityId === "string" && counterpart.catalogActivityId)) {
+      return `number:${String(activity.n)}`
+    }
+    return `catalog:${catalogId}`
+  }
+
+  const currentIdentityByNumber = new Map(currentActivities.map((activity) => [
+    String(activity.n), identityFor(activity, sourceByNumber, sourceByCatalog),
+  ]))
+  const sourceIdentityByNumber = new Map(sourceActivities.map((activity) => [
+    String(activity.n), identityFor(activity, currentByNumber, currentByCatalog),
+  ]))
+  return {
+    current: recordMap(currentActivities, (activity) => currentIdentityByNumber.get(String(activity.n))!),
+    source: recordMap(sourceActivities, (activity) => sourceIdentityByNumber.get(String(activity.n))!),
+    currentByNumber: currentIdentityByNumber,
+    sourceByNumber: sourceIdentityByNumber,
+  }
+}
+
+function rowActivityIdentity(activityByNumber: Map<string, string>, row: RecordValue) {
+  const number = String(row.activityNumber)
+  return activityByNumber.get(number) ?? `number:${number}`
+}
+
+function activityIdentityForNumber(activityByNumber: Map<string, string>, row: RecordValue) {
+  const number = String(row.n)
+  return activityByNumber.get(number) ?? `number:${number}`
+}
+
+function scheduleKey(activityByNumber: Map<string, string>, row: RecordValue) {
+  return `${rowActivityIdentity(activityByNumber, row)}:${row.year ?? ""}:${row.month}:${row.week}`
+}
+
+function worksiteAdjustmentKey(activityByNumber: Map<string, string>, row: RecordValue) {
+  return `${rowActivityIdentity(activityByNumber, row)}:${row.worksiteId}`
+}
+
+function scheduleOverrideKey(activityByNumber: Map<string, string>, row: RecordValue) {
+  return `${rowActivityIdentity(activityByNumber, row)}:${row.worksiteId}:${row.year}:${row.month}:${row.week}`
+}
+
+function worksiteExclusionKey(activityByNumber: Map<string, string>, row: RecordValue) {
+  return `${rowActivityIdentity(activityByNumber, row)}:${row.worksiteId}`
+}
+
+function retirementProjection(activity: RecordValue) {
+  return {
+    status: activity.status ?? null,
+    retiredReason: activity.retiredReason ?? null,
+    retiredEffectiveFrom: activity.retiredEffectiveFrom ?? null,
+    retiredByUserId: activity.retiredByUserId ?? null,
+    retiredAt: activity.retiredAt ?? null,
+  }
+}
+
+function rowContentWithoutActivityNumber(row: RecordValue) {
+  const { activityNumber: _activityNumber, ...content } = row
+  return content
 }
 
 function activityIdentity(row: RecordValue) {
   return typeof row.catalogActivityId === "string" && row.catalogActivityId
     ? `catalog:${row.catalogActivityId}`
     : `number:${String(row.n)}`
+}
+
+export function pdtpActivityIdentityMatches(activity: RecordValue, identity: string) {
+  if (identity.startsWith("number:")) return String(activity.n) === identity.slice("number:".length)
+  return activityIdentity(activity) === identity
 }
 
 export type PdtpBaseComparison = {
@@ -111,16 +244,19 @@ function compareSnapshots(input: {
 }): PdtpBaseComparison {
   const currentActivities = records(input.current.activities)
   const sourceActivities = records(input.source.activities)
-  const currentByNumber = recordMap(currentActivities, (row) => String(row.n))
-  const sourceByNumber = recordMap(sourceActivities, (row) => String(row.n))
+  const activityIdentities = pairedActivityIdentityMaps(input.current, input.source)
+  const currentByIdentity = activityIdentities.current
+  const sourceByIdentity = activityIdentities.source
+  const currentActivityIdentityByNumber = activityIdentities.currentByNumber
+  const sourceActivityIdentityByNumber = activityIdentities.sourceByNumber
   let modifiedActivities = 0
-  for (const [number, activity] of currentByNumber) {
-    const original = sourceByNumber.get(number)
+  for (const [identity, activity] of currentByIdentity) {
+    const original = sourceByIdentity.get(identity)
     if (original && JSON.stringify(activityComparable(activity)) !== JSON.stringify(activityComparable(original))) modifiedActivities += 1
   }
 
-  const currentSchedule = recordMap(records(input.current.schedules), scheduleKey)
-  const sourceSchedule = recordMap(records(input.source.schedules), scheduleKey)
+  const currentSchedule = recordMap(records(input.current.schedules), (row) => scheduleKey(currentActivityIdentityByNumber, row))
+  const sourceSchedule = recordMap(records(input.source.schedules), (row) => scheduleKey(sourceActivityIdentityByNumber, row))
   const scheduleKeys = new Set([...currentSchedule.keys(), ...sourceSchedule.keys()])
   let scheduleCellsChanged = 0
   for (const key of scheduleKeys) {
@@ -129,23 +265,52 @@ function compareSnapshots(input: {
     if (!currentCell || !sourceCell || currentCell.plannedQuantity !== sourceCell.plannedQuantity) scheduleCellsChanged += 1
   }
 
-  const adjustmentPairs = new Set([
-    ...records(input.current.activityWorksiteAdjustments).map((row) => `${row.activityNumber}:${row.worksiteId}`),
-    ...records(input.current.activityScheduleOverrides).map((row) => `${row.activityNumber}:${row.worksiteId}`),
-    ...records(input.source.activityWorksiteAdjustments).map((row) => `${row.activityNumber}:${row.worksiteId}`),
-    ...records(input.source.activityScheduleOverrides).map((row) => `${row.activityNumber}:${row.worksiteId}`),
-  ])
+  const currentAdjustments = records(input.current.activityWorksiteAdjustments)
+  const sourceAdjustments = records(input.source.activityWorksiteAdjustments)
+  const currentOverrides = records(input.current.activityScheduleOverrides)
+  const sourceOverrides = records(input.source.activityScheduleOverrides)
+  const currentExclusions = records(input.current.activityWorksiteExclusions)
+  const sourceExclusions = records(input.source.activityWorksiteExclusions)
   return {
     sourceTemplateVersionId: input.sourceTemplateVersionId,
     sourceRevision: input.sourceRevision,
     sourceDigest: input.sourceDigest,
-    addedActivities: [...currentByNumber.keys()].filter((number) => !sourceByNumber.has(number)).length,
-    missingActivities: [...sourceByNumber.keys()].filter((number) => !currentByNumber.has(number)).length,
+    addedActivities: [...currentByIdentity.keys()].filter((identity) => !sourceByIdentity.has(identity)).length,
+    missingActivities: [...sourceByIdentity.keys()].filter((identity) => !currentByIdentity.has(identity)).length,
     modifiedActivities,
-    retiredActivities: currentActivities.filter((activity) => activity.status === "retired").length,
+    // Only a retirement transition or its reason is a change. Counting every
+    // currently retired row made an untouched Base look divergent.
+    retiredActivities: changedSharedRowCount(
+      currentActivities,
+      sourceActivities,
+      (row) => activityIdentityForNumber(activityIdentities.currentByNumber, row),
+      retirementProjection,
+      (row) => activityIdentityForNumber(activityIdentities.sourceByNumber, row),
+    ),
     scheduleCellsChanged,
-    worksiteAdjustments: adjustmentPairs.size,
-    worksiteExclusions: records(input.current.activityWorksiteExclusions).length,
+    // Additions/removals and edited values are all real deltas. Keep the two
+    // dimensions separate in their keys so a schedule override cannot mask a
+    // parameter change for the same activity/faena pair.
+    worksiteAdjustments: changedRowCount(
+      currentAdjustments,
+      sourceAdjustments,
+      (row) => worksiteAdjustmentKey(currentActivityIdentityByNumber, row),
+      (row) => worksiteAdjustmentKey(sourceActivityIdentityByNumber, row),
+      rowContentWithoutActivityNumber,
+    ) + changedRowCount(
+      currentOverrides,
+      sourceOverrides,
+      (row) => scheduleOverrideKey(currentActivityIdentityByNumber, row),
+      (row) => scheduleOverrideKey(sourceActivityIdentityByNumber, row),
+      rowContentWithoutActivityNumber,
+    ),
+    worksiteExclusions: changedRowCount(
+      currentExclusions,
+      sourceExclusions,
+      (row) => worksiteExclusionKey(currentActivityIdentityByNumber, row),
+      (row) => worksiteExclusionKey(sourceActivityIdentityByNumber, row),
+      rowContentWithoutActivityNumber,
+    ),
   }
 }
 
@@ -192,8 +357,9 @@ export async function comparePdtpRevisionToCurrentBase(programId: string): Promi
     sourceRevision: base.version.version,
     sourceDigest: base.version.contentDigest,
   })
-  const currentByIdentity = recordMap(records(current.activities), activityIdentity)
-  const sourceByIdentity = recordMap(records(source.activities), activityIdentity)
+  const activityIdentities = pairedActivityIdentityMaps(current, source)
+  const currentByIdentity = activityIdentities.current
+  const sourceByIdentity = activityIdentities.source
   const items: PdtpRevisionDiff["items"] = []
   for (const [identity, activity] of currentByIdentity) {
     const baseActivity = sourceByIdentity.get(identity)

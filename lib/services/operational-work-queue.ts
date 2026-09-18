@@ -914,19 +914,23 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
         FROM ${pdtpActivities}
         INNER JOIN ${pdtpPrograms} ON ${pdtpPrograms.id} = ${pdtpActivities.programId}
         -- Misma regla que resolveProgramWorksiteIds: sin membresía declarada el
-        -- programa aplica a todas las faenas del alcance; con membresía, sólo a
-        -- la intersección. Un INNER JOIN contra pdtp_program_worksites dejaría
-        -- la cola muda mientras la planilla muestra todo, que es justo el caso
-        -- hoy: esa tabla está vacía.
+        -- programa sólo aplica a todas las faenas cuando lo declara de forma
+        -- explícita; con membresía, sólo a la intersección. Un INNER JOIN
+        -- contra pdtp_program_worksites dejaría la cola muda mientras la
+        -- planilla muestra todo, pero un alcance sin declarar debe quedar
+        -- cerrado para no inventar cobertura operacional.
         INNER JOIN ${worksites} ON ${worksites.isActive} AND (
-          NOT EXISTS (
-            SELECT 1 FROM ${pdtpProgramWorksites}
-            WHERE ${pdtpProgramWorksites.programId} = ${pdtpPrograms.id} AND ${pdtpProgramWorksites.isActive}
-          )
-          OR EXISTS (
-            SELECT 1 FROM ${pdtpProgramWorksites}
-            WHERE ${pdtpProgramWorksites.programId} = ${pdtpPrograms.id} AND ${pdtpProgramWorksites.isActive}
-              AND ${pdtpProgramWorksites.worksiteId} = ${worksites.id}
+          (
+            NOT EXISTS (
+              SELECT 1 FROM ${pdtpProgramWorksites}
+              WHERE ${pdtpProgramWorksites.programId} = ${pdtpPrograms.id} AND ${pdtpProgramWorksites.isActive}
+            ) AND ${pdtpPrograms.appliesToAllWorksites}
+          ) OR (
+            EXISTS (
+              SELECT 1 FROM ${pdtpProgramWorksites}
+              WHERE ${pdtpProgramWorksites.programId} = ${pdtpPrograms.id} AND ${pdtpProgramWorksites.isActive}
+                AND ${pdtpProgramWorksites.worksiteId} = ${worksites.id}
+            )
           )
         )
         -- Asignación nominal por faena (Fase 5). Sólo trae AL USUARIO DE LA

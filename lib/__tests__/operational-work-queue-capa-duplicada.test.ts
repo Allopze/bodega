@@ -65,7 +65,7 @@ describe("cola operacional — la acción del PDTP no se cuenta dos veces", () =
       hashedPassword: "hash", isActive: true, createdAt: now, updatedAt: now,
     })
     await inMemoryDb.insert(schema.pdtpPrograms).values({
-      id: "prog-dup", year, version: 1, title: "Programa Dup", status: "active",
+      id: "prog-dup", year, version: 1, title: "Programa Dup", status: "active", appliesToAllWorksites: true,
       periodStart: `${year}-01-01`, periodEnd: `${year}-12-31`,
       elaboratedByName: "Test", elaboratedByTitle: "Prevención",
       createdAt: now, updatedAt: now,

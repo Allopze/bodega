@@ -47,7 +47,7 @@ describe("findPdtpWeeklyPending", () => {
       { id: "ws-inactive", name: "Faena histórica", code: "OLD", isActive: false },
     ])
     await inMemoryDb.insert(schema.pdtpPrograms).values({
-      id: "program-2026", year: 2026, version: 1, status: "active", title: "PDTP 2026",
+      id: "program-2026", year: 2026, version: 1, status: "active", appliesToAllWorksites: true, title: "PDTP 2026",
       elaboratedByName: "Prevención", elaboratedByTitle: "PR", activatedAt: "2026-07-08T15:00:00.000Z",
       createdAt: now, updatedAt: now,
     })
@@ -195,7 +195,11 @@ describe("findPdtpWeeklyPending — asignación nominal", () => {
       id: "ws-nominal", name: "Faena nominal", code: "NOM", isActive: true,
     })
     await inMemoryDb.insert(schema.pdtpPrograms).values({
-      id: "program-nominal", year: 2026, version: 1, status: "active", title: "PDTP 2026",
+      // `appliesToAllWorksites` es obligatorio acá: un programa activo sin
+      // membresía de faena y sin alcance corporativo falla cerrado desde
+      // `assertPdtpWorksiteCanOperateProgram`, así que sin esta declaración el
+      // fixture no produce ningún destinatario.
+      id: "program-nominal", year: 2026, version: 1, status: "active", appliesToAllWorksites: true, title: "PDTP 2026",
       elaboratedByName: "Prevención", elaboratedByTitle: "PR",
       createdAt: now, updatedAt: now,
     })

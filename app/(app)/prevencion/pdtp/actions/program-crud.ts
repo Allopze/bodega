@@ -65,16 +65,19 @@ export async function createPdtpProgramAction(
   redirect(`${REVALIDATE}/${programId}/editar`)
 }
 
-export async function createPdtpRevisionAction(sourceProgramId: string): Promise<ActionState & { programId?: string }> {
+export async function createPdtpRevisionAction(sourceProgramId: string): Promise<ActionState & { programId?: string; programStatus?: string }> {
   const guard = await guardPermission("prevention:pdtp:program:manage")
   if (guard.error) return guard.error
-  if (!sourceProgramId) return { ok: false, message: "Programa de origen no válido." }
+  if (typeof sourceProgramId !== "string" || sourceProgramId.trim().length === 0) {
+    return { ok: false, message: "Programa de origen no válido." }
+  }
+  const sourceId = sourceProgramId.trim()
   try {
-    const result = await createPdtpRevision({ sourceProgramId, userId: guard.session.user.id })
+    const result = await createPdtpRevision({ sourceProgramId: sourceId, userId: guard.session.user.id })
     revalidatePath(REVALIDATE)
-    revalidatePath(`${REVALIDATE}/${sourceProgramId}`)
+    revalidatePath(`${REVALIDATE}/${sourceId}`)
     revalidatePath(`${REVALIDATE}/${result.programId}`)
-    return { ok: true, programId: result.programId }
+    return { ok: true, programId: result.programId, programStatus: result.program.status }
   } catch (error) {
     return fail(error)
   }
@@ -93,11 +96,13 @@ export async function decidePdtpRevisionDiffAction(input: {
     || (input.decision !== "applied" && input.decision !== "kept")) {
     return { ok: false, message: "La diferencia seleccionada no es válida." }
   }
+  const programId = input.programId.trim()
+  const activityIdentity = input.activityIdentity.trim()
   try {
-    await decidePdtpRevisionDiff({ ...input, userId: guard.session.user.id })
+    await decidePdtpRevisionDiff({ programId, activityIdentity, decision: input.decision, userId: guard.session.user.id })
     revalidatePath(REVALIDATE)
-    revalidatePath(`${REVALIDATE}/${input.programId}`)
-    revalidatePath(`${REVALIDATE}/${input.programId}/editar`)
+    revalidatePath(`${REVALIDATE}/${programId}`)
+    revalidatePath(`${REVALIDATE}/${programId}/editar`)
     return { ok: true }
   } catch (error) {
     return fail(error)

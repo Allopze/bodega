@@ -26,7 +26,7 @@ import ExcelJS from "exceljs"
 import { db } from "@/db"
 import { pdtpPrograms, users as schemaUsers } from "@/db/schema"
 import { pdtpProgramId } from "@/lib/services/pdtp/helpers"
-import { eq } from "drizzle-orm"
+import { asc, eq } from "drizzle-orm"
 import { getCurrentPdtpBase2026Version } from "@/lib/services/pdtp/templates"
 
 const PDTP_BASE_2026_XLSX = process.env.BOOTSTRAP_XLSX_PATH ?? "/app/PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"
@@ -62,6 +62,7 @@ async function getOrCreateProgram2026(): Promise<{ programId: string; created: b
     .select({ id: pdtpPrograms.id })
     .from(pdtpPrograms)
     .where(eq(pdtpPrograms.year, 2026))
+    .orderBy(asc(pdtpPrograms.version))
     .limit(1)
 
   if (existing) {

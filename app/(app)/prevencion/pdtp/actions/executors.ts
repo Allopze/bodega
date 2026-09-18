@@ -15,19 +15,31 @@ export async function setPdtpActivityExecutorAssignmentsAction(input: {
 }): Promise<ActionState> {
   const guard = await guardPermission("prevention:pdtp:program:manage")
   if (guard.error) return guard.error
-  if (!input.programId || !input.activityId || !Array.isArray(input.roleIds) || input.roleIds.some((id) => typeof id !== "string")) {
+  if (
+    !input
+    || typeof input !== "object"
+    || typeof input.programId !== "string"
+    || typeof input.activityId !== "string"
+    || input.programId.trim().length === 0
+    || input.activityId.trim().length === 0
+    || !Array.isArray(input.roleIds)
+    || input.roleIds.some((id) => typeof id !== "string" || id.trim().length === 0)
+  ) {
     return { ok: false, message: "Los ejecutores seleccionados no son válidos." }
   }
+  const programId = input.programId.trim()
+  const activityId = input.activityId.trim()
+  const roleIds = [...new Set(input.roleIds.map((id) => id.trim()))]
   try {
     await setPdtpActivityExecutorAssignments({
-      programId: input.programId,
-      activityId: input.activityId,
-      roleIds: input.roleIds,
+      programId,
+      activityId,
+      roleIds,
       userId: guard.session.user.id,
     })
     revalidatePath(ROOT)
-    revalidatePath(`${ROOT}/${input.programId}`)
-    revalidatePath(`${ROOT}/${input.programId}/editar`)
+    revalidatePath(`${ROOT}/${programId}`)
+    revalidatePath(`${ROOT}/${programId}/editar`)
     return { ok: true }
   } catch (error) {
     return { ok: false, message: safeActionMessage(error, "No se pudieron actualizar los ejecutores.") }

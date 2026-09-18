@@ -51,9 +51,9 @@ test.describe("Módulo de TI", () => {
     // jefe.faena@e2e.chome.cl solo tiene permisos de prevención (p-prev-insp-*).
     await clearRateLimits()
     await page.goto("/login")
-    await page.getByLabel("Correo electrónico").fill("jefe.faena@e2e.chome.cl")
-    await page.getByLabel("Contraseña").fill("chome2026")
-    await page.getByRole("button", { name: "Ingresar" }).click()
+    await page.getByLabel("Correo electrónico", { exact: true }).fill("jefe.faena@e2e.chome.cl")
+    await page.getByLabel("Contraseña", { exact: true }).fill("chome2026")
+    await page.getByRole("button", { name: "Ingresar", exact: true }).click()
     await expect(page).toHaveURL(/\/dashboard/)
 
     await page.goto("/ti")

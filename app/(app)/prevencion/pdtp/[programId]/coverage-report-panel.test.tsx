@@ -60,9 +60,25 @@ const sinEjecutor: PdtpCoverageReport["groups"][number] = {
     activity: "Charla de seguridad",
     status: "executor_required",
     reason: "Se acredita en Programa preventivo; falta asignar al menos un rol ejecutor para registrar ese hecho.",
-    destinationModule: "Programa preventivo",
+    destinationModule: "pdtp",
     requiredPermission: "prevention:pdtp:execute",
     suggestedExecutorRoleIds: ["rol-prevencionista"],
+  }],
+}
+
+// El mismo hueco de ejecutor pero con destino en otro módulo: fija que la
+// línea "Destino: … · permiso para …" traduce código de módulo y permiso.
+const sinEjecutorInspecciones: PdtpCoverageReport["groups"][number] = {
+  status: "executor_required",
+  label: "Sin ejecutor acreditador configurado",
+  blocks: true,
+  issues: [{
+    n: 24,
+    activity: "Inspección operacional",
+    status: "executor_required",
+    reason: "Falta asignar un rol ejecutor.",
+    destinationModule: "inspecciones",
+    requiredPermission: "prevention:inspections:execute",
   }],
 }
 
@@ -75,10 +91,23 @@ const ejecutorSinPermiso: PdtpCoverageReport["groups"][number] = {
     activity: "Inducción de contratistas",
     status: "executor_permission_gap",
     reason: "Se acredita en Programa preventivo, pero ninguno de los ejecutores asignados puede registrar el hecho.",
-    destinationModule: "Programa preventivo",
+    destinationModule: "pdtp",
     requiredPermission: "prevention:pdtp:execute",
     executorRoleLabels: ["Bodeguero"],
     suggestedExecutorRoleIds: ["rol-prevencionista"],
+  }],
+}
+
+const flujoSegregado: PdtpCoverageReport["groups"][number] = {
+  status: "segregated_valid",
+  label: "Flujo segregado válido",
+  blocks: false,
+  issues: [{
+    n: 83,
+    activity: "Aprobar plan de emergencia",
+    status: "segregated_valid",
+    reason: "El responsable redacta; la firma es de otro.",
+    destinationModule: "emergencias",
   }],
 }
 
@@ -127,11 +156,16 @@ describe("CoverageReportPanel", () => {
     expect(screen.getByRole("link", { name: "Configurar ejecutores en el borrador" })).toBeInTheDocument()
   })
 
-  it("P1(a): en un programa activo, sin ejecutor ofrece crear una revisión en vez de editar el borrador", () => {
+  // El panel ya no renderiza "Crear revisión": la salida a v+1 de un programa
+  // activo la ofrece la cabecera del detalle (`showRevisionCta` en page.tsx),
+  // que suma este caso —cobertura bloqueante— al alcance sin declarar y al
+  // desvío de huella. Lo que se fija acá es que el panel deje de ofrecer el
+  // atajo al borrador, que en un programa activo no lleva a ninguna parte.
+  it("P1(a): en un programa activo no ofrece editar el borrador", () => {
     render(<CoverageReportPanel report={report([sinEjecutor])} {...panelProps} programStatus="active" />)
 
     expect(screen.queryByRole("link", { name: "Configurar ejecutores en el borrador" })).toBeNull()
-    expect(screen.getByRole("button", { name: /crear revisi/i })).toBeInTheDocument()
+    expect(screen.getByText("N°20")).toBeInTheDocument()
   })
 
   it("P1(a): ejecutor sin permiso ofrece administrar roles cuando el usuario puede hacerlo", () => {
@@ -147,6 +181,35 @@ describe("CoverageReportPanel", () => {
 
     expect(screen.queryByRole("link", { name: "Administrar roles" })).toBeNull()
     expect(screen.getByText(/Bodeguero/)).toBeInTheDocument()
-    expect(screen.getByText(/registrar cumplimiento en PDTP/i)).toBeInTheDocument()
+    // El permiso aparece dos veces: en la línea "Destino: … · permiso para …"
+    // y en la frase que dice qué rol lo necesita. Lo que importa es que la
+    // explicación al usuario sin `admin:roles` nombre el permiso y a quién
+    // pedírselo, no que el texto sea único en el panel.
+    expect(screen.getAllByText(/registrar cumplimiento en PDTP/i).length).toBeGreaterThan(0)
+    expect(screen.getByText(/solicita el ajuste a quien administra roles/i)).toBeInTheDocument()
+  })
+
+  it("sólo ofrece configurar ejecutores cuando el programa sigue en borrador", () => {
+    const draft = render(<CoverageReportPanel report={report([sinEjecutorInspecciones])} {...panelProps} />)
+    expect(screen.getByRole("link", { name: "Configurar ejecutores en el borrador" })).toBeInTheDocument()
+    expect(screen.getByText("Destino: Inspecciones · permiso para registrar inspecciones")).toBeInTheDocument()
+    draft.unmount()
+
+    render(
+      <CoverageReportPanel
+        report={report([sinEjecutorInspecciones])}
+        {...panelProps}
+        programStatus="in_review"
+      />,
+    )
+    expect(screen.queryByRole("link", { name: "Configurar ejecutores en el borrador" })).toBeNull()
+  })
+
+  it("explica que un flujo segregado válido no requiere un ejecutor del programa", () => {
+    render(<CoverageReportPanel report={report([flujoSegregado], 1, 1)} {...panelProps} />)
+
+    expect(screen.getByText(/flujos segregados están cubiertos por contrato/i)).toBeInTheDocument()
+    expect(screen.getByText(/válido; no requiere ejecutor del programa/i)).toBeInTheDocument()
+    expect(screen.queryByText(/no acredita hasta resolverse/i)).toBeNull()
   })
 })

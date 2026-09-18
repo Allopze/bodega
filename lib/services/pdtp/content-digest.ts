@@ -26,15 +26,16 @@ type JsonPrimitive = string | number | boolean | null
 type StableJson = JsonPrimitive | StableJson[] | { [key: string]: StableJson }
 
 /** Forma del snapshot, independiente del número de revisión del programa. */
-export const CURRENT_PDTP_CONTENT_SCHEMA_VERSION = 15
+export const CURRENT_PDTP_CONTENT_SCHEMA_VERSION = 16
 
 /**
  * Versión de esquema más antigua que este builder sabe reconstruir con
  * exactitud a partir de las columnas actuales.
  *
- * Sólo tres cambios de forma están efectivamente deshechos por versión más
- * abajo: `executorAssignments` (≥13), `mechanism` (≥14) y `objectives` /
- * `activities[].objectiveCode` (≥15). Los cambios de las
+ * Sólo cuatro cambios de forma están efectivamente deshechos por versión más
+ * abajo: `executorAssignments` (≥13), `mechanism` (≥14), la declaración de
+ * alcance corporativo (`program.appliesToAllWorksites`, ≥15) y los objetivos
+ * del programa (`objectives` / `activities[].objectiveCode`, ≥16). Los cambios de las
  * versiones 9 a 12 (`expected_subject_count` fuera de la huella, `subject_source`,
  * `dueHours`, las capacidades del padrón) están para siempre incorporados sin
  * condición — no hay forma de "apagarlos" para reproducir cómo se veía la
@@ -102,6 +103,7 @@ export async function buildPdtpProgramContentSnapshot(
     pesoEjecucion: pdtpPrograms.pesoEjecucion,
     pesoVerificacion: pdtpPrograms.pesoVerificacion,
     pesoCierre: pdtpPrograms.pesoCierre,
+    appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites,
   }).from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
 
@@ -335,11 +337,13 @@ export async function buildPdtpProgramContentSnapshot(
     .where(eq(pdtpRoleLegendEntries.programId, programId))
     .orderBy(asc(pdtpRoleLegendEntries.code))
 
+  const { appliesToAllWorksites, ...legacyProgram } = program
+
   // Los objetivos del programa (RE-36) son un compromiso de contenido: a qué
   // objetivo estratégico responde cada actividad. Sólo se consultan cuando la
   // huella pedida ya los incluye, para no gastar una consulta al reconstruir
   // una versión anterior que nunca los tuvo.
-  const objectives = schemaVersion >= 15
+  const objectives = schemaVersion >= 16
     ? await client.select({
         id: pdtpObjectives.id,
         code: pdtpObjectives.code,
@@ -373,18 +377,20 @@ export async function buildPdtpProgramContentSnapshot(
     // coincidir con nada — ver `MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION`.
     // 14: `mechanism` se incorpora al compromiso de destino operativo; antes
     // se omitía del snapshot aunque ya existiera en la actividad.
-    // 15: el objetivo del programa (RE-36) entra al compromiso firmado —
+    // 15: la declaración explícita de alcance corporativo distingue un
+    // programa que cubre todas las faenas de un borrador aún sin alcance.
+    // 16: el objetivo del programa (RE-36) entra al compromiso firmado —
     // tanto el catálogo de objetivos (`objectives`) como a cuál responde cada
     // actividad (`activities[].objectiveCode`, resuelto por código en vez del
     // id interno para que la huella no dependa de un identificador accidental
     // de persistencia).
     schemaVersion,
-    program,
+    program: schemaVersion >= 15 ? { ...legacyProgram, appliesToAllWorksites } : legacyProgram,
     approvalSteps,
     activities: activities.map(({ id: _id, mechanism, objectiveId, ...activity }) => ({
       ...activity,
       ...(schemaVersion >= 14 ? { mechanism } : {}),
-      ...(schemaVersion >= 15 ? { objectiveCode: objectiveId ? objectiveCodeById.get(objectiveId) ?? null : null } : {}),
+      ...(schemaVersion >= 16 ? { objectiveCode: objectiveId ? objectiveCodeById.get(objectiveId) ?? null : null } : {}),
     })),
     schedules: schedules.map(({ activityId, ...schedule }) => ({ activityNumber: activityNumberById.get(activityId), ...schedule })),
     views: sheets.map(({ id: _id, ...sheet }) => sheet),
@@ -414,7 +420,7 @@ export async function buildPdtpProgramContentSnapshot(
         roleId,
       })),
     } : {}),
-    ...(schemaVersion >= 15 ? {
+    ...(schemaVersion >= 16 ? {
       objectives: objectives.map(({ id: _id, ...objective }) => objective),
     } : {}),
     activityWorksiteAdjustments: activityWorksiteAdjustments.map(({ activityId, ...adjustment }) => ({
@@ -468,6 +474,22 @@ export class PdtpUnreconstructibleContentSchemaError extends Error {
 }
 
 /**
+ * La fila tiene una huella firmada, pero no conserva la versión de esquema
+ * con la que se calculó. No se puede asumir la versión actual: hacerlo puede
+ * producir una comparación aparentemente válida con una forma distinta a la
+ * que aprobó el operador.
+ */
+export class PdtpContentSchemaVersionMissingError extends Error {
+  constructor(public readonly programId: string) {
+    super(
+      `El programa ${programId} tiene una huella firmada sin versión de esquema declarada. `
+      + "No se puede verificar la firma histórica de forma segura; crea una revisión v+1 para recomponerla.",
+    )
+    this.name = "PdtpContentSchemaVersionMissingError"
+  }
+}
+
+/**
  * Verifica una huella reconstruyendo la forma con la que fue firmada
  * originalmente, según la versión de esquema declarada en `reviewSnapshotJson`.
  *
@@ -486,8 +508,9 @@ export async function computePdtpProgramContentDigestForStoredVersion(
     .from(pdtpPrograms)
     .where(eq(pdtpPrograms.id, programId))
     .limit(1)
-  const schemaVersion = storedContentSchemaVersion(program?.reviewSnapshotJson)
-    ?? CURRENT_PDTP_CONTENT_SCHEMA_VERSION
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  const schemaVersion = storedContentSchemaVersion(program.reviewSnapshotJson)
+  if (schemaVersion === undefined) throw new PdtpContentSchemaVersionMissingError(programId)
   if (schemaVersion < MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION) {
     throw new PdtpUnreconstructibleContentSchemaError(programId, schemaVersion)
   }

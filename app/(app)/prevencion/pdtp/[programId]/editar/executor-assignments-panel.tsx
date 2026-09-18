@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { setPdtpActivityExecutorAssignmentsAction } from "../../actions"
+import { pdtpDestinationModuleLabel, pdtpPermissionLabel } from "../pdtp-destination-labels"
 
 type Activity = { id: string; n: number; activity: string; status: string }
 type Role = { id: string; name: string; label: string; permissions: string[] }
@@ -49,8 +50,8 @@ export function ExecutorAssignmentsPanel({
   if (issues.length === 0) {
     return (
       <section className="rounded-xl border border-[var(--color-success-line)] bg-[var(--color-success-tint)] p-4">
-        <h3 className="text-sm font-semibold text-[var(--color-success-ink)]">Ejecutores acreditadores configurados</h3>
-        <p className="mt-1 text-sm text-[var(--color-text-muted)]">Cada destino que exige permiso tiene al menos un rol ejecutor válido. Los responsables de planificación no se modificaron.</p>
+        <h3 className="text-sm font-semibold text-[var(--color-success-ink)]">Sin brechas de ejecutor acreditador</h3>
+        <p className="mt-1 text-sm text-[var(--color-text-muted)]">No hay brechas de ejecutor pendientes en esta versión. Si una versión nueva necesita acreditar un destino, asígnale al menos un rol con el permiso requerido. Los responsables de planificación no se modificaron.</p>
       </section>
     )
   }
@@ -95,7 +96,7 @@ export function ExecutorAssignmentsPanel({
                 <div>
                   <p className="font-medium text-[var(--color-text)]">N°{activity.n} · {activity.activity}</p>
                   <p className="mt-1 text-xs text-[var(--color-text-muted)]">{issue.reason}</p>
-                  {issue.destinationModule && <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Destino: {issue.destinationModule}{issue.requiredPermission ? ` · permiso requerido: ${issue.requiredPermission}` : ""}</p>}
+                  {issue.destinationModule && <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Destino: {pdtpDestinationModuleLabel(issue.destinationModule)}{issue.requiredPermission ? ` · se necesita permiso para ${pdtpPermissionLabel(issue.requiredPermission)}` : ""}</p>}
                 </div>
                 <Button size="sm" variant="secondary" loading={operation.pending} onClick={() => save(activity.id)}>
                   Guardar ejecutores

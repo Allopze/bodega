@@ -17,9 +17,9 @@ import { clearRateLimits, login } from "./helpers"
 async function loginAs(page: Page, email: string, password: string) {
   await clearRateLimits()
   await page.goto("/login")
-  await page.getByLabel("Correo electrónico").fill(email)
-  await page.getByLabel("Contraseña").fill(password)
-  await page.getByRole("button", { name: "Ingresar" }).click()
+  await page.getByLabel("Correo electrónico", { exact: true }).fill(email)
+  await page.getByLabel("Contraseña", { exact: true }).fill(password)
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click()
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 })
 }
 

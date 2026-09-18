@@ -103,15 +103,24 @@ export type PdtpSheetView = {
  */
 export type PdtpAggregateActivityWorksite = {
   worksiteId: string
+  /** Plan y ejecución exigibles desde la activación; alimentan el estado. */
   planned: number
   executed: number
   status: PdtpActivityStatus
+  /** Valores previos a la activación, dentro de la aplicabilidad declarada. */
+  historicalPlanned: number
+  historicalExecuted: number
 }
+
+export type PdtpAggregateWorksiteSummary = Pick<
+  PdtpAggregateActivityWorksite,
+  "worksiteId" | "planned" | "executed" | "historicalPlanned" | "historicalExecuted"
+>
 
 export type PdtpAggregatedSheetView = Omit<PdtpSheetView, "activities"> & {
   aggregate: true
   activities: Array<PdtpSheetView["activities"][number] & { worksiteSummaries: PdtpAggregateActivityWorksite[] }>
-  worksiteSummaries: Array<{ worksiteId: string; planned: number; executed: number }>
+  worksiteSummaries: PdtpAggregateWorksiteSummary[]
 }
 
 type DeviationRow = Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["deviationRows"][number]
@@ -152,7 +161,7 @@ export async function getPdtpAggregatedSheetViewByProgram(
     .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true)))
   const memberIds = new Set(members.map((member) => member.worksiteId))
   const authorizedWorksiteIds = members.length === 0
-    ? [...new Set(worksiteIds)]
+    ? (program.appliesToAllWorksites ? [...new Set(worksiteIds)] : [])
     : [...new Set(worksiteIds.filter((worksiteId) => memberIds.has(worksiteId)))]
   const sheet = await resolveSheetForProgram(programId, sheetCode)
   if (!sheet) return null
@@ -188,11 +197,17 @@ export async function getPdtpAggregatedSheetViewByProgram(
   const executionsByActivity = new Map<string, Array<typeof pdtpExecutions.$inferSelect>>()
   const effectiveSchedulesByActivity = new Map<string, Array<typeof pdtpActivitySchedule.$inferSelect>>()
   const effectiveExecutionsByActivity = new Map<string, Array<typeof pdtpExecutions.$inferSelect>>()
-  const worksiteSummaries = effectivePerWorksite.map(({ worksiteId, scheduleRows, executionRows }) => ({
-    worksiteId,
-    planned: scheduleRows.reduce((total, row) => total + row.plannedQuantity, 0),
-    executed: executionRows.filter((row) => row.status === "approved").reduce((total, row) => total + row.executedQuantity, 0),
-  }))
+  const rawByWorksite = new Map(loadedPerWorksite.map((entry) => [entry.worksiteId, entry]))
+  const worksiteSummaries: PdtpAggregateWorksiteSummary[] = effectivePerWorksite.map(({ worksiteId, scheduleRows, executionRows }) => {
+    const raw = rawByWorksite.get(worksiteId)
+    return {
+      worksiteId,
+      planned: scheduleRows.reduce((total, row) => total + row.plannedQuantity, 0),
+      executed: executionRows.filter((row) => row.status === "approved").reduce((total, row) => total + row.executedQuantity, 0),
+      historicalPlanned: raw?.scheduleRows.reduce((total, row) => total + row.plannedQuantity, 0) ?? 0,
+      historicalExecuted: raw?.executionRows.filter((row) => row.status === "approved").reduce((total, row) => total + row.executedQuantity, 0) ?? 0,
+    }
+  })
   for (const { scheduleRows, executionRows } of loadedPerWorksite) {
     for (const row of scheduleRows) {
       const rows = schedulesByActivity.get(row.activityId) ?? []
@@ -242,10 +257,15 @@ export async function getPdtpAggregatedSheetViewByProgram(
       if (row.status === "approved") effectiveMonthlyExecuted[row.month - 1]! += row.executedQuantity
     }
     const activityWorksiteSummaries = effectivePerWorksite.map(({ worksiteId, scheduleRows, executionRows, deviationRows }) => {
+      const raw = rawByWorksite.get(worksiteId)
       const plannedByMonth = Array.from({ length: 12 }, () => 0)
       const executedByMonth = Array.from({ length: 12 }, () => 0)
+      const historicalPlannedByMonth = Array.from({ length: 12 }, () => 0)
+      const historicalExecutedByMonth = Array.from({ length: 12 }, () => 0)
       for (const row of scheduleRows) if (row.activityId === activity.id) plannedByMonth[row.month - 1]! += row.plannedQuantity
       for (const row of executionRows) if (row.activityId === activity.id && row.status === "approved") executedByMonth[row.month - 1]! += row.executedQuantity
+      for (const row of raw?.scheduleRows ?? []) if (row.activityId === activity.id) historicalPlannedByMonth[row.month - 1]! += row.plannedQuantity
+      for (const row of raw?.executionRows ?? []) if (row.activityId === activity.id && row.status === "approved") historicalExecutedByMonth[row.month - 1]! += row.executedQuantity
       return {
         worksiteId,
         planned: plannedByMonth.reduce((sum, value) => sum + value, 0),
@@ -255,6 +275,8 @@ export async function getPdtpAggregatedSheetViewByProgram(
             deviationRows.filter((row) => row.activityId === activity.id),
           ),
         }),
+        historicalPlanned: historicalPlannedByMonth.reduce((sum, value) => sum + value, 0),
+        historicalExecuted: historicalExecutedByMonth.reduce((sum, value) => sum + value, 0),
       }
     })
     const activityDeviations = deviationsByActivity.get(activity.id) ?? []
@@ -292,6 +314,25 @@ export async function getPdtpAggregatedSheetViewByProgram(
 export async function getPdtpSheetViewByProgram(programId: string, sheetCode: string, worksiteId?: string): Promise<PdtpSheetView | null> {
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) return null
+
+  // La página y el export filtran la faena antes de llegar acá, pero este
+  // servicio también se consume desde rutas históricas y callers internos.
+  // No permitas que un `programId + faena` directo lea planificación o
+  // ejecuciones fuera del alcance declarado por el programa.
+  if (worksiteId) {
+    const members = await db.select({ worksiteId: pdtpProgramWorksites.worksiteId })
+      .from(pdtpProgramWorksites)
+      .where(and(
+        eq(pdtpProgramWorksites.programId, programId),
+        eq(pdtpProgramWorksites.isActive, true),
+      ))
+    const allowed = members.length === 0
+      // Drafts can be previewed/exported while their scope is being prepared;
+      // only a vigente version must already declare corporate scope or members.
+      ? program.appliesToAllWorksites || !["active", "closed"].includes(program.status)
+      : members.some((member) => member.worksiteId === worksiteId)
+    if (!allowed) return null
+  }
 
   const sheet = await resolveSheetForProgram(programId, sheetCode)
   if (!sheet) return null
@@ -444,13 +485,35 @@ export async function buildPdtpExport({ programId, year, sheetCode, worksiteId, 
     throw new Error(`No se encontró un programa PDTP para ${programId ? `programId=${programId}` : `año ${year}`} / hoja ${sheetCode}.`)
   }
 
-  const monthHeaders = MONTH_LABELS.flatMap((month) => [`${month} P`, `${month} E`])
-  const headers = ["N°", "Actividad preventiva", "Guía de ejecución", "Responsables", ...monthHeaders, "Plan anual", "Ejecutado anual", "%"]
+  // El export también debe hacer explícita la misma distinción que la tabla:
+  // histórico completo dentro de la aplicabilidad declarada para trazabilidad
+  // y exigible desde activación para la lectura operativa. No se sobreescribe
+  // un valor con el otro.
+  const monthHeaders = MONTH_LABELS.flatMap((month) => [
+    `${month} P histórico`, `${month} E histórico`,
+    `${month} P exigible`, `${month} E exigible`,
+  ])
+  const headers = [
+    "N°", "Actividad preventiva", "Guía de ejecución", "Responsables", ...monthHeaders,
+    "Plan anual histórico", "Ejecutado anual histórico", "% histórico",
+    "Plan anual exigible", "Ejecutado anual exigible", "% exigible",
+  ]
   const rows: ReportCell[][] = view.activities.map((activity) => {
     const content = readPdtpActivityContent(activity)
-    const monthly = MONTH_LABELS.flatMap((_, index) => [activity.monthlyPlanned[index] ?? 0, activity.monthlyExecuted[index] ?? 0])
-    const percent = activity.totalPlanned > 0 ? Math.round((activity.totalExecuted / activity.totalPlanned) * 100) : null
-    return [activity.n, content.activityDescription, content.executionGuidance, activity.responsibleDisplay, ...monthly, activity.totalPlanned, activity.totalExecuted, percent]
+    const monthly = MONTH_LABELS.flatMap((_, index) => [
+      activity.monthlyPlanned[index] ?? 0,
+      activity.monthlyExecuted[index] ?? 0,
+      activity.effectiveMonthlyPlanned[index] ?? 0,
+      activity.effectiveMonthlyExecuted[index] ?? 0,
+    ])
+    const historicalPercent = activity.totalPlanned > 0 ? Math.round((activity.totalExecuted / activity.totalPlanned) * 100) : null
+    const effectivePercent = activity.effectiveTotalPlanned > 0 ? Math.round((activity.effectiveTotalExecuted / activity.effectiveTotalPlanned) * 100) : null
+    return [
+      activity.n, content.activityDescription, content.executionGuidance, activity.responsibleDisplay,
+      ...monthly,
+      activity.totalPlanned, activity.totalExecuted, historicalPercent,
+      activity.effectiveTotalPlanned, activity.effectiveTotalExecuted, effectivePercent,
+    ]
   })
 
   const actionItems = await listActionsByProgram(view.program.id, scope, { worksiteId })

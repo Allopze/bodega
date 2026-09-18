@@ -49,7 +49,7 @@ const ACT_ID = `${PROGRAM_ID}-a-${String(ACT_N).padStart(3, "0")}`
 async function seedProgram(status: "draft" | "active" = "active", activatedAt: string | null = null) {
   await inMemoryDb.insert(schema.pdtpPrograms).values({
     id: PROGRAM_ID, version: 1, year: PROGRAM_YEAR, title: `PDTP ${PROGRAM_YEAR} constancias`,
-    status, elaboratedByName: "Prevencionista", elaboratedByTitle: "Experto en Prevención",
+    status, appliesToAllWorksites: true, elaboratedByName: "Prevencionista", elaboratedByTitle: "Experto en Prevención",
     creationMode: "blank", complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
     activatedAt,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),

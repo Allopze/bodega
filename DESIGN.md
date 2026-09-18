@@ -322,11 +322,24 @@ excepción ya señalada de `Button` (`active:scale-[0.98]`).
 | `--duration-fast` | 140ms | Hover, foco |
 | `--duration-default` | 180ms | Modales, selects |
 | `--duration-slow` | 220ms | Drawers, layout |
+| `--duration-hero` | 600ms | Intro del octágono en el hero de `/login` |
 
 Animaciones: fade de página (`template.tsx`), modal fade + zoom-95, drawer
 slide, select zoom-95, shimmer de skeleton, entrada/salida de toasts (Sonner con
-barra de progreso). `prefers-reduced-motion: reduce` lleva todas las duraciones a
-0ms.
+barra de progreso), intro y estados del hero de `/login` (octágono de marca).
+`prefers-reduced-motion: reduce` lleva todas las duraciones a 0ms.
+
+**Excepción del hero de `/login`**: el hero de `(auth)` es la única superficie
+de la plataforma que es identidad de marca, no bitácora — ya era la única con
+gradiente radial y logo a tamaño de póster. Su octágono se dibuja a sí mismo al
+cargar (`--duration-hero`, 600ms, por encima del techo de 220ms) y, en error,
+el marco hace un shake de 4px (`auth-frame-shake`, transform, no color). Ambas
+excepciones están acotadas a `.auth-hero-*` en `app/globals.css` y no
+autorizan reusar el patrón en `(app)`: ahí sigue rigiendo transiciones de
+color, no de escala, sin excepciones nuevas. El movimiento del hero solo existe
+dentro de `@media (prefers-reduced-motion: no-preference)`: bajo `reduce`, sus
+tres estados (pendiente, error, éxito) se siguen comunicando por color y
+opacidad, nunca por movimiento.
 
 ---
 

@@ -21,9 +21,9 @@ async function main() {
   const page = await ctx.newPage()
   await page.goto(`${BASE}/login`, { timeout: 30_000 })
   await page.waitForSelector('#email', { timeout: 10_000 })
-  await page.getByLabel("Correo electrónico").fill("admin@e2e.chome.cl")
-  await page.getByLabel("Contraseña").fill("chome2026")
-  await page.getByRole("button", { name: "Ingresar" }).click()
+  await page.getByLabel("Correo electrónico", { exact: true }).fill("admin@e2e.chome.cl")
+  await page.getByLabel("Contraseña", { exact: true }).fill("chome2026")
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click()
   await page.waitForURL("**/dashboard", { timeout: 15_000 })
   console.log("✓ Logged in")
 

@@ -108,19 +108,27 @@ Las siete brechas están **cerradas**. Cada una se implementó con pruebas propi
 | G6 | Objetivos como entidad | **Cerrada** | `ee0a1d5c` | `58d783cf` tabla · `bb79bed6` servicio, mapa 2026 y huella firmada · `5851e7e3`, `1c187814`, `1cb1ca8c` correcciones |
 | G7 | Envío por correo del reporte mensual a la lista de distribución | **Cerrada** | `b76725f6` | Depende de G4: el cierre es lo que se distribuye |
 
-**Estado de verificación al 2026-09-17**, para que nadie lea más certeza de la que hay:
+**Estado de verificación al 2026-09-18**, después de integrar `main` (`6ae68938`) en la
+rama, para que nadie lea más certeza de la que hay:
 
-- `npm run test:fast` 7544 pasan / 306 omitidos y `npm run test:pglite` 2089 pasan, con
-  `typecheck` y `lint` limpios y la cadena de migraciones verificada (307 entradas), en
-  `52101235`.
-- Los 15 specs `e2e/pdtp-*.spec.ts` pasan completos: **52 de 52, sin omitidos, en 4,0 min**
-  sobre `64e3a887`.
+- `npm run test:fast` 7556 pasan / 306 omitidos y `npm run test:pglite` 2104 pasan, con
+  `typecheck` y `lint` limpios y la cadena de migraciones verificada (307 entradas: `main`
+  no agregó migraciones, así que no hubo nada que regenerar).
+- Los 15 specs `e2e/pdtp-*.spec.ts` pasan completos: **52 de 52, sin omitidos, en 3,9 min**,
+  ya con el merge. Requirió declarar alcance corporativo en los dos programas que siembra
+  `e2e/setup-db.ts`: la regla de `main` que hace fallar cerrado a un programa sin membresía
+  ni declaración dejaba el fixture sin ninguna faena operable.
+- Se corrieron además `matriz-estados`, `dashboard`, `admin-flow`,
+  `prevencion-inspecciones-flujo-integral`, `prevencion-inspecciones-catalogo` y
+  `prevencion-cphs-maturity` —los specs no-PDTP que tocan el fixture del programa— para
+  descartar que ese cambio de sembrado rompiera otra cosa: 64 pasan, 1 omitido.
+- La huella firmada: la `schemaVersion` 15 quedó como la publicó `main` (declaración de
+  alcance corporativo) y los objetivos subieron a la **16**. `lib/__tests__/pdtp-objectives.test.ts`
+  ancla esa forma por versión.
 - **El gate completo del plan todavía no se cumplió**: exige dos corridas consecutivas de
   `npm run test:e2e` entero sin fallos, y lo que hay es una corrida de la familia `pdtp-*`.
   El criterio y el reparto por shards están en [`docs/deploy/RUNBOOK.md`](docs/deploy/RUNBOOK.md)
   § "Gate E2E"; falta ejecutarlo y dejar el informe en `qa/reports/`.
-- Las suites unitarias no se volvieron a correr después de `9736fb4e` y `b9cb949d`, que
-  tocan producto fuera del PDTP (solicitudes y PPA).
 
 ---
 

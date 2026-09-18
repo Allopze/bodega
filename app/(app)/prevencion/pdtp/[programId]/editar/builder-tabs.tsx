@@ -259,6 +259,7 @@ export function PdtpBuilderTabs({
                     programId={program.id}
                     visibleWorksites={visibleWorksites}
                     memberWorksiteIds={memberWorksiteIds}
+                    appliesToAllWorksites={program.appliesToAllWorksites}
                   />
                 </div>
               </details>
@@ -268,6 +269,7 @@ export function PdtpBuilderTabs({
               schedule={schedule}
               visibleWorksites={visibleWorksites}
               memberWorksiteIds={memberWorksiteIds}
+              appliesToAllWorksites={program.appliesToAllWorksites}
               exclusions={activityWorksiteExclusions}
               params={activityWorksiteParams}
               overrides={activityScheduleOverrides}
@@ -292,6 +294,7 @@ export function PdtpBuilderTabs({
           responsibleCatalog={responsibleCatalog}
           visibleWorksites={visibleWorksites}
           memberWorksiteIds={memberWorksiteIds}
+          appliesToAllWorksites={program.appliesToAllWorksites}
           activityWorksiteExclusions={activityWorksiteExclusions}
           baseComparison={baseComparison}
           revisionDiffDecisions={revisionDiffDecisions}

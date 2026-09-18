@@ -59,7 +59,7 @@ describe("PdtpIndicatorsPanel — render compacto actual", () => {
 
     const annualTile = screen.getByText("Cumplimiento anual").closest("div")!.parentElement!
     expect(annualTile).toHaveTextContent("45%")
-    expect(annualTile).toHaveTextContent("9/20")
+    expect(annualTile).toHaveTextContent("Plan 20 · ejecutado 9")
 
     const metaTile = screen.getByText("Meta anual").closest("div")!.parentElement!
     expect(metaTile).toHaveTextContent("85%")

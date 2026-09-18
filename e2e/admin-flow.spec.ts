@@ -28,9 +28,9 @@ function validChileanRut(): string {
 async function login(page: Page) {
   await clearRateLimits()
   await page.goto("/login")
-  await page.getByLabel("Correo electrónico").fill("admin@e2e.chome.cl")
-  await page.getByLabel("Contraseña").fill("chome2026")
-  await page.getByRole("button", { name: "Ingresar" }).click()
+  await page.getByLabel("Correo electrónico", { exact: true }).fill("admin@e2e.chome.cl")
+  await page.getByLabel("Contraseña", { exact: true }).fill("chome2026")
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click()
   await expect(page).toHaveURL(/\/dashboard/)
 }
 
