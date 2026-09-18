@@ -8,6 +8,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { listTrainingOccurrences, listTrainingOccurrenceWorksites } from "@/lib/services/prevention-training-occurrences"
 import { resolvePredefinedTrainingCatalogYear } from "@/lib/prevention/training-occurrences-catalog"
 import { TrainingOccurrenceList } from "./training-occurrence-list"
+import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "Capacitación" }
 
@@ -70,6 +71,7 @@ export default async function CapacitacionPage({
         selectedWorksiteId={worksiteId}
         canRecord={session.user.permissions.includes("prevention:training:record")}
       />
+      <PdtpScheduledActivityPanelServer connectorKey="training" />
     </PageContainer>
   )
 }

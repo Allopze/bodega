@@ -18,6 +18,7 @@ import { alcoholTestDispatches, alcoholTests, serviceEquipment, workers } from "
 import { nanoid } from "@/lib/id"
 import { assertWorksiteAccess, type WorksiteScope } from "@/lib/services/pdtp/helpers"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
+import { recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
 import { pdtpCatalogActivityIdForLegacyNumber } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 
 /** Familia de `service_equipment` que corresponde a un alcotómetro. */
@@ -151,6 +152,16 @@ export async function recordAlcoholTest(
     createdAt: now,
     updatedAt: now,
   }).returning()
+
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "alcotest",
+    eventKey: "test_registered",
+    sourceType: "alcotest",
+    sourceId: `alcotest:${id}`,
+    worksiteId: input.worksiteId,
+    occurredAt: input.performedAt,
+    payload: { alcoholTestId: id, testedWorkerId: input.testedWorkerId ?? null, result: input.result ?? "negativo" },
+  })
 
   await recordPdtpFulfillmentEvent({
     sourceType: "alcotest",

@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { listPdtpAdminCatalogs, listRoleSlugs } from "@/lib/services/pdtp/admin-catalogs"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -11,8 +11,9 @@ import type { CatalogActivityRow } from "./activity-form"
 export const metadata: Metadata = { title: "Catálogos PDTP" }
 
 export default async function PdtpCatalogsPage() {
+  let session
   try {
-    await requirePermission("admin:pdtp_catalog")
+    session = await requirePermission("admin:pdtp_catalog")
   } catch {
     redirect("/forbidden")
   }
@@ -32,7 +33,21 @@ export default async function PdtpCatalogsPage() {
           { label: "Administración", href: "/admin" },
           { label: "Catálogos PDTP" },
         ]}
-        actions={<PdtpActions programs={programs.map((p) => ({ id: p.id, year: p.year, version: p.version, status: p.status, title: p.title ?? p.id }))} roleOptions={roleOptions} />}
+        actions={<PdtpActions
+          programs={programs.map((p) => ({ id: p.id, year: p.year, version: p.version, status: p.status, title: p.title ?? p.id }))}
+          roleOptions={roleOptions}
+          canManagePrograms={can(session, "prevention:pdtp:program:manage")}
+          responsibleCatalog={responsibles.filter((responsible) => responsible.isActive).map((responsible) => ({ slug: responsible.slug, displayName: responsible.displayName }))}
+          catalogActivities={activities.map((activity) => ({
+            id: activity.id,
+            code: activity.code,
+            title: activity.title,
+            description: activity.description,
+            status: activity.status as "draft" | "active" | "retired",
+            currentRevision: activity.currentRevision,
+            executionGuidance: activity.executionGuidance,
+          }))}
+        />}
       />
       <CatalogTabs
         activities={activities.map((activity) => ({
@@ -74,6 +89,15 @@ export default async function PdtpCatalogsPage() {
           title: p.title ?? p.id,
           href: `/prevencion/pdtp/${encodeURIComponent(p.id)}`,
         }))}
+        draftPrograms={programs.filter((p) => p.status === "draft").map((p) => ({
+          id: p.id,
+          year: p.year,
+          version: p.version,
+          status: p.status,
+          title: p.title ?? p.id,
+          href: `/prevencion/pdtp/${encodeURIComponent(p.id)}/editar`,
+        }))}
+        canManagePrograms={can(session, "prevention:pdtp:program:manage")}
       />
     </PageContainer>
   )

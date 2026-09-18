@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { DocumentacionHeaderActions } from "./documentacion-header-actions"
 import { DocumentacionView } from "./documentacion-view"
 import { expiryFilterInput, parseExpiryFilter } from "./expiry-filter"
+import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "Registro documental" }
 
@@ -130,6 +131,7 @@ export default async function DocumentacionPage({
         canArchive={canArchive}
         userId={session.user.id}
       />
+      <PdtpScheduledActivityPanelServer connectorKey="documentation" />
     </PageContainer>
   )
 }

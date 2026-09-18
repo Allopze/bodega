@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm"
-import { db, type Tx } from "@/db"
+import { db, type DB, type Tx } from "@/db"
 import {
   pdtpActivities,
   pdtpActivitySchedule,
@@ -127,8 +127,8 @@ export function pdtpProgramId(year: number, version: number) {
  * Preferimos siempre la hoja program-scoped; caemos a la plantilla solo si
  * el programa no tiene una copia propia.
  */
-export async function resolveSheetForProgram(programId: string, sheetCode: string) {
-  const [sheet] = await db.select().from(pdtpSheets)
+export async function resolveSheetForProgram(programId: string, sheetCode: string, client: DB | Tx = db) {
+  const [sheet] = await client.select().from(pdtpSheets)
     .where(and(
       eq(pdtpSheets.code, sheetCode),
       or(isNull(pdtpSheets.programId), eq(pdtpSheets.programId, programId)),

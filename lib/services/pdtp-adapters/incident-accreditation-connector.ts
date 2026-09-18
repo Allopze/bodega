@@ -34,6 +34,7 @@ import { logger } from "@/lib/logger"
 import { resolvePdtpActivityIdsForNumbers } from "@/lib/services/pdtp/accreditation"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
 import { createPdtpObligation, findPdtpObligationByIdempotencyKey, pdtpObligationIdempotencyKey, reportPdtpObligation } from "@/lib/services/pdtp/obligations"
+import { recordPdtpTriggerEvent, recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
 import { pdtpCatalogActivityIdForLegacyNumber } from "./catalog-activities-2026"
 
 /** Las doce actividades del RE-20 que pasan por obligación. La N°76 no está. */
@@ -135,6 +136,23 @@ async function reportIncidentObligation(input: {
 
 /** 66, 67: Aviso registrado en turno — se crea y se reporta de inmediato. */
 export async function onIncidentReported(input: { incidentId: string; worksiteId: string; reportedAt: string; userId: string }) {
+  // Libro durable para reglas nuevas configuradas desde el creador. El
+  // cableado RE-20 de abajo conserva sus obligaciones históricas; ambos pueden
+  // coexistir porque comparten la misma clave de evento y son idempotentes.
+  try {
+    await recordPdtpTriggerEvent({
+      connectorKey: "incidents",
+      eventKey: "incident_registered",
+      sourceType: "incident",
+      sourceId: input.incidentId,
+      worksiteId: input.worksiteId,
+      occurredAt: input.reportedAt,
+      payload: { incidentId: input.incidentId, reportedByUserId: input.userId },
+    })
+  } catch (error) {
+    logger.error({ err: error, incidentId: input.incidentId, worksiteId: input.worksiteId }, "[incident-pdtp-connector] No se pudo registrar el evento configurable del incidente.")
+  }
+
   const resolved = await resolvePdtpActivityIdsForNumbers({
     worksiteId: input.worksiteId, occurredAt: input.reportedAt,
     activityNumbers: RE20_OBLIGATION_ACTIVITY_NUMBERS, sourceType: "incident", sourceId: input.incidentId,
@@ -226,6 +244,15 @@ export async function onIncidentFollowupRecorded(input: { incidentId: string; wo
 
 /** 77: Expediente archivado/cerrado (propuesto, tras el cierre del caso) */
 export async function onIncidentClosed(input: { incidentId: string; worksiteId: string; closedAt: string; userId: string }) {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "incidents",
+    eventKey: "incident_closed",
+    sourceType: "incident",
+    sourceId: input.incidentId,
+    worksiteId: input.worksiteId,
+    occurredAt: input.closedAt,
+    payload: { incidentId: input.incidentId, closedByUserId: input.userId },
+  })
   await reportIncidentObligation({
     n: 77, worksiteId: input.worksiteId, incidentId: input.incidentId, occurredAt: input.closedAt, userId: input.userId,
     evidenceText: `Expediente de incidente cerrado: ${input.incidentId}`,

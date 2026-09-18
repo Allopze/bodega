@@ -388,6 +388,9 @@ export function InspectionPageActions({
   assignees,
   subjectsByWorksite,
   exportQuery,
+  initialTemplateId,
+  initialWorksiteId,
+  initialOpen,
 }: {
   canCreate: boolean
   canExport: boolean
@@ -396,10 +399,21 @@ export function InspectionPageActions({
   assignees: { id: string; name: string }[]
   subjectsByWorksite: Record<string, InspectionSubjectOption[]>
   exportQuery: string
+  initialTemplateId?: string
+  initialWorksiteId?: string
+  initialOpen?: boolean
 }) {
   return (
     <>
-      {canCreate ? <NewRunDialog templates={templates} worksites={worksites} assignees={assignees} subjectsByWorksite={subjectsByWorksite} /> : null}
+      {canCreate ? <NewRunDialog
+        templates={templates}
+        worksites={worksites}
+        assignees={assignees}
+        subjectsByWorksite={subjectsByWorksite}
+        initialTemplateId={initialTemplateId}
+        initialWorksiteId={initialWorksiteId}
+        initialOpen={initialOpen}
+      /> : null}
       <div className="hidden items-center gap-1.5 sm:flex">
         <Button asChild variant="secondary"><Link href="/prevencion/inspecciones/plantillas">Plantillas</Link></Button>
         <Button asChild variant="secondary"><Link href="/prevencion/inspecciones/programacion">Programación</Link></Button>
@@ -423,17 +437,22 @@ export function InspectionPageActions({
 
 /* ── Alta de inspección ───────────────────────────────────────────────────── */
 
-export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksite }: {
+export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksite, initialTemplateId, initialWorksiteId, initialOpen }: {
   templates: TemplateOption[]
   worksites: { id: string; name: string }[]
   assignees: { id: string; name: string }[]
   /** Inventario de sujetos por faena (función #11). */
   subjectsByWorksite: Record<string, InspectionSubjectOption[]>
+  initialTemplateId?: string
+  initialWorksiteId?: string
+  initialOpen?: boolean
 }) {
-  const [open, setOpen] = React.useState(false)
+  const validInitialTemplateId = initialTemplateId && templates.some((item) => item.id === initialTemplateId) ? initialTemplateId : ""
+  const validInitialWorksiteId = initialWorksiteId && worksites.some((item) => item.id === initialWorksiteId) ? initialWorksiteId : ""
+  const [open, setOpen] = React.useState(Boolean(initialOpen))
   const defaults = safeNewInspectionDefaults()
-  const [templateId, setTemplateId] = React.useState<string>(defaults.templateId)
-  const [worksiteId, setWorksiteId] = React.useState<string>(defaults.worksiteId)
+  const [templateId, setTemplateId] = React.useState<string>(validInitialTemplateId || defaults.templateId)
+  const [worksiteId, setWorksiteId] = React.useState<string>(validInitialWorksiteId || defaults.worksiteId)
   const [assignedToUserId, setAssignedToUserId] = React.useState("_none")
   // Certificación Mutual (Plata/Oro): sin poder marcar 'cphs' aquí, ninguna
   // inspección puede acreditar como originada por el comité paritario (B-05).
@@ -448,8 +467,8 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen)
     if (!nextOpen) return
-    setTemplateId("")
-    setWorksiteId("")
+    setTemplateId(validInitialTemplateId || defaults.templateId)
+    setWorksiteId(validInitialWorksiteId || defaults.worksiteId)
     setSubjectRef("_none")
     setAssignedToUserId("_none")
     operation.setMessage("")
@@ -514,7 +533,9 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
         <form onSubmit={submit} className="flex max-h-[min(90dvh,54rem)] flex-col">
           <DialogHeader className="mb-0 shrink-0 border-b border-[var(--color-border)] px-6 pb-4 pt-6">
             <DialogTitle>Nueva inspección</DialogTitle>
-            <DialogDescription>Elige explícitamente el instrumento y la faena. Así evitas registrar trabajo en un alcance distinto al que estás visitando.</DialogDescription>
+            <DialogDescription>{initialOpen
+              ? "La actividad programada dejó preseleccionados el instrumento y la faena. Confirma los datos antes de crear el registro nativo."
+              : "Elige explícitamente el instrumento y la faena. Así evitas registrar trabajo en un alcance distinto al que estás visitando."}</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
           <Field label="Plantilla" required>

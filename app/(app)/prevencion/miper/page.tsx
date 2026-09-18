@@ -9,6 +9,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { todayInChile } from "@/lib/utils"
 import { MiperHeaderActions, MiperWorkbench } from "./miper-workbench"
+import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "MIPER y controles" }
 
@@ -57,6 +58,7 @@ export default async function MiperPage({ searchParams }: { searchParams: Promis
         permissions={permissions}
         today={today}
       />
+      <PdtpScheduledActivityPanelServer connectorKey="miper" />
     </PageContainer>
   )
 }

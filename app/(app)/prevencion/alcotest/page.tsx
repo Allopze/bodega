@@ -10,6 +10,7 @@ import {
   listAlcotestWorkers,
 } from "@/lib/services/prevention-alcotest"
 import { AlcotestWorkbench } from "./alcotest-workbench"
+import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "Alcotest" }
 
@@ -38,6 +39,7 @@ export default async function AlcotestPage() {
       equipment={equipment}
       canRegister={can(session, "prevention:alcotest:register")}
       canDispatch={can(session, "prevention:alcotest:dispatch")}
+      scheduledPanel={<PdtpScheduledActivityPanelServer connectorKey="alcotest" />}
     />
   )
 }

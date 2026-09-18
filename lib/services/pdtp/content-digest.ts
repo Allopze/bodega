@@ -10,6 +10,8 @@ import {
   pdtpApprovalSteps,
   pdtpActivityChecklists,
   pdtpActivitySchedule,
+  pdtpActivityExecutionConfigs,
+  pdtpActivityReminderRules,
   pdtpDocumentHistory,
   pdtpImportBatches,
   pdtpObjectives,
@@ -26,7 +28,7 @@ type JsonPrimitive = string | number | boolean | null
 type StableJson = JsonPrimitive | StableJson[] | { [key: string]: StableJson }
 
 /** Forma del snapshot, independiente del número de revisión del programa. */
-export const CURRENT_PDTP_CONTENT_SCHEMA_VERSION = 16
+export const CURRENT_PDTP_CONTENT_SCHEMA_VERSION = 17
 
 /**
  * Versión de esquema más antigua que este builder sabe reconstruir con
@@ -127,6 +129,7 @@ export async function buildPdtpProgramContentSnapshot(
     scheduleMode: pdtpActivities.scheduleMode,
     scheduleClassificationStatus: pdtpActivities.scheduleClassificationStatus,
     recurrenceRule: pdtpActivities.recurrenceRule,
+    scheduleDefinition: pdtpActivities.scheduleDefinition,
     triggerType: pdtpActivities.triggerType,
     triggerDescription: pdtpActivities.triggerDescription,
     dueDays: pdtpActivities.dueDays,
@@ -158,6 +161,30 @@ export async function buildPdtpProgramContentSnapshot(
 
   const activityIds = activities.map((activity) => activity.id)
   const activityNumberById = new Map(activities.map((activity) => [activity.id, activity.n]))
+  const executionConfigs = schemaVersion >= 17 && activityIds.length > 0
+    ? await client.select({
+        activityId: pdtpActivityExecutionConfigs.activityId,
+        destinationConnectorKey: pdtpActivityExecutionConfigs.destinationConnectorKey,
+        accreditationBindingId: pdtpActivityExecutionConfigs.accreditationBindingId,
+        completionPolicy: pdtpActivityExecutionConfigs.completionPolicy,
+        evidenceRequired: pdtpActivityExecutionConfigs.evidenceRequired,
+        acceptedEvidenceKinds: pdtpActivityExecutionConfigs.acceptedEvidenceKinds,
+      }).from(pdtpActivityExecutionConfigs)
+        .where(inArray(pdtpActivityExecutionConfigs.activityId, activityIds))
+        .orderBy(asc(pdtpActivityExecutionConfigs.activityId))
+    : []
+  const reminderRules = schemaVersion >= 17 && activityIds.length > 0
+    ? await client.select({
+        activityId: pdtpActivityReminderRules.activityId,
+        offsetValue: pdtpActivityReminderRules.offsetValue,
+        offsetUnit: pdtpActivityReminderRules.offsetUnit,
+        recipientKind: pdtpActivityReminderRules.recipientKind,
+        recipientUserId: pdtpActivityReminderRules.recipientUserId,
+        isActive: pdtpActivityReminderRules.isActive,
+      }).from(pdtpActivityReminderRules)
+        .where(inArray(pdtpActivityReminderRules.activityId, activityIds))
+        .orderBy(asc(pdtpActivityReminderRules.activityId), asc(pdtpActivityReminderRules.offsetValue))
+    : []
   const schedules = activityIds.length > 0
     ? await client.select({
         activityId: pdtpActivitySchedule.activityId,
@@ -387,10 +414,11 @@ export async function buildPdtpProgramContentSnapshot(
     schemaVersion,
     program: schemaVersion >= 15 ? { ...legacyProgram, appliesToAllWorksites } : legacyProgram,
     approvalSteps,
-    activities: activities.map(({ id: _id, mechanism, objectiveId, ...activity }) => ({
+    activities: activities.map(({ id: _id, mechanism, objectiveId, scheduleDefinition, ...activity }) => ({
       ...activity,
       ...(schemaVersion >= 14 ? { mechanism } : {}),
       ...(schemaVersion >= 16 ? { objectiveCode: objectiveId ? objectiveCodeById.get(objectiveId) ?? null : null } : {}),
+      ...(schemaVersion >= 17 ? { scheduleDefinition } : {}),
     })),
     schedules: schedules.map(({ activityId, ...schedule }) => ({ activityNumber: activityNumberById.get(activityId), ...schedule })),
     views: sheets.map(({ id: _id, ...sheet }) => sheet),
@@ -422,6 +450,16 @@ export async function buildPdtpProgramContentSnapshot(
     } : {}),
     ...(schemaVersion >= 16 ? {
       objectives: objectives.map(({ id: _id, ...objective }) => objective),
+    } : {}),
+    ...(schemaVersion >= 17 ? {
+      executionConfigs: executionConfigs.map(({ activityId, ...config }) => ({
+        activityNumber: activityNumberById.get(activityId),
+        ...config,
+      })),
+      reminderRules: reminderRules.map(({ activityId, ...rule }) => ({
+        activityNumber: activityNumberById.get(activityId),
+        ...rule,
+      })),
     } : {}),
     activityWorksiteAdjustments: activityWorksiteAdjustments.map(({ activityId, ...adjustment }) => ({
       activityNumber: activityNumberById.get(activityId),

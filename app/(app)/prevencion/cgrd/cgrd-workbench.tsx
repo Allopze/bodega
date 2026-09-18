@@ -52,7 +52,7 @@ async function handle(promise: Promise<{ ok: boolean; message?: string }>, onDon
 
 export function CgrdWorkbench({
   worksites, selectedWorksiteId, committee, structure, members, matrices, latestMatrixThreats, meetings, agreements, workerCandidates,
-  canManageCommittee, canEditMatrix, canPublishMatrix, canManageMeetings,
+  canManageCommittee, canEditMatrix, canPublishMatrix, canManageMeetings, scheduledPanel,
 }: {
   worksites: Worksite[]
   selectedWorksiteId: string | null
@@ -68,6 +68,7 @@ export function CgrdWorkbench({
   canEditMatrix: boolean
   canPublishMatrix: boolean
   canManageMeetings: boolean
+  scheduledPanel?: React.ReactNode
 }) {
   const router = useRouter()
   const [constituteOpen, setConstituteOpen] = React.useState(false)
@@ -115,6 +116,8 @@ export function CgrdWorkbench({
             : ""}
         </p>
       )}
+
+      {scheduledPanel}
 
       {/* La matriz GRD es de la faena, no del comité: la N°80 aplica también
           a una faena con coordinador. Vive fuera del bloque del comité por eso. */}

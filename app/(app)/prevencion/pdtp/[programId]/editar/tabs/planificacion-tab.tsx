@@ -39,6 +39,7 @@ import {
   type PdtpSchedulePresetKey,
   type PdtpSchedulePresetParams,
 } from "@/lib/services/pdtp/schedule-presets"
+import { describePdtpDue } from "@/lib/services/pdtp/schedule-definition"
 import { useDebouncedAutosave } from "@/lib/hooks/use-debounced-autosave"
 import { useEnterAdvancesFields } from "@/lib/hooks/use-enter-advances-fields"
 import { Table, TableBody, TableCell, TableCellNum, TableFooter, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
@@ -81,6 +82,7 @@ export function ScheduleOverview({ activities, schedule, horizon = DEFAULT_SCHED
           const rule = activity.recurrenceRule as PdtpRecurrenceRule | null
           const cells = cellsByActivity.get(activity.id) ?? []
           const source = derivePdtpScheduleSource({ cells, scheduleMode: mode as "scheduled" | "on_demand" | "triggered", recurrenceRule: rule, horizon })
+          const dueLabel = describePdtpDue(activity.dueDays, activity.dueHours)
           const description = needsReview
             ? "La planilla de origen no indicó programación. Elige al editar si ocurre con frecuencia, cuando se necesite o ante un evento."
             : mode === "scheduled"
@@ -88,8 +90,8 @@ export function ScheduleOverview({ activities, schedule, horizon = DEFAULT_SCHED
               ? describePdtpRecurrence(rule, horizon)
               : `${cells.length} período(s) heredado(s); define una recurrencia para usar el constructor general.`
             : mode === "on_demand"
-              ? `Cuando se necesite${activity.dueDays !== null ? ` · plazo objetivo ${activity.dueDays} día(s)` : ""}.`
-              : `${activity.triggerDescription || "Evento pendiente de describir"}${activity.dueDays !== null ? ` · plazo ${activity.dueDays} día(s)` : ""}.`
+              ? `Cuando se necesite${dueLabel ? ` · plazo objetivo ${dueLabel}` : ""}.`
+              : `${activity.triggerDescription || "Evento pendiente de describir"}${dueLabel ? ` · plazo ${dueLabel}` : ""}.`
           const label = needsReview ? "Clasificación pendiente" : mode === "scheduled" ? "Con frecuencia" : mode === "on_demand" ? "A demanda" : "Por evento"
           // La matriz puede haberse ajustado a mano y dejar la recurrencia
           // desalineada: el modelo lo permite, así que hay que mostrarlo.

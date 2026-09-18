@@ -17,6 +17,7 @@ import { EppTabs } from "./epp-tabs"
 import { CoverageDataHealth } from "./coverage-data-health"
 
 import { Button } from "@/components/ui/button"
+import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "Requisitos de EPP" }
 
@@ -83,6 +84,7 @@ export default async function EppPreventivoPage() {
         worksites={worksites}
         canManage={canManage}
       />
+      <PdtpScheduledActivityPanelServer connectorKey="epp" />
     </PageContainer>
   )
 }

@@ -161,6 +161,9 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionInspectionTemplates)
   await inMemoryDb.delete(schema.workers)
   await inMemoryDb.delete(schema.worksites)
+  // `audit_log.user_id` referencia users y se acumula durante los casos de
+  // esta suite; debe retirarse antes de recrear los usuarios del fixture.
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.users)
 
   await inMemoryDb.insert(schema.users).values([

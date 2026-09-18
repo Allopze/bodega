@@ -20,6 +20,8 @@
 
 import type { AccreditationInput } from "@/lib/services/pdtp/accreditation"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
+import { recordPdtpTriggerEvent } from "@/lib/services/pdtp/trigger-events"
+import { logger } from "@/lib/logger"
 import { reportSubjectObligation } from "./obligation-kit"
 import { workerSubjectKey } from "./worker-lifecycle-connector"
 
@@ -165,6 +167,33 @@ export async function onWorkerOnboardingClosed(input: {
   responses: OnboardingResponse[]
   actorUserId: string
 }): Promise<void> {
+  // El cierre del acta es el productor durable del evento configurable
+  // `worker.worker_created`. Se registra antes de resolver el mapa histórico
+  // de actividades: aunque una revisión anual todavía no esté activa, el
+  // reconciliador podrá consumirlo después sin perder el hecho operativo.
+  // Este adaptador se invoca después del commit de SST; un fallo del libro de
+  // eventos no debe revertir un acta ya cerrada.
+  try {
+    await recordPdtpTriggerEvent({
+      connectorKey: "worker",
+      eventKey: "worker_created",
+      sourceType: "evaluacion_sst",
+      sourceId: input.evaluationId,
+      worksiteId: input.worksiteId,
+      occurredAt: occurredAtFromChileDate(input.fechaEvaluacion),
+      payload: {
+        workerId: input.workerId,
+        evaluationId: input.evaluationId,
+        resultadoFinal: input.resultadoFinal,
+      },
+    })
+  } catch (error) {
+    // La acreditación histórica sigue siendo el contrato principal de esta
+    // integración. El cron/reconciliador podrá registrar un error observable
+    // sin tumbar el cierre del acta.
+    logger.error({ err: error, evaluationId: input.evaluationId, worksiteId: input.worksiteId }, "[worker-onboarding-connector] No se pudo registrar el evento PDTP de ingreso.")
+  }
+
   // El filtro va DESPUÉS del mapeador y nunca dentro: la N°19 es un número
   // derivado de que estén la 15, la 18 y la 23, así que sacar la 15 antes de
   // esa cuenta dejaría la carpeta del trabajador sin acreditar.

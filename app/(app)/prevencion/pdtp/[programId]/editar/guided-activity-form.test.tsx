@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { GuidedActivityForm } from "./guided-activity-form"
 
-const { mockAdd, mockRefresh } = vi.hoisted(() => ({ mockAdd: vi.fn(), mockRefresh: vi.fn() }))
+const { mockSave, mockRefresh } = vi.hoisted(() => ({ mockSave: vi.fn(), mockRefresh: vi.fn() }))
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mockRefresh }) }))
-vi.mock("../../actions", () => ({ addPdtpActivityAction: mockAdd }))
+vi.mock("@/app/(app)/prevencion/pdtp/actions", () => ({ savePdtpProgramActivityAction: mockSave }))
 
 const RESPONSIBLES = [{ slug: "prevencionista", displayName: "Equipo de Prevención" }]
 const CATALOG = [{
@@ -21,7 +21,7 @@ const CATALOG = [{
 
 beforeEach(() => {
   window.localStorage.clear()
-  mockAdd.mockResolvedValue({ ok: true })
+  mockSave.mockResolvedValue({ ok: true })
 })
 
 afterEach(() => {
@@ -43,12 +43,14 @@ describe("GuidedActivityForm", () => {
     fireEvent.click(screen.getByRole("option", { name: /Verificar controles preventivos/ }))
     fireEvent.click(screen.getByRole("button", { name: "Guardar actividad" }))
 
-    await waitFor(() => expect(mockAdd).toHaveBeenCalledWith(expect.objectContaining({
+    await waitFor(() => expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({
       programId: "program-2027",
-      catalogActivityId: "catalog-test",
+      source: { kind: "catalog", catalogActivityId: "catalog-test" },
       scheduleMode: "scheduled",
       recurrenceRule: expect.objectContaining({ frequency: "monthly", plannedQuantity: 1 }),
-      sheetCodes: ["pdtp_general"],
+      scheduleDefinition: expect.objectContaining({ kind: "recurring", unit: "month" }),
+      executionConfig: expect.objectContaining({ destinationConnectorKey: "inspections" }),
+      sheetCode: "pdtp_general",
     })))
     expect(mockRefresh).toHaveBeenCalled()
   })
@@ -60,15 +62,62 @@ describe("GuidedActivityForm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Seleccionar actividad" }))
     fireEvent.click(screen.getByRole("option", { name: /Verificar controles preventivos/ }))
     fireEvent.change(screen.getByLabelText(/Evento que genera la obligación/), { target: { value: "Ingreso de un trabajador nuevo" } })
-    fireEvent.change(screen.getByLabelText("Plazo en días"), { target: { value: "2" } })
+    fireEvent.change(screen.getByLabelText("Plazo"), { target: { value: "2" } })
     fireEvent.click(screen.getByRole("button", { name: "Guardar actividad" }))
 
-    await waitFor(() => expect(mockAdd).toHaveBeenCalledWith(expect.objectContaining({
+    await waitFor(() => expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({
       scheduleMode: "triggered",
       recurrenceRule: null,
       triggerDescription: "Ingreso de un trabajador nuevo",
-      dueDays: 2,
-      indicatorMode: "closed_on_time",
+      scheduleDefinition: expect.objectContaining({ kind: "event", triggerConnectorKey: "worker" }),
+    })))
+  })
+
+  it("permite expresar el plazo de un evento en horas", async () => {
+    render(<GuidedActivityForm programId="program-2028" responsibleCatalog={RESPONSIBLES} catalogActivities={CATALOG} />)
+
+    fireEvent.click(screen.getByText("Cuando ocurra un evento"))
+    fireEvent.click(screen.getByRole("button", { name: "Seleccionar actividad" }))
+    fireEvent.click(screen.getByRole("option", { name: /Verificar controles preventivos/ }))
+    fireEvent.change(screen.getByLabelText(/Evento que genera la obligación/), { target: { value: "Ingreso de un trabajador nuevo" } })
+    fireEvent.click(document.getElementById("guided-due-unit")!)
+    fireEvent.click(screen.getByRole("option", { name: "horas" }))
+    fireEvent.change(screen.getByLabelText("Plazo"), { target: { value: "24" } })
+    fireEvent.click(screen.getByRole("button", { name: "Guardar actividad" }))
+
+    await waitFor(() => expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({
+      scheduleDefinition: expect.objectContaining({ kind: "event", dueValue: 24, dueUnit: "hour" }),
+    })))
+  })
+
+  it("preselecciona la actividad cuando Administración abre el creador anual", () => {
+    render(
+      <GuidedActivityForm
+        programId="program-2027"
+        responsibleCatalog={RESPONSIBLES}
+        catalogActivities={CATALOG}
+        initialCatalogActivityId="catalog-test"
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: /^Verificar controles preventivos$/ })).toBeDefined()
+    expect(screen.getByText("Verificar controles antes de iniciar la tarea")).toBeDefined()
+  })
+
+  it("permite configurar más de un recordatorio y conserva sus offsets", async () => {
+    render(<GuidedActivityForm programId="program-2027" responsibleCatalog={RESPONSIBLES} catalogActivities={CATALOG} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Seleccionar actividad" }))
+    fireEvent.click(screen.getByRole("option", { name: /Verificar controles preventivos/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Agregar recordatorio" }))
+    fireEvent.change(screen.getByLabelText("Desfase del recordatorio 2"), { target: { value: "0" } })
+    fireEvent.click(screen.getByRole("button", { name: "Guardar actividad" }))
+
+    await waitFor(() => expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({
+      reminderRules: [
+        { offsetValue: -5, offsetUnit: "day" },
+        { offsetValue: 0, offsetUnit: "day" },
+      ],
     })))
   })
 })

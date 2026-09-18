@@ -11,6 +11,7 @@ import { NuevaEvaluacionForm } from "./nueva-evaluacion-form"
 import { CHECKLIST_DEFINITIONS, isPersonEvaluationDefinition } from "@/lib/sst/definitions/index"
 import { CARGO_OPTIONS } from "@/lib/sst/cargos"
 import { buildNuevaEvaluacionScope } from "./nueva-evaluacion-page.helpers"
+import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "Nueva Evaluación SST" }
 
@@ -86,6 +87,7 @@ export default async function NuevaEvaluacionPage() {
         definiciones={definicionOptions}
         cargoOptions={CARGO_OPTIONS}
       />
+      <PdtpScheduledActivityPanelServer connectorKey="worker" />
     </PageContainer>
   )
 }

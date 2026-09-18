@@ -44,7 +44,7 @@ function previousPeriod(): { year: number; month: number } {
 }
 
 export function AlcotestWorkbench({
-  worksites, initialTests, initialDispatches, workers, equipment, canRegister, canDispatch,
+  worksites, initialTests, initialDispatches, workers, equipment, canRegister, canDispatch, scheduledPanel,
 }: {
   worksites: Worksite[]
   initialTests: AlcoholTest[]
@@ -53,6 +53,7 @@ export function AlcotestWorkbench({
   equipment: Equipment[]
   canRegister: boolean
   canDispatch: boolean
+  scheduledPanel?: React.ReactNode
 }) {
   const router = useRouter()
   const [registerOpen, setRegisterOpen] = React.useState(false)
@@ -125,6 +126,8 @@ export function AlcotestWorkbench({
           </div>
         )}
       </section>
+
+      {scheduledPanel}
 
       <RegisterTestDialog open={registerOpen} onOpenChange={setRegisterOpen} worksites={worksites} workers={workers} equipment={equipment} onSaved={() => router.refresh()} />
       <DispatchDialog open={dispatchOpen} onOpenChange={setDispatchOpen} worksites={worksites} onSaved={() => router.refresh()} />

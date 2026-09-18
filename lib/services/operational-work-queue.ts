@@ -18,7 +18,6 @@ import {
   pdtpActivityWorksiteExclusions,
   pdtpExecutionDeviations,
   pdtpExecutions,
-  pdtpObligations,
   pdtpProgramWorksites,
   pdtpPrograms,
   pdtpResponsibleCatalog,
@@ -62,6 +61,7 @@ import {
   type WorkPriority,
 } from "@/lib/work-queue"
 import { resolvePdtpFulfillmentTarget } from "@/lib/services/pdtp/fulfillment"
+import { pdtpExecutableInstancesQueueSql } from "@/lib/services/pdtp/executable-instances"
 import type { OperationalModule } from "@/lib/work-queue.types"
 
 const DEFAULT_PAGE_SIZE = 50
@@ -1071,19 +1071,13 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
           )
       `)
     }
-    if (canActOnQueueSource(session.user.permissions, "pdtp")) add("pdtp", sql`
-      SELECT 'pdtp_obligation'::text AS source_type, ${pdtpObligations.id} AS source_id, 'execute'::text AS action_key,
-        'pdtp'::text AS module, NULL::text AS code, 'Cumplir obligación PDTP'::text AS title, ''::text AS subtitle,
-        ${pdtpObligations.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name, ${pdtpObligations.status} AS status,
-        CASE WHEN ${pdtpObligations.status} = 'overdue' THEN 'Vencida' ELSE 'Pendiente' END AS status_label,
-        CASE WHEN ${pdtpObligations.status} = 'overdue' THEN 'high' ELSE 'normal' END AS priority, false AS blocked,
-        ${pdtpObligations.createdAt}::text AS created_at, LEFT(${pdtpObligations.dueAt}::text, 10) AS source_due_at,
-        ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-        '/prevencion/pdtp/obligaciones'::text AS href, 'Registrar cumplimiento'::text AS cta_label
-      FROM ${pdtpObligations}
-      INNER JOIN ${worksites} ON ${worksites.id} = ${pdtpObligations.worksiteId}
-      WHERE ${inScope(pdtpObligations.worksiteId)} AND ${pdtpObligations.status} IN ('pending', 'overdue', 'reported')
-    `)
+    // Las actividades configuradas con fecha/recurrencia y las obligaciones
+    // comparten una proyección autorizada. Así `/pendientes` y los paneles de
+    // los conectores no pueden divergir en permisos, asignaciones, estados ni
+    // destinos contextuales.
+    if (canActOnQueueSource(session.user.permissions, "pdtp")) {
+      add("pdtp", pdtpExecutableInstancesQueueSql(session, scope))
+    }
     // D11 (2026-08-12), Fase 0: la acción correctiva del PDTP se lee de CAPA,
     // igual que la rama `capa` de más abajo. Antes esta fuente leía el espejo
     // `pdtp_action_plan` y producía dos consecuencias:

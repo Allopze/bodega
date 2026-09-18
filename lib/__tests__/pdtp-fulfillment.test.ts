@@ -20,7 +20,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
-import { chileDateParts } from "@/lib/utils"
+import { chileDateParts, todayInChile } from "@/lib/utils"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -174,6 +174,73 @@ describe("recordPdtpFulfillmentEvent — el hecho no se pierde", () => {
     const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
       .where(eq(schema.pdtpExecutions.activityId, ACT_ID))
     expect(executions).toHaveLength(1)
+  })
+
+  it("acredita también la instancia programada correspondiente al hecho nativo", async () => {
+    await seedProgram("active")
+    const scheduledFor = todayInChile()
+    await seedActivity({
+      scheduleDefinition: {
+        version: 1, kind: "one_time", date: scheduledFor,
+      },
+    })
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpActivityExecutionConfigs).values({
+      id: "cfg-scheduled-fulfillment", activityId: ACT_ID, destinationConnectorKey: "campaigns",
+      completionPolicy: "source_completed", evidenceRequired: false, acceptedEvidenceKinds: [],
+      createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.pdtpScheduledInstances).values({
+      id: "scheduled-fulfillment-1", programId: PROGRAM_ID, activityId: ACT_ID, worksiteId: WS_ID,
+      scheduledFor, isoWeekYear: PROGRAM_YEAR, isoWeek: 38, plannedQuantity: 1,
+      status: "pending", idempotencyKey: `pdtp-scheduled:${ACT_ID}:${WS_ID}:${scheduledFor}`,
+      sourceMetadataJson: {}, createdAt: now, updatedAt: now,
+    })
+
+    const result = await recordPdtpFulfillmentEvent({
+      sourceType: "campana", sourceId: "campana-scheduled-1", worksiteId: WS_ID,
+      activityNumbers: [ACT_N], occurredAt: `${scheduledFor}T15:00:00.000Z`,
+    })
+    expect(result?.accredited).toHaveLength(1)
+
+    const [instance] = await inMemoryDb.select().from(schema.pdtpScheduledInstances)
+      .where(eq(schema.pdtpScheduledInstances.id, "scheduled-fulfillment-1"))
+    expect(instance?.status).toBe("completed")
+    expect(instance?.sourceMetadataJson).toMatchObject({ sourceRecordId: "campana-scheduled-1" })
+
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, ACT_ID))
+    expect(execution?.scheduledInstanceId).toBe("scheduled-fulfillment-1")
+  })
+
+  it("deja enviada la instancia cuando el origen todavía requiere aprobación", async () => {
+    await seedProgram("active")
+    const scheduledFor = todayInChile()
+    await seedActivity({
+      scheduleDefinition: { version: 1, kind: "one_time", date: scheduledFor },
+    })
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpActivityExecutionConfigs).values({
+      id: "cfg-scheduled-approval", activityId: ACT_ID, destinationConnectorKey: "inspections",
+      completionPolicy: "source_approved", evidenceRequired: false, acceptedEvidenceKinds: [],
+      createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.pdtpScheduledInstances).values({
+      id: "scheduled-approval-1", programId: PROGRAM_ID, activityId: ACT_ID, worksiteId: WS_ID,
+      scheduledFor, isoWeekYear: PROGRAM_YEAR, isoWeek: 38, plannedQuantity: 1,
+      status: "pending", idempotencyKey: `pdtp-scheduled:${ACT_ID}:${WS_ID}:${scheduledFor}`,
+      sourceMetadataJson: {}, createdAt: now, updatedAt: now,
+    })
+
+    await recordPdtpFulfillmentEvent({
+      sourceType: "inspeccion", sourceId: "inspection-approval-1", worksiteId: WS_ID,
+      activityNumbers: [ACT_N], occurredAt: `${scheduledFor}T15:00:00.000Z`,
+    })
+
+    const [instance] = await inMemoryDb.select().from(schema.pdtpScheduledInstances)
+      .where(eq(schema.pdtpScheduledInstances.id, "scheduled-approval-1"))
+    expect(instance?.status).toBe("submitted")
+    expect(instance?.sourceMetadataJson).toMatchObject({ sourceRecordId: "inspection-approval-1" })
   })
 
   it("persiste el objetivo normalizado y resuelve la instancia anual sin usar el número como fuente", async () => {

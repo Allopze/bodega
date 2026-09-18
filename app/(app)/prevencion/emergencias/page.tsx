@@ -13,6 +13,7 @@ import {
   listEmergencyWorksites,
 } from "@/lib/services/prevention-emergency"
 import { EmergencyList } from "./emergency-list"
+import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "Emergencias y simulacros" }
 
@@ -81,6 +82,7 @@ export default async function EmergenciasPage({ searchParams }: { searchParams: 
         quickFilter={quickFilter}
         counts={counts}
       />
+      <PdtpScheduledActivityPanelServer connectorKey="emergencies" />
     </PageContainer>
   )
 }

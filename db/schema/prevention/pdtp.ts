@@ -5,6 +5,7 @@ import { roles, users } from "../users"
 import { worksites } from "../worksites"
 import { preventionContainers } from "./containers"
 import { preventionEmergencyResources } from "./emergency"
+import type { PdtpScheduleDefinition } from "@/lib/services/pdtp/schedule-definition"
 
 export const pdtpPrograms = pgTable("pdtp_programs", {
   id:                    text("id").primaryKey(),
@@ -394,6 +395,11 @@ export const pdtpActivities = pgTable("pdtp_activities", {
   scheduleMode:        text("schedule_mode").notNull().default("scheduled"),
   scheduleClassificationStatus: text("schedule_classification_status").notNull().default("confirmed"),
   recurrenceRule:      jsonb("recurrence_rule"),
+  /** Fuente de verdad para actividades creadas con el calendario nuevo.
+   * `null` conserva filas antiguas hasta que el backfill las marque como
+   * `legacy_grid`; nunca se reconstruyen fechas históricas a partir de la
+   * grilla 1..4. */
+  scheduleDefinition:  jsonb("schedule_definition").$type<PdtpScheduleDefinition | null>(),
   triggerType:         text("trigger_type"),
   triggerDescription:  text("trigger_description"),
   dueDays:             integer("due_days"),
@@ -539,6 +545,26 @@ export const pdtpActivityExecutorAssignments = pgTable("pdtp_activity_executor_a
   index("pdtp_activity_executor_assignments_role_idx").on(table.roleId),
 ])
 
+/** Configuración anual del destino operacional y de su criterio de cierre. */
+export const pdtpActivityExecutionConfigs = pgTable("pdtp_activity_execution_configs", {
+  id:                     text("id").primaryKey(),
+  activityId:             text("activity_id").notNull(),
+  destinationConnectorKey: text("destination_connector_key").notNull(),
+  accreditationBindingId: text("accreditation_binding_id"),
+  completionPolicy:       text("completion_policy").notNull().default("manual_confirmed"),
+  evidenceRequired:       boolean("evidence_required").notNull().default(false),
+  acceptedEvidenceKinds:  jsonb("accepted_evidence_kinds").notNull().default([]),
+  createdAt:              timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:              timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("pdtp_activity_execution_configs_activity_unique").on(table.activityId),
+  index("pdtp_activity_execution_configs_connector_idx").on(table.destinationConnectorKey),
+  foreignKey({ columns: [table.activityId], foreignColumns: [pdtpActivities.id], name: "pdtp_exec_cfg_activity_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.accreditationBindingId], foreignColumns: [pdtpAccreditationBindings.id], name: "pdtp_exec_cfg_binding_fk" }).onDelete("set null"),
+  check("pdtp_activity_execution_configs_policy_check", sql`${table.completionPolicy} IN ('manual_confirmed', 'source_completed', 'source_approved', 'checklist_completed')`),
+  check("pdtp_activity_execution_configs_evidence_kinds_check", sql`jsonb_typeof(${table.acceptedEvidenceKinds}) = 'array'`),
+])
+
 /**
  * Decisión explícita sobre una diferencia entre una revisión anual y la Base
  * preventiva vigente. `kept` no altera el programa; `applied` es el registro
@@ -580,6 +606,44 @@ export const pdtpActivitySchedule = pgTable("pdtp_activity_schedule", {
   check("pdtp_activity_schedule_month_check", sql`${table.month} BETWEEN 1 AND 12`),
   check("pdtp_activity_schedule_week_check", sql`${table.week} BETWEEN 1 AND 4`),
   check("pdtp_activity_schedule_quantity_check", sql`${table.plannedQuantity} >= 0`),
+])
+
+/** Ocurrencia fechada e independiente de la definición anual. */
+export const pdtpScheduledInstances = pgTable("pdtp_scheduled_instances", {
+  id:                    text("id").primaryKey(),
+  programId:             text("program_id").notNull().references(() => pdtpPrograms.id, { onDelete: "cascade" }),
+  activityId:            text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "cascade" }),
+  worksiteId:            text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
+  scheduledFor:          date("scheduled_for", { mode: "string" }).notNull(),
+  isoWeekYear:           integer("iso_week_year").notNull(),
+  isoWeek:               integer("iso_week").notNull(),
+  plannedQuantity:       numeric("planned_quantity", { precision: 10, scale: 2, mode: "number" }).notNull().default(1),
+  status:                text("status").notNull().default("pending"),
+  responsibleSlug:       text("responsible_slug"),
+  responsibleUserId:     text("responsible_user_id").references(() => users.id, { onDelete: "set null" }),
+  responsibleRoleSnapshot: text("responsible_role_snapshot"),
+  startedAt:             timestamp("started_at", { withTimezone: true, mode: "string" }),
+  startedByUserId:       text("started_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  completedAt:           timestamp("completed_at", { withTimezone: true, mode: "string" }),
+  completedByUserId:     text("completed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  notApplicableReason:   text("not_applicable_reason"),
+  cancelledAt:           timestamp("cancelled_at", { withTimezone: true, mode: "string" }),
+  cancelledByUserId:     text("cancelled_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  cancellationReason:    text("cancellation_reason"),
+  idempotencyKey:        text("idempotency_key").notNull(),
+  sourceMetadataJson:    jsonb("source_metadata_json").notNull().default({}),
+  createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("pdtp_scheduled_instances_idempotency_unique").on(table.idempotencyKey),
+  uniqueIndex("pdtp_scheduled_instances_activity_worksite_date_unique").on(table.activityId, table.worksiteId, table.scheduledFor),
+  index("pdtp_scheduled_instances_program_period_idx").on(table.programId, table.scheduledFor),
+  index("pdtp_scheduled_instances_worksite_status_idx").on(table.worksiteId, table.status, table.scheduledFor),
+  check("pdtp_scheduled_instances_status_check", sql`${table.status} IN ('pending', 'in_progress', 'submitted', 'completed', 'not_applicable', 'cancelled')`),
+  check("pdtp_scheduled_instances_iso_week_check", sql`${table.isoWeek} BETWEEN 1 AND 53`),
+  check("pdtp_scheduled_instances_quantity_check", sql`${table.plannedQuantity} > 0`),
+  check("pdtp_scheduled_instances_not_applicable_reason_check", sql`${table.status} <> 'not_applicable' OR length(trim(COALESCE(${table.notApplicableReason}, ''))) >= 3`),
+  check("pdtp_scheduled_instances_cancel_reason_check", sql`${table.status} <> 'cancelled' OR length(trim(COALESCE(${table.cancellationReason}, ''))) >= 3`),
 ])
 
 /** Ocurrencia ejecutable de una actividad. Para `triggered` y `on_demand`
@@ -652,6 +716,7 @@ export const pdtpExecutions = pgTable("pdtp_executions", {
   sourceMetadataJson: jsonb("source_metadata_json").notNull().default({}),
   evidenceStatus:    text("evidence_status").notNull().default("pending"),
   obligationId:      text("obligation_id").references(() => pdtpObligations.id, { onDelete: "set null" }),
+  scheduledInstanceId: text("scheduled_instance_id"),
   createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
@@ -664,13 +729,82 @@ export const pdtpExecutions = pgTable("pdtp_executions", {
   index("pdtp_executions_worksite_period_idx").on(table.worksiteId, table.year, table.month),
   index("pdtp_executions_status_idx").on(table.status),
   uniqueIndex("pdtp_executions_idempotency_key_unique").on(table.idempotencyKey),
+  uniqueIndex("pdtp_executions_scheduled_instance_unique").on(table.scheduledInstanceId),
   index("pdtp_executions_import_batch_idx").on(table.importBatchId),
+  index("pdtp_executions_scheduled_instance_idx").on(table.scheduledInstanceId),
+  foreignKey({ columns: [table.scheduledInstanceId], foreignColumns: [pdtpScheduledInstances.id], name: "pdtp_exec_scheduled_instance_fk" }).onDelete("set null"),
   check("pdtp_executions_status_check", sql`${table.status} IN ('draft', 'submitted', 'approved', 'rejected')`),
   check("pdtp_executions_month_check", sql`${table.month} BETWEEN 1 AND 12`),
   check("pdtp_executions_week_check", sql`${table.week} BETWEEN 1 AND 4`),
   check("pdtp_executions_quantity_check", sql`${table.executedQuantity} >= 0`),
   check("pdtp_executions_origin_check", sql`${table.origin} IN ('manual', 'xlsx_import', 'integration')`),
   check("pdtp_executions_evidence_status_check", sql`${table.evidenceStatus} IN ('pending', 'provided', 'not_required', 'migrated_without_attachment')`),
+])
+
+/** Offset configurable para avisar una instancia fechada. Un valor negativo
+ * ocurre antes del vencimiento; cero el día/hora objetivo; positivo después. */
+export const pdtpActivityReminderRules = pgTable("pdtp_activity_reminder_rules", {
+  id:                text("id").primaryKey(),
+  activityId:        text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "cascade" }),
+  offsetValue:       integer("offset_value").notNull(),
+  offsetUnit:        text("offset_unit").notNull().default("day"),
+  recipientKind:     text("recipient_kind").notNull().default("responsible"),
+  recipientUserId:   text("recipient_user_id").references(() => users.id, { onDelete: "set null" }),
+  isActive:          boolean("is_active").notNull().default(true),
+  createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  index("pdtp_activity_reminder_rules_activity_idx").on(table.activityId, table.isActive),
+  check("pdtp_activity_reminder_rules_unit_check", sql`${table.offsetUnit} IN ('hour', 'day')`),
+  check("pdtp_activity_reminder_rules_recipient_check", sql`${table.recipientKind} IN ('responsible', 'role', 'user')`),
+  check("pdtp_activity_reminder_rules_user_recipient_check", sql`${table.recipientKind} = 'user' OR ${table.recipientUserId} IS NULL`),
+])
+
+export const pdtpReminderDeliveries = pgTable("pdtp_reminder_deliveries", {
+  id:                 text("id").primaryKey(),
+  scheduledInstanceId: text("scheduled_instance_id").notNull(),
+  reminderRuleId:     text("reminder_rule_id").notNull(),
+  recipientUserId:    text("recipient_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  status:             text("status").notNull().default("sent"),
+  deliveredAt:        timestamp("delivered_at", { withTimezone: true, mode: "string" }),
+  errorMessage:       text("error_message"),
+  createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("pdtp_reminder_deliveries_dedupe_unique").on(table.scheduledInstanceId, table.reminderRuleId, table.recipientUserId),
+  index("pdtp_reminder_deliveries_status_idx").on(table.status, table.createdAt),
+  foreignKey({ columns: [table.scheduledInstanceId], foreignColumns: [pdtpScheduledInstances.id], name: "pdtp_reminder_delivery_instance_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.reminderRuleId], foreignColumns: [pdtpActivityReminderRules.id], name: "pdtp_reminder_delivery_rule_fk" }).onDelete("cascade"),
+  check("pdtp_reminder_deliveries_status_check", sql`${table.status} IN ('sent', 'failed')`),
+])
+
+/** Libro durable de señales emitidas por conectores. La clave única permite
+ * reintentar un evento sin crear obligaciones idénticas. */
+export const pdtpTriggerEvents = pgTable("pdtp_trigger_events", {
+  id:                 text("id").primaryKey(),
+  connectorKey:       text("connector_key").notNull(),
+  eventKey:           text("event_key").notNull(),
+  sourceType:         text("source_type").notNull(),
+  sourceId:           text("source_id").notNull(),
+  // El libro es durable mientras la faena existe; si una faena se elimina de
+  // una base de pruebas o por una purga administrativa, sus señales ya no
+  // pueden reconciliarse y se eliminan junto con el alcance que las originó.
+  worksiteId:         text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
+  occurredAt:         timestamp("occurred_at", { withTimezone: true, mode: "string" }).notNull(),
+  idempotencyKey:     text("idempotency_key").notNull(),
+  payloadJson:        jsonb("payload_json").notNull().default({}),
+  status:             text("status").notNull().default("pending"),
+  obligationId:      text("obligation_id").references(() => pdtpObligations.id, { onDelete: "set null" }),
+  processedAt:        timestamp("processed_at", { withTimezone: true, mode: "string" }),
+  attempts:           integer("attempts").notNull().default(0),
+  lastError:          text("last_error"),
+  createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("pdtp_trigger_events_idempotency_unique").on(table.idempotencyKey),
+  index("pdtp_trigger_events_pending_idx").on(table.status, table.occurredAt),
+  index("pdtp_trigger_events_connector_event_idx").on(table.connectorKey, table.eventKey),
+  check("pdtp_trigger_events_status_check", sql`${table.status} IN ('pending', 'processed', 'ignored', 'error')`),
+  check("pdtp_trigger_events_attempts_check", sql`${table.attempts} >= 0`),
 ])
 
 /**
@@ -1263,13 +1397,33 @@ export const pdtpObjectivesRelations = relations(pdtpObjectives, ({ one, many })
 export const pdtpActivitiesRelations = relations(pdtpActivities, ({ one, many }) => ({
   program: one(pdtpPrograms, { fields: [pdtpActivities.programId], references: [pdtpPrograms.id] }),
   objective: one(pdtpObjectives, { fields: [pdtpActivities.objectiveId], references: [pdtpObjectives.id] }),
+  executionConfig: one(pdtpActivityExecutionConfigs, { fields: [pdtpActivities.id], references: [pdtpActivityExecutionConfigs.activityId] }),
   schedule: many(pdtpActivitySchedule),
+  scheduledInstances: many(pdtpScheduledInstances),
   executions: many(pdtpExecutions),
   obligations: many(pdtpObligations),
+  reminderRules: many(pdtpActivityReminderRules),
   sheetMemberships: many(pdtpSheetActivities),
   checklists: many(pdtpActivityChecklists),
   worksiteExclusions: many(pdtpActivityWorksiteExclusions),
   executorAssignments: many(pdtpActivityExecutorAssignments),
+}))
+
+export const pdtpActivityExecutionConfigsRelations = relations(pdtpActivityExecutionConfigs, ({ one }) => ({
+  activity: one(pdtpActivities, { fields: [pdtpActivityExecutionConfigs.activityId], references: [pdtpActivities.id] }),
+  accreditationBinding: one(pdtpAccreditationBindings, { fields: [pdtpActivityExecutionConfigs.accreditationBindingId], references: [pdtpAccreditationBindings.id] }),
+}))
+
+export const pdtpScheduledInstancesRelations = relations(pdtpScheduledInstances, ({ one, many }) => ({
+  program: one(pdtpPrograms, { fields: [pdtpScheduledInstances.programId], references: [pdtpPrograms.id] }),
+  activity: one(pdtpActivities, { fields: [pdtpScheduledInstances.activityId], references: [pdtpActivities.id] }),
+  worksite: one(worksites, { fields: [pdtpScheduledInstances.worksiteId], references: [worksites.id] }),
+  responsibleUser: one(users, { fields: [pdtpScheduledInstances.responsibleUserId], references: [users.id] }),
+  startedByUser: one(users, { fields: [pdtpScheduledInstances.startedByUserId], references: [users.id] }),
+  completedByUser: one(users, { fields: [pdtpScheduledInstances.completedByUserId], references: [users.id] }),
+  cancelledByUser: one(users, { fields: [pdtpScheduledInstances.cancelledByUserId], references: [users.id] }),
+  execution: one(pdtpExecutions),
+  reminderDeliveries: many(pdtpReminderDeliveries),
 }))
 
 export const pdtpActivityExecutorAssignmentsRelations = relations(pdtpActivityExecutorAssignments, ({ one }) => ({
@@ -1291,9 +1445,27 @@ export const pdtpExecutionsRelations = relations(pdtpExecutions, ({ one }) => ({
   activity: one(pdtpActivities, { fields: [pdtpExecutions.activityId], references: [pdtpActivities.id] }),
   worksite: one(worksites, { fields: [pdtpExecutions.worksiteId], references: [worksites.id] }),
   obligation: one(pdtpObligations, { fields: [pdtpExecutions.obligationId], references: [pdtpObligations.id] }),
+  scheduledInstance: one(pdtpScheduledInstances, { fields: [pdtpExecutions.scheduledInstanceId], references: [pdtpScheduledInstances.id] }),
   executedByUser: one(users, { fields: [pdtpExecutions.executedByUserId], references: [users.id] }),
   approvedByUser: one(users, { fields: [pdtpExecutions.approvedByUserId], references: [users.id] }),
   checklistInstance: one(pdtpExecutionChecklists),
+}))
+
+export const pdtpActivityReminderRulesRelations = relations(pdtpActivityReminderRules, ({ one, many }) => ({
+  activity: one(pdtpActivities, { fields: [pdtpActivityReminderRules.activityId], references: [pdtpActivities.id] }),
+  recipientUser: one(users, { fields: [pdtpActivityReminderRules.recipientUserId], references: [users.id] }),
+  deliveries: many(pdtpReminderDeliveries),
+}))
+
+export const pdtpReminderDeliveriesRelations = relations(pdtpReminderDeliveries, ({ one }) => ({
+  scheduledInstance: one(pdtpScheduledInstances, { fields: [pdtpReminderDeliveries.scheduledInstanceId], references: [pdtpScheduledInstances.id] }),
+  reminderRule: one(pdtpActivityReminderRules, { fields: [pdtpReminderDeliveries.reminderRuleId], references: [pdtpActivityReminderRules.id] }),
+  recipientUser: one(users, { fields: [pdtpReminderDeliveries.recipientUserId], references: [users.id] }),
+}))
+
+export const pdtpTriggerEventsRelations = relations(pdtpTriggerEvents, ({ one }) => ({
+  worksite: one(worksites, { fields: [pdtpTriggerEvents.worksiteId], references: [worksites.id] }),
+  obligation: one(pdtpObligations, { fields: [pdtpTriggerEvents.obligationId], references: [pdtpObligations.id] }),
 }))
 
 export const pdtpExecutionDeviationsRelations = relations(pdtpExecutionDeviations, ({ one }) => ({
@@ -1396,8 +1568,12 @@ export type PdtpObjective = typeof pdtpObjectives.$inferSelect
 export type NewPdtpObjective = typeof pdtpObjectives.$inferInsert
 export type PdtpActivity = typeof pdtpActivities.$inferSelect
 export type NewPdtpActivity = typeof pdtpActivities.$inferInsert
+export type PdtpActivityExecutionConfig = typeof pdtpActivityExecutionConfigs.$inferSelect
+export type NewPdtpActivityExecutionConfig = typeof pdtpActivityExecutionConfigs.$inferInsert
 export type PdtpActivitySchedule = typeof pdtpActivitySchedule.$inferSelect
 export type NewPdtpActivitySchedule = typeof pdtpActivitySchedule.$inferInsert
+export type PdtpScheduledInstance = typeof pdtpScheduledInstances.$inferSelect
+export type NewPdtpScheduledInstance = typeof pdtpScheduledInstances.$inferInsert
 export type PdtpExecution = typeof pdtpExecutions.$inferSelect
 export type NewPdtpExecution = typeof pdtpExecutions.$inferInsert
 export type PdtpExecutionDeviation = typeof pdtpExecutionDeviations.$inferSelect
@@ -1408,6 +1584,12 @@ export type PdtpObligation = typeof pdtpObligations.$inferSelect
 export type NewPdtpObligation = typeof pdtpObligations.$inferInsert
 export type PdtpObligationReminder = typeof pdtpObligationReminders.$inferSelect
 export type NewPdtpObligationReminder = typeof pdtpObligationReminders.$inferInsert
+export type PdtpActivityReminderRule = typeof pdtpActivityReminderRules.$inferSelect
+export type NewPdtpActivityReminderRule = typeof pdtpActivityReminderRules.$inferInsert
+export type PdtpReminderDelivery = typeof pdtpReminderDeliveries.$inferSelect
+export type NewPdtpReminderDelivery = typeof pdtpReminderDeliveries.$inferInsert
+export type PdtpTriggerEvent = typeof pdtpTriggerEvents.$inferSelect
+export type NewPdtpTriggerEvent = typeof pdtpTriggerEvents.$inferInsert
 export type PdtpChangeLog = typeof pdtpChangeLog.$inferSelect
 export type NewPdtpChangeLog = typeof pdtpChangeLog.$inferInsert
 export type PdtpSheet = typeof pdtpSheets.$inferSelect

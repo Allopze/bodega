@@ -6,6 +6,7 @@ import {
   pdtpExecutions,
   pdtpObligations,
   pdtpPrograms,
+  pdtpScheduledInstances,
   preventionCapaActions,
   preventionInspectionFindings,
   preventionInspectionRuns,
@@ -222,6 +223,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     indicatorMode: pdtpActivities.indicatorMode,
     subjectSource: pdtpActivities.subjectSource,
     subjectCapabilityCodes: pdtpActivities.subjectCapabilityCodes,
+    scheduleDefinition: pdtpActivities.scheduleDefinition,
   }).from(pdtpActivities)
     .where(eq(pdtpActivities.programId, program.id))
 
@@ -252,6 +254,40 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   // submitted siguen visibles en el tablero operativo y en aprobaciones.
   const approvedExecutionRows = executionRows.filter((row) => row.status === "approved")
   const effectiveExecutionRows = effectiveApprovedExecutionsByCell(approvedExecutionRows)
+
+  // Las actividades nuevas no usan la grilla histórica de cuatro bloques. Sus
+  // ocurrencias se leen como instancias independientes y se incorporan a los
+  // mismos acumuladores mensuales que el resto, manteniendo intacta la
+  // semántica de los programas firmados con grilla.
+  const scheduledActivityIds = activityRows
+    .filter((activity) => {
+      const definition = activity.scheduleDefinition
+      return definition && typeof definition === "object"
+        && (definition as { kind?: unknown }).kind !== "legacy_grid"
+    })
+    .map((activity) => activity.id)
+  const scheduledInstances = scheduledActivityIds.length > 0
+    ? await db.select({
+        id: pdtpScheduledInstances.id,
+        activityId: pdtpScheduledInstances.activityId,
+        worksiteId: pdtpScheduledInstances.worksiteId,
+        scheduledFor: pdtpScheduledInstances.scheduledFor,
+        plannedQuantity: pdtpScheduledInstances.plannedQuantity,
+        status: pdtpScheduledInstances.status,
+        completedAt: pdtpScheduledInstances.completedAt,
+        updatedAt: pdtpScheduledInstances.updatedAt,
+      }).from(pdtpScheduledInstances)
+        .where(and(
+          inArray(pdtpScheduledInstances.activityId, scheduledActivityIds),
+          worksiteId ? eq(pdtpScheduledInstances.worksiteId, worksiteId) : undefined,
+        ))
+    : []
+  const eligibleScheduledInstances = scheduledInstances.filter((instance) => {
+    if (!program.activatedAt) return true
+    // Las instancias materializadas antes del día de activación no deben
+    // inventar deuda en el indicador de una versión recién firmada.
+    return instance.scheduledFor >= program.activatedAt.slice(0, 10)
+  })
 
   // Modo de indicador por actividad: 'coverage' se calcula todo-o-nada; el resto
   // se capa en lo planificado (R3). El cómputo es por actividad-mes para poder
@@ -353,10 +389,24 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     const key = `${row.activityId}:${row.month}`
     plannedByActivityMonth.set(key, (plannedByActivityMonth.get(key) ?? 0) + row.plannedQuantity)
   }
+  for (const row of eligibleScheduledInstances) {
+    if (row.status === "not_applicable" || row.status === "cancelled") continue
+    const month = Number(row.scheduledFor.slice(5, 7))
+    if (month < 1 || month > 12) continue
+    const key = `${row.activityId}:${month}`
+    plannedByActivityMonth.set(key, (plannedByActivityMonth.get(key) ?? 0) + row.plannedQuantity)
+  }
   const executedByActivityMonth = new Map<string, number>()
   for (const row of effectiveExecutionRows) {
     const key = `${row.activityId}:${row.month}`
     executedByActivityMonth.set(key, (executedByActivityMonth.get(key) ?? 0) + row.executedQuantity)
+  }
+  for (const row of eligibleScheduledInstances) {
+    if (row.status !== "completed") continue
+    const month = Number(row.scheduledFor.slice(5, 7))
+    if (month < 1 || month > 12) continue
+    const key = `${row.activityId}:${month}`
+    executedByActivityMonth.set(key, (executedByActivityMonth.get(key) ?? 0) + row.plannedQuantity)
   }
 
   const closedOnTimeActivityIds = activityRows.filter((a) => a.indicatorMode === "closed_on_time").map((a) => a.id)
@@ -453,6 +503,13 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   const lastExecutionUpdatedAt = approvedExecutionRows.reduce<string | null>((latest, row) => {
     return !latest || row.updatedAt > latest ? row.updatedAt : latest
   }, null)
+  const latestScheduledCompletion = eligibleScheduledInstances
+    .filter((row) => row.status === "completed")
+    .reduce<string | null>((latest, row) => !latest || row.updatedAt > latest ? row.updatedAt : latest, null)
+  const finalLastExecutionUpdatedAt = latestScheduledCompletion
+    && (!lastExecutionUpdatedAt || latestScheduledCompletion > lastExecutionUpdatedAt)
+    ? latestScheduledCompletion
+    : lastExecutionUpdatedAt
 
   return {
     programId: program.id,
@@ -461,7 +518,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     monthly,
     quarterly,
     annual,
-    lastExecutionUpdatedAt,
+    lastExecutionUpdatedAt: finalLastExecutionUpdatedAt,
     subjectRosterIssues,
   }
 }

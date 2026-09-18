@@ -29,16 +29,19 @@
  * libro de intentos alrededor de esas dos funciones.
  */
 
-import { and, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray, lte } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   pdtpActivities,
+  pdtpActivityExecutionConfigs,
   pdtpActivityExecutorAssignments,
   pdtpCatalogActivities,
   pdtpActivityWorksiteExclusions,
   pdtpActivityWorksiteParams,
+  pdtpAccreditationBindings,
   pdtpFulfillmentEvents,
   pdtpFulfillmentEventTargets,
+  pdtpScheduledInstances,
   pdtpResponsibleCatalog,
   permissions,
   preventionCampaigns,
@@ -65,6 +68,9 @@ import {
 import { engancheDestinationFor } from "@/lib/services/pdtp-adapters/fulfillment-contract-2026"
 import { usablePdtpInstrumentNumbers } from "./instruments"
 import { legacyPdtpActivityNumberForCatalogId } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
+import { getPdtpExecutionConnector } from "./connectors"
+import { recordPdtpScheduledInstanceOutcome } from "./scheduled-execution"
+import { todayInChile } from "@/lib/utils"
 
 type QueryClient = DB | Tx
 
@@ -233,6 +239,124 @@ async function resolveEventTargets(eventId: string, result: AccreditationResult)
   }
 }
 
+const CHILE_CIVIL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+function fulfillmentCivilDate(occurredAt: string): string {
+  if (CHILE_CIVIL_DATE_PATTERN.test(occurredAt)) return occurredAt
+  const parsed = Date.parse(occurredAt)
+  if (!Number.isFinite(parsed)) return occurredAt.slice(0, 10)
+  return todayInChile(parsed)
+}
+
+function connectorAcceptsFulfillmentEvent(
+  connectorKey: string,
+  sourceType: AccreditationInput["sourceType"],
+  metadata: Record<string, unknown>,
+): boolean {
+  const connector = getPdtpExecutionConnector(connectorKey)
+  if (!connector) return false
+  const eventKey = typeof metadata.eventKey === "string" ? metadata.eventKey.trim() : ""
+  return connector.supportedEvents.some((event) => event.sourceType === sourceType && (!eventKey || event.key === eventKey))
+}
+
+/**
+ * Enlaza el hecho nativo que ya acreditó el ledger con la ocurrencia fechada
+ * que lo originó. La acreditación por actividad/número sigue siendo la fuente
+ * de verdad para `pdtp_executions`; esta costura sólo cambia el estado de la
+ * instancia y guarda la referencia verificable del registro fuente.
+ *
+ * La selección es deliberadamente una sola ocurrencia por actividad: la más
+ * reciente exigible en la faena y no posterior al hecho. Si el hecho vuelve a
+ * entrar, la ejecución idempotente ya estará enlazada y la instancia terminal
+ * no vuelve a ser candidata.
+ */
+export async function linkPdtpScheduledInstancesToFulfillment(
+  input: AccreditationInput,
+  result: AccreditationResult,
+  client: QueryClient = db,
+): Promise<void> {
+  if (result.accredited.length === 0) return
+
+  const activityIds = [...new Set(result.accredited.map((entry) => entry.activityId))]
+  const occurredDate = fulfillmentCivilDate(input.occurredAt)
+  const candidates = await client.select({
+    id: pdtpScheduledInstances.id,
+    activityId: pdtpScheduledInstances.activityId,
+    scheduledFor: pdtpScheduledInstances.scheduledFor,
+    status: pdtpScheduledInstances.status,
+    completionPolicy: pdtpActivityExecutionConfigs.completionPolicy,
+    destinationConnectorKey: pdtpActivityExecutionConfigs.destinationConnectorKey,
+  }).from(pdtpScheduledInstances)
+    .innerJoin(
+      pdtpActivityExecutionConfigs,
+      eq(pdtpActivityExecutionConfigs.activityId, pdtpScheduledInstances.activityId),
+    )
+    .where(and(
+      inArray(pdtpScheduledInstances.activityId, activityIds),
+      eq(pdtpScheduledInstances.worksiteId, input.worksiteId),
+      inArray(pdtpScheduledInstances.status, ["pending", "in_progress", "submitted"]),
+      lte(pdtpScheduledInstances.scheduledFor, occurredDate),
+    ))
+    .orderBy(desc(pdtpScheduledInstances.scheduledFor), desc(pdtpScheduledInstances.createdAt))
+
+  const metadata = input.metadata ?? {}
+  const sourceApproved = Boolean(input.autoApproveByUserId)
+    || metadata.sourceApproved === true
+    || metadata.approvalStatus === "approved"
+    || (typeof metadata.approvedAt === "string" && metadata.approvedAt.trim().length > 0)
+  const usedInstances = new Set<string>()
+
+  for (const accredited of result.accredited) {
+    const candidate = candidates.find((row) => (
+      row.activityId === accredited.activityId
+      && !usedInstances.has(row.id)
+      && connectorAcceptsFulfillmentEvent(row.destinationConnectorKey, input.sourceType, metadata)
+    ))
+    if (!candidate) continue
+
+    let action: "submit" | "complete" | null = null
+    if (candidate.completionPolicy === "source_completed") action = "complete"
+    else if (candidate.completionPolicy === "source_approved") action = sourceApproved ? "complete" : "submit"
+    else if (candidate.completionPolicy === "checklist_completed") {
+      action = metadata.checklistCompleted === true || metadata.checklistStatus === "completed"
+        ? "complete"
+        : "submit"
+    }
+    if (!action) continue
+
+    usedInstances.add(candidate.id)
+    try {
+      await recordPdtpScheduledInstanceOutcome({
+        instanceId: candidate.id,
+        action,
+        userId: input.autoApproveByUserId ?? null,
+        evidenceRef: input.evidenceRef ?? null,
+        completedAt: input.occurredAt,
+        sourceMetadata: {
+          ...metadata,
+          sourceRecordId: input.sourceId,
+          sourceType: input.sourceType,
+          sourceCompleted: true,
+          executionId: accredited.executionId,
+          ...(sourceApproved ? { sourceApproved: true, approvedAt: input.occurredAt } : {}),
+        },
+      }, client)
+    } catch (err) {
+      // El hecho nativo ya está guardado y acreditado. Una política de
+      // evidencia incompleta o una carrera de otro enlace no debe deshacerlo;
+      // queda en el libro durable para que un reintento posterior reconcilie
+      // la instancia sin duplicar la ejecución.
+      logger.warn({
+        err,
+        instanceId: candidate.id,
+        activityId: candidate.activityId,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+      }, "[pdtp-fulfillment] No se pudo enlazar la instancia programada al hecho nativo.")
+    }
+  }
+}
+
 /**
  * Deja el hecho anotado como `pending` **dentro de la transacción del módulo
  * fuente**, sin intentar acreditar.
@@ -334,6 +458,7 @@ export async function recordPdtpFulfillmentEvent(input: AccreditationInput & {
   try {
     const result = await accreditPdtpFromEvent(normalizedInput)
     await resolveEventTargets(eventId, result)
+    await linkPdtpScheduledInstancesToFulfillment(normalizedInput, result)
     const now = new Date().toISOString()
     await db.update(pdtpFulfillmentEvents).set({
       status: result.accredited.length > 0 ? "accredited" : "rejected",
@@ -1040,6 +1165,9 @@ export async function assertPdtpFulfillmentCoverage(
     worksiteRows,
     responsibleRows,
     executorRows,
+    executionConfigRows,
+    bindingRows,
+    roleRows,
     permissionsByRole,
     excludedByActivity,
     manualSubjectRows,
@@ -1057,6 +1185,17 @@ export async function assertPdtpFulfillmentCoverage(
     }).from(pdtpActivityExecutorAssignments)
       .innerJoin(roles, eq(roles.id, pdtpActivityExecutorAssignments.roleId))
       .where(inArray(pdtpActivityExecutorAssignments.activityId, activityIds)),
+    client.select({
+      activityId: pdtpActivityExecutionConfigs.activityId,
+      destinationConnectorKey: pdtpActivityExecutionConfigs.destinationConnectorKey,
+      accreditationBindingId: pdtpActivityExecutionConfigs.accreditationBindingId,
+    }).from(pdtpActivityExecutionConfigs)
+      .where(inArray(pdtpActivityExecutionConfigs.activityId, activityIds)),
+    client.select({
+      id: pdtpAccreditationBindings.id,
+      isActive: pdtpAccreditationBindings.isActive,
+    }).from(pdtpAccreditationBindings),
+    client.select({ id: roles.id, name: roles.name }).from(roles),
     permissionsByRoleId(client),
     excludedWorksitesByActivity(client, activityIds),
     client.select({
@@ -1073,6 +1212,9 @@ export async function assertPdtpFulfillmentCoverage(
     assigned.push({ id: row.roleId, label: row.roleLabel })
     executorRolesByActivity.set(row.activityId, assigned)
   }
+  const executionConfigByActivity = new Map(executionConfigRows.map((row) => [row.activityId, row]))
+  const activeBindingIds = new Set(bindingRows.filter((row) => row.isActive).map((row) => row.id))
+  const roleIdByName = new Map(roleRows.map((row) => [row.name, row.id]))
   const manualSubjectWorksitesByActivity = new Map<string, Set<string>>()
   for (const row of manualSubjectRows) {
     if ((row.expectedSubjectCount ?? 0) <= 0) continue
@@ -1090,6 +1232,83 @@ export async function assertPdtpFulfillmentCoverage(
         n: activity.n, activity: activity.activity, status: "permission_gap",
         reason: "Ninguno de sus responsables declarados mapea a un rol RBAC real ni a un operador de plataforma.",
       })
+      continue
+    }
+
+    // Las actividades creadas con el calendario nuevo no tienen un número
+    // histórico que pueda resolver `resolvePdtpFulfillmentTarget`. Su destino
+    // persistido es la fuente de verdad y se valida con el registro de
+    // conectores; el contrato 2026 queda reservado para las filas heredadas.
+    const executionConfig = executionConfigByActivity.get(activity.id)
+    const isConfiguredSchedule = Boolean(
+      executionConfig
+      && activity.scheduleDefinition
+      && typeof activity.scheduleDefinition === "object"
+      && (activity.scheduleDefinition as { kind?: unknown }).kind !== "legacy_grid",
+    )
+    if (isConfiguredSchedule) {
+      const connector = getPdtpExecutionConnector(executionConfig?.destinationConnectorKey)
+      if (!connector) {
+        issues.push({
+          n: activity.n, activity: activity.activity, status: "destination_not_configured",
+          reason: "La actividad nueva referencia un conector operativo que ya no está disponible.",
+        })
+        continue
+      }
+      if (executionConfig?.accreditationBindingId && !activeBindingIds.has(executionConfig.accreditationBindingId)) {
+        issues.push({
+          n: activity.n, activity: activity.activity, status: "config_required",
+          reason: "El instrumento seleccionado para la actividad nueva ya no está vigente.",
+          destinationModule: connector.label,
+          requiredPermission: connector.configurePermission,
+        })
+        continue
+      }
+      const assignedExecutors = executorRolesByActivity.get(activity.id) ?? []
+      const responsibleRoleIds = roles
+        .map((roleName) => roleIdByName.get(roleName))
+        .filter((roleId): roleId is string => Boolean(roleId))
+      const candidateExecutorIds = assignedExecutors.length > 0
+        ? assignedExecutors.map((role) => role.id)
+        : responsibleRoleIds
+      if (requiresExecutorConfiguration && candidateExecutorIds.length === 0) {
+        issues.push({
+          n: activity.n, activity: activity.activity, status: "executor_required",
+          reason: `Se acredita en ${connector.label}; falta asignar un rol con permiso para registrar el hecho.`,
+          destinationModule: connector.label,
+          requiredPermission: connector.executePermission,
+          suggestedExecutorRoleIds: [...permissionsByRole.entries()]
+            .filter(([, grants]) => grants.has(connector.executePermission))
+            .map(([roleId]) => roleId),
+        })
+        continue
+      }
+      if (requiresExecutorConfiguration && !candidateExecutorIds.some((roleId) => permissionsByRole.get(roleId)?.has(connector.executePermission))) {
+        issues.push({
+          n: activity.n, activity: activity.activity, status: "executor_permission_gap",
+          reason: `Se acredita en ${connector.label}, pero ningún responsable/ejecutor tiene el permiso operativo requerido.`,
+          destinationModule: connector.label,
+          requiredPermission: connector.executePermission,
+          executorRoleLabels: assignedExecutors.map((role) => role.label),
+          suggestedExecutorRoleIds: [...permissionsByRole.entries()]
+            .filter(([, grants]) => grants.has(connector.executePermission))
+            .map(([roleId]) => roleId),
+        })
+        continue
+      }
+      if (activity.indicatorMode === "coverage" && !activity.subjectSource) {
+        const excluded = excludedByActivity.get(activity.id) ?? new Set<string>()
+        const applicableWorksiteIds = worksiteIds.filter((id) => !excluded.has(id))
+        const configuredWorksiteIds = manualSubjectWorksitesByActivity.get(activity.id) ?? new Set<string>()
+        const missingWorksiteIds = applicableWorksiteIds.filter((id) => !configuredWorksiteIds.has(id))
+        if (missingWorksiteIds.length > 0) {
+          const names = missingWorksiteIds.map((id) => worksiteNameById.get(id) ?? id)
+          issues.push({
+            n: activity.n, activity: activity.activity, status: "decision_required",
+            reason: `Se mide por cobertura sin fuente automática y falta definir un padrón manual positivo en: ${names.join(", ")}.`,
+          })
+        }
+      }
       continue
     }
 

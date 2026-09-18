@@ -27,6 +27,8 @@ import { ReviewTab } from "./tabs/revision-tab"
 import { SheetsTab } from "./tabs/sheets-tab"
 import { ExecutorAssignmentsPanel } from "./executor-assignments-panel"
 import type { PdtpObjective } from "@/lib/services/prevention-pdtp"
+import type { PdtpCompletionPolicy, PdtpEvidenceKind } from "@/lib/services/pdtp/connectors"
+import type { pdtpActivityExecutionConfigs, pdtpActivityReminderRules } from "@/db/schema"
 
 export { ActividadesTab } from "./tabs/actividades-tab"
 export { MetadataTab, WorksiteScopePanel } from "./tabs/metadata-tab"
@@ -68,6 +70,8 @@ type PdtpBuilderTabsProps = {
   activityWorksiteExclusions: Array<{ activityId: string; worksiteId: string; reason: string }>
   activityWorksiteParams: WorksiteParam[]
   activityScheduleOverrides: ScheduleOverride[]
+  activityExecutionConfigs: Array<typeof pdtpActivityExecutionConfigs.$inferSelect>
+  activityReminderRules: Array<typeof pdtpActivityReminderRules.$inferSelect>
   baseComparison: (PdtpBaseComparison | PdtpRevisionDiff) | null
   coverageIssues: Array<{
     n: number
@@ -81,6 +85,17 @@ type PdtpBuilderTabsProps = {
   executorRoleOptions: Array<{ id: string; name: string; label: string; permissions: string[] }>
   revisionDiffDecisions: Array<{ activityIdentity: string; decision: "applied" | "kept"; decidedAt: string }>
   initialStep?: string
+  initialCatalogActivityId?: string
+  connectors: Array<{
+    key: string
+    label: string
+    moduleHref: string
+    supportedEvents: Array<{ key: string; label: string }>
+    supportedBindingSourceTypes: readonly string[]
+    supportedCompletionPolicies: readonly PdtpCompletionPolicy[]
+    supportedEvidenceKinds: readonly PdtpEvidenceKind[]
+  }>
+  instruments: Array<{ id: string; label: string; sourceType: string; catalogActivityId: string }>
 }
 
 const STEPS = [
@@ -111,12 +126,17 @@ export function PdtpBuilderTabs({
   activityWorksiteExclusions,
   activityWorksiteParams,
   activityScheduleOverrides,
+  activityExecutionConfigs,
+  activityReminderRules,
   baseComparison,
   coverageIssues,
   executorAssignments,
   executorRoleOptions,
   revisionDiffDecisions,
   initialStep,
+  initialCatalogActivityId,
+  connectors,
+  instruments,
 }: PdtpBuilderTabsProps) {
   const storageKey = `pdtp-builder-step:${program.id}`
   const requestedStep: Step | null = initialStep && isStep(initialStep) ? initialStep : null
@@ -188,6 +208,12 @@ export function PdtpBuilderTabs({
           responsibleCatalog={responsibleCatalog}
           catalogActivities={catalogActivities}
           generalViewCode={generalViewCode}
+          programYear={program.year}
+          programPeriodStart={program.periodStart}
+          programPeriodEnd={program.periodEnd}
+          connectors={connectors}
+          instruments={instruments}
+          initialCatalogActivityId={initialCatalogActivityId}
         />
         <section>
           <h3 className="mb-2 text-h3 text-[var(--color-text)]">Actividades guardadas ({activities.length})</h3>
@@ -201,6 +227,10 @@ export function PdtpBuilderTabs({
             responsibleCatalog={responsibleCatalog}
             catalogActivities={catalogActivities}
             objectives={objectives}
+            connectors={connectors}
+            instruments={instruments}
+            activityExecutionConfigs={activityExecutionConfigs}
+            activityReminderRules={activityReminderRules}
           />
         </section>
 

@@ -25,6 +25,7 @@
 
 import type { AccreditationInput } from "@/lib/services/pdtp/accreditation"
 import { recordPdtpFulfillmentEvent, recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
+import { recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
 import { pdtpCatalogActivityIdForLegacyNumber } from "./catalog-activities-2026"
 
 /** N°45: "Evaluación cuantitativas por mutual". */
@@ -91,6 +92,15 @@ export async function onExposureMeasurementRecorded(input: {
   measuredOn: string
   reportReference: string | null
 }): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "hygiene",
+    eventKey: "measurement_completed",
+    sourceType: "higiene",
+    sourceId: `medicion:${input.measurementId}`,
+    worksiteId: input.worksiteId,
+    occurredAt: occurredAtFromChileDate(input.measuredOn),
+    payload: { measurementId: input.measurementId, groupCode: input.groupCode, agentCode: input.agentCode, outcome: input.outcome },
+  })
   // El informe de la mutual, cuando viene, es evidencia real; un rótulo
   // descriptivo no lo es. El motor decide solo mirando el prefijo, así que acá
   // basta con preferir la referencia sobre el rótulo.

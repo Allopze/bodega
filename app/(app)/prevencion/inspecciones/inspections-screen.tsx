@@ -1,4 +1,7 @@
 import { redirect } from "next/navigation"
+import { and, eq } from "drizzle-orm"
+import { db } from "@/db"
+import { pdtpAccreditationBindings } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
@@ -20,6 +23,7 @@ import { buildInspectionExportQuery, parseInspectionListQuery } from "@/lib/prev
 import { inspectionProgramIsOverdue } from "@/lib/prevention/inspections"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 /**
  * Realizar una inspección: la bandeja de ejecuciones del motor.
@@ -44,6 +48,27 @@ export async function InspectionsScreen({ searchParams }: {
     permissions: session.user.permissions,
   }
   const canExecute = session.user.permissions.includes("prevention:inspections:execute")
+
+  const queryValue = (value: string | string[] | undefined): string | undefined => {
+    const candidate = Array.isArray(value) ? value[0] : value
+    return candidate?.trim() || undefined
+  }
+  const contextualWorksiteId = queryValue(searchParams?.faena)
+  const contextualInstanceId = queryValue(searchParams?.instancia)
+  const contextualInstrumentId = queryValue(searchParams?.instrumento)
+  // Los enlaces de una instancia llevan el binding PDTP, no el ID interno de
+  // la plantilla. Resolverlo aquí permite que el formulario nativo siga siendo
+  // la única fuente de creación y, al mismo tiempo, llegue con el instrumento
+  // correcto preseleccionado.
+  const [contextualBinding] = contextualInstrumentId
+    ? await db.select({ sourceType: pdtpAccreditationBindings.sourceType, sourceId: pdtpAccreditationBindings.sourceId, eventType: pdtpAccreditationBindings.eventType })
+      .from(pdtpAccreditationBindings)
+      .where(and(eq(pdtpAccreditationBindings.id, contextualInstrumentId), eq(pdtpAccreditationBindings.isActive, true)))
+      .limit(1)
+    : []
+  const contextualTemplateId = contextualBinding?.sourceType === "inspeccion" && contextualBinding.eventType === "execute"
+    ? contextualBinding.sourceId
+    : undefined
 
   const { page, filter } = parseInspectionListQuery(searchParams ?? {})
   const exportQuery = buildInspectionExportQuery(filter)
@@ -93,6 +118,9 @@ export async function InspectionsScreen({ searchParams }: {
               assignees={assignees}
               subjectsByWorksite={subjectsByWorksite}
               exportQuery={exportQuery}
+              initialTemplateId={contextualTemplateId}
+              initialWorksiteId={contextualWorksiteId}
+              initialOpen={Boolean(contextualInstanceId)}
             />
           </>
         }
@@ -132,6 +160,7 @@ export async function InspectionsScreen({ searchParams }: {
         assignees={assignees}
         subjectsByWorksite={subjectsByWorksite}
       />
+      <PdtpScheduledActivityPanelServer connectorKey="inspections" />
     </PageContainer>
   )
 }

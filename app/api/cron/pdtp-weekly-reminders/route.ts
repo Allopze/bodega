@@ -12,6 +12,9 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { runPdtpWeeklyReminders, runPdtpActionPlanVencidasReminders, runPdtpObligationReminders, runPdtpSignaturePendingReminders } from "@/lib/services/prevention-pdtp"
 import { reconcilePdtpFulfillmentEvents } from "@/lib/services/pdtp/fulfillment"
+import { reconcilePdtpScheduledInstances } from "@/lib/services/pdtp/scheduled-instances"
+import { reconcilePdtpTriggerEvents } from "@/lib/services/pdtp/trigger-events"
+import { runPdtpScheduledInstanceReminders } from "@/lib/services/pdtp/scheduled-reminders"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
@@ -45,6 +48,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       // Actos segregados esperando una firma que nadie dio: es el modo de falla
       // de la N°35, la N°43, la N°80 y la N°83, y hasta ahora era silencioso.
       signatures: await runPdtpSignaturePendingReminders(),
+      // Las ocurrencias se generan al activar y se reconcilian acá para cubrir
+      // nuevas faenas o una corrida interrumpida. Las claves únicas hacen que
+      // repetir el cron sea seguro.
+      scheduledInstances: await reconcilePdtpScheduledInstances({ limit: 100 }),
+      triggerEvents: await reconcilePdtpTriggerEvents({ limit: 200 }),
+      scheduledReminders: await runPdtpScheduledInstanceReminders(),
       // Retoma lo que quedó en el libro de cumplimiento (`pending`/`error`) sin
       // esperar a la activación de un programa o al script manual del deploy.
       // Candado distinto anidado dentro del de arriba: es seguro porque
@@ -57,9 +66,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       reconciled: await withCronLock("pdtp-fulfillment-reconcile", () => reconcilePdtpFulfillmentEvents({ limit: 200 })),
     }))
     if ("skipped" in chained) return NextResponse.json({ ok: true, ...chained })
-    const { result, vencidas, obligations, signatures, reconciled } = chained
-    logger.info("[cron/pdtp-weekly-reminders] Completed", { ...result, vencidas, obligations, signatures, reconciled })
-    return NextResponse.json({ ok: true, ...result, vencidas, obligations, signatures, reconciled })
+    const { result, vencidas, obligations, signatures, scheduledInstances, triggerEvents, scheduledReminders, reconciled } = chained
+    logger.info("[cron/pdtp-weekly-reminders] Completed", { ...result, vencidas, obligations, signatures, scheduledInstances, triggerEvents, scheduledReminders, reconciled })
+    return NextResponse.json({ ok: true, ...result, vencidas, obligations, signatures, scheduledInstances, triggerEvents, scheduledReminders, reconciled })
   } catch (err) {
     // H-B11: en producción, no exponer err.message al cliente porque
     // puede filtrar paths internos, queries SQL, etc. Loguear el

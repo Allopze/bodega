@@ -21,11 +21,14 @@ import { and, asc, eq, gte, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
+  pdtpAccreditationBindings,
   pdtpActivityWorksiteExclusions,
+  pdtpActivityExecutionConfigs,
   pdtpChangeLog,
   pdtpDocumentHistory,
   pdtpResponsibleCatalog,
   pdtpRoleLegendEntries,
+  pdtpScheduledInstances,
   pdtpSheetActivities,
   pdtpSheets,
   users,
@@ -39,6 +42,8 @@ import { listPdtpObjectives } from "./objectives"
 import { filterPdtpRowsFromActivation } from "./period"
 import { getPdtpProgram } from "./programs"
 import { listPdtpProgramSheets } from "./sheet-management"
+import { derivePdtpScheduledInstanceStatus } from "./scheduled-instances"
+import { getPdtpExecutionConnector } from "./connectors"
 import { MONTH_LABELS } from "./constants"
 import { pdtpDeviationKindLabel } from "@/lib/prevention/pdtp"
 import { chileDateParts, todayInChile } from "@/lib/utils"
@@ -214,6 +219,25 @@ export type PdtpRe36DeviationRow = {
   recordedAt: string
 }
 
+/**
+ * Ocurrencia de una actividad creada con el calendario nuevo. Se mantiene
+ * separada de las celdas 1..4 del RE-36 histórico: una fila representa una
+ * ejecución concreta y conserva su semana ISO, estado y resultado.
+ */
+export type PdtpRe36IsoCalendarRow = {
+  isoWeekYear: number
+  isoWeek: number
+  scheduledFor: string
+  activity: string
+  responsible: string
+  destination: string
+  instrument: string
+  plannedQuantity: number
+  status: string
+  completedAt: string | null
+  result: string
+}
+
 export type PdtpRe36Document = {
   program: {
     id: string
@@ -275,10 +299,102 @@ export type PdtpRe36Document = {
    * (y por esa vía en `changeControl`), no en el anexo del documento vigente.
    */
   deviations: PdtpRe36DeviationRow[]
+  /** Instancias de las actividades nuevas, opcional para no alterar cierres
+   * históricos que sólo contienen el modelo RE-36 legado. */
+  isoCalendar?: PdtpRe36IsoCalendarRow[]
 }
 
 type ActivityRow = typeof pdtpActivities.$inferSelect
 type SheetRow = typeof pdtpSheets.$inferSelect
+
+const ISO_CALENDAR_STATUS_LABELS: Record<string, string> = {
+  pending: "Pendiente",
+  in_progress: "En curso",
+  submitted: "Enviada",
+  completed: "Cumplida",
+  completed_late: "Cumplida fuera de plazo",
+  overdue: "Vencida",
+  not_applicable: "No aplica",
+  cancelled: "Cancelada",
+}
+
+function isoCalendarResult(sourceMetadataJson: unknown): string {
+  if (!sourceMetadataJson || typeof sourceMetadataJson !== "object" || Array.isArray(sourceMetadataJson)) return "—"
+  const metadata = sourceMetadataJson as Record<string, unknown>
+  const executionId = typeof metadata.executionId === "string" ? metadata.executionId.trim() : ""
+  if (executionId) return `Registro ${executionId}`
+  const sourceRecordId = typeof metadata.sourceRecordId === "string" ? metadata.sourceRecordId.trim() : ""
+  if (sourceRecordId) return `Fuente ${sourceRecordId}`
+  const evidenceRef = typeof metadata.evidenceRef === "string" ? metadata.evidenceRef.trim() : ""
+  if (evidenceRef) return `Evidencia ${evidenceRef}`
+  const outcomeReason = typeof metadata.outcomeReason === "string" ? metadata.outcomeReason.trim() : ""
+  return outcomeReason || "—"
+}
+
+function canonicalPdtpTimestamp(value: string | null): string | null {
+  if (!value) return null
+  const direct = toCanonicalIso(value)
+  if (direct) return direct
+  // PGlite/PostgreSQL may return `YYYY-MM-DD HH:MM:SS-04`; normalise the
+  // separator and the short offset before asking the platform date parser.
+  const postgresTimestamp = value.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00")
+  const parsed = new Date(postgresTimestamp)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+}
+
+async function listPdtpRe36IsoCalendar(programId: string, worksiteId: string): Promise<PdtpRe36IsoCalendarRow[]> {
+  const rows = await db.select({
+    isoWeekYear: pdtpScheduledInstances.isoWeekYear,
+    isoWeek: pdtpScheduledInstances.isoWeek,
+    scheduledFor: pdtpScheduledInstances.scheduledFor,
+    status: pdtpScheduledInstances.status,
+    completedAt: pdtpScheduledInstances.completedAt,
+    plannedQuantity: pdtpScheduledInstances.plannedQuantity,
+    sourceMetadataJson: pdtpScheduledInstances.sourceMetadataJson,
+    responsibleSlug: pdtpScheduledInstances.responsibleSlug,
+    responsibleRoleSnapshot: pdtpScheduledInstances.responsibleRoleSnapshot,
+    responsibleUserName: users.name,
+    activity: pdtpActivities.activity,
+    destinationConnectorKey: pdtpActivityExecutionConfigs.destinationConnectorKey,
+    bindingSourceType: pdtpAccreditationBindings.sourceType,
+    bindingSourceId: pdtpAccreditationBindings.sourceId,
+    bindingEventType: pdtpAccreditationBindings.eventType,
+  }).from(pdtpScheduledInstances)
+    .innerJoin(pdtpActivities, eq(pdtpActivities.id, pdtpScheduledInstances.activityId))
+    .leftJoin(users, eq(users.id, pdtpScheduledInstances.responsibleUserId))
+    .leftJoin(pdtpActivityExecutionConfigs, eq(pdtpActivityExecutionConfigs.activityId, pdtpScheduledInstances.activityId))
+    .leftJoin(pdtpAccreditationBindings, eq(pdtpAccreditationBindings.id, pdtpActivityExecutionConfigs.accreditationBindingId))
+    .where(and(
+      eq(pdtpScheduledInstances.programId, programId),
+      eq(pdtpScheduledInstances.worksiteId, worksiteId),
+    ))
+    .orderBy(asc(pdtpScheduledInstances.scheduledFor), asc(pdtpActivities.n), asc(pdtpScheduledInstances.id))
+
+  return rows.map((row) => {
+    const derivedStatus = derivePdtpScheduledInstanceStatus({
+      status: row.status,
+      scheduledFor: row.scheduledFor,
+      completedAt: row.completedAt ? (canonicalPdtpTimestamp(row.completedAt) ?? row.completedAt) : null,
+    })
+    const connector = getPdtpExecutionConnector(row.destinationConnectorKey)
+    const bindingLabel = row.bindingSourceType && row.bindingSourceId && row.bindingEventType
+      ? `${row.bindingSourceType} · ${row.bindingSourceId} · ${row.bindingEventType}`
+      : null
+    return {
+      isoWeekYear: row.isoWeekYear,
+      isoWeek: row.isoWeek,
+      scheduledFor: row.scheduledFor,
+      activity: row.activity,
+      responsible: row.responsibleUserName ?? row.responsibleRoleSnapshot ?? row.responsibleSlug ?? "—",
+      destination: connector?.label ?? row.destinationConnectorKey ?? "—",
+      instrument: bindingLabel ?? "—",
+      plannedQuantity: row.plannedQuantity,
+      status: ISO_CALENDAR_STATUS_LABELS[derivedStatus] ?? derivedStatus,
+      completedAt: row.completedAt ? (canonicalPdtpTimestamp(row.completedAt) ?? row.completedAt) : null,
+      result: isoCalendarResult(row.sourceMetadataJson),
+    }
+  })
+}
 
 /**
  * Construye el documento RE-36 completo de un programa para una faena. No
@@ -594,7 +710,10 @@ export async function buildPdtpRe36Document(input: {
     ? buildPerPersonSheets(sheets, assigneeRows)
     : sheets
 
-  const indicators = await getPdtpComplianceIndicators(input.programId, input.worksiteId)
+  const [indicators, isoCalendar] = await Promise.all([
+    getPdtpComplianceIndicators(input.programId, input.worksiteId),
+    listPdtpRe36IsoCalendar(input.programId, input.worksiteId),
+  ])
   if (!indicators) throw new Error("No fue posible calcular los indicadores de cumplimiento del programa.")
 
   const platformIndicators = {
@@ -812,6 +931,7 @@ export async function buildPdtpRe36Document(input: {
       eGte1: "E ≥ 1: se ejecutó (bandera de cumplimiento o conteo de registros, según la actividad).",
     },
     deviations,
+    isoCalendar,
   }
 }
 
