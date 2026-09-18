@@ -8,23 +8,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { SavedViews } from "@/components/ui/saved-views"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
+import { hasServerListFilters, SERVER_LIST_FILTER_PARAMS } from "./server-list-filter-params"
 
 export interface ServerListFilterOption {
   value: string
   label: string
 }
 
-export const SERVER_LIST_FILTER_PARAMS = [
-  "q", "estado", "urgencia", "faena", "proveedor", "factura", "desde", "hasta", "solicitud",
-] as const
-
-interface SearchParamsLike {
-  get(name: string): string | null
-}
-
-export function hasServerListFilters(searchParams: SearchParamsLike): boolean {
-  return SERVER_LIST_FILTER_PARAMS.some((key) => Boolean(searchParams.get(key)))
-}
+/* La lista de parámetros y su predicado viven fuera de este archivo porque
+ * también los usa código de servidor, y todo export de un módulo `"use client"`
+ * llega al servidor como referencia de cliente, no como el valor
+ * (ver `server-list-filter-params.ts`). Se reexportan para no mover los
+ * imports del lado cliente, que son la mayoría. */
+export { SERVER_LIST_FILTER_PARAMS, hasServerListFilters } from "./server-list-filter-params"
 
 interface ServerListFiltersProps {
   searchPlaceholder?: string
