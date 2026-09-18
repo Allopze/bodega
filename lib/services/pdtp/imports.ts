@@ -22,6 +22,7 @@ import {
   preventionPdtpSourceLinks,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { countOf } from "@/lib/utils"
 import {
   extractPdtpCatalogFromWorkbook,
   type PdtpCatalog,
@@ -298,11 +299,11 @@ export async function stagePdtpXlsxImport(input: {
   }
   if (scheduleClassificationsPending > 0) {
     warnings.push(
-      `${scheduleClassificationsPending} actividad(es) no tienen planificación P. ` +
+      `${countOf(scheduleClassificationsPending, "actividad", "actividades")} ${scheduleClassificationsPending === 1 ? "no tiene" : "no tienen"} planificación P. ` +
       "Quedarán pendientes de clasificar; no se asumirá automáticamente que son a demanda.",
     )
   }
-  if (executions.length > 0) warnings.push(`${executions.length} celda(s) E requieren seleccionar una faena y aceptar su migración sin evidencia adjunta.`)
+  if (executions.length > 0) warnings.push(`${countOf(executions.length, "celda E", "celdas E")} ${executions.length === 1 ? "requiere" : "requieren"} seleccionar una faena y aceptar su migración sin evidencia adjunta.`)
   const batchId = `pdtp-import-${nanoid()}`
   const summary: PdtpImportPreview = {
     batchId,
@@ -556,7 +557,7 @@ export async function applyPdtpImportBatch(input: {
     }
   }
   if (stored.summary.blockingErrors.length > 0 || unresolvedCatalog.length > 0) {
-    throw new Error(`El lote tiene errores bloqueantes: ${[...stored.summary.blockingErrors, ...(unresolvedCatalog.length ? [`${unresolvedCatalog.length} actividad(es) candidata(s) siguen sin publicar.`] : [])].join(" ")}`)
+    throw new Error(`El lote tiene errores bloqueantes: ${[...stored.summary.blockingErrors, ...(unresolvedCatalog.length ? [`${countOf(unresolvedCatalog.length, "actividad candidata", "actividades candidatas")} ${unresolvedCatalog.length === 1 ? "sigue" : "siguen"} sin publicar.`] : [])].join(" ")}`)
   }
 
   const now = new Date().toISOString()

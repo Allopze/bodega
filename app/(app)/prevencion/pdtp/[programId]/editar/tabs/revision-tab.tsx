@@ -8,6 +8,7 @@ import type { pdtpPrograms } from "@/db/schema"
 import type { PdtpChecklistTemplate } from "@/lib/services/prevention-pdtp"
 import type { PdtpBaseComparison, PdtpRevisionDiff } from "@/lib/services/prevention-pdtp"
 import { RevisionDiffDecisions } from "../revision-diff-decisions"
+import { countOf, pluralize } from "@/lib/utils"
 
 import type { PdtpActivityRow } from "./types"
 
@@ -41,7 +42,7 @@ export function ReviewTab({
   const missingEvidence = activeActivities.filter((activity) => !activity.evidenceRequirement && !checklists.some((checklist) => checklist.activityId === activity.id)).length
   const checks = [
     { label: "Datos básicos", ok: !!program.title.trim(), detail: program.title },
-    { label: "Actividades", ok: activeActivities.length > 0, detail: activeActivities.length > 0 ? `${activeActivities.length} activa(s)` : "Agrega al menos una actividad activa" },
+    { label: "Actividades", ok: activeActivities.length > 0, detail: activeActivities.length > 0 ? `${activeActivities.length} ${pluralize(activeActivities.length, "activa")}` : "Agrega al menos una actividad activa" },
     { label: "Clasificación temporal", ok: unresolvedScheduleClassification === 0, detail: unresolvedScheduleClassification === 0 ? "Todas tienen una modalidad confirmada" : `${unresolvedScheduleClassification} requieren decidir cuándo se realizan` },
     { label: "Programación", ok: missingSchedule === 0 && missingTrigger === 0, detail: missingSchedule + missingTrigger === 0 ? "Todas explican cuándo se realizan" : `${missingSchedule + missingTrigger} requieren completar su regla` },
     { label: "Evidencia", ok: missingEvidence === 0, detail: missingEvidence === 0 ? "Requisitos definidos" : `${missingEvidence} sin requisito explícito o checklist` },
@@ -108,7 +109,7 @@ function BaseComparisonPanel({
           </p>
         </div>
         {comparison.missingActivities > 0 && (
-          <MetaBadge meta={{ label: `${comparison.missingActivities} eliminada(s) físicamente`, variant: "danger" }} />
+          <MetaBadge meta={{ label: countOf(comparison.missingActivities, "eliminada físicamente", "eliminadas físicamente"), variant: "danger" }} />
         )}
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-3">
@@ -215,7 +216,7 @@ export function AudiencePreviewPanel({
         </p>
       ) : (
         <p className="mt-3 text-sm text-[var(--color-text)]">
-          {filtered.length} de {activities.length} actividad(es) visibles para esta combinación.
+          {filtered.length} de {countOf(activities.length, "actividad visible", "actividades visibles")} para esta combinación.
         </p>
       )}
       {filtered.length > 0 && (filtered.length !== activities.length) && (

@@ -11,6 +11,7 @@ import {
   type PdtpScheduleMode,
 } from "./recurrence"
 import { presetToCells, presetToRule, type PdtpSchedulePresetKey, type PdtpSchedulePresetParams } from "./schedule-presets"
+import { countOf, pluralize } from "@/lib/utils"
 
 export type PdtpScheduleBatchSkipReason =
   | "manual_schedule_would_be_replaced"
@@ -237,7 +238,7 @@ export async function applyPdtpSchedulePresetToActivities(
       const knownConflicts = skippedConflicts.filter((skip) =>
         skip.reason === "manual_schedule_would_be_replaced" || skip.reason === "preset_produced_no_cells").length
       const notEligible = skippedConflicts.length - knownConflicts
-      const note = `Preset "${input.preset}" (${input.mode === "fill_empty" ? "solo vacías" : "reemplazo"}) aplicado a ${applied.length} actividad(es); ${knownConflicts} en conflicto conocido; ${notEligible} no elegible(s) (retirada o modo no planificable).`
+      const note = `Preset "${input.preset}" (${input.mode === "fill_empty" ? "solo vacías" : "reemplazo"}) aplicado a ${countOf(applied.length, "actividad", "actividades")}; ${knownConflicts} en conflicto conocido; ${notEligible} no ${pluralize(notEligible, "elegible", "elegibles")} (retirada o modo no planificable).`
       await addPdtpChangeLogEntry(
         input.programId,
         program.version,

@@ -30,7 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ChartBar, DotsThree, DownloadSimple, ListChecks, LockKey, PencilSimple } from "@phosphor-icons/react/dist/ssr"
-import { formatDateSafe } from "@/lib/utils"
+import { countOf, formatDateSafe } from "@/lib/utils"
 import { PdtpSheetTable } from "../pdtp-sheet-table"
 import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-sheet-table-ui"
 import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
@@ -424,7 +424,7 @@ async function PdtpDocumentMetadataSection({ programId, canReconcile }: { progra
       <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-[var(--color-text)] marker:hidden">
         Historia y referencias del documento importado
         <span className="ml-2 font-normal text-[var(--color-text-muted)]">
-          {metadata.history.length} declaración(es) · {metadata.roleLegend.length} código(s) de rol
+          {countOf(metadata.history.length, "declaración")} · {countOf(metadata.roleLegend.length, "código")} de rol
         </span>
       </summary>
       <div className="border-t border-[var(--color-border)] px-4 py-4">

@@ -88,7 +88,7 @@ export function ScheduleOverview({ activities, schedule, horizon = DEFAULT_SCHED
             : mode === "scheduled"
             ? rule
               ? describePdtpRecurrence(rule, horizon)
-              : `${cells.length} período(s) heredado(s); define una recurrencia para usar el constructor general.`
+              : `${cells.length} ${pluralize(cells.length, "período heredado", "períodos heredados")}; define una recurrencia para usar el constructor general.`
             : mode === "on_demand"
               ? `Cuando se necesite${dueLabel ? ` · plazo objetivo ${dueLabel}` : ""}.`
               : `${activity.triggerDescription || "Evento pendiente de describir"}${dueLabel ? ` · plazo ${dueLabel}` : ""}.`

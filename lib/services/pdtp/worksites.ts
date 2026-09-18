@@ -28,6 +28,7 @@ import {
   type PdtpProgramWorksite,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { countOf } from "@/lib/utils"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, assertWorksiteAccess, type WorksiteScope } from "./helpers"
 
 /** Faenas miembro de un programa. La ausencia de filas sólo equivale a todas
@@ -104,7 +105,7 @@ export async function setPdtpProgramWorksites(
         ? (declaredScope === true
           ? "Membresía de faenas eliminada: el programa declara alcance corporativo (todas las faenas)."
           : "Membresía de faenas eliminada: el programa queda sin alcance declarado y no podrá activarse así.")
-        : `Membresía de faenas actualizada (${uniqueIds.length} faena(s)).`,
+        : `Membresía de faenas actualizada (${countOf(uniqueIds.length, "faena")}).`,
       tx,
     )
     return rows

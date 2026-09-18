@@ -37,7 +37,7 @@ import {
 import type { PdtpScheduleDefinition } from "@/lib/services/pdtp/schedule-definition"
 import type { PdtpCompletionPolicy } from "@/lib/services/pdtp/connectors"
 import { todayLocalISO } from "@/lib/sst/date"
-import { formatDate, MONTH_LABELS } from "@/lib/utils"
+import { countOf, formatDate, MONTH_LABELS } from "@/lib/utils"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import type { pdtpActivityExecutionConfigs, pdtpActivityReminderRules } from "@/db/schema"
 import { DialogDescription } from "@/components/ui/dialog"
@@ -259,7 +259,7 @@ export function ActividadesTab({
       )}
       {items.length > 0 && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-          <p className="text-xs text-[var(--color-text-muted)]">{selectedIds.length} actividad(es) seleccionadas</p>
+          <p className="text-xs text-[var(--color-text-muted)]">{countOf(selectedIds.length, "actividad seleccionada", "actividades seleccionadas")}</p>
           <Button type="button" size="sm" variant="secondary" disabled={selectedIds.length === 0} onClick={() => setBatchOpen(true)}>Editar selección</Button>
         </div>
       )}
@@ -717,8 +717,8 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
           {wouldReplaceManualSchedule && (
             <div className="rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">
               <p>
-                Esta actividad tiene {currentCells.length} semana(s) planificadas que no vienen de esta frecuencia.
-                Guardar las reemplaza: {scheduleDiff.removedCells.length} semana(s) se eliminan y la cantidad planificada
+                Esta actividad tiene {countOf(currentCells.length, "semana planificada", "semanas planificadas")} que no vienen de esta frecuencia.
+                Guardar las reemplaza: {countOf(scheduleDiff.removedCells.length, "semana", "semanas")} {scheduleDiff.removedCells.length === 1 ? "se elimina" : "se eliminan"} y la cantidad planificada
                 pasa de {scheduleDiff.currentPlannedTotal} a {scheduleDiff.nextPlannedTotal}.
               </p>
               <div className="mt-2">
@@ -780,8 +780,8 @@ function RecurrenceImpactPreview({
   return (
     <p className="rounded-lg border border-[var(--color-info-line)] bg-[var(--color-info-tint)] px-3 py-2 text-xs text-[var(--color-info-ink)]">
       {changed
-        ? `Impacto antes de guardar: pasará de ${currentCount} a ${nextCount} obligación(es) calendarizadas; las ejecuciones existentes no se modifican.`
-        : `${nextCount} obligación(es) calendarizadas; no hay cambio de recurrencia pendiente.`}
+        ? `Impacto antes de guardar: pasará de ${currentCount} a ${countOf(nextCount, "obligación calendarizada", "obligaciones calendarizadas")}; las ejecuciones existentes no se modifican.`
+        : `${countOf(nextCount, "obligación calendarizada", "obligaciones calendarizadas")}; no hay cambio de recurrencia pendiente.`}
     </p>
   )
 }

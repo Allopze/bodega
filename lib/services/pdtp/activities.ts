@@ -22,6 +22,7 @@ import { getPdtpExecutionConnector, type PdtpCompletionPolicy, type PdtpEvidence
 import { assertPdtpScheduleDefinitionWithinPeriod, type PdtpScheduleDefinition } from "./schedule-definition"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
+import { countOf, pluralize } from "@/lib/utils"
 
 function dueFieldsFromScheduleDefinition(definition: PdtpScheduleDefinition | null | undefined): {
   dueDays: number | null
@@ -102,7 +103,7 @@ export class PdtpScheduleConflictError extends Error {
   constructor(readonly detail: PdtpScheduleConflictDetail) {
     super(detail.reason === "schedule_changed_elsewhere"
       ? "La planificación de esta actividad cambió en otra sesión. Recarga antes de guardar."
-      : `Esta actividad tiene ${detail.currentCellCount} semana(s) ajustadas manualmente. Guardar la recurrencia las reemplaza y la cantidad planificada pasaría de ${detail.currentPlannedTotal} a ${detail.nextPlannedTotal}. Confirma el reemplazo para continuar.`)
+      : `Esta actividad tiene ${countOf(detail.currentCellCount, "semana ajustada", "semanas ajustadas")} manualmente. Guardar la recurrencia las reemplaza y la cantidad planificada pasaría de ${detail.currentPlannedTotal} a ${detail.nextPlannedTotal}. Confirma el reemplazo para continuar.`)
     this.name = "PdtpScheduleConflictError"
   }
 }
@@ -455,7 +456,7 @@ export async function batchUpdatePdtpActivities(input: PdtpActivityBatchUpdateIn
       "activity:batch",
       { activityIds: uniqueIds },
       { activityIds: uniqueIds, ...updates },
-      `${rows.length} actividad(es) actualizadas en lote; calendario, vistas y checklist preservados.`,
+      `${countOf(rows.length, "actividad actualizada", "actividades actualizadas")} en lote; calendario, vistas y checklist preservados.`,
       tx,
     )
     return rows
@@ -676,7 +677,7 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
 
     if (Object.keys(after).length > 0) {
       const note = scheduleDiff
-        ? `Actividad ${activity.n} actualizada; planificación ${scheduleDiff.currentPlannedTotal} → ${scheduleDiff.nextPlannedTotal} (${currentCells.length} → ${effectiveSchedule!.length} celda(s)).`
+        ? `Actividad ${activity.n} actualizada; planificación ${scheduleDiff.currentPlannedTotal} → ${scheduleDiff.nextPlannedTotal} (${currentCells.length} → ${effectiveSchedule!.length} ${pluralize(effectiveSchedule!.length, "celda")}).`
         : `Actividad ${activity.n} actualizada.`
       await addPdtpChangeLogEntry(activity.programId, program.version, userId, `activity:${activity.n}`, before, after, note, tx)
       await recordAudit({

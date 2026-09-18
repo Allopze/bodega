@@ -1,5 +1,6 @@
 import { MetaBadge } from "@/components/states/state-badge"
 import { countPdtpFulfillmentBacklog } from "@/lib/services/pdtp/backlog"
+import { pluralize } from "@/lib/utils"
 
 /**
  * Si corresponde ofrecer "Crear revisión v+1" cuando el contenido vigente ya
@@ -51,28 +52,28 @@ export function BacklogStatusList({ backlog }: { backlog: FulfillmentBacklog }) 
             meta={{ label: String(backlog.errored - backlog.erroredWaitingOnActivation), variant: "danger" }}
             dot
           />
-          <span className="text-sm text-[var(--color-text-muted)]">evento(s) en error, sin acreditar</span>
+          <span className="text-sm text-[var(--color-text-muted)]">{pluralize(backlog.errored - backlog.erroredWaitingOnActivation, "evento")} en error, sin acreditar</span>
         </div>
       )}
       {backlog.erroredWaitingOnActivation > 0 && (
         <div className="flex items-center gap-2">
           <MetaBadge meta={{ label: String(backlog.erroredWaitingOnActivation), variant: "warning" }} dot />
           <span className="text-sm text-[var(--color-text-muted)]">
-            hecho(s) esperando que el programa esté vigente
+            {pluralize(backlog.erroredWaitingOnActivation, "hecho")} esperando que el programa esté vigente
           </span>
         </div>
       )}
       {backlog.pending > 0 && (
         <div className="flex items-center gap-2">
           <MetaBadge meta={{ label: String(backlog.pending), variant: "warning" }} dot />
-          <span className="text-sm text-[var(--color-text-muted)]">evento(s) pendiente(s) de reintento</span>
+          <span className="text-sm text-[var(--color-text-muted)]">{pluralize(backlog.pending, "evento")} {pluralize(backlog.pending, "pendiente")} de reintento</span>
         </div>
       )}
       {backlog.rejected > 0 && (
         <div className="flex items-center gap-2">
           <MetaBadge meta={{ label: String(backlog.rejected), variant: "warning" }} dot />
           <span className="text-sm text-[var(--color-text-muted)]">
-            hecho(s) sin acreditar por decisión del motor
+            {pluralize(backlog.rejected, "hecho")} sin acreditar por decisión del motor
           </span>
         </div>
       )}

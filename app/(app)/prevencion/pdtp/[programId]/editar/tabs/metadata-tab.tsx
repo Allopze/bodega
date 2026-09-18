@@ -12,6 +12,7 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { updatePdtpProgramAction, deletePdtpProgramAction } from "../../../actions"
 import { setPdtpProgramWorksitesAction } from "../../../actions/worksites-actions"
+import { countOf } from "@/lib/utils"
 
 import type { pdtpPrograms } from "@/db/schema"
 
@@ -213,7 +214,7 @@ export function MetadataTab({ program, canDelete, activities = [] }: {
             open={confirmDelete}
             onOpenChange={setConfirmDelete}
             title="Eliminar el programa completo"
-            description={`Se borrarán «${program.title}», sus ${activities.length} actividad(es) y todas las hojas asociadas. Esta acción no se puede deshacer.`}
+            description={`Se borrarán «${program.title}», sus ${countOf(activities.length, "actividad", "actividades")} y todas las hojas asociadas. Esta acción no se puede deshacer.`}
             confirmLabel="Eliminar definitivamente"
             variant="destructive"
             loading={deletePending}

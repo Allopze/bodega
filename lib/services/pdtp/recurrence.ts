@@ -1,3 +1,5 @@
+import { countOf, pluralize } from "@/lib/utils"
+
 export type PdtpRecurrenceFrequency = "weekly" | "monthly" | "quarterly" | "semiannual" | "annual" | "custom"
 
 export type PdtpRecurrenceRule = {
@@ -229,10 +231,10 @@ function frequencyLabel(rule: PdtpRecurrenceRule, weeksPerMonth: number): string
 export function describePdtpRecurrence(rule: PdtpRecurrenceRule, horizon: PdtpScheduleHorizon = DEFAULT_SCHEDULE_HORIZON): string {
   const base = frequencyLabel(rule, horizon.weeksPerMonth)
   const interval = rule.interval > 1 ? ` cada ${rule.interval} ciclos` : ""
-  const quantity = rule.plannedQuantity === 1 ? "1 ejecución" : `${rule.plannedQuantity} ejecuciones`
+  const quantity = countOf(rule.plannedQuantity, "ejecución", "ejecuciones")
   const projected = projectRecurrenceToLegacySchedule(rule, horizon)
-  const periodLabel = horizon.months.length >= 12 ? "período anual" : `período de ${horizon.months.length} mes(es)`
-  return `${quantity}, frecuencia ${base}${interval}. Genera ${projected.length} obligación(es) en el ${periodLabel}.`
+  const periodLabel = horizon.months.length >= 12 ? "período anual" : `período de ${countOf(horizon.months.length, "mes")}`
+  return `${quantity}, frecuencia ${base}${interval}. Genera ${countOf(projected.length, "obligación", "obligaciones")} en el ${periodLabel}.`
 }
 
 export function describePdtpRecurrenceImpact(
@@ -381,6 +383,6 @@ export function derivePdtpScheduleSource({
 
 export function describePdtpScheduleSource(source: PdtpScheduleSource, cellCount: number): string {
   if (source === "none") return "Sin semanas planificadas."
-  if (source === "rule") return `${cellCount} semana(s) proyectadas por la recurrencia.`
-  return `${cellCount} semana(s) ajustadas manualmente; la recurrencia guardada ya no coincide.`
+  if (source === "rule") return `${cellCount} ${pluralize(cellCount, "semana proyectada", "semanas proyectadas")} por la recurrencia.`
+  return `${cellCount} ${pluralize(cellCount, "semana ajustada", "semanas ajustadas")} manualmente; la recurrencia guardada ya no coincide.`
 }

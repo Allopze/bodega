@@ -80,8 +80,8 @@ describe("EditActivityDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Editar" }))
 
     // Un programa de 6 meses genera 6 obligaciones con una regla mensual.
-    expect(screen.getByText(/6 obligación\(es\) calendarizadas/)).toBeInTheDocument()
-    expect(screen.queryByText(/12 obligación\(es\)/)).not.toBeInTheDocument()
+    expect(screen.getByText(/6 obligaciones calendarizadas/)).toBeInTheDocument()
+    expect(screen.queryByText(/12 obligaciones/)).not.toBeInTheDocument()
   })
 
   it("editar el texto de una actividad con matriz manual no exige confirmar nada", () => {
@@ -100,7 +100,7 @@ describe("EditActivityDialog", () => {
     fireEvent.change(screen.getByLabelText("Semana"), { target: { value: "3" } })
 
     const acknowledgement = screen.getByLabelText(/se reemplazará la planificación/)
-    expect(screen.getByText(/2 semana\(s\) planificadas que no vienen de esta frecuencia/)).toBeInTheDocument()
+    expect(screen.getByText(/2 semanas planificadas que no vienen de esta frecuencia/)).toBeInTheDocument()
     expect(screen.getByText(/cantidad planificada\s+pasa de 5 a 12/)).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Guardar" })).toBeDisabled()
 

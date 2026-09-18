@@ -7,7 +7,7 @@ import {
   PdtpUnreconstructibleContentSchemaError,
 } from "@/lib/services/pdtp/content-digest"
 import { NO_ACTIVE_PROGRAM_LAST_ERROR_TAG } from "@/lib/services/pdtp/fulfillment"
-import { chileDateParts } from "@/lib/utils"
+import { chileDateParts, pluralize } from "@/lib/utils"
 
 /**
  * Cómo se nombra el origen de un hecho en pantalla. `sourceType` es una clave
@@ -118,10 +118,12 @@ export function describePdtpRejection(resultJson: unknown): string {
     return `El hecho ocurrió en ${occurredYear ?? "otro año"} y el programa vigente cubre ${programYear ?? "otro año"}.`
   }
   if (result.skippedExcluded && result.skippedExcluded.length > 0) {
-    return `Actividad(es) N°${result.skippedExcluded.join(", ")} excluidas de esta faena.`
+    const n = result.skippedExcluded.length
+    return `${pluralize(n, "Actividad", "Actividades")} N°${result.skippedExcluded.join(", ")} ${n === 1 ? "excluida" : "excluidas"} de esta faena.`
   }
   if (result.skippedNotFound && result.skippedNotFound.length > 0) {
-    return `Actividad(es) N°${result.skippedNotFound.join(", ")} no existen en el programa vigente.`
+    const n = result.skippedNotFound.length
+    return `${pluralize(n, "Actividad", "Actividades")} N°${result.skippedNotFound.join(", ")} no ${n === 1 ? "existe" : "existen"} en el programa vigente.`
   }
   return "El motor no encontró ninguna actividad del programa a la que acreditar el hecho."
 }

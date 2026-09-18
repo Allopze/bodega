@@ -51,9 +51,9 @@ describe("ProgramLifecycleControls", () => {
     render(<ProgramLifecycleControls
       program={baseProgram}
       permissions={permissions}
-      submitBlockers={["22 actividad(es) aún requieren confirmar cuándo se realizan."]}
+      submitBlockers={["22 actividades aún requieren confirmar cuándo se realizan."]}
     />)
-    expect(screen.getByText(/22 actividad\(es\) aún requieren confirmar/)).toBeInTheDocument()
+    expect(screen.getByText(/22 actividades aún requieren confirmar/)).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Enviar a revisión" })).toBeDisabled()
   })
 

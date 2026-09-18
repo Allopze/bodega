@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRo
 import { PdtpApprovalButtons } from "../pdtp-approval-buttons"
 import { PdtpEvidenceThumbs } from "../pdtp-evidence-thumbs"
 import { WeeklyScheduledSection } from "./weekly-scheduled-section"
+import { countOf } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Aprobaciones PDTP" }
 
@@ -47,7 +48,7 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
     scope.mode === "all"
       ? `Ejecuciones semanales${program ? ` de "${program.title}"` : " del Programa de Trabajo Preventivo"} pendientes de aprobación, en todas las faenas.`
       : scope.mode === "some"
-        ? `Ejecuciones semanales${program ? ` de "${program.title}"` : " del Programa de Trabajo Preventivo"} pendientes de aprobación en tus ${scope.ids.length} faena(s) asignada(s).`
+        ? `Ejecuciones semanales${program ? ` de "${program.title}"` : " del Programa de Trabajo Preventivo"} pendientes de aprobación en tus ${countOf(scope.ids.length, "faena asignada", "faenas asignadas")}.`
         : "No tienes faenas asignadas, no se mostrarán ejecuciones pendientes."
 
   // One row per (activityId, worksiteId) pair — the same activity can be

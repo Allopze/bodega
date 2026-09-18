@@ -13,7 +13,7 @@ import { buildPdtpProgramHref, resolvePdtpYear } from "../pdtp-context"
 import { PdtpYearPicker } from "../pdtp-sheet-table-ui"
 import { MetaBadge } from "@/components/states/state-badge"
 import { pdtpProgramStatusLabel, pdtpProgramStatusVariant } from "@/lib/prevention/pdtp"
-import { pluralize } from "@/lib/utils"
+import { countOf, pluralize } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Programas anuales" }
 
@@ -114,7 +114,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
                 </div>
                 <div className="mt-3 flex items-center gap-4 text-xs text-[var(--color-text-subtle)]">
                   {indicators?.annual && (
-                    <span title={`Plan / ejecutado agregado sobre ${indicators.worksiteCount} faena(s) autorizada(s)`}>
+                    <span title={`Plan / ejecutado agregado sobre ${countOf(indicators.worksiteCount, "faena autorizada", "faenas autorizadas")}`}>
                       Cumplimiento ({indicators.worksiteCount} {pluralize(indicators.worksiteCount, "faena")}): {indicators.annual.percent !== null ? `${Math.round(indicators.annual.percent * 100)}%` : "—"}
                     </span>
                   )}

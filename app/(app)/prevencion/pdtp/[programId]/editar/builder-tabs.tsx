@@ -13,6 +13,7 @@ import type {
 } from "@/db/schema"
 import type { PdtpChecklistTemplate } from "@/lib/services/prevention-pdtp"
 import type { PdtpBaseComparison, PdtpRevisionDiff } from "@/lib/services/prevention-pdtp"
+import { countOf } from "@/lib/utils"
 import { deriveScheduleHorizon } from "@/lib/services/pdtp/recurrence"
 import { ChecklistTab } from "./checklist-tab"
 import { GuidedActivityForm } from "./guided-activity-form"
@@ -185,7 +186,7 @@ export function PdtpBuilderTabs({
           <div>
             <p className="text-h3 text-[var(--color-text)]">Editor del programa anual</p>
             <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-              {activeActivities.length} actividad(es) activa(s) · {activities.length - activeActivities.length} retirada(s)
+              {countOf(activeActivities.length, "actividad activa", "actividades activas")} · {countOf(activities.length - activeActivities.length, "retirada", "retiradas")}
             </p>
           </div>
           <Button asChild size="sm"><Link href={`/prevencion/pdtp/${program.id}`}>Ver programa</Link></Button>

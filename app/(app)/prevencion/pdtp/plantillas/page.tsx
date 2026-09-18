@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { formatDate } from "@/lib/utils"
+import { countOf, formatDate } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Plantillas de programas preventivos" }
 
@@ -69,7 +69,7 @@ export default async function PdtpTemplatesPage() {
                     </div>
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
-                        {version.programs.length} programa(s) fijados a esta versión
+                        {countOf(version.programs.length, "programa fijado", "programas fijados")} a esta versión
                       </p>
                       {version.programs.length === 0 ? (
                         <p className="mt-2 text-sm text-[var(--color-text-muted)]">Todavía no se ha creado ningún programa desde esta versión.</p>
