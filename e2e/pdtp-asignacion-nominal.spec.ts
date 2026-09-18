@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs"
 import { expect, test } from "@playwright/test"
 import postgres from "postgres"
-import { login } from "./helpers"
+import { cerrarSesion, login } from "./helpers"
 
 /**
  * E2E: asignación nominal de actividades del PDTP a personas, por faena
@@ -129,7 +129,7 @@ test.describe.serial("PDTP — asignación nominal por faena", () => {
       await login(page, email)
       await page.goto("/pendientes")
       await expect(page.getByText(ACTIVITY_NAME).first()).toBeVisible()
-      await page.context().clearCookies()
+      await cerrarSesion(page)
     }
   })
 
@@ -144,7 +144,13 @@ test.describe.serial("PDTP — asignación nominal por faena", () => {
     await page.getByLabel(ASSIGNED_USER.name).check()
     await page.getByRole("button", { name: /Guardar asignación/ }).click()
 
-    await expect(page.getByText(`Asignada a: ${ASSIGNED_USER.name}`).first()).toBeVisible()
+    // En la vista anual los responsables —y con ellos el chip del asignado—
+    // viven dentro del `<details>` "Ver programa y responsables" de la fila: la
+    // tabla ya carga doce columnas de meses y no cabe más en la celda. Hay que
+    // abrirlo, o el chip existe en el DOM pero no está visible.
+    const row = page.getByRole("row").filter({ hasText: ACTIVITY_NAME })
+    await row.locator("summary").filter({ hasText: "Ver programa y responsables" }).click()
+    await expect(row.getByText(`Asignada a: ${ASSIGNED_USER.name}`)).toBeVisible()
   })
 
   test("con asignado, la ve él en /pendientes con su nombre y deja de verla el otro jefe de terreno", async ({ page }) => {
@@ -152,7 +158,7 @@ test.describe.serial("PDTP — asignación nominal por faena", () => {
     await page.goto("/pendientes")
     await expect(page.getByText(ACTIVITY_NAME).first()).toBeVisible()
     await expect(page.getByText(`Asignada a ${ASSIGNED_USER.name}`).first()).toBeVisible()
-    await page.context().clearCookies()
+    await cerrarSesion(page)
 
     // El cambio delicado de la fase: el otro del mismo cargo deja de verla.
     await login(page, OTHER_JT_EMAIL)
@@ -197,7 +203,7 @@ test.describe.serial("PDTP — asignación nominal por faena", () => {
     await page.getByRole("button", { name: /Dejar sin asignar/ }).click()
     await expect(page.getByText(`Asignada a: ${ASSIGNED_USER.name}`)).toHaveCount(0)
 
-    await page.context().clearCookies()
+    await cerrarSesion(page)
     await login(page, OTHER_JT_EMAIL)
     await page.goto("/pendientes")
     await expect(page.getByText(ACTIVITY_NAME).first()).toBeVisible()

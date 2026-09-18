@@ -23,7 +23,11 @@ test("el sidebar agrupa Administración por categorías y oculta las áreas de n
   await login(page)
   await page.goto("/admin/cargos")
 
-  const sidebar = page.getByRole("navigation", { name: "Navegación" })
+  // `exact: true` no es adorno: el breadcrumb de `PageHeader` es otro
+  // `<nav>`, rotulado "Navegación estructural", y sin exactitud el rótulo
+  // parcial resuelve los dos. Los mismos enlaces aparecen en ambos y cualquier
+  // acción muere por violación de modo estricto.
+  const sidebar = page.getByRole("navigation", { name: "Navegación", exact: true })
 
   for (const category of ADMIN_CATEGORIES) {
     await expect(sidebar.getByRole("button", { name: category, exact: true })).toBeVisible()
@@ -50,7 +54,7 @@ test("Catálogos de flota expone sus 5 sub-rutas y marca activo solo el destino 
   await login(page)
   await page.goto("/admin/flota-catalogos/tipos-equipo")
 
-  const sidebar = page.getByRole("navigation", { name: "Navegación" })
+  const sidebar = page.getByRole("navigation", { name: "Navegación", exact: true })
 
   await expect(sidebar.getByRole("link", { name: "Tipos de equipo" })).toHaveAttribute("aria-current", "page")
   // Antes de este fix, la fila padre también se marcaba "activa" al ver un
@@ -71,7 +75,7 @@ test("salir de /admin restaura el sidebar de negocio", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1080 })
   await login(page)
   await page.goto("/admin/cargos")
-  const sidebar = page.getByRole("navigation", { name: "Navegación" })
+  const sidebar = page.getByRole("navigation", { name: "Navegación", exact: true })
   await expect(sidebar.getByRole("button", { name: "Catálogos", exact: true })).toBeVisible()
 
   await sidebar.getByRole("link", { name: "Inicio" }).click()
@@ -139,7 +143,7 @@ test("una sesión con permisos de admin parciales solo ve sus categorías e íte
   await login(page, "admin.parcial@e2e.chome.cl")
   await page.goto("/admin/productos")
 
-  const sidebar = page.getByRole("navigation", { name: "Navegación" })
+  const sidebar = page.getByRole("navigation", { name: "Navegación", exact: true })
 
   // Solo admin:products + admin:product_catalogs (en "Catálogos") y
   // admin:notifications + admin:smtp (en "Comunicaciones e integraciones") —

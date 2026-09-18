@@ -58,6 +58,27 @@ export async function login(page: Page, email = "admin@e2e.chome.cl", password =
 }
 
 /**
+ * Cierra la sesión del navegador para volver a entrar como otra persona.
+ *
+ * `context.clearCookies()` por sí solo es una carrera: Auth.js reescribe
+ * `authjs.session-token` en CADA respuesta autenticada, y las precargas RSC que
+ * dispara la página anterior siguen en vuelo cuando el test borra las cookies —
+ * la respuesta llega después y vuelve a sembrar la sesión, así que el `/login`
+ * siguiente responde 307 a `/dashboard` y el formulario no aparece nunca.
+ * Se observó en `pdtp-asignacion-nominal.spec.ts` y ya estaba documentado en
+ * `matriz-estados.spec.ts`: primero se deja la pestaña en `about:blank` —sin
+ * página autenticada no hay precarga que responder— y después se espera a que
+ * la cookie realmente no esté.
+ */
+export async function cerrarSesion(page: Page) {
+  await page.goto("about:blank")
+  await page.context().clearCookies()
+  await expect
+    .poll(async () => (await page.context().cookies()).filter((cookie) => cookie.name.includes("authjs.session-token")).length)
+    .toBe(0)
+}
+
+/**
  * El id del recurso en la URL actual, tomado del **pathname**.
  *
  * `page.url().split("/").pop()` parece equivalente y no lo es. Varias acciones
@@ -564,6 +585,16 @@ export async function confirmarDeclararEjecutada(page: Page) {
   const dialogo = page.getByRole("dialog").filter({ visible: true })
   const confirmar = dialogo.getByRole("button", { name: "Declarar ejecutada" })
   await expect(confirmar).toBeEnabled({ timeout: 30_000 })
-  await confirmar.click()
-  await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+  /*
+   * Esperar a que esté habilitado no alcanza: el autoguardado puede dispararse
+   * ENTRE esa espera y el clic, y entonces el pie se vuelve a montar mientras
+   * Playwright intenta pulsar ("element is not stable" → "element was detached
+   * from the DOM") hasta agotar el `actionTimeout`. Reintentar el par
+   * clic + cierre absorbe ese remonte sin tapar un fallo real: si el diálogo no
+   * se cierra nunca, el `toPass` igual termina en rojo.
+   */
+  await expect(async () => {
+    await confirmar.click({ timeout: 5_000 })
+    await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 10_000 })
+  }).toPass({ timeout: 60_000 })
 }

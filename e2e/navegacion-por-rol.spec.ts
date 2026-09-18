@@ -108,7 +108,7 @@ test.describe("Navegación — rol restringido", () => {
     // podía cumplirse nunca; el reintento volvía a clickear al disparador, que
     // con la hoja ya abierta se llama "Cerrar menú", y moría contra un locator
     // inexistente en vez de contra la aserción real.
-    const panel = page.getByRole("navigation", { name: "Navegación" })
+    const panel = page.getByRole("navigation", { name: "Navegación", exact: true })
     await expect(async () => {
       await opener.click()
       await expect(panel.getByRole("link", { name: /Mis pendientes/ })).toBeVisible({ timeout: 5_000 })

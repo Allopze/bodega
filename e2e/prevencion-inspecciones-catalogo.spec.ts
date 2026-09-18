@@ -203,20 +203,33 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     const fila = filaPlantilla(page, version)
     await expect(fila.getByText("N° 29")).toBeVisible({ timeout: 15_000 })
 
+    /* Corregir la acreditación ya no es marcar números del programa anual: desde
+     * la centralización del catálogo corporativo el diálogo cablea IDENTIDADES
+     * (`pdtp_accreditation_bindings`), y los números quedan como snapshot
+     * histórico —por eso la celda de la fila sigue diciendo N° 29 después de
+     * guardar: `setInspectionTemplatePdtpActivities` los conserva a propósito—.
+     * Lo que se verifica acá es el cableado nuevo, releído desde la base.
+     *
+     * Los dos selectores son popovers de `PdtpActivityPicker`, con el mismo
+     * rótulo accesible en su disparador ("N actividades seleccionadas"): el
+     * primero es "Al declarar ejecutada" y el segundo "Al revisar y cerrar". */
     await fila.getByRole("button", { name: "Acreditación PDTP" }).click()
     const dialog = page.getByRole("dialog")
-    const ejecucion = dialog.getByRole("group", { name: "Al declarar ejecutada" })
-    await ejecucion.getByLabel(/N° 29 —/).uncheck()
-    await ejecucion.getByLabel(/N° 1 —/).check()
-    await ejecucion.getByLabel(/N° 2 —/).check()
+    const ejecucion = dialog.getByRole("button", { name: /actividades? seleccionadas?/ }).first()
+    await ejecucion.click()
+    await page.getByRole("option", { name: /Inspección de contenedores E2E/ }).click()
+    await page.getByRole("option", { name: /Orden y aseo de la faena E2E/ }).click()
+    await page.keyboard.press("Escape")
+    await expect(ejecucion).toHaveText(/2 actividades seleccionadas/)
     await dialog.getByRole("button", { name: "Guardar" }).click()
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
+    // Releer desde la base: el diálogo abre con las dos identidades cableadas.
     await page.reload()
-    // I-22: la celda ahora resuelve el nombre de cada actividad ("N° 1 — Nombre,
-    // N° 2 — Nombre"), no sólo el número — se verifica cada número, no el join literal.
-    await expect(fila.getByText("N° 1 —")).toBeVisible({ timeout: 15_000 })
-    await expect(fila.getByText("N° 2 —")).toBeVisible()
+    await fila.getByRole("button", { name: "Acreditación PDTP" }).click()
+    await expect(
+      page.getByRole("dialog").getByRole("button", { name: /actividades? seleccionadas?/ }).first(),
+    ).toHaveText(/2 actividades seleccionadas/, { timeout: 15_000 })
   })
 
   /**

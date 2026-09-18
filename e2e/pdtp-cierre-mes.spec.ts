@@ -22,6 +22,14 @@ import { login } from "./helpers"
  * La actividad vive en su propia hoja, por la misma razón que en
  * `pdtp-desvios.spec.ts`: `pdtp-templates-exports.spec.ts` cuenta con que
  * `pdtp-sheet-e2e` tenga exactamente una fila.
+ *
+ * El número de actividad (79) es exclusivo de este archivo, igual que el 77 de
+ * `pdtp-desvios` y el 78 de `pdtp-asignacion-nominal`. `pdtp_activities` tiene
+ * un índice único sobre (programa, n) y el `on conflict (id) do nothing` del
+ * insert NO lo cubre: dos specs que compartieran número dependerían de que el
+ * `afterAll` del que corre primero alcance a borrar, y bastaría un cambio de
+ * orden —o una corrida interrumpida— para que el segundo muriera con una
+ * violación de unicidad en su `beforeAll`.
  */
 
 const PROGRAM_ID = "pdtp-prog-e2e"
@@ -64,8 +72,8 @@ test.describe.serial("PDTP — cierre mensual por faena", () => {
           created_at, updated_at
         )
         values (
-          ${ACTIVITY_ID}, ${PROGRAM_ID}, 78, 1, 'active', ${ACTIVITY_NAME}, 'Programa E2E',
-          '[]'::jsonb, 'Prevencionista', 'scheduled', 78, ${now}, ${now}
+          ${ACTIVITY_ID}, ${PROGRAM_ID}, 79, 1, 'active', ${ACTIVITY_NAME}, 'Programa E2E',
+          '[]'::jsonb, 'Prevencionista', 'scheduled', 79, ${now}, ${now}
         )
         on conflict (id) do nothing
       `

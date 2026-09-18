@@ -138,6 +138,13 @@ fi
 # del artefacto. Al sacar de ahí los archivos de usuarios, la coincidencia
 # desapareció, el caché del DTE dejó de encontrarse y adjuntarlo terminaba
 # intentando descargar el XML del portal real.
+# BILLING_CHIPAX_ENABLED: el proveedor Chipax se declara HABILITADO pero sin
+# credenciales. Es el estado que describe `e2e/facturacion.spec.ts` —"Sin
+# configurar" no es "Con problema"— y que dejó de reproducirse cuando el
+# interruptor del proveedor pasó de ser una lectura de entorno gratuita a
+# `isProviderEnabled()`: apagado, la ficha decía "Inactivo" y el escenario que
+# distingue "falta configurar" de "está caído" no tenía cómo ocurrir. Sin
+# `BILLING_CHIPAX_APP_ID`/`SECRET_KEY` no hay ninguna llamada real al proveedor.
 STORAGE_PATH="$ROOT/storage" \
 DATABASE_URL="$DB_URL" \
 AUTH_SECRET="$AUTH_SECRET_VALUE" \
@@ -147,6 +154,7 @@ NEXTAUTH_URL="$APP_URL_VALUE" \
 AUTH_URL="$APP_URL_VALUE" \
 PDF_RENDER_ORIGIN="http://127.0.0.1:$PORT" \
 DTE_PORTAL_CODEMP="433" \
+BILLING_CHIPAX_ENABLED="true" \
 SMTP_HOST="" \
 SMTP_USER="" \
 SMTP_PASS="" \

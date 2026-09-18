@@ -26,7 +26,11 @@ test.describe("Prevención — Indicadores SST y Exportación", () => {
       const descarga = page.waitForEvent("download")
       await exportBtn.first().click()
       const archivo = await descarga
-      expect(archivo.suggestedFilename()).toMatch(/^indicadores_sst_\d{4}\.xlsx$/)
+      // El exporte es el libro CANÓNICO de indicadores (anual, mensual, fuentes
+      // y conciliación), y la ruta lo nombra así desde
+      // `app/api/prevencion/indicadores/export/route.ts`. El nombre anterior
+      // —`indicadores_sst_<año>`— quedó en el spec y no en el producto.
+      expect(archivo.suggestedFilename()).toMatch(/^indicadores_canonicos_\d{4}\.xlsx$/)
     }
   })
 })

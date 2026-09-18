@@ -119,6 +119,12 @@ async function main() {
     // e2e/pdtp-asignacion-nominal.spec.ts tiene que ver aparecer.
     { roleId: "rol-jefe-terreno-e2e", permissionId: "p-prev-pdtp-view" },
     { roleId: "rol-jefe-terreno-e2e", permissionId: "p-prev-pdtp-execute" },
+    // `modules/operations/manifest.ts` concede `operations:view_work` al rol
+    // `jefe_terreno` por defecto: sin esta fila el sembrado E2E le negaba
+    // /pendientes a un rol que en producción SÍ la tiene, y la cola —que es
+    // justo donde se ve el efecto de una asignación nominal— respondía
+    // /forbidden.
+    { roleId: "rol-jefe-terreno-e2e", permissionId: "p-ops-view-work" },
   ])
   await db.insert(schema.users).values({
     id: "user-jefe-terreno-e2e",
@@ -2160,6 +2166,41 @@ async function main() {
     createdAt: now,
     updatedAt: now,
   })
+  /* Catálogo corporativo de actividades preventivas.
+   *
+   * Desde `33490263 feat(pdtp): centralize preventive activities catalog` el
+   * diálogo "Acreditación PDTP" de una plantilla de inspección ofrece
+   * IDENTIDADES DEL CATÁLOGO, no los números del programa anual. El sembrado
+   * E2E nunca tuvo ninguna, así que ese diálogo abría con "No hay actividades
+   * publicadas en el catálogo corporativo" y el botón Guardar deshabilitado:
+   * la corrección de la acreditación no se podía recorrer por pantalla.
+   */
+  await db.insert(schema.pdtpCatalogActivities).values([
+    { id: "pdtp-cat-act-e2e-contenedores", code: "PDT-CONTENEDORES-E2E", status: "active", currentRevision: 1, createdByUserId: "user-admin-e2e", createdAt: now, updatedAt: now },
+    { id: "pdtp-cat-act-e2e-orden-aseo", code: "PDT-ORDEN-ASEO-E2E", status: "active", currentRevision: 1, createdByUserId: "user-admin-e2e", createdAt: now, updatedAt: now },
+  ])
+  await db.insert(schema.pdtpCatalogActivityRevisions).values([
+    {
+      id: "pdtp-cat-rev-e2e-contenedores",
+      catalogActivityId: "pdtp-cat-act-e2e-contenedores",
+      revision: 1,
+      title: "Inspección de contenedores E2E",
+      description: "Revisión del estado de los contenedores de la faena.",
+      executionGuidance: "Recorrer la faena y completar la lista de verificación.",
+      createdByUserId: "user-admin-e2e",
+      createdAt: now,
+    },
+    {
+      id: "pdtp-cat-rev-e2e-orden-aseo",
+      catalogActivityId: "pdtp-cat-act-e2e-orden-aseo",
+      revision: 1,
+      title: "Orden y aseo de la faena E2E",
+      description: "Verificación de orden y aseo en las áreas de trabajo.",
+      executionGuidance: "Recorrer las áreas comunes y registrar desviaciones.",
+      createdByUserId: "user-admin-e2e",
+      createdAt: now,
+    },
+  ])
   await db.insert(schema.pdtpActivities).values({
     id: "pdtp-draft-act-e2e",
     programId: "pdtp-draft-e2e",
