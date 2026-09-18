@@ -65,6 +65,45 @@ determinado hoy por la configuración:
 
 Al fijar los objetivos, anotarlos acá junto con quién los aprobó y contra qué se miden.
 
+## Gate E2E
+
+La suite Playwright es el gate de release. **Pasa sólo con los 4 shards en verde**
+(`.github/workflows/ci.yml`, job `e2e`, `strategy.matrix.shard: [1, 2, 3, 4]` y
+`npx playwright test --shard=${{ matrix.shard }}/4`). Tres verdes y uno rojo no es "casi
+verde": cada shard corre contra su PROPIO Postgres y su propio sembrado, así que el rojo
+no se puede atribuir a contaminación del vecino — es el único que ejecutó ese recorrido.
+`fail-fast: false` está puesto a propósito para ver los cuatro resultados, no para
+tolerar uno.
+
+Cómo reparte Playwright (`fullyParallel: false`, así que el grano es el archivo):
+
+| Shard | Archivos | Escenarios | Qué concentra |
+|---|---|---|---|
+| 1/4 | 3 | 173 | `accessibility.spec.ts` y compañía: un archivo, muchos escenarios parametrizados por ruta |
+| 2/4 | 30 | 184 | Adquisiciones, bodega, facturación, flota |
+| 3/4 | 31 | 163 | **Los 15 specs del PDTP, completos** |
+| 4/4 | 47 | 161 | El resto de Prevención (inspecciones, CPHS, MIPER, capacitación) |
+
+Que la familia `pdtp-*` caiga entera en el shard 3 no es casualidad afortunada que
+convenga romper: `pdtp-desvios`, `pdtp-cierre-mes` y `pdtp-asignacion-nominal` siembran
+hojas y actividades propias y las borran en su `afterAll`, y sus cantidades están
+calibradas para que `pdtp-reporte-gestion` siga viendo cero filas "En desviación" y
+`pdtp-templates-exports` siga viendo una sola fila en `pdtp-sheet-e2e`. Con todos en el
+mismo shard corren en serie contra la misma base y en orden alfabético, que es el orden
+bajo el que se calibraron. **Si se agrega un spec `pdtp-*`, verificar que el reparto los
+mantenga juntos** (`npx playwright test --shard=N/4 --list`).
+
+Localmente el gate se corre completo y **dos veces seguidas**: una corrida verde aislada
+no distingue un gate de una casualidad. No correr nada pesado en paralelo —Vitest, otra
+build— porque la contención produce fallos que no son de la aplicación
+(`VERIFICACION_AUDITORIA_2026-09-12.md` § "No hace falta optimizar la duración").
+
+```bash
+export TMPDIR=<un directorio con espacio>   # /tmp se llena con los artefactos de Chromium
+npm run test:e2e        # levanta Postgres en Docker, siembra y compila
+npm run test:e2e        # otra vez: el criterio son DOS corridas consecutivas sin fallos
+```
+
 ## Qué no hacer
 
 - No editar la base a mano para "destrabar" un deploy: el esquema lo gobiernan las migraciones y un cambio manual rompe `db:verify-migrations` en el deploy siguiente.

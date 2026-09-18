@@ -92,6 +92,36 @@ El módulo sigue el principio de [PRODUCT.md](PRODUCT.md): *"el trabajo antes qu
 | **G6** | **Objetivos como entidad** (los 8 del RE-36) para agrupar, filtrar y reportar | El Excel, el DS 44 y el mandante razonan por objetivo; el módulo agrupa por hoja, que es una vista por rol, no por propósito | Pequeño | **Baja** |
 | **G7** | Envío por correo del reporte mensual a la lista de distribución (gerencias, subgerente, JDPR) | Hoy solo hay recordatorios; la difusión (act. 4, 5, 7) se hace fuera | Pequeño si G4 existe | **Baja** |
 
+
+### 5.1 Estado de cierre (2026-09-17, rama `feat/pdtp-mejoras-exec`)
+
+Las siete brechas están **cerradas**. Cada una se implementó con pruebas propias
+(unitarias, PGlite y E2E) y el commit que la deja cerrada es el último de su serie.
+
+| # | Brecha | Estado | Commit que la cierra | Serie completa |
+|---|---|---|---|---|
+| G1 | Exportación con el formato RE-36 | **Cerrada** | `ffb7d641` | `83b7b31e` modelo de documento · `a9b6453d` renderer ExcelJS · `e30a65b4`, `96c7bcb6`, `8aff70d7`, `f90fc61d` correcciones |
+| G2 | Presets de planificación y aplicación masiva | **Cerrada** | `3f1edce2` | `f96b6d86` semanas y meses en la regla · `70e0f4ce` presets · `3f3205b2` aplicación masiva · `d7631f48`, `26b76409`, `d3ba6341`, `2bfb5ae5` correcciones |
+| G3 | "No realizada" con motivo y reprogramación por celda | **Cerrada** | `9a1d8f90` | `d368367d` tabla de desvíos · `41c50320` costura única · `df132a69` indicador, cola, reporte y RE-36 · `d7653a01`, `3819e786` correcciones |
+| G4 | Cierre de mes con foto congelada | **Cerrada** | `3654a70e` | `ca83a058` tabla y permiso · `c5b27609` cerrar y reabrir · `e45af7fc`, `49dc25d4` correcciones |
+| G5 | Asignación nominal a personas por faena | **Cerrada** | `db06252c` | `41104cc0` tabla y permiso · `813b9465` cola, recordatorios y RE-36 · `52101235` corrección |
+| G6 | Objetivos como entidad | **Cerrada** | `ee0a1d5c` | `58d783cf` tabla · `bb79bed6` servicio, mapa 2026 y huella firmada · `5851e7e3`, `1c187814`, `1cb1ca8c` correcciones |
+| G7 | Envío por correo del reporte mensual a la lista de distribución | **Cerrada** | `b76725f6` | Depende de G4: el cierre es lo que se distribuye |
+
+**Estado de verificación al 2026-09-17**, para que nadie lea más certeza de la que hay:
+
+- `npm run test:fast` 7544 pasan / 306 omitidos y `npm run test:pglite` 2089 pasan, con
+  `typecheck` y `lint` limpios y la cadena de migraciones verificada (307 entradas), en
+  `52101235`.
+- Los 15 specs `e2e/pdtp-*.spec.ts` pasan completos: **52 de 52, sin omitidos, en 4,0 min**
+  sobre `64e3a887`.
+- **El gate completo del plan todavía no se cumplió**: exige dos corridas consecutivas de
+  `npm run test:e2e` entero sin fallos, y lo que hay es una corrida de la familia `pdtp-*`.
+  El criterio y el reparto por shards están en [`docs/deploy/RUNBOOK.md`](docs/deploy/RUNBOOK.md)
+  § "Gate E2E"; falta ejecutarlo y dejar el informe en `qa/reports/`.
+- Las suites unitarias no se volvieron a correr después de `9736fb4e` y `b9cb949d`, que
+  tocan producto fuera del PDTP (solicitudes y PPA).
+
 ---
 
 ## 6. Dónde el módulo va más allá del documento — y cuándo eso es un riesgo

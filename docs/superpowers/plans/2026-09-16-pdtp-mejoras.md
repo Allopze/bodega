@@ -437,7 +437,7 @@ Reglas: una transacción, `SELECT … FOR UPDATE` por actividad, `assertPdtpProg
 
 Columnas: `id` PK; `activityId` FK cascade; `worksiteId` FK cascade; `year`, `month` (1–12), `week` (1–4); `kind` CHECK `('not_performed','not_applicable','reprogrammed')`; `reason` CHECK `length(trim) >= 10`; `targetMonth` / `targetWeek` NULL con CHECK `(kind <> 'reprogrammed') = (target_month IS NULL AND target_week IS NULL)` y `kind <> 'reprogrammed' OR (target_month, target_week) <> (month, week)`; `status` CHECK `('active','withdrawn')` default `active`; `createdByUserId`, `createdAt`; `withdrawnByUserId`, `withdrawnAt`, `withdrawReason` con CHECK `status <> 'withdrawn' OR (withdrawn_by_user_id IS NOT NULL AND withdrawn_at IS NOT NULL AND length(trim(COALESCE(withdraw_reason,''))) >= 10)`; `uniqueIndex(...).on(activityId, worksiteId, year, month, week).where(sql\`status = 'active'\`)`; `index(worksiteId, year, month)`.
 
-- [ ] **Step 1:** Tests de CHECK (kind inválido; `reprogrammed` sin destino; destino igual a origen; `withdrawn` sin motivo; segundo activo en la misma celda viola el índice parcial). FAIL → esquema → `db:generate` → `db:migrate` → `db:verify-migrations` → PASS. Commit `git commit -m "feat(pdtp): tabla de desvíos por celda"`.
+- [x] **Step 1:** Tests de CHECK (kind inválido; `reprogrammed` sin destino; destino igual a origen; `withdrawn` sin motivo; segundo activo en la misma celda viola el índice parcial). FAIL → esquema → `db:generate` → `db:migrate` → `db:verify-migrations` → PASS. Commit `git commit -m "feat(pdtp): tabla de desvíos por celda"`.
 
 ### Task 3.2: Servicio de desvíos y costura única
 
@@ -461,9 +461,9 @@ export async function listPdtpDeviationsForProgram(programId: string, worksiteId
 ```
 `applyDeviationsToSchedule`: `not_applicable` elimina la celda; `reprogrammed` mueve `plannedQuantity` al destino (suma si existe; `sourceColumn: "deviation:<id>"`); `not_performed` no toca P. Validaciones de `recordPdtpDeviation`: programa activo; faena operable y en alcance; período ≥ activación; actividad efectiva y no excluida; P efectivo > 0 para `not_applicable`/`reprogrammed`; destino dentro del año y del horizonte; `not_performed` no en períodos futuros; no crear si hay ejecución `submitted|approved` con cantidad > 0 en la celda. Changelog sección `deviation:{n}` (no altera la huella: la tabla no entra en `content-digest.ts`).
 
-- [ ] **Step 1: Test puro que falla** — `applyDeviationsToSchedule`: `not_applicable` elimina; `reprogrammed` mueve y suma en destino; `withdrawn` no aplica; `not_performed` deja P. FAIL → implementar → PASS.
-- [ ] **Step 2: Tests PGlite que fallan** — "`not_applicable` baja `planned` del indicador y del documento RE-36 en esa faena, no en otra"; "`reprogrammed` mueve P de mar S2 a abr S1 y una ejecución aprobada en abr S1 acredita"; "`not_performed` mantiene P, E=0 y cuenta en `zeroActivities`"; "no se puede registrar `not_applicable` sobre celda con ejecución aprobada"; "registrar ejecución sobre `not_performed` lo retira con changelog"; "la huella del programa no cambia al registrar desvíos". FAIL → implementar → PASS.
-- [ ] **Step 3:** `npm run test:fast && npx vitest run --config vitest.pglite.config.ts lib/__tests__/pdtp-*.test.ts`. Commit `git commit -m "feat(pdtp): desvíos por celda aplicados en la costura única de planificación"`.
+- [x] **Step 1: Test puro que falla** — `applyDeviationsToSchedule`: `not_applicable` elimina; `reprogrammed` mueve y suma en destino; `withdrawn` no aplica; `not_performed` deja P. FAIL → implementar → PASS.
+- [x] **Step 2: Tests PGlite que fallan** — "`not_applicable` baja `planned` del indicador y del documento RE-36 en esa faena, no en otra"; "`reprogrammed` mueve P de mar S2 a abr S1 y una ejecución aprobada en abr S1 acredita"; "`not_performed` mantiene P, E=0 y cuenta en `zeroActivities`"; "no se puede registrar `not_applicable` sobre celda con ejecución aprobada"; "registrar ejecución sobre `not_performed` lo retira con changelog"; "la huella del programa no cambia al registrar desvíos". FAIL → implementar → PASS.
+- [x] **Step 3:** `npm run test:fast && npx vitest run --config vitest.pglite.config.ts lib/__tests__/pdtp-*.test.ts`. Commit `git commit -m "feat(pdtp): desvíos por celda aplicados en la costura única de planificación"`.
 
 ### Task 3.3: Estados, indicador, cola y RE-36
 
@@ -477,8 +477,8 @@ export async function listPdtpDeviationsForProgram(programId: string, worksiteId
 - Modify: `lib/services/pdtp/management-report.ts` (`PdtpManagementReportActivityRow.deviations: { notPerformed; notApplicable; reprogrammed }`)
 - Tests: `lib/services/pdtp/period.test.ts` (o el existente), `lib/__tests__/operational-work-queue-pdtp-activity-source.test.ts` ("una actividad con `not_applicable` este mes no aparece en la cola"), `lib/reports/pdtp-re36-workbook.test.ts` ("celda no realizada = 0 con nota; hoja Desvíos con una fila"), `pdtp-sheet-table-ui.test.tsx`
 
-- [ ] **Step 1:** Escribir los tests listados → FAIL → implementar cada punto → PASS. `npm run test:fast`, pglite PDTP, `typecheck`, `lint`.
-- [ ] **Step 2: Commit** — `git commit -m "feat(pdtp): estado 'no realizada', desvíos en indicador, cola, reporte y RE-36"`.
+- [x] **Step 1:** Escribir los tests listados → FAIL → implementar cada punto → PASS. `npm run test:fast`, pglite PDTP, `typecheck`, `lint`.
+- [x] **Step 2: Commit** — `git commit -m "feat(pdtp): estado 'no realizada', desvíos en indicador, cola, reporte y RE-36"`.
 
 ### Task 3.4: Acciones y UI de desvíos
 
@@ -488,9 +488,9 @@ export async function listPdtpDeviationsForProgram(programId: string, worksiteId
 - Modify: `app/(app)/prevencion/pdtp/[programId]/reporte/page.tsx` (columna "Desvíos")
 - Create: `e2e/pdtp-desvios.spec.ts`
 
-- [ ] **Step 1:** Test de componente: "elegir Reprogramar muestra mes/semana destino; No realizada no"; "envía `kind`, `reason`, celda". FAIL → implementar → PASS.
-- [ ] **Step 2: E2E** — en `/prevencion/pdtp/actividades?programa=pdtp-prog-e2e&faena=ws-e2e&vista=semana` marcar "No realizada" con motivo y ver el badge; exportar RE-36 y comprobar E=0 con nota en esa celda. Verde.
-- [ ] **Step 3: Commit** — `git commit -m "feat(pdtp): registrar y retirar desvíos por celda desde la vista semanal"`.
+- [x] **Step 1:** Test de componente: "elegir Reprogramar muestra mes/semana destino; No realizada no"; "envía `kind`, `reason`, celda". FAIL → implementar → PASS.
+- [x] **Step 2: E2E** — en `/prevencion/pdtp/actividades?programa=pdtp-prog-e2e&faena=ws-e2e&vista=semana` marcar "No realizada" con motivo y ver el badge; exportar RE-36 y comprobar E=0 con nota en esa celda. Verde.
+- [x] **Step 3: Commit** — `git commit -m "feat(pdtp): registrar y retirar desvíos por celda desde la vista semanal"`.
 
 **Aceptación Fase 3:** tres tipos de desvío reflejados en estado, indicador, cola, reporte y RE-36; `contentDigest` inalterado por desvíos.
 
@@ -506,7 +506,7 @@ export async function listPdtpDeviationsForProgram(programId: string, worksiteId
 
 Columnas: `id` PK (`pdtp-close-${programId}-${worksiteId}-${year}-${MM}`); `programId` FK cascade; `worksiteId` FK restrict; `year` (2024–2100); `month` (1–12); `status` CHECK `('closed','reopened')`; `version` ≥ 1; `snapshotJson` jsonb NOT NULL; `digest` CHECK `length = 64`; `closedByUserId` NOT NULL, `closedAt`, `closeReason` (≥10); `reopenedByUserId`, `reopenedAt`, `reopenReason` con CHECK como en desvíos; `distributedAt` NULL; `distributionJson` jsonb default `[]`; `createdAt`, `updatedAt`; unique `(programId, worksiteId, year, month)`.
 
-- [ ] **Step 1:** Tests de CHECK (mes 13; digest corto; `reopened` sin motivo). FAIL → esquema + manifest + ARCHITECTURE → migración → PASS; `npx vitest run lib/__tests__/architecture-doc-rbac.test.ts` verde. Commit `git commit -m "feat(pdtp): cierres mensuales por faena (tabla, permiso y notificación)"`.
+- [x] **Step 1:** Tests de CHECK (mes 13; digest corto; `reopened` sin motivo). FAIL → esquema + manifest + ARCHITECTURE → migración → PASS; `npx vitest run lib/__tests__/architecture-doc-rbac.test.ts` verde. Commit `git commit -m "feat(pdtp): cierres mensuales por faena (tabla, permiso y notificación)"`.
 
 ### Task 4.2: Servicio de cierre y bloqueo de escrituras
 
@@ -538,8 +538,8 @@ export async function assertPdtpPeriodOpen(programId: string, worksiteId: string
 ```
 Reglas (patrón `closeSafetyIndicatorPeriod`, `lib/services/prevention-indicadores.ts:760-810`): programa activo; faena operable y en alcance; `(year, month)` ≤ período actual y ≥ activación; transacción: snapshot → digest sha256 del JSON canónico (`stableJson` si existe en el repo; si no, `JSON.stringify` con claves ordenadas) → `INSERT … ON CONFLICT DO UPDATE` con `version + 1` y limpieza de reapertura; changelog sección `closure:${year}-${MM}`; `recordAudit` `action: "close"`. `reopen` conserva el snapshot. `driftedSinceClose` recalcula el snapshot y compara digest (solo en detalle). La acreditación por integración (`accreditPdtpFromEvent`) **no** se bloquea.
 
-- [ ] **Step 1: Tests que fallan** — "cerrar crea snapshot con re36, indicadores, desvíos y objetivos, y digest de 64"; "cerrar dos veces incrementa `version` y reemplaza el snapshot"; "mes cerrado rechaza `markPdtpExecution`, `approve`, `recordPdtpDeviation` y `setPdtpActivityOverride`"; "reabrir exige motivo ≥10 y vuelve a permitir escrituras"; "acreditación por integración sigue pasando y `driftedSinceClose` es true"; "no se cierra un mes futuro ni anterior a la activación"; "faena fuera de alcance → error".
-- [ ] **Step 2:** FAIL → implementar → PASS. Commit `git commit -m "feat(pdtp): cerrar y reabrir el mes por faena con foto congelada"`.
+- [x] **Step 1: Tests que fallan** — "cerrar crea snapshot con re36, indicadores, desvíos y objetivos, y digest de 64"; "cerrar dos veces incrementa `version` y reemplaza el snapshot"; "mes cerrado rechaza `markPdtpExecution`, `approve`, `recordPdtpDeviation` y `setPdtpActivityOverride`"; "reabrir exige motivo ≥10 y vuelve a permitir escrituras"; "acreditación por integración sigue pasando y `driftedSinceClose` es true"; "no se cierra un mes futuro ni anterior a la activación"; "faena fuera de alcance → error".
+- [x] **Step 2:** FAIL → implementar → PASS. Commit `git commit -m "feat(pdtp): cerrar y reabrir el mes por faena con foto congelada"`.
 
 ### Task 4.3: Distribución por notificación/correo (G7)
 
@@ -554,7 +554,7 @@ export async function distributePdtpPeriodClosure(input: { closureId: string }, 
 ```
 Destinatarios: usuarios con `prevention:pdtp:view` en la faena (helper de `lib/services/pdtp/reminders.ts`) ∩ roles de la lista. Envío vía `createNotifications(userIds, { type: "pdtp_period_closed", title: \`Cierre PDTP ${MM}/${year} · ${faena}\`, body: "<% del mes>, <N> en cero, <M> desvíos", entityType: "pdtp_period_closure", entityId, entityHref: \`/prevencion/pdtp/${programId}/cierres/${closureId}\`, dedupeKey: \`pdtp-closure-${closureId}-v${version}\` })` (`lib/services/notification-create.ts:113` envía el correo). Registra `distributedAt` y `distributionJson`. Sin adjunto (fuera de alcance; el correo enlaza al detalle con descarga).
 
-- [ ] **Step 1: Tests que fallan** — "destinatarios = usuarios con `view` en la faena y rol de la lista"; "dedupe por `closureId+version` no reenvía"; "registra `distributedAt`". FAIL → implementar → PASS. Commit `git commit -m "feat(pdtp): distribuir el cierre mensual por notificación y correo"`.
+- [x] **Step 1: Tests que fallan** — "destinatarios = usuarios con `view` en la faena y rol de la lista"; "dedupe por `closureId+version` no reenvía"; "registra `distributedAt`". FAIL → implementar → PASS. Commit `git commit -m "feat(pdtp): distribuir el cierre mensual por notificación y correo"`.
 
 ### Task 4.4: Route de export del cierre, acciones y UI
 
@@ -566,9 +566,9 @@ Destinatarios: usuarios con `prevention:pdtp:view` en la faena (helper de `lib/s
 - Modify: `app/(app)/prevencion/pdtp/[programId]/page.tsx` (botón y enlace "Cierres"), `app/(app)/prevencion/pdtp/page.tsx` (texto "Último cierre: MM/AAAA"), `modules/prevention/manifest.ts:302-345` (hijo "Cierres mensuales" con `prevention:pdtp:view`)
 - Create: `e2e/pdtp-cierre-mes.spec.ts`
 
-- [ ] **Step 1:** Tests de route (403 sin permiso; 200 con `content-disposition` correcto) y de botón (mes por defecto = anterior; motivo obligatorio). FAIL → implementar → PASS.
-- [ ] **Step 2: E2E** — cerrar el mes anterior en `pdtp-prog-e2e`/`ws-e2e`, ver fila en `/cierres`, descargar, intentar registrar ejecución en ese mes y ver el error, reabrir. Verde.
-- [ ] **Step 3: Commit** — `git commit -m "feat(pdtp): pantalla de cierres mensuales, export del cierre y distribución"`.
+- [x] **Step 1:** Tests de route (403 sin permiso; 200 con `content-disposition` correcto) y de botón (mes por defecto = anterior; motivo obligatorio). FAIL → implementar → PASS.
+- [x] **Step 2: E2E** — cerrar el mes anterior en `pdtp-prog-e2e`/`ws-e2e`, ver fila en `/cierres`, descargar, intentar registrar ejecución en ese mes y ver el error, reabrir. Verde.
+- [x] **Step 3: Commit** — `git commit -m "feat(pdtp): pantalla de cierres mensuales, export del cierre y distribución"`.
 
 **Aceptación Fase 4:** el snapshot embebe objetivos y desvíos; el export del cierre se regenera desde el JSON sin tocar la BD viva; correo con dedupe; escrituras bloqueadas en meses cerrados.
 
@@ -584,7 +584,7 @@ Destinatarios: usuarios con `prevention:pdtp:view` en la faena (helper de `lib/s
 
 Columnas: `id` PK; `activityId` FK cascade; `worksiteId` FK cascade; `userId` FK restrict; `roleId` FK set null (informativo); `validFrom` date NOT NULL; `validUntil` date NULL con CHECK `valid_until IS NULL OR valid_until >= valid_from`; `note`; `createdByUserId`; `createdAt`, `updatedAt`; `uniqueIndex(activityId, worksiteId, userId).where(sql\`valid_until IS NULL\`)`; índices `(worksiteId, userId)`, `(activityId, worksiteId)`.
 
-- [ ] **Step 1:** Tests de CHECK/índice parcial. FAIL → esquema + manifest + doc → migración → PASS. Commit `git commit -m "feat(pdtp): asignación nominal de actividades por faena (tabla y permiso)"`.
+- [x] **Step 1:** Tests de CHECK/índice parcial. FAIL → esquema + manifest + doc → migración → PASS. Commit `git commit -m "feat(pdtp): asignación nominal de actividades por faena (tabla y permiso)"`.
 
 ### Task 5.2: Servicio, cola, recordatorios y RE-36
 
@@ -604,8 +604,8 @@ export async function resolvePdtpAssigneesForCell(activityId: string, worksiteId
 ```
 Decisión: con asignado nominal, los demás del mismo rol **no** ven la fila en `/pendientes`; la vista de actividades muestra todo con chip "Asignada a: Nombre" y filtro `?asignado=yo`. Dos asignados (turnos) la ven ambos.
 
-- [ ] **Step 1: Tests que fallan** — "candidatos = usuarios de la faena con rol mapeado"; "set cierra la vigencia anterior y abre la nueva"; "usuario sin rol compatible → error"; "con asignado nominal, otro usuario del mismo rol no ve la fila y el asignado sí con `native_assignee_user_id`"; "sin asignado se mantiene visibilidad por rol"; "el recordatorio va al asignado"; "RESPONSABLES del RE-36 incluye el nombre".
-- [ ] **Step 2:** FAIL → implementar → PASS. Commit `git commit -m "feat(pdtp): asignados nominales en cola, recordatorios y RE-36"`.
+- [x] **Step 1: Tests que fallan** — "candidatos = usuarios de la faena con rol mapeado"; "set cierra la vigencia anterior y abre la nueva"; "usuario sin rol compatible → error"; "con asignado nominal, otro usuario del mismo rol no ve la fila y el asignado sí con `native_assignee_user_id`"; "sin asignado se mantiene visibilidad por rol"; "el recordatorio va al asignado"; "RESPONSABLES del RE-36 incluye el nombre".
+- [x] **Step 2:** FAIL → implementar → PASS. Commit `git commit -m "feat(pdtp): asignados nominales en cola, recordatorios y RE-36"`.
 
 ### Task 5.3: Acción y UI de asignación
 
@@ -615,9 +615,9 @@ Decisión: con asignado nominal, los demás del mismo rol **no** ven la fila en 
 - Modify: `app/(app)/prevencion/pdtp/actividades/page.tsx` (filtro `?asignado=yo`), `app/api/prevencion/pdtp/export/route.ts` (`?por_persona=1`)
 - Modify: `e2e/setup-db.ts` (usuario `jt@e2e.chome.cl` con rol `jefe_terreno` y `worksite_users` a `ws-e2e`); Create: `e2e/pdtp-asignacion-nominal.spec.ts`
 
-- [ ] **Step 1:** Test de componente: lista candidatos y envía `userIds`. FAIL → implementar → PASS.
-- [ ] **Step 2: E2E** — asignar la actividad fixture al JT, iniciar sesión como él, ver la tarjeta en `/pendientes` con su nombre; exportar `?por_persona=1` y ver una hoja con su nombre. Verde.
-- [ ] **Step 3: Commit** — `git commit -m "feat(pdtp): asignar actividades a personas por faena y exportar por persona"`.
+- [x] **Step 1:** Test de componente: lista candidatos y envía `userIds`. FAIL → implementar → PASS.
+- [x] **Step 2: E2E** — asignar la actividad fixture al JT, iniciar sesión como él, ver la tarjeta en `/pendientes` con su nombre; exportar `?por_persona=1` y ver una hoja con su nombre. Verde.
+- [x] **Step 3: Commit** — `git commit -m "feat(pdtp): asignar actividades a personas por faena y exportar por persona"`.
 
 **Aceptación Fase 5:** dos JT en una faena ven solo lo suyo en la cola; el RE-36 "por persona" reproduce la variante Biodiversa; la huella no cambia al asignar.
 
