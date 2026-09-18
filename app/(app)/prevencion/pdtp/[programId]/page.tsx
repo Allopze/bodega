@@ -30,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ChartBar, DotsThree, DownloadSimple, ListChecks, LockKey, PencilSimple } from "@phosphor-icons/react/dist/ssr"
+import { formatDateSafe } from "@/lib/utils"
 import { PdtpSheetTable } from "../pdtp-sheet-table"
 import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-sheet-table-ui"
 import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
@@ -483,7 +484,7 @@ async function PdtpChangeLogSection({ programId }: { programId: string }) {
       <div className="divide-y divide-[var(--color-border)]">
         {entries.map((entry) => (
           <div key={entry.id} className="flex items-start gap-3 px-4 py-2.5 text-xs">
-            <span className="mt-0.5 shrink-0 text-[var(--color-text-faint)]">{entry.changedAt.slice(0, 10)}</span>
+            <span className="mt-0.5 shrink-0 text-[var(--color-text-faint)]">{formatDateSafe(entry.changedAt)}</span>
             <span className="font-medium text-[var(--color-text-subtle)]">{entry.section}</span>
             <span className="text-[var(--color-text-muted)]">{entry.note}</span>
           </div>

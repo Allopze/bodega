@@ -66,6 +66,7 @@ import {
   type RevocationInput,
 } from "./accreditation"
 import { engancheDestinationFor } from "@/lib/services/pdtp-adapters/fulfillment-contract-2026"
+import { PDTP_NO_EXECUTOR_ROLE_REASON } from "@/lib/prevention/pdtp"
 import { usablePdtpInstrumentNumbers } from "./instruments"
 import { legacyPdtpActivityNumberForCatalogId } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 import { getPdtpExecutionConnector } from "./connectors"
@@ -1230,7 +1231,7 @@ export async function assertPdtpFulfillmentCoverage(
     if (roles.length === 0) {
       issues.push({
         n: activity.n, activity: activity.activity, status: "permission_gap",
-        reason: "Ninguno de sus responsables declarados mapea a un rol RBAC real ni a un operador de plataforma.",
+        reason: PDTP_NO_EXECUTOR_ROLE_REASON,
       })
       continue
     }

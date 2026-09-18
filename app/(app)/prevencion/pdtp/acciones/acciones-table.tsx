@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select"
 import type { listActionsByProgram } from "@/lib/services/prevention-pdtp"
 import { PDTP_ACTION_STATUS_LABELS, pdtpActionStatusVariant, pdtpPriorityPresentation } from "@/lib/prevention/pdtp"
+import { formatDateSafe } from "@/lib/utils"
 
 type ActionRow = Awaited<ReturnType<typeof listActionsByProgram>>[number]
 
@@ -114,7 +115,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
             <TableRow key={item.id}>
               <TableCell className="text-(--color-text-muted)">{item.n}</TableCell>
               <TableCell className="tabular-nums text-xs text-(--color-text-muted)">
-                {item.createdAt?.slice(0, 10) ?? "—"}
+                {formatDateSafe(item.createdAt)}
               </TableCell>
               <TableCell>
                 <Link

@@ -165,3 +165,13 @@ const PDTP_PRIORITY_PRESENTATION: Record<PdtpActionPriority, { priority: Priorit
 export function pdtpPriorityPresentation(prioridad: string | undefined): { priority: Priority; label: string } {
   return PDTP_PRIORITY_PRESENTATION[prioridad as PdtpActionPriority] ?? PDTP_PRIORITY_PRESENTATION.media
 }
+
+/**
+ * Motivo mostrado cuando ninguno de los responsables declarados de una
+ * actividad corresponde a un rol real del sistema ni a un operador de
+ * plataforma. Vivía duplicado, con la misma jerga interna ("rol RBAC"), en
+ * `responsible-execution.ts` y `fulfillment.ts`; llega a pantalla en el panel
+ * de cobertura del programa (`coverage-report-panel.tsx`).
+ */
+export const PDTP_NO_EXECUTOR_ROLE_REASON =
+  "Ninguno de los responsables definidos para esta actividad puede registrar su cumplimiento en la plataforma."

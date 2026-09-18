@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { PDTP_2026_ENGANCHE_DESTINATIONS } from "@/lib/services/pdtp-adapters/fulfillment-contract-2026"
+import { PDTP_NO_EXECUTOR_ROLE_REASON } from "@/lib/prevention/pdtp"
 import {
   classifyPdtpResponsibleExecution,
   type ActivityExecutionRow,
@@ -93,7 +94,7 @@ describe("classifyPdtpResponsibleExecution", () => {
       permissionsByRole: permisos({ rol_viejo: ["prevention:inspections:execute"] }),
     })
     expect(report.soloManual).toBe(1)
-    expect(report.needsReview[0]!.reason).toMatch(/Ninguno de sus responsables declarados mapea a un rol RBAC real/)
+    expect(report.needsReview[0]!.reason).toBe(PDTP_NO_EXECUTOR_ROLE_REASON)
   })
 
   it("una actividad de gobernanza sin módulo de destino no exige permiso", () => {
