@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { MetaBadge } from "@/components/states/state-badge"
+import { Callout } from "@/components/ui/callout"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 import type { pdtpPrograms } from "@/db/schema"
@@ -211,9 +212,9 @@ export function AudiencePreviewPanel({
         <p className="mt-2 text-xs text-[var(--color-text-subtle)]">Ninguna actividad tiene audiencia asignada todavía; el filtro por responsable sigue disponible.</p>
       )}
       {worksiteSelected && !worksiteCanOperate ? (
-        <p className="mt-3 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">
+        <Callout tone="warning" className="mt-3 text-xs">
           Esta faena no está habilitada para este programa: la membresía declarada no la incluye.
-        </p>
+        </Callout>
       ) : (
         <p className="mt-3 text-sm text-[var(--color-text)]">
           {filtered.length} de {countOf(activities.length, "actividad visible", "actividades visibles")} para esta combinación.

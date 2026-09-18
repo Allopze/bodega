@@ -17,13 +17,24 @@ import { ReporteGestionFilters } from "./reporte-gestion-filters"
 
 export const metadata: Metadata = { title: "Reporte de gestión PDTP" }
 
-/** Conteo de desvíos de una actividad, en palabras y sin enums crudos. */
-function PdtpDeviationSummary({ deviations }: { deviations: { notPerformed: number; notApplicable: number; reprogrammed: number } }) {
+/**
+ * Conteo de desvíos de una actividad, en palabras y sin enums crudos.
+ *
+ * Sin desvíos declarados y sin cumplir la meta es el caso más grave que este
+ * reporte puede mostrar (una actividad que se quedó corta y nadie explicó
+ * por qué), no el más neutro — por eso ese caso no comparte el gris plano de
+ * "todo bien" y se distingue con `MetaBadge` en tono de advertencia.
+ */
+function PdtpDeviationSummary({ deviations, meetsTarget }: { deviations: { notPerformed: number; notApplicable: number; reprogrammed: number }; meetsTarget: boolean }) {
   const chips: Array<{ label: string; variant: "warning" | "outline" }> = []
   if (deviations.notPerformed > 0) chips.push({ label: `${deviations.notPerformed} no realizada${deviations.notPerformed === 1 ? "" : "s"}`, variant: "warning" })
   if (deviations.notApplicable > 0) chips.push({ label: `${deviations.notApplicable} no aplica`, variant: "outline" })
   if (deviations.reprogrammed > 0) chips.push({ label: `${deviations.reprogrammed} reprogramada${deviations.reprogrammed === 1 ? "" : "s"}`, variant: "outline" })
-  if (chips.length === 0) return <span className="text-[var(--color-text-faint)]">Sin desvíos</span>
+  if (chips.length === 0) {
+    return meetsTarget
+      ? <span className="text-[var(--color-text-faint)]">Sin desvíos</span>
+      : <MetaBadge meta={{ label: "Sin desvío registrado", variant: "warning" }} />
+  }
   return (
     <span className="flex flex-wrap gap-1">
       {chips.map((chip) => <MetaBadge key={chip.label} meta={chip} />)}
@@ -161,7 +172,7 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
                       desvío declarado es una decisión registrada; sin ninguno,
                       es trabajo que nadie explicó. */}
                   <TableCell className="text-xs text-[var(--color-text-muted)]">
-                    <PdtpDeviationSummary deviations={row.deviations} />
+                    <PdtpDeviationSummary deviations={row.deviations} meetsTarget={row.meetsTarget} />
                   </TableCell>
                   <TableCell className="max-w-xs text-xs text-[var(--color-text-muted)]">{row.responsibles.join(", ") || "Sin responsable"}</TableCell>
                   <TableCell>

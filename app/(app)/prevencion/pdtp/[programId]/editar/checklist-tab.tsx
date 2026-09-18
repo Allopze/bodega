@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Field } from "@/components/ui/field"
 import { MetaBadge } from "@/components/states/state-badge"
+import { Callout } from "@/components/ui/callout"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import {
@@ -399,9 +400,9 @@ function ChecklistEditor({ programId, activity, template, copySources, onSaved }
       )}
 
       {!validation.ok && (
-        <p role="status" className="rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">
+        <Callout tone="warning">
           {validation.message}
-        </p>
+        </Callout>
       )}
 
       {error && (

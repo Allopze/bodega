@@ -18,6 +18,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { MetaBadge } from "@/components/states/state-badge"
+import { Callout } from "@/components/ui/callout"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { FileInput } from "@/components/ui/file-input"
@@ -268,8 +269,8 @@ export function ImportExcelSection({ programId, visibleWorksites, catalogActivit
             </div>)}
             <p className="text-xs text-[var(--color-warning-ink)]">También puedes revisar y publicar cada candidata desde Admin → Catálogos PDTP → Actividades.</p>
           </div>}
-          {preview.blockingErrors.length > 0 && <ul className="space-y-1 rounded-lg border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-xs text-[var(--color-danger-ink)]">{preview.blockingErrors.map((error) => <li key={error}>• {error}</li>)}</ul>}
-          {preview.warnings.length > 0 && <ul className="space-y-1 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">{preview.warnings.map((warning) => <li key={warning}>• {warning}</li>)}</ul>}
+          {preview.blockingErrors.length > 0 && <Callout tone="danger" role="alert" className="text-xs"><ul className="space-y-1">{preview.blockingErrors.map((error) => <li key={error}>• {error}</li>)}</ul></Callout>}
+          {preview.warnings.length > 0 && <Callout tone="warning" className="text-xs"><ul className="space-y-1">{preview.warnings.map((warning) => <li key={warning}>• {warning}</li>)}</ul></Callout>}
 
           {preview.counts.executedCells > 0 && (
             <div className="grid gap-3 rounded-lg border border-[var(--color-border)] p-3 md:grid-cols-2">
@@ -319,11 +320,9 @@ export function ImportExcelSection({ programId, visibleWorksites, catalogActivit
         </div>
       )}
       {state?.message && (
-        <p role="status" className={`mt-3 rounded-[var(--radius)] border px-3 py-2 text-sm ${state.ok
-          ? "border-[var(--color-success-line)] bg-[var(--color-success-tint)] text-[var(--color-success-ink)]"
-          : "border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] text-[var(--color-danger)]"}`}>
+        <Callout tone={state.ok ? "success" : "danger"} className="mt-3">
           {state.message}
-        </p>
+        </Callout>
       )}
     </div>
   )

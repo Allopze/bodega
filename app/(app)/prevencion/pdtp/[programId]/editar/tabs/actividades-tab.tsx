@@ -11,6 +11,7 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { MetaBadge } from "@/components/states/state-badge"
+import { Callout } from "@/components/ui/callout"
 import {
   updatePdtpActivityAction,
   duplicatePdtpActivityAction,
@@ -645,10 +646,10 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
             <Textarea id="edit-execution-guidance" value={executionGuidance} onChange={(e) => setExecutionGuidance(e.target.value)} rows={3} maxLength={2000} />
           </Field>
           {modernSchedule ? (
-            <p className="rounded-lg border border-[var(--color-info-line)] bg-[var(--color-info-tint)] px-3 py-2 text-xs text-[var(--color-info-ink)]">
+            <Callout tone="info" className="text-xs">
               Esta actividad usa la programación nueva (fecha, recurrencia o evento) y conserva su configuración,
               instrumento, evidencia y recordatorios. El editor histórico no la reemplaza por la grilla de cuatro semanas.
-            </p>
+            </Callout>
           ) : (<>
           <Field label="Cuándo se realiza" htmlFor="edit-schedule-mode">
             <Select value={scheduleMode} onValueChange={(value) => setScheduleMode(value as typeof scheduleMode)}>
@@ -715,7 +716,7 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
             nextRule={nextRule}
           />}
           {wouldReplaceManualSchedule && (
-            <div className="rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">
+            <Callout tone="warning" className="text-xs">
               <p>
                 Esta actividad tiene {countOf(currentCells.length, "semana planificada", "semanas planificadas")} que no vienen de esta frecuencia.
                 Guardar las reemplaza: {countOf(scheduleDiff.removedCells.length, "semana", "semanas")} {scheduleDiff.removedCells.length === 1 ? "se elimina" : "se eliminan"} y la cantidad planificada
@@ -728,7 +729,7 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
                   onChange={(event) => setReplaceConfirmed(event.target.checked)}
                 />
               </div>
-            </div>
+            </Callout>
           )}
           </>)}
           <Field label="Notas" htmlFor="edit-notes">
@@ -778,10 +779,10 @@ function RecurrenceImpactPreview({
     horizon,
   )
   return (
-    <p className="rounded-lg border border-[var(--color-info-line)] bg-[var(--color-info-tint)] px-3 py-2 text-xs text-[var(--color-info-ink)]">
+    <Callout tone="info" className="text-xs">
       {changed
         ? `Impacto antes de guardar: pasará de ${currentCount} a ${countOf(nextCount, "obligación calendarizada", "obligaciones calendarizadas")}; las ejecuciones existentes no se modifican.`
         : `${countOf(nextCount, "obligación calendarizada", "obligaciones calendarizadas")}; no hay cambio de recurrencia pendiente.`}
-    </p>
+    </Callout>
   )
 }
