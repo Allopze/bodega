@@ -1013,7 +1013,8 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
             WHERE ${pdtpActivityWorksiteExclusions.activityId} = ${pdtpActivities.id}
               AND ${pdtpActivityWorksiteExclusions.worksiteId} = ${worksites.id}
           )
-          -- Visibilidad (Fase 5). Dos regímenes, excluyentes por celda:
+          -- Visibilidad (Fase 5). El rol responsable es condición NECESARIA
+          -- siempre; la asignación nominal sólo ACOTA dentro de él:
           --
           --  · SIN asignado nominal vigente: exactamente el criterio de antes
           --    —le toca a quien tenga el rol responsable (o el que opera por
@@ -1024,18 +1025,22 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
           --    asignación equivocada deja la fila fuera de la vista de todos
           --    menos de una persona. Por eso la vista de actividades sigue
           --    mostrándolo todo, con el chip "Asignada a".
-          AND (
-            asignado.user_id IS NOT NULL
-            OR (
-              NOT EXISTS (
-                SELECT 1 FROM ${pdtpActivityWorksiteAssignees}
-                WHERE ${pdtpActivityWorksiteAssignees.activityId} = ${pdtpActivities.id}
-                  AND ${pdtpActivityWorksiteAssignees.worksiteId} = ${worksites.id}
-                  AND ${pdtpActivityWorksiteAssignees.validFrom} <= ${chileToday}
-                  AND (${pdtpActivityWorksiteAssignees.validUntil} IS NULL OR ${pdtpActivityWorksiteAssignees.validUntil} >= ${chileToday})
-              )
-              AND EXISTS (
-                SELECT 1 FROM jsonb_array_elements_text(${pdtpActivities.responsibleSlugs}) AS slug
+          --
+          -- Que el rol quede FUERA del OR es deliberado y fue un defecto real:
+          -- con la condición de rol anidada bajo la rama "sin asignado", una
+          -- fila asignada se le mostraba al asignado aunque su rol no
+          -- respondiera por la actividad. Asignar no es una llave que reparta
+          -- trabajo: setPdtpActivityAssignees ya sólo acepta candidatos con
+          -- el rol responsable (o ejecutores), y esta consulta lo vuelve a
+          -- exigir en lectura para que un cambio de rol posterior —o una fila
+          -- escrita por fuera del servicio— no amplíe la visibilidad.
+          --
+          -- Contrapartida aceptada: si la persona asignada pierde el rol, la
+          -- fila deja de verse hasta que se corrija la asignación. La vista de
+          -- actividades la sigue mostrando, y corregir la nómina es
+          -- exactamente lo que corresponde hacer cuando alguien cambia de rol.
+          AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(${pdtpActivities.responsibleSlugs}) AS slug
             WHERE slug.value IN (
               -- El dueño puede ser el rol del responsable o el rol que opera la
               -- plataforma por él: los conductores y operadores son el
@@ -1049,7 +1054,15 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
                   OR ${inArray(pdtpResponsibleCatalog.operatedByRoleName, session.user.roles)}
                 )
             )
-              )
+          )
+          AND (
+            asignado.user_id IS NOT NULL
+            OR NOT EXISTS (
+              SELECT 1 FROM ${pdtpActivityWorksiteAssignees}
+              WHERE ${pdtpActivityWorksiteAssignees.activityId} = ${pdtpActivities.id}
+                AND ${pdtpActivityWorksiteAssignees.worksiteId} = ${worksites.id}
+                AND ${pdtpActivityWorksiteAssignees.validFrom} <= ${chileToday}
+                AND (${pdtpActivityWorksiteAssignees.validUntil} IS NULL OR ${pdtpActivityWorksiteAssignees.validUntil} >= ${chileToday})
             )
           )
       `)

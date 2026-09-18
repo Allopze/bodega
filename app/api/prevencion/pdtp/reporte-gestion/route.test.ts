@@ -43,7 +43,10 @@ function request(query = "") {
 const BASE_REPORT = {
   programId: "p1", programTitle: "Programa 2026", year: 2026, worksiteId: "w1", target: 0.9,
   activities: [
-    { activityNumber: 1, activity: "Liderazgo preventivo", planned: 10, executed: 8, percent: 0.8, meetsTarget: false, responsibles: ["PRF"] },
+    // `deviations` no es opcional en `PdtpManagementReportActivityRow`: la
+    // columna "Desvíos declarados" la lee sin guarda, igual que el resto de
+    // las columnas, así que un fixture sin ella deja la ruta en 500.
+    { activityNumber: 1, activity: "Liderazgo preventivo", planned: 10, executed: 8, percent: 0.8, meetsTarget: false, responsibles: ["PRF"], deviations: { notPerformed: 2, notApplicable: 0, reprogrammed: 1 } },
   ],
   indicatorDefinitions: [{ code: "avance_actividad", label: "Avance por actividad", formula: "ejecutado/planificado" }],
 }
@@ -102,6 +105,12 @@ describe("GET PDTP reporte de gestión", () => {
     const reopened = new ExcelJS.Workbook()
     await reopened.xlsx.load(await response.arrayBuffer())
     expect(reopened.worksheets.map((ws) => ws.name)).toEqual(expect.arrayContaining(["Resumen por actividad", "Indicadores"]))
+
+    // Los desvíos se describen en castellano, nunca con el enum crudo: la
+    // columna explica el avance, no lo corrige.
+    const summary = reopened.getWorksheet("Resumen por actividad")!
+    expect(summary.getRow(1).getCell(8).value).toBe("Desvíos declarados")
+    expect(summary.getRow(2).getCell(8).value).toBe("2 no realizadas · 1 reprogramada")
   })
 
   it("escapes activity/responsible text that looks like a formula so Excel never evaluates it", async () => {

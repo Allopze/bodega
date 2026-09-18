@@ -106,7 +106,7 @@ describe("GET PDTP Excel", () => {
 
     expect(response.status).toBe(200)
     expect(mockBuild).not.toHaveBeenCalled()
-    expect(mockBuildRe36Document).toHaveBeenCalledWith({ programId: "p1", worksiteId: "w1", scope: ["w1"] })
+    expect(mockBuildRe36Document).toHaveBeenCalledWith({ programId: "p1", worksiteId: "w1", scope: ["w1"], porPersona: false })
     expect(mockRenderRe36Buffer).toHaveBeenCalledWith(re36Document())
     expect(response.headers.get("content-disposition")).toContain("RE-36-PDTP-2026-F1-v3.xlsx")
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
@@ -121,6 +121,28 @@ describe("GET PDTP Excel", () => {
 
     expect(response.status).toBe(200)
     expect(mockBuildRe36Document).toHaveBeenCalled()
+  })
+
+  it("por_persona=1 pide la variante nominalizada y la distingue en el nombre del archivo", async () => {
+    mockAuth.mockResolvedValue(session())
+
+    const response = await GET(request("?programId=p1&por_persona=1"))
+
+    expect(response.status).toBe(200)
+    expect(mockBuildRe36Document).toHaveBeenCalledWith({ programId: "p1", worksiteId: "w1", scope: ["w1"], porPersona: true })
+    // Sin la marca en el nombre, dos descargas de la misma faena se pisarían
+    // en la carpeta de quien las baja y no habría forma de decir cuál es cuál.
+    expect(response.headers.get("content-disposition")).toContain("RE-36-PDTP-POR-PERSONA-2026-F1-v3.xlsx")
+  })
+
+  it("un por_persona que no es una marca afirmativa no cambia el documento", async () => {
+    mockAuth.mockResolvedValue(session())
+
+    const response = await GET(request("?programId=p1&por_persona=quizas"))
+
+    expect(response.status).toBe(200)
+    expect(mockBuildRe36Document).toHaveBeenCalledWith({ programId: "p1", worksiteId: "w1", scope: ["w1"], porPersona: false })
+    expect(response.headers.get("content-disposition")).not.toContain("POR-PERSONA")
   })
 
   it("falls back to formato=re36 for an unrecognized formato value instead of failing", async () => {
@@ -143,7 +165,7 @@ describe("GET PDTP Excel", () => {
 
     expect(response.status).toBe(200)
     expect(mockResolveActiveProgramId).toHaveBeenCalledWith(2026)
-    expect(mockBuildRe36Document).toHaveBeenCalledWith({ programId: "resolved-by-year", worksiteId: "w1", scope: ["w1"] })
+    expect(mockBuildRe36Document).toHaveBeenCalledWith({ programId: "resolved-by-year", worksiteId: "w1", scope: ["w1"], porPersona: false })
     expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
       newState: expect.objectContaining({ result: "success", formato: "re36" }),
     }))

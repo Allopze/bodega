@@ -117,6 +117,7 @@ describe("sidebar navigation", () => {
       "A demanda y por evento",
       "Medidas",
       "Cobertura",
+      "Cierres mensuales",
       "Aprobaciones",
     ])
     // El item padre ya lleva al dashboard: ningún hijo debe repetir su href, o el

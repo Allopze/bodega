@@ -546,7 +546,14 @@ describe("buildPdtpRe36Document", () => {
       await seedBaseFixture()
       await asignar("act-a", USER_ID, `${YEAR}-01-01`)
       const { buildPdtpRe36Document, pdtpRe36ResponsiblesLabel } = await import("@/lib/services/pdtp/re36-document")
-      const doc = await buildPdtpRe36Document({ programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all" })
+      // `asOf` dentro del año del fixture (2033): sin él la vigencia se
+      // resuelve al día de HOY, que es anterior al programa de este fixture y
+      // devolvería —correctamente— cero asignados. El documento se lee siempre
+      // a una fecha, y acá la fecha es el año que el documento describe.
+      const doc = await buildPdtpRe36Document({
+        programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all",
+        asOf: `${YEAR}-06-01T12:00:00.000Z`,
+      })
       const rowA = doc.sheets[0]!.rows.find((row) => row.activityId === "act-a")!
       expect(rowA.assigneeNames).toEqual(["Usuaria de prueba"])
       expect(pdtpRe36ResponsiblesLabel(rowA)).toBe(`${rowA.responsibles} (Usuaria de prueba)`)
@@ -565,6 +572,16 @@ describe("buildPdtpRe36Document", () => {
       })
       const rowA = doc.sheets[0]!.rows.find((row) => row.activityId === "act-a")!
       expect(rowA.assigneeNames).toEqual([])
+
+      // El contraste es lo que hace la prueba: la MISMA asignación, leída a una
+      // fecha posterior a su inicio, sí aparece. Sin esta mitad, un documento
+      // que nunca resolviera asignados pasaría igual.
+      const docDespues = await buildPdtpRe36Document({
+        programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all",
+        asOf: `${YEAR}-10-01T12:00:00.000Z`, cutoffMonth: 10,
+      })
+      const rowADespues = docDespues.sheets[0]!.rows.find((row) => row.activityId === "act-a")!
+      expect(rowADespues.assigneeNames).toEqual(["Usuaria de prueba"])
     })
 
     it("la variante por persona arma una hoja por asignado, con lo suyo", async () => {
@@ -578,6 +595,7 @@ describe("buildPdtpRe36Document", () => {
       const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")
       const doc = await buildPdtpRe36Document({
         programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all", porPersona: true,
+        asOf: `${YEAR}-06-01T12:00:00.000Z`,
       })
       // Una pestaña por persona, con su nombre como etiqueta: es lo que la
       // faena imprime y le entrega a cada responsable.

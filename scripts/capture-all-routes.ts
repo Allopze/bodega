@@ -736,6 +736,8 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-pdtp-nuevo", path: "/prevencion/pdtp/nuevo", auth: true },
   { slug: "prevencion-pdtp-aprobaciones", path: "/prevencion/pdtp/aprobaciones", auth: true },
   { slug: "prevencion-pdtp-cobertura", path: "/prevencion/pdtp/cobertura", auth: true },
+  { slug: "prevencion-pdtp-cierres-programa", path: "/prevencion/pdtp/prog-audit-1/cierres", auth: true, notes: "Sin cierres congelados la pantalla muestra su estado vacío, que es lo que ve una faena antes de cerrar su primer mes." },
+  { slug: "prevencion-pdtp-cierre-detalle", path: "/prevencion/pdtp/prog-audit-1/cierres/closure-audit-1", auth: true, expectedStatus: 404, captureView: false, notes: "Fixture pendiente: la foto de un cierre no se puede sembrar con un INSERT (snapshot_json lo produce closePdtpPeriod a partir del RE-36, los indicadores y el reporte de gestión). Sin esa fila el detalle responde 404." },
   { slug: "prevencion-capa", path: "/prevencion/capa", auth: true },
   { slug: "prevencion-capa-detalle", path: "/prevencion/capa/capa-audit-1", auth: true },
   { slug: "prevencion-incidentes", path: "/prevencion/incidentes", auth: true },

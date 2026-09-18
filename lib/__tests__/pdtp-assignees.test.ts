@@ -88,7 +88,11 @@ beforeEach(async () => {
     { id: "u-carla", name: "Carla Ajena", email: "carla@asg", hashedPassword: "x", isActive: true },
     // En la faena, pero con un rol que no responde por esta actividad.
     { id: "u-dario", name: "Darío Bodeguero", email: "dario@asg", hashedPassword: "x", isActive: true },
-    // Rol global: opera todas las faenas, así que sí es candidato.
+    // Tiene el rol responsable pero NO está adscrita a la faena; lo que la
+    // habilita es su rol global, que opera todas las faenas. El rol global por
+    // sí solo no alcanza: los candidatos salen del rol responsable de la
+    // actividad y de sus ejecutores (ver `candidateRoleIds`), y la adscripción
+    // —o el alcance global— sólo decide en qué faena puede recibirla.
     { id: "u-elena", name: "Elena Global", email: "elena@asg", hashedPassword: "x", isActive: true },
     { id: "u-admin", name: "Quien asigna", email: "admin@asg", hashedPassword: "x", isActive: true },
   ])
@@ -110,6 +114,7 @@ beforeEach(async () => {
     { userId: "u-carla", roleId: "role-jt" },
     { userId: "u-dario", roleId: "role-bod" },
     { userId: "u-elena", roleId: "role-prev" },
+    { userId: "u-elena", roleId: "role-jt" },
   ])
   await inMemoryDb.insert(schema.worksiteUsers).values([
     { userId: "u-ana", worksiteId: WORKSITE_ID, isPrimary: true },
