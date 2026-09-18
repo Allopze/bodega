@@ -165,11 +165,23 @@ async function authorizeRestart(page: Page) {
   // Cada paso hace router.refresh() y el panel cambia de rama según el estado,
   // así que se espera el control del paso siguiente antes de seguir: sin eso un
   // fallo intermedio sólo se ve al final, como un botón que nunca aparece.
-  await page.locator("#ppa-evidence-reference").fill("FOT-2026-0042")
+  /*
+   * La evidencia se vincula como ENLACE, no como fotografía. Desde CAPA-001 el
+   * repositorio exige, para un documento o una fotografía, la ruta del archivo
+   * almacenado MÁS su checksum SHA-256, y ningún formulario de PPA o de CAPA
+   * sube el archivo ni calcula el checksum: elegir esos tipos termina siempre
+   * en el rechazo del servidor. Es un hueco real del producto, anotado en el
+   * informe del gate; lo que este recorrido certifica es el control de
+   * reinicio, y con un enlace verificable se recorre entero.
+   */
+  await page.locator("#ppa-evidence-reference").fill("https://evidencias.chome.cl/ppa/FOT-2026-0042.jpg")
   await page.getByRole("button", { name: "Vincular evidencia" }).click()
 
   const declareButton = page.getByRole("button", { name: "Declarar controles implementados" })
   await expect(declareButton).toBeEnabled({ timeout: 15_000 })
+  // PPAI-003: la declaración dice QUÉ se implementó; sin ella el servidor la
+  // rechaza y quien verifica recibe una declaración vacía.
+  await page.locator("#ppa-declaration").fill("Se retiró el cable dañado y se instaló canalización nueva con protección.")
   await declareButton.click()
 
   await expect(page.locator("#ppa-verification-comment")).toBeVisible({ timeout: 15_000 })
@@ -201,14 +213,22 @@ test.describe("PPA Digital — revisión del responsable", () => {
     await authorizeRestart(page)
   })
 
-  test("rechazar un PPA detenido muestra estado rechazado", async ({ page }) => {
+  test("rechazar un PPA detenido exige el motivo y muestra estado rechazado", async ({ page }) => {
     await submitStoppedPpa(page)
     await goToStoppedPpaDetail(page)
 
     await page.getByRole("button", { name: "Rechazar inicio" }).click()
+
+    // Rechazar es la decisión más terminal del flujo y `ppaReviewSchema` exige
+    // el motivo (PPAI-002). Sin él la revisión no se registra.
+    await page.getByRole("button", { name: "Registrar revisión" }).click()
+    await expect(page.getByText(/Explica por qué se rechaza el trabajo/i)).toBeVisible()
+    await expect(page.getByText("Rechazó el inicio", { exact: true })).toHaveCount(0)
+
+    await page.locator("#nota").fill("El cliente anuló la tarea y la cuadrilla se retiró de la faena.")
     await page.getByRole("button", { name: "Registrar revisión" }).click()
 
-    await expect(page.getByText("Rechazó el inicio", { exact: true })).toBeVisible()
+    await expect(page.getByText("Rechazó el inicio", { exact: true })).toBeVisible({ timeout: 15_000 })
   })
 
   test("definir corrección cambia estado a en corrección", async ({ page }) => {

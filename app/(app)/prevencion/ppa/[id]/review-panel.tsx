@@ -11,6 +11,7 @@ import { Field } from "@/components/ui/field"
 import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "@/lib/toast"
 import { cn } from "@/lib/utils"
+import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 import { reviewPpaAction } from "../actions"
 import type { PpaDecision } from "@/lib/ppa/types"
 import { adminContratoLabel } from "@/lib/prevention/admin-contrato-label"
@@ -47,6 +48,7 @@ export function ReviewPanel({ ppaId, detenido, worksiteAdminContratoLabel }: { p
   // Toda corrección de un PPA detenido crea una CAPA estructurada, así que sus
   // datos mínimos se completan en esta misma revisión.
   const actionIncomplete = accionCorrectiva.trim().length < 4 || !responsibleRole || responsible.trim().length < 2 || !dueDate || !priority
+  const rejecting = decision === "rechazado"
 
   function doReview() {
     startTransition(async () => {
@@ -76,7 +78,15 @@ export function ReviewPanel({ ppaId, detenido, worksiteAdminContratoLabel }: { p
   function submit() {
     setErrors({})
     if (!decision) { toast.error("Selecciona una decisión."); return }
-    if (decision !== "rechazado" && actionIncomplete) {
+    if (decision === "rechazado") {
+      if (!isValidReason(reviewNota)) {
+        setErrors({ reviewNota: [reasonRequiredMessage("por qué se rechaza el trabajo")] })
+        return
+      }
+      doReview()
+      return
+    }
+    if (actionIncomplete) {
       setErrors({ accionCorrectiva: ["Completa la acción, responsable, plazo y prioridad antes de continuar."] })
       return
     }
@@ -129,7 +139,19 @@ export function ReviewPanel({ ppaId, detenido, worksiteAdminContratoLabel }: { p
           </Field>
         </div>
 
-        <Field label="Nota / observación (opcional)" htmlFor="nota">
+        {/* Rechazar es la única decisión que EXIGE este campo
+            (`ppaReviewSchema`, PPAI-002): no hay corrección que planificar, así
+            que el motivo es todo el rastro que queda. El formulario lo
+            ofrecía como "(opcional)" y no mostraba el error del servidor, de
+            modo que rechazar el inicio devolvía un "Revisa los campos del
+            formulario." sin nada marcado en pantalla — el rechazo no se podía
+            registrar desde la interfaz. */}
+        <Field
+          label={rejecting ? "Motivo del rechazo" : "Nota / observación (opcional)"}
+          htmlFor="nota"
+          error={errors.reviewNota?.[0]}
+          helper={rejecting ? "Queda en la trazabilidad del caso: es lo que explica por qué el trabajo no se hará." : undefined}
+        >
           <Textarea id="nota" rows={2} value={reviewNota} onChange={(e) => setReviewNota(e.target.value)} />
         </Field>
 

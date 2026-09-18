@@ -61,7 +61,19 @@ export function PpaWorkflowPanel({
 }: Props) {
   const router = useRouter()
   const { pending, run } = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
-  const [evidenceKind, setEvidenceKind] = React.useState<"document" | "photo" | "url">("photo")
+  /*
+   * El tipo por defecto es el enlace, y no la fotografía, porque es el único
+   * que este formulario puede satisfacer hoy: desde CAPA-001 una evidencia de
+   * tipo documento o fotografía exige la RUTA del archivo almacenado más su
+   * checksum SHA-256 (`lib/validation/evidence-contract.ts`), y acá no hay
+   * ningún control que suba el archivo ni que calcule el checksum. Elegirlas
+   * devuelve siempre el mismo rechazo del servidor.
+   *
+   * Es una limitación conocida y anotada, no un arreglo: mientras no exista el
+   * control de subida, el aviso de más abajo lo dice en pantalla en vez de
+   * dejar que el usuario lo descubra con un error.
+   */
+  const [evidenceKind, setEvidenceKind] = React.useState<"document" | "photo" | "url">("url")
   const [evidenceReference, setEvidenceReference] = React.useState("")
   const [evidenceDescription, setEvidenceDescription] = React.useState("")
   const [declaration, setDeclaration] = React.useState("")
@@ -182,12 +194,18 @@ export function PpaWorkflowPanel({
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Referencia" htmlFor="ppa-evidence-reference" helper="URL, folio o ubicación controlada del archivo.">
+            <Field
+              label="Referencia"
+              htmlFor="ppa-evidence-reference"
+              helper={evidenceKind === "url"
+                ? "Enlace http o https a la evidencia."
+                : "Ruta del archivo ya almacenado. Este formulario todavía no sube archivos ni calcula su checksum, así que documento y fotografía serán rechazados."}
+            >
               <Input
                 id="ppa-evidence-reference"
                 value={evidenceReference}
                 onChange={(event) => setEvidenceReference(event.target.value)}
-                placeholder="Ej.: https://… o FOT-2026-0042"
+                placeholder={evidenceKind === "url" ? "Ej.: https://…" : "Ej.: prevencion/capa/…"}
                 maxLength={4000}
               />
             </Field>

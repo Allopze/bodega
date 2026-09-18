@@ -32,7 +32,15 @@ test.describe("PPA Digital — verificación de RUT", () => {
     await expect(page.getByText(/Verificado:/)).not.toBeVisible()
   })
 
-  test("RUT no encontrado muestra error de trabajador", async ({ page }) => {
+  /*
+   * PPA-002 (auditoría 2026-09-14): el aviso ya NO dice "no se encontró ningún
+   * trabajador". Responder distinto según el RUT exista convertía el formulario
+   * público en un oráculo de pertenencia a la faena, así que acierto y fallo
+   * comparten un solo mensaje —y la misma cuota y el mismo piso de latencia—.
+   * Este spec pedía el texto viejo: exigirlo de vuelta sería consagrar el
+   * defecto, así que lo que se verifica es el mensaje uniforme.
+   */
+  test("un RUT ausente responde con el aviso uniforme, sin confirmar si existe", async ({ page }) => {
     await page.goto("/ppa")
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
 
@@ -40,10 +48,10 @@ test.describe("PPA Digital — verificación de RUT", () => {
     await page.locator("#rutSearch").fill("99999999-9")
     await page.getByRole("button", { name: "Verificar" }).click()
 
-    // Should show not-found error toast
     await expect(
-      page.getByText(/no se encontró|ningún trabajador/),
+      page.getByText(/No pudimos identificarte automáticamente/i),
     ).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(/ningún trabajador/i)).toHaveCount(0)
 
     // Worker should NOT be verified
     await expect(page.getByText(/Verificado:/)).not.toBeVisible()
