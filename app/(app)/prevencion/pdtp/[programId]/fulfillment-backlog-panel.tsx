@@ -37,13 +37,29 @@ function hasVisibleBacklog(backlog: FulfillmentBacklog) {
     || backlog.digestVerificationUnavailable
 }
 
-function BacklogStatusList({ backlog }: { backlog: FulfillmentBacklog }) {
+export function BacklogStatusList({ backlog }: { backlog: FulfillmentBacklog }) {
   return (
     <div className="mt-3 flex flex-wrap gap-3">
-      {backlog.errored > 0 && (
+      {/* `erroredWaitingOnActivation` es un subconjunto de `errored`, no un
+          conteo aparte: mostrarlos juntos en rojo presenta como falla lo que es
+          el estado normal entre firmar el programa y activarlo. Se separan acá
+          —el resto en rojo, la espera en amarillo— y sólo se pinta cada badge
+          si su resto es mayor que cero. */}
+      {backlog.errored - backlog.erroredWaitingOnActivation > 0 && (
         <div className="flex items-center gap-2">
-          <MetaBadge meta={{ label: String(backlog.errored), variant: "danger" }} dot />
+          <MetaBadge
+            meta={{ label: String(backlog.errored - backlog.erroredWaitingOnActivation), variant: "danger" }}
+            dot
+          />
           <span className="text-sm text-[var(--color-text-muted)]">evento(s) en error, sin acreditar</span>
+        </div>
+      )}
+      {backlog.erroredWaitingOnActivation > 0 && (
+        <div className="flex items-center gap-2">
+          <MetaBadge meta={{ label: String(backlog.erroredWaitingOnActivation), variant: "warning" }} dot />
+          <span className="text-sm text-[var(--color-text-muted)]">
+            hecho(s) esperando que el programa esté vigente
+          </span>
         </div>
       )}
       {backlog.pending > 0 && (
@@ -80,7 +96,7 @@ function BacklogStatusList({ backlog }: { backlog: FulfillmentBacklog }) {
   )
 }
 
-function BacklogDetails({ backlog }: { backlog: FulfillmentBacklog }) {
+export function BacklogDetails({ backlog }: { backlog: FulfillmentBacklog }) {
   return (
     <>
       {backlog.digestVerificationMessage && (
@@ -93,15 +109,21 @@ function BacklogDetails({ backlog }: { backlog: FulfillmentBacklog }) {
         <ul className="mt-3 space-y-1 text-xs text-[var(--color-text-subtle)]">
           {backlog.recentRejected.map((event) => (
             <li key={`${event.sourceType}:${event.sourceId}:${event.occurredAt}`}>
-              <span className="font-medium">{event.sourceType}</span> {event.sourceId} — {event.reason}
+              <span className="font-medium">{event.sourceLabel}</span>
+              {event.worksiteName ? ` en ${event.worksiteName}` : ""}
+              {event.occurredOn ? `, ${event.occurredOn}` : ""} — {event.reason}
             </li>
           ))}
         </ul>
       )}
 
-      {backlog.lastError && (
+      {/* `lastErrorDescription`, no `lastError`: el crudo trae el `message` de
+          la excepción con nanoids adentro (`epp:MpRpdOL3…`, `faena mHyTTFy…`) y
+          es diagnóstico de motor, no copy. El crudo sigue disponible en el
+          servicio para el preflight de cableado. */}
+      {backlog.lastErrorDescription && (
         <p className="mt-2 text-xs text-[var(--color-text-subtle)]">
-          Último error: {backlog.lastError}
+          Último error: {backlog.lastErrorDescription}
         </p>
       )}
     </>
