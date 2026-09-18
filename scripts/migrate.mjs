@@ -11,7 +11,13 @@
 import postgres from "postgres"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
-import { runMigrationPreflight } from "./migration-preflight.mjs"
+import {
+  assertAllMigrationsApplied,
+  inspectSkippedMigrations,
+  runMigrationPreflight,
+} from "./migration-preflight.mjs"
+
+const MIGRATIONS_DIR = "./db/migrations"
 
 const url = process.env.DATABASE_URL
 if (!url) {
@@ -31,7 +37,12 @@ for (let attempt = 1; attempt <= RETRIES; attempt++) {
     console.log(`[migrate] checking migration preconditions… (attempt ${attempt}/${RETRIES})`)
     await runMigrationPreflight(sql)
     console.log(`[migrate] applying migrations… (attempt ${attempt}/${RETRIES})`)
-    await migrate(drizzle(sql), { migrationsFolder: "./db/migrations" })
+    await migrate(drizzle(sql), { migrationsFolder: MIGRATIONS_DIR })
+    // El migrador decide con una sola marca de agua (`MAX(created_at)`) y no
+    // informa lo que se saltó, así que declara éxito con migraciones ausentes.
+    // Sin esta comprobación el deploy sigue y falla mucho después, en un script
+    // de datos, contra una columna que nunca se creó.
+    assertAllMigrationsApplied(await inspectSkippedMigrations(sql, MIGRATIONS_DIR))
     console.log("[migrate] done")
     await sql.end({ timeout: 5 })
     process.exit(0)

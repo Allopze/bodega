@@ -19,7 +19,7 @@ export const LEGACY_ACTION_TABLES = Object.freeze([
  * @property {{ duplicateApplicabilities: number }} legal
  * @property {{ duplicateProgramSlots: number }} inspections
  * @property {{ completedWithoutEvidence: number }} campaigns
- * @property {{ appliedCount: number, journalCount: number, skipped: string[] }} migrations
+ * @property {{ appliedCount: number, journalCount: number, skipped: string[], missing: string[] }} migrations
  * @property {string[]} skippedRelations
  */
 
@@ -129,7 +129,7 @@ export async function inspectMigrationPreconditions(sql) {
     legal: { duplicateApplicabilities: 0 },
     inspections: { duplicateProgramSlots: 0 },
     campaigns: { completedWithoutEvidence: 0 },
-    migrations: { appliedCount: 0, journalCount: 0, skipped: [] },
+    migrations: { appliedCount: 0, journalCount: 0, skipped: [], missing: [] },
     skippedRelations: [],
   }
 
@@ -265,7 +265,7 @@ export async function inspectMigrationPreconditions(sql) {
  */
 export async function inspectSkippedMigrations(sql, migrationsDir) {
   const [exists] = await sql`select to_regclass('drizzle.__drizzle_migrations') as relation`
-  if (!exists?.relation) return { appliedCount: 0, journalCount: 0, skipped: [] }
+  if (!exists?.relation) return { appliedCount: 0, journalCount: 0, skipped: [], missing: [] }
 
   const journal = JSON.parse(readFileSync(path.join(migrationsDir, "meta", "_journal.json"), "utf8"))
   const applied = await sql`select hash from drizzle.__drizzle_migrations`
@@ -290,7 +290,42 @@ export async function inspectSkippedMigrations(sql, migrationsDir) {
   }, -1)
   const trulySkipped = skipped.filter((tag) => journal.entries.findIndex((e) => e.tag === tag) < lastAppliedIndex)
 
-  return { appliedCount: appliedHashes.size, journalCount: journal.entries.length, skipped: trulySkipped }
+  /* `missing` es la lista completa —saltadas y pendientes— y sólo tiene sentido
+   * DESPUÉS de migrar, donde cualquier ausencia es un fallo. Antes de migrar se
+   * usa `skipped`, que excluye las pendientes del final. */
+  return {
+    appliedCount: appliedHashes.size,
+    journalCount: journal.entries.length,
+    skipped: trulySkipped,
+    missing: skipped,
+  }
+}
+
+/**
+ * Corre DESPUÉS de `migrate()`: a esa altura el journal y la base tienen que
+ * coincidir exactamente.
+ *
+ * El preflight no puede cubrir este caso. Cuando corre, una migración ausente
+ * todavía es indistinguible de una pendiente legítima al final de la lista, así
+ * que `skipped` la excluye a propósito para no volverse un candado permanente.
+ * Si el migrador la salta —porque su `when` es anterior a la marca de agua—, el
+ * proceso termina con éxito y nadie se entera: la siguiente corrida la vuelve a
+ * saltar, y el síntoma aparece semanas después en una consulta que pide una
+ * columna inexistente.
+ *
+ * Pasó con la 0236 en `bodega_dev` y con las 0297-0300 en producción, donde el
+ * deploy reportó migraciones aplicadas y reventó cien líneas más abajo, en un
+ * script de datos, con `column "catalog_activity_id" does not exist`.
+ *
+ * @param {{ appliedCount: number, journalCount: number, missing: string[] }} report
+ */
+export function assertAllMigrationsApplied(report) {
+  if (report.missing.length === 0) return report
+  throw new Error(
+    `MIGRATIONS_INCOMPLETAS: la base quedó con ${report.appliedCount} de ${report.journalCount} migraciones ` +
+    `tras migrar. Faltan ${report.missing.length}: ${report.missing.join(", ")}. ` +
+    "El migrador no las va a reintentar: aplícalas a mano y registra su fila en drizzle.__drizzle_migrations.",
+  )
 }
 
 export async function runMigrationPreflight(sql) {

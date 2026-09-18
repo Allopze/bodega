@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { assertMigrationPreflightReport, type MigrationPreflightReport } from "./migration-preflight.mjs"
+import {
+  assertAllMigrationsApplied,
+  assertMigrationPreflightReport,
+  type MigrationPreflightReport,
+} from "./migration-preflight.mjs"
 
 function cleanReport(): MigrationPreflightReport {
   return {
@@ -14,7 +18,7 @@ function cleanReport(): MigrationPreflightReport {
     legal: { duplicateApplicabilities: 0 },
     inspections: { duplicateProgramSlots: 0 },
     campaigns: { completedWithoutEvidence: 0 },
-    migrations: { appliedCount: 0, journalCount: 0, skipped: [] },
+    migrations: { appliedCount: 0, journalCount: 0, skipped: [], missing: [] },
     skippedRelations: [],
   }
 }
@@ -95,7 +99,12 @@ describe("migration preflight", () => {
 describe("migraciones saltadas", () => {
   it("bloquea cuando la base pasó de largo una migración del artefacto", () => {
     const report = cleanReport()
-    report.migrations = { appliedCount: 255, journalCount: 256, skipped: ["0236_typical_abomination"] }
+    report.migrations = {
+      appliedCount: 255,
+      journalCount: 256,
+      skipped: ["0236_typical_abomination"],
+      missing: ["0236_typical_abomination"],
+    }
 
     expect(() => assertMigrationPreflightReport(report)).toThrow(/0236_typical_abomination/)
     expect(() => assertMigrationPreflightReport(report)).toThrow(/no las reintenta/)
@@ -105,8 +114,57 @@ describe("migraciones saltadas", () => {
     // `skipped` sólo trae las anteriores a la última aplicada; las pendientes
     // al final de la lista son el estado normal antes de migrar.
     const report = cleanReport()
-    report.migrations = { appliedCount: 250, journalCount: 256, skipped: [] }
+    report.migrations = {
+      appliedCount: 250,
+      journalCount: 256,
+      skipped: [],
+      missing: ["0253_a", "0254_b", "0255_c", "0256_d", "0257_e", "0258_f"],
+    }
 
     expect(() => assertMigrationPreflightReport(report)).not.toThrow()
+  })
+})
+
+/* La contraparte del preflight, que corre DESPUÉS de migrar. El preflight no
+ * puede cubrir este caso: cuando él corre, una migración ausente todavía es
+ * indistinguible de una pendiente legítima. En producción las 0297-0300
+ * quedaron fuera, `migrate` salió con éxito y el deploy reventó cien líneas más
+ * abajo en un script de datos, contra `catalog_activity_id`. */
+describe("verificación posterior a migrar", () => {
+  it("falla si quedó cualquier migración sin aplicar", () => {
+    expect(() =>
+      assertAllMigrationsApplied({
+        appliedCount: 303,
+        journalCount: 307,
+        missing: ["0297_panoramic_meltdown", "0298_nasty_bastion", "0299_cold_devos", "0300_nifty_namorita"],
+      }),
+    ).toThrow(/MIGRATIONS_INCOMPLETAS/)
+  })
+
+  it("nombra las que faltan y el recuento, para no obligar a diagnosticar a mano", () => {
+    const incomplete = () =>
+      assertAllMigrationsApplied({
+        appliedCount: 303,
+        journalCount: 307,
+        missing: ["0297_panoramic_meltdown", "0300_nifty_namorita"],
+      })
+
+    expect(incomplete).toThrow(/303 de 307/)
+    expect(incomplete).toThrow(/0297_panoramic_meltdown, 0300_nifty_namorita/)
+  })
+
+  /* Distinto del preflight: acá una pendiente al final NO es tolerable. Si
+   * `migrate()` terminó y algo sigue sin aplicarse, el migrador ya decidió que
+   * no lo va a reintentar. */
+  it("no tolera pendientes al final, a diferencia del preflight", () => {
+    expect(() =>
+      assertAllMigrationsApplied({ appliedCount: 306, journalCount: 307, missing: ["0307_ultima"] }),
+    ).toThrow(/0307_ultima/)
+  })
+
+  it("pasa cuando la base y el journal coinciden", () => {
+    expect(() =>
+      assertAllMigrationsApplied({ appliedCount: 307, journalCount: 307, missing: [] }),
+    ).not.toThrow()
   })
 })
