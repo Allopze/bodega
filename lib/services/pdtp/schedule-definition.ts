@@ -6,6 +6,8 @@
  * browser/server timezone must not move an occurrence to the previous day.
  */
 
+import { pluralize } from "@/lib/utils"
+
 export type PdtpScheduleDefinition =
   | { version: 1; kind: "one_time"; date: string }
   | {
@@ -47,8 +49,8 @@ export function describePdtpDue(
   dueDays: number | null | undefined,
   dueHours: number | null | undefined,
 ): string | null {
-  if (dueHours !== null && dueHours !== undefined) return `${dueHours} hora(s)`
-  if (dueDays !== null && dueDays !== undefined) return `${dueDays} día(s)`
+  if (dueHours !== null && dueHours !== undefined) return `${dueHours} ${pluralize(dueHours, "hora")}`
+  if (dueDays !== null && dueDays !== undefined) return `${dueDays} ${pluralize(dueDays, "día")}`
   return null
 }
 

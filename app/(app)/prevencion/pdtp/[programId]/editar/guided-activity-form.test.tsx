@@ -36,7 +36,7 @@ describe("GuidedActivityForm", () => {
     expect(screen.getByText("Con frecuencia")).toBeDefined()
     expect(screen.getByText("Cuando se necesite")).toBeDefined()
     expect(screen.getByText("Cuando ocurra un evento")).toBeDefined()
-    expect(screen.getByText(/Genera 12 obligación\(es\)/)).toBeDefined()
+    expect(screen.getByText(/Genera 12 obligaciones/)).toBeDefined()
     expect(screen.queryByText("Ene")).toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Seleccionar actividad" }))

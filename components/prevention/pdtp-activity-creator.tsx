@@ -9,11 +9,10 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { DatePicker } from "@/components/ui/date-picker"
-import { cn } from "@/lib/utils"
+import { cn, codeYear, countOf, pluralize } from "@/lib/utils"
 import type { PdtpRecurrenceFrequency, PdtpRecurrenceRule } from "@/lib/services/pdtp/recurrence"
 import { expandPdtpScheduleDefinition, type PdtpScheduleDefinition } from "@/lib/services/pdtp/schedule-definition"
 import { listPdtpExecutionConnectors, type PdtpCompletionPolicy, type PdtpEvidenceKind } from "@/lib/services/pdtp/connectors"
-import { codeYear } from "@/lib/utils"
 import { savePdtpProgramActivityAction, updatePdtpActivityAction } from "@/app/(app)/prevencion/pdtp/actions"
 import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 
@@ -424,15 +423,15 @@ export function PdtpActivityCreator({
               ...(draft.recurrenceUnit === "month" || draft.recurrenceUnit === "year" ? { dayOfMonth: draft.dayOfMonth } : {}),
               plannedQuantity: draft.plannedQuantity,
             }, { startDate: defaultStartDate, endDate: defaultEndDate })
-            const unitLabel = draft.recurrenceUnit === "day" ? "día(s)" : draft.recurrenceUnit === "week" ? "semana(s)" : draft.recurrenceUnit === "month" ? "mes(es)" : "año(s)"
-            return `Cada ${draft.recurrenceEvery} ${unitLabel}. Genera ${occurrences.length} obligación(es) en el período del programa.`
+            const unit = draft.recurrenceUnit === "day" ? "día" : draft.recurrenceUnit === "week" ? "semana" : draft.recurrenceUnit === "month" ? "mes" : "año"
+            return `Cada ${draft.recurrenceEvery} ${pluralize(draft.recurrenceEvery, unit)}. Genera ${countOf(occurrences.length, "obligación", "obligaciones")} en el período del programa.`
           } catch {
             return "Define un inicio y fin válidos para previsualizar la recurrencia."
           }
         })()
     : draft.scheduleMode === "on_demand"
       ? "No genera una cuota semanal. Se mide solo cuando existan solicitudes o casos reales."
-      : `Cada evento abre una obligación con plazo de ${draft.dueUnit === "day" ? draft.dueDays : draft.dueHours} ${draft.dueUnit === "day" ? "día(s)" : "hora(s)"}.`
+      : `Cada evento abre una obligación con plazo de ${draft.dueUnit === "day" ? draft.dueDays : draft.dueHours} ${pluralize(draft.dueUnit === "day" ? draft.dueDays : draft.dueHours, draft.dueUnit === "day" ? "día" : "hora")}.`
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!effectiveProgramId) {

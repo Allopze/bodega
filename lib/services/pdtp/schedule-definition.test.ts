@@ -1,11 +1,22 @@
 import { describe, expect, it } from "vitest"
 import {
+  describePdtpDue,
   expandPdtpScheduleDefinition,
   getPdtpIsoWeek,
   listPdtpIsoWeeksIntersectingMonth,
   assertPdtpScheduleDefinitionWithinPeriod,
   type PdtpScheduleDefinition,
 } from "@/lib/services/pdtp/schedule-definition"
+
+describe("describePdtpDue", () => {
+  it("concuerda el plural con la cantidad, en días y en horas", () => {
+    expect(describePdtpDue(1, null)).toBe("1 día")
+    expect(describePdtpDue(5, null)).toBe("5 días")
+    expect(describePdtpDue(null, 1)).toBe("1 hora")
+    expect(describePdtpDue(null, 8)).toBe("8 horas")
+    expect(describePdtpDue(null, null)).toBeNull()
+  })
+})
 
 describe("PDTP schedule definitions", () => {
   it("expands a one-time date and keeps the civil date stable", () => {
