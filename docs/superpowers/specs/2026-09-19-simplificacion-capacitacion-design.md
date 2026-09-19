@@ -100,11 +100,17 @@ dedicada— y no entrega la simplificación.
 
 Sobreviven las tres tablas del modelo de ocurrencias, sin cambios.
 
-Se eliminan siete tablas de `db/schema/prevention/training.ts`:
+Se eliminan seis tablas de `db/schema/prevention/training.ts`:
 `prevention_training_courses`, `prevention_training_course_versions`,
 `prevention_training_sessions`, `prevention_training_attendance`,
-`prevention_worker_competencies`, `prevention_competency_requirements`,
-`prevention_training_history`.
+`prevention_worker_competencies` y `prevention_competency_requirements`.
+
+**Corrección durante la implementación (2026-09-19):** este diseño decía siete
+e incluía `prevention_training_history`. Esa tabla es la bitácora de cambios de
+estado de una **ocurrencia** —la escribe `recordTrainingOccurrenceStatus` y es
+el único registro que queda de un estado anterior, porque la ocurrencia se
+actualiza en sitio—. Vivía en `training.ts` por vecindad, no por pertenencia.
+Se conserva y se mudó a `training-occurrences.ts`.
 
 Se elimina además la columna `competency_task_key` de
 `prevention_permit_types`, que queda sin ningún lector.
@@ -228,10 +234,13 @@ la porción legacy de `prevention-training-export.ts` y de
 
 ## Paso 4 — Migración
 
-Una migración Drizzle: `DROP TABLE` de las siete tablas en orden de dependencia
-—`training_history`, `competency_requirements`, `worker_competencies`,
-`attendance`, `sessions`, `course_versions`, `courses`— y `DROP COLUMN` de
-`prevention_permit_types.competency_task_key`.
+Una migración Drizzle: `DROP TABLE IF EXISTS ... CASCADE` de las seis tablas y
+`DROP COLUMN IF EXISTS` de `prevention_permit_types.competency_task_key`.
+
+`IF EXISTS` no es opcional: el verificador de la cadena de migraciones
+(`npm run db:verify-migrations`) rechaza un DROP sin guardia, porque una
+migración que dropea algo ya ausente aborta el deploy entero y no se puede
+re-aplicar.
 
 Sin volcado previo: producción no tiene datos en estas tablas.
 

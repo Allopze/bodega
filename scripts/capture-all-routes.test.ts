@@ -270,7 +270,6 @@ describe("capture-all-routes route inventory", () => {
       expect.objectContaining({ slug: "prevencion-capa-detalle", path: "/prevencion/capa/capa-audit-1" }),
       expect.objectContaining({ slug: "prevencion-requisito-legal", path: "/prevencion/requisitos-legales/legal-requirement-audit-1" }),
       expect.objectContaining({ slug: "prevencion-privacidad-solicitud", path: "/prevencion/privacidad/solicitudes/privacy-request-audit-1" }),
-      expect.objectContaining({ slug: "prevencion-capacitacion-sesion", path: "/prevencion/capacitacion/trsess-audit-1" }),
       expect.objectContaining({ slug: "prevencion-gestion-cambio-detalle", path: "/prevencion/gestion-cambio/cambio-audit-1" }),
       expect.objectContaining({ slug: "prevencion-emergencias-plan-detalle", path: "/prevencion/emergencias/plan-audit-1" }),
       expect.objectContaining({ slug: "prevencion-permiso-detalle", path: "/prevencion/permisos/permit-audit-1" }),
@@ -322,7 +321,6 @@ describe("capture-all-routes route inventory", () => {
     expect(preventionFixtures).toContain("acción CAPA en progreso con evidencia y seguimiento")
     expect(preventionFixtures).toContain("requisito legal publicado con aplicabilidad por faena")
     expect(preventionFixtures).toContain("solicitud de privacidad con identidad verificada")
-    expect(preventionFixtures).toContain("sesión de capacitación cerrada con asistencia")
     expect(preventionFixtures).toContain("gestión de cambio evaluada con CAPA")
     expect(preventionFixtures).toContain("plan de emergencia con simulacro y roles")
     expect(preventionFixtures).toContain("permiso activo con AST, medición y aislamiento")
