@@ -68,6 +68,7 @@ export const ROUTE_URL_OVERRIDES: Record<string, string> = {
   "/compras/[id]/print": "/compras/oc-e2e/print",
   "/entregas/[id]/print": "/entregas/del-e2e/print",
   "/sst/[id]/print": "/sst/sst-eval-e2e/print",
+  "/prevencion/pdtp/[programId]/habilitacion": "/prevencion/pdtp/pdtp-prog-e2e/habilitacion",
 }
 
 /**
