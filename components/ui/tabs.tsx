@@ -94,6 +94,19 @@ const TabsContent = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <TabsPrimitive.Content
     ref={ref}
+    /* `forceMount` NO es el fix para un `aria-controls` roto: axe-core exime
+     * de validación el de cualquier trigger con `aria-selected="false"`
+     * (`node_modules/axe-core/axe.js:27132-27178`), así que el panel inactivo
+     * nunca se valida, esté montado o no. El diagnóstico que circuló acá antes
+     * —"Radix desmonta el panel, `forceMount` lo arregla"— era incorrecto y
+     * no arreglaba ninguna de las rutas que fallaban.
+     *
+     * Las causas reales de esas fallas (2026-09-19) eran de uso, no del
+     * primitivo: `Tabs` usado como filtro sin ningún `TabsContent`, o un
+     * `TabsContent id="..."` propio pisando el id que Radix genera (el spread
+     * de props va después de `id: contentId`). Ver
+     * `components/__tests__/tabs-primitive-contract.test.ts`, que falla si
+     * cualquiera de los dos vuelve a aparecer. */
     className={cn(
       "mt-4 focus-visible:outline-none",
       // Emil: subtle fade on tab switch — prevents jarring content swap
