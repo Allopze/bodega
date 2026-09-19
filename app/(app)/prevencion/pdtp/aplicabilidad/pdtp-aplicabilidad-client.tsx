@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Field } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { Check, SlidersHorizontal, X } from "@phosphor-icons/react"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { pdtpIndicatorModeLabel, pdtpScheduleModeLabel } from "@/lib/prevention/pdtp"
@@ -119,7 +119,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <div>
           <label htmlFor="pdtp-applicability-worksite" className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Faena a gestionar</label>
-          <div className="mt-1 flex items-center gap-3">
+          <div className="mt-1 flex flex-wrap items-center gap-3">
             <Select value={selectedWorksiteId} onValueChange={setSelectedWorksiteId}>
               <SelectTrigger id="pdtp-applicability-worksite" className="w-[260px]">
                 <SelectValue placeholder="Seleccionar faena..." />
@@ -142,7 +142,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
         <p role="status" className="text-sm text-[var(--color-text-muted)]">{message}</p>
       )}
 
-      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
+      <TableRoot>
         <Table>
           <TableHeader>
             <TableRow>
@@ -246,7 +246,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
             })}
           </TableBody>
         </Table>
-      </div>
+      </TableRoot>
 
       {/* Diálogo de edición de parámetros R1 / R2 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
