@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Input } from "@/components/ui/input"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCLP, formatQty, quantityStep } from "@/lib/utils"
 import { priceHint, suggestedSupplierLabel } from "./oc-form.helpers"
@@ -65,20 +65,24 @@ export function OcFormItems({
       </div>
 
       {/* This faena has pending items in more than one modo de despacho — the OC
-          guard rejects mixing them, so the picker works one mode at a time. */}
+          guard rejects mixing them, so the picker works one mode at a time.
+          Es un filtro de UNA lista, no pestañas de contenido distinto — `Tabs`
+          prometía un panel por valor que nunca existió (axe
+          `aria-valid-attr-value`). `SegmentedControl` en modo `onClick` alterna
+          sin esa promesa. */}
       {worksiteModes.length > 1 && modeFilter && (
-        <Tabs value={modeFilter} onValueChange={onModeChange}>
-          <TabsList>
-            {worksiteModes.map((mode) => {
-              const modeCount = filteredByWorksite.filter((i) => i.deliveryMode === mode).length
-              return (
-                <TabsTrigger key={mode} value={mode}>
-                  {MODE_LABELS[mode] ?? mode} ({modeCount})
-                </TabsTrigger>
-              )
-            })}
-          </TabsList>
-        </Tabs>
+        <SegmentedControl
+          ariaLabel="Modo de despacho"
+          items={worksiteModes.map((mode) => {
+            const modeCount = filteredByWorksite.filter((i) => i.deliveryMode === mode).length
+            return {
+              key: mode,
+              label: `${MODE_LABELS[mode] ?? mode} (${modeCount})`,
+              active: mode === modeFilter,
+              onClick: () => onModeChange(mode),
+            }
+          })}
+        />
       )}
 
       {filteredByWorksite.length > 10 && (
