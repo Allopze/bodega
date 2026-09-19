@@ -3,7 +3,8 @@ import { KpiCard } from "@/components/ui/kpi-card"
 import { getDashboardCounters } from "@/lib/services/prevention-documents/search"
 import { getPpaStats } from "@/lib/services/ppa-module/calculos"
 import { getDashboardStats } from "@/lib/services/sst-module/dashboard"
-import { listCompetencyGaps } from "@/lib/services/prevention-training"
+import { listTrainingOccurrences } from "@/lib/services/prevention-training-occurrences"
+import { resolvePredefinedTrainingCatalogYear } from "@/lib/prevention/training-occurrences-catalog"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { DomainSection } from "../dashboard-domain-shell"
 import { periodScopeLabel } from "../dashboard-scope"
@@ -18,18 +19,26 @@ export async function GovernanceSection({ session, scope, worksiteScope, worksit
   const permissions = session.user.permissions
   const has = (permission: string) => permissions.includes(permission)
 
-  const [docs, ppa, sstStats, gaps] = await Promise.all([
+  const [docs, ppa, sstStats, occurrences] = await Promise.all([
     has("prevention:docs:view")
       ? getDashboardCounters(worksiteScope, permissions)
       : Promise.resolve(null),
     has("ppa:view") ? getPpaStats(worksiteIds).catch(() => null) : Promise.resolve(null),
     has("sst:view") ? getDashboardStats(worksiteIds).catch(() => null) : Promise.resolve(null),
     has("prevention:training:view")
-      ? listCompetencyGaps({ userId: session.user.id, scope: worksiteScope, permissions }).catch(() => [])
+      ? listTrainingOccurrences(
+          { userId: session.user.id, scope: worksiteScope, permissions },
+          { year: resolvePredefinedTrainingCatalogYear(undefined) },
+        ).catch(() => [])
       : Promise.resolve([]),
   ])
 
-  const blockingGaps = gaps.filter((gap) => gap.enforcement === "blocking").length
+  /* La tarjeta contaba brechas de competencia por persona hasta el 2026-09-19.
+   * Con el modelo por actividad, lo que queda por hacer son las ocurrencias del
+   * año que nadie marcó todavía; `not_completed` no entra, porque ésa ya fue
+   * resuelta —declarada no hecha— y no es trabajo pendiente. */
+  const pendingTraining = occurrences.filter((row) => row.status === "pending").length
+  const notDoneTraining = occurrences.filter((row) => row.status === "not_completed").length
   const periodo = periodScopeLabel(scope.period).toLocaleLowerCase("es-CL")
 
   return (
@@ -50,9 +59,9 @@ export async function GovernanceSection({ session, scope, worksiteScope, worksit
             tone={(docs?.expiringSoon.within7 ?? 0) > 0 ? "signal" : "neutral"} href="/prevencion/documentacion?vence=30" />
           <KpiCard icon={<Certificate size={16} />} label="Acuses pendientes" value={String(docs?.ackPending ?? 0)}
             detail="Distribuciones sin firmar, ahora" href="/prevencion/documentacion" />
-          <KpiCard icon={<ShieldWarning size={16} />} label="Brechas de competencia" value={String(blockingGaps)}
-            detail={`${gaps.length} en total · ahora`}
-            tone={blockingGaps > 0 ? "signal" : "neutral"} href="/prevencion/capacitacion/brechas" />
+          <KpiCard icon={<ShieldWarning size={16} />} label="Capacitaciones pendientes" value={String(pendingTraining)}
+            detail={`${notDoneTraining} declaradas no hechas · ahora`}
+            tone={notDoneTraining > 0 ? "signal" : "neutral"} href="/prevencion/capacitacion" />
           <KpiCard icon={<Siren size={16} />} label="Desviaciones PPA"
             value={ppa ? `${Math.round(ppa.porcentajeDesviaciones)}%` : "—"}
             detail={ppa ? `${ppa.detenidos} detenciones de ${ppa.total} · ${periodo}` : "Sin registros PPA"}

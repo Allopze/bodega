@@ -69,7 +69,6 @@ function assess(over: Partial<Parameters<typeof assessPermitActivation>[0]> = {}
     measurements: [],
     jsaStepCount: 3,
     crew: [crew()],
-    crewWithoutCompetency: [],
     plannedEndAt: "2026-07-19T18:00:00.000Z",
     now: NOW,
     ...over,
@@ -77,38 +76,18 @@ function assess(over: Partial<Parameters<typeof assessPermitActivation>[0]> = {}
 }
 
 /**
- * CAP-001 (auditoría 2026-09-14), patrón P7: un requisito de competencia se
- * declara `blocking` o `warning`, y esa marca **no se consultaba** en el único
- * punto donde una competencia impide operar. Era decorativa en las dos
- * direcciones: un requisito «bloqueante» no impedía nada fuera del permiso, y
- * uno de «advertencia» sí impedía abrirlo. Quien configuraba el catálogo no
- * podía predecir el efecto de lo que elegía.
+ * La habilitación individual de la cuadrilla salió de la evaluación el
+ * 2026-09-19, junto con el seguimiento de capacitación por persona. Antes había
+ * acá cuatro casos sobre `crew_competency` y sobre cuándo un requisito
+ * `warning` debía o no bloquear.
+ *
+ * Queda constancia de que la activación **no** mira competencias: un permiso
+ * completo se activa aunque ningún integrante tenga curso alguno, porque ya no
+ * existe dónde registrarlo.
  */
-describe("CAP-001 — la marca de un requisito de competencia gobierna", () => {
-  it("una brecha de un requisito BLOQUEANTE impide activar", () => {
-    const result = assess({ crewWithoutCompetency: [crew()] })
-    expect(result.allowed).toBe(false)
-    expect(result.blockers.map((b) => b.kind)).toContain("crew_competency")
-    expect(result.blockers.find((b) => b.kind === "crew_competency")?.detail).toContain("BLOQUEANTE")
-  })
-
-  it("una de un requisito de ADVERTENCIA no impide activar", () => {
-    // Éste es el cambio: antes cualquier brecha bloqueaba, incluida la que el
-    // catálogo marcaba explícitamente como advertencia.
-    const result = assess({ crewWithoutCompetency: [], crewWithCompetencyWarning: [crew()] })
-    expect(result).toEqual({ allowed: true, blockers: [] })
-  })
-
-  it("con las dos, manda la bloqueante", () => {
-    const result = assess({ crewWithoutCompetency: [crew()], crewWithCompetencyWarning: [crew()] })
-    expect(result.allowed).toBe(false)
-    expect(result.blockers.filter((b) => b.kind === "crew_competency")).toHaveLength(1)
-  })
-
-  it("no pasar la lista de advertencias significa «ninguna», no «se desconoce»", () => {
-    // Los llamadores que aún no la pasan no deben empezar a bloquear de más ni
-    // de menos por omisión.
-    expect(assess({ crewWithoutCompetency: [] })).toEqual({ allowed: true, blockers: [] })
+describe("la activación no verifica la habilitación de cada integrante", () => {
+  it("un permiso completo se activa sin ninguna verificación de competencia", () => {
+    expect(assess()).toEqual({ allowed: true, blockers: [] })
   })
 })
 
@@ -336,15 +315,6 @@ describe("validación de entrada de una medición", () => {
 
   it("una medición sin fecha de calibración sigue siendo válida", () => {
     expect(permitMeasurementSchema.safeParse(input({ calibrationDate: null })).success).toBe(true)
-  })
-})
-
-describe("habilitación de la cuadrilla", () => {
-  it("bloquea si alguien no tiene la competencia exigida", () => {
-    const member = crew({ label: "Soto, Bruno" })
-    const result = assess({ crew: [crew(), member], crewWithoutCompetency: [member] })
-    expect(result.allowed).toBe(false)
-    expect(result.blockers[0]?.detail).toContain("Soto, Bruno")
   })
 })
 

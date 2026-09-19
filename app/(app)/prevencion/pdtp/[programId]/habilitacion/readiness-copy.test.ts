@@ -28,9 +28,9 @@ const template: PdtpCoverageInstrument = {
   blocker: "template_not_approved",
 }
 
-const course = (over: Partial<Extract<PdtpCoverageInstrument, { kind: "training_course" }>> = {}): PdtpCoverageInstrument => ({
-  kind: "training_course", id: "c-1", code: "CAP-07", name: "Inducción",
-  minimumDurationMinutes: 480, latestVersion: null, blocker: "course_has_no_version", ...over,
+const course = (over: Partial<Extract<PdtpCoverageInstrument, { kind: "training_catalog_item" }>> = {}): PdtpCoverageInstrument => ({
+  kind: "training_catalog_item", id: "c-1", code: "CAP-07", title: "Inducción",
+  blocker: "catalog_item_inactive", ...over,
 })
 
 describe("readiness-copy — lenguaje del oficio, no de la arquitectura", () => {
@@ -66,20 +66,20 @@ describe("readiness-copy — lenguaje del oficio, no de la arquitectura", () => 
     const filas = [
       issue({ n: 16, instruments: [template] }),
       issue({ n: 63, instruments: [course({ code: "CAP-63" })] }),
-      issue({ n: 57, instruments: [course({ code: "CAP-57", blocker: "course_version_not_published", latestVersion: { id: "v", versionLabel: "v02", status: "in_review", durationMinutes: 600, authorUserId: "u" } })] }),
-      issue({ n: 56, instruments: [course({ code: "CAP-56", blocker: "course_version_below_minimum_duration", latestVersion: { id: "v", versionLabel: "v01", status: "published", durationMinutes: 60, authorUserId: "u" } })] }),
+      issue({ n: 57, instruments: [course({ code: "CAP-57" })] }),
+      issue({ n: 56, instruments: [course({ code: "CAP-56" })] }),
     ].map(readinessRowReason)
 
     expect(new Set(filas).size).toBe(filas.length)
     expect(filas[0]).toBe("Plantilla INS-014 v3 en borrador")
-    expect(filas[1]).toBe("Curso CAP-63 sin ninguna versión")
-    expect(filas[2]).toBe("Curso CAP-57 v02 sin publicar")
-    expect(filas[3]).toBe("Curso CAP-56 publicado bajo el mínimo (60 de 480 min)")
+    expect(filas[1]).toBe("Actividad CAP-63 dada de baja del catálogo anual")
+    expect(filas[2]).toBe("Actividad CAP-57 dada de baja del catálogo anual")
+    expect(filas[3]).toBe("Actividad CAP-56 dada de baja del catálogo anual")
   })
 
   it("con varios instrumentos el motivo dice que basta resolver uno", () => {
     const reason = readinessRowReason(issue({ instruments: [template, course()] }))
-    expect(reason).toBe("Plantilla y Curso: resolver cualquiera habilita la actividad")
+    expect(reason).toBe("Plantilla y Actividad del catálogo: resolver cualquiera habilita la actividad")
   })
 
   it("sin instrumentos cae en el motivo del servicio, no en una fila vacía", () => {
@@ -107,11 +107,7 @@ describe("readiness-copy — lenguaje del oficio, no de la arquitectura", () => 
 
   it("el estado del instrumento se dice en español, no con el valor de la columna", () => {
     expect(instrumentStateLabel(template)).toBe("En borrador")
-    expect(instrumentStateLabel(course())).toBe("Sin versión")
-    expect(instrumentStateLabel(course({
-      blocker: "course_version_below_minimum_duration",
-      latestVersion: { id: "v", versionLabel: "v1", status: "published", durationMinutes: 60, authorUserId: null },
-    }))).toBe("Publicada, muy corta")
+    expect(instrumentStateLabel(course())).toBe("Dada de baja")
   })
 
   it("distingue una actividad por faena de una global", () => {

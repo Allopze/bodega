@@ -30,7 +30,7 @@ interface TopBarProps {
 // con un "Buscar categorías..." local y el usuario no tenía cómo saber a cuál
 // de las dos apuntaba cada caja. Cada tabla trae ahora su propio buscador
 // rotulado.
-const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/bodega", "/flota", "/mantenciones", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/capacitacion/catalogo", "/facturacion/facturas", "/trazabilidad/documento", "/ti/accesos", "/admin/taxonomia-sst"]
+const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/bodega", "/flota", "/mantenciones", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/facturacion/facturas", "/trazabilidad/documento", "/ti/accesos", "/admin/taxonomia-sst"]
 
 /** Formularios de alta/edición: no hay lista que filtrar, así que el input de
  *  la shell prometería un filtrado inexistente. Ninguna ruta bajo estos

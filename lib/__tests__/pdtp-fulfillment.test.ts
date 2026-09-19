@@ -21,6 +21,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 import { chileDateParts, todayInChile } from "@/lib/utils"
+import { PREDEFINED_TRAINING_CATALOG_VERSION } from "@/lib/prevention/training-occurrences-catalog"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -85,8 +86,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.preventionInspectionTemplates)
   await inMemoryDb.delete(schema.preventionEmergencyPlans)
-  await inMemoryDb.delete(schema.preventionTrainingCourseVersions)
-  await inMemoryDb.delete(schema.preventionTrainingCourses)
+  await inMemoryDb.delete(schema.preventionTrainingCatalogItems)
   await inMemoryDb.delete(schema.sstDocumentTypes)
   await inMemoryDb.delete(schema.sstDocumentCategories)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
@@ -526,53 +526,41 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
     expect(issues[0]!.reason).toMatch(/destino operativo/i)
   })
 
-  it("la N°63 exige un curso con versión publicada aunque tenga otro conector", async () => {
+  it("la N°63 exige un ítem activo del catálogo anual aunque tenga otro conector", async () => {
     await seedProgram("draft")
     await seedActivity({ mechanism: "enganche", n: 63 })
     const now = new Date().toISOString()
-    await inMemoryDb.insert(schema.preventionTrainingCourses).values({
-      id: "course-pdtp-63", code: "PDTP-63", name: "Inducción del trabajador", kind: "induction_worksite",
-      minimumDurationMinutes: 60, isActive: true, createdByUserId: USER_ID,
-      pdtpActivityNumbers: [63], createdAt: now, updatedAt: now,
+    await inMemoryDb.insert(schema.preventionTrainingCatalogItems).values({
+      id: "cat-pdtp-63", code: "PDTP-63", title: "Inducción del trabajador",
+      itemType: "course", audience: "Todos", catalogVersion: PREDEFINED_TRAINING_CATALOG_VERSION,
+      sourceRow: 63, scheduleJson: [], pdtpActivityNumbers: [63], isActive: false,
+      sortOrder: 63, createdAt: now, updatedAt: now,
     })
 
     const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
     expect(issues).toEqual([expect.objectContaining({ n: 63, status: "instrument_required" })])
-    // El motivo nombra el curso y dice qué le falta. Antes decía "su plantilla
-    // no tiene una versión aprobada o su curso no tiene ninguna versión
-    // publicada": la misma frase para las catorce actividades del grupo, sin
-    // decir cuál de los dos instrumentos era ni a cuál registro ir.
-    expect(issues[0]!.reason).toBe("El curso PDTP-63 no tiene ninguna versión creada.")
+    // El motivo nombra la actividad y dice qué le falta. Antes decía "su
+    // plantilla no tiene una versión aprobada o su curso no tiene ninguna
+    // versión publicada": la misma frase para las catorce actividades del
+    // grupo, sin decir cuál de los dos instrumentos era ni a cuál registro ir.
+    expect(issues[0]!.reason).toBe("La actividad PDTP-63 está dada de baja del catálogo anual y sólo una activa se puede programar.")
     expect(issues[0]!.instruments).toEqual([
-      expect.objectContaining({ kind: "training_course", id: "course-pdtp-63", blocker: "course_has_no_version" }),
+      expect.objectContaining({ kind: "training_catalog_item", id: "cat-pdtp-63", blocker: "catalog_item_inactive" }),
     ])
   })
 
-  it("un curso publicado más corto que el mínimo del catálogo no vuelve ejecutable la actividad", async () => {
+  it("un ítem activo del catálogo vuelve ejecutable la actividad", async () => {
     await seedProgram("draft")
     await seedActivity({ mechanism: "enganche", n: 56 })
     const now = new Date().toISOString()
-    await inMemoryDb.insert(schema.preventionTrainingCourses).values({
-      id: "course-pdtp-56", code: "PDTP-56", name: "Manejo a la defensiva", kind: "practical_training",
-      minimumDurationMinutes: 480, validityMonths: 24, isActive: true, createdByUserId: USER_ID,
-      pdtpActivityNumbers: [56], createdAt: now, updatedAt: now,
-    })
-    await inMemoryDb.insert(schema.preventionTrainingCourseVersions).values({
-      id: "version-pdtp-56-short", courseId: "course-pdtp-56", versionLabel: "Corta",
-      status: "published", contentOutline: [{ title: "Conducción", minutes: 60 }], durationMinutes: 60,
-      modality: "presencial", assessmentType: "practical", passingScore: 70,
-      contentHash: "a".repeat(64), authorUserId: USER_ID, publishedByUserId: USER_ID,
-      publishedAt: now, version: 1, createdAt: now, updatedAt: now,
+    await inMemoryDb.insert(schema.preventionTrainingCatalogItems).values({
+      id: "cat-pdtp-56", code: "PDTP-56", title: "Manejo a la defensiva",
+      itemType: "course", audience: "Conductores", catalogVersion: PREDEFINED_TRAINING_CATALOG_VERSION,
+      sourceRow: 56, scheduleJson: [], pdtpActivityNumbers: [56], isActive: true,
+      sortOrder: 56, createdAt: now, updatedAt: now,
     })
 
-    const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
-    expect(issues).toEqual([expect.objectContaining({ n: 56, status: "instrument_required" })])
-    // La alternativa —"duración" o "versión publicada"— estaba en el test
-    // porque el propio mensaje no distinguía las dos causas. Ahora sí.
-    expect(issues[0]!.reason).toBe("La versión publicada del curso PDTP-56 dura 60 min y el curso exige 480.")
-    expect(issues[0]!.instruments).toEqual([
-      expect.objectContaining({ blocker: "course_version_below_minimum_duration" }),
-    ])
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
   })
 
   it("un enganche declarado en STRUCTURALLY_WIRED_ACTIVITY_NUMBERS pasa (N°35, MIPER)", async () => {

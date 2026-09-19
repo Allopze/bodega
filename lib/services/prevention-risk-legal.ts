@@ -34,9 +34,8 @@ import {
   preventionRiskProcesses,
   preventionRiskReviewTriggers,
   preventionRiskTasks,
-  preventionTrainingCourseVersions,
-  preventionTrainingCourses,
-  preventionTrainingSessions,
+  preventionTrainingCatalogItems,
+  preventionTrainingOccurrences,
   users,
   worksites,
 } from "@/db/schema"
@@ -1206,9 +1205,19 @@ export async function linkPdtpActivitySource(input: unknown, access: RiskLegalAc
       if (!source) throw new Error("CAPA de incidente no encontrada o fuera de alcance.")
       sourceVersionSnapshot = `${source.code} v${source.version}`
     } else if (data.sourceType === "capacitacion") {
-      const [source] = await tx.select().from(preventionTrainingSessions).where(and(eq(preventionTrainingSessions.id, data.sourceId), eq(preventionTrainingSessions.worksiteId, data.worksiteId), ne(preventionTrainingSessions.status, "cancelled"))).limit(1)
-      if (!source) throw new Error("Sesión de capacitación no encontrada, cancelada o fuera de alcance.")
-      sourceVersionSnapshot = source.code
+      const [source] = await tx.select({
+        id: preventionTrainingOccurrences.id,
+        code: preventionTrainingCatalogItems.code,
+        year: preventionTrainingOccurrences.year,
+      }).from(preventionTrainingOccurrences)
+        .innerJoin(preventionTrainingCatalogItems, eq(preventionTrainingCatalogItems.id, preventionTrainingOccurrences.catalogItemId))
+        .where(and(
+          eq(preventionTrainingOccurrences.id, data.sourceId),
+          eq(preventionTrainingOccurrences.worksiteId, data.worksiteId),
+          eq(preventionTrainingOccurrences.status, "completed"),
+        )).limit(1)
+      if (!source) throw new Error("Capacitación no encontrada, no realizada o fuera de alcance.")
+      sourceVersionSnapshot = `${source.code} ${source.year}`
     } else if (data.sourceType === "inspeccion") {
       const [source] = await tx.select().from(preventionInspectionRuns).where(and(eq(preventionInspectionRuns.id, data.sourceId), eq(preventionInspectionRuns.worksiteId, data.worksiteId), ne(preventionInspectionRuns.status, "cancelled"))).limit(1)
       if (!source) throw new Error("Inspección no encontrada, cancelada o fuera de alcance.")
@@ -1466,16 +1475,21 @@ export async function getPdtpCoverage(programId: string, access: RiskLegalAccess
     }).from(preventionCapaActions)
       .where(and(scopeCondition(access.scope, preventionCapaActions.worksiteId), ne(preventionCapaActions.status, "cancelled")))
       .orderBy(asc(preventionCapaActions.code)),
+    /* Las sesiones de capacitación dejaron de existir el 2026-09-19. La fuente
+     * pasa a ser la ocurrencia del catálogo anual, que además —a diferencia de
+     * la sesión— tiene evidencia adjunta, que es justo lo que un control de
+     * riesgo necesita citar. Sólo las hechas: una actividad pendiente no
+     * respalda nada. */
     db.select({
-      id: preventionTrainingSessions.id,
-      worksiteId: preventionTrainingSessions.worksiteId,
-      code: preventionTrainingSessions.code,
-      courseName: preventionTrainingCourses.name,
-    }).from(preventionTrainingSessions)
-      .innerJoin(preventionTrainingCourseVersions, eq(preventionTrainingCourseVersions.id, preventionTrainingSessions.courseVersionId))
-      .innerJoin(preventionTrainingCourses, eq(preventionTrainingCourses.id, preventionTrainingCourseVersions.courseId))
-      .where(and(scopeCondition(access.scope, preventionTrainingSessions.worksiteId), ne(preventionTrainingSessions.status, "cancelled")))
-      .orderBy(asc(preventionTrainingSessions.code)),
+      id: preventionTrainingOccurrences.id,
+      worksiteId: preventionTrainingOccurrences.worksiteId,
+      code: preventionTrainingCatalogItems.code,
+      title: preventionTrainingCatalogItems.title,
+      year: preventionTrainingOccurrences.year,
+    }).from(preventionTrainingOccurrences)
+      .innerJoin(preventionTrainingCatalogItems, eq(preventionTrainingCatalogItems.id, preventionTrainingOccurrences.catalogItemId))
+      .where(and(scopeCondition(access.scope, preventionTrainingOccurrences.worksiteId), eq(preventionTrainingOccurrences.status, "completed")))
+      .orderBy(asc(preventionTrainingCatalogItems.code)),
     db.select({
       id: preventionInspectionRuns.id,
       worksiteId: preventionInspectionRuns.worksiteId,
@@ -1546,7 +1560,7 @@ export async function getPdtpCoverage(programId: string, access: RiskLegalAccess
       riskControls: riskSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.hazard} · ${item.description}` })),
       legalRequirements: legalSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.article}` })),
       capaActions: capaSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.finding}` })),
-      trainingSessions: trainingSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.courseName}` })),
+      trainingSessions: trainingSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.title} (${item.year})` })),
       inspectionRuns: inspectionSources.flatMap((item) => item.templateKind === "audit" ? [] : [{ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.templateName}${item.subjectLabel ? ` · ${item.subjectLabel}` : ""}` }]),
       audits: inspectionSources.flatMap((item) => item.templateKind === "audit" ? [{ id: item.id, worksiteId: item.worksiteId, label: `${item.code} · ${item.templateName}` }] : []),
       committees: cphsSources.map((item) => ({ id: item.id, worksiteId: item.worksiteId, label: item.name })),

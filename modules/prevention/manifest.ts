@@ -87,13 +87,7 @@ export const preventionModule = {
     "prevention:legal:approve_applicability",
     "prevention:legal:export",
     "prevention:training:view",
-    "prevention:training:manage",
-    "prevention:training:approve",
-    "prevention:training:deliver",
     "prevention:training:record",
-    "prevention:training:ack",
-    "prevention:training:convalidate",
-    "prevention:training:revoke",
     "prevention:training:export",
     "prevention:permits:view",
     "prevention:permits:manage",
@@ -230,15 +224,9 @@ export const preventionModule = {
     "prevention:legal:assess": { id: "p-prev-legal-assess", description: "Preparar requisitos, proponer aplicabilidad y evaluar cumplimiento" },
     "prevention:legal:approve_applicability": { id: "p-prev-legal-approve", description: "Aprobar requisitos y aplicabilidad legal de forma segregada" },
     "prevention:legal:export": { id: "p-prev-legal-export", description: "Exportar registro legal, aplicabilidad, evidencia y brechas en Excel" },
-    "prevention:training:view": { id: "p-prev-train-view", description: "Ver el catálogo anual, su estado y el expediente formativo dentro de la faena autorizada" },
-    "prevention:training:manage": { id: "p-prev-train-manage", description: "Administrar catálogo, contenidos, sesiones y requisitos de competencia" },
-    "prevention:training:approve": { id: "p-prev-train-approve", description: "Aprobar y publicar contenidos formativos de forma segregada del autor" },
-    "prevention:training:deliver": { id: "p-prev-train-deliver", description: "Registrar asistencia, evaluación y cierre de una sesión de capacitación" },
+    "prevention:training:view": { id: "p-prev-train-view", description: "Ver el control anual de capacitación, su estado y su evidencia dentro de la faena autorizada" },
     "prevention:training:record": { id: "p-prev-train-record", description: "Marcar una ocurrencia anual como hecha o no hecha y adjuntar evidencia" },
-    "prevention:training:ack": { id: "p-prev-train-ack", description: "Acusar recibo de la propia capacitación u ODI" },
-    "prevention:training:convalidate": { id: "p-prev-train-conval", description: "Convalidar competencias externas con justificación y evidencia" },
-    "prevention:training:revoke": { id: "p-prev-train-revoke", description: "Revocar una competencia vigente con motivo auditado" },
-    "prevention:training:export": { id: "p-prev-train-export", description: "Exportar el control anual, evidencias y expediente formativo en Excel" },
+    "prevention:training:export": { id: "p-prev-train-export", description: "Exportar el control anual de capacitación y sus evidencias en Excel" },
     "prevention:permits:view": { id: "p-prev-permit-view", description: "Ver permisos de trabajo, AST y aislamientos de la faena autorizada" },
     "prevention:permits:manage": { id: "p-prev-permit-manage", description: "Administrar el catálogo de tipos de permiso de trabajo" },
     "prevention:permits:request": { id: "p-prev-permit-request", description: "Solicitar permisos de trabajo y elaborar su AST/JSA" },
@@ -440,24 +428,14 @@ export const preventionModule = {
           ],
         },
         {
-          // La página concentra el catálogo anual y sus ocurrencias por faena;
-          // las pantallas antiguas se conservan para compatibilidad histórica.
+          // Una sola pantalla: el control anual de ocurrencias por faena. El
+          // catálogo de cursos, las competencias por trabajador y las brechas
+          // se retiraron el 2026-09-19 con el modelo por persona.
           label: "Capacitación",
           href: "/prevencion/capacitacion",
           iconName: "Certificate",
           group: "Cumplimiento del programa",
           permissions: ["prevention:training:view"],
-          children: [
-            {
-              // El catalogo estuvo huérfano —su page.tsx solo redirigía— y por
-              // eso no había ninguna pantalla alcanzable donde publicar la
-              // version de un curso que el programa exige. Va en el nav para
-              // que no vuelva a quedar sin puerta de entrada.
-              label: "Catálogo de cursos",
-              href: "/prevencion/capacitacion/catalogo",
-              permissions: ["prevention:training:view"],
-            },
-          ],
         },
         {
           label: "Acciones correctivas",
@@ -986,46 +964,24 @@ export const preventionModule = {
     // aprobada admite la excepción de `prevention:sign_own_work` (ver el grant
     // más abajo y lib/services/prevention-signing.ts).
     { roleSlug: "prevencionista",       permission: "prevention:training:view" },
-    { roleSlug: "prevencionista",       permission: "prevention:training:manage" },
-    { roleSlug: "prevencionista",       permission: "prevention:training:approve" },
-    { roleSlug: "prevencionista",       permission: "prevention:training:deliver" },
     { roleSlug: "prevencionista",       permission: "prevention:training:record" },
-    { roleSlug: "prevencionista",       permission: "prevention:training:ack" },
     { roleSlug: "prevencionista",       permission: "prevention:training:export" },
     { roleSlug: "prevencionista_faena", permission: "prevention:training:view" },
-    { roleSlug: "prevencionista_faena", permission: "prevention:training:manage" },
-    { roleSlug: "prevencionista_faena", permission: "prevention:training:deliver" },
     { roleSlug: "prevencionista_faena", permission: "prevention:training:record" },
-    { roleSlug: "prevencionista_faena", permission: "prevention:training:ack" },
     { roleSlug: "admin_contrato",       permission: "prevention:training:view" },
-    { roleSlug: "admin_contrato",       permission: "prevention:training:ack" },
     { roleSlug: "jefe_terreno",         permission: "prevention:training:view" },
     /* La charla diaria (n=53) y las charlas de refuerzo (n=38) las dicta la
      * línea de mando en terreno, no Prevención: son las dos actividades que la
      * planilla asigna al Sup y al JT, y sin `deliver` no podían registrar la
      * sesión que las acredita. Dictar sigue sin ser aprobar contenido:
      * `training:approve`, `convalidate` y `revoke` no se tocan. */
-    { roleSlug: "jefe_terreno",         permission: "prevention:training:deliver" },
     { roleSlug: "supervisor_terreno",   permission: "prevention:training:view" },
-    { roleSlug: "supervisor_terreno",   permission: "prevention:training:deliver" },
-    { roleSlug: "jefe_terreno",         permission: "prevention:training:ack" },
     { roleSlug: "cphs",                 permission: "prevention:training:view" },
     { roleSlug: "jefa_chome",           permission: "prevention:training:view" },
-    { roleSlug: "jefa_chome",           permission: "prevention:training:manage" },
-    { roleSlug: "jefa_chome",           permission: "prevention:training:approve" },
-    { roleSlug: "jefa_chome",           permission: "prevention:training:convalidate" },
-    { roleSlug: "jefa_chome",           permission: "prevention:training:revoke" },
     { roleSlug: "jefa_chome",           permission: "prevention:training:record" },
-    { roleSlug: "jefa_chome",           permission: "prevention:training:ack" },
     { roleSlug: "jefa_chome",           permission: "prevention:training:export" },
     { roleSlug: "administrador",        permission: "prevention:training:view" },
-    { roleSlug: "administrador",        permission: "prevention:training:manage" },
-    { roleSlug: "administrador",        permission: "prevention:training:approve" },
-    { roleSlug: "administrador",        permission: "prevention:training:deliver" },
     { roleSlug: "administrador",        permission: "prevention:training:record" },
-    { roleSlug: "administrador",        permission: "prevention:training:ack" },
-    { roleSlug: "administrador",        permission: "prevention:training:convalidate" },
-    { roleSlug: "administrador",        permission: "prevention:training:revoke" },
     { roleSlug: "administrador",        permission: "prevention:training:export" },
     // Contratistas DS 76. `accredit` y `authorize_access` deciden quién entra a
     // la faena: se separan de `submit` (quien presenta la evidencia) y no se

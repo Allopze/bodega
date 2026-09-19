@@ -39,6 +39,7 @@ import {
 import type { AccreditationInput, RevocationInput } from "@/lib/services/pdtp/accreditation"
 import { nanoid } from "@/lib/id"
 import { resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
+import { onTrainingOccurrenceCompleted } from "@/lib/services/pdtp-adapters/occurrence-gap-connector"
 
 export const TRAINING_OCCURRENCE_MAX_FILE_SIZE = 25 * 1024 * 1024
 // El margen cubre los campos multipart y los encabezados sin permitir que una
@@ -390,6 +391,11 @@ export async function recordTrainingOccurrenceStatus(
   const input = statusInputSchema.parse(rawInput)
   let completionEvent: (AccreditationInput & { sourceVersion: string; returnHref: string; plannedYear: number; plannedPeriod?: { year: number; month: number; week: number } }) | null = null
   let revocationEvent: RevocationInput | null = null
+  /* El cierre de la obligación del PDTP (N°57 y cualquier otra actividad a
+   * demanda medida por plazo) va fuera de la transacción, igual que el evento
+   * de acreditación: son dos mecanismos distintos —obligación y cumplimiento—
+   * y ninguno de los dos debe poder abortar el registro del operador. */
+  let obligationReport: { occurrenceId: string; catalogItemId: string; worksiteId: string; completedAt: string } | null = null
 
   const result = await db.transaction(async (tx) => {
     const current = await loadOccurrenceForMutation(tx, input.occurrenceId)
@@ -496,6 +502,14 @@ export async function recordTrainingOccurrenceStatus(
         actorUserId: access.userId,
       })
       await recordPendingPdtpFulfillmentEvent(completionEvent, tx)
+    }
+    if (nextStatus === "completed") {
+      obligationReport = {
+        occurrenceId: current.occurrence.id,
+        catalogItemId: current.catalog.id,
+        worksiteId: current.occurrence.worksiteId,
+        completedAt: now,
+      }
     } else if (nextStatus === "not_completed" && current.occurrence.status === "completed" && (target.catalogActivityIds?.length || target.activityNumbers?.length)) {
       revocationEvent = pdtpRevocationInput(
         current.occurrence.id,
@@ -511,6 +525,16 @@ export async function recordTrainingOccurrenceStatus(
 
   if (completionEvent) await recordPdtpFulfillmentEvent(completionEvent)
   if (revocationEvent) await recordPdtpFulfillmentRevocation(revocationEvent)
+  /* Se desestructura en vez de esparcir: TypeScript no propaga a este punto
+   * los tipos de las asignaciones hechas dentro del callback de la
+   * transacción, así que un spread acá no compila. Es el mismo motivo por el
+   * que `completionEvent` se pasa entero y no expandido. */
+  if (obligationReport) {
+    const { occurrenceId, catalogItemId, worksiteId, completedAt } = obligationReport
+    await onTrainingOccurrenceCompleted({
+      occurrenceId, catalogItemId, worksiteId, completedAt, userId: access.userId,
+    })
+  }
   return result
 }
 

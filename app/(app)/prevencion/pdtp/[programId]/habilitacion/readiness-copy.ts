@@ -78,14 +78,14 @@ export function readinessGroupCopy(status: CoverageStatus): ReadinessGroupCopy {
 /** Etiqueta del tipo de instrumento, para la columna "Qué falta". */
 export function instrumentKindLabel(instrument: PdtpCoverageInstrument): string {
   if (instrument.kind === "inspection_template") return "Plantilla"
-  if (instrument.kind === "training_course") return "Curso"
+  if (instrument.kind === "training_catalog_item") return "Actividad del catálogo"
   return "Plan de emergencia"
 }
 
 /** El código legible del instrumento, o las faenas cuando es por faena. */
 export function instrumentCode(instrument: PdtpCoverageInstrument): string {
   if (instrument.kind === "inspection_template") return instrument.code
-  if (instrument.kind === "training_course") return instrument.code
+  if (instrument.kind === "training_catalog_item") return instrument.code
   const withPlan = instrument.worksites.find((worksite) => worksite.planCode)
   return withPlan?.planCode ?? "Sin crear"
 }
@@ -105,11 +105,7 @@ export function instrumentStateLabel(instrument: PdtpCoverageInstrument): string
   if (instrument.kind === "inspection_template") {
     return INSTRUMENT_STATE_LABELS[instrument.status] ?? instrument.status
   }
-  if (instrument.kind === "training_course") {
-    if (!instrument.latestVersion) return "Sin versión"
-    if (instrument.blocker === "course_version_below_minimum_duration") return "Publicada, muy corta"
-    return INSTRUMENT_STATE_LABELS[instrument.latestVersion.status] ?? instrument.latestVersion.status
-  }
+  if (instrument.kind === "training_catalog_item") return "Dada de baja"
   const missing = instrument.worksites.filter((worksite) => !worksite.planId).length
   if (missing === instrument.worksites.length) return "Sin crear"
   return "En borrador"
@@ -132,12 +128,8 @@ export function readinessRowReason(issue: PdtpFulfillmentCoverageIssue): string 
     if (only.kind === "inspection_template") {
       return `Plantilla ${only.code} ${only.versionLabel} ${(INSTRUMENT_STATE_LABELS[only.status] ?? only.status).toLocaleLowerCase("es-CL")}`
     }
-    if (only.kind === "training_course") {
-      if (only.blocker === "course_has_no_version") return `Curso ${only.code} sin ninguna versión`
-      if (only.blocker === "course_version_not_published") {
-        return `Curso ${only.code} ${only.latestVersion!.versionLabel} sin publicar`
-      }
-      return `Curso ${only.code} publicado bajo el mínimo (${only.latestVersion!.durationMinutes} de ${only.minimumDurationMinutes} min)`
+    if (only.kind === "training_catalog_item") {
+      return `Actividad ${only.code} dada de baja del catálogo anual`
     }
     const names = only.worksites.map((worksite) => worksite.name)
     return `Sin plan aprobado en ${listNames(names)}`

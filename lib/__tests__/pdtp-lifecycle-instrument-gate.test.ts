@@ -23,6 +23,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
+import { PREDEFINED_TRAINING_CATALOG_VERSION } from "@/lib/prevention/training-occurrences-catalog"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -109,7 +110,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpChangeLog)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
-  await inMemoryDb.delete(schema.preventionTrainingCourses)
+  await inMemoryDb.delete(schema.preventionTrainingCatalogItems)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
   await inMemoryDb.delete(schema.rolePermissions)
   await inMemoryDb.delete(schema.permissions)
@@ -155,13 +156,14 @@ describe("un instrumento que todavía no existe no frena el ciclo de vida", () =
     expect(activado.status).toBe("active")
   })
 
-  it("el programa se activa con un curso declarado pero sin versión publicada", async () => {
+  it("el programa se activa con una actividad declarada pero dada de baja del catálogo", async () => {
     const now = new Date().toISOString()
     await seedActivitySinInstrumento({ id: `${PROGRAM_ID}-a-063`, n: 63 })
-    await inMemoryDb.insert(schema.preventionTrainingCourses).values({
-      id: "course-gate-63", code: "PDTP-63", name: "Inducción del trabajador", kind: "induction_worksite",
-      minimumDurationMinutes: 60, isActive: true, createdByUserId: ELABORADOR,
-      pdtpActivityNumbers: [63], createdAt: now, updatedAt: now,
+    await inMemoryDb.insert(schema.preventionTrainingCatalogItems).values({
+      id: "cat-gate-63", code: "PDTP-63", title: "Inducción del trabajador",
+      itemType: "course", audience: "Todos", catalogVersion: PREDEFINED_TRAINING_CATALOG_VERSION,
+      sourceRow: 63, scheduleJson: [], pdtpActivityNumbers: [63], isActive: false,
+      sortOrder: 63, createdAt: now, updatedAt: now,
     })
 
     expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID))

@@ -55,14 +55,10 @@ export interface CertificationEvidence {
   /** Programa de trabajo del año, aprobado y con actividades. */
   programActive: boolean
   programActivities: number
-  /** Integrantes con orientación en prevención vigente, sobre el total activo. */
-  orientationCovered: number
   /** Incidentes del período y cuántos tienen investigación cerrada. */
   incidentsTotal: number
   incidentsInvestigated: number
   /* ── Evidencia adicional de los niveles Plata y Oro ── */
-  /** Cursos declarados como exigibles a los integrantes del comité. */
-  requiredCourseCount: number
   /** Meses del período con al menos una inspección completada en la faena. */
   monthsWithInspection: number
   /** Meses con inspección originada por el propio comité. */
@@ -199,16 +195,15 @@ export const CERTIFICATION_REQUIREMENTS: readonly CertificationRequirement[] = [
     level: "bronce",
     title: "Orientación en prevención de riesgos",
     description: "Los integrantes cuentan con la orientación en prevención de riesgos vigente.",
-    check: auto((evidence) => {
-      if (evidence.activeMembers === 0) {
-        return { met: false, detail: "El comité no tiene integrantes activos." }
-      }
-      const met = evidence.orientationCovered >= evidence.activeMembers
-      return {
-        met,
-        detail: `${evidence.orientationCovered} de ${evidence.activeMembers} integrantes con orientación vigente.`,
-      }
-    }),
+    /*
+     * Manual desde el 2026-09-19. Se verificaba sola contra la competencia
+     * vigente de cada integrante, y ese registro se retiró con el modelo de
+     * capacitación por persona. El requisito de Mutual no cambió —la
+     * orientación se sigue exigiendo—, lo que cambió es que la plataforma ya no
+     * puede medirlo, y declararlo manual es preferible a fingir una medición
+     * que no existe.
+     */
+    check: { kind: "manual" },
   },
   {
     code: "work_program",
@@ -254,17 +249,8 @@ export const CERTIFICATION_REQUIREMENTS: readonly CertificationRequirement[] = [
     level: "plata",
     title: "Capacitación ampliada de los integrantes",
     description: "Curso de 20 horas, Árbol de Causas e IPER declarados como exigibles y vigentes en los integrantes.",
-    check: auto((evidence) => {
-      if (evidence.requiredCourseCount === 0) {
-        return { met: false, detail: "No hay cursos declarados como exigibles al comité en el módulo de capacitación." }
-      }
-      if (evidence.activeMembers === 0) return { met: false, detail: "El comité no tiene integrantes activos." }
-      const met = evidence.orientationCovered >= evidence.activeMembers
-      return {
-        met,
-        detail: `${evidence.orientationCovered} de ${evidence.activeMembers} integrantes con los ${evidence.requiredCourseCount} curso(s) exigidos vigentes.`,
-      }
-    }),
+    // Manual por el mismo motivo que `orientation_training`.
+    check: { kind: "manual" },
   },
   {
     code: "monthly_inspections",

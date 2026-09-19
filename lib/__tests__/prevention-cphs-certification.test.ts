@@ -24,10 +24,8 @@ const compliant = (over: Partial<CertificationEvidence> = {}): CertificationEvid
   agreementsWithCapa: 12,
   programActive: true,
   programActivities: 10,
-  orientationCovered: 6,
   incidentsTotal: 2,
   incidentsInvestigated: 2,
-  requiredCourseCount: 3,
   monthsWithInspection: 8,
   monthsWithCommitteeInspection: 4,
   iperRevisionsTotal: 1,
@@ -116,11 +114,13 @@ describe("evaluación automática", () => {
     expect(evaluated.find((item) => item.code === "work_program")).toMatchObject({ status: "not_met" })
   })
 
-  it("la orientación se mide sobre los integrantes activos", () => {
-    const evaluated = evaluateLevel("bronce", compliant({ activeMembers: 6, orientationCovered: 4 }), NO_MANUAL)
-    const training = evaluated.find((item) => item.code === "orientation_training")
-    expect(training).toMatchObject({ status: "not_met" })
-    expect(training?.detail).toContain("4 de 6")
+  /* La orientación se medía sola contra la competencia vigente de cada
+   * integrante. Ese registro se retiró el 2026-09-19 y el criterio pasó a
+   * manual: sin declaración de alguien queda pendiente, no cumplido. */
+  it("la orientación queda pendiente mientras nadie la declare", () => {
+    const evaluated = evaluateLevel("bronce", compliant(), NO_MANUAL)
+    expect(evaluated.find((item) => item.code === "orientation_training"))
+      .not.toMatchObject({ status: "met" })
   })
 })
 
@@ -135,18 +135,10 @@ describe("niveles Plata y Oro", () => {
     expect(oro.filter((code) => plata.includes(code))).toEqual([])
   })
 
-  /* Sin cursos declarados en el módulo de capacitación no se puede afirmar
-   * cobertura: la brecha señala que falta declararlos, no que falten personas. */
-  it("sin cursos exigibles declarados, la capacitación ampliada avisa qué falta", () => {
-    const evaluated = evaluateLevel("plata", compliant({ requiredCourseCount: 0 }), NO_MANUAL)
-    const training = evaluated.find((item) => item.code === "extended_training")
-    expect(training).toMatchObject({ status: "not_met" })
-    expect(training?.detail).toMatch(/no hay cursos declarados/i)
-  })
-
-  it("la capacitación ampliada cumple con todos los integrantes al día", () => {
+  /* Manual desde el 2026-09-19, por el mismo motivo que `orientation_training`. */
+  it("la capacitación ampliada queda pendiente mientras nadie la declare", () => {
     expect(evaluateLevel("plata", compliant(), NO_MANUAL)
-      .find((item) => item.code === "extended_training")).toMatchObject({ status: "met" })
+      .find((item) => item.code === "extended_training")).not.toMatchObject({ status: "met" })
   })
 
   it("un mes sin inspección rompe las inspecciones mensuales", () => {
@@ -239,13 +231,16 @@ describe("resumen del expediente", () => {
   it("no está listo mientras quede una brecha", () => {
     const evaluated = evaluateLevel("bronce", compliant(), NO_MANUAL)
     const summary = summarizeEvaluation(evaluated)
-    expect(summary.gaps).toBe(1) // el manual sin declarar
+    // Los dos manuales de Bronce sin declarar: comunicación de riesgo grave y
+    // orientación en prevención, que pasó a manual el 2026-09-19.
+    expect(summary.gaps).toBe(2)
     expect(summary.readyToSubmit).toBe(false)
   })
 
   it("queda listo cuando todo lo aplicable cumple", () => {
     const evaluated = evaluateLevel("bronce", compliant(), new Map([
       ["serious_risk_communication", { status: "met" as const, detail: "Procedimiento difundido." }],
+      ["orientation_training", { status: "met" as const, detail: "Seis de seis con orientación vigente." }],
     ]))
     const summary = summarizeEvaluation(evaluated)
     expect(summary).toMatchObject({ gaps: 0, readyToSubmit: true })
@@ -255,6 +250,7 @@ describe("resumen del expediente", () => {
   it("lo declarado no aplicable sale del denominador", () => {
     const evaluated = evaluateLevel("bronce", compliant(), new Map([
       ["serious_risk_communication", { status: "not_applicable" as const, detail: "No corresponde al giro." }],
+      ["orientation_training", { status: "met" as const, detail: "Seis de seis con orientación vigente." }],
     ]))
     const summary = summarizeEvaluation(evaluated)
     expect(summary.applicable).toBe(summary.total - 1)

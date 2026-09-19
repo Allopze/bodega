@@ -53,9 +53,14 @@ const inspecciones = (): EngancheDestination => ({
   href: (worksiteId) => `/prevencion/inspecciones?faena=${worksiteId}`,
 })
 
-const capacitacion = (permission: "prevention:training:deliver" | "prevention:training:record" = "prevention:training:deliver"): EngancheDestination => ({
+/* Un único permiso desde el 2026-09-19: `deliver` —registrar asistencia,
+ * evaluación y cierre de una sesión— se retiró con el modelo por persona, y lo
+ * que queda es marcar la actividad como hecha. El parámetro desapareció en vez
+ * de quedar con un default: dos valores posibles donde sólo hay uno invitan a
+ * pasar el que ya no existe. */
+const capacitacion = (): EngancheDestination => ({
   module: "capacitacion",
-  permission,
+  permission: "prevention:training:record",
   href: (worksiteId) => `/prevencion/capacitacion?faena=${worksiteId}`,
 })
 
@@ -144,11 +149,11 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
   16: capacitacion(), 37: capacitacion(), 38: capacitacion(), 51: capacitacion(),
   53: capacitacion(), 57: capacitacion(), 59: capacitacion(), 60: capacitacion(),
   // Actividades acreditadas por el registro simplificado de ocurrencias.
-  54: capacitacion("prevention:training:record"),
-  55: capacitacion("prevention:training:record"),
-  56: capacitacion("prevention:training:record"),
-  58: capacitacion("prevention:training:record"),
-  63: capacitacion("prevention:training:record"),
+  54: capacitacion(),
+  55: capacitacion(),
+  56: capacitacion(),
+  58: capacitacion(),
+  63: capacitacion(),
 
   // ── Habilitación del trabajador ─────────────────────────────────────────
   15: { module: "sst", permission: "sst:close", href: (w) => `/prevencion/nueva?faena=${w}` },
@@ -254,14 +259,14 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
   },
 
   // ── Campañas incluidas en el catálogo anual ────────────────────────────
-  85: capacitacion("prevention:training:record"),
-  86: capacitacion("prevention:training:record"),
-  87: capacitacion("prevention:training:record"),
+  85: capacitacion(),
+  86: capacitacion(),
+  87: capacitacion(),
   // La N°88 sigue siendo una campaña histórica compatible; el catálogo anual
   // nuevo usa la N°89 para puntos ciegos, por lo que no se debe ocultar este
   // destino mientras existan campañas antiguas con este número.
   88: campanas(),
-  89: capacitacion("prevention:training:record"),
+  89: capacitacion(),
 }
 
 export function engancheDestinationFor(n: number): EngancheDestination | null {

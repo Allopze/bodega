@@ -461,6 +461,25 @@ export function addDaysToPlainDate(plainDate: string, days: number): string {
   return new Date(Date.parse(`${plainDate}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
 }
 
+/**
+ * Suma `months` meses sobre una fecha civil "YYYY-MM-DD" conservando el último
+ * día válido del mes destino.
+ *
+ * El clamping no es un detalle: la versión con `setUTCMonth` desbordaba —31 de
+ * enero + 1 mes daba 3 de marzo— y eso retrasaba días la detección de EPP
+ * vencido. Vivía en `lib/prevention/training.ts`, que se retiró el 2026-09-19
+ * con el modelo de capacitación por persona; es un helper de fechas y nunca
+ * tuvo nada de capacitación.
+ */
+export function addMonths(date: string, months: number): string {
+  const [year, month, day] = date.split("-").map(Number)
+  if (!year || !month || !day) throw new Error("Fecha inválida para calcular vigencia.")
+  const target = new Date(Date.UTC(year, month - 1 + months, 1))
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate()
+  target.setUTCDate(Math.min(day, lastDay))
+  return target.toISOString().slice(0, 10)
+}
+
 /** Días hábiles que se pueden retrofechar en una entrega de bodega. */
 export const DELIVERY_BACKDATE_BUSINESS_DAYS = 5
 

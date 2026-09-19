@@ -11,7 +11,7 @@ import {
   preventionEmergencyPlans,
   preventionExternalEngagements,
   preventionIncidents,
-  preventionTrainingSessions,
+  preventionTrainingOccurrences,
   sstDocumentLinks,
   sstDocuments,
   sstEvaluations,
@@ -98,7 +98,7 @@ export async function inspectDocumentLinkTargets(
     committeeIds.length ? db.select({ id: preventionCommittees.id, worksiteId: preventionCommittees.worksiteId }).from(preventionCommittees).where(inArray(preventionCommittees.id, committeeIds)) : [],
     engagementIds.length ? db.select({ id: preventionExternalEngagements.id, worksiteId: preventionExternalEngagements.worksiteId }).from(preventionExternalEngagements).where(inArray(preventionExternalEngagements.id, engagementIds)) : [],
     incidentIds.length ? db.select({ id: preventionIncidents.id, worksiteId: preventionIncidents.worksiteId }).from(preventionIncidents).where(inArray(preventionIncidents.id, incidentIds)) : [],
-    trainingIds.length ? db.select({ id: preventionTrainingSessions.id, worksiteId: preventionTrainingSessions.worksiteId }).from(preventionTrainingSessions).where(inArray(preventionTrainingSessions.id, trainingIds)) : [],
+    trainingIds.length ? db.select({ id: preventionTrainingOccurrences.id, worksiteId: preventionTrainingOccurrences.worksiteId }).from(preventionTrainingOccurrences).where(inArray(preventionTrainingOccurrences.id, trainingIds)) : [],
     deliveryIds.length ? db.select({ id: deliveries.id, worksiteId: deliveries.worksiteId }).from(deliveries).where(inArray(deliveries.id, deliveryIds)) : [],
     emergencyPlanIds.length ? db.select({ id: preventionEmergencyPlans.id, worksiteId: preventionEmergencyPlans.worksiteId }).from(preventionEmergencyPlans).where(inArray(preventionEmergencyPlans.id, emergencyPlanIds)) : [],
   ])
@@ -191,9 +191,12 @@ export async function resolveDocumentLinkTarget(entityType: DocumentLinkEntityTy
         .from(preventionIncidents).where(eq(preventionIncidents.id, entityId)).limit(1)
       return row ?? null
     }
+    /* `training` apunta a la ocurrencia del catálogo anual desde el
+     * 2026-09-19. Antes apuntaba a la sesión de capacitación, que dejó de
+     * existir con el modelo por persona. */
     case "training": {
-      const [row] = await db.select({ id: preventionTrainingSessions.id, worksiteId: preventionTrainingSessions.worksiteId })
-        .from(preventionTrainingSessions).where(eq(preventionTrainingSessions.id, entityId)).limit(1)
+      const [row] = await db.select({ id: preventionTrainingOccurrences.id, worksiteId: preventionTrainingOccurrences.worksiteId })
+        .from(preventionTrainingOccurrences).where(eq(preventionTrainingOccurrences.id, entityId)).limit(1)
       return row ?? null
     }
     case "epp_delivery": {

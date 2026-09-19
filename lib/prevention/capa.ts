@@ -63,7 +63,9 @@ export function capaSourceHref(sourceType: string, sourceId: string) {
   if (sourceType === "incident") return `/prevencion/incidentes/${sourceId}`
   if (sourceType === "risk") return `/prevencion/miper/${sourceId}`
   if (sourceType === "legal_requirement") return `/prevencion/requisitos-legales/${sourceId}`
-  if (sourceType === "training") return `/prevencion/capacitacion/competencias?workerId=${encodeURIComponent(sourceId)}`
+  // La ficha de competencias del trabajador dejó de existir el 2026-09-19; el
+  // origen `training` va al control anual, que es donde vive la evidencia.
+  if (sourceType === "training") return "/prevencion/capacitacion"
   if (sourceType === "work_permit") return `/prevencion/permisos/${sourceId}`
   if (sourceType === "inspection") return `/prevencion/inspecciones/${sourceId}`
   if (sourceType === "external_engagement") return `/prevencion/coordinacion/${sourceId}`

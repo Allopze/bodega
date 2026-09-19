@@ -768,10 +768,6 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-privacidad-solicitud", path: "/prevencion/privacidad/solicitudes/privacy-request-audit-1", auth: true },
   // ── Prevención: capacidades P1 implementadas el 19-07-2026 ──
   { slug: "prevencion-capacitacion", path: "/prevencion/capacitacion", auth: true },
-  { slug: "prevencion-capacitacion-catalogo", path: "/prevencion/capacitacion/catalogo", auth: true },
-  { slug: "prevencion-capacitacion-competencias", path: "/prevencion/capacitacion/competencias", auth: true },
-  { slug: "prevencion-capacitacion-brechas", path: "/prevencion/capacitacion/brechas", auth: true },
-  { slug: "prevencion-capacitacion-sesion", path: "/prevencion/capacitacion/trsess-audit-1", auth: true },
   { slug: "prevencion-permisos", path: "/prevencion/permisos", auth: true },
   { slug: "prevencion-permiso-detalle", path: "/prevencion/permisos/permit-audit-1", auth: true },
   { slug: "prevencion-inspecciones", path: "/prevencion/inspecciones", auth: true },
@@ -904,7 +900,7 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "combustibles", fixtures: ["cargas de combustible", "lote de consumos con registros asociados y sin asociar", "lote de log operacional con faena pendiente de asociar", "carga TAE con resultado público", "lote TAE histórico con carga observada y rechazo", "vehículos de combustible", "proveedores de combustible", "cuentas corrientes", "reportes mensuales"] },
   { section: "repuestos", fixtures: ["solicitud de repuestos", "ítem libre", "cotización pendiente"] },
   { section: "servicios", fixtures: ["solicitud de servicios", "ítem libre", "cotización pendiente"] },
-  { section: "prevencion", fixtures: ["fiscalización de la Dirección del Trabajo con medida prescrita", "coordinación de información entregada al mandante", "evaluación nueva", "evaluación seguimiento", "plan de acción", "acción CAPA en progreso con evidencia y seguimiento", "requisito legal publicado con aplicabilidad por faena", "solicitud de privacidad con identidad verificada", "incidente en investigación con evidencia y difusión RE-20", "inspección revisada con hallazgo CAPA", "inspección en curso con respuestas parciales", "Reporte de Equipos en transcripción con planilla física", "ejecución PDTP aprobada con checklist y plan de acción", "sesión de capacitación cerrada con asistencia", "gestión de cambio evaluada con CAPA", "plan de emergencia con simulacro y roles", "permiso activo con AST, medición y aislamiento", "comité CPHS paritario con acta", "grupo de exposición con medición", "programa de vigilancia con matrículas", "documento vigente distribuido con acuse", "control MIPER crítico verificado", "indicadores mensuales de seguridad y salud en el trabajo", "indicadores material y ambiental", "control de alcotest negativo con equipo y envío mensual del lote DO-48", "coordinador GRD en faena chica y comité GRD con matriz publicada y acta cerrada", "actividad de constancia PDTP planificada sin ejecución (deuda abierta)"] },
+  { section: "prevencion", fixtures: ["fiscalización de la Dirección del Trabajo con medida prescrita", "coordinación de información entregada al mandante", "evaluación nueva", "evaluación seguimiento", "plan de acción", "acción CAPA en progreso con evidencia y seguimiento", "requisito legal publicado con aplicabilidad por faena", "solicitud de privacidad con identidad verificada", "incidente en investigación con evidencia y difusión RE-20", "inspección revisada con hallazgo CAPA", "inspección en curso con respuestas parciales", "Reporte de Equipos en transcripción con planilla física", "ejecución PDTP aprobada con checklist y plan de acción", "gestión de cambio evaluada con CAPA", "plan de emergencia con simulacro y roles", "permiso activo con AST, medición y aislamiento", "comité CPHS paritario con acta", "grupo de exposición con medición", "programa de vigilancia con matrículas", "documento vigente distribuido con acuse", "control MIPER crítico verificado", "indicadores mensuales de seguridad y salud en el trabajo", "indicadores material y ambiental", "control de alcotest negativo con equipo y envío mensual del lote DO-48", "coordinador GRD en faena chica y comité GRD con matriz publicada y acta cerrada", "actividad de constancia PDTP planificada sin ejecución (deuda abierta)"] },
   { section: "admin-faenas", fixtures: ["faenas activas", "faena que representa la bodega de la oficina central"] },
   { section: "admin-inventario-faena", fixtures: ["extintor operativo con plan de emergencias, asignaciones y eventos", "kit de derrame sin asignar a punto"] },
   { section: "admin-contenedores", fixtures: ["contenedor operativo con inspección ejecutada", "contenedor sin inspecciones"] },
@@ -2882,75 +2878,6 @@ async function prepareDatabase(captureDbUrl: string) {
     createdAt: now,
   })
 
-  // Sesión de capacitación completa: el detalle une sesión, versión del
-  // curso, curso, faena y asistencia. Sembrar sólo la sesión dejaba una ruta
-  // con FK inválidas o sin el denominador real de asistentes.
-  await db.insert(schema.preventionTrainingCourses).values({
-    id: "trcourse-audit-1",
-    code: "CAP-DS44-001",
-    name: "Inducción preventiva DS 44",
-    kind: "legal_mandatory",
-    description: "Inducción de riesgos, controles y reporte de condiciones inseguras.",
-    minimumDurationMinutes: 480,
-    validityMonths: 24,
-    requiresAssessment: true,
-    passingScore: 70,
-    legalRequirementId: "legal-requirement-audit-1",
-    legalBasis: "DS 44, artículo 16",
-    isActive: true,
-    createdByUserId: userId,
-    createdAt: now,
-    updatedAt: now,
-  })
-  await db.insert(schema.preventionTrainingCourseVersions).values({
-    id: "trcourse-version-audit-1",
-    courseId: "trcourse-audit-1",
-    versionLabel: "2026.1",
-    status: "published",
-    contentOutline: ["Riesgos críticos", "Controles operacionales", "Reporte y detención segura"],
-    durationMinutes: 480,
-    modality: "presencial",
-    assessmentType: "theoretical",
-    passingScore: 70,
-    contentHash: "a".repeat(64),
-    effectiveFrom: "2026-01-01",
-    authorUserId: "user-audit-prevencion",
-    reviewedByUserId: userId,
-    reviewedAt: now,
-    approvedByUserId: userId,
-    approvedAt: now,
-    publishedByUserId: userId,
-    publishedAt: now,
-    version: 1,
-    createdAt: now,
-    updatedAt: now,
-  })
-  await db.insert(schema.preventionTrainingSessions).values({
-    id: "trsess-audit-1",
-    code: "CAP-2026-001",
-    courseVersionId: "trcourse-version-audit-1",
-    worksiteId,
-    scheduledAt: "2026-06-09T08:00:00.000Z",
-    startedAt: "2026-06-09T08:05:00.000Z",
-    endedAt: "2026-06-09T16:10:00.000Z",
-    durationMinutes: 480,
-    modality: "presencial",
-    location: "Sala de capacitación Faena Mininco",
-    instructorUserId: "user-audit-prevencion",
-    instructorCompetencyEvidence: "Registro de competencia PREV-2026-01",
-    status: "completed",
-    closedByUserId: userId,
-    closedAt: now,
-    version: 1,
-    createdByUserId: userId,
-    createdAt: now,
-    updatedAt: now,
-  })
-  await db.insert(schema.preventionTrainingAttendance).values([
-    { id: "trattendance-audit-1", sessionId: "trsess-audit-1", workerId: "worker-audit-1", status: "attended", attendanceMinutes: 480, assessmentScore: 92, assessmentAttempts: 1, assessmentResult: "approved", evidenceReference: "Lista CAP-2026-001 · Daniela Fuentes", recordedByUserId: "user-audit-prevencion", createdAt: now, updatedAt: now },
-    { id: "trattendance-audit-2", sessionId: "trsess-audit-1", workerId: "worker-audit-2", status: "attended", attendanceMinutes: 480, assessmentScore: 84, assessmentAttempts: 1, assessmentResult: "approved", evidenceReference: "Lista CAP-2026-001 · Marco Silva", recordedByUserId: "user-audit-prevencion", createdAt: now, updatedAt: now },
-  ])
-
   // Plan de emergencia con los insumos que consume el detalle: escenario,
   // organigrama, recursos, contacto y simulacro. El resultado mejorable del
   // simulacro mantiene la trazabilidad hacia la CAPA ya sembrada.
@@ -3171,7 +3098,6 @@ async function prepareDatabase(captureDbUrl: string) {
     code: "LOTO-MANT",
     name: "Mantención con bloqueo de energías",
     description: "Permiso para intervenir equipo con aislamiento eléctrico y AST.",
-    competencyTaskKey: "mantenimiento_loto",
     requiresIsolation: true,
     requiresMeasurement: true,
     requiresJsa: true,

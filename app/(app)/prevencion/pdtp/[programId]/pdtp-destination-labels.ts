@@ -44,7 +44,6 @@ const PERMISSION_LABELS: Record<string, string> = {
   "prevention:pdtp:execute": "registrar cumplimiento en PDTP",
   "prevention:risk:publish": "publicar controles de riesgo",
   "prevention:training:execute": "registrar capacitaciones",
-  "prevention:training:deliver": "impartir capacitaciones",
   "prevention:training:record": "registrar capacitaciones",
   "sst:close": "cerrar la habilitación SST",
 }

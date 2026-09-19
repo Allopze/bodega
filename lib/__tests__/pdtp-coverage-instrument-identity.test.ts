@@ -4,7 +4,8 @@
  * Red de seguridad del rediseño "bandeja de habilitación" (2026-09-19).
  *
  * El rediseño enriquece `PdtpFulfillmentCoverageIssue` con la identidad del
- * instrumento (qué plantilla, qué curso, qué plan) para que cada fila del panel
+ * instrumento (qué plantilla, qué actividad del catálogo, qué plan) para que
+ * cada fila del panel
  * pueda ofrecer una acción. Para conseguirla, `usablePdtpInstrumentNumbers` y
  * `activityNumbersDeclared*` se funden en un índice único que lee cada tabla
  * una sola vez con su columna `status`.
@@ -38,6 +39,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
+import { PREDEFINED_TRAINING_CATALOG_VERSION } from "@/lib/prevention/training-occurrences-catalog"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -114,28 +116,21 @@ async function seedTemplate(id: string, code: string, n: number, status: "draft"
   })
 }
 
-async function seedCourse(id: string, code: string, n: number, minimumDurationMinutes: number) {
+/**
+ * Un ítem del catálogo anual controlado, que desde 2026-09-19 es el instrumento
+ * de las actividades de capacitación.
+ *
+ * `sortOrder` y `sourceRow` derivan del número de actividad sólo para que sean
+ * únicos y positivos: el índice no los lee, pero los CHECK de la tabla los
+ * exigen mayores que cero.
+ */
+async function seedCatalogItem(id: string, code: string, n: number, isActive: boolean) {
   const now = new Date().toISOString()
-  await inMemoryDb.insert(schema.preventionTrainingCourses).values({
-    id, code, name: `Curso ${code}`, kind: "practical_training",
-    minimumDurationMinutes, isActive: true, createdByUserId: USER_ID,
-    pdtpActivityNumbers: [n], createdAt: now, updatedAt: now,
-  })
-}
-
-async function seedCourseVersion(
-  id: string, courseId: string,
-  status: "draft" | "in_review" | "approved" | "published",
-  durationMinutes: number,
-) {
-  const now = new Date().toISOString()
-  await inMemoryDb.insert(schema.preventionTrainingCourseVersions).values({
-    id, courseId, versionLabel: id.slice(-3), status,
-    contentOutline: [{ title: "Contenido", minutes: durationMinutes }], durationMinutes,
-    modality: "presencial", assessmentType: "practical", passingScore: 70,
-    contentHash: "b".repeat(64), authorUserId: USER_ID, version: 1,
+  await inMemoryDb.insert(schema.preventionTrainingCatalogItems).values({
+    id, code, title: `Actividad ${code}`, itemType: "course", audience: "Todos",
+    catalogVersion: PREDEFINED_TRAINING_CATALOG_VERSION, sourceRow: n,
+    scheduleJson: [], pdtpActivityNumbers: [n], isActive, sortOrder: n,
     createdAt: now, updatedAt: now,
-    ...(status === "published" ? { publishedByUserId: USER_ID, publishedAt: now } : {}),
   })
 }
 
@@ -168,8 +163,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.preventionInspectionTemplates)
   await inMemoryDb.delete(schema.preventionEmergencyPlans)
-  await inMemoryDb.delete(schema.preventionTrainingCourseVersions)
-  await inMemoryDb.delete(schema.preventionTrainingCourses)
+  await inMemoryDb.delete(schema.preventionTrainingCatalogItems)
   await inMemoryDb.delete(schema.preventionCampaigns)
   await inMemoryDb.delete(schema.sstDocumentTypes)
   await inMemoryDb.delete(schema.sstDocumentCategories)
@@ -224,33 +218,38 @@ describe("cobertura PDTP — conjunto exacto de (n, status) por clase de instrum
     ])
   })
 
-  it("cursos: sin versión, en revisión y publicado bajo el mínimo reportan; publicado válido limpia", async () => {
-    // Los cuatro son `capacitacion()` en el contrato.
+  it("catálogo anual: ítem inactivo reporta, activo limpia, ausente es cableado", async () => {
+    // Los tres son `capacitacion()` en el contrato.
     await seedActivity(63, "Inducción del trabajador")
-    await seedActivity(57, "Comunicación efectiva")
-    await seedActivity(56, "Manejo a la defensiva")
     await seedActivity(58, "Capacitación Coordinador GRD")
+    await seedActivity(56, "Manejo a la defensiva")
 
-    // Sin ninguna versión creada.
-    await seedCourse("course-63", "PDTP-63", 63, 60)
-
-    // Con una versión, pero en revisión: declarado, no vigente.
-    await seedCourse("course-57", "PDTP-57", 57, 60)
-    await seedCourseVersion("ver-57-v01", "course-57", "in_review", 120)
-
-    // Publicado, pero más corto que el mínimo del catálogo.
-    await seedCourse("course-56", "PDTP-56", 56, 480)
-    await seedCourseVersion("ver-56-v01", "course-56", "published", 60)
-
-    // Publicado y suficiente: el único que no debería aparecer.
-    await seedCourse("course-58", "PDTP-58", 58, 60)
-    await seedCourseVersion("ver-58-v01", "course-58", "published", 120)
+    // Declarado pero dado de baja: instrumento no vigente.
+    await seedCatalogItem("cat-63", "PDTP-63", 63, false)
+    // Activo: el único que no debería aparecer.
+    await seedCatalogItem("cat-58", "PDTP-58", 58, true)
+    // La N°56 no la declara ningún ítem: no es instrumento no vigente, es un
+    // número sin declarar.
 
     expect(await coveragePairs()).toEqual([
-      [56, "instrument_required"],
-      [57, "instrument_required"],
+      [56, "config_required"],
       [63, "instrument_required"],
     ])
+  })
+
+  it("un ítem de otra versión del catálogo no declara el número", async () => {
+    // El filtro por `catalogVersion` es lo que impide que el catálogo del año
+    // pasado siga habilitando actividades del programa vigente.
+    await seedActivity(58, "Capacitación Coordinador GRD")
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.preventionTrainingCatalogItems).values({
+      id: "cat-58-viejo", code: "PDTP-58-OLD", title: "Actividad del año pasado",
+      itemType: "course", audience: "Todos", catalogVersion: "programa-capacitacion-2025-v1",
+      sourceRow: 58, scheduleJson: [], pdtpActivityNumbers: [58], isActive: true,
+      sortOrder: 58, createdAt: now, updatedAt: now,
+    })
+
+    expect(await coveragePairs()).toEqual([[58, "config_required"]])
   })
 
   it("planes de emergencia: por faena, y la ausencia total se distingue del borrador", async () => {
@@ -338,17 +337,16 @@ describe("cobertura PDTP — conjunto exacto de (n, status) por clase de instrum
     await seedActivity(24, "Inspección de extintores")        // plantilla borrador
     await seedActivity(25, "Inspección de equipos")           // plantilla aprobada
     await seedActivity(27, "Inspección de instalaciones")     // sin declarar
-    await seedActivity(63, "Inducción del trabajador")        // curso sin versión
-    await seedActivity(58, "Capacitación Coordinador GRD")    // curso publicado ok
+    await seedActivity(63, "Inducción del trabajador")        // ítem de catálogo inactivo
+    await seedActivity(58, "Capacitación Coordinador GRD")    // ítem de catálogo activo
     await seedActivity(84, "Simulacros")                      // plan borrador
     await seedActivity(43, "Procedimientos de trabajo seguro") // tipo de documento
     await seedActivity(35, "Mantener y actualizar la MIPER")  // cableada por código
 
     await seedTemplate("tpl-24", "insp_extintores", 24, "draft")
     await seedTemplate("tpl-25", "insp_equipos", 25, "approved")
-    await seedCourse("course-63", "PDTP-63", 63, 60)
-    await seedCourse("course-58", "PDTP-58", 58, 60)
-    await seedCourseVersion("ver-58-v01", "course-58", "published", 120)
+    await seedCatalogItem("cat-63", "PDTP-63", 63, false)
+    await seedCatalogItem("cat-58", "PDTP-58", 58, true)
     await seedPlan("plan-a-draft", "PE-A", WS_A, 84, "draft")
     await seedPlan("plan-b-draft", "PE-B", WS_B, 84, "draft")
     const now = new Date().toISOString()

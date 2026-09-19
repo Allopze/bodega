@@ -85,12 +85,12 @@ test.describe("PDTP — habilitar actividades", () => {
     await expect(page.getByText(/Sin resultados|No hay|Aún no hay/i).first()).toBeVisible()
   })
 
-  test("el catálogo de cursos volvió a ser alcanzable y filtra por código", async ({ page }) => {
-    // Esta ruta era un `redirect()` y dejaba sin destino a toda actividad cuyo
-    // curso no tuviera versión publicada.
-    await page.goto("/prevencion/capacitacion/catalogo?tab=versions&q=NO-EXISTE")
-    await expect(page.getByRole("heading", { name: "Catálogo de cursos" })).toBeVisible()
-    await expect(page.getByRole("button", { name: /Contenidos \(0\)/ })).toBeVisible()
+  test("el destino de una actividad de capacitación es el control anual", async ({ page }) => {
+    // El catálogo de cursos se retiró el 2026-09-19. El instrumento de una
+    // actividad de capacitación pasó a ser el ítem del catálogo anual, y su
+    // enlace de resolución va pelado: el destino no lee filtro de texto.
+    await page.goto("/prevencion/capacitacion")
+    await expect(page.getByRole("heading", { name: "Capacitación" })).toBeVisible()
   })
 
   test("el CTA de una fila es alcanzable por teclado y revela su verbo", async ({ page }) => {

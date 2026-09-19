@@ -19,7 +19,7 @@ export function PublicAcknowledgementForm({
   eligible,
   ineligibleReason,
 }: {
-  kind: "capacitacion" | "permiso"
+  kind: "permiso"
   targetId: string
   token: string
   alreadyAcknowledgedAt: string | null
@@ -45,9 +45,7 @@ export function PublicAcknowledgementForm({
       <input type="hidden" name="targetId" value={targetId} />
       <input type="hidden" name="token" value={token} />
       <p className="text-sm text-(--color-text-muted)">
-        {kind === "capacitacion"
-          ? "Declaro haber recibido la información de esta capacitación."
-          : "Declaro haber recibido el AST y los controles de este permiso."}
+        Declaro haber recibido el AST y los controles de este permiso.
       </p>
       <Button type="submit" disabled={pending}>
         {pending ? "Registrando…" : "Acuso recibo"}

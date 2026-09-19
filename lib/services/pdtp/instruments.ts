@@ -41,10 +41,10 @@ import {
   preventionCampaigns,
   preventionEmergencyPlans,
   preventionInspectionTemplates,
-  preventionTrainingCourses,
-  preventionTrainingCourseVersions,
+  preventionTrainingCatalogItems,
   sstDocumentTypes,
 } from "@/db/schema"
+import { PREDEFINED_TRAINING_CATALOG_VERSION } from "@/lib/prevention/training-occurrences-catalog"
 
 type QueryClient = DB | Tx
 
@@ -70,21 +70,12 @@ export type PdtpInstrumentRecord =
       usable: boolean
     }
   | {
-      kind: "training_course"
+      kind: "training_catalog_item"
       id: string
       code: string
-      name: string
+      title: string
+      /** Dado de baja del catálogo vigente: declarado pero no ejecutable. */
       isActive: boolean
-      minimumDurationMinutes: number
-      /** La versión más avanzada del curso, para poder decir QUÉ le falta y no
-       *  sólo que falta. `null` = el curso existe sin ninguna versión. */
-      latestVersion: {
-        id: string
-        versionLabel: string
-        status: string
-        durationMinutes: number
-        authorUserId: string | null
-      } | null
       usable: boolean
     }
   | {
@@ -162,7 +153,7 @@ function emptySets(): PdtpInstrumentNumberSets {
  * el único motivo de que la carga fueran tres olas secuenciales en vez de una.
  */
 export async function loadPdtpInstrumentIndex(client: QueryClient = db): Promise<PdtpInstrumentIndex> {
-  const [templates, courses, courseVersions, docTypes, campaigns, plans] = await Promise.all([
+  const [templates, catalogItems, docTypes, campaigns, plans] = await Promise.all([
     client.select({
       id: preventionInspectionTemplates.id,
       code: preventionInspectionTemplates.code,
@@ -173,27 +164,16 @@ export async function loadPdtpInstrumentIndex(client: QueryClient = db): Promise
       n: preventionInspectionTemplates.pdtpActivityNumbers,
     }).from(preventionInspectionTemplates)
       .where(isNotNull(preventionInspectionTemplates.pdtpActivityNumbers)),
+    // Sólo el catálogo controlado vigente: un ítem del año pasado no habilita
+    // una actividad del programa de este año.
     client.select({
-      id: preventionTrainingCourses.id,
-      code: preventionTrainingCourses.code,
-      name: preventionTrainingCourses.name,
-      isActive: preventionTrainingCourses.isActive,
-      minimumDurationMinutes: preventionTrainingCourses.minimumDurationMinutes,
-      n: preventionTrainingCourses.pdtpActivityNumbers,
-    }).from(preventionTrainingCourses)
-      .where(isNotNull(preventionTrainingCourses.pdtpActivityNumbers)),
-    // Todas las versiones, no sólo las `published`: para decir «su v02 está en
-    // revisión» hay que haberla leído.
-    client.select({
-      id: preventionTrainingCourseVersions.id,
-      courseId: preventionTrainingCourseVersions.courseId,
-      versionLabel: preventionTrainingCourseVersions.versionLabel,
-      status: preventionTrainingCourseVersions.status,
-      durationMinutes: preventionTrainingCourseVersions.durationMinutes,
-      authorUserId: preventionTrainingCourseVersions.authorUserId,
-    }).from(preventionTrainingCourseVersions)
-      .innerJoin(preventionTrainingCourses, eq(preventionTrainingCourses.id, preventionTrainingCourseVersions.courseId))
-      .where(isNotNull(preventionTrainingCourses.pdtpActivityNumbers)),
+      id: preventionTrainingCatalogItems.id,
+      code: preventionTrainingCatalogItems.code,
+      title: preventionTrainingCatalogItems.title,
+      isActive: preventionTrainingCatalogItems.isActive,
+      n: preventionTrainingCatalogItems.pdtpActivityNumbers,
+    }).from(preventionTrainingCatalogItems)
+      .where(eq(preventionTrainingCatalogItems.catalogVersion, PREDEFINED_TRAINING_CATALOG_VERSION)),
     client.select({
       id: sstDocumentTypes.id,
       code: sstDocumentTypes.code,
@@ -243,38 +223,16 @@ export async function loadPdtpInstrumentIndex(client: QueryClient = db): Promise
     })
   }
 
-  // Un curso cuenta cuando alguna de sus versiones está `published` **y** dura
-  // al menos el mínimo del catálogo: `createTrainingSession` rechaza cualquier
-  // otro estado, y una versión publicada más corta que el mínimo no acredita.
-  const versionsByCourseId = new Map<string, typeof courseVersions>()
-  for (const version of courseVersions) {
-    const forCourse = versionsByCourseId.get(version.courseId) ?? []
-    forCourse.push(version)
-    versionsByCourseId.set(version.courseId, forCourse)
-  }
-  /** Cuál versión mostrar cuando el curso no es ejecutable: la más avanzada del
-   *  flujo, que es la que el operador tiene que empujar. */
-  const VERSION_PROGRESS = ["draft", "observed", "in_review", "approved", "published", "superseded"]
-  for (const course of courses) {
-    const versions = versionsByCourseId.get(course.id) ?? []
-    const usableVersion = versions.find(
-      (version) => version.status === "published" && version.durationMinutes >= course.minimumDurationMinutes,
-    )
-    const latestVersion = usableVersion ?? [...versions].sort(
-      (a, b) => VERSION_PROGRESS.indexOf(b.status) - VERSION_PROGRESS.indexOf(a.status),
-    )[0] ?? null
-    record(course.n as number[] | null, {
-      kind: "training_course",
-      id: course.id, code: course.code, name: course.name,
-      isActive: course.isActive, minimumDurationMinutes: course.minimumDurationMinutes,
-      latestVersion: latestVersion
-        ? {
-            id: latestVersion.id, versionLabel: latestVersion.versionLabel,
-            status: latestVersion.status, durationMinutes: latestVersion.durationMinutes,
-            authorUserId: latestVersion.authorUserId,
-          }
-        : null,
-      usable: Boolean(usableVersion),
+  // Un ítem del catálogo anual cuenta con sólo estar activo. No hay ciclo de
+  // aprobación que verificar: el catálogo es un programa controlado que se
+  // carga completo, y lo que se mide de una capacitación es si se hizo, no si
+  // su contenido está publicado.
+  for (const item of catalogItems) {
+    record(item.n as number[] | null, {
+      kind: "training_catalog_item",
+      id: item.id, code: item.code, title: item.title,
+      isActive: item.isActive,
+      usable: item.isActive,
     })
   }
 

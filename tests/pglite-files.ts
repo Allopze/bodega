@@ -149,7 +149,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-cphs-program-persistence.test.ts",
   "lib/__tests__/prevention-cphs-certification-persistence.test.ts",
   "lib/__tests__/prevention-hygiene-pdtp-accreditation.test.ts",
-  "lib/__tests__/pdtp-competency-gap-obligation.test.ts",
+  "lib/__tests__/pdtp-occurrence-gap-obligation.test.ts",
   "lib/__tests__/pdtp-indicators-reopen-revocation.test.ts",
   "lib/__tests__/prevention-emergency-plan-seed.test.ts",
   // PER-001 y E2E-005 de la auditoría 2026-09-14.

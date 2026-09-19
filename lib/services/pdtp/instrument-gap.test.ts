@@ -20,10 +20,10 @@ const template = (over: Partial<Extract<PdtpInstrumentRecord, { kind: "inspectio
   status: "draft", authorUserId: "user-1", usable: false, ...over,
 })
 
-const course = (over: Partial<Extract<PdtpInstrumentRecord, { kind: "training_course" }>> = {}) => ({
-  kind: "training_course" as const,
-  id: "course-1", code: "PDTP-63", name: "Inducción del trabajador",
-  isActive: true, minimumDurationMinutes: 480, latestVersion: null, usable: false, ...over,
+const catalogItem = (over: Partial<Extract<PdtpInstrumentRecord, { kind: "training_catalog_item" }>> = {}) => ({
+  kind: "training_catalog_item" as const,
+  id: "cat-1", code: "PDTP-63", title: "Inducción del trabajador",
+  isActive: false, usable: false, ...over,
 })
 
 const plan = (over: Partial<Extract<PdtpInstrumentRecord, { kind: "emergency_plan" }>> = {}) => ({
@@ -43,41 +43,24 @@ describe("describePdtpInstrumentGap — un motivo que distingue una fila de otra
     ])
   })
 
-  it("distingue las tres causas por las que un curso no habilita", () => {
-    const sinVersion = describePdtpInstrumentGap({
-      n: 63, candidates: [course()], missingWorksites: [], applicableWorksiteCount: 1,
+  it("nombra la actividad del catálogo y su única causa", () => {
+    // Antes eran tres causas —sin versión, sin publicar, publicada bajo el
+    // mínimo— porque el instrumento era un curso versionado. El catálogo anual
+    // no tiene ciclo de aprobación: o la actividad está vigente o está de baja.
+    const deBaja = describePdtpInstrumentGap({
+      n: 63, candidates: [catalogItem()], missingWorksites: [], applicableWorksiteCount: 1,
     })
-    expect(sinVersion.reason).toBe("El curso PDTP-63 no tiene ninguna versión creada.")
-
-    const enRevision = describePdtpInstrumentGap({
-      n: 57,
-      candidates: [course({
-        code: "PDTP-57",
-        latestVersion: { id: "v-1", versionLabel: "v02", status: "in_review", durationMinutes: 600, authorUserId: "user-1" },
-      })],
-      missingWorksites: [], applicableWorksiteCount: 1,
-    })
-    expect(enRevision.reason).toBe("El curso PDTP-57 tiene su versión v02 en revisión y ninguna está publicada.")
-
-    const corta = describePdtpInstrumentGap({
-      n: 56,
-      candidates: [course({
-        code: "PDTP-56", minimumDurationMinutes: 480,
-        latestVersion: { id: "v-2", versionLabel: "v01", status: "published", durationMinutes: 60, authorUserId: "user-1" },
-      })],
-      missingWorksites: [], applicableWorksiteCount: 1,
-    })
-    expect(corta.reason).toBe("La versión publicada del curso PDTP-56 dura 60 min y el curso exige 480.")
-
-    // Las tres son distintas entre sí: es literalmente el defecto reportado.
-    const reasons = [sinVersion.reason, enRevision.reason, corta.reason]
-    expect(new Set(reasons).size).toBe(3)
-    const blockers = [sinVersion, enRevision, corta].map((gap) => (gap.instruments[0] as { blocker: string }).blocker)
-    expect(blockers).toEqual([
-      "course_has_no_version",
-      "course_version_not_published",
-      "course_version_below_minimum_duration",
+    expect(deBaja.reason).toBe("La actividad PDTP-63 está dada de baja del catálogo anual y sólo una activa se puede programar.")
+    expect(deBaja.instruments).toEqual([
+      expect.objectContaining({ kind: "training_catalog_item", blocker: "catalog_item_inactive" }),
     ])
+
+    // Dos actividades distintas siguen dando motivos distintos: el defecto
+    // reportado era que todas las filas del grupo repetían la misma frase.
+    const otra = describePdtpInstrumentGap({
+      n: 57, candidates: [catalogItem({ code: "PDTP-57" })], missingWorksites: [], applicableWorksiteCount: 1,
+    })
+    expect(otra.reason).not.toBe(deBaja.reason)
   })
 
   it("los planes se agrupan por faena, distinguiendo el que falta del que no está aprobado", () => {
@@ -107,12 +90,12 @@ describe("describePdtpInstrumentGap — un motivo que distingue una fila de otra
     // `usableGlobally.has(n)`, así que aprobar cualquiera apaga el issue.
     const gap = describePdtpInstrumentGap({
       n: 24,
-      candidates: [template(), course({ code: "PDTP-24" })],
+      candidates: [template(), catalogItem({ code: "PDTP-24" })],
       missingWorksites: [], applicableWorksiteCount: 1,
     })
 
     expect(gap.reason).toBe(
-      "Ninguno de los instrumentos que declaran el N°24 está vigente: la plantilla INSP-EXT (borrador) y el curso PDTP-24 (sin versiones). Resolver cualquiera de ellos habilita la actividad.",
+      "Ninguno de los instrumentos que declaran el N°24 está vigente: la plantilla INSP-EXT (borrador) y la actividad PDTP-24 (dada de baja del catálogo). Resolver cualquiera de ellos habilita la actividad.",
     )
     expect(gap.instruments).toHaveLength(2)
   })
@@ -120,12 +103,12 @@ describe("describePdtpInstrumentGap — un motivo que distingue una fila de otra
   it("dos instrumentos de la misma clase se nombran los dos", () => {
     const gap = describePdtpInstrumentGap({
       n: 56,
-      candidates: [course({ id: "c-1", code: "PDTP-56" }), course({ id: "c-2", code: "PDTP-56B" })],
+      candidates: [catalogItem({ id: "c-1", code: "PDTP-56" }), catalogItem({ id: "c-2", code: "PDTP-56B" })],
       missingWorksites: [], applicableWorksiteCount: 1,
     })
     expect(gap.reason).toContain("PDTP-56")
     expect(gap.reason).toContain("PDTP-56B")
-    expect(gap.instruments.map((instrument) => instrument.kind)).toEqual(["training_course", "training_course"])
+    expect(gap.instruments.map((instrument) => instrument.kind)).toEqual(["training_catalog_item", "training_catalog_item"])
   })
 
   it("el caso mixto: una plantilla en borrador además del plan por faena", () => {
@@ -156,7 +139,7 @@ describe("describePdtpInstrumentGap — un motivo que distingue una fila de otra
     // no en los tests de unidad, que comparan estructuras en memoria.
     const gap = describePdtpInstrumentGap({
       n: 84,
-      candidates: [template(), course(), plan()],
+      candidates: [template(), catalogItem(), plan()],
       missingWorksites: [{ id: "ws-a", name: "Faena Norte" }],
       applicableWorksiteCount: 1,
     })
@@ -166,7 +149,7 @@ describe("describePdtpInstrumentGap — un motivo que distingue una fila de otra
   it("nunca emite un href: las rutas se arman en la UI", () => {
     const gap = describePdtpInstrumentGap({
       n: 24,
-      candidates: [template(), course(), plan()],
+      candidates: [template(), catalogItem(), plan()],
       missingWorksites: [{ id: "ws-a", name: "Faena Norte" }],
       applicableWorksiteCount: 1,
     })

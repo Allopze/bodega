@@ -119,7 +119,6 @@ export default async function PermisoPage({ params }: { params: Promise<{ permit
           ackLink: !item.crewUserId && !item.acknowledgedAt
             ? preventionAckPath("permiso", item.id)
             : null,
-          hasCompetencyGap: item.hasCompetencyGap,
         }))}
         readiness={readiness}
         currentUserId={auth.user.id}
