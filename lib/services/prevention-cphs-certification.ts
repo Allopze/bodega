@@ -26,14 +26,12 @@ import {
   preventionCommitteeProgramActivities,
   preventionCommitteePrograms,
   preventionCommittees,
-  preventionCompetencyRequirements,
   preventionIncidentInvestigations,
   preventionIncidents,
   preventionInspectionRuns,
   preventionRiskMapLayouts,
   preventionRiskMapMarkers,
   preventionRiskMatrices,
-  preventionWorkerCompetencies,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { assessCommitteeParity, isMandateExpired } from "@/lib/prevention/cphs"
@@ -148,7 +146,6 @@ export async function gatherCertificationEvidence(args: {
     agreementRows,
     programRows,
     incidentRows,
-    requirementRows,
     inspectionRows,
     iperRows,
     guestRows,
@@ -198,15 +195,6 @@ export async function gatherCertificationEvidence(args: {
         eq(preventionIncidents.worksiteId, args.worksiteId),
         gte(preventionIncidents.occurredAt, `${periodStart}T00:00:00.000Z`),
         lte(preventionIncidents.occurredAt, `${periodEnd}T23:59:59.999Z`),
-      )),
-    // Los cursos exigidos a los integrantes se declaran como requisitos de
-    // competencia con alcance `committee` apuntando a este comité.
-    client.select({ courseId: preventionCompetencyRequirements.courseId })
-      .from(preventionCompetencyRequirements)
-      .where(and(
-        eq(preventionCompetencyRequirements.scopeType, "committee"),
-        eq(preventionCompetencyRequirements.scopeValue, args.committeeId),
-        eq(preventionCompetencyRequirements.isActive, true),
       )),
     // Evidencia de los niveles Plata y Oro. Se consulta siempre porque el
     // expediente muestra el nivel completo aunque sólo se presente Bronce.
@@ -302,32 +290,6 @@ export async function gatherCertificationEvidence(args: {
   const periodAgreements = agreementRows.filter((row) => chileYear(row.createdAt) === periodYear)
   const activeProgram = programRows.find((row) => row.status === "active")
 
-  const requiredCourseIds = [...new Set(requirementRows.map((row) => row.courseId))]
-  let orientationCovered = 0
-  if (requiredCourseIds.length > 0 && activeMembers.length > 0) {
-    const competencies = await client.select({
-      workerId: preventionWorkerCompetencies.workerId,
-      courseId: preventionWorkerCompetencies.courseId,
-      expiresAt: preventionWorkerCompetencies.expiresAt,
-    })
-      .from(preventionWorkerCompetencies)
-      .where(and(
-        inArray(preventionWorkerCompetencies.workerId, activeMembers.map((member) => member.workerId)),
-        inArray(preventionWorkerCompetencies.courseId, requiredCourseIds),
-        eq(preventionWorkerCompetencies.status, "valid"),
-      ))
-
-    const byWorker = new Map<string, Set<string>>()
-    for (const row of competencies) {
-      if (row.expiresAt !== null && row.expiresAt < today) continue
-      const set = byWorker.get(row.workerId)
-      if (set) set.add(row.courseId)
-      else byWorker.set(row.workerId, new Set([row.courseId]))
-    }
-    // Cubierto = tiene vigentes TODOS los cursos exigidos al comité.
-    orientationCovered = activeMembers.filter((member) =>
-      requiredCourseIds.every((courseId) => byWorker.get(member.workerId)?.has(courseId))).length
-  }
 
   return {
     committeeActive: Boolean(committeeRow)
@@ -346,10 +308,8 @@ export async function gatherCertificationEvidence(args: {
     agreementsWithCapa: periodAgreements.filter((row) => row.capaActionId !== null).length,
     programActive: Boolean(activeProgram),
     programActivities: activeProgram?.activities ?? 0,
-    orientationCovered,
     incidentsTotal: incidentRows.length,
     incidentsInvestigated: incidentRows.filter((row) => row.investigationStatus === "completed").length,
-    requiredCourseCount: requiredCourseIds.length,
     monthsWithInspection,
     monthsWithCommitteeInspection,
     iperRevisionsTotal: periodIper.length,
