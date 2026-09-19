@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
@@ -85,6 +86,15 @@ export function PdtpObligationsWorkbench({
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Programa de trabajo", href: "/prevencion/pdtp" }, { label: "A demanda y por evento" }]} />}
         actions={canExecute ? <Button type="button" onClick={openCreate} disabled={activities.length === 0 || worksites.length === 0}>Registrar necesidad o evento</Button> : undefined}
       />
+
+      {/* El caso "sin actividades" ya lo explica el EmptyState de más abajo;
+          este es el único de los dos motivos de bloqueo del botón que no
+          tenía ninguna explicación en pantalla. */}
+      {canExecute && activities.length > 0 && worksites.length === 0 && (
+        <Callout tone="info" className="mb-4">
+          No hay faenas visibles para registrar una necesidad o evento. Verifica tu faena asignada o el alcance del programa.
+        </Callout>
+      )}
 
       <div className="grid grid-cols-2 overflow-hidden border-y border-[var(--color-border)] sm:grid-cols-4">
         {[

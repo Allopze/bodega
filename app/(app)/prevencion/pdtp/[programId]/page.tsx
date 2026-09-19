@@ -335,7 +335,11 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         {indicators && <PdtpIndicatorsPanel data={indicators} integral={integral} asOf={renderedAt} worksiteId={selectedWorksiteId} />}
 
         <div className="flex flex-wrap items-center gap-3 border-y border-[var(--color-border)] py-3">
-          <PdtpSheetPicker current={sheetCode} options={sheetOptions} programId={programId} worksiteId={selectedWorksiteId} viewMode={viewMode} />
+          {sheetOptions.length > 0 ? (
+            <PdtpSheetPicker current={sheetCode} options={sheetOptions} programId={programId} worksiteId={selectedWorksiteId} viewMode={viewMode} />
+          ) : (
+            <span className="text-sm text-[var(--color-text-muted)]">Este programa aún no tiene hojas de actividades.</span>
+          )}
           {worksites.length > 1 && (
             <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={programId} viewMode={viewMode} allHref={`/prevencion/pdtp/actividades?programa=${programId}&anio=${program.year}&hoja=${sheetCode}&vista=${viewMode}`} />
           )}
