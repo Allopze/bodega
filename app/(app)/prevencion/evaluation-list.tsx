@@ -87,7 +87,9 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
                     <Link
                       href={href}
                       onClick={(event) => event.stopPropagation()}
-                      className="font-medium text-(--color-text) hover:underline"
+                      // 24px de alto minimo (WCAG 2.5.8): el enlace media 13px
+                      // y era el objetivo principal de la fila.
+                      className="inline-flex min-h-6 items-center font-medium text-(--color-text) hover:underline"
                     >
                       {group.workerName || <span className="text-text-subtle italic">Sin nombre</span>}
                     </Link>
