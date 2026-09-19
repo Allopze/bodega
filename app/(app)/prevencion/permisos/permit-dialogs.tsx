@@ -18,7 +18,6 @@ interface PermitTypeItem {
   id: string
   code: string
   name: string
-  competencyTaskKey: string | null
   requiresIsolation: boolean
   requiresMeasurement: boolean
   requiresJsa: boolean
@@ -54,12 +53,10 @@ export function PermitTypeDialog() {
     const form = new FormData(event.currentTarget)
     const validity = String(form.get("measurementValidityMinutes") ?? "").trim()
     const calibration = String(form.get("measurementCalibrationValidityDays") ?? "").trim()
-    const taskKey = String(form.get("competencyTaskKey") ?? "").trim()
     operation.run(() => createPermitTypeAction({
       code: form.get("code"),
       name: form.get("name"),
       description: String(form.get("description") ?? "") || null,
-      competencyTaskKey: taskKey || null,
       requiresIsolation,
       requiresMeasurement,
       requiresJsa,
@@ -88,12 +85,6 @@ export function PermitTypeDialog() {
             <Field label="Duración máxima (horas)"><Input name="maxDurationHours" type="number" min={1} max={72} defaultValue={12} required /></Field>
           </div>
           <Field label="Nombre"><Input name="name" required minLength={3} maxLength={200} placeholder="Trabajo en espacio confinado" /></Field>
-          <Field
-            label="Clave de tarea para competencias"
-            hint="Debe coincidir con el alcance `task` de un requisito de competencia en Capacitación. Vacío = no exige competencia específica."
-          >
-            <Input name="competencyTaskKey" maxLength={120} placeholder="espacio-confinado" />
-          </Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Checkbox
               label="Exige acuse del AST por la cuadrilla"
@@ -227,7 +218,6 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
               {type.requiresCrewAcknowledgement && " Exige acuse del AST por toda la cuadrilla."}
               {type.requiresIsolation && " Exige aislamiento LOTO."}
               {type.requiresMeasurement && " Exige mediciones."}
-              {type.competencyTaskKey && ` Exige competencia de tarea "${type.competencyTaskKey}".`}
             </p>
           )}
 

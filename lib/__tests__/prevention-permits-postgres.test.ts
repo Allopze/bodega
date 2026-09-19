@@ -91,7 +91,6 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
     const service = await import("@/lib/services/prevention-permits")
     const type = await service.createPermitType({
       code: "ESP-CONF", name: "Espacio confinado",
-      competencyTaskKey: "espacio-confinado",
       requiresIsolation: true, requiresMeasurement: true, requiresJsa: true,
       measurementValidityMinutes: 60, maxDurationHours: 8,
       legalBasis: "DS 44 art. 18 y estándar interno de tareas críticas.",

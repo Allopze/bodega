@@ -63,13 +63,7 @@ describe("prevention module RBAC", () => {
       "prevention:legal:approve_applicability",
       "prevention:legal:export",
       "prevention:training:view",
-      "prevention:training:manage",
-      "prevention:training:approve",
-      "prevention:training:deliver",
       "prevention:training:record",
-      "prevention:training:ack",
-      "prevention:training:convalidate",
-      "prevention:training:revoke",
       "prevention:training:export",
       "prevention:permits:view",
       "prevention:permits:manage",
@@ -360,35 +354,28 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:incidents:diffuse")).toContain("jefe_terreno")
   })
 
-  it("separates training delivery from content approval and competency override", () => {
+  /*
+   * La cadena de capacitación se redujo a tres permisos el 2026-09-19. Antes
+   * eran nueve, y este bloque protegía tres segregaciones: dictar no aprueba
+   * contenido, y convalidar o revocar una competencia no se concede a roles de
+   * terreno. Las tres desaparecieron con el modelo por persona —no hay
+   * contenido que aprobar ni competencia que convalidar—, así que lo que queda
+   * por afirmar es que registrar sigue siendo más restringido que ver.
+   */
+  it("keeps recording training narrower than viewing it", () => {
     const rolesFor = (permission: string) => preventionModule.defaultGrants
       .filter((grant) => grant.permission === permission)
       .map((grant) => grant.roleSlug)
       .sort()
 
-    // Dictar no aprueba contenido: la segregación autor/aprobador se sostiene
-    // además en el servicio, no sólo por RBAC.
-    /* La charla diaria (n=53) y las de refuerzo (n=38) las dicta la línea de
-     * mando en terreno: el jefe y el supervisor de terreno son los responsables
-     * declarados y sin `deliver` no podían registrar la sesión que las
-     * acredita. Dictar sigue sin ser aprobar contenido — la segregación que
-     * este bloque protege son las tres líneas de abajo. */
-    expect(rolesFor("prevention:training:deliver")).toEqual([
-      "administrador", "jefe_terreno", "prevencionista", "prevencionista_faena", "supervisor_terreno",
-    ])
-    // Desde 2026-09-06 la JDPR también aprueba y publica contenido formativo:
-    // es la responsable declarada de los cursos del programa y sin el permiso
-    // dependía de jefatura para dictar cualquier sesión. La segregación se
-    // conserva por actor, no por rol: `prevention:sign_own_work` sólo la exime
-    // del último eslabón (publicar), y aprobar sigue exigiéndole no haber
-    // redactado la versión.
-    expect(rolesFor("prevention:training:approve")).toEqual(["administrador", "jefa_chome", "prevencionista"])
-    // Convalidar y revocar alteran la habilitación sin sesión ni evaluación:
-    // nunca se conceden a roles de terreno.
-    expect(rolesFor("prevention:training:convalidate")).toEqual(["administrador", "jefa_chome"])
-    expect(rolesFor("prevention:training:revoke")).toEqual(["administrador", "jefa_chome"])
-    expect(rolesFor("prevention:training:convalidate")).not.toContain("prevencionista_faena")
-    expect(rolesFor("prevention:training:revoke")).not.toContain("jefe_terreno")
+    const view = rolesFor("prevention:training:view")
+    const record = rolesFor("prevention:training:record")
+    expect(record.length).toBeLessThan(view.length)
+    for (const role of record) expect(view).toContain(role)
+    // La línea de mando en terreno ve el control anual pero no lo registra:
+    // marcar una actividad como hecha es del prevencionista.
+    expect(record).not.toContain("jefe_terreno")
+    expect(record).not.toContain("supervisor_terreno")
   })
 
   it("splits the work-permit chain across distinct roles", () => {

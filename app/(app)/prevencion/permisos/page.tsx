@@ -82,7 +82,6 @@ export default async function PermisosPage() {
           id: item.id,
           code: item.code,
           name: item.name,
-          competencyTaskKey: item.competencyTaskKey,
           requiresIsolation: item.requiresIsolation,
           requiresMeasurement: item.requiresMeasurement,
           requiresJsa: item.requiresJsa,

@@ -2879,75 +2879,6 @@ async function prepareDatabase(captureDbUrl: string) {
     createdAt: now,
   })
 
-  // Sesión de capacitación completa: el detalle une sesión, versión del
-  // curso, curso, faena y asistencia. Sembrar sólo la sesión dejaba una ruta
-  // con FK inválidas o sin el denominador real de asistentes.
-  await db.insert(schema.preventionTrainingCourses).values({
-    id: "trcourse-audit-1",
-    code: "CAP-DS44-001",
-    name: "Inducción preventiva DS 44",
-    kind: "legal_mandatory",
-    description: "Inducción de riesgos, controles y reporte de condiciones inseguras.",
-    minimumDurationMinutes: 480,
-    validityMonths: 24,
-    requiresAssessment: true,
-    passingScore: 70,
-    legalRequirementId: "legal-requirement-audit-1",
-    legalBasis: "DS 44, artículo 16",
-    isActive: true,
-    createdByUserId: userId,
-    createdAt: now,
-    updatedAt: now,
-  })
-  await db.insert(schema.preventionTrainingCourseVersions).values({
-    id: "trcourse-version-audit-1",
-    courseId: "trcourse-audit-1",
-    versionLabel: "2026.1",
-    status: "published",
-    contentOutline: ["Riesgos críticos", "Controles operacionales", "Reporte y detención segura"],
-    durationMinutes: 480,
-    modality: "presencial",
-    assessmentType: "theoretical",
-    passingScore: 70,
-    contentHash: "a".repeat(64),
-    effectiveFrom: "2026-01-01",
-    authorUserId: "user-audit-prevencion",
-    reviewedByUserId: userId,
-    reviewedAt: now,
-    approvedByUserId: userId,
-    approvedAt: now,
-    publishedByUserId: userId,
-    publishedAt: now,
-    version: 1,
-    createdAt: now,
-    updatedAt: now,
-  })
-  await db.insert(schema.preventionTrainingSessions).values({
-    id: "trsess-audit-1",
-    code: "CAP-2026-001",
-    courseVersionId: "trcourse-version-audit-1",
-    worksiteId,
-    scheduledAt: "2026-06-09T08:00:00.000Z",
-    startedAt: "2026-06-09T08:05:00.000Z",
-    endedAt: "2026-06-09T16:10:00.000Z",
-    durationMinutes: 480,
-    modality: "presencial",
-    location: "Sala de capacitación Faena Mininco",
-    instructorUserId: "user-audit-prevencion",
-    instructorCompetencyEvidence: "Registro de competencia PREV-2026-01",
-    status: "completed",
-    closedByUserId: userId,
-    closedAt: now,
-    version: 1,
-    createdByUserId: userId,
-    createdAt: now,
-    updatedAt: now,
-  })
-  await db.insert(schema.preventionTrainingAttendance).values([
-    { id: "trattendance-audit-1", sessionId: "trsess-audit-1", workerId: "worker-audit-1", status: "attended", attendanceMinutes: 480, assessmentScore: 92, assessmentAttempts: 1, assessmentResult: "approved", evidenceReference: "Lista CAP-2026-001 · Daniela Fuentes", recordedByUserId: "user-audit-prevencion", createdAt: now, updatedAt: now },
-    { id: "trattendance-audit-2", sessionId: "trsess-audit-1", workerId: "worker-audit-2", status: "attended", attendanceMinutes: 480, assessmentScore: 84, assessmentAttempts: 1, assessmentResult: "approved", evidenceReference: "Lista CAP-2026-001 · Marco Silva", recordedByUserId: "user-audit-prevencion", createdAt: now, updatedAt: now },
-  ])
-
   // Plan de emergencia con los insumos que consume el detalle: escenario,
   // organigrama, recursos, contacto y simulacro. El resultado mejorable del
   // simulacro mantiene la trazabilidad hacia la CAPA ya sembrada.
@@ -3168,7 +3099,6 @@ async function prepareDatabase(captureDbUrl: string) {
     code: "LOTO-MANT",
     name: "Mantención con bloqueo de energías",
     description: "Permiso para intervenir equipo con aislamiento eléctrico y AST.",
-    competencyTaskKey: "mantenimiento_loto",
     requiresIsolation: true,
     requiresMeasurement: true,
     requiresJsa: true,

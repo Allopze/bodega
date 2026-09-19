@@ -92,9 +92,9 @@ const CONNECTORS: readonly PdtpExecutionConnector[] = [
   }),
   connector({
     key: "training", label: "Capacitación", moduleHref: "/prevencion/capacitacion",
-    configurePermission: "prevention:training:manage", executePermission: "prevention:training:deliver",
+    configurePermission: "prevention:training:record", executePermission: "prevention:training:record",
     supportedBindingSourceTypes: ["capacitacion", "capacitacion_ocurrencia"],
-    supportedEvents: [{ key: "session_closed", label: "Sesión cerrada", sourceType: "capacitacion" }],
+    supportedEvents: [{ key: "session_closed", label: "Actividad marcada como hecha", sourceType: "capacitacion" }],
     supportedCompletionPolicies: ["source_completed", "source_approved", "manual_confirmed"],
     supportedEvidenceKinds: ["file", "photo", "signature", "generated_record"],
   }),

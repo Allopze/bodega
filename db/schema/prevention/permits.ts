@@ -6,16 +6,18 @@ import { preventionRiskEntries } from "./risk-legal"
 
 /* ── Tipos de permiso configurables ───────────────────────────────────────
  * El catálogo no se hardcodea: Chome y cada mandante definen qué tareas
- * exigen permiso. `competencyTaskKey` enlaza con los requisitos de competencia
- * de alcance `task` ya existentes, en vez de crear un segundo motor de
- * habilitación.
+ * exigen permiso.
+ *
+ * Tenía además `competencyTaskKey`, que enlazaba con los requisitos de
+ * competencia de alcance `task` para bloquear la activación de un permiso cuya
+ * cuadrilla no estuviera habilitada. Esa verificación se retiró el 2026-09-19
+ * con el modelo de capacitación por persona.
  */
 export const preventionPermitTypes = pgTable("prevention_permit_types", {
   id:                     text("id").primaryKey(),
   code:                   text("code").notNull().unique(),
   name:                   text("name").notNull(),
   description:            text("description"),
-  competencyTaskKey:      text("competency_task_key"),
   requiresIsolation:      boolean("requires_isolation").notNull().default(false),
   requiresMeasurement:    boolean("requires_measurement").notNull().default(false),
   requiresJsa:            boolean("requires_jsa").notNull().default(true),

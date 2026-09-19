@@ -19,7 +19,6 @@ export const permitTypeSchema = z.object({
   code: z.string().trim().min(2).max(60),
   name: z.string().trim().min(3).max(200),
   description: z.string().trim().max(2000).nullable().optional(),
-  competencyTaskKey: z.string().trim().max(120).nullable().optional(),
   requiresIsolation: z.boolean().default(false),
   requiresMeasurement: z.boolean().default(false),
   requiresJsa: z.boolean().default(true),

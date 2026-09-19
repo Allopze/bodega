@@ -24,7 +24,6 @@ interface PermitTypeItem {
   id: string
   code: string
   name: string
-  competencyTaskKey: string | null
   requiresIsolation: boolean
   requiresMeasurement: boolean
   requiresJsa: boolean
