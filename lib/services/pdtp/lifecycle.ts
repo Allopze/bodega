@@ -166,7 +166,6 @@ export type PdtpCoverageReport = {
   /** Problemas agrupados por clasificación, cada uno con sus actividades. */
   groups: Array<{
     status: PdtpFulfillmentCoverageIssue["status"]
-    label: string
     /**
      * `true` sólo para lo que se arregla dentro del programa —`code_gap`,
      * `destination_not_configured`, `permission_gap` y la configuración de ejecutores— y frena por igual el
@@ -179,17 +178,37 @@ export type PdtpCoverageReport = {
   }>
 }
 
-const COVERAGE_STATUS_LABELS: Record<PdtpFulfillmentCoverageIssue["status"], string> = {
-  ready: "Listas",
-  segregated_valid: "Flujo segregado válido",
-  code_gap: "Sin mecanismo de acreditación clasificado",
-  destination_not_configured: "Sin destino operativo configurado",
-  config_required: "Sin la configuración que su enganche o constancia necesita",
-  permission_gap: "Sin un responsable que pueda registrar el cumplimiento",
-  executor_required: "Sin ejecutor acreditador configurado",
-  executor_permission_gap: "Con ejecutor sin permiso en el destino",
-  decision_required: "Midiéndose por cobertura sin padrón declarado",
-  instrument_required: "Con instrumento declarado pero no vigente (plantilla, curso o plan sin aprobar/publicar)",
+/**
+ * Orden de presentación de las clasificaciones, de más a menos urgente.
+ *
+ * Acá había un `COVERAGE_STATUS_LABELS` con el nombre visible de cada grupo, y
+ * el informe los ordenaba alfabéticamente por ese texto — o sea, el orden en
+ * pantalla dependía de con qué letra empezaba la frase. Los nombres se mudaron
+ * a la UI (`habilitacion/readiness-copy.ts`): un servicio que corre dentro de
+ * las compuertas de ciclo de vida no debería tener que editarse para ajustar
+ * una redacción. Lo que sí es de dominio, y se queda, es **qué tan grave es
+ * cada cosa**.
+ */
+const COVERAGE_STATUS_SEVERITY: PdtpFulfillmentCoverageIssue["status"][] = [
+  // Frenan el ciclo de vida. Dentro del bloque, primero lo que no tiene
+  // arreglo posible sin tocar el catálogo de actividades.
+  "code_gap",
+  "destination_not_configured",
+  "permission_gap",
+  "executor_required",
+  "executor_permission_gap",
+  // No frenan, pero la actividad no acredita mientras sigan así.
+  "config_required",
+  "instrument_required",
+  "decision_required",
+  // Confirmaciones positivas, al final.
+  "segregated_valid",
+  "ready",
+]
+
+function coverageSeverityRank(status: PdtpFulfillmentCoverageIssue["status"]): number {
+  const rank = COVERAGE_STATUS_SEVERITY.indexOf(status)
+  return rank === -1 ? COVERAGE_STATUS_SEVERITY.length : rank
 }
 
 /**
@@ -227,12 +246,12 @@ export async function getPdtpCoverageReport(
     groups: [...byStatus.entries()]
       .map(([status, list]) => ({
         status,
-        label: COVERAGE_STATUS_LABELS[status],
         blocks: pdtpCoverageIssueBlocksLifecycle(status),
         issues: [...list].sort((a, b) => a.n - b.n),
       }))
-      // Lo que frena el ciclo de vida primero.
-      .sort((a, b) => Number(b.blocks) - Number(a.blocks) || a.label.localeCompare(b.label, "es-CL")),
+      // Lo que frena el ciclo de vida primero, y dentro de cada bloque por
+      // gravedad declarada — no por la inicial de su nombre.
+      .sort((a, b) => Number(b.blocks) - Number(a.blocks) || coverageSeverityRank(a.status) - coverageSeverityRank(b.status)),
   }
 }
 

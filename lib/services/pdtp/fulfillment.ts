@@ -44,15 +44,10 @@ import {
   pdtpScheduledInstances,
   pdtpResponsibleCatalog,
   permissions,
-  preventionCampaigns,
-  preventionEmergencyPlans,
-  preventionInspectionTemplates,
   pdtpProgramWorksites,
   pdtpPrograms,
-  preventionTrainingCourses,
   rolePermissions,
   roles,
-  sstDocumentTypes,
   worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -67,7 +62,8 @@ import {
 } from "./accreditation"
 import { engancheDestinationFor } from "@/lib/services/pdtp-adapters/fulfillment-contract-2026"
 import { PDTP_NO_EXECUTOR_ROLE_REASON } from "@/lib/prevention/pdtp"
-import { usablePdtpInstrumentNumbers } from "./instruments"
+import { describePdtpInstrumentGap, type PdtpCoverageInstrument } from "./instrument-gap"
+import { loadPdtpInstrumentIndex, type PdtpInstrumentRecord } from "./instruments"
 import { legacyPdtpActivityNumberForCatalogId } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 import { getPdtpExecutionConnector } from "./connectors"
 import { recordPdtpScheduledInstanceOutcome } from "./scheduled-execution"
@@ -797,6 +793,12 @@ export type PdtpFulfillmentCoverageStatus =
   | "instrument_required"
 
 export type PdtpFulfillmentCoverageIssue = {
+  /**
+   * `pdtpActivities.id`. Sin esto ninguna clasificación puede enlazar a **su**
+   * fila: el informe sólo llevaba `n`, y con `n` se llega a una sección, no a
+   * una actividad.
+   */
+  activityId: string
   n: number
   activity: string
   status: PdtpFulfillmentCoverageStatus
@@ -806,6 +808,13 @@ export type PdtpFulfillmentCoverageIssue = {
   requiredPermission?: string
   executorRoleLabels?: string[]
   suggestedExecutorRoleIds?: string[]
+  /**
+   * Caminos **alternativos** de resolución: basta con uno. Ver la cabecera de
+   * `./instrument-gap` — la semántica de disyunción no es un detalle de
+   * presentación, sale de que `instrumentIssueFor` corta con
+   * `usableGlobally.has(n)`.
+   */
+  instruments?: PdtpCoverageInstrument[]
 }
 
 /**
@@ -900,70 +909,15 @@ function engancheDestinationPermissionFor(n: number): { permission: string; modu
   return { permission: destination.permission, module: destination.module }
 }
 
-/**
- * Números declarados en catálogos **globales**: una plantilla, un curso o un
- * tipo de documento vale para todo el programa.
- *
- * Los dos arreglos de `sst_document_types` se unen a propósito: uno acredita al
- * publicar y el otro por acuse de recibo, pero para "¿tiene destino declarado?"
- * cualquiera de los dos sirve.
+/*
+ * "¿Está declarado?" y "¿está vigente?" son la misma lectura con y sin un
+ * `WHERE` de estado, así que las resuelve `loadPdtpInstrumentIndex` en una sola
+ * pasada (ver `./instruments`). Acá vivían dos funciones —
+ * `activityNumbersDeclaredGlobally` y `activityNumbersDeclaredPerWorksite`—
+ * que releían las mismas cinco tablas sin filtro; el resultado eran 11 `SELECT`
+ * en tres olas para seis tablas, y ninguna de las dos mitades sabía **cuál**
+ * instrumento declaraba cada número, que es lo único accionable.
  */
-async function activityNumbersDeclaredGlobally(client: QueryClient): Promise<Set<number>> {
-  const [templates, courses, docTypes] = await Promise.all([
-    client.select({ n: preventionInspectionTemplates.pdtpActivityNumbers }).from(preventionInspectionTemplates),
-    client.select({ n: preventionTrainingCourses.pdtpActivityNumbers }).from(preventionTrainingCourses),
-    client.select({
-      n: sstDocumentTypes.pdtpActivityNumbers,
-      ack: sstDocumentTypes.pdtpAcknowledgmentActivityNumbers,
-    }).from(sstDocumentTypes),
-  ])
-  const set = new Set<number>()
-  for (const row of templates) for (const n of (row.n as number[] | null) ?? []) set.add(n)
-  for (const row of courses) for (const n of (row.n as number[] | null) ?? []) set.add(n)
-  for (const row of docTypes) {
-    for (const n of (row.n as number[] | null) ?? []) set.add(n)
-    for (const n of (row.ack as number[] | null) ?? []) set.add(n)
-  }
-  return set
-}
-
-/**
- * Números declarados en registros que existen **por faena**: los planes de
- * emergencia y las campañas.
- *
- * Se cuentan aparte porque un solo plan en una faena no acredita nada en las
- * otras seis. Antes las cinco tablas se leían juntas y globalmente, así que un
- * plan en cualquier parte daba la N°84 por resuelta en todo el programa —
- * exactamente la respuesta que impedía que el informe dijera "no hay plan en la
- * faena X", que es lo único accionable.
- */
-async function activityNumbersDeclaredPerWorksite(client: QueryClient): Promise<{
-  byNumber: Map<number, Set<string>>
-  /** Subconjunto declarado por un plan de emergencia (cualquier estado, no
-   *  sólo `approved`). Sirve para que `instrumentIssueFor` nombre el
-   *  instrumento correcto cuando ninguna faena tiene uno vigente: sin esto, la
-   *  N°84 (que sólo declara plan de emergencia) recibía el mensaje genérico
-   *  de plantilla/curso, que le dice al operador que arregle lo que no tiene. */
-  planNumbers: Set<number>
-}> {
-  const [campaigns, plans] = await Promise.all([
-    client.select({ n: preventionCampaigns.pdtpActivityNumbers, worksiteId: preventionCampaigns.worksiteId }).from(preventionCampaigns),
-    client.select({ n: preventionEmergencyPlans.pdtpActivityNumbers, worksiteId: preventionEmergencyPlans.worksiteId }).from(preventionEmergencyPlans),
-  ])
-  const byNumber = new Map<number, Set<string>>()
-  for (const rows of [campaigns, plans]) {
-    for (const row of rows) {
-      for (const n of (row.n as number[] | null) ?? []) {
-        const set = byNumber.get(n) ?? new Set<string>()
-        set.add(row.worksiteId)
-        byNumber.set(n, set)
-      }
-    }
-  }
-  const planNumbers = new Set<number>()
-  for (const row of plans) for (const n of (row.n as number[] | null) ?? []) planNumbers.add(n)
-  return { byNumber, planNumbers }
-}
 
 /**
  * Faenas contra las que se exige la declaración por faena: las miembros del
@@ -1037,7 +991,7 @@ async function excludedWorksitesByActivity(
  * denominador: nadie prometió trabajo ahí.
  */
 function wiringIssueFor(
-  activity: { n: number; activity: string },
+  activity: { id: string; n: number; activity: string },
   ctx: {
     declaredGlobally: Set<number>
     declaredPerWorksite: Map<number, Set<string>>
@@ -1059,13 +1013,13 @@ function wiringIssueFor(
     if (missing.length === 0) return null
     const names = missing.map((id) => ctx.worksiteNameById.get(id) ?? id)
     return {
-      n: activity.n, activity: activity.activity, status: "config_required",
+      activityId: activity.id, n: activity.n, activity: activity.activity, status: "config_required",
       reason: `Su número no está declarado en ${missing.length} de las ${applicableWorksiteIds.length} faenas donde aplica: ${names.join(", ")}.`,
     }
   }
 
   return {
-    n: activity.n, activity: activity.activity, status: "config_required",
+    activityId: activity.id, n: activity.n, activity: activity.activity, status: "config_required",
     reason: "Su número no está declarado en ninguna plantilla, curso, campaña, plan o tipo de documento.",
   }
 }
@@ -1080,16 +1034,17 @@ function wiringIssueFor(
  * sería ruido.
  */
 function instrumentIssueFor(
-  activity: { n: number; activity: string },
+  activity: { id: string; n: number; activity: string },
   ctx: {
     usableGlobally: Set<number>
     usablePerWorksite: Map<number, Set<string>>
+    /** Todos los instrumentos que declaran cada número, vigentes y no: es lo
+     *  que permite nombrar el que falta en vez de enumerar los que podrían
+     *  faltar. */
+    instrumentsByNumber: Map<number, PdtpInstrumentRecord[]>
     worksiteIds: string[]
     worksiteNameById: Map<string, string>
     excludedWorksiteIds: Set<string>
-    /** Números declarados por un plan de emergencia (cualquier estado). Ver
-     *  `activityNumbersDeclaredPerWorksite`. */
-    planNumbers: Set<number>
   },
 ): PdtpFulfillmentCoverageIssue | null {
   if (STRUCTURALLY_WIRED_ACTIVITY_NUMBERS.has(activity.n)) return null
@@ -1098,31 +1053,35 @@ function instrumentIssueFor(
   const applicableWorksiteIds = ctx.worksiteIds.filter((id) => !ctx.excludedWorksiteIds.has(id))
   if (applicableWorksiteIds.length === 0) return null
 
+  /* La decisión de si hay problema no cambió: `usablePerWorksite` con entrada
+   * significa "hay instrumento por faena vigente en algunas"; sin entrada,
+   * "en ninguna". Lo único que cambia es que ahora se puede decir cuál. */
   const usableWorksites = ctx.usablePerWorksite.get(activity.n)
+  const perWorksiteCandidates = (ctx.instrumentsByNumber.get(activity.n) ?? [])
+    .filter((record) => record.kind === "emergency_plan")
+  let missingWorksiteIds: string[]
   if (usableWorksites) {
-    const missing = applicableWorksiteIds.filter((id) => !usableWorksites.has(id))
-    if (missing.length === 0) return null
-    const names = missing.map((id) => ctx.worksiteNameById.get(id) ?? id)
-    return {
-      n: activity.n, activity: activity.activity, status: "instrument_required",
-      reason: `Su plan de emergencia no está aprobado en ${missing.length} de las ${applicableWorksiteIds.length} faenas donde aplica: ${names.join(", ")}.`,
-    }
+    missingWorksiteIds = applicableWorksiteIds.filter((id) => !usableWorksites.has(id))
+    if (missingWorksiteIds.length === 0) return null
+  } else {
+    // Ninguna faena tiene instrumento por faena vigente. Sólo se enumeran las
+    // faenas cuando lo que declara el número es un plan de emergencia —el caso
+    // de la N°84—: para una plantilla o un curso, que son globales, listar
+    // faenas manda al operador a arreglar lo que no tiene.
+    missingWorksiteIds = perWorksiteCandidates.length > 0 ? applicableWorksiteIds : []
   }
 
-  // Ninguna faena tiene un instrumento vigente (`usablePerWorksite` ni
-  // siquiera trae la entrada). Si lo que declaró el número fue un plan de
-  // emergencia — el caso de la N°84 —, decirlo: el mensaje genérico de
-  // plantilla/curso manda al operador a arreglar lo que no tiene.
-  if (ctx.planNumbers.has(activity.n)) {
-    return {
-      n: activity.n, activity: activity.activity, status: "instrument_required",
-      reason: "Su número está declarado en un plan de emergencia, pero ninguna faena donde aplica tiene uno aprobado.",
-    }
-  }
+  const candidates = (ctx.instrumentsByNumber.get(activity.n) ?? []).filter((record) => !record.usable)
+  const { reason, instruments } = describePdtpInstrumentGap({
+    n: activity.n,
+    candidates,
+    missingWorksites: missingWorksiteIds.map((id) => ({ id, name: ctx.worksiteNameById.get(id) ?? id })),
+    applicableWorksiteCount: applicableWorksiteIds.length,
+  })
 
   return {
-    n: activity.n, activity: activity.activity, status: "instrument_required",
-    reason: "Su número está declarado, pero su plantilla no tiene una versión aprobada o su curso no tiene ninguna versión publicada.",
+    activityId: activity.id, n: activity.n, activity: activity.activity,
+    status: "instrument_required", reason, instruments,
   }
 }
 
@@ -1159,9 +1118,7 @@ export async function assertPdtpFulfillmentCoverage(
 
   const activityIds = activities.map((activity) => activity.id)
   const [
-    declaredGlobally,
-    { byNumber: declaredPerWorksite, planNumbers },
-    { global: usableGlobally, perWorksite: usablePerWorksite },
+    instrumentIndex,
     worksiteIds,
     worksiteRows,
     responsibleRows,
@@ -1173,9 +1130,7 @@ export async function assertPdtpFulfillmentCoverage(
     excludedByActivity,
     manualSubjectRows,
   ] = await Promise.all([
-    activityNumbersDeclaredGlobally(client),
-    activityNumbersDeclaredPerWorksite(client),
-    usablePdtpInstrumentNumbers(client),
+    loadPdtpInstrumentIndex(client),
     programWorksiteIds(client, programId, options),
     client.select({ id: worksites.id, name: worksites.name }).from(worksites),
     client.select().from(pdtpResponsibleCatalog),
@@ -1205,6 +1160,8 @@ export async function assertPdtpFulfillmentCoverage(
       expectedSubjectCount: pdtpActivityWorksiteParams.expectedSubjectCount,
     }).from(pdtpActivityWorksiteParams).where(inArray(pdtpActivityWorksiteParams.activityId, activityIds)),
   ])
+  const { global: declaredGlobally, perWorksite: declaredPerWorksite } = instrumentIndex.declared
+  const { global: usableGlobally, perWorksite: usablePerWorksite } = instrumentIndex.usable
   const worksiteNameById = new Map(worksiteRows.map((row) => [row.id, row.name]))
   const roleBySlug = new Map(responsibleRows.map((row) => [row.slug, row.roleName ?? row.operatedByRoleName]))
   const executorRolesByActivity = new Map<string, Array<{ id: string; label: string }>>()
@@ -1230,7 +1187,7 @@ export async function assertPdtpFulfillmentCoverage(
     const roles = slugs.map((slug) => roleBySlug.get(slug)).filter((role): role is string => Boolean(role))
     if (roles.length === 0) {
       issues.push({
-        n: activity.n, activity: activity.activity, status: "permission_gap",
+        activityId: activity.id, n: activity.n, activity: activity.activity, status: "permission_gap",
         reason: PDTP_NO_EXECUTOR_ROLE_REASON,
       })
       continue
@@ -1251,14 +1208,14 @@ export async function assertPdtpFulfillmentCoverage(
       const connector = getPdtpExecutionConnector(executionConfig?.destinationConnectorKey)
       if (!connector) {
         issues.push({
-          n: activity.n, activity: activity.activity, status: "destination_not_configured",
+          activityId: activity.id, n: activity.n, activity: activity.activity, status: "destination_not_configured",
           reason: "La actividad nueva referencia un conector operativo que ya no está disponible.",
         })
         continue
       }
       if (executionConfig?.accreditationBindingId && !activeBindingIds.has(executionConfig.accreditationBindingId)) {
         issues.push({
-          n: activity.n, activity: activity.activity, status: "config_required",
+          activityId: activity.id, n: activity.n, activity: activity.activity, status: "config_required",
           reason: "El instrumento seleccionado para la actividad nueva ya no está vigente.",
           destinationModule: connector.label,
           requiredPermission: connector.configurePermission,
@@ -1274,7 +1231,7 @@ export async function assertPdtpFulfillmentCoverage(
         : responsibleRoleIds
       if (requiresExecutorConfiguration && candidateExecutorIds.length === 0) {
         issues.push({
-          n: activity.n, activity: activity.activity, status: "executor_required",
+          activityId: activity.id, n: activity.n, activity: activity.activity, status: "executor_required",
           reason: `Se acredita en ${connector.label}; falta asignar un rol con permiso para registrar el hecho.`,
           destinationModule: connector.label,
           requiredPermission: connector.executePermission,
@@ -1286,7 +1243,7 @@ export async function assertPdtpFulfillmentCoverage(
       }
       if (requiresExecutorConfiguration && !candidateExecutorIds.some((roleId) => permissionsByRole.get(roleId)?.has(connector.executePermission))) {
         issues.push({
-          n: activity.n, activity: activity.activity, status: "executor_permission_gap",
+          activityId: activity.id, n: activity.n, activity: activity.activity, status: "executor_permission_gap",
           reason: `Se acredita en ${connector.label}, pero ningún responsable/ejecutor tiene el permiso operativo requerido.`,
           destinationModule: connector.label,
           requiredPermission: connector.executePermission,
@@ -1305,7 +1262,7 @@ export async function assertPdtpFulfillmentCoverage(
         if (missingWorksiteIds.length > 0) {
           const names = missingWorksiteIds.map((id) => worksiteNameById.get(id) ?? id)
           issues.push({
-            n: activity.n, activity: activity.activity, status: "decision_required",
+            activityId: activity.id, n: activity.n, activity: activity.activity, status: "decision_required",
             reason: `Se mide por cobertura sin fuente automática y falta definir un padrón manual positivo en: ${names.join(", ")}.`,
           })
         }
@@ -1314,12 +1271,12 @@ export async function assertPdtpFulfillmentCoverage(
     }
 
     if (activity.mechanism === "sin_definir") {
-      issues.push({ n: activity.n, activity: activity.activity, status: "code_gap", reason: "Sin mecanismo de acreditación clasificado." })
+      issues.push({ activityId: activity.id, n: activity.n, activity: activity.activity, status: "code_gap", reason: "Sin mecanismo de acreditación clasificado." })
       continue
     }
 
     if (activity.mechanism === "constancia" && !activity.evidenceRequirement?.trim()) {
-      issues.push({ n: activity.n, activity: activity.activity, status: "config_required", reason: "Es constancia y no declara evidencia mínima." })
+      issues.push({ activityId: activity.id, n: activity.n, activity: activity.activity, status: "config_required", reason: "Es constancia y no declara evidencia mínima." })
       continue
     }
 
@@ -1345,7 +1302,8 @@ export async function assertPdtpFulfillmentCoverage(
       // destino es una pregunta prematura.
       if (!STRUCTURALLY_WIRED_ACTIVITY_NUMBERS.has(activity.n)) {
         const instrumentIssue = instrumentIssueFor(activity, {
-          usableGlobally, usablePerWorksite, worksiteIds, worksiteNameById, planNumbers,
+          usableGlobally, usablePerWorksite, worksiteIds, worksiteNameById,
+          instrumentsByNumber: instrumentIndex.byNumber,
           excludedWorksiteIds: excludedByActivity.get(activity.id) ?? new Set<string>(),
         })
         if (instrumentIssue) {
@@ -1366,7 +1324,7 @@ export async function assertPdtpFulfillmentCoverage(
     )
     if (target.kind === "fallback") {
       issues.push({
-        n: activity.n, activity: activity.activity, status: "destination_not_configured",
+        activityId: activity.id, n: activity.n, activity: activity.activity, status: "destination_not_configured",
         reason: "No tiene un destino operativo concreto: todavía cae a la planilla genérica del PDTP.",
       })
       continue
@@ -1381,6 +1339,7 @@ export async function assertPdtpFulfillmentCoverage(
       : null
     if (contractDestination?.segregated) {
       issues.push({
+        activityId: activity.id,
         n: activity.n,
         activity: activity.activity,
         status: "segregated_valid",
@@ -1410,6 +1369,7 @@ export async function assertPdtpFulfillmentCoverage(
         .map(([roleId]) => roleId)
       if (executorRoles.length === 0) {
         issues.push({
+          activityId: activity.id,
           n: activity.n,
           activity: activity.activity,
           status: "executor_required",
@@ -1422,6 +1382,7 @@ export async function assertPdtpFulfillmentCoverage(
       }
       if (!executorRoles.some((role) => permissionsByRole.get(role.id)?.has(destination.permission))) {
         issues.push({
+          activityId: activity.id,
           n: activity.n,
           activity: activity.activity,
           status: "executor_permission_gap",
@@ -1446,7 +1407,7 @@ export async function assertPdtpFulfillmentCoverage(
       if (missingWorksiteIds.length > 0) {
         const names = missingWorksiteIds.map((id) => worksiteNameById.get(id) ?? id)
         issues.push({
-          n: activity.n, activity: activity.activity, status: "decision_required",
+          activityId: activity.id, n: activity.n, activity: activity.activity, status: "decision_required",
           reason: `Se mide por cobertura sin fuente automática y falta definir un padrón manual positivo en: ${names.join(", ")}.`,
         })
       }
