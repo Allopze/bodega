@@ -401,7 +401,10 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
       ),
       // Vigentes primero y, dentro de cada grupo, por vencimiento: el historial
       // se conserva visible pero no se confunde con lo que rige hoy.
-      orderBy: [desc(fleetVehicleDocuments.status), fleetVehicleDocuments.expiresAt],
+      // `status` es texto, así que el orden alfabético pone `current` antes que
+      // `replaced`; con `desc` los reemplazados encabezaban la lista, al revés
+      // de lo que este comentario promete.
+      orderBy: [asc(fleetVehicleDocuments.status), fleetVehicleDocuments.expiresAt],
     }),
     // De la más reciente a la más antigua: con `limit: 10` el orden ascendente
     // devolvía el tramo más viejo del historial y la última mantención del
@@ -423,8 +426,11 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     // fuelLoads, que solo trae odómetro/horómetro cuando se digitó a mano).
     // Orden por instante real (fecha+hora), no sólo `fecha`: dos cargas del
     // mismo día devolvían un ganador arbitrario como "última lectura" (CO-023).
+    // Sólo filas con medidor: el log admite cargas sin lectura digitada y, sin
+    // este filtro, la más reciente sin horómetro dejaba la ficha en "—"
+    // ocultando lecturas anteriores que sí existen.
     canViewFuel ? db.query.fuelOperationRecords.findMany({
-      where: eq(fuelOperationRecords.vehicleId, id),
+      where: and(eq(fuelOperationRecords.vehicleId, id), isNotNull(fuelOperationRecords.horometro)),
       columns: {
         id: true,
         fecha: true,
@@ -464,8 +470,13 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
       }).from(maintenanceRecords).leftJoin(fuelOperationRecords, and(
         eq(fuelOperationRecords.vehicleId, maintenanceRecords.vehicleId),
         isNotNull(fuelOperationRecords.rendimiento),
-        sql`${fuelOperationRecords.fecha} >= (${maintenanceRecords.maintenanceDate}::date - interval '30 days')::text`,
-        sql`${fuelOperationRecords.fecha} <= (${maintenanceRecords.maintenanceDate}::date + interval '30 days')::text`,
+        // `fecha` es texto "YYYY-MM-DD": compararlo contra el resultado de
+        // `::date ± interval` (que agrega hora, "YYYY-MM-DD 00:00:00") dejaba
+        // fuera el día M-30 y sesgaba la ventana "antes" a 29 días. `to_char`
+        // devuelve el mismo formato que la columna y mantiene ambos extremos
+        // inclusivos.
+        sql`${fuelOperationRecords.fecha} >= to_char(${maintenanceRecords.maintenanceDate}::date - interval '30 days', 'YYYY-MM-DD')`,
+        sql`${fuelOperationRecords.fecha} <= to_char(${maintenanceRecords.maintenanceDate}::date + interval '30 days', 'YYYY-MM-DD')`,
       )).where(and(
         eq(maintenanceRecords.vehicleId, id),
         inArray(maintenanceRecords.id, comparableMaintenance.map((record) => record.id)),

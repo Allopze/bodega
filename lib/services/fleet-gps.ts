@@ -30,6 +30,22 @@ export interface FleetGpsPosition {
   observedAt: string
 }
 
+/**
+ * ¿La última captura de OnWay quedó fuera de la ventana de frescura?
+ *
+ * Compara INSTANTES, no texto: `observedAt` es `timestamptz mode:"string"` y
+ * drizzle lo serializa con separador de espacio ("2026-09-19 12:00:00.000+00"),
+ * mientras `staleBefore` es ISO ("...T...Z"). Un `<` sobre los strings decidía
+ * en el carácter del separador (' ' < 'T') y marcaba toda captura del mismo día
+ * como desactualizada, aunque OnWay hubiera sincronizado un minuto antes.
+ */
+export function isGpsCaptureStale(latestCapture: string | null, staleBefore: string): boolean {
+  if (!latestCapture) return false
+  const capture = Date.parse(latestCapture)
+  const threshold = Date.parse(staleBefore)
+  return Number.isFinite(capture) && Number.isFinite(threshold) && capture < threshold
+}
+
 export async function getFleetGpsMonitoring(session: Session) {
   const rawPositions = await db.select({
     id: fleetGpsLatestPositions.id,

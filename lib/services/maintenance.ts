@@ -701,8 +701,55 @@ async function requireMaintenanceAccess(client: DB | Tx, session: Session, id: s
 export async function getMaintenanceRecordDetail(session: Session, id: string) {
   if (!can(session, "mantenciones:view")) throw new Error("Sin permisos para ver mantenciones")
   await requireMaintenanceAccess(db, session, id)
+  const canViewCosts = can(session, "combustibles:view_costs")
   const record = await db.query.maintenanceRecords.findFirst({
     where: eq(maintenanceRecords.id, id),
+    // Sin permiso de costos, los montos no viajan del driver: se excluyen del
+    // `select` (mismo patrón que `getMaintenancePageData`) en vez de cargarlos
+    // y anularlos después. El mapeo del final conserva `null` en su lugar.
+    columns: {
+      id: true,
+      code: true,
+      planId: true,
+      vehicleId: true,
+      supplierId: true,
+      worksiteId: true,
+      costCenterId: true,
+      maintenanceDate: true,
+      maintenanceType: true,
+      status: true,
+      priority: true,
+      assignedToUserId: true,
+      slaDueAt: true,
+      startedAt: true,
+      completedAt: true,
+      cancelledAt: true,
+      cancellationReason: true,
+      downtimeStartedAt: true,
+      downtimeEndedAt: true,
+      rootCause: true,
+      underWarranty: true,
+      costApprovalStatus: true,
+      costApprovedByUserId: true,
+      costApprovedAt: true,
+      operationalImpact: true,
+      managesOperationalStatus: true,
+      odometerReading: true,
+      hourMeterReading: true,
+      netAmount: canViewCosts,
+      taxAmount: canViewCosts,
+      totalAmount: canViewCosts,
+      documentNumber: true,
+      documentName: true,
+      documentPath: true,
+      documentMimeType: true,
+      notes: true,
+      inspectionFindingId: true,
+      createdBy: true,
+      createdAt: true,
+      updatedAt: true,
+      version: true,
+    },
     with: {
       vehicle: true,
       supplier: true,
@@ -711,13 +758,18 @@ export async function getMaintenanceRecordDetail(session: Session, id: string) {
       assignee: { columns: { id: true, name: true, email: true } },
       plan: true,
       tasks: { orderBy: [maintenanceTasks.sortOrder, maintenanceTasks.createdAt] },
-      parts: { orderBy: [maintenanceParts.createdAt] },
-      labor: { orderBy: [maintenanceLabor.createdAt] },
+      parts: {
+        columns: { id: true, maintenanceId: true, productId: true, description: true, partNumber: true, quantity: true, unit: true, unitCost: canViewCosts, createdAt: true },
+        orderBy: [maintenanceParts.createdAt],
+      },
+      labor: {
+        columns: { id: true, maintenanceId: true, description: true, hours: true, hourlyRate: canViewCosts, createdAt: true },
+        orderBy: [maintenanceLabor.createdAt],
+      },
       documents: { orderBy: [desc(maintenanceDocuments.createdAt)] },
     },
   })
   if (!record) throw new Error("Orden de trabajo no encontrada")
-  const canViewCosts = can(session, "combustibles:view_costs")
   /**
    * `MNT-002` (auditoría 2026-09-14): sin catálogo a la vista, la única forma
    * de imputar un repuesto era escribirlo a mano, y esa línea nunca descontaba
@@ -737,14 +789,16 @@ export async function getMaintenanceRecordDetail(session: Session, id: string) {
     .innerJoin(products, eq(products.id, worksiteStock.productId))
     .where(and(eq(worksiteStock.worksiteId, worksiteId), sql`${worksiteStock.quantity} > 0`))
     .orderBy(products.name)
+  const redactAmount = (value: unknown) =>
+    canViewCosts && typeof value === "number" ? value : null
   return {
     ...record,
     availableStock,
-    netAmount: canViewCosts ? record.netAmount : null,
-    taxAmount: canViewCosts ? record.taxAmount : null,
-    totalAmount: canViewCosts ? record.totalAmount : null,
-    parts: record.parts.map((part) => ({ ...part, unitCost: canViewCosts ? part.unitCost : null })),
-    labor: record.labor.map((entry) => ({ ...entry, hourlyRate: canViewCosts ? entry.hourlyRate : null })),
+    netAmount: redactAmount((record as { netAmount?: unknown }).netAmount),
+    taxAmount: redactAmount((record as { taxAmount?: unknown }).taxAmount),
+    totalAmount: redactAmount((record as { totalAmount?: unknown }).totalAmount),
+    parts: record.parts.map((part) => ({ ...part, unitCost: redactAmount((part as { unitCost?: unknown }).unitCost) })),
+    labor: record.labor.map((entry) => ({ ...entry, hourlyRate: redactAmount((entry as { hourlyRate?: unknown }).hourlyRate) })),
   }
 }
 

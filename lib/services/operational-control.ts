@@ -101,6 +101,10 @@ export async function getOperationalControlHub(session: Session, input: Partial<
   const canViewMaintenance = can(session, "mantenciones:view")
   const canViewInspections = can(session, "prevention:inspections:view")
   const canViewCosts = can(session, "combustibles:view_costs")
+  // La salud de importación es del dominio Combustibles: un actor que entra al
+  // hub por flota o mantención no debe ver estado de un lote que no le
+  // corresponde. Se decide antes de consultar, no al renderizar.
+  const canViewFuelImport = can(session, "combustibles:view")
   const canViewServiceEquipment = can(session, "admin:service_equipment")
   if (!canViewFleet && !canViewMaintenance && !canViewInspections) throw new Error("Sin permisos para Control operacional")
   const vehicleScope = worksiteScopeSql(session, fuelVehicles.worksiteId)
@@ -122,7 +126,11 @@ export async function getOperationalControlHub(session: Session, input: Partial<
       completedCorrective: sql<number>`COUNT(*) FILTER (WHERE ${maintenanceRecords.status} = 'completed' AND ${maintenanceRecords.maintenanceType} = 'correctiva')`,
       downtimeHours: sql<number>`COALESCE(SUM(EXTRACT(EPOCH FROM (${maintenanceRecords.downtimeEndedAt} - ${maintenanceRecords.downtimeStartedAt})) / 3600) FILTER (WHERE ${maintenanceRecords.downtimeEndedAt} IS NOT NULL AND ${maintenanceRecords.downtimeStartedAt} IS NOT NULL), 0)`,
       correctiveDowntimeHours: sql<number>`COALESCE(SUM(EXTRACT(EPOCH FROM (${maintenanceRecords.downtimeEndedAt} - ${maintenanceRecords.downtimeStartedAt})) / 3600) FILTER (WHERE ${maintenanceRecords.status} = 'completed' AND ${maintenanceRecords.maintenanceType} = 'correctiva' AND ${maintenanceRecords.downtimeEndedAt} IS NOT NULL AND ${maintenanceRecords.downtimeStartedAt} IS NOT NULL), 0)`,
-      cost: sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}) FILTER (WHERE ${maintenanceRecords.status} <> 'cancelled'), 0)`,
+      // Sin permiso de costos el monto no se recupera en absoluto: proyectar
+      // `null` evita traer el dato del driver para descartarlo después.
+      cost: canViewCosts
+        ? sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}) FILTER (WHERE ${maintenanceRecords.status} <> 'cancelled'), 0)`
+        : sql<null>`null`,
       preventiveCompleted: sql<number>`COUNT(*) FILTER (WHERE ${maintenanceRecords.status} = 'completed' AND ${maintenanceRecords.maintenanceType} = 'preventiva')`,
       preventiveDue: sql<number>`COUNT(*) FILTER (WHERE ${maintenanceRecords.maintenanceType} = 'preventiva' AND ${maintenanceRecords.status} <> 'cancelled')`,
     }).from(maintenanceRecords).innerJoin(fuelVehicles, eq(fuelVehicles.id, maintenanceRecords.vehicleId)).where(and(
@@ -131,13 +139,16 @@ export async function getOperationalControlHub(session: Session, input: Partial<
     )).groupBy(maintenanceRecords.vehicleId) : [],
     canViewInspections ? db.select({ vehicleId: preventionInspectionRuns.subjectVehicleId, count: sql<number>`COUNT(*) FILTER (WHERE ${preventionInspectionRuns.status} <> 'cancelled')` })
       .from(preventionInspectionRuns).innerJoin(fuelVehicles, eq(fuelVehicles.id, preventionInspectionRuns.subjectVehicleId)).where(and(vehicleScope, sql`${preventionInspectionRuns.scheduledFor} BETWEEN ${period.from} AND ${period.to}`)).groupBy(preventionInspectionRuns.subjectVehicleId) : [],
-    db.select({
+    // La disponibilidad es un indicador de Flota: se consulta sólo con
+    // `flota:view`. Entrar al hub por mantención o inspección no habilita este
+    // subdominio.
+    canViewFleet ? db.select({
       vehicleId: fuelVehicleOperationalIntervals.vehicleId,
       totalHours: sql<number>`COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(${fuelVehicleOperationalIntervals.endedAt}, (${period.to}::date + INTERVAL '1 day')), (${period.to}::date + INTERVAL '1 day')) - GREATEST(${fuelVehicleOperationalIntervals.startedAt}, ${period.from}::date))) / 3600) FILTER (WHERE ${fuelVehicleOperationalIntervals.startedAt} < (${period.to}::date + INTERVAL '1 day') AND COALESCE(${fuelVehicleOperationalIntervals.endedAt}, (${period.to}::date + INTERVAL '1 day')) > ${period.from}::date), 0)`,
       operativeHours: sql<number>`COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(${fuelVehicleOperationalIntervals.endedAt}, (${period.to}::date + INTERVAL '1 day')), (${period.to}::date + INTERVAL '1 day')) - GREATEST(${fuelVehicleOperationalIntervals.startedAt}, ${period.from}::date))) / 3600) FILTER (WHERE ${fuelVehicleOperationalIntervals.status} = 'operativo' AND ${fuelVehicleOperationalIntervals.startedAt} < (${period.to}::date + INTERVAL '1 day') AND COALESCE(${fuelVehicleOperationalIntervals.endedAt}, (${period.to}::date + INTERVAL '1 day')) > ${period.from}::date), 0)`,
-    }).from(fuelVehicleOperationalIntervals).innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelVehicleOperationalIntervals.vehicleId)).where(vehicleScope).groupBy(fuelVehicleOperationalIntervals.vehicleId),
-    db.select({ id: fuelImportBatches.id, status: fuelImportBatches.estado, createdAt: fuelImportBatches.createdAt, validRows: fuelImportBatches.filasValidas, invalidRows: fuelImportBatches.filasInvalidas, source: fuelImportBatches.fuente })
-      .from(fuelImportBatches).where(worksiteScopeSql(session, fuelImportBatches.worksiteId)).orderBy(desc(fuelImportBatches.createdAt)).limit(1),
+    }).from(fuelVehicleOperationalIntervals).innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelVehicleOperationalIntervals.vehicleId)).where(vehicleScope).groupBy(fuelVehicleOperationalIntervals.vehicleId) : [],
+    canViewFuelImport ? db.select({ id: fuelImportBatches.id, status: fuelImportBatches.estado, createdAt: fuelImportBatches.createdAt, validRows: fuelImportBatches.filasValidas, invalidRows: fuelImportBatches.filasInvalidas, source: fuelImportBatches.fuente })
+      .from(fuelImportBatches).where(worksiteScopeSql(session, fuelImportBatches.worksiteId)).orderBy(desc(fuelImportBatches.createdAt)).limit(1) : [],
   ])
 
   const maintenanceByVehicle = new Map(maintenanceAgg.map((row) => [row.vehicleId, row]))
@@ -207,7 +218,7 @@ export async function getOperationalControlHub(session: Session, input: Partial<
       preventiveCompleted,
       preventiveDue,
       backlog: vehicleAssets.reduce((sum, asset) => sum + asset.openMaintenanceCount, 0),
-      maintenanceCost: maintenanceAgg.reduce((sum, row) => sum + Number(row.cost), 0),
+      maintenanceCost: maintenanceAgg.reduce((sum, row) => sum + Number(row.cost ?? 0), 0),
       canViewCosts,
     }),
     sourceHealth: (() => {
@@ -227,6 +238,6 @@ export async function getOperationalControlHub(session: Session, input: Partial<
           : "No hay lotes visibles",
       }]
     })(),
-    permissions: { canViewFleet, canViewMaintenance, canViewInspections, canViewCosts, canViewServiceEquipment },
+    permissions: { canViewFleet, canViewMaintenance, canViewInspections, canViewCosts, canViewFuelImport, canViewServiceEquipment },
   }
 }

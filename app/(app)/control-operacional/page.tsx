@@ -144,40 +144,46 @@ export default async function OperationalControlPage({
       </Card>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          icon={<ChartLineUp size={16} weight="duotone" />}
-          label="Disponibilidad"
-          value={formatKpi(data.metrics.availabilityPercent, "%")}
-          detail={
-            data.metrics.availabilityPercent == null
-              ? "Sin datos en el período"
-              : "Horas operativas vs. horas calendario"
-          }
-          glossary="Porcentaje de horas del período en que los vehículos se mantuvieron operativos. Sin vehículos activos o sin intervalos registrados, el indicador devuelve 'Sin datos' en lugar de 0%."
-          tone={availabilityTone}
-        />
-        <KpiCard
-          icon={<ClockClockwise size={16} weight="duotone" />}
-          label="MTBF"
-          value={formatKpi(data.metrics.mtbfHours, " h", 0)}
-          detail="Tiempo medio entre fallas correctivas"
-          glossary="MTBF (Mean Time Between Failures): horas operativas promedio entre dos mantenciones correctivas completadas dentro del período. Útil para comparar con la cadencia objetivo por equipo."
-        />
-        <KpiCard
-          icon={<Wrench size={16} weight="duotone" />}
-          label="MTTR"
-          value={formatKpi(data.metrics.mttrHours, " h", 1)}
-          detail="Tiempo medio de reparación"
-          glossary="MTTR (Mean Time To Repair): horas promedio de detención por mantención correctiva completada en el período. Una cifra alta sugiere piezas, mano de obra o aprobaciones que están frenando el retorno a operación."
-        />
-        <KpiCard
-          icon={<ShieldCheck size={16} weight="duotone" />}
-          label="Cumplimiento preventivo"
-          value={formatKpi(data.metrics.preventiveCompliancePercent, "%")}
-          detail="OT preventivas completadas / programadas"
-          glossary="Porcentaje de mantenciones preventivas no canceladas que se cerraron como completadas dentro del período. Bajo 70% abre una alerta para revisar capacidad del equipo de planificación."
-          tone={preventiveTone}
-        />
+        {data.permissions.canViewFleet && (
+          <KpiCard
+            icon={<ChartLineUp size={16} weight="duotone" />}
+            label="Disponibilidad"
+            value={formatKpi(data.metrics.availabilityPercent, "%")}
+            detail={
+              data.metrics.availabilityPercent == null
+                ? "Sin datos en el período"
+                : "Horas operativas vs. horas con estado registrado"
+            }
+            glossary="Porcentaje de horas del período en que los vehículos se mantuvieron operativos, sobre las horas cubiertas por el historial de estado del equipo. Sin vehículos activos o sin intervalos registrados, el indicador devuelve 'Sin datos' en lugar de 0%."
+            tone={availabilityTone}
+          />
+        )}
+        {data.permissions.canViewMaintenance && (
+          <>
+            <KpiCard
+              icon={<ClockClockwise size={16} weight="duotone" />}
+              label="MTBF"
+              value={formatKpi(data.metrics.mtbfHours, " h", 0)}
+              detail="Tiempo medio entre fallas correctivas"
+              glossary="MTBF (Mean Time Between Failures): horas operativas promedio entre dos mantenciones correctivas completadas dentro del período. Útil para comparar con la cadencia objetivo por equipo."
+            />
+            <KpiCard
+              icon={<Wrench size={16} weight="duotone" />}
+              label="MTTR"
+              value={formatKpi(data.metrics.mttrHours, " h", 1)}
+              detail="Tiempo medio de reparación"
+              glossary="MTTR (Mean Time To Repair): horas promedio de detención por mantención correctiva completada en el período. Una cifra alta sugiere piezas, mano de obra o aprobaciones que están frenando el retorno a operación."
+            />
+            <KpiCard
+              icon={<ShieldCheck size={16} weight="duotone" />}
+              label="Cumplimiento preventivo"
+              value={formatKpi(data.metrics.preventiveCompliancePercent, "%")}
+              detail="OT preventivas completadas / programadas"
+              glossary="Porcentaje de mantenciones preventivas no canceladas que se cerraron como completadas dentro del período. Bajo 70% abre una alerta para revisar capacidad del equipo de planificación."
+              tone={preventiveTone}
+            />
+          </>
+        )}
       </div>
 
       {data.permissions.canViewMaintenance && (
@@ -213,41 +219,43 @@ export default async function OperationalControlPage({
             />
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            {/* B-02: el card listaba una sola fuente (`fuel_import`) pero su
-                título decía "Salud de fuentes" (plural), lo que sugería
-                también mantención e inspecciones. Ahora el título describe
-                fielmente el contenido. */}
-            <CardTitle as="h2">Última importación de combustible</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-3">
-              {data.sourceHealth.map((source) => (
-                <li key={source.key} className="rounded-lg border border-[var(--color-border)] p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">{source.label}</span>
-                    <MetaBadge meta={{ label: `${source.statusLabel}`, variant: sourceHealthVariant(source.status) }} />
-                  </div>
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">{source.detail}</p>
-                  <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
-                    {source.lastRunAt
-                      ? `Última corrida: ${formatDateTime(source.lastRunAt)}`
-                      : "Sin ejecución visible"}
-                  </p>
-                  {source.lastBatchId && can(session, "combustibles:import") && (
-                    <Button asChild variant="link" size="sm" className="mt-1 h-auto p-0 text-xs">
-                      <Link href={`/combustibles/importar/${source.lastBatchId}`}>
-                        Ver detalle
-                        <ArrowRight size={12} className="ml-1" />
-                      </Link>
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        {data.permissions.canViewFuelImport && (
+          <Card>
+            <CardHeader>
+              {/* B-02: el card listaba una sola fuente (`fuel_import`) pero su
+                  título decía "Salud de fuentes" (plural), lo que sugería
+                  también mantención e inspecciones. Ahora el título describe
+                  fielmente el contenido. */}
+              <CardTitle as="h2">Última importación de combustible</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-3">
+                {data.sourceHealth.map((source) => (
+                  <li key={source.key} className="rounded-lg border border-[var(--color-border)] p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">{source.label}</span>
+                      <MetaBadge meta={{ label: `${source.statusLabel}`, variant: sourceHealthVariant(source.status) }} />
+                    </div>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">{source.detail}</p>
+                    <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+                      {source.lastRunAt
+                        ? `Última corrida: ${formatDateTime(source.lastRunAt)}`
+                        : "Sin ejecución visible"}
+                    </p>
+                    {source.lastBatchId && can(session, "combustibles:import") && (
+                      <Button asChild variant="link" size="sm" className="mt-1 h-auto p-0 text-xs">
+                        <Link href={`/combustibles/importar/${source.lastBatchId}`}>
+                          Ver detalle
+                          <ArrowRight size={12} className="ml-1" />
+                        </Link>
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </PageContainer>
   )

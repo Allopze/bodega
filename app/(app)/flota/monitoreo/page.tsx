@@ -7,7 +7,7 @@ import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { requirePermission } from "@/lib/auth/can"
 import { readOnwayAdminStatus } from "@/lib/integrations/onway/onway-settings"
 import { can } from "@/lib/auth/can"
-import { getFleetGpsAlerts, getFleetGpsMonitoring } from "@/lib/services/fleet-gps"
+import { getFleetGpsAlerts, getFleetGpsMonitoring, isGpsCaptureStale } from "@/lib/services/fleet-gps"
 import { formatDateTime } from "@/lib/utils"
 import { Callout } from "@/components/ui/callout"
 import { FleetGpsWorkspace } from "./fleet-gps-workspace"
@@ -39,8 +39,7 @@ export default async function FleetGpsMonitoringPage() {
     (latest, position) => !latest || position.observedAt > latest ? position.observedAt : latest,
     null,
   )
-  const captureIsStale = latestCapture !== null
-    && latestCapture < monitoring.staleBefore
+  const captureIsStale = isGpsCaptureStale(latestCapture, monitoring.staleBefore)
   const hasData = monitoring.positions.length > 0
   const blockedAlerts = alerts.filter((alert) => alert.processingStatus === "blocked").length
   const stats: SummaryStat[] = hasData ? [
