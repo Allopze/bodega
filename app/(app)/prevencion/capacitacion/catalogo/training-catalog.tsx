@@ -28,6 +28,8 @@ import {
 } from "../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
+import { MagnifyingGlass } from "@phosphor-icons/react"
 import { nanoid } from "@/lib/id"
 import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 
@@ -47,6 +49,7 @@ interface CourseItem {
 interface VersionItem {
   id: string
   courseName: string
+  courseCode: string
   versionLabel: string
   status: string
   durationMinutes: number
@@ -58,6 +61,7 @@ interface VersionItem {
 interface RequirementItem {
   id: string
   courseName: string
+  courseCode: string
   scopeType: string
   scopeValue: string | null
   worksiteName: string | null
@@ -82,18 +86,56 @@ export function TrainingCatalog({ courses, versions, requirements, worksites, ca
   canApprove: boolean
   catalogActivities?: PdtpActivityPickerOption[]
 }) {
-  const [tab, setTab] = React.useState<"courses" | "versions" | "requirements">("courses")
+  /* La pestaña y el filtro viven en la URL, no en `useState`: la bandeja de
+   * habilitación enlaza a un curso concreto con
+   * `?tab=versions&q=<código>`, y con estado local ese enlace aterrizaba en la
+   * pantalla pero no en la fila — que es el mismo fallo que el rediseño
+   * corrige aguas arriba. */
+  const { getFilter, setFilter, setFilters } = useUrlFilters()
+  const tab = ((["courses", "versions", "requirements"] as const).find((value) => value === getFilter("tab")) ?? "courses")
+  const setTab = (value: string) => setFilter("tab", value === "courses" ? null : value)
+  const urlQuery = getFilter("q")
+  const [query, setQueryDraft] = React.useState(urlQuery)
+  React.useEffect(() => setQueryDraft(urlQuery), [urlQuery])
+  React.useEffect(() => {
+    const next = query.trim()
+    if (next === urlQuery) return
+    const timer = setTimeout(() => setFilters({ q: next || null }), 350)
+    return () => clearTimeout(timer)
+  }, [query, urlQuery, setFilters])
+
+  const needle = urlQuery.trim().toLocaleLowerCase("es-CL")
+  const matches = (...fields: Array<string | null | undefined>) =>
+    !needle || fields.filter(Boolean).join(" ").toLocaleLowerCase("es-CL").includes(needle)
+  const visibleCourses = courses.filter((course) => matches(course.code, course.name))
+  const visibleVersions = versions.filter((version) => matches(version.courseCode, version.courseName, version.versionLabel))
+  const visibleRequirements = requirements.filter((requirement) => matches(requirement.courseCode, requirement.courseName))
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-1 rounded-md border border-[var(--color-border)] p-1">
-          {([["courses", `Cursos (${courses.length})`], ["versions", `Contenidos (${versions.length})`], ["requirements", `Requisitos (${requirements.length})`]] as const).map(([value, label]) => (
+          {([["courses", `Cursos (${visibleCourses.length})`], ["versions", `Contenidos (${visibleVersions.length})`], ["requirements", `Requisitos (${visibleRequirements.length})`]] as const).map(([value, label]) => (
             <button key={value} type="button" onClick={() => setTab(value)} aria-pressed={tab === value}
-              className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
+              className="rounded-[var(--radius-sm)] px-3 py-1 text-sm transition-colors aria-pressed:bg-[var(--color-primary-tint)] aria-pressed:text-[var(--color-primary-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]">
               {label}
             </button>
           ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Buscador propio y no el del TopBar: el filtro tiene que vivir en la
+              URL para que el enlace desde la bandeja de habilitacion aterrice en
+              la fila. La ruta esta registrada en `ROUTES_WITH_OWN_SEARCH`. */}
+          <label className="relative">
+            <span className="sr-only">Filtrar el catalogo por codigo o nombre</span>
+            <MagnifyingGlass size={14} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-faint)]" />
+            <Input
+              value={query}
+              onChange={(event) => setQueryDraft(event.target.value)}
+              placeholder="Filtrar por codigo o nombre"
+              className="h-9 w-56 pl-8"
+            />
+          </label>
         </div>
         {canManage && (
           <div className="flex flex-wrap gap-2">
@@ -104,7 +146,7 @@ export function TrainingCatalog({ courses, versions, requirements, worksites, ca
         )}
       </div>
 
-      {tab === "courses" && (courses.length === 0 ? (
+      {tab === "courses" && (visibleCourses.length === 0 ? (
         <EmptyState
           icon={<Certificate size={20} />}
           title="Aún no hay cursos en el catálogo"
@@ -125,7 +167,7 @@ export function TrainingCatalog({ courses, versions, requirements, worksites, ca
               </TableRow>
             </TableHeader>
             <TableBody>
-              {courses.map((item) => (
+              {visibleCourses.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>
                     <span className="font-mono text-xs">{item.code}</span>
@@ -152,7 +194,7 @@ export function TrainingCatalog({ courses, versions, requirements, worksites, ca
         </div>
       ))}
 
-      {tab === "versions" && (versions.length === 0 ? (
+      {tab === "versions" && (visibleVersions.length === 0 ? (
         <EmptyState
           icon={<Certificate size={20} />}
           title="Ningún curso tiene contenido versionado"
@@ -172,7 +214,7 @@ export function TrainingCatalog({ courses, versions, requirements, worksites, ca
               </TableRow>
             </TableHeader>
             <TableBody>
-              {versions.map((item) => (
+              {visibleVersions.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell className="text-sm">{item.courseName}</TableCell>
                   <TableCell className="font-mono text-xs">{item.versionLabel}</TableCell>
@@ -194,12 +236,12 @@ export function TrainingCatalog({ courses, versions, requirements, worksites, ca
         </div>
       ))}
 
-      {tab === "requirements" && (requirements.length === 0 ? (
+      {tab === "requirements" && (visibleRequirements.length === 0 ? (
         <EmptyState
           icon={<Certificate size={20} />}
           title="Aún no hay requisitos de competencia"
           description="Un requisito declara qué curso exige qué población. Sin requisitos declarados no se detecta ninguna brecha, porque el sistema no puede inferir qué tarea es crítica."
-          action={canManage && courses.length > 0 ? <RequirementDialog courses={courses} worksites={worksites} /> : undefined}
+          action={canManage && visibleCourses.length > 0 ? <RequirementDialog courses={courses} worksites={worksites} /> : undefined}
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
@@ -213,7 +255,7 @@ export function TrainingCatalog({ courses, versions, requirements, worksites, ca
               </TableRow>
             </TableHeader>
             <TableBody>
-              {requirements.map((item) => (
+              {visibleRequirements.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell className="text-sm">{item.courseName}</TableCell>
                   <TableCell className="text-sm">

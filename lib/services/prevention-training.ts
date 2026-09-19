@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import { and, asc, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm"
+import { z } from "zod"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import {
@@ -22,6 +23,8 @@ import {
   competencyExpiry,
   type CompetencyGap,
 } from "@/lib/prevention/training"
+import { createNotifications } from "@/lib/services/notifications"
+import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { resolveOwnWorkSigning } from "@/lib/services/prevention-signing"
 import { verifyPreventionAckToken } from "@/lib/services/prevention-ack-token"
@@ -945,6 +948,7 @@ export async function listCompetencyRequirements(access: TrainingAccess) {
   return db.select({
     requirement: preventionCompetencyRequirements,
     courseName: preventionTrainingCourses.name,
+    courseCode: preventionTrainingCourses.code,
     worksiteName: worksites.name,
   })
     .from(preventionCompetencyRequirements)
@@ -998,6 +1002,7 @@ export async function listAllCourseVersions(access: TrainingAccess) {
   return db.select({
     version: preventionTrainingCourseVersions,
     courseName: preventionTrainingCourses.name,
+    courseCode: preventionTrainingCourses.code,
     courseKind: preventionTrainingCourses.kind,
   })
     .from(preventionTrainingCourseVersions)
@@ -1033,4 +1038,55 @@ export async function listMyPendingAcknowledgements(access: TrainingAccess) {
       sql`${preventionTrainingAttendance.acknowledgedAt} IS NULL`,
     ))
     .orderBy(desc(preventionTrainingSessions.endedAt))
+}
+
+/**
+ * Pedirle a quien sí puede que apruebe o publique una versión de curso.
+ *
+ * Espeja `remindTemplateApproval` de Inspecciones. La necesidad es la misma y
+ * más aguda acá: `prevencionista_faena` tiene `training:manage` pero **no**
+ * `training:approve`, así que puede crear la versión que habilita una actividad
+ * del programa y no puede habilitarla él mismo. Sin esto, el informe de
+ * cobertura le decía que faltaba publicar el curso y no le daba ninguna forma
+ * de conseguirlo.
+ *
+ * El `dedupeKey` lleva la fecha: como máximo un recordatorio por día y por
+ * versión. Sin la fecha el recordatorio sería un no-op permanente después del
+ * primero.
+ */
+export async function remindTrainingCourseVersionApproval(input: unknown, access: TrainingAccess) {
+  const data = z.object({ versionId: z.string().min(1) }).parse(input)
+  requireAccess(access, "prevention:training:manage")
+
+  const [version] = await db.select({
+    id: preventionTrainingCourseVersions.id,
+    status: preventionTrainingCourseVersions.status,
+    versionLabel: preventionTrainingCourseVersions.versionLabel,
+    courseName: preventionTrainingCourses.name,
+    courseCode: preventionTrainingCourses.code,
+  }).from(preventionTrainingCourseVersions)
+    .innerJoin(preventionTrainingCourses, eq(preventionTrainingCourses.id, preventionTrainingCourseVersions.courseId))
+    .where(eq(preventionTrainingCourseVersions.id, data.versionId))
+    .limit(1)
+  if (!version) throw new Error("Versión de curso no encontrada.")
+  // `published` ya no espera a nadie; `superseded` tampoco.
+  if (!["draft", "in_review", "observed", "approved"].includes(version.status)) {
+    throw new Error("Esta versión no está esperando aprobación.")
+  }
+
+  const approverIds = await getUserIdsWithPermission("prevention:training:approve")
+  const approvers = approverIds.length === 0 ? [] : await db.select({ id: users.id, name: users.name }).from(users)
+    .where(and(inArray(users.id, approverIds), eq(users.isActive, true)))
+  if (approvers.length === 0) throw new Error("Nadie tiene permiso de aprobación. Avisa a un administrador.")
+
+  await createNotifications(approvers.map((approver) => approver.id), {
+    type: "system_alert",
+    title: "Solicitud de publicación de curso",
+    body: `${version.courseName} (${version.courseCode}, ${version.versionLabel}) espera aprobación para habilitarse.`,
+    entityType: "training_course_version",
+    entityId: version.id,
+    entityHref: `/prevencion/capacitacion/catalogo?tab=versions&q=${encodeURIComponent(version.courseCode)}`,
+    dedupeKey: `training:version-approval:${version.id}:${todayInChile()}`,
+  })
+  return { notified: approvers.map((approver) => approver.name) }
 }

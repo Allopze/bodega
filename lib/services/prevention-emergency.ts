@@ -24,6 +24,7 @@ import { onEmergencyDrillCompleted, onEmergencyPlanApproved } from "@/lib/servic
 import { replacePdtpAccreditationBindings, resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
 import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
+import { createNotifications } from "@/lib/services/notifications"
 import { codeYear, todayInChile } from "@/lib/utils"
 import { checkEvidence } from "@/lib/validation/evidence-contract"
 
@@ -1057,4 +1058,48 @@ export async function listEmergencyAssignees(access: EmergencyAccess) {
     .from(users)
     .where(and(inArray(users.id, ids), eq(users.isActive, true)))
     .orderBy(asc(users.name))
+}
+
+/**
+ * Pedirle a quien sí puede que apruebe el plan de emergencia.
+ *
+ * Espeja `remindTemplateApproval` de Inspecciones. Acá la segregación es
+ * doblemente estricta: además del permiso, `approveEmergencyPlan` rechaza que
+ * quien aprueba sea quien creó el plan, así que el redactor **nunca** puede
+ * cerrarlo solo. Sin este recordatorio, el informe de cobertura le señalaba un
+ * plan sin aprobar y le dejaba el problema sin salida.
+ *
+ * No se exige `readiness.ready`: un plan al que todavía le faltan escenarios
+ * igual necesita que su aprobador sepa que existe, y el detalle del plan ya
+ * muestra qué le falta antes de habilitar el botón.
+ */
+export async function remindEmergencyPlanApproval(input: unknown, access: EmergencyAccess) {
+  const data = z.object({ planId: z.string().min(1) }).parse(input)
+
+  const [plan] = await db.select().from(preventionEmergencyPlans)
+    .where(eq(preventionEmergencyPlans.id, data.planId)).limit(1)
+  if (!plan) throw new Error("Plan de emergencia no encontrado.")
+  // El permiso se verifica contra la faena del plan: el alcance por faena es
+  // parte del contrato de este módulo, a diferencia de las plantillas.
+  requireAccess(access, "prevention:emergency:manage", plan.worksiteId)
+  if (plan.status !== "draft") throw new Error("Sólo un plan en borrador espera aprobación.")
+
+  const approverIds = await getUserIdsWithPermission("prevention:emergency:approve")
+  const approvers = approverIds.length === 0 ? [] : await db.select({ id: users.id, name: users.name }).from(users)
+    // Quien creó el plan no lo puede aprobar, así que avisarle sería mandarlo a
+    // un botón deshabilitado. Se excluye del destinatario.
+    .where(and(inArray(users.id, approverIds), eq(users.isActive, true)))
+  const targets = approvers.filter((approver) => approver.id !== plan.createdByUserId)
+  if (targets.length === 0) throw new Error("Nadie distinto de quien creó el plan puede aprobarlo. Avisa a un administrador.")
+
+  await createNotifications(targets.map((approver) => approver.id), {
+    type: "system_alert",
+    title: "Solicitud de aprobación de plan de emergencia",
+    body: `${plan.title} (${plan.code}) espera aprobación para habilitarse.`,
+    entityType: "emergency_plan",
+    entityId: plan.id,
+    entityHref: `/prevencion/emergencias/${plan.id}`,
+    dedupeKey: `emergency:plan-approval:${plan.id}:${todayInChile()}`,
+  })
+  return { notified: targets.map((approver) => approver.name) }
 }
