@@ -3,6 +3,7 @@ import { db } from "@/db"
 import { pdtpActivities, pdtpObjectives, pdtpPrograms } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, isUniqueViolation } from "./helpers"
+import { countOf } from "@/lib/utils"
 
 export type PdtpObjective = typeof pdtpObjectives.$inferSelect
 
@@ -142,7 +143,7 @@ export async function deletePdtpObjective(input: { programId: string; objectiveI
       input.programId, program.version, userId, "objectives",
       { id: existing.id, code: existing.code, name: existing.name },
       null,
-      `Objetivo ${existing.code} eliminado; ${orphaned.length} actividad(es) quedaron sin objetivo asignado.`,
+      `Objetivo ${existing.code} eliminado; ${countOf(orphaned.length, "actividad", "actividades")} ${orphaned.length === 1 ? "quedó" : "quedaron"} sin objetivo asignado.`,
       tx,
     )
   })

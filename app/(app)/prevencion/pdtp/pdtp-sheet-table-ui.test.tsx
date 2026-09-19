@@ -13,7 +13,11 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { cleanup, render, screen } from "@testing-library/react"
-import { PdtpActivitySummary, PdtpStatusBadge, type PdtpStatusCounts } from "./pdtp-sheet-table-ui"
+import { PdtpActivitySummary, PdtpSheetPicker, PdtpStatusBadge, type PdtpStatusCounts } from "./pdtp-sheet-table-ui"
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+}))
 
 afterEach(cleanup)
 
@@ -77,5 +81,17 @@ describe("PdtpActivitySummary", () => {
     render(<PdtpActivitySummary counts={COUNTS} activeFilter="all" onFilter={onFilter} />)
     screen.getByRole("button", { name: /No realizadas 2/ }).click()
     expect(onFilter).toHaveBeenCalledWith("not_performed")
+  })
+})
+
+describe("PdtpSheetPicker", () => {
+  it("muestra un placeholder en vez de quedar vacío cuando no hay hojas", () => {
+    render(<PdtpSheetPicker current="" options={[]} />)
+    expect(screen.getByText("Selecciona hoja")).toBeInTheDocument()
+  })
+
+  it("muestra la hoja seleccionada cuando sí hay opciones", () => {
+    render(<PdtpSheetPicker current="general" options={[{ code: "general", label: "General" }]} />)
+    expect(screen.getByText("General")).toBeInTheDocument()
   })
 })

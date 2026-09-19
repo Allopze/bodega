@@ -233,6 +233,50 @@ async function seedBaseFixture() {
 }
 
 describe("buildPdtpRe36Document", () => {
+  it("expone las instancias nuevas en el calendario ISO sin alterar las hojas legacy", async () => {
+    await seedBaseFixture()
+    await inMemoryDb.insert(schema.pdtpActivities).values({
+      id: "act-scheduled", programId: PROGRAM_ID, n: 4,
+      activity: "Inspección mensual de extintores", program: "Inspecciones",
+      responsibleSlugs: ["prf"], responsibleDisplay: "PRF",
+      scheduleMode: "scheduled",
+      scheduleDefinition: {
+        version: 1, kind: "recurring", startDate: `${YEAR}-01-01`, endDate: `${YEAR}-12-31`,
+        every: 1, unit: "month", dayOfMonth: 15,
+      },
+      sourceSheetRow: 4, createdAt: now(), updatedAt: now(),
+    })
+    await inMemoryDb.insert(schema.pdtpActivityExecutionConfigs).values({
+      id: "cfg-scheduled", activityId: "act-scheduled", destinationConnectorKey: "inspections",
+      completionPolicy: "source_completed", evidenceRequired: true,
+      acceptedEvidenceKinds: ["generated_record", "file"], createdAt: now(), updatedAt: now(),
+    })
+    await inMemoryDb.insert(schema.pdtpScheduledInstances).values({
+      id: "instance-scheduled", programId: PROGRAM_ID, activityId: "act-scheduled", worksiteId: WORKSITE_ID,
+      scheduledFor: `${YEAR}-03-15`, isoWeekYear: YEAR, isoWeek: 11, plannedQuantity: 1,
+      status: "completed", completedAt: `${YEAR}-03-16T14:00:00.000Z`, completedByUserId: USER_ID,
+      responsibleSlug: "prf", responsibleUserId: USER_ID, responsibleRoleSnapshot: "prevencionista",
+      idempotencyKey: "pdtp-scheduled:act-scheduled:ws-re36-1:2033-03-15",
+      sourceMetadataJson: { generatedFrom: "schedule_definition" }, createdAt: now(), updatedAt: now(),
+    })
+
+    const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")
+    const doc = await buildPdtpRe36Document({ programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all" })
+
+    expect(doc.sheets.map((sheet) => sheet.code)).toEqual(["general", "cphs"])
+    expect(doc.isoCalendar).toEqual([expect.objectContaining({
+      isoWeekYear: YEAR,
+      isoWeek: 11,
+      scheduledFor: `${YEAR}-03-15`,
+      activity: "Inspección mensual de extintores",
+      responsible: "Usuaria de prueba",
+      destination: "Inspecciones",
+      instrument: "—",
+      status: "Cumplida fuera de plazo",
+      completedAt: `${YEAR}-03-16T14:00:00.000Z`,
+    })])
+  })
+
   it("arma el documento RE-36 con P/E coherentes con el indicador de cumplimiento (Σp de la hoja GENERAL, que contiene todas las actividades en modo planned_vs_completed)", async () => {
     await seedBaseFixture()
     const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")

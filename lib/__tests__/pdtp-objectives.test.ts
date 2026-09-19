@@ -313,7 +313,7 @@ describe("PDTP objetivos: servicio y huella", () => {
    * corporativo de la 15, este test falla antes de que la huella de un
    * programa firmado deje de reproducirse.
    */
-  it("ancla la forma por versión: la 15 no lleva objetivos y sí alcance corporativo; la 16 lleva ambos", async () => {
+  it("ancla la forma por versión: la 15 no lleva objetivos, la 16 lleva objetivos y la 17 programa y configura la ejecución", async () => {
     const { setPdtpActivityObjective, upsertPdtpObjective } = await import("@/lib/services/pdtp/objectives")
     const { buildPdtpProgramContentSnapshot, CURRENT_PDTP_CONTENT_SCHEMA_VERSION } = await import("@/lib/services/pdtp/content-digest")
     const { program, activity } = await createDraftProgramWithActivity(2066)
@@ -325,16 +325,19 @@ describe("PDTP objetivos: servicio y huella", () => {
     }, "user-1")
     await setPdtpActivityObjective({ programId: program.id, activityId: activity.id, objectiveId: objective.id }, "user-1")
 
-    expect(CURRENT_PDTP_CONTENT_SCHEMA_VERSION).toBe(16)
+    expect(CURRENT_PDTP_CONTENT_SCHEMA_VERSION).toBe(17)
 
     type SnapshotShape = {
       schemaVersion: number
       program: Record<string, unknown>
       objectives?: unknown
       activities: Record<string, unknown>[]
+      executionConfigs?: unknown
+      reminderRules?: unknown
     }
     const v15 = await buildPdtpProgramContentSnapshot(program.id, undefined, { schemaVersion: 15 }) as unknown as SnapshotShape
     const v16 = await buildPdtpProgramContentSnapshot(program.id, undefined, { schemaVersion: 16 }) as unknown as SnapshotShape
+    const v17 = await buildPdtpProgramContentSnapshot(program.id, undefined, { schemaVersion: 17 }) as unknown as SnapshotShape
 
     expect(v15.schemaVersion).toBe(15)
     expect("objectives" in v15).toBe(false)
@@ -347,5 +350,10 @@ describe("PDTP objetivos: servicio y huella", () => {
     expect(v16.objectives).toEqual([expect.objectContaining({ code: "1", name: objective.name })])
     expect(v16.activities).toEqual([expect.objectContaining({ objectiveCode: "1" })])
     expect("appliesToAllWorksites" in v16.program).toBe(true)
+
+    expect(v17.schemaVersion).toBe(17)
+    expect(v17.activities).toEqual([expect.objectContaining({ objectiveCode: "1", scheduleDefinition: null })])
+    expect(v17.executionConfigs).toEqual([])
+    expect(v17.reminderRules).toEqual([])
   })
 })

@@ -27,7 +27,7 @@ export default async function PdtpCoveragePage() {
       <PageHeader
         title="Cobertura MIPER y legal"
         description="Demuestra de dónde nace cada medida del programa y qué brechas siguen abiertas."
-        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Programa de trabajo (PDTP)", href: "/prevencion/pdtp" }, { label: "Cobertura" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Programa de trabajo", href: "/prevencion/pdtp" }, { label: "Cobertura" }]} />}
       />
       {!coverage ? (
         // A-4: la descripción ya decía qué hacer; faltaba que fuera clicable.

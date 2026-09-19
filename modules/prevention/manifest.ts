@@ -345,6 +345,14 @@ export const preventionModule = {
               permissions: ["prevention:pdtp:view"],
             },
             {
+              // Reglas de exclusión, metas y asignados por faena — mismo nivel
+              // que Cobertura y Aprobaciones (configuración de faena), sólo que
+              // hasta ahora se llegaba únicamente por enlace directo.
+              label: "Aplicabilidad",
+              href: "/prevencion/pdtp/aplicabilidad",
+              permissions: ["prevention:pdtp:view"],
+            },
+            {
               // El cierre por faena congela la copia del mes que se firma y se
               // distribuye. Ver la lista sólo exige `view`; cerrar y reabrir
               // exigen `prevention:pdtp:close_period`, que la propia pantalla

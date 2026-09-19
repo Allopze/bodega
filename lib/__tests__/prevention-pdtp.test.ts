@@ -161,6 +161,9 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionInspectionTemplates)
   await inMemoryDb.delete(schema.workers)
   await inMemoryDb.delete(schema.worksites)
+  // `audit_log.user_id` referencia users y se acumula durante los casos de
+  // esta suite; debe retirarse antes de recrear los usuarios del fixture.
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.users)
 
   await inMemoryDb.insert(schema.users).values([
@@ -822,7 +825,7 @@ describe("prevention PDTP service", () => {
     ])
     expect(staged.preview.blockingErrors).toEqual([])
     await expect(applyPdtpImportBatch({ batchId: staged.batch.id, userId: "user-1", scope: ["ws-1"] }))
-      .rejects.toThrow(/siguen sin publicar/i)
+      .rejects.toThrow(/sigue sin publicar/i)
 
     const linkedPreview = await linkPdtpImportCandidate({
       batchId: staged.batch.id,
@@ -1594,7 +1597,7 @@ describe("prevention PDTP service", () => {
     await inMemoryDb.update(schema.pdtpActivities).set({ mechanism: "constancia", evidenceRequirement: "Registro verificable" })
       .where(eq(schema.pdtpActivities.id, activity.id))
 
-    await expect(submitPdtpProgramForReview(program.id, "user-1")).rejects.toThrow(/requieren confirmar cuándo/i)
+    await expect(submitPdtpProgramForReview(program.id, "user-1")).rejects.toThrow(/requiere confirmar cuándo/i)
     // El mismo motivo tiene que poder consultarse ANTES de pulsar el botón,
     // para que la tarjeta de estado lo muestre en vez de dejar que el envío
     // falle.
@@ -1603,8 +1606,8 @@ describe("prevention PDTP service", () => {
     // haría fallar el envío: esa actividad incumple dos reglas a la vez.
     const blockers = await getPdtpSubmitReviewBlockers(program.id)
     expect(blockers).toHaveLength(2)
-    expect(blockers[0]).toMatch(/requieren confirmar cuándo/i)
-    expect(blockers[1]).toMatch(/no tienen SLA, evidencia, disparador/i)
+    expect(blockers[0]).toMatch(/requiere confirmar cuándo/i)
+    expect(blockers[1]).toMatch(/no tiene SLA, evidencia, disparador/i)
 
     await updatePdtpActivity({
       activityId: activity.id,
@@ -3205,7 +3208,7 @@ describe("prevention PDTP service", () => {
     expect({ planned: importedPlanned, executed: importedExecuted, percent: importedPercent }).toEqual({ planned: 1013, executed: 0, percent: 0 })
 
     const { submitPdtpProgramForReview } = await import("@/lib/services/prevention-pdtp")
-    await expect(submitPdtpProgramForReview(program.id, "user-1")).rejects.toThrow(/22 actividad\(es\).*requieren confirmar/i)
+    await expect(submitPdtpProgramForReview(program.id, "user-1")).rejects.toThrow(/22 actividades.*requieren confirmar/i)
 
     await applyPdtpImportBatch({
       batchId: cleanStaged.batch.id,

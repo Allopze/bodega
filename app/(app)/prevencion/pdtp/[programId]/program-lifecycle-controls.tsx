@@ -3,7 +3,8 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Tooltip } from "@/components/ui/tooltip"
-import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
+import { MetaBadge } from "@/components/states/state-badge"
+import { Callout } from "@/components/ui/callout"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -17,7 +18,7 @@ import {
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
-import { pdtpProgramStatusLabel } from "@/lib/prevention/pdtp"
+import { pdtpProgramStatusLabel, pdtpProgramStatusVariant } from "@/lib/prevention/pdtp"
 import {
   activatePdtpProgramAction,
   archivePdtpProgramAction,
@@ -55,16 +56,6 @@ type ApprovalStepProgress = {
   decision: { decision: string; decidedAt: string } | null
 }
 
-// El texto viene del vocabulario compartido; aquí sólo vive el color.
-const STATUS_VARIANT: Record<string, StateMetaInput["variant"]> = {
-  draft: "default",
-  in_review: "warning",
-  rejected: "danger",
-  active: "success",
-  closed: "outline",
-  archived: "outline",
-}
-
 function nextStep(program: ProgramLifecycle, pendingStep: ApprovalStepProgress | undefined, submitBlockers: string[]): string {
   if (program.status === "draft") {
     return submitBlockers.length > 0
@@ -99,7 +90,7 @@ export function ProgramLifecycleControls({
 }) {
   const router = useRouter()
   const { pending, run } = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
-  const statusVariant = STATUS_VARIANT[program.status] ?? "outline"
+  const statusVariant = pdtpProgramStatusVariant(program.status)
   const steps: ApprovalStepProgress[] = approvalSteps ?? [
     {
       id: `${program.id}-approval-jdpr`, code: "jdpr", label: "Revisión JDPR", isRequired: true,
@@ -133,17 +124,16 @@ export function ProgramLifecycleControls({
           </div>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">{nextStep(program, pendingStep, submitBlockers)}</p>
           {program.status === "draft" && submitBlockers.length > 0 && (
-            <div className="mt-2 max-w-3xl rounded-md border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">
-              <p className="font-semibold">Pendiente antes de enviar a revisión:</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-5">
+            <Callout tone="warning" className="mt-2 max-w-3xl" title="Pendiente antes de enviar a revisión:">
+              <ul className="list-disc space-y-0.5 pl-5">
                 {submitBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
               </ul>
-            </div>
+            </Callout>
           )}
           {program.status === "rejected" && program.rejectionReason && (
-            <p className="mt-2 max-w-3xl rounded-md border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger-ink)]">
+            <Callout tone="danger" className="mt-2 max-w-3xl">
               <span className="font-semibold">Observación:</span> {program.rejectionReason}
-            </p>
+            </Callout>
           )}
         </div>
 

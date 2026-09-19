@@ -11,6 +11,7 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { MetaBadge } from "@/components/states/state-badge"
+import { Callout } from "@/components/ui/callout"
 import {
   updatePdtpActivityAction,
   duplicatePdtpActivityAction,
@@ -34,9 +35,14 @@ import {
   type PdtpScheduleCell,
   type PdtpScheduleHorizon,
 } from "@/lib/services/pdtp/recurrence"
+import type { PdtpScheduleDefinition } from "@/lib/services/pdtp/schedule-definition"
+import type { PdtpCompletionPolicy } from "@/lib/services/pdtp/connectors"
 import { todayLocalISO } from "@/lib/sst/date"
-import { formatDate, MONTH_LABELS } from "@/lib/utils"
+import { countOf, formatDate, MONTH_LABELS } from "@/lib/utils"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
+import type { pdtpActivityExecutionConfigs, pdtpActivityReminderRules } from "@/db/schema"
+import { DialogDescription } from "@/components/ui/dialog"
+import { PdtpActivityCreator, type PdtpActivityCreatorInitialValue } from "@/components/prevention/pdtp-activity-creator"
 
 
 import type { PdtpActivityRow, PdtpScheduleRow } from "./types"
@@ -50,6 +56,11 @@ export function ActividadesTab({
   schedule,
   responsibleCatalog,
   catalogActivities,
+  connectors = [],
+  instruments = [],
+  activityExecutionConfigs = [],
+  activityReminderRules = [],
+  onSaved,
   objectives = [],
 }: {
   programId: string
@@ -62,6 +73,19 @@ export function ActividadesTab({
   schedule: PdtpScheduleRow[]
   responsibleCatalog: Array<{ slug: string; displayName: string }>
   catalogActivities: Array<PdtpActivityPickerOption & { executionGuidance: string; currentRevision: number }>
+  connectors?: Array<{
+    key: string
+    label: string
+    moduleHref: string
+    supportedEvents: Array<{ key: string; label: string }>
+    supportedBindingSourceTypes: readonly string[]
+    supportedCompletionPolicies: readonly import("@/lib/services/pdtp/connectors").PdtpCompletionPolicy[]
+    supportedEvidenceKinds: readonly import("@/lib/services/pdtp/connectors").PdtpEvidenceKind[]
+  }>
+  instruments?: Array<{ id: string; label: string; sourceType: string; catalogActivityId: string }>
+  activityExecutionConfigs?: Array<typeof pdtpActivityExecutionConfigs.$inferSelect>
+  activityReminderRules?: Array<typeof pdtpActivityReminderRules.$inferSelect>
+  onSaved?: () => void
   /** Sin objetivos, la columna y el select por fila no se muestran: la tabla
    *  se ve igual que antes de que este programa tuviera objetivos. */
   objectives?: PdtpObjective[]
@@ -88,6 +112,7 @@ export function ActividadesTab({
   }, [schedule])
   const [items, setItems] = React.useState(activities)
   const [editing, setEditing] = React.useState<PdtpActivityRow | null>(null)
+  const [modernEditing, setModernEditing] = React.useState<PdtpActivityRow | null>(null)
   const [retiring, setRetiring] = React.useState<PdtpActivityRow | null>(null)
   const [retirementReason, setRetirementReason] = React.useState("")
   const [retirementDate, setRetirementDate] = React.useState(defaultRetirementDate)
@@ -186,6 +211,45 @@ export function ActividadesTab({
 
   const selectedIdSet = new Set(selectedIds)
   const hasObjectives = objectives.length > 0
+  const configByActivity = React.useMemo(() => new Map(activityExecutionConfigs.map((config) => [config.activityId, config])), [activityExecutionConfigs])
+  const remindersByActivity = React.useMemo(() => {
+    const map = new Map<string, typeof activityReminderRules>()
+    for (const rule of activityReminderRules) map.set(rule.activityId, [...(map.get(rule.activityId) ?? []), rule])
+    return map
+  }, [activityReminderRules])
+
+  function modernInitialValue(activity: PdtpActivityRow): PdtpActivityCreatorInitialValue {
+    const config = configByActivity.get(activity.id)
+    const acceptedEvidenceKinds = Array.isArray(config?.acceptedEvidenceKinds)
+      ? config.acceptedEvidenceKinds.filter((kind): kind is "file" | "photo" | "checklist" | "signature" | "generated_record" => typeof kind === "string")
+      : []
+    return {
+      id: activity.id,
+      n: activity.n,
+      catalogActivityId: activity.catalogActivityId,
+      activity: activity.activity,
+      program: activity.program,
+      responsibleSlugs: Array.isArray(activity.responsibleSlugs) ? activity.responsibleSlugs.filter((value): value is string => typeof value === "string") : [],
+      audienceRoles: Array.isArray(activity.audienceRoles) ? activity.audienceRoles.filter((value): value is string => typeof value === "string") : [],
+      scheduleMode: activity.scheduleMode as "scheduled" | "on_demand" | "triggered",
+      recurrenceRule: activity.recurrenceRule as PdtpActivityCreatorInitialValue["recurrenceRule"],
+      scheduleDefinition: activity.scheduleDefinition as PdtpActivityCreatorInitialValue["scheduleDefinition"],
+      triggerType: activity.triggerType,
+      triggerDescription: activity.triggerDescription,
+      dueDays: activity.dueDays,
+      dueHours: activity.dueHours,
+      evidenceRequirement: activity.evidenceRequirement,
+      notes: activity.notes,
+      executionConfig: config ? {
+        destinationConnectorKey: config.destinationConnectorKey,
+        accreditationBindingId: config.accreditationBindingId,
+        completionPolicy: config.completionPolicy as PdtpCompletionPolicy,
+        evidenceRequired: config.evidenceRequired,
+        acceptedEvidenceKinds,
+      } : null,
+      reminderRules: (remindersByActivity.get(activity.id) ?? []).map((rule) => ({ offsetValue: rule.offsetValue, offsetUnit: rule.offsetUnit as "hour" | "day" })),
+    }
+  }
 
   return (
     <div className="space-y-3">
@@ -196,7 +260,7 @@ export function ActividadesTab({
       )}
       {items.length > 0 && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-          <p className="text-xs text-[var(--color-text-muted)]">{selectedIds.length} actividad(es) seleccionadas</p>
+          <p className="text-xs text-[var(--color-text-muted)]">{countOf(selectedIds.length, "actividad seleccionada", "actividades seleccionadas")}</p>
           <Button type="button" size="sm" variant="secondary" disabled={selectedIds.length === 0} onClick={() => setBatchOpen(true)}>Editar selección</Button>
         </div>
       )}
@@ -260,7 +324,11 @@ export function ActividadesTab({
                       <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired" || index === items.length - 1} onClick={() => move(index, 1)} aria-label="Bajar">↓</Button>
                       {!activity.catalogActivityId && <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired"} onClick={() => handleDuplicate(activity.id)}>Duplicar</Button>}
                       {hasNewRevision && <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired"} onClick={() => handleAdoptRevision(activity.id)}>Adoptar revisión</Button>}
-                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired"} onClick={() => setEditing(activity)}>Editar</Button>
+                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired"} onClick={() => {
+                        const modern = activity.scheduleDefinition != null && (activity.scheduleDefinition as PdtpScheduleDefinition).kind !== "legacy_grid"
+                        if (modern) setModernEditing(activity)
+                        else setEditing(activity)
+                      }}>{activity.scheduleDefinition != null && (activity.scheduleDefinition as PdtpScheduleDefinition).kind !== "legacy_grid" ? "Configurar" : "Editar"}</Button>
                       <Button
                         type="button"
                         variant="ghost"
@@ -291,6 +359,30 @@ export function ActividadesTab({
         onClose={() => setEditing(null)}
         onSaved={() => router.refresh()}
       />
+      <Dialog open={modernEditing !== null} onOpenChange={(open) => { if (!open) setModernEditing(null) }}>
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Configurar actividad N°{modernEditing?.n}</DialogTitle>
+            <DialogDescription>Los cambios actualizan la definición futura y conservan las ejecuciones ya registradas.</DialogDescription>
+          </DialogHeader>
+          {modernEditing && (
+            <PdtpActivityCreator
+              mode="edit"
+              programId={programId}
+              responsibleCatalog={responsibleCatalog}
+              catalogActivities={catalogActivities}
+              programYear={programYear}
+              programPeriodStart={periodStart}
+              programPeriodEnd={periodEnd}
+              connectors={connectors}
+              instruments={instruments}
+              initialActivity={modernInitialValue(modernEditing)}
+              onSaved={() => { setModernEditing(null); onSaved?.() }}
+              onCancel={() => setModernEditing(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
       <BatchEditActivitiesDialog
         open={batchOpen}
         onOpenChange={setBatchOpen}
@@ -467,6 +559,19 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
     }
   }
 
+  // Las actividades nuevas tienen una definición civil/ISO en
+  // `scheduleDefinition`; este diálogo histórico sólo entiende la grilla de
+  // cuatro semanas. No debe enviar una recurrencia legacy encima de esa
+  // definición (en particular, tampoco `dueDays=5` sobre una actividad que
+  // usa horas), porque dejaría dos fuentes de verdad o violaría el CHECK de
+  // días/horas. La edición textual sigue disponible y la programación se
+  // conserva intacta hasta que se abra el creador guiado correspondiente.
+  const modernSchedule = Boolean(
+    activity
+    && activity.scheduleDefinition
+    && (activity.scheduleDefinition as PdtpScheduleDefinition).kind !== "legacy_grid",
+  )
+
   const nextRule: PdtpRecurrenceRule | null = scheduleMode === "scheduled"
     ? { frequency, interval, plannedQuantity, weekOfMonth, ...(frequency === "custom" ? { months } : {}) }
     : null
@@ -507,12 +612,14 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
         activity: activityText,
         program: executionGuidance,
         notes,
-        scheduleMode,
-        scheduleClassificationStatus: "confirmed",
-        recurrenceRule: nextRule,
-        triggerDescription: scheduleMode === "triggered" ? triggerDescription : null,
-        dueDays: scheduleMode === "scheduled" ? null : dueDays,
-        ...(replaceConfirmed ? { scheduleReplaceConfirmed: true } : {}),
+        ...(modernSchedule ? {} : {
+          scheduleMode,
+          scheduleClassificationStatus: "confirmed" as const,
+          recurrenceRule: nextRule,
+          triggerDescription: scheduleMode === "triggered" ? triggerDescription : null,
+          dueDays: scheduleMode === "scheduled" ? null : dueDays,
+          ...(replaceConfirmed ? { scheduleReplaceConfirmed: true } : {}),
+        }),
       })
       if (!result.ok) {
         setError(result.message ?? "Error al guardar.")
@@ -538,6 +645,12 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
           <Field label="Guía de ejecución" htmlFor="edit-execution-guidance">
             <Textarea id="edit-execution-guidance" value={executionGuidance} onChange={(e) => setExecutionGuidance(e.target.value)} rows={3} maxLength={2000} />
           </Field>
+          {modernSchedule ? (
+            <Callout tone="info" className="text-xs">
+              Esta actividad usa la programación nueva (fecha, recurrencia o evento) y conserva su configuración,
+              instrumento, evidencia y recordatorios. El editor histórico no la reemplaza por la grilla de cuatro semanas.
+            </Callout>
+          ) : (<>
           <Field label="Cuándo se realiza" htmlFor="edit-schedule-mode">
             <Select value={scheduleMode} onValueChange={(value) => setScheduleMode(value as typeof scheduleMode)}>
               <SelectTrigger id="edit-schedule-mode"><SelectValue /></SelectTrigger>
@@ -603,10 +716,10 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
             nextRule={nextRule}
           />}
           {wouldReplaceManualSchedule && (
-            <div className="rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">
+            <Callout tone="warning" className="text-xs">
               <p>
-                Esta actividad tiene {currentCells.length} semana(s) planificadas que no vienen de esta frecuencia.
-                Guardar las reemplaza: {scheduleDiff.removedCells.length} semana(s) se eliminan y la cantidad planificada
+                Esta actividad tiene {countOf(currentCells.length, "semana planificada", "semanas planificadas")} que no vienen de esta frecuencia.
+                Guardar las reemplaza: {countOf(scheduleDiff.removedCells.length, "semana", "semanas")} {scheduleDiff.removedCells.length === 1 ? "se elimina" : "se eliminan"} y la cantidad planificada
                 pasa de {scheduleDiff.currentPlannedTotal} a {scheduleDiff.nextPlannedTotal}.
               </p>
               <div className="mt-2">
@@ -616,8 +729,9 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
                   onChange={(event) => setReplaceConfirmed(event.target.checked)}
                 />
               </div>
-            </div>
+            </Callout>
           )}
+          </>)}
           <Field label="Notas" htmlFor="edit-notes">
             <Textarea id="edit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
           </Field>
@@ -665,10 +779,10 @@ function RecurrenceImpactPreview({
     horizon,
   )
   return (
-    <p className="rounded-lg border border-[var(--color-info-line)] bg-[var(--color-info-tint)] px-3 py-2 text-xs text-[var(--color-info-ink)]">
+    <Callout tone="info" className="text-xs">
       {changed
-        ? `Impacto antes de guardar: pasará de ${currentCount} a ${nextCount} obligación(es) calendarizadas; las ejecuciones existentes no se modifican.`
-        : `${nextCount} obligación(es) calendarizadas; no hay cambio de recurrencia pendiente.`}
-    </p>
+        ? `Impacto antes de guardar: pasará de ${currentCount} a ${countOf(nextCount, "obligación calendarizada", "obligaciones calendarizadas")}; las ejecuciones existentes no se modifican.`
+        : `${countOf(nextCount, "obligación calendarizada", "obligaciones calendarizadas")}; no hay cambio de recurrencia pendiente.`}
+    </Callout>
   )
 }

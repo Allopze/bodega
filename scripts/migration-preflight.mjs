@@ -44,7 +44,7 @@ export function assertMigrationPreflightReport(report) {
   }
   if (report.pdtp.legacyObjectiveLinks > 0 || report.pdtp.duplicateYears > 0) {
     blockers.push(
-      `PDTP legacyObjectiveLinks=${report.pdtp.legacyObjectiveLinks} duplicateYears=${report.pdtp.duplicateYears}`,
+      `PDTP legacyObjectiveLinks=${report.pdtp.legacyObjectiveLinks} duplicateYearVersions=${report.pdtp.duplicateYears}`,
     )
   }
   // LEGAL-04: el índice único parcial sobre (requisito, faena) con proceso nulo
@@ -222,10 +222,19 @@ export async function inspectMigrationPreconditions(sql) {
   }
 
   if (await relationExists(sql, "pdtp_programs")) {
+    // A year may legitimately have several versions: the active version and
+    // its draft/review successor coexist during a controlled revision. The
+    // schema identity is (year, version), so only duplicate rows for that
+    // pair can make its unique index fail. Counting by year alone blocked the
+    // normal v1/v2 state and made every local migration unnecessarily
+    // unexecutable.
     report.pdtp.duplicateYears = await countUnsafe(sql, `
       select count(*)::int as total
       from (
-        select year from pdtp_programs group by year having count(*) > 1
+        select year, version
+        from pdtp_programs
+        group by year, version
+        having count(*) > 1
       ) duplicates
     `)
   } else {

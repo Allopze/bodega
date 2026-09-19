@@ -23,6 +23,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { ChartBar, ListChecks, Plus, ShieldCheck, WarningCircle } from "@phosphor-icons/react/dist/ssr"
+import { countOf } from "@/lib/utils"
 import { resolvePdtpYear, resolveSelectedWorksiteId } from "./pdtp-context"
 import { PdtpWorksitePicker, PdtpYearPicker } from "./pdtp-sheet-table-ui"
 import {
@@ -188,7 +189,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   // en 100%, así que este número es el que de verdad dice si algo quedó sin
   // tocar (tarea 1.4, no cambia la fórmula de `percent`).
   const zeroActivitiesThisMonth = currentMonthData?.zeroActivities ?? 0
-  const zeroActivitiesLabel = zeroActivitiesThisMonth === 1 ? "1 actividad en cero" : `${zeroActivitiesThisMonth} actividades en cero`
+  const zeroActivitiesLabel = countOf(zeroActivitiesThisMonth, "actividad en cero", "actividades en cero")
   // Sin faena elegida, `zeroActivitiesThisMonth` es la UNIÓN entre las faenas
   // autorizadas (`getPdtpComplianceIndicatorsForScope`): una actividad cuenta
   // una vez aunque esté en cero en varias faenas a la vez. Sin esta
@@ -215,7 +216,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             items={[
               { label: "Inicio", href: "/dashboard" },
               { label: "Prevención", href: "/prevencion" },
-              { label: "Programa de trabajo (PDTP)" },
+              { label: "Programa de trabajo" },
             ]}
           />
         }
@@ -371,7 +372,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             <KpiCard
               label="Acciones Pendientes"
               value={String(openActionsCount)}
-              detail={overdueActionsCount > 0 ? `${overdueActionsCount} acciones vencidas` : "Sin hallazgos vencidos"}
+              detail={overdueActionsCount > 0 ? countOf(overdueActionsCount, "acción vencida", "acciones vencidas") : "Sin hallazgos vencidos"}
               icon={
                 <WarningCircle
                   size={22}

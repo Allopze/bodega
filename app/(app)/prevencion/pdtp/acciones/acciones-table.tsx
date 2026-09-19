@@ -6,11 +6,13 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { DataTable } from "@/components/ui/data-table"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { MetaBadge } from "@/components/states/state-badge"
+import { PriorityBadge } from "@/components/ui/priority-badge"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
 import type { listActionsByProgram } from "@/lib/services/prevention-pdtp"
-import { PDTP_ACTION_STATUS_LABELS, pdtpActionStatusVariant } from "@/lib/prevention/pdtp"
+import { PDTP_ACTION_STATUS_LABELS, pdtpActionStatusVariant, pdtpPriorityPresentation } from "@/lib/prevention/pdtp"
+import { formatDateSafe } from "@/lib/utils"
 
 type ActionRow = Awaited<ReturnType<typeof listActionsByProgram>>[number]
 
@@ -113,7 +115,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
             <TableRow key={item.id}>
               <TableCell className="text-(--color-text-muted)">{item.n}</TableCell>
               <TableCell className="tabular-nums text-xs text-(--color-text-muted)">
-                {item.createdAt?.slice(0, 10) ?? "—"}
+                {formatDateSafe(item.createdAt)}
               </TableCell>
               <TableCell>
                 <Link
@@ -130,7 +132,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
               <TableCell className="text-xs text-(--color-text-muted)">{item.worksite}</TableCell>
               <TableCell>{item.responsable}</TableCell>
               <TableCell className="tabular-nums">{item.plazo}</TableCell>
-              <TableCell><MetaBadge meta={{ label: item.prioridad, variant: "outline" }} /></TableCell>
+              <TableCell><PriorityBadge {...pdtpPriorityPresentation(item.prioridad)} /></TableCell>
               <TableCell>
                 <MetaBadge meta={{ label: `${item.vencida ? "Vencida" : PDTP_ACTION_STATUS_LABELS[item.estado as keyof typeof PDTP_ACTION_STATUS_LABELS] ?? item.estado}`, variant: pdtpActionStatusVariant(item.estado, item.vencida) }} />
               </TableCell>
@@ -160,7 +162,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
                 <dd className="truncate text-right text-(--color-text)">{item.worksite}</dd>
               </dl>
               <div className="mt-2">
-                <MetaBadge meta={{ label: item.prioridad, variant: "outline" }} />
+                <PriorityBadge {...pdtpPriorityPresentation(item.prioridad)} />
               </div>
             </Link>
           )

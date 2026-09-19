@@ -30,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ChartBar, DotsThree, DownloadSimple, ListChecks, LockKey, PencilSimple } from "@phosphor-icons/react/dist/ssr"
+import { countOf, formatDateSafe } from "@/lib/utils"
 import { PdtpSheetTable } from "../pdtp-sheet-table"
 import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-sheet-table-ui"
 import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
@@ -173,7 +174,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
-            { label: "Programas PDTP", href: "/prevencion/pdtp" },
+            { label: "Programa de trabajo", href: "/prevencion/pdtp" },
             { label: program.title },
           ]} />
         }
@@ -334,7 +335,11 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         {indicators && <PdtpIndicatorsPanel data={indicators} integral={integral} asOf={renderedAt} worksiteId={selectedWorksiteId} />}
 
         <div className="flex flex-wrap items-center gap-3 border-y border-[var(--color-border)] py-3">
-          <PdtpSheetPicker current={sheetCode} options={sheetOptions} programId={programId} worksiteId={selectedWorksiteId} viewMode={viewMode} />
+          {sheetOptions.length > 0 ? (
+            <PdtpSheetPicker current={sheetCode} options={sheetOptions} programId={programId} worksiteId={selectedWorksiteId} viewMode={viewMode} />
+          ) : (
+            <span className="text-sm text-[var(--color-text-muted)]">Este programa aún no tiene hojas de actividades.</span>
+          )}
           {worksites.length > 1 && (
             <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={programId} viewMode={viewMode} allHref={`/prevencion/pdtp/actividades?programa=${programId}&anio=${program.year}&hoja=${sheetCode}&vista=${viewMode}`} />
           )}
@@ -423,7 +428,7 @@ async function PdtpDocumentMetadataSection({ programId, canReconcile }: { progra
       <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-[var(--color-text)] marker:hidden">
         Historia y referencias del documento importado
         <span className="ml-2 font-normal text-[var(--color-text-muted)]">
-          {metadata.history.length} declaración(es) · {metadata.roleLegend.length} código(s) de rol
+          {countOf(metadata.history.length, "declaración")} · {countOf(metadata.roleLegend.length, "código")} de rol
         </span>
       </summary>
       <div className="border-t border-[var(--color-border)] px-4 py-4">
@@ -483,7 +488,7 @@ async function PdtpChangeLogSection({ programId }: { programId: string }) {
       <div className="divide-y divide-[var(--color-border)]">
         {entries.map((entry) => (
           <div key={entry.id} className="flex items-start gap-3 px-4 py-2.5 text-xs">
-            <span className="mt-0.5 shrink-0 text-[var(--color-text-faint)]">{entry.changedAt.slice(0, 10)}</span>
+            <span className="mt-0.5 shrink-0 text-[var(--color-text-faint)]">{formatDateSafe(entry.changedAt)}</span>
             <span className="font-medium text-[var(--color-text-subtle)]">{entry.section}</span>
             <span className="text-[var(--color-text-muted)]">{entry.note}</span>
           </div>

@@ -14,6 +14,7 @@ import {
 } from "@/lib/services/prevention-hygiene"
 import { todayInChile } from "@/lib/utils"
 import { HygieneDashboard } from "./hygiene-dashboard"
+import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "Higiene y vigilancia" }
 
@@ -98,6 +99,7 @@ export default async function HigienePage() {
         today={todayInChile()}
         canManage={canManage}
       />
+      <PdtpScheduledActivityPanelServer connectorKey="hygiene" />
     </PageContainer>
   )
 }

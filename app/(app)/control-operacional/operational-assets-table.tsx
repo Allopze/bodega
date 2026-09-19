@@ -24,19 +24,31 @@ function statusVariant(label: string): Variant {
   return "neutral"
 }
 
-const COLUMNS = (canViewCosts: boolean) => [
-  { key: "code", label: "Código", sortable: true },
-  { key: "name", label: "Activo", sortable: true },
-  { key: "worksiteName", label: "Faena", sortable: true },
-  { key: "operationalStatusLabel", label: "Estado", sortable: true },
-  { key: "openMaintenanceCount", label: "OT abiertas", sortable: true, numeric: true },
-  { key: "inspectionCount", label: "Inspecciones", sortable: true, numeric: true },
-  { key: "downtimeHours", label: "Detención (h)", sortable: true, numeric: true },
-  ...(canViewCosts
-    ? [{ key: "maintenanceCost", label: "Costo mantenciones", sortable: true, numeric: true }]
-    : []),
-  { key: "_action", label: "", sortable: false, numeric: true },
-]
+const COLUMNS = (canViewCosts: boolean, canViewMaintenance: boolean, canViewInspections: boolean) => {
+  // El costo de mantención requiere ver las OT (`mantenciones:view`) además del
+  // permiso de costos; sin el primero la consulta no carga registros y la
+  // columna mostraría "$0" para todos los activos.
+  const showCost = canViewMaintenance && canViewCosts
+  return [
+    { key: "code", label: "Código", sortable: true },
+    { key: "name", label: "Activo", sortable: true },
+    { key: "worksiteName", label: "Faena", sortable: true },
+    { key: "operationalStatusLabel", label: "Estado", sortable: true },
+    ...(canViewMaintenance
+      ? [{ key: "openMaintenanceCount", label: "OT abiertas", sortable: true, numeric: true }]
+      : []),
+    ...(canViewInspections
+      ? [{ key: "inspectionCount", label: "Inspecciones", sortable: true, numeric: true }]
+      : []),
+    ...(canViewMaintenance
+      ? [{ key: "downtimeHours", label: "Detención (h)", sortable: true, numeric: true }]
+      : []),
+    ...(showCost
+      ? [{ key: "maintenanceCost", label: "Costo mantenciones", sortable: true, numeric: true }]
+      : []),
+    { key: "_action", label: "", sortable: false, numeric: true },
+  ]
+}
 
 const SEARCH_KEYS = ["code", "name", "worksiteName", "operationalStatusLabel"] as const
 
@@ -44,42 +56,53 @@ function assetHref(asset: OperationalAsset): string {
   return asset.kind === "vehicle" ? `/flota/${asset.id}` : `/admin/equipos/${asset.id}`
 }
 
-const renderMobileCard = (asset: OperationalAsset) => (
-  <article className="rounded-2xl border border-[var(--color-border)] bg-white p-4">
-    <div className="flex justify-between gap-3">
-      <div>
-        <p className="font-mono text-sm font-semibold">{asset.code}</p>
-        <p className="text-sm text-[var(--color-text-muted)]">{asset.name}</p>
-      </div>
-      <MetaBadge meta={{ label: asset.operationalStatusLabel, variant: statusVariant(asset.operationalStatusLabel) }} />
-    </div>
-    <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
-      <div>
-        <dt className="text-[var(--color-text-subtle)]">OT abiertas</dt>
-        <dd>{asset.openMaintenanceCount}</dd>
-      </div>
-      <div>
-        <dt className="text-[var(--color-text-subtle)]">Inspecciones</dt>
-        <dd>{asset.inspectionCount}</dd>
-      </div>
-      <div>
-        <dt className="text-[var(--color-text-subtle)]">Detención</dt>
-        <dd>{asset.downtimeHours.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h</dd>
-      </div>
-    </dl>
-    <Button asChild size="sm" variant="ghost" className="mt-3 w-full">
-      <Link href={assetHref(asset)}>Ver ficha</Link>
-    </Button>
-  </article>
-)
-
 export function OperationalAssetsTable({
   assets,
   canViewCosts,
+  canViewMaintenance,
+  canViewInspections,
 }: {
   assets: OperationalAsset[]
   canViewCosts: boolean
+  canViewMaintenance: boolean
+  canViewInspections: boolean
 }) {
+  const showCost = canViewMaintenance && canViewCosts
+
+  const renderMobileCard = (asset: OperationalAsset) => (
+    <article className="rounded-2xl border border-[var(--color-border)] bg-white p-4">
+      <div className="flex justify-between gap-3">
+        <div>
+          <p className="font-mono text-sm font-semibold">{asset.code}</p>
+          <p className="text-sm text-[var(--color-text-muted)]">{asset.name}</p>
+        </div>
+        <MetaBadge meta={{ label: asset.operationalStatusLabel, variant: statusVariant(asset.operationalStatusLabel) }} />
+      </div>
+      <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs">
+        {canViewMaintenance && (
+          <div>
+            <dt className="text-[var(--color-text-subtle)]">OT abiertas</dt>
+            <dd>{asset.openMaintenanceCount}</dd>
+          </div>
+        )}
+        {canViewInspections && (
+          <div>
+            <dt className="text-[var(--color-text-subtle)]">Inspecciones</dt>
+            <dd>{asset.inspectionCount}</dd>
+          </div>
+        )}
+        {canViewMaintenance && (
+          <div>
+            <dt className="text-[var(--color-text-subtle)]">Detención</dt>
+            <dd>{asset.downtimeHours.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h</dd>
+          </div>
+        )}
+      </dl>
+      <Button asChild size="sm" variant="ghost" className="mt-3 w-full">
+        <Link href={assetHref(asset)}>Ver ficha</Link>
+      </Button>
+    </article>
+  )
 
   const renderRow = (asset: OperationalAsset) => (
     <TableRow key={asset.key}>
@@ -94,12 +117,18 @@ export function OperationalAssetsTable({
       <TableCell>
         <MetaBadge meta={{ label: asset.operationalStatusLabel, variant: statusVariant(asset.operationalStatusLabel) }} />
       </TableCell>
-      <TableCell className="text-right font-mono">{asset.openMaintenanceCount}</TableCell>
-      <TableCell className="text-right font-mono">{asset.inspectionCount}</TableCell>
-      <TableCell className="text-right font-mono">
-        {asset.downtimeHours.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h
-      </TableCell>
-      {canViewCosts && (
+      {canViewMaintenance && (
+        <TableCell className="text-right font-mono">{asset.openMaintenanceCount}</TableCell>
+      )}
+      {canViewInspections && (
+        <TableCell className="text-right font-mono">{asset.inspectionCount}</TableCell>
+      )}
+      {canViewMaintenance && (
+        <TableCell className="text-right font-mono">
+          {asset.downtimeHours.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h
+        </TableCell>
+      )}
+      {showCost && (
         <TableCell className="text-right font-mono">
           {/*
            * B-05: los instrumentos de servicio no modelan costo. Pintar "$0"
@@ -122,7 +151,7 @@ export function OperationalAssetsTable({
   return (
     <DataTable
       caption="Activos operacionales"
-      columns={COLUMNS(canViewCosts)}
+      columns={COLUMNS(canViewCosts, canViewMaintenance, canViewInspections)}
       rows={assets}
       // M-06: el `searchKeys` apunta a la etiqueta humana del estado
       // (`operationalStatusLabel`) para que la búsqueda del TopBar encuentre

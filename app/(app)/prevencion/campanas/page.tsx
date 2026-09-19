@@ -9,6 +9,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { CampanasClient, type CampaignRow } from "./campanas-client"
 import { listCatalogActivities } from "@/lib/services/pdtp/catalog-activities"
 import { listPdtpAccreditationBindings } from "@/lib/services/pdtp/accreditation-bindings"
+import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = {
   title: "Campañas Preventivas | SGSST",
@@ -76,6 +77,7 @@ export default async function CampanasPage() {
         }))}
         catalogBindings={Object.fromEntries(campaignRows.map((campaign) => [campaign.id, bindings.filter((binding) => binding.sourceId === campaign.id && binding.eventType === "close" && binding.isActive).map((binding) => binding.catalogActivityId)]))}
       />
+      <PdtpScheduledActivityPanelServer connectorKey="campaigns" />
     </PageContainer>
   )
 }

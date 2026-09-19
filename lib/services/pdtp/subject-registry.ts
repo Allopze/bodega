@@ -40,6 +40,7 @@ import {
   workers,
 } from "@/db/schema"
 import { WORKER_CAPABILITY_CODE_PATTERN } from "@/lib/services/worker-positions/normalization"
+import { countOf } from "@/lib/utils"
 
 /** Las fuentes que `pdtp_activities.subject_source` admite (CHECK en la tabla). */
 export const PDTP_SUBJECT_SOURCES = [
@@ -302,7 +303,7 @@ async function resolveCapabilityRoster(
     capabilityCodes: codes,
     members,
     explanation: count > 0
-      ? `${count} trabajador(es) activo(s) de la faena cumplen al menos una capacidad configurada.`
+      ? `${countOf(count, "trabajador activo", "trabajadores activos")} de la faena ${count === 1 ? "cumple" : "cumplen"} al menos una capacidad configurada.`
       : "La faena no tiene trabajadores activos clasificados con las capacidades configuradas.",
   }
 }
@@ -337,7 +338,7 @@ export async function resolvePdtpSubjectRoster(
     count,
     capabilityCodes: [],
     members: [],
-    explanation: `${count} sujeto(s) resuelto(s) desde la fuente ${source}.`,
+    explanation: `${countOf(count, "sujeto resuelto", "sujetos resueltos")} desde la fuente ${source}.`,
   }
 }
 

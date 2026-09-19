@@ -14,6 +14,7 @@ import {
 import { assessMeetingCadence, isMandateExpired } from "@/lib/prevention/cphs"
 import { CommitteeList } from "./committee-list"
 import { todayInChile } from "@/lib/utils"
+import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "CPHS y gobernanza" }
 
@@ -102,6 +103,7 @@ export default async function CphsPage({
         canManage={canManage}
         canReview={canReview}
       />
+      <PdtpScheduledActivityPanelServer connectorKey="cphs" />
     </PageContainer>
   )
 }

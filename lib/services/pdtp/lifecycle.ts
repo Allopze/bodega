@@ -1,6 +1,8 @@
 import { and, desc, eq, isNull, ne } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpProgramWorksites, pdtpPrograms } from "@/db/schema"
+import { logger } from "@/lib/logger"
+import { countOf } from "@/lib/utils"
 import { addPdtpChangeLogEntry } from "./helpers"
 import { computePdtpProgramContentDigest, computePdtpProgramContentDigestForStoredVersion } from "./content-digest"
 import { assertPdtpFulfillmentCoverage, type PdtpCoverageScope, type PdtpFulfillmentCoverageIssue } from "./fulfillment"
@@ -10,6 +12,8 @@ import {
   ensureDefaultPdtpApprovalSteps,
   listPdtpApprovalProgress,
 } from "./approval-flow"
+import { materializePdtpScheduledInstances } from "./scheduled-instances"
+import { reconcilePdtpTriggerEvents } from "./trigger-events"
 
 /**
  * Qué clasificaciones de la compuerta 81/81 frenan el ciclo de vida, con el
@@ -78,7 +82,7 @@ function fulfillmentCoverageBlockers(issues: PdtpFulfillmentCoverageIssue[]): st
   const messages: string[] = []
   for (const [status, numbers] of groupCoverageIssuesByStatus(issues)) {
     if (!pdtpCoverageIssueBlocksLifecycle(status)) continue
-    messages.push(`${numbers.length} actividad(es) ${BLOCKING_COVERAGE_LABELS[status]}: N°${numbers.join(", N°")}.`)
+    messages.push(`${countOf(numbers.length, "actividad", "actividades")} ${BLOCKING_COVERAGE_LABELS[status]}: N°${numbers.join(", N°")}.`)
   }
   return messages
 }
@@ -125,8 +129,9 @@ export function pdtpSubmitReviewBlockers(activities: PdtpActivityRow[]): string[
   const blockers: string[] = []
   const unresolvedScheduleClassifications = active.filter((activity) => activity.scheduleClassificationStatus === "needs_review")
   if (unresolvedScheduleClassifications.length > 0) {
+    const n = unresolvedScheduleClassifications.length
     blockers.push(
-      `${unresolvedScheduleClassifications.length} actividad(es) aún requieren confirmar cuándo se realizan. ` +
+      `${countOf(n, "actividad", "actividades")} aún ${n === 1 ? "requiere" : "requieren"} confirmar cuándo ${n === 1 ? "se realiza" : "se realizan"}. ` +
       "Clasifícalas como periódicas, a demanda o por evento antes de enviar el programa a revisión.",
     )
   }
@@ -138,8 +143,9 @@ export function pdtpSubmitReviewBlockers(activities: PdtpActivityRow[]): string[
       || activity.indicatorMode === "planned_vs_completed"
   })
   if (incompleteDemandActivities.length > 0) {
+    const n = incompleteDemandActivities.length
     blockers.push(
-      `${incompleteDemandActivities.length} actividad(es) a demanda o por evento no tienen SLA, evidencia, disparador o regla de indicador completos.`,
+      `${countOf(n, "actividad", "actividades")} a demanda o por evento ${n === 1 ? "no tiene" : "no tienen"} SLA, evidencia, disparador o regla de indicador completos.`,
     )
   }
   return blockers
@@ -342,7 +348,7 @@ export async function rejectPdtpProgram(programId: string, userId: string, reaso
 }
 
 export async function activatePdtpProgram(programId: string, userId: string) {
-  return db.transaction(async (tx) => {
+  const activated = await db.transaction(async (tx) => {
     const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
     if (!program) throw new Error("Programa PDTP no encontrado.")
     if (program.status === "active" && program.activatedByUserId === userId && program.contentDigest) {
@@ -420,6 +426,20 @@ export async function activatePdtpProgram(programId: string, userId: string) {
     )
     return updated
   })
+
+  // La firma/activación y la materialización viven en pasos separados: la
+  // primera transacción no debe mantener una conexión abierta mientras se
+  // expanden recurrencias por faena. Ambas operaciones son idempotentes; si el
+  // proceso cae después de activar, el reconciliador puede retomarlas sin
+  // duplicar ocurrencias. No se revierte una activación válida por un fallo de
+  // infraestructura posterior, pero sí queda una señal operativa explícita.
+  try {
+    await materializePdtpScheduledInstances({ programId })
+    await reconcilePdtpTriggerEvents({ limit: 200 })
+  } catch (error) {
+    logger.error({ error, programId }, "[pdtp-lifecycle] No se pudieron materializar o reconciliar las instancias nuevas tras activar.")
+  }
+  return activated
 }
 
 export async function reopenRejectedPdtpProgram(programId: string, userId: string, rawReason: string) {

@@ -10,6 +10,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { getIncidentDashboardCounts, listIncidentWorksites, listPreventionIncidents } from "@/lib/services/prevention-incidents"
 import { IncidentList } from "./incident-list"
 import { PublicIncidentReportsPanel } from "./public-reports-panel"
+import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "Incidentes y accidentes" }
 
@@ -66,6 +67,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
       {/* INC-001: lo que llega por el canal público del trabajador, donde se tría. */}
       {canReport && <PublicIncidentReportsPanel scope={access.scope} />}
       <IncidentList incidents={incidents} worksites={worksites} counts={counts} canReport={canReport} indicatorContext={indicatorLabel ? `Fuente del indicador de ${indicatorLabel} · ${effectiveMonthFrom ?? "—"}-${effectiveMonthTo ?? "—"}/${query.year ?? ""}` : undefined} />
+      <PdtpScheduledActivityPanelServer connectorKey="incidents" />
     </PageContainer>
   )
 }

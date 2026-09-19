@@ -30,7 +30,7 @@ vi.mock("@/db", () => ({
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 
 import { getOperationalWorkQueue } from "@/lib/services/operational-work-queue"
-import { chileDateParts } from "@/lib/utils"
+import { chileDateParts, todayInChile } from "@/lib/utils"
 
 describe("cola operacional — actividades programadas del PDTP", () => {
   const now = "2026-08-13T12:00:00.000Z"
@@ -42,6 +42,8 @@ describe("cola operacional — actividades programadas del PDTP", () => {
   const worksiteA = "ws-pdtpq-a"
   const worksiteB = "ws-pdtpq-b"
   const programId = "prog-pdtpq"
+  const scheduledActivityId = "act-pdtpq-scheduled-epp"
+  const scheduledInstanceId = "inst-pdtpq-epp"
 
   /** El mes en curso y uno anterior, para distinguir pendiente de vencida.
    *  En enero no hay mes anterior dentro del año: el caso "vencida" se apoya
@@ -88,6 +90,19 @@ describe("cola operacional — actividades programadas del PDTP", () => {
       { slug: "jt", displayName: "Jefe de terreno PDTPQ", roleName: "jefe_terreno", kind: "rbac_role", isActive: true },
       { slug: "prf", displayName: "Prevencionista PDTPQ", roleName: "prevencionista_faena", kind: "rbac_role", isActive: true },
     ])
+    await inMemoryDb.insert(schema.pdtpCatalogActivities).values({
+      id: "cat-pdtpq-epp", code: "PDT-TEST-EPP", status: "active", currentRevision: 1,
+      createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.pdtpCatalogActivityRevisions).values({
+      id: "cat-pdtpq-epp-r1", catalogActivityId: "cat-pdtpq-epp", revision: 1,
+      title: "Entrega programada de EPP", description: "Entrega programada de EPP",
+      executionGuidance: "Registrar y evidenciar la entrega.", changeNote: "Fixture", createdAt: now,
+    })
+    await inMemoryDb.insert(schema.pdtpAccreditationBindings).values({
+      id: "binding-pdtpq-epp", sourceType: "epp", sourceId: "instrument-1", eventType: "execute",
+      catalogActivityId: "cat-pdtpq-epp", isActive: true, createdAt: now, updatedAt: now,
+    })
     await inMemoryDb.insert(schema.pdtpPrograms).values({
       id: programId, year, version: 1, title: "Programa PDTPQ", status: "active", appliesToAllWorksites: true,
       periodStart: `${year}-01-01`, periodEnd: `${year}-12-31`,
@@ -118,6 +133,13 @@ describe("cola operacional — actividades programadas del PDTP", () => {
         responsibleSlugs: ["jt"], responsibleDisplay: "Jefe de terreno PDTPQ",
         scheduleMode: "on_demand", sourceSheetRow: 3, createdAt: now, updatedAt: now,
       },
+      {
+        id: scheduledActivityId, programId, n: 90, displayOrder: 4, status: "active",
+        activity: "Entrega programada de EPP", program: "Registrar entrega", responsibleSlugs: ["prf"],
+        responsibleDisplay: "Prevencionista PDTPQ", scheduleMode: "scheduled", sourceSheetRow: 4,
+        scheduleDefinition: { version: 1, kind: "one_time", date: todayInChile() },
+        createdAt: now, updatedAt: now,
+      },
     ])
     await inMemoryDb.insert(schema.pdtpActivitySchedule).values([
       { id: "sch-jt", activityId: "act-pdtpq-jt", year, month, week: 1, plannedQuantity: 1, sourceColumn: "test" },
@@ -126,6 +148,17 @@ describe("cola operacional — actividades programadas del PDTP", () => {
       // casos reales, no el plan.
       { id: "sch-od", activityId: "act-pdtpq-ondemand", year, month, week: 1, plannedQuantity: 1, sourceColumn: "test" },
     ])
+    await inMemoryDb.insert(schema.pdtpActivityExecutionConfigs).values({
+      id: "cfg-pdtpq-epp", activityId: scheduledActivityId, destinationConnectorKey: "epp",
+      accreditationBindingId: "binding-pdtpq-epp", completionPolicy: "source_completed", evidenceRequired: false, acceptedEvidenceKinds: [],
+      createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.pdtpScheduledInstances).values({
+      id: scheduledInstanceId, programId, activityId: scheduledActivityId, worksiteId: worksiteA,
+      scheduledFor: todayInChile(), isoWeekYear: year, isoWeek: 38, plannedQuantity: 1,
+      status: "pending", idempotencyKey: `pdtp-scheduled:${scheduledActivityId}:${worksiteA}:${todayInChile()}`,
+      sourceMetadataJson: {}, createdAt: now, updatedAt: now,
+    })
   })
 
   afterAll(async () => { await pg.close() })
@@ -144,6 +177,14 @@ describe("cola operacional — actividades programadas del PDTP", () => {
     const items = await pdtpItems(makeSession(["prevencionista_faena"]))
     expect(items.every((item) => item.sourceId.startsWith("act-pdtpq-prf:"))).toBe(true)
     expect(items.length).toBeGreaterThan(0)
+  })
+
+  it("construye el destino de una instancia desde el conector registrado", async () => {
+    const session = makeSession(["prevencionista_faena"], [worksiteA])
+    session.user.permissions = [...session.user.permissions, "prevention:epp:manage"]
+    const items = (await getOperationalWorkQueue(session, { module: "pdtp" })).items
+    const scheduled = items.find((item) => item.sourceType === "pdtp_scheduled_instance")
+    expect(scheduled?.href).toBe(`/prevencion/epp-preventivo?faena=${worksiteA}&programa=${programId}&actividad=${scheduledActivityId}&instancia=${scheduledInstanceId}&instrumento=binding-pdtpq-epp`)
   })
 
   it("no le muestra nada a un rol que no es responsable de ninguna actividad", async () => {

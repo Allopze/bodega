@@ -16,7 +16,7 @@ describe("WeeklyScheduledSection — actividades programadas de la semana", () =
 
     expect(screen.getByText("Programadas esta semana")).toBeInTheDocument()
     expect(screen.getByText("Faena A")).toBeInTheDocument()
-    expect(screen.getByText("2 actividad(es) sin ejecutar esta semana")).toBeInTheDocument()
+    expect(screen.getByText("2 actividades sin ejecutar esta semana")).toBeInTheDocument()
   })
 
   it("shows an empty state when nothing is scheduled without execution", () => {

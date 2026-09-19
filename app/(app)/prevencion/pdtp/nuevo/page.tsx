@@ -32,7 +32,7 @@ export default async function PdtpCreateProgramPage() {
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
-            { label: "Programas PDTP", href: "/prevencion/pdtp" },
+            { label: "Programa de trabajo", href: "/prevencion/pdtp" },
             { label: "Nuevo" },
           ]} />
         }

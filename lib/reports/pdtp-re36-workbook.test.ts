@@ -202,6 +202,48 @@ function buildFixtureDocument(): PdtpRe36Document {
 }
 
 describe("renderPdtpRe36Workbook", () => {
+  it("agrega una hoja Calendario ISO para las instancias nuevas", () => {
+    const document = buildFixtureDocument() as PdtpRe36Document & {
+      isoCalendar: Array<Record<string, unknown>>
+    }
+    document.isoCalendar = [{
+      isoWeekYear: 2026,
+      isoWeek: 38,
+      scheduledFor: "2026-09-17",
+      activity: "Inspección de extintores",
+      responsible: "Prevencionista",
+      destination: "Inspecciones",
+      instrument: "Checklist extintores",
+      plannedQuantity: 1,
+      status: "Pendiente",
+      completedAt: null,
+      result: "—",
+    }]
+
+    const workbook = renderPdtpRe36Workbook(document)
+    const ws = workbook.getWorksheet("Calendario ISO")
+
+    expect(ws).toBeDefined()
+    expect(ws!.getRow(1).values).toEqual([
+      undefined,
+      "Año ISO",
+      "Semana ISO",
+      "Fecha prevista",
+      "Actividad",
+      "Responsable",
+      "Destino",
+      "Instrumento",
+      "Cantidad",
+      "Estado",
+      "Fecha real",
+      "Resultado / evidencia",
+    ])
+    expect(ws!.getCell("A2").value).toBe(2026)
+    expect(ws!.getCell("B2").value).toBe(38)
+    expect(ws!.getCell("D2").value).toBe("Inspección de extintores")
+    expect(ws!.views[0]).toMatchObject({ state: "frozen", ySplit: 1 })
+  })
+
   it("la banda OBJETIVO fusiona las filas de sus actividades", () => {
     const workbook = renderPdtpRe36Workbook(buildFixtureDocument())
     const ws = workbook.getWorksheet("PDTP GENERAL")!

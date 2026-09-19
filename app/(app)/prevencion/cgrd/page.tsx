@@ -15,6 +15,7 @@ import {
 } from "@/lib/services/prevention-cgrd"
 import type { CgrdAccess } from "@/lib/services/prevention-cgrd-access"
 import { CgrdWorkbench } from "./cgrd-workbench"
+import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "CGRD" }
 
@@ -81,6 +82,7 @@ export default async function CgrdPage({
       canEditMatrix={can(session, "prevention:cgrd:matrix:edit")}
       canPublishMatrix={can(session, "prevention:cgrd:matrix:publish")}
       canManageMeetings={can(session, "prevention:cgrd:meeting:manage")}
+      scheduledPanel={<PdtpScheduledActivityPanelServer connectorKey="cgrd" />}
     />
   )
 }

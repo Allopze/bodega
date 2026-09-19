@@ -1,5 +1,5 @@
 import { CheckCircle, Target, ChartBar } from "@phosphor-icons/react/dist/ssr"
-import { cn, MONTH_LABELS, QUARTER_LABELS } from "@/lib/utils"
+import { cn, formatDateTime, MONTH_LABELS, QUARTER_LABELS } from "@/lib/utils"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { PersistedDetails } from "./persisted-details"
 import { buildPdtpActivitiesHref } from "./pdtp-context"
@@ -27,12 +27,6 @@ function ComplianceBar({ value, target }: { value: number | null; target: number
       />
     </div>
   )
-}
-
-const DATE_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Santiago" })
-
-function fmtDateTime(iso: string): string {
-  return DATE_TIME_FORMAT.format(new Date(iso))
 }
 
 export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId }: {
@@ -72,8 +66,8 @@ export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId }: {
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)]">
         <p>El cumplimiento formal considera únicamente ejecuciones aprobadas.</p>
         <p>
-          {asOf && <span>Datos al {fmtDateTime(asOf)}</span>}
-          {lastExecutionUpdatedAt && <span className="ml-2">· Última ejecución aprobada: {fmtDateTime(lastExecutionUpdatedAt)}</span>}
+          {asOf && <span>Datos al {formatDateTime(asOf)}</span>}
+          {lastExecutionUpdatedAt && <span className="ml-2">· Última ejecución aprobada: {formatDateTime(lastExecutionUpdatedAt)}</span>}
         </p>
       </div>
 

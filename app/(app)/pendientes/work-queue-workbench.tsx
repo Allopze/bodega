@@ -15,6 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn, formatDate, formatDateTime } from "@/lib/utils"
 import type { OperationalQueueResult, OperationalWorkItem } from "@/lib/services/operational-work-queue"
 import { Table, TableBody, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
+import { toast } from "@/lib/toast"
+import { startPdtpScheduledInstanceAction } from "@/app/(app)/prevencion/pdtp/actions/scheduled-instances"
 
 const QUICK_FILTERS = [
   ["all", "Todas"], ["critical", "Críticas"], ["overdue", "Vencidas"], ["today", "Hoy"],
@@ -342,9 +344,9 @@ function QueueCard({ item, today }: { item: OperationalWorkItem; today: string }
   return (
     <li className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
       <div className="flex items-start justify-between gap-2">
-        <Link href={item.href} className="min-w-0 text-sm font-medium text-[var(--color-text)] hover:underline">
+        <QueueItemLink item={item} className="min-w-0 text-sm font-medium text-[var(--color-text)] hover:underline">
           {item.title}
-        </Link>
+        </QueueItemLink>
         <PriorityBadge priority={item.priority} />
       </div>
       <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
@@ -366,7 +368,7 @@ function QueueCard({ item, today }: { item: OperationalWorkItem; today: string }
       </div>
       <div className="mt-3 flex items-center justify-between gap-2">
         <Button asChild size="sm" variant="secondary">
-          <Link href={item.href}>{item.ctaLabel}<ArrowRight size={14} /></Link>
+          <QueueItemLink item={item}>{item.ctaLabel}<ArrowRight size={14} /></QueueItemLink>
         </Button>
       </div>
     </li>
@@ -379,7 +381,7 @@ function QueueRow({ item, today }: { item: OperationalWorkItem; today: string })
     <tr className="group border-t border-[var(--color-border)] align-middle hover:bg-[var(--color-surface-2)]">
       <td className="px-3 py-2.5"><PriorityBadge priority={item.priority} /></td>
       <td className="px-3 py-2.5">
-        <Link href={item.href} className="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-ink)] hover:underline">{item.title}</Link>
+        <QueueItemLink item={item} className="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-ink)] hover:underline">{item.title}</QueueItemLink>
         <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">{[item.code, item.subtitle].filter(Boolean).join(" · ")}</p>
       </td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{OPERATIONAL_MODULE_LABELS[item.module]}</td>
@@ -405,16 +407,56 @@ function QueueRow({ item, today }: { item: OperationalWorkItem; today: string })
             accesible estable, así que el lector de pantalla no pierde nada. */}
         <div className="flex items-center justify-end gap-1">
           <Button asChild size="sm" variant="ghost">
-            <Link href={item.href} aria-label={item.ctaLabel}>
+            <QueueItemLink item={item} aria-label={item.ctaLabel}>
               <span aria-hidden className="opacity-0 transition-opacity duration-[var(--duration-fast)] group-hover:opacity-100 group-focus-within:opacity-100">{item.ctaLabel}</span>
               <ArrowRight size={14} />
-            </Link>
+            </QueueItemLink>
           </Button>
         </div>
       </td>
     </tr>
   )
 }
+
+/**
+ * Las instancias nuevas pasan por la misma reserva idempotente tanto desde
+ * `/pendientes` como desde cualquier enlace directo. El href sigue siendo
+ * válido sin JavaScript, pero con la aplicación activa la reserva cambia la
+ * instancia a `in_progress` antes de abrir el formulario nativo del conector.
+ */
+type QueueItemLinkProps = Omit<React.ComponentProps<typeof Link>, "href"> & { item: OperationalWorkItem }
+
+const QueueItemLink = React.forwardRef<HTMLAnchorElement, QueueItemLinkProps>(function QueueItemLink({ item, children, onClick, ...props }, ref) {
+  const router = useRouter()
+  const [pending, setPending] = React.useState(false)
+  const scheduled = item.sourceType === "pdtp_scheduled_instance"
+
+  async function handleClick(event: React.MouseEvent<HTMLAnchorElement>) {
+    onClick?.(event)
+    if (event.defaultPrevented || !scheduled || pending || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    setPending(true)
+    try {
+      const parsedHref = new URL(item.href, window.location.origin)
+      const result = await startPdtpScheduledInstanceAction({
+        instanceId: item.sourceId,
+        instrumentId: parsedHref.searchParams.get("instrumento"),
+      })
+      if (!result.ok) {
+        toast.error(result.message ?? "No se pudo abrir la actividad programada.")
+        return
+      }
+      const target = typeof result.data?.href === "string" ? result.data.href : item.href
+      router.push(target)
+    } catch {
+      toast.error("No se pudo abrir la actividad programada.")
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return <Link {...props} ref={ref} href={item.href} aria-busy={pending || undefined} onClick={handleClick}>{children}</Link>
+})
 
 /** Cuánto lleva la tarea esperando, para la línea secundaria del vencimiento. */
 function ageLabel(value: string) {

@@ -277,12 +277,12 @@ describe("Program lifecycle actions", () => {
 
   it("muestra el motivo de negocio por el que no se puede enviar a revisión", async () => {
     mockSubmitPdtpProgramForReview.mockRejectedValueOnce(new Error(
-      "22 actividad(es) aún requieren confirmar cuándo se realizan. "
+      "22 actividades aún requieren confirmar cuándo se realizan. "
       + "Clasifícalas como periódicas, a demanda o por evento antes de enviar el programa a revisión.",
     ))
     const res = await submitPdtpProgramForReviewAction("prog-1")
     expect(res.ok).toBe(false)
-    expect(res.message).toContain("22 actividad(es) aún requieren confirmar cuándo se realizan")
+    expect(res.message).toContain("22 actividades aún requieren confirmar cuándo se realizan")
   })
 })
 

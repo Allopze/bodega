@@ -16,11 +16,13 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
 import { MetaBadge } from "@/components/states/state-badge"
 import { KpiCard } from "@/components/ui/kpi-card"
-import { can, canAny, requireAuth } from "@/lib/auth/can"
+import { can, requireAuth } from "@/lib/auth/can"
 import {
   getOperationalControlHub,
   resolveOperationalControlPeriod,
+  type OperationalControlPeriod,
 } from "@/lib/services/operational-control"
+import { canViewOperationalControl } from "@/lib/operational-control/capabilities"
 import {
   addDaysToPlainDate,
   formatCLP,
@@ -32,18 +34,6 @@ import { OperationalAssetsTable } from "./operational-assets-table"
 import { OperationalExportButton } from "./operational-export-button"
 
 export const metadata: Metadata = { title: "Control operacional" }
-
-/**
- * Trinidad de permisos que dan acceso al centro. Coincide con la guardia de
- * `getOperationalControlHub` (lib/services/operational-control.ts). P-01:
- * antes el page sólo pedía `flota:view`, dejando afuera a usuarios que sólo
- * tenían `mantenciones:view` o `prevention:inspections:view`.
- */
-const PERMISSIONS_FOR_PAGE = [
-  "flota:view",
-  "mantenciones:view",
-  "prevention:inspections:view",
-] as const
 
 function formatKpi(value: number | null, suffix = "", precision = 1): string {
   if (value == null) return "Sin datos"
@@ -67,13 +57,20 @@ export default async function OperationalControlPage({
   } catch {
     redirect("/forbidden")
   }
-  if (!canAny(session, ...PERMISSIONS_FOR_PAGE)) redirect("/forbidden")
+  if (!canViewOperationalControl(session)) redirect("/forbidden")
 
   const sp = await searchParams
-  const period = resolveOperationalControlPeriod({
-    from: typeof sp.desde === "string" ? sp.desde : undefined,
-    to: typeof sp.hasta === "string" ? sp.hasta : undefined,
-  })
+  // Un rango invertido (desde > hasta) rompe `resolveOperationalControlPeriod`;
+  // en lugar de caer en la página de error, se vuelve al período por defecto.
+  let period: OperationalControlPeriod
+  try {
+    period = resolveOperationalControlPeriod({
+      from: typeof sp.desde === "string" ? sp.desde : undefined,
+      to: typeof sp.hasta === "string" ? sp.hasta : undefined,
+    })
+  } catch {
+    redirect("/control-operacional")
+  }
   const data = await getOperationalControlHub(session, period)
 
   // B-04: la métrica de backlog en la tira editorial SÓLO cuenta OT de
@@ -183,22 +180,24 @@ export default async function OperationalControlPage({
         />
       </div>
 
-      <div
-        className="mb-4 flex flex-wrap items-center gap-x-8 gap-y-2 rounded-xl border border-[var(--color-border)] bg-white px-5 py-3 text-sm"
-        aria-label="Resumen editorial de operación"
-      >
-        <span>
-          <strong>{formatKpi(data.metrics.downtimeHours, " h", 0)}</strong> de detención
-        </span>
-        <span>
-          <strong>{data.metrics.backlog.toLocaleString("es-CL")}</strong> OT de vehículos abiertas
-        </span>
-        {data.permissions.canViewCosts && (
+      {data.permissions.canViewMaintenance && (
+        <div
+          className="mb-4 flex flex-wrap items-center gap-x-8 gap-y-2 rounded-xl border border-[var(--color-border)] bg-white px-5 py-3 text-sm"
+          aria-label="Resumen editorial de operación"
+        >
           <span>
-            <strong>{formatCLP(data.metrics.maintenanceCost ?? 0)}</strong> en mantenciones
+            <strong>{formatKpi(data.metrics.downtimeHours, " h", 0)}</strong> de detención
           </span>
-        )}
-      </div>
+          <span>
+            <strong>{data.metrics.backlog.toLocaleString("es-CL")}</strong> OT de vehículos abiertas
+          </span>
+          {data.permissions.canViewCosts && (
+            <span>
+              <strong>{formatCLP(data.metrics.maintenanceCost ?? 0)}</strong> en mantenciones
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Card>
@@ -206,7 +205,12 @@ export default async function OperationalControlPage({
             <CardTitle as="h2">Activos y trabajo del período</CardTitle>
           </CardHeader>
           <CardContent>
-            <OperationalAssetsTable assets={data.assets} canViewCosts={data.permissions.canViewCosts} />
+            <OperationalAssetsTable
+              assets={data.assets}
+              canViewCosts={data.permissions.canViewCosts}
+              canViewMaintenance={data.permissions.canViewMaintenance}
+              canViewInspections={data.permissions.canViewInspections}
+            />
           </CardContent>
         </Card>
         <Card>
@@ -231,9 +235,9 @@ export default async function OperationalControlPage({
                       ? `Última corrida: ${formatDateTime(source.lastRunAt)}`
                       : "Sin ejecución visible"}
                   </p>
-                  {source.lastBatchId && can(session, "combustibles:view") && (
+                  {source.lastBatchId && can(session, "combustibles:import") && (
                     <Button asChild variant="link" size="sm" className="mt-1 h-auto p-0 text-xs">
-                      <Link href="/combustibles/importar">
+                      <Link href={`/combustibles/importar/${source.lastBatchId}`}>
                         Ver detalle
                         <ArrowRight size={12} className="ml-1" />
                       </Link>

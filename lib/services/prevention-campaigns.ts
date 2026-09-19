@@ -5,6 +5,7 @@ import { preventionCampaigns } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
+import { recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
 import { replacePdtpAccreditationBindings, resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
 import { checkEvidence, evidencePathSchema } from "@/lib/validation/evidence-contract"
 
@@ -171,6 +172,16 @@ export async function closeCampaign(input: unknown, access: CampaignAccess) {
     .returning()
 
   if (!updated) throw new Error("No se pudo marcar la campaña como hecha.")
+
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "campaigns",
+    eventKey: "campaign_closed",
+    sourceType: "campana",
+    sourceId: campaign.id,
+    worksiteId: campaign.worksiteId,
+    occurredAt: occurredAtFromChileDate(data.heldOn),
+    payload: { campaignId: campaign.id, completedByUserId: access.userId },
+  })
 
   // Auto-acreditación PDTP por la capa durable. Sin actividades declaradas en
   // la campaña es no-op: no inventamos un número por defecto para no acreditar

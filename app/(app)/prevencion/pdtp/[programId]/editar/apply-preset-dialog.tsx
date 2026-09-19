@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Callout } from "@/components/ui/callout"
 import {
   Dialog,
   DialogContent,
@@ -399,9 +400,9 @@ export function ApplyPresetDialog({
         </DialogHeader>
 
         {errorMessage && (
-          <p role="alert" className="mb-3 rounded-[var(--radius-md)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-xs text-[var(--color-danger-ink)]">
+          <Callout tone="danger" role="alert" className="mb-3 text-xs">
             {errorMessage}
-          </p>
+          </Callout>
         )}
 
         {manualConflicts ? (

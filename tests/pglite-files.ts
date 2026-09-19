@@ -24,6 +24,7 @@ export const pgliteTestFiles = [
   "lib/services/billing/__tests__/duplicates-integration.test.ts",
   "lib/__tests__/admin-user-scope.test.ts",
   "lib/__tests__/admin-roles-service.test.ts",
+  "lib/services/pdtp/admin-catalogs.test.ts",
   "lib/__tests__/bootstrap.test.ts",
   "lib/__tests__/cancel-request-service.test.ts",
   "lib/__tests__/create-submitted-request-service.test.ts",

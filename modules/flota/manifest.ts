@@ -26,7 +26,9 @@ export const flotaModule = {
           label:    "Control operacional",
           href:     "/control-operacional",
           iconName: "ChartLineUp",
-          permissions: ["flota:view"],
+          // Paridad con el gate de la página: cualquiera de los tres permisos
+          // abre el centro, así que la navegación debe ofrecerlo a los tres.
+          permissions: ["flota:view", "mantenciones:view", "prevention:inspections:view"],
         },
         {
           label:    "Flota",

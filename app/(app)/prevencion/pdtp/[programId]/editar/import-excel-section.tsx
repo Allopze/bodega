@@ -18,11 +18,13 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { MetaBadge } from "@/components/states/state-badge"
+import { Callout } from "@/components/ui/callout"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { FileInput } from "@/components/ui/file-input"
 import { Textarea } from "@/components/ui/textarea"
 import { Field } from "@/components/ui/field"
+import { countOf, pluralize } from "@/lib/utils"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 
@@ -219,27 +221,27 @@ export function ImportExcelSection({ programId, visibleWorksites, catalogActivit
             ].map(([label, value]) => <div key={label} className="rounded-lg bg-[var(--color-surface-2)] px-3 py-2"><dt className="text-xs text-[var(--color-text-muted)]">{label}</dt><dd className="mt-0.5 font-semibold text-[var(--color-text)]">{value}</dd></div>)}
           </dl>
           <p className="text-xs text-[var(--color-text-muted)]">
-            {preview.counts.creates} altas · {preview.counts.updates} actualizaciones · {preview.counts.unchanged} sin cambios · {preview.counts.existingExtraActivitiesPreserved} actividad(es) adicionales preservadas.
+            {preview.counts.creates} altas · {preview.counts.updates} actualizaciones · {preview.counts.unchanged} sin cambios · {countOf(preview.counts.existingExtraActivitiesPreserved, "actividad adicional preservada", "actividades adicionales preservadas")}.
           </p>
           <div className="grid gap-3 rounded-lg border border-[var(--color-border)] p-3 text-xs sm:grid-cols-2">
             <div>
               <p className="font-semibold text-[var(--color-text)]">Impacto en calendario y vistas</p>
               <p className="mt-1 leading-5 text-[var(--color-text-muted)]">
-                Calendario: +{preview.counts.calendarCellsAdded} · ~{preview.counts.calendarCellsUpdated} · −{preview.counts.calendarCellsRemoved}. Se reemplazarán {preview.counts.scheduleRowsReplaced} fila(s) existentes.
+                Calendario: +{preview.counts.calendarCellsAdded} · ~{preview.counts.calendarCellsUpdated} · −{preview.counts.calendarCellsRemoved}. Se {preview.counts.scheduleRowsReplaced === 1 ? "reemplazará" : "reemplazarán"} {countOf(preview.counts.scheduleRowsReplaced, "fila existente", "filas existentes")}.
               </p>
               <p className="leading-5 text-[var(--color-text-muted)]">
-                Vistas: +{preview.counts.viewMembershipsAdded} · −{preview.counts.viewMembershipsRemoved}. Se reemplazarán {preview.counts.viewMembershipRowsReplaced} membresía(s) existentes.
+                Vistas: +{preview.counts.viewMembershipsAdded} · −{preview.counts.viewMembershipsRemoved}. Se {preview.counts.viewMembershipRowsReplaced === 1 ? "reemplazará" : "reemplazarán"} {countOf(preview.counts.viewMembershipRowsReplaced, "membresía existente", "membresías existentes")}.
               </p>
             </div>
             <div>
               <p className="font-semibold text-[var(--color-text)]">Relaciones protegidas</p>
               <p className="mt-1 leading-5 text-[var(--color-text-muted)]">
-                {preview.counts.checklistBindingsPreserved} checklist(s) y {preview.counts.sourceLinksPreserved} vínculo(s) de fuente se conservan. Pérdidas previstas: {preview.counts.checklistBindingsLost + preview.counts.sourceLinksLost}.
+                {countOf(preview.counts.checklistBindingsPreserved, "checklist", "checklists")} y {countOf(preview.counts.sourceLinksPreserved, "vínculo", "vínculos")} de fuente se conservan. Pérdidas previstas: {preview.counts.checklistBindingsLost + preview.counts.sourceLinksLost}.
               </p>
             </div>
             {preview.calendarChanges.length > 0 && (
               <details className="sm:col-span-2">
-                <summary className="cursor-pointer font-medium text-[var(--color-text)]">Ver {preview.calendarChanges.length} actividad(es) con cambio de calendario</summary>
+                <summary className="cursor-pointer font-medium text-[var(--color-text)]">Ver {countOf(preview.calendarChanges.length, "actividad con cambio de calendario", "actividades con cambio de calendario")}</summary>
                 <ul className="mt-2 max-h-36 overflow-y-auto space-y-1 text-[var(--color-text-subtle)]">
                   {preview.calendarChanges.map((change) => <li key={change.activityNumber}>Actividad {change.activityNumber}: +{change.added} · ~{change.updated} · −{change.removed}</li>)}
                 </ul>
@@ -267,8 +269,8 @@ export function ImportExcelSection({ programId, visibleWorksites, catalogActivit
             </div>)}
             <p className="text-xs text-[var(--color-warning-ink)]">También puedes revisar y publicar cada candidata desde Admin → Catálogos PDTP → Actividades.</p>
           </div>}
-          {preview.blockingErrors.length > 0 && <ul className="space-y-1 rounded-lg border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-xs text-[var(--color-danger-ink)]">{preview.blockingErrors.map((error) => <li key={error}>• {error}</li>)}</ul>}
-          {preview.warnings.length > 0 && <ul className="space-y-1 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">{preview.warnings.map((warning) => <li key={warning}>• {warning}</li>)}</ul>}
+          {preview.blockingErrors.length > 0 && <Callout tone="danger" role="alert" className="text-xs"><ul className="space-y-1">{preview.blockingErrors.map((error) => <li key={error}>• {error}</li>)}</ul></Callout>}
+          {preview.warnings.length > 0 && <Callout tone="warning" className="text-xs"><ul className="space-y-1">{preview.warnings.map((warning) => <li key={warning}>• {warning}</li>)}</ul></Callout>}
 
           {preview.counts.executedCells > 0 && (
             <div className="grid gap-3 rounded-lg border border-[var(--color-border)] p-3 md:grid-cols-2">
@@ -286,7 +288,7 @@ export function ImportExcelSection({ programId, visibleWorksites, catalogActivit
                   checked={acceptMissingEvidence}
                   onChange={(event) => setAcceptMissingEvidence(event.target.checked)}
                   label={<span className="text-xs text-[var(--color-text-muted)]">
-                    Acepto migrar {preview.counts.executedCells} celda(s) E como reportadas sin evidencia adjunta; no se inventará un archivo ni un ejecutor histórico.
+                    Acepto migrar {countOf(preview.counts.executedCells, "celda E", "celdas E")} como {pluralize(preview.counts.executedCells, "reportada")} sin evidencia adjunta; no se inventará un archivo ni un ejecutor histórico.
                   </span>}
                 />
               </div>
@@ -318,11 +320,9 @@ export function ImportExcelSection({ programId, visibleWorksites, catalogActivit
         </div>
       )}
       {state?.message && (
-        <p role="status" className={`mt-3 rounded-[var(--radius)] border px-3 py-2 text-sm ${state.ok
-          ? "border-[var(--color-success-line)] bg-[var(--color-success-tint)] text-[var(--color-success-ink)]"
-          : "border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] text-[var(--color-danger)]"}`}>
+        <Callout tone={state.ok ? "success" : "danger"} className="mt-3">
           {state.message}
-        </p>
+        </Callout>
       )}
     </div>
   )

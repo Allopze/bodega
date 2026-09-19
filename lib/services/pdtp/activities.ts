@@ -1,6 +1,6 @@
 import { and, eq, inArray, notInArray, sql } from "drizzle-orm"
-import { db, type Tx } from "@/db"
-import { pdtpActivities, pdtpActivityChecklists, pdtpActivitySchedule, pdtpCatalogActivities, pdtpCatalogActivityRevisions, pdtpObjectives, pdtpPrograms, pdtpSheetActivities, workerCapabilities } from "@/db/schema"
+import { db, type DB, type Tx } from "@/db"
+import { pdtpAccreditationBindings, pdtpActivities, pdtpActivityChecklists, pdtpActivityExecutionConfigs, pdtpActivityReminderRules, pdtpActivitySchedule, pdtpCatalogActivities, pdtpCatalogActivityRevisions, pdtpObjectives, pdtpPrograms, pdtpScheduledInstances, pdtpSheetActivities, workerCapabilities } from "@/db/schema"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId, resolveSheetForProgram } from "./helpers"
 import {
   derivePdtpScheduleSource,
@@ -18,6 +18,23 @@ import {
 import { pdtpActivityChecklistId } from "./checklist-domain"
 import type { PdtpSubjectSource } from "./subject-registry"
 import { WORKER_CAPABILITY_CODE_PATTERN } from "@/lib/services/worker-positions/normalization"
+import { getPdtpExecutionConnector, type PdtpCompletionPolicy, type PdtpEvidenceKind } from "./connectors"
+import { assertPdtpScheduleDefinitionWithinPeriod, type PdtpScheduleDefinition } from "./schedule-definition"
+import { nanoid } from "@/lib/id"
+import { recordAudit } from "@/lib/audit"
+import { countOf, pluralize } from "@/lib/utils"
+
+function dueFieldsFromScheduleDefinition(definition: PdtpScheduleDefinition | null | undefined): {
+  dueDays: number | null
+  dueHours: number | null
+} | null {
+  if (!definition || (definition.kind !== "event" && definition.kind !== "on_demand")) return null
+  return definition.dueUnit === "hour"
+    ? { dueDays: null, dueHours: definition.dueValue }
+    : { dueDays: definition.dueValue, dueHours: null }
+}
+
+const DEFAULT_REQUIRED_EVIDENCE = "Evidencia verificable del registro de ejecución"
 
 function normalizedSubjectCapabilityCodes(codes: readonly string[] | null | undefined): string[] | null {
   if (codes == null) return null
@@ -27,6 +44,7 @@ function normalizedSubjectCapabilityCodes(codes: readonly string[] | null | unde
 async function validateCapabilitySubjectConfiguration(
   source: string | null,
   codes: readonly string[] | null,
+  client: DB | Tx = db,
 ): Promise<void> {
   if (source !== "trabajadores_capacidad") {
     if (codes?.length) throw new Error("Las capacidades sólo corresponden a la fuente de trabajadores por capacidad.")
@@ -36,7 +54,7 @@ async function validateCapabilitySubjectConfiguration(
   if (codes.some((code) => !WORKER_CAPABILITY_CODE_PATTERN.test(code))) {
     throw new Error("La configuración contiene un código de capacidad inválido.")
   }
-  const existing = await db.select({ code: workerCapabilities.code }).from(workerCapabilities)
+  const existing = await client.select({ code: workerCapabilities.code }).from(workerCapabilities)
     .where(and(inArray(workerCapabilities.code, [...codes]), eq(workerCapabilities.isActive, true)))
   if (existing.length !== codes.length) {
     throw new Error("Una o más capacidades del padrón no existen o están inactivas.")
@@ -85,7 +103,7 @@ export class PdtpScheduleConflictError extends Error {
   constructor(readonly detail: PdtpScheduleConflictDetail) {
     super(detail.reason === "schedule_changed_elsewhere"
       ? "La planificación de esta actividad cambió en otra sesión. Recarga antes de guardar."
-      : `Esta actividad tiene ${detail.currentCellCount} semana(s) ajustadas manualmente. Guardar la recurrencia las reemplaza y la cantidad planificada pasaría de ${detail.currentPlannedTotal} a ${detail.nextPlannedTotal}. Confirma el reemplazo para continuar.`)
+      : `Esta actividad tiene ${countOf(detail.currentCellCount, "semana ajustada", "semanas ajustadas")} manualmente. Guardar la recurrencia las reemplaza y la cantidad planificada pasaría de ${detail.currentPlannedTotal} a ${detail.nextPlannedTotal}. Confirma el reemplazo para continuar.`)
     this.name = "PdtpScheduleConflictError"
   }
 }
@@ -273,6 +291,14 @@ export type PdtpActivityUpdateInput = {
   scheduleMode?: "scheduled" | "on_demand" | "triggered"
   scheduleClassificationStatus?: "confirmed" | "needs_review"
   recurrenceRule?: PdtpRecurrenceRule | null
+  scheduleDefinition?: PdtpScheduleDefinition | null
+  executionConfig?: {
+    destinationConnectorKey: string
+    accreditationBindingId?: string | null
+    completionPolicy: PdtpCompletionPolicy
+    evidencePolicy: { required: boolean; acceptedKinds: PdtpEvidenceKind[] }
+  }
+  reminderRules?: Array<{ offsetValue: number; offsetUnit: "hour" | "day"; recipientKind?: "responsible" | "role" | "user"; recipientUserId?: string | null; isActive?: boolean }>
   triggerType?: string | null
   triggerDescription?: string | null
   dueDays?: number | null
@@ -308,6 +334,14 @@ export type PdtpActivityAddInput = {
   scheduleMode?: "scheduled" | "on_demand" | "triggered"
   scheduleClassificationStatus?: "confirmed" | "needs_review"
   recurrenceRule?: PdtpRecurrenceRule | null
+  scheduleDefinition?: PdtpScheduleDefinition | null
+  executionConfig?: {
+    destinationConnectorKey: string
+    accreditationBindingId?: string | null
+    completionPolicy: PdtpCompletionPolicy
+    evidencePolicy: { required: boolean; acceptedKinds: PdtpEvidenceKind[] }
+  }
+  reminderRules?: Array<{ offsetValue: number; offsetUnit: "hour" | "day"; recipientKind?: "responsible" | "role" | "user"; recipientUserId?: string | null; isActive?: boolean }>
   triggerType?: string | null
   triggerDescription?: string | null
   dueDays?: number | null
@@ -322,6 +356,48 @@ export type PdtpActivityAddInput = {
   notes?: string
   sheetCodes: string[]
   schedule?: Array<{ month: number; week: number; plannedQuantity: number }>
+}
+
+async function validateExecutionConfig(
+  input: PdtpActivityAddInput["executionConfig"] | PdtpActivityUpdateInput["executionConfig"],
+  scheduleDefinition: PdtpScheduleDefinition | null | undefined,
+  catalogActivityId?: string | null,
+  client: DB | Tx = db,
+): Promise<void> {
+  if (!input) {
+    if (scheduleDefinition && scheduleDefinition.kind !== "legacy_grid") throw new Error("Las actividades nuevas requieren un destino operativo configurado.")
+    return
+  }
+  const connector = getPdtpExecutionConnector(input.destinationConnectorKey)
+  if (!connector) throw new Error("Selecciona un destino operativo soportado por Prevención.")
+  if (scheduleDefinition?.kind === "event") {
+    const triggerConnector = getPdtpExecutionConnector(scheduleDefinition.triggerConnectorKey)
+    if (!triggerConnector) throw new Error("Selecciona un conector productor de eventos soportado por Prevención.")
+    if (!triggerConnector.supportedEvents.some((event) => event.key === scheduleDefinition.triggerEventKey)) {
+      throw new Error(`El evento ${scheduleDefinition.triggerEventKey} no está soportado por el conector ${triggerConnector.label}.`)
+    }
+  }
+  if (!connector.supportedCompletionPolicies.includes(input.completionPolicy)) {
+    throw new Error(`El destino ${connector.label} no admite el criterio de cumplimiento seleccionado.`)
+  }
+  const unsupportedEvidence = input.evidencePolicy.acceptedKinds.filter((kind) => !connector.supportedEvidenceKinds.includes(kind))
+  if (unsupportedEvidence.length > 0) throw new Error(`El destino ${connector.label} no admite uno o más mecanismos de evidencia seleccionados.`)
+  if (input.evidencePolicy.required && input.evidencePolicy.acceptedKinds.length === 0) throw new Error("La evidencia obligatoria requiere al menos un mecanismo.")
+  if (input.accreditationBindingId) {
+    const [binding] = await client.select({
+      id: pdtpAccreditationBindings.id,
+      catalogActivityId: pdtpAccreditationBindings.catalogActivityId,
+      sourceType: pdtpAccreditationBindings.sourceType,
+    }).from(pdtpAccreditationBindings)
+      .where(and(eq(pdtpAccreditationBindings.id, input.accreditationBindingId), eq(pdtpAccreditationBindings.isActive, true))).limit(1)
+    if (!binding) throw new Error("El instrumento seleccionado ya no está disponible.")
+    if (catalogActivityId && binding.catalogActivityId !== catalogActivityId) {
+      throw new Error("El instrumento seleccionado no corresponde a la actividad de catálogo.")
+    }
+    if (!connector.supportedBindingSourceTypes.includes(binding.sourceType)) {
+      throw new Error(`El instrumento seleccionado no corresponde al destino ${connector.label}.`)
+    }
+  }
 }
 
 export type PdtpActivityBatchUpdateInput = {
@@ -380,7 +456,7 @@ export async function batchUpdatePdtpActivities(input: PdtpActivityBatchUpdateIn
       "activity:batch",
       { activityIds: uniqueIds },
       { activityIds: uniqueIds, ...updates },
-      `${rows.length} actividad(es) actualizadas en lote; calendario, vistas y checklist preservados.`,
+      `${countOf(rows.length, "actividad actualizada", "actividades actualizadas")} en lote; calendario, vistas y checklist preservados.`,
       tx,
     )
     return rows
@@ -413,9 +489,45 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
   }
 
   const now = new Date().toISOString()
+  const nextScheduleDefinition = input.scheduleDefinition !== undefined
+    ? input.scheduleDefinition
+    : activity.scheduleDefinition as PdtpScheduleDefinition | null
+  if (input.scheduleDefinition) {
+    assertPdtpScheduleDefinitionWithinPeriod(input.scheduleDefinition, {
+      startDate: program.periodStart ?? `${program.year}-01-01`,
+      endDate: program.periodEnd ?? `${program.year}-12-31`,
+    })
+  }
+  const derivedDue = dueFieldsFromScheduleDefinition(nextScheduleDefinition)
+  if (input.executionConfig !== undefined) await validateExecutionConfig(input.executionConfig, nextScheduleDefinition, activity.catalogActivityId)
+  if (input.scheduleDefinition !== undefined && input.executionConfig === undefined && nextScheduleDefinition && nextScheduleDefinition.kind !== "legacy_grid") {
+    const [existingConfig] = await db.select({ id: pdtpActivityExecutionConfigs.id }).from(pdtpActivityExecutionConfigs)
+      .where(eq(pdtpActivityExecutionConfigs.activityId, activity.id)).limit(1)
+    if (!existingConfig) throw new Error("La actividad necesita un destino operativo antes de usar una programación nueva.")
+  }
   const before: Record<string, unknown> = {}
   const after: Record<string, unknown> = {}
   const updates: Partial<typeof pdtpActivities.$inferInsert> = { updatedAt: now }
+
+  // La programación nueva es la fuente de verdad del plazo de eventos y
+  // solicitudes. Se proyecta también a las columnas heredadas porque los
+  // consumidores de obligaciones aún las utilizan para calcular `dueAt`.
+  if (input.scheduleDefinition !== undefined && derivedDue) {
+    // No conservar el componente anterior: el CHECK de la tabla exige que
+    // nunca convivan días y horas. Los campos heredados siguen proyectándose
+    // sólo para lectores antiguos, pero la definición nueva manda incluso si
+    // el llamador envió accidentalmente uno de esos campos.
+    if (activity.dueDays !== derivedDue.dueDays) {
+      before.dueDays = activity.dueDays
+      after.dueDays = derivedDue.dueDays
+      updates.dueDays = derivedDue.dueDays
+    }
+    if (activity.dueHours !== derivedDue.dueHours) {
+      before.dueHours = activity.dueHours
+      after.dueHours = derivedDue.dueHours
+      updates.dueHours = derivedDue.dueHours
+    }
+  }
 
   if (input.activity !== undefined && input.activity !== activity.activity) {
     before.activity = activity.activity; after.activity = input.activity; updates.activity = input.activity
@@ -439,7 +551,7 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
     updates.objectiveId = input.objectiveId
   }
   const configurableFields = [
-    "audienceRoles", "scheduleMode", "scheduleClassificationStatus", "recurrenceRule", "triggerType", "triggerDescription",
+    "audienceRoles", "scheduleMode", "scheduleClassificationStatus", "recurrenceRule", "scheduleDefinition", "triggerType", "triggerDescription",
     "dueDays", "dueHours", "evidenceRequirement", "indicatorMode", "targetValue", "targetUnit",
     // Va junto a `indicatorMode` porque son la misma declaración partida en dos:
     // el modo dice "cuántos de cuántos" y la fuente dice de cuántos.
@@ -447,6 +559,10 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
   ] as const
   for (const field of configurableFields) {
     if (input[field] === undefined) continue
+    // Cuando llega una definición nueva, sus plazos derivados son la única
+    // fuente válida. Evita que los campos heredados enviados por un cliente
+    // antiguo vuelvan a introducir una pareja días+horas incoherente.
+    if (input.scheduleDefinition !== undefined && derivedDue && (field === "dueDays" || field === "dueHours")) continue
     // `recurrenceRule` vive en jsonb: comparar su serialización da falsos
     // cambios por orden de claves (ver recurrenceRulesEqual).
     const unchanged = field === "recurrenceRule"
@@ -497,6 +613,55 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
     const [updated] = await tx.update(pdtpActivities).set(updates).where(eq(pdtpActivities.id, input.activityId)).returning()
     if (!updated) throw new Error("No se pudo actualizar la actividad PDTP.")
 
+    if (input.executionConfig !== undefined) {
+      const [beforeConfig] = await tx.select().from(pdtpActivityExecutionConfigs)
+        .where(eq(pdtpActivityExecutionConfigs.activityId, activity.id)).limit(1)
+      before.executionConfig = beforeConfig ?? null
+      const config = input.executionConfig
+      const [afterConfig] = await tx.insert(pdtpActivityExecutionConfigs).values({
+        id: beforeConfig?.id ?? `pdtp-exec-config-${activity.id}`,
+        activityId: activity.id,
+        destinationConnectorKey: config.destinationConnectorKey,
+        accreditationBindingId: config.accreditationBindingId ?? null,
+        completionPolicy: config.completionPolicy,
+        evidenceRequired: config.evidencePolicy.required,
+        acceptedEvidenceKinds: config.evidencePolicy.acceptedKinds,
+        createdAt: beforeConfig?.createdAt ?? now,
+        updatedAt: now,
+      }).onConflictDoUpdate({
+        target: pdtpActivityExecutionConfigs.activityId,
+        set: {
+          destinationConnectorKey: config.destinationConnectorKey,
+          accreditationBindingId: config.accreditationBindingId ?? null,
+          completionPolicy: config.completionPolicy,
+          evidenceRequired: config.evidencePolicy.required,
+          acceptedEvidenceKinds: config.evidencePolicy.acceptedKinds,
+          updatedAt: now,
+        },
+      }).returning()
+      after.executionConfig = afterConfig ?? null
+    }
+
+    if (input.reminderRules !== undefined) {
+      const beforeRules = await tx.select().from(pdtpActivityReminderRules).where(eq(pdtpActivityReminderRules.activityId, activity.id))
+      await tx.delete(pdtpActivityReminderRules).where(eq(pdtpActivityReminderRules.activityId, activity.id))
+      const afterRules = input.reminderRules.length > 0
+        ? await tx.insert(pdtpActivityReminderRules).values(input.reminderRules.map((rule) => ({
+          id: `pdtp-reminder-rule-${nanoid()}`,
+          activityId: activity.id,
+          offsetValue: rule.offsetValue,
+          offsetUnit: rule.offsetUnit,
+          recipientKind: rule.recipientKind ?? "responsible",
+          recipientUserId: rule.recipientUserId ?? null,
+          isActive: rule.isActive ?? true,
+          createdAt: now,
+          updatedAt: now,
+        }))).returning()
+        : []
+      before.reminderRules = beforeRules
+      after.reminderRules = afterRules
+    }
+
     if (effectiveSchedule !== undefined && scheduleDiff) {
       // El estado previo se registra de verdad: con "see after" el changelog
       // que firman los aprobadores no podía responder qué planificación se
@@ -512,19 +677,37 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
 
     if (Object.keys(after).length > 0) {
       const note = scheduleDiff
-        ? `Actividad ${activity.n} actualizada; planificación ${scheduleDiff.currentPlannedTotal} → ${scheduleDiff.nextPlannedTotal} (${currentCells.length} → ${effectiveSchedule!.length} celda(s)).`
+        ? `Actividad ${activity.n} actualizada; planificación ${scheduleDiff.currentPlannedTotal} → ${scheduleDiff.nextPlannedTotal} (${currentCells.length} → ${effectiveSchedule!.length} ${pluralize(effectiveSchedule!.length, "celda")}).`
         : `Actividad ${activity.n} actualizada.`
       await addPdtpChangeLogEntry(activity.programId, program.version, userId, `activity:${activity.n}`, before, after, note, tx)
+      await recordAudit({
+        userId,
+        action: "update",
+        entityType: "pdtp_program_activity",
+        entityId: activity.id,
+        entityCode: String(activity.n),
+        oldState: before,
+        newState: after,
+      }, tx)
     }
     return updated
   })
 }
 
-export async function addPdtpActivity(input: PdtpActivityAddInput, userId: string) {
-  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, input.programId)).limit(1)
+export async function addPdtpActivity(
+  input: PdtpActivityAddInput,
+  userId: string,
+  client: DB | Tx = db,
+  withinTransaction = false,
+): Promise<typeof pdtpActivities.$inferSelect> {
+  if (!withinTransaction && typeof (client as DB).transaction === "function") {
+    return (client as DB).transaction((tx) => addPdtpActivity(input, userId, tx, true))
+  }
+
+  const [program] = await client.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, input.programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
   assertPdtpProgramEditableState(program)
-  const catalogDefinition = input.catalogActivityId ? await db.select({
+  const catalogDefinition = input.catalogActivityId ? await client.select({
     id: pdtpCatalogActivities.id,
     status: pdtpCatalogActivities.status,
     revision: pdtpCatalogActivities.currentRevision,
@@ -542,9 +725,23 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   if (catalog?.status === "retired") throw new Error("La actividad está retirada y no puede seleccionarse nuevamente.")
   if (catalog && catalog.status !== "active") throw new Error("La actividad debe estar publicada antes de incorporarla.")
   const subjectCapabilityCodes = normalizedSubjectCapabilityCodes(input.subjectCapabilityCodes)
-  await validateCapabilitySubjectConfiguration(input.subjectSource ?? null, subjectCapabilityCodes)
+  await validateCapabilitySubjectConfiguration(input.subjectSource ?? null, subjectCapabilityCodes, client)
+  await validateExecutionConfig(input.executionConfig, input.scheduleDefinition, input.catalogActivityId ?? null, client)
+  if (input.scheduleDefinition) {
+    assertPdtpScheduleDefinitionWithinPeriod(input.scheduleDefinition, {
+      startDate: program.periodStart ?? `${program.year}-01-01`,
+      endDate: program.periodEnd ?? `${program.year}-12-31`,
+    })
+  }
 
-  const existingActivities = await db.select({ n: pdtpActivities.n, displayOrder: pdtpActivities.displayOrder, catalogActivityId: pdtpActivities.catalogActivityId })
+  const derivedDue = dueFieldsFromScheduleDefinition(input.scheduleDefinition)
+  const dueDays = input.dueDays !== undefined ? input.dueDays : derivedDue?.dueDays ?? null
+  const dueHours = input.dueHours !== undefined ? input.dueHours : derivedDue?.dueHours ?? null
+  const evidenceRequirement = input.evidenceRequirement !== undefined
+    ? input.evidenceRequirement
+    : input.executionConfig?.evidencePolicy.required ? DEFAULT_REQUIRED_EVIDENCE : null
+
+  const existingActivities = await client.select({ n: pdtpActivities.n, displayOrder: pdtpActivities.displayOrder, catalogActivityId: pdtpActivities.catalogActivityId })
     .from(pdtpActivities)
     .where(eq(pdtpActivities.programId, input.programId))
   const maxN = existingActivities.reduce((m, row) => Math.max(m, row.n), 0)
@@ -561,17 +758,16 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   // calendario ya commiteados, dejando una actividad sin membresía —invisible
   // en la vista donde el usuario la pidió— y sin entrada de changelog.
   const sheets = await Promise.all(input.sheetCodes.map(async (sheetCode) => {
-    const sheet = await resolveSheetForProgram(input.programId, sheetCode)
+    const sheet = await resolveSheetForProgram(input.programId, sheetCode, client)
     if (!sheet) throw new Error(`Hoja PDTP no encontrada: ${sheetCode}.`)
     return { sheetCode, sheet }
   }))
 
-  const schedule = input.schedule ?? ((input.scheduleMode ?? "scheduled") === "scheduled" && input.recurrenceRule
+  const schedule = input.schedule ?? (!input.scheduleDefinition && (input.scheduleMode ?? "scheduled") === "scheduled" && input.recurrenceRule
     ? projectRecurrenceToLegacySchedule(input.recurrenceRule, deriveScheduleHorizon(program))
     : [])
 
-  return db.transaction(async (tx) => {
-    const [created] = await tx.insert(pdtpActivities).values({
+  const [created] = await client.insert(pdtpActivities).values({
       id: activityId, programId: input.programId, n: newN, displayOrder: maxDisplayOrder + 1,
       catalogActivityId: catalog?.id ?? null,
       catalogRevision: catalog?.revision ?? null,
@@ -581,29 +777,59 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
       audienceRoles: input.audienceRoles ?? [], scheduleMode: input.scheduleMode ?? "scheduled",
       scheduleClassificationStatus: input.scheduleClassificationStatus ?? "confirmed",
       recurrenceRule: input.recurrenceRule ?? null, triggerType: input.triggerType ?? null,
-      triggerDescription: input.triggerDescription ?? null, dueDays: input.dueDays ?? null,
-      dueHours: input.dueHours ?? null,
-      evidenceRequirement: input.evidenceRequirement ?? null, indicatorMode: input.indicatorMode ?? "planned_vs_completed",
+      triggerDescription: input.triggerDescription ?? null, dueDays,
+      dueHours,
+      scheduleDefinition: input.scheduleDefinition ?? null,
+      evidenceRequirement, indicatorMode: input.indicatorMode ?? "planned_vs_completed",
       subjectSource: input.subjectSource ?? null, subjectCapabilityCodes,
       targetValue: input.targetValue ?? null, targetUnit: input.targetUnit ?? null,
       sourceSheetRow: 0, notes: input.notes ?? null, createdAt: now, updatedAt: now,
     }).returning()
     if (!created) throw new Error("No se pudo crear la actividad PDTP.")
 
+    if (input.executionConfig) {
+      const config = input.executionConfig
+      await client.insert(pdtpActivityExecutionConfigs).values({
+        id: `pdtp-exec-config-${activityId}`,
+        activityId,
+        destinationConnectorKey: config.destinationConnectorKey,
+        accreditationBindingId: config.accreditationBindingId ?? null,
+        completionPolicy: config.completionPolicy,
+        evidenceRequired: config.evidencePolicy.required,
+        acceptedEvidenceKinds: config.evidencePolicy.acceptedKinds,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+
+    if (input.reminderRules?.length) {
+      await client.insert(pdtpActivityReminderRules).values(input.reminderRules.map((rule) => ({
+        id: `pdtp-reminder-rule-${nanoid()}`,
+        activityId,
+        offsetValue: rule.offsetValue,
+        offsetUnit: rule.offsetUnit,
+        recipientKind: rule.recipientKind ?? "responsible",
+        recipientUserId: rule.recipientUserId ?? null,
+        isActive: rule.isActive ?? true,
+        createdAt: now,
+        updatedAt: now,
+      })))
+    }
+
     for (const cell of schedule) {
-      await tx.insert(pdtpActivitySchedule).values({
+      await client.insert(pdtpActivitySchedule).values({
         id: pdtpScheduleId(activityId, program.year, cell.month, cell.week), activityId,
         year: program.year, month: cell.month, week: cell.week, plannedQuantity: cell.plannedQuantity, sourceColumn: "manual",
       })
     }
 
     for (const { sheetCode, sheet } of sheets) {
-      const [{ maxOrder } = { maxOrder: 0 }] = await tx
+      const [{ maxOrder } = { maxOrder: 0 }] = await client
         .select({ maxOrder: sql<number>`COALESCE(MAX(${pdtpSheetActivities.displayOrder}), 0)` })
         .from(pdtpSheetActivities)
         .where(eq(pdtpSheetActivities.sheetId, sheet.id))
       const nextOrder = Number(maxOrder) + 1
-      await tx.insert(pdtpSheetActivities).values({
+      await client.insert(pdtpSheetActivities).values({
         id: pdtpSheetActivityId(input.programId, sheetCode, newN), sheetId: sheet.id, sheetCode, activityId,
         sheetRow: nextOrder, displayOrder: nextOrder,
       }).onConflictDoNothing()
@@ -615,9 +841,15 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
       catalogRevision: catalog?.revision ?? null,
       activity: catalog?.description ?? input.activity,
       sheetCodes: input.sheetCodes,
-    }, catalog ? `Actividad ${newN} incorporada desde catálogo.` : `Actividad ${newN} agregada manualmente.`, tx)
-    return created
-  })
+      scheduleDefinition: input.scheduleDefinition ?? null,
+      executionConfig: input.executionConfig ? {
+        destinationConnectorKey: input.executionConfig.destinationConnectorKey,
+        completionPolicy: input.executionConfig.completionPolicy,
+        evidencePolicy: input.executionConfig.evidencePolicy,
+      } : null,
+      reminderRuleCount: input.reminderRules?.length ?? 0,
+    }, catalog ? `Actividad ${newN} incorporada desde catálogo.` : `Actividad ${newN} agregada manualmente.`, client)
+  return created
 }
 
 export async function retirePdtpActivity(input: {
@@ -652,16 +884,41 @@ export async function retirePdtpActivity(input: {
       updatedAt: now,
     }).where(eq(pdtpActivities.id, input.activityId)).returning()
     if (!retired) throw new Error("No se pudo retirar la actividad.")
+    const cancelledFuture = await tx.update(pdtpScheduledInstances).set({
+      status: "cancelled",
+      cancelledAt: now,
+      cancelledByUserId: userId,
+      cancellationReason: `Actividad retirada desde ${input.effectiveFrom}: no se genera una nueva ejecución.`,
+      updatedAt: now,
+    }).where(and(
+      eq(pdtpScheduledInstances.activityId, input.activityId),
+      eq(pdtpScheduledInstances.status, "pending"),
+      sql`${pdtpScheduledInstances.scheduledFor} >= ${input.effectiveFrom}`,
+    )).returning({ id: pdtpScheduledInstances.id })
     await addPdtpChangeLogEntry(
       activity.programId,
       program.version,
       userId,
       `activity:${activity.n}`,
       { status: activity.status },
-      { status: "retired", reason, effectiveFrom: input.effectiveFrom, retiredAt: now, retiredByUserId: userId },
+      { status: "retired", reason, effectiveFrom: input.effectiveFrom, retiredAt: now, retiredByUserId: userId, cancelledFutureInstanceCount: cancelledFuture.length },
       `Actividad ${activity.n} retirada desde ${input.effectiveFrom}. Motivo: ${reason}`,
       tx,
     )
+    await recordAudit({
+      userId,
+      action: "update",
+      entityType: "pdtp_program_activity",
+      entityId: activity.id,
+      entityCode: String(activity.n),
+      oldState: { status: activity.status },
+      newState: {
+        status: "retired",
+        reason,
+        effectiveFrom: input.effectiveFrom,
+        cancelledFutureInstanceCount: cancelledFuture.length,
+      },
+    }, tx)
     return retired
   })
 }
@@ -699,6 +956,7 @@ export async function duplicatePdtpActivity(activityId: string, userId: string) 
       scheduleMode: source.scheduleMode,
       scheduleClassificationStatus: source.scheduleClassificationStatus,
       recurrenceRule: source.recurrenceRule,
+      scheduleDefinition: source.scheduleDefinition,
       triggerType: source.triggerType,
       triggerDescription: source.triggerDescription,
       dueDays: source.dueDays,
@@ -716,11 +974,27 @@ export async function duplicatePdtpActivity(activityId: string, userId: string) 
     }).returning()
     if (!copy) throw new Error("No se pudo duplicar la actividad.")
 
-    const [schedules, memberships, checklists] = await Promise.all([
+    const [schedules, memberships, checklists, executionConfigs, reminderRules] = await Promise.all([
       tx.select().from(pdtpActivitySchedule).where(eq(pdtpActivitySchedule.activityId, source.id)),
       tx.select().from(pdtpSheetActivities).where(eq(pdtpSheetActivities.activityId, source.id)),
       tx.select().from(pdtpActivityChecklists).where(eq(pdtpActivityChecklists.activityId, source.id)),
+      tx.select().from(pdtpActivityExecutionConfigs).where(eq(pdtpActivityExecutionConfigs.activityId, source.id)),
+      tx.select().from(pdtpActivityReminderRules).where(eq(pdtpActivityReminderRules.activityId, source.id)),
     ])
+    if (executionConfigs.length > 0) await tx.insert(pdtpActivityExecutionConfigs).values(executionConfigs.map((config) => ({
+      ...config,
+      id: `pdtp-exec-config-${id}`,
+      activityId: id,
+      createdAt: now,
+      updatedAt: now,
+    })))
+    if (reminderRules.length > 0) await tx.insert(pdtpActivityReminderRules).values(reminderRules.map((rule) => ({
+      ...rule,
+      id: `pdtp-reminder-rule-${nanoid()}`,
+      activityId: id,
+      createdAt: now,
+      updatedAt: now,
+    })))
     if (schedules.length > 0) await tx.insert(pdtpActivitySchedule).values(schedules.map((cell) => ({
       id: pdtpScheduleId(id, cell.year, cell.month, cell.week),
       activityId: id,

@@ -7,6 +7,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { CanonicalIndicatorsDashboard } from "./canonical-indicators-dashboard"
 import { ExportIndicadoresButton } from "./indicadores-export-button"
+import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "Indicadores de seguridad y salud en el trabajo" }
 
@@ -49,6 +50,7 @@ export default async function IndicadoresPage({ searchParams }: IndicadoresPageP
         canClose={hasClosePermission}
         currentUserId={session.user.id}
       />
+      <PdtpScheduledActivityPanelServer connectorKey="indicators" />
     </PageContainer>
   )
 }

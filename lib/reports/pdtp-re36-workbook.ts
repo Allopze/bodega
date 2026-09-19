@@ -22,7 +22,7 @@ import ExcelJS from "exceljs"
 import type { Session } from "next-auth"
 import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import { safeWorksheetName, sanitizeCell } from "@/lib/reports/export-module/excel-builder"
-import type { PdtpRe36Document, PdtpRe36Sheet } from "@/lib/services/pdtp/re36-document"
+import type { PdtpRe36Document, PdtpRe36IsoCalendarRow, PdtpRe36Sheet } from "@/lib/services/pdtp/re36-document"
 import { pdtpRe36ResponsiblesLabel } from "@/lib/services/pdtp/re36-document"
 
 /**
@@ -174,10 +174,59 @@ export function renderPdtpRe36Workbook(
     renderSheet(ws, doc, sheet, { isGeneral: sheet === generalSheet, quarterFormula })
   }
 
+  if (doc.isoCalendar) renderIsoCalendarSheet(workbook, doc.isoCalendar, usedNames)
+
   renderDeviationsSheet(workbook, doc, usedNames)
   if (options?.closure) renderClosureSheet(workbook, options.closure, usedNames)
 
   return workbook
+}
+
+/**
+ * Hoja operativa de las actividades creadas con el calendario nuevo. El RE-36
+ * legado conserva sus cuatro bloques mensuales; esta hoja no los reemplaza y
+ * muestra una fila por instancia con la semana ISO real.
+ */
+function renderIsoCalendarSheet(
+  workbook: ExcelJS.Workbook,
+  rows: readonly PdtpRe36IsoCalendarRow[],
+  usedNames: Set<string>,
+) {
+  const ws = workbook.addWorksheet(safeWorksheetName("Calendario ISO", usedNames))
+  const headers = [
+    "Año ISO",
+    "Semana ISO",
+    "Fecha prevista",
+    "Actividad",
+    "Responsable",
+    "Destino",
+    "Instrumento",
+    "Cantidad",
+    "Estado",
+    "Fecha real",
+    "Resultado / evidencia",
+  ]
+  headers.forEach((label, index) => setText(ws, `${columnLetter(index + 1)}1`, label, { bold: true }))
+  ws.views = [{ state: "frozen", ySplit: 1 }]
+  ws.autoFilter = { from: "A1", to: `K${Math.max(rows.length + 1, 1)}` }
+
+  const widths = [10, 12, 16, 42, 28, 24, 32, 12, 18, 18, 42]
+  widths.forEach((width, index) => { ws.getColumn(index + 1).width = width })
+
+  rows.forEach((item, index) => {
+    const row = index + 2
+    setText(ws, `A${row}`, item.isoWeekYear)
+    setText(ws, `B${row}`, item.isoWeek)
+    setText(ws, `C${row}`, item.scheduledFor)
+    setText(ws, `D${row}`, item.activity)
+    setText(ws, `E${row}`, item.responsible)
+    setText(ws, `F${row}`, item.destination)
+    setText(ws, `G${row}`, item.instrument)
+    setText(ws, `H${row}`, item.plannedQuantity)
+    setText(ws, `I${row}`, item.status)
+    setText(ws, `J${row}`, item.completedAt ?? "—")
+    setText(ws, `K${row}`, item.result)
+  })
 }
 
 /** Igual que `renderPdtpRe36Workbook`, pero devuelve el buffer final del libro. */

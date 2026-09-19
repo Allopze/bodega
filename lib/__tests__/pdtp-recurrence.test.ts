@@ -15,7 +15,7 @@ describe("PDTP recurrence rules", () => {
     expect(cells[0]).toEqual({ month: 1, week: 2, plannedQuantity: 2 })
     expect(cells[11]).toEqual({ month: 12, week: 2, plannedQuantity: 2 })
     expect(describePdtpRecurrence({ frequency: "monthly", interval: 1, plannedQuantity: 2, weekOfMonth: 2 }))
-      .toContain("Genera 12 obligación(es)")
+      .toContain("Genera 12 obligaciones")
   })
 
   it("supports quarterly, annual and selected-month rules", () => {

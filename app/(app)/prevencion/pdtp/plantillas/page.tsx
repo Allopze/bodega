@@ -8,9 +8,8 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
-
-const PUBLISHED_DATE_FORMAT = new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeZone: "America/Santiago" })
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { countOf, formatDate } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Plantillas de programas preventivos" }
 
@@ -29,7 +28,7 @@ export default async function PdtpTemplatesPage() {
         description="Versiones reutilizables y programas creados desde cada foto publicada."
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
-          { label: "Programas PDTP", href: "/prevencion/pdtp" },
+          { label: "Programa de trabajo", href: "/prevencion/pdtp" },
           { label: "Plantillas" },
         ]} />}
         actions={<Button asChild size="sm"><Link href="/prevencion/pdtp/nuevo">Crear programa</Link></Button>}
@@ -65,12 +64,12 @@ export default async function PdtpTemplatesPage() {
                         Huella {version.contentDigest.slice(0, 12)}…
                       </p>
                       <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                        Publicada {PUBLISHED_DATE_FORMAT.format(new Date(version.publishedAt))}
+                        Publicada {formatDate(version.publishedAt)}
                       </p>
                     </div>
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
-                        {version.programs.length} programa(s) fijados a esta versión
+                        {countOf(version.programs.length, "programa fijado", "programas fijados")} a esta versión
                       </p>
                       {version.programs.length === 0 ? (
                         <p className="mt-2 text-sm text-[var(--color-text-muted)]">Todavía no se ha creado ningún programa desde esta versión.</p>

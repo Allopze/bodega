@@ -27,6 +27,7 @@
  */
 
 import { engancheDestinationFor } from "@/lib/services/pdtp-adapters/fulfillment-contract-2026"
+import { PDTP_NO_EXECUTOR_ROLE_REASON } from "@/lib/prevention/pdtp"
 
 export type ResponsibleExecutionStatus = "ok" | "segregada" | "solo_manual"
 
@@ -127,7 +128,7 @@ export function classifyPdtpResponsibleExecution(input: {
     let reason: string
     if (roles.length === 0) {
       status = "solo_manual"
-      reason = "Ninguno de sus responsables declarados mapea a un rol RBAC real ni a un operador de plataforma."
+      reason = PDTP_NO_EXECUTOR_ROLE_REASON
     } else if (!destination.permission) {
       status = "ok"
       reason = "Se cumple en el propio PDTP: no hay un módulo de destino con permiso propio."

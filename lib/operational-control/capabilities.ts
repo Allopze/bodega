@@ -1,5 +1,22 @@
 import type { Session } from "next-auth"
-import { can, isGlobalRole } from "@/lib/auth/can"
+import type { Permission } from "@/modules/permissions"
+import { can, canAny, isGlobalRole } from "@/lib/auth/can"
+
+/**
+ * Trinidad de permisos que abre el centro de control operacional. Única fuente
+ * para el gate de página, la navegación y la exportación: un usuario con
+ * cualquiera de los tres puede entrar, y las superficies derivadas de
+ * mantención/inspección se condicionan aparte por su propia capacidad.
+ */
+export const OPERATIONAL_CONTROL_VIEW_PERMISSIONS: Permission[] = [
+  "flota:view",
+  "mantenciones:view",
+  "prevention:inspections:view",
+]
+
+export function canViewOperationalControl(session: Session): boolean {
+  return canAny(session, ...OPERATIONAL_CONTROL_VIEW_PERMISSIONS)
+}
 
 /**
  * Capacidades independientes del centro de control operacional.

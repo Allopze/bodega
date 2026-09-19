@@ -7,6 +7,93 @@ import {
   PdtpUnreconstructibleContentSchemaError,
 } from "@/lib/services/pdtp/content-digest"
 import { NO_ACTIVE_PROGRAM_LAST_ERROR_TAG } from "@/lib/services/pdtp/fulfillment"
+import { chileDateParts, pluralize } from "@/lib/utils"
+
+/**
+ * Cómo se nombra el origen de un hecho en pantalla. `sourceType` es una clave
+ * de cableado (`epp`, `miper`, `cgrd`): mostrarla cruda incumple PRODUCT.md y
+ * además no le dice nada a quien opera el programa. Las etiquetas siguen el
+ * nombre que el módulo ya tiene en la navegación, para que sean la misma
+ * palabra en los dos lugares.
+ */
+export const PDTP_FULFILLMENT_SOURCE_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  alcotest: "Alcotest",
+  aprobacion_programa: "Aprobación de programa",
+  campana: "Campaña de seguridad",
+  capacitacion: "Capacitación",
+  capacitacion_ocurrencia: "Capacitación",
+  cgrd: "Gestión de riesgos de desastres",
+  cphs: "Comités paritarios",
+  documento: "Documentación SST",
+  emergencia: "Emergencias",
+  epp: "Entrega de EPP",
+  evaluacion_sst: "Evaluación SST",
+  higiene: "Higiene y vigilancia",
+  incident: "Incidentes y accidentes",
+  indicadores: "Indicadores SST",
+  inspeccion: "Inspecciones",
+  miper: "Matriz IPER",
+  obligacion: "Obligación del programa",
+  pdtp: "Programa de trabajo",
+  pdtp_xlsx_cell: "Carga manual del RE-36",
+  ppa: "Permisos de trabajo",
+  vigilancia: "Higiene y vigilancia",
+})
+
+/**
+ * Un `sourceType` sin etiqueta declarada no debe romper la pantalla ni filtrar
+ * la clave cruda: se muestra como "Otro origen" y el identificador queda fuera.
+ * Perder precisión es preferible a mostrar `pdtp_xlsx_cell` en una pantalla que
+ * mira jefatura.
+ */
+export function pdtpFulfillmentSourceLabel(sourceType: string): string {
+  return PDTP_FULFILLMENT_SOURCE_LABELS[sourceType] ?? "Otro origen"
+}
+
+/**
+ * `DD-MM-AAAA` en hora de Chile, o `null` si no hay fecha utilizable. Un
+ * instante UTC adelanta el día entre las 20:00 y la medianoche chilena, y el
+ * hecho aparecería fechado mañana en la faena donde ocurrió.
+ */
+function chileDay(value: string | null): string | null {
+  if (!value) return null
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+  const { year, month, day } = chileDateParts(parsed)
+  return `${String(day).padStart(2, "0")}-${String(month).padStart(2, "0")}-${year}`
+}
+
+/**
+ * Traduce el `lastError` del libro de cumplimiento a una frase legible.
+ *
+ * `pdtp_fulfillment_events.lastError` guarda el `message` de la excepción tal
+ * cual, y el del caso más frecuente interpola identificadores internos
+ * (`epp:MpRpdOL3wOdTmb2v0bAN4`, `faena mHyTTFyYZMStchMpBaSmo`). Ese texto es un
+ * diagnóstico de motor, no copy: se conserva en `lastError` para quien depura,
+ * y la pantalla muestra esto.
+ *
+ * Sólo se puede traducir lo que el motor marca. Para `[no-active-program]`
+ * tenemos la causa y el contexto estructurado; para cualquier otra excepción no
+ * hay forma de reescribir un mensaje arbitrario, así que se devuelve tal cual.
+ */
+export function describePdtpFulfillmentError(input: {
+  lastError: string | null
+  sourceType: string | null
+  worksiteName: string | null
+  occurredAt: string | null
+}): string | null {
+  if (!input.lastError) return null
+  if (!input.lastError.startsWith(NO_ACTIVE_PROGRAM_LAST_ERROR_TAG)) return input.lastError
+
+  const origen = input.sourceType ? pdtpFulfillmentSourceLabel(input.sourceType).toLowerCase() : "un hecho"
+  const faena = input.worksiteName ? `la faena ${input.worksiteName}` : "esa faena"
+  const dia = chileDay(input.occurredAt)
+  const cuando = dia ? ` del ${dia}` : ""
+  return (
+    `Sin programa PDTP vigente que cubra ${faena} para ${origen}${cuando}. ` +
+    "Los hechos quedan guardados y se acreditan solos en cuanto el programa del año esté activo y declare esa faena."
+  )
+}
 
 /**
  * PDTP-002 (auditoría 2026-09-14) — Por qué la plataforma decidió no acreditar.
@@ -31,10 +118,12 @@ export function describePdtpRejection(resultJson: unknown): string {
     return `El hecho ocurrió en ${occurredYear ?? "otro año"} y el programa vigente cubre ${programYear ?? "otro año"}.`
   }
   if (result.skippedExcluded && result.skippedExcluded.length > 0) {
-    return `Actividad(es) N°${result.skippedExcluded.join(", ")} excluidas de esta faena.`
+    const n = result.skippedExcluded.length
+    return `${pluralize(n, "Actividad", "Actividades")} N°${result.skippedExcluded.join(", ")} ${n === 1 ? "excluida" : "excluidas"} de esta faena.`
   }
   if (result.skippedNotFound && result.skippedNotFound.length > 0) {
-    return `Actividad(es) N°${result.skippedNotFound.join(", ")} no existen en el programa vigente.`
+    const n = result.skippedNotFound.length
+    return `${pluralize(n, "Actividad", "Actividades")} N°${result.skippedNotFound.join(", ")} no ${n === 1 ? "existe" : "existen"} en el programa vigente.`
   }
   return "El motor no encontró ninguna actividad del programa a la que acreditar el hecho."
 }
@@ -73,8 +162,21 @@ export async function countPdtpFulfillmentBacklog(programId: string, options?: {
    * va a reintentar: exigen que alguien mire el hecho y decida.
    */
   rejected: number
-  /** Los últimos rechazos, con su razón ya traducida, para que el panel diga algo. */
-  recentRejected: Array<{ sourceType: string; sourceId: string; occurredAt: string; reason: string }>
+  /**
+   * Los últimos rechazos, con su razón ya traducida, para que el panel diga
+   * algo. `sourceType`/`sourceId` siguen expuestos porque el preflight los usa
+   * para señalar la fila exacta; la pantalla muestra `sourceLabel`,
+   * `worksiteName` y `occurredOn`, que es lo mismo dicho en castellano.
+   */
+  recentRejected: Array<{
+    sourceType: string
+    sourceId: string
+    occurredAt: string
+    reason: string
+    sourceLabel: string
+    worksiteName: string | null
+    occurredOn: string | null
+  }>
   /**
    * Subconjunto de `errored` cuya causa es `PdtpNoActiveProgramError` (el
    * programa todavía no está activo, o sigue en revisión): es el estado
@@ -84,7 +186,14 @@ export async function countPdtpFulfillmentBacklog(programId: string, options?: {
    * `ok`.
    */
   erroredWaitingOnActivation: number
+  /**
+   * El `message` crudo de la excepción, con identificadores internos incluidos.
+   * Es diagnóstico: lo consume `preflight-pdtp-accreditation-wiring`. La
+   * pantalla usa `lastErrorDescription`.
+   */
   lastError: string | null
+  /** El mismo error dicho para quien opera el programa. */
+  lastErrorDescription: string | null
   digestDrift: boolean
   /** La firma existe, pero su esquema histórico no permite verificarla aún. */
   digestVerificationUnavailable: boolean
@@ -142,11 +251,22 @@ export async function countPdtpFulfillmentBacklog(programId: string, options?: {
       sourceId: pdtpFulfillmentEvents.sourceId,
       occurredAt: pdtpFulfillmentEvents.occurredAt,
       resultJson: pdtpFulfillmentEvents.resultJson,
+      worksiteName: worksites.name,
     }).from(pdtpFulfillmentEvents)
+      .leftJoin(worksites, eq(worksites.id, pdtpFulfillmentEvents.worksiteId))
       .where(and(eq(pdtpFulfillmentEvents.status, "rejected"), memberScope))
       .orderBy(desc(pdtpFulfillmentEvents.updatedAt))
       .limit(5),
-    db.select({ lastError: pdtpFulfillmentEvents.lastError }).from(pdtpFulfillmentEvents)
+    // El `leftJoin` es a propósito: una faena borrada no debe hacer desaparecer
+    // el último error del libro, sólo deja el nombre en nulo y la frase cae en
+    // su variante genérica.
+    db.select({
+      lastError: pdtpFulfillmentEvents.lastError,
+      sourceType: pdtpFulfillmentEvents.sourceType,
+      occurredAt: pdtpFulfillmentEvents.occurredAt,
+      worksiteName: worksites.name,
+    }).from(pdtpFulfillmentEvents)
+      .leftJoin(worksites, eq(worksites.id, pdtpFulfillmentEvents.worksiteId))
       .where(and(eq(pdtpFulfillmentEvents.status, "error"), memberScope))
       .orderBy(desc(pdtpFulfillmentEvents.updatedAt))
       .limit(1),
@@ -183,9 +303,18 @@ export async function countPdtpFulfillmentBacklog(programId: string, options?: {
       sourceId: row.sourceId,
       occurredAt: row.occurredAt,
       reason: describePdtpRejection(row.resultJson),
+      sourceLabel: pdtpFulfillmentSourceLabel(row.sourceType),
+      worksiteName: row.worksiteName ?? null,
+      occurredOn: chileDay(row.occurredAt),
     })),
     erroredWaitingOnActivation: Number(erroredWaitingRow?.total ?? 0),
     lastError: lastErrorEvent?.lastError ?? null,
+    lastErrorDescription: describePdtpFulfillmentError({
+      lastError: lastErrorEvent?.lastError ?? null,
+      sourceType: lastErrorEvent?.sourceType ?? null,
+      worksiteName: lastErrorEvent?.worksiteName ?? null,
+      occurredAt: lastErrorEvent?.occurredAt ?? null,
+    }),
     digestDrift,
     digestVerificationUnavailable,
     digestVerificationMessage,

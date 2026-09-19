@@ -30,6 +30,9 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
   await inMemoryDb.delete(schema.worksites)
+  // La auditoría conserva el usuario que ejecutó cada operación; limpiar el
+  // log antes de recrear el fixture evita que la FK bloquee el DELETE de users.
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.users)
 
   await inMemoryDb.insert(schema.users).values({ id: "user-1", name: "U1", email: "u1@test", hashedPassword: "x", isActive: true })

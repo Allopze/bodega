@@ -55,7 +55,7 @@ export default async function PdtpPeriodClosuresPage({ params }: PageProps) {
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
-            { label: "Programas PDTP", href: "/prevencion/pdtp" },
+            { label: "Programa de trabajo", href: "/prevencion/pdtp" },
             { label: program.title, href: `/prevencion/pdtp/${programId}` },
             { label: "Cierres mensuales" },
           ]} />

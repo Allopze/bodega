@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/lib/form-state"
+import { pdtpResponsibleKindLabel } from "@/lib/prevention/pdtp"
 import {
   publishPdtpCatalogActivityAction,
   retirePdtpCatalogActivityAction,
@@ -66,6 +67,8 @@ interface CatalogTabsProps {
   responsibles: ResponsibleRow[]
   sheets: SheetRow[]
   programs: ProgramSummary[]
+  draftPrograms: ProgramSummary[]
+  canManagePrograms: boolean
 }
 
 const TABS = [
@@ -75,7 +78,7 @@ const TABS = [
   { key: "programs", label: "Programas activos" },
 ] as const
 
-export function CatalogTabs({ activities, roleOptions, responsibles, sheets, programs }: CatalogTabsProps) {
+export function CatalogTabs({ activities, roleOptions, responsibles, sheets, programs, draftPrograms, canManagePrograms }: CatalogTabsProps) {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("activities")
   const [activitySheetOpen, setActivitySheetOpen] = useState(false)
   const [editActivity, setEditActivity] = useState<CatalogActivityRow | null>(null)
@@ -146,7 +149,7 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
                   title={activity.title}
                   description={activity.description}
                   status={<CatalogStatus status={activity.status} />}
-                  actions={<ActivityActions activity={activity} onRevise={() => { setEditActivity(activity); setActivitySheetOpen(true) }} onRetire={() => setRetireActivity(activity)} publishAction={publishAction} />}
+                  actions={<ActivityActions activity={activity} onRevise={() => { setEditActivity(activity); setActivitySheetOpen(true) }} onRetire={() => setRetireActivity(activity)} publishAction={publishAction} draftPrograms={draftPrograms} canManagePrograms={canManagePrograms} />}
                 >
                   <ResponsiveDataListField label="Código"><span className="font-mono">{activity.code}</span></ResponsiveDataListField>
                   <ResponsiveDataListField label="Revisión">{activity.currentRevision}</ResponsiveDataListField>
@@ -166,7 +169,7 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{activity.currentRevision}</TableCell>
                   <TableCell><CatalogStatus status={activity.status} /></TableCell>
-                  <TableCell><ActivityActions activity={activity} onRevise={() => { setEditActivity(activity); setActivitySheetOpen(true) }} onRetire={() => setRetireActivity(activity)} publishAction={publishAction} /></TableCell>
+                  <TableCell><ActivityActions activity={activity} onRevise={() => { setEditActivity(activity); setActivitySheetOpen(true) }} onRetire={() => setRetireActivity(activity)} publishAction={publishAction} draftPrograms={draftPrograms} canManagePrograms={canManagePrograms} /></TableCell>
                 </TableRow>
               )
             }}
@@ -241,7 +244,7 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
                   }
                 >
                   <ResponsiveDataListField label="Rol">{r.roleName || "Sin rol"}</ResponsiveDataListField>
-                  <ResponsiveDataListField label="Tipo"><MetaBadge meta={{ label: r.kind, variant: "default" }} /></ResponsiveDataListField>
+                  <ResponsiveDataListField label="Tipo"><MetaBadge meta={{ label: pdtpResponsibleKindLabel(r.kind), variant: "default" }} /></ResponsiveDataListField>
                   <ResponsiveDataListField label="Notas" className="col-span-2">{r.notes || "Sin notas"}</ResponsiveDataListField>
                 </ResponsiveDataListCard>
               )
@@ -255,7 +258,7 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
                     <TableCell className="font-mono text-xs text-[var(--color-text-muted)]">
                       {r.roleName || "—"}
                     </TableCell>
-                    <TableCell>{<MetaBadge meta={{ label: r.kind, variant: "default" }} />}</TableCell>
+                    <TableCell>{<MetaBadge meta={{ label: pdtpResponsibleKindLabel(r.kind), variant: "default" }} />}</TableCell>
                     <TableCell className="text-xs text-[var(--color-text-muted)]">{r.notes || "—"}</TableCell>
                     <TableCell>
                       {r.isActive
@@ -295,6 +298,7 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
             open={respSheetOpen}
             onClose={() => setRespSheetOpen(false)}
             editResponsible={editResp}
+            roleOptions={roleOptions}
           />
         </section>
       )}
@@ -461,11 +465,15 @@ function ActivityActions({
   onRevise,
   onRetire,
   publishAction,
+  draftPrograms,
+  canManagePrograms,
 }: {
   activity: CatalogActivityRow
   onRevise: () => void
   onRetire: () => void
   publishAction: (payload: FormData) => void
+  draftPrograms: ProgramSummary[]
+  canManagePrograms: boolean
 }) {
   if (activity.status === "retired") return null
   return (
@@ -478,6 +486,32 @@ function ActivityActions({
         </form>
       )}
       {activity.status === "active" && <Button type="button" variant="ghost" size="sm" onClick={onRetire}><Archive size={15} />Retirar</Button>}
+      {activity.status === "active" && canManagePrograms && draftPrograms.length > 0 && (
+        draftPrograms.length === 1 ? (
+          <Button asChild type="button" variant="ghost" size="sm">
+            <Link href={`${draftPrograms[0]!.href}?catalogActivityId=${encodeURIComponent(activity.id)}`}>
+              Configurar en programa
+            </Link>
+          </Button>
+        ) : (
+          <details className="relative">
+            <summary className="cursor-pointer list-none rounded-md px-2 py-1.5 text-xs font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-2)]">
+              Configurar en programa
+            </summary>
+            <div className="absolute right-0 z-20 mt-1 min-w-56 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
+              {draftPrograms.map((program) => (
+                <Link
+                  key={program.id}
+                  href={`${program.href}?catalogActivityId=${encodeURIComponent(activity.id)}`}
+                  className="block rounded-md px-3 py-2 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
+                >
+                  {program.title} · {program.year} v{program.version}
+                </Link>
+              ))}
+            </div>
+          </details>
+        )
+      )}
     </div>
   )
 }

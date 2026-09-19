@@ -737,7 +737,19 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-pdtp-aprobaciones", path: "/prevencion/pdtp/aprobaciones", auth: true },
   { slug: "prevencion-pdtp-cobertura", path: "/prevencion/pdtp/cobertura", auth: true },
   { slug: "prevencion-pdtp-cierres-programa", path: "/prevencion/pdtp/prog-audit-1/cierres", auth: true, notes: "Sin cierres congelados la pantalla muestra su estado vacío, que es lo que ve una faena antes de cerrar su primer mes." },
-  { slug: "prevencion-pdtp-cierre-detalle", path: "/prevencion/pdtp/prog-audit-1/cierres/closure-audit-1", auth: true, expectedStatus: 404, captureView: false, notes: "Fixture pendiente: la foto de un cierre no se puede sembrar con un INSERT (snapshot_json lo produce closePdtpPeriod a partir del RE-36, los indicadores y el reporte de gestión). Sin esa fila el detalle responde 404." },
+  /* La entrada de menú no conoce un id: resuelve el programa del año y redirige
+     (así lo documenta `pdtp/cierres/page.tsx`). Sin declarar el destino, el
+     auto-descubrimiento la capturaba como vista y la corrida marcaba "URL final
+     no declarada" produciendo además un PNG idéntico al de su propio destino.
+     Se aceptan las dos ramas reales: el programa del año, y el tablero cuando
+     el año todavía no tiene programa. */
+  { slug: "prevencion-pdtp-cierres", path: "/prevencion/pdtp/cierres", auth: true, allowedPaths: ["/prevencion/pdtp/prog-audit-1/cierres", "/prevencion/pdtp"], captureView: false, notes: "Compatibilidad: entrada de menú que resuelve el programa del año y redirige a sus cierres." },
+  /* Declaraba 404 y el detalle responde 200: `[programId]/loading.tsx` abre un
+     límite de Suspense, así que el shell se envía con 200 y el `notFound()` del
+     cierre inexistente recién se resuelve al streamear. El estado dejó de ser
+     demostrable como 404 sin falsear la evidencia, y la fila sigue sin poder
+     sembrarse (snapshot_json lo produce closePdtpPeriod, no un INSERT). */
+  { slug: "prevencion-pdtp-cierre-detalle", path: "/prevencion/pdtp/prog-audit-1/cierres/closure-audit-1", auth: true, captureView: false, notes: "Fixture pendiente: la foto de un cierre no se puede sembrar con un INSERT (snapshot_json lo produce closePdtpPeriod a partir del RE-36, los indicadores y el reporte de gestión). Sin esa fila se renderiza el not-found dentro del segmento que streamea, con estado 200." },
   { slug: "prevencion-capa", path: "/prevencion/capa", auth: true },
   { slug: "prevencion-capa-detalle", path: "/prevencion/capa/capa-audit-1", auth: true },
   { slug: "prevencion-incidentes", path: "/prevencion/incidentes", auth: true },

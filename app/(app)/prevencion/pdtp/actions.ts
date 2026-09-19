@@ -20,6 +20,7 @@ export {
 export {
   updatePdtpActivityAction,
   addPdtpActivityAction,
+  savePdtpProgramActivityAction,
   duplicatePdtpActivityAction,
   batchUpdatePdtpActivitiesAction,
   applyPdtpSchedulePresetAction,
@@ -66,3 +67,5 @@ export {
   reopenPdtpPeriodAction,
   distributePdtpPeriodClosureAction,
 } from "./actions/period-closures"
+
+export { startPdtpScheduledInstanceAction, recordPdtpScheduledInstanceOutcomeAction } from "./actions/scheduled-instances"

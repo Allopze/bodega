@@ -90,6 +90,105 @@ export const pdtpRecurrenceRuleSchema = z.object({
   }
 })
 
+const pdtpScheduleDate = z.iso.date("Fecha de programación inválida")
+const pdtpScheduleDefinitionBase = z.object({ version: z.literal(1) })
+
+export const pdtpScheduleDefinitionSchema = z.discriminatedUnion("kind", [
+  pdtpScheduleDefinitionBase.extend({
+    kind: z.literal("one_time"),
+    date: pdtpScheduleDate,
+  }),
+  pdtpScheduleDefinitionBase.extend({
+    kind: z.literal("recurring"),
+    startDate: pdtpScheduleDate,
+    endDate: pdtpScheduleDate,
+    every: z.coerce.number().int().min(1).max(366),
+    unit: z.enum(["day", "week", "month", "year"]),
+    weekdays: z.array(z.coerce.number().int().min(1).max(7)).max(7).optional()
+      .transform((days) => days ? [...new Set(days)].sort((a, b) => a - b) : days),
+    dayOfMonth: z.coerce.number().int().min(1).max(31).optional(),
+    plannedQuantity: z.coerce.number().positive().max(100000).optional().default(1),
+  }).superRefine((value, ctx) => {
+    if (value.endDate < value.startDate) ctx.addIssue({ code: "custom", path: ["endDate"], message: "La fecha final debe ser posterior al inicio" })
+    if (value.unit !== "week" && value.weekdays?.length) ctx.addIssue({ code: "custom", path: ["weekdays"], message: "Los días de semana sólo aplican a una recurrencia semanal" })
+  }),
+  pdtpScheduleDefinitionBase.extend({
+    kind: z.literal("event"),
+    triggerConnectorKey: z.string().trim().min(1).max(100),
+    triggerEventKey: z.string().trim().min(1).max(100),
+    dueValue: z.coerce.number().int().positive().max(8760),
+    dueUnit: z.enum(["hour", "day"]),
+  }),
+  pdtpScheduleDefinitionBase.extend({
+    kind: z.literal("on_demand"),
+    dueValue: z.coerce.number().int().positive().max(8760),
+    dueUnit: z.enum(["hour", "day"]),
+  }),
+  pdtpScheduleDefinitionBase.extend({ kind: z.literal("legacy_grid") }),
+])
+
+export const pdtpCompletionPolicySchema = z.enum(["manual_confirmed", "source_completed", "source_approved", "checklist_completed"])
+export const pdtpEvidenceKindSchema = z.enum(["file", "photo", "checklist", "signature", "generated_record"])
+export const pdtpActivityExecutionConfigSchema = z.object({
+  destinationConnectorKey: z.string().trim().min(1).max(100),
+  accreditationBindingId: z.string().trim().min(1).nullable().optional(),
+  completionPolicy: pdtpCompletionPolicySchema.default("manual_confirmed"),
+  evidencePolicy: z.object({
+    required: z.boolean().default(false),
+    acceptedKinds: z.array(pdtpEvidenceKindSchema).max(5).transform((kinds) => [...new Set(kinds)]),
+  }),
+}).superRefine((value, ctx) => {
+  if (value.evidencePolicy.required && value.evidencePolicy.acceptedKinds.length === 0) {
+    ctx.addIssue({ code: "custom", path: ["evidencePolicy", "acceptedKinds"], message: "Selecciona al menos un mecanismo de evidencia" })
+  }
+})
+
+export const pdtpScheduledInstanceStartSchema = z.object({
+  instanceId: z.string().trim().min(1, "Instancia requerida"),
+  connectorKey: z.string().trim().min(1).max(100).optional(),
+  instrumentId: z.string().trim().min(1).max(200).nullable().optional(),
+})
+
+export const pdtpScheduledInstanceOutcomeSchema = z.object({
+  instanceId: z.string().trim().min(1, "Instancia requerida"),
+  action: z.enum(["submit", "complete", "not_applicable", "cancel"]),
+  evidenceRef: z.string().trim().max(2000).nullable().optional(),
+  reason: z.string().trim().max(2000).nullable().optional(),
+  sourceMetadata: z.record(z.string(), z.unknown()).default({}),
+})
+
+export const pdtpReminderRuleSchema = z.object({
+  offsetValue: z.coerce.number().int().min(-8760).max(8760),
+  offsetUnit: z.enum(["hour", "day"]).default("day"),
+  recipientKind: z.enum(["responsible", "role", "user"]).default("responsible"),
+  recipientUserId: z.string().trim().min(1).nullable().optional(),
+  isActive: z.boolean().default(true),
+}).superRefine((value, ctx) => {
+  if (value.recipientKind === "user" && !value.recipientUserId) {
+    ctx.addIssue({ code: "custom", path: ["recipientUserId"], message: "Selecciona el destinatario del recordatorio" })
+  }
+  if (value.recipientKind !== "user" && value.recipientUserId) {
+    ctx.addIssue({ code: "custom", path: ["recipientUserId"], message: "El destinatario nominal sólo aplica a reglas por usuario" })
+  }
+})
+
+function validateScheduleDefinitionMode(
+  value: { scheduleMode?: string; scheduleDefinition?: { kind: string } | null },
+  ctx: z.RefinementCtx,
+) {
+  if (!value.scheduleDefinition || !value.scheduleMode) return
+  const expected = value.scheduleDefinition.kind === "event"
+    ? "triggered"
+    : value.scheduleDefinition.kind === "on_demand"
+      ? "on_demand"
+      : value.scheduleDefinition.kind === "legacy_grid"
+        ? undefined
+        : "scheduled"
+  if (expected && value.scheduleMode !== expected) {
+    ctx.addIssue({ code: "custom", path: ["scheduleDefinition"], message: `La programación ${value.scheduleDefinition.kind} no coincide con el modo ${value.scheduleMode}` })
+  }
+}
+
 const pdtpScheduleModeSchema = z.enum(["scheduled", "on_demand", "triggered"])
 const pdtpScheduleClassificationStatusSchema = z.enum(["confirmed", "needs_review"])
 const pdtpIndicatorModeSchema = z.enum(["planned_vs_completed", "closed_on_time", "completed_count", "not_applicable", "coverage"])
@@ -140,6 +239,9 @@ export const pdtpActivityUpdateSchema = z.object({
   scheduleMode: pdtpScheduleModeSchema.optional(),
   scheduleClassificationStatus: pdtpScheduleClassificationStatusSchema.optional(),
   recurrenceRule: pdtpRecurrenceRuleSchema.nullable().optional(),
+  scheduleDefinition: pdtpScheduleDefinitionSchema.nullable().optional(),
+  executionConfig: pdtpActivityExecutionConfigSchema.optional(),
+  reminderRules: z.array(pdtpReminderRuleSchema).max(20).optional(),
   triggerType: z.string().trim().max(100).nullable().optional(),
   triggerDescription: z.string().trim().max(2000).nullable().optional(),
   dueDays: z.coerce.number().int().min(0).max(3650).nullable().optional(),
@@ -163,6 +265,7 @@ export const pdtpActivityUpdateSchema = z.object({
     ctx.addIssue({ code: "custom", path: ["recurrenceRule"], message: "Define una frecuencia para una actividad programada" })
   }
   validateSubjectSourceConfiguration(value, ctx)
+  validateScheduleDefinitionMode(value, ctx)
 })
 
 export const pdtpActivityAddSchema = z.object({
@@ -176,6 +279,9 @@ export const pdtpActivityAddSchema = z.object({
   scheduleMode: pdtpScheduleModeSchema.default("scheduled"),
   scheduleClassificationStatus: pdtpScheduleClassificationStatusSchema.default("confirmed"),
   recurrenceRule: pdtpRecurrenceRuleSchema.nullable().optional(),
+  scheduleDefinition: pdtpScheduleDefinitionSchema.nullable().optional(),
+  executionConfig: pdtpActivityExecutionConfigSchema.optional(),
+  reminderRules: z.array(pdtpReminderRuleSchema).max(20).optional(),
   triggerType: z.string().trim().max(100).nullable().optional(),
   triggerDescription: z.string().trim().max(2000).nullable().optional(),
   dueDays: z.coerce.number().int().min(0).max(3650).nullable().optional(),
@@ -194,6 +300,50 @@ export const pdtpActivityAddSchema = z.object({
     ctx.addIssue({ code: "custom", path: ["triggerDescription"], message: "Describe el evento que genera la obligación" })
   }
   validateSubjectSourceConfiguration(value, ctx)
+  validateScheduleDefinitionMode(value, ctx)
+})
+
+const pdtpProgramActivitySourceSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("catalog"),
+    catalogActivityId: z.string().trim().min(1, "Actividad requerida"),
+  }),
+  z.object({
+    kind: z.literal("new"),
+    code: z.string().trim().toUpperCase()
+      .regex(/^PDT-[A-Z0-9][A-Z0-9-]{2,116}[A-Z0-9]$/, "Usa el formato PDT-AREA-ACCION"),
+    title: z.string().trim().min(3, "El título debe tener al menos 3 caracteres").max(80),
+    description: z.string().trim().min(3, "La descripción es obligatoria").max(4000),
+    executionGuidance: z.string().trim().min(2, "La guía de ejecución es obligatoria").max(2000),
+  }),
+])
+
+/** Contrato único del creador. El cliente elige si reutiliza una identidad
+ * publicada o crea una nueva; la configuración anual siempre se valida con
+ * las mismas reglas modernas de programación, destino, evidencia y avisos. */
+export const pdtpProgramActivityCreateSchema = z.object({
+  programId: z.string().trim().min(1, "Programa requerido"),
+  sheetCode: z.string().trim().min(1).max(100).optional(),
+  source: pdtpProgramActivitySourceSchema,
+  responsibleSlug: z.string().trim().min(1, "Responsable requerido"),
+  audienceRoles: z.array(z.string().trim().min(1).max(100)).max(50).default([]),
+  scheduleMode: pdtpScheduleModeSchema.default("scheduled"),
+  recurrenceRule: pdtpRecurrenceRuleSchema.nullable().optional(),
+  scheduleDefinition: pdtpScheduleDefinitionSchema,
+  executionConfig: pdtpActivityExecutionConfigSchema,
+  reminderRules: z.array(pdtpReminderRuleSchema).max(20).default([]),
+  triggerType: z.string().trim().max(100).nullable().optional(),
+  triggerDescription: z.string().trim().max(2000).nullable().optional(),
+  evidenceRequirement: z.string().trim().max(3000).nullable().optional(),
+  notes: z.string().max(5000).optional().or(z.literal("")),
+}).superRefine((value, ctx) => {
+  if (value.scheduleMode === "scheduled" && !value.recurrenceRule) {
+    ctx.addIssue({ code: "custom", path: ["recurrenceRule"], message: "Define una frecuencia para una actividad programada" })
+  }
+  if (value.scheduleMode === "triggered" && !value.triggerDescription?.trim()) {
+    ctx.addIssue({ code: "custom", path: ["triggerDescription"], message: "Describe el evento que genera la obligación" })
+  }
+  validateScheduleDefinitionMode(value, ctx)
 })
 
 const pdtpDeviationKindSchema = z.enum(["not_performed", "not_applicable", "reprogrammed"])

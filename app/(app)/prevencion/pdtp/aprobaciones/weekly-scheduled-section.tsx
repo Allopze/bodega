@@ -2,6 +2,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import type { PdtpPendingTarget } from "@/lib/services/prevention-pdtp"
+import { countOf } from "@/lib/utils"
 
 /**
  * Actividades calendarizadas con plan esta semana que todavía no registran
@@ -25,7 +26,7 @@ export function WeeklyScheduledSection({ targets }: { targets: PdtpPendingTarget
             <div key={target.worksiteId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
               <div>
                 <p className="text-sm font-medium text-[var(--color-text)]">{target.worksiteName}</p>
-                <p className="text-xs text-[var(--color-text-muted)]">{target.activityIds.length} actividad(es) sin ejecutar esta semana</p>
+                <p className="text-xs text-[var(--color-text-muted)]">{countOf(target.activityIds.length, "actividad", "actividades")} sin ejecutar esta semana</p>
               </div>
               <Button asChild size="sm" variant="secondary">
                 <Link href={`/prevencion/pdtp?faena=${target.worksiteId}`}>Ver programa</Link>

@@ -18,6 +18,7 @@ import {
 import { MATRIX_PERMISSION, MATRIX_TRANSITIONS } from "@/lib/services/prevention-risk-legal"
 import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation, type PdtpPeriod } from "./period"
 import { logger } from "@/lib/logger"
+import { countOf } from "@/lib/utils"
 import { createNotifications, getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
 import { listVencidas } from "./followups"
 import { loadProgramScheduleAndExecutions } from "./helpers"
@@ -233,7 +234,7 @@ export async function runPdtpWeeklyReminders(period: PdtpPeriod = currentPdtpPer
     const dedupeKey = `pdtp-weekly:${entry.userId}:${entry.worksiteId}:${period.year}:${period.month}:W${period.week}`
     await createNotifications([entry.userId], {
       type: "system_alert",
-      title: `📋 PDTP semana ${period.week} con ${entry.activityIds.size} actividad(es) pendiente(s)`,
+      title: `📋 PDTP semana ${period.week} con ${countOf(entry.activityIds.size, "actividad pendiente", "actividades pendientes")}`,
       body: `La faena "${entry.worksiteName}" tiene actividades del programa preventivo SG-SST ${period.year} sin registrar esta semana.`,
       entityType: "pdtp_program",
       entityId: program.id,

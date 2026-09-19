@@ -129,7 +129,7 @@ export async function getOperationalControlHub(session: Session, input: Partial<
       vehicleScope,
       sql`${maintenanceRecords.maintenanceDate} BETWEEN ${period.from} AND ${period.to}`,
     )).groupBy(maintenanceRecords.vehicleId) : [],
-    canViewInspections ? db.select({ vehicleId: preventionInspectionRuns.subjectVehicleId, count: sql<number>`COUNT(*)`, openCount: sql<number>`COUNT(*) FILTER (WHERE ${preventionInspectionRuns.status} IN ('planned', 'in_progress', 'completed'))` })
+    canViewInspections ? db.select({ vehicleId: preventionInspectionRuns.subjectVehicleId, count: sql<number>`COUNT(*) FILTER (WHERE ${preventionInspectionRuns.status} <> 'cancelled')` })
       .from(preventionInspectionRuns).innerJoin(fuelVehicles, eq(fuelVehicles.id, preventionInspectionRuns.subjectVehicleId)).where(and(vehicleScope, sql`${preventionInspectionRuns.scheduledFor} BETWEEN ${period.from} AND ${period.to}`)).groupBy(preventionInspectionRuns.subjectVehicleId) : [],
     db.select({
       vehicleId: fuelVehicleOperationalIntervals.vehicleId,
@@ -185,7 +185,7 @@ export async function getOperationalControlHub(session: Session, input: Partial<
     // todavía; devolver null (no 0) fuerza a la UI a pintar "—" en vez de
     // "$0" — bug B-05. Cuando el módulo `service_requests` se conecte, esto
     // será un cálculo real.
-    maintenanceCost: canViewCosts ? null : null,
+    maintenanceCost: null,
   }))
 
   const totalIntervalHours = availabilityRows.reduce((sum, row) => sum + Number(row.totalHours), 0)

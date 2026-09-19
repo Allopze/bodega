@@ -4,6 +4,7 @@ import * as React from "react"
 import { useActionState } from "react"
 import { ArrowRight, CheckCircle, FileXls } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/ui/submit-button"
+import { Callout } from "@/components/ui/callout"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -81,24 +82,21 @@ function PdtpCreateProgramFields({
           </div>
         </section>
       ) : (
-        <div role="alert" className="rounded-xl border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-4 py-3 text-sm text-[var(--color-warning-ink)]">
-          <p className="font-semibold">Base {year} no instalada</p>
-          <p className="mt-1">
-            Quien administre el catálogo PDTP (Jefatura de Prevención u otro con el permiso correspondiente) debe
-            publicar la Base preventiva para {year} antes de crear programas anuales. Esta publicación se hace por
-            fuera de esta pantalla; contacta a esa persona para coordinarla.
-          </p>
-        </div>
+        <Callout tone="warning" role="alert" title={`Base ${year} no instalada`}>
+          Quien administre el catálogo PDTP (Jefatura de Prevención u otro con el permiso correspondiente) debe
+          publicar la Base preventiva para {year} antes de crear programas anuales. Esta publicación se hace por
+          fuera de esta pantalla; contacta a esa persona para coordinarla.
+        </Callout>
       )}
 
       {state?.message && (
-        <div role="status" className={state.ok
-          ? "rounded-xl border border-[var(--color-success-line)] bg-[var(--color-success-tint)] px-4 py-3 text-sm text-[var(--color-success-ink)]"
-          : "rounded-xl border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-4 py-3 text-sm text-[var(--color-danger-ink)]"
-        }>
-          <p className="font-semibold">{state.ok ? "Programa disponible" : "No se pudo crear"}</p>
-          <p className="mt-1">{state.message}</p>
-        </div>
+        <Callout
+          tone={state.ok ? "success" : "danger"}
+          role="status"
+          title={state.ok ? "Programa disponible" : "No se pudo crear"}
+        >
+          {state.message}
+        </Callout>
       )}
 
       <div className="flex justify-end">

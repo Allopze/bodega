@@ -31,6 +31,7 @@
     "db:generate": "drizzle-kit generate",
     "db:reconcile-watermarks": "node --env-file-if-exists=.env.local scripts/reconcile-migration-watermarks.mjs",
     "pdtp:backfill-activity-catalog": "tsx --env-file-if-exists=.env.local scripts/backfill-pdtp-catalog-activities.ts",
+    "pdtp:backfill-scheduling": "tsx --env-file-if-exists=.env.local scripts/backfill-pdtp-scheduling.ts",
     "db:migrate": "npm run db:preflight-pdtp-annual && npm run db:preflight-migrations && node --env-file-if-exists=.env.local scripts/migrate.mjs && npm run db:seed-size-catalog && npm run db:reconcile-epp-delivery-scale",
     "db:reconcile-epp-delivery-scale": "tsx --env-file-if-exists=.env.local scripts/reconcile-epp-delivery-scale.ts --apply",
     "db:push": "drizzle-kit push",

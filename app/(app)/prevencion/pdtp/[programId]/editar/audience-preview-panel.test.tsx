@@ -33,14 +33,14 @@ afterEach(() => cleanup())
 describe("AudiencePreviewPanel", () => {
   it("shows every activity when no filter is selected", () => {
     render(<AudiencePreviewPanel activities={ACTIVITIES} responsibleCatalog={RESPONSIBLES} appliesToAllWorksites />)
-    expect(screen.getByText("3 de 3 actividad(es) visibles para esta combinación.")).toBeDefined()
+    expect(screen.getByText("3 de 3 actividades visibles para esta combinación.")).toBeDefined()
   })
 
   it("filters to the activities matching the selected responsable", () => {
     render(<AudiencePreviewPanel activities={ACTIVITIES} responsibleCatalog={RESPONSIBLES} appliesToAllWorksites />)
     fireEvent.click(screen.getByLabelText("Responsable"))
     fireEvent.click(screen.getByText("Jefatura Chome"))
-    expect(screen.getByText("2 de 3 actividad(es) visibles para esta combinación.")).toBeDefined()
+    expect(screen.getByText("2 de 3 actividades visibles para esta combinación.")).toBeDefined()
     expect(screen.getByText(/N°2/)).toBeDefined()
     expect(screen.getByText(/N°3/)).toBeDefined()
   })
@@ -49,7 +49,7 @@ describe("AudiencePreviewPanel", () => {
     render(<AudiencePreviewPanel activities={ACTIVITIES} responsibleCatalog={RESPONSIBLES} appliesToAllWorksites />)
     fireEvent.click(screen.getByLabelText("Audiencia"))
     fireEvent.click(screen.getByText("subgerente"))
-    expect(screen.getByText("2 de 3 actividad(es) visibles para esta combinación.")).toBeDefined()
+    expect(screen.getByText("2 de 3 actividades visibles para esta combinación.")).toBeDefined()
   })
 
   it("does not show a faena filter when no worksites are passed (backward compatible)", () => {
@@ -71,7 +71,7 @@ describe("AudiencePreviewPanel", () => {
     )
     fireEvent.click(screen.getByLabelText("Faena"))
     fireEvent.click(screen.getByText("Faena Uno"))
-    expect(screen.getByText("2 de 3 actividad(es) visibles para esta combinación.")).toBeDefined()
+    expect(screen.getByText("2 de 3 actividades visibles para esta combinación.")).toBeDefined()
     expect(screen.queryByText(/N°1/)).toBeNull()
   })
 

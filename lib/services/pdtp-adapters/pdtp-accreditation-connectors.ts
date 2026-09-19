@@ -34,7 +34,8 @@ import {
   revokePdtpAccreditationWithClient,
   type AccreditationInput,
 } from "@/lib/services/pdtp/accreditation"
-import { recordPdtpFulfillmentEvent, recordPendingPdtpFulfillmentEvent, recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
+import { linkPdtpScheduledInstancesToFulfillment, recordPdtpFulfillmentEvent, recordPendingPdtpFulfillmentEvent, recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
+import { recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
 import { PDTP_CPHS_ACTIVITY_NUMBERS } from "@/lib/services/pdtp/worksites"
 import { pdtpCatalogActivityIdForLegacyNumber, pdtpCatalogActivityIdsForLegacyNumbers } from "./catalog-activities-2026"
 
@@ -84,6 +85,16 @@ export async function onInspectionCompleted(input: {
   activityNumbers?: number[]
   catalogActivityIds?: string[]
 }, client?: Tx): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "inspections",
+    eventKey: "inspection_completed",
+    sourceType: "inspeccion",
+    sourceId: input.runId,
+    worksiteId: input.worksiteId,
+    occurredAt: input.completedAt,
+    payload: { runId: input.runId, completedByUserId: input.completedByUserId },
+    client,
+  })
   if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   // Cantidad 1 porque el modelo es una inspección por sujeto: el run declara su
@@ -135,6 +146,11 @@ export async function onInspectionCompleted(input: {
           `La inspección ocurrió en ${result.skippedOutOfPeriod.occurredYear}, fuera del programa PDTP ${result.skippedOutOfPeriod.programYear}.`,
         )
       }
+      // La rama transaccional acredita directamente con el cliente del cierre
+      // de la inspección; enlazar aquí, con el mismo cliente, evita que la
+      // ocurrencia programada quede pendiente sólo porque el conector necesitó
+      // atomicidad con su registro nativo.
+      await linkPdtpScheduledInstancesToFulfillment(accreditation, result, client)
     } catch (err) {
       // Sólo ese caso. Un número inexistente o una faena fuera del programa
       // siguen tumbando el cierre: ésos sí hay que corregirlos antes de firmar.
@@ -195,6 +211,15 @@ export async function onTrainingSessionClosed(input: {
   activityNumbers?: number[]
   catalogActivityIds?: string[]
 }): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "training",
+    eventKey: "session_closed",
+    sourceType: "capacitacion",
+    sourceId: input.sessionId,
+    worksiteId: input.worksiteId,
+    occurredAt: input.closedAt,
+    payload: { sessionId: input.sessionId, attendedCount: input.attendedCount },
+  })
   if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   await safeAccredit({
@@ -243,6 +268,15 @@ export async function onEppDeliveryCompleted(input: {
   catalogActivityIds?: string[]
   evidenceRef?: string
 }): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "epp",
+    eventKey: "delivery_completed",
+    sourceType: "epp",
+    sourceId: input.deliveryId,
+    worksiteId: input.worksiteId,
+    occurredAt: input.deliveredAt,
+    payload: { deliveryId: input.deliveryId, workerCount: input.workerCount },
+  })
   const catalogActivityIds = input.catalogActivityIds?.length
     ? input.catalogActivityIds
     : pdtpCatalogActivityIdsForLegacyNumbers(input.activityNumbers ?? [])
@@ -275,6 +309,15 @@ export async function onCphsCommitteeConstituted(input: {
   worksiteId: string
   constitutedOn: string
 }): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "cphs",
+    eventKey: "committee_constituted",
+    sourceType: "cphs",
+    sourceId: input.committeeId,
+    worksiteId: input.worksiteId,
+    occurredAt: input.constitutedOn,
+    payload: { committeeId: input.committeeId },
+  })
   await safeAccredit({
     sourceType: "cphs",
     sourceId: input.committeeId,
@@ -300,6 +343,15 @@ export async function onManagementReviewClosed(input: {
   worksiteId: string
   heldAt: string
 }): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "cphs",
+    eventKey: "management_review_closed",
+    sourceType: "cphs",
+    sourceId: input.reviewId,
+    worksiteId: input.worksiteId,
+    occurredAt: input.heldAt,
+    payload: { reviewId: input.reviewId },
+  })
   await safeAccredit({
     sourceType: "cphs",
     sourceId: input.reviewId,
@@ -329,6 +381,15 @@ export async function onEmergencyDrillCompleted(input: {
   /** EMG-001: la ruta del acta, si el cierre la adjuntó. */
   evidencePath?: string | null
 }): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "emergencies",
+    eventKey: "drill_completed",
+    sourceType: "emergencia",
+    sourceId: input.drillId,
+    worksiteId: input.worksiteId,
+    occurredAt: input.executedAt,
+    payload: { drillId: input.drillId, participantCount: input.participantCount },
+  })
   if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   await safeAccredit({
@@ -423,6 +484,15 @@ export async function onRiskMatrixPublished(input: {
   publishedAt: string
   entryCount: number
 }): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "miper",
+    eventKey: "review_published",
+    sourceType: "miper",
+    sourceId: `miper:${input.matrixId}`,
+    worksiteId: input.worksiteId,
+    occurredAt: input.publishedAt,
+    payload: { matrixId: input.matrixId, matrixVersion: input.matrixVersion, entryCount: input.entryCount },
+  })
   await safeAccredit({
     sourceType: "miper",
     sourceId: `miper:${input.matrixId}`,
@@ -452,6 +522,15 @@ export async function onDocumentVersionPublished(input: {
   activityNumbers?: number[]
   catalogActivityIds?: string[]
 }): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "documentation",
+    eventKey: "document_published",
+    sourceType: "documento",
+    sourceId: `documento:${input.versionId}`,
+    worksiteId: input.worksiteId,
+    occurredAt: input.publishedAt,
+    payload: { documentId: input.documentId, versionId: input.versionId },
+  })
   if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   await safeAccredit({
@@ -482,6 +561,15 @@ export async function onDocumentAcknowledged(input: {
   activityNumbers?: number[]
   catalogActivityIds?: string[]
 }): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "documentation",
+    eventKey: "document_acknowledged",
+    sourceType: "documento",
+    sourceId: `acuse:${input.versionId}:${input.targetId}`,
+    worksiteId: input.worksiteId,
+    occurredAt: input.acknowledgedAt,
+    payload: { versionId: input.versionId, targetId: input.targetId },
+  })
   if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   await safeAccredit({
@@ -518,6 +606,15 @@ export async function onEmergencyPlanApproved(input: {
   approvedAt: string
   scenarioCount: number
 }): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "emergencies",
+    eventKey: "plan_approved",
+    sourceType: "emergencia",
+    sourceId: `plan:${input.planId}`,
+    worksiteId: input.worksiteId,
+    occurredAt: input.approvedAt,
+    payload: { planId: input.planId, planCode: input.planCode, scenarioCount: input.scenarioCount },
+  })
   await safeAccredit({
     sourceType: "emergencia",
     sourceId: `plan:${input.planId}`,
@@ -554,6 +651,15 @@ export async function onSafetyIndicatorPeriodClosed(input: {
   month: number
   closedAt: string
 }): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "indicators",
+    eventKey: "period_closed",
+    sourceType: "indicadores",
+    sourceId: `indicadores:${input.snapshotId}`,
+    worksiteId: input.worksiteId,
+    occurredAt: input.closedAt,
+    payload: { snapshotId: input.snapshotId, year: input.year, month: input.month },
+  })
   await safeAccredit({
     sourceType: "indicadores",
     sourceId: `indicadores:${input.snapshotId}`,
@@ -617,6 +723,15 @@ export async function onGrdStructureEstablished(input: {
   establishedOn: string
   evidenceUrl: string
 }): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "cgrd",
+    eventKey: "structure_established",
+    sourceType: "cgrd",
+    sourceId: `cgrd-${input.kind}:${input.id}`,
+    worksiteId: input.worksiteId,
+    occurredAt: input.establishedOn,
+    payload: { kind: input.kind, id: input.id },
+  })
   await safeAccredit({
     sourceType: "cgrd",
     sourceId: `cgrd-${input.kind}:${input.id}`,
@@ -638,6 +753,15 @@ export async function onGrdMatrixPublished(input: {
   threatCount: number
   evidenceUrl: string
 }): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "cgrd",
+    eventKey: "matrix_published",
+    sourceType: "cgrd",
+    sourceId: `cgrd-matrix:${input.matrixId}`,
+    worksiteId: input.worksiteId,
+    occurredAt: input.publishedAt,
+    payload: { matrixId: input.matrixId, matrixVersion: input.matrixVersion, threatCount: input.threatCount },
+  })
   await safeAccredit({
     sourceType: "cgrd",
     sourceId: `cgrd-matrix:${input.matrixId}`,
@@ -663,6 +787,15 @@ export async function onGrdMeetingClosed(input: {
   heldOn: string
   evidenceUrl: string
 }): Promise<void> {
+  await recordPdtpTriggerEventSafe({
+    connectorKey: "cgrd",
+    eventKey: "meeting_closed",
+    sourceType: "cgrd",
+    sourceId: `cgrd-meeting:${input.meetingId}`,
+    worksiteId: input.worksiteId,
+    occurredAt: input.heldOn,
+    payload: { meetingId: input.meetingId },
+  })
   await safeAccredit({
     sourceType: "cgrd",
     sourceId: `cgrd-meeting:${input.meetingId}`,

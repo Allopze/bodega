@@ -287,7 +287,7 @@ describe("ScheduleOverview", () => {
     const horizon = deriveScheduleHorizon({ year: 2027, periodStart: "2027-04-01", periodEnd: "2027-09-30" })
     render(<ScheduleOverview activities={activityWithRule} schedule={cells([])} horizon={horizon} />)
 
-    expect(screen.getByText(/Genera 6 obligación\(es\)/)).toBeInTheDocument()
+    expect(screen.getByText(/Genera 6 obligaciones/)).toBeInTheDocument()
   })
 
   it("marca la actividad cuya matriz se ajustó a mano y ya no coincide con su recurrencia", () => {

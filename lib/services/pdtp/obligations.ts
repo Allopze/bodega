@@ -444,6 +444,7 @@ export async function listPdtpDemandActivities() {
     mode: pdtpActivities.scheduleMode,
     triggerDescription: pdtpActivities.triggerDescription,
     dueDays: pdtpActivities.dueDays,
+    dueHours: pdtpActivities.dueHours,
     evidenceRequirement: pdtpActivities.evidenceRequirement,
     programId: pdtpPrograms.id,
     programTitle: pdtpPrograms.title,

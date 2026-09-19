@@ -9,6 +9,7 @@ import { asc, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpCatalogActivityRevisions, pdtpPrograms, pdtpResponsibleCatalog, pdtpSheets } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { PDTP_RESPONSIBLE_KIND_LABELS } from "@/lib/prevention/pdtp"
 import { listCatalogActivities } from "./catalog-activities"
 
 export async function listPdtpAdminCatalogs() {
@@ -54,18 +55,35 @@ export async function upsertPdtpResponsible(input: PdtpResponsibleInput) {
   const displayName = input.displayName.trim()
   if (!displayName) throw new Error("Nombre visible requerido")
   if (!input.kind?.trim()) throw new Error("Tipo (kind) del responsable requerido")
+  const roleName = input.roleName?.trim() || undefined
+  // `kind` no tiene constraint en la base: un responsable ya creado con un
+  // valor fuera de los 4 conocidos (o un rol que dejó de ser un default-grant
+  // vigente del registry) sigue siendo válido de conservar sin tocar — ver la
+  // escotilla de "heredado" en ResponsibleForm; sólo se rechaza un valor
+  // *nuevo* que nunca existió.
+  const existing = await db.select({ kind: pdtpResponsibleCatalog.kind, roleName: pdtpResponsibleCatalog.roleName })
+    .from(pdtpResponsibleCatalog).where(eq(pdtpResponsibleCatalog.slug, slug))
+  if (existing[0]?.kind !== input.kind && !(input.kind in PDTP_RESPONSIBLE_KIND_LABELS)) {
+    throw new Error(`Tipo de responsable inválido: "${input.kind}". Valores válidos: ${Object.keys(PDTP_RESPONSIBLE_KIND_LABELS).join(", ")}.`)
+  }
+  if (roleName && existing[0]?.roleName !== roleName) {
+    const validRoles = await listRoleSlugs()
+    if (!validRoles.includes(roleName)) {
+      throw new Error(`"${roleName}" no es un rol del sistema conocido.`)
+    }
+  }
 
   await db.insert(pdtpResponsibleCatalog).values({
     slug,
     displayName,
-    roleName: input.roleName ?? null,
+    roleName: roleName ?? null,
     kind: input.kind,
     notes: input.notes ?? null,
   }).onConflictDoUpdate({
     target: pdtpResponsibleCatalog.slug,
     set: {
       displayName,
-      roleName: input.roleName ?? null,
+      roleName: roleName ?? null,
       kind: input.kind,
       notes: input.notes ?? null,
     },

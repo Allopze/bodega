@@ -663,7 +663,7 @@ export function PdtpSheetPicker({
           router.replace(hrefBase ? `${hrefBase}?${params}` : programId ? `${PDT_BASE}/${programId}?${params}` : `${PDT_BASE}?${params}`, { scroll: false })
         }}
       >
-        <SelectTrigger className="w-64" aria-label="Seleccionar hoja"><SelectValue /></SelectTrigger>
+        <SelectTrigger className="w-64" aria-label="Seleccionar hoja"><SelectValue placeholder="Selecciona hoja" /></SelectTrigger>
         <SelectContent>
           {options.map((option) => <SelectItem key={option.code} value={option.code}>{option.label}</SelectItem>)}
         </SelectContent>

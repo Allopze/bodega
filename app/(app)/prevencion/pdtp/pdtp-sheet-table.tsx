@@ -38,7 +38,7 @@ import {
   type PdtpStatusCounts,
 } from "./pdtp-sheet-table-ui"
 import { pdtpDeviationKindLabel } from "@/lib/prevention/pdtp"
-import { MONTH_LABELS } from "@/lib/utils"
+import { countOf, MONTH_LABELS } from "@/lib/utils"
 
 /** Mes del período PDTP (1–12); etiqueta en `MONTH_LABELS[mes - 1]`. */
 const PDTP_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const
@@ -594,7 +594,7 @@ export function PdtpSheetTable({
                               {worksiteId && activity.executions.length > 0 && (
                                 <details className="mt-2 text-[11px]">
                                   <summary className="cursor-pointer text-[var(--color-text-muted)]">
-                                    {activity.executions.length} ejecución(es) con evidencia
+                                    {countOf(activity.executions.length, "ejecución con evidencia", "ejecuciones con evidencia")}
                                   </summary>
                                   <div className="mt-1 space-y-2">
                                     {activity.executions.map((exec) => (
