@@ -6,7 +6,7 @@ export default function Loading() {
     <>
       <PageHeader
         title="Editar programa PDTP"
-        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Programas PDTP", href: "/prevencion/pdtp" }, { label: "Editar" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Programa de trabajo", href: "/prevencion/pdtp" }, { label: "Editar" }]} />}
       />
       <SkeletonPage rows={8} />
     </>

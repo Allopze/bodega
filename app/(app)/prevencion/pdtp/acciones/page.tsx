@@ -93,8 +93,8 @@ export default async function PdtpAccionesPage({ searchParams }: Props) {
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
-            { label: "Programas PDTP", href: "/prevencion/pdtp" },
-            { label: "Plan de acción" },
+            { label: "Programa de trabajo", href: "/prevencion/pdtp" },
+            { label: "Medidas" },
           ]} />
         }
       />

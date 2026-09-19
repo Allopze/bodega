@@ -216,7 +216,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             items={[
               { label: "Inicio", href: "/dashboard" },
               { label: "Prevención", href: "/prevencion" },
-              { label: "Programa de trabajo (PDTP)" },
+              { label: "Programa de trabajo" },
             ]}
           />
         }

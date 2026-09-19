@@ -7,7 +7,7 @@ export default function Loading() {
     <PageContainer width="form">
       <PageHeader
         title="Nuevo programa preventivo"
-        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Programas PDTP", href: "/prevencion/pdtp" }, { label: "Nuevo" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Programa de trabajo", href: "/prevencion/pdtp" }, { label: "Nuevo" }]} />}
       />
 
       {/* E: Skeleton con preview animado */}

@@ -61,7 +61,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
-            { label: "Programa de trabajo (PDTP)", href: "/prevencion/pdtp" },
+            { label: "Programa de trabajo", href: "/prevencion/pdtp" },
             { label: "Listado de programas" },
           ]} />
         }

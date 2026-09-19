@@ -67,7 +67,7 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
   if (!program) {
     return (
       <PageContainer>
-        <PageHeader title="Actividades del programa preventivo" description="Consulta y ejecuta las actividades asignadas por faena." breadcrumb={<Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "Programa preventivo SG-SST (PDTP)", href: "/prevencion/pdtp" }, { label: "Actividades" }]} />} />
+        <PageHeader title="Actividades del programa preventivo" description="Consulta y ejecuta las actividades asignadas por faena." breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "Programa de trabajo", href: "/prevencion/pdtp" }, { label: "Actividades" }]} />} />
         <EmptyState title={`Sin programa preventivo para ${year}`} description="No hay actividades que consultar todavía." action={canManageProgram ? <Button asChild><Link href="/prevencion/pdtp/nuevo">Crear programa</Link></Button> : undefined} />
       </PageContainer>
     )
@@ -158,7 +158,7 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
       <PageHeader
         title="Actividades del programa preventivo"
         description={selectedWorksiteId ? "Trabajo programado, evidencia y avance de la faena seleccionada." : "Resumen anual agregado de todas las faenas autorizadas. Selecciona una faena para revisar evidencias y ejecutar."}
-        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "Programa preventivo SG-SST (PDTP)", href: "/prevencion/pdtp" }, { label: "Actividades" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "Programa de trabajo", href: "/prevencion/pdtp" }, { label: "Actividades" }]} />}
         actions={<><Button asChild size="sm" variant="secondary"><Link href="/prevencion/pdtp/programas">Programas</Link></Button>{canManageProgram && <Button asChild size="sm"><Link href={`/prevencion/pdtp/${program.id}/editar`}>Gestionar programa</Link></Button>}</>}
       />
 

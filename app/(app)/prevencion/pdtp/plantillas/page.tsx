@@ -28,7 +28,7 @@ export default async function PdtpTemplatesPage() {
         description="Versiones reutilizables y programas creados desde cada foto publicada."
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
-          { label: "Programas PDTP", href: "/prevencion/pdtp" },
+          { label: "Programa de trabajo", href: "/prevencion/pdtp" },
           { label: "Plantillas" },
         ]} />}
         actions={<Button asChild size="sm"><Link href="/prevencion/pdtp/nuevo">Crear programa</Link></Button>}
