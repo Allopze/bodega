@@ -159,11 +159,12 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
     const readiness = await service.evaluatePermitReadiness(permitId, REQUESTER)
     expect(readiness.allowed).toBe(false)
     const kinds = new Set(readiness.blockers.map((item) => item.kind))
-    // Controles sin verificar, sin aislamiento, sin medición, sin AST y
-    // competencia faltante, todos a la vez.
+    // Controles sin verificar, sin aislamiento, sin medición y sin AST, todos
+    // a la vez. La competencia de cada integrante salió de la evaluación el
+    // 2026-09-19, con el modelo de capacitación por persona.
     expect(kinds).toEqual(new Set([
       "control_pending", "isolation_missing", "measurement_missing",
-      "jsa_missing", "crew_competency",
+      "jsa_missing",
     ]))
   })
 
@@ -218,15 +219,15 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
     }, REQUESTER)).rejects.toThrow(/no esté aprobado/)
   })
 
-  it("will not activate while the crew is not eligible", async () => {
+  it("will not activate while field blockers remain", async () => {
     const service = await import("@/lib/services/prevention-permits")
     await expect(service.transitionWorkPermit({
       permitId, expectedVersion: permitVersion, toStatus: "active",
-      reason: "Intento de habilitar con la cuadrilla sin habilitar.",
+      reason: "Intento de habilitar con controles y mediciones pendientes.",
     }, APPROVER)).rejects.toThrow(/no puede habilitarse/)
   })
 
-  it("clears the field blockers: controls, isolation, measurement and competency", async () => {
+  it("clears the field blockers: controls, isolation and measurement", async () => {
     const service = await import("@/lib/services/prevention-permits")
 
     const controls = await getDb().select().from(schema.preventionPermitControls)
@@ -246,17 +247,11 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
       equipmentTag: "GAS-07", calibrationDate: "2026-07-01", takenAt: new Date().toISOString(),
     }, REQUESTER)
 
-    // Habilitación de personas: se otorga la competencia faltante.
-    await getDb().insert(schema.preventionWorkerCompetencies).values([
-      { id: "comp-a1", workerId: "wk-a1", courseId: "course-conf", sourceType: "external_certificate", grantedAt: "2026-07-01", expiresAt: "2028-07-01", status: "valid", evidenceReference: "cert-1", externalIssuer: "OTEC", createdByUserId: "pm-approver" },
-      { id: "comp-a2", workerId: "wk-a2", courseId: "course-conf", sourceType: "external_certificate", grantedAt: "2026-07-01", expiresAt: "2028-07-01", status: "valid", evidenceReference: "cert-2", externalIssuer: "OTEC", createdByUserId: "pm-approver" },
-    ])
-
     /*
      * PER-001 (auditoría 2026-09-14): esta prueba afirmaba lo contrario —que
-     * con controles, aislamiento, medición y competencias resueltos el permiso
-     * ya estaba habilitado— porque el acuse del AST por la cuadrilla no
-     * bloqueaba. Ahora falta ese acuse y el permiso sigue detenido.
+     * con controles, aislamiento y medición resueltos el permiso ya estaba
+     * habilitado— porque el acuse del AST por la cuadrilla no bloqueaba. Ahora
+     * falta ese acuse y el permiso sigue detenido.
      */
     const readiness = await service.evaluatePermitReadiness(permitId, REQUESTER)
     expect(readiness.allowed).toBe(false)
@@ -419,18 +414,6 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
     { id: "pm-crew-a1", name: "Ana Pérez", email: "pm-crew-a1@local.invalid", hashedPassword: "hash", workerId: "wk-a1", createdAt: now, updatedAt: now },
     { id: "pm-crew-a2", name: "Bruno Soto", email: "pm-crew-a2@local.invalid", hashedPassword: "hash", workerId: "wk-a2", createdAt: now, updatedAt: now },
   ])
-  // Curso y requisito de competencia con alcance `task`, que es el enlace que
-  // usa el tipo de permiso para exigir habilitación.
-  await database.insert(schema.preventionTrainingCourses).values({
-    id: "course-conf", code: "CONF-01", name: "Trabajo en espacio confinado", kind: "certification",
-    minimumDurationMinutes: 480, validityMonths: 24, requiresAssessment: true, passingScore: 70,
-    createdByUserId: "pm-approver", createdAt: now, updatedAt: now,
-  })
-  await database.insert(schema.preventionCompetencyRequirements).values({
-    id: "req-conf", courseId: "course-conf", scopeType: "task", scopeValue: "espacio-confinado",
-    enforcement: "blocking", reason: "Tarea crítica: exige certificación vigente de espacio confinado.",
-    createdByUserId: "pm-approver", createdAt: now, updatedAt: now,
-  })
 }
 
 async function resetDatabase(url: string) {

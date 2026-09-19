@@ -101,7 +101,6 @@ interface CrewItem {
   crewUserId: string | null
   /** PER-002: enlace de acuse sin cuenta; null si la persona sí tiene cuenta. */
   ackLink?: string | null
-  hasCompetencyGap: boolean
 }
 
 interface Readiness {
@@ -428,7 +427,6 @@ export function PermitDetail({
                 <TableRow>
                   <TableHead>Persona</TableHead>
                   <TableHead>Rol</TableHead>
-                  <TableHead>Competencia</TableHead>
                   <TableHead>Acuse</TableHead>
                 </TableRow>
               </TableHeader>
@@ -437,9 +435,6 @@ export function PermitDetail({
                   <TableRow key={member.id}>
                     <TableCell className="text-sm">{member.workerName}</TableCell>
                     <TableCell className="text-sm">{PERMIT_CREW_ROLE_LABELS[member.role] ?? member.role}</TableCell>
-                    <TableCell className="text-sm">
-                      {member.hasCompetencyGap ? <MetaBadge meta={{ label: "Sin competencia vigente", variant: "danger" }} /> : <MetaBadge meta={{ label: "Habilitado", variant: "success" }} />}
-                    </TableCell>
                     <TableCell className="text-sm">
                       {member.acknowledgedAt
                         ? formatDateTime(member.acknowledgedAt)

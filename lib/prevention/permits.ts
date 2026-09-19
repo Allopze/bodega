@@ -66,7 +66,6 @@ export interface PermitBlocker {
     | "measurement_uncalibrated"
     | "jsa_missing"
     | "crew_empty"
-    | "crew_competency"
     /** PER-001: integrante de la cuadrilla que no ha acusado el AST. */
     | "crew_ack_missing"
     | "window_expired"
@@ -128,9 +127,10 @@ export interface PermitCrewRow {
  * y no sólo el primero: en terreno interesa saber la lista completa de lo que
  * falta, no descubrirla de a uno.
  *
- * Las habilitaciones de personas se reciben ya resueltas
- * (`crewWithoutCompetency`) porque provienen del módulo de competencias; esta
- * función sólo compone la decisión.
+ * Hasta el 2026-09-19 recibía además la habilitación de cada integrante ya
+ * resuelta contra el módulo de competencias. Ese módulo se retiró y el
+ * bloqueador `crew_competency` con él: lo que queda son los controles que el
+ * propio permiso declara.
  */
 export function assessPermitActivation(args: {
   type: PermitTypeSpec
@@ -139,13 +139,6 @@ export function assessPermitActivation(args: {
   measurements: PermitMeasurementRow[]
   jsaStepCount: number
   crew: PermitCrewRow[]
-  crewWithoutCompetency: PermitCrewRow[]
-  /**
-   * `CAP-001`: los que sólo incumplen un requisito declarado «advertencia».
-   * Opcional para no romper a los llamadores que aún no lo pasan; su ausencia
-   * significa «ninguno», no «no se sabe».
-   */
-  crewWithCompetencyWarning?: PermitCrewRow[]
   plannedEndAt: string
   now: string
 }): { allowed: boolean; blockers: PermitBlocker[] } {
@@ -226,16 +219,6 @@ export function assessPermitActivation(args: {
   if (args.crew.length === 0) {
     blockers.push({ kind: "crew_empty", detail: "El permiso no tiene cuadrilla asignada." })
   }
-  /*
-   * CAP-001 (auditoría 2026-09-14): sólo bloquea la falta de una competencia
-   * declarada **bloqueante**. Antes bloqueaba cualquiera, incluidas las que el
-   * catálogo marcaba como advertencia, así que la marca decidía al revés de lo
-   * que decía.
-   */
-  for (const member of args.crewWithoutCompetency) {
-    blockers.push({ kind: "crew_competency", detail: `${member.label} no tiene vigente una competencia BLOQUEANTE exigida por este permiso.` })
-  }
-
   /*
    * PER-001 (auditoría 2026-09-14): la lista de bloqueadores no incluía el
    * acuse del AST. El acuse existía —sólo el propio integrante, de un solo uso,

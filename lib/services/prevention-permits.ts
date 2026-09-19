@@ -3,7 +3,6 @@ import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import {
-  preventionCompetencyRequirements,
   preventionJsaSteps,
   preventionPermitControls,
   preventionPermitCrew,
@@ -12,7 +11,6 @@ import {
   preventionPermitMeasurements,
   preventionPermitTypes,
   preventionWorkPermits,
-  preventionWorkerCompetencies,
   users,
   workers,
   worksites,
@@ -42,7 +40,7 @@ import {
   permitTypeSchema,
   workPermitSchema,
 } from "@/lib/validation/prevention-module/permits"
-import { codeYear, todayInChile } from "@/lib/utils"
+import { codeYear } from "@/lib/utils"
 
 type Client = DB | Tx
 
@@ -385,11 +383,16 @@ export async function addPermitMeasurement(input: unknown, access: PermitAccess)
 /* ── Habilitación ─────────────────────────────────────────────────────────── */
 
 /**
- * Resuelve, contra el módulo de competencias, quién de la cuadrilla no está
- * habilitado. Es la integración que convierte el permiso en un control real y
- * no en un formulario.
+ * La cuadrilla del permiso, con su acuse del AST.
+ *
+ * Hasta el 2026-09-19 esto además cruzaba a cada integrante contra el módulo de
+ * competencias y devolvía quién no estaba habilitado. Ese módulo se retiró con
+ * el seguimiento de capacitación por persona, así que la habilitación
+ * individual ya no se verifica acá ni en ninguna otra parte: el permiso exige
+ * cuadrilla, controles, aislaciones, mediciones, AST y acuse, y la competencia
+ * de cada integrante queda fuera del control automático.
  */
-async function resolveCrewEligibility(client: Client, permitId: string, competencyTaskKey: string | null) {
+async function resolveCrewEligibility(client: Client, permitId: string) {
   const crewRows = await client.select({
     id: preventionPermitCrew.id,
     workerId: preventionPermitCrew.workerId,
@@ -409,74 +412,7 @@ async function resolveCrewEligibility(client: Client, permitId: string, competen
     acknowledgedAt: row.acknowledgedAt,
   }))
 
-  /** Falta una competencia declarada **bloqueante**: impide activar. */
-  const crewWithoutCompetency: PermitCrewRow[] = []
-  /** Falta una declarada **advertencia**: se avisa y deja seguir. */
-  const crewWithCompetencyWarning: PermitCrewRow[] = []
-  if (competencyTaskKey) {
-    // Los cursos exigidos se leen de los requisitos de competencia con alcance
-    // `task`, en vez de duplicar el catálogo en el tipo de permiso.
-    /*
-     * CAP-001 (auditoría 2026-09-14), patrón P7: esta consulta **no miraba
-     * `enforcement`**, así que trataba igual a un requisito declarado
-     * «advertencia» y a uno «bloqueante». La marca era decorativa en las dos
-     * direcciones: uno bloqueante no impedía nada fuera de aquí, y uno de
-     * advertencia sí impedía abrir un permiso. Quien configuraba el catálogo no
-     * podía predecir el efecto de lo que elegía.
-     *
-     * Ahora gobierna: el bloqueante impide activar, el de advertencia se avisa
-     * y deja seguir. No es una política nueva —es la que el propio catálogo
-     * declara— y por eso el bloqueo sigue existiendo donde ya existía.
-     */
-    const requirements = await client.select({
-      courseId: preventionCompetencyRequirements.courseId,
-      enforcement: preventionCompetencyRequirements.enforcement,
-    })
-      .from(preventionCompetencyRequirements)
-      .where(and(
-        eq(preventionCompetencyRequirements.scopeType, "task"),
-        eq(preventionCompetencyRequirements.scopeValue, competencyTaskKey),
-        eq(preventionCompetencyRequirements.isActive, true),
-      ))
-    const requiredCourseIds = [...new Set(requirements.map((item) => item.courseId))]
-    const blockingCourseIds = new Set(
-      requirements.filter((item) => item.enforcement === "blocking").map((item) => item.courseId),
-    )
-
-    if (requiredCourseIds.length > 0) {
-      const crewWorkerIds = crew.map((member) => member.workerId)
-      const today = todayInChile()
-      const held = crewWorkerIds.length === 0 ? [] : await client.select({
-        workerId: preventionWorkerCompetencies.workerId,
-        courseId: preventionWorkerCompetencies.courseId,
-      })
-        .from(preventionWorkerCompetencies)
-        .where(and(
-          inArray(preventionWorkerCompetencies.workerId, crewWorkerIds),
-          inArray(preventionWorkerCompetencies.courseId, requiredCourseIds),
-          eq(preventionWorkerCompetencies.status, "valid"),
-          sql`${preventionWorkerCompetencies.expiresAt} IS NULL OR ${preventionWorkerCompetencies.expiresAt} >= ${today}`,
-        ))
-      const heldByWorker = new Map<string, Set<string>>()
-      for (const row of held) {
-        const set = heldByWorker.get(row.workerId) ?? new Set<string>()
-        set.add(row.courseId)
-        heldByWorker.set(row.workerId, set)
-      }
-      for (const member of crew) {
-        const owned = heldByWorker.get(member.workerId) ?? new Set<string>()
-        const missing = requiredCourseIds.filter((courseId) => !owned.has(courseId))
-        if (missing.length === 0) continue
-        if (missing.some((courseId) => blockingCourseIds.has(courseId))) {
-          crewWithoutCompetency.push(member)
-        } else {
-          crewWithCompetencyWarning.push(member)
-        }
-      }
-    }
-  }
-
-  return { crew, crewWithoutCompetency, crewWithCompetencyWarning }
+  return { crew }
 }
 
 export async function evaluatePermitReadiness(permitId: string, access: PermitAccess): Promise<{ allowed: boolean; blockers: PermitBlocker[] }> {
@@ -493,7 +429,7 @@ export async function evaluatePermitReadiness(permitId: string, access: PermitAc
     db.select().from(preventionPermitIsolations).where(eq(preventionPermitIsolations.permitId, permitId)),
     db.select().from(preventionPermitMeasurements).where(eq(preventionPermitMeasurements.permitId, permitId)),
     db.select({ count: sql<number>`count(*)::int` }).from(preventionJsaSteps).where(eq(preventionJsaSteps.permitId, permitId)),
-    resolveCrewEligibility(db, permitId, type.competencyTaskKey),
+    resolveCrewEligibility(db, permitId),
   ])
 
   return assessPermitActivation({
@@ -528,8 +464,6 @@ export async function evaluatePermitReadiness(permitId: string, access: PermitAc
     })),
     jsaStepCount: jsaCount[0]?.count ?? 0,
     crew: eligibility.crew,
-    crewWithoutCompetency: eligibility.crewWithoutCompetency,
-    crewWithCompetencyWarning: eligibility.crewWithCompetencyWarning,
     plannedEndAt: permit.extendedUntilAt ?? permit.plannedEndAt,
     now: nowIso(),
   })
@@ -813,7 +747,7 @@ export async function getWorkPermitDetail(permitId: string, access: PermitAccess
     .where(eq(preventionWorkPermits.id, permitId)).limit(1)
   if (!permit || !scopeAllows(access.scope, permit.permit.worksiteId)) return null
 
-  const [controls, isolations, measurements, jsaSteps, crewRows, eligibility] = await Promise.all([
+  const [controls, isolations, measurements, jsaSteps, crewRows] = await Promise.all([
     db.select().from(preventionPermitControls).where(eq(preventionPermitControls.permitId, permitId)),
     db.select().from(preventionPermitIsolations).where(eq(preventionPermitIsolations.permitId, permitId)),
     db.select().from(preventionPermitMeasurements).where(eq(preventionPermitMeasurements.permitId, permitId)).orderBy(desc(preventionPermitMeasurements.takenAt)),
@@ -836,22 +770,9 @@ export async function getWorkPermitDetail(permitId: string, access: PermitAccess
       .leftJoin(users, eq(users.workerId, preventionPermitCrew.workerId))
       .where(eq(preventionPermitCrew.permitId, permitId))
       .orderBy(asc(workers.lastName)),
-    // `competencyTaskKey` real y no `null`: sin él, ningún integrante aparecía
-    // nunca como falto de competencia en esta vista, aunque la activación sí lo
-    // bloqueara correctamente. Detectado al construir esta página.
-    resolveCrewEligibility(db, permitId, permit.competencyTaskKey),
   ])
 
-  const withoutCompetencyIds = new Set(eligibility.crewWithoutCompetency.map((item) => item.id))
-  const warningCompetencyIds = new Set(eligibility.crewWithCompetencyWarning.map((item) => item.id))
-  const crew = crewRows.map((row) => ({
-    ...row,
-    hasCompetencyGap: withoutCompetencyIds.has(row.id),
-    // CAP-001: la brecha de un requisito «advertencia» se ve, pero no bloquea.
-    hasCompetencyWarning: warningCompetencyIds.has(row.id),
-  }))
-
-  return { ...permit, controls, isolations, measurements, jsaSteps, crew }
+  return { ...permit, controls, isolations, measurements, jsaSteps, crew: crewRows }
 }
 
 export async function listPermitTypes(access: PermitAccess) {
