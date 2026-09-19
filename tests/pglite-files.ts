@@ -124,6 +124,10 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-checklist-action-plan.test.ts",
   "lib/__tests__/pdtp-fulfillment.test.ts",
   "lib/__tests__/pdtp-lifecycle-instrument-gate.test.ts",
+  // Red de caracterización del rediseño "bandeja de habilitación": afirma el
+  // conjunto exacto de (n, status) que emite la compuerta, que es lo que el
+  // índice unificado de instrumentos no puede mover.
+  "lib/__tests__/pdtp-coverage-instrument-identity.test.ts",
   "lib/__tests__/pdtp-constancias.test.ts",
   "lib/__tests__/prevention-alcotest.test.ts",
   "lib/__tests__/prevention-cgrd.test.ts",

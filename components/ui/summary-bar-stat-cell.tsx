@@ -1,6 +1,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { Progress } from "./progress"
 import type { SummaryStat } from "./summary-bar"
 
 export function SummaryBarStatCell({ stat }: { stat: SummaryStat }) {
@@ -27,14 +28,9 @@ export function SummaryBarStatCell({ stat }: { stat: SummaryStat }) {
           "mb-0.5 font-mono text-[11px] font-semibold tabular-nums",
           signalActive ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text-subtle)]",
         )}>{stat.hint}</span>}
-        {typeof stat.progress === "number" && <div
-          role="progressbar"
-          aria-label={stat.label}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.min(100, Math.max(0, stat.progress))}
-          className="mb-1.5 h-1 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-2)]"
-        ><div className="h-full rounded-full bg-[var(--color-primary)] transition-[width] duration-[var(--duration-slow)] ease-[var(--ease-out)]" style={{ width: `${Math.min(100, Math.max(0, stat.progress))}%` }} /></div>}
+        {typeof stat.progress === "number" && (
+          <Progress value={stat.progress} label={stat.label} size="sm" className="mb-1.5 flex-1" />
+        )}
       </div>
       {stat.secondary && <p className="mt-1 text-[11px] text-[var(--color-text-subtle)]">{stat.secondary}</p>}
     </div>

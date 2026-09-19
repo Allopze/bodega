@@ -37,7 +37,15 @@ export default async function InspectionFollowupPage() {
       title="Aún no hay hallazgos para seguir"
       description="Cuando una inspección u observación levante una desviación, aparecerá aquí junto con su acción correctiva."
       action={<Button asChild><Link href="/prevencion/inspecciones">Ir a inspecciones</Link></Button>}
-    /> : <div className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white shadow-xs">
+    /> : <div
+      // Una region que se desplaza con el raton tiene que poder
+      // desplazarse con el teclado: sin `tabIndex` no recibe foco y su
+      // contenido queda inalcanzable (axe `scrollable-region-focusable`).
+      tabIndex={0}
+      role="region"
+      aria-label="Seguimiento de inspecciones"
+      className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+    >
       <Table>
         <TableHeader><TableRow>
           <TableHead>Fecha</TableHead><TableHead>Área</TableHead><TableHead>Desviación</TableHead>

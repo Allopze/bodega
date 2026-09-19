@@ -80,7 +80,7 @@ export function LinkPlateForm({
       <input type="hidden" name="patente" value={patente} />
       <input type="hidden" name="vehicleId" value={vehicleId} />
       <Select value={vehicleId} onValueChange={setVehicleId}>
-        <SelectTrigger className="w-48"><SelectValue placeholder="Elegir vehículo…" /></SelectTrigger>
+        <SelectTrigger aria-label="Elegir vehículo…" className="w-48"><SelectValue placeholder="Elegir vehículo…" /></SelectTrigger>
         <SelectContent>
           {vehicles.map((v) => <SelectItem key={v.id} value={v.id}>{v.plate}</SelectItem>)}
         </SelectContent>

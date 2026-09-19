@@ -340,7 +340,11 @@ export const preventionModule = {
               permissions: ["prevention:pdtp:view"],
             },
             {
-              label: "Cobertura",
+              // "Cobertura" a secas era ambiguo incluso antes de que existiera
+              // la bandeja de habilitacion: esta pantalla concilia el programa
+              // con la MIPER y los requisitos legales, y no tiene nada que ver
+              // con la cobertura de destinos por actividad.
+              label: "Cobertura MIPER y legal",
               href: "/prevencion/pdtp/cobertura",
               permissions: ["prevention:pdtp:view"],
             },
@@ -443,6 +447,17 @@ export const preventionModule = {
           iconName: "Certificate",
           group: "Cumplimiento del programa",
           permissions: ["prevention:training:view"],
+          children: [
+            {
+              // El catalogo estuvo huérfano —su page.tsx solo redirigía— y por
+              // eso no había ninguna pantalla alcanzable donde publicar la
+              // version de un curso que el programa exige. Va en el nav para
+              // que no vuelva a quedar sin puerta de entrada.
+              label: "Catálogo de cursos",
+              href: "/prevencion/capacitacion/catalogo",
+              permissions: ["prevention:training:view"],
+            },
+          ],
         },
         {
           label: "Acciones correctivas",

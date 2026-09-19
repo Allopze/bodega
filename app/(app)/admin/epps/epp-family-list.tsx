@@ -238,6 +238,10 @@ export function EppFamilyList({ families, eppTypes, categories }: Props) {
         <span className="text-sm font-medium text-(--color-text)">{row.canonicalName}</span>
         {row.warnings.length > 0 && (
           <span
+            // `aria-label` sobre un `span` sin rol es un atributo prohibido
+            // (axe `aria-prohibited-attr`): sin rol no hay nada que nombrar.
+            // El icono comunica un estado, asi que es una imagen.
+            role="img"
             className="ml-1.5 inline-flex align-middle text-(--color-warning)"
             title={row.warnings.join(" · ")}
             aria-label={`${row.warnings.length} advertencia(s): ${row.warnings.join(". ")}`}

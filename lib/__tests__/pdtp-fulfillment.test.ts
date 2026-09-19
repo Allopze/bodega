@@ -538,7 +538,14 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
 
     const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
     expect(issues).toEqual([expect.objectContaining({ n: 63, status: "instrument_required" })])
-    expect(issues[0]!.reason).toMatch(/versión publicada/i)
+    // El motivo nombra el curso y dice qué le falta. Antes decía "su plantilla
+    // no tiene una versión aprobada o su curso no tiene ninguna versión
+    // publicada": la misma frase para las catorce actividades del grupo, sin
+    // decir cuál de los dos instrumentos era ni a cuál registro ir.
+    expect(issues[0]!.reason).toBe("El curso PDTP-63 no tiene ninguna versión creada.")
+    expect(issues[0]!.instruments).toEqual([
+      expect.objectContaining({ kind: "training_course", id: "course-pdtp-63", blocker: "course_has_no_version" }),
+    ])
   })
 
   it("un curso publicado más corto que el mínimo del catálogo no vuelve ejecutable la actividad", async () => {
@@ -560,7 +567,12 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
 
     const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
     expect(issues).toEqual([expect.objectContaining({ n: 56, status: "instrument_required" })])
-    expect(issues[0]!.reason).toMatch(/duración|versión publicada/i)
+    // La alternativa —"duración" o "versión publicada"— estaba en el test
+    // porque el propio mensaje no distinguía las dos causas. Ahora sí.
+    expect(issues[0]!.reason).toBe("La versión publicada del curso PDTP-56 dura 60 min y el curso exige 480.")
+    expect(issues[0]!.instruments).toEqual([
+      expect.objectContaining({ blocker: "course_version_below_minimum_duration" }),
+    ])
   })
 
   it("un enganche declarado en STRUCTURALLY_WIRED_ACTIVITY_NUMBERS pasa (N°35, MIPER)", async () => {
@@ -1150,5 +1162,44 @@ describe("getPdtpCoverageReport — el informe desagregado", () => {
 
     const scopedReport = await getPdtpCoverageReport(PROGRAM_ID, { worksiteIds: [WS_ID] })
     expect(scopedReport).toMatchObject({ total: 1, ready: 1, groups: [] })
+  })
+
+  it("los instrumentos del informe tampoco filtran faenas ni planes fuera del alcance", async () => {
+    /* Superficie nueva (2026-09-19): los refs de `instruments` llevan nombre de
+     * faena y código de plan para que la fila pueda enlazar al registro. Eso los
+     * vuelve un canal de filtración que el `reason` ya tenía cubierto y ellos
+     * no: se construyen desde `applicableWorksiteIds`, que viene filtrado por
+     * `programWorksiteIds`, y nunca iterando la tabla de planes. Este test es lo
+     * que lo mantiene así. */
+    const { getPdtpCoverageReport } = await import("@/lib/services/pdtp/lifecycle")
+    const outsideWorksiteId = "ws-fulfill-outside-2"
+    await inMemoryDb.insert(schema.worksites).values({
+      id: outsideWorksiteId, name: "Faena reservada", code: "FRS", isActive: true,
+    })
+    await seedProgram("draft")
+    await seedActivity({ n: 84, mechanism: "enganche" })
+    const now = new Date().toISOString()
+    // Un plan en borrador en cada faena: ninguna acredita, así que la actividad
+    // aparece en el informe y hay refs que inspeccionar.
+    await inMemoryDb.insert(schema.preventionEmergencyPlans).values([
+      { id: "plan-visible", worksiteId: WS_ID, code: "PE-VISIBLE", title: "Plan visible", status: "draft", version: 1, pdtpActivityNumbers: [84], createdByUserId: USER_ID, createdAt: now, updatedAt: now },
+      { id: "plan-reservado", worksiteId: outsideWorksiteId, code: "PE-RESERVADO", title: "Plan reservado", status: "draft", version: 1, pdtpActivityNumbers: [84], createdByUserId: USER_ID, createdAt: now, updatedAt: now },
+    ])
+
+    const scoped = await getPdtpCoverageReport(PROGRAM_ID, { worksiteIds: [WS_ID] })
+    const issue = scoped.groups.flatMap((group) => group.issues).find((candidate) => candidate.n === 84)
+    expect(issue?.status).toBe("instrument_required")
+
+    const planRef = issue?.instruments?.find((instrument) => instrument.kind === "emergency_plan")
+    expect(planRef).toEqual({
+      kind: "emergency_plan",
+      worksites: [expect.objectContaining({ id: WS_ID, name: "Faena Fulfillment", planId: "plan-visible", planCode: "PE-VISIBLE" })],
+    })
+
+    // La red gruesa: nada del registro reservado aparece por ningún campo.
+    const serialized = JSON.stringify(issue)
+    expect(serialized).not.toContain("Faena reservada")
+    expect(serialized).not.toContain("PE-RESERVADO")
+    expect(serialized).not.toContain(outsideWorksiteId)
   })
 })

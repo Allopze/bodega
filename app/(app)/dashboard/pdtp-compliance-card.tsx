@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { ChartLineUp } from "@phosphor-icons/react/dist/ssr"
 import { cn, formatDateTime, MONTH_LABELS } from "@/lib/utils"
+import { Progress } from "@/components/ui/progress"
 import { getPdtpComplianceIndicators, getPdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
 import { listPendingPdtpExecutions } from "@/lib/services/prevention-pdtp"
 import { getPdtpComplianceIndicatorsForScope } from "@/lib/services/pdtp/compliance"
@@ -101,36 +102,19 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
         )}
       </div>
 
-      <div
-        className="relative mt-3 h-2 w-full overflow-visible rounded-full bg-[var(--color-surface-2)]"
-        role="progressbar"
-        aria-label={`Avance real ${percent === null ? "sin datos" : `${value}%`}; avance esperado ${expectedPct === null ? "sin plan" : `${expectedPct}%`}; meta anual ${targetPct}%`}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={percent === null ? 0 : value}
-      >
-        <div
-          className={cn(
-            "h-full rounded-full transition-[width] duration-[var(--duration-slow)] ease-[var(--ease-out)]",
-            belowTarget ? "bg-[var(--color-signal)]" : "bg-[var(--color-primary)]",
-          )}
-          style={{ width: `${percent === null ? 0 : Math.min(100, Math.max(2, value))}%` }}
-        />
-        {expectedPct !== null && (
-          <span
-            className="absolute top-[-3px] h-3.5 w-0.5 rounded-full bg-[var(--color-rule)]"
-            style={{ left: `${Math.min(100, Math.max(0, expectedPct))}%` }}
-            title={`Avance esperado ${expectedPct}%`}
-            aria-hidden
-          />
-        )}
-        <span
-          className="absolute top-[-2px] h-3 w-px bg-[var(--color-text-faint)]"
-          style={{ left: `${Math.min(100, Math.max(0, targetPct))}%` }}
-          title={`Meta anual ${targetPct}%`}
-          aria-hidden
-        />
-      </div>
+      <Progress
+        className="mt-3"
+        value={percent === null ? 0 : value}
+        label={`Avance real ${percent === null ? "sin datos" : `${value}%`}; avance esperado ${expectedPct === null ? "sin plan" : `${expectedPct}%`}; meta anual ${targetPct}%`}
+        tone={belowTarget ? "signal" : "primary"}
+        // El sliver del 2%: un avance real pero diminuto no debe verse igual
+        // que no haber empezado.
+        minVisible={2}
+        markers={[
+          ...(expectedPct !== null ? [{ at: expectedPct, label: `Avance esperado ${expectedPct}%`, emphasis: true }] : []),
+          { at: targetPct, label: `Meta anual ${targetPct}%` },
+        ]}
+      />
 
       <div className="mt-3 grid gap-x-3 gap-y-1 text-[11px] text-[var(--color-text-muted)] sm:grid-cols-2">
         <span className="min-w-0">

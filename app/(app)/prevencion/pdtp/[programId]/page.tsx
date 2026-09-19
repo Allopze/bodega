@@ -29,7 +29,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ChartBar, DotsThree, DownloadSimple, ListChecks, LockKey, PencilSimple } from "@phosphor-icons/react/dist/ssr"
+import { ChartBar, DotsThree, DownloadSimple, ListChecks, LockKey, PencilSimple, Wrench } from "@phosphor-icons/react/dist/ssr"
 import { countOf, formatDateSafe } from "@/lib/utils"
 import { PdtpSheetTable } from "../pdtp-sheet-table"
 import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-sheet-table-ui"
@@ -38,7 +38,7 @@ import { PdtpImportExcelDialog } from "../pdtp-import-excel-dialog"
 import { countPdtpFulfillmentBacklog } from "@/lib/services/pdtp/backlog"
 import { resolveSelectedWorksiteId } from "../pdtp-context"
 import type { PdtpActivityStatusFilter } from "@/lib/services/pdtp/period"
-import { CoverageReportPanel } from "./coverage-report-panel"
+import { CoverageSummaryCard } from "./coverage-summary-card"
 import { FulfillmentBacklogPanel, shouldOfferPdtpRevision } from "./fulfillment-backlog-panel"
 import { ProgramLifecycleControls } from "./program-lifecycle-controls"
 import { ReconcileDeclaredActorButton } from "./reconcile-declared-actor-button"
@@ -221,6 +221,15 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
                 <DotsThree size={16} weight="bold" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {/* También acá y no sólo en la tarjeta de cobertura: cuando no
+                    queda nada pendiente la tarjeta colapsa a una línea, y la
+                    bandeja sigue siendo la vista donde se revisa el detalle. */}
+                <DropdownMenuItem asChild>
+                  <Link href={`/prevencion/pdtp/${programId}/habilitacion`} className="flex items-center gap-2">
+                    <Wrench size={14} />
+                    Habilitar actividades
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <a href={exportRe36Href} download className="flex items-center gap-2">
                     <DownloadSimple size={14} />
@@ -299,13 +308,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
           </section>
         )}
         {/* Program lifecycle status block, con la metadata del documento importado plegada dentro */}
-        <CoverageReportPanel
-          report={coverageReport}
-          programId={programId}
-          programStatus={program.status}
-          canManageProgram={canManageProgram}
-          canManageRoles={can(session, "admin:roles")}
-        />
+        <CoverageSummaryCard report={coverageReport} programId={programId} />
         <FulfillmentBacklogPanel
           programId={programId}
           worksiteIds={backlogWorksiteIds}

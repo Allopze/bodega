@@ -80,7 +80,7 @@ export function LinkOperationVehicleForm({
       <input type="hidden" name="plate" value={plate} />
       <input type="hidden" name="vehicleId" value={vehicleId} />
       <Select value={vehicleId} onValueChange={setVehicleId}>
-        <SelectTrigger className="w-48"><SelectValue placeholder="Elegir vehículo…" /></SelectTrigger>
+        <SelectTrigger aria-label="Elegir vehículo…" className="w-48"><SelectValue placeholder="Elegir vehículo…" /></SelectTrigger>
         <SelectContent>
           {vehicles.map((v) => <SelectItem key={v.id} value={v.id}>{v.plate}</SelectItem>)}
         </SelectContent>
@@ -115,7 +115,7 @@ export function LinkOperationWorksiteForm({
       <input type="hidden" name="faenaNombre" value={faenaNombre} />
       <input type="hidden" name="worksiteId" value={worksiteId} />
       <Select value={worksiteId} onValueChange={setWorksiteId}>
-        <SelectTrigger className="w-48"><SelectValue placeholder="Elegir faena…" /></SelectTrigger>
+        <SelectTrigger aria-label="Elegir faena…" className="w-48"><SelectValue placeholder="Elegir faena…" /></SelectTrigger>
         <SelectContent>
           {worksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
         </SelectContent>

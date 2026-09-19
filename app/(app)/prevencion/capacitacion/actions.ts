@@ -16,6 +16,7 @@ import {
   createTrainingCourse,
   createTrainingCourseVersion,
   createTrainingSession,
+  remindTrainingCourseVersionApproval,
   escalateBlockingGapsToCapa,
   recordTrainingAttendance,
   revokeCompetency,
@@ -151,4 +152,23 @@ export async function escalateBlockingGapsAction(input: { targetDate: string; re
   const guard = await guardPermission("prevention:training:manage")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => escalateBlockingGapsToCapa(access, input))
+}
+
+/**
+ * Solicitar la publicación de una versión de curso a quien sí puede.
+ *
+ * El guard es `manage` y no `approve` a propósito: quien pide es justamente
+ * quien **no** puede aprobar. `prevencionista_faena` tiene `manage` sin
+ * `approve`, que es el caso que motiva la acción.
+ */
+export async function remindTrainingCourseVersionApprovalAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:training:manage")
+  if (guard.error) return guard.error
+  try {
+    const result = await remindTrainingCourseVersionApproval(input, accessFromSession(guard.session))
+    revalidatePath(`${BASE}/catalogo`)
+    return { ok: true, data: { notified: result.notified } }
+  } catch (error) {
+    return { ok: false, message: safeActionMessage(error, "No se pudo enviar la solicitud.") }
+  }
 }

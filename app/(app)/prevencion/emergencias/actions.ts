@@ -17,6 +17,7 @@ import {
   createEmergencyPlan,
   EmergencyDomainError,
   planSchema,
+  remindEmergencyPlanApproval,
   scheduleEmergencyDrill,
   setEmergencyPlanPdtpActivities,
   updateEmergencyResource,
@@ -140,4 +141,25 @@ export async function cancelEmergencyDrillAction(input: unknown): Promise<Action
   const guard = await guardPermission("prevention:emergency:drill_execute")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), "cancelEmergencyDrill", (access) => cancelEmergencyDrill(input, access))
+}
+
+/**
+ * Solicitar la aprobación de un plan de emergencia a quien sí puede.
+ *
+ * El guard es `manage` porque quien pide es quien **no** puede aprobar: el
+ * servicio además excluye del aviso a quien creó el plan, ya que
+ * `approveEmergencyPlan` le rechazaría la firma.
+ */
+export async function remindEmergencyPlanApprovalAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:emergency:manage")
+  if (guard.error) return guard.error
+  try {
+    const result = await remindEmergencyPlanApproval(input, accessFromSession(guard.session))
+    revalidatePath(BASE)
+    return { ok: true, data: { notified: result.notified } }
+  } catch (error) {
+    if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados." }
+    if (error instanceof EmergencyDomainError) return { ok: false, message: error.message }
+    return unexpectedActionError(error, "prevencion/emergencias/remind-plan-approval")
+  }
 }

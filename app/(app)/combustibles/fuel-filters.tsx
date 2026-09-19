@@ -81,7 +81,7 @@ export function FuelFilters({ vehicles, suppliers, worksites, products, currentF
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Servicio</Label>
             <Select defaultValue={currentFilters.serviceType ?? "all"} onValueChange={(v) => setFilter("service", v === "all" ? "" : v)}>
-              <SelectTrigger><SelectValue placeholder="Todos" /></SelectTrigger>
+              <SelectTrigger aria-label="Todos"><SelectValue placeholder="Todos" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
                 <SelectItem value="TCT">TCT</SelectItem>
@@ -93,7 +93,7 @@ export function FuelFilters({ vehicles, suppliers, worksites, products, currentF
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Proveedor</Label>
             <Select defaultValue={currentFilters.supplierId ?? "all"} onValueChange={(v) => setFilter("proveedor", v === "all" ? "" : v)}>
-              <SelectTrigger><SelectValue placeholder="Todos" /></SelectTrigger>
+              <SelectTrigger aria-label="Todos"><SelectValue placeholder="Todos" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos los proveedores</SelectItem>
                 {suppliers.map((s) => (
@@ -109,7 +109,7 @@ export function FuelFilters({ vehicles, suppliers, worksites, products, currentF
               defaultValue={currentFilters.productId ?? (currentFilters.product ? `legacy:${currentFilters.product}` : "all")}
               onValueChange={setProductFilter}
             >
-              <SelectTrigger><SelectValue placeholder="Todos" /></SelectTrigger>
+              <SelectTrigger aria-label="Todos"><SelectValue placeholder="Todos" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos los productos</SelectItem>
                 {currentFilters.product && !currentFilters.productId && (
@@ -140,7 +140,7 @@ export function FuelFilters({ vehicles, suppliers, worksites, products, currentF
       />
 
       <Select defaultValue={currentFilters.vehicleId ?? "all"} onValueChange={(v) => setFilter("vehicle", v === "all" ? "" : v)}>
-        <SelectTrigger className="w-40 h-8 text-xs"><SelectValue placeholder="Vehículo" /></SelectTrigger>
+        <SelectTrigger aria-label="Vehículo" className="w-40 h-8 text-xs"><SelectValue placeholder="Vehículo" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todos los vehículos</SelectItem>
           {vehicles.map((v) => (
@@ -150,7 +150,7 @@ export function FuelFilters({ vehicles, suppliers, worksites, products, currentF
       </Select>
 
       <Select defaultValue={currentFilters.status ?? "all"} onValueChange={(v) => setFilter("status", v === "all" ? "" : v)}>
-        <SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Estado" /></SelectTrigger>
+        <SelectTrigger aria-label="Estado" className="w-36 h-8 text-xs"><SelectValue placeholder="Estado" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todos los estados</SelectItem>
           <SelectItem value="draft">Borrador</SelectItem>

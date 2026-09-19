@@ -218,7 +218,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
           <div className="grid gap-1.5">
             <Label className="text-xs">Faena</Label>
             <Select value={worksiteId} onValueChange={setWorksiteId}>
-              <SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger>
+              <SelectTrigger aria-label="Selecciona faena"><SelectValue placeholder="Selecciona faena" /></SelectTrigger>
               <SelectContent>
                 {canImportAllWorksites && <SelectItem value="all">Todas las faenas (según patente)</SelectItem>}
                 {worksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}

@@ -54,7 +54,7 @@ function MappingRow({ item, options, onResolved }: { item: AmbiguousIdentity; op
       </div>
       <div className="flex items-center gap-2">
         <Select value={selected} onValueChange={setSelected}>
-          <SelectTrigger className="w-56"><SelectValue placeholder="Selecciona del catálogo" /></SelectTrigger>
+          <SelectTrigger aria-label="Selecciona del catálogo" className="w-56"><SelectValue placeholder="Selecciona del catálogo" /></SelectTrigger>
           <SelectContent>{options.map((option) => <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>)}</SelectContent>
         </Select>
         <Button type="button" size="sm" disabled={!selected || pending} onClick={() => save(selected)}>Asignar</Button>

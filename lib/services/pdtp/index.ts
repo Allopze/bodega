@@ -103,6 +103,8 @@ export {
   archivePdtpProgram,
 } from "./lifecycle"
 export type { PdtpApprovalDecisionValue, PdtpCoverageReport } from "./lifecycle"
+export type { PdtpFulfillmentCoverageIssue, PdtpFulfillmentCoverageStatus } from "./fulfillment"
+export type { PdtpCoverageInstrument } from "./instrument-gap"
 export {
   DEFAULT_PDTP_APPROVAL_STEPS,
   ensureDefaultPdtpApprovalSteps,

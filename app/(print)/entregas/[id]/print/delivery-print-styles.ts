@@ -48,7 +48,7 @@ export const DELIVERY_PRINT_STYLES = `
   .print-action-primary:hover { background: #205438; }
   .print-action-secondary { background: #f9fbfa; border-color: #cfd8d2; color: #233027; }
   .print-action-secondary:hover { background: #eef5f1; border-color: #b8c8be; }
-  .print-filename { margin-left: 6px; color: #647067; font-size: 9pt; }
+  .print-filename { margin-left: 6px; color: #5a655d; font-size: 9pt; }
   .print-error { margin-left: 6px; color: #b91c1c; font-size: 9pt; }
 
   .mobile-document-summary { display: none; }
@@ -77,7 +77,7 @@ export const DELIVERY_PRINT_STYLES = `
   .delivery-sheet th { padding: 6px 4px; border-bottom: 2px solid #e5e7eb; color: #6b7280; font-size: 10px; font-weight: 600; text-align: left; text-transform: uppercase; }
   .delivery-sheet td { padding: 6px 4px; border-bottom: 1px solid #f3f4f6; font-size: 11px; }
   .delivery-sheet .total { font-weight: 700; }
-  .delivery-sheet .footer { margin-top: 40px; padding-top: 12px; border-top: 1px solid #e5e7eb; color: #9ca3af; font-size: 9px; text-align: center; }
+  .delivery-sheet .footer { margin-top: 40px; padding-top: 12px; border-top: 1px solid #e5e7eb; color: #5f6874; font-size: 9px; text-align: center; }
 
   /* "screen and" es obligatorio: al imprimir, el ancho de la media query es el
      de la caja de página, así que sin esto la rama móvil oculta la hoja y
@@ -91,7 +91,7 @@ export const DELIVERY_PRINT_STYLES = `
     .delivery-sheet { display: none; }
 
     .mobile-document-summary { display: block; margin: 16px auto 28px; padding: 20px; border: 1px solid #d8dfda; border-radius: 14px; background: #ffffff; color: #232522; }
-    .mobile-document-summary-code { margin: 0; color: #647067; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+    .mobile-document-summary-code { margin: 0; color: #5a655d; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
     .mobile-document-summary h1 { margin: 4px 0 0; font-size: 24px; line-height: 1.15; }
     .mobile-document-summary-description { margin: 8px 0 0; color: #45514a; font-size: 15px; }
     .mobile-document-summary-notice { margin: 16px 0; padding: 10px 12px; border-radius: 8px; background: #f1f5f3; color: #45514a; font-size: 14px; line-height: 1.45; }
@@ -99,7 +99,7 @@ export const DELIVERY_PRINT_STYLES = `
     .mobile-document-summary-section h2 { margin: 0 0 8px; color: #17422b; font-size: 14px; }
     .mobile-document-summary-section dl { margin: 0; }
     .mobile-document-summary-section dl > div { padding: 10px 0; border-top: 1px solid #e5ebe6; }
-    .mobile-document-summary-section dt { color: #647067; font-size: 12px; }
+    .mobile-document-summary-section dt { color: #5a655d; font-size: 12px; }
     .mobile-document-summary-section dd { margin: 3px 0 0; font-size: 15px; font-weight: 600; }
   }
 

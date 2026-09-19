@@ -1,5 +1,4 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { redirect } from "next/navigation"
 import { inArray } from "drizzle-orm"
 import { requireAuth, can } from "@/lib/auth/can"
@@ -78,7 +77,7 @@ export default async function DocumentDetailPage({ params }: Props) {
           { label: "Documentación", href: "/prevencion/documentacion" },
           { label: bundle.doc.title.slice(0, 48) },
         ]} />}
-        actions={<Button asChild size="sm" variant="secondary"><Link href={`/api/prevencion/documentacion/${id}/expediente`}>Exportar expediente Excel</Link></Button>}
+        actions={<Button asChild size="sm" variant="secondary"><a href={`/api/prevencion/documentacion/${id}/expediente`} download>Exportar expediente Excel</a></Button>}
       />
       {isRiohs && (
         <RiohsChecklist documentId={id} currentVersionId={bundle.doc.currentVersionId} sections={riohsSections} canManage={canManage} canDistribute={canDistribute} />

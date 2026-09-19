@@ -727,6 +727,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-pdtp-editar-activo", path: "/prevencion/pdtp/prog-audit-1/editar", auth: true, allowedPaths: ["/prevencion/pdtp/prog-audit-1"], captureView: false, notes: "Programa activo: la edición redirige al detalle en vez de abrir un editor sin efecto." },
   { slug: "prevencion-pdtp-ejecucion", path: "/prevencion/pdtp/prog-audit-1/ejecucion/exec-audit-1", auth: true },
   { slug: "prevencion-pdtp-reporte", path: "/prevencion/pdtp/prog-audit-1/reporte", auth: true },
+  { slug: "prevencion-pdtp-habilitacion", path: "/prevencion/pdtp/prog-audit-1/habilitacion", auth: true, notes: "Qué le falta a cada actividad para poder ejecutarse, con su acción de resolución." },
   { slug: "prevencion-pdtp-acciones", path: "/prevencion/pdtp/acciones", auth: true },
   { slug: "prevencion-pdtp-actividades", path: "/prevencion/pdtp/actividades", auth: true },
   { slug: "prevencion-pdtp-programas", path: "/prevencion/pdtp/programas", auth: true },

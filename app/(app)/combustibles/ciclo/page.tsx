@@ -258,7 +258,7 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
                       <TableCell>{movement.worksite.name}<span className="block text-xs text-[var(--color-text-muted)]">{movement.product.name}</span></TableCell>
                       <TableCell>{movement.sourceLocation?.name ?? movement.supplier?.name ?? "—"} <span className="text-[var(--color-text-muted)]">→</span> {movement.targetLocation?.name ?? movement.vehicle?.code ?? movement.vehicle?.plate ?? "—"}</TableCell>
                       <TableCell className="font-mono">{formatQty(movement.quantity, undefined, { maximumFractionDigits: 2 })} L</TableCell>
-                      <TableCell>{href ? <Link className="inline-flex items-center gap-1 text-[var(--color-primary-ink)] hover:underline" href={href}>Abrir registro <ArrowSquareOut size={14} /></Link> : <span className="inline-flex items-center gap-1 text-[var(--color-text-muted)]"><WarningCircle size={14} />Sin registro asociado</span>}</TableCell>
+                      <TableCell>{href ? <Link className="inline-flex min-h-6 items-center gap-1 text-[var(--color-primary-ink)] hover:underline" href={href}>Abrir registro <ArrowSquareOut size={14} /></Link> : <span className="inline-flex min-h-6 items-center gap-1 text-[var(--color-text-muted)]"><WarningCircle size={14} />Sin registro asociado</span>}</TableCell>
                     </TableRow>
                   )
                 })}
@@ -273,7 +273,7 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
 }
 
 function TraceLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return <Link href={href} className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-ink)] hover:underline">{children}<ArrowSquareOut size={12} /></Link>
+  return <Link href={href} className="inline-flex min-h-6 items-center gap-1 text-xs font-medium text-[var(--color-primary-ink)] hover:underline">{children}<ArrowSquareOut size={12} /></Link>
 }
 
 function Metric({ label, value, detail, trace }: { label: string; value: string; detail: string; trace?: React.ReactNode }) {

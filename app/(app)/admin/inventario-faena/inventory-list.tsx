@@ -14,7 +14,7 @@ import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-too
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { EMERGENCY_RESOURCE_STATUS_LABELS, emergencyResourceStatusVariant } from "@/lib/prevention/emergency"
@@ -145,21 +145,27 @@ export function InventoryList({ rows, points, worksites, canManage, canService, 
     </div>
     <Tabs value={view} onValueChange={(value) => setFilters({ vista: value === "activos" ? null : value, cobertura: null })}>
       <TabsList><TabsTrigger value="activos">Activos ({rows.length})</TabsTrigger><TabsTrigger value="puntos">Puntos de cobertura ({points.length})</TabsTrigger></TabsList>
+      <FilterToolbar activeChips={chips} onRemoveChip={(key) => setFilters({ [key]: null })} onClearAll={() => clearFilters()} hasActiveFilters={chips.length > 0}>
+        <Select value={worksite} onValueChange={(value) => setFilters({ faena: value === "all" ? null : value })}>
+          <SelectTrigger className="w-56" aria-label="Faena"><SelectValue placeholder="Faena" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">Todas las faenas</SelectItem>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+        </Select>
+        {view === "activos" ? <Select value={kind} onValueChange={(value) => setFilters({ tipo: value === "all" ? null : value })}>
+          <SelectTrigger className="w-52" aria-label="Tipo de recurso"><SelectValue placeholder="Tipo" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">Todos los tipos</SelectItem>{kinds.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
+        </Select> : <Select value={coverageFilter} onValueChange={(value) => setFilters({ cobertura: value === "all" ? null : value })}>
+          <SelectTrigger className="w-52" aria-label="Estado de cobertura"><SelectValue placeholder="Cobertura" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">Toda la cobertura</SelectItem><SelectItem value="gap">Brechas críticas</SelectItem><SelectItem value="attention">Atención</SelectItem><SelectItem value="covered">Cubiertos</SelectItem></SelectContent>
+        </Select>}
+      </FilterToolbar>
+      {/* Antes este contenido vivía fuera de `<Tabs>`, condicionado a mano por
+          `view === "..."`. El trigger activo ya emitía `aria-controls` hacia un
+          panel que nunca existió (axe `aria-valid-attr-value`); envolverlo en
+          `TabsContent` real hace exactamente la misma poda —Radix desmonta el
+          panel inactivo— pero con el id que el trigger sí referencia. */}
+      <TabsContent value="activos"><AssetsTable rows={visibleAssets} canManage={canManage} canService={canService} /></TabsContent>
+      <TabsContent value="puntos"><CoverageTable points={visiblePoints} resources={rows} canService={canService} today={today} /></TabsContent>
     </Tabs>
-    <FilterToolbar activeChips={chips} onRemoveChip={(key) => setFilters({ [key]: null })} onClearAll={() => clearFilters()} hasActiveFilters={chips.length > 0}>
-      <Select value={worksite} onValueChange={(value) => setFilters({ faena: value === "all" ? null : value })}>
-        <SelectTrigger className="w-56" aria-label="Faena"><SelectValue placeholder="Faena" /></SelectTrigger>
-        <SelectContent><SelectItem value="all">Todas las faenas</SelectItem>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
-      </Select>
-      {view === "activos" ? <Select value={kind} onValueChange={(value) => setFilters({ tipo: value === "all" ? null : value })}>
-        <SelectTrigger className="w-52" aria-label="Tipo de recurso"><SelectValue placeholder="Tipo" /></SelectTrigger>
-        <SelectContent><SelectItem value="all">Todos los tipos</SelectItem>{kinds.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent>
-      </Select> : <Select value={coverageFilter} onValueChange={(value) => setFilters({ cobertura: value === "all" ? null : value })}>
-        <SelectTrigger className="w-52" aria-label="Estado de cobertura"><SelectValue placeholder="Cobertura" /></SelectTrigger>
-        <SelectContent><SelectItem value="all">Toda la cobertura</SelectItem><SelectItem value="gap">Brechas críticas</SelectItem><SelectItem value="attention">Atención</SelectItem><SelectItem value="covered">Cubiertos</SelectItem></SelectContent>
-      </Select>}
-    </FilterToolbar>
-    {view === "activos" ? <AssetsTable rows={visibleAssets} canManage={canManage} canService={canService} /> : <CoverageTable points={visiblePoints} resources={rows} canService={canService} today={today} />}
   </div>
 }
 

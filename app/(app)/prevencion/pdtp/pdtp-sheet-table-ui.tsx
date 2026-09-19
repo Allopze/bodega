@@ -340,9 +340,13 @@ export function PdtpActivitySummary({
             title={item.title}
             className={[
               "inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2.5 py-1 text-[11px] font-medium transition-all",
+              // Sin `opacity-70` en los inactivos: la opacidad se aplica al
+              // MetaBadge entero y hunde `signal-ink` sobre `signal-tint` de
+              // 4.5:1 a 3.0:1 (axe `color-contrast`, `serious`). El anillo del
+              // activo ya los distingue, y `aria-pressed` lo dice sin color.
               isActive
                 ? "ring-2 ring-[var(--color-primary)] ring-offset-1"
-                : "opacity-70 hover:opacity-100",
+                : "hover:ring-1 hover:ring-[var(--color-border-strong)]",
             ].join(" ")}
             aria-pressed={isActive}
           >
