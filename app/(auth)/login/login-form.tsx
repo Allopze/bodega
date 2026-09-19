@@ -100,7 +100,7 @@ export function LoginForm() {
         <div className="flex flex-col gap-0">
           <div className="mb-1.5 flex items-center justify-between">
             <Label htmlFor="password" className="mb-0">Contraseña</Label>
-            <Link href="/recuperar" className="text-xs text-[var(--color-primary-ink)] hover:underline">
+            <Link href="/recuperar" className="text-xs font-medium text-[var(--color-primary)] hover:underline">
               ¿La olvidaste?
             </Link>
           </div>
