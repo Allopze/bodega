@@ -42,7 +42,6 @@ import { competencyConvalidationSchema,
 } from "@/lib/validation/prevention-module/training"
 import { onTrainingSessionCancelled, onTrainingSessionClosed } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { replacePdtpAccreditationBindings, resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
-import { onCompetencyObtained } from "@/lib/services/pdtp-adapters/competency-gap-connector"
 import { computeCompetencyGapsForScope } from "@/lib/services/prevention-training-gaps"
 import { codeYear, todayInChile } from "@/lib/utils"
 
@@ -394,7 +393,6 @@ export async function recordTrainingAttendance(input: unknown, access: TrainingA
 export async function closeTrainingSession(input: unknown, access: TrainingAccess) {
   const data = trainingSessionCloseSchema.parse(input)
   let accreditation: Parameters<typeof onTrainingSessionClosed>[0] | null = null
-  let competencyReport: Parameters<typeof onCompetencyObtained>[0] | null = null
   const result = await db.transaction(async (tx) => {
     const [session] = await tx.select().from(preventionTrainingSessions)
       .where(eq(preventionTrainingSessions.id, data.sessionId)).limit(1)
@@ -491,17 +489,6 @@ export async function closeTrainingSession(input: unknown, access: TrainingAcces
         attendedCount: granted.length,
         ...target,
       }
-      // Y el cierre en abanico de las obligaciones por persona, para los cursos
-      // cuya actividad se mide por plazo (la N°57). Es una lista de personas y
-      // no un conteo: la obligación es de cada una, no de la sesión.
-      competencyReport = {
-        sessionId: session.id,
-        worksiteId: session.worksiteId,
-        courseId: course.id,
-        closedAt: updated.closedAt ?? now,
-        grantedWorkerIds: granted.map((item) => item.workerId),
-        userId: access.userId,
-      }
     }
 
     return { session: updated, grantedCount: granted.length, convenedCount: attendance.length }
@@ -510,7 +497,6 @@ export async function closeTrainingSession(input: unknown, access: TrainingAcces
   // Auto-acreditación PDTP fuera de la transacción; safeAccredit absorbe errores
   // (programa inactivo, curso no vinculado) sin afectar el cierre ya confirmado.
   if (accreditation) await onTrainingSessionClosed(accreditation)
-  if (competencyReport) await onCompetencyObtained(competencyReport)
 
   return result
 }

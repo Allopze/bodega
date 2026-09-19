@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
-import { runPreventionTrainingReminders } from "@/lib/services/prevention-training-reminders"
+import { runPreventionTrainingObligations } from "@/lib/services/prevention-training-obligations"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
   try {
-    const result = await withCronLock("prevention-training-reminders", () => runPreventionTrainingReminders())
+    const result = await withCronLock("prevention-training-reminders", () => runPreventionTrainingObligations())
     logger.info("[cron/prevention-training-reminders] completed", result)
     return NextResponse.json({ ok: true, ...result })
   } catch (error) {
