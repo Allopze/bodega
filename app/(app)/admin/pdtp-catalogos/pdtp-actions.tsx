@@ -51,6 +51,7 @@ export function PdtpActions({
         open={respSheetOpen}
         onClose={() => setRespSheetOpen(false)}
         editResponsible={null}
+        roleOptions={roleOptions}
       />
 
       <Dialog open={activitySheetOpen} onOpenChange={(open) => { if (!open) setActivitySheetOpen(false) }}>

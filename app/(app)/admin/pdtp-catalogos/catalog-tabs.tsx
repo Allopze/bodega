@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/lib/form-state"
+import { pdtpResponsibleKindLabel } from "@/lib/prevention/pdtp"
 import {
   publishPdtpCatalogActivityAction,
   retirePdtpCatalogActivityAction,
@@ -243,7 +244,7 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
                   }
                 >
                   <ResponsiveDataListField label="Rol">{r.roleName || "Sin rol"}</ResponsiveDataListField>
-                  <ResponsiveDataListField label="Tipo"><MetaBadge meta={{ label: r.kind, variant: "default" }} /></ResponsiveDataListField>
+                  <ResponsiveDataListField label="Tipo"><MetaBadge meta={{ label: pdtpResponsibleKindLabel(r.kind), variant: "default" }} /></ResponsiveDataListField>
                   <ResponsiveDataListField label="Notas" className="col-span-2">{r.notes || "Sin notas"}</ResponsiveDataListField>
                 </ResponsiveDataListCard>
               )
@@ -257,7 +258,7 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
                     <TableCell className="font-mono text-xs text-[var(--color-text-muted)]">
                       {r.roleName || "—"}
                     </TableCell>
-                    <TableCell>{<MetaBadge meta={{ label: r.kind, variant: "default" }} />}</TableCell>
+                    <TableCell>{<MetaBadge meta={{ label: pdtpResponsibleKindLabel(r.kind), variant: "default" }} />}</TableCell>
                     <TableCell className="text-xs text-[var(--color-text-muted)]">{r.notes || "—"}</TableCell>
                     <TableCell>
                       {r.isActive
@@ -297,6 +298,7 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
             open={respSheetOpen}
             onClose={() => setRespSheetOpen(false)}
             editResponsible={editResp}
+            roleOptions={roleOptions}
           />
         </section>
       )}

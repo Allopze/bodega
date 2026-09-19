@@ -175,3 +175,22 @@ export function pdtpPriorityPresentation(prioridad: string | undefined): { prior
  */
 export const PDTP_NO_EXECUTOR_ROLE_REASON =
   "Ninguno de los responsables definidos para esta actividad puede registrar su cumplimiento en la plataforma."
+
+/**
+ * Tipo de responsable del catálogo PDTP (`pdtp_responsibles.kind`). El
+ * formulario de administración lo dejaba como texto libre con un texto de
+ * ayuda listando estos mismos 4 valores — el `<Select>` que los reemplaza
+ * hace que ese texto de ayuda sea redundante.
+ */
+export type PdtpResponsibleKind = "rol_rbac" | "grupo" | "persona" | "otro"
+
+export const PDTP_RESPONSIBLE_KIND_LABELS: Record<PdtpResponsibleKind, string> = {
+  rol_rbac: "Rol del sistema",
+  grupo: "Grupo",
+  persona: "Persona",
+  otro: "Otro",
+}
+
+export function pdtpResponsibleKindLabel(kind: string): string {
+  return PDTP_RESPONSIBLE_KIND_LABELS[kind as PdtpResponsibleKind] ?? kind
+}
