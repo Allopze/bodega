@@ -9,7 +9,7 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/lib/toast"
@@ -117,18 +117,19 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
   const activityRows = activities as (CatalogActivityRow & Record<string, unknown>)[]
 
   return (
-    <>
-      <Tabs value={tab} onValueChange={(value) => setTab(value as (typeof TABS)[number]["key"])} className="mb-4">
-        <TabsList>
-          {TABS.map((t) => (
-            <TabsTrigger key={t.key} value={t.key}>
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+    <Tabs value={tab} onValueChange={(value) => setTab(value as (typeof TABS)[number]["key"])} className="mb-4">
+      <TabsList>
+        {TABS.map((t) => (
+          <TabsTrigger key={t.key} value={t.key}>
+            {t.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
 
-      {tab === "activities" && (
+      {/* `TabsContent` real por sección: el trigger activo emitía `aria-controls`
+          hacia un panel que nunca existía (axe `aria-valid-attr-value`). Mismo
+          contenido, mismo gating por `tab`, ahora con el id que Radix genera. */}
+      <TabsContent value="activities">
         <section>
           <div className="mb-3">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Actividades preventivas</h2>
@@ -206,9 +207,9 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
             </DialogContent>
           </Dialog>
         </section>
-      )}
+      </TabsContent>
 
-      {tab === "responsibles" && (
+      <TabsContent value="responsibles">
         <section>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
@@ -301,9 +302,9 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
             roleOptions={roleOptions}
           />
         </section>
-      )}
+      </TabsContent>
 
-      {tab === "sheets" && (
+      <TabsContent value="sheets">
         <section>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
@@ -411,9 +412,9 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
             roleOptions={roleOptions}
           />
         </section>
-      )}
+      </TabsContent>
 
-      {tab === "programs" && (
+      <TabsContent value="programs">
         <section>
           <div className="mb-3">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
@@ -425,10 +426,9 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
           </div>
           <ProgramTable programs={programs} />
         </section>
-      )}
-    </>
+      </TabsContent>
+    </Tabs>
   )
-
 }
 
 function CatalogStatus({ status }: { status: CatalogActivityRow["status"] }) {
