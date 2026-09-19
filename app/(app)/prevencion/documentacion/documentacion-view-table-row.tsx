@@ -1,6 +1,5 @@
 "use client"
 
-import Link from "next/link"
 import { DownloadSimple, DotsThreeVertical } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -72,10 +71,10 @@ export function DocumentTableRow({
       <TableCell>
         <div className="flex justify-end gap-1">
           <Button asChild size="sm" variant="secondary">
-            <Link href={`/api/prevencion/documentacion/${d.id}?download=1`}>
+            <a href={`/api/prevencion/documentacion/${d.id}?download=1`} download>
               <DownloadSimple size={14} className="mr-1" />
               Descargar
-            </Link>
+            </a>
           </Button>
           {canManage && (
             <Button type="button" size="sm" variant="ghost" onClick={onMove}>
@@ -91,7 +90,7 @@ export function DocumentTableRow({
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={onOpenDetail}>Ver detalle</DropdownMenuItem>
               <DropdownMenuItem onSelect={onOpenDetail}>Vista previa</DropdownMenuItem>
-              <DropdownMenuItem asChild><Link href={`/api/prevencion/documentacion/${d.id}?download=1`}>Descargar</Link></DropdownMenuItem>
+              <DropdownMenuItem asChild><a href={`/api/prevencion/documentacion/${d.id}?download=1`} download>Descargar</a></DropdownMenuItem>
               {canManage && <DropdownMenuSeparator />}
               {canManage && <DropdownMenuItem onSelect={onMove}>Mover</DropdownMenuItem>}
               {canManage && <DropdownMenuItem onSelect={onOpenDetail}>Subir nueva versión</DropdownMenuItem>}
