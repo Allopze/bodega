@@ -14,7 +14,6 @@ import {
   preventionEmergencyPlans,
   preventionInspectionTemplates,
   preventionTrainingCatalogItems,
-  preventionTrainingCourses,
   sstDocumentTypes,
 } from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
@@ -41,13 +40,12 @@ function mapNumbers(sourceType: string, sourceId: string, eventType: BindingSeed
 }
 
 async function main() {
-  const [annualActivities, programs, memberships, events, inspectionTemplates, trainingCourses, trainingItems, documentTypes, campaigns, emergencyPlans, existingCatalog] = await Promise.all([
+  const [annualActivities, programs, memberships, events, inspectionTemplates, trainingItems, documentTypes, campaigns, emergencyPlans, existingCatalog] = await Promise.all([
     db.select({ id: pdtpActivities.id, programId: pdtpActivities.programId, n: pdtpActivities.n, activity: pdtpActivities.activity, program: pdtpActivities.program, catalogActivityId: pdtpActivities.catalogActivityId }).from(pdtpActivities),
     db.select({ id: pdtpPrograms.id, year: pdtpPrograms.year, status: pdtpPrograms.status }).from(pdtpPrograms),
     db.select({ programId: pdtpProgramWorksites.programId, worksiteId: pdtpProgramWorksites.worksiteId, isActive: pdtpProgramWorksites.isActive }).from(pdtpProgramWorksites),
     db.select().from(pdtpFulfillmentEvents),
     db.select({ id: preventionInspectionTemplates.id, execute: preventionInspectionTemplates.pdtpActivityNumbers, review: preventionInspectionTemplates.pdtpReviewActivityNumbers }).from(preventionInspectionTemplates),
-    db.select({ id: preventionTrainingCourses.id, numbers: preventionTrainingCourses.pdtpActivityNumbers }).from(preventionTrainingCourses),
     db.select({ id: preventionTrainingCatalogItems.id, numbers: preventionTrainingCatalogItems.pdtpActivityNumbers }).from(preventionTrainingCatalogItems),
     db.select({ id: sstDocumentTypes.id, publish: sstDocumentTypes.pdtpActivityNumbers, acknowledge: sstDocumentTypes.pdtpAcknowledgmentActivityNumbers }).from(sstDocumentTypes),
     db.select({ id: preventionCampaigns.id, numbers: preventionCampaigns.pdtpActivityNumbers }).from(preventionCampaigns),
@@ -67,7 +65,6 @@ async function main() {
     bindings.push(...mapNumbers("inspeccion", row.id, "execute", row.execute, issues))
     bindings.push(...mapNumbers("inspeccion", row.id, "review", row.review, issues))
   }
-  for (const row of trainingCourses) bindings.push(...mapNumbers("capacitacion", row.id, "close", row.numbers, issues))
   for (const row of trainingItems) bindings.push(...mapNumbers("capacitacion_ocurrencia", row.id, "close", row.numbers, issues))
   for (const row of documentTypes) {
     bindings.push(...mapNumbers("documento", row.id, "publish", row.publish, issues))

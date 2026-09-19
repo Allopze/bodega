@@ -2,10 +2,6 @@ import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import {
   preventionPermitCrew,
-  preventionTrainingAttendance,
-  preventionTrainingCourseVersions,
-  preventionTrainingCourses,
-  preventionTrainingSessions,
   preventionWorkPermits,
   workers,
 } from "@/db/schema"

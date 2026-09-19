@@ -10,8 +10,6 @@ import {
   preventionEmergencyPlans,
   preventionInspectionRuns,
   preventionInspectionTemplates,
-  preventionTrainingCourses,
-  preventionTrainingCourseVersions,
   rolePermissions,
   roles,
   worksites,
@@ -58,7 +56,6 @@ export interface PdtpWiringReport {
    */
   lostRuns: { templateId: string; code: string; versionLabel: string; closedRuns: number; declares: number[] }[]
   /** Cursos del programa sin una versión publicada: no se les puede programar sesión. */
-  coursesWithoutPublishedVersion: { code: string; name: string }[]
   /** Todo lo que la compuerta de cumplimiento reporta hoy, sin filtrar. */
   coverageIssues: PdtpFulfillmentCoverageIssue[]
   /**
@@ -145,32 +142,6 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
     }
   }
 
-  // Cursos del programa sin versión publicada. `createTrainingSession` la
-  // exige, así que un curso creado por el script de datos todavía no se puede
-  // dictar — y eso afecta a los doce, no sólo al que se acaba de agregar.
-  const courses = await db.select({
-    id: preventionTrainingCourses.id,
-    code: preventionTrainingCourses.code,
-    name: preventionTrainingCourses.name,
-    numbers: preventionTrainingCourses.pdtpActivityNumbers,
-    minimumDurationMinutes: preventionTrainingCourses.minimumDurationMinutes,
-  }).from(preventionTrainingCourses).where(eq(preventionTrainingCourses.isActive, true))
-  const pdtpCourses = courses.filter((course) => ((course.numbers as number[] | null) ?? []).length > 0)
-  const publishedVersions = pdtpCourses.length === 0 ? [] : await db.select({
-    courseId: preventionTrainingCourseVersions.courseId,
-    durationMinutes: preventionTrainingCourseVersions.durationMinutes,
-  }).from(preventionTrainingCourseVersions).where(and(
-    inArray(preventionTrainingCourseVersions.courseId, pdtpCourses.map((course) => course.id)),
-    eq(preventionTrainingCourseVersions.status, "published"),
-  ))
-  const minimumDurationByCourseId = new Map(pdtpCourses.map((course) => [course.id, course.minimumDurationMinutes]))
-  const publishedCourseIds = new Set(publishedVersions
-    .filter((row) => row.durationMinutes >= (minimumDurationByCourseId.get(row.courseId) ?? Number.POSITIVE_INFINITY))
-    .map((row) => row.courseId))
-  const coursesWithoutPublishedVersion = pdtpCourses
-    .filter((course) => !publishedCourseIds.has(course.id))
-    .map((course) => ({ code: course.code, name: course.name }))
-
   // La compuerta real, no una copia de su predicado. Replicarlo era el mismo
   // defecto que este script vino a detectar: dos lugares que opinan sobre lo
   // mismo se desincronizan, y el que avisa termina mintiendo.
@@ -241,7 +212,6 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
     activitiesWithoutApprovedInstrument,
     inspectionGaps: gaps,
     lostRuns,
-    coursesWithoutPublishedVersion,
     coverageIssues,
     coverageIssuesBlockingLifecycle,
     destinationsToReview,

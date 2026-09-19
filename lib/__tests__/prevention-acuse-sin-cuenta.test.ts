@@ -32,7 +32,7 @@ testGlobal.__db = testDb
 vi.mock("@/db", () => ({ get db() { return testGlobal.__db } }))
 
 const permits = await import("@/lib/services/prevention-permits")
-const { derivePreventionAckToken, verifyPreventionAckToken } = await import("@/lib/services/prevention-ack-token")
+const { derivePreventionAckToken } = await import("@/lib/services/prevention-ack-token")
 const { getPermitCrewAckPublicView } = await import("@/lib/services/prevention-ack-public")
 
 const WS = "ws-acuse"

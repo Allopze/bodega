@@ -2,20 +2,23 @@
  * scripts/apply-pdtp-2026-program-data.ts
  *
  * Deja declarado el dato que el motor de acreditación necesita para cerrar solas
- * las actividades de capacitación, simulacros y campañas del PDTP 2026 (grupos
- * G2, G3 y G4 del TODO).
+ * las actividades de simulacros y campañas del PDTP 2026 (grupos G3 y G4 del
+ * TODO).
  *
- * Los conectores de esos tres dominios ya están cableados desde la fase 2 del
- * motor, pero leen el número de actividad de un registro del propio módulo
- * —`prevention_training_courses.pdtp_activity_numbers`, el del plan de
- * emergencia, el de la campaña—. Sin ese dato la sesión se cierra, el simulacro
- * se completa y la campaña termina sin que el programa anual se entere.
+ * Los conectores de esos dominios ya están cableados desde la fase 2 del motor,
+ * pero leen el número de actividad de un registro del propio módulo —el del
+ * plan de emergencia, el de la campaña—. Sin ese dato el simulacro se completa
+ * y la campaña termina sin que el programa anual se entere.
+ *
+ * El grupo G2 —los doce cursos— salió de acá el 2026-09-19: los declara el
+ * catálogo anual controlado (`lib/prevention/training-occurrences-catalog.ts`),
+ * que es ahora el instrumento de las actividades de capacitación.
  *
  *   npm run pdtp:apply-program-data
  *   PDTP_PROGRAM_DATA_DRY_RUN=true npm run pdtp:apply-program-data
  *   PDTP_PROGRAM_DATA_DEPLOY_MODE=true node scripts/apply-pdtp-program-data.mjs
  *
- * Idempotente por clave natural: el `code` del curso y el de la campaña. Corre
+ * Idempotente por clave natural: el `code` de la campaña. Corre
  * en cada deploy de producción por el mismo motivo que las decisiones de
  * catálogo: es dato del programa, no del código, y si depende de que alguien lo
  * cargue a mano se queda sin cargar.
@@ -35,7 +38,6 @@ import { db } from "@/db"
 import {
   preventionCampaigns,
   preventionEmergencyPlans,
-  preventionTrainingCourses,
   pdtpResponsibleCatalog,
   roles,
   userRoles,
@@ -49,66 +51,6 @@ const DEPLOY_MODE = process.env.PDTP_PROGRAM_DATA_DEPLOY_MODE === "true"
 /** N°84: "Simulacros". La acredita el simulacro completado, leyendo el plan. */
 const DRILL_ACTIVITY_NUMBER = 84
 
-/**
- * G2 — los doce cursos que el programa 2026 planifica, con la actividad que
- * cada uno acredita al cerrar una sesión.
- *
- * `code` es la clave natural: reejecutar no duplica y sí corrige el número.
- * La N°56 usa `PDTP-56`: `B-01` es una inducción corporativa histórica y no se
- * reutiliza como curso práctico sólo porque su código ya exista.
- */
-const COURSES: Array<{
-  code: string
-  name: string
-  n: number
-  kind: string
-  minutes: number
-  legalBasis?: string
-  validityMonths?: number
-}> = [
-  { code: "PDTP-56", name: "Manejo a la defensiva", n: 56, kind: "practical_training", minutes: 480, validityMonths: 24 },
-  // N°16. No hacía falta ningún conector nuevo: `closeTrainingSession` ya cuenta
-  // como acreditados a los asistentes con evaluación aprobada, que es
-  // literalmente "rindió y pasó la prueba de la inducción IRL". Lo único que
-  // faltaba era la fila del curso.
-  { code: "PDTP-16", name: "Prueba de evaluación de la inducción IRL", n: 16, kind: "practical_training", minutes: 60 },
-  { code: "PDTP-37", name: "Charla de seguridad (Prevencionista de faena)", n: 37, kind: "operational_talk", minutes: 30 },
-  { code: "PDTP-38", name: "Charla de seguridad por turno (Supervisor / Jefe de terreno)", n: 38, kind: "operational_talk", minutes: 30 },
-  { code: "PDTP-51", name: "Capacitación según detección de necesidades", n: 51, kind: "practical_training", minutes: 240 },
-  { code: "PDTP-53", name: "Charla diaria de seguridad y salud en el trabajo", n: 53, kind: "operational_talk", minutes: 15 },
-  /* Los tres `practical_training` de abajo —N°54, N°58 y N°63— estuvieron
-   * declarados como `legal_mandatory`, que en este código significa "curso del
-   * art. 16 del DS 44": 8 horas mínimo y vigencia de a lo más 24 meses. Son
-   * capacitaciones específicas, con obligación y contenido propios, y con eso
-   * declarado el sistema no dejaba crear su versión (`assessLegalFloor`).
-   *
-   * Este script inserta con `db.insert` directo y por eso se salta
-   * `createTrainingCourse` y su validación: por ahí entraron mal. Como usa
-   * `onConflictDoNothing`, corregir esta lista no arregla las filas ya
-   * creadas — eso lo hace `reclassify-pdtp-2026-specific-courses.ts`.
-   *
-   * Duraciones y vigencias vienen de los certificados de Mutual, no de una
-   * estimación: N°54 del certificado del 24/04/2026 (2 horas, vigencia 3 años)
-   * y N°58 del diploma del 26/12/2025 (4 horas, expira 26/12/2028). */
-  { code: "PDTP-54", name: "Uso y manejo de extintores", n: 54, kind: "practical_training", minutes: 120, legalBasis: "DS 594 art. 48 (instrucción y entrenamiento en uso de extintores)", validityMonths: 36 },
-  // La N°55 tampoco es el curso del art. 16: ocho horas de primeros auxilios no
-  // cubren los siete bloques mínimos que ese artículo exige. Y su base legal
-  // citaba el art. 45 del DS 594 —que obliga a DISPONER de extintores—, heredado
-  // por error de la ficha de la N°54.
-  { code: "PDTP-55", name: "Primeros auxilios", n: 55, kind: "practical_training", minutes: 480, legalBasis: "Código del Trabajo art. 184 (acceso oportuno a atención médica ante accidente o emergencia); DS 44/2023 arts. 4 y 19; Ley 16.744 como marco general", validityMonths: 24 },
-  // Sin vigencia declarada, a propósito: su repetición se activa por detección
-  // de necesidades o cambio de rol, no por una caducidad de calendario.
-  { code: "PDTP-57", name: "Comunicación efectiva", n: 57, kind: "practical_training", minutes: 240 },
-  { code: "PDTP-58", name: "Coordinador de Gestión de Riesgos de Desastres", n: 58, kind: "practical_training", minutes: 240, legalBasis: "Designación y formación del Coordinador GRD del centro de trabajo", validityMonths: 36 },
-  { code: "PDTP-59", name: "Investigación de accidentes por árbol causal", n: 59, kind: "practical_training", minutes: 480, validityMonths: 24 },
-  // Ocho horas con temario propio orientado a la función preventiva del
-  // supervisor. Las fichas OTEC de liderazgo general declaran 16, pero recortar
-  // un curso ajeno deja un temario que no coincide con su fuente. Sin vigencia
-  // declarada: el refuerzo se activa al asumir jefatura o ante brechas, no por
-  // calendario.
-  { code: "PDTP-60", name: "Liderazgo para la línea de mando", n: 60, kind: "practical_training", minutes: 480 },
-  { code: "PDTP-63", name: "Uso correcto, reposición y eliminación de EPP", n: 63, kind: "practical_training", minutes: 120, legalBasis: "DS 594 art. 53 (capacitación teórica y práctica para el correcto empleo del EPP)", validityMonths: 12 },
-]
 
 /**
  * G4 — las cinco campañas que el programa planifica, una por faena.
@@ -155,79 +97,6 @@ async function resolveActorUserId(): Promise<string> {
 function sameNumbers(actual: unknown, expected: number[]): boolean {
   if (!Array.isArray(actual)) return false
   return actual.length === expected.length && expected.every((n, i) => actual[i] === n)
-}
-
-/**
- * B-01 puede contener historial de inducción ya publicado. Se conserva el
- * curso y sus versiones; sólo se retira el enlace accidental a la N°56.
- */
-async function unlinkLegacyCourseActivity(): Promise<number> {
-  const [legacy] = await db.select({
-    id: preventionTrainingCourses.id,
-    numbers: preventionTrainingCourses.pdtpActivityNumbers,
-  }).from(preventionTrainingCourses).where(eq(preventionTrainingCourses.code, "B-01")).limit(1)
-  if (!legacy) return 0
-  const current = Array.isArray(legacy.numbers) ? legacy.numbers as number[] : []
-  if (!current.includes(56)) return 0
-  const next = current.filter((n) => n !== 56)
-  if (!DRY_RUN) {
-    await db.update(preventionTrainingCourses)
-      .set({ pdtpActivityNumbers: next, updatedAt: new Date().toISOString() })
-      .where(eq(preventionTrainingCourses.id, legacy.id))
-  }
-  console.log(`  ✓ B-01: se conserva el curso histórico y se retira únicamente la N°56 (${JSON.stringify(current)} → ${JSON.stringify(next)}).`)
-  return 1
-}
-
-async function applyCourses(actorUserId: string): Promise<number> {
-  console.log("G2 — Cursos de capacitación")
-  const existing = await db.select({
-    id: preventionTrainingCourses.id,
-    code: preventionTrainingCourses.code,
-    numbers: preventionTrainingCourses.pdtpActivityNumbers,
-  }).from(preventionTrainingCourses)
-    .where(inArray(preventionTrainingCourses.code, COURSES.map((c) => c.code)))
-  const byCode = new Map(existing.map((row) => [row.code, row]))
-
-  let changes = await unlinkLegacyCourseActivity()
-  for (const course of COURSES) {
-    const numbers = [course.n]
-    const found = byCode.get(course.code)
-
-    if (found) {
-      if (sameNumbers(found.numbers, numbers)) {
-        console.log(`  · ${course.code}: ya declara la N°${course.n}.`)
-        continue
-      }
-      if (!DRY_RUN) {
-        await db.update(preventionTrainingCourses)
-          .set({ pdtpActivityNumbers: numbers, updatedAt: new Date().toISOString() })
-          .where(eq(preventionTrainingCourses.id, found.id))
-      }
-      console.log(`  ✓ ${course.code}: declara la N°${course.n} (antes ${JSON.stringify(found.numbers)}).`)
-      changes++
-      continue
-    }
-
-    if (!DRY_RUN) {
-      await db.insert(preventionTrainingCourses).values({
-        id: `trc-${nanoid()}`,
-        code: course.code,
-        name: course.name,
-        kind: course.kind,
-        minimumDurationMinutes: course.minutes,
-        validityMonths: course.validityMonths ?? null,
-        legalBasis: course.legalBasis ?? null,
-        // Las charlas no rinden prueba; los cursos formales sí.
-        requiresAssessment: course.kind !== "operational_talk",
-        pdtpActivityNumbers: numbers,
-        createdByUserId: actorUserId,
-      }).onConflictDoNothing({ target: preventionTrainingCourses.code })
-    }
-    console.log(`  ✓ ${course.code}: creado para la N°${course.n} — ${course.name}`)
-    changes++
-  }
-  return changes
 }
 
 async function applyDrillPlans(): Promise<number> {
@@ -374,13 +243,12 @@ async function main() {
   console.log(`Datos del programa PDTP 2026 — ${DRY_RUN ? "[DRY RUN]" : "escribiendo"} · actor=${actorUserId}`)
   console.log("")
 
-  const courses = await applyCourses(actorUserId)
   const plans = await applyDrillPlans()
   const campaigns = await applyCampaigns(actorUserId)
   const operated = await applyOperatedBy()
 
   console.log("")
-  console.log(`Resumen: ${courses} curso(s), ${plans} plan(es), ${campaigns} campaña(s) y ${operated} responsable(s).`)
+  console.log(`Resumen: ${plans} plan(es), ${campaigns} campaña(s) y ${operated} responsable(s).`)
   // `plans` cuenta CAMBIOS, no planes: cero significa "nada que corregir", que
   // es el caso normal una vez que `seed-emergency-plans` los dejó declarados.
   // El aviso de faenas sin plan lo da `applyDrillPlans`, por nombre.

@@ -1,7 +1,7 @@
 // Reusa el addMonths con clamping de fin de mes: la versión local con
 // setUTCMonth desbordaba (31 ene + 1 mes → 3 mar) y retrasaba días la
 // detección de EPP vencido.
-import { addMonths } from "./training"
+import { addMonths } from "@/lib/utils"
 
 export const EPP_REQUIREMENT_SCOPE_LABELS: Record<string, string> = {
   global: "Toda la organización",
