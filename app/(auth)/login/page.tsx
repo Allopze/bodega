@@ -74,7 +74,7 @@ export default async function LoginPage() {
       {userCount === 0 && (
         <p>
           Sin usuarios todavía.{" "}
-          <Link href="/registro" className="text-[var(--color-primary-ink)] hover:underline">
+          <Link href="/registro" className="font-medium text-[var(--color-primary)] hover:underline">
             Crear primer administrador
           </Link>
         </p>
@@ -82,8 +82,11 @@ export default async function LoginPage() {
     </>
   )
 
+  // Sin `subtitle`: decía "Usa tu correo @chome.cl.", que es exactamente lo que
+  // ya dice el placeholder del campo en el momento en que importa, y el footer
+  // lo repite una tercera vez.
   return (
-    <AuthShell title="Ingresar" subtitle="Usa tu correo @chome.cl." hero={hero} footer={footer}>
+    <AuthShell title="Ingresar" hero={hero} footer={footer}>
       <Suspense fallback={null}>
         <LoginForm />
       </Suspense>
