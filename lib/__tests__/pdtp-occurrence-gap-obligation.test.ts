@@ -85,7 +85,8 @@ async function seedOccurrence(input: {
   catalogItemId?: string
   year: number
   month: number | null
-  status: "pending" | "completed" | "not_completed"
+  status: "pending" | "completed" | "not_completed" | "not_applicable"
+  notApplicableReason?: string
 }) {
   const now = new Date().toISOString()
   await inMemoryDb.insert(schema.preventionTrainingOccurrences).values({
@@ -101,6 +102,13 @@ async function seedOccurrence(input: {
     createdAt: now,
     updatedAt: now,
     ...(input.status === "completed" ? { completedAt: now, completedByUserId: USER_ID } : {}),
+    ...(input.status === "not_applicable"
+      ? {
+          notApplicableAt: now,
+          notApplicableByUserId: USER_ID,
+          notApplicableReason: input.notApplicableReason ?? "La faena no ejecuta esta tarea.",
+        }
+      : {}),
   })
 }
 
@@ -204,6 +212,24 @@ describe("sweepTrainingOccurrenceObligations", () => {
     await seedOccurrence({ id: "occ-hecha", year: PAST.year, month: PAST.month, status: "completed" })
 
     expect((await sweepTrainingOccurrenceObligations()).gaps).toBe(0)
+    expect(await obligations()).toHaveLength(0)
+  })
+
+  /* El estado "no aplica" existe justamente para esto. Si el barrido no lo
+   * excluyera, una casilla declarada fuera del programa vencería igual que
+   * cualquier otra y abriría un compromiso sobre algo que alguien ya resolvió
+   * que no corresponde — y el estado no serviría para nada. */
+  it("una ocurrencia no aplicable no abre obligación, ni siquiera vencida", async () => {
+    await seedOccurrence({
+      id: "occ-no-aplica",
+      year: PAST.year,
+      month: PAST.month,
+      status: "not_applicable",
+      notApplicableReason: "La faena no opera equipos de izaje.",
+    })
+
+    const result = await sweepTrainingOccurrenceObligations()
+    expect(result.gaps).toBe(0)
     expect(await obligations()).toHaveLength(0)
   })
 

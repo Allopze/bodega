@@ -43,6 +43,15 @@ export const preventionTrainingOccurrences = pgTable("prevention_training_occurr
   status:             text("status").notNull().default("pending"),
   completedAt:        timestamp("completed_at", { withTimezone: true, mode: "string" }),
   completedByUserId:  text("completed_by_user_id"),
+  /* El trío de "no aplica", simétrico al de "completed".
+   *
+   * El molde de `pdtp_scheduled_instances` guarda sólo el motivo y deja el
+   * quién/cuándo en metadatos. Acá se guardan los tres porque el CHECK de
+   * consistencia de `completed` ya obliga a esa simetría y sostenerla cuesta
+   * dos columnas. */
+  notApplicableAt:       timestamp("not_applicable_at", { withTimezone: true, mode: "string" }),
+  notApplicableByUserId: text("not_applicable_by_user_id"),
+  notApplicableReason:   text("not_applicable_reason"),
   observation:        text("observation"),
   version:            integer("version").notNull().default(1),
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -51,13 +60,22 @@ export const preventionTrainingOccurrences = pgTable("prevention_training_occurr
   foreignKey({ columns: [table.catalogItemId], foreignColumns: [preventionTrainingCatalogItems.id], name: "training_occurrence_catalog_fk" }).onDelete("restrict"),
   foreignKey({ columns: [table.worksiteId], foreignColumns: [worksites.id], name: "training_occurrence_worksite_fk" }).onDelete("restrict"),
   foreignKey({ columns: [table.completedByUserId], foreignColumns: [users.id], name: "training_occurrence_completer_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.notApplicableByUserId], foreignColumns: [users.id], name: "training_occurrence_na_actor_fk" }).onDelete("restrict"),
   uniqueIndex("prevention_training_occurrence_slot_unique").on(table.catalogItemId, table.worksiteId, table.year, table.slotKey),
   index("prevention_training_occurrence_worksite_period_idx").on(table.worksiteId, table.year, table.status),
   index("prevention_training_occurrence_catalog_idx").on(table.catalogItemId, table.year),
   check("prevention_training_occurrence_year_check", sql`${table.year} BETWEEN 2020 AND 2100`),
-  check("prevention_training_occurrence_status_check", sql`${table.status} IN ('pending', 'completed', 'not_completed')`),
+  check("prevention_training_occurrence_status_check", sql`${table.status} IN ('pending', 'completed', 'not_completed', 'not_applicable')`),
   check("prevention_training_occurrence_slot_check", sql`(${table.scheduledMonth} IS NULL AND ${table.scheduledWeek} IS NULL) OR (${table.scheduledMonth} BETWEEN 1 AND 12 AND ${table.scheduledWeek} BETWEEN 1 AND 4)`),
   check("prevention_training_occurrence_completed_consistency_check", sql`(${table.status} = 'completed' AND ${table.completedAt} IS NOT NULL AND ${table.completedByUserId} IS NOT NULL) OR (${table.status} <> 'completed' AND ${table.completedAt} IS NULL AND ${table.completedByUserId} IS NULL)`),
+  /* La rama negativa no es simetría decorativa: sin ella, corregir un "no
+   * aplica" a "hecha" deja el motivo colgado, y el export termina mostrando un
+   * motivo de no-aplicabilidad junto a una capacitación realizada.
+   *
+   * El piso del motivo es 10 y no los 3 del molde PDTP: es el mismo que ya
+   * exige `excludeActivityForWorksite` para sacar una actividad del denominador,
+   * que es exactamente el acto que se está declarando acá. */
+  check("prevention_training_occurrence_na_consistency_check", sql`(${table.status} = 'not_applicable' AND ${table.notApplicableAt} IS NOT NULL AND ${table.notApplicableByUserId} IS NOT NULL AND length(trim(COALESCE(${table.notApplicableReason}, ''))) >= 10) OR (${table.status} <> 'not_applicable' AND ${table.notApplicableAt} IS NULL AND ${table.notApplicableByUserId} IS NULL AND ${table.notApplicableReason} IS NULL)`),
   check("prevention_training_occurrence_observation_length_check", sql`${table.observation} IS NULL OR length(${table.observation}) <= 3000`),
   check("prevention_training_occurrence_version_check", sql`${table.version} >= 1`),
 ])

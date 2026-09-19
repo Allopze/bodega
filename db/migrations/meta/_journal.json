@@ -2178,6 +2178,13 @@
       "when": 1789853701060,
       "tag": "0310_drop_training_person_model",
       "breakpoints": true
+    },
+    {
+      "idx": 311,
+      "version": "7",
+      "when": 1789861709943,
+      "tag": "0311_training_occurrence_not_applicable",
+      "breakpoints": true
     }
   ]
 }

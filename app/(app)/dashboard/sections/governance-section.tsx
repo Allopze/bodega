@@ -36,7 +36,9 @@ export async function GovernanceSection({ session, scope, worksiteScope, worksit
   /* La tarjeta contaba brechas de competencia por persona hasta el 2026-09-19.
    * Con el modelo por actividad, lo que queda por hacer son las ocurrencias del
    * año que nadie marcó todavía; `not_completed` no entra, porque ésa ya fue
-   * resuelta —declarada no hecha— y no es trabajo pendiente. */
+   * resuelta —declarada no hecha— y no es trabajo pendiente. `not_applicable`
+   * tampoco: salió del programa de esa faena, así que no es ni numerador ni
+   * denominador. Por eso se cuenta `=== "pending"` y no `!== "completed"`. */
   const pendingTraining = occurrences.filter((row) => row.status === "pending").length
   const notDoneTraining = occurrences.filter((row) => row.status === "not_completed").length
   const periodo = periodScopeLabel(scope.period).toLocaleLowerCase("es-CL")

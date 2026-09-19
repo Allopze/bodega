@@ -20,7 +20,7 @@
  * que cargue una actividad de esa forma queda cubierto sin tocar este archivo.
  */
 
-import { and, desc, eq, inArray, ne } from "drizzle-orm"
+import { and, desc, eq, inArray, notInArray } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
@@ -141,7 +141,12 @@ export async function sweepTrainingOccurrenceObligations(): Promise<OccurrenceGa
     .from(preventionTrainingOccurrences)
     .where(and(
       inArray(preventionTrainingOccurrences.catalogItemId, [...byItem.keys()]),
-      ne(preventionTrainingOccurrences.status, "completed"),
+      /* `not_applicable` se excluye acá y no al filtrar más abajo: una casilla
+       * declarada no aplicable vence igual que cualquier otra, así que
+       * `isOverdue` la marcaría como brecha y el programa abriría un compromiso
+       * sobre algo que alguien ya declaró que no corresponde. Es la razón por
+       * la que el estado existe. */
+      notInArray(preventionTrainingOccurrences.status, ["completed", "not_applicable"]),
     ))
 
   const gaps = candidates.filter(

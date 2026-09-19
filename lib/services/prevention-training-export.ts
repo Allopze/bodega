@@ -41,7 +41,7 @@ export async function buildTrainingOccurrenceExport(
   const sheets: ReportSheet[] = [
     sheet(
       "Ocurrencias",
-      ["Código", "Actividad", "Tipo", "Faena", "Estado faena", "Año", "Período programado", "Estado", "Marcada el", "Marcada por", "Observación", "Evidencias activas", "Actividades PDTP"],
+      ["Código", "Actividad", "Tipo", "Faena", "Estado faena", "Año", "Período programado", "Estado", "Marcada el", "Marcada por", "Observación", "Motivo de no aplica", "Evidencias activas", "Actividades PDTP"],
       occurrences.map((row) => [
         safeCell(row.code),
         safeCell(row.title),
@@ -54,6 +54,7 @@ export async function buildTrainingOccurrenceExport(
         row.completedAt,
         safeCell(row.completedByName),
         safeCell(row.observation),
+        safeCell(row.notApplicableReason),
         row.evidence.filter((evidence) => evidence.state === "active").length,
         safeCell(row.pdtpActivityNumbers.join(", ")),
       ]),
@@ -103,9 +104,13 @@ function typeLabelForExport(itemType: string): string {
   return itemType === "campaign" ? "Campaña" : "Curso"
 }
 
+/* El `default` silencioso era el riesgo: un estado nuevo salía rotulado como
+ * "Pendiente" en el Excel que se le entrega a un fiscalizador. Se nombran los
+ * cuatro y el default queda sólo para lo imprevisto. */
 function statusLabelForExport(status: string): string {
   if (status === "completed") return "Hecha"
   if (status === "not_completed") return "No hecha"
+  if (status === "not_applicable") return "No aplica"
   return "Pendiente"
 }
 
