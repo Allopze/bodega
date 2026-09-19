@@ -30,7 +30,7 @@ const worksiteConfig = { percent: { label: "% Cumplimiento", color: "var(--color
  * queda como detalle.
  */
 function ChartSection({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs"><div className="mb-4"><h2 className="text-h3 text-[var(--color-text)]">{title}</h2><p className="mt-1 text-xs text-[var(--color-text-muted)]">{description}</p></div>{children}</section>
+  return <section className="min-w-0 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs"><div className="mb-4"><h2 className="text-h3 text-[var(--color-text)]">{title}</h2><p className="mt-1 text-xs text-[var(--color-text-muted)]">{description}</p></div>{children}</section>
 }
 
 function NoAccreditedExecutions({ href }: { href: string }) {
