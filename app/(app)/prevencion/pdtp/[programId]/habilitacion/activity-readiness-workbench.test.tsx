@@ -18,7 +18,6 @@ vi.mock("next/navigation", () => ({
 }))
 
 vi.mock("@/app/(app)/prevencion/inspecciones/actions", () => ({ remindTemplateApprovalAction: vi.fn() }))
-vi.mock("@/app/(app)/prevencion/capacitacion/actions", () => ({ remindTrainingCourseVersionApprovalAction: vi.fn() }))
 vi.mock("@/app/(app)/prevencion/emergencias/actions", () => ({ remindEmergencyPlanApprovalAction: vi.fn() }))
 
 import { ActivityReadinessWorkbench, type ReadinessRow } from "./activity-readiness-workbench"

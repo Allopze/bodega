@@ -17,10 +17,10 @@
  * - `/prevencion/emergencias` lee `tab` y `vista`
  *   (`lib/prevention/emergency-list-filters.ts`); `vista=draft` sólo es válido
  *   con `tab=plans`.
- * - `/prevencion/capacitacion/catalogo` lee `tab` y `q` **desde que este
- *   rediseño los subió a la URL**; antes la pestaña vivía en `useState` y no
- *   había filtro de texto, así que el enlace llegaba al catálogo pero no a la
- *   fila.
+ * - `/prevencion/capacitacion` lee `faena` y `year`, y nada más
+ *   (`training-occurrence-list.tsx`). El enlace de capacitación va pelado desde
+ *   que el catálogo de cursos dejó de existir (2026-09-19): antes apuntaba a
+ *   `/prevencion/capacitacion/catalogo?tab=versions&q=<código>`.
  * - `/prevencion/pdtp/aplicabilidad` **no lee ningún parámetro**. Se enlaza
  *   pelado: inventarle un `?actividad=` habría sido exactamente el bug que
  *   este archivo existe para impedir.
@@ -44,11 +44,19 @@ export function inspectionTemplateLink(code: string): PdtpReadinessLink {
   }
 }
 
-/** El catálogo de cursos, en la pestaña de versiones y filtrado al curso. */
-export function trainingCourseLink(code: string): PdtpReadinessLink {
+/**
+ * El control anual de capacitación.
+ *
+ * Va pelado, sin `q` ni `tab`: el destino sólo lee `faena` y `year`
+ * (`training-occurrence-list.tsx`), y un parámetro que nadie lee es
+ * exactamente el defecto que este archivo existe para impedir. Tampoco lleva
+ * `year`: sin él la página resuelve el catálogo vigente por su cuenta, que es
+ * el que corresponde al programa que se está habilitando.
+ */
+export function trainingCatalogItemLink(): PdtpReadinessLink {
   return {
-    href: `/prevencion/capacitacion/catalogo?tab=versions&q=${encode(code)}`,
-    label: "Abrir el curso",
+    href: "/prevencion/capacitacion",
+    label: "Abrir el control anual",
   }
 }
 
@@ -96,6 +104,6 @@ export function rolesLink(): PdtpReadinessLink {
  */
 export function instrumentLink(instrument: PdtpCoverageInstrument): PdtpReadinessLink {
   if (instrument.kind === "inspection_template") return inspectionTemplateLink(instrument.code)
-  if (instrument.kind === "training_course") return trainingCourseLink(instrument.code)
+  if (instrument.kind === "training_catalog_item") return trainingCatalogItemLink()
   return emergencyPlanLink(instrument.worksites[0]?.planId ?? null)
 }

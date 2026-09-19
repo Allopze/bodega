@@ -13,13 +13,13 @@ import {
   instrumentLink,
   programEditorLink,
   rolesLink,
-  trainingCourseLink,
+  trainingCatalogItemLink,
 } from "../pdtp-readiness-links"
 
 /** Los parámetros que cada destino lee de verdad, verificados en su código. */
 const READS_PARAMS: Record<string, string[]> = {
   "/prevencion/inspecciones/plantillas": ["q", "tipo", "estado"],
-  "/prevencion/capacitacion/catalogo": ["tab", "q", "faena", "year"],
+  "/prevencion/capacitacion": ["faena", "year"],
   "/prevencion/emergencias": ["tab", "vista", "page"],
   "/prevencion/pdtp/aplicabilidad": [],
   "/admin/roles": [],
@@ -43,9 +43,9 @@ describe("pdtp-readiness-links — cada parámetro lo lee su destino", () => {
     assertOnlyKnownParams(link.href)
   })
 
-  it("el curso llega a la pestaña de versiones, filtrado", () => {
-    const link = trainingCourseLink("CAP-07")
-    expect(link.href).toBe("/prevencion/capacitacion/catalogo?tab=versions&q=CAP-07")
+  it("capacitación se enlaza pelada: el destino no lee filtro de texto", () => {
+    const link = trainingCatalogItemLink()
+    expect(link.href).toBe("/prevencion/capacitacion")
     assertOnlyKnownParams(link.href)
   })
 
@@ -88,9 +88,9 @@ describe("pdtp-readiness-links — cada parámetro lo lee su destino", () => {
     }).href).toContain("/prevencion/inspecciones/plantillas")
 
     expect(instrumentLink({
-      kind: "training_course", id: "c", code: "CAP-1", name: "x",
-      minimumDurationMinutes: 60, latestVersion: null, blocker: "course_has_no_version",
-    }).href).toContain("/prevencion/capacitacion/catalogo")
+      kind: "training_catalog_item", id: "c", code: "CAP-1", title: "x",
+      blocker: "catalog_item_inactive",
+    }).href).toContain("/prevencion/capacitacion")
 
     // Conjunción: va a la primera faena que falta y vuelve a aparecer con la
     // siguiente hasta que no queda ninguna.
@@ -105,7 +105,7 @@ describe("pdtp-readiness-links — cada parámetro lo lee su destino", () => {
 
   it("todos los enlaces son internos y absolutos", () => {
     const links = [
-      inspectionTemplateLink("A"), trainingCourseLink("B"), emergencyPlanLink("c"),
+      inspectionTemplateLink("A"), trainingCatalogItemLink(), emergencyPlanLink("c"),
       emergencyPlanLink(null), programEditorLink("p", 1), applicabilityLink(), rolesLink(),
     ]
     for (const link of links) {

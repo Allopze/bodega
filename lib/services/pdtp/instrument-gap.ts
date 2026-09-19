@@ -56,22 +56,11 @@ export type PdtpCoverageInstrument =
       blocker: "template_not_approved"
     }
   | {
-      kind: "training_course"
+      kind: "training_catalog_item"
       id: string
       code: string
-      name: string
-      minimumDurationMinutes: number
-      latestVersion: {
-        id: string
-        versionLabel: string
-        status: string
-        durationMinutes: number
-        authorUserId: string | null
-      } | null
-      blocker:
-        | "course_has_no_version"
-        | "course_version_not_published"
-        | "course_version_below_minimum_duration"
+      title: string
+      blocker: "catalog_item_inactive"
     }
   | {
       kind: "emergency_plan"
@@ -103,35 +92,19 @@ function statusLabel(status: string): string {
   return STATUS_LABELS[status] ?? status
 }
 
-/** Por qué este curso no es ejecutable. Son tres causas distintas que el
- *  mensaje viejo colapsaba en una: «no tiene ninguna versión publicada». */
-function courseBlocker(
-  record: Extract<PdtpInstrumentRecord, { kind: "training_course" }>,
-): Extract<PdtpCoverageInstrument, { kind: "training_course" }>["blocker"] {
-  if (!record.latestVersion) return "course_has_no_version"
-  if (record.latestVersion.status !== "published") return "course_version_not_published"
-  return "course_version_below_minimum_duration"
-}
-
 function describeTemplate(instrument: Extract<PdtpCoverageInstrument, { kind: "inspection_template" }>): string {
   return `La plantilla ${instrument.code} (${instrument.versionLabel}) está en ${statusLabel(instrument.status)} y sólo una aprobada se puede programar`
 }
 
-function describeCourse(instrument: Extract<PdtpCoverageInstrument, { kind: "training_course" }>): string {
-  if (instrument.blocker === "course_has_no_version") {
-    return `El curso ${instrument.code} no tiene ninguna versión creada`
-  }
-  if (instrument.blocker === "course_version_not_published") {
-    const version = instrument.latestVersion!
-    return `El curso ${instrument.code} tiene su versión ${version.versionLabel} en ${statusLabel(version.status)} y ninguna está publicada`
-  }
-  const version = instrument.latestVersion!
-  return `La versión publicada del curso ${instrument.code} dura ${version.durationMinutes} min y el curso exige ${instrument.minimumDurationMinutes}`
+/** Una sola causa posible: el ítem existe en el catálogo y está dado de baja.
+ *  Un ítem activo es ejecutable, así que nunca llega hasta acá. */
+function describeCatalogItem(instrument: Extract<PdtpCoverageInstrument, { kind: "training_catalog_item" }>): string {
+  return `La actividad ${instrument.code} está dada de baja del catálogo anual y sólo una activa se puede programar`
 }
 
 function describeOne(instrument: PdtpCoverageInstrument): string {
   if (instrument.kind === "inspection_template") return describeTemplate(instrument)
-  if (instrument.kind === "training_course") return describeCourse(instrument)
+  if (instrument.kind === "training_catalog_item") return describeCatalogItem(instrument)
   const names = instrument.worksites.map((worksite) => worksite.name)
   return `Ninguna de estas faenas tiene un plan de emergencia aprobado: ${names.join(", ")}`
 }
@@ -141,12 +114,8 @@ function mentionOne(instrument: PdtpCoverageInstrument): string {
   if (instrument.kind === "inspection_template") {
     return `la plantilla ${instrument.code} (${statusLabel(instrument.status)})`
   }
-  if (instrument.kind === "training_course") {
-    if (instrument.blocker === "course_has_no_version") return `el curso ${instrument.code} (sin versiones)`
-    if (instrument.blocker === "course_version_not_published") {
-      return `el curso ${instrument.code} (${statusLabel(instrument.latestVersion!.status)}, sin publicar)`
-    }
-    return `el curso ${instrument.code} (publicado, bajo el mínimo)`
+  if (instrument.kind === "training_catalog_item") {
+    return `la actividad ${instrument.code} (dada de baja del catálogo)`
   }
   return `el plan de emergencia de ${instrument.worksites.length} faena${instrument.worksites.length === 1 ? "" : "s"}`
 }
@@ -187,13 +156,11 @@ export function describePdtpInstrumentGap(input: {
         name: candidate.name, status: candidate.status, authorUserId: candidate.authorUserId,
         blocker: "template_not_approved",
       })
-    } else if (candidate.kind === "training_course") {
+    } else if (candidate.kind === "training_catalog_item") {
       instruments.push({
-        kind: "training_course",
-        id: candidate.id, code: candidate.code, name: candidate.name,
-        minimumDurationMinutes: candidate.minimumDurationMinutes,
-        latestVersion: candidate.latestVersion,
-        blocker: courseBlocker(candidate),
+        kind: "training_catalog_item",
+        id: candidate.id, code: candidate.code, title: candidate.title,
+        blocker: "catalog_item_inactive",
       })
     }
     // Los planes no se proyectan uno a uno: se agrupan abajo por faena, porque

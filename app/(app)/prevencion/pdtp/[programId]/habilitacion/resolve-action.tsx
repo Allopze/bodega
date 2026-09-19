@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge"
 import { Tooltip } from "@/components/ui/tooltip"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { remindTemplateApprovalAction } from "@/app/(app)/prevencion/inspecciones/actions"
-import { remindTrainingCourseVersionApprovalAction } from "@/app/(app)/prevencion/capacitacion/actions"
 import { remindEmergencyPlanApprovalAction } from "@/app/(app)/prevencion/emergencias/actions"
 
 /**
@@ -33,7 +32,6 @@ export type ReadinessResolution =
 
 export type RequestTarget =
   | { kind: "template"; templateId: string }
-  | { kind: "course"; versionId: string }
   | { kind: "plan"; planId: string }
 
 /**
@@ -65,7 +63,6 @@ export function RequestInstrumentApprovalButton({ target, label }: { target: Req
         onClick={() => operation.run(
           () => {
             if (target.kind === "template") return remindTemplateApprovalAction({ templateId: target.templateId })
-            if (target.kind === "course") return remindTrainingCourseVersionApprovalAction({ versionId: target.versionId })
             return remindEmergencyPlanApprovalAction({ planId: target.planId })
           },
           (result) => {

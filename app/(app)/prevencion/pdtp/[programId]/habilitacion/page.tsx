@@ -61,22 +61,12 @@ function resolveInstrumentAction(
     return { kind: "blocked", askRoles: ["Jefatura de Prevención"], permissionLabel: pdtpPermissionLabel("prevention:inspections:execute") }
   }
 
-  if (instrument.kind === "training_course") {
-    const version = instrument.latestVersion
-    const canApprove = can(session, "prevention:training:approve")
-    const isAuthor = version?.authorUserId === userId
-    if (canApprove && version && !(isAuthor && !signOwnWork)) return { kind: "open", ...link }
-    if (can(session, "prevention:training:manage")) {
-      // Sin ninguna versión no hay nada que pedirle a nadie: hay que crearla, y
-      // eso lo puede hacer quien tiene `manage`.
-      if (!version) return { kind: "open", ...link, label: "Crear la versión" }
-      return {
-        kind: "request",
-        target: { kind: "course", versionId: version.id },
-        label: isAuthor ? "Pedir que otro la publique" : "Solicitar publicación",
-      }
-    }
-    return { kind: "blocked", askRoles: ["Jefatura de Prevención"], permissionLabel: "publicar versiones de curso" }
+  // Capacitación. No hay nada que aprobar ni que pedirle a un tercero: el
+  // catálogo anual es un programa controlado, y lo único que bloquea es que la
+  // actividad esté dada de baja. Se manda al control anual, que es donde se ve.
+  if (instrument.kind === "training_catalog_item") {
+    if (can(session, "prevention:training:view")) return { kind: "open", ...link }
+    return { kind: "blocked", askRoles: ["Jefatura de Prevención"], permissionLabel: pdtpPermissionLabel("prevention:training:view") }
   }
 
   // Plan de emergencia. Nunca se ofrece "Aprobar": `approveEmergencyPlan` falla
