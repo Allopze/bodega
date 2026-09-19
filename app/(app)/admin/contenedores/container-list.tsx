@@ -81,14 +81,14 @@ export function ContainerList({ rows, worksites, canManage }: {
         aria-label="Filtrar contenedores"
       />
       <Select value={worksite} onValueChange={(value) => setFilters({ faena: value === "all" ? null : value })}>
-        <SelectTrigger className="w-52"><SelectValue placeholder="Faena" /></SelectTrigger>
+        <SelectTrigger aria-label="Faena" className="w-52"><SelectValue placeholder="Faena" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todas las faenas</SelectItem>
           {worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
         </SelectContent>
       </Select>
       <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value })}>
-        <SelectTrigger className="w-48"><SelectValue placeholder="Estado" /></SelectTrigger>
+        <SelectTrigger aria-label="Estado" className="w-48"><SelectValue placeholder="Estado" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todos los estados</SelectItem>
           {(Object.keys(CONTAINER_STATUS_LABELS) as ContainerStatus[]).map((value) =>

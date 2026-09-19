@@ -47,7 +47,7 @@ export function NewStatementDialog({ suppliers }: { suppliers: Array<{ id: strin
           <div className="space-y-2">
             <Label>Proveedor *</Label>
             <Select name="fuelSupplierId" required>
-              <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+              <SelectTrigger aria-label="Seleccionar"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
               <SelectContent>
                 {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
               </SelectContent>

@@ -267,7 +267,7 @@ export function IncidentReportForm({ worksites, defaultDate, defaultTime }: { wo
         <div className="space-y-2">
           <Label>Gravedad real conocida</Label>
           <Select value={actualSeverity} onValueChange={setActualSeverity}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label="Gravedad real conocida"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="none">Sin lesión conocida</SelectItem>
               <SelectItem value="minor">Menor</SelectItem>
@@ -281,7 +281,7 @@ export function IncidentReportForm({ worksites, defaultDate, defaultTime }: { wo
         <div className="space-y-2">
           <Label>Gravedad potencial</Label>
           <Select value={potentialSeverity} onValueChange={setPotentialSeverity}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label="Gravedad potencial"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="low">Baja</SelectItem>
               <SelectItem value="medium">Media</SelectItem>

@@ -76,7 +76,7 @@ export function MaterialEnvironmentalDashboard({
 
       <div className="flex flex-wrap gap-2">
         <Select value={selectedWorksiteId} onValueChange={setSelectedWorksiteId}>
-          <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label="Faena" className="w-64"><SelectValue /></SelectTrigger>
           <SelectContent>
             {eventData.map((item) => (
               <SelectItem key={item.worksiteId} value={item.worksiteId}>{item.worksiteName}</SelectItem>
@@ -84,7 +84,7 @@ export function MaterialEnvironmentalDashboard({
           </SelectContent>
         </Select>
         <Select value={String(year)} onValueChange={(value) => router.replace(`/prevencion/indicadores-material-ambiental?year=${value}`, { scroll: false })}>
-          <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label="Año" className="w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
             {yearOptions.sort((a, b) => b - a).map((y) => (
               <SelectItem key={y} value={String(y)}>{y}</SelectItem>

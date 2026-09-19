@@ -113,8 +113,8 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Select value={selectedWorksiteId} onValueChange={setSelectedWorksiteId}><SelectTrigger className="w-64"><SelectValue /></SelectTrigger><SelectContent>{view.groups.map((item) => <SelectItem key={item.worksiteId} value={item.worksiteId}>{item.worksiteName}</SelectItem>)}</SelectContent></Select>
-        <Select value={String(view.year)} onValueChange={(value) => router.replace(`/prevencion/indicadores?year=${value}`, { scroll: false })}><SelectTrigger className="w-32"><SelectValue /></SelectTrigger><SelectContent>{yearOptions.sort((a, b) => b - a).map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}</SelectContent></Select>
+        <Select value={selectedWorksiteId} onValueChange={setSelectedWorksiteId}><SelectTrigger aria-label="Faena" className="w-64"><SelectValue /></SelectTrigger><SelectContent>{view.groups.map((item) => <SelectItem key={item.worksiteId} value={item.worksiteId}>{item.worksiteName}</SelectItem>)}</SelectContent></Select>
+        <Select value={String(view.year)} onValueChange={(value) => router.replace(`/prevencion/indicadores?year=${value}`, { scroll: false })}><SelectTrigger aria-label="Año" className="w-32"><SelectValue /></SelectTrigger><SelectContent>{yearOptions.sort((a, b) => b - a).map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}</SelectContent></Select>
       </div>
 
       <div className="grid grid-cols-2 overflow-hidden border-y border-[var(--color-border)] lg:grid-cols-4">

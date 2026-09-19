@@ -128,7 +128,7 @@ export function ImportBatchHistory({ batches }: { batches: BatchRow[] }) {
     <div className="flex items-center gap-2">
       <ImportStatusFilter value={estadoFilter} onValueChange={setEstadoFilter} />
       <Select value={fuenteFilter} onValueChange={setFuenteFilter}>
-        <SelectTrigger className="h-8 text-xs w-36">
+        <SelectTrigger aria-label="Fuente" className="h-8 text-xs w-36">
           <SelectValue placeholder="Fuente" />
         </SelectTrigger>
         <SelectContent>

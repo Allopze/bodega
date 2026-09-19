@@ -67,7 +67,7 @@ export function NewFuelLoadForm({ data, rates }: { data: NewFuelLoadData; rates:
             <div className="space-y-2">
               <Label>Servicio *</Label>
               <Select name="serviceType" required>
-                <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                <SelectTrigger aria-label="Seleccionar"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="TCT">TCT</SelectItem>
                   <SelectItem value="TAE">TAE</SelectItem>
@@ -79,7 +79,7 @@ export function NewFuelLoadForm({ data, rates }: { data: NewFuelLoadData; rates:
             <div className="space-y-2">
               <Label>Vehículo *</Label>
               <Select name="vehicleId" required>
-                <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                <SelectTrigger aria-label="Seleccionar"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                 <SelectContent>
                   {data.vehicles.map(v => (
                     <SelectItem key={v.id} value={v.id}>{v.plate} ({v.type})</SelectItem>
@@ -92,7 +92,7 @@ export function NewFuelLoadForm({ data, rates }: { data: NewFuelLoadData; rates:
             <div className="space-y-2">
               <Label>Proveedor *</Label>
               <Select name="fuelSupplierId" required>
-                <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                <SelectTrigger aria-label="Seleccionar"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                 <SelectContent>
                   {data.suppliers.map(s => (
                     <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
@@ -105,7 +105,7 @@ export function NewFuelLoadForm({ data, rates }: { data: NewFuelLoadData; rates:
             <div className="space-y-2">
               <Label>Faena *</Label>
               <Select name="worksiteId" required>
-                <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                <SelectTrigger aria-label="Seleccionar"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                 <SelectContent>
                   {data.worksites.map(w => (
                     <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
@@ -118,7 +118,7 @@ export function NewFuelLoadForm({ data, rates }: { data: NewFuelLoadData; rates:
             <div className="space-y-2">
               <Label>Producto *</Label>
               <Select name="product" required>
-                <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                <SelectTrigger aria-label="Seleccionar"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="PETROLEO DIESEL">Petróleo Diésel</SelectItem>
                   <SelectItem value="BLUEMAX">BlueMax</SelectItem>
@@ -191,22 +191,22 @@ export function NewFuelLoadForm({ data, rates }: { data: NewFuelLoadData; rates:
 
             <div className="space-y-2">
               <Label>IEC Fijo</Label>
-              <Input value={formatCLP(iecFixed)} disabled className="bg-[var(--color-surface-2)]" />
+              <Input aria-label="IEC Fijo" value={formatCLP(iecFixed)} disabled className="bg-[var(--color-surface-2)]" />
             </div>
 
             <div className="space-y-2">
               <Label>IEC Variable</Label>
-              <Input value={formatCLP(iecVariable)} disabled className="bg-[var(--color-surface-2)]" />
+              <Input aria-label="IEC Variable" value={formatCLP(iecVariable)} disabled className="bg-[var(--color-surface-2)]" />
             </div>
 
             <div className="space-y-2">
               <Label>IVA (19%)</Label>
-              <Input value={formatCLP(ivaAmount)} disabled className="bg-[var(--color-surface-2)]" />
+              <Input aria-label="IVA (19%)" value={formatCLP(ivaAmount)} disabled className="bg-[var(--color-surface-2)]" />
             </div>
 
             <div className="space-y-2">
               <Label className="text-lg font-semibold">Total</Label>
-              <Input value={formatCLP(totalAmount)} disabled className="bg-[var(--color-surface-2)] text-lg font-bold" />
+              <Input aria-label="Total" value={formatCLP(totalAmount)} disabled className="bg-[var(--color-surface-2)] text-lg font-bold" />
             </div>
           </CardContent>
         </Card>
