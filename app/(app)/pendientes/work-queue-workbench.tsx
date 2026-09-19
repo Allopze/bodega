@@ -195,7 +195,12 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
               className={cn(
                 "flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--radius)] border px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
                 activeQuick === value ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] text-[var(--color-primary-ink)]" : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)]",
-                empty && "opacity-60",
+                /* Borde discontinuo y no `opacity-60`: la opacidad se aplica a
+                 * todo el chip, y sobre `--color-text-muted` dejaba el texto en
+                 * 2.95:1 contra el blanco — `color-contrast` `serious` en la
+                 * auditoría axe. El conteo en 0 y el `title` ya dicen que la
+                 * vista está vacía; atenuarla no puede costar poder leerla. */
+                empty && "border-dashed",
               )}
             >
               {label}

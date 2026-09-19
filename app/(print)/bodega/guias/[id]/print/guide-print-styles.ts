@@ -59,7 +59,7 @@ export const GUIDE_PRINT_STYLES = `
   .print-action-primary:hover { background: #205438; }
   .print-action-secondary { background: #f9fbfa; color: #233027; border-color: #cfd8d2; }
   .print-action-secondary:hover { background: #eef5f1; border-color: #b8c8be; }
-  .print-filename { margin-left: 6px; font-size: 9pt; color: #647067; }
+  .print-filename { margin-left: 6px; font-size: 9pt; color: #5a655d; }
   .print-error { margin-left: 6px; font-size: 9pt; color: #b91c1c; }
   .spin { animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -333,7 +333,7 @@ export const GUIDE_PRINT_STYLES = `
       background: #ffffff;
       color: #232522;
     }
-    .mobile-document-summary-code { margin: 0; color: #647067; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+    .mobile-document-summary-code { margin: 0; color: #5a655d; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
     .mobile-document-summary h1 { margin: 4px 0 0; font-size: 24px; line-height: 1.15; }
     .mobile-document-summary-description { margin: 8px 0 0; color: #45514a; font-size: 15px; }
     .mobile-document-summary-notice { margin: 16px 0; padding: 10px 12px; border-radius: 8px; background: #f1f5f3; color: #45514a; font-size: 14px; line-height: 1.45; }
@@ -341,7 +341,7 @@ export const GUIDE_PRINT_STYLES = `
     .mobile-document-summary-section h2 { margin: 0 0 8px; font-size: 14px; color: #17422b; }
     .mobile-document-summary-section dl { margin: 0; }
     .mobile-document-summary-section dl > div { padding: 10px 0; border-top: 1px solid #e5ebe6; }
-    .mobile-document-summary-section dt { color: #647067; font-size: 12px; }
+    .mobile-document-summary-section dt { color: #5a655d; font-size: 12px; }
     .mobile-document-summary-section dd { margin: 3px 0 0; font-size: 15px; font-weight: 600; }
   }
 

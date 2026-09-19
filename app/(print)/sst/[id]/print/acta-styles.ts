@@ -93,7 +93,7 @@ export const ACTA_STYLES = `
   .print-filename {
     margin-left: 6px;
     font-size: 9pt;
-    color: #647067;
+    color: #5a655d;
   }
 
   .print-error {
@@ -304,7 +304,7 @@ export const ACTA_STYLES = `
     padding-top: 4mm;
     border-top: 1px solid #d8dfda;
     font-size: 7pt;
-    color: #94a3b8;
+    color: #5f6874;
     text-align: center;
     break-inside: avoid;
     page-break-inside: avoid;
@@ -340,7 +340,7 @@ export const ACTA_STYLES = `
     }
     .print-filename { display: none; }
     .print-error { margin: 0; width: 100%; }
-    .mobile-document-summary-code { margin: 0; color: #647067; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+    .mobile-document-summary-code { margin: 0; color: #5a655d; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
     .mobile-document-summary h1 { margin: 4px 0 0; font-size: 24px; line-height: 1.15; }
     .mobile-document-summary-description { margin: 8px 0 0; color: #45514a; font-size: 15px; }
     .mobile-document-summary-notice { margin: 16px 0; padding: 10px 12px; border-radius: 8px; background: #f1f5f3; color: #45514a; font-size: 14px; line-height: 1.45; }
@@ -348,7 +348,7 @@ export const ACTA_STYLES = `
     .mobile-document-summary-section h2 { margin: 0 0 8px; font-size: 14px; color: #17422b; }
     .mobile-document-summary-section dl { margin: 0; }
     .mobile-document-summary-section dl > div { padding: 10px 0; border-top: 1px solid #e5ebe6; }
-    .mobile-document-summary-section dt { color: #647067; font-size: 12px; }
+    .mobile-document-summary-section dt { color: #5a655d; font-size: 12px; }
     .mobile-document-summary-section dd { margin: 3px 0 0; font-size: 15px; font-weight: 600; }
   }
 

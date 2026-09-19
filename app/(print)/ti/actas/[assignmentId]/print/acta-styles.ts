@@ -46,7 +46,7 @@ export const ACTA_PRINT_STYLES = `
   .print-action-primary:hover { background: #205438; }
   .print-action-secondary { background: #f9fbfa; border-color: #cfd8d2; color: #233027; }
   .print-action-secondary:hover { background: #eef5f1; border-color: #b8c8be; }
-  .print-filename { margin-left: 6px; color: #647067; font-size: 9pt; }
+  .print-filename { margin-left: 6px; color: #5a655d; font-size: 9pt; }
   .print-error { margin-left: 6px; color: #b91c1c; font-size: 9pt; }
 
   .acta-sheet {
@@ -87,7 +87,7 @@ export const ACTA_PRINT_STYLES = `
   .acta-sheet .photo-cell .caption { padding: 4px 6px; font-size: 9px; color: #6b7280; }
   .acta-sheet .signature-block { margin-top: 36px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
   .acta-sheet .signature { border-top: 1px solid #374151; padding-top: 6px; font-size: 10px; color: #6b7280; text-align: center; }
-  .acta-sheet .footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid #e5e7eb; color: #9ca3af; font-size: 9px; text-align: center; }
+  .acta-sheet .footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid #e5e7eb; color: #5f6874; font-size: 9px; text-align: center; }
 
   @media print {
     html, body { background: #ffffff; }

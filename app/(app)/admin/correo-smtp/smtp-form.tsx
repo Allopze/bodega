@@ -231,7 +231,7 @@ function ResendStatusCard({ resendStatus }: { resendStatus: ResendStatus }) {
       )}
 
       {!resendStatus.configured && (
-        <p className="mt-5 rounded-(--radius) border border-(--color-warning-border) bg-(--color-warning-surface) px-4 py-3 text-sm text-warning">
+        <p className="mt-5 rounded-(--radius) border border-(--color-warning-line) bg-(--color-warning-tint) px-4 py-3 text-sm text-(--color-warning-ink)">
           Configura <code className="font-mono text-xs">RESEND_API_KEY</code> en el entorno para
           activar el envío de correos.
         </p>
