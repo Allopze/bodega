@@ -32,9 +32,8 @@ testGlobal.__db = testDb
 vi.mock("@/db", () => ({ get db() { return testGlobal.__db } }))
 
 const permits = await import("@/lib/services/prevention-permits")
-const training = await import("@/lib/services/prevention-training")
 const { derivePreventionAckToken, verifyPreventionAckToken } = await import("@/lib/services/prevention-ack-token")
-const { getPermitCrewAckPublicView, getTrainingAckPublicView } = await import("@/lib/services/prevention-ack-public")
+const { getPermitCrewAckPublicView } = await import("@/lib/services/prevention-ack-public")
 
 const WS = "ws-acuse"
 const SCOPE = { mode: "some", ids: [WS] } as WorksiteScope
@@ -69,64 +68,12 @@ beforeAll(async () => {
     { id: APROBADOR.userId, name: "Aprobador", email: "aprobador@acuse.cl", hashedPassword: "x", isActive: true },
   ])
 
-  // Capacitación: curso, versión, sesión y asistencia registrada de Rosa.
-  await testDb.insert(schema.preventionTrainingCourses).values({
-    id: "curso-acuse", code: "ACU-001", name: "Obligación de informar (ODI)", kind: "odi",
-    minimumDurationMinutes: 60, validityMonths: 12, requiresAssessment: false,
-    createdByUserId: APROBADOR.userId,
-  })
-  await testDb.insert(schema.preventionTrainingCourseVersions).values({
-    id: "curso-acuse-v1", courseId: "curso-acuse", versionLabel: "v1", status: "published",
-    contentOutline: [{ titulo: "Riesgos del puesto" }], durationMinutes: 60, modality: "presencial",
-    assessmentType: "none", contentHash: "a".repeat(64), authorUserId: APROBADOR.userId,
-  })
-  await testDb.insert(schema.preventionTrainingSessions).values({
-    id: "sesion-acuse", code: "SES-ACU-001", courseVersionId: "curso-acuse-v1", worksiteId: WS,
-    scheduledAt: new Date().toISOString(), modality: "presencial",
-    instructorCompetencyEvidence: "Relator interno con registro vigente.", status: "completed", createdByUserId: APROBADOR.userId,
-  })
-  await testDb.insert(schema.preventionTrainingAttendance).values({
-    id: "asistencia-acuse", sessionId: "sesion-acuse", workerId: WORKER_SIN_CUENTA,
-    status: "attended", attendanceMinutes: 60, assessmentResult: "not_required",
-  })
 })
 
-describe("CAP-002 — acuse de capacitación sin cuenta de usuario", () => {
-  it("un trabajador sin cuenta acusa su capacitación con el enlace", async () => {
-    const token = derivePreventionAckToken("capacitacion", "asistencia-acuse")
-
-    // La vista pública sólo entrega lo que hace falta para saber qué se acusa.
-    const vista = await getTrainingAckPublicView("asistencia-acuse", token)
-    expect(vista).toMatchObject({ workerName: "Rosa Millán", acknowledgedAt: null, eligible: true })
-
-    const actualizada = await training.acknowledgeTrainingByPublicToken(
-      { attendanceId: "asistencia-acuse", token },
-      { ip: "203.0.113.9", userAgent: "Terreno/1.0" },
-    )
-    expect(actualizada.acknowledgedAt).toBeTruthy()
-    // El canal queda declarado: un auditor distingue el acuse por enlace del
-    // acuse con cuenta sin tener que deducirlo.
-    expect(actualizada.acknowledgementChannel).toBe("public_token")
-    expect(actualizada.acknowledgementIp).toBe("203.0.113.9")
-    expect(actualizada.acknowledgementSha256).toHaveLength(64)
-  })
-
-  it("sigue siendo de un solo uso", async () => {
-    const token = derivePreventionAckToken("capacitacion", "asistencia-acuse")
-    await expect(training.acknowledgeTrainingByPublicToken(
-      { attendanceId: "asistencia-acuse", token }, {},
-    )).rejects.toThrow(/ya fue acusada/)
-  })
-
-  it("el token de una asistencia no abre otra ni se acepta uno inventado", async () => {
-    expect(verifyPreventionAckToken("capacitacion", "asistencia-acuse", derivePreventionAckToken("capacitacion", "otra-asistencia"))).toBe(false)
-    expect(verifyPreventionAckToken("capacitacion", "asistencia-acuse", "f".repeat(64))).toBe(false)
-    // Un token de la otra puerta tampoco sirve: el dominio va dentro del HMAC.
-    expect(verifyPreventionAckToken("capacitacion", "asistencia-acuse", derivePreventionAckToken("permiso", "asistencia-acuse"))).toBe(false)
-    // Sin token válido no se distingue "no existe" de "no autorizado".
-    expect(await getTrainingAckPublicView("asistencia-acuse", "no-es-un-token")).toBeNull()
-  })
-})
+/* El acuse de capacitación sin cuenta (CAP-002) se retiró el 2026-09-19 con el
+ * modelo de capacitación por persona: sin asistencia individual no hay nada que
+ * una persona pueda acusar. Queda su hermano, el acuse del AST, que es el que
+ * bloquea la activación de un permiso. */
 
 describe("PER-002 — acuse del AST sin cuenta de usuario", () => {
   async function permisoAprobadoConCuadrillaSinCuenta() {

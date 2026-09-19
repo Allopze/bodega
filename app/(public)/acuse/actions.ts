@@ -6,7 +6,6 @@ import { resolveTrustedClientIp } from "@/lib/security/login-rate-limit-ip"
 import { checkRateLimit, recordFailure, recordSuccessForTelemetry } from "@/lib/services/rate-limit"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { acknowledgePermitCrewByPublicToken } from "@/lib/services/prevention-permits"
-import { acknowledgeTrainingByPublicToken } from "@/lib/services/prevention-training"
 import { safeActionMessage } from "@/lib/action-error"
 
 export interface PublicAckState { ok: boolean; message: string }
@@ -28,11 +27,11 @@ export async function submitPublicAcknowledgement(
   const kind = String(formData.get("kind") ?? "")
   const targetId = String(formData.get("targetId") ?? "")
   const token = String(formData.get("token") ?? "")
-  if (kind !== "capacitacion" && kind !== "permiso") {
+  if (kind !== "permiso") {
     return { ok: false, message: "El enlace de acuse no es válido." }
   }
 
-  const routeHref = kind === "capacitacion" ? "/prevencion/capacitacion" : "/prevencion/permisos"
+  const routeHref = "/prevencion/permisos"
   if (!await isRouteOperational(routeHref)) {
     return { ok: false, message: "El acuse está temporalmente inactivo." }
   }
@@ -45,11 +44,7 @@ export async function submitPublicAcknowledgement(
   if (!rateLimit.allowed) return { ok: false, message: "Demasiados intentos. Espera unos minutos." }
 
   try {
-    if (kind === "capacitacion") {
-      await acknowledgeTrainingByPublicToken({ attendanceId: targetId, token }, { ip, userAgent })
-    } else {
-      await acknowledgePermitCrewByPublicToken({ crewId: targetId, token }, { ip, userAgent })
-    }
+    await acknowledgePermitCrewByPublicToken({ crewId: targetId, token }, { ip, userAgent })
     await recordSuccessForTelemetry(limitKey)
     revalidatePath(`/acuse/${kind}/${targetId}/${token}`)
     return { ok: true, message: "Acuse registrado. Gracias." }

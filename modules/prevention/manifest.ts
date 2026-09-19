@@ -440,24 +440,14 @@ export const preventionModule = {
           ],
         },
         {
-          // La página concentra el catálogo anual y sus ocurrencias por faena;
-          // las pantallas antiguas se conservan para compatibilidad histórica.
+          // Una sola pantalla: el control anual de ocurrencias por faena. El
+          // catálogo de cursos, las competencias por trabajador y las brechas
+          // se retiraron el 2026-09-19 con el modelo por persona.
           label: "Capacitación",
           href: "/prevencion/capacitacion",
           iconName: "Certificate",
           group: "Cumplimiento del programa",
           permissions: ["prevention:training:view"],
-          children: [
-            {
-              // El catalogo estuvo huérfano —su page.tsx solo redirigía— y por
-              // eso no había ninguna pantalla alcanzable donde publicar la
-              // version de un curso que el programa exige. Va en el nav para
-              // que no vuelva a quedar sin puerta de entrada.
-              label: "Catálogo de cursos",
-              href: "/prevencion/capacitacion/catalogo",
-              permissions: ["prevention:training:view"],
-            },
-          ],
         },
         {
           label: "Acciones correctivas",

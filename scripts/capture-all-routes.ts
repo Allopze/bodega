@@ -768,9 +768,6 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-privacidad-solicitud", path: "/prevencion/privacidad/solicitudes/privacy-request-audit-1", auth: true },
   // ── Prevención: capacidades P1 implementadas el 19-07-2026 ──
   { slug: "prevencion-capacitacion", path: "/prevencion/capacitacion", auth: true },
-  { slug: "prevencion-capacitacion-catalogo", path: "/prevencion/capacitacion/catalogo", auth: true },
-  { slug: "prevencion-capacitacion-competencias", path: "/prevencion/capacitacion/competencias", auth: true },
-  { slug: "prevencion-capacitacion-brechas", path: "/prevencion/capacitacion/brechas", auth: true },
   { slug: "prevencion-capacitacion-sesion", path: "/prevencion/capacitacion/trsess-audit-1", auth: true },
   { slug: "prevencion-permisos", path: "/prevencion/permisos", auth: true },
   { slug: "prevencion-permiso-detalle", path: "/prevencion/permisos/permit-audit-1", auth: true },

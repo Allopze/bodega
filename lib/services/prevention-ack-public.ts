@@ -22,7 +22,7 @@ import { verifyPreventionAckToken } from "@/lib/services/prevention-ack-token"
  * oráculo de existencia de ids.
  */
 export interface PublicAckView {
-  kind: "capacitacion" | "permiso"
+  kind: "permiso"
   targetId: string
   workerName: string
   title: string
@@ -31,37 +31,6 @@ export interface PublicAckView {
   /** El acuse sólo tiene sentido sobre una asistencia registrada. */
   eligible: boolean
   ineligibleReason: string | null
-}
-
-export async function getTrainingAckPublicView(attendanceId: string, token: unknown): Promise<PublicAckView | null> {
-  if (!attendanceId || !verifyPreventionAckToken("capacitacion", attendanceId, token)) return null
-  const [row] = await db.select({
-    attendance: preventionTrainingAttendance,
-    sessionCode: preventionTrainingSessions.code,
-    scheduledAt: preventionTrainingSessions.scheduledAt,
-    courseName: preventionTrainingCourses.name,
-    firstName: workers.firstName,
-    lastName: workers.lastName,
-  })
-    .from(preventionTrainingAttendance)
-    .innerJoin(preventionTrainingSessions, eq(preventionTrainingAttendance.sessionId, preventionTrainingSessions.id))
-    .innerJoin(preventionTrainingCourseVersions, eq(preventionTrainingSessions.courseVersionId, preventionTrainingCourseVersions.id))
-    .innerJoin(preventionTrainingCourses, eq(preventionTrainingCourseVersions.courseId, preventionTrainingCourses.id))
-    .innerJoin(workers, eq(workers.id, preventionTrainingAttendance.workerId))
-    .where(eq(preventionTrainingAttendance.id, attendanceId))
-    .limit(1)
-  if (!row) return null
-  const attended = row.attendance.status === "attended"
-  return {
-    kind: "capacitacion",
-    targetId: attendanceId,
-    workerName: `${row.firstName} ${row.lastName}`.trim(),
-    title: row.courseName,
-    detail: `Sesión ${row.sessionCode}`,
-    acknowledgedAt: row.attendance.acknowledgedAt,
-    eligible: attended,
-    ineligibleReason: attended ? null : "Todavía no hay una asistencia registrada para esta capacitación.",
-  }
 }
 
 export async function getPermitCrewAckPublicView(crewId: string, token: unknown): Promise<PublicAckView | null> {
