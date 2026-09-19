@@ -116,7 +116,8 @@ describe("sidebar navigation", () => {
       "Programas anuales",
       "A demanda y por evento",
       "Medidas",
-      "Cobertura",
+      "Cobertura MIPER y legal",
+      "Aplicabilidad",
       "Cierres mensuales",
       "Aprobaciones",
     ])
