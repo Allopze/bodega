@@ -42,6 +42,14 @@ export const exposureMeasurementSchema = z.object({
     .nullable().optional(),
   sampleDurationMinutes: z.number().int().positive().max(10_000).nullable().optional(),
   reportReference: z.string().trim().max(2000).nullable().optional(),
+  /**
+   * Ruta del informe de laboratorio ya subido, obligatoria.
+   *
+   * `reportReference` es el folio y se conserva, pero un folio no es el
+   * documento: no se puede abrir en una fiscalización. Una medición que no
+   * puede mostrar su informe no acredita la N°45.
+   */
+  evidencePath: z.string().trim().min(1).max(500),
 })
 
 export type ExposureMeasurementInput = z.infer<typeof exposureMeasurementSchema>

@@ -91,6 +91,8 @@ export async function onExposureMeasurementRecorded(input: {
   outcome: string
   measuredOn: string
   reportReference: string | null
+  /** Ruta del informe de laboratorio. Es la evidencia real de la N°45. */
+  evidencePath?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "hygiene",
@@ -101,10 +103,12 @@ export async function onExposureMeasurementRecorded(input: {
     occurredAt: occurredAtFromChileDate(input.measuredOn),
     payload: { measurementId: input.measurementId, groupCode: input.groupCode, agentCode: input.agentCode, outcome: input.outcome },
   })
-  // El informe de la mutual, cuando viene, es evidencia real; un rótulo
-  // descriptivo no lo es. El motor decide solo mirando el prefijo, así que acá
-  // basta con preferir la referencia sobre el rótulo.
-  const evidenceRef = input.reportReference?.trim()
+  /* La ruta del informe primero: es el documento, no su folio. `reportReference`
+   * queda como segunda opción para las mediciones anteriores a que el archivo
+   * fuera obligatorio, y el rótulo descriptivo como último recurso — el motor
+   * decide mirando el prefijo `storage/`. */
+  const evidenceRef = input.evidencePath?.trim()
+    || input.reportReference?.trim()
     || `Medición de exposición ${input.measurementId} · GES ${input.groupCode}`
 
   await safeAccredit({

@@ -8,6 +8,7 @@ import {
   preventionExposureGroups,
   preventionExposureMeasurements,
   preventionHygieneHistory,
+  preventionHygieneMeasurementEvidence,
   preventionProtocolApplicabilities,
   preventionSurveillanceEnrollments,
   preventionSurveillancePrograms,
@@ -15,7 +16,11 @@ import {
   worksites,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { createHash } from "node:crypto"
+import { promises as fs } from "node:fs"
 import { nanoid } from "@/lib/id"
+import { inferEvidenceContentType } from "@/lib/services/prevention-evidence-upload"
+import { resolveHygieneEvidenceFile } from "@/lib/storage/config"
 import { findMinsalProtocol, summarizeProtocolCoverage } from "@/lib/prevention/minsal-protocols"
 import {
   onExposureMeasurementRecorded,
@@ -191,8 +196,50 @@ export async function addExposureGroupMember(input: unknown, access: HygieneAcce
  * su límite después, la evidencia de esta medición sigue diciendo contra qué
  * se comparó.
  */
+/**
+ * Metadatos del informe ya escrito en disco.
+ *
+ * Se recalculan acá y no se reciben del formulario: el sha256 que devolvió la
+ * subida pasa por el navegador antes de volver, así que no prueba nada sobre lo
+ * que quedó almacenado. La ruta es lo único que viaja, y
+ * `resolveHygieneEvidenceFile` la valida contra el traversal antes de tocar el
+ * sistema de archivos.
+ */
+async function readHygieneEvidenceFromDisk(storagePath: string) {
+  const absolutePath = resolveHygieneEvidenceFile(storagePath)
+  if (!absolutePath) {
+    throw new Error("La ruta del informe de laboratorio no es válida. Vuelve a subir el archivo.")
+  }
+  let buffer: Buffer
+  try {
+    buffer = await fs.readFile(absolutePath)
+  } catch {
+    throw new Error("No se encontró el informe de laboratorio subido. Vuelve a adjuntarlo.")
+  }
+  if (buffer.byteLength === 0) {
+    throw new Error("El informe de laboratorio está vacío.")
+  }
+  /* El nombre almacenado se toma de la ruta relativa, no del absoluto: armar
+   * rutas de almacenamiento con `node:path` está prohibido en el repo porque sin
+   * el `turbopackIgnore` de `@/lib/storage/config` el build empaqueta el
+   * repositorio entero, archivos subidos incluidos. */
+  const storageName = storagePath.slice(storagePath.lastIndexOf("/") + 1)
+  return {
+    fileName: storageName,
+    mimeType: inferEvidenceContentType(storageName),
+    fileSizeBytes: buffer.byteLength,
+    sha256: createHash("sha256").update(buffer).digest("hex"),
+  }
+}
+
 export async function recordExposureMeasurement(input: unknown, access: HygieneAccess) {
   const data = exposureMeasurementSchema.parse(input)
+
+  /* El informe se lee del disco y se le calcula el sha256 acá: lo único que
+   * viaja desde el cliente es la ruta, y esa la valida `resolveHygieneEvidenceFile`
+   * contra el traversal. Confiar en un checksum que dio la vuelta por el
+   * navegador sería firmar por un archivo que nadie volvió a mirar. */
+  const evidence = await readHygieneEvidenceFromDisk(data.evidencePath)
 
   let accreditation: Parameters<typeof onExposureMeasurementRecorded>[0] | null = null
   const result = await db.transaction(async (tx) => {
@@ -237,6 +284,18 @@ export async function recordExposureMeasurement(input: unknown, access: HygieneA
     }).returning()
     if (!created) throw new Error("No se pudo registrar la medición.")
 
+    await tx.insert(preventionHygieneMeasurementEvidence).values({
+      id: `hmev-${nanoid()}`,
+      measurementId: created.id,
+      fileName: evidence.fileName,
+      storagePath: data.evidencePath,
+      mimeType: evidence.mimeType,
+      fileSizeBytes: evidence.fileSizeBytes,
+      sha256: evidence.sha256,
+      state: "active",
+      uploadedByUserId: access.userId,
+    })
+
     // La obligación de vigilancia se recalcula con todo el historial, no sólo
     // con la medición recién ingresada.
     const measurements = await tx.select({ measuredOn: preventionExposureMeasurements.measuredOn, outcome: preventionExposureMeasurements.outcome })
@@ -271,6 +330,7 @@ export async function recordExposureMeasurement(input: unknown, access: HygieneA
       outcome: assessment.outcome,
       measuredOn: data.measuredOn,
       reportReference: created.reportReference,
+      evidencePath: data.evidencePath,
     }
 
     return { measurement: created, assessment, surveillanceRequired: obligation.required, basis: obligation.basis }
@@ -684,6 +744,11 @@ export async function setProtocolApplicability(input: unknown, access: HygieneAc
     // arriba: entre aquel SELECT y este UPDATE otra transacción puede haber
     // cambiado la fila, y perder un pronunciamiento es perder la justificación
     // de por qué se descartó un protocolo MINSAL obligatorio.
+    /* Sigue siendo upsert aunque los ocho protocolos ahora se materialicen al
+     * activar la faena: una faena anterior a esa pre-generación no tiene fila, y
+     * quitarle el camino de inserción convertiría su primer pronunciamiento en
+     * un error sin ganar nada a cambio. La fila sembrada es la norma; el insert
+     * es la red. */
     const [saved] = existing
       ? await tx.update(preventionProtocolApplicabilities)
           .set({ ...values, version: sql`${preventionProtocolApplicabilities.version} + 1` })

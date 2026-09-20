@@ -16,6 +16,7 @@ import {
 } from "@/lib/prevention/hygiene"
 import { addExposureGroupMemberAction, recordExposureMeasurementAction } from "../../actions"
 import { Field } from "@/components/ui/field"
+import { FileInput } from "@/components/ui/file-input"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { todayInChile } from "@/lib/utils"
 
@@ -242,6 +243,37 @@ function AddMeasurementDialog({ groupId, agent }: { groupId: string; agent: Agen
   const [open, setOpen] = React.useState(false)
   const [defaultValue, setDefaultValue] = React.useState("")
   const [value, setValue] = React.useState("")
+  const [evidencePath, setEvidencePath] = React.useState("")
+  const [evidenceName, setEvidenceName] = React.useState("")
+  const [uploadingEvidence, setUploadingEvidence] = React.useState(false)
+  const [evidenceError, setEvidenceError] = React.useState<string | null>(null)
+
+  /* Se sube apenas se elige y no al enviar, para que un error de subida se vea
+   * en su propio campo en vez de arrastrar consigo el registro de la medición.
+   * A diferencia de Campañas y CGRD acá no se acepta pegar una URL: la
+   * evidencia lleva sha256 y estado, y un enlace externo no tiene ninguno de
+   * los dos. */
+  async function uploadEvidence(file: File | null) {
+    if (!file) return
+    setEvidenceError(null)
+    setUploadingEvidence(true)
+    try {
+      const body = new FormData()
+      body.set("file", file)
+      const response = await fetch("/api/prevencion/higiene/evidence", { method: "POST", body })
+      const json = await response.json().catch(() => ({})) as { path?: string; error?: string }
+      if (!response.ok || !json.path) {
+        setEvidenceError(json.error ?? "No se pudo subir el informe.")
+        return
+      }
+      setEvidencePath(json.path)
+      setEvidenceName(file.name)
+    } catch {
+      setEvidenceError("No se pudo subir el informe.")
+    } finally {
+      setUploadingEvidence(false)
+    }
+  }
   const operation = useOperation()
 
   const preview = value.trim() && !Number.isNaN(Number(value))
@@ -268,7 +300,8 @@ function AddMeasurementDialog({ groupId, agent }: { groupId: string; agent: Agen
       calibrationDate: calibrationDate || null,
       sampleDurationMinutes: sampleDuration ? Number(sampleDuration) : null,
       reportReference: reportReference || null,
-    }), () => { setOpen(false); setValue("") })
+      evidencePath,
+    }), () => { setOpen(false); setValue(""); setEvidencePath(""); setEvidenceName("") })
   }
 
   return (
@@ -302,10 +335,28 @@ function AddMeasurementDialog({ groupId, agent }: { groupId: string; agent: Agen
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Duración de muestra (min)" hint="Opcional."><Input name="sampleDurationMinutes" type="number" min={1} /></Field>
-            <Field label="Referencia de informe" hint="Opcional."><Input name="reportReference" maxLength={2000} /></Field>
+            <Field label="Referencia de informe" hint="El folio del laboratorio. Opcional."><Input name="reportReference" maxLength={2000} /></Field>
           </div>
+          {/* El folio no es el documento: un número escrito a mano no se puede
+            * abrir en una fiscalización, y con eso se acreditaba la N°45. */}
+          <Field label="Informe de laboratorio" required hint="PDF, documento o foto del informe que respalda esta medición.">
+            <FileInput
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+              disabled={operation.pending || uploadingEvidence}
+              onChange={(file) => uploadEvidence(file)}
+            />
+          </Field>
+          {uploadingEvidence && <p className="text-xs text-[var(--color-text-subtle)]">Subiendo el informe…</p>}
+          {evidenceName && !uploadingEvidence && (
+            <p className="text-xs text-[var(--color-text-muted)]">Informe adjunto: {evidenceName}</p>
+          )}
+          {evidenceError && <p role="alert" className="text-xs text-[var(--color-danger-ink)]">{evidenceError}</p>}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending}>Registrar</Button></DialogFooter>
+          <DialogFooter>
+            {/* Sin informe no hay medición: es el mismo gate que ya tienen
+              * capacitación, simulacros y alcotest para declarar algo hecho. */}
+            <Button type="submit" disabled={operation.pending || uploadingEvidence || !evidencePath}>Registrar</Button>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

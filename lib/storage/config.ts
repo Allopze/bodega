@@ -14,6 +14,7 @@ const PREVENTION_DRILL_EVIDENCE_PREFIX = "storage/prevention-drill-evidence/"
 const PREVENTION_ALCOTEST_EVIDENCE_PREFIX = "storage/prevention-alcotest-evidence/"
 const CAMPAIGN_EVIDENCE_PREFIX = "storage/campaign-evidence/"
 const CGRD_EVIDENCE_PREFIX = "storage/cgrd-evidence/"
+const HYGIENE_EVIDENCE_PREFIX = "storage/hygiene-evidence/"
 const RISK_MAP_PREFIX = "storage/risk-map/"
 const FUEL_IMPORT_PREFIX = "storage/imports/"
 const FUEL_TAE_EVIDENCE_PREFIX = "storage/fuel-tae/"
@@ -416,6 +417,29 @@ export function resolvePreventionDrillEvidenceFile(filePath: string): string | n
   const storageName = filePath.slice(PREVENTION_DRILL_EVIDENCE_PREFIX.length)
   if (!isSafeStorageName(storageName)) return null
   return path.join(/*turbopackIgnore: true*/ resolvePreventionDrillEvidenceDir(), storageName)
+}
+
+/* ── Evidencia de higiene ocupacional ─────────────────────────────────────
+ * El informe del laboratorio que respalda una medición de exposición. Antes la
+ * N°45 se acreditaba con `report_reference`, un folio escrito a mano: un folio
+ * no se puede abrir en una fiscalización.
+ */
+export function resolveHygieneEvidenceDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "hygiene-evidence")
+}
+
+export function createHygieneEvidencePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid hygiene evidence storage name")
+  }
+  return `${HYGIENE_EVIDENCE_PREFIX}${storageName}`
+}
+
+export function resolveHygieneEvidenceFile(filePath: string): string | null {
+  if (!filePath.startsWith(HYGIENE_EVIDENCE_PREFIX)) return null
+  const storageName = filePath.slice(HYGIENE_EVIDENCE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolveHygieneEvidenceDir(), storageName)
 }
 
 /* ── Evidencia de las casillas de alcotest ────────────────────────────────

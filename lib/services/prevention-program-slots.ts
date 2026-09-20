@@ -19,6 +19,7 @@ import {
   preventionAlcotestSlots,
   preventionEmergencyDrillSlots,
   preventionGrdMeetingSlots,
+  preventionProtocolApplicabilities,
 } from "@/db/schema"
 import {
   ALCOTEST_CONTROL_SLOTS_2026,
@@ -28,6 +29,7 @@ import {
   PROGRAM_SLOT_YEAR,
   type ProgramSlot,
 } from "@/lib/prevention/program-slots-2026"
+import { MINSAL_PROTOCOLS } from "@/lib/prevention/minsal-protocols"
 import { effectiveActivationFor, pdtpActivationPeriod } from "./pdtp/period"
 import { loadWorksiteAddedAt } from "./pdtp/helpers"
 import { ensurePreventionTrainingOccurrencesForWorksiteTx } from "./prevention-training-occurrences"
@@ -118,11 +120,48 @@ export async function ensureAlcotestSlotsForWorksiteTx(
 }
 
 /**
+ * Los ocho protocolos MINSAL de la faena, sin pronunciar.
+ *
+ * No son casillas de un cronograma —un protocolo no vence en marzo—, pero les
+ * falta exactamente lo mismo: la fila. `getProtocolCoverage` ya devolvía los
+ * ocho rellenando en memoria los que no existían, así que la pantalla mostraba
+ * "por evaluar" sobre datos que no estaban en la base. Es la misma confusión
+ * entre "nadie se pronunció" y "no hay nada que mirar", con una capa de
+ * maquillaje que la escondía en la pantalla pero no en los datos: ningún
+ * export, ninguna consulta y ningún cálculo veían esos ocho protocolos.
+ *
+ * El `default` de la columna es `pending_assessment` y nunca llegaba a
+ * persistirse por la vía del pronunciamiento, que inserta ya decidido.
+ */
+export async function ensureProtocolApplicabilitiesForWorksiteTx(
+  client: Client,
+  worksiteId: string,
+): Promise<number> {
+  const rows = MINSAL_PROTOCOLS.map((protocol) => ({
+    id: `pprot-${worksiteId}-${protocol.code}`,
+    protocolCode: protocol.code,
+    worksiteId,
+    status: "pending_assessment" as const,
+    periodicityMonths: protocol.defaultPeriodicityMonths,
+    version: 1,
+  }))
+  const created = await client.insert(preventionProtocolApplicabilities)
+    .values(rows)
+    .onConflictDoNothing({ target: [
+      preventionProtocolApplicabilities.worksiteId,
+      preventionProtocolApplicabilities.protocolCode,
+    ] })
+    .returning({ id: preventionProtocolApplicabilities.id })
+  return created.length
+}
+
+/**
  * Todas las casillas del programa para una faena, en una llamada.
  *
  * Es lo que deben invocar los puntos de alta de faena. Una faena nueva y
- * activa queda con 24 casillas de capacitación, 2 de simulacro, 4 de CGRD y 23
- * de alcotest (12 controles + 11 envíos).
+ * activa queda con 24 casillas de capacitación, 2 de simulacro, 4 de CGRD, 23
+ * de alcotest (12 controles + 11 envíos) y los 8 protocolos MINSAL sin
+ * pronunciar: 61 filas.
  *
  * Se siembra **el año completo**, también para una faena dada de alta en
  * octubre, y eso es deliberado: la casilla de marzo sigue existiendo y se puede
@@ -137,12 +176,19 @@ export async function ensureAlcotestSlotsForWorksiteTx(
 export async function ensurePreventionProgramSlotsForWorksiteTx(
   client: Client,
   worksiteId: string,
-): Promise<{ training: number; drills: number; grdMeetings: number; alcotest: number }> {
+): Promise<{
+  training: number
+  drills: number
+  grdMeetings: number
+  alcotest: number
+  protocols: number
+}> {
   return {
     training: await ensurePreventionTrainingOccurrencesForWorksiteTx(client, worksiteId),
     drills: await ensureEmergencyDrillSlotsForWorksiteTx(client, worksiteId),
     grdMeetings: await ensureGrdMeetingSlotsForWorksiteTx(client, worksiteId),
     alcotest: await ensureAlcotestSlotsForWorksiteTx(client, worksiteId),
+    protocols: await ensureProtocolApplicabilitiesForWorksiteTx(client, worksiteId),
   }
 }
 

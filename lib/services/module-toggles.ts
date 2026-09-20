@@ -160,6 +160,8 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "prevention", submoduleHref: "/prevencion/privacidad", prefix: "/api/prevencion/privacidad" },
   { moduleId: "prevention", submoduleHref: "/prevencion/requisitos-legales", prefix: "/api/prevencion/requisitos-legales" },
   { moduleId: "prevention", submoduleHref: "/prevencion/higiene", prefix: "/api/prevencion/salud" },
+  // Subida del informe de laboratorio que respalda una medición de exposición.
+  { moduleId: "prevention", submoduleHref: "/prevencion/higiene", prefix: "/api/prevencion/higiene" },
 
   // Automatizaciones: el secreto se valida en el handler antes de consultar el toggle.
   { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/backup-health" },

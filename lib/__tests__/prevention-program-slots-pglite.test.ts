@@ -4,8 +4,8 @@
  * Las casillas del programa nacen con la faena.
  *
  * Lo que se protege no es que las tablas existan: es que activar una faena
- * deje las 53 casillas —24 de capacitación, 2 de simulacro, 4 de CGRD y 23 de
- * alcotest— y
+ * deje las 61 filas —24 casillas de capacitación, 2 de simulacro, 4 de CGRD, 23
+ * de alcotest y los 8 protocolos MINSAL sin pronunciar— y
  * que reejecutar no cree ninguna más ni pise el estado de las existentes.
  *
  * El modo de falla que esto vigila es el que motivó el agregador: alguien
@@ -47,6 +47,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.preventionProtocolApplicabilities)
   await inMemoryDb.delete(schema.preventionAlcotestSlotEvidence)
   await inMemoryDb.delete(schema.preventionAlcotestSlots)
   await inMemoryDb.delete(schema.preventionGrdMeetingSlots)
@@ -79,14 +80,14 @@ beforeEach(async () => {
 })
 
 describe("pre-generación de las casillas del programa", () => {
-  it("una faena activa recibe las 53 casillas, y reejecutar no crea ninguna más", async () => {
+  it("una faena activa recibe las 61 filas, y reejecutar no crea ninguna más", async () => {
     const { ensurePreventionProgramSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
 
     const first = await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
-    expect(first).toEqual({ training: 24, drills: 2, grdMeetings: 4, alcotest: 23 })
+    expect(first).toEqual({ training: 24, drills: 2, grdMeetings: 4, alcotest: 23, protocols: 8 })
 
     const second = await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
-    expect(second).toEqual({ training: 0, drills: 0, grdMeetings: 0, alcotest: 0 })
+    expect(second).toEqual({ training: 0, drills: 0, grdMeetings: 0, alcotest: 0, protocols: 0 })
   })
 
   it("las casillas nacen pendientes y en los meses que el programa declara", async () => {
@@ -102,6 +103,14 @@ describe("pre-generación de las casillas del programa", () => {
     expect(alcotest.filter((row) => row.kind === "control")).toHaveLength(12)
     expect(alcotest.filter((row) => row.kind === "envio")).toHaveLength(11)
     expect(alcotest.every((row) => row.status === "pending")).toBe(true)
+
+    /* Los ocho protocolos existen EN LA BASE, no rellenados en memoria por la
+     * pantalla: es la diferencia entre "nadie se pronunció" y "no hay nada que
+     * mirar", y es lo único que hace que un export los vea. */
+    const protocolos = await inMemoryDb.select().from(schema.preventionProtocolApplicabilities)
+    expect(protocolos).toHaveLength(8)
+    expect(protocolos.every((row) => row.status === "pending_assessment")).toBe(true)
+    expect(protocolos.every((row) => row.justification === null)).toBe(true)
 
     const meetings = await inMemoryDb.select().from(schema.preventionGrdMeetingSlots)
     expect(meetings.map((row) => row.slotKey).sort()).toEqual(["m02-w1", "m03-w1", "m04-w1", "m05-w1"])

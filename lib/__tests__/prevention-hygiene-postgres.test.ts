@@ -38,6 +38,27 @@ function getDb() {
   return testDb
 }
 
+
+/**
+ * Un informe de laboratorio real en el almacenamiento de prueba.
+ *
+ * `recordExposureMeasurement` relee el archivo del disco para calcular su
+ * sha256, y `storage_path` es único global, así que cada medición necesita el
+ * suyo y tiene que existir de verdad.
+ */
+let evidenceSeq = 0
+async function measurementEvidence() {
+  const { resolveHygieneEvidenceDir } = await import("@/lib/storage/config")
+  const { promises: fs } = await import("node:fs")
+  const nodePath = await import("node:path")
+  evidenceSeq += 1
+  const name = `informe-hy-${evidenceSeq}.pdf`
+  const dir = resolveHygieneEvidenceDir()
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(nodePath.join(dir, name), "informe de laboratorio de prueba")
+  return `storage/hygiene-evidence/${name}`
+}
+
 describeIf("Higiene industrial on real PostgreSQL", () => {
   let agentId = ""
   let uncappedAgentId = ""
@@ -118,7 +139,7 @@ describeIf("Higiene industrial on real PostgreSQL", () => {
     const service = await import("@/lib/services/prevention-hygiene")
     const result = await service.recordExposureMeasurement({
       groupId, measuredOn: "2026-08-05", value: 0.02, method: "NIOSH 7500",
-      equipmentTag: "BOMBA-01", calibrationDate: "2026-07-01", laboratoryName: "Lab externo",
+      equipmentTag: "BOMBA-01", calibrationDate: "2026-07-01", laboratoryName: "Lab externo", evidencePath: await measurementEvidence(),
     }, HYGIENIST)
     expect(result.assessment.outcome).toBe("below_action")
     expect(result.surveillanceRequired).toBe(false)
@@ -131,14 +152,14 @@ describeIf("Higiene industrial on real PostgreSQL", () => {
     const service = await import("@/lib/services/prevention-hygiene")
     await expect(service.recordExposureMeasurement({
       groupId, measuredOn: "2026-08-05", value: 0.02, method: "NIOSH 7500",
-      equipmentTag: "BOMBA-01", calibrationDate: "2099-01-01",
+      equipmentTag: "BOMBA-01", calibrationDate: "2099-01-01", evidencePath: await measurementEvidence(),
     }, HYGIENIST)).rejects.toThrow(/calibración no puede estar en el futuro/)
   })
 
   it("a measurement over the limit puts the group under surveillance with a stated basis", async () => {
     const service = await import("@/lib/services/prevention-hygiene")
     const result = await service.recordExposureMeasurement({
-      groupId, measuredOn: "2026-09-05", value: 0.12, method: "NIOSH 7500", equipmentTag: "BOMBA-01",
+      groupId, measuredOn: "2026-09-05", value: 0.12, method: "NIOSH 7500", equipmentTag: "BOMBA-01", evidencePath: await measurementEvidence(),
     }, HYGIENIST)
     expect(result.assessment.outcome).toBe("above_limit")
     expect(result.surveillanceRequired).toBe(true)
@@ -160,7 +181,7 @@ describeIf("Higiene industrial on real PostgreSQL", () => {
     await service.addExposureGroupMember({ groupId: smallGroupId, workerId: "wk-a2", joinedOn: "2026-08-01" }, HYGIENIST)
 
     const result = await service.recordExposureMeasurement({
-      groupId: smallGroupId, measuredOn: "2026-08-20", value: 75, method: "CEAL-SM", equipmentTag: "CUESTIONARIO",
+      groupId: smallGroupId, measuredOn: "2026-08-20", value: 75, method: "CEAL-SM", equipmentTag: "CUESTIONARIO", evidencePath: await measurementEvidence(),
     }, HYGIENIST)
     expect(result.assessment.outcome).toBe("not_comparable")
     expect(result.measurement.permissibleLimitSnapshot).toBeNull()
@@ -169,7 +190,7 @@ describeIf("Higiene industrial on real PostgreSQL", () => {
   it("a later campaign below the action level releases surveillance but keeps the record of the excedence", async () => {
     const service = await import("@/lib/services/prevention-hygiene")
     const result = await service.recordExposureMeasurement({
-      groupId, measuredOn: "2026-12-05", value: 0.01, method: "NIOSH 7500", equipmentTag: "BOMBA-02",
+      groupId, measuredOn: "2026-12-05", value: 0.01, method: "NIOSH 7500", equipmentTag: "BOMBA-02", evidencePath: await measurementEvidence(),
     }, HYGIENIST)
     expect(result.surveillanceRequired).toBe(false)
     expect(result.basis).toContain("excedencias previas")

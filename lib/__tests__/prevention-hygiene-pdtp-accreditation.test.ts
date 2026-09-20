@@ -10,6 +10,8 @@
  * una evaluación sin valor numérico.
  */
 
+import { promises as fs } from "node:fs"
+import nodePath from "node:path"
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { and, eq } from "drizzle-orm"
@@ -75,6 +77,37 @@ const access: HygieneAccess = {
 }
 
 /** Una medición válida mínima; `value` 1 queda bajo el nivel de acción. */
+/**
+ * El informe de laboratorio, escrito de verdad en el almacenamiento de prueba.
+ *
+ * `recordExposureMeasurement` vuelve a leer el archivo del disco para calcular
+ * su sha256 —no confía en lo que devuelve la subida, que pasa por el navegador—,
+ * así que un fixture con una ruta inventada no sirve: tiene que existir.
+ */
+const EVIDENCE_STORAGE_NAME = "informe-ges-01.pdf"
+const EVIDENCE_PATH = `storage/hygiene-evidence/${EVIDENCE_STORAGE_NAME}`
+
+/* `storage_path` es único global —dos mediciones no comparten archivo—, así que
+ * cada medición de un mismo caso necesita el suyo. */
+let evidenceSeq = 0
+async function anotherEvidenceFile() {
+  evidenceSeq += 1
+  const name = `informe-ges-01-${evidenceSeq}.pdf`
+  await writeEvidenceFile(name)
+  return `storage/hygiene-evidence/${name}`
+}
+
+async function writeEvidenceFile(storageName: string) {
+  const { resolveHygieneEvidenceDir } = await import("@/lib/storage/config")
+  const dir = resolveHygieneEvidenceDir()
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(nodePath.join(dir, storageName), "informe de laboratorio de prueba")
+}
+
+async function seedEvidenceFile() {
+  await writeEvidenceFile(EVIDENCE_STORAGE_NAME)
+}
+
 function measurement(overrides: Record<string, unknown> = {}) {
   return {
     groupId: GROUP_ID,
@@ -82,6 +115,7 @@ function measurement(overrides: Record<string, unknown> = {}) {
     value: 1,
     method: "NCh 2431",
     equipmentTag: "DOS-01",
+    evidencePath: EVIDENCE_PATH,
     ...overrides,
   }
 }
@@ -99,6 +133,7 @@ async function seedEnrollment(id: string, workerId: string, dueOn: string) {
 }
 
 beforeEach(async () => {
+  await seedEvidenceFile()
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.pdtpActivityWorksiteParams)
@@ -213,17 +248,47 @@ describe("N°45 — medición cuantitativa de exposición", () => {
     expect(rows[0]).toMatchObject({ month: 3, week: 1 })
   })
 
-  it("deja un rótulo sin inflar la métrica de evidencia cuando no hay informe", async () => {
+  /* Antes este caso afirmaba que sin informe la N°45 acreditaba con un rótulo
+   * sintético. Ya no hay "sin informe": el archivo es obligatorio, y lo que se
+   * acredita es su ruta. Un folio escrito a mano no se puede abrir en una
+   * fiscalización. */
+  it("acredita con la ruta del informe y no con un rótulo sintético", async () => {
     await recordExposureMeasurement(measurement(), access)
 
     const rows = await executionsFor(45)
-    expect(rows[0]!.evidenceStatus).toBe("not_required")
-    expect(rows[0]!.evidenceText).toContain("GES-01")
+    /* El motor guarda una ruta `storage/` en `evidenceUrl` y deja `evidenceText`
+     * nulo: es la señal de que acreditó con un artefacto real y no con una
+     * glosa. Antes pasaba por el camino contrario, con el rótulo sintético. */
+    expect(rows[0]!.evidenceUrl).toBe(EVIDENCE_PATH)
+    expect(rows[0]!.evidenceText).toBeNull()
+  })
+
+  it("guarda la evidencia con su checksum calculado en servidor", async () => {
+    const created = await recordExposureMeasurement(measurement(), access)
+    const [evidence] = await inMemoryDb.select().from(schema.preventionHygieneMeasurementEvidence)
+    expect(evidence).toMatchObject({
+      measurementId: created.measurement.id,
+      storagePath: EVIDENCE_PATH,
+      state: "active",
+    })
+    expect(evidence!.sha256).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it("una ruta que no existe en disco no registra la medición", async () => {
+    await expect(recordExposureMeasurement(
+      measurement({ evidencePath: "storage/hygiene-evidence/no-existe.pdf" }),
+      access,
+    )).rejects.toThrow(/informe/i)
+    expect(await executionsFor(45)).toHaveLength(0)
   })
 
   it("cuenta dos mediciones del mismo mes como dos ejecuciones independientes", async () => {
     await recordExposureMeasurement(measurement({ measuredOn: `${PROGRAM_YEAR}-06-10` }), access)
-    await recordExposureMeasurement(measurement({ measuredOn: `${PROGRAM_YEAR}-06-11`, value: 90 }), access)
+    await recordExposureMeasurement(measurement({
+      measuredOn: `${PROGRAM_YEAR}-06-11`,
+      value: 90,
+      evidencePath: await anotherEvidenceFile(),
+    }), access)
 
     const rows = await executionsFor(45)
     expect(rows).toHaveLength(2)

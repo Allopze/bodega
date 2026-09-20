@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { boolean, check, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { boolean, check, foreignKey, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { workers, worksites } from "../worksites"
 import { preventionHealthRecords } from "./privacy"
@@ -211,8 +211,58 @@ export const preventionExposureGroupMembersRelations = relations(preventionExpos
   worker: one(workers, { fields: [preventionExposureGroupMembers.workerId], references: [workers.id] }),
 }))
 
-export const preventionExposureMeasurementsRelations = relations(preventionExposureMeasurements, ({ one }) => ({
+/**
+ * Evidencia de la medición: el informe del laboratorio, 1:N y con estados.
+ *
+ * Antes lo más cercano era `reportReference`, un texto libre. Con eso la N°45
+ * se acreditaba con el folio escrito a mano, que no es el documento: un folio
+ * no se puede abrir en una fiscalización. `reportReference` se conserva porque
+ * sigue siendo el dato del laboratorio, distinto del archivo.
+ *
+ * Copia literal del contrato que ya usan capacitación, simulacros y alcotest:
+ * sha256 con formato validado, anulación con motivo, y el archivo que no se
+ * borra al corregir nada.
+ */
+export const preventionHygieneMeasurementEvidence = pgTable("prevention_hygiene_measurement_evidence", {
+  id:                text("id").primaryKey(),
+  measurementId:     text("measurement_id").notNull(),
+  fileName:          text("file_name").notNull(),
+  storagePath:       text("storage_path").notNull().unique(),
+  mimeType:          text("mime_type").notNull(),
+  fileSizeBytes:     integer("file_size_bytes").notNull(),
+  sha256:            text("sha256").notNull(),
+  state:             text("state").notNull().default("active"),
+  uploadedByUserId:  text("uploaded_by_user_id"),
+  uploadedAt:        timestamp("uploaded_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  annulledByUserId:  text("annulled_by_user_id"),
+  annulledAt:        timestamp("annulled_at", { withTimezone: true, mode: "string" }),
+  annulledReason:    text("annulled_reason"),
+}, (table) => [
+  /* `cascade` y no `restrict`, a diferencia de las casillas: la medición ya
+   * cuelga del grupo de exposición con `cascade`, así que borrar el grupo tiene
+   * que poder arrastrar la cadena completa. Una evidencia que sobreviviera a su
+   * medición no tendría a qué referirse. */
+  foreignKey({ columns: [table.measurementId], foreignColumns: [preventionExposureMeasurements.id], name: "hygiene_measurement_evidence_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.uploadedByUserId], foreignColumns: [users.id], name: "hygiene_measurement_ev_uploader_fk" }).onDelete("set null"),
+  foreignKey({ columns: [table.annulledByUserId], foreignColumns: [users.id], name: "hygiene_measurement_ev_annuller_fk" }).onDelete("restrict"),
+  index("prevention_hygiene_measurement_evidence_idx").on(table.measurementId, table.state, table.uploadedAt),
+  check("prevention_hygiene_meas_ev_name_check", sql`length(${table.fileName}) BETWEEN 1 AND 255`),
+  check("prevention_hygiene_meas_ev_size_check", sql`${table.fileSizeBytes} > 0`),
+  check("prevention_hygiene_meas_ev_sha_check", sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
+  check("prevention_hygiene_meas_ev_state_check", sql`${table.state} IN ('active', 'replaced', 'annulled')`),
+  check("prevention_hygiene_meas_ev_annul_check", sql`(${table.state} IN ('active', 'replaced') AND ${table.annulledAt} IS NULL AND ${table.annulledByUserId} IS NULL AND ${table.annulledReason} IS NULL) OR (${table.state} = 'annulled' AND ${table.annulledAt} IS NOT NULL AND ${table.annulledByUserId} IS NOT NULL AND length(${table.annulledReason}) >= 5)`),
+])
+
+export const preventionExposureMeasurementsRelations = relations(preventionExposureMeasurements, ({ one, many }) => ({
   group: one(preventionExposureGroups, { fields: [preventionExposureMeasurements.groupId], references: [preventionExposureGroups.id] }),
+  evidence: many(preventionHygieneMeasurementEvidence),
+}))
+
+export const preventionHygieneMeasurementEvidenceRelations = relations(preventionHygieneMeasurementEvidence, ({ one }) => ({
+  measurement: one(preventionExposureMeasurements, {
+    fields: [preventionHygieneMeasurementEvidence.measurementId],
+    references: [preventionExposureMeasurements.id],
+  }),
 }))
 
 export const preventionSurveillanceProgramsRelations = relations(preventionSurveillancePrograms, ({ one, many }) => ({
@@ -233,3 +283,4 @@ export type PreventionExposureMeasurement = typeof preventionExposureMeasurement
 export type PreventionSurveillanceProgram = typeof preventionSurveillancePrograms.$inferSelect
 export type PreventionSurveillanceEnrollment = typeof preventionSurveillanceEnrollments.$inferSelect
 export type PreventionProtocolApplicability = typeof preventionProtocolApplicabilities.$inferSelect
+export type PreventionHygieneMeasurementEvidence = typeof preventionHygieneMeasurementEvidence.$inferSelect

@@ -1,7 +1,7 @@
 /**
  * lib/services/prevention-evidence-upload.ts
  *
- * Subida de un archivo de evidencia para Campañas y CGRD.
+ * Subida de un archivo de evidencia para Campañas, CGRD e Higiene.
  *
  * Existe porque la simplificación de 2026-09-14 hizo la evidencia
  * **obligatoria** en ambos módulos y ninguno tenía dónde subir un archivo: la
@@ -22,19 +22,22 @@ import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
 import {
   createCampaignEvidencePath,
   createCgrdEvidencePath,
+  createHygieneEvidencePath,
   resolveCampaignEvidenceDir,
   resolveCgrdEvidenceDir,
+  resolveHygieneEvidenceDir,
   resolveStorageFile,
 } from "@/lib/storage/config"
 
 /** Mismo tope que la evidencia del PDTP: son el mismo tipo de respaldo. */
 export const PREVENTION_EVIDENCE_MAX_FILE_SIZE = 25 * 1024 * 1024
 
-export type PreventionEvidenceDomain = "campaign" | "cgrd"
+export type PreventionEvidenceDomain = "campaign" | "cgrd" | "hygiene"
 
 const DOMAINS = {
   campaign: { dir: resolveCampaignEvidenceDir, toPath: createCampaignEvidencePath },
   cgrd: { dir: resolveCgrdEvidenceDir, toPath: createCgrdEvidencePath },
+  hygiene: { dir: resolveHygieneEvidenceDir, toPath: createHygieneEvidencePath },
 } as const
 
 export class PreventionEvidenceError extends Error {

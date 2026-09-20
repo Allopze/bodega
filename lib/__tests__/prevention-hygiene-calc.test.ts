@@ -150,10 +150,19 @@ describe("validación de entrada de una medición de exposición", () => {
     value: 50,
     method: "Muestreo de aire personal",
     equipmentTag: "BOMBA-01",
+    evidencePath: "storage/hygiene-evidence/informe.pdf",
   }
 
   it("acepta una medición sin fecha de calibración declarada", () => {
     expect(() => exposureMeasurementSchema.parse(base)).not.toThrow()
+  })
+
+  /* El folio del laboratorio no reemplaza al informe: es un número escrito a
+   * mano, y con eso se acreditaba la N°45. */
+  it("no acepta una medición sin el informe de laboratorio", () => {
+    const { evidencePath: _omitido, ...sinInforme } = base
+    expect(() => exposureMeasurementSchema.parse(sinInforme)).toThrow()
+    expect(() => exposureMeasurementSchema.parse({ ...sinInforme, reportReference: "Folio 12345" })).toThrow()
   })
 
   it("acepta la fecha de calibración de hoy en hora de Chile", () => {
