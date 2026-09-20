@@ -126,6 +126,26 @@ export function CgrdWorkbench({
 
       {scheduledPanel}
 
+      {/* Fuera del bloque del comité, por el mismo motivo que la Matriz GRD: la
+          N°81 se le planifica a la FAENA. Una faena de hasta 25 personas tiene
+          coordinador y no comité, y es justamente ahí donde hay que poder
+          declarar que sus sesiones no aplican — con el comité como condición,
+          esas casillas existían en la base y no se veían en ninguna pantalla. */}
+      {selectedWorksiteId && (
+        <section className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+          <h2 className="mb-2 text-sm font-semibold text-[var(--color-text)]">Sesiones que el programa espera</h2>
+          <ProgramSlotList
+            rows={meetingSlots}
+            year={slotYear}
+            canRecord={canManageMeetings}
+            emptyHint="Esta faena todavía no tiene casillas del programa; se generan al activarla."
+            notApplicableSuggestion={notApplicableSuggestion}
+            activationPeriod={activationPeriod}
+            onRecord={(input) => recordGrdMeetingSlotStatusAction(input)}
+          />
+        </section>
+      )}
+
       {/* La matriz GRD es de la faena, no del comité: la N°80 aplica también
           a una faena con coordinador. Vive fuera del bloque del comité por eso. */}
       {selectedWorksiteId && (
@@ -273,19 +293,6 @@ export function CgrdWorkbench({
               <h2 className="text-sm font-semibold text-[var(--color-text)]">Actas de reunión</h2>
               {canManageMeetings && <Button type="button" size="sm" variant="secondary" onClick={() => setRecordMeetingOpen(true)}>Registrar acta</Button>}
             </div>
-            <div className="mb-4">
-              <h4 className="mb-2 text-sm font-medium">Sesiones que el programa espera</h4>
-              <ProgramSlotList
-                rows={meetingSlots}
-                year={slotYear}
-                canRecord={canManageMeetings}
-                emptyHint="Esta faena todavía no tiene casillas del programa; se generan al activarla."
-                notApplicableSuggestion={notApplicableSuggestion}
-                activationPeriod={activationPeriod}
-                onRecord={(input) => recordGrdMeetingSlotStatusAction(input)}
-              />
-            </div>
-
             {meetings.length === 0 ? (
               <p className="mt-2 text-sm text-[var(--color-text-subtle)]">Sin sesiones registradas.</p>
             ) : (
