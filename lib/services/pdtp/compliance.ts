@@ -729,13 +729,13 @@ export type PdtpIntegralCompliance = PdtpIntegralComplianceAxes & {
  * promediar los resultados por faena daría un número distinto (y equivocado)
  * cuando las faenas tienen distinto número de checklists o de acciones.
  *
- * Dos motores alimentan estos ejes:
- *  · checklists del PDTP (`pdtp_execution_checklists` + `pdtp_action_plan`);
- *  · inspecciones del motor transversal, alcanzadas por la ejecución que
- *    acreditaron (`origin='integration'`, `sourceType='inspeccion'`,
- *    `sourceId=runId`). Antes sólo se leía el primero, así que una faena que
- *    trabajara en el motor de inspecciones aparecía con verificación y cierre
- *    en null y perdía los dos ejes del índice integral.
+ * `verificacion` sale de las inspecciones del motor transversal, alcanzadas por
+ * la ejecución que acreditaron (`sourceType='inspeccion'`, `sourceId=runId`).
+ * El motor de checklist propio del PDTP era la otra fuente y se retiró; sus dos
+ * tablas estaban vacías, así que no aportaba nada.
+ *
+ * `cierre` lee CAPA y hallazgos de inspección. Las acciones que en su momento
+ * creó el motor viejo siguen contando: viven en `prevention_capa_actions`.
  */
 async function computeVerificacionYCierre(approvedExecutionIds: string[]): Promise<{
   verificacion: number | null
@@ -743,10 +743,7 @@ async function computeVerificacionYCierre(approvedExecutionIds: string[]): Promi
 }> {
   if (approvedExecutionIds.length === 0) return { verificacion: null, cierre: null }
 
-  const [instances, actions, inspectionRows] = await Promise.all([
-    db.query.pdtpExecutionChecklists.findMany({
-      where: (t, { inArray: ia }) => ia(t.executionId, approvedExecutionIds),
-    }),
+  const [actions, inspectionRows] = await Promise.all([
     // D11: el estado de la acción vive en su CAPA. Leer el espejo daba un %
     // congelado cuando la acción se avanzaba desde la pantalla de CAPA.
     db.select({ estado: preventionCapaActions.status })
@@ -795,10 +792,9 @@ async function computeVerificacionYCierre(approvedExecutionIds: string[]): Promi
         .where(inArray(preventionInspectionFindings.runId, inspectionRunIds))
     : []
 
-  const validPct = [
-    ...instances.map((instance) => instance.porcentajeCumplimiento),
-    ...inspectionRows.map((row) => row.compliancePercent),
-  ].filter((pct): pct is number => pct !== null)
+  const validPct = inspectionRows
+    .map((row) => row.compliancePercent)
+    .filter((pct): pct is number => pct !== null)
   const verificacion = validPct.length > 0
     ? Math.round((validPct.reduce((sum, pct) => sum + pct, 0) / validPct.length) * 100) / 100
     : null
@@ -826,13 +822,28 @@ function weightIntegral(
     verificacion: program.pesoVerificacion,
     cierre: program.pesoCierre,
   }
-  let integral: number | null = null
-  if (axes.ejecucion !== null || axes.verificacion !== null || axes.cierre !== null) {
-    const e = (axes.ejecucion ?? 0) * 100
-    const v = axes.verificacion ?? 0
-    const c = axes.cierre ?? 0
-    integral = Math.round((pesos.ejecucion * e + pesos.verificacion * v + pesos.cierre * c) * 100) / 100
-  }
+  /* Un eje sin datos se pondera FUERA del denominador, no como cero.
+   *
+   * Antes `axes.verificacion ?? 0` hacía que un programa sin datos de
+   * verificación perdiera `pesoVerificacion × 100` puntos —hasta 30— y mostrara
+   * un integral rebajado en silencio, indistinguible de uno que sí midió y salió
+   * mal. Con los tres ejes presentes los pesos suman 1 (CHECK
+   * `pdtp_programs_pesos_sum_check`), así que esto no mueve ningún número que
+   * hoy esté bien calculado: sólo arregla el caso degenerado.
+   *
+   * `ejecucion` llega como ratio 0-1; los otros dos ya son porcentaje. */
+  const ponderables = [
+    { peso: pesos.ejecucion, valor: axes.ejecucion === null ? null : axes.ejecucion * 100 },
+    { peso: pesos.verificacion, valor: axes.verificacion },
+    { peso: pesos.cierre, valor: axes.cierre },
+  ].filter((eje): eje is { peso: number; valor: number } => eje.valor !== null)
+
+  // Si lo único con dato pesa 0, no hay nada que ponderar: es "sin datos", no un 0.
+  const pesoTotal = ponderables.reduce((suma, eje) => suma + eje.peso, 0)
+  const integral = pesoTotal > 0
+    ? Math.round((ponderables.reduce((suma, eje) => suma + eje.peso * eje.valor, 0) / pesoTotal) * 100) / 100
+    : null
+
   return { programId: program.id, year: program.year, ...axes, integral, pesos }
 }
 

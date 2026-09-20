@@ -17,7 +17,6 @@ const ENTITY_TYPES = [
   { value: "worksite", label: "Faena" },
   { value: "pdtp_activity", label: "Actividad PDTP" },
   { value: "pdtp_execution", label: "Ejecución PDTP" },
-  { value: "pdtp_checklist", label: "Checklist PDTP" },
   { value: "sst_evaluation", label: "Evaluación SST" },
   { value: "corrective_action", label: "Acción CAPA" },
   { value: "ppa", label: "PPA" },

@@ -6,7 +6,7 @@ import { NORMALIZED_ONLY_SCORING } from '../scoring-policies'
  * Inspección de Carros — módulo 07.
  *
  * Patrón C (multi-sujeto). Se siembra como plantilla de la actividad PDTP
- * n=34 del programa 2026. Ver `scripts/seed-pdtp-checklists-2026.ts`.
+ * n=34 del programa 2026. Ver `scripts/seed-pdtp-inspection-templates-2026.ts`.
  *
  * Sujeto = `fuelVehicles` (el carro), filtrado por worksiteId de la ejecución.
  * El carro se vincula a su camión vía `subjectLabel` (patente del carro).

@@ -780,27 +780,49 @@ como **dos plantillas separadas** (`v02-jt` / `v02-prf`). Es deliberado: por D3
 cada responsable tiene su propia ocurrencia, así que un run del JT no puede
 cerrar la del PRF. Se podrán colapsar en una sola cuando se resuelva C5.
 
-### Pendiente: retirar el motor de PDTP (decisión abierta)
+### Hecho: el motor de checklist del PDTP se retiró (2026-09-20)
 
-El motor viejo sigue en pie. Retirarlo toca 21 archivos y tiene una
-consecuencia funcional que no es limpieza:
+Nada puede redactar ni llenar un checklist del PDTP. Se fueron el editor
+(`checklist-tab.tsx`, `checklist-builder.tsx`), el panel de llenado
+(`execution-checklist-panel.tsx`), el motor de ejecución
+(`execution-checklists.ts`, 371 líneas), el adaptador huérfano
+(`checklist-templates-2026.ts` y su script de sembrado sin entrada en
+`package.json`), las acciones de plantilla y de llenado, y los dos permisos
+`prevention:pdtp:checklist:manage` y `:fill` —retirados también de las
+concesiones ya otorgadas vía `RETIRED_PERMISSION_NAMES`—.
 
-**El plan de acción cambia de casa.** Hoy `generateActionPlanFromChecklist`
-crea filas en `pdtp_action_plan` desde los ítems `no_cumple`, con prefijo de
-sujeto y deduplicación por instancia. El motor de inspecciones hace lo
-equivalente con `deriveFindings` → `prevention_inspection_findings` → CAPA.
-Al retirar el motor viejo, las acciones correctivas de esas 11 actividades
-pasan a vivir en CAPA, y `pdtp_action_plan` queda sólo para las que se crean a
-mano desde la página de verificación.
+**Dos afirmaciones de la versión anterior de esta sección eran falsas.** Quedan
+corregidas acá porque costaron trabajo de descubrir:
 
-Probablemente sea lo correcto —un solo lugar para las acciones correctivas—
-pero es una decisión de la jefa de prevención, no un detalle de
-implementación.
+1. **`pdtp_action_plan` ya no existía.** La migración `0161` la dropeó junto con
+   `pdtp_action_plan_followups`, y `action-plan.ts` es desde entonces una fachada
+   sobre `prevention_capa_actions`. La "decisión de la jefa de prevención" sobre
+   mudar las acciones correctivas a CAPA ya estaba tomada y desplegada; lo que
+   quedaba era retirar la vía de entrada, no migrar datos.
 
-Alcance del retiro cuando se decida: `execution-checklists.ts` (371 líneas),
-`checklists.ts`, `checklist-templates-2026.ts`, `seed-pdtp-checklists-2026.ts`,
-`execution-checklist-panel.tsx`, `checklist-actions.ts`, cirugía en
-`action-plan.ts`, `sheets.ts` (badge de no-conformes), `compliance.ts`,
-`index.ts`, y una migración que borre `pdtp_activity_checklists`,
-`pdtp_execution_checklists` y `pdtp_execution_checklist_responses` (0 filas
-las tres).
+2. **Las tres tablas NO estaban en cero.** `pdtp_activity_checklists` tiene 9
+   filas en producción y 18 en dev. Este mismo documento se contradecía: más
+   arriba registra «10 checklists reales: 32 secciones, 189 ítems». Sólo
+   `pdtp_execution_checklists` y `pdtp_execution_checklist_responses` estaban
+   vacías, y son las dos que borró la migración `0320`.
+
+**`pdtp_activity_checklists` se conserva, a propósito.** Está dentro de la huella
+firmada del programa: `content-digest.ts` emite una clave `checklists` construida
+desde ella **sin condicionar por `schemaVersion`**, y los snapshots ya firmados en
+`pdtp_programs.review_snapshot_json` y `pdtp_program_template_versions.snapshot_json`
+la contienen. Borrarla obligaba a subir
+`MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION` a 18, lo que dejaría sin
+verificar **todo** programa firmado entre v12 y v17 —tenga o no checklists— y
+pondría una insignia permanente en el programa activo. El precedente del propio
+repositorio (la v9, que retiró `expected_subject_count`) confirma además que
+emitir un `[]` de compatibilidad es el modo de fallo que un test ya prohíbe: un
+digest que nunca calza es indistinguible de una deriva de contenido real.
+
+La tabla queda como artefacto de sólo lectura. Sus filas nacen por una sola vía:
+copiar hacia adelante un snapshot ya firmado —instanciar una plantilla, copiar un
+programa, duplicar una actividad, aplicar una diferencia de base o importar—.
+
+Dos lectores se re-cablearon al motor que hoy sí tiene los datos: el distintivo
+de no conformes de `sheets.ts` (que daba 0 en todas partes, porque sus dos tablas
+fuente estaban vacías) y el eje `verificacion` de `compliance.ts`, ambos contra
+`prevention_inspection_runs`.

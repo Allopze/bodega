@@ -6,7 +6,7 @@ import { NORMALIZED_ONLY_SCORING } from '../scoring-policies'
  * Inspección Estado de Extintores — módulo 10.
  *
  * Patrón C (multi-sujeto). Se siembra como plantilla de la actividad PDTP
- * n=24 del programa 2026. Ver `scripts/seed-pdtp-checklists-2026.ts`.
+ * n=24 del programa 2026. Ver `scripts/seed-pdtp-inspection-templates-2026.ts`.
  *
  * Sujeto = extintor por `subjectLabel` libre en v1 (no hay inventario de
  * extintores; PLAN_INTEGRACION §7). El selector real (o inventario

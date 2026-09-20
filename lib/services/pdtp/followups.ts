@@ -1,8 +1,9 @@
 /**
  * Servicio de seguimiento (bitácora) del plan de acción PDTP.
  *
- * Cada cambio de estado o evidencia registrada queda como un followup
- * en `pdtp_action_plan_followups`, formando una línea de tiempo.
+ * Cada cambio de estado o evidencia registrada forma una línea de tiempo. Se lee
+ * de `prevention_capa_transitions` desde D11: el espejo `pdtp_action_plan_followups`
+ * se dropeó en la migración 0161.
  */
 
 import { and, eq } from "drizzle-orm"

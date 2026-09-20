@@ -15,7 +15,6 @@ import type { PdtpChecklistTemplate } from "@/lib/services/prevention-pdtp"
 import type { PdtpBaseComparison, PdtpRevisionDiff } from "@/lib/services/prevention-pdtp"
 import { countOf } from "@/lib/utils"
 import { deriveScheduleHorizon } from "@/lib/services/pdtp/recurrence"
-import { ChecklistTab } from "./checklist-tab"
 import { GuidedActivityForm } from "./guided-activity-form"
 import type { PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 import { ImportExcelSection } from "./import-excel-section"
@@ -259,15 +258,6 @@ export function PdtpBuilderTabs({
               schedule={schedule}
               responsibleCatalog={responsibleCatalog}
             />
-          </div>
-        </details>
-
-        <details className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-[var(--color-text)]">
-            Requisitos y evidencia
-          </summary>
-          <div className="border-t border-[var(--color-border)] p-4">
-            <ChecklistTab programId={program.id} activities={activeActivities} checklists={checklists} />
           </div>
         </details>
       </TabsContent>

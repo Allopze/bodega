@@ -248,6 +248,5 @@ describe("catálogo de contenedores", () => {
     const rows = await listContainers(access)
     expect(rows.find((item) => item.container.id === created.id)?.inspectionCount).toBe(1)
     // El listado suma runs + PDTP; la ficha tiene que poder explicar la resta.
-    expect(detail.pdtpChecklistCount).toBe(0)
   })
 })

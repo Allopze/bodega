@@ -248,7 +248,7 @@ export function ItemField({
   }
 
   // Relato largo (p. ej. la descripción de la Observación Planeada, Anexo 7).
-  // maxLength 2000 = tope de `observacion` en pdtpChecklistResponseItemSchema.
+  // maxLength 2000: mismo tope que el resto de las observaciones del dominio.
   if (kind === "textarea") {
     return (
       <Textarea

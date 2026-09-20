@@ -20,7 +20,7 @@ import { NORMALIZED_ONLY_SCORING } from '../scoring-policies'
  * Actividad PDTP 2026: n=39, "Realizar Observación para corregir desviaciones
  * de conductas incorrectas sobre normas, procedimientos y/o estándares"
  * (Sup, JT — mensual, semana 2; "cada jefe directo en las distintas áreas de
- * trabajo"). Ver `lib/services/pdtp-adapters/checklist-templates-2026.ts`.
+ * trabajo"). Ver `lib/services/pdtp-adapters/inspection-templates-2026.ts`.
  *
  * No puntúa: sin ítems de estado, `porcentajeCumplimiento` queda en null. La
  * regla de puntaje cumple=1 / regular=0.5 / no cumple=0 no aplica aquí.

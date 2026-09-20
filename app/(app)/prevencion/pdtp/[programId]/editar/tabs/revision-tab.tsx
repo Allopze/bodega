@@ -46,7 +46,7 @@ export function ReviewTab({
     { label: "Actividades", ok: activeActivities.length > 0, detail: activeActivities.length > 0 ? `${activeActivities.length} ${pluralize(activeActivities.length, "activa")}` : "Agrega al menos una actividad activa" },
     { label: "Clasificación temporal", ok: unresolvedScheduleClassification === 0, detail: unresolvedScheduleClassification === 0 ? "Todas tienen una modalidad confirmada" : `${unresolvedScheduleClassification} requieren decidir cuándo se realizan` },
     { label: "Programación", ok: missingSchedule === 0 && missingTrigger === 0, detail: missingSchedule + missingTrigger === 0 ? "Todas explican cuándo se realizan" : `${missingSchedule + missingTrigger} requieren completar su regla` },
-    { label: "Evidencia", ok: missingEvidence === 0, detail: missingEvidence === 0 ? "Requisitos definidos" : `${missingEvidence} sin requisito explícito o checklist` },
+    { label: "Evidencia", ok: missingEvidence === 0, detail: missingEvidence === 0 ? "Requisitos definidos" : `${missingEvidence} sin requisito de evidencia declarado` },
   ]
   const ready = checks.every((check) => check.ok)
 

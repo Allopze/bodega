@@ -6,7 +6,7 @@ import { NORMALIZED_ONLY_SCORING } from '../scoring-policies'
  * Inspección Taller de Mantención y Bodega de Acopio RESPEL — módulo 06.
  *
  * Patrón B (single-sujeto). Se siembra como plantilla de la actividad PDTP
- * n=27 del programa 2026. Ver `scripts/seed-pdtp-checklists-2026.ts`.
+ * n=27 del programa 2026. Ver `scripts/seed-pdtp-inspection-templates-2026.ts`.
  *
  * Firmas (markdown 06): ejecutor (prevencionista) + acompañante
  * (encargado de taller / supervisor de faena). El acta de cierre modela

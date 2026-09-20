@@ -5,8 +5,8 @@
  * **motor de inspecciones** (`preventionInspectionTemplates`), declarando en
  * `pdtpActivityNumbers` qué actividad del PDTP acredita cada una.
  *
- * Reemplaza a `checklist-templates-2026.ts`, que instalaba las mismas
- * definiciones en el motor propio de PDTP (`pdtpActivityChecklists`). Decisión
+ * Reemplazó a `checklist-templates-2026.ts` —ya borrado con el retiro del motor
+ * viejo—, que instalaba las mismas definiciones en `pdtpActivityChecklists`. Decisión
  * D10 del diseño 2026-08-12: manda Inspecciones, porque es el motor que tiene
  * sujeto inspeccionado, hallazgos derivados, revisión y —sobre todo— el
  * conector `onInspectionCompleted` que acredita el PDTP solo.

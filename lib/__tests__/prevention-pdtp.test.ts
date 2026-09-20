@@ -20,6 +20,35 @@ vi.mock("@/db", () => ({
   },
 }))
 
+/**
+ * Siembra un checklist de actividad directo en la tabla.
+ *
+ * El motor que los escribía se retiró. La tabla se conserva porque está dentro
+ * de la huella firmada del programa, y sus filas sólo nacen al copiar hacia
+ * adelante un snapshot ya firmado. Estas pruebas la usan como dato de partida
+ * para verificar justamente esa copia.
+ */
+async function seedActivityChecklist(activityId: string, label: string) {
+  const [activity] = await inMemoryDb.select().from(schema.pdtpActivities)
+    .where(eq(schema.pdtpActivities.id, activityId)).limit(1)
+  await inMemoryDb.insert(schema.pdtpActivityChecklists).values({
+    id: `chk-${activityId}`,
+    activityId,
+    programId: activity!.programId,
+    version: "01",
+    label,
+    definitionJson: {
+      code: `seed-${activityId}`, version: "01", revisionDate: "2026-01-01",
+      title: label, tipo: "nuevo", legalFramework: [], applicableTo: "prevencionista_faena",
+      sections: [{ id: "verificacion", title: "Verificación", items: [{ id: "ejecutada", label: "Ejecutada conforme", kind: "cumple_nocumple_obs" }] }],
+      closingAct: { title: "Cierre", resultOptions: [], signatureRoles: ["prevencionista_faena"] },
+    },
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  })
+}
+
 // H-B7: en tests, los archivos físicos no existen. Para los tests que
 // usan evidenceUrl, pre-creamos los archivos en el FS real.
 import { mkdirSync, writeFileSync } from "node:fs"
@@ -511,7 +540,6 @@ describe("prevention PDTP service", () => {
       batchUpdatePdtpActivities,
       createLegacyPdtpProgramForTests,
       duplicatePdtpActivity,
-      savePdtpActivityChecklist,
       updatePdtpActivity,
     } = await import("@/lib/services/prevention-pdtp")
     const source = await createLegacyPdtpProgramForTests({ year: 2027, title: "Programa preventivo de controles críticos", userId: "user-1" })
@@ -532,10 +560,17 @@ describe("prevention PDTP service", () => {
       indicatorMode: "planned_vs_completed",
       sheetCodes: ["pdtp_general"],
     }, "user-1")
-    await savePdtpActivityChecklist({
+    /* Fila sembrada directo: el motor que la escribía se retiró, pero la tabla
+     * se conserva —está dentro de la huella firmada— y lo que esta prueba
+     * verifica sigue vivo: que copiar un programa y duplicar una actividad
+     * arrastren el checklist. */
+    await inMemoryDb.insert(schema.pdtpActivityChecklists).values({
+      id: "chk-control-critico",
       activityId: activity.id,
+      programId: source.id,
+      version: "01",
       label: "Control crítico",
-      definition: {
+      definitionJson: {
         code: "control-critico",
         version: "01",
         revisionDate: "2027-01-01",
@@ -543,9 +578,12 @@ describe("prevention PDTP service", () => {
         tipo: "nuevo",
         legalFramework: [],
         applicableTo: "prf",
-        sections: [{ id: "control", title: "Control", items: [{ id: "item", label: "Verificar", kind: "cumple_nocumple_obs" }], }],
+        sections: [{ id: "control", title: "Control", items: [{ id: "item", label: "Verificar", kind: "cumple_nocumple_obs" }] }],
         closingAct: { title: "Cierre", resultOptions: [], signatureRoles: ["prf"] },
       },
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     })
 
     const sourceSchedule = await inMemoryDb.select().from(schema.pdtpActivitySchedule).where(eq(schema.pdtpActivitySchedule.activityId, activity.id))
@@ -1823,9 +1861,7 @@ describe("prevention PDTP service", () => {
   it("blocks every signed-content mutation surface once review starts", async () => {
     const {
       approvePdtpProgramJdpr,
-      deletePdtpActivityChecklist,
       deletePdtpProgram,
-      savePdtpActivityChecklist,
       updatePdtpActivity,
       updatePdtpProgram,
     } = await import("@/lib/services/prevention-pdtp")
@@ -1835,13 +1871,6 @@ describe("prevention PDTP service", () => {
       .where(eq(schema.pdtpActivities.programId, program.id))
       .limit(1)
 
-    const definition = {
-      code: "signed-content", version: "01", revisionDate: "2026-01-01", title: "Control firmado", tipo: "nuevo" as const,
-      legalFramework: [], applicableTo: "prevencionista_faena",
-      sections: [{ id: "control", title: "Control", items: [{ id: "item", label: "Verificar", kind: "cumple_nocumple_obs" as const }] }],
-      closingAct: { title: "Cierre", resultOptions: [], signatureRoles: ["prevencionista_faena"] },
-    }
-    const checklist = await savePdtpActivityChecklist({ activityId: activity!.id, label: "Control firmado", definition })
     const access = {
       userId: "user-1",
       scope: { mode: "some" as const, ids: ["ws-1"] },
@@ -1879,8 +1908,6 @@ describe("prevention PDTP service", () => {
 
     await expect(updatePdtpProgram(program.id, { title: "Cambio posterior" }, "user-1")).rejects.toThrow(/bloqueado/i)
     await expect(updatePdtpActivity({ activityId: activity!.id, activity: "Cambio posterior" }, "user-1")).rejects.toThrow(/bloqueado/i)
-    await expect(savePdtpActivityChecklist({ activityId: activity!.id, label: "Cambio posterior", definition })).rejects.toThrow(/bloqueado/i)
-    await expect(deletePdtpActivityChecklist(checklist.id)).rejects.toThrow(/bloqueado/i)
     await expect(linkPdtpActivitySource({
       activityId: activity!.id,
       worksiteId: "ws-1",
@@ -2681,7 +2708,6 @@ describe("prevention PDTP service", () => {
     const {
       addPdtpActivity,
       createLegacyPdtpProgramForTests,
-      ensureDefaultChecklist,
     } = await import("@/lib/services/prevention-pdtp")
 
     const source = await createLegacyPdtpProgramForTests({
@@ -2710,7 +2736,7 @@ describe("prevention PDTP service", () => {
       targetUnit: "%",
       sheetCodes: ["pdtp_general"],
     }, "user-1")
-    await ensureDefaultChecklist(activity.id, "Verificación de controles")
+    await seedActivityChecklist(activity.id, "Verificación de controles")
 
     const projected = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
       .where(eq(schema.pdtpActivitySchedule.activityId, activity.id))
@@ -2751,7 +2777,6 @@ describe("prevention PDTP service", () => {
       addPdtpActivity,
       createLegacyPdtpProgramForTests,
       createPdtpTemplateVersion,
-      ensureDefaultChecklist,
       listActivePdtpTemplates,
       updatePdtpActivity,
     } = await import("@/lib/services/prevention-pdtp")
@@ -2774,7 +2799,7 @@ describe("prevention PDTP service", () => {
       indicatorMode: "planned_vs_completed",
       sheetCodes: ["pdtp_general"],
     }, "user-1")
-    await ensureDefaultChecklist(sourceActivity.id, "Checklist de controles")
+    await seedActivityChecklist(sourceActivity.id, "Checklist de controles")
 
     const publishedV1 = await createPdtpTemplateVersion({
       sourceProgramId: source.id,
@@ -3087,7 +3112,6 @@ describe("prevention PDTP service", () => {
       applyPdtpImportBatch,
       cancelPdtpImportBatch,
       createLegacyPdtpProgramForTests,
-      ensureDefaultChecklist,
       getPdtpComplianceIndicators,
       rollbackPdtpImportBatch,
       stagePdtpXlsxImport,
@@ -3103,7 +3127,7 @@ describe("prevention PDTP service", () => {
       recurrenceRule: { frequency: "annual", interval: 1, plannedQuantity: 1, weekOfMonth: 1 },
       sheetCodes: ["pdtp_general"],
     }, "user-1")
-    await ensureDefaultChecklist(priorActivity.id, "Checklist previo")
+    await seedActivityChecklist(priorActivity.id, "Checklist previo")
     await inMemoryDb.insert(schema.preventionPdtpSourceLinks).values({
       id: "source-link-before-import",
       activityId: priorActivity.id,
@@ -3400,13 +3424,12 @@ describe("prevention PDTP service", () => {
     expect(afterDigest.digest).not.toBe(beforeDigest.digest)
   })
 
-  it("repeats the 2026 post-import bootstrap without duplicating checklists or template versions", async () => {
+  it("repeats the 2026 post-import bootstrap without duplicating template versions", async () => {
     const { readFile } = await import("node:fs/promises")
     const {
       applyPdtpImportBatch,
       createLegacyPdtpProgramForTests,
       createPdtpTemplateVersion,
-      ensurePdtp2026ChecklistTemplates,
       finalizePdtpImportBootstrap,
       rollbackPdtpImportBatch,
       stagePdtpXlsxImport,
@@ -3430,8 +3453,6 @@ describe("prevention PDTP service", () => {
       scope: ["ws-1"],
     })
 
-    const firstChecklists = await ensurePdtp2026ChecklistTemplates({ programId: program.id })
-    const secondChecklists = await ensurePdtp2026ChecklistTemplates({ programId: program.id })
     await expect(createPdtpTemplateVersion({
       sourceProgramId: program.id,
       name: "Referencia preventiva 2026",
@@ -3448,7 +3469,7 @@ describe("prevention PDTP service", () => {
     await finalizePdtpImportBootstrap({
       batchId: staged.batch.id,
       userId: "user-1",
-      checklistIdsCreated: firstChecklists.createdChecklistIds,
+      checklistIdsCreated: [],
       templateIdCreated: firstTemplate.template.id,
       templateVersionIdCreated: firstTemplate.version.id,
     })
@@ -3460,19 +3481,20 @@ describe("prevention PDTP service", () => {
     const artifactsAfterRetry = await finalizePdtpImportBootstrap({
       batchId: staged.batch.id,
       userId: "user-1",
-      checklistIdsCreated: secondChecklists.createdChecklistIds,
+      checklistIdsCreated: [],
     })
 
-    expect(firstChecklists).toMatchObject({ expected: 10, created: 10, skipped: 0, missing: [] })
-    expect(secondChecklists).toMatchObject({ expected: 10, created: 0, skipped: 10, missing: [] })
     expect(secondTemplate).toMatchObject({ unchanged: true })
     expect(secondTemplate.version.id).toBe(firstTemplate.version.id)
     expect(artifactsAfterRetry).toMatchObject({
-      checklistIdsCreated: expect.arrayContaining(firstChecklists.createdChecklistIds),
+      checklistIdsCreated: [],
       templateIdCreated: firstTemplate.template.id,
       templateVersionIdCreated: firstTemplate.version.id,
     })
-    expect(await inMemoryDb.select().from(schema.pdtpActivityChecklists)).toHaveLength(10)
+    // Una importación cruda no crea checklists: el instrumento de la actividad
+    // es su plantilla de inspección. Las filas de `pdtp_activity_checklists`
+    // sólo nacen al copiar hacia adelante un snapshot ya firmado.
+    expect(await inMemoryDb.select().from(schema.pdtpActivityChecklists)).toHaveLength(0)
     expect(await inMemoryDb.select().from(schema.pdtpProgramTemplateVersions)).toHaveLength(1)
     expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(0)
 

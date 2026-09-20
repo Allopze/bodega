@@ -40,6 +40,10 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionExposureGroupMembers)
   await inMemoryDb.delete(schema.preventionExposureGroups)
   await inMemoryDb.delete(schema.preventionExposureAgents)
+  // Las corridas de inspección apuntan a faena y usuario con FK RESTRICT: sin
+  // limpiarlas antes, el borrado de `worksites` falla y arrastra a toda la suite.
+  await inMemoryDb.delete(schema.preventionInspectionRuns)
+  await inMemoryDb.delete(schema.preventionInspectionTemplates)
   await inMemoryDb.delete(schema.preventionEmergencyResources)
   await inMemoryDb.delete(schema.preventionEmergencyResourceTypes)
   await inMemoryDb.delete(schema.fuelVehicles)
@@ -230,45 +234,59 @@ describe("Cumplimiento integral agregado sobre varias faenas", () => {
       plannedQuantity: 1, sourceColumn: "test",
     })
 
-    // Faena A: 1 checklist al 100 %, 1 acción cerrada.
-    // Faena B: 3 checklists al 0 %, 3 acciones abiertas.
-    // Promediar por faena daría verificación 50 %; lo correcto sobre las filas
-    // crudas es 25 % (1 de 4 instancias al 100).
+    /* La verificación la aporta el motor de inspecciones, alcanzado por la
+     * ejecución que la inspección acreditó. Una ejecución sostiene UNA corrida,
+     * así que la faena B reparte sus tres en tres ejecuciones — la aritmética
+     * que esta prueba fija no cambia:
+     *
+     *   Faena A: 1 corrida al 100 %, 1 acción cerrada.
+     *   Faena B: 3 corridas al 0 %, 3 acciones abiertas.
+     *
+     * Promediar por faena daría 50 %; lo correcto sobre las filas crudas es 25.
+     */
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: "tpl-r2-agg", code: "R2-AGG", versionLabel: "01", name: "Instrumento R2",
+      // Borrador basta: el cálculo une la corrida por id, no filtra por el
+      // estado de su plantilla, y `approved` exigiría aprobador y fecha.
+      kind: "inspection", definitionSnapshot: {}, contentHash: "b".repeat(64),
+      authorUserId: USER_ID,
+    })
+
+    // Semanas distintas dentro de la faena B: la unicidad de `pdtp_executions`
+    // es (actividad, faena, año, mes, semana).
     const specs = [
-      { ws: WS_ID, execId: "exec-agg-a", checklists: [100], estados: ["verificado"] },
-      { ws: WS_B, execId: "exec-agg-b", checklists: [0, 0, 0], estados: ["pendiente", "pendiente", "pendiente"] },
+      { ws: WS_ID, execId: "exec-agg-a", week: 1, percent: 100, estado: "verificado" },
+      { ws: WS_B, execId: "exec-agg-b-1", week: 1, percent: 0, estado: "pendiente" },
+      { ws: WS_B, execId: "exec-agg-b-2", week: 2, percent: 0, estado: "pendiente" },
+      { ws: WS_B, execId: "exec-agg-b-3", week: 3, percent: 0, estado: "pendiente" },
     ]
+    // D11: la acción del PDTP vive en CAPA. Los estados del spec están en
+    // vocabulario PDTP, así que se traducen al insertar.
+    const A_CAPA: Record<string, string> = {
+      pendiente: "pending", en_proceso: "in_progress", completado: "pending_verification",
+      verificado: "verified", reabierto: "reopened", cancelado: "cancelled",
+    }
     for (const spec of specs) {
+      const runId = `run-${spec.execId}`
+      await inMemoryDb.insert(schema.preventionInspectionRuns).values({
+        id: runId, code: `INSP-${spec.execId}`, templateId: "tpl-r2-agg",
+        worksiteId: spec.ws, status: "reviewed", compliancePercent: spec.percent,
+        createdByUserId: USER_ID,
+      })
       await inMemoryDb.insert(schema.pdtpExecutions).values({
-        id: spec.execId, activityId: ACT_B, worksiteId: spec.ws, year: 2026, month: 1, week: 1,
+        id: spec.execId, activityId: ACT_B, worksiteId: spec.ws, year: 2026, month: 1, week: spec.week,
         executedQuantity: 1, status: "approved", executedByUserId: USER_ID,
+        sourceType: "inspeccion", sourceId: runId,
         createdAt: now, updatedAt: now,
       })
-      await inMemoryDb.insert(schema.pdtpExecutionChecklists).values(
-        spec.checklists.map((pct, index) => ({
-          id: `chk-${spec.execId}-${index}`, executionId: spec.execId,
-          definitionSnapshotJson: {}, overallStatus: "completado",
-          // Una instancia por sujeto: la tabla es única en (executionId, subjectId).
-          subjectType: "trabajador", subjectId: `w-${spec.execId}-${index}`,
-          porcentajeCumplimiento: pct, createdAt: now, updatedAt: now,
-        })),
-      )
-      // D11: la acción del PDTP vive en CAPA. Los estados del spec están en
-      // vocabulario PDTP, así que se traducen al insertar.
-      const A_CAPA: Record<string, string> = {
-        pendiente: "pending", en_proceso: "in_progress", completado: "pending_verification",
-        verificado: "verified", reabierto: "reopened", cancelado: "cancelled",
-      }
-      await inMemoryDb.insert(schema.preventionCapaActions).values(
-        spec.estados.map((estado, index) => ({
-          id: `act-${spec.execId}-${index}`, code: `CAPA-R2-${spec.execId}-${index}`,
-          sourceType: "pdtp", sourceId: spec.execId, worksiteId: spec.ws,
-          finding: "Hallazgo", actionDescription: "Acción", responsibleRole: "prevencionista",
-          responsibleSnapshot: "Prevencionista", targetDate: "2026-02-01",
-          priority: "medium", status: A_CAPA[estado] ?? "pending", evidenceRequired: true,
-          createdByUserId: USER_ID, createdAt: now, updatedAt: now,
-        })),
-      )
+      await inMemoryDb.insert(schema.preventionCapaActions).values({
+        id: `act-${spec.execId}`, code: `CAPA-R2-${spec.execId}`,
+        sourceType: "pdtp", sourceId: spec.execId, worksiteId: spec.ws,
+        finding: "Hallazgo", actionDescription: "Acción", responsibleRole: "prevencionista",
+        responsibleSnapshot: "Prevencionista", targetDate: "2026-02-01",
+        priority: "medium", status: A_CAPA[spec.estado] ?? "pending", evidenceRequired: true,
+        createdByUserId: USER_ID, createdAt: now, updatedAt: now,
+      })
     }
   }
 
@@ -291,6 +309,40 @@ describe("Cumplimiento integral agregado sobre varias faenas", () => {
     const naiveAverage = ((perA!.verificacion ?? 0) + (perB!.verificacion ?? 0)) / 2
     expect(naiveAverage).toBe(50)
     expect(scoped!.verificacion).not.toBe(naiveAverage)
+  })
+
+  /* Un eje sin datos se pondera fuera del denominador, no como cero.
+   *
+   * Antes, una faena que ejecutaba pero todavía no tenía nada que verificar ni
+   * que cerrar mostraba el integral rebajado por el peso de los dos ejes que le
+   * faltaban —hasta 50 puntos con los pesos por defecto—, indistinguible de una
+   * que sí midió y salió mal. */
+  it("no castiga el integral por un eje sin datos: lo saca del denominador", async () => {
+    const { getPdtpIntegralCompliance } = await import("@/lib/services/pdtp/compliance")
+    await seedTwoWorksites()
+    const WS_C = "ws-r2-3"
+    await inMemoryDb.insert(schema.worksites).values({
+      id: WS_C, name: "Faena R2 C", code: "FR2C", isActive: true,
+    })
+    // Ejecuta, pero sin checklists, sin acciones y sin corridas de inspección:
+    // `verificacion` y `cierre` quedan en null, no en cero.
+    await inMemoryDb.insert(schema.pdtpExecutions).values({
+      id: "exec-solo-ejecucion", activityId: ACT_B, worksiteId: WS_C,
+      year: 2026, month: 1, week: 1, executedQuantity: 1, status: "approved",
+      executedByUserId: USER_ID, createdAt: now, updatedAt: now,
+    })
+
+    const solo = await getPdtpIntegralCompliance(PROGRAM_ID, WS_C)
+    expect(solo).not.toBeNull()
+    expect(solo!.verificacion).toBeNull()
+    expect(solo!.cierre).toBeNull()
+    expect(solo!.ejecucion).not.toBeNull()
+
+    // El integral ES el único eje con datos, en su escala de porcentaje.
+    const soloEjecucion = Math.round(solo!.ejecucion! * 100 * 100) / 100
+    expect(solo!.integral).toBe(soloEjecucion)
+    // Y NO ese mismo eje rebajado por su peso, que es lo que devolvía antes.
+    expect(solo!.integral).not.toBe(Math.round(solo!.pesos.ejecucion * soloEjecucion * 100) / 100)
   })
 
   it("falla cerrado sin faenas en el alcance", async () => {

@@ -3,8 +3,6 @@ import { boolean, check, date, foreignKey, index, integer, jsonb, numeric, real,
 import { pgTable } from "drizzle-orm/pg-core"
 import { roles, users } from "../users"
 import { worksites } from "../worksites"
-import { preventionContainers } from "./containers"
-import { preventionEmergencyResources } from "./emergency"
 import type { PdtpScheduleDefinition } from "@/lib/services/pdtp/schedule-definition"
 
 export const pdtpPrograms = pgTable("pdtp_programs", {
@@ -1120,62 +1118,6 @@ export const pdtpActivityChecklists = pgTable("pdtp_activity_checklists", {
   check("pdtp_activity_checklists_version_check", sql`length(${table.version}) > 0`),
 ])
 
-/* ── PDTP Execution Checklists (instancia llenada por ejecución) ──────────── */
-/**
- * Multi-sujeto (PLAN_INTEGRACION §4): una ejecución puede sostener N instancias
- * de checklist, una por sujeto (extintor, equipo, trabajador…). La instancia
- * única de faena (patrón B) usa subjectType=null y subjectId=''. `subjectId`
- * NO NULL evita el problema de "NULLs distintos" en el índice único
- * (executionId, subjectId) y permite coexistir con datos pre-migración.
- */
-export const pdtpExecutionChecklists = pgTable("pdtp_execution_checklists", {
-  id:                     text("id").primaryKey(),
-  executionId:            text("execution_id").notNull().references(() => pdtpExecutions.id, { onDelete: "cascade" }),
-  checklistId:            text("checklist_id").references(() => pdtpActivityChecklists.id, { onDelete: "set null" }),
-  definitionSnapshotJson: jsonb("definition_snapshot_json").notNull(),
-  overallStatus:          text("overall_status").notNull().default("pendiente"),
-  porcentajeCumplimiento: real("porcentaje_cumplimiento"),
-  completedByUserId:      text("completed_by_user_id").references(() => users.id),
-  completedAt:            timestamp("completed_at", { withTimezone: true, mode: "string" }),
-  // Sujeto multi-instancia: 'equipo' | 'trabajador' | 'contenedor' | 'extintor' | 'carro' | null
-  subjectType:            text("subject_type"),
-  // fuelVehicles.id / workers.id / '' (instancia de faena única). NOT NULL DEFAULT ''.
-  subjectId:              text("subject_id").notNull().default(""),
-  /** FK canónica para nuevas instancias de extintor; subjectId queda histórico. */
-  subjectResourceId:      text("subject_resource_id").references(() => preventionEmergencyResources.id, { onDelete: "restrict" }),
-  /** FK canónica para nuevas instancias de contenedor; subjectId queda histórico. */
-  subjectContainerId:     text("subject_container_id").references(() => preventionContainers.id, { onDelete: "restrict" }),
-  // Denormalizado para mostrar/exportar: patente, nombre, "Extintor #7 / acopio".
-  subjectLabel:           text("subject_label"),
-  createdAt:              timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
-  updatedAt:              timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
-}, (table) => [
-  // Una instancia por (ejecución, sujeto). subjectId='' → instancia única de faena.
-  uniqueIndex("pdtp_execution_checklists_execution_subject_unique").on(table.executionId, table.subjectId),
-  index("pdtp_execution_checklists_subject_resource_idx").on(table.subjectResourceId),
-  index("pdtp_execution_checklists_subject_container_idx").on(table.subjectContainerId),
-  check("pdtp_execution_checklists_extinguisher_subject_fk", sql`${table.subjectType} <> 'extintor' OR ${table.subjectResourceId} IS NOT NULL OR ${table.subjectId} <> ''`),
-  // Mismo criterio laxo que el extintor: las instancias anteriores al catálogo
-  // escribían el slug del texto libre en `subjectId` y deben seguir siendo válidas.
-  check("pdtp_execution_checklists_container_subject_fk", sql`${table.subjectType} <> 'contenedor' OR ${table.subjectContainerId} IS NOT NULL OR ${table.subjectId} <> ''`),
-  check("pdtp_execution_checklists_status_check", sql`${table.overallStatus} IN ('pendiente', 'en_proceso', 'completado')`),
-])
-
-/* ── PDTP Execution Checklist Responses (1 fila por ítem) ────────────────── */
-export const pdtpExecutionChecklistResponses = pgTable("pdtp_execution_checklist_responses", {
-  id:                  text("id").primaryKey(),
-  checklistInstanceId: text("checklist_instance_id").notNull().references(() => pdtpExecutionChecklists.id, { onDelete: "cascade" }),
-  seccionId:           text("seccion_id").notNull(),
-  itemId:              text("item_id").notNull(),
-  estado:              text("estado"),
-  observacion:         text("observacion"),
-  accionCorrectiva:    text("accion_correctiva"),
-  respondedByUserId:   text("responded_by_user_id").references(() => users.id),
-  respondedAt:         timestamp("responded_at", { withTimezone: true, mode: "string" }),
-}, (table) => [
-  uniqueIndex("pdtp_exec_responses_instance_section_item_unique").on(table.checklistInstanceId, table.seccionId, table.itemId),
-])
-
 /**
  * Membresía de faenas de un programa. Sin filas para un `programId`, el
  * programa aplica a todas las faenas del scope del usuario (comportamiento
@@ -1448,7 +1390,6 @@ export const pdtpExecutionsRelations = relations(pdtpExecutions, ({ one }) => ({
   scheduledInstance: one(pdtpScheduledInstances, { fields: [pdtpExecutions.scheduledInstanceId], references: [pdtpScheduledInstances.id] }),
   executedByUser: one(users, { fields: [pdtpExecutions.executedByUserId], references: [users.id] }),
   approvedByUser: one(users, { fields: [pdtpExecutions.approvedByUserId], references: [users.id] }),
-  checklistInstance: one(pdtpExecutionChecklists),
 }))
 
 export const pdtpActivityReminderRulesRelations = relations(pdtpActivityReminderRules, ({ one, many }) => ({
@@ -1523,23 +1464,11 @@ export const pdtpActivityScheduleOverridesRelations = relations(pdtpActivitySche
   updatedByUser: one(users, { fields: [pdtpActivityScheduleOverrides.updatedByUserId], references: [users.id] }),
 }))
 
-export const pdtpActivityChecklistsRelations = relations(pdtpActivityChecklists, ({ one, many }) => ({
+export const pdtpActivityChecklistsRelations = relations(pdtpActivityChecklists, ({ one }) => ({
   activity: one(pdtpActivities, { fields: [pdtpActivityChecklists.activityId], references: [pdtpActivities.id] }),
   program: one(pdtpPrograms, { fields: [pdtpActivityChecklists.programId], references: [pdtpPrograms.id] }),
-  executionInstances: many(pdtpExecutionChecklists),
 }))
 
-export const pdtpExecutionChecklistsRelations = relations(pdtpExecutionChecklists, ({ one, many }) => ({
-  execution: one(pdtpExecutions, { fields: [pdtpExecutionChecklists.executionId], references: [pdtpExecutions.id] }),
-  checklist: one(pdtpActivityChecklists, { fields: [pdtpExecutionChecklists.checklistId], references: [pdtpActivityChecklists.id] }),
-  completedByUser: one(users, { fields: [pdtpExecutionChecklists.completedByUserId], references: [users.id] }),
-  responses: many(pdtpExecutionChecklistResponses),
-}))
-
-export const pdtpExecutionChecklistResponsesRelations = relations(pdtpExecutionChecklistResponses, ({ one }) => ({
-  checklistInstance: one(pdtpExecutionChecklists, { fields: [pdtpExecutionChecklistResponses.checklistInstanceId], references: [pdtpExecutionChecklists.id] }),
-  respondedByUser: one(users, { fields: [pdtpExecutionChecklistResponses.respondedByUserId], references: [users.id] }),
-}))
 
 /* ── Relations (extiende pdtpExecutions y pdtpActivities con las nuevas tablas) ─ */
 
@@ -1607,10 +1536,6 @@ export type NewPdtpActivityWorksiteExclusion = typeof pdtpActivityWorksiteExclus
 
 export type PdtpActivityChecklist = typeof pdtpActivityChecklists.$inferSelect
 export type NewPdtpActivityChecklist = typeof pdtpActivityChecklists.$inferInsert
-export type PdtpExecutionChecklist = typeof pdtpExecutionChecklists.$inferSelect
-export type NewPdtpExecutionChecklist = typeof pdtpExecutionChecklists.$inferInsert
-export type PdtpExecutionChecklistResponse = typeof pdtpExecutionChecklistResponses.$inferSelect
-export type NewPdtpExecutionChecklistResponse = typeof pdtpExecutionChecklistResponses.$inferInsert
 
 /* ── Enums de dominio PDTP Checklist/Plan de acción ───────────────────────── */
 export type PdtpChecklistStatus = "pendiente" | "en_proceso" | "completado"

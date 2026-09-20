@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { getDefinition, CHECKLIST_DEFINITIONS, TRABAJADOR_NUEVO, TRABAJADOR_ANTIGUO, isPersonEvaluationDefinition, isNonInspectionDefinition } from '../definitions'
+import { checklistDefinitionSchema } from '../definition-schema'
 
 // ── CHECKLIST_DEFINITIONS ───────────────────────────────────────────────────
 
@@ -65,6 +66,61 @@ describe('CHECKLIST_DEFINITIONS', () => {
 })
 
 // ── getDefinition ───────────────────────────────────────────────────────────
+
+/*
+ * El único control automático sobre la forma del catálogo. Vivía en las pruebas
+ * del motor de checklist del PDTP, que se retiró; se mudó acá porque el
+ * catálogo pertenece hoy al motor de inspecciones. Se itera entero y no tres
+ * definiciones elegidas a mano: la versión anterior dejaba pasar a las demás.
+ */
+describe('forma del catálogo', () => {
+  it('todas las definiciones pasan el validador de forma', () => {
+    for (const [code, definition] of Object.entries(CHECKLIST_DEFINITIONS)) {
+      const parsed = checklistDefinitionSchema.safeParse(definition)
+      expect(parsed.success, `${code}: ${parsed.error?.issues[0]?.path.join('.')} ${parsed.error?.issues[0]?.message}`).toBe(true)
+    }
+  })
+
+  it('ninguna sección viene vacía: el motor desreferencia items sin guarda', () => {
+    for (const [code, definition] of Object.entries(CHECKLIST_DEFINITIONS)) {
+      for (const section of definition.sections) {
+        expect(Array.isArray(section.items), `${code}/${section.id}`).toBe(true)
+      }
+    }
+  })
+
+  it('los pares (sección, ítem) son únicos y no llevan "::"', () => {
+    // `sectionId::itemId` es la clave compuesta de las respuestas, y el cliente
+    // la parte por posición: un id con "::" corrompe el payload, y uno repetido
+    // colapsa dos respuestas en una fila sin avisar.
+    for (const [code, definition] of Object.entries(CHECKLIST_DEFINITIONS)) {
+      const seen = new Set<string>()
+      for (const section of definition.sections) {
+        for (const item of section.items) {
+          const key = `${section.id}::${item.id}`
+          expect(section.id.includes('::'), `${code}/${section.id}`).toBe(false)
+          expect(item.id.includes('::'), `${code}/${item.id}`).toBe(false)
+          expect(seen.has(key), `${code}: ${key} duplicado`).toBe(false)
+          seen.add(key)
+        }
+      }
+    }
+  })
+
+  it('EPP, Carros y Contenedores usan la escala del anexo, no la binaria', () => {
+    const escalas: Record<string, string> = {
+      // EPP combina B/R/M con la columna "Usa" (Sí/No/N/A) del Anexo 3.
+      inspeccion_epp: 'bueno_regular_malo_obs',
+      inspeccion_carros: 'bueno_regular_malo_obs',
+      inspeccion_contenedores: 'bueno_regular_malo_na_nt_obs',
+    }
+    for (const [code, kind] of Object.entries(escalas)) {
+      const items = CHECKLIST_DEFINITIONS[code]!.sections.flatMap((section) => section.items)
+      expect(items.some((item) => item.kind === kind), `${code} debería usar ${kind}`).toBe(true)
+      expect(items.every((item) => item.kind !== 'cumple_nocumple_obs'), `${code} conserva escala binaria`).toBe(true)
+    }
+  })
+})
 
 describe('getDefinition', () => {
   it('returns trabajador_nuevo definition by code', () => {

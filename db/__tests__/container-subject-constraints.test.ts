@@ -71,33 +71,4 @@ describe("CHECK del contenedor como sujeto", () => {
     expect(run?.subjectContainerId).toBe("cont-1")
   })
 
-  it("rechaza una instancia PDTP de contenedor sin ficha ni subjectId histórico", async () => {
-    const now = new Date().toISOString()
-    await inMemoryDb.insert(schema.pdtpPrograms).values({
-      id: "prog-chk", year: 2026, version: 1, status: "active", title: "T",
-      elaboratedByName: "X", elaboratedByTitle: "Y", createdAt: now, updatedAt: now,
-    })
-    await inMemoryDb.insert(schema.pdtpActivities).values({
-      id: "act-chk", programId: "prog-chk", n: 29, activity: "Contenedores", program: "P",
-      responsibleSlugs: [], responsibleDisplay: "R", sourceSheetRow: 1, createdAt: now, updatedAt: now,
-    })
-    await inMemoryDb.insert(schema.pdtpExecutions).values({
-      id: "exec-chk", activityId: "act-chk", worksiteId: "w-cont", year: 2026, month: 1,
-      week: 1, executedQuantity: 1, status: "submitted", createdAt: now, updatedAt: now,
-    })
-
-    await expectCheckViolation(inMemoryDb.insert(schema.pdtpExecutionChecklists).values({
-      id: "inst-sin-ficha", executionId: "exec-chk", definitionSnapshotJson: {},
-      subjectType: "contenedor", subjectId: "", createdAt: now, updatedAt: now,
-    }))
-
-    // Las instancias anteriores al catálogo llevan el slug del texto libre en
-    // `subjectId` y deben seguir siendo válidas: el CHECK es laxo a propósito.
-    const [historica] = await inMemoryDb.insert(schema.pdtpExecutionChecklists).values({
-      id: "inst-historica", executionId: "exec-chk", definitionSnapshotJson: {},
-      subjectType: "contenedor", subjectId: "contenedor-respel-n2",
-      subjectLabel: "Contenedor RESPEL N°2", createdAt: now, updatedAt: now,
-    }).returning()
-    expect(historica?.subjectContainerId).toBeNull()
-  })
 })

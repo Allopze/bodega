@@ -18,7 +18,6 @@ import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
 import {
-  pdtpExecutionChecklists,
   preventionContainers,
   preventionInspectionPrograms,
   preventionInspectionRuns,
@@ -115,9 +114,6 @@ export async function listContainers(access: ContainerAccess) {
     inspectionCount: sql<number>`(
       SELECT COUNT(*)::int FROM prevention_inspection_runs r
       WHERE r.subject_container_id = ${preventionContainers.id}
-    ) + (
-      SELECT COUNT(*)::int FROM pdtp_execution_checklists c
-      WHERE c.subject_container_id = ${preventionContainers.id}
     )`,
   })
     .from(preventionContainers)
@@ -216,15 +212,9 @@ export async function getContainerDetail(containerId: string, access: ContainerA
     .orderBy(desc(preventionInspectionRuns.createdAt))
     .limit(100)
 
-  /* El conteo del listado suma runs + instancias PDTP, así que la ficha tiene
-   * que decir también cuántas vienen del PDTP: sin esto la tabla mostraba "1"
-   * junto a una ficha que decía "Sin inspecciones" y un borrado bloqueado sin
-   * motivo visible. */
-  const [pdtpCount] = await db.select({ total: sql<number>`COUNT(*)::int` })
-    .from(pdtpExecutionChecklists)
-    .where(eq(pdtpExecutionChecklists.subjectContainerId, containerId))
-
-  return { ...row, inspections, pdtpChecklistCount: pdtpCount?.total ?? 0 }
+  /* El conteo del listado ya sólo suma corridas de inspección, así que la ficha
+   * y la tabla vuelven a decir lo mismo sin necesidad de explicar un sumando. */
+  return { ...row, inspections }
 }
 
 /* ── Alta ────────────────────────────────────────────────────────────────── */
@@ -360,10 +350,7 @@ export async function deleteContainer(input: unknown, access: ContainerAccess) {
   const [usedByRun] = await db.select({ id: preventionInspectionRuns.id })
     .from(preventionInspectionRuns)
     .where(eq(preventionInspectionRuns.subjectContainerId, containerId)).limit(1)
-  const [usedByChecklist] = usedByRun ? [null] : await db.select({ id: pdtpExecutionChecklists.id })
-    .from(pdtpExecutionChecklists)
-    .where(eq(pdtpExecutionChecklists.subjectContainerId, containerId)).limit(1)
-  if (usedByRun || usedByChecklist) {
+  if (usedByRun) {
     throw new Error(
       "Este contenedor ya fue inspeccionado, así que su ficha es evidencia y no se borra. Márcalo como «fuera de servicio».",
     )

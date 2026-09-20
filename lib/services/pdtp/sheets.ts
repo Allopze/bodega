@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpActivitySchedule, pdtpExecutions, pdtpPrograms, pdtpProgramWorksites, pdtpSheetActivities, pdtpSheets } from "@/db/schema"
+import { pdtpActivities, pdtpActivitySchedule, pdtpExecutions, pdtpPrograms, pdtpProgramWorksites, pdtpSheetActivities, pdtpSheets, preventionInspectionRuns } from "@/db/schema"
 import { MONTH_LABELS } from "./constants"
 import { SHEET_EXPORT_NAMES } from "@/lib/services/pdtp-adapters/sheet-meta-2026"
 import { assertWorksiteAccess, emptyMonthlyTotals, loadProgramScheduleAndExecutions, resolveSheetForProgram } from "./helpers"
@@ -13,9 +13,36 @@ import type { ReportData, ReportCell, ReportSheet } from "@/lib/reports/export"
 // usa `sheet.label`, que sí es genérico (ver getPdtpSheetViewByProgram).
 import { listActionsByProgram, countActionsByExecution } from "./action-plan"
 import { listFollowups } from "./followups"
-import { countNoCumpleByExecution } from "./execution-checklists"
 import { readPdtpActivityContent } from "./activity-content"
 import { deriveActivityStatus, filterPdtpRowsFromActivation, type PdtpActivityStatus, type PdtpPeriod } from "./period"
+
+/**
+ * No conformes por ejecución, para el distintivo de la planilla.
+ *
+ * Antes contaba respuestas `no_cumple` de `pdtp_execution_checklist_responses`.
+ * Ese motor se retiró y sus dos tablas quedaron vacías, así que el distintivo
+ * daba 0 en todas partes. La misma cuenta la lleva el motor de inspecciones en
+ * `non_conforming_count`, alcanzado por la ejecución que la inspección acreditó.
+ * Mismo significado para quien mira la planilla, y ahora con datos reales.
+ */
+async function countNoCumpleByExecution(executionIds: string[]): Promise<Map<string, number>> {
+  const result = new Map<string, number>()
+  if (executionIds.length === 0) return result
+  const rows = await db.select({
+    executionId: pdtpExecutions.id,
+    nonConforming: preventionInspectionRuns.nonConformingCount,
+  })
+    .from(pdtpExecutions)
+    .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, pdtpExecutions.sourceId))
+    .where(and(
+      inArray(pdtpExecutions.id, executionIds),
+      eq(pdtpExecutions.sourceType, "inspeccion"),
+    ))
+  for (const row of rows) {
+    if (row.nonConforming > 0) result.set(row.executionId, row.nonConforming)
+  }
+  return result
+}
 
 export type PdtpSheetView = {
   program: typeof pdtpPrograms.$inferSelect
