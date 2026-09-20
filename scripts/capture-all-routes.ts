@@ -3085,10 +3085,18 @@ async function prepareDatabase(captureDbUrl: string) {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(schema.preventionEmergencyDrillParticipants).values([
-    { id: "emergency-participant-audit-1", drillId: "emergency-drill-audit-1", workerId: "worker-audit-1", present: true, roleName: "Guía de evacuación", createdAt: now },
-    { id: "emergency-participant-audit-2", drillId: "emergency-drill-audit-1", workerId: "worker-audit-2", present: true, roleName: "Participante", createdAt: now },
-  ])
+  await db.insert(schema.preventionEmergencyDrillEvidence).values({
+    id: "emergency-drill-evidence-audit-1",
+    drillId: "emergency-drill-audit-1",
+    fileName: "acta-simulacro-sismo.pdf",
+    storagePath: "storage/prevention-drill-evidence/acta-simulacro-sismo.pdf",
+    mimeType: "application/pdf",
+    fileSizeBytes: 2048,
+    sha256: "d".repeat(64),
+    state: "active",
+    uploadedByUserId: userId,
+    uploadedAt: now,
+  })
 
   // Permiso activo completo. El detalle une el tipo y la cabecera, y consulta
   // controles, LOTO, mediciones, AST y cuadrilla por separado; se siembran

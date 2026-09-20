@@ -90,6 +90,7 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
           scheduledFor: drill.scheduledFor,
           status: drill.status,
           outcome: drill.outcome,
+          activeEvidenceCount: drill.activeEvidenceCount,
           version: drill.version,
         }))}
         eligibleWorkers={eligibleWorkers.map((worker) => ({

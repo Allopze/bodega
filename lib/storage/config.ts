@@ -10,6 +10,7 @@ const SST_DOCUMENT_PREFIX = "storage/sst-documents/"
 const PDTP_EVIDENCE_PREFIX = "storage/pdtp-evidence/"
 const INSPECTION_EVIDENCE_PREFIX = "storage/inspection-evidence/"
 const PREVENTION_TRAINING_EVIDENCE_PREFIX = "storage/prevention-training-evidence/"
+const PREVENTION_DRILL_EVIDENCE_PREFIX = "storage/prevention-drill-evidence/"
 const CAMPAIGN_EVIDENCE_PREFIX = "storage/campaign-evidence/"
 const CGRD_EVIDENCE_PREFIX = "storage/cgrd-evidence/"
 const RISK_MAP_PREFIX = "storage/risk-map/"
@@ -390,6 +391,30 @@ export function resolvePreventionTrainingEvidenceFile(filePath: string): string 
   const storageName = filePath.slice(PREVENTION_TRAINING_EVIDENCE_PREFIX.length)
   if (!isSafeStorageName(storageName)) return null
   return path.join(/*turbopackIgnore: true*/ resolvePreventionTrainingEvidenceDir(), storageName)
+}
+
+/* ── Evidencia de simulacros de emergencia ───────────────────────────────
+ * Mismo contrato que la evidencia de capacitación: los archivos no se borran
+ * al corregir el estado de un simulacro, así que la ruta sigue siendo
+ * auditable. Antes el simulacro guardaba una sola ruta en su propia fila y la
+ * UI nunca la enviaba, de modo que la N°84 acreditaba con un rótulo sintético.
+ */
+export function resolvePreventionDrillEvidenceDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "prevention-drill-evidence")
+}
+
+export function createPreventionDrillEvidencePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid prevention drill evidence storage name")
+  }
+  return `${PREVENTION_DRILL_EVIDENCE_PREFIX}${storageName}`
+}
+
+export function resolvePreventionDrillEvidenceFile(filePath: string): string | null {
+  if (!filePath.startsWith(PREVENTION_DRILL_EVIDENCE_PREFIX)) return null
+  const storageName = filePath.slice(PREVENTION_DRILL_EVIDENCE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolvePreventionDrillEvidenceDir(), storageName)
 }
 
 /* ── Mapa de riesgos (MIPER) ──────────────────────────────────────────────

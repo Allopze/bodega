@@ -2185,6 +2185,20 @@
       "when": 1789861709943,
       "tag": "0311_training_occurrence_not_applicable",
       "breakpoints": true
+    },
+    {
+      "idx": 312,
+      "version": "7",
+      "when": 1789863326865,
+      "tag": "0312_drill_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 313,
+      "version": "7",
+      "when": 1789863458101,
+      "tag": "0313_drop_drill_participants",
+      "breakpoints": true
     }
   ]
 }

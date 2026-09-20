@@ -144,7 +144,7 @@ export function assessPlanReadiness(input: PlanReadinessInput): PlanReadinessRes
 }
 
 export interface DrillCompletionInput {
-  participants: { present: boolean }[]
+  activeEvidenceCount: number
   evacuationSeconds: number | null
   outcome: "satisfactory" | "needs_improvement" | null
 }
@@ -155,14 +155,18 @@ export interface DrillCompletionResult {
 }
 
 /**
- * Completar un simulacro exige participantes registrados y un resultado
- * explícito: un simulacro "completado" sin nadie presente ni conclusión no
- * deja aprendizaje verificable, que es justamente lo que el DS 44 pide.
+ * Completar un simulacro exige evidencia y un resultado explícito: un simulacro
+ * "completado" sin acta ni conclusión no deja aprendizaje verificable, que es
+ * justamente lo que el DS 44 pide.
+ *
+ * El gate era «al menos un participante presente» hasta el 2026-09-19. Esa
+ * lista se escribía y nadie la leía nunca, así que lo único que respaldaba el
+ * hecho era un dato que ninguna consulta miraba. Ahora lo respalda el acta.
  */
 export function assessDrillCompletion(input: DrillCompletionInput): DrillCompletionResult {
   const blockers: string[] = []
-  if (input.participants.filter((item) => item.present).length === 0) {
-    blockers.push("El simulacro no registra ningún participante presente.")
+  if (input.activeEvidenceCount < 1) {
+    blockers.push("El simulacro no tiene ninguna evidencia adjunta.")
   }
   if (!input.outcome) {
     blockers.push("El simulacro no declara un resultado (satisfactorio o requiere mejora).")

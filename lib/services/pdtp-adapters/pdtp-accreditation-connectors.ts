@@ -375,7 +375,6 @@ export async function onEmergencyDrillCompleted(input: {
   drillId: string
   worksiteId: string
   executedAt: string
-  participantCount: number
   activityNumbers?: number[]
   catalogActivityIds?: string[]
   /** EMG-001: la ruta del acta, si el cierre la adjuntó. */
@@ -388,7 +387,7 @@ export async function onEmergencyDrillCompleted(input: {
     sourceId: input.drillId,
     worksiteId: input.worksiteId,
     occurredAt: input.executedAt,
-    payload: { drillId: input.drillId, participantCount: input.participantCount },
+    payload: { drillId: input.drillId },
   })
   if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
@@ -398,7 +397,11 @@ export async function onEmergencyDrillCompleted(input: {
     worksiteId: input.worksiteId,
     ...(input.catalogActivityIds?.length ? { catalogActivityIds: input.catalogActivityIds } : { activityNumbers: input.activityNumbers }),
     occurredAt: input.executedAt,
-    executedQuantity: Math.max(1, input.participantCount),
+    /* Un simulacro es una actividad, no una cuenta de asistentes. Acá iba
+     * `Math.max(1, participantCount)`, así que un simulacro con 30 presentes
+     * acreditaba cantidad 30 contra una cantidad planificada de 1 e inflaba el
+     * indicador del programa. La celda planifica un simulacro; se ejecuta uno. */
+    executedQuantity: 1,
     /*
      * EMG-001 (auditoría 2026-09-14): esto era siempre el rótulo sintético
      * «Simulacro completado: <id>» —una cadena que se ve como evidencia y no lo
