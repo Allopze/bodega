@@ -8,15 +8,12 @@ import {
   worksiteStock,
   worksites,
 } from "@/db/schema"
+import { ensurePreventionProgramSlotsForWorksiteTx } from "@/lib/services/prevention-program-slots"
 import { recordAudit } from "@/lib/audit"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { transitionCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { resolveOfficeWorksite } from "@/lib/services/dispatch-guides"
 import { applyMovementTx } from "@/lib/services/stock-movement"
-import {
-  ensurePreventionTrainingOccurrencesForWorksiteTx,
-} from "@/lib/services/prevention-training-occurrences"
-import { PREDEFINED_TRAINING_CATALOG_YEAR } from "@/lib/prevention/training-occurrences-catalog"
 
 const OPEN_CAPA_STATUSES = ["pending", "in_progress", "pending_verification", "reopened"] as const
 const OPEN_OBLIGATION_STATUSES = ["pending", "overdue"] as const
@@ -253,7 +250,10 @@ export async function setWorksiteActive(input: SetWorksiteActiveInput): Promise<
     }).where(eq(worksites.id, current.id))
 
     if (input.activate) {
-      await ensurePreventionTrainingOccurrencesForWorksiteTx(tx, current.id, PREDEFINED_TRAINING_CATALOG_YEAR)
+      /* Las casillas del programa —capacitación, simulacros y actas del CGRD—
+       * nacen con la faena y dentro de la misma transacción. Una faena activa
+       * sin casillas no tiene cómo mostrar que algo no se hizo. */
+      await ensurePreventionProgramSlotsForWorksiteTx(tx, current.id)
     }
 
     await recordAudit({

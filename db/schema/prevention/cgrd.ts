@@ -211,6 +211,49 @@ export const preventionGrdAgreements = pgTable("prevention_grd_agreements", {
   check("prevention_grd_agreement_description_valid", sql`length(${table.description}) >= 5`),
 ])
 
+/* ── Casillas del programa ────────────────────────────────────────────────
+ * Lo que el PDTP espera del comité: cuatro sesiones por faena y año (N°81,
+ * meses 2 a 5). Se pre-generan al activar la faena.
+ *
+ * La casilla NO es el acta. El acta sigue siendo lo que era —agenda, minuta,
+ * quórum, acuerdos que abren CAPA, evidencia obligatoria— y se registra
+ * post-facto; la casilla sólo declara que esa sesión se esperaba, y apunta al
+ * acta que la llenó. Una sesión extraordinaria se registra igual y no cuenta
+ * en el denominador del programa.
+ *
+ * Sin la casilla, "no hubo reunión en marzo" y "nadie cargó el acta de marzo"
+ * eran el mismo estado: la ausencia de una fila.
+ */
+export const preventionGrdMeetingSlots = pgTable("prevention_grd_meeting_slots", {
+  id:                    text("id").primaryKey(),
+  worksiteId:            text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
+  year:                  integer("year").notNull(),
+  slotKey:               text("slot_key").notNull(),
+  scheduledMonth:        integer("scheduled_month").notNull(),
+  scheduledWeek:         integer("scheduled_week").notNull(),
+  status:                text("status").notNull().default("pending"),
+  meetingId:             text("meeting_id").references(() => preventionGrdMeetings.id, { onDelete: "set null" }),
+  completedAt:           timestamp("completed_at", { withTimezone: true, mode: "string" }),
+  completedByUserId:     text("completed_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+  notApplicableAt:       timestamp("not_applicable_at", { withTimezone: true, mode: "string" }),
+  notApplicableByUserId: text("not_applicable_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+  notApplicableReason:   text("not_applicable_reason"),
+  observation:           text("observation"),
+  version:               integer("version").notNull().default(1),
+  createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("prevention_grd_meeting_slot_unique").on(table.worksiteId, table.year, table.slotKey),
+  index("prevention_grd_meeting_slot_period_idx").on(table.worksiteId, table.year, table.status),
+  check("prevention_grd_meeting_slot_year_check", sql`${table.year} BETWEEN 2020 AND 2100`),
+  check("prevention_grd_meeting_slot_status_check", sql`${table.status} IN ('pending', 'completed', 'not_completed', 'not_applicable')`),
+  check("prevention_grd_meeting_slot_period_check", sql`${table.scheduledMonth} BETWEEN 1 AND 12 AND ${table.scheduledWeek} BETWEEN 1 AND 4`),
+  // Una casilla hecha sin el acta que la cumple sería una marca sin hecho.
+  check("prevention_grd_meeting_slot_done_check", sql`(${table.status} = 'completed' AND ${table.meetingId} IS NOT NULL AND ${table.completedAt} IS NOT NULL AND ${table.completedByUserId} IS NOT NULL) OR (${table.status} <> 'completed' AND ${table.completedAt} IS NULL AND ${table.completedByUserId} IS NULL)`),
+  check("prevention_grd_meeting_slot_na_check", sql`(${table.status} = 'not_applicable' AND ${table.notApplicableAt} IS NOT NULL AND ${table.notApplicableByUserId} IS NOT NULL AND length(trim(COALESCE(${table.notApplicableReason}, ''))) >= 10) OR (${table.status} <> 'not_applicable' AND ${table.notApplicableAt} IS NULL AND ${table.notApplicableByUserId} IS NULL AND ${table.notApplicableReason} IS NULL)`),
+  check("prevention_grd_meeting_slot_version_check", sql`${table.version} >= 1`),
+])
+
 /* ── Relations ──────────────────────────────────────────────────────────── */
 export const preventionGrdCommitteesRelations = relations(preventionGrdCommittees, ({ one, many }) => ({
   worksite: one(worksites, { fields: [preventionGrdCommittees.worksiteId], references: [worksites.id] }),
@@ -253,5 +296,6 @@ export type PreventionGrdMember = typeof preventionGrdMembers.$inferSelect
 export type PreventionGrdMatrix = typeof preventionGrdMatrices.$inferSelect
 export type PreventionGrdThreat = typeof preventionGrdThreats.$inferSelect
 export type PreventionGrdMeeting = typeof preventionGrdMeetings.$inferSelect
+export type PreventionGrdMeetingSlot = typeof preventionGrdMeetingSlots.$inferSelect
 export type PreventionGrdAgreement = typeof preventionGrdAgreements.$inferSelect
 export type PreventionGrdCoordinator = typeof preventionGrdCoordinators.$inferSelect

@@ -15,7 +15,10 @@ const mockUpdate = vi.hoisted(() => vi.fn())
 const mockSet = vi.hoisted(() => vi.fn())
 const mockRecordAudit = vi.hoisted(() => vi.fn())
 const mockSetWorksiteActive = vi.hoisted(() => vi.fn())
-const mockEnsurePreventionTrainingOccurrencesForWorksiteTx = vi.hoisted(() => vi.fn())
+/* Se mockea el AGREGADOR y no la pre-generación de capacitación: el alta de
+ * faena debe dejar las casillas de los tres módulos, y un mock del módulo
+ * suelto pasaría verde el día que alguien vuelva a llamar sólo a ése. */
+const mockEnsurePreventionProgramSlotsForWorksiteTx = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
@@ -41,8 +44,8 @@ vi.mock("@/lib/audit", () => ({
 vi.mock("@/lib/services/worksite-lifecycle", () => ({
   setWorksiteActive: mockSetWorksiteActive,
 }))
-vi.mock("@/lib/services/prevention-training-occurrences", () => ({
-  ensurePreventionTrainingOccurrencesForWorksiteTx: mockEnsurePreventionTrainingOccurrencesForWorksiteTx,
+vi.mock("@/lib/services/prevention-program-slots", () => ({
+  ensurePreventionProgramSlotsForWorksiteTx: mockEnsurePreventionProgramSlotsForWorksiteTx,
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
@@ -117,7 +120,7 @@ describe("createWorksite", () => {
     const res = await createWorksite(prevState, makeFormData())
     expect(res.ok).toBe(true)
     expect(res.message).toContain("creada")
-    expect(mockEnsurePreventionTrainingOccurrencesForWorksiteTx).toHaveBeenCalledOnce()
+    expect(mockEnsurePreventionProgramSlotsForWorksiteTx).toHaveBeenCalledOnce()
   })
 
   it("does not create operational occurrences for an inactive worksite", async () => {
@@ -125,7 +128,7 @@ describe("createWorksite", () => {
     mockFindFirstWorksite.mockResolvedValueOnce(null)
     const res = await createWorksite(prevState, makeFormData({ isActive: "" }))
     expect(res.ok).toBe(true)
-    expect(mockEnsurePreventionTrainingOccurrencesForWorksiteTx).not.toHaveBeenCalled()
+    expect(mockEnsurePreventionProgramSlotsForWorksiteTx).not.toHaveBeenCalled()
   })
 })
 

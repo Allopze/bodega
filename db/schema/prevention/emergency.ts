@@ -314,6 +314,52 @@ export const preventionEmergencyDrillEvidence = pgTable("prevention_emergency_dr
   check("prevention_emergency_drill_evidence_annul_check", sql`(${table.state} IN ('active', 'replaced') AND ${table.annulledAt} IS NULL AND ${table.annulledByUserId} IS NULL AND ${table.annulledReason} IS NULL) OR (${table.state} = 'annulled' AND ${table.annulledAt} IS NOT NULL AND ${table.annulledByUserId} IS NOT NULL AND length(${table.annulledReason}) >= 5)`),
 ])
 
+/* ── Casillas del programa ────────────────────────────────────────────────
+ * Lo que el PDTP espera: dos simulacros por faena y año (N°84, marzo y
+ * septiembre). Se pre-generan al activar la faena, igual que las ocurrencias
+ * de capacitación, y por el mismo motivo: sin una fila que exista antes de que
+ * pase nada, "no se hizo" es indistinguible de "nadie lo cargó".
+ *
+ * La casilla NO es el simulacro. `drillId` apunta al que la cumplió, y es
+ * nullable porque una casilla puede quedar sin hacerse o declararse no
+ * aplicable. A la inversa, un simulacro extraordinario —el que se corre
+ * después de un incidente— existe sin casilla y no cuenta en el denominador
+ * del programa.
+ */
+export const preventionEmergencyDrillSlots = pgTable("prevention_emergency_drill_slots", {
+  id:                    text("id").primaryKey(),
+  worksiteId:            text("worksite_id").notNull(),
+  year:                  integer("year").notNull(),
+  slotKey:               text("slot_key").notNull(),
+  scheduledMonth:        integer("scheduled_month").notNull(),
+  scheduledWeek:         integer("scheduled_week").notNull(),
+  status:                text("status").notNull().default("pending"),
+  drillId:               text("drill_id"),
+  completedAt:           timestamp("completed_at", { withTimezone: true, mode: "string" }),
+  completedByUserId:     text("completed_by_user_id"),
+  notApplicableAt:       timestamp("not_applicable_at", { withTimezone: true, mode: "string" }),
+  notApplicableByUserId: text("not_applicable_by_user_id"),
+  notApplicableReason:   text("not_applicable_reason"),
+  observation:           text("observation"),
+  version:               integer("version").notNull().default(1),
+  createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  foreignKey({ columns: [table.worksiteId], foreignColumns: [worksites.id], name: "drill_slot_worksite_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.drillId], foreignColumns: [preventionEmergencyDrills.id], name: "drill_slot_drill_fk" }).onDelete("set null"),
+  foreignKey({ columns: [table.completedByUserId], foreignColumns: [users.id], name: "drill_slot_completer_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.notApplicableByUserId], foreignColumns: [users.id], name: "drill_slot_na_actor_fk" }).onDelete("restrict"),
+  uniqueIndex("prevention_emergency_drill_slot_unique").on(table.worksiteId, table.year, table.slotKey),
+  index("prevention_emergency_drill_slot_period_idx").on(table.worksiteId, table.year, table.status),
+  check("prevention_emergency_drill_slot_year_check", sql`${table.year} BETWEEN 2020 AND 2100`),
+  check("prevention_emergency_drill_slot_status_check", sql`${table.status} IN ('pending', 'completed', 'not_completed', 'not_applicable')`),
+  check("prevention_emergency_drill_slot_period_check", sql`${table.scheduledMonth} BETWEEN 1 AND 12 AND ${table.scheduledWeek} BETWEEN 1 AND 4`),
+  // Una casilla hecha sin el simulacro que la cumple sería una marca sin hecho.
+  check("prevention_emergency_drill_slot_done_check", sql`(${table.status} = 'completed' AND ${table.drillId} IS NOT NULL AND ${table.completedAt} IS NOT NULL AND ${table.completedByUserId} IS NOT NULL) OR (${table.status} <> 'completed' AND ${table.completedAt} IS NULL AND ${table.completedByUserId} IS NULL)`),
+  check("prevention_emergency_drill_slot_na_check", sql`(${table.status} = 'not_applicable' AND ${table.notApplicableAt} IS NOT NULL AND ${table.notApplicableByUserId} IS NOT NULL AND length(trim(COALESCE(${table.notApplicableReason}, ''))) >= 10) OR (${table.status} <> 'not_applicable' AND ${table.notApplicableAt} IS NULL AND ${table.notApplicableByUserId} IS NULL AND ${table.notApplicableReason} IS NULL)`),
+  check("prevention_emergency_drill_slot_version_check", sql`${table.version} >= 1`),
+])
+
 /* ── Historial inmutable ──────────────────────────────────────────────────── */
 export const preventionEmergencyHistory = pgTable("prevention_emergency_history", {
   id:          text("id").primaryKey(),
@@ -406,3 +452,5 @@ export type PreventionEmergencyResourceEvent = typeof preventionEmergencyResourc
 export type PreventionEmergencyResourceImportBatch = typeof preventionEmergencyResourceImportBatches.$inferSelect
 export type PreventionEmergencyContact = typeof preventionEmergencyContacts.$inferSelect
 export type PreventionEmergencyDrill = typeof preventionEmergencyDrills.$inferSelect
+export type PreventionEmergencyDrillEvidence = typeof preventionEmergencyDrillEvidence.$inferSelect
+export type PreventionEmergencyDrillSlot = typeof preventionEmergencyDrillSlots.$inferSelect
