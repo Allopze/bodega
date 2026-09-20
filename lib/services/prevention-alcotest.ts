@@ -20,6 +20,7 @@ import { assertWorksiteAccess, type WorksiteScope } from "@/lib/services/pdtp/he
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
 import { recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
 import { pdtpCatalogActivityIdForLegacyNumber } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
+import { fulfillAlcotestSlotTx, resolveAlcotestSlotEvidenceRef } from "@/lib/services/prevention-alcotest-slots"
 
 /** Familia de `service_equipment` que corresponde a un alcotómetro. */
 export const ALCOTEST_EQUIPMENT_KIND = "alcotest"
@@ -54,6 +55,13 @@ export type RecordAlcoholTestInput = {
   performedAt: string
   result?: "negativo" | "positivo"
   evidenceUrl?: string | null
+  /**
+   * La casilla del programa que este control cumple, si cumple alguna. Opcional
+   * a propósito: un control extraordinario —una fiscalización sorpresa, un
+   * ingreso fuera de turno— se registra igual y no ocupa una celda del
+   * cronograma ni cuenta en el denominador.
+   */
+  slotId?: string | null
 }
 
 /** Personas de la dotación de una faena, candidatas a ser evaluadas. */
@@ -138,20 +146,34 @@ export async function recordAlcoholTest(
 
   const now = new Date().toISOString()
   const id = nanoid()
-  const [created] = await db.insert(alcoholTests).values({
-    id,
-    worksiteId: input.worksiteId,
-    performedByUserId,
-    testedWorkerId: input.testedWorkerId ?? null,
-    testedPersonName: input.testedWorkerId ? null : (input.testedPersonName?.trim() ?? null),
-    equipmentId: input.equipmentId ?? null,
-    shift: input.shift,
-    performedAt: input.performedAt,
-    result: input.result ?? "negativo",
-    evidenceUrl: input.evidenceUrl ?? null,
-    createdAt: now,
-    updatedAt: now,
-  }).returning()
+  /* El control y la casilla que cumple se escriben en la misma transacción: si
+   * el registro se revierte, la casilla no puede quedar en verde sin hecho. La
+   * acreditación va después del commit, para no dejar ejecuciones huérfanas. */
+  const { created, slotEvidenceRef } = await db.transaction(async (tx) => {
+    const [row] = await tx.insert(alcoholTests).values({
+      id,
+      worksiteId: input.worksiteId,
+      performedByUserId,
+      testedWorkerId: input.testedWorkerId ?? null,
+      testedPersonName: input.testedWorkerId ? null : (input.testedPersonName?.trim() ?? null),
+      equipmentId: input.equipmentId ?? null,
+      shift: input.shift,
+      performedAt: input.performedAt,
+      result: input.result ?? "negativo",
+      evidenceUrl: input.evidenceUrl ?? null,
+      createdAt: now,
+      updatedAt: now,
+    }).returning()
+
+    if (!input.slotId) return { created: row!, slotEvidenceRef: null as string | null }
+    await fulfillAlcotestSlotTx(tx, {
+      slotId: input.slotId,
+      worksiteId: input.worksiteId,
+      userId: performedByUserId,
+      testId: id,
+    })
+    return { created: row!, slotEvidenceRef: await resolveAlcotestSlotEvidenceRef(tx, input.slotId) }
+  })
 
   await recordPdtpTriggerEventSafe({
     connectorKey: "alcotest",
@@ -171,7 +193,12 @@ export async function recordAlcoholTest(
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(activityNumber)],
     occurredAt: input.performedAt,
-    evidenceRef: input.evidenceUrl ?? `Control de alcotest ${id}`,
+    /* La ruta del archivo de la casilla, no un rótulo inventado: un
+     * `evidenceRef` sintético pasa el motor de acreditación pero no sirve ante
+     * un fiscalizador, que es el único lector que importa. Un control
+     * extraordinario no tiene casilla y conserva el rótulo, porque tampoco
+     * acredita una celda del cronograma. */
+    evidenceRef: slotEvidenceRef ?? input.evidenceUrl ?? `Control de alcotest ${id}`,
     metadata: {
       alcoholTestId: id,
       result: input.result ?? "negativo",
@@ -181,7 +208,7 @@ export async function recordAlcoholTest(
     },
   })
 
-  return created!
+  return created
 }
 
 export async function listAlcoholTests(scope: WorksiteScope, worksiteId?: string) {
@@ -201,6 +228,8 @@ export type RecordAlcoholTestDispatchInput = {
   recipient: string
   evidenceUrl?: string | null
   sentAt?: string
+  /** La casilla de envío que este registro cumple, si cumple alguna. */
+  slotId?: string | null
 }
 
 /**
@@ -234,19 +263,30 @@ export async function recordAlcoholTestDispatch(
 
   const now = new Date().toISOString()
   const id = nanoid()
-  const [created] = await db.insert(alcoholTestDispatches).values({
-    id,
-    worksiteId: input.worksiteId,
-    year: input.year,
-    month: input.month,
-    sentByUserId,
-    sentAt,
-    recipient: input.recipient,
-    evidenceUrl: input.evidenceUrl ?? null,
-    testCount: testsInPeriod.length,
-    createdAt: now,
-    updatedAt: now,
-  }).returning()
+  const { created, slotEvidenceRef } = await db.transaction(async (tx) => {
+    const [row] = await tx.insert(alcoholTestDispatches).values({
+      id,
+      worksiteId: input.worksiteId,
+      year: input.year,
+      month: input.month,
+      sentByUserId,
+      sentAt,
+      recipient: input.recipient,
+      evidenceUrl: input.evidenceUrl ?? null,
+      testCount: testsInPeriod.length,
+      createdAt: now,
+      updatedAt: now,
+    }).returning()
+
+    if (!input.slotId) return { created: row!, slotEvidenceRef: null as string | null }
+    await fulfillAlcotestSlotTx(tx, {
+      slotId: input.slotId,
+      worksiteId: input.worksiteId,
+      userId: sentByUserId,
+      dispatchId: id,
+    })
+    return { created: row!, slotEvidenceRef: await resolveAlcotestSlotEvidenceRef(tx, input.slotId) }
+  })
 
   await recordPdtpFulfillmentEvent({
     sourceType: "alcotest",
@@ -254,11 +294,13 @@ export async function recordAlcoholTestDispatch(
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(ALCOTEST_DISPATCH_ACTIVITY_NUMBER)],
     occurredAt: sentAt,
-    evidenceRef: input.evidenceUrl ?? `Envío de registros ${input.year}-${String(input.month).padStart(2, "0")} a ${input.recipient}`,
+    evidenceRef: slotEvidenceRef
+      ?? input.evidenceUrl
+      ?? `Envío de registros ${input.year}-${String(input.month).padStart(2, "0")} a ${input.recipient}`,
     metadata: { alcoholTestDispatchId: id, year: input.year, month: input.month, testCount: testsInPeriod.length },
   })
 
-  return created!
+  return created
 }
 
 export async function listAlcoholTestDispatches(scope: WorksiteScope, worksiteId?: string) {

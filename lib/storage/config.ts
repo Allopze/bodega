@@ -11,6 +11,7 @@ const PDTP_EVIDENCE_PREFIX = "storage/pdtp-evidence/"
 const INSPECTION_EVIDENCE_PREFIX = "storage/inspection-evidence/"
 const PREVENTION_TRAINING_EVIDENCE_PREFIX = "storage/prevention-training-evidence/"
 const PREVENTION_DRILL_EVIDENCE_PREFIX = "storage/prevention-drill-evidence/"
+const PREVENTION_ALCOTEST_EVIDENCE_PREFIX = "storage/prevention-alcotest-evidence/"
 const CAMPAIGN_EVIDENCE_PREFIX = "storage/campaign-evidence/"
 const CGRD_EVIDENCE_PREFIX = "storage/cgrd-evidence/"
 const RISK_MAP_PREFIX = "storage/risk-map/"
@@ -415,6 +416,31 @@ export function resolvePreventionDrillEvidenceFile(filePath: string): string | n
   const storageName = filePath.slice(PREVENTION_DRILL_EVIDENCE_PREFIX.length)
   if (!isSafeStorageName(storageName)) return null
   return path.join(/*turbopackIgnore: true*/ resolvePreventionDrillEvidenceDir(), storageName)
+}
+
+/* ── Evidencia de las casillas de alcotest ────────────────────────────────
+ * Mismo contrato que capacitación y simulacros. Cuelga de la casilla y no del
+ * control: lo que el programa pide respaldar es el cumplimiento del mes —la
+ * planilla de controles, el correo del envío—, no cada lectura del alcotómetro.
+ * Antes la N°30/31 y la N°32 acreditaban con un rótulo sintético cuando la UI
+ * no mandaba archivo, que es la misma falla que ya tuvo la N°84.
+ */
+export function resolvePreventionAlcotestEvidenceDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "prevention-alcotest-evidence")
+}
+
+export function createPreventionAlcotestEvidencePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid prevention alcotest evidence storage name")
+  }
+  return `${PREVENTION_ALCOTEST_EVIDENCE_PREFIX}${storageName}`
+}
+
+export function resolvePreventionAlcotestEvidenceFile(filePath: string): string | null {
+  if (!filePath.startsWith(PREVENTION_ALCOTEST_EVIDENCE_PREFIX)) return null
+  const storageName = filePath.slice(PREVENTION_ALCOTEST_EVIDENCE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolvePreventionAlcotestEvidenceDir(), storageName)
 }
 
 /* ── Mapa de riesgos (MIPER) ──────────────────────────────────────────────

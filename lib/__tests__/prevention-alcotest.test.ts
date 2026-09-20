@@ -42,6 +42,17 @@ const {
   listAlcotestEquipment,
 } = await import("@/lib/services/prevention-alcotest")
 
+const {
+  ensureAlcotestSlotsForWorksiteTx,
+} = await import("@/lib/services/prevention-program-slots")
+
+const {
+  listAlcotestSlotsForWorksite,
+  recordAlcotestSlotStatus,
+  attachAlcotestSlotEvidenceTx,
+  AlcotestSlotError,
+} = await import("@/lib/services/prevention-alcotest-slots")
+
 const { year: PROGRAM_YEAR } = chileDateParts()
 const PROGRAM_ID = "pdtp-alcotest-v1"
 const WS_ID = "ws-alcotest-1"
@@ -91,6 +102,10 @@ async function seedProgramAndActivities() {
 }
 
 beforeEach(async () => {
+  /* Las casillas van primero: apuntan al control y al envío con `restrict`, así
+   * que borrar el hecho antes deja la casilla huérfana y Postgres lo rechaza. */
+  await inMemoryDb.delete(schema.preventionAlcotestSlotEvidence)
+  await inMemoryDb.delete(schema.preventionAlcotestSlots)
   await inMemoryDb.delete(schema.alcoholTestDispatches)
   await inMemoryDb.delete(schema.alcoholTests)
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
@@ -313,5 +328,224 @@ describe("listAlcoholTests / listAlcoholTestDispatches", () => {
     await recordAlcoholTestDispatch({ worksiteId: WS_ID, year: 2026, month: 3, recipient: "Mutualidad" }, USER_PRF, [WS_ID])
     expect(await listAlcoholTestDispatches([WS_ID])).toHaveLength(1)
     expect(await listAlcoholTestDispatches([])).toHaveLength(0)
+  })
+})
+
+/* ── Casillas del programa ────────────────────────────────────────────────── */
+
+const SLOT_YEAR = 2026
+
+/** Siembra las casillas y devuelve la de control de marzo. */
+async function seedSlots(worksiteId = WS_ID) {
+  await ensureAlcotestSlotsForWorksiteTx(inMemoryDb as never, worksiteId, SLOT_YEAR)
+  const slots = await listAlcotestSlotsForWorksite([worksiteId], worksiteId, SLOT_YEAR, inMemoryDb as never)
+  return slots
+}
+
+async function evidenciaEn(slotId: string) {
+  await inMemoryDb.insert(schema.preventionAlcotestSlotEvidence).values({
+    id: `alcev-${slotId}`,
+    slotId,
+    fileName: "planilla-marzo.pdf",
+    storagePath: `alcotest/${slotId}/planilla-marzo.pdf`,
+    mimeType: "application/pdf",
+    fileSizeBytes: 1024,
+    sha256: "a".repeat(64),
+    state: "active",
+    uploadedByUserId: USER_PRF,
+  })
+}
+
+describe("pre-generación de las casillas de alcotest", () => {
+  it("siembra 12 controles y 11 envíos, y es idempotente", async () => {
+    const creadas = await ensureAlcotestSlotsForWorksiteTx(inMemoryDb as never, WS_ID, SLOT_YEAR)
+    expect(creadas).toBe(23)
+    // Reejecutar no duplica ni pisa: los ids son determinísticos.
+    expect(await ensureAlcotestSlotsForWorksiteTx(inMemoryDb as never, WS_ID, SLOT_YEAR)).toBe(0)
+
+    const slots = await listAlcotestSlotsForWorksite([WS_ID], WS_ID, SLOT_YEAR, inMemoryDb as never)
+    expect(slots.filter((s) => s.kind === "control")).toHaveLength(12)
+    expect(slots.filter((s) => s.kind === "envio")).toHaveLength(11)
+    expect(slots.every((s) => s.status === "pending")).toBe(true)
+  })
+
+  it("control y envío del mismo mes no colisionan: el tipo es parte del unique", async () => {
+    const slots = await seedSlots()
+    const febrero = slots.filter((s) => s.scheduledMonth === 2)
+    expect(febrero.map((s) => s.kind).sort()).toEqual(["control", "envio"])
+  })
+})
+
+describe("recordAlcotestSlotStatus", () => {
+  it("declara la casilla no aplicable sólo con un motivo escrito", async () => {
+    const [slot] = await seedSlots()
+    await expect(recordAlcotestSlotStatus(
+      { slotId: slot!.id, expectedVersion: 1, status: "not_applicable" },
+      { userId: USER_PRF, scope: [WS_ID] },
+    )).rejects.toThrow()
+    await expect(recordAlcotestSlotStatus(
+      { slotId: slot!.id, expectedVersion: 1, status: "not_applicable", notApplicableReason: "corto" },
+      { userId: USER_PRF, scope: [WS_ID] },
+    )).rejects.toThrow()
+
+    const updated = await recordAlcotestSlotStatus(
+      {
+        slotId: slot!.id,
+        expectedVersion: 1,
+        status: "not_applicable",
+        notApplicableReason: "La faena no tiene conducción de vehículos ni turnos nocturnos.",
+      },
+      { userId: USER_PRF, scope: [WS_ID] },
+    )
+    expect(updated.status).toBe("not_applicable")
+    expect(updated.notApplicableByUserId).toBe(USER_PRF)
+  })
+
+  it("corregir a no hecha limpia el motivo, que si no queda colgado", async () => {
+    const [slot] = await seedSlots()
+    const na = await recordAlcotestSlotStatus(
+      {
+        slotId: slot!.id,
+        expectedVersion: 1,
+        status: "not_applicable",
+        notApplicableReason: "La faena no tiene conducción de vehículos ni turnos nocturnos.",
+      },
+      { userId: USER_PRF, scope: [WS_ID] },
+    )
+    const corregida = await recordAlcotestSlotStatus(
+      { slotId: slot!.id, expectedVersion: na.version, status: "not_completed" },
+      { userId: USER_PRF, scope: [WS_ID] },
+    )
+    expect(corregida.status).toBe("not_completed")
+    expect(corregida.notApplicableReason).toBeNull()
+    expect(corregida.notApplicableAt).toBeNull()
+    expect(corregida.notApplicableByUserId).toBeNull()
+  })
+
+  it("no deja apagar el cumplimiento sin tocar el hecho", async () => {
+    await seedProgramAndActivities()
+    const slots = await seedSlots()
+    const marzo = slots.find((s) => s.kind === "control" && s.scheduledMonth === 3)!
+    await evidenciaEn(marzo.id)
+    await recordAlcoholTest(
+      { worksiteId: WS_ID, ...SUBJECT, shift: "dia", performedAt: "2026-03-05T14:00:00.000Z", slotId: marzo.id },
+      USER_PRF, ["prevencionista_faena"], [WS_ID],
+    )
+
+    await expect(recordAlcotestSlotStatus(
+      { slotId: marzo.id, expectedVersion: 2, status: "not_completed" },
+      { userId: USER_PRF, scope: [WS_ID] },
+    )).rejects.toBeInstanceOf(AlcotestSlotError)
+  })
+
+  it("una casilla de otra faena no se toca aunque se sepa su id", async () => {
+    const slots = await seedSlots(WS_OTHER)
+    await expect(recordAlcotestSlotStatus(
+      { slotId: slots[0]!.id, expectedVersion: 1, status: "not_completed" },
+      { userId: USER_PRF, scope: [WS_ID] },
+    )).rejects.toThrow()
+  })
+})
+
+describe("cumplir la casilla con el hecho", () => {
+  it("sin evidencia activa no se puede declarar hecha", async () => {
+    await seedProgramAndActivities()
+    const slots = await seedSlots()
+    const marzo = slots.find((s) => s.kind === "control" && s.scheduledMonth === 3)!
+
+    await expect(recordAlcoholTest(
+      { worksiteId: WS_ID, ...SUBJECT, shift: "dia", performedAt: "2026-03-05T14:00:00.000Z", slotId: marzo.id },
+      USER_PRF, ["prevencionista_faena"], [WS_ID],
+    )).rejects.toThrow(/evidencia/i)
+
+    // Y el control tampoco quedó registrado: van en la misma transacción.
+    expect(await inMemoryDb.select().from(schema.alcoholTests)).toHaveLength(0)
+  })
+
+  it("con evidencia, acredita el PDTP con la ruta del archivo y no con un rótulo inventado", async () => {
+    await seedProgramAndActivities()
+    const slots = await seedSlots()
+    const marzo = slots.find((s) => s.kind === "control" && s.scheduledMonth === 3)!
+    await evidenciaEn(marzo.id)
+
+    await recordAlcoholTest(
+      { worksiteId: WS_ID, ...SUBJECT, shift: "dia", performedAt: "2026-03-05T14:00:00.000Z", slotId: marzo.id },
+      USER_PRF, ["prevencionista_faena"], [WS_ID],
+    )
+
+    const [exec] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, N30_ID))
+    expect(exec?.evidenceText).toBe(`alcotest/${marzo.id}/planilla-marzo.pdf`)
+    expect(exec?.evidenceText).not.toMatch(/Control de alcotest/)
+
+    const [despues] = await inMemoryDb.select().from(schema.preventionAlcotestSlots)
+      .where(eq(schema.preventionAlcotestSlots.id, marzo.id))
+    expect(despues).toMatchObject({ status: "completed", completedByUserId: USER_PRF })
+    expect(despues?.testId).toBeTruthy()
+  })
+
+  it("un control extraordinario se registra sin casilla y no ocupa ninguna celda", async () => {
+    await seedProgramAndActivities()
+    await seedSlots()
+    await recordAlcoholTest(
+      { worksiteId: WS_ID, ...SUBJECT, shift: "noche", performedAt: "2026-03-05T23:00:00.000Z" },
+      USER_PRF, ["prevencionista_faena"], [WS_ID],
+    )
+    const slots = await listAlcotestSlotsForWorksite([WS_ID], WS_ID, SLOT_YEAR, inMemoryDb as never)
+    expect(slots.every((s) => s.status === "pending")).toBe(true)
+  })
+
+  it("una casilla de envío no se cumple con un control", async () => {
+    await seedProgramAndActivities()
+    const slots = await seedSlots()
+    const envio = slots.find((s) => s.kind === "envio")!
+    await evidenciaEn(envio.id)
+
+    await expect(recordAlcoholTest(
+      { worksiteId: WS_ID, ...SUBJECT, shift: "dia", performedAt: "2026-03-05T14:00:00.000Z", slotId: envio.id },
+      USER_PRF, ["prevencionista_faena"], [WS_ID],
+    )).rejects.toThrow(/envío de registros/i)
+  })
+
+  it("el envío cumple su casilla y acredita la N°32 con el archivo", async () => {
+    await seedProgramAndActivities()
+    const slots = await seedSlots()
+    const envioMarzo = slots.find((s) => s.kind === "envio" && s.scheduledMonth === 3)!
+    await evidenciaEn(envioMarzo.id)
+
+    await recordAlcoholTestDispatch(
+      { worksiteId: WS_ID, year: 2026, month: 2, recipient: "mutual@example.test", slotId: envioMarzo.id },
+      USER_PRF, [WS_ID],
+    )
+    const [exec] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, N32_ID))
+    expect(exec?.evidenceText).toBe(`alcotest/${envioMarzo.id}/planilla-marzo.pdf`)
+  })
+})
+
+describe("attachAlcotestSlotEvidenceTx", () => {
+  it("rechaza adjuntar evidencia a una casilla declarada no aplicable", async () => {
+    const [slot] = await seedSlots()
+    await recordAlcotestSlotStatus(
+      {
+        slotId: slot!.id,
+        expectedVersion: 1,
+        status: "not_applicable",
+        notApplicableReason: "La faena no tiene conducción de vehículos ni turnos nocturnos.",
+      },
+      { userId: USER_PRF, scope: [WS_ID] },
+    )
+
+    await expect(inMemoryDb.transaction(async (tx) => attachAlcotestSlotEvidenceTx(tx as never, {
+      slotId: slot!.id,
+      fileName: "planilla.pdf",
+      storagePath: "alcotest/x/planilla.pdf",
+      mimeType: "application/pdf",
+      fileSizeBytes: 10,
+      sha256: "b".repeat(64),
+      uploadedByUserId: USER_PRF,
+    }))).rejects.toBeInstanceOf(AlcotestSlotError)
+
+    expect(await inMemoryDb.select().from(schema.preventionAlcotestSlotEvidence)).toHaveLength(0)
   })
 })

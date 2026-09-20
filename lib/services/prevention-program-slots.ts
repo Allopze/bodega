@@ -8,17 +8,21 @@
  * de una faena ocurre en tres lugares distintos, y con tres módulos serían
  * nueve llamadas: el modo de falla es que alguien agregue un cuarto punto de
  * alta y pre-genere sólo capacitación, dejando una faena sin casillas de
- * simulacro ni de CGRD — invisible hasta que llega una fiscalización.
+ * simulacro, de CGRD ni de alcotest — invisible hasta que llega una
+ * fiscalización.
  */
 
 import { and, desc, eq, inArray } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   pdtpPrograms,
+  preventionAlcotestSlots,
   preventionEmergencyDrillSlots,
   preventionGrdMeetingSlots,
 } from "@/db/schema"
 import {
+  ALCOTEST_CONTROL_SLOTS_2026,
+  ALCOTEST_DISPATCH_SLOTS_2026,
   DRILL_SLOTS_2026,
   GRD_MEETING_SLOTS_2026,
   PROGRAM_SLOT_YEAR,
@@ -83,10 +87,42 @@ export async function ensureGrdMeetingSlotsForWorksiteTx(
 }
 
 /**
+ * Las casillas de alcotest del año: doce de control (N°30/31) y once de envío
+ * (N°32). Devuelve cuántas creó.
+ *
+ * Las dos series van juntas porque comparten tabla y se distinguen por `kind`,
+ * que además forma parte del unique: una casilla de control y una de envío del
+ * mismo mes no colisionan.
+ */
+export async function ensureAlcotestSlotsForWorksiteTx(
+  client: Client,
+  worksiteId: string,
+  year = PROGRAM_SLOT_YEAR,
+): Promise<number> {
+  const rows = [
+    ...slotRows("alcotest-slot", worksiteId, year, ALCOTEST_CONTROL_SLOTS_2026)
+      .map((row) => ({ ...row, id: `${row.id}-control`, kind: "control" as const })),
+    ...slotRows("alcotest-slot", worksiteId, year, ALCOTEST_DISPATCH_SLOTS_2026)
+      .map((row) => ({ ...row, id: `${row.id}-envio`, kind: "envio" as const })),
+  ]
+  const created = await client.insert(preventionAlcotestSlots)
+    .values(rows)
+    .onConflictDoNothing({ target: [
+      preventionAlcotestSlots.worksiteId,
+      preventionAlcotestSlots.year,
+      preventionAlcotestSlots.kind,
+      preventionAlcotestSlots.slotKey,
+    ] })
+    .returning({ id: preventionAlcotestSlots.id })
+  return created.length
+}
+
+/**
  * Todas las casillas del programa para una faena, en una llamada.
  *
  * Es lo que deben invocar los puntos de alta de faena. Una faena nueva y
- * activa queda con 24 casillas de capacitación, 2 de simulacro y 4 de CGRD.
+ * activa queda con 24 casillas de capacitación, 2 de simulacro, 4 de CGRD y 23
+ * de alcotest (12 controles + 11 envíos).
  *
  * Se siembra **el año completo**, también para una faena dada de alta en
  * octubre, y eso es deliberado: la casilla de marzo sigue existiendo y se puede
@@ -101,11 +137,12 @@ export async function ensureGrdMeetingSlotsForWorksiteTx(
 export async function ensurePreventionProgramSlotsForWorksiteTx(
   client: Client,
   worksiteId: string,
-): Promise<{ training: number; drills: number; grdMeetings: number }> {
+): Promise<{ training: number; drills: number; grdMeetings: number; alcotest: number }> {
   return {
     training: await ensurePreventionTrainingOccurrencesForWorksiteTx(client, worksiteId),
     drills: await ensureEmergencyDrillSlotsForWorksiteTx(client, worksiteId),
     grdMeetings: await ensureGrdMeetingSlotsForWorksiteTx(client, worksiteId),
+    alcotest: await ensureAlcotestSlotsForWorksiteTx(client, worksiteId),
   }
 }
 
@@ -123,6 +160,14 @@ export async function listGrdMeetingSlots(client: Client, worksiteId: string, ye
   return client.select().from(preventionGrdMeetingSlots).where(and(
     eq(preventionGrdMeetingSlots.worksiteId, worksiteId),
     eq(preventionGrdMeetingSlots.year, year),
+  ))
+}
+
+/** Las casillas de alcotest de una faena y año, para la pantalla. */
+export async function listAlcotestSlots(client: Client, worksiteId: string, year = PROGRAM_SLOT_YEAR) {
+  return client.select().from(preventionAlcotestSlots).where(and(
+    eq(preventionAlcotestSlots.worksiteId, worksiteId),
+    eq(preventionAlcotestSlots.year, year),
   ))
 }
 

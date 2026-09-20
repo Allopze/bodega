@@ -16,7 +16,19 @@ import { formatDateTime } from "@/lib/utils"
 import type {
   listAlcoholTestDispatches, listAlcoholTests, listAlcotestEquipment, listAlcotestWorkers,
 } from "@/lib/services/prevention-alcotest"
-import { recordAlcoholTestAction, recordAlcoholTestDispatchAction } from "./actions"
+import { ProgramSlotList, type ProgramSlotRow } from "@/components/prevention/program-slot-list"
+import type { PdtpPeriod } from "@/lib/services/pdtp/period"
+import {
+  recordAlcoholTestAction,
+  recordAlcoholTestDispatchAction,
+  recordAlcotestSlotStatusAction,
+} from "./actions"
+
+/** La casilla, con el tipo que decide en qué sección se muestra. */
+export type AlcotestSlotRow = ProgramSlotRow & {
+  kind: "control" | "envio"
+  activeEvidenceCount: number
+}
 
 type Worksite = { id: string; name: string; code: string }
 type AlcoholTest = Awaited<ReturnType<typeof listAlcoholTests>>[number]
@@ -44,9 +56,14 @@ function previousPeriod(): { year: number; month: number } {
 }
 
 export function AlcotestWorkbench({
-  worksites, initialTests, initialDispatches, workers, equipment, canRegister, canDispatch, scheduledPanel,
+  worksites, selectedWorksiteId, slotRows, slotYear, activationPeriod,
+  initialTests, initialDispatches, workers, equipment, canRegister, canDispatch, scheduledPanel,
 }: {
   worksites: Worksite[]
+  selectedWorksiteId: string | null
+  slotRows: AlcotestSlotRow[]
+  slotYear: number
+  activationPeriod: PdtpPeriod | null
   initialTests: AlcoholTest[]
   initialDispatches: AlcoholTestDispatch[]
   workers: Worker[]
@@ -56,6 +73,8 @@ export function AlcotestWorkbench({
   scheduledPanel?: React.ReactNode
 }) {
   const router = useRouter()
+  const controlSlots = React.useMemo(() => slotRows.filter((row) => row.kind === "control"), [slotRows])
+  const dispatchSlots = React.useMemo(() => slotRows.filter((row) => row.kind === "envio"), [slotRows])
   const [registerOpen, setRegisterOpen] = React.useState(false)
   const [dispatchOpen, setDispatchOpen] = React.useState(false)
   const worksiteName = React.useMemo(() => new Map(worksites.map((w) => [w.id, w.name])), [worksites])
@@ -125,6 +144,52 @@ export function AlcotestWorkbench({
             ))}
           </div>
         )}
+      </section>
+
+      {/* El checklist del programa: qué esperaba el PDTP este año en esta faena.
+        * Va antes del panel de actividades programadas porque es lo que el
+        * operador viene a resolver; el panel es contexto. */}
+      <section className="mt-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-[var(--color-text)]">Casillas del programa {slotYear}</h2>
+          {worksites.length > 1 && (
+            <Select
+              value={selectedWorksiteId ?? undefined}
+              onValueChange={(value) => router.push(`/prevencion/alcotest?faena=${encodeURIComponent(value)}`)}
+            >
+              <SelectTrigger className="w-64"><SelectValue placeholder="Elige una faena" /></SelectTrigger>
+              <SelectContent>
+                {worksites.map((worksite) => (
+                  <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+
+        <h3 className="mt-3 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Controles</h3>
+        <div className="mt-2">
+          <ProgramSlotList
+            rows={controlSlots}
+            year={slotYear}
+            canRecord={canRegister}
+            emptyHint="Esta faena todavía no tiene casillas del programa; se generan al activarla."
+            activationPeriod={activationPeriod}
+            onRecord={(input) => recordAlcotestSlotStatusAction(input)}
+          />
+        </div>
+
+        <h3 className="mt-5 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Envíos de registros (DO-48)</h3>
+        <div className="mt-2">
+          <ProgramSlotList
+            rows={dispatchSlots}
+            year={slotYear}
+            canRecord={canDispatch}
+            emptyHint="Esta faena todavía no tiene casillas de envío; se generan al activarla."
+            activationPeriod={activationPeriod}
+            onRecord={(input) => recordAlcotestSlotStatusAction(input)}
+          />
+        </div>
       </section>
 
       {scheduledPanel}
