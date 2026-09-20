@@ -16,7 +16,7 @@ import {
 } from "@/lib/services/prevention-cgrd"
 import type { CgrdAccess } from "@/lib/services/prevention-cgrd-access"
 import { db } from "@/db"
-import { listGrdMeetingSlots } from "@/lib/services/prevention-program-slots"
+import { listGrdMeetingSlots, resolveProgramActivationPeriod } from "@/lib/services/prevention-program-slots"
 import { PROGRAM_SLOT_YEAR } from "@/lib/prevention/program-slots-2026"
 import { CgrdWorkbench } from "./cgrd-workbench"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
@@ -73,6 +73,7 @@ export default async function CgrdPage({
   const notApplicableSuggestion = worksiteId
     ? await suggestGrdSlotNotApplicableReason(worksiteId)
     : null
+  const activationPeriod = await resolveProgramActivationPeriod()
 
   const latestMatrix = matrices.length > 0
     ? [...matrices].sort((a, b) => b.matrixVersion - a.matrixVersion)[0]!
@@ -104,6 +105,7 @@ export default async function CgrdPage({
       }))}
       slotYear={slotYear}
       notApplicableSuggestion={notApplicableSuggestion}
+      activationPeriod={activationPeriod}
       agreements={agreements}
       workerCandidates={workerCandidates.filter((worker) => worker.worksiteId === worksiteId)}
       canManageCommittee={can(session, "prevention:cgrd:committee:manage")}

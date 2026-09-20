@@ -6,6 +6,7 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { FileInput } from "@/components/ui/file-input"
 import { ProgramSlotList, type ProgramSlotRow } from "@/components/prevention/program-slot-list"
+import type { PdtpPeriod } from "@/lib/services/pdtp/period"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
@@ -75,6 +76,7 @@ interface Props {
   drills: DrillInfo[]
   drillSlots: ProgramSlotRow[]
   slotYear: number
+  activationPeriod: PdtpPeriod | null
   eligibleWorkers: WorkerOption[]
   assignees: { id: string; name: string }[]
   currentUserId: string
@@ -86,7 +88,7 @@ interface Props {
 }
 
 export function PlanDetail({
-  plan, worksiteName, readiness, scenarios, roles, resources, linkableResources, contacts, drills, drillSlots, slotYear,
+  plan, worksiteName, readiness, scenarios, roles, resources, linkableResources, contacts, drills, drillSlots, slotYear, activationPeriod,
   eligibleWorkers, assignees, currentUserId, canManage, canApprove, canExecuteDrill,
   catalogActivities, catalogActivityIds,
 }: Props) {
@@ -308,6 +310,7 @@ export function PlanDetail({
             year={slotYear}
             canRecord={canExecuteDrill}
             emptyHint="Esta faena todavía no tiene casillas del programa; se generan al activarla."
+            activationPeriod={activationPeriod}
             onRecord={(input) => recordDrillSlotStatusAction(input)}
           />
         </div>

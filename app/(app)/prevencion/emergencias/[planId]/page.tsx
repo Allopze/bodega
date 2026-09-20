@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { db } from "@/db"
-import { listEmergencyDrillSlots } from "@/lib/services/prevention-program-slots"
+import { listEmergencyDrillSlots, resolveProgramActivationPeriod } from "@/lib/services/prevention-program-slots"
 import { PROGRAM_SLOT_YEAR } from "@/lib/prevention/program-slots-2026"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -55,6 +55,7 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
   /* Las casillas son de la FAENA, no del plan: archivar un plan y emitir otro
    * no reinicia lo que el programa esperaba ese año. */
   const drillSlots = await listEmergencyDrillSlots(db, [detail.plan.worksiteId])
+  const activationPeriod = await resolveProgramActivationPeriod()
 
   return (
     <PageContainer>
@@ -103,6 +104,7 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
           fulfilledLabel: slot.drillId ? "Cumplida por un simulacro registrado" : null,
         }))}
         slotYear={PROGRAM_SLOT_YEAR}
+        activationPeriod={activationPeriod}
         drills={detail.drills.map((drill) => ({
           id: drill.id,
           scenarioType: drill.scenarioType,

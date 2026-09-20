@@ -59,6 +59,22 @@ export function isPdtpPeriodOnOrAfterActivation(
 ): boolean {
   const activationPeriod = pdtpActivationPeriod(activatedAt)
   if (!activationPeriod) return true
+  return isPdtpPeriodOnOrAfterActivationPeriod(period, activationPeriod)
+}
+
+/**
+ * La misma regla, ya resuelta a período.
+ *
+ * Se separa para que la pantalla pueda aplicarla sin recibir el `activatedAt`
+ * crudo: el checklist del programa la usa para distinguir una casilla que
+ * nadie hizo de una que el programa todavía no exigía. Reusarla evita tener
+ * dos versiones de "antes de la activación", que es la clase de duplicación
+ * que se desincroniza sin que ningún test lo note.
+ */
+export function isPdtpPeriodOnOrAfterActivationPeriod(
+  period: PdtpPeriodRow,
+  activationPeriod: PdtpPeriod,
+): boolean {
   if (period.year !== activationPeriod.year) return period.year > activationPeriod.year
   if (period.month !== activationPeriod.month) return period.month > activationPeriod.month
   return period.week >= activationPeriod.week

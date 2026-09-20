@@ -11,9 +11,10 @@
  * simulacro ni de CGRD — invisible hasta que llega una fiscalización.
  */
 
-import { and, eq, inArray } from "drizzle-orm"
-import type { DB, Tx } from "@/db"
+import { and, desc, eq, inArray } from "drizzle-orm"
+import { db, type DB, type Tx } from "@/db"
 import {
+  pdtpPrograms,
   preventionEmergencyDrillSlots,
   preventionGrdMeetingSlots,
 } from "@/db/schema"
@@ -23,6 +24,7 @@ import {
   PROGRAM_SLOT_YEAR,
   type ProgramSlot,
 } from "@/lib/prevention/program-slots-2026"
+import { pdtpActivationPeriod } from "./pdtp/period"
 import { ensurePreventionTrainingOccurrencesForWorksiteTx } from "./prevention-training-occurrences"
 
 type Client = DB | Tx
@@ -111,4 +113,22 @@ export async function listGrdMeetingSlots(client: Client, worksiteId: string, ye
     eq(preventionGrdMeetingSlots.worksiteId, worksiteId),
     eq(preventionGrdMeetingSlots.year, year),
   ))
+}
+
+/**
+ * La semana desde la que el programa vigente exige, o `null` si no hay programa
+ * activo del año.
+ *
+ * Existe para que el checklist pueda distinguir una casilla que nadie hizo de
+ * una que el programa todavía no exigía cuando llegó su mes. No cambia el
+ * estado de la casilla —sigue pendiente y se puede hacer tarde—: sólo permite
+ * decirlo en pantalla, para que nadie corra a ejecutar algo que no se le pedía.
+ */
+export async function resolveProgramActivationPeriod(year = PROGRAM_SLOT_YEAR) {
+  const [program] = await db.select({ activatedAt: pdtpPrograms.activatedAt })
+    .from(pdtpPrograms)
+    .where(and(eq(pdtpPrograms.status, "active"), eq(pdtpPrograms.year, year)))
+    .orderBy(desc(pdtpPrograms.version))
+    .limit(1)
+  return pdtpActivationPeriod(program?.activatedAt ?? null)
 }

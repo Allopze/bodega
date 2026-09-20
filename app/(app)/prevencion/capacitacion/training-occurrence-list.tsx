@@ -13,6 +13,10 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react"
 import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
+import {
+  isPdtpPeriodOnOrAfterActivationPeriod,
+  type PdtpPeriod,
+} from "@/lib/services/pdtp/period"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -35,6 +39,8 @@ interface Props {
   selectedYear: number
   selectedWorksiteId: string
   canRecord: boolean
+  /** Desde cuándo exige el programa; `null` si no hay programa activo. */
+  activationPeriod: PdtpPeriod | null
 }
 
 type StatusFilter = "all" | "pending" | "completed" | "not_completed" | "not_applicable"
@@ -112,7 +118,7 @@ function updateRoute(router: ReturnType<typeof useRouter>, pathname: string, wor
   router.replace(`${pathname}?${params.toString()}`)
 }
 
-export function TrainingOccurrenceList({ rows, worksites, selectedYear, selectedWorksiteId, canRecord }: Props) {
+export function TrainingOccurrenceList({ rows, worksites, selectedYear, selectedWorksiteId, canRecord, activationPeriod }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const { searchQuery, setSearchQuery } = useSafeShellHeader()
@@ -214,7 +220,7 @@ export function TrainingOccurrenceList({ rows, worksites, selectedYear, selected
       ) : (
         <div className="grid gap-3">
           {filteredRows.map((row) => (
-            <TrainingOccurrenceCard key={row.id} row={row} canRecord={canRecord} />
+            <TrainingOccurrenceCard key={row.id} row={row} canRecord={canRecord} activationPeriod={activationPeriod} />
           ))}
         </div>
       )}
@@ -222,7 +228,20 @@ export function TrainingOccurrenceList({ rows, worksites, selectedYear, selected
   )
 }
 
-function TrainingOccurrenceCard({ row, canRecord }: { row: TrainingOccurrenceListItem; canRecord: boolean }) {
+/* El PDTP se vuelve exigible al activarse la versión aprobada, no el 1 de
+ * enero. Una casilla anterior a esa semana sigue pendiente y se puede hacer
+ * tarde —la actividad no se canceló—, pero el barrido no abre compromiso por
+ * ella. Se dice en pantalla para que nadie corra a ejecutar algo que nadie le
+ * estaba pidiendo. */
+function isBeforeActivation(row: TrainingOccurrenceListItem, activation: PdtpPeriod | null): boolean {
+  if (!activation || row.scheduledMonth === null || row.scheduledWeek === null) return false
+  return !isPdtpPeriodOnOrAfterActivationPeriod(
+    { year: row.year, month: row.scheduledMonth, week: row.scheduledWeek },
+    activation,
+  )
+}
+
+function TrainingOccurrenceCard({ row, canRecord, activationPeriod }: { row: TrainingOccurrenceListItem; canRecord: boolean; activationPeriod: PdtpPeriod | null }) {
   const evidence = row.evidence
   return (
     <article className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xs sm:p-5">
@@ -296,6 +315,8 @@ function TrainingOccurrenceCard({ row, canRecord }: { row: TrainingOccurrenceLis
             <span className="inline-flex max-w-xl items-start gap-1.5 text-left sm:text-right"><Prohibit size={14} className="mt-0.5 shrink-0 text-[var(--color-text-subtle)]" aria-hidden />{row.notApplicableReason}</span>
           ) : row.status === "not_completed" && row.observation ? (
             <span className="inline-flex max-w-xl items-start gap-1.5 text-left sm:text-right"><WarningCircle size={14} className="mt-0.5 shrink-0 text-[var(--color-danger-ink)]" aria-hidden />{row.observation}</span>
+          ) : isBeforeActivation(row, activationPeriod) ? (
+            <span>Anterior a la activación del programa: no se exige, pero se puede registrar si se realiza.</span>
           ) : (
             <span>Requiere registro del prevencionista de faena</span>
           )}

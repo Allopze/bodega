@@ -10,6 +10,10 @@ import {
 import { Field } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
+import {
+  isPdtpPeriodOnOrAfterActivationPeriod,
+  type PdtpPeriod,
+} from "@/lib/services/pdtp/period"
 
 /**
  * El checklist del programa: qué se esperaba, qué pasó y por qué.
@@ -58,17 +62,44 @@ function statusMeta(status: ProgramSlotStatus): StateMetaInput {
 /** El motivo mínimo. Debe coincidir con el CHECK de la tabla y con el servicio. */
 const NOT_APPLICABLE_REASON_MIN = 10
 
+/**
+ * ¿El programa ya exigía esta casilla cuando llegó su mes?
+ *
+ * El PDTP se vuelve exigible al activarse la versión aprobada, no el 1 de
+ * enero. Una casilla anterior a esa semana sigue pendiente y se puede hacer
+ * tarde —la actividad no se canceló—, pero el barrido no abre compromiso por
+ * ella. Decirlo en pantalla evita que alguien corra a ejecutar algo que nadie
+ * le estaba pidiendo.
+ */
+function isBeforeActivation(
+  row: ProgramSlotRow,
+  year: number,
+  activation: PdtpPeriod | null,
+): boolean {
+  if (!activation) return false
+  // Se reusa la regla del programa en vez de reescribirla: dos versiones de
+  // "antes de la activación" se desincronizan, y la de la pantalla sería la
+  // que miente sin que ningún test lo note.
+  return !isPdtpPeriodOnOrAfterActivationPeriod(
+    { year, month: row.scheduledMonth, week: row.scheduledWeek },
+    activation,
+  )
+}
+
 export function ProgramSlotList({
   rows,
   year,
   canRecord,
   emptyHint,
   notApplicableSuggestion,
+  activationPeriod,
   onRecord,
 }: {
   rows: ProgramSlotRow[]
   year: number
   canRecord: boolean
+  /** Desde cuándo exige el programa; `null` si no hay programa activo. */
+  activationPeriod?: PdtpPeriod | null
   /** Qué decir cuando no hay casillas: el motivo difiere por módulo. */
   emptyHint: string
   /** Texto sugerido para el motivo de "no aplica", si el módulo tiene uno. */
@@ -104,6 +135,11 @@ export function ProgramSlotList({
               {row.status === "not_applicable" && (
                 <p className="mt-1 inline-flex max-w-xl items-start gap-1.5 text-xs text-[var(--color-text-subtle)]">
                   <Prohibit size={13} className="mt-0.5 shrink-0" aria-hidden />{row.notApplicableReason}
+                </p>
+              )}
+              {row.status === "pending" && isBeforeActivation(row, year, activationPeriod ?? null) && (
+                <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+                  Anterior a la activación del programa: no se exige, pero se puede registrar si se realiza.
                 </p>
               )}
               {row.status === "not_completed" && row.observation && (

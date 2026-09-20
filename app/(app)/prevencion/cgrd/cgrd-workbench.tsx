@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { ProgramSlotList, type ProgramSlotRow } from "@/components/prevention/program-slot-list"
+import type { PdtpPeriod } from "@/lib/services/pdtp/period"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { EvidenceField } from "@/components/prevention/evidence-field"
@@ -53,7 +54,7 @@ async function handle(promise: Promise<{ ok: boolean; message?: string }>, onDon
 }
 
 export function CgrdWorkbench({
-  worksites, selectedWorksiteId, committee, structure, members, matrices, latestMatrixThreats, meetings, meetingSlots, slotYear, notApplicableSuggestion, agreements, workerCandidates,
+  worksites, selectedWorksiteId, committee, structure, members, matrices, latestMatrixThreats, meetings, meetingSlots, slotYear, notApplicableSuggestion, activationPeriod, agreements, workerCandidates,
   canManageCommittee, canEditMatrix, canPublishMatrix, canManageMeetings, scheduledPanel,
 }: {
   worksites: Worksite[]
@@ -67,6 +68,7 @@ export function CgrdWorkbench({
   meetingSlots: ProgramSlotRow[]
   slotYear: number
   notApplicableSuggestion: string | null
+  activationPeriod: PdtpPeriod | null
   agreements: Agreement[]
   workerCandidates: Worker[]
   canManageCommittee: boolean
@@ -279,6 +281,7 @@ export function CgrdWorkbench({
                 canRecord={canManageMeetings}
                 emptyHint="Esta faena todavía no tiene casillas del programa; se generan al activarla."
                 notApplicableSuggestion={notApplicableSuggestion}
+                activationPeriod={activationPeriod}
                 onRecord={(input) => recordGrdMeetingSlotStatusAction(input)}
               />
             </div>
