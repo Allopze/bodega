@@ -695,6 +695,31 @@ export async function transitionCapaActionWithClient(
         ne(preventionInspectionFindings.status, "closed"),
       ))
     }
+    if (input.toStatus === "cancelled") {
+      /* Cancelar la acción NO resuelve la desviación: lo que se canceló es el
+       * intento de corregirla. El hallazgo vuelve a `open` y suelta el vínculo.
+       *
+       * Sin esto quedaba atrapado: `capa_linked` para siempre. No `closed`, así
+       * que seguía contando como hallazgo crítico abierto en el dashboard; no
+       * `open`, así que el programador de inspecciones lo ignoraba; y
+       * `closeInspectionFinding` se negaba a cerrarlo porque conservaba
+       * `capa_action_id`. No había forma de sacarlo por la interfaz.
+       *
+       * El vínculo se suelta además del estado: el guard de cierre mira
+       * `capa_action_id`, no el estado, así que dejarlo puesto mantendría el
+       * callejón. La traza no se pierde — la acción cancelada conserva su
+       * `source_id` apuntando al hallazgo, y la bitácora conserva el enlace. */
+      await client.update(preventionInspectionFindings).set({
+        status: "open",
+        capaActionId: null,
+        closedByUserId: null,
+        closedAt: null,
+        updatedAt: now,
+      }).where(and(
+        eq(preventionInspectionFindings.capaActionId, current.id),
+        ne(preventionInspectionFindings.status, "closed"),
+      ))
+    }
     if (input.toStatus === "reopened") {
       // Simétrico: si la acción vuelve a estar viva, el hallazgo no está resuelto.
       await client.update(preventionInspectionFindings).set({
