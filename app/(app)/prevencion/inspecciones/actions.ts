@@ -25,6 +25,7 @@ import {
   rollbackInspectionTemplate,
   saveInspectionAnswers,
   saveInspectionParticipants,
+  setInspectionTemplateParity,
   setInspectionTemplatePdtpActivities,
   stopVehicleForFinding,
   transitionInspectionRun,
@@ -108,6 +109,19 @@ export async function setInspectionTemplatePdtpActivitiesAction(input: unknown):
   const guard = await guardPermission("prevention:inspections:manage")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => setInspectionTemplatePdtpActivities(input, access))
+}
+
+/**
+ * Declara la paridad de una plantilla documental contra su planilla oficial.
+ *
+ * Con `inspections:approve` y no con `manage`: contrastar la transcripción con
+ * el papel es un acto de verificación, el mismo que después habilita el
+ * instrumento, no parte de administrarlo.
+ */
+export async function setInspectionTemplateParityAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:approve")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => setInspectionTemplateParity(input, access))
 }
 
 export async function approveInspectionTemplateAction(input: unknown): Promise<ActionState> {

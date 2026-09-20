@@ -27,6 +27,7 @@ import {
   remindTemplateApprovalAction,
   rollbackInspectionTemplateAction,
   runProgramNowAction,
+  setInspectionTemplateParityAction,
   setInspectionTemplatePdtpActivitiesAction,
   promoteUnclassifiedDeviationAction,
   setTemplateDeviationAction,
@@ -333,7 +334,11 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, catalogActivi
                         ? "No acredita · reemplazada por un código nuevo, retírala"
                         : "No acredita"
                 }</dd></div>
-                <div className="col-span-2"><dt className="text-[var(--color-text-subtle)]">Fuente y paridad</dt><dd className="mt-0.5 font-medium">{item.sourceSnapshot ? <><a className="underline" href={`/api/prevencion/documentacion/${item.sourceSnapshot.documentId}/version/${item.sourceSnapshot.versionId}`}>{item.sourceSnapshot.fileName}</a> · {item.sourceSnapshot.revision ?? "sin revisión"} · {parityStatusLabel(item.parityReport?.status)}</> : isOfficialProvenance(item.provenanceKind) ? "Documento oficial pendiente" : "Definición propia de plataforma"}</dd></div>
+                <div className="col-span-2"><dt className="text-[var(--color-text-subtle)]">Fuente y paridad</dt><dd className="mt-0.5 font-medium">{item.sourceSnapshot ? <><a className="underline" href={`/api/prevencion/documentacion/${item.sourceSnapshot.documentId}/version/${item.sourceSnapshot.versionId}`}>{item.sourceSnapshot.fileName}</a> · {item.sourceSnapshot.revision ?? "sin revisión"} · {parityStatusLabel(item.parityReport?.status)}{item.parityReport?.status === "failed" && (item.parityReport.differences?.length ?? 0) > 0 && (
+                  <ul className="mt-0.5 list-disc pl-4 font-normal text-[var(--color-warning-ink)]">
+                    {item.parityReport.differences.map((difference) => <li key={difference}>{difference}</li>)}
+                  </ul>
+                )}</> : isOfficialProvenance(item.provenanceKind) ? "Documento oficial pendiente" : "Definición propia de plataforma"}</dd></div>
               </dl>
               <TemplateActions item={item} templates={templates} catalogActivities={catalogActivities} canManage={canManage} canApprove={canApprove} />
             </article>
@@ -369,6 +374,13 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, catalogActivi
                     {item.sourceSnapshot ? <>
                       <a className="underline" href={`/api/prevencion/documentacion/${item.sourceSnapshot.documentId}/version/${item.sourceSnapshot.versionId}`}>{item.sourceSnapshot.fileName}</a>
                       <span className="block">{item.sourceSnapshot.revision ?? "Sin revisión"} · {parityStatusLabel(item.parityReport?.status)}</span>
+                      {/* Las diferencias se guardaban y no se mostraban en ninguna
+                          parte: una plantilla con veinte decía sólo «Con diferencias». */}
+                      {item.parityReport?.status === "failed" && (item.parityReport.differences?.length ?? 0) > 0 && (
+                        <ul className="mt-0.5 list-disc pl-4 text-[var(--color-warning-ink)]">
+                          {item.parityReport.differences.map((difference) => <li key={difference}>{difference}</li>)}
+                        </ul>
+                      )}
                       <span className="block font-mono" title={item.sourceSnapshot.checksumSha256}>SHA-256 {item.sourceSnapshot.checksumSha256.slice(0, 12)}…</span>
                       <span className="block font-mono" title={item.contentHash}>JSON {item.contentHash.slice(0, 12)}…</span>
                     </> : isOfficialProvenance(item.provenanceKind) ? <span className="text-[var(--color-warning-ink)]">Documento oficial pendiente</span> : "Definición de plataforma"}
@@ -495,12 +507,80 @@ function TemplateActions({ item, templates, catalogActivities, canManage, canApp
     <div className="flex flex-wrap justify-end gap-2">
       {item.status !== "superseded" && canManage && <DeviationCatalogDialog templateCode={item.code} name={item.name} entries={item.deviations} unclassified={item.unclassifiedDeviations} />}
       {item.status !== "superseded" && canManage && <PdtpActivitiesDialog templateId={item.id} name={item.name} expectedVersion={item.version} current={item.pdtpCatalogActivityIds ?? []} currentReview={item.pdtpReviewCatalogActivityIds ?? []} options={catalogActivities} />}
+      {item.status === "draft" && canApprove && isOfficialProvenance(item.provenanceKind) && item.sourceDocumentVersionId && <ParityDialog item={item} />}
       {item.status === "draft" && canApprove && <ApproveDialog templateId={item.id} name={item.name} expectedVersion={item.version} />}
       {item.status === "draft" && canManage && !canApprove && <RequestApprovalButton templateId={item.id} />}
       {item.status !== "superseded" && canApprove && <RetireDialog templateId={item.id} name={item.name} />}
       {item.status === "approved" && previous && canApprove && <RollbackTemplateDialog current={item} previous={previous} />}
     </div>
   )
+}
+
+/**
+ * Declara si la transcripción digital coincide con la planilla oficial.
+ *
+ * Antes esto se afirmaba con una casilla en el diálogo de importación que
+ * comparaba la definición consigo misma y sólo sabía decir «sí». Quien no la
+ * marcaba dejaba la plantilla en `pending`, y nada podía sacarla de ahí. Acá se
+ * declara contra el documento ya vinculado, se pueden enumerar las diferencias,
+ * y queda la traza de quién lo hizo.
+ */
+function ParityDialog({ item }: { item: TemplateItem }) {
+  const [open, setOpen] = React.useState(false)
+  const [status, setStatus] = React.useState<"passed" | "failed">(
+    item.parityReport?.status === "failed" ? "failed" : "passed",
+  )
+  const operation = useOperation()
+  return <Dialog open={open} onOpenChange={setOpen}>
+    <DialogTrigger asChild><Button size="sm" variant="secondary">Declarar paridad</Button></DialogTrigger>
+    <DialogContent><form className="space-y-4" onSubmit={(event) => {
+      event.preventDefault()
+      const form = new FormData(event.currentTarget)
+      const toCount = (name: string) => {
+        const raw = String(form.get(name) ?? "").trim()
+        return raw === "" ? null : Number(raw)
+      }
+      const differences = String(form.get("differences") ?? "")
+        .split("\n").map((line) => line.trim()).filter(Boolean)
+      operation.run(() => setInspectionTemplateParityAction({
+        templateId: item.id,
+        expectedVersion: item.version,
+        status,
+        expectedItems: toCount("expectedItems"),
+        actualItems: toCount("actualItems"),
+        differences: status === "failed" ? differences : [],
+        reason: String(form.get("reason") ?? ""),
+      }), () => setOpen(false))
+    }}>
+      <DialogHeader>
+        <DialogTitle>Paridad de {item.name}</DialogTitle>
+        <DialogDescription>
+          Contrasta la definición digital con {item.sourceSnapshot?.fileName ?? "el anexo vinculado"}. Sin paridad aprobada el instrumento no puede habilitarse.
+        </DialogDescription>
+      </DialogHeader>
+      <Field label="Resultado" required>
+        <Select value={status} onValueChange={(value) => setStatus(value as "passed" | "failed")}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="passed">Coincide, sin diferencias</SelectItem>
+            <SelectItem value="failed">Tiene diferencias</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Ítems del anexo"><Input name="expectedItems" type="number" min={0} inputMode="numeric" /></Field>
+        <Field label="Ítems transcritos"><Input name="actualItems" type="number" min={0} inputMode="numeric" /></Field>
+      </div>
+      {status === "failed" && (
+        <Field label="Diferencias, una por línea" required>
+          <Textarea name="differences" required rows={4} placeholder={"Falta el ítem «Estado del cinturón»\nLa columna N/A no existe en el anexo"} />
+        </Field>
+      )}
+      <Field label="Motivo" required><Textarea name="reason" required minLength={10} maxLength={3000} /></Field>
+      {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+      <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar paridad</Button></DialogFooter>
+    </form></DialogContent>
+  </Dialog>
 }
 
 function RollbackTemplateDialog({ current, previous }: { current: TemplateItem; previous: TemplateItem }) {
@@ -947,14 +1027,12 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
     const form = new FormData(event.currentTarget)
     const versionLabel = String(form.get("versionLabel") ?? "").trim()
     const sourceRevision = String(form.get("sourceRevision") ?? "").trim()
-    const parityConfirmed = form.get("parityConfirmed") === "on"
     operation.run(() => importInspectionTemplateAction({
       definitionCode: code,
       kind: form.get("kind"),
       versionLabel: versionLabel || undefined,
       sourceDocumentVersionId: sourceVersionId === NO_ACTIVITY ? undefined : sourceVersionId,
       sourceRevision: sourceRevision || undefined,
-      parityReport: parityConfirmed ? { status: "passed", expectedItems: definition?.items ?? null, actualItems: definition?.items ?? null, differences: [] } : undefined,
       // Sólo se manda cuando hay que desempatar. Omitirlo deja que el servicio
       // aplique el cableado por defecto, que es el caso de las nueve
       // definiciones con una sola actividad.
@@ -987,7 +1065,7 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
           </Field>
           {sourceVersionId !== NO_ACTIVITY && <>
             <Field label="Revisión impresa"><Input name="sourceRevision" placeholder="Ej. Rev. 02" maxLength={120} /></Field>
-            <Checkbox name="parityConfirmed" label="Confirmo que la definición digital fue contrastada con esta versión y no tiene diferencias bloqueantes." />
+            <p className="text-xs text-[var(--color-text-muted)]">La paridad con el anexo se declara después, desde «Declarar paridad» en el catálogo. Hasta entonces la plantilla no puede habilitarse.</p>
           </>}
           {definition && (
             <p className="text-xs text-[var(--color-text-subtle)]">
