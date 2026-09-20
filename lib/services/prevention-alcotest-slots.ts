@@ -26,7 +26,7 @@ import {
   preventionAlcotestSlotEvidence,
   preventionAlcotestSlots,
 } from "@/db/schema"
-import { recordAudit } from "@/lib/audit"
+import { recordAudit, recordModuleHistory } from "@/lib/audit"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { nanoid } from "@/lib/id"
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
@@ -171,6 +171,25 @@ export async function recordAlcotestSlotStatus(
     if (!updated) {
       throw new AlcotestSlotError("La casilla cambió mientras la editabas. Recarga y reintenta.")
     }
+
+    /* La traza es obligatoria justamente acá: corregir un "no aplica" a "no
+     * hecha" anula el trío `not_applicable_*` —lo exige el CHECK—, así que sin
+     * esto no quedaría ningún registro de que alguien sacó esa casilla del
+     * denominador ni de por qué. Es el mismo motivo por el que las casillas de
+     * simulacro y CGRD escriben su historial. */
+    await recordModuleHistory(tx, {
+      module: "alcotest",
+      entityType: "slot",
+      entityId: slot.id,
+      worksiteId: slot.worksiteId,
+      changeType: "status_changed",
+      reason: notApplicable
+        ? `Casilla declarada no aplicable: ${notApplicableReason ?? "sin motivo"}`
+        : "Casilla marcada como no hecha.",
+      beforeState: { status: slot.status, version: slot.version, notApplicableReason: slot.notApplicableReason },
+      afterState: { status: updated.status, version: updated.version, kind: updated.kind, slotKey: updated.slotKey, notApplicableReason },
+      actorUserId: actor.userId,
+    })
     return updated
   })
 }
@@ -241,6 +260,27 @@ export async function fulfillAlcotestSlotTx(
     updatedAt: now,
   }).where(eq(preventionAlcotestSlots.id, slot.id)).returning()
   if (!updated) throw new AlcotestSlotError("No se pudo cumplir la casilla.")
+
+  await recordModuleHistory(tx, {
+    module: "alcotest",
+    entityType: "slot",
+    entityId: slot.id,
+    worksiteId: slot.worksiteId,
+    changeType: "completed",
+    reason: slot.kind === "control"
+      ? "Casilla cumplida por un control de alcotest."
+      : "Casilla cumplida por un envío de registros.",
+    beforeState: { status: slot.status, version: slot.version },
+    afterState: {
+      status: updated.status,
+      version: updated.version,
+      kind: updated.kind,
+      slotKey: updated.slotKey,
+      testId: updated.testId,
+      dispatchId: updated.dispatchId,
+    },
+    actorUserId: input.userId,
+  })
   return updated
 }
 

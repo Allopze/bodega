@@ -14,6 +14,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
+import { readModuleHistory } from "@/lib/testing/audit-history"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -104,6 +105,9 @@ async function seedProgramAndActivities() {
 beforeEach(async () => {
   /* Las casillas van primero: apuntan al control y al envío con `restrict`, así
    * que borrar el hecho antes deja la casilla huérfana y Postgres lo rechaza. */
+  /* El `audit_log` va primero: su FK a `users` impide borrar un usuario que
+   * actuó, y ahora las casillas dejan traza ahí. */
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.preventionAlcotestSlotEvidence)
   await inMemoryDb.delete(schema.preventionAlcotestSlots)
   await inMemoryDb.delete(schema.alcoholTestDispatches)
@@ -436,6 +440,39 @@ describe("recordAlcotestSlotStatus", () => {
       { slotId: marzo.id, expectedVersion: 2, status: "not_completed" },
       { userId: USER_PRF, scope: [WS_ID] },
     )).rejects.toBeInstanceOf(AlcotestSlotError)
+  })
+
+  /* Sin esto, corregir un "no aplica" a "no hecha" borraría toda huella de que
+   * alguien sacó la casilla del denominador: el CHECK anula el trío
+   * `not_applicable_*` y la fila deja de decir quién y por qué. */
+  it("deja traza de quién sacó la casilla del denominador, y sobrevive a la corrección", async () => {
+    const [slot] = await seedSlots()
+    const na = await recordAlcotestSlotStatus(
+      {
+        slotId: slot!.id,
+        expectedVersion: 1,
+        status: "not_applicable",
+        notApplicableReason: "La faena no opera vehículos ni tiene turnos nocturnos.",
+      },
+      { userId: USER_PRF, scope: [WS_ID] },
+    )
+    await recordAlcotestSlotStatus(
+      { slotId: slot!.id, expectedVersion: na.version, status: "not_completed" },
+      { userId: USER_PRF, scope: [WS_ID] },
+    )
+
+    // La fila ya no conserva el motivo; la bitácora sí.
+    const [fila] = await inMemoryDb.select().from(schema.preventionAlcotestSlots)
+      .where(eq(schema.preventionAlcotestSlots.id, slot!.id))
+    expect(fila?.notApplicableReason).toBeNull()
+
+    const traza = await readModuleHistory(inMemoryDb, {
+      module: "alcotest", entityType: "slot", entityId: slot!.id,
+    })
+    expect(traza).toHaveLength(2)
+    expect(traza[0]).toMatchObject({ actorUserId: USER_PRF, worksiteId: WS_ID })
+    expect(traza[0]!.reason).toContain("no opera vehículos")
+    expect(traza[1]!.reason).toContain("no hecha")
   })
 
   it("una casilla de otra faena no se toca aunque se sepa su id", async () => {
