@@ -8,13 +8,13 @@ import {
   eppProductFamilies,
   eppTypes,
   preventionCapaActions,
-  preventionEppHistory,
   preventionEppRequirements,
   products,
   worksites,
   workers,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { computeEppCoverageGaps, EPP_REQUIREMENT_INPUT_SCOPES, type EppCoverageGap } from "@/lib/prevention/epp"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
@@ -55,14 +55,15 @@ async function history(client: Client, args: {
   afterState?: unknown
   actorUserId?: string | null
 }) {
-  await client.insert(preventionEppHistory).values({
-    id: `peppd-${nanoid()}`,
+  await recordModuleHistory(client, {
+    module: "epp",
     entityType: args.entityType,
     entityId: args.entityId,
     worksiteId: args.worksiteId ?? null,
     changeType: args.changeType,
     reason: args.reason,
-    afterState: args.afterState ?? null,
+    beforeState: "beforeState" in args ? (args as { beforeState?: unknown }).beforeState : undefined,
+    afterState: args.afterState,
     actorUserId: args.actorUserId ?? null,
   })
 }

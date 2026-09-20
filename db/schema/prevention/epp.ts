@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { boolean, check, index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core"
+import { boolean, check, index, pgTable, text, timestamp } from "drizzle-orm/pg-core"
 import { eppTypes } from "../epp-types"
 import { eppProductFamilies } from "../products"
 import { users } from "../users"
@@ -38,21 +38,6 @@ export const preventionEppRequirements = pgTable("prevention_epp_requirements", 
   check("prevention_epp_requirement_scope_value_present", sql`${table.scopeType} IN ('global', 'worksite') OR length(${table.scopeValue}) >= 1`),
 ])
 
-/* ── Historial inmutable ──────────────────────────────────────────────────── */
-export const preventionEppHistory = pgTable("prevention_epp_history", {
-  id:          text("id").primaryKey(),
-  entityType:  text("entity_type").notNull(),
-  entityId:    text("entity_id").notNull(),
-  worksiteId:  text("worksite_id").references(() => worksites.id, { onDelete: "set null" }),
-  changeType:  text("change_type").notNull(),
-  reason:      text("reason").notNull(),
-  beforeState: jsonb("before_state"),
-  afterState:  jsonb("after_state"),
-  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-}, (table) => [
-  index("prevention_epp_history_entity_idx").on(table.entityType, table.entityId, table.createdAt),
-])
 
 /* ── Relations ────────────────────────────────────────────────────────────── */
 export const preventionEppRequirementsRelations = relations(preventionEppRequirements, ({ one }) => ({

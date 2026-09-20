@@ -137,6 +137,9 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   // cerrar el endpoint y el permiso a la vez: si no, la evidencia del módulo
   // apagado sigue siendo alcanzable por URL.
   { moduleId: "prevention", submoduleHref: "/prevencion/emergencias", prefix: "/api/prevencion/emergencias" },
+  // Subida y descarga de la evidencia de las casillas de alcotest, por el mismo
+  // motivo: apagar Alcotest tiene que cerrar el endpoint junto con el permiso.
+  { moduleId: "prevention", submoduleHref: "/prevencion/alcotest", prefix: "/api/prevencion/alcotest" },
   { moduleId: "prevention", submoduleHref: "/prevencion/documentacion", prefix: "/api/prevencion/documentacion" },
   { moduleId: "prevention", submoduleHref: "/prevencion/documentacion", prefix: "/api/prevencion/archivos-sensibles" },
   { moduleId: "prevention", submoduleHref: "/prevencion/epp-preventivo", prefix: "/api/prevencion/epp" },
@@ -157,6 +160,8 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "prevention", submoduleHref: "/prevencion/privacidad", prefix: "/api/prevencion/privacidad" },
   { moduleId: "prevention", submoduleHref: "/prevencion/requisitos-legales", prefix: "/api/prevencion/requisitos-legales" },
   { moduleId: "prevention", submoduleHref: "/prevencion/higiene", prefix: "/api/prevencion/salud" },
+  // Subida del informe de laboratorio que respalda una medición de exposición.
+  { moduleId: "prevention", submoduleHref: "/prevencion/higiene", prefix: "/api/prevencion/higiene" },
 
   // Automatizaciones: el secreto se valida en el handler antes de consultar el toggle.
   { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/backup-health" },

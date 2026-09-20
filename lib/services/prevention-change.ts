@@ -5,12 +5,12 @@ import { db, type DB, type Tx } from "@/db"
 import {
   preventionCapaActions,
   preventionChangeAssessments,
-  preventionChangeHistory,
   preventionChangeRequests,
   users,
   worksites,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { assessChangeReadiness, CHANGE_DIMENSIONS } from "@/lib/prevention/change"
 import {
@@ -61,15 +61,15 @@ async function history(client: Client, args: {
   afterState?: unknown
   actorUserId?: string | null
 }) {
-  await client.insert(preventionChangeHistory).values({
-    id: `pchgh-${nanoid()}`,
+  await recordModuleHistory(client, {
+    module: "change",
     entityType: args.entityType,
     entityId: args.entityId,
     worksiteId: args.worksiteId ?? null,
     changeType: args.changeType,
     reason: args.reason,
-    beforeState: args.beforeState ?? null,
-    afterState: args.afterState ?? null,
+    beforeState: "beforeState" in args ? (args as { beforeState?: unknown }).beforeState : undefined,
+    afterState: args.afterState,
     actorUserId: args.actorUserId ?? null,
   })
 }

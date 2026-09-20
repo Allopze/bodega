@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { boolean, check, index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { worksites } from "../worksites"
 import { preventionCapaActions } from "./capa"
@@ -70,21 +70,6 @@ export const preventionChangeAssessments = pgTable("prevention_change_assessment
   check("prevention_change_assessment_action_consistent", sql`${table.actionRequired} = false OR ${table.capaActionId} IS NOT NULL`),
 ])
 
-/* ── Historial inmutable ──────────────────────────────────────────────────── */
-export const preventionChangeHistory = pgTable("prevention_change_history", {
-  id:          text("id").primaryKey(),
-  entityType:  text("entity_type").notNull(),
-  entityId:    text("entity_id").notNull(),
-  worksiteId:  text("worksite_id").references(() => worksites.id, { onDelete: "set null" }),
-  changeType:  text("change_type").notNull(),
-  reason:      text("reason").notNull(),
-  beforeState: jsonb("before_state"),
-  afterState:  jsonb("after_state"),
-  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-}, (table) => [
-  index("prevention_change_history_entity_idx").on(table.entityType, table.entityId, table.createdAt),
-])
 
 /* ── Relations ────────────────────────────────────────────────────────────── */
 export const preventionChangeRequestsRelations = relations(preventionChangeRequests, ({ one, many }) => ({

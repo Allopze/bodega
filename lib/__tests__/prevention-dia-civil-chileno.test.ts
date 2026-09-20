@@ -73,7 +73,7 @@ afterEach(() => {
 
 beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionEmergencyResources)
-  await inMemoryDb.delete(schema.preventionEmergencyHistory)
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.preventionEmergencyPlans)
   await inMemoryDb.delete(schema.preventionChangeAssessments)
   await inMemoryDb.delete(schema.preventionChangeRequests)

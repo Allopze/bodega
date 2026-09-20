@@ -6,7 +6,6 @@ import {
   preventionJsaSteps,
   preventionPermitControls,
   preventionPermitCrew,
-  preventionPermitHistory,
   preventionPermitIsolations,
   preventionPermitMeasurements,
   preventionPermitTypes,
@@ -16,6 +15,7 @@ import {
   worksites,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { verifyPreventionAckToken } from "@/lib/services/prevention-ack-token"
@@ -86,16 +86,18 @@ async function history(client: Client, args: {
   afterState?: unknown
   actorUserId?: string | null
 }) {
-  await client.insert(preventionPermitHistory).values({
-    id: `ptrh-${nanoid()}`,
-    permitId: args.permitId,
+  await recordModuleHistory(client, {
+    module: "permit",
+    entityType: "permit",
+    entityId: args.permitId,
     changeType: args.changeType,
-    fromStatus: args.fromStatus ?? null,
-    toStatus: args.toStatus ?? null,
     reason: args.reason,
-    beforeState: args.beforeState ?? null,
-    afterState: args.afterState ?? null,
+    beforeState: args.beforeState,
+    afterState: args.afterState,
     actorUserId: args.actorUserId ?? null,
+    /* La transición viaja tipada dentro del estado: el permiso de trabajo es
+     * una máquina de estados y "de dónde a dónde" es su dato más consultado. */
+    extra: { fromStatus: args.fromStatus ?? null, toStatus: args.toStatus ?? null },
   })
 }
 

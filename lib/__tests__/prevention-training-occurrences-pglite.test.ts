@@ -38,7 +38,6 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionTrainingOccurrenceEvidence)
   await inMemoryDb.delete(schema.preventionTrainingOccurrences)
   await inMemoryDb.delete(schema.preventionTrainingCatalogItems)
-  await inMemoryDb.delete(schema.preventionTrainingHistory)
   await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpExecutions)
@@ -129,9 +128,9 @@ describe("ocurrencias de capacitación", () => {
       .where(eq(schema.preventionTrainingOccurrenceEvidence.id, "training-occ-evidence-1"))
     expect(evidence).toMatchObject({ state: "annulled", fileName: "acta-extintores.pdf" })
 
-    const history = await inMemoryDb.select().from(schema.preventionTrainingHistory)
-      .where(eq(schema.preventionTrainingHistory.entityId, target.id))
-    expect(history).toHaveLength(2)
+    /* Antes acá había dos aserciones: una sobre `prevention_training_history` y
+     * otra sobre `audit_log`, con el mismo largo. Eran la misma traza escrita
+     * dos veces; la tabla por módulo se retiró y queda la compartida. */
     expect((await inMemoryDb.select().from(schema.auditLog)).filter((row) => row.entityId === target.id)).toHaveLength(2)
     expect((await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)).filter((row) => row.sourceId === target.id)).toHaveLength(2)
 

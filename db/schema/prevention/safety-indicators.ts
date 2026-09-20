@@ -136,26 +136,6 @@ export const safetyIndicatorSnapshots = pgTable("safety_indicator_snapshots", {
   check("safety_indicator_snapshot_approval_check", sql`${table.status} <> 'approved' OR (${table.approvedByUserId} IS NOT NULL AND ${table.approvedAt} IS NOT NULL AND ${table.approvalReason} IS NOT NULL AND ${table.hasPendingCases} = false AND ${table.reconciliationStatus} = 'matched')`),
 ])
 
-/** Bitácora append-only de denominadores, recálculos, cierres y correcciones. */
-export const safetyIndicatorHistory = pgTable("safety_indicator_history", {
-  id:          text("id").primaryKey(),
-  worksiteId:  text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
-  year:        integer("year").notNull(),
-  month:       integer("month"),
-  changeType:  text("change_type").notNull(),
-  entityType:  text("entity_type").notNull(),
-  entityId:    text("entity_id").notNull(),
-  reason:      text("reason").notNull(),
-  beforeState: jsonb("before_state").$type<Record<string, unknown>>(),
-  afterState:  jsonb("after_state").$type<Record<string, unknown>>(),
-  actorUserId: text("actor_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
-  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
-}, (table) => [
-  index("safety_indicator_history_period_idx").on(table.worksiteId, table.year, table.month, table.createdAt),
-  check("safety_indicator_history_month_check", sql`${table.month} IS NULL OR ${table.month} BETWEEN 1 AND 12`),
-  check("safety_indicator_history_change_check", sql`${table.changeType} IN ('denominator_created', 'denominator_updated', 'denominator_submitted', 'denominator_approved', 'denominator_rejected', 'recalculated', 'closed', 'corrected', 'superseded')`),
-  check("safety_indicator_history_entity_check", sql`${table.entityType} IN ('denominator', 'snapshot', 'period', 'incident_person')`),
-])
 
 /** Cierre administrativo de un mes; el registro del indicador no se duplica. */
 export const safetyIndicatorPeriods = pgTable("safety_indicator_periods", {
@@ -199,10 +179,6 @@ export const safetyIndicatorSnapshotsRelations = relations(safetyIndicatorSnapsh
   approvedBy: one(users, { fields: [safetyIndicatorSnapshots.approvedByUserId], references: [users.id], relationName: "safetyIndicatorSnapshotApprover" }),
 }))
 
-export const safetyIndicatorHistoryRelations = relations(safetyIndicatorHistory, ({ one }) => ({
-  worksite: one(worksites, { fields: [safetyIndicatorHistory.worksiteId], references: [worksites.id] }),
-  actor: one(users, { fields: [safetyIndicatorHistory.actorUserId], references: [users.id] }),
-}))
 
 export const safetyIndicatorPeriodsRelations = relations(safetyIndicatorPeriods, ({ one }) => ({
   worksite: one(worksites, { fields: [safetyIndicatorPeriods.worksiteId], references: [worksites.id] }),

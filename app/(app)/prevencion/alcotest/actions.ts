@@ -8,6 +8,7 @@ import {
   recordAlcoholTest,
   recordAlcoholTestDispatch,
 } from "@/lib/services/prevention-alcotest"
+import { recordAlcotestSlotStatus } from "@/lib/services/prevention-alcotest-slots"
 import type { WorksiteScope } from "@/lib/services/pdtp/helpers"
 import {
   alcoholTestDispatchSchema,
@@ -55,4 +56,16 @@ export async function recordAlcoholTestDispatchAction(input: unknown): Promise<A
     const parsed = alcoholTestDispatchSchema.parse(input)
     return recordAlcoholTestDispatch(parsed, userId, scope)
   })
+}
+
+/**
+ * Declara una casilla del programa como no hecha o no aplicable.
+ *
+ * Mismo permiso que registrar el control, que es la decisión ya tomada para los
+ * otros módulos: quien puede declarar que algo se hizo puede declarar que no, y
+ * partir el permiso convertiría "no aplica" en un trámite que nadie hace.
+ */
+export async function recordAlcotestSlotStatusAction(input: unknown): Promise<ActionState> {
+  return run("prevention:alcotest:register", ({ userId, scope }) =>
+    recordAlcotestSlotStatus(input, { userId, scope }))
 }

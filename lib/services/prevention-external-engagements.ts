@@ -3,12 +3,12 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import {
   preventionCapaActions,
-  preventionExternalEngagementHistory,
   preventionExternalEngagements,
   users,
   worksites,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { engagementMeasureKey } from "@/lib/prevention/external-engagements"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
@@ -54,14 +54,15 @@ async function history(client: Client, args: {
   afterState?: unknown
   actorUserId: string
 }) {
-  await client.insert(preventionExternalEngagementHistory).values({
-    id: `pengh-${nanoid()}`,
-    engagementId: args.engagementId,
+  await recordModuleHistory(client, {
+    module: "external_engagement",
+    entityType: "engagement",
+    entityId: args.engagementId,
     worksiteId: args.worksiteId,
     changeType: args.changeType,
     reason: args.reason ?? null,
-    beforeState: args.beforeState ?? null,
-    afterState: args.afterState ?? null,
+    beforeState: args.beforeState,
+    afterState: args.afterState,
     actorUserId: args.actorUserId,
   })
 }

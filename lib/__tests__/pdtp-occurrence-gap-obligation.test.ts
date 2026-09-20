@@ -116,6 +116,7 @@ async function seedOccurrence(input: {
 beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.pdtpObligations)
+  await inMemoryDb.delete(schema.pdtpProgramWorksites)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.preventionTrainingOccurrences)
@@ -169,6 +170,23 @@ async function activarProgramaEn(year: number, month: number, day: number) {
   await inMemoryDb.update(schema.pdtpPrograms)
     .set({ activatedAt: new Date(Date.UTC(year, month - 1, day, 12)).toISOString() })
     .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+}
+
+/**
+ * Incorpora la faena al programa con una fecha dada. El programa del test
+ * declara `appliesToAllWorksites`, así que sin esta fila no hay membresía y el
+ * único corte es el del programa — que es justamente el caso histórico.
+ */
+async function incorporarFaenaEn(year: number, month: number, day: number) {
+  await inMemoryDb.delete(schema.pdtpProgramWorksites)
+  await inMemoryDb.insert(schema.pdtpProgramWorksites).values({
+    id: `pw-${year}-${month}`,
+    programId: PROGRAM_ID,
+    worksiteId: WS_ID,
+    isActive: true,
+    addedByUserId: USER_ID,
+    addedAt: new Date(Date.UTC(year, month - 1, day, 12)).toISOString(),
+  })
 }
 
 describe("sweepTrainingOccurrenceObligations", () => {
@@ -269,6 +287,36 @@ describe("sweepTrainingOccurrenceObligations", () => {
   it("una casilla declarada no hecha antes de la activación tampoco se exige", async () => {
     await seedOccurrence({ id: "occ-antes-nh", year: PROGRAM_YEAR, month: 2, status: "not_completed" })
     await activarProgramaEn(PROGRAM_YEAR, 4, 1)
+
+    expect((await sweepTrainingOccurrenceObligations()).gaps).toBe(0)
+  })
+
+  /* El corte tiene dos mitades y hacen falta las dos: que el programa se active
+   * y que la faena esté incorporada. Una faena que entró en octubre no arrastra
+   * las casillas de marzo, aunque el programa estuviera activo desde enero. */
+  it("no exige una casilla anterior a la incorporación de la faena al programa", async () => {
+    await seedOccurrence({ id: "occ-antes-faena", year: PROGRAM_YEAR, month: 2, status: "not_completed" })
+    await activarProgramaEn(PROGRAM_YEAR, 1, 5)
+    await incorporarFaenaEn(PROGRAM_YEAR, 10, 1)
+
+    expect((await sweepTrainingOccurrenceObligations()).gaps).toBe(0)
+    expect(await obligations()).toHaveLength(0)
+  })
+
+  it("sí exige las casillas posteriores a la incorporación", async () => {
+    await seedOccurrence({ id: "occ-despues-faena", year: PAST.year, month: PAST.month, status: "not_completed" })
+    await activarProgramaEn(PROGRAM_YEAR, 1, 5)
+    await incorporarFaenaEn(PROGRAM_YEAR - 1, 1, 1)
+
+    expect((await sweepTrainingOccurrenceObligations()).gaps).toBe(1)
+  })
+
+  it("una faena preexistente sigue rigiéndose por la activación del programa", async () => {
+    // Incorporada en enero, programa activado en abril: manda abril, que es el
+    // más tardío de los dos. La casilla de febrero no se exige.
+    await seedOccurrence({ id: "occ-preexistente", year: PROGRAM_YEAR, month: 2, status: "not_completed" })
+    await activarProgramaEn(PROGRAM_YEAR, 4, 1)
+    await incorporarFaenaEn(PROGRAM_YEAR, 1, 2)
 
     expect((await sweepTrainingOccurrenceObligations()).gaps).toBe(0)
   })

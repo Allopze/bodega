@@ -19,7 +19,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
-  await inMemoryDb.delete(schema.preventionRiskLegalHistory)
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.preventionPdtpSourceLinks)
   await inMemoryDb.delete(schema.preventionCommittees)
   await inMemoryDb.delete(schema.preventionEmergencyPlans)

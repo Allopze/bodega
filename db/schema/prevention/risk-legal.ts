@@ -467,19 +467,3 @@ export const preventionPdtpUpdateObligations = pgTable("prevention_pdtp_update_o
   check("prevention_pdtp_update_obligations_status_valid", sql`${table.status} IN ('pending', 'addressed', 'overdue', 'waived')`),
 ])
 
-export const preventionRiskLegalHistory = pgTable("prevention_risk_legal_history", {
-  id: text("id").primaryKey(),
-  domain: text("domain").notNull(),
-  entityType: text("entity_type").notNull(),
-  entityId: text("entity_id").notNull(),
-  worksiteId: text("worksite_id").references(() => worksites.id, { onDelete: "set null" }),
-  changeType: text("change_type").notNull(),
-  reason: text("reason").notNull(),
-  beforeState: jsonb("before_state"),
-  afterState: jsonb("after_state"),
-  actorUserId: text("actor_user_id").references(() => users.id),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-}, (table) => [
-  index("prevention_risk_legal_history_entity_idx").on(table.domain, table.entityType, table.entityId, table.createdAt),
-  check("prevention_risk_legal_history_domain_valid", sql`${table.domain} IN ('risk', 'legal', 'pdtp_coverage', 'import')`),
-])

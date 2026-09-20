@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { check, index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { check, foreignKey, index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { workers, worksites } from "../worksites"
 import { serviceEquipment } from "../service-equipment"
@@ -85,3 +85,113 @@ export const alcoholTestDispatchesRelations = relations(alcoholTestDispatches, (
   worksite: one(worksites, { fields: [alcoholTestDispatches.worksiteId], references: [worksites.id] }),
   sentBy: one(users, { fields: [alcoholTestDispatches.sentByUserId], references: [users.id] }),
 }))
+
+/* ── Casillas del programa ─────────────────────────────────────────────────
+ * La casilla es del programa; el control y el envío son del dominio. Se
+ * mantienen separados por la misma razón que en simulacros y CGRD: un control
+ * extraordinario —una fiscalización sorpresa, un ingreso fuera de turno— existe
+ * sin casilla y no cuenta en el denominador, y el cronograma sigue exigiendo su
+ * celda aunque nadie haya cargado nada. Sin la casilla, "no se hizo" es
+ * indistinguible de "nadie lo cargó".
+ *
+ * Una sola tabla para los dos tipos y no dos: la casilla de control (N°30/31,
+ * 12 celdas) y la de envío (N°32, 11 celdas) tienen forma idéntica y difieren
+ * sólo en qué hecho las llena. Dos tablas gemelas obligarían a duplicar el
+ * mismo aparato de evidencia, de estados y de pre-generación, que es la clase
+ * de duplicación que después se desincroniza en un lado solo.
+ */
+export const preventionAlcotestSlots = pgTable("prevention_alcotest_slots", {
+  id:                    text("id").primaryKey(),
+  worksiteId:            text("worksite_id").notNull(),
+  year:                  integer("year").notNull(),
+  /** `control` = N°30/31 (realizar el alcotest); `envio` = N°32 (DO-48). */
+  kind:                  text("kind").notNull(),
+  slotKey:               text("slot_key").notNull(),
+  scheduledMonth:        integer("scheduled_month").notNull(),
+  scheduledWeek:         integer("scheduled_week").notNull(),
+  status:                text("status").notNull().default("pending"),
+  testId:                text("test_id"),
+  dispatchId:            text("dispatch_id"),
+  completedAt:           timestamp("completed_at", { withTimezone: true, mode: "string" }),
+  completedByUserId:     text("completed_by_user_id"),
+  notApplicableAt:       timestamp("not_applicable_at", { withTimezone: true, mode: "string" }),
+  notApplicableByUserId: text("not_applicable_by_user_id"),
+  notApplicableReason:   text("not_applicable_reason"),
+  observation:           text("observation"),
+  version:               integer("version").notNull().default(1),
+  createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  foreignKey({ columns: [table.worksiteId], foreignColumns: [worksites.id], name: "alcotest_slot_worksite_fk" }).onDelete("restrict"),
+  /* `restrict` y no `set null`: con `set null`, borrar el control dejaría la
+   * casilla cumplida apuntando a nada y el CHECK de consistencia rechazaría el
+   * borrado con un error de driver. Es la misma lección que dejaron las
+   * casillas de simulacro y CGRD. */
+  foreignKey({ columns: [table.testId], foreignColumns: [alcoholTests.id], name: "alcotest_slot_test_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.dispatchId], foreignColumns: [alcoholTestDispatches.id], name: "alcotest_slot_dispatch_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.completedByUserId], foreignColumns: [users.id], name: "alcotest_slot_completer_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.notApplicableByUserId], foreignColumns: [users.id], name: "alcotest_slot_na_actor_fk" }).onDelete("restrict"),
+  uniqueIndex("prevention_alcotest_slot_unique").on(table.worksiteId, table.year, table.kind, table.slotKey),
+  index("prevention_alcotest_slot_period_idx").on(table.worksiteId, table.year, table.status),
+  check("prevention_alcotest_slot_year_check", sql`${table.year} BETWEEN 2020 AND 2100`),
+  check("prevention_alcotest_slot_kind_check", sql`${table.kind} IN ('control', 'envio')`),
+  check("prevention_alcotest_slot_status_check", sql`${table.status} IN ('pending', 'completed', 'not_completed', 'not_applicable')`),
+  check("prevention_alcotest_slot_period_check", sql`${table.scheduledMonth} BETWEEN 1 AND 12 AND ${table.scheduledWeek} BETWEEN 1 AND 4`),
+  /* Cada tipo de casilla sólo puede apuntar a su propio hecho. Sin esto, una
+   * casilla de envío podría quedar cumplida por un control y el checklist
+   * mostraría la N°32 acreditada por algo que no es un envío. */
+  check("prevention_alcotest_slot_kind_ref_check", sql`(${table.kind} = 'control' AND ${table.dispatchId} IS NULL) OR (${table.kind} = 'envio' AND ${table.testId} IS NULL)`),
+  // Una casilla hecha sin el hecho que la cumple sería una marca sin hecho.
+  check("prevention_alcotest_slot_done_check", sql`(${table.status} = 'completed' AND COALESCE(${table.testId}, ${table.dispatchId}) IS NOT NULL AND ${table.completedAt} IS NOT NULL AND ${table.completedByUserId} IS NOT NULL) OR (${table.status} <> 'completed' AND ${table.completedAt} IS NULL AND ${table.completedByUserId} IS NULL)`),
+  check("prevention_alcotest_slot_na_check", sql`(${table.status} = 'not_applicable' AND ${table.notApplicableAt} IS NOT NULL AND ${table.notApplicableByUserId} IS NOT NULL AND length(trim(COALESCE(${table.notApplicableReason}, ''))) >= 10) OR (${table.status} <> 'not_applicable' AND ${table.notApplicableAt} IS NULL AND ${table.notApplicableByUserId} IS NULL AND ${table.notApplicableReason} IS NULL)`),
+  check("prevention_alcotest_slot_version_check", sql`${table.version} >= 1`),
+])
+
+/**
+ * Evidencia de la casilla, 1:N con estados, copiando
+ * `preventionTrainingOccurrenceEvidence`.
+ *
+ * Cuelga de la casilla y no del control: lo que el programa pide respaldar es
+ * el cumplimiento del mes —la planilla de controles, el correo del envío—, no
+ * cada lectura del alcotómetro. Un control extraordinario sigue existiendo sin
+ * evidencia, igual que antes.
+ */
+export const preventionAlcotestSlotEvidence = pgTable("prevention_alcotest_slot_evidence", {
+  id:                text("id").primaryKey(),
+  slotId:            text("slot_id").notNull(),
+  fileName:          text("file_name").notNull(),
+  storagePath:       text("storage_path").notNull().unique(),
+  mimeType:          text("mime_type").notNull(),
+  fileSizeBytes:     integer("file_size_bytes").notNull(),
+  sha256:            text("sha256").notNull(),
+  state:             text("state").notNull().default("active"),
+  uploadedByUserId:  text("uploaded_by_user_id"),
+  uploadedAt:        timestamp("uploaded_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  annulledByUserId:  text("annulled_by_user_id"),
+  annulledAt:        timestamp("annulled_at", { withTimezone: true, mode: "string" }),
+  annulledReason:    text("annulled_reason"),
+}, (table) => [
+  foreignKey({ columns: [table.slotId], foreignColumns: [preventionAlcotestSlots.id], name: "alcotest_evidence_slot_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.uploadedByUserId], foreignColumns: [users.id], name: "alcotest_evidence_uploader_fk" }).onDelete("set null"),
+  foreignKey({ columns: [table.annulledByUserId], foreignColumns: [users.id], name: "alcotest_evidence_annuller_fk" }).onDelete("restrict"),
+  index("prevention_alcotest_slot_evidence_idx").on(table.slotId, table.state, table.uploadedAt),
+  check("prevention_alcotest_evidence_name_check", sql`length(${table.fileName}) BETWEEN 1 AND 255`),
+  check("prevention_alcotest_evidence_size_check", sql`${table.fileSizeBytes} > 0`),
+  check("prevention_alcotest_evidence_sha_check", sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
+  check("prevention_alcotest_evidence_state_check", sql`${table.state} IN ('active', 'replaced', 'annulled')`),
+  check("prevention_alcotest_evidence_annul_check", sql`(${table.state} IN ('active', 'replaced') AND ${table.annulledAt} IS NULL AND ${table.annulledByUserId} IS NULL AND ${table.annulledReason} IS NULL) OR (${table.state} = 'annulled' AND ${table.annulledAt} IS NOT NULL AND ${table.annulledByUserId} IS NOT NULL AND length(${table.annulledReason}) >= 5)`),
+])
+
+export const preventionAlcotestSlotsRelations = relations(preventionAlcotestSlots, ({ one, many }) => ({
+  worksite: one(worksites, { fields: [preventionAlcotestSlots.worksiteId], references: [worksites.id] }),
+  test: one(alcoholTests, { fields: [preventionAlcotestSlots.testId], references: [alcoholTests.id] }),
+  dispatch: one(alcoholTestDispatches, { fields: [preventionAlcotestSlots.dispatchId], references: [alcoholTestDispatches.id] }),
+  evidence: many(preventionAlcotestSlotEvidence),
+}))
+
+export const preventionAlcotestSlotEvidenceRelations = relations(preventionAlcotestSlotEvidence, ({ one }) => ({
+  slot: one(preventionAlcotestSlots, { fields: [preventionAlcotestSlotEvidence.slotId], references: [preventionAlcotestSlots.id] }),
+}))
+
+export type PreventionAlcotestSlot = typeof preventionAlcotestSlots.$inferSelect
+export type PreventionAlcotestSlotEvidence = typeof preventionAlcotestSlotEvidence.$inferSelect

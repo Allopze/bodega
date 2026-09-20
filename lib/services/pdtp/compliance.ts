@@ -13,9 +13,9 @@ import {
 } from "@/db/schema"
 import { PDTP_ESTADOS_CERRADOS } from "./checklist-domain"
 import { capaEstado } from "./capa-view"
-import { loadApprovedExecutionsForWorksites, loadProgramScheduleAndExecutions } from "./helpers"
+import { loadApprovedExecutionsForWorksites, loadProgramScheduleAndExecutions, loadWorksiteAddedAt } from "./helpers"
 import { isFlowSubjectSource, resolvePdtpSubjectRoster } from "./subject-registry"
-import { filterPdtpRowsFromActivation } from "./period"
+import { effectiveActivationFor, filterPdtpRowsFromActivation } from "./period"
 
 export type PdtpComplianceMonth = {
   month: number
@@ -240,13 +240,20 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
 
   const allActivityIds = activityRows.map((row) => row.id)
   const loaded = await loadProgramScheduleAndExecutions(allActivityIds, year, worksiteId)
-  const scheduleRows = filterPdtpRowsFromActivation(loaded.scheduleRows, program.activatedAt)
-  const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, program.activatedAt)
+  /* El corte de exigibilidad es por faena, no sólo por programa: una faena
+   * incorporada en octubre no arrastra las casillas de marzo. Sin `worksiteId`
+   * —vista consolidada— el corte sigue siendo el del programa, que es lo que
+   * corresponde: no hay una faena de la cual hablar. */
+  const activationCutoff = worksiteId
+    ? effectiveActivationFor(program.activatedAt, await loadWorksiteAddedAt(program.id, worksiteId))
+    : program.activatedAt
+  const scheduleRows = filterPdtpRowsFromActivation(loaded.scheduleRows, activationCutoff)
+  const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, activationCutoff)
   // Métrica, no insumo del cálculo: los desvíos que transforman el
   // planificado ya vienen aplicados en `scheduleRows` desde la costura única.
   // Acá sólo se cuentan los "no realizada" por mes para exponerlos.
   const declaredNotPerformedByMonth = Array.from({ length: 12 }, () => 0)
-  for (const row of filterPdtpRowsFromActivation(loaded.deviationRows, program.activatedAt)) {
+  for (const row of filterPdtpRowsFromActivation(loaded.deviationRows, activationCutoff)) {
     if (row.kind !== "not_performed") continue
     declaredNotPerformedByMonth[row.month - 1] = (declaredNotPerformedByMonth[row.month - 1] ?? 0) + 1
   }
@@ -283,10 +290,11 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
         ))
     : []
   const eligibleScheduledInstances = scheduledInstances.filter((instance) => {
-    if (!program.activatedAt) return true
+    if (!activationCutoff) return true
     // Las instancias materializadas antes del día de activación no deben
-    // inventar deuda en el indicador de una versión recién firmada.
-    return instance.scheduledFor >= program.activatedAt.slice(0, 10)
+    // inventar deuda en el indicador de una versión recién firmada. Con faena,
+    // el corte incluye además su fecha de incorporación al programa.
+    return instance.scheduledFor >= activationCutoff.slice(0, 10)
   })
 
   // Modo de indicador por actividad: 'coverage' se calcula todo-o-nada; el resto
@@ -648,13 +656,17 @@ export async function getPdtpComplianceByCategoryForScope(
   const closedOnTimeIds = scorable.filter((row) => row.indicatorMode === "closed_on_time").map((row) => row.id)
   const scheduledIds = scorable.filter((row) => row.indicatorMode !== "closed_on_time").map((row) => row.id)
 
+  /* El corte va adentro del cargador porque se aplica por faena y el
+   * resultado aplana las faenas: acá afuera `scheduleRows` ya no sabe de cuál
+   * vino. */
   const loaded = await loadApprovedExecutionsForWorksites(
     scheduledIds,
     program.year,
     worksiteIds,
+    { programId: program.id, activatedAt: program.activatedAt },
   )
-  const scheduleRows = filterPdtpRowsFromActivation(loaded.scheduleRows, program.activatedAt)
-  const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, program.activatedAt)
+  const scheduleRows = loaded.scheduleRows
+  const executionRows = loaded.executionRows
 
   const totals = new Map<string, { planned: number; executed: number }>()
   const bump = (activityId: string, field: "planned" | "executed", amount: number) => {
@@ -846,8 +858,9 @@ export async function getPdtpIntegralComplianceForScope(
     activityRows.map((row) => row.id),
     program.year,
     worksiteIds,
+    { programId: program.id, activatedAt: program.activatedAt },
   )
-  const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, program.activatedAt)
+  const executionRows = loaded.executionRows
   const { verificacion, cierre } = await computeVerificacionYCierre(executionRows.map((row) => row.id))
 
   return weightIntegral(program, { ejecucion, verificacion, cierre })
@@ -885,7 +898,10 @@ export async function getPdtpIntegralCompliance(
   let approvedExecutionIds: string[] = []
   if (activityIds.length > 0) {
     const loaded = await loadProgramScheduleAndExecutions(activityIds, program.year, worksiteId)
-    const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, program.activatedAt)
+    const cutoff = worksiteId
+      ? effectiveActivationFor(program.activatedAt, await loadWorksiteAddedAt(program.id, worksiteId))
+      : program.activatedAt
+    const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, cutoff)
     // El indicador integral es formal: checklist y acciones también requieren
     // que la ejecución base haya sido aprobada.
     approvedExecutionIds = executionRows.reduce<string[]>((ids, execution) => {

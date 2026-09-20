@@ -7,6 +7,7 @@ import {
   pdtpChangeLog,
   pdtpExecutionChecklists,
   pdtpExecutions,
+  pdtpProgramWorksites,
   pdtpPrograms,
   pdtpSheets,
   worksites,
@@ -15,6 +16,7 @@ import { nanoid } from "@/lib/id"
 import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
 import { applyDeviationsToSchedule, loadPdtpDeviations } from "./deviations"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
+import { effectiveActivationFor, filterPdtpRowsFromActivation } from "./period"
 import { getPdtpActionWorksiteId } from "./capa-view"
 
 export type WorksiteScope = string[] | "all"
@@ -190,6 +192,28 @@ export function pdtpCellLockKey(
   return `pdtp-cell:${activityId}:${worksiteId}:${year}:${month}:${week}`
 }
 
+/**
+ * Cuándo esta faena entró al programa. Es la mitad por faena del corte de
+ * exigibilidad; la otra mitad es la activación del programa, y quien las une es
+ * `effectiveActivationFor`.
+ *
+ * `null` cuando la faena no tiene fila de membresía, que es el caso de los
+ * programas con `appliesToAllWorksites`: ahí no hay fecha de incorporación
+ * porque nunca hubo incorporación, y el corte queda siendo el del programa.
+ */
+export async function loadWorksiteAddedAt(
+  programId: string, worksiteId: string, client: DB | Tx = db,
+): Promise<string | null> {
+  const [row] = await client.select({ addedAt: pdtpProgramWorksites.addedAt })
+    .from(pdtpProgramWorksites)
+    .where(and(
+      eq(pdtpProgramWorksites.programId, programId),
+      eq(pdtpProgramWorksites.worksiteId, worksiteId),
+    ))
+    .limit(1)
+  return row?.addedAt ?? null
+}
+
 export async function loadProgramScheduleAndExecutions(activityIds: string[], year: number, worksiteId?: string) {
   const [scheduleRows, executionRows, overrideRows, exclusionRows, activityRows, deviationRows] = await Promise.all([
     db.select().from(pdtpActivitySchedule).where(and(
@@ -283,6 +307,13 @@ export async function loadApprovedExecutionsForWorksites(
   activityIds: string[],
   year: number,
   worksiteIds: string[],
+  /**
+   * Cuando viene, el corte de exigibilidad se aplica **por faena** acá adentro.
+   * Tiene que ser acá y no en el llamador: este resultado aplana las faenas y
+   * `scheduleRows` no lleva `worksiteId`, así que después de aplanar ya no se
+   * puede saber a qué corte someter cada fila.
+   */
+  activation?: { programId: string; activatedAt: string | null },
 ) {
   if (activityIds.length === 0 || worksiteIds.length === 0) {
     return { scheduleRows: [], executionRows: [] } as {
@@ -291,7 +322,19 @@ export async function loadApprovedExecutionsForWorksites(
     }
   }
   const perWorksite = await Promise.all(
-    worksiteIds.map((worksiteId) => loadProgramScheduleAndExecutions(activityIds, year, worksiteId)),
+    worksiteIds.map(async (worksiteId) => {
+      const entry = await loadProgramScheduleAndExecutions(activityIds, year, worksiteId)
+      if (!activation) return entry
+      const cutoff = effectiveActivationFor(
+        activation.activatedAt,
+        await loadWorksiteAddedAt(activation.programId, worksiteId),
+      )
+      return {
+        ...entry,
+        scheduleRows: filterPdtpRowsFromActivation(entry.scheduleRows, cutoff),
+        executionRows: filterPdtpRowsFromActivation(entry.executionRows, cutoff),
+      }
+    }),
   )
   return {
     scheduleRows: perWorksite.flatMap((entry) => entry.scheduleRows),

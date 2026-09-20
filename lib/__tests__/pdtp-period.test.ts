@@ -3,6 +3,7 @@ import {
   countOverdueMonths,
   currentPdtpPeriod,
   deriveActivityStatus,
+  effectiveActivationFor,
   filterPdtpRowsFromActivation,
   isPdtpActivityZeroThisMonth,
   isPdtpPeriodOnOrAfterActivation,
@@ -86,6 +87,43 @@ describe("vigencia del programa PDTP", () => {
     const nearMidnight = "2026-07-15T02:30:00.000Z"
     expect(isPdtpPeriodOnOrAfterActivation({ year: 2026, month: 7, week: 1 }, nearMidnight)).toBe(false)
     expect(isPdtpPeriodOnOrAfterActivation({ year: 2026, month: 7, week: 2 }, nearMidnight)).toBe(true)
+  })
+})
+
+describe("effectiveActivationFor", () => {
+  const activatedAt = "2026-04-10T12:00:00.000Z"
+
+  it("sin fecha de incorporación devuelve el corte del programa", () => {
+    expect(effectiveActivationFor(activatedAt, null)).toBe(activatedAt)
+    expect(effectiveActivationFor(activatedAt, undefined)).toBe(activatedAt)
+  })
+
+  it("sin activación del programa devuelve la incorporación de la faena", () => {
+    expect(effectiveActivationFor(null, "2026-10-01T12:00:00.000Z")).toBe("2026-10-01T12:00:00.000Z")
+  })
+
+  it("con ambas, gana la más tardía", () => {
+    // Faena preexistente: el programa se activa después y manda él.
+    expect(effectiveActivationFor(activatedAt, "2026-01-05T12:00:00.000Z")).toBe(activatedAt)
+    // Faena incorporada tarde: manda su fecha, no la del programa.
+    expect(effectiveActivationFor(activatedAt, "2026-10-01T12:00:00.000Z")).toBe("2026-10-01T12:00:00.000Z")
+  })
+
+  it("compara por instante y no por texto", () => {
+    /* Postgres devuelve `2026-10-01 12:00:00+00` y `toISOString()` devuelve
+     * `2026-10-01T12:00:00.000Z`. Comparadas como cadenas, el espacio (0x20)
+     * siempre pierde contra la T (0x54), así que la fecha de la faena nunca
+     * ganaría si vino de la base — que es de donde siempre viene. */
+    const fromPostgres = "2026-10-01 12:00:00+00"
+    expect(effectiveActivationFor(activatedAt, fromPostgres)).toBe(fromPostgres)
+  })
+
+  it("una fecha inválida no manda", () => {
+    expect(effectiveActivationFor(activatedAt, "no es una fecha")).toBe(activatedAt)
+  })
+
+  it("ninguna de las dos deja el corte sin resolver, que significa exigir todo", () => {
+    expect(effectiveActivationFor(null, null)).toBe(null)
   })
 })
 

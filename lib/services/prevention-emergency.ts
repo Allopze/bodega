@@ -8,7 +8,6 @@ import {
   preventionEmergencyDrillEvidence,
   preventionEmergencyDrillSlots,
   preventionEmergencyDrills,
-  preventionEmergencyHistory,
   preventionEmergencyPlans,
   preventionEmergencyResources,
   preventionEmergencyRoles,
@@ -18,6 +17,7 @@ import {
   worksites,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { assessDrillCompletion, assessPlanReadiness, EMERGENCY_SCENARIO_TYPES } from "@/lib/prevention/emergency"
 import type { EmergencyQuickFilter } from "@/lib/prevention/emergency-list-filters"
@@ -109,15 +109,15 @@ async function history(client: Client, args: {
   afterState?: unknown
   actorUserId?: string | null
 }) {
-  await client.insert(preventionEmergencyHistory).values({
-    id: `pemgh-${nanoid()}`,
+  await recordModuleHistory(client, {
+    module: "emergency",
     entityType: args.entityType,
     entityId: args.entityId,
     worksiteId: args.worksiteId ?? null,
     changeType: args.changeType,
     reason: args.reason,
-    beforeState: args.beforeState ?? null,
-    afterState: args.afterState ?? null,
+    beforeState: "beforeState" in args ? (args as { beforeState?: unknown }).beforeState : undefined,
+    afterState: args.afterState,
     actorUserId: args.actorUserId ?? null,
   })
 }

@@ -55,7 +55,7 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
   /* Las casillas son de la FAENA, no del plan: archivar un plan y emitir otro
    * no reinicia lo que el programa esperaba ese año. */
   const drillSlots = await listEmergencyDrillSlots(db, [detail.plan.worksiteId])
-  const activationPeriod = await resolveProgramActivationPeriod()
+  const activationPeriod = await resolveProgramActivationPeriod(detail.plan.worksiteId)
 
   return (
     <PageContainer>

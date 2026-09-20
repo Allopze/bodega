@@ -1,7 +1,7 @@
 /** Real PostgreSQL proof for Emergencias: disponibilidad del plan, segregación de aprobación y cierre de simulacro derivando a CAPA. */
 import path from "node:path"
 import postgres from "postgres"
-import { asc, eq, sql } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
@@ -13,6 +13,7 @@ import {
   getMaintenanceDatabaseUrl,
   quotePostgresIdentifier,
 } from "@/lib/testing/destructive-database-guard"
+import { readModuleHistory } from "@/lib/testing/audit-history"
 
 const databaseUrl = process.env.PREVENTION_EMERGENCY_DATABASE_URL
 const canReset = process.env.PREVENTION_EMERGENCY_ALLOW_DESTRUCTIVE_RESET === "true"
@@ -343,9 +344,9 @@ describeIf("Emergencias on real PostgreSQL", () => {
     expect(conCableado.status).toBe("approved")
     expect(conCableado.pdtpActivityNumbers).toEqual([83, 84])
 
-    const historia = await getDb().select().from(schema.preventionEmergencyHistory)
-      .where(eq(schema.preventionEmergencyHistory.entityId, planId))
-      .orderBy(asc(schema.preventionEmergencyHistory.createdAt))
+    const historia = await readModuleHistory(getDb(), {
+      module: "emergency", entityType: "plan", entityId: planId,
+    })
     expect(historia.map((row) => row.changeType)).toContain("pdtp_activities_set")
 
     // La prueba del hallazgo: completar un simulacro ahora SÍ llega al motor de
@@ -464,9 +465,9 @@ describeIf("Emergencias on real PostgreSQL", () => {
 
     expect(await emergencyAttention()).toEqual([])
 
-    const historia = await getDb().select().from(schema.preventionEmergencyHistory)
-      .where(eq(schema.preventionEmergencyHistory.entityId, resourceId))
-      .orderBy(asc(schema.preventionEmergencyHistory.createdAt))
+    const historia = await readModuleHistory(getDb(), {
+      module: "emergency", entityType: "resource", entityId: resourceId,
+    })
     expect(historia.map((row) => row.changeType)).toEqual(["added", "updated"])
   })
 
@@ -486,9 +487,9 @@ describeIf("Emergencias on real PostgreSQL", () => {
     expect(counts.totalResources).toBe(1)
     expect(counts.resourcesOutOfService).toBe(1)
 
-    const historia = await getDb().select().from(schema.preventionEmergencyHistory)
-      .where(eq(schema.preventionEmergencyHistory.entityId, resourceId))
-      .orderBy(asc(schema.preventionEmergencyHistory.createdAt))
+    const historia = await readModuleHistory(getDb(), {
+      module: "emergency", entityType: "resource", entityId: resourceId,
+    })
     expect(historia.map((row) => row.changeType)).toEqual(["added", "updated", "decommissioned"])
   })
 
@@ -519,9 +520,9 @@ describeIf("Emergencias on real PostgreSQL", () => {
     expect(cancelado.status).toBe("cancelled")
     expect(cancelado.version).toBe(programado.version + 1)
 
-    const historia = await getDb().select().from(schema.preventionEmergencyHistory)
-      .where(eq(schema.preventionEmergencyHistory.entityId, programado.id))
-      .orderBy(asc(schema.preventionEmergencyHistory.createdAt))
+    const historia = await readModuleHistory(getDb(), {
+      module: "emergency", entityType: "drill", entityId: programado.id,
+    })
     expect(historia.map((row) => row.changeType)).toEqual(["scheduled", "cancelled"])
     expect(historia[1]?.reason).toBe("Se suspendió por alerta meteorológica en la faena.")
 
@@ -569,9 +570,9 @@ describeIf("Emergencias on real PostgreSQL", () => {
     expect(archivado.status).toBe("archived")
     expect(archivado.version).toBe(planVersion + 1)
 
-    const historia = await getDb().select().from(schema.preventionEmergencyHistory)
-      .where(eq(schema.preventionEmergencyHistory.entityId, planId))
-      .orderBy(asc(schema.preventionEmergencyHistory.createdAt))
+    const historia = await readModuleHistory(getDb(), {
+      module: "emergency", entityType: "plan", entityId: planId,
+    })
     // El ciclo de vida del plan, aislado de las entradas de cableado al PDTP
     // que EMERGENCIAS-05 intercala en medio (`pdtp_activities_set`): lo que esta
     // prueba fija es que archivar deja su marca al final, no el largo total del

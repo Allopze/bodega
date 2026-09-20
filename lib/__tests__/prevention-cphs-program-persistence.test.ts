@@ -12,6 +12,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { readModuleHistory } from "@/lib/testing/audit-history"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -46,6 +47,9 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionWorksiteDelegates)
   await inMemoryDb.delete(schema.workers)
   await inMemoryDb.delete(schema.worksites)
+  /* La bitácora de estos módulos pasó al `audit_log` compartido, y su FK a
+   * `users` impide borrar un usuario que actuó. Va antes que `users`. */
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.users)
 
   await inMemoryDb.insert(schema.users).values({
@@ -162,8 +166,9 @@ describe("programa de trabajo del comité", () => {
     }, MANAGER)).rejects.toThrow(/cerrado/i)
 
     // Y el cierre deja traza, como el resto de las transiciones del programa.
-    const history = await inMemoryDb.select().from(schema.preventionGovernanceHistory)
-      .where(eq(schema.preventionGovernanceHistory.entityId, program.id))
+    const history = await readModuleHistory(inMemoryDb, {
+      module: "governance", entityType: "committee_program", entityId: program.id,
+    })
     expect(history.map((row) => row.changeType)).toEqual(["created", "activated", "closed"])
   })
 

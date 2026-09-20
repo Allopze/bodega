@@ -366,7 +366,14 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
             worksiteId: membership.worksiteId,
             isActive: membership.isActive,
             addedByUserId: membership.addedByUserId,
-            addedAt: now,
+            /* La fecha de incorporación es de la faena, no de esta copia:
+             * responde "desde cuándo esta faena está dentro del programa", y
+             * versionar el programa no la cambia. Escribir `now` acá hacía que
+             * cada versión nueva dijera que todas las faenas entraron ese día,
+             * y como el corte de exigibilidad se calcula desde este dato,
+             * versionar en noviembre habría borrado el año entero del
+             * denominador de cumplimiento de todas las faenas. */
+            addedAt: membership.addedAt,
           }))).onConflictDoNothing()
         }
       }

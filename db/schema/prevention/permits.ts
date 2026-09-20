@@ -214,21 +214,6 @@ export const preventionJsaSteps = pgTable("prevention_jsa_steps", {
   check("prevention_jsa_residual_valid", sql`${table.residualRisk} IN ('low', 'medium', 'high', 'critical')`),
 ])
 
-/* ── Historial inmutable ──────────────────────────────────────────────────── */
-export const preventionPermitHistory = pgTable("prevention_permit_history", {
-  id:          text("id").primaryKey(),
-  permitId:    text("permit_id").notNull().references(() => preventionWorkPermits.id, { onDelete: "cascade" }),
-  changeType:  text("change_type").notNull(),
-  fromStatus:  text("from_status"),
-  toStatus:    text("to_status"),
-  reason:      text("reason").notNull(),
-  beforeState: jsonb("before_state"),
-  afterState:  jsonb("after_state"),
-  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-}, (table) => [
-  index("prevention_permit_history_permit_idx").on(table.permitId, table.createdAt),
-])
 
 /* ── Relations ────────────────────────────────────────────────────────────── */
 export const preventionWorkPermitsRelations = relations(preventionWorkPermits, ({ one, many }) => ({

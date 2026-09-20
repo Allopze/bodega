@@ -12,9 +12,8 @@
 import { inArray, sql } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import type { DB, Tx } from "@/db"
-import { preventionGovernanceHistory } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
-import { nanoid } from "@/lib/id"
+import { recordModuleHistory } from "@/lib/audit"
 
 export type CphsClient = DB | Tx
 
@@ -57,15 +56,15 @@ export async function recordGovernanceHistory(client: CphsClient, args: {
   afterState?: unknown
   actorUserId?: string | null
 }) {
-  await client.insert(preventionGovernanceHistory).values({
-    id: `pgovh-${nanoid()}`,
+  await recordModuleHistory(client, {
+    module: "governance",
     entityType: args.entityType,
     entityId: args.entityId,
     worksiteId: args.worksiteId ?? null,
     changeType: args.changeType,
     reason: args.reason,
-    beforeState: args.beforeState ?? null,
-    afterState: args.afterState ?? null,
+    beforeState: "beforeState" in args ? (args as { beforeState?: unknown }).beforeState : undefined,
+    afterState: args.afterState,
     actorUserId: args.actorUserId ?? null,
   })
 }

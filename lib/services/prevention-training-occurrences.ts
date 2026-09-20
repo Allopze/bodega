@@ -7,7 +7,6 @@ import {
   preventionTrainingCatalogItems,
   preventionTrainingOccurrenceEvidence,
   preventionTrainingOccurrences,
-  preventionTrainingHistory,
   users,
   worksites,
 } from "@/db/schema"
@@ -501,27 +500,11 @@ export async function recordTrainingOccurrenceStatus(
       annulledEvidenceIds.push(...annulled.map((row) => row.id))
     }
 
-    await tx.insert(preventionTrainingHistory).values({
-      id: `ptrh-${nanoid()}`,
-      entityType: TRAINING_OCCURRENCE_ENTITY_TYPE,
-      entityId: input.occurrenceId,
-      worksiteId: current.occurrence.worksiteId,
-      changeType: "status_changed",
-      reason: statusChangeReason(nextStatus, notApplicableReason),
-      beforeState: {
-        status: current.occurrence.status,
-        version: current.occurrence.version,
-        evidenceIds: activeEvidence.map((row) => row.id),
-      },
-      afterState: {
-        status: nextStatus,
-        version: updated.version,
-        observation,
-        notApplicableReason,
-        annulledEvidenceIds,
-      },
-      actorUserId: access.userId,
-    })
+    /* Antes acá había además un insert en `prevention_training_history`, que
+     * duplicaba exactamente lo que el `recordAudit` de abajo ya escribe. Era el
+     * único de los once historiales de prevención cuyo servicio sí llamaba al
+     * log compartido, así que es el único que se retira sin migrar nada: lo que
+     * guardaba ya estaba guardado dos líneas más abajo. */
 
     await recordAudit({
       userId: access.userId,

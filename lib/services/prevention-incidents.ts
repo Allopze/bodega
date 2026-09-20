@@ -21,7 +21,6 @@ import {
   preventionIncidentFollowups,
   preventionRiskReviewTriggers,
   preventionSensitiveAccessAudit,
-  safetyIndicatorHistory,
   users,
   workers,
   worksites,
@@ -39,6 +38,7 @@ import {
   onIncidentStatementRecorded,
 } from "@/lib/services/pdtp-adapters/incident-accreditation-connector"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import {
   decryptPreventionPayload,
@@ -775,19 +775,20 @@ export async function classifyIncidentPersonForIndicators(args: {
       changeSet: { personId: person.id, before: beforeState, after: afterState, formulaImpact: "ds44_indicators" },
       createdAt: now,
     })
-    await tx.insert(safetyIndicatorHistory).values({
-      id: `sih-${nanoid()}`,
-      worksiteId: incident.worksiteId,
-      year: Number(CHILE_YEAR_FORMAT.format(new Date(incident.occurredAt))),
-      month: Number(CHILE_MONTH_FORMAT.format(new Date(incident.occurredAt))),
-      changeType: "corrected",
+    await recordModuleHistory(tx, {
+      module: "safety_indicator",
       entityType: "incident_person",
       entityId: person.id,
+      worksiteId: incident.worksiteId,
+      changeType: "corrected",
       reason: input.reason,
       beforeState,
       afterState,
       actorUserId: args.access.ctx.userId,
-      createdAt: now,
+      extra: {
+        year: Number(CHILE_YEAR_FORMAT.format(new Date(incident.occurredAt))),
+        month: Number(CHILE_MONTH_FORMAT.format(new Date(incident.occurredAt))),
+      },
     })
     return { incident, person }
   })

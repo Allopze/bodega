@@ -364,21 +364,6 @@ export const preventionEmergencyDrillSlots = pgTable("prevention_emergency_drill
   check("prevention_emergency_drill_slot_version_check", sql`${table.version} >= 1`),
 ])
 
-/* ── Historial inmutable ──────────────────────────────────────────────────── */
-export const preventionEmergencyHistory = pgTable("prevention_emergency_history", {
-  id:          text("id").primaryKey(),
-  entityType:  text("entity_type").notNull(),
-  entityId:    text("entity_id").notNull(),
-  worksiteId:  text("worksite_id").references(() => worksites.id, { onDelete: "set null" }),
-  changeType:  text("change_type").notNull(),
-  reason:      text("reason").notNull(),
-  beforeState: jsonb("before_state"),
-  afterState:  jsonb("after_state"),
-  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-}, (table) => [
-  index("prevention_emergency_history_entity_idx").on(table.entityType, table.entityId, table.createdAt),
-])
 
 /* ── Relations ────────────────────────────────────────────────────────────── */
 export const preventionEmergencyPlansRelations = relations(preventionEmergencyPlans, ({ one, many }) => ({

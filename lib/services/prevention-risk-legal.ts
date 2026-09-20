@@ -26,7 +26,6 @@ import {
   preventionRiskControls,
   preventionRiskEntries,
   preventionRiskImportBatches,
-  preventionRiskLegalHistory,
   preventionRiskMapMarkers,
   preventionRiskMatrices,
   preventionRiskMethodologies,
@@ -41,6 +40,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { onRiskMatrixPublished } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { LEGAL_COMPLIANCE_STATUS_LABELS } from "@/lib/prevention/badges"
 import { CAPA_STATUS_LABELS } from "@/lib/prevention/capa"
@@ -109,16 +109,15 @@ async function history(client: Client, args: {
   afterState?: unknown
   actorUserId?: string | null
 }) {
-  await client.insert(preventionRiskLegalHistory).values({
-    id: `prlh-${nanoid()}`,
-    domain: args.domain,
+  await recordModuleHistory(client, {
+    module: `risk_legal:${args.domain}`,
     entityType: args.entityType,
     entityId: args.entityId,
     worksiteId: args.worksiteId ?? null,
     changeType: args.changeType,
     reason: args.reason,
-    beforeState: args.beforeState ?? null,
-    afterState: args.afterState ?? null,
+    beforeState: args.beforeState,
+    afterState: args.afterState,
     actorUserId: args.actorUserId ?? null,
   })
 }

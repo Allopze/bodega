@@ -16,6 +16,7 @@ import {
   getMaintenanceDatabaseUrl,
   quotePostgresIdentifier,
 } from "@/lib/testing/destructive-database-guard"
+import { readModuleHistory } from "@/lib/testing/audit-history"
 
 const databaseUrl = process.env.PREVENTION_INSPECTIONS_DATABASE_URL
 const canReset = process.env.PREVENTION_INSPECTIONS_ALLOW_DESTRUCTIVE_RESET === "true"
@@ -918,11 +919,11 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       answers: [answerFor(scorableItem())],
     }, AUTHOR)
 
-    const entries = await getDb().select().from(schema.preventionInspectionHistory)
-      .where(eq(schema.preventionInspectionHistory.entityId, created.run.id))
-    const saved = entries.filter((row) => row.changeType === "answers_saved")
+    const saved = await readModuleHistory(getDb(), {
+      module: "inspection", entityType: "run", entityId: created.run.id, changeType: "answers_saved",
+    })
     expect(saved).toHaveLength(1)
-    expect(saved[0]).toMatchObject({ entityType: "run", actorUserId: "in-author", worksiteId: "ws-in-a" })
+    expect(saved[0]).toMatchObject({ actorUserId: "in-author", worksiteId: "ws-in-a" })
   })
 
   /* ── Taller: equipo de flota como sujeto, hallazgo → CAPA → mantención ──── */

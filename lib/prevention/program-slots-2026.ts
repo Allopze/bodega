@@ -1,8 +1,9 @@
 /**
  * lib/prevention/program-slots-2026.ts
  *
- * Las casillas del programa 2026 para simulacros (N°84) y actas del CGRD
- * (N°81): lo que se espera que ocurra, por faena y por año.
+ * Las casillas del programa 2026 para simulacros (N°84), actas del CGRD
+ * (N°81) y alcotest (N°30/31 y N°32): lo que se espera que ocurra, por faena y
+ * por año.
  *
  * **Por qué una constante y no una lectura del JSON en runtime.** El
  * cronograma vive en `db/seed/pdtp-catalog-2026.json`, que es dato del
@@ -13,14 +14,23 @@
  * **Y por qué eso no es una copia que se va a desincronizar.** Existe
  * `pdtp:reprogram-2026-schedule`: el cronograma se puede reprogramar, así que
  * la deriva no es teórica. `program-slots-2026.test.ts` lee el JSON y afirma,
- * celda por celda, que esta constante coincide con las actividades N°84 y
- * N°81. Si alguien reprograma y no actualiza acá, CI lo dice.
+ * celda por celda, que esta constante coincide con las actividades del
+ * catálogo. Si alguien reprograma y no actualiza acá, CI lo dice.
  */
 
 /** Número de actividad PDTP de los simulacros de emergencia. */
 export const DRILL_PDTP_ACTIVITY_NUMBER = 84
 /** Número de actividad PDTP de las actas de reunión del CGRD. */
 export const GRD_MEETING_PDTP_ACTIVITY_NUMBER = 81
+/**
+ * N°30 y N°31 tienen el mismo texto y el mismo cronograma; sólo difieren en el
+ * responsable declarado (PRF vs Sup/JT). Cuál de las dos se acredita lo decide
+ * el rol de quien completa la casilla, no la casilla: por eso son dos números y
+ * una sola serie de celdas.
+ */
+export const ALCOTEST_CONTROL_PDTP_ACTIVITY_NUMBERS = [30, 31] as const
+/** N°32 — «Envío registros alcotest, según DO-48». */
+export const ALCOTEST_DISPATCH_PDTP_ACTIVITY_NUMBER = 32
 
 export const PROGRAM_SLOT_YEAR = 2026 as const
 
@@ -48,6 +58,24 @@ export const GRD_MEETING_SLOTS_2026: readonly ProgramSlot[] = [
   slot(4, 1),
   slot(5, 1),
 ]
+
+/**
+ * N°30/31 — «Realizar alcotest». Doce al año: enero en semana 4 y el resto en
+ * semana 3.
+ */
+export const ALCOTEST_CONTROL_SLOTS_2026: readonly ProgramSlot[] = [
+  slot(1, 4),
+  ...Array.from({ length: 11 }, (_, index) => slot(index + 2, 3)),
+]
+
+/**
+ * N°32 — «Envío registros alcotest, según DO-48». Once: arranca en febrero
+ * porque cada envío reporta el mes anterior, así que enero no tiene qué enviar.
+ */
+export const ALCOTEST_DISPATCH_SLOTS_2026: readonly ProgramSlot[] = Array.from(
+  { length: 11 },
+  (_, index) => slot(index + 2, 1),
+)
 
 /**
  * El año de las casillas. Fuera de 2026 no hay cronograma declarado, así que

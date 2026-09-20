@@ -28,10 +28,12 @@
  * que pinta la pantalla de faenas decide qué compromiso se abre.
  */
 
-import { inArray } from "drizzle-orm"
-import { worksites } from "@/db/schema"
+import { and, desc, eq, inArray } from "drizzle-orm"
+import { db } from "@/db"
+import { pdtpProgramWorksites, pdtpPrograms, worksites } from "@/db/schema"
 import { loadWorksiteOrganizationRows } from "@/lib/services/prevention-cphs-organization-read"
 import { chileDateParts } from "@/lib/utils"
+import { effectiveActivationFor } from "@/lib/services/pdtp/period"
 import {
   countOutcome,
   emptySweepCounters,
@@ -67,12 +69,55 @@ function episodeIdFor(worksiteId: string, occurredAt: string): string {
 
 export type PreventiveOrganizationSweepResult = ObligationSweepCounters & { evaluated: number }
 
+/**
+ * ¿El programa ya le exige algo a esta faena, al día del barrido?
+ *
+ * Dos hechos la vuelven exigible y hacen falta los dos: que la versión aprobada
+ * del programa se active y que la faena esté incorporada a él. Antes de eso la
+ * brecha existe —la faena está sobre el umbral y no tiene comité— pero no es
+ * incumplimiento *del programa*, y abrir el compromiso igual le cobra a una
+ * faena meses en los que no estaba dentro.
+ *
+ * A diferencia del barrido de casillas, acá la comparación es contra **hoy** y
+ * no contra una celda del cronograma: la brecha de la N°11 es una condición
+ * presente —hay dotación y no hay órgano—, no una posición del calendario.
+ *
+ * Sin programa activo del año no se filtra nada: es el comportamiento anterior,
+ * y callar todo compromiso porque no hay programa sería peor que abrirlo. Una
+ * faena sin fila de membresía tampoco se filtra por faena: un programa con
+ * `appliesToAllWorksites` no tiene membresías, y ahí el único corte es el suyo.
+ */
+async function resolveProgramDemandGate(occurredAt: string): Promise<(worksiteId: string) => boolean> {
+  const { year } = chileDateParts(occurredAt)
+  const [program] = await db.select({ id: pdtpPrograms.id, activatedAt: pdtpPrograms.activatedAt })
+    .from(pdtpPrograms)
+    .where(and(eq(pdtpPrograms.status, "active"), eq(pdtpPrograms.year, year)))
+    .orderBy(desc(pdtpPrograms.version))
+    .limit(1)
+  if (!program) return () => true
+
+  const memberships = await db.select({
+    worksiteId: pdtpProgramWorksites.worksiteId,
+    addedAt: pdtpProgramWorksites.addedAt,
+  }).from(pdtpProgramWorksites).where(eq(pdtpProgramWorksites.programId, program.id))
+  const addedAtByWorksite = new Map(memberships.map((row) => [row.worksiteId, row.addedAt]))
+
+  const now = new Date(occurredAt).getTime()
+  return (worksiteId: string) => {
+    const cutoff = effectiveActivationFor(program.activatedAt, addedAtByWorksite.get(worksiteId))
+    if (!cutoff) return true
+    const cutoffMs = new Date(cutoff).getTime()
+    return Number.isNaN(cutoffMs) || cutoffMs <= now
+  }
+}
+
 async function openObligationsFor(
   rows: Awaited<ReturnType<typeof loadWorksiteOrganizationRows>>,
 ): Promise<PreventiveOrganizationSweepResult> {
   const counters = emptySweepCounters()
   const occurredAt = new Date().toISOString()
-  const gaps = rows.filter((row) => !row.compliance.compliant)
+  const isDemanded = await resolveProgramDemandGate(occurredAt)
+  const gaps = rows.filter((row) => !row.compliance.compliant && isDemanded(row.worksiteId))
   if (gaps.length === 0) return { ...counters, evaluated: rows.length }
 
   // El actor se hereda del programa una sola vez por barrido: es el mismo para

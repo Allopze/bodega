@@ -86,6 +86,38 @@ export function pdtpActivationPeriod(activatedAt: string | null | undefined): Pd
   return Number.isNaN(activationDate.getTime()) ? null : currentPdtpPeriod(activationDate)
 }
 
+/**
+ * Desde cuándo el programa le exige algo a UNA faena.
+ *
+ * Son dos hechos independientes y hacen falta los dos: que el programa se
+ * active y que la faena esté incorporada a él. Hasta que ocurre el segundo, el
+ * programa está vigente pero no sobre esta faena. Por eso gana el más tardío.
+ *
+ * Una faena incorporada en octubre arrastraba las casillas de marzo y las
+ * contaba como incumplimiento, porque el único corte que existía era el del
+ * programa —uno solo, global— y ninguna de las quince llamadas a
+ * `filterPdtpRowsFromActivation` sabía de qué faena estaba hablando.
+ *
+ * Sin `worksiteAddedAt` devuelve el corte del programa, que es el
+ * comportamiento anterior: cada sitio se puede migrar por separado.
+ */
+export function effectiveActivationFor(
+  programActivatedAt: string | null | undefined,
+  worksiteAddedAt: string | null | undefined,
+): string | null | undefined {
+  if (!worksiteAddedAt) return programActivatedAt
+  if (!programActivatedAt) return worksiteAddedAt
+  /* Por instante y no por texto: Postgres devuelve `2026-03-01 12:00:00+00` y
+   * `toISOString()` devuelve `2026-03-01T12:00:00.000Z`. Comparados como
+   * cadenas, el espacio (0x20) siempre pierde contra la T (0x54), así que la
+   * fecha de la faena nunca ganaría si vino de la base. */
+  const added = new Date(worksiteAddedAt).getTime()
+  const activated = new Date(programActivatedAt).getTime()
+  if (Number.isNaN(added)) return programActivatedAt
+  if (Number.isNaN(activated)) return worksiteAddedAt
+  return added > activated ? worksiteAddedAt : programActivatedAt
+}
+
 /** Excluye del cómputo las obligaciones anteriores a la activación. */
 export function filterPdtpRowsFromActivation<T extends PdtpPeriodRow>(
   rows: T[],

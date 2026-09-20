@@ -79,7 +79,7 @@ async function seedPdtpActivity(n: 79 | 80 | 81) {
 }
 
 beforeEach(async () => {
-  await inMemoryDb.delete(schema.preventionGovernanceHistory)
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.preventionGrdAgreements)
   await inMemoryDb.delete(schema.preventionCapaActions)
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)

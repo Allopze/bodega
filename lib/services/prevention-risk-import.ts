@@ -6,10 +6,10 @@ import { db } from "@/db"
 import {
   preventionRiskImportBatches,
   preventionRiskImportRows,
-  preventionRiskLegalHistory,
   preventionRiskMatrices,
   worksites,
 } from "@/db/schema"
+import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import type { RiskLegalAccess } from "@/lib/services/prevention-risk-legal"
 import {
@@ -453,9 +453,8 @@ export async function reopenRiskImportBatch(input: unknown, access: RiskLegalAcc
       .where(and(eq(preventionRiskImportBatches.id, batch.id), eq(preventionRiskImportBatches.status, "approved")))
       .returning()
     if (!updated) throw new Error("El lote cambió mientras lo reabrías. Recarga antes de continuar.")
-    await tx.insert(preventionRiskLegalHistory).values({
-      id: `prlh-${nanoid()}`,
-      domain: "import",
+    await recordModuleHistory(tx, {
+      module: "risk_legal:import",
       entityType: "import_batch",
       entityId: batch.id,
       worksiteId: batch.worksiteId,
