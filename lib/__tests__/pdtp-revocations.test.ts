@@ -28,13 +28,14 @@
 
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
-import { and, desc, eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { readModuleHistory } from "@/lib/testing/audit-history"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -103,7 +104,7 @@ async function executionsFor(n: number) {
 
 beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionCapaActions)
-  await inMemoryDb.delete(schema.preventionGovernanceHistory)
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpObligations)
   await inMemoryDb.delete(schema.pdtpExecutions)
@@ -515,13 +516,10 @@ describe("el cableado PDTP de un plan de emergencia", () => {
 
     // El historial tiene que decir qué se cableó, no repetir el snapshot que
     // se conservó: es la evidencia de quién cambió la acreditación y a qué.
-    const [entrada] = await inMemoryDb.select().from(schema.preventionEmergencyHistory)
-      .where(and(
-        eq(schema.preventionEmergencyHistory.entityId, conCatalogo.id),
-        eq(schema.preventionEmergencyHistory.changeType, "pdtp_activities_set"),
-      ))
-      .orderBy(desc(schema.preventionEmergencyHistory.createdAt))
-    expect(entrada!.reason).toContain("pdtp-catalog-plan-snapshot")
+    const entradas = await readModuleHistory(inMemoryDb, {
+      module: "emergency", entityType: "plan", entityId: conCatalogo.id, changeType: "pdtp_activities_set",
+    })
+    expect(entradas.at(-1)!.reason).toContain("pdtp-catalog-plan-snapshot")
   })
 
   it("vaciar la selección apaga la acreditación en las dos representaciones", async () => {

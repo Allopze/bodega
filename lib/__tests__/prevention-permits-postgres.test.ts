@@ -13,6 +13,7 @@ import {
   getMaintenanceDatabaseUrl,
   quotePostgresIdentifier,
 } from "@/lib/testing/destructive-database-guard"
+import { readModuleHistory } from "@/lib/testing/audit-history"
 
 const databaseUrl = process.env.PREVENTION_PERMITS_DATABASE_URL
 const canReset = process.env.PREVENTION_PERMITS_ALLOW_DESTRUCTIVE_RESET === "true"
@@ -346,8 +347,9 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
     permitVersion = closed.version
     expect(closed.status).toBe("closed")
 
-    const history = await getDb().select().from(schema.preventionPermitHistory)
-      .where(eq(schema.preventionPermitHistory.permitId, permitId))
+    const history = await readModuleHistory(getDb(), {
+      module: "permit", entityType: "permit", entityId: permitId,
+    })
     expect(history.length).toBeGreaterThanOrEqual(6)
   })
 

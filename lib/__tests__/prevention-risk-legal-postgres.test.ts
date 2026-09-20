@@ -15,6 +15,7 @@ import {
   getMaintenanceDatabaseUrl,
   quotePostgresIdentifier,
 } from "@/lib/testing/destructive-database-guard"
+import { readModuleHistory } from "@/lib/testing/audit-history"
 
 const databaseUrl = process.env.PREVENTION_RISK_DATABASE_URL
 const canReset = process.env.PREVENTION_RISK_ALLOW_DESTRUCTIVE_RESET === "true"
@@ -113,12 +114,10 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     const oldEntriesAfter = await getDb().select().from(schema.preventionRiskEntries).where(eq(schema.preventionRiskEntries.matrixId, first.id))
     expect(old).toMatchObject({ status: "superseded", version: published.version + 1, publishedHashSha256: published.publishedHashSha256 })
     expect(oldEntriesAfter).toEqual(firstBefore)
-    const [supersededHistory] = await getDb().select().from(schema.preventionRiskLegalHistory).where(and(
-      eq(schema.preventionRiskLegalHistory.entityId, first.id),
-      eq(schema.preventionRiskLegalHistory.changeType, "superseded"),
-    ))
+    const [supersededHistory] = await readModuleHistory(getDb(), {
+      module: "risk_legal:risk", entityType: "matrix", entityId: first.id, changeType: "superseded",
+    })
     expect(supersededHistory).toMatchObject({
-      domain: "risk",
       beforeState: expect.objectContaining({ status: "published", publishedHashSha256: published.publishedHashSha256 }),
       afterState: expect.objectContaining({ status: "superseded", supersededByMatrixId: revision.id }),
     })
@@ -148,10 +147,9 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     ])
     expect(competingReviews.filter((result) => result.status === "fulfilled")).toHaveLength(1)
     expect(competingReviews.filter((result) => result.status === "rejected")).toHaveLength(1)
-    const concurrentHistory = await getDb().select().from(schema.preventionRiskLegalHistory).where(and(
-      eq(schema.preventionRiskLegalHistory.entityId, concurrent.id),
-      eq(schema.preventionRiskLegalHistory.changeType, "reviewed"),
-    ))
+    const concurrentHistory = await readModuleHistory(getDb(), {
+      module: "risk_legal:risk", entityType: "matrix", entityId: concurrent.id, changeType: "reviewed",
+    })
     expect(concurrentHistory).toHaveLength(1)
   })
 
@@ -284,12 +282,10 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     legalRequirementId = revisionPublished.id
     const [oldRequirement] = await getDb().select().from(schema.preventionLegalRequirements).where(eq(schema.preventionLegalRequirements.id, requirement.id))
     expect(oldRequirement).toMatchObject({ status: "superseded", version: published.version + 1, publishedHashSha256: published.publishedHashSha256 })
-    const [legalSupersededHistory] = await getDb().select().from(schema.preventionRiskLegalHistory).where(and(
-      eq(schema.preventionRiskLegalHistory.entityId, requirement.id),
-      eq(schema.preventionRiskLegalHistory.changeType, "superseded"),
-    ))
+    const [legalSupersededHistory] = await readModuleHistory(getDb(), {
+      module: "risk_legal:legal", entityType: "requirement", entityId: requirement.id, changeType: "superseded",
+    })
     expect(legalSupersededHistory).toMatchObject({
-      domain: "legal",
       beforeState: expect.objectContaining({ status: "published", publishedHashSha256: published.publishedHashSha256 }),
       afterState: expect.objectContaining({ status: "superseded", supersededByRequirementId: revision.id }),
     })
@@ -388,10 +384,9 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
 
     const returned = await service.transitionRiskMatrix({ matrixId: draft.id, expectedVersion: submitted.version, toStatus: "draft", reason: "La evaluación residual del peligro RET-01 no corresponde a la metodología." }, reviewer)
     expect(returned).toMatchObject({ status: "draft", version: submitted.version + 1, reviewedByUserId: null })
-    const [returnHistory] = await getDb().select().from(schema.preventionRiskLegalHistory).where(and(
-      eq(schema.preventionRiskLegalHistory.entityId, draft.id),
-      eq(schema.preventionRiskLegalHistory.changeType, "draft"),
-    ))
+    const [returnHistory] = await readModuleHistory(getDb(), {
+      module: "risk_legal:risk", entityType: "matrix", entityId: draft.id, changeType: "draft",
+    })
     expect(returnHistory).toMatchObject({ actorUserId: "risk-reviewer", reason: expect.stringContaining("RET-01") })
 
     // Y en borrador vuelve a admitir cambios, que es de lo que se trataba.
@@ -448,10 +443,9 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
 
     const orphaned = await getDb().select().from(schema.preventionRiskMapMarkers).where(eq(schema.preventionRiskMapMarkers.id, droppedMarker.id))
     expect(orphaned).toEqual([])
-    const [orphanHistory] = await getDb().select().from(schema.preventionRiskLegalHistory).where(and(
-      eq(schema.preventionRiskLegalHistory.entityId, droppedMarker.id),
-      eq(schema.preventionRiskLegalHistory.changeType, "orphaned"),
-    ))
+    const [orphanHistory] = await readModuleHistory(getDb(), {
+      module: "risk_legal:risk", entityType: "risk_map_marker", entityId: droppedMarker.id, changeType: "orphaned",
+    })
     expect(orphanHistory).toMatchObject({ beforeState: expect.objectContaining({ hazardCode: "MAP-02", label: "Sala de bombas" }) })
 
     // La afirmación del informe, comprobada sobre la tabla y no sobre el flujo:
@@ -508,10 +502,9 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     expect(verified).toMatchObject({ status: "verified", effectivenessStatus: "effective", lastVerifiedByUserId: "risk-reviewer", evidenceReference: "acta-verificacion-cinta-001", version: target.version + 1 })
     const [entryAfter] = await getDb().select().from(schema.preventionRiskEntries).where(eq(schema.preventionRiskEntries.id, target.riskEntryId))
     expect(entryAfter!.version).toBeGreaterThan(1)
-    const [verifiedHistory] = await getDb().select().from(schema.preventionRiskLegalHistory).where(and(
-      eq(schema.preventionRiskLegalHistory.entityId, target.id),
-      eq(schema.preventionRiskLegalHistory.changeType, "verified"),
-    ))
+    const [verifiedHistory] = await readModuleHistory(getDb(), {
+      module: "risk_legal:risk", entityType: "control", entityId: target.id, changeType: "verified",
+    })
     expect(verifiedHistory).toMatchObject({ actorUserId: "risk-reviewer", afterState: expect.objectContaining({ segregationExceptionReason: null }) })
 
     // La excepción fundamentada sí pasa, y queda escrita en el historial: es lo
@@ -523,10 +516,9 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
       segregationExceptionReason: "Faena sin segunda persona competente durante el turno de verificación.",
     }, accessB("risk-author", ["prevention:risk:edit", "prevention:risk:override_segregation"]))
     expect(overridden).toMatchObject({ status: "ineffective", effectivenessStatus: "ineffective" })
-    const [overrideHistory] = await getDb().select().from(schema.preventionRiskLegalHistory).where(and(
-      eq(schema.preventionRiskLegalHistory.entityId, target.id),
-      eq(schema.preventionRiskLegalHistory.changeType, "ineffective"),
-    ))
+    const [overrideHistory] = await readModuleHistory(getDb(), {
+      module: "risk_legal:risk", entityType: "control", entityId: target.id, changeType: "ineffective",
+    })
     expect(overrideHistory).toMatchObject({ afterState: expect.objectContaining({ segregationExceptionReason: "Faena sin segunda persona competente durante el turno de verificación." }) })
     // Un control crítico ineficaz abre revisión de la matriz, no queda en nada.
     const [trigger] = await getDb().select().from(schema.preventionRiskReviewTriggers).where(eq(schema.preventionRiskReviewTriggers.sourceId, target.id))
@@ -719,12 +711,10 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
       eq(schema.preventionLegalRequirements.status, "published"),
     ))
     expect(stillPublished).toEqual([{ id: v3.id }])
-    const [supersededHistory] = await getDb().select().from(schema.preventionRiskLegalHistory).where(and(
-      eq(schema.preventionRiskLegalHistory.entityId, current!.id),
-      eq(schema.preventionRiskLegalHistory.changeType, "superseded"),
-    ))
+    const [supersededHistory] = await readModuleHistory(getDb(), {
+      module: "risk_legal:legal", entityType: "requirement", entityId: current!.id, changeType: "superseded",
+    })
     expect(supersededHistory).toMatchObject({
-      domain: "legal",
       beforeState: expect.objectContaining({ status: "published", validTo: null }),
       afterState: expect.objectContaining({ status: "superseded", validTo: "2026-02-28", supersededByRequirementId: v3.id }),
     })
@@ -834,11 +824,10 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     // texto de la v1 y ahí se quedan. Lo que cambia es que deja de contar.
     const [row] = await getDb().select().from(schema.preventionLegalApplicabilities).where(eq(schema.preventionLegalApplicabilities.id, proposed.id))
     expect(row).toMatchObject({ requirementId: v1.id, applicabilityStatus: "applicable", version: approved.version })
-    const [orphanHistory] = await getDb().select().from(schema.preventionRiskLegalHistory).where(and(
-      eq(schema.preventionRiskLegalHistory.entityId, proposed.id),
-      eq(schema.preventionRiskLegalHistory.changeType, "superseded"),
-    ))
-    expect(orphanHistory).toMatchObject({ domain: "legal", afterState: { supersededByRequirementId: v2.id } })
+    const [orphanHistory] = await readModuleHistory(getDb(), {
+      module: "risk_legal:legal", entityType: "applicability", entityId: proposed.id, changeType: "superseded",
+    })
+    expect(orphanHistory).toMatchObject({ afterState: { supersededByRequirementId: v2.id } })
     expect(orphanHistory!.reason).toMatch(/re-evaluarse/i)
 
     await expect(service.approveLegalApplicability({

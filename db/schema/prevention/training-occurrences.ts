@@ -106,29 +106,7 @@ export const preventionTrainingOccurrenceEvidence = pgTable("prevention_training
   check("prevention_training_occurrence_evidence_annulled_consistency_check", sql`(${table.state} IN ('active', 'replaced') AND ${table.annulledAt} IS NULL AND ${table.annulledByUserId} IS NULL AND ${table.annulledReason} IS NULL) OR (${table.state} = 'annulled' AND ${table.annulledAt} IS NOT NULL AND ${table.annulledByUserId} IS NOT NULL AND length(${table.annulledReason}) >= 5)`),
 ])
 
-/* ── Historial inmutable ──────────────────────────────────────────────────
- * La bitácora de cambios de estado de una ocurrencia: qué cambió, por qué y
- * quién. Vivía en `training.ts` junto al modelo por persona y se mudó acá el
- * 2026-09-19, cuando ese archivo se retiró: la escribe
- * `recordTrainingOccurrenceStatus` y es el único registro que queda de un
- * estado anterior, porque la ocurrencia se actualiza en sitio.
- */
-export const preventionTrainingHistory = pgTable("prevention_training_history", {
-  id:          text("id").primaryKey(),
-  entityType:  text("entity_type").notNull(),
-  entityId:    text("entity_id").notNull(),
-  worksiteId:  text("worksite_id").references(() => worksites.id, { onDelete: "set null" }),
-  changeType:  text("change_type").notNull(),
-  reason:      text("reason").notNull(),
-  beforeState: jsonb("before_state"),
-  afterState:  jsonb("after_state"),
-  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-}, (table) => [
-  index("prevention_training_history_entity_idx").on(table.entityType, table.entityId, table.createdAt),
-])
 
 export type PreventionTrainingCatalogItem = typeof preventionTrainingCatalogItems.$inferSelect
 export type PreventionTrainingOccurrence = typeof preventionTrainingOccurrences.$inferSelect
 export type PreventionTrainingOccurrenceEvidence = typeof preventionTrainingOccurrenceEvidence.$inferSelect
-export type PreventionTrainingHistory = typeof preventionTrainingHistory.$inferSelect

@@ -81,6 +81,9 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionInspectionPrograms)
   await inMemoryDb.delete(schema.preventionInspectionTemplates)
   await inMemoryDb.delete(schema.worksites)
+  /* La bitácora de estos módulos pasó al `audit_log` compartido, y su FK a
+   * `users` impide borrar un usuario que actuó. Va antes que `users`. */
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.users)
 
   await inMemoryDb.insert(schema.users).values({

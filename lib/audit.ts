@@ -20,6 +20,11 @@ interface AuditParams {
   oldState?:  Record<string, unknown>
   newState?:  Record<string, unknown>
   reason?:    string
+  /**
+   * La faena del hecho. Es lo que permite filtrar la bitácora por alcance sin
+   * pasar por la entidad, que puede estar borrada.
+   */
+  worksiteId?: string | null
   ipAddress?: string
 }
 
@@ -77,6 +82,7 @@ export async function recordAudit(params: AuditParams, client: AuditDb = db): Pr
     oldState:   params.oldState ? JSON.stringify(params.oldState) : null,
     newState:   params.newState ? JSON.stringify(params.newState) : null,
     reason:     params.reason,
+    worksiteId: params.worksiteId ?? null,
     ipAddress:  ipAddress,
   })
 }
@@ -156,4 +162,79 @@ export async function archiveOldInventoryMovements(keepMonths = 36): Promise<num
     sql`SELECT archive_old_inventory_movements(${keepMonths})`
   )
   return parseInt(row?.archive_old_inventory_movements ?? "0", 10)
+}
+
+/**
+ * La bitácora de un módulo de prevención, escrita en el `audit_log` compartido.
+ *
+ * Reemplaza a las once tablas `prevention_*_history` que cada módulo mantenía
+ * por su cuenta. No eran una copia del audit log —ninguno de esos servicios
+ * llamaba a `recordAudit`, así que eran la única traza que existía—, pero eran
+ * una traza que **nadie podía leer**: cero pantallas, cero exports, cero
+ * cálculos. Escribirlas en el log compartido no duplica nada y las vuelve
+ * alcanzables desde donde ya se mira la auditoría.
+ *
+ * `changeType` viaja dentro de `newState` y **no** amplía el enum de `action`.
+ * Los verbos de los módulos son suyos (`triage`, `superseded`,
+ * `denominator_approved`); meterlos en el vocabulario compartido lo degradaría
+ * hasta que dejara de significar algo. `action` se deriva a los tres verbos
+ * genéricos que sí son comunes.
+ *
+ * Nota de retención: lo escrito acá queda bajo `cleanup_old_audit_log`, que
+ * borra sobre los 6 años. Las tablas por módulo no tenían política alguna. Son
+ * 6 contra el mínimo de 5 del DS N°44, así que cumple, pero es un cambio de
+ * comportamiento y no un efecto neutro.
+ */
+export async function recordModuleHistory(
+  client: AuditDb,
+  args: {
+    /** Prefijo del módulo, para poder aislar su bitácora: `epp`, `hygiene`, … */
+    module: string
+    entityType: string
+    entityId: string
+    worksiteId?: string | null
+    changeType: string
+    reason?: string | null
+    beforeState?: unknown
+    afterState?: unknown
+    actorUserId?: string | null
+    /** Dimensión propia de un módulo, como el `domain` de riesgo y legal. */
+    extra?: Record<string, unknown>
+  },
+): Promise<void> {
+  await recordAudit({
+    userId: args.actorUserId ?? null,
+    action: deriveAuditAction(args.changeType),
+    entityType: `${args.module}:${args.entityType}`,
+    entityId: args.entityId,
+    worksiteId: args.worksiteId ?? null,
+    oldState: toAuditState(args.beforeState),
+    newState: {
+      changeType: args.changeType,
+      ...(args.extra ?? {}),
+      ...(toAuditState(args.afterState) ?? {}),
+    },
+    reason: args.reason ?? undefined,
+  }, client)
+}
+
+/** Sólo los objetos planos entran al JSON del log; el resto se descarta. */
+function toAuditState(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  return value as Record<string, unknown>
+}
+
+/**
+ * El verbo compartido que corresponde a un `changeType` de módulo.
+ *
+ * Deliberadamente grueso: el detalle vive en `newState.changeType`, que no
+ * pierde nada. Lo que se gana es que una consulta transversal por `action`
+ * siga significando lo mismo en los veinte módulos.
+ */
+function deriveAuditAction(changeType: string): AuditParams["action"] {
+  if (/^(created|imported|uploaded|registered)$/.test(changeType)) return "create"
+  if (/^(deleted|deactivated|removed|annulled|archived)$/.test(changeType)) return "delete"
+  if (/cancel/.test(changeType)) return "cancel"
+  if (/(status|state)_changed$/.test(changeType)) return "status_change"
+  return "update"
 }

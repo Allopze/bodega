@@ -18,9 +18,9 @@ import {
   preventionRiskMapLayouts,
   preventionRiskMapMarkers,
   preventionRiskMatrices,
-  preventionRiskLegalHistory,
   worksites,
 } from "@/db/schema"
+import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import type { RiskLegalAccess } from "@/lib/services/prevention-risk-legal"
 
@@ -46,9 +46,8 @@ async function history(client: Client, args: {
   reason: string
   actorUserId?: string | null
 }) {
-  await client.insert(preventionRiskLegalHistory).values({
-    id: `prlh-${nanoid()}`,
-    domain: "risk",
+  await recordModuleHistory(client, {
+    module: "risk_legal:risk",
     entityType: args.entityType,
     entityId: args.entityId,
     worksiteId: args.worksiteId ?? null,

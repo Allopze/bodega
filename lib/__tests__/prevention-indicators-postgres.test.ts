@@ -150,8 +150,14 @@ describeIf("canonical prevention indicators on real PostgreSQL", () => {
     expect(supersededSnapshot.formulaVersion).toBe(originalSnapshot!.formulaVersion)
     expect(supersededSnapshot.resultSnapshot).toEqual(originalSnapshot!.resultSnapshot)
     expect(supersededSnapshot.sourceHashSha256).toBe(originalSnapshot!.sourceHashSha256)
-    const history = await getDb().select().from(schema.safetyIndicatorHistory).where(eq(schema.safetyIndicatorHistory.worksiteId, "ws-indicators"))
-    expect(history.map((item) => item.changeType)).toEqual(expect.arrayContaining(["denominator_created", "denominator_approved", "closed", "corrected", "superseded"]))
+    /* La bitácora de indicadores vive ahora en el `audit_log` compartido, y
+     * atraviesa varias entidades: se lee por faena y no por entidad. */
+    const history = await getDb().select().from(schema.auditLog)
+      .where(eq(schema.auditLog.worksiteId, "ws-indicators"))
+    const changeTypes = history
+      .filter((item) => item.entityType.startsWith("safety_indicator:"))
+      .map((item) => (JSON.parse(item.newState ?? "{}") as { changeType?: string }).changeType)
+    expect(changeTypes).toEqual(expect.arrayContaining(["denominator_created", "denominator_approved", "closed", "corrected", "superseded"]))
   })
 
   it("rejects zero-hour closure and foreign-faena reads or writes", async () => {

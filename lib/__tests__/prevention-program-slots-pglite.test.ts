@@ -60,7 +60,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionEmergencyRoles)
   await inMemoryDb.delete(schema.preventionEmergencyScenarios)
   await inMemoryDb.delete(schema.preventionEmergencyPlans)
-  await inMemoryDb.delete(schema.preventionEmergencyHistory)
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.workers)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)

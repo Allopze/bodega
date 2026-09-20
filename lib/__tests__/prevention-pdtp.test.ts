@@ -120,7 +120,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpCatalogActivities)
     .where(like(schema.pdtpCatalogActivities.id, "pdtp-import-candidate-%"))
   await inMemoryDb.delete(schema.operationalActivityEvents)
-  await inMemoryDb.delete(schema.preventionRiskLegalHistory)
+  await inMemoryDb.delete(schema.auditLog)
   // pdtpExecutions.obligationId es `onDelete: "set null"`: si `pdtpObligations`
   // se borra primero, la cascada anula ese campo en TODAS las ejecuciones
   // huérfanas de una sola vez, y si dos de ellas (de dos obligaciones

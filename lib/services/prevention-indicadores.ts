@@ -8,12 +8,12 @@ import {
   preventionIncidentPeople,
   preventionIncidents,
   safetyIndicatorDenominators,
-  safetyIndicatorHistory,
   safetyIndicatorPeriods,
   safetyIndicatorSnapshots,
   safetyIndicators,
   worksites,
 } from "@/db/schema"
+import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { INCIDENT_EVENT_LABELS, INCIDENT_SEVERITY_LABELS } from "@/lib/prevention/incidents"
 import { onSafetyIndicatorPeriodClosed, onSafetyIndicatorPeriodReopened } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
@@ -498,8 +498,48 @@ export async function upsertSafetyIndicatorMonth(
   return data
 }
 
-async function appendIndicatorHistory(client: IndicatorClient, input: Omit<typeof safetyIndicatorHistory.$inferInsert, "id" | "createdAt">) {
-  await client.insert(safetyIndicatorHistory).values({ id: `sih-${nanoid()}`, ...input, createdAt: new Date().toISOString() })
+/**
+ * Lo que un cambio de indicadores deja escrito.
+ *
+ * Era `typeof safetyIndicatorHistory.$inferInsert` hasta que esa tabla se
+ * retiró; declararlo acá mantiene el contrato de los llamadores sin atarlo a
+ * una tabla.
+ */
+type IndicatorHistoryEntry = {
+  worksiteId: string
+  year: number
+  month?: number | null
+  changeType: string
+  entityType: string
+  entityId: string
+  reason: string
+  beforeState?: unknown
+  afterState?: unknown
+  actorUserId: string | null
+}
+
+/**
+ * El período va en `extra` y no se pierde: año y mes eran columnas tipadas con
+ * su propio índice, pero la tabla no la leía nadie —ni siquiera el cálculo de
+ * tasas, que va contra denominadores y snapshots—, así que ese índice no servía
+ * a ninguna consulta.
+ */
+async function appendIndicatorHistory(
+  client: IndicatorClient,
+  input: IndicatorHistoryEntry,
+) {
+  await recordModuleHistory(client, {
+    module: "safety_indicator",
+    entityType: input.entityType,
+    entityId: input.entityId,
+    worksiteId: input.worksiteId,
+    changeType: input.changeType,
+    reason: input.reason,
+    beforeState: input.beforeState,
+    afterState: input.afterState,
+    actorUserId: input.actorUserId,
+    extra: { year: input.year, month: input.month ?? null },
+  })
 }
 
 /**

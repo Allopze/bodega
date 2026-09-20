@@ -14,6 +14,7 @@ import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { todayInChile } from "@/lib/utils"
+import { readModuleHistory } from "@/lib/testing/audit-history"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -48,6 +49,9 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionCommittees)
   await inMemoryDb.delete(schema.workers)
   await inMemoryDb.delete(schema.worksites)
+  /* La bitácora de estos módulos pasó al `audit_log` compartido, y su FK a
+   * `users` impide borrar un usuario que actuó. Va antes que `users`. */
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.users)
 
   await inMemoryDb.insert(schema.users).values({
@@ -321,11 +325,9 @@ describe("expediente de certificación · ciclo completo", () => {
       .where(and(eq(schema.preventionCapaActions.sourceType, "cphs"), eq(schema.preventionCapaActions.sourceId, dossier.id)))
     expect(capaAfter).toHaveLength(capaBefore.length)
 
-    const history = await db.select().from(schema.preventionGovernanceHistory)
-      .where(and(
-        eq(schema.preventionGovernanceHistory.entityId, dossier.id),
-        eq(schema.preventionGovernanceHistory.changeType, "reopened"),
-      ))
+    const history = await readModuleHistory(db, {
+      module: "governance", entityType: "certification_dossier", entityId: dossier.id, changeType: "reopened",
+    })
     expect(history).toHaveLength(1)
     expect(history[0]?.reason).toContain("Mutual devolvió el expediente")
   })

@@ -1,7 +1,7 @@
 /** Real PostgreSQL proof for CPHS governance: parity, quorum, minutes and management review. */
 import path from "node:path"
 import postgres from "postgres"
-import { and, eq, sql } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
@@ -13,6 +13,7 @@ import {
   getMaintenanceDatabaseUrl,
   quotePostgresIdentifier,
 } from "@/lib/testing/destructive-database-guard"
+import { readModuleHistory } from "@/lib/testing/audit-history"
 
 const databaseUrl = process.env.PREVENTION_CPHS_DATABASE_URL
 const canReset = process.env.PREVENTION_CPHS_ALLOW_DESTRUCTIVE_RESET === "true"
@@ -307,21 +308,17 @@ describeIf("CPHS y gobernanza on real PostgreSQL", () => {
     expect(after?.status).toBe("expired")
     expect(after?.version).toBe(before!.version + 1)
 
-    const expiredHistory = await getDb().select().from(schema.preventionGovernanceHistory)
-      .where(and(
-        eq(schema.preventionGovernanceHistory.entityId, committeeId),
-        eq(schema.preventionGovernanceHistory.changeType, "expired"),
-      ))
+    const expiredHistory = await readModuleHistory(getDb(), {
+      module: "governance", entityType: "committee", entityId: committeeId, changeType: "expired",
+    })
     expect(expiredHistory).toHaveLength(1)
     expect(expiredHistory[0]?.worksiteId).toBe("ws-cp-a")
 
     // Idempotente: la segunda corrida no reexpira ni duplica el historial.
     expect((await service.expireLapsedCommittees()).expired).toBe(0)
-    const afterSecondRun = await getDb().select().from(schema.preventionGovernanceHistory)
-      .where(and(
-        eq(schema.preventionGovernanceHistory.entityId, committeeId),
-        eq(schema.preventionGovernanceHistory.changeType, "expired"),
-      ))
+    const afterSecondRun = await readModuleHistory(getDb(), {
+      module: "governance", entityType: "committee", entityId: committeeId, changeType: "expired",
+    })
     expect(afterSecondRun).toHaveLength(1)
 
     await expect(service.scheduleCommitteeMeeting({

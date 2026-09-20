@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { boolean, check, foreignKey, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { boolean, check, foreignKey, index, integer, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { workers, worksites } from "../worksites"
 import { preventionHealthRecords } from "./privacy"
@@ -146,21 +146,6 @@ export const preventionSurveillanceEnrollments = pgTable("prevention_surveillanc
   check("prevention_surveillance_enrollment_absent_consistent", sql`${table.status} <> 'absent' OR length(${table.absenceReason}) >= 5`),
 ])
 
-/* ── Historial inmutable ──────────────────────────────────────────────────── */
-export const preventionHygieneHistory = pgTable("prevention_hygiene_history", {
-  id:          text("id").primaryKey(),
-  entityType:  text("entity_type").notNull(),
-  entityId:    text("entity_id").notNull(),
-  worksiteId:  text("worksite_id").references(() => worksites.id, { onDelete: "set null" }),
-  changeType:  text("change_type").notNull(),
-  reason:      text("reason").notNull(),
-  beforeState: jsonb("before_state"),
-  afterState:  jsonb("after_state"),
-  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-}, (table) => [
-  index("prevention_hygiene_history_entity_idx").on(table.entityType, table.entityId, table.createdAt),
-])
 
 /* ── Aplicabilidad de los protocolos MINSAL por faena ─────────────────────
  * El catálogo de protocolos (PREXOR, psicosocial, sílice, hiperbaria,

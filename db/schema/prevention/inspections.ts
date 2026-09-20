@@ -579,21 +579,6 @@ export const preventionInspectionImportRows = pgTable("prevention_inspection_imp
   check("prevention_inspection_import_row_status_valid", sql`${table.status} IN ('pending_review', 'imported', 'duplicate', 'rejected')`),
 ])
 
-/* ── Historial inmutable ──────────────────────────────────────────────────── */
-export const preventionInspectionHistory = pgTable("prevention_inspection_history", {
-  id:          text("id").primaryKey(),
-  entityType:  text("entity_type").notNull(),
-  entityId:    text("entity_id").notNull(),
-  worksiteId:  text("worksite_id").references(() => worksites.id, { onDelete: "set null" }),
-  changeType:  text("change_type").notNull(),
-  reason:      text("reason").notNull(),
-  beforeState: jsonb("before_state"),
-  afterState:  jsonb("after_state"),
-  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-}, (table) => [
-  index("prevention_inspection_history_entity_idx").on(table.entityType, table.entityId, table.createdAt),
-])
 
 /* ── Relations ────────────────────────────────────────────────────────────── */
 export const preventionInspectionTemplatesRelations = relations(preventionInspectionTemplates, ({ many }) => ({

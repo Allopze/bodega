@@ -68,17 +68,3 @@ export const preventionExternalEngagements = pgTable("prevention_external_engage
   check("prevention_external_engagement_version_positive", sql`${table.version} >= 1`),
 ])
 
-/** Historial inmutable, misma forma que el resto de los dominios de Prevención. */
-export const preventionExternalEngagementHistory = pgTable("prevention_external_engagement_history", {
-  id:          text("id").primaryKey(),
-  engagementId: text("engagement_id").notNull().references(() => preventionExternalEngagements.id, { onDelete: "cascade" }),
-  worksiteId:  text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
-  changeType:  text("change_type").notNull(),
-  reason:      text("reason"),
-  beforeState: jsonb("before_state"),
-  afterState:  jsonb("after_state"),
-  actorUserId: text("actor_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
-  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-}, (table) => [
-  index("prevention_external_engagement_history_idx").on(table.engagementId, table.createdAt),
-])

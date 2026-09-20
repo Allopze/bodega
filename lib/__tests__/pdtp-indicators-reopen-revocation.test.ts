@@ -122,7 +122,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
   // La bitácora referencia la faena y el período; se borra primero.
-  await inMemoryDb.delete(schema.safetyIndicatorHistory)
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.safetyIndicatorPeriods)
   await inMemoryDb.delete(schema.safetyIndicatorSnapshots)
   await inMemoryDb.delete(schema.worksites)

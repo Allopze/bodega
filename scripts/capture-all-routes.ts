@@ -2788,9 +2788,11 @@ async function prepareDatabase(captureDbUrl: string) {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(schema.preventionInspectionHistory).values([
-    { id: "inspection-history-audit-1", entityType: "run", entityId: "insp-audit-1", worksiteId, changeType: "created", reason: "Inspección programada en faena.", afterState: { status: "planned" }, actorUserId: userId, createdAt: now },
-    { id: "inspection-history-audit-2", entityType: "run", entityId: "insp-audit-1", worksiteId, changeType: "reviewed", reason: "Revisión completada con hallazgo vinculado a CAPA.", beforeState: { status: "completed" }, afterState: { status: "reviewed", capaActionId: "capa-audit-1" }, actorUserId: userId, createdAt: now },
+  /* La bitácora de inspecciones pasó al `audit_log` compartido (2026-09-20).
+   * Se siembra ahí, con el mismo par de eventos. */
+  await db.insert(schema.auditLog).values([
+    { id: "inspection-history-audit-1", userId, action: "create", entityType: "inspection:run", entityId: "insp-audit-1", worksiteId, reason: "Inspección programada en faena.", newState: JSON.stringify({ changeType: "created", status: "planned" }), createdAt: now },
+    { id: "inspection-history-audit-2", userId, action: "update", entityType: "inspection:run", entityId: "insp-audit-1", worksiteId, reason: "Revisión completada con hallazgo vinculado a CAPA.", oldState: JSON.stringify({ status: "completed" }), newState: JSON.stringify({ changeType: "reviewed", status: "reviewed", capaActionId: "capa-audit-1" }), createdAt: now },
   ])
 
   // Estado operativo #1: ejecución parcialmente respondida. Hace visible la

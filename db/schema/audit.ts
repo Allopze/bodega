@@ -1,6 +1,7 @@
 import { pgTable, text, integer, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core"
 import { relations, sql } from "drizzle-orm"
 import { users } from "./users"
+import { worksites } from "./worksites"
 
 /* ── Audit Log ────────────────────────────────────────────────────────────── */
 export const auditLog = pgTable("audit_log", {
@@ -14,11 +15,30 @@ export const auditLog = pgTable("audit_log", {
   oldState:     text("old_state"),        // JSON of relevant old values
   newState:     text("new_state"),        // JSON of relevant new values
   reason:       text("reason"),           // mandatory for rejections/postponements/cancellations
+  /**
+   * La faena del hecho, cuando el hecho tiene una.
+   *
+   * Nace con la consolidación de los historiales por módulo de prevención
+   * (2026-09-20): doce de esas tablas llevaban `worksite_id` propio y el alcance
+   * por faena se filtra con él. Sin esta columna, la traza migrada perdería el
+   * scoping y habría que derivarlo con un JOIN a una entidad que puede estar
+   * borrada.
+   *
+   * `set null` y no `restrict`: la bitácora sobrevive a la faena, igual que
+   * sobrevive al usuario —por eso `user_email` está denormalizado—. Una
+   * auditoría que impide dar de baja una faena es una auditoría que alguien va
+   * a querer borrar.
+   */
+  worksiteId:   text("worksite_id").references(() => worksites.id, { onDelete: "set null" }),
   ipAddress:    text("ip_address"),
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("audit_log_created_at_idx").on(table.createdAt),
-  index("audit_log_entity_idx").on(table.entityType, table.entityId),
+  /* `created_at` entra en el índice de entidad: la línea de tiempo de una
+   * entidad se lee ordenada, y todas las tablas `*_history` que este log
+   * reemplaza lo incluían. Sin él, el orden se resuelve en memoria. */
+  index("audit_log_entity_idx").on(table.entityType, table.entityId, table.createdAt),
+  index("audit_log_worksite_idx").on(table.worksiteId, table.createdAt),
 ])
 
 /* ── Status History ───────────────────────────────────────────────────────── */
