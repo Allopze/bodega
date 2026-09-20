@@ -16,6 +16,7 @@ import {
   addGrdThreat,
   publishGrdMatrix,
   recordGrdMeeting,
+  recordGrdMeetingSlotStatus,
   removeGrdMember,
   removeGrdThreat,
 } from "@/lib/services/prevention-cgrd"
@@ -112,4 +113,11 @@ export async function annulGrdMeetingAction(input: unknown): Promise<ActionState
   const guard = await guardPermission("prevention:cgrd:meeting:manage")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => annulGrdMeeting(input, access))
+}
+
+/** Declara una casilla del programa como no hecha o no aplicable. */
+export async function recordGrdMeetingSlotStatusAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:cgrd:meeting:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => recordGrdMeetingSlotStatus(input, access))
 }

@@ -25,28 +25,31 @@ describe("disponibilidad del plan de emergencia", () => {
 })
 
 describe("cierre de un simulacro", () => {
-  it("un simulacro con participantes presentes y resultado está listo", () => {
+  /* El gate era «al menos un participante presente». Esa lista se escribía y
+   * ninguna consulta la leía, así que lo único que respaldaba el hecho era un
+   * dato muerto. Desde el 2026-09-19 lo respalda el acta. */
+  it("un simulacro con evidencia y resultado está listo", () => {
     const result = assessDrillCompletion({
-      participants: [{ present: true }, { present: false }],
+      activeEvidenceCount: 1,
       evacuationSeconds: 180,
       outcome: "satisfactory",
     })
     expect(result).toEqual({ ready: true, blockers: [] })
   })
 
-  it("rechaza un simulacro sin nadie presente", () => {
+  it("rechaza un simulacro sin ninguna evidencia", () => {
     const result = assessDrillCompletion({
-      participants: [{ present: false }],
+      activeEvidenceCount: 0,
       evacuationSeconds: null,
       outcome: "satisfactory",
     })
     expect(result.ready).toBe(false)
-    expect(result.blockers.some((b) => b.includes("participante"))).toBe(true)
+    expect(result.blockers.some((b) => b.includes("evidencia"))).toBe(true)
   })
 
   it("rechaza un simulacro sin resultado declarado", () => {
     const result = assessDrillCompletion({
-      participants: [{ present: true }],
+      activeEvidenceCount: 1,
       evacuationSeconds: null,
       outcome: null,
     })
@@ -54,7 +57,9 @@ describe("cierre de un simulacro", () => {
     expect(result.blockers.some((b) => b.includes("resultado"))).toBe(true)
   })
 
-  it("una lista de participantes vacía nunca queda lista", () => {
-    expect(assessDrillCompletion({ participants: [], evacuationSeconds: null, outcome: "satisfactory" }).ready).toBe(false)
+  it("sin evidencia y sin resultado devuelve los dos bloqueadores, no el primero", () => {
+    const result = assessDrillCompletion({ activeEvidenceCount: 0, evacuationSeconds: null, outcome: null })
+    expect(result.ready).toBe(false)
+    expect(result.blockers).toHaveLength(2)
   })
 })

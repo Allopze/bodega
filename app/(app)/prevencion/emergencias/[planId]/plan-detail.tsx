@@ -4,7 +4,9 @@ import * as React from "react"
 import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
+import { FileInput } from "@/components/ui/file-input"
+import { ProgramSlotList, type ProgramSlotRow } from "@/components/prevention/program-slot-list"
+import type { PdtpPeriod } from "@/lib/services/pdtp/period"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
@@ -33,6 +35,7 @@ import {
   scheduleEmergencyDrillAction,
   setEmergencyPlanPdtpActivitiesAction,
   updateEmergencyResourceAction,
+  recordDrillSlotStatusAction,
 } from "../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
@@ -57,7 +60,7 @@ interface ScenarioInfo { id: string; type: string; title: string; description: s
 interface RoleInfo { id: string; roleName: string; assigneeName: string; backupName: string | null }
 interface ResourceInfo { id: string; name: string; kind: string; location: string; serialNumber: string | null; lastInspectedAt: string | null; nextInspectionAt: string | null; expiresAt: string | null; status: string }
 interface ContactInfo { id: string; name: string; org: string; role: string | null; phone: string }
-interface DrillInfo { id: string; scenarioType: string; scheduledFor: string; status: string; outcome: string | null; version: number }
+interface DrillInfo { id: string; scenarioType: string; scheduledFor: string; status: string; outcome: string | null; version: number; activeEvidenceCount: number }
 interface WorkerOption { id: string; name: string; position: string | null }
 
 interface Props {
@@ -71,6 +74,9 @@ interface Props {
   linkableResources: { id: string; name: string; kind: string; location: string }[]
   contacts: ContactInfo[]
   drills: DrillInfo[]
+  drillSlots: ProgramSlotRow[]
+  slotYear: number
+  activationPeriod: PdtpPeriod | null
   eligibleWorkers: WorkerOption[]
   assignees: { id: string; name: string }[]
   currentUserId: string
@@ -82,7 +88,7 @@ interface Props {
 }
 
 export function PlanDetail({
-  plan, worksiteName, readiness, scenarios, roles, resources, linkableResources, contacts, drills,
+  plan, worksiteName, readiness, scenarios, roles, resources, linkableResources, contacts, drills, drillSlots, slotYear, activationPeriod,
   eligibleWorkers, assignees, currentUserId, canManage, canApprove, canExecuteDrill,
   catalogActivities, catalogActivityIds,
 }: Props) {
@@ -296,6 +302,18 @@ export function PlanDetail({
           <h2 className="text-sm font-semibold">Simulacros ({drills.length})</h2>
           {canExecuteDrill && isApproved && <ScheduleDrillDialog planId={plan.id} />}
         </div>
+
+        <div>
+          <h3 className="mb-2 text-sm font-medium">Simulacros que el programa espera</h3>
+          <ProgramSlotList
+            rows={drillSlots}
+            year={slotYear}
+            canRecord={canExecuteDrill}
+            emptyHint="Esta faena todavía no tiene casillas del programa; se generan al activarla."
+            activationPeriod={activationPeriod}
+            onRecord={(input) => recordDrillSlotStatusAction(input)}
+          />
+        </div>
         {drills.length === 0 ? (
           <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">
             {isApproved ? "Sin simulacros programados." : "Sólo un plan aprobado puede programar simulacros."}
@@ -329,7 +347,7 @@ export function PlanDetail({
                       <TableCell className="text-right">
                         {drill.status === "scheduled" && (
                           <div className="flex justify-end gap-2">
-                            <CompleteDrillDialog drill={drill} eligibleWorkers={eligibleWorkers} assignees={assignees} />
+                            <CompleteDrillDialog drill={drill} assignees={assignees} openSlots={drillSlots.filter((slot) => slot.status !== "completed")} />
                             <CancelDrillDialog drill={drill} />
                           </div>
                         )}
@@ -748,31 +766,32 @@ function ScheduleDrillDialog({ planId }: { planId: string }) {
 
 /* ── Cierre de simulacro ──────────────────────────────────────────────────── */
 
-function CompleteDrillDialog({ drill, eligibleWorkers, assignees }: {
+const MONTH_LABELS = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
+
+function CompleteDrillDialog({ drill, assignees, openSlots }: {
   drill: DrillInfo
-  eligibleWorkers: WorkerOption[]
   assignees: { id: string; name: string }[]
+  /** Las casillas del programa que este simulacro podría llenar. */
+  openSlots: ProgramSlotRow[]
 }) {
   const [open, setOpen] = React.useState(false)
+  const [slotId, setSlotId] = React.useState("_none")
   const [executedAt, setExecutedAt] = React.useState("")
-  const [present, setPresent] = React.useState<Set<string>>(new Set())
+  const [files, setFiles] = React.useState<File[]>([])
   const [outcome, setOutcome] = React.useState<"" | "satisfactory" | "needs_improvement">("")
   const [responsibleUserId, setResponsibleUserId] = React.useState("_none")
   const operation = useOperation()
 
+  /* El gate era el checklist de dotación; pasó a ser el acta. La cuenta local
+   * incluye los archivos elegidos, que se suben antes de cerrar. */
   const readiness = React.useMemo(() => assessDrillCompletion({
-    participants: eligibleWorkers.map((worker) => ({ present: present.has(worker.id) })),
+    activeEvidenceCount: drill.activeEvidenceCount + files.length,
     evacuationSeconds: null,
     outcome: outcome || null,
-  }), [eligibleWorkers, present, outcome])
-
-  function togglePresent(workerId: string, checked: boolean) {
-    setPresent((current) => {
-      const next = new Set(current)
-      if (checked) next.add(workerId); else next.delete(workerId)
-      return next
-    })
-  }
+  }), [drill.activeEvidenceCount, files, outcome])
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -782,18 +801,32 @@ function CompleteDrillDialog({ drill, eligibleWorkers, assignees }: {
     const observations = String(form.get("observations") ?? "").trim()
     const responsibleUserId = String(form.get("responsibleUserId") ?? "").trim()
     const targetDate = String(form.get("targetDate") ?? "").trim()
-    operation.run(() => completeEmergencyDrillAction({
-      drillId: drill.id,
-      expectedVersion: drill.version,
-      executedAt: new Date(executedAt).toISOString(),
-      durationMinutes: durationMinutes ? Number(durationMinutes) : null,
-      evacuationSeconds: evacuationSeconds ? Number(evacuationSeconds) : null,
-      observations: observations || null,
-      outcome: outcome || null,
-      participants: eligibleWorkers.map((worker) => ({ workerId: worker.id, present: present.has(worker.id) })),
-      responsibleUserId: responsibleUserId || null,
-      targetDate: targetDate || null,
-    }), () => setOpen(false))
+    operation.run(async () => {
+      /* La evidencia se sube antes de cerrar: el servicio exige al menos una
+       * activa, y subirla después dejaría el simulacro cerrado sin acta. */
+      for (const file of files) {
+        const upload = new FormData()
+        upload.set("drillId", drill.id)
+        upload.set("file", file)
+        const response = await fetch("/api/prevencion/emergencias/simulacros/evidencia", { method: "POST", body: upload })
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({})) as { error?: string }
+          return { ok: false as const, message: payload.error ?? "No se pudo subir una evidencia." }
+        }
+      }
+      return completeEmergencyDrillAction({
+        drillId: drill.id,
+        expectedVersion: drill.version,
+        slotId: slotId === "_none" ? null : slotId,
+        executedAt: new Date(executedAt).toISOString(),
+        durationMinutes: durationMinutes ? Number(durationMinutes) : null,
+        evacuationSeconds: evacuationSeconds ? Number(evacuationSeconds) : null,
+        observations: observations || null,
+        outcome: outcome || null,
+        responsibleUserId: responsibleUserId || null,
+        targetDate: targetDate || null,
+      })
+    }, () => setOpen(false))
   }
 
   return (
@@ -821,22 +854,40 @@ function CompleteDrillDialog({ drill, eligibleWorkers, assignees }: {
             />
           </Field>
 
-          <div className="space-y-2">
-            <span className="text-sm font-medium">Participantes</span>
-            <div className="max-h-56 overflow-y-auto rounded-md border border-[var(--color-border)]">
-              {eligibleWorkers.length === 0 ? (
-                <p className="p-3 text-sm text-[var(--color-text-subtle)]">Sin dotación disponible en esta faena.</p>
-              ) : eligibleWorkers.map((worker) => (
-                <div key={worker.id} className="border-b border-[var(--color-border)] px-3 py-2 last:border-b-0">
-                  <Checkbox
-                    label={`${worker.name}${worker.position ? ` · ${worker.position}` : ""}`}
-                    checked={present.has(worker.id)}
-                    onChange={(event) => togglePresent(worker.id, event.target.checked)}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
+          <Field
+            label="Evidencia"
+            required={drill.activeEvidenceCount === 0}
+            hint="Acta, registro fotográfico o informe del simulacro. Máximo 25 MB por archivo."
+          >
+            <FileInput
+              multiple
+              accept=".pdf,.docx,.xls,.xlsx,.jpg,.jpeg,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png"
+              onFilesChange={setFiles}
+              disabled={operation.pending}
+            />
+          </Field>
+          {drill.activeEvidenceCount > 0 && (
+            <p className="text-xs text-[var(--color-text-subtle)]">
+              Este simulacro ya tiene {drill.activeEvidenceCount} evidencia(s) adjunta(s).
+            </p>
+          )}
+
+          {/* Sin casilla el simulacro se registra igual: un extraordinario —el
+              que se corre después de un incidente— no llena ninguna y no
+              cuenta en el denominador del programa. */}
+          <Field label="Casilla del programa" hint="Opcional: deja «Ninguna» si es un simulacro extraordinario.">
+            <Select value={slotId} onValueChange={setSlotId}>
+              <SelectTrigger><SelectValue placeholder="Ninguna" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">Ninguna (simulacro extraordinario)</SelectItem>
+                {openSlots.map((slot) => (
+                  <SelectItem key={slot.id} value={slot.id}>
+                    {MONTH_LABELS[slot.scheduledMonth - 1]} · semana {slot.scheduledWeek}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
 
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Duración (min)" hint="Opcional."><Input name="durationMinutes" type="number" min={1} /></Field>

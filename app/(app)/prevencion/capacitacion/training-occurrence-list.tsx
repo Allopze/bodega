@@ -9,9 +9,14 @@ import {
   Certificate,
   CheckCircle,
   Paperclip,
+  Prohibit,
   WarningCircle,
 } from "@phosphor-icons/react"
 import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
+import {
+  isPdtpPeriodOnOrAfterActivationPeriod,
+  type PdtpPeriod,
+} from "@/lib/services/pdtp/period"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -34,20 +39,25 @@ interface Props {
   selectedYear: number
   selectedWorksiteId: string
   canRecord: boolean
+  /** Desde cuándo exige el programa; `null` si no hay programa activo. */
+  activationPeriod: PdtpPeriod | null
 }
 
-type StatusFilter = "all" | "pending" | "completed" | "not_completed"
+type StatusFilter = "all" | "pending" | "completed" | "not_completed" | "not_applicable"
 
 const MONTH_NAMES = [
   "enero", "febrero", "marzo", "abril", "mayo", "junio",
   "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 ]
 
+/* Las pestañas se arman iterando estas claves, así que agregar un estado acá
+ * lo agrega también al filtro y a los contadores. */
 const STATUS_LABELS: Record<StatusFilter, string> = {
   all: "Todas",
   pending: "Pendientes",
   completed: "Hechas",
   not_completed: "No hechas",
+  not_applicable: "No aplican",
 }
 
 function statusLabel(status: TrainingOccurrenceListItem["status"]): string {
@@ -57,6 +67,10 @@ function statusLabel(status: TrainingOccurrenceListItem["status"]): string {
 function statusMeta(status: TrainingOccurrenceListItem["status"]): StateMetaInput {
   if (status === "completed") return { label: statusLabel(status), variant: "success" }
   if (status === "not_completed") return { label: statusLabel(status), variant: "danger" }
+  /* "No aplica" es neutro a propósito: no es un logro ni una falta, es una
+   * actividad que salió del denominador. Pintarla de verde o de rojo invita a
+   * leerla como cumplimiento o como incumplimiento, y no es ninguna de las dos. */
+  if (status === "not_applicable") return { label: statusLabel(status), variant: "outline" }
   return { label: statusLabel(status), variant: "warning" }
 }
 
@@ -104,7 +118,7 @@ function updateRoute(router: ReturnType<typeof useRouter>, pathname: string, wor
   router.replace(`${pathname}?${params.toString()}`)
 }
 
-export function TrainingOccurrenceList({ rows, worksites, selectedYear, selectedWorksiteId, canRecord }: Props) {
+export function TrainingOccurrenceList({ rows, worksites, selectedYear, selectedWorksiteId, canRecord, activationPeriod }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const { searchQuery, setSearchQuery } = useSafeShellHeader()
@@ -115,6 +129,7 @@ export function TrainingOccurrenceList({ rows, worksites, selectedYear, selected
     pending: rows.filter((row) => row.status === "pending").length,
     completed: rows.filter((row) => row.status === "completed").length,
     not_completed: rows.filter((row) => row.status === "not_completed").length,
+    not_applicable: rows.filter((row) => row.status === "not_applicable").length,
   }), [rows])
 
   const filteredRows = React.useMemo(() => {
@@ -205,7 +220,7 @@ export function TrainingOccurrenceList({ rows, worksites, selectedYear, selected
       ) : (
         <div className="grid gap-3">
           {filteredRows.map((row) => (
-            <TrainingOccurrenceCard key={row.id} row={row} canRecord={canRecord} />
+            <TrainingOccurrenceCard key={row.id} row={row} canRecord={canRecord} activationPeriod={activationPeriod} />
           ))}
         </div>
       )}
@@ -213,7 +228,20 @@ export function TrainingOccurrenceList({ rows, worksites, selectedYear, selected
   )
 }
 
-function TrainingOccurrenceCard({ row, canRecord }: { row: TrainingOccurrenceListItem; canRecord: boolean }) {
+/* El PDTP se vuelve exigible al activarse la versión aprobada, no el 1 de
+ * enero. Una casilla anterior a esa semana sigue pendiente y se puede hacer
+ * tarde —la actividad no se canceló—, pero el barrido no abre compromiso por
+ * ella. Se dice en pantalla para que nadie corra a ejecutar algo que nadie le
+ * estaba pidiendo. */
+function isBeforeActivation(row: TrainingOccurrenceListItem, activation: PdtpPeriod | null): boolean {
+  if (!activation || row.scheduledMonth === null || row.scheduledWeek === null) return false
+  return !isPdtpPeriodOnOrAfterActivationPeriod(
+    { year: row.year, month: row.scheduledMonth, week: row.scheduledWeek },
+    activation,
+  )
+}
+
+function TrainingOccurrenceCard({ row, canRecord, activationPeriod }: { row: TrainingOccurrenceListItem; canRecord: boolean; activationPeriod: PdtpPeriod | null }) {
   const evidence = row.evidence
   return (
     <article className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xs sm:p-5">
@@ -238,6 +266,9 @@ function TrainingOccurrenceCard({ row, canRecord }: { row: TrainingOccurrenceLis
             )}
             {row.status !== "not_completed" && (
               <TrainingOccurrenceDialog row={row} targetStatus="not_completed" triggerLabel={row.status === "completed" ? "Corregir a no hecha" : "Marcar no hecha"} />
+            )}
+            {row.status !== "not_applicable" && (
+              <TrainingOccurrenceDialog row={row} targetStatus="not_applicable" triggerLabel="No aplica" />
             )}
           </div>
         )}
@@ -280,8 +311,12 @@ function TrainingOccurrenceCard({ row, canRecord }: { row: TrainingOccurrenceLis
               <span>Marcada el {formatDateTime(row.completedAt)}</span>
               {row.completedByName && <span className="block">por {row.completedByName}</span>}
             </>
+          ) : row.status === "not_applicable" ? (
+            <span className="inline-flex max-w-xl items-start gap-1.5 text-left sm:text-right"><Prohibit size={14} className="mt-0.5 shrink-0 text-[var(--color-text-subtle)]" aria-hidden />{row.notApplicableReason}</span>
           ) : row.status === "not_completed" && row.observation ? (
             <span className="inline-flex max-w-xl items-start gap-1.5 text-left sm:text-right"><WarningCircle size={14} className="mt-0.5 shrink-0 text-[var(--color-danger-ink)]" aria-hidden />{row.observation}</span>
+          ) : isBeforeActivation(row, activationPeriod) ? (
+            <span>Anterior a la activación del programa: no se exige, pero se puede registrar si se realiza.</span>
           ) : (
             <span>Requiere registro del prevencionista de faena</span>
           )}
@@ -291,15 +326,73 @@ function TrainingOccurrenceCard({ row, canRecord }: { row: TrainingOccurrenceLis
   )
 }
 
+type DialogTargetStatus = Exclude<TrainingOccurrenceListItem["status"], "pending">
+
+/** El motivo mínimo de "no aplica". Debe coincidir con el CHECK de la tabla y
+ *  con el `superRefine` del servicio: el formulario avisa antes, no decide. */
+const NOT_APPLICABLE_REASON_MIN = 10
+
+/* El diálogo era un ternario `completed ? … : …` de punta a punta. Con tres
+ * destinos eso obliga a anidar, y cada anidación es un lugar donde el estado
+ * nuevo hereda por descuido el texto del viejo. La copia vive acá, declarada. */
+const DIALOG_COPY: Record<DialogTargetStatus, {
+  title: string
+  confirmLabel: string
+  confirmVariant: "primary" | "destructive" | "secondary"
+  notice: { tone: "success" | "warning" | "neutral"; text: string }
+  observationLabel: string
+  observationHelper: string
+  observationPlaceholder: string
+  observationRequired: boolean
+}> = {
+  completed: {
+    title: "Marcar capacitación como hecha",
+    confirmLabel: "Confirmar hecha",
+    confirmVariant: "primary",
+    notice: { tone: "success", text: "Para confirmar el hecho se necesita al menos una evidencia. Puedes subir PDF, DOCX, XLS/XLSX, JPG o PNG." },
+    observationLabel: "Observación",
+    observationHelper: "Opcional: deja contexto sobre la actividad realizada.",
+    observationPlaceholder: "Ej.: actividad ejecutada en reunión mensual...",
+    observationRequired: false,
+  },
+  not_completed: {
+    title: "Marcar capacitación como no hecha",
+    confirmLabel: "Confirmar no hecha",
+    confirmVariant: "destructive",
+    notice: { tone: "warning", text: "Las evidencias activas de esta ocurrencia se conservarán como historial y no podrán reutilizarse si se vuelve a marcar como hecha." },
+    observationLabel: "Observación",
+    observationHelper: "Opcional: explica por qué no se realizó.",
+    observationPlaceholder: "Ej.: se reprogramará por...",
+    observationRequired: false,
+  },
+  not_applicable: {
+    title: "Declarar que la capacitación no aplica",
+    confirmLabel: "Confirmar no aplica",
+    confirmVariant: "secondary",
+    notice: { tone: "neutral", text: "La actividad saldrá del programa de esta faena: no cuenta como cumplida ni como incumplida. El motivo queda registrado y es lo que un fiscalizador va a leer." },
+    observationLabel: "Motivo",
+    observationHelper: `Obligatorio: explica por qué no corresponde en esta faena (al menos ${NOT_APPLICABLE_REASON_MIN} caracteres).`,
+    observationPlaceholder: "Ej.: la faena no opera equipos de izaje, por lo que el curso no corresponde.",
+    observationRequired: true,
+  },
+}
+
+const NOTICE_CLASS: Record<"success" | "warning" | "neutral", string> = {
+  success: "bg-[var(--color-success-tint)] text-[var(--color-success-ink)]",
+  warning: "bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)]",
+  neutral: "bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]",
+}
+
 function TrainingOccurrenceDialog({
   row,
   targetStatus,
   triggerLabel,
 }: {
   row: TrainingOccurrenceListItem
-  targetStatus: Exclude<TrainingOccurrenceListItem["status"], "pending">
+  targetStatus: DialogTargetStatus
   triggerLabel: string
 }) {
+  const copy = DIALOG_COPY[targetStatus]
   const router = useRouter()
   const [open, setOpen] = React.useState(false)
   const [observation, setObservation] = React.useState("")
@@ -315,6 +408,10 @@ function TrainingOccurrenceDialog({
   function submit() {
     if (targetStatus === "completed" && files.length === 0 && existingEvidenceCount === 0) {
       toast.error("Adjunta al menos un PDF, documento Office o foto para marcarla como hecha.")
+      return
+    }
+    if (targetStatus === "not_applicable" && observation.trim().length < NOT_APPLICABLE_REASON_MIN) {
+      toast.error(`Explica por qué la capacitación no aplica (al menos ${NOT_APPLICABLE_REASON_MIN} caracteres).`)
       return
     }
 
@@ -339,11 +436,14 @@ function TrainingOccurrenceDialog({
           uploadedFileCount += 1
         }
 
+        /* En "no aplica" el textarea ES el motivo y viaja por su propio campo:
+         * el CHECK de la tabla lo exige ahí, no en la observación. */
         const result = await recordTrainingOccurrenceStatusAction({
           occurrenceId: row.id,
           expectedVersion: row.version,
           status: targetStatus,
-          observation: observation.trim() || null,
+          observation: targetStatus === "not_applicable" ? null : (observation.trim() || null),
+          notApplicableReason: targetStatus === "not_applicable" ? observation.trim() : null,
         })
         if (!result.ok) {
           if (uploadedFileCount > 0) {
@@ -377,13 +477,17 @@ function TrainingOccurrenceDialog({
     >
       <DialogTrigger asChild>
         <Button type="button" variant={targetStatus === "completed" ? "primary" : "secondary"}>
-          {targetStatus === "completed" ? <CheckCircle size={15} aria-hidden /> : <WarningCircle size={15} aria-hidden />}
+          {targetStatus === "completed"
+            ? <CheckCircle size={15} aria-hidden />
+            : targetStatus === "not_applicable"
+              ? <Prohibit size={15} aria-hidden />
+              : <WarningCircle size={15} aria-hidden />}
           {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent aria-describedby={`training-occurrence-${row.id}-description`}>
         <DialogHeader>
-          <DialogTitle>{targetStatus === "completed" ? "Marcar capacitación como hecha" : "Marcar capacitación como no hecha"}</DialogTitle>
+          <DialogTitle>{copy.title}</DialogTitle>
           <DialogDescription id={`training-occurrence-${row.id}-description`}>
             {row.code} · {row.title} · {row.worksiteName}
           </DialogDescription>
@@ -391,8 +495,8 @@ function TrainingOccurrenceDialog({
 
         {targetStatus === "completed" ? (
           <div className="space-y-4">
-            <div className="rounded-xl bg-[var(--color-success-tint)] px-3.5 py-3 text-sm text-[var(--color-success-ink)]">
-              Para confirmar el hecho se necesita al menos una evidencia. Puedes subir PDF, DOCX, XLS/XLSX, JPG o PNG.
+            <div className={`rounded-xl px-3.5 py-3 text-sm ${NOTICE_CLASS[copy.notice.tone]}`}>
+              {copy.notice.text}
             </div>
             <Field
               label="Evidencia"
@@ -414,32 +518,33 @@ function TrainingOccurrenceDialog({
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="rounded-xl bg-[var(--color-warning-tint)] px-3.5 py-3 text-sm text-[var(--color-warning-ink)]">
-              Las evidencias activas de esta ocurrencia se conservarán como historial y no podrán reutilizarse si se vuelve a marcar como hecha.
+            <div className={`rounded-xl px-3.5 py-3 text-sm ${NOTICE_CLASS[copy.notice.tone]}`}>
+              {copy.notice.text}
             </div>
           </div>
         )}
 
         <Field
-          label="Observación"
+          label={copy.observationLabel}
           htmlFor={`training-observation-${row.id}`}
-          helper={targetStatus === "completed" ? "Opcional: deja contexto sobre la actividad realizada." : "Opcional: explica por qué no se realizó."}
+          helper={copy.observationHelper}
+          required={copy.observationRequired}
           className="mt-4"
         >
           <Textarea
             id={`training-observation-${row.id}`}
             value={observation}
             onChange={(event) => setObservation(event.target.value)}
-            maxLength={3000}
-            placeholder={targetStatus === "completed" ? "Ej.: actividad ejecutada en reunión mensual..." : "Ej.: se reprogramará por..."}
+            maxLength={targetStatus === "not_applicable" ? 1000 : 3000}
+            placeholder={copy.observationPlaceholder}
             disabled={pending}
           />
         </Field>
 
         <DialogFooter>
           <Button type="button" variant="secondary" onClick={() => setOpen(false)} disabled={pending}>Cancelar</Button>
-          <Button type="button" variant={targetStatus === "completed" ? "primary" : "destructive"} onClick={submit} loading={pending}>
-            {targetStatus === "completed" ? "Confirmar hecha" : "Confirmar no hecha"}
+          <Button type="button" variant={copy.confirmVariant} onClick={submit} loading={pending}>
+            {copy.confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

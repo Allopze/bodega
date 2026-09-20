@@ -7,6 +7,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { listTrainingOccurrences, listTrainingOccurrenceWorksites } from "@/lib/services/prevention-training-occurrences"
 import { resolvePredefinedTrainingCatalogYear } from "@/lib/prevention/training-occurrences-catalog"
+import { resolveProgramActivationPeriod } from "@/lib/services/prevention-program-slots"
 import { TrainingOccurrenceList } from "./training-occurrence-list"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
@@ -37,13 +38,14 @@ export default async function CapacitacionPage({
         : ""
   const exportParams = new URLSearchParams({ year: String(year) })
   if (worksiteId) exportParams.set("faena", worksiteId)
-  const [occurrences, worksites] = await Promise.all([
+  const [occurrences, worksites, activationPeriod] = await Promise.all([
     listTrainingOccurrences(access, {
       year,
       worksiteId: worksiteId || undefined,
       includeInactiveWorksites: Boolean(worksiteId),
     }),
     listTrainingOccurrenceWorksites(access),
+    resolveProgramActivationPeriod(year),
   ])
 
   return (
@@ -70,6 +72,7 @@ export default async function CapacitacionPage({
         selectedYear={year}
         selectedWorksiteId={worksiteId}
         canRecord={session.user.permissions.includes("prevention:training:record")}
+        activationPeriod={activationPeriod}
       />
       <PdtpScheduledActivityPanelServer connectorKey="training" />
     </PageContainer>

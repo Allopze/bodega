@@ -20,7 +20,7 @@
  * que cargue una actividad de esa forma queda cubierto sin tocar este archivo.
  */
 
-import { and, desc, eq, inArray, ne } from "drizzle-orm"
+import { and, desc, eq, inArray, notInArray } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
@@ -30,6 +30,7 @@ import {
 } from "@/db/schema"
 import { PREDEFINED_TRAINING_CATALOG_VERSION } from "@/lib/prevention/training-occurrences-catalog"
 import { chileDateParts } from "@/lib/utils"
+import { isPdtpPeriodOnOrAfterActivation } from "@/lib/services/pdtp/period"
 import {
   countOutcome,
   emptySweepCounters,
@@ -115,6 +116,38 @@ function isOverdue(
 }
 
 /**
+ * ¿El programa ya exigía esta casilla?
+ *
+ * El PDTP se vuelve exigible cuando se activa la versión aprobada, no el 1 de
+ * enero: `isPdtpPeriodOnOrAfterActivation` es la regla que el resto del módulo
+ * ya aplica, y la semana de activación se conserva entera porque el calendario
+ * firmado sólo tiene granularidad mes/semana.
+ *
+ * Sin esto, un programa activado en abril abría obligación el primer día por
+ * todas las casillas de febrero y marzo. Y como la obligación se sella con la
+ * fecha del barrido —no con la de la casilla—, caía en el mes corriente, pasaba
+ * el filtro de activación aguas abajo y contaba como incumplimiento.
+ *
+ * La casilla NO se descarta ni se marca: sigue pendiente y se puede hacer
+ * tarde, que es lo que corresponde —la actividad no se canceló, simplemente el
+ * programa todavía no la exigía—. Lo único que no ocurre es el castigo.
+ *
+ * Una ocurrencia anual (sin mes) vence a fin de año, así que nunca es anterior
+ * a la activación dentro del mismo año.
+ */
+function isDemandedByProgram(
+  occurrence: { year: number; scheduledMonth: number | null; scheduledWeek: number | null },
+  activatedAt: string | null | undefined,
+): boolean {
+  if (!activatedAt) return true
+  if (occurrence.scheduledMonth === null || occurrence.scheduledWeek === null) return true
+  return isPdtpPeriodOnOrAfterActivation(
+    { year: occurrence.year, month: occurrence.scheduledMonth, week: occurrence.scheduledWeek },
+    activatedAt,
+  )
+}
+
+/**
  * Barrido diario.
  *
  * Abre por dos hechos distintos: la ocurrencia declarada `not_completed` —que
@@ -129,6 +162,20 @@ export async function sweepTrainingOccurrenceObligations(): Promise<OccurrenceGa
   const occurredAt = new Date().toISOString()
   const today = chileDateParts(occurredAt)
 
+  /* El programa se resuelve antes de filtrar y no después, porque su semana de
+   * activación decide qué casillas exige: el PDTP se vuelve exigible al
+   * activarse la versión aprobada, no el 1 de enero. Acá también se lee el
+   * actor, que antes era el único motivo de esta consulta.
+   *
+   * El barrido puede coexistir con programas activos de otros años; elegir el
+   * primer activo sin filtrar por año y versión dejaba obligaciones del año
+   * corriente atribuidas al autor de una versión histórica. */
+  const [program] = await db.select({ id: pdtpPrograms.id, activatedAt: pdtpPrograms.activatedAt })
+    .from(pdtpPrograms)
+    .where(and(eq(pdtpPrograms.status, "active"), eq(pdtpPrograms.year, today.year)))
+    .orderBy(desc(pdtpPrograms.version))
+    .limit(1)
+
   const candidates = await db.select({
     id: preventionTrainingOccurrences.id,
     catalogItemId: preventionTrainingOccurrences.catalogItemId,
@@ -136,28 +183,26 @@ export async function sweepTrainingOccurrenceObligations(): Promise<OccurrenceGa
     year: preventionTrainingOccurrences.year,
     slotKey: preventionTrainingOccurrences.slotKey,
     scheduledMonth: preventionTrainingOccurrences.scheduledMonth,
+    scheduledWeek: preventionTrainingOccurrences.scheduledWeek,
     status: preventionTrainingOccurrences.status,
   })
     .from(preventionTrainingOccurrences)
     .where(and(
       inArray(preventionTrainingOccurrences.catalogItemId, [...byItem.keys()]),
-      ne(preventionTrainingOccurrences.status, "completed"),
+      /* `not_applicable` se excluye acá y no al filtrar más abajo: una casilla
+       * declarada no aplicable vence igual que cualquier otra, así que
+       * `isOverdue` la marcaría como brecha y el programa abriría un compromiso
+       * sobre algo que alguien ya declaró que no corresponde. Es la razón por
+       * la que el estado existe. */
+      notInArray(preventionTrainingOccurrences.status, ["completed", "not_applicable"]),
     ))
 
-  const gaps = candidates.filter(
-    (occurrence) => occurrence.status === "not_completed" || isOverdue(occurrence, today),
-  )
+  const gaps = candidates.filter((occurrence) => {
+    if (!isDemandedByProgram(occurrence, program?.activatedAt)) return false
+    return occurrence.status === "not_completed" || isOverdue(occurrence, today)
+  })
   if (gaps.length === 0) return { ...counters, gaps: 0 }
 
-  // El actor se hereda del programa activo, una sola vez: es el mismo para todo
-  // el barrido y resolverlo por ocurrencia serían N consultas idénticas.
-  // El barrido puede coexistir con programas activos de otros años. Elegir el
-  // primer activo sin año/version dejaba obligaciones del año corriente
-  // atribuidas al autor de una versión histórica.
-  const [program] = await db.select({ id: pdtpPrograms.id }).from(pdtpPrograms)
-    .where(and(eq(pdtpPrograms.status, "active"), eq(pdtpPrograms.year, today.year)))
-    .orderBy(desc(pdtpPrograms.version))
-    .limit(1)
   const actorUserId = program ? await resolvePdtpProgramActorUserId(program.id) : null
 
   for (const occurrence of gaps) {

@@ -76,6 +76,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-accreditation-bindings.test.ts",
   "lib/__tests__/prevention-training-occurrences-migration.test.ts",
   "lib/__tests__/prevention-training-occurrences-pglite.test.ts",
+  "lib/__tests__/prevention-program-slots-pglite.test.ts",
   "lib/__tests__/worksite-deactivation-pdtp.test.ts",
   "lib/__tests__/code-sequences.test.ts",
   "lib/__tests__/dispatch-guides.test.ts",

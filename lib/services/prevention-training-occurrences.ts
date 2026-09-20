@@ -50,7 +50,7 @@ export const TRAINING_OCCURRENCE_ENTITY_TYPE = "training_occurrence"
 
 type Client = DB | Tx
 
-export type TrainingOccurrenceStatus = "pending" | "completed" | "not_completed"
+export type TrainingOccurrenceStatus = "pending" | "completed" | "not_completed" | "not_applicable"
 
 export interface TrainingOccurrenceAccess {
   userId: string
@@ -93,16 +93,38 @@ export interface TrainingOccurrenceListItem {
   completedByUserId: string | null
   completedByName: string | null
   observation: string | null
+  notApplicableReason: string | null
   evidence: TrainingOccurrenceEvidenceListItem[]
 }
 
-const statusSchema = z.enum(["completed", "not_completed"])
+const statusSchema = z.enum(["completed", "not_completed", "not_applicable"])
 
+/* El motivo es obligatorio para declarar "no aplica" y está prohibido en los
+ * demás estados. Lo segundo importa tanto como lo primero: un motivo que
+ * sobrevive a la corrección del estado termina mostrándose junto a una
+ * capacitación realizada. El CHECK de la tabla impone la misma regla. */
 const statusInputSchema = z.object({
   occurrenceId: z.string().trim().min(1).max(200),
   expectedVersion: z.number().int().positive(),
   status: statusSchema,
   observation: z.string().trim().max(3000).nullable().optional(),
+  notApplicableReason: z.string().trim().max(1000).nullable().optional(),
+}).superRefine((value, ctx) => {
+  const reason = value.notApplicableReason?.trim() ?? ""
+  if (value.status === "not_applicable" && reason.length < 10) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["notApplicableReason"],
+      message: "Explica por qué la capacitación no aplica (al menos 10 caracteres).",
+    })
+  }
+  if (value.status !== "not_applicable" && reason.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["notApplicableReason"],
+      message: "El motivo de no aplicabilidad sólo corresponde al estado «no aplica».",
+    })
+  }
 })
 
 function scopeAllows(scope: WorksiteScope, worksiteId: string): boolean {
@@ -123,6 +145,21 @@ function requireAccess(access: TrainingOccurrenceAccess, permission: string, wor
 
 function nowIso(): string {
   return new Date().toISOString()
+}
+
+/** El motivo del cambio, para la bitácora y la auditoría.
+ *
+ * Existe porque el ternario binario que había acá trataba "no completed" como
+ * sinónimo de "no hecha". Un estado nuevo que caiga en esa rama se ve bien en
+ * pantalla y miente en el historial, que es el único registro que queda de un
+ * estado anterior. */
+const NOT_APPLICABLE_EVIDENCE_MESSAGE =
+  "La capacitación está declarada como no aplicable: no admite evidencia."
+
+function statusChangeReason(status: TrainingOccurrenceStatus, notApplicableReason: string | null): string {
+  if (status === "completed") return "Ocurrencia marcada como hecha con evidencia."
+  if (status === "not_applicable") return `Ocurrencia declarada no aplicable: ${notApplicableReason ?? "sin motivo"}`
+  return "Ocurrencia marcada como no hecha."
 }
 
 function catalogInsertRows() {
@@ -301,6 +338,7 @@ export async function listTrainingOccurrences(
     completedByUserId: occurrence.completedByUserId,
     completedByName: completedByName ?? null,
     observation: occurrence.observation,
+    notApplicableReason: occurrence.notApplicableReason,
     evidence: evidenceByOccurrence.get(occurrence.id) ?? [],
   }))
 }
@@ -423,10 +461,16 @@ export async function recordTrainingOccurrenceStatus(
 
     const now = nowIso()
     const observation = input.observation?.trim() || null
+    const notApplicableReason = nextStatus === "not_applicable"
+      ? (input.notApplicableReason?.trim() || null)
+      : null
     const [updated] = await tx.update(preventionTrainingOccurrences).set({
       status: nextStatus,
       completedAt: nextStatus === "completed" ? now : null,
       completedByUserId: nextStatus === "completed" ? access.userId : null,
+      notApplicableAt: nextStatus === "not_applicable" ? now : null,
+      notApplicableByUserId: nextStatus === "not_applicable" ? access.userId : null,
+      notApplicableReason,
       observation,
       version: current.occurrence.version + 1,
       updatedAt: now,
@@ -436,13 +480,20 @@ export async function recordTrainingOccurrenceStatus(
     )).returning()
     if (!updated) throw new Error("La capacitación cambió mientras la editabas. Recarga y reintenta.")
 
+    /* Cualquier estado que no sea "hecha" anula la evidencia activa, no sólo
+     * "no hecha": una ocurrencia declarada no aplicable tampoco puede quedar
+     * con evidencia colgando. Se anula en vez de borrarse porque esa evidencia
+     * pudo haber acreditado el programa, y su rastro es lo que explica por qué
+     * se contó y después se descontó. */
     const annulledEvidenceIds: string[] = []
-    if (nextStatus === "not_completed" && activeEvidence.length > 0) {
+    if (nextStatus !== "completed" && activeEvidence.length > 0) {
       const annulled = await tx.update(preventionTrainingOccurrenceEvidence).set({
         state: "annulled",
         annulledByUserId: access.userId,
         annulledAt: now,
-        annulledReason: "La ocurrencia fue corregida a no hecha; la evidencia anterior se conserva como historial.",
+        annulledReason: nextStatus === "not_applicable"
+          ? "La ocurrencia se declaró no aplicable; la evidencia anterior se conserva como historial."
+          : "La ocurrencia fue corregida a no hecha; la evidencia anterior se conserva como historial.",
       }).where(and(
         eq(preventionTrainingOccurrenceEvidence.occurrenceId, input.occurrenceId),
         eq(preventionTrainingOccurrenceEvidence.state, "active"),
@@ -456,8 +507,7 @@ export async function recordTrainingOccurrenceStatus(
       entityId: input.occurrenceId,
       worksiteId: current.occurrence.worksiteId,
       changeType: "status_changed",
-      reason: nextStatus === "completed"
-        ? "Ocurrencia marcada como hecha con evidencia.": "Ocurrencia marcada como no hecha.",
+      reason: statusChangeReason(nextStatus, notApplicableReason),
       beforeState: {
         status: current.occurrence.status,
         version: current.occurrence.version,
@@ -467,6 +517,7 @@ export async function recordTrainingOccurrenceStatus(
         status: nextStatus,
         version: updated.version,
         observation,
+        notApplicableReason,
         annulledEvidenceIds,
       },
       actorUserId: access.userId,
@@ -479,9 +530,8 @@ export async function recordTrainingOccurrenceStatus(
       entityId: input.occurrenceId,
       entityCode: current.catalog.code,
       oldState: { status: current.occurrence.status, version: current.occurrence.version },
-      newState: { status: nextStatus, version: updated.version, observation, annulledEvidenceIds },
-      reason: nextStatus === "completed"
-        ? "Ocurrencia marcada como hecha con evidencia.": "Ocurrencia marcada como no hecha.",
+      newState: { status: nextStatus, version: updated.version, observation, notApplicableReason, annulledEvidenceIds },
+      reason: statusChangeReason(nextStatus, notApplicableReason),
     }, tx)
 
     const activityNumbers = (current.catalog.pdtpActivityNumbers as number[]) ?? []
@@ -510,12 +560,19 @@ export async function recordTrainingOccurrenceStatus(
         worksiteId: current.occurrence.worksiteId,
         completedAt: now,
       }
-    } else if (nextStatus === "not_completed" && current.occurrence.status === "completed" && (target.catalogActivityIds?.length || target.activityNumbers?.length)) {
+    } else if (current.occurrence.status === "completed" && (target.catalogActivityIds?.length || target.activityNumbers?.length)) {
+      /* La condición era `nextStatus === "not_completed"` literal. Con un tercer
+       * estado eso dejaba viva la acreditación de una ocurrencia corregida a
+       * "no aplica": el programa la seguía contando como cumplida. Lo que
+       * revoca es SALIR de "hecha" —cosa que esta rama `else` ya garantiza—, no
+       * el destino concreto. */
       revocationEvent = pdtpRevocationInput(
         current.occurrence.id,
         current.occurrence.worksiteId,
         access.userId,
-        observation ?? "La ocurrencia de capacitación fue corregida a no hecha.",
+        notApplicableReason
+          ?? observation
+          ?? "La ocurrencia de capacitación dejó de estar cumplida.",
       )
       await recordPendingPdtpFulfillmentRevocation(revocationEvent, tx)
     }
@@ -569,6 +626,13 @@ export async function uploadTrainingOccurrenceEvidence(
   if (!preflight || !preflight.worksiteActive || !preflight.catalog.isActive || !scopeAllows(access.scope, preflight.occurrence.worksiteId)) {
     throw new Error("Registro de capacitación no encontrado o fuera de alcance.")
   }
+  /* Una ocurrencia declarada no aplicable no admite evidencia: se declaró que
+   * la actividad no correspondía, así que no hay nada que respaldar. Se
+   * comprueba acá y de nuevo dentro de la transacción, igual que el alcance:
+   * el preflight evita el archivo huérfano, la transacción cierra la carrera. */
+  if (preflight.occurrence.status === "not_applicable") {
+    throw new Error(NOT_APPLICABLE_EVIDENCE_MESSAGE)
+  }
 
   const validation = validateFileBuffer(input.buffer, input.fileSize, MimeType.INSPECTION_DOCUMENT, fileName)
   if (validation.error) throw new Error(validation.error)
@@ -587,6 +651,9 @@ export async function uploadTrainingOccurrenceEvidence(
       const current = await loadOccurrenceForMutation(tx, input.occurrenceId)
       if (!current || !current.worksiteActive || !current.catalog.isActive || !scopeAllows(access.scope, current.occurrence.worksiteId)) {
         throw new Error("Registro de capacitación no encontrado o fuera de alcance.")
+      }
+      if (current.occurrence.status === "not_applicable") {
+        throw new Error(NOT_APPLICABLE_EVIDENCE_MESSAGE)
       }
       const [created] = await tx.insert(preventionTrainingOccurrenceEvidence).values({
         id: `ptoe-${nanoid()}`,

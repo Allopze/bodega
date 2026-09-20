@@ -12,7 +12,7 @@ import { can, canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { worksiteSchema, type ActionState } from "@/lib/validation/masters"
 import { setWorksiteActive } from "@/lib/services/worksite-lifecycle"
-import { ensurePreventionTrainingOccurrencesForWorksiteTx } from "@/lib/services/prevention-training-occurrences"
+import { ensurePreventionProgramSlotsForWorksiteTx } from "@/lib/services/prevention-program-slots"
 
 const REVALIDATE = "/admin/faenas"
 
@@ -45,7 +45,7 @@ export async function createWorksite(_prev: ActionState, formData: FormData): Pr
   try {
     await db.transaction(async (tx) => {
       await tx.insert(worksites).values({ id, name: d.name, code: d.code, address: d.address ?? null, region: d.region ?? null, adminContratoLabel: d.adminContratoLabel || null, isActive: d.isActive })
-      if (d.isActive) await ensurePreventionTrainingOccurrencesForWorksiteTx(tx, id)
+      if (d.isActive) await ensurePreventionProgramSlotsForWorksiteTx(tx, id)
       await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "worksite", entityId: id, entityCode: d.code, newState: { name: d.name, code: d.code, isActive: d.isActive } }, tx)
     })
   } catch (error) {

@@ -375,11 +375,11 @@ export async function onEmergencyDrillCompleted(input: {
   drillId: string
   worksiteId: string
   executedAt: string
-  participantCount: number
   activityNumbers?: number[]
   catalogActivityIds?: string[]
-  /** EMG-001: la ruta del acta, si el cierre la adjuntó. */
-  evidencePath?: string | null
+  /** La ruta del acta. Siempre presente: desde el 2026-09-19 no existe un
+   *  camino que cierre un simulacro sin evidencia. */
+  evidencePath: string
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "emergencies",
@@ -388,7 +388,7 @@ export async function onEmergencyDrillCompleted(input: {
     sourceId: input.drillId,
     worksiteId: input.worksiteId,
     occurredAt: input.executedAt,
-    payload: { drillId: input.drillId, participantCount: input.participantCount },
+    payload: { drillId: input.drillId },
   })
   if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
@@ -398,15 +398,18 @@ export async function onEmergencyDrillCompleted(input: {
     worksiteId: input.worksiteId,
     ...(input.catalogActivityIds?.length ? { catalogActivityIds: input.catalogActivityIds } : { activityNumbers: input.activityNumbers }),
     occurredAt: input.executedAt,
-    executedQuantity: Math.max(1, input.participantCount),
+    /* Un simulacro es una actividad, no una cuenta de asistentes. Acá iba
+     * `Math.max(1, participantCount)`, así que un simulacro con 30 presentes
+     * acreditaba cantidad 30 contra una cantidad planificada de 1 e inflaba el
+     * indicador del programa. La celda planifica un simulacro; se ejecuta uno. */
+    executedQuantity: 1,
     /*
-     * EMG-001 (auditoría 2026-09-14): esto era siempre el rótulo sintético
-     * «Simulacro completado: <id>» —una cadena que se ve como evidencia y no lo
-     * es—. Ahora, si el cierre adjuntó el acta, se referencia el archivo real;
-     * el rótulo queda sólo para los simulacros que no llevan acta, y ahí dice
-     * lo que hay: el registro de participantes.
+     * EMG-001 (auditoría 2026-09-14) dejó acá el rótulo sintético «Simulacro
+     * completado: <id>» —una cadena que se ve como evidencia y no lo es— para
+     * los cierres sin acta. Esos cierres ya no existen, así que el rótulo
+     * tampoco: siempre se referencia el archivo real.
      */
-    evidenceRef: input.evidencePath ?? `Simulacro completado: ${input.drillId}`,
+    evidenceRef: input.evidencePath,
   })
 }
 

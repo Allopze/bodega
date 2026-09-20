@@ -17,6 +17,7 @@
 
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
+import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -85,7 +86,8 @@ async function seedOccurrence(input: {
   catalogItemId?: string
   year: number
   month: number | null
-  status: "pending" | "completed" | "not_completed"
+  status: "pending" | "completed" | "not_completed" | "not_applicable"
+  notApplicableReason?: string
 }) {
   const now = new Date().toISOString()
   await inMemoryDb.insert(schema.preventionTrainingOccurrences).values({
@@ -101,6 +103,13 @@ async function seedOccurrence(input: {
     createdAt: now,
     updatedAt: now,
     ...(input.status === "completed" ? { completedAt: now, completedByUserId: USER_ID } : {}),
+    ...(input.status === "not_applicable"
+      ? {
+          notApplicableAt: now,
+          notApplicableByUserId: USER_ID,
+          notApplicableReason: input.notApplicableReason ?? "La faena no ejecuta esta tarea.",
+        }
+      : {}),
   })
 }
 
@@ -155,6 +164,13 @@ beforeEach(async () => {
   ])
 })
 
+/** Mueve la activación del programa, que es lo que decide desde cuándo exige. */
+async function activarProgramaEn(year: number, month: number, day: number) {
+  await inMemoryDb.update(schema.pdtpPrograms)
+    .set({ activatedAt: new Date(Date.UTC(year, month - 1, day, 12)).toISOString() })
+    .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+}
+
 describe("sweepTrainingOccurrenceObligations", () => {
   it("sin ocurrencias incumplidas no abre nada", async () => {
     await seedOccurrence({ id: "occ-futura", year: FUTURE.year, month: FUTURE.month, status: "pending" })
@@ -205,6 +221,63 @@ describe("sweepTrainingOccurrenceObligations", () => {
 
     expect((await sweepTrainingOccurrenceObligations()).gaps).toBe(0)
     expect(await obligations()).toHaveLength(0)
+  })
+
+  /* El estado "no aplica" existe justamente para esto. Si el barrido no lo
+   * excluyera, una casilla declarada fuera del programa vencería igual que
+   * cualquier otra y abriría un compromiso sobre algo que alguien ya resolvió
+   * que no corresponde — y el estado no serviría para nada. */
+  it("una ocurrencia no aplicable no abre obligación, ni siquiera vencida", async () => {
+    await seedOccurrence({
+      id: "occ-no-aplica",
+      year: PAST.year,
+      month: PAST.month,
+      status: "not_applicable",
+      notApplicableReason: "La faena no opera equipos de izaje.",
+    })
+
+    const result = await sweepTrainingOccurrenceObligations()
+    expect(result.gaps).toBe(0)
+    expect(await obligations()).toHaveLength(0)
+  })
+
+  /* El PDTP se vuelve exigible al activarse la versión aprobada, no el 1 de
+   * enero. Sin esta regla, un programa activado en abril abría obligación el
+   * primer día por todas las casillas de febrero y marzo — y como la
+   * obligación se sella con la fecha del barrido, caía en el mes corriente y
+   * contaba como incumplimiento. */
+  it("no exige una casilla anterior a la semana de activación del programa", async () => {
+    await seedOccurrence({ id: "occ-antes", year: PROGRAM_YEAR, month: 2, status: "pending" })
+    await activarProgramaEn(PROGRAM_YEAR, 4, 1)
+
+    expect((await sweepTrainingOccurrenceObligations()).gaps).toBe(0)
+    expect(await obligations()).toHaveLength(0)
+  })
+
+  /* La casilla no se descarta ni se marca: sigue pendiente y se puede hacer
+   * tarde. Lo único que no ocurre es el castigo. */
+  it("la casilla sigue pendiente: no se toca, sólo no se exige", async () => {
+    await seedOccurrence({ id: "occ-antes", year: PROGRAM_YEAR, month: 2, status: "pending" })
+    await activarProgramaEn(PROGRAM_YEAR, 4, 1)
+    await sweepTrainingOccurrenceObligations()
+
+    const [row] = await inMemoryDb.select().from(schema.preventionTrainingOccurrences)
+      .where(eq(schema.preventionTrainingOccurrences.id, "occ-antes"))
+    expect(row).toMatchObject({ status: "pending" })
+  })
+
+  it("una casilla declarada no hecha antes de la activación tampoco se exige", async () => {
+    await seedOccurrence({ id: "occ-antes-nh", year: PROGRAM_YEAR, month: 2, status: "not_completed" })
+    await activarProgramaEn(PROGRAM_YEAR, 4, 1)
+
+    expect((await sweepTrainingOccurrenceObligations()).gaps).toBe(0)
+  })
+
+  it("sin fecha de activación se conserva el comportamiento histórico", async () => {
+    // Programas importados que ya estaban activos antes de que se registrara
+    // la huella: `activatedAt` nulo no puede dejar de exigir todo.
+    await seedOccurrence({ id: "occ-vencida", year: PAST.year, month: PAST.month, status: "pending" })
+    expect((await sweepTrainingOccurrenceObligations()).gaps).toBe(1)
   })
 
   it("un ítem cuya actividad no se mide por plazo queda fuera del barrido", async () => {

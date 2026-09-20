@@ -117,7 +117,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionGrdCoordinators)
   await inMemoryDb.delete(schema.preventionGrdCommittees)
 
-  await inMemoryDb.delete(schema.preventionEmergencyDrillParticipants)
+  await inMemoryDb.delete(schema.preventionEmergencyDrillEvidence)
   await inMemoryDb.delete(schema.preventionEmergencyDrills)
   await inMemoryDb.delete(schema.preventionEmergencyRoles)
   await inMemoryDb.delete(schema.preventionEmergencyScenarios)
@@ -300,7 +300,12 @@ describe("annulGrdMeeting revoca la N°81", () => {
  * «Simulacro completado: <id>». El acta es la prueba que se exhibe en una
  * fiscalización.
  */
-describe("EMG-001 — el acta del simulacro", () => {
+/* EMG-001 abrió el lugar para el acta del simulacro, pero lo dejó opcional con
+ * el argumento de que «hay simulacros cuyo respaldo es el propio registro de
+ * participantes». Ese registro se retiró el 2026-09-19 —se escribía y nadie lo
+ * leía—, así que el argumento cayó con él: ahora el acta es el único respaldo
+ * y es obligatoria. Con eso desaparece también el rótulo sintético. */
+describe("el acta del simulacro es obligatoria", () => {
   async function planConSimulacro(titulo: string) {
     const plan = await createEmergencyPlan({ worksiteId: WS_ID, title: titulo }, EMERGENCY_MANAGER)
     await addEmergencyScenario({
@@ -320,52 +325,41 @@ describe("EMG-001 — el acta del simulacro", () => {
     }, EMERGENCY_MANAGER)
   }
 
-  const cerrar = (drill: { id: string; version: number }, extra: Record<string, unknown> = {}) =>
+  async function adjuntarActa(drillId: string, storagePath: string) {
+    await inMemoryDb.insert(schema.preventionEmergencyDrillEvidence).values({
+      id: `evidencia-${drillId}`,
+      drillId,
+      fileName: "acta-simulacro.pdf",
+      storagePath,
+      mimeType: "application/pdf",
+      fileSizeBytes: 512,
+      sha256: "d".repeat(64),
+      state: "active",
+      uploadedByUserId: USER_ID,
+    })
+  }
+
+  const cerrar = (drill: { id: string; version: number }) =>
     completeEmergencyDrill({
       drillId: drill.id, expectedVersion: drill.version, executedAt: new Date().toISOString(),
-      outcome: "satisfactory", participants: [{ workerId: WORKER_ID, present: true }], ...extra,
+      outcome: "satisfactory",
     }, EMERGENCY_MANAGER)
 
-  it("se puede cerrar sin acta: hay simulacros cuyo respaldo es el registro de participantes", async () => {
+  it("no se puede cerrar sin acta", async () => {
     const drill = await planConSimulacro("Plan sin acta")
+    await expect(cerrar(drill)).rejects.toThrow(/evidencia/i)
+  })
+
+  it("con acta cierra, y la acreditación referencia el archivo y no un rótulo sintético", async () => {
+    const drill = await planConSimulacro("Plan con acta")
+    await adjuntarActa(drill.id, "storage/prevention-drill-evidence/acta-acreditada.pdf")
     const cerrado = await cerrar(drill)
     expect(cerrado.status).toBe("completed")
-    expect(cerrado.evidencePath).toBeNull()
-  })
 
-  it("pero ahora existe el lugar, y el acta queda con su checksum", async () => {
-    const drill = await planConSimulacro("Plan con acta")
-    const cerrado = await cerrar(drill, {
-      evidencePath: "storage/pdtp-evidence/acta-simulacro.pdf",
-      evidenceChecksumSha256: "d".repeat(64),
-    })
-    expect(cerrado.evidencePath).toBe("storage/pdtp-evidence/acta-simulacro.pdf")
-    expect(cerrado.evidenceChecksumSha256).toBe("d".repeat(64))
-  })
-
-  it("un acta sin checksum no se acepta: un archivo sin huella no es evidencia verificable", async () => {
-    const drill = await planConSimulacro("Plan acta sin huella")
-    await expect(cerrar(drill, { evidencePath: "storage/pdtp-evidence/acta.pdf" })).rejects.toThrow()
-  })
-
-  it("ni una ruta inventada, aunque traiga checksum", async () => {
-    const drill = await planConSimulacro("Plan ruta inventada")
-    await expect(cerrar(drill, {
-      evidencePath: "el acta está en la carpeta compartida",
-      evidenceChecksumSha256: "e".repeat(64),
-    })).rejects.toThrow()
-  })
-
-  it("con acta, la acreditación PDTP referencia el archivo y no el rótulo sintético", async () => {
-    const drill = await planConSimulacro("Plan acreditación")
-    await cerrar(drill, {
-      evidencePath: "storage/pdtp-evidence/acta-acreditada.pdf",
-      evidenceChecksumSha256: "f".repeat(64),
-    })
     // `evidenceRef` vive en el evento de cumplimiento, que es lo que el
     // conector escribe; la ejecución es su consecuencia.
     const eventos = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
-    expect(eventos.at(-1)?.evidenceRef).toBe("storage/pdtp-evidence/acta-acreditada.pdf")
+    expect(eventos.at(-1)?.evidenceRef).toBe("storage/prevention-drill-evidence/acta-acreditada.pdf")
   })
 })
 
@@ -387,9 +381,20 @@ describe("cancelEmergencyDrill revoca la N°84", () => {
     const drill = await scheduleEmergencyDrill({
       planId: plan.id, scenarioType: "incendio_estructural", scheduledFor: new Date(Date.now() - 60_000).toISOString(),
     }, EMERGENCY_MANAGER)
+    await inMemoryDb.insert(schema.preventionEmergencyDrillEvidence).values({
+      id: "evidencia-defensa-profundidad",
+      drillId: drill.id,
+      fileName: "acta-simulacro.pdf",
+      storagePath: "storage/prevention-drill-evidence/acta-defensa.pdf",
+      mimeType: "application/pdf",
+      fileSizeBytes: 512,
+      sha256: "e".repeat(64),
+      state: "active",
+      uploadedByUserId: USER_ID,
+    })
     const completed = await completeEmergencyDrill({
       drillId: drill.id, expectedVersion: drill.version, executedAt: new Date().toISOString(),
-      outcome: "satisfactory", participants: [{ workerId: WORKER_ID, present: true }],
+      outcome: "satisfactory",
     }, EMERGENCY_MANAGER)
     expect(withActivities.pdtpActivityNumbers).toEqual([84])
     expect(await executionsFor(84)).toHaveLength(1)

@@ -216,66 +216,37 @@ describeIf("Emergencias on real PostgreSQL", () => {
     expect(drill.status).toBe("scheduled")
   })
 
-  it("refuses to complete a drill with nobody present", async () => {
+  /* El gate de "esto realmente ocurrió" era la lista de participantes: se
+   * escribía y ninguna consulta la leía. Desde el 2026-09-19 lo es el acta, y
+   * con ella se fueron los cuatro casos que validaban la dotación. */
+  it("refuses to complete a drill without any evidence", async () => {
     const service = await import("@/lib/services/prevention-emergency")
     await expect(service.completeEmergencyDrill({
       drillId, expectedVersion: drillVersion,
       executedAt: DRILL_EXECUTED_AT,
       outcome: "satisfactory",
-      participants: [{ workerId: "wk-a1", present: false }],
-    }, EXECUTOR)).rejects.toThrow(/participante/)
+    }, EXECUTOR)).rejects.toThrow(/evidencia/)
   })
 
-  // EMERGENCIAS-03: los participantes se validan contra la faena del simulacro y
-  // su vigencia, igual que el titular de un rol del organigrama. El rechazo es
-  // todo-o-nada: la transacción no deja ninguna fila de asistencia.
-  async function expectParticipantsRejected(
-    participants: { workerId: string; present: boolean }[],
-    message: RegExp,
-  ) {
-    const service = await import("@/lib/services/prevention-emergency")
-    const attempt = service.completeEmergencyDrill({
-      drillId, expectedVersion: drillVersion,
-      executedAt: DRILL_EXECUTED_AT,
-      outcome: "satisfactory",
-      participants,
-    }, EXECUTOR)
-    await expect(attempt).rejects.toThrow(service.EmergencyDomainError)
-    await expect(attempt).rejects.toThrow(message)
-    const rows = await getDb().select().from(schema.preventionEmergencyDrillParticipants)
-    expect(rows).toHaveLength(0)
+  /** El acta que habilita el cierre. Se inserta directo porque la subida real
+   *  escribe en disco, y lo que este archivo protege es la regla, no el I/O. */
+  async function attachDrillEvidence(suffix: string, targetDrillId: string = drillId) {
+    await getDb().insert(schema.preventionEmergencyDrillEvidence).values({
+      id: `drill-evidence-${suffix}`,
+      drillId: targetDrillId,
+      fileName: `acta-simulacro-${suffix}.pdf`,
+      storagePath: `storage/prevention-drill-evidence/acta-${suffix}.pdf`,
+      mimeType: "application/pdf",
+      fileSizeBytes: 256,
+      sha256: "c".repeat(64),
+      state: "active",
+      uploadedByUserId: "em-manager",
+    })
   }
-
-  it("rejects a drill participant from another worksite", async () => {
-    await expectParticipantsRejected(
-      [{ workerId: "wk-a1", present: true }, { workerId: "wk-b1", present: true }],
-      /^1 participante\(s\) no existen, están inactivos o no pertenecen a la faena del simulacro\.$/,
-    )
-  })
-
-  it("rejects an inactive drill participant", async () => {
-    await expectParticipantsRejected(
-      [{ workerId: "wk-a1", present: true }, { workerId: "wk-a4", present: true }],
-      /1 participante\(s\) no existen, están inactivos/,
-    )
-  })
-
-  it("rejects an unknown drill participant", async () => {
-    await expectParticipantsRejected(
-      [{ workerId: "wk-a1", present: true }, { workerId: "wk-fantasma", present: false }],
-      /1 participante\(s\) no existen, están inactivos/,
-    )
-  })
-
-  it("rejects a repeated drill participant", async () => {
-    await expectParticipantsRejected(
-      [{ workerId: "wk-a1", present: true }, { workerId: "wk-a1", present: false }],
-      /^1 participante\(s\) vienen repetidos en la lista\.$/,
-    )
-  })
 
   it("completes a drill that needs improvement, deriving a CAPA action with responsible and target date", async () => {
     const service = await import("@/lib/services/prevention-emergency")
+    await attachDrillEvidence("capa")
     const completed = await service.completeEmergencyDrill({
       drillId, expectedVersion: drillVersion,
       executedAt: DRILL_EXECUTED_AT,
@@ -283,11 +254,6 @@ describeIf("Emergencias on real PostgreSQL", () => {
       evacuationSeconds: 240,
       observations: "La ruta de evacuación del sector B estaba parcialmente obstruida.",
       outcome: "needs_improvement",
-      participants: [
-        { workerId: "wk-a1", present: true },
-        { workerId: "wk-a2", present: true },
-        { workerId: "wk-a3", present: false },
-      ],
       responsibleUserId: "em-manager",
       targetDate: "2026-10-15",
     }, EXECUTOR)
@@ -308,7 +274,6 @@ describeIf("Emergencias on real PostgreSQL", () => {
       drillId, expectedVersion: 99,
       executedAt: DRILL_EXECUTED_AT,
       outcome: "satisfactory",
-      participants: [{ workerId: "wk-a1", present: true }],
     }, EXECUTOR)).rejects.toThrow()
   })
 
@@ -330,7 +295,6 @@ describeIf("Emergencias on real PostgreSQL", () => {
     const base = {
       drillId: drill.id, expectedVersion: drill.version,
       outcome: "satisfactory" as const,
-      participants: [{ workerId: "wk-a1", present: true }],
     }
 
     // Antes se aceptaba cualquier instante: un simulacro "realizado" el año que
@@ -389,15 +353,15 @@ describeIf("Emergencias on real PostgreSQL", () => {
     const drill = await service.scheduleEmergencyDrill({
       planId, scenarioType: "sismo", scheduledFor: iso(-2 * HORA),
     }, EXECUTOR)
+    await attachDrillEvidence("acreditacion", drill.id)
     await service.completeEmergencyDrill({
       drillId: drill.id, expectedVersion: drill.version, executedAt: iso(-1 * HORA),
       outcome: "satisfactory",
-      participants: [{ workerId: "wk-a1", present: true }, { workerId: "wk-a2", present: true }],
     }, EXECUTOR)
 
     expect(accredit).toHaveBeenCalledTimes(1)
     expect(accredit.mock.calls[0]![0]).toMatchObject({
-      drillId: drill.id, worksiteId: "ws-em-a", activityNumbers: [83, 84], participantCount: 2,
+      drillId: drill.id, worksiteId: "ws-em-a", activityNumbers: [83, 84],
     })
 
     // Y vaciarlo vuelve a apagar la acreditación, sin dejar un array vacío.
@@ -411,9 +375,10 @@ describeIf("Emergencias on real PostgreSQL", () => {
     const mudo = await service.scheduleEmergencyDrill({
       planId, scenarioType: "nevada", scheduledFor: iso(-2 * HORA),
     }, EXECUTOR)
+    await attachDrillEvidence("mudo", mudo.id)
     await service.completeEmergencyDrill({
       drillId: mudo.id, expectedVersion: mudo.version, executedAt: iso(-1 * HORA),
-      outcome: "satisfactory", participants: [{ workerId: "wk-a1", present: true }],
+      outcome: "satisfactory",
     }, EXECUTOR)
     expect(accredit).not.toHaveBeenCalled()
 
@@ -567,7 +532,6 @@ describeIf("Emergencias on real PostgreSQL", () => {
     await expect(service.completeEmergencyDrill({
       drillId: programado.id, expectedVersion: cancelado.version,
       executedAt: SECOND_DRILL_EXECUTED_AT, outcome: "satisfactory",
-      participants: [{ workerId: "wk-a1", present: true }],
     }, EXECUTOR)).rejects.toThrow(/programado puede completarse/)
   })
 

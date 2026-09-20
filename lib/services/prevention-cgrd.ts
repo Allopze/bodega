@@ -29,6 +29,7 @@
  *   porque el CPHS es bipartito por DS 54. Quien registra el acta declara si
  *   hubo quórum y queda registrado con autor y fecha en la bitácora.
  */
+import { z } from "zod"
 import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
@@ -38,6 +39,7 @@ import {
   preventionGrdCoordinators,
   preventionGrdMatrices,
   preventionGrdMeetings,
+  preventionGrdMeetingSlots,
   preventionGrdMembers,
   preventionGrdThreats,
   workers,
@@ -608,6 +610,31 @@ export async function recordGrdMeeting(input: unknown, access: CgrdAccess) {
     }).returning()
     if (!created) throw new Error("No se pudo registrar el acta.")
 
+    /* El acta llena una casilla del programa, en la misma transacción: si el
+     * registro se revierte, la casilla no puede quedar en verde sin acta.
+     *
+     * `slotId` es opcional a propósito. Una sesión extraordinaria se registra
+     * igual y no llena ninguna casilla, así que no cuenta en el denominador
+     * del programa — que es exactamente lo que debe pasar. */
+    if (data.slotId) {
+      const [slot] = await tx.select().from(preventionGrdMeetingSlots)
+        .where(eq(preventionGrdMeetingSlots.id, data.slotId)).limit(1)
+      if (!slot) throw new Error("La casilla del programa no existe.")
+      if (slot.worksiteId !== committee.worksiteId) throw new Error("La casilla pertenece a otra faena.")
+      if (slot.status === "completed") throw new Error("Esa casilla ya está cumplida por otra acta.")
+      await tx.update(preventionGrdMeetingSlots).set({
+        status: "completed",
+        meetingId: created.id,
+        completedAt: new Date().toISOString(),
+        completedByUserId: access.userId,
+        notApplicableAt: null,
+        notApplicableByUserId: null,
+        notApplicableReason: null,
+        version: slot.version + 1,
+        updatedAt: new Date().toISOString(),
+      }).where(eq(preventionGrdMeetingSlots.id, slot.id))
+    }
+
     // Los acuerdos van antes de cerrar la transacción: si `createCapaActionWithClient`
     // rechaza un responsable inactivo, el acta no queda registrada a medias
     // con acuerdos perdidos — toda la transacción revierte.
@@ -661,6 +688,96 @@ export async function recordGrdMeeting(input: unknown, access: CgrdAccess) {
  * flujo: una CAPA en curso no se borra porque el acta que la originó estuviera
  * mal transcrita.
  */
+/* ── Casillas del programa ────────────────────────────────────────────────
+ * La casilla declara la sesión que el PDTP espera; el acta es el hecho. Se
+ * cumple registrando un acta contra ella, y se resuelve como no hecha o no
+ * aplicable con un motivo.
+ */
+
+const grdSlotStatusInput = z.object({
+  slotId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  status: z.enum(["not_completed", "not_applicable"]),
+  observation: z.string().trim().max(3000).nullable().optional(),
+  notApplicableReason: z.string().trim().max(1000).nullable().optional(),
+}).superRefine((value, ctx) => {
+  const reason = value.notApplicableReason?.trim() ?? ""
+  if (value.status === "not_applicable" && reason.length < 10) {
+    ctx.addIssue({ code: "custom", path: ["notApplicableReason"], message: "Explica por qué la sesión no aplica en esta faena (al menos 10 caracteres)." })
+  }
+  if (value.status !== "not_applicable" && reason.length > 0) {
+    ctx.addIssue({ code: "custom", path: ["notApplicableReason"], message: "El motivo de no aplicabilidad sólo corresponde al estado «no aplica»." })
+  }
+})
+
+/** Declara una casilla de sesión del CGRD como no hecha o no aplicable. */
+export async function recordGrdMeetingSlotStatus(input: unknown, access: CgrdAccess) {
+  const data = grdSlotStatusInput.parse(input)
+  return db.transaction(async (tx) => {
+    const [slot] = await tx.select().from(preventionGrdMeetingSlots)
+      .where(eq(preventionGrdMeetingSlots.id, data.slotId)).limit(1)
+    if (!slot) throw new Error(GRD_NOT_FOUND)
+    requireGrdAccess(access, "prevention:cgrd:meeting:manage", slot.worksiteId)
+    if (slot.version !== data.expectedVersion) {
+      throw new Error("La casilla cambió mientras la editabas. Recarga y reintenta.")
+    }
+    if (slot.status === data.status) throw new Error("La casilla ya tiene ese estado.")
+    /* Una casilla cumplida se corrige anulando su acta, que ya revoca la N°81.
+     * Dejar que esta vía la desmarcara permitiría apagar el cumplimiento sin
+     * tocar el hecho ni dejar rastro de por qué el acta dejó de valer. */
+    if (slot.status === "completed") {
+      throw new Error("La casilla está cumplida por un acta: anula el acta si hay que corregirla.")
+    }
+
+    const now = nowIso()
+    const notApplicableReason = data.status === "not_applicable"
+      ? (data.notApplicableReason?.trim() || null)
+      : null
+    const [updated] = await tx.update(preventionGrdMeetingSlots).set({
+      status: data.status,
+      notApplicableAt: data.status === "not_applicable" ? now : null,
+      notApplicableByUserId: data.status === "not_applicable" ? access.userId : null,
+      notApplicableReason,
+      observation: data.observation?.trim() || null,
+      version: slot.version + 1,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionGrdMeetingSlots.id, data.slotId),
+      eq(preventionGrdMeetingSlots.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new Error("La casilla cambió mientras la editabas. Recarga y reintenta.")
+
+    await recordGrdHistory(tx, {
+      entityType: "grd_meeting_slot",
+      entityId: slot.id,
+      worksiteId: slot.worksiteId,
+      changeType: "status_changed",
+      reason: data.status === "not_applicable"
+        ? `Casilla declarada no aplicable: ${notApplicableReason ?? "sin motivo"}`
+        : "Casilla marcada como no hecha.",
+      beforeState: slot,
+      afterState: updated,
+      actorUserId: access.userId,
+    })
+    return updated
+  })
+}
+
+/**
+ * El motivo sugerido para declarar "no aplica", cuando la dotación de la faena
+ * no alcanza el umbral del DS 44.
+ *
+ * Es una sugerencia y no una exclusión automática. Excluir solo exigiría un
+ * histórico de dotación por mes que el módulo no tiene —`worksiteHeadcount` es
+ * un conteo instantáneo—, y sobre todo: una exclusión automática esconde la
+ * decisión, que es justo lo que este mecanismo existe para dejar por escrito.
+ */
+export async function suggestGrdSlotNotApplicableReason(worksiteId: string): Promise<string | null> {
+  const headcount = await worksiteHeadcount(db, worksiteId)
+  if (resolveGrdStructure(headcount) !== "coordinator") return null
+  return `Centro de trabajo con ${headcount} persona(s) trabajadoras: el DS 44 exige coordinador de gestión de riesgos de desastres, no comité.`
+}
+
 export async function annulGrdMeeting(input: unknown, access: CgrdAccess) {
   const data = grdMeetingAnnulSchema.parse(input)
   let revocation: Parameters<typeof recordPdtpFulfillmentRevocation>[0] | null = null
@@ -687,6 +804,22 @@ export async function annulGrdMeeting(input: unknown, access: CgrdAccess) {
       entityType: "grd_meeting", entityId: updated.id, worksiteId: row.committee.worksiteId,
       changeType: "annulled", reason: data.reason, beforeState: row.meeting, afterState: updated, actorUserId: access.userId,
     })
+
+    /* La casilla que llenaba esta acta vuelve a "no hecha", con el motivo de la
+     * anulación como observación.
+     *
+     * No vuelve a "pendiente": la sesión del programa se dio por cumplida y
+     * dejó de estarlo, y eso es un incumplimiento declarado, no una tarea que
+     * nadie tocó todavía. Sin esta vuelta atrás, anular un acta dejaba la
+     * casilla en verde sin acta: el checklist mentía. */
+    await tx.update(preventionGrdMeetingSlots).set({
+      status: "not_completed",
+      meetingId: null,
+      completedAt: null,
+      completedByUserId: null,
+      observation: `Acta anulada: ${data.reason}`,
+      updatedAt: now,
+    }).where(eq(preventionGrdMeetingSlots.meetingId, updated.id))
 
     // Mismo `sourceId` con prefijo que usó `onGrdMeetingClosed` al registrarla.
     revocation = {

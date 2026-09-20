@@ -1,10 +1,12 @@
+import { createHash } from "node:crypto"
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
 import { z } from "zod"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import {
   preventionEmergencyContacts,
-  preventionEmergencyDrillParticipants,
+  preventionEmergencyDrillEvidence,
+  preventionEmergencyDrillSlots,
   preventionEmergencyDrills,
   preventionEmergencyHistory,
   preventionEmergencyPlans,
@@ -26,7 +28,14 @@ import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { createNotifications } from "@/lib/services/notifications"
 import { codeYear, todayInChile } from "@/lib/utils"
-import { checkEvidence } from "@/lib/validation/evidence-contract"
+import { validateFileBuffer, MimeType } from "@/lib/file-validation"
+import { generateStorageName } from "@/lib/services/prevention-documents/utils"
+import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
+import {
+  createPreventionDrillEvidencePath,
+  resolvePreventionDrillEvidenceDir,
+  resolveStorageFile,
+} from "@/lib/storage/config"
 
 type Client = DB | Tx
 
@@ -573,28 +582,6 @@ export async function scheduleEmergencyDrill(input: unknown, access: EmergencyAc
   })
 }
 
-/**
- * `EMG-001`: el acta de un simulacro, bajo el contrato único de evidencia. Se
- * valida aquí y no con el esquema genérico porque el par ruta+checksum es
- * opcional en conjunto: o van los dos o no va ninguno.
- */
-function checkDrillEvidence(
-  path: string | undefined,
-  checksum: string | undefined,
-): { field: "evidencePath" | "evidenceChecksumSha256"; message: string } | null {
-  if (!path) {
-    if (checksum) return { field: "evidencePath", message: "Adjunta el archivo del acta o quita su checksum" }
-    return null
-  }
-  const problems = checkEvidence({ kind: "document", reference: path, checksumSha256: checksum ?? null })
-  const first = problems[0]
-  if (!first) return null
-  return {
-    field: first.field === "checksumSha256" ? "evidenceChecksumSha256" : "evidencePath",
-    message: first.message,
-  }
-}
-
 const completeDrillSchema = z.object({
   drillId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
@@ -603,27 +590,21 @@ const completeDrillSchema = z.object({
   evacuationSeconds: z.number().int().positive().nullable().optional(),
   observations: z.string().trim().max(5000).nullable().optional(),
   outcome: z.enum(["satisfactory", "needs_improvement"]),
-  participants: z.array(z.object({
-    workerId: z.string().min(1),
-    present: z.boolean(),
-    roleName: z.string().trim().max(120).nullable().optional(),
-  })).default([]),
+  /* La casilla del programa que este simulacro cumple. Opcional: un simulacro
+   * extraordinario —el que se corre después de un incidente— no llena ninguna
+   * casilla y no cuenta en el denominador. */
+  slotId: z.string().min(1).nullable().optional(),
   responsibleUserId: z.string().min(1).nullable().optional(),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   /*
-   * EMG-001 (auditoría 2026-09-14), patrón P4: el simulacro no tenía dónde
-   * guardar su acta y el conector PDTP acreditaba con un rótulo sintético.
-   *
-   * Opcional: hay simulacros —un corte de energía, una evacuación de dos
-   * minutos— cuyo respaldo es el propio registro de participantes, y exigir un
-   * archivo obligaría a inventar uno. Pero si se adjunta, va bajo el contrato
-   * del repositorio: ruta de un directorio de evidencia y checksum del archivo.
+   * EMG-001 (auditoría 2026-09-14) dejó `evidencePath` + checksum en la propia
+   * fila, opcionales, con el argumento de que «hay simulacros cuyo respaldo es
+   * el propio registro de participantes». Ese registro se retiró el 2026-09-19
+   * —se escribía y nunca se leía—, así que el argumento ya no aplica y la
+   * evidencia pasa a ser obligatoria, en su tabla 1:N y subida por su ruta,
+   * igual que en capacitación. El gate vive en el servicio, no en este esquema.
    */
-  evidencePath: z.string().trim().optional(),
-  evidenceChecksumSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
 }).superRefine((value, ctx) => {
-  const evidencia = checkDrillEvidence(value.evidencePath, value.evidenceChecksumSha256)
-  if (evidencia) ctx.addIssue({ code: "custom", path: [evidencia.field], message: evidencia.message })
   if (value.outcome === "needs_improvement" && !value.targetDate) {
     ctx.addIssue({ code: "custom", path: ["targetDate"], message: "Un simulacro que requiere mejora necesita un plazo para la acción correctiva." })
   }
@@ -647,6 +628,208 @@ const completeDrillSchema = z.object({
  * hallazgo a CAPA común: el aprendizaje del simulacro queda con
  * responsable y plazo, no en un campo de texto.
  */
+/* ── Evidencia del simulacro ──────────────────────────────────────────────
+ * Copia deliberada del aparato de capacitación
+ * (`uploadTrainingOccurrenceEvidence`): mismos límites, mismo cálculo de
+ * sha256 en el servidor —el cliente nunca lo manda— y el mismo borrado del
+ * archivo si la transacción falla, para no dejar huérfanos en disco.
+ */
+export const DRILL_EVIDENCE_MAX_FILE_SIZE = 25 * 1024 * 1024
+export const DRILL_EVIDENCE_MAX_REQUEST_SIZE = DRILL_EVIDENCE_MAX_FILE_SIZE + 256 * 1024
+
+export interface DrillEvidenceListItem {
+  id: string
+  fileName: string
+  storagePath: string
+  mimeType: string
+  fileSizeBytes: number
+  sha256: string
+  state: string
+  uploadedAt: string
+}
+
+export async function uploadEmergencyDrillEvidence(
+  input: { drillId: string; fileName: string; fileSize: number; buffer: Uint8Array },
+  access: EmergencyAccess,
+): Promise<DrillEvidenceListItem> {
+  const fileName = input.fileName.trim()
+  if (!fileName || fileName.length > 255) throw new EmergencyDomainError("El nombre del archivo no es válido.")
+  if (!Number.isSafeInteger(input.fileSize) || input.fileSize <= 0) {
+    throw new EmergencyDomainError("El tamaño del archivo no es válido.")
+  }
+  if (input.fileSize > DRILL_EVIDENCE_MAX_FILE_SIZE) {
+    throw new EmergencyDomainError(`El archivo supera el máximo permitido de ${Math.round(DRILL_EVIDENCE_MAX_FILE_SIZE / 1024 / 1024)} MB.`)
+  }
+  if (input.buffer.byteLength !== input.fileSize) {
+    throw new EmergencyDomainError("El contenido del archivo no coincide con su tamaño declarado.")
+  }
+
+  // Se comprueba antes de escribir para no dejar el archivo huérfano, y de
+  // nuevo dentro de la transacción para cerrar la carrera.
+  const [preflight] = await db.select().from(preventionEmergencyDrills)
+    .where(eq(preventionEmergencyDrills.id, input.drillId)).limit(1)
+  if (!preflight) throw new EmergencyDomainError(NOT_FOUND)
+  requireAccess(access, "prevention:emergency:drill_execute", preflight.worksiteId)
+  if (preflight.status !== "scheduled") {
+    throw new EmergencyDomainError("Sólo un simulacro programado admite evidencia nueva.")
+  }
+
+  const validation = validateFileBuffer(input.buffer, input.fileSize, MimeType.INSPECTION_DOCUMENT, fileName)
+  if (validation.error) throw new EmergencyDomainError(validation.error)
+
+  const storageName = generateStorageName(fileName)
+  const relativePath = createPreventionDrillEvidencePath(storageName)
+  const directory = resolvePreventionDrillEvidenceDir()
+  const absolutePath = resolveStorageFile(directory, storageName)
+  const sha256 = createHash("sha256").update(input.buffer).digest("hex")
+
+  await mkdirp(directory)
+  await writeBuffer(absolutePath, Buffer.from(input.buffer))
+
+  try {
+    return await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(preventionEmergencyDrills)
+        .where(eq(preventionEmergencyDrills.id, input.drillId)).limit(1)
+      if (!current || current.status !== "scheduled") {
+        throw new EmergencyDomainError("Sólo un simulacro programado admite evidencia nueva.")
+      }
+      const [created] = await tx.insert(preventionEmergencyDrillEvidence).values({
+        id: `pemgde-${nanoid()}`,
+        drillId: input.drillId,
+        fileName,
+        storagePath: relativePath,
+        mimeType: validation.mimeType,
+        fileSizeBytes: input.fileSize,
+        sha256,
+        state: "active",
+        uploadedByUserId: access.userId,
+      }).returning()
+      if (!created) throw new EmergencyDomainError("No se pudo guardar la evidencia.")
+      await history(tx, {
+        entityType: "drill",
+        entityId: input.drillId,
+        worksiteId: current.worksiteId,
+        changeType: "evidence_added",
+        reason: `Evidencia adjuntada: ${fileName}`,
+        afterState: { evidenceId: created.id, storagePath: relativePath, sha256 },
+        actorUserId: access.userId,
+      })
+      return {
+        id: created.id,
+        fileName: created.fileName,
+        storagePath: created.storagePath,
+        mimeType: created.mimeType,
+        fileSizeBytes: created.fileSizeBytes,
+        sha256: created.sha256,
+        state: created.state,
+        uploadedAt: created.uploadedAt,
+      }
+    })
+  } catch (error) {
+    await removeFile(absolutePath)
+    throw error
+  }
+}
+
+/* ── Casillas del programa ────────────────────────────────────────────────
+ * La casilla declara lo que el PDTP espera; el simulacro es el hecho. Se
+ * cumple vinculando un simulacro completado, y se resuelve como no hecha o no
+ * aplicable con un motivo, igual que el checklist de capacitación.
+ */
+
+const drillSlotStatusSchema = z.enum(["not_completed", "not_applicable"])
+
+const drillSlotStatusInput = z.object({
+  slotId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  status: drillSlotStatusSchema,
+  observation: z.string().trim().max(3000).nullable().optional(),
+  notApplicableReason: z.string().trim().max(1000).nullable().optional(),
+}).superRefine((value, ctx) => {
+  const reason = value.notApplicableReason?.trim() ?? ""
+  if (value.status === "not_applicable" && reason.length < 10) {
+    ctx.addIssue({ code: "custom", path: ["notApplicableReason"], message: "Explica por qué el simulacro no aplica en esta faena (al menos 10 caracteres)." })
+  }
+  if (value.status !== "not_applicable" && reason.length > 0) {
+    ctx.addIssue({ code: "custom", path: ["notApplicableReason"], message: "El motivo de no aplicabilidad sólo corresponde al estado «no aplica»." })
+  }
+})
+
+/** Declara una casilla de simulacro como no hecha o no aplicable. */
+export async function recordDrillSlotStatus(input: unknown, access: EmergencyAccess) {
+  const data = drillSlotStatusInput.parse(input)
+  return db.transaction(async (tx) => {
+    const [slot] = await tx.select().from(preventionEmergencyDrillSlots)
+      .where(eq(preventionEmergencyDrillSlots.id, data.slotId)).limit(1)
+    if (!slot) throw new EmergencyDomainError(NOT_FOUND)
+    requireAccess(access, "prevention:emergency:drill_execute", slot.worksiteId)
+    if (slot.version !== data.expectedVersion) {
+      throw new EmergencyDomainError("La casilla cambió mientras la editabas. Recarga y reintenta.")
+    }
+    if (slot.status === data.status) throw new EmergencyDomainError("La casilla ya tiene ese estado.")
+    /* Una casilla cumplida no se corrige acá: el hecho es el simulacro, y
+     * deshacerlo es cancelarlo, que ya revoca la acreditación. Dejar que esta
+     * vía la desmarcara permitiría apagar el cumplimiento sin tocar el hecho. */
+    if (slot.status === "completed") {
+      throw new EmergencyDomainError("La casilla está cumplida por un simulacro: cancela el simulacro si hay que corregirla.")
+    }
+
+    const now = nowIso()
+    const notApplicableReason = data.status === "not_applicable"
+      ? (data.notApplicableReason?.trim() || null)
+      : null
+    const [updated] = await tx.update(preventionEmergencyDrillSlots).set({
+      status: data.status,
+      notApplicableAt: data.status === "not_applicable" ? now : null,
+      notApplicableByUserId: data.status === "not_applicable" ? access.userId : null,
+      notApplicableReason,
+      observation: data.observation?.trim() || null,
+      version: slot.version + 1,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionEmergencyDrillSlots.id, data.slotId),
+      eq(preventionEmergencyDrillSlots.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new EmergencyDomainError("La casilla cambió mientras la editabas. Recarga y reintenta.")
+
+    await history(tx, {
+      entityType: "drill_slot",
+      entityId: slot.id,
+      worksiteId: slot.worksiteId,
+      changeType: "status_changed",
+      reason: data.status === "not_applicable"
+        ? `Casilla declarada no aplicable: ${notApplicableReason ?? "sin motivo"}`
+        : "Casilla marcada como no hecha.",
+      beforeState: slot,
+      afterState: updated,
+      actorUserId: access.userId,
+    })
+    return updated
+  })
+}
+
+/** La evidencia de un simulacro, con su faena, para servir la descarga bajo
+ *  el alcance de quien la pide. Sin esto la ruta serviría cualquier archivo a
+ *  cualquiera que adivinara el nombre. */
+export async function getDrillEvidenceForDownload(storageName: string, access: EmergencyAccess) {
+  const [row] = await db.select({
+    evidence: preventionEmergencyDrillEvidence,
+    worksiteId: preventionEmergencyDrills.worksiteId,
+  })
+    .from(preventionEmergencyDrillEvidence)
+    .innerJoin(preventionEmergencyDrills, eq(preventionEmergencyDrills.id, preventionEmergencyDrillEvidence.drillId))
+    .where(eq(preventionEmergencyDrillEvidence.storagePath, createPreventionDrillEvidencePath(storageName)))
+    .limit(1)
+  if (!row) return null
+  if (!scopeAllows(access.scope, row.worksiteId)) return null
+  return row
+}
+
+/** Los documentos se muestran en el navegador; el resto se descarga. */
+export function drillEvidenceContentDisposition(mimeType: string): "inline" | "attachment" {
+  return mimeType === "application/pdf" || mimeType.startsWith("image/") ? "inline" : "attachment"
+}
+
 export async function completeEmergencyDrill(input: unknown, access: EmergencyAccess) {
   const data = completeDrillSchema.parse(input)
   let accreditation: Parameters<typeof onEmergencyDrillCompleted>[0] | null = null
@@ -669,50 +852,23 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
       throw new EmergencyDomainError("El simulacro no pudo realizarse antes de la fecha para la que fue programado. Si se adelantó, cancélalo con su motivo y prográmalo en la fecha real.")
     }
 
-    // Los participantes no se validaban: entraba gente de otra faena, inactiva,
-    // inexistente o repetida. Misma regla de pertenencia que `addEmergencyRole`,
-    // pero en UNA consulta en lote, no N+1.
-    // Va antes de assessDrillCompletion porque un duplicado inflaría el conteo
-    // de presentes que decide si el simulacro puede cerrarse.
-    const participantIds = data.participants.map((item) => item.workerId)
-    if (participantIds.length > 0) {
-      const duplicated = participantIds.length - new Set(participantIds).size
-      if (duplicated > 0) {
-        // Se rechaza en vez de deduplicar: dos filas del mismo trabajador pueden
-        // traer `present` contradictorio y no hay criterio para elegir cuál vale;
-        // además el conteo de asistentes acredita actividades PDTP. El UNIQUE
-        // (drill_id, worker_id) sigue como red de seguridad en la base, pero
-        // fallaría con un error de driver en vez de un mensaje de dominio.
-        throw new EmergencyDomainError(`${duplicated} participante(s) vienen repetidos en la lista.`)
-      }
-      const valid = await tx.select({ id: workers.id }).from(workers).where(and(
-        inArray(workers.id, participantIds),
-        eq(workers.worksiteId, drill.worksiteId),
-        eq(workers.isActive, true),
+    /* El gate de que el simulacro realmente ocurrió. Hasta el 2026-09-19 era
+     * «al menos un participante presente»; esa lista se escribía y nadie la
+     * leía nunca, así que lo único que respaldaba el hecho era un dato que no
+     * se consultaba. Ahora lo respalda el acta. */
+    const activeEvidence = await tx.select().from(preventionEmergencyDrillEvidence)
+      .where(and(
+        eq(preventionEmergencyDrillEvidence.drillId, drill.id),
+        eq(preventionEmergencyDrillEvidence.state, "active"),
       ))
-      const ok = new Set(valid.map((worker) => worker.id))
-      const rejected = participantIds.filter((id) => !ok.has(id))
-      if (rejected.length > 0) {
-        throw new EmergencyDomainError(`${rejected.length} participante(s) no existen, están inactivos o no pertenecen a la faena del simulacro.`)
-      }
-    }
+      .orderBy(asc(preventionEmergencyDrillEvidence.uploadedAt))
 
     const readiness = assessDrillCompletion({
-      participants: data.participants,
+      activeEvidenceCount: activeEvidence.length,
       evacuationSeconds: data.evacuationSeconds ?? null,
       outcome: data.outcome,
     })
     if (!readiness.ready) throw new EmergencyDomainError(readiness.blockers.join(" "))
-
-    if (data.participants.length > 0) {
-      await tx.insert(preventionEmergencyDrillParticipants).values(data.participants.map((item) => ({
-        id: `pemgdp-${nanoid()}`,
-        drillId: drill.id,
-        workerId: item.workerId,
-        present: item.present,
-        roleName: item.roleName ?? null,
-      })))
-    }
 
     let capaActionId: string | null = null
     if (data.outcome === "needs_improvement") {
@@ -738,8 +894,6 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
       evacuationSeconds: data.evacuationSeconds ?? null,
       observations: data.observations ?? null,
       outcome: data.outcome,
-      evidencePath: data.evidencePath ?? null,
-      evidenceChecksumSha256: data.evidencePath ? (data.evidenceChecksumSha256 ?? null) : null,
       capaActionId,
       version: drill.version + 1,
       updatedAt: now,
@@ -749,6 +903,31 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
     )).returning()
     if (!updated) throw new EmergencyDomainError("El simulacro cambió mientras lo editabas. Recarga y reintenta.")
     await history(tx, { entityType: "drill", entityId: drill.id, worksiteId: drill.worksiteId, changeType: "completed", reason: `Resultado: ${data.outcome}`, beforeState: drill, afterState: updated, actorUserId: access.userId })
+
+    /* La casilla se cumple en la misma transacción que el simulacro: si el
+     * cierre se revierte, la casilla no puede quedar en verde sin hecho. */
+    if (data.slotId) {
+      const [slot] = await tx.select().from(preventionEmergencyDrillSlots)
+        .where(eq(preventionEmergencyDrillSlots.id, data.slotId)).limit(1)
+      if (!slot) throw new EmergencyDomainError("La casilla del programa no existe.")
+      if (slot.worksiteId !== drill.worksiteId) {
+        throw new EmergencyDomainError("La casilla pertenece a otra faena.")
+      }
+      if (slot.status === "completed") {
+        throw new EmergencyDomainError("Esa casilla ya está cumplida por otro simulacro.")
+      }
+      await tx.update(preventionEmergencyDrillSlots).set({
+        status: "completed",
+        drillId: drill.id,
+        completedAt: now,
+        completedByUserId: access.userId,
+        notApplicableAt: null,
+        notApplicableByUserId: null,
+        notApplicableReason: null,
+        version: slot.version + 1,
+        updatedAt: now,
+      }).where(eq(preventionEmergencyDrillSlots.id, slot.id))
+    }
 
     // Auto-acreditación PDTP: actividades del plan de emergencia. Se dispara
     // DESPUÉS del commit (ver abajo) para no dejar ejecuciones huérfanas si la
@@ -762,11 +941,11 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
         drillId: drill.id,
         worksiteId: drill.worksiteId,
         executedAt: data.executedAt,
-        participantCount: data.participants.length,
         ...target,
-        // EMG-001: si hay acta, la acreditación referencia el archivo real en
-        // vez del rótulo sintético «Simulacro completado: <id>».
-        evidencePath: data.evidencePath ?? null,
+        /* La acreditación referencia el acta real. El rótulo sintético
+         * «Simulacro completado: <id>» desaparece porque ya no existe un camino
+         * que cierre un simulacro sin evidencia. */
+        evidencePath: activeEvidence[0]!.storagePath,
       }
     }
 
@@ -816,6 +995,17 @@ export async function cancelEmergencyDrill(input: unknown, access: EmergencyAcce
     )).returning()
     if (!updated) throw new EmergencyDomainError("El simulacro cambió mientras lo editabas. Recarga y reintenta.")
     await history(tx, { entityType: "drill", entityId: drill.id, worksiteId: drill.worksiteId, changeType: "cancelled", reason: data.reason, beforeState: drill, afterState: updated, actorUserId: access.userId })
+
+    /* Si el simulacro llenaba una casilla, la casilla vuelve a estar pendiente.
+     * Sin esto quedaría cumplida apuntando a un simulacro cancelado: el
+     * checklist mostraría verde sobre un hecho que se deshizo. */
+    await tx.update(preventionEmergencyDrillSlots).set({
+      status: "pending",
+      drillId: null,
+      completedAt: null,
+      completedByUserId: null,
+      updatedAt: now,
+    }).where(eq(preventionEmergencyDrillSlots.drillId, drill.id))
 
     // Revertir la N°84 con el mismo `sourceId` (el propio drillId) que usó
     // `onEmergencyDrillCompleted`. Defensa en profundidad: el guard de arriba
@@ -968,7 +1158,15 @@ export async function getEmergencyPlanDetail(planId: string, access: EmergencyAc
       .where(eq(preventionEmergencyRoles.planId, planId)),
     db.select().from(preventionEmergencyResources).where(eq(preventionEmergencyResources.planId, planId)),
     db.select().from(preventionEmergencyContacts).where(eq(preventionEmergencyContacts.planId, planId)),
-    db.select().from(preventionEmergencyDrills).where(eq(preventionEmergencyDrills.planId, planId)).orderBy(desc(preventionEmergencyDrills.scheduledFor)),
+    /* El conteo de evidencia activa viaja con el simulacro: es lo que decide
+     * si se puede completar, y resolverlo en la UI sería un N+1. */
+    db.select({
+      drill: preventionEmergencyDrills,
+      activeEvidenceCount: sql<number>`(SELECT COUNT(*)::int FROM prevention_emergency_drill_evidence e WHERE e.drill_id = ${preventionEmergencyDrills.id} AND e.state = 'active')`,
+    })
+      .from(preventionEmergencyDrills)
+      .where(eq(preventionEmergencyDrills.planId, planId))
+      .orderBy(desc(preventionEmergencyDrills.scheduledFor)),
   ])
 
   // El reemplazo de un rol es opcional; sólo se resuelve el nombre cuando existe.
@@ -994,7 +1192,7 @@ export async function getEmergencyPlanDetail(planId: string, access: EmergencyAc
     roles,
     resources,
     contacts,
-    drills: drillRows,
+    drills: drillRows.map((row) => ({ ...row.drill, activeEvidenceCount: row.activeEvidenceCount })),
     readiness,
   }
 }

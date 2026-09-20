@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { boolean, check, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { boolean, check, foreignKey, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { workers, worksites } from "../worksites"
 import { products } from "../products"
@@ -274,15 +274,94 @@ export const preventionEmergencyDrills = pgTable("prevention_emergency_drills", 
   check("prevention_emergency_drill_version_positive", sql`${table.version} >= 1`),
 ])
 
-export const preventionEmergencyDrillParticipants = pgTable("prevention_emergency_drill_participants", {
-  id:        text("id").primaryKey(),
-  drillId:   text("drill_id").notNull().references(() => preventionEmergencyDrills.id, { onDelete: "cascade" }),
-  workerId:  text("worker_id").notNull().references(() => workers.id, { onDelete: "restrict" }),
-  present:   boolean("present").notNull().default(true),
-  roleName:  text("role_name"),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+/* ── Evidencia del simulacro ──────────────────────────────────────────────
+ * Copia del modelo de capacitación (`prevention_training_occurrence_evidence`),
+ * y por el mismo motivo: el par `evidence_path` + checksum en la propia fila
+ * admitía un solo archivo, y la UI no lo enviaba nunca, así que la N°84 se
+ * acreditaba con el rótulo sintético «Simulacro completado: <id>».
+ *
+ * Cuelga del simulacro y no de su casilla del programa: un simulacro
+ * extraordinario —el que se corre después de un incidente— no tiene casilla, y
+ * también necesita dejar su acta.
+ *
+ * La evidencia no se borra al corregir un simulacro: se anula con motivo,
+ * porque pudo haber acreditado el programa y su rastro es lo que explica por
+ * qué se contó y después se descontó.
+ */
+export const preventionEmergencyDrillEvidence = pgTable("prevention_emergency_drill_evidence", {
+  id:                text("id").primaryKey(),
+  drillId:           text("drill_id").notNull(),
+  fileName:          text("file_name").notNull(),
+  storagePath:       text("storage_path").notNull().unique(),
+  mimeType:          text("mime_type").notNull(),
+  fileSizeBytes:     integer("file_size_bytes").notNull(),
+  sha256:            text("sha256").notNull(),
+  state:             text("state").notNull().default("active"),
+  uploadedByUserId:  text("uploaded_by_user_id"),
+  uploadedAt:        timestamp("uploaded_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  annulledByUserId:  text("annulled_by_user_id"),
+  annulledAt:        timestamp("annulled_at", { withTimezone: true, mode: "string" }),
+  annulledReason:    text("annulled_reason"),
 }, (table) => [
-  uniqueIndex("prevention_emergency_drill_participant_unique").on(table.drillId, table.workerId),
+  foreignKey({ columns: [table.drillId], foreignColumns: [preventionEmergencyDrills.id], name: "drill_evidence_drill_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.uploadedByUserId], foreignColumns: [users.id], name: "drill_evidence_uploader_fk" }).onDelete("set null"),
+  foreignKey({ columns: [table.annulledByUserId], foreignColumns: [users.id], name: "drill_evidence_annuller_fk" }).onDelete("restrict"),
+  index("prevention_emergency_drill_evidence_drill_idx").on(table.drillId, table.state, table.uploadedAt),
+  check("prevention_emergency_drill_evidence_name_check", sql`length(${table.fileName}) BETWEEN 1 AND 255`),
+  check("prevention_emergency_drill_evidence_size_check", sql`${table.fileSizeBytes} > 0`),
+  check("prevention_emergency_drill_evidence_sha_check", sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
+  check("prevention_emergency_drill_evidence_state_check", sql`${table.state} IN ('active', 'replaced', 'annulled')`),
+  check("prevention_emergency_drill_evidence_annul_check", sql`(${table.state} IN ('active', 'replaced') AND ${table.annulledAt} IS NULL AND ${table.annulledByUserId} IS NULL AND ${table.annulledReason} IS NULL) OR (${table.state} = 'annulled' AND ${table.annulledAt} IS NOT NULL AND ${table.annulledByUserId} IS NOT NULL AND length(${table.annulledReason}) >= 5)`),
+])
+
+/* ── Casillas del programa ────────────────────────────────────────────────
+ * Lo que el PDTP espera: dos simulacros por faena y año (N°84, marzo y
+ * septiembre). Se pre-generan al activar la faena, igual que las ocurrencias
+ * de capacitación, y por el mismo motivo: sin una fila que exista antes de que
+ * pase nada, "no se hizo" es indistinguible de "nadie lo cargó".
+ *
+ * La casilla NO es el simulacro. `drillId` apunta al que la cumplió, y es
+ * nullable porque una casilla puede quedar sin hacerse o declararse no
+ * aplicable. A la inversa, un simulacro extraordinario —el que se corre
+ * después de un incidente— existe sin casilla y no cuenta en el denominador
+ * del programa.
+ */
+export const preventionEmergencyDrillSlots = pgTable("prevention_emergency_drill_slots", {
+  id:                    text("id").primaryKey(),
+  worksiteId:            text("worksite_id").notNull(),
+  year:                  integer("year").notNull(),
+  slotKey:               text("slot_key").notNull(),
+  scheduledMonth:        integer("scheduled_month").notNull(),
+  scheduledWeek:         integer("scheduled_week").notNull(),
+  status:                text("status").notNull().default("pending"),
+  drillId:               text("drill_id"),
+  completedAt:           timestamp("completed_at", { withTimezone: true, mode: "string" }),
+  completedByUserId:     text("completed_by_user_id"),
+  notApplicableAt:       timestamp("not_applicable_at", { withTimezone: true, mode: "string" }),
+  notApplicableByUserId: text("not_applicable_by_user_id"),
+  notApplicableReason:   text("not_applicable_reason"),
+  observation:           text("observation"),
+  version:               integer("version").notNull().default(1),
+  createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  foreignKey({ columns: [table.worksiteId], foreignColumns: [worksites.id], name: "drill_slot_worksite_fk" }).onDelete("restrict"),
+  /* `restrict` por el mismo motivo que la casilla del CGRD: con `set null`,
+   * borrar el simulacro dejaría la casilla cumplida apuntando a nada y el CHECK
+   * de consistencia rechazaría el borrado con un error de driver. Un simulacro
+   * que llena una casilla se cancela, y cancelarlo la libera. */
+  foreignKey({ columns: [table.drillId], foreignColumns: [preventionEmergencyDrills.id], name: "drill_slot_drill_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.completedByUserId], foreignColumns: [users.id], name: "drill_slot_completer_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.notApplicableByUserId], foreignColumns: [users.id], name: "drill_slot_na_actor_fk" }).onDelete("restrict"),
+  uniqueIndex("prevention_emergency_drill_slot_unique").on(table.worksiteId, table.year, table.slotKey),
+  index("prevention_emergency_drill_slot_period_idx").on(table.worksiteId, table.year, table.status),
+  check("prevention_emergency_drill_slot_year_check", sql`${table.year} BETWEEN 2020 AND 2100`),
+  check("prevention_emergency_drill_slot_status_check", sql`${table.status} IN ('pending', 'completed', 'not_completed', 'not_applicable')`),
+  check("prevention_emergency_drill_slot_period_check", sql`${table.scheduledMonth} BETWEEN 1 AND 12 AND ${table.scheduledWeek} BETWEEN 1 AND 4`),
+  // Una casilla hecha sin el simulacro que la cumple sería una marca sin hecho.
+  check("prevention_emergency_drill_slot_done_check", sql`(${table.status} = 'completed' AND ${table.drillId} IS NOT NULL AND ${table.completedAt} IS NOT NULL AND ${table.completedByUserId} IS NOT NULL) OR (${table.status} <> 'completed' AND ${table.completedAt} IS NULL AND ${table.completedByUserId} IS NULL)`),
+  check("prevention_emergency_drill_slot_na_check", sql`(${table.status} = 'not_applicable' AND ${table.notApplicableAt} IS NOT NULL AND ${table.notApplicableByUserId} IS NOT NULL AND length(trim(COALESCE(${table.notApplicableReason}, ''))) >= 10) OR (${table.status} <> 'not_applicable' AND ${table.notApplicableAt} IS NULL AND ${table.notApplicableByUserId} IS NULL AND ${table.notApplicableReason} IS NULL)`),
+  check("prevention_emergency_drill_slot_version_check", sql`${table.version} >= 1`),
 ])
 
 /* ── Historial inmutable ──────────────────────────────────────────────────── */
@@ -362,13 +441,9 @@ export const preventionEmergencyDrillsRelations = relations(preventionEmergencyD
   plan: one(preventionEmergencyPlans, { fields: [preventionEmergencyDrills.planId], references: [preventionEmergencyPlans.id] }),
   worksite: one(worksites, { fields: [preventionEmergencyDrills.worksiteId], references: [worksites.id] }),
   capaAction: one(preventionCapaActions, { fields: [preventionEmergencyDrills.capaActionId], references: [preventionCapaActions.id] }),
-  participants: many(preventionEmergencyDrillParticipants),
+  evidence: many(preventionEmergencyDrillEvidence),
 }))
 
-export const preventionEmergencyDrillParticipantsRelations = relations(preventionEmergencyDrillParticipants, ({ one }) => ({
-  drill: one(preventionEmergencyDrills, { fields: [preventionEmergencyDrillParticipants.drillId], references: [preventionEmergencyDrills.id] }),
-  worker: one(workers, { fields: [preventionEmergencyDrillParticipants.workerId], references: [workers.id] }),
-}))
 
 export type PreventionEmergencyPlan = typeof preventionEmergencyPlans.$inferSelect
 export type PreventionEmergencyScenario = typeof preventionEmergencyScenarios.$inferSelect
@@ -381,4 +456,5 @@ export type PreventionEmergencyResourceEvent = typeof preventionEmergencyResourc
 export type PreventionEmergencyResourceImportBatch = typeof preventionEmergencyResourceImportBatches.$inferSelect
 export type PreventionEmergencyContact = typeof preventionEmergencyContacts.$inferSelect
 export type PreventionEmergencyDrill = typeof preventionEmergencyDrills.$inferSelect
-export type PreventionEmergencyDrillParticipant = typeof preventionEmergencyDrillParticipants.$inferSelect
+export type PreventionEmergencyDrillEvidence = typeof preventionEmergencyDrillEvidence.$inferSelect
+export type PreventionEmergencyDrillSlot = typeof preventionEmergencyDrillSlots.$inferSelect

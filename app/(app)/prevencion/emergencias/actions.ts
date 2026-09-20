@@ -13,6 +13,7 @@ import {
   approveEmergencyPlan,
   archiveEmergencyPlan,
   cancelEmergencyDrill,
+  recordDrillSlotStatus,
   completeEmergencyDrill,
   createEmergencyPlan,
   EmergencyDomainError,
@@ -161,5 +162,20 @@ export async function remindEmergencyPlanApprovalAction(input: unknown): Promise
     if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados." }
     if (error instanceof EmergencyDomainError) return { ok: false, message: error.message }
     return unexpectedActionError(error, "prevencion/emergencias/remind-plan-approval")
+  }
+}
+
+/** Declara una casilla del programa como no hecha o no aplicable. */
+export async function recordDrillSlotStatusAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:emergency:drill_execute")
+  if (guard.error) return guard.error
+  try {
+    await recordDrillSlotStatus(input, accessFromSession(guard.session))
+    revalidatePath(BASE)
+    return { ok: true }
+  } catch (error) {
+    if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados." }
+    if (error instanceof EmergencyDomainError) return { ok: false, message: error.message }
+    return unexpectedActionError(error, "prevencion/emergencias/record-drill-slot")
   }
 }

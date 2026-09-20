@@ -309,5 +309,10 @@
   "0307_warm_micromax": "029e4241b6fb4d58457083279cfd2bc22a0b557facaafc8363346d1f684208d5",
   "0308_chubby_layla_miller": "9f9e10fbd1b6b5b83830416e8c27a0bd3d007224e2b8d0505f271905c4f17af8",
   "0309_young_zemo": "6f5b22061c800414c0abb0ed105421ea6b94f5ac319c582b4eafff01142f17c3",
-  "0310_drop_training_person_model": "2ba1a5deee34883e97725d0cec52c0d7d681ece6b9860a929390b5faf125011d"
+  "0310_drop_training_person_model": "2ba1a5deee34883e97725d0cec52c0d7d681ece6b9860a929390b5faf125011d",
+  "0311_training_occurrence_not_applicable": "d52df1d38b6fc715dd64b4d5e07207bc1802b67f6168da4528ac0d0f27820baf",
+  "0312_drill_evidence": "84515604a6996df3ca1b46a93d9f46fca29ce9b2cf5ced565f953ddb69419d74",
+  "0313_drop_drill_participants": "333c4606619cec540bf044ae547036c914e45083df23a738c1f2a92e83f911ec",
+  "0314_program_slots": "86fdf94803055aec34643a75782a46d4d1078134dc72d607cc6384152d72b356",
+  "0315_program_slot_fk_names": "5a670b3ed2587274c5d6b75b3c6aee95362e684ac6f81c8efdefc18f05075e27"
 }

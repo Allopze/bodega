@@ -135,6 +135,44 @@ describe("INS-001 (refutado) — el hallazgo sigue la suerte de su CAPA", () => 
     expect((await findingStatus(findingId))?.status).toBe("closed")
   })
 
+  /* La cuarta transición, la que faltaba. Cancelar la acción no resuelve la
+   * desviación: lo que se canceló es el intento de corregirla.
+   *
+   * Sin propagarla, el hallazgo quedaba `capa_linked` para siempre —contando
+   * como crítico abierto en el dashboard, invisible para el programador y
+   * rechazado por `closeInspectionFinding` porque conservaba el vínculo—. Un
+   * callejón sin salida por la interfaz. */
+  it("cancelar la CAPA devuelve el hallazgo a abierto y suelta el vínculo", async () => {
+    const { findingId, capaId } = await seedFindingWithCapa()
+    expect((await findingStatus(findingId))?.status).toBe("capa_linked")
+
+    await transition(capaId, "cancelled", "La acción se cargó en la faena equivocada")
+
+    const liberado = await findingStatus(findingId)
+    expect(liberado?.status).toBe("open")
+    expect(liberado?.capaActionId).toBeNull()
+    expect(liberado?.closedAt).toBeNull()
+  })
+
+  /* El vínculo se suelta además del estado porque el guard de cierre mira
+   * `capa_action_id`, no el estado: dejarlo puesto mantendría el callejón. */
+  it("y entonces sí se puede cerrar a mano, que antes era imposible", async () => {
+    const { findingId, capaId } = await seedFindingWithCapa()
+    await transition(capaId, "cancelled", "La acción se cargó en la faena equivocada")
+
+    const service = await import("@/lib/services/prevention-inspections")
+    await service.closeInspectionFinding({
+      findingId,
+      reason: "La condición se corrigió en terreno y se verificó en la ronda siguiente.",
+    }, {
+      userId: VERIFICADOR,
+      scope: { mode: "all", ids: [] },
+      permissions: ["prevention:inspections:review"],
+    })
+
+    expect((await findingStatus(findingId))?.status).toBe("closed")
+  })
+
   it("y reabrirla lo devuelve a vinculado: la simetría también existe", async () => {
     const { findingId, capaId } = await seedFindingWithCapa()
     await transition(capaId, "verified", "Extintor recargado y certificado en terreno")
