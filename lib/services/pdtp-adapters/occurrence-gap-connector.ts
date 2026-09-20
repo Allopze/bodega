@@ -24,13 +24,14 @@ import { and, desc, eq, inArray, notInArray } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
+  pdtpProgramWorksites,
   pdtpPrograms,
   preventionTrainingCatalogItems,
   preventionTrainingOccurrences,
 } from "@/db/schema"
 import { PREDEFINED_TRAINING_CATALOG_VERSION } from "@/lib/prevention/training-occurrences-catalog"
 import { chileDateParts } from "@/lib/utils"
-import { isPdtpPeriodOnOrAfterActivation } from "@/lib/services/pdtp/period"
+import { effectiveActivationFor, isPdtpPeriodOnOrAfterActivation } from "@/lib/services/pdtp/period"
 import {
   countOutcome,
   emptySweepCounters,
@@ -116,17 +117,21 @@ function isOverdue(
 }
 
 /**
- * ¿El programa ya exigía esta casilla?
+ * ¿El programa ya le exigía esta casilla a esta faena?
  *
- * El PDTP se vuelve exigible cuando se activa la versión aprobada, no el 1 de
- * enero: `isPdtpPeriodOnOrAfterActivation` es la regla que el resto del módulo
- * ya aplica, y la semana de activación se conserva entera porque el calendario
- * firmado sólo tiene granularidad mes/semana.
+ * Son dos hechos y hacen falta los dos: que la versión aprobada se active —el
+ * PDTP no es exigible desde el 1 de enero— y que la faena esté incorporada al
+ * programa. El `cutoff` que entra acá es el más tardío de ambos, resuelto por
+ * `effectiveActivationFor`. `isPdtpPeriodOnOrAfterActivation` es la regla que
+ * el resto del módulo ya aplica, y la semana de corte se conserva entera porque
+ * el calendario firmado sólo tiene granularidad mes/semana.
  *
  * Sin esto, un programa activado en abril abría obligación el primer día por
- * todas las casillas de febrero y marzo. Y como la obligación se sella con la
- * fecha del barrido —no con la de la casilla—, caía en el mes corriente, pasaba
- * el filtro de activación aguas abajo y contaba como incumplimiento.
+ * todas las casillas de febrero y marzo, y lo mismo le pasaba a una faena
+ * incorporada en octubre con las casillas de todo el año anterior a su alta. Y
+ * como la obligación se sella con la fecha del barrido —no con la de la
+ * casilla—, caía en el mes corriente, pasaba el filtro de activación aguas
+ * abajo y contaba como incumplimiento.
  *
  * La casilla NO se descarta ni se marca: sigue pendiente y se puede hacer
  * tarde, que es lo que corresponde —la actividad no se canceló, simplemente el
@@ -137,13 +142,13 @@ function isOverdue(
  */
 function isDemandedByProgram(
   occurrence: { year: number; scheduledMonth: number | null; scheduledWeek: number | null },
-  activatedAt: string | null | undefined,
+  cutoff: string | null | undefined,
 ): boolean {
-  if (!activatedAt) return true
+  if (!cutoff) return true
   if (occurrence.scheduledMonth === null || occurrence.scheduledWeek === null) return true
   return isPdtpPeriodOnOrAfterActivation(
     { year: occurrence.year, month: occurrence.scheduledMonth, week: occurrence.scheduledWeek },
-    activatedAt,
+    cutoff,
   )
 }
 
@@ -197,8 +202,26 @@ export async function sweepTrainingOccurrenceObligations(): Promise<OccurrenceGa
       notInArray(preventionTrainingOccurrences.status, ["completed", "not_applicable"]),
     ))
 
+  /* El corte es por faena, no sólo por programa: una faena incorporada en
+   * octubre tampoco debe recibir obligaciones por las casillas de marzo. Es la
+   * misma razón por la que el programa recién activado no las abre, un nivel
+   * más abajo. Se resuelve de una consulta para todas las faenas candidatas en
+   * vez de una por ocurrencia. */
+  const addedAtByWorksite = new Map<string, string>()
+  if (program) {
+    const memberships = await db.select({
+      worksiteId: pdtpProgramWorksites.worksiteId,
+      addedAt: pdtpProgramWorksites.addedAt,
+    }).from(pdtpProgramWorksites).where(eq(pdtpProgramWorksites.programId, program.id))
+    for (const row of memberships) addedAtByWorksite.set(row.worksiteId, row.addedAt)
+  }
+
   const gaps = candidates.filter((occurrence) => {
-    if (!isDemandedByProgram(occurrence, program?.activatedAt)) return false
+    const cutoff = effectiveActivationFor(
+      program?.activatedAt,
+      addedAtByWorksite.get(occurrence.worksiteId),
+    )
+    if (!isDemandedByProgram(occurrence, cutoff)) return false
     return occurrence.status === "not_completed" || isOverdue(occurrence, today)
   })
   if (gaps.length === 0) return { ...counters, gaps: 0 }

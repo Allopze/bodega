@@ -24,7 +24,8 @@ import {
   PROGRAM_SLOT_YEAR,
   type ProgramSlot,
 } from "@/lib/prevention/program-slots-2026"
-import { pdtpActivationPeriod } from "./pdtp/period"
+import { effectiveActivationFor, pdtpActivationPeriod } from "./pdtp/period"
+import { loadWorksiteAddedAt } from "./pdtp/helpers"
 import { ensurePreventionTrainingOccurrencesForWorksiteTx } from "./prevention-training-occurrences"
 
 type Client = DB | Tx
@@ -86,6 +87,16 @@ export async function ensureGrdMeetingSlotsForWorksiteTx(
  *
  * Es lo que deben invocar los puntos de alta de faena. Una faena nueva y
  * activa queda con 24 casillas de capacitación, 2 de simulacro y 4 de CGRD.
+ *
+ * Se siembra **el año completo**, también para una faena dada de alta en
+ * octubre, y eso es deliberado: la casilla de marzo sigue existiendo y se puede
+ * cumplir tarde, porque la actividad no se canceló. Lo que no ocurre es el
+ * castigo — de eso se encarga el corte de exigibilidad
+ * (`effectiveActivationFor`), que saca del denominador y del barrido las
+ * casillas anteriores a la incorporación de la faena sin borrarlas ni
+ * declararlas no aplicables. Pre-generar sólo desde el mes de alta haría
+ * indistinguible "el programa no la exigía" de "nadie la cargó", que es
+ * exactamente el problema que este modelo existe para resolver.
  */
 export async function ensurePreventionProgramSlotsForWorksiteTx(
   client: Client,
@@ -116,19 +127,28 @@ export async function listGrdMeetingSlots(client: Client, worksiteId: string, ye
 }
 
 /**
- * La semana desde la que el programa vigente exige, o `null` si no hay programa
- * activo del año.
+ * La semana desde la que el programa vigente le exige a esta faena, o `null` si
+ * no hay programa activo del año.
  *
  * Existe para que el checklist pueda distinguir una casilla que nadie hizo de
  * una que el programa todavía no exigía cuando llegó su mes. No cambia el
  * estado de la casilla —sigue pendiente y se puede hacer tarde—: sólo permite
  * decirlo en pantalla, para que nadie corra a ejecutar algo que no se le pedía.
+ *
+ * Con `worksiteId` el corte incluye la fecha en que la faena entró al programa,
+ * que es la misma regla que aplican el cálculo de cumplimiento y el barrido. Sin
+ * él devuelve el corte del programa, que es lo que corresponde cuando no hay una
+ * faena de la cual hablar.
  */
-export async function resolveProgramActivationPeriod(year = PROGRAM_SLOT_YEAR) {
-  const [program] = await db.select({ activatedAt: pdtpPrograms.activatedAt })
+export async function resolveProgramActivationPeriod(worksiteId?: string, year = PROGRAM_SLOT_YEAR) {
+  const [program] = await db.select({ id: pdtpPrograms.id, activatedAt: pdtpPrograms.activatedAt })
     .from(pdtpPrograms)
     .where(and(eq(pdtpPrograms.status, "active"), eq(pdtpPrograms.year, year)))
     .orderBy(desc(pdtpPrograms.version))
     .limit(1)
-  return pdtpActivationPeriod(program?.activatedAt ?? null)
+  if (!program) return pdtpActivationPeriod(null)
+  const cutoff = worksiteId
+    ? effectiveActivationFor(program.activatedAt, await loadWorksiteAddedAt(program.id, worksiteId))
+    : program.activatedAt
+  return pdtpActivationPeriod(cutoff ?? null)
 }

@@ -73,7 +73,7 @@ export default async function CgrdPage({
   const notApplicableSuggestion = worksiteId
     ? await suggestGrdSlotNotApplicableReason(worksiteId)
     : null
-  const activationPeriod = await resolveProgramActivationPeriod()
+  const activationPeriod = await resolveProgramActivationPeriod(worksiteId || undefined)
 
   const latestMatrix = matrices.length > 0
     ? [...matrices].sort((a, b) => b.matrixVersion - a.matrixVersion)[0]!

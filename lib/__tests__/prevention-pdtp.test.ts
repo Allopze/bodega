@@ -3890,6 +3890,20 @@ describe("prevention PDTP service", () => {
       allowUnclassifiedBaseActivities: true,
     })
 
+    /* La membresía viaja a la versión nueva conservando SU fecha de
+     * incorporación. Es el dato desde el cual se calcula qué le exige el
+     * programa a esta faena: escribir la fecha de la copia haría que cada
+     * versión declarara que todas las faenas entraron ese día, y versionar en
+     * noviembre borraría el año entero de su denominador. */
+    await inMemoryDb.insert(schema.pdtpProgramWorksites).values({
+      id: "pw-revision-addedat",
+      programId: source.id,
+      worksiteId: "ws-1",
+      isActive: true,
+      addedByUserId: "user-1",
+      addedAt: "2026-01-15T12:00:00.000Z",
+    })
+
     const revisions = await Promise.all([
       createPdtpRevision({ sourceProgramId: source.id, userId: "user-1" }),
       createPdtpRevision({ sourceProgramId: source.id, userId: "user-1" }),
@@ -3920,6 +3934,11 @@ describe("prevention PDTP service", () => {
       .where(inArray(schema.pdtpExecutions.activityId, revisionActivities.map((activity) => activity.id)))
     const revisionDecisions = await inMemoryDb.select().from(schema.pdtpApprovalDecisions)
       .where(eq(schema.pdtpApprovalDecisions.programId, revision.id))
+    const [revisionMembership] = await inMemoryDb.select().from(schema.pdtpProgramWorksites)
+      .where(eq(schema.pdtpProgramWorksites.programId, revision.id))
+    expect(revisionMembership?.worksiteId).toBe("ws-1")
+    expect(new Date(revisionMembership!.addedAt).toISOString()).toBe("2026-01-15T12:00:00.000Z")
+
     expect(revisionActivities).toHaveLength(87)
     expect(new Set(revisionSchedule.map((cell) => cell.year))).toEqual(new Set([2026]))
     expect(revisionExecutions).toHaveLength(0)

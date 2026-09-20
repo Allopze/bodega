@@ -45,7 +45,7 @@ export default async function CapacitacionPage({
       includeInactiveWorksites: Boolean(worksiteId),
     }),
     listTrainingOccurrenceWorksites(access),
-    resolveProgramActivationPeriod(year),
+    resolveProgramActivationPeriod(worksiteId || undefined, year),
   ])
 
   return (
