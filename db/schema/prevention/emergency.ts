@@ -346,7 +346,11 @@ export const preventionEmergencyDrillSlots = pgTable("prevention_emergency_drill
   updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   foreignKey({ columns: [table.worksiteId], foreignColumns: [worksites.id], name: "drill_slot_worksite_fk" }).onDelete("restrict"),
-  foreignKey({ columns: [table.drillId], foreignColumns: [preventionEmergencyDrills.id], name: "drill_slot_drill_fk" }).onDelete("set null"),
+  /* `restrict` por el mismo motivo que la casilla del CGRD: con `set null`,
+   * borrar el simulacro dejaría la casilla cumplida apuntando a nada y el CHECK
+   * de consistencia rechazaría el borrado con un error de driver. Un simulacro
+   * que llena una casilla se cancela, y cancelarlo la libera. */
+  foreignKey({ columns: [table.drillId], foreignColumns: [preventionEmergencyDrills.id], name: "drill_slot_drill_fk" }).onDelete("restrict"),
   foreignKey({ columns: [table.completedByUserId], foreignColumns: [users.id], name: "drill_slot_completer_fk" }).onDelete("restrict"),
   foreignKey({ columns: [table.notApplicableByUserId], foreignColumns: [users.id], name: "drill_slot_na_actor_fk" }).onDelete("restrict"),
   uniqueIndex("prevention_emergency_drill_slot_unique").on(table.worksiteId, table.year, table.slotKey),

@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { boolean, check, index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { boolean, check, foreignKey, index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { workers, worksites } from "../worksites"
 import { preventionCapaActions } from "./capa"
@@ -226,23 +226,36 @@ export const preventionGrdAgreements = pgTable("prevention_grd_agreements", {
  */
 export const preventionGrdMeetingSlots = pgTable("prevention_grd_meeting_slots", {
   id:                    text("id").primaryKey(),
-  worksiteId:            text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
+  worksiteId:            text("worksite_id").notNull(),
   year:                  integer("year").notNull(),
   slotKey:               text("slot_key").notNull(),
   scheduledMonth:        integer("scheduled_month").notNull(),
   scheduledWeek:         integer("scheduled_week").notNull(),
   status:                text("status").notNull().default("pending"),
-  meetingId:             text("meeting_id").references(() => preventionGrdMeetings.id, { onDelete: "set null" }),
+  /* `restrict` y no `set null`: con `set null`, borrar un acta dejaba la
+   * casilla en `completed` apuntando a nada, y el CHECK de abajo —que existe
+   * justamente para impedir una casilla en verde sin hecho— reventaba el
+   * borrado con un error de driver. Un acta que llena una casilla no se borra:
+   * se anula, y la anulación devuelve la casilla a "no hecha". */
+  meetingId:             text("meeting_id"),
   completedAt:           timestamp("completed_at", { withTimezone: true, mode: "string" }),
-  completedByUserId:     text("completed_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+  completedByUserId:     text("completed_by_user_id"),
   notApplicableAt:       timestamp("not_applicable_at", { withTimezone: true, mode: "string" }),
-  notApplicableByUserId: text("not_applicable_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+  notApplicableByUserId: text("not_applicable_by_user_id"),
   notApplicableReason:   text("not_applicable_reason"),
   observation:           text("observation"),
   version:               integer("version").notNull().default(1),
   createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  /* Nombres explícitos: los derivados de estas columnas superan los 63 bytes
+   * que Postgres admite para un identificador, y truncados en silencio dejan un
+   * constraint cuyo nombre real no coincide con el que un `DROP ... IF EXISTS`
+   * futuro buscaría. */
+  foreignKey({ columns: [table.worksiteId], foreignColumns: [worksites.id], name: "grd_slot_worksite_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.meetingId], foreignColumns: [preventionGrdMeetings.id], name: "grd_slot_meeting_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.completedByUserId], foreignColumns: [users.id], name: "grd_slot_completer_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.notApplicableByUserId], foreignColumns: [users.id], name: "grd_slot_na_actor_fk" }).onDelete("restrict"),
   uniqueIndex("prevention_grd_meeting_slot_unique").on(table.worksiteId, table.year, table.slotKey),
   index("prevention_grd_meeting_slot_period_idx").on(table.worksiteId, table.year, table.status),
   check("prevention_grd_meeting_slot_year_check", sql`${table.year} BETWEEN 2020 AND 2100`),

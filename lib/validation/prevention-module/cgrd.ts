@@ -103,6 +103,11 @@ export const grdMeetingRecordSchema = z.object({
   quorumReached: z.boolean(),
   evidenceUrl,
   /**
+   * La casilla del programa que esta acta llena. Opcional: una sesión
+   * extraordinaria se registra igual y no cuenta en el denominador.
+   */
+  slotId: z.string().min(1).nullable().optional(),
+  /**
    * Cada acuerdo se deriva a CAPA común, igual que en el CPHS: un acuerdo con
    * responsable y plazo que no se persigue hasta el cierre no es seguimiento.
    * Vacío es válido — un acta puede no producir acuerdos.

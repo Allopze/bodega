@@ -9,6 +9,7 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { eq } from "drizzle-orm"
+import type { DB } from "@/db"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -36,7 +37,7 @@ afterAll(async () => {
 const {
   constituteGrdCommittee, dissolveGrdCommittee, addGrdMember, removeGrdMember,
   createGrdMatrixDraft, addGrdThreat, removeGrdThreat, publishGrdMatrix,
-  recordGrdMeeting, listGrdAgreements,
+  recordGrdMeeting, listGrdAgreements, annulGrdMeeting, recordGrdMeetingSlotStatus,
   designateGrdCoordinator, endGrdCoordinator, getGrdStructureStatus,
 } = await import("@/lib/services/prevention-cgrd")
 
@@ -86,6 +87,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.preventionGrdThreats)
+  await inMemoryDb.delete(schema.preventionGrdMeetingSlots)
   await inMemoryDb.delete(schema.preventionGrdMeetings)
   await inMemoryDb.delete(schema.preventionGrdMatrices)
   await inMemoryDb.delete(schema.preventionGrdMembers)
@@ -221,6 +223,70 @@ describe("matriz GRD — borrador → publicada, N°80", () => {
 
     const published = await inMemoryDb.select().from(schema.preventionGrdMatrices).where(eq(schema.preventionGrdMatrices.worksiteId, WS_A))
     expect(published.filter((row) => row.status === "published")).toHaveLength(1)
+  })
+})
+
+/* La casilla del programa, desde el 2026-09-19. Antes una sesión que no
+ * ocurrió y una que nadie cargó eran el mismo estado —la ausencia de un acta—,
+ * y el módulo no tenía cómo mostrar lo que se esperaba. */
+describe("casillas del programa del CGRD — N°81", () => {
+  async function casillaYComite() {
+    const { ensureGrdMeetingSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
+    await ensureGrdMeetingSlotsForWorksiteTx(inMemoryDb as unknown as DB, WS_A)
+    const committee = await constituteGrdCommittee({
+      worksiteId: WS_A, name: "CGRD", constitutedOn: "2026-01-10",
+      mandateEndsOn: "2028-01-10", evidenceUrl: EVIDENCE,
+    }, MANAGER)
+    const [slot] = await inMemoryDb.select().from(schema.preventionGrdMeetingSlots)
+    return { committee, slot: slot! }
+  }
+
+  it("el acta llena su casilla", async () => {
+    const { committee, slot } = await casillaYComite()
+    const meeting = await recordGrdMeeting({
+      committeeId: committee.id, heldOn: "2026-02-03T15:00:00.000Z", agenda: "Revisión de amenazas del período",
+      minutes: "Acta de la sesión con el detalle suficiente de lo tratado", quorumReached: true,
+      evidenceUrl: EVIDENCE, slotId: slot.id,
+    }, MANAGER)
+
+    const [llena] = await inMemoryDb.select().from(schema.preventionGrdMeetingSlots)
+      .where(eq(schema.preventionGrdMeetingSlots.id, slot.id))
+    expect(llena).toMatchObject({ status: "completed", meetingId: meeting.id })
+  })
+
+  /* Sin esto el checklist miente: la casilla quedaría en verde apuntando a un
+   * acta anulada, que es precisamente el hecho que se deshizo. Vuelve a "no
+   * hecha" y no a "pendiente": la sesión se dio por cumplida y dejó de estarlo,
+   * y eso es un incumplimiento declarado, no una tarea sin tocar. */
+  it("anular el acta devuelve la casilla a no hecha, con el motivo", async () => {
+    const { committee, slot } = await casillaYComite()
+    const meeting = await recordGrdMeeting({
+      committeeId: committee.id, heldOn: "2026-02-03T15:00:00.000Z", agenda: "Revisión de amenazas del período",
+      minutes: "Acta de la sesión con el detalle suficiente de lo tratado", quorumReached: true,
+      evidenceUrl: EVIDENCE, slotId: slot.id,
+    }, MANAGER)
+
+    await annulGrdMeeting({ meetingId: meeting.id, reason: "El acta se cargó en la faena equivocada." }, MANAGER)
+
+    const [devuelta] = await inMemoryDb.select().from(schema.preventionGrdMeetingSlots)
+      .where(eq(schema.preventionGrdMeetingSlots.id, slot.id))
+    expect(devuelta).toMatchObject({ status: "not_completed", meetingId: null, completedAt: null })
+    expect(devuelta!.observation).toContain("faena equivocada")
+  })
+
+  it("una casilla se declara no aplicable con motivo, y lo exige", async () => {
+    const { slot } = await casillaYComite()
+
+    await expect(recordGrdMeetingSlotStatus({
+      slotId: slot.id, expectedVersion: slot.version, status: "not_applicable",
+      notApplicableReason: "corto",
+    }, MANAGER)).rejects.toThrow()
+
+    const declarada = await recordGrdMeetingSlotStatus({
+      slotId: slot.id, expectedVersion: slot.version, status: "not_applicable",
+      notApplicableReason: "Centro de trabajo con 12 personas: corresponde coordinador, no comité.",
+    }, MANAGER)
+    expect(declarada).toMatchObject({ status: "not_applicable", notApplicableByUserId: USER_MANAGER })
   })
 })
 

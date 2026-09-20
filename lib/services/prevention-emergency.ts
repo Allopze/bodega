@@ -6,6 +6,7 @@ import { db, type DB, type Tx } from "@/db"
 import {
   preventionEmergencyContacts,
   preventionEmergencyDrillEvidence,
+  preventionEmergencyDrillSlots,
   preventionEmergencyDrills,
   preventionEmergencyHistory,
   preventionEmergencyPlans,
@@ -589,6 +590,10 @@ const completeDrillSchema = z.object({
   evacuationSeconds: z.number().int().positive().nullable().optional(),
   observations: z.string().trim().max(5000).nullable().optional(),
   outcome: z.enum(["satisfactory", "needs_improvement"]),
+  /* La casilla del programa que este simulacro cumple. Opcional: un simulacro
+   * extraordinario —el que se corre después de un incidente— no llena ninguna
+   * casilla y no cuenta en el denominador. */
+  slotId: z.string().min(1).nullable().optional(),
   responsibleUserId: z.string().min(1).nullable().optional(),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   /*
@@ -726,6 +731,83 @@ export async function uploadEmergencyDrillEvidence(
   }
 }
 
+/* ── Casillas del programa ────────────────────────────────────────────────
+ * La casilla declara lo que el PDTP espera; el simulacro es el hecho. Se
+ * cumple vinculando un simulacro completado, y se resuelve como no hecha o no
+ * aplicable con un motivo, igual que el checklist de capacitación.
+ */
+
+const drillSlotStatusSchema = z.enum(["not_completed", "not_applicable"])
+
+const drillSlotStatusInput = z.object({
+  slotId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  status: drillSlotStatusSchema,
+  observation: z.string().trim().max(3000).nullable().optional(),
+  notApplicableReason: z.string().trim().max(1000).nullable().optional(),
+}).superRefine((value, ctx) => {
+  const reason = value.notApplicableReason?.trim() ?? ""
+  if (value.status === "not_applicable" && reason.length < 10) {
+    ctx.addIssue({ code: "custom", path: ["notApplicableReason"], message: "Explica por qué el simulacro no aplica en esta faena (al menos 10 caracteres)." })
+  }
+  if (value.status !== "not_applicable" && reason.length > 0) {
+    ctx.addIssue({ code: "custom", path: ["notApplicableReason"], message: "El motivo de no aplicabilidad sólo corresponde al estado «no aplica»." })
+  }
+})
+
+/** Declara una casilla de simulacro como no hecha o no aplicable. */
+export async function recordDrillSlotStatus(input: unknown, access: EmergencyAccess) {
+  const data = drillSlotStatusInput.parse(input)
+  return db.transaction(async (tx) => {
+    const [slot] = await tx.select().from(preventionEmergencyDrillSlots)
+      .where(eq(preventionEmergencyDrillSlots.id, data.slotId)).limit(1)
+    if (!slot) throw new EmergencyDomainError(NOT_FOUND)
+    requireAccess(access, "prevention:emergency:drill_execute", slot.worksiteId)
+    if (slot.version !== data.expectedVersion) {
+      throw new EmergencyDomainError("La casilla cambió mientras la editabas. Recarga y reintenta.")
+    }
+    if (slot.status === data.status) throw new EmergencyDomainError("La casilla ya tiene ese estado.")
+    /* Una casilla cumplida no se corrige acá: el hecho es el simulacro, y
+     * deshacerlo es cancelarlo, que ya revoca la acreditación. Dejar que esta
+     * vía la desmarcara permitiría apagar el cumplimiento sin tocar el hecho. */
+    if (slot.status === "completed") {
+      throw new EmergencyDomainError("La casilla está cumplida por un simulacro: cancela el simulacro si hay que corregirla.")
+    }
+
+    const now = nowIso()
+    const notApplicableReason = data.status === "not_applicable"
+      ? (data.notApplicableReason?.trim() || null)
+      : null
+    const [updated] = await tx.update(preventionEmergencyDrillSlots).set({
+      status: data.status,
+      notApplicableAt: data.status === "not_applicable" ? now : null,
+      notApplicableByUserId: data.status === "not_applicable" ? access.userId : null,
+      notApplicableReason,
+      observation: data.observation?.trim() || null,
+      version: slot.version + 1,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionEmergencyDrillSlots.id, data.slotId),
+      eq(preventionEmergencyDrillSlots.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new EmergencyDomainError("La casilla cambió mientras la editabas. Recarga y reintenta.")
+
+    await history(tx, {
+      entityType: "drill_slot",
+      entityId: slot.id,
+      worksiteId: slot.worksiteId,
+      changeType: "status_changed",
+      reason: data.status === "not_applicable"
+        ? `Casilla declarada no aplicable: ${notApplicableReason ?? "sin motivo"}`
+        : "Casilla marcada como no hecha.",
+      beforeState: slot,
+      afterState: updated,
+      actorUserId: access.userId,
+    })
+    return updated
+  })
+}
+
 /** La evidencia de un simulacro, con su faena, para servir la descarga bajo
  *  el alcance de quien la pide. Sin esto la ruta serviría cualquier archivo a
  *  cualquiera que adivinara el nombre. */
@@ -822,6 +904,31 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
     if (!updated) throw new EmergencyDomainError("El simulacro cambió mientras lo editabas. Recarga y reintenta.")
     await history(tx, { entityType: "drill", entityId: drill.id, worksiteId: drill.worksiteId, changeType: "completed", reason: `Resultado: ${data.outcome}`, beforeState: drill, afterState: updated, actorUserId: access.userId })
 
+    /* La casilla se cumple en la misma transacción que el simulacro: si el
+     * cierre se revierte, la casilla no puede quedar en verde sin hecho. */
+    if (data.slotId) {
+      const [slot] = await tx.select().from(preventionEmergencyDrillSlots)
+        .where(eq(preventionEmergencyDrillSlots.id, data.slotId)).limit(1)
+      if (!slot) throw new EmergencyDomainError("La casilla del programa no existe.")
+      if (slot.worksiteId !== drill.worksiteId) {
+        throw new EmergencyDomainError("La casilla pertenece a otra faena.")
+      }
+      if (slot.status === "completed") {
+        throw new EmergencyDomainError("Esa casilla ya está cumplida por otro simulacro.")
+      }
+      await tx.update(preventionEmergencyDrillSlots).set({
+        status: "completed",
+        drillId: drill.id,
+        completedAt: now,
+        completedByUserId: access.userId,
+        notApplicableAt: null,
+        notApplicableByUserId: null,
+        notApplicableReason: null,
+        version: slot.version + 1,
+        updatedAt: now,
+      }).where(eq(preventionEmergencyDrillSlots.id, slot.id))
+    }
+
     // Auto-acreditación PDTP: actividades del plan de emergencia. Se dispara
     // DESPUÉS del commit (ver abajo) para no dejar ejecuciones huérfanas si la
     // transacción se revierte.
@@ -888,6 +995,17 @@ export async function cancelEmergencyDrill(input: unknown, access: EmergencyAcce
     )).returning()
     if (!updated) throw new EmergencyDomainError("El simulacro cambió mientras lo editabas. Recarga y reintenta.")
     await history(tx, { entityType: "drill", entityId: drill.id, worksiteId: drill.worksiteId, changeType: "cancelled", reason: data.reason, beforeState: drill, afterState: updated, actorUserId: access.userId })
+
+    /* Si el simulacro llenaba una casilla, la casilla vuelve a estar pendiente.
+     * Sin esto quedaría cumplida apuntando a un simulacro cancelado: el
+     * checklist mostraría verde sobre un hecho que se deshizo. */
+    await tx.update(preventionEmergencyDrillSlots).set({
+      status: "pending",
+      drillId: null,
+      completedAt: null,
+      completedByUserId: null,
+      updatedAt: now,
+    }).where(eq(preventionEmergencyDrillSlots.drillId, drill.id))
 
     // Revertir la N°84 con el mismo `sourceId` (el propio drillId) que usó
     // `onEmergencyDrillCompleted`. Defensa en profundidad: el guard de arriba
