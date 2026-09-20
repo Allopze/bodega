@@ -1,5 +1,8 @@
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
+import { db } from "@/db"
+import { listEmergencyDrillSlots } from "@/lib/services/prevention-program-slots"
+import { PROGRAM_SLOT_YEAR } from "@/lib/prevention/program-slots-2026"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
@@ -49,6 +52,10 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
     listPdtpAccreditationBindings({ sourceType: "emergencia", sourceIds: [detail.plan.id] }),
   ])
 
+  /* Las casillas son de la FAENA, no del plan: archivar un plan y emitir otro
+   * no reinicia lo que el programa esperaba ese año. */
+  const drillSlots = await listEmergencyDrillSlots(db, [detail.plan.worksiteId])
+
   return (
     <PageContainer>
       <PageHeader
@@ -84,6 +91,18 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
         resources={detail.resources}
         linkableResources={linkableResources}
         contacts={detail.contacts}
+        drillSlots={drillSlots.map((slot) => ({
+          id: slot.id,
+          version: slot.version,
+          slotKey: slot.slotKey,
+          scheduledMonth: slot.scheduledMonth,
+          scheduledWeek: slot.scheduledWeek,
+          status: slot.status as "pending" | "completed" | "not_completed" | "not_applicable",
+          observation: slot.observation,
+          notApplicableReason: slot.notApplicableReason,
+          fulfilledLabel: slot.drillId ? "Cumplida por un simulacro registrado" : null,
+        }))}
+        slotYear={PROGRAM_SLOT_YEAR}
         drills={detail.drills.map((drill) => ({
           id: drill.id,
           scenarioType: drill.scenarioType,

@@ -9,11 +9,15 @@ import {
   listGrdCommittees,
   listGrdMatrices,
   listGrdMeetings,
+  suggestGrdSlotNotApplicableReason,
   listGrdMembers,
   listGrdThreats,
   listGrdWorkers,
 } from "@/lib/services/prevention-cgrd"
 import type { CgrdAccess } from "@/lib/services/prevention-cgrd-access"
+import { db } from "@/db"
+import { listGrdMeetingSlots } from "@/lib/services/prevention-program-slots"
+import { PROGRAM_SLOT_YEAR } from "@/lib/prevention/program-slots-2026"
 import { CgrdWorkbench } from "./cgrd-workbench"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
@@ -61,6 +65,15 @@ export default async function CgrdPage({
       ])
     : [[], [], []]
 
+  /* Las casillas cuelgan de la FAENA y no del comité, igual que la matriz: la
+   * N°81 se espera aunque el comité todavía no esté constituido, y ésa es
+   * justamente la brecha que el checklist tiene que mostrar. */
+  const meetingSlots = worksiteId ? await listGrdMeetingSlots(db, worksiteId) : []
+  const slotYear = PROGRAM_SLOT_YEAR
+  const notApplicableSuggestion = worksiteId
+    ? await suggestGrdSlotNotApplicableReason(worksiteId)
+    : null
+
   const latestMatrix = matrices.length > 0
     ? [...matrices].sort((a, b) => b.matrixVersion - a.matrixVersion)[0]!
     : null
@@ -76,6 +89,21 @@ export default async function CgrdPage({
       matrices={matrices}
       latestMatrixThreats={threats}
       meetings={meetings}
+      meetingSlots={meetingSlots.map((slot) => ({
+        id: slot.id,
+        version: slot.version,
+        slotKey: slot.slotKey,
+        scheduledMonth: slot.scheduledMonth,
+        scheduledWeek: slot.scheduledWeek,
+        status: slot.status as "pending" | "completed" | "not_completed" | "not_applicable",
+        observation: slot.observation,
+        notApplicableReason: slot.notApplicableReason,
+        fulfilledLabel: slot.meetingId
+          ? (meetings.find((meeting) => meeting.id === slot.meetingId)?.code ?? "Acta registrada")
+          : null,
+      }))}
+      slotYear={slotYear}
+      notApplicableSuggestion={notApplicableSuggestion}
       agreements={agreements}
       workerCandidates={workerCandidates.filter((worker) => worker.worksiteId === worksiteId)}
       canManageCommittee={can(session, "prevention:cgrd:committee:manage")}

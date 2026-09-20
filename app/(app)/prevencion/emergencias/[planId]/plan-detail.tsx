@@ -5,6 +5,7 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { FileInput } from "@/components/ui/file-input"
+import { ProgramSlotList, type ProgramSlotRow } from "@/components/prevention/program-slot-list"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
@@ -33,6 +34,7 @@ import {
   scheduleEmergencyDrillAction,
   setEmergencyPlanPdtpActivitiesAction,
   updateEmergencyResourceAction,
+  recordDrillSlotStatusAction,
 } from "../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
@@ -71,6 +73,8 @@ interface Props {
   linkableResources: { id: string; name: string; kind: string; location: string }[]
   contacts: ContactInfo[]
   drills: DrillInfo[]
+  drillSlots: ProgramSlotRow[]
+  slotYear: number
   eligibleWorkers: WorkerOption[]
   assignees: { id: string; name: string }[]
   currentUserId: string
@@ -82,7 +86,7 @@ interface Props {
 }
 
 export function PlanDetail({
-  plan, worksiteName, readiness, scenarios, roles, resources, linkableResources, contacts, drills,
+  plan, worksiteName, readiness, scenarios, roles, resources, linkableResources, contacts, drills, drillSlots, slotYear,
   eligibleWorkers, assignees, currentUserId, canManage, canApprove, canExecuteDrill,
   catalogActivities, catalogActivityIds,
 }: Props) {
@@ -296,6 +300,17 @@ export function PlanDetail({
           <h2 className="text-sm font-semibold">Simulacros ({drills.length})</h2>
           {canExecuteDrill && isApproved && <ScheduleDrillDialog planId={plan.id} />}
         </div>
+
+        <div>
+          <h3 className="mb-2 text-sm font-medium">Simulacros que el programa espera</h3>
+          <ProgramSlotList
+            rows={drillSlots}
+            year={slotYear}
+            canRecord={canExecuteDrill}
+            emptyHint="Esta faena todavía no tiene casillas del programa; se generan al activarla."
+            onRecord={(input) => recordDrillSlotStatusAction(input)}
+          />
+        </div>
         {drills.length === 0 ? (
           <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">
             {isApproved ? "Sin simulacros programados." : "Sólo un plan aprobado puede programar simulacros."}
@@ -329,7 +344,7 @@ export function PlanDetail({
                       <TableCell className="text-right">
                         {drill.status === "scheduled" && (
                           <div className="flex justify-end gap-2">
-                            <CompleteDrillDialog drill={drill} assignees={assignees} />
+                            <CompleteDrillDialog drill={drill} assignees={assignees} openSlots={drillSlots.filter((slot) => slot.status !== "completed")} />
                             <CancelDrillDialog drill={drill} />
                           </div>
                         )}
@@ -748,11 +763,19 @@ function ScheduleDrillDialog({ planId }: { planId: string }) {
 
 /* ── Cierre de simulacro ──────────────────────────────────────────────────── */
 
-function CompleteDrillDialog({ drill, assignees }: {
+const MONTH_LABELS = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
+
+function CompleteDrillDialog({ drill, assignees, openSlots }: {
   drill: DrillInfo
   assignees: { id: string; name: string }[]
+  /** Las casillas del programa que este simulacro podría llenar. */
+  openSlots: ProgramSlotRow[]
 }) {
   const [open, setOpen] = React.useState(false)
+  const [slotId, setSlotId] = React.useState("_none")
   const [executedAt, setExecutedAt] = React.useState("")
   const [files, setFiles] = React.useState<File[]>([])
   const [outcome, setOutcome] = React.useState<"" | "satisfactory" | "needs_improvement">("")
@@ -791,6 +814,7 @@ function CompleteDrillDialog({ drill, assignees }: {
       return completeEmergencyDrillAction({
         drillId: drill.id,
         expectedVersion: drill.version,
+        slotId: slotId === "_none" ? null : slotId,
         executedAt: new Date(executedAt).toISOString(),
         durationMinutes: durationMinutes ? Number(durationMinutes) : null,
         evacuationSeconds: evacuationSeconds ? Number(evacuationSeconds) : null,
@@ -844,6 +868,23 @@ function CompleteDrillDialog({ drill, assignees }: {
               Este simulacro ya tiene {drill.activeEvidenceCount} evidencia(s) adjunta(s).
             </p>
           )}
+
+          {/* Sin casilla el simulacro se registra igual: un extraordinario —el
+              que se corre después de un incidente— no llena ninguna y no
+              cuenta en el denominador del programa. */}
+          <Field label="Casilla del programa" hint="Opcional: deja «Ninguna» si es un simulacro extraordinario.">
+            <Select value={slotId} onValueChange={setSlotId}>
+              <SelectTrigger><SelectValue placeholder="Ninguna" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">Ninguna (simulacro extraordinario)</SelectItem>
+                {openSlots.map((slot) => (
+                  <SelectItem key={slot.id} value={slot.id}>
+                    {MONTH_LABELS[slot.scheduledMonth - 1]} · semana {slot.scheduledWeek}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
 
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Duración (min)" hint="Opcional."><Input name="durationMinutes" type="number" min={1} /></Field>

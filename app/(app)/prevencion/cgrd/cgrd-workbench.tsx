@@ -4,6 +4,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
+import { ProgramSlotList, type ProgramSlotRow } from "@/components/prevention/program-slot-list"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { EvidenceField } from "@/components/prevention/evidence-field"
@@ -27,6 +28,7 @@ import {
   constituteGrdCommitteeAction, createGrdMatrixDraftAction, designateGrdCoordinatorAction,
   dissolveGrdCommitteeAction, endGrdCoordinatorAction, publishGrdMatrixAction, recordGrdMeetingAction,
   removeGrdMemberAction, removeGrdThreatAction,
+  recordGrdMeetingSlotStatusAction,
 } from "./actions"
 
 type Worksite = { id: string; name: string; code: string }
@@ -51,7 +53,7 @@ async function handle(promise: Promise<{ ok: boolean; message?: string }>, onDon
 }
 
 export function CgrdWorkbench({
-  worksites, selectedWorksiteId, committee, structure, members, matrices, latestMatrixThreats, meetings, agreements, workerCandidates,
+  worksites, selectedWorksiteId, committee, structure, members, matrices, latestMatrixThreats, meetings, meetingSlots, slotYear, notApplicableSuggestion, agreements, workerCandidates,
   canManageCommittee, canEditMatrix, canPublishMatrix, canManageMeetings, scheduledPanel,
 }: {
   worksites: Worksite[]
@@ -62,6 +64,9 @@ export function CgrdWorkbench({
   matrices: Matrix[]
   latestMatrixThreats: Threat[]
   meetings: Meeting[]
+  meetingSlots: ProgramSlotRow[]
+  slotYear: number
+  notApplicableSuggestion: string | null
   agreements: Agreement[]
   workerCandidates: Worker[]
   canManageCommittee: boolean
@@ -266,6 +271,18 @@ export function CgrdWorkbench({
               <h2 className="text-sm font-semibold text-[var(--color-text)]">Actas de reunión</h2>
               {canManageMeetings && <Button type="button" size="sm" variant="secondary" onClick={() => setRecordMeetingOpen(true)}>Registrar acta</Button>}
             </div>
+            <div className="mb-4">
+              <h4 className="mb-2 text-sm font-medium">Sesiones que el programa espera</h4>
+              <ProgramSlotList
+                rows={meetingSlots}
+                year={slotYear}
+                canRecord={canManageMeetings}
+                emptyHint="Esta faena todavía no tiene casillas del programa; se generan al activarla."
+                notApplicableSuggestion={notApplicableSuggestion}
+                onRecord={(input) => recordGrdMeetingSlotStatusAction(input)}
+              />
+            </div>
+
             {meetings.length === 0 ? (
               <p className="mt-2 text-sm text-[var(--color-text-subtle)]">Sin sesiones registradas.</p>
             ) : (
@@ -337,7 +354,7 @@ export function CgrdWorkbench({
       {committee && (
         <>
           <AddMemberDialog open={addMemberOpen} onOpenChange={setAddMemberOpen} committeeId={committee.id} workers={workerCandidates} onDone={onDone} />
-          <RecordMeetingDialog open={recordMeetingOpen} onOpenChange={setRecordMeetingOpen} committeeId={committee.id} onDone={onDone} />
+          <RecordMeetingDialog open={recordMeetingOpen} onOpenChange={setRecordMeetingOpen} committeeId={committee.id} openSlots={meetingSlots.filter((slot) => slot.status !== "completed")} onDone={onDone} />
         </>
       )}
     </PageContainer>
@@ -481,7 +498,13 @@ function PublishMatrixDialog({ matrix, onClose, onDone }: { matrix: Matrix | nul
 
 const EMPTY_AGREEMENT: DraftAgreement = { description: "", actionDescription: "", priority: "medium", targetDate: "" }
 
-function RecordMeetingDialog({ open, onOpenChange, committeeId, onDone }: { open: boolean; onOpenChange: (open: boolean) => void; committeeId: string; onDone: (message?: string) => void }) {
+const SLOT_MONTHS = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
+
+function RecordMeetingDialog({ open, onOpenChange, committeeId, openSlots, onDone }: { open: boolean; onOpenChange: (open: boolean) => void; committeeId: string; openSlots: ProgramSlotRow[]; onDone: (message?: string) => void }) {
+  const [slotId, setSlotId] = React.useState("_none")
   const [heldOn, setHeldOn] = React.useState("")
   const [agenda, setAgenda] = React.useState("")
   const [minutes, setMinutes] = React.useState("")
@@ -491,7 +514,7 @@ function RecordMeetingDialog({ open, onOpenChange, committeeId, onDone }: { open
   const [pending, setPending] = React.useState(false)
 
   function reset() {
-    setHeldOn(""); setAgenda(""); setMinutes(""); setQuorumReached(true); setEvidenceUrl(""); setDrafts([])
+    setSlotId("_none"); setHeldOn(""); setAgenda(""); setMinutes(""); setQuorumReached(true); setEvidenceUrl(""); setDrafts([])
   }
 
   function updateDraft(index: number, patch: Partial<DraftAgreement>) {
@@ -508,6 +531,7 @@ function RecordMeetingDialog({ open, onOpenChange, committeeId, onDone }: { open
     try {
       const result = await recordGrdMeetingAction({
         committeeId, heldOn: new Date(heldOn).toISOString(), agenda, minutes, quorumReached, evidenceUrl,
+        slotId: slotId === "_none" ? null : slotId,
         agreements: drafts.map((draft) => ({
           description: draft.description.trim(),
           actionDescription: draft.actionDescription.trim(),
@@ -524,6 +548,21 @@ function RecordMeetingDialog({ open, onOpenChange, committeeId, onDone }: { open
     <DialogHeader><DialogTitle>Registrar acta</DialogTitle><DialogDescription>Cierra la N°81 del PDTP. Se carga después de la sesión, con su evidencia. Cada acuerdo se abre como acción correctiva en CAPA.</DialogDescription></DialogHeader>
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
+        {/* Sin casilla el acta se registra igual: una sesión extraordinaria no
+            llena ninguna y no cuenta en el denominador del programa. */}
+        <Field label="Casilla del programa" hint="Opcional: deja «Ninguna» si es una sesión extraordinaria.">
+          <Select value={slotId} onValueChange={setSlotId}>
+            <SelectTrigger><SelectValue placeholder="Ninguna" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_none">Ninguna (sesión extraordinaria)</SelectItem>
+              {openSlots.map((slot) => (
+                <SelectItem key={slot.id} value={slot.id}>
+                  {SLOT_MONTHS[slot.scheduledMonth - 1]} · semana {slot.scheduledWeek}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
         <Field label="Fecha y hora de la sesión" required><Input type="datetime-local" value={heldOn} onChange={(event) => setHeldOn(event.target.value)} /></Field>
         <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={quorumReached} onChange={(event) => setQuorumReached(event.target.checked)} /> Hubo quórum</label>
       </div>
