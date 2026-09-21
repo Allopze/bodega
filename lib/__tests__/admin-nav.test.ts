@@ -100,8 +100,22 @@ describe("getAdminAreas", () => {
       "Productos y abastecimiento",
     ])
 
+    // Nombrarlos en vez de contarlos: un `toHaveLength(9)` sólo dice que el
+    // número cambió, no cuál entró ni si correspondía. Así se agregó
+    // "Escenarios de emergencia" y el test quedó rojo sin explicar por qué.
     const catalogos = areas.find((area) => area.id === "catalogos")
-    expect(catalogos?.items).toHaveLength(9)
+    expect(catalogos?.items.map((item) => item.label)).toEqual([
+      "Cargos y capacidades",
+      "Productos",
+      "Catálogo de EPP",
+      "Catálogos de productos",
+      "Desviaciones",
+      "Catálogos PDTP",
+      "Catálogos de flota",
+      "Tipos de activo TI",
+      "Tipos de documento SST",
+      "Escenarios de emergencia",
+    ])
   })
 
   it("hides items the session lacks permission for, and drops empty categories", () => {

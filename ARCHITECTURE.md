@@ -72,10 +72,10 @@ Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 
 | ID | Permisos | Descripción |
 |---|---|---|
-| `admin` | 35 | Usuarios, faenas, productos, proveedores, trabajadores, catálogos, configuración, auditoría |
+| `admin` | 36 | Usuarios, faenas, productos, proveedores, trabajadores, catálogos, configuración, auditoría |
 | `requests` | 4 | Solicitudes de compra |
 | `approvals` | 1 | Aprobaciones de ítems |
-| `purchasing` | 5 | Órdenes de compra |
+| `purchasing` | 6 | Órdenes de compra |
 | `receiving` | 3 | Recepción de mercadería |
 | `warehouse` | 10 | Stock, movimientos y guías de despacho internas (Oficina → Faena) |
 | `deliveries` | 3 | Entregas |
@@ -84,17 +84,17 @@ Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 | `repuestos` | 5 | Solicitudes de repuestos |
 | `servicios` | 5 | Solicitudes de servicios |
 | `operations` | 1 | Cola operacional transversal |
-| `billing` | 12 | Facturación y cobranza (cuentas por cobrar) — ver [docs/facturacion/](docs/facturacion/README.md) |
+| `billing` | 13 | Facturación y cobranza (cuentas por cobrar) — ver [docs/facturacion/](docs/facturacion/README.md) |
 | `sst` | 5 | Evaluaciones SST |
 | `ppa` | 8 | Prevención de Peligros en el Área |
 | `feedback` | 4 | Soporte / feedback interno |
 | `combustibles` | 22 | Cargas, cuentas corrientes, TAE, anomalías, import de combustible |
 | `flota` | 5 | Vehículos |
 | `mantenciones` | 4 | Mantención de flota/equipos |
-| `prevention` | 120 | Documentación SST, capacitaciones, incidentes, inspecciones, PDTP, indicadores |
+| `prevention` | 118 | Documentación SST, capacitaciones, incidentes, inspecciones, PDTP, indicadores |
 | `ti` | 10 | Módulo de TI |
 
-**Total: 265 permisos**, derivados automáticamente. Recalcular con:
+**Total: 266 permisos**, derivados automáticamente. Recalcular con:
 
 ```bash
 npx tsx -e "import { registry } from './modules/registry'; \
@@ -300,7 +300,7 @@ Fuente de verdad: `SYSTEM_ROLES` en `lib/auth/system-rbac.ts`.
 | `subgerente_operaciones` | Todas | Subgerente de operaciones |
 | `tecnico_ti` | Todas | Técnico TI |
 
-**265 permisos granulares** derivados del registry (`modules/registry.ts` vía
+**266 permisos granulares** derivados del registry (`modules/registry.ts` vía
 `modules/permissions.ts`). La lista completa vive en el registry, no se mantiene a mano.
 
 ### Guards

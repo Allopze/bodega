@@ -29,6 +29,21 @@ describe("ARCHITECTURE.md · RBAC declarado vs. código", () => {
     expect(new Set(declared)).toEqual(new Set([total]))
   })
 
+  /**
+   * El total sólo miraba las dos frases "N permisos"; la tabla por módulo usa
+   * celdas sin esa palabra y quedó fuera del contrato. Así derivó a 35/5/12/120
+   * cuando el registry decía 36/6/13/118: la tabla sumaba 265 mientras el total
+   * declaraba otra cifra, que es justo la contradicción que este archivo vigila.
+   */
+  it("declara los permisos de cada módulo en la tabla", () => {
+    for (const entry of registry) {
+      const row = doc.match(new RegExp(`^\\| \`${entry.id}\` \\| (\\d+) \\|`, "m"))
+      expect(row, `falta la fila del módulo ${entry.id}`).not.toBeNull()
+      expect(Number(row![1]), `la tabla declara ${row![1]} permisos para ${entry.id}`)
+        .toBe(entry.permissions.length)
+    }
+  })
+
   it("declara el número real de módulos registrados", () => {
     expect(doc).toContain(`### Módulos registrados (${registry.length})`)
   })
