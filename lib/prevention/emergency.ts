@@ -23,8 +23,9 @@ export const EMERGENCY_PLAN_STATUS_LABELS: Record<string, string> = {
  * —lo cubren nevada, marejada e inundación— y `otro`, renombrado
  * `otra_amenaza` para que se lea como lo que es.
  *
- * El orden es el de la pantalla: los dos `<Select>` de emergencias se pueblan
- * recorriendo `EMERGENCY_SCENARIO_TYPE_LABELS`.
+ * La lista conserva los tipos base y sus códigos estables para las reglas de
+ * amenazas territoriales, sembrado inicial y compatibilidad histórica. Los
+ * selectores de la aplicación leen el catálogo administrable en base de datos.
  */
 export const EMERGENCY_SCENARIO_TYPES = [
   "sismo",

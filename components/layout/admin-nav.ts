@@ -35,6 +35,7 @@ export const ADMIN_AREAS: AreaNode[] = [
       },
       { label: "Tipos de activo TI",    href: "/admin/tipos-activo",        iconName: "Laptop",            permissions: ["admin:it_asset_types"] },
       { label: "Tipos de documento SST", href: "/admin/taxonomia-sst",      iconName: "FileText",          permissions: ["admin:document_taxonomy"] },
+      { label: "Escenarios de emergencia", href: "/admin/escenarios-emergencia", iconName: "WarningCircle", permissions: ["admin:emergency_scenario_catalog"] },
     ],
   },
   {

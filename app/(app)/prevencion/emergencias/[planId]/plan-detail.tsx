@@ -18,7 +18,6 @@ import {
   EMERGENCY_DRILL_STATUS_LABELS,
   EMERGENCY_PLAN_STATUS_LABELS,
   EMERGENCY_RESOURCE_STATUS_LABELS,
-  EMERGENCY_SCENARIO_TYPE_LABELS,
   emergencyScenarioTypeLabel,
   emergencyPlanStatusBadgeVariant,
 } from "@/lib/prevention/emergency"
@@ -42,8 +41,6 @@ import { useOperation } from "@/lib/hooks/use-operation"
 import { toLocalInputValue } from "@/lib/utils"
 import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 
-const SCENARIO_TYPES = Object.keys(EMERGENCY_SCENARIO_TYPE_LABELS)
-
 interface PlanInfo {
   id: string
   code: string
@@ -56,11 +53,12 @@ interface PlanInfo {
   pdtpActivityNumbers: number[]
 }
 
-interface ScenarioInfo { id: string; type: string; title: string; description: string | null; responseProcedure: string }
+interface ScenarioInfo { id: string; type: string; typeLabelSnapshot: string; title: string; description: string | null; responseProcedure: string }
 interface RoleInfo { id: string; roleName: string; assigneeName: string; backupName: string | null }
 interface ResourceInfo { id: string; name: string; kind: string; location: string; serialNumber: string | null; lastInspectedAt: string | null; nextInspectionAt: string | null; expiresAt: string | null; status: string }
 interface ContactInfo { id: string; name: string; org: string; role: string | null; phone: string }
-interface DrillInfo { id: string; scenarioType: string; scheduledFor: string; status: string; outcome: string | null; version: number; activeEvidenceCount: number }
+interface DrillInfo { id: string; scenarioType: string; scenarioTypeLabelSnapshot: string; scheduledFor: string; status: string; outcome: string | null; version: number; activeEvidenceCount: number }
+interface ScenarioTypeOption { code: string; label: string; isSystem: boolean; isActive: boolean; sortOrder: number }
 interface WorkerOption { id: string; name: string; position: string | null }
 
 interface Props {
@@ -68,6 +66,7 @@ interface Props {
   worksiteName: string
   readiness: { ready: boolean; blockers: string[] }
   scenarios: ScenarioInfo[]
+  scenarioTypes: ScenarioTypeOption[]
   roles: RoleInfo[]
   resources: ResourceInfo[]
   /** Inventario de la faena que este plan aún no declara (Admin → Inventario de faena). */
@@ -88,7 +87,7 @@ interface Props {
 }
 
 export function PlanDetail({
-  plan, worksiteName, readiness, scenarios, roles, resources, linkableResources, contacts, drills, drillSlots, slotYear, activationPeriod,
+  plan, worksiteName, readiness, scenarios, scenarioTypes, roles, resources, linkableResources, contacts, drills, drillSlots, slotYear, activationPeriod,
   eligibleWorkers, assignees, currentUserId, canManage, canApprove, canExecuteDrill,
   catalogActivities, catalogActivityIds,
 }: Props) {
@@ -160,7 +159,7 @@ export function PlanDetail({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Escenarios ({scenarios.length})</h2>
-          {canManage && isDraft && <AddScenarioDialog planId={plan.id} />}
+          {canManage && isDraft && <AddScenarioDialog planId={plan.id} scenarioTypes={scenarioTypes} />}
         </div>
         {scenarios.length === 0 ? (
           <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin escenarios declarados.</p>
@@ -177,7 +176,7 @@ export function PlanDetail({
               <TableBody>
                 {scenarios.map((scenario) => (
                   <TableRow key={scenario.id}>
-                    <TableCell className="text-sm">{emergencyScenarioTypeLabel(scenario.type)}</TableCell>
+                    <TableCell className="text-sm">{scenario.typeLabelSnapshot || emergencyScenarioTypeLabel(scenario.type)}</TableCell>
                     <TableCell className="text-sm font-medium">{scenario.title}</TableCell>
                     <TableCell className="max-w-md text-sm text-[var(--color-text-subtle)]">{scenario.responseProcedure}</TableCell>
                   </TableRow>
@@ -300,7 +299,7 @@ export function PlanDetail({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Simulacros ({drills.length})</h2>
-          {canExecuteDrill && isApproved && <ScheduleDrillDialog planId={plan.id} />}
+          {canExecuteDrill && isApproved && <ScheduleDrillDialog planId={plan.id} scenarioTypes={scenarioTypes} />}
         </div>
 
         <div>
@@ -333,7 +332,7 @@ export function PlanDetail({
               <TableBody>
                 {drills.map((drill) => (
                   <TableRow key={drill.id}>
-                    <TableCell className="text-sm">{emergencyScenarioTypeLabel(drill.scenarioType)}</TableCell>
+                    <TableCell className="text-sm">{drill.scenarioTypeLabelSnapshot || emergencyScenarioTypeLabel(drill.scenarioType)}</TableCell>
                     <TableCell className="text-sm tabular-nums">{formatDateTime(drill.scheduledFor)}</TableCell>
                     <TableCell>
                       <MetaBadge meta={{ label: `${EMERGENCY_DRILL_STATUS_LABELS[drill.status] ?? drill.status}`, variant: drill.status === "completed" ? "success" : drill.status === "cancelled" ? "outline" : "default" }} />
@@ -366,7 +365,7 @@ export function PlanDetail({
 
 /* ── Alta de escenario ────────────────────────────────────────────────────── */
 
-function AddScenarioDialog({ planId }: { planId: string }) {
+function AddScenarioDialog({ planId, scenarioTypes }: { planId: string; scenarioTypes: ScenarioTypeOption[] }) {
   const [open, setOpen] = React.useState(false)
   const [type, setType] = React.useState("")
   const operation = useOperation()
@@ -394,7 +393,7 @@ function AddScenarioDialog({ planId }: { planId: string }) {
             <DialogDescription>Cada escenario declara su propio procedimiento de respuesta.</DialogDescription>
           </DialogHeader>
           <Field label="Tipo">
-            <Select value={type} onValueChange={setType}><SelectTrigger><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger><SelectContent>{SCENARIO_TYPES.map((t) => <SelectItem key={t} value={t}>{emergencyScenarioTypeLabel(t)}</SelectItem>)}</SelectContent></Select><input type="hidden" name="type" value={type} />
+            <Select value={type} onValueChange={setType}><SelectTrigger><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger><SelectContent>{scenarioTypes.filter((item) => item.isActive).map((item) => <SelectItem key={item.code} value={item.code}>{item.label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="type" value={type} />
           </Field>
           <Field label="Título"><Input name="title" required minLength={3} maxLength={200} /></Field>
           <Field label="Descripción" hint="Opcional."><Textarea name="description" maxLength={3000} /></Field>
@@ -727,7 +726,7 @@ function AddContactDialog({ planId }: { planId: string }) {
 
 /* ── Programación de simulacro ────────────────────────────────────────────── */
 
-function ScheduleDrillDialog({ planId }: { planId: string }) {
+function ScheduleDrillDialog({ planId, scenarioTypes }: { planId: string; scenarioTypes: ScenarioTypeOption[] }) {
   const [open, setOpen] = React.useState(false)
   const [defaultValue, setDefaultValue] = React.useState("")
   const [scenarioType, setScenarioType] = React.useState("")
@@ -753,7 +752,7 @@ function ScheduleDrillDialog({ planId }: { planId: string }) {
             <DialogDescription>Sólo un plan aprobado puede programar simulacros.</DialogDescription>
           </DialogHeader>
           <Field label="Escenario">
-            <Select value={scenarioType} onValueChange={setScenarioType}><SelectTrigger><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger><SelectContent>{SCENARIO_TYPES.map((t) => <SelectItem key={t} value={t}>{emergencyScenarioTypeLabel(t)}</SelectItem>)}</SelectContent></Select><input type="hidden" name="scenarioType" value={scenarioType} />
+            <Select value={scenarioType} onValueChange={setScenarioType}><SelectTrigger><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger><SelectContent>{scenarioTypes.map((item) => <SelectItem key={item.code} value={item.code}>{item.label}{item.isActive ? "" : " · inactivo"}</SelectItem>)}</SelectContent></Select><input type="hidden" name="scenarioType" value={scenarioType} />
           </Field>
           <Field label="Fecha y hora"><Input name="scheduledFor" type="datetime-local" required defaultValue={defaultValue} /></Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}

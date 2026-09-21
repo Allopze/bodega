@@ -12,6 +12,7 @@ import {
   listEmergencyAssignees,
   listEmergencyWorkers,
 } from "@/lib/services/prevention-emergency"
+import { listEmergencyScenarioTypes } from "@/lib/services/prevention-emergency-catalog"
 import { listLinkableResources } from "@/lib/services/worksite-inventory"
 import { PlanDetail } from "./plan-detail"
 import { listCatalogActivities } from "@/lib/services/pdtp/catalog-activities"
@@ -42,7 +43,7 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
   // La faena del plan se pasa al servicio, no se filtra después: el tope de la
   // consulta se aplicaba antes del filtro y truncaba dotación arbitrariamente
   // (EMERGENCIAS-11).
-  const [eligibleWorkers, assignees, linkableResources, catalogActivities, bindings] = await Promise.all([
+  const [eligibleWorkers, assignees, linkableResources, catalogActivities, bindings, catalogScenarioTypes, drillSlots, activationPeriod] = await Promise.all([
     canManage || canExecuteDrill ? listEmergencyWorkers(access, detail.plan.worksiteId) : Promise.resolve([]),
     canExecuteDrill ? listEmergencyAssignees(access) : Promise.resolve([]),
     // Inventario de la faena que este plan todavía no declara. El padrón se
@@ -50,12 +51,13 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
     canManage ? listLinkableResources(detail.plan.worksiteId) : Promise.resolve([]),
     listCatalogActivities(),
     listPdtpAccreditationBindings({ sourceType: "emergencia", sourceIds: [detail.plan.id] }),
+    listEmergencyScenarioTypes({ includeInactive: true }),
+    listEmergencyDrillSlots(db, [detail.plan.worksiteId]),
+    resolveProgramActivationPeriod(detail.plan.worksiteId),
   ])
 
-  /* Las casillas son de la FAENA, no del plan: archivar un plan y emitir otro
-   * no reinicia lo que el programa esperaba ese año. */
-  const drillSlots = await listEmergencyDrillSlots(db, [detail.plan.worksiteId])
-  const activationPeriod = await resolveProgramActivationPeriod(detail.plan.worksiteId)
+  const usedScenarioTypes = new Set(detail.scenarios.map((scenario) => scenario.type))
+  const scenarioTypes = catalogScenarioTypes.filter((scenarioType) => scenarioType.isActive || usedScenarioTypes.has(scenarioType.code))
 
   return (
     <PageContainer>
@@ -83,6 +85,7 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
         worksiteName={detail.worksiteName}
         readiness={detail.readiness}
         scenarios={detail.scenarios}
+        scenarioTypes={scenarioTypes}
         roles={detail.roles.map((role) => ({
           id: role.id,
           roleName: role.roleName,
@@ -108,6 +111,7 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
         drills={detail.drills.map((drill) => ({
           id: drill.id,
           scenarioType: drill.scenarioType,
+          scenarioTypeLabelSnapshot: drill.scenarioTypeLabelSnapshot,
           scheduledFor: drill.scheduledFor,
           status: drill.status,
           outcome: drill.outcome,

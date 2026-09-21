@@ -38,17 +38,37 @@ export const preventionEmergencyPlans = pgTable("prevention_emergency_plans", {
   check("prevention_emergency_plan_version_positive", sql`${table.version} >= 1`),
 ])
 
+/**
+ * Catálogo global de tipos de escenario. Los códigos base se cargan con la
+ * migración y quedan protegidos (`isSystem`); Administración puede agregar y
+ * desactivar tipos propios sin borrar los registros históricos que los usan.
+ */
+export const preventionEmergencyScenarioTypes = pgTable("prevention_emergency_scenario_types", {
+  code:       text("code").primaryKey(),
+  label:      text("label").notNull(),
+  obligation: text("obligation").notNull(),
+  isSystem:   boolean("is_system").notNull().default(false),
+  isActive:   boolean("is_active").notNull().default(true),
+  sortOrder:  integer("sort_order").notNull().default(1000),
+  createdAt:  timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:  timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("prevention_emergency_scenario_type_label_unique").on(sql`lower(${table.label})`),
+  check("prevention_emergency_scenario_type_obligation_valid", sql`${table.obligation} IN ('mandatory', 'senapred_detected', 'operational', 'optional', 'custom')`),
+  check("prevention_emergency_scenario_type_sort_order_nonnegative", sql`${table.sortOrder} >= 0`),
+])
+
 export const preventionEmergencyScenarios = pgTable("prevention_emergency_scenarios", {
   id:                text("id").primaryKey(),
   planId:            text("plan_id").notNull().references(() => preventionEmergencyPlans.id, { onDelete: "cascade" }),
-  type:              text("type").notNull(),
+  type:              text("type").notNull().references(() => preventionEmergencyScenarioTypes.code, { onDelete: "restrict" }),
+  typeLabelSnapshot: text("type_label_snapshot").notNull().default(""),
   title:             text("title").notNull(),
   description:       text("description"),
   responseProcedure: text("response_procedure").notNull(),
   createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("prevention_emergency_scenario_plan_idx").on(table.planId),
-  check("prevention_emergency_scenario_type_valid", sql`${table.type} IN ('sismo', 'tsunami', 'aluvion', 'incendio_estructural', 'incendio_forestal', 'asalto_robo', 'erupcion_volcanica', 'inundacion_lluvia', 'inundacion_cauce', 'nevada', 'marejada', 'corte_energia', 'corte_agua', 'desorden_publico', 'otra_amenaza', 'derrame', 'fuga', 'volcamiento', 'exposicion', 'rescate')`),
 ])
 
 /* ── Organigrama de emergencia ─────────────────────────────────────────────
@@ -232,7 +252,8 @@ export const preventionEmergencyDrills = pgTable("prevention_emergency_drills", 
   id:                text("id").primaryKey(),
   planId:            text("plan_id").notNull().references(() => preventionEmergencyPlans.id, { onDelete: "restrict" }),
   worksiteId:        text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
-  scenarioType:      text("scenario_type").notNull(),
+  scenarioType:      text("scenario_type").notNull().references(() => preventionEmergencyScenarioTypes.code, { onDelete: "restrict" }),
+  scenarioTypeLabelSnapshot: text("scenario_type_label_snapshot").notNull().default(""),
   scheduledFor:      timestamp("scheduled_for", { withTimezone: true, mode: "string" }).notNull(),
   executedAt:        timestamp("executed_at", { withTimezone: true, mode: "string" }),
   status:            text("status").notNull().default("scheduled"),
@@ -261,7 +282,6 @@ export const preventionEmergencyDrills = pgTable("prevention_emergency_drills", 
   updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("prevention_emergency_drill_plan_idx").on(table.planId, table.scheduledFor),
-  check("prevention_emergency_drill_scenario_type_valid", sql`${table.scenarioType} IN ('sismo', 'tsunami', 'aluvion', 'incendio_estructural', 'incendio_forestal', 'asalto_robo', 'erupcion_volcanica', 'inundacion_lluvia', 'inundacion_cauce', 'nevada', 'marejada', 'corte_energia', 'corte_agua', 'desorden_publico', 'otra_amenaza', 'derrame', 'fuga', 'volcamiento', 'exposicion', 'rescate')`),
   // EMG-001: la ruta y su checksum van juntos o ninguno. Un archivo sin huella
   // no es evidencia verificable, y una huella sin archivo no es nada.
   check("prevention_emergency_drill_evidence_complete", sql`
