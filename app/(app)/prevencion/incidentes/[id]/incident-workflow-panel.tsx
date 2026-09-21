@@ -262,7 +262,6 @@ export function IncidentWorkflowPanel({ incident, notifications, investigation, 
             authorizationReference: formData.get("authorizationReference"),
             authorizationDate: formData.get("authorizationDate"),
             evidenceReference: formData.get("evidenceReference"),
-            evidenceChecksumSha256: formData.get("evidenceChecksumSha256") || undefined,
             segregationExceptionReason: formData.get("segregationExceptionReason") || undefined,
           }))}
         >
@@ -281,10 +280,12 @@ export function IncidentWorkflowPanel({ incident, notifications, investigation, 
             <div className="space-y-2"><Label htmlFor="restart-reference">Folio o resolución</Label><Input id="restart-reference" name="authorizationReference" required minLength={3} /></div>
             <div className="space-y-2"><Label htmlFor="restart-date">Fecha de la autorización</Label><Input id="restart-date" name="authorizationDate" type="date" required /></div>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-2"><Label htmlFor="restart-evidence">Documento de respaldo</Label><Input id="restart-evidence" name="evidenceReference" required minLength={3} placeholder="Referencia verificable del documento" /></div>
-            <div className="space-y-2"><Label htmlFor="restart-checksum">Checksum SHA-256 (opcional)</Label><Input id="restart-checksum" name="evidenceChecksumSha256" pattern="[a-f0-9]{64}" placeholder="64 caracteres hexadecimales" /></div>
-          </div>
+          {/* Sin "Checksum SHA-256 (opcional)": le pedía a quien registra la
+              resolución del fiscalizador que corriera `sha256sum` sobre un PDF
+              que la plataforma no almacena y transcribiera 64 caracteres. La
+              huella la calcula el sistema sobre un archivo propio —como en TAE
+              e inspecciones—, no la tipea una persona. */}
+          <div className="space-y-2"><Label htmlFor="restart-evidence">Documento de respaldo</Label><Input id="restart-evidence" name="evidenceReference" required minLength={3} placeholder="Referencia verificable del documento" /></div>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2"><Label htmlFor="restart-reason">Fundamento de autorización de reinicio</Label><Input id="restart-reason" name="reason" required minLength={10} /></div>
             <div className="space-y-2"><Label htmlFor="restart-segregation-reason">Excepción de segregación (si participaste en la investigación o las medidas)</Label><Input id="restart-segregation-reason" name="segregationExceptionReason" minLength={10} placeholder="Sólo si tienes autorización de excepción" /></div>
