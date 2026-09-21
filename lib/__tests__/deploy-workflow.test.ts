@@ -286,6 +286,31 @@ describe("deploy workflow", () => {
     }
   })
 
+  /*
+   * La 0319 dropea once tablas `prevention_*_history` dentro de la transacción
+   * del migrador, así que el rescate al `audit_log` sólo sirve antes. Después
+   * no hay ventana: las filas ya no existen. El orden acá no es preferencia,
+   * es la única secuencia en la que el rescate hace algo.
+   */
+  it("rescata la historia de prevención antes de migrar, y después del respaldo", () => {
+    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
+
+    const dump = deployScript.indexOf('run_timed "Dumping production database"')
+    const rescate = deployScript.indexOf("backfill-prevention-history-to-audit-log.sql")
+    const migrate = deployScript.indexOf('run_timed "Applying migrations"')
+
+    expect(dump, "falta el pg_dump").toBeGreaterThan(-1)
+    expect(rescate, "el rescate de la historia no está cableado").toBeGreaterThan(-1)
+    expect(migrate, "falta el paso de migración").toBeGreaterThan(-1)
+
+    expect(dump).toBeLessThan(rescate)
+    expect(rescate).toBeLessThan(migrate)
+
+    // Y se salta solo cuando las tablas ya no existen, o el segundo deploy
+    // moriría con «relation does not exist».
+    expect(deployScript).toContain("to_regclass('prevention_epp_history')")
+  })
+
   it("corre el catálogo de tallas y la conciliación antes de completar el rango", () => {
     const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
 

@@ -18,7 +18,8 @@ set -euo pipefail
 # exigidas y variables nuevas) y el nombre de imagen se resuelve ALLÁ.
 # Steps: sync compose -> contrastar .env -> resolver nombre de imagen -> tag
 # current image as rollback -> pg_dump -> build -> ship image -> preflight
-# conciliación -> preflight combustible -> migrate -> migración documental SST
+# conciliación -> preflight combustible -> rescate de la historia de prevención
+# -> migrate -> migración documental SST
 # a Cloudreve -> normalize EPP -> estado de solicitudes -> catálogo de tallas
 # -> conciliar variantes
 # duplicadas por talla -> completar el rango de tallas de ropa EPP ->
@@ -398,6 +399,29 @@ run_timed "Diagnóstico de conciliación OC-factura (previo a migrar)" run_in_pr
 # paso, que es lo que se necesita cuando el deploy trae justamente el arreglo.
 run_timed "Diagnóstico de integraciones de combustible (previo a migrar)" \
   run_in_prod docker compose run --rm -e "SKIP_FUEL_PREFLIGHT_GATE=$SKIP_FUEL_PREFLIGHT_GATE" preflight-fuel-integrations
+
+# ÚLTIMO PASO ANTES DE MIGRAR, y el orden no es cosmético: la migración 0319
+# dropea once tablas `prevention_*_history` y corre dentro de la transacción del
+# migrador, así que después no hay ventana. El commit que la preparó migró las
+# ESCRITURAS al `audit_log`, no las filas —«diez de las once eran la ÚNICA traza
+# que existía»—, y este rescate las copia conservando su fecha original.
+#
+# Condicional como los demás backfills de este script: cuando las tablas ya no
+# existen —o sea, del segundo deploy en adelante— el paso se salta solo en vez
+# de reventar el despliegue con «relation does not exist».
+history_tables_present="$(run_in_prod docker compose exec -T db psql -U "$PROD_DB_USER" -d "$PROD_DB_NAME" -tAc "SELECT to_regclass('prevention_epp_history') IS NOT NULL" 2>/dev/null | tr -d '[:space:]' || true)"
+if [ "$history_tables_present" = "t" ]; then
+  rescue_prevention_history() {
+    # `prod_sh` no sirve acá: el .sql vive en este checkout y hay que
+    # empujarlo por stdin al psql de allá.
+    ssh "${prod_ssh_opts[@]}" "$PROD_SSH" \
+      "cd $(printf '%q' "$PROD_DIR") && docker compose exec -T db psql -U $(printf '%q' "$PROD_DB_USER") -d $(printf '%q' "$PROD_DB_NAME") -v ON_ERROR_STOP=1 -f -" \
+      < "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/backfill-prevention-history-to-audit-log.sql"
+  }
+  run_timed "Rescatando la historia de prevención al audit_log (previo a migrar)" rescue_prevention_history
+else
+  echo "==> Historia de prevención: las tablas ya no existen, nada que rescatar"
+fi
 
 run_timed "Applying migrations" run_in_prod docker compose run --rm migrate
 
