@@ -84,9 +84,14 @@ test.describe("Keyboard navigation — skip link", () => {
       }
     })
 
-    // Skip link should exist and point to #main-content or similar
+    // El `href` se assertea, no se da por supuesto: el comentario anterior decía
+    // "should point to #main-content or similar" y la prueba sólo comprobaba que
+    // el foco cayera en un `<a>`. Que el destino sea `#main-content` es lo que
+    // hace del enlace un salto real; que el foco llegue allí y no vuelva al
+    // cromo lo verifica `e2e/shell-scroll.spec.ts`.
     expect(skipLink).not.toBeNull()
     expect(skipLink!.tag).toBe("A")
+    expect(skipLink!.href).toBe("#main-content")
   })
 })
 

@@ -128,6 +128,11 @@ async function readDomMetrics(page: Page, isMobile: boolean): Promise<DomMetrics
         headers: document.querySelectorAll("header").length,
         navs: document.querySelectorAll("nav").length,
         mains: document.querySelectorAll("main").length,
+        // Un `<header>` descendiente de `main` no es `banner`, así que contar
+        // `header` no dice si la ruta expone el landmark de cabecera. Hasta el
+        // 2026-09-21 ninguna lo hacía: la TopBar vivía dentro de `<main>`.
+        bannerTopLevel: Boolean(document.querySelector("header"))
+          && document.querySelector("main header") === null,
       },
       tables: tables.length,
       tablesWithoutName,

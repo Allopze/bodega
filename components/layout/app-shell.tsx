@@ -132,22 +132,49 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
                 ancha—. `overflow-x-hidden` (no `clip`, que aquí no generaba CSS)
                 contiene el resto. Las tablas anchas no se ven afectadas: siguen
                 desplazándose dentro de su propio `TableRoot`. */}
-            <main
+            {/* Este nodo era el `<main>`. Dejó de serlo —conservando clases,
+                comentarios y su lugar exacto en el DOM— porque la TopBar vivía
+                dentro de él, y un `<header>` descendiente de `main` pierde la
+                correspondencia implícita con el rol `banner`: la aplicación no
+                exponía ningún landmark de cabecera, y todo el cromo global
+                —buscador, notificaciones, menú de usuario, faena— quedaba dentro
+                del landmark del contenido de la página.
+
+                Renombrarlo y no moverlo es lo que hace el cambio seguro: el
+                contenedor de scroll sigue siendo este punto del DOM, así que
+                todo `sticky top-0` y todo `scroll-mt-*` de las páginas resuelve
+                contra el mismo scrollport, y la TopBar sigue dentro de él. */}
+            <div
+              data-shell-scroll
               className="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-[var(--color-surface)] lg:rounded-tl-[36px] lg:shadow-well"
-              id="main-content"
-              tabIndex={-1}
             >
               {/* La TopBar scrollea con el contenido: nada se queda pegado
                   dentro del pozo. Sin `sticky` tampoco necesita fondo opaco,
-                  y sin fondo opaco la sombra `inset` del pozo la cruza. */}
+                  y sin fondo opaco la sombra `inset` del pozo la cruza.
+                  Es además el `banner`: por eso está acá y no dentro de
+                  `<main>`. No la vuelvas `sticky` ni le des fondo propio. */}
               <TopBar
                 session={session}
                 onMenuToggle={mobileOpen ? closeDrawer : openDrawer}
                 worksiteName={worksiteName}
                 isMenuOpen={mobileOpen}
               />
-              {children}
-            </main>
+              {/* `<main>` va SIN CLASES, y no es minimalismo: es corrección.
+                  Dentro de `{children}` hay modales artesanales con
+                  `fixed inset-0` que se anclan al viewport (combustibles/tae,
+                  ti/activos, prevencion/documentacion, admin/folios) y el
+                  `sticky top-0` del detalle de inspección, que resuelve contra
+                  el pozo. Un `transform`, `filter`, `contain`, `will-change`,
+                  `perspective` u `overflow` acá volvería a `<main>` bloque
+                  contenedor de esos `fixed` —modales encajados y recortados— y
+                  rompería el sticky. `components/layout/app-shell.test.tsx`
+                  congela que este elemento no tenga `className`.
+
+                  El `id` y el `tabIndex` viajan con él: el skip link apunta a
+                  `#main-content` y ahora aterriza DESPUÉS del banner, que es lo
+                  que un skip link promete y antes no cumplía. */}
+              <main id="main-content" tabIndex={-1}>{children}</main>
+            </div>
           </div>
         </ShellHeaderProvider>
       </div>

@@ -28,7 +28,13 @@ test.describe("Prevención — Incidentes y denuncias RE-20", () => {
     await page.goto("/prevencion/incidentes")
     await expectPageTitle(page, "Incidentes y accidentes")
 
-    const main = page.locator("#main-content")
+    // `[data-shell-scroll]` y no `#main-content`: acá el acotado existe para
+    // desempatar contra el menú lateral, no para afirmar en qué cabecera vive
+    // el botón. "Reportar" y "Exportar Excel" son acciones de `PageHeader`, que
+    // en escritorio las pinta la TopBar (el `banner`, ya fuera de `<main>`) y en
+    // móvil el bloque de la página. El pozo contiene ambas, así que el test
+    // queda indiferente al breakpoint.
+    const main = page.locator("[data-shell-scroll]")
     await expect(main.getByRole("link", { name: "Reportar", exact: true })).toBeVisible()
     await expect(main.getByRole("link", { name: /Exportar Excel/i })).toBeVisible()
 
@@ -50,9 +56,16 @@ test.describe("Prevención — Incidentes y denuncias RE-20", () => {
     await page.locator('input[name="location"]').fill(lugar)
     await page.locator('textarea[name="initialNarrative"]').fill(descripcion)
 
-    // Enviar reporte
+    // Enviar reporte.
+    //
+    // El regex anterior era `/\/prevencion\/incidentes(\/[^/]+)?$/`, que también
+    // calza la propia URL del formulario (`/reportar` es un `[^/]+`): pasaba al
+    // instante con el envío aún en vuelo, el paso siguiente navegaba al listado
+    // antes de que la escritura fuera visible, y el `toBeVisible` de 30 s
+    // esperaba —sin recargar— un nodo que ya nunca iba a aparecer. El fallo se
+    // leía como "el incidente no se guardó" cuando sí se guardaba.
     await page.getByRole("button", { name: "Reportar incidente" }).click()
-    await expect(page).toHaveURL(/\/prevencion\/incidentes(\/[^/]+)?$/, { timeout: 30_000 })
+    await expect(page).toHaveURL(/\/prevencion\/incidentes\/(?!reportar$)[^/]+$/, { timeout: 30_000 })
 
     // 4. Verificar presencia en el listado
     await page.goto("/prevencion/incidentes")
@@ -67,7 +80,7 @@ test.describe("Prevención — Incidentes y denuncias RE-20", () => {
     // 6. Exportar Excel
     await page.goto("/prevencion/incidentes")
     const descarga = page.waitForEvent("download")
-    await page.locator("#main-content").getByRole("link", { name: /Exportar Excel/i }).click()
+    await page.locator("[data-shell-scroll]").getByRole("link", { name: /Exportar Excel/i }).click()
     const archivoDescargado = await descarga
     expect(archivoDescargado.suggestedFilename()).toMatch(/^registro-incidentes-\d{4}-\d{2}-\d{2}\.xlsx$/)
   })

@@ -4,6 +4,19 @@ import * as React from "react"
 import { X } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 
+/**
+ * Panel contextual derecho. **Hoy sin consumidores** en la aplicación.
+ *
+ * Si lo conectas, ojo con el alto: sus clases de escritorio
+ * (`xl:relative xl:h-full`) asumen un padre con altura definida. Colocado
+ * dentro del contenido de una página del shell, su padre es el `<main>` de
+ * `AppShell`, que tiene `height: auto` —el alto lo acota el pozo
+ * (`[data-shell-scroll]`), que es el contenedor de scroll—, así que el
+ * `xl:h-full` colapsaría. Dale altura al contenedor que lo hospede, o usa el
+ * alto del viewport, en vez de tocar `<main>`: una clase de altura ahí (u
+ * `overflow`, `transform`, `filter`, `contain`) rompe los modales
+ * `fixed inset-0` de las páginas y el `sticky` del detalle de inspección.
+ */
 interface RightPanelProps {
   /** Indica si el panel está visible */
   open?: boolean

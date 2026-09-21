@@ -42,6 +42,11 @@ test.describe("Perceived latency — page load", () => {
       // Wait for the page to have meaningful content (not just loading skeleton)
       const hasContent = await page.waitForFunction(
         () => {
+          // Sigue midiendo sobre `<main>` a propósito. Desde que la TopBar
+          // salió de `<main>` para recuperar el rol `banner`, el título y el
+          // breadcrumb del shell ya no cuentan hacia estos 50 caracteres: el
+          // umbral pasó a medir contenido real de la página, que es lo que la
+          // prueba quiere.
           const main = document.querySelector("main") ?? document.body
           // Check that there's actual text content, not just loading spinners
           const textContent = main?.textContent?.trim() ?? ""

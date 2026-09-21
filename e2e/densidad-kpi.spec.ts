@@ -36,10 +36,19 @@ const PANTALLAS = [
   { path: "/prevencion/emergencias", name: "Emergencias" },
 ]
 
-/** Controles de filtro que el usuario ve sin desplegar "Más filtros". */
+/**
+ * Controles de filtro que el usuario ve sin desplegar "Más filtros".
+ *
+ * Se mide sobre `[data-shell-scroll]` —el pozo— y no sobre `<main>`: desde que
+ * la TopBar salió de `<main>` para recuperar el rol `banner`, su input
+ * "Filtrar en esta página..." dejó de estar dentro del landmark del contenido.
+ * Para el presupuesto de A2 ese input ES un filtro que compite por la atención,
+ * así que medir sobre `<main>` bajaría el conteo en uno y relajaría el tope de
+ * seis sin que nadie lo hubiera decidido.
+ */
 async function contarFiltrosVisibles(page: Page): Promise<number> {
   return page.evaluate(() => {
-    const main = document.querySelector("main") ?? document.body
+    const main = document.querySelector("[data-shell-scroll]") ?? document.body
     const controles = main.querySelectorAll<HTMLElement>(
       'input:not([type=hidden]):not([type=checkbox]):not([type=radio]), select, [role="combobox"]',
     )
