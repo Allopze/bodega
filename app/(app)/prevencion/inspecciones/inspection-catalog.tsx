@@ -21,6 +21,11 @@ import {
   inspectionProgramIsOverdue, nextDueAfter,
 } from "@/lib/prevention/inspections"
 import {
+  AssigneeSelectOptions,
+  findWorksiteSuggestedAssignee,
+  type InspectionAssigneeOption,
+} from "./assignee-picker"
+import {
   approveInspectionTemplateAction,
   retireInspectionTemplateAction,
   createInspectionProgramAction,
@@ -608,7 +613,7 @@ function RollbackTemplateDialog({ current, previous }: { current: TemplateItem; 
  */
 export function InspectionProgramsPanel({ programs, assignees, subjectsByWorksite = {}, riskEntriesByWorksite = {}, canManage, initialView = "all" }: {
   programs: ProgramItem[]
-  assignees: { id: string; name: string }[]
+  assignees: InspectionAssigneeOption[]
   /** Inventario por faena, para declarar QUÉ se inspecciona (INS-04). */
   subjectsByWorksite?: Record<string, InspectionSubjectOption[]>
   riskEntriesByWorksite?: Record<string, { id: string; hazardCode: string; hazard: string }[]>
@@ -750,7 +755,7 @@ export function InspectionProgramsPanel({ programs, assignees, subjectsByWorksit
 
 function ProgramActions({ program, assignees, subjectsByWorksite, riskEntriesByWorksite }: {
   program: ProgramItem
-  assignees: { id: string; name: string }[]
+  assignees: InspectionAssigneeOption[]
   subjectsByWorksite: Record<string, InspectionSubjectOption[]>
   riskEntriesByWorksite: Record<string, { id: string; hazardCode: string; hazard: string }[]>
 }) {
@@ -1287,7 +1292,7 @@ function RetireDialog({ templateId, name }: { templateId: string; name: string }
 
 function EditProgramDialog({ program, assignees, subjects, riskEntries }: {
   program: ProgramItem
-  assignees: { id: string; name: string }[]
+  assignees: InspectionAssigneeOption[]
   subjects: InspectionSubjectOption[]
   riskEntries: { id: string; hazardCode: string; hazard: string }[]
 }) {
@@ -1361,7 +1366,7 @@ function EditProgramDialog({ program, assignees, subjects, riskEntries }: {
               <DatePicker value={nextDueOn} onChange={setNextDueOn} />
             </Field>
             <Field label="Asignada a" hint="Opcional.">
-              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
+              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><AssigneeSelectOptions assignees={assignees} worksiteId={program.worksiteId} noneLabel="Sin asignar" /></SelectContent></Select>
             </Field>
           </div>
           {(subjectOptions.length > 0 || requiresContainer) && (
@@ -1510,7 +1515,7 @@ function RunProgramNowButton({ program }: { program: ProgramItem }) {
 export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWorksite, subjectsByWorksite = {} }: {
   templates: { id: string; name: string; versionLabel: string; sourceDefinitionCode?: string | null }[]
   worksites: { id: string; name: string }[]
-  assignees: { id: string; name: string }[]
+  assignees: InspectionAssigneeOption[]
   riskEntriesByWorksite: Record<string, { id: string; hazardCode: string; hazard: string }[]>
   /** Inventario por faena: declarar QUÉ se inspecciona, no sólo con qué instrumento (INS-04). */
   subjectsByWorksite?: Record<string, InspectionSubjectOption[]>
@@ -1591,7 +1596,12 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Faena">
-              <Select value={worksiteId} onValueChange={(value) => { setWorksiteId(value); setRiskEntryId("_none"); setSubjectRef(NO_SUBJECT) }}><SelectTrigger aria-label="Faena del programa"><SelectValue placeholder="Selecciona la faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
+              <Select value={worksiteId} onValueChange={(value) => {
+                setWorksiteId(value)
+                setRiskEntryId("_none")
+                setSubjectRef(NO_SUBJECT)
+                setAssignedToUserId(findWorksiteSuggestedAssignee(assignees, value))
+              }}><SelectTrigger aria-label="Faena del programa"><SelectValue placeholder="Selecciona la faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
             </Field>
             <Field label="Frecuencia">
               <Select value={frequency} onValueChange={(value) => { setFrequency(value); setIntervalDays(FREQUENCY_INTERVAL_DAYS[value] ?? 30) }}><SelectTrigger aria-label="Frecuencia"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="frequency" value={frequency} />
@@ -1604,8 +1614,8 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
             <Field label="Intervalo efectivo (días)" hint="Este número gobierna el calendario. Al cambiar la frecuencia se propone su intervalo estándar.">
               <Input name="intervalDays" type="number" min={1} max={3650} value={intervalDays} onChange={(event) => setIntervalDays(Number(event.target.value))} required />
             </Field>
-            <Field label="Asignada a" hint="Opcional.">
-              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
+            <Field label="Asignada a" hint="Opcional. El prevencionista de la faena se sugiere automáticamente al elegirla.">
+              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><AssigneeSelectOptions assignees={assignees} worksiteId={worksiteId} noneLabel="Sin asignar" /></SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
             </Field>
           </div>
           {/* Con plantilla de contenedores el campo se muestra siempre, incluso

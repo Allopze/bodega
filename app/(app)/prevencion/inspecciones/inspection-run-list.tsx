@@ -28,6 +28,11 @@ import { createInspectionRunAction } from "./actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import {
+  AssigneeSelectOptions,
+  findWorksiteSuggestedAssignee,
+  type InspectionAssigneeOption,
+} from "./assignee-picker"
+import {
   inspectionTaskStatusLabel,
   safeNewInspectionDefaults,
   subjectIdsFromRef,
@@ -80,7 +85,7 @@ interface Props {
   canExecute: boolean
   templates: TemplateOption[]
   worksites: { id: string; name: string }[]
-  assignees: { id: string; name: string }[]
+  assignees: InspectionAssigneeOption[]
   subjectsByWorksite: Record<string, InspectionSubjectOption[]>
 }
 
@@ -457,7 +462,7 @@ export function InspectionPageActions({
 export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksite, initialTemplateId, initialWorksiteId, initialOpen }: {
   templates: TemplateOption[]
   worksites: { id: string; name: string }[]
-  assignees: { id: string; name: string }[]
+  assignees: InspectionAssigneeOption[]
   /** Inventario de sujetos por faena (función #11). */
   subjectsByWorksite: Record<string, InspectionSubjectOption[]>
   initialTemplateId?: string
@@ -468,9 +473,12 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
   const validInitialWorksiteId = initialWorksiteId && worksites.some((item) => item.id === initialWorksiteId) ? initialWorksiteId : ""
   const [open, setOpen] = React.useState(Boolean(initialOpen))
   const defaults = safeNewInspectionDefaults()
+  const initialEffectiveWorksiteId = validInitialWorksiteId || defaults.worksiteId
   const [templateId, setTemplateId] = React.useState<string>(validInitialTemplateId || defaults.templateId)
-  const [worksiteId, setWorksiteId] = React.useState<string>(validInitialWorksiteId || defaults.worksiteId)
-  const [assignedToUserId, setAssignedToUserId] = React.useState("_none")
+  const [worksiteId, setWorksiteId] = React.useState<string>(initialEffectiveWorksiteId)
+  const [assignedToUserId, setAssignedToUserId] = React.useState<string>(() =>
+    findWorksiteSuggestedAssignee(assignees, initialEffectiveWorksiteId)
+  )
   // Certificación Mutual (Plata/Oro): sin poder marcar 'cphs' aquí, ninguna
   // inspección puede acreditar como originada por el comité paritario (B-05).
   const [origin, setOrigin] = React.useState("prevencion")
@@ -484,16 +492,18 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen)
     if (!nextOpen) return
+    const nextWorksiteId = validInitialWorksiteId || defaults.worksiteId
     setTemplateId(validInitialTemplateId || defaults.templateId)
-    setWorksiteId(validInitialWorksiteId || defaults.worksiteId)
+    setWorksiteId(nextWorksiteId)
     setSubjectRef("_none")
-    setAssignedToUserId("_none")
+    setAssignedToUserId(findWorksiteSuggestedAssignee(assignees, nextWorksiteId))
     operation.setMessage("")
   }
 
   function handleWorksiteChange(nextWorksiteId: string) {
     setWorksiteId(nextWorksiteId)
     setSubjectRef("_none")
+    setAssignedToUserId(findWorksiteSuggestedAssignee(assignees, nextWorksiteId))
   }
 
   const template = templates.find((item) => item.id === templateId)
@@ -607,8 +617,8 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
               </div> : <p className="rounded-lg bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-text-muted)]">Se usará el sujeto seleccionado del inventario; los campos de texto libre no aplican.</p>}
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Programada para" hint="Opcional."><DatePicker name="scheduledFor" /></Field>
-            <Field label="Asignada a" hint="Vacío = quien la crea.">
-              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Quien la crea" /></SelectTrigger><SelectContent><SelectItem value="_none">Quien la crea</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
+            <Field label="Asignada a" hint="Vacío = quien la crea. El prevencionista de la faena se sugiere automáticamente al elegirla.">
+              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Quien la crea" /></SelectTrigger><SelectContent><AssigneeSelectOptions assignees={assignees} worksiteId={worksiteId} noneLabel="Quien la crea" /></SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
             </Field>
           </div>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}

@@ -23,8 +23,11 @@ import {
   preventionRiskMatrices,
   sstDocuments,
   sstDocumentVersions,
+  roles,
+  userRoles,
   users,
   worksites,
+  worksiteUsers,
 } from "@/db/schema"
 import {
   history,
@@ -2906,14 +2909,57 @@ export async function listInspectionWorksites(access: InspectionAccess) {
  * programa/ejecución y de `responsibleUserId` al derivar un hallazgo a CAPA,
  * porque quien ejecuta en terreno es quien razonablemente corrige.
  */
-export async function listInspectionAssignees(access: InspectionAccess) {
+export type InspectionAssignee = {
+  id: string
+  name: string
+  worksiteIds: string[]
+  isFaenaPreventionist: boolean
+  isGlobalPreventionist: boolean
+}
+
+export async function listInspectionAssignees(access: InspectionAccess): Promise<InspectionAssignee[]> {
   requireAccess(access, "prevention:inspections:view")
   const ids = await getUserIdsWithPermission("prevention:inspections:execute")
   if (ids.length === 0) return []
-  return db.select({ id: users.id, name: users.name })
-    .from(users)
-    .where(and(inArray(users.id, ids), eq(users.isActive, true)))
-    .orderBy(asc(users.name))
+
+  const [userRows, worksiteRows, roleRows] = await Promise.all([
+    db.select({ id: users.id, name: users.name })
+      .from(users)
+      .where(and(inArray(users.id, ids), eq(users.isActive, true)))
+      .orderBy(asc(users.name)),
+    db.select({ userId: worksiteUsers.userId, worksiteId: worksiteUsers.worksiteId })
+      .from(worksiteUsers)
+      .where(inArray(worksiteUsers.userId, ids)),
+    db.select({ userId: userRoles.userId, roleName: roles.name })
+      .from(userRoles)
+      .innerJoin(roles, eq(userRoles.roleId, roles.id))
+      .where(inArray(userRoles.userId, ids)),
+  ])
+
+  const worksiteMap = new Map<string, string[]>()
+  for (const row of worksiteRows) {
+    const list = worksiteMap.get(row.userId) ?? []
+    list.push(row.worksiteId)
+    worksiteMap.set(row.userId, list)
+  }
+
+  const roleMap = new Map<string, Set<string>>()
+  for (const row of roleRows) {
+    const set = roleMap.get(row.userId) ?? new Set<string>()
+    set.add(row.roleName)
+    roleMap.set(row.userId, set)
+  }
+
+  return userRows.map((u) => {
+    const userRoleSet = roleMap.get(u.id) ?? new Set<string>()
+    return {
+      id: u.id,
+      name: u.name,
+      worksiteIds: worksiteMap.get(u.id) ?? [],
+      isFaenaPreventionist: userRoleSet.has("prevencionista_faena"),
+      isGlobalPreventionist: userRoleSet.has("prevencionista"),
+    }
+  })
 }
 
 /**
