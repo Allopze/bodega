@@ -7,7 +7,7 @@ import { OBSERVATION_22_SCORING } from '../scoring-policies'
  *
  * Patrón C (multi-sujeto). Se siembra como plantilla de la actividad PDTP
  * n=40 del programa 2026 ("Realizar Inspecciones para corregir desviaciones").
- * Ver `scripts/seed-pdtp-checklists-2026.ts`.
+ * Ver `scripts/seed-pdtp-inspection-templates-2026.ts`.
  *
  * Sujeto = `workers` (el operador), filtrado por worksiteId de la ejecución.
  * `% = buenas/22`. "Se reinstruye" se deriva de cualquier `no_cumple`.

@@ -4,12 +4,21 @@ import { confirmarDeclararEjecutada, crearInspeccion as crearInspeccionE2E, expe
 /**
  * E2E Spec: Flujo Integral Multimódulo de Inspecciones SST.
  *
- * Cubre el ciclo de vida completo:
+ * Cubre el recorrido por la UI:
  *   1. Ejecución de Inspección en terreno con hallazgo crítico.
  *   2. Derivación del hallazgo a Acción Correctiva (CAPA).
- *   3. Seguimiento, implementación y cierre de la CAPA vinculada.
- *   4. Verificación de cierre automático del hallazgo en la inspección de origen.
- *   5. Impacto en cumplimiento PDTP e indicadores generales de Prevención.
+ *   3. Verificación del enlace y de los datos heredados en la CAPA.
+ *   4. Que el tablero de Prevención sigue en pie tras el recorrido.
+ *
+ * Lo que este spec NO cubre, pese a lo que decía su cabecera: la acreditación
+ * del PDTP al completar la corrida. Afirmarla acá exigiría cablear
+ * `pdtpActivityNumbers` en `insptpl-insp-e2e`, que comparten diez specs del
+ * PDTP, y toda inspección de los demás specs empezaría a acreditar contra
+ * `pdtp-act-e2e` moviéndoles las cuentas. Además es un invariante de servidor,
+ * no de navegador, y está probado donde corresponde:
+ * `lib/__tests__/pdtp-accreditation.test.ts` —incluida la idempotencia por
+ * `sourceId`— y `prevention-inspections-postgres.test.ts`, que verifica que el
+ * Reporte de Equipos acredite sólo la n=25.
  */
 
 const crearInspeccion = async (page: Page) => (await crearInspeccionE2E(page, { prefijo: "E2E-INT" })).identificacion

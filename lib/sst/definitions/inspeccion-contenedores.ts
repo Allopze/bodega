@@ -6,7 +6,7 @@ import { NORMALIZED_ONLY_SCORING } from '../scoring-policies'
  * Inspección de Contenedores — módulo 08.
  *
  * Patrón C (multi-sujeto). Se siembra como plantilla de la actividad PDTP
- * n=29 del programa 2026. Ver `scripts/seed-pdtp-checklists-2026.ts`.
+ * n=29 del programa 2026. Ver `scripts/seed-pdtp-inspection-templates-2026.ts`.
  *
  * Sujeto = contenedor del catálogo (`prevention_containers`, Administración ›
  * Contenedores). Fue `subjectLabel` libre mientras no hubo padrón; desde que

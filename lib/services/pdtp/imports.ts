@@ -11,7 +11,6 @@ import {
   pdtpCatalogActivityRevisions,
   pdtpDocumentHistory,
   pdtpExecutions,
-  pdtpExecutionChecklists,
   pdtpImportBatches,
   pdtpImportRows,
   pdtpPrograms,
@@ -860,10 +859,10 @@ export async function rollbackPdtpImportBatch(input: { batchId: string; userId: 
 
     const snapshot = batch.preApplySnapshotJson as ImportSnapshot
     const checklistIds = artifacts.checklistIdsCreated ?? []
+    /* El guard que miraba respuestas operacionales se fue con el motor de
+     * llenado: ya no hay instancias que puedan colgar de un checklist. Borrar
+     * las filas que creó el lote sigue siendo correcto. */
     if (checklistIds.length > 0) {
-      const instances = await tx.select({ id: pdtpExecutionChecklists.id }).from(pdtpExecutionChecklists)
-        .where(inArray(pdtpExecutionChecklists.checklistId, checklistIds))
-      if (instances.length > 0) throw new Error("No se puede revertir: un checklist creado por el lote ya tiene respuestas operacionales.")
       await tx.delete(pdtpActivityChecklists).where(inArray(pdtpActivityChecklists.id, checklistIds))
     }
     await tx.delete(pdtpDocumentHistory).where(eq(pdtpDocumentHistory.sourceImportBatchId, batch.id))

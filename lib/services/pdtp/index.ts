@@ -22,8 +22,6 @@ export type { PdtpSheetCreateInput } from "./sheet-management"
 // Re-export schema types para el dominio Checklist → Plan de Acción
 export type {
   PdtpActivityChecklist, NewPdtpActivityChecklist,
-  PdtpExecutionChecklist, NewPdtpExecutionChecklist,
-  PdtpExecutionChecklistResponse, NewPdtpExecutionChecklistResponse,
   PdtpObligation, NewPdtpObligation,
   PdtpObligationReminder, NewPdtpObligationReminder,
   PdtpDocumentHistoryEntry, NewPdtpDocumentHistoryEntry,
@@ -44,7 +42,6 @@ export type { PdtpDanoPotencial } from "./checklist-domain"
 export {
   assertWorksiteAccess,
   assertPdtpActionPlanItemAccess,
-  assertPdtpChecklistInstanceAccess,
   assertPdtpExecutionAccess,
   getPdtpProgramActivityCount,
   isActivePdtpWorksite,
@@ -218,7 +215,6 @@ export { createLegacyPdtpProgramForTests } from "./programs"
 export { stagePdtpXlsxImport, applyPdtpImportBatch, cancelPdtpImportBatch, finalizePdtpImportBootstrap, rollbackPdtpImportBatch, getPdtpImportBatch, linkPdtpImportCandidate } from "./imports"
 export type { PdtpImportPreview } from "./imports"
 export { getPdtpDocumentMetadata, listPdtpReconciliationCandidates, reconcilePdtpDeclaredActor } from "./document-metadata"
-export { ensurePdtp2026ChecklistTemplates } from "@/lib/services/pdtp-adapters/checklist-templates-2026"
 export { ensurePdtp2026InspectionTemplates, PDTP_2026_INSPECTION_SPECS } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
 export {
   createPdtpObligation,
@@ -236,26 +232,10 @@ export { createPdtpSheet, deletePdtpSheet, listPdtpProgramSheets } from "./sheet
 export { listPdtpConstanciaActivities, assertPdtpActivityMechanism } from "./constancias"
 export type { PdtpConstanciaView, PdtpConstanciaDebt } from "./constancias"
 
-// ── Checklist → Plan de Acción → Seguimiento ─────────────────────────────────
-export type { PdtpChecklistTemplateInput, PdtpChecklistTemplate } from "./checklists"
-export {
-  savePdtpActivityChecklist, getActivePdtpActivityChecklist,
-  listPdtpActivityChecklists, listProgramActiveChecklists,
-  deletePdtpActivityChecklist, ensureDefaultChecklist,
-} from "./checklists"
-
-export type { PdtpChecklistResponseInput, PdtpExecutionChecklistInstance, PdtpChecklistSubject } from "./execution-checklists"
-export {
-  getOrCreateExecutionChecklist, getExecutionChecklist, listExecutionChecklists,
-  getChecklistResponses,
-  upsertChecklistResponses, completeExecutionChecklist,
-  calculateInstanceCompliance, getNonCompliantItems, getAverageVerificationCompliance,
-  recalcExecutionQuantityFromInstances,
-} from "./execution-checklists"
-
+// ── Plan de Acción → Seguimiento ─────────────────────────────────────────────
 export type { PdtpActionPlanItemInput, PdtpActionPlanItemUpdate } from "./action-plan"
 export {
-  generateActionPlanFromChecklist, submitExecutionChecklist, listActionPlanItems,
+  listActionPlanItems,
   createActionPlanItem, updateActionPlanItem, deleteActionPlanItem,
   listActionsByProgram, getActionPlanClosureRate,
   verifyActionPlanItem, reopenActionPlanItem,

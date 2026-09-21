@@ -3767,25 +3767,6 @@ async function prepareDatabase(captureDbUrl: string) {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(schema.pdtpExecutionChecklists).values({
-    id: "exec-audit-1-cli-worker-audit-1",
-    executionId: "exec-audit-1",
-    checklistId: "pdtp-checklist-audit-1",
-    definitionSnapshotJson: pdtpChecklistDefinition,
-    overallStatus: "completado",
-    porcentajeCumplimiento: 50,
-    completedByUserId: "user-audit-prevencion",
-    completedAt: "2026-06-12T10:00:00.000Z",
-    subjectType: "trabajador",
-    subjectId: "worker-audit-1",
-    subjectLabel: "Daniela Fuentes · operadora",
-    createdAt: now,
-    updatedAt: now,
-  })
-  await db.insert(schema.pdtpExecutionChecklistResponses).values([
-    { id: "exec-response-audit-1", checklistInstanceId: "exec-audit-1-cli-worker-audit-1", seccionId: "barreras-criticas", itemId: "candado-personal", estado: "cumple", observacion: "Candado personal instalado y etiquetado.", respondedByUserId: "user-audit-prevencion", respondedAt: "2026-06-12T09:45:00.000Z" },
-    { id: "exec-response-audit-2", checklistInstanceId: "exec-audit-1-cli-worker-audit-1", seccionId: "barreras-criticas", itemId: "energia-cero", estado: "no_cumple", observacion: "La medición fue realizada, pero el folio no quedó registrado en el permiso.", accionCorrectiva: "Incorporar el folio de energía cero al permiso antes de liberar la intervención.", respondedByUserId: "user-audit-prevencion", respondedAt: "2026-06-12T09:50:00.000Z" },
-  ])
   // D11: la acción correctiva del PDTP vive en CAPA. El seed apuntaba al espejo
   // y su `capaActionId` colgaba de una CAPA `manual` ajena a esta ejecución.
   await db.insert(schema.preventionCapaActions).values({

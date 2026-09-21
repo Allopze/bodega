@@ -239,6 +239,39 @@ describe("deploy workflow", () => {
     }
   })
 
+  /*
+   * Las casillas del programa preventivo se pre-generan en el alta de faena.
+   * Cuando las migraciones 0314/0316 crearon esas tablas, las faenas que ya
+   * existían quedaron sin ninguna: nada las materializa fuera del alta. La
+   * cabecera del propio servicio nombra el modo de falla —"invisible hasta que
+   * llega una fiscalización"— y es exactamente lo que pasó. Esta prueba vigila
+   * que el paso esté cableado en los caminos que corren en el servidor, que es
+   * lo que faltaba; que el servicio sea idempotente ya lo cubre
+   * `prevention-program-slots-pglite.test.ts`.
+   */
+  it("materializa las casillas del programa en todos los caminos de despliegue", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
+    const packageJson = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"))
+    const script = "ensure-prevention-program-slots"
+
+    const build = dockerfile.match(new RegExp(
+      `RUN ./node_modules/.bin/esbuild scripts/${script}\\.ts[\\s\\S]*?--outfile=/tmp/${script}\\.mjs`,
+    ))?.[0]
+    expect(build).toBeDefined()
+    expect(build).toContain("--external:drizzle-orm")
+    expect(build).toContain("--external:postgres")
+    expect(dockerfile).toContain(`COPY --from=build /tmp/${script}.mjs ./scripts/${script}.mjs`)
+
+    // Camino del servidor: `deploy-prod.sh` corre el servicio `migrate`.
+    const migrateCommand = compose.match(/command: \["sh", "-c", "node scripts\/migrate\.mjs[^\]]*\]/)?.[0]
+    expect(migrateCommand).toBeDefined()
+    expect(migrateCommand).toContain(`node scripts/${script}.mjs`)
+
+    // Camino de GitHub Actions y el local: la cadena de `db:migrate`.
+    expect(packageJson.scripts["db:migrate"]).toContain("db:ensure-program-slots")
+  })
+
   it("exige `--apply` en los one-shots de reconciliación que escriben", () => {
     const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
 

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm"
 import { z } from "zod"
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type Tx } from "@/db"
@@ -37,6 +37,7 @@ import {
   type Client,
   type InspectionAccess,
 } from "@/lib/services/prevention-inspections-access"
+import { allowedDocumentConfidentialities } from "@/lib/services/prevention-documents/utils"
 import { nanoid } from "@/lib/id"
 import { containerLabel } from "@/lib/prevention/containers"
 import { listContainersByWorksite, listContainersForWorksite } from "@/lib/services/prevention-containers"
@@ -396,6 +397,106 @@ export async function setInspectionTemplatePdtpActivities(input: unknown, access
         describeWiring("al revisar", data.reviewCatalogActivityIds, reviewNumbers),
       ].filter(Boolean).join(" · "),
       beforeState: template, afterState: updated, actorUserId: access.userId,
+    })
+    return updated
+  })
+}
+
+/**
+ * Declara el resultado de contrastar la definición digital con la planilla
+ * oficial que transcribe.
+ *
+ * El `parityReport` sólo se escribía en el INSERT de `importInspectionTemplate`,
+ * y el diálogo únicamente sabía producir `passed` con `differences: []` —
+ * comparando la definición consigo misma—. Una plantilla `official_document`
+ * incorporada sin marcar la casilla nacía en `pending`, y como
+ * `approveInspectionTemplate` rechaza todo lo que no sea `passed`, quedaba
+ * inaprobable para siempre: el único remedio era reimportarla con otra etiqueta
+ * de versión. `failed` y `differences` eran, además, código muerto: ninguna ruta
+ * de la aplicación podía producirlos.
+ *
+ * Con segregación respecto de quien incorporó, y esto se aparta a propósito de
+ * `approveInspectionTemplate`, que documenta por qué ahí no la hay. La
+ * diferencia es lo que cada acto afirma. Aprobar una plantilla del catálogo
+ * avala una copia literal de algo ya revisado en el repositorio: un segundo par
+ * de ojos no revisaba nada y dejaba el instrumento inservible donde el Jefe de
+ * Prevención es quien lo instala. Declarar paridad es un juicio: alguien afirma
+ * que la transcripción digital coincide con el papel, ítem por ítem. Que lo
+ * afirme la misma persona que la incorporó es el control revisándose a sí mismo.
+ */
+export async function setInspectionTemplateParity(input: unknown, access: InspectionAccess) {
+  const data = z.object({
+    templateId: z.string().min(1),
+    expectedVersion: z.number().int().positive(),
+    status: z.enum(["passed", "failed"]),
+    expectedItems: z.number().int().nonnegative().nullable().default(null),
+    actualItems: z.number().int().nonnegative().nullable().default(null),
+    differences: z.array(z.string().trim().min(1).max(500)).max(200).default([]),
+    reason: z.string().trim().min(TRANSITION_REASON_MIN_LENGTH).max(3000),
+  }).parse(input)
+  requireAccess(access, "prevention:inspections:approve")
+
+  // Coherente con lo que exige la aprobación: "sin diferencias" no es una
+  // opinión, es la ausencia de la lista.
+  if (data.status === "passed" && data.differences.length > 0) {
+    throw new Error("Una paridad aprobada no puede declarar diferencias. Resuélvelas o declárala con diferencias.")
+  }
+  if (data.status === "failed" && data.differences.length === 0) {
+    throw new Error("Declarar diferencias exige enumerarlas: es lo que leerá quien decida si el instrumento sirve.")
+  }
+
+  return db.transaction(async (tx) => {
+    const [template] = await tx.select().from(preventionInspectionTemplates)
+      .where(eq(preventionInspectionTemplates.id, data.templateId)).limit(1)
+    if (!template) throw new Error(NOT_FOUND)
+    if (template.version !== data.expectedVersion) {
+      throw new Error("La plantilla cambió mientras la revisabas. Recarga y reintenta.")
+    }
+    if (template.provenanceKind !== "official_document") {
+      throw new Error("Sólo una plantilla con fuente documental oficial declara paridad.")
+    }
+    // Una vez vigente, la paridad quedó sellada: contrastarla de nuevo implica
+    // una versión nueva del instrumento, no editar la que ya está en uso.
+    if (template.status !== "draft") {
+      throw new Error("Sólo puede declararse la paridad de una plantilla en borrador.")
+    }
+    if (!template.sourceDocumentVersionId || !template.sourceSnapshot) {
+      throw new Error("La plantilla no tiene una versión documental vinculada contra la cual contrastar.")
+    }
+    if (template.authorUserId === access.userId) {
+      throw new Error("La paridad la declara alguien distinto de quien incorporó la plantilla: contrastar la transcripción con el papel es el control, y no se revisa a sí mismo.")
+    }
+
+    // Misma verificación de integridad que la aprobación: declarar paridad
+    // contra un archivo que ya cambió no prueba nada.
+    const [source] = await tx.select({ status: sstDocumentVersions.status, checksum: sstDocumentVersions.checksum })
+      .from(sstDocumentVersions).where(eq(sstDocumentVersions.id, template.sourceDocumentVersionId)).limit(1)
+    const snapshot = template.sourceSnapshot as { checksumSha256?: string }
+    if (!source || !["aprobado", "vigente"].includes(source.status) || source.checksum !== snapshot.checksumSha256) {
+      throw new Error("La versión documental vinculada ya no está vigente o cambió su integridad.")
+    }
+
+    const now = nowIso()
+    const [updated] = await tx.update(preventionInspectionTemplates).set({
+      parityReport: {
+        status: data.status,
+        verifiedAt: now,
+        verifiedByUserId: access.userId,
+        expectedItems: data.expectedItems,
+        actualItems: data.actualItems,
+        differences: data.differences,
+      },
+      version: template.version + 1,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionInspectionTemplates.id, template.id),
+      eq(preventionInspectionTemplates.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new Error("La plantilla cambió mientras la revisabas. Recarga y reintenta.")
+
+    await history(tx, {
+      entityType: "template", entityId: template.id, changeType: "parity_declared",
+      reason: data.reason, beforeState: template, afterState: updated, actorUserId: access.userId,
     })
     return updated
   })
@@ -1111,7 +1212,13 @@ export async function createInspectionRun(input: unknown, access: InspectionAcce
 const answerRowSchema = z.object({
   sectionId: z.string().min(1),
   itemId: z.string().min(1),
-  result: z.enum(["conforming", "partial", "non_conforming", "not_applicable", "recorded"]),
+  /* `not_present` ("No tiene", Anexo 14) faltaba acá y estaba en todas las
+   * demás capas: el CHECK de la base, `InspectionResult`, `EXCLUDED_RESULTS` y
+   * `statusOptionsForKind` para la escala `bueno_regular_malo_na_nt_obs`. El
+   * botón se renderizaba y el servidor rechazaba el lote completo. En terreno
+   * era peor: el emisor de la cola offline marca toda respuesta no-ok como
+   * `retriable: false`, así que la corrida encolada se quemaba sin vuelta. */
+  result: z.enum(["conforming", "partial", "non_conforming", "not_applicable", "not_present", "recorded"]),
   value: z.string().trim().max(2000).nullable().optional(),
   comment: z.string().trim().max(2000).nullable().optional(),
   evidenceReference: z.string().trim().max(2000).nullable().optional(),
@@ -2717,9 +2824,29 @@ export async function listInspectionTemplates(access: InspectionAccess, filter: 
   })
 }
 
-/** Versiones aprobadas/vigentes de la Biblioteca SST elegibles como fuente. */
+/**
+ * Versiones aprobadas/vigentes de la Biblioteca SST elegibles como fuente.
+ *
+ * El único filtro era el estado de la versión: con `inspections:manage` bastaba
+ * para leer título, nombre de archivo y checksum de documentos `restringido` y
+ * `sensible` de faenas fuera del alcance. El binario sí estaba protegido en la
+ * ruta de descarga; la metadata no, y un nombre de archivo ya dice de qué trata.
+ * Se aplica el mismo par de condiciones que `searchDocuments`: confidencialidad
+ * por permiso y alcance de faena **dejando pasar los corporativos**
+ * (`worksiteId IS NULL`), que es donde viven los anexos del SGI.
+ */
 export async function listInspectionDocumentSources(access: InspectionAccess) {
   requireAccess(access, "prevention:inspections:manage")
+  if (access.scope.mode === "none") return []
+
+  const conditions = [
+    inArray(sstDocumentVersions.status, ["aprobado", "vigente"]),
+    inArray(sstDocuments.confidentiality, allowedDocumentConfidentialities(access.permissions)),
+    access.scope.mode === "some"
+      ? or(inArray(sstDocuments.worksiteId, access.scope.ids), isNull(sstDocuments.worksiteId))
+      : undefined,
+  ]
+
   return db.select({
     id: sstDocumentVersions.id,
     documentId: sstDocuments.id,
@@ -2731,7 +2858,7 @@ export async function listInspectionDocumentSources(access: InspectionAccess) {
     effectiveFrom: sstDocumentVersions.effectiveFrom,
   }).from(sstDocumentVersions)
     .innerJoin(sstDocuments, eq(sstDocuments.id, sstDocumentVersions.documentId))
-    .where(inArray(sstDocumentVersions.status, ["aprobado", "vigente"]))
+    .where(and(...conditions))
     .orderBy(asc(sstDocuments.internalCode), desc(sstDocumentVersions.version))
 }
 

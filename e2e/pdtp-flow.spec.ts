@@ -54,49 +54,32 @@ test.describe("PDTP — Creación y edición de programas", () => {
 })
 
 /**
- * E2E: PDTP — flujo checklist → plan de acción (Gap 5 del checklist de
- * seguimiento). Usa el fixture sembrado por e2e/setup-db.ts
- * (pdtp-prog-e2e / pdtp-act-e2e / pdtp-exec-e2e con un checklist activo de
- * 1 ítem) en vez de crear el programa por UI — evita acoplar este spec al
- * flujo de creación, cubierto por separado más arriba. Solo verifica el
- * camino UI; el cálculo de % y las reglas de negocio
- * ya están cubiertos por lib/__tests__/pdtp-checklist-action-plan.test.ts.
+ * E2E: la página de verificación ya no ofrece checklist propio.
+ *
+ * El motor de checklist del PDTP se retiró: los instrumentos viven en
+ * Inspecciones. Este spec cubría el flujo «marcar No cumple → acción
+ * autogenerada», que dejó de existir; lo que queda es la guarda de que la
+ * puerta está cerrada y que el plan de acción manual sigue en pie.
+ *
+ * Pendiente: un spec del flujo inspección → hallazgo → CAPA → acreditación del
+ * PDTP, que es donde vive hoy ese recorrido.
  */
-test.describe("PDTP — Checklist de verificación y plan de acción", () => {
+test.describe("PDTP — Verificación de ejecución", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
   })
 
-  test("marcar un ítem 'No cumple' genera automáticamente una acción correctiva", async ({ page }) => {
+  test("no ofrece llenar un checklist y conserva el plan de acción", async ({ page }) => {
     await page.goto("/prevencion/pdtp/pdtp-prog-e2e/ejecucion/pdtp-exec-e2e")
 
     await expect(page.getByRole("heading", { name: /Verificación/ })).toBeVisible()
 
-    // Inicia el checklist de faena única (patrón B — sin sujeto).
-    await page.getByRole("button", { name: "Iniciar verificación" }).click()
-    await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeVisible()
+    // La puerta cerrada: ninguno de los afordances del motor viejo.
+    await expect(page.getByRole("button", { name: "Iniciar verificación" })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Guardar respuestas" })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Enviar revisión" })).toHaveCount(0)
 
-    // Marca el único ítem como "No cumple" y agrega la observación que se
-    // convertirá en el hallazgo de la acción generada.
-    await page.getByRole("button", { name: "No cumple" }).click()
-    // El botón de la nota cambia de rótulo según el estado del ítem: al marcar
-    // "No cumple" pasa a "Nota requerida" (requiresObservation), y una vez
-    // escrita, a "Editar nota". El test buscaba sólo "Agregar nota", que es
-    // justamente el único de los tres que ya no está en pantalla acá.
-    await page.getByRole("button", { name: /Agregar nota|Nota requerida|Editar nota/ }).click()
-    await page.getByPlaceholder("Agrega una nota breve...").fill("Falta EPP en terreno")
-    await page.getByRole("button", { name: "Guardar nota" }).click()
-
-    // Persiste la respuesta antes de enviar — "Enviar revisión" opera sobre lo
-    // guardado en servidor, no sobre el draft local (draftsByInstance).
-    await page.getByRole("button", { name: "Guardar respuestas" }).click()
-    await expect(page.getByText("Pendiente de respuesta")).not.toBeVisible()
-
-    await page.getByRole("button", { name: "Enviar revisión" }).click()
-
-    // El checklist queda completado (badge) y el plan de acción muestra la
-    // acción autogenerada con el hallazgo ingresado.
-    await expect(page.getByText("Completado")).toBeVisible()
-    await expect(page.getByRole("button", { name: /Falta EPP en terreno/ })).toBeVisible()
+    // Y lo que sí sobrevive: el plan de acción de la ejecución.
+    await expect(page.getByRole("heading", { name: /Plan de acción/ })).toBeVisible()
   })
 })

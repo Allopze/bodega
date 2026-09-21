@@ -4,11 +4,22 @@ import { fileURLToPath } from "node:url"
 import path from "node:path"
 import postgres from "postgres"
 
+/**
+ * Tablas retiradas que una migración posterior dropea. El preflight corre dentro
+ * de `db:migrate`, antes del migrador, así que es lo que impide que el DROP
+ * corra contra filas. Cuando la tabla ya no existe, `relationExists` la manda a
+ * `skippedRelations` y la entrada se vuelve inerte: puede quedarse para siempre.
+ */
 export const LEGACY_ACTION_TABLES = Object.freeze([
   "pdtp_action_plan",
   "pdtp_action_plan_followups",
   "sst_action_plan",
   "ppa_corrective_actions",
+  // El lado de llenado del motor de checklist del PDTP, retirado en 2026-09.
+  // `pdtp_activity_checklists` NO está acá: se conserva porque está dentro de
+  // la huella firmada del programa.
+  "pdtp_execution_checklists",
+  "pdtp_execution_checklist_responses",
 ])
 
 /**

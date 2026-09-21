@@ -10,24 +10,9 @@
 import { and, eq, lte, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
-  pdtpExecutionChecklists,
   pdtpExecutions,
 } from "@/db/schema"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
-import {
-  getNonCompliantItems,
-  completeExecutionChecklist,
-  getChecklistResponses,
-  recalcExecutionQuantityFromInstances,
-} from "./execution-checklists"
-import { requiresObservation } from "@/lib/sst/compliance"
-import type { StatusValue } from "@/lib/sst/types"
-import {
-  PDTP_DANO_POTENCIAL_A_PRIORIDAD,
-  plazoFromDañoPotencial,
-  requiereDetencionInmediata,
-  plazoFromPrioridad,
-} from "./checklist-domain"
 import {
   capaEstado,
   capaPrioridad,
@@ -37,8 +22,7 @@ import {
   listPdtpActionsByExecution,
   listPdtpActionsByProgram,
 } from "./capa-view"
-import type { ChecklistDefinition } from "@/lib/sst/types"
-import { isUniqueViolation, type WorksiteScope } from "./helpers"
+import { type WorksiteScope } from "./helpers"
 import {
   createCapaActionWithClient,
   transitionCapaActionWithClient,
@@ -133,204 +117,6 @@ export type PdtpActionPlanItemUpdate = {
  * condicional — solo actúa con >1 instancia completada (preserva la cantidad
  * manual del flujo single-sujeto).
  */
-/**
- * Todo ítem que no quedó plenamente conforme (Regular, Malo/No cumple, No
- * entregado, No apto, No) debe traer observación escrita antes de cerrar el
- * checklist. Ver `requiresObservation` en `lib/sst/compliance.ts`.
- *
- * Se valida en el submit y no en cada `upsertChecklistResponses` a propósito:
- * el llenado es incremental y el inspector marca el estado antes de redactar
- * la observación; bloquear en el autosave haría el formulario inusable.
- */
-async function assertNonConformingItemsHaveObservation(instanceId: string) {
-  const responses = await getChecklistResponses(instanceId)
-  const faltantes = responses.filter((r) =>
-    requiresObservation(r.estado as StatusValue) && !r.observacion?.trim())
-  if (faltantes.length === 0) return
-
-  const definition = await getInstanceDefinition(instanceId)
-  const labelByItemId = new Map(
-    (definition?.sections ?? []).flatMap((s) => s.items.map((i) => [i.id, i.label] as const)),
-  )
-  const detalle = faltantes
-    .map((r) => labelByItemId.get(r.itemId) ?? r.itemId)
-    .join("; ")
-  throw new Error(
-    `Deja una observación en los ítems marcados como Regular o Malo antes de enviar: ${detalle}`,
-  )
-}
-
-async function getInstanceDefinition(instanceId: string): Promise<ChecklistDefinition | null> {
-  const [row] = await db.select({ definition: pdtpExecutionChecklists.definitionSnapshotJson })
-    .from(pdtpExecutionChecklists)
-    .where(eq(pdtpExecutionChecklists.id, instanceId)).limit(1)
-  return (row?.definition as unknown as ChecklistDefinition) ?? null
-}
-
-export async function submitExecutionChecklist(instanceId: string, userId: string) {
-  await assertNonConformingItemsHaveObservation(instanceId)
-  // Una sola transacción y en SECUENCIA, no `Promise.all`: cerrar el checklist
-  // y generar su plan de acción son una única unidad de trabajo. Con dos
-  // caminos independientes, un fallo a mitad de la generación dejaba el
-  // checklist en `completado` con ítems `no_cumple` sin acción correctiva —
-  // incumplimiento silencioso del Anexo 8, y con el checklist ya cerrado para
-  // el usuario. El paralelismo tampoco aportaba: ambas tocan el mismo
-  // `instanceId`.
-  const { porcentajeCumplimiento, generadas, existentes } = await db.transaction(async (tx) => {
-    const completion = await completeExecutionChecklist(instanceId, userId, tx)
-    const actionPlan = await generateActionPlanFromChecklist(instanceId, userId, tx)
-    return { ...completion, ...actionPlan }
-  })
-  // Recálculo best-effort: no falla el submit si la ejecución desaparece.
-  try {
-    const [inst] = await db.select({ executionId: pdtpExecutionChecklists.executionId })
-      .from(pdtpExecutionChecklists)
-      .where(eq(pdtpExecutionChecklists.id, instanceId)).limit(1)
-    if (inst) await recalcExecutionQuantityFromInstances(inst.executionId)
-  } catch { /* no-op */ }
-  return { porcentajeCumplimiento, generadas, existentes }
-}
-
-/**
- * Genera acciones del plan desde los ítems 'no_cumple' del checklist.
- * Se llama al completar el checklist. Hace upsert (no duplica si ya existe).
- *
- * Multi-sujeto: el hallazgo se prefija con `subjectLabel` de la instancia
- * (p.ej. "[EQ-042] Alarma de retroceso: no cumple") y la deduplicación se
- * acota a la instancia (subjectId), no solo a la ejecución — así dos
- * extintores con el mismo ítem no_cumple generan dos acciones distintas.
- */
-export async function generateActionPlanFromChecklist(
-  instanceId: string,
-  userId: string,
-  tx?: Tx,
-): Promise<{ generadas: number; existentes: number }> {
-  const client = tx ?? db
-  const instance = await client.select().from(pdtpExecutionChecklists)
-    .where(eq(pdtpExecutionChecklists.id, instanceId)).limit(1)
-  const inst = instance[0]
-  if (!inst) throw new Error("Instancia de checklist no encontrada.")
-  const executionId = inst.executionId
-  const subjectLabel = inst.subjectLabel?.trim() || ""
-
-  const nonCompliant = await getNonCompliantItems(instanceId, client)
-  if (nonCompliant.length === 0) return { generadas: 0, existentes: 0 }
-
-  const definition = inst.definitionSnapshotJson as unknown as ChecklistDefinition
-
-  // Prefijo de sujeto para el hallazgo: "[subjectLabel] " cuando aplica.
-  const prefix = subjectLabel ? `[${subjectLabel}] ` : ""
-
-  // Ejecución para obtener fecha de referencia del plazo
-  const [execution] = await client.select().from(pdtpExecutions)
-    .where(eq(pdtpExecutions.id, executionId)).limit(1)
-  if (!execution) throw new Error("Ejecución PDTP no encontrada.")
-  const refDate = execution?.executedAt ? new Date(execution.executedAt) : new Date()
-
-  let generadas = 0
-  let existentes = 0
-  const sectionsById = new Map(definition.sections.map((section) => [section.id, section]))
-  const itemsBySectionId = new Map(
-    definition.sections.map((section) => [
-      section.id,
-      new Map(section.items.map((item) => [item.id, item])),
-    ]),
-  )
-
-  for (const item of nonCompliant) {
-    // Buscar si ya existe una acción para este ítem de ESTA instancia. El id de
-    // instancia es la identidad durable del sujeto; la etiqueta visible puede
-    // repetirse o cambiar y por eso nunca sirve como clave de deduplicación.
-    const [existing] = await client.select().from(preventionCapaActions)
-      .where(and(
-        eq(preventionCapaActions.sourceType, "pdtp"),
-        eq(preventionCapaActions.sourceId, executionId),
-        sql`${preventionCapaActions.sourceRef}->>'checklistInstanceId' = ${instanceId}`,
-        sql`${preventionCapaActions.sourceRef}->>'seccionId' = ${item.seccionId}`,
-        sql`${preventionCapaActions.sourceRef}->>'itemId' = ${item.itemId}`,
-      )).limit(1)
-
-    if (existing) {
-      existentes++
-      continue
-    }
-
-    // Derivar responsableRole desde la sección de la definición
-    const section = sectionsById.get(item.seccionId)
-    const responsableRole = section?.appliesWhen?.[0] ?? "prevencionista_faena"
-
-    // Hallazgo: prefijo de sujeto + observación del ítem, o label del ítem
-    const defItem = itemsBySectionId.get(item.seccionId)?.get(item.itemId)
-    const hallazgo = prefix + (item.observacion || defItem?.label || "Ítem no conforme")
-
-    const accion = item.accionCorrectiva || "Por definir"
-
-    // Prioridad/plazo: si el ítem define danoPotencial, se derivan del mapa
-    // de daño potencial (mismo criterio que hallazgos manuales — PLAN_INTEGRACION
-    // §5.4). Sin ese campo, cae al default histórico "media" (+7 días).
-    const danoPotencial = defItem?.danoPotencial
-    const prioridad = danoPotencial ? PDTP_DANO_POTENCIAL_A_PRIORIDAD[danoPotencial] : "media"
-    const plazo = danoPotencial ? plazoFromDañoPotencial(danoPotencial, refDate) : plazoFromPrioridad("media", refDate)
-    // La urgencia de terreno viaja como bandera, no como plazo imposible.
-    const detencionInmediata = requiereDetencionInmediata(danoPotencial)
-
-    // `sourceItemId` con la identidad del ítem para que el unique ya existente
-    // (`prevention_capa_source_item_unique`) respalde la deduplicación: el
-    // pre-chequeo de arriba es una carrera, y un doble clic creaba dos acciones
-    // para el mismo hallazgo, duplicando el % de cierre y los badges.
-    const sourceItemId = `${instanceId}:${item.seccionId}:${item.itemId}`
-    const writeAction = async (client: Tx) => {
-      const capa = await createCapaActionWithClient(client, {
-        sourceType: "pdtp",
-        sourceId: executionId,
-        sourceItemId,
-        worksiteId: execution.worksiteId,
-        finding: hallazgo,
-        actionDescription: accion,
-        responsibleSnapshot: responsableRole,
-        responsibleRole: responsableRole,
-        priority: toCapaPriority(prioridad),
-        requiresImmediateStop: detencionInmediata,
-        targetDate: plazo,
-        evidenceRequired: true,
-        // A12: el daño declarado por la plantilla sube a CAPA, no sólo su
-        // derivada — la prioridad no distingue `grave` de `fatal`.
-        danoPotencial: danoPotencial ?? null,
-        // A12 (cont.): de qué ítem del checklist nació. Es procedencia, no
-        // estado, así que no merece columnas propias — viaja en el
-        // `source_ref`. `origen` no se persiste: una
-        // acción es de checklist si y sólo si trae `seccionId`.
-        sourceRef: { checklistInstanceId: instanceId, seccionId: item.seccionId, itemId: item.itemId },
-        reconciliationStatus: "needs_assignment",
-      }, userId)
-      await recordOperationalActivity({
-        eventType: "pdtp.action_created",
-        module: "pdtp",
-        entityType: "pdtp_action",
-        entityId: capa.id,
-        worksiteId: execution.worksiteId,
-        actorUserId: userId,
-        payload: { status: "pendiente", priority: prioridad },
-      }, client)
-    }
-
-    try {
-      // Con `tx` compartida el lote entero es atómico; sin ella se conserva el
-      // comportamiento anterior de una transacción por ítem.
-      if (tx) await writeAction(tx)
-      else await db.transaction(writeAction)
-      generadas++
-    } catch (error) {
-      // Perdió la carrera contra otra generación simultánea: el unique la
-      // atrapó, así que el ítem ya tiene su acción.
-      if (!tx && isUniqueViolation(error)) { existentes++; continue }
-      throw error
-    }
-  }
-
-  return { generadas, existentes }
-}
-
 /** Lista todas las acciones del plan de una ejecución. */
 export async function listActionPlanItems(executionId: string) {
   return listPdtpActionsByExecution(executionId)

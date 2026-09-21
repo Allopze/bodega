@@ -3,7 +3,6 @@ import { db } from "@/db"
 import {
   deliveries,
   pdtpActivities,
-  pdtpExecutionChecklists,
   pdtpExecutions,
   ppaSubmissions,
   preventionCapaActions,
@@ -27,7 +26,6 @@ export const DOCUMENT_LINK_ENTITY_TYPES = [
   "worksite",
   "pdtp_activity",
   "pdtp_execution",
-  "pdtp_checklist",
   "sst_evaluation",
   "corrective_action",
   "ppa",
@@ -73,7 +71,6 @@ export async function inspectDocumentLinkTargets(
   const worksiteIds = idsFor("worksite")
   const activityIds = idsFor("pdtp_activity")
   const executionIds = idsFor("pdtp_execution")
-  const checklistIds = idsFor("pdtp_checklist")
   const evaluationIds = idsFor("sst_evaluation")
   const actionIds = idsFor("corrective_action")
   const ppaIds = idsFor("ppa")
@@ -84,14 +81,11 @@ export async function inspectDocumentLinkTargets(
   const deliveryIds = idsFor("epp_delivery")
   const emergencyPlanIds = idsFor("emergency_plan")
 
-  const [workerRows, worksiteRows, activityRows, executionRows, checklistRows, evaluationRows, actionRows, ppaRows, committeeRows, engagementRows, incidentRows, trainingRows, deliveryRows, emergencyPlanRows] = await Promise.all([
+  const [workerRows, worksiteRows, activityRows, executionRows, evaluationRows, actionRows, ppaRows, committeeRows, engagementRows, incidentRows, trainingRows, deliveryRows, emergencyPlanRows] = await Promise.all([
     workerIds.length ? db.select({ id: workers.id, worksiteId: workers.worksiteId }).from(workers).where(inArray(workers.id, workerIds)) : [],
     worksiteIds.length ? db.select({ id: worksites.id, worksiteId: worksites.id }).from(worksites).where(inArray(worksites.id, worksiteIds)) : [],
     activityIds.length ? db.select({ id: pdtpActivities.id }).from(pdtpActivities).where(inArray(pdtpActivities.id, activityIds)) : [],
     executionIds.length ? db.select({ id: pdtpExecutions.id, worksiteId: pdtpExecutions.worksiteId }).from(pdtpExecutions).where(inArray(pdtpExecutions.id, executionIds)) : [],
-    checklistIds.length ? db.select({ id: pdtpExecutionChecklists.id, worksiteId: pdtpExecutions.worksiteId })
-      .from(pdtpExecutionChecklists).innerJoin(pdtpExecutions, eq(pdtpExecutionChecklists.executionId, pdtpExecutions.id))
-      .where(inArray(pdtpExecutionChecklists.id, checklistIds)) : [],
     evaluationIds.length ? db.select({ id: sstEvaluations.id, worksiteId: sstEvaluations.worksiteId }).from(sstEvaluations).where(inArray(sstEvaluations.id, evaluationIds)) : [],
     actionIds.length ? db.select({ id: preventionCapaActions.id, worksiteId: preventionCapaActions.worksiteId }).from(preventionCapaActions).where(inArray(preventionCapaActions.id, actionIds)) : [],
     ppaIds.length ? db.select({ id: ppaSubmissions.id, worksiteId: ppaSubmissions.worksiteId }).from(ppaSubmissions).where(inArray(ppaSubmissions.id, ppaIds)) : [],
@@ -108,7 +102,6 @@ export async function inspectDocumentLinkTargets(
   for (const row of worksiteRows) targets.set(`worksite:${row.id}`, row.worksiteId)
   for (const row of activityRows) targets.set(`pdtp_activity:${row.id}`, null)
   for (const row of executionRows) targets.set(`pdtp_execution:${row.id}`, row.worksiteId)
-  for (const row of checklistRows) targets.set(`pdtp_checklist:${row.id}`, row.worksiteId)
   for (const row of evaluationRows) targets.set(`sst_evaluation:${row.id}`, row.worksiteId)
   for (const row of actionRows) targets.set(`corrective_action:${row.id}`, row.worksiteId)
   for (const row of ppaRows) targets.set(`ppa:${row.id}`, row.worksiteId)
@@ -152,13 +145,6 @@ export async function resolveDocumentLinkTarget(entityType: DocumentLinkEntityTy
     case "pdtp_execution": {
       const [row] = await db.select({ id: pdtpExecutions.id, worksiteId: pdtpExecutions.worksiteId })
         .from(pdtpExecutions).where(eq(pdtpExecutions.id, entityId)).limit(1)
-      return row ?? null
-    }
-    case "pdtp_checklist": {
-      const [row] = await db.select({ id: pdtpExecutionChecklists.id, worksiteId: pdtpExecutions.worksiteId })
-        .from(pdtpExecutionChecklists)
-        .innerJoin(pdtpExecutions, eq(pdtpExecutionChecklists.executionId, pdtpExecutions.id))
-        .where(eq(pdtpExecutionChecklists.id, entityId)).limit(1)
       return row ?? null
     }
     case "sst_evaluation": {

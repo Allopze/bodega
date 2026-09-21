@@ -122,7 +122,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-closure-distribution.test.ts",
   "lib/__tests__/pdtp-re36-document.test.ts",
   "lib/__tests__/pdtp-capability-subjects.test.ts",
-  "lib/__tests__/pdtp-checklist-action-plan.test.ts",
+  "lib/__tests__/pdtp-action-plan.test.ts",
   "lib/__tests__/pdtp-fulfillment.test.ts",
   "lib/__tests__/pdtp-lifecycle-instrument-gate.test.ts",
   // Red de caracterización del rediseño "bandeja de habilitación": afirma el

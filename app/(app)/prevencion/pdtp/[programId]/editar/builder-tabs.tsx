@@ -11,11 +11,9 @@ import type {
   pdtpPrograms,
   pdtpSheets,
 } from "@/db/schema"
-import type { PdtpChecklistTemplate } from "@/lib/services/prevention-pdtp"
 import type { PdtpBaseComparison, PdtpRevisionDiff } from "@/lib/services/prevention-pdtp"
 import { countOf } from "@/lib/utils"
 import { deriveScheduleHorizon } from "@/lib/services/pdtp/recurrence"
-import { ChecklistTab } from "./checklist-tab"
 import { GuidedActivityForm } from "./guided-activity-form"
 import type { PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 import { ImportExcelSection } from "./import-excel-section"
@@ -59,7 +57,6 @@ type PdtpBuilderTabsProps = {
   sheets: Array<typeof pdtpSheets.$inferSelect>
   activities: Array<typeof pdtpActivities.$inferSelect>
   schedule: Array<typeof pdtpActivitySchedule.$inferSelect>
-  checklists: PdtpChecklistTemplate[]
   objectives: PdtpObjective[]
   userId: string
   canDelete: boolean
@@ -115,7 +112,6 @@ export function PdtpBuilderTabs({
   sheets,
   activities,
   schedule,
-  checklists,
   objectives,
   userId,
   canDelete,
@@ -261,15 +257,6 @@ export function PdtpBuilderTabs({
             />
           </div>
         </details>
-
-        <details className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-[var(--color-text)]">
-            Requisitos y evidencia
-          </summary>
-          <div className="border-t border-[var(--color-border)] p-4">
-            <ChecklistTab programId={program.id} activities={activeActivities} checklists={checklists} />
-          </div>
-        </details>
       </TabsContent>
 
       <TabsContent value="faenas" className="space-y-5">
@@ -321,7 +308,6 @@ export function PdtpBuilderTabs({
         <ReviewTab
           program={program}
           activities={activities}
-          checklists={checklists}
           responsibleCatalog={responsibleCatalog}
           visibleWorksites={visibleWorksites}
           memberWorksiteIds={memberWorksiteIds}

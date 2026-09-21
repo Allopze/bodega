@@ -8,7 +8,7 @@ import { OBSERVATION_22_SCORING } from '../scoring-policies'
  * Patrón C (multi-sujeto). Se siembra como plantilla de la actividad PDTP
  * n=41 del programa 2026 ("Caminatas de seguridad, levantamiento de
  * inspecciones y observaciones en terreno"). Reemplaza la plantilla genérica
- * provisional de Fase A en esa actividad. Ver `scripts/seed-pdtp-checklists-2026.ts`.
+ * provisional de Fase A en esa actividad. Ver `scripts/seed-pdtp-inspection-templates-2026.ts`.
  *
  * Sujeto = `workers` (el operador de maquinaria), filtrado por worksiteId.
  *

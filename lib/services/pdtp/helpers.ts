@@ -5,7 +5,6 @@ import {
   pdtpActivitySchedule,
   pdtpActivityWorksiteExclusions,
   pdtpChangeLog,
-  pdtpExecutionChecklists,
   pdtpExecutions,
   pdtpProgramWorksites,
   pdtpPrograms,
@@ -89,16 +88,6 @@ export async function assertPdtpExecutionAccess(executionId: string, scope: Work
   assertWorksiteAccess(execution.worksiteId, scope)
 }
 
-/** Verifica el alcance a partir de una instancia de checklist. */
-export async function assertPdtpChecklistInstanceAccess(instanceId: string, scope: WorksiteScope): Promise<void> {
-  const [instance] = await db.select({ worksiteId: pdtpExecutions.worksiteId })
-    .from(pdtpExecutionChecklists)
-    .innerJoin(pdtpExecutions, eq(pdtpExecutionChecklists.executionId, pdtpExecutions.id))
-    .where(eq(pdtpExecutionChecklists.id, instanceId))
-    .limit(1)
-  if (!instance) throw new Error("Checklist de ejecución PDTP no encontrado.")
-  assertWorksiteAccess(instance.worksiteId, scope)
-}
 
 /**
  * Verifica el alcance a partir de una acción correctiva. La faena es columna

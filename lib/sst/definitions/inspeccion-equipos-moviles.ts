@@ -6,7 +6,7 @@ import { NORMALIZED_ONLY_SCORING } from '../scoring-policies'
  * Inspección de Equipos Móviles — módulo 05.
  *
  * Patrón C (multi-sujeto). Se siembra como plantilla de la actividad PDTP
- * n=33 del programa 2026. Ver `scripts/seed-pdtp-checklists-2026.ts`.
+ * n=33 del programa 2026. Ver `scripts/seed-pdtp-inspection-templates-2026.ts`.
  *
  * Sujeto = `fuelVehicles` (camión o equipo), filtrado por worksiteId de la
  * ejecución. La documentación (SOAP, rev. técnica, permiso, seguro) se lee de

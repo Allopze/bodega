@@ -1,4 +1,5 @@
 /** Real PostgreSQL proof for the cross-cutting inspection engine. */
+import { createHash } from "node:crypto"
 import path from "node:path"
 import postgres from "postgres"
 import { and, eq, sql } from "drizzle-orm"
@@ -70,7 +71,7 @@ async function currentRunVersion(id: string) {
  */
 function answerFor(
   item: InspectionItemSpec,
-  result: "conforming" | "partial" | "non_conforming" | "not_applicable" = "conforming",
+  result: "conforming" | "partial" | "non_conforming" | "not_applicable" | "not_present" = "conforming",
   comment: string | null = null,
 ) {
   if (!fieldKindIsScorable(item.kind)) {
@@ -255,6 +256,159 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     expect(available.length).toBeGreaterThan(0)
     expect(available.map((item) => item.code)).not.toContain("trabajador_nuevo")
     expect(available.every((item) => item.items > 0)).toBe(true)
+  })
+
+  /* El selector de fuente documental sólo filtraba por estado de la versión:
+   * con `inspections:manage` bastaba para leer título, archivo y checksum de
+   * documentos `sensible` y de faenas ajenas. El binario sí estaba protegido en
+   * la ruta de descarga; la metadata no. Se prueban las dos mitades y, sobre
+   * todo, que los corporativos sigan pasando: los anexos del SGI no cuelgan de
+   * ninguna faena y filtrarlos de más dejaría el selector vacío. */
+  it("no ofrece como fuente documentos sensibles ni de otra faena, y sí los corporativos", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const now = new Date().toISOString()
+
+    async function seedSource(id: string, patch: Partial<typeof schema.sstDocuments.$inferInsert>) {
+      await getDb().insert(schema.sstDocuments).values({
+        id, categorySlug: SST_CATEGORY, title: `Documento ${id}`, status: "vigente",
+        uploadedBy: AUTHOR.userId, createdAt: now, updatedAt: now, ...patch,
+      })
+      await getDb().insert(schema.sstDocumentVersions).values({
+        id: `${id}-v1`, documentId: id, version: 1, status: "vigente",
+        fileName: `${id}.xlsx`, storageName: `${id}.xlsx`,
+        filePath: `storage/sst-documents/${id}.xlsx`, fileSize: 512,
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        checksum: createHash("sha256").update(id).digest("hex"),
+        uploadedBy: AUTHOR.userId, createdAt: now, updatedAt: now,
+      })
+    }
+
+    await seedSource("sstdoc-corporativo", {})
+    await seedSource("sstdoc-sensible", { confidentiality: "sensible" })
+    await seedSource("sstdoc-ajeno", { worksiteId: "ws-in-b" })
+    await seedSource("sstdoc-propio", { worksiteId: "ws-in-a" })
+
+    // AUTHOR tiene `inspections:manage` y ningún permiso documental.
+    const ids = (await service.listInspectionDocumentSources(AUTHOR)).map((row) => row.documentId)
+    expect(ids).toContain("sstdoc-corporativo")
+    expect(ids).toContain("sstdoc-propio")
+    expect(ids).not.toContain("sstdoc-sensible")
+    expect(ids).not.toContain("sstdoc-ajeno")
+  })
+
+  /* El callejón sin salida del `parityReport`: nacía en `pending` cuando el
+   * instrumento exige anexo oficial, `approveInspectionTemplate` rechaza todo
+   * lo que no sea `passed`, y NINGUNA ruta escribía el campo después del
+   * INSERT. La plantilla quedaba inaprobable de por vida; el único remedio era
+   * reimportarla con otra etiqueta de versión. */
+  describe("paridad documental", () => {
+    async function draftWithoutParity(versionLabel: string) {
+      const service = await import("@/lib/services/prevention-inspections")
+      const sourceDocumentVersionId = await officialSourceVersionFor("observacion_maquinaria")
+      return service.importInspectionTemplate({
+        definitionCode: "observacion_maquinaria", kind: "observation",
+        versionLabel, sourceDocumentVersionId,
+      }, AUTHOR)
+    }
+
+    it("nace pendiente, bloquea la aprobación, y declararla la desbloquea", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const draft = await draftWithoutParity("par-01")
+      expect((draft.parityReport as { status: string }).status).toBe("pending")
+
+      await expect(service.approveInspectionTemplate({
+        templateId: draft.id, expectedVersion: draft.version,
+        reason: "Intento de habilitar sin haber contrastado el anexo.",
+      }, APPROVER)).rejects.toThrow(/paridad documental/i)
+
+      const verified = await service.setInspectionTemplateParity({
+        templateId: draft.id, expectedVersion: draft.version, status: "passed",
+        expectedItems: 12, actualItems: 12,
+        reason: "Contrastada ítem por ítem contra el Anexo 5 impreso.",
+      }, APPROVER)
+      const parity = verified.parityReport as { status: string; verifiedByUserId: string | null }
+      expect(parity.status).toBe("passed")
+      expect(parity.verifiedByUserId).toBe(APPROVER.userId)
+
+      const approved = await service.approveInspectionTemplate({
+        templateId: draft.id, expectedVersion: verified.version,
+        reason: "Instrumento habilitado tras verificar la paridad.",
+      }, APPROVER)
+      expect(approved.status).toBe("approved")
+    })
+
+    it("guarda las diferencias cuando la transcripción no coincide", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const draft = await draftWithoutParity("par-02")
+      const failed = await service.setInspectionTemplateParity({
+        templateId: draft.id, expectedVersion: draft.version, status: "failed",
+        expectedItems: 12, actualItems: 11,
+        differences: ["Falta el ítem 'Estado de cinturón de seguridad' del anexo."],
+        reason: "La transcripción perdió un ítem respecto del anexo.",
+      }, APPROVER)
+      const parity = failed.parityReport as { status: string; differences: string[] }
+      expect(parity.status).toBe("failed")
+      expect(parity.differences).toHaveLength(1)
+
+      // Y sigue sin poder habilitarse, que es el punto de declararlo.
+      await expect(service.approveInspectionTemplate({
+        templateId: draft.id, expectedVersion: failed.version,
+        reason: "No debería poder habilitarse con diferencias abiertas.",
+      }, APPROVER)).rejects.toThrow(/paridad documental/i)
+    })
+
+    it("no admite una paridad aprobada con diferencias ni una fallida sin ellas", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const draft = await draftWithoutParity("par-03")
+      await expect(service.setInspectionTemplateParity({
+        templateId: draft.id, expectedVersion: draft.version, status: "passed",
+        differences: ["Sobra una columna"], reason: "Incoherente a propósito.",
+      }, APPROVER)).rejects.toThrow(/no puede declarar diferencias/i)
+
+      await expect(service.setInspectionTemplateParity({
+        templateId: draft.id, expectedVersion: draft.version, status: "failed",
+        reason: "Incoherente a propósito.",
+      }, APPROVER)).rejects.toThrow(/exige enumerarlas/i)
+    })
+
+    /* Se aparta a propósito de `approveInspectionTemplate`, que no tiene
+     * segregación. Aprobar avala una copia literal del catálogo; declarar
+     * paridad es un juicio —que la transcripción coincide con el papel, ítem
+     * por ítem— y que lo afirme quien la incorporó es el control revisándose a
+     * sí mismo. */
+    it("no la declara quien incorporó la plantilla", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const draft = await draftWithoutParity("par-05")
+      // APPROVER tiene todos los permisos, así que si importa él, él no puede
+      // declararla: lo que bloquea es la identidad, no el permiso.
+      const propio = await service.importInspectionTemplate({
+        definitionCode: "observacion_maquinaria", kind: "observation",
+        versionLabel: "par-06",
+        sourceDocumentVersionId: await officialSourceVersionFor("observacion_maquinaria"),
+      }, APPROVER)
+
+      await expect(service.setInspectionTemplateParity({
+        templateId: propio.id, expectedVersion: propio.version, status: "passed",
+        reason: "Intento de verificar mi propia transcripción.",
+      }, APPROVER)).rejects.toThrow(/no se revisa a sí mismo/i)
+
+      // Y la que incorporó otro sí la puede declarar.
+      const verificada = await service.setInspectionTemplateParity({
+        templateId: draft.id, expectedVersion: draft.version, status: "passed",
+        reason: "Contrastada contra el anexo impreso.",
+      }, APPROVER)
+      expect((verificada.parityReport as { status: string }).status).toBe("passed")
+    })
+
+    it("exige el permiso de aprobación, no el de gestión", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const draft = await draftWithoutParity("par-04")
+      // AUTHOR administra inspecciones pero no las habilita.
+      await expect(service.setInspectionTemplateParity({
+        templateId: draft.id, expectedVersion: draft.version, status: "passed",
+        reason: "Sin permiso para verificar.",
+      }, AUTHOR)).rejects.toThrow()
+    })
   })
 
   /**
@@ -732,6 +886,52 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       .where(eq(schema.preventionInspectionRuns.id, created.run.id))
     expect(stored!.partialCount).toBe(1)
     expect(stored!.compliancePercent).toBe(expected)
+  })
+
+  /* El "No tiene" del Anexo 14 estaba en el CHECK de la base, en
+   * `InspectionResult`, en `EXCLUDED_RESULTS` y en la escala
+   * `bueno_regular_malo_na_nt_obs`, pero NO en el enum de `answerRowSchema`.
+   * El botón se pintaba y el servidor rechazaba el lote entero; encolado
+   * offline, el emisor marca todo fallo como `retriable: false` y la corrida
+   * se perdía. Se prueba de punta a punta porque el enum es interno. */
+  it("acepta 'No tiene' en la escala NT y lo deja fuera del denominador", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const approved = await installTemplate({ definitionCode: "inspeccion_contenedores", versionLabel: "nt" })
+
+    // La inspección de contenedores exige sujeto del padrón, no texto libre.
+    const containerId = "cont-nt-01"
+    await getDb().insert(schema.preventionContainers).values({
+      id: containerId, worksiteId: "ws-in-a", code: "CT-NT-01",
+      location: "Acopio de prueba", createdByUserId: AUTHOR.userId,
+    })
+
+    const created = await service.createInspectionRun({
+      templateId: approved.id, worksiteId: "ws-in-a", subjectContainerId: containerId,
+    }, AUTHOR)
+
+    const items = service.itemsFromDefinition(approved.definitionSnapshot as never)
+    const scorable = items.filter((item) => fieldKindIsScorable(item.kind))
+    const ntTarget = scorable.find((item) => item.kind === "bueno_regular_malo_na_nt_obs")!
+    expect(ntTarget).toBeDefined()
+
+    // Sin comentario a propósito: a diferencia de "No aplica", el "No tiene" es
+    // una constatación verificable contra el sujeto y el CHECK no lo exige.
+    const answers = answersForAll(items, (item) =>
+      item.itemId === ntTarget.itemId ? answerFor(item, "not_present") : undefined)
+    await service.saveInspectionAnswers({
+      runId: created.run.id, expectedVersion: created.run.version, answers,
+    }, AUTHOR)
+
+    const [before] = await getDb().select().from(schema.preventionInspectionRuns)
+      .where(eq(schema.preventionInspectionRuns.id, created.run.id))
+    const result = await service.completeInspectionRun({
+      runId: created.run.id, expectedVersion: before!.version, closingAct: await closingActFor(approved.id),
+    }, AUTHOR)
+
+    // El ítem sale del denominador, igual que un "No aplica": el resto cumple,
+    // así que el cumplimiento es 100 y no (n-1)/n.
+    expect(result.run.conformingCount).toBe(scorable.length - 1)
+    expect(result.compliancePercent).toBe(100)
   })
 
   // B-05 (auditoría 2026-08-18): `origin` ya se aceptaba en el schema y el

@@ -20,7 +20,7 @@ import {
   verifyPdtpActionPlanItemAction,
   reopenPdtpActionPlanItemAction,
   addPdtpFollowupAction,
-} from "../../../actions/checklist-actions"
+} from "../../../actions/action-plan-actions"
 import { PDTP_ACTION_STATUS_LABELS, pdtpActionStatusVariant } from "@/lib/prevention/pdtp"
 // Import type-only para romper la cadena cliente → barrel → db → postgres → fs
 import type { listFollowups, listActionPlanItems } from "@/lib/services/prevention-pdtp"

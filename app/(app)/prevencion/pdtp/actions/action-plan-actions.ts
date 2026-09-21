@@ -6,12 +6,6 @@ import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { safeActionMessage } from "@/lib/action-error"
 import {
-  savePdtpActivityChecklist,
-  deletePdtpActivityChecklist,
-  ensureDefaultChecklist,
-  getOrCreateExecutionChecklist,
-  upsertChecklistResponses,
-  submitExecutionChecklist,
   createActionPlanItem,
   updateActionPlanItem,
   deleteActionPlanItem,
@@ -19,17 +13,10 @@ import {
   reopenActionPlanItem,
   addFollowup,
   assertPdtpActionPlanItemAccess,
-  assertPdtpChecklistInstanceAccess,
   assertPdtpExecutionAccess,
 } from "@/lib/services/prevention-pdtp"
 import type { ActionState } from "@/lib/validation/prevention"
 import {
-  pdtpChecklistDefinitionSchema,
-  pdtpChecklistTemplateSaveSchema,
-  pdtpChecklistTemplateDeleteSchema,
-  pdtpChecklistStartSchema,
-  pdtpChecklistResponsesUpsertSchema,
-  pdtpChecklistSubmitSchema,
   pdtpActionPlanCreateSchema,
   pdtpActionPlanUpdateSchema,
   pdtpActionPlanDeleteSchema,
@@ -54,114 +41,6 @@ function fail(e: unknown): ActionState {
   // avanza. `safeActionMessage` las deja pasar y sigue ocultando los errores
   // de driver y de esquema.
   return { ok: false, message: safeActionMessage(e, "No se pudo completar la acción. Intenta nuevamente.") }
-}
-
-// ── Plantillas de checklist (por actividad) ─────────────────────────────────
-
-export async function savePdtpChecklistTemplateAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:pdtp:checklist:manage")
-  if (guard.error) return guard.error
-  try {
-    const parsed = pdtpChecklistTemplateSaveSchema.parse(input)
-    let definitionJson: unknown
-    try {
-      definitionJson = JSON.parse(parsed.definitionRaw)
-    } catch {
-      return { ok: false, message: "El JSON de la definición no es válido.", fieldErrors: { definitionRaw: ["JSON inválido"] } }
-    }
-    const definition = pdtpChecklistDefinitionSchema.parse(definitionJson)
-    await savePdtpActivityChecklist({
-      activityId: parsed.activityId,
-      label: parsed.label,
-      definition,
-    })
-    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
-    return { ok: true }
-  } catch (e) {
-    return fail(e)
-  }
-}
-
-export async function ensureDefaultPdtpChecklistAction(
-  activityId: string,
-  programId: string,
-  label: string,
-): Promise<ActionState> {
-  const guard = await guardPermission("prevention:pdtp:checklist:manage")
-  if (guard.error) return guard.error
-  try {
-    await ensureDefaultChecklist(activityId, label)
-    revalidatePath(`${REVALIDATE}/${programId}/editar`)
-    return { ok: true }
-  } catch (e) {
-    return fail(e)
-  }
-}
-
-export async function deletePdtpChecklistTemplateAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:pdtp:checklist:manage")
-  if (guard.error) return guard.error
-  try {
-    const parsed = pdtpChecklistTemplateDeleteSchema.parse(input)
-    await deletePdtpActivityChecklist(parsed.checklistId)
-    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
-    return { ok: true }
-  } catch (e) {
-    return fail(e)
-  }
-}
-
-// ── Llenado de checklist en ejecución ───────────────────────────────────────
-
-export async function startPdtpExecutionChecklistAction(input: unknown): Promise<ActionState & { instanceId?: string }> {
-  const guard = await guardPermission("prevention:pdtp:checklist:fill")
-  if (guard.error) return guard.error
-  const session = guard.session
-  try {
-    const parsed = pdtpChecklistStartSchema.parse(input)
-    await assertPdtpExecutionAccess(parsed.executionId, pdtpScopeForSession(session))
-    const instance = await getOrCreateExecutionChecklist(parsed.executionId, session.user.id, {
-      subjectType: parsed.subjectType,
-      subjectId: parsed.subjectId,
-      subjectResourceId: parsed.subjectResourceId,
-      subjectContainerId: parsed.subjectContainerId,
-      subjectLabel: parsed.subjectLabel,
-    })
-    return { ok: true, instanceId: instance.id }
-  } catch (e) {
-    return fail(e)
-  }
-}
-
-export async function upsertPdtpChecklistResponsesAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:pdtp:checklist:fill")
-  if (guard.error) return guard.error
-  const session = guard.session
-  try {
-    const parsed = pdtpChecklistResponsesUpsertSchema.parse(input)
-    await assertPdtpChecklistInstanceAccess(parsed.instanceId, pdtpScopeForSession(session))
-    await upsertChecklistResponses(parsed.instanceId, parsed.responses, session.user.id)
-    revalidatePath(`${REVALIDATE}/${parsed.programId}`, "layout")
-    return { ok: true }
-  } catch (e) {
-    return fail(e)
-  }
-}
-
-export async function submitPdtpExecutionChecklistAction(input: unknown): Promise<ActionState & { generadas?: number }> {
-  const guard = await guardPermission("prevention:pdtp:checklist:fill")
-  if (guard.error) return guard.error
-  const session = guard.session
-  try {
-    const parsed = pdtpChecklistSubmitSchema.parse(input)
-    await assertPdtpChecklistInstanceAccess(parsed.instanceId, pdtpScopeForSession(session))
-    const result = await submitExecutionChecklist(parsed.instanceId, session.user.id)
-    revalidatePath(REVALIDATE)
-    revalidatePath(`${REVALIDATE}/${parsed.programId}`, "layout")
-    return { ok: true, generadas: result.generadas }
-  } catch (e) {
-    return fail(e)
-  }
 }
 
 // ── Plan de acción ──────────────────────────────────────────────────────────

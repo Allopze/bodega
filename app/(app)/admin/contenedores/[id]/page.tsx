@@ -30,7 +30,7 @@ export default async function ContenedorDetallePage({ params }: { params: Promis
     })
   } catch { notFound() }
 
-  const { container, worksiteName, inspections, pdtpChecklistCount } = detail
+  const { container, worksiteName, inspections } = detail
   const status = container.status as ContainerStatus
 
   return <PageContainer width="workbench">
@@ -84,9 +84,7 @@ export default async function ContenedorDetallePage({ params }: { params: Promis
               compact
               align="start"
               title="Sin inspecciones"
-              description={pdtpChecklistCount > 0
-                ? "Ninguna inspección del motor lo tomó como sujeto todavía; las verificaciones del PDTP se listan abajo."
-                : "Cuando se ejecute una inspección eligiendo este contenedor, aparecerá acá."}
+              description="Cuando se ejecute una inspección eligiendo este contenedor, aparecerá acá."
             />
           : <Table className="mt-3">
               <TableHeader>
@@ -115,13 +113,6 @@ export default async function ContenedorDetallePage({ params }: { params: Promis
                 </TableRow>)}
               </TableBody>
             </Table>}
-        {/* El listado cuenta ambas fuentes; nombrarlas por separado evita que
-            la ficha parezca vacía mientras el borrado está bloqueado. */}
-        {pdtpChecklistCount > 0 && (
-          <p className="mt-3 text-xs text-[var(--color-text-subtle)]">
-            Además, {pdtpChecklistCount} verificación(es) del programa PDTP toman este contenedor como sujeto.
-          </p>
-        )}
       </aside>
     </div>
   </PageContainer>

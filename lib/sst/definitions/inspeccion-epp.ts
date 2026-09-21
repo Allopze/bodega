@@ -7,7 +7,7 @@ import { NORMALIZED_ONLY_SCORING } from '../scoring-policies'
  *
  * Patrón C (multi-sujeto). Se siembra como plantilla de las actividades PDTP
  * n=64 y n=65 del programa 2026 (ambas "Check list de uso y estado de EPP",
- * responsables JT y PRF). Ver `scripts/seed-pdtp-checklists-2026.ts`.
+ * responsables JT y PRF). Ver `scripts/seed-pdtp-inspection-templates-2026.ts`.
  *
  * Sujeto = `workers`, filtrado por worksiteId de la ejecución.
  *
