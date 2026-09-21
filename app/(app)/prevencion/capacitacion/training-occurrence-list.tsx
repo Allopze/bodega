@@ -75,7 +75,7 @@ function statusMeta(status: TrainingOccurrenceListItem["status"]): StateMetaInpu
 }
 
 function typeMeta(itemType: string): StateMetaInput {
-  return { label: itemType === "campaign" ? "Campaña" : "Curso", variant: itemType === "campaign" ? "info" : "primary" }
+  return { label: itemType === "campaign" ? "Campaña" : "Capacitación", variant: itemType === "campaign" ? "info" : "primary" }
 }
 
 function scheduleLabel(row: TrainingOccurrenceListItem): string {
@@ -123,6 +123,7 @@ export function TrainingOccurrenceList({ rows, worksites, selectedYear, selected
   const pathname = usePathname()
   const { searchQuery, setSearchQuery } = useSafeShellHeader()
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all")
+  const selectedInactiveWorksite = worksites.find((worksite) => worksite.id === selectedWorksiteId && !worksite.isActive)
 
   const counts = React.useMemo(() => ({
     all: rows.length,
@@ -153,13 +154,15 @@ export function TrainingOccurrenceList({ rows, worksites, selectedYear, selected
             onValueChange={(value) => updateRoute(router, pathname, value === "all" ? "" : value, selectedYear)}
           >
             <SelectTrigger id="training-worksite-filter" aria-label="Filtrar por faena" className="h-9 text-sm">
-              <SelectValue placeholder="Todas las faenas" />
+              <SelectValue placeholder="Todas las faenas">
+                {selectedInactiveWorksite ? `${selectedInactiveWorksite.name} (inactiva · solo lectura)` : undefined}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todas las faenas</SelectItem>
-              {worksites.map((worksite) => (
+              {worksites.filter((worksite) => worksite.isActive).map((worksite) => (
                 <SelectItem key={worksite.id} value={worksite.id} textValue={worksite.name}>
-                  {worksite.name}{worksite.isActive ? "" : " (inactiva)"}
+                  {worksite.name}
                 </SelectItem>
               ))}
             </SelectContent>

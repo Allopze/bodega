@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "app/(app)/prevencion/capacitacion/training-occurrence-list.tsx"
+        ],
+        "createdAt": "2026-09-21T14:56:43.598Z",
+        "reason": "Agent: pre-existing tab underline uses a bottom border to indicate selection; top-only rounded corners do not create a rounded card accent border."
+      }
+    ]
+  }
+}

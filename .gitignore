@@ -167,3 +167,6 @@ scripts/.docs-runner/
 docs/generado
 docs/plan.yml
 docs/generado/index.md
+
+# Caché del detector de UI (la config sí se versiona; el caché no)
+.impeccable/hook.cache.json

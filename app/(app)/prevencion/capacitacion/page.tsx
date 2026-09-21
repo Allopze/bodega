@@ -11,7 +11,7 @@ import { resolveProgramActivationPeriod } from "@/lib/services/prevention-progra
 import { TrainingOccurrenceList } from "./training-occurrence-list"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
-export const metadata: Metadata = { title: "Capacitación" }
+export const metadata: Metadata = { title: "Campañas y Capacitación" }
 
 export default async function CapacitacionPage({
   searchParams,
@@ -51,12 +51,12 @@ export default async function CapacitacionPage({
   return (
     <PageContainer>
       <PageHeader
-        title="Capacitación"
-        description="Control anual de cursos y campañas por faena. Marca cada actividad como hecha o no hecha y conserva su evidencia."
+        title="Campañas y Capacitación"
+        description="Control anual de campañas y capacitaciones por faena. Marca cada actividad como hecha o no hecha y conserva su evidencia."
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
-          { label: "Capacitación" },
+          { label: "Campañas y Capacitación" },
         ]} />}
         actions={
           session.user.permissions.includes("prevention:training:export") ? (
