@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 const mockGuardPermission = vi.hoisted(() => vi.fn())
+const mockCan = vi.hoisted(() => vi.fn((session: { user?: { permissions?: string[] } } | null, permission: string) => Boolean(session?.user?.permissions?.includes(permission))))
 const mockGuardAuth = vi.hoisted(() => vi.fn())
 const mockResolveWorksiteScope = vi.hoisted(() => vi.fn(() => ({ mode: "all" as const, ids: [] })))
 const mockRedirect = vi.hoisted(() => vi.fn((url: string) => { throw new Error(`REDIRECT:${url}`) }))
@@ -41,6 +42,9 @@ const MockPdtpScheduleConflictError = vi.hoisted(() => class PdtpScheduleConflic
   }
 })
 const mockAddPdtpActivity = vi.hoisted(() => vi.fn(async () => undefined))
+const mockAddCatalogActivityToProgram = vi.hoisted(() => vi.fn(async () => ({ annualActivityId: "annual-1", catalogActivityId: "catalog-1" })))
+const mockCreatePublishedCatalogActivity = vi.hoisted(() => vi.fn(async () => ({ annualActivityId: "annual-1", catalogActivityId: "catalog-1", code: "PDT-TEST" })))
+const MockPdtpCatalogCodeConflictError = vi.hoisted(() => class PdtpCatalogCodeConflictError extends Error {})
 const mockRetirePdtpActivity = vi.hoisted(() => vi.fn(async () => undefined))
 const mockReorderPdtpActivities = vi.hoisted(() => vi.fn(async () => undefined))
 const mockSetPdtpActivityOverride = vi.hoisted(() => vi.fn(async () => undefined))
@@ -54,8 +58,14 @@ const mockReconcilePdtpDeclaredActor = vi.hoisted(() => vi.fn(async () => undefi
 const mockRevalidatePath = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({
+  can: mockCan,
   guardAuth: mockGuardAuth,
   guardPermission: mockGuardPermission,
+}))
+vi.mock("@/lib/services/pdtp/activity-creation", () => ({
+  addCatalogActivityToProgram: mockAddCatalogActivityToProgram,
+  createPublishedCatalogActivityAndAddToProgram: mockCreatePublishedCatalogActivity,
+  PdtpCatalogCodeConflictError: MockPdtpCatalogCodeConflictError,
 }))
 vi.mock("@/lib/auth/scope", () => ({
   resolveWorksiteScope: mockResolveWorksiteScope,
@@ -106,6 +116,7 @@ import {
   rejectPdtpExecutionAction,
   updatePdtpActivityAction,
   addPdtpActivityAction,
+  savePdtpProgramActivityAction,
   setPdtpActivityOverrideFormAction,
   createPdtpProgramAction,
   updatePdtpProgramAction,
@@ -127,7 +138,7 @@ function makeSession(permissions: string[] = [
   "prevention:pdtp:activate",
   "prevention:pdtp:lifecycle:manage",
 ]) {
-  return { user: { id: "user-1", permissions } }
+  return { user: { id: "user-1", email: "user-1@example.test", permissions } }
 }
 
 function makeFormData(fields: Record<string, string>) {
@@ -390,6 +401,165 @@ describe("Activity edit/add actions", () => {
     })
     expect(res.ok).toBe(true)
     expect(mockAddPdtpActivity).toHaveBeenCalled()
+  })
+
+  it("savePdtpProgramActivityAction reutiliza una definición con permiso de programa", async () => {
+    const res = await savePdtpProgramActivityAction({
+      programId: "prog-1",
+      source: { kind: "catalog", catalogActivityId: "catalog-1" },
+      responsibleSlug: "resp-1",
+      scheduleMode: "scheduled",
+      recurrenceRule: { frequency: "monthly", interval: 1, plannedQuantity: 1, weekOfMonth: 1 },
+      audienceRoles: [],
+    })
+
+    expect(res.ok).toBe(true)
+    expect(mockAddCatalogActivityToProgram).toHaveBeenCalledWith(expect.objectContaining({
+      programId: "prog-1",
+      catalogActivityId: "catalog-1",
+      execution: expect.objectContaining({ responsibleSlug: "resp-1", scheduleMode: "scheduled" }),
+    }), expect.objectContaining({ userId: "user-1" }))
+    expect(mockCreatePublishedCatalogActivity).not.toHaveBeenCalled()
+  })
+
+  it("savePdtpProgramActivityAction exige permiso de catálogo para crear y publicar", async () => {
+    const res = await savePdtpProgramActivityAction({
+      programId: "prog-1",
+      source: {
+        kind: "new",
+        code: "PDT-TEST-NUEVA",
+        title: "Crear actividad nueva",
+        description: "Descripción válida para la nueva actividad",
+        executionGuidance: "Guardar evidencia verificable",
+      },
+      responsibleSlug: "resp-1",
+      scheduleMode: "on_demand",
+      dueDays: 5,
+      audienceRoles: [],
+    })
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toMatch(/permisos/i)
+    expect(mockCreatePublishedCatalogActivity).not.toHaveBeenCalled()
+  })
+
+  it("savePdtpProgramActivityAction crea, publica e incorpora con ambos permisos", async () => {
+    mockGuardPermission.mockResolvedValueOnce({
+      session: makeSession(["prevention:pdtp:program:manage", "admin:pdtp_catalog"]),
+      error: null,
+    })
+    const input = {
+      programId: "prog-1",
+      source: {
+        kind: "new" as const,
+        code: "PDT-TEST-NUEVA",
+        title: "Crear actividad nueva",
+        description: "Descripción válida para la nueva actividad",
+        executionGuidance: "Guardar evidencia verificable",
+      },
+      responsibleSlug: "resp-1",
+      scheduleMode: "on_demand" as const,
+      dueDays: 5,
+      audienceRoles: [],
+    }
+
+    const res = await savePdtpProgramActivityAction(input)
+
+    expect(res.ok).toBe(true)
+    expect(mockCreatePublishedCatalogActivity).toHaveBeenCalledWith({
+      programId: "prog-1",
+      definition: input.source,
+      execution: expect.objectContaining({ responsibleSlug: "resp-1", scheduleMode: "on_demand", dueDays: 5 }),
+    }, { userId: "user-1", userEmail: "user-1@example.test" })
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/editar")
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/pdtp-catalogos")
+  })
+
+  it("savePdtpProgramActivityAction devuelve errores de campos condicionales", async () => {
+    const res = await savePdtpProgramActivityAction({
+      programId: "prog-1",
+      source: { kind: "catalog", catalogActivityId: "catalog-1" },
+      responsibleSlug: "resp-1",
+      scheduleMode: "triggered",
+      triggerDescription: " ",
+      dueDays: 2,
+      audienceRoles: [],
+    })
+
+    expect(res.ok).toBe(false)
+    expect(res.fieldErrors?.triggerDescription).toBeDefined()
+    expect(mockAddCatalogActivityToProgram).not.toHaveBeenCalled()
+  })
+
+  it("savePdtpProgramActivityAction atribuye los errores de una definición nueva al campo concreto", async () => {
+    mockGuardPermission.mockResolvedValueOnce({
+      session: makeSession(["prevention:pdtp:program:manage", "admin:pdtp_catalog"]),
+      error: null,
+    })
+    const res = await savePdtpProgramActivityAction({
+      programId: "prog-1",
+      source: {
+        kind: "new",
+        code: "codigo inválido",
+        title: "x",
+        description: "",
+        executionGuidance: "",
+      },
+      responsibleSlug: "resp-1",
+      scheduleMode: "on_demand",
+      dueDays: 5,
+      audienceRoles: [],
+    })
+
+    expect(res.ok).toBe(false)
+    expect(res.fieldErrors?.code).toBeDefined()
+    expect(res.fieldErrors?.title).toBeDefined()
+    expect(res.fieldErrors?.description).toBeDefined()
+    expect(res.fieldErrors?.executionGuidance).toBeDefined()
+  })
+
+  it("savePdtpProgramActivityAction convierte la colisión de código en error de campo", async () => {
+    mockGuardPermission.mockResolvedValueOnce({
+      session: makeSession(["prevention:pdtp:program:manage", "admin:pdtp_catalog"]),
+      error: null,
+    })
+    mockCreatePublishedCatalogActivity.mockRejectedValueOnce(new MockPdtpCatalogCodeConflictError())
+
+    const res = await savePdtpProgramActivityAction({
+      programId: "prog-1",
+      source: {
+        kind: "new",
+        code: "PDT-TEST-REPETIDA",
+        title: "Crear actividad repetida",
+        description: "Descripción válida para la actividad repetida",
+        executionGuidance: "Guardar evidencia verificable",
+      },
+      responsibleSlug: "resp-1",
+      scheduleMode: "on_demand",
+      dueDays: 5,
+      audienceRoles: [],
+    })
+
+    expect(res.ok).toBe(false)
+    expect(res.fieldErrors?.code).toEqual(["Este código ya existe"])
+  })
+
+  it("savePdtpProgramActivityAction no expone errores del controlador de base de datos", async () => {
+    const driverError = new Error("Failed query: insert into pdtp_activities values ($1)")
+    driverError.cause = { code: "23503", detail: "Key (program_id)=(secret) is not present" }
+    mockAddCatalogActivityToProgram.mockRejectedValueOnce(driverError)
+
+    const res = await savePdtpProgramActivityAction({
+      programId: "prog-1",
+      source: { kind: "catalog", catalogActivityId: "catalog-1" },
+      responsibleSlug: "resp-1",
+      scheduleMode: "scheduled",
+      recurrenceRule: { frequency: "monthly", interval: 1, plannedQuantity: 1, weekOfMonth: 1 },
+      audienceRoles: [],
+    })
+
+    expect(res).toMatchObject({ ok: false, message: "No se pudo completar la acción. Intenta nuevamente." })
+    expect(res.message).not.toContain("program_id")
   })
 
   it("deletePdtpActivityAction retira actividad sin borrarla", async () => {

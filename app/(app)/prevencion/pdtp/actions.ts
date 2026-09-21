@@ -20,6 +20,7 @@ export {
 export {
   updatePdtpActivityAction,
   addPdtpActivityAction,
+  savePdtpProgramActivityAction,
   duplicatePdtpActivityAction,
   batchUpdatePdtpActivitiesAction,
   deletePdtpActivityAction,

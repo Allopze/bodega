@@ -68,11 +68,11 @@ export function ActivityForm({
           {activity && <input type="hidden" name="id" value={activity.id} />}
           <SheetHeader>
             <div>
-              <SheetTitle>{isRevision ? "Crear nueva revisión" : "Nueva actividad"}</SheetTitle>
+              <SheetTitle>{isRevision ? "Crear nueva revisión" : "Nueva plantilla"}</SheetTitle>
               <SheetDescription>
                 {isRevision
                   ? "Los programas existentes conservarán la revisión que ya adoptaron."
-                  : "La definición se crea como borrador y debe publicarse antes de usarla."}
+                  : "La plantilla se crea como borrador y debe publicarse antes de incorporarla a un programa."}
               </SheetDescription>
             </div>
             <SheetCloseButton />
@@ -100,7 +100,7 @@ export function ActivityForm({
           </SheetBody>
           <SheetFooter>
             <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
-            <SubmitButton label={isRevision ? "Crear revisión" : "Crear borrador"} loadingLabel="Guardando..." />
+            <SubmitButton label={isRevision ? "Crear revisión" : "Crear plantilla"} loadingLabel="Guardando..." />
           </SheetFooter>
         </form>
       </SheetContent>

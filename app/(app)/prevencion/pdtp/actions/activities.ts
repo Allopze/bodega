@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { ZodError } from "zod"
-import { guardPermission } from "@/lib/auth/can"
+import { can, guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { safeActionMessage } from "@/lib/action-error"
 import {
@@ -22,8 +22,14 @@ import {
 import type { ActionState } from "@/lib/validation/prevention"
 import { adoptLatestCatalogRevision } from "@/lib/services/pdtp/catalog-activities"
 import {
+  addCatalogActivityToProgram,
+  createPublishedCatalogActivityAndAddToProgram,
+  PdtpCatalogCodeConflictError,
+} from "@/lib/services/pdtp/activity-creation"
+import {
   pdtpActivityUpdateSchema,
   pdtpActivityAddSchema,
+  pdtpProgramActivityCreateSchema,
   pdtpActivityOverrideSchema,
   pdtpActivityDeleteSchema,
   pdtpActivityDuplicateSchema,
@@ -50,11 +56,20 @@ function fail(error: unknown): ActionState {
     return { ok: false, message: error.message, data: { scheduleConflict: error.detail } }
   }
   if (error instanceof ZodError) {
+    const fieldErrors: Record<string, string[]> = {}
+    for (const issue of error.issues) {
+      const key = [...issue.path].reverse().find((part): part is string => typeof part === "string")
+      if (!key) continue
+      fieldErrors[key] = [...(fieldErrors[key] ?? []), issue.message]
+    }
     return {
       ok: false,
       message: "Revisa los campos marcados.",
-      fieldErrors: error.flatten().fieldErrors as Record<string, string[]>,
+      fieldErrors,
     }
+  }
+  if (error instanceof PdtpCatalogCodeConflictError) {
+    return { ok: false, message: "Revisa los campos marcados.", fieldErrors: { code: ["Este código ya existe"] } }
   }
   // Los servicios PDTP lanzan sus reglas de negocio como `new Error("texto
   // para el operador")` y son la única pista de por qué la operación no
@@ -93,6 +108,53 @@ export async function addPdtpActivityAction(input: unknown): Promise<ActionState
     return { ok: true }
   } catch (e) {
     return fail(e)
+  }
+}
+
+export async function savePdtpProgramActivityAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  const session = guard.session
+  try {
+    const parsed = pdtpProgramActivityCreateSchema.parse(input)
+    if (parsed.source.kind === "new" && !can(session, "admin:pdtp_catalog")) {
+      return { ok: false, message: "No tienes permisos para crear y publicar actividades de catálogo" }
+    }
+
+    const execution = {
+      responsibleSlug: parsed.responsibleSlug,
+      audienceRoles: parsed.audienceRoles,
+      scheduleMode: parsed.scheduleMode,
+      recurrenceRule: parsed.scheduleMode === "scheduled" ? parsed.recurrenceRule : null,
+      triggerType: parsed.scheduleMode === "triggered" ? parsed.triggerType ?? "evento_operacional" : null,
+      triggerDescription: parsed.scheduleMode === "triggered" ? parsed.triggerDescription : null,
+      dueDays: parsed.scheduleMode === "scheduled" ? null : parsed.dueDays,
+      evidenceRequirement: parsed.evidenceRequirement,
+      indicatorMode: parsed.scheduleMode === "scheduled" ? "planned_vs_completed" as const : "closed_on_time" as const,
+      targetValue: 100,
+      targetUnit: "%",
+      notes: parsed.notes,
+    }
+    const actor = { userId: session.user.id, userEmail: session.user.email ?? undefined }
+    const result = parsed.source.kind === "new"
+      ? await createPublishedCatalogActivityAndAddToProgram({
+        programId: parsed.programId,
+        definition: parsed.source,
+        execution,
+      }, actor)
+      : await addCatalogActivityToProgram({
+        programId: parsed.programId,
+        catalogActivityId: parsed.source.catalogActivityId,
+        execution,
+      }, actor)
+
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}`)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
+    revalidatePath("/admin/pdtp-catalogos")
+    return { ok: true, data: result }
+  } catch (error) {
+    return fail(error)
   }
 }
 

@@ -1,5 +1,5 @@
 import { and, eq, inArray, notInArray, sql } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type DB, type Tx } from "@/db"
 import { pdtpActivities, pdtpActivityChecklists, pdtpActivitySchedule, pdtpCatalogActivities, pdtpCatalogActivityRevisions, pdtpPrograms, pdtpSheetActivities, workerCapabilities } from "@/db/schema"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId, resolveSheetForProgram } from "./helpers"
 import {
@@ -26,6 +26,7 @@ function normalizedSubjectCapabilityCodes(codes: readonly string[] | null | unde
 async function validateCapabilitySubjectConfiguration(
   source: string | null,
   codes: readonly string[] | null,
+  client: DB | Tx = db,
 ): Promise<void> {
   if (source !== "trabajadores_capacidad") {
     if (codes?.length) throw new Error("Las capacidades sólo corresponden a la fuente de trabajadores por capacidad.")
@@ -35,7 +36,7 @@ async function validateCapabilitySubjectConfiguration(
   if (codes.some((code) => !WORKER_CAPABILITY_CODE_PATTERN.test(code))) {
     throw new Error("La configuración contiene un código de capacidad inválido.")
   }
-  const existing = await db.select({ code: workerCapabilities.code }).from(workerCapabilities)
+  const existing = await client.select({ code: workerCapabilities.code }).from(workerCapabilities)
     .where(and(inArray(workerCapabilities.code, [...codes]), eq(workerCapabilities.isActive, true)))
   if (existing.length !== codes.length) {
     throw new Error("Una o más capacidades del padrón no existen o están inactivas.")
@@ -423,11 +424,20 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
   })
 }
 
-export async function addPdtpActivity(input: PdtpActivityAddInput, userId: string) {
-  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, input.programId)).limit(1)
+export async function addPdtpActivity(
+  input: PdtpActivityAddInput,
+  userId: string,
+  client: DB | Tx = db,
+  withinTransaction = false,
+): Promise<typeof pdtpActivities.$inferSelect> {
+  if (!withinTransaction && typeof (client as DB).transaction === "function") {
+    return (client as DB).transaction((tx) => addPdtpActivity(input, userId, tx, true))
+  }
+
+  const [program] = await client.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, input.programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
   assertPdtpProgramEditableState(program)
-  const catalogDefinition = input.catalogActivityId ? await db.select({
+  const catalogDefinition = input.catalogActivityId ? await client.select({
     id: pdtpCatalogActivities.id,
     status: pdtpCatalogActivities.status,
     revision: pdtpCatalogActivities.currentRevision,
@@ -445,9 +455,9 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   if (catalog?.status === "retired") throw new Error("La actividad está retirada y no puede seleccionarse nuevamente.")
   if (catalog && catalog.status !== "active") throw new Error("La actividad debe estar publicada antes de incorporarla.")
   const subjectCapabilityCodes = normalizedSubjectCapabilityCodes(input.subjectCapabilityCodes)
-  await validateCapabilitySubjectConfiguration(input.subjectSource ?? null, subjectCapabilityCodes)
+  await validateCapabilitySubjectConfiguration(input.subjectSource ?? null, subjectCapabilityCodes, client)
 
-  const existingActivities = await db.select({ n: pdtpActivities.n, displayOrder: pdtpActivities.displayOrder, catalogActivityId: pdtpActivities.catalogActivityId })
+  const existingActivities = await client.select({ n: pdtpActivities.n, displayOrder: pdtpActivities.displayOrder, catalogActivityId: pdtpActivities.catalogActivityId })
     .from(pdtpActivities)
     .where(eq(pdtpActivities.programId, input.programId))
   const maxN = existingActivities.reduce((m, row) => Math.max(m, row.n), 0)
@@ -464,7 +474,7 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   // calendario ya commiteados, dejando una actividad sin membresía —invisible
   // en la vista donde el usuario la pidió— y sin entrada de changelog.
   const sheets = await Promise.all(input.sheetCodes.map(async (sheetCode) => {
-    const sheet = await resolveSheetForProgram(input.programId, sheetCode)
+    const sheet = await resolveSheetForProgram(input.programId, sheetCode, client)
     if (!sheet) throw new Error(`Hoja PDTP no encontrada: ${sheetCode}.`)
     return { sheetCode, sheet }
   }))
@@ -473,8 +483,7 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
     ? projectRecurrenceToLegacySchedule(input.recurrenceRule, deriveScheduleHorizon(program))
     : [])
 
-  return db.transaction(async (tx) => {
-    const [created] = await tx.insert(pdtpActivities).values({
+  const [created] = await client.insert(pdtpActivities).values({
       id: activityId, programId: input.programId, n: newN, displayOrder: maxDisplayOrder + 1,
       catalogActivityId: catalog?.id ?? null,
       catalogRevision: catalog?.revision ?? null,
@@ -494,19 +503,19 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
     if (!created) throw new Error("No se pudo crear la actividad PDTP.")
 
     for (const cell of schedule) {
-      await tx.insert(pdtpActivitySchedule).values({
+      await client.insert(pdtpActivitySchedule).values({
         id: pdtpScheduleId(activityId, program.year, cell.month, cell.week), activityId,
         year: program.year, month: cell.month, week: cell.week, plannedQuantity: cell.plannedQuantity, sourceColumn: "manual",
       })
     }
 
     for (const { sheetCode, sheet } of sheets) {
-      const [{ maxOrder } = { maxOrder: 0 }] = await tx
+      const [{ maxOrder } = { maxOrder: 0 }] = await client
         .select({ maxOrder: sql<number>`COALESCE(MAX(${pdtpSheetActivities.displayOrder}), 0)` })
         .from(pdtpSheetActivities)
         .where(eq(pdtpSheetActivities.sheetId, sheet.id))
       const nextOrder = Number(maxOrder) + 1
-      await tx.insert(pdtpSheetActivities).values({
+      await client.insert(pdtpSheetActivities).values({
         id: pdtpSheetActivityId(input.programId, sheetCode, newN), sheetId: sheet.id, sheetCode, activityId,
         sheetRow: nextOrder, displayOrder: nextOrder,
       }).onConflictDoNothing()
@@ -518,9 +527,8 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
       catalogRevision: catalog?.revision ?? null,
       activity: catalog?.description ?? input.activity,
       sheetCodes: input.sheetCodes,
-    }, catalog ? `Actividad ${newN} incorporada desde catálogo.` : `Actividad ${newN} agregada manualmente.`, tx)
-    return created
-  })
+    }, catalog ? `Actividad ${newN} incorporada desde catálogo.` : `Actividad ${newN} agregada manualmente.`, client)
+  return created
 }
 
 export async function retirePdtpActivity(input: {

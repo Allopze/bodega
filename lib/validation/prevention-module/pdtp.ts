@@ -189,6 +189,42 @@ export const pdtpActivityAddSchema = z.object({
   validateSubjectSourceConfiguration(value, ctx)
 })
 
+const pdtpProgramActivitySourceSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("catalog"),
+    catalogActivityId: z.string().trim().min(1, "Actividad requerida"),
+  }),
+  z.object({
+    kind: z.literal("new"),
+    code: z.string().trim().toUpperCase()
+      .regex(/^PDT-[A-Z0-9][A-Z0-9-]{2,116}[A-Z0-9]$/, "Usa el formato PDT-AREA-ACCION"),
+    title: z.string().trim().min(3, "El título debe tener al menos 3 caracteres").max(80),
+    description: z.string().trim().min(3, "La descripción es obligatoria").max(4000),
+    executionGuidance: z.string().trim().min(2, "La guía de ejecución es obligatoria").max(2000),
+  }),
+])
+
+export const pdtpProgramActivityCreateSchema = z.object({
+  programId: z.string().trim().min(1, "Programa requerido"),
+  source: pdtpProgramActivitySourceSchema,
+  responsibleSlug: z.string().trim().min(1, "Responsable requerido"),
+  audienceRoles: z.array(z.string().trim().min(1).max(100)).max(50).default([]),
+  scheduleMode: pdtpScheduleModeSchema.default("scheduled"),
+  recurrenceRule: pdtpRecurrenceRuleSchema.nullable().optional(),
+  triggerType: z.string().trim().max(100).nullable().optional(),
+  triggerDescription: z.string().trim().max(2000).nullable().optional(),
+  dueDays: z.coerce.number().int().min(0).max(3650).nullable().optional(),
+  evidenceRequirement: z.string().trim().max(3000).nullable().optional(),
+  notes: z.string().max(5000).optional().or(z.literal("")),
+}).superRefine((value, ctx) => {
+  if (value.scheduleMode === "scheduled" && !value.recurrenceRule) {
+    ctx.addIssue({ code: "custom", path: ["recurrenceRule"], message: "Define una frecuencia para una actividad programada" })
+  }
+  if (value.scheduleMode === "triggered" && !value.triggerDescription?.trim()) {
+    ctx.addIssue({ code: "custom", path: ["triggerDescription"], message: "Describe el evento que genera la obligación" })
+  }
+})
+
 export const pdtpActivityOverrideSchema = z.object({
   activityId: z.string().min(1, "Actividad requerida"),
   worksiteId: z.string().min(1, "Faena requerida"),

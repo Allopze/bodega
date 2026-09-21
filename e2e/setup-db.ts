@@ -2107,6 +2107,13 @@ async function main() {
   // ── PDTP fixture: programa + actividad + hoja + checklist activo + ejecución ──
   // Da a e2e/pdtp-flow.spec.ts un flujo completo y un borrador anual para
   // comprobar que el creador idempotente abre el programa existente.
+  await db.insert(schema.pdtpResponsibleCatalog).values({
+    slug: "prevencionista_e2e",
+    displayName: "Prevencionista E2E",
+    roleName: "prevencionista",
+    kind: "rol_rbac",
+    isActive: true,
+  })
   await db.insert(schema.pdtpPrograms).values({
     id: "pdtp-prog-e2e",
     year: 2026,
