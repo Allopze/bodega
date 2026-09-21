@@ -233,13 +233,6 @@ export { listPdtpConstanciaActivities, assertPdtpActivityMechanism } from "./con
 export type { PdtpConstanciaView, PdtpConstanciaDebt } from "./constancias"
 
 // ── Plan de Acción → Seguimiento ─────────────────────────────────────────────
-/* El motor de checklist propio del PDTP se retiró: los instrumentos viven en
- * Inspecciones. De `checklists.ts` sólo queda la lectura, porque la tabla se
- * conserva —está dentro de la huella firmada del programa— y sus filas nacen
- * únicamente al copiar hacia adelante un snapshot ya firmado. */
-export type { PdtpChecklistTemplate } from "./checklists"
-export { listProgramActiveChecklists } from "./checklists"
-
 export type { PdtpActionPlanItemInput, PdtpActionPlanItemUpdate } from "./action-plan"
 export {
   listActionPlanItems,

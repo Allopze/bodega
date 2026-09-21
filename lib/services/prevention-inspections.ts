@@ -415,10 +415,14 @@ export async function setInspectionTemplatePdtpActivities(input: unknown, access
  * de versión. `failed` y `differences` eran, además, código muerto: ninguna ruta
  * de la aplicación podía producirlos.
  *
- * Sin segregación respecto de quien incorporó, por la misma razón que documenta
- * `approveInspectionTemplate`: exigir un segundo par de ojos dejaba el
- * instrumento inservible en las faenas donde el Jefe de Prevención es quien lo
- * instala. Lo que sí queda es la traza de quién declaró la paridad y cuándo.
+ * Con segregación respecto de quien incorporó, y esto se aparta a propósito de
+ * `approveInspectionTemplate`, que documenta por qué ahí no la hay. La
+ * diferencia es lo que cada acto afirma. Aprobar una plantilla del catálogo
+ * avala una copia literal de algo ya revisado en el repositorio: un segundo par
+ * de ojos no revisaba nada y dejaba el instrumento inservible donde el Jefe de
+ * Prevención es quien lo instala. Declarar paridad es un juicio: alguien afirma
+ * que la transcripción digital coincide con el papel, ítem por ítem. Que lo
+ * afirme la misma persona que la incorporó es el control revisándose a sí mismo.
  */
 export async function setInspectionTemplateParity(input: unknown, access: InspectionAccess) {
   const data = z.object({
@@ -458,6 +462,9 @@ export async function setInspectionTemplateParity(input: unknown, access: Inspec
     }
     if (!template.sourceDocumentVersionId || !template.sourceSnapshot) {
       throw new Error("La plantilla no tiene una versión documental vinculada contra la cual contrastar.")
+    }
+    if (template.authorUserId === access.userId) {
+      throw new Error("La paridad la declara alguien distinto de quien incorporó la plantilla: contrastar la transcripción con el papel es el control, y no se revisa a sí mismo.")
     }
 
     // Misma verificación de integridad que la aprobación: declarar paridad

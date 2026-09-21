@@ -9,7 +9,6 @@ import {
   listPdtpProgramSheets,
   listPdtpProgramActivities,
   listPdtpProgramScheduleForYear,
-  listProgramActiveChecklists,
   listPdtpResponsibleCatalog,
   listPdtpProgramWorksites,
   listPdtpActivityWorksiteExclusions,
@@ -56,10 +55,9 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
   if (program.status !== "draft") redirect(`/prevencion/pdtp/${programId}`)
 
   const worksiteScope = resolveWorksiteScope(session)
-  const [sheets, activities, checklists, responsibleCatalog, catalogActivities, visibleWorksites, programWorksites, baseComparison, coverageReport, executorAssignments, executorRoleOptions, objectives, accreditationBindings] = await Promise.all([
+  const [sheets, activities, responsibleCatalog, catalogActivities, visibleWorksites, programWorksites, baseComparison, coverageReport, executorAssignments, executorRoleOptions, objectives, accreditationBindings] = await Promise.all([
     listPdtpProgramSheets(programId),
     listPdtpProgramActivities(programId),
-    listProgramActiveChecklists(programId),
     listPdtpResponsibleCatalog(),
     listCatalogActivities(),
     worksiteScope.mode === "none"
@@ -147,7 +145,6 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
         sheets={sheets}
         activities={activities}
         schedule={schedule}
-        checklists={checklists}
         objectives={objectives}
         responsibleCatalog={responsibleCatalog.filter((responsible) => responsible.isActive)}
         catalogActivities={catalogActivities.map((activity) => ({

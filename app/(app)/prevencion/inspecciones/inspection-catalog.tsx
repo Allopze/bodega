@@ -8,6 +8,7 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Combobox } from "@/components/ui/combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
@@ -1054,14 +1055,23 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
           <Field label="Definición del catálogo SST">
             <Select value={code} onValueChange={setCode}><SelectTrigger aria-label="Definición del catálogo SST"><SelectValue /></SelectTrigger><SelectContent>{importable.map((item) => <SelectItem key={item.code} value={item.code}>{item.title}</SelectItem>)}</SelectContent></Select>
           </Field>
+          {/* Combobox y no Select: la Biblioteca SST sembrada son 99+ versiones
+              y en una lista desplegable sin buscar no se encuentra ninguna. El
+              nombre del archivo viaja como `hint` para que también se pueda
+              buscar por él, que suele ser lo que la persona recuerda. */}
           <Field label="Fuente documental de la Biblioteca SST" hint="Obligatoria para aprobar anexos oficiales; puede vincularse al crear el borrador.">
-            <Select value={sourceVersionId} onValueChange={setSourceVersionId}>
-              <SelectTrigger aria-label="Fuente documental"><SelectValue placeholder="Sin fuente vinculada" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_ACTIVITY}>Sin fuente vinculada</SelectItem>
-                {documentSources.map((source) => <SelectItem key={source.id} value={source.id}>{source.documentCode ?? source.documentTitle} · {source.fileName}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <Combobox
+              id="import-source-version"
+              options={documentSources.map((source) => ({
+                value: source.id,
+                label: source.documentCode ?? source.documentTitle,
+                hint: source.fileName,
+              }))}
+              value={sourceVersionId === NO_ACTIVITY ? "" : sourceVersionId}
+              onChange={(value) => setSourceVersionId(value === "" ? NO_ACTIVITY : value)}
+              placeholder="Buscar por código o nombre de archivo…"
+              clearLabel="Sin fuente vinculada"
+            />
           </Field>
           {sourceVersionId !== NO_ACTIVITY && <>
             <Field label="Revisión impresa"><Input name="sourceRevision" placeholder="Ej. Rev. 02" maxLength={120} /></Field>

@@ -6,7 +6,6 @@ import { Callout } from "@/components/ui/callout"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 import type { pdtpPrograms } from "@/db/schema"
-import type { PdtpChecklistTemplate } from "@/lib/services/prevention-pdtp"
 import type { PdtpBaseComparison, PdtpRevisionDiff } from "@/lib/services/prevention-pdtp"
 import { RevisionDiffDecisions } from "../revision-diff-decisions"
 import { countOf, pluralize } from "@/lib/utils"
@@ -16,7 +15,6 @@ import type { PdtpActivityRow } from "./types"
 export function ReviewTab({
   program,
   activities,
-  checklists,
   responsibleCatalog,
   visibleWorksites,
   memberWorksiteIds,
@@ -27,7 +25,6 @@ export function ReviewTab({
 }: {
   program: typeof pdtpPrograms.$inferSelect
   activities: PdtpActivityRow[]
-  checklists: PdtpChecklistTemplate[]
   responsibleCatalog: Array<{ slug: string; displayName: string }>
   visibleWorksites: Array<{ id: string; name: string; code: string }>
   memberWorksiteIds: string[]
@@ -40,7 +37,9 @@ export function ReviewTab({
   const missingSchedule = activeActivities.filter((activity) => (activity.scheduleMode ?? "scheduled") === "scheduled" && !activity.recurrenceRule && activity.sourceSheetRow === 0).length
   const missingTrigger = activeActivities.filter((activity) => activity.scheduleMode === "triggered" && !activity.triggerDescription).length
   const unresolvedScheduleClassification = activeActivities.filter((activity) => activity.scheduleClassificationStatus === "needs_review").length
-  const missingEvidence = activeActivities.filter((activity) => !activity.evidenceRequirement && !checklists.some((checklist) => checklist.activityId === activity.id)).length
+  /* El checklist dejó de contar como evidencia declarada: su motor se retiró y
+   * nadie puede crear uno. Lo único que queda es el requisito explícito. */
+  const missingEvidence = activeActivities.filter((activity) => !activity.evidenceRequirement).length
   const checks = [
     { label: "Datos básicos", ok: !!program.title.trim(), detail: program.title },
     { label: "Actividades", ok: activeActivities.length > 0, detail: activeActivities.length > 0 ? `${activeActivities.length} ${pluralize(activeActivities.length, "activa")}` : "Agrega al menos una actividad activa" },

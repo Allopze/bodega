@@ -11,7 +11,6 @@ import type {
   pdtpPrograms,
   pdtpSheets,
 } from "@/db/schema"
-import type { PdtpChecklistTemplate } from "@/lib/services/prevention-pdtp"
 import type { PdtpBaseComparison, PdtpRevisionDiff } from "@/lib/services/prevention-pdtp"
 import { countOf } from "@/lib/utils"
 import { deriveScheduleHorizon } from "@/lib/services/pdtp/recurrence"
@@ -58,7 +57,6 @@ type PdtpBuilderTabsProps = {
   sheets: Array<typeof pdtpSheets.$inferSelect>
   activities: Array<typeof pdtpActivities.$inferSelect>
   schedule: Array<typeof pdtpActivitySchedule.$inferSelect>
-  checklists: PdtpChecklistTemplate[]
   objectives: PdtpObjective[]
   userId: string
   canDelete: boolean
@@ -114,7 +112,6 @@ export function PdtpBuilderTabs({
   sheets,
   activities,
   schedule,
-  checklists,
   objectives,
   userId,
   canDelete,
@@ -311,7 +308,6 @@ export function PdtpBuilderTabs({
         <ReviewTab
           program={program}
           activities={activities}
-          checklists={checklists}
           responsibleCatalog={responsibleCatalog}
           visibleWorksites={visibleWorksites}
           memberWorksiteIds={memberWorksiteIds}

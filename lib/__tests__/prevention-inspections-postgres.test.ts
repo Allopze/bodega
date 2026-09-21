@@ -371,6 +371,35 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       }, APPROVER)).rejects.toThrow(/exige enumerarlas/i)
     })
 
+    /* Se aparta a propósito de `approveInspectionTemplate`, que no tiene
+     * segregación. Aprobar avala una copia literal del catálogo; declarar
+     * paridad es un juicio —que la transcripción coincide con el papel, ítem
+     * por ítem— y que lo afirme quien la incorporó es el control revisándose a
+     * sí mismo. */
+    it("no la declara quien incorporó la plantilla", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const draft = await draftWithoutParity("par-05")
+      // APPROVER tiene todos los permisos, así que si importa él, él no puede
+      // declararla: lo que bloquea es la identidad, no el permiso.
+      const propio = await service.importInspectionTemplate({
+        definitionCode: "observacion_maquinaria", kind: "observation",
+        versionLabel: "par-06",
+        sourceDocumentVersionId: await officialSourceVersionFor("observacion_maquinaria"),
+      }, APPROVER)
+
+      await expect(service.setInspectionTemplateParity({
+        templateId: propio.id, expectedVersion: propio.version, status: "passed",
+        reason: "Intento de verificar mi propia transcripción.",
+      }, APPROVER)).rejects.toThrow(/no se revisa a sí mismo/i)
+
+      // Y la que incorporó otro sí la puede declarar.
+      const verificada = await service.setInspectionTemplateParity({
+        templateId: draft.id, expectedVersion: draft.version, status: "passed",
+        reason: "Contrastada contra el anexo impreso.",
+      }, APPROVER)
+      expect((verificada.parityReport as { status: string }).status).toBe("passed")
+    })
+
     it("exige el permiso de aprobación, no el de gestión", async () => {
       const service = await import("@/lib/services/prevention-inspections")
       const draft = await draftWithoutParity("par-04")
