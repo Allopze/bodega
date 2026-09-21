@@ -12,34 +12,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { CanonicalIndicatorResult } from "@/lib/prevention/safety-indicators-calc"
 import type { CanonicalIndicatorYearView } from "@/lib/services/prevention-indicadores"
 import { denominatorDialogLabel, IndicatorDenominatorDialog } from "./indicator-denominator-dialog"
+import { DENOMINATOR_STATUS_LABELS, labelOrRaw, RECONCILIATION_LABELS } from "./denominator-labels"
 import { IndicatorPeriodCloseButton } from "./indicator-period-close-button"
 
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-/**
- * La tabla de denominadores pintaba `reconciliationStatus` y `status` crudos
- * mientras el fallback textual sí estaba en español: la misma columna alternaba
- * idioma según hubiera registro o no, en la pantalla de indicadores DS 44.
- */
-const RECONCILIATION_LABELS: Record<string, string> = {
-  pending: "Pendiente",
-  matched: "Conciliado",
-  mismatched: "Con diferencia",
-  missing_legacy: "Sin dato anterior",
-  difference: "Con diferencia",
-  match: "Coincide",
-}
-
-const DENOMINATOR_STATUS_LABELS: Record<string, string> = {
-  draft: "Borrador",
-  submitted: "Enviado",
-  approved: "Aprobado",
-  rejected: "Rechazado",
-}
-
-function labelOrRaw(catalog: Record<string, string>, value: string | null | undefined) {
-  if (!value) return "—"
-  return catalog[value] ?? value
-}
 
 const STATUS_LABELS: Record<string, string> = { reconciled: "Conciliado", provisional: "Provisional", non_calculable: "No calculable", error: "Error de conciliación" }
 
@@ -61,7 +37,7 @@ function rateCell(value: number | null) {
 function statusVariant(status: string): "success" | "warning" | "danger" | "default" {
   if (status === "reconciled" || status === "approved") return "success"
   if (status === "error" || status === "rejected") return "danger"
-  if (["provisional", "pending_review", "difference", "reopened"].includes(status)) return "warning"
+  if (["provisional", "pending_review", "difference", "exception", "reopened"].includes(status)) return "warning"
   return "default"
 }
 
@@ -165,7 +141,7 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
                 const denominator = selectedIsTotal ? null : denominatorByPeriod.get(`${group.worksiteId}:${index + 1}`) ?? null
                 const closed = !selectedIsTotal && closedKeys.has(`${group.worksiteId}:${index + 1}`)
                 const metrics = item.status === "provisional" ? item.provisional : item.confirmed
-                return <TableRow key={MONTHS[index]}><TableCell><p className="font-medium">{MONTHS[index]}</p><MetaBadge className="mt-1" meta={{ label: STATUS_LABELS[item.status] ?? item.status, variant: statusVariant(item.status) }} />{item.pendingCaseCount > 0 && <p className="mt-1 text-xs text-[var(--color-warning-ink)]">{item.pendingCaseCount} pendiente(s)</p>}</TableCell><TableCell className="text-right font-mono tabular-nums"><Link href={incidentHref(item, "frequency")} className="font-medium text-[var(--color-primary-ink)] hover:underline">{metrics.injuredPeople}</Link></TableCell><TableCell className="text-right font-mono tabular-nums">{item.workedHours ? item.workedHours.toLocaleString("es-CL") : <span className="text-[var(--color-text-subtle)]" title="Sin denominador cargado para este mes">—</span>}</TableCell><TableCell className="text-right font-mono tabular-nums font-medium">{rateCell(metricValue(item, "frequencyRate"))}</TableCell><TableCell className="text-right font-mono tabular-nums">{metrics.absenceDays} + {metrics.chargeDays}</TableCell><TableCell className="text-right font-mono tabular-nums">{rateCell(metricValue(item, "accidentabilityRate"))}</TableCell>{!selectedIsTotal && (canManage || canClose) && <TableCell className="text-right"><div className="flex justify-end gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => setEditingMonth(index + 1)}>{denominatorDialogLabel(denominator ?? null)}</Button>{closed ? <MetaBadge meta={{ label: "Cerrado", variant: "success" }} /> : canClose && item.status === "reconciled" && <IndicatorPeriodCloseButton worksiteId={String(group.worksiteId)} year={view.year} month={index + 1} />}</div></TableCell>}</TableRow>
+                return <TableRow key={MONTHS[index]}><TableCell><p className="font-medium">{MONTHS[index]}</p><MetaBadge className="mt-1" meta={{ label: STATUS_LABELS[item.status] ?? item.status, variant: statusVariant(item.status) }} />{item.pendingCaseCount > 0 && <p className="mt-1 text-xs text-[var(--color-warning-ink)]">{item.pendingCaseCount} pendiente(s)</p>}</TableCell><TableCell className="text-right font-mono tabular-nums"><Link href={incidentHref(item, "frequency")} className="font-medium text-[var(--color-primary-ink)] hover:underline">{metrics.injuredPeople}</Link></TableCell><TableCell className="text-right font-mono tabular-nums">{item.workedHours ? item.workedHours.toLocaleString("es-CL") : <span className="text-[var(--color-text-subtle)]" title="Sin denominador cargado para este mes">—</span>}</TableCell><TableCell className="text-right font-mono tabular-nums font-medium">{rateCell(metricValue(item, "frequencyRate"))}</TableCell><TableCell className="text-right font-mono tabular-nums">{metrics.absenceDays} + {metrics.chargeDays}</TableCell><TableCell className="text-right font-mono tabular-nums">{rateCell(metricValue(item, "accidentabilityRate"))}</TableCell>{!selectedIsTotal && (canManage || canClose) && <TableCell className="text-right"><div className="flex justify-end gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => setEditingMonth(index + 1)}>{denominatorDialogLabel(denominator ?? null, { canManage, canApprove: canClose })}</Button>{closed ? <MetaBadge meta={{ label: "Cerrado", variant: "success" }} /> : canClose && item.status === "reconciled" && <IndicatorPeriodCloseButton worksiteId={String(group.worksiteId)} year={view.year} month={index + 1} />}</div></TableCell>}</TableRow>
               })}</TableBody></Table>
           </div>
           <div className="grid gap-3 md:grid-cols-2">{group.semesters.map((semester, index) => <div key={`semester-${index + 1}`} className="rounded-lg border border-[var(--color-border)] p-4"><div className="flex justify-between"><h3 className="font-medium">Semestre {index + 1}</h3><MetaBadge meta={{ label: STATUS_LABELS[semester.status] ?? semester.status, variant: statusVariant(semester.status) }} /></div><p className="mt-3 font-mono text-2xl font-semibold">{rate(metricValue(semester, "severityRate"))}</p><p className="text-xs text-[var(--color-text-subtle)]">Calculada desde los seis meses brutos, no desde un promedio de tasas.</p></div>)}</div>
@@ -173,7 +149,7 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
         </TabsContent>
 
         <TabsContent value="denominators">
-          {selectedIsTotal ? <EmptyState title="Selecciona una faena" description="La fuente y aprobación se gestionan por faena y mes; la vista total sólo agrega resultados autorizados." /> : <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]"><Table><TableHeader><TableRow><TableHead>Mes</TableHead><TableHead className="text-right">Dotación</TableHead><TableHead className="text-right">HH</TableHead><TableHead>Fuente</TableHead><TableHead>Conciliación</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acción</TableHead></TableRow></TableHeader><TableBody>{MONTHS.map((month, index) => { const item = denominatorByPeriod.get(`${group.worksiteId}:${index + 1}`) ?? null; return <TableRow key={month}><TableCell>{month}</TableCell><TableCell className="text-right font-mono tabular-nums">{item?.workerCount ?? "—"}</TableCell><TableCell className="text-right font-mono tabular-nums">{item?.workedHours?.toLocaleString("es-CL") ?? "—"}</TableCell><TableCell>{item?.sourceReference ?? "Sin fuente"}</TableCell><TableCell><MetaBadge meta={{ label: item ? labelOrRaw(RECONCILIATION_LABELS, item.reconciliationStatus) : "Pendiente", variant: statusVariant(item?.reconciliationStatus ?? "pending") }} /></TableCell><TableCell><MetaBadge meta={{ label: item ? labelOrRaw(DENOMINATOR_STATUS_LABELS, item.status) : "Sin registro", variant: statusVariant(item?.status ?? "draft") }} /></TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="ghost" onClick={() => setEditingMonth(index + 1)}>{denominatorDialogLabel(item)}</Button></TableCell></TableRow> })}</TableBody></Table></div>}
+          {selectedIsTotal ? <EmptyState title="Selecciona una faena" description="La fuente y aprobación se gestionan por faena y mes; la vista total sólo agrega resultados autorizados." /> : <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]"><Table><TableHeader><TableRow><TableHead>Mes</TableHead><TableHead className="text-right">Dotación</TableHead><TableHead className="text-right">HH</TableHead><TableHead>Fuente</TableHead><TableHead>Conciliación</TableHead><TableHead>Estado</TableHead>{(canManage || canClose) && <TableHead className="text-right">Acción</TableHead>}</TableRow></TableHeader><TableBody>{MONTHS.map((month, index) => { const item = denominatorByPeriod.get(`${group.worksiteId}:${index + 1}`) ?? null; return <TableRow key={month}><TableCell>{month}</TableCell><TableCell className="text-right font-mono tabular-nums">{item?.workerCount ?? "—"}</TableCell><TableCell className="text-right font-mono tabular-nums">{item?.workedHours?.toLocaleString("es-CL") ?? "—"}</TableCell><TableCell>{item?.sourceReference ?? "Sin fuente"}</TableCell><TableCell><MetaBadge meta={{ label: item ? labelOrRaw(RECONCILIATION_LABELS, item.reconciliationStatus) : "Pendiente", variant: statusVariant(item?.reconciliationStatus ?? "pending") }} /></TableCell><TableCell><MetaBadge meta={{ label: item ? labelOrRaw(DENOMINATOR_STATUS_LABELS, item.status) : "Sin registro", variant: statusVariant(item?.status ?? "draft") }} /></TableCell>{(canManage || canClose) && <TableCell className="text-right"><Button type="button" size="sm" variant="ghost" onClick={() => setEditingMonth(index + 1)}>{denominatorDialogLabel(item, { canManage, canApprove: canClose })}</Button></TableCell>}</TableRow> })}</TableBody></Table></div>}
         </TabsContent>
 
         <TabsContent value="reconciliation">

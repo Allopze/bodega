@@ -119,4 +119,22 @@ describe("CanonicalIndicatorsDashboard", () => {
     expect(screen.getByText(/Las tasas de frecuencia, gravedad y accidentabilidad/)).toBeDefined()
     expect(screen.queryByRole("button", { name: "Cargar dotación y HH" })).toBeNull()
   })
+
+  /**
+   * La columna "Acción" de la pestaña Denominadores no tenía gate de permiso
+   * —a diferencia de la del cálculo mensual—, así que un usuario de sólo
+   * lectura veía doce botones que abrían un modal sin formulario ni panel.
+   */
+  it("no ofrece la acción del denominador a quien sólo puede ver", () => {
+    render(<CanonicalIndicatorsDashboard view={makeView()} currentYear={2026} canManage={false} canClose={false} currentUserId="user-1" />)
+
+    expect(screen.queryByRole("button", { name: "Registrar" })).toBeNull()
+    expect(screen.queryByRole("columnheader", { name: "Acción" })).toBeNull()
+  })
+
+  it("sí la ofrece a quien puede aprobar aunque no pueda gestionar", () => {
+    render(<CanonicalIndicatorsDashboard view={makeView()} currentYear={2026} canManage={false} canClose currentUserId="user-1" />)
+
+    expect(screen.getAllByRole("button", { name: "Registrar" }).length).toBeGreaterThan(0)
+  })
 })
