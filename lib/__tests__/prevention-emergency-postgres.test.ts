@@ -314,6 +314,9 @@ describeIf("Emergencias on real PostgreSQL", () => {
     expect(pendiente?.executedAt).toBeNull()
 
     // El borde de abajo es inclusivo: realizarlo justo a la hora programada vale.
+    // La evidencia va acá y no antes a propósito: los dos rechazos de arriba son
+    // por fecha, y adjuntarla antes escondería cuál de los dos gates disparó.
+    await attachDrillEvidence("borde-inferior", drill.id)
     const completado = await service.completeEmergencyDrill({ ...base, executedAt: scheduledFor }, EXECUTOR)
     expect(completado.status).toBe("completed")
   })
