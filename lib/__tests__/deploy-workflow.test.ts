@@ -292,6 +292,30 @@ describe("deploy workflow", () => {
    * no hay ventana: las filas ya no existen. El orden acá no es preferencia,
    * es la única secuencia en la que el rescate hace algo.
    */
+  /*
+   * El workflow migraba producción desde un runner, disparado por cada push a
+   * `main`. El respaldo y el rescate de la historia viven en `deploy-prod.sh`,
+   * así que ese camino podía aplicar migraciones destructivas sin red. Migrar
+   * quedó en un solo lugar; acá sólo se verifica, y se falla cerrado.
+   */
+  it("el despliegue automático verifica el esquema pero no lo migra", () => {
+    const workflow = readFileSync(path.join(repoRoot, ".github/workflows/deploy.yml"), "utf8")
+
+    expect(workflow).not.toContain("npm run db:migrate")
+    expect(workflow).toContain("node scripts/assert-migrations-applied.mjs")
+
+    // Y la compuerta corre antes de rotar el contenedor, o no serviría de nada.
+    const verify = workflow.indexOf("assert-migrations-applied")
+    const rollout = workflow.indexOf("--force-recreate app")
+    expect(verify).toBeGreaterThan(-1)
+    expect(rollout).toBeGreaterThan(-1)
+    expect(verify).toBeLessThan(rollout)
+
+    // Migrar sigue existiendo, pero sólo en el camino que respalda primero.
+    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
+    expect(deployScript).toContain('run_timed "Applying migrations"')
+  })
+
   it("rescata la historia de prevención antes de migrar, y después del respaldo", () => {
     const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
 
