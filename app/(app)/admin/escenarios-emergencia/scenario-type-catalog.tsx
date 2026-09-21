@@ -96,7 +96,7 @@ export function EmergencyScenarioTypeCatalog({ rows }: { rows: EmergencyScenario
                 <div className="min-w-0">
                   <h2 className="truncate text-sm font-medium text-[var(--color-text)]">{item.label}</h2>
                   <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                    {item.isSystem ? "Incluido por la plataforma" : "Tipo propio"} · {OBLIGATION_LABELS[item.obligation] ?? item.obligation}
+                    {OBLIGATION_LABELS[item.obligation] ?? item.obligation}
                   </p>
                 </div>
                 <MetaBadge meta={{ label: item.isActive ? "Activo" : "Inactivo", variant: item.isActive ? "success" : "default" }} dot />
@@ -104,8 +104,36 @@ export function EmergencyScenarioTypeCatalog({ rows }: { rows: EmergencyScenario
               <p className="mt-3 text-xs tabular-nums text-[var(--color-text-muted)]">
                 {item.scenarioCount} escenario(s) en planes · {item.drillCount} simulacro(s)
               </p>
-              {!item.isSystem && (
-                <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
+              <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
+                <Button size="sm" variant="ghost" onClick={() => edit(item)}><PencilSimple size={15} />Editar</Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={pendingCode === item.code}
+                  onClick={() => item.isActive ? setConfirmRow(item) : void setActive(item, true)}
+                >
+                  <Power size={15} />{item.isActive ? "Desactivar" : "Activar"}
+                </Button>
+              </div>
+            </article>
+          )
+        }}
+        renderRow={(row) => {
+          const item = row as ScenarioTypeTableRow
+          return (
+            <TableRow key={item.code}>
+              <TableCell>
+                <span className="font-medium">{item.label}</span>
+              </TableCell>
+              <TableCell className="text-sm text-[var(--color-text-muted)]">{item.obligationLabel}</TableCell>
+              <TableCell className="text-sm tabular-nums">
+                {item.scenarioCount} escenario(s) · {item.drillCount} simulacro(s)
+              </TableCell>
+              <TableCell>
+                <MetaBadge meta={{ label: item.isActive ? "Activo" : "Inactivo", variant: item.isActive ? "success" : "default" }} />
+              </TableCell>
+              <TableCell>
+                <div className="flex items-center justify-end gap-1">
                   <Button size="sm" variant="ghost" onClick={() => edit(item)}><PencilSimple size={15} />Editar</Button>
                   <Button
                     size="sm"
@@ -116,39 +144,6 @@ export function EmergencyScenarioTypeCatalog({ rows }: { rows: EmergencyScenario
                     <Power size={15} />{item.isActive ? "Desactivar" : "Activar"}
                   </Button>
                 </div>
-              )}
-            </article>
-          )
-        }}
-        renderRow={(row) => {
-          const item = row as ScenarioTypeTableRow
-          return (
-            <TableRow key={item.code}>
-              <TableCell>
-                <span className="font-medium">{item.label}</span>
-                <span className="ml-2 text-xs text-[var(--color-text-muted)]">{item.isSystem ? "Base protegida" : "Tipo propio"}</span>
-              </TableCell>
-              <TableCell className="text-sm text-[var(--color-text-muted)]">{item.obligationLabel}</TableCell>
-              <TableCell className="text-sm tabular-nums">
-                {item.scenarioCount} escenario(s) · {item.drillCount} simulacro(s)
-              </TableCell>
-              <TableCell>
-                <MetaBadge meta={{ label: item.isActive ? "Activo" : "Inactivo", variant: item.isActive ? "success" : "default" }} />
-              </TableCell>
-              <TableCell>
-                {item.isSystem ? <span className="text-xs text-[var(--color-text-muted)]">Protegido</span> : (
-                  <div className="flex items-center justify-end gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => edit(item)}><PencilSimple size={15} />Editar</Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={pendingCode === item.code}
-                      onClick={() => item.isActive ? setConfirmRow(item) : void setActive(item, true)}
-                    >
-                      <Power size={15} />{item.isActive ? "Desactivar" : "Activar"}
-                    </Button>
-                  </div>
-                )}
               </TableCell>
             </TableRow>
           )

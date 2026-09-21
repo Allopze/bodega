@@ -58,7 +58,7 @@ interface RoleInfo { id: string; roleName: string; assigneeName: string; backupN
 interface ResourceInfo { id: string; name: string; kind: string; location: string; serialNumber: string | null; lastInspectedAt: string | null; nextInspectionAt: string | null; expiresAt: string | null; status: string }
 interface ContactInfo { id: string; name: string; org: string; role: string | null; phone: string }
 interface DrillInfo { id: string; scenarioType: string; scenarioTypeLabelSnapshot: string; scheduledFor: string; status: string; outcome: string | null; version: number; activeEvidenceCount: number }
-interface ScenarioTypeOption { code: string; label: string; isSystem: boolean; isActive: boolean; sortOrder: number }
+interface ScenarioTypeOption { code: string; label: string; isActive: boolean }
 interface WorkerOption { id: string; name: string; position: string | null }
 
 interface Props {

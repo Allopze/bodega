@@ -9,9 +9,7 @@ export interface EmergencyScenarioTypeRow {
   code: string
   label: string
   obligation: string
-  isSystem: boolean
   isActive: boolean
-  sortOrder: number
   scenarioCount: number
   drillCount: number
 }
@@ -51,21 +49,6 @@ export function EmergencyScenarioTypeForm({
               error={Boolean(state.fieldErrors?.label)}
             />
           </Field>
-          <Field label="Orden" htmlFor="emergency-scenario-type-order" error={state.fieldErrors?.sortOrder?.[0]}>
-            <Input
-              id="emergency-scenario-type-order"
-              name="sortOrder"
-              type="number"
-              min="0"
-              max="10000"
-              defaultValue={editRow?.sortOrder ?? 1000}
-              className="w-32"
-              error={Boolean(state.fieldErrors?.sortOrder)}
-            />
-          </Field>
-          <p className="text-xs text-[var(--color-text-muted)]">
-            Los tipos base y su clasificación preventiva están protegidos. Los tipos propios se pueden desactivar, pero no borrar.
-          </p>
         </FieldGroup>
       )}
     </CatalogFormSheet>

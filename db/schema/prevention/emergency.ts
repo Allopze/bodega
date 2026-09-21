@@ -39,9 +39,9 @@ export const preventionEmergencyPlans = pgTable("prevention_emergency_plans", {
 ])
 
 /**
- * Catálogo global de tipos de escenario. Los códigos base se cargan con la
- * migración y quedan protegidos (`isSystem`); Administración puede agregar y
- * desactivar tipos propios sin borrar los registros históricos que los usan.
+ * Catálogo global de tipos de escenario. `isSystem` conserva el origen del
+ * registro, pero no limita su edición ni activación. Las listas se ordenan por
+ * nombre; `sortOrder` queda por compatibilidad con la columna existente.
  */
 export const preventionEmergencyScenarioTypes = pgTable("prevention_emergency_scenario_types", {
   code:       text("code").primaryKey(),

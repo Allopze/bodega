@@ -32,7 +32,6 @@ export async function createEmergencyScenarioTypeAction(_prev: ActionState, form
   try {
     const created = await createEmergencyScenarioType({
       label: formData.get("label"),
-      sortOrder: formData.get("sortOrder") ?? "1000",
     }, { userId: session.user.id, userEmail: session.user.email ?? undefined })
     revalidateCatalog()
     return { ok: true, message: `Tipo «${created.label}» creado` }
@@ -46,12 +45,11 @@ export async function updateEmergencyScenarioTypeAction(_prev: ActionState, form
   try { session = await requirePermission(PERMISSION) }
   catch { return { ok: false, message: "No tienes permisos para administrar este catálogo." } }
 
-  const code = String(formData.get("code") ?? "").trim()
+  const code = String(formData.get("id") ?? "").trim()
   if (!code) return { ok: false, message: "No se recibió el tipo que quieres actualizar." }
   try {
     const updated = await updateEmergencyScenarioType(code, {
       label: formData.get("label"),
-      sortOrder: formData.get("sortOrder") ?? "1000",
     }, { userId: session.user.id, userEmail: session.user.email ?? undefined })
     revalidateCatalog()
     return { ok: true, message: `Tipo «${updated.label}» actualizado` }

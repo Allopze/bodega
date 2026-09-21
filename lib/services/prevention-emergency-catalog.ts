@@ -1,4 +1,4 @@
-import { asc, eq, sql } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
 import { preventionEmergencyDrills, preventionEmergencyScenarioTypes, preventionEmergencyScenarios } from "@/db/schema"
@@ -7,32 +7,37 @@ import { nanoid } from "@/lib/id"
 
 const emergencyScenarioTypeInputSchema = z.object({
   label: z.string().trim().min(2).max(120),
-  sortOrder: z.coerce.number().int().min(0).max(10_000),
 })
+
+const emergencyScenarioTypeLabelCollator = new Intl.Collator("es-CL", { sensitivity: "base" })
+const emergencyScenarioTypeLabelTieBreaker = new Intl.Collator("es-CL", { sensitivity: "variant" })
+
+function sortScenarioTypesAlphabetically<T extends { label: string }>(rows: T[]): T[] {
+  return rows.sort((left, right) =>
+    emergencyScenarioTypeLabelCollator.compare(left.label, right.label)
+    || emergencyScenarioTypeLabelTieBreaker.compare(left.label, right.label),
+  )
+}
 
 export type EmergencyScenarioCatalogActor = { userId: string; userEmail?: string }
 
 export async function listEmergencyScenarioTypes(options: { includeInactive?: boolean } = {}) {
-  return db.select({
+  const rows = await db.select({
     code: preventionEmergencyScenarioTypes.code,
     label: preventionEmergencyScenarioTypes.label,
     obligation: preventionEmergencyScenarioTypes.obligation,
-    isSystem: preventionEmergencyScenarioTypes.isSystem,
     isActive: preventionEmergencyScenarioTypes.isActive,
-    sortOrder: preventionEmergencyScenarioTypes.sortOrder,
   }).from(preventionEmergencyScenarioTypes)
     .where(options.includeInactive ? undefined : eq(preventionEmergencyScenarioTypes.isActive, true))
-    .orderBy(asc(preventionEmergencyScenarioTypes.sortOrder), asc(preventionEmergencyScenarioTypes.label))
+  return sortScenarioTypesAlphabetically(rows)
 }
 
 export async function listEmergencyScenarioTypeAdminRows() {
-  return db.select({
+  const rows = await db.select({
     code: preventionEmergencyScenarioTypes.code,
     label: preventionEmergencyScenarioTypes.label,
     obligation: preventionEmergencyScenarioTypes.obligation,
-    isSystem: preventionEmergencyScenarioTypes.isSystem,
     isActive: preventionEmergencyScenarioTypes.isActive,
-    sortOrder: preventionEmergencyScenarioTypes.sortOrder,
     scenarioCount: sql<number>`(
       SELECT count(*)::int FROM ${preventionEmergencyScenarios} s
       WHERE s.type = ${preventionEmergencyScenarioTypes.code}
@@ -42,7 +47,7 @@ export async function listEmergencyScenarioTypeAdminRows() {
       WHERE d.scenario_type = ${preventionEmergencyScenarioTypes.code}
     )`,
   }).from(preventionEmergencyScenarioTypes)
-    .orderBy(asc(preventionEmergencyScenarioTypes.sortOrder), asc(preventionEmergencyScenarioTypes.label))
+  return sortScenarioTypesAlphabetically(rows)
 }
 
 export async function createEmergencyScenarioType(input: unknown, actor: EmergencyScenarioCatalogActor) {
@@ -54,7 +59,6 @@ export async function createEmergencyScenarioType(input: unknown, actor: Emergen
     obligation: "custom",
     isSystem: false,
     isActive: true,
-    sortOrder: data.sortOrder,
     createdAt: now,
     updatedAt: now,
   }
@@ -80,9 +84,8 @@ export async function updateEmergencyScenarioType(code: string, input: unknown, 
     const [existing] = await tx.select().from(preventionEmergencyScenarioTypes)
       .where(eq(preventionEmergencyScenarioTypes.code, code)).limit(1)
     if (!existing) throw new Error("Tipo de escenario no encontrado.")
-    if (existing.isSystem) throw new Error("Los tipos base de emergencia están protegidos.")
 
-    const nextState = { label: data.label, sortOrder: data.sortOrder, updatedAt: new Date().toISOString() }
+    const nextState = { label: data.label, updatedAt: new Date().toISOString() }
     const [updated] = await tx.update(preventionEmergencyScenarioTypes).set(nextState)
       .where(eq(preventionEmergencyScenarioTypes.code, code)).returning()
     if (!updated) throw new Error("No se pudo actualizar el tipo de escenario.")
@@ -104,7 +107,6 @@ export async function setEmergencyScenarioTypeActive(code: string, isActive: boo
     const [existing] = await tx.select().from(preventionEmergencyScenarioTypes)
       .where(eq(preventionEmergencyScenarioTypes.code, code)).limit(1)
     if (!existing) throw new Error("Tipo de escenario no encontrado.")
-    if (existing.isSystem) throw new Error("Los tipos base de emergencia están protegidos.")
 
     const nextState = { isActive, updatedAt: new Date().toISOString() }
     const [updated] = await tx.update(preventionEmergencyScenarioTypes).set(nextState)
