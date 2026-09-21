@@ -155,9 +155,12 @@ export function AlcotestWorkbench({
           {worksites.length > 1 && (
             <Select
               value={selectedWorksiteId ?? undefined}
-              onValueChange={(value) => router.push(`/prevencion/alcotest?faena=${encodeURIComponent(value)}`)}
+              onValueChange={(value) => router.replace(
+                `/prevencion/alcotest?faena=${encodeURIComponent(value)}`,
+                { scroll: false },
+              )}
             >
-              <SelectTrigger className="w-64"><SelectValue placeholder="Elige una faena" /></SelectTrigger>
+              <SelectTrigger aria-label="Filtrar por faena" className="w-64"><SelectValue placeholder="Elige una faena" /></SelectTrigger>
               <SelectContent>
                 {worksites.map((worksite) => (
                   <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>
