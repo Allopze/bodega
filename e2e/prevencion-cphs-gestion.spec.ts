@@ -23,4 +23,19 @@ test.describe("Prevención — CPHS y Gobernanza Paritaria", () => {
     // Verificación de tabla o tarjetas de comités
     await expect(page.getByText("Faena E2E").first()).toBeVisible({ timeout: 30_000 })
   })
+
+  test("alerta cuando una faena supera los 25 trabajadores sin comité vigente", async ({ page }) => {
+    await page.goto("/prevencion/cphs")
+    await expect(page).toHaveURL(/\/prevencion\/cphs/)
+
+    const banner = page.getByRole("status").filter({ hasText: "Faena Sin CPHS E2E" })
+    await expect(banner).toBeVisible({ timeout: 30_000 })
+    await expect(banner).toContainText("26")
+
+    await banner.getByRole("button", { name: "Crear comité para Faena Sin CPHS E2E", exact: true }).click()
+
+    const dialog = page.getByRole("dialog", { name: "Constituir comité paritario" })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole("combobox")).toHaveText("Faena Sin CPHS E2E")
+  })
 })

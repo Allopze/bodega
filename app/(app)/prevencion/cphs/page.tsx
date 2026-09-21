@@ -4,6 +4,8 @@ import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import {
   listCommitteeAssignees,
   listCommitteeMeetings,
@@ -11,8 +13,10 @@ import {
   listCommitteeWorksites,
   listManagementReviews,
 } from "@/lib/services/prevention-cphs"
+import { listWorksiteOrganizations } from "@/lib/services/prevention-cphs-organization"
 import { assessMeetingCadence, isMandateExpired } from "@/lib/prevention/cphs"
 import { CommitteeList } from "./committee-list"
+import { NewCommitteeDialog } from "./cphs-dialogs"
 import { todayInChile } from "@/lib/utils"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
@@ -35,13 +39,17 @@ export default async function CphsPage({
   const canManage = session.user.permissions.includes("prevention:cphs:manage")
   const canReview = session.user.permissions.includes("prevention:governance:review")
 
-  const [committees, meetings, worksites, reviews, assignees] = await Promise.all([
+  const [committees, meetings, worksites, reviews, assignees, organizations] = await Promise.all([
     listCommittees(access),
     listCommitteeMeetings(access),
     canManage || canReview ? listCommitteeWorksites(access) : Promise.resolve([]),
     canReview ? listManagementReviews(access) : Promise.resolve([]),
     canManage || canReview ? listCommitteeAssignees(access) : Promise.resolve([]),
+    listWorksiteOrganizations(access),
   ])
+  const cphsGaps = organizations.filter(
+    (org) => org.compliance.required === "cphs" && !org.compliance.compliant,
+  )
   const query = await searchParams
   const requestedWorksiteId = Array.isArray(query.faena) ? query.faena[0] : query.faena
   const initialWorksiteId = worksites.some((worksite) => worksite.id === requestedWorksiteId)
@@ -61,6 +69,34 @@ export default async function CphsPage({
           { label: "CPHS" },
         ]} />}
       />
+      {cphsGaps.length > 0 && (
+        <Callout
+          tone="warning"
+          className="mb-4"
+          title={cphsGaps.length === 1
+            ? "1 faena supera los 25 trabajadores y no tiene Comité Paritario vigente"
+            : `${cphsGaps.length} faenas superan los 25 trabajadores y no tienen Comité Paritario vigente`}
+        >
+          <ul className="space-y-1.5">
+            {cphsGaps.map((gap) => (
+              <li key={gap.worksiteId} className="flex flex-wrap items-center justify-between gap-2">
+                <span>{gap.worksiteName} · {gap.headcount} trabajadores</span>
+                {canManage && worksites.length > 0 && (
+                  <NewCommitteeDialog
+                    worksites={worksites}
+                    initialWorksiteId={gap.worksiteId}
+                    trigger={
+                      <Button size="sm" variant="secondary" aria-label={`Crear comité para ${gap.worksiteName}`}>
+                        Crear comité
+                      </Button>
+                    }
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
+        </Callout>
+      )}
       <CommitteeList
         committees={committees.map((row) => ({
           id: row.committee.id,

@@ -2914,6 +2914,33 @@ async function main() {
     updatedAt: now,
   })
 
+  // ── Fixture de brecha: faena con 26 trabajadores activos (supera los 25
+  // del art. 8 DS 54) y SIN comité vigente, para la alerta de
+  // e2e/prevencion-cphs-gestion.spec.ts. Ninguna otra faena sirve: ws-e2e y
+  // ws-restricted-e2e ya tienen comité activo arriba.
+  await db.insert(schema.worksites).values({
+    id: "ws-cphs-gap-e2e",
+    name: "Faena Sin CPHS E2E",
+    code: "E2E-CPHS-GAP",
+    address: "Ruta E2E",
+    region: "Testing",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.workers).values(
+    Array.from({ length: 26 }, (_, i) => ({
+      id: `worker-cphs-gap-e2e-${i + 1}`,
+      rut: `7${String(i + 1).padStart(7, "0")}-${i % 2 === 0 ? "K" : "9"}`,
+      firstName: `Trabajador${i + 1}`,
+      lastName: "CPHS Gap E2E",
+      position: "Operario",
+      worksiteId: "ws-cphs-gap-e2e",
+      isActive: true,
+      createdAt: now,
+    })),
+  )
+
   // ── MIPER fixture: matriz publicada con un peligro, para
   // e2e/prevencion-miper-risk-map.spec.ts (necesita un peligro que ubicar).
   await db.insert(schema.preventionRiskMethodologies).values({

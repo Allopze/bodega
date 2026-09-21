@@ -18,9 +18,12 @@ import { nanoid } from "@/lib/id"
 export function NewCommitteeDialog({
   worksites,
   initialWorksiteId,
+  trigger,
 }: {
   worksites: { id: string; name: string }[]
   initialWorksiteId?: string
+  /** Disparador propio (p. ej. un botón de alerta por faena); por defecto "Nuevo comité". */
+  trigger?: React.ReactNode
 }) {
   const [open, setOpen] = React.useState(false)
   const requestedWorksiteId = initialWorksiteId
@@ -45,7 +48,7 @@ export function NewCommitteeDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button size="sm">Nuevo comité</Button></DialogTrigger>
+      <DialogTrigger asChild>{trigger ?? <Button size="sm">Nuevo comité</Button>}</DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
