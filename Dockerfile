@@ -435,6 +435,19 @@ RUN ./node_modules/.bin/esbuild scripts/seed-size-catalog.ts \
     --external:postgres \
     --outfile=/tmp/seed-size-catalog.mjs
 
+# Materializa las casillas del programa preventivo de las faenas ya existentes.
+# Las migraciones 0314/0316 crearon esas tablas vacías y sólo el alta de faena
+# las llena, así que sin este paso el servidor arranca con las pantallas de
+# emergencias, CGRD y alcotest en blanco. Idempotente: reejecutar crea cero.
+RUN ./node_modules/.bin/esbuild scripts/ensure-prevention-program-slots.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/ensure-prevention-program-slots.mjs
+
 # Da de baja las variantes que son la misma talla física escrita de dos formas
 # (`N41` junto a `T41`, `L` junto a `T/L`) o duplicadas de plano. Desactiva con
 # `is_active = false`, nunca borra, y sólo toca variantes sin stock ni
@@ -561,6 +574,7 @@ COPY --from=build /tmp/preflight-fuel-integrations.mjs ./scripts/preflight-fuel-
 COPY --from=build /tmp/normalize-epp-skus.mjs ./scripts/normalize-epp-skus.mjs
 COPY --from=build /tmp/reconcile-request-status.mjs ./scripts/reconcile-request-status.mjs
 COPY --from=build /tmp/seed-size-catalog.mjs ./scripts/seed-size-catalog.mjs
+COPY --from=build /tmp/ensure-prevention-program-slots.mjs ./scripts/ensure-prevention-program-slots.mjs
 COPY --from=build /tmp/reconcile-epp-duplicate-sizes.mjs ./scripts/reconcile-epp-duplicate-sizes.mjs
 COPY --from=build /tmp/backfill-epp-clothing-sizes.mjs ./scripts/backfill-epp-clothing-sizes.mjs
 # Cron service uses this bounded internal HTTP runner instead of an inline
