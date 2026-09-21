@@ -21,8 +21,6 @@ import type { InspectionSubjectOption } from "@/lib/prevention/inspection-list-q
 import { todayInChile } from "@/lib/utils"
 import { buildInspectionExportQuery, parseInspectionListQuery } from "@/lib/prevention/inspection-list-query"
 import { inspectionProgramIsOverdue } from "@/lib/prevention/inspections"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 /**
@@ -105,9 +103,13 @@ export async function InspectionsScreen({ searchParams }: {
           { label: "Prevención" },
           { label: "Inspecciones" },
         ]} />}
+        /* Sólo acciones de página. "Seguimiento", "Plantillas" y "Programación"
+           estaban acá como botones y no son acciones: son las rutas hermanas
+           que el menú lateral ya lista bajo "Inspecciones" —Seguimiento se
+           sumó ahí—. Seis controles en la cabecera dejaban al único verbo
+           primario, "Nueva inspección", compitiendo con la navegación. */
         actions={
           <>
-            <Button asChild variant="secondary"><Link href="/prevencion/inspecciones/seguimiento">Seguimiento</Link></Button>
             {/* Esta pantalla ES "realizar una inspección": su verbo va primero
                 y en el encabezado, no dentro de la barra de filtros. */}
             <InspectionPageActions
@@ -160,7 +162,7 @@ export async function InspectionsScreen({ searchParams }: {
         assignees={assignees}
         subjectsByWorksite={subjectsByWorksite}
       />
-      <PdtpScheduledActivityPanelServer connectorKey="inspections" />
+      <PdtpScheduledActivityPanelServer connectorKey="inspections" searchQuery={filter.search} />
     </PageContainer>
   )
 }

@@ -8,7 +8,9 @@ import {
   deriveFindings,
   effectiveRequiredItems,
   fieldKindAcceptsPartial,
+  complianceUnavailableReason,
   inspectionResultOptionsFor,
+  inspectionRunIsOverdue,
   resultBadgeVariant,
   summarizeCompliance,
   validateAnswerRow,
@@ -542,5 +544,46 @@ describe("'not_present' (NT del Anexo 14)", () => {
 
   it("no se pinta como conformidad", () => {
     expect(resultBadgeVariant("not_present")).toBe("outline")
+  })
+})
+
+describe("ejecución vencida (el rojo de la bandeja)", () => {
+  const today = "2026-09-21"
+
+  it("una planificada con fecha pasada está vencida", () => {
+    expect(inspectionRunIsOverdue({ status: "planned", scheduledFor: "2026-08-25" }, today)).toBe(true)
+    expect(inspectionRunIsOverdue({ status: "in_progress", scheduledFor: "2026-08-25" }, today)).toBe(true)
+  })
+
+  it("una cancelada con fecha pasada NO está vencida", () => {
+    // El defecto: la tabla de escritorio comparaba sólo la fecha y pintaba
+    // "Vencida" en rojo sobre una inspección cancelada, contradiciendo al KPI.
+    expect(inspectionRunIsOverdue({ status: "cancelled", scheduledFor: "2026-08-25" }, today)).toBe(false)
+  })
+
+  it("una ya ejecutada o revisada tampoco", () => {
+    expect(inspectionRunIsOverdue({ status: "completed", scheduledFor: "2026-08-25" }, today)).toBe(false)
+    expect(inspectionRunIsOverdue({ status: "reviewed", scheduledFor: "2026-08-25" }, today)).toBe(false)
+  })
+
+  it("hoy no está vencida, y sin fecha no hay vencimiento", () => {
+    expect(inspectionRunIsOverdue({ status: "planned", scheduledFor: today }, today)).toBe(false)
+    expect(inspectionRunIsOverdue({ status: "planned", scheduledFor: null }, today)).toBe(false)
+  })
+})
+
+describe("por qué el cumplimiento no es calculable", () => {
+  it("distingue no ejecutada, cancelada y ejecutada sin ítems puntuables", () => {
+    expect(complianceUnavailableReason("planned")).toContain("aún no se ejecuta")
+    expect(complianceUnavailableReason("in_progress")).toContain("aún no se ejecuta")
+    expect(complianceUnavailableReason("cancelled")).toContain("canceló")
+    expect(complianceUnavailableReason("completed")).toContain("ningún ítem respondido puntúa")
+    expect(complianceUnavailableReason("reviewed")).toContain("ningún ítem respondido puntúa")
+  })
+
+  it("el texto empieza con la etiqueta de la celda, porque es su title", () => {
+    for (const status of ["planned", "in_progress", "cancelled", "completed", "reviewed"]) {
+      expect(complianceUnavailableReason(status).startsWith("No calculable: ")).toBe(true)
+    }
   })
 })

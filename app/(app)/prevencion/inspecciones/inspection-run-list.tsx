@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { DotsThree, MagnifyingGlass } from "@phosphor-icons/react"
+import { MagnifyingGlass } from "@phosphor-icons/react"
 import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
@@ -16,10 +16,11 @@ import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-too
 import { Pagination } from "@/components/ui/pagination"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import {
   INSPECTION_KIND_LABELS,
   INSPECTION_ORIGIN_LABELS,
+  complianceUnavailableReason,
+  inspectionRunIsOverdue,
   runStatusBadgeVariant,
 } from "@/lib/prevention/inspections"
 import { formatDate, formatDateTime } from "@/lib/utils"
@@ -123,14 +124,23 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
   // los KPIs vienen de `summary` — derivarlos de la página los volvía mentira
   // en cuanto había más de una.
   const filtered = runs
+  // A1: cuatro tiles, y los cuatro filtran esta misma lista. "Programaciones
+  // vencidas" salió de la fila porque navegaba a otra ruta con la misma
+  // apariencia de filtro; ahora es el aviso de abajo, visible sólo cuando hay
+  // algo que regularizar.
+  //
+  // `emptyDetail` existe porque un `0` con el subtítulo de siempre ("Requieren
+  // acción") no distinguía "todo al día" de "no hay datos": en cero el tile
+  // afirma el estado bueno y deja de ser clicable (un clic sólo podía llevar a
+  // una lista vacía).
   const metrics = [
-    { id: "pending-review", key: "pending_review" as const, label: "Pendientes de revisión", value: summary.pendingReview, detail: "Requieren a Prevención" },
-    { id: "open-findings", key: "open_findings" as const, label: "Con hallazgos abiertos", value: summary.withOpenFindings, detail: "Requieren acción" },
-    { id: "critical", key: "critical" as const, label: "Con hallazgo grave", value: summary.withCriticalFindings, detail: "Alto o crítico" },
+    { id: "pending-review", key: "pending_review" as const, label: "Pendientes de revisión", value: summary.pendingReview, detail: "Requieren a Prevención", emptyDetail: "Nada esperando revisión" },
+    { id: "open-findings", key: "open_findings" as const, label: "Con hallazgos abiertos", value: summary.withOpenFindings, detail: "Requieren acción", emptyDetail: "Sin hallazgos abiertos" },
+    { id: "critical", key: "critical" as const, label: "Con hallazgo grave", value: summary.withCriticalFindings, detail: "Alto o crítico", emptyDetail: "Ninguno alto ni crítico" },
     // I-31: vencido era el primer criterio de orden y no tenía acceso directo
     // en la bandeja — sólo existía "Programaciones vencidas" (otra pantalla,
     // sobre programas, no sobre ejecuciones ya creadas).
-    { id: "overdue", key: "overdue" as const, label: "Vencidas", value: summary.overdueRuns, detail: "Planificadas o en curso" },
+    { id: "overdue", key: "overdue" as const, label: "Vencidas", value: summary.overdueRuns, detail: "Planificadas o en curso", emptyDetail: "Ninguna fuera de plazo" },
   ]
 
   const totalPages = Math.max(1, Math.ceil(summary.total / pageSize))
@@ -171,32 +181,49 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
 
   return (
     <div className="space-y-4">
-      {/* I-12: en móvil los 5 KPI ocupaban una grilla 2×3 (~170px de alto)
-          antes de la primera tarjeta. Una fila con scroll horizontal baja eso
-          a una sola fila; desde `lg` vuelve a ser la grilla de siempre. */}
-      <div className="flex overflow-x-auto border-y border-[var(--color-border)] lg:grid lg:grid-cols-5 lg:overflow-hidden">
-        {metrics.map((metric) => (
-          <button
-            key={metric.id}
-            type="button"
-            onClick={() => setFilters({ vista: quickFilter === metric.key ? null : metric.key, pagina: null })}
-            aria-pressed={quickFilter === metric.key}
-            className="w-36 shrink-0 border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)] lg:w-auto"
-          >
-            <span className="text-eyebrow">{metric.label}</span>
-            <span className="mt-1 block font-mono text-xl font-semibold tabular-nums">{metric.value}</span>
-            <span className="text-xs text-[var(--color-text-subtle)]">{metric.detail}</span>
-          </button>
-        ))}
-        <Link
-          href="/prevencion/inspecciones/programacion?vista=vencidas"
-          className="w-36 shrink-0 border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] lg:w-auto"
-        >
-          <span className="text-eyebrow">Programaciones vencidas</span>
-          <span className="mt-1 block font-mono text-xl font-semibold tabular-nums">{overdueProgramCount}</span>
-          <span className="text-xs text-[var(--color-text-subtle)]">Ver y regularizar</span>
-        </Link>
+      {/* I-12: en móvil los KPI ocupaban una grilla de dos filas antes de la
+          primera tarjeta. Una fila con scroll horizontal baja eso a una sola
+          fila; desde `lg` vuelve a ser la grilla de siempre. */}
+      <div className="flex overflow-x-auto border-y border-[var(--color-border)] lg:grid lg:grid-cols-4 lg:overflow-hidden">
+        {metrics.map((metric) => {
+          const active = quickFilter === metric.key
+          // En cero no hay subconjunto al que llevar. Sigue siendo pulsable si
+          // es el filtro activo: si no, el usuario quedaría encerrado en una
+          // vista vacía sin poder apagarla desde el mismo control.
+          const inert = metric.value === 0 && !active
+          return (
+            <button
+              key={metric.id}
+              type="button"
+              disabled={inert}
+              onClick={() => setFilters({ vista: active ? null : metric.key, pagina: null })}
+              aria-pressed={active}
+              className="w-36 shrink-0 border-r border-[var(--color-border)] px-4 py-3 text-left enabled:hover:bg-[var(--color-surface-2)] disabled:cursor-default aria-pressed:bg-[var(--color-primary-tint)] lg:w-auto"
+            >
+              <span className="text-eyebrow">{metric.label}</span>
+              <span className={inert
+                ? "mt-1 block font-mono text-xl font-semibold tabular-nums text-[var(--color-text-subtle)]"
+                : "mt-1 block font-mono text-xl font-semibold tabular-nums"}>{metric.value}</span>
+              <span className="text-xs text-[var(--color-text-subtle)]">{inert ? metric.emptyDetail : metric.detail}</span>
+            </button>
+          )
+        })}
       </div>
+
+      {/* Programaciones vencidas son programas, no ejecuciones: viven en otra
+          pantalla y no filtran esta lista. Como aviso accionable dice lo mismo
+          sin disfrazarse de KPI, y desaparece cuando no hay nada que hacer. */}
+      {overdueProgramCount > 0 && (
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm">
+          <span className="font-semibold text-[var(--color-warning-ink)]">
+            {overdueProgramCount} {overdueProgramCount === 1 ? "programación vencida" : "programaciones vencidas"}
+          </span>
+          <span className="text-[var(--color-text-subtle)]">no han generado su ejecución.</span>
+          <Link href="/prevencion/inspecciones/programacion?vista=vencidas" className="font-medium underline underline-offset-2">
+            Ver y regularizar
+          </Link>
+        </p>
+      )}
 
       <FilterToolbar
         activeChips={activeChips}
@@ -279,7 +306,7 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
         <>
         <div className="space-y-3 md:hidden">
           {filtered.map((item) => {
-            const overdue = Boolean(item.scheduledFor && item.scheduledFor < today && (item.status === "planned" || item.status === "in_progress"))
+            const overdue = inspectionRunIsOverdue(item, today)
             const action = item.status === "planned" ? "Comenzar" : item.status === "in_progress" ? "Continuar" : item.status === "completed" ? "Revisar" : "Ver detalle"
             return (
               <article key={item.id} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xs">
@@ -304,7 +331,9 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
                   <div>
                     <dt className="text-[var(--color-text-subtle)]">Resultado</dt>
                     <dd className="mt-0.5 text-[var(--color-text)]">
-                      {item.compliancePercent === null ? "Aún no calculable" : `${item.compliancePercent}%`} · {item.openFindings} hallazgo{item.openFindings === 1 ? "" : "s"}
+                      {item.compliancePercent === null
+                        ? <span title={complianceUnavailableReason(item.status)}>No calculable</span>
+                        : `${item.compliancePercent}%`} · {item.openFindings} hallazgo{item.openFindings === 1 ? "" : "s"}
                     </dd>
                   </div>
                 </dl>
@@ -351,11 +380,13 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
                     {item.executedAt
                       ? formatDateTime(item.executedAt)
                       : item.scheduledFor
-                        ? <span className={item.scheduledFor < today ? "font-semibold text-[var(--color-danger)]" : undefined}>{item.scheduledFor < today ? "Vencida · " : "Programada · "}{formatDate(item.scheduledFor)}</span>
+                        ? <span className={inspectionRunIsOverdue(item, today) ? "font-semibold text-[var(--color-danger)]" : undefined}>{inspectionRunIsOverdue(item, today) ? "Vencida · " : "Programada · "}{formatDate(item.scheduledFor)}</span>
                         : "Sin fecha"}
                   </TableCell>
                   <TableCell className="text-right font-mono text-sm tabular-nums">
-                    {item.compliancePercent === null ? "No calculable" : `${item.compliancePercent}%`}
+                    {item.compliancePercent === null
+                      ? <span title={complianceUnavailableReason(item.status)}>No calculable</span>
+                      : `${item.compliancePercent}%`}
                   </TableCell>
                   <TableCell className="text-right font-mono text-sm tabular-nums">
                     {item.openFindings}{item.criticalFindings > 0 && ` (${item.criticalFindings})`}
@@ -414,23 +445,9 @@ export function InspectionPageActions({
         initialWorksiteId={initialWorksiteId}
         initialOpen={initialOpen}
       /> : null}
-      <div className="hidden items-center gap-1.5 sm:flex">
-        <Button asChild variant="secondary"><Link href="/prevencion/inspecciones/plantillas">Plantillas</Link></Button>
-        <Button asChild variant="secondary"><Link href="/prevencion/inspecciones/programacion">Programación</Link></Button>
-        {canExport ? <Button asChild variant="secondary"><a href={`/api/prevencion/inspecciones/export${exportQuery}`} download>Exportar Excel</a></Button> : null}
-      </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button type="button" variant="secondary" size="sm" className="sm:hidden" aria-label="Más acciones de inspecciones">
-            <DotsThree size={18} weight="bold" aria-hidden /> Más
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem asChild><Link href="/prevencion/inspecciones/plantillas">Administrar plantillas</Link></DropdownMenuItem>
-          <DropdownMenuItem asChild><Link href="/prevencion/inspecciones/programacion">Ver programación</Link></DropdownMenuItem>
-          {canExport ? <DropdownMenuItem asChild><a href={`/api/prevencion/inspecciones/export${exportQuery}`} download>Exportar Excel filtrado</a></DropdownMenuItem> : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {canExport
+        ? <Button asChild variant="secondary"><a href={`/api/prevencion/inspecciones/export${exportQuery}`} download>Exportar Excel</a></Button>
+        : null}
     </>
   )
 }

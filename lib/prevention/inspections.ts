@@ -986,3 +986,47 @@ export function summarizeTimelyClosure(findings: FindingClosureRow[], asOf: stri
     timelyPct: judged === 0 ? null : Math.round((closedOnTime / judged) * 100),
   }
 }
+
+/**
+ * Una ejecución está vencida sólo si sigue pendiente de hacerse. Una cancelada
+ * —o ya ejecutada, o revisada— con fecha programada en el pasado no está
+ * vencida: no hay nada que reclamar.
+ *
+ * Es la misma condición que el KPI "Vencidas" aplica en SQL
+ * (`summarizeInspectionRuns`: `status IN ('planned','in_progress') AND
+ * scheduled_for < today`). Vivía escrita a mano en la tarjeta móvil y, mal, en
+ * la celda de la tabla de escritorio: ahí sólo se comparaba la fecha, así que
+ * una inspección `Cancelada` se pintaba en rojo como "Vencida" mientras el KPI
+ * la contaba en cero. Los dos árboles —`md:hidden` y `hidden md:block`— leen
+ * ahora esta función.
+ */
+export function inspectionRunIsOverdue(
+  run: { status: string; scheduledFor: string | null },
+  today: string,
+): boolean {
+  if (run.status !== "planned" && run.status !== "in_progress") return false
+  return run.scheduledFor !== null && run.scheduledFor < today
+}
+
+/**
+ * Por qué una ejecución no tiene porcentaje de cumplimiento.
+ *
+ * `compliancePercent` es nulo cuando `summarizeCompliance` no encontró un solo
+ * ítem puntuable respondido (`scored === 0`), y eso ocurre por dos motivos muy
+ * distintos que la celda mostraba igual: la inspección todavía no se ejecutó, o
+ * se ejecutó y todo lo respondido quedó fuera del puntaje (N/A, "no tiene",
+ * ítems de registro). "No calculable" a secas obligaba a abrir la ejecución
+ * para saber cuál de los dos era.
+ *
+ * A6 pide `title`/Tooltip para la jerga de dominio; esto es el texto de ese
+ * atributo, y por eso empieza repitiendo la etiqueta de la celda.
+ */
+export function complianceUnavailableReason(status: string): string {
+  if (status === "planned" || status === "in_progress") {
+    return "No calculable: la inspección aún no se ejecuta."
+  }
+  if (status === "cancelled") {
+    return "No calculable: la inspección se canceló sin ejecutarse."
+  }
+  return "No calculable: ningún ítem respondido puntúa para el cumplimiento (no aplica, no tiene o sólo registro)."
+}

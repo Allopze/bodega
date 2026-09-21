@@ -412,6 +412,11 @@ export const preventionModule = {
           permissions: ["prevention:inspections:view"],
           children: [
             {
+              label: "Seguimiento",
+              href: "/prevencion/inspecciones/seguimiento",
+              permissions: ["prevention:inspections:view"],
+            },
+            {
               label: "Plantillas",
               href: "/prevencion/inspecciones/plantillas",
               permissions: ["prevention:inspections:view"],
@@ -427,7 +432,7 @@ export const preventionModule = {
           // Una sola pantalla: el control anual de ocurrencias por faena. El
           // catálogo de cursos, las competencias por trabajador y las brechas
           // se retiraron el 2026-09-19 con el modelo por persona.
-          label: "Capacitación",
+          label: "Campañas y Capacitación",
           href: "/prevencion/capacitacion",
           iconName: "Certificate",
           group: "Cumplimiento del programa",

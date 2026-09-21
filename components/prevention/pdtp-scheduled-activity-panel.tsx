@@ -75,15 +75,29 @@ function StartButton({ row }: { row: PdtpExecutableInstanceRow }) {
 export function PdtpScheduledActivityPanel({
   rows,
   connectorLabel,
+  searchQuery: searchOverride,
 }: {
   rows: PdtpExecutableInstanceRow[]
   connectorLabel: string
+  /**
+   * Búsqueda de texto de la pantalla que monta el bloque.
+   *
+   * Por defecto el bloque lee el buscador del shell, pero en las rutas de
+   * `ROUTES_WITH_OWN_SEARCH` (`/prevencion/inspecciones` entre ellas) la
+   * cabecera no pinta ese input: el valor llegaba siempre vacío y el buscador
+   * que el usuario sí veía no filtraba este bloque. Esas pantallas pasan su
+   * propia búsqueda por acá, y así el bloque nunca depende de un valor
+   * ambiente que puede no existir.
+   */
+  searchQuery?: string
 }) {
   const [worksite, setWorksite] = React.useState("all")
   const [status, setStatus] = React.useState("all")
   const [period, setPeriod] = React.useState<PeriodFilter>("30")
   const [assignedToMe, setAssignedToMe] = React.useState(false)
-  const { searchQuery } = useSafeShellHeader()
+  const { searchQuery: shellSearchQuery } = useSafeShellHeader()
+  const searchQuery = searchOverride ?? shellSearchQuery
+  const needle = searchQuery.trim().toLocaleLowerCase("es-CL")
   const today = chileToday()
   const periodEnd = period === "all" ? null : addCivilDays(today, Number(period))
   const worksites = React.useMemo(
@@ -92,15 +106,45 @@ export function PdtpScheduledActivityPanel({
       .sort((a, b) => a.name.localeCompare(b.name, "es-CL")),
     [rows],
   )
+  function resetFilters() {
+    setWorksite("all")
+    setStatus("all")
+    setPeriod("all")
+    setAssignedToMe(false)
+  }
+  function matchesSearch(row: PdtpExecutableInstanceRow) {
+    if (!needle) return true
+    return `${row.activityName} ${row.worksiteName} ${row.responsibleName ?? ""} ${row.statusLabel}`
+      .toLocaleLowerCase("es-CL").includes(needle)
+  }
+  /** Cuántas sobreviven a la búsqueda de la pantalla, sin los filtros del bloque. */
+  const searchMatchCount = rows.filter(matchesSearch).length
   const visibleRows = rows.filter((row) => {
-    const needle = searchQuery.trim().toLocaleLowerCase("es-CL")
-    if (needle && !`${row.activityName} ${row.worksiteName} ${row.responsibleName ?? ""} ${row.statusLabel}`.toLocaleLowerCase("es-CL").includes(needle)) return false
+    if (!matchesSearch(row)) return false
     if (worksite !== "all" && row.worksiteId !== worksite) return false
     if (status !== "all" && row.status !== status) return false
     if (assignedToMe && !row.assignedToMe) return false
     if (periodEnd && row.dueAt && row.dueAt > periodEnd) return false
     return true
   })
+
+  // Sin nada programado el bloque ocupaba media pantalla —encabezado, tres
+  // filtros y un estado vacío ilustrado— para empujar hacia abajo la lista que
+  // es el objeto de la página. Colapsado dice lo mismo en un renglón, y no
+  // ofrece filtros para un conjunto vacío.
+  if (rows.length === 0) {
+    return (
+      <section
+        aria-labelledby={`pdtp-programmed-${connectorLabel}`}
+        className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-xs"
+      >
+        <h2 id={`pdtp-programmed-${connectorLabel}`} className="text-sm font-semibold text-[var(--color-text)]">Actividades programadas</h2>
+        <p className="text-sm text-[var(--color-text-subtle)]">
+          Sin trabajo del Programa Preventivo pendiente en {connectorLabel.toLocaleLowerCase("es-CL")}.
+        </p>
+      </section>
+    )
+  }
 
   return (
     <section aria-labelledby={`pdtp-programmed-${connectorLabel}`} className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xs md:p-5">
@@ -112,38 +156,29 @@ export function PdtpScheduledActivityPanel({
         <MetaBadge meta={{ label: `${visibleRows.length} pendiente${visibleRows.length === 1 ? "" : "s"}`, variant: visibleRows.length > 0 ? "warning" : "default" }} />
       </div>
 
-      <div className="flex flex-wrap items-end gap-2" aria-label="Filtros de actividades programadas">
-        <div className="min-w-44">
-          <label className="mb-1 block text-xs font-medium text-[var(--color-text-muted)]" htmlFor={`pdtp-worksite-${connectorLabel}`}>Faena</label>
-          <Select value={worksite} onValueChange={setWorksite}>
-            <SelectTrigger id={`pdtp-worksite-${connectorLabel}`}><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas las faenas</SelectItem>
-              {worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="min-w-40">
-          <label className="mb-1 block text-xs font-medium text-[var(--color-text-muted)]" htmlFor={`pdtp-status-${connectorLabel}`}>Estado</label>
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger id={`pdtp-status-${connectorLabel}`}><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los estados</SelectItem>
-              {Object.entries(STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="min-w-40">
-          <label className="mb-1 block text-xs font-medium text-[var(--color-text-muted)]" htmlFor={`pdtp-period-${connectorLabel}`}>Período</label>
-          <Select value={period} onValueChange={(value) => setPeriod(value as PeriodFilter)}>
-            <SelectTrigger id={`pdtp-period-${connectorLabel}`}><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7">Próximos 7 días</SelectItem>
-              <SelectItem value="30">Próximos 30 días</SelectItem>
-              <SelectItem value="all">Todo el período</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="flex flex-wrap items-center gap-2" aria-label="Filtros de actividades programadas">
+        <Select value={worksite} onValueChange={setWorksite}>
+          <SelectTrigger aria-label="Faena"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas las faenas</SelectItem>
+            {worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={status} onValueChange={setStatus}>
+          <SelectTrigger aria-label="Estado"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los estados</SelectItem>
+            {Object.entries(STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={period} onValueChange={(value) => setPeriod(value as PeriodFilter)}>
+          <SelectTrigger aria-label="Período"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="7">Próximos 7 días</SelectItem>
+            <SelectItem value="30">Próximos 30 días</SelectItem>
+            <SelectItem value="all">Todo el período</SelectItem>
+          </SelectContent>
+        </Select>
         <Checkbox
           label="Asignadas a mí"
           checked={assignedToMe}
@@ -153,12 +188,22 @@ export function PdtpScheduledActivityPanel({
       </div>
 
       {visibleRows.length === 0 ? (
-        <EmptyState
-          compact
-          icon={<CheckCircle size={20} />}
-          title="Sin actividades programadas"
-          description="No hay ejecuciones pendientes para este conector con los filtros seleccionados."
-        />
+        searchMatchCount === 0 ? (
+          <EmptyState
+            compact
+            icon={<CheckCircle size={20} />}
+            title={`Ninguna actividad coincide con «${searchQuery.trim()}»`}
+            description={`La búsqueda de la pantalla también acota este bloque. Bórrala para volver a ver ${rows.length === 1 ? "la actividad programada" : `las ${rows.length} actividades programadas`}.`}
+          />
+        ) : (
+          <EmptyState
+            compact
+            icon={<CheckCircle size={20} />}
+            title="Ninguna actividad coincide con estos filtros"
+            description={`Hay ${searchMatchCount} ${searchMatchCount === 1 ? "actividad programada" : "actividades programadas"} en este bloque, pero los filtros de arriba las dejan todas fuera.`}
+            action={<Button type="button" size="sm" variant="secondary" onClick={resetFilters}>Quitar filtros del bloque</Button>}
+          />
+        )
       ) : (
         <div className="space-y-2">
           {visibleRows.map((row) => (
