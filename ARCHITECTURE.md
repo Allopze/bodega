@@ -152,7 +152,7 @@ plataforma-chome/
 │   ├── combustibles/                 # Servicios de combustibles (TAE, Copec, reportes, anomalías)
 │   ├── reports/                      # Builder Excel (ExcelJS)
 │   ├── validation/                   # Schemas Zod (masters, operations)
-│   ├── hooks/                        # React hooks (login, notifications, hide-on-scroll)
+│   ├── hooks/                        # React hooks (login, notifications, url-filters, saved-views, operation)
 │   ├── audit.ts                      # recordAudit() + recordStatusChange()
 │   ├── code-sequences.ts             # Generador transaccional de códigos
 │   ├── work-queue.ts                 # Constructor de work queue del dashboard

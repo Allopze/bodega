@@ -27,23 +27,41 @@ clases. Siempre claro: `color-scheme: light`, sin dark mode.
 
 El shell es un **chrome tintado edge-to-edge** (`bg-(--color-chrome)`) con un
 **pozo blanco** de contenido. El sidebar va al ras (parte izquierda de la "L"); el
-`<main>` es el pozo (`bg-(--color-surface)`, esquina sup-izq redondeada en
-desktop) y es el scroll container.
+pozo es `[data-shell-scroll]` (`bg-(--color-surface)`, esquina sup-izq redondeada
+en desktop) y es el scroll container. Dentro del pozo van, como hermanos, el
+`<header>` de la TopBar —que es el landmark `banner`— y el `<main>`.
 
 ```
 [chrome gris  bg-(--color-chrome)  h-[100dvh]]
-┌─ DesktopNav ─┐ ┌──────────── main = pozo blanco ────────────────┐
+┌─ DesktopNav ─┐ ┌──── [data-shell-scroll] = pozo blanco ─────────┐
 │  rail +      │ │ bg-(--color-surface) · lg:rounded-tl-[36px]      │
-│  panel       │ │ overflow-y-auto                                  │
+│  panel       │ │ overflow-y-auto  ← el scroll vive acá            │
 │  (al ras)    │ │  ┌────────────────────────────────────────────┐ │
-│              │ │  │ TopBar  sticky top-0  h-[3.5rem]            │ │
+│              │ │  │ <header> TopBar — banner, NO sticky         │ │
 │              │ │  ├────────────────────────────────────────────┤ │
-│              │ │  │ <PageContainer>  ← controla ancho/padding   │ │
-│              │ │  │   <PageHeader />                            │ │
-│              │ │  │   {contenido}                              │ │
+│              │ │  │ <main id="main-content">  ← SIN clases      │ │
+│              │ │  │   <PageContainer>  ← ancho/padding          │ │
+│              │ │  │     <PageHeader />                          │ │
+│              │ │  │     {contenido}                            │ │
 │              │ │  └────────────────────────────────────────────┘ │
 └──────────────┘ └────────────────────────────────────────────────┘
 ```
+
+Tres cosas que no se deducen del diagrama y rompen si se tocan:
+
+- **La TopBar no es `sticky`** (la doc afirmó lo contrario un tiempo, citando un
+  `useHideOnScroll` que nunca existió). Scrollea con el contenido y por eso no
+  lleva fondo propio: hereda el del pozo y con él la sombra `inset`.
+- **El scrollport es el pozo, no `<main>`**, así que `sticky top-0` y
+  `scroll-mt-*` de las páginas miden contra el borde del pozo.
+- **`<main>` va sin clases.** Un `transform`, `filter`, `contain` u `overflow`
+  ahí lo volvería bloque contenedor de los modales `fixed inset-0` de las
+  páginas. Congelado en `components/layout/app-shell.test.tsx` y verificado en
+  `e2e/shell-scroll.spec.ts` y `e2e/shell-landmarks.spec.ts`.
+
+`components/layout/right-panel.tsx` (hoy sin consumidores) asume un padre con
+altura definida para su `xl:h-full`; `<main>` tiene `height: auto`, así que
+montarlo dentro de `{contenido}` colapsaría ese alto.
 
 **Archivos clave:**
 - Shell: `components/layout/app-shell.tsx`

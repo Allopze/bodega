@@ -459,9 +459,17 @@ Hard rules (full explanation in `db/migrations/README.md`):
 # Page layout rules (CRITICAL for new pages)
 
 Every authenticated page lives under `app/(app)/` and is wrapped by `AppShell`
-→ `TopBar` (sticky header) → `<main>` (scrollable). The shell already handles
-title, breadcrumbs, search, and spacing. New pages must follow these rules
-to avoid duplicate UI and broken spacing.
+→ `[data-shell-scroll]` (the white "well": the scroll container) → which holds
+`TopBar` (a `<header>`, the `banner` landmark, **not** sticky — it scrolls with
+the content) and `<main id="main-content">` (your page, and it carries **no
+classes** on purpose). The shell already handles title, breadcrumbs, search, and
+spacing. New pages must follow these rules to avoid duplicate UI and broken
+spacing.
+
+Two consequences worth knowing before you write a page: `sticky top-0` and
+`scroll-mt-*` measure against the well, not against `<main>`; and a page-level
+`fixed inset-0` overlay anchors to the viewport only because `<main>` has no
+`transform`/`filter`/`contain`/`overflow` — do not add any to the shell.
 
 ## 1. NEVER add a standalone search input to new pages
 

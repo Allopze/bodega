@@ -144,13 +144,14 @@ Estructura de la app autenticada (`components/layout/app-shell.tsx`):
 ┌───────────────────────────────────────────────────────────────┐
 │  bg-(--color-chrome) · h-[100dvh]  — shell tintado en "L"      │
 │ ┌──────────┐ ┌───────────────────────────────────────────────┐│
-│ │ DesktopNav│ │  <main> — pozo blanco                          ││
+│ │ DesktopNav│ │  [data-shell-scroll] — pozo blanco              ││
 │ │  (rail +  │ │  bg-(--color-surface) · lg:rounded-tl-[36px]   ││
 │ │  panel)   │ │  overflow-y-auto (scroll container)            ││
 │ │  al ras   │ │ ┌───────────────────────────────────────────┐ ││
-│ │           │ │ │ TopBar — sticky top-0, h-[3.5rem]          │ ││
+│ │           │ │ │ <header> TopBar — banner, NO sticky        │ ││
 │ │           │ │ ├───────────────────────────────────────────┤ ││
-│ │           │ │ │ <PageContainer> → <PageHeader /> + contenido│ ││
+│ │           │ │ │ <main id="main-content">                   │ ││
+│ │           │ │ │  <PageContainer> → <PageHeader /> + conten.│ ││
 │ │           │ │ └───────────────────────────────────────────┘ ││
 │ └──────────┘ └───────────────────────────────────────────────┘│
 └───────────────────────────────────────────────────────────────┘
@@ -164,8 +165,21 @@ Estructura de la app autenticada (`components/layout/app-shell.tsx`):
   conectado); su `overflow-y-auto` crea el scroll container y clipea el radio.
   El pozo también lleva `shadow-well` (sombra interior fija a su borde
   lateral y esquina), distinta de las sombras de superficies flotantes.
-- El **TopBar es sticky** dentro del pozo. En mobile se auto-oculta al scrollear
-  (`useHideOnScroll`); en desktop `lg:` bloquea el auto-hide.
+- El **TopBar NO es sticky**: scrollea con el contenido, dentro del pozo. Por eso
+  no lleva fondo propio —hereda el del pozo y con él la sombra `inset`, de modo
+  que cabecera y zona de trabajo quedan sin costura—. (La documentación afirmó
+  durante un tiempo lo contrario y citaba un hook `useHideOnScroll` que nunca
+  existió en el repo.)
+- El `<header>` de la TopBar es el landmark **`banner`**, y por eso vive como
+  hermano de `<main>` y no dentro de él: un `<header>` descendiente de `main`
+  pierde esa correspondencia, y hasta el 2026-09-21 la aplicación no exponía
+  ningún landmark de cabecera. El nodo con `overflow-y-auto` es el pozo
+  (`[data-shell-scroll]`), no `<main>`, así que todo `sticky top-0` y todo
+  `scroll-mt-*` de las páginas resuelve contra el pozo.
+- `<main>` va **sin clases**, y no es estética: un `transform`, `filter`,
+  `contain` u `overflow` ahí lo volvería bloque contenedor de los modales
+  `fixed inset-0` de las páginas y rompería el `sticky` del detalle de
+  inspección. `components/layout/app-shell.test.tsx` lo congela.
 - **Command palette ⌘K / Ctrl+K** global (lazy), navega a cualquier destino
   permitido.
 - **Feature toggles**: `enabledModuleIds` oculta módulos deshabilitados en toda
@@ -360,7 +374,8 @@ opacidad, nunca por movimiento.
 Sombras suaves (`--shadow-xs/sm/card/md/lg`) reservadas a superficies
 flotantes (cards, popovers, modales) + `--shadow-well`: sombra interior fija
 al borde lateral y esquina superior del pozo principal — no es una superficie
-flotante, es el propio `<main>`.
+flotante, es el propio contenedor de scroll del pozo (`[data-shell-scroll]`,
+hermano mayor de `<main>`).
 
 ---
 
