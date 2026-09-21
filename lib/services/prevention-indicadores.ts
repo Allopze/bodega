@@ -605,7 +605,23 @@ export async function upsertSafetyIndicatorDenominator(input: unknown, access: I
       eq(safetyIndicatorDenominators.year, data.year),
       eq(safetyIndicatorDenominators.month, data.month),
     )).limit(1)
-    if (data.expectedVersion && existing?.version !== data.expectedVersion) throw new Error("El denominador cambió; recarga antes de guardar.")
+    // `expectedVersion` llega nulo cuando el formulario se abrió sobre un mes
+    // sin registro. Si al guardar YA existe uno, eso no es una creación: otro
+    // usuario lo creó en el intermedio y el `onConflictDoUpdate` de más abajo
+    // lo sobrescribía sin avisarle a nadie. El bloqueo optimista cubría las
+    // ediciones pero dejaba fuera justamente la creación concurrente.
+    const versionMismatch = existing
+      ? existing.version !== data.expectedVersion
+      : Boolean(data.expectedVersion)
+    if (versionMismatch) throw new Error("El denominador cambió; recarga antes de guardar.")
+    // El estado `pending_review` sólo estaba protegido en la UI —el formulario
+    // se desmonta—, no acá: un POST directo podía reescribir el dato mientras
+    // otra persona lo revisaba, y la decisión se habría tomado sobre cifras
+    // distintas de las que quedaron guardadas. Se sale de `pending_review` por
+    // `approveSafetyIndicatorDenominator`, no reescribiendo el registro.
+    if (existing?.status === "pending_review") {
+      throw new Error("El denominador está en revisión; espera la aprobación o el rechazo antes de editarlo.")
+    }
     if (existing?.status === "approved") {
       requireIndicatorAccess(access, "prevention:indicadores:close", data.worksiteId)
       if (!data.correctionReason) throw new Error("Corregir un denominador aprobado exige un motivo trazable.")

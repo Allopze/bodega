@@ -187,6 +187,48 @@ describeIf("canonical prevention indicators on real PostgreSQL", () => {
     const foreignView = await indicators.getCanonicalSafetyIndicatorYear(2026, { mode: "some", ids: ["ws-foreign"] })
     expect(foreignView.groups.some((item) => item.worksiteId === "ws-indicators")).toBe(false)
   })
+
+  it("protege el denominador en revisión y la creación concurrente", async () => {
+    const indicators = await import("@/lib/services/prevention-indicadores")
+    const preparer = indicatorAccess("indicator-preparer", ["prevention:indicadores:manage"])
+    const input = {
+      worksiteId: "ws-indicators", year: 2026, month: 4, workerCount: 50, workedHours: 8_000,
+      sourceType: "rrhh" as const, sourceReference: "Nómina abril 2026", evidenceReference: "doc-abril",
+      reconciliationStatus: "matched" as const,
+    }
+
+    const created = await indicators.upsertSafetyIndicatorDenominator(input, preparer)
+
+    // Dos usuarios abren el mismo mes vacío: ambos mandan `expectedVersion`
+    // nulo. Antes el segundo sobrescribía al primero sin conflicto alguno.
+    await expect(indicators.upsertSafetyIndicatorDenominator(input, preparer))
+      .rejects.toThrow(/recarga antes de guardar/i)
+
+    const inReview = await indicators.upsertSafetyIndicatorDenominator(
+      { ...input, expectedVersion: created.version, submitForReview: true },
+      preparer,
+    )
+    expect(inReview.status).toBe("pending_review")
+
+    // En revisión el formulario se oculta en la UI, pero el servicio aceptaba
+    // la escritura igual: la decisión se habría tomado sobre otras cifras.
+    await expect(indicators.upsertSafetyIndicatorDenominator(
+      { ...input, workerCount: 999, expectedVersion: inReview.version },
+      preparer,
+    )).rejects.toThrow(/en revisión/i)
+
+    // Rechazado vuelve a ser editable.
+    const rejected = await indicators.approveSafetyIndicatorDenominator(
+      { denominatorId: inReview.id, expectedVersion: inReview.version, decision: "rejected", reason: "Falta respaldo de la nómina" },
+      indicatorAccess("indicator-approver", ["prevention:indicadores:close"]),
+    )
+    expect(rejected.status).toBe("rejected")
+    const reworked = await indicators.upsertSafetyIndicatorDenominator(
+      { ...input, workerCount: 51, expectedVersion: rejected.version },
+      preparer,
+    )
+    expect(reworked.workerCount).toBe(51)
+  })
 })
 
 function indicatorAccess(userId: string, permissions: string[], scopeIds: string[] = ["ws-indicators"]) {
