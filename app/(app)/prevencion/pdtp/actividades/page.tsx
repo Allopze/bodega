@@ -24,7 +24,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PdtpSheetTable } from "../pdtp-sheet-table"
-import { PdtpObjectivePicker, PdtpPeriodPicker, PdtpProgramPicker, PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker, PdtpYearPicker } from "../pdtp-sheet-table-ui"
+import { PdtpActivitiesFilters } from "./pdtp-activities-filters"
 import { buildPdtpActivitiesHref, resolvePdtpYear, resolveSelectedWorksiteId } from "../pdtp-context"
 import { CreatePdtpRevisionButton } from "../[programId]/create-pdtp-revision-button"
 
@@ -34,7 +34,6 @@ type ActivityViewerPageProps = {
   searchParams: Promise<{ programa?: string | string[]; hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; estado?: string | string[]; mes?: string | string[]; semana?: string | string[]; objetivo?: string | string[]; asignado?: string | string[] }>
 }
 
-const VIEWER_HREF = "/prevencion/pdtp/actividades"
 const one = (value?: string | string[]) => Array.isArray(value) ? value[0] : value
 
 export default async function PdtpActivitiesPage({ searchParams }: ActivityViewerPageProps) {
@@ -163,56 +162,26 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
       />
 
       <div className="space-y-4">
-        <div className="flex flex-wrap items-end gap-3 border-y border-[var(--color-border)] py-3">
-          <PdtpYearPicker current={year} years={allPrograms.map((item) => item.year)} hrefBase={VIEWER_HREF} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} objetivo={objectiveFilter} />
-          <PdtpPeriodPicker month={currentPeriod.month} week={currentPeriod.week} hrefBase={VIEWER_HREF} programId={program.id} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} year={year} status={statusFilter} objetivo={objectiveFilter} />
-          <PdtpProgramPicker current={program.id} programs={programs.map((item) => ({ id: item.id, title: item.title, year: item.year, version: item.version }))} hrefBase={VIEWER_HREF} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} objetivo={objectiveFilter} />
-          {sheets.length > 0 ? (
-            <PdtpSheetPicker current={sheetCode} options={sheets.map((sheet) => ({ code: sheet.code, label: sheet.label }))} programId={program.id} worksiteId={selectedWorksiteId} viewMode={viewMode} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} objetivo={objectiveFilter} />
-          ) : (
-            <p className="text-sm text-[var(--color-text-muted)]">Este programa aún no tiene hojas de actividades.</p>
-          )}
-          {worksites.length > 1 && <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={program.id} viewMode={viewMode} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} objetivo={objectiveFilter} />}
-          {objectives.length > 0 && (
-            <PdtpObjectivePicker
-              current={objectiveFilter}
-              objectives={objectives}
-              programId={program.id}
-              sheetCode={sheetCode}
-              worksiteId={selectedWorksiteId}
-              viewMode={viewMode}
-              hrefBase={VIEWER_HREF}
-              year={year}
-              status={statusFilter}
-              month={currentPeriod.month}
-              week={currentPeriod.week}
-            />
-          )}
-          {/* "Sólo lo mío": la vista sigue mostrando TODO el programa —esa es la
-              diferencia con Pendientes— pero deja acotarlo a lo que uno tiene a
-              su nombre en esta faena sin cambiar de pantalla. */}
-          {selectedWorksiteId && assigneeRows.length > 0 && (
-            <Button asChild size="sm" variant={assigneeFilterUserId ? "primary" : "secondary"}>
-              <Link href={buildPdtpActivitiesHref({
-                programa: program.id,
-                hoja: sheetCode,
-                faena: selectedWorksiteId,
-                vista: viewMode,
-                anio: String(year),
-                estado: statusFilter,
-                mes: currentPeriod.month,
-                semana: currentPeriod.week,
-                objetivo: objectiveFilter,
-                asignado: assigneeFilterUserId ? undefined : "yo",
-              })}>
-                {assigneeFilterUserId ? "Ver todas las actividades" : "Sólo las asignadas a mí"}
-              </Link>
-            </Button>
-          )}
-          {/* Fila propia en móvil: con `ml-auto` a secas el toggle quedaba
-              huérfano bajo los selects (UI/UX 2026-08-05, MV-3). */}
-          <div className="w-full lg:ml-auto lg:w-auto"><PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={program.id} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} objetivo={objectiveFilter} /></div>
-        </div>
+        <PdtpActivitiesFilters
+          year={year}
+          years={allPrograms.map((item) => item.year)}
+          programId={program.id}
+          programs={programs.map((item) => ({ id: item.id, title: item.title, year: item.year, version: item.version }))}
+          sheetCode={sheetCode}
+          sheets={sheets.map((sheet) => ({ code: sheet.code, label: sheet.label }))}
+          worksiteId={selectedWorksiteId}
+          worksites={worksites.map((worksite) => ({ id: worksite.id, name: worksite.name }))}
+          objectiveId={objectiveFilter}
+          objectives={objectives.map((objective) => ({ id: objective.id, code: objective.code, name: objective.name }))}
+          month={currentPeriod.month}
+          week={currentPeriod.week}
+          viewMode={viewMode}
+          assigneeFilterActive={Boolean(assigneeFilterUserId)}
+          hasAssignees={assigneeRows.length > 0}
+        />
+        {sheets.length === 0 && (
+          <p className="text-sm text-[var(--color-text-muted)]">Este programa aún no tiene hojas de actividades.</p>
+        )}
 
         {hasUndeclaredActiveScope ? (
           <EmptyState

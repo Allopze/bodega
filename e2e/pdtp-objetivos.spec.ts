@@ -55,12 +55,25 @@ test.describe("PDTP — objetivos y filtro de actividades", () => {
     await expect(page.getByRole("row").filter({ hasText: "Actividad sin objetivo E2E" })).toBeVisible()
 
     // Filtrar por el objetivo recién creado deja sólo la actividad asignada.
+    // El selector vive tras "Más filtros" (regla A2): la vista anual ya agrupa
+    // por objetivo con encabezados de sección, así que tenerlo también como
+    // control primario duplicaba la dimensión. `exact` porque "Más filtros"
+    // convive con "Limpiar filtros" y `getByRole` matchea por substring.
+    await page.getByRole("button", { name: "Más filtros", exact: true }).click()
     await page.getByRole("combobox", { name: "Seleccionar objetivo" }).click()
     await page.getByRole("option", { name: /Objetivo E2E/ }).click()
+    await page.getByRole("button", { name: "Aplicar filtros", exact: true }).click()
     await page.waitForLoadState("networkidle").catch(() => undefined)
 
     await expect(page).toHaveURL(/[?&]objetivo=/)
     await expect(page.getByRole("row").filter({ hasText: "Actividad sin objetivo E2E" })).toBeVisible()
     await expect(page.getByRole("row").filter({ hasText: "Actividad ajustable anual E2E" })).not.toBeVisible()
+
+    // El objetivo activo se anuncia como chip removible: es lo que impide que
+    // bajarlo al Sheet lo vuelva un filtro invisible.
+    await page.getByRole("button", { name: "Eliminar filtro Objetivo" }).click()
+    await page.waitForLoadState("networkidle").catch(() => undefined)
+    await expect(page).not.toHaveURL(/[?&]objetivo=/)
+    await expect(page.getByRole("row").filter({ hasText: "Actividad ajustable anual E2E" })).toBeVisible()
   })
 })

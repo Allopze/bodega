@@ -65,20 +65,39 @@ test.describe("Densidad — el dashboard limita por dominio", () => {
   })
 })
 
+/**
+ * El conteo de filtros primarios cubría sólo `/pendientes`, así que la regla de
+ * los seis se seguía respetando a mano en el resto — que es exactamente la
+ * situación que este archivo existe para impedir. `/prevencion/pdtp/actividades`
+ * llegó a exponer **siete** comboboxes simultáneos (Año, Mes, Semana, Programa,
+ * Hoja, Faena, Objetivo) sin que nada lo detectara.
+ *
+ * Se mide con y sin faena porque el visor renderiza controles distintos en cada
+ * caso: sin `?faena=` no hay botón de asignadas, y el selector de faena sólo
+ * aparece con más de una autorizada.
+ */
+const FILTER_PAGES = [
+  { path: "/pendientes", name: "Mis pendientes" },
+  { path: "/prevencion/pdtp/actividades", name: "Actividades PDTP (agregado)" },
+  { path: "/prevencion/pdtp/actividades?vista=anual", name: "Actividades PDTP (vista anual)" },
+]
+
 test.describe("Densidad — filtros primarios", () => {
-  test("Pendientes no expone mas de seis controles de filtro a la vez", async ({ page }) => {
-    await login(page)
-    await page.goto("/pendientes")
-    await page.waitForLoadState("networkidle").catch(() => undefined)
+  for (const { path, name } of FILTER_PAGES) {
+    test(`${name} no expone mas de seis controles de filtro a la vez`, async ({ page }) => {
+      await login(page)
+      await page.goto(path)
+      await page.waitForLoadState("networkidle").catch(() => undefined)
 
-    // Los controles primarios son los que se ven sin abrir "Más filtros": ésa
-    // es justamente la distinción que la tarea pide preservar.
-    const combos = await visibleCount(page, '[role="combobox"]')
-    const searchBoxes = await visibleCount(page, 'input[type="search"], input[type="text"]')
-    const primary = combos + searchBoxes
+      // Los controles primarios son los que se ven sin abrir "Más filtros": ésa
+      // es justamente la distinción que la tarea pide preservar.
+      const combos = await visibleCount(page, '[role="combobox"]')
+      const searchBoxes = await visibleCount(page, 'input[type="search"], input[type="text"]')
+      const primary = combos + searchBoxes
 
-    expect(primary, `Pendientes expone ${primary} filtros primarios`).toBeLessThanOrEqual(6)
-  })
+      expect(primary, `${name} expone ${primary} filtros primarios`).toBeLessThanOrEqual(6)
+    })
+  }
 })
 
 test.describe("Densidad — un indicador lleva a su propio recorte", () => {
