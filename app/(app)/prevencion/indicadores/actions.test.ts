@@ -123,9 +123,12 @@ describe("indicator server actions are authorization boundaries", () => {
 
       expect(result.ok).toBe(false)
       expect(result.message).toBe("Revisa los campos marcados.")
+      // El diálogo ahora pinta estos textos bajo cada campo, así que dejaron de
+      // ser diagnóstico interno: ningún mensaje de Zod en inglés puede llegar a
+      // la pantalla, y el de la nota depende del estado de conciliación.
       expect(result.fieldErrors).toEqual({
-        evidenceReference: ["Too small: expected string to have >=3 characters"],
-        reconciliationNotes: ["Documenta la diferencia o excepción."],
+        evidenceReference: ["Identifica la evidencia con al menos 3 caracteres."],
+        reconciliationNotes: ["Documenta la diferencia encontrada."],
       })
       expect(saveDenominator).not.toHaveBeenCalled()
     })
