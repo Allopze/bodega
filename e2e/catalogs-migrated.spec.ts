@@ -17,13 +17,13 @@ test.describe("Catálogos administrativos migrados", () => {
     await login(page)
   })
 
-  test("todos los catálogos tienen una ruta administrativa navegable", async ({ page }) => {
-    for (const route of catalogRoutes) {
+  for (const route of catalogRoutes) {
+    test(`${route.title} tiene una ruta administrativa navegable`, async ({ page }) => {
       await page.goto(route.path)
       await expect(page.getByRole("heading", { name: route.title }).first()).toBeVisible()
       await expect(page.getByPlaceholder("Filtrar en esta página...")).toBeVisible()
-    }
-  })
+    })
+  }
 
   test("el hub de flota enlaza las superficies canónicas", async ({ page }) => {
     await page.goto("/admin/flota-catalogos")
