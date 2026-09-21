@@ -287,10 +287,12 @@ describe("deploy workflow", () => {
   })
 
   /*
-   * La 0319 dropea once tablas `prevention_*_history` dentro de la transacción
-   * del migrador, así que el rescate al `audit_log` sólo sirve antes. Después
-   * no hay ventana: las filas ya no existen. El orden acá no es preferencia,
-   * es la única secuencia en la que el rescate hace algo.
+   * El rescate de la historia va en dos fases porque sus dos extremos no
+   * coexisten: la 0319 dropea once tablas `prevention_*_history` y la 0318 crea
+   * la columna destino `audit_log.worksite_id`, y el migrador aplica ambas en
+   * UNA transacción. Copiar antes y volcar después es la única secuencia que
+   * funciona; hacerlo en un paso ya falló en producción el 2026-09-21 con
+   * «column worksite_id of relation audit_log does not exist».
    */
   /*
    * El workflow migraba producción desde un runner, disparado por cada push a
@@ -346,23 +348,33 @@ describe("deploy workflow", () => {
     expect(deployScript).toContain('run_timed "Applying migrations"')
   })
 
-  it("rescata la historia de prevención antes de migrar, y después del respaldo", () => {
+  it("copia la historia de prevención antes de migrar y la vuelca después, tras el respaldo", () => {
     const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
 
     const dump = deployScript.indexOf('run_timed "Dumping production database"')
-    const rescate = deployScript.indexOf("backfill-prevention-history-to-audit-log.sql")
+    const fase1 = deployScript.indexOf("rescue-prevention-history-1-stage.sql")
     const migrate = deployScript.indexOf('run_timed "Applying migrations"')
+    const fase2 = deployScript.indexOf("rescue-prevention-history-2-flush.sql")
 
     expect(dump, "falta el pg_dump").toBeGreaterThan(-1)
-    expect(rescate, "el rescate de la historia no está cableado").toBeGreaterThan(-1)
+    expect(fase1, "la fase 1 del rescate no está cableada").toBeGreaterThan(-1)
     expect(migrate, "falta el paso de migración").toBeGreaterThan(-1)
+    expect(fase2, "la fase 2 del rescate no está cableada").toBeGreaterThan(-1)
 
-    expect(dump).toBeLessThan(rescate)
-    expect(rescate).toBeLessThan(migrate)
+    expect(dump).toBeLessThan(fase1)
+    expect(fase1).toBeLessThan(migrate)
+    expect(migrate).toBeLessThan(fase2)
 
-    // Y se salta solo cuando las tablas ya no existen, o el segundo deploy
+    // Los dos .sql existen: el test cablea nombres, y un typo dejaría el paso
+    // fallando recién contra producción.
+    for (const archivo of ["rescue-prevention-history-1-stage.sql", "rescue-prevention-history-2-flush.sql"]) {
+      expect(existsSync(path.join(repoRoot, "scripts", archivo)), archivo).toBe(true)
+    }
+
+    // Cada fase se salta sola cuando su origen ya no está, o el segundo deploy
     // moriría con «relation does not exist».
-    expect(deployScript).toContain("to_regclass('prevention_epp_history')")
+    expect(deployScript).toContain("prod_relation_exists prevention_epp_history")
+    expect(deployScript).toContain("prod_relation_exists prevention_history_rescue")
   })
 
   it("corre el catálogo de tallas y la conciliación antes de completar el rango", () => {

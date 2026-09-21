@@ -400,30 +400,54 @@ run_timed "Diagnóstico de conciliación OC-factura (previo a migrar)" run_in_pr
 run_timed "Diagnóstico de integraciones de combustible (previo a migrar)" \
   run_in_prod docker compose run --rm -e "SKIP_FUEL_PREFLIGHT_GATE=$SKIP_FUEL_PREFLIGHT_GATE" preflight-fuel-integrations
 
-# ÚLTIMO PASO ANTES DE MIGRAR, y el orden no es cosmético: la migración 0319
-# dropea once tablas `prevention_*_history` y corre dentro de la transacción del
-# migrador, así que después no hay ventana. El commit que la preparó migró las
-# ESCRITURAS al `audit_log`, no las filas —«diez de las once eran la ÚNICA traza
-# que existía»—, y este rescate las copia conservando su fecha original.
+# Rescate de la historia de prevención, FASE 1 de 2. El orden no es cosmético:
+# la migración 0319 dropea once tablas `prevention_*_history`, así que esto va
+# antes. El commit que la preparó migró las ESCRITURAS al `audit_log`, no las
+# filas —«diez de las once eran la ÚNICA traza que existía»—, y el rescate las
+# copia conservando su fecha original.
 #
-# Condicional como los demás backfills de este script: cuando las tablas ya no
-# existen —o sea, del segundo deploy en adelante— el paso se salta solo en vez
-# de reventar el despliegue con «relation does not exist».
-history_tables_present="$(run_in_prod docker compose exec -T db psql -U "$PROD_DB_USER" -d "$PROD_DB_NAME" -tAc "SELECT to_regclass('prevention_epp_history') IS NOT NULL" 2>/dev/null | tr -d '[:space:]' || true)"
-if [ "$history_tables_present" = "t" ]; then
-  rescue_prevention_history() {
-    # `prod_sh` no sirve acá: el .sql vive en este checkout y hay que
-    # empujarlo por stdin al psql de allá.
-    ssh "${prod_ssh_opts[@]}" "$PROD_SSH" \
-      "cd $(printf '%q' "$PROD_DIR") && docker compose exec -T db psql -U $(printf '%q' "$PROD_DB_USER") -d $(printf '%q' "$PROD_DB_NAME") -v ON_ERROR_STOP=1 -f -" \
-      < "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/backfill-prevention-history-to-audit-log.sql"
-  }
-  run_timed "Rescatando la historia de prevención al audit_log (previo a migrar)" rescue_prevention_history
+# POR QUÉ DOS FASES. El destino es `audit_log.worksite_id`, columna que CREA la
+# 0318 — y el migrador aplica todas las pendientes en UNA transacción, así que
+# no hay ningún instante en que las tablas origen y esa columna coexistan. Se
+# intentó en un paso el 2026-09-21 y el deploy murió con «column worksite_id of
+# relation audit_log does not exist». De ahí la tabla de paso: la fase 1 copia
+# mientras el origen vive, la fase 2 vuelca cuando la columna ya existe.
+#
+# Condicionales como los demás backfills de este script: del segundo deploy en
+# adelante el origen ya no está y cada fase se salta sola en vez de reventar el
+# despliegue con «relation does not exist».
+
+# El .sql vive en ESTE checkout, así que hay que empujarlo por stdin al psql de
+# allá; `prod_sh` no sirve porque redirige en el lado remoto.
+run_prod_sql_file() {
+  ssh "${prod_ssh_opts[@]}" "$PROD_SSH" \
+    "cd $(printf '%q' "$PROD_DIR") && docker compose exec -T db psql -U $(printf '%q' "$PROD_DB_USER") -d $(printf '%q' "$PROD_DB_NAME") -v ON_ERROR_STOP=1 -f -" \
+    < "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$1"
+}
+
+prod_relation_exists() {
+  [ "$(run_in_prod docker compose exec -T db psql -U "$PROD_DB_USER" -d "$PROD_DB_NAME" -tAc "SELECT to_regclass('$1') IS NOT NULL" 2>/dev/null | tr -d '[:space:]' || true)" = "t" ]
+}
+
+if prod_relation_exists prevention_epp_history; then
+  rescue_history_stage() { run_prod_sql_file rescue-prevention-history-1-stage.sql; }
+  run_timed "Historia de prevención, fase 1: a la tabla de paso (previo a migrar)" rescue_history_stage
 else
-  echo "==> Historia de prevención: las tablas ya no existen, nada que rescatar"
+  echo "==> Historia de prevención: las tablas origen ya no existen, nada que copiar"
 fi
 
 run_timed "Applying migrations" run_in_prod docker compose run --rm migrate
+
+# Rescate de la historia de prevención, FASE 2 de 2: ahora que la 0318 creó
+# `audit_log.worksite_id`, se vuelca la tabla de paso y se borra, todo en una
+# transacción. Si el volcado falla, el paso sobrevive y se puede reintentar sin
+# haber perdido nada — por eso este paso va aquí y no más abajo.
+if prod_relation_exists prevention_history_rescue; then
+  rescue_history_flush() { run_prod_sql_file rescue-prevention-history-2-flush.sql; }
+  run_timed "Historia de prevención, fase 2: volcando al audit_log" rescue_history_flush
+else
+  echo "==> Historia de prevención: no hay tabla de paso, nada que volcar"
+fi
 
 # La migración SST es idempotente y conserva el origen local; debe ejecutarse
 # después de que la base ya tenga el esquema y antes de levantar la nueva app.
