@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
@@ -298,6 +298,36 @@ describe("deploy workflow", () => {
    * así que ese camino podía aplicar migraciones destructivas sin red. Migrar
    * quedó en un solo lugar; acá sólo se verifica, y se falla cerrado.
    */
+  /*
+   * El Dockerfile empaqueta cada one-shot con un `esbuild scripts/<x>.ts`. Si
+   * alguien borra el script y no la línea, el build de producción muere con
+   * «Could not resolve» — y nadie se entera, porque el build de prod sólo corre
+   * al desplegar. Pasó: la simplificación de capacitación (2026-09-19) retiró
+   * dos scripts y dejó sus líneas, y el deploy siguiente falló ahí. Esta prueba
+   * es barata y cierra esa clase entera.
+   */
+  it("cada esbuild del Dockerfile apunta a un script que existe", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const referenced = [...dockerfile.matchAll(/esbuild (scripts\/[\w.-]+\.ts)/g)].map((match) => match[1]!)
+
+    expect(referenced.length).toBeGreaterThan(5)
+    const missing = referenced.filter((script) => !existsSync(path.join(repoRoot, script)))
+    expect(missing, `el Dockerfile empaqueta scripts que no existen: ${missing.join(", ")}`).toEqual([])
+  })
+
+  /* La otra mitad del mismo agujero: el bundle se copia a la imagen y un
+   * servicio de compose lo invoca. Un `command` que apunte a un `.mjs` que
+   * nadie copió falla recién al correr el one-shot, en producción. */
+  it("cada one-shot de compose corre un bundle que el Dockerfile copia", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
+    const invoked = [...compose.matchAll(/"node", "(scripts\/[\w.-]+\.mjs)"/g)].map((match) => match[1]!)
+
+    expect(invoked.length).toBeGreaterThan(5)
+    const uncopied = invoked.filter((bundle) => !dockerfile.includes(`./${bundle}`))
+    expect(uncopied, `compose invoca bundles que la imagen no trae: ${uncopied.join(", ")}`).toEqual([])
+  })
+
   it("el despliegue automático verifica el esquema pero no lo migra", () => {
     const workflow = readFileSync(path.join(repoRoot, ".github/workflows/deploy.yml"), "utf8")
 

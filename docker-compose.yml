@@ -559,46 +559,6 @@ services:
       - APPROVE_DRY_RUN=${APPROVE_DRY_RUN:-}
     command: ["node", "scripts/approve-pdtp-inspection-templates.mjs"]
 
-  # Corrige la clasificación de los cursos específicos (extintores, EPP,
-  # Coordinador GRD) que quedaron declarados como del art. 16 del DS 44. NO va
-  # en el deploy —queda constancia con nombre y fecha— y exige actor explícito:
-  #   RECLASSIFY_DRY_RUN=true RECLASSIFY_ACTOR_USER_ID=<id> docker compose run --rm reclassify-specific-courses
-  reclassify-specific-courses:
-    build:
-      context: .
-      target: prod
-    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
-    restart: "no"
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
-      - RECLASSIFY_ACTOR_USER_ID=${RECLASSIFY_ACTOR_USER_ID:-}
-      - RECLASSIFY_DRY_RUN=${RECLASSIFY_DRY_RUN:-}
-    command: ["node", "scripts/reclassify-pdtp-specific-courses.mjs"]
-
-  # Carga en borrador el temario de los cursos con contenido documentado. El
-  # actor queda como AUTOR y por eso no podrá aprobarlo después: la segregación
-  # lo impide, así que conviene elegir a alguien distinto de quien vaya a firmar.
-  #   SEED_VERSIONS_DRY_RUN=true SEED_VERSIONS_ACTOR_USER_ID=<id> docker compose run --rm seed-course-versions
-  seed-course-versions:
-    build:
-      context: .
-      target: prod
-    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
-    restart: "no"
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
-      - SEED_VERSIONS_ACTOR_USER_ID=${SEED_VERSIONS_ACTOR_USER_ID:-}
-      - SEED_VERSIONS_DRY_RUN=${SEED_VERSIONS_DRY_RUN:-}
-    command: ["node", "scripts/seed-pdtp-course-versions.mjs"]
-
   # Retira las plantillas habilitadas por quien no correspondía. Entre este paso
   # y la nueva aprobación NO hay ninguna plantilla vigente y nadie puede ejecutar
   # una inspección: correlo con la persona que va a firmar disponible.
