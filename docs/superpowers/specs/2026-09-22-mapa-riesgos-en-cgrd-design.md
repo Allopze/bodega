@@ -184,8 +184,10 @@ Tests existentes a actualizar — ninguno se elimina:
 | `app/api/prevencion/miper/mapa/route.test.ts` | Mover junto a la ruta; el `revalidatePath` esperado pasa de `/prevencion/miper` a `/prevencion/cgrd/mapa` |
 | `lib/__tests__/risk-map-gc.test.ts:159-196` | Hace GET contra la ruta de la API; actualizar el import y la URL. Los asserts de `X-Plano-Estado` y `Cache-Control` no cambian |
 | `lib/__tests__/module-toggles.test.ts` | Par href/prefijo de la entrada 157 |
-| `lib/routing/__tests__/not-found-suggestion.test.ts` | Sugerencia para la ruta vieja |
 | `scripts/capture-all-routes.ts` | Ruta registrada para captura |
+
+`lib/routing/__tests__/not-found-suggestion.test.ts` **no** requiere cambios:
+declara `/prevencion/miper` como destino y nunca el mapa (verificado 2026-09-22).
 
 Test nuevo, obligatorio: **el redirect de `/prevencion/miper/mapa` responde y aterriza
 en `/prevencion/cgrd/mapa`**. Sin él, la mudanza rompe bookmarks en silencio y ningún
