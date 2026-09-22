@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
+import { FileInput } from "@/components/ui/file-input"
 import { Input } from "@/components/ui/input"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -39,6 +40,8 @@ type Equipment = Awaited<ReturnType<typeof listAlcotestEquipment>>[number]
 /** Valor centinela del selector de persona para el caso "no es de la dotación". */
 const THIRD_PARTY = "__third_party__"
 const NO_EQUIPMENT = "__none__"
+/** Centinela del selector de casilla: control/envío extraordinario, sin casilla del programa. */
+const NO_SLOT = "__no_slot__"
 
 const SHIFT_LABEL: Record<string, string> = { dia: "Día", noche: "Noche" }
 
@@ -197,15 +200,32 @@ export function AlcotestWorkbench({
 
       {scheduledPanel}
 
-      <RegisterTestDialog open={registerOpen} onOpenChange={setRegisterOpen} worksites={worksites} workers={workers} equipment={equipment} onSaved={() => router.refresh()} />
-      <DispatchDialog open={dispatchOpen} onOpenChange={setDispatchOpen} worksites={worksites} onSaved={() => router.refresh()} />
+      <RegisterTestDialog
+        open={registerOpen} onOpenChange={setRegisterOpen}
+        worksites={worksites} workers={workers} equipment={equipment}
+        selectedWorksiteId={selectedWorksiteId} controlSlots={controlSlots}
+        onSaved={() => router.refresh()}
+      />
+      <DispatchDialog
+        open={dispatchOpen} onOpenChange={setDispatchOpen}
+        worksites={worksites}
+        selectedWorksiteId={selectedWorksiteId} dispatchSlots={dispatchSlots}
+        onSaved={() => router.refresh()}
+      />
     </PageContainer>
   )
 }
 
-function RegisterTestDialog({ open, onOpenChange, worksites, workers, equipment, onSaved }: {
+function RegisterTestDialog({
+  open, onOpenChange, worksites, workers, equipment, selectedWorksiteId, controlSlots, onSaved,
+}: {
   open: boolean; onOpenChange: (open: boolean) => void
-  worksites: Worksite[]; workers: Worker[]; equipment: Equipment[]; onSaved: () => void
+  worksites: Worksite[]; workers: Worker[]; equipment: Equipment[]
+  /** La faena que la página tiene filtrada — de ahí salen las casillas de `controlSlots`. */
+  selectedWorksiteId: string | null
+  /** Casillas de control del programa para `selectedWorksiteId`, ya calculadas en la página. */
+  controlSlots: AlcotestSlotRow[]
+  onSaved: () => void
 }) {
   const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
   const [shift, setShift] = React.useState("dia")
@@ -214,12 +234,26 @@ function RegisterTestDialog({ open, onOpenChange, worksites, workers, equipment,
   const [subject, setSubject] = React.useState("")
   const [personName, setPersonName] = React.useState("")
   const [equipmentId, setEquipmentId] = React.useState(NO_EQUIPMENT)
+  const [slotId, setSlotId] = React.useState(NO_SLOT)
+  const [files, setFiles] = React.useState<File[]>([])
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
   // Persona y equipo pertenecen a la faena: cambiar de faena invalida lo elegido.
   const worksiteWorkers = workers.filter((worker) => worker.worksiteId === worksiteId)
   const worksiteEquipment = equipment.filter((item) => item.worksiteId === worksiteId)
+  // Las casillas sólo se conocen para la faena que la página tiene filtrada
+  // (`selectedWorksiteId`): si el operador elige otra faena en este diálogo no
+  // hay datos para ofrecer un selector honesto, así que se apaga en vez de
+  // mostrar una lista que podría ser de la faena equivocada.
+  const slotsAvailable = worksiteId === selectedWorksiteId
+  const openControlSlots = slotsAvailable ? controlSlots.filter((slot) => slot.status !== "completed") : []
+  const selectedSlot = openControlSlots.find((slot) => slot.id === slotId) ?? null
+  const hasSlot = slotsAvailable && slotId !== NO_SLOT
+  // Gate real del servicio (`fulfillAlcotestSlotTx`): sin evidencia activa la
+  // casilla no se puede cumplir. Se refleja acá para no dejar enviar algo que
+  // el servidor va a rechazar igual.
+  const evidenceReady = !hasSlot || (selectedSlot?.activeEvidenceCount ?? 0) + files.length > 0
 
   const [prevOpen, setPrevOpen] = React.useState(open)
   if (open !== prevOpen) {
@@ -230,6 +264,9 @@ function RegisterTestDialog({ open, onOpenChange, worksites, workers, equipment,
       setSubject("")
       setPersonName("")
       setEquipmentId(NO_EQUIPMENT)
+      setWorksiteId(selectedWorksiteId ?? worksites[0]?.id ?? "")
+      setSlotId(NO_SLOT)
+      setFiles([])
       // Hora local del navegador, no UTC: `datetime-local` la interpreta como
       // hora de pared de quien la ve, y toISOString() la habría adelantado.
       setPerformedAt(localDatetimeInputValue(new Date()))
@@ -240,6 +277,8 @@ function RegisterTestDialog({ open, onOpenChange, worksites, workers, equipment,
     setWorksiteId(value)
     setSubject("")
     setEquipmentId(NO_EQUIPMENT)
+    setSlotId(NO_SLOT)
+    setFiles([])
   }
 
   const isThirdParty = subject === THIRD_PARTY
@@ -247,19 +286,35 @@ function RegisterTestDialog({ open, onOpenChange, worksites, workers, equipment,
 
   async function save() {
     setPending(true); setError(null)
-    let res
     try {
-      res = await recordAlcoholTestAction({
+      // La evidencia se sube antes de registrar: el servicio exige al menos una
+      // activa para cumplir la casilla, y subirla después dejaría el control
+      // registrado sin casilla cumplida.
+      if (hasSlot) {
+        for (const file of files) {
+          const upload = new FormData()
+          upload.set("slotId", slotId)
+          upload.set("file", file)
+          const response = await fetch("/api/prevencion/alcotest/evidence", { method: "POST", body: upload })
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({})) as { error?: string }
+            setError(payload.error ?? "No se pudo subir la evidencia.")
+            return
+          }
+        }
+      }
+      const res = await recordAlcoholTestAction({
         worksiteId, shift, performedAt: new Date(performedAt).toISOString(), result,
         testedWorkerId: isThirdParty ? null : subject,
         testedPersonName: isThirdParty ? personName.trim() : null,
         equipmentId: equipmentId === NO_EQUIPMENT ? null : equipmentId,
+        slotId: hasSlot ? slotId : null,
       })
+      if (!res.ok) { setError(res.message ?? "No se pudo registrar el control."); return }
+      onOpenChange(false); onSaved()
     } finally {
       setPending(false)
     }
-    if (!res.ok) { setError(res.message ?? "No se pudo registrar el control."); return }
-    onOpenChange(false); onSaved()
   }
 
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent>
@@ -294,52 +349,173 @@ function RegisterTestDialog({ open, onOpenChange, worksites, workers, equipment,
         <Field label="Resultado" required><Select value={result} onValueChange={(value) => setResult(value as "negativo" | "positivo")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="negativo">Negativo</SelectItem><SelectItem value="positivo">Positivo</SelectItem></SelectContent></Select></Field>
       </div>
       <Field label="Fecha y hora" required><Input type="datetime-local" value={performedAt} onChange={(event) => setPerformedAt(event.target.value)} /></Field>
+
+      {/* Sin casilla el control se registra igual: uno extraordinario —una
+          fiscalización sorpresa, un ingreso fuera de turno— no llena ninguna y
+          no cuenta en el denominador del programa. */}
+      <Field
+        label="Casilla del programa"
+        hint={slotsAvailable ? "Opcional: deja «Ninguna» si es un control extraordinario." : "Cambia el filtro de faena de la página para ligar este control a una de sus casillas."}
+      >
+        <Select value={slotsAvailable ? slotId : NO_SLOT} onValueChange={setSlotId} disabled={!slotsAvailable}>
+          <SelectTrigger><SelectValue placeholder="Ninguna" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_SLOT}>Ninguna (control extraordinario)</SelectItem>
+            {openControlSlots.map((slot) => (
+              <SelectItem key={slot.id} value={slot.id}>{MONTH_LABELS[slot.scheduledMonth - 1]} · semana {slot.scheduledWeek}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+
+      {hasSlot && (
+        <Field
+          label="Evidencia"
+          required={!evidenceReady}
+          hint="Planilla de control, foto o registro firmado. Máximo 25 MB por archivo."
+        >
+          <FileInput
+            multiple
+            accept=".pdf,.docx,.xls,.xlsx,.jpg,.jpeg,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png"
+            onFilesChange={setFiles}
+            disabled={pending}
+          />
+        </Field>
+      )}
+      {hasSlot && !!selectedSlot?.activeEvidenceCount && (
+        <p className="text-xs text-[var(--color-text-subtle)]">Esta casilla ya tiene {selectedSlot.activeEvidenceCount} evidencia(s) adjunta(s).</p>
+      )}
+      {hasSlot && !evidenceReady && (
+        <p className="text-sm text-[var(--color-warning-ink)]">Adjunta al menos una evidencia para poder cumplir esta casilla.</p>
+      )}
+
       {error && <p role="alert" className="text-sm text-[var(--color-danger)]">{error}</p>}
     </div>
-    <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !worksiteId || !performedAt || !subjectReady}>{pending ? "Registrando..." : "Registrar"}</Button></DialogFooter>
+    <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !worksiteId || !performedAt || !subjectReady || !evidenceReady}>{pending ? "Registrando..." : "Registrar"}</Button></DialogFooter>
   </DialogContent></Dialog>
 }
 
-function DispatchDialog({ open, onOpenChange, worksites, onSaved }: {
-  open: boolean; onOpenChange: (open: boolean) => void; worksites: Worksite[]; onSaved: () => void
+function DispatchDialog({
+  open, onOpenChange, worksites, selectedWorksiteId, dispatchSlots, onSaved,
+}: {
+  open: boolean; onOpenChange: (open: boolean) => void; worksites: Worksite[]
+  /** La faena que la página tiene filtrada — de ahí salen las casillas de `dispatchSlots`. */
+  selectedWorksiteId: string | null
+  /** Casillas de envío del programa para `selectedWorksiteId`, ya calculadas en la página. */
+  dispatchSlots: AlcotestSlotRow[]
+  onSaved: () => void
 }) {
   const period = previousPeriod()
   const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
   const [year, setYear] = React.useState(period.year)
   const [month, setMonth] = React.useState(period.month)
   const [recipient, setRecipient] = React.useState("")
+  const [slotId, setSlotId] = React.useState(NO_SLOT)
+  const [files, setFiles] = React.useState<File[]>([])
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+
+  // Ídem RegisterTestDialog: las casillas sólo se conocen para la faena que la
+  // página tiene filtrada.
+  const slotsAvailable = worksiteId === selectedWorksiteId
+  const openDispatchSlots = slotsAvailable ? dispatchSlots.filter((slot) => slot.status !== "completed") : []
+  const selectedSlot = openDispatchSlots.find((slot) => slot.id === slotId) ?? null
+  const hasSlot = slotsAvailable && slotId !== NO_SLOT
+  const evidenceReady = !hasSlot || (selectedSlot?.activeEvidenceCount ?? 0) + files.length > 0
 
   const [prevOpen, setPrevOpen] = React.useState(open)
   if (open !== prevOpen) {
     setPrevOpen(open)
-    if (open) { setError(null); setRecipient(""); setYear(period.year); setMonth(period.month) }
+    if (open) {
+      setError(null); setRecipient(""); setYear(period.year); setMonth(period.month)
+      setWorksiteId(selectedWorksiteId ?? worksites[0]?.id ?? "")
+      setSlotId(NO_SLOT); setFiles([])
+    }
+  }
+
+  function changeWorksite(value: string) {
+    setWorksiteId(value)
+    setSlotId(NO_SLOT)
+    setFiles([])
   }
 
   async function save() {
     setPending(true); setError(null)
-    let res
     try {
-      res = await recordAlcoholTestDispatchAction({ worksiteId, year, month, recipient })
+      // Misma razón que en RegisterTestDialog: la evidencia se sube antes de
+      // registrar, porque el servicio exige al menos una activa para cumplir
+      // la casilla.
+      if (hasSlot) {
+        for (const file of files) {
+          const upload = new FormData()
+          upload.set("slotId", slotId)
+          upload.set("file", file)
+          const response = await fetch("/api/prevencion/alcotest/evidence", { method: "POST", body: upload })
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({})) as { error?: string }
+            setError(payload.error ?? "No se pudo subir la evidencia.")
+            return
+          }
+        }
+      }
+      const res = await recordAlcoholTestDispatchAction({ worksiteId, year, month, recipient, slotId: hasSlot ? slotId : null })
+      if (!res.ok) { setError(res.message ?? "No se pudo registrar el envío."); return }
+      onOpenChange(false); onSaved()
     } finally {
       setPending(false)
     }
-    if (!res.ok) { setError(res.message ?? "No se pudo registrar el envío."); return }
-    onOpenChange(false); onSaved()
   }
 
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent>
     <DialogHeader><DialogTitle>Enviar registros del mes</DialogTitle><DialogDescription>Cierra la N°32: el envío según DO-48 de los controles del período elegido. Un envío por faena y mes.</DialogDescription></DialogHeader>
     <div className="space-y-4">
-      <Field label="Faena" required><Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></Field>
+      <Field label="Faena" required><Select value={worksiteId} onValueChange={changeWorksite}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></Field>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Mes" required><Select value={String(month)} onValueChange={(value) => setMonth(Number(value))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{MONTH_LABELS.map((label, index) => <SelectItem key={label} value={String(index + 1)}>{label}</SelectItem>)}</SelectContent></Select></Field>
         <Field label="Año" required><Input type="number" value={year} onChange={(event) => setYear(Number(event.target.value))} /></Field>
       </div>
       <Field label="Destinatario" required helper="Organismo administrador o mutual que recibe el envío."><Input value={recipient} onChange={(event) => setRecipient(event.target.value)} maxLength={200} /></Field>
+
+      {/* Sin casilla el envío se registra igual: uno extraordinario no llena
+          ninguna y no cuenta en el denominador del programa. */}
+      <Field
+        label="Casilla del programa"
+        hint={slotsAvailable ? "Opcional: deja «Ninguna» si es un envío extraordinario." : "Cambia el filtro de faena de la página para ligar este envío a una de sus casillas."}
+      >
+        <Select value={slotsAvailable ? slotId : NO_SLOT} onValueChange={setSlotId} disabled={!slotsAvailable}>
+          <SelectTrigger><SelectValue placeholder="Ninguna" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_SLOT}>Ninguna (envío extraordinario)</SelectItem>
+            {openDispatchSlots.map((slot) => (
+              <SelectItem key={slot.id} value={slot.id}>{MONTH_LABELS[slot.scheduledMonth - 1]} · semana {slot.scheduledWeek}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+
+      {hasSlot && (
+        <Field
+          label="Evidencia"
+          required={!evidenceReady}
+          hint="Comprobante o correo del envío a la mutual. Máximo 25 MB por archivo."
+        >
+          <FileInput
+            multiple
+            accept=".pdf,.docx,.xls,.xlsx,.jpg,.jpeg,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png"
+            onFilesChange={setFiles}
+            disabled={pending}
+          />
+        </Field>
+      )}
+      {hasSlot && !!selectedSlot?.activeEvidenceCount && (
+        <p className="text-xs text-[var(--color-text-subtle)]">Esta casilla ya tiene {selectedSlot.activeEvidenceCount} evidencia(s) adjunta(s).</p>
+      )}
+      {hasSlot && !evidenceReady && (
+        <p className="text-sm text-[var(--color-warning-ink)]">Adjunta al menos una evidencia para poder cumplir esta casilla.</p>
+      )}
+
       {error && <p role="alert" className="text-sm text-[var(--color-danger)]">{error}</p>}
     </div>
-    <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !worksiteId || recipient.trim().length < 3}>{pending ? "Registrando..." : "Registrar envío"}</Button></DialogFooter>
+    <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !worksiteId || recipient.trim().length < 3 || !evidenceReady}>{pending ? "Registrando..." : "Registrar envío"}</Button></DialogFooter>
   </DialogContent></Dialog>
 }

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CalendarBlank, CheckCircle, Prohibit, WarningCircle } from "@phosphor-icons/react"
+import { CalendarBlank, CheckCircle, Paperclip, Prohibit, WarningCircle } from "@phosphor-icons/react"
 import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -37,6 +37,12 @@ export interface ProgramSlotRow {
   notApplicableReason: string | null
   /** Qué llenó la casilla, para mostrarlo sin que el componente sepa de qué es. */
   fulfilledLabel: string | null
+  /**
+   * Evidencia activa ya adjunta a la casilla. No todos los módulos la cuentan
+   * por casilla (simulacros la cuenta por simulacro, no por casilla), así que
+   * es opcional: sin el campo no se muestra nada.
+   */
+  activeEvidenceCount?: number
 }
 
 const MONTHS = [
@@ -129,6 +135,12 @@ export function ProgramSlotList({
                 <CalendarBlank size={15} aria-hidden />
                 {MONTHS[row.scheduledMonth - 1]} · semana {row.scheduledWeek}
               </p>
+              {!!row.activeEvidenceCount && (
+                <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-[var(--color-text-subtle)]">
+                  <Paperclip size={13} aria-hidden />
+                  {row.activeEvidenceCount} evidencia{row.activeEvidenceCount === 1 ? "" : "s"} adjunta{row.activeEvidenceCount === 1 ? "" : "s"}
+                </p>
+              )}
               {row.status === "completed" && row.fulfilledLabel && (
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">{row.fulfilledLabel}</p>
               )}
