@@ -391,6 +391,14 @@ export async function onEmergencyDrillCompleted(input: {
   /** La ruta del acta. Siempre presente: desde el 2026-09-19 no existe un
    *  camino que cierre un simulacro sin evidencia. */
   evidencePath: string
+  /**
+   * Quien completó el simulacro (`completeEmergencyDrill`, `access.userId`).
+   * M0.4: el cierre de un simulacro con acta real ya es la validación —
+   * `accreditPdtpFromEvent` exige además `evidencePath` real para auto-aprobar
+   * (`AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE`); si el motor alguna vez
+   * recibiera una ruta sintética, la ejecución queda `submitted` igual.
+   */
+  completedByUserId: string
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "emergencies",
@@ -422,6 +430,7 @@ export async function onEmergencyDrillCompleted(input: {
      * tampoco: siempre se referencia el archivo real.
      */
     evidenceRef: input.evidencePath,
+    autoApproveByUserId: input.completedByUserId,
   })
 }
 
@@ -812,6 +821,14 @@ export async function onGrdMeetingClosed(input: {
    * esperaba.
    */
   plannedPeriod?: { year: number; month: number; week: number }
+  /**
+   * Quien registró el acta (`recordGrdMeeting`, `access.userId`). M0.4: el
+   * acta ya exige `evidenceUrl` real por validación
+   * (`lib/validation/prevention-module/cgrd.ts`), así que en la práctica esta
+   * fuente siempre auto-aprueba — el gate de evidencia real lo aplica
+   * igualmente `accreditPdtpFromEvent`, no este conector.
+   */
+  recordedByUserId: string
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "cgrd",
@@ -831,5 +848,6 @@ export async function onGrdMeetingClosed(input: {
     executedQuantity: 1,
     evidenceRef: input.evidenceUrl,
     ...(input.plannedPeriod ? { plannedPeriod: input.plannedPeriod } : {}),
+    autoApproveByUserId: input.recordedByUserId,
   })
 }

@@ -173,7 +173,12 @@ describe("recordAlcoholTest", () => {
     const execN31 = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.activityId, N31_ID))
     expect(execN30).toHaveLength(1)
     expect(execN31).toHaveLength(0)
-    // No autoaprobado (accreditation.ts:169-171): sólo "inspeccion" nace aprobada.
+    // M0.4: alcotest sí puede auto-aprobarse, pero sólo con evidencia real
+    // (`AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE` en accreditation.ts).
+    // Sin `slotId` no hay casilla que aporte una ruta de storage, así que el
+    // conector cae al rótulo sintético "Control de alcotest <id>" y el motor
+    // lo deja `submitted` para revisión manual — ver el describe "M0.4" más
+    // abajo para el caso con evidencia real.
     expect(execN30[0]?.status).toBe("submitted")
   })
 
@@ -605,6 +610,69 @@ describe("cumplir la casilla con el hecho", () => {
       .where(eq(schema.pdtpExecutions.activityId, N32_ID))
     expect(exec).toMatchObject({ year: PROGRAM_YEAR, month: 3, week: 1 })
   })
+})
+
+/**
+ * M0.4 (2026-09-22): antes de este cambio, `recordAlcoholTest` y
+ * `recordAlcoholTestDispatch` nunca pasaban `autoApproveByUserId` — un
+ * alcotest nacía siempre `submitted`, aun con la ruta real de la casilla
+ * (ver el comentario que este mismo cambio retiró de la cabecera de
+ * `recordAlcoholTest`). Ahora el motor central auto-aprueba cuando el
+ * `evidenceRef` es real; `evidenciaEn()` (arriba) no sirve para probarlo
+ * porque su `storagePath` no lleva el prefijo `storage/` que
+ * `accreditPdtpFromEvent` exige — de ahí el helper propio.
+ */
+async function evidenciaRealEn(slotId: string) {
+  await inMemoryDb.insert(schema.preventionAlcotestSlotEvidence).values({
+    id: `alcev-real-${slotId}`,
+    slotId,
+    fileName: "planilla-real.pdf",
+    storagePath: `storage/prevention-alcotest-evidence/${slotId}/planilla-real.pdf`,
+    mimeType: "application/pdf",
+    fileSizeBytes: 1024,
+    sha256: "b".repeat(64),
+    state: "active",
+    uploadedByUserId: USER_PRF,
+  })
+}
+
+describe("M0.4 — el alcotest se auto-aprueba con evidencia real de la casilla", () => {
+  it("un control con la ruta real de storage se auto-aprueba", async () => {
+    await seedProgramAndActivities()
+    const slots = await seedSlots()
+    const marzo = slots.find((s) => s.kind === "control" && s.scheduledMonth === 3)!
+    await evidenciaRealEn(marzo.id)
+
+    await recordAlcoholTest(
+      { worksiteId: WS_ID, ...SUBJECT, shift: "dia", performedAt: "2026-03-05T14:00:00.000Z", slotId: marzo.id },
+      USER_PRF, ["prevencionista_faena"], [WS_ID],
+    )
+
+    const [exec] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, N30_ID))
+    expect(exec).toMatchObject({ status: "approved", approvedByUserId: USER_PRF })
+  })
+
+  it("el envío con la ruta real de storage también se auto-aprueba", async () => {
+    await seedProgramAndActivities()
+    const slots = await seedSlots()
+    const envioMarzo = slots.find((s) => s.kind === "envio" && s.scheduledMonth === 3)!
+    await evidenciaRealEn(envioMarzo.id)
+
+    await recordAlcoholTestDispatch(
+      { worksiteId: WS_ID, year: 2026, month: 2, recipient: "mutual@example.test", slotId: envioMarzo.id },
+      USER_PRF, [WS_ID],
+    )
+
+    const [exec] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, N32_ID))
+    expect(exec).toMatchObject({ status: "approved", approvedByUserId: USER_PRF })
+  })
+
+  /* Sin casilla no hay ruta real: el conector cae al rótulo sintético
+   * `Control de alcotest <id>` y el motor lo deja `submitted` — cubierto ya
+   * por "PRF registra y acredita la N°30, no la N°31" arriba, que no pasa
+   * `slotId`. */
 })
 
 describe("attachAlcotestSlotEvidenceTx", () => {

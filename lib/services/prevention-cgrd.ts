@@ -683,6 +683,8 @@ export async function recordGrdMeeting(input: unknown, access: CgrdAccess) {
     meetingId: result.meeting.id, worksiteId: result.worksiteId,
     heldOn: result.meeting.heldOn, evidenceUrl: result.meeting.evidenceUrl,
     ...(result.plannedPeriod ? { plannedPeriod: result.plannedPeriod } : {}),
+    // M0.4: quien registró el acta es quien la valida.
+    recordedByUserId: access.userId,
   })
   return result.meeting
 }

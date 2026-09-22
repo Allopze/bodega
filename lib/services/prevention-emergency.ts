@@ -992,6 +992,9 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
          * «Simulacro completado: <id>» desaparece porque ya no existe un camino
          * que cierre un simulacro sin evidencia. */
         evidencePath: activeEvidence[0]!.storagePath,
+        // M0.4: quien completó el simulacro es quien lo valida; el motor sigue
+        // exigiendo que el acta sea real para auto-aprobar.
+        completedByUserId: access.userId,
       }
     }
 

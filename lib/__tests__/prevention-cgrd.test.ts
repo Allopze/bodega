@@ -303,6 +303,23 @@ describe("actas de reunión — N°81", () => {
     expect(executions).toHaveLength(1)
   })
 
+  /* M0.4 (2026-09-22): quien registra el acta pasa a autoaprobar su propia
+   * N°81. A diferencia del alcotest, acá no hace falta un caso "evidencia
+   * sintética": `evidenceUrl` está validado (`validation/prevention-module/cgrd.ts`)
+   * como ruta de storage o URL http(s) desde antes de este cambio, así que
+   * nunca llega al motor un acta con evidencia sintética. */
+  it("M0.4: registrar el acta con evidencia real la auto-aprueba", async () => {
+    const committee = await constituteGrdCommittee({ worksiteId: WS_A, name: "CGRD", constitutedOn: "2026-03-01", mandateEndsOn: "2028-03-01", evidenceUrl: EVIDENCE }, MANAGER)
+    await recordGrdMeeting({
+      committeeId: committee.id, heldOn: "2026-04-01T15:00:00.000Z", agenda: "Revisión de amenazas del período",
+      minutes: "Acta de la sesión con el detalle suficiente de lo tratado", quorumReached: true, evidenceUrl: EVIDENCE,
+    }, MANAGER)
+
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, `${PROGRAM_ID}-a-81`))
+    expect(execution).toMatchObject({ status: "approved", approvedByUserId: USER_MANAGER })
+  })
+
   /* El acta se carga DESPUÉS de la sesión, así que la fecha que acredita es la
    * de la sesión (`heldOn`), no la de digitación: el motor resuelve el período
    * del programa con `occurredAt`. Con `createdAt` una sesión de marzo cargada

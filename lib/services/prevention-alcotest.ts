@@ -97,10 +97,14 @@ export async function listAlcotestEquipment(scope: WorksiteScope, worksiteId?: s
 }
 
 /**
- * Registra un control y lo envía al motor de acreditación. Nace `submitted`,
- * no aprobado: `autoApproveByUserId` está reservado a fuentes cuyo cierre ya
- * es la validación completa (`accreditation.ts:169-171`), y un alcotest
- * autoregistrado no lo es.
+ * Registra un control y lo envía al motor de acreditación.
+ *
+ * M0.4: pasa `autoApproveByUserId`, pero el motor (`accreditPdtpFromEvent`,
+ * `AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE`) sólo auto-aprueba el
+ * alcotest cuando el `evidenceRef` es real — la ruta de la casilla
+ * (`slotEvidenceRef`) o una URL, nunca el rótulo sintético `Control de
+ * alcotest <id>` de un control extraordinario sin casilla. Sin evidencia
+ * real la ejecución nace `submitted`, igual que antes de este cambio.
  */
 export async function recordAlcoholTest(
   input: RecordAlcoholTestInput,
@@ -205,6 +209,9 @@ export async function recordAlcoholTest(
      * extraordinario no tiene casilla y conserva el rótulo, porque tampoco
      * acredita una celda del cronograma. */
     evidenceRef: slotEvidenceRef ?? input.evidenceUrl ?? `Control de alcotest ${id}`,
+    // M0.4: el motor exige además evidencia real para auto-aprobar esta
+    // fuente — un control extraordinario sin casilla ni URL queda `submitted`.
+    autoApproveByUserId: performedByUserId,
     metadata: {
       alcoholTestId: id,
       result: input.result ?? "negativo",
@@ -317,6 +324,8 @@ export async function recordAlcoholTestDispatch(
     evidenceRef: slotEvidenceRef
       ?? input.evidenceUrl
       ?? `Envío de registros ${input.year}-${String(input.month).padStart(2, "0")} a ${input.recipient}`,
+    // M0.4: igual que en el control — sólo auto-aprueba con evidencia real.
+    autoApproveByUserId: sentByUserId,
     metadata: { alcoholTestDispatchId: id, year: input.year, month: input.month, testCount: testsInPeriod.length },
   })
 
