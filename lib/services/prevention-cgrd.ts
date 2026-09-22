@@ -59,6 +59,8 @@ import {
   onGrdMeetingClosed,
 } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
+import { propagateSlotStatusToPdtp, slotPdtpDeclaration } from "@/lib/services/pdtp-adapters/slot-deviation-connector"
+import { GRD_MEETING_PDTP_ACTIVITY_NUMBER } from "@/lib/prevention/program-slots-2026"
 import {
   grdCommitteeConstituteSchema,
   grdCommitteeDissolveSchema,
@@ -710,7 +712,11 @@ const grdSlotStatusInput = z.object({
   }
 })
 
-/** Declara una casilla de sesión del CGRD como no hecha o no aplicable. */
+/**
+ * Declara una casilla de sesión del CGRD como no hecha o no aplicable, y lo
+ * refleja en la celda de la N°81 del PDTP en la misma transacción
+ * (`slot-deviation-connector.ts`).
+ */
 export async function recordGrdMeetingSlotStatus(input: unknown, access: CgrdAccess) {
   const data = grdSlotStatusInput.parse(input)
   return db.transaction(async (tx) => {
@@ -758,6 +764,17 @@ export async function recordGrdMeetingSlotStatus(input: unknown, access: CgrdAcc
       beforeState: slot,
       afterState: updated,
       actorUserId: access.userId,
+    })
+
+    const label = `de sesión del CGRD ${slot.slotKey}`
+    await propagateSlotStatusToPdtp(tx, {
+      source: { module: "cgrd", slotId: slot.id, label },
+      worksiteId: slot.worksiteId,
+      cell: { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek },
+      activities: { activityNumbers: [GRD_MEETING_PDTP_ACTIVITY_NUMBER] },
+      next: slotPdtpDeclaration(updated, label),
+      previous: slotPdtpDeclaration(slot, label),
+      userId: access.userId,
     })
     return updated
   })

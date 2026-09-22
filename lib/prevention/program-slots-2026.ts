@@ -32,6 +32,27 @@ export const ALCOTEST_CONTROL_PDTP_ACTIVITY_NUMBERS = [30, 31] as const
 /** N°32 — «Envío registros alcotest, según DO-48». */
 export const ALCOTEST_DISPATCH_PDTP_ACTIVITY_NUMBER = 32
 
+/** Roles que responden por la N°30 — el propio PRF. */
+const ALCOTEST_PRF_ROLES = new Set(["prevencionista_faena", "prevencionista"])
+/** Roles que responden por la N°31 — quien no es PRF pero controla en terreno. */
+const ALCOTEST_SUP_JT_ROLES = new Set(["supervisor_terreno", "jefe_terreno"])
+
+/**
+ * Cuál de las dos actividades de la serie de control (N°30 o N°31) corresponde
+ * a quien actúa sobre la casilla, según su rol. `null` si el rol no mapea a
+ * ninguna.
+ *
+ * Vive junto a las constantes de la serie porque la usan los dos lados de la
+ * casilla: el registro del control (`prevention-alcotest.ts`, que la reexporta)
+ * y la declaración de «no aplica»/«no hecha» (`prevention-alcotest-slots.ts`).
+ * Tenerla en uno de los dos servicios obligaba al otro a importarlo en ciclo.
+ */
+export function resolveAlcotestActivityNumber(roles: readonly string[]): number | null {
+  if (roles.some((role) => ALCOTEST_PRF_ROLES.has(role))) return ALCOTEST_CONTROL_PDTP_ACTIVITY_NUMBERS[0]
+  if (roles.some((role) => ALCOTEST_SUP_JT_ROLES.has(role))) return ALCOTEST_CONTROL_PDTP_ACTIVITY_NUMBERS[1]
+  return null
+}
+
 export const PROGRAM_SLOT_YEAR = 2026 as const
 
 export interface ProgramSlot {

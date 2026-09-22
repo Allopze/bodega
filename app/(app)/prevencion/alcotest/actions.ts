@@ -66,6 +66,6 @@ export async function recordAlcoholTestDispatchAction(input: unknown): Promise<A
  * partir el permiso convertiría "no aplica" en un trámite que nadie hace.
  */
 export async function recordAlcotestSlotStatusAction(input: unknown): Promise<ActionState> {
-  return run("prevention:alcotest:register", ({ userId, scope }) =>
-    recordAlcotestSlotStatus(input, { userId, scope }))
+  return run("prevention:alcotest:register", ({ userId, roles, scope }) =>
+    recordAlcotestSlotStatus(input, { userId, roles, scope }))
 }

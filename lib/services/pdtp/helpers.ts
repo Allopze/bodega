@@ -43,9 +43,15 @@ export function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): 
   }
 }
 
-/** Evita que un usuario global use un identificador arbitrario como contexto de exportación. */
-export async function isActivePdtpWorksite(worksiteId: string): Promise<boolean> {
-  const [worksite] = await db
+/**
+ * Evita que un usuario global use un identificador arbitrario como contexto de
+ * exportación. `client` existe para quien ya está dentro de una transacción
+ * (`recordPdtpDeviation` llamado por un servicio de casilla): leer con la
+ * conexión global desde ahí cuelga sobre una sola conexión (PGlite) y no ve lo
+ * que la propia transacción ya escribió.
+ */
+export async function isActivePdtpWorksite(worksiteId: string, client: DB | Tx = db): Promise<boolean> {
+  const [worksite] = await client
     .select({ id: worksites.id })
     .from(worksites)
     .where(and(eq(worksites.id, worksiteId), eq(worksites.isActive, true)))

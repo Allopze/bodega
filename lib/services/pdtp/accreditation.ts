@@ -367,9 +367,22 @@ async function resolvePdtpActiveProgramForEvent(
  * Devuelve `null` si el evento cae fuera del año del programa (mismo criterio
  * tolerante que el motor); lanza para el resto de las condiciones de
  * configuración, porque ahí sí es un error, no un caso normal.
+ *
+ * `plannedPeriod` fija el año por la celda del cronograma en vez de por
+ * `occurredAt`, igual que en `accreditPdtpFromEvent`: lo usa el conector de
+ * casillas, cuyo "no aplica" se declara sobre la celda de la casilla y no
+ * sobre la fecha en que alguien lo escribió.
  */
 export async function resolvePdtpActivityIdsForNumbers(
-  input: { worksiteId: string; occurredAt: string; activityNumbers: number[]; programId?: string; sourceType: string; sourceId: string },
+  input: {
+    worksiteId: string
+    occurredAt: string
+    activityNumbers: number[]
+    programId?: string
+    sourceType: string
+    sourceId: string
+    plannedPeriod?: { year: number; month: number; week: number }
+  },
   client: AccreditationClient = db,
 ): Promise<{ programId: string; activityIdByN: Map<number, string>; skippedNotFound: number[] } | null> {
   const resolved = await resolvePdtpActiveProgramForEvent(input, client)

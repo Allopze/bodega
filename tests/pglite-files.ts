@@ -115,6 +115,8 @@ export const pgliteTestFiles = [
   // (loadProgramScheduleAndExecutions) — indicador, RE-36, exclusión mutua
   // con ejecuciones y no-alteración de la huella firmada.
   "lib/__tests__/pdtp-deviations.test.ts",
+  // M0.3: el «no aplica»/«no hecha» de las casillas llega al PDTP como desvío.
+  "lib/__tests__/pdtp-slot-deviation-propagation.test.ts",
   // Fase 5: asignación nominal de actividades a personas, por faena.
   "lib/__tests__/pdtp-assignees.test.ts",
   // Fase 4: el cierre mensual por faena y su distribución por correo.

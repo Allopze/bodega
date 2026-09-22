@@ -25,7 +25,7 @@
  */
 
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type Tx } from "@/db"
 import {
   pdtpActivities,
   pdtpActivitySchedule,
@@ -82,19 +82,39 @@ export const PDTP_DEVIATION_LABELS: Record<PdtpDeviationKind, string> = {
  * La unicidad de un desvío activo por celda la impone el índice parcial de
  * `pdtp_execution_deviations` (WHERE status = 'active'); acá sólo se traduce
  * su violación a un mensaje legible.
+ *
+ * **El permiso no se valida acá**, y eso es a propósito: cada llamador llega
+ * con el suyo ya comprobado. La planilla del PDTP exige
+ * `prevention:pdtp:execute` u `override:manage` según el tipo
+ * (`app/(app)/prevencion/pdtp/actions/deviations.ts`); un servicio de casilla
+ * (alcotest, simulacros, CGRD, capacitación) propaga su "no aplica"/"no hecha"
+ * con el permiso de su propio dominio, que es el que autorizó el cambio de la
+ * casilla (`pdtp-adapters/slot-deviation-connector.ts`).
+ *
+ * `callerTx`: la transacción del llamador, cuando el desvío tiene que quedar en la
+ * misma unidad de trabajo que el hecho que lo origina. Todas las lecturas y la
+ * escritura pasan por ella —leer con la conexión global desde dentro de una
+ * transacción abierta cuelga sobre una sola conexión y no ve lo que esa
+ * transacción ya escribió—, y la escritura va en un `callerTx.transaction(...)`,
+ * que Drizzle traduce a SAVEPOINT: si el INSERT falla (desvío activo
+ * duplicado, CHECK), se deshace sólo el desvío y la transacción del llamador
+ * sigue usable. Sin `callerTx` el comportamiento es el de siempre: su propia
+ * transacción sobre `db`.
  */
 export async function recordPdtpDeviation(
   input: unknown,
   userId: string,
   scope: WorksiteScope,
+  callerTx?: Tx,
 ): Promise<PdtpExecutionDeviation> {
+  const client = callerTx ?? db
   const data = pdtpDeviationSchema.parse(input)
   assertWorksiteAccess(data.worksiteId, scope)
-  if (!await isActivePdtpWorksite(data.worksiteId)) {
+  if (!await isActivePdtpWorksite(data.worksiteId, client)) {
     throw new Error("La faena no existe o está inactiva.")
   }
 
-  const [activity] = await db.select({
+  const [activity] = await client.select({
     programId: pdtpActivities.programId,
     n: pdtpActivities.n,
     status: pdtpActivities.status,
@@ -102,7 +122,7 @@ export async function recordPdtpDeviation(
   }).from(pdtpActivities).where(eq(pdtpActivities.id, data.activityId)).limit(1)
   if (!activity) throw new Error("Actividad PDTP no encontrada.")
 
-  const [program] = await db.select({
+  const [program] = await client.select({
     status: pdtpPrograms.status,
     year: pdtpPrograms.year,
     version: pdtpPrograms.version,
@@ -117,7 +137,7 @@ export async function recordPdtpDeviation(
 
   // Si el programa declara membresía de faenas, una faena fuera de ella no
   // puede declarar desvíos (mismo guard que overrides/ejecuciones).
-  await assertPdtpWorksiteCanOperateProgram(activity.programId, data.worksiteId)
+  await assertPdtpWorksiteCanOperateProgram(activity.programId, data.worksiteId, client)
 
   if (program.year !== data.year) {
     throw new Error(`El desvío debe corresponder al año del programa (${program.year}).`)
@@ -129,7 +149,7 @@ export async function recordPdtpDeviation(
     throw new Error("La actividad está retirada para el período seleccionado y no admite desvíos.")
   }
 
-  const [exclusion] = await db.select({ id: pdtpActivityWorksiteExclusions.id })
+  const [exclusion] = await client.select({ id: pdtpActivityWorksiteExclusions.id })
     .from(pdtpActivityWorksiteExclusions)
     .where(and(
       eq(pdtpActivityWorksiteExclusions.activityId, data.activityId),
@@ -153,11 +173,11 @@ export async function recordPdtpDeviation(
   const requiresCellExclusivity = data.kind === "not_applicable" || data.kind === "reprogrammed"
   if (requiresCellExclusivity) {
     const [scheduleRows, overrideRows] = await Promise.all([
-      db.select().from(pdtpActivitySchedule).where(and(
+      client.select().from(pdtpActivitySchedule).where(and(
         eq(pdtpActivitySchedule.activityId, data.activityId),
         eq(pdtpActivitySchedule.year, data.year),
       )),
-      loadPdtpOverrides([data.activityId], data.year, data.worksiteId),
+      loadPdtpOverrides([data.activityId], data.year, data.worksiteId, client),
     ])
     const effectiveSchedule = applyOverridesToSchedule(scheduleRows, overrideRows)
     const cell = effectiveSchedule.find((row) => row.month === data.month && row.week === data.week)
@@ -197,7 +217,13 @@ export async function recordPdtpDeviation(
   const now = new Date().toISOString()
   const id = nanoid()
   try {
-    return await db.transaction(async (tx) => {
+    // Con `callerTx`, esto es un SAVEPOINT dentro de la transacción del llamador;
+    // sin él, una transacción propia. El advisory lock de abajo es
+    // `pg_advisory_xact_lock`: vive hasta el fin de la transacción de nivel
+    // superior (o hasta que se deshaga el savepoint que lo tomó), y es
+    // reentrante para la misma sesión, así que un llamador que ya lo tuviera
+    // no se bloquea contra sí mismo.
+    const write = async (tx: Tx): Promise<PdtpExecutionDeviation> => {
       // TOCTOU con `markPdtpExecution`: la ejecución conflictiva se lee acá,
       // DENTRO de la transacción que inserta el desvío y detrás del mismo
       // advisory lock por celda que toma executions.ts, no antes y por fuera.
@@ -263,7 +289,8 @@ export async function recordPdtpDeviation(
         tx,
       )
       return row
-    })
+    }
+    return await (callerTx ? callerTx.transaction(write) : db.transaction(write))
   } catch (e) {
     if (isUniqueViolation(e)) {
       throw new Error("Ya existe un desvío activo para esta celda. Retíralo antes de registrar uno nuevo.")
@@ -277,18 +304,23 @@ export async function recordPdtpDeviation(
  * `pdtpDeviationWithdrawSchema` (motivo ≥10 caracteres, mismo mínimo que el
  * resto del módulo — reflejado en el CHECK
  * `pdtp_execution_deviations_withdrawn_check`).
+ *
+ * `callerTx` y permiso: mismo contrato que `recordPdtpDeviation`. El conector de
+ * casillas lo usa para retirar el desvío que él mismo propagó cuando la
+ * casilla cambia de estado, dentro de la transacción de la casilla.
  */
 export async function withdrawPdtpDeviation(
   input: unknown,
   userId: string,
   scope: WorksiteScope,
+  callerTx?: Tx,
 ): Promise<void> {
   // La regla del motivo (≥10 caracteres, recortado) vive en el schema, no
   // duplicada acá: `pdtpDeviationWithdrawSchema` ya la declara y era código
   // muerto mientras esta función la validaba a mano.
   const { deviationId, reason } = pdtpDeviationWithdrawSchema.parse(input)
 
-  await db.transaction(async (tx) => {
+  const write = async (tx: Tx): Promise<void> => {
     const [deviation] = await tx.select().from(pdtpExecutionDeviations)
       .where(eq(pdtpExecutionDeviations.id, deviationId)).limit(1)
     if (!deviation) throw new Error("Desvío PDTP no encontrado.")
@@ -330,7 +362,10 @@ export async function withdrawPdtpDeviation(
       `Desvío retirado para actividad ${activity.n}. Motivo: ${reason}`,
       tx,
     )
-  })
+  }
+  // Mismo criterio que `recordPdtpDeviation`: SAVEPOINT dentro de la
+  // transacción del llamador, o una transacción propia.
+  await (callerTx ? callerTx.transaction(write) : db.transaction(write))
 }
 
 /**

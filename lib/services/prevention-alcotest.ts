@@ -21,30 +21,22 @@ import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
 import { recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
 import { pdtpCatalogActivityIdForLegacyNumber } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 import { fulfillAlcotestSlotTx, resolveAlcotestSlotEvidenceRef } from "@/lib/services/prevention-alcotest-slots"
+import { resolveAlcotestActivityNumber } from "@/lib/prevention/program-slots-2026"
 
 /** Familia de `service_equipment` que corresponde a un alcotómetro. */
 export const ALCOTEST_EQUIPMENT_KIND = "alcotest"
 
-const ALCOTEST_PRF_ACTIVITY_NUMBER = 30
-const ALCOTEST_SUP_JT_ACTIVITY_NUMBER = 31
 const ALCOTEST_DISPATCH_ACTIVITY_NUMBER = 32
 
-/** Roles que responden por la N°30 — el propio PRF. */
-const PRF_ROLES = new Set(["prevencionista_faena", "prevencionista"])
-/** Roles que responden por la N°31 — quien no es PRF pero controla en terreno. */
-const SUP_JT_ROLES = new Set(["supervisor_terreno", "jefe_terreno"])
-
 /**
- * Qué actividad cierra un control, según el rol de quien lo registra. `null`
- * si el rol no mapea a ninguna de las dos — el permiso de escritura ya debería
- * haberlo impedido, así que el caller lo trata como un error de datos, no
- * como un caso normal sin acreditación.
+ * Qué actividad cierra un control, según el rol de quien lo registra (N°30
+ * PRF, N°31 supervisor/jefe de terreno). `null` si el rol no mapea a ninguna
+ * de las dos — el permiso de escritura ya debería haberlo impedido, así que el
+ * caller lo trata como un error de datos, no como un caso normal sin
+ * acreditación. Definida junto a la serie de casillas
+ * (`program-slots-2026.ts`); se reexporta acá, donde siempre vivió.
  */
-export function resolveAlcotestActivityNumber(roles: string[]): number | null {
-  if (roles.some((role) => PRF_ROLES.has(role))) return ALCOTEST_PRF_ACTIVITY_NUMBER
-  if (roles.some((role) => SUP_JT_ROLES.has(role))) return ALCOTEST_SUP_JT_ACTIVITY_NUMBER
-  return null
-}
+export { resolveAlcotestActivityNumber }
 
 export type RecordAlcoholTestInput = {
   worksiteId: string

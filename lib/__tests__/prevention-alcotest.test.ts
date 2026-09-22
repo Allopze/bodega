@@ -68,6 +68,8 @@ const EQUIPMENT_MONOGAS = "eq-monogas-1"
 
 /** Sujeto por defecto para los casos que no prueban la identificación. */
 const SUBJECT = { testedWorkerId: WORKER_ID }
+/** Quien declara casillas en estos casos: un PRF de la faena (N°30). */
+const PRF_ACTOR = { userId: USER_PRF, scope: [WS_ID], roles: ["prevencionista_faena"] }
 const N30_ID = `${PROGRAM_ID}-a-030`
 const N31_ID = `${PROGRAM_ID}-a-031`
 const N32_ID = `${PROGRAM_ID}-a-032`
@@ -385,11 +387,11 @@ describe("recordAlcotestSlotStatus", () => {
     const [slot] = await seedSlots()
     await expect(recordAlcotestSlotStatus(
       { slotId: slot!.id, expectedVersion: 1, status: "not_applicable" },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )).rejects.toThrow()
     await expect(recordAlcotestSlotStatus(
       { slotId: slot!.id, expectedVersion: 1, status: "not_applicable", notApplicableReason: "corto" },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )).rejects.toThrow()
 
     const updated = await recordAlcotestSlotStatus(
@@ -399,7 +401,7 @@ describe("recordAlcotestSlotStatus", () => {
         status: "not_applicable",
         notApplicableReason: "La faena no tiene conducción de vehículos ni turnos nocturnos.",
       },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )
     expect(updated.status).toBe("not_applicable")
     expect(updated.notApplicableByUserId).toBe(USER_PRF)
@@ -414,11 +416,11 @@ describe("recordAlcotestSlotStatus", () => {
         status: "not_applicable",
         notApplicableReason: "La faena no tiene conducción de vehículos ni turnos nocturnos.",
       },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )
     const corregida = await recordAlcotestSlotStatus(
       { slotId: slot!.id, expectedVersion: na.version, status: "not_completed" },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )
     expect(corregida.status).toBe("not_completed")
     expect(corregida.notApplicableReason).toBeNull()
@@ -438,7 +440,7 @@ describe("recordAlcotestSlotStatus", () => {
 
     await expect(recordAlcotestSlotStatus(
       { slotId: marzo.id, expectedVersion: 2, status: "not_completed" },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )).rejects.toBeInstanceOf(AlcotestSlotError)
   })
 
@@ -454,11 +456,11 @@ describe("recordAlcotestSlotStatus", () => {
         status: "not_applicable",
         notApplicableReason: "La faena no opera vehículos ni tiene turnos nocturnos.",
       },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )
     await recordAlcotestSlotStatus(
       { slotId: slot!.id, expectedVersion: na.version, status: "not_completed" },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )
 
     // La fila ya no conserva el motivo; la bitácora sí.
@@ -479,7 +481,7 @@ describe("recordAlcotestSlotStatus", () => {
     const slots = await seedSlots(WS_OTHER)
     await expect(recordAlcotestSlotStatus(
       { slotId: slots[0]!.id, expectedVersion: 1, status: "not_completed" },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )).rejects.toThrow()
   })
 })
@@ -570,7 +572,7 @@ describe("attachAlcotestSlotEvidenceTx", () => {
         status: "not_applicable",
         notApplicableReason: "La faena no tiene conducción de vehículos ni turnos nocturnos.",
       },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )
 
     await expect(inMemoryDb.transaction(async (tx) => attachAlcotestSlotEvidenceTx(tx as never, {

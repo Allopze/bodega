@@ -22,9 +22,11 @@ import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { assessDrillCompletion, assessPlanReadiness } from "@/lib/prevention/emergency"
 import type { EmergencyQuickFilter } from "@/lib/prevention/emergency-list-filters"
+import { DRILL_PDTP_ACTIVITY_NUMBER } from "@/lib/prevention/program-slots-2026"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { onEmergencyDrillCompleted, onEmergencyPlanApproved } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { replacePdtpAccreditationBindings, resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
+import { propagateSlotStatusToPdtp, slotPdtpDeclaration } from "@/lib/services/pdtp-adapters/slot-deviation-connector"
 import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { createNotifications } from "@/lib/services/notifications"
@@ -778,7 +780,11 @@ const drillSlotStatusInput = z.object({
   }
 })
 
-/** Declara una casilla de simulacro como no hecha o no aplicable. */
+/**
+ * Declara una casilla de simulacro como no hecha o no aplicable, y lo refleja
+ * en la celda de la N°84 del PDTP en la misma transacción
+ * (`slot-deviation-connector.ts`).
+ */
 export async function recordDrillSlotStatus(input: unknown, access: EmergencyAccess) {
   const data = drillSlotStatusInput.parse(input)
   return db.transaction(async (tx) => {
@@ -826,6 +832,17 @@ export async function recordDrillSlotStatus(input: unknown, access: EmergencyAcc
       beforeState: slot,
       afterState: updated,
       actorUserId: access.userId,
+    })
+
+    const label = `de simulacro ${slot.slotKey}`
+    await propagateSlotStatusToPdtp(tx, {
+      source: { module: "emergencias", slotId: slot.id, label },
+      worksiteId: slot.worksiteId,
+      cell: { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek },
+      activities: { activityNumbers: [DRILL_PDTP_ACTIVITY_NUMBER] },
+      next: slotPdtpDeclaration(updated, label),
+      previous: slotPdtpDeclaration(slot, label),
+      userId: access.userId,
     })
     return updated
   })

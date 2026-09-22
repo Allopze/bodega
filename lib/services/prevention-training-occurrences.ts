@@ -37,8 +37,14 @@ import {
 } from "@/lib/services/pdtp/fulfillment"
 import type { AccreditationInput, RevocationInput } from "@/lib/services/pdtp/accreditation"
 import { nanoid } from "@/lib/id"
+import { logger } from "@/lib/logger"
 import { resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
 import { onTrainingOccurrenceCompleted } from "@/lib/services/pdtp-adapters/occurrence-gap-connector"
+import {
+  propagateSlotStatusToPdtp,
+  slotPdtpDeclaration,
+  type SlotPdtpPropagationInput,
+} from "@/lib/services/pdtp-adapters/slot-deviation-connector"
 
 export const TRAINING_OCCURRENCE_MAX_FILE_SIZE = 25 * 1024 * 1024
 // El margen cubre los campos multipart y los encabezados sin permitir que una
@@ -433,6 +439,12 @@ export async function recordTrainingOccurrenceStatus(
    * de acreditación: son dos mecanismos distintos —obligación y cumplimiento—
    * y ninguno de los dos debe poder abortar el registro del operador. */
   let obligationReport: { occurrenceId: string; catalogItemId: string; worksiteId: string; completedAt: string } | null = null
+  /* El «no aplica»/«no hecha» de una ocurrencia que salía de «hecha» se
+   * refleja en el PDTP después del commit y de la revocación, no adentro: la
+   * ejecución acreditada sigue viva hasta que `recordPdtpFulfillmentRevocation`
+   * la pasa a borrador, y el PDTP rechaza un «no aplica» sobre una celda con
+   * ejecución. Los demás cambios van en la transacción de la ocurrencia. */
+  let postCommitPdtpDeviation: SlotPdtpPropagationInput | null = null
 
   const result = await db.transaction(async (tx) => {
     const current = await loadOccurrenceForMutation(tx, input.occurrenceId)
@@ -560,11 +572,40 @@ export async function recordTrainingOccurrenceStatus(
       await recordPendingPdtpFulfillmentRevocation(revocationEvent, tx)
     }
 
+    /* «No aplica»/«no hecha» llega a la celda del PDTP de la misma actividad
+     * que la ocurrencia acreditaría al cumplirse (`target`), en su período
+     * planificado. «Hecha» no pasa por acá: la acreditación ya retira el
+     * desvío de la celda que acredita. */
+    if (nextStatus !== "completed" && (target.catalogActivityIds?.length || target.activityNumbers?.length)) {
+      const label = `de capacitación ${current.catalog.code} ${current.occurrence.slotKey}`
+      const propagation: SlotPdtpPropagationInput = {
+        source: { module: "capacitacion", slotId: current.occurrence.id, label },
+        worksiteId: current.occurrence.worksiteId,
+        cell: { year: current.occurrence.year, month: current.occurrence.scheduledMonth, week: current.occurrence.scheduledWeek },
+        activities: target.catalogActivityIds?.length
+          ? { catalogActivityIds: target.catalogActivityIds }
+          : { activityNumbers: target.activityNumbers ?? [] },
+        next: slotPdtpDeclaration(updated, label),
+        previous: slotPdtpDeclaration(current.occurrence, label),
+        userId: access.userId,
+      }
+      if (current.occurrence.status === "completed") postCommitPdtpDeviation = propagation
+      else await propagateSlotStatusToPdtp(tx, propagation)
+    }
+
     return { status: updated.status as TrainingOccurrenceStatus, version: updated.version }
   })
 
   if (completionEvent) await recordPdtpFulfillmentEvent(completionEvent)
   if (revocationEvent) await recordPdtpFulfillmentRevocation(revocationEvent)
+  if (postCommitPdtpDeviation) {
+    const propagation: SlotPdtpPropagationInput = postCommitPdtpDeviation
+    // El conector no lanza; esto cubre que falle la transacción misma (la
+    // conexión), que tampoco puede convertir en error un cambio ya confirmado.
+    await db.transaction((tx) => propagateSlotStatusToPdtp(tx, propagation)).catch((err: unknown) => {
+      logger.error({ err, occurrenceId: propagation.source.slotId }, "[training-occurrences] No se pudo reflejar el estado de la ocurrencia en el PDTP.")
+    })
+  }
   /* Se desestructura en vez de esparcir: TypeScript no propaga a este punto
    * los tipos de las asignaciones hechas dentro del callback de la
    * transacción, así que un spread acá no compila. Es el mismo motivo por el
