@@ -523,6 +523,28 @@ describe("cumplir la casilla con el hecho", () => {
     expect(despues?.testId).toBeTruthy()
   })
 
+  /* Task 3 — M0.2: el control se registra tarde (abril), pero cumple una
+   * casilla planificada para marzo. La celda que el PDTP acredita tiene que
+   * ser la de la casilla (marzo), no la del mes en que el control llegó
+   * registrado — si no, un control tardío paga un mes que no le corresponde y
+   * marzo sigue en cero aunque la casilla ya esté marcada cumplida. */
+  it("un control tardío acredita la celda planificada de la casilla, no el mes real del control", async () => {
+    await seedProgramAndActivities()
+    const slots = await seedSlots()
+    const marzo = slots.find((s) => s.kind === "control" && s.scheduledMonth === 3)!
+    expect(marzo.scheduledWeek).toBe(3)
+    await evidenciaEn(marzo.id)
+
+    await recordAlcoholTest(
+      { worksiteId: WS_ID, ...SUBJECT, shift: "dia", performedAt: "2026-04-10T14:00:00.000Z", slotId: marzo.id },
+      USER_PRF, ["prevencionista_faena"], [WS_ID],
+    )
+
+    const [exec] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, N30_ID))
+    expect(exec).toMatchObject({ year: PROGRAM_YEAR, month: 3, week: 3 })
+  })
+
   it("un control extraordinario se registra sin casilla y no ocupa ninguna celda", async () => {
     await seedProgramAndActivities()
     await seedSlots()
@@ -559,6 +581,29 @@ describe("cumplir la casilla con el hecho", () => {
     const [exec] = await inMemoryDb.select().from(schema.pdtpExecutions)
       .where(eq(schema.pdtpExecutions.activityId, N32_ID))
     expect(exec?.evidenceText).toBe(`alcotest/${envioMarzo.id}/planilla-marzo.pdf`)
+  })
+
+  /* Task 3 — M0.2: el envío se registra tarde (mayo), pero cumple la casilla
+   * planificada para marzo (semana 1). La celda que el PDTP acredita tiene
+   * que ser la de la casilla, no la del mes en que el envío se registró. */
+  it("un envío tardío acredita la celda planificada de la casilla, no el mes real del envío", async () => {
+    await seedProgramAndActivities()
+    const slots = await seedSlots()
+    const envioMarzo = slots.find((s) => s.kind === "envio" && s.scheduledMonth === 3)!
+    expect(envioMarzo.scheduledWeek).toBe(1)
+    await evidenciaEn(envioMarzo.id)
+
+    await recordAlcoholTestDispatch(
+      {
+        worksiteId: WS_ID, year: 2026, month: 2, recipient: "mutual@example.test",
+        slotId: envioMarzo.id, sentAt: "2026-05-12T12:00:00.000Z",
+      },
+      USER_PRF, [WS_ID],
+    )
+
+    const [exec] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, N32_ID))
+    expect(exec).toMatchObject({ year: PROGRAM_YEAR, month: 3, week: 1 })
   })
 })
 

@@ -141,7 +141,7 @@ export async function recordAlcoholTest(
   /* El control y la casilla que cumple se escriben en la misma transacción: si
    * el registro se revierte, la casilla no puede quedar en verde sin hecho. La
    * acreditación va después del commit, para no dejar ejecuciones huérfanas. */
-  const { created, slotEvidenceRef } = await db.transaction(async (tx) => {
+  const { created, slotEvidenceRef, plannedPeriod } = await db.transaction(async (tx) => {
     const [row] = await tx.insert(alcoholTests).values({
       id,
       worksiteId: input.worksiteId,
@@ -157,14 +157,27 @@ export async function recordAlcoholTest(
       updatedAt: now,
     }).returning()
 
-    if (!input.slotId) return { created: row!, slotEvidenceRef: null as string | null }
-    await fulfillAlcotestSlotTx(tx, {
+    if (!input.slotId) {
+      return {
+        created: row!,
+        slotEvidenceRef: null as string | null,
+        plannedPeriod: undefined as { year: number; month: number; week: number } | undefined,
+      }
+    }
+    const slot = await fulfillAlcotestSlotTx(tx, {
       slotId: input.slotId,
       worksiteId: input.worksiteId,
       userId: performedByUserId,
       testId: id,
     })
-    return { created: row!, slotEvidenceRef: await resolveAlcotestSlotEvidenceRef(tx, input.slotId) }
+    return {
+      created: row!,
+      slotEvidenceRef: await resolveAlcotestSlotEvidenceRef(tx, input.slotId),
+      /* La celda que el control acredita es la que la casilla ya tenía
+       * planificada, no la del mes en que el control llegó registrado: uno
+       * tomado tarde no debe pagar un mes que no le corresponde. */
+      plannedPeriod: { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek },
+    }
   })
 
   await recordPdtpTriggerEventSafe({
@@ -185,6 +198,7 @@ export async function recordAlcoholTest(
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(activityNumber)],
     occurredAt: input.performedAt,
+    ...(plannedPeriod ? { plannedPeriod } : {}),
     /* La ruta del archivo de la casilla, no un rótulo inventado: un
      * `evidenceRef` sintético pasa el motor de acreditación pero no sirve ante
      * un fiscalizador, que es el único lector que importa. Un control
@@ -255,7 +269,7 @@ export async function recordAlcoholTestDispatch(
 
   const now = new Date().toISOString()
   const id = nanoid()
-  const { created, slotEvidenceRef } = await db.transaction(async (tx) => {
+  const { created, slotEvidenceRef, plannedPeriod } = await db.transaction(async (tx) => {
     const [row] = await tx.insert(alcoholTestDispatches).values({
       id,
       worksiteId: input.worksiteId,
@@ -270,14 +284,27 @@ export async function recordAlcoholTestDispatch(
       updatedAt: now,
     }).returning()
 
-    if (!input.slotId) return { created: row!, slotEvidenceRef: null as string | null }
-    await fulfillAlcotestSlotTx(tx, {
+    if (!input.slotId) {
+      return {
+        created: row!,
+        slotEvidenceRef: null as string | null,
+        plannedPeriod: undefined as { year: number; month: number; week: number } | undefined,
+      }
+    }
+    const slot = await fulfillAlcotestSlotTx(tx, {
       slotId: input.slotId,
       worksiteId: input.worksiteId,
       userId: sentByUserId,
       dispatchId: id,
     })
-    return { created: row!, slotEvidenceRef: await resolveAlcotestSlotEvidenceRef(tx, input.slotId) }
+    return {
+      created: row!,
+      slotEvidenceRef: await resolveAlcotestSlotEvidenceRef(tx, input.slotId),
+      /* La celda que el envío acredita es la que la casilla ya tenía
+       * planificada, no la del mes en que el envío se registró: uno hecho
+       * tarde no debe pagar un mes que no le corresponde. */
+      plannedPeriod: { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek },
+    }
   })
 
   await recordPdtpFulfillmentEvent({
@@ -286,6 +313,7 @@ export async function recordAlcoholTestDispatch(
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(ALCOTEST_DISPATCH_ACTIVITY_NUMBER)],
     occurredAt: sentAt,
+    ...(plannedPeriod ? { plannedPeriod } : {}),
     evidenceRef: slotEvidenceRef
       ?? input.evidenceUrl
       ?? `Envío de registros ${input.year}-${String(input.month).padStart(2, "0")} a ${input.recipient}`,

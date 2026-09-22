@@ -946,6 +946,7 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
 
     /* La casilla se cumple en la misma transacción que el simulacro: si el
      * cierre se revierte, la casilla no puede quedar en verde sin hecho. */
+    let plannedPeriod: { year: number; month: number; week: number } | undefined
     if (data.slotId) {
       const [slot] = await tx.select().from(preventionEmergencyDrillSlots)
         .where(eq(preventionEmergencyDrillSlots.id, data.slotId)).limit(1)
@@ -967,6 +968,10 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
         version: slot.version + 1,
         updatedAt: now,
       }).where(eq(preventionEmergencyDrillSlots.id, slot.id))
+      /* La celda que se acredita es la que la casilla ya tenía planificada, no
+       * la del mes en que el simulacro llegó registrado: uno completado tarde
+       * no debe pagar un mes que no le corresponde. */
+      plannedPeriod = { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek }
     }
 
     // Auto-acreditación PDTP: actividades del plan de emergencia. Se dispara
@@ -982,6 +987,7 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
         worksiteId: drill.worksiteId,
         executedAt: data.executedAt,
         ...target,
+        ...(plannedPeriod ? { plannedPeriod } : {}),
         /* La acreditación referencia el acta real. El rótulo sintético
          * «Simulacro completado: <id>» desaparece porque ya no existe un camino
          * que cierre un simulacro sin evidencia. */
