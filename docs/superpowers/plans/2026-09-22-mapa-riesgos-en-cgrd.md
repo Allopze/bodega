@@ -19,6 +19,7 @@
 - Rutas de filtro que naveguen: `router.replace(url, { scroll: false })` (regla del repo, `AGENTS.md`).
 - Textos de usuario en español; comentarios de código en español, como el resto del módulo.
 - Puertas del repo: `npm run typecheck`, `npm run lint`, `npm run test:fast`, `npm run test:pglite`, `npm run test:e2e`.
+- **Nunca `git add -A`.** El árbol de trabajo puede contener cambios en curso de otra sesión; cada commit usa rutas explícitas.
 - Las suites Postgres corren contra el contenedor e2e en el puerto 55432, no contra el socket local; si no está arriba, se saltan solas y eso **no** cuenta como verde.
 
 ---
@@ -155,7 +156,10 @@ Expected: sin errores.
 - [ ] **Step 10: Commit**
 
 ```bash
-git add -A
+# add explícito, NUNCA `git add -A`: el árbol puede contener trabajo en curso
+# de otra sesión (2026-09-22: 8 archivos de PDTP sin commitear).
+git add "app/api/prevencion/cgrd/mapa" "app/(app)/prevencion/miper/risk-map-panel.tsx" \
+        lib/services/module-toggles.ts lib/__tests__/risk-map-gc.test.ts
 git commit -m "refactor(prevencion): mover la API del mapa de riesgos a /api/prevencion/cgrd/mapa
 
 El par href/prefijo del module-toggle viaja junto con la ruta: si la API se
@@ -438,7 +442,9 @@ Expected: PASS los dos tests — el flujo de plano y marcadores en la ruta nueva
 - [ ] **Step 14: Commit**
 
 ```bash
-git add -A
+git add "app/(app)/prevencion/cgrd/mapa" "app/(app)/prevencion/miper/actions.ts" \
+        next.config.ts lib/__tests__/risk-map-ui-contract.test.ts \
+        lib/__tests__/miper-ui-contract.test.ts e2e/
 git commit -m "refactor(prevencion): mover la pantalla del mapa de riesgos a /prevencion/cgrd/mapa
 
 La ruta anterior redirige permanente. Las acciones del marcador se separan de
@@ -551,7 +557,8 @@ Expected: sin errores.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add -A
+git add modules/prevention/manifest.ts lib/__tests__/navigation.test.ts \
+        lib/__tests__/module-toggles.test.ts scripts/capture-all-routes.ts
 git commit -m "feat(prevencion): colgar el mapa de riesgos de la navegación del CGRD
 
 Sale del grupo Programa y pasa a ser hijo de Gestión de riesgos de desastres,
@@ -654,7 +661,7 @@ Expected: una sola coincidencia, la del `source` del redirect en `next.config.ts
 - [ ] **Step 6: Commit**
 
 ```bash
-git add -A
+git add docs/manual-prevencion/
 git commit -m "docs(prevencion): trasladar el mapa de riesgos al capítulo del CGRD
 
 El capítulo 4 conserva un puntero, porque los marcadores salen de la matriz IPER

@@ -15,7 +15,7 @@ import { uploadRiskMapLayout } from "@/lib/services/prevention-risk-map"
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 
 /**
- * POST /api/prevencion/miper/mapa
+ * POST /api/prevencion/cgrd/mapa
  *
  * Sube el plano de planta (imagen) sobre el que se ubican los marcadores del
  * mapa de riesgos. Acepta multipart/form-data con `file` (JPEG/PNG) y
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
       permissions: session.user.permissions,
     })
     registered = true
-    revalidatePath("/prevencion/miper")
+    revalidatePath("/prevencion/cgrd/mapa")
     return NextResponse.json({
       ok: true,
       layoutId: layout.id,

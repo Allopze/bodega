@@ -318,7 +318,12 @@ describe("module-toggles service", () => {
       expect(resolveModuleRoute("/prevencion/evaluation-1")).toEqual({ moduleId: "sst", submoduleHref: "/prevencion/evaluaciones" })
       expect(resolveModuleRoute("/api/bodega/stock/export")).toEqual({ moduleId: "warehouse", submoduleHref: "/bodega" })
       expect(resolveModuleRoute("/api/prevencion/epp/export")).toEqual({ moduleId: "prevention", submoduleHref: "/prevencion/epp-preventivo" })
-      expect(resolveModuleRoute("/api/prevencion/miper/mapa/plano-1")).toEqual({ moduleId: "prevention", submoduleHref: "/prevencion/miper/mapa" })
+      // El mapa se trasladó a CGRD (2026-09-22) y conserva toggle propio: la ruta
+      // del plano debe resolver al submódulo del mapa, no al del CGRD que lo
+      // contiene por prefijo. Lo garantiza el sort por longitud de prefijo, que
+      // no es evidente al leer el array.
+      expect(resolveModuleRoute("/api/prevencion/cgrd/mapa/plano-1")).toEqual({ moduleId: "prevention", submoduleHref: "/prevencion/cgrd/mapa" })
+      expect(resolveModuleRoute("/api/prevencion/cgrd/evidence/acta-1")).toEqual({ moduleId: "prevention", submoduleHref: "/prevencion/cgrd" })
       expect(resolveModuleRoute("/api/cron/billing-sales-sync")).toEqual({ moduleId: "billing", submoduleHref: "/facturacion/sincronizacion" })
       expect(resolveModuleRoute("/api/facturacion/facturas/export")).toEqual({ moduleId: "billing", submoduleHref: "/facturacion/facturas" })
       expect(resolveModuleRoute("/api/prevencion/inspecciones/export")).toEqual({ moduleId: "prevention", submoduleHref: undefined })

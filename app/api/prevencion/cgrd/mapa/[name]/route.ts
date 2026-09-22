@@ -1,5 +1,5 @@
 /**
- * GET /api/prevencion/miper/mapa/[name]
+ * GET /api/prevencion/cgrd/mapa/[name]
  *
  * Sirve un plano de riesgos previamente subido a `storage/risk-map/`. Mismo
  * guard IDOR que la evidencia PDTP: el nombre se valida contra

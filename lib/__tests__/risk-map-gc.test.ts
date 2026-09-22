@@ -153,7 +153,7 @@ describe("cleanupRiskMapOrphans (MIP-002)", () => {
  * Seguir sirviéndolo es deliberado —el histórico de planos es evidencia—;
  * servirlo INDISTINGUIBLE del vigente no lo es.
  */
-describe("GET /api/prevencion/miper/mapa/[name] (MIP-002)", () => {
+describe("GET /api/prevencion/cgrd/mapa/[name] (MIP-002)", () => {
   async function get(name: string) {
     mockAuthFn.mockResolvedValue({
       user: {
@@ -163,10 +163,10 @@ describe("GET /api/prevencion/miper/mapa/[name] (MIP-002)", () => {
       },
       expires: new Date(Date.now() + 86_400_000).toISOString(),
     })
-    const { GET } = await import("@/app/api/prevencion/miper/mapa/[name]/route")
+    const { GET } = await import("@/app/api/prevencion/cgrd/mapa/[name]/route")
     const { NextRequest } = await import("next/server")
     return GET(
-      new NextRequest(`http://localhost/api/prevencion/miper/mapa/${name}`),
+      new NextRequest(`http://localhost/api/prevencion/cgrd/mapa/${name}`),
       { params: Promise.resolve({ name }) },
     )
   }

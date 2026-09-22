@@ -132,6 +132,11 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   // es el mismo href al que ya resuelve el permiso `prevention:campaign:*`:
   // apagar ese submódulo tiene que cerrar el endpoint y el permiso a la vez.
   { moduleId: "prevention", submoduleHref: "/prevencion/capacitacion", prefix: "/api/prevencion/campanas" },
+  // El mapa de riesgos se trasladó a CGRD (2026-09-22). El par href/prefijo viaja
+  // junto con la ruta: si la API se quedaba bajo /api/prevencion/miper, apagar el
+  // submódulo MIPER habría roto una pantalla del CGRD. El orden respecto de la
+  // entrada de abajo no decide nada — el array se ordena por longitud de prefijo.
+  { moduleId: "prevention", submoduleHref: "/prevencion/cgrd/mapa", prefix: "/api/prevencion/cgrd/mapa" },
   { moduleId: "prevention", submoduleHref: "/prevencion/cgrd", prefix: "/api/prevencion/cgrd" },
   // Subida y descarga del acta de un simulacro. Apagar Emergencias tiene que
   // cerrar el endpoint y el permiso a la vez: si no, la evidencia del módulo
@@ -154,7 +159,6 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   // determina en el handler después de autenticar y cargar el kind real; el
   // proxy sólo aplica aquí el toggle del módulo Prevención.
   { moduleId: "prevention", prefix: "/api/prevencion/inspecciones" },
-  { moduleId: "prevention", submoduleHref: "/prevencion/miper/mapa", prefix: "/api/prevencion/miper/mapa" },
   { moduleId: "prevention", submoduleHref: "/prevencion/miper", prefix: "/api/prevencion/miper" },
   { moduleId: "prevention", submoduleHref: "/prevencion/permisos", prefix: "/api/prevencion/permisos" },
   { moduleId: "prevention", submoduleHref: "/prevencion/privacidad", prefix: "/api/prevencion/privacidad" },

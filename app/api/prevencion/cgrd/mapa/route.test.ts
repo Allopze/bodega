@@ -42,10 +42,10 @@ function request(file: File, title = "Planta principal") {
   form.set("file", file)
   form.set("worksiteId", "ws-1")
   form.set("title", title)
-  return new Request("http://localhost/api/prevencion/miper/mapa", { method: "POST", body: form })
+  return new Request("http://localhost/api/prevencion/cgrd/mapa", { method: "POST", body: form })
 }
 
-describe("POST /api/prevencion/miper/mapa", () => {
+describe("POST /api/prevencion/cgrd/mapa", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGuardPermission.mockResolvedValue({
@@ -86,7 +86,7 @@ describe("POST /api/prevencion/miper/mapa", () => {
       scope: { mode: "some", ids: ["ws-1"] },
       permissions: ["prevention:risk:edit"],
     })
-    expect(mockRevalidatePath).toHaveBeenCalledWith("/prevencion/miper")
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/prevencion/cgrd/mapa")
   })
 
   it("elimina el archivo escrito cuando falla el registro en base", async () => {

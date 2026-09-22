@@ -138,7 +138,7 @@ function RiskMapImage({ layout, entries, canEdit }: { layout: RiskMapLayout; ent
         {/* eslint-disable-next-line @next/next/no-img-element -- imagen servida por ruta autenticada, no un asset de build */}
         <img
           ref={imgRef}
-          src={`/api/prevencion/miper/mapa/${layout.imagePath.split("/").pop()}`}
+          src={`/api/prevencion/cgrd/mapa/${layout.imagePath.split("/").pop()}`}
           alt={layout.title}
           className="block w-full select-none"
           draggable={false}
@@ -200,7 +200,7 @@ function UploadLayoutDialog({ worksiteId, replacing }: { worksiteId: string; rep
       uploadForm.set("file", file)
       uploadForm.set("worksiteId", worksiteId)
       uploadForm.set("title", title)
-      const response = await fetch("/api/prevencion/miper/mapa", { method: "POST", body: uploadForm })
+      const response = await fetch("/api/prevencion/cgrd/mapa", { method: "POST", body: uploadForm })
       const body = await response.json()
       if (!response.ok) { setError(body.error ?? "No se pudo subir la imagen."); return }
       setOpen(false)
