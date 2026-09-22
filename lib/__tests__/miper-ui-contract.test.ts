@@ -23,16 +23,6 @@ describe("contratos React de la pantalla MIPER", () => {
     expect(workbench).not.toContain("todayInChile(")
   })
 
-  it("permite activar el plano de riesgos con teclado cuando es editable", () => {
-    const riskMap = source("app/(app)/prevencion/miper/risk-map-panel.tsx")
-
-    expect(riskMap).toContain("onKeyDown={handleKeyDown}")
-    expect(riskMap).toContain("tabIndex={canEdit ? 0 : undefined}")
-    expect(riskMap).toContain('event.key !== "Enter" && event.key !== " "')
-    expect(riskMap).toContain("setPendingPoint({ xPct: 50, yPct: 50 })")
-    expect(riskMap).toContain("Plano de riesgos: clic para ubicar un marcador")
-  })
-
   it("conserva el tab activo cuando una mutación refresca los datos", () => {
     const workbench = source("app/(app)/prevencion/miper/miper-workbench.tsx")
 
@@ -111,12 +101,4 @@ describe("contratos React de la pantalla MIPER", () => {
     expect(workbench).toContain('toStatus="draft" label="Devolver a borrador"')
   })
 
-  it("conserva la faena elegida del mapa cuando una mutación refresca los datos", () => {
-    const riskMap = source("app/(app)/prevencion/miper/risk-map-panel.tsx")
-
-    expect(riskMap).toContain('searchParams.get("mapWorksite")')
-    expect(riskMap).toContain('params.set("mapWorksite", value)')
-    expect(riskMap).toContain("onValueChange={navigateWorksite}")
-    expect(riskMap).toContain('router.replace(qs ? `?${qs}` : "", { scroll: false })')
-  })
 })

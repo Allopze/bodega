@@ -25,10 +25,6 @@ import {
   stageRiskImport,
   RISK_IMPORT_MAX_BYTES,
 } from "@/lib/services/prevention-risk-import"
-import {
-  addRiskMapMarker,
-  removeRiskMapMarker,
-} from "@/lib/services/prevention-risk-map"
 import type { ActionState } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/miper"
@@ -148,18 +144,4 @@ export async function verifyRiskControlAction(input: unknown): Promise<ActionSta
   // La ficha del control es una ruta dinámica: `run` sólo revalida el listado.
   revalidatePath(`${REVALIDATE}/controles/[id]`, "page")
   return state
-}
-
-/* ── Mapa de riesgos ───────────────────────────────────────────────────────── */
-
-export async function addRiskMapMarkerAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:risk:edit")
-  if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => addRiskMapMarker(input, access))
-}
-
-export async function removeRiskMapMarkerAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:risk:edit")
-  if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => removeRiskMapMarker(input, access))
 }

@@ -2,25 +2,24 @@ import { test, expect } from "@playwright/test"
 import { login, MINIMAL_PNG } from "./helpers"
 
 /**
- * E2E: mapa de riesgos espacial de MIPER (§13/Oro) — cargar un plano de
- * planta, ubicar un marcador sobre un peligro de la matriz publicada y
- * quitarlo. No hay librería de mapas en el repo: el overlay es CSS puro
- * sobre una imagen responsiva, así que el clic se posiciona por porcentaje
- * del `boundingBox` real, igual que calcula el cliente.
+ * E2E: mapa de riesgos espacial (DS 44 art. 62, requisito Oro de la
+ * certificación CPHS) — cargar un plano de planta, ubicar un marcador sobre un
+ * peligro de la matriz IPER publicada y quitarlo. Vive bajo CGRD desde el
+ * 2026-09-22; los marcadores siguen saliendo de la MIPER.
+ *
+ * No hay librería de mapas en el repo: el overlay es CSS puro sobre una imagen
+ * responsiva, así que el clic se posiciona por porcentaje del `boundingBox`
+ * real, igual que calcula el cliente.
  *
  * El plano usa `MINIMAL_PNG` (e2e/helpers.ts): sin bytes de imagen de verdad el
  * navegador no le da dimensiones al <img> y el clic porcentual no tiene
  * dónde caer.
  */
 
-test.describe("Prevención — MIPER: mapa de riesgos espacial", () => {
+test.describe("Prevención — CGRD: mapa de riesgos espacial", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
-    // El mapa no es una pestaña del workbench: es su propia página
-    // (`/prevencion/miper/mapa`). El test navegaba a `/prevencion/miper` y
-    // buscaba un `tab` que no existe, así que agotaba el timeout del
-    // `beforeEach` sin llegar a ejercitar nada.
-    await page.goto("/prevencion/miper/mapa")
+    await page.goto("/prevencion/cgrd/mapa")
     await expect(page.getByRole("heading", { level: 1, name: "Mapa de riesgos" })).toBeVisible()
   })
 
@@ -69,4 +68,20 @@ test.describe("Prevención — MIPER: mapa de riesgos espacial", () => {
 
     await expect(page.getByText("Planta principal E2E (0 marcadores)")).toBeVisible({ timeout: 15_000 })
   })
+})
+
+/**
+ * El mapa se trasladó a CGRD el 2026-09-22. Sin este test, romper el redirect no
+ * falla ninguna suite: los bookmarks y los enlaces del manual antiguo caen en un
+ * 404 que nadie observa.
+ *
+ * Fuera del describe de arriba a propósito: aquel navega al mapa en su
+ * `beforeEach`, y acá lo que se prueba es justamente la llegada desde la ruta
+ * anterior.
+ */
+test("la ruta anterior del mapa redirige a CGRD", async ({ page }) => {
+  await login(page)
+  await page.goto("/prevencion/miper/mapa")
+  await expect(page).toHaveURL(/\/prevencion\/cgrd\/mapa$/)
+  await expect(page.getByRole("heading", { level: 1, name: "Mapa de riesgos" })).toBeVisible()
 })

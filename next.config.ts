@@ -74,6 +74,10 @@ const nextConfig: NextConfig = {
       { source: "/prevencion/auditorias", destination: "/prevencion/inspecciones?tipo=audit", permanent: true },
       { source: "/prevencion/auditorias/catalogo", destination: "/prevencion/inspecciones/plantillas", permanent: true },
       { source: "/prevencion/inspecciones/catalogo", destination: "/prevencion/inspecciones/plantillas", permanent: true },
+      // El mapa de riesgos (DS 44 art. 62) se trasladó a CGRD el 2026-09-22.
+      // Sin este redirect, los bookmarks y los enlaces del manual anterior caen
+      // en un 404 que ninguna suite observa.
+      { source: "/prevencion/miper/mapa", destination: "/prevencion/cgrd/mapa", permanent: true },
       // Biblioteca SST renamed to Documentación (2026-07-02)
       { source: "/prevencion/biblioteca", destination: "/prevencion/documentacion", permanent: true },
       { source: "/prevencion/biblioteca/:path*", destination: "/prevencion/documentacion/:path*", permanent: true },
