@@ -980,9 +980,9 @@ modules:
       dynamic: true
       file: prevencion-miper-controles-detalle.md
     -
-      route: /prevencion/miper/mapa
+      route: /prevencion/cgrd/mapa
       dynamic: false
-      file: prevencion-miper-mapa.md
+      file: prevencion-cgrd-mapa.md
     -
       route: /prevencion/nueva
       dynamic: false

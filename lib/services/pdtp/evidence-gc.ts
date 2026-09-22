@@ -200,7 +200,7 @@ export async function cleanupInspectionEvidenceOrphans(
  * plataforma todavía no declara. Un plano archivado y referenciado se conserva
  * intacto; cuánto tiempo debe conservarse es una decisión pendiente.
  *
- * Productor único del directorio: `POST /api/prevencion/miper/mapa`, que
+ * Productor único del directorio: `POST /api/prevencion/cgrd/mapa`, que
  * vincula el archivo a `prevention_risk_map_layouts.image_path`. La ventana de
  * gracia (`olderThanMs`) existe por lo mismo que en PDTP: el archivo se sube
  * antes de que exista la fila que lo referencia.

@@ -24,9 +24,12 @@ test.describe("Prevención — Matriz MIPER y Controles", () => {
     await expect(page.getByText("Faena E2E").first()).toBeVisible({ timeout: 30_000 })
   })
 
+  // El mapa se trasladó a CGRD el 2026-09-22. El flujo completo del plano y sus
+  // marcadores vive en prevencion-cgrd-risk-map.spec.ts; acá sólo queda que la
+  // pantalla responde y se titula como corresponde.
   test("navegación al mapa de riesgos interactivo", async ({ page }) => {
-    await page.goto("/prevencion/miper/mapa")
-    await expect(page).toHaveURL(/\/prevencion\/miper\/mapa/)
+    await page.goto("/prevencion/cgrd/mapa")
+    await expect(page).toHaveURL(/\/prevencion\/cgrd\/mapa/)
     await expectPageTitle(page, /Mapa de riesgos|Peligros y riesgos/i)
   })
 })

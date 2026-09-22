@@ -3,7 +3,7 @@
 > **Marco Normativo:** Decreto Supremo 44 (DS 44), Artículos 7 (Matriz IPER) y 62 (Mapa de Riesgos).  
 > **Rutas en Plataforma:**  
 > *   Matriz IPER: `/prevencion/miper`  
-> *   Mapa de Riesgos: `/prevencion/miper/mapa`  
+> *   Mapa de Riesgos: `/prevencion/cgrd/mapa` (se opera en el capítulo 17)  
 > **Actividades PDTP Asociadas:** N° 35 (Publicación de revisión MIPER) y N° 36 (Acuse de difusión MIPER-DIF).
 
 ---
@@ -65,14 +65,13 @@ El Artículo 7 del DS 44 exige que cada trabajador conozca los riesgos específi
 
 ---
 
-## 5. El Mapa de Riesgos en Terreno (`/prevencion/miper/mapa`)
+## 5. El Mapa de Riesgos
 
-En `/prevencion/miper/mapa` puedes visualizar y descargar el mapa de riesgos zonificado de tu faena:
+El mapa de riesgos (DS 44 Art. 62) se documenta en el **capítulo 17 — Gestión del
+Riesgo de Desastres** (`/prevencion/cgrd/mapa`).
 
-*   **Zona de Tránsito Peatonal vs. Maquinaria:** Delimitación de segregación de hombres y camiones.
-*   **Zonas de Ruido Elevado:** Sectores donde es mandatorio el protector auditivo (PREXOR).
-*   **Almacenamiento de Sustancias Peligrosas (SUSPEL):** Bodegas de aceites, solventes o combustibles.
-*   **Vías de Evacuación y Puntos de Encuentro de Emergencia (PEE):** Puntos seguros ante sismos, incendios o evacuaciones.
-
-> [!TIP]
-> **Consejo de terreno:** Mantén una copia plastificada en gran formato del Mapa de Riesgos en la entrada principal de la faena y en la sala de inducciones. Es uno de los primeros elementos que solicita un fiscalizador de la SEREMI de Salud al presentarse en terreno.
+Vive allá, pero sus marcadores salen de la matriz IPER que describe este
+capítulo: al publicar una revisión de la MIPER, cada marcador se reubica sobre el
+peligro equivalente de la versión nueva, y el marcador de un peligro que
+desaparece se elimina. Si trabajas la MIPER, ése es el efecto que tu publicación
+tiene sobre el mapa.

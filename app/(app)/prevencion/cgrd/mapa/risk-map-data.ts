@@ -10,9 +10,10 @@ import type { RiskLegalAccess } from "@/lib/services/prevention-risk-legal"
  *
  * El mapa (DS 44 art. 62) es un instrumento distinto de la matriz IPER
  * (art. 7): tiene su propia exigibilidad, contenido y visibilidad, y el
- * fiscalizador los pide por separado. Por eso vive en `/prevencion/miper/mapa`
- * y no como pestaña de la MIPER, pero comparte el mismo origen de datos —
- * los marcadores se anclan a entradas de una matriz publicada.
+ * fiscalizador los pide por separado. Por eso es un destino propio y no una
+ * pestaña, y desde el 2026-09-22 vive en `/prevencion/cgrd/mapa`. Comparte el
+ * origen de datos con la MIPER: los marcadores se anclan a entradas de una
+ * matriz publicada.
  */
 export async function loadRiskMapProps(
   access: RiskLegalAccess,

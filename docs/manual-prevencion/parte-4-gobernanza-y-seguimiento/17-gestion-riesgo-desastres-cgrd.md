@@ -2,7 +2,8 @@
 
 > **Marco Normativo:** Decreto Supremo 44 (DS 44, Disposiciones sobre Gestión de Riesgos de Desastres) y Ley 21.364 (Sistema Nacional de Prevención y Respuesta ante Desastres - SENAPRED).  
 > **Ruta en Plataforma:** Menú > Cumplimiento del programa > **Gestión de riesgos de desastres** (`/prevencion/cgrd`).  
-> **Actividades PDTP Asociadas:** N° 79 (Constitución del CGRD), N° 80 (Matriz GRD) y N° 81 (Actas de reunión CGRD).
+> **Actividades PDTP Asociadas:** N° 79 (Constitución del CGRD), N° 80 (Matriz GRD) y N° 81 (Actas de reunión CGRD).  
+> **Nota:** el Mapa de Riesgos (sección 5) **no** acredita ninguna actividad del PDTP; es exigible por el DS 44 Art. 62 y cuenta para el requisito Oro de la certificación del CPHS.
 
 ---
 
@@ -62,3 +63,27 @@ Se **anula** con su motivo, desde la misma lista de actas. La anulación reviert
 la acreditación de la N° 81 y deja el registro a la vista, tachado: no se borra,
 porque el rastro es lo que explica por qué el programa contó —y después
 descontó— esa sesión. Los acuerdos ya derivados a CAPA siguen su propio curso.
+
+---
+
+## 5. El Mapa de Riesgos en Terreno (DS 44 Art. 62)
+
+> **Ruta en Plataforma:** Menú > Cumplimiento del programa > Gestión de riesgos de desastres > **Mapa de riesgos** (`/prevencion/cgrd/mapa`).
+
+El Mapa de Riesgos es un instrumento **distinto de la Matriz GRD** de este mismo capítulo: es el plano de la faena con los mayores peligros físicos ubicados sobre él, y sirve de inducción visual para visitas, transportistas y personal nuevo. Debe estar visible en el lugar de trabajo.
+
+> [!IMPORTANT]
+> Los marcadores del mapa salen de la **Matriz IPER publicada** de la faena (capítulo 4), **no** de la Matriz GRD de amenazas. Tres consecuencias prácticas:
+> - Una faena sin MIPER publicada verá el mapa vacío.
+> - Al publicar una revisión de la MIPER, los marcadores se reubican solos sobre los peligros que sobreviven, y el de un peligro retirado se elimina.
+> - El mapa **no acredita ninguna actividad del PDTP**. Sí cuenta para el requisito Oro de la certificación del CPHS.
+
+Contenidos que se esperan sobre el plano:
+
+*   **Zona de Tránsito Peatonal vs. Maquinaria:** Delimitación de segregación de personas y camiones.
+*   **Zonas de Ruido Elevado:** Sectores donde es mandatorio el protector auditivo (PREXOR).
+*   **Almacenamiento de Sustancias Peligrosas (SUSPEL):** Bodegas de aceites, solventes o combustibles.
+*   **Vías de Evacuación y Puntos de Encuentro de Emergencia (PEE):** Puntos seguros ante sismos, incendios o evacuaciones.
+
+> [!TIP]
+> **Consejo de terreno:** Mantén una copia plastificada en gran formato del Mapa de Riesgos en la entrada principal de la faena y en la sala de inducciones. Es uno de los primeros elementos que solicita un fiscalizador de la SEREMI de Salud al presentarse en terreno.

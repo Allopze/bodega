@@ -7,7 +7,7 @@
  * Reusa el alcance y los permisos de MIPER (`prevention:risk:view`/`:edit`):
  * es una vista adicional sobre los mismos datos, no un dominio nuevo con
  * permisos propios. La imagen se sube por separado
- * (POST /api/prevencion/miper/mapa) — este servicio sólo registra la
+ * (POST /api/prevencion/cgrd/mapa) — este servicio sólo registra la
  * referencia y los marcadores.
  */
 import { and, eq, inArray } from "drizzle-orm"

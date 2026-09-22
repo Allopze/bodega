@@ -42,7 +42,6 @@ PREVENCIÓN
 ├── 1. PROGRAMA
 │   ├── Programa de trabajo (/prevencion/pdtp) -> Planilla anual de 81 actividades por faena
 │   ├── Matriz IPER (/prevencion/miper) -> Inventario de peligros y controles críticos
-│   ├── Mapa de riesgos (/prevencion/miper/mapa) -> Distribución territorial de riesgos
 │   └── Requisitos legales (/prevencion/requisitos-legales) -> Normativa aplicable
 │
 ├── 2. CUMPLIMIENTO DEL PROGRAMA
@@ -55,6 +54,7 @@ PREVENCIÓN
 │   ├── Emergencias (/prevencion/emergencias) -> Planes, brigadas, extintores y simulacros
 │   ├── Comités paritarios (/prevencion/cphs) -> Actas, reuniones y certificación Mutual
 │   └── Gestión de riesgos de desastres (/prevencion/cgrd) -> Comité y matriz de amenazas DS 44
+│       └── Mapa de riesgos (/prevencion/cgrd/mapa) -> Plano de la faena con los peligros de la MIPER ubicados
 │
 ├── 3. EN TERRENO
 │   ├── Para, Piensa y Actúa (/prevencion/ppa) -> Tarjetas de detención y control en terreno
@@ -99,7 +99,7 @@ Para facilitar la lectura durante la operación, el manual se organiza en los si
     *   [15. Higiene Ocupacional y Protocolos MINSAL](./parte-3-eventos-criticos-y-contingencias/15-higiene-protocolos-minsal.md)
 *   **Parte 4: Gobernanza y Seguimiento**
     *   [16. Comités Paritarios (CPHS)](./parte-4-gobernanza-y-seguimiento/16-comites-paritarios-cphs.md)
-    *   [17. Comité de Gestión de Riesgo de Desastres (CGRD)](./parte-4-gobernanza-y-seguimiento/17-gestion-riesgo-desastres-cgrd.md)
+    *   [17. Comité de Gestión de Riesgo de Desastres (CGRD) y Mapa de Riesgos](./parte-4-gobernanza-y-seguimiento/17-gestion-riesgo-desastres-cgrd.md)
     *   [18. Gestión del Cambio (MOC)](./parte-4-gobernanza-y-seguimiento/18-gestion-del-cambio-moc.md)
     *   [19. Visitas Externas y Fiscalizaciones](./parte-4-gobernanza-y-seguimiento/19-visitas-coordinacion-externa.md)
     *   [20. Indicadores Estadísticos SST y Cierre Mensual](./parte-4-gobernanza-y-seguimiento/20-indicadores-sst-cierre-mensual.md)
