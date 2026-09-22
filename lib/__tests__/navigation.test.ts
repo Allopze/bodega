@@ -174,16 +174,46 @@ describe("sidebar navigation", () => {
     }
   })
 
-  // El mapa de riesgos (DS 44 art. 62) cuelga de la ruta de la MIPER (art. 7)
-  // pero es un destino propio: sin el desempate por prefijo más largo, entrar al
-  // mapa dejaría las dos filas resaltadas.
-  it("keeps Matriz IPER and Mapa de riesgos as distinct destinations", () => {
-    expect(isHrefActive("/prevencion/miper", "/prevencion/miper")).toBe(true)
-    expect(isHrefActive("/prevencion/miper", "/prevencion/miper/mapa")).toBe(false)
-    expect(isHrefActive("/prevencion/miper/mapa", "/prevencion/miper/mapa")).toBe(true)
-    expect(isHrefActive("/prevencion/miper/mapa", "/prevencion/miper")).toBe(false)
-    // Las subrutas que no son el mapa siguen perteneciendo a la MIPER.
+  // El mapa de riesgos (DS 44 art. 62) se trasladó a CGRD el 2026-09-22, pero
+  // sigue siendo un destino propio: sin el desempate por prefijo más largo,
+  // entrar al mapa dejaría las dos filas resaltadas.
+  it("keeps CGRD and Mapa de riesgos as distinct destinations", () => {
+    expect(isHrefActive("/prevencion/cgrd", "/prevencion/cgrd")).toBe(true)
+    expect(isHrefActive("/prevencion/cgrd", "/prevencion/cgrd/mapa")).toBe(false)
+    expect(isHrefActive("/prevencion/cgrd/mapa", "/prevencion/cgrd/mapa")).toBe(true)
+    expect(isHrefActive("/prevencion/cgrd/mapa", "/prevencion/cgrd")).toBe(false)
+    // Las subrutas de la MIPER siguen perteneciendo a la MIPER.
     expect(isHrefActive("/prevencion/miper", "/prevencion/miper/controles/ctl-1")).toBe(true)
+  })
+
+  // El mapa exige `prevention:risk:view`, no el permiso del CGRD que lo aloja:
+  // sus marcadores son entradas de la matriz IPER. admin_contrato tiene
+  // cgrd:view y no risk:view, así que no debe ver la fila — y el CGRD sí.
+  it("hides the risk map from a role with cgrd:view but no risk:view", () => {
+    const session = {
+      ...adminSession,
+      user: { ...adminSession.user, permissions: ["prevention:cgrd:view"] },
+    } satisfies Session
+
+    const prevention = getVisibleAreas(session).find((area) => area.id === "prevencion")
+    const cgrd = prevention?.items.find((item) => item.href === "/prevencion/cgrd")
+
+    expect(cgrd, "el CGRD debe seguir visible").toBeDefined()
+    expect(cgrd?.children?.some((child) => child.href === "/prevencion/cgrd/mapa") ?? false).toBe(false)
+  })
+
+  // El contrapunto del test anterior: sin esto, aquél pasaría igual si la
+  // navegación del CGRD se rompiera entera y el mapa desapareciera para todos.
+  it("shows the risk map to a role holding both cgrd:view and risk:view", () => {
+    const session = {
+      ...adminSession,
+      user: { ...adminSession.user, permissions: ["prevention:cgrd:view", "prevention:risk:view"] },
+    } satisfies Session
+
+    const prevention = getVisibleAreas(session).find((area) => area.id === "prevencion")
+    const cgrd = prevention?.items.find((item) => item.href === "/prevencion/cgrd")
+
+    expect(cgrd?.children?.some((child) => child.href === "/prevencion/cgrd/mapa")).toBe(true)
   })
 
   it("hides the Prevención area when no prevention module is visible", () => {

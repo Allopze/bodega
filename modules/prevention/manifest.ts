@@ -380,16 +380,6 @@ export const preventionModule = {
           permissions: ["prevention:risk:view"],
         },
         {
-          // DS 44 art. 62: instrumento distinto de la matriz IPER (art. 7), con
-          // exigibilidad, contenido y visibilidad propios. El fiscalizador los
-          // pide por separado, así que no puede vivir como pestaña de la MIPER.
-          label: "Mapa de riesgos",
-          href: "/prevencion/miper/mapa",
-          iconName: "MapPin",
-          group: "Programa",
-          permissions: ["prevention:risk:view"],
-        },
-        {
           label: "Requisitos legales",
           href: "/prevencion/requisitos-legales",
           iconName: "Scales",
@@ -497,6 +487,23 @@ export const preventionModule = {
           iconName: "Mountains",
           group: "Cumplimiento del programa",
           permissions: ["prevention:cgrd:view"],
+          children: [
+            {
+              // DS 44 art. 62: instrumento exigible por sí mismo, que el
+              // fiscalizador pide por separado — por eso es un destino propio y
+              // no una sección más del workbench. Vive acá por decisión de
+              // Prevención (2026-09-22).
+              //
+              // El permiso sigue siendo el de riesgo y no el del CGRD: sus
+              // marcadores son peligros de la matriz IPER publicada (art. 7),
+              // así que un rol con cgrd:view y sin risk:view (admin_contrato)
+              // no ve esta fila, y eso es deliberado. Si alguna vez debe verla,
+              // se le otorga risk:view — no se mueve el permiso de la pantalla.
+              label: "Mapa de riesgos",
+              href: "/prevencion/cgrd/mapa",
+              permissions: ["prevention:risk:view"],
+            },
+          ],
         },
 
         // ── En terreno ──────────────────────────────────────────────────────

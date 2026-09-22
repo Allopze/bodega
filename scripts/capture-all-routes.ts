@@ -759,7 +759,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-incidentes-procedimiento", path: "/prevencion/incidentes/inc-audit-1/procedimiento", auth: true, expectedStatus: 404, captureView: false, notes: "No existe página App Router para este subpath: la investigación RE-20 se gestiona dentro del detalle canónico del incidente." },
   { slug: "prevencion-miper", path: "/prevencion/miper", auth: true },
   { slug: "prevencion-miper-control", path: "/prevencion/miper/controles/risk-control-audit-1", auth: true },
-  { slug: "prevencion-miper-mapa", path: "/prevencion/miper/mapa", auth: true, notes: "Mapa de riesgos: instrumento propio del DS 44 art. 62, ya no una pestaña de la MIPER." },
+  { slug: "prevencion-cgrd-mapa", path: "/prevencion/cgrd/mapa", auth: true, notes: "Mapa de riesgos: instrumento propio del DS 44 art. 62, alojado en CGRD desde el 2026-09-22." },
   { slug: "prevencion-requisitos-legales", path: "/prevencion/requisitos-legales", auth: true },
   { slug: "prevencion-requisito-legal", path: "/prevencion/requisitos-legales/legal-requirement-audit-1", auth: true },
   { slug: "prevencion-privacidad", path: "/prevencion/privacidad", auth: true },
