@@ -45,7 +45,7 @@ afterAll(async () => {
 
 const { ensurePreventionProgramSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
 const { recordDrillSlotStatus } = await import("@/lib/services/prevention-emergency")
-const { recordGrdMeetingSlotStatus } = await import("@/lib/services/prevention-cgrd")
+const { recordGrdMeetingSlotStatus, constituteGrdCommittee, recordGrdMeeting, annulGrdMeeting } = await import("@/lib/services/prevention-cgrd")
 const { recordAlcotestSlotStatus } = await import("@/lib/services/prevention-alcotest-slots")
 const { recordTrainingOccurrenceStatus } = await import("@/lib/services/prevention-training-occurrences")
 const { recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
@@ -61,7 +61,7 @@ const USER_ADMIN = "user-slot-admin"
 
 const scopeAll = { mode: "all", ids: [] } as WorksiteScope
 const EMERGENCY = { userId: USER_PRF, scope: scopeAll, permissions: ["prevention:emergency:drill_execute"] }
-const CGRD = { userId: USER_PRF, scope: scopeAll, permissions: ["prevention:cgrd:meeting:manage"] }
+const CGRD = { userId: USER_PRF, scope: scopeAll, permissions: ["prevention:cgrd:meeting:manage", "prevention:cgrd:committee:manage"] }
 const TRAINING = { userId: USER_PRF, scope: scopeAll, permissions: ["prevention:training:view", "prevention:training:record"] }
 const ALCOTEST_PRF = { userId: USER_PRF, scope: [WS], roles: ["prevencionista_faena"] }
 const ALCOTEST_SUP = { userId: USER_SUP, scope: [WS], roles: ["supervisor_terreno"] }
@@ -167,6 +167,10 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionAlcotestSlotEvidence)
   await inMemoryDb.delete(schema.preventionAlcotestSlots)
   await inMemoryDb.delete(schema.preventionGrdMeetingSlots)
+  await inMemoryDb.delete(schema.preventionGrdAgreements)
+  await inMemoryDb.delete(schema.preventionGrdMeetings)
+  await inMemoryDb.delete(schema.preventionGrdMembers)
+  await inMemoryDb.delete(schema.preventionGrdCommittees)
   await inMemoryDb.delete(schema.preventionEmergencyDrillSlots)
   await inMemoryDb.delete(schema.preventionTrainingOccurrenceEvidence)
   await inMemoryDb.delete(schema.preventionTrainingOccurrences)
@@ -225,6 +229,65 @@ describe("cada familia de casillas escribe su desvío en la celda del PDTP", () 
       worksiteId: WS, year: YEAR, month: 2, week: 1,
       kind: "not_performed", reason: observation, status: "active", createdByUserId: USER_PRF,
     })
+  })
+
+  /* La otra vía que deja una casilla del CGRD en «no hecha»: anular el acta
+   * que la cumplía. No pasa por `recordGrdMeetingSlotStatus`, y sin cablearla
+   * el PDTP nunca se enteraba de ese incumplimiento declarado. */
+  it("anular el acta que cumplía una casilla del CGRD → N°81 `not_performed` con el motivo de la anulación", async () => {
+    await seedActiveProgram()
+    const slot = await grdSlot("m02-w1")
+    const committee = await constituteGrdCommittee({
+      worksiteId: WS, name: "CGRD", constitutedOn: "2026-01-10", mandateEndsOn: "2028-01-10",
+      evidenceUrl: "https://drive.chome.cl/cgrd-constitucion",
+    }, CGRD)
+    const meeting = await recordGrdMeeting({
+      committeeId: committee.id, heldOn: "2026-02-03T15:00:00.000Z", agenda: "Revisión de amenazas del período",
+      minutes: "Acta de la sesión con el detalle suficiente de lo tratado", quorumReached: true,
+      evidenceUrl: "https://drive.chome.cl/cgrd-acta", slotId: slot.id,
+    }, CGRD)
+    expect(await grdSlot("m02-w1")).toMatchObject({ status: "completed", meetingId: meeting.id })
+    expect(await deviationsOf(81)).toHaveLength(0)
+
+    const reason = "El acta se cargó en la faena equivocada."
+    await annulGrdMeeting({ meetingId: meeting.id, reason }, CGRD)
+
+    expect(await grdSlot("m02-w1")).toMatchObject({ status: "not_completed", meetingId: null })
+    const rows = await deviationsOf(81)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      worksiteId: WS, year: YEAR, month: 2, week: 1,
+      kind: "not_performed", status: "active", createdByUserId: USER_PRF,
+    })
+    expect(rows[0]!.reason).toBe(`Acta anulada: ${reason}`)
+    // La acreditación del acta se revoca después del commit, igual que antes.
+    const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, activityId(81)))
+    expect(executions.every((execution) => execution.status === "draft")).toBe(true)
+  })
+
+  it("anular el acta y después declarar la casilla «no aplica» reemplaza el `not_performed` que dejó la anulación", async () => {
+    await seedActiveProgram()
+    const slot = await grdSlot("m02-w1")
+    const committee = await constituteGrdCommittee({
+      worksiteId: WS, name: "CGRD", constitutedOn: "2026-01-10", mandateEndsOn: "2028-01-10",
+      evidenceUrl: "https://drive.chome.cl/cgrd-constitucion",
+    }, CGRD)
+    const meeting = await recordGrdMeeting({
+      committeeId: committee.id, heldOn: "2026-02-03T15:00:00.000Z", agenda: "Revisión de amenazas del período",
+      minutes: "Acta de la sesión con el detalle suficiente de lo tratado", quorumReached: true,
+      evidenceUrl: "https://drive.chome.cl/cgrd-acta", slotId: slot.id,
+    }, CGRD)
+    await annulGrdMeeting({ meetingId: meeting.id, reason: "El acta se cargó en la faena equivocada." }, CGRD)
+
+    const anulada = await grdSlot("m02-w1")
+    const naReason = "Centro de trabajo con 12 personas: corresponde coordinador, no comité."
+    await recordGrdMeetingSlotStatus({
+      slotId: anulada.id, expectedVersion: anulada.version, status: "not_applicable", notApplicableReason: naReason,
+    }, CGRD)
+
+    expect(await activeDeviationsOf(81)).toEqual([expect.objectContaining({ kind: "not_applicable", reason: naReason })])
+    expect(await deviationsOf(81)).toContainEqual(expect.objectContaining({ kind: "not_performed", status: "withdrawn" }))
   })
 
   it("envío de alcotest «no hecha» sin observación → N°32 `not_performed` con un motivo que nombra la casilla", async () => {

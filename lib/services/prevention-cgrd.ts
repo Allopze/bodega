@@ -713,6 +713,16 @@ const grdSlotStatusInput = z.object({
 })
 
 /**
+ * Cómo se nombra la casilla en el motivo del desvío. Uno solo para las dos vías
+ * que la dejan «no hecha» (esta y `annulGrdMeeting`): el conector reconoce el
+ * desvío que la casilla propagó comparando el motivo, y un rótulo distinto en
+ * cada vía rompería esa comparación.
+ */
+function grdMeetingSlotLabel(slotKey: string): string {
+  return `de sesión del CGRD ${slotKey}`
+}
+
+/**
  * Declara una casilla de sesión del CGRD como no hecha o no aplicable, y lo
  * refleja en la celda de la N°81 del PDTP en la misma transacción
  * (`slot-deviation-connector.ts`).
@@ -766,7 +776,7 @@ export async function recordGrdMeetingSlotStatus(input: unknown, access: CgrdAcc
       actorUserId: access.userId,
     })
 
-    const label = `de sesión del CGRD ${slot.slotKey}`
+    const label = grdMeetingSlotLabel(slot.slotKey)
     await propagateSlotStatusToPdtp(tx, {
       source: { module: "cgrd", slotId: slot.id, label },
       worksiteId: slot.worksiteId,
@@ -829,14 +839,33 @@ export async function annulGrdMeeting(input: unknown, access: CgrdAccess) {
      * dejó de estarlo, y eso es un incumplimiento declarado, no una tarea que
      * nadie tocó todavía. Sin esta vuelta atrás, anular un acta dejaba la
      * casilla en verde sin acta: el checklist mentía. */
-    await tx.update(preventionGrdMeetingSlots).set({
+    const reverted = await tx.update(preventionGrdMeetingSlots).set({
       status: "not_completed",
       meetingId: null,
       completedAt: null,
       completedByUserId: null,
       observation: `Acta anulada: ${data.reason}`,
       updatedAt: now,
-    }).where(eq(preventionGrdMeetingSlots.meetingId, updated.id))
+    }).where(eq(preventionGrdMeetingSlots.meetingId, updated.id)).returning()
+
+    /* Esa vuelta a «no hecha» llega a la celda de la N°81 como `not_performed`,
+     * con el mismo conector que `recordGrdMeetingSlotStatus` y el motivo de la
+     * anulación (va en la observación). `previous: null` porque la casilla
+     * venía «hecha», que no propaga desvío. Un `not_performed` no choca con la
+     * ejecución que todavía acredita el acta —la revocación va después del
+     * commit—: no saca la celda del denominador, sólo declara el motivo. */
+    for (const slot of reverted) {
+      const label = grdMeetingSlotLabel(slot.slotKey)
+      await propagateSlotStatusToPdtp(tx, {
+        source: { module: "cgrd", slotId: slot.id, label },
+        worksiteId: slot.worksiteId,
+        cell: { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek },
+        activities: { activityNumbers: [GRD_MEETING_PDTP_ACTIVITY_NUMBER] },
+        next: slotPdtpDeclaration(slot, label),
+        previous: null,
+        userId: access.userId,
+      })
+    }
 
     // Mismo `sourceId` con prefijo que usó `onGrdMeetingClosed` al registrarla.
     revocation = {
