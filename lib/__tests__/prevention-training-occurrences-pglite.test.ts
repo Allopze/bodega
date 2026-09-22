@@ -68,13 +68,13 @@ describe("ocurrencias de capacitación", () => {
       recordTrainingOccurrenceStatus,
     } = await import("@/lib/services/prevention-training-occurrences")
 
-    await expect(ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)).resolves.toBe(24)
+    await expect(ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)).resolves.toBe(52)
     await expect(ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)).resolves.toBe(0)
 
     const rows = await listTrainingOccurrences(ACCESS)
-    expect(rows).toHaveLength(24)
-    const target = rows.find((row) => row.code === "CAP-02" && row.slotKey === "m03-w2")
-    expect(target).toMatchObject({ status: "pending", scheduledMonth: 3, scheduledWeek: 2, version: 1 })
+    expect(rows).toHaveLength(52)
+    const target = rows.find((row) => row.code === "CAP-02" && row.slotKey === "m09-w4")
+    expect(target).toMatchObject({ status: "pending", scheduledMonth: 9, scheduledWeek: 4, version: 1 })
     if (!target) throw new Error("No se encontró la ocurrencia de prueba.")
 
     await expect(recordTrainingOccurrenceStatus({
@@ -114,7 +114,7 @@ describe("ocurrencias de capacitación", () => {
       ))
     expect(fulfillment).toMatchObject({
       activityNumbers: [54],
-      periodOverrideJson: { year: 2026, month: 3, week: 2 },
+      periodOverrideJson: { year: 2026, month: 9, week: 4 },
     })
 
     await expect(recordTrainingOccurrenceStatus({
@@ -142,7 +142,7 @@ describe("ocurrencias de capacitación", () => {
 
     await inMemoryDb.update(schema.worksites).set({ isActive: false }).where(eq(schema.worksites.id, WORKSITE_ID))
     expect(await listTrainingOccurrences(ACCESS)).toEqual([])
-    expect((await listTrainingOccurrences(ACCESS, { includeInactiveWorksites: true })).length).toBe(24)
+    expect((await listTrainingOccurrences(ACCESS, { includeInactiveWorksites: true })).length).toBe(52)
   })
 
   /* El tercer estado (2026-09-19). Lo que se protege no es que el valor exista:
@@ -158,7 +158,7 @@ describe("ocurrencias de capacitación", () => {
 
     await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)
     const rows = await listTrainingOccurrences(ACCESS)
-    const target = rows.find((row) => row.code === "CAP-02" && row.slotKey === "m03-w2")
+    const target = rows.find((row) => row.code === "CAP-02" && row.slotKey === "m09-w4")
     if (!target) throw new Error("No se encontró la ocurrencia de prueba.")
 
     // Sin motivo, y con un motivo de relleno: los dos se rechazan.
@@ -233,7 +233,7 @@ describe("ocurrencias de capacitación", () => {
 
     await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)
     const rows = await listTrainingOccurrences(ACCESS)
-    const target = rows.find((row) => row.code === "CAP-02" && row.slotKey === "m03-w2")
+    const target = rows.find((row) => row.code === "CAP-02" && row.slotKey === "m09-w4")
     if (!target) throw new Error("No se encontró la ocurrencia de prueba.")
 
     await inMemoryDb.insert(schema.preventionTrainingOccurrenceEvidence).values({

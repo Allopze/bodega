@@ -88,7 +88,7 @@ async function seedActiveProgram() {
     { n: 30, month: 3, week: 3 }, // control alcotest m03-w3 (PRF)
     { n: 31, month: 3, week: 3 }, // control alcotest m03-w3 (Sup/JT)
     { n: 32, month: 3, week: 1 }, // envío alcotest m03-w1
-    { n: 54, month: 3, week: 2 }, // CAP-02 m03-w2
+    { n: 54, month: 9, week: 4 }, // CAP-02 m09-w4
   ]
   await inMemoryDb.insert(schema.pdtpActivities).values(cells.map(({ n }) => ({
     id: activityId(n), programId: PROGRAM_ID, n, activity: `Actividad N°${n}`, program: "Prevención PDTP",
@@ -209,7 +209,8 @@ describe("cada familia de casillas escribe su desvío en la celda del PDTP", () 
 
     // Lo que la pantalla de la casilla promete: no cuenta ni como cumplida ni
     // como incumplida. Marzo tenía planificado el simulacro (1) y el control
-    // de alcotest de las N°30/31, el envío N°32 y la CAP-02 (4 más).
+    // de alcotest de las N°30/31 y el envío N°32 (3 más); la CAP-02 quedó en
+    // septiembre/octubre tras alinearla con la grilla real del PDTP.
     const after = await getPdtpComplianceIndicators(PROGRAM_ID, WS)
     expect(after!.monthly[2]!.planned).toBe(before!.monthly[2]!.planned - 1)
   })
@@ -357,7 +358,7 @@ describe("cada familia de casillas escribe su desvío en la celda del PDTP", () 
 
   it("ocurrencia de capacitación «no aplica» → la actividad de su catálogo (N°54) en su período planificado", async () => {
     await seedActiveProgram()
-    const occurrence = await trainingOccurrence("CAP-02", "m03-w2")
+    const occurrence = await trainingOccurrence("CAP-02", "m09-w4")
     const reason = "La faena no tiene extintores propios: los provee el mandante."
 
     await recordTrainingOccurrenceStatus({
@@ -365,13 +366,13 @@ describe("cada familia de casillas escribe su desvío en la celda del PDTP", () 
     }, TRAINING)
 
     expect(await deviationsOf(54)).toEqual([expect.objectContaining({
-      worksiteId: WS, year: YEAR, month: 3, week: 2, kind: "not_applicable", reason, status: "active", createdByUserId: USER_PRF,
+      worksiteId: WS, year: YEAR, month: 9, week: 4, kind: "not_applicable", reason, status: "active", createdByUserId: USER_PRF,
     })])
   })
 
   it("capacitación que sale de «hecha» a «no aplica»: el desvío se escribe después de revocar la acreditación", async () => {
     await seedActiveProgram()
-    const occurrence = await trainingOccurrence("CAP-02", "m03-w2")
+    const occurrence = await trainingOccurrence("CAP-02", "m09-w4")
     await inMemoryDb.insert(schema.preventionTrainingOccurrenceEvidence).values({
       id: "slot-dev-evidence-1", occurrenceId: occurrence.id, fileName: "acta.pdf",
       storagePath: "storage/prevention-training-evidence/slot-dev-acta.pdf", mimeType: "application/pdf",
@@ -382,7 +383,7 @@ describe("cada familia de casillas escribe su desvío en la celda del PDTP", () 
     }, TRAINING)
     const [accredited] = await inMemoryDb.select().from(schema.pdtpExecutions)
       .where(eq(schema.pdtpExecutions.activityId, activityId(54)))
-    expect(accredited).toMatchObject({ month: 3, week: 2, status: "approved", executedQuantity: 1 })
+    expect(accredited).toMatchObject({ month: 9, week: 4, status: "approved", executedQuantity: 1 })
 
     const reason = "Se registró por error: la faena no tiene extintores propios."
     await recordTrainingOccurrenceStatus({
@@ -392,7 +393,7 @@ describe("cada familia de casillas escribe su desvío en la celda del PDTP", () 
     const [revoked] = await inMemoryDb.select().from(schema.pdtpExecutions)
       .where(eq(schema.pdtpExecutions.activityId, activityId(54)))
     expect(revoked!.status).toBe("draft")
-    expect(await activeDeviationsOf(54)).toEqual([expect.objectContaining({ month: 3, week: 2, kind: "not_applicable", reason })])
+    expect(await activeDeviationsOf(54)).toEqual([expect.objectContaining({ month: 9, week: 4, kind: "not_applicable", reason })])
   })
 })
 
@@ -402,7 +403,7 @@ describe("la casilla es la fuente de verdad: el PDTP nunca bloquea su cambio de 
     const drill = await drillSlot("m03-w3")
     const grd = await grdSlot("m02-w1")
     const control = await alcotestSlot("control", "m03-w3")
-    const occurrence = await trainingOccurrence("CAP-02", "m03-w2")
+    const occurrence = await trainingOccurrence("CAP-02", "m09-w4")
 
     await expect(recordDrillSlotStatus({ slotId: drill.id, expectedVersion: drill.version, status: "not_applicable", notApplicableReason: reason }, EMERGENCY))
       .resolves.toMatchObject({ status: "not_applicable" })
