@@ -522,6 +522,7 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
 }) {
   const [activityText, setActivityText] = React.useState("")
   const [executionGuidance, setExecutionGuidance] = React.useState("")
+  const [evidenceRequirement, setEvidenceRequirement] = React.useState("")
   const [notes, setNotes] = React.useState("")
   const [scheduleMode, setScheduleMode] = React.useState<"scheduled" | "on_demand" | "triggered">("scheduled")
   const [frequency, setFrequency] = React.useState<PdtpRecurrenceFrequency>("monthly")
@@ -541,6 +542,7 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
     if (activity) {
       setActivityText(activity.activity)
       setExecutionGuidance(activity.program)
+      setEvidenceRequirement(activity.evidenceRequirement ?? "")
       setNotes(activity.notes ?? "")
       setScheduleMode((activity.scheduleMode ?? "scheduled") as "scheduled" | "on_demand" | "triggered")
       const rule = activity.recurrenceRule as PdtpRecurrenceRule | null
@@ -611,6 +613,7 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
         activityId: activity.id,
         activity: activityText,
         program: executionGuidance,
+        evidenceRequirement: evidenceRequirement.trim() || null,
         notes,
         ...(modernSchedule ? {} : {
           scheduleMode,
@@ -644,6 +647,13 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
           </Field>
           <Field label="Guía de ejecución" htmlFor="edit-execution-guidance">
             <Textarea id="edit-execution-guidance" value={executionGuidance} onChange={(e) => setExecutionGuidance(e.target.value)} rows={3} maxLength={2000} />
+          </Field>
+          <Field
+            label="Evidencia mínima esperada"
+            htmlFor="edit-evidence-requirement"
+            helper="Define qué debe quedar respaldado. El archivo u observación se agrega después, al registrar la ejecución."
+          >
+            <Textarea id="edit-evidence-requirement" value={evidenceRequirement} onChange={(e) => setEvidenceRequirement(e.target.value)} rows={2} maxLength={3000} />
           </Field>
           {modernSchedule ? (
             <Callout tone="info" className="text-xs">

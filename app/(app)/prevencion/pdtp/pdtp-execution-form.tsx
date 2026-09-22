@@ -59,6 +59,7 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
       if (file) {
         const uploadData = new FormData()
         uploadData.set("file", file)
+        uploadData.set("activityId", activityId)
         uploadData.set("worksiteId", worksiteId)
         try {
           const res = await fetch("/api/prevencion/pdtp/evidence", { method: "POST", body: uploadData })

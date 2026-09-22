@@ -9,7 +9,7 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { setPdtpActivityWorksiteAdjustmentAction } from "../../actions"
+import { applyPdtpCphsHeadcountRuleAction, setPdtpActivityWorksiteAdjustmentAction } from "../../actions"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { MONTH_LABELS } from "@/lib/utils"
 import type { PdtpActivityRow, PdtpScheduleRow } from "./tabs/types"
@@ -39,6 +39,7 @@ const PDTP_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const
 const INHERIT = "__inherit__"
 
 export function WorksiteAdjustmentsPanel({
+  programId,
   activities,
   schedule,
   visibleWorksites,
@@ -49,6 +50,7 @@ export function WorksiteAdjustmentsPanel({
   overrides,
   responsibleCatalog,
 }: {
+  programId: string
   activities: PdtpActivityRow[]
   schedule: PdtpScheduleRow[]
   visibleWorksites: Worksite[]
@@ -64,6 +66,13 @@ export function WorksiteAdjustmentsPanel({
     : visibleWorksites.filter((worksite) => memberWorksiteIds.includes(worksite.id))
   const [worksiteId, setWorksiteId] = React.useState(eligibleWorksites[0]?.id ?? "")
   const [editing, setEditing] = React.useState<PdtpActivityRow | null>(null)
+  const router = useRouter()
+  // No hay `<form action={…}>`: el barrido se dispara desde un `onClick`, que
+  // es el caso de `useOperation` (ver AGENTS.md, patrón de formularios).
+  // `feedback: "toast"` porque el mensaje que importa es el del servidor
+  // —cuántas faenas cambiaron— y el modo "message" lo reemplaza por un
+  // "Guardado correctamente." que no dice nada.
+  const sweep = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
 
   if (eligibleWorksites.length === 0) {
     return (
@@ -90,6 +99,20 @@ export function WorksiteAdjustmentsPanel({
         <p className="mt-2 text-xs text-[var(--color-text-muted)]">
           Los valores no ajustados heredan la definición global. Una exclusión desactiva completamente la actividad en esta faena.
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={sweep.pending}
+            onClick={() => sweep.run(() => applyPdtpCphsHeadcountRuleAction({ programId }))}
+          >
+            {sweep.pending ? "Aplicando…" : "Aplicar regla de dotación (DS 44)"}
+          </Button>
+          <p className="text-xs text-[var(--color-text-muted)]">
+            Excluye las actividades del Comité Paritario en las faenas que no superan los 25 trabajadores propios, y las reincorpora donde sí. Recorre todas las faenas del programa.
+          </p>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">

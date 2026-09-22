@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Callout } from "@/components/ui/callout"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -39,13 +40,14 @@ export function ReviewTab({
   const unresolvedScheduleClassification = activeActivities.filter((activity) => activity.scheduleClassificationStatus === "needs_review").length
   /* El checklist dejó de contar como evidencia declarada: su motor se retiró y
    * nadie puede crear uno. Lo único que queda es el requisito explícito. */
-  const missingEvidence = activeActivities.filter((activity) => !activity.evidenceRequirement).length
+  const missingEvidenceActivities = activeActivities.filter((activity) => !activity.evidenceRequirement?.trim())
+  const missingEvidence = missingEvidenceActivities.length
   const checks = [
     { label: "Datos básicos", ok: !!program.title.trim(), detail: program.title },
     { label: "Actividades", ok: activeActivities.length > 0, detail: activeActivities.length > 0 ? `${activeActivities.length} ${pluralize(activeActivities.length, "activa")}` : "Agrega al menos una actividad activa" },
     { label: "Clasificación temporal", ok: unresolvedScheduleClassification === 0, detail: unresolvedScheduleClassification === 0 ? "Todas tienen una modalidad confirmada" : `${unresolvedScheduleClassification} requieren decidir cuándo se realizan` },
     { label: "Programación", ok: missingSchedule === 0 && missingTrigger === 0, detail: missingSchedule + missingTrigger === 0 ? "Todas explican cuándo se realizan" : `${missingSchedule + missingTrigger} requieren completar su regla` },
-    { label: "Evidencia", ok: missingEvidence === 0, detail: missingEvidence === 0 ? "Requisitos definidos" : `${missingEvidence} sin requisito de evidencia declarado` },
+    { label: "Evidencia mínima", ok: missingEvidence === 0, detail: missingEvidence === 0 ? "Requisito definido en cada actividad" : `${missingEvidence} sin requisito de evidencia declarado` },
   ]
   const ready = checks.every((check) => check.ok)
 
@@ -60,12 +62,40 @@ export function ReviewTab({
       </div>
       <ul className="divide-y divide-[var(--color-border)]">
         {checks.map((check) => (
-          <li key={check.label} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
-            <span className="font-medium text-[var(--color-text)]">{check.label}</span>
-            <span className={check.ok ? "text-[var(--color-success-ink)]" : "text-[var(--color-signal-ink)]"}>{check.ok ? "Completo" : check.detail}</span>
+          <li key={check.label} className="flex items-start justify-between gap-4 px-4 py-3 text-sm">
+            <div className="min-w-0">
+              <span className="font-medium text-[var(--color-text)]">{check.label}</span>
+              {check.label === "Evidencia mínima" && missingEvidenceActivities.length > 0 && (
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  Faltan: {missingEvidenceActivities.slice(0, 6).map((activity) => `N°${activity.n}`).join(", ")}
+                  {missingEvidenceActivities.length > 6 ? ` y ${missingEvidenceActivities.length - 6} más` : ""}
+                </p>
+              )}
+            </div>
+            <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+              <span className={check.ok ? "text-[var(--color-success-ink)]" : "text-[var(--color-signal-ink)]"}>{check.ok ? "Completo" : check.detail}</span>
+              {check.label === "Evidencia mínima" && !check.ok && (
+                <Link
+                  href={`/prevencion/pdtp/${program.id}/editar?seccion=actividades`}
+                  className="font-medium text-[var(--color-primary)] hover:underline"
+                >
+                  Definir evidencia en Actividades
+                </Link>
+              )}
+            </div>
           </li>
         ))}
       </ul>
+      {missingEvidence > 0 && (
+        <Callout tone="warning" className="mx-4 my-4" title="Declara el requisito antes de enviar">
+          <p>
+            Aquí defines qué respaldo mínimo debe quedar para acreditar cada actividad; no adjuntas el archivo en esta revisión.
+          </p>
+          <p className="mt-1">
+            El archivo, registro u observación se incorpora al registrar la ejecución o en el submódulo indicado.
+          </p>
+        </Callout>
+      )}
       <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3 text-xs text-[var(--color-text-muted)]">
         La aprobación ocurre fuera del editor y congela una versión exacta del contenido.
       </div>

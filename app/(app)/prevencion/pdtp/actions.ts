@@ -31,6 +31,7 @@ export {
   setPdtpActivityOverrideFormAction,
   reconcilePdtpDeclaredActorAction,
   setPdtpActivityWorksiteAdjustmentAction,
+  applyPdtpCphsHeadcountRuleAction,
 } from "./actions/activities"
 
 export {

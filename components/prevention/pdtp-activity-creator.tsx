@@ -305,6 +305,7 @@ export function PdtpActivityCreator({
   const [hydrated, setHydrated] = React.useState(mode === "edit")
   const [pending, setPending] = React.useState(false)
   const [message, setMessage] = React.useState<{ ok: boolean; text: string } | null>(null)
+  const [evidenceSectionOpen, setEvidenceSectionOpen] = React.useState(true)
 
   React.useEffect(() => {
     if (mode === "edit") return
@@ -836,12 +837,19 @@ export function PdtpActivityCreator({
               </Field>
             )}
           </div>
-          <details className="rounded-lg border border-[var(--color-border)] px-3 py-2">
-            <summary className="cursor-pointer text-sm font-medium text-[var(--color-text)]">Evidencia y recordatorios</summary>
+          <details
+            open={evidenceSectionOpen}
+            onToggle={(event) => setEvidenceSectionOpen(event.currentTarget.open)}
+            className="rounded-lg border border-[var(--color-border)] px-3 py-2"
+          >
+            <summary className="cursor-pointer text-sm font-medium text-[var(--color-text)]">Evidencia para acreditar y recordatorios</summary>
             <div className="mt-4 space-y-4">
-              <label className="inline-flex items-center gap-2 text-sm text-[var(--color-text)]"><input type="checkbox" checked={draft.evidenceRequired} onChange={(event) => patch("evidenceRequired", event.target.checked)} />Evidencia requerida</label>
+              <label className="inline-flex items-center gap-2 text-sm text-[var(--color-text)]"><input type="checkbox" checked={draft.evidenceRequired} onChange={(event) => patch("evidenceRequired", event.target.checked)} />Se requiere respaldo para acreditar</label>
               <fieldset>
-                <legend className="mb-2 text-sm font-medium text-[var(--color-text)]">Mecanismos admitidos</legend>
+                <legend className="mb-2 text-sm font-medium text-[var(--color-text)]">Cómo se puede respaldar</legend>
+                <p className="mb-2 text-xs text-[var(--color-text-muted)]">
+                  Indica cómo se comprobará la ejecución. Si el destino es otro submódulo, el registro se genera allí.
+                </p>
                 <div className="flex flex-wrap gap-3">
                   {acceptedEvidenceKinds.map((kind) => {
                     const checked = draft.acceptedEvidenceKinds.includes(kind)
@@ -849,6 +857,13 @@ export function PdtpActivityCreator({
                   })}
                 </div>
               </fieldset>
+              <Field
+                label="Evidencia mínima esperada"
+                htmlFor="guided-evidence"
+                helper="Define aquí qué debe quedar respaldado. El archivo, registro u observación se incorpora al registrar la ejecución o en el submódulo seleccionado."
+              >
+                <Textarea id="guided-evidence" value={draft.evidenceRequirement} onChange={(event) => patch("evidenceRequirement", event.target.value)} rows={2} maxLength={3000} />
+              </Field>
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -897,11 +912,8 @@ export function PdtpActivityCreator({
         </section>
 
         <details className="rounded-lg border border-[var(--color-border)] px-3 py-2">
-          <summary className="cursor-pointer text-sm font-medium text-[var(--color-text)]">Responsabilidades, evidencia y detalles opcionales</summary>
+          <summary className="cursor-pointer text-sm font-medium text-[var(--color-text)]">Responsabilidades y detalles opcionales</summary>
           <div className="mt-4 grid gap-4">
-            <Field label="Evidencia mínima esperada" htmlFor="guided-evidence">
-              <Textarea id="guided-evidence" value={draft.evidenceRequirement} onChange={(event) => patch("evidenceRequirement", event.target.value)} rows={2} maxLength={3000} />
-            </Field>
             <Field label="Audiencias adicionales" htmlFor="guided-audience" helper="Separa roles o grupos con comas.">
               <Input id="guided-audience" value={draft.audienceRoles} onChange={(event) => patch("audienceRoles", event.target.value)} placeholder="CPHS, jefatura de terreno" />
             </Field>

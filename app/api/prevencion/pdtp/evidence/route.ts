@@ -2,9 +2,13 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 import { NextResponse } from "next/server"
-import { guardPermission } from "@/lib/auth/can"
+import { can, guardAnyPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { assertWorksiteAccess, type WorksiteScope } from "@/lib/services/prevention-pdtp"
+import {
+  assertPdtpActivityMechanism,
+  assertWorksiteAccess,
+  type WorksiteScope,
+} from "@/lib/services/prevention-pdtp"
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
@@ -21,6 +25,8 @@ const MAX_FILE_SIZE = 25 * 1024 * 1024
  * ejecución PDTP. Acepta multipart/form-data con los campos:
  *   - file: el archivo (obligatorio, PDF/JPEG/PNG)
  *   - worksiteId: id de la faena (obligatorio)
+ *   - activityId: id de la actividad; obligatorio para quien sólo tiene el
+ *     permiso de ejecución de Constancias
  *
  * No implementa deduplicación, versionado ni un endpoint de visualización —
  * su único trabajo es validar un archivo, guardarlo y devolver su ruta.
@@ -34,7 +40,7 @@ const MAX_FILE_SIZE = 25 * 1024 * 1024
  * está en memoria: calcularlo después obligaría a volver a leerlo del disco.
  */
 export async function POST(request: Request) {
-  const guard = await guardPermission("prevention:pdtp:execute")
+  const guard = await guardAnyPermission(["prevention:pdtp:execute", "prevention:constancias:execute"])
   if (guard.error) return NextResponse.json(guard.error, { status: 403 })
 
   const session = guard.session
@@ -56,6 +62,19 @@ export async function POST(request: Request) {
   const worksiteId = String(form.get("worksiteId") ?? "")
   if (!worksiteId) {
     return NextResponse.json({ error: "Falta la faena (worksiteId)." }, { status: 400 })
+  }
+
+  if (!can(session, "prevention:pdtp:execute")) {
+    const activityId = String(form.get("activityId") ?? "")
+    if (!activityId) {
+      return NextResponse.json({ error: "Falta la actividad (activityId)." }, { status: 400 })
+    }
+    try {
+      await assertPdtpActivityMechanism(activityId, "constancia")
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "La actividad no está habilitada para Constancias."
+      return NextResponse.json({ error: message }, { status: 403 })
+    }
   }
 
   try {

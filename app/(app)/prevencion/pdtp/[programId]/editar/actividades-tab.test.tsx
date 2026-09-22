@@ -93,6 +93,19 @@ describe("EditActivityDialog", () => {
     expect(screen.getByRole("button", { name: "Guardar" })).toBeEnabled()
   })
 
+  it("permite declarar la evidencia mínima al editar una actividad histórica", async () => {
+    renderTab({ activities: [makeActivity({ evidenceRequirement: null })] })
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }))
+
+    fireEvent.change(screen.getByLabelText("Evidencia mínima esperada"), { target: { value: "Acta firmada y fotografía" } })
+    fireEvent.click(screen.getByRole("button", { name: "Guardar" }))
+
+    await vi.waitFor(() => expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      activityId: "act-1",
+      evidenceRequirement: "Acta firmada y fotografía",
+    })))
+  })
+
   it("cambiar la frecuencia sobre una matriz manual exige confirmar y lo manda en el payload", async () => {
     renderTab({ schedule: makeCells([[1, 1, 3], [7, 4, 2]]) })
     fireEvent.click(screen.getByRole("button", { name: "Editar" }))

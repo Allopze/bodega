@@ -199,6 +199,7 @@ export {
   resolveProgramWorksiteIds,
   listPdtpActivityWorksiteExclusions,
   syncPdtpCphsHeadcountExclusion,
+  syncPdtpCphsHeadcountExclusionsForProgram,
   PDTP_CPHS_ACTIVITY_NUMBERS,
   PDTP_CPHS_MIN_HEADCOUNT,
   resolvePdtpEffectiveActivitiesForWorksite,
@@ -206,7 +207,7 @@ export {
   setPdtpActivityWorksiteAdjustment,
   listPdtpActivityWorksiteParams,
 } from "./worksites"
-export type { PdtpActivityWorksiteAdjustmentInput } from "./worksites"
+export type { PdtpActivityWorksiteAdjustmentInput, PdtpCphsHeadcountSweep } from "./worksites"
 export { cleanupPdtpEvidenceOrphans } from "./evidence-gc"
 export type { CleanupPdtpEvidenceOrphansOptions, CleanupPdtpEvidenceOrphansResult } from "./evidence-gc"
 export { createAnnualPdtpProgram, createPdtpRevision, updatePdtpProgram, listPdtpPrograms, getPdtpProgram, deletePdtpProgram } from "./programs"

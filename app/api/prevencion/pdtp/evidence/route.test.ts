@@ -1,19 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 const mockGuardPermission = vi.hoisted(() => vi.fn())
+const mockGuardAnyPermission = vi.hoisted(() => vi.fn())
+const mockCan = vi.hoisted(() => vi.fn())
 const mockResolveWorksiteScope = vi.hoisted(() => vi.fn())
 const mockAssertWorksiteAccess = vi.hoisted(() => vi.fn())
+const mockAssertPdtpActivityMechanism = vi.hoisted(() => vi.fn())
 const mockMkdirp = vi.hoisted(() => vi.fn())
 const mockWriteBuffer = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({
   guardPermission: mockGuardPermission,
+  guardAnyPermission: mockGuardAnyPermission,
+  can: mockCan,
 }))
 vi.mock("@/lib/auth/scope", () => ({
   resolveWorksiteScope: mockResolveWorksiteScope,
 }))
 vi.mock("@/lib/services/prevention-pdtp", () => ({
   assertWorksiteAccess: mockAssertWorksiteAccess,
+  assertPdtpActivityMechanism: mockAssertPdtpActivityMechanism,
 }))
 vi.mock("@/lib/storage/helpers", () => ({
   mkdirp: mockMkdirp,
@@ -29,8 +35,9 @@ const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const TEXT_BYTES = new Uint8Array(Buffer.from("just some plain text, not a real file"))
 
-function makeRequest(fields: { file?: File; worksiteId?: string }) {
+function makeRequest(fields: { activityId?: string; file?: File; worksiteId?: string }) {
   const form = new FormData()
+  if (fields.activityId !== undefined) form.set("activityId", fields.activityId)
   if (fields.file) form.set("file", fields.file)
   if (fields.worksiteId !== undefined) form.set("worksiteId", fields.worksiteId)
   return { formData: async () => form } as unknown as Request
@@ -40,18 +47,35 @@ describe("POST /api/prevencion/pdtp/evidence", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGuardPermission.mockResolvedValue({ session, error: null })
+    mockGuardAnyPermission.mockResolvedValue({ session, error: null })
+    mockCan.mockReturnValue(true)
     mockResolveWorksiteScope.mockReturnValue({ mode: "all", ids: [] })
     mockAssertWorksiteAccess.mockReturnValue(undefined)
+    mockAssertPdtpActivityMechanism.mockResolvedValue(undefined)
     mockMkdirp.mockResolvedValue(undefined)
     mockWriteBuffer.mockResolvedValue(undefined)
   })
 
   it("returns 403 when permission guard fails", async () => {
-    mockGuardPermission.mockResolvedValueOnce({ session: null, error: { ok: false, message: "No tienes permisos" } })
+    mockGuardAnyPermission.mockResolvedValueOnce({ session: null, error: { ok: false, message: "No tienes permisos" } })
     const { POST } = await import("./route")
     const file = new File([PDF_BYTES], "foto.pdf", { type: "application/pdf" })
     const res = await POST(makeRequest({ file, worksiteId: "ws-1" }))
     expect(res.status).toBe(403)
+  })
+
+  it("allows a constancias-only user to upload evidence for a constancia activity", async () => {
+    const constanciasSession = { user: { id: "user-constancias", permissions: ["prevention:constancias:execute"] } }
+    mockGuardAnyPermission.mockResolvedValueOnce({ session: constanciasSession, error: null })
+    mockCan.mockReturnValueOnce(false)
+    const { POST } = await import("./route")
+    const file = new File([PDF_BYTES], "acta.pdf", { type: "application/pdf" })
+
+    const res = await POST(makeRequest({ activityId: "activity-constancia", file, worksiteId: "ws-1" }))
+
+    expect(res.status).toBe(201)
+    expect(mockGuardAnyPermission).toHaveBeenCalledWith(["prevention:pdtp:execute", "prevention:constancias:execute"])
+    expect(mockAssertPdtpActivityMechanism).toHaveBeenCalledWith("activity-constancia", "constancia")
   })
 
   it("returns 400 when no file is provided", async () => {

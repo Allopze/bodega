@@ -283,6 +283,7 @@ export function PdtpBuilderTabs({
               </details>
             )}
             <WorksiteAdjustmentsPanel
+              programId={program.id}
               activities={activities}
               schedule={schedule}
               visibleWorksites={visibleWorksites}

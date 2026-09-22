@@ -323,6 +323,46 @@ export async function syncPdtpCphsHeadcountExclusion(
   return { headcount, cphsApplies, changed }
 }
 
+export type PdtpCphsHeadcountSweep = {
+  evaluated: number
+  changed: number
+  perWorksite: Array<{ worksiteId: string; headcount: number; cphsApplies: boolean; changed: number }>
+}
+
+/**
+ * La misma regla R4, barrida sobre todas las faenas del programa.
+ *
+ * `syncPdtpCphsHeadcountExclusion` existía desde el inicio, pero **ningún
+ * camino de la aplicación la llamaba**: su único invocador era su propio test.
+ * El resultado fue que la matriz de aplicabilidad del 2026 llegó a producción
+ * con cero exclusiones y las actividades del Comité Paritario contaban en las
+ * seis faenas del programa, cuando sólo una supera la dotación que lo exige.
+ * Una regla que hay que recordar aplicar faena por faena no se aplica: por eso
+ * el barrido es del programa y se ofrece como un control durante la autoría.
+ *
+ * Se recorre en serie a propósito: cada faena escribe exclusión + bitácora en
+ * su propia transacción, y paralelizarlas sólo agregaría contención sobre las
+ * mismas filas de `pdtp_change_log` sin ganar nada a esta escala (una decena
+ * de faenas, como mucho).
+ */
+export async function syncPdtpCphsHeadcountExclusionsForProgram(
+  programId: string,
+  userId: string,
+  scope: WorksiteScope,
+): Promise<PdtpCphsHeadcountSweep> {
+  const eligible = await listAccessiblePdtpProgramWorksites(programId, scope)
+  const perWorksite: PdtpCphsHeadcountSweep["perWorksite"] = []
+  let changed = 0
+  for (const worksite of eligible) {
+    // El alcance ya lo aplicó `listAccessiblePdtpProgramWorksites`; repetirlo
+    // por faena sólo volvería a consultarlo con el mismo resultado.
+    const result = await syncPdtpCphsHeadcountExclusion(programId, worksite.id, userId)
+    perWorksite.push({ worksiteId: worksite.id, ...result })
+    changed += result.changed
+  }
+  return { evaluated: eligible.length, changed, perWorksite }
+}
+
 /**
  * Actividades efectivas de un programa para una faena concreta: todas menos
  * sus exclusiones puntuales. También respeta el alcance declarado para evitar

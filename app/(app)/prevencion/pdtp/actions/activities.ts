@@ -20,6 +20,7 @@ import {
   deletePdtpActivityOverride,
   reconcilePdtpDeclaredActor,
   setPdtpActivityWorksiteAdjustment,
+  syncPdtpCphsHeadcountExclusionsForProgram,
   PdtpScheduleConflictError,
 } from "@/lib/services/prevention-pdtp"
 import type { ActionState } from "@/lib/validation/prevention"
@@ -40,6 +41,7 @@ import {
   pdtpSchedulePresetBatchSchema,
   pdtpActivityReorderSchema,
   pdtpActivityWorksiteAdjustmentSchema,
+  pdtpCphsHeadcountSweepSchema,
   pdtpReconcileDeclaredActorSchema,
 } from "@/lib/validation/prevention"
 
@@ -394,6 +396,35 @@ export async function reconcilePdtpDeclaredActorAction(input: unknown): Promise<
 }
 
 // ── Worksite exclusions and params ───────────────────────────────────────────
+
+/**
+ * Aplica la regla de dotación (R4 / DS 44) a todas las faenas del programa:
+ * excluye las actividades del Comité Paritario donde la dotación no lo exige y
+ * las vuelve a incluir donde sí. El servicio ya rechaza un programa fuera de
+ * borrador, porque las exclusiones son parte del contenido firmado.
+ */
+export async function applyPdtpCphsHeadcountRuleAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  try {
+    const parsed = pdtpCphsHeadcountSweepSchema.parse(input)
+    const result = await syncPdtpCphsHeadcountExclusionsForProgram(
+      parsed.programId,
+      guard.session.user.id,
+      scopeToIds(resolveWorksiteScope(guard.session)),
+    )
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
+    const message = result.evaluated === 0
+      ? "El programa no declara faenas en tu alcance: no hay nada que evaluar."
+      : result.changed === 0
+        ? `Sin cambios: las ${result.evaluated} faenas ya reflejan la regla de dotación.`
+        : `Regla aplicada en ${result.changed} de ${result.evaluated} faena(s).`
+    return { ok: true, message }
+  } catch (e) {
+    return fail(e)
+  }
+}
 
 export async function setPdtpActivityWorksiteAdjustmentAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:pdtp:program:manage")

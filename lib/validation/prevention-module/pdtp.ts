@@ -604,6 +604,10 @@ export const pdtpActivityWorksiteAdjustmentSchema = z.object({
   schedule: z.array(pdtpScheduleCellSchema).nullable().optional(),
 })
 
+export const pdtpCphsHeadcountSweepSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+})
+
 // ── Plan de Acción → Seguimiento ────────────────────────────────────────────
 
 export const pdtpActionPlanCreateSchema = z.object({

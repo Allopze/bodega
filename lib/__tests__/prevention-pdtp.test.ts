@@ -1550,6 +1550,73 @@ describe("prevention PDTP service", () => {
   })
 
   /**
+   * La regla R4 estaba implementada, documentada y probada por faena, pero
+   * ninguna pantalla ni acción la llamaba: `syncPdtpCphsHeadcountExclusion`
+   * sólo tenía como llamador al test de arriba. Por eso la matriz de
+   * aplicabilidad del programa 2026 llegó a producción con CERO exclusiones y
+   * las actividades del Comité Paritario contaban en faenas que no alcanzan la
+   * dotación que lo exige (DS 44: más de 25 trabajadores propios).
+   *
+   * Este caso fija el barrido a nivel de programa —lo que la UI necesita para
+   * ofrecerlo en un control— y su condición de borde: es idempotente, y vuelve
+   * a incluir la actividad si la faena cruza el umbral hacia arriba.
+   */
+  it("barre la regla de dotación CPHS sobre todas las faenas del programa, y es idempotente (R4)", async () => {
+    const { syncPdtpCphsHeadcountExclusionsForProgram } = await import("@/lib/services/prevention-pdtp")
+    const { program } = await loadCatalog()
+    await inMemoryDb.insert(schema.worksites).values([
+      { id: "ws-2", name: "Faena B", code: "FB", isActive: true },
+      { id: "ws-3", name: "Faena C", code: "FC", isActive: true },
+    ])
+    // Sin faenas declaradas ni alcance corporativo no hay nada que barrer, y
+    // eso es correcto (PDTP-003): el barrido no puede inventar el alcance que
+    // el programa no declaró.
+    expect((await syncPdtpCphsHeadcountExclusionsForProgram(program.id, "user-1", "all")).evaluated).toBe(0)
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true })
+      .where(eq(schema.pdtpPrograms.id, program.id))
+
+    const seedWorkers = async (worksiteId: string, count: number) => {
+      if (count === 0) return
+      await inMemoryDb.insert(schema.workers).values(
+        Array.from({ length: count }, (_, i) => ({
+          id: `w-${worksiteId}-${i}`, firstName: "Trab", lastName: `${i}`,
+          worksiteId, isActive: true, createdAt: new Date().toISOString(),
+        })),
+      )
+    }
+    // ws-1: 41 (supera 25 → el comité aplica). ws-2: 20 y ws-3: 3 → no aplica.
+    await seedWorkers("ws-1", 41)
+    await seedWorkers("ws-2", 20)
+    await seedWorkers("ws-3", 3)
+
+    const first = await syncPdtpCphsHeadcountExclusionsForProgram(program.id, "user-1", "all")
+    expect(first.evaluated).toBe(3)
+    expect(first.changed).toBe(2)
+    expect(first.perWorksite.find((row) => row.worksiteId === "ws-1")!.cphsApplies).toBe(true)
+
+    const exclusions = await inMemoryDb.select().from(schema.pdtpActivityWorksiteExclusions)
+    expect(exclusions.map((row) => row.worksiteId).sort()).toEqual(["ws-2", "ws-3"])
+
+    // Idempotente: correrlo de nuevo no reescribe nada ni duplica bitácora.
+    const second = await syncPdtpCphsHeadcountExclusionsForProgram(program.id, "user-1", "all")
+    expect(second.changed).toBe(0)
+    expect(await inMemoryDb.select().from(schema.pdtpActivityWorksiteExclusions)).toHaveLength(2)
+
+    // Si la faena crece y cruza el umbral, la actividad vuelve a incluirse: la
+    // regla es reversible, no una baja definitiva.
+    await seedWorkers("ws-2-grow", 0)
+    await inMemoryDb.insert(schema.workers).values(
+      Array.from({ length: 10 }, (_, i) => ({
+        id: `w-ws-2-grow-${i}`, firstName: "Trab", lastName: `g${i}`,
+        worksiteId: "ws-2", isActive: true, createdAt: new Date().toISOString(),
+      })),
+    )
+    const third = await syncPdtpCphsHeadcountExclusionsForProgram(program.id, "user-1", "all")
+    expect(third.changed).toBe(1)
+    expect((await inMemoryDb.select().from(schema.pdtpActivityWorksiteExclusions)).map((row) => row.worksiteId)).toEqual(["ws-3"])
+  })
+
+  /**
    * PDTP-003 (auditoría 2026-09-14) — Un programa sin faenas declaradas se
    * aplicaba a todas. `resolvePdtpActiveProgramForEvent` trataba
    * `members.length === 0` como "cualquier faena", así que un programa creado

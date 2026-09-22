@@ -30,6 +30,17 @@ afterEach(() => {
 })
 
 describe("GuidedActivityForm", () => {
+  it("explains that evidence is declared during planning and attached during execution", () => {
+    render(<GuidedActivityForm programId="program-2027" responsibleCatalog={RESPONSIBLES} catalogActivities={CATALOG} />)
+
+    expect(screen.getByText("Evidencia para acreditar y recordatorios")).toBeInTheDocument()
+    expect(screen.getByText("Se requiere respaldo para acreditar")).toBeInTheDocument()
+    expect(screen.getByText("Cómo se puede respaldar")).toBeInTheDocument()
+    expect(screen.getByText(/Define aquí qué debe quedar respaldado/)).toBeInTheDocument()
+    expect(screen.getByText("Evidencia para acreditar y recordatorios").closest("details")).toHaveAttribute("open")
+    expect(screen.queryByText("Responsabilidades, evidencia y detalles opcionales")).toBeNull()
+  })
+
   it("starts from prevention intent and previews a recurrence instead of a 48-cell editor", async () => {
     render(<GuidedActivityForm programId="program-2027" responsibleCatalog={RESPONSIBLES} catalogActivities={CATALOG} />)
 
