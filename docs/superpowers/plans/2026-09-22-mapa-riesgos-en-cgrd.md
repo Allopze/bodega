@@ -724,3 +724,56 @@ El requisito Oro `risk_map` (`lib/prevention/cphs-certification.ts:353-360`) se 
 - [ ] **Step 5: Reportar**
 
 Informar: qué se movió, qué puertas se corrieron con su resultado, qué se verificó en navegador y con qué roles, y qué quedó fuera de alcance (las dos deudas de las secciones 10 y 11 del spec: la colisión de nombres con la matriz GRD de amenazas, y la desalineación del manual sobre zonificación y descarga).
+
+---
+
+## Registro de ejecución (2026-09-22)
+
+Rama `feat/mapa-riesgos-en-cgrd`. Cuatro commits, uno por tarea:
+
+| Tarea | Commit | Resultado |
+|---|---|---|
+| 1. API | `d14663f5` | `/api/prevencion/cgrd/mapa` + module-toggle |
+| 2. Pantalla | `297fd72d` | `/prevencion/cgrd/mapa` + redirect + acciones propias |
+| 3. Navegación | `2a513522` | hija del CGRD, con `prevention:risk:view` |
+| 4. Documentación | `15eb884d` | capítulo 17 + puntero en el 4 |
+
+### Desviaciones del plan
+
+1. **Ocho archivos de PDTP sin commitear** aparecieron en el árbol al empezar
+   (trabajo en curso de otra sesión). Cada commit usó rutas explícitas en vez de
+   `git add -A`, y esos archivos quedaron intactos. El plan se corrigió a media
+   ejecución para que la regla quedara escrita.
+2. **`not-found-suggestion.test.ts` no requirió cambios** — declara
+   `/prevencion/miper` y nunca el mapa. El spec lo listaba por precaución.
+3. **El orden de las entradas de `module-toggles` no decide nada**: el array se
+   ordena por longitud de prefijo (`module-toggles.ts:212`). Se agregó igual un
+   caso al test, porque esa garantía vive en una línea de `sort` que nadie asocia
+   con el mapa.
+4. **El import de acciones del panel no se editó**: ya era relativo (`./actions`),
+   así que resolvió solo al archivo nuevo de la misma carpeta.
+5. **Cinco referencias a la ruta anterior que el plan no previó.** Una era un
+   fallo real: `e2e/prevencion-miper-matriz.spec.ts:29` asertaba
+   `toHaveURL(/\/prevencion\/miper\/mapa/)` y habría fallado al redirigir. Las
+   otras cuatro eran comentarios y `docs/plan.yml`.
+6. **`docs/generado/` está en `.gitignore`** y todavía nombra la ruta anterior.
+   Se regenera; no se tocó a mano.
+7. **Tres tests más de los planificados**: el positivo de navegación (un rol con
+   ambos permisos SÍ ve el mapa — sin él, el negativo pasaría igual si la
+   navegación se rompiera entera), el desempate de `module-toggles`, y que el
+   panel consuma la API en su ruta de CGRD (esa URL se arma como string, así que
+   el typecheck no la protege).
+
+### Rojo del redirect, demostrado
+
+El test del redirect se ejecutó en rojo **quitando el redirect y rebuildeando**,
+no solo en verde:
+
+```
+✘ la ruta anterior del mapa redirige a CGRD
+  Expected pattern: /\/prevencion\/cgrd\/mapa$/
+  Received string:  "http://localhost:3100/prevencion/miper/mapa"
+```
+
+El redirect se restauró con `git checkout` y la suite volvió a verde. Un test de
+redirect que nunca se vio fallar por la razón correcta no protege nada.
