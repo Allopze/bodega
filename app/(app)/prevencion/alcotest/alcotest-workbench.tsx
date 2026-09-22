@@ -24,6 +24,13 @@ import {
   recordAlcoholTestDispatchAction,
   recordAlcotestSlotStatusAction,
 } from "./actions"
+import {
+  isEvidenceReady,
+  NO_SLOT,
+  resolvesToSlot,
+  slotsAvailableForWorksite,
+  uploadSlotEvidenceSequentially,
+} from "./slot-selection"
 
 /** La casilla, con el tipo que decide en qué sección se muestra. */
 export type AlcotestSlotRow = ProgramSlotRow & {
@@ -40,8 +47,6 @@ type Equipment = Awaited<ReturnType<typeof listAlcotestEquipment>>[number]
 /** Valor centinela del selector de persona para el caso "no es de la dotación". */
 const THIRD_PARTY = "__third_party__"
 const NO_EQUIPMENT = "__none__"
-/** Centinela del selector de casilla: control/envío extraordinario, sin casilla del programa. */
-const NO_SLOT = "__no_slot__"
 
 const SHIFT_LABEL: Record<string, string> = { dia: "Día", noche: "Noche" }
 
@@ -56,6 +61,17 @@ function previousPeriod(): { year: number; month: number } {
   const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()
   const month = now.getMonth() === 0 ? 12 : now.getMonth()
   return { year, month }
+}
+
+/** Sube un único archivo de evidencia para una casilla, vía el endpoint multipart. */
+async function uploadAlcotestEvidence(slotId: string, file: File): Promise<{ ok: boolean; message?: string }> {
+  const upload = new FormData()
+  upload.set("slotId", slotId)
+  upload.set("file", file)
+  const response = await fetch("/api/prevencion/alcotest/evidence", { method: "POST", body: upload })
+  if (response.ok) return { ok: true }
+  const payload = await response.json().catch(() => ({})) as { error?: string }
+  return { ok: false, message: payload.error }
 }
 
 export function AlcotestWorkbench({
@@ -242,18 +258,13 @@ function RegisterTestDialog({
   // Persona y equipo pertenecen a la faena: cambiar de faena invalida lo elegido.
   const worksiteWorkers = workers.filter((worker) => worker.worksiteId === worksiteId)
   const worksiteEquipment = equipment.filter((item) => item.worksiteId === worksiteId)
-  // Las casillas sólo se conocen para la faena que la página tiene filtrada
-  // (`selectedWorksiteId`): si el operador elige otra faena en este diálogo no
-  // hay datos para ofrecer un selector honesto, así que se apaga en vez de
-  // mostrar una lista que podría ser de la faena equivocada.
-  const slotsAvailable = worksiteId === selectedWorksiteId
+  const slotsAvailable = slotsAvailableForWorksite(worksiteId, selectedWorksiteId)
   const openControlSlots = slotsAvailable ? controlSlots.filter((slot) => slot.status !== "completed") : []
   const selectedSlot = openControlSlots.find((slot) => slot.id === slotId) ?? null
-  const hasSlot = slotsAvailable && slotId !== NO_SLOT
-  // Gate real del servicio (`fulfillAlcotestSlotTx`): sin evidencia activa la
-  // casilla no se puede cumplir. Se refleja acá para no dejar enviar algo que
-  // el servidor va a rechazar igual.
-  const evidenceReady = !hasSlot || (selectedSlot?.activeEvidenceCount ?? 0) + files.length > 0
+  const hasSlot = resolvesToSlot(slotId, slotsAvailable)
+  const evidenceReady = isEvidenceReady({
+    hasSlot, activeEvidenceCount: selectedSlot?.activeEvidenceCount ?? 0, newFileCount: files.length,
+  })
 
   const [prevOpen, setPrevOpen] = React.useState(open)
   if (open !== prevOpen) {
@@ -291,17 +302,8 @@ function RegisterTestDialog({
       // activa para cumplir la casilla, y subirla después dejaría el control
       // registrado sin casilla cumplida.
       if (hasSlot) {
-        for (const file of files) {
-          const upload = new FormData()
-          upload.set("slotId", slotId)
-          upload.set("file", file)
-          const response = await fetch("/api/prevencion/alcotest/evidence", { method: "POST", body: upload })
-          if (!response.ok) {
-            const payload = await response.json().catch(() => ({})) as { error?: string }
-            setError(payload.error ?? "No se pudo subir la evidencia.")
-            return
-          }
-        }
+        const uploaded = await uploadSlotEvidenceSequentially(files, (file) => uploadAlcotestEvidence(slotId, file))
+        if (!uploaded.ok) { setError(uploaded.message); return }
       }
       const res = await recordAlcoholTestAction({
         worksiteId, shift, performedAt: new Date(performedAt).toISOString(), result,
@@ -415,13 +417,13 @@ function DispatchDialog({
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
-  // Ídem RegisterTestDialog: las casillas sólo se conocen para la faena que la
-  // página tiene filtrada.
-  const slotsAvailable = worksiteId === selectedWorksiteId
+  const slotsAvailable = slotsAvailableForWorksite(worksiteId, selectedWorksiteId)
   const openDispatchSlots = slotsAvailable ? dispatchSlots.filter((slot) => slot.status !== "completed") : []
   const selectedSlot = openDispatchSlots.find((slot) => slot.id === slotId) ?? null
-  const hasSlot = slotsAvailable && slotId !== NO_SLOT
-  const evidenceReady = !hasSlot || (selectedSlot?.activeEvidenceCount ?? 0) + files.length > 0
+  const hasSlot = resolvesToSlot(slotId, slotsAvailable)
+  const evidenceReady = isEvidenceReady({
+    hasSlot, activeEvidenceCount: selectedSlot?.activeEvidenceCount ?? 0, newFileCount: files.length,
+  })
 
   const [prevOpen, setPrevOpen] = React.useState(open)
   if (open !== prevOpen) {
@@ -446,17 +448,8 @@ function DispatchDialog({
       // registrar, porque el servicio exige al menos una activa para cumplir
       // la casilla.
       if (hasSlot) {
-        for (const file of files) {
-          const upload = new FormData()
-          upload.set("slotId", slotId)
-          upload.set("file", file)
-          const response = await fetch("/api/prevencion/alcotest/evidence", { method: "POST", body: upload })
-          if (!response.ok) {
-            const payload = await response.json().catch(() => ({})) as { error?: string }
-            setError(payload.error ?? "No se pudo subir la evidencia.")
-            return
-          }
-        }
+        const uploaded = await uploadSlotEvidenceSequentially(files, (file) => uploadAlcotestEvidence(slotId, file))
+        if (!uploaded.ok) { setError(uploaded.message); return }
       }
       const res = await recordAlcoholTestDispatchAction({ worksiteId, year, month, recipient, slotId: hasSlot ? slotId : null })
       if (!res.ok) { setError(res.message ?? "No se pudo registrar el envío."); return }
