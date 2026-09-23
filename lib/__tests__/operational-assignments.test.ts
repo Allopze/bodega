@@ -206,11 +206,11 @@ describe("operational work queue and activity", () => {
         isGlobal: false,
       },
     } as Session
-    // "Mis tareas" y "Sin responsable" leen sólo el responsable propio de la
-    // entidad origen: las etapas de abastecimiento no tienen uno, así que
-    // ninguna es "mía" y todas quedan sin responsable.
+    // "Mis tareas" usa al responsable propio; las etapas compartidas de
+    // abastecimiento no pertenecen a una persona y no cuentan como falta de
+    // asignación individual.
     await expect(getOperationalWorkQueue(eligibleViewer, { quick: "mine" })).resolves.toMatchObject({ total: 0 })
-    await expect(getOperationalWorkQueue(scopedViewer, { quick: "unassigned" })).resolves.toMatchObject({ total: 2 })
+    await expect(getOperationalWorkQueue(scopedViewer, { quick: "unassigned" })).resolves.toMatchObject({ total: 0 })
     await expect(getOperationalWorkQueue(scopedViewer, { quick: "overdue" })).resolves.toMatchObject({ total: 2 })
     await expect(getOperationalWorkQueue(scopedViewer, { module: "aprobaciones" })).resolves.toMatchObject({
       total: 1,
@@ -234,6 +234,45 @@ describe("operational work queue and activity", () => {
       total: 2,
       sourceErrors: [],
     })
+  })
+
+  it("counts unassigned reconciliation reviews but excludes shared purchasing stages", async () => {
+    const supplierId = nanoid()
+    const purchaseOrderId = nanoid()
+    await inMemoryDb.insert(schema.suppliers).values({
+      id: supplierId,
+      name: "Proveedor conciliación",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrders).values({
+      id: purchaseOrderId,
+      code: `OC-${nanoid().slice(0, 8)}`,
+      worksiteId,
+      supplierId,
+      createdBy: assignerId,
+      status: "sent",
+      invoiceReconciliationStatus: "needs_review",
+      createdAt: now,
+      updatedAt: now,
+    })
+    const viewer = {
+      user: {
+        ...assignerSession.user,
+        permissions: ["requests:view_all", "purchasing:send_order"],
+      },
+    } as Session
+
+    const queue = await getOperationalWorkQueue(viewer, { quick: "unassigned" })
+    expect(queue).toMatchObject({ total: 1 })
+    expect(queue.items).toMatchObject([{
+      sourceType: "purchase_order",
+      sourceId: purchaseOrderId,
+      actionKey: "invoice",
+      statusLabel: "Conciliación pendiente",
+      assignee: null,
+    }])
   })
 
   // Regresión de la auditoría UI/UX 2026-07-29 (A-03 y A-13). La fuente

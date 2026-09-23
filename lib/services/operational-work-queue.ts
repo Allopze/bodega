@@ -1374,11 +1374,16 @@ function queueCursorSql(cursor: QueueCursor | null, sort: OperationalSort): SQL 
  */
 function quickFilterSql(quick: OperationalQuickFilter, session: Session): SQL | null {
   switch (quick) {
-    // El responsable sale de la entidad origen (CAPA, inspección, documento
-    // SST). Las etapas de abastecimiento no tienen uno, así que caen todas en
-    // "sin responsable" y ninguna en "mis tareas".
+    // Este filtro es para trabajo que debe tener una persona a cargo, no para
+    // etapas compartidas de operación que deliberadamente no guardan dueño.
+    // Compras, recepciones, entregas, aprobaciones, pagos y seguimientos se
+    // mantienen en la cola general; sólo las fuentes con asignación nominal
+    // (y la revisión explícita de conciliación) se consideran sin responsable.
     case "mine":       return sql`assignee_user_id = ${session.user.id}`
-    case "unassigned": return sql`assignee_user_id IS NULL`
+    case "unassigned": return sql`assignee_user_id IS NULL AND (
+      source_type IN ('capa', 'inspection', 'sst_document', 'pdtp_activity')
+      OR (source_type = 'purchase_order' AND action_key = 'invoice' AND status_label = 'Conciliación pendiente')
+    )`
     case "critical":   return sql`priority = 'critical'`
     case "blocked":    return sql`blocked = true`
     case "overdue":    return sql`source_due_at IS NOT NULL AND source_due_at < ${startOfChileDay()}`
