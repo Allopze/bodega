@@ -35,8 +35,9 @@
 
 import { and, desc, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
-import { sstDocumentLinks, sstDocuments, sstDocumentVersions } from "@/db/schema"
+import { pdtpActivities, sstDocumentLinks, sstDocuments, sstDocumentVersions } from "@/db/schema"
 import { logger } from "@/lib/logger"
+import { resolvePdtpActivityIdsForNumbers } from "@/lib/services/pdtp/accreditation"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
 import { pdtpCatalogActivityIdForLegacyNumber } from "./catalog-activities-2026"
 
@@ -92,6 +93,53 @@ async function linkedEvidencePath(engagementId: string): Promise<string | null> 
 }
 
 /**
+ * Guard contra el doble conteo (hallazgo 2 de la revisión final,
+ * 2026-09-23): la N°20 sigue clasificada `mechanism: 'constancia'` en
+ * cualquier ambiente donde todavía no se corrió `npm run
+ * pdtp:apply-mechanisms` sobre una revisión draft del programa (paso
+ * operativo pendiente, fuera de esta ronda). Mientras eso no pase,
+ * Constancias sigue ofreciendo la N°20 para marcarla a mano Y este conector
+ * también la acreditaría al cerrar la coordinación — dos caminos vivos que el
+ * motor de cumplimiento suma sin deduplicar, el mismo patrón que ya se
+ * corrigió para 85-89 (campaña legado + CAM-* del catálogo, ver commit
+ * b5ff6c1f: `effectiveApprovedExecutionsByCell` sólo deduplica `"inspeccion"`
+ * contra la ejecución manual; todo lo demás cae en el mismo acumulador y se
+ * suma).
+ *
+ * Resuelve el programa activo con `resolvePdtpActivityIdsForNumbers`: la
+ * misma función que la acreditación real usará más abajo, así este guard no
+ * reinventa la resolución de activación/membresía de faena con una consulta
+ * propia que podría desalinearse de ella. Tolerante a propósito: si no hay
+ * programa activo, la faena no pertenece a él, o cualquier otra falla de
+ * resolución, no bloquea nada acá — `recordPdtpFulfillmentEvent` ya sabe
+ * manejar esos casos (evento `pending` durable) y es quien debe decidirlo,
+ * no este guard. Nunca lanza: un fallo acá no debe romper el cierre de la
+ * coordinación, que ya quedó confirmado en su propia transacción.
+ */
+async function mandanteActivityIsStillConstancia(worksiteId: string, occurredAt: string): Promise<boolean> {
+  try {
+    const resolved = await resolvePdtpActivityIdsForNumbers({
+      worksiteId,
+      occurredAt,
+      activityNumbers: [PDTP_MANDANTE_COORDINATION_ACTIVITY_NUMBER],
+      sourceType: "engagement",
+      sourceId: "coordinacion-mandante:mechanism-check",
+    })
+    const activityId = resolved?.activityIdByN.get(PDTP_MANDANTE_COORDINATION_ACTIVITY_NUMBER)
+    if (!activityId) return false
+    const [activity] = await db.select({ mechanism: pdtpActivities.mechanism })
+      .from(pdtpActivities).where(eq(pdtpActivities.id, activityId)).limit(1)
+    return activity?.mechanism === "constancia"
+  } catch (err) {
+    logger.warn(
+      { err, worksiteId },
+      "[external-engagement-pdtp-connector] No se pudo comprobar el mecanismo de la N°20 antes de acreditar; se procede a acreditar igual.",
+    )
+    return false
+  }
+}
+
+/**
  * Llama desde `closeExternalEngagement`, después de confirmado el cierre.
  *
  * `officialReference` no es obligatorio en una coordinación (el check
@@ -111,6 +159,16 @@ export async function onExternalEngagementClosed(input: {
 }): Promise<void> {
   if (input.kind !== "coordinacion" || input.counterpartyType !== "mandante") return
 
+  const occurredAt = occurredAtFromChileDate(input.occurredOn)
+
+  if (await mandanteActivityIsStillConstancia(input.worksiteId, occurredAt)) {
+    logger.warn(
+      { engagementId: input.engagementId, worksiteId: input.worksiteId },
+      "[external-engagement-pdtp-connector] La N°20 sigue clasificada 'constancia': no se acredita desde este conector para evitar el doble conteo con Constancias. Declárala en Constancias hasta correr `npm run pdtp:apply-mechanisms`.",
+    )
+    return
+  }
+
   const linkedPath = await linkedEvidencePath(input.engagementId)
   const reference = input.officialReference?.trim() || null
   const evidenceRef = linkedPath
@@ -122,7 +180,7 @@ export async function onExternalEngagementClosed(input: {
     sourceId: `coordinacion-mandante:${input.engagementId}`,
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_MANDANTE_COORDINATION_ACTIVITY_NUMBER)],
-    occurredAt: occurredAtFromChileDate(input.occurredOn),
+    occurredAt,
     executedQuantity: 1,
     evidenceRef,
     autoApproveByUserId: input.closedByUserId,

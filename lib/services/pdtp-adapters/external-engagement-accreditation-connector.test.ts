@@ -63,8 +63,15 @@ async function seedProgram() {
   })
 }
 
-/** N°20, ya reclasificada a `enganche` (Task 12) — el estado que este test protege. */
-async function seedActivity() {
+/**
+ * N°20. Por defecto sembrada ya reclasificada a `enganche` (Task 12) — el
+ * estado que la mayoría de este archivo protege. El guard del hallazgo 2 de
+ * la revisión final (2026-09-23) necesita sembrarla también con
+ * `mechanism: 'constancia'` — el estado real de cualquier ambiente donde
+ * todavía no se corrió `npm run pdtp:apply-mechanisms` — así que el mecanismo
+ * es parametrizable.
+ */
+async function seedActivity(mechanism: "enganche" | "constancia" = "enganche") {
   const now = new Date().toISOString()
   await inMemoryDb.insert(schema.pdtpCatalogActivities).values({
     id: CATALOG_ENTRY.id, code: CATALOG_ENTRY.code, status: "active", currentRevision: 1,
@@ -81,7 +88,7 @@ async function seedActivity() {
     activity: CATALOG_ENTRY.title, program: CATALOG_ENTRY.executionGuidance,
     responsibleSlugs: ["prevencionista"], responsibleDisplay: "Prevencionista",
     scheduleMode: "scheduled", scheduleClassificationStatus: "confirmed",
-    mechanism: "enganche", evidenceRequirement: "Acta o correo de la reunión con la empresa mandante.",
+    mechanism, evidenceRequirement: "Acta o correo de la reunión con la empresa mandante.",
     sourceSheetRow: 20, createdAt: now, updatedAt: now,
   })
 }
@@ -231,5 +238,51 @@ describe("N°20 tras la reclasificación a 'enganche' (Task 12)", () => {
     })
     const view = await listPdtpConstanciaActivities([WS_ID])
     expect(view?.debts.filter((debt) => debt.n === 20)).toHaveLength(0)
+  })
+})
+
+/**
+ * Hallazgo 2 de la revisión final (2026-09-23): la N°20 sigue clasificada
+ * `mechanism: 'constancia'` en cualquier ambiente donde todavía no se corrió
+ * `npm run pdtp:apply-mechanisms` sobre una revisión draft del programa (paso
+ * operativo pendiente, fuera de esta ronda). Mientras eso no pase,
+ * Constancias sigue ofreciendo la N°20 para marcarla a mano Y este conector
+ * también la acreditaría al cerrar la coordinación — el mismo patrón de doble
+ * conteo que ya se corrigió para 85-89 (commit b5ff6c1f). El guard en
+ * `onExternalEngagementClosed` (mandanteActivityIsStillConstancia) debe
+ * impedir la segunda vía mientras el mecanismo siga siendo 'constancia'.
+ */
+describe("Guard contra el doble conteo mientras la N°20 siga siendo 'constancia' (hallazgo 2, revisión final)", () => {
+  it("con mechanism: 'constancia', cerrar una coordinación con el mandante NO acredita nada (ni ejecución ni evento)", async () => {
+    await inMemoryDb.delete(schema.pdtpActivities)
+    await seedActivity("constancia")
+
+    const { logger } = await import("@/lib/logger")
+    const created = await createCoordinationWithMandante()
+    await close(created.id, created.version)
+
+    const executions = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.activityId, ACT_ID))
+    expect(executions).toHaveLength(0)
+
+    const fulfillmentEvents = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
+      .where(eq(schema.pdtpFulfillmentEvents.sourceId, `coordinacion-mandante:${created.id}`))
+    expect(fulfillmentEvents).toHaveLength(0)
+
+    // El cierre no debe fallar ni lanzar — es tolerante, sólo deja rastro.
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ engagementId: created.id, worksiteId: WS_ID }),
+      expect.stringContaining("sigue clasificada 'constancia'"),
+    )
+  })
+
+  it("con mechanism: 'enganche' (estado post-reclasificación), cerrar la coordinación sí acredita como hasta ahora", async () => {
+    // `seedActivity()` en `beforeEach` ya siembra 'enganche' por defecto; este
+    // test sólo deja explícito el contraste con el de arriba.
+    const created = await createCoordinationWithMandante()
+    await close(created.id, created.version)
+
+    const executions = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.activityId, ACT_ID))
+    expect(executions).toHaveLength(1)
+    expect(executions[0]).toMatchObject({ worksiteId: WS_ID, sourceType: "engagement" })
   })
 })

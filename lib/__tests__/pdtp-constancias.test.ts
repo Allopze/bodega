@@ -263,11 +263,17 @@ describe("markPdtpExecution — evidencia mínima declarada", () => {
     await seedSchedule(WS_A, CURRENT_MONTH)
   })
 
-  it("rechaza una constancia sin evidencia cuando la actividad declara una", async () => {
+  // Ronda de corrección (2026-09-23, revisión final): con el gate genérico
+  // restaurado, una constancia sin NINGUNA evidencia dispara dos condiciones a
+  // la vez (genérica y específica de Task 9) — el mensaje que debe ganar es el
+  // más específico ("adjunta un archivo"), no el genérico, porque le dice al
+  // usuario exactamente qué falta. Ver el comentario junto a los dos gates en
+  // executions.ts.
+  it("rechaza una constancia sin evidencia cuando la actividad declara una (gana el mensaje específico, no el genérico)", async () => {
     await expect(markPdtpExecution({
       activityId: ACT_ID, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
       executedQuantity: 1, evidenceText: "", evidenceUrl: "", evidencePhotos: [],
-    }, "user-constancias-1", "all")).rejects.toThrow(/evidencia/i)
+    }, "user-constancias-1", "all")).rejects.toThrow(/no basta/i)
   })
 
   it("rechaza la misma constancia con sólo una observación de texto — ya no basta (M2.1)", async () => {
@@ -340,6 +346,41 @@ describe("markPdtpExecution — evidencia mínima declarada", () => {
       expect(execution.status).toBe("submitted")
       expect(execution.evidenceText).toBe("Registro autodeclarado por el responsable, sin archivo adjunto")
       expect(execution.evidenceUrl).toBeNull()
+    },
+  )
+
+  // Hallazgo 1 de la revisión final (2026-09-23): comparado contra `main`
+  // (commit 64bbdeba), acotar el gate de evidencia real a `constancia` (ronda
+  // de arriba) se llevó por delante, sin querer, el gate GENÉRICO que ya
+  // existía en `main` — cualquier actividad con `evidenceRequirement` exigía
+  // al menos texto/URL/foto, sin importar el mecanismo. El fallback
+  // `solo_manual` que el test de arriba protege siempre exigió ESO como
+  // mínimo (texto autodeclarado); nunca "nada en absoluto". Esta prueba
+  // reproduce exactamente la regresión: antes del segundo gate restaurado,
+  // esto pasaba silenciosamente para `enganche`/`compuesta`.
+  it.each(["enganche", "compuesta"] as const)(
+    "rechaza una ejecución completamente vacía (sin texto, sin URL, sin foto) en una actividad '%s' con evidenceRequirement — regresión real de main",
+    async (mechanism) => {
+      const otherActId = `${PROGRAM_ID}-a-096-${mechanism}`
+      await inMemoryDb.insert(schema.pdtpActivities).values({
+        id: otherActId, programId: PROGRAM_ID, n: mechanism === "enganche" ? 96 : 97,
+        activity: `Actividad ${mechanism} con evidencia mínima declarada`,
+        program: "Prevención PDTP",
+        responsibleSlugs: ["prf"], responsibleDisplay: "Prevencionista de riesgos en faena",
+        scheduleMode: "scheduled", scheduleClassificationStatus: "confirmed",
+        mechanism, evidenceRequirement: "Registro verificable en el módulo de origen",
+        sourceSheetRow: mechanism === "enganche" ? 6 : 7,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      })
+      await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+        id: `${otherActId}-s-${PROGRAM_YEAR}-${String(CURRENT_MONTH).padStart(2, "0")}-1`,
+        activityId: otherActId, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1, plannedQuantity: 1, sourceColumn: "manual",
+      })
+
+      await expect(markPdtpExecution({
+        activityId: otherActId, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
+        executedQuantity: 1, evidenceText: "", evidenceUrl: "", evidencePhotos: [],
+      }, "user-constancias-1", "all")).rejects.toThrow(/^Esta actividad exige evidencia: Registro verificable en el módulo de origen$/)
     },
   )
 })

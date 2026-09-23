@@ -137,6 +137,35 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
     nextEvidenceUrl = existing?.evidenceUrl ?? null
   }
 
+  // Ronda de corrección (2026-09-23, hallazgo 1 de la revisión final de la
+  // rama): este gate GENÉRICO es el que existía en `main` (commit 64bbdeba)
+  // antes de Task 9 — cualquier actividad con `evidenceRequirement` exigía,
+  // como mínimo, texto o URL o foto (`hasEvidence`). La ronda de Task 9 (más
+  // abajo) lo REEMPLAZÓ por uno más estricto pero acotado a `constancia`, sin
+  // restaurar éste para el resto de los mecanismos: el resultado era que una
+  // actividad `enganche`/`compuesta` con `evidenceRequirement` (incluida toda
+  // la cadena RE-20, N°66-78) aceptaba una ejecución manual completamente
+  // vacía —ni texto, ni URL, ni foto— cuando antes de esta rama exigía al
+  // menos texto. Es una regresión real: se perdió algo que ya existía, no
+  // sólo "no se ganó" lo que Task 9 no se propuso ganar.
+  //
+  // Los dos gates conviven ahora, cada uno con su propio propósito:
+  // 1. Éste (genérico): para CUALQUIER mecanismo, exige texto o URL o foto —
+  //    nunca una ejecución completamente vacía. Se evalúa sobre lo que llegó
+  //    en ESTE envío (`data.*`, igual que en `main`) y excluye `constancia` a
+  //    propósito: una constancia sin evidencia real debe fallar con el
+  //    mensaje más específico del gate 2 ("adjunta un archivo"), no con este
+  //    genérico — si no, una constancia con sólo texto (que el gate 2 igual
+  //    rechaza) mostraría el mensaje que no dice qué falta en realidad.
+  // 2. El de Task 9 (`hasRealEvidence`, sin cambios de comportamiento): sólo
+  //    para `constancia`, exige archivo real ya verificado contra el disco.
+  const hasEvidence = Boolean(data.evidenceText?.trim())
+    || Boolean(data.evidenceUrl?.trim())
+    || (data.evidencePhotos?.length ?? 0) > 0
+  if (requirement && !hasEvidence && activity.mechanism !== "constancia") {
+    throw new Error(`Esta actividad exige evidencia: ${requirement}`)
+  }
+
   // Task 9 (M2.1): una observación de texto ya no basta cuando la actividad
   // exige evidencia — hasta ahora `evidenceText` sola satisfacía el
   // requisito, y una "constancia" es exactamente el caso donde el texto
@@ -158,7 +187,9 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   // permiso del módulo que la acredita, el sistema permite registrarla a mano
   // en la planilla con evidencia autodeclarada (texto). 19 actividades reales
   // del catálogo 2026 (incluida toda la cadena RE-20, N°66-78) dependen de ese
-  // fallback — ver `scripts/apply-pdtp-2026-demand-slas.ts:77-175`.
+  // fallback — ver `scripts/apply-pdtp-2026-demand-slas.ts:77-175`. Una
+  // segunda ronda (arriba) restauró el gate genérico que `main` ya exigía: el
+  // fallback `solo_manual` siempre necesitó al menos texto, nunca "nada".
   const hasRealEvidence = Boolean(nextEvidenceUrl) || dedupedPhotos.length > 0
   if (requirement && activity.mechanism === "constancia" && !hasRealEvidence) {
     throw new Error(`Esta actividad exige evidencia: ${requirement}. La observación no basta — adjunta un archivo (foto o PDF).`)

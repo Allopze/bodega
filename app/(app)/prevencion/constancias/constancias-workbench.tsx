@@ -121,6 +121,11 @@ export function ConstanciasWorkbench({
                         defaultMonth={row.dueMonth}
                         effectiveFrom={view.effectiveFrom}
                         evidenceRequirement={row.evidenceRequirement}
+                        // Este workbench sólo lista actividades `mechanism:
+                        // 'constancia'` (ver `listPdtpConstanciaActivities`
+                        // en lib/services/pdtp/constancias.ts) — no viene en
+                        // `PdtpConstanciaDebt` porque acá siempre es ese valor.
+                        mechanism="constancia"
                       />
                       <PdtpDeviationForm
                         activityId={row.activityId}
