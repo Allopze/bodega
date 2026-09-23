@@ -4,9 +4,13 @@
  * Las casillas del programa nacen con la faena.
  *
  * Lo que se protege no es que las tablas existan: es que activar una faena
- * deje las 61 filas —24 casillas de capacitación, 2 de simulacro, 4 de CGRD, 23
- * de alcotest y los 8 protocolos MINSAL sin pronunciar— y
- * que reejecutar no cree ninguna más ni pise el estado de las existentes.
+ * deje las 428 filas —390 casillas de capacitación (102: 52 de Task 5 + 42 de
+ * la Task 8, que cerró la brecha de instrumento de las N°16, 37, 51, 57, 59 y
+ * 60, + 8 de la Task 13, CAM-07/N°88; más 288 de la Task 16, CAP-21/N°53 y
+ * las 5 réplicas de N°38, 6 ítems × 48 celdas), 2 de simulacro, 4 de CGRD, 23
+ * de alcotest, los 8 protocolos MINSAL sin pronunciar y la evaluación
+ * cuantitativa anual de higiene (N°45)— y que reejecutar no cree ninguna más
+ * ni pise el estado de las existentes.
  *
  * El modo de falla que esto vigila es el que motivó el agregador: alguien
  * agrega un cuarto punto de alta de faena, pre-genera sólo capacitación, y la
@@ -33,6 +37,20 @@ vi.mock("@/db", () => ({ get db() { return testGlobal.__db } }))
 vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
+/**
+ * Task 3 — M0.2: sólo se sustituye `onEmergencyDrillCompleted`, para poder
+ * inspeccionar el `plannedPeriod` que `completeEmergencyDrill` arma a partir
+ * de la casilla, sin depender de un programa PDTP activo ni de en qué mes
+ * real caiga la corrida (`executedAt` está acotado a "no futuro", así que no
+ * se puede fijar un mes calendario arbitrario para la ejecución sin repetir
+ * el problema de EMERGENCIAS-06 en `prevention-emergency-postgres.test.ts`).
+ * Ningún test existente de este archivo cablea `pdtpActivityNumbers` en su
+ * plan, así que el conector real nunca se invocaba antes de este mock.
+ */
+vi.mock("@/lib/services/pdtp-adapters/pdtp-accreditation-connectors", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/pdtp-adapters/pdtp-accreditation-connectors")>()),
+  onEmergencyDrillCompleted: vi.fn(async () => {}),
+}))
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
@@ -47,6 +65,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.preventionHygieneMeasurementSlots)
   await inMemoryDb.delete(schema.preventionProtocolApplicabilities)
   await inMemoryDb.delete(schema.preventionAlcotestSlotEvidence)
   await inMemoryDb.delete(schema.preventionAlcotestSlots)
@@ -80,14 +99,14 @@ beforeEach(async () => {
 })
 
 describe("pre-generación de las casillas del programa", () => {
-  it("una faena activa recibe las 61 filas, y reejecutar no crea ninguna más", async () => {
+  it("una faena activa recibe las 428 filas, y reejecutar no crea ninguna más", async () => {
     const { ensurePreventionProgramSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
 
     const first = await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
-    expect(first).toEqual({ training: 24, drills: 2, grdMeetings: 4, alcotest: 23, protocols: 8 })
+    expect(first).toEqual({ training: 390, drills: 2, grdMeetings: 4, alcotest: 23, protocols: 8, hygieneMeasurements: 1 })
 
     const second = await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
-    expect(second).toEqual({ training: 0, drills: 0, grdMeetings: 0, alcotest: 0, protocols: 0 })
+    expect(second).toEqual({ training: 0, drills: 0, grdMeetings: 0, alcotest: 0, protocols: 0, hygieneMeasurements: 0 })
   })
 
   it("las casillas nacen pendientes y en los meses que el programa declara", async () => {
@@ -115,6 +134,14 @@ describe("pre-generación de las casillas del programa", () => {
     const meetings = await inMemoryDb.select().from(schema.preventionGrdMeetingSlots)
     expect(meetings.map((row) => row.slotKey).sort()).toEqual(["m02-w1", "m03-w1", "m04-w1", "m05-w1"])
     expect(meetings.every((row) => row.status === "pending")).toBe(true)
+
+    /* N°45: una sola celda al año, febrero semana 2, sin medición detrás. */
+    const hygiene = await inMemoryDb.select().from(schema.preventionHygieneMeasurementSlots)
+    expect(hygiene).toHaveLength(1)
+    expect(hygiene[0]).toMatchObject({
+      worksiteId: WORKSITE_ID, year: 2026, slotKey: "m02-w2",
+      scheduledMonth: 2, scheduledWeek: 2, status: "pending", measurementId: null,
+    })
   })
 
   it("reejecutar no pisa el estado de una casilla ya resuelta", async () => {
@@ -149,6 +176,18 @@ describe("pre-generación de las casillas del programa", () => {
       completedAt: new Date().toISOString(),
       completedByUserId: USER_ID,
     }).where(eq(schema.preventionEmergencyDrillSlots.id, slot!.id))).rejects.toThrow()
+  })
+
+  it("la base rechaza una casilla de higiene hecha sin la medición que la cumple", async () => {
+    const { ensurePreventionProgramSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
+    await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
+    const [slot] = await inMemoryDb.select().from(schema.preventionHygieneMeasurementSlots)
+
+    await expect(inMemoryDb.update(schema.preventionHygieneMeasurementSlots).set({
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      completedByUserId: USER_ID,
+    }).where(eq(schema.preventionHygieneMeasurementSlots.id, slot!.id))).rejects.toThrow()
   })
 
   it("la base exige motivo de al menos diez caracteres para declarar no aplica", async () => {
@@ -191,7 +230,7 @@ describe("la casilla sigue al simulacro que la cumple", () => {
     await service.addEmergencyRole({
       planId: plan.id, roleName: "Jefe de emergencia", assigneeWorkerId: WORKER_ID,
     }, MANAGER)
-    await service.approveEmergencyPlan({ planId: plan.id, expectedVersion: plan.version }, APPROVER)
+    const approved = await service.approveEmergencyPlan({ planId: plan.id, expectedVersion: plan.version }, APPROVER)
     const drill = await service.scheduleEmergencyDrill({
       planId: plan.id, scenarioType: "incendio_estructural",
       scheduledFor: new Date(Date.now() - 60_000).toISOString(),
@@ -207,7 +246,7 @@ describe("la casilla sigue al simulacro que la cumple", () => {
       state: "active",
       uploadedByUserId: USER_ID,
     })
-    return { service, drill }
+    return { service, drill, plan: approved }
   }
 
   it("completar un simulacro contra una casilla la deja cumplida y apuntando a él", async () => {
@@ -225,6 +264,50 @@ describe("la casilla sigue al simulacro que la cumple", () => {
     const [cumplida] = await inMemoryDb.select().from(schema.preventionEmergencyDrillSlots)
       .where(eq(schema.preventionEmergencyDrillSlots.id, slot!.id))
     expect(cumplida).toMatchObject({ status: "completed", drillId: drill.id, completedByUserId: USER_ID })
+  })
+
+  /*
+   * Task 3 — M0.2: antes, `completeEmergencyDrill` acreditaba el PDTP con el
+   * mes de `executedAt` (el cierre), no con la celda que la casilla ya tenía
+   * planificada. Un simulacro registrado tarde pagaba entonces un mes que no
+   * le correspondía y el mes realmente planificado seguía en cero.
+   *
+   * Se verifica el `plannedPeriod` que llega al conector (mockeado arriba del
+   * archivo) en vez del `pdtpExecutions` real, porque `executedAt` está
+   * acotado a "no futuro" contra el reloj real y no hay forma de fijar un mes
+   * calendario arbitrario para el cierre sin repetir el problema que
+   * EMERGENCIAS-06 ya documentó en `prevention-emergency-postgres.test.ts`.
+   */
+  it("completar un simulacro pasa el `plannedPeriod` de la casilla al conector PDTP, no el mes del cierre", async () => {
+    const { ensurePreventionProgramSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
+    const connectors = await import("@/lib/services/pdtp-adapters/pdtp-accreditation-connectors")
+    const accredit = vi.mocked(connectors.onEmergencyDrillCompleted)
+    accredit.mockClear()
+
+    await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
+    const [slot] = await inMemoryDb.select().from(schema.preventionEmergencyDrillSlots)
+      .where(eq(schema.preventionEmergencyDrillSlots.slotKey, "m03-w3"))
+    expect(slot).toMatchObject({ scheduledMonth: 3, scheduledWeek: 3 })
+
+    const { service, drill, plan } = await planAprobadoConSimulacro()
+    // Sin esto la acreditación es un no-op (ningún número cableado) y el
+    // conector jamás se invoca — lo que ya cubren los otros tests de este
+    // describe. Acá interesa justamente lo que se le pasa cuando sí acredita.
+    await service.setEmergencyPlanPdtpActivities({
+      planId: plan.id, expectedVersion: plan.version, pdtpActivityNumbers: [84],
+    }, MANAGER)
+
+    await service.completeEmergencyDrill({
+      drillId: drill.id, expectedVersion: drill.version,
+      executedAt: new Date().toISOString(), outcome: "satisfactory",
+      slotId: slot!.id,
+    }, MANAGER)
+
+    expect(accredit).toHaveBeenCalledTimes(1)
+    expect(accredit.mock.calls[0]![0]).toMatchObject({
+      drillId: drill.id, worksiteId: WORKSITE_ID,
+      plannedPeriod: { year: slot!.year, month: 3, week: 3 },
+    })
   })
 
   it("cancelar el simulacro libera su casilla en vez de dejarla en verde", async () => {

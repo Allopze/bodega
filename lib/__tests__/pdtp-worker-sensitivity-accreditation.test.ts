@@ -54,9 +54,10 @@ const ACTIVITY_ID = `${PROGRAM_ID}-a-017`
 
 /**
  * El RE-28 no tiene ítems puntuables, así que `getEvaluationApplicableItems`
- * devuelve cero y el cierre no exige respuestas. Se responde igual, recorriendo
- * la definición completa: es lo que hace una persona en la pantalla, y es de
- * donde sale el resultado del acta.
+ * devuelve cero — pero desde el fix de `requiresCompletion` el cierre SÍ exige
+ * respuestas: `getEvaluationMandatoryItems` las sigue contando aunque no
+ * puntúen. Se responde recorriendo la definición completa: es lo que hace una
+ * persona en la pantalla, y es de donde sale el resultado del acta.
  */
 async function answerAll(evaluationId = EVAL_ID, overrides: Record<string, string> = {}) {
   const definition = getDefinition("identificacion_sensibles", "01")
@@ -124,6 +125,25 @@ beforeEach(async () => {
     definicionCode: "identificacion_sensibles", definicionVersion: "01", tipo: "seguimiento",
     fechaEvaluacion: `${PROGRAM_YEAR}-04-15`, estado: "borrador",
     createdAt: now, updatedAt: now,
+  })
+})
+
+describe("El RE-28 no puede cerrarse vacío", () => {
+  it("rechaza el cierre sin ninguna respuesta", async () => {
+    // Antes del fix: countsForCompliance:false vaciaba también la lista de
+    // ítems "obligatorios de responder", así que el RE-28 se cerraba en blanco
+    // y acreditaba igual la N°17. `requiresCompletion: true` en la definición
+    // + `getMandatoryItems` en el gate revierten eso.
+    await expect(closeEvaluation(EVAL_ID, { evaluationId: EVAL_ID }, "all", USER_ID))
+      .rejects.toThrow("sin responder")
+    expect(await executions()).toHaveLength(0)
+  })
+
+  it("respondiendo aunque sea todo \"no\", el cierre funciona igual que antes", async () => {
+    expect(await answerAll()).toBeGreaterThan(0)
+    const closed = await closeEvaluation(EVAL_ID, { evaluationId: EVAL_ID }, "all", USER_ID)
+    expect(closed.estado).toBe("cerrado")
+    expect(await executions()).toHaveLength(1)
   })
 })
 

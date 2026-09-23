@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { sstEvaluations } from "@/db/schema/sst"
 import { getDefinition } from "@/lib/sst/definitions/index"
-import { getApplicableItems, sectionAppliesToEvaluatorRole } from "@/lib/sst/checklist"
+import { getApplicableItems, getMandatoryItems, sectionAppliesToEvaluatorRole } from "@/lib/sst/checklist"
 
 export const SECTIONS_EXCLUDED_FROM_PERCENTAGE: Record<string, string[]> = {
   trabajador_nuevo: ["competencias_operacionales"],
@@ -18,6 +18,22 @@ export async function assertEditable(evaluationId: string, tx?: Tx): Promise<voi
 export function getEvaluationApplicableItems(definition: ReturnType<typeof getDefinition>, cargoKeys: string[], evaluatorRole: string | null) {
   const sectionById = new Map(definition.sections.map((s) => [s.id, s]))
   return getApplicableItems(definition, cargoKeys).filter(({ seccionId }) => {
+    const section = sectionById.get(seccionId)
+    if (!section) return false
+    return sectionAppliesToEvaluatorRole(section, evaluatorRole)
+  })
+}
+
+/**
+ * Igual que `getEvaluationApplicableItems`, pero para el chequeo de "falta
+ * responder" del cierre: parte de `getMandatoryItems` en vez de
+ * `getApplicableItems`, así que incluye las secciones marcadas
+ * `requiresCompletion` aunque no puntúen (RE-28). El filtro por rol de
+ * evaluador es el mismo: el conductor líder sólo ve/responde su Punto 3.
+ */
+export function getEvaluationMandatoryItems(definition: ReturnType<typeof getDefinition>, cargoKeys: string[], evaluatorRole: string | null) {
+  const sectionById = new Map(definition.sections.map((s) => [s.id, s]))
+  return getMandatoryItems(definition, cargoKeys).filter(({ seccionId }) => {
     const section = sectionById.get(seccionId)
     if (!section) return false
     return sectionAppliesToEvaluatorRole(section, evaluatorRole)

@@ -9,7 +9,7 @@
  */
 
 import { and, eq, inArray, sql } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type DB, type Tx } from "@/db"
 import {
   pdtpActivities,
   pdtpActivityScheduleOverrides,
@@ -242,9 +242,11 @@ export async function loadPdtpOverrides(
   activityIds: string[],
   year: number,
   worksiteId?: string,
+  /** La transacción del llamador, si la hay (`recordPdtpDeviation` con `callerTx`). */
+  client: DB | Tx = db,
 ): Promise<PdtpActivityScheduleOverride[]> {
   if (activityIds.length === 0) return []
-  return db
+  return client
     .select()
     .from(pdtpActivityScheduleOverrides)
     .where(and(

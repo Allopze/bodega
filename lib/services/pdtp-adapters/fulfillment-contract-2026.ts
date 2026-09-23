@@ -118,6 +118,17 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
     href: (worksiteId) => `/prevencion/cphs?faena=${worksiteId}`,
   },
 
+  /* Task 12 (M2.5, 2026-09-23): la cierra `closeExternalEngagement` en Visitas
+   * y coordinación, que exige `prevention:engagement:manage` — el mismo
+   * permiso con el que ya se registra y se cierra la interacción, no uno
+   * nuevo para esta actividad. Antes era `constancia` y se declaraba aparte;
+   * ver `external-engagement-accreditation-connector.ts`. */
+  20: {
+    module: "coordinacion",
+    permission: "prevention:engagement:manage",
+    href: (worksiteId) => `/prevencion/coordinacion?faena=${worksiteId}`,
+  },
+
   // ── Indicadores ─────────────────────────────────────────────────────────
   7: {
     module: "indicadores",

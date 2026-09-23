@@ -36,8 +36,14 @@ import {
   resolvePreventionAlcotestEvidenceDir,
   resolveStorageFile,
 } from "@/lib/storage/config"
-import { PROGRAM_SLOT_YEAR } from "@/lib/prevention/program-slots-2026"
+import {
+  ALCOTEST_CONTROL_PDTP_ACTIVITY_NUMBERS,
+  ALCOTEST_DISPATCH_PDTP_ACTIVITY_NUMBER,
+  PROGRAM_SLOT_YEAR,
+  resolveAlcotestActivityNumber,
+} from "@/lib/prevention/program-slots-2026"
 import { assertWorksiteAccess, type WorksiteScope } from "@/lib/services/pdtp/helpers"
+import { propagateSlotStatusToPdtp, slotPdtpDeclaration } from "@/lib/services/pdtp-adapters/slot-deviation-connector"
 
 type Client = DB | Tx
 
@@ -126,10 +132,15 @@ const slotStatusInput = z.object({
  * control o el envío que la cumple, dentro de la misma transacción que lo
  * registra. Una casilla que se pudiera poner en verde desde acá permitiría
  * declarar cumplimiento sin hecho que lo respalde.
+ *
+ * El estado nuevo se refleja en la celda del PDTP (N°32 para un envío; para un
+ * control, la N°30 o la N°31 según el rol de quien declara, igual que al
+ * cumplirla) en la misma transacción — ver `slot-deviation-connector.ts`.
+ * `roles` es por eso obligatorio: sin él no hay cómo elegir entre las dos.
  */
 export async function recordAlcotestSlotStatus(
   input: unknown,
-  actor: { userId: string; scope: WorksiteScope },
+  actor: { userId: string; scope: WorksiteScope; roles: readonly string[] },
 ) {
   const data = slotStatusInput.parse(input)
   return db.transaction(async (tx) => {
@@ -189,6 +200,27 @@ export async function recordAlcotestSlotStatus(
       beforeState: { status: slot.status, version: slot.version, notApplicableReason: slot.notApplicableReason },
       afterState: { status: updated.status, version: updated.version, kind: updated.kind, slotKey: updated.slotKey, notApplicableReason },
       actorUserId: actor.userId,
+    })
+
+    /* N°30 y N°31 son una sola serie de casillas: la actividad la decide el
+     * rol de quien actúa, el mismo criterio con que `recordAlcoholTest` elige
+     * cuál acredita. Las dos se pasan como familia para poder retirar el desvío
+     * que la casilla propagó antes aunque lo haya declarado alguien del otro
+     * rol; el nuevo se escribe sólo en la que corresponde a este actor. */
+    const isControl = slot.kind === "control"
+    const controlActivity = isControl ? resolveAlcotestActivityNumber(actor.roles) : null
+    const label = `${isControl ? "de control de alcotest" : "de envío de registros de alcotest"} ${slot.slotKey}`
+    await propagateSlotStatusToPdtp(tx, {
+      source: { module: "alcotest", slotId: slot.id, label },
+      worksiteId: slot.worksiteId,
+      cell: { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek },
+      activities: {
+        activityNumbers: isControl ? ALCOTEST_CONTROL_PDTP_ACTIVITY_NUMBERS : [ALCOTEST_DISPATCH_PDTP_ACTIVITY_NUMBER],
+      },
+      ...(isControl ? { declareOnActivityNumbers: controlActivity === null ? [] : [controlActivity] } : {}),
+      next: slotPdtpDeclaration(updated, label),
+      previous: slotPdtpDeclaration(slot, label),
+      userId: actor.userId,
     })
     return updated
   })

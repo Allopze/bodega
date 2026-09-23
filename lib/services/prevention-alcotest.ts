@@ -21,30 +21,22 @@ import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
 import { recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
 import { pdtpCatalogActivityIdForLegacyNumber } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 import { fulfillAlcotestSlotTx, resolveAlcotestSlotEvidenceRef } from "@/lib/services/prevention-alcotest-slots"
+import { resolveAlcotestActivityNumber } from "@/lib/prevention/program-slots-2026"
 
 /** Familia de `service_equipment` que corresponde a un alcotómetro. */
 export const ALCOTEST_EQUIPMENT_KIND = "alcotest"
 
-const ALCOTEST_PRF_ACTIVITY_NUMBER = 30
-const ALCOTEST_SUP_JT_ACTIVITY_NUMBER = 31
 const ALCOTEST_DISPATCH_ACTIVITY_NUMBER = 32
 
-/** Roles que responden por la N°30 — el propio PRF. */
-const PRF_ROLES = new Set(["prevencionista_faena", "prevencionista"])
-/** Roles que responden por la N°31 — quien no es PRF pero controla en terreno. */
-const SUP_JT_ROLES = new Set(["supervisor_terreno", "jefe_terreno"])
-
 /**
- * Qué actividad cierra un control, según el rol de quien lo registra. `null`
- * si el rol no mapea a ninguna de las dos — el permiso de escritura ya debería
- * haberlo impedido, así que el caller lo trata como un error de datos, no
- * como un caso normal sin acreditación.
+ * Qué actividad cierra un control, según el rol de quien lo registra (N°30
+ * PRF, N°31 supervisor/jefe de terreno). `null` si el rol no mapea a ninguna
+ * de las dos — el permiso de escritura ya debería haberlo impedido, así que el
+ * caller lo trata como un error de datos, no como un caso normal sin
+ * acreditación. Definida junto a la serie de casillas
+ * (`program-slots-2026.ts`); se reexporta acá, donde siempre vivió.
  */
-export function resolveAlcotestActivityNumber(roles: string[]): number | null {
-  if (roles.some((role) => PRF_ROLES.has(role))) return ALCOTEST_PRF_ACTIVITY_NUMBER
-  if (roles.some((role) => SUP_JT_ROLES.has(role))) return ALCOTEST_SUP_JT_ACTIVITY_NUMBER
-  return null
-}
+export { resolveAlcotestActivityNumber }
 
 export type RecordAlcoholTestInput = {
   worksiteId: string
@@ -105,10 +97,14 @@ export async function listAlcotestEquipment(scope: WorksiteScope, worksiteId?: s
 }
 
 /**
- * Registra un control y lo envía al motor de acreditación. Nace `submitted`,
- * no aprobado: `autoApproveByUserId` está reservado a fuentes cuyo cierre ya
- * es la validación completa (`accreditation.ts:169-171`), y un alcotest
- * autoregistrado no lo es.
+ * Registra un control y lo envía al motor de acreditación.
+ *
+ * M0.4: pasa `autoApproveByUserId`, pero el motor (`accreditPdtpFromEvent`,
+ * `AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE`) sólo auto-aprueba el
+ * alcotest cuando el `evidenceRef` es real — la ruta de la casilla
+ * (`slotEvidenceRef`) o una URL, nunca el rótulo sintético `Control de
+ * alcotest <id>` de un control extraordinario sin casilla. Sin evidencia
+ * real la ejecución nace `submitted`, igual que antes de este cambio.
  */
 export async function recordAlcoholTest(
   input: RecordAlcoholTestInput,
@@ -149,7 +145,7 @@ export async function recordAlcoholTest(
   /* El control y la casilla que cumple se escriben en la misma transacción: si
    * el registro se revierte, la casilla no puede quedar en verde sin hecho. La
    * acreditación va después del commit, para no dejar ejecuciones huérfanas. */
-  const { created, slotEvidenceRef } = await db.transaction(async (tx) => {
+  const { created, slotEvidenceRef, plannedPeriod } = await db.transaction(async (tx) => {
     const [row] = await tx.insert(alcoholTests).values({
       id,
       worksiteId: input.worksiteId,
@@ -165,14 +161,27 @@ export async function recordAlcoholTest(
       updatedAt: now,
     }).returning()
 
-    if (!input.slotId) return { created: row!, slotEvidenceRef: null as string | null }
-    await fulfillAlcotestSlotTx(tx, {
+    if (!input.slotId) {
+      return {
+        created: row!,
+        slotEvidenceRef: null as string | null,
+        plannedPeriod: undefined as { year: number; month: number; week: number } | undefined,
+      }
+    }
+    const slot = await fulfillAlcotestSlotTx(tx, {
       slotId: input.slotId,
       worksiteId: input.worksiteId,
       userId: performedByUserId,
       testId: id,
     })
-    return { created: row!, slotEvidenceRef: await resolveAlcotestSlotEvidenceRef(tx, input.slotId) }
+    return {
+      created: row!,
+      slotEvidenceRef: await resolveAlcotestSlotEvidenceRef(tx, input.slotId),
+      /* La celda que el control acredita es la que la casilla ya tenía
+       * planificada, no la del mes en que el control llegó registrado: uno
+       * tomado tarde no debe pagar un mes que no le corresponde. */
+      plannedPeriod: { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek },
+    }
   })
 
   await recordPdtpTriggerEventSafe({
@@ -193,12 +202,16 @@ export async function recordAlcoholTest(
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(activityNumber)],
     occurredAt: input.performedAt,
+    ...(plannedPeriod ? { plannedPeriod } : {}),
     /* La ruta del archivo de la casilla, no un rótulo inventado: un
      * `evidenceRef` sintético pasa el motor de acreditación pero no sirve ante
      * un fiscalizador, que es el único lector que importa. Un control
      * extraordinario no tiene casilla y conserva el rótulo, porque tampoco
      * acredita una celda del cronograma. */
     evidenceRef: slotEvidenceRef ?? input.evidenceUrl ?? `Control de alcotest ${id}`,
+    // M0.4: el motor exige además evidencia real para auto-aprobar esta
+    // fuente — un control extraordinario sin casilla ni URL queda `submitted`.
+    autoApproveByUserId: performedByUserId,
     metadata: {
       alcoholTestId: id,
       result: input.result ?? "negativo",
@@ -263,7 +276,7 @@ export async function recordAlcoholTestDispatch(
 
   const now = new Date().toISOString()
   const id = nanoid()
-  const { created, slotEvidenceRef } = await db.transaction(async (tx) => {
+  const { created, slotEvidenceRef, plannedPeriod } = await db.transaction(async (tx) => {
     const [row] = await tx.insert(alcoholTestDispatches).values({
       id,
       worksiteId: input.worksiteId,
@@ -278,14 +291,27 @@ export async function recordAlcoholTestDispatch(
       updatedAt: now,
     }).returning()
 
-    if (!input.slotId) return { created: row!, slotEvidenceRef: null as string | null }
-    await fulfillAlcotestSlotTx(tx, {
+    if (!input.slotId) {
+      return {
+        created: row!,
+        slotEvidenceRef: null as string | null,
+        plannedPeriod: undefined as { year: number; month: number; week: number } | undefined,
+      }
+    }
+    const slot = await fulfillAlcotestSlotTx(tx, {
       slotId: input.slotId,
       worksiteId: input.worksiteId,
       userId: sentByUserId,
       dispatchId: id,
     })
-    return { created: row!, slotEvidenceRef: await resolveAlcotestSlotEvidenceRef(tx, input.slotId) }
+    return {
+      created: row!,
+      slotEvidenceRef: await resolveAlcotestSlotEvidenceRef(tx, input.slotId),
+      /* La celda que el envío acredita es la que la casilla ya tenía
+       * planificada, no la del mes en que el envío se registró: uno hecho
+       * tarde no debe pagar un mes que no le corresponde. */
+      plannedPeriod: { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek },
+    }
   })
 
   await recordPdtpFulfillmentEvent({
@@ -294,9 +320,12 @@ export async function recordAlcoholTestDispatch(
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(ALCOTEST_DISPATCH_ACTIVITY_NUMBER)],
     occurredAt: sentAt,
+    ...(plannedPeriod ? { plannedPeriod } : {}),
     evidenceRef: slotEvidenceRef
       ?? input.evidenceUrl
       ?? `Envío de registros ${input.year}-${String(input.month).padStart(2, "0")} a ${input.recipient}`,
+    // M0.4: igual que en el control — sólo auto-aprueba con evidencia real.
+    autoApproveByUserId: sentByUserId,
     metadata: { alcoholTestDispatchId: id, year: input.year, month: input.month, testCount: testsInPeriod.length },
   })
 

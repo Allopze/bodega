@@ -76,6 +76,13 @@ export type PdtpAccreditationSourceType =
    * matriz GRD (N°80) o acta de reunión cerrada (N°81).
    */
   | "cgrd"
+  /**
+   * Visitas y coordinación (`prevention_external_engagements`): cerrar una
+   * coordinación del art. 20 con la empresa mandante cierra la N°20 (Task 12,
+   * M2.5). Las fiscalizaciones y visitas del organismo administrador no
+   * acreditan nada por esta vía — el conector las filtra antes de llegar acá.
+   */
+  | "engagement"
 
 export type AccreditationResult = {
   /** Programa que el motor resolvió por faena y fecha efectiva. Nunca se toma
@@ -132,9 +139,16 @@ export type AccreditationInput = {
   /** Metadatos adicionales que se persisten en sourceMetadataJson. */
   metadata?: Record<string, unknown>
   /**
-   * El evento fuente ya constituye validación suficiente. Se usa sólo desde
-   * conectores cuyo cierre es el hecho que el programa busca medir, como una
-   * inspección declarada ejecutada.
+   * El evento fuente ya constituye validación suficiente. Sólo lo aceptan las
+   * fuentes de `AUTO_APPROVE_SOURCE_TYPES_UNCONDITIONAL` y
+   * `AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE` (ver más abajo) — cualquier
+   * otra hace que `accreditPdtpFromEvent` lance. Para las primeras (inspección,
+   * ocurrencia de capacitación) el cierre del hecho ya es la validación, con o
+   * sin archivo adjunto. Para las segundas (alcotest, simulacro de emergencia,
+   * acta de CGRD, medición cuantitativa de higiene) además se exige
+   * `isRealEvidence`: sin un artefacto real la ejecución nace/queda
+   * `submitted` para revisión manual aunque el conector haya pasado este
+   * campo.
    */
   autoApproveByUserId?: string
 }
@@ -367,9 +381,22 @@ async function resolvePdtpActiveProgramForEvent(
  * Devuelve `null` si el evento cae fuera del año del programa (mismo criterio
  * tolerante que el motor); lanza para el resto de las condiciones de
  * configuración, porque ahí sí es un error, no un caso normal.
+ *
+ * `plannedPeriod` fija el año por la celda del cronograma en vez de por
+ * `occurredAt`, igual que en `accreditPdtpFromEvent`: lo usa el conector de
+ * casillas, cuyo "no aplica" se declara sobre la celda de la casilla y no
+ * sobre la fecha en que alguien lo escribió.
  */
 export async function resolvePdtpActivityIdsForNumbers(
-  input: { worksiteId: string; occurredAt: string; activityNumbers: number[]; programId?: string; sourceType: string; sourceId: string },
+  input: {
+    worksiteId: string
+    occurredAt: string
+    activityNumbers: number[]
+    programId?: string
+    sourceType: string
+    sourceId: string
+    plannedPeriod?: { year: number; month: number; week: number }
+  },
   client: AccreditationClient = db,
 ): Promise<{ programId: string; activityIdByN: Map<number, string>; skippedNotFound: number[] } | null> {
   const resolved = await resolvePdtpActiveProgramForEvent(input, client)
@@ -390,11 +417,44 @@ export async function resolvePdtpActivityIdsForNumbers(
 // ── Función principal ─────────────────────────────────────────────────────────
 
 /**
+ * Fuentes cuyo propio cierre ya es la validación completa del hecho: se
+ * auto-aprueban con `autoApproveByUserId` sin exigir un artefacto de
+ * evidencia real. La inspección firmada y la ocurrencia de capacitación
+ * certificada no dejan de ser válidas por no traer además un archivo.
+ */
+const AUTO_APPROVE_SOURCE_TYPES_UNCONDITIONAL: readonly PdtpAccreditationSourceType[] = [
+  "inspeccion",
+  "capacitacion_ocurrencia",
+]
+
+/**
+ * Fuentes que auto-aprueban sólo si el evento trae evidencia real (M0.4,
+ * 2026-09-22; `higiene` se sumó en la ronda de corrección de Task 11 porque la
+ * N°45 ya cumple la misma condición: casilla propia más informe de laboratorio
+ * real, igual que un simulacro sin casilla asociada; `engagement` se sumó en
+ * Task 12 con el mismo criterio — el acta o correo de la reunión con el
+ * mandante es la evidencia real, y sin ella no hay por qué eximir del paso
+ * manual): un control de alcotest, un simulacro, un acta de CGRD, una
+ * medición de higiene o el cierre de una coordinación con el mandante sin
+ * artefacto real quedan `submitted` para revisión manual, igual que antes de
+ * este cambio — la diferencia es que con evidencia real ya no requieren ese
+ * paso manual.
+ */
+const AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE: readonly PdtpAccreditationSourceType[] = [
+  "alcotest",
+  "emergencia",
+  "cgrd",
+  "higiene",
+  "engagement",
+]
+
+/**
  * Acredita automáticamente las actividades PDTP indicadas a partir de un
  * evento operacional real. Es idempotente: si ya existe una ejecución con
  * la misma clave, la retorna sin crear una nueva (a menos que esté en estado
  * `draft` o `rejected`, en cuyo caso la actualiza a `submitted`, o a
- * `approved` cuando una inspección ejecutada constituye la validación).
+ * `approved` cuando el hecho constituye validación suficiente, con o sin
+ * evidencia real según la fuente — ver `AUTO_APPROVE_SOURCE_TYPES_*`).
  *
  * Una aprobación manual nunca se modifica aquí. Cada evento de integración
  * conserva una fila propia, incluso cuando comparte período con otro evento.
@@ -403,8 +463,12 @@ export async function accreditPdtpFromEvent(
   input: AccreditationInput,
   client: AccreditationClient = db,
 ): Promise<AccreditationResult> {
-  if (input.autoApproveByUserId && input.sourceType !== "inspeccion" && input.sourceType !== "capacitacion_ocurrencia") {
-    throw new Error("Sólo las inspecciones y las ocurrencias de capacitación pueden aprobar automáticamente su cumplimiento.")
+  const isAutoApproveEligibleSourceType = AUTO_APPROVE_SOURCE_TYPES_UNCONDITIONAL.includes(input.sourceType)
+    || AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE.includes(input.sourceType)
+  if (input.autoApproveByUserId && !isAutoApproveEligibleSourceType) {
+    throw new Error(
+      "Sólo las inspecciones, las ocurrencias de capacitación, el alcotest, los simulacros de emergencia, las actas del CGRD, las mediciones de higiene y el cierre de coordinaciones con el mandante pueden aprobar automáticamente su cumplimiento.",
+    )
   }
   const activityNumbers = input.activityNumbers ?? []
   const catalogActivityIds = input.catalogActivityIds ?? []
@@ -423,6 +487,20 @@ export async function accreditPdtpFromEvent(
   // no lo es.
   const isStorageRef = input.evidenceRef?.startsWith("storage/") ?? false
   const isRealEvidence = isStorageRef || /^https?:\/\//.test(input.evidenceRef ?? "")
+
+  /*
+   * M0.4 (2026-09-22): las fuentes "condicionadas" (alcotest, emergencia,
+   * cgrd) sólo auto-aprueban cuando además hay evidencia real — si el
+   * conector pasó `autoApproveByUserId` pero el evento no trae artefacto, la
+   * ejecución nace/queda `submitted` para revisión manual, igual que si el
+   * conector no lo hubiera pasado. Las fuentes "incondicionales" (inspección,
+   * ocurrencia de capacitación) no llevan esta segunda condición: su propio
+   * cierre ya era, desde antes de este cambio, la validación completa.
+   */
+  const canAutoApprove = Boolean(input.autoApproveByUserId) && (
+    AUTO_APPROVE_SOURCE_TYPES_UNCONDITIONAL.includes(input.sourceType)
+    || (AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE.includes(input.sourceType) && isRealEvidence)
+  )
 
   /*
    * PDTP-001 (auditoría 2026-09-14), patrón P4: sin artefacto real, la ejecución
@@ -646,7 +724,7 @@ export async function accreditPdtpFromEvent(
       occurredAt: input.occurredAt,
       ...(input.plannedYear !== undefined ? { plannedYear: input.plannedYear } : {}),
       ...(input.plannedPeriod ? { plannedPeriod: input.plannedPeriod } : {}),
-      ...(input.autoApproveByUserId ? {
+      ...(canAutoApprove ? {
         approvalMode: "automatic_source_event",
         automaticApprovedByUserId: input.autoApproveByUserId,
         automaticApprovalActors: { [idempotencyKey]: input.autoApproveByUserId },
@@ -660,9 +738,9 @@ export async function accreditPdtpFromEvent(
         .update(pdtpExecutions)
         .set({
           executedQuantity,
-          status: input.autoApproveByUserId ? "approved" : "submitted",
-          approvedByUserId: input.autoApproveByUserId ?? null,
-          approvedAt: input.autoApproveByUserId ? now : null,
+          status: canAutoApprove ? "approved" : "submitted",
+          approvedByUserId: canAutoApprove ? input.autoApproveByUserId! : null,
+          approvedAt: canAutoApprove ? now : null,
           evidenceText: isStorageRef ? null : (input.evidenceRef ?? null),
           evidenceUrl: isStorageRef ? input.evidenceRef : null,
           evidenceStatus: evidenceStatusFor(activity.evidenceRequirement),
@@ -692,9 +770,9 @@ export async function accreditPdtpFromEvent(
           month: slot.month,
           week: slot.week,
           executedQuantity,
-          status: input.autoApproveByUserId ? "approved" : "submitted",
-          approvedByUserId: input.autoApproveByUserId ?? null,
-          approvedAt: input.autoApproveByUserId ? now : null,
+          status: canAutoApprove ? "approved" : "submitted",
+          approvedByUserId: canAutoApprove ? input.autoApproveByUserId! : null,
+          approvedAt: canAutoApprove ? now : null,
           evidenceText: isStorageRef ? null : (input.evidenceRef ?? null),
           evidenceUrl: isStorageRef ? input.evidenceRef : null,
           evidencePhotos: [],

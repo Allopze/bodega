@@ -16,7 +16,7 @@ import {
   isPersonEvaluationDefinition,
 } from "@/lib/sst/definitions"
 import { IDENTIFICACION_SENSIBLES } from "@/lib/sst/definitions/identificacion-sensibles"
-import { getApplicableItems } from "@/lib/sst/checklist"
+import { getApplicableItems, getMandatoryItems } from "@/lib/sst/checklist"
 import { getAutomaticResultadoFinal } from "@/lib/sst/compliance"
 
 describe("IDENTIFICACION_SENSIBLES", () => {
@@ -80,6 +80,17 @@ describe("IDENTIFICACION_SENSIBLES", () => {
       expect(section.countsForCompliance, section.id).toBe(false)
     }
     expect(getApplicableItems(IDENTIFICACION_SENSIBLES, [])).toHaveLength(0)
+  })
+
+  it("aun así exige responder cada sección para poder cerrar el acta", () => {
+    // "No puntúa" (countsForCompliance: false) no es lo mismo que "no hace
+    // falta responder": sin `requiresCompletion: true` el gate de cierre
+    // (getMandatoryItems) quedaba con cero ítems obligatorios y el RE-28 se
+    // podía cerrar vacío, acreditando igual la N°17.
+    for (const section of IDENTIFICACION_SENSIBLES.sections) {
+      expect(section.requiresCompletion, section.id).toBe(true)
+    }
+    expect(getMandatoryItems(IDENTIFICACION_SENSIBLES, [])).not.toHaveLength(0)
   })
 
   it("ninguna sección queda atrapada por la regla del conductor líder", () => {

@@ -7,7 +7,7 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
@@ -218,6 +218,125 @@ describe("programa de trabajo del comité", () => {
     const { createProgram } = await import("@/lib/services/prevention-cphs-program")
     await expect(createProgram({ committeeId: "cphs-a", year: 2027 }, VIEWER))
       .rejects.toThrow(/no encontrado o fuera de alcance/i)
+  })
+})
+
+describe("las 12 sesiones ordinarias mensuales (Task 10)", () => {
+  it("aprobar el programa pre-genera las 12 sesiones, una por mes, en 'planned'", async () => {
+    const { activateProgram, addProgramActivity, createProgram } = await import("@/lib/services/prevention-cphs-program")
+    const program = await createProgram({ committeeId: "cphs-a", year: 2026 }, MANAGER)
+
+    // El gate de "al menos una actividad" no lo cumplen las sesiones —todavía
+    // no existen antes de aprobar—, así que sigue exigiendo una manual.
+    await expect(activateProgram({ programId: program.id, expectedVersion: program.version }, MANAGER))
+      .rejects.toThrow(/no tiene actividades/i)
+    await addProgramActivity({
+      programId: program.id, title: "Difusión inicial del programa preventivo", plannedMonth: 1,
+    }, MANAGER)
+
+    await activateProgram({ programId: program.id, expectedVersion: program.version }, MANAGER)
+
+    const sessions = await inMemoryDb.select().from(schema.preventionCommitteeProgramActivities)
+      .where(and(
+        eq(schema.preventionCommitteeProgramActivities.programId, program.id),
+        eq(schema.preventionCommitteeProgramActivities.isMandatorySession, true),
+      ))
+    expect(sessions).toHaveLength(12)
+    expect(sessions.map((row) => row.plannedMonth).sort((a, b) => a - b))
+      .toEqual(Array.from({ length: 12 }, (_, index) => index + 1))
+    expect(sessions.every((row) => row.status === "planned")).toBe(true)
+
+    // Y la actividad manual agregada antes de aprobar sigue ahí, intacta:
+    // pre-generar sesiones no reemplaza ni toca lo que el comité ya cargó.
+    const total = await inMemoryDb.select().from(schema.preventionCommitteeProgramActivities)
+      .where(eq(schema.preventionCommitteeProgramActivities.programId, program.id))
+    expect(total).toHaveLength(13)
+  })
+
+  it("cerrar el acta del mes completa automáticamente su sesión ordinaria", async () => {
+    const { addCommitteeMember, closeCommitteeMeeting, scheduleCommitteeMeeting } = await import("@/lib/services/prevention-cphs")
+    const { activateProgram, addProgramActivity, createProgram } = await import("@/lib/services/prevention-cphs-program")
+
+    // Quórum paritario: falta la representación de la empresa en el fixture.
+    const companyMember = await addCommitteeMember({
+      committeeId: "cphs-a", workerId: "wk-2", representation: "company", seat: "titular",
+    }, MANAGER)
+
+    const program = await createProgram({ committeeId: "cphs-a", year: 2026 }, MANAGER)
+    await addProgramActivity({
+      programId: program.id, title: "Difusión inicial del programa preventivo", plannedMonth: 1,
+    }, MANAGER)
+    await activateProgram({ programId: program.id, expectedVersion: program.version }, MANAGER)
+
+    const meeting = await scheduleCommitteeMeeting({
+      committeeId: "cphs-a", scheduledFor: "2026-08-10T14:00:00.000Z",
+      agenda: "Sesión ordinaria de agosto: condiciones de trabajo y seguimiento de acuerdos.",
+    }, MANAGER)
+
+    await closeCommitteeMeeting({
+      meetingId: meeting.id, expectedVersion: meeting.version, heldAt: "2026-08-10T14:00:00.000Z",
+      minutes: "Se revisaron las condiciones de trabajo y se acordó reforzar la señalización del patio.",
+      attendedMemberIds: ["cphsm-1", companyMember.id],
+    }, MANAGER)
+
+    const [august] = await inMemoryDb.select().from(schema.preventionCommitteeProgramActivities)
+      .where(and(
+        eq(schema.preventionCommitteeProgramActivities.programId, program.id),
+        eq(schema.preventionCommitteeProgramActivities.plannedMonth, 8),
+        eq(schema.preventionCommitteeProgramActivities.isMandatorySession, true),
+      ))
+    expect(august?.status).toBe("done")
+    expect(august?.reviewedInMeetingId).toBe(meeting.id)
+    expect(august?.completionNote).toContain(meeting.code)
+  })
+
+  it("una segunda acta el mismo mes no falla ni duplica cuando ya no queda sesión 'planned'", async () => {
+    const { addCommitteeMember, closeCommitteeMeeting, scheduleCommitteeMeeting } = await import("@/lib/services/prevention-cphs")
+    const { activateProgram, addProgramActivity, createProgram } = await import("@/lib/services/prevention-cphs-program")
+
+    const companyMember = await addCommitteeMember({
+      committeeId: "cphs-a", workerId: "wk-2", representation: "company", seat: "titular",
+    }, MANAGER)
+
+    const program = await createProgram({ committeeId: "cphs-a", year: 2026 }, MANAGER)
+    await addProgramActivity({
+      programId: program.id, title: "Difusión inicial del programa preventivo", plannedMonth: 1,
+    }, MANAGER)
+    await activateProgram({ programId: program.id, expectedVersion: program.version }, MANAGER)
+
+    const first = await scheduleCommitteeMeeting({
+      committeeId: "cphs-a", scheduledFor: "2026-08-10T14:00:00.000Z",
+      agenda: "Primera sesión de agosto: condiciones de trabajo y acuerdos pendientes.",
+    }, MANAGER)
+    await closeCommitteeMeeting({
+      meetingId: first.id, expectedVersion: first.version, heldAt: "2026-08-10T14:00:00.000Z",
+      minutes: "Primera acta de agosto, cerrada con quórum y un acuerdo de seguimiento.",
+      attendedMemberIds: ["cphsm-1", companyMember.id],
+    }, MANAGER)
+
+    // Segunda sesión extraordinaria el mismo mes: ya no queda ninguna fila de
+    // sesión mandatoria 'planned' para agosto (la de arriba la dejó 'done').
+    const second = await scheduleCommitteeMeeting({
+      committeeId: "cphs-a", meetingType: "extraordinary", scheduledFor: "2026-08-20T14:00:00.000Z",
+      agenda: "Segunda sesión de agosto, extraordinaria, sobre un incidente puntual.",
+    }, MANAGER)
+    await expect(closeCommitteeMeeting({
+      meetingId: second.id, expectedVersion: second.version, heldAt: "2026-08-20T14:00:00.000Z",
+      minutes: "Segunda acta de agosto, extraordinaria, cerrada sin problemas.",
+      attendedMemberIds: ["cphsm-1", companyMember.id],
+    }, MANAGER)).resolves.toMatchObject({ meeting: { status: "closed" } })
+
+    const augustSessions = await inMemoryDb.select().from(schema.preventionCommitteeProgramActivities)
+      .where(and(
+        eq(schema.preventionCommitteeProgramActivities.programId, program.id),
+        eq(schema.preventionCommitteeProgramActivities.plannedMonth, 8),
+        eq(schema.preventionCommitteeProgramActivities.isMandatorySession, true),
+      ))
+    // Ni falló ni duplicó: sigue habiendo una sola fila de agosto, ya 'done'
+    // y todavía apuntando a la primera acta (la segunda no la tocó).
+    expect(augustSessions).toHaveLength(1)
+    expect(augustSessions[0]?.status).toBe("done")
+    expect(augustSessions[0]?.reviewedInMeetingId).toBe(first.id)
   })
 })
 

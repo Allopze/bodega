@@ -1,0 +1,1 @@
+ALTER TABLE "prevention_surveillance_enrollments" ADD CONSTRAINT "prevention_surveillance_enrollment_exempt_consistent" CHECK ("prevention_surveillance_enrollments"."status" <> 'exempt' OR length(trim(COALESCE("prevention_surveillance_enrollments"."absence_reason", ''))) >= 10);

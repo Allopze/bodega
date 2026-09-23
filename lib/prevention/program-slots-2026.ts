@@ -2,8 +2,8 @@
  * lib/prevention/program-slots-2026.ts
  *
  * Las casillas del programa 2026 para simulacros (N°84), actas del CGRD
- * (N°81) y alcotest (N°30/31 y N°32): lo que se espera que ocurra, por faena y
- * por año.
+ * (N°81), alcotest (N°30/31 y N°32) y la evaluación cuantitativa de higiene
+ * (N°45): lo que se espera que ocurra, por faena y por año.
  *
  * **Por qué una constante y no una lectura del JSON en runtime.** El
  * cronograma vive en `db/seed/pdtp-catalog-2026.json`, que es dato del
@@ -22,6 +22,8 @@
 export const DRILL_PDTP_ACTIVITY_NUMBER = 84
 /** Número de actividad PDTP de las actas de reunión del CGRD. */
 export const GRD_MEETING_PDTP_ACTIVITY_NUMBER = 81
+/** N°45 — «Evaluación cuantitativas por mutual»: la medición de exposición. */
+export const HYGIENE_MEASUREMENT_PDTP_ACTIVITY_NUMBER = 45
 /**
  * N°30 y N°31 tienen el mismo texto y el mismo cronograma; sólo difieren en el
  * responsable declarado (PRF vs Sup/JT). Cuál de las dos se acredita lo decide
@@ -31,6 +33,27 @@ export const GRD_MEETING_PDTP_ACTIVITY_NUMBER = 81
 export const ALCOTEST_CONTROL_PDTP_ACTIVITY_NUMBERS = [30, 31] as const
 /** N°32 — «Envío registros alcotest, según DO-48». */
 export const ALCOTEST_DISPATCH_PDTP_ACTIVITY_NUMBER = 32
+
+/** Roles que responden por la N°30 — el propio PRF. */
+const ALCOTEST_PRF_ROLES = new Set(["prevencionista_faena", "prevencionista"])
+/** Roles que responden por la N°31 — quien no es PRF pero controla en terreno. */
+const ALCOTEST_SUP_JT_ROLES = new Set(["supervisor_terreno", "jefe_terreno"])
+
+/**
+ * Cuál de las dos actividades de la serie de control (N°30 o N°31) corresponde
+ * a quien actúa sobre la casilla, según su rol. `null` si el rol no mapea a
+ * ninguna.
+ *
+ * Vive junto a las constantes de la serie porque la usan los dos lados de la
+ * casilla: el registro del control (`prevention-alcotest.ts`, que la reexporta)
+ * y la declaración de «no aplica»/«no hecha» (`prevention-alcotest-slots.ts`).
+ * Tenerla en uno de los dos servicios obligaba al otro a importarlo en ciclo.
+ */
+export function resolveAlcotestActivityNumber(roles: readonly string[]): number | null {
+  if (roles.some((role) => ALCOTEST_PRF_ROLES.has(role))) return ALCOTEST_CONTROL_PDTP_ACTIVITY_NUMBERS[0]
+  if (roles.some((role) => ALCOTEST_SUP_JT_ROLES.has(role))) return ALCOTEST_CONTROL_PDTP_ACTIVITY_NUMBERS[1]
+  return null
+}
 
 export const PROGRAM_SLOT_YEAR = 2026 as const
 
@@ -57,6 +80,15 @@ export const GRD_MEETING_SLOTS_2026: readonly ProgramSlot[] = [
   slot(3, 1),
   slot(4, 1),
   slot(5, 1),
+]
+
+/**
+ * N°45 — «Evaluación cuantitativas por mutual». Una sola celda al año:
+ * febrero, semana 2. La cumple la primera medición de exposición del año en la
+ * faena, que ya exige el informe de laboratorio como archivo real.
+ */
+export const HYGIENE_MEASUREMENT_SLOTS_2026: readonly ProgramSlot[] = [
+  slot(2, 2),
 ]
 
 /**

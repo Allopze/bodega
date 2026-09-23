@@ -53,6 +53,7 @@ export default async function ProgramaPage({ params }: { params: Promise<{ progr
         }}
         enrollments={detail.enrollments.map((item) => ({
           id: item.id,
+          workerId: item.workerId,
           workerName: item.workerName,
           groupName: item.groupName,
           enrolledOn: item.enrolledOn,

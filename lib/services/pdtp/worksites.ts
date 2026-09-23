@@ -11,7 +11,7 @@
  */
 
 import { and, eq, inArray, sql } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type DB, type Tx } from "@/db"
 import { CPHS_MIN_HEADCOUNT, resolvePreventiveOrganization } from "@/lib/prevention/cphs-organization"
 import {
   pdtpActivities,
@@ -32,9 +32,11 @@ import { countOf } from "@/lib/utils"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, assertWorksiteAccess, type WorksiteScope } from "./helpers"
 
 /** Faenas miembro de un programa. La ausencia de filas sólo equivale a todas
- * las faenas cuando el programa declaró explícitamente alcance corporativo. */
-export async function listPdtpProgramWorksites(programId: string): Promise<PdtpProgramWorksite[]> {
-  return db.select().from(pdtpProgramWorksites)
+ * las faenas cuando el programa declaró explícitamente alcance corporativo.
+ * `client` para leer dentro de una transacción abierta (ver
+ * `assertPdtpWorksiteCanOperateProgram`). */
+export async function listPdtpProgramWorksites(programId: string, client: DB | Tx = db): Promise<PdtpProgramWorksite[]> {
+  return client.select().from(pdtpProgramWorksites)
     .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true)))
 }
 
@@ -399,13 +401,18 @@ export async function resolvePdtpEffectiveActivitiesForWorksite(programId: strin
  * alcance corporativo explícito puede operar en cualquier faena. Falla
  * cerrado: lanza si la faena no está autorizada para este programa.
  */
-export async function assertPdtpWorksiteCanOperateProgram(programId: string, worksiteId: string): Promise<void> {
+export async function assertPdtpWorksiteCanOperateProgram(
+  programId: string,
+  worksiteId: string,
+  /** La transacción del llamador, si la hay: mismo criterio que `assertPdtpPeriodOpen`. */
+  client: DB | Tx = db,
+): Promise<void> {
   const [[program], members] = await Promise.all([
-    db.select({ status: pdtpPrograms.status, appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites })
+    client.select({ status: pdtpPrograms.status, appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites })
       .from(pdtpPrograms)
       .where(eq(pdtpPrograms.id, programId))
       .limit(1),
-    listPdtpProgramWorksites(programId),
+    listPdtpProgramWorksites(programId, client),
   ])
   if (!program) throw new Error("Programa PDTP no encontrado.")
   // Un borrador puede seguir usando esta primitiva para preparar configuración;

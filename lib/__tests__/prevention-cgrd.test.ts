@@ -303,6 +303,23 @@ describe("actas de reunión — N°81", () => {
     expect(executions).toHaveLength(1)
   })
 
+  /* M0.4 (2026-09-22): quien registra el acta pasa a autoaprobar su propia
+   * N°81. A diferencia del alcotest, acá no hace falta un caso "evidencia
+   * sintética": `evidenceUrl` está validado (`validation/prevention-module/cgrd.ts`)
+   * como ruta de storage o URL http(s) desde antes de este cambio, así que
+   * nunca llega al motor un acta con evidencia sintética. */
+  it("M0.4: registrar el acta con evidencia real la auto-aprueba", async () => {
+    const committee = await constituteGrdCommittee({ worksiteId: WS_A, name: "CGRD", constitutedOn: "2026-03-01", mandateEndsOn: "2028-03-01", evidenceUrl: EVIDENCE }, MANAGER)
+    await recordGrdMeeting({
+      committeeId: committee.id, heldOn: "2026-04-01T15:00:00.000Z", agenda: "Revisión de amenazas del período",
+      minutes: "Acta de la sesión con el detalle suficiente de lo tratado", quorumReached: true, evidenceUrl: EVIDENCE,
+    }, MANAGER)
+
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, `${PROGRAM_ID}-a-81`))
+    expect(execution).toMatchObject({ status: "approved", approvedByUserId: USER_MANAGER })
+  })
+
   /* El acta se carga DESPUÉS de la sesión, así que la fecha que acredita es la
    * de la sesión (`heldOn`), no la de digitación: el motor resuelve el período
    * del programa con `occurredAt`. Con `createdAt` una sesión de marzo cargada
@@ -322,6 +339,33 @@ describe("actas de reunión — N°81", () => {
     expect(execution!.year).toBe(PROGRAM_YEAR)
     expect(execution!.month).toBe(3)
     expect(execution!.week).toBe(2)
+  })
+
+  /* Task 3 — M0.2: el acta se carga tarde (abril), pero cumple la casilla
+   * planificada para febrero (semana 1). La celda que el PDTP acredita tiene
+   * que ser la de la casilla, no el mes real en que el acta llegó — si no,
+   * un acta tardía paga un mes que no le corresponde y febrero sigue en cero
+   * aunque la casilla ya esté marcada cumplida. */
+  it("un acta tardía acredita la celda planificada de la casilla, no el mes real del acta", async () => {
+    const { ensureGrdMeetingSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
+    await ensureGrdMeetingSlotsForWorksiteTx(inMemoryDb as unknown as DB, WS_A)
+    const [febrero] = await inMemoryDb.select().from(schema.preventionGrdMeetingSlots)
+      .where(eq(schema.preventionGrdMeetingSlots.slotKey, "m02-w1"))
+    expect(febrero).toMatchObject({ scheduledMonth: 2, scheduledWeek: 1 })
+
+    const committee = await constituteGrdCommittee({
+      worksiteId: WS_A, name: "CGRD", constitutedOn: `${PROGRAM_YEAR}-01-10`, mandateEndsOn: `${PROGRAM_YEAR + 2}-01-10`, evidenceUrl: EVIDENCE,
+    }, MANAGER)
+
+    await recordGrdMeeting({
+      committeeId: committee.id, heldOn: `${PROGRAM_YEAR}-04-05T15:00:00.000Z`, agenda: "Sesión atrasada de febrero",
+      minutes: "Acta de la sesión con el detalle suficiente de lo tratado", quorumReached: true,
+      evidenceUrl: EVIDENCE, slotId: febrero!.id,
+    }, MANAGER)
+
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, `${PROGRAM_ID}-a-81`))
+    expect(execution).toMatchObject({ year: PROGRAM_YEAR, month: 2, week: 1 })
   })
 
   it("exige evidencia del acta", async () => {

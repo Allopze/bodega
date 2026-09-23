@@ -26,10 +26,17 @@
 import type { AccreditationInput } from "@/lib/services/pdtp/accreditation"
 import { recordPdtpFulfillmentEvent, recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import { recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
+import { HYGIENE_MEASUREMENT_PDTP_ACTIVITY_NUMBER } from "@/lib/prevention/program-slots-2026"
 import { pdtpCatalogActivityIdForLegacyNumber } from "./catalog-activities-2026"
 
-/** N°45: "Evaluación cuantitativas por mutual". */
-const PDTP_QUANTITATIVE_MEASUREMENT_ACTIVITY_NUMBER = 45
+/**
+ * N°45: "Evaluación cuantitativas por mutual". Reexportada desde
+ * `lib/prevention/program-slots-2026.ts` —el mismo criterio que
+ * `resolveAlcotestActivityNumber` (Task 2)— para no declarar el mismo número
+ * dos veces: ese módulo ya la contrasta contra el catálogo del programa
+ * (`program-slots-2026.test.ts`).
+ */
+const PDTP_QUANTITATIVE_MEASUREMENT_ACTIVITY_NUMBER = HYGIENE_MEASUREMENT_PDTP_ACTIVITY_NUMBER
 /** N°50: "Controlar trabajadores expuestos a programa de vigilancia". */
 const PDTP_SURVEILLANCE_CONTROL_ACTIVITY_NUMBER = 50
 
@@ -93,6 +100,27 @@ export async function onExposureMeasurementRecorded(input: {
   reportReference: string | null
   /** Ruta del informe de laboratorio. Es la evidencia real de la N°45. */
   evidencePath?: string | null
+  /**
+   * Posición de la casilla N°45 que esta medición cumple, cuando cumple una
+   * (`preventionHygieneMeasurementSlots.year/scheduledMonth/scheduledWeek`).
+   * La segunda medición del año no llena casilla y no la trae: el motor
+   * resuelve entonces el período con `measuredOn`, como antes.
+   *
+   * Existe para que una evaluación informada en junio no pague un junio que el
+   * programa no planificó mientras la celda de febrero sigue en cero — el mismo
+   * criterio que simulacros, CGRD y alcotest (`onEmergencyDrillCompleted`).
+   */
+  plannedPeriod?: { year: number; month: number; week: number }
+  /**
+   * Quien registró la medición (`recordExposureMeasurement`, `access.userId`).
+   * M0.4 (ronda de corrección de Task 11): la N°45 ya cumple las dos
+   * condiciones de `AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE` —casilla y
+   * evidencia real—, así que auto-aprueba igual que un simulacro o un acta de
+   * CGRD. El gate de evidencia real lo sigue aplicando `accreditPdtpFromEvent`
+   * (`isRealEvidence`): un `reportReference` de texto que no es URL no
+   * auto-aprueba aunque la fuente ya esté en la lista.
+   */
+  recordedByUserId: string
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "hygiene",
@@ -117,8 +145,10 @@ export async function onExposureMeasurementRecorded(input: {
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_QUANTITATIVE_MEASUREMENT_ACTIVITY_NUMBER)],
     occurredAt: occurredAtFromChileDate(input.measuredOn),
+    ...(input.plannedPeriod ? { plannedPeriod: input.plannedPeriod } : {}),
     executedQuantity: 1,
     evidenceRef,
+    autoApproveByUserId: input.recordedByUserId,
     metadata: {
       groupCode: input.groupCode,
       agentCode: input.agentCode,

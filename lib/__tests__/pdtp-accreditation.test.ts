@@ -517,8 +517,10 @@ describe("accreditPdtpFromEvent", () => {
     expect(execution!.week).toBe(1)
   })
 
-  it("reserva la aprobación automática inmediata para inspecciones", async () => {
+  it("reserva la aprobación automática inmediata a las fuentes habilitadas", async () => {
     const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    // "capacitacion" (la sesión, no la ocurrencia) nunca estuvo ni está en la
+    // lista ampliada — a diferencia de "capacitacion_ocurrencia", que sí.
     await expect(accreditPdtpFromEvent({
       sourceType: "capacitacion",
       sourceId: "session-auto-invalid",
@@ -527,6 +529,93 @@ describe("accreditPdtpFromEvent", () => {
       occurredAt: `${PROGRAM_YEAR}-03-01T12:00:00.000Z`,
       autoApproveByUserId: USER_ID,
     })).rejects.toThrow("Sólo las inspecciones")
+  })
+
+  /*
+   * M0.4 (2026-09-22): alcotest, emergencia y cgrd se suman a la lista de
+   * fuentes que pueden auto-aprobar, pero — a diferencia de inspección y
+   * capacitacion_ocurrencia — sólo cuando el evento trae evidencia real (una
+   * ruta de storage o una URL http(s)). Con evidencia sintética, la ejecución
+   * queda `submitted` para revisión manual sin importar que el conector haya
+   * pasado `autoApproveByUserId`.
+   */
+  describe("M0.4 — auto-aprobación condicionada a evidencia real (alcotest, emergencia, cgrd)", () => {
+    it.each([
+      ["alcotest", "storage/prevention-alcotest-evidence/planilla.pdf"],
+      ["emergencia", "storage/prevention-drill-evidence/acta.pdf"],
+      ["cgrd", "storage/cgrd-evidence/acta.pdf"],
+    ] as const)("%s con ruta de storage se auto-aprueba", async (sourceType, evidenceRef) => {
+      const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+      const result = await accreditPdtpFromEvent({
+        sourceType,
+        sourceId: `${sourceType}-real-storage`,
+        worksiteId: WS_ID,
+        activityNumbers: [ACT_N],
+        occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
+        evidenceRef,
+        autoApproveByUserId: USER_ID,
+      })
+      const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+        .where(eq(schema.pdtpExecutions.id, result.accredited[0]!.executionId))
+      expect(execution).toMatchObject({ status: "approved", approvedByUserId: USER_ID })
+      expect((execution!.sourceMetadataJson as Record<string, unknown>).approvalMode).toBe("automatic_source_event")
+    })
+
+    it.each([
+      ["alcotest", "https://drive.chome.cl/alcotest-acta"],
+      ["emergencia", "https://drive.chome.cl/simulacro-acta"],
+      ["cgrd", "https://drive.chome.cl/cgrd-acta"],
+    ] as const)("%s con URL http(s) también se auto-aprueba", async (sourceType, evidenceRef) => {
+      const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+      const result = await accreditPdtpFromEvent({
+        sourceType,
+        sourceId: `${sourceType}-real-url`,
+        worksiteId: WS_ID,
+        activityNumbers: [ACT_N],
+        occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
+        evidenceRef,
+        autoApproveByUserId: USER_ID,
+      })
+      const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+        .where(eq(schema.pdtpExecutions.id, result.accredited[0]!.executionId))
+      expect(execution?.status).toBe("approved")
+    })
+
+    it.each([
+      ["alcotest", "Control de alcotest test-001"],
+      ["emergencia", "Simulacro completado: test-001"],
+      ["cgrd", "Acta de reunión CGRD: test-001"],
+    ] as const)("%s con un rótulo sintético queda submitted, aunque el conector pase autoApproveByUserId", async (sourceType, evidenceRef) => {
+      const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+      const result = await accreditPdtpFromEvent({
+        sourceType,
+        sourceId: `${sourceType}-synthetic`,
+        worksiteId: WS_ID,
+        activityNumbers: [ACT_N],
+        occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
+        evidenceRef,
+        autoApproveByUserId: USER_ID,
+      })
+      const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+        .where(eq(schema.pdtpExecutions.id, result.accredited[0]!.executionId))
+      expect(execution).toMatchObject({ status: "submitted", approvedByUserId: null, approvedAt: null })
+      expect((execution!.sourceMetadataJson as Record<string, unknown>).approvalMode).toBeUndefined()
+    })
+
+    it("sin evidencia (undefined) también queda submitted", async () => {
+      const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+      const result = await accreditPdtpFromEvent({
+        sourceType: "alcotest",
+        sourceId: "alcotest-sin-evidencia",
+        worksiteId: WS_ID,
+        activityNumbers: [ACT_N],
+        occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
+        autoApproveByUserId: USER_ID,
+      })
+      const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+        .where(eq(schema.pdtpExecutions.id, result.accredited[0]!.executionId))
+      expect(execution?.status).toBe("submitted")
+    })
   })
 })
 

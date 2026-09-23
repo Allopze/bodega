@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
 import { z } from "zod"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
@@ -8,6 +8,7 @@ import {
   preventionExposureGroups,
   preventionExposureMeasurements,
   preventionHygieneMeasurementEvidence,
+  preventionHygieneMeasurementSlots,
   preventionProtocolApplicabilities,
   preventionSurveillanceEnrollments,
   preventionSurveillancePrograms,
@@ -28,6 +29,9 @@ import {
   onSurveillanceControlAttended,
   onSurveillanceControlReverted,
 } from "@/lib/services/pdtp-adapters/hygiene-accreditation-connector"
+import { propagateSlotStatusToPdtp, slotPdtpDeclaration } from "@/lib/services/pdtp-adapters/slot-deviation-connector"
+import { HYGIENE_MEASUREMENT_PDTP_ACTIVITY_NUMBER } from "@/lib/prevention/program-slots-2026"
+import { REASON_MAX_LENGTH, isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 import { exposureMeasurementSchema, protocolApplicabilitySchema } from "@/lib/validation/prevention-module/hygiene"
 import {
   assessMeasurement,
@@ -35,7 +39,7 @@ import {
   nextSurveillanceDate,
   summarizeExposureAnonymized,
 } from "@/lib/prevention/hygiene"
-import { todayInChile } from "@/lib/utils"
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 
 type Client = DB | Tx
 
@@ -232,6 +236,181 @@ async function readHygieneEvidenceFromDisk(storagePath: string) {
   }
 }
 
+/* ── Casilla del programa: N°45 ───────────────────────────────────────────── */
+
+/**
+ * Cumple con esta medición la casilla N°45 del año de la faena, si queda una
+ * sin cumplir. Devuelve la casilla cumplida, o `null` si no había ninguna.
+ *
+ * **Cuál medición la cumple: la primera del año.** El programa pide una
+ * evaluación cuantitativa por faena y año; no hay un selector de casilla como
+ * en simulacros porque no hay entre qué elegir. Las mediciones siguientes
+ * existen sin casilla, igual que un simulacro extraordinario.
+ *
+ * **La evidencia gana.** También cumple una casilla declarada «no hecha» o «no
+ * aplica»: la medición prueba que se hizo. Es el mismo criterio del motor de
+ * acreditación, que al acreditar la celda retira el desvío que la casilla había
+ * propagado (`accreditation.ts`, `withdrawDeviationForAccreditedCell`); dejar
+ * la casilla en «no aplica» mientras el PDTP ya la cuenta ejecutada haría que
+ * los dos lados dijeran cosas distintas.
+ *
+ * `FOR UPDATE` porque dos mediciones de GES distintos de la misma faena no se
+ * serializan por el candado del grupo: sin él las dos podrían tomar la casilla.
+ */
+async function fulfillHygieneMeasurementSlotTx(tx: Tx, args: {
+  worksiteId: string
+  year: number
+  measurementId: string
+  userId: string
+}) {
+  const [open] = await tx.select().from(preventionHygieneMeasurementSlots)
+    .where(and(
+      eq(preventionHygieneMeasurementSlots.worksiteId, args.worksiteId),
+      eq(preventionHygieneMeasurementSlots.year, args.year),
+      ne(preventionHygieneMeasurementSlots.status, "completed"),
+    ))
+    .orderBy(asc(preventionHygieneMeasurementSlots.scheduledMonth), asc(preventionHygieneMeasurementSlots.scheduledWeek))
+    .for("update")
+    .limit(1)
+  if (!open) return null
+
+  const now = nowIso()
+  const [filled] = await tx.update(preventionHygieneMeasurementSlots).set({
+    status: "completed",
+    measurementId: args.measurementId,
+    completedAt: now,
+    completedByUserId: args.userId,
+    notApplicableAt: null,
+    notApplicableByUserId: null,
+    notApplicableReason: null,
+    version: open.version + 1,
+    updatedAt: now,
+  }).where(and(
+    eq(preventionHygieneMeasurementSlots.id, open.id),
+    eq(preventionHygieneMeasurementSlots.version, open.version),
+  )).returning()
+  if (!filled) return null
+
+  await history(tx, {
+    entityType: "measurement_slot",
+    entityId: open.id,
+    worksiteId: open.worksiteId,
+    changeType: "completed",
+    reason: `Casilla ${open.slotKey} cumplida por la medición ${args.measurementId}.`,
+    beforeState: open,
+    afterState: filled,
+    actorUserId: args.userId,
+  })
+  return filled
+}
+
+const measurementSlotStatusSchema = z.object({
+  slotId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  status: z.enum(["not_completed", "not_applicable"]),
+  observation: z.string().trim().max(3000).nullable().optional(),
+  notApplicableReason: z.string().trim().max(REASON_MAX_LENGTH).nullable().optional(),
+})
+
+/**
+ * Declara la casilla N°45 de una faena como no hecha o no aplicable, y lo
+ * refleja en la celda de la N°45 del PDTP en la misma transacción
+ * (`slot-deviation-connector.ts`).
+ *
+ * El permiso es el del hecho —`prevention:hygiene:measure`, el mismo que
+ * registra la medición—, como en las demás familias de casillas: quien puede
+ * cumplirla es quien puede decir por qué no se cumplió.
+ */
+export async function recordHygieneMeasurementSlotStatus(input: unknown, access: HygieneAccess) {
+  const data = measurementSlotStatusSchema.parse(input)
+  const notApplicableReason = data.status === "not_applicable" ? (data.notApplicableReason?.trim() || null) : null
+  // Error plano y no un refinamiento de zod: el mensaje de un `ZodError` no
+  // llega a la pantalla (`safeActionMessage`), y éste es el que el usuario
+  // necesita leer.
+  if (data.status === "not_applicable" && !isValidReason(notApplicableReason)) {
+    throw new Error(`${reasonRequiredMessage("por qué la evaluación cuantitativa no aplica en esta faena")}.`)
+  }
+
+  return db.transaction(async (tx) => {
+    const [slot] = await tx.select().from(preventionHygieneMeasurementSlots)
+      .where(eq(preventionHygieneMeasurementSlots.id, data.slotId))
+      .for("update")
+      .limit(1)
+    if (!slot) throw new Error(NOT_FOUND)
+    requireAccess(access, "prevention:hygiene:measure", slot.worksiteId)
+    if (slot.version !== data.expectedVersion) {
+      throw new Error("La casilla cambió mientras la editabas. Recarga y vuelve a intentarlo.")
+    }
+    if (slot.status === data.status) throw new Error("La casilla ya tiene ese estado.")
+    /* Una casilla cumplida no se corrige acá: el hecho es la medición, y esta
+     * vía permitiría apagar el cumplimiento sin tocar el hecho. */
+    if (slot.status === "completed") {
+      throw new Error("La casilla está cumplida por una medición: no se puede declarar no hecha ni no aplicable.")
+    }
+
+    const now = nowIso()
+    const [updated] = await tx.update(preventionHygieneMeasurementSlots).set({
+      status: data.status,
+      notApplicableAt: data.status === "not_applicable" ? now : null,
+      notApplicableByUserId: data.status === "not_applicable" ? access.userId : null,
+      notApplicableReason,
+      observation: data.observation?.trim() || null,
+      version: slot.version + 1,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionHygieneMeasurementSlots.id, slot.id),
+      eq(preventionHygieneMeasurementSlots.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new Error("La casilla cambió mientras la editabas. Recarga y vuelve a intentarlo.")
+
+    await history(tx, {
+      entityType: "measurement_slot",
+      entityId: slot.id,
+      worksiteId: slot.worksiteId,
+      changeType: "status_changed",
+      reason: data.status === "not_applicable"
+        ? `Casilla declarada no aplicable: ${notApplicableReason}`
+        : "Casilla marcada como no hecha.",
+      beforeState: slot,
+      afterState: updated,
+      actorUserId: access.userId,
+    })
+
+    const label = `de evaluación cuantitativa ${slot.slotKey}`
+    await propagateSlotStatusToPdtp(tx, {
+      source: { module: "higiene", slotId: slot.id, label },
+      worksiteId: slot.worksiteId,
+      cell: { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek },
+      activities: { activityNumbers: [HYGIENE_MEASUREMENT_PDTP_ACTIVITY_NUMBER] },
+      next: slotPdtpDeclaration(updated, label),
+      previous: slotPdtpDeclaration(slot, label),
+      userId: access.userId,
+    })
+    return updated
+  })
+}
+
+/**
+ * Las casillas N°45 del año de las faenas visibles, con el GES y la fecha de la
+ * medición que las cumplió, para la pantalla.
+ */
+export async function listHygieneMeasurementSlots(access: HygieneAccess, year: number) {
+  requireAccess(access, "prevention:hygiene:view")
+  return db.select({
+    slot: preventionHygieneMeasurementSlots,
+    measuredOn: preventionExposureMeasurements.measuredOn,
+    groupCode: preventionExposureGroups.code,
+  })
+    .from(preventionHygieneMeasurementSlots)
+    .leftJoin(preventionExposureMeasurements, eq(preventionExposureMeasurements.id, preventionHygieneMeasurementSlots.measurementId))
+    .leftJoin(preventionExposureGroups, eq(preventionExposureGroups.id, preventionExposureMeasurements.groupId))
+    .where(and(
+      eq(preventionHygieneMeasurementSlots.year, year),
+      scopeCondition(access.scope, preventionHygieneMeasurementSlots.worksiteId),
+    ))
+    .orderBy(asc(preventionHygieneMeasurementSlots.scheduledMonth), asc(preventionHygieneMeasurementSlots.scheduledWeek))
+}
+
 export async function recordExposureMeasurement(input: unknown, access: HygieneAccess) {
   const data = exposureMeasurementSchema.parse(input)
 
@@ -296,6 +475,17 @@ export async function recordExposureMeasurement(input: unknown, access: HygieneA
       uploadedByUserId: access.userId,
     })
 
+    /* La casilla de la N°45 se cumple en la misma transacción que la medición:
+     * si el registro se revierte, la casilla no puede quedar en verde sin hecho.
+     * El informe ya se exigió arriba como archivo real, así que no hay casilla
+     * cumplida sin documento. */
+    const slot = await fulfillHygieneMeasurementSlotTx(tx, {
+      worksiteId: row.group.worksiteId,
+      year: Number(data.measuredOn.slice(0, 4)),
+      measurementId: created.id,
+      userId: access.userId,
+    })
+
     // La obligación de vigilancia se recalcula con todo el historial, no sólo
     // con la medición recién ingresada.
     const measurements = await tx.select({ measuredOn: preventionExposureMeasurements.measuredOn, outcome: preventionExposureMeasurements.outcome })
@@ -331,6 +521,13 @@ export async function recordExposureMeasurement(input: unknown, access: HygieneA
       measuredOn: data.measuredOn,
       reportReference: created.reportReference,
       evidencePath: data.evidencePath,
+      recordedByUserId: access.userId,
+      /* La celda que se acredita es la que la casilla ya tenía planificada, no
+       * la del mes en que llegó el informe: una evaluación hecha en junio no
+       * debe pagar un junio que el programa no planificó mientras febrero
+       * sigue en cero. Sin casilla —la segunda medición del año— se acredita
+       * por su fecha, como antes. */
+      ...(slot ? { plannedPeriod: { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek } } : {}),
     }
 
     return { measurement: created, assessment, surveillanceRequired: obligation.required, basis: obligation.basis }
@@ -407,9 +604,27 @@ export async function enrollGroupInSurveillance(input: unknown, access: HygieneA
       ))
     if (members.length === 0) throw new Error("El grupo no tiene personas activas que matricular.")
 
+    /* Quien ya tiene un ciclo abierto en el programa no se vuelve a matricular.
+     * Desde que registrar `attended` o `exempt` abre el ciclo siguiente solo
+     * (`recordSurveillanceOutcome`/`syncSurveillanceRenewalTx`), matricular el
+     * grupo otra vez —que antes era la única forma de reabrirlo— le abriría a
+     * esa persona un segundo ciclo con otro vencimiento. Sí entra quien está
+     * ausente, o eximido sin que la renovación automática haya abierto el
+     * ciclo siguiente (programa no vigente, o ya no expuesta por este GES):
+     * matricular es cómo vuelve al programa en ese caso. */
+    const openCycles = await tx.select({ workerId: preventionSurveillanceEnrollments.workerId })
+      .from(preventionSurveillanceEnrollments)
+      .where(and(
+        eq(preventionSurveillanceEnrollments.programId, data.programId),
+        inArray(preventionSurveillanceEnrollments.workerId, members.map((member) => member.workerId)),
+        inArray(preventionSurveillanceEnrollments.status, ["pending", "summoned"]),
+      ))
+    const withOpenCycle = new Set(openCycles.map((row) => row.workerId))
+    const toEnroll = members.filter((member) => !withOpenCycle.has(member.workerId))
+
     const enrolledOn = data.startingOn ?? todayInChile()
     const dueOn = nextSurveillanceDate(enrolledOn, program.periodicityMonths)
-    const result = await tx.insert(preventionSurveillanceEnrollments).values(members.map((member) => ({
+    const result = toEnroll.length === 0 ? [] : await tx.insert(preventionSurveillanceEnrollments).values(toEnroll.map((member) => ({
       id: `surven-${nanoid()}`,
       programId: data.programId,
       workerId: member.workerId,
@@ -425,8 +640,135 @@ export async function enrollGroupInSurveillance(input: unknown, access: HygieneA
 }
 
 /**
+ * Fecha del hecho que ancla el ciclo siguiente: el día del control para
+ * `attended`, el vencimiento del propio ciclo para `exempt`. `null` para
+ * cualquier otro estado, que no abre ciclo siguiente.
+ *
+ * La exención no tiene una fecha del hecho propia —el motivo no la trae, y no
+ * hay un "día en que se examinó"—, así que se ancla en lo único cierto que ese
+ * ciclo tiene: cuándo vencía. Eso acota la exención a un solo ciclo (ronda de
+ * corrección de Task 11, Importante 3): sin esto, un ciclo `exempt` nunca
+ * abría el siguiente y la persona quedaba fuera del padrón de expuestos
+ * (`subject-registry.ts`) hasta que alguien rematriculara el grupo a mano.
+ */
+function renewalAnchorOn(enrollment: typeof preventionSurveillanceEnrollments.$inferSelect): string | null {
+  if (enrollment.status === "attended") return enrollment.attendedOn
+  if (enrollment.status === "exempt") return enrollment.dueOn
+  return null
+}
+
+/**
+ * Vencimiento del ciclo que abre un control asistido o una exención: una
+ * periodicidad después de la fecha ancla (`renewalAnchorOn`), o `null` si el
+ * estado no abre ciclo siguiente.
+ *
+ * Un caso se corre un día. Si el control se registra el mismo día de la
+ * matrícula, el ciclo siguiente vencería exactamente cuando vencía éste —ambos
+ * cuentan una periodicidad desde el mismo día—, y el índice único (programa,
+ * persona, vencimiento) descartaría la renovación en silencio: la persona
+ * quedaría sin ciclo abierto, justo lo que la renovación existe para evitar. Un
+ * día sobre una periodicidad de meses no cambia la exigencia. Para `exempt` el
+ * mismo choque no debería darse en la práctica —la ancla es el vencimiento
+ * anterior, no "hoy"—, pero la guarda es genérica y no cuesta nada dejarla.
+ */
+function nextCycleDueOn(enrollment: typeof preventionSurveillanceEnrollments.$inferSelect, periodicityMonths: number): string | null {
+  const anchor = renewalAnchorOn(enrollment)
+  if (!anchor) return null
+  const dueOn = nextSurveillanceDate(anchor, periodicityMonths)
+  return dueOn === enrollment.dueOn ? addDaysToPlainDate(dueOn, 1) : dueOn
+}
+
+/**
+ * Mantiene el ciclo siguiente de una matrícula en línea con su estado recién
+ * registrado. Devuelve lo que retiró y lo que abrió, para el historial.
+ *
+ * **Por qué existe.** `nextSurveillanceDate` sólo se calculaba al matricular el
+ * grupo: una vez que el control quedaba `attended` (o, desde la ronda de
+ * corrección de Task 11, `exempt`), nadie abría el ciclo siguiente hasta que
+ * alguien volviera a matricular a mano, y mientras tanto la persona
+ * desaparecía de los vencimientos. Ahora el cierre del ciclo abre el siguiente
+ * con el mismo INSERT que hace `enrollGroupInSurveillance` —mismo índice único
+ * `(programa, persona, vencimiento)`, mismo `onConflictDoNothing`—, con el
+ * vencimiento contado desde la fecha ancla (`renewalAnchorOn`) y no desde la
+ * matrícula.
+ *
+ * **Qué retira.** Lo que esta matrícula abrió y ya no corresponde: si dejó de
+ * estar asistida o exenta (se corrigió a ausente o citado), o si se corrigió la
+ * fecha del control y el vencimiento cambió. Sólo lo intacto —`pending`, sin
+ * citación, sin control y sin registro de salud—: un ciclo siguiente en el que
+ * alguien ya trabajó es un hecho propio, y borrarlo por corregir el anterior
+ * perdería esa gestión. Se reconoce por `renewedFromEnrollmentId`, no por fecha,
+ * para no llevarse una matrícula que alguien creó a mano con el mismo
+ * vencimiento.
+ *
+ * **Cuándo no abre nada.** Programa no vigente (tampoco admite matrículas),
+ * persona inactiva o que ya salió del GES de origen (ya no está expuesta por
+ * él), o persona que ya tiene otro ciclo en curso: un ciclo siguiente que ya
+ * avanzó o uno abierto en el programa por otra vía. Nunca dos ciclos abiertos a
+ * la vez para la misma persona y programa.
+ */
+async function syncSurveillanceRenewalTx(tx: Tx, args: {
+  enrollment: typeof preventionSurveillanceEnrollments.$inferSelect
+  program: typeof preventionSurveillancePrograms.$inferSelect
+}) {
+  const { enrollment, program } = args
+  const nextDueOn = nextCycleDueOn(enrollment, program.periodicityMonths)
+
+  const retired = await tx.delete(preventionSurveillanceEnrollments).where(and(
+    eq(preventionSurveillanceEnrollments.renewedFromEnrollmentId, enrollment.id),
+    eq(preventionSurveillanceEnrollments.status, "pending"),
+    isNull(preventionSurveillanceEnrollments.summonedAt),
+    isNull(preventionSurveillanceEnrollments.attendedOn),
+    isNull(preventionSurveillanceEnrollments.healthRecordId),
+    nextDueOn ? ne(preventionSurveillanceEnrollments.dueOn, nextDueOn) : undefined,
+  )).returning()
+
+  if (!nextDueOn || program.status !== "active" || !enrollment.groupId) return { retired, created: null }
+
+  const [exposure] = await tx.select({ memberId: preventionExposureGroupMembers.id })
+    .from(preventionExposureGroupMembers)
+    .innerJoin(workers, eq(workers.id, preventionExposureGroupMembers.workerId))
+    .where(and(
+      eq(preventionExposureGroupMembers.groupId, enrollment.groupId),
+      eq(preventionExposureGroupMembers.workerId, enrollment.workerId),
+      isNull(preventionExposureGroupMembers.leftOn),
+      eq(workers.isActive, true),
+    ))
+    .limit(1)
+  if (!exposure) return { retired, created: null }
+
+  const [cycleUnderway] = await tx.select({ id: preventionSurveillanceEnrollments.id })
+    .from(preventionSurveillanceEnrollments)
+    .where(and(
+      eq(preventionSurveillanceEnrollments.programId, enrollment.programId),
+      eq(preventionSurveillanceEnrollments.workerId, enrollment.workerId),
+      ne(preventionSurveillanceEnrollments.id, enrollment.id),
+      ne(preventionSurveillanceEnrollments.dueOn, nextDueOn),
+      sql`(${preventionSurveillanceEnrollments.renewedFromEnrollmentId} = ${enrollment.id} OR ${preventionSurveillanceEnrollments.status} IN ('pending', 'summoned'))`,
+    ))
+    .limit(1)
+  if (cycleUnderway) return { retired, created: null }
+
+  const [created] = await tx.insert(preventionSurveillanceEnrollments).values({
+    id: `surven-${nanoid()}`,
+    programId: enrollment.programId,
+    workerId: enrollment.workerId,
+    groupId: enrollment.groupId,
+    enrolledOn: renewalAnchorOn(enrollment)!,
+    dueOn: nextDueOn,
+    renewedFromEnrollmentId: enrollment.id,
+  }).onConflictDoNothing().returning()
+  return { retired, created: created ?? null }
+}
+
+/**
  * Registra el resultado del control. El dato clínico no se guarda aquí: se
  * enlaza al registro de salud cifrado que ya existe en el dominio sensible.
+ *
+ * Asistir o eximir abre el ciclo siguiente; corregir uno de los dos retira el
+ * ciclo que había abierto si nadie lo tocó (`syncSurveillanceRenewalTx`). Esto
+ * acota la exención a un solo ciclo: la persona vuelve a estar `pending` para
+ * el siguiente en vez de quedar fuera del padrón de expuestos para siempre.
  */
 export async function recordSurveillanceOutcome(input: unknown, access: HygieneAccess) {
   const data = z.object({
@@ -434,16 +776,21 @@ export async function recordSurveillanceOutcome(input: unknown, access: HygieneA
     status: z.enum(["summoned", "attended", "absent", "exempt"]),
     attendedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     healthRecordId: z.string().min(1).nullable().optional(),
-    absenceReason: z.string().trim().max(1000).nullable().optional(),
+    absenceReason: z.string().trim().max(REASON_MAX_LENGTH).nullable().optional(),
   }).parse(input)
 
   let accreditation: Parameters<typeof onSurveillanceControlAttended>[0] | null = null
   let revocation: Parameters<typeof onSurveillanceControlReverted>[0] | null = null
   const result = await db.transaction(async (tx) => {
+    // `FOR UPDATE` sobre la matrícula: el ciclo siguiente se abre y se retira
+    // mirando su estado, y dos registros concurrentes de la misma persona no
+    // pueden decidirlo cada uno sobre una foto distinta.
     const [row] = await tx.select({ enrollment: preventionSurveillanceEnrollments, program: preventionSurveillancePrograms })
       .from(preventionSurveillanceEnrollments)
       .innerJoin(preventionSurveillancePrograms, eq(preventionSurveillanceEnrollments.programId, preventionSurveillancePrograms.id))
-      .where(eq(preventionSurveillanceEnrollments.id, data.enrollmentId)).limit(1)
+      .where(eq(preventionSurveillanceEnrollments.id, data.enrollmentId))
+      .for("update", { of: preventionSurveillanceEnrollments })
+      .limit(1)
     if (!row) throw new Error(NOT_FOUND)
     requireAccess(access, "prevention:hygiene:assess", row.program.worksiteId)
 
@@ -453,6 +800,13 @@ export async function recordSurveillanceOutcome(input: unknown, access: HygieneA
     if (data.status === "absent" && (data.absenceReason?.trim().length ?? 0) < 5) {
       throw new Error("Registrar una ausencia exige indicar el motivo.")
     }
+    /* Eximir saca a la persona del padrón de expuestos de la N°50
+     * (`subject-registry.ts`): sin motivo, la cobertura se podría subir
+     * eximiendo. Diez caracteres y no los cinco de la ausencia: una exención se
+     * parece más a un «no aplica» que a un «no vino». */
+    if (data.status === "exempt" && !isValidReason(data.absenceReason)) {
+      throw new Error(`${reasonRequiredMessage("por qué se exime a la persona de este control")}.`)
+    }
 
     const now = nowIso()
     const [updated] = await tx.update(preventionSurveillanceEnrollments).set({
@@ -460,11 +814,32 @@ export async function recordSurveillanceOutcome(input: unknown, access: HygieneA
       summonedAt: data.status === "summoned" ? now : row.enrollment.summonedAt,
       attendedOn: data.attendedOn ?? row.enrollment.attendedOn,
       healthRecordId: data.healthRecordId ?? row.enrollment.healthRecordId,
-      absenceReason: data.status === "absent" ? data.absenceReason ?? null : null,
+      absenceReason: data.status === "absent" || data.status === "exempt" ? data.absenceReason?.trim() || null : null,
       updatedAt: now,
     }).where(eq(preventionSurveillanceEnrollments.id, data.enrollmentId)).returning()
     if (!updated) throw new Error("No se pudo registrar el resultado.")
     await history(tx, { entityType: "enrollment", entityId: data.enrollmentId, worksiteId: row.program.worksiteId, changeType: data.status, reason: data.absenceReason ?? `Control ${data.status}`, actorUserId: access.userId })
+
+    const renewal = await syncSurveillanceRenewalTx(tx, { enrollment: updated, program: row.program })
+    for (const withdrawn of renewal.retired) {
+      await history(tx, {
+        entityType: "enrollment", entityId: withdrawn.id, worksiteId: row.program.worksiteId,
+        changeType: "renewal_withdrawn",
+        reason: `Ciclo con vencimiento ${withdrawn.dueOn} retirado: el control que lo abrió ahora es ${data.status}${updated.attendedOn && data.status === "attended" ? ` del ${updated.attendedOn}` : ""}.`,
+        beforeState: withdrawn, actorUserId: access.userId,
+      })
+    }
+    if (renewal.created) {
+      const openedReason = data.status === "exempt"
+        ? `Ciclo siguiente abierto por la exención del ciclo con vencimiento ${updated.dueOn}: vence ${renewal.created.dueOn}.`
+        : `Ciclo siguiente abierto por el control del ${updated.attendedOn}: vence ${renewal.created.dueOn}.`
+      await history(tx, {
+        entityType: "enrollment", entityId: renewal.created.id, worksiteId: row.program.worksiteId,
+        changeType: "renewed",
+        reason: openedReason,
+        afterState: renewal.created, actorUserId: access.userId,
+      })
+    }
 
     // N°50 del PDTP, una ejecución por persona controlada. El evento es
     // bidireccional: corregir un `attended` a `absent` retira el control que
@@ -528,7 +903,10 @@ export async function getAnonymizedExposureSummary(access: HygieneAccess) {
     groupName: preventionExposureGroups.name,
     agentName: preventionExposureAgents.name,
     exposedCount: sql<number>`(SELECT COUNT(*)::int FROM prevention_exposure_group_members m WHERE m.group_id = ${preventionExposureGroups.id} AND m.left_on IS NULL)`,
-    attendedCount: sql<number>`(SELECT COUNT(*)::int FROM prevention_surveillance_enrollments e WHERE e.group_id = ${preventionExposureGroups.id} AND e.status = 'attended')`,
+    // Personas y no matrículas: con el ciclo siguiente abierto al asistir, una
+    // persona controlada dos años seguidos no puede contar dos veces contra un
+    // solo expuesto.
+    attendedCount: sql<number>`(SELECT COUNT(DISTINCT e.worker_id)::int FROM prevention_surveillance_enrollments e WHERE e.group_id = ${preventionExposureGroups.id} AND e.status = 'attended')`,
     latestOutcome: sql<string | null>`(SELECT x.outcome FROM prevention_exposure_measurements x WHERE x.group_id = ${preventionExposureGroups.id} ORDER BY x.measured_on DESC LIMIT 1)`,
   })
     .from(preventionExposureGroups)
@@ -540,14 +918,22 @@ export async function getAnonymizedExposureSummary(access: HygieneAccess) {
   return summarizeExposureAnonymized(rows)
 }
 
+/**
+ * Programas de vigilancia con su cobertura.
+ *
+ * `enrolled` y `attended` cuentan **personas**, no matrículas: cada control
+ * asistido abre el ciclo siguiente (`recordSurveillanceOutcome`), así que contar
+ * filas haría caer la cobertura a la mitad en cuanto todos se controlan. El
+ * vencido sí cuenta ciclos, porque cada uno es un control que falta.
+ */
 export async function listSurveillancePrograms(access: HygieneAccess) {
   requireAccess(access, "prevention:hygiene:view")
   return db.select({
     program: preventionSurveillancePrograms,
     worksiteName: worksites.name,
     agentName: preventionExposureAgents.name,
-    enrolled: sql<number>`(SELECT COUNT(*)::int FROM prevention_surveillance_enrollments e WHERE e.program_id = ${preventionSurveillancePrograms.id})`,
-    attended: sql<number>`(SELECT COUNT(*)::int FROM prevention_surveillance_enrollments e WHERE e.program_id = ${preventionSurveillancePrograms.id} AND e.status = 'attended')`,
+    enrolled: sql<number>`(SELECT COUNT(DISTINCT e.worker_id)::int FROM prevention_surveillance_enrollments e WHERE e.program_id = ${preventionSurveillancePrograms.id})`,
+    attended: sql<number>`(SELECT COUNT(DISTINCT e.worker_id)::int FROM prevention_surveillance_enrollments e WHERE e.program_id = ${preventionSurveillancePrograms.id} AND e.status = 'attended')`,
     overdue: sql<number>`(SELECT COUNT(*)::int FROM prevention_surveillance_enrollments e WHERE e.program_id = ${preventionSurveillancePrograms.id} AND e.status IN ('pending','summoned') AND e.due_on < ${todayInChile()})`,
   })
     .from(preventionSurveillancePrograms)

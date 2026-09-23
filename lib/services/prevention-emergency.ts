@@ -22,9 +22,11 @@ import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { assessDrillCompletion, assessPlanReadiness } from "@/lib/prevention/emergency"
 import type { EmergencyQuickFilter } from "@/lib/prevention/emergency-list-filters"
+import { DRILL_PDTP_ACTIVITY_NUMBER } from "@/lib/prevention/program-slots-2026"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { onEmergencyDrillCompleted, onEmergencyPlanApproved } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { replacePdtpAccreditationBindings, resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
+import { propagateSlotStatusToPdtp, slotPdtpDeclaration } from "@/lib/services/pdtp-adapters/slot-deviation-connector"
 import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { createNotifications } from "@/lib/services/notifications"
@@ -778,7 +780,11 @@ const drillSlotStatusInput = z.object({
   }
 })
 
-/** Declara una casilla de simulacro como no hecha o no aplicable. */
+/**
+ * Declara una casilla de simulacro como no hecha o no aplicable, y lo refleja
+ * en la celda de la N°84 del PDTP en la misma transacción
+ * (`slot-deviation-connector.ts`).
+ */
 export async function recordDrillSlotStatus(input: unknown, access: EmergencyAccess) {
   const data = drillSlotStatusInput.parse(input)
   return db.transaction(async (tx) => {
@@ -826,6 +832,17 @@ export async function recordDrillSlotStatus(input: unknown, access: EmergencyAcc
       beforeState: slot,
       afterState: updated,
       actorUserId: access.userId,
+    })
+
+    const label = `de simulacro ${slot.slotKey}`
+    await propagateSlotStatusToPdtp(tx, {
+      source: { module: "emergencias", slotId: slot.id, label },
+      worksiteId: slot.worksiteId,
+      cell: { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek },
+      activities: { activityNumbers: [DRILL_PDTP_ACTIVITY_NUMBER] },
+      next: slotPdtpDeclaration(updated, label),
+      previous: slotPdtpDeclaration(slot, label),
+      userId: access.userId,
     })
     return updated
   })
@@ -929,6 +946,7 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
 
     /* La casilla se cumple en la misma transacción que el simulacro: si el
      * cierre se revierte, la casilla no puede quedar en verde sin hecho. */
+    let plannedPeriod: { year: number; month: number; week: number } | undefined
     if (data.slotId) {
       const [slot] = await tx.select().from(preventionEmergencyDrillSlots)
         .where(eq(preventionEmergencyDrillSlots.id, data.slotId)).limit(1)
@@ -950,6 +968,10 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
         version: slot.version + 1,
         updatedAt: now,
       }).where(eq(preventionEmergencyDrillSlots.id, slot.id))
+      /* La celda que se acredita es la que la casilla ya tenía planificada, no
+       * la del mes en que el simulacro llegó registrado: uno completado tarde
+       * no debe pagar un mes que no le corresponde. */
+      plannedPeriod = { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek }
     }
 
     // Auto-acreditación PDTP: actividades del plan de emergencia. Se dispara
@@ -965,10 +987,14 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
         worksiteId: drill.worksiteId,
         executedAt: data.executedAt,
         ...target,
+        ...(plannedPeriod ? { plannedPeriod } : {}),
         /* La acreditación referencia el acta real. El rótulo sintético
          * «Simulacro completado: <id>» desaparece porque ya no existe un camino
          * que cierre un simulacro sin evidencia. */
         evidencePath: activeEvidence[0]!.storagePath,
+        // M0.4: quien completó el simulacro es quien lo valida; el motor sigue
+        // exigiendo que el acta sea real para auto-aprobar.
+        completedByUserId: access.userId,
       }
     }
 

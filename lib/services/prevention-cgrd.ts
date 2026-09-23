@@ -59,6 +59,8 @@ import {
   onGrdMeetingClosed,
 } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
+import { propagateSlotStatusToPdtp, slotPdtpDeclaration } from "@/lib/services/pdtp-adapters/slot-deviation-connector"
+import { GRD_MEETING_PDTP_ACTIVITY_NUMBER } from "@/lib/prevention/program-slots-2026"
 import {
   grdCommitteeConstituteSchema,
   grdCommitteeDissolveSchema,
@@ -616,6 +618,7 @@ export async function recordGrdMeeting(input: unknown, access: CgrdAccess) {
      * `slotId` es opcional a propósito. Una sesión extraordinaria se registra
      * igual y no llena ninguna casilla, así que no cuenta en el denominador
      * del programa — que es exactamente lo que debe pasar. */
+    let plannedPeriod: { year: number; month: number; week: number } | undefined
     if (data.slotId) {
       const [slot] = await tx.select().from(preventionGrdMeetingSlots)
         .where(eq(preventionGrdMeetingSlots.id, data.slotId)).limit(1)
@@ -633,6 +636,10 @@ export async function recordGrdMeeting(input: unknown, access: CgrdAccess) {
         version: slot.version + 1,
         updatedAt: new Date().toISOString(),
       }).where(eq(preventionGrdMeetingSlots.id, slot.id))
+      /* La celda que el acta acredita es la que la casilla ya tenía
+       * planificada, no la del mes en que el acta se cargó: una sesión
+       * registrada tarde no debe pagar un mes que no le corresponde. */
+      plannedPeriod = { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek }
     }
 
     // Los acuerdos van antes de cerrar la transacción: si `createCapaActionWithClient`
@@ -663,7 +670,7 @@ export async function recordGrdMeeting(input: unknown, access: CgrdAccess) {
       changeType: "recorded", reason: `Acta registrada con ${data.agreements.length} acuerdo(s)`,
       afterState: created, actorUserId: access.userId,
     })
-    return { meeting: created, worksiteId: committee.worksiteId }
+    return { meeting: created, worksiteId: committee.worksiteId, plannedPeriod }
   })
 
   /* `heldOn` y no `createdAt`: el acta se carga después de la sesión, y el
@@ -675,6 +682,9 @@ export async function recordGrdMeeting(input: unknown, access: CgrdAccess) {
   await onGrdMeetingClosed({
     meetingId: result.meeting.id, worksiteId: result.worksiteId,
     heldOn: result.meeting.heldOn, evidenceUrl: result.meeting.evidenceUrl,
+    ...(result.plannedPeriod ? { plannedPeriod: result.plannedPeriod } : {}),
+    // M0.4: quien registró el acta es quien la valida.
+    recordedByUserId: access.userId,
   })
   return result.meeting
 }
@@ -710,7 +720,21 @@ const grdSlotStatusInput = z.object({
   }
 })
 
-/** Declara una casilla de sesión del CGRD como no hecha o no aplicable. */
+/**
+ * Cómo se nombra la casilla en el motivo del desvío. Uno solo para las dos vías
+ * que la dejan «no hecha» (esta y `annulGrdMeeting`): el conector reconoce el
+ * desvío que la casilla propagó comparando el motivo, y un rótulo distinto en
+ * cada vía rompería esa comparación.
+ */
+function grdMeetingSlotLabel(slotKey: string): string {
+  return `de sesión del CGRD ${slotKey}`
+}
+
+/**
+ * Declara una casilla de sesión del CGRD como no hecha o no aplicable, y lo
+ * refleja en la celda de la N°81 del PDTP en la misma transacción
+ * (`slot-deviation-connector.ts`).
+ */
 export async function recordGrdMeetingSlotStatus(input: unknown, access: CgrdAccess) {
   const data = grdSlotStatusInput.parse(input)
   return db.transaction(async (tx) => {
@@ -758,6 +782,17 @@ export async function recordGrdMeetingSlotStatus(input: unknown, access: CgrdAcc
       beforeState: slot,
       afterState: updated,
       actorUserId: access.userId,
+    })
+
+    const label = grdMeetingSlotLabel(slot.slotKey)
+    await propagateSlotStatusToPdtp(tx, {
+      source: { module: "cgrd", slotId: slot.id, label },
+      worksiteId: slot.worksiteId,
+      cell: { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek },
+      activities: { activityNumbers: [GRD_MEETING_PDTP_ACTIVITY_NUMBER] },
+      next: slotPdtpDeclaration(updated, label),
+      previous: slotPdtpDeclaration(slot, label),
+      userId: access.userId,
     })
     return updated
   })
@@ -812,14 +847,33 @@ export async function annulGrdMeeting(input: unknown, access: CgrdAccess) {
      * dejó de estarlo, y eso es un incumplimiento declarado, no una tarea que
      * nadie tocó todavía. Sin esta vuelta atrás, anular un acta dejaba la
      * casilla en verde sin acta: el checklist mentía. */
-    await tx.update(preventionGrdMeetingSlots).set({
+    const reverted = await tx.update(preventionGrdMeetingSlots).set({
       status: "not_completed",
       meetingId: null,
       completedAt: null,
       completedByUserId: null,
       observation: `Acta anulada: ${data.reason}`,
       updatedAt: now,
-    }).where(eq(preventionGrdMeetingSlots.meetingId, updated.id))
+    }).where(eq(preventionGrdMeetingSlots.meetingId, updated.id)).returning()
+
+    /* Esa vuelta a «no hecha» llega a la celda de la N°81 como `not_performed`,
+     * con el mismo conector que `recordGrdMeetingSlotStatus` y el motivo de la
+     * anulación (va en la observación). `previous: null` porque la casilla
+     * venía «hecha», que no propaga desvío. Un `not_performed` no choca con la
+     * ejecución que todavía acredita el acta —la revocación va después del
+     * commit—: no saca la celda del denominador, sólo declara el motivo. */
+    for (const slot of reverted) {
+      const label = grdMeetingSlotLabel(slot.slotKey)
+      await propagateSlotStatusToPdtp(tx, {
+        source: { module: "cgrd", slotId: slot.id, label },
+        worksiteId: slot.worksiteId,
+        cell: { year: slot.year, month: slot.scheduledMonth, week: slot.scheduledWeek },
+        activities: { activityNumbers: [GRD_MEETING_PDTP_ACTIVITY_NUMBER] },
+        next: slotPdtpDeclaration(slot, label),
+        previous: null,
+        userId: access.userId,
+      })
+    }
 
     // Mismo `sourceId` con prefijo que usó `onGrdMeetingClosed` al registrarla.
     revocation = {

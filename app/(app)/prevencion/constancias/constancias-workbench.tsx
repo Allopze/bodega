@@ -10,6 +10,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { MONTH_LABELS } from "@/lib/services/pdtp/constants"
 import type { listPdtpConstanciaActivities } from "@/lib/services/prevention-pdtp"
+import { PdtpDeviationForm } from "../pdtp/pdtp-deviation-form"
 import { PdtpExecutionForm } from "../pdtp/pdtp-execution-form"
 
 type ConstanciaView = Awaited<ReturnType<typeof listPdtpConstanciaActivities>>
@@ -120,6 +121,22 @@ export function ConstanciasWorkbench({
                         defaultMonth={row.dueMonth}
                         effectiveFrom={view.effectiveFrom}
                         evidenceRequirement={row.evidenceRequirement}
+                        // Este workbench sólo lista actividades `mechanism:
+                        // 'constancia'` (ver `listPdtpConstanciaActivities`
+                        // en lib/services/pdtp/constancias.ts) — no viene en
+                        // `PdtpConstanciaDebt` porque acá siempre es ese valor.
+                        mechanism="constancia"
+                      />
+                      <PdtpDeviationForm
+                        activityId={row.activityId}
+                        activityN={row.n}
+                        activityName={row.activityName}
+                        worksiteId={row.worksiteId}
+                        year={view.programYear}
+                        defaultMonth={row.dueMonth}
+                        defaultWeek={row.dueWeek}
+                        canDeclareNotPerformed={canExecute}
+                        canDeclareNotApplicable={canExecute}
                       />
                     </div>
                   )}

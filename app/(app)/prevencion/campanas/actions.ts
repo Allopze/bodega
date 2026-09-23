@@ -9,23 +9,21 @@ import type { ActionState } from "@/lib/validation/prevention"
 import {
   CampaignDomainError,
   closeCampaign,
-  createCampaign,
   setCampaignPdtpActivities,
   type CampaignAccess,
 } from "@/lib/services/prevention-campaigns"
 
-const createCampaignSchema = z.object({
-  worksiteId: z.string().min(1, "Selecciona una faena"),
-  title: z.string().trim().min(3, "El título debe tener al menos 3 caracteres"),
-  description: z.string().trim().optional(),
-  // Sin default: el diálogo ofrece las cinco del programa y quien crea la
-  // campaña elige. Fijarlo acá era lo que dejaba las N°86 a N°89 inalcanzables.
-  pdtpActivityNumbers: z.array(z.number().int().positive()).default([]),
-  catalogActivityIds: z.array(z.string().min(1)).min(1).optional(),
-}).refine((value) => value.catalogActivityIds?.length || value.pdtpActivityNumbers.length, { message: "Selecciona la actividad que acredita" })
-
 const closeCampaignSchema = z.object({
   campaignId: z.string().min(1),
+  // Task 13 (2026-09-23): faltaba en este schema aunque `closeCampaign`
+  // (lib/services/prevention-campaigns.ts) lo exige y el cliente siempre lo
+  // envía (campanas-client.tsx). Sin declararlo acá, zod lo descartaba en
+  // silencio antes de llegar al servicio, que entonces rechazaba con "Indica
+  // la fecha en que se hizo la campaña" — "Marcar como hecha" nunca
+  // funcionaba desde la UI, para ninguna campaña. Se corrige acá porque el
+  // requisito explícito de esta tarea es que las campañas `pending` que ya
+  // existían sigan siendo cerrables.
+  heldOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Indica la fecha en que se hizo la campaña (YYYY-MM-DD)."),
   evidenceUrl: z.string().trim().min(1, "Adjunta la evidencia de difusión de la campaña."),
 })
 
@@ -58,16 +56,38 @@ function campaignFailure(error: unknown, action: string): ActionState {
   return unexpectedActionError(error, `prevencion/campanas/${action}`)
 }
 
-export async function createCampaignAction(formData: unknown): Promise<ActionState> {
+/**
+ * Task 13 (2026-09-23): esta acción ya no crea campañas.
+ *
+ * Las N°85 a N°89 del programa 2026 nacen ahora como ítems `CAM-*` del
+ * catálogo de capacitación (`lib/prevention/training-occurrences-catalog.ts`)
+ * y se acreditan desde `/prevencion/capacitacion`. Dejar esta ruta de alta
+ * viva — aunque `campanas-client.tsx` ya no ofrezca el diálogo — habría sido
+ * el mismo defecto que dejó la N°88 sólo alcanzable desde acá (ver el
+ * comentario de `modules/prevention/manifest.ts`): quitar el botón de la UI
+ * no es una barrera si el endpoint sigue aceptando la misma llamada. Se
+ * conserva la función (no la ruta) para no romper el tipo `ActionState` que
+ * el cliente todavía podría invocar desde una pestaña vieja, y para que quien
+ * la llame directamente reciba un mensaje accionable en vez de un 404 o un
+ * error genérico.
+ *
+ * `closeCampaignAction` y `setCampaignPdtpActivitiesAction` SÍ se conservan
+ * intactas: hay campañas `pending` creadas antes de este cambio (35 en la
+ * base de datos de desarrollo al momento de esta tarea) que deben poder
+ * cerrarse sin quedar huérfanas.
+ */
+export async function createCampaignAction(_formData: unknown): Promise<ActionState> {
   try {
-    const access = await getAccess()
-    const parsed = createCampaignSchema.parse(formData)
-    await createCampaign(parsed, access)
-    revalidatePath("/prevencion/campanas")
-    return { ok: true }
+    await getAccess()
   } catch (err: unknown) {
     return campaignFailure(err, "createCampaign")
   }
+  return campaignFailure(
+    new CampaignDomainError(
+      "Las campañas del programa 2026 (N°85 a N°89) ya no se crean acá. Regístralas y ciérralas desde Capacitación (/prevencion/capacitacion), la única vía que acredita el PDTP para esas actividades.",
+    ),
+    "createCampaign",
+  )
 }
 
 export async function setCampaignPdtpActivitiesAction(formData: unknown): Promise<ActionState> {

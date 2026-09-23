@@ -377,9 +377,28 @@ export async function onEmergencyDrillCompleted(input: {
   executedAt: string
   activityNumbers?: number[]
   catalogActivityIds?: string[]
+  /**
+   * Posición de la casilla del cronograma que este simulacro cumple, cuando
+   * cumple alguna (`preventionEmergencyDrillSlots.year/scheduledMonth/scheduledWeek`).
+   * Un simulacro extraordinario no llena casilla y no la trae: el motor
+   * entonces resuelve el período con `executedAt`, como antes.
+   *
+   * Existe para que un simulacro registrado tarde no pague el mes en que
+   * llegó el hecho, sino la celda que el programa ya tenía planificada — el
+   * mismo criterio que capacitación (`prevention-training-occurrences.ts`).
+   */
+  plannedPeriod?: { year: number; month: number; week: number }
   /** La ruta del acta. Siempre presente: desde el 2026-09-19 no existe un
    *  camino que cierre un simulacro sin evidencia. */
   evidencePath: string
+  /**
+   * Quien completó el simulacro (`completeEmergencyDrill`, `access.userId`).
+   * M0.4: el cierre de un simulacro con acta real ya es la validación —
+   * `accreditPdtpFromEvent` exige además `evidencePath` real para auto-aprobar
+   * (`AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE`); si el motor alguna vez
+   * recibiera una ruta sintética, la ejecución queda `submitted` igual.
+   */
+  completedByUserId: string
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "emergencies",
@@ -398,6 +417,7 @@ export async function onEmergencyDrillCompleted(input: {
     worksiteId: input.worksiteId,
     ...(input.catalogActivityIds?.length ? { catalogActivityIds: input.catalogActivityIds } : { activityNumbers: input.activityNumbers }),
     occurredAt: input.executedAt,
+    ...(input.plannedPeriod ? { plannedPeriod: input.plannedPeriod } : {}),
     /* Un simulacro es una actividad, no una cuenta de asistentes. Acá iba
      * `Math.max(1, participantCount)`, así que un simulacro con 30 presentes
      * acreditaba cantidad 30 contra una cantidad planificada de 1 e inflaba el
@@ -410,6 +430,7 @@ export async function onEmergencyDrillCompleted(input: {
      * tampoco: siempre se referencia el archivo real.
      */
     evidenceRef: input.evidencePath,
+    autoApproveByUserId: input.completedByUserId,
   })
 }
 
@@ -789,6 +810,25 @@ export async function onGrdMeetingClosed(input: {
    *  con la que el motor resuelve el período y el año del programa. */
   heldOn: string
   evidenceUrl: string
+  /**
+   * Posición de la casilla de sesión que esta acta cumple, cuando cumple
+   * alguna (`preventionGrdMeetingSlots.year/scheduledMonth/scheduledWeek`).
+   * Una sesión extraordinaria no llena casilla y no la trae: el motor
+   * resuelve el período con `heldOn`, como antes.
+   *
+   * Sin esto, un acta cargada después de que el mes planificado ya cerró
+   * acreditaba el mes de la digitación en vez de la celda que el programa
+   * esperaba.
+   */
+  plannedPeriod?: { year: number; month: number; week: number }
+  /**
+   * Quien registró el acta (`recordGrdMeeting`, `access.userId`). M0.4: el
+   * acta ya exige `evidenceUrl` real por validación
+   * (`lib/validation/prevention-module/cgrd.ts`), así que en la práctica esta
+   * fuente siempre auto-aprueba — el gate de evidencia real lo aplica
+   * igualmente `accreditPdtpFromEvent`, no este conector.
+   */
+  recordedByUserId: string
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "cgrd",
@@ -807,5 +847,7 @@ export async function onGrdMeetingClosed(input: {
     occurredAt: input.heldOn,
     executedQuantity: 1,
     evidenceRef: input.evidenceUrl,
+    ...(input.plannedPeriod ? { plannedPeriod: input.plannedPeriod } : {}),
+    autoApproveByUserId: input.recordedByUserId,
   })
 }

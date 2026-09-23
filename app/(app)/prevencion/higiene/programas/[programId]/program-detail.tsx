@@ -14,6 +14,7 @@ import { enrollGroupInSurveillanceAction, recordSurveillanceOutcomeAction } from
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { todayInChile } from "@/lib/utils"
+import { REASON_MAX_LENGTH, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 
 interface ProgramInfo {
   id: string
@@ -27,6 +28,7 @@ interface ProgramInfo {
 
 interface EnrollmentInfo {
   id: string
+  workerId: string
   workerName: string
   groupName: string | null
   enrolledOn: string
@@ -57,12 +59,16 @@ export function ProgramDetail({ program, enrollments, eligibleGroups, canManage 
   canManage: boolean
 }) {
   const overdue = enrollments.filter((item) => ["pending", "summoned"].includes(item.status) && item.dueOn < todayInChile()).length
+  // Personas, no filas: cada control asistido abre el ciclo siguiente, así que
+  // una persona controlada aparece dos veces en la tabla (el ciclo cerrado y el
+  // que viene).
+  const enrolledPeople = new Set(enrollments.map((item) => item.workerId)).size
 
   const facts = [
     { label: "Protocolo", value: program.protocol },
     { label: "Periodicidad", value: `${program.periodicityMonths} meses` },
     { label: "Estado", value: PROGRAM_STATUS_LABELS[program.status] ?? program.status },
-    { label: "Matriculados", value: String(enrollments.length) },
+    { label: "Matriculados", value: String(enrolledPeople) },
     { label: "Vencidos", value: String(overdue) },
   ]
 
@@ -81,14 +87,14 @@ export function ProgramDetail({ program, enrollments, eligibleGroups, canManage 
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Matrículas ({enrollments.length})</h2>
+          <h2 className="text-sm font-semibold">Ciclos de control ({enrollments.length})</h2>
           {canManage && program.status === "active" && eligibleGroups.length > 0 && (
             <EnrollGroupDialog programId={program.id} eligibleGroups={eligibleGroups} />
           )}
         </div>
         {enrollments.length === 0 ? (
           <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">
-            Sin matrículas. Matricular un grupo deriva su nómina completa desde el GES.
+            Sin matrículas. Matricular un grupo deriva su nómina completa desde el GES; después, cada control asistido abre solo el ciclo siguiente.
           </p>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
@@ -112,13 +118,13 @@ export function ProgramDetail({ program, enrollments, eligibleGroups, canManage 
                     <TableCell className="text-sm tabular-nums">{item.dueOn}</TableCell>
                     <TableCell>
                       <MetaBadge meta={{ label: SURVEILLANCE_STATUS_LABELS[item.status] ?? item.status, variant: statusBadgeVariant(item.status) }} />
-                      {item.status === "absent" && item.absenceReason && (
+                      {(item.status === "absent" || item.status === "exempt") && item.absenceReason && (
                         <span className="mt-1 block text-xs text-[var(--color-text-subtle)]">{item.absenceReason}</span>
                       )}
                     </TableCell>
                     {canManage && (
                       <TableCell className="text-right">
-                        {(item.status === "pending" || item.status === "summoned") && <OutcomeDialog enrollment={item} />}
+                        {(item.status === "pending" || item.status === "summoned") && <OutcomeDialog enrollment={item} periodicityMonths={program.periodicityMonths} />}
                       </TableCell>
                     )}
                   </TableRow>
@@ -183,7 +189,7 @@ const OUTCOME_OPTIONS: { value: SurveillanceOutcomeStatus; label: string }[] = [
   { value: "exempt", label: "Exento" },
 ]
 
-function OutcomeDialog({ enrollment }: { enrollment: EnrollmentInfo }) {
+function OutcomeDialog({ enrollment, periodicityMonths }: { enrollment: EnrollmentInfo; periodicityMonths: number }) {
   const [open, setOpen] = React.useState(false)
   const [status, setStatus] = React.useState<SurveillanceOutcomeStatus>("summoned")
   const operation = useOperation()
@@ -200,7 +206,7 @@ function OutcomeDialog({ enrollment }: { enrollment: EnrollmentInfo }) {
       status,
       attendedOn: status === "attended" ? attendedOn || null : null,
       healthRecordId: healthRecordId || null,
-      absenceReason: status === "absent" ? absenceReason || null : null,
+      absenceReason: status === "absent" || status === "exempt" ? absenceReason || null : null,
     }), () => setOpen(false))
   }
 
@@ -224,10 +230,29 @@ function OutcomeDialog({ enrollment }: { enrollment: EnrollmentInfo }) {
               </Field>
             </>
           )}
+          {status === "attended" && (
+            <p className="text-xs text-[var(--color-text-subtle)]">
+              Al guardar se abre el ciclo siguiente de esta persona, con vencimiento a {periodicityMonths} meses de la fecha del control, mientras siga en el grupo de exposición.
+            </p>
+          )}
           {status === "absent" && (
             <Field label="Motivo" hint="Mínimo 5 caracteres.">
               <Textarea name="absenceReason" required minLength={5} maxLength={1000} />
             </Field>
+          )}
+          {status === "exempt" && (
+            <>
+              <Field
+                label="Motivo de la exención"
+                required
+                hint={`Obligatorio: la persona sale del padrón de expuestos del programa anual hasta el ciclo siguiente. Mínimo ${REASON_MIN_LENGTH} caracteres. No escribas el diagnóstico: este motivo se muestra en la tabla y se copia al registro de auditoría — el dato clínico va sólo en el registro de salud cifrado.`}
+              >
+                <Textarea name="absenceReason" required minLength={REASON_MIN_LENGTH} maxLength={REASON_MAX_LENGTH} />
+              </Field>
+              <p className="text-xs text-[var(--color-text-subtle)]">
+                Al guardar se abre también el ciclo siguiente de esta persona, a {periodicityMonths} meses del vencimiento actual: la exención acota sólo este ciclo, no la deja fuera del padrón para siempre.
+              </p>
+            </>
           )}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar</Button></DialogFooter>

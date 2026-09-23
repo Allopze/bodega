@@ -29,9 +29,17 @@ type PdtpExecutionFormProps = {
   defaultWeek?: number
   effectiveFrom?: PdtpPeriod | null
   evidenceRequirement?: string | null
+  /**
+   * Ronda de corrección (2026-09-23): mientras `markPdtpExecution` restauró
+   * el gate genérico (texto/URL/foto) para cualquier mecanismo, sólo
+   * `constancia` exige específicamente un archivo real (Task 9) — la
+   * observación de texto ya no basta ahí. Sin este dato la etiqueta de
+   * abajo prometía lo mismo para los dos casos.
+   */
+  mechanism?: string | null
 }
 
-export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, defaultWeek, effectiveFrom, evidenceRequirement }: PdtpExecutionFormProps) {
+export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, defaultWeek, effectiveFrom, evidenceRequirement, mechanism }: PdtpExecutionFormProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [open, setOpen] = React.useState(false)
   const programYear = year ?? codeYear()
@@ -88,6 +96,15 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
     null,
   )
   const [pending, startTransition] = React.useTransition()
+  // Sólo `constancia` exige archivo real (Task 9 + ronda 2026-09-23, ver
+  // `markPdtpExecution`): para el resto de los mecanismos la observación de
+  // texto sigue bastando cuando no se adjunta evidencia.
+  const requiresRealEvidence = !!evidenceRequirement && mechanism === "constancia"
+  const observationLabel = !evidenceRequirement
+    ? "Observación"
+    : requiresRealEvidence
+      ? "Observación (no reemplaza la evidencia exigida — adjunta un archivo)"
+      : "Observación (obligatoria si no adjuntas evidencia)"
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -176,7 +193,7 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
             </p>
           )}
 
-          <Field label={evidenceRequirement ? "Observación (obligatoria si no adjuntas evidencia)" : "Observación"} htmlFor="exec-obs">
+          <Field label={observationLabel} htmlFor="exec-obs">
             <input
               id="exec-obs"
               name="evidenceText"

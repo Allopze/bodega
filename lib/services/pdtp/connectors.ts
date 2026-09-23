@@ -175,10 +175,17 @@ const CONNECTORS: readonly PdtpExecutionConnector[] = [
     key: "cphs", label: "CPHS", moduleHref: "/prevencion/cphs",
     configurePermission: "prevention:cphs:manage", executePermission: "prevention:governance:review",
     supportedBindingSourceTypes: ["cphs"],
+    // Sin "meeting_closed": la reunión mensual del comité (antes N°13) salió
+    // del PDTP por decisión D5 y no acredita ninguna actividad del catálogo
+    // (`closeCommitteeMeeting` lo declara explícitamente). Este evento estuvo
+    // declarado acá sin que nada lo emitiera nunca — un binding admin sobre él
+    // habría quedado configurado y muerto para siempre. Desde la Task 10,
+    // cerrar el acta sí completa algo, pero es la sesión del programa LOCAL
+    // del comité (`prevention_committee_program_activities`), no un evento de
+    // este registro de conectores PDTP.
     supportedEvents: [
       { key: "committee_constituted", label: "Comité CPHS constituido", sourceType: "cphs" },
       { key: "management_review_closed", label: "Revisión por la dirección cerrada", sourceType: "cphs" },
-      { key: "meeting_closed", label: "Reunión CPHS cerrada", sourceType: "cphs" },
     ],
     supportedCompletionPolicies: ["source_completed", "source_approved", "manual_confirmed"],
     supportedEvidenceKinds: ["signature", "file", "generated_record"],

@@ -10,6 +10,14 @@ export const alcoholTestRegisterSchema = z.object({
   /** Tercero que no está en `workers` (chofer de proveedor, visita). */
   testedPersonName: z.string().trim().min(3).max(200).nullable().optional(),
   equipmentId: z.string().min(1).nullable().optional(),
+  /**
+   * La casilla del programa que este control cumple, si cumple alguna.
+   * Opcional: un control extraordinario no ocupa una celda del cronograma.
+   * Sin declararlo acá Zod lo descartaba en silencio y ninguna casilla podía
+   * marcarse "hecha" desde la aplicación (`fulfillAlcotestSlotTx` en
+   * prevention-alcotest-slots.ts ya sabe qué hacer con él).
+   */
+  slotId: z.string().min(1).nullable().optional(),
 }).superRefine((value, ctx) => {
   // El CHECK de la base ya lo impide, pero ahí el error llega como violación
   // de constraint; acá llega marcado en el campo que el operador debe corregir.
@@ -28,4 +36,6 @@ export const alcoholTestDispatchSchema = z.object({
   year: z.coerce.number().int().min(2000).max(2100),
   month: z.coerce.number().int().min(1).max(12),
   recipient: z.string().trim().min(3, "Destinatario requerido").max(200),
+  /** La casilla de envío que este registro cumple, si cumple alguna. */
+  slotId: z.string().min(1).nullable().optional(),
 })

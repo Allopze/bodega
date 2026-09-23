@@ -24,7 +24,8 @@
  * para un sujeto que todavía no tiene registro propio.
  */
 
-import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm"
+import { and, eq, exists, gt, gte, inArray, isNull, lt, lte, ne, notExists, or, sql, type SQL } from "drizzle-orm"
+import { alias, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
   fuelVehicles,
@@ -32,6 +33,8 @@ import {
   preventionEmergencyResources,
   preventionExposureGroupMembers,
   preventionExposureGroups,
+  preventionSurveillanceEnrollments,
+  preventionSurveillancePrograms,
   sstEvaluations,
   workerCapabilities,
   workerCapabilityOverrides,
@@ -39,8 +42,9 @@ import {
   workerPositions,
   workers,
 } from "@/db/schema"
+import { LEGACY_SURVEILLANCE_EXEMPT_REASON_PLACEHOLDER } from "@/lib/prevention/hygiene"
 import { WORKER_CAPABILITY_CODE_PATTERN } from "@/lib/services/worker-positions/normalization"
-import { countOf } from "@/lib/utils"
+import { countOf, todayInChile } from "@/lib/utils"
 
 /** Las fuentes que `pdtp_activities.subject_source` admite (CHECK en la tabla). */
 export const PDTP_SUBJECT_SOURCES = [
@@ -132,13 +136,131 @@ function countExtintores(worksiteId: string): Promise<number> {
 }
 
 /**
+ * ¿Tiene la membresía un ciclo vigente de vigilancia que cumpla `status`?
+ *
+ * «Vigente» es la matrícula más reciente —mayor `due_on`— de la persona en cada
+ * programa activo: la que ningún ciclo posterior reemplazó. Se busca entre las
+ * matrículas que salieron de ESTE GES (`group_id`), porque es la exposición por
+ * la que la persona está en el padrón.
+ *
+ * **Qué cuenta como "posterior" (ronda de corrección de Task 11, Importante 3,
+ * ronda 2/5).** Un ciclo con `due_on` mayor sólo desplaza al vigente cuando:
+ * (a) sigue `pending` pero su propio vencimiento ya llegó (`due_on <= hoy`), o
+ * (b) alguien ya actuó sobre él —cualquier estado que no sea `pending`—,
+ * cualquiera sea su vencimiento. Un `pending` recién creado por
+ * `syncSurveillanceRenewalTx` (la renovación automática de `attended`/`exempt`,
+ * `lib/services/prevention-hygiene.ts`) vence típicamente un año después: sin
+ * esta condición, ese `pending` desplazaba al ciclo recién resuelto —incluida
+ * una exención— en el mismo instante en que se creaba, y la exención nunca
+ * llegaba a ser observable como "vigente" para nadie. Con esto, el ciclo
+ * resuelto (`attended`, `absent`, `exempt`) sigue siendo el vigente hasta que
+ * el `pending` que lo sucede efectivamente vence, o hasta que alguien también
+ * actúa sobre ese sucesor.
+ *
+ * **Y el propio candidato no puede ser "prematuro".** Relajar sólo la
+ * condición de arriba no basta: un `pending` sin vencer nunca tiene su propio
+ * posterior (nada existe todavía después de él), así que por esa sola regla
+ * sería "vigente" el ciclo resuelto **y también**, al mismo tiempo, su
+ * sucesor `pending` recién creado —dos filas vigentes a la vez para la misma
+ * persona—, y `countExpuestosGes` volvía a contarla por el sucesor
+ * (`exists(vigente no exento)`) sin que importara que el ciclo resuelto
+ * también siguiera vigente. Por eso un candidato queda descartado cuando: es
+ * `pending`, su vencimiento todavía no llega, **y** existe algún ciclo
+ * anterior (`due_on` menor) de la misma persona/programa — ese anterior es el
+ * que sigue mandando. Un `pending` sin ningún ciclo anterior (la matrícula
+ * inicial de alguien, el caso normal y más común) no se descarta por esto: no
+ * hay nada anterior que deba seguir mandando.
+ */
+function currentSurveillanceCycle(
+  status: (column: AnyPgColumn) => SQL,
+  today: string,
+  options: { excludePlaceholderExemption?: boolean } = {},
+) {
+  const vigente = alias(preventionSurveillanceEnrollments, "ciclo_vigente")
+  const posterior = alias(preventionSurveillanceEnrollments, "ciclo_posterior")
+  const anterior = alias(preventionSurveillanceEnrollments, "ciclo_anterior")
+  return db.select({ one: sql`1` })
+    .from(vigente)
+    .innerJoin(preventionSurveillancePrograms, and(
+      eq(preventionSurveillancePrograms.id, vigente.programId),
+      eq(preventionSurveillancePrograms.status, "active"),
+    ))
+    .where(and(
+      eq(vigente.workerId, preventionExposureGroupMembers.workerId),
+      eq(vigente.groupId, preventionExposureGroupMembers.groupId),
+      status(vigente.status),
+      // La exención legado con el texto placeholder (0323) no es una
+      // justificación real: es "no consta por qué se eximió", no "se eximió
+      // por esto". No cuenta como ciclo vigente exento, así que no descuenta
+      // del padrón (ronda de corrección de Task 11, Importante 2).
+      options.excludePlaceholderExemption
+        ? ne(vigente.absenceReason, LEGACY_SURVEILLANCE_EXEMPT_REASON_PLACEHOLDER)
+        : undefined,
+      notExists(db.select({ one: sql`1` }).from(posterior).where(and(
+        eq(posterior.programId, vigente.programId),
+        eq(posterior.workerId, vigente.workerId),
+        gt(posterior.dueOn, vigente.dueOn),
+        or(
+          ne(posterior.status, "pending"),
+          lte(posterior.dueOn, today),
+        ),
+      ))),
+      // El candidato mismo no puede ser un `pending` prematuro con historia
+      // antes de él (ver el JSDoc). Expresado por su negación, con la misma
+      // forma `or` que ya usa el bloque de arriba: es elegible si no es
+      // `pending`, o si ya venció, o si no tiene ningún ciclo anterior.
+      or(
+        ne(vigente.status, "pending"),
+        lte(vigente.dueOn, today),
+        notExists(db.select({ one: sql`1` }).from(anterior).where(and(
+          eq(anterior.programId, vigente.programId),
+          eq(anterior.workerId, vigente.workerId),
+          lt(anterior.dueOn, vigente.dueOn),
+        ))),
+      ),
+    ))
+}
+
+/**
  * Personas que deben estar bajo vigilancia en la faena.
  *
  * Se cuenta distinto por trabajador: una persona en dos GES con vigilancia es un
  * sujeto, no dos. `left_on IS NULL` es la membresía vigente, que es el mismo
  * criterio con que el módulo arma la nómina al matricular.
+ *
+ * **Quien está eximido no es sujeto.** Una membresía sale del padrón cuando su
+ * ciclo vigente en algún programa activo está en `exempt` y no tiene ningún otro
+ * ciclo vigente que todavía la exija: eximida del audiométrico pero pendiente
+ * de otro programa del mismo GES, sigue contando. Sin esto la persona eximida
+ * seguía en el denominador de la cobertura de la N°50 y la bajaba sin que nadie
+ * pudiera controlarla. La exención exige motivo en base (≥10) desde el mismo
+ * cambio, así que descontar deja rastro.
+ *
+ * La exención es del ciclo, no de la persona: mientras el ciclo siguiente
+ * —el que abrió sola `syncSurveillanceRenewalTx`, o el que abrió a mano
+ * volver a matricular al grupo— siga `pending` y no venza, la exención sigue
+ * siendo la vigente y sigue descontando: una exención con motivo real sí baja
+ * el padrón durante su propio período, no sólo en teoría. El ciclo siguiente
+ * recién creado no basta por sí solo para superarla —nace `pending` y sin
+ * vencer, "prematuro" igual que el de la renovación automática—; sólo pasa a
+ * ser el vigente cuando efectivamente vence, o cuando alguien actúa sobre él
+ * (citarlo, por ejemplo: cualquier estado que deje de ser `pending`) — ver el
+ * criterio de "posterior"/"prematuro" en `currentSurveillanceCycle`. La
+ * exención de un programa suspendido o cerrado no descuenta: ese programa ya
+ * no está controlando a nadie.
+ *
+ * **La exención legado sin motivo real no descuenta.** La migración 0323
+ * marcó con un texto placeholder las exenciones previas a exigir motivo, sin
+ * inventarles una justificación clínica. Contar esas filas como descuento
+ * infla la cobertura con una exención que nadie puede explicar —el error
+ * conservador es que la persona siga en el padrón, visible y corregible; el
+ * contrario es cobertura inflada e invisible ante un fiscalizador (Rule
+ * Priority #1)—, así que se excluyen por el texto exacto
+ * (`LEGACY_SURVEILLANCE_EXEMPT_REASON_PLACEHOLDER`). Una exención nueva con
+ * motivo real sí descuenta, como siempre.
  */
 function countExpuestosGes(worksiteId: string): Promise<number> {
+  const today = todayInChile()
   return countOne(db.select({ count: sql<number>`count(distinct ${preventionExposureGroupMembers.workerId})::int` })
     .from(preventionExposureGroupMembers)
     .innerJoin(preventionExposureGroups, eq(preventionExposureGroups.id, preventionExposureGroupMembers.groupId))
@@ -147,6 +269,10 @@ function countExpuestosGes(worksiteId: string): Promise<number> {
       eq(preventionExposureGroups.surveillanceRequired, true),
       eq(preventionExposureGroups.isActive, true),
       isNull(preventionExposureGroupMembers.leftOn),
+      or(
+        notExists(currentSurveillanceCycle((status) => eq(status, "exempt"), today, { excludePlaceholderExemption: true })),
+        exists(currentSurveillanceCycle((status) => ne(status, "exempt"), today)),
+      ),
     )))
 }
 

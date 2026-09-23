@@ -58,6 +58,15 @@ import { PDTP_2026_SOURCE } from "@/lib/services/pdtp-adapters/contract-2026"
 import { PDTP_2026_CATALOG_ACTIVITIES } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 const tmpEvidenceDir = join(tmpdir(), "pdtp-evidence-test")
 mkdirSync(tmpEvidenceDir, { recursive: true })
+// Task 9 (M2.1): `prepareProgramForReview` declara `evidenceRequirement` para
+// TODAS las actividades del catálogo (compuerta 81/81), así que cualquier
+// `markPdtpExecution` corrido después de `loadActiveCatalog()` ahora exige un
+// archivo real, no sólo `evidenceText`. Un único archivo genérico, reusado
+// por los tests que sólo necesitan una ejecución válida como fixture (no
+// están probando semántica de evidencia).
+const GENERIC_EVIDENCE_NAME = "generic-test-evidence.pdf"
+const GENERIC_EVIDENCE_URL = `storage/pdtp-evidence/${GENERIC_EVIDENCE_NAME}`
+writeFileSync(join(tmpEvidenceDir, GENERIC_EVIDENCE_NAME), "%PDF-1.4 test")
 
 vi.mock("@/lib/storage/config", () => ({
   resolvePdtpEvidenceFile: (filePath: string) => {
@@ -1002,6 +1011,7 @@ describe("prevention PDTP service", () => {
       week: 1,
       executedQuantity: 3,
       evidenceText: "Charla ejecutada en turno A",
+      evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
 
     const second = await markPdtpExecution({
@@ -1012,6 +1022,7 @@ describe("prevention PDTP service", () => {
       week: 1,
       executedQuantity: 5,
       evidenceText: "Charla completada",
+      evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
 
     expect(second.id).toBe(first.id)
@@ -1067,6 +1078,7 @@ describe("prevention PDTP service", () => {
       week: 1,
       executedQuantity: 4,
       evidenceText: "Charla ejecutada en turno A",
+      evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
 
     const view = await getPdtpSheetView(2026, "sup_jt", "ws-1")
@@ -1111,11 +1123,11 @@ describe("prevention PDTP service", () => {
     const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 38))
     const executionA = await markPdtpExecution({
       activityId: activity!.id, worksiteId: "ws-1", year: 2026, month: 1, week: 1, executedQuantity: 1,
-      evidenceText: "Charla ejecutada en Faena A",
+      evidenceText: "Charla ejecutada en Faena A", evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", "all")
     const executionB = await markPdtpExecution({
       activityId: activity!.id, worksiteId: "ws-2", year: 2026, month: 1, week: 1, executedQuantity: 1,
-      evidenceText: "Charla ejecutada en Faena B",
+      evidenceText: "Charla ejecutada en Faena B", evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", "all")
     const now = new Date().toISOString()
     // D11: la acción del PDTP vive en CAPA; `sourceId` es la ejecución.
@@ -1315,6 +1327,7 @@ describe("prevention PDTP service", () => {
       week: 1,
       executedQuantity: 3,
       evidenceText: "Registro de la actividad 1",
+      evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
     // Una segunda actividad aporta su propia cantidad al total mensual.
     const exec2 = await markPdtpExecution({
@@ -1325,6 +1338,7 @@ describe("prevention PDTP service", () => {
       week: 1,
       executedQuantity: 2,
       evidenceText: "Registro de la actividad 2",
+      evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(exec2.id, "user-approver", ["ws-1"])
 
@@ -1386,7 +1400,7 @@ describe("prevention PDTP service", () => {
     // La meta de la celda (mes 1, sem 1) es 1, pero se ejecutan 3 unidades reales.
     const execution = await markPdtpExecution({
       activityId: activity.id, worksiteId: "ws-1", year: 2029, month: 1, week: 1, executedQuantity: 3,
-      evidenceText: "Registro verificable de la ejecución",
+      evidenceText: "Registro verificable de la ejecución", evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(execution.id, "user-approver", ["ws-1"])
 
@@ -1457,10 +1471,10 @@ describe("prevention PDTP service", () => {
     await setPdtpActivityWorksiteParams(actFull.id, "ws-1", { expectedSubjectCount: 4 }, "user-1")
 
     // actUnder cubre 3 (<4) → no acredita nada (todo o nada).
-    const e1 = await markPdtpExecution({ activityId: actUnder.id, worksiteId: "ws-1", year: 2031, month: 1, week: 1, executedQuantity: 3, evidenceText: "Registro de cobertura incompleta" }, "user-1", ["ws-1"])
+    const e1 = await markPdtpExecution({ activityId: actUnder.id, worksiteId: "ws-1", year: 2031, month: 1, week: 1, executedQuantity: 3, evidenceText: "Registro de cobertura incompleta", evidenceUrl: GENERIC_EVIDENCE_URL }, "user-1", ["ws-1"])
     await approvePdtpExecution(e1.id, "user-approver", ["ws-1"])
     // actFull cubre 4 (=4) → acredita completo.
-    const e2 = await markPdtpExecution({ activityId: actFull.id, worksiteId: "ws-1", year: 2031, month: 1, week: 1, executedQuantity: 4, evidenceText: "Registro de cobertura completa" }, "user-1", ["ws-1"])
+    const e2 = await markPdtpExecution({ activityId: actFull.id, worksiteId: "ws-1", year: 2031, month: 1, week: 1, executedQuantity: 4, evidenceText: "Registro de cobertura completa", evidenceUrl: GENERIC_EVIDENCE_URL }, "user-1", ["ws-1"])
     await approvePdtpExecution(e2.id, "user-approver", ["ws-1"])
 
     const result = await getPdtpComplianceIndicators(program.id, "ws-1")
@@ -1480,12 +1494,12 @@ describe("prevention PDTP service", () => {
 
     const exec1 = await markPdtpExecution({
       activityId: act1.id, worksiteId: "ws-1", year: 2026, month: 1, week: 1, executedQuantity: 3,
-      evidenceText: "Registro de la actividad 1 en Faena A",
+      evidenceText: "Registro de la actividad 1 en Faena A", evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(exec1.id, "user-approver", ["ws-1"])
     const exec2 = await markPdtpExecution({
       activityId: act2.id, worksiteId: "ws-2", year: 2026, month: 1, week: 1, executedQuantity: 2,
-      evidenceText: "Registro de la actividad 2 en Faena B",
+      evidenceText: "Registro de la actividad 2 en Faena B", evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-2"])
     await approvePdtpExecution(exec2.id, "user-approver", ["ws-2"])
 
@@ -2095,6 +2109,7 @@ describe("prevention PDTP service", () => {
       week: 1,
       executedQuantity: 1,
       evidenceText: "Registro verificable del caso",
+      evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
 
     expect(exec.status).toBe("submitted")
@@ -2134,6 +2149,7 @@ describe("prevention PDTP service", () => {
       week: 2,
       executedQuantity: 1,
       evidenceText: "Registro verificable del caso",
+      evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
 
     const results = await Promise.allSettled([
@@ -2159,17 +2175,17 @@ describe("prevention PDTP service", () => {
     // Pending, worksite A
     await markPdtpExecution({
       activityId: act1!.id, worksiteId: "ws-1", year: 2026, month: 1, week: 1, executedQuantity: 1,
-      evidenceText: "Registro verificable del caso A",
+      evidenceText: "Registro verificable del caso A", evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
     // Pending, worksite B
     await markPdtpExecution({
       activityId: act2!.id, worksiteId: "ws-2", year: 2026, month: 1, week: 2, executedQuantity: 1,
-      evidenceText: "Registro verificable del caso B",
+      evidenceText: "Registro verificable del caso B", evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-2"])
     // Approved (not pending) — must be excluded
     const exec3 = await markPdtpExecution({
       activityId: act3!.id, worksiteId: "ws-1", year: 2026, month: 1, week: 1, executedQuantity: 1,
-      evidenceText: "Registro verificable del caso C",
+      evidenceText: "Registro verificable del caso C", evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(exec3.id, "user-approver", ["ws-1"])
 
@@ -2505,6 +2521,7 @@ describe("prevention PDTP service", () => {
       week: 1,
       executedQuantity: 1,
       evidenceText: "Cantidad mal ingresada",
+      evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
 
     expect(exec.status).toBe("submitted")
@@ -2556,6 +2573,7 @@ describe("prevention PDTP service", () => {
       week: 1,
       executedQuantity: 1,
       evidenceText: "Registro verificable del caso",
+      evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(exec.id, "user-approver", ["ws-1"])
 
@@ -2584,6 +2602,7 @@ describe("prevention PDTP service", () => {
       week: 1,
       executedQuantity: 1,
       evidenceText: "Registro verificable del caso",
+      evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
 
     await expect(rejectPdtpExecution(exec.id, "user-1", "", ["ws-1"])).rejects.toThrow(/motivo del rechazo/i)
@@ -2760,11 +2779,14 @@ describe("prevention PDTP service", () => {
     const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 40))
 
     // No escribimos el archivo en disco → resolvePdtpEvidenceFile
-    // retorna un path que existsSync rechaza.
+    // retorna un path que existsSync rechaza. `evidencePhotos` sí apunta a un
+    // archivo real (Task 9: la actividad exige evidencia real, y esta prueba
+    // es sobre `evidenceUrl` específicamente, no sobre si hay o no evidencia).
     const row = await markPdtpExecution({
       activityId: activity!.id, worksiteId: "ws-1", year: 2026, month: 6, week: 3,
       executedQuantity: 1,
       evidenceUrl: "storage/pdtp-evidence/inexistente.pdf",
+      evidencePhotos: [GENERIC_EVIDENCE_URL],
     }, "user-1", ["ws-1"])
 
     // Se guarda la ejecución pero sin evidenceUrl (se loggea warning)
@@ -2985,7 +3007,7 @@ describe("prevention PDTP service", () => {
 
     const execution = await markPdtpExecution({
       activityId: target.id, worksiteId: "ws-1", year: program.year, month: 1, week: 1, executedQuantity: 1,
-      evidenceText: "Registro verificable del caso",
+      evidenceText: "Registro verificable del caso", evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(execution.id, "user-approver", ["ws-1"])
 
@@ -3078,7 +3100,7 @@ describe("prevention PDTP service", () => {
     const target = activities.find((activity) => activity.n === candidateRow.activityNumber)!
     const execution = await markPdtpExecution({
       activityId: target.id, worksiteId: "ws-1", year: program.year, month: 1, week: 1, executedQuantity: 1,
-      evidenceText: "Registro verificable del caso",
+      evidenceText: "Registro verificable del caso", evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(execution.id, "user-approver", ["ws-1"])
 
@@ -3112,7 +3134,7 @@ describe("prevention PDTP service", () => {
     const target = activities[0]!
     const execution = await markPdtpExecution({
       activityId: target.id, worksiteId: "ws-1", year: program.year, month: 1, week: 1, executedQuantity: 1,
-      evidenceText: "Registro fotográfico revisado en terreno",
+      evidenceText: "Registro fotográfico revisado en terreno", evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(execution.id, "user-approver", ["ws-1"])
 
@@ -3959,6 +3981,7 @@ describe("prevention PDTP service", () => {
       week: 1,
       executedQuantity: 1,
       evidenceText: "Evidencia que debe permanecer en v1",
+      evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
     await inMemoryDb.insert(schema.pdtpActivityScheduleOverrides).values({
       id: "revision-diff-override-source",

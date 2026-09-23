@@ -415,6 +415,21 @@ RUN ./node_modules/.bin/esbuild scripts/ensure-prevention-program-slots.ts \
     --external:postgres \
     --outfile=/tmp/ensure-prevention-program-slots.mjs
 
+# Backfillea las 12 sesiones ordinarias mensuales del CPHS (Task 10) en los
+# programas del comité que ya estaban `active` antes de la migración 0322.
+# Mismo incidente que el paso anterior, con otra tabla: `activateProgram` no
+# puede volver a correr sobre un programa que ya salió de `draft`, así que sin
+# esto un comité con programa aprobado antes de este deploy se queda sin sus
+# 12 filas de sesión para siempre. Idempotente: reejecutar crea cero.
+RUN ./node_modules/.bin/esbuild scripts/backfill-cphs-mandatory-sessions.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/backfill-cphs-mandatory-sessions.mjs
+
 # Da de baja las variantes que son la misma talla física escrita de dos formas
 # (`N41` junto a `T41`, `L` junto a `T/L`) o duplicadas de plano. Desactiva con
 # `is_active = false`, nunca borra, y sólo toca variantes sin stock ni
@@ -540,6 +555,7 @@ COPY --from=build /tmp/normalize-epp-skus.mjs ./scripts/normalize-epp-skus.mjs
 COPY --from=build /tmp/reconcile-request-status.mjs ./scripts/reconcile-request-status.mjs
 COPY --from=build /tmp/seed-size-catalog.mjs ./scripts/seed-size-catalog.mjs
 COPY --from=build /tmp/ensure-prevention-program-slots.mjs ./scripts/ensure-prevention-program-slots.mjs
+COPY --from=build /tmp/backfill-cphs-mandatory-sessions.mjs ./scripts/backfill-cphs-mandatory-sessions.mjs
 COPY --from=build /tmp/reconcile-epp-duplicate-sizes.mjs ./scripts/reconcile-epp-duplicate-sizes.mjs
 COPY --from=build /tmp/backfill-epp-clothing-sizes.mjs ./scripts/backfill-epp-clothing-sizes.mjs
 # Cron service uses this bounded internal HTTP runner instead of an inline

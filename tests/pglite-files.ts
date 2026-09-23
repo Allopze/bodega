@@ -115,6 +115,8 @@ export const pgliteTestFiles = [
   // (loadProgramScheduleAndExecutions) — indicador, RE-36, exclusión mutua
   // con ejecuciones y no-alteración de la huella firmada.
   "lib/__tests__/pdtp-deviations.test.ts",
+  // M0.3: el «no aplica»/«no hecha» de las casillas llega al PDTP como desvío.
+  "lib/__tests__/pdtp-slot-deviation-propagation.test.ts",
   // Fase 5: asignación nominal de actividades a personas, por faena.
   "lib/__tests__/pdtp-assignees.test.ts",
   // Fase 4: el cierre mensual por faena y su distribución por correo.
@@ -140,6 +142,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-revocations.test.ts",
   "lib/__tests__/pdtp-objectives.test.ts",
   "scripts/__tests__/apply-pdtp-2026-objectives.test.ts",
+  "scripts/__tests__/apply-pdtp-2026-mechanisms.test.ts",
   "lib/__tests__/pdtp-worksites.test.ts",
   "lib/__tests__/pdtp-schedule-presets-batch.test.ts",
   "lib/__tests__/physical-inventory-service.test.ts",
@@ -149,7 +152,10 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-incident-public-reports.test.ts",
   "lib/__tests__/prevention-cphs-program-persistence.test.ts",
   "lib/__tests__/prevention-cphs-certification-persistence.test.ts",
+  "lib/__tests__/backfill-cphs-mandatory-sessions.test.ts",
   "lib/__tests__/prevention-hygiene-pdtp-accreditation.test.ts",
+  // N°50: el saneamiento de las exenciones previas antes del CHECK de motivo.
+  "lib/__tests__/prevention-surveillance-exempt-migration.test.ts",
   "lib/__tests__/pdtp-occurrence-gap-obligation.test.ts",
   "lib/__tests__/pdtp-indicators-reopen-revocation.test.ts",
   "lib/__tests__/prevention-emergency-plan-seed.test.ts",
@@ -222,4 +228,6 @@ export const pgliteTestFiles = [
   "lib/__tests__/ti-maintenance-retirement-pglite.test.ts",
   "lib/__tests__/ti-alerts-pglite.test.ts",
   "lib/__tests__/ti-attachments-pglite.test.ts",
+  // ── PDTP (Prevención) ────────────────────────────────────────────────────
+  "lib/services/pdtp-adapters/external-engagement-accreditation-connector.test.ts",
 ]

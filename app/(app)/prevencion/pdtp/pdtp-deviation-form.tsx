@@ -33,11 +33,20 @@ type PdtpDeviationFormProps = {
   year: number
   defaultMonth: number
   defaultWeek: number
-  /** `prevention:pdtp:execute`: habilita declarar "no realizada". */
+  /** `prevention:pdtp:execute` (o, en celdas `mechanism = 'constancia'`,
+   *  `prevention:constancias:execute`): habilita declarar "no realizada". */
   canDeclareNotPerformed?: boolean
-  /** `prevention:pdtp:override:manage`: habilita "no aplica" y "reprogramar",
-   *  los dos que cambian lo planificado y por eso exigen el permiso de metas. */
+  /** `prevention:pdtp:override:manage`: habilita "reprogramar" (mueve lo
+   *  planificado a otro período — sigue siendo exclusivo de quien administra
+   *  metas por faena) y, salvo que `canDeclareNotApplicable` ya la habilite,
+   *  también "no aplica". */
   canManagePlanning?: boolean
+  /** `prevention:constancias:execute` sobre una celda `mechanism =
+   *  'constancia'` (Task 9, M2.1): habilita "no aplica" SIN habilitar
+   *  "reprogramar" — Constancias declara hechos sobre su propia celda, no
+   *  reprograma planificación, que sigue siendo de quien administra metas
+   *  (`canManagePlanning`). Es aditivo a `canManagePlanning`, no lo reemplaza. */
+  canDeclareNotApplicable?: boolean
 }
 
 const WEEKS = [1, 2, 3, 4]
@@ -67,10 +76,12 @@ export function PdtpDeviationForm({
   defaultWeek,
   canDeclareNotPerformed = false,
   canManagePlanning = false,
+  canDeclareNotApplicable = false,
 }: PdtpDeviationFormProps) {
   const availableKinds: PdtpDeviationKindValue[] = [
     ...(canDeclareNotPerformed ? (["not_performed"] as const) : []),
-    ...(canManagePlanning ? (["not_applicable", "reprogrammed"] as const) : []),
+    ...(canManagePlanning || canDeclareNotApplicable ? (["not_applicable"] as const) : []),
+    ...(canManagePlanning ? (["reprogrammed"] as const) : []),
   ]
   const [open, setOpen] = React.useState(false)
   const [kind, setKind] = React.useState<PdtpDeviationKindValue>(availableKinds[0] ?? "not_performed")

@@ -8,7 +8,9 @@
  * compuerta que evita que `prevention:constancias:execute` sirva para marcar
  * cualquier actividad de la planilla.
  */
-import path from "node:path"
+import { mkdirSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path, { join } from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
@@ -26,11 +28,22 @@ vi.mock("@/db", () => ({
   get db() { return testGlobal.__db },
 }))
 
+// Task 9: `markPdtpExecution` ahora verifica que `evidenceUrl` resuelva a un
+// archivo físico (H-B7) antes de contarlo como "evidencia real" — mismo
+// patrón que `pdtp-evidence-gc.test.ts`: STORAGE_PATH apunta a un tmpdir
+// propio de este archivo, restaurado en `afterAll`.
+const previousStoragePath = process.env.STORAGE_PATH
+const tmpEvidenceRoot = join(tmpdir(), `pdtp-constancias-evidence-${Date.now()}`)
+process.env.STORAGE_PATH = tmpEvidenceRoot
+mkdirSync(join(tmpEvidenceRoot, "pdtp-evidence"), { recursive: true })
+
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 afterAll(async () => {
   delete testGlobal.__db
   await pg.close()
+  if (previousStoragePath === undefined) delete process.env.STORAGE_PATH
+  else process.env.STORAGE_PATH = previousStoragePath
 })
 
 const { listPdtpConstanciaActivities, assertPdtpActivityMechanism } = await import("@/lib/services/pdtp/constancias")
@@ -131,8 +144,25 @@ describe("listPdtpConstanciaActivities", () => {
     const view = await listPdtpConstanciaActivities([WS_A])
     expect(view?.debts).toHaveLength(1)
     expect(view?.debts[0]).toMatchObject({
-      activityId: ACT_ID, n: ACT_N, worksiteId: WS_A, dueMonth: CURRENT_MONTH, status: "pending", overdueMonths: 0,
+      activityId: ACT_ID, n: ACT_N, worksiteId: WS_A, dueMonth: CURRENT_MONTH, dueWeek: 1, status: "pending", overdueMonths: 0,
     })
+  })
+
+  it("dueWeek es la menor semana planificada del mes adeudado, no una por defecto", async () => {
+    // `seedSchedule` siempre usa week 1; acá se siembra a mano una celda de
+    // constancia con semanas 3 y 2 (en ese orden de inserción, a propósito)
+    // para que el test no pase por casualidad si la implementación tomara la
+    // primera fila en vez de la menor.
+    await seedProgram("active")
+    await seedActivity()
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values([
+      { id: `${ACT_ID}-s-${PROGRAM_YEAR}-${String(CURRENT_MONTH).padStart(2, "0")}-3`, activityId: ACT_ID, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 3, plannedQuantity: 1, sourceColumn: "manual" },
+      { id: `${ACT_ID}-s-${PROGRAM_YEAR}-${String(CURRENT_MONTH).padStart(2, "0")}-2`, activityId: ACT_ID, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 2, plannedQuantity: 1, sourceColumn: "manual" },
+    ])
+
+    const view = await listPdtpConstanciaActivities([WS_A])
+    expect(view?.debts).toHaveLength(1)
+    expect(view?.debts[0]).toMatchObject({ dueMonth: CURRENT_MONTH, dueWeek: 2 })
   })
 
   it("un mes anterior sin marcar es 'overdue' y queda como el mes que corresponde marcar, no el actual", async () => {
@@ -144,7 +174,7 @@ describe("listPdtpConstanciaActivities", () => {
 
     const view = await listPdtpConstanciaActivities([WS_A])
     expect(view?.debts).toHaveLength(1) // una fila, no una por mes vencido
-    expect(view?.debts[0]).toMatchObject({ dueMonth: PREVIOUS_MONTH, status: "overdue", overdueMonths: 1 })
+    expect(view?.debts[0]).toMatchObject({ dueMonth: PREVIOUS_MONTH, dueWeek: 1, status: "overdue", overdueMonths: 1 })
   })
 
   it("marcar con status 'submitted' o 'approved' salda la deuda; 'draft' no", async () => {
@@ -220,31 +250,139 @@ describe("listPdtpConstanciaActivities", () => {
 })
 
 describe("markPdtpExecution — evidencia mínima declarada", () => {
-  // Task 9: las 9 actividades de mecanismo 'constancia' declaran su
-  // evidencia mínima en evidenceRequirement, y hasta ahora eso era sólo un
-  // texto en la tarjeta — el esquema deja la evidencia opcional y
-  // markPdtpExecution nunca la exigía. Aquí ACT_ID declara "Certificado
-  // vigente" (ver seedActivity), así que una constancia sin nada de
-  // evidencia debe rechazarse, y una con observación escrita debe aceptarse.
+  // Task 9: las actividades de mecanismo 'constancia' declaran su evidencia
+  // mínima en evidenceRequirement. ACT_ID declara "Certificado vigente" (ver
+  // seedActivity). Una constancia sin nada de evidencia se rechaza; una con
+  // sólo observación de texto TAMBIÉN se rechaza ahora (M2.1: una
+  // observación no acredita nada por sí sola cuando la actividad exige
+  // evidencia) — sólo un archivo real (evidenceUrl/evidencePhotos que
+  // resuelvan a un archivo físico) satisface el requisito.
   beforeEach(async () => {
     await seedProgram("active")
     await seedActivity()
     await seedSchedule(WS_A, CURRENT_MONTH)
   })
 
-  it("rechaza una constancia sin evidencia cuando la actividad declara una", async () => {
+  // Ronda de corrección (2026-09-23, revisión final): con el gate genérico
+  // restaurado, una constancia sin NINGUNA evidencia dispara dos condiciones a
+  // la vez (genérica y específica de Task 9) — el mensaje que debe ganar es el
+  // más específico ("adjunta un archivo"), no el genérico, porque le dice al
+  // usuario exactamente qué falta. Ver el comentario junto a los dos gates en
+  // executions.ts.
+  it("rechaza una constancia sin evidencia cuando la actividad declara una (gana el mensaje específico, no el genérico)", async () => {
     await expect(markPdtpExecution({
       activityId: ACT_ID, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
       executedQuantity: 1, evidenceText: "", evidenceUrl: "", evidencePhotos: [],
-    }, "user-constancias-1", "all")).rejects.toThrow(/evidencia/i)
+    }, "user-constancias-1", "all")).rejects.toThrow(/no basta/i)
   })
 
-  it("acepta la misma constancia con una observación que la respalda", async () => {
+  it("rechaza la misma constancia con sólo una observación de texto — ya no basta (M2.1)", async () => {
     await expect(markPdtpExecution({
       activityId: ACT_ID, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
       executedQuantity: 1, evidenceText: "Acta firmada por los 12 asistentes", evidenceUrl: "", evidencePhotos: [],
+    }, "user-constancias-1", "all")).rejects.toThrow(/no basta/i)
+  })
+
+  it("acepta la misma constancia con un archivo real de evidencia adjunto", async () => {
+    writeFileSync(join(tmpEvidenceRoot, "pdtp-evidence", "certificado-vigente.pdf"), "%PDF-1.4 test")
+    await expect(markPdtpExecution({
+      activityId: ACT_ID, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
+      executedQuantity: 1, evidenceText: "Acta firmada por los 12 asistentes",
+      evidenceUrl: "storage/pdtp-evidence/certificado-vigente.pdf", evidencePhotos: [],
     }, "user-constancias-1", "all")).resolves.toBeDefined()
   })
+
+  it("un reenvío que sólo corrige el texto conserva el archivo ya adjuntado (append-only)", async () => {
+    writeFileSync(join(tmpEvidenceRoot, "pdtp-evidence", "certificado-reenvio.pdf"), "%PDF-1.4 test")
+    await markPdtpExecution({
+      activityId: ACT_ID, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
+      executedQuantity: 1, evidenceText: "Primer envío con archivo",
+      evidenceUrl: "storage/pdtp-evidence/certificado-reenvio.pdf", evidencePhotos: [],
+    }, "user-constancias-1", "all")
+
+    const second = await markPdtpExecution({
+      activityId: ACT_ID, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
+      executedQuantity: 1, evidenceText: "Segundo envío, sólo corrige el texto", evidenceUrl: "", evidencePhotos: [],
+    }, "user-constancias-1", "all")
+    expect(second.evidenceUrl).toBe("storage/pdtp-evidence/certificado-reenvio.pdf")
+  })
+
+  // Ronda de corrección (2026-09-23): el gate de evidencia real de M2.1 se
+  // acotó a `mechanism === 'constancia'` — ver el comentario junto al gate en
+  // executions.ts. Sin acotar rompía, sin ningún test que lo cubriera, el
+  // fallback `solo_manual` documentado en responsible-execution.ts:17-26:
+  // cuando ninguno de los responsables declarados de una actividad
+  // `enganche`/`compuesta` tiene el permiso del módulo que la acredita
+  // automáticamente, el sistema permite registrarla a mano en la planilla del
+  // PDTP con evidencia autodeclarada (sólo texto) en vez del registro real del
+  // módulo de origen. 19 actividades reales del catálogo 2026 dependen de este
+  // fallback, incluida toda la cadena RE-20 (N°66 a 78) — ver
+  // `scripts/apply-pdtp-2026-demand-slas.ts:77-175`.
+  it.each(["enganche", "compuesta"] as const)(
+    "acepta evidencia de sólo texto en una actividad '%s' con evidenceRequirement (fallback solo_manual preservado)",
+    async (mechanism) => {
+      const otherActId = `${PROGRAM_ID}-a-099-${mechanism}`
+      await inMemoryDb.insert(schema.pdtpActivities).values({
+        id: otherActId, programId: PROGRAM_ID, n: mechanism === "enganche" ? 98 : 99,
+        activity: `Actividad ${mechanism} con evidencia mínima declarada`,
+        program: "Prevención PDTP",
+        responsibleSlugs: ["prf"], responsibleDisplay: "Prevencionista de riesgos en faena",
+        scheduleMode: "scheduled", scheduleClassificationStatus: "confirmed",
+        mechanism, evidenceRequirement: "Registro verificable en el módulo de origen",
+        sourceSheetRow: mechanism === "enganche" ? 2 : 3,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      })
+      await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+        id: `${otherActId}-s-${PROGRAM_YEAR}-${String(CURRENT_MONTH).padStart(2, "0")}-1`,
+        activityId: otherActId, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1, plannedQuantity: 1, sourceColumn: "manual",
+      })
+
+      const execution = await markPdtpExecution({
+        activityId: otherActId, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
+        executedQuantity: 1,
+        evidenceText: "Registro autodeclarado por el responsable, sin archivo adjunto",
+        evidenceUrl: "", evidencePhotos: [],
+      }, "user-constancias-1", "all")
+      expect(execution.status).toBe("submitted")
+      expect(execution.evidenceText).toBe("Registro autodeclarado por el responsable, sin archivo adjunto")
+      expect(execution.evidenceUrl).toBeNull()
+    },
+  )
+
+  // Hallazgo 1 de la revisión final (2026-09-23): comparado contra `main`
+  // (commit 64bbdeba), acotar el gate de evidencia real a `constancia` (ronda
+  // de arriba) se llevó por delante, sin querer, el gate GENÉRICO que ya
+  // existía en `main` — cualquier actividad con `evidenceRequirement` exigía
+  // al menos texto/URL/foto, sin importar el mecanismo. El fallback
+  // `solo_manual` que el test de arriba protege siempre exigió ESO como
+  // mínimo (texto autodeclarado); nunca "nada en absoluto". Esta prueba
+  // reproduce exactamente la regresión: antes del segundo gate restaurado,
+  // esto pasaba silenciosamente para `enganche`/`compuesta`.
+  it.each(["enganche", "compuesta"] as const)(
+    "rechaza una ejecución completamente vacía (sin texto, sin URL, sin foto) en una actividad '%s' con evidenceRequirement — regresión real de main",
+    async (mechanism) => {
+      const otherActId = `${PROGRAM_ID}-a-096-${mechanism}`
+      await inMemoryDb.insert(schema.pdtpActivities).values({
+        id: otherActId, programId: PROGRAM_ID, n: mechanism === "enganche" ? 96 : 97,
+        activity: `Actividad ${mechanism} con evidencia mínima declarada`,
+        program: "Prevención PDTP",
+        responsibleSlugs: ["prf"], responsibleDisplay: "Prevencionista de riesgos en faena",
+        scheduleMode: "scheduled", scheduleClassificationStatus: "confirmed",
+        mechanism, evidenceRequirement: "Registro verificable en el módulo de origen",
+        sourceSheetRow: mechanism === "enganche" ? 6 : 7,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      })
+      await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+        id: `${otherActId}-s-${PROGRAM_YEAR}-${String(CURRENT_MONTH).padStart(2, "0")}-1`,
+        activityId: otherActId, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1, plannedQuantity: 1, sourceColumn: "manual",
+      })
+
+      await expect(markPdtpExecution({
+        activityId: otherActId, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
+        executedQuantity: 1, evidenceText: "", evidenceUrl: "", evidencePhotos: [],
+      }, "user-constancias-1", "all")).rejects.toThrow(/^Esta actividad exige evidencia: Registro verificable en el módulo de origen$/)
+    },
+  )
 })
 
 describe("assertPdtpActivityMechanism", () => {

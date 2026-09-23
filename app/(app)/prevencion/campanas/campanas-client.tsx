@@ -2,8 +2,10 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import {
   Dialog,
   DialogContent,
@@ -14,23 +16,11 @@ import {
 } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { EvidenceField } from "@/components/prevention/evidence-field"
-import { Input } from "@/components/ui/input"
-import { Field, Label } from "@/components/ui/field"
+import { Field } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
 import { PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  closeCampaignAction,
-  createCampaignAction,
-  setCampaignPdtpActivitiesAction,
-} from "./actions"
+import { closeCampaignAction, setCampaignPdtpActivitiesAction } from "./actions"
 import type { preventionCampaigns } from "@/db/schema"
 import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 
@@ -38,23 +28,26 @@ export type CampaignRow = typeof preventionCampaigns.$inferSelect & {
   worksiteName: string
 }
 
-interface WorksitesItem {
-  id: string
-  name: string
-  code: string
-}
-
 interface CampanasClientProps {
   initialCampaigns: CampaignRow[]
-  worksites: WorksitesItem[]
   canManage: boolean
   catalogActivities: PdtpActivityPickerOption[]
   catalogBindings: Record<string, string[]>
 }
 
+/**
+ * Task 13 (2026-09-23): las campañas nuevas del programa 2026 (N°85-89) ya no
+ * se crean acá — nacen como ítems CAM-* del catálogo de capacitación en
+ * `/prevencion/capacitacion`, la única vía viva desde ahora para acreditarlas
+ * (ver `lib/prevention/training-occurrences-catalog.ts`). Esta pantalla queda
+ * en modo lectura + cierre de lo pendiente: conserva "Marcar como hecha" y la
+ * corrección de actividad para las campañas que ya existían antes de este
+ * cambio, para no dejarlas huérfanas.
+ */
+const TRAINING_ROUTE = "/prevencion/capacitacion"
+
 export function CampanasClient({
   initialCampaigns,
-  worksites,
   canManage,
   catalogActivities,
   catalogBindings,
@@ -63,44 +56,9 @@ export function CampanasClient({
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
-  // Modals state
-  const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [doneCampaignItem, setDoneCampaignItem] = useState<CampaignRow | null>(null)
-
-  // Form states
-  const [newTitle, setNewTitle] = useState("")
-  const [newDescription, setNewDescription] = useState("")
-  const [newWorksiteId, setNewWorksiteId] = useState("")
-  const [newActivity, setNewActivity] = useState("")
   const [evidenceUrl, setEvidenceUrl] = useState("")
   const [heldOn, setHeldOn] = useState("")
-
-  const handleCreate = () => {
-    if (!newWorksiteId || !newTitle.trim() || !newActivity) {
-      setError("Completa la faena, el título y la actividad que acredita.")
-      return
-    }
-    setError(null)
-    startTransition(async () => {
-      const res = await createCampaignAction({
-        worksiteId: newWorksiteId,
-        title: newTitle,
-        description: newDescription,
-        pdtpActivityNumbers: [],
-        catalogActivityIds: [newActivity],
-      })
-      if (res.ok) {
-        setIsCreateOpen(false)
-        setNewTitle("")
-        setNewDescription("")
-        setNewWorksiteId("")
-        setNewActivity("")
-        router.refresh()
-      } else {
-        setError(res.message ?? "Ocurrió un error")
-      }
-    })
-  }
 
   /** El número declarado, o el primero si la campaña declara más de uno. */
   const activityOf = (campaign: CampaignRow): string => {
@@ -148,15 +106,23 @@ export function CampanasClient({
     <div className="space-y-6">
       <PageHeader
         title="Campañas Preventivas (R9)"
-        description="Se hizo / no se hizo, con evidencia de difusión — auto-acredita el PDTP"
+        description="Registro histórico. Las campañas del programa 2026 (N°85-89) ya no se crean acá."
         actions={
-          canManage ? (
-            <Button onClick={() => setIsCreateOpen(true)} className="bg-[var(--color-primary)] text-white">
-              + Nueva Campaña
-            </Button>
-          ) : undefined
+          <Button asChild variant="secondary">
+            <Link href={TRAINING_ROUTE}>Ir a Capacitación</Link>
+          </Button>
         }
       />
+
+      <Callout tone="info">
+        Esta pantalla dejó de aceptar campañas nuevas: las N°85 a N°89 del programa 2026
+        se registran y cierran ahora desde{" "}
+        <Link href={TRAINING_ROUTE} className="font-medium underline underline-offset-2">
+          Capacitación
+        </Link>
+        , que es la única vía que acredita el PDTP para esas actividades. Acá se pueden
+        seguir cerrando las campañas que ya estaban pendientes antes de este cambio.
+      </Callout>
 
       {error && (
         <div className="p-3 text-sm text-[var(--color-danger-ink)] bg-[var(--color-danger-tint)] rounded-md border border-[var(--color-danger-border)]">
@@ -166,14 +132,12 @@ export function CampanasClient({
 
       {initialCampaigns.length === 0 ? (
         <EmptyState
-          title="Sin campañas registradas"
-          description="Crea la primera campaña preventiva para difundir medidas de seguridad y acreditar PDTP (R9)."
+          title="Sin campañas pendientes en esta faena"
+          description="Las campañas del programa 2026 (N°85 a N°89) se registran y cierran desde Capacitación."
           action={
-            canManage ? (
-              <Button onClick={() => setIsCreateOpen(true)} className="bg-[var(--color-primary)] text-white">
-                Crear Campaña
-              </Button>
-            ) : undefined
+            <Button asChild>
+              <Link href={TRAINING_ROUTE}>Ir a Capacitación</Link>
+            </Button>
           }
         />
       ) : (
@@ -237,62 +201,6 @@ export function CampanasClient({
           </div>
         </div>
       )}
-
-      {/* Modal Nueva Campaña */}
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader>
-            <DialogTitle>Nueva Campaña Preventiva</DialogTitle>
-            <DialogDescription>
-              Registra una campaña de difusión preventiva para ser acreditada en PDTP (R9).
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Faena</Label>
-              <Select value={newWorksiteId} onValueChange={setNewWorksiteId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona una faena" />
-                </SelectTrigger>
-                <SelectContent>
-                  {worksites.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>
-                      {w.name} ({w.code})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Título de la Campaña</Label>
-              <Input
-                placeholder="Ej: Difusión de uso correcto de EPP"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <PdtpActivityPicker label="Actividad del catálogo que acredita" options={catalogActivities} value={newActivity} onChange={setNewActivity} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Descripción / Alcance (Opcional)</Label>
-              <Input
-                placeholder="Detalles sobre el tema o la maniobra abordada"
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => setIsCreateOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleCreate} disabled={isPending}>
-              {isPending ? "Guardando..." : "Crear Campaña"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Dialog Marcar como hecha */}
       <Dialog open={!!doneCampaignItem} onOpenChange={(open) => !open && setDoneCampaignItem(null)}>

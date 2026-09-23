@@ -6,6 +6,8 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 import type { CampaignAccess } from "@/lib/services/prevention-campaigns"
+import type { TrainingOccurrenceAccess } from "@/lib/services/prevention-training-occurrences"
+import type { DB } from "@/db"
 import { chileDateParts } from "@/lib/utils"
 
 /* El motor sólo acredita cuando el año del programa coincide con el del evento
@@ -47,6 +49,14 @@ const WS_ID = "ws-cmp-1"
 const PROGRAM_ID = "pdtp-cmp-prog"
 
 beforeEach(async () => {
+  // Las tres tablas de ocurrencias de capacitación (usadas por el test de
+  // doble conteo 85-89 más abajo, que cierra una campaña y además completa su
+  // CAM-* equivalente) tienen FK `restrict` hacia `worksites`/`users`: hay que
+  // vaciarlas antes o el `delete` de esas dos tablas falla.
+  await inMemoryDb.delete(schema.preventionTrainingOccurrenceEvidence)
+  await inMemoryDb.delete(schema.preventionTrainingOccurrences)
+  await inMemoryDb.delete(schema.preventionTrainingCatalogItems)
+  await inMemoryDb.delete(schema.pdtpTriggerEvents)
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.preventionCampaigns)
@@ -130,7 +140,19 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
     expect(rows[0]!.title).toBe("Campaña Uso Correcto de EPP")
   })
 
-  it("marca la campaña como hecha con evidencia y auto-acredita en PDTP (R9)", async () => {
+  /**
+   * Ronda de corrección 1/5 (2026-09-23, doble conteo 85-89): antes de esta
+   * ronda, cerrar la campaña SÍ creaba una fila `pdtpExecutions` propia (vía
+   * `recordPdtpFulfillmentEvent`) y este test lo verificaba. Eso es
+   * exactamente lo que producía el doble conteo cuando la ocurrencia `CAM-*`
+   * equivalente del catálogo de capacitación también se completaba para el
+   * mismo período: el motor de cumplimiento no deduplica entre `"campana"` y
+   * `"capacitacion_ocurrencia"`, así que las dos ejecuciones se sumaban (ver
+   * el test de doble conteo más abajo). El cierre de campaña ya no acredita
+   * el PDTP en absoluto — sigue marcando la campaña como hecha, con su
+   * evidencia y su historial.
+   */
+  it("marca la campaña como hecha con evidencia, pero ya no acredita el PDTP (evita doble conteo con CAM-*)", async () => {
     const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
 
     const campaign = await createCampaign({
@@ -146,16 +168,18 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
 
     expect(result.campaign!.status).toBe("done")
     expect(result.campaign!.completedByUserId).toBe(USER_ID)
-    expect(result.pdtpAccredited).toBe(true)
+    expect(result.campaign!.evidenceUrl).toBe("https://drive.chome.cl/acta-campana")
+    expect(result.pdtpAccredited).toBe(false)
+    expect(result.pdtpPending).toBe(false)
 
-    // Verificar auto-acreditación PDTP
+    // Ya no hay auto-acreditación PDTP desde el cierre de campaña.
     const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
       .where(eq(schema.pdtpExecutions.sourceId, campaign!.id))
+    expect(executions).toHaveLength(0)
 
-    expect(executions).toHaveLength(1)
-    expect(executions[0]!.origin).toBe("integration")
-    expect(executions[0]!.sourceType).toBe("campana")
-    expect(executions[0]!.executedQuantity).toBe(1)
+    const fulfillmentEvents = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
+      .where(eq(schema.pdtpFulfillmentEvents.sourceId, campaign!.id))
+    expect(fulfillmentEvents).toHaveLength(0)
   })
 
   /**
@@ -203,6 +227,12 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
     })
   })
 
+  // F-14 en su origen distinguía "no declaró actividades" de "declaró y no
+  // acreditó" por `pdtpPending`. Desde la ronda de corrección 1/5 el cierre de
+  // campaña nunca acredita (declare o no actividades), así que ambos casos
+  // terminan en `pdtpAccredited: false, pdtpPending: false` — se conserva el
+  // test para que declarar `pdtpActivityNumbers: []` siga sin lanzar ni crear
+  // nada en `pdtpExecutions`.
   it("marca hecha sin acreditar PDTP cuando no declara actividades (F-14)", async () => {
     const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
 
@@ -228,11 +258,14 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
     expect(executions).toHaveLength(0)
   })
 
-  /* Con el programa en borrador el motor lanza ("El programa … no está
-   * activo"). Antes eso se perdía en un `logger.error` y no quedaba nada que
-   * reprocesar. El hecho tiene que sobrevivir como evento durable para que
-   * `reconcilePdtpFulfillmentEvents` lo recupere al activar el programa. */
-  it("deja un evento durable reprocesable cuando el programa no está activo", async () => {
+  /* Ronda de corrección 1/5 (2026-09-23): antes, con el programa en borrador,
+   * el motor de acreditación lanzaba ("El programa … no está activo") y
+   * `recordPdtpFulfillmentEvent` dejaba un evento durable `pending`/`error`
+   * para que `reconcilePdtpFulfillmentEvents` lo reprocesara al activar el
+   * programa. Ese mecanismo entero se retiró de `closeCampaign`: el estado del
+   * programa PDTP ya no puede afectar si una campaña se cierra o no, porque el
+   * cierre no depende de él. */
+  it("cierra la campaña igual cuando el programa PDTP está en borrador, sin dejar nada pendiente de acreditar", async () => {
     const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
 
     await inMemoryDb.update(schema.pdtpPrograms)
@@ -253,49 +286,42 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
     // La campaña se marca hecha igual: el PDTP no manda sobre el módulo fuente.
     expect(result.campaign!.status).toBe("done")
     expect(result.pdtpAccredited).toBe(false)
-    // Declaró actividades y no acreditó: es el caso "queda pendiente", distinto
-    // de "no había nada que acreditar".
-    expect(result.pdtpPending).toBe(true)
+    expect(result.pdtpPending).toBe(false)
 
+    // Ya no se intenta acreditar en absoluto, así que no queda ningún evento
+    // de acreditación durable esperando reproceso.
     const events = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
       .where(eq(schema.pdtpFulfillmentEvents.sourceId, campaign!.id))
-
-    expect(events).toHaveLength(1)
-    expect(events[0]!.sourceType).toBe("campana")
-    expect(events[0]!.activityNumbers).toEqual([85])
-    expect(events[0]!.quantity).toBe(1)
-    // `pending` o `error`: las dos las reprocesa `reconcilePdtpFulfillmentEvents`.
-    expect(["pending", "error"]).toContain(events[0]!.status)
+    expect(events).toHaveLength(0)
   })
 
-  /* La campaña se marca después de hecha, así que la fecha que acredita es la
-   * del hecho y no la de digitación: el motor resuelve mes y semana con
-   * `occurredAt`. Con `now()` una campaña de marzo marcada hoy se anotaba en
-   * el mes de la carga. */
-  it("acredita en el período de la campaña, no en el de la digitación", async () => {
+  /* La fecha civil de una campaña se ancla al mediodía UTC (08:00-09:00 en
+   * Chile): a medianoche UTC, el día 1 cae en el mes anterior en Chile. Antes
+   * de esta ronda esto se verificaba mirando el mes/semana de la ejecución
+   * PDTP que `closeCampaign` creaba; como el cierre ya no crea ninguna
+   * ejecución, se verifica en el único artefacto fechado que el cierre sigue
+   * escribiendo: el evento disparador (`pdtpTriggerEvents`, conector
+   * "campaigns") que alimenta el libro de obligaciones — no el de
+   * cumplimiento, pero pasa por la misma `occurredAtFromChileDate`. */
+  it("ancla `occurredAt` al mediodía UTC del día en que se hizo la campaña, no al de la digitación", async () => {
     const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
 
     const campaign = await createCampaign({
       worksiteId: WS_ID, title: "Campaña de marzo", pdtpActivityNumbers: [85],
     }, access)
 
-    // 12 de marzo: mes 3, semana 2 (ceil(12/7)).
     await closeCampaign({
       campaignId: campaign!.id, heldOn: `${PROGRAM_YEAR}-03-12`,
       evidenceUrl: "https://drive.chome.cl/acta-campana",
     }, access)
 
-    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
-      .where(eq(schema.pdtpExecutions.activityId, "act-85"))
-    expect(execution).toBeTruthy()
-    expect(execution!.year).toBe(PROGRAM_YEAR)
-    expect(execution!.month).toBe(3)
-    expect(execution!.week).toBe(2)
+    const [triggerEvent] = await inMemoryDb.select().from(schema.pdtpTriggerEvents)
+      .where(eq(schema.pdtpTriggerEvents.sourceId, campaign!.id))
+    expect(triggerEvent).toBeTruthy()
+    expect(new Date(triggerEvent!.occurredAt).toISOString()).toBe(`${PROGRAM_YEAR}-03-12T12:00:00.000Z`)
   })
 
-  /* La fecha civil se ancla al mediodía UTC: a medianoche, el día 1 cae en el
-   * mes anterior en Chile y la campaña se archivaría en el mes equivocado. */
-  it("el primer día del mes se acredita en ese mes, no en el anterior", async () => {
+  it("el primer día del mes ancla `occurredAt` en ese mes, no en el anterior", async () => {
     const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
 
     const campaign = await createCampaign({
@@ -306,10 +332,9 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
       evidenceUrl: "https://drive.chome.cl/acta-campana",
     }, access)
 
-    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
-      .where(eq(schema.pdtpExecutions.activityId, "act-85"))
-    expect(execution!.month).toBe(4)
-    expect(execution!.week).toBe(1)
+    const [triggerEvent] = await inMemoryDb.select().from(schema.pdtpTriggerEvents)
+      .where(eq(schema.pdtpTriggerEvents.sourceId, campaign!.id))
+    expect(new Date(triggerEvent!.occurredAt).toISOString()).toBe(`${PROGRAM_YEAR}-04-01T12:00:00.000Z`)
   })
 
   it("exige la fecha en que se hizo la campaña", async () => {
@@ -353,5 +378,164 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
     await expect(setCampaignPdtpActivities({
       campaignId: campaign!.id, pdtpActivityNumbers: [86],
     }, access)).rejects.toThrow(/ya está hecha/i)
+  })
+})
+
+/**
+ * Ronda de corrección 1/5 (2026-09-23). Reproduce el hallazgo tal cual lo
+ * describió la revisión: `closeCampaign` acreditaba la N°85-89 y, en paralelo,
+ * completar la ocurrencia `CAM-*` equivalente del catálogo de capacitación
+ * (`recordTrainingOccurrenceStatus`) TAMBIÉN la acreditaba — el motor de
+ * cumplimiento (`effectiveApprovedExecutionsByCell`,
+ * lib/services/pdtp/compliance.ts) sólo deduplica `"inspeccion"` contra la
+ * ejecución manual (toma el máximo); `"campana"` y `"capacitacion_ocurrencia"`
+ * caen en el mismo acumulador (`otherIntegrationQuantity`) y se SUMAN. Cerrar
+ * la campaña legado de la N°88 y completar CAM-07 (su equivalente, Task 13)
+ * del mismo período dejaba `executedQuantity = 2` contra `plannedQuantity = 1`.
+ *
+ * Usa un programa PDTP propio, dedicado y fijado al año del catálogo de
+ * capacitación (`PREDEFINED_TRAINING_CATALOG_YEAR`, hoy 2026): el catálogo
+ * `CAM-*` sólo existe para ese año exacto
+ * (`assertPredefinedTrainingCatalogYear`), así que no puede parametrizarse con
+ * el año en curso como el resto de este archivo. Para no competir con el
+ * programa de `beforeEach` (mismo año en curso hoy, lo que crearía dos
+ * programas `active` candidatos para el mismo año y una resolución ambigua),
+ * ese programa compartido se pasa a `draft` al inicio del test: desde esta
+ * ronda `closeCampaign` no lo necesita `active` para nada. Se le da además
+ * `version: 2` porque `pdtp_programs_year_version_unique` es sobre
+ * `(year, version)` sin importar el status — pasar el compartido a `draft` no
+ * libera su fila `(YEAR, 1)`.
+ */
+describe("Ronda de corrección 1/5 — doble conteo 85-89 (campaña legado + CAM-* del catálogo)", () => {
+  it("cerrar la campaña N°88 y completar CAM-07 del mismo período deja la celda en executedQuantity=1, no 2", async () => {
+    const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
+    const {
+      ensurePreventionTrainingOccurrencesForWorksiteTx,
+      listTrainingOccurrences,
+      recordTrainingOccurrenceStatus,
+    } = await import("@/lib/services/prevention-training-occurrences")
+    const { effectiveApprovedExecutionsByCell } = await import("@/lib/services/pdtp/compliance")
+    const { PREDEFINED_TRAINING_CATALOG_YEAR } = await import("@/lib/prevention/training-occurrences-catalog")
+
+    const YEAR = PREDEFINED_TRAINING_CATALOG_YEAR
+    const DUP_PROGRAM_ID = "pdtp-dup88-prog"
+    const DUP_ACTIVITY_ID = "pdtp-dup88-act"
+    const access: CampaignAccess = {
+      userId: USER_ID,
+      scope: { mode: "all", ids: [] },
+      permissions: ["prevention:campaign:view", "prevention:campaign:manage"],
+    }
+    const trainingAccess: TrainingOccurrenceAccess = {
+      userId: USER_ID,
+      scope: { mode: "all", ids: [] },
+      permissions: ["prevention:training:view", "prevention:training:record"],
+    }
+
+    // Neutraliza el programa compartido de `beforeEach`: mismo año hoy, y ya
+    // no hace falta que esté activo porque `closeCampaign` no lo consulta.
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ status: "draft" })
+      .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpPrograms).values({
+      id: DUP_PROGRAM_ID,
+      year: YEAR,
+      // v2, no v1: `pdtp_programs_year_version_unique` es sobre (year, version)
+      // sin importar el status, y el programa compartido de `beforeEach` ya
+      // ocupa (YEAR, 1) hoy que su año en curso coincide con el del catálogo.
+      // Pasarlo a `draft` (arriba) lo saca de la resolución de acreditación
+      // (que sólo mira status active/closed), pero no libera la fila v1.
+      version: 2,
+      title: `PDTP ${YEAR} Doble Conteo N88`,
+      status: "active",
+      appliesToAllWorksites: true,
+      elaboratedByName: "Prevencionista",
+      elaboratedByTitle: "Experto",
+      creationMode: "blank",
+      complianceTarget: 0.9,
+      pesoEjecucion: 0.5,
+      pesoVerificacion: 0.3,
+      pesoCierre: 0.2,
+      createdAt: now,
+      updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.pdtpActivities).values({
+      id: DUP_ACTIVITY_ID,
+      programId: DUP_PROGRAM_ID,
+      n: 88,
+      activity: "Campaña Seguridad Vial",
+      program: "Prevención",
+      responsibleSlugs: ["prevencionista"],
+      responsibleDisplay: "Prevencionista",
+      scheduleMode: "scheduled",
+      scheduleClassificationStatus: "confirmed",
+      indicatorMode: "coverage",
+      sourceSheetRow: 36,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    // 1) Cierra la campaña legado que declara la N°88 (CAM-07 la absorbe desde
+    // Task 13). Con el fix, esto ya NO debe crear una ejecución PDTP.
+    const campaign = await createCampaign({
+      worksiteId: WS_ID,
+      title: "Campaña Seguridad Vial (legado)",
+      pdtpActivityNumbers: [88],
+    }, access)
+
+    // CAM-07 empieza en m06-w1: el 5 de junio (semana 1) es el mismo período.
+    await closeCampaign({
+      campaignId: campaign!.id,
+      heldOn: `${YEAR}-06-05`,
+      evidenceUrl: "https://drive.chome.cl/acta-vial",
+    }, access)
+
+    const executionsAfterCampaignClose = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, DUP_ACTIVITY_ID))
+    expect(executionsAfterCampaignClose).toHaveLength(0)
+
+    // 2) Completa la ocurrencia CAM-07 equivalente, mismo período (m06-w1).
+    await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb as unknown as DB, WS_ID, YEAR)
+    const occurrence = (await listTrainingOccurrences(trainingAccess))
+      .find((row) => row.code === "CAM-07" && row.slotKey === "m06-w1")
+    if (!occurrence) throw new Error("No se encontró la ocurrencia CAM-07 m06-w1 de prueba.")
+
+    await inMemoryDb.insert(schema.preventionTrainingOccurrenceEvidence).values({
+      id: "training-occ-evidence-dup88",
+      occurrenceId: occurrence.id,
+      fileName: "acta-vial.pdf",
+      storagePath: "storage/prevention-training-evidence/test-acta-vial-dup88.pdf",
+      mimeType: "application/pdf",
+      fileSizeBytes: 128,
+      sha256: "e".repeat(64),
+      state: "active",
+      uploadedByUserId: USER_ID,
+    })
+
+    await recordTrainingOccurrenceStatus({
+      occurrenceId: occurrence.id,
+      expectedVersion: occurrence.version,
+      status: "completed",
+    }, trainingAccess)
+
+    // 3) Sólo debe existir la ejecución de la ocurrencia CAM-07: la campaña ya
+    // no aportó una segunda fila para la misma actividad/período.
+    const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, DUP_ACTIVITY_ID))
+    expect(executions).toHaveLength(1)
+    expect(executions[0]!.sourceType).toBe("capacitacion_ocurrencia")
+    expect(executions[0]!.month).toBe(6)
+    expect(executions[0]!.week).toBe(1)
+
+    // 4) Y el motor de cumplimiento no suma una segunda ejecución para la
+    // misma celda: `executedQuantity` queda en 1, no en 2 — el hallazgo
+    // original. Se filtra por `status === "approved"` porque es exactamente lo
+    // que hace `getPdtpComplianceIndicators` antes de deduplicar.
+    const approved = executions.filter((row) => row.status === "approved")
+    expect(approved).toHaveLength(1)
+    const cells = effectiveApprovedExecutionsByCell(approved)
+    expect(cells).toHaveLength(1)
+    expect(cells[0]!.executedQuantity).toBe(1)
   })
 })

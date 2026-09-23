@@ -18,6 +18,13 @@ export interface EvaluationProgress {
 /**
  * El avance describe respuestas registradas. No es cumplimiento: una respuesta
  * negativa cuenta como avance, pero no como resultado favorable.
+ *
+ * El filtro de sección es el mismo que `getMandatoryItems` en el servidor
+ * (`requiresCompletion ?? countsForCompliance ?? true`), no el de
+ * `getApplicableItems`: una sección puede no puntuar y aun así ser obligatoria
+ * de responder para poder cerrar (RE-28). Sin este espejo el gate de cierre
+ * del servidor podía bloquear un cierre que la barra de avance del cliente ya
+ * mostraba en 100% con cero pendientes.
  */
 export function getEvaluationProgress(sections: ChecklistSection[], responseMap: ResponseMap): EvaluationProgress {
   const pending: EvaluationPendingItem[] = []
@@ -25,7 +32,7 @@ export function getEvaluationProgress(sections: ChecklistSection[], responseMap:
   let answered = 0
 
   for (const section of sections) {
-    if ((section.countsForCompliance ?? true) === false) continue
+    if ((section.requiresCompletion ?? section.countsForCompliance ?? true) === false) continue
     for (const item of section.items) {
       if (!isStatusKind(item.kind)) continue
       total += 1

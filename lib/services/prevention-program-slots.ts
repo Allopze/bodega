@@ -19,6 +19,7 @@ import {
   preventionAlcotestSlots,
   preventionEmergencyDrillSlots,
   preventionGrdMeetingSlots,
+  preventionHygieneMeasurementSlots,
   preventionProtocolApplicabilities,
 } from "@/db/schema"
 import {
@@ -26,6 +27,7 @@ import {
   ALCOTEST_DISPATCH_SLOTS_2026,
   DRILL_SLOTS_2026,
   GRD_MEETING_SLOTS_2026,
+  HYGIENE_MEASUREMENT_SLOTS_2026,
   PROGRAM_SLOT_YEAR,
   type ProgramSlot,
 } from "@/lib/prevention/program-slots-2026"
@@ -156,12 +158,39 @@ export async function ensureProtocolApplicabilitiesForWorksiteTx(
 }
 
 /**
+ * La casilla anual de evaluación cuantitativa de higiene (N°45). Devuelve
+ * cuántas creó.
+ *
+ * Vive en este agregador y no como un mecanismo propio de higiene por la
+ * misma razón que las demás familias: así la heredan los tres puntos de alta
+ * de faena y el backfill de post-migración
+ * (`scripts/ensure-prevention-program-slots.ts`) sin cablear nada nuevo.
+ */
+export async function ensureHygieneMeasurementSlotsForWorksiteTx(
+  client: Client,
+  worksiteId: string,
+  year: number = PROGRAM_SLOT_YEAR,
+): Promise<number> {
+  const rows = slotRows("hygiene-slot", worksiteId, year, HYGIENE_MEASUREMENT_SLOTS_2026)
+  const created = await client.insert(preventionHygieneMeasurementSlots)
+    .values(rows)
+    .onConflictDoNothing({ target: [
+      preventionHygieneMeasurementSlots.worksiteId,
+      preventionHygieneMeasurementSlots.year,
+      preventionHygieneMeasurementSlots.slotKey,
+    ] })
+    .returning({ id: preventionHygieneMeasurementSlots.id })
+  return created.length
+}
+
+/**
  * Todas las casillas del programa para una faena, en una llamada.
  *
  * Es lo que deben invocar los puntos de alta de faena. Una faena nueva y
- * activa queda con 24 casillas de capacitación, 2 de simulacro, 4 de CGRD, 23
- * de alcotest (12 controles + 11 envíos) y los 8 protocolos MINSAL sin
- * pronunciar: 61 filas.
+ * activa queda con 94 casillas de capacitación (52 + 42 de la Task 8, que
+ * agregó instrumento a las N°16, 37, 51, 57, 59 y 60), 2 de simulacro, 4 de
+ * CGRD, 23 de alcotest (12 controles + 11 envíos), los 8 protocolos MINSAL
+ * sin pronunciar y 1 de evaluación cuantitativa de higiene (N°45): 132 filas.
  *
  * Se siembra **el año completo**, también para una faena dada de alta en
  * octubre, y eso es deliberado: la casilla de marzo sigue existiendo y se puede
@@ -182,6 +211,7 @@ export async function ensurePreventionProgramSlotsForWorksiteTx(
   grdMeetings: number
   alcotest: number
   protocols: number
+  hygieneMeasurements: number
 }> {
   return {
     training: await ensurePreventionTrainingOccurrencesForWorksiteTx(client, worksiteId),
@@ -189,6 +219,7 @@ export async function ensurePreventionProgramSlotsForWorksiteTx(
     grdMeetings: await ensureGrdMeetingSlotsForWorksiteTx(client, worksiteId),
     alcotest: await ensureAlcotestSlotsForWorksiteTx(client, worksiteId),
     protocols: await ensureProtocolApplicabilitiesForWorksiteTx(client, worksiteId),
+    hygieneMeasurements: await ensureHygieneMeasurementSlotsForWorksiteTx(client, worksiteId),
   }
 }
 

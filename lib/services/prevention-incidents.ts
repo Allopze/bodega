@@ -36,6 +36,7 @@ import {
   onIncidentReported,
   onIncidentShiftDiffused,
   onIncidentStatementRecorded,
+  reconcileIncidentObligationsAfterTriage,
 } from "@/lib/services/pdtp-adapters/incident-accreditation-connector"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { recordModuleHistory } from "@/lib/audit"
@@ -647,8 +648,18 @@ export async function reportPreventionIncident(args: {
     return { incident: created, idempotentReplay: false }
   })
 
-  // Auto-acreditación PDTP: Actividades 66, 67 (fuera de la transacción)
-  await onIncidentReported({ incidentId: result.incident.id, worksiteId: result.incident.worksiteId, reportedAt: result.incident.createdAt, userId: args.access.ctx.userId })
+  // Auto-acreditación PDTP: Actividades 66, 67 siempre; 68-75,77,78 filtradas
+  // por tipo de evento/severidad (fuera de la transacción).
+  await onIncidentReported({
+    incidentId: result.incident.id,
+    worksiteId: result.incident.worksiteId,
+    reportedAt: result.incident.createdAt,
+    userId: args.access.ctx.userId,
+    eventType: result.incident.eventType as IncidentEventType,
+    actualSeverity: result.incident.actualSeverity,
+    potentialSeverity: result.incident.potentialSeverity,
+    isFatalOrSerious: result.incident.isFatalOrSerious,
+  })
 
   return result
 }
@@ -982,7 +993,7 @@ export async function triagePreventionIncident(args: {
 }) {
   requireAccess(args.access, "prevention:incidents:triage")
   const input = triageSchema.parse(args.input)
-  return db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx) => {
     const incident = await findIncidentForMutation(tx, input.incidentId)
     requireAccess(args.access, "prevention:incidents:triage", incident.worksiteId)
     if (incident.status !== "reported") throw new Error("El incidente ya fue sometido a triage.")
@@ -1042,6 +1053,23 @@ export async function triagePreventionIncident(args: {
     })
     return updated
   })
+
+  // Reconciliación PDTP best-effort tras el triage (fuera de la transacción,
+  // mismo patrón que `onIncidentReported` en `reportPreventionIncident`): si
+  // la reclasificación bajó la severidad al punto de que una obligación del
+  // RE-20 ya creada dejó de aplicar, se cancela con motivo trazable.
+  await reconcileIncidentObligationsAfterTriage({
+    incidentId: updated.id,
+    worksiteId: updated.worksiteId,
+    occurredAt: updated.createdAt,
+    userId: args.access.ctx.userId,
+    eventType: updated.eventType as IncidentEventType,
+    actualSeverity: updated.actualSeverity,
+    potentialSeverity: updated.potentialSeverity,
+    isFatalOrSerious: updated.isFatalOrSerious,
+  })
+
+  return updated
 }
 
 async function getClosureFacts(client: IncidentClient, incidentId: string) {

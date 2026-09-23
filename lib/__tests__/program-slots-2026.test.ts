@@ -21,6 +21,8 @@ import {
   DRILL_SLOTS_2026,
   GRD_MEETING_PDTP_ACTIVITY_NUMBER,
   GRD_MEETING_SLOTS_2026,
+  HYGIENE_MEASUREMENT_PDTP_ACTIVITY_NUMBER,
+  HYGIENE_MEASUREMENT_SLOTS_2026,
   PROGRAM_SLOT_YEAR,
   resolveProgramSlotYear,
 } from "@/lib/prevention/program-slots-2026"
@@ -64,7 +66,14 @@ describe("las casillas congeladas coinciden con el cronograma del programa", () 
     expect(ALCOTEST_DISPATCH_SLOTS_2026).toHaveLength(11)
   })
 
+  it("N°45 — evaluación cuantitativa por mutual, una sola celda anual", () => {
+    expect(HYGIENE_MEASUREMENT_SLOTS_2026.map((s) => ({ month: s.month, week: s.week })))
+      .toEqual(scheduleFor(HYGIENE_MEASUREMENT_PDTP_ACTIVITY_NUMBER))
+    expect(HYGIENE_MEASUREMENT_SLOTS_2026).toHaveLength(1)
+  })
+
   it("la clave de slot usa el mismo formato que capacitación", () => {
+    expect(HYGIENE_MEASUREMENT_SLOTS_2026.map((s) => s.slotKey)).toEqual(["m02-w2"])
     expect(DRILL_SLOTS_2026.map((s) => s.slotKey)).toEqual(["m03-w3", "m09-w3"])
     expect(GRD_MEETING_SLOTS_2026.map((s) => s.slotKey)).toEqual(["m02-w1", "m03-w1", "m04-w1", "m05-w1"])
     expect(ALCOTEST_CONTROL_SLOTS_2026[0]!.slotKey).toBe("m01-w4")

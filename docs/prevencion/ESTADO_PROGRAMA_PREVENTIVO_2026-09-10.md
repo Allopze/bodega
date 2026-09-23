@@ -1,5 +1,16 @@
 # Estado del Programa de Trabajo Preventivo 2026 después de las correcciones
 
+> **Nota histórica (2026-09-22).** Este documento es anterior al retiro del modelo de
+> cursos por persona (2026-09-19, migración `0310`), que dejó ocho actividades del
+> programa (N°16, 37, 38, 51, 53, 57, 59 y 60) sin ningún instrumento vivo que las
+> acredite. La afirmación "81/81 actividades vigentes conectadas" que sigue abajo
+> **ya no refleja el estado actual** del programa: no la uses como evidencia de
+> cobertura vigente. La Task 8 (2026-09-22) agregó instrumento a seis de esas ocho
+> (N°16, 37, 51, 57, 59, 60) en `lib/prevention/training-occurrences-catalog.ts`; las
+> N°38 y N°53 quedan pendientes de una decisión de Prevención (ver el informe de esa
+> tarea). Se conserva el resto del documento sin reescribir, como antecedente
+> histórico de la revisión del 10 de septiembre de 2026.
+
 **Dirigido a:** Jefatura del Departamento de Prevención de Riesgos  
 **Fecha de revisión:** 10 de septiembre de 2026  
 **Programa revisado:** Programa de Trabajo Preventivo SG-SST 2026  

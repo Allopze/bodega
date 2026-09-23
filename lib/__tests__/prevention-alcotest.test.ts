@@ -68,6 +68,8 @@ const EQUIPMENT_MONOGAS = "eq-monogas-1"
 
 /** Sujeto por defecto para los casos que no prueban la identificación. */
 const SUBJECT = { testedWorkerId: WORKER_ID }
+/** Quien declara casillas en estos casos: un PRF de la faena (N°30). */
+const PRF_ACTOR = { userId: USER_PRF, scope: [WS_ID], roles: ["prevencionista_faena"] }
 const N30_ID = `${PROGRAM_ID}-a-030`
 const N31_ID = `${PROGRAM_ID}-a-031`
 const N32_ID = `${PROGRAM_ID}-a-032`
@@ -171,7 +173,12 @@ describe("recordAlcoholTest", () => {
     const execN31 = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.activityId, N31_ID))
     expect(execN30).toHaveLength(1)
     expect(execN31).toHaveLength(0)
-    // No autoaprobado (accreditation.ts:169-171): sólo "inspeccion" nace aprobada.
+    // M0.4: alcotest sí puede auto-aprobarse, pero sólo con evidencia real
+    // (`AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE` en accreditation.ts).
+    // Sin `slotId` no hay casilla que aporte una ruta de storage, así que el
+    // conector cae al rótulo sintético "Control de alcotest <id>" y el motor
+    // lo deja `submitted` para revisión manual — ver el describe "M0.4" más
+    // abajo para el caso con evidencia real.
     expect(execN30[0]?.status).toBe("submitted")
   })
 
@@ -385,11 +392,11 @@ describe("recordAlcotestSlotStatus", () => {
     const [slot] = await seedSlots()
     await expect(recordAlcotestSlotStatus(
       { slotId: slot!.id, expectedVersion: 1, status: "not_applicable" },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )).rejects.toThrow()
     await expect(recordAlcotestSlotStatus(
       { slotId: slot!.id, expectedVersion: 1, status: "not_applicable", notApplicableReason: "corto" },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )).rejects.toThrow()
 
     const updated = await recordAlcotestSlotStatus(
@@ -399,7 +406,7 @@ describe("recordAlcotestSlotStatus", () => {
         status: "not_applicable",
         notApplicableReason: "La faena no tiene conducción de vehículos ni turnos nocturnos.",
       },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )
     expect(updated.status).toBe("not_applicable")
     expect(updated.notApplicableByUserId).toBe(USER_PRF)
@@ -414,11 +421,11 @@ describe("recordAlcotestSlotStatus", () => {
         status: "not_applicable",
         notApplicableReason: "La faena no tiene conducción de vehículos ni turnos nocturnos.",
       },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )
     const corregida = await recordAlcotestSlotStatus(
       { slotId: slot!.id, expectedVersion: na.version, status: "not_completed" },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )
     expect(corregida.status).toBe("not_completed")
     expect(corregida.notApplicableReason).toBeNull()
@@ -438,7 +445,7 @@ describe("recordAlcotestSlotStatus", () => {
 
     await expect(recordAlcotestSlotStatus(
       { slotId: marzo.id, expectedVersion: 2, status: "not_completed" },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )).rejects.toBeInstanceOf(AlcotestSlotError)
   })
 
@@ -454,11 +461,11 @@ describe("recordAlcotestSlotStatus", () => {
         status: "not_applicable",
         notApplicableReason: "La faena no opera vehículos ni tiene turnos nocturnos.",
       },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )
     await recordAlcotestSlotStatus(
       { slotId: slot!.id, expectedVersion: na.version, status: "not_completed" },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )
 
     // La fila ya no conserva el motivo; la bitácora sí.
@@ -479,7 +486,7 @@ describe("recordAlcotestSlotStatus", () => {
     const slots = await seedSlots(WS_OTHER)
     await expect(recordAlcotestSlotStatus(
       { slotId: slots[0]!.id, expectedVersion: 1, status: "not_completed" },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )).rejects.toThrow()
   })
 })
@@ -521,6 +528,28 @@ describe("cumplir la casilla con el hecho", () => {
     expect(despues?.testId).toBeTruthy()
   })
 
+  /* Task 3 — M0.2: el control se registra tarde (abril), pero cumple una
+   * casilla planificada para marzo. La celda que el PDTP acredita tiene que
+   * ser la de la casilla (marzo), no la del mes en que el control llegó
+   * registrado — si no, un control tardío paga un mes que no le corresponde y
+   * marzo sigue en cero aunque la casilla ya esté marcada cumplida. */
+  it("un control tardío acredita la celda planificada de la casilla, no el mes real del control", async () => {
+    await seedProgramAndActivities()
+    const slots = await seedSlots()
+    const marzo = slots.find((s) => s.kind === "control" && s.scheduledMonth === 3)!
+    expect(marzo.scheduledWeek).toBe(3)
+    await evidenciaEn(marzo.id)
+
+    await recordAlcoholTest(
+      { worksiteId: WS_ID, ...SUBJECT, shift: "dia", performedAt: "2026-04-10T14:00:00.000Z", slotId: marzo.id },
+      USER_PRF, ["prevencionista_faena"], [WS_ID],
+    )
+
+    const [exec] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, N30_ID))
+    expect(exec).toMatchObject({ year: PROGRAM_YEAR, month: 3, week: 3 })
+  })
+
   it("un control extraordinario se registra sin casilla y no ocupa ninguna celda", async () => {
     await seedProgramAndActivities()
     await seedSlots()
@@ -558,6 +587,92 @@ describe("cumplir la casilla con el hecho", () => {
       .where(eq(schema.pdtpExecutions.activityId, N32_ID))
     expect(exec?.evidenceText).toBe(`alcotest/${envioMarzo.id}/planilla-marzo.pdf`)
   })
+
+  /* Task 3 — M0.2: el envío se registra tarde (mayo), pero cumple la casilla
+   * planificada para marzo (semana 1). La celda que el PDTP acredita tiene
+   * que ser la de la casilla, no la del mes en que el envío se registró. */
+  it("un envío tardío acredita la celda planificada de la casilla, no el mes real del envío", async () => {
+    await seedProgramAndActivities()
+    const slots = await seedSlots()
+    const envioMarzo = slots.find((s) => s.kind === "envio" && s.scheduledMonth === 3)!
+    expect(envioMarzo.scheduledWeek).toBe(1)
+    await evidenciaEn(envioMarzo.id)
+
+    await recordAlcoholTestDispatch(
+      {
+        worksiteId: WS_ID, year: 2026, month: 2, recipient: "mutual@example.test",
+        slotId: envioMarzo.id, sentAt: "2026-05-12T12:00:00.000Z",
+      },
+      USER_PRF, [WS_ID],
+    )
+
+    const [exec] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, N32_ID))
+    expect(exec).toMatchObject({ year: PROGRAM_YEAR, month: 3, week: 1 })
+  })
+})
+
+/**
+ * M0.4 (2026-09-22): antes de este cambio, `recordAlcoholTest` y
+ * `recordAlcoholTestDispatch` nunca pasaban `autoApproveByUserId` — un
+ * alcotest nacía siempre `submitted`, aun con la ruta real de la casilla
+ * (ver el comentario que este mismo cambio retiró de la cabecera de
+ * `recordAlcoholTest`). Ahora el motor central auto-aprueba cuando el
+ * `evidenceRef` es real; `evidenciaEn()` (arriba) no sirve para probarlo
+ * porque su `storagePath` no lleva el prefijo `storage/` que
+ * `accreditPdtpFromEvent` exige — de ahí el helper propio.
+ */
+async function evidenciaRealEn(slotId: string) {
+  await inMemoryDb.insert(schema.preventionAlcotestSlotEvidence).values({
+    id: `alcev-real-${slotId}`,
+    slotId,
+    fileName: "planilla-real.pdf",
+    storagePath: `storage/prevention-alcotest-evidence/${slotId}/planilla-real.pdf`,
+    mimeType: "application/pdf",
+    fileSizeBytes: 1024,
+    sha256: "b".repeat(64),
+    state: "active",
+    uploadedByUserId: USER_PRF,
+  })
+}
+
+describe("M0.4 — el alcotest se auto-aprueba con evidencia real de la casilla", () => {
+  it("un control con la ruta real de storage se auto-aprueba", async () => {
+    await seedProgramAndActivities()
+    const slots = await seedSlots()
+    const marzo = slots.find((s) => s.kind === "control" && s.scheduledMonth === 3)!
+    await evidenciaRealEn(marzo.id)
+
+    await recordAlcoholTest(
+      { worksiteId: WS_ID, ...SUBJECT, shift: "dia", performedAt: "2026-03-05T14:00:00.000Z", slotId: marzo.id },
+      USER_PRF, ["prevencionista_faena"], [WS_ID],
+    )
+
+    const [exec] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, N30_ID))
+    expect(exec).toMatchObject({ status: "approved", approvedByUserId: USER_PRF })
+  })
+
+  it("el envío con la ruta real de storage también se auto-aprueba", async () => {
+    await seedProgramAndActivities()
+    const slots = await seedSlots()
+    const envioMarzo = slots.find((s) => s.kind === "envio" && s.scheduledMonth === 3)!
+    await evidenciaRealEn(envioMarzo.id)
+
+    await recordAlcoholTestDispatch(
+      { worksiteId: WS_ID, year: 2026, month: 2, recipient: "mutual@example.test", slotId: envioMarzo.id },
+      USER_PRF, [WS_ID],
+    )
+
+    const [exec] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, N32_ID))
+    expect(exec).toMatchObject({ status: "approved", approvedByUserId: USER_PRF })
+  })
+
+  /* Sin casilla no hay ruta real: el conector cae al rótulo sintético
+   * `Control de alcotest <id>` y el motor lo deja `submitted` — cubierto ya
+   * por "PRF registra y acredita la N°30, no la N°31" arriba, que no pasa
+   * `slotId`. */
 })
 
 describe("attachAlcotestSlotEvidenceTx", () => {
@@ -570,7 +685,7 @@ describe("attachAlcotestSlotEvidenceTx", () => {
         status: "not_applicable",
         notApplicableReason: "La faena no tiene conducción de vehículos ni turnos nocturnos.",
       },
-      { userId: USER_PRF, scope: [WS_ID] },
+      PRF_ACTOR,
     )
 
     await expect(inMemoryDb.transaction(async (tx) => attachAlcotestSlotEvidenceTx(tx as never, {

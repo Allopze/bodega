@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { ProgramSlotList, type ProgramSlotRow } from "@/components/prevention/program-slot-list"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -12,13 +13,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import {
   MINSAL_PROTOCOLS,
   PROTOCOL_APPLICABILITY_LABELS,
   summarizeProtocolCoverage,
   type ProtocolApplicabilityStatus,
 } from "@/lib/prevention/minsal-protocols"
-import { setProtocolApplicabilityAction } from "./actions"
+import type { PdtpPeriod } from "@/lib/services/pdtp/period"
+import { recordHygieneMeasurementSlotStatusAction, setProtocolApplicabilityAction } from "./actions"
 
 export interface ApplicabilityRow {
   worksiteId: string
@@ -30,6 +33,9 @@ export interface ApplicabilityRow {
   version: number
 }
 
+/** Casilla N°45 de una faena: la fila del checklist compartido, con su faena. */
+export type MeasurementSlotRow = ProgramSlotRow & { worksiteId: string }
+
 function statusVariant(status: ProtocolApplicabilityStatus): "success" | "outline" | "warning" {
   if (status === "applicable") return "success"
   if (status === "not_applicable") return "outline"
@@ -37,18 +43,36 @@ function statusVariant(status: ProtocolApplicabilityStatus): "success" | "outlin
 }
 
 /**
- * Los ocho protocolos del MINSAL frente a lo que declaró cada faena.
+ * Lo que el programa anual le pide a la higiene de cada faena: la evaluación
+ * cuantitativa (N°45) y los ocho protocolos del MINSAL frente a lo que declaró.
  *
  * La pregunta que resuelve —"¿qué % del PREXOR tengo cumplido?"— no se podía
  * responder mientras el protocolo fue texto libre en el programa de vigilancia.
+ * La casilla N°45 vive acá y no en el detalle del GES porque es de la faena, no
+ * de un grupo: la cumple la primera medición del año, de cualquier GES.
  */
-export function ProtocolsPanel({ worksites, applicabilities, today, canManage }: {
+export function ProtocolsPanel({
+  worksites, applicabilities, measurementSlots, slotYear, activationPeriods, canRecordMeasurementSlots, today, canManage,
+}: {
   worksites: { id: string; name: string }[]
   applicabilities: ApplicabilityRow[]
+  measurementSlots: MeasurementSlotRow[]
+  slotYear: number
+  activationPeriods: Record<string, PdtpPeriod | null>
+  canRecordMeasurementSlots: boolean
   today: string
   canManage: boolean
 }) {
-  const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
+  /* La faena viaja en la URL (`?faena=`) y no en un `useState`: después de
+   * cada acción —declarar un protocolo, resolver la casilla N°45— la página se
+   * vuelve a renderizar y el panel se monta de nuevo, así que el estado local
+   * volvía a la primera faena de la lista. Quien acababa de declarar algo en la
+   * cuarta faena veía la primera y creía que la acción no había hecho nada. */
+  const { getFilter, setFilter } = useUrlFilters()
+  const requestedWorksiteId = getFilter("faena")
+  const worksiteId = worksites.some((item) => item.id === requestedWorksiteId)
+    ? requestedWorksiteId
+    : worksites[0]?.id ?? ""
   const [editing, setEditing] = React.useState<{ code: string; shortName: string; row?: ApplicabilityRow } | null>(null)
 
   const scoped = applicabilities.filter((row) => row.worksiteId === worksiteId)
@@ -63,13 +87,32 @@ export function ProtocolsPanel({ worksites, applicabilities, today, canManage }:
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={worksiteId} onValueChange={setWorksiteId}>
+        <Select value={worksiteId} onValueChange={(value) => setFilter("faena", value)}>
           <SelectTrigger className="w-64" aria-label="Faena"><SelectValue /></SelectTrigger>
           <SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
         </Select>
         {pending > 0 && <MetaBadge meta={{ label: `${pending} sin pronunciamiento`, variant: "warning" }} />}
         {overdue > 0 && <MetaBadge meta={{ label: `${overdue} con reevaluación vencida`, variant: "danger" }} />}
       </div>
+
+      <section aria-labelledby="hygiene-n45-heading" className="space-y-2">
+        <div>
+          <h2 id="hygiene-n45-heading" className="text-sm font-semibold">Evaluación cuantitativa por mutual</h2>
+          <p className="text-xs text-[var(--color-text-subtle)]">
+            Actividad N°45 del programa anual. La cumple la primera medición del año en esta faena, con su informe de laboratorio adjunto.
+          </p>
+        </div>
+        <ProgramSlotList
+          rows={measurementSlots.filter((row) => row.worksiteId === worksiteId)}
+          year={slotYear}
+          canRecord={canRecordMeasurementSlots}
+          emptyHint="Esta faena todavía no tiene la casilla del programa; se genera al activarla."
+          activationPeriod={activationPeriods[worksiteId] ?? null}
+          onRecord={(input) => recordHygieneMeasurementSlotStatusAction(input)}
+        />
+      </section>
+
+      <h2 className="text-sm font-semibold">Protocolos MINSAL</h2>
 
       {pending > 0 && (
         <div role="status" className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-4 text-sm">

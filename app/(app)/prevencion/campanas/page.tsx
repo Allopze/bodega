@@ -69,7 +69,6 @@ export default async function CampanasPage() {
     <PageContainer width="wide">
       <CampanasClient
         initialCampaigns={campaignRows}
-        worksites={worksiteRows}
         canManage={canManage}
         catalogActivities={catalogActivities.map((activity) => ({
           id: activity.id, code: activity.code, title: activity.title, description: activity.description,

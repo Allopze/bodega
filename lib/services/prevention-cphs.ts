@@ -8,6 +8,8 @@ import {
   preventionCommitteeCommissions,
   preventionCommitteeMeetings,
   preventionCommitteeMembers,
+  preventionCommitteeProgramActivities,
+  preventionCommitteePrograms,
   preventionCommittees,
   preventionManagementReviews,
   users,
@@ -33,6 +35,7 @@ import {
   REPRESENTATION_LABELS,
 } from "@/lib/prevention/cphs"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
+import { completeProgramActivityWithClient } from "@/lib/services/prevention-cphs-program"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { onCphsCommitteeConstituted, onManagementReviewClosed } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { onPreventiveOrganizationSatisfied } from "@/lib/services/pdtp-adapters/preventive-organization-connector"
@@ -845,6 +848,36 @@ export async function closeCommitteeMeeting(input: unknown, access: CphsAccess) 
 
     // Sin acreditación PDTP: la reunión mensual del comité (antes N°13) salió
     // del programa al del propio CPHS (D5 del diseño 2026-08-12).
+
+    // Sí conecta con el programa LOCAL del comité (Task 10, distinto de lo de
+    // arriba): si el mes de esta sesión todavía tiene su fila de sesión
+    // ordinaria mandatoria (`isMandatorySession`) en estado `planned`, esta
+    // acta la completa. Si ya no queda ninguna `planned` para el mes —se
+    // completó a mano, el programa de ese año no existe o no está vigente—
+    // no hay nada que hacer: no falla ni duplica.
+    const heldOn = todayInChile(data.heldAt)
+    const heldYear = Number(heldOn.slice(0, 4))
+    const heldMonth = Number(heldOn.slice(5, 7))
+    const [sessionActivity] = await tx.select({ activity: preventionCommitteeProgramActivities })
+      .from(preventionCommitteeProgramActivities)
+      .innerJoin(preventionCommitteePrograms, eq(preventionCommitteePrograms.id, preventionCommitteeProgramActivities.programId))
+      .where(and(
+        eq(preventionCommitteePrograms.committeeId, row.committee.id),
+        eq(preventionCommitteePrograms.year, heldYear),
+        eq(preventionCommitteePrograms.status, "active"),
+        eq(preventionCommitteeProgramActivities.plannedMonth, heldMonth),
+        eq(preventionCommitteeProgramActivities.isMandatorySession, true),
+        eq(preventionCommitteeProgramActivities.status, "planned"),
+      )).limit(1)
+    if (sessionActivity) {
+      await completeProgramActivityWithClient(tx, {
+        activityId: sessionActivity.activity.id,
+        expectedVersion: sessionActivity.activity.version,
+        completionNote: `Sesión ${updated.code} cerrada el ${heldOn}.`,
+        evidenceReference: `Acta ${updated.code}`,
+        reviewedInMeetingId: updated.id,
+      }, access)
+    }
 
     return { meeting: updated, agreementsCreated: data.agreements.length, quorum }
   })
