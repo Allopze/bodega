@@ -42,6 +42,7 @@ import {
   workerPositions,
   workers,
 } from "@/db/schema"
+import { LEGACY_SURVEILLANCE_EXEMPT_REASON_PLACEHOLDER } from "@/lib/prevention/hygiene"
 import { WORKER_CAPABILITY_CODE_PATTERN } from "@/lib/services/worker-positions/normalization"
 import { countOf } from "@/lib/utils"
 
@@ -142,7 +143,10 @@ function countExtintores(worksiteId: string): Promise<number> {
  * matrículas que salieron de ESTE GES (`group_id`), porque es la exposición por
  * la que la persona está en el padrón.
  */
-function currentSurveillanceCycle(status: (column: AnyPgColumn) => SQL) {
+function currentSurveillanceCycle(
+  status: (column: AnyPgColumn) => SQL,
+  options: { excludePlaceholderExemption?: boolean } = {},
+) {
   const vigente = alias(preventionSurveillanceEnrollments, "ciclo_vigente")
   const posterior = alias(preventionSurveillanceEnrollments, "ciclo_posterior")
   return db.select({ one: sql`1` })
@@ -155,6 +159,13 @@ function currentSurveillanceCycle(status: (column: AnyPgColumn) => SQL) {
       eq(vigente.workerId, preventionExposureGroupMembers.workerId),
       eq(vigente.groupId, preventionExposureGroupMembers.groupId),
       status(vigente.status),
+      // La exención legado con el texto placeholder (0323) no es una
+      // justificación real: es "no consta por qué se eximió", no "se eximió
+      // por esto". No cuenta como ciclo vigente exento, así que no descuenta
+      // del padrón (ronda de corrección de Task 11, Importante 2).
+      options.excludePlaceholderExemption
+        ? ne(vigente.absenceReason, LEGACY_SURVEILLANCE_EXEMPT_REASON_PLACEHOLDER)
+        : undefined,
       notExists(db.select({ one: sql`1` }).from(posterior).where(and(
         eq(posterior.programId, vigente.programId),
         eq(posterior.workerId, vigente.workerId),
@@ -179,9 +190,20 @@ function currentSurveillanceCycle(status: (column: AnyPgColumn) => SQL) {
  * cambio, así que descontar deja rastro.
  *
  * La exención es del ciclo, no de la persona: cuando existe un ciclo más nuevo
- * (se volvió a matricular al grupo), ése es el vigente y la persona vuelve al
- * padrón. La de un programa suspendido o cerrado no descuenta: ese programa ya
- * no está controlando a nadie.
+ * (se volvió a matricular al grupo, o la propia exención abrió sola el ciclo
+ * siguiente — ver `syncSurveillanceRenewalTx`), ése es el vigente y la
+ * persona vuelve al padrón. La de un programa suspendido o cerrado no
+ * descuenta: ese programa ya no está controlando a nadie.
+ *
+ * **La exención legado sin motivo real no descuenta.** La migración 0323
+ * marcó con un texto placeholder las exenciones previas a exigir motivo, sin
+ * inventarles una justificación clínica. Contar esas filas como descuento
+ * infla la cobertura con una exención que nadie puede explicar —el error
+ * conservador es que la persona siga en el padrón, visible y corregible; el
+ * contrario es cobertura inflada e invisible ante un fiscalizador (Rule
+ * Priority #1)—, así que se excluyen por el texto exacto
+ * (`LEGACY_SURVEILLANCE_EXEMPT_REASON_PLACEHOLDER`). Una exención nueva con
+ * motivo real sí descuenta, como siempre.
  */
 function countExpuestosGes(worksiteId: string): Promise<number> {
   return countOne(db.select({ count: sql<number>`count(distinct ${preventionExposureGroupMembers.workerId})::int` })
@@ -193,7 +215,7 @@ function countExpuestosGes(worksiteId: string): Promise<number> {
       eq(preventionExposureGroups.isActive, true),
       isNull(preventionExposureGroupMembers.leftOn),
       or(
-        notExists(currentSurveillanceCycle((status) => eq(status, "exempt"))),
+        notExists(currentSurveillanceCycle((status) => eq(status, "exempt"), { excludePlaceholderExemption: true })),
         exists(currentSurveillanceCycle((status) => ne(status, "exempt"))),
       ),
     )))

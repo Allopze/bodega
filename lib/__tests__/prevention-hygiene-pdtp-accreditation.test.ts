@@ -50,6 +50,8 @@ const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compli
 const { ensureHygieneMeasurementSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
 const { resolvePdtpSubjectCount } = await import("@/lib/services/pdtp/subject-registry")
 const { enrollGroupInSurveillance, listSurveillancePrograms } = await import("@/lib/services/prevention-hygiene")
+const { onExposureMeasurementRecorded } = await import("@/lib/services/pdtp-adapters/hygiene-accreditation-connector")
+const { LEGACY_SURVEILLANCE_EXEMPT_REASON_PLACEHOLDER } = await import("@/lib/prevention/hygiene")
 
 afterAll(async () => {
   delete testGlobal.__db
@@ -221,7 +223,7 @@ beforeEach(async () => {
 // ── N°45: medición cuantitativa ───────────────────────────────────────────────
 
 describe("N°45 — medición cuantitativa de exposición", () => {
-  it("acredita una ejecución de integración que todavía no cuenta para el cumplimiento", async () => {
+  it("acredita y auto-aprueba de inmediato: la casilla más el informe real ya son la validación completa", async () => {
     await recordExposureMeasurement(measurement({ reportReference: "https://mutual.cl/informe/123" }), access)
 
     const rows = await executionsFor(45)
@@ -230,19 +232,47 @@ describe("N°45 — medición cuantitativa de exposición", () => {
       worksiteId: WS_ID,
       origin: "integration",
       sourceType: "higiene",
-      // Nace `submitted`, no `approved`: sólo las inspecciones pueden
-      // autoaprobarse, así que el % de cumplimiento no se mueve hasta que
-      // alguien la valide.
-      status: "submitted",
-      approvedByUserId: null,
+      // Nace `approved` y no `submitted`: `higiene` está en
+      // AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE (ronda de corrección de
+      // Task 11, Importante 1) y esta medición trae un informe real
+      // (`evidencePath`), así que el % de cumplimiento se mueve sin que nadie
+      // tenga que validarla a mano — mismo criterio que un simulacro o un
+      // acta de CGRD con evidencia.
+      status: "approved",
+      approvedByUserId: USER_ID,
       year: PROGRAM_YEAR,
       month: 6,
       week: 2,
     })
     const [stored] = await inMemoryDb.select().from(schema.preventionExposureMeasurements)
     expect(rows[0]!.sourceId).toBe(`medicion:${stored!.id}`)
-    // La referencia del informe es una URL: cuenta como evidencia real.
     expect(rows[0]!.evidenceStatus).toBe("provided")
+  })
+
+  /* La fuente ya está en la lista de auto-aprobación, pero el gate real sigue
+   * siendo `isRealEvidence`: un folio escrito a mano no se puede abrir en una
+   * fiscalización, así que no basta con que la fuente sea elegible.
+   *
+   * `recordExposureMeasurement` no sirve para este caso: `evidencePath` es
+   * obligatorio en su schema (el informe real siempre se exige), así que la
+   * única forma de ejercitar el camino sin evidencia real es llamar al
+   * conector directamente, como haría un registro histórico sin archivo. */
+  it("sin evidencia real —un reportReference de texto, no una ruta ni una URL— sigue quedando submitted", async () => {
+    await onExposureMeasurementRecorded({
+      measurementId: "expms-sin-evidencia",
+      worksiteId: WS_ID,
+      groupCode: "GES-01",
+      agentCode: "RUIDO",
+      outcome: "below_action",
+      measuredOn: `${PROGRAM_YEAR}-06-10`,
+      reportReference: "Folio N°123 entregado en papel",
+      recordedByUserId: USER_ID,
+    })
+
+    const rows = await executionsFor(45)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ status: "submitted", approvedByUserId: null })
+    expect(rows[0]!.evidenceStatus).not.toBe("provided")
   })
 
   it("ancla la fecha civil al mediodía para no caer en el mes anterior", async () => {
@@ -641,39 +671,68 @@ describe("N°50 — eximir exige motivo y saca a la persona del padrón de expue
       .where(eq(schema.preventionSurveillanceEnrollments.id, "surven-1"))).rejects.toThrow()
   })
 
-  it("una persona eximida en su ciclo vigente no cuenta en el padrón", async () => {
+  /* Ronda de corrección de Task 11, Importante 3: eximir ya no deja a la
+   * persona fuera del padrón para siempre — abre sola el ciclo siguiente
+   * (`syncSurveillanceRenewalTx`, el mismo mecanismo que ya abría `attended`),
+   * y ese ciclo pendiente es lo que hace que la persona siga contando de
+   * inmediato. La exención acota un solo ciclo, no da de baja permanente. */
+  it("eximir con motivo real abre el ciclo siguiente solo: la persona sigue contando en el padrón", async () => {
     expect(await padron()).toBe(3)
 
     await recordSurveillanceOutcome({
       enrollmentId: "surven-1", status: "exempt",
       absenceReason: "Contraindicación médica documentada para el examen.",
     }, access)
+
+    expect(await padron()).toBe(3)
+    const [renewed] = await inMemoryDb.select().from(schema.preventionSurveillanceEnrollments)
+      .where(eq(schema.preventionSurveillanceEnrollments.renewedFromEnrollmentId, "surven-1"))
+    expect(renewed).toMatchObject({
+      status: "pending", enrolledOn: `${PROGRAM_YEAR}-06-30`, dueOn: `${PROGRAM_YEAR + 1}-06-30`,
+    })
+  })
+
+  /* Una fila que nadie procesó por el servicio —el caso de una exención
+   * legado (0323), o cualquier otra que la renovación automática no pudo
+   * abrir— no tiene ciclo posterior, sigue vigente, y por eso sí descuenta
+   * mientras su motivo sea real. Esto es lo que hace durable una exención
+   * cuando corresponde: no es un camino nuevo, es el mismo que protegen la
+   * 0323/0324 (Importante 2) y el describe de más abajo. */
+  it("una exención sin renovación asociada —nadie la procesó por el servicio— sí descuenta, con motivo real", async () => {
+    await inMemoryDb.update(schema.preventionSurveillanceEnrollments)
+      .set({ status: "exempt", absenceReason: "Contraindicación médica documentada para el examen." })
+      .where(eq(schema.preventionSurveillanceEnrollments.id, "surven-1"))
+
     expect(await padron()).toBe(2)
   })
 
-  /* La exención es del ciclo, no de la persona: cuando existe un ciclo más
-   * nuevo —se volvió a matricular al grupo— la persona vuelve al padrón. */
-  it("una exención superada por un ciclo más nuevo deja de descontar", async () => {
-    await recordSurveillanceOutcome({
-      enrollmentId: "surven-1", status: "exempt",
-      absenceReason: "Contraindicación médica documentada para el examen.",
-    }, access)
-    await seedEnrollment("surven-1-next", "wk-1", `${PROGRAM_YEAR + 1}-06-30`)
+  /* Y esa exención sin renovación sigue siendo del ciclo, no de la persona:
+   * una matrícula nueva (re-matricular el grupo a mano) la supera igual que
+   * antes. */
+  it("una exención sin renovación queda superada si se vuelve a matricular el grupo", async () => {
+    await inMemoryDb.update(schema.preventionSurveillanceEnrollments)
+      .set({ status: "exempt", absenceReason: "Contraindicación médica documentada para el examen." })
+      .where(eq(schema.preventionSurveillanceEnrollments.id, "surven-1"))
+    expect(await padron()).toBe(2)
+
+    await enrollGroupInSurveillance({ programId: SURV_PROGRAM_ID, groupId: GROUP_ID }, access)
 
     expect(await padron()).toBe(3)
   })
 
-  /* Y al revés: lo que cuenta es el ciclo más reciente, no cualquiera. Un
-   * control asistido del año pasado no la deja en el padrón si el ciclo de
-   * este año se eximió. */
-  it("eximida en el ciclo nuevo descuenta aunque el anterior se haya controlado", async () => {
+  /* Lo que cuenta es el ciclo más reciente, no cualquiera: un control asistido
+   * del año pasado no deja a la persona en el padrón si el ciclo de este año
+   * quedó exento y nada lo superó todavía. Se marca la exención directo en
+   * base —sin pasar por el servicio— para aislar "cuál ciclo es el vigente"
+   * de la renovación automática, que abriría un tercer ciclo y volvería a
+   * superar a éste (ya cubierto arriba). */
+  it("eximida en el ciclo más reciente descuenta aunque el anterior se haya controlado", async () => {
     await recordSurveillanceOutcome({ enrollmentId: "surven-1", status: "attended", attendedOn: `${PROGRAM_YEAR}-06-12` }, access)
     const [next] = await inMemoryDb.select().from(schema.preventionSurveillanceEnrollments)
       .where(eq(schema.preventionSurveillanceEnrollments.renewedFromEnrollmentId, "surven-1"))
-    await recordSurveillanceOutcome({
-      enrollmentId: next!.id, status: "exempt",
-      absenceReason: "Contraindicación médica documentada para el examen.",
-    }, access)
+    await inMemoryDb.update(schema.preventionSurveillanceEnrollments)
+      .set({ status: "exempt", absenceReason: "Contraindicación médica documentada para el examen." })
+      .where(eq(schema.preventionSurveillanceEnrollments.id, next!.id))
 
     expect(await padron()).toBe(2)
   })
@@ -716,10 +775,13 @@ describe("N°50 — eximir exige motivo y saca a la persona del padrón de expue
       id: "sched-50", activityId: activityId(50), year: PROGRAM_YEAR, month: 6, week: 2,
       plannedQuantity: 1, sourceColumn: "T",
     })
-    await recordSurveillanceOutcome({
-      enrollmentId: "surven-3", status: "exempt",
-      absenceReason: "Contraindicación médica documentada para el examen.",
-    }, access)
+    /* Directo en base, sin pasar por el servicio: si pasara por
+     * `recordSurveillanceOutcome`, la renovación automática (Importante 3) le
+     * abriría a wk-3 el ciclo siguiente y volvería a contarla, cambiando el
+     * padrón que este test mide (`planned` dejaría de ser 2). */
+    await inMemoryDb.update(schema.preventionSurveillanceEnrollments)
+      .set({ status: "exempt", absenceReason: "Contraindicación médica documentada para el examen." })
+      .where(eq(schema.preventionSurveillanceEnrollments.id, "surven-3"))
     for (const enrollmentId of ["surven-1", "surven-2"]) {
       await recordSurveillanceOutcome({ enrollmentId, status: "attended", attendedOn: `${PROGRAM_YEAR}-06-12` }, access)
       await inMemoryDb.update(schema.pdtpExecutions)
@@ -730,6 +792,40 @@ describe("N°50 — eximir exige motivo y saca a la persona del padrón de expue
     const indicators = await getPdtpComplianceIndicators(PROGRAM_ID, WS_ID)
     expect(indicators!.annual.planned).toBe(2)
     expect(indicators!.annual.executed).toBe(2)
+  })
+})
+
+// ── N°50: la exención legado con motivo placeholder no descuenta del padrón ───
+
+/*
+ * Ronda de corrección de Task 11, Importante 2. La migración 0323 marcó las
+ * exenciones previas a exigir motivo con un texto placeholder ("no consta por
+ * qué se eximió"). Esa fila no es una justificación clínica, es la ausencia de
+ * una: contarla como descuento infla la cobertura sin evidencia. Se inserta
+ * directo en base —sin pasar por el servicio, que ya no deja guardar el
+ * placeholder como motivo nuevo— para simular exactamente la fila que dejó la
+ * migración.
+ */
+describe("N°50 — la exención legado con motivo placeholder no descuenta del padrón", () => {
+  beforeEach(async () => {
+    await seedExposedGroup()
+    for (const n of [1, 2, 3]) await seedEnrollment(`surven-${n}`, `wk-${n}`, `${PROGRAM_YEAR}-06-30`)
+  })
+
+  it("una exención con el motivo placeholder de la migración 0323 sigue contando en el padrón", async () => {
+    await inMemoryDb.update(schema.preventionSurveillanceEnrollments)
+      .set({ status: "exempt", absenceReason: LEGACY_SURVEILLANCE_EXEMPT_REASON_PLACEHOLDER })
+      .where(eq(schema.preventionSurveillanceEnrollments.id, "surven-1"))
+
+    expect(await padron()).toBe(3)
+  })
+
+  it("la misma exención con un motivo real sí descuenta", async () => {
+    await inMemoryDb.update(schema.preventionSurveillanceEnrollments)
+      .set({ status: "exempt", absenceReason: "Contraindicación médica documentada para el examen." })
+      .where(eq(schema.preventionSurveillanceEnrollments.id, "surven-1"))
+
+    expect(await padron()).toBe(2)
   })
 })
 

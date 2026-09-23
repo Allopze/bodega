@@ -14,10 +14,16 @@ import { PGlite } from "@electric-sql/pglite"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import { LEGACY_SURVEILLANCE_EXEMPT_REASON_PLACEHOLDER } from "@/lib/prevention/hygiene"
 
 const pg = new PGlite()
 const migrationsDir = path.resolve(process.cwd(), "db/migrations")
-const LEGACY_MARKER = "Exención registrada antes de exigir motivo: no consta por qué se eximió."
+/* La migración ya publicada no se edita (regla de `db/migrations/README.md`),
+ * así que el literal SQL es la fuente que no puede cambiar sola: si alguien
+ * toca la constante de TS sin tocar el SQL —o viceversa— `subject-registry.ts`
+ * dejaría de reconocer las exenciones legado y volvería a descontarlas del
+ * padrón en silencio. */
+const LEGACY_MARKER = LEGACY_SURVEILLANCE_EXEMPT_REASON_PLACEHOLDER
 
 async function backfillStatement(): Promise<string> {
   const migration = await readFile(path.join(migrationsDir, "0323_medical_shocker.sql"), "utf8")
@@ -25,7 +31,9 @@ async function backfillStatement(): Promise<string> {
   expect(start).toBeGreaterThanOrEqual(0)
   const end = migration.indexOf(";", start)
   expect(end).toBeGreaterThan(start)
-  return migration.slice(start, end + 1)
+  const statement = migration.slice(start, end + 1)
+  expect(statement).toContain(`'${LEGACY_SURVEILLANCE_EXEMPT_REASON_PLACEHOLDER}'`)
+  return statement
 }
 
 afterAll(async () => {

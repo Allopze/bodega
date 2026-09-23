@@ -138,9 +138,10 @@ export type AccreditationInput = {
    * otra hace que `accreditPdtpFromEvent` lance. Para las primeras (inspección,
    * ocurrencia de capacitación) el cierre del hecho ya es la validación, con o
    * sin archivo adjunto. Para las segundas (alcotest, simulacro de emergencia,
-   * acta de CGRD) además se exige `isRealEvidence`: sin un artefacto real la
-   * ejecución nace/queda `submitted` para revisión manual aunque el conector
-   * haya pasado este campo.
+   * acta de CGRD, medición cuantitativa de higiene) además se exige
+   * `isRealEvidence`: sin un artefacto real la ejecución nace/queda
+   * `submitted` para revisión manual aunque el conector haya pasado este
+   * campo.
    */
   autoApproveByUserId?: string
 }
@@ -421,15 +422,18 @@ const AUTO_APPROVE_SOURCE_TYPES_UNCONDITIONAL: readonly PdtpAccreditationSourceT
 
 /**
  * Fuentes que auto-aprueban sólo si el evento trae evidencia real (M0.4,
- * 2026-09-22): un control de alcotest, un simulacro o un acta de CGRD sin
- * artefacto real quedan `submitted` para revisión manual, igual que antes de
- * este cambio — la diferencia es que con evidencia real ya no requieren ese
- * paso manual.
+ * 2026-09-22; `higiene` se sumó en la ronda de corrección de Task 11 porque la
+ * N°45 ya cumple la misma condición: casilla propia más informe de laboratorio
+ * real, igual que un simulacro sin casilla asociada): un control de alcotest,
+ * un simulacro, un acta de CGRD o una medición de higiene sin artefacto real
+ * quedan `submitted` para revisión manual, igual que antes de este cambio —
+ * la diferencia es que con evidencia real ya no requieren ese paso manual.
  */
 const AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE: readonly PdtpAccreditationSourceType[] = [
   "alcotest",
   "emergencia",
   "cgrd",
+  "higiene",
 ]
 
 /**
@@ -451,7 +455,7 @@ export async function accreditPdtpFromEvent(
     || AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE.includes(input.sourceType)
   if (input.autoApproveByUserId && !isAutoApproveEligibleSourceType) {
     throw new Error(
-      "Sólo las inspecciones, las ocurrencias de capacitación, el alcotest, los simulacros de emergencia y las actas del CGRD pueden aprobar automáticamente su cumplimiento.",
+      "Sólo las inspecciones, las ocurrencias de capacitación, el alcotest, los simulacros de emergencia, las actas del CGRD y las mediciones de higiene pueden aprobar automáticamente su cumplimiento.",
     )
   }
   const activityNumbers = input.activityNumbers ?? []

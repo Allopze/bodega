@@ -21,6 +21,23 @@ export const SURVEILLANCE_STATUS_LABELS: Record<string, string> = {
   exempt: "Exento",
 }
 
+/**
+ * El texto exacto con el que la migración `0323_medical_shocker.sql` marcó
+ * las exenciones de vigilancia previas a exigir motivo (CAPA-002/0284 es el
+ * mismo precedente). Fuente única: la migración ya publicada no se edita
+ * (regla de `db/migrations/README.md`), así que este es el lado que puede
+ * seguir cambiando si hiciera falta, y `prevention-surveillance-exempt-migration.test.ts`
+ * verifica que el literal SQL coincide con esta constante.
+ *
+ * `subject-registry.ts` la usa para excluir del descuento del padrón de
+ * expuestos las exenciones legado que sólo tienen esta procedencia y no una
+ * justificación clínica real: fueron una declaración humana de "no consta por
+ * qué se eximió", no de "se eximió por esto". Contarlas como descuento infla
+ * el cumplimiento sin evidencia (Rule Priority #1, integridad de datos).
+ */
+export const LEGACY_SURVEILLANCE_EXEMPT_REASON_PLACEHOLDER =
+  "Exención registrada antes de exigir motivo: no consta por qué se eximió."
+
 export const PROGRAM_STATUS_LABELS: Record<string, string> = {
   active: "Vigente",
   suspended: "Suspendido",

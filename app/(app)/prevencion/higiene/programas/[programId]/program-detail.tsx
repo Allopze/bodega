@@ -241,13 +241,18 @@ function OutcomeDialog({ enrollment, periodicityMonths }: { enrollment: Enrollme
             </Field>
           )}
           {status === "exempt" && (
-            <Field
-              label="Motivo de la exención"
-              required
-              hint={`Obligatorio: la persona sale del padrón de expuestos del programa anual. Mínimo ${REASON_MIN_LENGTH} caracteres.`}
-            >
-              <Textarea name="absenceReason" required minLength={REASON_MIN_LENGTH} maxLength={REASON_MAX_LENGTH} />
-            </Field>
+            <>
+              <Field
+                label="Motivo de la exención"
+                required
+                hint={`Obligatorio: la persona sale del padrón de expuestos del programa anual hasta el ciclo siguiente. Mínimo ${REASON_MIN_LENGTH} caracteres. No escribas el diagnóstico: este motivo se muestra en la tabla y se copia al registro de auditoría — el dato clínico va sólo en el registro de salud cifrado.`}
+              >
+                <Textarea name="absenceReason" required minLength={REASON_MIN_LENGTH} maxLength={REASON_MAX_LENGTH} />
+              </Field>
+              <p className="text-xs text-[var(--color-text-subtle)]">
+                Al guardar se abre también el ciclo siguiente de esta persona, a {periodicityMonths} meses del vencimiento actual: la exención acota sólo este ciclo, no la deja fuera del padrón para siempre.
+              </p>
+            </>
           )}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar</Button></DialogFooter>

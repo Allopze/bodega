@@ -521,6 +521,7 @@ export async function recordExposureMeasurement(input: unknown, access: HygieneA
       measuredOn: data.measuredOn,
       reportReference: created.reportReference,
       evidencePath: data.evidencePath,
+      recordedByUserId: access.userId,
       /* La celda que se acredita es la que la casilla ya tenía planificada, no
        * la del mes en que llegó el informe: una evaluación hecha en junio no
        * debe pagar un junio que el programa no planificó mientras febrero
@@ -604,11 +605,13 @@ export async function enrollGroupInSurveillance(input: unknown, access: HygieneA
     if (members.length === 0) throw new Error("El grupo no tiene personas activas que matricular.")
 
     /* Quien ya tiene un ciclo abierto en el programa no se vuelve a matricular.
-     * Desde que registrar la asistencia abre el ciclo siguiente solo
-     * (`recordSurveillanceOutcome`), matricular el grupo otra vez —que era la
-     * única forma de hacerlo— le abriría a esa persona un segundo ciclo con otro
-     * vencimiento. Sí entra quien está eximido o ausente: su ciclo ya se cerró,
-     * y matricular es justamente cómo vuelve al programa. */
+     * Desde que registrar `attended` o `exempt` abre el ciclo siguiente solo
+     * (`recordSurveillanceOutcome`/`syncSurveillanceRenewalTx`), matricular el
+     * grupo otra vez —que antes era la única forma de reabrirlo— le abriría a
+     * esa persona un segundo ciclo con otro vencimiento. Sí entra quien está
+     * ausente, o eximido sin que la renovación automática haya abierto el
+     * ciclo siguiente (programa no vigente, o ya no expuesta por este GES):
+     * matricular es cómo vuelve al programa en ese caso. */
     const openCycles = await tx.select({ workerId: preventionSurveillanceEnrollments.workerId })
       .from(preventionSurveillanceEnrollments)
       .where(and(
@@ -637,19 +640,60 @@ export async function enrollGroupInSurveillance(input: unknown, access: HygieneA
 }
 
 /**
+ * Fecha del hecho que ancla el ciclo siguiente: el día del control para
+ * `attended`, el vencimiento del propio ciclo para `exempt`. `null` para
+ * cualquier otro estado, que no abre ciclo siguiente.
+ *
+ * La exención no tiene una fecha del hecho propia —el motivo no la trae, y no
+ * hay un "día en que se examinó"—, así que se ancla en lo único cierto que ese
+ * ciclo tiene: cuándo vencía. Eso acota la exención a un solo ciclo (ronda de
+ * corrección de Task 11, Importante 3): sin esto, un ciclo `exempt` nunca
+ * abría el siguiente y la persona quedaba fuera del padrón de expuestos
+ * (`subject-registry.ts`) hasta que alguien rematriculara el grupo a mano.
+ */
+function renewalAnchorOn(enrollment: typeof preventionSurveillanceEnrollments.$inferSelect): string | null {
+  if (enrollment.status === "attended") return enrollment.attendedOn
+  if (enrollment.status === "exempt") return enrollment.dueOn
+  return null
+}
+
+/**
+ * Vencimiento del ciclo que abre un control asistido o una exención: una
+ * periodicidad después de la fecha ancla (`renewalAnchorOn`), o `null` si el
+ * estado no abre ciclo siguiente.
+ *
+ * Un caso se corre un día. Si el control se registra el mismo día de la
+ * matrícula, el ciclo siguiente vencería exactamente cuando vencía éste —ambos
+ * cuentan una periodicidad desde el mismo día—, y el índice único (programa,
+ * persona, vencimiento) descartaría la renovación en silencio: la persona
+ * quedaría sin ciclo abierto, justo lo que la renovación existe para evitar. Un
+ * día sobre una periodicidad de meses no cambia la exigencia. Para `exempt` el
+ * mismo choque no debería darse en la práctica —la ancla es el vencimiento
+ * anterior, no "hoy"—, pero la guarda es genérica y no cuesta nada dejarla.
+ */
+function nextCycleDueOn(enrollment: typeof preventionSurveillanceEnrollments.$inferSelect, periodicityMonths: number): string | null {
+  const anchor = renewalAnchorOn(enrollment)
+  if (!anchor) return null
+  const dueOn = nextSurveillanceDate(anchor, periodicityMonths)
+  return dueOn === enrollment.dueOn ? addDaysToPlainDate(dueOn, 1) : dueOn
+}
+
+/**
  * Mantiene el ciclo siguiente de una matrícula en línea con su estado recién
  * registrado. Devuelve lo que retiró y lo que abrió, para el historial.
  *
  * **Por qué existe.** `nextSurveillanceDate` sólo se calculaba al matricular el
- * grupo: una vez que el control quedaba `attended`, nadie abría el ciclo
- * siguiente hasta que alguien volviera a matricular a mano, y mientras tanto la
- * persona desaparecía de los vencimientos. Ahora el cierre del ciclo abre el
- * siguiente con el mismo INSERT que hace `enrollGroupInSurveillance` —mismo
- * índice único `(programa, persona, vencimiento)`, mismo `onConflictDoNothing`—,
- * con el vencimiento contado desde el control y no desde la matrícula.
+ * grupo: una vez que el control quedaba `attended` (o, desde la ronda de
+ * corrección de Task 11, `exempt`), nadie abría el ciclo siguiente hasta que
+ * alguien volviera a matricular a mano, y mientras tanto la persona
+ * desaparecía de los vencimientos. Ahora el cierre del ciclo abre el siguiente
+ * con el mismo INSERT que hace `enrollGroupInSurveillance` —mismo índice único
+ * `(programa, persona, vencimiento)`, mismo `onConflictDoNothing`—, con el
+ * vencimiento contado desde la fecha ancla (`renewalAnchorOn`) y no desde la
+ * matrícula.
  *
  * **Qué retira.** Lo que esta matrícula abrió y ya no corresponde: si dejó de
- * estar asistida (se corrigió a ausente, exento o citado), o si se corrigió la
+ * estar asistida o exenta (se corrigió a ausente o citado), o si se corrigió la
  * fecha del control y el vencimiento cambió. Sólo lo intacto —`pending`, sin
  * citación, sin control y sin registro de salud—: un ciclo siguiente en el que
  * alguien ya trabajó es un hecho propio, y borrarlo por corregir el anterior
@@ -663,23 +707,6 @@ export async function enrollGroupInSurveillance(input: unknown, access: HygieneA
  * avanzó o uno abierto en el programa por otra vía. Nunca dos ciclos abiertos a
  * la vez para la misma persona y programa.
  */
-/**
- * Vencimiento del ciclo que abre un control asistido: una periodicidad después
- * del control, o `null` si la matrícula no está asistida.
- *
- * Un caso se corre un día. Si el control se registra el mismo día de la
- * matrícula, el ciclo siguiente vencería exactamente cuando vencía éste —ambos
- * cuentan una periodicidad desde el mismo día—, y el índice único (programa,
- * persona, vencimiento) descartaría la renovación en silencio: la persona
- * quedaría sin ciclo abierto, justo lo que la renovación existe para evitar. Un
- * día sobre una periodicidad de meses no cambia la exigencia.
- */
-function nextCycleDueOn(enrollment: typeof preventionSurveillanceEnrollments.$inferSelect, periodicityMonths: number) {
-  if (enrollment.status !== "attended" || !enrollment.attendedOn) return null
-  const dueOn = nextSurveillanceDate(enrollment.attendedOn, periodicityMonths)
-  return dueOn === enrollment.dueOn ? addDaysToPlainDate(dueOn, 1) : dueOn
-}
-
 async function syncSurveillanceRenewalTx(tx: Tx, args: {
   enrollment: typeof preventionSurveillanceEnrollments.$inferSelect
   program: typeof preventionSurveillancePrograms.$inferSelect
@@ -727,7 +754,7 @@ async function syncSurveillanceRenewalTx(tx: Tx, args: {
     programId: enrollment.programId,
     workerId: enrollment.workerId,
     groupId: enrollment.groupId,
-    enrolledOn: enrollment.attendedOn!,
+    enrolledOn: renewalAnchorOn(enrollment)!,
     dueOn: nextDueOn,
     renewedFromEnrollmentId: enrollment.id,
   }).onConflictDoNothing().returning()
@@ -738,8 +765,10 @@ async function syncSurveillanceRenewalTx(tx: Tx, args: {
  * Registra el resultado del control. El dato clínico no se guarda aquí: se
  * enlaza al registro de salud cifrado que ya existe en el dominio sensible.
  *
- * Asistir abre el ciclo siguiente; corregir una asistencia retira el ciclo que
- * había abierto si nadie lo tocó (`syncSurveillanceRenewalTx`).
+ * Asistir o eximir abre el ciclo siguiente; corregir uno de los dos retira el
+ * ciclo que había abierto si nadie lo tocó (`syncSurveillanceRenewalTx`). Esto
+ * acota la exención a un solo ciclo: la persona vuelve a estar `pending` para
+ * el siguiente en vez de quedar fuera del padrón de expuestos para siempre.
  */
 export async function recordSurveillanceOutcome(input: unknown, access: HygieneAccess) {
   const data = z.object({
@@ -801,10 +830,13 @@ export async function recordSurveillanceOutcome(input: unknown, access: HygieneA
       })
     }
     if (renewal.created) {
+      const openedReason = data.status === "exempt"
+        ? `Ciclo siguiente abierto por la exención del ciclo con vencimiento ${updated.dueOn}: vence ${renewal.created.dueOn}.`
+        : `Ciclo siguiente abierto por el control del ${updated.attendedOn}: vence ${renewal.created.dueOn}.`
       await history(tx, {
         entityType: "enrollment", entityId: renewal.created.id, worksiteId: row.program.worksiteId,
         changeType: "renewed",
-        reason: `Ciclo siguiente abierto por el control del ${updated.attendedOn}: vence ${renewal.created.dueOn}.`,
+        reason: openedReason,
         afterState: renewal.created, actorUserId: access.userId,
       })
     }
