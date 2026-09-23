@@ -339,6 +339,174 @@ describe("Módulo de Investigación RE-20 y Auto-acreditación PDTP (66-78)", ()
   })
 })
 
+/*
+ * M1.1: las 10 obligaciones filtrables del RE-20 (68-75,77,78) sólo deben
+ * abrirse cuando el tipo de evento/severidad efectivamente exige
+ * investigación (`incidentRequiresInvestigation`), y la N°72 (DIAT)
+ * específicamente sólo cuando el tipo de evento la exige
+ * (`requiredIncidentNotificationTypes`). La N°66/67 se mantienen siempre.
+ */
+describe("Filtrado del RE-20 por tipo de evento (M1.1)", () => {
+  const access: IncidentAccess = {
+    ctx: { userId: USER_ID },
+    scope: { mode: "all", ids: [] },
+    permissions: [
+      "prevention:incidents:view", "prevention:incidents:report",
+      "prevention:incidents:investigate", "prevention:incidents:triage",
+    ],
+  }
+
+  const FILTERABLE_NUMBERS = [68, 69, 70, 71, 72, 73, 74, 75, 77, 78]
+
+  async function obligationsOf(incidentId: string) {
+    return inMemoryDb.select().from(schema.pdtpObligations)
+      .where(and(eq(schema.pdtpObligations.sourceType, "incident"), eq(schema.pdtpObligations.sourceId, incidentId)))
+  }
+
+  it("un daño material de baja severidad no requiere investigación: no crea ninguna de las 10 filtrables (sólo 66/67)", async () => {
+    const { reportPreventionIncident } = await import("@/lib/services/prevention-incidents")
+
+    const res = await reportPreventionIncident({
+      access,
+      input: {
+        worksiteId: WS_ID,
+        companyName: "Empresa Test",
+        eventType: "material_damage",
+        occurredAt: OCCURRED_AT,
+        knownAt: KNOWN_AT,
+        location: "Bodega principal",
+        initialNarrative: "Golpe de un montacargas contra una estantería vacía, sin heridos ni pérdidas relevantes.",
+        actualSeverity: "none",
+        potentialSeverity: "low",
+        isFatalOrSerious: false,
+        people: [],
+        clientSubmissionId: "sub-re20-filter-material-baja",
+      },
+    })
+
+    const activityIds = (await obligationsOf(res.incident.id)).map((o) => o.activityId)
+    expect(activityIds).toEqual(expect.arrayContaining(["act-66", "act-67"]))
+    for (const n of FILTERABLE_NUMBERS) {
+      expect(activityIds).not.toContain(`act-${n}`)
+    }
+  })
+
+  it("un incidente peligroso de baja severidad sí requiere investigación por tipo de evento: crea las 10 filtrables salvo la DIAT (72)", async () => {
+    const { reportPreventionIncident } = await import("@/lib/services/prevention-incidents")
+
+    const res = await reportPreventionIncident({
+      access,
+      input: {
+        worksiteId: WS_ID,
+        companyName: "Empresa Test",
+        eventType: "dangerous_incident",
+        occurredAt: OCCURRED_AT,
+        knownAt: KNOWN_AT,
+        location: "Planta Principal",
+        initialNarrative: "Casi-accidente: caída de una herramienta desde altura, sin golpear a nadie.",
+        actualSeverity: "none",
+        potentialSeverity: "low",
+        isFatalOrSerious: false,
+        people: [],
+        clientSubmissionId: "sub-re20-filter-dangerous",
+      },
+    })
+
+    const activityIds = (await obligationsOf(res.incident.id)).map((o) => o.activityId)
+    for (const n of [66, 67, 68, 69, 70, 71, 73, 74, 75, 77, 78]) {
+      expect(activityIds).toContain(`act-${n}`)
+    }
+    // "dangerous_incident" nunca exige DIAT (sólo work_accident/commute_accident la exigen).
+    expect(activityIds).not.toContain("act-72")
+  })
+
+  it("un accidente del trabajo sin fatal/grave sí crea las 10 filtrables, incluida la N°72 (DIAT)", async () => {
+    const { reportPreventionIncident } = await import("@/lib/services/prevention-incidents")
+
+    const res = await reportPreventionIncident({
+      access,
+      input: {
+        worksiteId: WS_ID,
+        companyName: "Empresa Test",
+        eventType: "work_accident",
+        occurredAt: OCCURRED_AT,
+        knownAt: KNOWN_AT,
+        location: "Planta Principal",
+        initialNarrative: "Corte superficial en la mano al manipular una herramienta manual.",
+        actualSeverity: "minor",
+        potentialSeverity: "low",
+        isFatalOrSerious: false,
+        people: [],
+        clientSubmissionId: "sub-re20-filter-work-accident",
+      },
+    })
+
+    const activityIds = (await obligationsOf(res.incident.id)).map((o) => o.activityId)
+    for (const n of [66, 67, ...FILTERABLE_NUMBERS]) {
+      expect(activityIds).toContain(`act-${n}`)
+    }
+  })
+
+  it("el triage que baja la severidad de un daño material a 'sin investigación' cancela las obligaciones filtrables ya creadas", async () => {
+    const { reportPreventionIncident, triagePreventionIncident } = await import("@/lib/services/prevention-incidents")
+
+    const res = await reportPreventionIncident({
+      access,
+      input: {
+        worksiteId: WS_ID,
+        companyName: "Empresa Test",
+        eventType: "material_damage",
+        occurredAt: OCCURRED_AT,
+        knownAt: KNOWN_AT,
+        location: "Bodega principal",
+        initialNarrative: "Golpe de un montacargas contra una estantería, con daño visible a un panel eléctrico.",
+        actualSeverity: "minor",
+        potentialSeverity: "medium",
+        isFatalOrSerious: false,
+        people: [],
+        clientSubmissionId: "sub-re20-triage-reclasifica",
+      },
+    })
+
+    const before = await obligationsOf(res.incident.id)
+    const beforeActivityIds = before.map((o) => o.activityId)
+    // Confirma la premisa: la severidad inicial exigió investigación y abrió las filtrables.
+    expect(beforeActivityIds).toEqual(expect.arrayContaining(
+      [68, 69, 70, 71, 73, 74, 75, 77, 78].map((n) => `act-${n}`),
+    ))
+    const filterableBeforeIds = beforeActivityIds.filter((id) => id !== "act-66" && id !== "act-67")
+    expect(filterableBeforeIds.length).toBeGreaterThan(0)
+
+    await triagePreventionIncident({
+      access,
+      input: {
+        incidentId: res.incident.id,
+        expectedVersion: res.incident.version,
+        actualSeverity: "none",
+        potentialSeverity: "low",
+        isFatalOrSerious: false,
+        operationsSuspended: false,
+        evacuated: false,
+        immediateMeasures: "Se limpió el área y se reforzó la señalización de tránsito interno.",
+        reason: "Tras revisar en terreno, el daño fue sólo material y menor: no amerita investigación formal del RE-20.",
+      },
+    })
+
+    const afterFilterable = await inMemoryDb.select().from(schema.pdtpObligations)
+      .where(inArray(schema.pdtpObligations.id, before.filter((o) => filterableBeforeIds.includes(o.activityId)).map((o) => o.id)))
+    expect(afterFilterable.length).toBe(filterableBeforeIds.length)
+    for (const obligation of afterFilterable) {
+      expect(obligation.status).toBe("cancelled")
+      expect(obligation.cancellationReason).toBe("Reclasificado en el triage: el tipo de evento ya no exige esta actividad del RE-20.")
+    }
+
+    // 66/67 no son tocadas por la reconciliación: siguen reportadas.
+    const untouched = await inMemoryDb.select().from(schema.pdtpObligations)
+      .where(inArray(schema.pdtpObligations.activityId, ["act-66", "act-67"]))
+    expect(untouched.every((o) => o.status === "reported")).toBe(true)
+  })
+})
+
 describe("Expediente cerrado e independencia del reinicio (F-04, F-09)", () => {
   const access: IncidentAccess = {
     ctx: { userId: USER_ID },

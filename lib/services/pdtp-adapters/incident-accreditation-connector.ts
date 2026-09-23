@@ -31,14 +31,59 @@
  */
 
 import { logger } from "@/lib/logger"
+import {
+  incidentRequiresInvestigation,
+  requiredIncidentNotificationTypes,
+  type IncidentEventType,
+} from "@/lib/services/prevention-incidents"
 import { resolvePdtpActivityIdsForNumbers } from "@/lib/services/pdtp/accreditation"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
-import { createPdtpObligation, findPdtpObligationByIdempotencyKey, pdtpObligationIdempotencyKey, reportPdtpObligation } from "@/lib/services/pdtp/obligations"
+import {
+  cancelPdtpObligation,
+  createPdtpObligation,
+  findPdtpObligationByIdempotencyKey,
+  pdtpObligationIdempotencyKey,
+  reportPdtpObligation,
+} from "@/lib/services/pdtp/obligations"
 import { recordPdtpTriggerEvent, recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
 import { pdtpCatalogActivityIdForLegacyNumber } from "./catalog-activities-2026"
 
 /** Las doce actividades del RE-20 que pasan por obligación. La N°76 no está. */
 const RE20_OBLIGATION_ACTIVITY_NUMBERS = [66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 77, 78]
+
+/**
+ * De las doce, la N°66 y la N°67 se crean siempre (la auditoría confirma que
+ * "cualquier incidente" las exige). Las diez restantes sólo aplican cuando el
+ * incidente efectivamente exige investigación — de lo contrario un daño
+ * material menor abría una DIAT (N°72) o un informe definitivo (N°73/74) que
+ * ese tipo de evento nunca debió exigir, y esas obligaciones vencían para
+ * siempre contando como incumplimiento del RE-20.
+ */
+const RE20_FILTERABLE_ACTIVITY_NUMBERS = RE20_OBLIGATION_ACTIVITY_NUMBERS.filter((n) => n !== 66 && n !== 67)
+
+type Re20Classification = {
+  eventType: IncidentEventType
+  actualSeverity: string
+  potentialSeverity: string
+  isFatalOrSerious: boolean
+}
+
+/**
+ * Recalcula, con la clasificación vigente del incidente, cuáles de las diez
+ * obligaciones filtrables del RE-20 aplican. Reutilizado tanto al reportar el
+ * incidente (`onIncidentReported`) como al reconciliar tras el triage
+ * (`reconcileIncidentObligationsAfterTriage`): misma regla, una sola fuente.
+ */
+function applicableRe20FilterableNumbers(classification: Re20Classification): number[] {
+  if (!incidentRequiresInvestigation(classification)) return []
+  const requiresDiat = requiredIncidentNotificationTypes({
+    eventType: classification.eventType,
+    isFatalOrSerious: classification.isFatalOrSerious,
+  }).includes("diat")
+  return requiresDiat
+    ? RE20_FILTERABLE_ACTIVITY_NUMBERS
+    : RE20_FILTERABLE_ACTIVITY_NUMBERS.filter((n) => n !== 72)
+}
 
 function incidentObligationIdempotencyKey(activityId: string, worksiteId: string, incidentId: string): string {
   return pdtpObligationIdempotencyKey({ activityId, worksiteId, sourceType: "incident", sourceId: incidentId })
@@ -134,8 +179,21 @@ async function reportIncidentObligation(input: {
   }
 }
 
-/** 66, 67: Aviso registrado en turno — se crea y se reporta de inmediato. */
-export async function onIncidentReported(input: { incidentId: string; worksiteId: string; reportedAt: string; userId: string }) {
+/**
+ * 66, 67: Aviso registrado en turno — se crea y se reporta de inmediato.
+ * 68-75,77,78: sólo las que aplican según el tipo de evento/severidad del
+ * incidente (ver `applicableRe20FilterableNumbers`).
+ */
+export async function onIncidentReported(input: {
+  incidentId: string
+  worksiteId: string
+  reportedAt: string
+  userId: string
+  eventType: IncidentEventType
+  actualSeverity: string
+  potentialSeverity: string
+  isFatalOrSerious: boolean
+}) {
   // Libro durable para reglas nuevas configuradas desde el creador. El
   // cableado RE-20 de abajo conserva sus obligaciones históricas; ambos pueden
   // coexistir porque comparten la misma clave de evento y son idempotentes.
@@ -153,16 +211,18 @@ export async function onIncidentReported(input: { incidentId: string; worksiteId
     logger.error({ err: error, incidentId: input.incidentId, worksiteId: input.worksiteId }, "[incident-pdtp-connector] No se pudo registrar el evento configurable del incidente.")
   }
 
+  const numbersToCreate = [66, 67, ...applicableRe20FilterableNumbers(input)]
+
   const resolved = await resolvePdtpActivityIdsForNumbers({
     worksiteId: input.worksiteId, occurredAt: input.reportedAt,
-    activityNumbers: RE20_OBLIGATION_ACTIVITY_NUMBERS, sourceType: "incident", sourceId: input.incidentId,
+    activityNumbers: numbersToCreate, sourceType: "incident", sourceId: input.incidentId,
   }).catch((err: unknown) => {
     logger.error({ err, incidentId: input.incidentId, worksiteId: input.worksiteId }, "[incident-pdtp-connector] No se pudieron resolver las obligaciones del RE-20.")
     return null
   })
   if (!resolved) return
 
-  for (const n of RE20_OBLIGATION_ACTIVITY_NUMBERS) {
+  for (const n of numbersToCreate) {
     const activityId = resolved.activityIdByN.get(n)
     if (!activityId) continue
     const immediate = n === 66 || n === 67
@@ -171,6 +231,69 @@ export async function onIncidentReported(input: { incidentId: string; worksiteId
       userId: input.userId,
       immediateEvidence: immediate ? `Aviso de incidente registrado: ${input.incidentId}` : undefined,
     })
+  }
+}
+
+/**
+ * El triage puede reclasificar severidad/`isFatalOrSerious` después de ya
+ * abiertas las obligaciones del reporte inicial (`onIncidentReported`). Si con
+ * los datos nuevos una de las diez filtrables deja de aplicar, se **cancela**
+ * con motivo — nunca se borra ni se ignora en silencio — para no dejarla
+ * vencer eternamente como un incumplimiento fantasma del RE-20.
+ *
+ * La N°66/67 nunca se tocan acá: se crean y reportan siempre, sin condición.
+ *
+ * Tolerante a fallos, igual que el resto del conector: un error al cancelar
+ * una obligación queda en el log y no tumba el triage. `cancelPdtpObligation`
+ * abre su propia transacción y no admite batch, así que se llama una vez por
+ * obligación a cancelar.
+ */
+export async function reconcileIncidentObligationsAfterTriage(input: {
+  incidentId: string
+  worksiteId: string
+  occurredAt: string
+  userId: string
+  eventType: IncidentEventType
+  actualSeverity: string
+  potentialSeverity: string
+  isFatalOrSerious: boolean
+}): Promise<void> {
+  const stillApplicable = new Set(applicableRe20FilterableNumbers(input))
+  const noLongerApplicable = RE20_FILTERABLE_ACTIVITY_NUMBERS.filter((n) => !stillApplicable.has(n))
+  if (noLongerApplicable.length === 0) return
+
+  const resolved = await resolvePdtpActivityIdsForNumbers({
+    worksiteId: input.worksiteId, occurredAt: input.occurredAt,
+    activityNumbers: noLongerApplicable, sourceType: "incident", sourceId: input.incidentId,
+  }).catch((err: unknown) => {
+    logger.error(
+      { err, incidentId: input.incidentId, worksiteId: input.worksiteId },
+      "[incident-pdtp-connector] No se pudieron resolver las obligaciones del RE-20 para reconciliar tras el triage.",
+    )
+    return null
+  })
+  if (!resolved) return
+
+  for (const n of noLongerApplicable) {
+    const activityId = resolved.activityIdByN.get(n)
+    if (!activityId) continue
+    try {
+      const key = incidentObligationIdempotencyKey(activityId, input.worksiteId, input.incidentId)
+      const obligation = await findPdtpObligationByIdempotencyKey(key)
+      if (!obligation) continue // no se llegó a crear (p. ej. fuera del año del programa): nada que cancelar.
+      if (obligation.status !== "pending" && obligation.status !== "overdue") continue // ya reportada/completada/cancelada: no se toca.
+      await cancelPdtpObligation({
+        obligationId: obligation.id,
+        userId: input.userId,
+        reason: "Reclasificado en el triage: el tipo de evento ya no exige esta actividad del RE-20.",
+        scope: "all",
+      })
+    } catch (err) {
+      logger.error(
+        { err, n, incidentId: input.incidentId, worksiteId: input.worksiteId },
+        "[incident-pdtp-connector] Error al cancelar una obligación del RE-20 reclasificada en el triage.",
+      )
+    }
   }
 }
 
