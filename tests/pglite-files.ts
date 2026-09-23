@@ -151,6 +151,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-incident-public-reports.test.ts",
   "lib/__tests__/prevention-cphs-program-persistence.test.ts",
   "lib/__tests__/prevention-cphs-certification-persistence.test.ts",
+  "lib/__tests__/backfill-cphs-mandatory-sessions.test.ts",
   "lib/__tests__/prevention-hygiene-pdtp-accreditation.test.ts",
   "lib/__tests__/pdtp-occurrence-gap-obligation.test.ts",
   "lib/__tests__/pdtp-indicators-reopen-revocation.test.ts",

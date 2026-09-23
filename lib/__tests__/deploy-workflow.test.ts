@@ -272,6 +272,43 @@ describe("deploy workflow", () => {
     expect(packageJson.scripts["db:migrate"]).toContain("db:ensure-program-slots")
   })
 
+  /*
+   * Mismo incidente que el de arriba, con otra tabla (Task 10, ronda de
+   * corrección 1): la migración 0322 agrega `is_mandatory_session` a
+   * `prevention_committee_program_activities`, pero `activateProgram` —el
+   * único punto que pre-generaba las 12 filas de sesión— no puede volver a
+   * correr sobre un programa que ya salió de `draft`. Sin este backfill
+   * cableado en el servidor, un comité con programa aprobado antes de este
+   * deploy se queda sin sus 12 sesiones para siempre.
+   */
+  it("backfillea las sesiones mandatorias del CPHS en todos los caminos de despliegue", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
+    const packageJson = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"))
+    const script = "backfill-cphs-mandatory-sessions"
+
+    const build = dockerfile.match(new RegExp(
+      `RUN ./node_modules/.bin/esbuild scripts/${script}\\.ts[\\s\\S]*?--outfile=/tmp/${script}\\.mjs`,
+    ))?.[0]
+    expect(build).toBeDefined()
+    expect(build).toContain("--external:drizzle-orm")
+    expect(build).toContain("--external:postgres")
+    expect(dockerfile).toContain(`COPY --from=build /tmp/${script}.mjs ./scripts/${script}.mjs`)
+
+    // Camino del servidor: `deploy-prod.sh` corre el servicio `migrate`, y
+    // este paso va después de `ensure-prevention-program-slots` (mismo lugar
+    // lógico: post-migración, post-siembra de casillas).
+    const migrateCommand = compose.match(/command: \["sh", "-c", "node scripts\/migrate\.mjs[^\]]*\]/)?.[0]
+    expect(migrateCommand).toBeDefined()
+    expect(migrateCommand).toContain(`node scripts/${script}.mjs`)
+    expect(migrateCommand!.indexOf("node scripts/ensure-prevention-program-slots.mjs"))
+      .toBeLessThan(migrateCommand!.indexOf(`node scripts/${script}.mjs`))
+
+    // Camino de GitHub Actions y el local: la cadena de `db:migrate`.
+    expect(packageJson.scripts["db:migrate"]).toContain("db:backfill-cphs-sessions")
+    expect(packageJson.scripts["db:backfill-cphs-sessions"]).toContain(`scripts/${script}.ts`)
+  })
+
   it("exige `--apply` en los one-shots de reconciliación que escriben", () => {
     const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
 

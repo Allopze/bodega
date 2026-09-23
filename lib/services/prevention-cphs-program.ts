@@ -147,8 +147,14 @@ const MONTHLY_SESSION_COUNT = 12
  * `..._mandatory_session_unique` + `onConflictDoNothing` hacen la generación
  * idempotente — mismo patrón (no la misma tabla) que
  * `lib/services/prevention-program-slots.ts:42-53`.
+ *
+ * Exportada (no sólo de uso interno de `activateProgram`): la migración 0322
+ * agregó la columna/índice pero no backfillea los programas que ya estaban
+ * `active` antes de ella — `scripts/backfill-cphs-mandatory-sessions.ts` la
+ * reusa, un programa a la vez, para ese backfill (mismo incidente que motivó
+ * `scripts/ensure-prevention-program-slots.ts`, con otra tabla).
  */
-async function ensureMonthlySessionActivities(
+export async function ensureMonthlySessionActivities(
   client: CphsClient,
   programId: string,
   actorUserId: string,
