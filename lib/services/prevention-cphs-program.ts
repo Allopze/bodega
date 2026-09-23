@@ -7,7 +7,7 @@
  * que mantener sincronizadas: sólo el plan y lo que se marcó como hecho.
  */
 
-import { and, asc, desc, eq } from "drizzle-orm"
+import { and, asc, desc, eq, sql } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
 import {
@@ -20,6 +20,7 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import {
+  monthLabel,
   summarizeProgramCompliance,
   type ProgramComplianceSummary,
 } from "@/lib/prevention/cphs-program"
@@ -124,6 +125,56 @@ export async function createProgram(input: unknown, access: CphsAccess) {
   })
 }
 
+const MONTHLY_SESSION_COUNT = 12
+
+/**
+ * Las 12 sesiones ordinarias mensuales son la obligación reglamentaria más
+ * "casilla" del comité (DS 44/54: 12 sesiones al año), y hoy "no sesionó" es
+ * indistinguible de "nadie lo cargó" porque no existe ninguna fila hasta que
+ * alguien la crea a mano. D5 prohíbe reusar el motor del PDTP para esto —sin
+ * slots ni obligaciones materializadas—, así que se pre-generan **dentro**
+ * del programa local del comité: 12 filas normales de
+ * `prevention_committee_program_activities`, marcadas con
+ * `isMandatorySession` para distinguirlas de una actividad libre.
+ *
+ * Se llama desde `activateProgram` (no desde `createProgram`): un borrador
+ * sigue exigiendo que alguien agregue al menos una actividad para aprobarse
+ * —ese gate no cambia—, y recién al aprobarse el programa se vuelve
+ * "exigible" (ver el comentario de `activateProgram`), que es cuando
+ * corresponde que las 12 sesiones empiecen a contar.
+ *
+ * El id determinístico (`programId` + mes) + el índice único parcial
+ * `..._mandatory_session_unique` + `onConflictDoNothing` hacen la generación
+ * idempotente — mismo patrón (no la misma tabla) que
+ * `lib/services/prevention-program-slots.ts:42-53`.
+ */
+async function ensureMonthlySessionActivities(
+  client: CphsClient,
+  programId: string,
+  actorUserId: string,
+): Promise<number> {
+  const rows = Array.from({ length: MONTHLY_SESSION_COUNT }, (_, index) => {
+    const month = index + 1
+    return {
+      id: `cphspa-session-${programId}-${String(month).padStart(2, "0")}`,
+      programId,
+      title: `Sesión ordinaria mensual — ${monthLabel(month)}`,
+      description: "Sesión ordinaria mensual generada al aprobar el programa (12 sesiones/año exigidas por el DS 54). Se completa sola al cerrar el acta de esa sesión, o puedes cerrarla a mano.",
+      plannedMonth: month,
+      isMandatorySession: true,
+      createdByUserId: actorUserId,
+    }
+  })
+  const created = await client.insert(preventionCommitteeProgramActivities)
+    .values(rows)
+    .onConflictDoNothing({
+      target: [preventionCommitteeProgramActivities.programId, preventionCommitteeProgramActivities.plannedMonth],
+      where: sql`${preventionCommitteeProgramActivities.isMandatorySession}`,
+    })
+    .returning({ id: preventionCommitteeProgramActivities.id })
+  return created.length
+}
+
 const activateProgramSchema = z.object({
   programId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
@@ -160,6 +211,10 @@ export async function activateProgram(input: unknown, access: CphsAccess) {
       eq(preventionCommitteePrograms.version, data.expectedVersion),
     )).returning()
     if (!updated) throw new Error("El programa cambió mientras lo editabas. Recarga y reintenta.")
+
+    // Las 12 sesiones ordinarias del año nacen al aprobarse el programa, no
+    // antes: ver el comentario de `ensureMonthlySessionActivities`.
+    await ensureMonthlySessionActivities(tx, data.programId, access.userId)
 
     await recordGovernanceHistory(tx, {
       entityType: "committee_program",
@@ -297,47 +352,60 @@ const completeActivitySchema = z.object({
   reviewedInMeetingId: z.string().min(1).nullable().optional(),
 })
 
-export async function completeProgramActivity(input: unknown, access: CphsAccess) {
+/**
+ * Núcleo de `completeProgramActivity`, parametrizado por cliente para que
+ * `closeCommitteeMeeting` (`lib/services/prevention-cphs.ts`) pueda completar
+ * la sesión del mes **dentro de su propia transacción** de cierre de acta —
+ * mismo patrón que `createCapaActionWithClient` en `prevention-capa.ts`. La
+ * versión pública de abajo sólo abre su propia transacción y delega acá.
+ */
+export async function completeProgramActivityWithClient(
+  client: CphsClient,
+  input: unknown,
+  access: CphsAccess,
+) {
   const data = completeActivitySchema.parse(input)
 
-  return db.transaction(async (tx) => {
-    const context = await loadActivityContext(tx, data.activityId)
-    requireCphsAccess(access, "prevention:cphs:manage", context.worksiteId)
-    if (context.activity.status !== "planned") throw new Error("La actividad ya fue cerrada.")
-    if (context.activity.version !== data.expectedVersion) {
-      throw new Error("La actividad cambió mientras la editabas. Recarga y reintenta.")
-    }
-    if (data.reviewedInMeetingId) {
-      await assertMeetingBelongsToCommittee(tx, data.reviewedInMeetingId, context.committeeId)
-    }
+  const context = await loadActivityContext(client, data.activityId)
+  requireCphsAccess(access, "prevention:cphs:manage", context.worksiteId)
+  if (context.activity.status !== "planned") throw new Error("La actividad ya fue cerrada.")
+  if (context.activity.version !== data.expectedVersion) {
+    throw new Error("La actividad cambió mientras la editabas. Recarga y reintenta.")
+  }
+  if (data.reviewedInMeetingId) {
+    await assertMeetingBelongsToCommittee(client, data.reviewedInMeetingId, context.committeeId)
+  }
 
-    const [updated] = await tx.update(preventionCommitteeProgramActivities).set({
-      status: "done",
-      completedAt: nowIso(),
-      completionNote: data.completionNote,
-      evidenceReference: data.evidenceReference ?? null,
-      evidenceChecksumSha256: data.evidenceChecksumSha256 ?? null,
-      reviewedInMeetingId: data.reviewedInMeetingId ?? context.activity.reviewedInMeetingId,
-      version: context.activity.version + 1,
-      updatedAt: nowIso(),
-    }).where(and(
-      eq(preventionCommitteeProgramActivities.id, data.activityId),
-      eq(preventionCommitteeProgramActivities.version, data.expectedVersion),
-    )).returning()
-    if (!updated) throw new Error("La actividad cambió mientras la editabas. Recarga y reintenta.")
+  const [updated] = await client.update(preventionCommitteeProgramActivities).set({
+    status: "done",
+    completedAt: nowIso(),
+    completionNote: data.completionNote,
+    evidenceReference: data.evidenceReference ?? null,
+    evidenceChecksumSha256: data.evidenceChecksumSha256 ?? null,
+    reviewedInMeetingId: data.reviewedInMeetingId ?? context.activity.reviewedInMeetingId,
+    version: context.activity.version + 1,
+    updatedAt: nowIso(),
+  }).where(and(
+    eq(preventionCommitteeProgramActivities.id, data.activityId),
+    eq(preventionCommitteeProgramActivities.version, data.expectedVersion),
+  )).returning()
+  if (!updated) throw new Error("La actividad cambió mientras la editabas. Recarga y reintenta.")
 
-    await recordGovernanceHistory(tx, {
-      entityType: "program_activity",
-      entityId: updated.id,
-      worksiteId: context.worksiteId,
-      changeType: "completed",
-      reason: data.completionNote,
-      beforeState: context.activity,
-      afterState: updated,
-      actorUserId: access.userId,
-    })
-    return updated
+  await recordGovernanceHistory(client, {
+    entityType: "program_activity",
+    entityId: updated.id,
+    worksiteId: context.worksiteId,
+    changeType: "completed",
+    reason: data.completionNote,
+    beforeState: context.activity,
+    afterState: updated,
+    actorUserId: access.userId,
   })
+  return updated
+}
+
+export async function completeProgramActivity(input: unknown, access: CphsAccess) {
+  return db.transaction((tx) => completeProgramActivityWithClient(tx, input, access))
 }
 
 const cancelActivitySchema = z.object({

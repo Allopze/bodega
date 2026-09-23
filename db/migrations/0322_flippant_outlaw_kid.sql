@@ -1,0 +1,2 @@
+ALTER TABLE "prevention_committee_program_activities" ADD COLUMN "is_mandatory_session" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "prevention_committee_program_activity_mandatory_session_unique" ON "prevention_committee_program_activities" USING btree ("program_id","planned_month") WHERE "prevention_committee_program_activities"."is_mandatory_session";

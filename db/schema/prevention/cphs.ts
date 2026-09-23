@@ -107,12 +107,22 @@ export const preventionCommitteeProgramActivities = pgTable("prevention_committe
   evidenceChecksumSha256: text("evidence_checksum_sha256"),
   /* Seguimiento en la reunión mensual: qué sesión revisó esta actividad. */
   reviewedInMeetingId: text("reviewed_in_meeting_id").references(() => preventionCommitteeMeetings.id, { onDelete: "set null" }),
+  /* Task 10 (M2.3): distingue las 12 filas de sesión ordinaria mensual —
+   * pre-generadas al aprobar el programa (DS 54: 12 sesiones/año) — de una
+   * actividad libre que el comité agrega a mano. Sin `slotKey` ni tabla nueva
+   * a propósito (D5): la fila sigue siendo una actividad más del programa,
+   * sólo marcada. El índice único parcial de abajo impide dos sesiones
+   * mandatorias del mismo mes en el mismo programa. */
+  isMandatorySession: boolean("is_mandatory_session").notNull().default(false),
   version:         integer("version").notNull().default(1),
   createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("prevention_committee_program_activity_idx").on(table.programId, table.plannedMonth),
+  uniqueIndex("prevention_committee_program_activity_mandatory_session_unique")
+    .on(table.programId, table.plannedMonth)
+    .where(sql`${table.isMandatorySession}`),
   check("prevention_committee_program_activity_title_valid", sql`length(${table.title}) >= 5`),
   check("prevention_committee_program_activity_month_valid", sql`${table.plannedMonth} BETWEEN 1 AND 12`),
   check("prevention_committee_program_activity_status_valid", sql`${table.status} IN ('planned', 'done', 'cancelled')`),
