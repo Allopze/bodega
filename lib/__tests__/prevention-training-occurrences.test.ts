@@ -8,13 +8,13 @@ import {
 } from "@/lib/prevention/training-occurrences-catalog"
 
 describe("catálogo predefinido de capacitación", () => {
-  it("conserva los 14 cursos y 6 campañas del programa 2026", () => {
+  it("conserva los 20 cursos y 6 campañas del programa 2026", () => {
     expect(PREDEFINED_TRAINING_CATALOG_YEAR).toBe(2026)
     expect(PREDEFINED_TRAINING_CATALOG_VERSION).toBe("programa-capacitacion-2026-v1")
-    expect(PREDEFINED_TRAINING_CATALOG).toHaveLength(20)
-    expect(PREDEFINED_TRAINING_CATALOG.filter((item) => item.itemType === "course")).toHaveLength(14)
+    expect(PREDEFINED_TRAINING_CATALOG).toHaveLength(26)
+    expect(PREDEFINED_TRAINING_CATALOG.filter((item) => item.itemType === "course")).toHaveLength(20)
     expect(PREDEFINED_TRAINING_CATALOG.filter((item) => item.itemType === "campaign")).toHaveLength(6)
-    expect(new Set(PREDEFINED_TRAINING_CATALOG.map((item) => item.code)).size).toBe(20)
+    expect(new Set(PREDEFINED_TRAINING_CATALOG.map((item) => item.code)).size).toBe(26)
     expect(new Set(PREDEFINED_TRAINING_CATALOG.map((item) => item.audience))).toEqual(new Set(["Dirigido a todo el personal."]))
   })
 
@@ -34,6 +34,14 @@ describe("catálogo predefinido de capacitación", () => {
     expect(mapped.get("CAM-04")).toEqual([89])
     expect(mapped.get("CAM-05")).toEqual([87])
     expect(mapped.get("CAM-06")).toEqual([85])
+    // Task 8 (2026-09-22): N°16, 37, 51, 57, 59 y 60, antes sin ningún
+    // instrumento vivo que las acredite.
+    expect(mapped.get("CAP-15")).toEqual([16])
+    expect(mapped.get("CAP-16")).toEqual([37])
+    expect(mapped.get("CAP-17")).toEqual([51])
+    expect(mapped.get("CAP-18")).toEqual([59])
+    expect(mapped.get("CAP-19")).toEqual([60])
+    expect(mapped.get("CAP-20")).toEqual([57])
 
     expect(PREDEFINED_TRAINING_CATALOG.filter((item) => item.pdtpActivityNumbers.length === 0).map((item) => item.code))
       .toEqual(["CAP-01", "CAP-05", "CAP-06", "CAP-08", "CAP-09", "CAP-10", "CAP-12", "CAP-13", "CAP-14"])
@@ -64,6 +72,20 @@ describe("catálogo predefinido de capacitación", () => {
       ["CAM-04", ["m10-w1", "m10-w2", "m10-w3", "m10-w4", "m11-w1", "m11-w2", "m11-w3", "m11-w4"]],
       ["CAM-05", ["m08-w1", "m08-w2", "m08-w3", "m08-w4"]],
       ["CAM-06", ["m02-w4"]],
+      ["CAP-15", ["annual"]],
+      ["CAP-16", [
+        "m01-w2", "m01-w4", "m02-w2", "m02-w4", "m03-w2", "m03-w4",
+        "m04-w2", "m04-w4", "m05-w2", "m05-w4", "m06-w2", "m06-w4",
+        "m07-w2", "m07-w4", "m08-w2", "m08-w4", "m09-w2", "m09-w4",
+        "m10-w2", "m10-w4", "m11-w2", "m11-w4", "m12-w2", "m12-w4",
+      ]],
+      ["CAP-17", [
+        "m01-w4", "m02-w2", "m03-w2", "m04-w2", "m05-w2", "m06-w2",
+        "m07-w2", "m08-w2", "m09-w2", "m10-w2", "m11-w2", "m12-w2",
+      ]],
+      ["CAP-18", ["m03-w3", "m03-w4"]],
+      ["CAP-19", ["m06-w2", "m06-w3"]],
+      ["CAP-20", ["annual"]],
     ])
   })
 
@@ -76,21 +98,41 @@ describe("catálogo predefinido de capacitación", () => {
     expect(slots.slice().sort()).toEqual(["m02-w1", "m02-w2", "m02-w3", "m02-w4"])
   })
 
-  it("genera 52 ocurrencias por faena, conserva repeticiones y representa el único ítem anual", () => {
+  it("genera 94 ocurrencias por faena, conserva repeticiones y representa los ítems anuales", () => {
     const rows = PREDEFINED_TRAINING_CATALOG.flatMap((item) => occurrenceSeedRows(item, "faena-1", 2026))
 
-    expect(rows).toHaveLength(52)
+    // 52 (Task 5) + 42 de la Task 8: CAP-16 (24) + CAP-17 (12) + CAP-18 (2)
+    // + CAP-19 (2) + CAP-15 y CAP-20 (1 "annual" cada una).
+    expect(rows).toHaveLength(94)
     expect(new Set(rows.map((row) => row.id)).size).toBe(rows.length)
     expect(rows.filter((row) => row.catalogCode === "CAP-02")).toHaveLength(2)
     expect(rows.filter((row) => row.catalogCode === "CAP-04")).toHaveLength(10)
     expect(rows.filter((row) => row.catalogCode === "CAP-12")).toHaveLength(2)
     expect(rows.filter((row) => row.catalogCode === "CAM-04")).toHaveLength(8)
     expect(rows.filter((row) => row.catalogCode === "CAM-05")).toHaveLength(4)
+    expect(rows.filter((row) => row.catalogCode === "CAP-16")).toHaveLength(24)
+    expect(rows.filter((row) => row.catalogCode === "CAP-17")).toHaveLength(12)
+    expect(rows.filter((row) => row.catalogCode === "CAP-18")).toHaveLength(2)
+    expect(rows.filter((row) => row.catalogCode === "CAP-19")).toHaveLength(2)
     expect(rows.find((row) => row.catalogCode === "CAP-01")).toMatchObject({
       slotKey: "annual",
       scheduledMonth: null,
       scheduledWeek: null,
     })
+    // CAP-15 (N°16) y CAP-20 (N°57) son on_demand: mismo centinela "annual"
+    // que CAP-01, ver Task 8.
+    expect(rows.find((row) => row.catalogCode === "CAP-15")).toMatchObject({
+      slotKey: "annual",
+      scheduledMonth: null,
+      scheduledWeek: null,
+    })
+    expect(rows.find((row) => row.catalogCode === "CAP-20")).toMatchObject({
+      slotKey: "annual",
+      scheduledMonth: null,
+      scheduledWeek: null,
+    })
+    expect(rows.filter((row) => row.slotKey === "annual").map((row) => row.catalogCode).sort())
+      .toEqual(["CAP-01", "CAP-15", "CAP-20"])
     expect(rows.find((row) => row.catalogCode === "CAM-05" && row.slotKey === "annual")).toBeUndefined()
     expect(rows.find((row) => row.catalogCode === "CAP-02" && row.slotKey === "m09-w4"))
       .toMatchObject({ scheduledMonth: 9, scheduledWeek: 4 })

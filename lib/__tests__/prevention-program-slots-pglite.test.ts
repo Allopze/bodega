@@ -4,9 +4,11 @@
  * Las casillas del programa nacen con la faena.
  *
  * Lo que se protege no es que las tablas existan: es que activar una faena
- * deje las 89 filas —52 casillas de capacitación, 2 de simulacro, 4 de CGRD, 23
- * de alcotest y los 8 protocolos MINSAL sin pronunciar— y
- * que reejecutar no cree ninguna más ni pise el estado de las existentes.
+ * deje las 131 filas —94 casillas de capacitación (52 + 42 de la Task 8, que
+ * cerró la brecha de instrumento de las N°16, 37, 51, 57, 59 y 60), 2 de
+ * simulacro, 4 de CGRD, 23 de alcotest y los 8 protocolos MINSAL sin
+ * pronunciar— y que reejecutar no cree ninguna más ni pise el estado de las
+ * existentes.
  *
  * El modo de falla que esto vigila es el que motivó el agregador: alguien
  * agrega un cuarto punto de alta de faena, pre-genera sólo capacitación, y la
@@ -98,7 +100,7 @@ describe("pre-generación de las casillas del programa", () => {
     const { ensurePreventionProgramSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
 
     const first = await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
-    expect(first).toEqual({ training: 52, drills: 2, grdMeetings: 4, alcotest: 23, protocols: 8 })
+    expect(first).toEqual({ training: 94, drills: 2, grdMeetings: 4, alcotest: 23, protocols: 8 })
 
     const second = await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
     expect(second).toEqual({ training: 0, drills: 0, grdMeetings: 0, alcotest: 0, protocols: 0 })

@@ -76,6 +76,26 @@ describe("el cronograma del catálogo de capacitación coincide con la grilla de
       )
       const pdtpSlots = sorted(pdtpSlotKeysFor(activityNumber))
 
+      /*
+       * Task 8 (2026-09-22): las N°16 y 57 son `on_demand` en el PDTP — el
+       * cronograma maestro no les declara ninguna celda de mes/semana
+       * (`schedule: []`), así que `pdtpSlots` queda vacío para ambas. El
+       * catálogo, sin embargo, NO puede espejar ese vacío con un
+       * `schedule()` igualmente vacío: `occurrenceSeedRows` no generaría
+       * ninguna fila y el ítem quedaría sin ninguna ocurrencia que un
+       * operador pueda marcar hecha ni que `occurrence-gap-connector.ts`
+       * pueda vencer — es decir, sin instrumento vivo, que es exactamente el
+       * defecto que la Task 8 corrige. Por eso usan el centinela `annual`
+       * (la misma representación que ya usa CAP-01 para "sin cronograma
+       * específico, una vez al año"), y la comparación exacta no aplica: se
+       * verifica en cambio que el PDTP de verdad no declara celdas para
+       * ellas y que el catálogo de verdad usa el centinela.
+       */
+      if (pdtpSlots.length === 0) {
+        expect(catalogSlots).toEqual(["annual"])
+        return
+      }
+
       expect(catalogSlots).toEqual(pdtpSlots)
     },
   )
