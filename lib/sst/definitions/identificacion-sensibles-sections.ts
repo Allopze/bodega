@@ -25,6 +25,14 @@ import type { ChecklistSection } from '../types'
  *    mide no es el contenido del acta sino cuántas personas de la dotación la
  *    tienen hecha.
  *
+ *    "No puntúa" no es lo mismo que "no hace falta responder": ambas secciones
+ *    llevan `requiresCompletion: true`, así que `closeEvaluation` sigue
+ *    exigiendo una respuesta por ítem aunque ninguno cuente para el % de
+ *    cumplimiento. Sin ese campo el RE-28 se cerraba en blanco y acreditaba
+ *    igual la N°17 — el efecto colateral no buscado de que
+ *    `countsForCompliance: false` también vaciaba la lista de "ítems que
+ *    faltan por responder".
+ *
  * 2. **No lleva `requiresPermission`** pese a contener datos de salud. Ese campo
  *    hoy significa "sección del Punto 3 del conductor líder":
  *    `sectionAppliesToEvaluatorRole` devuelve `!section.requiresPermission` para
@@ -41,6 +49,10 @@ export const IDENTIFICACION_SENSIBLES_SECTIONS: ChecklistSection[] = [
       'Declaración voluntaria, con reserva de identificación. Un "Sí" no es un incumplimiento: es lo que activa '
       + 'la obligación de evaluar el puesto. Contiene datos de salud y el acta archivada queda clasificada como sensible.',
     countsForCompliance: false,
+    // No puntúa, pero el acta no puede cerrarse sin declarar cada categoría:
+    // sin esto, `closeEvaluation` no exigía ninguna respuesta acá y el RE-28
+    // se cerraba vacío acreditando igual la N°17.
+    requiresCompletion: true,
     items: [
       { id: 'embarazo_lactancia',        label: 'Mujer embarazada o en periodo de lactancia.', kind: 'si_no_obs' },
       { id: 'menor_edad',                label: 'Menor de edad (menor de 18 años).', kind: 'si_no_obs' },
@@ -60,6 +72,7 @@ export const IDENTIFICACION_SENSIBLES_SECTIONS: ChecklistSection[] = [
       'Las tres preguntas del formulario. Sus respuestas no puntúan: un "Sí" describe la realidad del puesto, '
       + 'no una falta.',
     countsForCompliance: false,
+    requiresCompletion: true,
     hasActionCorrectiva: true,
     items: [
       { id: 'exposicion_agentes', label: '¿Existe exposición a agentes físicos, químicos o biológicos relevantes para su condición?', kind: 'si_no_obs' },

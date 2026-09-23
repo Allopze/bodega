@@ -34,6 +34,11 @@ vi.mock("@/lib/sst/definitions/index", () => ({
 }))
 vi.mock("@/lib/sst/checklist", () => ({
   getApplicableItems: vi.fn(() => []),
+  // Ítems obligatorios de responder para cerrar (independiente de si puntúan).
+  // Por omisión igual a getApplicableItems (=[]): ningún test de este archivo
+  // ejercita una sección requiresCompletion-only, así que el chequeo de
+  // "sin responder" queda trivialmente vacío salvo que un test lo sobreescriba.
+  getMandatoryItems: vi.fn(() => []),
   sectionAppliesToEvaluatorRole: vi.fn((section: { requiresPermission?: string }, evaluatorRole: string | null) =>
     evaluatorRole === "conductor_lider"
       ? section.requiresPermission === "sst:evaluate_acompanamiento"

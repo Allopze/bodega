@@ -15,7 +15,7 @@ import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment
 import { sstEvaluationCreateSchema, sstCloseEvaluationSchema } from "@/lib/validation/sst"
 import type { StatusValue, EvaluatorRole } from "@/lib/sst/types"
 import { transitionCapaActionWithClient } from "@/lib/services/prevention-capa"
-import { assertEditable, getEvaluationApplicableItems, SECTIONS_EXCLUDED_FROM_PERCENTAGE } from "./helpers"
+import { assertEditable, getEvaluationApplicableItems, getEvaluationMandatoryItems, SECTIONS_EXCLUDED_FROM_PERCENTAGE } from "./helpers"
 
 export async function createEvaluation(input: z.infer<typeof sstEvaluationCreateSchema>, userId: string, evaluatorRole?: EvaluatorRole): Promise<SstEvaluation> {
   const data = sstEvaluationCreateSchema.parse(input)
@@ -219,6 +219,11 @@ export async function closeEvaluation(id: string, input: z.infer<typeof sstClose
   const cargos = (evaluation.cargosJson as string[]) ?? []
   const applicableItems = getEvaluationApplicableItems(definition, cargos, evaluation.evaluatorRole)
   const applicableSet = new Set(applicableItems.map((ai) => `${ai.seccionId}::${ai.item.id}`))
+  // Distinto de `applicableItems`: incluye también las secciones marcadas
+  // `requiresCompletion` que no puntúan (RE-28) — esas no entran al % de
+  // cumplimiento, pero el acta no puede cerrarse sin responderlas. El % y el
+  // resultado automático siguen usando sólo `applicableItems`/`applicableSet`.
+  const mandatoryItems = getEvaluationMandatoryItems(definition, cargos, evaluation.evaluatorRole)
 
   let updated: SstEvaluation | undefined
   let accreditation: Parameters<typeof onWorkerOnboardingClosed>[0] | null = null
@@ -227,9 +232,13 @@ export async function closeEvaluation(id: string, input: z.infer<typeof sstClose
     await assertEditable(id, tx)
     const allResponses = await tx.select().from(sstResponses).where(eq(sstResponses.evaluationId, id))
     const applicableResponses = allResponses.filter((r) => applicableSet.has(`${r.seccionId}::${r.itemId}`))
-    const responseByItem = new Map(applicableResponses.map((r) => [`${r.seccionId}::${r.itemId}`, r]))
-    const unanswered = applicableItems.filter(({ seccionId, item }) => { const resp = responseByItem.get(`${seccionId}::${item.id}`); return !resp || resp.estado === null })
-    if (unanswered.length > 0) throw new Error(`No se puede cerrar la evaluación: hay ${unanswered.length} ítem(s) aplicable(s) sin responder. Primer pendiente: ${unanswered[0]!.seccionId} / ${unanswered[0]!.item.label}.`)
+    // Construido desde TODAS las respuestas (no sólo `applicableResponses`):
+    // las secciones sólo obligatorias (no puntuables) quedan fuera de
+    // `applicableSet`, así que buscar ahí siempre las reportaría como sin
+    // responder aunque el usuario ya las haya contestado.
+    const responseByItem = new Map(allResponses.map((r) => [`${r.seccionId}::${r.itemId}`, r]))
+    const unanswered = mandatoryItems.filter(({ seccionId, item }) => { const resp = responseByItem.get(`${seccionId}::${item.id}`); return !resp || resp.estado === null })
+    if (unanswered.length > 0) throw new Error(`No se puede cerrar la evaluación: hay ${unanswered.length} ítem(s) obligatorio(s) sin responder. Primer pendiente: ${unanswered[0]!.seccionId} / ${unanswered[0]!.item.label}.`)
 
     // Regular / Malo / No cumple exigen observación escrita (DS N°44: el acta
     // cerrada es inmutable). La UI lo avisa, pero el gate real vive acá — igual
@@ -276,7 +285,17 @@ export async function closeEvaluation(id: string, input: z.infer<typeof sstClose
     //
     // Sólo el acta de trabajador nuevo: la de trabajador antiguo es seguimiento,
     // no habilitación, y no cierra estas actividades.
-    if (evaluation.definicionCode === "trabajador_nuevo" && row) {
+    //
+    // Tampoco la participación del conductor líder: esa acta sólo evalúa el
+    // acompañamiento en terreno (Punto 3, secciones semanales), una sección
+    // aparte de las bloqueantes 1.1/1.2 de la evaluación base. Con ≥90% ahí
+    // `getAutomaticResultadoFinal` ya da `habilitado_autonomo` — porque no ve
+    // ítems de esas secciones para bloquear, no porque estén respondidas—, y
+    // dispararía la N°52 sin que la evaluación base exista o esté completa.
+    // El conector no tiene hoy una actividad propia del acompañamiento que
+    // reportar por separado, así que la participación del conductor líder
+    // simplemente no dispara este conector.
+    if (evaluation.definicionCode === "trabajador_nuevo" && evaluation.evaluatorRole !== "conductor_lider" && row) {
       accreditation = {
         evaluationId: row.id,
         worksiteId: row.worksiteId,

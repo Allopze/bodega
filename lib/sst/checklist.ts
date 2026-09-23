@@ -56,6 +56,42 @@ export function getApplicableItems(
   })
 }
 
+/**
+ * Devuelve la lista de {seccionId, item} que deben quedar respondidas para
+ * poder CERRAR el acta — independiente de si puntúan para el % de
+ * cumplimiento. Mismo criterio que `getApplicableItems`, salvo el paso 1:
+ * en vez de mirar sólo `countsForCompliance`, cae a `requiresCompletion` si
+ * está declarado, y si no, se comporta igual que `getApplicableItems`
+ * (`requiresCompletion ?? countsForCompliance ?? true`).
+ *
+ * Existe porque una sección puede declarar a propósito que nada de lo suyo
+ * puntúa (RE-28: declarar un embarazo no es un incumplimiento) sin que eso
+ * signifique que el acta puede cerrarse sin responder nada ahí — son dos
+ * preguntas distintas y `countsForCompliance` sólo contestaba una.
+ */
+export function getMandatoryItems(
+  definition: ChecklistDefinition,
+  cargoKeys: string | string[]
+): Array<{ seccionId: string; item: ChecklistItem }> {
+  const keys = Array.isArray(cargoKeys) ? cargoKeys : [cargoKeys]
+
+  return definition.sections.flatMap((sec: ChecklistSection) => {
+    // 1. La sección debe ser obligatoria de responder para poder cerrar
+    if ((sec.requiresCompletion ?? sec.countsForCompliance ?? true) === false) return []
+
+    // 2. La sección debe aplicar al cargo del trabajador
+    if (sec.appliesWhen && sec.appliesWhen.length > 0) {
+      const applies = keys.some((k) => sec.appliesWhen!.includes(k))
+      if (!applies) return []
+    }
+
+    // 3. Solo ítems con kind de estado
+    return sec.items
+      .filter((item: ChecklistItem) => isStatusKind(item.kind))
+      .map((item: ChecklistItem) => ({ seccionId: sec.id, item }))
+  })
+}
+
 type ChecklistResponseStatus = {
   seccionId: string
   itemId: string

@@ -145,7 +145,7 @@ export function EvaluationInfoSection({
       {canClose && !isCerrado && progress.pending.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-(--color-border) pt-3" role="status" aria-live="polite" aria-atomic="true">
           <p className="text-sm text-(--color-text-muted)">
-            Cierre bloqueado: faltan {progress.pending.length} ítem(s) aplicable(s). Primero: {progress.pending[0]!.sectionTitle}, {progress.pending[0]!.itemLabel}.
+            Cierre bloqueado: faltan {progress.pending.length} ítem(s) obligatorio(s). Primero: {progress.pending[0]!.sectionTitle}, {progress.pending[0]!.itemLabel}.
           </p>
           <Button type="button" size="sm" variant="secondary" className="min-h-11" onClick={goToNextPending}>
             Ir al siguiente pendiente

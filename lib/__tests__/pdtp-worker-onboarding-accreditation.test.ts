@@ -341,3 +341,83 @@ describe("onboardingActivityNumbers — el mapa, sin base de datos", () => {
     expect(numbers).toEqual([])
   })
 })
+
+/**
+ * La participación del conductor líder es una `sstEvaluations` propia
+ * (`evaluatorRole: "conductor_lider"`), separada del acta base que responde
+ * `documentacion_requisitos` / `induccion_capacitacion` / `epp`. Sólo ve y
+ * responde el Punto 3 (acompañamiento en terreno), así que su propio cierre
+ * nunca tiene respuestas en las secciones bloqueantes 1.1/1.2 —
+ * `getAutomaticResultadoFinal` no las ve para bloquear, no porque estén
+ * conformes. Antes del fix, `onWorkerOnboardingClosed` se disparaba para
+ * cualquier acta `trabajador_nuevo` cerrada sin mirar el rol, así que un
+ * acompañamiento con ≥90% bastaba para reportar la N°52 sin que la evaluación
+ * base existiera siquiera.
+ */
+describe("El conductor líder no acredita la N°52 con su sola participación", () => {
+  const CONDUCTOR_EVAL_ID = "sstev-onb-cond-1"
+
+  beforeEach(async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.sstEvaluations).values({
+      id: CONDUCTOR_EVAL_ID, worksiteId: WS_ID, workerId: WORKER_ID, createdBy: USER_ID,
+      definicionCode: "trabajador_nuevo", definicionVersion: "01", tipo: "nuevo",
+      evaluatorRole: "conductor_lider",
+      fechaEvaluacion: `${PROGRAM_YEAR}-04-01`, estado: "borrador",
+      createdAt: now, updatedAt: now,
+    })
+  })
+
+  /** Responde sólo el Punto 3: es todo lo que `sectionAppliesToEvaluatorRole` deja ver al conductor líder. */
+  async function answerAccompaniment(evaluationId: string) {
+    const definition = getDefinition("trabajador_nuevo", "01")
+    const items = getEvaluationApplicableItems(definition, [], "conductor_lider")
+    const rows = items.map(({ seccionId, item }, index) => ({
+      id: `resp-cond-${index}`,
+      evaluationId,
+      seccionId,
+      itemId: item.id,
+      estado: conformingFor(item.kind),
+      observacion: null,
+    }))
+    await inMemoryDb.insert(schema.sstResponses).values(rows)
+    return rows.length
+  }
+
+  it("cerrar sólo el acompañamiento con nota alta no reporta la N°52", async () => {
+    await openEntryObligations()
+    const answered = await answerAccompaniment(CONDUCTOR_EVAL_ID)
+    expect(answered).toBeGreaterThan(0)
+
+    const closed = await closeEvaluation(CONDUCTOR_EVAL_ID, { evaluationId: CONDUCTOR_EVAL_ID }, "all", USER_ID)
+
+    // La participación del conductor líder sí queda habilitada por su cuenta
+    // (100% de SUS ítems)...
+    expect(closed.resultadoFinal).toBe("habilitado_autonomo")
+    // ...pero eso no es la inducción completa: sin las secciones 1.1/1.2 de la
+    // evaluación base, la N°52 no debe reportarse todavía.
+    expect(await executionsFor(52)).toHaveLength(0)
+  })
+
+  it("la N°52 se reporta recién cuando la evaluación base también cierra", async () => {
+    await openEntryObligations()
+    await answerAccompaniment(CONDUCTOR_EVAL_ID)
+    await closeEvaluation(CONDUCTOR_EVAL_ID, { evaluationId: CONDUCTOR_EVAL_ID }, "all", USER_ID)
+    expect(await executionsFor(52)).toHaveLength(0)
+
+    // La evaluación base (EVAL_ID, del beforeEach externo) responde y cierra
+    // sus propias secciones 1.1/1.2/1.3 — recién ahí sale la N°52.
+    await answerAll()
+    await closeEvaluation(EVAL_ID, { evaluationId: EVAL_ID }, "all", USER_ID)
+    expect(await executionsFor(52)).toHaveLength(1)
+  })
+
+  it("cerrar la evaluación base sin el acompañamiento igual reporta la N°52 (no depende de él)", async () => {
+    // El acompañamiento es una participación aparte: su ausencia no debe
+    // bloquear la N°52 si la evaluación base por sí sola queda habilitada.
+    await openEntryObligations()
+    await answerAll()
+    await closeEvaluation(EVAL_ID, { evaluationId: EVAL_ID }, "all", USER_ID)
+    expect(await executionsFor(52)).toHaveLength(1)
+  })
+})

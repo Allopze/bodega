@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { TRABAJADOR_NUEVO } from "@/lib/sst/definitions"
+import { IDENTIFICACION_SENSIBLES } from "@/lib/sst/definitions/identificacion-sensibles"
 import { isStatusKind } from "@/lib/sst/checklist"
 import { getEvaluationProgress } from "./evaluation-progress"
 
@@ -17,5 +18,15 @@ describe("getEvaluationProgress", () => {
     expect(progress.total).toBeGreaterThan(1)
     expect(progress.answered).toBe(1)
     expect(progress.pending[0]).toMatchObject({ sectionId: section.id, sectionTitle: section.title })
+  })
+
+  it("cuenta como pendientes las secciones requiresCompletion=true aunque no puntúen (RE-28)", () => {
+    // Espejo del servidor: `closeEvaluation` usa getMandatoryItems, que mira
+    // `requiresCompletion` en vez de `countsForCompliance`. Sin este mismo
+    // filtro acá, la barra de avance mostraba 100% / 0 pendientes para un
+    // RE-28 vacío mientras el servidor rechazaba el cierre.
+    const progress = getEvaluationProgress(IDENTIFICACION_SENSIBLES.sections, {})
+    expect(progress.total).toBeGreaterThan(0)
+    expect(progress.pending.length).toBe(progress.total)
   })
 })

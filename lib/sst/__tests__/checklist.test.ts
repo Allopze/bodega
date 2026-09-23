@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getApplicableItems, getUnansweredApplicableItems, isStatusKind, getApplicableResponses, getApplicableResponseStatuses } from '../checklist'
+import { getApplicableItems, getMandatoryItems, getUnansweredApplicableItems, isStatusKind, getApplicableResponses, getApplicableResponseStatuses } from '../checklist'
 import type { ChecklistDefinition, StatusValue } from '../types'
 
 type ChecklistResponseStatus = {
@@ -24,6 +24,8 @@ const mockDefinition: ChecklistDefinition = {
       id: 'sec_clasif',
       title: 'Clasificación',
       countsForCompliance: false,
+      // No puntúa, pero sí debe responderse para poder cerrar (molde RE-28).
+      requiresCompletion: true,
       items: [
         { id: 'item_a', label: 'A', kind: 'si_no_obs' }
       ]
@@ -115,6 +117,38 @@ describe('getApplicableItems', () => {
     expect(itemD?.seccionId).toBe('sec_ampliroll')
     const itemB = items.find((x) => x.item.id === 'item_b')
     expect(itemB?.seccionId).toBe('sec_general')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getMandatoryItems
+// ---------------------------------------------------------------------------
+describe('getMandatoryItems', () => {
+  it('incluye una sección countsForCompliance=false marcada requiresCompletion=true (molde RE-28)', () => {
+    const items = getMandatoryItems(mockDefinition, 'conductor_ampliroll')
+    const ids = items.map((x) => x.item.id)
+    expect(ids).toContain('item_a')
+  })
+
+  it('sigue excluyendo secciones countsForCompliance=false sin requiresCompletion declarado', () => {
+    // sec_batea no aplica al cargo de todos modos, pero sec_general/sec_ampliroll
+    // sí cuentan y no declaran requiresCompletion: deben comportarse igual que
+    // getApplicableItems (requiresCompletion ?? countsForCompliance ?? true).
+    const applicable = getApplicableItems(mockDefinition, 'conductor_ampliroll').map((x) => x.item.id)
+    const mandatory = getMandatoryItems(mockDefinition, 'conductor_ampliroll').map((x) => x.item.id)
+    expect(mandatory.filter((id) => id !== 'item_a').sort()).toEqual(applicable.sort())
+  })
+
+  it('excluye ítems con kind no-status igual que getApplicableItems', () => {
+    const items = getMandatoryItems(mockDefinition, 'conductor_ampliroll')
+    const ids = items.map((x) => x.item.id)
+    expect(ids).not.toContain('item_texto')
+  })
+
+  it('respeta appliesWhen igual que getApplicableItems', () => {
+    const items = getMandatoryItems(mockDefinition, 'conductor_ampliroll')
+    const ids = items.map((x) => x.item.id)
+    expect(ids).not.toContain('item_f') // sec_batea no aplica a ampliroll
   })
 })
 

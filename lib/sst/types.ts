@@ -98,6 +98,15 @@ export interface ChecklistSection {
   items: ChecklistItem[]
   appliesWhen?: CargoCondition[]  // only show for specific cargos
   countsForCompliance?: boolean   // whether items count toward % calculation
+  /**
+   * Independiente de `countsForCompliance`: si es `true`, la sección debe
+   * quedar respondida para poder cerrar el acta, aunque no puntúe para el %
+   * de cumplimiento (p. ej. el RE-28: declarar una condición sensible no es
+   * un incumplimiento, pero el acta no puede cerrarse vacía). Si se omite,
+   * se comporta igual que antes de este campo: `requiresCompletion ??
+   * countsForCompliance ?? true`.
+   */
+  requiresCompletion?: boolean
   hasActionCorrectiva?: boolean   // adds "Acción correctiva" column
   requiresPermission?: string     // gate: only users with this permission can view/edit this section
   weekNumber?: 1 | 2 | 3 | 4     // set for acompanamiento_terreno_sN weekly sections (conductor_lider)
