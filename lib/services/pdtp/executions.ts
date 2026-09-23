@@ -47,18 +47,10 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   if (!isPdtpPeriodOnOrAfterActivation(data, program.activatedAt)) {
     throw new Error("El programa aún no estaba activo en el período seleccionado. Registra actividades desde su semana de activación.")
   }
-  // La actividad declara qué evidencia exige y hasta ahora eso era sólo un
-  // texto en la tarjeta: el esquema deja la evidencia opcional y la única red
-  // era el aprobador. Lo acreditado por integración (accreditPdtpFromEvent)
-  // no pasa por acá y queda exento a propósito — su evidencia es el registro
-  // del módulo de origen.
+  // La actividad declara qué evidencia exige. El requisito se evalúa más
+  // abajo (después de resolver `nextEvidenceUrl`/`dedupedPhotos`), una vez
+  // verificado el archivo físico — ver el comentario junto a esa evaluación.
   const requirement = activity.evidenceRequirement?.trim()
-  const hasEvidence = Boolean(data.evidenceText?.trim())
-    || Boolean(data.evidenceUrl?.trim())
-    || (data.evidencePhotos?.length ?? 0) > 0
-  if (requirement && !hasEvidence) {
-    throw new Error(`Esta actividad exige evidencia: ${requirement}`)
-  }
   if (!isPdtpActivityEffectiveForPeriod(activity, data.year, data.month, data.week)) {
     throw new Error("La actividad está retirada para el período seleccionado y no admite nuevas ejecuciones.")
   }
@@ -142,6 +134,22 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
     }
   } else {
     nextEvidenceUrl = existing?.evidenceUrl ?? null
+  }
+
+  // Task 9 (M2.1): una observación de texto ya no basta cuando la actividad
+  // exige evidencia — hasta ahora `evidenceText` sola satisfacía el
+  // requisito, y una "constancia" es exactamente el caso donde el texto
+  // libre no acredita nada por sí solo. Se evalúa sobre el resultado FINAL
+  // (`nextEvidenceUrl`/`dedupedPhotos`, ya verificados contra el archivo
+  // físico), no sobre lo que llegó en este envío puntual: un reenvío que
+  // sólo corrige el texto y no vuelve a adjuntar el archivo no debe perder
+  // la evidencia real que ya tenía guardada (H-M3, append-only). Mismo
+  // criterio de "evidencia real" que `isRealEvidence` en accreditation.ts
+  // (ruta de storage o URL), aplicado aquí sobre campos que el esquema ya
+  // restringe a `storage/pdtp-evidence/…`.
+  const hasRealEvidence = Boolean(nextEvidenceUrl) || dedupedPhotos.length > 0
+  if (requirement && !hasRealEvidence) {
+    throw new Error(`Esta actividad exige evidencia: ${requirement}. La observación no basta — adjunta un archivo (foto o PDF).`)
   }
 
   const now = new Date().toISOString()

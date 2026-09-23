@@ -184,6 +184,7 @@ export {
   applyDeviationsToSchedule,
   deviationsByActivityMonth,
   getPdtpDeviationKind,
+  getPdtpDeviationKindAndActivity,
   listPdtpDeviationsForProgram,
 } from "./deviations"
 export type { PdtpDeviationKind } from "./deviations"

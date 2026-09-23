@@ -26,6 +26,11 @@ export type PdtpConstanciaDebt = {
    * operational-work-queue.ts (D12), para que esta lista y el badge de
    * /pendientes cuenten exactamente lo mismo. */
   dueMonth: number
+  /** La semana de `pdtp_activity_schedule` que dejó planificado `dueMonth`
+   * (la menor con `plannedQuantity > 0` para ese mes): es la celda real que
+   * `PdtpDeviationForm` necesita para declarar "no se hizo"/"no aplica", no
+   * un valor por defecto inventado. */
+  dueWeek: number
   status: "pending" | "overdue"
   overdueMonths: number
 }
@@ -94,13 +99,14 @@ export async function listPdtpConstanciaActivities(scope: WorksiteScope): Promis
     for (const activityId of activityIds) {
       const activity = activityById.get(activityId)
       if (!activity) continue
-      const plannedMonths = filterPdtpRowsFromActivation(scheduleRows, program.activatedAt)
+      const plannedCells = filterPdtpRowsFromActivation(scheduleRows, program.activatedAt)
         .filter((row) => row.activityId === activityId
           && row.year === program.year
           && row.month <= period.month
           && row.plannedQuantity > 0)
-        .map((row) => row.month)
-      if (plannedMonths.length === 0) continue
+        .map((row) => ({ month: row.month, week: row.week }))
+      if (plannedCells.length === 0) continue
+      const plannedMonths = plannedCells.map((cell) => cell.month)
       const paidMonths = new Set(
         executionRows
           .filter((row) => row.activityId === activityId && row.executedQuantity > 0
@@ -110,6 +116,11 @@ export async function listPdtpConstanciaActivities(scope: WorksiteScope): Promis
       const unpaidMonths = plannedMonths.filter((month) => !paidMonths.has(month)).sort((a, b) => a - b)
       const dueMonth = unpaidMonths[0]
       if (dueMonth === undefined) continue
+      // La semana más baja planificada para `dueMonth`: si el mes tiene más de
+      // una celda planificada (raro en constancia, pero posible), se declara
+      // sobre la primera — la misma que el badge de /pendientes considera
+      // vencida antes que las demás.
+      const dueWeek = Math.min(...plannedCells.filter((cell) => cell.month === dueMonth).map((cell) => cell.week))
       debts.push({
         activityId,
         n: activity.n,
@@ -119,6 +130,7 @@ export async function listPdtpConstanciaActivities(scope: WorksiteScope): Promis
         worksiteId,
         worksiteName: worksiteNameById.get(worksiteId) ?? worksiteId,
         dueMonth,
+        dueWeek,
         status: dueMonth < period.month ? "overdue" : "pending",
         overdueMonths: unpaidMonths.filter((month) => month < period.month).length,
       })

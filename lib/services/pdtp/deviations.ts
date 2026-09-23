@@ -385,6 +385,24 @@ export async function getPdtpDeviationKind(deviationId: string): Promise<PdtpDev
   return (row?.kind as PdtpDeviationKind | undefined) ?? null
 }
 
+/**
+ * Igual que `getPdtpDeviationKind`, más `activityId` — task 9 (M2.1): retirar
+ * un `not_applicable`/`not_performed` declarado desde Constancias exige el
+ * mismo acotamiento por mecanismo que declararlo (`assertPdtpActivityMechanism`),
+ * y esa comprobación necesita saber sobre qué actividad se está retirando, no
+ * sólo el tipo.
+ */
+export async function getPdtpDeviationKindAndActivity(
+  deviationId: string,
+): Promise<{ kind: PdtpDeviationKind; activityId: string } | null> {
+  const [row] = await db.select({ kind: pdtpExecutionDeviations.kind, activityId: pdtpExecutionDeviations.activityId })
+    .from(pdtpExecutionDeviations)
+    .where(eq(pdtpExecutionDeviations.id, deviationId))
+    .limit(1)
+  if (!row) return null
+  return { kind: row.kind as PdtpDeviationKind, activityId: row.activityId }
+}
+
 /** Desvíos activos de un set de actividades para una faena y año. */
 export async function loadPdtpDeviations(
   activityIds: string[],

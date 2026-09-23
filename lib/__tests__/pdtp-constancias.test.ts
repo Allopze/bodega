@@ -8,7 +8,9 @@
  * compuerta que evita que `prevention:constancias:execute` sirva para marcar
  * cualquier actividad de la planilla.
  */
-import path from "node:path"
+import { mkdirSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path, { join } from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
@@ -26,11 +28,22 @@ vi.mock("@/db", () => ({
   get db() { return testGlobal.__db },
 }))
 
+// Task 9: `markPdtpExecution` ahora verifica que `evidenceUrl` resuelva a un
+// archivo físico (H-B7) antes de contarlo como "evidencia real" — mismo
+// patrón que `pdtp-evidence-gc.test.ts`: STORAGE_PATH apunta a un tmpdir
+// propio de este archivo, restaurado en `afterAll`.
+const previousStoragePath = process.env.STORAGE_PATH
+const tmpEvidenceRoot = join(tmpdir(), `pdtp-constancias-evidence-${Date.now()}`)
+process.env.STORAGE_PATH = tmpEvidenceRoot
+mkdirSync(join(tmpEvidenceRoot, "pdtp-evidence"), { recursive: true })
+
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 afterAll(async () => {
   delete testGlobal.__db
   await pg.close()
+  if (previousStoragePath === undefined) delete process.env.STORAGE_PATH
+  else process.env.STORAGE_PATH = previousStoragePath
 })
 
 const { listPdtpConstanciaActivities, assertPdtpActivityMechanism } = await import("@/lib/services/pdtp/constancias")
@@ -131,8 +144,25 @@ describe("listPdtpConstanciaActivities", () => {
     const view = await listPdtpConstanciaActivities([WS_A])
     expect(view?.debts).toHaveLength(1)
     expect(view?.debts[0]).toMatchObject({
-      activityId: ACT_ID, n: ACT_N, worksiteId: WS_A, dueMonth: CURRENT_MONTH, status: "pending", overdueMonths: 0,
+      activityId: ACT_ID, n: ACT_N, worksiteId: WS_A, dueMonth: CURRENT_MONTH, dueWeek: 1, status: "pending", overdueMonths: 0,
     })
+  })
+
+  it("dueWeek es la menor semana planificada del mes adeudado, no una por defecto", async () => {
+    // `seedSchedule` siempre usa week 1; acá se siembra a mano una celda de
+    // constancia con semanas 3 y 2 (en ese orden de inserción, a propósito)
+    // para que el test no pase por casualidad si la implementación tomara la
+    // primera fila en vez de la menor.
+    await seedProgram("active")
+    await seedActivity()
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values([
+      { id: `${ACT_ID}-s-${PROGRAM_YEAR}-${String(CURRENT_MONTH).padStart(2, "0")}-3`, activityId: ACT_ID, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 3, plannedQuantity: 1, sourceColumn: "manual" },
+      { id: `${ACT_ID}-s-${PROGRAM_YEAR}-${String(CURRENT_MONTH).padStart(2, "0")}-2`, activityId: ACT_ID, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 2, plannedQuantity: 1, sourceColumn: "manual" },
+    ])
+
+    const view = await listPdtpConstanciaActivities([WS_A])
+    expect(view?.debts).toHaveLength(1)
+    expect(view?.debts[0]).toMatchObject({ dueMonth: CURRENT_MONTH, dueWeek: 2 })
   })
 
   it("un mes anterior sin marcar es 'overdue' y queda como el mes que corresponde marcar, no el actual", async () => {
@@ -144,7 +174,7 @@ describe("listPdtpConstanciaActivities", () => {
 
     const view = await listPdtpConstanciaActivities([WS_A])
     expect(view?.debts).toHaveLength(1) // una fila, no una por mes vencido
-    expect(view?.debts[0]).toMatchObject({ dueMonth: PREVIOUS_MONTH, status: "overdue", overdueMonths: 1 })
+    expect(view?.debts[0]).toMatchObject({ dueMonth: PREVIOUS_MONTH, dueWeek: 1, status: "overdue", overdueMonths: 1 })
   })
 
   it("marcar con status 'submitted' o 'approved' salda la deuda; 'draft' no", async () => {
@@ -220,12 +250,13 @@ describe("listPdtpConstanciaActivities", () => {
 })
 
 describe("markPdtpExecution — evidencia mínima declarada", () => {
-  // Task 9: las 9 actividades de mecanismo 'constancia' declaran su
-  // evidencia mínima en evidenceRequirement, y hasta ahora eso era sólo un
-  // texto en la tarjeta — el esquema deja la evidencia opcional y
-  // markPdtpExecution nunca la exigía. Aquí ACT_ID declara "Certificado
-  // vigente" (ver seedActivity), así que una constancia sin nada de
-  // evidencia debe rechazarse, y una con observación escrita debe aceptarse.
+  // Task 9: las actividades de mecanismo 'constancia' declaran su evidencia
+  // mínima en evidenceRequirement. ACT_ID declara "Certificado vigente" (ver
+  // seedActivity). Una constancia sin nada de evidencia se rechaza; una con
+  // sólo observación de texto TAMBIÉN se rechaza ahora (M2.1: una
+  // observación no acredita nada por sí sola cuando la actividad exige
+  // evidencia) — sólo un archivo real (evidenceUrl/evidencePhotos que
+  // resuelvan a un archivo físico) satisface el requisito.
   beforeEach(async () => {
     await seedProgram("active")
     await seedActivity()
@@ -239,11 +270,35 @@ describe("markPdtpExecution — evidencia mínima declarada", () => {
     }, "user-constancias-1", "all")).rejects.toThrow(/evidencia/i)
   })
 
-  it("acepta la misma constancia con una observación que la respalda", async () => {
+  it("rechaza la misma constancia con sólo una observación de texto — ya no basta (M2.1)", async () => {
     await expect(markPdtpExecution({
       activityId: ACT_ID, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
       executedQuantity: 1, evidenceText: "Acta firmada por los 12 asistentes", evidenceUrl: "", evidencePhotos: [],
+    }, "user-constancias-1", "all")).rejects.toThrow(/no basta/i)
+  })
+
+  it("acepta la misma constancia con un archivo real de evidencia adjunto", async () => {
+    writeFileSync(join(tmpEvidenceRoot, "pdtp-evidence", "certificado-vigente.pdf"), "%PDF-1.4 test")
+    await expect(markPdtpExecution({
+      activityId: ACT_ID, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
+      executedQuantity: 1, evidenceText: "Acta firmada por los 12 asistentes",
+      evidenceUrl: "storage/pdtp-evidence/certificado-vigente.pdf", evidencePhotos: [],
     }, "user-constancias-1", "all")).resolves.toBeDefined()
+  })
+
+  it("un reenvío que sólo corrige el texto conserva el archivo ya adjuntado (append-only)", async () => {
+    writeFileSync(join(tmpEvidenceRoot, "pdtp-evidence", "certificado-reenvio.pdf"), "%PDF-1.4 test")
+    await markPdtpExecution({
+      activityId: ACT_ID, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
+      executedQuantity: 1, evidenceText: "Primer envío con archivo",
+      evidenceUrl: "storage/pdtp-evidence/certificado-reenvio.pdf", evidencePhotos: [],
+    }, "user-constancias-1", "all")
+
+    const second = await markPdtpExecution({
+      activityId: ACT_ID, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
+      executedQuantity: 1, evidenceText: "Segundo envío, sólo corrige el texto", evidenceUrl: "", evidencePhotos: [],
+    }, "user-constancias-1", "all")
+    expect(second.evidenceUrl).toBe("storage/pdtp-evidence/certificado-reenvio.pdf")
   })
 })
 
