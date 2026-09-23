@@ -68,13 +68,13 @@ describe("ocurrencias de capacitación", () => {
       recordTrainingOccurrenceStatus,
     } = await import("@/lib/services/prevention-training-occurrences")
 
-    // 102 = 52 (Task 5) + 42 de la Task 8 (N°16, 37, 51, 57, 59, 60) + 8 de la
-    // Task 13 (CAM-07, N°88).
-    await expect(ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)).resolves.toBe(102)
+    // 390 = 102 (Task 5 + Task 8 + Task 13) + 288 de la Task 16: CAP-21 (48,
+    // N°53) + CAP-22..26 (48 cada una, las 5 réplicas de la N°38).
+    await expect(ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)).resolves.toBe(390)
     await expect(ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)).resolves.toBe(0)
 
     const rows = await listTrainingOccurrences(ACCESS)
-    expect(rows).toHaveLength(102)
+    expect(rows).toHaveLength(390)
     const target = rows.find((row) => row.code === "CAP-02" && row.slotKey === "m09-w4")
     expect(target).toMatchObject({ status: "pending", scheduledMonth: 9, scheduledWeek: 4, version: 1 })
     if (!target) throw new Error("No se encontró la ocurrencia de prueba.")
@@ -144,7 +144,7 @@ describe("ocurrencias de capacitación", () => {
 
     await inMemoryDb.update(schema.worksites).set({ isActive: false }).where(eq(schema.worksites.id, WORKSITE_ID))
     expect(await listTrainingOccurrences(ACCESS)).toEqual([])
-    expect((await listTrainingOccurrences(ACCESS, { includeInactiveWorksites: true })).length).toBe(102)
+    expect((await listTrainingOccurrences(ACCESS, { includeInactiveWorksites: true })).length).toBe(390)
   })
 
   /*
