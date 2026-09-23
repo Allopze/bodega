@@ -227,4 +227,6 @@ export const pgliteTestFiles = [
   "lib/__tests__/ti-maintenance-retirement-pglite.test.ts",
   "lib/__tests__/ti-alerts-pglite.test.ts",
   "lib/__tests__/ti-attachments-pglite.test.ts",
+  // ── PDTP (Prevención) ────────────────────────────────────────────────────
+  "lib/services/pdtp-adapters/external-engagement-accreditation-connector.test.ts",
 ]

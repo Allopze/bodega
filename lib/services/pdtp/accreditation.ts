@@ -76,6 +76,13 @@ export type PdtpAccreditationSourceType =
    * matriz GRD (N°80) o acta de reunión cerrada (N°81).
    */
   | "cgrd"
+  /**
+   * Visitas y coordinación (`prevention_external_engagements`): cerrar una
+   * coordinación del art. 20 con la empresa mandante cierra la N°20 (Task 12,
+   * M2.5). Las fiscalizaciones y visitas del organismo administrador no
+   * acreditan nada por esta vía — el conector las filtra antes de llegar acá.
+   */
+  | "engagement"
 
 export type AccreditationResult = {
   /** Programa que el motor resolvió por faena y fecha efectiva. Nunca se toma
@@ -424,16 +431,21 @@ const AUTO_APPROVE_SOURCE_TYPES_UNCONDITIONAL: readonly PdtpAccreditationSourceT
  * Fuentes que auto-aprueban sólo si el evento trae evidencia real (M0.4,
  * 2026-09-22; `higiene` se sumó en la ronda de corrección de Task 11 porque la
  * N°45 ya cumple la misma condición: casilla propia más informe de laboratorio
- * real, igual que un simulacro sin casilla asociada): un control de alcotest,
- * un simulacro, un acta de CGRD o una medición de higiene sin artefacto real
- * quedan `submitted` para revisión manual, igual que antes de este cambio —
- * la diferencia es que con evidencia real ya no requieren ese paso manual.
+ * real, igual que un simulacro sin casilla asociada; `engagement` se sumó en
+ * Task 12 con el mismo criterio — el acta o correo de la reunión con el
+ * mandante es la evidencia real, y sin ella no hay por qué eximir del paso
+ * manual): un control de alcotest, un simulacro, un acta de CGRD, una
+ * medición de higiene o el cierre de una coordinación con el mandante sin
+ * artefacto real quedan `submitted` para revisión manual, igual que antes de
+ * este cambio — la diferencia es que con evidencia real ya no requieren ese
+ * paso manual.
  */
 const AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE: readonly PdtpAccreditationSourceType[] = [
   "alcotest",
   "emergencia",
   "cgrd",
   "higiene",
+  "engagement",
 ]
 
 /**
@@ -455,7 +467,7 @@ export async function accreditPdtpFromEvent(
     || AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE.includes(input.sourceType)
   if (input.autoApproveByUserId && !isAutoApproveEligibleSourceType) {
     throw new Error(
-      "Sólo las inspecciones, las ocurrencias de capacitación, el alcotest, los simulacros de emergencia, las actas del CGRD y las mediciones de higiene pueden aprobar automáticamente su cumplimiento.",
+      "Sólo las inspecciones, las ocurrencias de capacitación, el alcotest, los simulacros de emergencia, las actas del CGRD, las mediciones de higiene y el cierre de coordinaciones con el mandante pueden aprobar automáticamente su cumplimiento.",
     )
   }
   const activityNumbers = input.activityNumbers ?? []

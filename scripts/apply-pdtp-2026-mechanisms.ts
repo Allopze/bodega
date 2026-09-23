@@ -71,6 +71,14 @@ const ENGANCHE = [
   // CGRD del DS 44 (G15, 2026-09-02): `prevention-cgrd.ts` cablea la
   // constitución del comité, la publicación de la matriz GRD y el acta cerrada.
   79, 80, 81,
+  // Task 12 (M2.5, 2026-09-23): la reunión con la empresa mandante ya la
+  // registra "Visitas y coordinación" (`prevention_external_engagements`,
+  // kind='coordinacion' + counterpartyType='mandante') sin tocar el PDTP.
+  // Declararla aparte en Constancias era el mismo hecho cargado dos veces por
+  // dos caminos distintos; ahora cierra la N°20 el propio cierre de la
+  // interacción (`external-engagement-accreditation-connector.ts`). Estuvo en
+  // CONSTANCIA hasta esta tarea.
+  20,
   // La N°21 salió del programa por la D02: medía lo mismo que las N°66–78.
   24, 27, 29, 33, 34, 39, 40, 41, 64, 65,  // inspecciones y observaciones
   // El report de uso diario y su revisión: la plantilla `reporte_equipos` los
@@ -108,7 +116,7 @@ const ENGANCHE = [
 const CONSTANCIA = [
   3,           // difusión del plan en faenas
   6,           // reunión de revisión SG-SST
-  20,          // reunión con la empresa mandante
+  // La N°20 salió de acá por la Task 12 (M2.5, 2026-09-23): ver ENGANCHE.
   22,          // control de plataformas de la empresa y del mandante
   // Revisar y cerrar las inspecciones de equipos. Manual por decisión de
   // jefatura (2026-08-21) y no por falta de mecanismo: es un acto semanal sobre

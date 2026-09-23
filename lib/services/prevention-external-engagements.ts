@@ -11,6 +11,7 @@ import type { WorksiteScope } from "@/lib/auth/scope"
 import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { engagementMeasureKey } from "@/lib/prevention/external-engagements"
+import { onExternalEngagementClosed } from "@/lib/services/pdtp-adapters/external-engagement-accreditation-connector"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import {
@@ -169,7 +170,7 @@ export async function addPrescribedMeasure(input: unknown, access: EngagementAcc
 export async function closeExternalEngagement(input: unknown, access: EngagementAccess) {
   const data = externalEngagementCloseSchema.parse(input)
 
-  return db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx) => {
     // `FOR UPDATE`: el gate de medidas abiertas de más abajo se evalúa contra un
     // conteo que `addPrescribedMeasure` puede estar cambiando en paralelo, y sin
     // el lock quedaba una medida prescrita viva bajo una interacción ya cerrada
@@ -221,6 +222,22 @@ export async function closeExternalEngagement(input: unknown, access: Engagement
     })
     return updated
   })
+
+  // Post-commit, fire-and-forget: la interacción ya quedó cerrada y
+  // confirmada. El conector filtra internamente kind/contraparte — sólo la
+  // coordinación del art. 20 con la empresa mandante acredita la N°20 (Task
+  // 12) — y un fallo acá no debe deshacer el cierre.
+  await onExternalEngagementClosed({
+    engagementId: updated.id,
+    worksiteId: updated.worksiteId,
+    kind: updated.kind,
+    counterpartyType: updated.counterpartyType,
+    occurredOn: updated.occurredOn,
+    officialReference: updated.officialReference,
+    closedByUserId: access.userId,
+  })
+
+  return updated
 }
 
 export async function listExternalEngagements(access: EngagementAccess, filter: { kind?: string } = {}) {

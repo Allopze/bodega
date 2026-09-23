@@ -840,6 +840,7 @@ const STRUCTURALLY_WIRED_ACTIVITY_NUMBERS = new Set([
   7,                  // indicadores de faena (Fase 4.1)
   15, 18, 19, 23, 52, // acta de trabajador nuevo (la N°19 es la carpeta, T47)
   17,                 // RE-28 de personas sensibles (worker-sensitivity-connector)
+  20,                 // coordinación con el mandante (Task 12, external-engagement-accreditation-connector)
   35,                 // MIPER
   45, 46, 47, 48, 49, 50, // higiene y vigilancia
   62,                 // entrega de EPP
