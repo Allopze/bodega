@@ -18,7 +18,7 @@ import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { and, eq } from "drizzle-orm"
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 
@@ -50,7 +50,15 @@ beforeEach(async () => {
 
 afterEach(() => {
   delete process.env.PDTP_MECHANISMS_ACTOR_USER_ID
+  delete process.env.PDTP_MECHANISMS_DEPLOY_MODE
 })
+
+/** Señuelo para simular que `process.exit()` corta la ejecución, sin matar el worker de test. */
+class ProcessExitSignal extends Error {
+  constructor(public code: number | undefined) {
+    super(`process.exit(${code})`)
+  }
+}
 
 const N20_ID = (programId: string) => `${programId}-a-020`
 
@@ -158,5 +166,81 @@ describe("apply-pdtp-2026-mechanisms (PGlite): programa 2026 firmado", () => {
 
     const programsForYear = await inMemoryDb.select().from(schema.pdtpPrograms).where(eq(schema.pdtpPrograms.year, 2026))
     expect(programsForYear).toHaveLength(1)
+  })
+
+  it("no escribe sobre una revisión v+1 ya reutilizada que sigue en proceso de revisión formal (bail sin lanzar en modo deploy)", async () => {
+    const { createLegacyPdtpProgramForTests } = await import("@/lib/services/prevention-pdtp")
+    const { pdtpProgramId } = await import("@/lib/services/pdtp/helpers")
+
+    const program = await createLegacyPdtpProgramForTests({ year: 2026, title: "Programa 2026", userId: "user-1" })
+    await insertActivityN20(program.id, "constancia")
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "active" }).where(eq(schema.pdtpPrograms.id, program.id))
+
+    // Simula una revisión v+1 YA existente y abierta por un humano (no por
+    // este script) que YA sometió esa revisión a proceso formal
+    // (`reviewStartedAt` seteado) — `assertPdtpProgramEditableState` la trata
+    // como bloqueada aunque su `status` siga en "draft". `createPdtpRevision`
+    // la encuentra y la reutiliza porque su `status` está en
+    // ["draft", "in_review"]; el bug era que el script escribía encima sin
+    // comprobar nada de esto.
+    const revisionId = pdtpProgramId(2026, 2)
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpPrograms).values({
+      id: revisionId,
+      year: 2026,
+      version: 2,
+      status: "draft",
+      title: program.title,
+      sourceProgramId: program.id,
+      reviewStartedAt: now,
+      elaboratedByUserId: "user-1",
+      elaboratedByName: "U1",
+      elaboratedByTitle: "Prevencionista",
+      createdAt: now,
+      updatedAt: now,
+    })
+    // Clon con el mismo mecanismo pendiente que el activo: la reclasificación
+    // de la N°20 (constancia → enganche) sigue sin aplicarse en la revisión.
+    await insertActivityN20(revisionId, "constancia")
+
+    // `DEPLOY_MODE` es una constante de módulo (`process.env.…​ === "true"`
+    // leída una sola vez al cargar `apply-pdtp-2026-mechanisms.ts`), y los
+    // tests anteriores ya lo importaron sin la env var puesta. Hace falta
+    // `vi.resetModules()` para forzar una reevaluación fresca — mismo patrón
+    // que `lib/__tests__/env.test.ts` y las suites *-postgres.test.ts que
+    // reimportan un servicio después de `resetModules()` (p. ej.
+    // `prevention-cgrd-postgres.test.ts`). `testGlobal.__db` sigue seteado
+    // (es un global, `resetModules()` no lo toca), así que el módulo fresco
+    // de `@/db` sigue resolviendo a la misma conexión PGlite.
+    process.env.PDTP_MECHANISMS_DEPLOY_MODE = "true"
+    vi.resetModules()
+    const { runMechanismsPass } = await import("../apply-pdtp-2026-mechanisms")
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new ProcessExitSignal(code)
+    }) as never)
+
+    try {
+      await expect(runMechanismsPass()).rejects.toBeInstanceOf(ProcessExitSignal)
+      // Modo deploy: se advierte y se corta (exit 0), nunca se lanza sin capturar.
+      expect(exitSpy).toHaveBeenCalledWith(0)
+      const warned = warnSpy.mock.calls.map((call) => String(call[0]))
+      expect(warned.some((msg) => msg.includes(revisionId) && msg.includes("revisión formal"))).toBe(true)
+    } finally {
+      exitSpy.mockRestore()
+      warnSpy.mockRestore()
+    }
+
+    // Nada se escribió sobre la revisión reutilizada.
+    const [revisionActivity] = await inMemoryDb.select().from(schema.pdtpActivities)
+      .where(and(eq(schema.pdtpActivities.programId, revisionId), eq(schema.pdtpActivities.n, 20)))
+    expect(revisionActivity?.mechanism).toBe("constancia")
+
+    // Tampoco se creó una tercera revisión ni se tocó el activo/firmado.
+    const programsForYear = await inMemoryDb.select().from(schema.pdtpPrograms).where(eq(schema.pdtpPrograms.year, 2026))
+    expect(programsForYear).toHaveLength(2)
+    const [activeProgramRow] = await inMemoryDb.select().from(schema.pdtpPrograms).where(eq(schema.pdtpPrograms.id, program.id))
+    expect(activeProgramRow?.status).toBe("active")
   })
 })

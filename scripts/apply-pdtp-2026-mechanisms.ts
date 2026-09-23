@@ -26,6 +26,16 @@
  * de firma; este script nunca la firma ni la activa, y nunca escribe sobre el
  * programa activo/firmado.
  *
+ * `createPdtpRevision` puede REUTILIZAR una revisión v+1 que ya existía —
+ * abierta por un humano, y que ese humano ya haya sometido formalmente a
+ * revisión (`reviewStartedAt` seteado) o tenga alguna aprobación parcial
+ * (`approvedByJdprUserId`/`approvedByLegalUserId`), aunque su `status` siga
+ * figurando `draft`. Escribirle encima mutaría en silencio un borrador que un
+ * humano ya está evaluando para firmar. Por eso, antes de tocar la revisión
+ * reutilizada, se corre el mismo `assertPdtpProgramEditableState` que decide
+ * si el programa elegido está bloqueado: si esa revisión ya no es un simple
+ * draft recién abierto, el script hace `bail()` sin escribir nada sobre ella.
+ *
  * El comportamiento es el mismo en modo manual y en
  * `PDTP_MECHANISMS_DEPLOY_MODE`: ambos abren la revisión cuando hace falta. La
  * única diferencia sigue siendo abortar (manual) vs. advertir y continuar sin
@@ -292,12 +302,32 @@ async function resolveActorUserId(): Promise<string> {
  * de origen intactos (es un clon), así que la revisión arranca con el mismo
  * mecanismo desactualizado y el filtro `status = "active"` sigue siendo
  * válido sobre las filas clonadas.
+ *
+ * `createPdtpRevision` reutiliza CUALQUIER revisión ya abierta para el mismo
+ * programa origen cuyo `status` esté en `["draft", "in_review"]` — incluida
+ * una que un humano ya sometió formalmente a revisión o que ya tiene alguna
+ * aprobación parcial, aunque su `status` siga siendo `draft` hasta que la
+ * aprobación se complete. Escribir ahí sin comprobar nada mutaría en silencio
+ * el contenido de un borrador que un humano ya está evaluando para firmar. Por
+ * eso, apenas se resuelve la revisión (nueva o reutilizada), se la somete al
+ * mismo chequeo que decide si un programa está bloqueado
+ * (`assertPdtpProgramEditableState`): si ya no es un draft recién abierto, se
+ * aborta con `bail()` sin escribir nada sobre ella.
  */
 export async function applyPendingChangesInNewRevision(
   activeProgram: { id: string },
 ): Promise<{ programId: string; applied: number }> {
   const actorUserId = await resolveActorUserId()
   const revision = await createPdtpRevision({ sourceProgramId: activeProgram.id, userId: actorUserId })
+  try {
+    assertPdtpProgramEditableState(revision.program)
+  } catch {
+    bail(
+      `La revisión v+1 ${revision.programId} del programa ${activeProgram.id} ya está en proceso de revisión ` +
+      "formal; no se aplican cambios automáticos sobre un borrador que un humano ya está evaluando. Aplica la " +
+      "reclasificación a mano o espera a que se resuelva esa revisión.",
+    )
+  }
   const revisionActivities = await loadActiveActivityMechanisms(revision.programId)
   const revisionChanges = planMechanismChanges(revisionActivities)
   const applied = await applyMechanismChanges(revision.programId, revisionChanges)
