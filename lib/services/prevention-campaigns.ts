@@ -4,9 +4,8 @@ import { db } from "@/db"
 import { preventionCampaigns } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
-import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
 import { recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
-import { replacePdtpAccreditationBindings, resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
+import { replacePdtpAccreditationBindings } from "@/lib/services/pdtp/accreditation-bindings"
 import { checkEvidence, evidencePathSchema } from "@/lib/validation/evidence-contract"
 
 export interface CampaignAccess {
@@ -147,8 +146,12 @@ function occurredAtFromChileDate(plainDate: string): string {
 }
 
 /**
- * Marca una campaña preventiva como hecha (R9) y dispara la auto-acreditación
- * PDTP para las actividades que declara (ej. 85-89).
+ * Marca una campaña preventiva como hecha (R9) con su evidencia.
+ *
+ * Ya NO acredita el PDTP (ronda de corrección 1/5, 2026-09-23): ver el
+ * comentario dentro de la función. La acreditación de 85-89 vive
+ * exclusivamente en `recordTrainingOccurrenceStatus`
+ * (lib/services/prevention-training-occurrences.ts) desde Task 13.
  */
 export async function closeCampaign(input: unknown, access: CampaignAccess) {
   const data = campaignCompleteSchema.parse(input)
@@ -183,43 +186,36 @@ export async function closeCampaign(input: unknown, access: CampaignAccess) {
     payload: { campaignId: campaign.id, completedByUserId: access.userId },
   })
 
-  // Auto-acreditación PDTP por la capa durable. Sin actividades declaradas en
-  // la campaña es no-op: no inventamos un número por defecto para no acreditar
-  // una actividad ajena a la campaña.
+  // Ronda de corrección 1/5 (2026-09-23, doble conteo 85-89): este cierre YA NO
+  // acredita el PDTP. Hasta acá llamaba a `recordPdtpFulfillmentEvent` para las
+  // actividades que la campaña declara (85-89) — pero desde Task 13 esas mismas
+  // actividades también se acreditan al completar la ocurrencia `CAM-*`
+  // equivalente del catálogo de capacitación
+  // (`recordTrainingOccurrenceStatus`, lib/services/prevention-training-occurrences.ts).
+  // El motor de cumplimiento (`effectiveApprovedExecutionsByCell`,
+  // lib/services/pdtp/compliance.ts) sólo deduplica entre `sourceType:
+  // "inspeccion"` y las ejecuciones manuales (toma el máximo); todo lo demás,
+  // incluidos "campana" y "capacitacion_ocurrencia", cae en el mismo
+  // acumulador (`otherIntegrationQuantity`) y SE SUMA — no es tolerancia ni
+  // idempotencia. Cerrar la campaña legado de una actividad y además completar
+  // su CAM-* del mismo período dejaba una celda con `executedQuantity = 2`
+  // contra `plannedQuantity = 1`: doble conteo real.
   //
-  // Pasa por `recordPdtpFulfillmentEvent` y no por `accreditPdtpFromEvent` a
-  // secas: el motor lanza cuando el programa está en borrador o la faena queda
-  // fuera de él, y con un `try/catch` esos cierres se perderían en un
-  // `logger.error`, sin fila que `reconcilePdtpFulfillmentEvents` pudiera
-  // recuperar al activar el programa.
+  // El catálogo de capacitación es ahora "la única vía viva para acreditar
+  // 85-89" (brief de Task 13), así que cerrar la campaña legado sigue siendo
+  // posible —conserva su registro histórico, su evidencia y el evento
+  // disparador registrado arriba— pero deja de generar una segunda ejecución
+  // PDTP. No se reemplaza por `accreditPdtpFromEvent`/`resolvePdtpAccreditationTarget`
+  // con otro `sourceType`: cualquier acreditación desde acá volvería a sumarse
+  // con la del catálogo de capacitación, que es el defecto que esta ronda
+  // cierra.
   //
-  // `pdtpPending` separa "no había nada que acreditar" de "había y todavía no
-  // pudo": el primero no es un problema y el segundo tampoco obliga a marcar a
-  // mano, porque el evento quedó registrado.
-  let pdtpAccredited = false
-  let pdtpPending = false
-  const activityNumbers = Array.isArray(campaign.pdtpActivityNumbers) ? campaign.pdtpActivityNumbers : []
-  const accreditationTarget = await resolvePdtpAccreditationTarget({
-    sourceType: "campana",
-    sourceId: campaign.id,
-    eventType: "close",
-    legacyActivityNumbers: activityNumbers,
-  })
-  if (accreditationTarget.catalogActivityIds?.length || accreditationTarget.activityNumbers?.length) {
-    const result = await recordPdtpFulfillmentEvent({
-      sourceType: "campana",
-      sourceId: campaign.id,
-      worksiteId: campaign.worksiteId,
-      ...accreditationTarget,
-      // La fecha del hecho, no la de digitación: el motor resuelve el período
-      // (mes y semana) y el año del programa con `occurredAt`.
-      occurredAt: occurredAtFromChileDate(data.heldOn),
-      executedQuantity: 1,
-      evidenceRef: data.evidenceUrl,
-    })
-    pdtpAccredited = (result?.accredited.length ?? 0) > 0
-    pdtpPending = !pdtpAccredited
-  }
+  // `pdtpAccredited`/`pdtpPending` quedan siempre en `false`: se conservan en
+  // la firma (no en la lógica) porque `closeCampaignAction`
+  // (app/(app)/prevencion/campanas/actions.ts) y `campanas-client.tsx` todavía
+  // los leen para decidir el mensaje que muestran.
+  const pdtpAccredited = false
+  const pdtpPending = false
 
   return { campaign: updated, pdtpAccredited, pdtpPending }
 }
