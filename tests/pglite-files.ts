@@ -153,6 +153,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-cphs-certification-persistence.test.ts",
   "lib/__tests__/backfill-cphs-mandatory-sessions.test.ts",
   "lib/__tests__/prevention-hygiene-pdtp-accreditation.test.ts",
+  // N°50: el saneamiento de las exenciones previas antes del CHECK de motivo.
+  "lib/__tests__/prevention-surveillance-exempt-migration.test.ts",
   "lib/__tests__/pdtp-occurrence-gap-obligation.test.ts",
   "lib/__tests__/pdtp-indicators-reopen-revocation.test.ts",
   "lib/__tests__/prevention-emergency-plan-seed.test.ts",

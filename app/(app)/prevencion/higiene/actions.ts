@@ -12,6 +12,7 @@ import {
   createSurveillanceProgram,
   enrollGroupInSurveillance,
   recordExposureMeasurement,
+  recordHygieneMeasurementSlotStatus,
   recordSurveillanceOutcome,
   setProtocolApplicability,
   type HygieneAccess,
@@ -81,6 +82,17 @@ export async function recordSurveillanceOutcomeAction(input: unknown): Promise<A
   const guard = await guardPermission("prevention:hygiene:assess")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => recordSurveillanceOutcome(input, access))
+}
+
+/**
+ * Declara la casilla N°45 de una faena como no hecha o no aplicable. El permiso
+ * es el del hecho —el mismo que registra la medición—, como en las demás
+ * familias de casillas del programa.
+ */
+export async function recordHygieneMeasurementSlotStatusAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:hygiene:measure")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => recordHygieneMeasurementSlotStatus(input, access))
 }
 
 /** Declara si un protocolo MINSAL aplica a una faena (DS 44 título V). */

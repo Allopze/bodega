@@ -2,8 +2,9 @@
  * lib/services/pdtp-adapters/slot-deviation-connector.ts
  *
  * Conector entre las casillas del programa de los submódulos (alcotest,
- * simulacros, sesiones del CGRD, ocurrencias de capacitación) y los desvíos
- * por celda del PDTP (`pdtp_execution_deviations`).
+ * simulacros, sesiones del CGRD, ocurrencias de capacitación, evaluación
+ * cuantitativa de higiene) y los desvíos por celda del PDTP
+ * (`pdtp_execution_deviations`).
  *
  * Una casilla declarada «no aplica» o «no hecha» es la fuente de verdad del
  * submódulo; el PDTP es un consumidor. Antes de este conector el estado nunca
@@ -28,9 +29,9 @@
  * **Permiso.** No se pide `prevention:pdtp:*`: quien llega acá ya pasó el
  * permiso de su propio dominio (`prevention:alcotest:register`,
  * `prevention:emergency:drill_execute`, `prevention:cgrd:meeting:manage`,
- * `prevention:training:record`), que es lo que autorizó cambiar la casilla. La
- * vía manual desde la planilla del PDTP sigue exigiendo el suyo
- * (`app/(app)/prevencion/pdtp/actions/deviations.ts`).
+ * `prevention:training:record`, `prevention:hygiene:measure`), que es lo que
+ * autorizó cambiar la casilla. La vía manual desde la planilla del PDTP sigue
+ * exigiendo el suyo (`app/(app)/prevencion/pdtp/actions/deviations.ts`).
  *
  * **Lo que la casilla propagó, lo retira la casilla — y nada más.** Cuando la
  * casilla pasa de «no aplica» a «no hecha» (o al revés), el desvío que ella

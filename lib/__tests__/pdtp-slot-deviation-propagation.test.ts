@@ -164,6 +164,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.preventionProtocolApplicabilities)
+  await inMemoryDb.delete(schema.preventionHygieneMeasurementSlots)
   await inMemoryDb.delete(schema.preventionAlcotestSlotEvidence)
   await inMemoryDb.delete(schema.preventionAlcotestSlots)
   await inMemoryDb.delete(schema.preventionGrdMeetingSlots)

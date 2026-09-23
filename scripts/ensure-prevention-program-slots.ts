@@ -67,7 +67,7 @@ async function main() {
   const activas = await db.select({ id: worksites.id, name: worksites.name })
     .from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name))
 
-  const totales: Counts = { training: 0, drills: 0, grdMeetings: 0, alcotest: 0, protocols: 0 }
+  const totales: Counts = { training: 0, drills: 0, grdMeetings: 0, alcotest: 0, protocols: 0, hygieneMeasurements: 0 }
   const porFaena: Array<{ faena: string; creadas: Counts }> = []
 
   for (const faena of activas) {

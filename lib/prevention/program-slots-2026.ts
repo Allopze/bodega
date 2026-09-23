@@ -2,8 +2,8 @@
  * lib/prevention/program-slots-2026.ts
  *
  * Las casillas del programa 2026 para simulacros (N°84), actas del CGRD
- * (N°81) y alcotest (N°30/31 y N°32): lo que se espera que ocurra, por faena y
- * por año.
+ * (N°81), alcotest (N°30/31 y N°32) y la evaluación cuantitativa de higiene
+ * (N°45): lo que se espera que ocurra, por faena y por año.
  *
  * **Por qué una constante y no una lectura del JSON en runtime.** El
  * cronograma vive en `db/seed/pdtp-catalog-2026.json`, que es dato del
@@ -22,6 +22,8 @@
 export const DRILL_PDTP_ACTIVITY_NUMBER = 84
 /** Número de actividad PDTP de las actas de reunión del CGRD. */
 export const GRD_MEETING_PDTP_ACTIVITY_NUMBER = 81
+/** N°45 — «Evaluación cuantitativas por mutual»: la medición de exposición. */
+export const HYGIENE_MEASUREMENT_PDTP_ACTIVITY_NUMBER = 45
 /**
  * N°30 y N°31 tienen el mismo texto y el mismo cronograma; sólo difieren en el
  * responsable declarado (PRF vs Sup/JT). Cuál de las dos se acredita lo decide
@@ -78,6 +80,15 @@ export const GRD_MEETING_SLOTS_2026: readonly ProgramSlot[] = [
   slot(3, 1),
   slot(4, 1),
   slot(5, 1),
+]
+
+/**
+ * N°45 — «Evaluación cuantitativas por mutual». Una sola celda al año:
+ * febrero, semana 2. La cumple la primera medición de exposición del año en la
+ * faena, que ya exige el informe de laboratorio como archivo real.
+ */
+export const HYGIENE_MEASUREMENT_SLOTS_2026: readonly ProgramSlot[] = [
+  slot(2, 2),
 ]
 
 /**

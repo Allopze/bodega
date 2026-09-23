@@ -135,15 +135,35 @@ export const preventionSurveillanceEnrollments = pgTable("prevention_surveillanc
   summonedAt:       timestamp("summoned_at", { withTimezone: true, mode: "string" }),
   attendedOn:       text("attended_on"),
   healthRecordId:   text("health_record_id").references(() => preventionHealthRecords.id, { onDelete: "set null" }),
+  /**
+   * Por qué la persona no se controla en este ciclo: el motivo de la ausencia
+   * (`absent`, ≥5) o de la exención (`exempt`, ≥10). Es la misma columna para
+   * los dos porque responde la misma pregunta —«¿por qué este ciclo no tiene
+   * control?»— y sólo uno de los dos estados puede estar vigente a la vez.
+   */
   absenceReason:    text("absence_reason"),
+  /**
+   * La matrícula cuyo control asistido abrió este ciclo. `null` en las que nacen
+   * de matricular el grupo a mano. Es lo que permite retirar exactamente el
+   * ciclo siguiente si ese control se corrige y deja de estar asistido, sin
+   * adivinar por fecha cuál de las matrículas futuras fue la automática.
+   */
+  renewedFromEnrollmentId: text("renewed_from_enrollment_id"),
   createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  foreignKey({ columns: [table.renewedFromEnrollmentId], foreignColumns: [table.id], name: "surveillance_enrollment_renewed_from_fk" }).onDelete("set null"),
   uniqueIndex("prevention_surveillance_enrollment_unique").on(table.programId, table.workerId, table.dueOn),
   index("prevention_surveillance_enrollment_due_idx").on(table.dueOn, table.status),
+  index("prevention_surveillance_enrollment_renewed_from_idx").on(table.renewedFromEnrollmentId),
   check("prevention_surveillance_enrollment_status_valid", sql`${table.status} IN ('pending', 'summoned', 'attended', 'absent', 'exempt')`),
   check("prevention_surveillance_enrollment_attended_consistent", sql`${table.status} <> 'attended' OR ${table.attendedOn} IS NOT NULL`),
   check("prevention_surveillance_enrollment_absent_consistent", sql`${table.status} <> 'absent' OR length(${table.absenceReason}) >= 5`),
+  /* Eximir saca a la persona del padrón de expuestos de la N°50: sin motivo, el
+   * indicador de cobertura podría subirse eximiendo. Diez caracteres y no los
+   * cinco de la ausencia porque una exención se parece más a un «no aplica» que
+   * a un «no vino»: es el umbral único de `reason-thresholds.ts`. */
+  check("prevention_surveillance_enrollment_exempt_consistent", sql`${table.status} <> 'exempt' OR length(trim(COALESCE(${table.absenceReason}, ''))) >= 10`),
 ])
 
 
@@ -238,9 +258,70 @@ export const preventionHygieneMeasurementEvidence = pgTable("prevention_hygiene_
   check("prevention_hygiene_meas_ev_annul_check", sql`(${table.state} IN ('active', 'replaced') AND ${table.annulledAt} IS NULL AND ${table.annulledByUserId} IS NULL AND ${table.annulledReason} IS NULL) OR (${table.state} = 'annulled' AND ${table.annulledAt} IS NOT NULL AND ${table.annulledByUserId} IS NOT NULL AND length(${table.annulledReason}) >= 5)`),
 ])
 
+/* ── Casillas del programa: N°45 ──────────────────────────────────────────
+ * Lo que el PDTP espera de la higiene cuantitativa: una evaluación por faena y
+ * año («Evaluación cuantitativas por mutual», febrero semana 2). Se pre-genera
+ * al activar la faena junto a las demás casillas del programa
+ * (`ensurePreventionProgramSlotsForWorksiteTx`), por el mismo motivo que los
+ * simulacros: sin una fila que exista antes de que pase nada, "no se hizo" es
+ * indistinguible de "nadie lo cargó".
+ *
+ * La casilla NO es la medición. `measurementId` apunta a la que la cumplió —la
+ * primera del año en la faena— y es nullable porque la casilla puede quedar sin
+ * hacerse o declararse no aplicable. Las mediciones siguientes del año existen
+ * sin casilla y se acreditan por su propia fecha, igual que un simulacro
+ * extraordinario.
+ */
+export const preventionHygieneMeasurementSlots = pgTable("prevention_hygiene_measurement_slots", {
+  id:                    text("id").primaryKey(),
+  worksiteId:            text("worksite_id").notNull(),
+  year:                  integer("year").notNull(),
+  slotKey:               text("slot_key").notNull(),
+  scheduledMonth:        integer("scheduled_month").notNull(),
+  scheduledWeek:         integer("scheduled_week").notNull(),
+  status:                text("status").notNull().default("pending"),
+  measurementId:         text("measurement_id"),
+  completedAt:           timestamp("completed_at", { withTimezone: true, mode: "string" }),
+  completedByUserId:     text("completed_by_user_id"),
+  notApplicableAt:       timestamp("not_applicable_at", { withTimezone: true, mode: "string" }),
+  notApplicableByUserId: text("not_applicable_by_user_id"),
+  notApplicableReason:   text("not_applicable_reason"),
+  observation:           text("observation"),
+  version:               integer("version").notNull().default(1),
+  createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  foreignKey({ columns: [table.worksiteId], foreignColumns: [worksites.id], name: "hygiene_meas_slot_worksite_fk" }).onDelete("restrict"),
+  /* `restrict` y no `set null`, igual que la casilla de simulacro: con `set
+   * null`, borrar la medición dejaría la casilla cumplida apuntando a nada y el
+   * CHECK de consistencia rechazaría el borrado con un error de driver. Hoy
+   * ninguna vía de la aplicación borra mediciones: es un registro de
+   * fiscalización. */
+  foreignKey({ columns: [table.measurementId], foreignColumns: [preventionExposureMeasurements.id], name: "hygiene_meas_slot_measurement_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.completedByUserId], foreignColumns: [users.id], name: "hygiene_meas_slot_completer_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.notApplicableByUserId], foreignColumns: [users.id], name: "hygiene_meas_slot_na_actor_fk" }).onDelete("restrict"),
+  uniqueIndex("prevention_hygiene_measurement_slot_unique").on(table.worksiteId, table.year, table.slotKey),
+  index("prevention_hygiene_measurement_slot_period_idx").on(table.worksiteId, table.year, table.status),
+  check("prevention_hygiene_measurement_slot_year_check", sql`${table.year} BETWEEN 2020 AND 2100`),
+  check("prevention_hygiene_measurement_slot_status_check", sql`${table.status} IN ('pending', 'completed', 'not_completed', 'not_applicable')`),
+  check("prevention_hygiene_measurement_slot_period_check", sql`${table.scheduledMonth} BETWEEN 1 AND 12 AND ${table.scheduledWeek} BETWEEN 1 AND 4`),
+  // Una casilla hecha sin la medición que la cumple sería una marca sin hecho.
+  check("prevention_hygiene_measurement_slot_done_check", sql`(${table.status} = 'completed' AND ${table.measurementId} IS NOT NULL AND ${table.completedAt} IS NOT NULL AND ${table.completedByUserId} IS NOT NULL) OR (${table.status} <> 'completed' AND ${table.completedAt} IS NULL AND ${table.completedByUserId} IS NULL)`),
+  check("prevention_hygiene_measurement_slot_na_check", sql`(${table.status} = 'not_applicable' AND ${table.notApplicableAt} IS NOT NULL AND ${table.notApplicableByUserId} IS NOT NULL AND length(trim(COALESCE(${table.notApplicableReason}, ''))) >= 10) OR (${table.status} <> 'not_applicable' AND ${table.notApplicableAt} IS NULL AND ${table.notApplicableByUserId} IS NULL AND ${table.notApplicableReason} IS NULL)`),
+  check("prevention_hygiene_measurement_slot_version_check", sql`${table.version} >= 1`),
+])
+
 export const preventionExposureMeasurementsRelations = relations(preventionExposureMeasurements, ({ one, many }) => ({
   group: one(preventionExposureGroups, { fields: [preventionExposureMeasurements.groupId], references: [preventionExposureGroups.id] }),
   evidence: many(preventionHygieneMeasurementEvidence),
+}))
+
+export const preventionHygieneMeasurementSlotsRelations = relations(preventionHygieneMeasurementSlots, ({ one }) => ({
+  worksite: one(worksites, { fields: [preventionHygieneMeasurementSlots.worksiteId], references: [worksites.id] }),
+  measurement: one(preventionExposureMeasurements, {
+    fields: [preventionHygieneMeasurementSlots.measurementId],
+    references: [preventionExposureMeasurements.id],
+  }),
 }))
 
 export const preventionHygieneMeasurementEvidenceRelations = relations(preventionHygieneMeasurementEvidence, ({ one }) => ({
@@ -269,3 +350,4 @@ export type PreventionSurveillanceProgram = typeof preventionSurveillanceProgram
 export type PreventionSurveillanceEnrollment = typeof preventionSurveillanceEnrollments.$inferSelect
 export type PreventionProtocolApplicability = typeof preventionProtocolApplicabilities.$inferSelect
 export type PreventionHygieneMeasurementEvidence = typeof preventionHygieneMeasurementEvidence.$inferSelect
+export type PreventionHygieneMeasurementSlot = typeof preventionHygieneMeasurementSlots.$inferSelect

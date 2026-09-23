@@ -24,7 +24,8 @@
  * para un sujeto que todavía no tiene registro propio.
  */
 
-import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm"
+import { and, eq, exists, gt, gte, inArray, isNull, lte, ne, notExists, or, sql, type SQL } from "drizzle-orm"
+import { alias, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
   fuelVehicles,
@@ -32,6 +33,8 @@ import {
   preventionEmergencyResources,
   preventionExposureGroupMembers,
   preventionExposureGroups,
+  preventionSurveillanceEnrollments,
+  preventionSurveillancePrograms,
   sstEvaluations,
   workerCapabilities,
   workerCapabilityOverrides,
@@ -132,11 +135,53 @@ function countExtintores(worksiteId: string): Promise<number> {
 }
 
 /**
+ * ¿Tiene la membresía un ciclo vigente de vigilancia que cumpla `status`?
+ *
+ * «Vigente» es la matrícula más reciente —mayor `due_on`— de la persona en cada
+ * programa activo: la que ningún ciclo posterior reemplazó. Se busca entre las
+ * matrículas que salieron de ESTE GES (`group_id`), porque es la exposición por
+ * la que la persona está en el padrón.
+ */
+function currentSurveillanceCycle(status: (column: AnyPgColumn) => SQL) {
+  const vigente = alias(preventionSurveillanceEnrollments, "ciclo_vigente")
+  const posterior = alias(preventionSurveillanceEnrollments, "ciclo_posterior")
+  return db.select({ one: sql`1` })
+    .from(vigente)
+    .innerJoin(preventionSurveillancePrograms, and(
+      eq(preventionSurveillancePrograms.id, vigente.programId),
+      eq(preventionSurveillancePrograms.status, "active"),
+    ))
+    .where(and(
+      eq(vigente.workerId, preventionExposureGroupMembers.workerId),
+      eq(vigente.groupId, preventionExposureGroupMembers.groupId),
+      status(vigente.status),
+      notExists(db.select({ one: sql`1` }).from(posterior).where(and(
+        eq(posterior.programId, vigente.programId),
+        eq(posterior.workerId, vigente.workerId),
+        gt(posterior.dueOn, vigente.dueOn),
+      ))),
+    ))
+}
+
+/**
  * Personas que deben estar bajo vigilancia en la faena.
  *
  * Se cuenta distinto por trabajador: una persona en dos GES con vigilancia es un
  * sujeto, no dos. `left_on IS NULL` es la membresía vigente, que es el mismo
  * criterio con que el módulo arma la nómina al matricular.
+ *
+ * **Quien está eximido no es sujeto.** Una membresía sale del padrón cuando su
+ * ciclo vigente en algún programa activo está en `exempt` y no tiene ningún otro
+ * ciclo vigente que todavía la exija: eximida del audiométrico pero pendiente
+ * de otro programa del mismo GES, sigue contando. Sin esto la persona eximida
+ * seguía en el denominador de la cobertura de la N°50 y la bajaba sin que nadie
+ * pudiera controlarla. La exención exige motivo en base (≥10) desde el mismo
+ * cambio, así que descontar deja rastro.
+ *
+ * La exención es del ciclo, no de la persona: cuando existe un ciclo más nuevo
+ * (se volvió a matricular al grupo), ése es el vigente y la persona vuelve al
+ * padrón. La de un programa suspendido o cerrado no descuenta: ese programa ya
+ * no está controlando a nadie.
  */
 function countExpuestosGes(worksiteId: string): Promise<number> {
   return countOne(db.select({ count: sql<number>`count(distinct ${preventionExposureGroupMembers.workerId})::int` })
@@ -147,6 +192,10 @@ function countExpuestosGes(worksiteId: string): Promise<number> {
       eq(preventionExposureGroups.surveillanceRequired, true),
       eq(preventionExposureGroups.isActive, true),
       isNull(preventionExposureGroupMembers.leftOn),
+      or(
+        notExists(currentSurveillanceCycle((status) => eq(status, "exempt"))),
+        exists(currentSurveillanceCycle((status) => ne(status, "exempt"))),
+      ),
     )))
 }
 

@@ -93,6 +93,17 @@ export async function onExposureMeasurementRecorded(input: {
   reportReference: string | null
   /** Ruta del informe de laboratorio. Es la evidencia real de la N°45. */
   evidencePath?: string | null
+  /**
+   * Posición de la casilla N°45 que esta medición cumple, cuando cumple una
+   * (`preventionHygieneMeasurementSlots.year/scheduledMonth/scheduledWeek`).
+   * La segunda medición del año no llena casilla y no la trae: el motor
+   * resuelve entonces el período con `measuredOn`, como antes.
+   *
+   * Existe para que una evaluación informada en junio no pague un junio que el
+   * programa no planificó mientras la celda de febrero sigue en cero — el mismo
+   * criterio que simulacros, CGRD y alcotest (`onEmergencyDrillCompleted`).
+   */
+  plannedPeriod?: { year: number; month: number; week: number }
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "hygiene",
@@ -117,6 +128,7 @@ export async function onExposureMeasurementRecorded(input: {
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_QUANTITATIVE_MEASUREMENT_ACTIVITY_NUMBER)],
     occurredAt: occurredAtFromChileDate(input.measuredOn),
+    ...(input.plannedPeriod ? { plannedPeriod: input.plannedPeriod } : {}),
     executedQuantity: 1,
     evidenceRef,
     metadata: {

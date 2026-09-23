@@ -1,7 +1,8 @@
 "use client"
 import Link from "next/link"
 import { Heartbeat } from "@phosphor-icons/react"
-import { ProtocolsPanel, type ApplicabilityRow } from "./protocols-panel"
+import { ProtocolsPanel, type ApplicabilityRow, type MeasurementSlotRow } from "./protocols-panel"
+import type { PdtpPeriod } from "@/lib/services/pdtp/period"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -61,7 +62,10 @@ interface AgentOption {
   unit: string
 }
 
-export function HygieneDashboard({ groups, programs, summary, agents, worksites, protocolWorksites, applicabilities, today, canManage }: {
+export function HygieneDashboard({
+  groups, programs, summary, agents, worksites, protocolWorksites, applicabilities,
+  measurementSlots, slotYear, activationPeriods, canRecordMeasurementSlots, today, canManage,
+}: {
   groups: GroupItem[]
   programs: ProgramItem[]
   summary: AnonymizedExposureSummary[]
@@ -69,6 +73,10 @@ export function HygieneDashboard({ groups, programs, summary, agents, worksites,
   worksites: { id: string; name: string }[]
   protocolWorksites: { id: string; name: string }[]
   applicabilities: ApplicabilityRow[]
+  measurementSlots: MeasurementSlotRow[]
+  slotYear: number
+  activationPeriods: Record<string, PdtpPeriod | null>
+  canRecordMeasurementSlots: boolean
   today: string
   canManage: boolean
 }) {
@@ -137,7 +145,7 @@ export function HygieneDashboard({ groups, programs, summary, agents, worksites,
         )}
       >
         <div role="tablist" aria-label="Vista de higiene" className="flex gap-1 rounded-md border border-[var(--color-border)] p-1 w-fit">
-          {([["groups", `Grupos (${groups.length})`], ["programs", `Vigilancia (${programs.length})`], ["protocols", "Protocolos MINSAL"], ["summary", "Panel anonimizado"]] as const).map(([value, label]) => (
+          {([["groups", `Grupos (${groups.length})`], ["programs", `Vigilancia (${programs.length})`], ["protocols", "Programa y protocolos"], ["summary", "Panel anonimizado"]] as const).map(([value, label]) => (
             <button key={value} type="button" role="tab" onClick={() => setFilters({ tab: value, vista: null })} aria-selected={tab === value}
               className="rounded px-3 py-1 text-sm aria-selected:bg-[var(--color-primary-tint)]">
               {label}
@@ -150,6 +158,10 @@ export function HygieneDashboard({ groups, programs, summary, agents, worksites,
         <ProtocolsPanel
           worksites={protocolWorksites}
           applicabilities={applicabilities}
+          measurementSlots={measurementSlots}
+          slotYear={slotYear}
+          activationPeriods={activationPeriods}
+          canRecordMeasurementSlots={canRecordMeasurementSlots}
           today={today}
           canManage={canManage}
         />

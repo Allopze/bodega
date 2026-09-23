@@ -4,11 +4,11 @@
  * Las casillas del programa nacen con la faena.
  *
  * Lo que se protege no es que las tablas existan: es que activar una faena
- * deje las 131 filas —94 casillas de capacitación (52 + 42 de la Task 8, que
+ * deje las 132 filas —94 casillas de capacitación (52 + 42 de la Task 8, que
  * cerró la brecha de instrumento de las N°16, 37, 51, 57, 59 y 60), 2 de
- * simulacro, 4 de CGRD, 23 de alcotest y los 8 protocolos MINSAL sin
- * pronunciar— y que reejecutar no cree ninguna más ni pise el estado de las
- * existentes.
+ * simulacro, 4 de CGRD, 23 de alcotest, los 8 protocolos MINSAL sin
+ * pronunciar y la evaluación cuantitativa anual de higiene (N°45)— y que
+ * reejecutar no cree ninguna más ni pise el estado de las existentes.
  *
  * El modo de falla que esto vigila es el que motivó el agregador: alguien
  * agrega un cuarto punto de alta de faena, pre-genera sólo capacitación, y la
@@ -63,6 +63,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.preventionHygieneMeasurementSlots)
   await inMemoryDb.delete(schema.preventionProtocolApplicabilities)
   await inMemoryDb.delete(schema.preventionAlcotestSlotEvidence)
   await inMemoryDb.delete(schema.preventionAlcotestSlots)
@@ -96,14 +97,14 @@ beforeEach(async () => {
 })
 
 describe("pre-generación de las casillas del programa", () => {
-  it("una faena activa recibe las 131 filas, y reejecutar no crea ninguna más", async () => {
+  it("una faena activa recibe las 132 filas, y reejecutar no crea ninguna más", async () => {
     const { ensurePreventionProgramSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
 
     const first = await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
-    expect(first).toEqual({ training: 94, drills: 2, grdMeetings: 4, alcotest: 23, protocols: 8 })
+    expect(first).toEqual({ training: 94, drills: 2, grdMeetings: 4, alcotest: 23, protocols: 8, hygieneMeasurements: 1 })
 
     const second = await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
-    expect(second).toEqual({ training: 0, drills: 0, grdMeetings: 0, alcotest: 0, protocols: 0 })
+    expect(second).toEqual({ training: 0, drills: 0, grdMeetings: 0, alcotest: 0, protocols: 0, hygieneMeasurements: 0 })
   })
 
   it("las casillas nacen pendientes y en los meses que el programa declara", async () => {
@@ -131,6 +132,14 @@ describe("pre-generación de las casillas del programa", () => {
     const meetings = await inMemoryDb.select().from(schema.preventionGrdMeetingSlots)
     expect(meetings.map((row) => row.slotKey).sort()).toEqual(["m02-w1", "m03-w1", "m04-w1", "m05-w1"])
     expect(meetings.every((row) => row.status === "pending")).toBe(true)
+
+    /* N°45: una sola celda al año, febrero semana 2, sin medición detrás. */
+    const hygiene = await inMemoryDb.select().from(schema.preventionHygieneMeasurementSlots)
+    expect(hygiene).toHaveLength(1)
+    expect(hygiene[0]).toMatchObject({
+      worksiteId: WORKSITE_ID, year: 2026, slotKey: "m02-w2",
+      scheduledMonth: 2, scheduledWeek: 2, status: "pending", measurementId: null,
+    })
   })
 
   it("reejecutar no pisa el estado de una casilla ya resuelta", async () => {
@@ -165,6 +174,18 @@ describe("pre-generación de las casillas del programa", () => {
       completedAt: new Date().toISOString(),
       completedByUserId: USER_ID,
     }).where(eq(schema.preventionEmergencyDrillSlots.id, slot!.id))).rejects.toThrow()
+  })
+
+  it("la base rechaza una casilla de higiene hecha sin la medición que la cumple", async () => {
+    const { ensurePreventionProgramSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
+    await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
+    const [slot] = await inMemoryDb.select().from(schema.preventionHygieneMeasurementSlots)
+
+    await expect(inMemoryDb.update(schema.preventionHygieneMeasurementSlots).set({
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      completedByUserId: USER_ID,
+    }).where(eq(schema.preventionHygieneMeasurementSlots.id, slot!.id))).rejects.toThrow()
   })
 
   it("la base exige motivo de al menos diez caracteres para declarar no aplica", async () => {

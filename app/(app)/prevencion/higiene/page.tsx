@@ -8,11 +8,14 @@ import {
   getAnonymizedExposureSummary,
   listExposureAgents,
   listExposureGroups,
+  listHygieneMeasurementSlots,
   listHygieneWorksites,
   listProtocolApplicabilities,
   listSurveillancePrograms,
 } from "@/lib/services/prevention-hygiene"
-import { todayInChile } from "@/lib/utils"
+import { resolveProgramActivationPeriod } from "@/lib/services/prevention-program-slots"
+import { resolveProgramSlotYear } from "@/lib/prevention/program-slots-2026"
+import { formatDate, todayInChile } from "@/lib/utils"
 import { HygieneDashboard } from "./hygiene-dashboard"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
@@ -29,15 +32,25 @@ export default async function HigienePage() {
     permissions: session.user.permissions,
   }
   const canManage = session.user.permissions.includes("prevention:hygiene:manage")
+  // La casilla N°45 la resuelve quien registra la medición: es el permiso del hecho.
+  const canRecordMeasurementSlots = session.user.permissions.includes("prevention:hygiene:measure")
+  const slotYear = resolveProgramSlotYear(todayInChile().slice(0, 4))
 
-  const [groups, programs, summary, agents, worksites, applicabilities] = await Promise.all([
+  const [groups, programs, summary, agents, worksites, applicabilities, measurementSlots] = await Promise.all([
     listExposureGroups(access),
     listSurveillancePrograms(access),
     getAnonymizedExposureSummary(access),
     canManage ? listExposureAgents(access) : Promise.resolve([]),
     canManage ? listHygieneWorksites(access) : Promise.resolve([]),
     listProtocolApplicabilities(access),
+    listHygieneMeasurementSlots(access, slotYear),
   ])
+  // Desde cuándo exige el programa a cada faena: el checklist lo usa para no
+  // pedir una casilla anterior a la incorporación de la faena al programa.
+  const slotWorksiteIds = [...new Set(measurementSlots.map((row) => row.slot.worksiteId))]
+  const activationPeriods = Object.fromEntries(await Promise.all(
+    slotWorksiteIds.map(async (worksiteId) => [worksiteId, await resolveProgramActivationPeriod(worksiteId)] as const),
+  ))
   // La pestaña de protocolos necesita todas las faenas visibles, no sólo las
   // gestionables: quien sólo mira igual tiene que poder revisar la cobertura.
   const protocolWorksites = [...new Map(
@@ -96,6 +109,23 @@ export default async function HigienePage() {
           nextAssessmentOn: row.applicability.nextAssessmentOn,
           version: row.applicability.version,
         }))}
+        measurementSlots={measurementSlots.map((row) => ({
+          worksiteId: row.slot.worksiteId,
+          id: row.slot.id,
+          version: row.slot.version,
+          slotKey: row.slot.slotKey,
+          scheduledMonth: row.slot.scheduledMonth,
+          scheduledWeek: row.slot.scheduledWeek,
+          status: row.slot.status as "pending" | "completed" | "not_completed" | "not_applicable",
+          observation: row.slot.observation,
+          notApplicableReason: row.slot.notApplicableReason,
+          fulfilledLabel: row.measuredOn
+            ? `Cumplida por la medición${row.groupCode ? ` del GES ${row.groupCode}` : ""} del ${formatDate(row.measuredOn)}`
+            : null,
+        }))}
+        slotYear={slotYear}
+        activationPeriods={activationPeriods}
+        canRecordMeasurementSlots={canRecordMeasurementSlots}
         today={todayInChile()}
         canManage={canManage}
       />

@@ -2262,6 +2262,20 @@
       "when": 1790134933393,
       "tag": "0322_flippant_outlaw_kid",
       "breakpoints": true
+    },
+    {
+      "idx": 323,
+      "version": "7",
+      "when": 1790137848632,
+      "tag": "0323_medical_shocker",
+      "breakpoints": true
+    },
+    {
+      "idx": 324,
+      "version": "7",
+      "when": 1790137900532,
+      "tag": "0324_unique_echo",
+      "breakpoints": true
     }
   ]
 }
