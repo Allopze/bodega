@@ -413,6 +413,44 @@ export const PREDEFINED_TRAINING_CATALOG = [
     pdtpActivityNumbers: [57],
     sortOrder: 26,
   },
+  /**
+   * Task 13 (2026-09-23): la N°88 (Seguridad vial) es una de las 5 campañas
+   * del programa anual (N°85-89). A diferencia de las otras 4 — ya cubiertas
+   * por CAM-01/02/03/04/05/06 —, sólo se podía acreditar desde
+   * `/prevencion/campanas`, la ruta histórica de campañas que ya no está en
+   * la navegación (ver el comentario en `modules/prevention/manifest.ts`)
+   * pero que hasta esta tarea seguía aceptando campañas nuevas: dos caminos
+   * vivos para la misma actividad, con el riesgo de doble conteo que la
+   * auditoría dejó abierto en la práctica, no sólo en la navegación. CAM-07
+   * cierra ese hueco y, junto con el cambio en
+   * `app/(app)/prevencion/campanas` que retira la alta de campañas nuevas,
+   * deja a las CAM-* de este catálogo como la única vía viva para acreditar
+   * 85-89.
+   *
+   * `sourceRow: 36` no viene de "Programa anual de Capacitaciones 2026.xlsx"
+   * — mismo criterio que CAP-15..CAP-20 (Task 8): continúa la numeración
+   * secuencial del archivo (el máximo usado era 35) como marcador de alta
+   * nueva sin fila de origen real en esa hoja.
+   */
+  {
+    code: "CAM-07",
+    title: "Seguridad vial",
+    itemType: "campaign",
+    audience: "Dirigido a todo el personal.",
+    sourceRow: 36,
+    schedule: schedule(
+      monthWeek(6, 1),
+      monthWeek(6, 2),
+      monthWeek(6, 3),
+      monthWeek(6, 4),
+      monthWeek(7, 1),
+      monthWeek(7, 2),
+      monthWeek(7, 3),
+      monthWeek(7, 4),
+    ),
+    pdtpActivityNumbers: [88],
+    sortOrder: 27,
+  },
 ] satisfies readonly PredefinedTrainingCatalogItem[]
 
 export function trainingCatalogItemId(year: number, code: string): string {

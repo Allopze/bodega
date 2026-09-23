@@ -4,11 +4,12 @@
  * Las casillas del programa nacen con la faena.
  *
  * Lo que se protege no es que las tablas existan: es que activar una faena
- * deje las 132 filas —94 casillas de capacitación (52 + 42 de la Task 8, que
- * cerró la brecha de instrumento de las N°16, 37, 51, 57, 59 y 60), 2 de
- * simulacro, 4 de CGRD, 23 de alcotest, los 8 protocolos MINSAL sin
- * pronunciar y la evaluación cuantitativa anual de higiene (N°45)— y que
- * reejecutar no cree ninguna más ni pise el estado de las existentes.
+ * deje las 140 filas —102 casillas de capacitación (52 + 42 de la Task 8, que
+ * cerró la brecha de instrumento de las N°16, 37, 51, 57, 59 y 60, + 8 de la
+ * Task 13, CAM-07/N°88), 2 de simulacro, 4 de CGRD, 23 de alcotest, los 8
+ * protocolos MINSAL sin pronunciar y la evaluación cuantitativa anual de
+ * higiene (N°45)— y que reejecutar no cree ninguna más ni pise el estado de
+ * las existentes.
  *
  * El modo de falla que esto vigila es el que motivó el agregador: alguien
  * agrega un cuarto punto de alta de faena, pre-genera sólo capacitación, y la
@@ -97,11 +98,11 @@ beforeEach(async () => {
 })
 
 describe("pre-generación de las casillas del programa", () => {
-  it("una faena activa recibe las 132 filas, y reejecutar no crea ninguna más", async () => {
+  it("una faena activa recibe las 140 filas, y reejecutar no crea ninguna más", async () => {
     const { ensurePreventionProgramSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
 
     const first = await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
-    expect(first).toEqual({ training: 94, drills: 2, grdMeetings: 4, alcotest: 23, protocols: 8, hygieneMeasurements: 1 })
+    expect(first).toEqual({ training: 102, drills: 2, grdMeetings: 4, alcotest: 23, protocols: 8, hygieneMeasurements: 1 })
 
     const second = await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
     expect(second).toEqual({ training: 0, drills: 0, grdMeetings: 0, alcotest: 0, protocols: 0, hygieneMeasurements: 0 })
