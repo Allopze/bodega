@@ -24,6 +24,7 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
     status: pdtpActivities.status,
     retiredEffectiveFrom: pdtpActivities.retiredEffectiveFrom,
     evidenceRequirement: pdtpActivities.evidenceRequirement,
+    mechanism: pdtpActivities.mechanism,
   }).from(pdtpActivities).where(eq(pdtpActivities.id, data.activityId)).limit(1)
   if (!activity) throw new Error("Actividad PDTP no encontrada.")
 
@@ -147,8 +148,19 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   // criterio de "evidencia real" que `isRealEvidence` en accreditation.ts
   // (ruta de storage o URL), aplicado aquí sobre campos que el esquema ya
   // restringe a `storage/pdtp-evidence/…`.
+  //
+  // Ronda de corrección (2026-09-23): acotado a `mechanism === 'constancia'`,
+  // igual que `assertPdtpActivityMechanism` en constancias.ts. Task 9 es
+  // "Constancias declara no se hizo/no aplica", no "endurecer la evidencia en
+  // todo el PDTP" — la versión sin acotar rompía, sin test que lo cubriera, el
+  // fallback `solo_manual` documentado en responsible-execution.ts:17-26:
+  // cuando ningún responsable de una actividad `enganche`/`compuesta` tiene el
+  // permiso del módulo que la acredita, el sistema permite registrarla a mano
+  // en la planilla con evidencia autodeclarada (texto). 19 actividades reales
+  // del catálogo 2026 (incluida toda la cadena RE-20, N°66-78) dependen de ese
+  // fallback — ver `scripts/apply-pdtp-2026-demand-slas.ts:77-175`.
   const hasRealEvidence = Boolean(nextEvidenceUrl) || dedupedPhotos.length > 0
-  if (requirement && !hasRealEvidence) {
+  if (requirement && activity.mechanism === "constancia" && !hasRealEvidence) {
     throw new Error(`Esta actividad exige evidencia: ${requirement}. La observación no basta — adjunta un archivo (foto o PDF).`)
   }
 

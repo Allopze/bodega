@@ -300,6 +300,48 @@ describe("markPdtpExecution — evidencia mínima declarada", () => {
     }, "user-constancias-1", "all")
     expect(second.evidenceUrl).toBe("storage/pdtp-evidence/certificado-reenvio.pdf")
   })
+
+  // Ronda de corrección (2026-09-23): el gate de evidencia real de M2.1 se
+  // acotó a `mechanism === 'constancia'` — ver el comentario junto al gate en
+  // executions.ts. Sin acotar rompía, sin ningún test que lo cubriera, el
+  // fallback `solo_manual` documentado en responsible-execution.ts:17-26:
+  // cuando ninguno de los responsables declarados de una actividad
+  // `enganche`/`compuesta` tiene el permiso del módulo que la acredita
+  // automáticamente, el sistema permite registrarla a mano en la planilla del
+  // PDTP con evidencia autodeclarada (sólo texto) en vez del registro real del
+  // módulo de origen. 19 actividades reales del catálogo 2026 dependen de este
+  // fallback, incluida toda la cadena RE-20 (N°66 a 78) — ver
+  // `scripts/apply-pdtp-2026-demand-slas.ts:77-175`.
+  it.each(["enganche", "compuesta"] as const)(
+    "acepta evidencia de sólo texto en una actividad '%s' con evidenceRequirement (fallback solo_manual preservado)",
+    async (mechanism) => {
+      const otherActId = `${PROGRAM_ID}-a-099-${mechanism}`
+      await inMemoryDb.insert(schema.pdtpActivities).values({
+        id: otherActId, programId: PROGRAM_ID, n: mechanism === "enganche" ? 98 : 99,
+        activity: `Actividad ${mechanism} con evidencia mínima declarada`,
+        program: "Prevención PDTP",
+        responsibleSlugs: ["prf"], responsibleDisplay: "Prevencionista de riesgos en faena",
+        scheduleMode: "scheduled", scheduleClassificationStatus: "confirmed",
+        mechanism, evidenceRequirement: "Registro verificable en el módulo de origen",
+        sourceSheetRow: mechanism === "enganche" ? 2 : 3,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      })
+      await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+        id: `${otherActId}-s-${PROGRAM_YEAR}-${String(CURRENT_MONTH).padStart(2, "0")}-1`,
+        activityId: otherActId, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1, plannedQuantity: 1, sourceColumn: "manual",
+      })
+
+      const execution = await markPdtpExecution({
+        activityId: otherActId, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
+        executedQuantity: 1,
+        evidenceText: "Registro autodeclarado por el responsable, sin archivo adjunto",
+        evidenceUrl: "", evidencePhotos: [],
+      }, "user-constancias-1", "all")
+      expect(execution.status).toBe("submitted")
+      expect(execution.evidenceText).toBe("Registro autodeclarado por el responsable, sin archivo adjunto")
+      expect(execution.evidenceUrl).toBeNull()
+    },
+  )
 })
 
 describe("assertPdtpActivityMechanism", () => {
