@@ -146,6 +146,84 @@ describe("ocurrencias de capacitación", () => {
     expect((await listTrainingOccurrences(ACCESS, { includeInactiveWorksites: true })).length).toBe(94)
   })
 
+  /*
+   * Task 8, ronda de corrección 1 (2026-09-22). CAP-15 (N°16) es `on_demand` y
+   * se acredita por OBLIGACIÓN (`onTrainingOccurrenceCompleted` →
+   * `reportSubjectObligation`), no por acreditación directa: antes de esta
+   * ronda, `recordTrainingOccurrenceStatus` disparaba los DOS mecanismos en
+   * paralelo al marcar la ocurrencia hecha — una fila `pdtpExecutions`
+   * aprobada (vía `recordPdtpFulfillmentEvent`) además del reporte de la
+   * obligación — duplicando el registro sin que el indicador `closed_on_time`
+   * (que ignora las ejecuciones) lo necesitara. Este test ejercita
+   * `recordTrainingOccurrenceStatus` de verdad (no un fixture aislado, como
+   * `pdtp-occurrence-gap-obligation.test.ts`) y confirma que ya no queda esa
+   * ejecución duplicada.
+   */
+  it("marcar hecha una ocurrencia on_demand (N°16) no crea una ejecución PDTP duplicada", async () => {
+    const {
+      ensurePreventionTrainingOccurrencesForWorksiteTx,
+      listTrainingOccurrences,
+      recordTrainingOccurrenceStatus,
+    } = await import("@/lib/services/prevention-training-occurrences")
+
+    const now = new Date().toISOString()
+    const PROGRAM_ID = "pdtp-program-n16-dup"
+    const ACTIVITY_ID = `${PROGRAM_ID}-a-016`
+    await inMemoryDb.insert(schema.pdtpPrograms).values({
+      id: PROGRAM_ID, version: 1, year: 2026, title: "PDTP 2026 duplicado N°16",
+      status: "active", appliesToAllWorksites: true,
+      elaboratedByName: "Prevencionista", elaboratedByTitle: "Experto en Prevención",
+      creationMode: "blank", complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
+      activatedByUserId: USER_ID, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.pdtpActivities).values({
+      id: ACTIVITY_ID, programId: PROGRAM_ID, n: 16,
+      activity: "Realizar Prueba de evaluación capacitación IRL", program: "Todo trabajador nuevo debe realizar la evaluación.",
+      responsibleSlugs: ["prevencionista_faena"], responsibleDisplay: "PRF",
+      scheduleMode: "on_demand", scheduleClassificationStatus: "confirmed",
+      dueDays: 30, evidenceRequirement: "Evidencia de la actividad realizada.",
+      indicatorMode: "closed_on_time",
+      sourceSheetRow: 27, createdAt: now, updatedAt: now,
+    })
+
+    await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)
+    const target = (await listTrainingOccurrences(ACCESS)).find((row) => row.code === "CAP-15")
+    if (!target) throw new Error("No se encontró la ocurrencia CAP-15 (N°16) de prueba.")
+    expect(target).toMatchObject({ slotKey: "annual", pdtpActivityNumbers: [16] })
+
+    await inMemoryDb.insert(schema.preventionTrainingOccurrenceEvidence).values({
+      id: "training-occ-evidence-n16",
+      occurrenceId: target.id,
+      fileName: "acta-irl.pdf",
+      storagePath: "storage/prevention-training-evidence/test-acta-irl.pdf",
+      mimeType: "application/pdf",
+      fileSizeBytes: 128,
+      sha256: "c".repeat(64),
+      state: "active",
+      uploadedByUserId: USER_ID,
+    })
+
+    await expect(recordTrainingOccurrenceStatus({
+      occurrenceId: target.id,
+      expectedVersion: target.version,
+      status: "completed",
+      observation: "Evaluación IRL realizada tras el ingreso del trabajador.",
+    }, ACCESS)).resolves.toMatchObject({ status: "completed" })
+
+    // La obligación N°16 no se corrompe: sigue sin haber ninguna ejecución
+    // acreditada directamente para esa actividad.
+    const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, ACTIVITY_ID))
+    expect(executions).toHaveLength(0)
+
+    // Tampoco queda un evento de acreditación directa para esta ocurrencia:
+    // el `completionEvent` nunca se construyó, así que ni siquiera se
+    // registró el intento «pending».
+    const events = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
+      .where(eq(schema.pdtpFulfillmentEvents.sourceId, target.id))
+    expect(events).toHaveLength(0)
+  })
+
   /* El tercer estado (2026-09-19). Lo que se protege no es que el valor exista:
    * es que salga del programa sin dejar rastros del estado anterior, y que
    * exija una explicación que un fiscalizador pueda leer. */

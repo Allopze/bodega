@@ -159,9 +159,10 @@ export async function ensureProtocolApplicabilitiesForWorksiteTx(
  * Todas las casillas del programa para una faena, en una llamada.
  *
  * Es lo que deben invocar los puntos de alta de faena. Una faena nueva y
- * activa queda con 52 casillas de capacitación, 2 de simulacro, 4 de CGRD, 23
- * de alcotest (12 controles + 11 envíos) y los 8 protocolos MINSAL sin
- * pronunciar: 89 filas.
+ * activa queda con 94 casillas de capacitación (52 + 42 de la Task 8, que
+ * agregó instrumento a las N°16, 37, 51, 57, 59 y 60), 2 de simulacro, 4 de
+ * CGRD, 23 de alcotest (12 controles + 11 envíos) y los 8 protocolos MINSAL
+ * sin pronunciar: 131 filas.
  *
  * Se siembra **el año completo**, también para una faena dada de alta en
  * octubre, y eso es deliberado: la casilla de marzo sigue existiendo y se puede

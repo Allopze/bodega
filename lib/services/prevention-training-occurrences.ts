@@ -39,7 +39,11 @@ import type { AccreditationInput, RevocationInput } from "@/lib/services/pdtp/ac
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
-import { onTrainingOccurrenceCompleted } from "@/lib/services/pdtp-adapters/occurrence-gap-connector"
+import {
+  loadObligationBackedCatalogActivities,
+  onTrainingOccurrenceCompleted,
+} from "@/lib/services/pdtp-adapters/occurrence-gap-connector"
+import { legacyPdtpActivityNumberForCatalogId } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 import {
   propagateSlotStatusToPdtp,
   slotPdtpDeclaration,
@@ -426,6 +430,48 @@ function pdtpRevocationInput(occurrenceId: string, worksiteId: string, actorUser
   }
 }
 
+/**
+ * Task 8 (ronda de corrección 1, 2026-09-22): las actividades `on_demand`
+ * medidas por plazo (N°16 y N°57 desde esta tarea) se acreditan por
+ * OBLIGACIÓN (`onTrainingOccurrenceCompleted` → `reportSubjectObligation`),
+ * no por acreditación directa de la ocurrencia: `closed_on_time`
+ * (`lib/services/pdtp/compliance.ts`) ignora las ejecuciones y sólo mira
+ * obligaciones, así que una fila directa en `pdtpExecutions` no aporta nada
+ * y sólo duplica el registro — el mismo motivo por el que
+ * `worker-onboarding-connector.ts` excluye la N°15/N°52 de su acreditación
+ * directa (`OBLIGATION_ACTIVITY_NUMBERS` ahí).
+ *
+ * Acá se resuelve de forma genérica contra el mismo mapa que ya usa el
+ * barrido de brechas (`loadObligationBackedCatalogActivities`), no a mano:
+ * cualquier ítem `on_demand`+`closed_on_time` que se agregue al catálogo en
+ * el futuro queda cubierto sin tocar esta función.
+ *
+ * `target` puede venir como números legados o como `catalogActivityIds` de
+ * vínculos ya migrados (`resolvePdtpAccreditationTarget`); en el segundo caso
+ * se resuelve cada id a su número legado (`legacyPdtpActivityNumberForCatalogId`,
+ * mismo puente que usa `lib/services/pdtp/fulfillment.ts`) para poder
+ * comparar contra el mapa, que siempre habla en números.
+ */
+function excludeObligationBackedFromAccreditationTarget(
+  target: { catalogActivityIds?: string[]; activityNumbers?: number[] },
+  obligationBackedNumbers: readonly number[],
+): { catalogActivityIds?: string[]; activityNumbers?: number[] } {
+  if (obligationBackedNumbers.length === 0) return target
+  const backed = new Set(obligationBackedNumbers)
+  if (target.activityNumbers?.length) {
+    const filtered = target.activityNumbers.filter((n) => !backed.has(n))
+    return filtered.length > 0 ? { activityNumbers: filtered } : {}
+  }
+  if (target.catalogActivityIds?.length) {
+    const filtered = target.catalogActivityIds.filter((id) => {
+      const legacyNumber = legacyPdtpActivityNumberForCatalogId(id)
+      return legacyNumber === null || !backed.has(legacyNumber)
+    })
+    return filtered.length > 0 ? { catalogActivityIds: filtered } : {}
+  }
+  return target
+}
+
 export async function recordTrainingOccurrenceStatus(
   rawInput: unknown,
   access: TrainingOccurrenceAccess,
@@ -445,6 +491,11 @@ export async function recordTrainingOccurrenceStatus(
    * la pasa a borrador, y el PDTP rechaza un «no aplica» sobre una celda con
    * ejecución. Los demás cambios van en la transacción de la ocurrencia. */
   let postCommitPdtpDeviation: SlotPdtpPropagationInput | null = null
+  /* Fuera de la transacción, igual que en el barrido de brechas: sólo lee el
+   * programa activo y el catálogo, no depende de la ocurrencia que se está
+   * mutando. Se resuelve una vez y se usa para excluir de la acreditación
+   * directa las actividades que ya se acreditan por obligación. */
+  const obligationBackedByItem = await loadObligationBackedCatalogActivities()
 
   const result = await db.transaction(async (tx) => {
     const current = await loadOccurrenceForMutation(tx, input.occurrenceId)
@@ -531,14 +582,24 @@ export async function recordTrainingOccurrenceStatus(
 
     const activityNumbers = (current.catalog.pdtpActivityNumbers as number[]) ?? []
     const target = await resolvePdtpAccreditationTarget({ sourceType: "capacitacion_ocurrencia", sourceId: current.catalog.id, eventType: "close", legacyActivityNumbers: activityNumbers }, tx)
-    if (nextStatus === "completed" && (target.catalogActivityIds?.length || target.activityNumbers?.length)) {
+    /* Sólo para acreditación directa (completar/revocar). La propagación de
+     * desvíos más abajo usa `target` sin filtrar a propósito: es un mecanismo
+     * distinto (refleja «no aplica»/«no hecha» en la celda planificada del
+     * PDTP, no acredita nada) y ya es tolerante a actividades sin celda
+     * (`propagateSlotStatusToPdtp` no hace nada si la ocurrencia es `annual`,
+     * como las N°16/N°57). */
+    const directTarget = excludeObligationBackedFromAccreditationTarget(
+      target,
+      obligationBackedByItem.get(current.catalog.id) ?? [],
+    )
+    if (nextStatus === "completed" && (directTarget.catalogActivityIds?.length || directTarget.activityNumbers?.length)) {
       completionEvent = pdtpCompletionInput({
         occurrenceId: current.occurrence.id,
         worksiteId: current.occurrence.worksiteId,
         year: current.occurrence.year,
         scheduledMonth: current.occurrence.scheduledMonth,
         scheduledWeek: current.occurrence.scheduledWeek,
-        ...target,
+        ...directTarget,
         evidenceRef: activeEvidence[0]?.storagePath ?? null,
         catalogCode: current.catalog.code,
         catalogTitle: current.catalog.title,
@@ -555,7 +616,7 @@ export async function recordTrainingOccurrenceStatus(
         worksiteId: current.occurrence.worksiteId,
         completedAt: now,
       }
-    } else if (current.occurrence.status === "completed" && (target.catalogActivityIds?.length || target.activityNumbers?.length)) {
+    } else if (current.occurrence.status === "completed" && (directTarget.catalogActivityIds?.length || directTarget.activityNumbers?.length)) {
       /* La condición era `nextStatus === "not_completed"` literal. Con un tercer
        * estado eso dejaba viva la acreditación de una ocurrencia corregida a
        * "no aplica": el programa la seguía contando como cumplida. Lo que

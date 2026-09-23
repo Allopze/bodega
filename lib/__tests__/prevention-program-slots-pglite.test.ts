@@ -96,7 +96,7 @@ beforeEach(async () => {
 })
 
 describe("pre-generación de las casillas del programa", () => {
-  it("una faena activa recibe las 89 filas, y reejecutar no crea ninguna más", async () => {
+  it("una faena activa recibe las 131 filas, y reejecutar no crea ninguna más", async () => {
     const { ensurePreventionProgramSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
 
     const first = await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
