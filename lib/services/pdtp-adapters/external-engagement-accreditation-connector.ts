@@ -36,6 +36,7 @@
 import { and, desc, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { sstDocumentLinks, sstDocuments, sstDocumentVersions } from "@/db/schema"
+import { logger } from "@/lib/logger"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
 import { pdtpCatalogActivityIdForLegacyNumber } from "./catalog-activities-2026"
 
@@ -59,21 +60,35 @@ function occurredAtFromChileDate(plainDate: string): string {
  * publicada (`currentVersionId` nulo): ahí no hay archivo real que ofrecer
  * todavía, y cae al siguiente nivel del fallback igual que si no hubiera
  * vínculo.
+ *
+ * La interacción ya quedó cerrada y confirmada en su propia transacción antes
+ * de llegar acá (ver el docblock del archivo): un hipo transitorio de esta
+ * consulta no debe propagarse como si el cierre hubiera fallado. Se degrada a
+ * "sin documento vinculado" y deja rastro en el log, igual que el resto de
+ * los conectores de este plan.
  */
 async function linkedEvidencePath(engagementId: string): Promise<string | null> {
-  const [linked] = await db
-    .select({ filePath: sstDocumentVersions.filePath })
-    .from(sstDocumentLinks)
-    .innerJoin(sstDocuments, eq(sstDocuments.id, sstDocumentLinks.documentId))
-    .innerJoin(sstDocumentVersions, eq(sstDocumentVersions.id, sstDocuments.currentVersionId))
-    .where(and(
-      eq(sstDocumentLinks.entityType, "external_engagement"),
-      eq(sstDocumentLinks.entityId, engagementId),
-      isNull(sstDocumentLinks.removedAt),
-    ))
-    .orderBy(desc(sstDocumentLinks.createdAt))
-    .limit(1)
-  return linked?.filePath ?? null
+  try {
+    const [linked] = await db
+      .select({ filePath: sstDocumentVersions.filePath })
+      .from(sstDocumentLinks)
+      .innerJoin(sstDocuments, eq(sstDocuments.id, sstDocumentLinks.documentId))
+      .innerJoin(sstDocumentVersions, eq(sstDocumentVersions.id, sstDocuments.currentVersionId))
+      .where(and(
+        eq(sstDocumentLinks.entityType, "external_engagement"),
+        eq(sstDocumentLinks.entityId, engagementId),
+        isNull(sstDocumentLinks.removedAt),
+      ))
+      .orderBy(desc(sstDocumentLinks.createdAt))
+      .limit(1)
+    return linked?.filePath ?? null
+  } catch (err) {
+    logger.error(
+      { err, engagementId },
+      "[external-engagement-pdtp-connector] No se pudo resolver el documento vinculado; se usa el fallback de evidencia.",
+    )
+    return null
+  }
 }
 
 /**

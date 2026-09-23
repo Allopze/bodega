@@ -193,9 +193,19 @@ describe("closeExternalEngagement → acredita la N°20 (Task 12)", () => {
   })
 
   it.each([
+    // Ninguna de las dos condiciones se cumple.
     { label: "fiscalización de la Dirección del Trabajo", kind: "fiscalizacion" as const, counterpartyType: "direccion_trabajo" as const, officialReference: "ORD-2026-001", infoTypes: undefined },
+    // kind === coordinacion, pero la contraparte no es el mandante.
     { label: "coordinación con un contratista (no es el mandante)", kind: "coordinacion" as const, counterpartyType: "contratista" as const, officialReference: undefined, infoTypes: ["riesgos"] as const },
+    // Ninguna de las dos condiciones se cumple (mismo caso que el primero en
+    // términos de rama, pero con el otro kind real que tampoco acredita).
     { label: "visita del organismo administrador", kind: "organismo_administrador" as const, counterpartyType: "organismo_administrador" as const, officialReference: "ACHS-2026-77", infoTypes: undefined },
+    // La contraparte SÍ es el mandante, pero kind no es coordinación: una
+    // fiscalización de la Dirección del Trabajo a la propia empresa mandante
+    // es una combinación válida en la base — tener la contraparte correcta no
+    // compensa tener el `kind` equivocado. Rama independiente de las
+    // anteriores, no una repetición de "ninguna de las dos se cumple".
+    { label: "fiscalización a la empresa mandante (contraparte correcta, kind incorrecto)", kind: "fiscalizacion" as const, counterpartyType: "mandante" as const, officialReference: "ORD-2026-002", infoTypes: undefined },
   ])("cerrar una interacción de otra combinación ($label) no acredita nada", async ({ kind, counterpartyType, officialReference, infoTypes }) => {
     const created = await createExternalEngagement({
       worksiteId: WS_ID, kind, direction: "received", counterpartyType,
