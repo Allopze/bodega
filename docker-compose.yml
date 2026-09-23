@@ -676,6 +676,7 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
       - PDTP_MECHANISMS_DEPLOY_MODE=true
+      - PDTP_MECHANISMS_ACTOR_USER_ID=${PDTP_MECHANISMS_ACTOR_USER_ID:-}
       - PDTP_MECHANISMS_DRY_RUN=${PDTP_MECHANISMS_DRY_RUN:-}
     command: ["node", "scripts/apply-pdtp-mechanisms.mjs"]
 

@@ -142,6 +142,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-revocations.test.ts",
   "lib/__tests__/pdtp-objectives.test.ts",
   "scripts/__tests__/apply-pdtp-2026-objectives.test.ts",
+  "scripts/__tests__/apply-pdtp-2026-mechanisms.test.ts",
   "lib/__tests__/pdtp-worksites.test.ts",
   "lib/__tests__/pdtp-schedule-presets-batch.test.ts",
   "lib/__tests__/physical-inventory-service.test.ts",
