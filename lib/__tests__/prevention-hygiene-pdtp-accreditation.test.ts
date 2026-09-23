@@ -39,7 +39,7 @@ vi.mock("@/lib/logger", () => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-const { chileDateParts } = await import("@/lib/utils")
+const { chileDateParts, todayInChile } = await import("@/lib/utils")
 const {
   recordExposureMeasurement,
   recordHygieneMeasurementSlotStatus,
@@ -671,12 +671,38 @@ describe("N°50 — eximir exige motivo y saca a la persona del padrón de expue
       .where(eq(schema.preventionSurveillanceEnrollments.id, "surven-1"))).rejects.toThrow()
   })
 
-  /* Ronda de corrección de Task 11, Importante 3: eximir ya no deja a la
-   * persona fuera del padrón para siempre — abre sola el ciclo siguiente
-   * (`syncSurveillanceRenewalTx`, el mismo mecanismo que ya abría `attended`),
-   * y ese ciclo pendiente es lo que hace que la persona siga contando de
-   * inmediato. La exención acota un solo ciclo, no da de baja permanente. */
-  it("eximir con motivo real abre el ciclo siguiente solo: la persona sigue contando en el padrón", async () => {
+  /* Ronda 2/5, punto 2 del pedido de la controladora: el ajuste de
+   * "posterior"/"prematuro" en `currentSurveillanceCycle` no puede cambiar
+   * ningún resultado observable del padrón para `attended`, porque
+   * `countExpuestosGes` sólo descuenta por `exempt` — un `attended` vigente
+   * ya contaba antes de este cambio (es "no exento") y un `pending` recién
+   * abierto por su renovación también cuenta ("no exento" también). Se
+   * verifica con el mismo test antes y después de la renovación, no se
+   * asume. */
+  it("attended no cambia el padrón, ni antes ni después de que se abra su ciclo siguiente", async () => {
+    expect(await padron()).toBe(3)
+
+    await recordSurveillanceOutcome({ enrollmentId: "surven-1", status: "attended", attendedOn: `${PROGRAM_YEAR}-06-12` }, access)
+
+    // El ciclo asistido sigue siendo el vigente (su sucesor `pending` es
+    // "prematuro"), pero como `attended` tampoco es `exempt`, el resultado
+    // del padrón es el mismo que si el sucesor ya fuera el vigente.
+    expect(await padron()).toBe(3)
+    const [renewed] = await inMemoryDb.select().from(schema.preventionSurveillanceEnrollments)
+      .where(eq(schema.preventionSurveillanceEnrollments.renewedFromEnrollmentId, "surven-1"))
+    expect(renewed).toMatchObject({ status: "pending" })
+  })
+
+  /* Ronda de corrección de Task 11, Importante 3 (ronda 2/5): eximir ya no
+   * deja a la persona fuera del padrón para siempre — abre sola el ciclo
+   * siguiente (`syncSurveillanceRenewalTx`, el mismo mecanismo que ya abría
+   * `attended`) — pero tampoco vacía de sentido la exención: mientras ese
+   * ciclo siguiente siga `pending` y no venza, sigue siendo la exención la
+   * que manda, así que el padrón SÍ baja de inmediato. Sólo cuando el ciclo
+   * siguiente efectivamente llega a su fecha (o alguien actúa sobre él) la
+   * persona vuelve a contar — ver el criterio de "posterior"/"prematuro" en
+   * `currentSurveillanceCycle` (`lib/services/pdtp/subject-registry.ts`). */
+  it("eximir con motivo real baja el padrón mientras el ciclo renovado no vence, y sube cuando vence", async () => {
     expect(await padron()).toBe(3)
 
     await recordSurveillanceOutcome({
@@ -684,12 +710,25 @@ describe("N°50 — eximir exige motivo y saca a la persona del padrón de expue
       absenceReason: "Contraindicación médica documentada para el examen.",
     }, access)
 
-    expect(await padron()).toBe(3)
+    // El ciclo pendiente recién abierto vence en más de un año: mientras no
+    // llegue esa fecha, no desplaza a la exención como "vigente".
+    expect(await padron()).toBe(2)
     const [renewed] = await inMemoryDb.select().from(schema.preventionSurveillanceEnrollments)
       .where(eq(schema.preventionSurveillanceEnrollments.renewedFromEnrollmentId, "surven-1"))
     expect(renewed).toMatchObject({
       status: "pending", enrolledOn: `${PROGRAM_YEAR}-06-30`, dueOn: `${PROGRAM_YEAR + 1}-06-30`,
     })
+
+    // Una vez que el ciclo pendiente vence, pasa a ser el vigente y la
+    // persona vuelve a contar: la exención acotó exactamente ese período, no
+    // más. Se corre el vencimiento directo en base a "hoy" —posterior al
+    // vencimiento original (`${PROGRAM_YEAR}-06-30`) y ya cumplido— en vez de
+    // mockear el reloj del proceso; es el mismo patrón que ya usa el resto de
+    // la plataforma para "vencidos" (`item.dueOn < todayInChile()`).
+    await inMemoryDb.update(schema.preventionSurveillanceEnrollments)
+      .set({ dueOn: todayInChile() })
+      .where(eq(schema.preventionSurveillanceEnrollments.id, renewed!.id))
+    expect(await padron()).toBe(3)
   })
 
   /* Una fila que nadie procesó por el servicio —el caso de una exención
@@ -706,16 +745,27 @@ describe("N°50 — eximir exige motivo y saca a la persona del padrón de expue
     expect(await padron()).toBe(2)
   })
 
-  /* Y esa exención sin renovación sigue siendo del ciclo, no de la persona:
-   * una matrícula nueva (re-matricular el grupo a mano) la supera igual que
-   * antes. */
-  it("una exención sin renovación queda superada si se vuelve a matricular el grupo", async () => {
+  /* Y esa exención sin renovación sigue siendo del ciclo, no de la persona,
+   * pero (ronda 2/5) sólo la supera un ciclo que YA está en efecto: uno cuyo
+   * vencimiento llegó, o sobre el que alguien ya actuó. Re-matricular el
+   * grupo por sí solo NO alcanza —el ciclo que crea nace `pending` y sin
+   * vencer, tan "prematuro" como el de la renovación automática—, pero citar
+   * a la persona para ese ciclo nuevo (una acción real sobre él) sí. */
+  it("una exención sin renovación no se supera con sólo re-matricular; sí con una acción sobre el ciclo nuevo", async () => {
     await inMemoryDb.update(schema.preventionSurveillanceEnrollments)
       .set({ status: "exempt", absenceReason: "Contraindicación médica documentada para el examen." })
       .where(eq(schema.preventionSurveillanceEnrollments.id, "surven-1"))
     expect(await padron()).toBe(2)
 
-    await enrollGroupInSurveillance({ programId: SURV_PROGRAM_ID, groupId: GROUP_ID }, access)
+    const { dueOn } = await enrollGroupInSurveillance({ programId: SURV_PROGRAM_ID, groupId: GROUP_ID }, access)
+    expect(await padron()).toBe(2)
+
+    const [created] = await inMemoryDb.select().from(schema.preventionSurveillanceEnrollments)
+      .where(and(
+        eq(schema.preventionSurveillanceEnrollments.workerId, "wk-1"),
+        eq(schema.preventionSurveillanceEnrollments.dueOn, dueOn),
+      ))
+    await recordSurveillanceOutcome({ enrollmentId: created!.id, status: "summoned" }, access)
 
     expect(await padron()).toBe(3)
   })
