@@ -10,6 +10,7 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { INITIAL_STATE } from "@/lib/form-state"
+import type { ActionState } from "@/lib/validation/masters"
 import { useOperation } from "@/lib/hooks/use-operation"
 import type { CloudreveAdminStatus } from "@/lib/services/cloudreve/settings"
 import {
@@ -30,7 +31,15 @@ const SOURCE_LABELS = {
 } as const
 
 export function CloudreveStorageForm({ status }: CloudreveStorageFormProps) {
-  const [state, formAction] = useActionState(saveCloudreveStorageAction, INITIAL_STATE)
+  // El aviso sale dentro de la acción: al revalidar, la página se vuelve a
+  // montar y un efecto sobre `state` nunca llegaba a ver el resultado, así que
+  // guardar no avisaba nada (el mismo patrón de `admin/desviaciones`).
+  const [, formAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
+    const result = await saveCloudreveStorageAction(prev, formData)
+    if (result.ok) toast.success(result.message ?? "Configuración guardada")
+    else if (result.message) toast.error(result.message)
+    return result
+  }, INITIAL_STATE)
   const [backend, setBackend] = useState<"filesystem" | "cloudreve">(status.backend.value)
   const [usernameInput, setUsernameInput] = useState("")
   const [passwordInput, setPasswordInput] = useState("")
@@ -45,11 +54,6 @@ export function CloudreveStorageForm({ status }: CloudreveStorageFormProps) {
   useEffect(() => {
     setBackend(status.backend.value)
   }, [status.backend.value])
-
-  useEffect(() => {
-    if (state.ok) toast.success(state.message ?? "Configuración guardada")
-    else if (state.message) toast.error(state.message)
-  }, [state])
 
   function handleTest() {
     connection.run(testCloudreveConnectionAction)

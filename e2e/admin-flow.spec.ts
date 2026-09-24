@@ -278,6 +278,10 @@ test("admin: crear trabajador y verificarlo en listado", async ({ page }) => {
   await selectRadixById(page, "wrk-ws", "Faena E2E")
 
   await submitFormAndWaitForClose(page, dialog)
+  // El listado pagina de a 25 y el seed ya trae más trabajadores (los del CPHS
+  // de más de 25 personas): el nuevo no tiene por qué caer en la primera
+  // página. Se busca con el filtro de la barra, como lo haría la persona.
+  await page.getByPlaceholder("Filtrar en esta página...").fill(firstName)
   await expect(page.getByRole("row", { name: new RegExp(`${firstName} Playwright.*${rut}.*Montajista E2E.*Faena E2E`) })).toBeVisible({ timeout: 15_000 })
 })
 

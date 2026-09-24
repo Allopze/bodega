@@ -8,16 +8,19 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
 
+// `ok` es parte del contrato de `scripts/cron-runner.mjs`: sin él el runner
+// daba cada corrida por fallida (DTE_CRON_RUNNER_CONTRACT, salida 1) aunque el
+// trabajo se hubiera hecho, y así una falla real no se distinguía en el log.
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET
-  if (!secret) return NextResponse.json({ outcome: "failed", code: "MAINTENANCE_CRON_CONFIGURATION" }, { status: 500 })
-  if (!verifyCronSecret(request.headers.get("authorization"), secret)) return NextResponse.json({ outcome: "unauthorized", code: "MAINTENANCE_CRON_UNAUTHORIZED" }, { status: 401 })
+  if (!secret) return NextResponse.json({ ok: false, outcome: "failed", code: "MAINTENANCE_CRON_CONFIGURATION" }, { status: 500 })
+  if (!verifyCronSecret(request.headers.get("authorization"), secret)) return NextResponse.json({ ok: false, outcome: "unauthorized", code: "MAINTENANCE_CRON_UNAUTHORIZED" }, { status: 401 })
   try {
     const result = await withCronLock("maintenance-reminders", () => runMaintenanceReminders())
     logger.info("[cron/maintenance-reminders] completed", result)
-    return NextResponse.json({ outcome: "success", code: "MAINTENANCE_CRON_SUCCESS", ...result })
+    return NextResponse.json({ ok: true, outcome: "success", code: "MAINTENANCE_CRON_SUCCESS", ...result })
   } catch (error) {
     logger.error("[cron/maintenance-reminders] failed", error)
-    return NextResponse.json({ outcome: "failed", code: "MAINTENANCE_CRON_FAILED" }, { status: 503 })
+    return NextResponse.json({ ok: false, outcome: "failed", code: "MAINTENANCE_CRON_FAILED" }, { status: 503 })
   }
 }

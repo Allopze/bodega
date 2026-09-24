@@ -90,7 +90,9 @@ test.describe("PDTP — habilitar actividades", () => {
     // actividad de capacitación pasó a ser el ítem del catálogo anual, y su
     // enlace de resolución va pelado: el destino no lee filtro de texto.
     await page.goto("/prevencion/capacitacion")
-    await expect(page.getByRole("heading", { name: "Capacitación" })).toBeVisible()
+    // `name` compara por substring: sin `level` ni `exact` también toma cada
+    // actividad del control anual cuyo título dice «Capacitación…».
+    await expect(page.getByRole("heading", { level: 1, name: "Campañas y Capacitación", exact: true })).toBeVisible()
   })
 
   test("el CTA de una fila es alcanzable por teclado y revela su verbo", async ({ page }) => {

@@ -132,3 +132,30 @@ describe("cron runner", () => {
     expect(exitCode).toBe(0)
   })
 })
+
+/*
+ * Cada ruta que llama el runner declara `ok` en sus respuestas. `ti-alerts` y
+ * `maintenance-reminders` no lo hacían y el runner daba por fallida cada
+ * corrida (DTE_CRON_RUNNER_CONTRACT) aunque el trabajo se hubiera hecho: en el
+ * log del scheduler una falla real no se distinguía de una corrida buena.
+ */
+describe("rutas de cron que llama el runner", () => {
+  it("toda respuesta con `outcome` declara también `ok`", async () => {
+    const { readFileSync } = await import("node:fs")
+    const path = await import("node:path")
+    const root = path.resolve(__dirname, "../..")
+    const runner = readFileSync(path.join(root, "scripts/cron-runner.mjs"), "utf8")
+    const routes = [...runner.matchAll(/url: "http:\/\/app:3000\/api\/cron\/([a-z0-9-]+)"/g)].map((match) => match[1]!)
+    expect(routes.length).toBeGreaterThan(10)
+
+    const missing: string[] = []
+    for (const route of routes) {
+      const source = readFileSync(path.join(root, "app/api/cron", route, "route.ts"), "utf8")
+      for (const literal of source.matchAll(/NextResponse\.json\(\s*\{([^}]*)\}/g)) {
+        const body = literal[1]!
+        if (/\boutcome\s*:/.test(body) && !/\bok\s*:/.test(body)) missing.push(`${route}: {${body.trim().slice(0, 60)}…}`)
+      }
+    }
+    expect(missing).toEqual([])
+  })
+})
