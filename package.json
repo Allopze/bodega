@@ -53,6 +53,7 @@
     "pdtp:apply-objectives": "tsx --env-file=.env.local scripts/apply-pdtp-2026-objectives.ts",
     "pdtp:apply-program-data": "tsx --env-file=.env.local scripts/apply-pdtp-2026-program-data.ts",
     "pdtp:apply-demand-slas": "tsx --env-file=.env.local scripts/apply-pdtp-2026-demand-slas.ts",
+    "pdtp:apply-legal-folder": "tsx --env-file=.env.local scripts/apply-pdtp-2026-legal-folder.ts",
     "pdtp:resign-inspection-templates": "tsx --env-file=.env.local scripts/resign-pdtp-2026-inspection-templates.ts",
     "pdtp:approve-inspection-templates": "tsx --env-file=.env.local scripts/approve-pdtp-2026-inspection-templates.ts",
     "pdtp:reconcile-fulfillment-events": "tsx --env-file=.env.local scripts/reconcile-pdtp-fulfillment-events.ts",

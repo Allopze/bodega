@@ -124,7 +124,9 @@ export async function uploadSstDocumentVersionAction(formData: FormData): Promis
     revalidatePath(REVALIDATE)
     return {
       ok: true,
-      message: `Versión ${version.version} subida como borrador pendiente de revisión.`,
+      message: version.status === "vigente"
+        ? `Versión ${version.version} cargada y vigente: su tipo documental no requiere aprobación.`
+        : `Versión ${version.version} subida como borrador pendiente de revisión.`,
       data: { id: version.id },
     }
   } catch (e) {

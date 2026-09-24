@@ -272,6 +272,23 @@ describe("prevention PDTP service", () => {
     await inMemoryDb.update(schema.pdtpActivities)
       .set({ mechanism: "constancia" })
       .where(and(eq(schema.pdtpActivities.programId, programId), eq(schema.pdtpActivities.mechanism, "sin_definir")))
+    // La carpeta de requisitos legales (N°19) debe declarar qué documentos
+    // exige antes de enviar a revisión (`getPdtpLegalFolderBlockers`). El paso
+    // real es `apply-pdtp-2026-legal-folder.ts`; acá basta un tipo.
+    const [folder] = await inMemoryDb.select({ id: schema.pdtpActivities.id }).from(schema.pdtpActivities)
+      .where(and(eq(schema.pdtpActivities.programId, programId), eq(schema.pdtpActivities.n, 19)))
+    if (folder) {
+      const now = new Date().toISOString()
+      await inMemoryDb.insert(schema.sstDocumentCategories)
+        .values({ slug: "legal_normativa", name: "Legal y normativa", createdAt: now, updatedAt: now })
+        .onConflictDoNothing()
+      await inMemoryDb.insert(schema.sstDocumentTypes)
+        .values({ id: "sstdt-test-carpeta", categorySlug: "legal_normativa", code: "CARPETA-TEST", name: "Documento de carpeta", createdAt: now, updatedAt: now })
+        .onConflictDoNothing()
+      await inMemoryDb.insert(schema.pdtpActivityDocumentRequirements)
+        .values({ id: `req-${folder.id}`, activityId: folder.id, documentTypeId: "sstdt-test-carpeta", scope: "faena", createdAt: now, updatedAt: now })
+        .onConflictDoNothing()
+    }
   }
 
   const loadCatalog = async () => {

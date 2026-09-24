@@ -252,6 +252,7 @@ export const pdtpActivityUpdateSchema = z.object({
   subjectCapabilityCodes: pdtpSubjectCapabilityCodesSchema.nullable().optional(),
   targetValue: z.coerce.number().min(0).max(1000000).nullable().optional(),
   targetUnit: z.string().trim().max(80).nullable().optional(),
+  minAnnualExecutions: z.coerce.number().int("El mínimo anual debe ser un número entero").min(1, "El mínimo anual debe ser al menos 1").max(1000).nullable().optional(),
   scheduleOverrides: scheduleCellArraySchema.optional(),
   scheduleReplaceConfirmed: z.coerce.boolean().optional(),
   expectedScheduleFingerprint: z.string().max(4000).nullable().optional(),
@@ -292,6 +293,7 @@ export const pdtpActivityAddSchema = z.object({
   subjectCapabilityCodes: pdtpSubjectCapabilityCodesSchema.nullable().optional(),
   targetValue: z.coerce.number().min(0).max(1000000).nullable().optional(),
   targetUnit: z.string().trim().max(80).nullable().optional(),
+  minAnnualExecutions: z.coerce.number().int("El mínimo anual debe ser un número entero").min(1, "El mínimo anual debe ser al menos 1").max(1000).nullable().optional(),
   notes: z.string().max(5000).optional().or(z.literal("")),
   sheetCodes: z.array(z.string().min(1)).min(1, "Al menos una hoja"),
   schedule: scheduleCellArraySchema.optional(),
@@ -703,4 +705,15 @@ export const reopenPdtpPeriodSchema = z.object({
 
 export const distributePdtpPeriodClosureSchema = z.object({
   closureId: z.string().min(1, "Cierre requerido"),
+})
+
+/** Carpeta documental de una actividad (N°19): lista autoritativa. */
+export const pdtpActivityDocumentRequirementsSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+  activityId: z.string().min(1, "Actividad requerida"),
+  requirements: z.array(z.object({
+    documentTypeId: z.string().trim().min(1, "Selecciona el tipo documental"),
+    scope: z.enum(["faena", "corporativo"], { message: "Elige si el documento es por faena o corporativo" }),
+    mustFollowDocumentTypeId: z.string().trim().min(1).nullable().optional(),
+  })).max(30, "Una carpeta admite como máximo 30 documentos"),
 })

@@ -17,7 +17,32 @@ vi.mock("next/navigation", () => ({
 vi.mock("./actions", () => ({
   createSstDocumentFolderAction: vi.fn(),
   createAndUploadSstDocumentAction: vi.fn(),
+  uploadTypedSstDocumentAction: vi.fn(),
+  listSstDocumentsOfTypeAction: vi.fn(async () => ({ ok: true, data: { documents: [] } })),
+  previewSstDocumentUploadEffectsAction: vi.fn(async () => ({ ok: true, data: { effects: null } })),
 }))
+
+vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+
+const baseProps = {
+  currentFolderId: "sdf-parent",
+  folderWorksiteId: null,
+  documentTypes: [{
+    id: "sstdt-legal_normativa-riohs-seremi",
+    name: "Carta conductora del RIOHS a la SEREMI de Salud",
+    code: "RIOHS-SEREMI",
+    categoryName: "Legal y normativa",
+    requiresApproval: false,
+    defaultValidityMonths: null,
+  }],
+  worksites: [{ id: "ws-1", name: "Faena Norte" }],
+  canUploadCorporate: true,
+}
+
+function openBulkUpload() {
+  fireEvent.click(screen.getByRole("button", { name: /Subir documento/i }))
+  fireEvent.click(screen.getByRole("button", { name: "Carga masiva (sin clasificar)" }))
+}
 
 afterEach(() => {
   cleanup()
@@ -28,7 +53,7 @@ describe("DocumentacionHeaderActions", () => {
   it("renders document actions in the header and creates a folder in the current folder", async () => {
     vi.mocked(createSstDocumentFolderAction).mockResolvedValue({ ok: true, data: { id: "sdf-new" } })
 
-    render(<DocumentacionHeaderActions currentFolderId="sdf-parent" />)
+    render(<DocumentacionHeaderActions {...baseProps} />)
 
     expect(screen.getByRole("link", { name: "Papelera" })).toHaveAttribute("href", "/prevencion/documentacion/papelera")
 
@@ -41,12 +66,23 @@ describe("DocumentacionHeaderActions", () => {
     expect(refresh).toHaveBeenCalled()
   })
 
-  it("opens an upload modal (files or folders) instead of navigating to a form page", () => {
-    render(<DocumentacionHeaderActions currentFolderId="sdf-parent" />)
+  it("asks what the document is before accepting a file: the typed upload is the default", () => {
+    render(<DocumentacionHeaderActions {...baseProps} />)
 
-    // "Subir archivo" ya no es un link a /nuevo, es un botón que abre el modal.
-    expect(screen.queryByRole("link", { name: /Subir archivo/i })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: /Subir archivo/i }))
+    fireEvent.click(screen.getByRole("button", { name: /Subir documento/i }))
+
+    expect(screen.getByRole("button", { name: "Documento clasificado" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByText("Tipo de documento")).toBeInTheDocument()
+    // Sin tipo ni archivo no hay nada que cargar.
+    expect(screen.getByRole("button", { name: "Cargar documento" })).toBeDisabled()
+  })
+
+  it("keeps the bulk upload (files or folders) as an explicit unclassified mode", () => {
+    render(<DocumentacionHeaderActions {...baseProps} />)
+
+    // "Subir documento" no es un link a /nuevo, es un botón que abre el modal.
+    expect(screen.queryByRole("link", { name: /Subir documento/i })).not.toBeInTheDocument()
+    openBulkUpload()
 
     expect(screen.getByRole("button", { name: "Subir archivos" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Subir carpeta" })).toBeInTheDocument()
@@ -62,9 +98,9 @@ describe("DocumentacionHeaderActions", () => {
       }),
     )
 
-    render(<DocumentacionHeaderActions currentFolderId="sdf-parent" />)
+    render(<DocumentacionHeaderActions {...baseProps} />)
 
-    fireEvent.click(screen.getByRole("button", { name: /Subir archivo/i }))
+    openBulkUpload()
     fireEvent.click(screen.getByRole("combobox", { name: "Clasificación del documento" }))
     fireEvent.click(await screen.findByRole("option", { name: "Operacional" }))
     const input = document.querySelector('input[type="file"]:not([webkitdirectory])') as HTMLInputElement

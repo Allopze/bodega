@@ -8,24 +8,30 @@ const mockRemoveFile = vi.hoisted(() => vi.fn(async () => undefined))
 const insertState = vi.hoisted(() => ({ succeeds: true }))
 let selectCall = 0
 
-vi.mock("@/db", () => ({
-  db: {
+vi.mock("@/db", () => {
+  const document = {
+    id: "sdoc-1",
+    worksiteId: "ws-1",
+    confidentiality: "publico_interno",
+    status: "vigente",
+    currentVersionId: "sdv-current",
+    // Sin tipo: el documento no está clasificado y la carga sigue el ciclo de
+    // revisión de siempre (ver `resolveDirectPublication`).
+    typeId: null,
+  }
+  // Consultas en orden: el documento, el duplicado por checksum y el bloqueo
+  // del documento dentro de la transacción de la carga.
+  const rowsForCall = (call: number) => (call === 2 ? [] : [document])
+  const client = {
     select: vi.fn(() => {
       selectCall += 1
-      const call = selectCall
-      return {
-        from: vi.fn(() => ({
-          where: vi.fn(() => call === 1
-            ? Promise.resolve([{
-                id: "sdoc-1",
-                worksiteId: "ws-1",
-                confidentiality: "publico_interno",
-                status: "vigente",
-                currentVersionId: "sdv-current",
-              }])
-            : { limit: vi.fn(async () => []) }),
-        })),
+      const rows = rowsForCall(selectCall)
+      const result = {
+        limit: vi.fn(async () => rows),
+        for: vi.fn(async () => rows),
+        then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => Promise.resolve(rows).then(resolve, reject),
       }
+      return { from: vi.fn(() => ({ where: vi.fn(() => result) })) }
     }),
     insert: vi.fn(() => ({
       values: vi.fn((values: Record<string, unknown>) => {
@@ -39,8 +45,9 @@ vi.mock("@/db", () => ({
       }),
     })),
     update: mockUpdate,
-  },
-}))
+  }
+  return { db: { ...client, transaction: vi.fn(async (fn: (tx: typeof client) => unknown) => fn(client)) } }
+})
 
 vi.mock("@/lib/storage/helpers", () => ({
   mkdirp: mockMkdirp,

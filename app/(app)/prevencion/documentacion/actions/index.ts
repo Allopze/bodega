@@ -22,6 +22,7 @@ export {
   assignSstDocumentToWorkforceAction,
   acknowledgeSstDocumentVersionAction,
   exemptSstDocumentRecipientAction,
+  exemptSstDocumentRecipientsAction,
 } from "./distribution"
 
 export {
@@ -41,3 +42,10 @@ export {
 } from "./folders"
 
 export { setRiohsSectionsAction } from "./riohs"
+
+export {
+  uploadTypedSstDocumentAction,
+  previewSstDocumentUploadEffectsAction,
+  listSstDocumentsOfTypeAction,
+  classifySstDocumentAction,
+} from "./typed-upload"

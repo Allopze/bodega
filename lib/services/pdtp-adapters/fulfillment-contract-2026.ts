@@ -190,14 +190,19 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
   18: { module: "sst", permission: "sst:close", href: (w) => `/prevencion/nueva?faena=${w}` },
   23: { module: "sst", permission: "sst:close", href: (w) => `/prevencion/nueva?faena=${w}` },
   52: { module: "sst", permission: "sst:close", href: (w) => `/prevencion/nueva?faena=${w}` },
-  /* La N°19 —mantener la carpeta del trabajador— se acredita con el acta y no
-   * en Documentación: `STARTER_FOLDER_ACTIVITY_NUMBER = 19` en
-   * `worker-onboarding-connector.ts`, que documenta que "cierra junto con" la
-   * N°15, la N°18 y la N°23 porque es el mismo hecho, archivado. Apuntarla a
-   * `docs:publish` mandaba a su responsable a un módulo donde no pasa nada. */
-  19: { module: "sst", permission: "sst:close", href: (w) => `/prevencion/nueva?faena=${w}` },
 
   // ── Documentación SST ───────────────────────────────────────────────────
+  /* La N°19 —mantener la carpeta de requisitos legales— se acredita en
+   * Documentación desde el 2026-09-24: el mes queda acreditado cuando la faena
+   * tiene vigentes todos los documentos que la actividad declara
+   * (`legal-folder-connector.ts`). Quien la ejecuta carga los documentos, así
+   * que el permiso es el de cargar (`docs:manage`), no el de publicar: los
+   * registros externos de la carpeta quedan vigentes al cargarse. */
+  19: {
+    module: "documentacion",
+    permission: "prevention:docs:manage",
+    href: (w) => `/prevencion/documentacion?faena=${w}&carpeta=requisitos-legales`,
+  },
   43: {
     module: "documentacion",
     permission: "prevention:docs:publish",

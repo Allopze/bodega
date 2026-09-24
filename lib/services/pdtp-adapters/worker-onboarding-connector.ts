@@ -53,18 +53,14 @@ const ITEM_ACTIVITIES: Array<{ seccionId: string; itemId: string; n: number; lab
 const EPP_SECTION_ID = "epp"
 const EPP_ACTIVITY_NUMBER = 23
 
-/**
- * N°19 ("mantener actualizada la carpeta de… entrega EPP, IRL, RIOHS con
- * cartas de SEREMI e inspección") es `planned_vs_completed`, mensual (1
- * unidad planificada por mes), no `coverage`: no mide qué fracción de la
- * dotación tiene carpeta completa, mide si la carpeta se mantuvo ese mes. La
- * carpeta de un trabajador se considera al día con los mismos tres
- * componentes que ya cierran la N°15, la N°18 y la N°23 —es el mismo hecho,
- * archivado—, así que cierra junto con ellas y no necesita su propio ítem del
- * acta. Las cartas del SEREMI quedan como evidencia de respaldo del
- * expediente, sin entrar al cómputo: no hay un ítem del acta que las registre.
+/*
+ * La N°19 ("mantener actualizada la carpeta de requisitos legales") se
+ * acreditaba acá hasta el 2026-09-24, como la carpeta del trabajador: cerraba
+ * junto con la 15, la 18 y la 23. Prevención decidió que la carpeta es la
+ * documental de la faena —RIOHS vigente con sus cartas conductoras, registros
+ * de IRL y de entrega de EPP— y ahora la acredita Documentación
+ * (`legal-folder-connector.ts`). El acta ya no la toca.
  */
-const STARTER_FOLDER_ACTIVITY_NUMBER = 19
 
 /**
  * N°52, la inducción completa. Es la actividad **compuesta** del programa: se
@@ -86,7 +82,7 @@ const ONBOARDING_PASSING_RESULT = "habilitado_autonomo"
  * planilla. Si no hay obligación abierta, el kit deja un `warn`: ésa es la
  * señal de que la entrada del trabajador no abrió su compromiso.
  *
- * Las otras cuatro (18, 19, 23, 63) siguen igual: no son a demanda y no tienen
+ * Las otras tres (18, 23, 63) siguen igual: no son a demanda y no tienen
  * obligación contra la cual reportarse.
  */
 const OBLIGATION_ACTIVITY_NUMBERS = new Set([15, ONBOARDING_ACTIVITY_NUMBER])
@@ -140,12 +136,6 @@ export function onboardingActivityNumbers(input: {
 
   if (input.resultadoFinal === ONBOARDING_PASSING_RESULT) numbers.push(ONBOARDING_ACTIVITY_NUMBER)
 
-  // N°19: la carpeta del trabajador queda al día cuando los tres componentes
-  // que la componen (inducción IRL, RIOHS, EPP inicial) ya cerraron.
-  if (numbers.includes(15) && numbers.includes(18) && numbers.includes(EPP_ACTIVITY_NUMBER)) {
-    numbers.push(STARTER_FOLDER_ACTIVITY_NUMBER)
-  }
-
   return numbers.sort((a, b) => a - b)
 }
 
@@ -194,9 +184,8 @@ export async function onWorkerOnboardingClosed(input: {
     logger.error({ err: error, evaluationId: input.evaluationId, worksiteId: input.worksiteId }, "[worker-onboarding-connector] No se pudo registrar el evento PDTP de ingreso.")
   }
 
-  // El filtro va DESPUÉS del mapeador y nunca dentro: la N°19 es un número
-  // derivado de que estén la 15, la 18 y la 23, así que sacar la 15 antes de
-  // esa cuenta dejaría la carpeta del trabajador sin acreditar.
+  // El filtro va después del mapeador: el mapeador describe qué probó el acta,
+  // y este paso decide por qué vía se acredita cada número.
   const activityNumbers = onboardingActivityNumbers(input)
   if (activityNumbers.length === 0) return
 

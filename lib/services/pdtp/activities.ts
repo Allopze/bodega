@@ -20,6 +20,7 @@ import type { PdtpSubjectSource } from "./subject-registry"
 import { WORKER_CAPABILITY_CODE_PATTERN } from "@/lib/services/worker-positions/normalization"
 import { getPdtpExecutionConnector, type PdtpCompletionPolicy, type PdtpEvidenceKind } from "./connectors"
 import { assertPdtpScheduleDefinitionWithinPeriod, type PdtpScheduleDefinition } from "./schedule-definition"
+import { pdtpAnnualMinimumAllowed } from "./annual-minimum"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { countOf, pluralize } from "@/lib/utils"
@@ -35,6 +36,22 @@ function dueFieldsFromScheduleDefinition(definition: PdtpScheduleDefinition | nu
 }
 
 const DEFAULT_REQUIRED_EVIDENCE = "Evidencia verificable del registro de ejecución"
+
+/**
+ * El piso anual sólo existe para actividades "cuando corresponda" medidas por
+ * caso. El CHECK de la tabla lo exige igual; esto da el mensaje legible.
+ */
+function assertPdtpAnnualMinimumCoherent(
+  minimum: number | null | undefined,
+  scheduleMode: string,
+  indicatorMode: string,
+): void {
+  if (minimum == null) return
+  if (!Number.isInteger(minimum) || minimum < 1) throw new Error("El mínimo anual debe ser un número entero mayor o igual a 1.")
+  if (!pdtpAnnualMinimumAllowed(scheduleMode, indicatorMode)) {
+    throw new Error("El mínimo anual sólo aplica a actividades cuando corresponda (a demanda o por evento) que se miden por casos.")
+  }
+}
 
 function normalizedSubjectCapabilityCodes(codes: readonly string[] | null | undefined): string[] | null {
   if (codes == null) return null
@@ -312,6 +329,8 @@ export type PdtpActivityUpdateInput = {
   subjectCapabilityCodes?: string[] | null
   targetValue?: number | null
   targetUnit?: string | null
+  /** Mínimo de ejecuciones al año de una actividad "cuando corresponda". */
+  minAnnualExecutions?: number | null
   scheduleOverrides?: Array<{ month: number; week: number; plannedQuantity: number }>
   /** Autoriza reemplazar una planificación ajustada a mano por la proyección de
    *  la recurrencia. Sin esto, esa reescritura se rechaza (ver
@@ -353,6 +372,7 @@ export type PdtpActivityAddInput = {
   subjectCapabilityCodes?: string[] | null
   targetValue?: number | null
   targetUnit?: string | null
+  minAnnualExecutions?: number | null
   notes?: string
   sheetCodes: string[]
   schedule?: Array<{ month: number; week: number; plannedQuantity: number }>
@@ -556,6 +576,7 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
     // Va junto a `indicatorMode` porque son la misma declaración partida en dos:
     // el modo dice "cuántos de cuántos" y la fuente dice de cuántos.
     "subjectSource", "subjectCapabilityCodes",
+    "minAnnualExecutions",
   ] as const
   for (const field of configurableFields) {
     if (input[field] === undefined) continue
@@ -584,6 +605,20 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
     before.subjectCapabilityCodes = activity.subjectCapabilityCodes
     after.subjectCapabilityCodes = nextSubjectCapabilityCodes
     updates.subjectCapabilityCodes = nextSubjectCapabilityCodes as never
+  }
+
+  // Mismo criterio para el piso anual: si la actividad pasa a calendarizada o
+  // a un modo que no se mide por caso, el mínimo deja de significar algo y se
+  // limpia solo (queda en el changelog). Pedirlo explícitamente en una
+  // combinación que no lo admite sí es un error.
+  const nextScheduleMode = input.scheduleMode ?? activity.scheduleMode
+  const nextIndicatorMode = input.indicatorMode ?? activity.indicatorMode
+  if (input.minAnnualExecutions !== undefined) {
+    assertPdtpAnnualMinimumCoherent(input.minAnnualExecutions, nextScheduleMode, nextIndicatorMode)
+  } else if (activity.minAnnualExecutions != null && !pdtpAnnualMinimumAllowed(nextScheduleMode, nextIndicatorMode)) {
+    before.minAnnualExecutions = activity.minAnnualExecutions
+    after.minAnnualExecutions = null
+    updates.minAnnualExecutions = null
   }
 
   const horizon = deriveScheduleHorizon(program)
@@ -726,6 +761,7 @@ export async function addPdtpActivity(
   if (catalog && catalog.status !== "active") throw new Error("La actividad debe estar publicada antes de incorporarla.")
   const subjectCapabilityCodes = normalizedSubjectCapabilityCodes(input.subjectCapabilityCodes)
   await validateCapabilitySubjectConfiguration(input.subjectSource ?? null, subjectCapabilityCodes, client)
+  assertPdtpAnnualMinimumCoherent(input.minAnnualExecutions, input.scheduleMode ?? "scheduled", input.indicatorMode ?? "planned_vs_completed")
   await validateExecutionConfig(input.executionConfig, input.scheduleDefinition, input.catalogActivityId ?? null, client)
   if (input.scheduleDefinition) {
     assertPdtpScheduleDefinitionWithinPeriod(input.scheduleDefinition, {
@@ -783,6 +819,7 @@ export async function addPdtpActivity(
       evidenceRequirement, indicatorMode: input.indicatorMode ?? "planned_vs_completed",
       subjectSource: input.subjectSource ?? null, subjectCapabilityCodes,
       targetValue: input.targetValue ?? null, targetUnit: input.targetUnit ?? null,
+      minAnnualExecutions: input.minAnnualExecutions ?? null,
       sourceSheetRow: 0, notes: input.notes ?? null, createdAt: now, updatedAt: now,
     }).returning()
     if (!created) throw new Error("No se pudo crear la actividad PDTP.")
@@ -1037,6 +1074,7 @@ export async function duplicatePdtpActivity(activityId: string, userId: string) 
       subjectCapabilityCodes: source.subjectCapabilityCodes,
       targetValue: source.targetValue,
       targetUnit: source.targetUnit,
+      minAnnualExecutions: source.minAnnualExecutions,
       sourceSheetRow: 0,
       notes: source.notes,
       createdAt: now,

@@ -1,7 +1,8 @@
-import { and, eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import { sstDocumentCategories, sstDocumentTypes } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { RIOHS_DOCUMENT_TYPE_CODE } from "@/lib/prevention/riohs"
 import { sstDocumentCategoryUpsertSchema, sstDocumentTypeUpsertSchema } from "@/lib/validation/prevention"
 
 export async function listDocumentCategories(activeOnly = false) {
@@ -52,6 +53,12 @@ export async function upsertDocumentType(input: unknown, client: DB | Tx = db) {
     .from(sstDocumentCategories)
     .where(eq(sstDocumentCategories.slug, data.categorySlug))
   if (!category) throw new Error("La categoría indicada no existe")
+  // El RIOHS tiene contenido mínimo legal (DS 44 art. 58) que se verifica en
+  // el ciclo de aprobación; un RIOHS "sin aprobación" quedaría vigente sin que
+  // nadie lo revise.
+  if (data.code === RIOHS_DOCUMENT_TYPE_CODE && !data.requiresApproval) {
+    throw new Error("El Reglamento Interno siempre requiere revisión y aprobación antes de quedar vigente.")
+  }
   const now = new Date().toISOString()
   const id = data.id || `sdtype-${nanoid()}`
   await client.insert(sstDocumentTypes).values({
@@ -64,6 +71,7 @@ export async function upsertDocumentType(input: unknown, client: DB | Tx = db) {
     defaultValidityMonths: data.defaultValidityMonths ?? null,
     requiresApproval: data.requiresApproval,
     requiresAcknowledgment: data.requiresAcknowledgment,
+    distributionDueDays: data.distributionDueDays ?? null,
     pdtpActivityNumbers: numbersOrNull(data.pdtpActivityNumbers),
     pdtpAcknowledgmentActivityNumbers: numbersOrNull(data.pdtpAcknowledgmentActivityNumbers),
     isActive: data.isActive,
@@ -76,6 +84,7 @@ export async function upsertDocumentType(input: unknown, client: DB | Tx = db) {
       description: data.description || null, defaultConfidentiality: data.defaultConfidentiality,
       defaultValidityMonths: data.defaultValidityMonths ?? null,
       requiresApproval: data.requiresApproval, requiresAcknowledgment: data.requiresAcknowledgment,
+      ...(data.distributionDueDays === undefined ? {} : { distributionDueDays: data.distributionDueDays }),
       // Omitidos = se conservan. Ver el schema: con identidades cableadas los
       // números son snapshot histórico, no configuración vigente.
       ...(data.pdtpActivityNumbers === undefined ? {} : { pdtpActivityNumbers: numbersOrNull(data.pdtpActivityNumbers) }),
@@ -121,6 +130,14 @@ export const DEFAULT_DOCUMENT_TYPES: Array<{
   pdtpActivityNumbers?: number[]
   /** Actividades que acredita **cada acuse de recibo**. */
   pdtpAcknowledgmentActivityNumbers?: number[]
+  /**
+   * `false` = registro externo: cada versión queda vigente al cargarla, sin
+   * revisión ni aprobación. Se siembra sólo al crear el tipo; después manda el
+   * admin (`/admin/taxonomia-sst`).
+   */
+  requiresApproval?: boolean
+  /** Días para entregar una versión vigente a toda la dotación (RIOHS: N°18). */
+  distributionDueDays?: number
 }> = [
   {
     categorySlug: "legal_normativa",
@@ -129,6 +146,54 @@ export const DEFAULT_DOCUMENT_TYPES: Array<{
     description: "DS 44 arts. 56-61. Contenido mínimo del art. 58, entrega nominativa a toda la dotación.",
     requiresAcknowledgment: true,
     defaultValidityMonths: 12,
+    // N°18: cada versión vigente se entrega a toda la dotación de cada faena
+    // dentro de este plazo (propuesto por Prevención el 2026-09-24, editable).
+    distributionDueDays: 30,
+  },
+  // ── Carpeta de requisitos legales (N°19) ────────────────────────────────
+  //
+  // Las cartas conductoras del RIOHS no las redacta la empresa para aprobarlas:
+  // son la constancia, timbrada, de que el reglamento se envió. Por eso no
+  // requieren aprobación y quedan vigentes al cargarlas. La carpeta N°19 las
+  // exige posteriores al RIOHS vigente (ver `pdtp_activity_document_requirements`).
+  {
+    categorySlug: "legal_normativa",
+    code: "RIOHS-SEREMI",
+    name: "Carta conductora del RIOHS a la SEREMI de Salud",
+    description: "Constancia del envío del Reglamento Interno vigente a la SEREMI de Salud (Código del Trabajo art. 153).",
+    requiresAcknowledgment: false,
+    defaultValidityMonths: null,
+    requiresApproval: false,
+  },
+  {
+    categorySlug: "legal_normativa",
+    code: "RIOHS-DT",
+    name: "Carta conductora del RIOHS a la Inspección del Trabajo",
+    description: "Constancia del envío del Reglamento Interno vigente a la Inspección del Trabajo (Código del Trabajo art. 153).",
+    requiresAcknowledgment: false,
+    defaultValidityMonths: null,
+    requiresApproval: false,
+  },
+  {
+    // Por faena: el registro firmado de la información de riesgos laborales
+    // (DS 44) de su dotación. La validez anual es propuesta: marca cuándo la
+    // carpeta deja de estar al día si nadie carga el registro actualizado.
+    categorySlug: "capacitacion",
+    code: "IRL-REG",
+    name: "Registro de IRL de la faena",
+    description: "Registro de la información de riesgos laborales entregada a la dotación de la faena (DS 44).",
+    requiresAcknowledgment: false,
+    defaultValidityMonths: 12,
+    requiresApproval: false,
+  },
+  {
+    categorySlug: "epp",
+    code: "EPP-REG",
+    name: "Registro de entrega de EPP de la faena",
+    description: "Registro de entrega de elementos de protección personal a la dotación de la faena.",
+    requiresAcknowledgment: false,
+    defaultValidityMonths: 12,
+    requiresApproval: false,
   },
   // ── Tipos derivados del RE-08 ───────────────────────────────────────────
   //
@@ -185,11 +250,12 @@ export async function seedDefaultDocumentTypes() {
       code: type.code,
       name: type.name,
       description: type.description,
-      requiresApproval: true,
+      requiresApproval: type.requiresApproval ?? true,
       requiresAcknowledgment: type.requiresAcknowledgment,
       defaultValidityMonths: type.defaultValidityMonths,
       pdtpActivityNumbers: type.pdtpActivityNumbers ?? null,
       pdtpAcknowledgmentActivityNumbers: type.pdtpAcknowledgmentActivityNumbers ?? null,
+      distributionDueDays: type.distributionDueDays ?? null,
       isActive: true,
       createdAt: now,
       updatedAt: now,
@@ -205,6 +271,9 @@ export async function seedDefaultDocumentTypes() {
         // sin ellas para siempre si el conflicto no las corrige.
         pdtpActivityNumbers: type.pdtpActivityNumbers ?? null,
         pdtpAcknowledgmentActivityNumbers: type.pdtpAcknowledgmentActivityNumbers ?? null,
+        // El plazo se completa si falta —el RIOHS ya existía antes de esta
+        // columna— pero nunca pisa el que el admin haya ajustado.
+        distributionDueDays: sql`COALESCE(${sstDocumentTypes.distributionDueDays}, excluded.distribution_due_days)`,
         isActive: true,
         updatedAt: now,
       },

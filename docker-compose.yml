@@ -718,6 +718,25 @@ services:
       - PDTP_DEMAND_SLAS_DRY_RUN=${PDTP_DEMAND_SLAS_DRY_RUN:-}
     command: ["node", "scripts/apply-pdtp-demand-slas.mjs"]
 
+  # One-shot: carpeta de requisitos legales de la N°19 (qué documentos debe
+  # tener vigentes cada faena). Sólo siembra una carpeta vacía; nunca reescribe
+  # la que Prevención ya declaró.
+  apply-pdtp-legal-folder:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - PDTP_LEGAL_FOLDER_DEPLOY_MODE=true
+      - PDTP_LEGAL_FOLDER_DRY_RUN=${PDTP_LEGAL_FOLDER_DRY_RUN:-}
+    command: ["node", "scripts/apply-pdtp-legal-folder.mjs"]
+
   # One-shot: reprocesa los eventos de cumplimiento PDTP que quedaron
   # pending/error (programa que se activó después del hecho, mapeo corregido).
   # Idempotente por idempotency_key.

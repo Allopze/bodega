@@ -5,6 +5,7 @@ import {
   pdtpActivities,
   pdtpActivityChecklists,
   pdtpActivityExecutorAssignments,
+  pdtpActivityDocumentRequirements,
   pdtpActivitySchedule,
   pdtpActivityScheduleOverrides,
   pdtpActivityWorksiteExclusions,
@@ -474,6 +475,7 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
             evidenceRequirement: activity.evidenceRequirement, mechanism: activity.mechanism, indicatorMode: activity.indicatorMode,
             subjectSource: activity.subjectSource, subjectCapabilityCodes: activity.subjectCapabilityCodes,
             targetValue: activity.targetValue, targetUnit: activity.targetUnit,
+            minAnnualExecutions: activity.minAnnualExecutions,
             sourceSheetRow: activity.sourceSheetRow, notes: activity.notes, createdAt: now, updatedAt: now,
           })
         }
@@ -481,7 +483,7 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
 
         if (activityIdMap.size > 0) {
           const sourceActivityIds = [...activityIdMap.keys()]
-          const [scheduleRows, membershipRows, sourceLinks, checklistRows, overrideRows, exclusionRows, paramRows, executorRows] = await Promise.all([
+          const [scheduleRows, membershipRows, sourceLinks, checklistRows, overrideRows, exclusionRows, paramRows, executorRows, documentRequirementRows] = await Promise.all([
             tx.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, sourceActivityIds)),
             tx.select().from(pdtpSheetActivities).where(inArray(pdtpSheetActivities.activityId, sourceActivityIds)),
             tx.select().from(preventionPdtpSourceLinks).where(inArray(preventionPdtpSourceLinks.activityId, sourceActivityIds)),
@@ -490,6 +492,7 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
             tx.select().from(pdtpActivityWorksiteExclusions).where(inArray(pdtpActivityWorksiteExclusions.activityId, sourceActivityIds)),
             tx.select().from(pdtpActivityWorksiteParams).where(inArray(pdtpActivityWorksiteParams.activityId, sourceActivityIds)),
             tx.select().from(pdtpActivityExecutorAssignments).where(inArray(pdtpActivityExecutorAssignments.activityId, sourceActivityIds)),
+            tx.select().from(pdtpActivityDocumentRequirements).where(inArray(pdtpActivityDocumentRequirements.activityId, sourceActivityIds)),
           ])
           const copiedSchedule: Array<typeof pdtpActivitySchedule.$inferInsert> = []
           for (const cell of scheduleRows) {
@@ -596,6 +599,21 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
               id: `pdtp-executor-${nanoid()}`,
               activityId: activityIdMap.get(assignment.activityId)!,
               roleId: assignment.roleId,
+              createdAt: now,
+              updatedAt: now,
+            }))).onConflictDoNothing()
+          }
+
+          // La carpeta que exige la actividad (N°19) es contenido firmado: la
+          // versión nueva la hereda igual que ejecutores y exclusiones.
+          if (documentRequirementRows.length > 0) {
+            await tx.insert(pdtpActivityDocumentRequirements).values(documentRequirementRows.map((requirement) => ({
+              id: `pdtp-docreq-${nanoid()}`,
+              activityId: activityIdMap.get(requirement.activityId)!,
+              documentTypeId: requirement.documentTypeId,
+              scope: requirement.scope,
+              mustFollowDocumentTypeId: requirement.mustFollowDocumentTypeId,
+              displayOrder: requirement.displayOrder,
               createdAt: now,
               updatedAt: now,
             }))).onConflictDoNothing()

@@ -230,6 +230,18 @@ RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-demand-slas.ts \
     --external:postgres \
     --outfile=/tmp/apply-pdtp-demand-slas.mjs
 
+# La carpeta de requisitos legales de la N°19: qué documentos debe tener
+# vigentes cada faena. Va después de la taxonomía documental, que siembra los
+# tipos que la carpeta exige.
+RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-legal-folder.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/apply-pdtp-legal-folder.mjs
+
 # Reprocesa los eventos de cumplimiento que quedaron `pending`/`error` en
 # `pdtp_fulfillment_events` — un hecho ocurrido con el programa todavía en
 # borrador, o un mapeo que se acaba de corregir. Idempotente: no duplica lo ya
@@ -538,6 +550,7 @@ COPY --from=build /tmp/apply-pdtp-program-data.mjs ./scripts/apply-pdtp-program-
 COPY --from=build /tmp/apply-pdtp-mechanisms.mjs ./scripts/apply-pdtp-mechanisms.mjs
 COPY --from=build /tmp/apply-pdtp-objectives.mjs ./scripts/apply-pdtp-objectives.mjs
 COPY --from=build /tmp/apply-pdtp-demand-slas.mjs ./scripts/apply-pdtp-demand-slas.mjs
+COPY --from=build /tmp/apply-pdtp-legal-folder.mjs ./scripts/apply-pdtp-legal-folder.mjs
 COPY --from=build /tmp/reconcile-pdtp-fulfillment-events.cjs ./scripts/reconcile-pdtp-fulfillment-events.cjs
 COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconciliation.mjs ./scripts/preflight-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs

@@ -3,7 +3,13 @@ import { redirect } from "next/navigation"
 import { inArray } from "drizzle-orm"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { getDocumentBundle, listDocumentRecipientOptions } from "@/lib/services/prevention-documents-library"
+import {
+  getDocumentBundle,
+  listDocumentCategories,
+  listDocumentRecipientOptions,
+  listDocumentTypes,
+} from "@/lib/services/prevention-documents-library"
+import { listRiohsRolloutStatus, listRiohsRolloutWorksiteIds } from "@/lib/services/pdtp-adapters/riohs-rollout-connector"
 import { db } from "@/db"
 import { sstDocumentTypes, users, worksites } from "@/db/schema"
 import { PageContainer } from "@/components/ui/page-container"
@@ -11,8 +17,10 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { DocumentDetailView } from "./document-detail-view"
 import { RiohsChecklist } from "./riohs-checklist"
+import { ClassifyDocumentDialog } from "./classify-document-dialog"
+import { RiohsRolloutCard, type RiohsRolloutRow } from "./riohs-rollout-card"
 import { RIOHS_DOCUMENT_TYPE_CODE, type RiohsMetadata } from "@/lib/prevention/riohs"
-import { eq } from "drizzle-orm"
+import { and, asc, eq as eqOp } from "drizzle-orm"
 
 export const metadata: Metadata = { title: "Detalle documental SST" }
 
@@ -58,7 +66,7 @@ export default async function DocumentDetailPage({ params }: Props) {
   // El Reglamento Interno tiene un contenido mínimo exigido (DS 44 art. 58) que
   // el gate de publicación verifica; acá se declara.
   const [docType] = bundle.doc.typeId
-    ? await db.select({ code: sstDocumentTypes.code }).from(sstDocumentTypes).where(eq(sstDocumentTypes.id, bundle.doc.typeId))
+    ? await db.select({ code: sstDocumentTypes.code }).from(sstDocumentTypes).where(eqOp(sstDocumentTypes.id, bundle.doc.typeId))
     : [undefined]
   const isRiohs = docType?.code === RIOHS_DOCUMENT_TYPE_CODE
   const riohsSections = ((bundle.doc.extraMetadata ?? {}) as RiohsMetadata).riohsSections ?? []
@@ -66,6 +74,48 @@ export default async function DocumentDetailPage({ params }: Props) {
   const canManage = can(session, "prevention:docs:manage")
   const canArchive = can(session, "prevention:docs:archive")
   const currentVersion = bundle.versions.find((version) => version.id === bundle.doc.currentVersionId) ?? null
+
+  // Clasificar: los mismos tipos y faenas que ofrece la subida tipada.
+  const [types, categories, visibleWorksites] = canManage
+    ? await Promise.all([
+        listDocumentTypes(),
+        listDocumentCategories(),
+        scope.mode === "none"
+          ? Promise.resolve([] as Array<{ id: string; name: string }>)
+          : db.select({ id: worksites.id, name: worksites.name }).from(worksites)
+            .where(scope.mode === "all"
+              ? eqOp(worksites.isActive, true)
+              : and(eqOp(worksites.isActive, true), inArray(worksites.id, scope.ids)))
+            .orderBy(asc(worksites.name)),
+      ])
+    : [[], [], []] as [
+        Awaited<ReturnType<typeof listDocumentTypes>>,
+        Awaited<ReturnType<typeof listDocumentCategories>>,
+        Array<{ id: string; name: string }>,
+      ]
+  const categoryName = new Map(categories.map((category) => [category.slug, category.name]))
+  const typeOptions = types.map((type) => ({
+    id: type.id,
+    name: type.name,
+    code: type.code,
+    categoryName: categoryName.get(type.categorySlug) ?? type.categorySlug,
+    requiresApproval: type.requiresApproval,
+    defaultValidityMonths: type.defaultValidityMonths,
+  }))
+
+  // N°18: entrega de la versión vigente del RIOHS a la dotación, por faena.
+  let rolloutRows: RiohsRolloutRow[] = []
+  if (isRiohs && currentVersion?.status === "vigente") {
+    const candidates = await listRiohsRolloutWorksiteIds(bundle.doc.worksiteId)
+    const inScope = scope.mode === "all" ? candidates : candidates.filter((id) => scope.mode === "some" && scope.ids.includes(id))
+    const status = await listRiohsRolloutStatus(currentVersion.id, inScope)
+    rolloutRows = status.map((row) => ({
+      ...row,
+      pendingTargetIds: bundle.distribution
+        .filter((target) => target.versionId === currentVersion.id && target.status === "pendiente" && target.worksiteId === row.worksiteId)
+        .map((target) => target.id),
+    }))
+  }
 
   return (
     <PageContainer width="workbench">
@@ -77,10 +127,33 @@ export default async function DocumentDetailPage({ params }: Props) {
           { label: "Documentación", href: "/prevencion/documentacion" },
           { label: bundle.doc.title.slice(0, 48) },
         ]} />}
-        actions={<Button asChild size="sm" variant="secondary"><a href={`/api/prevencion/documentacion/${id}/expediente`} download>Exportar expediente Excel</a></Button>}
+        actions={(
+          <div className="flex flex-wrap items-center gap-2">
+            {canManage && bundle.doc.status !== "archivado" ? (
+              <ClassifyDocumentDialog
+                documentId={id}
+                currentTypeId={bundle.doc.typeId}
+                currentWorksiteId={bundle.doc.worksiteId}
+                types={typeOptions}
+                worksites={visibleWorksites}
+                canUseCorporate={scope.mode === "all"}
+              />
+            ) : null}
+            <Button asChild size="sm" variant="secondary"><a href={`/api/prevencion/documentacion/${id}/expediente`} download>Exportar expediente Excel</a></Button>
+          </div>
+        )}
       />
       {isRiohs && (
         <RiohsChecklist documentId={id} currentVersionId={bundle.doc.currentVersionId} sections={riohsSections} canManage={canManage} canDistribute={canDistribute} />
+      )}
+      {isRiohs && currentVersion?.status === "vigente" && (
+        <RiohsRolloutCard
+          documentId={id}
+          versionId={currentVersion.id}
+          versionNumber={currentVersion.version}
+          rows={rolloutRows}
+          canDistribute={canDistribute}
+        />
       )}
       <DocumentDetailView
         bundle={bundle}

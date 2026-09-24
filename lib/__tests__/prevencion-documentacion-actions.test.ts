@@ -385,7 +385,7 @@ describe("getDocumentDetailAction", () => {
  * archivo con `readFileSync("actions.ts")` y se rompería con el split.
  */
 describe("documentacion/actions.ts — contrato público de exports (Fase 0 baseline)", () => {
-  it("expone exactamente los 24 exports nombrados usados hoy por la app y los tests", async () => {
+  it("expone exactamente los 30 exports nombrados usados hoy por la app y los tests", async () => {
     const mod: Record<string, unknown> = await import("@/app/(app)/prevencion/documentacion/actions")
 
     const expectedExportNames = [
@@ -413,6 +413,13 @@ describe("documentacion/actions.ts — contrato público de exports (Fase 0 base
       "moveSstDocumentAction",
       "revalidateBiblioteca",
       "getDocumentDetailAction",
+      // Subida tipada y entrega del RIOHS a la dotación (2026-09-24).
+      "uploadTypedSstDocumentAction",
+      "previewSstDocumentUploadEffectsAction",
+      "listSstDocumentsOfTypeAction",
+      "classifySstDocumentAction",
+      "exemptSstDocumentRecipientsAction",
+      "assignSstDocumentToWorkforceAction",
     ]
 
     for (const name of expectedExportNames) {

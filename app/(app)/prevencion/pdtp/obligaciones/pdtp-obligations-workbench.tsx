@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
@@ -148,7 +149,7 @@ export function PdtpObligationsWorkbench({
                 </div>
                 <h2 className="mt-2 text-sm font-semibold text-[var(--color-text)]">{row.activityName}</h2>
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                  {row.obligation.sourceType && row.obligation.sourceId ? `Origen: ${row.obligation.sourceType} · ${row.obligation.sourceId}` : "Necesidad registrada manualmente"}
+                  <ObligationOrigin obligation={row.obligation} />
                 </p>
               </div>
               <div>
@@ -282,4 +283,24 @@ function CancelObligationDialog({ row, onClose, onSaved }: { row: ObligationRow 
     <div><Field label="Motivo" required><Textarea value={reason} onChange={(event) => setReason(event.target.value)} minLength={10} maxLength={3000} rows={3} /></Field>{error && <p role="alert" className="mt-2 text-sm text-[var(--color-danger)]">{error}</p>}</div>
     <DialogFooter><Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Volver</Button><Button type="button" variant="destructive" onClick={save} disabled={pending || reason.trim().length < 10}>{pending ? "Cancelando..." : "Confirmar cancelación"}</Button></DialogFooter>
   </DialogContent></Dialog>
+}
+
+/**
+ * De dónde nació la obligación. Una entrega del RIOHS (N°18) enlaza al
+ * documento, que es donde se asigna y se exime a la dotación; el resto muestra
+ * su fuente como hasta ahora.
+ */
+function ObligationOrigin({ obligation }: { obligation: { sourceType: string | null; sourceId: string | null; sourceMetadataJson: unknown } }) {
+  const metadata = (obligation.sourceMetadataJson ?? {}) as { rollout?: string; documentId?: string; version?: number }
+  if (obligation.sourceType === "documento" && metadata.rollout === "riohs" && metadata.documentId) {
+    return (
+      <>
+        Origen: nueva versión del Reglamento Interno{metadata.version ? ` (v${metadata.version})` : ""} ·{" "}
+        <Link href={`/prevencion/documentacion/${metadata.documentId}`} className="underline underline-offset-2 hover:text-[var(--color-text)]">
+          ver entrega a la dotación
+        </Link>
+      </>
+    )
+  }
+  return <>{obligation.sourceType && obligation.sourceId ? `Origen: ${obligation.sourceType} · ${obligation.sourceId}` : "Necesidad registrada manualmente"}</>
 }

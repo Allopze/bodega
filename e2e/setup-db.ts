@@ -1580,6 +1580,32 @@ async function main() {
     updatedAt: now,
   })
 
+  // Documentación SST — lo mínimo para la subida tipada
+  // (prevencion-documentacion.spec.ts): una categoría y un tipo que no
+  // requiere aprobación, con el mismo id determinista que siembra
+  // `seedDefaultDocumentTypes`.
+  await db.insert(schema.sstDocumentCategories).values({
+    slug: "legal_normativa",
+    name: "Legal y normativa",
+    description: "RIOHS, protocolos obligatorios, fiscalización, evidencias regulatorias.",
+    sortOrder: 20,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.sstDocumentTypes).values({
+    id: "sstdt-legal_normativa-riohs-seremi",
+    categorySlug: "legal_normativa",
+    code: "RIOHS-SEREMI",
+    name: "Carta conductora del RIOHS a la SEREMI de Salud",
+    description: "Constancia del envío del Reglamento Interno vigente a la SEREMI de Salud.",
+    requiresApproval: false,
+    requiresAcknowledgment: false,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+
   // Delivery fixture — for worker-delivery and delivery-print E2E specs
   await db.insert(schema.deliveries).values({
     id: "del-e2e",

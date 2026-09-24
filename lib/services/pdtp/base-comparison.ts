@@ -221,6 +221,7 @@ function activityRevisionSections(snapshot: RecordValue, activity: RecordValue) 
     sourceLinks: rowsForActivity(snapshot, "sourceLinks", activityNumber),
     exclusions: rowsForActivity(snapshot, "activityWorksiteExclusions", activityNumber),
     executorAssignments: rowsForActivity(snapshot, "executorAssignments", activityNumber),
+    documentRequirements: rowsForActivity(snapshot, "documentRequirements", activityNumber),
     worksiteAdjustments: rowsForActivity(snapshot, "activityWorksiteAdjustments", activityNumber),
     scheduleOverrides: rowsForActivity(snapshot, "activityScheduleOverrides", activityNumber),
   }

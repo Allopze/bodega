@@ -20,6 +20,7 @@ import { computePdtpProgramContentDigest } from "./content-digest"
 import { addPdtpChangeLogEntry, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
 import { PDTP_2026_INVARIANTS, PDTP_2026_REMOVED_ACTIVITIES, PDTP_2026_PROGRAM_SOURCE } from "@/lib/services/pdtp-adapters/contract-2026"
 import { remapPdtpDateToYear } from "./retirement"
+import { replacePdtpActivityDocumentRequirementsFromSnapshot } from "./document-requirements"
 
 type QueryClient = Tx | typeof db
 type SnapshotRecord = Record<string, unknown>
@@ -380,6 +381,7 @@ export async function instantiatePdtpTemplateVersion(input: {
         indicatorMode: stringValue(activity.indicatorMode, "planned_vs_completed"),
         targetValue: typeof activity.targetValue === "number" ? activity.targetValue : null,
         targetUnit: typeof activity.targetUnit === "string" ? activity.targetUnit : null,
+        minAnnualExecutions: typeof activity.minAnnualExecutions === "number" ? activity.minAnnualExecutions : null,
         sourceSheetRow: 0,
         notes: typeof activity.notes === "string" ? activity.notes : null,
         createdAt: now,
@@ -423,6 +425,21 @@ export async function instantiatePdtpTemplateVersion(input: {
         displayOrder: numberValue(membership.displayOrder, index + 1),
       }]
     }))
+  }
+
+  // La carpeta documental (N°19) viaja en la huella desde el esquema 19. Una
+  // plantilla anterior no la trae y la actividad queda sin carpeta: la
+  // compuerta de envío a revisión lo marca en vez de inventar una.
+  const documentRequirements = records(snapshot.documentRequirements)
+  if (documentRequirements.length > 0) {
+    for (const [activityNumber, activityId] of activityIdByNumber) {
+      await replacePdtpActivityDocumentRequirementsFromSnapshot(input.client, {
+        activityId,
+        activityNumber,
+        snapshotRequirements: documentRequirements,
+        now,
+      })
+    }
   }
 
   const checklists = records(snapshot.checklists)

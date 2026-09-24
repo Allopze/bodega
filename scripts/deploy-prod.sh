@@ -597,6 +597,12 @@ run_timed "Declarando los objetivos del PDTP 2026" run_in_prod docker compose ru
 # existe o ya está firmado (PDTP_DEMAND_SLAS_DEPLOY_MODE).
 run_timed "Declarando el SLA de las actividades a demanda del PDTP" run_in_prod docker compose run --rm apply-pdtp-demand-slas
 
+# La carpeta de requisitos legales de la N°19: sin ella el programa no se puede
+# enviar a revisión (`getPdtpLegalFolderBlockers`). Sólo siembra una carpeta
+# vacía; no aborta el deploy si el programa no existe o ya está firmado
+# (PDTP_LEGAL_FOLDER_DEPLOY_MODE).
+run_timed "Declarando la carpeta de requisitos legales del PDTP" run_in_prod docker compose run --rm apply-pdtp-legal-folder
+
 # Idempotente y antes del swap: si falla, el deploy aborta con la app anterior
 # todavía en pie. Va acá y no después porque la app debe levantar con el
 # catálogo ya cableado — una plantilla sin `pdtpActivityNumbers` ejecuta la

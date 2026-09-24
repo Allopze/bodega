@@ -59,7 +59,10 @@ export const SST_DOCUMENT_DATA_CLASSES = [
 ] as const
 
 export const sstDocumentCreateSchema = z.object({
-  categorySlug:    z.enum(SST_DOCUMENT_CATEGORY_SLUGS),
+  // Igual que en `sstDocumentTypeUpsertSchema`: la categoría la fija el tipo y
+  // el admin puede crear categorías nuevas, así que un enum cerrado rechazaba
+  // documentos de tipos reales. La existencia la garantiza la FK.
+  categorySlug:    z.string().trim().min(1).max(60).regex(/^[a-z][a-z0-9_]*$/, "Categoría inválida"),
   typeId:          z.string().optional().or(z.literal("")),
   folderId:        z.string().optional().nullable().or(z.literal("")),
   internalCode:    z.string().trim().max(60).optional().or(z.literal("")),
@@ -78,6 +81,8 @@ export const sstDocumentCreateSchema = z.object({
 
 export const sstDocumentUpdateSchema = z.object({
   id:              z.string().min(1),
+  /** Clasificar: fija el tipo (y con él la categoría). Vacío lo quita. */
+  typeId:          z.string().optional().or(z.literal("")),
   folderId:        z.string().optional().nullable().or(z.literal("")),
   title:           z.string().trim().min(1).max(200).optional(),
   description:     z.string().max(2000).optional().or(z.literal("")),
@@ -143,6 +148,9 @@ export const sstDocumentTypeUpsertSchema = z.object({
   defaultValidityMonths:  z.coerce.number().int().positive().max(600).optional(),
   requiresApproval:       z.boolean().default(true),
   requiresAcknowledgment: z.boolean().default(false),
+  /** Días para entregar cada versión vigente a toda la dotación; `null` apaga
+   *  la entrega y omitirlo conserva el valor actual. */
+  distributionDueDays:    z.coerce.number().int().min(1, "El plazo de entrega es de al menos 1 día").max(365, "El plazo de entrega no supera 365 días").nullable().optional(),
   /**
    * Las dos vías por las que un tipo documental acredita en el programa anual.
    * Son campos distintos porque son momentos distintos: publicar una versión

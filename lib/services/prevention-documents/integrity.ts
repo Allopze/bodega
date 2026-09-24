@@ -80,7 +80,7 @@ export async function regularizeDocumentIntegrityFinding(args: {
       if (args.findingCode !== "DRAFT_WITH_PUBLISHED_VERSION" || !args.versionId) throw new Error("Acción incompatible con el hallazgo.")
       const [version] = await tx.select().from(sstDocumentVersions)
         .where(and(eq(sstDocumentVersions.id, args.versionId), eq(sstDocumentVersions.documentId, doc.id))).for("update").limit(1)
-      if (!version || version.status !== "vigente" || !version.approvedBy || !version.approvedAt || doc.status !== "borrador") {
+      if (!version || version.status !== "vigente" || !hasDemonstrableApproval(version) || doc.status !== "borrador") {
         throw new Error("La versión no es una publicación aprobada apta para restaurar.")
       }
       await tx.update(sstDocuments).set({
@@ -92,7 +92,7 @@ export async function regularizeDocumentIntegrityFinding(args: {
       if (args.findingCode !== "PUBLISHED_WITHOUT_APPROVER" || !args.versionId) throw new Error("Acción incompatible con el hallazgo.")
       const [version] = await tx.select().from(sstDocumentVersions)
         .where(and(eq(sstDocumentVersions.id, args.versionId), eq(sstDocumentVersions.documentId, doc.id))).for("update").limit(1)
-      if (!version || version.status !== "vigente" || version.approvedBy || version.approvedAt) {
+      if (!version || version.status !== "vigente" || hasDemonstrableApproval(version)) {
         throw new Error("La versión ya no corresponde a una publicación sin aprobación.")
       }
       await tx.update(sstDocumentVersions).set({ status: "archivado", updatedAt: now })
@@ -119,7 +119,7 @@ export async function regularizeDocumentIntegrityFinding(args: {
       const published = await tx.select().from(sstDocumentVersions)
         .where(and(eq(sstDocumentVersions.documentId, doc.id), eq(sstDocumentVersions.status, "vigente"))).for("update")
       const selected = published.find((version) => version.id === args.selectedVersionId)
-      if (published.length < 2 || !selected?.approvedBy || !selected.approvedAt) {
+      if (published.length < 2 || !selected || !hasDemonstrableApproval(selected)) {
         throw new Error("Selecciona una de las versiones vigentes que tenga aprobación demostrable.")
       }
       const retiredIds = published.filter((version) => version.id !== selected.id).map((version) => version.id)
@@ -279,7 +279,7 @@ export async function getDocumentIntegrityFindings(
         "Revisar el expediente y regularizar mediante una publicación o retiro auditado."))
     }
     for (const version of published) {
-      if (!version.approvedBy || !version.approvedAt) {
+      if (!hasDemonstrableApproval(version)) {
         findings.push(finding(doc, "PUBLISHED_WITHOUT_APPROVER", "critico", version.id,
           `La versión v${version.version} figura vigente sin aprobador o fecha de aprobación.`,
           "Retirar de uso como evidencia y someter la versión a revisión/aprobación formal."))
@@ -344,4 +344,15 @@ function finding(
     recommendedAction,
     evidenceUsable: false,
   }
+}
+
+/**
+ * Una versión vigente tiene aprobación demostrable si pasó por el ciclo
+ * (aprobador y fecha) o si su tipo no la exigía y quedó vigente al cargarla
+ * (`approval_mode = 'not_required'`, una carta timbrada, un certificado). Sin
+ * esa segunda rama, cada registro externo cargado aparecería como una
+ * publicación crítica "sin aprobador".
+ */
+function hasDemonstrableApproval(version: { approvedBy: string | null; approvedAt: string | null; approvalMode: string }): boolean {
+  return version.approvalMode === "not_required" || Boolean(version.approvedBy && version.approvedAt)
 }

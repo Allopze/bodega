@@ -45,6 +45,7 @@ export {
 } from "./actions/program-crud"
 
 export { setPdtpActivityExecutorAssignmentsAction } from "./actions/executors"
+export { setPdtpActivityDocumentRequirementsAction } from "./actions/document-requirements"
 
 export {
   upsertPdtpObjectiveAction,

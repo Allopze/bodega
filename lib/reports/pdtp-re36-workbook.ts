@@ -24,6 +24,7 @@ import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import { safeWorksheetName, sanitizeCell } from "@/lib/reports/export-module/excel-builder"
 import type { PdtpRe36Document, PdtpRe36IsoCalendarRow, PdtpRe36Sheet } from "@/lib/services/pdtp/re36-document"
 import { pdtpRe36ResponsiblesLabel } from "@/lib/services/pdtp/re36-document"
+import { describePdtpAnnualMinimum } from "@/lib/services/pdtp/annual-minimum"
 
 /**
  * Filas/columnas fijas del layout, para no repetir números mágicos. Todo lo
@@ -408,7 +409,11 @@ function renderDataRows(ws: ExcelJS.Worksheet, sheet: PdtpRe36Sheet) {
     const excelRow = RE36_LAYOUT.firstDataRow + index
     setText(ws, `B${excelRow}`, row.n)
     setText(ws, `C${excelRow}`, row.program)
-    setText(ws, `D${excelRow}`, row.activity)
+    // El mínimo anual es parte del compromiso firmado: sin él, la fila achurada
+    // se lee como "sólo si hay casos" y el documento promete menos de lo que
+    // el indicador exige.
+    const minimumLabel = describePdtpAnnualMinimum(row.minAnnualExecutions)
+    setText(ws, `D${excelRow}`, minimumLabel ? `${row.activity} (Cuando corresponda · ${minimumLabel})` : row.activity)
     // Cargo del programa firmado + quién lo tiene a su nombre en esta faena
     // ("Sup, JT (María Pérez)"). El cargo no se reemplaza: el documento se
     // firma por cargo y tiene que seguir leyéndose igual cuando la persona rote.

@@ -22,6 +22,7 @@ export const PDTP_FULFILLMENT_SOURCE_LABELS: Readonly<Record<string, string>> = 
   campana: "Campaña de seguridad",
   capacitacion: "Capacitación",
   capacitacion_ocurrencia: "Capacitación",
+  carpeta_legal: "Carpeta de requisitos legales",
   cgrd: "Gestión de riesgos de desastres",
   cphs: "Comités paritarios",
   documento: "Documentación SST",

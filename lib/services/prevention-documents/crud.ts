@@ -1,9 +1,18 @@
 import { and, eq, ne, sql } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type Tx } from "@/db"
 import {
+  sstDocumentFolders,
   sstDocuments,
+  sstDocumentTypes,
   sstDocumentVersions,
 } from "@/db/schema"
+import { assessRiohsCompleteness, RIOHS_DOCUMENT_TYPE_CODE, type RiohsMetadata } from "@/lib/prevention/riohs"
+import { onLegalFolderDocumentChanged } from "@/lib/services/pdtp-adapters/legal-folder-connector"
+import {
+  dispatchDocumentVersionCurrentEffects,
+  makeDocumentVersionCurrent,
+  type DocumentVersionCurrentEffects,
+} from "./publication"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { deleteSstDocument } from "@/lib/storage/sst-backend"
@@ -31,6 +40,7 @@ import {
   generateStorageName,
   sha256Hex,
   recordAuditEntry,
+  todayIso,
 } from "./utils"
 
 const ALLOWED_MIMES = MimeType.DOCUMENT_LIBRARY
@@ -40,6 +50,28 @@ const MAX_FILE_SIZE = 25 * 1024 * 1024
 
 export async function createDocument({ data, ctx, scope, permissions }: CreateDocumentInput) {
   const parsed = sstDocumentCreateSchema.parse(data)
+  // Un documento creado dentro de la carpeta de una faena es de esa faena: la
+  // carpeta ya la declara (las subcarpetas la heredan en `folders-crud.ts`) y
+  // sin esto la carga masiva dejaba "corporativo" todo lo que se soltaba en la
+  // carpeta de una faena. Declarar otra faena que la de la carpeta es un error.
+  if (parsed.folderId) {
+    const [folder] = await db.select({ worksiteId: sstDocumentFolders.worksiteId })
+      .from(sstDocumentFolders).where(eq(sstDocumentFolders.id, parsed.folderId)).limit(1)
+    if (!folder) throw new Error("Carpeta no encontrada.")
+    if (folder.worksiteId) {
+      if (parsed.worksiteId && parsed.worksiteId !== folder.worksiteId) {
+        throw new Error("La carpeta pertenece a otra faena que la declarada para el documento.")
+      }
+      parsed.worksiteId = folder.worksiteId
+    }
+  }
+  if (parsed.typeId) {
+    // La categoría la define el tipo: dos fuentes para lo mismo divergían.
+    const [type] = await db.select({ categorySlug: sstDocumentTypes.categorySlug, isActive: sstDocumentTypes.isActive })
+      .from(sstDocumentTypes).where(eq(sstDocumentTypes.id, parsed.typeId)).limit(1)
+    if (!type || !type.isActive) throw new Error("El tipo documental seleccionado no existe o está inactivo.")
+    parsed.categorySlug = type.categorySlug
+  }
   assertScopeAccess(parsed.worksiteId || null, scope)
   assertConfidentialityAllowed(parsed.confidentiality, permissions)
   assertGeneralLibraryContentAllowed({ dataClass: parsed.dataClass, title: parsed.title })
@@ -110,6 +142,33 @@ export async function updateDocumentMetadata(args: {
   }
 
   const patch: Record<string, unknown> = { updatedAt: now }
+  if (data.typeId !== undefined && (data.typeId || null) !== doc.typeId) {
+    if (data.typeId) {
+      const [type] = await db.select({
+        categorySlug: sstDocumentTypes.categorySlug,
+        code: sstDocumentTypes.code,
+        isActive: sstDocumentTypes.isActive,
+        requiresAcknowledgment: sstDocumentTypes.requiresAcknowledgment,
+      }).from(sstDocumentTypes).where(eq(sstDocumentTypes.id, data.typeId)).limit(1)
+      if (!type || !type.isActive) throw new Error("El tipo documental seleccionado no existe o está inactivo.")
+      // Clasificar como RIOHS un documento ya vigente lo haría pasar por
+      // vigente sin la verificación del DS 44 art. 58 que exige publicarlo.
+      if (type.code === RIOHS_DOCUMENT_TYPE_CODE && doc.status === "vigente") {
+        const metadata = ((data.extraMetadata ?? doc.extraMetadata) ?? {}) as RiohsMetadata
+        const completeness = assessRiohsCompleteness(metadata.riohsSections)
+        if (!completeness.complete) {
+          throw new Error("Un documento vigente sólo puede clasificarse como Reglamento Interno si declara el contenido mínimo del DS 44 art. 58.")
+        }
+      }
+      patch.typeId = data.typeId
+      patch.categorySlug = type.categorySlug
+      if (type.requiresAcknowledgment && !doc.requiresAcknowledgment && data.requiresAcknowledgment === undefined) {
+        patch.requiresAcknowledgment = true
+      }
+    } else {
+      patch.typeId = null
+    }
+  }
   if (data.title !== undefined) patch.title = data.title
   if (data.folderId !== undefined) patch.folderId = data.folderId || null
   if (data.description !== undefined) patch.description = data.description || null
@@ -131,6 +190,16 @@ export async function updateDocumentMetadata(args: {
     action: "edit", ip: args.ctx.ip,
     metadata: { changed: Object.keys(patch).filter((k) => k !== "updatedAt") },
   })
+  // Clasificar, mover de faena o cambiar el vencimiento de un documento
+  // vigente puede completar la carpeta de requisitos legales (N°19) de la
+  // faena de antes o de la de ahora.
+  if (updated.status === "vigente"
+    && (updated.typeId !== doc.typeId || updated.worksiteId !== doc.worksiteId || updated.expiresAt !== doc.expiresAt)) {
+    await onLegalFolderDocumentChanged({
+      typeIds: [doc.typeId, updated.typeId],
+      worksiteIds: [doc.worksiteId, updated.worksiteId],
+    })
+  }
   return updated
 }
 
@@ -150,6 +219,9 @@ export async function uploadDocumentVersion(args: {
   assertConfidentialityAllowed(doc.confidentiality as SstDocumentConfidentiality, args.permissions)
   if (doc.status === "archivado") throw new Error("No se puede subir versiones a un documento archivado.")
   assertGeneralLibraryContentAllowed({ dataClass: doc.dataClass, title: doc.title, fileName: args.input.file.name })
+  if (data.effectiveFrom && data.effectiveTo && data.effectiveTo < data.effectiveFrom) {
+    throw new Error("La vigencia no puede terminar antes de comenzar.")
+  }
 
   const file = await readFileToBuffer(args.input.file)
   if (file.size > MAX_FILE_SIZE) throw new Error(`El archivo supera el máximo permitido de ${Math.round(MAX_FILE_SIZE / 1024 / 1024)} MB.`)
@@ -168,38 +240,92 @@ export async function uploadDocumentVersion(args: {
   const storageName = generateStorageName(file.name)
   const folderSegments = await getFolderRemoteSegments(doc.folderId)
   const relativePath = await persistFileOnDisk(storageName, file.buffer, folderSegments)
-  const now = new Date().toISOString()
-  const id = `sdv-${nanoid()}`
 
-  const [row] = await db.insert(sstDocumentVersions).values({
-    id, documentId: data.documentId,
-    version: sql`(SELECT COALESCE(MAX(${sstDocumentVersions.version}), 0) + 1 FROM ${sstDocumentVersions} WHERE ${sstDocumentVersions.documentId} = ${data.documentId})`,
-    status: "borrador", fileName: file.name, storageName, filePath: relativePath,
-    mimeType: validated.mimeType, fileSize: file.size, checksum,
-    effectiveFrom: data.effectiveFrom || null, effectiveTo: data.effectiveTo || null,
-    changelog: data.changelog || null, uploadedBy: args.ctx.userId,
-    reviewedBy: null, approvedBy: null, approvedAt: null,
-    supersedesId: data.supersedesId || null, createdAt: now, updatedAt: now,
-  }).returning()
+  let effects: DocumentVersionCurrentEffects | null = null
+  let row: typeof sstDocumentVersions.$inferSelect
+  try {
+    row = await db.transaction(async (tx) => {
+      // Bloquear el documento serializa dos cargas simultáneas: con la carga
+      // directa, las dos intentarían reemplazar la misma vigente.
+      const [locked] = await tx.select().from(sstDocuments).where(eq(sstDocuments.id, doc.id)).for("update")
+      if (!locked) throw new Error("Documento no encontrado.")
+      if (locked.status === "archivado") throw new Error("No se puede subir versiones a un documento archivado.")
 
-  if (!row) {
+      const now = new Date().toISOString()
+      const id = `sdv-${nanoid()}`
+      const [inserted] = await tx.insert(sstDocumentVersions).values({
+        id, documentId: data.documentId,
+        version: sql`(SELECT COALESCE(MAX(${sstDocumentVersions.version}), 0) + 1 FROM ${sstDocumentVersions} WHERE ${sstDocumentVersions.documentId} = ${data.documentId})`,
+        status: "borrador", fileName: file.name, storageName, filePath: relativePath,
+        mimeType: validated.mimeType, fileSize: file.size, checksum,
+        effectiveFrom: data.effectiveFrom || null, effectiveTo: data.effectiveTo || null,
+        changelog: data.changelog || null, uploadedBy: args.ctx.userId,
+        reviewedBy: null, approvedBy: null, approvedAt: null,
+        supersedesId: data.supersedesId || null, createdAt: now, updatedAt: now,
+      }).returning()
+      if (!inserted) throw new Error("No se pudo registrar la nueva versión.")
+
+      const direct = await resolveDirectPublication(tx, locked, inserted)
+      await recordAuditEntry({
+        documentId: data.documentId, versionId: id, userId: args.ctx.userId, userEmail: args.ctx.userEmail,
+        action: "upload", fromStatus: null, toStatus: "borrador", ip: args.ctx.ip,
+        comment: data.changelog || null,
+        metadata: {
+          fileName: file.name,
+          size: file.size,
+          mime: validated.mimeType,
+          version: inserted.version,
+          publication: direct ? "direct_no_approval" : "pending_review",
+        },
+      }, tx)
+      if (!direct) return inserted
+
+      // Registro externo: el tipo no requiere aprobación, así que la versión
+      // queda vigente por el mismo paso que una publicación (reemplazo de la
+      // anterior, vencimiento, efectos sobre el programa preventivo).
+      const current = await makeDocumentVersionCurrent(tx, {
+        doc: locked,
+        version: inserted,
+        ctx: args.ctx,
+        comment: data.changelog || undefined,
+        fromStatus: "borrador",
+        approvalMode: "not_required",
+        auditMetadata: { publication: "direct_no_approval" },
+        now,
+      })
+      effects = current.effects
+      return current.published
+    })
+  } catch (error) {
     try { await deleteSstDocument(relativePath) }
     catch (err) { logger.warn("[documents-library] no se pudo limpiar archivo huérfano", err) }
-    throw new Error("No se pudo registrar la nueva versión.")
+    throw error
   }
-  await recordAuditEntry({
-    documentId: data.documentId, versionId: id, userId: args.ctx.userId, userEmail: args.ctx.userEmail,
-    action: "upload", fromStatus: null, toStatus: "borrador", ip: args.ctx.ip,
-    comment: data.changelog || null,
-    metadata: {
-      fileName: file.name,
-      size: file.size,
-      mime: validated.mimeType,
-      version: row.version,
-      publication: "pending_review",
-    },
-  })
+
+  if (effects) await dispatchDocumentVersionCurrentEffects(effects)
   return row
+}
+
+/**
+ * ¿Esta carga deja la versión vigente de inmediato? Sólo si el documento está
+ * clasificado con un tipo que no requiere aprobación, el tipo no es el RIOHS
+ * (que tiene contenido mínimo legal y siempre pasa por el ciclo) y la versión
+ * ya rige. Un documento sin clasificar sigue el camino de siempre: borrador.
+ */
+async function resolveDirectPublication(
+  tx: Tx,
+  doc: typeof sstDocuments.$inferSelect,
+  version: typeof sstDocumentVersions.$inferSelect,
+): Promise<boolean> {
+  if (!doc.typeId) return false
+  const [type] = await tx.select({ code: sstDocumentTypes.code, requiresApproval: sstDocumentTypes.requiresApproval, isActive: sstDocumentTypes.isActive })
+    .from(sstDocumentTypes).where(eq(sstDocumentTypes.id, doc.typeId)).limit(1)
+  if (!type || type.requiresApproval || !type.isActive) return false
+  if (type.code === RIOHS_DOCUMENT_TYPE_CODE) return false
+  if (version.effectiveFrom && version.effectiveFrom > todayIso()) {
+    throw new Error(`Este tipo queda vigente al cargarlo, y su vigencia empieza el ${version.effectiveFrom}. Cárgalo desde esa fecha.`)
+  }
+  return true
 }
 
 /* ── Archivado lógico ───────────────────────────────────────────────────── */

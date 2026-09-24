@@ -15,6 +15,7 @@ import {
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { onDocumentAcknowledged } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { onRiohsRolloutProgress } from "@/lib/services/pdtp-adapters/riohs-rollout-connector"
 import { resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
 import {
   assertConfidentialityAllowed,
@@ -43,9 +44,25 @@ async function getPublishedVersionContext(versionId: string) {
   return { doc, version }
 }
 
+/**
+ * Un documento de faena se opera con alcance sobre esa faena, como siempre.
+ * Uno corporativo (sin faena: el RIOHS) es de toda la empresa, y quien opera
+ * una faena debe poder distribuirlo y cerrar su entrega en ella; por eso acá
+ * sólo se exige algún alcance, y cada operación acota después a los
+ * destinatarios de las faenas que la persona ve (`assertTargetInScope`).
+ */
 function authorizeDistribution(args: DistributionContext, doc: { worksiteId: string | null; confidentiality: string }) {
-  assertScopeAccess(doc.worksiteId, args.scope)
+  if (doc.worksiteId) assertScopeAccess(doc.worksiteId, args.scope)
+  else if (args.scope.mode === "none") throw new Error("Documento no encontrado o sin acceso a la faena.")
   assertConfidentialityAllowed(doc.confidentiality as SstDocumentConfidentiality, args.permissions)
+}
+
+/** En un documento corporativo, un usuario con alcance de faena sólo opera sus faenas. */
+function assertTargetInScope(doc: { worksiteId: string | null }, targetWorksiteId: string | null, scope: WorksiteScope) {
+  if (doc.worksiteId || scope.mode === "all") return
+  if (scope.mode === "none" || !targetWorksiteId || !scope.ids.includes(targetWorksiteId)) {
+    throw new Error("El destinatario pertenece a una faena fuera de tu alcance.")
+  }
 }
 
 export function buildDocumentAcknowledgmentSignature(args: {
@@ -141,6 +158,14 @@ export async function assignDocumentVersionRecipients(args: DistributionContext 
   for (const recipient of userRows) {
     const worker = recipient.workerId ? workerMap.get(recipient.workerId) : undefined
     if (worker) assertScopeAccess(worker.worksiteId, args.scope)
+    // Sin ficha de trabajador, la faena del destinatario sale de sus
+    // asignaciones. En un documento corporativo, alguien con alcance de faena
+    // sólo puede asignar a personas de sus faenas.
+    const recipientWorksite = worker?.worksiteId
+      ?? (args.scope.mode === "some"
+        ? [...(worksiteIdsByUser.get(recipient.id) ?? [])].find((id) => args.scope.mode === "some" && args.scope.ids.includes(id)) ?? null
+        : null)
+    assertTargetInScope(doc, recipientWorksite ?? null, args.scope)
     if (doc.worksiteId) {
       const hasDocumentWorksite = worker?.worksiteId === doc.worksiteId
         || worksiteIdsByUser.get(recipient.id)?.has(doc.worksiteId)
@@ -152,7 +177,7 @@ export async function assignDocumentVersionRecipients(args: DistributionContext 
       userId: recipient.id,
       workerId: recipient.workerId,
       assignmentReason: reason,
-      worksiteId: worker?.worksiteId ?? doc.worksiteId,
+      worksiteId: recipientWorksite ?? doc.worksiteId,
       positionSnapshot: worker?.position ?? null,
       companySnapshot: "Chome",
       assignedByUserId: args.ctx.userId,
@@ -220,9 +245,14 @@ export async function acknowledgeDocumentVersion(args: DistributionContext & {
   const method = args.method?.trim() || "digital"
   if (!/^[a-z_]{3,30}$/.test(method)) throw new Error("Método de acuse inválido.")
   const { doc, version } = await getPublishedVersionContext(args.versionId)
-  authorizeDistribution(args, doc)
+  // Acusar es un acto propio: lo autoriza tener una asignación nominativa para
+  // esta versión (se verifica abajo), no el alcance sobre la faena del
+  // documento. Sin esto, nadie con alcance de faena podía acusar un RIOHS
+  // corporativo. La confidencialidad sigue exigiéndose.
+  assertConfidentialityAllowed(doc.confidentiality as SstDocumentConfidentiality, args.permissions)
 
   let accreditation: Parameters<typeof onDocumentAcknowledged>[0] | null = null
+  let acknowledgedWorksiteId: string | null = null
   const result = await db.transaction(async (tx) => {
     const [user] = await tx.select({ workerId: users.workerId, isActive: users.isActive })
       .from(users).where(eq(users.id, args.ctx.userId))
@@ -242,6 +272,7 @@ export async function acknowledgeDocumentVersion(args: DistributionContext & {
       .for("update")
     if (!target) throw new Error("No tienes una asignación nominativa para esta versión.")
     if (target.status === "exento") throw new Error("La asignación está exenta y no admite acuse.")
+    acknowledgedWorksiteId = target.worksiteId
 
     const [existing] = await tx.select().from(sstDocumentAcknowledgments)
       .where(and(
@@ -309,6 +340,8 @@ export async function acknowledgeDocumentVersion(args: DistributionContext & {
   })
 
   if (accreditation) await onDocumentAcknowledged(accreditation)
+  // N°18: este acuse puede completar la entrega de un RIOHS en la faena.
+  await onRiohsRolloutProgress({ versionId: version.id, worksiteIds: [acknowledgedWorksiteId], actorUserId: args.ctx.userId })
   return result
 }
 
@@ -323,9 +356,10 @@ export async function exemptDocumentDistributionTarget(args: DistributionContext
   if (!target) throw new Error("Destinatario documental no encontrado.")
   const { doc, version } = await getPublishedVersionContext(target.versionId)
   authorizeDistribution(args, doc)
+  assertTargetInScope(doc, target.worksiteId, args.scope)
   if (target.status !== "pendiente") throw new Error("Sólo se puede eximir una asignación pendiente.")
 
-  return db.transaction(async (tx) => {
+  const exempted = await db.transaction(async (tx) => {
     const now = new Date().toISOString()
     const [updated] = await tx.update(sstDocumentDistributionTargets).set({
       status: "exento",
@@ -351,13 +385,141 @@ export async function exemptDocumentDistributionTarget(args: DistributionContext
     })
     return updated
   })
+  await onRiohsRolloutProgress({ versionId: version.id, worksiteIds: [exempted.worksiteId], actorUserId: args.ctx.userId })
+  return exempted
 }
 
 export async function listDocumentDistribution(versionId: string, scope: WorksiteScope, permissions: readonly string[]) {
   const { doc } = await getPublishedVersionContext(versionId)
   authorizeDistribution({ ctx: { userId: "read-only" }, scope, permissions }, doc)
-  return db.select().from(sstDocumentDistributionTargets)
+  const rows = await db.select().from(sstDocumentDistributionTargets)
     .where(eq(sstDocumentDistributionTargets.versionId, versionId))
+  if (doc.worksiteId || scope.mode !== "some") return rows
+  return rows.filter((row) => row.worksiteId !== null && scope.ids.includes(row.worksiteId))
+}
+
+/**
+ * Exime en un solo acto a varios destinatarios pendientes de una versión, con
+ * un mismo motivo y una fila de auditoría por destinatario.
+ *
+ * Existe porque el acuse es propio: sólo lo firma quien tiene cuenta en la
+ * plataforma, y la mayor parte de la dotación no la tiene. Cerrar la entrega de
+ * un RIOHS nuevo (N°18) exige que cada trabajador activo acuse o quede exento;
+ * eximirlos de a uno, en una faena de cien personas, no es operable. Los que
+ * ya no están pendientes se informan, no se tocan.
+ */
+export async function exemptDocumentDistributionTargets(args: DistributionContext & {
+  versionId: string
+  targetIds: string[]
+  reason: string
+}) {
+  const reason = args.reason.trim()
+  if (reason.length < 3 || reason.length > 1000) throw new Error("Registra un motivo de exención válido.")
+  const targetIds = Array.from(new Set(args.targetIds.filter(Boolean)))
+  if (targetIds.length === 0) throw new Error("Selecciona al menos un destinatario.")
+  if (targetIds.length > 200) throw new Error("La exención admite hasta 200 destinatarios por operación.")
+  const { doc, version } = await getPublishedVersionContext(args.versionId)
+  authorizeDistribution(args, doc)
+
+  const targets = await db.select().from(sstDocumentDistributionTargets)
+    .where(and(
+      eq(sstDocumentDistributionTargets.versionId, version.id),
+      inArray(sstDocumentDistributionTargets.id, targetIds),
+    ))
+  if (targets.length !== targetIds.length) throw new Error("Uno o más destinatarios no pertenecen a esta versión.")
+  for (const target of targets) assertTargetInScope(doc, target.worksiteId, args.scope)
+  const pendingIds = targets.filter((target) => target.status === "pendiente").map((target) => target.id)
+
+  const exempted = pendingIds.length === 0 ? [] : await db.transaction(async (tx) => {
+    const now = new Date().toISOString()
+    const updated = await tx.update(sstDocumentDistributionTargets).set({
+      status: "exento",
+      exemptedByUserId: args.ctx.userId,
+      exemptedAt: now,
+      exemptionReason: reason,
+      updatedAt: now,
+    }).where(and(
+      inArray(sstDocumentDistributionTargets.id, pendingIds),
+      eq(sstDocumentDistributionTargets.status, "pendiente"),
+    )).returning()
+    if (updated.length > 0) {
+      await tx.insert(sstDocumentAudit).values(updated.map((target) => ({
+        id: `sda-${nanoid()}`,
+        documentId: doc.id,
+        versionId: version.id,
+        action: "exempt",
+        userId: args.ctx.userId,
+        comment: reason,
+        metadata: { targetId: target.id, bulk: true },
+        ip: args.ctx.ip ?? null,
+        createdAt: now,
+      })))
+    }
+    return updated
+  })
+  const worksiteIds = [...new Set(exempted.flatMap((target) => target.worksiteId ? [target.worksiteId] : []))]
+  const rollout = await onRiohsRolloutProgress({ versionId: version.id, worksiteIds, actorUserId: args.ctx.userId })
+  return {
+    exempted: exempted.length,
+    skipped: targetIds.length - exempted.length,
+    worksiteIds,
+    rolloutsReported: rollout.reported,
+  }
+}
+
+export type DocumentWorkforceRollout = {
+  versionId: string
+  worksiteId: string
+  /** Trabajadores activos hoy en la faena: el padrón de la entrega. */
+  active: number
+  acknowledged: number
+  exempt: number
+  /** Asignados que todavía no acusan ni están exentos. */
+  pending: number
+  /** Activos sin asignación para esta versión (p. ej. ingresaron después). */
+  unassigned: number
+  complete: boolean
+}
+
+/**
+ * ¿Recibió toda la dotación de la faena esta versión? Completa cuando cada
+ * trabajador **activo hoy** de la faena tiene su asignación acusada o exenta.
+ *
+ * El padrón es el de hoy, no el del día de la publicación: quien ingresó
+ * después también debe recibir el reglamento vigente (y lo recibe con el acta
+ * de trabajador nuevo, que lo exime acá), y quien se fue ya no cuenta. Una
+ * faena sin dotación no está "completa": no hay entrega que cerrar.
+ */
+export async function assessDocumentWorkforceRollout(versionId: string, worksiteId: string): Promise<DocumentWorkforceRollout> {
+  const [activeWorkers, targets] = await Promise.all([
+    db.select({ id: workers.id }).from(workers)
+      .where(and(eq(workers.worksiteId, worksiteId), eq(workers.isActive, true))),
+    db.select({ workerId: sstDocumentDistributionTargets.workerId, status: sstDocumentDistributionTargets.status })
+      .from(sstDocumentDistributionTargets)
+      .where(eq(sstDocumentDistributionTargets.versionId, versionId)),
+  ])
+  const statusByWorker = new Map(targets.flatMap((target) => target.workerId ? [[target.workerId, target.status] as const] : []))
+  let acknowledged = 0
+  let exempt = 0
+  let pending = 0
+  let unassigned = 0
+  for (const worker of activeWorkers) {
+    const status = statusByWorker.get(worker.id)
+    if (status === "acusado") acknowledged += 1
+    else if (status === "exento") exempt += 1
+    else if (status) pending += 1
+    else unassigned += 1
+  }
+  return {
+    versionId,
+    worksiteId,
+    active: activeWorkers.length,
+    acknowledged,
+    exempt,
+    pending,
+    unassigned,
+    complete: activeWorkers.length > 0 && pending === 0 && unassigned === 0,
+  }
 }
 
 export async function listDocumentRecipientOptions(scope: WorksiteScope) {
@@ -407,19 +569,32 @@ export async function assignDocumentVersionToWorkforce(args: DistributionContext
   versionId: string
   assignmentReason: string
   dueAt?: string | null
+  /** Sólo para un documento corporativo: acota la asignación a una faena. */
+  worksiteId?: string | null
 }) {
   const { doc } = await getPublishedVersionContext(args.versionId)
   authorizeDistribution(args, doc)
   if (doc.confidentiality === "sensible") {
     throw new Error("Los documentos sensibles sólo admiten distribución nominativa individual.")
   }
+  if (args.worksiteId && doc.worksiteId && args.worksiteId !== doc.worksiteId) {
+    throw new Error("El documento pertenece a otra faena.")
+  }
+  if (args.worksiteId) assertTargetInScope(doc, args.worksiteId, args.scope)
 
-  // Un documento sin faena es corporativo: alcanza a toda la dotación visible.
+  // Un documento sin faena es corporativo: alcanza a toda la dotación visible
+  // —la de todas las faenas con alcance global, la de las propias si no—, o a
+  // la faena pedida.
+  const worksiteFilter = doc.worksiteId
+    ? eq(workers.worksiteId, doc.worksiteId)
+    : args.worksiteId
+      ? eq(workers.worksiteId, args.worksiteId)
+      : args.scope.mode === "some"
+        ? inArray(workers.worksiteId, args.scope.ids)
+        : undefined
   const workerRows = await db.select({ id: workers.id })
     .from(workers)
-    .where(doc.worksiteId
-      ? and(eq(workers.worksiteId, doc.worksiteId), eq(workers.isActive, true))
-      : eq(workers.isActive, true))
+    .where(worksiteFilter ? and(worksiteFilter, eq(workers.isActive, true)) : eq(workers.isActive, true))
 
   const existing = await db.select({ workerId: sstDocumentDistributionTargets.workerId })
     .from(sstDocumentDistributionTargets)

@@ -23,4 +23,10 @@ export {
   moveSstDocumentFolderAction,
   archiveSstDocumentFolderAction,
   restoreSstDocumentFolderAction,
+  uploadTypedSstDocumentAction,
+  previewSstDocumentUploadEffectsAction,
+  listSstDocumentsOfTypeAction,
+  classifySstDocumentAction,
+  exemptSstDocumentRecipientsAction,
+  assignSstDocumentToWorkforceAction,
 } from "./actions/index"

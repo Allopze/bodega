@@ -31,6 +31,8 @@ import { PdtpBuilderTabs } from "./builder-tabs"
 import { resolvePdtpActivitiesReturnHref } from "../../pdtp-context"
 import { listCatalogActivities } from "@/lib/services/pdtp/catalog-activities"
 import { listPdtpExecutionConnectors } from "@/lib/services/pdtp/connectors"
+import { isPdtpLegalFolderActivity, listPdtpActivityDocumentRequirements } from "@/lib/services/pdtp/document-requirements"
+import { listDocumentCategories, listDocumentTypes } from "@/lib/services/prevention-documents-library"
 
 export const metadata: Metadata = { title: "Editar programa PDTP" }
 
@@ -95,6 +97,37 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
       ? db.select().from(pdtpActivityReminderRules).where(inArray(pdtpActivityReminderRules.activityId, activityIds))
       : Promise.resolve([]),
   ])
+  // Carpeta de requisitos legales (N°19): los documentos que exige, editables
+  // mientras el programa no entró a revisión.
+  const folderActivity = activities.find((activity) => activity.status === "active" && isPdtpLegalFolderActivity(activity)) ?? null
+  const [folderRequirements, documentTypes, documentCategories] = folderActivity
+    ? await Promise.all([
+        listPdtpActivityDocumentRequirements([folderActivity.id]),
+        listDocumentTypes(),
+        listDocumentCategories(),
+      ])
+    : [[], [], []] as [
+        Awaited<ReturnType<typeof listPdtpActivityDocumentRequirements>>,
+        Awaited<ReturnType<typeof listDocumentTypes>>,
+        Awaited<ReturnType<typeof listDocumentCategories>>,
+      ]
+  const documentCategoryName = new Map(documentCategories.map((category) => [category.slug, category.name]))
+  const legalFolder = folderActivity ? {
+    activity: { id: folderActivity.id, n: folderActivity.n, activity: folderActivity.activity },
+    requirements: folderRequirements.map((requirement) => ({
+      documentTypeId: requirement.documentTypeId,
+      scope: requirement.scope,
+      mustFollowDocumentTypeId: requirement.mustFollowDocumentTypeId,
+    })),
+    documentTypes: documentTypes.map((type) => ({
+      id: type.id,
+      name: type.name,
+      code: type.code,
+      categoryName: documentCategoryName.get(type.categorySlug) ?? type.categorySlug,
+    })),
+    editable: !program.contentDigest && !program.reviewStartedAt && !program.approvedByJdprUserId && !program.approvedByLegalUserId,
+  } : null
+
   const revisionDiffDecisions = program.version > 1 && baseComparison
     && "baseTemplateVersionId" in baseComparison
     && typeof baseComparison.baseTemplateVersionId === "string"
@@ -170,6 +203,7 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
         coverageIssues={coverageReport.groups.flatMap((group) => group.issues)}
         executorAssignments={executorAssignments}
         executorRoleOptions={executorRoleOptions}
+        legalFolder={legalFolder}
         revisionDiffDecisions={revisionDiffDecisions}
         initialStep={initialSection}
         initialCatalogActivityId={initialCatalogActivityId}

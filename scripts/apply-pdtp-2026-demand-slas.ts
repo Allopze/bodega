@@ -24,6 +24,11 @@
  * que una actividad es constancia es `apply-pdtp-2026-mechanisms.ts`; su
  * evidencia se declara acá.
  *
+ * Declara también el mínimo anual de las actividades "cuando corresponda"
+ * (`ANNUAL_MINIMUMS`): la inducción IRL (N°15) y su evaluación (N°16) sólo se
+ * miden cuando entra alguien, y un año sin ingresos las dejaba fuera del
+ * indicador. Con mínimo 1, cada faena debe acreditar al menos una en el año.
+ *
  *   npm run pdtp:apply-demand-slas
  *   PDTP_DEMAND_SLAS_DRY_RUN=true npm run pdtp:apply-demand-slas
  *   PDTP_DEMAND_SLAS_ACTOR_USER_ID=<id> npm run pdtp:apply-demand-slas
@@ -44,6 +49,7 @@ import { db } from "@/db"
 import { pdtpActivities, pdtpPrograms, roles, userRoles } from "@/db/schema"
 import { updatePdtpActivity } from "@/lib/services/pdtp/activities"
 import { assertPdtpProgramEditableState } from "@/lib/services/pdtp/helpers"
+import { pdtpAnnualMinimumAllowed } from "@/lib/services/pdtp/annual-minimum"
 
 const PROGRAM_YEAR = 2026
 const DRY_RUN = process.env.PDTP_DEMAND_SLAS_DRY_RUN === "true"
@@ -92,7 +98,10 @@ const DEMAND_SLAS: DemandSla[] = [
   },
   {
     n: 18, dueDays: 0, proposed: true,
-    evidenceRequirement: "Entrega del RIOHS registrada en el acta de trabajador nuevo.",
+    // El plazo 0 es el del trabajador nuevo. La entrega de una versión nueva a
+    // toda la dotación tiene el suyo, que declara el tipo documental RIOHS
+    // (30 días; ver `riohs-rollout-connector.ts`).
+    evidenceRequirement: "Entrega del RIOHS registrada en el acta de trabajador nuevo o, ante una versión nueva, acuse o exención de toda la dotación de la faena.",
     basis: "El catálogo dice \"al momento de la incorporación\": plazo cero.",
   },
   {
@@ -235,6 +244,22 @@ const CONSTANCIA_EVIDENCE: ConstanciaEvidence[] = [
   },
 ]
 
+/**
+ * Mínimo de ejecuciones al año de actividades "cuando corresponda". Se exige
+ * por faena; lo que falte para llegar al mínimo vence al cierre del año (ver
+ * `lib/services/pdtp/annual-minimum.ts`).
+ */
+const ANNUAL_MINIMUMS: Array<{ n: number; minimum: number; basis: string }> = [
+  {
+    n: 15, minimum: 1,
+    basis: "Decisión de Prevención (2026-09-24): la inducción IRL se dicta cuando corresponda —ingreso o cambio de puesto— y al menos una vez al año.",
+  },
+  {
+    n: 16, minimum: 1,
+    basis: "Decisión de Prevención (2026-09-24): la evaluación de la inducción IRL sigue a la N°15, con el mismo mínimo anual.",
+  },
+]
+
 async function resolveActorUserId(): Promise<string> {
   const fromEnv = process.env.PDTP_DEMAND_SLAS_ACTOR_USER_ID?.trim()
   if (fromEnv) return fromEnv
@@ -339,13 +364,40 @@ async function main() {
   }
 
   console.log("")
-  console.log(`Resumen: ${changes} actividad(es) con SLA sobre ${DEMAND_SLAS.length} declaradas, `
-    + `${evidenceChanges} constancia(s) con evidencia sobre ${CONSTANCIA_EVIDENCE.length}.`)
+  console.log("Mínimo anual de las actividades cuando corresponda")
+  let minimumChanges = 0
+  for (const item of ANNUAL_MINIMUMS) {
+    const activity = byN.get(item.n)
+    if (!activity) { console.warn(`  ? N°${item.n}: no existe en el programa, se omite.`); continue }
+    if (activity.status === "retired") { console.log(`  · N°${item.n}: retirada, se omite.`); continue }
+    if (activity.minAnnualExecutions === item.minimum) {
+      console.log(`  · N°${item.n}: ya exige mínimo ${item.minimum} al año.`)
+      continue
+    }
+    // Una reclasificación posterior (a calendarizada, o a un modo que no se
+    // mide por caso) deja sin sentido el mínimo; se reporta en vez de forzar
+    // una combinación que el CHECK de la tabla rechaza.
+    if (!pdtpAnnualMinimumAllowed(activity.scheduleMode, activity.indicatorMode)) {
+      console.warn(`  ? N°${item.n}: ${activity.scheduleMode}/${activity.indicatorMode} no admite mínimo anual, se omite.`)
+      continue
+    }
+    if (!planOnly) {
+      await updatePdtpActivity({ activityId: activity.id, minAnnualExecutions: item.minimum }, actorUserId)
+    }
+    console.log(`  ✓ N°${item.n}: cuando corresponda, mínimo ${item.minimum} al año. ${item.basis}`)
+    minimumChanges++
+  }
 
-  if (locked && changes > 0) {
+  console.log("")
+  console.log(`Resumen: ${changes} actividad(es) con SLA sobre ${DEMAND_SLAS.length} declaradas, `
+    + `${evidenceChanges} constancia(s) con evidencia sobre ${CONSTANCIA_EVIDENCE.length}, `
+    + `${minimumChanges} mínimo(s) anual(es) sobre ${ANNUAL_MINIMUMS.length}.`)
+
+  if (locked && (changes > 0 || minimumChanges > 0)) {
     bail(
-      `El programa ${program.id} ya entró a revisión (status=${program.status}) y quedan ${changes} SLA sin `
-      + "aplicar. Su contenido está firmado, así que aplicarlos exige una revisión nueva del programa.",
+      `El programa ${program.id} ya entró a revisión (status=${program.status}) y quedan ${changes} SLA y `
+      + `${minimumChanges} mínimo(s) anual(es) sin aplicar. Su contenido está firmado, así que aplicarlos exige `
+      + "una revisión nueva del programa.",
     )
   }
 

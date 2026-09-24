@@ -15,6 +15,8 @@ export interface FileDropzoneProps {
   className?: string
   id?: string
   name?: string
+  /** Ícono del área. Por defecto el de Excel, que es el uso original (importaciones). */
+  icon?: React.ReactNode
 }
 
 export function FileDropzone({
@@ -27,6 +29,7 @@ export function FileDropzone({
   className,
   id = "file-dropzone-input",
   name = "file",
+  icon,
 }: FileDropzoneProps) {
   const [dragActive, setDragActive] = React.useState(false)
   const inputRef = React.useRef<HTMLInputElement>(null)
@@ -90,7 +93,7 @@ export function FileDropzone({
         )}
       >
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-primary)]">
-          <FileXls size={28} weight="duotone" />
+          {icon ?? <FileXls size={28} weight="duotone" />}
         </div>
         <p className="mt-3 text-sm font-medium text-[var(--color-text)]">{title}</p>
         <p className="mt-1 text-xs text-[var(--color-text-subtle)]">{description}</p>

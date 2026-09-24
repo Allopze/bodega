@@ -39,6 +39,7 @@ PDTP_DATA_STEPS=(
   "pdtp:apply-mechanisms|apply-pdtp-mechanisms"
   "pdtp:apply-objectives|apply-pdtp-objectives"
   "pdtp:apply-demand-slas|apply-pdtp-demand-slas"
+  "pdtp:apply-legal-folder|apply-pdtp-legal-folder"
   "db:seed-pdtp-inspection-templates|seed-inspection-templates"
   "db:preflight-pdtp-wiring|preflight-pdtp-wiring"
   "pdtp:reconcile-fulfillment-events|reconcile-pdtp-fulfillment-events"
@@ -71,6 +72,7 @@ if [[ "${PDTP_APPLY_DRY_RUN:-}" == "true" ]]; then
   export PDTP_OBJECTIVES_DRY_RUN=true
   export PDTP_PROGRAM_DATA_DRY_RUN=true
   export PDTP_DEMAND_SLAS_DRY_RUN=true
+  export PDTP_LEGAL_FOLDER_DRY_RUN=true
   export EMERGENCY_PLANS_DRY_RUN=true
   echo "▸ DRY RUN: ningún paso escribe en la base."
   echo "  Se omiten los que no saben simular: ${PDTP_STEPS_WITHOUT_DRY_RUN[*]}"

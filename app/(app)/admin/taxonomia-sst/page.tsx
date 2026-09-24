@@ -75,6 +75,7 @@ export default async function TaxonomySstPage({ searchParams }: PageProps) {
           defaultValidityMonths: t.defaultValidityMonths ?? null,
           requiresApproval: t.requiresApproval,
           requiresAcknowledgment: t.requiresAcknowledgment,
+          distributionDueDays: t.distributionDueDays ?? null,
           pdtpActivityNumbers: t.pdtpActivityNumbers,
           pdtpAcknowledgmentActivityNumbers: t.pdtpAcknowledgmentActivityNumbers,
           pdtpCatalogActivityIds: bindings.filter((binding) => binding.sourceId === t.id && binding.eventType === "publish" && binding.isActive).map((binding) => binding.catalogActivityId),

@@ -6,6 +6,7 @@ import {
   pdtpActivityExecutorAssignments,
   pdtpActivityScheduleOverrides,
   pdtpActivityWorksiteExclusions,
+  pdtpActivityDocumentRequirements,
   pdtpActivityWorksiteParams,
   pdtpApprovalSteps,
   pdtpActivityChecklists,
@@ -28,7 +29,7 @@ type JsonPrimitive = string | number | boolean | null
 type StableJson = JsonPrimitive | StableJson[] | { [key: string]: StableJson }
 
 /** Forma del snapshot, independiente del número de revisión del programa. */
-export const CURRENT_PDTP_CONTENT_SCHEMA_VERSION = 17
+export const CURRENT_PDTP_CONTENT_SCHEMA_VERSION = 19
 
 /**
  * Versión de esquema más antigua que este builder sabe reconstruir con
@@ -143,6 +144,7 @@ export async function buildPdtpProgramContentSnapshot(
     subjectCapabilityCodes: pdtpActivities.subjectCapabilityCodes,
     targetValue: pdtpActivities.targetValue,
     targetUnit: pdtpActivities.targetUnit,
+    minAnnualExecutions: pdtpActivities.minAnnualExecutions,
     notes: pdtpActivities.notes,
   }).from(pdtpActivities)
     .where(eq(pdtpActivities.programId, programId))
@@ -300,6 +302,25 @@ export async function buildPdtpProgramContentSnapshot(
         .orderBy(asc(pdtpActivityExecutorAssignments.activityId), asc(pdtpActivityExecutorAssignments.roleId))
     : []
 
+  // La carpeta que una actividad exige (N°19) es compromiso del programa: qué
+  // documentos se prometió mantener, con qué alcance. Se identifica el tipo
+  // por id, no por código, para que renombrar un código no altere una firma.
+  const documentRequirements = schemaVersion >= 19 && activityIds.length > 0
+    ? await client.select({
+        activityId: pdtpActivityDocumentRequirements.activityId,
+        documentTypeId: pdtpActivityDocumentRequirements.documentTypeId,
+        scope: pdtpActivityDocumentRequirements.scope,
+        mustFollowDocumentTypeId: pdtpActivityDocumentRequirements.mustFollowDocumentTypeId,
+        displayOrder: pdtpActivityDocumentRequirements.displayOrder,
+      }).from(pdtpActivityDocumentRequirements)
+        .where(inArray(pdtpActivityDocumentRequirements.activityId, activityIds))
+        .orderBy(
+          asc(pdtpActivityDocumentRequirements.activityId),
+          asc(pdtpActivityDocumentRequirements.displayOrder),
+          asc(pdtpActivityDocumentRequirements.documentTypeId),
+        )
+    : []
+
   /**
    * `expected_subject_count` NO entra en la huella, a diferencia del resto de la
    * fila.
@@ -411,14 +432,20 @@ export async function buildPdtpProgramContentSnapshot(
     // actividad (`activities[].objectiveCode`, resuelto por código en vez del
     // id interno para que la huella no dependa de un identificador accidental
     // de persistencia).
+    // 19: los documentos que una actividad exige como carpeta (N°19,
+    // `documentRequirements`) entran al compromiso firmado.
+    // 18: el mínimo anual de una actividad "cuando corresponda"
+    // (`minAnnualExecutions`) es un compromiso del programa: cambia cuánto se
+    // exige en el año aunque no haya casos, así que requiere otra firma.
     schemaVersion,
     program: schemaVersion >= 15 ? { ...legacyProgram, appliesToAllWorksites } : legacyProgram,
     approvalSteps,
-    activities: activities.map(({ id: _id, mechanism, objectiveId, scheduleDefinition, ...activity }) => ({
+    activities: activities.map(({ id: _id, mechanism, objectiveId, scheduleDefinition, minAnnualExecutions, ...activity }) => ({
       ...activity,
       ...(schemaVersion >= 14 ? { mechanism } : {}),
       ...(schemaVersion >= 16 ? { objectiveCode: objectiveId ? objectiveCodeById.get(objectiveId) ?? null : null } : {}),
       ...(schemaVersion >= 17 ? { scheduleDefinition } : {}),
+      ...(schemaVersion >= 18 ? { minAnnualExecutions } : {}),
     })),
     schedules: schedules.map(({ activityId, ...schedule }) => ({ activityNumber: activityNumberById.get(activityId), ...schedule })),
     views: sheets.map(({ id: _id, ...sheet }) => sheet),
@@ -450,6 +477,12 @@ export async function buildPdtpProgramContentSnapshot(
     } : {}),
     ...(schemaVersion >= 16 ? {
       objectives: objectives.map(({ id: _id, ...objective }) => objective),
+    } : {}),
+    ...(schemaVersion >= 19 ? {
+      documentRequirements: documentRequirements.map(({ activityId, ...requirement }) => ({
+        activityNumber: activityNumberById.get(activityId),
+        ...requirement,
+      })),
     } : {}),
     ...(schemaVersion >= 17 ? {
       executionConfigs: executionConfigs.map(({ activityId, ...config }) => ({

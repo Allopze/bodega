@@ -839,7 +839,8 @@ const STRUCTURALLY_WIRED_ACTIVITY_NUMBERS = new Set([
   1, 9, 11,           // programa, revisión por la dirección, CPHS
   2, 3,               // difusión del plan: toma de conocimiento (program-acknowledgments.ts)
   7,                  // indicadores de faena (Fase 4.1)
-  15, 18, 19, 23, 52, // acta de trabajador nuevo (la N°19 es la carpeta, T47)
+  15, 18, 23, 52,     // acta de trabajador nuevo (la N°18 también: nueva versión del RIOHS)
+  19,                 // carpeta de requisitos legales (legal-folder-connector.ts)
   17,                 // RE-28 de personas sensibles (worker-sensitivity-connector)
   20,                 // coordinación con el mandante (Task 12, external-engagement-accreditation-connector)
   35,                 // MIPER

@@ -57,9 +57,14 @@ describe("validation: sstDocumentCreateSchema", () => {
     expect(res.success).toBe(false)
   })
 
-  it("rechaza categoría inválida", () => {
-    const res = sstDocumentCreateSchema.safeParse({ ...base, categorySlug: "no_existe" })
+  it("rechaza una categoría con formato inválido", () => {
+    const res = sstDocumentCreateSchema.safeParse({ ...base, categorySlug: "No Existe" })
     expect(res.success).toBe(false)
+  })
+
+  it("acepta una categoría creada por el admin: la existencia la garantiza la FK, no un enum", () => {
+    const res = sstDocumentCreateSchema.safeParse({ ...base, categorySlug: "procedimientos_operacionales_audit" })
+    expect(res.success).toBe(true)
   })
 
   it("rechaza confidencialidad inválida", () => {

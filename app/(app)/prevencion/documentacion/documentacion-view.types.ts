@@ -7,6 +7,8 @@ export interface DocumentRow {
   title: string
   internalCode: string | null
   categorySlug: string
+  /** Tipo documental; sin tipo el documento no acredita nada del programa preventivo. */
+  typeId?: string | null
   status: string
   confidentiality: string
   worksiteId: string | null

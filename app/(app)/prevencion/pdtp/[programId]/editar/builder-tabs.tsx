@@ -25,6 +25,7 @@ import { PlanificacionTab, ScheduleOverview } from "./tabs/planificacion-tab"
 import { ReviewTab } from "./tabs/revision-tab"
 import { SheetsTab } from "./tabs/sheets-tab"
 import { ExecutorAssignmentsPanel } from "./executor-assignments-panel"
+import { DocumentRequirementsPanel } from "./document-requirements-panel"
 import type { PdtpObjective } from "@/lib/services/prevention-pdtp"
 import type { PdtpCompletionPolicy, PdtpEvidenceKind } from "@/lib/services/pdtp/connectors"
 import type { pdtpActivityExecutionConfigs, pdtpActivityReminderRules } from "@/db/schema"
@@ -81,6 +82,8 @@ type PdtpBuilderTabsProps = {
   }>
   executorAssignments: Array<{ activityId: string; roleId: string; roleName: string; roleLabel: string }>
   executorRoleOptions: Array<{ id: string; name: string; label: string; permissions: string[] }>
+  /** Carpeta de requisitos legales (N°19); `null` si el programa no tiene esa actividad. */
+  legalFolder?: Omit<React.ComponentProps<typeof DocumentRequirementsPanel>, "programId"> | null
   revisionDiffDecisions: Array<{ activityIdentity: string; decision: "applied" | "kept"; decidedAt: string }>
   initialStep?: string
   initialCatalogActivityId?: string
@@ -129,6 +132,7 @@ export function PdtpBuilderTabs({
   coverageIssues,
   executorAssignments,
   executorRoleOptions,
+  legalFolder = null,
   revisionDiffDecisions,
   initialStep,
   initialCatalogActivityId,
@@ -299,6 +303,9 @@ export function PdtpBuilderTabs({
       </TabsContent>
 
       <TabsContent value="revision" className="space-y-5">
+        {legalFolder && (
+          <DocumentRequirementsPanel programId={program.id} {...legalFolder} />
+        )}
         <ExecutorAssignmentsPanel
           programId={program.id}
           activities={activities}

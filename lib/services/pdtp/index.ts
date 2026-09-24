@@ -67,6 +67,18 @@ export {
 } from "./executors"
 export type { PdtpExecutorRoleOption, PdtpActivityExecutorAssignmentView } from "./executors"
 export {
+  PDTP_DOCUMENT_REQUIREMENTS_MAX,
+  PDTP_LEGAL_FOLDER_ACTIVITY_NUMBER,
+  isPdtpLegalFolderActivity,
+  listPdtpActivityDocumentRequirements,
+  setPdtpActivityDocumentRequirements,
+} from "./document-requirements"
+export type {
+  PdtpActivityDocumentRequirementInput,
+  PdtpActivityDocumentRequirementView,
+  PdtpDocumentRequirementScope,
+} from "./document-requirements"
+export {
   PDTP_2026_OBJECTIVES,
   pdtpObjectiveForLegacyNumber,
   listPdtpObjectives,

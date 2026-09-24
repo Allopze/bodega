@@ -115,6 +115,30 @@ export async function setPdtpProgramWorksites(
 }
 
 /**
+ * Faenas en las que opera un programa, sin mirar el alcance de nadie: las
+ * miembros activas, o todas las activas si el programa declaró alcance
+ * corporativo. Es el padrón que usan los conectores que reparten un hecho
+ * corporativo (un RIOHS nuevo, un documento de la carpeta legal) a cada faena.
+ */
+export async function listPdtpProgramOperatingWorksiteIds(programId: string, client: DB | Tx = db): Promise<string[]> {
+  const [[program], members, active] = await Promise.all([
+    client.select({ appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites })
+      .from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1),
+    client.select({ worksiteId: pdtpProgramWorksites.worksiteId })
+      .from(pdtpProgramWorksites)
+      .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true))),
+    client.select({ id: worksites.id }).from(worksites).where(eq(worksites.isActive, true)),
+  ])
+  if (!program) return []
+  return resolveProgramWorksiteIds(
+    members.map((row) => row.worksiteId),
+    "all",
+    active.map((row) => row.id),
+    program.appliesToAllWorksites,
+  )
+}
+
+/**
  * Faenas efectivas de un programa dentro del scope de un usuario: sin
  * membresía declarada, todo el scope sólo cuando el programa declara alcance
  * corporativo; con membresía, la intersección entre el scope y las faenas

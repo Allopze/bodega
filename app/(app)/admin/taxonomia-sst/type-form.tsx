@@ -151,6 +151,26 @@ export function TypeForm({ open, onClose, editType, categorySlug, categoryOption
                 defaultChecked={editType?.requiresApproval ?? true}
                 label="Requiere aprobación administrativa"
               />
+              <p className="-mt-1 text-xs text-[var(--color-text-muted)]">
+                Sin aprobación, cada versión queda vigente al cargarla: úsalo sólo para registros externos (una carta timbrada, un certificado).
+              </p>
+              <Field
+                label="Plazo de entrega a la dotación (días)"
+                htmlFor="type-distribution-days"
+                error={state.fieldErrors?.distributionDueDays?.[0]}
+                helper="Opcional. Con plazo, cada versión vigente se asigna a toda la dotación de cada faena para su acuse (el RIOHS abre la entrega N°18 del programa preventivo)."
+              >
+                <Input
+                  id="type-distribution-days"
+                  name="distributionDueDays"
+                  type="number"
+                  min={1}
+                  max={365}
+                  defaultValue={editType?.distributionDueDays?.toString() ?? ""}
+                  error={!!state.fieldErrors?.distributionDueDays}
+                  className="w-32"
+                />
+              </Field>
               <Checkbox
                 id="type-ack"
                 name="requiresAcknowledgment"

@@ -21,6 +21,7 @@ import { comparePdtpRevisionToCurrentBase, pdtpActivityIdentityMatches, type Pdt
 import { pdtpActivityChecklistId } from "./checklist-domain"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
 import { getCurrentPdtpBase2026Version } from "./templates"
+import { replacePdtpActivityDocumentRequirementsFromSnapshot } from "./document-requirements"
 
 type SnapshotRecord = Record<string, unknown>
 type DiffDecision = "applied" | "kept"
@@ -85,6 +86,7 @@ function activityValues(activity: SnapshotRecord, now: string, objectiveIdByCode
       : null,
     targetValue: typeof activity.targetValue === "number" ? activity.targetValue : null,
     targetUnit: typeof activity.targetUnit === "string" ? activity.targetUnit : null,
+    minAnnualExecutions: typeof activity.minAnnualExecutions === "number" ? activity.minAnnualExecutions : null,
     notes: typeof activity.notes === "string" ? activity.notes : null,
     updatedAt: now,
   }
@@ -344,6 +346,18 @@ export async function decidePdtpRevisionDiff(input: {
           createdAt: now,
           updatedAt: now,
         })))
+      }
+
+      // Base anterior al esquema 19: no declara carpeta y adoptar otra
+      // diferencia no debe vaciar la que ya tiene la revisión (mismo criterio
+      // que `mechanism` y `objectiveCode`).
+      if ("documentRequirements" in snapshot) {
+        await replacePdtpActivityDocumentRequirementsFromSnapshot(tx, {
+          activityId,
+          activityNumber,
+          snapshotRequirements: records(snapshot.documentRequirements),
+          now,
+        })
       }
 
       await tx.delete(pdtpActivityChecklists).where(eq(pdtpActivityChecklists.activityId, activityId))

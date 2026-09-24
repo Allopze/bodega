@@ -113,6 +113,7 @@ function buildFixtureDocument(): PdtpRe36Document {
             responsibles: "JDPR",
             assigneeNames: [],
             scheduleMode: "scheduled",
+            minAnnualExecutions: null,
             cells: row1Cells,
           },
           {
@@ -125,6 +126,7 @@ function buildFixtureDocument(): PdtpRe36Document {
             responsibles: "PRF",
             assigneeNames: [],
             scheduleMode: "scheduled",
+            minAnnualExecutions: null,
             cells: row2Cells,
           },
           {
@@ -137,6 +139,7 @@ function buildFixtureDocument(): PdtpRe36Document {
             responsibles: "Sup, JT",
             assigneeNames: [],
             scheduleMode: "on_demand",
+            minAnnualExecutions: 1,
             cells: row3Cells,
           },
         ],
@@ -159,6 +162,7 @@ function buildFixtureDocument(): PdtpRe36Document {
             responsibles: "JDPR",
             assigneeNames: [],
             scheduleMode: "scheduled",
+            minAnnualExecutions: null,
             cells: row1Cells,
           },
         ],
@@ -385,6 +389,14 @@ describe("renderPdtpRe36Workbook", () => {
       if (fill?.type === "pattern" && fill.pattern === "lightUp") hatched += 1
     }
     expect(hatched).toBe(96)
+  })
+
+  it("la fila cuando corresponda declara su mínimo anual en la columna de la actividad", () => {
+    const workbook = renderPdtpRe36Workbook(buildFixtureDocument())
+    const ws = workbook.getWorksheet("PDTP GENERAL")!
+    expect(ws.getCell("D18").value).toBe("Registro de hallazgos a demanda (Cuando corresponda · mínimo 1 al año)")
+    // Sin mínimo, el texto de la actividad queda intacto.
+    expect(ws.getCell("D16").value).toBe("Reunión mensual de gerencia")
   })
 
   it("los totales P/E son fórmulas SUM sobre el rango de datos", () => {

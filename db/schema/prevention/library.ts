@@ -55,11 +55,23 @@ export const sstDocumentTypes = pgTable("sst_document_types", {
    * `pdtpActivityNumbers` y `pdtpReviewActivityNumbers`.
    */
   pdtpAcknowledgmentActivityNumbers: jsonb("pdtp_acknowledgment_activity_numbers").$type<number[]>(),
+  /**
+   * Plazo, en días desde que una versión queda vigente, para entregarla a toda
+   * la dotación de cada faena. Hoy sólo lo usa el RIOHS: una versión nueva abre
+   * la entrega N°18 del PDTP y ésta vence a los N días (ver
+   * `lib/services/pdtp-adapters/riohs-rollout-connector.ts`). Vive en el tipo y
+   * no en el programa porque el disparador es el tipo, y porque el mismo plazo
+   * fija el vencimiento de cada asignación de acuse.
+   *
+   * `null` = el tipo no se reparte a la dotación al publicarse.
+   */
+  distributionDueDays: integer("distribution_due_days"),
   isActive:      boolean("is_active").notNull().default(true),
   createdAt:     timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:     timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   uniqueIndex("sst_document_types_category_code_unique").on(table.categorySlug, table.code),
+  check("sst_document_types_distribution_due_days_check", sql`${table.distributionDueDays} IS NULL OR ${table.distributionDueDays} BETWEEN 1 AND 365`),
 ])
 
 export const sstDocumentFolders = pgTable("sst_document_folders", {
@@ -142,10 +154,20 @@ export const sstDocumentVersions = pgTable("sst_document_versions", {
   approvedBy:    text("approved_by").references(() => users.id, { onDelete: "set null" }),
   approvedAt:    timestamp("approved_at", { withTimezone: true, mode: "string" }),
   supersedesId:  text("supersedes_id"),
+  /**
+   * Cómo llegó a vigente. `workflow` = revisión → aprobación → publicación, el
+   * ciclo segregado de siempre. `not_required` = el tipo no requiere aprobación
+   * (un registro externo: una carta timbrada por la SEREMI, un certificado) y la
+   * versión quedó vigente al cargarla. Sin esta marca, la integridad no puede
+   * distinguir una publicación sin aprobador legítima de una que se saltó el
+   * ciclo, y marcaría crítica cada carta cargada.
+   */
+  approvalMode:  text("approval_mode").notNull().default("workflow"),
   createdAt:     timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:     timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   uniqueIndex("sst_document_versions_doc_version_unique").on(table.documentId, table.version),
+  check("sst_document_versions_approval_mode_valid", sql`${table.approvalMode} IN ('workflow', 'not_required')`),
   index("sst_document_versions_doc_status_idx").on(table.documentId, table.status),
   index("sst_document_versions_checksum_idx").on(table.checksum),
   check("sst_document_versions_status_valid", sql`${table.status} IN ('borrador', 'en_revision', 'observado', 'aprobado', 'vigente', 'reemplazado', 'archivado')`),

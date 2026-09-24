@@ -3,6 +3,7 @@ import { boolean, check, date, foreignKey, index, integer, jsonb, numeric, real,
 import { pgTable } from "drizzle-orm/pg-core"
 import { roles, users } from "../users"
 import { worksites } from "../worksites"
+import { sstDocumentTypes } from "./library"
 import type { PdtpScheduleDefinition } from "@/lib/services/pdtp/schedule-definition"
 
 export const pdtpPrograms = pgTable("pdtp_programs", {
@@ -453,6 +454,20 @@ export const pdtpActivities = pgTable("pdtp_activities", {
   subjectCapabilityCodes: text("subject_capability_codes").array(),
   targetValue:         numeric("target_value", { precision: 10, scale: 2, mode: "number" }),
   targetUnit:          text("target_unit"),
+  /**
+   * Mínimo de ejecuciones al año de una actividad "cuando corresponda".
+   *
+   * Una actividad a demanda o por evento sólo entra al indicador cuando hay un
+   * caso: si en el año no ingresó nadie, la inducción (N°15) y su evaluación
+   * (N°16) desaparecen del cumplimiento sin que nadie lo note. Con este piso,
+   * cada faena debe acreditar al menos N ejecuciones en el año; lo que falte
+   * para llegar al piso entra al denominador del mes de cierre (diciembre).
+   *
+   * Sólo tiene sentido en las medidas por caso (`closed_on_time`, `coverage`)
+   * de actividades no calendarizadas: una calendarizada ya tiene su planificado.
+   * `null` = sin mínimo, el comportamiento histórico.
+   */
+  minAnnualExecutions: integer("min_annual_executions"),
   sourceSheetRow:     integer("source_sheet_row").notNull(),
   notes:              text("notes"),
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
@@ -522,6 +537,11 @@ export const pdtpActivities = pgTable("pdtp_activities", {
     AND ${table.subjectCapabilityCodes} IS NULL
   )`),
   check("pdtp_activities_target_value_check", sql`${table.targetValue} IS NULL OR ${table.targetValue} >= 0`),
+  check("pdtp_activities_min_annual_executions_check", sql`${table.minAnnualExecutions} IS NULL OR (
+    ${table.minAnnualExecutions} >= 1
+    AND ${table.scheduleMode} IN ('on_demand', 'triggered')
+    AND ${table.indicatorMode} IN ('closed_on_time', 'coverage')
+  )`),
 ])
 
 /**
@@ -1154,6 +1174,51 @@ export const pdtpActivityWorksiteExclusions = pgTable("pdtp_activity_worksite_ex
 }, (table) => [
   uniqueIndex("pdtp_activity_worksite_exclusions_activity_worksite_unique").on(table.activityId, table.worksiteId),
   index("pdtp_activity_worksite_exclusions_worksite_idx").on(table.worksiteId),
+])
+
+/**
+ * Documentos que una actividad declara como su carpeta (N°19, "Mantener
+ * carpetas de requisitos legales"). La actividad se acredita en un mes cuando
+ * la faena tiene **todos** estos tipos vigentes en Documentación — ver
+ * `lib/prevention/legal-folder.ts` y
+ * `lib/services/pdtp-adapters/legal-folder-connector.ts`.
+ *
+ * Es contenido del programa: entra a la huella firmada (esquema 19) y sólo se
+ * edita con el programa abierto. Por eso no reutiliza
+ * `pdtp_accreditation_bindings`, que es global, no se firma y dice otra cosa
+ * ("tal hecho acredita tal actividad", no "tal actividad exige tal conjunto").
+ *
+ *   `scope = 'faena'`       cada faena debe tener su propio documento.
+ *   `scope = 'corporativo'` basta un documento corporativo vigente (o uno de la
+ *                           propia faena) para todas las faenas.
+ *
+ * `mustFollowDocumentTypeId`: el documento sólo cuenta si su versión vigente es
+ * posterior (o del mismo día) a la versión vigente del tipo indicado. Es lo que
+ * hace que las cartas conductoras a la SEREMI y a la Inspección caduquen cuando
+ * se publica un RIOHS nuevo.
+ */
+export const pdtpActivityDocumentRequirements = pgTable("pdtp_activity_document_requirements", {
+  id:                       text("id").primaryKey(),
+  activityId:               text("activity_id").notNull(),
+  documentTypeId:           text("document_type_id").notNull(),
+  scope:                    text("scope").notNull(),
+  mustFollowDocumentTypeId: text("must_follow_document_type_id"),
+  displayOrder:             integer("display_order").notNull().default(0),
+  createdAt:                timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:                timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  // Nombres explícitos: los que deriva drizzle superan los 63 bytes y Postgres
+  // los truncaría (ver `scripts/verify-migration-chain.mjs`).
+  foreignKey({ columns: [table.activityId], foreignColumns: [pdtpActivities.id], name: "pdtp_act_doc_req_activity_fk" }).onDelete("cascade"),
+  // `restrict`: borrar un tipo documental no puede vaciar en silencio la
+  // carpeta de un programa firmado.
+  foreignKey({ columns: [table.documentTypeId], foreignColumns: [sstDocumentTypes.id], name: "pdtp_act_doc_req_type_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.mustFollowDocumentTypeId], foreignColumns: [sstDocumentTypes.id], name: "pdtp_act_doc_req_must_follow_fk" }).onDelete("restrict"),
+  uniqueIndex("pdtp_activity_document_requirements_activity_type_unique").on(table.activityId, table.documentTypeId),
+  index("pdtp_activity_document_requirements_type_idx").on(table.documentTypeId),
+  check("pdtp_activity_document_requirements_scope_check", sql`${table.scope} IN ('faena', 'corporativo')`),
+  check("pdtp_activity_document_requirements_display_order_check", sql`${table.displayOrder} >= 0`),
+  check("pdtp_activity_document_requirements_must_follow_check", sql`${table.mustFollowDocumentTypeId} IS NULL OR ${table.mustFollowDocumentTypeId} <> ${table.documentTypeId}`),
 ])
 
 /* ── PDTP Activity Worksite Params (parámetros por faena: R1 sujetos, R2 cobertura) ── */

@@ -91,6 +91,7 @@ function revisionSectionLabel(section: string) {
     sourceLinks: "vínculos",
     exclusions: "exclusiones",
     executorAssignments: "ejecutores",
+    documentRequirements: "carpeta documental",
     worksiteAdjustments: "parámetros por faena",
     scheduleOverrides: "overrides",
   }

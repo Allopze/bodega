@@ -15,21 +15,43 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createSstDocumentFolderAction } from "./actions"
 import { uploadFilesAsDocuments } from "./documentacion-upload"
+import { TypedUploadForm, type TypedUploadTypeOption, type TypedUploadWorksiteOption } from "./typed-upload-form"
 
 interface Props {
   currentFolderId: string | null
+  /** Faena de la carpeta abierta: lo que se suba ahí es de esa faena. */
+  folderWorksiteId: string | null
+  documentTypes: TypedUploadTypeOption[]
+  worksites: TypedUploadWorksiteOption[]
+  canUploadCorporate: boolean
+  /** Llegada desde el programa preventivo (`?tipo=`/`?faena=`): abre el diálogo prellenado. */
+  initialTypeId?: string
+  initialWorksiteId?: string | null
 }
 
-export function DocumentacionHeaderActions({ currentFolderId }: Props) {
+export function DocumentacionHeaderActions({
+  currentFolderId,
+  folderWorksiteId,
+  documentTypes,
+  worksites,
+  canUploadCorporate,
+  initialTypeId,
+  initialWorksiteId,
+}: Props) {
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
   const [folderOpen, setFolderOpen] = React.useState(false)
   const [folderName, setFolderName] = React.useState("")
 
-  const [uploadOpen, setUploadOpen] = React.useState(false)
+  const [uploadOpen, setUploadOpen] = React.useState(Boolean(initialTypeId))
+  // Clasificado es el camino por defecto: es el único que dice qué es el
+  // documento y, con eso, qué acredita. La carga masiva queda para migrar
+  // carpetas enteras, sin efecto en el programa hasta clasificarlas.
+  const [uploadMode, setUploadMode] = React.useState<"typed" | "bulk">("typed")
   const [busy, setBusy] = React.useState(false)
   const [dataClass, setDataClass] = React.useState<"" | "operational" | "personal" | "sensitive_preventive" | "client_secret">("")
   const [progress, setProgress] = React.useState<{ done: number; total: number; failed: number } | null>(null)
@@ -43,7 +65,7 @@ export function DocumentacionHeaderActions({ currentFolderId }: Props) {
       el.setAttribute("webkitdirectory", "")
       el.setAttribute("directory", "")
     }
-  }, [uploadOpen])
+  }, [uploadOpen, uploadMode])
 
   function createFolder(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -116,23 +138,53 @@ export function DocumentacionHeaderActions({ currentFolderId }: Props) {
           if (!open) {
             setProgress(null)
             setDataClass("")
+            setUploadMode("typed")
           }
         }}
       >
         <DialogTrigger asChild>
           <Button type="button" size="sm">
             <FileArrowUp size={16} className="mr-1" />
-            Subir archivo
+            Subir documento
           </Button>
         </DialogTrigger>
-        <DialogContent>
+        <DialogContent
+          className="sm:max-w-2xl"
+          // Llegada con el tipo declarado (`?tipo=`): el foco va al archivo, no al
+          // buscador de tipo, que al abrirse ocultaría el tipo elegido.
+          onOpenAutoFocus={initialTypeId ? (event) => { event.preventDefault(); document.getElementById("typed-upload-file")?.focus() } : undefined}
+        >
           <DialogHeader>
-            <DialogTitle>Subir documentos</DialogTitle>
+            <DialogTitle>Subir documento</DialogTitle>
             <DialogDescription>
-              Sube archivos o una carpeta completa a esta ubicación. Cada archivo se registra como un documento.
+              {uploadMode === "typed"
+                ? "Declara qué documento es y de qué faena, y adjúntalo."
+                : "Sube archivos o una carpeta completa a esta ubicación. Quedan sin clasificar y en borrador."}
             </DialogDescription>
           </DialogHeader>
 
+          <SegmentedControl
+            ariaLabel="Modo de carga"
+            variant="segmented"
+            items={[
+              { key: "typed", label: "Documento clasificado", active: uploadMode === "typed", onClick: () => setUploadMode("typed") },
+              { key: "bulk", label: "Carga masiva (sin clasificar)", active: uploadMode === "bulk", onClick: () => setUploadMode("bulk") },
+            ]}
+          />
+
+          {uploadMode === "typed" ? (
+            <TypedUploadForm
+              types={documentTypes}
+              worksites={worksites}
+              canUploadCorporate={canUploadCorporate}
+              currentFolderId={currentFolderId}
+              folderWorksiteId={folderWorksiteId}
+              initialTypeId={initialTypeId}
+              initialWorksiteId={initialWorksiteId}
+              onDone={() => setUploadOpen(false)}
+              onCancel={() => setUploadOpen(false)}
+            />
+          ) : (<>
           <div className="space-y-2">
             <label htmlFor="document-data-class" className="text-sm font-medium text-(--color-text)">
               Clasificación obligatoria
@@ -207,6 +259,7 @@ export function DocumentacionHeaderActions({ currentFolderId }: Props) {
               handleUpload(files)
             }}
           />
+          </>)}
         </DialogContent>
       </Dialog>
 

@@ -325,7 +325,7 @@ describe("PDTP objetivos: servicio y huella", () => {
     }, "user-1")
     await setPdtpActivityObjective({ programId: program.id, activityId: activity.id, objectiveId: objective.id }, "user-1")
 
-    expect(CURRENT_PDTP_CONTENT_SCHEMA_VERSION).toBe(17)
+    expect(CURRENT_PDTP_CONTENT_SCHEMA_VERSION).toBe(19)
 
     type SnapshotShape = {
       schemaVersion: number

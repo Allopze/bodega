@@ -5,7 +5,7 @@
  * programa anual no puede seguir contándolo: disolver un comité paritario
  * (N°11), disolver el comité GRD y terminar la designación del coordinador
  * (N°79), anular un acta CGRD (N°81), cancelar un simulacro (N°84) y borrar un
- * acta SST (N°15, 17, 18, 19, 23, 52, 63).
+ * acta SST (N°15, 17, 18, 23, 52, 63; la N°19 pasó a Documentación el 2026-09-24).
  *
  * Dos de los cuatro (simulacro, acta SST) tienen una máquina de estados que
  * en la práctica de hoy nunca deja llegar a la revocación con una

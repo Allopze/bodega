@@ -36,6 +36,7 @@ import {
   type PdtpScheduleHorizon,
 } from "@/lib/services/pdtp/recurrence"
 import type { PdtpScheduleDefinition } from "@/lib/services/pdtp/schedule-definition"
+import { pdtpAnnualMinimumAllowed } from "@/lib/services/pdtp/annual-minimum"
 import type { PdtpCompletionPolicy } from "@/lib/services/pdtp/connectors"
 import { todayLocalISO } from "@/lib/sst/date"
 import { countOf, formatDate, MONTH_LABELS } from "@/lib/utils"
@@ -533,6 +534,8 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
   const [replaceConfirmed, setReplaceConfirmed] = React.useState(false)
   const [triggerDescription, setTriggerDescription] = React.useState("")
   const [dueDays, setDueDays] = React.useState(5)
+  /** Texto del input: vacío = sin mínimo anual. */
+  const [minAnnualExecutions, setMinAnnualExecutions] = React.useState("")
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -557,6 +560,7 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
       setReplaceConfirmed(false)
       setTriggerDescription(activity.triggerDescription ?? "")
       setDueDays(activity.dueDays ?? 5)
+      setMinAnnualExecutions(activity.minAnnualExecutions != null ? String(activity.minAnnualExecutions) : "")
       setError(null)
     }
   }
@@ -573,6 +577,14 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
     && activity.scheduleDefinition
     && (activity.scheduleDefinition as PdtpScheduleDefinition).kind !== "legacy_grid",
   )
+
+  // El mínimo anual depende del modo que quedará guardado: el elegido en este
+  // diálogo o, si la programación es nueva y este editor no la toca, el vigente.
+  const effectiveScheduleMode = modernSchedule ? (activity?.scheduleMode ?? "scheduled") : scheduleMode
+  const annualMinimumAllowed = pdtpAnnualMinimumAllowed(effectiveScheduleMode, activity?.indicatorMode)
+  const parsedAnnualMinimum = minAnnualExecutions.trim() === "" ? null : Number(minAnnualExecutions)
+  const annualMinimumInvalid = annualMinimumAllowed && parsedAnnualMinimum !== null
+    && (!Number.isInteger(parsedAnnualMinimum) || parsedAnnualMinimum < 1)
 
   const nextRule: PdtpRecurrenceRule | null = scheduleMode === "scheduled"
     ? { frequency, interval, plannedQuantity, weekOfMonth, ...(frequency === "custom" ? { months } : {}) }
@@ -615,6 +627,8 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
         program: executionGuidance,
         evidenceRequirement: evidenceRequirement.trim() || null,
         notes,
+        // Fuera del modo que lo admite no se envía: el servicio lo limpia solo.
+        ...(annualMinimumAllowed ? { minAnnualExecutions: parsedAnnualMinimum } : {}),
         ...(modernSchedule ? {} : {
           scheduleMode,
           scheduleClassificationStatus: "confirmed" as const,
@@ -742,6 +756,26 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
             </Callout>
           )}
           </>)}
+          {annualMinimumAllowed && (
+            <Field
+              label="Mínimo de ejecuciones al año"
+              htmlFor="edit-min-annual"
+              helper="Cuando corresponda, pero al menos esta cantidad por faena en el año. Si no hubo casos suficientes, lo que falte se exige al cierre (diciembre). Déjalo vacío para no exigir un mínimo."
+              error={annualMinimumInvalid ? "Ingresa un número entero mayor o igual a 1." : undefined}
+            >
+              <Input
+                id="edit-min-annual"
+                type="number"
+                min={1}
+                max={1000}
+                step={1}
+                inputMode="numeric"
+                value={minAnnualExecutions}
+                onChange={(event) => setMinAnnualExecutions(event.target.value)}
+                aria-invalid={annualMinimumInvalid || undefined}
+              />
+            </Field>
+          )}
           <Field label="Notas" htmlFor="edit-notes">
             <Textarea id="edit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
           </Field>
@@ -757,7 +791,7 @@ function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved 
             type="button"
             size="sm"
             onClick={handleSave}
-            disabled={pending || (wouldReplaceManualSchedule && !replaceConfirmed)}
+            disabled={pending || annualMinimumInvalid || (wouldReplaceManualSchedule && !replaceConfirmed)}
           >
             {pending ? "Guardando..." : "Guardar"}
           </Button>

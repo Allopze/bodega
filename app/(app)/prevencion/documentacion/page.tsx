@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { inArray } from "drizzle-orm"
+import { and, asc, eq, inArray } from "drizzle-orm"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
@@ -10,9 +10,12 @@ import {
   listFolderOptions,
   getFolderBreadcrumbItems,
   getDashboardCounters,
+  listDocumentCategories,
+  listDocumentTypes,
 } from "@/lib/services/prevention-documents-library"
+import { getPdtpLegalFolderOverview } from "@/lib/services/pdtp-adapters/legal-folder-connector"
 import { db } from "@/db"
-import { sstDocumentVersions, worksites } from "@/db/schema"
+import { sstDocumentFolders, sstDocumentVersions, worksites } from "@/db/schema"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Button } from "@/components/ui/button"
@@ -20,13 +23,24 @@ import { DocumentacionHeaderActions } from "./documentacion-header-actions"
 import { DocumentacionView } from "./documentacion-view"
 import { expiryFilterInput, parseExpiryFilter } from "./expiry-filter"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
+import { LegalFolderPanel, type LegalFolderPanelData } from "./legal-folder-panel"
 
 export const metadata: Metadata = { title: "Registro documental" }
 
 export default async function DocumentacionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; folder?: string; page?: string; vence?: string }>
+  searchParams: Promise<{
+    q?: string
+    folder?: string
+    page?: string
+    vence?: string
+    /** Llegada desde el programa preventivo: faena y tipo a declarar. */
+    faena?: string
+    tipo?: string
+    /** `requisitos-legales`: muestra la carpeta N°19 de la faena. */
+    carpeta?: string
+  }>
 }) {
   let session
   try { session = await requireAuth() }
@@ -101,6 +115,52 @@ export default async function DocumentacionPage({
   const canArchive = can(session, "prevention:docs:archive")
   const canRegularize = can(session, "prevention:docs:publish")
 
+  // Subida tipada: tipos activos, faenas que la persona ve y la faena de la
+  // carpeta abierta (lo que se sube ahí es de esa faena).
+  const [types, categories, visibleWorksites, [currentFolder]] = await Promise.all([
+    listDocumentTypes(),
+    listDocumentCategories(),
+    scope.mode === "none"
+      ? Promise.resolve([] as Array<{ id: string; name: string }>)
+      : db.select({ id: worksites.id, name: worksites.name }).from(worksites)
+        .where(scope.mode === "all"
+          ? eq(worksites.isActive, true)
+          : and(eq(worksites.isActive, true), inArray(worksites.id, scope.ids)))
+        .orderBy(asc(worksites.name)),
+    activeFolderId
+      ? db.select({ worksiteId: sstDocumentFolders.worksiteId }).from(sstDocumentFolders)
+        .where(eq(sstDocumentFolders.id, activeFolderId)).limit(1)
+      : Promise.resolve([] as Array<{ worksiteId: string | null }>),
+  ])
+  const categoryName = new Map(categories.map((category) => [category.slug, category.name]))
+  const typeOptions = types.map((type) => ({
+    id: type.id,
+    name: type.name,
+    code: type.code,
+    categoryName: categoryName.get(type.categorySlug) ?? type.categorySlug,
+    requiresApproval: type.requiresApproval,
+    defaultValidityMonths: type.defaultValidityMonths,
+  }))
+  const requestedWorksite = params.faena && visibleWorksites.some((site) => site.id === params.faena) ? params.faena : null
+  const requestedType = params.tipo && types.some((type) => type.id === params.tipo) ? params.tipo : undefined
+
+  // Carpeta de requisitos legales (N°19): se abre desde el programa preventivo
+  // con `?carpeta=requisitos-legales&faena=…`.
+  const showLegalFolder = params.carpeta === "requisitos-legales"
+  let legalFolder: LegalFolderPanelData | null = null
+  if (showLegalFolder) {
+    const folderWorksite = requestedWorksite ?? (visibleWorksites.length === 1 ? visibleWorksites[0]!.id : null)
+    const overview = folderWorksite ? await getPdtpLegalFolderOverview(folderWorksite) : null
+    if (overview && folderWorksite) {
+      legalFolder = {
+        activityNumber: overview.activity.n,
+        worksiteId: folderWorksite,
+        assessment: overview.assessment,
+        month: overview.month,
+      }
+    }
+  }
+
   return (
     <PageContainer width="workbench">
       <PageHeader
@@ -109,7 +169,17 @@ export default async function DocumentacionPage({
         breadcrumb={<Breadcrumbs items={breadcrumbs} />}
         actions={canManage || canRegularize ? (
           <div className="flex flex-wrap items-center gap-2">
-            {canManage ? <DocumentacionHeaderActions currentFolderId={activeFolderId} /> : null}
+            {canManage ? (
+              <DocumentacionHeaderActions
+                currentFolderId={activeFolderId}
+                folderWorksiteId={currentFolder?.worksiteId ?? null}
+                documentTypes={typeOptions}
+                worksites={visibleWorksites}
+                canUploadCorporate={scope.mode === "all"}
+                initialTypeId={requestedType}
+                initialWorksiteId={requestedWorksite}
+              />
+            ) : null}
             {canRegularize ? (
               <Button asChild size="sm" variant="secondary">
                 <Link href="/prevencion/documentacion/regularizacion">Regularización</Link>
@@ -118,6 +188,15 @@ export default async function DocumentacionPage({
           </div>
         ) : undefined}
       />
+      {showLegalFolder && (
+        <LegalFolderPanel
+          data={legalFolder}
+          worksites={visibleWorksites}
+          types={typeOptions}
+          canManage={canManage}
+          canUploadCorporate={scope.mode === "all"}
+        />
+      )}
       <DocumentacionView
         counters={counters}
         documents={docsWithRefs}

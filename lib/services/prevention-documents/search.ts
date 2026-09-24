@@ -27,7 +27,11 @@ export async function getDocumentBundle(id: string, scope: WorksiteScope, permis
   const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, id))
   if (!doc) return null
   if (scope.mode === "none") return null
-  if (scope.mode === "some" && (!doc.worksiteId || !scope.ids.includes(doc.worksiteId))) return null
+  // Un documento corporativo (sin faena) es de toda la empresa —el RIOHS—, y
+  // quien opera una faena tiene que poder abrirlo para distribuirlo y acusarlo
+  // en ella. El listado y la descarga ya lo permitían; el detalle era el único
+  // que lo negaba. Lo que sí se acota es la distribución: ver abajo.
+  if (scope.mode === "some" && doc.worksiteId && !scope.ids.includes(doc.worksiteId)) return null
   if (!canReadDocumentConfidentiality(doc.confidentiality, permissions)) return null
 
   const [versions, links, acks, distribution, audit] = await Promise.all([
@@ -49,12 +53,21 @@ export async function getDocumentBundle(id: string, scope: WorksiteScope, permis
   ])
 
   const effective = { ...doc, status: effectiveStatus(doc.status as SstDocumentStatus, doc.expiresAt) }
+  let targets = distribution.map((row) => row.sst_document_distribution_targets)
+  let visibleAcks = acks
+  // En un documento corporativo, un usuario con alcance de faena ve sólo la
+  // distribución de sus faenas: quién acusó en otra faena no le corresponde.
+  if (scope.mode === "some" && !doc.worksiteId) {
+    targets = targets.filter((target) => target.worksiteId !== null && scope.ids.includes(target.worksiteId))
+    const visibleUsers = new Set(targets.flatMap((target) => target.userId ? [target.userId] : []))
+    visibleAcks = acks.filter((ack) => visibleUsers.has(ack.userId))
+  }
   return {
     doc: effective,
     versions,
     links,
-    acks,
-    distribution: distribution.map((row) => row.sst_document_distribution_targets),
+    acks: visibleAcks,
+    distribution: targets,
     audit,
   }
 }

@@ -1,5 +1,5 @@
 import { and, desc, eq, isNull, ne } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type Tx } from "@/db"
 import { pdtpActivities, pdtpProgramWorksites, pdtpPrograms } from "@/db/schema"
 import { logger } from "@/lib/logger"
 import { countOf } from "@/lib/utils"
@@ -13,6 +13,8 @@ import {
   listPdtpApprovalProgress,
 } from "./approval-flow"
 import { materializePdtpScheduledInstances } from "./scheduled-instances"
+import { isPdtpLegalFolderActivity, listPdtpActivityDocumentRequirements } from "./document-requirements"
+import { sweepPdtpLegalFolders } from "@/lib/services/pdtp-adapters/legal-folder-connector"
 import { reconcilePdtpTriggerEvents } from "./trigger-events"
 
 /**
@@ -151,11 +153,38 @@ export function pdtpSubmitReviewBlockers(activities: PdtpActivityRow[]): string[
   return blockers
 }
 
+/**
+ * La carpeta de requisitos legales (N°19) se acredita cuando la faena tiene
+ * vigentes los documentos que la actividad declara. Sin lista, "la carpeta
+ * está completa" es trivialmente cierto y la actividad se acreditaría sola cada
+ * mes; con un tipo inactivo, nadie puede cargar ese documento y el mes nunca
+ * se acredita. Las dos cosas se frenan antes de firmar.
+ */
+export async function getPdtpLegalFolderBlockers(activities: PdtpActivityRow[], client: Tx | typeof db = db): Promise<string[]> {
+  const folderActivities = activities.filter((activity) => activity.status === "active" && isPdtpLegalFolderActivity(activity))
+  if (folderActivities.length === 0) return []
+  const requirements = await listPdtpActivityDocumentRequirements(folderActivities.map((activity) => activity.id), client)
+  const blockers: string[] = []
+  for (const activity of folderActivities) {
+    const own = requirements.filter((requirement) => requirement.activityId === activity.id)
+    if (own.length === 0) {
+      blockers.push(`La actividad N°${activity.n} no declara qué documentos debe contener la carpeta de requisitos legales.`)
+    } else if (own.some((requirement) => !requirement.documentTypeIsActive)) {
+      blockers.push(`La carpeta de la actividad N°${activity.n} exige un tipo documental inactivo; reactívalo o quítalo de la carpeta.`)
+    }
+  }
+  return blockers
+}
+
 /** Los motivos por los que hoy no se puede enviar el programa a revisión. */
 export async function getPdtpSubmitReviewBlockers(programId: string): Promise<string[]> {
   const activities = await db.select().from(pdtpActivities).where(eq(pdtpActivities.programId, programId))
   const coverageIssues = await assertPdtpFulfillmentCoverage(programId)
-  return [...pdtpSubmitReviewBlockers(activities), ...fulfillmentCoverageBlockers(coverageIssues)]
+  return [
+    ...pdtpSubmitReviewBlockers(activities),
+    ...await getPdtpLegalFolderBlockers(activities),
+    ...fulfillmentCoverageBlockers(coverageIssues),
+  ]
 }
 
 export type PdtpCoverageReport = {
@@ -274,6 +303,8 @@ export async function submitPdtpProgramForReview(programId: string, userId: stri
     // la compuerta 81/81, porque un programa con clasificación pendiente tiene
     // un problema más básico que su cobertura de destinos.
     if (firstBlocker) throw new Error(firstBlocker)
+    const [firstFolderBlocker] = await getPdtpLegalFolderBlockers(activities, tx)
+    if (firstFolderBlocker) throw new Error(firstFolderBlocker)
     const [firstCoverageBlocker] = fulfillmentCoverageBlockers(await assertPdtpFulfillmentCoverage(programId, tx))
     if (firstCoverageBlocker) throw new Error(firstCoverageBlocker)
 
@@ -387,6 +418,13 @@ export async function activatePdtpProgram(programId: string, userId: string) {
     // usarse mientras ese catálogo se completa.
     const [firstCoverageBlocker] = fulfillmentCoverageBlockers(await assertPdtpFulfillmentCoverage(programId, tx))
     if (firstCoverageBlocker) throw new Error(firstCoverageBlocker)
+    // La carpeta ya está firmada, pero un tipo pudo desactivarse después de
+    // enviar a revisión: activar así dejaría la N°19 imposible de acreditar.
+    const [firstFolderBlocker] = await getPdtpLegalFolderBlockers(
+      await tx.select().from(pdtpActivities).where(eq(pdtpActivities.programId, programId)),
+      tx,
+    )
+    if (firstFolderBlocker) throw new Error(firstFolderBlocker)
 
     /**
      * PDTP-003 (auditoría 2026-09-14): un programa activo sin ninguna faena
@@ -455,6 +493,9 @@ export async function activatePdtpProgram(programId: string, userId: string) {
   try {
     await materializePdtpScheduledInstances({ programId })
     await reconcilePdtpTriggerEvents({ limit: 200 })
+    // N°19: una carpeta que ya estaba completa acredita el mes en curso desde
+    // el día de la activación, sin esperar a la próxima carga ni al cron.
+    await sweepPdtpLegalFolders({ programId })
   } catch (error) {
     logger.error({ error, programId }, "[pdtp-lifecycle] No se pudieron materializar o reconciliar las instancias nuevas tras activar.")
   }

@@ -4,19 +4,16 @@ import { resolveOwnWorkSigning } from "@/lib/services/prevention-signing"
 import {
   sstDocumentAudit,
   sstDocuments,
-  sstDocumentTypes,
   sstDocumentVersions,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
-import { onDocumentVersionPublished } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
-import { resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
 import {
-  assessRiohsCompleteness,
-  RIOHS_DOCUMENT_TYPE_CODE,
-  type RiohsMetadata,
-} from "@/lib/prevention/riohs"
+  dispatchDocumentVersionCurrentEffects,
+  makeDocumentVersionCurrent,
+  type DocumentVersionCurrentEffects,
+} from "./publication"
 import {
   assertConfidentialityAllowed,
   assertScopeAccess,
@@ -243,7 +240,7 @@ export function approveDocumentVersion(args: WorkflowInput) {
 export async function publishDocumentVersion(args: WorkflowInput) {
   if (!args.versionId) throw new Error("Versión requerida.")
 
-  let accreditation: Parameters<typeof onDocumentVersionPublished>[0] | null = null
+  let effects: DocumentVersionCurrentEffects | null = null
   const result = await db.transaction(async (tx) => {
     const { doc, version } = await lockWorkflowContext(tx, args.versionId)
     authorizeWorkflowContext(args, doc)
@@ -277,138 +274,24 @@ export async function publishDocumentVersion(args: WorkflowInput) {
     if (doc.currentVersionId === version.id) {
       throw new Error("La versión ya es la publicación vigente.")
     }
-    await assertRiohsContentComplete(tx, doc)
 
-    const now = new Date().toISOString()
-    const previousVersionId = doc.currentVersionId
-    if (previousVersionId) {
-      const [previous] = await tx
-        .select()
-        .from(sstDocumentVersions)
-        .where(eq(sstDocumentVersions.id, previousVersionId))
-        .for("update")
-      if (!previous || previous.documentId !== doc.id || previous.status !== "vigente") {
-        throw new Error("La versión vigente anterior es inconsistente; requiere regularización administrativa.")
-      }
-      await tx
-        .update(sstDocumentVersions)
-        .set({ status: "reemplazado", effectiveTo: todayIso(), updatedAt: now })
-        .where(eq(sstDocumentVersions.id, previous.id))
-      await tx.insert(sstDocumentAudit).values(auditValues({
-        documentId: doc.id,
-        versionId: previous.id,
-        ctx: args.ctx,
-        action: "replace",
-        fromStatus: "vigente",
-        toStatus: "reemplazado",
-        comment: args.comment,
-        metadata: { replacedByVersionId: version.id },
-        now,
-      }))
-    }
-
-    const [published] = await tx
-      .update(sstDocumentVersions)
-      .set({
-        status: "vigente",
-        supersedesId: previousVersionId ?? version.supersedesId,
-        updatedAt: now,
-      })
-      .where(eq(sstDocumentVersions.id, version.id))
-      .returning()
-    if (!published) throw new Error("No se pudo publicar la versión.")
-
-    await tx
-      .update(sstDocuments)
-      .set({
-        status: "vigente",
-        currentVersionId: version.id,
-        checksum: version.checksum,
-        effectiveFrom: version.effectiveFrom ?? doc.effectiveFrom,
-        reviewedBy: version.reviewedBy,
-        approvedBy: version.approvedBy,
-        approvedAt: version.approvedAt,
-        updatedAt: now,
-      })
-      .where(eq(sstDocuments.id, doc.id))
-
-    await tx.insert(sstDocumentAudit).values(auditValues({
-      documentId: doc.id,
-      versionId: version.id,
+    // El paso a vigente —reemplazo de la anterior, vencimiento, contenido
+    // mínimo del RIOHS, qué acredita el tipo— es el mismo que el de una carga
+    // sin aprobación, y vive en un solo lugar (`publication.ts`).
+    const current = await makeDocumentVersionCurrent(tx, {
+      doc,
+      version,
       ctx: args.ctx,
-      action: "status_change",
-      fromStatus: "aprobado",
-      toStatus: "vigente",
       comment: args.comment,
-      metadata: { previousVersionId, ownWorkExceptionUsed: signing.usedException },
-      now,
-    }))
-    if (doc.worksiteId && doc.confidentiality === "publico_interno" && doc.dataClass === "operational") {
-      await recordOperationalActivity({
-        eventType: "document.workflow_updated",
-        module: "documentacion",
-        entityType: "sst_document",
-        entityId: doc.id,
-        entityCode: doc.internalCode,
-        worksiteId: doc.worksiteId,
-        actorUserId: args.ctx.userId,
-        payload: { fromStatus: version.status, toStatus: "vigente" },
-      }, tx)
-    }
-
-    // La actividad que acredita la declara el TIPO del documento, que es el
-    // catálogo — igual que un curso frente a una sesión. Un documento
-    // corporativo no tiene faena, y el programa se mide por faena, así que ahí
-    // no hay nada que acreditar. Se dispara después del commit.
-    if (doc.worksiteId && doc.typeId) {
-      const [type] = await tx.select({ numbers: sstDocumentTypes.pdtpActivityNumbers })
-        .from(sstDocumentTypes).where(eq(sstDocumentTypes.id, doc.typeId)).limit(1)
-      const activityNumbers = Array.isArray(type?.numbers) ? type.numbers as number[] : []
-      const accreditationTarget = await resolvePdtpAccreditationTarget({ sourceType: "documento", sourceId: doc.typeId, eventType: "publish", legacyActivityNumbers: activityNumbers }, tx)
-      if (accreditationTarget.catalogActivityIds?.length || accreditationTarget.activityNumbers?.length) {
-        accreditation = {
-          documentId: doc.id,
-          versionId: published.id,
-          worksiteId: doc.worksiteId,
-          publishedAt: now,
-          ...accreditationTarget,
-        }
-      }
-    }
-    return published
+      fromStatus: "aprobado",
+      approvalMode: "workflow",
+      auditMetadata: { ownWorkExceptionUsed: signing.usedException },
+      now: new Date().toISOString(),
+    })
+    effects = current.effects
+    return current.published
   })
 
-  if (accreditation) await onDocumentVersionPublished(accreditation)
+  if (effects) await dispatchDocumentVersionCurrentEffects(effects)
   return result
-}
-
-
-/**
- * Gate de publicación del Reglamento Interno.
- *
- * El DS 44 art. 58 fija un contenido mínimo cerrado: publicar un RIOHS al que
- * le falta un capítulo obligatorio es publicar un documento que no cumple.
- * Se valida acá, en la transacción de publicación, y no en la UI, porque es
- * donde el documento pasa a ser el vigente.
- *
- * Sólo aplica al tipo documental RIOHS; el resto de la biblioteca no se toca.
- */
-async function assertRiohsContentComplete(
-  tx: Parameters<typeof lockWorkflowContext>[0],
-  doc: { typeId: string | null; extraMetadata: unknown },
-) {
-  if (!doc.typeId) return
-  const [type] = await tx
-    .select({ code: sstDocumentTypes.code })
-    .from(sstDocumentTypes)
-    .where(eq(sstDocumentTypes.id, doc.typeId))
-  if (type?.code !== RIOHS_DOCUMENT_TYPE_CODE) return
-
-  const metadata = (doc.extraMetadata ?? {}) as RiohsMetadata
-  const completeness = assessRiohsCompleteness(metadata.riohsSections)
-  if (!completeness.complete) {
-    throw new Error(
-      `El Reglamento Interno no declara el contenido mínimo del DS 44 art. 58. Falta: ${completeness.missing.map((section) => section.title).join("; ")}.`,
-    )
-  }
 }

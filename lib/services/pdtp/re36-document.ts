@@ -170,6 +170,8 @@ export type PdtpRe36Row = {
    */
   assigneeNames: string[]
   scheduleMode: "scheduled" | "on_demand" | "triggered"
+  /** Mínimo anual de una actividad "cuando corresponda"; `null` sin mínimo. */
+  minAnnualExecutions: number | null
   /** 48 celdas: `(month-1)*4 + (week-1)`, mes 1-12, semana 1-4. */
   cells: PdtpRe36Cell[]
 }
@@ -660,6 +662,7 @@ export async function buildPdtpRe36Document(input: {
         responsibles: activity.responsibleDisplay,
         assigneeNames: assigneeNamesByActivity.get(activity.id) ?? [],
         scheduleMode: activity.scheduleMode as "scheduled" | "on_demand" | "triggered",
+        minAnnualExecutions: activity.minAnnualExecutions ?? null,
         cells,
       }
     })
@@ -926,7 +929,7 @@ export async function buildPdtpRe36Document(input: {
     changeControl,
     glossary,
     legend: {
-      onDemand: "Actividad con frecuencia: cada vez que sea necesario (a demanda). No entra al denominador de cumplimiento salvo que además tenga P planificado (actividad mixta).",
+      onDemand: "Actividad con frecuencia: cada vez que sea necesario (a demanda). No entra al denominador de cumplimiento salvo que además tenga P planificado (actividad mixta) o declare un mínimo anual (\"cuando corresponda · mínimo N al año\"): lo que falte para ese mínimo se exige al cierre del año.",
       e0: "E = 0: se reportó la semana y no se ejecutó.",
       eGte1: "E ≥ 1: se ejecutó (bandera de cumplimiento o conteo de registros, según la actividad).",
     },

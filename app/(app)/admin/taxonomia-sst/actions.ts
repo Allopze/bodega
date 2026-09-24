@@ -119,6 +119,9 @@ export async function saveDocumentTypeAction(_prev: ActionState, formData: FormD
   const defaultConfidentiality = (formData.get("defaultConfidentiality") as string | null || "publico_interno").trim()
   const validityRaw = (formData.get("defaultValidityMonths") as string | null)?.trim()
   const defaultValidityMonths = validityRaw ? Number(validityRaw) : undefined
+  // Vacío apaga la entrega a la dotación; el campo siempre viaja en el form.
+  const distributionRaw = (formData.get("distributionDueDays") as string | null)?.trim()
+  const distributionDueDays = distributionRaw ? Number(distributionRaw) : null
   const description = (formData.get("description") as string | null)?.trim() || undefined
 
   if (!categorySlug) return { ok: false, fieldErrors: { categorySlug: ["Selecciona una categoría"] } }
@@ -137,6 +140,7 @@ export async function saveDocumentTypeAction(_prev: ActionState, formData: FormD
         defaultValidityMonths,
         requiresApproval: readFormBool(formData, "requiresApproval", true),
         requiresAcknowledgment: readFormBool(formData, "requiresAcknowledgment", false),
+        distributionDueDays,
         pdtpActivityNumbers: legacyActivityNumbers(formData, "pdtpActivityNumbers", "pdtpCatalogActivityIds"),
         pdtpAcknowledgmentActivityNumbers: legacyActivityNumbers(formData, "pdtpAcknowledgmentActivityNumbers", "pdtpAcknowledgmentCatalogActivityIds"),
         isActive: readFormBool(formData, "isActive", true),

@@ -85,6 +85,14 @@ export async function createPdtpObligation(input: {
   clientRequestId?: string
   sourceMetadata?: Record<string, unknown>
   /**
+   * Vencimiento explícito, cuando el plazo lo fija el hecho de origen y no la
+   * actividad. La N°18 tiene plazo 0 para el trabajador nuevo ("al momento de
+   * la incorporación"), pero la entrega de una versión nueva del RIOHS a toda
+   * la dotación tiene el suyo (el tipo documental declara 30 días). Sólo lo
+   * admiten las obligaciones integradas y nunca antes del evento.
+   */
+  dueAt?: string
+  /**
    * Puede ser null: los barridos de cron no tienen actor humano y la columna
    * `created_by_user_id` es nullable. No se inventa un usuario de sistema —
    * es FK real a `users` y un id falso rompería la constraint.
@@ -135,10 +143,19 @@ export async function createPdtpObligation(input: {
     if (!input.sourceOccurredAt) throw new Error("Una obligación integrada exige la fecha y hora del evento de origen.")
     idempotencyKey = pdtpObligationIdempotencyKey({ activityId: activity.id, worksiteId: input.worksiteId, sourceType, sourceId })
   } else {
+    if (input.dueAt) throw new Error("Una obligación manual toma el plazo de su actividad.")
     if ((manualReason?.length ?? 0) < 10) throw new Error("La creación manual exige un motivo de al menos 10 caracteres.")
     const requestId = input.clientRequestId?.trim()
     if (!requestId || requestId.length < 8) throw new Error("La creación manual exige un identificador de solicitud estable.")
     idempotencyKey = `pdtp-obligation:${activity.id}:${input.worksiteId}:manual:${requestId}`
+  }
+
+  let explicitDueAt: string | null = null
+  if (input.dueAt) {
+    const due = new Date(input.dueAt)
+    if (Number.isNaN(due.getTime())) throw new Error("El vencimiento de la obligación no es una fecha válida.")
+    if (due.getTime() < occurredAt.getTime()) throw new Error("El vencimiento de la obligación no puede ser anterior al evento.")
+    explicitDueAt = due.toISOString()
   }
 
   const [existing] = await db.select().from(pdtpObligations).where(eq(pdtpObligations.idempotencyKey, idempotencyKey)).limit(1)
@@ -161,7 +178,7 @@ export async function createPdtpObligation(input: {
       sourceType,
       sourceId,
       sourceOccurredAt: occurredAt.toISOString(),
-      dueAt: dueDate(occurredAt, activity.dueDays, activity.dueHours),
+      dueAt: explicitDueAt ?? dueDate(occurredAt, activity.dueDays, activity.dueHours),
       plannedQuantity,
       completedQuantity: 0,
       idempotencyKey,

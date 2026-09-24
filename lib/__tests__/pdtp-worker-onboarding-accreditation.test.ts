@@ -168,16 +168,14 @@ beforeEach(async () => {
 })
 
 describe("El acta de trabajador nuevo acredita al cerrarse", () => {
-  it("cierra las seis actividades cuando todos los ítems quedan conformes", async () => {
+  it("cierra las cinco actividades cuando todos los ítems quedan conformes", async () => {
     await openEntryObligations()
     const answered = await answerAll()
     expect(answered).toBeGreaterThan(0)
 
     await closeEvaluation(EVAL_ID, { evaluationId: EVAL_ID }, "all")
 
-    // N°19 cierra junto con las otras: la carpeta del trabajador queda al día
-    // con los mismos tres componentes que ya cierran la N°15, N°18 y N°23.
-    for (const n of [18, 19, 23, 63]) {
+    for (const n of [18, 23, 63]) {
       const rows = await executionsFor(n)
       expect(rows, `N°${n}`).toHaveLength(1)
       expect(rows[0], `N°${n}`).toMatchObject({
@@ -206,6 +204,10 @@ describe("El acta de trabajador nuevo acredita al cerrarse", () => {
     const obligations = await inMemoryDb.select().from(schema.pdtpObligations)
     expect(obligations).toHaveLength(2)
     expect(obligations.every((o) => o.status === "reported")).toBe(true)
+
+    // La N°19 ya no sale del acta (2026-09-24): la carpeta de requisitos
+    // legales se acredita en Documentación (`legal-folder-connector.ts`).
+    expect(await executionsFor(19)).toHaveLength(0)
   })
 
   it("no acredita la N°17: el RE-28 no es la declaración de salud del acta", async () => {
@@ -228,7 +230,7 @@ describe("El acta de trabajador nuevo acredita al cerrarse", () => {
     expect(await executionsFor(18)).toHaveLength(0)
     // La inducción IRL sí se hizo, así que la N°15 no se ve arrastrada.
     expect(await executionsFor(15)).toHaveLength(1)
-    // La carpeta no queda al día si falta uno de sus tres componentes.
+    // La N°19 nunca sale del acta: la acredita Documentación.
     expect(await executionsFor(19)).toHaveLength(0)
   })
 
@@ -263,7 +265,7 @@ describe("El acta de trabajador nuevo acredita al cerrarse", () => {
     expect(await inMemoryDb.select().from(schema.pdtpObligations)).toHaveLength(0)
     expect(await executionsFor(15)).toHaveLength(0)
     expect(await executionsFor(52)).toHaveLength(0)
-    for (const n of [18, 19, 23, 63]) {
+    for (const n of [18, 23, 63]) {
       expect(await executionsFor(n), `N°${n}`).toHaveLength(1)
     }
   })
@@ -292,8 +294,8 @@ describe("onboardingActivityNumbers — el mapa, sin base de datos", () => {
         { seccionId: "epp", itemId: "casco_seguridad", estado: "entregado" },
       ],
     })
-    // N°19 cierra junto con las tres: es el mismo hecho archivado.
-    expect(numbers).toEqual([15, 18, 19, 23, 52, 63])
+    // Sin la N°19: la carpeta de requisitos legales la acredita Documentación.
+    expect(numbers).toEqual([15, 18, 23, 52, 63])
   })
 
   it("una habilitación con restricciones no es la inducción completa", async () => {
@@ -302,22 +304,23 @@ describe("onboardingActivityNumbers — el mapa, sin base de datos", () => {
       resultadoFinal: "habilitado_restricciones",
       responses: [{ seccionId: "induccion_capacitacion", itemId: "riohs", estado: "cumple" }],
     })
-    // Sólo el RIOHS: faltan la inducción y el EPP, así que la carpeta (N°19)
-    // tampoco queda al día.
+    // Sólo el RIOHS: faltan la inducción y el EPP.
     expect(numbers).toEqual([18])
   })
 
-  it("la carpeta (N°19) no cierra si falta uno de sus tres componentes", async () => {
+  it("el acta completa nunca acredita la carpeta (N°19), que ahora es documental", async () => {
     const { onboardingActivityNumbers } = await import("@/lib/services/pdtp-adapters/worker-onboarding-connector")
     const numbers = onboardingActivityNumbers({
       resultadoFinal: null,
       responses: [
         { seccionId: "induccion_capacitacion", itemId: "induccion_irl", estado: "cumple" },
         { seccionId: "induccion_capacitacion", itemId: "riohs", estado: "cumple" },
-        // Sin EPP entregado.
+        { seccionId: "epp", itemId: "casco_seguridad", estado: "entregado" },
       ],
     })
-    expect(numbers).toEqual([15, 18])
+    // Las tres que antes "archivaban" la carpeta del trabajador cierran, y la
+    // N°19 no aparece.
+    expect(numbers).toEqual([15, 18, 23])
   })
 
   it("los ítems de EPP no aplicables al cargo no cuentan en contra", async () => {

@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, ne } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
+  pdtpActivityWorksiteExclusions,
   pdtpActivityWorksiteParams,
   pdtpExecutions,
   pdtpObligations,
@@ -16,6 +17,8 @@ import { capaEstado } from "./capa-view"
 import { loadApprovedExecutionsForWorksites, loadProgramScheduleAndExecutions, loadWorksiteAddedAt } from "./helpers"
 import { isFlowSubjectSource, resolvePdtpSubjectRoster } from "./subject-registry"
 import { effectiveActivationFor, filterPdtpRowsFromActivation } from "./period"
+import { PDTP_ANNUAL_MINIMUM_MONTH, pdtpAnnualMinimumFloor } from "./annual-minimum"
+import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 
 export type PdtpComplianceMonth = {
   month: number
@@ -116,17 +119,30 @@ function chileMonthOf(iso: string): number {
  * desglose por eje pasa el alcance completo, con la misma consulta y la misma
  * regla. Sin faenas no hay a qué obligaciones mirar y devuelve vacío, mismo
  * límite que el padrón derivado de `coverage`.
+ *
+ * `coverageActivityIds`: actividades de cobertura cuyas obligaciones pueden
+ * sumar como caso propio. De ellas sólo cuentan las que su conector declara
+ * así (`source_metadata_json.countsAsCoverageCase`): la entrega de un RIOHS
+ * nuevo a la dotación (N°18) sí es un caso; una brecha de capacitación abierta
+ * sobre la misma actividad no, porque su sujeto ya está en el padrón y contarla
+ * sería exigirlo dos veces.
  */
-async function loadClosedOnTimeByActivityMonth(activityIds: string[], worksiteIds: string[]) {
+export const PDTP_COVERAGE_CASE_METADATA_KEY = "countsAsCoverageCase"
+
+async function loadClosedOnTimeByActivityMonth(activityIds: string[], worksiteIds: string[], coverageActivityIds: ReadonlySet<string> = new Set()) {
   const planned = new Map<string, number>()
   const executed = new Map<string, number>()
-  if (worksiteIds.length === 0 || activityIds.length === 0) return { planned, executed }
+  /** Cierres `completed` por actividad en el año, a tiempo o no y tengan o no
+   * `dueAt`: es lo "realizado" contra lo que se acredita el piso anual. */
+  const completedByActivity = new Map<string, number>()
+  if (worksiteIds.length === 0 || activityIds.length === 0) return { planned, executed, completedByActivity }
 
   const rows = await db.select({
     activityId: pdtpObligations.activityId,
     status: pdtpObligations.status,
     dueAt: pdtpObligations.dueAt,
     reportedAt: pdtpObligations.reportedAt,
+    metadata: pdtpObligations.sourceMetadataJson,
   }).from(pdtpObligations)
     .where(and(
       inArray(pdtpObligations.activityId, activityIds),
@@ -135,13 +151,16 @@ async function loadClosedOnTimeByActivityMonth(activityIds: string[], worksiteId
     ))
 
   for (const row of rows) {
+    if (coverageActivityIds.has(row.activityId)
+      && (row.metadata as Record<string, unknown> | null)?.[PDTP_COVERAGE_CASE_METADATA_KEY] !== true) continue
+    if (row.status === "completed") completedByActivity.set(row.activityId, (completedByActivity.get(row.activityId) ?? 0) + 1)
     if (!row.dueAt) continue // sin plazo no hay mes al que asignarla.
     const key = `${row.activityId}:${chileMonthOf(row.dueAt)}`
     planned.set(key, (planned.get(key) ?? 0) + 1)
     const onTime = row.status === "completed" && (!!row.reportedAt && row.reportedAt <= row.dueAt)
     if (onTime) executed.set(key, (executed.get(key) ?? 0) + 1)
   }
-  return { planned, executed }
+  return { planned, executed, completedByActivity }
 }
 
 /**
@@ -224,6 +243,9 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     subjectSource: pdtpActivities.subjectSource,
     subjectCapabilityCodes: pdtpActivities.subjectCapabilityCodes,
     scheduleDefinition: pdtpActivities.scheduleDefinition,
+    minAnnualExecutions: pdtpActivities.minAnnualExecutions,
+    status: pdtpActivities.status,
+    retiredEffectiveFrom: pdtpActivities.retiredEffectiveFrom,
   }).from(pdtpActivities)
     .where(eq(pdtpActivities.programId, program.id))
 
@@ -417,8 +439,30 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     executedByActivityMonth.set(key, (executedByActivityMonth.get(key) ?? 0) + row.plannedQuantity)
   }
 
-  const closedOnTimeActivityIds = activityRows.filter((a) => a.indicatorMode === "closed_on_time").map((a) => a.id)
-  const { planned: closedOnTimePlanned, executed: closedOnTimeExecuted } = await loadClosedOnTimeByActivityMonth(closedOnTimeActivityIds, worksiteId ? [worksiteId] : [])
+  // Las de cobertura también pueden tener casos: la N°18 se mide sobre los
+  // trabajadores nuevos del mes, y además una versión nueva del RIOHS abre
+  // por faena la obligación de entregarla a toda la dotación. Esa entrega es
+  // un caso propio —a tiempo o no— y se suma con la regla de `closed_on_time`.
+  // La ejecución que la cierra no infla el padrón: `loadProgramScheduleAndExecutions`
+  // ya descarta las ejecuciones con `obligationId`.
+  const closedOnTimeActivityIds = activityRows
+    .filter((a) => a.indicatorMode === "closed_on_time" || a.indicatorMode === "coverage")
+    .map((a) => a.id)
+  const coverageActivityIds = new Set(activityRows.filter((a) => a.indicatorMode === "coverage").map((a) => a.id))
+  const {
+    planned: closedOnTimePlanned,
+    executed: closedOnTimeExecuted,
+    completedByActivity: closedOnTimeCompleted,
+  } = await loadClosedOnTimeByActivityMonth(closedOnTimeActivityIds, worksiteId ? [worksiteId] : [], coverageActivityIds)
+
+  // Piso anual (`minAnnualExecutions`): cuánto puso cada actividad en el
+  // denominador del año y cuánto realizó, contara o no. Se acumula en el bucle
+  // mensual —que es donde se decide qué cuenta— y se aplica al cierre.
+  const annualMeasuredByActivity = new Map<string, number>()
+  const annualPerformedByActivity = new Map<string, number>()
+  const bumpAnnual = (map: Map<string, number>, activityId: string, amount: number) => {
+    if (amount > 0) map.set(activityId, (map.get(activityId) ?? 0) + amount)
+  }
 
   const monthly: PdtpComplianceMonth[] = Array.from({ length: 12 }, (_, i) => {
     const month = i + 1
@@ -446,6 +490,14 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
         // denominador son los casos que ocurrieron, y ocurren cuando ocurren — la
         // N°18 no tiene calendario y aun así debe contar el mes que entró gente.
         const esFlujo = isFlowSubjectSource(sourceByActivity.get(activityId) ?? null)
+        bumpAnnual(annualPerformedByActivity, activityId, rawExecuted)
+        const obligationKey = `${activityId}:${month}`
+        const obligationCases = closedOnTimePlanned.get(obligationKey) ?? 0
+        if (obligationCases > 0) {
+          coveragePlanned += obligationCases
+          coverageExecuted += closedOnTimeExecuted.get(obligationKey) ?? 0
+          bumpAnnual(annualMeasuredByActivity, activityId, obligationCases)
+        }
         if (p === 0 && !(esFlujo && derived != null)) continue
         // Override manual → padrón derivado → cantidad planificada. Sin ninguno,
         // se mide por lo planificado y no contra una población inventada.
@@ -458,6 +510,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
         const threshold = targetPct != null ? Math.ceil((target * targetPct) / 100) : target
         coveragePlanned += target
         coverageExecuted += threshold > 0 && rawExecuted >= threshold ? target : 0
+        bumpAnnual(annualMeasuredByActivity, activityId, target)
       } else if (modeByActivity.get(activityId) === "closed_on_time") {
         // A demanda: no hay calendario contra el cual medir, así que `p` es
         // siempre 0 (no confundir con "sin casos": es que esta actividad
@@ -470,6 +523,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
         if (casesDue === 0) continue // sin casos este mes: no es un 0%, es nada que medir.
         coveragePlanned += casesDue
         coverageExecuted += closedOnTimeExecuted.get(key) ?? 0
+        bumpAnnual(annualMeasuredByActivity, activityId, casesDue)
       } else {
         // Resto: se agrupa por total del mes (respuesta 2.4 = "por mes"), sin
         // condicionar el ejecutado a que la misma actividad tuviera planificado
@@ -488,6 +542,41 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
       declaredNotPerformed: declaredNotPerformedByMonth[i] ?? 0,
     }
   })
+
+  // Piso anual de las actividades "cuando corresponda". Sólo por faena: sin
+  // faena no hay obligaciones ni padrón que medir (mismo límite que
+  // `closed_on_time` y `coverage`), y el consolidado suma las faenas. Lo que
+  // falte para el mínimo vence al cierre del año, así que entra a diciembre
+  // —igual que una celda planificada futura ya cuenta en el denominador anual—
+  // y con la regla todo-o-nada de los modos por caso: no compensa ni es
+  // compensado por otra actividad.
+  if (worksiteId) {
+    const withMinimum = activityRows.filter((a) => (a.minAnnualExecutions ?? 0) > 0
+      && isPdtpActivityEffectiveForPeriod(a, year, PDTP_ANNUAL_MINIMUM_MONTH, 4))
+    const excludedIds = withMinimum.length === 0
+      ? new Set<string>()
+      : new Set((await db.select({ activityId: pdtpActivityWorksiteExclusions.activityId })
+        .from(pdtpActivityWorksiteExclusions)
+        .where(and(
+          inArray(pdtpActivityWorksiteExclusions.activityId, withMinimum.map((a) => a.id)),
+          eq(pdtpActivityWorksiteExclusions.worksiteId, worksiteId),
+        ))).map((row) => row.activityId))
+    const closing = monthly[PDTP_ANNUAL_MINIMUM_MONTH - 1]!
+    for (const activity of withMinimum) {
+      if (excludedIds.has(activity.id)) continue
+      const performed = activity.indicatorMode === "closed_on_time"
+        ? closedOnTimeCompleted.get(activity.id) ?? 0
+        : (annualPerformedByActivity.get(activity.id) ?? 0) + (closedOnTimeCompleted.get(activity.id) ?? 0)
+      const floor = pdtpAnnualMinimumFloor({
+        minimum: activity.minAnnualExecutions,
+        measured: annualMeasuredByActivity.get(activity.id) ?? 0,
+        performed,
+      })
+      closing.planned += floor.planned
+      closing.executed += floor.executed
+    }
+    closing.percent = closing.planned > 0 ? Math.round((closing.executed / closing.planned) * 100) / 100 : null
+  }
 
   const quarterly = Array.from({ length: 4 }, (_, q) => {
     const months = monthly.slice(q * 3, q * 3 + 3)
@@ -645,8 +734,14 @@ export async function getPdtpComplianceByCategoryForScope(
     id: pdtpActivities.id,
     program: pdtpActivities.program,
     indicatorMode: pdtpActivities.indicatorMode,
+    minAnnualExecutions: pdtpActivities.minAnnualExecutions,
+    status: pdtpActivities.status,
+    retiredEffectiveFrom: pdtpActivities.retiredEffectiveFrom,
   }).from(pdtpActivities).where(eq(pdtpActivities.programId, program.id))
 
+  // Las de cobertura quedan fuera del eje completas, incluidos sus casos por
+  // obligación (la entrega de un RIOHS nuevo, N°18): su unidad es el padrón y
+  // mezclarla con instancias de actividad es lo que este desglose evita.
   const scorable = activityRows.filter((row) => row.indicatorMode !== "coverage")
   if (scorable.length === 0) return []
   const categoryByActivity = new Map(scorable.map((row) => [row.id, row.program || "General"]))
@@ -691,6 +786,42 @@ export async function getPdtpComplianceByCategoryForScope(
   }
   for (const [key, onTime] of closedOnTime.executed) {
     bump(key.slice(0, key.lastIndexOf(":")), "executed", onTime)
+  }
+
+  // Piso anual, con la misma regla que el indicador mensual y por faena: el
+  // mínimo se exige en cada una, así que no puede calcularse sobre la suma.
+  // Sólo `closed_on_time` llega acá — las de cobertura están fuera del eje.
+  const withMinimum = scorable.filter((row) => row.indicatorMode === "closed_on_time"
+    && (row.minAnnualExecutions ?? 0) > 0
+    && isPdtpActivityEffectiveForPeriod(row, program.year, PDTP_ANNUAL_MINIMUM_MONTH, 4))
+  if (withMinimum.length > 0) {
+    const minimumIds = withMinimum.map((row) => row.id)
+    const exclusions = await db.select({
+      activityId: pdtpActivityWorksiteExclusions.activityId,
+      worksiteId: pdtpActivityWorksiteExclusions.worksiteId,
+    }).from(pdtpActivityWorksiteExclusions)
+      .where(and(
+        inArray(pdtpActivityWorksiteExclusions.activityId, minimumIds),
+        inArray(pdtpActivityWorksiteExclusions.worksiteId, worksiteIds),
+      ))
+    const excluded = new Set(exclusions.map((row) => `${row.activityId}:${row.worksiteId}`))
+    for (const worksiteId of worksiteIds) {
+      const perWorksite = await loadClosedOnTimeByActivityMonth(minimumIds, [worksiteId])
+      for (const activity of withMinimum) {
+        if (excluded.has(`${activity.id}:${worksiteId}`)) continue
+        let measured = 0
+        for (const [key, cases] of perWorksite.planned) {
+          if (key.slice(0, key.lastIndexOf(":")) === activity.id) measured += cases
+        }
+        const floor = pdtpAnnualMinimumFloor({
+          minimum: activity.minAnnualExecutions,
+          measured,
+          performed: perWorksite.completedByActivity.get(activity.id) ?? 0,
+        })
+        bump(activity.id, "planned", floor.planned)
+        bump(activity.id, "executed", floor.executed)
+      }
+    }
   }
 
   return [...totals.entries()]

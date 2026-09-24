@@ -8,6 +8,7 @@ import {
   assignDocumentVersionToWorkforce,
   acknowledgeDocumentVersion,
   exemptDocumentDistributionTarget,
+  exemptDocumentDistributionTargets,
 } from "@/lib/services/prevention-documents-library"
 import { clientCtx, fail, REVALIDATE } from "./shared"
 
@@ -50,6 +51,8 @@ export async function assignSstDocumentToWorkforceAction(input: {
   versionId: string
   assignmentReason: string
   dueAt?: string | null
+  /** Documento corporativo: acota la asignación a una faena. */
+  worksiteId?: string | null
 }) {
   const guard = await guardPermission("prevention:docs:distribute")
   if (guard.error) return guard.error
@@ -58,6 +61,7 @@ export async function assignSstDocumentToWorkforceAction(input: {
       versionId: input.versionId,
       assignmentReason: input.assignmentReason,
       dueAt: input.dueAt,
+      worksiteId: input.worksiteId ?? null,
       ctx: await clientCtx(guard.session),
       scope: resolveWorksiteScope(guard.session),
       permissions: guard.session.user.permissions,
@@ -115,6 +119,42 @@ export async function exemptSstDocumentRecipientAction(input: {
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${input.documentId}`)
     return { ok: true, message: "Exención registrada con motivo y actor." }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+/**
+ * Exime en lote a los destinatarios pendientes. Es el cierre operable de la
+ * entrega de un RIOHS a la dotación (N°18): el acuse es propio y quien no tiene
+ * cuenta se exime con el motivo de cómo recibió el reglamento.
+ */
+export async function exemptSstDocumentRecipientsAction(input: {
+  documentId: string
+  versionId: string
+  targetIds: string[]
+  reason: string
+}) {
+  const guard = await guardPermission("prevention:docs:distribute")
+  if (guard.error) return guard.error
+  try {
+    const result = await exemptDocumentDistributionTargets({
+      versionId: input.versionId,
+      targetIds: input.targetIds,
+      reason: input.reason,
+      ctx: await clientCtx(guard.session),
+      scope: resolveWorksiteScope(guard.session),
+      permissions: guard.session.user.permissions,
+    })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${input.documentId}`)
+    const closed = result.rolloutsReported > 0
+      ? ` La entrega quedó completa en ${result.rolloutsReported} faena(s) y se reportó al programa preventivo.`
+      : ""
+    return {
+      ok: true,
+      message: `${result.exempted} destinatario(s) eximido(s)${result.skipped ? `; ${result.skipped} ya no estaban pendientes` : ""}.${closed}`,
+    }
   } catch (error) {
     return fail(error)
   }

@@ -43,6 +43,8 @@ export interface TypeRow {
   defaultValidityMonths: number | null
   requiresApproval: boolean
   requiresAcknowledgment: boolean
+  /** Días para entregar cada versión vigente a toda la dotación (RIOHS: N°18). */
+  distributionDueDays?: number | null
   /** Actividades del PDTP que acredita publicar una versión de este tipo. */
   pdtpActivityNumbers: number[] | null
   /** Actividades que acredita cada acuse de recibo. */

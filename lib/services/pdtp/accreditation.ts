@@ -88,6 +88,12 @@ export type PdtpAccreditationSourceType =
    * acreditan nada por esta vía — el conector las filtra antes de llegar acá.
    */
   | "engagement"
+  /**
+   * Carpeta de requisitos legales (N°19): la faena tuvo vigentes en
+   * Documentación todos los documentos que la actividad declara. Una
+   * acreditación por faena y mes (`carpeta:<actividad>:<faena>:<AAAA-MM>`).
+   */
+  | "carpeta_legal"
 
 export type AccreditationResult = {
   /** Programa que el motor resolvió por faena y fecha efectiva. Nunca se toma

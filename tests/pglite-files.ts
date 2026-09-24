@@ -73,6 +73,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/operational-work-queue-pdtp-activity-source.test.ts",
   "lib/__tests__/pdtp-accreditation.test.ts",
   "lib/__tests__/pdtp-program-acknowledgments.test.ts",
+  "lib/__tests__/pdtp-annual-minimum.test.ts",
+  "lib/__tests__/pdtp-document-accreditation.test.ts",
   "lib/__tests__/pdtp-catalog-activities.test.ts",
   "lib/__tests__/pdtp-accreditation-bindings.test.ts",
   "lib/__tests__/prevention-training-occurrences-migration.test.ts",

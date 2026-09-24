@@ -60,6 +60,9 @@ export function DocumentTableRow({
             <FileIcon size={18} weight="duotone" style={{ color: fileMeta.color }} />
             {d.title}
           </button>
+          {canManage && d.typeId === null && (
+            <span className="text-xs text-[var(--color-text-muted)]">Sin clasificar: ábrelo para declarar su tipo y faena.</span>
+          )}
           {d.fileName && d.fileName !== d.title && (
             <span className="text-xs text-(--color-text-subtle)">{d.fileName}</span>
           )}
