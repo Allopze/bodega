@@ -17,6 +17,7 @@ import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
 import { getTraceableDeliveryBalance } from "@/lib/services/delivery-eligibility"
 import { deliverItemTx } from "@/lib/services/item-state"
+import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/enqueue"
 import { onEppDeliveryCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { pdtpCatalogActivityIdForLegacyNumber } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 import { applyMovementTx } from "@/lib/services/stock"
@@ -459,6 +460,19 @@ export async function registerWorkerStockDelivery(
           : {}),
       },
     }, tx)
+
+    // El comprobante de una entrega de EPP queda en Cloudreve en el momento
+    // del hecho. Una entrega sin EPP no es un registro de Prevención.
+    if (deliveredEpp) {
+      await enqueueGeneratedDocumentTx(tx, {
+        kind: "entrega",
+        entityId: deliveryId,
+        milestone: "registrada",
+        worksiteId: targetWorksite.id,
+        occurredAt: now,
+        actorUserId: input.deliveredBy,
+      })
+    }
   })
 
   // N°62 del PDTP. Va fuera de la transacción y no propaga: la entrega ya está

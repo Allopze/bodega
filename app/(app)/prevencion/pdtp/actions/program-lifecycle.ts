@@ -25,6 +25,7 @@ import {
   pdtpApprovalDecisionSchema,
   pdtpProgramLifecycleReasonSchema,
 } from "@/lib/validation/prevention"
+import { scheduleGeneratedDocumentDrain } from "@/lib/services/generated-documents/schedule"
 
 const REVALIDATE = "/prevencion/pdtp"
 
@@ -52,6 +53,8 @@ async function activatePdtpIfAllStepsApproved(programId: string, userId: string)
     return
   }
   await activatePdtpProgram(programId, userId)
+  // Las planillas RE-36 del programa vigente se arman y suben después de responder.
+  await scheduleGeneratedDocumentDrain(userId)
   // Al activar hay que retomar lo que quedó en el libro mientras el programa
   // estaba en borrador — la N°1 entre otros: se acredita al firmar el paso
   // legal, con el programa todavía en revisión, así que su evento queda en
@@ -142,6 +145,7 @@ export async function activatePdtpProgramAction(programId: string): Promise<Acti
   const session = guard.session
   try {
     await activatePdtpProgram(programId, session.user.id)
+    await scheduleGeneratedDocumentDrain(session.user.id)
     // Ver el comentario en `activatePdtpIfAllStepsApproved`: mismo motivo,
     // mismo candado propio. El programa ya quedó `active`, así que un fallo
     // de reconciliación no debe reportarse como fallo de activación.

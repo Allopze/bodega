@@ -18,9 +18,22 @@ import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { eq } from "drizzle-orm"
-import { afterAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
+
+// Un Cloudreve en memoria para el archivado del RE-36 congelado (al final).
+const fakeCloudreve = vi.hoisted(() => ({ files: new Map<string, Buffer>() }))
+vi.mock("@/lib/services/cloudreve/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/cloudreve/client")>()),
+  ensureCloudreveCollections: async () => undefined,
+  putCloudreveKey: async (key: string, buffer: Buffer) => { fakeCloudreve.files.set(key, buffer) },
+  statCloudreveKey: async (key: string) => (fakeCloudreve.files.has(key) ? { size: fakeCloudreve.files.get(key)!.length } : null),
+}))
+vi.mock("@/lib/services/cloudreve/settings", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/cloudreve/settings")>()),
+  readCloudreveConfig: async () => ({ baseUrl: "https://cloudreve.test", username: "u", password: "p", sstPath: "storage/sst-documents", hasCredentials: true }),
+}))
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -490,3 +503,49 @@ describe("listPdtpPeriodClosures", () => {
     expect(scoped[0]!.worksiteId).toBe("ws-1")
   })
 })
+
+describe("archivado del RE-36 congelado en Cloudreve", () => {
+  it("cada versión del cierre es su propia copia; la reemplazada no se imprime con su nombre", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs")
+    const { tmpdir } = await import("node:os")
+    const storage = mkdtempSync(path.join(tmpdir(), "pdtp-closure-archive-"))
+    const previous = { storage: process.env.STORAGE_PATH, flag: process.env.GENERATED_DOCS_ARCHIVE_ENABLED }
+    process.env.STORAGE_PATH = storage
+    process.env.GENERATED_DOCS_ARCHIVE_ENABLED = "true"
+    fakeCloudreve.files.clear()
+    try {
+      const { closePdtpPeriod, reopenPdtpPeriod } = await import("@/lib/services/pdtp/period-closures")
+      const { drainGeneratedDocuments } = await import("@/lib/services/generated-documents/drain")
+      await inMemoryDb.delete(schema.generatedDocumentArchives)
+      await inMemoryDb.insert(schema.systemSettings).values({ key: "storage.generated_docs.enabled", value: "true" })
+        .onConflictDoUpdate({ target: schema.systemSettings.key, set: { value: "true" } })
+      const { program } = await createActiveProgram()
+
+      const first = await closePdtpPeriod({ programId: program.id, worksiteId: "ws-1", year: YEAR, month: MONTH, reason: REASON }, "user-1", "all")
+      await reopenPdtpPeriod({ closureId: first.id, reason: "Faltaba cargar la evidencia de la charla dictada." }, "user-1", "all")
+      await closePdtpPeriod({ programId: program.id, worksiteId: "ws-1", year: YEAR, month: MONTH, reason: REASON }, "user-1", "all")
+
+      const queued = await inMemoryDb.select().from(schema.generatedDocumentArchives)
+      expect(queued.map((row) => [row.kind, row.milestone, row.revision, row.documentYear]).sort()).toEqual([
+        ["pdtp_cierre", "cierre", 1, YEAR],
+        ["pdtp_cierre", "cierre", 2, YEAR],
+      ])
+
+      const summary = await drainGeneratedDocuments()
+      expect(summary).toMatchObject({ processed: 2, uploaded: 1, superseded: 1 })
+      const key = `Documentos generados/Faena 1/RE-36-PDTP-${YEAR}-01-F1-cierre-v2.xlsx`
+      expect([...fakeCloudreve.files.keys()]).toEqual([key])
+      // Un .xlsx es un ZIP: el libro se armó de verdad desde la foto.
+      expect(fakeCloudreve.files.get(key)!.subarray(0, 2).toString("latin1")).toBe("PK")
+    } finally {
+      await inMemoryDb.delete(schema.systemSettings)
+      // Asignar `undefined` a process.env deja el texto "undefined": se borra.
+      if (previous.storage === undefined) delete process.env.STORAGE_PATH
+      else process.env.STORAGE_PATH = previous.storage
+      if (previous.flag === undefined) delete process.env.GENERATED_DOCS_ARCHIVE_ENABLED
+      else process.env.GENERATED_DOCS_ARCHIVE_ENABLED = previous.flag
+      rmSync(storage, { recursive: true, force: true })
+    }
+  })
+})
+

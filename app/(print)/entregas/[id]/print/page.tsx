@@ -7,7 +7,7 @@ import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
-import { formatDate, formatQty } from "@/lib/utils"
+import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
 import { MobileDocumentSummary } from "@/components/print/mobile-document-summary"
 import { DELIVERY_PRINT_STYLES } from "./delivery-print-styles"
 import { PrintTrigger } from "./print-trigger"
@@ -124,6 +124,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
               { label: "Fecha", value: formatDate(delivery.deliveredAt) },
               { label: "Entregado por", value: delivery.deliveredBy?.name ?? delivery.deliveredBy?.email ?? "Sin registro" },
               { label: "Tipo", value: delivery.destinationType === "faena" ? "Entrega a faena" : "Entrega a trabajador" },
+              ...(delivery.voidedAt ? [{ label: "Estado", value: "Anulada" }] : []),
             ],
           },
           { title: "Productos entregados", fields: deliveryItems },
@@ -139,7 +140,8 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
         ]}
       />
 
-      <main className="delivery-sheet" aria-label={`Comprobante de entrega ${delivery.code}`}>
+      {/* `data-print-ready`: el render a PDF exige esta marca (lib/pdf/print-specs.ts). */}
+      <main className="delivery-sheet" data-print-ready="" aria-label={`Comprobante de entrega ${delivery.code}`}>
         <div className="header">
           <div>
             <h1>Comprobante de Entrega</h1>
@@ -149,6 +151,15 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
             <p style={{ fontSize: 10, color: "#6b7280" }}>Emitido: {formatDate(delivery.deliveredAt)}</p>
           </div>
         </div>
+
+        {/* Una entrega anulada seguía imprimiéndose igual que una vigente: el
+            comprobante no decía que el stock se había repuesto. */}
+        {delivery.voidedAt && (
+          <div className="voided-banner" role="note">
+            <strong>Entrega anulada.</strong> {delivery.voidReason}
+            {` · ${formatDateTime(delivery.voidedAt)}`}
+          </div>
+        )}
 
         <div className="section">
           <h2>Datos generales</h2>

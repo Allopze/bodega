@@ -145,6 +145,15 @@ fi
 # `isProviderEnabled()`: apagado, la ficha decía "Inactivo" y el escenario que
 # distingue "falta configurar" de "está caído" no tenía cómo ocurrir. Sin
 # `BILLING_CHIPAX_APP_ID`/`SECRET_KEY` no hay ninguna llamada real al proveedor.
+# Documentos generados → Cloudreve: la llave de entorno y una cuenta WebDAV que
+# apunta al servidor falso de `e2e/fixtures/fake-webdav.ts` (127.0.0.1:3198).
+# La base E2E no guarda credenciales de Cloudreve, así que estas del entorno son
+# las únicas: ninguna prueba puede escribir en el drive real. Mientras
+# Administración no encienda el archivado no se encola nada.
+GENERATED_DOCS_ARCHIVE_ENABLED="true" \
+CLOUDREVE_BASE_URL="http://127.0.0.1:3198" \
+CLOUDREVE_USERNAME="e2e-webdav" \
+CLOUDREVE_PASSWORD="e2e-webdav" \
 STORAGE_PATH="$ROOT/storage" \
 DATABASE_URL="$DB_URL" \
 AUTH_SECRET="$AUTH_SECRET_VALUE" \

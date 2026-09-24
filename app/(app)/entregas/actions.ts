@@ -9,6 +9,7 @@ import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { registerWorkerStockDelivery, type DeliveryAttachmentInput } from "@/lib/services/deliveries"
 import { voidWorkerStockDelivery } from "@/lib/services/deliveries-void"
+import { scheduleGeneratedDocumentDrain } from "@/lib/services/generated-documents/schedule"
 import { workerStockDeliverySchema, type ActionState } from "@/lib/validation/operations"
 
 import { createDeliveryAttachmentPath, resolveDeliveriesDir, resolveStorageFile } from "@/lib/storage/config"
@@ -96,6 +97,8 @@ export async function registerWorkerDeliveryAction(
     // el alcance evita vaciar los badges de las demás faenas (los usuarios con
     // visión global se invalidan igual, por su propia etiqueta).
     revalidateOperationalViews(["/entregas", "/bodega", "/trazabilidad", "/solicitudes"], { worksiteId: sourceWorksiteId })
+    // El comprobante se imprime con esta sesión después de responder.
+    await scheduleGeneratedDocumentDrain(session.user.id)
     const registered = `Entrega registrada: ${deliveryItems.length} ${deliveryItems.length === 1 ? "producto" : "productos"}`
     return {
       ok: true,
@@ -197,6 +200,7 @@ export async function voidDeliveryAction(
     // La anulación no tiene la faena a mano (llega sólo el id de la entrega):
     // sin alcance declarado se invalida a todos, que es el default seguro.
     revalidateOperationalViews(["/entregas", "/bodega", "/trazabilidad", "/solicitudes"])
+    await scheduleGeneratedDocumentDrain(session.user.id)
     return { ok: true, message: "Entrega anulada y stock repuesto" }
   } catch (e) {
     logger.error("[voidDeliveryAction]", e)

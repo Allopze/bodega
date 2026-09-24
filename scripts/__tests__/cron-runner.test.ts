@@ -85,6 +85,18 @@ describe("cron runner", () => {
     expect(partial).toBe(1)
   })
 
+  // Documentos generados → Cloudreve: éxito, apagado (200) y falla (503).
+  it("accepts the GENDOCS_CRON_ contract for the generated documents archive", async () => {
+    const run = (status: number, body: Record<string, unknown>) => runCronJob("generated-documents-archive", {
+      secret: "cron-secret",
+      log: vi.fn(),
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(status, body)),
+    })
+    expect(await run(200, { ok: true, outcome: "success", code: "GENDOCS_CRON_SUCCESS" })).toBe(0)
+    expect(await run(200, { ok: true, outcome: "disabled", code: "GENDOCS_CRON_DISABLED" })).toBe(0)
+    expect(await run(503, { ok: false, outcome: "failed", code: "GENDOCS_CRON_FAILED" })).toBe(1)
+  })
+
   it("accepts the dedicated Fleet GPS contract for OnWay", async () => {
     const success = await runCronJob("fleet-onway-sync", {
       secret: "cron-secret",

@@ -28,6 +28,10 @@ import {
   putCloudreveFile,
   statCloudreveFile,
   CloudreveError,
+  ensureCloudreveCollections,
+  putCloudreveKey,
+  statCloudreveKey,
+  probeCloudreveFolderKey,
 } from "@/lib/services/cloudreve/client"
 
 function jsonResponse(status: number, body = ""): Response {
@@ -301,3 +305,57 @@ describe("cloudreve WebDAV client", () => {
     expect(mockFetch).not.toHaveBeenCalled()
   })
 })
+
+describe("claves remotas arbitrarias (documentos generados)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", mockFetch)
+    vi.clearAllMocks()
+    fakeConfig.baseUrl = "https://cloudreve.example.test"
+    fakeConfig.hasCredentials = true
+  })
+
+  it("sube a la clave pedida, sin pasar por el espacio SST", async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(201))
+    await putCloudreveKey("Documentos generados/Faena Norte/INS-1 - revisada.pdf", Buffer.from("%PDF"))
+    const [url, init] = mockFetch.mock.calls[0] as [URL, RequestInit]
+    expect(url.href).toBe("https://cloudreve.example.test/dav/Documentos%20generados/Faena%20Norte/INS-1%20-%20revisada.pdf")
+    expect(init.method).toBe("PUT")
+  })
+
+  it("rechaza una clave con un segmento de retroceso antes de tocar la red", async () => {
+    await expect(putCloudreveKey("Documentos generados/../storage/sst-documents/x.pdf", Buffer.from("x"))).rejects.toBeInstanceOf(CloudreveError)
+    await expect(statCloudreveKey("a//b.pdf")).rejects.toBeInstanceOf(CloudreveError)
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it("crea las carpetas de afuera hacia adentro", async () => {
+    mockFetch.mockResolvedValue(jsonResponse(201))
+    await ensureCloudreveCollections("Documentos generados/2026/Faena Norte")
+    const hrefs = mockFetch.mock.calls.map(([url]) => (url as URL).href)
+    expect(hrefs).toEqual([
+      "https://cloudreve.example.test/dav/Documentos%20generados/",
+      "https://cloudreve.example.test/dav/Documentos%20generados/2026/",
+      "https://cloudreve.example.test/dav/Documentos%20generados/2026/Faena%20Norte/",
+    ])
+    expect(mockFetch.mock.calls.every(([, init]) => (init as RequestInit).method === "MKCOL")).toBe(true)
+  })
+
+  it("stat devuelve el tamaño o null si no existe", async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(207, "<d:multistatus><d:response><d:getcontentlength>42</d:getcontentlength></d:response></d:multistatus>"))
+    expect(await statCloudreveKey("Documentos generados/a.pdf")).toEqual({ size: 42 })
+    mockFetch.mockResolvedValueOnce(jsonResponse(404))
+    expect(await statCloudreveKey("Documentos generados/b.pdf")).toBeNull()
+  })
+
+  it("la prueba de carpeta clasifica la respuesta", async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(207))
+    expect(await probeCloudreveFolderKey("Documentos generados")).toBe("exists")
+    mockFetch.mockResolvedValueOnce(jsonResponse(404))
+    expect(await probeCloudreveFolderKey("Documentos generados")).toBe("missing")
+    mockFetch.mockResolvedValueOnce(jsonResponse(401))
+    expect(await probeCloudreveFolderKey("Documentos generados")).toBe("auth")
+    fakeConfig.hasCredentials = false
+    expect(await probeCloudreveFolderKey("Documentos generados")).toBe("not_configured")
+  })
+})
+

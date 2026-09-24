@@ -4,9 +4,9 @@ import { deliveries } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import { encodeContentDisposition } from "@/lib/utils"
-import { withBrowserContext } from "@/lib/pdf/browser-pool"
 import { resolvePdfRenderOrigin } from "@/lib/pdf/render-origin"
-import { a4PdfOptions } from "@/lib/pdf/page-options"
+import { PRINT_DOCUMENT_SPECS } from "@/lib/pdf/print-specs"
+import { PrintRenderError, printCredentialFromCookieHeader, renderPrintPageToPdf } from "@/lib/pdf/render-print-page"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -29,18 +29,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return new Response("No encontrado", { status: 404 })
   }
 
-  const origin = resolvePdfRenderOrigin(req)
-  const cookie = req.headers.get("cookie") ?? ""
-  const pdf = await withBrowserContext(
-    { extraHTTPHeaders: cookie ? { cookie } : {} },
-    async (context) => {
-      const page = await context.newPage()
-      await page.goto(`${origin}/entregas/${id}/print`, { waitUntil: "domcontentloaded", timeout: 30_000 })
-      // El comprobante tiene su propia caja (más angosta): debe coincidir con el
-      // @page de delivery-print-styles.ts.
-      return page.pdf(a4PdfOptions({ top: "12mm", right: "14mm", bottom: "20mm", left: "14mm" }))
-    },
-  )
+  let pdf: Buffer
+  try {
+    pdf = await renderPrintPageToPdf({
+      origin: resolvePdfRenderOrigin(req),
+      spec: PRINT_DOCUMENT_SPECS.entrega,
+      entityId: id,
+      credential: printCredentialFromCookieHeader(req.headers.get("cookie")),
+    })
+  } catch (error) {
+    if (error instanceof PrintRenderError) return new Response("No se pudo generar el comprobante", { status: 502 })
+    throw error
+  }
 
   return new Response(new Uint8Array(pdf), {
     headers: {

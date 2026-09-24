@@ -24,6 +24,7 @@ import type { z } from "zod"
 import { scopeToIds, resolveEvaluatorRole } from "./helpers"
 import { REVALIDATE } from "./revalidate"
 import { isPersonEvaluationDefinition } from "@/lib/sst/definitions"
+import { scheduleGeneratedDocumentDrain } from "@/lib/services/generated-documents/schedule"
 
 // ── createEvaluationAction ────────────────────────────────────────────────────
 
@@ -153,6 +154,8 @@ export async function closeEvaluationAction(
   } catch (e) {
     logger.error("[closeEvaluationAction] archiveEvaluationPdf falló tras un cierre exitoso", e)
   }
+  // La copia del acta para Cloudreve ya quedó impresa: se sube después de responder.
+  await scheduleGeneratedDocumentDrain(session.user.id)
 
   return { ok: true, message: "Evaluación cerrada exitosamente", data: { evaluation } }
 }

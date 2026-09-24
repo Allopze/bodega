@@ -24,6 +24,7 @@ import {
   triagePreventionIncident,
   type IncidentStatus,
 } from "@/lib/services/prevention-incidents"
+import { scheduleGeneratedDocumentDrain } from "@/lib/services/generated-documents/schedule"
 
 const ROOT = "/prevencion/incidentes"
 
@@ -90,6 +91,8 @@ export async function transitionPreventionIncidentAction(input: {
   try {
     const incident = await transitionPreventionIncident({ input, access: access(guard.session) })
     refresh(incident.id)
+    // El expediente cerrado se arma y se sube a Cloudreve después de responder.
+    if (incident.status === "closed") await scheduleGeneratedDocumentDrain(guard.session.user.id)
     return { ok: true, message: "Estado del incidente actualizado" }
   } catch (error) {
     return fail(error, "No se pudo actualizar el incidente")

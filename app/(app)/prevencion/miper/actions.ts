@@ -26,6 +26,7 @@ import {
   RISK_IMPORT_MAX_BYTES,
 } from "@/lib/services/prevention-risk-import"
 import type { ActionState } from "@/lib/validation/prevention"
+import { scheduleGeneratedDocumentDrain } from "@/lib/services/generated-documents/schedule"
 
 const REVALIDATE = "/prevencion/miper"
 
@@ -77,7 +78,10 @@ export async function transitionRiskMatrixAction(input: unknown): Promise<Action
   const permission: Permission = toStatus === "reviewed" || toStatus === "draft" ? "prevention:risk:review" : toStatus === "approved" ? "prevention:risk:approve" : toStatus === "published" ? "prevention:risk:publish" : "prevention:risk:edit"
   const guard = await guardPermission(permission)
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => transitionRiskMatrix(input, access))
+  const state = await run(accessFromSession(guard.session), (access) => transitionRiskMatrix(input, access))
+  // La matriz publicada se arma y se sube a Cloudreve después de responder.
+  if (state.ok && toStatus === "published") await scheduleGeneratedDocumentDrain(guard.session.user.id)
+  return state
 }
 
 export async function createRiskReviewTriggerAction(input: unknown): Promise<ActionState> {

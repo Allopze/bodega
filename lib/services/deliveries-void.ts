@@ -12,6 +12,7 @@ import { recordAudit } from "@/lib/audit"
 import { revertDeliveredItemTx } from "@/lib/services/item-state"
 import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import { applyMovementTx } from "@/lib/services/stock"
+import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/enqueue"
 
 /**
  * Anula una entrega a trabajador y devuelve el stock a la bodega de origen.
@@ -184,6 +185,19 @@ export async function voidWorkerStockDelivery(
       newState: { voidedAt: now, voidReason: reason, restoredItems: auditItems },
       reason,
     }, tx)
+
+    // La anulación cambia lo que dice el comprobante: es una copia nueva en
+    // Cloudreve, junto a la de «registrada». Misma condición que el alta.
+    if (deliveredEpp) {
+      await enqueueGeneratedDocumentTx(tx, {
+        kind: "entrega",
+        entityId: delivery.id,
+        milestone: "anulada",
+        worksiteId: delivery.worksiteId,
+        occurredAt: now,
+        actorUserId: input.voidedBy,
+      })
+    }
   })
 
   // Revierte la N°62. Mismo patrón que `cancelTrainingSession`: post-commit,

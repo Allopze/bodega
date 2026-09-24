@@ -16,6 +16,16 @@ export const DELIVERY_PRINT_STYLES = `
     line-height: 1.5;
   }
 
+  .voided-banner {
+    margin: 0 0 12px;
+    border: 1px solid #b91c1c;
+    background: #fdf2f2;
+    color: #7f1d1d;
+    padding: 8px 12px;
+    font-size: 11px;
+    break-inside: avoid;
+  }
+
   .print-toolbar {
     width: 210mm;
     max-width: calc(100vw - 32px);

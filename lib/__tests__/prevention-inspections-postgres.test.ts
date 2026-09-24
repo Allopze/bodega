@@ -233,11 +233,17 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     process.env.DATABASE_URL = databaseUrl
     vi.resetModules()
     await seedFixture(getDb())
+    // Archivado de documentos generados encendido: completar y revisar dejan
+    // el informe en la cola de Cloudreve (se verifica tras la revisión).
+    process.env.GENERATED_DOCS_ARCHIVE_ENABLED = "true"
+    await getDb().insert(schema.systemSettings).values({ key: "storage.generated_docs.enabled", value: "true" })
+      .onConflictDoUpdate({ target: schema.systemSettings.key, set: { value: "true" } })
   // La cadena completa ya supera 200 migraciones; en un contenedor frío puede
   // tardar algo más de un minuto antes de que empiece la primera prueba.
   }, 120_000)
 
   afterAll(async () => {
+    delete process.env.GENERATED_DOCS_ARCHIVE_ENABLED
     ;(globalThis as typeof globalThis & { __db?: unknown }).__db = undefined
     await client?.end()
     if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL
@@ -728,6 +734,15 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       reviewComment: "Hallazgo con acción asignada y evidencia comprometida; se cierra la inspección.",
     }, REVIEWER)
     expect(reviewed).toMatchObject({ status: "reviewed", reviewedByUserId: "in-reviewer" })
+
+    // Completar y revisar son dos hitos del mismo informe: dos copias en la
+    // cola de Cloudreve, cada una con la versión del run que la produjo.
+    const queued = await getDb().select().from(schema.generatedDocumentArchives)
+      .where(and(eq(schema.generatedDocumentArchives.kind, "inspeccion"), eq(schema.generatedDocumentArchives.entityId, runId)))
+    expect(queued.map((row) => row.milestone).sort()).toEqual(["completada", "revisada"])
+    expect(queued.find((row) => row.milestone === "revisada")).toMatchObject({
+      revision: reviewed.version, worksiteId: "ws-in-a", renderMode: "session", actorUserId: "in-reviewer",
+    })
 
     await expect(service.saveInspectionAnswers({
       runId, expectedVersion: await currentRunVersion(runId),

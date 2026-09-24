@@ -16,6 +16,9 @@ import { materializePdtpScheduledInstances } from "./scheduled-instances"
 import { isPdtpLegalFolderActivity, listPdtpActivityDocumentRequirements } from "./document-requirements"
 import { sweepPdtpLegalFolders } from "@/lib/services/pdtp-adapters/legal-folder-connector"
 import { reconcilePdtpTriggerEvents } from "./trigger-events"
+import { listPdtpProgramOperatingWorksiteIds } from "./worksites"
+import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/enqueue"
+import { pdtpRe36EntityId } from "@/lib/services/generated-documents/kinds"
 
 /**
  * Qué clasificaciones de la compuerta 81/81 frenan el ciclo de vida, con el
@@ -481,6 +484,22 @@ export async function activatePdtpProgram(programId: string, userId: string) {
       "Programa activado sobre todos los pasos requeridos de la versión firmada.",
       tx,
     )
+
+    // La planilla RE-36 del programa que entra en vigencia queda en Cloudreve,
+    // una por faena operativa. Es la foto del programa aprobado: lo que cambie
+    // después queda en los cierres mensuales.
+    for (const worksiteId of await listPdtpProgramOperatingWorksiteIds(programId, tx)) {
+      await enqueueGeneratedDocumentTx(tx, {
+        kind: "pdtp_re36",
+        entityId: pdtpRe36EntityId(programId, worksiteId),
+        milestone: "vigente",
+        revision: updated.version,
+        worksiteId,
+        occurredAt: now,
+        documentYear: updated.year,
+        actorUserId: userId,
+      })
+    }
     return updated
   })
 

@@ -97,6 +97,12 @@ const JOBS = Object.freeze({
     kind: "sync",
     codePrefix: "TI_CRON_",
   },
+  "generated-documents-archive": {
+    url: "http://app:3000/api/cron/generated-documents-archive",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "GENDOCS_CRON_",
+  },
 })
 
 // Mapa de sufijos: cada job combina esto con su propio `codePrefix`, así que

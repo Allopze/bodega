@@ -84,6 +84,7 @@ import { replacePdtpAccreditationBindings, resolvePdtpAccreditationTarget } from
 import { defaultPdtpActivityNumbers, defaultPdtpReviewActivityNumbers, inspectionTemplateCodeFor, pdtpActivityCandidatesFor } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
 import { codeYear, formatDate, todayInChile } from "@/lib/utils"
 import { assertRouteModuleEnabled } from "@/lib/services/module-toggles"
+import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/enqueue"
 
 
 /**
@@ -1723,6 +1724,18 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       }, tx)
     }
 
+    // El informe queda en Cloudreve con el estado que dejó este cierre. La
+    // versión del run identifica la copia: reabrir y volver a cerrar es otra.
+    await enqueueGeneratedDocumentTx(tx, {
+      kind: "inspeccion",
+      entityId: updated.id,
+      milestone: updated.status === "reviewed" ? "revisada" : "completada",
+      revision: updated.version,
+      worksiteId: updated.worksiteId,
+      occurredAt: now,
+      actorUserId: access.userId,
+    })
+
     return {
       run: updated,
       findings: derived.length,
@@ -2128,6 +2141,19 @@ export async function transitionInspectionRun(input: unknown, access: Inspection
           : `Inspección ${run.code} reabierta para rectificar: ${data.reason ?? "sin motivo declarado"}`,
         revokedBy: access.userId,
       }, tx)
+    }
+    // La revisión firma el informe: es una copia nueva en Cloudreve, además de
+    // la que dejó el cierre en `completed`.
+    if (data.toStatus === "reviewed") {
+      await enqueueGeneratedDocumentTx(tx, {
+        kind: "inspeccion",
+        entityId: updated.id,
+        milestone: "revisada",
+        revision: updated.version,
+        worksiteId: updated.worksiteId,
+        occurredAt: now,
+        actorUserId: access.userId,
+      })
     }
     return updated
   })

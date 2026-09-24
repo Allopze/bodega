@@ -55,9 +55,15 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
     process.env.PREVENTION_DATA_ENCRYPTION_KEY_VERSION = "incident-test-v1"
     vi.resetModules()
     await seedFixture(getDb())
+    // Archivado de documentos generados encendido: cerrar un incidente deja su
+    // expediente en la cola de Cloudreve (se verifica tras el cierre).
+    process.env.GENERATED_DOCS_ARCHIVE_ENABLED = "true"
+    await getDb().insert(schema.systemSettings).values({ key: "storage.generated_docs.enabled", value: "true" })
+      .onConflictDoUpdate({ target: schema.systemSettings.key, set: { value: "true" } })
   }, 60_000)
 
   afterAll(async () => {
+    delete process.env.GENERATED_DOCS_ARCHIVE_ENABLED
     const globalWithDb = globalThis as typeof globalThis & { __db?: unknown }
     globalWithDb.__db = undefined
     await client?.end()
@@ -299,7 +305,13 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
     const capaId = createdCapa.capa.id
     const capaManager = { ctx: { userId: "incident-reporter" }, scope: { mode: "some" as const, ids: ["ws-incidents"] }, permissions: managerPermissions }
     let capa = await capaService.transitionCapaAction({ ...capaManager, input: { actionId: capaId, expectedVersion: 1, toStatus: "in_progress" } })
-    const evidence = await capaService.addCapaEvidence({ ...capaManager, input: { actionId: capaId, expectedVersion: capa.version, kind: "document", reference: "evidencia-barrera-certificada", description: "Acta de instalación" } })
+    const evidence = await capaService.addCapaEvidence({ ...capaManager, input: { actionId: capaId, expectedVersion: capa.version, kind: "document",
+      // Un "document" afirma que hay un archivo guardado: desde el contrato
+      // único de evidencia (P4, auditoría 2026-09-14) exige una ruta de storage
+      // de evidencia y su SHA-256. El texto libre de antes ya no pasa.
+      reference: "storage/pdtp-evidence/acta-instalacion-barrera.pdf",
+      checksumSha256: "a".repeat(64),
+      description: "Acta de instalación" } })
     capa = await capaService.transitionCapaAction({ ...capaManager, input: { actionId: capaId, expectedVersion: evidence.action.version, toStatus: "pending_verification" } })
     capa = await capaService.transitionCapaAction({
       ctx: { userId: "incident-verifier" }, scope: { mode: "some", ids: ["ws-incidents"] }, permissions: ["prevention:capa:verify"],
@@ -364,6 +376,22 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
     const history = await getDb().select().from(schema.preventionIncidentHistory)
       .where(eq(schema.preventionIncidentHistory.incidentId, incidentId))
     expect(history.map((item) => item.changeType)).toEqual(expect.arrayContaining(["reported", "triage", "investigation", "capa", "notification", "restart", "closure"]))
+
+    // El expediente cerrado queda en la cola de Cloudreve y se arma sin la
+    // hoja de datos reservados (decisión del 2026-09-24).
+    const queued = await getDb().select().from(schema.generatedDocumentArchives)
+      .where(eq(schema.generatedDocumentArchives.entityId, incidentId))
+    expect(queued).toHaveLength(1)
+    expect(queued[0]).toMatchObject({ kind: "incidente", milestone: "cerrado", renderMode: "inprocess", status: "pending" })
+    const { produceGeneratedDocument } = await import("@/lib/services/generated-documents/renderers")
+    const produced = await produceGeneratedDocument(queued[0]!, { credential: null, origin: null })
+    if (produced.outcome !== "document") throw new Error("el expediente cerrado debía armarse")
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(produced.buffer as unknown as ArrayBuffer)
+    const sheets = workbook.worksheets.map((sheet) => sheet.name)
+    expect(sheets).toContain("Expediente")
+    expect(sheets).toContain("Personas minimizadas")
+    expect(sheets).not.toContain("Datos reservados")
   })
 
   // Reemplaza al antiguo escenario de staging SFTI: lo que interesa conservar

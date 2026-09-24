@@ -574,11 +574,7 @@ export async function putCloudreveBackupFile(
   fileName: string,
   buffer: Buffer,
 ): Promise<void> {
-  const response = await requestKey(backupRemoteKey(basePath, dateStr, fileName), {
-    method: "PUT",
-    body: new Blob([new Uint8Array(buffer)], { type: "application/octet-stream" }),
-  })
-  await response.text().catch(() => undefined)
+  await putCloudreveKey(backupRemoteKey(basePath, dateStr, fileName), buffer)
 }
 
 /** Descarga un artefacto de snapshot. Lanza CLOUDREVE_NOT_FOUND si no existe. */
@@ -597,24 +593,7 @@ export async function statCloudreveBackupFile(
   dateStr: string,
   fileName: string,
 ): Promise<{ size: number } | null> {
-  const remoteKey = backupRemoteKey(basePath, dateStr, fileName)
-  let response: Response
-  try {
-    response = await requestKey(remoteKey, {
-      method: "PROPFIND",
-      headers: { Depth: "0", "Content-Type": "application/xml" },
-    })
-  } catch (error) {
-    if (error instanceof CloudreveError && error.code === "CLOUDREVE_NOT_FOUND") return null
-    throw error
-  }
-  const body = await response.text()
-  const match = /<(?:d:)?getcontentlength>(\d+)<\/(?:d:)?getcontentlength>/i.exec(body)
-  const size = match ? Number(match[1]) : null
-  if (size === null || !Number.isFinite(size)) {
-    throw new CloudreveError("CLOUDREVE_IO", "PROPFIND no devolvió el tamaño del archivo")
-  }
-  return { size }
+  return statCloudreveKey(backupRemoteKey(basePath, dateStr, fileName))
 }
 
 /** Fechas (YYYY-MM-DD) de los snapshots presentes bajo `basePath`. */
@@ -718,4 +697,103 @@ export async function probeCloudreveBackupPath(basePath: string): Promise<{ ok: 
     return { ok: true, message: `Credenciales y URL OK. La carpeta ${folderLabel} se creará en el primer respaldo.` }
   }
   return { ok: false, message: `Cloudreve respondió ${response.status} en el PROPFIND de verificación.` }
+}
+
+// ── Claves remotas arbitrarias (documentos generados) ─────────────────────────
+//
+// El espacio SST y los respaldos tienen cada uno su mapeo de rutas; los
+// documentos generados arman la clave completa con
+// `lib/services/generated-documents/remote-key.ts`. Estas funciones solo
+// comprueban que la clave no pueda retroceder: `new URL()` resuelve `..` como
+// segmento de retroceso y la escritura saldría de la carpeta pedida.
+
+function assertGenericRemoteKey(remoteKey: string): void {
+  const segments = remoteKey.split("/")
+  const invalid = segments.length === 0 || segments.some((segment) => (
+    !segment
+    || segment === "."
+    || segment === ".."
+    || segment.includes("\\")
+    || /[\u0000-\u001f]/.test(segment)
+  ))
+  if (invalid) throw new CloudreveError("CLOUDREVE_IO", "Clave remota inválida")
+}
+
+/**
+ * Crea cada carpeta de `folderKey`, de la más externa a la más interna. MKCOL
+ * responde 409 cuando falta la carpeta padre, y `mkcolRemoteKey` lo toma como
+ * "ya existe": ir en orden es lo que hace que esa lectura sea cierta.
+ */
+export async function ensureCloudreveCollections(folderKey: string): Promise<void> {
+  assertGenericRemoteKey(folderKey)
+  const segments = folderKey.split("/")
+  for (let i = 1; i <= segments.length; i += 1) {
+    await mkcolRemoteKey(segments.slice(0, i).join("/"))
+  }
+}
+
+/** PUT sobre una clave remota. WebDAV reemplaza sin avisar: quien llama decide si la clave está libre. */
+export async function putCloudreveKey(remoteKey: string, buffer: Buffer): Promise<void> {
+  assertGenericRemoteKey(remoteKey)
+  const response = await requestKey(remoteKey, {
+    method: "PUT",
+    body: new Blob([new Uint8Array(buffer)], { type: "application/octet-stream" }),
+  })
+  await response.text().catch(() => undefined)
+}
+
+/** Tamaño de un archivo remoto vía PROPFIND Depth 0; null si no existe. */
+export async function statCloudreveKey(remoteKey: string): Promise<{ size: number } | null> {
+  assertGenericRemoteKey(remoteKey)
+  let response: Response
+  try {
+    response = await requestKey(remoteKey, {
+      method: "PROPFIND",
+      headers: { Depth: "0", "Content-Type": "application/xml" },
+    })
+  } catch (error) {
+    if (error instanceof CloudreveError && error.code === "CLOUDREVE_NOT_FOUND") return null
+    throw error
+  }
+  const body = await response.text()
+  const match = /<(?:d:)?getcontentlength>(\d+)<\/(?:d:)?getcontentlength>/i.exec(body)
+  const size = match ? Number(match[1]) : null
+  if (size === null || !Number.isFinite(size)) {
+    throw new CloudreveError("CLOUDREVE_IO", "PROPFIND no devolvió el tamaño del archivo")
+  }
+  return { size }
+}
+
+export type CloudreveFolderProbe = "exists" | "missing" | "auth" | "unreachable" | "not_configured" | "error"
+
+/**
+ * PROPFIND Depth 0 sobre una carpeta con la configuración guardada. Solo
+ * clasifica el resultado: cada pantalla lo cuenta con sus palabras (para la de
+ * documentos generados, una carpeta que falta se crea en la primera subida).
+ */
+export async function probeCloudreveFolderKey(folderKey: string): Promise<CloudreveFolderProbe> {
+  const config = await readCloudreveConfig()
+  if (!config.hasCredentials) return "not_configured"
+  assertGenericRemoteKey(folderKey)
+  let url: URL
+  try {
+    url = davUrlFromKey(config.baseUrl, folderKey, true)
+  } catch {
+    return "not_configured"
+  }
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: "PROPFIND",
+      headers: { Authorization: basicAuth(config), Depth: "0", "Content-Type": "application/xml" },
+      signal: AbortSignal.timeout(readCloudreveRequestTimeout()),
+    })
+  } catch {
+    return "unreachable"
+  }
+  await response.text().catch(() => undefined)
+  if (response.ok) return "exists"
+  if (response.status === 404) return "missing"
+  if (response.status === 401 || response.status === 403) return "auth"
+  return "error"
 }

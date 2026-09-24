@@ -1,9 +1,9 @@
 import { requirePermission } from "@/lib/auth/can"
 import { encodeContentDisposition } from "@/lib/utils"
 import { loadActaData } from "../document"
-import { withBrowserContext } from "@/lib/pdf/browser-pool"
 import { resolvePdfRenderOrigin } from "@/lib/pdf/render-origin"
-import { a4PdfOptions } from "@/lib/pdf/page-options"
+import { PRINT_DOCUMENT_SPECS } from "@/lib/pdf/print-specs"
+import { PrintRenderError, printCredentialFromCookieHeader, renderPrintPageToPdf } from "@/lib/pdf/render-print-page"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -13,8 +13,8 @@ export const dynamic = "force-dynamic"
  * pooled headless Chromium context, producing a clean A4 PDF without browser
  * chrome (date / URL / page number) — unlike window.print().
  *
- * The session cookie is forwarded so the headless browser loads the page as
- * the requesting user. PDF_MAX_CONCURRENT (default 2) caps the number of
+ * The session cookie is forwarded (only to the platform's own origin) so the
+ * headless browser loads the page as the requesting user. PDF_MAX_CONCURRENT (default 2) caps the number of
  * simultaneous Chromium contexts; further requests queue rather than spawning
  * additional browser processes.
  */
@@ -35,19 +35,18 @@ export async function GET(
   const data = await loadActaData(id, session)
   if (!data) return new Response("No encontrado", { status: 404 })
 
-  const origin = resolvePdfRenderOrigin(req)
-  const printUrl = `${origin}/sst/${id}/print`
-  const cookie = req.headers.get("cookie") ?? ""
-
-  const pdf = await withBrowserContext(
-    { extraHTTPHeaders: cookie ? { cookie } : {} },
-    async (ctx) => {
-      const page = await ctx.newPage()
-      await page.goto(printUrl, { waitUntil: "domcontentloaded", timeout: 30_000 })
-      // Márgenes idénticos al @page de acta-styles.ts; el pie numera las hojas.
-      return page.pdf(a4PdfOptions())
-    },
-  )
+  let pdf: Buffer
+  try {
+    pdf = await renderPrintPageToPdf({
+      origin: resolvePdfRenderOrigin(req),
+      spec: PRINT_DOCUMENT_SPECS.sst,
+      entityId: id,
+      credential: printCredentialFromCookieHeader(req.headers.get("cookie")),
+    })
+  } catch (error) {
+    if (error instanceof PrintRenderError) return new Response("No se pudo generar el acta", { status: 502 })
+    throw error
+  }
 
   return new Response(new Uint8Array(pdf), {
     headers: {

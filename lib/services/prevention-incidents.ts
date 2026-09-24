@@ -52,6 +52,7 @@ import { onSafetyIndicatorPeriodReopened } from "@/lib/services/pdtp-adapters/pd
 import { invalidateClosedIndicatorPeriodWithClient, type ReopenedPeriodRevocation } from "@/lib/services/prevention-indicadores"
 import { createRiskReviewTriggerWithClient } from "@/lib/services/prevention-risk-legal"
 import { codeYear, todayInChile } from "@/lib/utils"
+import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/enqueue"
 
 const CHILE_YEAR_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric" })
 const CHILE_MONTH_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", month: "numeric" })
@@ -1192,6 +1193,18 @@ export async function transitionPreventionIncident(args: {
         : input.reason,
       createdAt: now,
     })
+    // El expediente cerrado queda en Cloudreve, sin la hoja de datos
+    // reservados. El cierre es terminal: una sola copia por incidente.
+    if (input.toStatus === "closed") {
+      await enqueueGeneratedDocumentTx(tx, {
+        kind: "incidente",
+        entityId: updated.id,
+        milestone: "cerrado",
+        worksiteId: updated.worksiteId,
+        occurredAt: now,
+        actorUserId: args.access.ctx.userId,
+      })
+    }
     return updated
   })
 

@@ -30,6 +30,7 @@ import {
   distributePdtpPeriodClosureSchema,
   reopenPdtpPeriodSchema,
 } from "@/lib/validation/prevention"
+import { scheduleGeneratedDocumentDrain } from "@/lib/services/generated-documents/schedule"
 
 const REVALIDATE = "/prevencion/pdtp"
 
@@ -65,6 +66,9 @@ export async function closePdtpPeriodAction(input: unknown): Promise<ActionState
   const scope = scopeToIds(resolveWorksiteScope(session))
   try {
     const closure = await closePdtpPeriod(parsed.data, session.user.id, scope)
+    // Antes de distribuir: si el aviso falla la acción responde temprano, y el
+    // RE-36 del cierre tiene que llegar a Cloudreve igual.
+    await scheduleGeneratedDocumentDrain(session.user.id)
     if (parsed.data.distribute) {
       try {
         await distributePdtpPeriodClosure({ closureId: closure.id }, session.user.id, scope)

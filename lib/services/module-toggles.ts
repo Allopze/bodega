@@ -169,6 +169,8 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
 
   // Automatizaciones: el secreto se valida en el handler antes de consultar el toggle.
   { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/backup-health" },
+  // Documentos generados → Cloudreve: se configura en Administración › Almacenamiento.
+  { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/generated-documents-archive" },
   { moduleId: "billing", submoduleHref: "/facturacion/sincronizacion", prefix: "/api/cron/billing-sales-sync" },
   { moduleId: "billing", submoduleHref: "/facturacion/sincronizacion", prefix: "/api/cron/chipax-sync" },
   { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/dte-portal-sync" },

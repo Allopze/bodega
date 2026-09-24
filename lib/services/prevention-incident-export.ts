@@ -78,6 +78,8 @@ export async function buildIncidentRegisterExport(access: IncidentAccess): Promi
   }
 }
 
+type IncidentCaseBundle = NonNullable<Awaited<ReturnType<typeof getPreventionIncidentDetail>>>
+
 export async function buildIncidentCaseExport(args: {
   incidentId: string
   includeSensitive: boolean
@@ -92,6 +94,40 @@ export async function buildIncidentCaseExport(args: {
     purpose: args.purpose,
   })
   if (!bundle) return null
+  const report = incidentCaseReport(bundle, { includeSensitive: args.includeSensitive, purpose: args.purpose })
+  await recordAudit({
+    userId: args.access.ctx.userId,
+    action: "export",
+    entityType: "prevention_incident",
+    entityId: bundle.incident.id,
+    entityCode: bundle.incident.code,
+    newState: { includesSensitive: args.includeSensitive, sheetCount: report.sheets?.length ?? 0 },
+    reason: args.includeSensitive ? `Expediente Excel reservado: ${args.purpose}` : "Expediente Excel operacional",
+    ipAddress: args.access.ctx.ip,
+  })
+  return report
+}
+
+/**
+ * El expediente de un incidente cerrado para el archivado en Cloudreve, sin la
+ * hoja «Datos reservados» (decisión del 2026-09-24): el archivo va a una
+ * carpeta compartida donde no rigen los permisos de la plataforma. Corre sin
+ * sesión y solo lee; el acceso total queda acotado a esta función.
+ */
+export async function buildIncidentCaseArchive(incidentId: string): Promise<ReportData | null> {
+  const bundle = await getPreventionIncidentDetail({
+    incidentId,
+    access: {
+      ctx: { userId: "system:generated-documents" },
+      scope: { mode: "all", ids: [] },
+      permissions: ["prevention:incidents:view"],
+    },
+    includeSensitive: false,
+  })
+  return bundle ? incidentCaseReport(bundle, { includeSensitive: false }) : null
+}
+
+function incidentCaseReport(bundle: IncidentCaseBundle, args: { includeSensitive: boolean; purpose?: string }): ReportData {
   const incident = bundle.incident
   const sheets: ReportSheet[] = [
     sheet("Expediente", ["Campo", "Valor", "Clasificación"], [
@@ -121,16 +157,6 @@ export async function buildIncidentCaseExport(args: {
   if (args.includeSensitive) {
     sheets.push(sheet("Datos reservados", ["Persona ID", "Payload", "Clasificación", "Propósito"], bundle.sensitivePeople.map((entry) => [entry.personId, safeCell(entry.payload), "sensible_salud", safeCell(args.purpose)])))
   }
-  await recordAudit({
-    userId: args.access.ctx.userId,
-    action: "export",
-    entityType: "prevention_incident",
-    entityId: incident.id,
-    entityCode: incident.code,
-    newState: { includesSensitive: args.includeSensitive, sheetCount: sheets.length },
-    reason: args.includeSensitive ? `Expediente Excel reservado: ${args.purpose}` : "Expediente Excel operacional",
-    ipAddress: args.access.ctx.ip,
-  })
   return {
     filenameBase: `expediente-${incident.code}`,
     worksheetName: sheets[0]!.worksheetName,

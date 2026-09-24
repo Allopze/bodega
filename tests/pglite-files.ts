@@ -75,6 +75,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-program-acknowledgments.test.ts",
   "lib/__tests__/pdtp-annual-minimum.test.ts",
   "lib/__tests__/pdtp-document-accreditation.test.ts",
+  // Documentos generados → Cloudreve: la cola de archivado (2026-09-24).
+  "lib/__tests__/generated-documents-archive.test.ts",
   "lib/__tests__/pdtp-catalog-activities.test.ts",
   "lib/__tests__/pdtp-accreditation-bindings.test.ts",
   "lib/__tests__/prevention-training-occurrences-migration.test.ts",

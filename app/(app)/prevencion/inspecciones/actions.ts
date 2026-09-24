@@ -40,6 +40,7 @@ import { materializeProgramRuns } from "@/lib/services/prevention-inspection-sch
 import type { ActionState } from "@/lib/validation/prevention"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { assertInspectionOperationEnabled } from "@/lib/services/prevention-inspections"
+import { scheduleGeneratedDocumentDrain } from "@/lib/services/generated-documents/schedule"
 
 const BASE = "/prevencion/inspecciones"
 
@@ -219,7 +220,10 @@ export async function saveInspectionParticipantsAction(input: unknown): Promise<
 export async function completeInspectionRunAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => completeInspectionRun(input, access), versionOf)
+  const state = await run(accessFromSession(guard.session), (access) => completeInspectionRun(input, access), versionOf)
+  // El informe se imprime con esta sesión después de responder (Cloudreve).
+  if (state.ok) await scheduleGeneratedDocumentDrain(guard.session.user.id)
+  return state
 }
 
 export async function createFindingCapaAction(input: unknown): Promise<ActionState> {
@@ -246,7 +250,9 @@ export async function stopVehicleForFindingAction(input: unknown): Promise<Actio
 export async function reviewInspectionRunAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:review")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => reviewInspectionRun(input, access))
+  const state = await run(accessFromSession(guard.session), (access) => reviewInspectionRun(input, access))
+  if (state.ok) await scheduleGeneratedDocumentDrain(guard.session.user.id)
+  return state
 }
 
 /**

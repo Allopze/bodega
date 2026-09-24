@@ -1,9 +1,9 @@
 import { requirePermission } from "@/lib/auth/can"
 import { encodeContentDisposition } from "@/lib/utils"
 import { loadInspectionActaData } from "../document"
-import { withBrowserContext } from "@/lib/pdf/browser-pool"
 import { resolvePdfRenderOrigin } from "@/lib/pdf/render-origin"
-import { a4PdfOptions } from "@/lib/pdf/page-options"
+import { PRINT_DOCUMENT_SPECS } from "@/lib/pdf/print-specs"
+import { PrintRenderError, printCredentialFromCookieHeader, renderPrintPageToPdf } from "@/lib/pdf/render-print-page"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -12,8 +12,8 @@ export const dynamic = "force-dynamic"
  * PDF del acta de una inspección, renderizado server-side con el pool de
  * Chromium (mismo pipeline que la acta SST y las guías de despacho).
  *
- * La cookie de sesión se reenvía para que el navegador headless cargue la
- * página como el usuario que pide el PDF.
+ * La cookie de sesión se reenvía (solo a la propia plataforma) para que el
+ * navegador headless cargue la página como el usuario que pide el PDF.
  */
 export async function GET(
   req: Request,
@@ -33,29 +33,20 @@ export async function GET(
   const data = await loadInspectionActaData(runId, session)
   if (!data) return new Response("No encontrado", { status: 404 })
 
-  const origin = resolvePdfRenderOrigin(req)
-  const printUrl = `${origin}/prevencion/inspecciones/${runId}/print`
-  const cookie = req.headers.get("cookie") ?? ""
-
-  const pdf = await withBrowserContext(
-    { extraHTTPHeaders: cookie ? { cookie } : {} },
-    async (ctx) => {
-      const page = await ctx.newPage()
-      await page.goto(printUrl, { waitUntil: "domcontentloaded", timeout: 30_000 })
-      // El acta puede traer miniaturas de evidencia servidas por HTTP: con
-      // `domcontentloaded` a secas el PDF sale antes de que carguen y las
-      // imágenes aparecen en blanco.
-      await page.waitForFunction(
-        () => Array.from(document.images).every((image) => image.complete),
-        undefined,
-        { timeout: 15_000 },
-      ).catch(() => {
-        // Una imagen que no carga no puede impedir emitir el acta.
-      })
-      // Márgenes idénticos al @page de acta-styles.ts; el pie numera las hojas.
-      return page.pdf(a4PdfOptions())
-    },
-  )
+  // La espera de imágenes y los márgenes viven en la especificación compartida
+  // con el archivado de documentos generados.
+  let pdf: Buffer
+  try {
+    pdf = await renderPrintPageToPdf({
+      origin: resolvePdfRenderOrigin(req),
+      spec: PRINT_DOCUMENT_SPECS.inspeccion,
+      entityId: runId,
+      credential: printCredentialFromCookieHeader(req.headers.get("cookie")),
+    })
+  } catch (error) {
+    if (error instanceof PrintRenderError) return new Response("No se pudo generar el acta", { status: 502 })
+    throw error
+  }
 
   return new Response(new Uint8Array(pdf), {
     headers: {

@@ -208,3 +208,55 @@ describe("registerWorkerStockDelivery acredita la N°62 del PDTP", () => {
     expect(ejecucion?.status).toBe("draft")
   })
 })
+
+describe("el comprobante de una entrega de EPP se encola para Cloudreve", () => {
+  async function enableArchive(enabled = true) {
+    process.env.GENERATED_DOCS_ARCHIVE_ENABLED = "true"
+    await inMemoryDb.delete(schema.generatedDocumentArchives)
+    await inMemoryDb.insert(schema.systemSettings).values({ key: "storage.generated_docs.enabled", value: String(enabled) })
+      .onConflictDoUpdate({ target: schema.systemSettings.key, set: { value: String(enabled) } })
+  }
+
+  afterAll(async () => {
+    delete process.env.GENERATED_DOCS_ARCHIVE_ENABLED
+    await inMemoryDb.delete(schema.systemSettings)
+  })
+
+  it("registrar y anular dejan una copia por hito, en la faena de la entrega", async () => {
+    await enableArchive()
+    const deliveryId = await registerWorkerStockDelivery({
+      sourceWorksiteId: WS_ID, workerId: WORKER_ID, deliveredBy: USER_ID,
+      items: [{ productId: EPP_PRODUCT_ID, quantity: 1 }],
+    })
+    await voidWorkerStockDelivery({ deliveryId, voidedBy: USER_ID, reason: "Trabajador equivocado en la guía" })
+
+    const queued = await inMemoryDb.select().from(schema.generatedDocumentArchives)
+    expect(queued.map((row) => row.milestone).sort()).toEqual(["anulada", "registrada"])
+    for (const row of queued) {
+      expect(row).toMatchObject({
+        kind: "entrega", entityId: deliveryId, worksiteId: WS_ID, worksiteLabel: "Faena EPP Delivery",
+        renderMode: "session", status: "pending", actorUserId: USER_ID,
+      })
+    }
+  })
+
+  it("una entrega sin EPP no es un registro de Prevención: no se encola", async () => {
+    await enableArchive()
+    await registerWorkerStockDelivery({
+      sourceWorksiteId: WS_ID, workerId: WORKER_ID, deliveredBy: USER_ID,
+      items: [{ productId: PLAIN_PRODUCT_ID, quantity: 1 }],
+    })
+    expect(await inMemoryDb.select().from(schema.generatedDocumentArchives)).toEqual([])
+  })
+
+  it("con el archivado apagado la entrega se registra igual y no se encola nada", async () => {
+    await enableArchive(false)
+    const deliveryId = await registerWorkerStockDelivery({
+      sourceWorksiteId: WS_ID, workerId: WORKER_ID, deliveredBy: USER_ID,
+      items: [{ productId: EPP_PRODUCT_ID, quantity: 1 }],
+    })
+    expect(deliveryId).toBeTruthy()
+    expect(await inMemoryDb.select().from(schema.generatedDocumentArchives)).toEqual([])
+  })
+})
+

@@ -24,14 +24,10 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { renderPdtpRe36Buffer } from "@/lib/reports/pdtp-re36-workbook"
 import { getPdtpPeriodClosure } from "@/lib/services/pdtp/period-closures"
 import type { PdtpPeriodClosureSnapshot } from "@/lib/services/pdtp/period-closures"
+import { pdtpClosureFilenameBase, pdtpClosureMonthLabel, pdtpClosureSheet } from "@/lib/services/pdtp/period-closure-export"
 import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 import { recordAudit } from "@/lib/audit"
-
-const MONTH_NAMES = [
-  "enero", "febrero", "marzo", "abril", "mayo", "junio",
-  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
-]
 
 export async function GET(
   _request: NextRequest,
@@ -86,28 +82,11 @@ export async function GET(
     }
 
     const snapshot = closure.snapshotJson as PdtpPeriodClosureSnapshot
-    const monthLabel = `${MONTH_NAMES[closure.month - 1] ?? closure.month} de ${closure.year}`
-    const xlsx = await renderPdtpRe36Buffer(snapshot.re36, {
-      session,
-      closure: {
-        rows: [
-          { label: "Mes cerrado", value: monthLabel },
-          { label: "Faena", value: snapshot.re36.worksite.name },
-          { label: "Programa", value: snapshot.re36.program.title },
-          { label: "Versión del cierre", value: String(closure.version) },
-          { label: "Estado", value: closure.status === "reopened" ? "Reabierto" : "Cerrado" },
-          { label: "Cerrado el", value: closure.closedAt },
-          { label: "Fundamento del cierre", value: closure.closeReason },
-          { label: "Motivo de la reapertura", value: closure.reopenReason ?? "—" },
-          { label: "Corte de la foto", value: snapshot.cutoff.asOf },
-          { label: "Huella de la foto (SHA-256)", value: closure.digest },
-          { label: "Versión del programa al cierre", value: String(snapshot.programVersion.version) },
-          { label: "Huella del programa al cierre", value: snapshot.programVersion.contentDigest ?? "—" },
-        ],
-      },
-    })
+    const monthLabel = pdtpClosureMonthLabel(closure)
+    // La hoja «Cierre» y el nombre los comparte el archivado en Cloudreve.
+    const xlsx = await renderPdtpRe36Buffer(snapshot.re36, { session, closure: pdtpClosureSheet(closure, snapshot) })
 
-    const filenameBase = `RE-36-PDTP-${closure.year}-${String(closure.month).padStart(2, "0")}-${snapshot.re36.worksite.code}-cierre-v${closure.version}`
+    const filenameBase = pdtpClosureFilenameBase(closure, snapshot)
     await auditOutcome("success", `Descarga del cierre PDTP de ${monthLabel} (versión ${closure.version})`)
 
     return new NextResponse(xlsx, {

@@ -253,6 +253,9 @@ ENV_WHITELIST=(
   # Aramco/Copec: sin ellas un restore se queda sin acceso al WebDAV.
   SST_STORAGE_BACKEND CLOUDREVE_BASE_URL CLOUDREVE_USERNAME CLOUDREVE_PASSWORD
   CLOUDREVE_SST_PATH CLOUDREVE_REQUEST_TIMEOUT_MS
+  # Llave que habilita archivar documentos generados en Cloudreve: un restore
+  # en producción debe quedar con el archivado habilitado igual que antes.
+  GENERATED_DOCS_ARCHIVE_ENABLED
   TAX_RATE PDF_MAX_CONCURRENT PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
   TAE_OCR_MAX_CONCURRENT
   NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA

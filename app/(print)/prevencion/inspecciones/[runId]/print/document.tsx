@@ -51,8 +51,9 @@ export function InspectionActaDocument({ data }: { data: InspectionActaData }) {
   const run = detail.run
   const answerByItem = new Map(detail.answers.map((answer) => [`${answer.sectionId}::${answer.itemId}`, answer]))
 
+  // `data-print-ready`: el render a PDF exige esta marca (lib/pdf/print-specs.ts).
   return (
-    <div className="sheet">
+    <div className="sheet" data-print-ready="">
       <header className="doc-header">
         <div>
           <div className="brand-row">

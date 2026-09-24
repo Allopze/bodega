@@ -2297,6 +2297,13 @@
       "when": 1790257865687,
       "tag": "0327_small_lady_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 328,
+      "version": "7",
+      "when": 1790267545962,
+      "tag": "0328_quiet_gamora",
+      "breakpoints": true
     }
   ]
 }

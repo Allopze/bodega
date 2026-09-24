@@ -58,6 +58,11 @@ services:
       - AUTH_SECRET_PREVIOUS=${AUTH_SECRET_PREVIOUS:-}
       - APP_URL=${APP_URL:?err}
       - PDF_RENDER_ORIGIN=${PDF_RENDER_ORIGIN:-http://127.0.0.1:3000}
+      # Archivado de documentos generados en Cloudreve. Esta llave solo existe
+      # en producción: la base de desarrollo copia los ajustes de producción,
+      # incluida la cuenta de Cloudreve real, y sin ella dev nunca escribe ahí.
+      # Encender el archivado sigue siendo decisión de Administración.
+      - GENERATED_DOCS_ARCHIVE_ENABLED=${GENERATED_DOCS_ARCHIVE_ENABLED:-true}
       - AUTH_URL=${AUTH_URL:?err}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-}
       - PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-/usr/bin/chromium-browser}
@@ -298,6 +303,9 @@ services:
         # abra trazabilidad. Sólo observa: no cierra casos ni toca stock. Va
         # temprano y solo porque el detector de compras reconcilia cada OC viva.
         30 5 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs operational-integrity-scan >/proc/1/fd/1 2>&1
+        # Documentos generados → Cloudreve — sube lo que el archivado en línea
+        # no alcanzó (Cloudreve caído) y arma los Excel pendientes.
+        */15 * * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs generated-documents-archive >/proc/1/fd/1 2>&1
         EOF
         # Si el montaje de zoneinfo se rompe, esto lo delata: debe decir -04 o
         # -03, nunca UTC. Los horarios de abajo se leen contra esta hora.

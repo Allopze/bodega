@@ -178,6 +178,14 @@ export function resolveFeedbackDir(): string {
   return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "feedback")
 }
 
+/**
+ * Copia local de los documentos generados entre que se arman y que se suben a
+ * Cloudreve (lib/services/generated-documents/staging.ts).
+ */
+export function resolveGeneratedArchiveStagingDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "generated-archive")
+}
+
 /** Excel original de cada lote de importación de riesgos (MIPER). */
 export function resolveRiskImportsDir(): string {
   return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "risk-imports")

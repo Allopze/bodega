@@ -36,7 +36,8 @@ export function ActaDocument({ data, logoSrc }: { data: ActaData; logoSrc: strin
   } = data
 
   return (
-    <main className="sheet" aria-label={`Acta SST de ${worker.firstName} ${worker.lastName}`}>
+    // `data-print-ready`: el render a PDF exige esta marca (lib/pdf/print-specs.ts).
+    <main className="sheet" data-print-ready="" aria-label={`Acta SST de ${worker.firstName} ${worker.lastName}`}>
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <header className="doc-header">
         <div className="brand-row">

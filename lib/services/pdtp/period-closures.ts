@@ -71,6 +71,7 @@ import { getPdtpComplianceIndicators, getPdtpIntegralCompliance, type PdtpCompli
 import { getPdtpManagementReport, type PdtpManagementReport } from "./management-report"
 import { currentPdtpPeriod, pdtpActivationPeriod } from "./period"
 import { pdtpMonthLabel as monthLabel } from "./period-guard"
+import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/enqueue"
 
 /* ── Corte reproducible ──────────────────────────────────────────────────── */
 
@@ -430,6 +431,20 @@ export async function closePdtpPeriod(
       newState: { status: "closed", version: closure.version, digest, worksiteId: data.worksiteId, programId: data.programId },
       reason: data.reason,
     }, tx)
+
+    // El RE-36 congelado queda en Cloudreve con la versión de este cierre:
+    // volver a cerrar el mes sobrescribe la foto, así que cada versión es su
+    // propia copia.
+    await enqueueGeneratedDocumentTx(tx, {
+      kind: "pdtp_cierre",
+      entityId: closure.id,
+      milestone: "cierre",
+      revision: closure.version,
+      worksiteId: data.worksiteId,
+      occurredAt: now,
+      documentYear: data.year,
+      actorUserId: userId,
+    })
 
     return closure
   })

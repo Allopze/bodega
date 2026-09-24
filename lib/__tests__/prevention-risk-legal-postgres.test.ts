@@ -47,9 +47,16 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     process.env.STORAGE_PATH = storagePath
     vi.resetModules()
     await seedFixture(getDb())
+    // Archivado de documentos generados encendido: cada MIPER que se publique
+    // en esta suite queda en la cola de Cloudreve (ver el caso al final del
+    // primer bloque). No hay Cloudreve: la suite solo mira la cola y el libro.
+    process.env.GENERATED_DOCS_ARCHIVE_ENABLED = "true"
+    await getDb().insert(schema.systemSettings).values({ key: "storage.generated_docs.enabled", value: "true" })
+      .onConflictDoUpdate({ target: schema.systemSettings.key, set: { value: "true" } })
   }, 60_000)
 
   afterAll(async () => {
+    delete process.env.GENERATED_DOCS_ARCHIVE_ENABLED
     ;(globalThis as typeof globalThis & { __db?: unknown }).__db = undefined
     await client?.end()
     if (storagePath) await rm(storagePath, { recursive: true, force: true })
@@ -162,6 +169,25 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
    *
    * Va ANTES del guard a propósito: el "antes" necesita que ninguna matriz de
    * ws-risk-a declare sesión todavía, y ese guard crea la primera. */
+  it("publicar una MIPER la deja en la cola de Cloudreve y el libro archivado se arma con la matriz real", async () => {
+    const queued = await getDb().select().from(schema.generatedDocumentArchives)
+      .where(eq(schema.generatedDocumentArchives.kind, "miper"))
+    // Las dos versiones publicadas del caso anterior: cada una es su propia fila.
+    expect(queued.map((row) => row.milestone)).toEqual(["publicada", "publicada"])
+    const current = queued.find((row) => row.entityId === currentMatrixId)
+    expect(current).toMatchObject({ worksiteId: "ws-risk-a", renderMode: "inprocess", status: "pending" })
+
+    const { produceGeneratedDocument } = await import("@/lib/services/generated-documents/renderers")
+    const produced = await produceGeneratedDocument(current!, { credential: null, origin: null })
+    if (produced.outcome !== "document") throw new Error("la MIPER publicada debía armarse")
+    expect(produced.buffer.subarray(0, 2).toString("latin1")).toBe("PK")
+    expect(produced.baseName).toMatch(/^MIPER_.+_v2$/)
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(produced.buffer as unknown as ArrayBuffer)
+    // Sin hoja «Metadatos»: esa describe a quien descarga, y acá no descarga nadie.
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Matriz MIPER", "Controles", "Aprobación", "Revisiones"])
+  })
+
   it("turns the Oro CPHS-participation credit from unreachable into reachable", async () => {
     const service = await import("@/lib/services/prevention-risk-legal")
     const { gatherCertificationEvidence } = await import("@/lib/services/prevention-cphs-certification")

@@ -29,8 +29,12 @@ import { workers } from "@/db/schema/worksites"
 import { sstDocuments, sstDocumentVersions, sstDocumentLinks } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
-import { withBrowserContext } from "@/lib/pdf/browser-pool"
+import { PRINT_DOCUMENT_SPECS } from "@/lib/pdf/print-specs"
+import { resolveInternalRenderOrigin } from "@/lib/pdf/render-origin"
+import { printCredentialFromCookieHeader, renderPrintPageToPdf } from "@/lib/pdf/render-print-page"
 import { buildActaFilename } from "@/lib/sst/acta-filename"
+import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/enqueue"
+import { stageRenderedGeneratedDocument } from "@/lib/services/generated-documents/prestage"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import {
   generateStorageName,
@@ -63,21 +67,38 @@ export async function archiveEvaluationPdf(evaluationId: string, session: Sessio
       .where(eq(sstDocuments.id, docId)).limit(1)
     if (alreadyArchived) return
 
-    const h = await headers()
-    const cookie = h.get("cookie") ?? ""
-    const origin = process.env.APP_URL ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host") ?? "localhost:3000"}`
-    const printUrl = `${origin}/sst/${evaluationId}/print`
-
-    const pdfBuffer = await withBrowserContext(
-      { extraHTTPHeaders: cookie ? { cookie } : {} },
-      async (ctx) => {
-        const page = await ctx.newPage()
-        await page.goto(printUrl, { waitUntil: "networkidle" })
-        return page.pdf({ format: "A4", printBackground: true })
-      },
-    )
+    // Mismo render que la descarga (lib/pdf/print-specs.ts): antes esta copia
+    // salía sin márgenes ni pie numerado, armaba el origen con el header Host
+    // —que controla el cliente— y archivaba lo que devolviera la página, aunque
+    // fuera el login.
+    const pdfBuffer = await renderPrintPageToPdf({
+      origin: resolveInternalRenderOrigin(),
+      spec: PRINT_DOCUMENT_SPECS.sst,
+      entityId: evaluationId,
+      credential: printCredentialFromCookieHeader((await headers()).get("cookie")),
+    })
     const validated = validateFileBuffer(pdfBuffer, pdfBuffer.length, MimeType.INVOICE)
     if (validated.error) throw new Error(`PDF generado inválido: ${validated.error}`)
+
+    // Copia legible en la carpeta de la faena en Cloudreve (decisión del
+    // 2026-09-24). El RE-28 no: registra condiciones de salud y la carpeta
+    // compartida no aplica los permisos de la plataforma.
+    if (evaluation.definicionCode !== "identificacion_sensibles") {
+      try {
+        const queued = await enqueueGeneratedDocumentTx(db, {
+          kind: "acta_sst",
+          entityId: evaluationId,
+          milestone: "cerrada",
+          worksiteId: evaluation.worksiteId,
+          actorUserId: session.user.id,
+        })
+        if (queued.status === "queued") {
+          await stageRenderedGeneratedDocument(queued.id, pdfBuffer, suggestedFilename.replace(/\.pdf$/i, ""))
+        }
+      } catch (error) {
+        logger.error("[evaluation-archive] no se pudo encolar la copia del acta para Cloudreve", error)
+      }
+    }
 
     const folder = await getOrCreateSystemFolder({
       name: EVALUATIONS_FOLDER_NAME,

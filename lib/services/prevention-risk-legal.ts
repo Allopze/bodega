@@ -63,6 +63,7 @@ import {
   riskMethodologySchema,
   riskReviewTriggerSchema,
 } from "@/lib/validation/prevention-module/risk-legal"
+import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/enqueue"
 
 type Client = DB | Tx
 
@@ -597,6 +598,17 @@ export async function transitionRiskMatrix(input: unknown, access: RiskLegalAcce
         publishedAt: updated.publishedAt ?? now,
         entryCount: entries.length,
       }
+
+      // La matriz publicada queda en Cloudreve. Cada versión es su propia fila
+      // de matriz, así que no hace falta revisión aparte.
+      await enqueueGeneratedDocumentTx(tx, {
+        kind: "miper",
+        entityId: matrix.id,
+        milestone: "publicada",
+        worksiteId: matrix.worksiteId,
+        occurredAt: updated.publishedAt ?? now,
+        actorUserId: access.userId,
+      })
     }
     return updated
   })
@@ -1585,6 +1597,20 @@ export async function getPublishedRiskMatrix(matrixId: string, access: RiskLegal
   const controls = entries.length ? await db.select().from(preventionRiskControls).where(inArray(preventionRiskControls.riskEntryId, entries.map((item) => item.entry.id))).orderBy(asc(preventionRiskControls.createdAt)) : []
   const triggers = await db.select().from(preventionRiskReviewTriggers).where(eq(preventionRiskReviewTriggers.matrixId, matrixId)).orderBy(desc(preventionRiskReviewTriggers.createdAt))
   return { ...matrix, entries, controls, triggers }
+}
+
+/**
+ * La misma MIPER publicada, para el archivado de documentos generados. Corre
+ * sin sesión (en un `after()` o en el cron) y solo lee: el hecho —publicar—
+ * ya lo autorizó quien lo hizo. Queda con nombre propio para que ningún otro
+ * caller use este acceso total por comodidad.
+ */
+export async function getPublishedRiskMatrixForArchive(matrixId: string) {
+  return getPublishedRiskMatrix(matrixId, {
+    userId: "system:generated-documents",
+    scope: { mode: "all", ids: [] },
+    permissions: ["prevention:risk:view"],
+  })
 }
 
 export async function getRiskControlDetail(controlId: string, access: RiskLegalAccess) {
