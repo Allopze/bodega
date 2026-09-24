@@ -67,6 +67,11 @@ export type PdtpAccreditationSourceType =
   | "miper"
   /** El propio ciclo de aprobación del programa (N°1: "Aprobar el Programa"). */
   | "aprobacion_programa"
+  /**
+   * Toma de conocimiento del programa: el padrón de responsables lo abrió
+   * completo en la plataforma. Difusión a gerencias (N°2) y en faenas (N°3).
+   */
+  | "toma_conocimiento"
   /** Indicadores de faena: cierre del período mensual (N°7). */
   | "indicadores"
   /** Alcotest (G14, DO-48): un control (N°30/N°31) o un envío mensual de registros (N°32). */

@@ -194,11 +194,6 @@ type ConstanciaEvidence = {
  */
 const CONSTANCIA_EVIDENCE: ConstanciaEvidence[] = [
   {
-    n: 3,
-    evidenceRequirement: "Acta o registro de asistencia de la reunión de difusión del Plan en la faena.",
-    basis: "Guía del catálogo: «Reunión en la faena».",
-  },
-  {
     n: 6,
     evidenceRequirement: "Acta de la reunión de revisión del SG-SST, con los temas tratados y los asistentes.",
     basis: "Guía del catálogo: «Reunión en la faena».",

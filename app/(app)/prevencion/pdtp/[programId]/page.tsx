@@ -44,6 +44,9 @@ import { ProgramLifecycleControls } from "./program-lifecycle-controls"
 import { ReconcileDeclaredActorButton } from "./reconcile-declared-actor-button"
 import { PdtpPeriodCloseButton } from "./period-close-button"
 import { CreatePdtpRevisionButton } from "./create-pdtp-revision-button"
+import { ProgramAcknowledgmentBeacon } from "./program-acknowledgment-beacon"
+import { ProgramDiffusionCard } from "./program-diffusion-card"
+import { getPdtpProgramDiffusionStatus } from "@/lib/services/pdtp/program-acknowledgments"
 
 export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SST" }
 
@@ -163,6 +166,10 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const catalogActivities = canManageProgram && program.status === "draft" ? await listCatalogActivities() : []
   const exportBaseHref = `/api/prevencion/pdtp/export?programId=${programId}&hoja=${sheetCode}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}&year=${program.year}`
   const exportRe36Href = `${exportBaseHref}&formato=re36`
+  // La difusión (N°2/N°3) la controla la jefatura de prevención, que es quien
+  // aprueba el programa: el padrón nombra personas y no es para cualquiera que
+  // pueda ver la planilla.
+  const diffusionStatus = canApprove ? await getPdtpProgramDiffusionStatus(programId) : null
   const exportPlanoHref = `${exportBaseHref}&formato=plano`
 
   return (
@@ -308,7 +315,9 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
           </section>
         )}
         {/* Program lifecycle status block, con la metadata del documento importado plegada dentro */}
+        <ProgramAcknowledgmentBeacon programId={programId} />
         <CoverageSummaryCard report={coverageReport} programId={programId} />
+        {diffusionStatus && <ProgramDiffusionCard status={diffusionStatus} canManageUsers={can(session, "admin:users")} />}
         <FulfillmentBacklogPanel
           programId={programId}
           worksiteIds={backlogWorksiteIds}

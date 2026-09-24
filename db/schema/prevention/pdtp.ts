@@ -1250,6 +1250,26 @@ export const pdtpActivityWorksiteAssignees = pgTable("pdtp_activity_worksite_ass
   ),
 ])
 
+/**
+ * Toma de conocimiento del programa: la primera vez que una persona abre esta
+ * versión del programa en la plataforma. Es el hecho que acredita la difusión
+ * del plan (N°2 a gerencias, N°3 en faenas) cuando el padrón queda completo;
+ * ver `lib/services/pdtp/program-acknowledgments.ts`.
+ *
+ * Es por versión (`programId`) y no por año: una revisión firmada es otro plan,
+ * y conocer el anterior no es conocer éste.
+ */
+export const pdtpProgramAcknowledgments = pgTable("pdtp_program_acknowledgments", {
+  id:             text("id").primaryKey(),
+  programId:      text("program_id").notNull().references(() => pdtpPrograms.id, { onDelete: "cascade" }),
+  // `restrict`, igual que las asignaciones: borrar una cuenta no borra la
+  // constancia de que esa persona conoció el plan.
+  userId:         text("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("pdtp_program_acknowledgments_program_user_unique").on(table.programId, table.userId),
+])
+
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const pdtpProgramsRelations = relations(pdtpPrograms, ({ many, one }) => ({
   elaboratedByUser: one(users, { fields: [pdtpPrograms.elaboratedByUserId], references: [users.id] }),

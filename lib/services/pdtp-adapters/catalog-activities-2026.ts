@@ -101,7 +101,9 @@ const TITLES: Record<number, string> = {
   89: "Capacitar sobre puntos ciegos",
 }
 
-const RETIRED_NUMBERS = new Set([2, 5, 12, 13, 14, 21])
+// La N°2 volvió el 2026-09-23: la difusión a gerencias se acredita por toma de
+// conocimiento del programa, que la aprobación de Legal y RRHH (N°1) no mide.
+const RETIRED_NUMBERS = new Set([5, 12, 13, 14, 21])
 
 /** Correcciones ya aplicadas a las filas locales después de congelar el XLSX. */
 export const PDTP_2026_LOCAL_CONTENT_OVERRIDES: Readonly<Record<number, { description?: string; executionGuidance?: string }>> = {

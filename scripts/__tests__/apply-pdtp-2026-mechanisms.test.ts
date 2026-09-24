@@ -40,6 +40,9 @@ beforeEach(async () => {
   // y el resto de las tablas program-scoped (mismo comentario que
   // `deletePdtpProgram` en `lib/services/pdtp/programs.ts`).
   await inMemoryDb.delete(schema.pdtpPrograms)
+  // Reactivar deja rastro en el `audit_log` compartido, cuya FK a `users`
+  // impide borrar al actor: va antes.
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.users)
 
   await inMemoryDb.insert(schema.users).values({ id: "user-1", name: "U1", email: "u1@test", hashedPassword: "x", isActive: true })
@@ -82,7 +85,57 @@ async function insertActivityN20(programId: string, mechanism: "constancia" | "e
   })
 }
 
+/** La N°2 como quedó en el programa firmado: retirada por la decisión G12 y sin clasificar. */
+async function insertRetiredActivityN2(programId: string) {
+  const now = new Date().toISOString()
+  await inMemoryDb.insert(schema.pdtpActivities).values({
+    id: `${programId}-a-002`,
+    programId,
+    n: 2,
+    status: "retired",
+    retiredReason: "Eliminada por decisión de la jefatura de prevención.",
+    retiredEffectiveFrom: "2026-09-03",
+    retiredByUserId: "user-1",
+    retiredAt: now,
+    mechanism: "sin_definir",
+    displayOrder: 2,
+    activity: "Difundir el Plan a todos los niveles de la gerencias y subgerencia",
+    program: "Reunión Online",
+    responsibleSlugs: ["jdpr"],
+    responsibleDisplay: "JDPR",
+    sourceSheetRow: 15,
+    createdAt: now,
+    updatedAt: now,
+  })
+}
+
 describe("apply-pdtp-2026-mechanisms (PGlite): programa 2026 firmado", () => {
+  it("reactiva la N°2 en la revisión v+1 y la clasifica como enganche, sin tocar el programa firmado", async () => {
+    const { runMechanismsPass } = await import("../apply-pdtp-2026-mechanisms")
+    const { createLegacyPdtpProgramForTests } = await import("@/lib/services/prevention-pdtp")
+
+    const program = await createLegacyPdtpProgramForTests({ year: 2026, title: "Programa 2026", userId: "user-1" })
+    await insertActivityN20(program.id, "enganche") // nada más pendiente: sólo la reactivación abre la revisión
+    await insertRetiredActivityN2(program.id)
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "active" }).where(eq(schema.pdtpPrograms.id, program.id))
+
+    const result = await runMechanismsPass()
+    if (result.kind !== "applied_in_revision") throw new Error(`esperaba "applied_in_revision", llegó "${result.kind}"`)
+    // Reactivar + clasificar.
+    expect(result.applied).toBe(2)
+
+    const [signed] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.id, `${program.id}-a-002`))
+    expect(signed).toMatchObject({ status: "retired", mechanism: "sin_definir" })
+
+    const [revised] = await inMemoryDb.select().from(schema.pdtpActivities)
+      .where(and(eq(schema.pdtpActivities.programId, result.revisionProgramId), eq(schema.pdtpActivities.n, 2)))
+    expect(revised).toMatchObject({ status: "active", mechanism: "enganche", retiredReason: null, retiredEffectiveFrom: null })
+
+    // Idempotente: la segunda corrida elige el draft y no encuentra nada que hacer.
+    const second = await runMechanismsPass()
+    expect(second).toEqual({ kind: "applied_directly", programId: result.revisionProgramId, applied: 0 })
+  })
+
   it("abre (o reutiliza) una revisión v+1 y aplica ahí el mecanismo pendiente, sin tocar el programa activo", async () => {
     const { runMechanismsPass } = await import("../apply-pdtp-2026-mechanisms")
     const { createLegacyPdtpProgramForTests } = await import("@/lib/services/prevention-pdtp")
@@ -133,6 +186,25 @@ describe("apply-pdtp-2026-mechanisms (PGlite): programa 2026 firmado", () => {
     // v1 (activo, firmado) + v2 (la revisión) — nunca una v3 de una segunda corrida.
     expect(programsForYear).toHaveLength(2)
     expect(programsForYear.map((p) => p.version).sort()).toEqual([1, 2])
+  })
+
+  // El caso de producción al 2026-09-24: el programa del año todavía no se
+  // aprueba, así que la N°2 vuelve directo en el borrador, sin revisión v+1.
+  it("reactiva la N°2 directo en un borrador editable, sin abrir revisión", async () => {
+    const { runMechanismsPass } = await import("../apply-pdtp-2026-mechanisms")
+    const { createLegacyPdtpProgramForTests } = await import("@/lib/services/prevention-pdtp")
+
+    const program = await createLegacyPdtpProgramForTests({ year: 2026, title: "Programa 2026", userId: "user-1" })
+    await insertActivityN20(program.id, "enganche")
+    await insertRetiredActivityN2(program.id)
+
+    const result = await runMechanismsPass()
+    expect(result).toEqual({ kind: "applied_directly", programId: program.id, applied: 2 })
+
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.id, `${program.id}-a-002`))
+    expect(activity).toMatchObject({ status: "active", mechanism: "enganche", retiredReason: null })
+    const programsForYear = await inMemoryDb.select().from(schema.pdtpPrograms).where(eq(schema.pdtpPrograms.year, 2026))
+    expect(programsForYear).toHaveLength(1)
   })
 
   it("no abre ninguna revisión cuando el programa está bloqueado pero no hay clasificaciones pendientes", async () => {

@@ -923,6 +923,76 @@ export async function retirePdtpActivity(input: {
   })
 }
 
+/**
+ * Inverso de `retirePdtpActivity`: devuelve al programa una actividad retirada.
+ * Sólo sobre un programa editable —en uno firmado va por una revisión v+1—,
+ * porque reactivar cambia lo que el programa promete. Si la identidad de
+ * catálogo también estaba retirada se reactiva con ella: una actividad activa
+ * sobre un catálogo retirado no podría volver a importarse ni vincularse.
+ *
+ * No recrea las instancias que el retiro canceló: las genera la activación del
+ * programa desde el cronograma, que el retiro no toca.
+ */
+export async function reactivatePdtpActivity(input: {
+  activityId: string
+  reason: string
+}, userId: string) {
+  const reason = input.reason.trim()
+  if (reason.length < 10) throw new Error("Indica un motivo de reactivación de al menos 10 caracteres.")
+
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM ${pdtpActivities} WHERE id = ${input.activityId} FOR UPDATE`)
+    const [activity] = await tx.select().from(pdtpActivities).where(eq(pdtpActivities.id, input.activityId)).limit(1)
+    if (!activity) throw new Error("Actividad PDTP no encontrada.")
+    if (activity.status !== "retired") return activity
+
+    const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
+    if (!program) throw new Error("Programa PDTP no encontrado.")
+    assertPdtpProgramEditableState(program)
+
+    const now = new Date().toISOString()
+    const [reactivated] = await tx.update(pdtpActivities).set({
+      status: "active",
+      retiredReason: null,
+      retiredEffectiveFrom: null,
+      retiredByUserId: null,
+      retiredAt: null,
+      updatedAt: now,
+    }).where(eq(pdtpActivities.id, input.activityId)).returning()
+    if (!reactivated) throw new Error("No se pudo reactivar la actividad.")
+    if (activity.catalogActivityId) {
+      await tx.update(pdtpCatalogActivities).set({
+        status: "active",
+        retiredReason: null,
+        retiredByUserId: null,
+        retiredAt: null,
+        updatedAt: now,
+      }).where(and(eq(pdtpCatalogActivities.id, activity.catalogActivityId), eq(pdtpCatalogActivities.status, "retired")))
+    }
+    const previous = { status: activity.status, reason: activity.retiredReason, effectiveFrom: activity.retiredEffectiveFrom }
+    await addPdtpChangeLogEntry(
+      activity.programId,
+      program.version,
+      userId,
+      `activity:${activity.n}`,
+      previous,
+      { status: "active", reason },
+      `Actividad ${activity.n} reactivada. Motivo: ${reason}`,
+      tx,
+    )
+    await recordAudit({
+      userId,
+      action: "update",
+      entityType: "pdtp_program_activity",
+      entityId: activity.id,
+      entityCode: String(activity.n),
+      oldState: previous,
+      newState: { status: "active", reason },
+    }, tx)
+    return reactivated
+  })
+}
+
 /** Duplica la definición reusable de una actividad dentro del mismo programa.
  * Conserva calendario, vistas y checklist; nunca copia ejecuciones ni firmas. */
 export async function duplicatePdtpActivity(activityId: string, userId: string) {

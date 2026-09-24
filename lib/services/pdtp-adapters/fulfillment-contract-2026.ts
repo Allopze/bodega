@@ -42,6 +42,20 @@ export interface EngancheDestination {
   segregated?: string
 }
 
+/* La N°2 y la N°3 no las acredita un acto de su responsable declarado (JDPR,
+ * PRF) sino la suma de actos ajenos: cada persona del padrón que abre el
+ * programa. Por eso el permiso es el de ver el programa y la actividad queda
+ * segregada: exigirle al responsable algo más sería verificar el acto
+ * equivocado. */
+const programDiffusion = (): EngancheDestination => ({
+  module: "pdtp",
+  permission: "prevention:pdtp:view",
+  href: (worksiteId, programId) => programId
+    ? `/prevencion/pdtp/${encodeURIComponent(programId)}?faena=${encodeURIComponent(worksiteId)}`
+    : null,
+  segregated: "Se acredita cuando todo el padrón toma conocimiento del programa al abrirlo, no por un registro de quien la declara.",
+})
+
 /* Todas las actividades de inspección acreditan al declarar el run ejecutado.
  * El parámetro que permitía pedir `review` se retiró junto con la N°26 y la
  * N°28: ninguna plantilla declara `pdtpReviewActivityNumbers`, así que el
@@ -98,6 +112,10 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
       : null,
     segregated: "La aprobación tiene pasos y permisos distintos para Jefatura de Prevención y Legal/RRHH.",
   },
+  // Difusión del plan: la cumple el padrón al abrir el programa (toma de
+  // conocimiento, `program-acknowledgments.ts`), no quien la declara.
+  2: programDiffusion(),
+  3: programDiffusion(),
   11: {
     module: "faenas",
     permission: "prevention:cphs:manage",

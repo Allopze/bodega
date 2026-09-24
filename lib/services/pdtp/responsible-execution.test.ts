@@ -115,11 +115,15 @@ describe("classifyPdtpResponsibleExecution", () => {
  * que dice, ante un fiscalizador, por qué esa firma es de otro. Cuando la
  * jefatura del Departamento de Prevención entró al conjunto de firmantes esto
  * no se movió, y era lo correcto: firma, pero no es responsable declarada de
- * ninguna de las cinco. Si mañana el número cambia, que cambie a propósito. */
-describe("las cinco segregadas del programa 2026", () => {
-  const SEGREGADAS = [35, 43, 77, 80, 83]
+ * ninguna de las cinco. Si mañana el número cambia, que cambie a propósito.
+ *
+ * Cambió el 2026-09-23: la N°2 y la N°3 (difusión del plan) las acredita la toma
+ * de conocimiento del padrón al abrir el programa, no un acto de su responsable
+ * declarado (JDPR, PRF), así que son segregadas por construcción. */
+describe("las siete segregadas del programa 2026", () => {
+  const SEGREGADAS = [2, 3, 35, 43, 77, 80, 83]
 
-  it("siguen siendo cinco, y las mismas", () => {
+  it("siguen siendo siete, y las mismas", () => {
     const numeros = Object.entries(PDTP_2026_ENGANCHE_DESTINATIONS)
       .filter(([, destination]) => Boolean(destination.segregated) && destination.permission !== null)
       .map(([n]) => Number(n))

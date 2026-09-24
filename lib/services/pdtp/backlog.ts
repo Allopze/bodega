@@ -37,6 +37,7 @@ export const PDTP_FULFILLMENT_SOURCE_LABELS: Readonly<Record<string, string>> = 
   pdtp: "Programa de trabajo",
   pdtp_xlsx_cell: "Carga manual del RE-36",
   ppa: "Permisos de trabajo",
+  toma_conocimiento: "Toma de conocimiento del programa",
   vigilancia: "Higiene y vigilancia",
 })
 

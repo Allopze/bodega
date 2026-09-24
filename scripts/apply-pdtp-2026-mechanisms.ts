@@ -7,8 +7,9 @@
  * actividades le corresponden, y el motor de acreditación qué actividades
  * espera un evento externo.
  *
- * Los números son los del catálogo 2026. Las actividades retiradas por G12 (N°2,
- * 5, 12, 13, 14 y 21) no aparecen a propósito.
+ * Los números son los del catálogo 2026. Las actividades retiradas por G12 (N°5,
+ * 12, 13, 14 y 21) no aparecen a propósito. La N°2 también estuvo retirada y
+ * volvió el 2026-09-23 (ver `REACTIVATIONS`).
  *
  *   npm run pdtp:apply-mechanisms
  *   PDTP_MECHANISMS_DRY_RUN=true npm run pdtp:apply-mechanisms
@@ -67,6 +68,7 @@ import { db } from "@/db"
 import { pdtpActivities, pdtpPrograms, roles, userRoles } from "@/db/schema"
 import { assertPdtpProgramEditableState } from "@/lib/services/pdtp/helpers"
 import { createPdtpRevision } from "@/lib/services/pdtp/programs"
+import { reactivatePdtpActivity } from "@/lib/services/pdtp/activities"
 
 const PROGRAM_YEAR = 2026
 const DRY_RUN = process.env.PDTP_MECHANISMS_DRY_RUN === "true"
@@ -96,6 +98,11 @@ type Mechanism = "enganche" | "constancia" | "formulario" | "compuesta"
  */
 const ENGANCHE = [
   1,           // aprobación de Legal y RRHH sobre el propio programa
+  // Difusión del plan a gerencias (N°2) y en faenas (N°3): la acredita la toma
+  // de conocimiento del padrón completo al abrir el programa
+  // (`lib/services/pdtp/program-acknowledgments.ts`). La N°3 estuvo en
+  // CONSTANCIA hasta el 2026-09-23.
+  2, 3,
   7,           // ingreso de indicadores de la faena
   9,           // revisión por la dirección
   11,          // constituir el comité paritario
@@ -156,7 +163,6 @@ const ENGANCHE = [
  * puede enviar a revisión.
  */
 const CONSTANCIA = [
-  3,           // difusión del plan en faenas
   6,           // reunión de revisión SG-SST
   // La N°20 salió de acá por la Task 12 (M2.5, 2026-09-23): ver ENGANCHE.
   22,          // control de plataformas de la empresa y del mandante
@@ -211,6 +217,43 @@ const ASSIGNMENTS: Array<{ mechanism: Mechanism; numbers: readonly number[] }> =
   { mechanism: "compuesta", numbers: COMPUESTA },
   { mechanism: "formulario", numbers: FORMULARIO },
 ]
+
+/**
+ * Actividades que una decisión anterior retiró y que vuelven al programa. Se
+ * reactivan antes de clasificar, porque la clasificación sólo mira las activas:
+ * sin esto la N°2 quedaría retirada con `sin_definir` para siempre.
+ */
+const REACTIVATIONS: Array<{ n: number; reason: string }> = [
+  {
+    n: 2,
+    reason: "Reactivada por decisión de la jefatura de prevención (2026-09-23): la difusión del plan a gerencias y subgerencias se acredita cuando todas toman conocimiento del programa en la plataforma, un hecho que la aprobación de Legal y RRHH (N°1) no mide.",
+  },
+]
+
+export type ActivityStatusRow = { id: string; n: number; status: string }
+
+/** Actividades de `REACTIVATIONS` que siguen retiradas en el programa. Función pura. */
+export function planReactivations(activities: ActivityStatusRow[]): Array<{ activityId: string; n: number; reason: string }> {
+  return REACTIVATIONS.flatMap((item) => {
+    const row = activities.find((activity) => activity.n === item.n && activity.status === "retired")
+    return row ? [{ activityId: row.id, n: item.n, reason: item.reason }] : []
+  })
+}
+
+async function loadActivityStatuses(programId: string): Promise<ActivityStatusRow[]> {
+  return db.select({ id: pdtpActivities.id, n: pdtpActivities.n, status: pdtpActivities.status })
+    .from(pdtpActivities)
+    .where(eq(pdtpActivities.programId, programId))
+}
+
+/** Reactiva lo pendiente de `REACTIVATIONS` en un programa editable. Devuelve cuántas volvieron. */
+async function applyReactivations(programId: string, actorUserId: string): Promise<number> {
+  const pending = planReactivations(await loadActivityStatuses(programId))
+  for (const item of pending) {
+    await reactivatePdtpActivity({ activityId: item.activityId, reason: item.reason }, actorUserId)
+  }
+  return pending.length
+}
 
 /** Lanza si un número quedó declarado en dos listas: sería un error de clasificación silencioso. */
 export function assertNoDuplicateClassification(): void {
@@ -328,10 +371,11 @@ export async function applyPendingChangesInNewRevision(
       "reclasificación a mano o espera a que se resuelva esa revisión.",
     )
   }
+  const reactivated = await applyReactivations(revision.programId, actorUserId)
   const revisionActivities = await loadActiveActivityMechanisms(revision.programId)
   const revisionChanges = planMechanismChanges(revisionActivities)
   const applied = await applyMechanismChanges(revision.programId, revisionChanges)
-  return { programId: revision.programId, applied }
+  return { programId: revision.programId, applied: applied + reactivated }
 }
 
 export type MechanismsPassResult =
@@ -372,6 +416,10 @@ export async function runMechanismsPass(): Promise<MechanismsPassResult> {
 
   const activeActivities = await loadActiveActivityMechanisms(program.id)
   const changes = planMechanismChanges(activeActivities)
+  const reactivations = planReactivations(await loadActivityStatuses(program.id))
+  for (const item of reactivations) {
+    console.log(`  ${DRY_RUN ? "◦ se reactivaría" : "✓ reactivar"}: N°${item.n}`)
+  }
 
   for (const { mechanism, numbers } of ASSIGNMENTS) {
     const pendientes = changes.filter((change) => change.mechanism === mechanism).map((change) => change.n)
@@ -391,7 +439,7 @@ export async function runMechanismsPass(): Promise<MechanismsPassResult> {
   // Estrictamente de lectura: ni escribe mecanismos ni abre una revisión, así
   // el programa esté bloqueado y con cambios pendientes — sólo lo informa.
   if (DRY_RUN) {
-    if (locked && changes.length > 0) {
+    if (locked && changes.length + reactivations.length > 0) {
       console.log(`[DRY RUN] ${changes.length} actividad(es) cambiarían de mecanismo, pero el programa está bloqueado: correrlo de verdad abriría (o reutilizaría) una revisión v+1. No se escribió nada.`)
     } else {
       console.log(`[DRY RUN] ${changes.length} actividad(es) cambiarían de mecanismo. No se escribió nada.`)
@@ -400,12 +448,16 @@ export async function runMechanismsPass(): Promise<MechanismsPassResult> {
   }
 
   if (!locked) {
-    const applied = await applyMechanismChanges(program.id, changes)
-    console.log(`Resumen: ${applied} actividad(es) actualizada(s) sobre ${activeActivities.length} activas.`)
+    // El actor sólo se exige si hay algo que reactivar: una corrida normal de
+    // clasificación sobre un draft no necesita a quién atribuirla.
+    const reactivated = reactivations.length > 0 ? await applyReactivations(program.id, await resolveActorUserId()) : 0
+    const pendingChanges = reactivated > 0 ? planMechanismChanges(await loadActiveActivityMechanisms(program.id)) : changes
+    const applied = await applyMechanismChanges(program.id, pendingChanges) + reactivated
+    console.log(`Resumen: ${applied} actividad(es) actualizada(s) sobre ${activeActivities.length + reactivated} activas.`)
     return { kind: "applied_directly", programId: program.id, applied }
   }
 
-  if (changes.length === 0) {
+  if (changes.length === 0 && reactivations.length === 0) {
     console.log(`Resumen: el programa ${program.id} está bloqueado, pero no hay clasificaciones pendientes.`)
     return { kind: "locked_no_pending_changes", programId: program.id }
   }
@@ -415,7 +467,7 @@ export async function runMechanismsPass(): Promise<MechanismsPassResult> {
     bail(`El programa ${program.id} está bloqueado y no existe un programa activo del año ${PROGRAM_YEAR} desde el cual abrir una revisión.`)
   }
 
-  console.log(`  → El programa ${program.id} está bloqueado; abriendo (o reutilizando) una revisión v+1 de ${activeProgram.id} para aplicar ${changes.length} cambio(s).`)
+  console.log(`  → El programa ${program.id} está bloqueado; abriendo (o reutilizando) una revisión v+1 de ${activeProgram.id} para aplicar ${changes.length + reactivations.length} cambio(s).`)
   let revisionResult: { programId: string; applied: number }
   try {
     revisionResult = await applyPendingChangesInNewRevision(activeProgram)

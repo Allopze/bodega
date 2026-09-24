@@ -837,6 +837,7 @@ export type PdtpFulfillmentCoverageIssue = {
  */
 const STRUCTURALLY_WIRED_ACTIVITY_NUMBERS = new Set([
   1, 9, 11,           // programa, revisión por la dirección, CPHS
+  2, 3,               // difusión del plan: toma de conocimiento (program-acknowledgments.ts)
   7,                  // indicadores de faena (Fase 4.1)
   15, 18, 19, 23, 52, // acta de trabajador nuevo (la N°19 es la carpeta, T47)
   17,                 // RE-28 de personas sensibles (worker-sensitivity-connector)

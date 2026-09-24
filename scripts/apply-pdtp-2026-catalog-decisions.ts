@@ -64,7 +64,9 @@ function bail(reason: string): never {
 
 /** Actividades que salen del programa, con el motivo que queda en el change log. */
 const RETIREMENTS: Array<{ n: number; reason: string }> = [
-  { n: 2, reason: "Eliminada por decisión de la jefatura de prevención: la difusión a gerencias queda cubierta por la aprobación de Legal y RRHH del propio programa (actividad N°1)." },
+  // La N°2 salió de acá el 2026-09-23: vuelve al programa acreditada por toma de
+  // conocimiento (ver REACTIVATIONS en `apply-pdtp-2026-mechanisms.ts`). Dejarla
+  // haría que este script la retirara otra vez sobre la revisión que la reactiva.
   { n: 5, reason: "Eliminada por decisión de la jefatura de prevención: el control de cumplimiento de la línea de mando lo entrega el indicador del PDTP, no requiere una actividad propia." },
   { n: 12, reason: "Pasa al programa propio del Comité Paritario: la formación de sus integrantes se gestiona desde el submódulo de capacitaciones del CPHS." },
   { n: 13, reason: "Pasa al programa propio del Comité Paritario: la reunión mensual y su acta son actividades del comité, no de la empresa." },
@@ -178,7 +180,6 @@ const COVERAGE_TARGETS: Array<{ n: number; percent: number }> = [
  * exigible. La N°19 no está en esta lista porque pasó a `enganche` (T47).
  */
 const CONSTANCIA_EVIDENCE: Array<{ n: number; evidenceRequirement: string }> = [
-  { n: 3, evidenceRequirement: "Acta o registro de la reunión de difusión del plan, con asistencia." },
   { n: 6, evidenceRequirement: "Acta de la reunión de revisión SG-SST, con los temas tratados y los asistentes." },
   { n: 20, evidenceRequirement: "Acta o correo de la reunión con la empresa mandante." },
   { n: 22, evidenceRequirement: "Registro de la revisión de la plataforma, con vencimientos y coordinaciones informadas." },

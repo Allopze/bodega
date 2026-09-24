@@ -72,6 +72,7 @@ export const pgliteTestFiles = [
   // corriendo en el proyecto paralelo competían por CPU con los demás.
   "lib/__tests__/operational-work-queue-pdtp-activity-source.test.ts",
   "lib/__tests__/pdtp-accreditation.test.ts",
+  "lib/__tests__/pdtp-program-acknowledgments.test.ts",
   "lib/__tests__/pdtp-catalog-activities.test.ts",
   "lib/__tests__/pdtp-accreditation-bindings.test.ts",
   "lib/__tests__/prevention-training-occurrences-migration.test.ts",

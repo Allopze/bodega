@@ -27,10 +27,10 @@ describe("manifestación corporativa de actividades PDTP 2026", () => {
     expect(Math.max(...titles.map((title) => title.length))).toBeLessThanOrEqual(80)
   })
 
-  it("mantiene retiradas las seis identidades históricas locales", () => {
+  it("mantiene retiradas las cinco identidades históricas locales", () => {
     expect(PDTP_2026_CATALOG_ACTIVITIES.filter((activity) => activity.status === "retired").map((activity) => activity.legacyNumber))
-      .toEqual([2, 5, 12, 13, 14, 21])
-    expect(PDTP_2026_CATALOG_ACTIVITIES.filter((activity) => activity.status === "active")).toHaveLength(81)
+      .toEqual([5, 12, 13, 14, 21])
+    expect(PDTP_2026_CATALOG_ACTIVITIES.filter((activity) => activity.status === "active")).toHaveLength(82)
   })
 
   it("distingue explícitamente los pares cuyo texto histórico se repite", () => {
