@@ -8,6 +8,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }))
 
+vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock("./actions", () => ({
   archiveSstDocumentAction: vi.fn(),
   createAndUploadSstDocumentAction: vi.fn(),
@@ -275,6 +276,37 @@ describe("DocumentacionView", () => {
     fireEvent.contextMenu(firstFolderTile())
     fireEvent.click(screen.getByRole("menuitem", { name: "Archivar" }))
     await waitFor(() => expect(archiveSstDocumentFolderAction).toHaveBeenCalledWith({ id: "sdf-1" }))
+  })
+
+  /*
+   * Cada acción de la vista ignoraba el rechazo: el diálogo quedaba abierto sin
+   * explicación. Ahora el motivo del servicio sale en un aviso.
+   */
+  it("avisa con el motivo cuando el servidor rechaza mover una carpeta", async () => {
+    const { toast } = await import("@/lib/toast")
+    vi.mocked(moveSstDocumentFolderAction).mockResolvedValue({ ok: false, message: "No se puede mover una carpeta dentro de sí misma." })
+    render(
+      <DocumentacionView
+        counters={counters}
+        expiring={[]}
+        documents={[]}
+        folders={[FOLDER]}
+        folderOptions={[{ id: "sdf-1", parentId: null, name: "Protocolos MINSAL" }]}
+        breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
+        searchParams={{}}
+        total={0}
+        canManage
+        canArchive
+        userId="test-user"
+      />,
+    )
+
+    fireEvent.contextMenu(firstFolderTile())
+    fireEvent.click(screen.getByRole("menuitem", { name: "Mover" }))
+    fireEvent.click(screen.getByRole("button", { name: "Mover carpeta a destino" }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("No se puede mover una carpeta dentro de sí misma."))
+    expect(screen.getByRole("dialog", { name: "Mover carpeta" })).toBeInTheDocument()
   })
 
   it("supports multi-selection and bulk folder archive", async () => {

@@ -87,12 +87,17 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
       hazardCode: "CTRL-01", hazard: "Contacto con residuo corrosivo", critical: false,
       controls: [{ description: "Segregación y contención del área de transferencia", hierarchy: "engineering", isExisting: true, isCritical: false, responsibleSnapshot: "Jefatura de operaciones", status: "implemented" }],
     }), author)
-    await expect(service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: 1, toStatus: "reviewed", reason: "Intento de omitir la revisión formal" }, reviewer)).rejects.toThrow(/transición/i)
+    // El rechazo es de dominio y nombra los estados como la persona los ve.
+    const skipReview = service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: 1, toStatus: "reviewed", reason: "Intento de omitir la revisión formal" }, reviewer)
+    await expect(skipReview).rejects.toThrow(/no puede pasar de «Borrador» a «Revisada»/)
+    await expect(skipReview).rejects.toBeInstanceOf(service.RiskLegalDomainError)
     const submitted = await service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: 1, toStatus: "in_review", reason: "Contenido completo enviado a revisión técnica." }, author)
     await expect(service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: "Autor intenta revisar su propio trabajo" }, access("risk-author", ["prevention:risk:review"]))).rejects.toThrow(/no puede revisarla/i)
     const reviewed = await service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: "Metodología, jerarquía y participación verificadas." }, reviewer)
     const approved = await service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: reviewed.version, toStatus: "approved", reason: "Revisión independiente aceptada para publicación." }, approver)
-    await expect(service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: approved.version, toStatus: "published", reason: "Quien aprobó intenta publicar.", effectiveFrom: "2026-07-18" }, approver)).rejects.toThrow(/no puede publicarla/i)
+    const selfPublish = service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: approved.version, toStatus: "published", reason: "Quien aprobó intenta publicar.", effectiveFrom: "2026-07-18" }, approver)
+    await expect(selfPublish).rejects.toThrow(/no puede publicarla/i)
+    await expect(selfPublish).rejects.toBeInstanceOf(service.RiskLegalDomainError)
     const published = await service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: approved.version, toStatus: "published", reason: "Publicación formal de la primera versión MIPER.", effectiveFrom: "2026-07-18" }, publisher)
     expect(published).toMatchObject({ status: "published", effectiveFrom: "2026-07-18", reviewDueAt: "2027-07-18" })
     expect(published.publishedHashSha256).toMatch(/^[a-f0-9]{64}$/)
@@ -363,6 +368,7 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
 
   it("preserves Excel original, normalization and activation decisions without cross-faena access", async () => {
     const importer = await import("@/lib/services/prevention-risk-import")
+    const service = await import("@/lib/services/prevention-risk-legal")
     const workbook = new ExcelJS.Workbook()
     const sheet = workbook.addWorksheet("MIPER")
     sheet.addRow(["Proceso", "Tarea", "Puesto de trabajo", "Peligro", "Factor de riesgo", "Evento o daño", "Nivel inherente", "Nivel residual", "Responsable", "Controles"])
@@ -370,6 +376,20 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     const bytes = Buffer.from(await workbook.xlsx.writeBuffer())
     const author = access("risk-author", ["prevention:risk:view", "prevention:risk:edit"])
     const approver = access("risk-approver", ["prevention:risk:approve"])
+    // Un archivo o una planilla rechazados llegan con su motivo: los
+    // validadores de `xlsx-security` lanzan `Error` común y el importador los
+    // pasa como error de dominio; las columnas faltantes se nombran como en
+    // la planilla, no por su clave interna.
+    const legacy = importer.stageRiskImport({ worksiteId: "ws-risk-a", fileName: "miper_fuente.xls", buffer: bytes, access: author })
+    await expect(legacy).rejects.toThrow(/\.xls no está permitido/)
+    await expect(legacy).rejects.toBeInstanceOf(service.RiskLegalDomainError)
+    const incomplete = new ExcelJS.Workbook()
+    incomplete.addWorksheet("MIPER").addRow(["Proceso", "Tarea", "Peligro"])
+    const incompleteBytes = Buffer.from(await incomplete.xlsx.writeBuffer())
+    const missingColumns = importer.stageRiskImport({ worksiteId: "ws-risk-a", fileName: "miper_incompleta.xlsx", buffer: incompleteBytes, access: author })
+    await expect(missingColumns).rejects.toThrow(/no trae las columnas obligatorias: Puesto, Factor de riesgo, Evento o daño, Nivel inherente, Nivel residual, Responsable\./)
+    await expect(missingColumns).rejects.toBeInstanceOf(service.RiskLegalDomainError)
+
     const staged = await importer.stageRiskImport({ worksiteId: "ws-risk-a", fileName: "miper_fuente.xlsx", buffer: bytes, access: author })
     expect(staged.idempotentReplay).toBe(false)
     const [row] = await getDb().select().from(schema.preventionRiskImportRows).where(eq(schema.preventionRiskImportRows.batchId, staged.batch.id))
@@ -420,7 +440,7 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     // 'draft' no es un destino desde cualquier estado: sólo se devuelve lo que
     // está en revisión.
     await expect(service.transitionRiskMatrix({ matrixId: draft.id, expectedVersion: returned.version + 1, toStatus: "draft", reason: "Intento de devolver algo que ya está en borrador." }, reviewer))
-      .rejects.toThrow(/transición miper inválida/i)
+      .rejects.toThrow(/no puede pasar de «Borrador» a «Borrador»/)
   })
 
   // MIPER-05: los marcadores del mapa cuelgan de una fila de
@@ -448,8 +468,9 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     // sólo ofrece las publicadas, pero eso era cortesía de la UI, no una regla.
     const parkedDraft = await service.createRiskMatrixDraft(matrixDraft("MIPER Faena Sur borrador paralelo"), author)
     const { entry: draftEntry } = await service.addRiskEntry(riskEntryB(parkedDraft.id, { hazardCode: "MAP-09", hazard: "Peligro que sigue en borrador", critical: false, controls: [] }), author)
-    await expect(mapService.addRiskMapMarker({ layoutId: layout.id, riskEntryId: draftEntry.id, xPct: 10, yPct: 10, label: null }, author))
-      .rejects.toThrow(/matriz miper vigente/i)
+    const draftMarker = mapService.addRiskMapMarker({ layoutId: layout.id, riskEntryId: draftEntry.id, xPct: 10, yPct: 10, label: null }, author)
+    await expect(draftMarker).rejects.toThrow(/matriz miper vigente/i)
+    await expect(draftMarker).rejects.toBeInstanceOf(service.RiskLegalDomainError)
 
     // v2 conserva MAP-01 (mismo proceso/tarea/puesto/código: la identidad
     // estable) y retira MAP-02.

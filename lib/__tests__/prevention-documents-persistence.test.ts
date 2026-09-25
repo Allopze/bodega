@@ -13,6 +13,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
+import { eq } from "drizzle-orm"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -71,6 +72,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.statusHistory)
   await inMemoryDb.delete(schema.sstDocumentVersions)
   await inMemoryDb.delete(schema.sstDocuments)
+  await inMemoryDb.delete(schema.sstDocumentFolders)
   await inMemoryDb.delete(schema.sstDocumentCategories)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
@@ -127,6 +129,45 @@ describe("prevention-documents-library — persistencia real (PGlite)", () => {
       scope: SCOPE_WS1,
       permissions: ["prevention:docs:manage"],
     })).rejects.toThrow(/faena/i)
+  })
+
+  it("el rechazo por alcance es un error de dominio: la acción muestra el motivo", async () => {
+    const { createDocument, PreventionDocumentDomainError } = await import("@/lib/services/prevention-documents-library")
+    await expect(createDocument({
+      data: { categorySlug: "gestion_preventiva", title: "Doc ajeno", worksiteId: "ws-2" },
+      ctx: CTX,
+      scope: SCOPE_WS1,
+      permissions: ["prevention:docs:manage"],
+    })).rejects.toBeInstanceOf(PreventionDocumentDomainError)
+  })
+
+  /*
+   * El diálogo «Mover carpeta» ofrece volver a la raíz, pero el servicio
+   * comparaba la faena de un padre inexistente (`undefined`) con la de la
+   * carpeta y rechazaba siempre con «No se puede mover la carpeta a otra
+   * faena».
+   */
+  it("mueve una carpeta de vuelta a la raíz", async () => {
+    const { createDocumentFolder, moveDocumentFolder } = await import("@/lib/services/prevention-documents-library")
+    const parent = await createDocumentFolder({ input: { name: "Raíz de prueba padre", parentId: null, worksiteId: "ws-1" }, ctx: CTX, scope: SCOPE_WS1 })
+    const child = await createDocumentFolder({ input: { name: "Raíz de prueba hija", parentId: parent.id, worksiteId: "ws-1" }, ctx: CTX, scope: SCOPE_WS1 })
+
+    await moveDocumentFolder({ input: { id: child.id, parentId: null }, ctx: CTX, scope: SCOPE_WS1 })
+
+    const [moved] = await inMemoryDb.select().from(schema.sstDocumentFolders).where(eq(schema.sstDocumentFolders.id, child.id))
+    expect(moved).toMatchObject({ parentId: null, worksiteId: "ws-1" })
+    expect((await fs.stat(join(tmpStorageDir, "Raíz de prueba hija"))).isDirectory()).toBe(true)
+  })
+
+  it("sigue sin permitir mover una carpeta bajo otra faena", async () => {
+    const { createDocumentFolder, moveDocumentFolder, PreventionDocumentDomainError } = await import("@/lib/services/prevention-documents-library")
+    const scopeAll = { mode: "all" as const, ids: [] as [] }
+    const target = await createDocumentFolder({ input: { name: "Destino faena A", parentId: null, worksiteId: "ws-1" }, ctx: CTX, scope: scopeAll })
+    const folder = await createDocumentFolder({ input: { name: "Carpeta faena B", parentId: null, worksiteId: "ws-2" }, ctx: CTX, scope: scopeAll })
+
+    const move = moveDocumentFolder({ input: { id: folder.id, parentId: target.id }, ctx: CTX, scope: scopeAll })
+    await expect(move).rejects.toThrow(/otra faena/)
+    await expect(move).rejects.toBeInstanceOf(PreventionDocumentDomainError)
   })
 
   it("numera versiones sucesivas con el subquery MAX(version)+1 real", async () => {

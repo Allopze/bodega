@@ -1,3 +1,4 @@
+import { SST_DOCUMENT_STATUS_LABELS } from "@/lib/prevention/privacy-inventory"
 import { eq } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { resolveOwnWorkSigning } from "@/lib/services/prevention-signing"
@@ -21,6 +22,7 @@ import {
   type RequestContext,
   type SstDocumentConfidentiality,
 } from "./utils"
+import { PreventionDocumentDomainError } from "./errors"
 
 type WorkflowStatus = "borrador" | "en_revision" | "observado" | "aprobado" | "vigente" | "reemplazado" | "archivado"
 
@@ -50,14 +52,14 @@ async function lockWorkflowContext(tx: Tx, versionId: string) {
     .from(sstDocumentVersions)
     .where(eq(sstDocumentVersions.id, versionId))
 
-  if (!versionRef) throw new Error("Versión documental no encontrada.")
+  if (!versionRef) throw new PreventionDocumentDomainError("Versión documental no encontrada.")
 
   const [doc] = await tx
     .select()
     .from(sstDocuments)
     .where(eq(sstDocuments.id, versionRef.documentId))
     .for("update")
-  if (!doc) throw new Error("Documento no encontrado.")
+  if (!doc) throw new PreventionDocumentDomainError("Documento no encontrado.")
 
   const [version] = await tx
     .select()
@@ -78,7 +80,7 @@ function authorizeWorkflowContext(args: WorkflowInput, doc: {
 }) {
   assertScopeAccess(doc.worksiteId, args.scope)
   assertConfidentialityAllowed(doc.confidentiality as SstDocumentConfidentiality, args.permissions)
-  if (doc.status === "archivado") throw new Error("No se puede operar sobre un documento archivado.")
+  if (doc.status === "archivado") throw new PreventionDocumentDomainError("No se puede operar sobre un documento archivado.")
 }
 
 function auditValues(args: {
@@ -108,11 +110,11 @@ function auditValues(args: {
 }
 
 async function transitionVersion(args: WorkflowInput, options: TransitionOptions) {
-  if (!args.versionId) throw new Error("Versión requerida.")
+  if (!args.versionId) throw new PreventionDocumentDomainError("Versión requerida.")
   const comment = args.comment?.trim() ?? ""
-  if (comment.length > 2000) throw new Error("El comentario supera el máximo de 2.000 caracteres.")
+  if (comment.length > 2000) throw new PreventionDocumentDomainError("El comentario supera el máximo de 2.000 caracteres.")
   if (options.requireComment && comment.length < 3) {
-    throw new Error("Debes registrar un comentario de al menos 3 caracteres.")
+    throw new PreventionDocumentDomainError("Debes registrar un comentario de al menos 3 caracteres.")
   }
 
   return db.transaction(async (tx) => {
@@ -120,19 +122,19 @@ async function transitionVersion(args: WorkflowInput, options: TransitionOptions
     authorizeWorkflowContext(args, doc)
 
     if (version.status !== options.expected) {
-      throw new Error(`La versión debe estar en estado ${options.expected} para realizar esta acción.`)
+      throw new PreventionDocumentDomainError(`La versión debe estar en «${SST_DOCUMENT_STATUS_LABELS[options.expected] ?? options.expected}» para realizar esta acción; recarga para ver su estado actual.`)
     }
     if (options.requireUploader && version.uploadedBy !== args.ctx.userId) {
-      throw new Error("Sólo quien cargó la versión puede devolverla a borrador.")
+      throw new PreventionDocumentDomainError("Sólo quien cargó la versión puede devolverla a borrador.")
     }
     if (options.preventUploader && version.uploadedBy === args.ctx.userId) {
-      throw new Error("Quien cargó la versión no puede aprobarla.")
+      throw new PreventionDocumentDomainError("Quien cargó la versión no puede aprobarla.")
     }
     if (options.requireReviewed && !version.reviewedBy) {
-      throw new Error("La versión debe tener una revisión registrada antes de aprobarse.")
+      throw new PreventionDocumentDomainError("La versión debe tener una revisión registrada antes de aprobarse.")
     }
     if (options.preventReviewer && version.reviewedBy === args.ctx.userId) {
-      throw new Error("Quien revisó la versión no puede aprobarla.")
+      throw new PreventionDocumentDomainError("Quien revisó la versión no puede aprobarla.")
     }
 
     const now = new Date().toISOString()
@@ -238,17 +240,17 @@ export function approveDocumentVersion(args: WorkflowInput) {
 }
 
 export async function publishDocumentVersion(args: WorkflowInput) {
-  if (!args.versionId) throw new Error("Versión requerida.")
+  if (!args.versionId) throw new PreventionDocumentDomainError("Versión requerida.")
 
   let effects: DocumentVersionCurrentEffects | null = null
   const result = await db.transaction(async (tx) => {
     const { doc, version } = await lockWorkflowContext(tx, args.versionId)
     authorizeWorkflowContext(args, doc)
     if (version.status !== "aprobado") {
-      throw new Error("Sólo se puede publicar una versión aprobada.")
+      throw new PreventionDocumentDomainError("Sólo se puede publicar una versión aprobada.")
     }
     if (!version.approvedBy || !version.approvedAt) {
-      throw new Error("La aprobación de la versión está incompleta.")
+      throw new PreventionDocumentDomainError("La aprobación de la versión está incompleta.")
     }
     /* Publicar no pasa por `transitionVersion`, así que su segregación va acá,
      * explícita. Hasta ahora no existía: la separación entre quien aprueba y
@@ -266,13 +268,13 @@ export async function publishDocumentVersion(args: WorkflowInput) {
       what: "Publicar la versión",
     })
     if (!signing.ok) {
-      throw new Error("Quien aprobó la versión no puede publicarla: debe firmarla otra persona.")
+      throw new PreventionDocumentDomainError("Quien aprobó la versión no puede publicarla: debe firmarla otra persona.")
     }
     if (version.effectiveFrom && version.effectiveFrom > todayIso()) {
-      throw new Error(`La versión no puede publicarse antes del ${version.effectiveFrom}.`)
+      throw new PreventionDocumentDomainError(`La versión no puede publicarse antes del ${version.effectiveFrom}.`)
     }
     if (doc.currentVersionId === version.id) {
-      throw new Error("La versión ya es la publicación vigente.")
+      throw new PreventionDocumentDomainError("La versión ya es la publicación vigente.")
     }
 
     // El paso a vigente —reemplazo de la anterior, vencimiento, contenido

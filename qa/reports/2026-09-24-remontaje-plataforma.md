@@ -150,7 +150,23 @@ Criterio: con la plataforma montada, después de una acción exitosa la persona 
   - **Evidencia.**
     - `actions.test.ts` cubre las cuatro acciones y el error inesperado, que sigue oculto.
     - `prevention-indicators-postgres.test.ts` exige la clase de dominio en la creación concurrente y en revisión. Contra Postgres real falló sin el cambio del servicio.
-- **FUNCTIONAL FINDING (preexistente, no corregido).** MIPER, requisitos legales, documentación y el mapa del CGRD también mandan todo a `unexpectedActionError` sin una clase de dominio. Es probable que sus rechazos de negocio se vean igual de genéricos. No se revisó uno por uno.
+- **UX FINDING (preexistente, corregido).** MIPER, requisitos legales, el mapa de riesgos del CGRD y la biblioteca documental también respondían «No se pudo completar la acción» a todo rechazo de negocio.
+  - **Riesgo y legal.** `RiskLegalDomainError` cubre `prevention-risk-legal`, `-risk-import` y `-risk-map`. Pasaron a error de dominio 102 rechazos, más uno que lo es solo cuando su causa también lo es: una fila de la importación, para que el SQL de un error de driver nunca llegue al navegador. Quedan 10 como errores internos (escrituras sin fila, una ruta de archivo corrupta).
+  - **Documentación.** `PreventionDocumentDomainError` cubre `lib/services/prevention-documents/*`. Pasaron 108 rechazos; 31 quedan internos (escrituras sin fila, fallas de almacenamiento, jerarquía corrupta).
+  - **Mensajes corregidos antes de mostrarse por primera vez:**
+    - las transiciones de MIPER, requisitos y documentos nombran estados como «En revisión» y no como `in_review` (regla A6);
+    - las columnas faltantes de la importación MIPER se nombran como en la planilla;
+    - los rechazos de los validadores Excel compartidos (`.xls`, cifrado, tamaño, filas) llegan como rechazo de la planilla.
+  - **La vista de documentación ignoraba todo rechazo.** Sus 11 manejadores (renombrar, mover, archivar y restaurar carpetas; mover y archivar documentos, en lote y por arrastre) no avisaban nada y el diálogo quedaba abierto sin explicación. Ahora avisan el motivo, y en un lote con éxitos parciales refrescan lo que sí se aplicó.
+  - El botón «Registrar metodología ISP» del encabezado de MIPER no mostraba su resultado; ahora avisa.
+  - **Evidencia:**
+    - las pruebas de acciones de los cuatro módulos (MIPER, requisitos, mapa y documentación) fallaron con las acciones anteriores;
+    - la suite Postgres de riesgo y legal exige la clase de dominio y los mensajes con etiquetas: 19 de 19 con el cambio, 7 fallas con los servicios anteriores;
+    - `documentacion-view.test.tsx` cubre el aviso de un movimiento rechazado, rojo sin el arreglo.
+- **PRODUCT BUG (preexistente, corregido).** Mover una carpeta de documentación a la raíz fallaba siempre, aunque el diálogo lo ofrece («vuelve a la raíz»).
+  - El servicio comparaba la faena de un padre inexistente (`undefined`) con la de la carpeta, y respondía «No se puede mover la carpeta a otra faena».
+  - Ahora solo un padre impone faena. Mover bajo una carpeta de otra faena sigue rechazado.
+  - `prevention-documents-persistence.test.ts` (PGlite) cubre los dos casos; mover a la raíz falló con el mensaje exacto antes del arreglo.
 - **IMPROVEMENT OPPORTUNITY.**
   - Algunos altos conservan elecciones inofensivas: tipo de activo y periodicidad de licencia en TI, miembros y amenazas del CGRD, rótulo del QR de TAE.
   - Los diálogos de mensaje siguen sin aviso de éxito propio: el cierre es la señal.

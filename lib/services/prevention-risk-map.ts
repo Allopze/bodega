@@ -23,6 +23,7 @@ import {
 import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import type { RiskLegalAccess } from "@/lib/services/prevention-risk-legal"
+import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 
 type Client = DB | Tx
 
@@ -34,7 +35,7 @@ function scopeAllows(scope: RiskLegalAccess["scope"], worksiteId: string) {
 
 function requireAccess(access: RiskLegalAccess, permission: string, worksiteId?: string) {
   if (!access.permissions.includes(permission) || (worksiteId && !scopeAllows(access.scope, worksiteId))) {
-    throw new Error(NOT_FOUND)
+    throw new RiskLegalDomainError(NOT_FOUND)
   }
 }
 
@@ -77,7 +78,7 @@ export async function uploadRiskMapLayout(input: unknown, access: RiskLegalAcces
   return db.transaction(async (tx) => {
     const [worksite] = await tx.select({ id: worksites.id }).from(worksites)
       .where(eq(worksites.id, data.worksiteId)).limit(1)
-    if (!worksite) throw new Error(NOT_FOUND)
+    if (!worksite) throw new RiskLegalDomainError(NOT_FOUND)
 
     await tx.update(preventionRiskMapLayouts).set({ status: "archived", updatedAt: new Date().toISOString() })
       .where(and(eq(preventionRiskMapLayouts.worksiteId, data.worksiteId), eq(preventionRiskMapLayouts.status, "active")))
@@ -113,7 +114,7 @@ export async function addRiskMapMarker(input: unknown, access: RiskLegalAccess) 
   return db.transaction(async (tx) => {
     const [layout] = await tx.select().from(preventionRiskMapLayouts)
       .where(eq(preventionRiskMapLayouts.id, data.layoutId)).limit(1)
-    if (!layout) throw new Error(NOT_FOUND)
+    if (!layout) throw new RiskLegalDomainError(NOT_FOUND)
     requireAccess(access, "prevention:risk:edit", layout.worksiteId)
 
     // El peligro debe venir de la matriz VIGENTE de la MISMA faena que el plano:
@@ -127,7 +128,7 @@ export async function addRiskMapMarker(input: unknown, access: RiskLegalAccess) 
       .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
       .where(and(eq(preventionRiskEntries.id, data.riskEntryId), eq(preventionRiskMatrices.status, "published"))).limit(1)
     if (!entry || entry.worksiteId !== layout.worksiteId) {
-      throw new Error("El peligro debe pertenecer a la matriz MIPER vigente de esta misma faena.")
+      throw new RiskLegalDomainError("El peligro debe pertenecer a la matriz MIPER vigente de esta misma faena.")
     }
 
     const [created] = await tx.insert(preventionRiskMapMarkers).values({
@@ -154,7 +155,7 @@ export async function removeRiskMapMarker(input: unknown, access: RiskLegalAcces
       .from(preventionRiskMapMarkers)
       .innerJoin(preventionRiskMapLayouts, eq(preventionRiskMapLayouts.id, preventionRiskMapMarkers.layoutId))
       .where(eq(preventionRiskMapMarkers.id, data.markerId)).limit(1)
-    if (!row) throw new Error(NOT_FOUND)
+    if (!row) throw new RiskLegalDomainError(NOT_FOUND)
     requireAccess(access, "prevention:risk:edit", row.worksiteId)
 
     await tx.delete(preventionRiskMapMarkers).where(eq(preventionRiskMapMarkers.id, data.markerId))

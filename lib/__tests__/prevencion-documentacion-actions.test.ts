@@ -433,3 +433,28 @@ describe("documentacion/actions.ts — contrato público de exports (Fase 0 base
     expect(Object.keys(mod).sort()).toEqual([...expectedExportNames].sort())
   })
 })
+
+/*
+ * Todo error del servicio caía en «No se pudo completar la acción»: publicar
+ * sin aprobación vigente o mover a una carpeta archivada se leía como una
+ * falla sin causa. El error de dominio viaja con su mensaje; el resto sigue
+ * oculto tras el genérico.
+ */
+describe("documentación: los rechazos de negocio llegan con su motivo", () => {
+  it("publicar y archivar devuelven el motivo del servicio", async () => {
+    const { PreventionDocumentDomainError } = await import("@/lib/services/prevention-documents/errors")
+    mockPublishDocumentVersion.mockRejectedValueOnce(new PreventionDocumentDomainError("Publicar exige una aprobación vigente de otra persona."))
+    mockArchiveDocument.mockRejectedValueOnce(new PreventionDocumentDomainError("El documento cambió; recarga antes de archivarlo."))
+
+    await expect(publishSstDocumentVersionAction({ documentId: "doc-1", versionId: "ver-1" }))
+      .resolves.toMatchObject({ ok: false, message: "Publicar exige una aprobación vigente de otra persona." })
+    await expect(archiveSstDocumentAction({ documentId: "doc-1", comment: "vencido" }))
+      .resolves.toMatchObject({ ok: false, message: "El documento cambió; recarga antes de archivarlo." })
+  })
+
+  it("un error inesperado sigue oculto tras el mensaje genérico", async () => {
+    mockArchiveDocument.mockRejectedValueOnce(new Error('duplicate key value violates unique constraint "prevention_documents_pkey"'))
+    await expect(archiveSstDocumentAction({ documentId: "doc-1", comment: "vencido" }))
+      .resolves.toMatchObject({ ok: false, message: "No se pudo completar la acción. Intenta nuevamente." })
+  })
+})

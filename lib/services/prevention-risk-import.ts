@@ -20,6 +20,7 @@ import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
 import { resolveRiskImportsDir, resolveStorageFile } from "@/lib/storage/config"
 import { riskEntrySchema } from "@/lib/validation/prevention-module/risk-legal"
 import { validateLoadedWorkbook, validateXlsxEnvelope } from "@/lib/services/xlsx-security"
+import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 
 export const RISK_IMPORT_MAX_BYTES = 20 * 1024 * 1024
 const MAX_ROWS = 5_000
@@ -162,6 +163,29 @@ function parseControls(value: string, responsible: string, critical: boolean) {
   })
 }
 
+/** Columnas obligatorias con el encabezado que la persona ve en su planilla. */
+const REQUIRED_COLUMN_LABELS: Record<string, string> = {
+  processName: "Proceso",
+  taskName: "Tarea",
+  positionName: "Puesto",
+  hazard: "Peligro",
+  riskFactor: "Factor de riesgo",
+  expectedEventOrDamage: "Evento o daño",
+  inherentLevel: "Nivel inherente",
+  residualLevel: "Nivel residual",
+  responsibleSnapshot: "Responsable",
+}
+
+/*
+ * Los validadores compartidos de `xlsx-security` lanzan `Error` común con
+ * texto para el usuario («.xls no está permitido», «Los Excel cifrados no están
+ * permitidos»…). Aquí son un rechazo de la planilla, no una falla: se pasan como
+ * error de dominio para que la acción los muestre.
+ */
+function asFileRejection(error: unknown): unknown {
+  return error instanceof Error && !(error instanceof RiskLegalDomainError) ? new RiskLegalDomainError(error.message) : error
+}
+
 function buildColumnMap(row: ExcelJS.Row) {
   const map = new Map<string, number>()
   row.eachCell({ includeEmpty: false }, (cell, column) => {
@@ -170,9 +194,8 @@ function buildColumnMap(row: ExcelJS.Row) {
       if (!map.has(field) && aliases.some((alias) => normalize(alias) === header)) map.set(field, column)
     }
   })
-  const required = ["processName", "taskName", "positionName", "hazard", "riskFactor", "expectedEventOrDamage", "inherentLevel", "residualLevel", "responsibleSnapshot"]
-  const missing = required.filter((field) => !map.has(field))
-  if (missing.length) throw new Error(`El Excel MIPER no contiene columnas obligatorias reconocibles: ${missing.join(", ")}.`)
+  const missing = Object.keys(REQUIRED_COLUMN_LABELS).filter((field) => !map.has(field))
+  if (missing.length) throw new RiskLegalDomainError(`El Excel MIPER no trae las columnas obligatorias: ${missing.map((field) => REQUIRED_COLUMN_LABELS[field]).join(", ")}.`)
   return map
 }
 
@@ -255,7 +278,7 @@ function fingerprint(row: NormalizedRiskImportRow) {
 
 function assertPermission(access: RiskLegalAccess, permission: string, worksiteId?: string) {
   const scopeAllows = !worksiteId || access.scope.mode === "all" || (access.scope.mode === "some" && access.scope.ids.includes(worksiteId))
-  if (!access.permissions.includes(permission) || !scopeAllows) throw new Error("Lote MIPER no encontrado o fuera de alcance.")
+  if (!access.permissions.includes(permission) || !scopeAllows) throw new RiskLegalDomainError("Lote MIPER no encontrado o fuera de alcance.")
 }
 
 export async function stageRiskImport(args: {
@@ -268,22 +291,27 @@ export async function stageRiskImport(args: {
   assertPermission(args.access, "prevention:risk:edit", args.worksiteId)
   // Envolvente ZIP antes de que el buffer toque ExcelJS: firma, expansión,
   // cifrado y rutas internas (mismo orden que la importación PDTP).
-  validateXlsxEnvelope({
-    name: args.fileName,
-    type: args.mimeType ?? "",
-    size: args.buffer.length,
-    buffer: args.buffer,
-  }, RISK_IMPORT_MAX_BYTES, RISK_IMPORT_LIMITS)
+  try {
+    validateXlsxEnvelope({
+      name: args.fileName,
+      type: args.mimeType ?? "",
+      size: args.buffer.length,
+      buffer: args.buffer,
+    }, RISK_IMPORT_MAX_BYTES, RISK_IMPORT_LIMITS)
+  } catch (error) {
+    throw asFileRejection(error)
+  }
   const checksum = createHash("sha256").update(args.buffer).digest("hex")
   const [existing] = await db.select().from(preventionRiskImportBatches).where(and(eq(preventionRiskImportBatches.worksiteId, args.worksiteId), eq(preventionRiskImportBatches.sourceChecksumSha256, checksum))).limit(1)
   if (existing) return { batch: existing, idempotentReplay: true }
   const [worksite] = await db.select({ id: worksites.id }).from(worksites).where(and(eq(worksites.id, args.worksiteId), eq(worksites.isActive, true))).limit(1)
-  if (!worksite) throw new Error("Faena no encontrada o fuera de alcance.")
+  if (!worksite) throw new RiskLegalDomainError("Faena no encontrada o fuera de alcance.")
 
   const workbook = new ExcelJS.Workbook()
   try { await workbook.xlsx.load(args.buffer as never, { ignoreNodes: ["dataValidations", "conditionalFormatting", "hyperlinks"] }) }
-  catch { throw new Error("El archivo no es un Excel válido.") }
-  validateLoadedWorkbook(workbook, MAX_ROWS, RISK_IMPORT_LIMITS)
+  catch { throw new RiskLegalDomainError("El archivo no es un Excel válido.") }
+  try { validateLoadedWorkbook(workbook, MAX_ROWS, RISK_IMPORT_LIMITS) }
+  catch (error) { throw asFileRejection(error) }
   const sheet = workbook.worksheets[0]!
   const columns = buildColumnMap(sheet.getRow(1))
   const rows: Array<{ rowNumber: number; original: Record<string, string>; normalized: NormalizedRiskImportRow; issues: string[]; fingerprint: string }> = []
@@ -322,7 +350,7 @@ export async function stageRiskImport(args: {
     seen.add(rowFingerprint)
     rows.push({ rowNumber, original, normalized, issues: rowIssues, fingerprint: rowFingerprint })
   })
-  if (!rows.length) throw new Error("El Excel no contiene filas MIPER utilizables.")
+  if (!rows.length) throw new RiskLegalDomainError("El Excel no contiene filas MIPER utilizables.")
 
   const batchId = `riskimport-${nanoid()}`
   const storageName = `${batchId}.xlsx`
@@ -379,17 +407,17 @@ export async function resolveRiskImportRow(input: unknown, access: RiskLegalAcce
   }).parse(input)
   return db.transaction(async (tx) => {
     const [row] = await tx.select({ row: preventionRiskImportRows, batch: preventionRiskImportBatches }).from(preventionRiskImportRows).innerJoin(preventionRiskImportBatches, eq(preventionRiskImportBatches.id, preventionRiskImportRows.batchId)).where(eq(preventionRiskImportRows.id, data.rowId)).limit(1)
-    if (!row) throw new Error("Fila MIPER no encontrada o fuera de alcance.")
+    if (!row) throw new RiskLegalDomainError("Fila MIPER no encontrada o fuera de alcance.")
     assertPermission(access, "prevention:risk:edit", row.batch.worksiteId)
-    if (row.batch.status !== "staged") throw new Error("Sólo un lote en revisión admite correcciones.")
+    if (row.batch.status !== "staged") throw new RiskLegalDomainError("Sólo un lote en revisión admite correcciones.")
     let normalized: NormalizedRiskImportRow | Record<string, unknown> = data.normalized
     let issues: string[] = []
     if (!data.reject) {
       const parsed = riskEntryContract.safeParse(data.normalized)
-      if (!parsed.success) throw new Error(`La normalización corregida no cumple el contrato MIPER: ${parsed.error.issues.map((issue) => `${issue.path.join(".") || "fila"}: ${issue.message}`).join("; ")}.`)
+      if (!parsed.success) throw new RiskLegalDomainError(`La normalización corregida no cumple el contrato MIPER: ${parsed.error.issues.map((issue) => `${issue.path.join(".") || "fila"}: ${issue.message}`).join("; ")}.`)
       normalized = parsed.data as unknown as NormalizedRiskImportRow
       issues = issuesFor(normalized as NormalizedRiskImportRow)
-      if (issues.length) throw new Error(`La fila aún tiene observaciones: ${issues.join("; ")}.`)
+      if (issues.length) throw new RiskLegalDomainError(`La fila aún tiene observaciones: ${issues.join("; ")}.`)
     }
     const status = data.reject ? "rejected" : "ready"
     const now = new Date().toISOString()
@@ -406,12 +434,12 @@ export async function resolveRiskImportRow(input: unknown, access: RiskLegalAcce
 export async function approveRiskImportBatch(batchId: string, access: RiskLegalAccess) {
   return db.transaction(async (tx) => {
     const [batch] = await tx.select().from(preventionRiskImportBatches).where(eq(preventionRiskImportBatches.id, batchId)).limit(1)
-    if (!batch) throw new Error("Lote MIPER no encontrado o fuera de alcance.")
+    if (!batch) throw new RiskLegalDomainError("Lote MIPER no encontrado o fuera de alcance.")
     assertPermission(access, "prevention:risk:approve", batch.worksiteId)
-    if (batch.createdByUserId === access.userId) throw new Error("Quien importó el archivo no puede aprobar el lote.")
-    if (batch.status !== "staged") throw new Error("El lote no está pendiente de aprobación.")
+    if (batch.createdByUserId === access.userId) throw new RiskLegalDomainError("Quien importó el archivo no puede aprobar el lote.")
+    if (batch.status !== "staged") throw new RiskLegalDomainError("El lote no está pendiente de aprobación.")
     const counts = await tx.select({ blocking: sql<number>`count(*) filter (where ${preventionRiskImportRows.status} = 'needs_review')::int` }).from(preventionRiskImportRows).where(eq(preventionRiskImportRows.batchId, batch.id))
-    if (counts[0]?.blocking) throw new Error("Debes resolver todas las filas observadas antes de aprobar.")
+    if (counts[0]?.blocking) throw new RiskLegalDomainError("Debes resolver todas las filas observadas antes de aprobar.")
     const now = new Date().toISOString()
     const [updated] = await tx.update(preventionRiskImportBatches).set({ status: "approved", approvedByUserId: access.userId, approvedAt: now }).where(and(eq(preventionRiskImportBatches.id, batch.id), eq(preventionRiskImportBatches.status, "staged"))).returning()
     // MIPER-11: el predicado `status = 'staged'` es el CAS que evita la doble
@@ -421,7 +449,7 @@ export async function approveRiskImportBatch(batchId: string, access: RiskLegalA
     // que la pantalla mostraba éxito y el aprobador quedaba registrado como
     // otro. Mismo `if (!updated) throw` que `reopenRiskImportBatch` y el resto
     // del módulo.
-    if (!updated) throw new Error("El lote cambió mientras lo aprobabas. Recarga antes de continuar.")
+    if (!updated) throw new RiskLegalDomainError("El lote cambió mientras lo aprobabas. Recarga antes de continuar.")
     return updated
   })
 }
@@ -441,18 +469,18 @@ export async function reopenRiskImportBatch(input: unknown, access: RiskLegalAcc
   const data = z.object({ batchId: z.string().min(1), reason: z.string().trim().min(10).max(3000) }).parse(input)
   return db.transaction(async (tx) => {
     const [batch] = await tx.select().from(preventionRiskImportBatches).where(eq(preventionRiskImportBatches.id, data.batchId)).limit(1)
-    if (!batch) throw new Error("Lote MIPER no encontrado o fuera de alcance.")
+    if (!batch) throw new RiskLegalDomainError("Lote MIPER no encontrado o fuera de alcance.")
     assertPermission(access, "prevention:risk:edit", batch.worksiteId)
-    if (batch.status !== "approved") throw new Error("Sólo un lote aprobado y aún sin activar puede reabrirse.")
+    if (batch.status !== "approved") throw new RiskLegalDomainError("Sólo un lote aprobado y aún sin activar puede reabrirse.")
     const [matrix] = await tx.select({ id: preventionRiskMatrices.id, status: preventionRiskMatrices.status }).from(preventionRiskMatrices).where(eq(preventionRiskMatrices.sourceImportBatchId, batch.id)).limit(1)
     // Si ya nació la versión borrador desde este lote, reabrirlo dejaría dos
     // orígenes de verdad para el mismo peligro. Se corrige en la MIPER.
-    if (matrix) throw new Error("El lote ya generó una versión MIPER: corrige el peligro en la versión borrador.")
+    if (matrix) throw new RiskLegalDomainError("El lote ya generó una versión MIPER: corrige el peligro en la versión borrador.")
     const [updated] = await tx.update(preventionRiskImportBatches)
       .set({ status: "staged", approvedByUserId: null, approvedAt: null })
       .where(and(eq(preventionRiskImportBatches.id, batch.id), eq(preventionRiskImportBatches.status, "approved")))
       .returning()
-    if (!updated) throw new Error("El lote cambió mientras lo reabrías. Recarga antes de continuar.")
+    if (!updated) throw new RiskLegalDomainError("El lote cambió mientras lo reabrías. Recarga antes de continuar.")
     await recordModuleHistory(tx, {
       module: "risk_legal:import",
       entityType: "import_batch",
@@ -485,9 +513,9 @@ export async function activateRiskImportBatch(input: unknown, access: RiskLegalA
 
   return db.transaction(async (tx) => {
     const [batch] = await tx.select().from(preventionRiskImportBatches).where(eq(preventionRiskImportBatches.id, data.batchId)).limit(1)
-    if (!batch) throw new Error("Lote MIPER no encontrado o fuera de alcance.")
+    if (!batch) throw new RiskLegalDomainError("Lote MIPER no encontrado o fuera de alcance.")
     assertPermission(access, "prevention:risk:edit", batch.worksiteId)
-    if (!inArrayStatus(batch.status, ["approved", "activated"])) throw new Error("El lote debe estar aprobado antes de activarlo.")
+    if (!inArrayStatus(batch.status, ["approved", "activated"])) throw new RiskLegalDomainError("El lote debe estar aprobado antes de activarlo.")
 
     let [matrix] = await tx.select().from(preventionRiskMatrices).where(eq(preventionRiskMatrices.sourceImportBatchId, batch.id)).limit(1)
     if (!matrix) {
@@ -525,7 +553,13 @@ export async function activateRiskImportBatch(input: unknown, access: RiskLegalA
         const detail = error instanceof ZodError
           ? error.issues.map((issue) => `${issue.path.join(".") || "fila"}: ${issue.message}`).join("; ")
           : error instanceof Error ? error.message : String(error)
-        throw new Error(`Fila ${row.rowNumber}: ${detail} Reabre el lote para corregirla o rechazarla.`)
+        const message = `Fila ${row.rowNumber}: ${detail} Reabre el lote para corregirla o rechazarla.`
+        // Sólo sube como dominio lo que ya era apto para el usuario (validación o
+        // regla de negocio). Un error de driver trae el SQL en `message`: sigue
+        // siendo `Error` común para que la acción lo loguee y responda genérico.
+        throw error instanceof ZodError || error instanceof RiskLegalDomainError
+          ? new RiskLegalDomainError(message)
+          : new Error(message)
       }
     }
 
@@ -583,7 +617,7 @@ export function resolveRiskImportSourcePath(filePath: string) {
 
 export async function getRiskImportSourceFile(batchId: string, access: RiskLegalAccess) {
   const [batch] = await db.select().from(preventionRiskImportBatches).where(eq(preventionRiskImportBatches.id, batchId)).limit(1)
-  if (!batch) throw new Error("Lote MIPER no encontrado o fuera de alcance.")
+  if (!batch) throw new RiskLegalDomainError("Lote MIPER no encontrado o fuera de alcance.")
   assertPermission(access, "prevention:risk:view", batch.worksiteId)
   const absolutePath = resolveRiskImportSourcePath(batch.sourceFilePath)
   if (!absolutePath) throw new Error("Ruta de original MIPER inválida.")

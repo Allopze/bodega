@@ -42,6 +42,7 @@ import {
   recordAuditEntry,
   todayIso,
 } from "./utils"
+import { PreventionDocumentDomainError } from "./errors"
 
 const ALLOWED_MIMES = MimeType.DOCUMENT_LIBRARY
 const MAX_FILE_SIZE = 25 * 1024 * 1024
@@ -57,10 +58,10 @@ export async function createDocument({ data, ctx, scope, permissions }: CreateDo
   if (parsed.folderId) {
     const [folder] = await db.select({ worksiteId: sstDocumentFolders.worksiteId })
       .from(sstDocumentFolders).where(eq(sstDocumentFolders.id, parsed.folderId)).limit(1)
-    if (!folder) throw new Error("Carpeta no encontrada.")
+    if (!folder) throw new PreventionDocumentDomainError("Carpeta no encontrada.")
     if (folder.worksiteId) {
       if (parsed.worksiteId && parsed.worksiteId !== folder.worksiteId) {
-        throw new Error("La carpeta pertenece a otra faena que la declarada para el documento.")
+        throw new PreventionDocumentDomainError("La carpeta pertenece a otra faena que la declarada para el documento.")
       }
       parsed.worksiteId = folder.worksiteId
     }
@@ -69,7 +70,7 @@ export async function createDocument({ data, ctx, scope, permissions }: CreateDo
     // La categoría la define el tipo: dos fuentes para lo mismo divergían.
     const [type] = await db.select({ categorySlug: sstDocumentTypes.categorySlug, isActive: sstDocumentTypes.isActive })
       .from(sstDocumentTypes).where(eq(sstDocumentTypes.id, parsed.typeId)).limit(1)
-    if (!type || !type.isActive) throw new Error("El tipo documental seleccionado no existe o está inactivo.")
+    if (!type || !type.isActive) throw new PreventionDocumentDomainError("El tipo documental seleccionado no existe o está inactivo.")
     parsed.categorySlug = type.categorySlug
   }
   assertScopeAccess(parsed.worksiteId || null, scope)
@@ -118,10 +119,10 @@ export async function updateDocumentMetadata(args: {
 }) {
   const data = sstDocumentUpdateSchema.parse(args.input)
   const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, data.id))
-  if (!doc) throw new Error("Documento no encontrado.")
+  if (!doc) throw new PreventionDocumentDomainError("Documento no encontrado.")
   assertScopeAccess(doc.worksiteId, args.scope)
   assertConfidentialityAllowed(doc.confidentiality as SstDocumentConfidentiality, args.permissions)
-  if (doc.status === "archivado") throw new Error("No se puede modificar un documento archivado.")
+  if (doc.status === "archivado") throw new PreventionDocumentDomainError("No se puede modificar un documento archivado.")
   if (data.worksiteId !== undefined) assertScopeAccess(data.worksiteId || null, args.scope)
   if (data.confidentiality !== undefined) assertConfidentialityAllowed(data.confidentiality, args.permissions)
   if (data.dataClass !== undefined) {
@@ -150,14 +151,14 @@ export async function updateDocumentMetadata(args: {
         isActive: sstDocumentTypes.isActive,
         requiresAcknowledgment: sstDocumentTypes.requiresAcknowledgment,
       }).from(sstDocumentTypes).where(eq(sstDocumentTypes.id, data.typeId)).limit(1)
-      if (!type || !type.isActive) throw new Error("El tipo documental seleccionado no existe o está inactivo.")
+      if (!type || !type.isActive) throw new PreventionDocumentDomainError("El tipo documental seleccionado no existe o está inactivo.")
       // Clasificar como RIOHS un documento ya vigente lo haría pasar por
       // vigente sin la verificación del DS 44 art. 58 que exige publicarlo.
       if (type.code === RIOHS_DOCUMENT_TYPE_CODE && doc.status === "vigente") {
         const metadata = ((data.extraMetadata ?? doc.extraMetadata) ?? {}) as RiohsMetadata
         const completeness = assessRiohsCompleteness(metadata.riohsSections)
         if (!completeness.complete) {
-          throw new Error("Un documento vigente sólo puede clasificarse como Reglamento Interno si declara el contenido mínimo del DS 44 art. 58.")
+          throw new PreventionDocumentDomainError("Un documento vigente sólo puede clasificarse como Reglamento Interno si declara el contenido mínimo del DS 44 art. 58.")
         }
       }
       patch.typeId = data.typeId
@@ -214,20 +215,20 @@ export async function uploadDocumentVersion(args: {
     supersedesId: args.input.supersedesId,
   })
   const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, data.documentId))
-  if (!doc) throw new Error("Documento no encontrado.")
+  if (!doc) throw new PreventionDocumentDomainError("Documento no encontrado.")
   assertScopeAccess(doc.worksiteId, args.scope)
   assertConfidentialityAllowed(doc.confidentiality as SstDocumentConfidentiality, args.permissions)
-  if (doc.status === "archivado") throw new Error("No se puede subir versiones a un documento archivado.")
+  if (doc.status === "archivado") throw new PreventionDocumentDomainError("No se puede subir versiones a un documento archivado.")
   assertGeneralLibraryContentAllowed({ dataClass: doc.dataClass, title: doc.title, fileName: args.input.file.name })
   if (data.effectiveFrom && data.effectiveTo && data.effectiveTo < data.effectiveFrom) {
-    throw new Error("La vigencia no puede terminar antes de comenzar.")
+    throw new PreventionDocumentDomainError("La vigencia no puede terminar antes de comenzar.")
   }
 
   const file = await readFileToBuffer(args.input.file)
-  if (file.size > MAX_FILE_SIZE) throw new Error(`El archivo supera el máximo permitido de ${Math.round(MAX_FILE_SIZE / 1024 / 1024)} MB.`)
-  if (file.size < 4) throw new Error("El archivo está vacío o es demasiado pequeño.")
+  if (file.size > MAX_FILE_SIZE) throw new PreventionDocumentDomainError(`El archivo supera el máximo permitido de ${Math.round(MAX_FILE_SIZE / 1024 / 1024)} MB.`)
+  if (file.size < 4) throw new PreventionDocumentDomainError("El archivo está vacío o es demasiado pequeño.")
   const validated = validateFileBuffer(file.buffer, file.size, ALLOWED_MIMES, file.name)
-  if (validated.error) throw new Error(validated.error)
+  if (validated.error) throw new PreventionDocumentDomainError(validated.error)
 
   const checksum = sha256Hex(file.buffer)
   const [dupe] = await db
@@ -235,7 +236,7 @@ export async function uploadDocumentVersion(args: {
     .from(sstDocumentVersions)
     .where(and(eq(sstDocumentVersions.documentId, data.documentId), eq(sstDocumentVersions.checksum, checksum)))
     .limit(1)
-  if (dupe) throw new Error(`Este archivo ya existe como versión ${dupe.version} del documento.`)
+  if (dupe) throw new PreventionDocumentDomainError(`Este archivo ya existe como versión ${dupe.version} del documento.`)
 
   const storageName = generateStorageName(file.name)
   const folderSegments = await getFolderRemoteSegments(doc.folderId)
@@ -248,8 +249,8 @@ export async function uploadDocumentVersion(args: {
       // Bloquear el documento serializa dos cargas simultáneas: con la carga
       // directa, las dos intentarían reemplazar la misma vigente.
       const [locked] = await tx.select().from(sstDocuments).where(eq(sstDocuments.id, doc.id)).for("update")
-      if (!locked) throw new Error("Documento no encontrado.")
-      if (locked.status === "archivado") throw new Error("No se puede subir versiones a un documento archivado.")
+      if (!locked) throw new PreventionDocumentDomainError("Documento no encontrado.")
+      if (locked.status === "archivado") throw new PreventionDocumentDomainError("No se puede subir versiones a un documento archivado.")
 
       const now = new Date().toISOString()
       const id = `sdv-${nanoid()}`
@@ -323,7 +324,7 @@ async function resolveDirectPublication(
   if (!type || type.requiresApproval || !type.isActive) return false
   if (type.code === RIOHS_DOCUMENT_TYPE_CODE) return false
   if (version.effectiveFrom && version.effectiveFrom > todayIso()) {
-    throw new Error(`Este tipo queda vigente al cargarlo, y su vigencia empieza el ${version.effectiveFrom}. Cárgalo desde esa fecha.`)
+    throw new PreventionDocumentDomainError(`Este tipo queda vigente al cargarlo, y su vigencia empieza el ${version.effectiveFrom}. Cárgalo desde esa fecha.`)
   }
   return true
 }
@@ -335,7 +336,7 @@ export async function archiveDocument(args: {
 }) {
   const data = sstDocumentArchiveSchema.parse(args.input)
   const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, data.documentId))
-  if (!doc) throw new Error("Documento no encontrado.")
+  if (!doc) throw new PreventionDocumentDomainError("Documento no encontrado.")
   assertScopeAccess(doc.worksiteId, args.scope)
 
   const now = new Date().toISOString()
@@ -357,9 +358,9 @@ export async function restoreDocument(args: {
   input: { documentId: string; comment?: string }; ctx: RequestContext; scope: WorksiteScope
 }) {
   const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, args.input.documentId))
-  if (!doc) throw new Error("Documento no encontrado.")
+  if (!doc) throw new PreventionDocumentDomainError("Documento no encontrado.")
   assertScopeAccess(doc.worksiteId, args.scope)
-  if (doc.status !== "archivado") throw new Error("Sólo se pueden restaurar documentos archivados.")
+  if (doc.status !== "archivado") throw new PreventionDocumentDomainError("Sólo se pueden restaurar documentos archivados.")
 
   const now = new Date().toISOString()
   const [updated] = await db.update(sstDocuments)

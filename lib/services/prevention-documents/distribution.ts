@@ -23,6 +23,7 @@ import {
   type RequestContext,
   type SstDocumentConfidentiality,
 } from "./utils"
+import { PreventionDocumentDomainError } from "./errors"
 
 interface DistributionContext {
   ctx: RequestContext
@@ -35,11 +36,11 @@ async function getPublishedVersionContext(versionId: string) {
     .select()
     .from(sstDocumentVersions)
     .where(eq(sstDocumentVersions.id, versionId))
-  if (!version) throw new Error("Versión documental no encontrada.")
+  if (!version) throw new PreventionDocumentDomainError("Versión documental no encontrada.")
   const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, version.documentId))
-  if (!doc) throw new Error("Documento no encontrado.")
+  if (!doc) throw new PreventionDocumentDomainError("Documento no encontrado.")
   if (doc.currentVersionId !== version.id || version.status !== "vigente" || doc.status !== "vigente") {
-    throw new Error("Sólo se puede distribuir o acusar la versión vigente publicada.")
+    throw new PreventionDocumentDomainError("Sólo se puede distribuir o acusar la versión vigente publicada.")
   }
   return { doc, version }
 }
@@ -53,7 +54,7 @@ async function getPublishedVersionContext(versionId: string) {
  */
 function authorizeDistribution(args: DistributionContext, doc: { worksiteId: string | null; confidentiality: string }) {
   if (doc.worksiteId) assertScopeAccess(doc.worksiteId, args.scope)
-  else if (args.scope.mode === "none") throw new Error("Documento no encontrado o sin acceso a la faena.")
+  else if (args.scope.mode === "none") throw new PreventionDocumentDomainError("Documento no encontrado o sin acceso a la faena.")
   assertConfidentialityAllowed(doc.confidentiality as SstDocumentConfidentiality, args.permissions)
 }
 
@@ -61,7 +62,7 @@ function authorizeDistribution(args: DistributionContext, doc: { worksiteId: str
 function assertTargetInScope(doc: { worksiteId: string | null }, targetWorksiteId: string | null, scope: WorksiteScope) {
   if (doc.worksiteId || scope.mode === "all") return
   if (scope.mode === "none" || !targetWorksiteId || !scope.ids.includes(targetWorksiteId)) {
-    throw new Error("El destinatario pertenece a una faena fuera de tu alcance.")
+    throw new PreventionDocumentDomainError("El destinatario pertenece a una faena fuera de tu alcance.")
   }
 }
 
@@ -88,17 +89,17 @@ export async function assignDocumentVersionRecipients(args: DistributionContext 
   const workerIds = Array.from(new Set(args.workerIds?.filter(Boolean) ?? []))
   const recipientCount = userIds.length + workerIds.length
   const reason = args.assignmentReason.trim()
-  if (recipientCount === 0) throw new Error("Selecciona al menos un destinatario.")
-  if (recipientCount > 200) throw new Error("La distribución admite hasta 200 destinatarios por operación.")
-  if (reason.length < 3 || reason.length > 500) throw new Error("Registra un motivo de asignación válido.")
+  if (recipientCount === 0) throw new PreventionDocumentDomainError("Selecciona al menos un destinatario.")
+  if (recipientCount > 200) throw new PreventionDocumentDomainError("La distribución admite hasta 200 destinatarios por operación.")
+  if (reason.length < 3 || reason.length > 500) throw new PreventionDocumentDomainError("Registra un motivo de asignación válido.")
 
   const { doc, version } = await getPublishedVersionContext(args.versionId)
   authorizeDistribution(args, doc)
   if (!doc.requiresAcknowledgment) {
-    throw new Error("El documento no está configurado para exigir acuse.")
+    throw new PreventionDocumentDomainError("El documento no está configurado para exigir acuse.")
   }
   if (doc.confidentiality === "sensible" && recipientCount !== 1) {
-    throw new Error("Los documentos sensibles sólo admiten distribución nominativa individual.")
+    throw new PreventionDocumentDomainError("Los documentos sensibles sólo admiten distribución nominativa individual.")
   }
 
   const [userRows, explicitWorkerRows] = await Promise.all([
@@ -116,10 +117,10 @@ export async function assignDocumentVersionRecipients(args: DistributionContext 
       : Promise.resolve([]),
   ])
   if (userRows.length !== userIds.length || userRows.some((row) => !row.isActive)) {
-    throw new Error("Uno o más usuarios destinatarios no existen o están inactivos.")
+    throw new PreventionDocumentDomainError("Uno o más usuarios destinatarios no existen o están inactivos.")
   }
   if (explicitWorkerRows.length !== workerIds.length || explicitWorkerRows.some((row) => !row.isActive)) {
-    throw new Error("Uno o más trabajadores destinatarios no existen o están inactivos.")
+    throw new PreventionDocumentDomainError("Uno o más trabajadores destinatarios no existen o están inactivos.")
   }
 
   const linkedWorkerIds = userRows.flatMap((row) => row.workerId ? [row.workerId] : [])
@@ -169,7 +170,7 @@ export async function assignDocumentVersionRecipients(args: DistributionContext 
     if (doc.worksiteId) {
       const hasDocumentWorksite = worker?.worksiteId === doc.worksiteId
         || worksiteIdsByUser.get(recipient.id)?.has(doc.worksiteId)
-      if (!hasDocumentWorksite) throw new Error("Un usuario destinatario no pertenece a la faena del documento.")
+      if (!hasDocumentWorksite) throw new PreventionDocumentDomainError("Un usuario destinatario no pertenece a la faena del documento.")
     }
     rows.push({
       id: `sdd-${nanoid()}`,
@@ -191,7 +192,7 @@ export async function assignDocumentVersionRecipients(args: DistributionContext 
   for (const worker of explicitWorkerRows) {
     assertScopeAccess(worker.worksiteId, args.scope)
     if (doc.worksiteId && worker.worksiteId !== doc.worksiteId) {
-      throw new Error("Un trabajador destinatario no pertenece a la faena del documento.")
+      throw new PreventionDocumentDomainError("Un trabajador destinatario no pertenece a la faena del documento.")
     }
     if (rows.some((row) => row.workerId === worker.id)) continue
     rows.push({
@@ -243,7 +244,7 @@ export async function acknowledgeDocumentVersion(args: DistributionContext & {
   userAgent?: string | null
 }) {
   const method = args.method?.trim() || "digital"
-  if (!/^[a-z_]{3,30}$/.test(method)) throw new Error("Método de acuse inválido.")
+  if (!/^[a-z_]{3,30}$/.test(method)) throw new PreventionDocumentDomainError("Método de acuse inválido.")
   const { doc, version } = await getPublishedVersionContext(args.versionId)
   // Acusar es un acto propio: lo autoriza tener una asignación nominativa para
   // esta versión (se verifica abajo), no el alcance sobre la faena del
@@ -256,7 +257,7 @@ export async function acknowledgeDocumentVersion(args: DistributionContext & {
   const result = await db.transaction(async (tx) => {
     const [user] = await tx.select({ workerId: users.workerId, isActive: users.isActive })
       .from(users).where(eq(users.id, args.ctx.userId))
-    if (!user?.isActive) throw new Error("Usuario no disponible para registrar acuse.")
+    if (!user?.isActive) throw new PreventionDocumentDomainError("Usuario no disponible para registrar acuse.")
 
     const recipientWhere = user.workerId
       ? or(
@@ -270,8 +271,8 @@ export async function acknowledgeDocumentVersion(args: DistributionContext & {
         recipientWhere,
       ))
       .for("update")
-    if (!target) throw new Error("No tienes una asignación nominativa para esta versión.")
-    if (target.status === "exento") throw new Error("La asignación está exenta y no admite acuse.")
+    if (!target) throw new PreventionDocumentDomainError("No tienes una asignación nominativa para esta versión.")
+    if (target.status === "exento") throw new PreventionDocumentDomainError("La asignación está exenta y no admite acuse.")
     acknowledgedWorksiteId = target.worksiteId
 
     const [existing] = await tx.select().from(sstDocumentAcknowledgments)
@@ -350,14 +351,14 @@ export async function exemptDocumentDistributionTarget(args: DistributionContext
   reason: string
 }) {
   const reason = args.reason.trim()
-  if (reason.length < 3 || reason.length > 1000) throw new Error("Registra un motivo de exención válido.")
+  if (reason.length < 3 || reason.length > 1000) throw new PreventionDocumentDomainError("Registra un motivo de exención válido.")
   const [target] = await db.select().from(sstDocumentDistributionTargets)
     .where(eq(sstDocumentDistributionTargets.id, args.targetId))
-  if (!target) throw new Error("Destinatario documental no encontrado.")
+  if (!target) throw new PreventionDocumentDomainError("Destinatario documental no encontrado.")
   const { doc, version } = await getPublishedVersionContext(target.versionId)
   authorizeDistribution(args, doc)
   assertTargetInScope(doc, target.worksiteId, args.scope)
-  if (target.status !== "pendiente") throw new Error("Sólo se puede eximir una asignación pendiente.")
+  if (target.status !== "pendiente") throw new PreventionDocumentDomainError("Sólo se puede eximir una asignación pendiente.")
 
   const exempted = await db.transaction(async (tx) => {
     const now = new Date().toISOString()
@@ -371,7 +372,7 @@ export async function exemptDocumentDistributionTarget(args: DistributionContext
       eq(sstDocumentDistributionTargets.id, target.id),
       eq(sstDocumentDistributionTargets.status, "pendiente"),
     )).returning()
-    if (!updated) throw new Error("La asignación ya no está pendiente.")
+    if (!updated) throw new PreventionDocumentDomainError("La asignación ya no está pendiente.")
     await tx.insert(sstDocumentAudit).values({
       id: `sda-${nanoid()}`,
       documentId: doc.id,
@@ -414,10 +415,10 @@ export async function exemptDocumentDistributionTargets(args: DistributionContex
   reason: string
 }) {
   const reason = args.reason.trim()
-  if (reason.length < 3 || reason.length > 1000) throw new Error("Registra un motivo de exención válido.")
+  if (reason.length < 3 || reason.length > 1000) throw new PreventionDocumentDomainError("Registra un motivo de exención válido.")
   const targetIds = Array.from(new Set(args.targetIds.filter(Boolean)))
-  if (targetIds.length === 0) throw new Error("Selecciona al menos un destinatario.")
-  if (targetIds.length > 200) throw new Error("La exención admite hasta 200 destinatarios por operación.")
+  if (targetIds.length === 0) throw new PreventionDocumentDomainError("Selecciona al menos un destinatario.")
+  if (targetIds.length > 200) throw new PreventionDocumentDomainError("La exención admite hasta 200 destinatarios por operación.")
   const { doc, version } = await getPublishedVersionContext(args.versionId)
   authorizeDistribution(args, doc)
 
@@ -426,7 +427,7 @@ export async function exemptDocumentDistributionTargets(args: DistributionContex
       eq(sstDocumentDistributionTargets.versionId, version.id),
       inArray(sstDocumentDistributionTargets.id, targetIds),
     ))
-  if (targets.length !== targetIds.length) throw new Error("Uno o más destinatarios no pertenecen a esta versión.")
+  if (targets.length !== targetIds.length) throw new PreventionDocumentDomainError("Uno o más destinatarios no pertenecen a esta versión.")
   for (const target of targets) assertTargetInScope(doc, target.worksiteId, args.scope)
   const pendingIds = targets.filter((target) => target.status === "pendiente").map((target) => target.id)
 
@@ -575,10 +576,10 @@ export async function assignDocumentVersionToWorkforce(args: DistributionContext
   const { doc } = await getPublishedVersionContext(args.versionId)
   authorizeDistribution(args, doc)
   if (doc.confidentiality === "sensible") {
-    throw new Error("Los documentos sensibles sólo admiten distribución nominativa individual.")
+    throw new PreventionDocumentDomainError("Los documentos sensibles sólo admiten distribución nominativa individual.")
   }
   if (args.worksiteId && doc.worksiteId && args.worksiteId !== doc.worksiteId) {
-    throw new Error("El documento pertenece a otra faena.")
+    throw new PreventionDocumentDomainError("El documento pertenece a otra faena.")
   }
   if (args.worksiteId) assertTargetInScope(doc, args.worksiteId, args.scope)
 

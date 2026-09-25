@@ -66,7 +66,9 @@ export function MiperHeaderActions({ worksites, methodologies, matrices, committ
   committeeMeetings: Dashboard["committeeMeetings"]
   canEdit: boolean
 }) {
-  const operation = useOperation()
+  // En el encabezado no hay dónde pintar `operation.message`: el resultado,
+  // también el rechazo, sale en un aviso.
+  const operation = useOperation({ feedback: "toast" })
   if (!canEdit) return null
   return (
     <div className="flex gap-2">

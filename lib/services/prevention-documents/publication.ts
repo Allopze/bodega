@@ -28,6 +28,7 @@ import { onRiohsVersionPublished } from "@/lib/services/pdtp-adapters/riohs-roll
 import { resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
 import { addMonths } from "@/lib/utils"
 import { todayIso, type RequestContext } from "./utils"
+import { PreventionDocumentDomainError } from "./errors"
 
 type SstDocumentRow = typeof sstDocuments.$inferSelect
 type SstDocumentVersionRow = typeof sstDocumentVersions.$inferSelect
@@ -93,7 +94,7 @@ function assertRiohsContentComplete(doc: SstDocumentRow, typeCode: string | null
   const metadata = (doc.extraMetadata ?? {}) as RiohsMetadata
   const completeness = assessRiohsCompleteness(metadata.riohsSections)
   if (!completeness.complete) {
-    throw new Error(
+    throw new PreventionDocumentDomainError(
       `El Reglamento Interno no declara el contenido mínimo del DS 44 art. 58. Falta: ${completeness.missing.map((section) => section.title).join("; ")}.`,
     )
   }
@@ -136,7 +137,7 @@ export async function makeDocumentVersionCurrent(tx: Tx, args: {
       .where(eq(sstDocumentVersions.id, previousVersionId))
       .for("update")
     if (!previous || previous.documentId !== doc.id || previous.status !== "vigente") {
-      throw new Error("La versión vigente anterior es inconsistente; requiere regularización administrativa.")
+      throw new PreventionDocumentDomainError("La versión vigente anterior es inconsistente; requiere regularización administrativa.")
     }
     await tx
       .update(sstDocumentVersions)

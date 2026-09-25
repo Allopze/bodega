@@ -12,6 +12,7 @@ import { nanoid } from "@/lib/id"
 import { allowedDocumentConfidentialities, assertGeneralLibraryContentAllowed } from "./utils"
 import { assertScopeAccess } from "./utils"
 import { inspectDocumentLinkTargets } from "./links"
+import { PreventionDocumentDomainError } from "./errors"
 
 export type DocumentIntegrityFindingCode =
   | "DRAFT_WITH_PUBLISHED_VERSION"
@@ -59,13 +60,13 @@ export async function regularizeDocumentIntegrityFinding(args: {
 }) {
   const reason = args.reason.trim()
   if (reason.length < 5 || reason.length > 2000) {
-    throw new Error("La regularización requiere un motivo de al menos 5 caracteres.")
+    throw new PreventionDocumentDomainError("La regularización requiere un motivo de al menos 5 caracteres.")
   }
 
   return db.transaction(async (tx) => {
     const [doc] = await tx.select().from(sstDocuments)
       .where(eq(sstDocuments.id, args.documentId)).for("update").limit(1)
-    if (!doc) throw new Error("Documento no encontrado.")
+    if (!doc) throw new PreventionDocumentDomainError("Documento no encontrado.")
     assertScopeAccess(doc.worksiteId, args.scope)
     const now = new Date().toISOString()
     const before: Record<string, unknown> = {
@@ -77,11 +78,11 @@ export async function regularizeDocumentIntegrityFinding(args: {
     let after: Record<string, unknown> = {}
 
     if (args.action === "restore_published_document") {
-      if (args.findingCode !== "DRAFT_WITH_PUBLISHED_VERSION" || !args.versionId) throw new Error("Acción incompatible con el hallazgo.")
+      if (args.findingCode !== "DRAFT_WITH_PUBLISHED_VERSION" || !args.versionId) throw new PreventionDocumentDomainError("Acción incompatible con el hallazgo.")
       const [version] = await tx.select().from(sstDocumentVersions)
         .where(and(eq(sstDocumentVersions.id, args.versionId), eq(sstDocumentVersions.documentId, doc.id))).for("update").limit(1)
       if (!version || version.status !== "vigente" || !hasDemonstrableApproval(version) || doc.status !== "borrador") {
-        throw new Error("La versión no es una publicación aprobada apta para restaurar.")
+        throw new PreventionDocumentDomainError("La versión no es una publicación aprobada apta para restaurar.")
       }
       await tx.update(sstDocuments).set({
         status: "vigente", currentVersionId: version.id,
@@ -89,11 +90,11 @@ export async function regularizeDocumentIntegrityFinding(args: {
       }).where(eq(sstDocuments.id, doc.id))
       after = { documentStatus: "vigente", currentVersionId: version.id, approvedBy: version.approvedBy, approvedAt: version.approvedAt }
     } else if (args.action === "retire_unapproved_version") {
-      if (args.findingCode !== "PUBLISHED_WITHOUT_APPROVER" || !args.versionId) throw new Error("Acción incompatible con el hallazgo.")
+      if (args.findingCode !== "PUBLISHED_WITHOUT_APPROVER" || !args.versionId) throw new PreventionDocumentDomainError("Acción incompatible con el hallazgo.")
       const [version] = await tx.select().from(sstDocumentVersions)
         .where(and(eq(sstDocumentVersions.id, args.versionId), eq(sstDocumentVersions.documentId, doc.id))).for("update").limit(1)
       if (!version || version.status !== "vigente" || hasDemonstrableApproval(version)) {
-        throw new Error("La versión ya no corresponde a una publicación sin aprobación.")
+        throw new PreventionDocumentDomainError("La versión ya no corresponde a una publicación sin aprobación.")
       }
       await tx.update(sstDocumentVersions).set({ status: "archivado", updatedAt: now })
         .where(eq(sstDocumentVersions.id, version.id))
@@ -105,22 +106,22 @@ export async function regularizeDocumentIntegrityFinding(args: {
       after = { retiredVersionId: version.id, versionStatus: "archivado", currentVersionCleared: doc.currentVersionId === version.id }
     } else if (args.action === "clear_invalid_current_version") {
       if (!["CURRENT_VERSION_MISSING", "CURRENT_VERSION_NOT_PUBLISHED"].includes(args.findingCode) || !doc.currentVersionId) {
-        throw new Error("Acción incompatible con el hallazgo.")
+        throw new PreventionDocumentDomainError("Acción incompatible con el hallazgo.")
       }
       const [current] = await tx.select().from(sstDocumentVersions)
         .where(and(eq(sstDocumentVersions.id, doc.currentVersionId), eq(sstDocumentVersions.documentId, doc.id))).limit(1)
-      if (current?.status === "vigente") throw new Error("La versión actual ya es vigente; recarga el inventario.")
+      if (current?.status === "vigente") throw new PreventionDocumentDomainError("La versión actual ya es vigente; recarga el inventario.")
       await tx.update(sstDocuments).set({
         status: "borrador", currentVersionId: null, approvedBy: null, approvedAt: null, updatedAt: now,
       }).where(eq(sstDocuments.id, doc.id))
       after = { documentStatus: "borrador", currentVersionId: null, clearedReference: doc.currentVersionId }
     } else if (args.action === "choose_authoritative_version") {
-      if (args.findingCode !== "MULTIPLE_PUBLISHED_VERSIONS" || !args.selectedVersionId) throw new Error("Acción incompatible con el hallazgo.")
+      if (args.findingCode !== "MULTIPLE_PUBLISHED_VERSIONS" || !args.selectedVersionId) throw new PreventionDocumentDomainError("Acción incompatible con el hallazgo.")
       const published = await tx.select().from(sstDocumentVersions)
         .where(and(eq(sstDocumentVersions.documentId, doc.id), eq(sstDocumentVersions.status, "vigente"))).for("update")
       const selected = published.find((version) => version.id === args.selectedVersionId)
       if (published.length < 2 || !selected || !hasDemonstrableApproval(selected)) {
-        throw new Error("Selecciona una de las versiones vigentes que tenga aprobación demostrable.")
+        throw new PreventionDocumentDomainError("Selecciona una de las versiones vigentes que tenga aprobación demostrable.")
       }
       const retiredIds = published.filter((version) => version.id !== selected.id).map((version) => version.id)
       if (retiredIds.length) {
@@ -134,7 +135,7 @@ export async function regularizeDocumentIntegrityFinding(args: {
       after = { authoritativeVersionId: selected.id, retiredVersionIds: retiredIds }
     } else if (args.action === "link_successor") {
       if (args.findingCode !== "REPLACED_WITHOUT_SUCCESSOR" || !args.versionId || !args.selectedVersionId) {
-        throw new Error("Acción incompatible con el hallazgo.")
+        throw new PreventionDocumentDomainError("Acción incompatible con el hallazgo.")
       }
       const versions = await tx.select().from(sstDocumentVersions).where(and(
         eq(sstDocumentVersions.documentId, doc.id),
@@ -143,10 +144,10 @@ export async function regularizeDocumentIntegrityFinding(args: {
       const replaced = versions.find((version) => version.id === args.versionId)
       const successor = versions.find((version) => version.id === args.selectedVersionId)
       if (!replaced || replaced.status !== "reemplazado" || !successor || successor.version <= replaced.version) {
-        throw new Error("La versión sucesora debe existir, ser posterior y pertenecer al mismo documento.")
+        throw new PreventionDocumentDomainError("La versión sucesora debe existir, ser posterior y pertenecer al mismo documento.")
       }
       if (successor.supersedesId && successor.supersedesId !== replaced.id) {
-        throw new Error("La versión seleccionada ya declara otra predecesora.")
+        throw new PreventionDocumentDomainError("La versión seleccionada ya declara otra predecesora.")
       }
       await tx.update(sstDocumentVersions).set({ supersedesId: replaced.id, updatedAt: now })
         .where(eq(sstDocumentVersions.id, successor.id))

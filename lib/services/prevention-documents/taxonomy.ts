@@ -4,6 +4,7 @@ import { sstDocumentCategories, sstDocumentTypes } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { RIOHS_DOCUMENT_TYPE_CODE } from "@/lib/prevention/riohs"
 import { sstDocumentCategoryUpsertSchema, sstDocumentTypeUpsertSchema } from "@/lib/validation/prevention"
+import { PreventionDocumentDomainError } from "./errors"
 
 export async function listDocumentCategories(activeOnly = false) {
   const rows = activeOnly
@@ -52,12 +53,12 @@ export async function upsertDocumentType(input: unknown, client: DB | Tx = db) {
     .select({ slug: sstDocumentCategories.slug })
     .from(sstDocumentCategories)
     .where(eq(sstDocumentCategories.slug, data.categorySlug))
-  if (!category) throw new Error("La categoría indicada no existe")
+  if (!category) throw new PreventionDocumentDomainError("La categoría indicada no existe")
   // El RIOHS tiene contenido mínimo legal (DS 44 art. 58) que se verifica en
   // el ciclo de aprobación; un RIOHS "sin aprobación" quedaría vigente sin que
   // nadie lo revise.
   if (data.code === RIOHS_DOCUMENT_TYPE_CODE && !data.requiresApproval) {
-    throw new Error("El Reglamento Interno siempre requiere revisión y aprobación antes de quedar vigente.")
+    throw new PreventionDocumentDomainError("El Reglamento Interno siempre requiere revisión y aprobación antes de quedar vigente.")
   }
   const now = new Date().toISOString()
   const id = data.id || `sdtype-${nanoid()}`
@@ -301,7 +302,7 @@ export async function setDocumentCategoryActive(slug: string, isActive: boolean)
     .select({ isActive: sstDocumentCategories.isActive })
     .from(sstDocumentCategories)
     .where(eq(sstDocumentCategories.slug, slug))
-  if (!current) throw new Error("Categoría documental no encontrada")
+  if (!current) throw new PreventionDocumentDomainError("Categoría documental no encontrada")
   const now = new Date().toISOString()
   const [row] = await db
     .update(sstDocumentCategories)
@@ -316,7 +317,7 @@ export async function setDocumentTypeActive(id: string, isActive: boolean) {
     .select({ isActive: sstDocumentTypes.isActive })
     .from(sstDocumentTypes)
     .where(eq(sstDocumentTypes.id, id))
-  if (!current) throw new Error("Tipo documental no encontrado")
+  if (!current) throw new PreventionDocumentDomainError("Tipo documental no encontrado")
   const now = new Date().toISOString()
   const [row] = await db
     .update(sstDocumentTypes)

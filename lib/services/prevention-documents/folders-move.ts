@@ -17,6 +17,7 @@ import { getFolderRemoteSegments } from "./folder-storage"
 import { moveSstFolder } from "@/lib/storage/sst-folders"
 import { moveSstDocument } from "@/lib/storage/sst-backend"
 import { remoteSegment, sstPrefixReplace } from "@/lib/services/cloudreve/sst-path"
+import { PreventionDocumentDomainError } from "./errors"
 
 function normalizeNullableId(value: string | null | undefined) {
   return value ? value : null
@@ -24,7 +25,7 @@ function normalizeNullableId(value: string | null | undefined) {
 
 async function getFolderOrThrow(id: string, scope: WorksiteScope) {
   const [folder] = await db.select().from(sstDocumentFolders).where(eq(sstDocumentFolders.id, id)).limit(1)
-  if (!folder || folder.archivedAt) throw new Error("Carpeta no encontrada.")
+  if (!folder || folder.archivedAt) throw new PreventionDocumentDomainError("Carpeta no encontrada.")
   assertScopeAccess(folder.worksiteId, scope)
   return folder
 }
@@ -56,10 +57,12 @@ export async function moveDocumentFolder(args: {
   const parentId = normalizeNullableId(data.parentId)
   const folder = await getFolderOrThrow(data.id, args.scope)
   const parent = await assertParent(parentId, args.scope)
-  if (parent?.worksiteId !== folder.worksiteId) throw new Error("No se puede mover la carpeta a otra faena.")
+  // Sólo un padre impone faena: en la raíz la carpeta conserva la suya. Antes
+  // `undefined !== worksiteId` rechazaba siempre volver a la raíz.
+  if (parent && parent.worksiteId !== folder.worksiteId) throw new PreventionDocumentDomainError("No se puede mover la carpeta a otra faena.")
   const descendantIds = await listFolderDescendantIds(data.id)
   if (!canMoveFolder({ folderId: data.id, targetParentId: parentId, descendantIds })) {
-    throw new Error("No se puede mover una carpeta dentro de sí misma.")
+    throw new PreventionDocumentDomainError("No se puede mover una carpeta dentro de sí misma.")
   }
 
   const oldSegments = await getFolderRemoteSegments(data.id)
@@ -165,10 +168,10 @@ export async function moveDocumentToFolder(args: {
   const data = sstDocumentMoveSchema.parse(args.input)
   const folderId = normalizeNullableId(data.folderId)
   const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, data.id)).limit(1)
-  if (!doc) throw new Error("Documento no encontrado.")
+  if (!doc) throw new PreventionDocumentDomainError("Documento no encontrado.")
   assertScopeAccess(doc.worksiteId, args.scope)
   const folder = await assertParent(folderId, args.scope)
-  if (folder && folder.worksiteId !== doc.worksiteId) throw new Error("No se puede mover el documento a otra faena.")
+  if (folder && folder.worksiteId !== doc.worksiteId) throw new PreventionDocumentDomainError("No se puede mover el documento a otra faena.")
 
   const fromSegments = await getFolderRemoteSegments(doc.folderId)
   const toSegments = await getFolderRemoteSegments(folderId)

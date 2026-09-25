@@ -42,7 +42,7 @@ import type { WorksiteScope } from "@/lib/auth/scope"
 import { onRiskMatrixPublished } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
-import { LEGAL_COMPLIANCE_STATUS_LABELS } from "@/lib/prevention/badges"
+import { LEGAL_COMPLIANCE_STATUS_LABELS, LEGAL_REQUIREMENT_STATUS_LABELS, RISK_MATRIX_STATUS_LABELS } from "@/lib/prevention/badges"
 import { CAPA_STATUS_LABELS } from "@/lib/prevention/capa"
 import { capaPriorityForCriticality } from "@/lib/prevention/inspections"
 import { MINSAL_PROTOCOL_LABELS } from "@/lib/prevention/minsal-protocols"
@@ -64,6 +64,9 @@ import {
   riskReviewTriggerSchema,
 } from "@/lib/validation/prevention-module/risk-legal"
 import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/enqueue"
+import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
+
+export { RiskLegalDomainError } from "./prevention-risk-legal-errors"
 
 type Client = DB | Tx
 
@@ -79,7 +82,7 @@ function scopeAllows(scope: WorksiteScope, worksiteId: string) {
 
 function requireAccess(access: RiskLegalAccess, permission: string, worksiteId?: string) {
   if (!access.permissions.includes(permission) || (worksiteId && !scopeAllows(access.scope, worksiteId))) {
-    throw new Error("Registro preventivo no encontrado o fuera de alcance.")
+    throw new RiskLegalDomainError("Registro preventivo no encontrado o fuera de alcance.")
   }
 }
 
@@ -130,7 +133,7 @@ async function assertActiveUsers(client: Client, userIds: readonly (string | nul
     inArray(users.id, uniqueIds),
     eq(users.isActive, true),
   ))
-  if (activeUsers.length !== uniqueIds.length) throw new Error("La persona responsable no existe o está inactiva.")
+  if (activeUsers.length !== uniqueIds.length) throw new RiskLegalDomainError("La persona responsable no existe o está inactiva.")
 }
 
 async function assertActiveUser(client: Client, userId: string | null | undefined) {
@@ -181,13 +184,13 @@ export async function createRiskMatrixDraftWithClient(
     client.select().from(preventionRiskMethodologies).where(and(eq(preventionRiskMethodologies.id, data.methodologyId), eq(preventionRiskMethodologies.isActive, true))).limit(1),
     client.select({ matrixVersion: preventionRiskMatrices.matrixVersion }).from(preventionRiskMatrices).where(eq(preventionRiskMatrices.worksiteId, data.worksiteId)).orderBy(desc(preventionRiskMatrices.matrixVersion)).limit(1),
   ])
-  if (!worksite || !methodology) throw new Error("Faena o metodología no encontrada.")
+  if (!worksite || !methodology) throw new RiskLegalDomainError("Faena o metodología no encontrada.")
 
   let source: typeof preventionRiskMatrices.$inferSelect | null = null
   if (data.sourceMatrixId) {
     const sourceRows = await client.select().from(preventionRiskMatrices).where(and(eq(preventionRiskMatrices.id, data.sourceMatrixId), eq(preventionRiskMatrices.worksiteId, data.worksiteId), eq(preventionRiskMatrices.status, "published"))).limit(1)
     source = sourceRows[0] ?? null
-    if (!source) throw new Error("La versión fuente no está publicada o está fuera de alcance.")
+    if (!source) throw new RiskLegalDomainError("La versión fuente no está publicada o está fuera de alcance.")
   }
   if (data.sourceImportBatchId) {
     const [batch] = await client.select().from(preventionRiskImportBatches).where(and(
@@ -195,7 +198,7 @@ export async function createRiskMatrixDraftWithClient(
       eq(preventionRiskImportBatches.worksiteId, data.worksiteId),
       eq(preventionRiskImportBatches.status, "approved"),
     )).limit(1)
-    if (!batch) throw new Error("El lote de importación no está aprobado o está fuera de alcance.")
+    if (!batch) throw new RiskLegalDomainError("El lote de importación no está aprobado o está fuera de alcance.")
   }
   /* MIPER-07: la sesión es la evidencia verificable de participación del CPHS,
    * así que se resuelve antes de escribirla (mismo criterio que
@@ -213,7 +216,7 @@ export async function createRiskMatrixDraftWithClient(
         eq(preventionCommittees.worksiteId, data.worksiteId),
         ne(preventionCommitteeMeetings.status, "cancelled"),
       )).limit(1)
-    if (!meeting) throw new Error("La sesión del comité no existe, es de otra faena o está cancelada.")
+    if (!meeting) throw new RiskLegalDomainError("La sesión del comité no existe, es de otra faena o está cancelada.")
   }
 
   const matrixVersion = (versionRows[0]?.matrixVersion ?? 0) + 1
@@ -277,7 +280,7 @@ async function resolveHierarchy(client: Client, worksiteId: string, data: z.infe
   async function resolveProcess() {
     const [current] = await client.select().from(preventionRiskProcesses).where(and(eq(preventionRiskProcesses.worksiteId, worksiteId), eq(preventionRiskProcesses.code, data.process.code))).limit(1)
     if (current) {
-      if (current.name !== data.process.name) throw new Error(`El código de proceso ${data.process.code} ya existe con otro nombre.`)
+      if (current.name !== data.process.name) throw new RiskLegalDomainError(`El código de proceso ${data.process.code} ya existe con otro nombre.`)
       return current
     }
     const [created] = await client.insert(preventionRiskProcesses).values({ id: `riskprocess-${nanoid()}`, worksiteId, code: data.process.code, name: data.process.name, description: data.process.description ?? null }).returning()
@@ -286,10 +289,10 @@ async function resolveHierarchy(client: Client, worksiteId: string, data: z.infe
   const process = await resolveProcess()
   const [existingTask] = await client.select().from(preventionRiskTasks).where(and(eq(preventionRiskTasks.processId, process.id), eq(preventionRiskTasks.code, data.task.code))).limit(1)
   const task = existingTask ?? (await client.insert(preventionRiskTasks).values({ id: `risktask-${nanoid()}`, processId: process.id, code: data.task.code, name: data.task.name, isRoutine: data.task.isRoutine }).returning())[0]!
-  if (task.name !== data.task.name) throw new Error(`El código de tarea ${data.task.code} ya existe con otro nombre.`)
+  if (task.name !== data.task.name) throw new RiskLegalDomainError(`El código de tarea ${data.task.code} ya existe con otro nombre.`)
   const [existingPosition] = await client.select().from(preventionRiskPositions).where(and(eq(preventionRiskPositions.taskId, task.id), eq(preventionRiskPositions.code, data.position.code))).limit(1)
   const position = existingPosition ?? (await client.insert(preventionRiskPositions).values({ id: `riskposition-${nanoid()}`, taskId: task.id, code: data.position.code, name: data.position.name, workerPositionKey: data.position.workerPositionKey ?? null }).returning())[0]!
-  if (position.name !== data.position.name) throw new Error(`El código de puesto ${data.position.code} ya existe con otro nombre.`)
+  if (position.name !== data.position.name) throw new RiskLegalDomainError(`El código de puesto ${data.position.code} ya existe con otro nombre.`)
   return { process, task, position }
 }
 
@@ -300,9 +303,9 @@ export async function addRiskEntryWithClient(
 ) {
   const data = riskEntrySchema.parse(input)
   const [matrix] = await client.select().from(preventionRiskMatrices).where(eq(preventionRiskMatrices.id, data.matrixId)).limit(1)
-  if (!matrix) throw new Error("MIPER no encontrada o fuera de alcance.")
+  if (!matrix) throw new RiskLegalDomainError("MIPER no encontrada o fuera de alcance.")
   requireAccess(access, "prevention:risk:edit", matrix.worksiteId)
-  if (matrix.status !== "draft") throw new Error("Sólo una versión MIPER en borrador admite cambios.")
+  if (matrix.status !== "draft") throw new RiskLegalDomainError("Sólo una versión MIPER en borrador admite cambios.")
   await assertActiveUsers(client, [
     data.responsibleUserId,
     ...data.controls.map((control) => control.responsibleUserId),
@@ -493,16 +496,16 @@ export async function transitionRiskMatrix(input: unknown, access: RiskLegalAcce
   let accreditation: Parameters<typeof onRiskMatrixPublished>[0] | null = null
   const result = await db.transaction(async (tx) => {
     const [matrix] = await tx.select().from(preventionRiskMatrices).where(eq(preventionRiskMatrices.id, data.matrixId)).limit(1)
-    if (!matrix) throw new Error("MIPER no encontrada o fuera de alcance.")
+    if (!matrix) throw new RiskLegalDomainError("MIPER no encontrada o fuera de alcance.")
     requireAccess(access, MATRIX_PERMISSION[data.toStatus]!, matrix.worksiteId)
-    if (!MATRIX_TRANSITIONS[matrix.status]?.includes(data.toStatus)) throw new Error(`Transición MIPER inválida: ${matrix.status} → ${data.toStatus}.`)
-    if (matrix.version !== data.expectedVersion) throw new Error("La MIPER cambió mientras la revisabas. Recarga antes de continuar.")
+    if (!MATRIX_TRANSITIONS[matrix.status]?.includes(data.toStatus)) throw new RiskLegalDomainError(`La MIPER no puede pasar de «${RISK_MATRIX_STATUS_LABELS[matrix.status] ?? matrix.status}» a «${RISK_MATRIX_STATUS_LABELS[data.toStatus] ?? data.toStatus}»; recarga para ver su estado actual.`)
+    if (matrix.version !== data.expectedVersion) throw new RiskLegalDomainError("La MIPER cambió mientras la revisabas. Recarga antes de continuar.")
     if (data.toStatus === "in_review") {
       const countRows = await tx.select({ count: sql<number>`count(*)::int` }).from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, matrix.id))
-      if (!countRows[0]?.count) throw new Error("Una MIPER sin peligros no puede enviarse a revisión.")
+      if (!countRows[0]?.count) throw new RiskLegalDomainError("Una MIPER sin peligros no puede enviarse a revisión.")
     }
-    if (data.toStatus === "reviewed" && matrix.createdByUserId === access.userId) throw new Error("Quien creó la versión MIPER no puede revisarla.")
-    if (data.toStatus === "approved" && (matrix.createdByUserId === access.userId || matrix.reviewedByUserId === access.userId)) throw new Error("La aprobación MIPER debe estar segregada de creación y revisión.")
+    if (data.toStatus === "reviewed" && matrix.createdByUserId === access.userId) throw new RiskLegalDomainError("Quien creó la versión MIPER no puede revisarla.")
+    if (data.toStatus === "approved" && (matrix.createdByUserId === access.userId || matrix.reviewedByUserId === access.userId)) throw new RiskLegalDomainError("La aprobación MIPER debe estar segregada de creación y revisión.")
     /* Publicar es la cuarta firma y hasta ahora no comprobaba nada: la separaba
      * sólo el reparto de permisos, y eso deja de bastar en cuanto un rol tiene
      * `risk:edit` y `risk:publish` a la vez. La jefatura técnica del área queda
@@ -517,7 +520,7 @@ export async function transitionRiskMatrix(input: unknown, access: RiskLegalAcce
       what: "Publicar la versión de la MIPER",
     })
     if (!signing.ok) {
-      throw new Error("Quien aprobó la versión de la MIPER no puede publicarla: debe firmarla otra persona.")
+      throw new RiskLegalDomainError("Quien aprobó la versión de la MIPER no puede publicarla: debe firmarla otra persona.")
     }
     const now = new Date().toISOString()
     const updates: Partial<typeof preventionRiskMatrices.$inferInsert> = { status: data.toStatus, version: matrix.version + 1, updatedAt: now }
@@ -559,7 +562,7 @@ export async function transitionRiskMatrix(input: unknown, access: RiskLegalAcce
       Object.assign(updates, { effectiveFrom, reviewDueAt, publishedHashSha256: sourceHash, publishedByUserId: access.userId, publishedAt: now })
     }
     const [updated] = await tx.update(preventionRiskMatrices).set(updates).where(and(eq(preventionRiskMatrices.id, matrix.id), eq(preventionRiskMatrices.version, data.expectedVersion), eq(preventionRiskMatrices.status, matrix.status))).returning()
-    if (!updated) throw new Error("La MIPER cambió mientras la revisabas. Recarga antes de continuar.")
+    if (!updated) throw new RiskLegalDomainError("La MIPER cambió mientras la revisabas. Recarga antes de continuar.")
     await history(tx, { domain: "risk", entityType: "matrix", entityId: matrix.id, worksiteId: matrix.worksiteId, changeType: data.toStatus, reason: signing.usedException ? `${data.reason ?? ""} [Firma propia: publicada por quien la aprobó, con la excepción prevention:sign_own_work.]`.trim() : data.reason, beforeState: { status: matrix.status, version: matrix.version }, afterState: { status: updated.status, version: updated.version, sourceHash, ownWorkExceptionUsed: signing.usedException }, actorUserId: access.userId })
     if (data.toStatus === "published") {
       const effectiveFrom = updated.effectiveFrom!
@@ -640,19 +643,19 @@ export async function verifyRiskControl(input: unknown, access: RiskLegalAccess)
       .innerJoin(preventionRiskEntries, eq(preventionRiskEntries.id, preventionRiskControls.riskEntryId))
       .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
       .where(eq(preventionRiskControls.id, data.controlId)).limit(1)
-    if (!row) throw new Error("Control MIPER no encontrado o fuera de alcance.")
+    if (!row) throw new RiskLegalDomainError("Control MIPER no encontrado o fuera de alcance.")
     requireAccess(access, "prevention:risk:edit", row.matrix.worksiteId)
     // Sólo se verifica lo que rige: un control de un borrador o de una versión
     // reemplazada no es una medida operativa que se pueda ir a mirar a terreno.
-    if (row.matrix.status !== "published") throw new Error("Sólo se verifica un control de la MIPER vigente.")
-    if (row.control.status === "retired") throw new Error("Un control retirado no se verifica.")
-    if (row.control.version !== data.expectedVersion) throw new Error("El control cambió mientras lo verificabas. Recarga antes de continuar.")
+    if (row.matrix.status !== "published") throw new RiskLegalDomainError("Sólo se verifica un control de la MIPER vigente.")
+    if (row.control.status === "retired") throw new RiskLegalDomainError("Un control retirado no se verifica.")
+    if (row.control.version !== data.expectedVersion) throw new RiskLegalDomainError("El control cambió mientras lo verificabas. Recarga antes de continuar.")
 
     const conflicted = [row.matrix.createdByUserId, row.control.responsibleUserId, row.entry.responsibleUserId].includes(access.userId)
     if (conflicted) {
       const canOverride = access.permissions.includes("prevention:risk:override_segregation")
       if (!canOverride || (data.segregationExceptionReason?.trim().length ?? 0) < 10) {
-        throw new Error("La verificación debe hacerla una persona distinta de quien creó la versión MIPER o responde por el control.")
+        throw new RiskLegalDomainError("La verificación debe hacerla una persona distinta de quien creó la versión MIPER o responde por el control.")
       }
     }
 
@@ -667,7 +670,7 @@ export async function verifyRiskControl(input: unknown, access: RiskLegalAccess)
       version: row.control.version + 1,
       updatedAt: now,
     }).where(and(eq(preventionRiskControls.id, row.control.id), eq(preventionRiskControls.version, data.expectedVersion))).returning()
-    if (!updated) throw new Error("El control cambió mientras lo verificabas. Recarga antes de continuar.")
+    if (!updated) throw new RiskLegalDomainError("El control cambió mientras lo verificabas. Recarga antes de continuar.")
     // El control es hijo del peligro: se bumpea el padre. La matriz NO — su
     // `version` es el candado del workflow y su `publishedHashSha256` congela el
     // contenido al publicar; la verificación es operación posterior, no un
@@ -792,13 +795,13 @@ export async function resolveRiskReviewTrigger(input: unknown, access: RiskLegal
   const data = z.object({ triggerId: z.string().min(1), matrixId: z.string().min(1), resolution: z.string().trim().min(10).max(3000) }).parse(input)
   return db.transaction(async (tx) => {
     const [trigger] = await tx.select().from(preventionRiskReviewTriggers).where(eq(preventionRiskReviewTriggers.id, data.triggerId)).limit(1)
-    if (!trigger) throw new Error("Tarea de revisión no encontrada o fuera de alcance.")
+    if (!trigger) throw new RiskLegalDomainError("Tarea de revisión no encontrada o fuera de alcance.")
     requireAccess(access, "prevention:risk:review", trigger.worksiteId)
     const [matrix] = await tx.select().from(preventionRiskMatrices).where(and(eq(preventionRiskMatrices.id, data.matrixId), eq(preventionRiskMatrices.worksiteId, trigger.worksiteId), eq(preventionRiskMatrices.status, "published"))).limit(1)
-    if (!matrix || !matrix.publishedAt || new Date(matrix.publishedAt) < new Date(trigger.createdAt)) throw new Error("La tarea sólo se completa con una versión MIPER publicada después del disparador.")
+    if (!matrix || !matrix.publishedAt || new Date(matrix.publishedAt) < new Date(trigger.createdAt)) throw new RiskLegalDomainError("La tarea sólo se completa con una versión MIPER publicada después del disparador.")
     const now = new Date().toISOString()
     const [updated] = await tx.update(preventionRiskReviewTriggers).set({ status: "completed", matrixId: matrix.id, resolvedByUserId: access.userId, resolvedAt: now, resolution: data.resolution }).where(and(eq(preventionRiskReviewTriggers.id, trigger.id), inArray(preventionRiskReviewTriggers.status, ["pending", "in_progress"]))).returning()
-    if (!updated) throw new Error("La tarea de revisión ya fue resuelta.")
+    if (!updated) throw new RiskLegalDomainError("La tarea de revisión ya fue resuelta.")
     await history(tx, { domain: "risk", entityType: "review_trigger", entityId: trigger.id, worksiteId: trigger.worksiteId, changeType: "completed", reason: data.resolution, beforeState: trigger, afterState: updated, actorUserId: access.userId })
     return updated
   })
@@ -884,7 +887,7 @@ export async function createLegalRequirementDraft(input: unknown, access: RiskLe
     if (data.sourceRequirementId) {
       const sourceRows = await tx.select().from(preventionLegalRequirements).where(and(eq(preventionLegalRequirements.id, data.sourceRequirementId), eq(preventionLegalRequirements.status, "published"))).limit(1)
       source = sourceRows[0] ?? null
-      if (!source) throw new Error("El requisito fuente no está publicado.")
+      if (!source) throw new RiskLegalDomainError("El requisito fuente no está publicado.")
     }
     const [latest] = await tx.select({ requirementVersion: preventionLegalRequirements.requirementVersion }).from(preventionLegalRequirements).where(eq(preventionLegalRequirements.code, data.code)).orderBy(desc(preventionLegalRequirements.requirementVersion)).limit(1)
     const now = new Date().toISOString()
@@ -924,12 +927,12 @@ export async function transitionLegalRequirement(input: unknown, access: RiskLeg
   const data = legalRequirementTransitionSchema.parse(input)
   return db.transaction(async (tx) => {
     const [requirement] = await tx.select().from(preventionLegalRequirements).where(eq(preventionLegalRequirements.id, data.requirementId)).limit(1)
-    if (!requirement) throw new Error("Requisito legal no encontrado.")
+    if (!requirement) throw new RiskLegalDomainError("Requisito legal no encontrado.")
     requireAccess(access, LEGAL_PERMISSION[data.toStatus]!)
-    if (!LEGAL_TRANSITIONS[requirement.status]?.includes(data.toStatus)) throw new Error(`Transición legal inválida: ${requirement.status} → ${data.toStatus}.`)
-    if (requirement.version !== data.expectedVersion) throw new Error("El requisito cambió mientras lo revisabas.")
-    if (data.toStatus === "reviewed" && requirement.createdByUserId === access.userId) throw new Error("Quien creó el requisito no puede revisarlo.")
-    if (data.toStatus === "approved" && (requirement.createdByUserId === access.userId || requirement.reviewedByUserId === access.userId)) throw new Error("La aprobación legal debe estar segregada de creación y revisión.")
+    if (!LEGAL_TRANSITIONS[requirement.status]?.includes(data.toStatus)) throw new RiskLegalDomainError(`El requisito legal no puede pasar de «${LEGAL_REQUIREMENT_STATUS_LABELS[requirement.status] ?? requirement.status}» a «${LEGAL_REQUIREMENT_STATUS_LABELS[data.toStatus] ?? data.toStatus}»; recarga para ver su estado actual.`)
+    if (requirement.version !== data.expectedVersion) throw new RiskLegalDomainError("El requisito cambió mientras lo revisabas.")
+    if (data.toStatus === "reviewed" && requirement.createdByUserId === access.userId) throw new RiskLegalDomainError("Quien creó el requisito no puede revisarlo.")
+    if (data.toStatus === "approved" && (requirement.createdByUserId === access.userId || requirement.reviewedByUserId === access.userId)) throw new RiskLegalDomainError("La aprobación legal debe estar segregada de creación y revisión.")
     const now = new Date().toISOString()
     const updates: Partial<typeof preventionLegalRequirements.$inferInsert> = { status: data.toStatus, version: requirement.version + 1, updatedAt: now }
     if (data.toStatus === "reviewed") Object.assign(updates, { reviewedByUserId: access.userId, reviewedAt: now })
@@ -967,7 +970,7 @@ export async function transitionLegalRequirement(input: unknown, access: RiskLeg
             eq(preventionLegalRequirements.version, previous.version),
           ))
           .returning()
-        if (!superseded) throw new Error("El requisito vigente anterior cambió durante la publicación. Recarga antes de continuar.")
+        if (!superseded) throw new RiskLegalDomainError("El requisito vigente anterior cambió durante la publicación. Recarga antes de continuar.")
         await history(tx, {
           domain: "legal",
           entityType: "requirement",
@@ -1016,7 +1019,7 @@ export async function transitionLegalRequirement(input: unknown, access: RiskLeg
       updates.supersedesRequirementId = supersededIds.find((id) => id === requirement.supersedesRequirementId) ?? supersededIds[0] ?? null
     }
     const [updated] = await tx.update(preventionLegalRequirements).set(updates).where(and(eq(preventionLegalRequirements.id, requirement.id), eq(preventionLegalRequirements.version, data.expectedVersion), eq(preventionLegalRequirements.status, requirement.status))).returning()
-    if (!updated) throw new Error("El requisito cambió mientras lo revisabas.")
+    if (!updated) throw new RiskLegalDomainError("El requisito cambió mientras lo revisabas.")
     await history(tx, { domain: "legal", entityType: "requirement", entityId: requirement.id, changeType: data.toStatus, reason: data.reason, beforeState: { status: requirement.status, version: requirement.version }, afterState: { status: updated.status, version: updated.version, hash: updated.publishedHashSha256 }, actorUserId: access.userId })
     return updated
   })
@@ -1033,11 +1036,11 @@ export async function proposeLegalApplicability(input: unknown, access: RiskLega
       tx.select().from(preventionLegalRequirements).where(and(eq(preventionLegalRequirements.id, data.requirementId), legalRequirementInForceCondition())).limit(1),
       tx.select({ id: worksites.id }).from(worksites).where(and(eq(worksites.id, data.worksiteId), eq(worksites.isActive, true))).limit(1),
     ])
-    if (!requirement || !worksite) throw new Error("Requisito no vigente o faena no encontrada.")
+    if (!requirement || !worksite) throw new RiskLegalDomainError("Requisito no vigente o faena no encontrada.")
     await assertActiveUser(tx, data.responsibleUserId)
     if (data.processId) {
       const [process] = await tx.select({ id: preventionRiskProcesses.id }).from(preventionRiskProcesses).where(and(eq(preventionRiskProcesses.id, data.processId), eq(preventionRiskProcesses.worksiteId, data.worksiteId))).limit(1)
-      if (!process) throw new Error("Proceso no encontrado en la faena.")
+      if (!process) throw new RiskLegalDomainError("Proceso no encontrado en la faena.")
     }
     const existingConditions = [eq(preventionLegalApplicabilities.requirementId, data.requirementId), eq(preventionLegalApplicabilities.worksiteId, data.worksiteId), data.processId ? eq(preventionLegalApplicabilities.processId, data.processId) : isNull(preventionLegalApplicabilities.processId)]
     const [existing] = await tx.select().from(preventionLegalApplicabilities).where(and(...existingConditions)).limit(1)
@@ -1066,7 +1069,7 @@ export async function proposeLegalApplicability(input: unknown, access: RiskLega
       // `onConflictDoNothing` convierte el choque en el mismo mensaje de
       // concurrencia que el resto del módulo en vez de un error de Postgres.
       : await tx.insert(preventionLegalApplicabilities).values({ id: `legalapp-${nanoid()}`, requirementId: data.requirementId, worksiteId: data.worksiteId, ...values }).onConflictDoNothing().returning()
-    if (!saved) throw new Error("La aplicabilidad cambió mientras la revisabas. Recarga antes de continuar.")
+    if (!saved) throw new RiskLegalDomainError("La aplicabilidad cambió mientras la revisabas. Recarga antes de continuar.")
     await history(tx, { domain: "legal", entityType: "applicability", entityId: saved.id, worksiteId: data.worksiteId, changeType: data.applicabilityStatus, reason: data.rationale, beforeState: existing ?? null, afterState: saved, actorUserId: access.userId })
     return saved
   })
@@ -1076,24 +1079,24 @@ export async function approveLegalApplicability(input: unknown, access: RiskLega
   const data = legalApplicabilityApprovalSchema.parse(input)
   return db.transaction(async (tx) => {
     const [item] = await tx.select().from(preventionLegalApplicabilities).where(eq(preventionLegalApplicabilities.id, data.applicabilityId)).limit(1)
-    if (!item) throw new Error("Aplicabilidad no encontrada o fuera de alcance.")
+    if (!item) throw new RiskLegalDomainError("Aplicabilidad no encontrada o fuera de alcance.")
     requireAccess(access, "prevention:legal:approve_applicability", item.worksiteId)
-    if (!item.applicabilityStatus.startsWith("proposed_")) throw new Error("La aplicabilidad no está pendiente de aprobación.")
-    if (item.assessedByUserId === access.userId) throw new Error("Quien evaluó la aplicabilidad no puede aprobarla.")
-    if (item.version !== data.expectedVersion) throw new Error("La aplicabilidad cambió mientras la revisabas.")
+    if (!item.applicabilityStatus.startsWith("proposed_")) throw new RiskLegalDomainError("La aplicabilidad no está pendiente de aprobación.")
+    if (item.assessedByUserId === access.userId) throw new RiskLegalDomainError("Quien evaluó la aplicabilidad no puede aprobarla.")
+    if (item.version !== data.expectedVersion) throw new RiskLegalDomainError("La aplicabilidad cambió mientras la revisabas.")
     /* Si el texto dejó de regir entre la propuesta y la aprobación, aprobarla
      * firma una decisión sobre un texto que ya no existe —y abre un reloj de 30
      * días del PDTP que nadie podría cerrar, porque `linkPdtpActivitySource` no
      * acepta un requisito no vigente como fuente de cobertura (LEGAL-01/03). */
     const [requirement] = await tx.select().from(preventionLegalRequirements).where(eq(preventionLegalRequirements.id, item.requirementId)).limit(1)
     if (!requirement || !isLegalRequirementInForce(requirement)) {
-      throw new Error("El requisito dejó de estar vigente: vuelve a pronunciarte sobre la versión vigente antes de aprobar.")
+      throw new RiskLegalDomainError("El requisito dejó de estar vigente: vuelve a pronunciarte sobre la versión vigente antes de aprobar.")
     }
     const finalStatus = item.applicabilityStatus === "proposed_applicable" ? "applicable" : "not_applicable"
     const complianceStatus = finalStatus === "not_applicable" ? "not_applicable" : "not_assessed"
     const now = new Date().toISOString()
     const [updated] = await tx.update(preventionLegalApplicabilities).set({ applicabilityStatus: finalStatus, complianceStatus, approvedByUserId: access.userId, approvedAt: now, version: item.version + 1, updatedAt: now }).where(and(eq(preventionLegalApplicabilities.id, item.id), eq(preventionLegalApplicabilities.version, data.expectedVersion))).returning()
-    if (!updated) throw new Error("La aplicabilidad cambió mientras la revisabas.")
+    if (!updated) throw new RiskLegalDomainError("La aplicabilidad cambió mientras la revisabas.")
     await history(tx, { domain: "legal", entityType: "applicability", entityId: item.id, worksiteId: item.worksiteId, changeType: "approved", reason: data.reason, beforeState: item, afterState: updated, actorUserId: access.userId })
     if (finalStatus === "applicable") {
       await tx.insert(preventionPdtpUpdateObligations).values({
@@ -1114,16 +1117,16 @@ export async function assessLegalCompliance(input: unknown, access: RiskLegalAcc
   const data = legalComplianceAssessmentSchema.parse(input)
   return db.transaction(async (tx) => {
     const [item] = await tx.select().from(preventionLegalApplicabilities).where(eq(preventionLegalApplicabilities.id, data.applicabilityId)).limit(1)
-    if (!item) throw new Error("Aplicabilidad no encontrada o fuera de alcance.")
+    if (!item) throw new RiskLegalDomainError("Aplicabilidad no encontrada o fuera de alcance.")
     requireAccess(access, "prevention:legal:assess", item.worksiteId)
-    if (item.applicabilityStatus !== "applicable") throw new Error("Sólo un requisito aplicable y aprobado puede evaluarse.")
-    if (item.version !== data.expectedVersion) throw new Error("La aplicabilidad cambió mientras la revisabas.")
+    if (item.applicabilityStatus !== "applicable") throw new RiskLegalDomainError("Sólo un requisito aplicable y aprobado puede evaluarse.")
+    if (item.version !== data.expectedVersion) throw new RiskLegalDomainError("La aplicabilidad cambió mientras la revisabas.")
     /* LEGAL-01/03: evaluar el cumplimiento es una afirmación fechada hoy contra
      * un texto. Si ese texto ya fue reemplazado o su vigencia terminó, la
      * evaluación no dice nada: lo que hay que evaluar es la versión vigente. */
     const [requirement] = await tx.select().from(preventionLegalRequirements).where(eq(preventionLegalRequirements.id, item.requirementId)).limit(1)
     if (!requirement || !isLegalRequirementInForce(requirement)) {
-      throw new Error("El requisito no está vigente (reemplazado o con vigencia terminada): evalúa el cumplimiento sobre la versión vigente.")
+      throw new RiskLegalDomainError("El requisito no está vigente (reemplazado o con vigencia terminada): evalúa el cumplimiento sobre la versión vigente.")
     }
     /* LEGAL-05: una brecha se declaraba cumplida con su CAPA todavía abierta —
      * el tablero pasaba a verde mientras la corrección seguía sin hacerse. Mismo
@@ -1143,7 +1146,7 @@ export async function assessLegalCompliance(input: unknown, access: RiskLegalAcc
           notInArray(preventionCapaActions.status, ["verified", "closed", "cancelled"]),
         )).limit(1)
       if (openCapa) {
-        throw new Error(`No se puede declarar cumplimiento: la acción correctiva ${openCapa.code} sigue abierta (${CAPA_STATUS_LABELS[openCapa.status as CapaStatus] ?? openCapa.status}). Verifícala antes de cerrar la brecha.`)
+        throw new RiskLegalDomainError(`No se puede declarar cumplimiento: la acción correctiva ${openCapa.code} sigue abierta (${CAPA_STATUS_LABELS[openCapa.status as CapaStatus] ?? openCapa.status}). Verifícala antes de cerrar la brecha.`)
       }
     }
     let capaActionId: string | null = null
@@ -1178,7 +1181,7 @@ export async function assessLegalCompliance(input: unknown, access: RiskLegalAcc
       nextAssessmentAt: data.nextAssessmentAt ?? null,
     }).returning()
     const [updated] = await tx.update(preventionLegalApplicabilities).set({ complianceStatus: data.status, evidenceReference: data.evidenceReference ?? item.evidenceReference, assessedByUserId: access.userId, assessedAt: now, version: item.version + 1, updatedAt: now }).where(and(eq(preventionLegalApplicabilities.id, item.id), eq(preventionLegalApplicabilities.version, data.expectedVersion))).returning()
-    if (!assessment || !updated) throw new Error("La aplicabilidad cambió mientras la evaluabas.")
+    if (!assessment || !updated) throw new RiskLegalDomainError("La aplicabilidad cambió mientras la evaluabas.")
     await history(tx, { domain: "legal", entityType: "assessment", entityId: assessment.id, worksiteId: item.worksiteId, changeType: data.status, reason: data.finding ?? "Evaluación de cumplimiento", beforeState: { complianceStatus: item.complianceStatus }, afterState: { complianceStatus: data.status, capaActionId }, actorUserId: access.userId })
     return { assessment, applicability: updated }
   })
@@ -1189,31 +1192,31 @@ export async function linkPdtpActivitySource(input: unknown, access: RiskLegalAc
   requireAccess(access, "prevention:pdtp:program:manage", data.worksiteId)
   return db.transaction(async (tx) => {
     const [activity] = await tx.select({ activity: pdtpActivities, program: pdtpPrograms }).from(pdtpActivities).innerJoin(pdtpPrograms, eq(pdtpPrograms.id, pdtpActivities.programId)).where(eq(pdtpActivities.id, data.activityId)).limit(1)
-    if (!activity) throw new Error("Actividad PDTP no encontrada.")
+    if (!activity) throw new RiskLegalDomainError("Actividad PDTP no encontrada.")
     // La cobertura de fuentes es trazabilidad operacional: se vincula tanto en
     // borrador (planificación) como en un programa activo (demostrar cobertura y
     // cerrar el reloj MIPER de 30 días — ver resolvePdtpUpdateObligation). Solo
     // se bloquea durante la revisión: alterar el contenido ahí invalidaría el
     // digest firmado que se re-verifica al activar (ver pdtp/lifecycle.ts).
     if (activity.program.status === "in_review") {
-      throw new Error("El programa está en revisión y su contenido está bloqueado: no se pueden modificar sus vínculos de cobertura hasta que se apruebe o se reabra.")
+      throw new RiskLegalDomainError("El programa está en revisión y su contenido está bloqueado: no se pueden modificar sus vínculos de cobertura hasta que se apruebe o se reabra.")
     }
     let sourceVersionSnapshot = "Fuente manual"
     let sourceEntityId = data.sourceId
     if (data.sourceType === "risk_control") {
       const [source] = await tx.select({ control: preventionRiskControls, matrix: preventionRiskMatrices }).from(preventionRiskControls).innerJoin(preventionRiskEntries, eq(preventionRiskEntries.id, preventionRiskControls.riskEntryId)).innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId)).where(and(eq(preventionRiskControls.id, data.sourceId), eq(preventionRiskMatrices.worksiteId, data.worksiteId), eq(preventionRiskMatrices.status, "published"))).limit(1)
-      if (!source) throw new Error("Control MIPER no encontrado, no publicado o fuera de alcance.")
+      if (!source) throw new RiskLegalDomainError("Control MIPER no encontrado, no publicado o fuera de alcance.")
       sourceVersionSnapshot = `MIPER v${source.matrix.matrixVersion} · control v${source.control.version}`
       sourceEntityId = source.control.id
     } else if (data.sourceType === "legal_requirement") {
       // La vigencia también manda acá: una actividad del programa no queda
       // cubierta por un artículo derogado (LEGAL-03).
       const [source] = await tx.select({ requirement: preventionLegalRequirements }).from(preventionLegalRequirements).innerJoin(preventionLegalApplicabilities, eq(preventionLegalApplicabilities.requirementId, preventionLegalRequirements.id)).where(and(eq(preventionLegalRequirements.id, data.sourceId), legalRequirementInForceCondition(), eq(preventionLegalApplicabilities.worksiteId, data.worksiteId), eq(preventionLegalApplicabilities.applicabilityStatus, "applicable"))).limit(1)
-      if (!source) throw new Error("Requisito legal no encontrado, no vigente, no aplicable o fuera de alcance.")
+      if (!source) throw new RiskLegalDomainError("Requisito legal no encontrado, no vigente, no aplicable o fuera de alcance.")
       sourceVersionSnapshot = `${source.requirement.code} v${source.requirement.requirementVersion}`
     } else if (data.sourceType === "incident_capa") {
       const [source] = await tx.select().from(preventionCapaActions).where(and(eq(preventionCapaActions.id, data.sourceId), eq(preventionCapaActions.worksiteId, data.worksiteId))).limit(1)
-      if (!source) throw new Error("CAPA de incidente no encontrada o fuera de alcance.")
+      if (!source) throw new RiskLegalDomainError("CAPA de incidente no encontrada o fuera de alcance.")
       sourceVersionSnapshot = `${source.code} v${source.version}`
     } else if (data.sourceType === "capacitacion") {
       const [source] = await tx.select({
@@ -1227,11 +1230,11 @@ export async function linkPdtpActivitySource(input: unknown, access: RiskLegalAc
           eq(preventionTrainingOccurrences.worksiteId, data.worksiteId),
           eq(preventionTrainingOccurrences.status, "completed"),
         )).limit(1)
-      if (!source) throw new Error("Capacitación no encontrada, no realizada o fuera de alcance.")
+      if (!source) throw new RiskLegalDomainError("Capacitación no encontrada, no realizada o fuera de alcance.")
       sourceVersionSnapshot = `${source.code} ${source.year}`
     } else if (data.sourceType === "inspeccion") {
       const [source] = await tx.select().from(preventionInspectionRuns).where(and(eq(preventionInspectionRuns.id, data.sourceId), eq(preventionInspectionRuns.worksiteId, data.worksiteId), ne(preventionInspectionRuns.status, "cancelled"))).limit(1)
-      if (!source) throw new Error("Inspección no encontrada, cancelada o fuera de alcance.")
+      if (!source) throw new RiskLegalDomainError("Inspección no encontrada, cancelada o fuera de alcance.")
       sourceVersionSnapshot = source.code
     } else if (data.sourceType === "audit") {
       // `audit` ya existía en el enum pero sin rama: caía en "Fuente manual", o
@@ -1239,36 +1242,36 @@ export async function linkPdtpActivitySource(input: unknown, access: RiskLegalAc
       // faena. Una auditoría es una corrida del motor de inspecciones cuya
       // plantilla es de tipo 'audit' (DS 44 art. 22 n°4).
       const [source] = await tx.select({ run: preventionInspectionRuns, template: preventionInspectionTemplates }).from(preventionInspectionRuns).innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId)).where(and(eq(preventionInspectionRuns.id, data.sourceId), eq(preventionInspectionRuns.worksiteId, data.worksiteId), eq(preventionInspectionTemplates.kind, "audit"), ne(preventionInspectionRuns.status, "cancelled"))).limit(1)
-      if (!source) throw new Error("Auditoría no encontrada, cancelada o fuera de alcance.")
+      if (!source) throw new RiskLegalDomainError("Auditoría no encontrada, cancelada o fuera de alcance.")
       sourceVersionSnapshot = `${source.run.code} · ${source.template.code} v${source.template.versionLabel}`
     } else if (data.sourceType === "cphs") {
       const [source] = await tx.select().from(preventionCommittees).where(and(eq(preventionCommittees.id, data.sourceId), eq(preventionCommittees.worksiteId, data.worksiteId), eq(preventionCommittees.status, "active"))).limit(1)
-      if (!source) throw new Error("Comité CPHS no encontrado, no activo o fuera de alcance.")
+      if (!source) throw new RiskLegalDomainError("Comité CPHS no encontrado, no activo o fuera de alcance.")
       sourceVersionSnapshot = `${source.name} v${source.version}`
     } else if (data.sourceType === "epp") {
       const [source] = await tx.select().from(preventionEppRequirements).where(and(eq(preventionEppRequirements.id, data.sourceId), eq(preventionEppRequirements.worksiteId, data.worksiteId), eq(preventionEppRequirements.isActive, true))).limit(1)
-      if (!source) throw new Error("Requisito de EPP no encontrado, inactivo o fuera de alcance.")
+      if (!source) throw new RiskLegalDomainError("Requisito de EPP no encontrado, inactivo o fuera de alcance.")
       sourceVersionSnapshot = `EPP requerido desde ${source.createdAt.slice(0, 10)}`
     } else if (data.sourceType === "emergencia") {
       const [source] = await tx.select().from(preventionEmergencyPlans).where(and(eq(preventionEmergencyPlans.id, data.sourceId), eq(preventionEmergencyPlans.worksiteId, data.worksiteId), eq(preventionEmergencyPlans.status, "approved"))).limit(1)
-      if (!source) throw new Error("Plan de emergencia no encontrado, no aprobado o fuera de alcance.")
+      if (!source) throw new RiskLegalDomainError("Plan de emergencia no encontrado, no aprobado o fuera de alcance.")
       sourceVersionSnapshot = `${source.code} v${source.version}`
     } else if (data.sourceType === "protocolo_minsal") {
       // Sólo un protocolo declarado aplicable puede cubrir una actividad: uno
       // descartado o sin pronunciamiento no sostiene nada ante un fiscalizador.
       const [source] = await tx.select().from(preventionProtocolApplicabilities).where(and(eq(preventionProtocolApplicabilities.id, data.sourceId), eq(preventionProtocolApplicabilities.worksiteId, data.worksiteId), eq(preventionProtocolApplicabilities.status, "applicable"))).limit(1)
-      if (!source) throw new Error("Protocolo MINSAL no encontrado, no declarado aplicable o fuera de alcance.")
+      if (!source) throw new RiskLegalDomainError("Protocolo MINSAL no encontrado, no declarado aplicable o fuera de alcance.")
       sourceVersionSnapshot = `${MINSAL_PROTOCOL_LABELS[source.protocolCode] ?? source.protocolCode} v${source.version}`
     } else if (data.sourceType === "contractual_obligation") {
       // La obligación contractual del mandante llega por una coordinación del
       // art. 20: es la interacción registrada la que la acredita.
       const [source] = await tx.select().from(preventionExternalEngagements).where(and(eq(preventionExternalEngagements.id, data.sourceId), eq(preventionExternalEngagements.worksiteId, data.worksiteId), eq(preventionExternalEngagements.kind, "coordinacion"))).limit(1)
-      if (!source) throw new Error("Coordinación con el mandante no encontrada o fuera de alcance.")
+      if (!source) throw new RiskLegalDomainError("Coordinación con el mandante no encontrada o fuera de alcance.")
       sourceVersionSnapshot = `${source.code} · ${source.occurredOn}`
     } else if (data.sourceType === "campana") {
       // Único tipo con catálogo que quedaba sin verificar pertenencia a faena.
       const [source] = await tx.select().from(preventionCampaigns).where(and(eq(preventionCampaigns.id, data.sourceId), eq(preventionCampaigns.worksiteId, data.worksiteId))).limit(1)
-      if (!source) throw new Error("Campaña no encontrada o fuera de alcance.")
+      if (!source) throw new RiskLegalDomainError("Campaña no encontrada o fuera de alcance.")
       sourceVersionSnapshot = source.code
     }
     const [created] = await tx.insert(preventionPdtpSourceLinks).values({
@@ -1291,12 +1294,12 @@ export async function resolvePdtpUpdateObligation(input: unknown, access: RiskLe
   const data = pdtpObligationResolutionSchema.parse(input)
   return db.transaction(async (tx) => {
     const [obligation] = await tx.select().from(preventionPdtpUpdateObligations).where(eq(preventionPdtpUpdateObligations.id, data.obligationId)).limit(1)
-    if (!obligation) throw new Error("Obligación PDTP no encontrada o fuera de alcance.")
+    if (!obligation) throw new RiskLegalDomainError("Obligación PDTP no encontrada o fuera de alcance.")
     requireAccess(access, "prevention:pdtp:program:manage", obligation.worksiteId)
     const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, data.programId)).limit(1)
-    if (!program) throw new Error("Programa PDTP no encontrado.")
+    if (!program) throw new RiskLegalDomainError("Programa PDTP no encontrado.")
     const activities = await tx.select({ id: pdtpActivities.id }).from(pdtpActivities).where(eq(pdtpActivities.programId, program.id))
-    if (activities.length === 0) throw new Error("El programa no contiene actividades.")
+    if (activities.length === 0) throw new RiskLegalDomainError("El programa no contiene actividades.")
     const activityIds = activities.map((item) => item.id)
     let covered = false
     if (obligation.sourceType === "legal_requirement") {
@@ -1306,10 +1309,10 @@ export async function resolvePdtpUpdateObligation(input: unknown, access: RiskLe
       const [link] = await tx.select({ id: preventionPdtpSourceLinks.id }).from(preventionPdtpSourceLinks).innerJoin(preventionRiskControls, eq(preventionRiskControls.id, preventionPdtpSourceLinks.sourceId)).innerJoin(preventionRiskEntries, eq(preventionRiskEntries.id, preventionRiskControls.riskEntryId)).where(and(inArray(preventionPdtpSourceLinks.activityId, activityIds), eq(preventionPdtpSourceLinks.worksiteId, obligation.worksiteId), eq(preventionPdtpSourceLinks.sourceType, "risk_control"), eq(preventionRiskEntries.matrixId, obligation.sourceId), eq(preventionPdtpSourceLinks.isActive, true))).limit(1)
       covered = Boolean(link)
     }
-    if (!covered) throw new Error("No se puede cerrar el reloj: el programa no tiene una actividad vinculada a esta fuente.")
+    if (!covered) throw new RiskLegalDomainError("No se puede cerrar el reloj: el programa no tiene una actividad vinculada a esta fuente.")
     const now = new Date().toISOString()
     const [updated] = await tx.update(preventionPdtpUpdateObligations).set({ status: "addressed", addressedByProgramId: program.id, addressedByUserId: access.userId, addressedAt: now, resolution: data.resolution }).where(and(eq(preventionPdtpUpdateObligations.id, obligation.id), inArray(preventionPdtpUpdateObligations.status, ["pending", "overdue"]))).returning()
-    if (!updated) throw new Error("La obligación ya fue resuelta.")
+    if (!updated) throw new RiskLegalDomainError("La obligación ya fue resuelta.")
     await history(tx, { domain: "pdtp_coverage", entityType: "update_obligation", entityId: obligation.id, worksiteId: obligation.worksiteId, changeType: "addressed", reason: data.resolution, beforeState: obligation, afterState: updated, actorUserId: access.userId })
     return updated
   })
@@ -1440,7 +1443,7 @@ export async function getPdtpCoverage(programId: string, access: RiskLegalAccess
   requireAccess(access, "prevention:pdtp:view")
   await refreshPdtpUpdateObligationDeadlines()
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
-  if (!program) throw new Error("Programa PDTP no encontrado.")
+  if (!program) throw new RiskLegalDomainError("Programa PDTP no encontrado.")
   const [
     activities,
     obligations,
@@ -1592,7 +1595,7 @@ export async function getPdtpCoverage(programId: string, access: RiskLegalAccess
 export async function getPublishedRiskMatrix(matrixId: string, access: RiskLegalAccess) {
   requireAccess(access, "prevention:risk:view")
   const [matrix] = await db.select({ matrix: preventionRiskMatrices, worksiteName: worksites.name }).from(preventionRiskMatrices).innerJoin(worksites, eq(worksites.id, preventionRiskMatrices.worksiteId)).where(and(eq(preventionRiskMatrices.id, matrixId), inArray(preventionRiskMatrices.status, ["published", "superseded"]))).limit(1)
-  if (!matrix || !scopeAllows(access.scope, matrix.matrix.worksiteId)) throw new Error("MIPER no encontrada o fuera de alcance.")
+  if (!matrix || !scopeAllows(access.scope, matrix.matrix.worksiteId)) throw new RiskLegalDomainError("MIPER no encontrada o fuera de alcance.")
   const entries = await db.select({ entry: preventionRiskEntries, process: preventionRiskProcesses, task: preventionRiskTasks, position: preventionRiskPositions }).from(preventionRiskEntries).innerJoin(preventionRiskProcesses, eq(preventionRiskProcesses.id, preventionRiskEntries.processId)).innerJoin(preventionRiskTasks, eq(preventionRiskTasks.id, preventionRiskEntries.taskId)).innerJoin(preventionRiskPositions, eq(preventionRiskPositions.id, preventionRiskEntries.positionId)).where(eq(preventionRiskEntries.matrixId, matrixId)).orderBy(asc(preventionRiskProcesses.name), asc(preventionRiskTasks.name), asc(preventionRiskPositions.name), asc(preventionRiskEntries.hazardCode))
   const controls = entries.length ? await db.select().from(preventionRiskControls).where(inArray(preventionRiskControls.riskEntryId, entries.map((item) => item.entry.id))).orderBy(asc(preventionRiskControls.createdAt)) : []
   const triggers = await db.select().from(preventionRiskReviewTriggers).where(eq(preventionRiskReviewTriggers.matrixId, matrixId)).orderBy(desc(preventionRiskReviewTriggers.createdAt))
@@ -1614,7 +1617,7 @@ export async function getPublishedRiskMatrixForArchive(matrixId: string) {
 }
 
 export async function getRiskControlDetail(controlId: string, access: RiskLegalAccess) {
-  if (!access.permissions.includes("prevention:risk:view") && !access.permissions.includes("prevention:pdtp:view")) throw new Error("Control MIPER no encontrado o fuera de alcance.")
+  if (!access.permissions.includes("prevention:risk:view") && !access.permissions.includes("prevention:pdtp:view")) throw new RiskLegalDomainError("Control MIPER no encontrado o fuera de alcance.")
   const [row] = await db.select({
     control: preventionRiskControls,
     entry: preventionRiskEntries,
@@ -1631,15 +1634,15 @@ export async function getRiskControlDetail(controlId: string, access: RiskLegalA
     .innerJoin(preventionRiskPositions, eq(preventionRiskPositions.id, preventionRiskEntries.positionId))
     .innerJoin(worksites, eq(worksites.id, preventionRiskMatrices.worksiteId))
     .where(and(eq(preventionRiskControls.id, controlId), inArray(preventionRiskMatrices.status, ["published", "superseded"]))).limit(1)
-  if (!row || !scopeAllows(access.scope, row.matrix.worksiteId)) throw new Error("Control MIPER no encontrado o fuera de alcance.")
+  if (!row || !scopeAllows(access.scope, row.matrix.worksiteId)) throw new RiskLegalDomainError("Control MIPER no encontrado o fuera de alcance.")
   const links = await db.select().from(preventionPdtpSourceLinks).where(and(eq(preventionPdtpSourceLinks.sourceType, "risk_control"), eq(preventionPdtpSourceLinks.sourceId, controlId), eq(preventionPdtpSourceLinks.isActive, true)))
   return { ...row, links }
 }
 
 export async function getLegalRequirementDetail(requirementId: string, access: RiskLegalAccess) {
-  if (!access.permissions.includes("prevention:legal:view") && !access.permissions.includes("prevention:pdtp:view")) throw new Error("Requisito legal no encontrado.")
+  if (!access.permissions.includes("prevention:legal:view") && !access.permissions.includes("prevention:pdtp:view")) throw new RiskLegalDomainError("Requisito legal no encontrado.")
   const [requirement] = await db.select().from(preventionLegalRequirements).where(and(eq(preventionLegalRequirements.id, requirementId), inArray(preventionLegalRequirements.status, ["published", "superseded"]))).limit(1)
-  if (!requirement) throw new Error("Requisito legal no encontrado.")
+  if (!requirement) throw new RiskLegalDomainError("Requisito legal no encontrado.")
   const applicabilities = await db.select({ applicability: preventionLegalApplicabilities, worksiteName: worksites.name }).from(preventionLegalApplicabilities).innerJoin(worksites, eq(worksites.id, preventionLegalApplicabilities.worksiteId)).where(and(eq(preventionLegalApplicabilities.requirementId, requirementId), scopeCondition(access.scope, preventionLegalApplicabilities.worksiteId))).orderBy(asc(worksites.name))
   const ids = applicabilities.map((item) => item.applicability.id)
   const assessments = ids.length ? await db.select().from(preventionLegalAssessments).where(inArray(preventionLegalAssessments.applicabilityId, ids)).orderBy(desc(preventionLegalAssessments.assessedAt)) : []

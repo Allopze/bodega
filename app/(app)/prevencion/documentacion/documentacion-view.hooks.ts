@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { usePersistedViewMode } from "@/components/prevention/view-mode-toggle"
 import { buildFolderOptionLabels } from "@/lib/services/prevention-documents/labels"
+import { toast } from "@/lib/toast"
 import type { DocumentRow, FolderRow, MenuState } from "./documentacion-view.types"
 import { DRAG_MIME } from "./documentacion-view.types"
 import {
@@ -15,6 +16,16 @@ import {
   renameSstDocumentFolderAction,
   restoreSstDocumentFolderAction,
 } from "./actions"
+
+/**
+ * Avisa el primer rechazo con su motivo. Sin esto cada acción de la vista
+ * fallaba en silencio: el diálogo quedaba abierto, o el arrastre no hacía nada,
+ * y la persona no sabía por qué.
+ */
+function notifyFailure(results: ReadonlyArray<{ ok: boolean; message?: string }>) {
+  const failed = results.find((result) => !result.ok)
+  if (failed) toast.error(failed.message ?? "No se pudo completar la acción.")
+}
 
 export interface DocumentacionViewState {
   pending: boolean
@@ -94,6 +105,8 @@ export function useDocumentacionView(
         setMoveDocumentId(null)
         setMoveFolderId("")
         router.refresh()
+      } else {
+        notifyFailure([result])
       }
     })
   }, [moveDocumentId, moveFolderId, router])
@@ -122,6 +135,8 @@ export function useDocumentacionView(
         setFolderAction(null)
         setDialogFolder(null)
         router.refresh()
+      } else {
+        notifyFailure([result])
       }
     })
   }, [dialogFolder, folderActionName, router])
@@ -135,6 +150,8 @@ export function useDocumentacionView(
         setFolderAction(null)
         setDialogFolder(null)
         router.refresh()
+      } else {
+        notifyFailure([result])
       }
     })
   }, [dialogFolder, folderActionParentId, router])
@@ -145,6 +162,8 @@ export function useDocumentacionView(
       if (result.ok) {
         setMenu(null)
         router.refresh()
+      } else {
+        notifyFailure([result])
       }
     })
   }, [router])
@@ -153,6 +172,7 @@ export function useDocumentacionView(
     startTransition(async () => {
       const result = await restoreSstDocumentFolderAction({ id: folder.id })
       if (result.ok) router.refresh()
+      else notifyFailure([result])
     })
   }, [router])
 
@@ -187,6 +207,9 @@ export function useDocumentacionView(
       if (results.every((result) => result.ok)) {
         setSelectedFolders(new Set())
         router.refresh()
+      } else {
+        notifyFailure(results)
+        if (results.some((result) => result.ok)) router.refresh()
       }
     })
   }, [router, selectedFolders])
@@ -199,6 +222,9 @@ export function useDocumentacionView(
       if (results.every((result) => result.ok)) {
         setSelectedDocuments(new Set())
         router.refresh()
+      } else {
+        notifyFailure(results)
+        if (results.some((result) => result.ok)) router.refresh()
       }
     })
   }, [router, selectedDocuments])
@@ -214,6 +240,9 @@ export function useDocumentacionView(
         setMoveFolderId("")
         setSelectedDocuments(new Set())
         router.refresh()
+      } else {
+        notifyFailure(results)
+        if (results.some((result) => result.ok)) router.refresh()
       }
     })
   }, [moveFolderId, router, selectedDocuments])
@@ -234,6 +263,8 @@ export function useDocumentacionView(
       if (result.ok) {
         setMenu(null)
         router.refresh()
+      } else {
+        notifyFailure([result])
       }
     })
   }, [router])
@@ -249,11 +280,13 @@ export function useDocumentacionView(
       startTransition(async () => {
         const result = await moveSstDocumentAction({ id: payload.id, folderId: folder.id })
         if (result.ok) router.refresh()
+        else notifyFailure([result])
       })
     } else if (payload.kind === "folder" && payload.id !== folder.id) {
       startTransition(async () => {
         const result = await moveSstDocumentFolderAction({ id: payload.id, parentId: folder.id })
         if (result.ok) router.refresh()
+        else notifyFailure([result])
       })
     }
   }, [router])

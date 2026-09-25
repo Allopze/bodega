@@ -20,6 +20,7 @@ import {
 import { nanoid } from "@/lib/id"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { assertScopeAccess, recordAuditEntry } from "./utils"
+import { PreventionDocumentDomainError } from "./errors"
 
 export const DOCUMENT_LINK_ENTITY_TYPES = [
   "worker",
@@ -203,32 +204,32 @@ export async function createDocumentLink(args: {
 }) {
   const entityId = args.entityId.trim()
   const notes = args.notes?.trim() || null
-  if (entityId.length < 1 || entityId.length > 160) throw new Error("Identificador de entidad inválido.")
-  if (notes && notes.length > 1000) throw new Error("Las notas del vínculo superan el máximo permitido.")
+  if (entityId.length < 1 || entityId.length > 160) throw new PreventionDocumentDomainError("Identificador de entidad inválido.")
+  if (notes && notes.length > 1000) throw new PreventionDocumentDomainError("Las notas del vínculo superan el máximo permitido.")
   const [document] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, args.documentId)).limit(1)
-  if (!document) throw new Error("Documento no encontrado.")
+  if (!document) throw new PreventionDocumentDomainError("Documento no encontrado.")
   assertScopeAccess(document.worksiteId, args.scope)
   const target = await resolveDocumentLinkTarget(args.entityType, entityId)
-  if (!target) throw new Error("La entidad que intentas vincular no existe.")
+  if (!target) throw new PreventionDocumentDomainError("La entidad que intentas vincular no existe.")
   if (target.worksiteId) assertScopeAccess(target.worksiteId, args.scope)
   if (document.worksiteId && target.worksiteId && document.worksiteId !== target.worksiteId) {
-    throw new Error("La entidad no pertenece a la faena del documento.")
+    throw new PreventionDocumentDomainError("La entidad no pertenece a la faena del documento.")
   }
   const now = new Date().toISOString()
   const [created] = await db.insert(sstDocumentLinks).values({
     id: `sdlink-${nanoid()}`, documentId: args.documentId, entityType: args.entityType, entityId,
     notes, createdByUserId: args.userId, createdAt: now,
   }).onConflictDoNothing().returning()
-  if (!created) throw new Error("El documento ya tiene un vínculo activo con esa entidad.")
+  if (!created) throw new PreventionDocumentDomainError("El documento ya tiene un vínculo activo con esa entidad.")
   await recordAuditEntry({ documentId: args.documentId, userId: args.userId, action: "link", metadata: { entityType: args.entityType, entityId } })
   return created
 }
 
 export async function removeDocumentLink(args: { linkId: string; reason: string; userId: string; scope: WorksiteScope }) {
-  if (args.reason.trim().length < 3) throw new Error("Indica el motivo del retiro del vínculo.")
+  if (args.reason.trim().length < 3) throw new PreventionDocumentDomainError("Indica el motivo del retiro del vínculo.")
   const [row] = await db.select({ link: sstDocumentLinks, document: sstDocuments }).from(sstDocumentLinks)
     .innerJoin(sstDocuments, eq(sstDocumentLinks.documentId, sstDocuments.id)).where(and(eq(sstDocumentLinks.id, args.linkId), isNull(sstDocumentLinks.removedAt))).limit(1)
-  if (!row) throw new Error("Vínculo no encontrado o ya retirado.")
+  if (!row) throw new PreventionDocumentDomainError("Vínculo no encontrado o ya retirado.")
   assertScopeAccess(row.document.worksiteId, args.scope)
   const now = new Date().toISOString()
   await db.update(sstDocumentLinks).set({ removedByUserId: args.userId, removedAt: now, removalReason: args.reason.trim() }).where(eq(sstDocumentLinks.id, args.linkId))

@@ -12,6 +12,7 @@ import { writeSstDocument } from "@/lib/storage/sst-backend"
 import { type WorksiteScope } from "@/lib/auth/scope"
 import { todayInChile } from "@/lib/utils"
 import { buildFolderOptionLabels } from "./labels"
+import { PreventionDocumentDomainError } from "./errors"
 
 export type {
   SstDocumentStatus,
@@ -62,7 +63,7 @@ export interface CreateDocumentInput {
 
 export function normalizeFolderName(name: string): string {
   const normalized = name.trim().replace(/\s+/g, " ")
-  if (!normalized) throw new Error("Nombre de carpeta requerido.")
+  if (!normalized) throw new PreventionDocumentDomainError("Nombre de carpeta requerido.")
   return normalized
 }
 
@@ -105,10 +106,10 @@ export function canMoveFolder(args: {
 export function assertScopeAccess(worksiteId: string | null, scope: WorksiteScope) {
   if (scope.mode === "all") return
   if (!worksiteId) {
-    throw new Error("El documento no tiene faena asignada; requiere alcance global.")
+    throw new PreventionDocumentDomainError("El documento no tiene faena asignada; requiere alcance global.")
   }
   if (scope.mode === "none" || !scope.ids.includes(worksiteId)) {
-    throw new Error("Documento no encontrado o sin acceso a la faena.")
+    throw new PreventionDocumentDomainError("Documento no encontrado o sin acceso a la faena.")
   }
 }
 
@@ -118,10 +119,10 @@ export function assertConfidentialityAllowed(
 ) {
   if (confidentiality === "publico_interno") return
   if (confidentiality === "sensible" && !userPermissions.includes("prevention:docs:manage_sensitive")) {
-    throw new Error("No tienes permisos para gestionar documentos sensibles.")
+    throw new PreventionDocumentDomainError("No tienes permisos para gestionar documentos sensibles.")
   }
   if (confidentiality === "restringido" && !userPermissions.includes("prevention:docs:manage_restricted")) {
-    throw new Error("No tienes permisos para gestionar documentos restringidos.")
+    throw new PreventionDocumentDomainError("No tienes permisos para gestionar documentos restringidos.")
   }
 }
 
@@ -158,7 +159,7 @@ export function assertGeneralLibraryContentAllowed(args: {
 }) {
   const dataClass = args.dataClass || "operational"
   if (dataClass === "clinical" || dataClass === "reserved_investigation") {
-    throw new Error("Los antecedentes clínicos o de investigación reservada deben registrarse en su dominio seguro, no en la biblioteca general.")
+    throw new PreventionDocumentDomainError("Los antecedentes clínicos o de investigación reservada deben registrarse en su dominio seguro, no en la biblioteca general.")
   }
   const searchable = `${args.title ?? ""} ${args.fileName ?? ""}`
     .normalize("NFD")
@@ -167,7 +168,7 @@ export function assertGeneralLibraryContentAllowed(args: {
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
   if (PROHIBITED_GENERAL_LIBRARY_PATTERNS.some((pattern) => pattern.test(searchable))) {
-    throw new Error("El archivo parece contener antecedentes clínicos o de investigación reservada y no puede cargarse en la biblioteca general.")
+    throw new PreventionDocumentDomainError("El archivo parece contener antecedentes clínicos o de investigación reservada y no puede cargarse en la biblioteca general.")
   }
 }
 

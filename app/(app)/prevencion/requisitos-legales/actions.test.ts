@@ -17,6 +17,7 @@ vi.mock("@/lib/services/prevention-risk-legal", () => ({
   transitionLegalRequirement,
 }))
 
+import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import {
   approveLegalApplicabilityAction,
   assessLegalComplianceAction,
@@ -68,5 +69,38 @@ describe("legal register server actions are authorization boundaries", () => {
 
     expect(guardPermission).toHaveBeenCalledWith("prevention:legal:approve_applicability")
     expect(transitionLegalRequirement).not.toHaveBeenCalled()
+  })
+})
+
+/*
+ * Todo error del servicio caía en «No se pudo completar la acción»: quien
+ * aprobaba su propia aplicabilidad o evaluaba sin evidencia no sabía por qué
+ * se rechazaba. El error de dominio viaja con su mensaje; el resto sigue
+ * oculto tras el genérico.
+ */
+describe("requisitos legales: los rechazos de negocio llegan con su motivo", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resolveWorksiteScope.mockReturnValue({ mode: "some", ids: ["ws-own"] })
+    guardPermission.mockResolvedValue({ session, error: null })
+  })
+
+  it("evaluar, aprobar la aplicabilidad y cambiar de estado devuelven el motivo", async () => {
+    assessLegalCompliance.mockRejectedValue(new RiskLegalDomainError("La evaluación exige evidencia verificable."))
+    approveLegalApplicability.mockRejectedValue(new RiskLegalDomainError("Quien propuso la aplicabilidad no puede aprobarla."))
+    transitionLegalRequirement.mockRejectedValue(new RiskLegalDomainError("El requisito cambió; recarga antes de continuar."))
+
+    await expect(assessLegalComplianceAction({ requirementId: "req-1" }))
+      .resolves.toEqual({ ok: false, message: "La evaluación exige evidencia verificable." })
+    await expect(approveLegalApplicabilityAction({ applicabilityId: "app-1" }))
+      .resolves.toEqual({ ok: false, message: "Quien propuso la aplicabilidad no puede aprobarla." })
+    await expect(transitionLegalRequirementAction({ requirementId: "req-1", toStatus: "active" }))
+      .resolves.toEqual({ ok: false, message: "El requisito cambió; recarga antes de continuar." })
+  })
+
+  it("un error inesperado sigue oculto tras el mensaje genérico", async () => {
+    assessLegalCompliance.mockRejectedValue(new Error('duplicate key value violates unique constraint "prevention_legal_assessments_pkey"'))
+    await expect(assessLegalComplianceAction({ requirementId: "req-1" }))
+      .resolves.toEqual({ ok: false, message: "No se pudo completar la acción. Intenta nuevamente." })
   })
 })

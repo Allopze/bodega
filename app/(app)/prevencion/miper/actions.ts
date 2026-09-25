@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { ZodError } from "zod"
 import { unexpectedActionError } from "@/lib/actions/safe-server-action"
+import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import type { Permission } from "@/modules/permissions"
@@ -35,6 +36,17 @@ function accessFromSession(session: Awaited<ReturnType<typeof guardPermission>>[
   return { userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
 }
 
+/**
+ * El error de dominio viaja con su mensaje: le dice a la persona qué hacer
+ * (recargar, pedir otra firma, completar la evidencia). El resto pasa por
+ * `unexpectedActionError`, que lo loguea y responde genérico para no filtrar
+ * detalles de driver o SQL. Antes todo caía en el genérico.
+ */
+function fail(error: unknown): ActionState {
+  if (error instanceof RiskLegalDomainError) return { ok: false, message: error.message }
+  return unexpectedActionError(error, "prevencion/miper/actions")
+}
+
 async function run(access: RiskLegalAccess, operation: (access: RiskLegalAccess) => Promise<unknown>): Promise<ActionState> {
   try {
     await operation(access)
@@ -43,7 +55,7 @@ async function run(access: RiskLegalAccess, operation: (access: RiskLegalAccess)
     return { ok: true }
   } catch (error) {
     if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados.", fieldErrors: error.flatten().fieldErrors as Record<string, string[]> }
-    return unexpectedActionError(error, "prevencion/miper/actions")
+    return fail(error)
   }
 }
 
@@ -103,8 +115,8 @@ export async function stageRiskImportAction(formData: FormData): Promise<ActionS
     const file = formData.get("file")
     const worksiteId = String(formData.get("worksiteId") ?? "")
     if (!(file instanceof File) || file.size === 0) return { ok: false, message: "Selecciona un archivo Excel." }
-    // Corta antes de bufferizar: `unexpectedActionError` oculta el detalle del
-    // servicio, así que el límite se explica aquí como en la ruta PDTP.
+    // Corta antes de bufferizar el archivo; el límite se explica aquí como en
+    // la ruta PDTP.
     if (file.size > RISK_IMPORT_MAX_BYTES) {
       return { ok: false, message: `El archivo supera el límite de ${Math.round(RISK_IMPORT_MAX_BYTES / 1024 / 1024)} MB.` }
     }
@@ -113,7 +125,7 @@ export async function stageRiskImportAction(formData: FormData): Promise<ActionS
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (error) {
-    return unexpectedActionError(error, "prevencion/miper/actions")
+    return fail(error)
   }
 }
 

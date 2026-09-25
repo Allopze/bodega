@@ -157,6 +157,16 @@ export const CONTRACTOR_DOCUMENT_STATUS_VARIANTS: Record<string, BadgeVariant> =
  * `prevention_legal_applicabilities_status_valid` y
  * `..._compliance_valid`; `lib/__tests__/prevention-risk-legal.test.ts` lo
  * verifica contra el esquema para que un valor nuevo no llegue crudo a la UI. */
+/** Estados de una versión MIPER (femenino: «la MIPER»). */
+export const RISK_MATRIX_STATUS_LABELS: Record<string, string> = {
+  draft: "Borrador",
+  in_review: "En revisión",
+  reviewed: "Revisada",
+  approved: "Aprobada",
+  published: "Vigente",
+  superseded: "Reemplazada",
+}
+
 export const LEGAL_REQUIREMENT_STATUS_LABELS: Record<string, string> = {
   draft: "Borrador",
   in_review: "En revisión",

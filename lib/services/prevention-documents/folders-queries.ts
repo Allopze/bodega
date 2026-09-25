@@ -10,12 +10,13 @@ import {
   normalizeFolderName,
 } from "./utils"
 import { ensureSstFolderPhysical } from "./folder-storage"
+import { PreventionDocumentDomainError } from "./errors"
 
 type FolderRow = typeof sstDocumentFolders.$inferSelect
 
 async function getFolderOrThrow(id: string, scope: WorksiteScope) {
   const [folder] = await db.select().from(sstDocumentFolders).where(eq(sstDocumentFolders.id, id)).limit(1)
-  if (!folder || folder.archivedAt) throw new Error("Carpeta no encontrada.")
+  if (!folder || folder.archivedAt) throw new PreventionDocumentDomainError("Carpeta no encontrada.")
   assertScopeAccess(folder.worksiteId, scope)
   return folder
 }

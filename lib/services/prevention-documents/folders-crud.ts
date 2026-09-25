@@ -21,6 +21,7 @@ import {
   sstPrefixReplace,
 } from "@/lib/services/cloudreve/sst-path"
 import { createSstFolder, moveSstFolder } from "@/lib/storage/sst-folders"
+import { PreventionDocumentDomainError } from "./errors"
 
 function normalizeNullableId(value: string | null | undefined) {
   return value ? value : null
@@ -28,7 +29,7 @@ function normalizeNullableId(value: string | null | undefined) {
 
 async function getFolderOrThrow(id: string, scope: WorksiteScope) {
   const [folder] = await db.select().from(sstDocumentFolders).where(eq(sstDocumentFolders.id, id)).limit(1)
-  if (!folder || folder.archivedAt) throw new Error("Carpeta no encontrada.")
+  if (!folder || folder.archivedAt) throw new PreventionDocumentDomainError("Carpeta no encontrada.")
   assertScopeAccess(folder.worksiteId, scope)
   return folder
 }
@@ -198,7 +199,7 @@ export async function archiveDocumentFolder(args: {
       .limit(1),
   ])
   if (activeChild || activeDoc) {
-    throw new Error("La carpeta tiene subcarpetas o documentos activos. Muévelos o archívalos antes de archivar la carpeta.")
+    throw new PreventionDocumentDomainError("La carpeta tiene subcarpetas o documentos activos. Muévelos o archívalos antes de archivar la carpeta.")
   }
 
   const parentSegments = await getFolderRemoteSegments(folder.parentId)
@@ -250,7 +251,7 @@ export async function restoreDocumentFolder(args: {
   scope: WorksiteScope
 }) {
   const [folder] = await db.select().from(sstDocumentFolders).where(eq(sstDocumentFolders.id, args.input.id)).limit(1)
-  if (!folder || !folder.archivedAt) throw new Error("Carpeta archivada no encontrada.")
+  if (!folder || !folder.archivedAt) throw new PreventionDocumentDomainError("Carpeta archivada no encontrada.")
   assertScopeAccess(folder.worksiteId, args.scope)
 
   // Restaurar bajo un padre aún archivado dejaría la carpeta huérfana (invisible
