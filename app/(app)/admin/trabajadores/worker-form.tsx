@@ -112,7 +112,7 @@ export function WorkerForm({ open, onClose, editWorker, worksites, sizeFamilies,
             </Field>
           </div>
 
-          <Field label="RUT" htmlFor="wrk-rut" helper="Formato: 12345678-9" error={state.fieldErrors?.rut?.[0]}>
+          <Field label="RUT" htmlFor="wrk-rut" helper="Con o sin puntos y guion: 12.345.678-9, 12345678-9 o 123456789" error={state.fieldErrors?.rut?.[0]}>
             <Input id="wrk-rut" name="rut" defaultValue={editWorker?.rut ?? ""} placeholder="12345678-9" error={!!state.fieldErrors?.rut} className="font-mono" />
           </Field>
 

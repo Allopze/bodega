@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { cleanRut, validateRut } from "@/lib/rut"
+import { cleanRut, describeRutProblem } from "@/lib/rut"
 import { normalizeEquipmentCode } from "@/lib/products/service-items"
 import { duplicateNormalizedNames } from "@/lib/products/attribute-names"
 import { unitOfMeasureSchema } from "./product-catalogs"
@@ -12,7 +12,15 @@ export const rutSchema = z
   .string()
   .optional()
   .transform((v) => (v ? cleanRut(v) : v))
-  .refine((v) => !v || validateRut(v), { message: "RUT inválido" })
+  .superRefine((v, ctx) => {
+    if (!v) return
+    const problem = describeRutProblem(v)
+    if (problem === "format") {
+      ctx.addIssue({ code: "custom", message: "RUT inválido: debe tener 7 u 8 dígitos más el dígito verificador" })
+    } else if (problem === "check-digit") {
+      ctx.addIssue({ code: "custom", message: "RUT inválido: el dígito verificador no corresponde al número. Revisa que esté bien escrito" })
+    }
+  })
 
 // ── User ──────────────────────────────────────────────────────────────────────
 export const userCreateSchema = z.object({

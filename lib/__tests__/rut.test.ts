@@ -2,7 +2,8 @@
  * Audit A-15: tests for the shared Chilean RUT helpers.
  */
 import { describe, expect, it } from "vitest"
-import { cleanRut, computeRutDv, validateRut } from "@/lib/rut"
+import { cleanRut, computeRutDv, describeRutProblem, validateRut } from "@/lib/rut"
+import { workerSchema } from "@/lib/validation/masters"
 
 describe("cleanRut", () => {
   it("strips dots, trims and upper-cases", () => {
@@ -45,5 +46,35 @@ describe("validateRut", () => {
     expect(validateRut("not-a-rut")).toBe(false)
     expect(validateRut("123-4")).toBe(false)
     expect(validateRut("")).toBe(false)
+  })
+})
+
+describe("describeRutProblem", () => {
+  it("dots and dash never make a valid RUT fail", () => {
+    for (const spelling of ["12.345.678-5", "12345678-5", "123456785", "12.345.6785", "7.654.321-6"]) {
+      expect(describeRutProblem(spelling), spelling).toBeNull()
+    }
+  })
+  it("tells a wrong check digit apart from a malformed value", () => {
+    expect(describeRutProblem("12.345.678-0")).toBe("check-digit")
+    expect(describeRutProblem("123-4")).toBe("format")
+  })
+})
+
+describe("workerSchema.rut", () => {
+  const base = { firstName: "Juan", lastName: "Pérez", worksiteId: "w1", positionId: "p1" }
+
+  it("accepts every usual spelling and stores the canonical form", () => {
+    for (const rut of ["12.345.678-5", "12345678-5", "123456785"]) {
+      const parsed = workerSchema.safeParse({ ...base, rut })
+      expect(parsed.success, rut).toBe(true)
+      expect(parsed.data?.rut).toBe("12345678-5")
+    }
+  })
+
+  it("says it is the check digit, not the format, when the DV is wrong", () => {
+    const parsed = workerSchema.safeParse({ ...base, rut: "12.345.678-0" })
+    expect(parsed.success).toBe(false)
+    expect(parsed.error?.flatten().fieldErrors.rut?.[0]).toMatch(/dígito verificador/)
   })
 })

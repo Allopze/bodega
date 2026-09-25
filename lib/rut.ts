@@ -38,10 +38,21 @@ export function computeRutDv(body: string): string {
   return expected === 11 ? "0" : expected === 10 ? "K" : String(expected)
 }
 
+/**
+ * Why a RUT is rejected, or `null` when it is valid.
+ *
+ * Puntos y guion nunca son el problema —`cleanRut` los absorbe—, pero un único
+ * "RUT inválido" hacía creer que sí: quien escribía un RUT con el dígito
+ * verificador mal lo reintentaba con y sin puntos sin saber qué corregir.
+ */
+export function describeRutProblem(rut: string): "format" | "check-digit" | null {
+  const cleaned = cleanRut(rut)
+  if (!/^\d{7,8}-[\dKk]$/.test(cleaned)) return "format"
+  const [body, dv] = cleaned.split("-") as [string, string]
+  return computeRutDv(body) === dv.toUpperCase() ? null : "check-digit"
+}
+
 /** Validate a Chilean RUT including its check digit. */
 export function validateRut(rut: string): boolean {
-  const cleaned = cleanRut(rut)
-  if (!/^\d{7,8}-[\dKk]$/.test(cleaned)) return false
-  const [body, dv] = cleaned.split("-") as [string, string]
-  return computeRutDv(body) === dv.toUpperCase()
+  return describeRutProblem(rut) === null
 }
