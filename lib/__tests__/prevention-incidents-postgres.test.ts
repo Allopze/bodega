@@ -298,6 +298,33 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
     expect(savedInvestigation).toMatchObject({ status: "completed", miperUpdateRequired: true })
     expect(savedInvestigation!.miperUpdatedAt).toBeTruthy()
     incident = await incidents.transitionPreventionIncident({ access: manager, input: { incidentId, expectedVersion: investigation.incident.version, toStatus: "pending_capa", reason: "Investigación completa; se abre control CAPA" } })
+
+    // Volver a guardar la investigación, ya completa, para sumar una conclusión
+    // no reescribe lo registrado: la MIPER, el procedimiento, la capacitación y
+    // el cierre conservan su fecha y su autor originales.
+    const resaved = await incidents.savePreventionIncidentInvestigation({
+      access: access("incident-verifier", managerPermissions),
+      input: {
+        ...investigationBase,
+        expectedIncidentVersion: incident.version,
+        miperUpdated: true,
+        complete: true,
+        conclusions: `${investigationBase.conclusions} Se agrega la verificación de terreno.`,
+        reason: "Se agrega la verificación de terreno a las conclusiones",
+      },
+    })
+    const [resavedInvestigation] = await getDb().select().from(schema.preventionIncidentInvestigations)
+      .where(eq(schema.preventionIncidentInvestigations.id, resaved.investigationId))
+    expect(resavedInvestigation).toMatchObject({
+      status: "completed",
+      conclusions: expect.stringContaining("verificación de terreno"),
+      miperUpdatedAt: savedInvestigation!.miperUpdatedAt,
+      procedureUpdatedAt: savedInvestigation!.procedureUpdatedAt,
+      trainingCompletedAt: savedInvestigation!.trainingCompletedAt,
+      completedAt: savedInvestigation!.completedAt,
+      completedByUserId: savedInvestigation!.completedByUserId,
+    })
+    incident = resaved.incident
     const createdCapa = await incidents.createPreventionIncidentCapa({
       access: manager,
       input: { incidentId, expectedVersion: incident.version, finding: "Barrera de ingeniería insuficiente", actionDescription: "Instalar y verificar una barrera certificada", responsibleUserId: "incident-reporter", priority: "critical", targetDate: "2026-08-01", evidenceRequired: true },

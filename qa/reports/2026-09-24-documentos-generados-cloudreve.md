@@ -67,7 +67,7 @@ Quedan fuera por decisión de Prevención la OC, la guía de despacho, el acta T
 
   Ahora usa el mismo renderizador que la descarga. Ese renderizador exige la marca `data-print-ready` en la página y rechaza /login, /forbidden y /modulo-inactivo.
 - **PRODUCT BUG (corregido).** Un comprobante anulado se imprimía igual que uno vigente. Ahora lleva el aviso «Entrega anulada».
-- **PRODUCT BUG (preexistente, causa identificada, NO corregido en este cambio).** Cada `router.refresh()` y cada Server Action que llama a `revalidatePath` vuelve a montar la plataforma entera: todo lo que está bajo `<body>`, con el shell, la navegación y la página.
+- **PRODUCT BUG (preexistente, causa identificada; corregido después en `2026-09-24-remontaje-plataforma.md`).** Cada `router.refresh()` y cada Server Action que llama a `revalidatePath` vuelve a montar la plataforma entera: todo lo que está bajo `<body>`, con el shell, la navegación y la página.
   - **Síntomas.** Se pierde el estado del cliente y los avisos que dependen del resultado de la acción. Por eso guardar en Administración › Almacenamiento no avisaba nada. Esa pantalla quedó corregida lanzando el aviso dentro de la acción, con el patrón de `admin/desviaciones`.
   - **Causa.** `AppShell` (`components/layout/app-shell.tsx`) se exporta como el objeto `React.memo` tal cual, y el layout de `(app)`, que es un Server Component, lo usa como referencia de cliente. Pasa lo mismo con `Breadcrumbs`.
   - **Cómo se aisló.** Con `next dev` contra la base desechable, reduciendo el layout pieza por pieza:
@@ -80,7 +80,7 @@ Quedan fuera por decisión de Prevención la OC, la guía de despacho, el acta T
     - En el editor del PDTP, el objetivo recién creado no aparece en la tabla (`pdtp-objetivos.spec.ts`) y el preset aplicado no se refleja en la matriz (`pdtp-planificacion-presets.spec.ts`).
     - El diálogo de invitación con SMTP apagado queda abierto como «Invitación pendiente» y la lista queda fuera del árbol accesible (`admin-flow.spec.ts`).
     - Un barrido estático encuentra al menos 13 diálogos más que llaman acciones sin cerrarse de forma explícita, y no detecta los que lo hacen a través de paneles internos, como la hoja de Bodega.
-  - Por eso se revirtió. Corregirlo es un cambio aparte: exportar `AppShell` y `Breadcrumbs` como funciones, cerrar cada diálogo al terminar bien, dejar de copiar props a estado, correr la suite e2e completa y hacer un recorrido asistido de las pantallas con formularios.
+  - Por eso se revirtió en este cambio. Se corrigió en un cambio aparte, con las pantallas dependientes: ver `2026-09-24-remontaje-plataforma.md`. El plan era: exportar `AppShell` y `Breadcrumbs` como funciones, cerrar cada diálogo al terminar bien, dejar de copiar props a estado, correr la suite e2e completa y hacer un recorrido asistido de las pantallas con formularios.
 - **PRODUCT BUG (preexistente, corregido).** Las rutas de cron `ti-alerts` y `maintenance-reminders` no devolvían `ok`.
   - `scripts/cron-runner.mjs` daba cada corrida por fallida (`DTE_CRON_RUNNER_CONTRACT`, salida 1) aunque el trabajo se hubiera hecho, así que en el log del scheduler una falla real no se distinguía de una corrida buena. Se reprodujo con el runner real.
   - Una prueba de contrato en `scripts/__tests__/cron-runner.test.ts` revisa ahora todas las rutas que llama el runner. Se comprobó que falla sin el arreglo.

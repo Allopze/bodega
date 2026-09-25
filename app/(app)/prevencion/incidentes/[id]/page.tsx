@@ -24,7 +24,7 @@ import {
   listIncidentNotificationResponsibles,
   type IncidentStatus,
 } from "@/lib/services/prevention-incidents"
-import { IncidentWorkflowPanel } from "./incident-workflow-panel"
+import { IncidentWorkflowPanel, type IncidentInvestigationSnapshot } from "./incident-workflow-panel"
 import { RE20Panel } from "./re20-panel"
 
 export const metadata: Metadata = { title: "Detalle de incidente" }
@@ -112,7 +112,7 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
             <IncidentWorkflowPanel
               incident={incident}
               notifications={bundle.notifications}
-              investigation={bundle.investigation}
+              investigation={bundle.investigation ? investigationForForm(bundle.investigation) : null}
               capa={bundle.capa}
               people={bundle.people}
               responsibles={responsibles}
@@ -155,4 +155,30 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
       </div>
     </PageContainer>
   )
+}
+
+/**
+ * Lo que el formulario de investigación precarga, y nada más: la fila completa
+ * trae las entrevistas cifradas (payload, IV y tag), que no tienen por qué
+ * viajar al navegador.
+ */
+function investigationForForm(row: IncidentInvestigationSnapshot): IncidentInvestigationSnapshot {
+  return {
+    id: row.id,
+    status: row.status,
+    methodology: row.methodology,
+    team: row.team,
+    evidenceSummary: row.evidenceSummary,
+    immediateCauses: row.immediateCauses,
+    basicCauses: row.basicCauses,
+    organizationalCauses: row.organizationalCauses,
+    failedControls: row.failedControls,
+    conclusions: row.conclusions,
+    miperUpdateRequired: row.miperUpdateRequired,
+    miperUpdatedAt: row.miperUpdatedAt,
+    procedureUpdateRequired: row.procedureUpdateRequired,
+    procedureUpdatedAt: row.procedureUpdatedAt,
+    trainingRequired: row.trainingRequired,
+    trainingCompletedAt: row.trainingCompletedAt,
+  }
 }

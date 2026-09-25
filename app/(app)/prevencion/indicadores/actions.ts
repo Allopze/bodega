@@ -10,6 +10,7 @@ import {
   upsertSafetyIndicatorMonth,
   upsertSafetyIndicatorDenominator,
   closeSafetyIndicatorPeriod,
+  SafetyIndicatorDomainError,
 } from "@/lib/services/prevention-indicadores"
 import {
   approveSafetyIndicatorDenominatorSchema,
@@ -32,6 +33,18 @@ function refresh() {
   revalidatePath(REVALIDATE)
 }
 
+/**
+ * El error de dominio viaja con su mensaje: le dice a la persona qué hacer
+ * (recargar, esperar la revisión, pedirle a otra persona que apruebe). El resto
+ * pasa por `unexpectedActionError`, que lo loguea y responde genérico para no
+ * filtrar detalles de driver o SQL. Antes todo caía en el genérico, y un
+ * conflicto de edición se leía como una falla sin causa.
+ */
+function fail(error: unknown): ActionState {
+  if (error instanceof SafetyIndicatorDomainError) return { ok: false, message: error.message }
+  return unexpectedActionError(error, "prevencion/indicadores/actions")
+}
+
 export async function saveSafetyIndicatorMonthAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:indicadores:manage")
   if (guard.error) return guard.error
@@ -43,7 +56,7 @@ export async function saveSafetyIndicatorMonthAction(input: unknown): Promise<Ac
     refresh()
     return { ok: true }
   } catch (e) {
-    return unexpectedActionError(e, "prevencion/indicadores/actions")
+    return fail(e)
   }
 }
 
@@ -57,7 +70,7 @@ export async function closeSafetyIndicatorPeriodAction(input: unknown): Promise<
     refresh()
     return { ok: true }
   } catch (e) {
-    return unexpectedActionError(e, "prevencion/indicadores/actions")
+    return fail(e)
   }
 }
 
@@ -75,7 +88,7 @@ export async function saveSafetyIndicatorDenominatorAction(input: unknown): Prom
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
-    return unexpectedActionError(e, "prevencion/indicadores/actions")
+    return fail(e)
   }
 }
 
@@ -93,6 +106,6 @@ export async function approveSafetyIndicatorDenominatorAction(input: unknown): P
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
-    return unexpectedActionError(e, "prevencion/indicadores/actions")
+    return fail(e)
   }
 }

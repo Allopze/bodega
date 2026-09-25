@@ -201,8 +201,11 @@ describeIf("canonical prevention indicators on real PostgreSQL", () => {
 
     // Dos usuarios abren el mismo mes vacío: ambos mandan `expectedVersion`
     // nulo. Antes el segundo sobrescribía al primero sin conflicto alguno.
-    await expect(indicators.upsertSafetyIndicatorDenominator(input, preparer))
-      .rejects.toThrow(/recarga antes de guardar/i)
+    // Es un error de dominio: la acción le muestra el motivo a la persona en
+    // vez del «No se pudo completar la acción» genérico.
+    const concurrent = indicators.upsertSafetyIndicatorDenominator(input, preparer)
+    await expect(concurrent).rejects.toThrow(/recarga antes de guardar/i)
+    await expect(concurrent).rejects.toBeInstanceOf(indicators.SafetyIndicatorDomainError)
 
     const inReview = await indicators.upsertSafetyIndicatorDenominator(
       { ...input, expectedVersion: created.version, submitForReview: true },
@@ -212,10 +215,12 @@ describeIf("canonical prevention indicators on real PostgreSQL", () => {
 
     // En revisión el formulario se oculta en la UI, pero el servicio aceptaba
     // la escritura igual: la decisión se habría tomado sobre otras cifras.
-    await expect(indicators.upsertSafetyIndicatorDenominator(
+    const whileInReview = indicators.upsertSafetyIndicatorDenominator(
       { ...input, workerCount: 999, expectedVersion: inReview.version },
       preparer,
-    )).rejects.toThrow(/en revisión/i)
+    )
+    await expect(whileInReview).rejects.toThrow(/en revisión/i)
+    await expect(whileInReview).rejects.toBeInstanceOf(indicators.SafetyIndicatorDomainError)
 
     // Rechazado vuelve a ser editable.
     const rejected = await indicators.approveSafetyIndicatorDenominator(

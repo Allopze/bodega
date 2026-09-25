@@ -6,6 +6,12 @@ const approveDenominator = vi.hoisted(() => vi.fn())
 const saveDenominator = vi.hoisted(() => vi.fn())
 const saveMonth = vi.hoisted(() => vi.fn())
 const closePeriod = vi.hoisted(() => vi.fn())
+const SafetyIndicatorDomainError = vi.hoisted(() => class SafetyIndicatorDomainError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "SafetyIndicatorDomainError"
+  }
+})
 
 vi.mock("@/lib/auth/can", () => ({ guardPermission }))
 vi.mock("@/lib/auth/scope", () => ({ resolveWorksiteScope }))
@@ -15,6 +21,7 @@ vi.mock("@/lib/services/prevention-indicadores", () => ({
   upsertSafetyIndicatorDenominator: saveDenominator,
   upsertSafetyIndicatorMonth: saveMonth,
   closeSafetyIndicatorPeriod: closePeriod,
+  SafetyIndicatorDomainError,
 }))
 
 import {
@@ -186,5 +193,47 @@ describe("indicator server actions are authorization boundaries", () => {
         permissions: session.user.permissions,
       })
     })
+  })
+})
+
+/*
+ * Las acciones respondían siempre «No se pudo completar la acción. Intenta
+ * nuevamente.»: la persona no se enteraba de que otro usuario había creado el
+ * mes, de que el denominador estaba en revisión ni de que no podía aprobar lo
+ * que preparó. El error de dominio viaja con su mensaje; el resto sigue oculto
+ * tras el genérico, como en emergencias y campañas.
+ */
+describe("los rechazos de negocio llegan con su motivo", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resolveWorksiteScope.mockReturnValue({ mode: "some", ids: ["ws-own"] })
+    guardPermission.mockResolvedValue({ session, error: null })
+  })
+
+  it("guardar el denominador devuelve el motivo del servicio", async () => {
+    saveDenominator.mockRejectedValue(new SafetyIndicatorDomainError("El denominador cambió; recarga antes de guardar."))
+    await expect(saveSafetyIndicatorDenominatorAction(validDenominatorInput))
+      .resolves.toEqual({ ok: false, message: "El denominador cambió; recarga antes de guardar." })
+  })
+
+  it("aprobar, cerrar y registrar el mes también", async () => {
+    approveDenominator.mockRejectedValue(new SafetyIndicatorDomainError("Quien preparó el denominador no puede aprobarlo."))
+    closePeriod.mockRejectedValue(new SafetyIndicatorDomainError("El período no puede cerrarse: denominador sin aprobar."))
+    saveMonth.mockRejectedValue(new SafetyIndicatorDomainError("El período está cerrado; la corrección exige permiso de cierre y un motivo trazable."))
+
+    await expect(approveSafetyIndicatorDenominatorAction({
+      denominatorId: "den-1", expectedVersion: 2, decision: "approved", reason: "Fuente cuadrada y evidencia revisada",
+    })).resolves.toEqual({ ok: false, message: "Quien preparó el denominador no puede aprobarlo." })
+    await expect(closeSafetyIndicatorPeriodAction({
+      worksiteId: "ws-own", year: 2026, month: 7, reason: "Conciliación mensual aprobada y documentada.",
+    })).resolves.toEqual({ ok: false, message: "El período no puede cerrarse: denominador sin aprobar." })
+    await expect(saveSafetyIndicatorMonthAction({ worksiteId: "ws-own", year: 2026, month: 7 }))
+      .resolves.toEqual({ ok: false, message: "El período está cerrado; la corrección exige permiso de cierre y un motivo trazable." })
+  })
+
+  it("un error inesperado sigue oculto tras el mensaje genérico", async () => {
+    saveDenominator.mockRejectedValue(new Error('duplicate key value violates unique constraint "safety_indicator_denominators_pkey"'))
+    await expect(saveSafetyIndicatorDenominatorAction(validDenominatorInput))
+      .resolves.toEqual({ ok: false, message: "No se pudo completar la acción. Intenta nuevamente." })
   })
 })

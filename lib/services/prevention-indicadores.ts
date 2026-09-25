@@ -80,17 +80,36 @@ export interface CanonicalIndicatorYearView {
   snapshots: Array<typeof safetyIndicatorSnapshots.$inferSelect>
 }
 
+/**
+ * Error de dominio con mensaje pensado para el usuario: las acciones de
+ * `app/(app)/prevencion/indicadores/actions.ts` devuelven SU mensaje tal cual y
+ * mandan cualquier otro error a `unexpectedActionError`, que loguea y responde
+ * genérico para no filtrar detalles de driver o SQL al navegador. Mismo
+ * contrato que `EmergencyDomainError` y `CampaignDomainError`.
+ *
+ * La regla para elegir cuál lanzar: si el mensaje le dice al usuario qué hacer
+ * (no encontrado, versión desactualizada, en revisión, segregación, período que
+ * no admite la operación), es de dominio. Si describe algo que no debería poder
+ * ocurrir —un INSERT ... RETURNING que no devuelve fila—, es un `Error` común.
+ */
+export class SafetyIndicatorDomainError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "SafetyIndicatorDomainError"
+  }
+}
+
 function scopeAllows(scope: WorksiteScope, worksiteId: string) {
   return scope.mode === "all" || (scope.mode === "some" && scope.ids.includes(worksiteId))
 }
 
 function assertWorksiteAccess(worksiteId: string, scope: WorksiteScope): void {
-  if (!scopeAllows(scope, worksiteId)) throw new Error("Faena no encontrada o sin acceso.")
+  if (!scopeAllows(scope, worksiteId)) throw new SafetyIndicatorDomainError("Faena no encontrada o sin acceso.")
 }
 
 function requireIndicatorAccess(access: IndicatorAccess, permission: string, worksiteId?: string) {
   if (!access.permissions.includes(permission) || (worksiteId && !scopeAllows(access.scope, worksiteId))) {
-    throw new Error("Período de indicadores no encontrado o fuera de alcance.")
+    throw new SafetyIndicatorDomainError("Período de indicadores no encontrado o fuera de alcance.")
   }
 }
 
@@ -340,7 +359,7 @@ export async function getSafetyIndicatorPeriods(year: number, scope: WorksiteSco
 }
 
 export async function getCanonicalSafetyIndicatorYear(year: number, scope: WorksiteScope): Promise<CanonicalIndicatorYearView> {
-  if (!Number.isInteger(year) || year < 2024 || year > 2100) throw new Error("Año de indicadores inválido.")
+  if (!Number.isInteger(year) || year < 2024 || year > 2100) throw new SafetyIndicatorDomainError("Año de indicadores inválido.")
   const worksitesVisible = await listVisibleWorksites(scope)
   const ids = worksitesVisible.map((item) => item.id)
   const effectiveScope: WorksiteScope = ids.length > 0 ? { mode: "some", ids } : { mode: "none", ids: [] }
@@ -454,10 +473,10 @@ export async function upsertSafetyIndicatorMonth(
     eq(safetyIndicatorPeriods.status, "closed"),
   )).limit(1)
   if (period && (!canEditClosed || !data.correctionReason)) {
-    throw new Error("El período está cerrado; la corrección exige permiso de cierre y un motivo trazable.")
+    throw new SafetyIndicatorDomainError("El período está cerrado; la corrección exige permiso de cierre y un motivo trazable.")
   }
   const [worksite] = await db.select({ id: worksites.id }).from(worksites).where(eq(worksites.id, data.worksiteId)).limit(1)
-  if (!worksite) throw new Error("Faena no encontrada.")
+  if (!worksite) throw new SafetyIndicatorDomainError("Faena no encontrada.")
   const now = new Date().toISOString()
   await db.insert(safetyIndicators).values({
     id: safetyIndicatorId(data.worksiteId, data.year, data.month),
@@ -613,18 +632,18 @@ export async function upsertSafetyIndicatorDenominator(input: unknown, access: I
     const versionMismatch = existing
       ? existing.version !== data.expectedVersion
       : Boolean(data.expectedVersion)
-    if (versionMismatch) throw new Error("El denominador cambió; recarga antes de guardar.")
+    if (versionMismatch) throw new SafetyIndicatorDomainError("El denominador cambió; recarga antes de guardar.")
     // El estado `pending_review` sólo estaba protegido en la UI —el formulario
     // se desmonta—, no acá: un POST directo podía reescribir el dato mientras
     // otra persona lo revisaba, y la decisión se habría tomado sobre cifras
     // distintas de las que quedaron guardadas. Se sale de `pending_review` por
     // `approveSafetyIndicatorDenominator`, no reescribiendo el registro.
     if (existing?.status === "pending_review") {
-      throw new Error("El denominador está en revisión; espera la aprobación o el rechazo antes de editarlo.")
+      throw new SafetyIndicatorDomainError("El denominador está en revisión; espera la aprobación o el rechazo antes de editarlo.")
     }
     if (existing?.status === "approved") {
       requireIndicatorAccess(access, "prevention:indicadores:close", data.worksiteId)
-      if (!data.correctionReason) throw new Error("Corregir un denominador aprobado exige un motivo trazable.")
+      if (!data.correctionReason) throw new SafetyIndicatorDomainError("Corregir un denominador aprobado exige un motivo trazable.")
       // Se prepara acá y se dispara DESPUÉS del commit: el conector abre su
       // propia conexión, y llamarlo dentro dejaría dos transacciones esperándose.
       const reopened = await reopenClosedPeriod(tx, {
@@ -699,13 +718,13 @@ export async function approveSafetyIndicatorDenominator(input: unknown, access: 
   const data = approveSafetyIndicatorDenominatorSchema.parse(input)
   return db.transaction(async (tx) => {
     const [current] = await tx.select().from(safetyIndicatorDenominators).where(eq(safetyIndicatorDenominators.id, data.denominatorId)).limit(1)
-    if (!current) throw new Error("Denominador no encontrado o fuera de alcance.")
+    if (!current) throw new SafetyIndicatorDomainError("Denominador no encontrado o fuera de alcance.")
     requireIndicatorAccess(access, "prevention:indicadores:close", current.worksiteId)
-    if (current.version !== data.expectedVersion) throw new Error("El denominador cambió; recarga antes de decidir.")
-    if (current.status !== "pending_review") throw new Error("Sólo se puede decidir un denominador pendiente de revisión.")
-    if (current.createdByUserId === access.userId || current.updatedByUserId === access.userId) throw new Error("Quien preparó el denominador no puede aprobarlo.")
+    if (current.version !== data.expectedVersion) throw new SafetyIndicatorDomainError("El denominador cambió; recarga antes de decidir.")
+    if (current.status !== "pending_review") throw new SafetyIndicatorDomainError("Sólo se puede decidir un denominador pendiente de revisión.")
+    if (current.createdByUserId === access.userId || current.updatedByUserId === access.userId) throw new SafetyIndicatorDomainError("Quien preparó el denominador no puede aprobarlo.")
     if (data.decision === "approved" && (!current.evidenceReference || current.reconciliationStatus === "pending")) {
-      throw new Error("La aprobación exige evidencia y conciliación resuelta.")
+      throw new SafetyIndicatorDomainError("La aprobación exige evidencia y conciliación resuelta.")
     }
     const now = new Date().toISOString()
     const [updated] = await tx.update(safetyIndicatorDenominators).set({
@@ -716,7 +735,7 @@ export async function approveSafetyIndicatorDenominator(input: unknown, access: 
       updatedByUserId: access.userId,
       updatedAt: now,
     }).where(and(eq(safetyIndicatorDenominators.id, current.id), eq(safetyIndicatorDenominators.version, data.expectedVersion))).returning()
-    if (!updated) throw new Error("El denominador cambió; recarga antes de decidir.")
+    if (!updated) throw new SafetyIndicatorDomainError("El denominador cambió; recarga antes de decidir.")
     await appendIndicatorHistory(tx, {
       worksiteId: current.worksiteId, year: current.year, month: current.month,
       changeType: data.decision === "approved" ? "denominator_approved" : "denominator_rejected",
@@ -740,7 +759,7 @@ async function createApprovedSnapshot(client: IndicatorClient, args: {
   })
   if (result.status !== "reconciled" || result.pendingCaseCount > 0) {
     const detail = [...result.errors, ...result.reconciliationIssues].join(" ")
-    throw new Error(`El período no puede cerrarse: ${detail || "existen fuentes pendientes"}.`)
+    throw new SafetyIndicatorDomainError(`El período no puede cerrarse: ${detail || "existen fuentes pendientes"}.`)
   }
   const hash = sourceHash(result)
   const [existing] = await client.select().from(safetyIndicatorSnapshots).where(and(
@@ -822,7 +841,7 @@ export async function closeSafetyIndicatorPeriod(
   assertWorksiteAccess(data.worksiteId, scope)
   const outcome = await db.transaction(async (tx) => {
     const [worksite] = await tx.select({ id: worksites.id }).from(worksites).where(eq(worksites.id, data.worksiteId)).limit(1)
-    if (!worksite) throw new Error("Faena no encontrada o sin acceso.")
+    if (!worksite) throw new SafetyIndicatorDomainError("Faena no encontrada o sin acceso.")
     const { snapshot, result, legacyComparison } = await createApprovedSnapshot(tx, {
       worksiteId: data.worksiteId, year: data.year, month: data.month, actorUserId: userId, reason: data.reason,
     })
@@ -883,7 +902,7 @@ export async function invalidateClosedIndicatorPeriodWithClient(client: Indicato
     eq(safetyIndicatorPeriods.status, "closed"),
   )).limit(1)
   if (!closed) return { reopened: false, revocation: null }
-  if (!args.permissions.includes("prevention:indicadores:close")) throw new Error("Corregir una fuente de un período cerrado exige permiso de cierre de indicadores.")
+  if (!args.permissions.includes("prevention:indicadores:close")) throw new SafetyIndicatorDomainError("Corregir una fuente de un período cerrado exige permiso de cierre de indicadores.")
   return reopenClosedPeriod(client, {
     worksiteId: args.worksiteId, year, month, actorUserId: args.actorUserId, reason: args.reason,
   })
@@ -920,7 +939,7 @@ export async function getMaterialEnvironmentalEvents(
   year: number,
   scope: WorksiteScope,
 ): Promise<{ worksites: Array<{ id: string; name: string }>; eventData: MaterialEnvironmentalEventData[] }> {
-  if (!Number.isInteger(year) || year < 2024 || year > 2100) throw new Error("Año inválido.")
+  if (!Number.isInteger(year) || year < 2024 || year > 2100) throw new SafetyIndicatorDomainError("Año inválido.")
 
   const worksitesVisible = await listVisibleWorksites(scope)
   const ids = worksitesVisible.map((item) => item.id)

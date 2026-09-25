@@ -1276,14 +1276,16 @@ export async function savePreventionIncidentInvestigation(args: {
         interviewsAuthTag: encryptedInterviews.authTag,
         interviewsKeyVersion: encryptedInterviews.keyVersion,
       } : {}),
+      // Volver a guardar con la marca puesta conserva cuándo se registró (y
+      // quién cerró): esas fechas son la evidencia del hecho, no del guardado.
       miperUpdateRequired: input.miperUpdateRequired,
-      miperUpdatedAt: input.miperUpdated && miperUpdateVerified ? now : null,
+      miperUpdatedAt: input.miperUpdated && miperUpdateVerified ? (existing[0]?.miperUpdatedAt ?? now) : null,
       procedureUpdateRequired: input.procedureUpdateRequired,
-      procedureUpdatedAt: input.procedureUpdated ? now : null,
+      procedureUpdatedAt: input.procedureUpdated ? (existing[0]?.procedureUpdatedAt ?? now) : null,
       trainingRequired: input.trainingRequired,
-      trainingCompletedAt: input.trainingCompleted ? now : null,
-      completedByUserId: input.complete ? args.access.ctx.userId : null,
-      completedAt: input.complete ? now : null,
+      trainingCompletedAt: input.trainingCompleted ? (existing[0]?.trainingCompletedAt ?? now) : null,
+      completedByUserId: input.complete ? (existing[0]?.completedAt ? existing[0].completedByUserId : args.access.ctx.userId) : null,
+      completedAt: input.complete ? (existing[0]?.completedAt ?? now) : null,
       updatedAt: now,
     }
     if (input.complete) {

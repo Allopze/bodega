@@ -8,7 +8,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { denominatorDialogLabel, IndicatorDenominatorDialog } from "./indicator-denominator-dialog"
 import { saveSafetyIndicatorDenominatorAction } from "./actions"
 import { toast } from "@/lib/toast"
@@ -171,6 +171,35 @@ describe("IndicatorDenominatorDialog — navegación mensual", () => {
 })
 
 describe("IndicatorDenominatorDialog — errores de validación", () => {
+  /*
+   * `<form action={fn}>` reinicia el formulario al terminar, también cuando el
+   * servidor rechaza el guardado: el error se pintaba sobre campos que ya
+   * habían vuelto a su valor anterior y había que teclear todo de nuevo.
+   */
+  it("un guardado rechazado conserva lo tecleado", async () => {
+    vi.mocked(saveSafetyIndicatorDenominatorAction).mockResolvedValue({
+      ok: false,
+      message: "Revisa los campos marcados.",
+      fieldErrors: { workedHours: ["Las horas no cuadran con la dotación."] },
+    })
+    render(<IndicatorDenominatorDialog {...BASE_PROPS} onClose={vi.fn()} />)
+
+    fireEvent.change(screen.getByLabelText(/Dotación del mes/), { target: { value: "42" } })
+    fireEvent.change(screen.getByLabelText(/Horas trabajadas/), { target: { value: "7392" } })
+    fireEvent.change(screen.getByLabelText(/Referencia de fuente/), { target: { value: "Nómina julio" } })
+    fireEvent.change(screen.getByLabelText(/^Evidencia/), { target: { value: "Folio 5120" } })
+    fireEvent.change(screen.getByLabelText(/Notas/), { target: { value: "Pendiente de cruce con RR.HH." } })
+    // Con clic en el botón, como la persona: `fireEvent.submit` sobre el form no
+    // recorre el camino en que React reinicia el formulario.
+    await act(async () => { screen.getByRole("button", { name: "Guardar denominador" }).click() })
+
+    expect(await screen.findByText("Las horas no cuadran con la dotación.")).toBeInTheDocument()
+    expect(screen.getByLabelText(/Dotación del mes/)).toHaveValue(42)
+    expect(screen.getByLabelText(/Horas trabajadas/)).toHaveValue(7392)
+    expect(screen.getByLabelText(/Referencia de fuente/)).toHaveValue("Nómina julio")
+    expect(screen.getByLabelText(/Notas/)).toHaveValue("Pendiente de cruce con RR.HH.")
+  })
+
   it("pinta el error del servidor sobre el campo, no sólo en un toast", async () => {
     vi.mocked(saveSafetyIndicatorDenominatorAction).mockResolvedValue({
       ok: false,

@@ -247,7 +247,13 @@ export function IndicatorDenominatorDialog({ worksiteId, year, month, denominato
         {showForm && (
           <form
             ref={formRef}
-            action={save}
+            // `onSubmit` y no `action={save}`: React reinicia un formulario con
+            // `action` al terminar, también cuando el servidor rechaza el
+            // guardado, y el error quedaba sobre campos ya vaciados.
+            onSubmit={(event) => {
+              event.preventDefault()
+              save(new FormData(event.currentTarget))
+            }}
             onChange={(event) => {
               setDirty(true)
               // El target real es el control que cambió, no el form que React tipa.
