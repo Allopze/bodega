@@ -84,7 +84,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const overrideError = Array.isArray(query.overrideError) ? query.overrideError[0] : query.overrideError
   const viewMode: "semana" | "anual" = requestedView === "anual" ? "anual" : "semana"
   // La tabla escribe ?estado= al filtrar (router.replace); sin leerlo acá, un
-  // enlace compartido o un remount del árbol volvían el filtro a "Todas".
+  // enlace compartido o una recarga volvían el filtro a "Todas".
   // Mismo patrón que actividades/page.tsx.
   const requestedStatus = Array.isArray(query.estado) ? query.estado[0] : query.estado
   const statusFilter: PdtpActivityStatusFilter | "all" = ["executed", "pending", "overdue", "not_scheduled", "not_performed", "en_cero"].includes(requestedStatus ?? "")

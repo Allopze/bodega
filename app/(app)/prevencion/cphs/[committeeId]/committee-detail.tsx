@@ -330,6 +330,9 @@ function AddMemberDialog({ committeeId, eligibleWorkers, existingMemberNames }: 
   const operation = useOperation()
   const existing = new Set(existingMemberNames)
   const available = eligibleWorkers.filter((worker) => !existing.has(worker.name))
+  // La persona recién incorporada sale de `available` pero seguía elegida, y el
+  // siguiente envío la volvía a agregar: se cae a la primera disponible.
+  const selectedWorkerId = available.some((worker) => worker.id === workerId) ? workerId : (available[0]?.id ?? "")
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -344,7 +347,12 @@ function AddMemberDialog({ committeeId, eligibleWorkers, existingMemberNames }: 
       role: role || null,
       electedOn: electedOn || null,
       hasFuero: form.get("hasFuero") === "on",
-    }), () => setOpen(false))
+    }), () => {
+      setOpen(false)
+      setRepresentation("company")
+      setSeat("titular")
+      setRole("")
+    })
   }
 
   return (
@@ -361,7 +369,7 @@ function AddMemberDialog({ committeeId, eligibleWorkers, existingMemberNames }: 
           ) : (
             <>
               <Field label="Persona">
-                <Select value={workerId} onValueChange={setWorkerId}><SelectTrigger><SelectValue placeholder="Selecciona persona" /></SelectTrigger><SelectContent>{available.map((worker) => <SelectItem key={worker.id} value={worker.id}>{worker.name}{worker.position ? ` · ${worker.position}` : ""}</SelectItem>)}</SelectContent></Select><input type="hidden" name="workerId" value={workerId} />
+                <Select value={selectedWorkerId} onValueChange={setWorkerId}><SelectTrigger><SelectValue placeholder="Selecciona persona" /></SelectTrigger><SelectContent>{available.map((worker) => <SelectItem key={worker.id} value={worker.id}>{worker.name}{worker.position ? ` · ${worker.position}` : ""}</SelectItem>)}</SelectContent></Select><input type="hidden" name="workerId" value={selectedWorkerId} />
               </Field>
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Representación">

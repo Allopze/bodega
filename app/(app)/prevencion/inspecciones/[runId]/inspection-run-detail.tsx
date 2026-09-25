@@ -914,8 +914,9 @@ export function InspectionRunDetail({
       setSavedRevision(sending)
       // El botón persiste exactamente lo mismo que el autoguardado, así que el
       // espejo del dispositivo tampoco tiene ya nada que rescatar. Sin esto,
-      // `readInspectionDraft` lo restauraba al remontar y la pantalla avisaba
-      // "Se recuperaron respuestas sin enviar" sobre respuestas ya guardadas.
+      // `readInspectionDraft` lo restauraba la próxima vez que se montara la
+      // pantalla, que avisaba "Se recuperaron respuestas sin enviar" sobre
+      // respuestas ya guardadas.
       clearInspectionDraft(run.id)
       setRestoredDraft(false)
     })
@@ -929,8 +930,8 @@ export function InspectionRunDetail({
     // `revision <= savedRevision` es "no hay nada sin enviar". Comparar contra 0
     // no bastaba: un guardado exitoso sube `version`, que es dependencia de este
     // efecto, así que volvía a escribir el espejo que `onSaved` acababa de
-    // borrar y al remontar la pantalla avisaba de respuestas sin enviar que sí
-    // estaban guardadas.
+    // borrar, y la próxima vez que se montara la pantalla avisaba de
+    // respuestas sin enviar que sí estaban guardadas.
     if (!editable || revision <= savedRevision) return
     writeInspectionDraft(run.id, { version, savedAt: new Date().toISOString(), drafts })
   }, [editable, revision, savedRevision, drafts, run.id, version])
@@ -1626,7 +1627,12 @@ function PreventiveActionsPanel({ runId, actions, assignees, editable }: {
     <Dialog open={open} onOpenChange={setOpen}><DialogContent><form className="space-y-4" onSubmit={(event) => {
       event.preventDefault()
       const actionDescription = String(new FormData(event.currentTarget).get("actionDescription") ?? "")
-      operation.run(() => registerInspectionPreventiveActionAction({ runId, actionDescription, responsibleUserId, targetDate }), () => setOpen(false))
+      // El panel sigue montado tras guardar: la acción siguiente parte de cero.
+      operation.run(() => registerInspectionPreventiveActionAction({ runId, actionDescription, responsibleUserId, targetDate }), () => {
+        setOpen(false)
+        setResponsibleUserId("")
+        setTargetDate("")
+      })
     }}>
       <DialogHeader><DialogTitle>Acción preventiva</DialogTitle><DialogDescription>La acción quedará creada directamente en CAPA/PDTP con responsable y fecha de control.</DialogDescription></DialogHeader>
       <Field label="Acción acordada" required><Textarea name="actionDescription" required minLength={10} maxLength={3000} /></Field>
@@ -1866,7 +1872,11 @@ function OtherDeviationDialog({ runId, open, onOpenChange, narrative }: {
                 immediateMeasure: narrative ? String(form.get("immediateMeasure") ?? "").trim() : undefined,
                 applicableLaw: narrative ? String(form.get("applicableLaw") ?? "").trim() : undefined,
               }),
-              () => onOpenChange(false),
+              () => {
+                // El diálogo sigue montado: la desviación siguiente parte de la gravedad por defecto.
+                setDano("moderado")
+                onOpenChange(false)
+              },
             )
           }}
         >
@@ -2184,10 +2194,10 @@ function SourceFormUpload({ runId, hasDocuments }: { runId: string; hasDocuments
         const failure = await response.json().catch(() => ({}))
         throw new Error(failure?.error ?? "No se pudo subir la planilla.")
       }
-      /* INS-10: `router.refresh()` en una ruta con `loading.tsx` vuelve a
-       * suspender, y React puede desmontar el árbol de cliente y montar uno
-       * nuevo — el borrador en `useState` se iría con él. Lo que sostiene la
-       * promesa de abajo no es el refresh: es el espejo en el dispositivo
+      /* INS-10: hasta 2026-09-24 `router.refresh()` volvía a montar la
+       * plataforma entera (AppShell exportado como objeto memo) y el borrador
+       * en `useState` se iba con él; ya no ocurre. Lo que sostiene la promesa
+       * de abajo no es el refresh: es el espejo en el dispositivo
        * (`inspection-draft-storage`), que se restaura al volver a montar. */
       setMessage("Planilla cargada. Tu borrador de respuestas se conserva.")
       router.refresh()

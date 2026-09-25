@@ -167,6 +167,9 @@ export function ActividadesTab({
         setRetiring(null)
         setRetirementReason("")
         setRetirementDate(defaultRetirementDate)
+        // Una retirada no se puede editar en lote y su casilla queda
+        // deshabilitada: si siguiera seleccionada, no habría cómo quitarla.
+        setSelectedIds((current) => current.filter((id) => id !== activityId))
         router.refresh()
       }
     } finally {
@@ -470,6 +473,12 @@ function BatchEditActivitiesDialog({ open, onOpenChange, programId, activityIds,
         objectiveId: objectiveChange,
       })
       if (!result.ok) { setError(result.message ?? "No se pudo editar la selección."); return }
+      // El diálogo sigue montado: sin esto el próximo lote abriría con estos
+      // cambios ya elegidos y los aplicaría a otra selección.
+      setResponsible("keep")
+      setReplaceEvidence(false)
+      setEvidence("")
+      setObjective("keep")
       onOpenChange(false)
       onSaved()
     } finally {

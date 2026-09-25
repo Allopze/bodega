@@ -133,9 +133,9 @@ const AVAILABILITY_DEFINITIONS = {
 /**
  * `sessionStorage` y no la URL: agrupar es preferencia de vista y se aplica en
  * cliente sobre filas ya cargadas. En la URL obligaría a un viaje al servidor, y
- * en estado de React sola la borraría cualquier `router.refresh()` — hay
- * `loading.tsx`, así que el refresco desmonta el árbol (guardar un mínimo lo
- * dispara).
+ * en estado de React sola se perdería al recargar o al volver a Bodega desde
+ * otra pantalla (hasta 2026-09-24 la borraba también cada revalidación —guardar
+ * un mínimo, por ejemplo—, que volvía a montar la plataforma entera).
  */
 function useGroupBy(): [GroupBy, (value: GroupBy) => void] {
   const [groupBy, setGroupBy] = React.useState<GroupBy>("faena")
@@ -221,7 +221,12 @@ function MinStockCell({ stockId, currentMin, disabled = false }: { stockId: stri
     return (
       <button
         type="button"
-        onClick={() => setEditing(true)}
+        onClick={() => {
+          // El mínimo puede haber cambiado con la celda montada (la hoja de
+          // stock mínimo edita la faena entera): se parte del valor actual.
+          setValue(String(currentMin))
+          setEditing(true)
+        }}
         className="inline-flex min-h-11 min-w-11 items-center justify-end gap-1 text-xs text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)] sm:min-h-6 sm:min-w-6"
         title={currentMin > 0 ? "Editar stock mínimo" : "Definir stock mínimo"}
         aria-label={currentMin > 0 ? "Editar stock mínimo" : "Definir stock mínimo"}

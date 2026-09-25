@@ -32,15 +32,17 @@ export function BulkApproveBar({
   onClear: () => void
 }) {
   const [state, action] = useActionState(bulkApproveRequestAction, INITIAL_STATE)
-  const prevMessage = React.useRef<string | undefined>(undefined)
+  const handledState = React.useRef(state)
 
   React.useEffect(() => {
-    // La guarda de "mismo mensaje" existe para no repetir el toast cuando el
-    // efecto se re-dispara sin que haya un envío nuevo. En un fallo se limpia,
-    // porque reintentar y volver a fallar con el mismo texto se veía como que
-    // el botón no hacía nada.
-    if (!state.message || state.message === prevMessage.current) return
-    prevMessage.current = state.ok ? state.message : undefined
+    // Cada resultado se atiende una vez: el efecto también se re-dispara cuando
+    // cambia `onClear`. La guarda compara el resultado y no su texto, porque la
+    // barra sigue montada y dos aprobaciones seguidas pueden decir lo mismo
+    // («2 solicitudes aprobadas»): con el texto, la segunda no avisaba ni
+    // limpiaba la selección. Reintentar un fallo también es un resultado nuevo.
+    if (state === handledState.current) return
+    handledState.current = state
+    if (!state.message) return
     if (state.ok) {
       toast.success(state.message)
       onClear()

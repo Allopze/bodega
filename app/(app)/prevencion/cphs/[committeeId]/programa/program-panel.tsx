@@ -458,8 +458,10 @@ function CompleteActivityDialog({ activity, meetings }: {
         }), () => setOpen(false))
   }
 
+  // La sesión se vuelve a leer al abrir: "Vincular a sesión" puede haberla
+  // cambiado mientras este diálogo seguía montado con la del primer render.
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(value) => { if (value) setMeetingId(activity.reviewedInMeetingId ?? ""); setOpen(value) }}>
       <DialogTrigger asChild><Button size="sm" variant="secondary">Cerrar</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
@@ -522,7 +524,7 @@ function LinkMeetingDialog({ activityId, meetings }: {
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    operation.run(() => linkActivityToMeetingAction({ activityId, meetingId }), () => setOpen(false))
+    operation.run(() => linkActivityToMeetingAction({ activityId, meetingId }), () => { setOpen(false); setMeetingId("") })
   }
 
   return (

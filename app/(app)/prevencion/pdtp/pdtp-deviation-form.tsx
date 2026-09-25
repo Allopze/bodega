@@ -99,6 +99,12 @@ export function PdtpDeviationForm({
       } else {
         toast.success("Desvío registrado.")
         setOpen(false)
+        // El diálogo sigue montado: el desvío siguiente parte de la celda, no del último usado.
+        setKind(availableKinds[0] ?? "not_performed")
+        setMonth(String(defaultMonth))
+        setWeek(String(defaultWeek))
+        setTargetMonth(String(defaultMonth))
+        setTargetWeek(String(Math.min(4, defaultWeek + 1)))
       }
       return result
     },

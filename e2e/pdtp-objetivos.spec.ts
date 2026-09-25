@@ -36,7 +36,9 @@ test.describe("PDTP — objetivos y filtro de actividades", () => {
     await createDialog.getByLabel(/Nombre/).fill("Objetivo E2E")
     await createDialog.getByRole("button", { name: "Guardar" }).click()
     await expect(createDialog).not.toBeVisible()
-    await expect(page.getByRole("cell", { name: "Objetivo E2E" })).toBeVisible()
+    // `exact`: sin él el nombre también calza con la celda de la actividad
+    // "Actividad sin objetivo E2E" y la aserción no probaba el objetivo nuevo.
+    await expect(page.getByRole("cell", { name: "Objetivo E2E", exact: true })).toBeVisible()
 
     // Asigna el objetivo recién creado a "Actividad sin objetivo E2E" (N°91)
     // desde el select de su fila, en la tabla de actividades guardadas.

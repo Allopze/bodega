@@ -40,6 +40,10 @@ export function MaintenanceCreateButton({
   canViewCosts: boolean
 }) {
   const [open, setOpen] = useState(false)
+  // Remontar el formulario tras guardar lo deja limpio para el siguiente: el
+  // reset nativo no alcanza a los selectores controlados, al DatePicker ni al
+  // `slaDueAt` oculto, que quedaban con los valores del registro anterior.
+  const [formKey, setFormKey] = useState(0)
 
   return (
     <>
@@ -58,11 +62,13 @@ export function MaintenanceCreateButton({
           </SheetHeader>
           <SheetBody>
         <MaintenanceForm
+          key={formKey}
           vehicles={vehicles}
           suppliers={suppliers}
           costCenters={costCenters}
           assignees={assignees}
           canViewCosts={canViewCosts}
+          onSuccess={() => setFormKey((current) => current + 1)}
         />
           </SheetBody>
         </SheetContent>

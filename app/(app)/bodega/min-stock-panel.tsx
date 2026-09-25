@@ -25,22 +25,29 @@ export function MinStockPanel({
   worksiteId,
   worksiteName,
   products,
+  onDone,
 }: {
   worksiteId: string
   worksiteName: string
   products: WorksiteProductOption[]
+  /** Se llama cuando el movimiento queda registrado, para cerrar la hoja. */
+  onDone?: () => void
 }) {
   const formRef = React.useRef<HTMLFormElement>(null)
   const [query, setQuery] = React.useState("")
-  const [state, action, pending] = useActionState<ActionState, FormData>(setMinStockBulkAction, INITIAL_STATE)
-
-  React.useEffect(() => {
-    if (state.ok && state.message) {
-      toast.success(state.message)
-    } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
-      toast.error(state.message)
+  // El aviso y el cierre salen dentro de la acción: la hoja queda montada
+  // después de revalidar, así que sin cerrarla seguiría abierta sobre datos
+  // viejos (antes la cerraba el remontaje de toda la plataforma).
+  const [state, action, pending] = useActionState<ActionState, FormData>(async (prev, formData) => {
+    const result = await setMinStockBulkAction(prev, formData)
+    if (result.ok) {
+      if (result.message) toast.success(result.message)
+      onDone?.()
+    } else if (result.message) {
+      toast.error(result.message)
     }
-  }, [state])
+    return result
+  }, INITIAL_STATE)
 
   // Sólo los productos con fila en `worksite_stock`: el mínimo se guarda contra
   // esa fila, y un producto que nunca tuvo movimiento en la faena no la tiene.

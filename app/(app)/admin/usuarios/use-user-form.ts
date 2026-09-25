@@ -68,11 +68,20 @@ export function useUserForm({ editUser, onClose, allRoles, allPermissions, allWo
   const [pending, setPending] = React.useState<PendingInvite | null>(null)
   const [copied, setCopied] = React.useState(false)
 
+  const [selection, updateSelection] = useReducer(
+    userSelectionReducer,
+    editUser,
+    getUserSelection,
+  )
+
   useEffect(() => {
     if (state === lastSeenStateRef.current) return
     lastSeenStateRef.current = state
     if (state.ok) {
       toast.success(state.message ?? (isEdit ? "Usuario actualizado" : "Usuario creado"))
+      // La instancia de alta sigue montada: el próximo usuario parte sin los
+      // roles ni los permisos del anterior.
+      if (!isEdit) updateSelection({ type: "reset", user: null })
       const data = state.data as { email?: string; inviteUrl?: string } | undefined
       if (!isEdit && data?.inviteUrl) {
         setPending({ email: data.email ?? "", inviteUrl: data.inviteUrl })
@@ -84,12 +93,6 @@ export function useUserForm({ editUser, onClose, allRoles, allPermissions, allWo
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
-
-  const [selection, updateSelection] = useReducer(
-    userSelectionReducer,
-    editUser,
-    getUserSelection,
-  )
 
   useEffect(() => {
     updateSelection({ type: "reset", user: editUser })

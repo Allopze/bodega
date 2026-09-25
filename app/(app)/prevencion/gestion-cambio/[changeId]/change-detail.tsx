@@ -186,8 +186,18 @@ function EvaluateDialog({ changeRequestId, assessment, assignees }: {
     }), () => setOpen(false))
   }
 
+  // Al abrir se parte de la evaluación guardada: el diálogo sigue montado tras
+  // guardar y conservaría una edición abandonada o los datos de la CAPA anterior.
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(value) => {
+      if (value) {
+        setImpacted(assessment.impacted)
+        setActionRequired(assessment.actionRequired)
+        setResponsibleUserId("_none")
+        setPriority("medium")
+      }
+      setOpen(value)
+    }}>
       <DialogTrigger asChild>
         <Button size="sm" variant="secondary">{assessment.evaluated ? "Reevaluar" : "Evaluar"}</Button>
       </DialogTrigger>

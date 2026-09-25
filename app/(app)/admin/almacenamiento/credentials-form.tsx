@@ -31,19 +31,26 @@ const SOURCE_LABELS = {
 } as const
 
 export function CloudreveStorageForm({ status }: CloudreveStorageFormProps) {
-  // El aviso sale dentro de la acción: al revalidar, la página se vuelve a
-  // montar y un efecto sobre `state` nunca llegaba a ver el resultado, así que
-  // guardar no avisaba nada (el mismo patrón de `admin/desviaciones`).
-  const [, formAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
-    const result = await saveCloudreveStorageAction(prev, formData)
-    if (result.ok) toast.success(result.message ?? "Configuración guardada")
-    else if (result.message) toast.error(result.message)
-    return result
-  }, INITIAL_STATE)
-  const [backend, setBackend] = useState<"filesystem" | "cloudreve">(status.backend.value)
   const [usernameInput, setUsernameInput] = useState("")
   const [passwordInput, setPasswordInput] = useState("")
   const [sstPathInput, setSstPathInput] = useState("")
+  // El aviso sale dentro de la acción, donde se conoce el resultado (el mismo
+  // patrón de `admin/desviaciones`). Los campos de secreto son no controlados y
+  // React los vacía al terminar; su espejo controlado se vacía acá, o las
+  // casillas «Borrar…» quedarían deshabilitadas junto a campos vacíos.
+  const [, formAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
+    const result = await saveCloudreveStorageAction(prev, formData)
+    if (result.ok) {
+      toast.success(result.message ?? "Configuración guardada")
+      setUsernameInput("")
+      setPasswordInput("")
+      setSstPathInput("")
+    } else if (result.message) {
+      toast.error(result.message)
+    }
+    return result
+  }, INITIAL_STATE)
+  const [backend, setBackend] = useState<"filesystem" | "cloudreve">(status.backend.value)
   const [confirmClearOpen, setConfirmClearOpen] = useState(false)
   const [clearing, setClearing] = useState(false)
   // `feedback: "toast"` notifica con el mensaje que devuelve la acción. Con el
@@ -64,8 +71,12 @@ export function CloudreveStorageForm({ status }: CloudreveStorageFormProps) {
     setClearing(true)
     try {
       const result = await clearCloudreveStorageAction()
-      if (result.ok) toast.success(result.message)
-      else toast.error(result.message)
+      if (result.ok) {
+        toast.success(result.message)
+        setConfirmClearOpen(false)
+      } else {
+        toast.error(result.message)
+      }
     } finally {
       setClearing(false)
     }

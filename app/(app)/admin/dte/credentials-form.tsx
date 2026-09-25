@@ -10,7 +10,7 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { SubmitButton } from "@/components/ui/submit-button"
-import { INITIAL_STATE } from "@/lib/form-state"
+import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { useOperation } from "@/lib/hooks/use-operation"
 import type { DtePortalAdminStatus } from "@/lib/services/dte-portal/settings"
 import {
@@ -30,9 +30,21 @@ interface DteCredentialsFormProps {
  * Los inputs siempre parten vacíos: vacío conserva y cada borrado es explícito.
  */
 export function DteCredentialsForm({ status }: DteCredentialsFormProps) {
-  const [state, formAction] = useActionState(saveDteSettingsAction, INITIAL_STATE)
-  const [syncEnabled, setSyncEnabled] = useState(status.syncEnabled)
   const [claveInput, setClaveInput] = useState("")
+  // El aviso sale dentro de la acción, donde se conoce el resultado. La clave
+  // es un campo no controlado que React vacía al terminar; su espejo se vacía
+  // acá, o «Borrar la contraseña persistida» quedaría deshabilitada.
+  const [, formAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
+    const result = await saveDteSettingsAction(prev, formData)
+    if (result.ok) {
+      toast.success(result.message ?? "Configuración DTE guardada")
+      setClaveInput("")
+    } else if (result.message) {
+      toast.error(result.message)
+    }
+    return result
+  }, INITIAL_STATE)
+  const [syncEnabled, setSyncEnabled] = useState(status.syncEnabled)
   const [confirmClearOpen, setConfirmClearOpen] = useState(false)
   const [confirmConversionOpen, setConfirmConversionOpen] = useState(false)
   const [confirmRotationOpen, setConfirmRotationOpen] = useState(false)
@@ -43,11 +55,6 @@ export function DteCredentialsForm({ status }: DteCredentialsFormProps) {
   useEffect(() => {
     setSyncEnabled(status.syncEnabled)
   }, [status.syncEnabled])
-
-  useEffect(() => {
-    if (state.ok) toast.success(state.message ?? "Configuración DTE guardada")
-    else if (state.message) toast.error(state.message)
-  }, [state])
 
   const visualStatus = !status.configured
     ? {
@@ -90,8 +97,12 @@ export function DteCredentialsForm({ status }: DteCredentialsFormProps) {
     setClearing(true)
     try {
       const result = await clearDteSettingsAction()
-      if (result.ok) toast.success(result.message)
-      else toast.error(result.message)
+      if (result.ok) {
+        toast.success(result.message)
+        setConfirmClearOpen(false)
+      } else {
+        toast.error(result.message)
+      }
     } finally {
       setClearing(false)
     }

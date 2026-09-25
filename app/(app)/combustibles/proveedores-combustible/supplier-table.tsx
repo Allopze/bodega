@@ -96,7 +96,9 @@ export function FuelSupplierList({ suppliers, generalSuppliers }: { suppliers: F
           const formData = new FormData()
           formData.set("id", confirmId)
           formData.set("activate", "false")
-          toggleAction(formData)
+          React.startTransition(() => {
+            toggleAction(formData)
+          })
           setConfirmId(null)
         }}
       />

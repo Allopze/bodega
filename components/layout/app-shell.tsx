@@ -191,4 +191,14 @@ const AppShellInner = React.memo(function AppShellInner({ session, worksiteName,
   )
 })
 
-export const AppShell = AppShellInner
+/*
+ * Función y no el objeto `memo`: el layout de `(app)` es un Server Component y
+ * lo que recibe de este módulo es una referencia de cliente. Con el `memo`
+ * exportado tal cual, React volvía a montar la plataforma entera —shell,
+ * navegación y página— en cada `router.refresh()` y en cada Server Action que
+ * revalida, y se perdía el estado de cliente. Ver
+ * `lib/__tests__/client-memo-boundary.test.ts`.
+ */
+export function AppShell(props: AppShellProps) {
+  return <AppShellInner {...props} />
+}

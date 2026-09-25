@@ -45,6 +45,11 @@ interface GuideActionsProps {
  * usuario tiene el permiso: el servidor vuelve a comprobar ambas cosas, así que
  * esto es la capa de claridad, no la de seguridad.
  */
+/** Lo que falta por recibir de cada línea, como texto para los inputs. */
+function pendingQuantities(items: NonNullable<GuideActionsProps["reconciliationItems"]>): Record<string, string> {
+  return Object.fromEntries(items.map((item) => [item.id, String(Math.max(0, item.quantity - (item.receivedQuantity ?? 0)))]))
+}
+
 export function GuideActions({
   guideId,
   code,
@@ -63,9 +68,7 @@ export function GuideActions({
   const [cancelOpen, setCancelOpen] = React.useState(false)
   const [receiverWorkerId, setReceiverWorkerId] = React.useState(defaultReceiverWorkerId)
   const [reason, setReason] = React.useState("")
-  const [receivedQuantities, setReceivedQuantities] = React.useState<Record<string, string>>(() =>
-    Object.fromEntries(reconciliationItems.map((item) => [item.id, String(Math.max(0, item.quantity - (item.receivedQuantity ?? 0)))])),
-  )
+  const [receivedQuantities, setReceivedQuantities] = React.useState<Record<string, string>>(() => pendingQuantities(reconciliationItems))
   const [differenceReasons, setDifferenceReasons] = React.useState<Record<string, string>>({})
   const receiveContentRef = React.useRef<HTMLDivElement>(null)
 
@@ -123,7 +126,17 @@ export function GuideActions({
       )}
 
       {isDispatched && permissions.receive && (
-        <Button onClick={() => setReceiveOpen(true)} disabled={pending} className="gap-1.5">
+        <Button
+          onClick={() => {
+            // Se siembra al abrir y no solo al montar: tras una recepción parcial
+            // la pantalla sigue montada y lo pendiente ya es menos.
+            setReceivedQuantities(pendingQuantities(reconciliationItems))
+            setDifferenceReasons({})
+            setReceiveOpen(true)
+          }}
+          disabled={pending}
+          className="gap-1.5"
+        >
           <SealCheck size={15} aria-hidden />
           Confirmar recepción
         </Button>

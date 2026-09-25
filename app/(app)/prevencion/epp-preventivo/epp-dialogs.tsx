@@ -46,8 +46,18 @@ export function NewRequirementDialog({ eppTypes, families, worksites }: {
     }), () => setOpen(false))
   }
 
+  // El diálogo sigue montado tras crear: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(value) => {
+      if (value) {
+        setScopeType("global")
+        setEppTypeId(eppTypes[0]?.id ?? "")
+        setEnforcement("warning")
+        setWorksiteId("")
+        setPreferredFamilyId("_none")
+      }
+      setOpen(value)
+    }}>
       <DialogTrigger asChild><Button size="sm">Nuevo requisito</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
@@ -140,8 +150,9 @@ export function EditRequirementDialog({ id, currentEnforcement, currentReason }:
     }), () => setOpen(false))
   }
 
+  // Al abrir se parte de la exigibilidad guardada, no de una edición abandonada.
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(value) => { if (value) setEnforcement(currentEnforcement); setOpen(value) }}>
       <DialogTrigger asChild>
         <button
           type="button"

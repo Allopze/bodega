@@ -76,6 +76,8 @@ export function ResponsibleForm({ open, onClose, editResponsible, roleOptions }:
       const result = await savePdtpResponsibleAction(prev, formData)
       if (result.ok) {
         toast.success(result.message ?? "Responsable guardado")
+        // La instancia de alta sigue montada (su key es fija): se vacía para el próximo «Nuevo».
+        if (!isEdit) { setKind("rol_rbac"); setRoleName("") }
         onClose()
       } else if (result.message && !result.fieldErrors) {
         toast.error(result.message)

@@ -52,7 +52,15 @@ export function ManualCapaDialog({ worksites }: { worksites: { id: string; name:
         evidenceRequired,
         evidenceExemptionReason: evidenceRequired ? null : v.get("evidenceExemptionReason"),
       }),
-      () => { setOpen(false); router.refresh() },
+      () => {
+        setOpen(false)
+        // Estos campos viven fuera del contenido del diálogo y no se reinician
+        // al cerrarlo: la acción siguiente heredaba prioridad y exención.
+        setWorksiteId(worksites[0]?.id ?? "")
+        setPriority("medium")
+        setEvidenceRequired(true)
+        router.refresh()
+      },
     )
   }
 

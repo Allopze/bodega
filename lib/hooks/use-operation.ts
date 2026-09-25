@@ -30,6 +30,12 @@ export function useOperation(options?: OperationOptions) {
    * que el cliente necesita conservar —p. ej. la nueva `version` de un registro
    * con bloqueo optimista, para que el siguiente envío no choque—. El parámetro
    * es opcional, así que los callbacks sin argumentos siguen siendo válidos.
+   *
+   * En modo "message", con `onSuccess` el éxito lo comunica quien llama y el
+   * hook no guarda «Guardado correctamente.». Casi todos esos callbacks cierran
+   * el diálogo que llamó: nadie veía el aviso, que se quedaba en el estado del
+   * padre —sigue montado— y reaparecía sobre el formulario vacío al volver a
+   * abrirlo. Los errores se muestran igual.
    */
   function run(operation: () => Promise<OperationResult>, onSuccess?: (result: OperationResult) => void) {
     setMessage("")
@@ -38,7 +44,7 @@ export function useOperation(options?: OperationOptions) {
       if (result.ok) {
         if (feedback === "toast") {
           toast.success(result.message ?? "Cambio registrado")
-        } else {
+        } else if (!onSuccess) {
           setMessage("Guardado correctamente.")
         }
         onSuccess?.(result)

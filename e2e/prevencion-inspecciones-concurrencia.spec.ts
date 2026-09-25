@@ -35,9 +35,8 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
      * realidad era una carrera del propio test.
      *
      * La señal es la respuesta de red y no el aviso "Guardado correctamente.":
-     * ese texto vive en estado de cliente y el revalidado remonta el árbol
-     * —esta ruta tiene `loading.tsx`—, así que desaparece antes de poder
-     * observarse de forma fiable. */
+     * `saveAnswers` le pasa a `useOperation` un `onSuccess` propio, y en ese
+     * caso el hook no guarda ese texto, así que nunca aparece. */
     const guardado = page.waitForResponse(
       (response) => response.request().method() === "POST" && response.status() === 200,
       { timeout: 30_000 },

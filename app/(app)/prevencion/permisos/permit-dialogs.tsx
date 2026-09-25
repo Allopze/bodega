@@ -65,7 +65,10 @@ export function PermitTypeDialog() {
       measurementCalibrationValidityDays: requiresMeasurement && calibration ? Number(calibration) : null,
       maxDurationHours: Number(form.get("maxDurationHours")),
       legalBasis: form.get("legalBasis"),
-    }), () => setOpen(false))
+    }), () => {
+      // El diálogo sigue montado: el próximo tipo no hereda las exigencias de este.
+      setOpen(false); setRequiresMeasurement(false); setRequiresIsolation(false); setRequiresJsa(true); setRequiresCrewAck(true)
+    })
   }
 
   return (

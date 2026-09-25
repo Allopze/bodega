@@ -125,10 +125,11 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
       }
 
       // `router.refresh()` AL FINAL, después de fijar el resultado en el estado
-      // local: antes corría primero y el resumen dispatchado justo después
-      // llegaba a pisar (o se perdía contra) el remount que el refresh dispara
-      // en esta misma ruta — el mismo patrón ya documentado en
-      // actions-operaciones.ts:325-333 para revalidatePath.
+      // local: antes corría primero y el resumen dispatchado justo después se
+      // perdía, porque hasta 2026-09-24 el refresh volvía a montar la
+      // plataforma entera (AppShell exportado como objeto memo; ver
+      // `confirmOperationsImportAction` en actions-operaciones.ts). Ya no
+      // ocurre; el orden se conserva.
       router.refresh()
 
       if (stoppedAt) return

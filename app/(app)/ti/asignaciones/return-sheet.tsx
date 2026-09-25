@@ -135,8 +135,15 @@ export function ReturnSheet({ trigger, assignment }: ReturnSheetProps) {
     }
   }
 
+  function openSheet() {
+    // La hora por defecto es la de apertura, no la de montaje de la página:
+    // las demás filas conservan su hoja montada tras cada devolución.
+    setReturnedAt(toLocalInputValue(new Date()))
+    setOpen(true)
+  }
+
   return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) closeSheet(); else setOpen(true) }}>
+    <Sheet open={open} onOpenChange={(v) => { if (!v) closeSheet(); else openSheet() }}>
       <SheetTrigger asChild>{trigger}</SheetTrigger>
       <SheetContent className="sm:max-w-xl">
         <form action={formAction} className="flex flex-col flex-1 min-h-0">

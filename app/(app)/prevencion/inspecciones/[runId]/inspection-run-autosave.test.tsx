@@ -13,8 +13,9 @@
  * El segundo bug es el espejo local: `clearInspectionDraft` sólo se llamaba
  * desde el autoguardado, y el efecto que escribe el espejo depende de `version`
  * —que un guardado exitoso sube—, así que volvía a escribir lo que se acababa
- * de borrar. Al remontar, la pantalla avisaba "Se recuperaron respuestas sin
- * enviar de este dispositivo" sobre respuestas ya persistidas.
+ * de borrar. La próxima vez que se montaba, la pantalla avisaba "Se
+ * recuperaron respuestas sin enviar de este dispositivo" sobre respuestas ya
+ * persistidas.
  */
 
 import { act, fireEvent, render, screen } from "@testing-library/react"

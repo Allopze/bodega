@@ -117,11 +117,23 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
         return []
       })
       setAccessories([])
+      // La hoja sigue montada: el activo recién entregado ya no está disponible
+      // y la próxima entrega debe partir del formulario en blanco.
+      setSelectedAsset(assetId ?? "")
+      setKind("delivery")
+      setPhysicalState("bueno")
+      setAccessoryDraft("")
     } else if (result.message && !result.fieldErrors) {
       toast.error(result.message)
     }
     return result
   }, INITIAL_STATE)
+
+  function openSheet() {
+    // La hora por defecto es la de apertura, no la de montaje de la página.
+    setDeliveredAt(toLocalInputValue(new Date()))
+    setOpen(true)
+  }
 
   const availableAssets = assetId ? assets : assets.filter((a) => ["disponible", "en_bodega"].includes(a.status))
 
@@ -164,7 +176,7 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
   }
 
   return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) closeSheet(); else setOpen(true) }}>
+    <Sheet open={open} onOpenChange={(v) => { if (!v) closeSheet(); else openSheet() }}>
       <SheetTrigger asChild>{trigger}</SheetTrigger>
       <SheetContent className="sm:max-w-xl">
         <form action={formAction} className="flex flex-col flex-1 min-h-0">

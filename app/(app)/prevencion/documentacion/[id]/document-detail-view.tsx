@@ -47,9 +47,10 @@ export function DocumentDetailView(props: DetailViewProps) {
     onMutated?.()
   }
 
-  // router.refresh() + loading.tsx remonta el árbol y un Tabs no controlado
-  // volvía a "Resumen" tras cada acción de versiones/distribución; la pestaña
-  // activa se persiste en sessionStorage para sobrevivir el remount.
+  // La pestaña activa se persiste en sessionStorage y se restaura al volver a
+  // montar el detalle del mismo documento. Hasta 2026-09-24 hacía falta tras
+  // cada acción de versiones/distribución: router.refresh() volvía a montar la
+  // plataforma entera y un Tabs no controlado volvía a "Resumen".
   const [tab, setTab] = useState("overview")
   useEffect(() => {
     const stored = sessionStorage.getItem(`sst-doc-tab:${doc.id}`)

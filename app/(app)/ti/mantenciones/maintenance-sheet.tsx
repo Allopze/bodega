@@ -56,6 +56,11 @@ export function MaintenanceSheet({ trigger, assetId, suppliers, assets = [], edi
     if (result.ok) {
       toast.success(result.message ?? (isEditing ? "Mantención actualizada" : "Mantención registrada"))
       setOpen(false)
+      // En alta la hoja sigue montada: la próxima mantención parte de hoy.
+      if (!isEditing) {
+        setType("correctiva")
+        setDate(todayInChile())
+      }
     } else if (result.message && !result.fieldErrors) {
       toast.error(result.message)
     }

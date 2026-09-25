@@ -356,12 +356,13 @@ export async function confirmConsumptionImportAction(
   }
 
   // Sin revalidar "/combustibles/importar": es la ruta donde vive ESTE wizard
-  // (import-wizard.tsx, renderizado desde importar/page.tsx). Revalidarla
-  // remonta el árbol de cliente en la misma respuesta y borra el paso "done"
-  // antes de que el usuario alcance a ver el resumen — mismo caso ya resuelto
-  // en actions-operaciones.ts:325-333. Basta con la ruta hermana: el
-  // historial de lotes se sirve fresco en la próxima visita real (dinámica,
-  // depende de sesión).
+  // (import-wizard.tsx, renderizado desde importar/page.tsx). Se excluyó porque
+  // revalidar borraba el paso "done" antes de que el usuario viera el resumen;
+  // la causa real era que hasta 2026-09-24 cualquier revalidación volvía a
+  // montar la plataforma entera (AppShell exportado como objeto memo), y ya no
+  // ocurre — ver `confirmOperationsImportAction` en actions-operaciones.ts.
+  // Basta con la ruta hermana: el historial de lotes se sirve fresco en la
+  // próxima visita real (dinámica, depende de sesión).
   revalidatePath("/combustibles")
 
   return { ok: true, data: { batchId: batchIds[0]!, imported: [...rowsByWorksite.values()].flat().length, errors: [...parsed.errors, ...unmatchedErrors] } }

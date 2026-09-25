@@ -100,11 +100,13 @@ export function IncidentWorkflowPanel({ incident, notifications, investigation, 
   const [targetDate, setTargetDate] = useState(defaultTargetDate)
 
   const can = (permission: string) => permissions.includes(permission)
-  function run(operation: () => Promise<{ ok: boolean; message?: string }>) {
+  function run(operation: () => Promise<{ ok: boolean; message?: string }>, onSuccess?: () => void) {
     startTransition(async () => {
       const result = await operation()
-      if (result.ok) toast.success(result.message)
-      else toast.error(result.message)
+      if (result.ok) {
+        toast.success(result.message)
+        onSuccess?.()
+      } else toast.error(result.message)
     })
   }
 
@@ -187,11 +189,16 @@ export function IncidentWorkflowPanel({ incident, notifications, investigation, 
       {can("prevention:incidents:investigate") && (
         <details className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <summary className="cursor-pointer font-semibold">Agregar evidencia o CAPA</summary>
+          {/* Las `Select` con `defaultValue` no siguen el reset automático del
+              formulario tras la acción: su `<select>` oculto vuelve al valor
+              del montaje mientras la pantalla muestra el último elegido, y el
+              envío siguiente mandaría el de montaje. La clave por versión
+              remonta cada formulario después de un guardado exitoso. */}
           <div className="mt-4 grid gap-6 lg:grid-cols-2">
-            <form className="space-y-3" action={(formData) => run(() => addPreventionIncidentEvidenceAction({ incidentId: incident.id, expectedVersion: incident.version, kind: formData.get("kind"), reference: formData.get("reference"), description: formData.get("description") || null, isSensitive: formData.get("isSensitive") === "on" }))}>
+            <form key={`evidence-${incident.version}`} className="space-y-3" action={(formData) => run(() => addPreventionIncidentEvidenceAction({ incidentId: incident.id, expectedVersion: incident.version, kind: formData.get("kind"), reference: formData.get("reference"), description: formData.get("description") || null, isSensitive: formData.get("isSensitive") === "on" }))}>
               <p className="font-medium">Evidencia</p><Select name="kind" defaultValue="document"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="document">Documento</SelectItem><SelectItem value="photo">Fotografía</SelectItem><SelectItem value="video">Video</SelectItem><SelectItem value="diagram">Diagrama</SelectItem><SelectItem value="external_reference">Referencia externa</SelectItem><SelectItem value="note">Nota</SelectItem></SelectContent></Select><Input name="reference" required placeholder="ID documental, URL o referencia controlada" /><Input name="description" placeholder="Descripción" /><Checkbox name="isSensitive" label="Evidencia sensible" /><Button type="submit" variant="secondary" disabled={pending}>Agregar evidencia</Button>
             </form>
-            {can("prevention:capa:manage") && <form className="space-y-3" action={(formData) => run(() => createPreventionIncidentCapaAction({ incidentId: incident.id, expectedVersion: incident.version, finding: formData.get("finding"), actionDescription: formData.get("actionDescription"), priority: formData.get("priority"), targetDate, evidenceRequired: true }))}>
+            {can("prevention:capa:manage") && <form key={`capa-${incident.version}`} className="space-y-3" action={(formData) => run(() => createPreventionIncidentCapaAction({ incidentId: incident.id, expectedVersion: incident.version, finding: formData.get("finding"), actionDescription: formData.get("actionDescription"), priority: formData.get("priority"), targetDate, evidenceRequired: true }), () => setTargetDate(defaultTargetDate))}>
               <p className="font-medium">Acción CAPA común</p><Input name="finding" required minLength={3} placeholder="Hallazgo / causa a controlar" /><Textarea name="actionDescription" required minLength={3} rows={2} placeholder="Acción correctiva o preventiva" /><Select name="priority" defaultValue="high"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Baja</SelectItem><SelectItem value="medium">Media</SelectItem><SelectItem value="high">Alta</SelectItem><SelectItem value="critical">Crítica</SelectItem></SelectContent></Select><DatePicker value={targetDate} onChange={setTargetDate} min={defaultTargetDate} /><Button type="submit" variant="secondary" disabled={pending}>Crear CAPA</Button>
             </form>}
           </div>
@@ -203,8 +210,11 @@ export function IncidentWorkflowPanel({ incident, notifications, investigation, 
         <details className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <summary className="cursor-pointer font-semibold">Clasificación para indicadores DS 44</summary>
           <p className="mt-2 text-xs text-[var(--color-text-subtle)]">La inclusión es una decisión explícita y trazable. Se incluye por ausencia con tiempo perdido o por días de cargo (una fatalidad tiene 6.000 días de cargo y cero de ausencia). Registrar las fechas de reposo permite atribuir los días al período en que realmente hubo incapacidad, que es lo que exige el DS 44 para la gravedad semestral. Un período cerrado exige permiso de Jefatura y se reabre con historial.</p>
+          {/* Misma razón que la clave de evidencia/CAPA: la decisión es una
+              `Select` con `defaultValue`, y sin remontar tras guardar el
+              siguiente envío mandaría la del montaje. */}
           <div className="mt-4 space-y-4">{people.map((person) => (
-            <form key={person.id} className="grid gap-3 rounded-lg border border-[var(--color-border)] p-3 md:grid-cols-2 lg:grid-cols-4" action={(formData) => run(() => classifyIncidentPersonForIndicatorsAction({
+            <form key={`${person.id}:${person.version}`} className="grid gap-3 rounded-lg border border-[var(--color-border)] p-3 md:grid-cols-2 lg:grid-cols-4" action={(formData) => run(() => classifyIncidentPersonForIndicatorsAction({
               incidentId: incident.id,
               personId: person.id,
               expectedIncidentVersion: incident.version,

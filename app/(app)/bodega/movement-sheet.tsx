@@ -89,6 +89,10 @@ export function BodegaMovementSheet({
     if (!next) window.setTimeout(() => { setType(null); setWorksiteId(""); setOptions(null); setError(null) }, 200)
   }
 
+  // Al registrar, la hoja se cierra y la próxima apertura vuelve a pedir las
+  // opciones: las cantidades de stock y las devoluciones pendientes cambiaron.
+  const closeSheet = () => handleOpenChange(false)
+
   if (choices.length === 0 && !canCreateGuide) return null
 
   return (
@@ -196,22 +200,23 @@ export function BodegaMovementSheet({
                 {options && !loading && (
                   <>
                     {type === "return" && (
-                      <ReturnPanel worksiteId={options.worksiteId} returns={options.returns} />
+                      <ReturnPanel worksiteId={options.worksiteId} returns={options.returns} onDone={closeSheet} />
                     )}
                     {type === "count" && (
-                      <PhysicalInventoryPanel worksiteId={options.worksiteId} products={options.products} draft={options.openCount} />
+                      <PhysicalInventoryPanel worksiteId={options.worksiteId} products={options.products} draft={options.openCount} onDone={closeSheet} />
                     )}
                     {type === "adjust" && (
-                      <AdjustPanel worksiteId={options.worksiteId} products={options.products} />
+                      <AdjustPanel worksiteId={options.worksiteId} products={options.products} onDone={closeSheet} />
                     )}
                     {type === "discard" && (
-                      <DiscardPanel worksiteId={options.worksiteId} products={options.products} />
+                      <DiscardPanel worksiteId={options.worksiteId} products={options.products} onDone={closeSheet} />
                     )}
                     {type === "minstock" && (
                       <MinStockPanel
                         worksiteId={options.worksiteId}
                         worksiteName={chosenWorksite?.name ?? options.worksiteName}
                         products={options.products}
+                        onDone={closeSheet}
                       />
                     )}
                   </>

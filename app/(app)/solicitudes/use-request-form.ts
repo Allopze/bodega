@@ -97,9 +97,16 @@ function useDraftPersistence({
   draftState: ActionState & { requestId?: string }; draftAction: (fd: FormData) => void; draftPending: boolean
 }): { buildDraftFormData: (overrides?: { id?: string }) => FormData } {
   const autoSaveRef = useRef(false)
+  const handledDraftRef = useRef<typeof draftState | null>(null)
 
   // ── DraftState watcher (success/error toasts + state reset) ──
   useEffect(() => {
+    // Un resultado se procesa una sola vez. El formulario sigue montado tras
+    // guardar, así que cambiar el tipo después volvía a correr este efecto con
+    // el mismo `draftState`: repetía el toast y vaciaba las cotizaciones
+    // adjuntadas desde entonces.
+    if (handledDraftRef.current === draftState) return
+    handledDraftRef.current = draftState
     if (draftState.ok) {
       setDirty(false)
       setLastSavedAt(new Date())

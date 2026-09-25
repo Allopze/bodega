@@ -142,7 +142,10 @@ export default async function CapaDetailPage({ params }: { params: Promise<{ id:
           )}
         </div>
 
+        {/* Cada cambio exitoso sube `version` y uno fallido no: con esta llave los
+            campos se vacían tras guardar y conservan lo tecleado ante un error. */}
         <CapaControls
+          key={`${bundle.action.id}:${bundle.action.version}`}
           action={{
             id: bundle.action.id,
             version: bundle.action.version,

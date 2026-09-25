@@ -228,21 +228,12 @@ type BatchActionResult = {
  *      ids que quedaron marcados — nunca la selección original completa.
  *
  * El resultado final (aplicadas/omitidas) se comunica con un toast, no
- * quedándose en una pantalla dentro del diálogo. Motivo: en pruebas E2E
- * reales se observó, de forma intermitente, que el botón "Cerrar" de una
- * pantalla de resultado quedaba "detached from the DOM" justo después de
- * aplicar — el nodo desaparecía antes de que Playwright llegara a clicarlo.
- * NO es la `key={initialSection ?? "default"}` de `PdtpBuilderTabs` en
- * `page.tsx` (esa `key` no cambia con `router.refresh()`, que no toca los
- * search params, así que no remonta nada por sí sola — ver el comentario de
- * esa `key` en `builder-tabs.tsx`, que existe para navegar entre secciones,
- * no para esto). La causa real no se determinó — candidatos sin confirmar
- * son el `revalidatePath` de la acción o la reconciliación del payload de
- * la Server Action — así que este diseño no depende de resolverla: un toast
- * vive en un contenedor global ajeno al árbol de esta página, y el diálogo
- * se cierra en el mismo tick en que se decide el resultado final, antes de
- * que cualquier re-render posterior (cualquiera sea su causa) tenga chance
- * de afectarlo.
+ * quedándose en una pantalla dentro del diálogo. En pruebas E2E el botón
+ * "Cerrar" de una pantalla de resultado quedaba "detached from the DOM" justo
+ * después de aplicar. La causa era que la plataforma entera se volvía a montar
+ * con cada Server Action que revalida (`AppShell` exportado como objeto
+ * `memo`, ya corregido: ver `lib/__tests__/client-memo-boundary.test.ts`). El
+ * diálogo se cierra explícitamente al decidir el resultado final.
  */
 export function ApplyPresetDialog({
   programId,

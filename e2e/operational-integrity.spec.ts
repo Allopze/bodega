@@ -40,9 +40,10 @@ test("escanea, filtra y navega la mesa de integridad conservando el alcance", as
   await expect(qaCase.getByText("Crítico")).toBeVisible()
 
   /**
-   * El escaneo revalida las vistas operacionales y vuelve a montar la lista.
-   * Sin esperar a que termine, el desplegable de dominio se desprende del DOM
-   * a mitad del clic — y cuanto más casos haya, más ancha es esa ventana.
+   * Hasta 2026-09-24 el escaneo —que revalida las vistas operacionales—
+   * volvía a montar la plataforma entera, y el desplegable de dominio se
+   * desprendía del DOM a mitad del clic. Ya no ocurre; se conserva la espera
+   * a que la red quede inactiva antes de interactuar.
    */
   await page.waitForLoadState("networkidle")
 
@@ -79,9 +80,10 @@ test("reconocer exige motivo y verificar no cierra un caso que sigue presente", 
   await expect(qaCase).toHaveCount(1, { timeout: 15_000 })
 
   /**
-   * El escaneo revalida las vistas operacionales y vuelve a montar la lista.
-   * Sin esperar a que eso termine, el formulario de acuse se desprende del DOM
-   * a mitad de la interacción.
+   * Hasta 2026-09-24 el escaneo —que revalida las vistas operacionales—
+   * volvía a montar la plataforma entera, y el formulario de acuse se
+   * desprendía del DOM a mitad de la interacción. Ya no ocurre; se conserva
+   * la espera a que la red quede inactiva.
    */
   await page.waitForLoadState("networkidle")
 

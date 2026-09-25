@@ -42,9 +42,8 @@ export function TypeForm({ open, onClose, editType, categorySlug, categoryOption
   // existiendo en el selector al editar: se agrega desde el propio registro en
   // vez de resetear el valor.
   const options = withCurrentCategory(categoryOptions, initialCategory)
-  const [catSlug, setCatSlug] = React.useState(
-    initialCategory && options.some((o) => o.slug === initialCategory) ? initialCategory : (options[0]?.slug ?? ""),
-  )
+  const initialCatSlug = initialCategory && options.some((o) => o.slug === initialCategory) ? initialCategory : (options[0]?.slug ?? "")
+  const [catSlug, setCatSlug] = React.useState(initialCatSlug)
   const [defaultConf, setDefaultConf] = React.useState(editType?.defaultConfidentiality ?? "publico_interno")
   const [publishActivities, setPublishActivities] = React.useState(editType?.pdtpCatalogActivityIds ?? [])
   const [ackActivities, setAckActivities] = React.useState(editType?.pdtpAcknowledgmentCatalogActivityIds ?? [])
@@ -54,6 +53,14 @@ export function TypeForm({ open, onClose, editType, categorySlug, categoryOption
       const result = await saveDocumentTypeAction(prev, formData)
       if (result.ok) {
         toast.success(result.message ?? "Tipo guardado")
+        // La instancia de alta sigue montada (su key es fija): se vacía para el próximo «Nuevo».
+        // Sin esto, el tipo siguiente heredaba las actividades del PDTP que acredita.
+        if (!isEdit) {
+          setCatSlug(initialCatSlug)
+          setDefaultConf("publico_interno")
+          setPublishActivities([])
+          setAckActivities([])
+        }
         onClose()
       } else if (result.message && !result.fieldErrors) {
         toast.error(result.message)

@@ -569,6 +569,8 @@ function PlanificacionRow({ activity, initial, horizon, weeks, source, onStateCh
     setValues(initial)
     setDrafts({})
     setConflict(false)
+    // La regla pendiente era de las celdas que se acaban de descartar.
+    setPendingRule(undefined)
   }
 
   function setCell(month: number, week: number, raw: string) {

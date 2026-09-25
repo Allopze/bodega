@@ -246,7 +246,9 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
                 fd.set("id", toggleTarget.id)
                 fd.set("activate", String(toggleTarget.activate))
                 fd.set("reason", toggleReason)
-                toggleAction(fd)
+                React.startTransition(() => {
+                  toggleAction(fd)
+                })
                 setToggleTarget(null)
               }}
             >

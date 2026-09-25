@@ -134,4 +134,8 @@ const BreadcrumbsInner = React.memo(function BreadcrumbsInner({ items, className
   )
 })
 
-export const Breadcrumbs = BreadcrumbsInner
+// Función y no el objeto `memo`, por lo mismo que `AppShell`: las páginas
+// (Server Components) lo renderizan directamente.
+export function Breadcrumbs(props: BreadcrumbsProps) {
+  return <BreadcrumbsInner {...props} />
+}

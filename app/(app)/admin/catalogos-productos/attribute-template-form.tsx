@@ -64,6 +64,8 @@ export function AttributeTemplateForm({ open, onClose, editTemplate, categories 
       const result = await saveAttributeTemplateAction(prev, formData)
       if (result.ok) {
         toast.success(result.message ?? "Plantilla guardada")
+        // La instancia de alta sigue montada (su key es fija): se vacía para el próximo «Nuevo».
+        if (!isEdit) { setType("text"); setCategoryId("__all__") }
         onClose()
       } else if (result.message && !result.fieldErrors) {
         toast.error(result.message)

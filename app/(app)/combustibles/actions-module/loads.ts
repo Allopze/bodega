@@ -212,11 +212,12 @@ export async function createFuelLoadAction(
   // redirect() fuera del try/catch: lanza una excepción de control de flujo
   // interna de Next que un catch genérico interceptaría y trataría como
   // error. Se navega server-side en vez de que el cliente haga router.push
-  // tras leer el estado: la acción vive en /combustibles/nueva y revalida
-  // /combustibles (otra ruta) — en Next.js 16 cualquier revalidatePath en una
-  // action re-renderiza la ruta ACTUAL en la misma respuesta, lo que remonta
-  // el formulario cliente antes de que el useEffect llegue a disparar el
-  // push. redirect() evita la carrera por completo.
+  // tras leer el estado: revalidar y redirigir viajan en la misma respuesta.
+  // Hasta 2026-09-24 era además obligatorio: la acción vive en
+  // /combustibles/nueva, cualquier revalidatePath re-renderiza la ruta ACTUAL
+  // en la misma respuesta, y ese re-render volvía a montar la plataforma
+  // entera (AppShell exportado como objeto memo) antes de que el useEffect
+  // llegara a disparar el push.
   revalidatePath(REVALIDATE)
   redirect(REVALIDATE)
 }

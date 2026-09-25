@@ -65,6 +65,8 @@ export function SheetForm({ open, onClose, editSheet, programs, roleOptions }: S
       const result = await savePdtpSheetAction(prev, formData)
       if (result.ok) {
         toast.success(result.message ?? "Hoja guardada")
+        // La instancia de alta sigue montada (su key es fija): se vacía para el próximo «Nuevo».
+        if (!isEdit) { setSelected(new Set()); setProgramId("") }
         onClose()
       } else if (result.message && !result.fieldErrors) {
         toast.error(result.message)

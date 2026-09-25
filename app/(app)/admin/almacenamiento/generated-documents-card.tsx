@@ -93,9 +93,8 @@ function QueueItem({ row }: { row: GeneratedArchiveQueueRow }) {
 }
 
 export function GeneratedDocumentsCard({ settings, credentialsConfigured, overview }: GeneratedDocumentsCardProps) {
-  // El aviso sale dentro de la acción y no de un efecto sobre el estado: al
-  // revalidar, la página se vuelve a montar y un efecto nunca llegaba a ver el
-  // resultado (el mismo patrón de `admin/desviaciones/deviation-form.tsx`).
+  // El aviso sale dentro de la acción, donde se conoce el resultado (el mismo
+  // patrón de `admin/desviaciones/deviation-form.tsx`).
   const [, formAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
     const result = await saveGeneratedArchiveSettingsAction(prev, formData)
     if (result.ok) toast.success(result.message ?? "Configuración guardada")

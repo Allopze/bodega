@@ -28,24 +28,31 @@ import type { WorksiteProductOption } from "./movement-options"
 export function DiscardPanel({
   worksiteId,
   products,
+  onDone,
 }: {
   worksiteId: string
   products: WorksiteProductOption[]
+  /** Se llama cuando el movimiento queda registrado, para cerrar la hoja. */
+  onDone?: () => void
 }) {
   const [productId, setProductId] = React.useState<string>("")
   const formRef = React.useRef<HTMLFormElement>(null)
 
-  const [state, action, pending] = useActionState<ActionState, FormData>(discardStockAction, INITIAL_STATE)
-
-  React.useEffect(() => {
-    if (state.ok && state.message) {
-      toast.success(state.message)
+  // El aviso y el cierre salen dentro de la acción: la hoja queda montada
+  // después de revalidar, así que sin cerrarla seguiría abierta sobre datos
+  // viejos (antes la cerraba el remontaje de toda la plataforma).
+  const [state, action, pending] = useActionState<ActionState, FormData>(async (prev, formData) => {
+    const result = await discardStockAction(prev, formData)
+    if (result.ok) {
+      if (result.message) toast.success(result.message)
       formRef.current?.reset()
       setProductId("")
-    } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
-      toast.error(state.message)
+      onDone?.()
+    } else if (result.message) {
+      toast.error(result.message)
     }
-  }, [state])
+    return result
+  }, INITIAL_STATE)
 
   const selected = products.find((product) => product.productId === productId)
   const withStock = products.filter((product) => product.quantity > 0)

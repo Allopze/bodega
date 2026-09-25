@@ -399,7 +399,7 @@ export async function attachQuotation(page: Page, amount: string, supplier = "Pr
  *
  * La señal es la desaparición de la cotización pendiente del formulario: al
  * guardar con éxito el servidor se queda con el archivo y el cliente lo saca de
- * la lista (y, si además el árbol se remonta por la revalidación, tampoco está).
+ * la lista.
  * El indicador "Guardado HH:MM" no sirve: es efímero y depende del reloj.
  */
 export async function waitForDraftSaved(page: Page) {
@@ -591,11 +591,12 @@ export async function enviarAsistenteDeProducto(page: Page, panel: Locator) {
  * asiente.
  *
  * El botón de confirmar lleva `disabled={… || saving}`, y `saving` sigue al
- * autoguardado: llenar el acta sube la revisión, el debounce dispara ~1200 ms
- * después y el pie se vuelve a montar justo cuando el test hace clic. Playwright
- * reintenta —"intercepts pointer events", "element was detached from the DOM"—
- * hasta agotar el `actionTimeout`. Esperar a que el botón esté habilitado deja
- * pasar ese guardado antes de tocarlo.
+ * autoguardado: llenar el acta sube la revisión y el debounce dispara ~1200 ms
+ * después, justo cuando el test hace clic. Hasta 2026-09-24 ese guardado, que
+ * revalida la ruta, además volvía a montar la plataforma entera (`AppShell`
+ * exportado como objeto `memo`): de ahí el "element was detached from the DOM"
+ * y el acta vaciada de la prueba inestable. Esperar a que el botón esté
+ * habilitado deja pasar ese guardado antes de tocarlo.
  */
 export async function confirmarDeclararEjecutada(page: Page) {
   const dialogo = page.getByRole("dialog").filter({ visible: true })
@@ -603,11 +604,10 @@ export async function confirmarDeclararEjecutada(page: Page) {
   await expect(confirmar).toBeEnabled({ timeout: 30_000 })
   /*
    * Esperar a que esté habilitado no alcanza: el autoguardado puede dispararse
-   * ENTRE esa espera y el clic, y entonces el pie se vuelve a montar mientras
-   * Playwright intenta pulsar ("element is not stable" → "element was detached
-   * from the DOM") hasta agotar el `actionTimeout`. Reintentar el par
-   * clic + cierre absorbe ese remonte sin tapar un fallo real: si el diálogo no
-   * se cierra nunca, el `toPass` igual termina en rojo.
+   * ENTRE esa espera y el clic y deshabilitar el botón mientras Playwright
+   * intenta pulsar. Reintentar el par clic + cierre absorbe esa carrera sin
+   * tapar un fallo real: si el diálogo no se cierra nunca, el `toPass` igual
+   * termina en rojo.
    */
   await expect(async () => {
     await confirmar.click({ timeout: 5_000 })

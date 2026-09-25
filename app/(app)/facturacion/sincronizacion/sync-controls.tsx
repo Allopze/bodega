@@ -76,8 +76,11 @@ export function SyncControls({
   // merece una confirmación visible, no un popup del navegador.
   const [confirmingPastPeriod, setConfirmingPastPeriod] = useState(false)
 
-  const selected = providers.find((entry) => entry.id === provider)
-  const automationEnabled = Boolean(provider && automationEnabledByProvider[provider])
+  // `providers` cambia al habilitar o apagar Chipax en esta misma pantalla: si
+  // el elegido ya no está, se cae al primero en vez de apuntar a uno ausente.
+  const selected = providers.find((entry) => entry.id === provider) ?? providers[0]
+  const activeProvider = selected?.id ?? ""
+  const automationEnabled = Boolean(activeProvider && automationEnabledByProvider[activeProvider])
   const isCurrentPeriod = period === defaultPeriod
 
   // Sólo los alcances que este proveedor declara. FacturaEnLínea no entrega
@@ -100,7 +103,7 @@ export function SyncControls({
   }
 
   function execute(dryRun: boolean) {
-    if (!provider) return
+    if (!activeProvider) return
     if (!dryRun && !isCurrentPeriod) {
       setConfirmingPastPeriod(true)
       return
@@ -111,7 +114,7 @@ export function SyncControls({
   function startSync(dryRun: boolean) {
     startTransition(async () => {
       const result = await triggerBillingSyncAction({
-        provider,
+        provider: activeProvider,
         scope: effectiveScope,
         period,
         dryRun,
@@ -150,7 +153,7 @@ export function SyncControls({
         <p className="text-xs text-[var(--color-text-muted)]">
           {automationEnabled
             ? "La automatización del proveedor seleccionado está activa. Esta ejecución manual sirve para períodos anteriores o para forzar una actualización."
-            : `La automatización del proveedor seleccionado está desactivada (${provider === "chipax" ? "BILLING_CHIPAX_SYNC_ENABLED" : "BILLING_SALES_SYNC_ENABLED"}). Solo se sincroniza desde acá.`}
+            : `La automatización del proveedor seleccionado está desactivada (${activeProvider === "chipax" ? "BILLING_CHIPAX_SYNC_ENABLED" : "BILLING_SALES_SYNC_ENABLED"}). Solo se sincroniza desde acá.`}
         </p>
       </header>
 
@@ -158,7 +161,7 @@ export function SyncControls({
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-[var(--color-text-muted)]">Proveedor</span>
           <OptionSelect
-            value={provider}
+            value={activeProvider}
             onValueChange={(value) => changeProvider(value as BillingProviderId)}
             options={providers.map((entry) => ({ value: entry.id, label: entry.label }))}
             className="w-56"

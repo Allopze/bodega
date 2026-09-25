@@ -65,6 +65,12 @@ export function WorksiteAdjustmentsPanel({
     ? visibleWorksites
     : visibleWorksites.filter((worksite) => memberWorksiteIds.includes(worksite.id))
   const [worksiteId, setWorksiteId] = React.useState(eligibleWorksites[0]?.id ?? "")
+  // El alcance se edita en esta misma pestaña (WorksiteScopePanel) y este panel
+  // sigue montado: la faena elegida puede salir del alcance, o no haber ninguna
+  // al montar. Se cae a la primera elegible en vez de quedar en una inexistente.
+  const selectedWorksiteId = eligibleWorksites.some((worksite) => worksite.id === worksiteId)
+    ? worksiteId
+    : (eligibleWorksites[0]?.id ?? "")
   const [editing, setEditing] = React.useState<PdtpActivityRow | null>(null)
   const router = useRouter()
   // No hay `<form action={…}>`: el barrido se dispara desde un `onClick`, que
@@ -87,7 +93,7 @@ export function WorksiteAdjustmentsPanel({
     <section className="space-y-4">
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <Field label="Faena a ajustar" htmlFor="pdtp-adjustment-worksite">
-          <Select value={worksiteId} onValueChange={setWorksiteId}>
+          <Select value={selectedWorksiteId} onValueChange={setWorksiteId}>
             <SelectTrigger id="pdtp-adjustment-worksite" className="max-w-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
               {eligibleWorksites.map((worksite) => (
@@ -121,9 +127,9 @@ export function WorksiteAdjustmentsPanel({
         </div>
         <div className="divide-y divide-[var(--color-border)]">
           {activities.map((activity) => {
-            const exclusion = exclusions.find((item) => item.activityId === activity.id && item.worksiteId === worksiteId)
-            const param = params.find((item) => item.activityId === activity.id && item.worksiteId === worksiteId)
-            const hasOverrides = overrides.some((item) => item.activityId === activity.id && item.worksiteId === worksiteId)
+            const exclusion = exclusions.find((item) => item.activityId === activity.id && item.worksiteId === selectedWorksiteId)
+            const param = params.find((item) => item.activityId === activity.id && item.worksiteId === selectedWorksiteId)
+            const hasOverrides = overrides.some((item) => item.activityId === activity.id && item.worksiteId === selectedWorksiteId)
             const adjusted = Boolean(
               param && (
                 param.expectedSubjectCount !== null
@@ -161,13 +167,13 @@ export function WorksiteAdjustmentsPanel({
 
       {editing && (
         <AdjustmentDialog
-          key={`${editing.id}:${worksiteId}`}
+          key={`${editing.id}:${selectedWorksiteId}`}
           activity={editing}
-          worksiteId={worksiteId}
+          worksiteId={selectedWorksiteId}
           globalSchedule={schedule.filter((row) => row.activityId === editing.id)}
-          exclusion={exclusions.find((item) => item.activityId === editing.id && item.worksiteId === worksiteId)}
-          params={params.find((item) => item.activityId === editing.id && item.worksiteId === worksiteId)}
-          overrides={overrides.filter((item) => item.activityId === editing.id && item.worksiteId === worksiteId)}
+          exclusion={exclusions.find((item) => item.activityId === editing.id && item.worksiteId === selectedWorksiteId)}
+          params={params.find((item) => item.activityId === editing.id && item.worksiteId === selectedWorksiteId)}
+          overrides={overrides.filter((item) => item.activityId === editing.id && item.worksiteId === selectedWorksiteId)}
           responsibleCatalog={responsibleCatalog}
           onClose={() => setEditing(null)}
         />

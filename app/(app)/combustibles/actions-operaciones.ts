@@ -412,11 +412,12 @@ export async function confirmOperationsImportAction(
       return { ok: false, message: result.message }
     }
 
-    // Sin revalidatePath aquí a propósito: en Next.js 16, CUALQUIER llamada a
-    // revalidatePath/refresh dentro de una server action fuerza a Next a
-    // re-renderizar y re-transmitir la ruta ACTUAL (donde vive este wizard) en
-    // la misma respuesta — sin importar qué ruta se pase — lo que remonta el
-    // árbol de cliente y pierde el estado local del wizard (paso "done").
+    // Sin revalidatePath aquí. En Next.js 16, CUALQUIER llamada a
+    // revalidatePath/refresh dentro de una server action re-renderiza la ruta
+    // ACTUAL (donde vive este wizard) en la misma respuesta, sin importar qué
+    // ruta se pase. Hasta 2026-09-24 ese re-render volvía a montar la
+    // plataforma entera (AppShell exportado como objeto memo) y perdía el
+    // estado local del wizard (paso "done"); ya no ocurre.
     // Ver node_modules/next/dist/docs/01-app/02-guides/server-actions.md.
     // Las páginas afectadas (dashboard, vehículos, flota, mantenciones) son
     // dinámicas (usan sesión/cookies) y se renderizan frescas en cada visita

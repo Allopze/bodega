@@ -24,8 +24,9 @@ test("repuestos: crea borrador y envia solicitud a aprobacion", async ({ page })
   await page.getByRole("button", { name: /Guardar borrador/ }).click()
   await waitForDraftSaved(page)
 
-  // Guardar revalida y remonta el árbol, así que el creador vuelve a su estado
-  // inicial: se continúa desde la ficha del borrador, que ya existe en servidor.
+  // Tras guardar, el creador sigue montado pero la cotización ya subida sale
+  // de su lista (la tiene el servidor): se continúa desde la ficha del
+  // borrador, para enviar lo que quedó persistido y no el estado del formulario.
   await openLatestDraft(page, "REP")
 
   await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
@@ -55,8 +56,9 @@ test("servicios: crea borrador y envia solicitud a aprobacion", async ({ page })
   await page.getByRole("button", { name: /Guardar borrador/ }).click()
   await waitForDraftSaved(page)
 
-  // Guardar revalida y remonta el árbol, así que el creador vuelve a su estado
-  // inicial: se continúa desde la ficha del borrador, que ya existe en servidor.
+  // Tras guardar, el creador sigue montado pero la cotización ya subida sale
+  // de su lista (la tiene el servidor): se continúa desde la ficha del
+  // borrador, para enviar lo que quedó persistido y no el estado del formulario.
   await openLatestDraft(page, "SER")
 
   await page.getByRole("button", { name: /Enviar a aprobación/ }).click()

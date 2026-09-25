@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useEffect, useMemo, useState } from "react"
+import { useActionState, useMemo, useState } from "react"
 import { Plus, WarningCircle } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,7 +8,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Field } from "@/components/ui/field"
-import { INITIAL_STATE } from "@/lib/form-state"
+import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
+import { toast } from "@/lib/toast"
 import { toLocalInputValue } from "@/lib/utils"
 import { createFuelCycleMovementAction } from "./actions"
 
@@ -24,13 +25,19 @@ export function CycleWorkbench({ worksites, products, suppliers, locations, vehi
   const [sourceLocationId, setSourceLocationId] = useState("")
   const [targetLocationId, setTargetLocationId] = useState("")
   const [vehicleId, setVehicleId] = useState("")
-  const [state, action, pending] = useActionState(createFuelCycleMovementAction, INITIAL_STATE)
+  // Cierre y aviso dentro de la acción, sobre el resultado que acaba de volver.
+  // El mensaje de éxito no se pinta en el formulario: el diálogo sigue montado
+  // y lo mostraría sobre un formulario vacío al volver a abrirlo.
+  const [state, action, pending] = useActionState<ActionState, FormData>(async (prev, formData) => {
+    const result = await createFuelCycleMovementAction(prev, formData)
+    if (result.ok) {
+      setOpen(false)
+      toast.success(result.message ?? "Movimiento registrado")
+    }
+    return result
+  }, INITIAL_STATE)
   const usableLocations = useMemo(() => locations.filter((item) => item.worksiteId === worksiteId && item.productId === productId), [locations, productId, worksiteId])
   const usableVehicles = useMemo(() => vehicles.filter((item) => item.worksiteId === worksiteId), [vehicles, worksiteId])
-  // El cierre se decide sobre el estado ya devuelto por la action, no sobre el
-  // que capturó el closure del `action={}` (siempre el del render anterior:
-  // dejaba el diálogo abierto tras el primer éxito y lo cerraba tras un error).
-  useEffect(() => { if (state.ok) setOpen(false) }, [state])
   if (!canCreate) return null
   return (
     <>
@@ -43,7 +50,7 @@ export function CycleWorkbench({ worksites, products, suppliers, locations, vehi
             <DialogDescription>El registro queda auditado y alimenta la conciliación del período.</DialogDescription>
           </DialogHeader>
           <form action={action} className="space-y-5">
-            {state.message && <p className={state.ok ? "text-sm text-[var(--color-primary-ink)]" : "flex gap-2 text-sm text-[var(--color-danger)]"}>{!state.ok && <WarningCircle size={18} />}{state.message}</p>}
+            {state.message && !state.ok && <p className="flex gap-2 text-sm text-[var(--color-danger)]"><WarningCircle size={18} />{state.message}</p>}
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Tipo de evento" htmlFor="eventType">
                 <Select value={type} onValueChange={setType}>

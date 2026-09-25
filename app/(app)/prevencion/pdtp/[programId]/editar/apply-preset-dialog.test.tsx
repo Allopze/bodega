@@ -100,10 +100,10 @@ describe("ApplyPresetDialog", () => {
       mode: "replace",
     }))
     expect(mockRefresh).toHaveBeenCalledTimes(1)
-    // Sin conflictos, el diálogo se cierra solo: no se queda esperando a que
-    // el usuario cierre una pantalla de resultado que un `router.refresh()`
-    // posterior podría hacer desaparecer sin que la vea (ver JSDoc del
-    // componente).
+    // Sin conflictos, el diálogo se cierra solo y avisa por toast: no se queda
+    // esperando a que el usuario cierre una pantalla de resultado (ver JSDoc
+    // del componente: hasta 2026-09-24 el remontaje de la plataforma que
+    // provocaba el `router.refresh()` posterior la hacía desaparecer).
     expect(onOpenChange).toHaveBeenCalledWith(false)
     expect(mockToast.success).toHaveBeenCalledWith(expect.stringMatching(/2 actividades actualizada/))
   })

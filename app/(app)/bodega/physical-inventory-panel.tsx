@@ -25,25 +25,33 @@ export function PhysicalInventoryPanel({
   worksiteId,
   products,
   draft = null,
+  onDone,
 }: {
   worksiteId: string
   products: WorksiteProductOption[]
   /** Borrador abierto de esta faena, si lo hay: el conteo se retoma donde quedó. */
   draft?: OpenCountDraft | null
+  /** Se llama al cerrar el conteo (no al guardar el borrador), para cerrar la hoja. */
+  onDone?: () => void
 }) {
   const formRef = React.useRef<HTMLFormElement>(null)
   const [query, setQuery] = React.useState("")
-  const [state, action, pending] = useActionState<ActionState, FormData>(closePhysicalInventoryCountAction, INITIAL_STATE)
-  const [draftState, draftAction, draftPending] = useActionState<ActionState, FormData>(savePhysicalInventoryDraftAction, INITIAL_STATE)
-
-  React.useEffect(() => {
-    if (state.ok && state.message) {
-      toast.success(state.message)
+  // El aviso y el cierre salen dentro de la acción: la hoja queda montada
+  // después de revalidar, así que sin cerrarla seguiría abierta sobre datos
+  // viejos (antes la cerraba el remontaje de toda la plataforma).
+  const [state, action, pending] = useActionState<ActionState, FormData>(async (prev, formData) => {
+    const result = await closePhysicalInventoryCountAction(prev, formData)
+    if (result.ok) {
+      if (result.message) toast.success(result.message)
       formRef.current?.reset()
-    } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
-      toast.error(state.message)
+      onDone?.()
+    } else if (result.message) {
+      toast.error(result.message)
     }
-  }, [state])
+    return result
+  }, INITIAL_STATE)
+  // El borrador no cierra la hoja: se guarda para retomar el conteo.
+  const [draftState, draftAction, draftPending] = useActionState<ActionState, FormData>(savePhysicalInventoryDraftAction, INITIAL_STATE)
 
   React.useEffect(() => {
     if (draftState.ok && draftState.message) toast.success(draftState.message)

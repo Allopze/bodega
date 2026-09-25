@@ -49,20 +49,16 @@ test.describe("PDTP — presets de planificación y carga por rol", () => {
 
     await dialog.getByRole("button", { name: "Aplicar" }).click()
     // Sin conflictos, el diálogo se cierra solo y avisa por toast en vez de
-    // quedarse en una pantalla de resultado (ver JSDoc de `ApplyPresetDialog`
-    // para el porqué: un nodo "detached from the DOM" intermitente observado
-    // en pruebas reales, de causa no confirmada — NO la `key` de
-    // `PdtpBuilderTabs`). La llamada recorre server action + Postgres real:
+    // quedarse en una pantalla de resultado (ver JSDoc de `ApplyPresetDialog`).
+    // La llamada recorre server action + Postgres real:
     // más lenta que el timeout por defecto de `expect` (5 s) bajo el
     // `resource-guard` local, así que se le da el mismo presupuesto que
     // `actionTimeout`.
     await expect(dialog).not.toBeVisible({ timeout: 15_000 })
     await expect(page.getByText(/1 actividad actualizada/)).toBeVisible()
 
-    // El remonte también colapsa "Programación global avanzada" (un
-    // `<details>` nativo sin estado persistido, a diferencia de "Carga por
-    // rol" más abajo): hay que reabrirlo para leer la fila.
-    await page.locator("summary").filter({ hasText: "Programación global avanzada" }).first().click()
+    // "Programación global avanzada" sigue abierto: la revalidación ya no
+    // vuelve a montar la página. Pulsar su `<summary>` acá lo cerraría.
 
     // El preset "diario" sin restricción de meses proyecta 48 celdas de
     // cantidad 5: 240 en el total de la fila.

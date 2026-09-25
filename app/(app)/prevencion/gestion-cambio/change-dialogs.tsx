@@ -33,8 +33,16 @@ export function NewChangeDialog({ worksites }: { worksites: { id: string; name: 
     }), () => setOpen(false))
   }
 
+  // El diálogo sigue montado tras crear: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(value) => {
+      if (value) {
+        setWorksiteId(worksites[0]?.id ?? "")
+        setChangeType("_none")
+        setRiskLevel("medium")
+      }
+      setOpen(value)
+    }}>
       <DialogTrigger asChild><Button size="sm">Nuevo cambio</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">

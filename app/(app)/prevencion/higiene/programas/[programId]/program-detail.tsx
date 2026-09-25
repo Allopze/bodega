@@ -158,7 +158,7 @@ function EnrollGroupDialog({ programId, eligibleGroups }: { programId: string; e
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (value) setDefaultValue(todayInChile()); setOpen(value) }}>
+    <Dialog open={open} onOpenChange={(value) => { if (value) { setDefaultValue(todayInChile()); setGroupId(eligibleGroups[0]?.id ?? "") } setOpen(value) }}>
       <DialogTrigger asChild><Button size="sm">Matricular grupo</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">

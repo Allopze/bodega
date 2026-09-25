@@ -537,7 +537,11 @@ function ParityDialog({ item }: { item: TemplateItem }) {
     item.parityReport?.status === "failed" ? "failed" : "passed",
   )
   const operation = useOperation()
-  return <Dialog open={open} onOpenChange={setOpen}>
+  // Al abrir se parte de la paridad guardada, no de una elección abandonada.
+  return <Dialog open={open} onOpenChange={(value) => {
+    if (value) setStatus(item.parityReport?.status === "failed" ? "failed" : "passed")
+    setOpen(value)
+  }}>
     <DialogTrigger asChild><Button size="sm" variant="secondary">Declarar paridad</Button></DialogTrigger>
     <DialogContent><form className="space-y-4" onSubmit={(event) => {
       event.preventDefault()
@@ -1046,8 +1050,17 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
     }), () => setOpen(false))
   }
 
+  // El diálogo sigue montado tras incorporar: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(value) => {
+      if (value) {
+        setCode(importable[0]?.code ?? "")
+        setKind("inspection")
+        setActivity(NO_ACTIVITY)
+        setSourceVersionId(NO_ACTIVITY)
+      }
+      setOpen(value)
+    }}>
       <DialogTrigger asChild><Button size="sm">Incorporar borrador</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">

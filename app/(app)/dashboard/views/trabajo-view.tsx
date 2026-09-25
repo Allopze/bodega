@@ -49,9 +49,10 @@ const SORT_OPTIONS: SortOption[] = ["priority", "oldest", "newest"]
  * ya cargadas; la faena reencuadra consultas de servidor y por eso tiene que
  * viajar en la URL.
  *
- * `sessionStorage` y no la URL para el orden porque cualquier `router.refresh()`
- * desmonta el árbol (hay `loading.tsx`) y borraría un estado que viviera sólo
- * en React.
+ * `sessionStorage` y no estado de React solo para el orden porque cambiar de
+ * vista, faena o período remonta esta vista (el `Suspense` de `page.tsx` lleva
+ * el alcance en su `key`) y lo borraría. Hasta 2026-09-24 también lo borraba
+ * cada `router.refresh()`, que volvía a montar la plataforma entera.
  */
 const FILTERS_STORAGE_KEY = "dashboard:queue-filters"
 

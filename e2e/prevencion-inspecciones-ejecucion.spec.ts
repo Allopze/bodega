@@ -118,9 +118,9 @@ test.describe("Inspecciones — ejecución en terreno", () => {
     // ejecutada, así que el porcentaje no es el firmado.
     await expect(textoVisible(page, "100%").first()).toBeVisible()
 
-    // El aviso "Guardado correctamente." no sirve de señal: al aceptar el
-    // guardado el servidor revalida, el árbol se remonta y `useOperation`
-    // vuelve a su mensaje vacío, así que desaparece antes de poder afirmarlo.
+    // El aviso "Guardado correctamente." no sirve de señal: `saveAnswers` le
+    // pasa a `useOperation` un `onSuccess` propio, y en ese caso el hook no
+    // guarda ese texto, así que nunca aparece.
     // El efecto persistido sí es estable — la ejecución arranca al guardar.
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
     await expect(textoVisible(page, "En ejecución").first()).toBeVisible({ timeout: 30_000 })

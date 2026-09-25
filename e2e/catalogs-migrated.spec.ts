@@ -62,6 +62,11 @@ test.describe("Catálogos administrativos migrados", () => {
     await page.getByRole("button", { name: "Activar vehículo E2E-FUEL-1" }).click()
     await page.getByRole("dialog").getByLabel("Motivo").fill("Reactivación para completar el ciclo E2E")
     await page.getByRole("dialog").getByRole("button", { name: "Reactivar" }).click()
+    // La pantalla sigue en la pestaña «Inactivos» (antes la devolvía a
+    // «Activos» el remontaje de la plataforma al revalidar): el vehículo
+    // reactivado se busca donde quedó.
+    await expect(page.getByRole("tab", { name: /Inactivos 0/ })).toBeVisible()
+    await page.getByRole("tab", { name: /^Activos/ }).click()
     await expect(page.getByRole("button", { name: "Desactivar vehículo E2E-FUEL-1" })).toBeVisible()
   })
 

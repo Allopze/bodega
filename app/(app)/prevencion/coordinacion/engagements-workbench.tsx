@@ -230,7 +230,17 @@ function CreateEngagementDialog({ open, onOpenChange, worksites }: {
       summary: form.get("summary"),
       officialReference: form.get("officialReference"),
       infoTypes: isCoordination ? infoTypes : undefined,
-    }), () => { onOpenChange(false); setInfoTypes([]); router.refresh() })
+    }), () => {
+      onOpenChange(false)
+      // El diálogo no se desmonta al cerrarse: sin esto, la siguiente
+      // interacción nacía con la fecha y los tipos de la anterior.
+      setKind("coordinacion")
+      setDirection("received")
+      setCounterpartyType("mandante")
+      setOccurredOn("")
+      setInfoTypes([])
+      router.refresh()
+    })
   }
 
   return (
@@ -337,7 +347,15 @@ function AddMeasureDialog({ row, onClose, responsibles }: {
       targetDate,
       priority,
       normativaLegal: form.get("normativaLegal"),
-    }), () => { onClose(); router.refresh() })
+    }), () => {
+      onClose()
+      // Mismo diálogo para todas las filas: el responsable y el plazo de una
+      // medida no deben aparecer precargados en la de otra interacción.
+      setResponsibleUserId("")
+      setTargetDate("")
+      setPriority("high")
+      router.refresh()
+    })
   }
 
   return (

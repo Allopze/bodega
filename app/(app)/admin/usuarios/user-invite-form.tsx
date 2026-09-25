@@ -67,11 +67,13 @@ export function UserInviteForm({ open, onClose, allRoles, allWorksites, allWorke
       const result = await inviteUser(prev, formData)
       if (result.ok) {
         toast.success(result.message ?? "Invitación creada")
+        // El formulario sigue montado tras cerrar: la próxima invitación parte
+        // sin los roles ni las faenas de la anterior.
+        dispatchSelection({ type: "reset" })
         const data = result.data as { email?: string; inviteUrl?: string } | undefined
         if (data?.inviteUrl) {
           const matchedEmail = data.email ?? result.message?.match(/a\s+(\S+@\S+)/i)?.[1] ?? ""
           setPending({ email: matchedEmail, inviteUrl: data.inviteUrl })
-          dispatchSelection({ type: "reset" })
         } else {
           onClose()
         }

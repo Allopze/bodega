@@ -498,9 +498,10 @@ function AddInvoiceForm({
   const lastRefreshAt = React.useRef<number | null>(null)
   const [selectedDte, setSelectedDte] = React.useState<DteCandidate | null>(null)
   const [dteResolutions, setDteResolutions] = React.useState<Record<string, { purchaseOrderItemId: string | null; rememberAlias: boolean }>>({})
-  const [selectedReceiptIds, setSelectedReceiptIds] = React.useState<string[]>(() => (
+  const defaultReceiptIds = () => (
     defaultReceiptId && receipts.some((receipt) => receipt.id === defaultReceiptId) ? [defaultReceiptId] : []
-  ))
+  )
+  const [selectedReceiptIds, setSelectedReceiptIds] = React.useState<string[]>(defaultReceiptIds)
 
   const refreshCandidates = React.useCallback((source: "button" | "focus") => {
     lastRefreshAt.current = Date.now()
@@ -543,9 +544,15 @@ function AddInvoiceForm({
       setDteParsed(false)
       setExtractionWarnings([])
       setSupplierRutMissing(false)
+      // Las recepciones que se sumaron eran de la factura recién adjuntada: la
+      // siguiente vuelve a partir de la recepción con que se abrió la pantalla.
+      setSelectedReceiptIds(defaultReceiptIds())
     } else if (!state.ok && state.message && "fieldErrors" in state) {
       toast.error(state.message)
     }
+  // Solo `state`: cada resultado se atiende una vez. `receipts` cambia de
+  // identidad al revalidar y repetiría el aviso.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
 
   function addLineItem() {
@@ -755,6 +762,7 @@ function AddInvoiceForm({
       return result
     }, () => {
       setSelectedDte(null)
+      setSelectedReceiptIds(defaultReceiptIds())
       toast.success(`Factura ${doc.folio} adjuntada correctamente`)
     })
   }

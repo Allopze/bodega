@@ -213,7 +213,7 @@ describe("StockTable", () => {
     expect(screen.queryByRole("rowheader", { name: /13 unidades/ })).toBeNull()
   })
 
-  it("conserva la agrupación elegida entre montajes: un refresco desmonta el árbol", () => {
+  it("conserva la agrupación elegida entre montajes: recargar o volver a Bodega monta la tabla de nuevo", () => {
     renderTable()
     fireEvent.click(screen.getByRole("button", { name: "Por producto" }))
     cleanup()

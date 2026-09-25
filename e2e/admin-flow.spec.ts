@@ -233,6 +233,16 @@ test("admin: crear usuario con rol prevencionista faena, verificar login", async
   // it transforms into a pending-invite panel with "Invitación pendiente".
   await dialog.locator("form").evaluate((el) => (el as HTMLFormElement).requestSubmit())
 
+  // Sin SMTP el enlace solo se entrega en ese panel, así que queda abierto
+  // hasta que el admin lo cierra (antes lo destruía el remontaje de la
+  // plataforma al revalidar). Mientras está abierto, la hoja modal saca la
+  // lista del árbol accesible.
+  const pendingPanel = page.getByRole("dialog", { name: "Invitación pendiente" })
+  await expect(pendingPanel).toBeVisible({ timeout: 30_000 })
+  await expect(pendingPanel.getByRole("button", { name: "Copiar enlace al portapapeles" })).toBeVisible()
+  await pendingPanel.getByRole("button", { name: "Cerrar", exact: true }).last().click()
+  await expect(pendingPanel).toBeHidden()
+
   await expect(page.getByRole("heading", { name: "Invitaciones enviadas" })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByText(email)).toBeVisible()
 })

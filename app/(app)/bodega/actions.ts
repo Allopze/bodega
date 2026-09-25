@@ -316,8 +316,9 @@ export async function setMinStockBulkAction(
       }
     })
 
-    // Sólo en éxito: con `loading.tsx`, revalidar desmonta el árbol y el usuario
-    // perdería lo tecleado en el resto del formulario.
+    // Sólo en éxito: un error revierte la transacción y no hay nada que
+    // revalidar. (Hasta 2026-09-24, además, revalidar volvía a montar la
+    // plataforma entera y el usuario perdía lo tecleado en el formulario.)
     revalidateOperationalViews([REVALIDATE])
     return {
       ok: true,
@@ -407,8 +408,9 @@ export async function savePhysicalInventoryDraftAction(
       { worksiteId, notes, items },
       serviceWorksiteScope(session),
     )
-    // El borrador no mueve stock: no hay vistas operativas que revalidar, y
-    // revalidar desmontaría el formulario que el usuario sigue llenando.
+    // El borrador no mueve stock: no hay vistas operativas que revalidar.
+    // (Hasta 2026-09-24, además, revalidar volvía a montar la plataforma entera
+    // y se llevaba el formulario que el usuario sigue llenando.)
     return {
       ok: true,
       message: `Borrador ${result.code} guardado con ${result.itemCount} ${result.itemCount === 1 ? "producto" : "productos"}`,

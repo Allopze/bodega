@@ -180,8 +180,8 @@ test.describe("Dashboard operacional", () => {
     // saludo y una línea de contexto: tres veces la misma palabra.
     await expect(picker).toHaveText(new RegExp(worksiteName))
 
-    // Está en la URL, así que un recargue no lo pierde (a diferencia del estado
-    // en React, que `loading.tsx` + `router.refresh()` borraban).
+    // Está en la URL, así que un recargue no lo pierde (un estado sólo en React
+    // sí; hasta 2026-09-24 además lo borraba cada `router.refresh()`).
     await page.reload()
     await expect(page.getByText(worksiteName).first()).toBeVisible()
   })

@@ -46,10 +46,10 @@ async function createSubmitAndAward(page: Page, type: "Repuestos" | "Servicios")
   await page.getByRole("button", { name: /Guardar borrador/ }).click()
   await waitForDraftSaved(page)
 
-  // Guardar revalida y el árbol se remonta, así que el creador vuelve a su
-  // estado inicial (comportamiento conocido de router.refresh con loading.tsx).
-  // El borrador ya existe en el servidor con su cotización: se continúa desde su
-  // ficha, que es también lo que hace una persona que vuelve a un borrador.
+  // Tras guardar, el creador sigue montado pero la cotización ya subida sale
+  // de su lista: el borrador existe en el servidor con ella. Se continúa desde
+  // su ficha, que es también lo que hace una persona que vuelve a un borrador,
+  // y así se envía lo persistido y no el estado del formulario.
   const prefix = type === "Repuestos" ? "REP" : "SER"
   await openLatestDraft(page, prefix)
 

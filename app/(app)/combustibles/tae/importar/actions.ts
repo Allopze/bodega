@@ -91,11 +91,13 @@ export async function importTaeHistoryAction(formData: FormData) {
     })
     // Rutas HERMANAS, nunca "/combustibles/tae/importar": es la ruta donde
     // vive este mismo formulario (tae-import-report-form.tsx, montado desde
-    // tae/importar/page.tsx) — revalidarla remonta el árbol de cliente y
-    // borra el resumen de importación antes de que el usuario lo vea (mismo
-    // patrón que actions-operaciones.ts:325-333). El detalle del lote recién
-    // creado es una ruta que el usuario aún no visitó, así que sí conviene
-    // dejarla fresca para cuando navegue a "Ver detalle".
+    // tae/importar/page.tsx). Se excluyó porque revalidar borraba el resumen
+    // de importación antes de que el usuario lo viera; la causa real era que
+    // hasta 2026-09-24 cualquier revalidación volvía a montar la plataforma
+    // entera (AppShell exportado como objeto memo), y ya no ocurre — ver
+    // `confirmOperationsImportAction` en actions-operaciones.ts. El detalle
+    // del lote recién creado es una ruta que el usuario aún no visitó, así que
+    // sí conviene dejarla fresca para cuando navegue a "Ver detalle".
     revalidatePath("/combustibles")
     revalidatePath("/combustibles/tae")
     revalidatePath("/combustibles/tae/importar/historial")

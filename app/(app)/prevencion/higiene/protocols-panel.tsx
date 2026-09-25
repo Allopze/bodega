@@ -63,11 +63,13 @@ export function ProtocolsPanel({
   today: string
   canManage: boolean
 }) {
-  /* La faena viaja en la URL (`?faena=`) y no en un `useState`: después de
-   * cada acción —declarar un protocolo, resolver la casilla N°45— la página se
-   * vuelve a renderizar y el panel se monta de nuevo, así que el estado local
-   * volvía a la primera faena de la lista. Quien acababa de declarar algo en la
-   * cuarta faena veía la primera y creía que la acción no había hecho nada. */
+  /* La faena viaja en la URL (`?faena=`) y no en un `useState`: el panel sólo
+   * se pinta en la pestaña "protocols", así que cambiar de pestaña lo desmonta
+   * y un estado local volvería a la primera faena. Hasta 2026-09-24 pasaba
+   * además después de cada acción —declarar un protocolo, resolver la casilla
+   * N°45—, porque revalidar volvía a montar la plataforma entera: quien acababa
+   * de declarar algo en la cuarta faena veía la primera y creía que la acción
+   * no había hecho nada. */
   const { getFilter, setFilter } = useUrlFilters()
   const requestedWorksiteId = getFilter("faena")
   const worksiteId = worksites.some((item) => item.id === requestedWorksiteId)

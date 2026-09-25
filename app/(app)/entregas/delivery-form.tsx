@@ -81,7 +81,6 @@ export function DeliveryForm({
   onSuccess?: () => void
 }) {
   const router = useRouter()
-  const [state, action] = useActionState<ActionState, FormData>(registerWorkerDeliveryAction, INITIAL_STATE)
   // Sin intención explícita, se abre en la primera bodega (ordenadas por nombre)
   // que tenga stock **y** dotación activa. Elegir sólo por stock caía en la
   // bodega de oficina, que casi nunca tiene trabajadores de faena, y dejaba el
@@ -111,6 +110,28 @@ export function DeliveryForm({
   const [lines, setLines] = React.useState<DeliveryLine[]>([])
   const formRef = React.useRef<HTMLFormElement>(null)
   useEnterAdvancesFields(formRef)
+  // El éxito se atiende aquí y no en un efecto: el padre pasa `onSuccess` en
+  // línea, y un efecto que dependiera de él se re-disparaba (toast y refresh
+  // duplicados) mientras el sheet anima su cierre.
+  const [state, action] = useActionState<ActionState, FormData>(async (prev, formData) => {
+    const result = await registerWorkerDeliveryAction(prev, formData)
+    if (result.ok && result.message) {
+      toast.success(result.message)
+      router.refresh()
+      formRef.current?.reset()
+      setWorkerId("")
+      // `reset()` no alcanza al estado controlado del selector de fecha.
+      setDeliveredAt(today)
+      setLines([])
+      setPendingGroupKey("")
+      setPendingProductId("")
+      setPendingQuantity("")
+      onSuccess?.()
+    } else if (result.ok === false && result.message && result !== INITIAL_STATE) {
+      toast.error(result.message)
+    }
+    return result
+  }, INITIAL_STATE)
 
   const availableStock = React.useMemo(
     () => stockProducts.filter((product) => product.sourceWorksiteId === sourceWorksiteId && product.stockQuantity > 0),
@@ -146,24 +167,6 @@ export function DeliveryForm({
   const needsSize = requiresSizeChoice(selectedGroup)
   const selectedPendingProduct = availableStock.find((product) => product.productId === pendingProductId)
   const pendingStep = quantityStep(selectedPendingProduct?.unitOfMeasure)
-
-  React.useEffect(() => {
-    if (state.ok && state.message) {
-      toast.success(state.message)
-      router.refresh()
-      formRef.current?.reset()
-      setWorkerId("")
-      // `reset()` no alcanza al estado controlado del selector de fecha.
-      setDeliveredAt(today)
-      setLines([])
-      setPendingGroupKey("")
-      setPendingProductId("")
-      setPendingQuantity("")
-      onSuccess?.()
-    } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
-      toast.error(state.message)
-    }
-  }, [onSuccess, router, state, today])
 
   function changeSource(nextSourceWorksiteId: string) {
     setSourceWorksiteId(nextSourceWorksiteId)

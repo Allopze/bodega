@@ -41,8 +41,9 @@ export function NewAgentDialog() {
     }), () => setOpen(false))
   }
 
+  // El diálogo sigue montado tras crear: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(value) => { if (value) setAgentType(Object.keys(AGENT_TYPE_LABELS)[0] ?? "physical"); setOpen(value) }}>
       <DialogTrigger asChild><Button size="sm" variant="secondary">Nuevo agente</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
@@ -102,8 +103,15 @@ export function NewGroupDialog({ agents, worksites }: { agents: AgentOption[]; w
     }), () => setOpen(false))
   }
 
+  // El diálogo sigue montado tras crear: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(value) => {
+      if (value) {
+        setWorksiteId(worksites[0]?.id ?? "")
+        setAgentId(agents[0]?.id ?? "")
+      }
+      setOpen(value)
+    }}>
       <DialogTrigger asChild><Button size="sm">Nuevo grupo de exposición</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
@@ -158,8 +166,15 @@ export function NewProgramDialog({ agents, worksites }: { agents: AgentOption[];
     }), () => setOpen(false))
   }
 
+  // El diálogo sigue montado tras crear: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(value) => {
+      if (value) {
+        setWorksiteId(worksites[0]?.id ?? "")
+        setAgentId("_none")
+      }
+      setOpen(value)
+    }}>
       <DialogTrigger asChild><Button size="sm">Nuevo programa de vigilancia</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">

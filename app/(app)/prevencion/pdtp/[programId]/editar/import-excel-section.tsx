@@ -97,6 +97,11 @@ export function ImportExcelSection({ programId, visibleWorksites, catalogActivit
         const json = await res.json()
         setState({ ok: true, message: json.message })
         setPreview(json.preview as ImportPreview)
+        // Un lote nuevo exige su propia aceptación: la del lote anterior no se
+        // arrastra (la sección sigue montada tras aplicar o cancelar).
+        setAcceptMissingEvidence(false)
+        setAcceptanceReason("")
+        setCandidateTargets({})
         formRef.current?.reset()
       }
     } catch {

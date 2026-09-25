@@ -67,10 +67,11 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await page.getByRole("button", { name: "Registrar ajuste" }).click()
     await expect(page.getByRole("dialog")).toHaveCount(0, { timeout: 20_000 })
 
-    // Se afirma el efecto persistido y no el toast: al cerrar la hoja, la
-    // revalidación remonta el árbol y el aviso puede desaparecer antes de que
-    // el test lo alcance. El folio en Documentos prueba más y no depende del
-    // tiempo de vida de una notificación.
+    // Se afirma el efecto persistido y no el toast: el aviso dura 4 s y puede
+    // desaparecer antes de que el test lo alcance (hasta 2026-09-24, además,
+    // se lo llevaba el remontaje de la plataforma al revalidar). El folio en
+    // Documentos prueba más y no depende del tiempo de vida de una
+    // notificación.
     await page.goto("/bodega/documentos")
     await expect(page.getByText("Ajuste e2e").first()).toBeVisible()
     await expect(page.getByText(/AJU-\d{4}-\d{4}/).first()).toBeVisible()
@@ -102,8 +103,8 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
 
     await page.getByRole("button", { name: "Cerrar conteo" }).click()
     await expect(page.getByRole("dialog")).toHaveCount(0, { timeout: 20_000 })
-    // El conteo cerrado queda con su folio en Documentos; el toast de cierre no
-    // sobrevive a la revalidación que dispara la propia acción.
+    // El conteo cerrado queda con su folio en Documentos; el toast de cierre es
+    // efímero (4 s) y no sirve de señal.
     await page.goto("/bodega/documentos")
     await expect(page.getByText(/CON-\d{4}-\d{4}/).first()).toBeVisible({ timeout: 15_000 })
   })

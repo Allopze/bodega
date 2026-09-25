@@ -382,10 +382,10 @@ describe("createFuelLoadAction — audit logging", () => {
     fd.set("totalAmount", "1208")
 
     // En éxito, createFuelLoadAction navega server-side vía redirect() en vez
-    // de devolver { ok: true } — evita la carrera cliente descrita en su
-    // comentario (Next.js 16 re-renderiza la ruta actual en la respuesta de
-    // la action, lo que remontaba el formulario antes de que un useEffect
-    // alcanzara a disparar router.push).
+    // de devolver { ok: true } (ver su comentario: hasta 2026-09-24 el
+    // re-render de la ruta actual que trae la respuesta de la action volvía a
+    // montar la plataforma entera antes de que un useEffect alcanzara a
+    // disparar router.push).
     await createFuelLoadAction({ ok: false, message: "" }, fd)
 
     expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ productId: "fuel-diesel" }))

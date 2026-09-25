@@ -383,8 +383,9 @@ function AddScenarioDialog({ planId, scenarioTypes }: { planId: string; scenario
     }), () => setOpen(false))
   }
 
+  // El diálogo sigue montado tras guardar: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(value) => { if (value) setType(""); setOpen(value) }}>
       <DialogTrigger asChild><Button size="sm">Agregar escenario</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
@@ -428,8 +429,15 @@ function AddRoleDialog({ planId, eligibleWorkers }: { planId: string; eligibleWo
     }), () => setOpen(false))
   }
 
+  // El diálogo sigue montado tras guardar: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(value) => {
+      if (value) {
+        setAssigneeWorkerId(eligibleWorkers[0]?.id ?? "")
+        setBackupWorkerId("_none")
+      }
+      setOpen(value)
+    }}>
       <DialogTrigger asChild><Button size="sm">Agregar rol</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
@@ -562,8 +570,9 @@ function EditResourceDialog({ resource }: { resource: ResourceInfo }) {
     }), () => setOpen(false))
   }
 
+  // Al abrir se parte del estado guardado, no de una edición abandonada.
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(value) => { if (value) setStatus(resource.status); setOpen(value) }}>
       <DialogTrigger asChild><Button size="sm" variant="ghost">Editar</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="max-h-[75vh] space-y-4 overflow-y-auto">
@@ -743,7 +752,7 @@ function ScheduleDrillDialog({ planId, scenarioTypes }: { planId: string; scenar
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (value) setDefaultValue(toLocalInputValue(new Date())); setOpen(value) }}>
+    <Dialog open={open} onOpenChange={(value) => { if (value) { setDefaultValue(toLocalInputValue(new Date())); setScenarioType("") } setOpen(value) }}>
       <DialogTrigger asChild><Button size="sm">Programar simulacro</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
