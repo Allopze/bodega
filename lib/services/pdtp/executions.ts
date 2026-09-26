@@ -14,6 +14,12 @@ import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { isPdtpPeriodOnOrAfterActivation } from "./period"
 import { assertPdtpPeriodOpen } from "./period-guard"
 import { todayInChile } from "@/lib/utils"
+import { hashPdtpEvidenceFiles } from "./evidence-files"
+import {
+  pdtpExecutionHistorySnapshot,
+  pdtpNextSubmissionMetadata,
+  recordPdtpExecutionHistory,
+} from "./execution-history"
 
 export type MarkPdtpExecutionOptions = {
   /**
@@ -103,6 +109,10 @@ export async function markPdtpExecution(
 
   const now = new Date().toISOString()
   const id = pdtpExecutionId(data.activityId, data.worksiteId, data.year, data.month, data.week)
+  // W5-SHA: el checksum de lo que llega se calcula aquí, en el servidor y
+  // fuera de la transacción (lee el archivo completo). Dentro sólo se guardan
+  // los de las rutas que de verdad quedaron vinculadas.
+  const incomingSha256 = await hashPdtpEvidenceFiles([data.evidenceUrl, ...(data.evidencePhotos ?? [])])
 
   // H-B8 (intencional): `evidenceText || null` colapsa string vacío a
   // null en DB. Es la convención del módulo: "sin texto de evidencia"
@@ -157,6 +167,8 @@ export async function markPdtpExecution(
         evidencePhotos: pdtpExecutions.evidencePhotos,
         executedByUserId: pdtpExecutions.executedByUserId,
         rejectionReason: pdtpExecutions.rejectionReason,
+        evidenceText: pdtpExecutions.evidenceText,
+        sourceMetadataJson: pdtpExecutions.sourceMetadataJson,
       })
       .from(pdtpExecutions)
       .where(and(
@@ -234,11 +246,20 @@ export async function markPdtpExecution(
       ? "provided" as const
       : "not_required" as const
 
+    // PREV-I04 / W5-SHA: número de intento y sha256 por archivo viajan en los
+    // metadatos de la fila (sin migración) y se copian al historial.
+    const sourceMetadataJson = pdtpNextSubmissionMetadata(existing?.sourceMetadataJson, {
+      isResubmission: Boolean(existing),
+      linkedPaths: [nextEvidenceUrl, ...dedupedPhotos],
+      incomingSha256,
+    })
+
     const [row] = await tx.insert(pdtpExecutions).values({
       id, activityId: data.activityId, worksiteId: data.worksiteId, year: data.year, month: data.month,
       week: data.week, executedQuantity: data.executedQuantity, status: "submitted",
       evidenceText: data.evidenceText || null, evidenceUrl: nextEvidenceUrl,
       evidencePhotos: dedupedPhotos, evidenceStatus, executedByUserId: userId, executedAt: now, createdAt: now, updatedAt: now,
+      sourceMetadataJson,
     }).onConflictDoUpdate({
       target: [pdtpExecutions.activityId, pdtpExecutions.worksiteId, pdtpExecutions.year, pdtpExecutions.month, pdtpExecutions.week],
       targetWhere: sql`${pdtpExecutions.obligationId} IS NULL AND ${pdtpExecutions.origin} <> 'integration'`,
@@ -246,6 +267,7 @@ export async function markPdtpExecution(
         executedQuantity: data.executedQuantity, status: "submitted",
         evidenceText: data.evidenceText || null, evidenceUrl: nextEvidenceUrl,
         evidencePhotos: dedupedPhotos, evidenceStatus, executedByUserId: userId, executedAt: now,
+        sourceMetadataJson,
         // Limpia rechazo previo: cuando el prevencionista reenvía, la
         // ejecución vuelve a 'submitted' con un nuevo intento. El motivo no se
         // pierde: queda en el evento `pdtp.execution_resubmitted` de abajo.
@@ -304,6 +326,16 @@ export async function markPdtpExecution(
         } : {}),
       },
     }, tx)
+    // PREV-I04 (D10): la traza completa del intento —el anterior y el nuevo,
+    // con sus archivos— queda en la bitácora, en esta misma transacción.
+    await recordPdtpExecutionHistory(tx, {
+      executionId: row.id,
+      worksiteId: data.worksiteId,
+      changeType: existing ? "resubmitted" : "submitted",
+      actorUserId: userId,
+      before: existing ? pdtpExecutionHistorySnapshot(existing) : null,
+      after: pdtpExecutionHistorySnapshot(row),
+    })
     return row
   })
 }
@@ -327,8 +359,12 @@ function pdtpEvidenceFileExists(url: string): boolean {
  * H-B7: una ruta nueva sin archivo físico (un upload que falló, una pestaña
  * cerrada) se descarta y se conserva la previa; la BD nunca apunta a archivos
  * inexistentes.
+ *
+ * Exportada porque `reportPdtpObligation` aplica la misma regla: reportar de
+ * nuevo una obligación rechazada reemplazaba el archivo y el del intento
+ * anterior quedaba sin referencia (PREV-B03 en obligaciones).
  */
-function mergePdtpEvidence(
+export function mergePdtpEvidence(
   existing: { evidenceUrl: string | null; evidencePhotos: unknown } | undefined,
   data: { activityId: string; worksiteId: string; evidenceUrl?: string; evidencePhotos?: string[] },
 ): { evidenceUrl: string | null; evidencePhotos: string[] } {
@@ -499,6 +535,14 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
       actorUserId: userId,
       payload: { status: "approved", obligationCompleted: Boolean(execution.obligationId) },
     }, tx)
+    await recordPdtpExecutionHistory(tx, {
+      executionId: updated.id,
+      worksiteId: execution.worksiteId,
+      changeType: "approved",
+      actorUserId: userId,
+      before: pdtpExecutionHistorySnapshot(execution),
+      after: pdtpExecutionHistorySnapshot(updated),
+    })
     // PREV-I04: aprobar cambia lo que el programa declara cumplido; queda en
     // su control de cambios, igual que desvíos y cierres.
     if (context) {
@@ -567,6 +611,15 @@ export async function rejectPdtpExecution(
       actorUserId: userId,
       payload: { status: "rejected", hasObligation: Boolean(execution.obligationId), reason: reason.trim() },
     }, tx)
+    await recordPdtpExecutionHistory(tx, {
+      executionId: updated.id,
+      worksiteId: execution.worksiteId,
+      changeType: "rejected",
+      actorUserId: userId,
+      reason: reason.trim(),
+      before: pdtpExecutionHistorySnapshot(execution),
+      after: pdtpExecutionHistorySnapshot(updated),
+    })
     const context = await loadExecutionActivityContext(tx, execution.activityId)
     if (context) {
       await addPdtpChangeLogEntry(

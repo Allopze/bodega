@@ -15,6 +15,9 @@ import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 import { addPdtpChangeLogEntry, assertWorksiteAccess, isActivePdtpWorksite, type WorksiteScope } from "./helpers"
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
+import { mergePdtpEvidence } from "./executions"
+import { hashPdtpEvidenceFiles } from "./evidence-files"
+import { pdtpExecutionHistorySnapshot, pdtpNextSubmissionMetadata, recordPdtpExecutionHistory } from "./execution-history"
 import { isPdtpActivityEffectiveAt } from "./retirement"
 
 export type PdtpObligationOrigin = "manual" | "integration"
@@ -233,6 +236,8 @@ export async function reportPdtpObligation(input: {
     const absolutePath = resolvePdtpEvidenceFile(evidenceUrl)
     if (!absolutePath || !existsSync(absolutePath)) throw new Error("La evidencia adjunta no existe en el almacenamiento autorizado.")
   }
+  // W5-SHA: checksum calculado en el servidor, fuera de la transacción.
+  const incomingSha256 = await hashPdtpEvidenceFiles([evidenceUrl, ...photos])
 
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM ${pdtpObligations} WHERE id = ${input.obligationId} FOR UPDATE`)
@@ -273,6 +278,19 @@ export async function reportPdtpObligation(input: {
     }
     const slot = periodSlot(reportedAt)
     const now = new Date().toISOString()
+    // PREV-B03: el reporte rechazado es evidencia del intento anterior. Antes
+    // se reemplazaba y su archivo quedaba sin referencia (inaccesible y
+    // candidato al GC). Se aplica la misma fusión append-only de la planilla.
+    const merged = mergePdtpEvidence(existing, {
+      activityId: obligation.activityId,
+      worksiteId: obligation.worksiteId,
+      evidenceUrl: evidenceUrl ?? undefined,
+      evidencePhotos: photos,
+    })
+    const submissionMetadata = pdtpNextSubmissionMetadata(
+      existing?.sourceMetadataJson ?? { obligationId: obligation.id, ...((obligation.sourceMetadataJson ?? {}) as Record<string, unknown>) },
+      { isResubmission: Boolean(existing), linkedPaths: [merged.evidenceUrl, ...merged.evidencePhotos], incomingSha256 },
+    )
     const [execution] = await tx.insert(pdtpExecutions).values({
       id: existing?.id ?? `pdtp-obligation-execution-${nanoid()}`,
       activityId: obligation.activityId,
@@ -283,15 +301,15 @@ export async function reportPdtpObligation(input: {
       executedQuantity: input.executedQuantity,
       status: "submitted",
       evidenceText: input.evidenceText?.trim() || null,
-      evidenceUrl,
-      evidencePhotos: photos,
+      evidenceUrl: merged.evidenceUrl,
+      evidencePhotos: merged.evidencePhotos,
       executedByUserId: input.userId,
       executedAt: reportedAt.toISOString(),
       origin: obligation.origin,
       sourceType: obligation.sourceType,
       sourceId: obligation.sourceId,
       idempotencyKey: `pdtp-obligation-execution:${obligation.id}`,
-      sourceMetadataJson: { obligationId: obligation.id, ...((obligation.sourceMetadataJson ?? {}) as Record<string, unknown>) },
+      sourceMetadataJson: submissionMetadata,
       evidenceStatus: hasEvidence ? "provided" : "not_required",
       obligationId: obligation.id,
       createdAt: now,
@@ -302,10 +320,11 @@ export async function reportPdtpObligation(input: {
         executedQuantity: input.executedQuantity,
         status: "submitted",
         evidenceText: input.evidenceText?.trim() || null,
-        evidenceUrl,
-        evidencePhotos: photos,
+        evidenceUrl: merged.evidenceUrl,
+        evidencePhotos: merged.evidencePhotos,
         executedByUserId: input.userId,
         executedAt: reportedAt.toISOString(),
+        sourceMetadataJson: submissionMetadata,
         evidenceStatus: hasEvidence ? "provided" : "not_required",
         rejectedByUserId: null,
         rejectedAt: null,
@@ -343,6 +362,15 @@ export async function reportPdtpObligation(input: {
       actorUserId: input.userId,
       payload: { status: updated.status, completedQuantity: updated.completedQuantity },
     }, tx)
+    // PREV-I04 (D10): el reporte es un envío más de la ejecución.
+    await recordPdtpExecutionHistory(tx, {
+      executionId: execution.id,
+      worksiteId: obligation.worksiteId,
+      changeType: existing ? "resubmitted" : "submitted",
+      actorUserId: input.userId,
+      before: existing ? pdtpExecutionHistorySnapshot(existing) : null,
+      after: pdtpExecutionHistorySnapshot(execution),
+    })
     return { obligation: updated, execution, created: !existing }
   })
 }
