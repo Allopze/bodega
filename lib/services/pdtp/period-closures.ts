@@ -52,6 +52,7 @@ import { and, desc, eq, sql } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   pdtpActivities,
+  pdtpExecutionDeviations,
   pdtpExecutions,
   pdtpPeriodClosures,
   pdtpPrograms,
@@ -353,8 +354,33 @@ async function loadClosableContext(programId: string, worksiteId: string, year: 
   }
 
   await assertNoPendingSubmissions(db, programId, worksiteId, year, month)
+  await assertNoPendingNotApplicable(db, programId, worksiteId, year, month)
 
   return program
+}
+
+/**
+ * PREV-C07: un "No aplica" en revisión todavía cuenta en el denominador. Si
+ * el mes se congela así, aprobarlo después ya no cambia la foto —y el guard de
+ * mes cerrado impide aprobarlo—. Se exige revisarlo antes, igual que los
+ * envíos pendientes.
+ */
+async function assertNoPendingNotApplicable(client: DB | Tx, programId: string, worksiteId: string, year: number, month: number) {
+  const [row] = await client.select({ pending: sql<number>`count(*)::int` })
+    .from(pdtpExecutionDeviations)
+    .innerJoin(pdtpActivities, eq(pdtpActivities.id, pdtpExecutionDeviations.activityId))
+    .where(and(
+      eq(pdtpActivities.programId, programId),
+      eq(pdtpExecutionDeviations.worksiteId, worksiteId),
+      eq(pdtpExecutionDeviations.year, year),
+      eq(pdtpExecutionDeviations.month, month),
+      eq(pdtpExecutionDeviations.status, "pending_review"),
+    ))
+  const pending = Number(row?.pending ?? 0)
+  if (pending > 0) {
+    const label = pending === 1 ? '1 "no aplica" en revisión' : `${pending} "no aplica" en revisión`
+    throw new Error(`El mes de ${monthLabel(year, month)} tiene ${label} en esta faena. Apruébalos o recházalos en Aprobaciones antes de cerrarlo.`)
+  }
 }
 
 /**
@@ -417,6 +443,7 @@ export async function closePdtpPeriod(
 
   return db.transaction(async (tx) => {
     await assertNoPendingSubmissions(tx, data.programId, data.worksiteId, data.year, data.month)
+    await assertNoPendingNotApplicable(tx, data.programId, data.worksiteId, data.year, data.month)
     const [previous] = await tx.select({ version: pdtpPeriodClosures.version, status: pdtpPeriodClosures.status, digest: pdtpPeriodClosures.digest })
       .from(pdtpPeriodClosures).where(eq(pdtpPeriodClosures.id, id)).limit(1)
 

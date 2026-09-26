@@ -28,8 +28,9 @@ vi.mock("./actions", () => ({
   withdrawPdtpDeviationAction: (fd: FormData) => withdrawPdtpDeviationAction(fd),
 }))
 
+const toastSuccess = vi.fn()
 vi.mock("@/lib/toast", () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: (message: string) => toastSuccess(message), error: vi.fn() },
 }))
 
 import { PdtpDeviationForm, PdtpDeviationList } from "./pdtp-deviation-form"
@@ -103,6 +104,19 @@ describe("PdtpDeviationForm", () => {
     // Sin reprogramación no viaja destino, ni siquiera vacío.
     expect(sent.get("targetMonth")).toBeNull()
     expect(sent.get("targetWeek")).toBeNull()
+  })
+
+  it("declarar 'No aplica' avisa que queda en revisión y no cambia el cumplimiento todavía", async () => {
+    toastSuccess.mockClear()
+    renderForm()
+    openDialog()
+    fireEvent.click(await screen.findByLabelText("No aplica"))
+    expect(screen.getByText(/otra persona/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText("Motivo"), {
+      target: { value: "La faena estuvo detenida toda la semana por mantención." },
+    })
+    fireEvent.click(screen.getByRole("button", { name: /Registrar desvío/ }))
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith(expect.stringMatching(/revisión/)))
   })
 
   it("al reprogramar también viaja la celda de destino", async () => {
@@ -180,6 +194,14 @@ describe("PdtpDeviationList", () => {
     const sent = withdrawPdtpDeviationAction.mock.calls[0]![0]
     expect(sent.get("deviationId")).toBe("dev-1")
     expect(sent.get("reason")).toBe("La faena confirmó que la actividad sí se ejecutó esa semana.")
+  })
+
+  // PREV-C07: un "No aplica" en revisión todavía no cambia el cálculo; la
+  // lista tiene que decirlo para que no se lea como ya aplicado.
+  it("marca el 'No aplica' pendiente como 'En revisión' y lo deja retirar", () => {
+    render(<PdtpDeviationList deviations={[{ ...deviations[0]!, id: "dev-na", kind: "not_applicable", status: "pending_review" }]} canWithdraw />)
+    expect(screen.getByText("En revisión")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Retirar" })).toBeInTheDocument()
   })
 
   it("sin desvíos no dibuja nada", () => {

@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpActivitySchedule, pdtpExecutions, pdtpPrograms, pdtpProgramWorksites, pdtpSheetActivities, pdtpSheets, preventionInspectionRuns } from "@/db/schema"
+import { pdtpActivities, pdtpActivitySchedule, pdtpExecutionDeviations, pdtpExecutions, pdtpPrograms, pdtpProgramWorksites, pdtpSheetActivities, pdtpSheets, preventionInspectionRuns } from "@/db/schema"
 import { MONTH_LABELS } from "./constants"
 import { SHEET_EXPORT_NAMES } from "@/lib/services/pdtp-adapters/sheet-meta-2026"
 import { assertWorksiteAccess, emptyMonthlyTotals, loadProgramScheduleAndExecutions, resolveSheetForProgram } from "./helpers"
@@ -134,6 +134,12 @@ export type PdtpSheetView = {
       reason: string
       targetMonth: number | null
       targetWeek: number | null
+      /**
+       * `active` o, sólo en la vista por faena, `pending_review` (PREV-C07):
+       * un "No aplica" que espera revisión se muestra para que se pueda
+       * seguir y retirar, pero no está aplicado al planificado.
+       */
+      status: string
     }>
     executions: Array<{
       id: string
@@ -200,6 +206,7 @@ function toSheetDeviation(row: DeviationRow): PdtpSheetView["activities"][number
     reason: row.reason,
     targetMonth: row.targetMonth,
     targetWeek: row.targetWeek,
+    status: row.status,
   }
 }
 
@@ -465,8 +472,19 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
   // única; acá sólo se recortan desde la activación, igual que el resto de lo
   // que la vista muestra como "efectivo".
   const deviationRows = filterPdtpRowsFromActivation(loaded.deviationRows, activationCutoff)
+  // PREV-C07: los "No aplica" en revisión no pasan por la costura única (no
+  // cambian el planificado), pero la faena tiene que verlos para seguirlos o
+  // retirarlos. Sólo se agregan a la lista que se muestra.
+  const pendingReviewRows = worksiteId
+    ? await db.select().from(pdtpExecutionDeviations).where(and(
+        inArray(pdtpExecutionDeviations.activityId, activityIds),
+        eq(pdtpExecutionDeviations.worksiteId, worksiteId),
+        eq(pdtpExecutionDeviations.year, program.year),
+        eq(pdtpExecutionDeviations.status, "pending_review"),
+      ))
+    : []
   const deviationsByActivity = new Map<string, DeviationRow[]>()
-  for (const row of deviationRows) {
+  for (const row of [...deviationRows, ...pendingReviewRows]) {
     const current = deviationsByActivity.get(row.activityId) ?? []
     current.push(row)
     deviationsByActivity.set(row.activityId, current)

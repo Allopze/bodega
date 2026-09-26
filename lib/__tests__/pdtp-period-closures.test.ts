@@ -283,6 +283,27 @@ describe("closePdtpPeriod: validaciones", () => {
     expect(await inMemoryDb.select().from(schema.pdtpPeriodClosures)).toEqual([])
   })
 
+  // PREV-C07: un "No aplica" en revisión todavía cuenta en el denominador; si
+  // el mes se congela así, aprobarlo después ya no cambiaría la foto.
+  it("no cierra un mes con 'no aplica' en revisión y dice cuántos son", async () => {
+    const { closePdtpPeriod } = await import("@/lib/services/pdtp/period-closures")
+    const { recordPdtpDeviation, reviewPdtpNotApplicable } = await import("@/lib/services/pdtp/deviations")
+    const { program, activity } = await createActiveProgram()
+    const deviation = await recordPdtpDeviation({
+      activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: MONTH, week: 1,
+      kind: "not_applicable", reason: "La faena estuvo detenida toda la semana por mantención.",
+    }, "user-1", "all")
+
+    await expect(closePdtpPeriod({
+      programId: program.id, worksiteId: "ws-1", year: YEAR, month: MONTH, reason: REASON,
+    }, "user-1", "all")).rejects.toThrow(/1 "no aplica" en revisión/i)
+
+    await reviewPdtpNotApplicable({ deviationId: deviation.id, decision: "approve" }, "user-2", "all")
+    await expect(closePdtpPeriod({
+      programId: program.id, worksiteId: "ws-1", year: YEAR, month: MONTH, reason: REASON,
+    }, "user-1", "all")).resolves.toMatchObject({ status: "closed" })
+  })
+
   it("los envíos pendientes de otra faena no impiden cerrar esta", async () => {
     const { closePdtpPeriod } = await import("@/lib/services/pdtp/period-closures")
     const { program, activity } = await createActiveProgram()

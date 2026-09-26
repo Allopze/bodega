@@ -196,6 +196,9 @@ export type { PdtpOverrideInput } from "./overrides"
 export {
   recordPdtpDeviation,
   withdrawPdtpDeviation,
+  reviewPdtpNotApplicable,
+  listPendingPdtpNotApplicable,
+  countPdtpNotApplicable,
   loadPdtpDeviations,
   applyDeviationsToSchedule,
   deviationsByActivityMonth,
@@ -203,7 +206,7 @@ export {
   getPdtpDeviationKindAndActivity,
   listPdtpDeviationsForProgram,
 } from "./deviations"
-export type { PdtpDeviationKind } from "./deviations"
+export type { PdtpDeviationKind, PdtpPendingNotApplicable } from "./deviations"
 // `PdtpExecutionDeviation` es el tipo de retorno de `recordPdtpDeviation`,
 // `loadPdtpDeviations` y `listPdtpDeviationsForProgram`: sin él exportado acá,
 // un consumidor del servicio tenía que importarlo de `@/db/schema` para poder

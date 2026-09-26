@@ -98,11 +98,12 @@ async function createActiveProgramWithScheduledCell(
 }
 
 describe("recordPdtpDeviation: efecto de cada tipo a través de la costura única", () => {
-  it("not_applicable baja `planned` del indicador y del documento RE-36 en esa faena, no en otra", async () => {
-    const { recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
+  // PREV-C07: el efecto llega recién con la aprobación de otra persona.
+  it("not_applicable aprobado baja `planned` del indicador y del documento RE-36 en esa faena, no en otra", async () => {
+    const { recordPdtpDeviation, reviewPdtpNotApplicable } = await import("@/lib/services/pdtp/deviations")
     const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
     const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")
-    const { program, activity } = await createActiveProgramWithScheduledCell(2060, { month: 3, week: 1, plannedQuantity: 4 })
+    const { program, activity } = await createActiveProgramWithScheduledCell(2024, { month: 3, week: 1, plannedQuantity: 4 })
 
     // Membresía de hoja para que la fila aparezca en el documento RE-36.
     const [sheet] = await inMemoryDb.select().from(schema.pdtpSheets).where(eq(schema.pdtpSheets.programId, program.id))
@@ -110,10 +111,11 @@ describe("recordPdtpDeviation: efecto de cada tipo a través de la costura únic
       id: "membership-1", sheetId: sheet!.id, sheetCode: "pdtp_general", activityId: activity.id, sheetRow: 1, displayOrder: 1,
     })
 
-    await recordPdtpDeviation({
-      activityId: activity.id, worksiteId: "ws-1", year: 2060, month: 3, week: 1,
+    const deviation = await recordPdtpDeviation({
+      activityId: activity.id, worksiteId: "ws-1", year: 2024, month: 3, week: 1,
       kind: "not_applicable", reason: "No aplica: la faena no opera esa semana por paro programado.",
     }, "user-1", "all")
+    await reviewPdtpNotApplicable({ deviationId: deviation.id, decision: "approve" }, "user-2", "all")
 
     const ws1Indicators = await getPdtpComplianceIndicators(program.id, "ws-1")
     expect(ws1Indicators!.monthly[2]!.planned).toBe(0) // marzo = índice 2
@@ -173,39 +175,40 @@ describe("recordPdtpDeviation: efecto de cada tipo a través de la costura únic
   })
 
   it("no se puede registrar not_applicable sobre celda con ejecución aprobada", async () => {
-    const { recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
+    const { recordPdtpDeviation, reviewPdtpNotApplicable } = await import("@/lib/services/pdtp/deviations")
     const { markPdtpExecution, approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
-    const { activity } = await createActiveProgramWithScheduledCell(2062, { month: 5, week: 1, plannedQuantity: 1 })
+    const { activity } = await createActiveProgramWithScheduledCell(2025, { month: 5, week: 1, plannedQuantity: 1 })
 
     const execution = await markPdtpExecution({
       evidenceUrl: EVIDENCE_URL,
-      activityId: activity.id, worksiteId: "ws-1", year: 2062, month: 5, week: 1, executedQuantity: 1,
+      activityId: activity.id, worksiteId: "ws-1", year: 2025, month: 5, week: 1, executedQuantity: 1,
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(execution.id, "user-2", ["ws-1"])
 
     await expect(recordPdtpDeviation({
-      activityId: activity.id, worksiteId: "ws-1", year: 2062, month: 5, week: 1,
+      activityId: activity.id, worksiteId: "ws-1", year: 2025, month: 5, week: 1,
       kind: "not_applicable", reason: "Se intenta declarar no aplicable tras la aprobación.",
     }, "user-1", "all")).rejects.toThrow(/ejecución/)
 
     // Lo mismo con reprogrammed sobre la misma celda ya acreditada.
     await expect(recordPdtpDeviation({
-      activityId: activity.id, worksiteId: "ws-1", year: 2062, month: 5, week: 1,
+      activityId: activity.id, worksiteId: "ws-1", year: 2025, month: 5, week: 1,
       kind: "reprogrammed", reason: "Se intenta reprogramar tras la aprobación.",
       targetMonth: 6, targetWeek: 1,
     }, "user-1", "all")).rejects.toThrow(/ejecución/)
 
     // Y a la inversa: con un desvío activo no-`not_performed` sobre otra celda, la ejecución también se rechaza.
     await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
-      id: `${activity.id}-s-2062-06-01`, activityId: activity.id, year: 2062, month: 6, week: 1, plannedQuantity: 1, sourceColumn: "test",
+      id: `${activity.id}-s-2025-06-01`, activityId: activity.id, year: 2025, month: 6, week: 1, plannedQuantity: 1, sourceColumn: "test",
     })
-    await recordPdtpDeviation({
-      activityId: activity.id, worksiteId: "ws-1", year: 2062, month: 6, week: 1,
+    const naJune = await recordPdtpDeviation({
+      activityId: activity.id, worksiteId: "ws-1", year: 2025, month: 6, week: 1,
       kind: "not_applicable", reason: "No aplica esta celda para la faena.",
     }, "user-1", "all")
+    await reviewPdtpNotApplicable({ deviationId: naJune.id, decision: "approve" }, "user-2", "all")
     await expect(markPdtpExecution({
       evidenceUrl: EVIDENCE_URL,
-      activityId: activity.id, worksiteId: "ws-1", year: 2062, month: 6, week: 1, executedQuantity: 1,
+      activityId: activity.id, worksiteId: "ws-1", year: 2025, month: 6, week: 1, executedQuantity: 1,
     }, "user-1", ["ws-1"])).rejects.toThrow(/desvío activo/)
   })
 
@@ -252,12 +255,12 @@ describe("recordPdtpDeviation: efecto de cada tipo a través de la costura únic
   it("la huella del programa no cambia al registrar desvíos", async () => {
     const { recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
     const { computePdtpProgramContentDigest } = await import("@/lib/services/pdtp/content-digest")
-    const { program, activity } = await createActiveProgramWithScheduledCell(2063, { month: 7, week: 1, plannedQuantity: 5 })
+    const { program, activity } = await createActiveProgramWithScheduledCell(2024, { month: 7, week: 1, plannedQuantity: 5 })
 
     const baseline = await computePdtpProgramContentDigest(program.id)
 
     await recordPdtpDeviation({
-      activityId: activity.id, worksiteId: "ws-1", year: 2063, month: 7, week: 1,
+      activityId: activity.id, worksiteId: "ws-1", year: 2024, month: 7, week: 1,
       kind: "not_applicable", reason: "No aplica esta semana por cierre temporal de faena.",
     }, "user-1", "all")
 
@@ -270,7 +273,7 @@ describe("recordPdtpDeviation: validaciones de entrada", () => {
   it("rechaza declarar no aplicable o reprogramar sobre una celda sin planificado efectivo", async () => {
     const { recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
     const { addPdtpActivity, createLegacyPdtpProgramForTests } = await import("@/lib/services/prevention-pdtp")
-    const program = await createLegacyPdtpProgramForTests({ year: 2064, title: "Programa 2064", userId: "user-1" })
+    const program = await createLegacyPdtpProgramForTests({ year: 2025, title: "Programa 2025", userId: "user-1" })
     const activity = await addPdtpActivity({
       programId: program.id, activity: "Actividad sin planificación", program: "Guía",
       responsibleSlugs: ["prevencionista"], responsibleDisplay: "Prevencionista", sheetCodes: [], scheduleMode: "on_demand",
@@ -278,7 +281,7 @@ describe("recordPdtpDeviation: validaciones de entrada", () => {
     await inMemoryDb.update(schema.pdtpPrograms).set({ status: "active" }).where(eq(schema.pdtpPrograms.id, program.id))
 
     await expect(recordPdtpDeviation({
-      activityId: activity.id, worksiteId: "ws-1", year: 2064, month: 1, week: 1,
+      activityId: activity.id, worksiteId: "ws-1", year: 2025, month: 1, week: 1,
       kind: "not_applicable", reason: "No hay nada planificado en esta celda todavía.",
     }, "user-1", "all")).rejects.toThrow(/no hay nada/i)
   })
@@ -309,22 +312,22 @@ describe("recordPdtpDeviation: validaciones de entrada", () => {
 
   it("rechaza un segundo desvío activo sobre la misma celda; retirar el primero habilita registrar otro", async () => {
     const { recordPdtpDeviation, withdrawPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
-    const { activity } = await createActiveProgramWithScheduledCell(2066, { month: 2, week: 2, plannedQuantity: 2 })
+    const { activity } = await createActiveProgramWithScheduledCell(2024, { month: 2, week: 2, plannedQuantity: 2 })
 
     const first = await recordPdtpDeviation({
-      activityId: activity.id, worksiteId: "ws-1", year: 2066, month: 2, week: 2,
+      activityId: activity.id, worksiteId: "ws-1", year: 2024, month: 2, week: 2,
       kind: "not_applicable", reason: "Primer desvío registrado sobre esta celda.",
     }, "user-1", "all")
 
     await expect(recordPdtpDeviation({
-      activityId: activity.id, worksiteId: "ws-1", year: 2066, month: 2, week: 2,
+      activityId: activity.id, worksiteId: "ws-1", year: 2024, month: 2, week: 2,
       kind: "not_applicable", reason: "Segundo intento sobre la misma celda activa.",
-    }, "user-1", "all")).rejects.toThrow(/ya existe un desvío activo/i)
+    }, "user-1", "all")).rejects.toThrow(/ya existe un desvío vigente o en revisión/i)
 
     await withdrawPdtpDeviation({ deviationId: first.id, reason: "Se revirtió: la faena sí opera esa semana." }, "user-1", "all")
 
     await expect(recordPdtpDeviation({
-      activityId: activity.id, worksiteId: "ws-1", year: 2066, month: 2, week: 2,
+      activityId: activity.id, worksiteId: "ws-1", year: 2024, month: 2, week: 2,
       kind: "not_applicable", reason: "Tercer intento, ya con el primero retirado.",
     }, "user-1", "all")).resolves.toBeDefined()
   })
@@ -464,7 +467,7 @@ describe("acreditación por integración sobre una celda con desvío activo (la 
   })
 
   it("nunca falla por el desvío: la acreditación se completa y la ejecución queda registrada", async () => {
-    const { result } = await accreditOver("not_applicable", 2027)
+    const { result } = await accreditOver("not_applicable", 2025)
     expect(result.accredited).toHaveLength(1)
     const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
     expect(executions).toHaveLength(1)
@@ -485,9 +488,9 @@ describe("recordPdtpDeviation: validaciones de entrada (continuación)", () => {
 
   it("rechaza retirar un desvío con un motivo demasiado corto (schema, no validación a mano)", async () => {
     const { recordPdtpDeviation, withdrawPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
-    const { activity } = await createActiveProgramWithScheduledCell(2069, { month: 1, week: 1, plannedQuantity: 2 })
+    const { activity } = await createActiveProgramWithScheduledCell(2024, { month: 1, week: 1, plannedQuantity: 2 })
     const deviation = await recordPdtpDeviation({
-      activityId: activity.id, worksiteId: "ws-1", year: 2069, month: 1, week: 1,
+      activityId: activity.id, worksiteId: "ws-1", year: 2024, month: 1, week: 1,
       kind: "not_applicable", reason: "Desvío que luego se intentará retirar sin motivo.",
     }, "user-1", "all")
 
@@ -511,5 +514,161 @@ describe("recordPdtpDeviation: validaciones de entrada (continuación)", () => {
       activityId: activity.id, worksiteId: "ws-1", year: 2068, month: 1, week: 1,
       kind: "not_applicable", reason: "La actividad ya está excluida en esta faena.",
     }, "user-1", "all")).rejects.toThrow(/excluida/)
+  })
+})
+
+/**
+ * PREV-C07 (T2, D8): el "No aplica" era la palanca más directa para inflar el
+ * cumplimiento —sacaba la celda del denominador al instante, sin segundo
+ * actor, y también sobre semanas que no habían ocurrido—. Ahora nace
+ * `pending_review` y sólo cuenta cuando otra persona lo aprueba.
+ */
+describe("PREV-C07: revisión del 'No aplica'", () => {
+  const NA_REASON = "La faena estuvo detenida toda la semana por mantención mayor."
+
+  async function declarePendingNa(year = 2025) {
+    const { recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
+    const created = await createActiveProgramWithScheduledCell(year, { month: 3, week: 1, plannedQuantity: 4 })
+    const deviation = await recordPdtpDeviation({
+      activityId: created.activity.id, worksiteId: "ws-1", year, month: 3, week: 1,
+      kind: "not_applicable", reason: NA_REASON,
+    }, "user-1", "all")
+    return { ...created, deviation }
+  }
+
+  it("un N/A nuevo nace pendiente y no cambia el denominador", async () => {
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    const { program, deviation } = await declarePendingNa()
+    expect(deviation.status).toBe("pending_review")
+    const indicators = await getPdtpComplianceIndicators(program.id, "ws-1")
+    expect(indicators!.monthly[2]!.planned).toBe(4)
+  })
+
+  it("la planilla de la faena lo muestra 'en revisión' sin aplicarlo al planificado", async () => {
+    const { getPdtpSheetViewByProgram } = await import("@/lib/services/pdtp/sheets")
+    const { program, activity, deviation } = await declarePendingNa()
+    const [sheet] = await inMemoryDb.select().from(schema.pdtpSheets).where(eq(schema.pdtpSheets.programId, program.id))
+    await inMemoryDb.insert(schema.pdtpSheetActivities).values({
+      id: "membership-na", sheetId: sheet!.id, sheetCode: "pdtp_general", activityId: activity.id, sheetRow: 1, displayOrder: 1,
+    })
+    const view = await getPdtpSheetViewByProgram(program.id, "pdtp_general", "ws-1")
+    const row = view!.activities[0]!
+    expect(row.effectiveMonthlyPlanned[2]).toBe(4)
+    expect(row.deviations).toEqual([expect.objectContaining({ id: deviation.id, kind: "not_applicable", status: "pending_review" })])
+  })
+
+  it("otra persona lo aprueba y recién ahí sale del denominador, con revisor y changelog", async () => {
+    const { reviewPdtpNotApplicable } = await import("@/lib/services/pdtp/deviations")
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    const { program, activity, deviation } = await declarePendingNa()
+
+    const reviewed = await reviewPdtpNotApplicable({ deviationId: deviation.id, decision: "approve" }, "user-2", "all")
+    expect(reviewed).toMatchObject({ status: "active", reviewedByUserId: "user-2" })
+    expect(reviewed.reviewedAt).toBeTruthy()
+
+    const indicators = await getPdtpComplianceIndicators(program.id, "ws-1")
+    expect(indicators!.monthly[2]!.planned).toBe(0)
+    const changeLog = await inMemoryDb.select().from(schema.pdtpChangeLog)
+      .where(eq(schema.pdtpChangeLog.section, `deviation:${activity.n}`))
+    expect(changeLog.some((entry) => /aprobado/i.test(entry.note ?? ""))).toBe(true)
+  })
+
+  it("quien lo declaró no puede aprobarlo", async () => {
+    const { reviewPdtpNotApplicable } = await import("@/lib/services/pdtp/deviations")
+    const { deviation } = await declarePendingNa()
+    await expect(reviewPdtpNotApplicable({ deviationId: deviation.id, decision: "approve" }, "user-1", "all"))
+      .rejects.toThrow(/propi/)
+  })
+
+  it("rechazar exige motivo, no toca el denominador y libera la celda", async () => {
+    const { reviewPdtpNotApplicable, recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    const { program, activity, deviation } = await declarePendingNa()
+
+    await expect(reviewPdtpNotApplicable({ deviationId: deviation.id, decision: "reject", reason: "no" }, "user-2", "all"))
+      .rejects.toThrow(/10 caracteres/)
+    const rejected = await reviewPdtpNotApplicable({ deviationId: deviation.id, decision: "reject", reason: "La faena sí operó: hay registros de turno esa semana." }, "user-2", "all")
+    expect(rejected.status).toBe("rejected")
+    expect((await getPdtpComplianceIndicators(program.id, "ws-1"))!.monthly[2]!.planned).toBe(4)
+
+    await recordPdtpDeviation({
+      activityId: activity.id, worksiteId: "ws-1", year: 2025, month: 3, week: 1,
+      kind: "not_performed", reason: "No se alcanzó a realizar por falta de relator.",
+    }, "user-1", "all")
+  })
+
+  it("no se revisa dos veces ni se revisa algo que no está pendiente", async () => {
+    const { reviewPdtpNotApplicable } = await import("@/lib/services/pdtp/deviations")
+    const { deviation } = await declarePendingNa()
+    await reviewPdtpNotApplicable({ deviationId: deviation.id, decision: "approve" }, "user-2", "all")
+    await expect(reviewPdtpNotApplicable({ deviationId: deviation.id, decision: "approve" }, "user-2", "all"))
+      .rejects.toThrow(/pendiente/)
+  })
+
+  it("no se revisa fuera del alcance de faenas del revisor", async () => {
+    const { reviewPdtpNotApplicable } = await import("@/lib/services/pdtp/deviations")
+    const { deviation } = await declarePendingNa()
+    await expect(reviewPdtpNotApplicable({ deviationId: deviation.id, decision: "approve" }, "user-2", ["ws-2"]))
+      .rejects.toThrow(/sin acceso/)
+  })
+
+  it("se prohíbe sobre una semana que todavía no ocurre", async () => {
+    const { recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
+    const { activity } = await createActiveProgramWithScheduledCell(2099, { month: 3, week: 1, plannedQuantity: 1 })
+    await expect(recordPdtpDeviation({
+      activityId: activity.id, worksiteId: "ws-1", year: 2099, month: 3, week: 1,
+      kind: "not_applicable", reason: NA_REASON,
+    }, "user-1", "all")).rejects.toThrow(/aún no ocurre/)
+  })
+
+  it("un N/A pendiente bloquea registrar una ejecución en la celda", async () => {
+    const { markPdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    const { activity } = await declarePendingNa()
+    await expect(markPdtpExecution({
+      evidenceUrl: EVIDENCE_URL,
+      activityId: activity.id, worksiteId: "ws-1", year: 2025, month: 3, week: 1, executedQuantity: 1,
+    }, "user-1", ["ws-1"])).rejects.toThrow(/revisión/)
+  })
+
+  it("quien lo declaró puede retirarlo mientras está en revisión", async () => {
+    const { withdrawPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
+    const { deviation } = await declarePendingNa()
+    await withdrawPdtpDeviation({ deviationId: deviation.id, reason: "Me equivoqué de semana al declararlo." }, "user-1", "all")
+    const [row] = await inMemoryDb.select().from(schema.pdtpExecutionDeviations).where(eq(schema.pdtpExecutionDeviations.id, deviation.id))
+    expect(row?.status).toBe("withdrawn")
+  })
+
+  it("la acreditación por integración también retira un N/A pendiente", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    const { activity, deviation } = await declarePendingNa()
+    await accreditPdtpFromEvent({
+      sourceType: "capacitacion", sourceId: "sesion-na-pendiente", worksiteId: "ws-1",
+      activityNumbers: [activity.n], occurredAt: "2025-03-05T12:00:00.000Z",
+    })
+    const [row] = await inMemoryDb.select().from(schema.pdtpExecutionDeviations).where(eq(schema.pdtpExecutionDeviations.id, deviation.id))
+    expect(row?.status).toBe("withdrawn")
+  })
+
+  it("la bandeja lista los pendientes del alcance y el conteo separa aprobados de pendientes", async () => {
+    const { listPendingPdtpNotApplicable, countPdtpNotApplicable, reviewPdtpNotApplicable, recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
+    const { program, activity, deviation } = await declarePendingNa()
+
+    const pending = await listPendingPdtpNotApplicable("all")
+    expect(pending).toEqual([expect.objectContaining({
+      id: deviation.id, activityN: activity.n, worksiteName: "Faena 1", createdByName: "U1", year: 2025, month: 3, week: 1, reason: NA_REASON,
+    })])
+    expect(await listPendingPdtpNotApplicable(["ws-2"])).toEqual([])
+    expect(await listPendingPdtpNotApplicable("all", { programId: "otro-programa" })).toEqual([])
+    expect(await countPdtpNotApplicable(program.id, ["ws-1"])).toEqual({ approved: 0, pending: 1 })
+
+    await reviewPdtpNotApplicable({ deviationId: deviation.id, decision: "approve" }, "user-2", "all")
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+      id: `${activity.id}-s-2025-04-01`, activityId: activity.id, year: 2025, month: 4, week: 1, plannedQuantity: 1, sourceColumn: "test",
+    })
+    await recordPdtpDeviation({
+      activityId: activity.id, worksiteId: "ws-2", year: 2025, month: 4, week: 1, kind: "not_applicable", reason: NA_REASON,
+    }, "user-1", "all")
+    expect(await countPdtpNotApplicable(program.id, ["ws-1", "ws-2"])).toEqual({ approved: 1, pending: 1 })
+    expect(await countPdtpNotApplicable(program.id, ["ws-1"])).toEqual({ approved: 1, pending: 0 })
   })
 })

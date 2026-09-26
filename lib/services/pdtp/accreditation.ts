@@ -706,6 +706,7 @@ export async function accreditPdtpFromEvent(
       .select({
         id: pdtpExecutionDeviations.id,
         kind: pdtpExecutionDeviations.kind,
+        status: pdtpExecutionDeviations.status,
         createdByUserId: pdtpExecutionDeviations.createdByUserId,
       })
       .from(pdtpExecutionDeviations)
@@ -715,7 +716,9 @@ export async function accreditPdtpFromEvent(
         eq(pdtpExecutionDeviations.year, occurredYear),
         eq(pdtpExecutionDeviations.month, slot.month),
         eq(pdtpExecutionDeviations.week, slot.week),
-        eq(pdtpExecutionDeviations.status, "active"),
+        // PREV-C07: un "No aplica" en revisión también cae: la evidencia
+        // prueba que la semana sí aplicaba.
+        inArray(pdtpExecutionDeviations.status, ["active", "pending_review"]),
       ))
       .limit(1)
     if (!activeDeviation) return
@@ -734,7 +737,7 @@ export async function accreditPdtpFromEvent(
         eq(pdtpExecutionDeviations.id, activeDeviation.id),
         // Condición de escritura, no lectura previa: si otro flujo lo retiró
         // en el intertanto, este UPDATE no hace nada y no se anota nada.
-        eq(pdtpExecutionDeviations.status, "active"),
+        eq(pdtpExecutionDeviations.status, activeDeviation.status),
       ))
       .returning({ id: pdtpExecutionDeviations.id })
     if (!withdrawn) return
@@ -744,7 +747,7 @@ export async function accreditPdtpFromEvent(
       program.version,
       input.autoApproveByUserId ?? null,
       `deviation:${activity.n}`,
-      { status: "active", kind: activeDeviation.kind, year: occurredYear, month: slot.month, week: slot.week },
+      { status: activeDeviation.status, kind: activeDeviation.kind, year: occurredYear, month: slot.month, week: slot.week },
       { status: "withdrawn", reason: withdrawReason },
       `Desvío "${label}" retirado automáticamente para actividad ${activity.n}: acreditación por integración desde ${input.sourceType} (${input.sourceId}).`,
       client,
