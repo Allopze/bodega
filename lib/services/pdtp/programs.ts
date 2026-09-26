@@ -251,21 +251,24 @@ export async function createAnnualPdtpProgram(input: {
     }).returning()
     if (!program) throw new Error("No se pudo crear el programa anual.")
 
-    await instantiatePdtpTemplateVersion({
+    const { report: instantiationReport } = await instantiatePdtpTemplateVersion({
       templateVersionId: base.version.id,
       targetProgramId: program.id,
       targetYear: input.year,
       client: tx,
     })
     await ensureDefaultPdtpApprovalSteps(program.id, tx)
+    const skipped = instantiationReport.skippedExecutionConfigs.length + instantiationReport.skippedReminderRules.length
+      + instantiationReport.skippedExecutorAssignments.length + instantiationReport.skippedWorksiteRows.length
     await addPdtpChangeLogEntry(
       program.id,
       1,
       input.userId,
       "lifecycle",
       null,
-      { status: "draft", baseTemplateVersionId: base.version.id },
-      `Programa anual creado desde Base preventiva 2026, revisión ${base.version.version}.`,
+      { status: "draft", baseTemplateVersionId: base.version.id, instantiationReport },
+      `Programa anual creado desde Base preventiva 2026, revisión ${base.version.version}.`
+        + (skipped > 0 ? ` ${countOf(skipped, "referencia omitida", "referencias omitidas")} por apuntar a registros que ya no existen.` : ""),
       tx,
     )
     return { programId: program.id, program, created: true, baseVersionId: base.version.id }

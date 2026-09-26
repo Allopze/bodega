@@ -67,6 +67,8 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpSheets)
   await inMemoryDb.delete(schema.pdtpProgramWorksites)
   await inMemoryDb.delete(schema.pdtpChangeLog)
+  await inMemoryDb.delete(schema.pdtpProgramTemplateVersions)
+  await inMemoryDb.delete(schema.pdtpProgramTemplates)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
   await inMemoryDb.delete(schema.rolePermissions)
@@ -303,6 +305,66 @@ describe("createAnnualPdtpProgram — copia del año anterior (D20)", () => {
     const [stillActive] = await inMemoryDb.select().from(schema.pdtpPrograms).where(eq(schema.pdtpPrograms.id, source.id))
     expect(stillActive?.status).toBe("active")
     expect(await inMemoryDb.select().from(schema.pdtpActivityWorksiteAssignees).where(eq(schema.pdtpActivityWorksiteAssignees.activityId, configuredId))).toHaveLength(2)
+  })
+
+  it("una Base publicada desde un programa de cualquier año restaura todo al instanciarse (PREV-C03.2)", async () => {
+    const { createPdtpTemplateVersion } = await import("@/lib/services/pdtp/templates")
+    const { configuredId, source } = await seedSourceProgram()
+    const now = new Date().toISOString()
+    // Un recordatorio a una persona puntual y un ejecutor extra cuyos destinos
+    // desaparecen después de publicar: se omiten y se informan, no se re-apuntan.
+    await inMemoryDb.insert(schema.users).values({ id: "user-gone", name: "Se fue", email: "gone@test", hashedPassword: "x" })
+    await inMemoryDb.insert(schema.roles).values({ id: "role-gone", name: "rol_retirado", label: "Rol retirado" })
+    await inMemoryDb.insert(schema.pdtpActivityReminderRules).values({
+      id: "rule-user", activityId: configuredId, offsetValue: 1, offsetUnit: "day", recipientKind: "user", recipientUserId: "user-gone", isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.pdtpActivityExecutorAssignments).values({
+      id: "executor-gone", activityId: configuredId, roleId: "role-gone", createdAt: now, updatedAt: now,
+    })
+
+    // Publicar la Base desde un programa que no es de 2026: la publicación
+    // genérica no exige el año del documento oficial.
+    const published = await createPdtpTemplateVersion({ sourceProgramId: source.id, name: "Base preventiva 2026", userId: USER_ID })
+    expect(published.version.snapshotJson).toMatchObject({ schemaVersion: 20 })
+    await inMemoryDb.delete(schema.pdtpActivityReminderRules).where(eq(schema.pdtpActivityReminderRules.id, "rule-user"))
+    await inMemoryDb.delete(schema.users).where(eq(schema.users.id, "user-gone"))
+    await inMemoryDb.delete(schema.pdtpActivityExecutorAssignments).where(eq(schema.pdtpActivityExecutorAssignments.id, "executor-gone"))
+    await inMemoryDb.delete(schema.roles).where(eq(schema.roles.id, "role-gone"))
+
+    const result = await createAnnualPdtpProgram({ year: TARGET_YEAR, userId: USER_ID, source: { kind: "base" } })
+    expect(result.program.creationMode).toBe("base_2026")
+    const [sourceActivity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.id, configuredId))
+    const copies = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.programId, result.programId))
+    // La retirada no vuelve (re-anclar su retiro la dejaba vigente parte del año).
+    expect(copies).toHaveLength(1)
+    const copy = copies[0]!
+    expect(copy).toMatchObject({
+      n: sourceActivity!.n,
+      mechanism: "enganche",
+      dueHours: 48,
+      manualEvidencePolicy: "declaration_allowed",
+      scheduleMode: "scheduled",
+    })
+    expect(copy.scheduleDefinition).toMatchObject({ startDate: `${TARGET_YEAR}-01-01`, endDate: `${TARGET_YEAR}-12-31` })
+    expect(await inMemoryDb.select().from(schema.pdtpActivityExecutionConfigs).where(eq(schema.pdtpActivityExecutionConfigs.activityId, copy.id)))
+      .toEqual([expect.objectContaining({ destinationConnectorKey: "inspections", evidenceRequired: true })])
+    expect((await inMemoryDb.select().from(schema.pdtpActivityReminderRules).where(eq(schema.pdtpActivityReminderRules.activityId, copy.id))).map((rule) => rule.recipientKind))
+      .toEqual(["responsible"])
+    expect((await inMemoryDb.select().from(schema.pdtpActivityExecutorAssignments).where(eq(schema.pdtpActivityExecutorAssignments.activityId, copy.id))).map((row) => row.roleId))
+      .toEqual(["role-copy"])
+    expect(await inMemoryDb.select().from(schema.pdtpActivityWorksiteExclusions).where(eq(schema.pdtpActivityWorksiteExclusions.activityId, copy.id))).toHaveLength(1)
+    expect(await inMemoryDb.select().from(schema.pdtpActivityWorksiteParams).where(eq(schema.pdtpActivityWorksiteParams.activityId, copy.id)))
+      .toEqual([expect.objectContaining({ targetCoveragePercent: 80, expectedSubjectCount: null })])
+    // Los ajustes puntuales por faena no se instancian desde una plantilla.
+    expect(await inMemoryDb.select().from(schema.pdtpActivityScheduleOverrides).where(eq(schema.pdtpActivityScheduleOverrides.activityId, copy.id))).toHaveLength(0)
+
+    const [log] = await inMemoryDb.select().from(schema.pdtpChangeLog).where(eq(schema.pdtpChangeLog.programId, result.programId))
+    expect(log?.after).toMatchObject({
+      instantiationReport: {
+        skippedReminderRules: [expect.objectContaining({ activityNumber: sourceActivity!.n, reason: expect.stringMatching(/usuario/) })],
+        skippedExecutorAssignments: [expect.objectContaining({ activityNumber: sourceActivity!.n, roleId: "role-gone" })],
+      },
+    })
   })
 
   it("sin programa anterior, o pidiendo la Base, usa la Base preventiva 2026", async () => {

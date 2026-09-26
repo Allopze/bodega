@@ -29,7 +29,7 @@ type JsonPrimitive = string | number | boolean | null
 type StableJson = JsonPrimitive | StableJson[] | { [key: string]: StableJson }
 
 /** Forma del snapshot, independiente del número de revisión del programa. */
-export const CURRENT_PDTP_CONTENT_SCHEMA_VERSION = 19
+export const CURRENT_PDTP_CONTENT_SCHEMA_VERSION = 20
 
 /**
  * Versión de esquema más antigua que este builder sabe reconstruir con
@@ -136,6 +136,7 @@ export async function buildPdtpProgramContentSnapshot(
     dueDays: pdtpActivities.dueDays,
     dueHours: pdtpActivities.dueHours,
     evidenceRequirement: pdtpActivities.evidenceRequirement,
+    manualEvidencePolicy: pdtpActivities.manualEvidencePolicy,
     mechanism: pdtpActivities.mechanism,
     indicatorMode: pdtpActivities.indicatorMode,
     // El método se firma —de qué población se mide— aunque el conteo no:
@@ -434,18 +435,24 @@ export async function buildPdtpProgramContentSnapshot(
     // de persistencia).
     // 19: los documentos que una actividad exige como carpeta (N°19,
     // `documentRequirements`) entran al compromiso firmado.
+    // 20 (PREV-C03.2): la política de evidencia manual (`manualEvidencePolicy`,
+    // las 19 excepciones de PREV-B02 que admiten declaración) entra al
+    // compromiso firmado: decide qué evidencia vale, igual que
+    // `evidenceRequirement`. Sin ella, una plantilla no la transportaba y un
+    // programa instanciado perdía las excepciones.
     // 18: el mínimo anual de una actividad "cuando corresponda"
     // (`minAnnualExecutions`) es un compromiso del programa: cambia cuánto se
     // exige en el año aunque no haya casos, así que requiere otra firma.
     schemaVersion,
     program: schemaVersion >= 15 ? { ...legacyProgram, appliesToAllWorksites } : legacyProgram,
     approvalSteps,
-    activities: activities.map(({ id: _id, mechanism, objectiveId, scheduleDefinition, minAnnualExecutions, ...activity }) => ({
+    activities: activities.map(({ id: _id, mechanism, objectiveId, scheduleDefinition, minAnnualExecutions, manualEvidencePolicy, ...activity }) => ({
       ...activity,
       ...(schemaVersion >= 14 ? { mechanism } : {}),
       ...(schemaVersion >= 16 ? { objectiveCode: objectiveId ? objectiveCodeById.get(objectiveId) ?? null : null } : {}),
       ...(schemaVersion >= 17 ? { scheduleDefinition } : {}),
       ...(schemaVersion >= 18 ? { minAnnualExecutions } : {}),
+      ...(schemaVersion >= 20 ? { manualEvidencePolicy } : {}),
     })),
     schedules: schedules.map(({ activityId, ...schedule }) => ({ activityNumber: activityNumberById.get(activityId), ...schedule })),
     views: sheets.map(({ id: _id, ...sheet }) => sheet),

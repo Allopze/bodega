@@ -1,9 +1,15 @@
 import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
+  pdtpAccreditationBindings,
   pdtpActivities,
   pdtpActivityChecklists,
+  pdtpActivityExecutionConfigs,
+  pdtpActivityExecutorAssignments,
+  pdtpActivityReminderRules,
   pdtpActivitySchedule,
+  pdtpActivityWorksiteExclusions,
+  pdtpActivityWorksiteParams,
   pdtpApprovalSteps,
   pdtpExecutions,
   pdtpImportBatches,
@@ -13,13 +19,16 @@ import {
   pdtpPrograms,
   pdtpSheetActivities,
   pdtpSheets,
+  roles,
+  users,
+  worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { pdtpActivityChecklistId } from "./checklist-domain"
 import { computePdtpProgramContentDigest } from "./content-digest"
 import { addPdtpChangeLogEntry, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId } from "./helpers"
 import { PDTP_2026_INVARIANTS, PDTP_2026_REMOVED_ACTIVITIES, PDTP_2026_PROGRAM_SOURCE } from "@/lib/services/pdtp-adapters/contract-2026"
-import { remapPdtpDateToYear } from "./retirement"
+import { remapPdtpScheduleDefinitionToYear, type PdtpScheduleDefinition, type PdtpScheduleRemapNote } from "./schedule-definition"
 import { replacePdtpActivityDocumentRequirementsFromSnapshot } from "./document-requirements"
 
 type QueryClient = Tx | typeof db
@@ -273,19 +282,61 @@ export async function getPdtpTemplateVersion(versionId: string, client: QueryCli
   return version ?? null
 }
 
-/** Materializa una foto publicada; nunca consulta el programa fuente vivo. */
+export type PdtpTemplateInstantiationReport = {
+  /** Actividades retiradas en la foto: no se instancian (su retiro re-anclado las dejaba vigentes parte del año). */
+  skippedRetiredActivityNumbers: number[]
+  /** Programación fechada re-anclada al año destino. */
+  scheduleNotes: Array<{ n: number; notes: PdtpScheduleRemapNote[] }>
+  /** Referencias a registros que ya no existen: se omiten y se informan, nunca se re-apuntan. */
+  skippedExecutionConfigs: Array<{ activityNumber: number; reason: string }>
+  skippedReminderRules: Array<{ activityNumber: number; reason: string }>
+  skippedExecutorAssignments: Array<{ activityNumber: number; roleId: string }>
+  skippedWorksiteRows: Array<{ activityNumber: number; worksiteId: string; kind: "exclusion" | "adjustment" }>
+}
+
+/**
+ * Materializa una foto publicada; nunca consulta el programa fuente vivo.
+ *
+ * PREV-C03.2: restaura TODO lo que la foto trae de cada actividad —mecanismo,
+ * programación (re-anclada al año destino), padrón declarado, capacidades,
+ * plazos, política de evidencia— y las tablas asociadas: configuración de
+ * ejecución, recordatorios, ejecutores, exclusiones y ajustes firmados por
+ * faena. Antes sólo copiaba la estructura y el programa nacía con todas sus
+ * actividades `sin_definir`, bloqueado para enviarse a revisión.
+ *
+ * No restaura las faenas del programa ni los vínculos de origen (el alcance se
+ * declara por programa, PDTP-003), ni los ajustes puntuales de meta por faena,
+ * ni el padrón (`expectedSubjectCount`, no firmado). Una referencia a un rol,
+ * usuario, faena o vínculo de acreditación que ya no existe se omite y queda en
+ * el informe: re-apuntarla cambiaría en silencio a quién se avisa o quién
+ * ejecuta.
+ */
 export async function instantiatePdtpTemplateVersion(input: {
   templateVersionId: string
   targetProgramId: string
   targetYear: number
   client: QueryClient
-}) {
+}): Promise<{ version: NonNullable<Awaited<ReturnType<typeof getPdtpTemplateVersion>>>; report: PdtpTemplateInstantiationReport }> {
   const version = await getPdtpTemplateVersion(input.templateVersionId, input.client)
   if (!version) throw new Error("La versión de plantilla seleccionada no existe.")
   const snapshot = version.snapshotJson as SnapshotRecord
-  const activities = records(snapshot.activities)
+  const allActivities = records(snapshot.activities)
   const activityIdByNumber = new Map<number, string>()
   const now = new Date().toISOString()
+  const report: PdtpTemplateInstantiationReport = {
+    skippedRetiredActivityNumbers: [],
+    scheduleNotes: [],
+    skippedExecutionConfigs: [],
+    skippedReminderRules: [],
+    skippedExecutorAssignments: [],
+    skippedWorksiteRows: [],
+  }
+  const snapshotProgram = (typeof snapshot.program === "object" && snapshot.program !== null ? snapshot.program : {}) as SnapshotRecord
+  const snapshotYear = numberValue(snapshotProgram.year, input.targetYear)
+  const sourcePeriod = {
+    startDate: stringValue(snapshotProgram.periodStart, `${snapshotYear}-01-01`),
+    endDate: stringValue(snapshotProgram.periodEnd, `${snapshotYear}-12-31`),
+  }
 
   const approvalSteps = records(snapshot.approvalSteps)
   if (approvalSteps.length > 0) {
@@ -345,12 +396,27 @@ export async function instantiatePdtpTemplateVersion(input: {
     }))
   }
 
+  // Mismo criterio que la copia anual: una actividad retirada no pasa al
+  // programa nuevo.
+  const activities = allActivities.filter((activity, index) => {
+    if (stringValue(activity.status, "active") !== "retired") return true
+    report.skippedRetiredActivityNumbers.push(numberValue(activity.n, index + 1))
+    return false
+  })
+
   if (activities.length > 0) {
     await input.client.insert(pdtpActivities).values(activities.map((activity, index) => {
       const n = numberValue(activity.n, index + 1)
       const id = pdtpActivityId(input.targetProgramId, n)
       activityIdByNumber.set(n, id)
       const objectiveCode = typeof activity.objectiveCode === "string" ? activity.objectiveCode : undefined
+      const remapped = remapPdtpScheduleDefinitionToYear(
+        typeof activity.scheduleDefinition === "object" && activity.scheduleDefinition !== null
+          ? activity.scheduleDefinition as PdtpScheduleDefinition
+          : null,
+        { sourcePeriod, targetYear: input.targetYear },
+      )
+      if (remapped.notes.length > 0) report.scheduleNotes.push({ n, notes: remapped.notes })
       return {
         id,
         programId: input.targetProgramId,
@@ -359,13 +425,7 @@ export async function instantiatePdtpTemplateVersion(input: {
         catalogActivityId: typeof activity.catalogActivityId === "string" ? activity.catalogActivityId : null,
         catalogRevision: typeof activity.catalogRevision === "number" ? activity.catalogRevision : null,
         displayOrder: numberValue(activity.displayOrder, n),
-        status: stringValue(activity.status, "active"),
-        retiredReason: typeof activity.retiredReason === "string" ? activity.retiredReason : null,
-        retiredEffectiveFrom: typeof activity.retiredEffectiveFrom === "string"
-          ? remapPdtpDateToYear(activity.retiredEffectiveFrom, input.targetYear)
-          : null,
-        retiredByUserId: typeof activity.retiredByUserId === "string" ? activity.retiredByUserId : null,
-        retiredAt: typeof activity.retiredAt === "string" ? activity.retiredAt : null,
+        status: "active",
         activity: stringValue(activity.activity, "Actividad"),
         program: stringValue(activity.program, "Gestión preventiva"),
         responsibleSlugs: strings(activity.responsibleSlugs),
@@ -374,11 +434,19 @@ export async function instantiatePdtpTemplateVersion(input: {
         scheduleMode: stringValue(activity.scheduleMode, "scheduled"),
         scheduleClassificationStatus: stringValue(activity.scheduleClassificationStatus, "confirmed"),
         recurrenceRule: activity.recurrenceRule ?? null,
+        scheduleDefinition: remapped.definition,
         triggerType: typeof activity.triggerType === "string" ? activity.triggerType : null,
         triggerDescription: typeof activity.triggerDescription === "string" ? activity.triggerDescription : null,
         dueDays: typeof activity.dueDays === "number" ? activity.dueDays : null,
+        dueHours: typeof activity.dueHours === "number" ? activity.dueHours : null,
         evidenceRequirement: typeof activity.evidenceRequirement === "string" ? activity.evidenceRequirement : null,
+        // Una foto anterior a la huella v20 no trae la política: queda la
+        // regla general (archivo obligatorio), nunca una excepción inventada.
+        manualEvidencePolicy: stringValue(activity.manualEvidencePolicy, "file_required"),
+        mechanism: stringValue(activity.mechanism, "sin_definir"),
         indicatorMode: stringValue(activity.indicatorMode, "planned_vs_completed"),
+        subjectSource: typeof activity.subjectSource === "string" ? activity.subjectSource : null,
+        subjectCapabilityCodes: Array.isArray(activity.subjectCapabilityCodes) ? strings(activity.subjectCapabilityCodes) : null,
         targetValue: typeof activity.targetValue === "number" ? activity.targetValue : null,
         targetUnit: typeof activity.targetUnit === "string" ? activity.targetUnit : null,
         minAnnualExecutions: typeof activity.minAnnualExecutions === "number" ? activity.minAnnualExecutions : null,
@@ -392,7 +460,7 @@ export async function instantiatePdtpTemplateVersion(input: {
 
   const schedules = records(snapshot.schedules)
   if (schedules.length > 0) {
-    await input.client.insert(pdtpActivitySchedule).values(schedules.flatMap((cell) => {
+    const rows = schedules.flatMap((cell) => {
       const activityId = activityIdByNumber.get(numberValue(cell.activityNumber))
       if (!activityId) return []
       const month = numberValue(cell.month)
@@ -406,12 +474,13 @@ export async function instantiatePdtpTemplateVersion(input: {
         plannedQuantity: numberValue(cell.plannedQuantity),
         sourceColumn: "template",
       }]
-    }))
+    })
+    if (rows.length > 0) await input.client.insert(pdtpActivitySchedule).values(rows)
   }
 
   const memberships = records(snapshot.memberships)
   if (memberships.length > 0) {
-    await input.client.insert(pdtpSheetActivities).values(memberships.flatMap((membership, index) => {
+    const rows = memberships.flatMap((membership, index) => {
       const activityNumber = numberValue(membership.activityNumber)
       const activityId = activityIdByNumber.get(activityNumber)
       const viewCode = stringValue(membership.viewCode)
@@ -424,7 +493,8 @@ export async function instantiatePdtpTemplateVersion(input: {
         sheetRow: numberValue(membership.sheetRow, index + 1),
         displayOrder: numberValue(membership.displayOrder, index + 1),
       }]
-    }))
+    })
+    if (rows.length > 0) await input.client.insert(pdtpSheetActivities).values(rows)
   }
 
   // La carpeta documental (N°19) viaja en la huella desde el esquema 19. Una
@@ -444,7 +514,7 @@ export async function instantiatePdtpTemplateVersion(input: {
 
   const checklists = records(snapshot.checklists)
   if (checklists.length > 0) {
-    await input.client.insert(pdtpActivityChecklists).values(checklists.flatMap((checklist) => {
+    const rows = checklists.flatMap((checklist) => {
       const activityId = activityIdByNumber.get(numberValue(checklist.activityNumber))
       if (!activityId) return []
       const checklistVersion = stringValue(checklist.version, "01")
@@ -459,7 +529,132 @@ export async function instantiatePdtpTemplateVersion(input: {
         createdAt: now,
         updatedAt: now,
       }]
-    }))
+    })
+    if (rows.length > 0) await input.client.insert(pdtpActivityChecklists).values(rows)
   }
-  return version
+
+  // ── Tablas asociadas (PREV-C03.2) ────────────────────────────────────────
+  const executionConfigs = records(snapshot.executionConfigs)
+  const reminderRules = records(snapshot.reminderRules)
+  const executorAssignments = records(snapshot.executorAssignments)
+  const exclusions = records(snapshot.activityWorksiteExclusions)
+  const adjustments = records(snapshot.activityWorksiteAdjustments)
+  const referenced = {
+    bindings: [...new Set(executionConfigs.map((row) => row.accreditationBindingId).filter((id): id is string => typeof id === "string"))],
+    users: [...new Set(reminderRules.map((row) => row.recipientUserId).filter((id): id is string => typeof id === "string"))],
+    roles: [...new Set(executorAssignments.map((row) => row.roleId).filter((id): id is string => typeof id === "string"))],
+    worksites: [...new Set([...exclusions, ...adjustments].map((row) => row.worksiteId).filter((id): id is string => typeof id === "string"))],
+  }
+  const [existingBindings, existingUsers, existingRoles, existingWorksites] = await Promise.all([
+    referenced.bindings.length > 0 ? input.client.select({ id: pdtpAccreditationBindings.id }).from(pdtpAccreditationBindings).where(inArray(pdtpAccreditationBindings.id, referenced.bindings)) : [],
+    referenced.users.length > 0 ? input.client.select({ id: users.id }).from(users).where(and(inArray(users.id, referenced.users), eq(users.isActive, true))) : [],
+    referenced.roles.length > 0 ? input.client.select({ id: roles.id }).from(roles).where(inArray(roles.id, referenced.roles)) : [],
+    referenced.worksites.length > 0 ? input.client.select({ id: worksites.id }).from(worksites).where(inArray(worksites.id, referenced.worksites)) : [],
+  ])
+  const bindingSet = new Set(existingBindings.map((row) => row.id))
+  const userSet = new Set(existingUsers.map((row) => row.id))
+  const roleSet = new Set(existingRoles.map((row) => row.id))
+  const worksiteSet = new Set(existingWorksites.map((row) => row.id))
+
+  const configRows = executionConfigs.flatMap((config) => {
+    const activityNumber = numberValue(config.activityNumber)
+    const activityId = activityIdByNumber.get(activityNumber)
+    if (!activityId) return []
+    const bindingId = typeof config.accreditationBindingId === "string" ? config.accreditationBindingId : null
+    if (bindingId && !bindingSet.has(bindingId)) {
+      report.skippedExecutionConfigs.push({ activityNumber, reason: `El vínculo de acreditación ${bindingId} ya no existe.` })
+      return []
+    }
+    if (typeof config.destinationConnectorKey !== "string" || !config.destinationConnectorKey) {
+      report.skippedExecutionConfigs.push({ activityNumber, reason: "La configuración de la foto no declara destino." })
+      return []
+    }
+    return [{
+      id: `pdtp-exec-config-${activityId}`,
+      activityId,
+      destinationConnectorKey: config.destinationConnectorKey,
+      accreditationBindingId: bindingId,
+      completionPolicy: stringValue(config.completionPolicy, "manual_confirmed"),
+      evidenceRequired: config.evidenceRequired === true,
+      acceptedEvidenceKinds: strings(config.acceptedEvidenceKinds),
+      createdAt: now,
+      updatedAt: now,
+    }]
+  })
+  if (configRows.length > 0) await input.client.insert(pdtpActivityExecutionConfigs).values(configRows).onConflictDoNothing()
+
+  const ruleRows = reminderRules.flatMap((rule) => {
+    const activityNumber = numberValue(rule.activityNumber)
+    const activityId = activityIdByNumber.get(activityNumber)
+    if (!activityId) return []
+    const recipientUserId = typeof rule.recipientUserId === "string" ? rule.recipientUserId : null
+    if (recipientUserId && !userSet.has(recipientUserId)) {
+      report.skippedReminderRules.push({ activityNumber, reason: `El usuario destinatario ${recipientUserId} ya no existe o está inactivo.` })
+      return []
+    }
+    return [{
+      id: `pdtp-reminder-rule-${nanoid()}`,
+      activityId,
+      offsetValue: numberValue(rule.offsetValue),
+      offsetUnit: stringValue(rule.offsetUnit, "day"),
+      recipientKind: stringValue(rule.recipientKind, "responsible"),
+      recipientUserId,
+      isActive: rule.isActive !== false,
+      createdAt: now,
+      updatedAt: now,
+    }]
+  })
+  if (ruleRows.length > 0) await input.client.insert(pdtpActivityReminderRules).values(ruleRows).onConflictDoNothing()
+
+  const executorRows = executorAssignments.flatMap((assignment) => {
+    const activityNumber = numberValue(assignment.activityNumber)
+    const activityId = activityIdByNumber.get(activityNumber)
+    const roleId = typeof assignment.roleId === "string" ? assignment.roleId : null
+    if (!activityId || !roleId) return []
+    if (!roleSet.has(roleId)) {
+      report.skippedExecutorAssignments.push({ activityNumber, roleId })
+      return []
+    }
+    return [{ id: `pdtp-executor-${nanoid()}`, activityId, roleId, createdAt: now, updatedAt: now }]
+  })
+  if (executorRows.length > 0) await input.client.insert(pdtpActivityExecutorAssignments).values(executorRows).onConflictDoNothing()
+
+  const exclusionRows = exclusions.flatMap((exclusion) => {
+    const activityNumber = numberValue(exclusion.activityNumber)
+    const activityId = activityIdByNumber.get(activityNumber)
+    const worksiteId = typeof exclusion.worksiteId === "string" ? exclusion.worksiteId : null
+    if (!activityId || !worksiteId) return []
+    if (!worksiteSet.has(worksiteId)) {
+      report.skippedWorksiteRows.push({ activityNumber, worksiteId, kind: "exclusion" })
+      return []
+    }
+    return [{ id: `pdtp-exclusion-${nanoid()}`, activityId, worksiteId, reason: stringValue(exclusion.reason, "Excluida en la plantilla"), createdAt: now }]
+  })
+  if (exclusionRows.length > 0) await input.client.insert(pdtpActivityWorksiteExclusions).values(exclusionRows).onConflictDoNothing()
+
+  const adjustmentRows = adjustments.flatMap((adjustment) => {
+    const activityNumber = numberValue(adjustment.activityNumber)
+    const activityId = activityIdByNumber.get(activityNumber)
+    const worksiteId = typeof adjustment.worksiteId === "string" ? adjustment.worksiteId : null
+    if (!activityId || !worksiteId) return []
+    if (!worksiteSet.has(worksiteId)) {
+      report.skippedWorksiteRows.push({ activityNumber, worksiteId, kind: "adjustment" })
+      return []
+    }
+    return [{
+      id: `pdtp-worksite-param-${nanoid()}`,
+      activityId,
+      worksiteId,
+      expectedSubjectCount: null,
+      targetCoveragePercent: typeof adjustment.targetCoveragePercent === "number" ? adjustment.targetCoveragePercent : null,
+      responsibleSlugs: Array.isArray(adjustment.responsibleSlugs) ? strings(adjustment.responsibleSlugs) : null,
+      responsibleDisplay: typeof adjustment.responsibleDisplay === "string" ? adjustment.responsibleDisplay : null,
+      responsibleReason: typeof adjustment.responsibleReason === "string" ? adjustment.responsibleReason : null,
+      createdAt: now,
+      updatedAt: now,
+    }]
+  })
+  if (adjustmentRows.length > 0) await input.client.insert(pdtpActivityWorksiteParams).values(adjustmentRows).onConflictDoNothing()
+
+  return { version, report }
 }
