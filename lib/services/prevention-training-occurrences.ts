@@ -12,16 +12,19 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { recordAudit } from "@/lib/audit"
+import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
 import {
-  PREDEFINED_TRAINING_CATALOG,
-  PREDEFINED_TRAINING_CATALOG_VERSION,
   PREDEFINED_TRAINING_CATALOG_YEAR,
-  assertPredefinedTrainingCatalogYear,
-  isPredefinedTrainingCatalogYear,
+  assertTrainingCatalogYear,
+  isTrainingCatalogYear,
+  resolveTrainingCatalogYear,
   occurrenceSeedRows,
   trainingCatalogItemId,
+  trainingCatalogItemsForYear,
+  trainingCatalogVersionForYear,
+  type PredefinedTrainingCatalogItem,
 } from "@/lib/prevention/training-occurrences-catalog"
 import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
 import {
@@ -171,14 +174,29 @@ function statusChangeReason(status: TrainingOccurrenceStatus, notApplicableReaso
   return "Ocurrencia marcada como no hecha."
 }
 
-function catalogInsertRows() {
-  return PREDEFINED_TRAINING_CATALOG.map(catalogItemToInsert)
+/**
+ * El año de capacitación que muestra una pantalla: el pedido (?year / ?anio) si
+ * tiene catálogo publicado; si no, el año operativo del programa (PREV-C03.7);
+ * y si ése tampoco tiene catálogo, el año base.
+ */
+export async function resolveTrainingOccurrenceYear(value: unknown): Promise<number> {
+  const { primary } = await getPdtpOperationalYears()
+  return resolveTrainingCatalogYear(value, isTrainingCatalogYear(primary) ? primary : PREDEFINED_TRAINING_CATALOG_YEAR)
 }
 
-/** Inserta el catálogo controlado sin tocar estados ni evidencias existentes. */
-export async function ensurePreventionTrainingCatalogTx(client: Client): Promise<void> {
+function catalogInsertRows(year: number) {
+  return trainingCatalogItemsForYear(year).map((item) => catalogItemToInsert(item, year))
+}
+
+/**
+ * Inserta el catálogo controlado del año sin tocar estados ni evidencias
+ * existentes. PREV-C03.4: el año es obligatorio; cada año tiene su versión
+ * (`programa-capacitacion-<año>-v1`), así que sus ocurrencias acreditan el
+ * programa de su año.
+ */
+export async function ensurePreventionTrainingCatalogTx(client: Client, year: number): Promise<void> {
   await client.insert(preventionTrainingCatalogItems)
-    .values(catalogInsertRows())
+    .values(catalogInsertRows(year))
     .onConflictDoNothing({ target: [
       preventionTrainingCatalogItems.catalogVersion,
       preventionTrainingCatalogItems.code,
@@ -186,29 +204,29 @@ export async function ensurePreventionTrainingCatalogTx(client: Client): Promise
 }
 
 /**
- * Crea las posiciones del cronograma para una faena. Es idempotente y se usa
- * tanto en el seed como al activar una faena nueva; nunca sobreescribe una
- * ocurrencia que ya tenga estado, observación o evidencia.
+ * Crea las posiciones del cronograma para una faena y un año. Es idempotente y
+ * se usa tanto en el seed como al activar una faena nueva; nunca sobreescribe
+ * una ocurrencia que ya tenga estado, observación o evidencia.
  */
 export async function ensurePreventionTrainingOccurrencesForWorksiteTx(
   client: Client,
   worksiteId: string,
-  year = PREDEFINED_TRAINING_CATALOG_YEAR,
+  year: number,
 ): Promise<number> {
-  assertPredefinedTrainingCatalogYear(year)
-  await ensurePreventionTrainingCatalogTx(client)
+  assertTrainingCatalogYear(year)
+  await ensurePreventionTrainingCatalogTx(client, year)
   const catalogRows = await client.select({
     id: preventionTrainingCatalogItems.id,
     code: preventionTrainingCatalogItems.code,
   })
     .from(preventionTrainingCatalogItems)
     .where(and(
-      eq(preventionTrainingCatalogItems.catalogVersion, PREDEFINED_TRAINING_CATALOG_VERSION),
+      eq(preventionTrainingCatalogItems.catalogVersion, trainingCatalogVersionForYear(year)),
       eq(preventionTrainingCatalogItems.isActive, true),
     ))
 
   const itemByCode = new Map(catalogRows.map((row) => [row.code, row.id]))
-  const values = PREDEFINED_TRAINING_CATALOG.flatMap((item) => occurrenceSeedRows(item, worksiteId, year)
+  const values = trainingCatalogItemsForYear(year).flatMap((item) => occurrenceSeedRows(item, worksiteId, year)
     .map((row) => {
       const catalogItemId = itemByCode.get(row.catalogCode)
       if (!catalogItemId) {
@@ -242,9 +260,9 @@ export async function ensurePreventionTrainingOccurrencesForWorksiteTx(
 
 export async function ensurePreventionTrainingOccurrencesForActiveWorksites(
   client: Client,
-  year = PREDEFINED_TRAINING_CATALOG_YEAR,
+  year: number,
 ): Promise<number> {
-  assertPredefinedTrainingCatalogYear(year)
+  assertTrainingCatalogYear(year)
   const activeWorksites = await client.select({ id: worksites.id })
     .from(worksites)
     .where(eq(worksites.isActive, true))
@@ -268,13 +286,13 @@ export async function listTrainingOccurrenceWorksites(access: TrainingOccurrence
 
 export async function listTrainingOccurrences(
   access: TrainingOccurrenceAccess,
-  filters: { year?: number; worksiteId?: string; includeInactiveWorksites?: boolean } = {},
+  filters: { year: number; worksiteId?: string; includeInactiveWorksites?: boolean },
 ): Promise<TrainingOccurrenceListItem[]> {
   requireAccess(access, "prevention:training:view")
   if (access.scope.mode === "none") return []
 
-  const year = filters.year ?? PREDEFINED_TRAINING_CATALOG_YEAR
-  if (!isPredefinedTrainingCatalogYear(year)) return []
+  const year = filters.year
+  if (!isTrainingCatalogYear(year)) return []
   const rows = await db.select({
     occurrence: preventionTrainingOccurrences,
     catalog: preventionTrainingCatalogItems,
@@ -289,7 +307,7 @@ export async function listTrainingOccurrences(
     .where(and(
       eq(preventionTrainingOccurrences.year, year),
       filters.includeInactiveWorksites ? undefined : eq(worksites.isActive, true),
-      eq(preventionTrainingCatalogItems.catalogVersion, PREDEFINED_TRAINING_CATALOG_VERSION),
+      eq(preventionTrainingCatalogItems.catalogVersion, trainingCatalogVersionForYear(year)),
       eq(preventionTrainingCatalogItems.isActive, true),
       scopeCondition(access.scope, worksites.id),
       filters.worksiteId ? eq(worksites.id, filters.worksiteId) : undefined,
@@ -819,14 +837,14 @@ export function trainingEvidenceContentDisposition(mimeType: string): "inline" |
     : "attachment"
 }
 
-function catalogItemToInsert(item: (typeof PREDEFINED_TRAINING_CATALOG)[number]) {
+function catalogItemToInsert(item: PredefinedTrainingCatalogItem, year: number) {
   return {
-    id: trainingCatalogItemId(PREDEFINED_TRAINING_CATALOG_YEAR, item.code),
+    id: trainingCatalogItemId(year, item.code),
     code: item.code,
     title: item.title,
     itemType: item.itemType,
     audience: item.audience,
-    catalogVersion: PREDEFINED_TRAINING_CATALOG_VERSION,
+    catalogVersion: trainingCatalogVersionForYear(year),
     sourceRow: item.sourceRow,
     scheduleJson: [...item.schedule],
     pdtpActivityNumbers: [...item.pdtpActivityNumbers],

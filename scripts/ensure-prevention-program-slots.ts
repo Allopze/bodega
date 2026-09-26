@@ -35,6 +35,15 @@ import { worksites } from "@/db/schema"
 import { ensurePreventionProgramSlotsForWorksiteTx } from "@/lib/services/prevention-program-slots"
 
 const DRY_RUN = process.env.PROGRAM_SLOTS_DRY_RUN === "true"
+/**
+ * PREV-C03.4: fuerza el año a sembrar (p. ej. `PROGRAM_SLOTS_YEAR=2027`). Sin
+ * ella se aplica la regla única del agregador: los años cuyo programa activo
+ * incluye a cada faena.
+ */
+const FORCED_YEAR = process.env.PROGRAM_SLOTS_YEAR ? Number.parseInt(process.env.PROGRAM_SLOTS_YEAR, 10) : undefined
+if (FORCED_YEAR !== undefined && (!Number.isInteger(FORCED_YEAR) || FORCED_YEAR < 2024 || FORCED_YEAR > 2100)) {
+  throw new Error("PROGRAM_SLOTS_YEAR debe ser un año entre 2024 y 2100.")
+}
 
 type Counts = Awaited<ReturnType<typeof ensurePreventionProgramSlotsForWorksiteTx>>
 
@@ -53,7 +62,7 @@ class DryRunRollback extends Error {
 async function ensureFor(worksiteId: string): Promise<Counts> {
   try {
     return await db.transaction(async (tx) => {
-      const counts = await ensurePreventionProgramSlotsForWorksiteTx(tx, worksiteId)
+      const counts = await ensurePreventionProgramSlotsForWorksiteTx(tx, worksiteId, FORCED_YEAR ? { years: [FORCED_YEAR] } : {})
       if (DRY_RUN) throw new DryRunRollback(counts)
       return counts
     })

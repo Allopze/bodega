@@ -5,8 +5,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { listTrainingOccurrences, listTrainingOccurrenceWorksites } from "@/lib/services/prevention-training-occurrences"
-import { resolvePredefinedTrainingCatalogYear } from "@/lib/prevention/training-occurrences-catalog"
+import { listTrainingOccurrences, listTrainingOccurrenceWorksites, resolveTrainingOccurrenceYear } from "@/lib/services/prevention-training-occurrences"
 import { resolveProgramActivationPeriod } from "@/lib/services/prevention-program-slots"
 import { TrainingOccurrenceList } from "./training-occurrence-list"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
@@ -28,7 +27,9 @@ export default async function CapacitacionPage({
     permissions: session.user.permissions,
   }
   const params = await searchParams
-  const year = resolvePredefinedTrainingCatalogYear(params?.year)
+  // PREV-C03.4/C03.7: el año pedido (?year o ?anio) si tiene catálogo; si no,
+  // el año operativo del programa, que en enero puede seguir siendo el anterior.
+  const year = await resolveTrainingOccurrenceYear(params?.year ?? params?.anio)
   const rawWorksiteId = params?.faena
   const worksiteId =
     typeof rawWorksiteId === "string"

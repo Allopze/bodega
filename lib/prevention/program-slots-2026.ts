@@ -55,7 +55,12 @@ export function resolveAlcotestActivityNumber(roles: readonly string[]): number 
   return null
 }
 
-export const PROGRAM_SLOT_YEAR = 2026 as const
+/**
+ * El año cuyo cronograma de casillas está congelado en este archivo. Desde
+ * PREV-C03.4 (D22) los demás años derivan sus casillas del programa activo del
+ * año (`resolveProgramSlotSchedules` en `prevention-program-slots.ts`).
+ */
+export const PROGRAM_SLOT_BASE_YEAR = 2026 as const
 
 export interface ProgramSlot {
   /** `m%02d-w%d`, el mismo formato que usan las ocurrencias de capacitación. */
@@ -110,10 +115,11 @@ export const ALCOTEST_DISPATCH_SLOTS_2026: readonly ProgramSlot[] = Array.from(
 )
 
 /**
- * El año de las casillas. Fuera de 2026 no hay cronograma declarado, así que
- * se cae al único que existe en vez de generar un año vacío en silencio.
+ * El año de las casillas pedido por una URL o un formulario. Cualquier año del
+ * rango del programa (2024-2100) se respeta; la basura cae al respaldo (el año
+ * operativo, típicamente). Antes forzaba 2026 siempre.
  */
-export function resolveProgramSlotYear(value: unknown): number {
+export function resolveProgramSlotYear(value: unknown, fallback: number): number {
   const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10)
-  return Number.isInteger(parsed) && parsed === PROGRAM_SLOT_YEAR ? parsed : PROGRAM_SLOT_YEAR
+  return Number.isInteger(parsed) && parsed >= 2024 && parsed <= 2100 ? parsed : fallback
 }

@@ -1205,7 +1205,7 @@ export async function assertPdtpFulfillmentCoverage(
   client: QueryClient = db,
   options?: PdtpCoverageScope,
 ): Promise<PdtpFulfillmentCoverageIssue[]> {
-  const [program] = await client.select({ version: pdtpPrograms.version, status: pdtpPrograms.status })
+  const [program] = await client.select({ version: pdtpPrograms.version, status: pdtpPrograms.status, year: pdtpPrograms.year })
     .from(pdtpPrograms)
     .where(eq(pdtpPrograms.id, programId))
     .limit(1)
@@ -1233,7 +1233,7 @@ export async function assertPdtpFulfillmentCoverage(
     excludedByActivity,
     manualSubjectRows,
   ] = await Promise.all([
-    loadPdtpInstrumentIndex(client),
+    loadPdtpInstrumentIndex(client, { year: program.year }),
     programWorksiteIds(client, programId, options),
     client.select({ id: worksites.id, name: worksites.name }).from(worksites),
     client.select().from(pdtpResponsibleCatalog),

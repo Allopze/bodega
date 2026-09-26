@@ -15,13 +15,14 @@ import {
 } from "@/lib/services/prevention-hygiene"
 import { resolveProgramActivationPeriod } from "@/lib/services/prevention-program-slots"
 import { resolveProgramSlotYear } from "@/lib/prevention/program-slots-2026"
+import { getPdtpOperationalYears } from "@/lib/services/prevention-pdtp"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { HygieneDashboard } from "./hygiene-dashboard"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "Higiene y vigilancia" }
 
-export default async function HigienePage() {
+export default async function HigienePage({ searchParams }: { searchParams: Promise<{ anio?: string | string[] }> }) {
   let session
   try { session = await requirePermission("prevention:hygiene:view") }
   catch { redirect("/forbidden") }
@@ -34,7 +35,10 @@ export default async function HigienePage() {
   const canManage = session.user.permissions.includes("prevention:hygiene:manage")
   // La casilla N°45 la resuelve quien registra la medición: es el permiso del hecho.
   const canRecordMeasurementSlots = session.user.permissions.includes("prevention:hygiene:measure")
-  const slotYear = resolveProgramSlotYear(todayInChile().slice(0, 4))
+  // PREV-C03.4/C03.7: el año de las casillas viene de ?anio o, si falta, del
+  // año operativo (en enero puede seguir siendo el anterior).
+  const query = await searchParams
+  const slotYear = resolveProgramSlotYear(Array.isArray(query.anio) ? query.anio[0] : query.anio, (await getPdtpOperationalYears()).primary)
 
   const [groups, programs, summary, agents, worksites, applicabilities, measurementSlots] = await Promise.all([
     listExposureGroups(access),
@@ -49,7 +53,7 @@ export default async function HigienePage() {
   // pedir una casilla anterior a la incorporación de la faena al programa.
   const slotWorksiteIds = [...new Set(measurementSlots.map((row) => row.slot.worksiteId))]
   const activationPeriods = Object.fromEntries(await Promise.all(
-    slotWorksiteIds.map(async (worksiteId) => [worksiteId, await resolveProgramActivationPeriod(worksiteId)] as const),
+    slotWorksiteIds.map(async (worksiteId) => [worksiteId, await resolveProgramActivationPeriod(worksiteId, slotYear)] as const),
   ))
   // La pestaña de protocolos necesita todas las faenas visibles, no sólo las
   // gestionables: quien sólo mira igual tiene que poder revisar la cobertura.

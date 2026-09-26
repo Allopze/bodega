@@ -578,22 +578,68 @@ export function trainingCatalogItemId(year: number, code: string): string {
 }
 
 /**
- * El flujo operativo sólo expone el programa que fue revisado y cargado. La
- * función centraliza la normalización para que una URL manipulada no termine
- * creando ocurrencias de un año que en realidad apuntan al catálogo 2026.
+ * PREV-C03.4 (D22): el catálogo controlado es POR AÑO. El programa de
+ * capacitación 2027 parte como copia del 2026 (mismo contenido, versión propia
+ * `programa-capacitacion-2027-v1`), para que sus ocurrencias acrediten el
+ * programa 2027 y no el cerrado. Si llega un documento de capacitación 2027
+ * distinto, se registra aquí una lista propia con otra versión.
+ *
+ * No se deriva del cronograma del programa: la N°85 está repartida entre
+ * CAM-01/02/06 y la N°38 tiene cinco réplicas, así que el catálogo necesita una
+ * entrada explícita por año.
  */
-export function resolvePredefinedTrainingCatalogYear(_value: unknown): typeof PREDEFINED_TRAINING_CATALOG_YEAR {
-  return PREDEFINED_TRAINING_CATALOG_YEAR
+export const TRAINING_CATALOGS_BY_YEAR: Readonly<Record<number, { version: string; items: readonly PredefinedTrainingCatalogItem[] }>> = Object.freeze({
+  [PREDEFINED_TRAINING_CATALOG_YEAR]: { version: PREDEFINED_TRAINING_CATALOG_VERSION, items: PREDEFINED_TRAINING_CATALOG },
+  2027: { version: "programa-capacitacion-2027-v1", items: PREDEFINED_TRAINING_CATALOG },
+})
+
+/** Todas las versiones de catálogo registradas, del año más antiguo al más nuevo. */
+export const TRAINING_CATALOG_VERSIONS: readonly string[] = Object.keys(TRAINING_CATALOGS_BY_YEAR)
+  .map(Number)
+  .sort((left, right) => left - right)
+  .map((year) => TRAINING_CATALOGS_BY_YEAR[year]!.version)
+
+export function isTrainingCatalogYear(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && Object.hasOwn(TRAINING_CATALOGS_BY_YEAR, value)
 }
 
-export function isPredefinedTrainingCatalogYear(value: unknown): value is typeof PREDEFINED_TRAINING_CATALOG_YEAR {
-  return value === PREDEFINED_TRAINING_CATALOG_YEAR
-}
-
-export function assertPredefinedTrainingCatalogYear(year: number): asserts year is typeof PREDEFINED_TRAINING_CATALOG_YEAR {
-  if (!isPredefinedTrainingCatalogYear(year)) {
+export function assertTrainingCatalogYear(year: number): void {
+  if (!isTrainingCatalogYear(year)) {
     throw new Error(`No existe un catálogo de capacitación operativo para el año ${year}.`)
   }
+}
+
+export function trainingCatalogVersionForYear(year: number): string {
+  assertTrainingCatalogYear(year)
+  return TRAINING_CATALOGS_BY_YEAR[year]!.version
+}
+
+export function trainingCatalogItemsForYear(year: number): readonly PredefinedTrainingCatalogItem[] {
+  assertTrainingCatalogYear(year)
+  return TRAINING_CATALOGS_BY_YEAR[year]!.items
+}
+
+/**
+ * Normaliza el año de una URL: un año con catálogo publicado se respeta; uno
+ * sin catálogo (o basura) cae al respaldo, para que una URL manipulada no
+ * termine creando ocurrencias de un año que no existe.
+ */
+export function resolveTrainingCatalogYear(value: unknown, fallback: number): number {
+  const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10)
+  return isTrainingCatalogYear(parsed) ? parsed : fallback
+}
+
+/** @deprecated Usa `resolveTrainingCatalogYear` con el año operativo como respaldo. */
+export function resolvePredefinedTrainingCatalogYear(value: unknown): number {
+  return resolveTrainingCatalogYear(value, PREDEFINED_TRAINING_CATALOG_YEAR)
+}
+
+export function isPredefinedTrainingCatalogYear(value: unknown): value is number {
+  return isTrainingCatalogYear(value)
+}
+
+export function assertPredefinedTrainingCatalogYear(year: number): void {
+  assertTrainingCatalogYear(year)
 }
 
 export function occurrenceSeedRows(
@@ -601,7 +647,7 @@ export function occurrenceSeedRows(
   worksiteId: string,
   year: number,
 ): TrainingOccurrenceSeedRow[] {
-  assertPredefinedTrainingCatalogYear(year)
+  assertTrainingCatalogYear(year)
   return item.schedule.map((slot) => ({
     id: `training-occurrence-${year}-${worksiteId}-${item.code.toLowerCase()}-${slot.slotKey}`,
     catalogCode: item.code,

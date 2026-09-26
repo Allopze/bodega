@@ -2,7 +2,8 @@ import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { db } from "@/db"
 import { listEmergencyDrillSlots, resolveProgramActivationPeriod } from "@/lib/services/prevention-program-slots"
-import { PROGRAM_SLOT_YEAR } from "@/lib/prevention/program-slots-2026"
+import { resolveProgramSlotYear } from "@/lib/prevention/program-slots-2026"
+import { getPdtpOperationalYears } from "@/lib/services/prevention-pdtp"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
@@ -20,8 +21,9 @@ import { listPdtpAccreditationBindings } from "@/lib/services/pdtp/accreditation
 
 export const metadata: Metadata = { title: "Plan de emergencia" }
 
-export default async function PlanEmergenciaPage({ params }: { params: Promise<{ planId: string }> }) {
+export default async function PlanEmergenciaPage({ params, searchParams }: { params: Promise<{ planId: string }>; searchParams: Promise<{ anio?: string | string[] }> }) {
   const { planId } = await params
+  const query = await searchParams
 
   let auth
   try { auth = await requirePermission("prevention:emergency:view") }
@@ -37,6 +39,9 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
   if (!detail) notFound()
 
   const canManage = auth.user.permissions.includes("prevention:emergency:manage")
+  // PREV-C03.4/C03.7: el año de las casillas viene de ?anio o, si falta, del
+  // año operativo (en enero puede seguir siendo el anterior).
+  const slotYear = resolveProgramSlotYear(Array.isArray(query.anio) ? query.anio[0] : query.anio, (await getPdtpOperationalYears()).primary)
   const canApprove = auth.user.permissions.includes("prevention:emergency:approve")
   const canExecuteDrill = auth.user.permissions.includes("prevention:emergency:drill_execute")
 
@@ -52,8 +57,8 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
     listCatalogActivities(),
     listPdtpAccreditationBindings({ sourceType: "emergencia", sourceIds: [detail.plan.id] }),
     listEmergencyScenarioTypes({ includeInactive: true }),
-    listEmergencyDrillSlots(db, [detail.plan.worksiteId]),
-    resolveProgramActivationPeriod(detail.plan.worksiteId),
+    listEmergencyDrillSlots(db, [detail.plan.worksiteId], slotYear),
+    resolveProgramActivationPeriod(detail.plan.worksiteId, slotYear),
   ])
 
   const usedScenarioTypes = new Set(detail.scenarios.map((scenario) => scenario.type))
@@ -106,7 +111,7 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
           notApplicableReason: slot.notApplicableReason,
           fulfilledLabel: slot.drillId ? "Cumplida por un simulacro registrado" : null,
         }))}
-        slotYear={PROGRAM_SLOT_YEAR}
+        slotYear={slotYear}
         activationPeriod={activationPeriod}
         drills={detail.drills.map((drill) => ({
           id: drill.id,

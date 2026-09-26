@@ -1,8 +1,8 @@
-import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm"
+import { and, desc, eq, isNull, ne } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { pdtpActivities, pdtpProgramWorksites, pdtpPrograms } from "@/db/schema"
 import { logger } from "@/lib/logger"
-import { codeYear, countOf, todayInChile } from "@/lib/utils"
+import { countOf, todayInChile } from "@/lib/utils"
 import { addPdtpChangeLogEntry } from "./helpers"
 import { handoverPdtpWorksiteAssignees } from "./assignees"
 import { computePdtpProgramContentDigest, computePdtpProgramContentDigestForStoredVersion } from "./content-digest"
@@ -14,7 +14,6 @@ import {
   listPdtpApprovalProgress,
 } from "./approval-flow"
 import { materializePdtpScheduledInstances } from "./scheduled-instances"
-import { resolvePdtpOperationalYears, type PdtpOperationalYears } from "./period"
 import { isPdtpLegalFolderActivity, listPdtpActivityDocumentRequirements } from "./document-requirements"
 import { sweepPdtpLegalFolders } from "@/lib/services/pdtp-adapters/legal-folder-connector"
 import { reconcilePdtpTriggerEvents } from "./trigger-events"
@@ -114,17 +113,8 @@ export async function getActivePdtpProgram(year: number) {
   return program ?? null
 }
 
-/**
- * PREV-C03.7: año operativo y año en cierre, leídos de la base. Ver
- * `resolvePdtpOperationalYears` (period.ts) para la regla.
- */
-export async function getPdtpOperationalYears(now: Date = new Date()): Promise<PdtpOperationalYears> {
-  const calendarYear = codeYear(now)
-  const programs = await db.select({ year: pdtpPrograms.year, status: pdtpPrograms.status, yearClosedAt: pdtpPrograms.yearClosedAt })
-    .from(pdtpPrograms)
-    .where(inArray(pdtpPrograms.year, [calendarYear - 1, calendarYear]))
-  return resolvePdtpOperationalYears(programs, calendarYear)
-}
+/** PREV-C03.7: ver `operational-years.ts`. */
+export { getPdtpOperationalYears } from "./operational-years"
 
 type PdtpActivityRow = typeof pdtpActivities.$inferSelect
 
@@ -550,6 +540,12 @@ export async function activatePdtpProgram(programId: string, userId: string) {
     // N°19: una carpeta que ya estaba completa acredita el mes en curso desde
     // el día de la activación, sin esperar a la próxima carga ni al cron.
     await sweepPdtpLegalFolders({ programId })
+    // PREV-C03.4 (D22): las casillas del año (simulacros, CGRD, alcotest,
+    // higiene y capacitación) nacen al activar el programa de ese año, en cada
+    // faena operativa. Import dinámico: el agregador arrastra los servicios de
+    // cada submódulo y no tiene por qué cargarse con el ciclo de vida.
+    const { ensurePreventionProgramSlotsForProgram } = await import("@/lib/services/prevention-program-slots")
+    await ensurePreventionProgramSlotsForProgram(programId)
   } catch (error) {
     logger.error({ error, programId }, "[pdtp-lifecycle] No se pudieron materializar o reconciliar las instancias nuevas tras activar.")
   }

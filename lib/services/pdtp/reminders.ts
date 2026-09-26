@@ -16,7 +16,8 @@ import {
   sstDocuments, sstDocumentVersions, worksites,
 } from "@/db/schema"
 import { MATRIX_PERMISSION, MATRIX_TRANSITIONS } from "@/lib/services/prevention-risk-legal"
-import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation, resolvePdtpOperationalYears, type PdtpPeriod } from "./period"
+import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation, type PdtpPeriod } from "./period"
+import { getPdtpOperationalYears } from "./operational-years"
 import { logger } from "@/lib/logger"
 import { countOf } from "@/lib/utils"
 import { createNotifications, getUserIdsWithPermission, getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
@@ -591,10 +592,7 @@ export type PdtpYearCloseReminderResult = {
  */
 export async function runPdtpYearCloseReminders(asOf = new Date()): Promise<PdtpYearCloseReminderResult> {
   const calendarYear = codeYear(asOf)
-  const programs = await db.select({ year: pdtpPrograms.year, status: pdtpPrograms.status, yearClosedAt: pdtpPrograms.yearClosedAt })
-    .from(pdtpPrograms)
-    .where(inArray(pdtpPrograms.year, [calendarYear - 1, calendarYear]))
-  const { primary, closing } = resolvePdtpOperationalYears(programs, calendarYear)
+  const { primary, closing } = await getPdtpOperationalYears(asOf)
   const closingYear = closing ?? (primary < calendarYear ? primary : null)
   if (closingYear === null) return { closingYear: null, canClose: false, pendingMonths: 0, notifiedUsers: 0 }
 
