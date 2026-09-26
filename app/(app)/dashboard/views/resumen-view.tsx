@@ -29,6 +29,7 @@ import { getCapaDashboardCounts } from "@/lib/services/prevention-capa"
 import { getIncidentDashboardCounts } from "@/lib/services/prevention-incidents"
 import { getActivePdtpProgram, listPdtpPrograms } from "@/lib/services/prevention-pdtp"
 import { getOperationalTrendHistory } from "@/lib/services/operational-trend-history"
+import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 import { loadPdtpComplianceSummary } from "../pdtp-compliance-card"
 import { RecentActivity } from "../recent-activity"
 import { OperationalTrendChart, RadialGaugeChart } from "../dashboard-domain-charts"
@@ -91,6 +92,10 @@ export async function ResumenView({
   const canViewCapa = can(session, "prevention:capa:view")
   const canViewIncidents = can(session, "prevention:incidents:view")
   const canManagePdtp = can(session, "prevention:pdtp:program:manage")
+  // PREV-C03.7: el PDTP del resumen es el del año operativo, no el civil.
+  const pdtpYear = canViewPdtp
+    ? (await getPdtpOperationalYears().catch(() => null))?.primary ?? currentYear
+    : currentYear
   /*
    * DASH-001 (auditoría 2026-09-14): la tendencia operativa —solicitudes, OC y
    * recepciones de toda la faena— se cargaba y dibujaba para cualquier sesión
@@ -132,7 +137,7 @@ export async function ResumenView({
     canViewPdtp
       ? optionalBlock("cumplimiento PDTP", loadPdtpComplianceSummary(worksiteIds), null)
       : Promise.resolve(null),
-    canViewPdtp ? optionalBlock("programa PDTP vigente", getActivePdtpProgram(currentYear), null) : Promise.resolve(null),
+    canViewPdtp ? optionalBlock("programa PDTP vigente", getActivePdtpProgram(pdtpYear), null) : Promise.resolve(null),
     canViewPdtp ? optionalBlock("programas PDTP", listPdtpPrograms(), []) : Promise.resolve([]),
     // Las dos alimentan la ranura de Riesgo. Ambas hacen `requirePermission`
     // adentro, así que el gate va afuera y no en un `catch`.
@@ -149,7 +154,7 @@ export async function ResumenView({
       : Promise.resolve([]),
   ])
 
-  const hasNextYearProgram = allPrograms.some((p) => p.year === currentYear + 1)
+  const hasNextYearProgram = allPrograms.some((p) => p.year === pdtpYear + 1)
   const shouldSuggestNextYear = activeProgram && !hasNextYearProgram && canManagePdtp
 
   const metrics = buildOperationalMetrics({
@@ -221,7 +226,7 @@ export async function ResumenView({
               <Link href="/prevencion/pdtp" className="block rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]">
                 <RadialGaugeChart
                   title="Cumplimiento PDTP"
-                  description={`Avance acreditado · año ${currentYear}`}
+                  description={`Avance acreditado · año ${pdtpYear}`}
                   percent={Math.round(pdtpSummary.percent * 100)}
                   targetPercent={Math.round(pdtpSummary.target * 100)}
                 />
@@ -231,8 +236,8 @@ export async function ResumenView({
                 compact
                 align="start"
                 title={pdtpSummary
-                  ? `El programa ${currentYear} no tiene avance acreditado`
-                  : `No hay un programa activo para ${currentYear}`}
+                  ? `El programa ${pdtpYear} no tiene avance acreditado`
+                  : `No hay un programa activo para ${pdtpYear}`}
                 description={pdtpSummary
                   ? "El cumplimiento aparece cuando se acredite la primera actividad."
                   : "Crea o activa un programa para visualizar el avance preventivo desde acá."}
@@ -240,7 +245,7 @@ export async function ResumenView({
                   <Button asChild size="sm">
                     <Link href="/prevencion/pdtp/nuevo">
                       <Plus size={13} />
-                      {shouldSuggestNextYear ? `Preparar ${currentYear + 1}` : "Crear programa"}
+                      {shouldSuggestNextYear ? `Preparar ${pdtpYear + 1}` : "Crear programa"}
                     </Link>
                   </Button>
                 ) : undefined}

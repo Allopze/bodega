@@ -13,7 +13,7 @@ import { tmpdir } from "node:os"
 import path, { join } from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
@@ -403,5 +403,56 @@ describe("assertPdtpActivityMechanism", () => {
 
   it("lanza cuando la actividad no existe", async () => {
     await expect(assertPdtpActivityMechanism("no-existe", "constancia")).rejects.toThrow()
+  })
+})
+
+describe("listPdtpConstanciaActivities — cambio de año (PREV-C03.7)", () => {
+  const OLD = 2081
+  const NEW = 2082
+
+  async function seedYear(year: number, status: "active" | "draft", months: number[]) {
+    const programId = `pdtp-const-${year}`
+    const activityId = `${programId}-a-061`
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpPrograms).values({
+      id: programId, version: 1, year, title: `PDTP ${year}`, status, appliesToAllWorksites: true,
+      elaboratedByName: "P", elaboratedByTitle: "P", activatedAt: status === "active" ? `${year}-01-02T12:00:00.000Z` : null,
+      createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.pdtpActivities).values({
+      id: activityId, programId, n: 61, activity: "Controlar certificados", program: "PDTP",
+      responsibleSlugs: ["prf"], responsibleDisplay: "PRF", scheduleMode: "scheduled", scheduleClassificationStatus: "confirmed",
+      mechanism: "constancia", evidenceRequirement: "Certificado", sourceSheetRow: 1, createdAt: now, updatedAt: now,
+    })
+    for (const month of months) {
+      await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+        id: `${activityId}-s-${month}`, activityId, year, month, week: 1, plannedQuantity: 1, sourceColumn: "manual",
+      })
+    }
+  }
+
+  afterEach(() => vi.useRealTimers())
+
+  it("con los dos años activos en enero, junta las deudas de diciembre del año en cierre, rotuladas por año", async () => {
+    await seedYear(OLD, "active", [12])
+    await seedYear(NEW, "active", [1])
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(`${NEW}-01-15T15:00:00.000Z`))
+    const view = await listPdtpConstanciaActivities([WS_A])
+    expect(view).toMatchObject({ programYear: NEW, closingYear: OLD })
+    expect(view?.debts.map((debt) => [debt.programYear, debt.dueMonth, debt.status]).sort()).toEqual([
+      [OLD, 12, "overdue"],
+      [NEW, 1, "pending"],
+    ])
+  })
+
+  it("en enero con el año nuevo en borrador, sigue mostrando el año anterior completo", async () => {
+    await seedYear(OLD, "active", [11, 12])
+    await seedYear(NEW, "draft", [1])
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(`${NEW}-01-15T15:00:00.000Z`))
+    const view = await listPdtpConstanciaActivities([WS_A])
+    expect(view).toMatchObject({ programYear: OLD, closingYear: null })
+    expect(view?.debts).toEqual([expect.objectContaining({ programYear: OLD, dueMonth: 11, status: "overdue", overdueMonths: 2 })])
   })
 })

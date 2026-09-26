@@ -17,6 +17,7 @@ import {
 } from "@/lib/services/prevention-pdtp"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 import type { PdtpActivityStatusFilter } from "@/lib/services/pdtp/period"
 import { todayInChile } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
@@ -42,7 +43,8 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
   if (!can(session, "prevention:pdtp:view")) redirect("/forbidden")
 
   const query = await searchParams
-  const year = resolvePdtpYear(one(query.anio))
+  // PREV-C03.7: sin ?anio, el año operativo.
+  const year = resolvePdtpYear(one(query.anio), (await getPdtpOperationalYears()).primary)
   const allPrograms = await listPdtpPrograms()
   const programs = allPrograms.filter((item) => item.year === year)
   const activeProgram = await getActivePdtpProgram(year)

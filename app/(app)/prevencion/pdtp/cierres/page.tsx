@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 import { can, requireAuth } from "@/lib/auth/can"
 import { resolveActivePdtpProgramId } from "@/lib/services/prevention-pdtp"
-import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 
 /**
  * Entrada de menú "Cierres mensuales".
@@ -19,7 +19,11 @@ export default async function PdtpClosuresEntryPage() {
   catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/pdtp/cierres")}`) }
   if (!can(session, "prevention:pdtp:view")) redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/pdtp/cierres")}`)
 
-  const programId = await resolveActivePdtpProgramId(currentPdtpPeriod().year)
+  // PREV-C03.7: en enero, con el año anterior todavía abierto, lo urgente es
+  // cerrar su diciembre: el menú lleva al año en cierre si lo hay y, si no, al
+  // año operativo.
+  const { primary, closing } = await getPdtpOperationalYears()
+  const programId = await resolveActivePdtpProgramId(closing ?? primary)
   // Sin programa del año, el tablero explica qué falta mejor que un 404.
   redirect(programId ? `/prevencion/pdtp/${programId}/cierres` : "/prevencion/pdtp")
 }

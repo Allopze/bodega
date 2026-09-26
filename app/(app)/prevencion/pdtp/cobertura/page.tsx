@@ -5,7 +5,7 @@ import { can, requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getActivePdtpProgram } from "@/lib/services/prevention-pdtp"
 import { getPdtpCoverage } from "@/lib/services/prevention-risk-legal"
-import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
@@ -19,7 +19,8 @@ export default async function PdtpCoveragePage() {
   try { session = await requireAuth() }
   catch { redirect("/forbidden") }
   if (!can(session, "prevention:pdtp:view")) redirect("/forbidden")
-  const program = await getActivePdtpProgram(currentPdtpPeriod().year)
+  // PREV-C03.7: el programa del año operativo, no del año civil.
+  const program = await getActivePdtpProgram((await getPdtpOperationalYears()).primary)
   const access = { userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
   const coverage = program ? await getPdtpCoverage(program.id, access) : null
   return (

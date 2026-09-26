@@ -92,12 +92,17 @@ export function ConstanciasWorkbench({
           ) : (
             <div className="mt-4 divide-y divide-[var(--color-border)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
               {rows.map((row) => (
-                <article key={`${row.activityId}:${row.worksiteId}`} className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_14rem_auto] lg:items-center">
+                <article key={`${row.programYear}:${row.activityId}:${row.worksiteId}`} className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_14rem_auto] lg:items-center">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <MetaBadge meta={{ label: `${row.status === "overdue" ? "Vencida" : "Pendiente"}`, variant: row.status === "overdue" ? "danger" : "warning" }} dot />
                       <span className="font-mono text-xs text-[var(--color-text-subtle)]">Actividad {row.n}</span>
                       <span className="text-xs text-[var(--color-text-subtle)]">{row.worksiteName}</span>
+                      {/* PREV-C03.7: una deuda del año que se está cerrando se rotula
+                          con su año; se marca contra el programa de ese año. */}
+                      {view.closingYear === row.programYear && (
+                        <MetaBadge meta={{ label: `PDTP ${row.programYear} · cierre pendiente`, variant: "outline" }} />
+                      )}
                     </div>
                     <h2 className="mt-2 text-sm font-semibold text-[var(--color-text)]">{row.activityName}</h2>
                     <p className="mt-1 text-xs text-[var(--color-text-muted)]">
@@ -117,9 +122,9 @@ export function ConstanciasWorkbench({
                       <PdtpExecutionForm
                         activityId={row.activityId}
                         worksiteId={row.worksiteId}
-                        year={view.programYear}
+                        year={row.programYear}
                         defaultMonth={row.dueMonth}
-                        effectiveFrom={view.effectiveFrom}
+                        effectiveFrom={row.effectiveFrom}
                         evidenceRequirement={row.evidenceRequirement}
                         manualEvidencePolicy={row.manualEvidencePolicy}
                         // Este workbench sólo lista actividades `mechanism:
@@ -133,7 +138,7 @@ export function ConstanciasWorkbench({
                         activityN={row.n}
                         activityName={row.activityName}
                         worksiteId={row.worksiteId}
-                        year={view.programYear}
+                        year={row.programYear}
                         defaultMonth={row.dueMonth}
                         defaultWeek={row.dueWeek}
                         canDeclareNotPerformed={canExecute}

@@ -6,9 +6,17 @@ import { getPdtpComplianceIndicators, getPdtpIntegralCompliance } from "@/lib/se
 import { listPendingPdtpExecutions } from "@/lib/services/prevention-pdtp"
 import { getPdtpComplianceIndicatorsForScope } from "@/lib/services/pdtp/compliance"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 
 type PdtpComplianceCardProps = {
   year: number
+  /**
+   * PREV-C03.7 (D23): el año anterior, cuando sigue activo sin cierre anual
+   * mientras el nuevo ya opera. Se muestra como una línea, no como otra
+   * tarjeta (A5): el 1 de enero el resultado del año que se cierra no puede
+   * desaparecer del tablero.
+   */
+  closingYear?: number | null
   /** Faena única seleccionada para calcular cumplimiento. */
   worksiteId?: string
   /** Faenas que suma el agregado cuando no hay faena única. */
@@ -38,6 +46,7 @@ type PdtpComplianceCardProps = {
 export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
   const {
     year,
+    closingYear,
     worksiteId,
     worksiteCount,
     pendingCount,
@@ -59,8 +68,9 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
   const monthLabel = MONTH_LABELS[month - 1] ?? "—"
 
   return (
+    <div className="space-y-2">
     <Link
-      href="/prevencion/pdtp"
+      href={`/prevencion/pdtp?anio=${year}`}
       data-pressable
       className={cn(
         "group block rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs transition-all duration-150 ease-out",
@@ -146,11 +156,28 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
         )}
       </div>
     </Link>
+    {closingYear ? (
+      <Link
+        href={`/prevencion/pdtp?anio=${closingYear}`}
+        className="block rounded-[var(--radius)] px-1 text-xs font-medium text-[var(--color-warning-ink)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+      >
+        PDTP {closingYear} · cierre pendiente
+      </Link>
+    ) : null}
+    </div>
   )
 }
 
 export async function loadPdtpComplianceSummary(worksiteIds: string[]) {
-  const period = currentPdtpPeriod()
+  const today = currentPdtpPeriod()
+  /*
+   * PREV-C03.7: el año del tablero es el operativo, no el civil. En enero,
+   * con el programa nuevo todavía sin activar, sigue siendo el anterior; con
+   * los dos activos es el nuevo y el anterior queda como "cierre pendiente".
+   * Un año ya terminado se mide completo (diciembre, semana 4).
+   */
+  const { primary: year, closing: closingYear } = await getPdtpOperationalYears()
+  const period = year < today.year ? { year, month: 12, week: 4 } : { ...today, year }
   const targetWorksiteId = worksiteIds.length === 1 ? worksiteIds[0] : undefined
   /*
    * Multi-faena usa el mismo agregado que la sección Prevención
@@ -179,6 +206,7 @@ export async function loadPdtpComplianceSummary(worksiteIds: string[]) {
 
   return {
     year: period.year,
+    closingYear,
     worksiteId: targetWorksiteId,
     worksiteCount: worksiteIds.length,
     pendingCount: pending.length,
