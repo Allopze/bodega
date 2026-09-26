@@ -198,6 +198,14 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionInspectionRuns)
   await inMemoryDb.delete(schema.preventionInspectionTemplates)
   await inMemoryDb.delete(schema.workers)
+  // PREV-C03.4: activar un programa siembra las casillas del año en sus faenas.
+  await inMemoryDb.delete(schema.preventionTrainingOccurrenceEvidence)
+  await inMemoryDb.delete(schema.preventionTrainingOccurrences)
+  await inMemoryDb.delete(schema.preventionHygieneMeasurementSlots)
+  await inMemoryDb.delete(schema.preventionProtocolApplicabilities)
+  await inMemoryDb.delete(schema.preventionAlcotestSlots)
+  await inMemoryDb.delete(schema.preventionGrdMeetingSlots)
+  await inMemoryDb.delete(schema.preventionEmergencyDrillSlots)
   await inMemoryDb.delete(schema.worksites)
   // `audit_log.user_id` referencia users y se acumula durante los casos de
   // esta suite; debe retirarse antes de recrear los usuarios del fixture.
