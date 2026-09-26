@@ -548,6 +548,31 @@ describe("acreditación por integración y `driftedSinceClose`", () => {
     // La foto congelada no cambió: sigue siendo lo que se distribuyó.
     expect(afterDrift!.digest).toBe(closure.digest)
   })
+
+  it("el reporte D6 lista los cierres vigentes que quedaron desviados, sin escribir nada", async () => {
+    const { closePdtpPeriod, reportPdtpPeriodClosureDrift } = await import("@/lib/services/pdtp/period-closures")
+    const { program, activity } = await createActiveProgram()
+    const closure = await closePdtpPeriod({
+      programId: program.id, worksiteId: "ws-1", year: YEAR, month: MONTH, reason: REASON,
+    }, "user-1", "all")
+    expect((await reportPdtpPeriodClosureDrift()).drifted).toEqual([])
+
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpExecutions).values({
+      id: `exec-d6-${activity.id}`,
+      activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: MONTH, week: 1,
+      executedQuantity: 4, status: "approved", origin: "integration",
+      approvedByUserId: "user-2", approvedAt: now, executedAt: now, createdAt: now, updatedAt: now,
+    })
+    const before = await inMemoryDb.select().from(schema.pdtpPeriodClosures)
+
+    const report = await reportPdtpPeriodClosureDrift()
+    expect(report.checked).toBeGreaterThanOrEqual(1)
+    expect(report.drifted).toContainEqual(expect.objectContaining({
+      closureId: closure.id, programId: program.id, worksiteId: "ws-1", year: YEAR, month: MONTH,
+    }))
+    expect(await inMemoryDb.select().from(schema.pdtpPeriodClosures)).toEqual(before)
+  })
 })
 
 describe("W1-N02 — la foto del cierre no depende del día en que se recalcula", () => {

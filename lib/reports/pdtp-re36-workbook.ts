@@ -570,6 +570,11 @@ function renderConditionalFormatting(ws: ExcelJS.Worksheet, hasRows: boolean, la
   })
 }
 
+/** Σ MIN(e, p) fila a fila, sin fórmula matricial. */
+function cappedSumFormula(eRange: string, pRange: string): string {
+  return `SUMPRODUCT((${eRange}<${pRange})*${eRange}+(${eRange}>=${pRange})*${pRange})`
+}
+
 function renderTotals(
   ws: ExcelJS.Worksheet,
   rows: { hasRows: boolean; lastDataRow: number; totalPRow: number; totalERow: number; weeklyPercentRow: number; quarterlyPercentRow: number },
@@ -606,9 +611,14 @@ function renderTotals(
         eTotalCell.value = 0
       }
 
+      // PREV-C02: cada actividad aporta como máximo su P de la semana
+      // (MIN(E, P) fila a fila, escrito con SUMPRODUCT para no exigir fórmula
+      // matricial). La fila E de totales sigue mostrando lo ejecutado real.
+      const eRange = `${eCol}${firstDataRow}:${eCol}${lastDataRow}`
+      const pRange = `${pCol}${firstDataRow}:${pCol}${lastDataRow}`
       const percentCell = ws.getCell(`${eCol}${weeklyPercentRow}`)
       percentCell.value = hasRows
-        ? { formula: `IFERROR(${eCol}${totalERow}/${pCol}${totalPRow},"")` }
+        ? { formula: `IFERROR(${cappedSumFormula(eRange, pRange)}/${pCol}${totalPRow},"")` }
         : ""
       percentCell.numFmt = "0%"
     }
@@ -637,9 +647,15 @@ function renderTotals(
 
     if (quarterFormula === "ratio") {
       const pSum = weeksInQuarter.map(({ month, week }) => `${columnLetter(cellColumn(month, week, "P"))}${totalPRow}`).join("+")
-      const eSum = weeksInQuarter.map(({ month, week }) => `${columnLetter(cellColumn(month, week, "E"))}${totalERow}`).join("+")
-      cell.value = { formula: `IFERROR((${eSum})/(${pSum}),"")` }
-      cell.note = "Razón ΣE/ΣP del trimestre (suma de ejecutado sobre suma de planeado), no un promedio de los porcentajes semanales."
+      // Lo computable de cada mes: por actividad, MIN(ΣE del mes, ΣP del mes)
+      // — la misma regla que el indicador de la plataforma (PREV-C02).
+      const monthRange = (month: number, kind: "P" | "E") => `(${Array.from({ length: RE36_LAYOUT.weeksPerMonth }, (_, i) => {
+        const col = columnLetter(cellColumn(month, i + 1, kind))
+        return `${col}${firstDataRow}:${col}${lastDataRow}`
+      }).join("+")})`
+      const countedSum = monthsInQuarter.map((month) => cappedSumFormula(monthRange(month, "E"), monthRange(month, "P"))).join("+")
+      cell.value = { formula: `IFERROR((${countedSum})/(${pSum}),"")` }
+      cell.note = "Razón computable/ΣP del trimestre: cada actividad aporta cada mes como máximo lo planificado (la regla del indicador de la plataforma). No es un promedio de los porcentajes semanales."
     } else {
       const percentCells = weeksInQuarter.map(({ month, week }) => `${columnLetter(cellColumn(month, week, "E"))}${weeklyPercentRow}`)
       cell.value = { formula: `IFERROR(AVERAGE(${percentCells.join(",")}),"")` }

@@ -409,12 +409,24 @@ describe("renderPdtpRe36Workbook", () => {
     expect(totalE.formula).toBe("SUM(G16:G18)")
   })
 
-  it("el % semanal es IFERROR(E/P,'')", () => {
+  it("el % semanal topa cada actividad a su plan de la semana: una sobreejecutada no cubre a otra (PREV-C02)", () => {
     const workbook = renderPdtpRe36Workbook(buildFixtureDocument())
     const ws = workbook.getWorksheet("PDTP GENERAL")!
     // weeklyPercentRow = lastDataRow + 3 = 21.
     const percent = ws.getCell("G21").value as { formula: string }
-    expect(percent.formula).toBe('IFERROR(G20/F19,"")')
+    expect(percent.formula).toBe('IFERROR(SUMPRODUCT((G16:G18<F16:F18)*G16:G18+(G16:G18>=F16:F18)*F16:F18)/F19,"")')
+  })
+
+  it("el % trimestral suma lo computable de cada actividad y mes, igual que la plataforma (PREV-C02)", () => {
+    const workbook = renderPdtpRe36Workbook(buildFixtureDocument())
+    const ws = workbook.getWorksheet("PDTP GENERAL")!
+    // quarterlyPercentRow = lastDataRow + 4 = 22; el trimestre 1 parte en F.
+    const quarter = ws.getCell("F22").value as { formula: string }
+    const januaryE = "(G16:G18+I16:I18+K16:K18+M16:M18)"
+    const januaryP = "(F16:F18+H16:H18+J16:J18+L16:L18)"
+    expect(quarter.formula).toContain(`SUMPRODUCT((${januaryE}<${januaryP})*${januaryE}+(${januaryE}>=${januaryP})*${januaryP})`)
+    expect(quarter.formula.match(/SUMPRODUCT/g)).toHaveLength(3)
+    expect(quarter.formula).toMatch(/^IFERROR\(\(SUMPRODUCT/)
   })
 
   it("paneles congelados en 5 columnas y 15 filas", () => {
@@ -594,7 +606,7 @@ describe("renderPdtpRe36Buffer", () => {
       expect(typeof totalP).toBe("object")
       expect((totalP as { formula: string }).formula).toBe("SUM(F16:F18)")
       expect(typeof percent).toBe("object")
-      expect((percent as { formula: string }).formula).toBe('IFERROR(G20/F19,"")')
+      expect((percent as { formula: string }).formula).toBe('IFERROR(SUMPRODUCT((G16:G18<F16:F18)*G16:G18+(G16:G18>=F16:F18)*F16:F18)/F19,"")')
     })
     if (!canRecalcWithLibreOffice) {
       console.warn(
@@ -603,6 +615,27 @@ describe("renderPdtpRe36Buffer", () => {
       )
     }
   })
+
+  it.skipIf(!canRecalcWithLibreOffice)("recalculado en LibreOffice, una actividad sobreejecutada no compensa a otra en cero (PREV-C02)", async () => {
+    const doc = buildFixtureDocument()
+    const rows = doc.sheets[0]!.rows
+    // Enero, semana 1: A planificó 1 e hizo 2; B planificó 1 e hizo 0.
+    rows[0]!.cells[0] = { p: 1, e: 2 }
+    rows[1]!.cells[1] = { p: null, e: null }
+    rows[1]!.cells[0] = { p: 1, e: 0 }
+    const buffer = await renderPdtpRe36Buffer(doc)
+    await withFixtureFile(buffer, "re36-capped-recalc.xlsx", async (fixturePath) => {
+      execFileSync("python3", [recalcScript!, fixturePath], { encoding: "utf8", timeout: 60_000 })
+      const reloaded = new (await import("exceljs")).default.Workbook()
+      await reloaded.xlsx.readFile(fixturePath)
+      const ws = reloaded.getWorksheet("PDTP GENERAL")!
+      const result = (address: string) => (ws.getCell(address).value as { result?: unknown }).result
+      expect(result("G20")).toBe(2) // lo ejecutado real sigue a la vista
+      expect(result("G21")).toBe(0.5) // semana: 1 computable de 2 planificadas
+      // Trimestre 1: enero 1 de 2 computable + marzo 0 de 1 (la fila de B).
+      expect(result("F22")).toBeCloseTo(1 / 3)
+    })
+  }, 60_000)
 
   it.skipIf(!canRecalcWithLibreOffice)("LibreOffice recalcula el libro sin errores", async () => {
     const buffer = await renderPdtpRe36Buffer(buildFixtureDocument())

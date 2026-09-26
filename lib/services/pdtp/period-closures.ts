@@ -634,6 +634,29 @@ export async function getPdtpPeriodClosure(
 }
 
 /** Último cierre de un programa (para el resumen "Último cierre: MM/AAAA"). */
+/**
+ * D6 (plan de pendientes): qué cierres vigentes quedarían desviados con el
+ * cálculo actual. Recalcula cada foto con `getPdtpPeriodClosure` —la misma
+ * comparación de digest que ve la pantalla— y **no escribe nada**: está pensado
+ * para correr antes de un despliegue que cambia la fórmula, con un usuario de
+ * solo lectura (`scripts/report-pdtp-closure-drift.ts`).
+ */
+export async function reportPdtpPeriodClosureDrift(): Promise<{
+  checked: number
+  drifted: Array<{ closureId: string; programId: string; worksiteId: string; year: number; month: number }>
+}> {
+  const closures = await db.select({ id: pdtpPeriodClosures.id }).from(pdtpPeriodClosures)
+    .where(eq(pdtpPeriodClosures.status, "closed"))
+  const drifted: Array<{ closureId: string; programId: string; worksiteId: string; year: number; month: number }> = []
+  for (const { id } of closures) {
+    const closure = await getPdtpPeriodClosure(id, "all")
+    if (closure?.driftedSinceClose) {
+      drifted.push({ closureId: closure.id, programId: closure.programId, worksiteId: closure.worksiteId, year: closure.year, month: closure.month })
+    }
+  }
+  return { checked: closures.length, drifted }
+}
+
 export async function getLatestPdtpPeriodClosure(
   programId: string,
   scope: WorksiteScope,

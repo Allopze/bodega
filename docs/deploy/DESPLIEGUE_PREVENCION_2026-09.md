@@ -70,6 +70,14 @@ where origin <> 'integration'
   );
 ```
 
+**Q5 (D6). Cierres mensuales que quedarán "desviados".** El cálculo del porcentaje cambió (tope por actividad y mes, manual + acreditación de la misma semana cuentan una vez; tandas T1 e integración T1+T5). La foto de un cierre ya emitido no cambia, pero su ficha mostrará "desviado" si el recálculo ya no coincide. No es un SELECT: el digest se recalcula con el código. Correrlo **desde el checkout de la versión nueva**, contra producción y con un usuario de solo lectura:
+
+```sh
+DATABASE_URL=<usuario de solo lectura> npm run pdtp:report-closure-drift
+```
+
+El script solo lee (`reportPdtpPeriodClosureDrift`, probado en `pdtp-period-closures.test.ts`). Imprime cuántos cierres revisó y cuáles quedarían desviados. Con pocos, basta comunicarlo a la jefatura. Con muchos, se evalúa una foto `schemaVersion 2` (T7) antes de desplegar.
+
 ## 2. Antes: comunicación
 
 La jefatura de Prevención avisa a los responsables **48 h antes**:
@@ -77,6 +85,7 @@ La jefatura de Prevención avisa a los responsables **48 h antes**:
 - Un envío pendiente de otra persona ya no se puede reemplazar.
 - Los envíos pendientes sin archivo (Q2) se devolverán para completarlos.
 - El porcentaje de la planilla ahora cuenta solo lo aprobado, y muestra aparte lo que está "por aprobar". El panel muestra "cumplimiento a la fecha" además del avance anual.
+- Cada actividad aporta al porcentaje como máximo lo que tenía planificado en el mes: hacer de más una actividad ya no compensa otra que quedó en cero. Una semana registrada a mano y acreditada desde su módulo cuenta una sola vez. Los porcentajes pueden bajar. El Excel de la planilla trae una columna "Ejecutado computable" y el RE-36 calcula su % semanal y trimestral con la misma regla.
 
 ## 3. Contingencias
 
