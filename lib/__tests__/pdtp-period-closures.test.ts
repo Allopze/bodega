@@ -14,6 +14,8 @@
  * resuelve `@/db` antes de que `globalThis.__db` quede asignado más abajo
  * (mismo patrón que `pdtp-deviations.test.ts`).
  */
+import { mkdirSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
@@ -21,6 +23,13 @@ import { eq } from "drizzle-orm"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
+
+// PREV-B02: registrar "Se hizo" exige un archivo real en disco. Las pruebas
+// de este archivo que registran ejecuciones adjuntan éste.
+process.env.STORAGE_PATH = path.join(tmpdir(), `pdtp-period-closures-${Date.now()}`)
+mkdirSync(path.join(process.env.STORAGE_PATH, "pdtp-evidence"), { recursive: true })
+writeFileSync(path.join(process.env.STORAGE_PATH, "pdtp-evidence", "acta-cierre.pdf"), "%PDF-1.4")
+const EVIDENCE_URL = "storage/pdtp-evidence/acta-cierre.pdf"
 
 // Un Cloudreve en memoria para el archivado del RE-36 congelado (al final).
 const fakeCloudreve = vi.hoisted(() => ({ files: new Map<string, Buffer>() }))
@@ -44,6 +53,7 @@ testGlobal.__db = inMemoryDb
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 afterAll(async () => {
+  vi.useRealTimers()
   delete testGlobal.__db
   await pg.close()
 })
@@ -83,8 +93,16 @@ beforeEach(async () => {
  * ocurrido, así que un año futuro (como los 2060 de otros tests) no sirve acá.
  */
 const YEAR = new Date().getFullYear()
-/** Enero siempre está en el pasado o es el mes en curso. */
+/** Enero: un mes ya terminado mientras el reloj esté fijo en junio (abajo). */
 const MONTH = 1
+/**
+ * PREV-I02: el mes en curso tampoco se cierra. El reloj se fija a mediados de
+ * junio del año en curso para que enero sea siempre un mes terminado, también
+ * cuando la suite corre en enero. Sólo se simula `Date`: los timers reales
+ * siguen corriendo para PGlite.
+ */
+const CURRENT_MONTH = 6
+vi.setSystemTime(new Date(`${YEAR}-06-15T15:00:00.000Z`))
 
 async function createActiveProgram(cell = { month: MONTH, week: 1, plannedQuantity: 4 }) {
   const { createLegacyPdtpProgramForTests, addPdtpActivity } = await import("@/lib/services/prevention-pdtp")
@@ -121,6 +139,19 @@ async function createActiveProgram(cell = { month: MONTH, week: 1, plannedQuanti
 }
 
 const REASON = "Mes revisado con la jefatura de faena y conciliado con las evidencias."
+
+/**
+ * Un envío `submitted` escrito directo en la base, sin pasar por
+ * `markPdtpExecution`: estas pruebas miden el cierre, no la carga.
+ */
+async function insertSubmittedExecution(activityId: string, worksiteId: string, id = `exec-${worksiteId}`) {
+  const now = new Date().toISOString()
+  await inMemoryDb.insert(schema.pdtpExecutions).values({
+    id, activityId, worksiteId, year: YEAR, month: MONTH, week: 1,
+    executedQuantity: 1, status: "submitted", createdAt: now, updatedAt: now,
+  })
+  return { id }
+}
 
 describe("closePdtpPeriod: la foto congelada", () => {
   it("crea el snapshot con re36, indicadores, desvíos y objetivos, y un digest de 64 caracteres", async () => {
@@ -182,7 +213,7 @@ describe("closePdtpPeriod: la foto congelada", () => {
     // Reabrir, cargar ejecución aprobada y volver a cerrar: la foto cambia.
     await reopenPdtpPeriod({ closureId: first.id, reason: "Faltaba cargar la evidencia de la charla dictada." }, "user-1", "all")
     const execution = await markPdtpExecution({
-      activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: MONTH, week: 1, executedQuantity: 4,
+      activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: MONTH, week: 1, executedQuantity: 4, evidenceUrl: EVIDENCE_URL,
     }, "user-1", "all")
     await approvePdtpExecution(execution.id, "user-2", "all")
 
@@ -225,6 +256,41 @@ describe("closePdtpPeriod: validaciones", () => {
     await expect(closePdtpPeriod({
       programId: program.id, worksiteId: "ws-1", year: YEAR + 1, month: 12, reason: REASON,
     }, "user-1", "all")).rejects.toThrow()
+  })
+
+  // PREV-I02: la comparación era `month > current.month`, y el mes vigente se
+  // congelaba antes de terminar — contra su propio comentario.
+  it("no cierra el mes en curso: todavía no termina", async () => {
+    const { closePdtpPeriod } = await import("@/lib/services/pdtp/period-closures")
+    const { program } = await createActiveProgram({ month: CURRENT_MONTH, week: 1, plannedQuantity: 2 })
+
+    await expect(closePdtpPeriod({
+      programId: program.id, worksiteId: "ws-1", year: YEAR, month: CURRENT_MONTH, reason: REASON,
+    }, "user-1", "all")).rejects.toThrow(/aún no termina/i)
+    expect(await inMemoryDb.select().from(schema.pdtpPeriodClosures)).toEqual([])
+  })
+
+  // PREV-I02: un envío `submitted` de un mes cerrado ya no se puede aprobar ni
+  // rechazar hasta reabrir; la foto además lo congelaba como no ejecutado.
+  it("no cierra un mes con envíos pendientes de aprobación y dice cuántos son", async () => {
+    const { closePdtpPeriod } = await import("@/lib/services/pdtp/period-closures")
+    const { program, activity } = await createActiveProgram()
+    await insertSubmittedExecution(activity.id, "ws-1")
+
+    await expect(closePdtpPeriod({
+      programId: program.id, worksiteId: "ws-1", year: YEAR, month: MONTH, reason: REASON,
+    }, "user-1", "all")).rejects.toThrow(/1 envío pendiente de aprobación/i)
+    expect(await inMemoryDb.select().from(schema.pdtpPeriodClosures)).toEqual([])
+  })
+
+  it("los envíos pendientes de otra faena no impiden cerrar esta", async () => {
+    const { closePdtpPeriod } = await import("@/lib/services/pdtp/period-closures")
+    const { program, activity } = await createActiveProgram()
+    await insertSubmittedExecution(activity.id, "ws-2")
+
+    await expect(closePdtpPeriod({
+      programId: program.id, worksiteId: "ws-1", year: YEAR, month: MONTH, reason: REASON,
+    }, "user-1", "all")).resolves.toMatchObject({ status: "closed" })
   })
 
   it("no cierra un mes anterior a la activación del programa", async () => {
@@ -277,32 +343,31 @@ describe("mes cerrado: bloqueo de escrituras", () => {
     }, "user-1", "all")).rejects.toThrow(/cerrado/i)
   })
 
-  it("rechaza `approvePdtpExecution` de una ejecución cargada antes del cierre", async () => {
-    const { markPdtpExecution, approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
+  // Cerrar con envíos pendientes ya no se permite (PREV-I02), pero el guard
+  // de escritura sigue siendo la defensa: un envío que se cuele en carrera con
+  // el cierre, o uno anterior a esta regla, tampoco se aprueba en mes cerrado.
+  it("rechaza `approvePdtpExecution` de un envío pendiente en el mes cerrado", async () => {
+    const { approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
     const { closePdtpPeriod } = await import("@/lib/services/pdtp/period-closures")
     const { program, activity } = await createActiveProgram()
 
-    const execution = await markPdtpExecution({
-      activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: MONTH, week: 1, executedQuantity: 1,
-    }, "user-1", "all")
     await closePdtpPeriod({
       programId: program.id, worksiteId: "ws-1", year: YEAR, month: MONTH, reason: REASON,
     }, "user-1", "all")
+    const execution = await insertSubmittedExecution(activity.id, "ws-1")
 
     await expect(approvePdtpExecution(execution.id, "user-2", "all")).rejects.toThrow(/cerrado/i)
   })
 
   it("rechaza `rejectPdtpExecution` en el mes cerrado", async () => {
-    const { markPdtpExecution, rejectPdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    const { rejectPdtpExecution } = await import("@/lib/services/prevention-pdtp")
     const { closePdtpPeriod } = await import("@/lib/services/pdtp/period-closures")
     const { program, activity } = await createActiveProgram()
 
-    const execution = await markPdtpExecution({
-      activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: MONTH, week: 1, executedQuantity: 1,
-    }, "user-1", "all")
     await closePdtpPeriod({
       programId: program.id, worksiteId: "ws-1", year: YEAR, month: MONTH, reason: REASON,
     }, "user-1", "all")
+    const execution = await insertSubmittedExecution(activity.id, "ws-1")
 
     await expect(rejectPdtpExecution(execution.id, "user-2", "No corresponde", "all")).rejects.toThrow(/cerrado/i)
   })
@@ -404,7 +469,7 @@ describe("mes cerrado: bloqueo de escrituras", () => {
 
     // Otra faena, mismo mes.
     await expect(markPdtpExecution({
-      activityId: activity.id, worksiteId: "ws-2", year: YEAR, month: MONTH, week: 1, executedQuantity: 1,
+      activityId: activity.id, worksiteId: "ws-2", year: YEAR, month: MONTH, week: 1, executedQuantity: 1, evidenceUrl: EVIDENCE_URL,
     }, "user-1", "all")).resolves.toBeTruthy()
   })
 })
@@ -439,7 +504,7 @@ describe("reopenPdtpPeriod", () => {
     expect(reopened.snapshotJson).toBeTruthy()
 
     await expect(markPdtpExecution({
-      activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: MONTH, week: 1, executedQuantity: 2,
+      activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: MONTH, week: 1, executedQuantity: 2, evidenceUrl: EVIDENCE_URL,
     }, "user-1", "all")).resolves.toBeTruthy()
   })
 
@@ -482,6 +547,48 @@ describe("acreditación por integración y `driftedSinceClose`", () => {
     expect(afterDrift!.driftedSinceClose).toBe(true)
     // La foto congelada no cambió: sigue siendo lo que se distribuyó.
     expect(afterDrift!.digest).toBe(closure.digest)
+  })
+})
+
+describe("W1-N02 — la foto del cierre no depende del día en que se recalcula", () => {
+  it("pasar de mes no marca como desviado un cierre sin cambios reales", async () => {
+    const { closePdtpPeriod, getPdtpPeriodClosure } = await import("@/lib/services/pdtp/period-closures")
+    const { program, activity } = await createActiveProgram()
+    // Plan en julio: el "cumplimiento a la fecha" de junio y el de julio
+    // difieren, así que si la foto lo midiera contra hoy, cambiaría.
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+      id: `${activity.id}-s-jul`, activityId: activity.id, year: YEAR, month: 7, week: 1, plannedQuantity: 2, sourceColumn: "manual",
+    })
+    const closure = await closePdtpPeriod({
+      programId: program.id, worksiteId: "ws-1", year: YEAR, month: MONTH, reason: REASON,
+    }, "user-1", "all")
+
+    vi.setSystemTime(new Date(`${YEAR}-07-20T15:00:00.000Z`))
+    try {
+      expect((await getPdtpPeriodClosure(closure.id, "all"))!.driftedSinceClose).toBe(false)
+    } finally {
+      vi.setSystemTime(new Date(`${YEAR}-06-15T15:00:00.000Z`))
+    }
+  })
+
+  it("aprobar trabajo de un mes posterior no marca como desviado el cierre anterior", async () => {
+    const { closePdtpPeriod, getPdtpPeriodClosure } = await import("@/lib/services/pdtp/period-closures")
+    const { program, activity } = await createActiveProgram()
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+      id: `${activity.id}-s-may`, activityId: activity.id, year: YEAR, month: 5, week: 1, plannedQuantity: 1, sourceColumn: "manual",
+    })
+    const closure = await closePdtpPeriod({
+      programId: program.id, worksiteId: "ws-1", year: YEAR, month: MONTH, reason: REASON,
+    }, "user-1", "all")
+
+    // Trabajo de mayo, aprobado después del cierre de enero.
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpExecutions).values({
+      id: `exec-may-${activity.id}`, activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: 5, week: 1,
+      executedQuantity: 1, status: "approved", origin: "manual", evidenceUrl: EVIDENCE_URL,
+      executedByUserId: "user-1", approvedByUserId: "user-2", approvedAt: now, executedAt: now, createdAt: now, updatedAt: now,
+    })
+    expect((await getPdtpPeriodClosure(closure.id, "all"))!.driftedSinceClose).toBe(false)
   })
 })
 

@@ -121,6 +121,7 @@ export function ConstanciasWorkbench({
                         defaultMonth={row.dueMonth}
                         effectiveFrom={view.effectiveFrom}
                         evidenceRequirement={row.evidenceRequirement}
+                        manualEvidencePolicy={row.manualEvidencePolicy}
                         // Este workbench sólo lista actividades `mechanism:
                         // 'constancia'` (ver `listPdtpConstanciaActivities`
                         // en lib/services/pdtp/constancias.ts) — no viene en

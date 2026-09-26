@@ -53,4 +53,29 @@ describe("GET document integrity Excel", () => {
     expect(workbook.getWorksheet("Regularización")?.getCell("I2").value).toBe("No")
     expect(workbook.getWorksheet("Advertencia")?.getCell("A1").value).toMatch(/no utilizable/i)
   })
+
+  it("neutraliza textos que Excel interpretaría como fórmula (PREV-K03)", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "jefa-1", permissions: ["prevention:docs:publish"] } })
+    mockCan.mockReturnValue(true)
+    mockGetFindings.mockResolvedValue([{
+      severity: "alto",
+      code: "PUBLISHED_WITHOUT_APPROVER",
+      documentId: "sdoc-2",
+      documentTitle: "=HYPERLINK(\"http://x\",\"abrir\")",
+      versionId: "sdv-2",
+      detail: "+cmd|' /C calc'!A0",
+      recommendedAction: "@SUM(1+1)",
+      evidenceUsable: false,
+    }])
+    const { GET } = await import("./route")
+    const response = await GET()
+    const Excel = await import("exceljs")
+    const workbook = new Excel.Workbook()
+    await workbook.xlsx.load(await response.arrayBuffer())
+    const sheet = workbook.getWorksheet("Regularización")!
+    expect(String(sheet.getCell("D2").value).startsWith("'")).toBe(true)
+    expect(String(sheet.getCell("G2").value).startsWith("'")).toBe(true)
+    expect(String(sheet.getCell("H2").value).startsWith("'")).toBe(true)
+  })
 })
+

@@ -41,8 +41,8 @@ import {
   reportSubjectObligation,
   resolvePdtpProgramActorUserId,
   type ObligationSweepCounters,
+  resolvePdtpActivityIdsOrSkip,
 } from "./obligation-kit"
-import { resolvePdtpActivityIdsForNumbers } from "@/lib/services/pdtp/accreditation"
 
 const PREVENTIVE_ORGANIZATION_ACTIVITY_NUMBER = 11
 const SOURCE_TYPE = "organizacion_preventiva"
@@ -123,13 +123,13 @@ async function openObligationsFor(
   // El actor se hereda del programa una sola vez por barrido: es el mismo para
   // todas las faenas y resolverlo por fila serían N consultas idénticas.
   let actorUserId: string | null = null
-  const probe = await resolvePdtpActivityIdsForNumbers({
+  const probe = await resolvePdtpActivityIdsOrSkip({
     worksiteId: gaps[0]!.worksiteId,
     occurredAt,
     activityNumbers: [PREVENTIVE_ORGANIZATION_ACTIVITY_NUMBER],
     sourceType: SOURCE_TYPE,
     sourceId: episodeIdFor(gaps[0]!.worksiteId, occurredAt),
-  }).catch(() => null)
+  })
   if (probe) actorUserId = await resolvePdtpProgramActorUserId(probe.programId)
 
   for (const row of gaps) {

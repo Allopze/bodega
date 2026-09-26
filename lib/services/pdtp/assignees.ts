@@ -435,4 +435,65 @@ function normalizeDate(value: string | undefined | null): string | null {
   return trimmed
 }
 
+/**
+ * Traspasa a la versión que entra en vigencia las asignaciones nominales
+ * abiertas de las versiones que cierra (C05-A). La v+1 copia reglas de
+ * recordatorio y la restricción de PREV-I03 lee asignados por actividad: sin
+ * este traspaso los avisos iban a todos los de la faena y cualquiera volvía a
+ * registrar la actividad de otra persona.
+ *
+ * La actividad equivalente se busca por identidad de catálogo y, si no hay,
+ * por número. La asignación nueva rige desde `today`; la de la versión cerrada
+ * se conserva tal cual, como historia. Idempotente: el índice único de
+ * asignaciones abiertas evita duplicar.
+ */
+export async function handoverPdtpWorksiteAssignees(
+  fromProgramIds: string[],
+  toProgramId: string,
+  today: string,
+  tx: Tx,
+): Promise<number> {
+  if (fromProgramIds.length === 0) return 0
+  const [sourceActivities, targetActivities] = await Promise.all([
+    tx.select({ id: pdtpActivities.id, n: pdtpActivities.n, catalogActivityId: pdtpActivities.catalogActivityId })
+      .from(pdtpActivities).where(inArray(pdtpActivities.programId, fromProgramIds)),
+    tx.select({ id: pdtpActivities.id, n: pdtpActivities.n, catalogActivityId: pdtpActivities.catalogActivityId })
+      .from(pdtpActivities).where(and(eq(pdtpActivities.programId, toProgramId), eq(pdtpActivities.status, "active"))),
+  ])
+  if (sourceActivities.length === 0 || targetActivities.length === 0) return 0
+  const targetByCatalog = new Map(targetActivities.filter((row) => row.catalogActivityId).map((row) => [row.catalogActivityId!, row.id]))
+  const targetByN = new Map(targetActivities.map((row) => [row.n, row.id]))
+  const targetFor = new Map(sourceActivities.map((row) => [
+    row.id,
+    (row.catalogActivityId ? targetByCatalog.get(row.catalogActivityId) : undefined) ?? targetByN.get(row.n),
+  ]))
+
+  const open = await tx.select().from(pdtpActivityWorksiteAssignees).where(and(
+    inArray(pdtpActivityWorksiteAssignees.activityId, sourceActivities.map((row) => row.id)),
+    or(isNull(pdtpActivityWorksiteAssignees.validUntil), sql`${pdtpActivityWorksiteAssignees.validUntil} >= ${today}`),
+  ))
+  const now = new Date().toISOString()
+  const rows = open.flatMap((assignment) => {
+    const activityId = targetFor.get(assignment.activityId)
+    if (!activityId) return []
+    return [{
+      id: `pdtp-assignee-${nanoid()}`,
+      activityId,
+      worksiteId: assignment.worksiteId,
+      userId: assignment.userId,
+      roleId: assignment.roleId,
+      validFrom: assignment.validFrom > today ? assignment.validFrom : today,
+      validUntil: assignment.validUntil,
+      note: assignment.note,
+      createdByUserId: assignment.createdByUserId,
+      createdAt: now,
+      updatedAt: now,
+    }]
+  })
+  if (rows.length === 0) return 0
+  const inserted = await tx.insert(pdtpActivityWorksiteAssignees).values(rows)
+    .onConflictDoNothing().returning({ id: pdtpActivityWorksiteAssignees.id })
+  return inserted.length
+}
+
 export type { PdtpActivityWorksiteAssignee }

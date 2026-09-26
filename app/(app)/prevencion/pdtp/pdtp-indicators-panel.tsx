@@ -38,7 +38,7 @@ export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId }: {
    * para conservar el filtro al enlazar al visor de actividades. */
   worksiteId?: string
 }) {
-  const { monthly, quarterly, annual, target, lastExecutionUpdatedAt, programId, year } = data
+  const { monthly, quarterly, annual, toDate, target, lastExecutionUpdatedAt, programId, year } = data
   // `estado=en_cero` es el filtro del visor que corresponde exactamente a lo
   // que esta columna cuenta (`pending ∪ overdue`, sin `coverage`/
   // `closed_on_time` — ver `isPdtpActivityZeroThisMonth` en `period.ts`).
@@ -77,25 +77,33 @@ export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId }: {
         <div className="-ml-px -mt-px flex flex-wrap">
           {integral && <IntegralTile integral={integral} />}
 
-          {/* Cumplimiento anual: navega a los registros que lo componen. */}
+          {/* Cumplimiento a la fecha (PREV-I15): lo exigible hasta hoy contra lo
+              aprobado. El avance contra el plan de todo el año queda como dato
+              secundario —a mitad de año siempre está bajo la meta aunque todo lo
+              exigible esté hecho—. Navega a los registros que lo componen. */}
           <a href="#registros-pdtp" className="flex-1 min-w-[10rem] border-l border-t border-[var(--color-border)] transition-colors hover:bg-[var(--color-surface-2)]">
             <div className="px-4 py-3">
               <div className="flex items-center gap-1.5">
                 <ChartBar size={13} className="shrink-0 text-[var(--color-text-faint)]" />
-                <span className="text-eyebrow">Cumplimiento anual</span>
+                <span className="text-eyebrow">Cumplimiento a la fecha</span>
               </div>
               <div className="mt-2 flex items-end gap-2">
                 <span className={cn(
                   "font-mono text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight",
-                  annual.percent !== null && annual.percent >= target
+                  toDate.percent !== null && toDate.percent >= target
                     ? "text-[var(--color-success-ink)]"
                     : "text-[var(--color-text)]"
                 )}>
-                  {fmtPct(annual.percent)}
+                  {fmtPct(toDate.percent)}
                 </span>
-                <span className="mb-1 text-xs text-[var(--color-text-subtle)]">Plan {annual.planned} · ejecutado {annual.executed}</span>
+                <span className="mb-1 text-xs text-[var(--color-text-subtle)]">
+                  {toDate.throughMonth > 0 ? `hasta ${MONTH_LABELS[toDate.throughMonth - 1]} · ` : ""}plan {toDate.planned} · ejecutado {toDate.executed}
+                </span>
               </div>
-              <ComplianceBar value={annual.percent} target={target} />
+              <ComplianceBar value={toDate.percent} target={target} />
+              <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
+                Avance anual {fmtPct(annual.percent)} · plan {annual.planned} · ejecutado {annual.executed}
+              </p>
             </div>
           </a>
 

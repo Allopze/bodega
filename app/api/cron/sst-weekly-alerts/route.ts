@@ -20,6 +20,8 @@ export const dynamic = 'force-dynamic'
 // corte por timeout de plataforma deja estado parcial sin señal accionable.
 export const maxDuration = 300
 
+// `outcome` y `code` son el contrato de `scripts/cron-runner.mjs` (PREV-C04):
+// sin ellos el runner daba por rota cada corrida aunque el trabajo se hiciera.
 export async function GET(req: NextRequest): Promise<NextResponse> {
   // Validate CRON_SECRET to prevent unauthorized invocations
   const secret = process.env.CRON_SECRET
@@ -27,17 +29,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   if (!secret) {
     logger.error('[cron/sst-weekly-alerts] CRON_SECRET is not configured')
-    return NextResponse.json({ error: 'Cron secret not configured' }, { status: 500 })
+    return NextResponse.json({ ok: false, outcome: 'failed', code: 'SST_CRON_CONFIGURATION', error: 'Cron secret not configured' }, { status: 500 })
   }
 
   if (!verifyCronSecret(authHeader, secret)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ ok: false, outcome: 'unauthorized', code: 'SST_CRON_UNAUTHORIZED', error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
     const result = await withCronLock("sst-weekly-alerts", () => checkOverdueWeeklyAlerts())
+    if ('skipped' in result && result.skipped === true) return NextResponse.json({ ok: true, outcome: 'skipped', code: 'SST_CRON_SKIPPED', reason: result.reason })
     logger.info('[cron/sst-weekly-alerts] Completed', result)
-    return NextResponse.json({ ok: true, ...result })
+    return NextResponse.json({ ok: true, outcome: 'success', code: 'SST_CRON_SUCCESS', ...result })
   } catch (err) {
     // H-B11: en producción no se expone `err.message` al cliente porque puede
     // filtrar paths internos y fragmentos de SQL. Mismo criterio que los otros
@@ -45,8 +48,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     logger.error('[cron/sst-weekly-alerts] Fatal error', err)
     const isProd = process.env.NODE_ENV === 'production'
     return NextResponse.json(
-      { error: isProd ? 'Internal cron error' : (err instanceof Error ? err.message : 'Unknown error') },
-      { status: 500 }
+      { ok: false, outcome: 'failed', code: 'SST_CRON_FAILED', error: isProd ? 'Internal cron error' : (err instanceof Error ? err.message : 'Unknown error') },
+      { status: 503 }
     )
   }
 }

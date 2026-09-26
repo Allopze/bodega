@@ -73,6 +73,10 @@ export const pdtpPrograms = pgTable("pdtp_programs", {
   // La identidad documental es año + versión: una revisión correctiva v+1
   // convive con la evidencia de la versión que estaba activa.
   uniqueIndex("pdtp_programs_year_version_unique").on(table.year, table.version),
+  // Un solo programa vigente por año (PREV-M01). `activatePdtpProgram` ya
+  // cierra la versión anterior en la misma transacción; el índice es la
+  // garantía ante dos activaciones concurrentes de versiones distintas.
+  uniqueIndex("pdtp_programs_one_active_per_year_unique").on(table.year).where(sql`${table.status} = 'active'`),
   index("pdtp_programs_status_idx").on(table.status),
   check("pdtp_programs_status_check", sql`${table.status} IN ('draft', 'in_review', 'rejected', 'active', 'closed', 'archived')`),
   check("pdtp_programs_creation_mode_check", sql`${table.creationMode} IN ('blank', 'program_copy', 'template', 'xlsx_import', 'base_2026')`),
@@ -413,6 +417,15 @@ export const pdtpActivities = pgTable("pdtp_activities", {
   dueHours:            integer("due_hours"),
   evidenceRequirement: text("evidence_requirement"),
   /**
+   * Qué basta para declarar "Se hizo" a mano en la planilla (PREV-B02,
+   * auditoría 2026-09-26). Por defecto un archivo real: una ejecución sin
+   * evidencia verificable no puede contar como cumplida. `declaration_allowed`
+   * es la excepción declarada —actividades cuyo respaldo vive fuera de la
+   * plataforma (expediente físico del RE-20, por ejemplo)— y aun así exige una
+   * observación escrita: nunca vacío.
+   */
+  manualEvidencePolicy: text("manual_evidence_policy").notNull().default("file_required"),
+  /**
    * Cómo se cumple esta actividad (D4 del diseño 2026-08-12). Hasta ahora la
    * clasificación vivía sólo en el documento y el código no podía consultarla:
    *
@@ -523,6 +536,7 @@ export const pdtpActivities = pgTable("pdtp_activities", {
   // (¿se suman? ¿manda la más corta?) y ninguna actividad del catálogo 2026
   // necesita ambas.
   check("pdtp_activities_due_days_hours_exclusive", sql`${table.dueDays} IS NULL OR ${table.dueHours} IS NULL`),
+  check("pdtp_activities_manual_evidence_policy_check", sql`${table.manualEvidencePolicy} IN ('file_required', 'declaration_allowed')`),
   check("pdtp_activities_mechanism_check", sql`${table.mechanism} IN ('enganche', 'constancia', 'formulario', 'compuesta', 'sin_definir')`),
   check("prevention_pdtp_activity_indicator_mode_valid", sql`${table.indicatorMode} IN ('planned_vs_completed', 'closed_on_time', 'completed_count', 'not_applicable', 'coverage')`),
   check("pdtp_activities_subject_source_check", sql`${table.subjectSource} IS NULL OR ${table.subjectSource} IN ('dotacion', 'extintores', 'expuestos_ges', 'equipos', 'trabajadores_nuevos', 'trabajadores_capacidad')`),

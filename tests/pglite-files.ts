@@ -141,6 +141,12 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-cgrd.test.ts",
   "lib/__tests__/pdtp-coverage-sources.test.ts",
   "lib/__tests__/pdtp-evidence-gc.test.ts",
+  // Auditoría 2026-09-26: evidencia obligatoria, envíos ajenos y asignación nominal.
+  "lib/__tests__/pdtp-execution-integrity.test.ts",
+  // C05-A: la revisión v+1 copia todo el contenido de la actividad.
+  "lib/__tests__/pdtp-revision-midyear.test.ts",
+  // DEPLOY-0329: el SQL del chequeo de años con dos programas activos.
+  "lib/__tests__/migration-preflight-pdtp-active.test.ts",
   "lib/__tests__/risk-map-gc.test.ts",
   "lib/__tests__/pdtp-reminders-dedup.test.ts",
   "lib/__tests__/pdtp-revision-diff-decisions.test.ts",

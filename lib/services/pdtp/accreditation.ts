@@ -228,6 +228,18 @@ export class PdtpNoActiveProgramError extends Error {
   }
 }
 
+/**
+ * La faena del hecho no es miembro del programa (PREV-I07). Tipada para que
+ * los conectores de barrido la distingan de una falla real: para ellos es "no
+ * aplica", igual que la falta de programa activo.
+ */
+export class PdtpWorksiteNotInProgramError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "PdtpWorksiteNotInProgramError"
+  }
+}
+
 type ResolvedProgramEvent =
   | { ok: true; program: typeof pdtpPrograms.$inferSelect; occurredYear: number; slot: { month: number; week: number } }
   // El programa existe y está activo, pero no cubre el año del evento. Se
@@ -357,7 +369,7 @@ async function resolvePdtpActiveProgramForEvent(
       eq(pdtpProgramWorksites.isActive, true),
     ))
   if (explicitMemberships.length > 0 && !explicitMemberships.some((member) => member.worksiteId === input.worksiteId)) {
-    throw new Error(`La faena ${input.worksiteId} no pertenece al programa ${program.id}.`)
+    throw new PdtpWorksiteNotInProgramError(`La faena ${input.worksiteId} no pertenece al programa ${program.id}.`)
   }
   if (explicitMemberships.length === 0 && !program.appliesToAllWorksites) {
     throw new Error(`El programa ${program.id} no declara alcance corporativo ni una membresía de faena.`)
@@ -840,14 +852,20 @@ export async function accreditPdtpFromEvent(
 
 export type RevocationResult = {
   revoked: Array<{ activityId: string; executionId: string }>
-  skippedApproved: Array<{ activityId: string; executionId: string }>
+  /** Subconjunto de `revoked` que una persona había aprobado (PREV-B01). */
+  revertedApproved: Array<{ activityId: string; executionId: string }>
 }
 
 /**
- * Revierte las ejecuciones auto-acreditadas para un evento dado.
- * Las aprobaciones manuales no se tocan (se reportan en `skippedApproved`).
- * Las demás, incluidas las aprobadas automáticamente por el propio evento,
- * pasan a `draft` con nota de reversión en `sourceMetadataJson`.
+ * Revierte las ejecuciones acreditadas por un evento dado: pasan a `draft`
+ * con nota de reversión en `sourceMetadataJson`.
+ *
+ * PREV-B01 (auditoría 2026-09-26): antes una aprobación manual se saltaba
+ * ("deshacer una aprobación humana es una decisión humana") y el libro
+ * marcaba el evento como `revoked` sin que nadie se enterara: la actividad
+ * seguía cumplida con un registro anulado. Ahora también se revierte, pero
+ * no en silencio: conserva quién la había aprobado y deja una entrada en el
+ * control de cambios del programa.
  *
  * Llamar desde el flujo de cancelación del evento original (inspección
  * cancelada, sesión cancelada, etc.).
@@ -900,7 +918,7 @@ export async function revokePdtpAccreditationWithClient(
   })
 
   const revoked: RevocationResult["revoked"] = []
-  const skippedApproved: RevocationResult["skippedApproved"] = []
+  const revertedApproved: RevocationResult["revertedApproved"] = []
   const now = new Date().toISOString()
 
   for (const execution of matching) {
@@ -911,10 +929,7 @@ export async function revokePdtpAccreditationWithClient(
       && prevMetadata.approvalMode === "automatic_source_event"
       && ((prevMetadata.sourceType === input.sourceType && prevMetadata.sourceId === input.sourceId)
         || contributed.includes(targetKey))
-    if (execution.status === "approved" && !automaticallyApproved) {
-      skippedApproved.push({ activityId: execution.activityId, executionId: execution.id })
-      continue
-    }
+    const manuallyApproved = execution.status === "approved" && !automaticallyApproved
 
     const remainingKeys = contributed.filter((key) => key !== targetKey)
     if (automaticallyApproved && contributed.includes(targetKey) && remainingKeys.length > 0) {
@@ -962,6 +977,7 @@ export async function revokePdtpAccreditationWithClient(
           revokedAt: now,
           revokedBy: input.revokedBy ?? null,
           revocationReason: input.reason ?? "Evento fuente cancelado o anulado.",
+          ...(manuallyApproved ? { previousApprovedByUserId: execution.approvedByUserId } : {}),
         },
         updatedAt: now,
       })
@@ -972,7 +988,30 @@ export async function revokePdtpAccreditationWithClient(
         ),
       )
       .returning({ id: pdtpExecutions.id })
-    if (updated) revoked.push({ activityId: execution.activityId, executionId: execution.id })
+    if (!updated) continue
+    revoked.push({ activityId: execution.activityId, executionId: execution.id })
+    if (manuallyApproved) {
+      revertedApproved.push({ activityId: execution.activityId, executionId: execution.id })
+      const [context] = await client.select({
+        programId: pdtpActivities.programId,
+        n: pdtpActivities.n,
+        version: pdtpPrograms.version,
+      })
+        .from(pdtpActivities)
+        .innerJoin(pdtpPrograms, eq(pdtpPrograms.id, pdtpActivities.programId))
+        .where(eq(pdtpActivities.id, execution.activityId))
+        .limit(1)
+      if (context) {
+        const reason = input.reason ?? "Evento fuente cancelado o anulado."
+        await addPdtpChangeLogEntry(
+          context.programId, context.version, input.revokedBy ?? null, `execution:${execution.id}`,
+          { status: "approved", approvedByUserId: execution.approvedByUserId },
+          { status: "draft", sourceType: input.sourceType, sourceId: input.sourceId, reason },
+          `Acreditación aprobada de la actividad N°${context.n} revertida: el registro de origen (${input.sourceType}) fue anulado. Motivo: ${reason}`,
+          client,
+        )
+      }
+    }
   }
 
   logger.info(
@@ -981,12 +1020,12 @@ export async function revokePdtpAccreditationWithClient(
       sourceId: input.sourceId,
       worksiteId: input.worksiteId,
       revokedCount: revoked.length,
-      skippedApproved: skippedApproved.length,
+      revertedApproved: revertedApproved.length,
     },
     "[revokePdtpAccreditation] Reversión completada.",
   )
 
-  return { revoked, skippedApproved }
+  return { revoked, revertedApproved }
 }
 
 export async function revokePdtpAccreditation(input: RevocationInput): Promise<RevocationResult> {

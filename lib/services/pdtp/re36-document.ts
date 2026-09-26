@@ -17,7 +17,7 @@
  * aplicar `sanitizeCell` (`lib/reports/export-module/excel-builder.ts`) o un
  * saneo equivalente antes de escribirlos en una celda.
  */
-import { and, asc, eq, gte, inArray } from "drizzle-orm"
+import { and, asc, eq, gte, inArray, lte } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
@@ -36,7 +36,7 @@ import {
 } from "@/db/schema"
 import { listPdtpApprovalSteps } from "./approval-flow"
 import { listPdtpActivityAssignees } from "./assignees"
-import { effectiveApprovedExecutionsByCell, getPdtpComplianceIndicators } from "./compliance"
+import { cutPdtpComplianceIndicatorsToMonth, effectiveApprovedExecutionsByCell, getPdtpComplianceIndicators } from "./compliance"
 import { assertWorksiteAccess, loadProgramScheduleAndExecutions, type WorksiteScope } from "./helpers"
 import { listPdtpObjectives } from "./objectives"
 import { filterPdtpRowsFromActivation } from "./period"
@@ -344,7 +344,14 @@ function canonicalPdtpTimestamp(value: string | null): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
 }
 
-async function listPdtpRe36IsoCalendar(programId: string, worksiteId: string): Promise<PdtpRe36IsoCalendarRow[]> {
+async function listPdtpRe36IsoCalendar(
+  programId: string,
+  worksiteId: string,
+  options: { asOf?: string } = {},
+): Promise<PdtpRe36IsoCalendarRow[]> {
+  // W1-N02: con corte, sólo las ocurrencias hasta ese día y su estado medido
+  // contra el corte, no contra hoy (una ocurrencia no "vence" sola en la foto).
+  const cutoffDay = options.asOf ? isoToChileDay(options.asOf) : null
   const rows = await db.select({
     isoWeekYear: pdtpScheduledInstances.isoWeekYear,
     isoWeek: pdtpScheduledInstances.isoWeek,
@@ -369,6 +376,7 @@ async function listPdtpRe36IsoCalendar(programId: string, worksiteId: string): P
     .where(and(
       eq(pdtpScheduledInstances.programId, programId),
       eq(pdtpScheduledInstances.worksiteId, worksiteId),
+      cutoffDay ? lte(pdtpScheduledInstances.scheduledFor, cutoffDay) : undefined,
     ))
     .orderBy(asc(pdtpScheduledInstances.scheduledFor), asc(pdtpActivities.n), asc(pdtpScheduledInstances.id))
 
@@ -377,6 +385,7 @@ async function listPdtpRe36IsoCalendar(programId: string, worksiteId: string): P
       status: row.status,
       scheduledFor: row.scheduledFor,
       completedAt: row.completedAt ? (canonicalPdtpTimestamp(row.completedAt) ?? row.completedAt) : null,
+      ...(cutoffDay ? { now: `${cutoffDay}T23:59:59.999Z` } : {}),
     })
     const connector = getPdtpExecutionConnector(row.destinationConnectorKey)
     const bindingLabel = row.bindingSourceType && row.bindingSourceId && row.bindingEventType
@@ -416,10 +425,8 @@ export async function buildPdtpRe36Document(input: {
   asOf?: string
   /**
    * Mes de corte (1-12), o `null` para "año completo". Se refleja en
-   * `cutoff.month` tal cual. `getPdtpComplianceIndicators` no acepta un
-   * corte mensual hoy, así que `platformIndicators` sigue siendo del año
-   * completo aunque se pase un mes — recortarlo de verdad queda para la fase
-   * de cierre mensual, no para esta tarea.
+   * `cutoff.month`, y con él lo ejecutado de meses posteriores y los
+   * indicadores quedan recortados al corte (W1-N02).
    */
   cutoffMonth?: number | null
   /**
@@ -641,7 +648,9 @@ export async function buildPdtpRe36Document(input: {
         for (let week = 1; week <= WEEKS_PER_MONTH; week++) {
           const key = `${activity.id}:${month}:${week}`
           const p = plannedByCell.get(key)
-          const e = executedByCell.get(key)
+          // W1-N02: con mes de corte, lo ejecutado después no aparece en el
+          // documento congelado (el planificado sí: es el plan firmado).
+          const e = input.cutoffMonth && month > input.cutoffMonth ? undefined : executedByCell.get(key)
           const notes = notesByCell.get(key)
           cells[cellIndex(month, week)] = {
             p: p === undefined ? null : p,
@@ -713,11 +722,14 @@ export async function buildPdtpRe36Document(input: {
     ? buildPerPersonSheets(sheets, assigneeRows)
     : sheets
 
-  const [indicators, isoCalendar] = await Promise.all([
+  const [rawIndicators, isoCalendar] = await Promise.all([
     getPdtpComplianceIndicators(input.programId, input.worksiteId),
-    listPdtpRe36IsoCalendar(input.programId, input.worksiteId),
+    listPdtpRe36IsoCalendar(input.programId, input.worksiteId, input.asOf ? { asOf: input.asOf } : {}),
   ])
-  if (!indicators) throw new Error("No fue posible calcular los indicadores de cumplimiento del programa.")
+  if (!rawIndicators) throw new Error("No fue posible calcular los indicadores de cumplimiento del programa.")
+  // W1-N02: con mes de corte, los indicadores son los de ese mes (antes
+  // seguían siendo del año completo aunque se pasara el corte).
+  const indicators = input.cutoffMonth ? cutPdtpComplianceIndicatorsToMonth(rawIndicators, input.cutoffMonth) : rawIndicators
 
   const platformIndicators = {
     monthly: indicators.monthly.map((month) => ({

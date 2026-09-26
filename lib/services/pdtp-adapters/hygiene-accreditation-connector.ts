@@ -250,10 +250,9 @@ export async function onSurveillanceControlAttended(input: {
 
 /**
  * Revierte la N°50 cuando la matrícula deja de estar `attended`: el control que
- * la sostenía dejó de existir. Las ejecuciones ya aprobadas por una persona no
- * se tocan —eso lo decide `revokePdtpAccreditation`, que las reporta en
- * `skippedApproved`—, porque deshacer una aprobación humana es una decisión
- * humana.
+ * la sostenía dejó de existir. Si una persona ya la había aprobado, también se
+ * revierte (PREV-B01): `revokePdtpAccreditation` la reporta en
+ * `revertedApproved` y deja la traza en el control de cambios.
  */
 export async function onSurveillanceControlReverted(input: {
   enrollmentId: string

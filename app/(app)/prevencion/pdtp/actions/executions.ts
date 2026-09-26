@@ -70,7 +70,11 @@ export async function markPdtpExecutionAction(formData: FormData): Promise<Actio
     if (!can(session, "prevention:pdtp:execute")) {
       await assertPdtpActivityMechanism(parsed.data.activityId, "constancia")
     }
-    await markPdtpExecution(parsed.data, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+    // Sólo quien administra el programa corrige el envío pendiente de otra
+    // persona o registra por la persona asignada (PREV-B03, PREV-I03).
+    await markPdtpExecution(parsed.data, session.user.id, scopeToIds(resolveWorksiteScope(session)), {
+      canActForOthers: can(session, "prevention:pdtp:override:manage"),
+    })
     revalidateOperationalViews([REVALIDATE, "/prevencion/constancias"])
     return { ok: true }
   } catch (e) {

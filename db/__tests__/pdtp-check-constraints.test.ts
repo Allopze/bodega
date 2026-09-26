@@ -207,12 +207,23 @@ describe("PDTP CHECK constraints SQL", () => {
       await expectCheckViolation(insertObjective({ code: "1", name: " " }), "pdtp_objectives_name_check")
     })
 
+    it("no admite dos programas activos del mismo año (PREV-M01)", async () => {
+      const now = new Date().toISOString()
+      await expect(inMemoryDb.insert(schema.pdtpPrograms).values({
+        id: "p-active-dup", year: 2026, version: 9, status: "active", title: "Duplicado",
+        elaboratedByName: "X", elaboratedByTitle: "Y", createdAt: now, updatedAt: now,
+      })).rejects.toThrow()
+      const programs = await inMemoryDb.select().from(schema.pdtpPrograms)
+      expect(programs.filter((program) => program.year === 2026 && program.status === "active")).toHaveLength(1)
+    })
+
     it("un objetivo de otro programa es rechazado por la FK compuesta", async () => {
       const now = new Date().toISOString()
       // Segundo programa real y distinto de p1: la FK compuesta debe comparar
       // programId, no solo el id del objetivo.
       await inMemoryDb.insert(schema.pdtpPrograms).values({
-        id: "p2", year: 2026, version: 2, status: "active", title: "T2",
+        // `draft`: sólo puede haber un programa activo por año (PREV-M01).
+        id: "p2", year: 2026, version: 2, status: "draft", title: "T2",
         elaboratedByName: "X", elaboratedByTitle: "Y",
         createdAt: now, updatedAt: now,
       })

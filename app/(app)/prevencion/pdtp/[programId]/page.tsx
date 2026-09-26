@@ -38,6 +38,7 @@ import { PdtpImportExcelDialog } from "../pdtp-import-excel-dialog"
 import { countPdtpFulfillmentBacklog } from "@/lib/services/pdtp/backlog"
 import { resolveSelectedWorksiteId } from "../pdtp-context"
 import type { PdtpActivityStatusFilter } from "@/lib/services/pdtp/period"
+import { pdtpChangeLogCategory } from "@/lib/services/pdtp/change-log-labels"
 import { CoverageSummaryCard } from "./coverage-summary-card"
 import { FulfillmentBacklogPanel, shouldOfferPdtpRevision } from "./fulfillment-backlog-panel"
 import { ProgramLifecycleControls } from "./program-lifecycle-controls"
@@ -316,7 +317,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         )}
         {/* Program lifecycle status block, con la metadata del documento importado plegada dentro */}
         <ProgramAcknowledgmentBeacon programId={programId} />
-        <CoverageSummaryCard report={coverageReport} programId={programId} />
+        <CoverageSummaryCard report={coverageReport} programId={programId} programStatus={program.status} />
         {diffusionStatus && <ProgramDiffusionCard status={diffusionStatus} canManageUsers={can(session, "admin:users")} />}
         <FulfillmentBacklogPanel
           programId={programId}
@@ -501,7 +502,7 @@ async function PdtpChangeLogSection({ programId }: { programId: string }) {
         {entries.map((entry) => (
           <div key={entry.id} className="flex items-start gap-3 px-4 py-2.5 text-xs">
             <span className="mt-0.5 shrink-0 text-[var(--color-text-faint)]">{formatDateSafe(entry.changedAt)}</span>
-            <span className="font-medium text-[var(--color-text-subtle)]">{entry.section}</span>
+            <span className="font-medium text-[var(--color-text-subtle)]">{pdtpChangeLogCategory(entry.section)}</span>
             <span className="text-[var(--color-text-muted)]">{entry.note}</span>
           </div>
         ))}

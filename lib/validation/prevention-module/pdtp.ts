@@ -433,7 +433,9 @@ export const pdtpObligationReportSchema = z.object({
   evidenceText: z.string().trim().max(5000).nullable().optional(),
   evidenceUrl: pdtpEvidenceUrl.nullable().optional(),
   evidencePhotos: z.array(pdtpEvidencePhotoItem).max(20).default([]),
-  reportedAt: z.iso.datetime({ offset: true }).optional(),
+  // Sin `reportedAt` (PREV-I11): `closed_on_time` lo compara con `dueAt`, y en
+  // manos del cliente un POST armado antedataba un cierre tardío. Lo fija el
+  // servidor; zod descarta la clave si llega.
 })
 
 export const pdtpObligationCancelSchema = z.object({

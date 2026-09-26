@@ -9,6 +9,8 @@
  * Import dinámico dentro de cada `it()`: un import estático del barrel
  * resuelve `@/db` antes de que `globalThis.__db` quede asignado más abajo.
  */
+import { mkdirSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
@@ -16,6 +18,13 @@ import { eq } from "drizzle-orm"
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
+
+// PREV-B02: "Se hizo" exige un archivo real en disco; las ejecuciones de este
+// archivo adjuntan éste.
+process.env.STORAGE_PATH = path.join(tmpdir(), `pdtp-evidence-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+mkdirSync(path.join(process.env.STORAGE_PATH, "pdtp-evidence"), { recursive: true })
+writeFileSync(path.join(process.env.STORAGE_PATH, "pdtp-evidence", "acta.pdf"), "%PDF-1.4")
+const EVIDENCE_URL = "storage/pdtp-evidence/acta.pdf"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -133,6 +142,7 @@ describe("recordPdtpDeviation: efecto de cada tipo a través de la costura únic
     }, "user-1", "all")
 
     const execution = await markPdtpExecution({
+      evidenceUrl: EVIDENCE_URL,
       activityId: activity.id, worksiteId: "ws-1", year: 2061, month: 4, week: 1, executedQuantity: 3,
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(execution.id, "user-2", ["ws-1"])
@@ -168,6 +178,7 @@ describe("recordPdtpDeviation: efecto de cada tipo a través de la costura únic
     const { activity } = await createActiveProgramWithScheduledCell(2062, { month: 5, week: 1, plannedQuantity: 1 })
 
     const execution = await markPdtpExecution({
+      evidenceUrl: EVIDENCE_URL,
       activityId: activity.id, worksiteId: "ws-1", year: 2062, month: 5, week: 1, executedQuantity: 1,
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(execution.id, "user-2", ["ws-1"])
@@ -193,6 +204,7 @@ describe("recordPdtpDeviation: efecto de cada tipo a través de la costura únic
       kind: "not_applicable", reason: "No aplica esta celda para la faena.",
     }, "user-1", "all")
     await expect(markPdtpExecution({
+      evidenceUrl: EVIDENCE_URL,
       activityId: activity.id, worksiteId: "ws-1", year: 2062, month: 6, week: 1, executedQuantity: 1,
     }, "user-1", ["ws-1"])).rejects.toThrow(/desvío activo/)
   })
@@ -208,6 +220,7 @@ describe("recordPdtpDeviation: efecto de cada tipo a través de la costura únic
     }, "user-1", "all")
 
     await markPdtpExecution({
+      evidenceUrl: EVIDENCE_URL,
       activityId: activity.id, worksiteId: "ws-1", year: 2025, month: 2, week: 1, executedQuantity: 1,
     }, "user-1", ["ws-1"])
 
@@ -228,6 +241,7 @@ describe("recordPdtpDeviation: efecto de cada tipo a través de la costura únic
       kind: "not_performed", reason: "No se realizó por ausencia del relator asignado.",
     }, "user-1", "all")
     await markPdtpExecution({
+      evidenceUrl: EVIDENCE_URL,
       activityId: activity2.id, worksiteId: "ws-1", year: 2026, month: 2, week: 1, executedQuantity: 0,
     }, "user-1", ["ws-1"])
     const [stillActive] = await inMemoryDb.select().from(schema.pdtpExecutionDeviations)

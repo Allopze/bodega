@@ -331,8 +331,11 @@ describe("Actividades planificadas en cero junto al cumplimiento mensual", () =>
     const submittedActivity = view!.activities.find((a) => a.id === actSubmitted)!
     const approvedActivity = view!.activities.find((a) => a.id === actApproved)!
 
-    // La tabla no cambia: una `submitted` sigue contando para la presentación.
-    expect(submittedActivity.effectiveMonthlyExecuted[5]).toBe(1)
+    // PREV-C01: la tabla cuenta como ejecutado sólo lo aprobado —igual que el
+    // indicador—; lo enviado se muestra aparte, como pendiente de aprobación.
+    expect(submittedActivity.effectiveMonthlyExecuted[5]).toBe(0)
+    expect(submittedActivity.pendingMonthlyExecuted?.[5]).toBe(1)
+    expect(submittedActivity.pendingTotalExecuted).toBe(1)
     // Pero el campo que alimenta el filtro solo mira lo aprobado.
     expect(submittedActivity.approvedMonthlyExecuted[5]).toBe(0)
     expect(
@@ -340,6 +343,8 @@ describe("Actividades planificadas en cero junto al cumplimiento mensual", () =>
     ).toBe(true)
 
     expect(approvedActivity.effectiveMonthlyExecuted[5]).toBe(1)
+    expect(approvedActivity.totalExecuted).toBe(1)
+    expect(approvedActivity.pendingTotalExecuted).toBe(0)
     expect(approvedActivity.approvedMonthlyExecuted[5]).toBe(1)
     expect(
       isPdtpActivityZeroThisMonth(approvedActivity, approvedActivity.effectiveMonthlyPlanned, approvedActivity.approvedMonthlyExecuted, period),
@@ -351,5 +356,69 @@ describe("Actividades planificadas en cero junto al cumplimiento mensual", () =>
     const june = compliance!.monthly[5]!
     expect(june.zeroActivityIds).toContain(actSubmitted)
     expect(june.zeroActivityIds).not.toContain(actApproved)
+  })
+
+  it("getPdtpSheetViewByProgram: una ejecución rechazada no suma ni como ejecutada ni como pendiente (PREV-C01)", async () => {
+    const { getPdtpSheetViewByProgram } = await import("@/lib/services/pdtp/sheets")
+    const programId = "pdtp-zero-prog-5"
+    const worksiteId = "ws-zero-5"
+    const sheetCode = "pdtp_general"
+    await inMemoryDb.insert(schema.worksites).values({ id: worksiteId, name: "Faena Zero 5", code: "FZ5", isActive: true })
+    await seedProgram(programId, 2037)
+    const activityId = "act-zero-rejected"
+    await seedActivity(programId, activityId, 1)
+    await seedSchedule(activityId, 2037, 3, 1)
+    await seedSheetMembership(programId, sheetCode, [activityId])
+    await seedExecution(activityId, worksiteId, 2037, 3, 1, "rejected")
+
+    const view = await getPdtpSheetViewByProgram(programId, sheetCode, worksiteId)
+    const activity = view!.activities.find((a) => a.id === activityId)!
+    expect(activity.monthlyExecuted[2]).toBe(0)
+    expect(activity.totalExecuted).toBe(0)
+    expect(activity.pendingTotalExecuted).toBe(0)
+  })
+
+  it("el avance por eje usa el mismo tope mensual que el indicador (PREV-C01)", async () => {
+    const { getPdtpComplianceByCategoryForScope, getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    const programId = "pdtp-zero-prog-6"
+    const worksiteId = "ws-zero-6"
+    await inMemoryDb.insert(schema.worksites).values({ id: worksiteId, name: "Faena Zero 6", code: "FZ6", isActive: true })
+    await seedProgram(programId, 2038)
+    const activityId = "act-zero-category"
+    await seedActivity(programId, activityId, 1)
+    await seedSchedule(activityId, 2038, 1, 1)
+    await seedSchedule(activityId, 2038, 3, 1)
+    // Enero cumplido; marzo en cero; julio (sin plan) con una ejecución extra.
+    await seedExecution(activityId, worksiteId, 2038, 1, 1, "approved")
+    await seedExecution(activityId, worksiteId, 2038, 7, 1, "approved")
+
+    const indicators = await getPdtpComplianceIndicators(programId, worksiteId)
+    expect(indicators!.annual).toMatchObject({ planned: 2, executed: 1 })
+    const categories = await getPdtpComplianceByCategoryForScope(programId, [worksiteId])
+    const total = categories!.reduce((acc, row) => ({ planned: acc.planned + row.planned, executed: acc.executed + row.executed }), { planned: 0, executed: 0 })
+    expect(total).toEqual({ planned: 2, executed: 1 })
+  })
+
+  it("expone el cumplimiento a la fecha además del avance anual (PREV-I15)", async () => {
+    const { getPdtpComplianceIndicators, getPdtpComplianceIndicatorsForScope } = await import("@/lib/services/pdtp/compliance")
+    const { chileDateParts } = await import("@/lib/utils")
+    const { year, month } = chileDateParts()
+    if (month === 12) return // sin meses futuros no hay diferencia que medir
+    const programId = "pdtp-zero-prog-7"
+    const worksiteId = "ws-zero-7"
+    await inMemoryDb.insert(schema.worksites).values({ id: worksiteId, name: "Faena Zero 7", code: "FZ7", isActive: true })
+    await seedProgram(programId, year)
+    const activityId = "act-zero-to-date"
+    await seedActivity(programId, activityId, 1)
+    await seedSchedule(activityId, year, 1, 1)
+    await seedSchedule(activityId, year, 12, 1)
+    await seedExecution(activityId, worksiteId, year, 1, 1, "approved")
+
+    const indicators = await getPdtpComplianceIndicators(programId, worksiteId)
+    expect(indicators!.annual).toMatchObject({ planned: 2, executed: 1, percent: 0.5 })
+    expect(indicators!.toDate).toEqual({ throughMonth: month, planned: 1, executed: 1, percent: 1 })
+
+    const scope = await getPdtpComplianceIndicatorsForScope(programId, [worksiteId])
+    expect(scope!.toDate).toEqual({ throughMonth: month, planned: 1, executed: 1, percent: 1 })
   })
 })

@@ -19,6 +19,7 @@ import { isFlowSubjectSource, resolvePdtpSubjectRoster } from "./subject-registr
 import { effectiveActivationFor, filterPdtpRowsFromActivation } from "./period"
 import { PDTP_ANNUAL_MINIMUM_MONTH, pdtpAnnualMinimumFloor } from "./annual-minimum"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
+import { chileDateParts } from "@/lib/utils"
 
 export type PdtpComplianceMonth = {
   month: number
@@ -83,6 +84,8 @@ export type PdtpComplianceIndicators = {
      * anual (es un listado de actividades, no de eventos mes-actividad). */
     zeroActivityIds: string[]
   }
+  /** Cumplimiento a la fecha: plan y ejecutado hasta `throughMonth` (PREV-I15). */
+  toDate: { throughMonth: number; planned: number; executed: number; percent: number | null }
   /** Última `updatedAt` entre las ejecuciones aprobadas que componen el
    * indicador, o `null` si no hay ninguna todavía. No es la hora del
    * cálculo (eso es "corte", ver `asOf` en el caller) sino de los datos. */
@@ -222,6 +225,65 @@ export function effectiveApprovedExecutionsByCell(rows: ApprovedExecution[]) {
   }))
 }
 
+/**
+ * El indicador tal como estaba al cierre del mes `cutoffMonth` (W1-N02): los
+ * meses posteriores quedan en cero, trimestres y año se recalculan sobre ese
+ * recorte y `toDate` se mide contra el corte. `lastExecutionUpdatedAt` se
+ * descarta porque es el máximo de todo el año y no se puede recortar sin las
+ * filas. Así la foto de un cierre no cambia porque se opere un mes posterior.
+ * Conserva los doce meses para no cambiar la forma de `PdtpComplianceIndicators`.
+ */
+export function cutPdtpComplianceIndicatorsToMonth(
+  indicators: PdtpComplianceIndicators,
+  cutoffMonth: number,
+): PdtpComplianceIndicators {
+  const monthly = indicators.monthly.map((month) => month.month <= cutoffMonth
+    ? month
+    : { ...month, planned: 0, executed: 0, percent: null, zeroActivities: 0, zeroActivityIds: [], declaredNotPerformed: 0 })
+  const quarterly = indicators.quarterly.map((quarter) => {
+    const months = monthly.slice((quarter.quarter - 1) * 3, quarter.quarter * 3)
+    const planned = months.reduce((sum, month) => sum + month.planned, 0)
+    const executed = months.reduce((sum, month) => sum + month.executed, 0)
+    return { ...quarter, planned, executed, percent: planned > 0 ? Math.round((executed / planned) * 100) / 100 : null }
+  })
+  const annualPlanned = monthly.reduce((sum, month) => sum + month.planned, 0)
+  const annualExecuted = monthly.reduce((sum, month) => sum + month.executed, 0)
+  return {
+    ...indicators,
+    monthly,
+    quarterly,
+    annual: {
+      ...indicators.annual,
+      planned: annualPlanned,
+      executed: annualExecuted,
+      percent: annualPlanned > 0 ? Math.round((annualExecuted / annualPlanned) * 100) / 100 : null,
+      zeroActivityMonths: monthly.filter((month) => month.zeroActivities > 0).length,
+      zeroActivityIds: [...new Set(monthly.flatMap((month) => month.zeroActivityIds))],
+    },
+    toDate: pdtpComplianceToDate(monthly, indicators.year, { year: indicators.year, month: cutoffMonth }),
+    lastExecutionUpdatedAt: null,
+  }
+}
+
+/**
+ * Cumplimiento a la fecha (PREV-I15, auditoría 2026-09-26): lo planificado
+ * hasta el mes en curso contra lo ejecutado en esos mismos meses. El "anual"
+ * mide avance contra el plan de todo el año —a mitad de año siempre está bajo
+ * la meta aunque todo lo exigible esté hecho—; esta cifra responde "¿vamos al
+ * día?". Un año pasado cuenta sus doce meses; uno futuro, ninguno.
+ */
+export function pdtpComplianceToDate(
+  monthly: Array<{ month: number; planned: number; executed: number }>,
+  year: number,
+  today: { year: number; month: number } = chileDateParts(),
+): { throughMonth: number; planned: number; executed: number; percent: number | null } {
+  const throughMonth = year < today.year ? 12 : year > today.year ? 0 : today.month
+  const months = monthly.filter((entry) => entry.month <= throughMonth)
+  const planned = months.reduce((sum, entry) => sum + entry.planned, 0)
+  const executed = months.reduce((sum, entry) => sum + entry.executed, 0)
+  return { throughMonth, planned, executed, percent: planned > 0 ? Math.round((executed / planned) * 100) / 100 : null }
+}
+
 export async function getPdtpComplianceIndicators(yearOrProgramId: number | string, worksiteId?: string): Promise<PdtpComplianceIndicators | null> {
   let program: typeof pdtpPrograms.$inferSelect | null = null
 
@@ -255,6 +317,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
       monthly: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, planned: 0, executed: 0, percent: null, zeroActivities: 0, zeroActivityIds: [], declaredNotPerformed: 0 })),
       quarterly: Array.from({ length: 4 }, (_, i) => ({ quarter: i + 1, planned: 0, executed: 0, percent: null })),
       annual: { planned: 0, executed: 0, percent: null, zeroActivityMonths: 0, zeroActivityIds: [] },
+      toDate: pdtpComplianceToDate([], year),
       lastExecutionUpdatedAt: null,
       subjectRosterIssues: [],
     }
@@ -615,6 +678,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     monthly,
     quarterly,
     annual,
+    toDate: pdtpComplianceToDate(monthly, year),
     lastExecutionUpdatedAt: finalLastExecutionUpdatedAt,
     subjectRosterIssues,
   }
@@ -681,6 +745,7 @@ export async function getPdtpComplianceIndicatorsForScope(
     target: resolved[0]!.target,
     monthly,
     quarterly,
+    toDate: pdtpComplianceToDate(monthly, resolved[0]!.year),
     annual: {
       planned: annualPlanned, executed: annualExecuted,
       percent: annualPlanned > 0 ? Math.round((annualExecuted / annualPlanned) * 100) / 100 : null,
@@ -771,9 +836,29 @@ export async function getPdtpComplianceByCategoryForScope(
     entry[field] += amount
     totals.set(category, entry)
   }
-  for (const row of scheduleRows) bump(row.activityId, "planned", row.plannedQuantity)
+  // PREV-C01: lo calendarizado se topa por mes, con la misma regla que el
+  // indicador (respuesta 2.4: compensación dentro del mes, no entre meses).
+  // Topar sólo al final, por año, dejaba que una ejecución de un mes sin plan
+  // cubriera un mes en cero y el eje mostraba más avance que el tablero.
+  const scheduledByCategoryMonth = new Map<string, { planned: number; executed: number }>()
+  const bumpMonth = (activityId: string, month: number, field: "planned" | "executed", amount: number) => {
+    const category = categoryByActivity.get(activityId)
+    if (!category) return
+    const key = `${category}\u0000${month}`
+    const entry = scheduledByCategoryMonth.get(key) ?? { planned: 0, executed: 0 }
+    entry[field] += amount
+    scheduledByCategoryMonth.set(key, entry)
+  }
+  for (const row of scheduleRows) bumpMonth(row.activityId, row.month, "planned", row.plannedQuantity)
   for (const row of effectiveApprovedExecutionsByCell(executionRows)) {
-    bump(row.activityId, "executed", row.executedQuantity)
+    bumpMonth(row.activityId, row.month, "executed", row.executedQuantity)
+  }
+  for (const [key, { planned, executed }] of scheduledByCategoryMonth) {
+    const category = key.slice(0, key.indexOf("\u0000"))
+    const entry = totals.get(category) ?? { planned: 0, executed: 0 }
+    entry.planned += planned
+    entry.executed += Math.min(executed, planned)
+    totals.set(category, entry)
   }
 
   // Casos por plazo: cada obligación vencida pesa 1 en el denominador y cada

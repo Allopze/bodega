@@ -10,6 +10,7 @@ import { Callout } from "@/components/ui/callout"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
+import { FileInput } from "@/components/ui/file-input"
 import { Input } from "@/components/ui/input"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -228,22 +229,40 @@ function CreateObligationDialog({ open, onOpenChange, activities, worksites, onS
   </DialogContent></Dialog>
 }
 
+/** Mismo tope que `POST /api/prevencion/pdtp/evidence`. */
+const MAX_EVIDENCE_BYTES = 25 * 1024 * 1024
+
 function ReportObligationDialog({ row, onClose, onSaved }: { row: ObligationRow | null; onClose: () => void; onSaved: () => void }) {
   const [quantity, setQuantity] = React.useState(1)
   const [evidence, setEvidence] = React.useState("")
+  const [file, setFile] = React.useState<File | null>(null)
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [prevRow, setPrevRow] = React.useState(row)
   if (row !== prevRow) {
     setPrevRow(row)
-    if (row) { setQuantity(row.obligation.plannedQuantity); setEvidence(""); setError(null) }
+    if (row) { setQuantity(row.obligation.plannedQuantity); setEvidence(""); setFile(null); setError(null) }
   }
   async function save() {
     if (!row) return
     setPending(true); setError(null)
     let result
     try {
-      result = await reportPdtpObligationAction({ obligationId: row.obligation.id, executedQuantity: quantity, evidenceText: evidence, evidencePhotos: [] })
+      // PREV-B02: el caso manual se respalda con un archivo, salvo que la
+      // actividad declare que basta la observación (lo valida el servidor).
+      let evidenceUrl: string | undefined
+      if (file) {
+        if (file.size > MAX_EVIDENCE_BYTES) { setError("El archivo supera 25 MB. Comprímelo o divide el PDF antes de subirlo."); return }
+        const body = new FormData()
+        body.set("file", file)
+        body.set("worksiteId", row.obligation.worksiteId)
+        body.set("activityId", row.obligation.activityId)
+        const response = await fetch("/api/prevencion/pdtp/evidence", { method: "POST", body })
+        const json = await response.json().catch(() => ({}))
+        if (!response.ok) { setError(json.error ?? "No se pudo subir la evidencia."); return }
+        evidenceUrl = json.path as string
+      }
+      result = await reportPdtpObligationAction({ obligationId: row.obligation.id, executedQuantity: quantity, evidenceText: evidence, evidenceUrl, evidencePhotos: [] })
     } finally {
       setPending(false)
     }
@@ -252,8 +271,16 @@ function ReportObligationDialog({ row, onClose, onSaved }: { row: ObligationRow 
   }
   return <Dialog open={row !== null} onOpenChange={(value) => { if (!value) onClose() }}><DialogContent>
     <DialogHeader><DialogTitle>Reportar trabajo realizado</DialogTitle><DialogDescription>La obligación quedará reportada y pasará a aprobación; aún no contará como cumplimiento formal.</DialogDescription></DialogHeader>
-    <div className="space-y-4"><p className="text-sm font-medium">{row?.activityName}</p><Field label="Cantidad realizada" required><Input className="max-w-32" type="number" min="0.01" step="0.25" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} /></Field><Field label="Evidencia" required helper="Describe el expediente, registro o respaldo verificable."><Textarea value={evidence} onChange={(event) => setEvidence(event.target.value)} rows={4} maxLength={5000} /></Field>{error && <p role="alert" className="text-sm text-[var(--color-danger)]">{error}</p>}</div>
-    <DialogFooter><Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || evidence.trim().length === 0}>{pending ? "Reportando..." : "Enviar a aprobación"}</Button></DialogFooter>
+    <div className="space-y-4">
+      <p className="text-sm font-medium">{row?.activityName}</p>
+      <Field label="Cantidad realizada" required><Input className="max-w-32" type="number" min="0.01" step="0.25" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} /></Field>
+      <Field label="Evidencia (foto o PDF)" htmlFor="obligation-evidence-file" helper="Adjunta el archivo que respalda el caso. Solo las actividades con respaldo fuera de la plataforma aceptan únicamente la descripción.">
+        <FileInput id="obligation-evidence-file" accept="image/jpeg,image/png,application/pdf" onChange={(next: File | null) => setFile(next)} disabled={pending} />
+      </Field>
+      <Field label="Descripción" helper="Qué se hizo y dónde está el respaldo."><Textarea value={evidence} onChange={(event) => setEvidence(event.target.value)} rows={4} maxLength={5000} /></Field>
+      {error && <p role="alert" className="text-sm text-[var(--color-danger)]">{error}</p>}
+    </div>
+    <DialogFooter><Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || (evidence.trim().length === 0 && !file)}>{pending ? "Reportando..." : "Enviar a aprobación"}</Button></DialogFooter>
   </DialogContent></Dialog>
 }
 

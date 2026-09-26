@@ -78,12 +78,6 @@ const capacitacion = (): EngancheDestination => ({
   href: (worksiteId) => `/prevencion/capacitacion?faena=${worksiteId}`,
 })
 
-const campanas = (): EngancheDestination => ({
-  module: "campanas",
-  permission: "prevention:campaign:manage",
-  href: (worksiteId) => `/prevencion/campanas?faena=${worksiteId}`,
-})
-
 const incidentes = (): EngancheDestination => ({
   module: "incidentes",
   permission: "prevention:incidents:investigate",
@@ -296,10 +290,11 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
   85: capacitacion(),
   86: capacitacion(),
   87: capacitacion(),
-  // La N°88 sigue siendo una campaña histórica compatible; el catálogo anual
-  // nuevo usa la N°89 para puntos ciegos, por lo que no se debe ocultar este
-  // destino mientras existan campañas antiguas con este número.
-  88: campanas(),
+  // PREV-I10: la N°88 se acredita completando su ocurrencia CAM-07 del
+  // catálogo anual. Apuntaba a Campañas, pero desde b5ff6c1f cerrar una
+  // campaña ya no acredita (evitaba el doble conteo con CAM-07): el destino
+  // mandaba a registrar trabajo que el PDTP no cuenta.
+  88: capacitacion(),
   89: capacitacion(),
 }
 

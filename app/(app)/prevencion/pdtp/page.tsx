@@ -340,7 +340,9 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             <KpiCard
               label="Ejecutadas"
               value={String(executedCount)}
-              detail={`Ejecuciones registradas en ${year}`}
+              // PREV-C01: es el ejecutado del indicador —aprobado y con el tope
+              // del mes—, no el conteo de registros; el rótulo lo decía mal.
+              detail={`Aprobadas que cuentan para el cumplimiento ${year}`}
               icon={<ShieldCheck size={22} className="text-[var(--color-success-ink)]" />}
               href={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "anual", "executed", currentPeriod) : undefined}
             />

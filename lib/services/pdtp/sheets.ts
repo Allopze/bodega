@@ -61,20 +61,20 @@ export type PdtpSheetView = {
     effectiveMonthlyPlanned: number[]
     effectiveMonthlyExecuted: number[]
     /**
-     * Igual que `effectiveMonthlyExecuted` (recorte de vigencia) pero contando
-     * **solo** ejecuciones `approved` — el mismo criterio que
-     * `compliance.ts` (`approvedExecutionRows = executionRows.filter(row =>
-     * row.status === "approved")`). No reemplaza a `effectiveMonthlyExecuted`:
-     * esa sigue mostrando cualquier estado (una `submitted` cuenta como
-     * "ejecutado" en la tabla, correcto — el usuario quiere ver que hay
-     * trabajo cargado esperando aprobación) para los badges y la tabla.
-     * Este campo existe solo para que `isPdtpActivityZeroThisMonth`
-     * (`period.ts`) cuente lo mismo que cuenta el indicador de cumplimiento:
-     * antes de este campo, una ejecución `submitted` sin aprobar hacía que
-     * el filtro "en_cero" excluyera una actividad que el indicador sí seguía
-     * contando como en cero (bug encontrado en la ronda 2/5 de la tarea 1.4).
+     * Ejecuciones `approved` por mes con recorte de vigencia. Desde PREV-C01
+     * coincide con `effectiveMonthlyExecuted` en la vista por faena (las dos
+     * cuentan sólo lo aprobado, el criterio de `compliance.ts`); se mantiene
+     * porque alimenta `isPdtpActivityZeroThisMonth` también en la vista
+     * agregada.
      */
     approvedMonthlyExecuted: number[]
+    /**
+     * PREV-C01: cantidades enviadas y aún sin revisar, por mes. No son
+     * "ejecutado" —no cuentan para el cumplimiento— pero la tabla las muestra
+     * como pendientes de aprobación. Sólo en la vista por faena.
+     */
+    pendingMonthlyExecuted?: number[]
+    pendingTotalExecuted?: number
     /**
      * Cuántos desvíos "no realizada" activos tiene la actividad en cada mes
      * (índice 0 = enero) para esta faena. Alimenta `deriveActivityStatus`
@@ -439,8 +439,17 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
       monthlyPlanned[cell.month - 1] = (monthlyPlanned[cell.month - 1] ?? 0) + cell.plannedQuantity
       monthlyTotals[cell.month - 1]!.planned += cell.plannedQuantity
     }
+    // PREV-C01 (auditoría 2026-09-26): "ejecutado" es sólo lo aprobado, igual
+    // que en `compliance.ts`. Antes la tabla y su Excel sumaban cualquier
+    // estado —una rechazada o un borrador se veían "Ejecutada"—. Lo enviado
+    // y aún no revisado se lleva aparte, como pendiente de aprobación.
+    const pendingMonthlyExecuted = Array.from({ length: 12 }, () => 0)
     const activityExecutions = executionsByActivity.get(activity.id) ?? []
     for (const execution of activityExecutions) {
+      if (execution.status === "submitted") {
+        pendingMonthlyExecuted[execution.month - 1] = (pendingMonthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
+      }
+      if (execution.status !== "approved") continue
       monthlyExecuted[execution.month - 1] = (monthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
       monthlyTotals[execution.month - 1]!.executed += execution.executedQuantity
     }
@@ -449,10 +458,8 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
     }
     const effectiveActivityExecutions = filterPdtpRowsFromActivation(activityExecutions, program.activatedAt)
     for (const execution of effectiveActivityExecutions) {
-      effectiveMonthlyExecuted[execution.month - 1] = (effectiveMonthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
-    }
-    for (const execution of effectiveActivityExecutions) {
       if (execution.status !== "approved") continue
+      effectiveMonthlyExecuted[execution.month - 1] = (effectiveMonthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
       approvedMonthlyExecuted[execution.month - 1] = (approvedMonthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
     }
 
@@ -467,6 +474,8 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
       totalExecuted: monthlyExecuted.reduce((s, v) => s + v, 0),
       effectiveTotalPlanned: effectiveMonthlyPlanned.reduce((s, v) => s + v, 0),
       effectiveTotalExecuted: effectiveMonthlyExecuted.reduce((s, v) => s + v, 0),
+      pendingMonthlyExecuted,
+      pendingTotalExecuted: pendingMonthlyExecuted.reduce((s, v) => s + v, 0),
       executions: activityExecutions
         .filter((e) => e.evidenceUrl || (Array.isArray(e.evidencePhotos) && e.evidencePhotos.length > 0) || e.evidenceText)
         .map((e) => ({

@@ -128,6 +128,20 @@ describe("POST /api/prevencion/pdtp/evidence", () => {
     expect(json.error).toBeTruthy()
   })
 
+  it("un fallo del disco responde 500 genérico y no expone la ruta interna (PREV-K02)", async () => {
+    const { POST } = await import("./route")
+    mockWriteBuffer.mockRejectedValueOnce(Object.assign(
+      new Error("EACCES: permission denied, open '/srv/app/storage/pdtp-evidence/abc.pdf'"),
+      { code: "EACCES" },
+    ))
+    const file = new File([PDF_BYTES], "foto.pdf", { type: "application/pdf" })
+    const res = await POST(makeRequest({ file, worksiteId: "ws-1" }))
+    const json = await res.json()
+    expect(res.status).toBe(500)
+    expect(JSON.stringify(json)).not.toContain("/srv/app")
+    expect(json.error).toMatch(/no se pudo guardar/i)
+  })
+
   it("accepts a valid PDF and returns a path under storage/pdtp-evidence/", async () => {
     const { POST } = await import("./route")
     const file = new File([PDF_BYTES], "foto.pdf", { type: "application/pdf" })

@@ -639,7 +639,7 @@ describe("revokePdtpAccreditation", () => {
     })
 
     expect(result.revoked).toHaveLength(1)
-    expect(result.skippedApproved).toHaveLength(0)
+    expect(result.revertedApproved).toHaveLength(0)
 
     const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
       .where(eq(schema.pdtpExecutions.activityId, ACT_ID))
@@ -649,7 +649,7 @@ describe("revokePdtpAccreditation", () => {
     expect(meta.revocationReason).toBe("Inspección cancelada por error.")
   })
 
-  it("no revierte una ejecución approved", async () => {
+  it("revierte también una aprobación humana: la fuente anulada deja de acreditar y queda la traza (PREV-B01)", async () => {
     const { accreditPdtpFromEvent, revokePdtpAccreditation } = await import("@/lib/services/pdtp/accreditation")
 
     const r1 = await accreditPdtpFromEvent({
@@ -671,13 +671,19 @@ describe("revokePdtpAccreditation", () => {
       worksiteId: WS_ID,
     })
 
-    expect(result.revoked).toHaveLength(0)
-    expect(result.skippedApproved).toHaveLength(1)
+    expect(result.revoked).toHaveLength(1)
+    expect(result.revertedApproved).toEqual([{ activityId: ACT_ID, executionId: r1.accredited[0]!.executionId }])
 
-    // Sigue approved
     const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
       .where(eq(schema.pdtpExecutions.id, r1.accredited[0]!.executionId))
-    expect(execution!.status).toBe("approved")
+    expect(execution!.status).toBe("draft")
+    expect(execution!.approvedByUserId).toBeNull()
+    expect(execution!.sourceMetadataJson).toMatchObject({ previousApprovedByUserId: USER_ID })
+    // Deshacer una aprobación humana no puede ser silencioso: queda en el
+    // control de cambios del programa.
+    const log = await inMemoryDb.select().from(schema.pdtpChangeLog)
+    expect(log.some((entry) => entry.section === `execution:${r1.accredited[0]!.executionId}`
+      && (entry.after as Record<string, unknown>)?.status === "draft")).toBe(true)
   })
 
   it("revierte una aprobación automática cuando la inspección se reabre", async () => {
@@ -700,7 +706,7 @@ describe("revokePdtpAccreditation", () => {
     })
 
     expect(result.revoked).toEqual([{ activityId: ACT_ID, executionId: accredited.accredited[0]!.executionId }])
-    expect(result.skippedApproved).toEqual([])
+    expect(result.revertedApproved).toEqual([])
     const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
       .where(eq(schema.pdtpExecutions.id, accredited.accredited[0]!.executionId))
     expect(execution).toMatchObject({
@@ -710,7 +716,7 @@ describe("revokePdtpAccreditation", () => {
     })
   })
 
-  it("una aprobación humana posterior prevalece y ya no puede revocarse por el run", async () => {
+  it("una aprobación humana posterior también se revierte si el run se cancela después (PREV-B01)", async () => {
     const { accreditPdtpFromEvent, revokePdtpAccreditation } = await import("@/lib/services/pdtp/accreditation")
     const { approvePdtpExecution } = await import("@/lib/services/pdtp/executions")
     const accredited = await accreditPdtpFromEvent({
@@ -739,12 +745,12 @@ describe("revokePdtpAccreditation", () => {
       reason: "El run se cancela después de la aprobación humana.",
     })
 
-    expect(revoked.revoked).toEqual([])
-    expect(revoked.skippedApproved).toEqual([{ activityId: ACT_ID, executionId }])
+    expect(revoked.revoked).toEqual([{ activityId: ACT_ID, executionId }])
+    expect(revoked.revertedApproved).toEqual([{ activityId: ACT_ID, executionId }])
     const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
       .where(eq(schema.pdtpExecutions.id, executionId))
-    expect(execution!.status).toBe("approved")
-    expect((execution!.sourceMetadataJson as Record<string, unknown>).approvalMode).toBe("manual")
+    expect(execution!.status).toBe("draft")
+    expect((execution!.sourceMetadataJson as Record<string, unknown>).revocationReason).toBe("El run se cancela después de la aprobación humana.")
   })
 
   it("serializa dos revocaciones simultáneas de una fila agregada histórica", async () => {
@@ -797,7 +803,7 @@ describe("revokePdtpAccreditation", () => {
     })
 
     expect(result.revoked).toHaveLength(0)
-    expect(result.skippedApproved).toHaveLength(0)
+    expect(result.revertedApproved).toHaveLength(0)
   })
 })
 
@@ -1641,11 +1647,11 @@ describe("cancelar o reabrir devuelve la acreditación al programa", () => {
     expect(await liveExecutions()).toHaveLength(0)
   })
 
-  it("una ejecución ya aprobada por una persona no se revoca sola", async () => {
+  it("cancelar el run revierte también una acreditación ya aprobada por una persona (PREV-B01)", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     const run = await seedAccredited()
-    // Deshacer una aprobación humana es una decisión humana, no un efecto
-    // secundario de reabrir.
+    // Una aprobación humana se apoyó en un registro que ahora está anulado:
+    // mantenerla contaba como cumplido algo que no ocurrió.
     await inMemoryDb.update(schema.pdtpExecutions).set({ status: "approved" })
 
     await service.transitionInspectionRun({
@@ -1656,7 +1662,7 @@ describe("cancelar o reabrir devuelve la acreditación al programa", () => {
     }, ACCESS)
 
     const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
-    expect(rows.filter((row) => row.sourceId === RUN && row.status === "approved")).toHaveLength(1)
+    expect(rows.filter((row) => row.sourceId === RUN && row.status === "approved")).toHaveLength(0)
   })
 
   it("cancelar una planificada no toca el programa: nunca acreditó nada", async () => {

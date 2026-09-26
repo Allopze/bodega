@@ -17,6 +17,7 @@ import {
   preventionPdtpSourceLinks,
   worksites,
 } from "@/db/schema"
+import { classifyPdtpExecutionEvidence, type PdtpExecutionEvidenceKind } from "./audit-dossier-evidence"
 import { assertWorksiteAccess, type WorksiteScope } from "./helpers"
 import { getPdtpApprovalProgress } from "./approval-flow"
 import { listActionsByProgram } from "./action-plan"
@@ -33,7 +34,9 @@ export type PdtpAuditDossierExecutionRow = {
   week: number
   executedQuantity: number
   status: string
+  /** Verdadero sólo con archivo verificado o registro de origen (PREV-I06). */
   hasEvidence: boolean
+  evidenceKind: PdtpExecutionEvidenceKind
   executedByUserId: string | null
   executedAt: string | null
 }
@@ -113,7 +116,9 @@ export async function getPdtpAuditDossier(input: {
     .orderBy(desc(pdtpExecutions.updatedAt))
   const executions: PdtpAuditDossierExecutionRow[] = executionRows
     .filter((row) => row.execution.worksiteId === input.worksiteId)
-    .map((row) => ({
+    .map((row) => {
+      const evidenceKind = classifyPdtpExecutionEvidence(row.execution)
+      return {
       executionId: row.execution.id,
       activityN: row.activityN,
       activityName: row.activityName,
@@ -123,10 +128,12 @@ export async function getPdtpAuditDossier(input: {
       week: row.execution.week,
       executedQuantity: row.execution.executedQuantity,
       status: row.execution.status,
-      hasEvidence: Boolean(row.execution.evidenceUrl || row.execution.evidenceText || (Array.isArray(row.execution.evidencePhotos) && row.execution.evidencePhotos.length > 0)),
+      hasEvidence: evidenceKind === "file" || evidenceKind === "source_record",
+      evidenceKind,
       executedByUserId: row.execution.executedByUserId,
       executedAt: row.execution.executedAt,
-    }))
+      }
+    })
 
   const sourceLinkRows = await db.select({
     link: preventionPdtpSourceLinks,

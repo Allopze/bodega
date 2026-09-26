@@ -10,6 +10,7 @@
 export const dynamic = "force-dynamic"
 
 import { NextRequest, NextResponse } from "next/server"
+import { PDTP_EVIDENCE_KIND_LABELS } from "@/lib/services/pdtp/audit-dossier-evidence"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -108,12 +109,12 @@ export async function GET(request: NextRequest) {
       { header: "N° actividad", key: "n", width: 12 }, { header: "Actividad", key: "activity", width: 50 },
       { header: "Año", key: "year", width: 8 }, { header: "Mes", key: "month", width: 8 }, { header: "Semana", key: "week", width: 10 },
       { header: "Cantidad", key: "qty", width: 12 }, { header: "Estado", key: "status", width: 14 },
-      { header: "Con evidencia", key: "evidence", width: 14 }, { header: "Actor", key: "actor", width: 24 },
+      { header: "Evidencia", key: "evidence", width: 22 }, { header: "Actor", key: "actor", width: 24 },
       { header: "Fecha", key: "at", width: 22 }, { header: "ID ejecución (navegable)", key: "id", width: 30 },
     ]
     for (const row of dossier.executions) executions.addRow({
       n: row.activityN, activity: safe(row.activityName), year: row.year, month: row.month, week: row.week,
-      qty: row.executedQuantity, status: row.status, evidence: row.hasEvidence ? "Sí" : "No",
+      qty: row.executedQuantity, status: row.status, evidence: PDTP_EVIDENCE_KIND_LABELS[row.evidenceKind],
       actor: row.executedByUserId ?? "", at: row.executedAt ?? "", id: row.executionId,
     })
     styleHeader(executions)

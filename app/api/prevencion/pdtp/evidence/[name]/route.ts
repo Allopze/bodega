@@ -88,6 +88,10 @@ export async function GET(
     })
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      // PREV-I13: la base referencia este archivo y el disco ya no lo tiene.
+      // Al usuario le llega el mismo 404 que a un acceso denegado, pero la
+      // pérdida queda registrada para poder detectarla y recuperarla.
+      logger.warn({ name }, "[pdtp/evidence GET] evidencia referenciada sin archivo en disco")
       return NextResponse.json({ error: "Evidencia no encontrada" }, { status: 404 })
     }
     if (err instanceof Error && /sin acceso a la faena/i.test(err.message)) {

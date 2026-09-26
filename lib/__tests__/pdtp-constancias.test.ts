@@ -319,7 +319,7 @@ describe("markPdtpExecution — evidencia mínima declarada", () => {
   // fallback, incluida toda la cadena RE-20 (N°66 a 78) — ver
   // `scripts/apply-pdtp-2026-demand-slas.ts:77-175`.
   it.each(["enganche", "compuesta"] as const)(
-    "acepta evidencia de sólo texto en una actividad '%s' con evidenceRequirement (fallback solo_manual preservado)",
+    "acepta evidencia de sólo texto en una actividad '%s' que declara la excepción (fallback solo_manual, PREV-B02)",
     async (mechanism) => {
       const otherActId = `${PROGRAM_ID}-a-099-${mechanism}`
       await inMemoryDb.insert(schema.pdtpActivities).values({
@@ -329,6 +329,9 @@ describe("markPdtpExecution — evidencia mínima declarada", () => {
         responsibleSlugs: ["prf"], responsibleDisplay: "Prevencionista de riesgos en faena",
         scheduleMode: "scheduled", scheduleClassificationStatus: "confirmed",
         mechanism, evidenceRequirement: "Registro verificable en el módulo de origen",
+        // Desde PREV-B02 la observación sola sólo basta con la excepción
+        // declarada en la actividad (`manualEvidencePolicy`).
+        manualEvidencePolicy: "declaration_allowed",
         sourceSheetRow: mechanism === "enganche" ? 2 : 3,
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       })

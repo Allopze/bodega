@@ -40,4 +40,30 @@ describe("PdtpExecutionForm", () => {
     expect(upload.get("activityId")).toBe("activity-constancia")
     expect(upload.get("worksiteId")).toBe("ws-1")
   })
+
+  it("por defecto avisa que el archivo es obligatorio para declararla realizada (PREV-B02)", () => {
+    render(<PdtpExecutionForm activityId="a" worksiteId="ws-1" year={2026} />)
+    fireEvent.click(screen.getByRole("button", { name: "Registrar" }))
+    expect(screen.getByText(/sin un archivo la actividad no se puede declarar realizada/i)).toBeTruthy()
+  })
+
+  it("con la excepción declarada explica que basta una observación escrita", () => {
+    render(<PdtpExecutionForm activityId="a" worksiteId="ws-1" year={2026} manualEvidencePolicy="declaration_allowed" />)
+    fireEvent.click(screen.getByRole("button", { name: "Registrar" }))
+    expect(screen.getByText(/basta una observación escrita/i)).toBeTruthy()
+  })
+
+  it("rechaza en el cliente un archivo sobre 25 MB sin intentar subirlo (PREV-I09)", async () => {
+    render(<PdtpExecutionForm activityId="a" worksiteId="ws-1" year={2026} />)
+    fireEvent.click(screen.getByRole("button", { name: "Registrar" }))
+    const big = new File(["x"], "acta-grande.pdf", { type: "application/pdf" })
+    Object.defineProperty(big, "size", { value: 26 * 1024 * 1024 })
+    fireEvent.change(screen.getByLabelText("Evidencia (foto o PDF)"), { target: { files: [big] } })
+    fireEvent.click(screen.getByRole("button", { name: "Guardar ejecución" }))
+
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalled())
+    expect(String(mockToast.error.mock.calls[0]![0])).toMatch(/supera 25 MB/)
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled()
+    expect(mockMarkPdtpExecutionFormAction).not.toHaveBeenCalled()
+  })
 })

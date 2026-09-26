@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { todayInChile } from "@/lib/utils"
 import { and, eq, inArray } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
@@ -144,7 +145,13 @@ export async function materializePdtpScheduledInstances(input: {
     activity: { ...activity, scheduleDefinition: activity.scheduleDefinition as PdtpScheduleDefinition | null },
     worksiteIds: worksiteIds.filter((worksiteId) => !excluded.has(`${activity.id}:${worksiteId}`)),
   }))
-  if (seeds.length === 0) return { created: 0, existing: 0, skipped: activities.length }
+  // C05-A: nada anterior a la activación es exigible (mismo criterio que
+  // `isPdtpPeriodOnOrAfterActivation`). Materializarlo dejaba ocurrencias
+  // "vencidas" desde enero en una revisión v+1 activada a mitad de año, y el
+  // enlace de un hecho podía completar una de esas en vez de la vigente.
+  const activationDay = program.activatedAt ? todayInChile(program.activatedAt) : null
+  const exigibleSeeds = activationDay ? seeds.filter((seed) => seed.scheduledFor >= activationDay) : seeds
+  if (exigibleSeeds.length === 0) return { created: 0, existing: 0, skipped: activities.length }
   // La asignación nominal por faena ya existe en el modelo PDTP. Se copia la
   // persona y el rol efectivo de cada fecha sin reemplazar el slug responsable
   // firmado; si la nómina cambia después, el histórico sigue contestando quién
@@ -160,7 +167,7 @@ export async function materializePdtpScheduledInstances(input: {
     inArray(pdtpActivityWorksiteAssignees.activityId, activities.map((activity) => activity.id)),
     inArray(pdtpActivityWorksiteAssignees.worksiteId, worksiteIds),
   ))
-  const assignedSeeds = seeds.map((seed) => {
+  const assignedSeeds = exigibleSeeds.map((seed) => {
     const effective = assignments
       .filter((assignment) => assignment.activityId === seed.activityId
         && assignment.worksiteId === seed.worksiteId

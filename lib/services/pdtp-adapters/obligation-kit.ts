@@ -29,7 +29,11 @@ import { db } from "@/db"
 import { pdtpPrograms } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { logger } from "@/lib/logger"
-import { resolvePdtpActivityIdsForNumbers } from "@/lib/services/pdtp/accreditation"
+import {
+  PdtpNoActiveProgramError,
+  PdtpWorksiteNotInProgramError,
+  resolvePdtpActivityIdsForNumbers,
+} from "@/lib/services/pdtp/accreditation"
 import {
   createPdtpObligation,
   findOpenPdtpObligationBySubject,
@@ -92,6 +96,24 @@ export async function resolvePdtpProgramActorUserId(programId: string): Promise<
  * fuera del año". Para un conector de barrido las tres son lo mismo: no hay
  * nada que hacer y no hay nada que reportar.
  */
+/**
+ * `resolvePdtpActivityIdsForNumbers` para conectores de barrido (PREV-I07):
+ * "sin programa activo" y "faena fuera del programa" son `null` (no aplica),
+ * pero cualquier otra falla —la base caída, un error de validación— se
+ * relanza. Antes un `.catch(() => null)` las contaba todas como "no hay
+ * programa" y las obligaciones legales dejaban de abrirse sin señal.
+ */
+export async function resolvePdtpActivityIdsOrSkip(
+  input: Parameters<typeof resolvePdtpActivityIdsForNumbers>[0],
+): Promise<Awaited<ReturnType<typeof resolvePdtpActivityIdsForNumbers>>> {
+  try {
+    return await resolvePdtpActivityIdsForNumbers(input)
+  } catch (err) {
+    if (err instanceof PdtpNoActiveProgramError || err instanceof PdtpWorksiteNotInProgramError) return null
+    throw err
+  }
+}
+
 async function resolveActivity(input: {
   activityNumber: number
   worksiteId: string
@@ -99,15 +121,22 @@ async function resolveActivity(input: {
   sourceType: string
   sourceId: string
 }): Promise<{ programId: string; activityId: string } | "skipped_no_program" | "skipped_out_of_period"> {
-  const resolved = await resolvePdtpActivityIdsForNumbers({
-    worksiteId: input.worksiteId,
-    occurredAt: input.occurredAt,
-    activityNumbers: [input.activityNumber],
-    sourceType: input.sourceType,
-    sourceId: input.sourceId,
-  }).catch(() => "throws" as const)
+  let resolved: Awaited<ReturnType<typeof resolvePdtpActivityIdsForNumbers>>
+  try {
+    resolved = await resolvePdtpActivityIdsForNumbers({
+      worksiteId: input.worksiteId,
+      occurredAt: input.occurredAt,
+      activityNumbers: [input.activityNumber],
+      sourceType: input.sourceType,
+      sourceId: input.sourceId,
+    })
+  } catch (err) {
+    // PREV-I07: sólo los dos "no aplica" tipados se omiten; una falla real
+    // sube y el llamador la cuenta como `"error"`.
+    if (err instanceof PdtpNoActiveProgramError || err instanceof PdtpWorksiteNotInProgramError) return "skipped_no_program"
+    throw err
+  }
 
-  if (resolved === "throws") return "skipped_no_program"
   if (resolved === null) return "skipped_out_of_period"
   const activityId = resolved.activityIdByN.get(input.activityNumber)
   if (!activityId) return "skipped_no_program"

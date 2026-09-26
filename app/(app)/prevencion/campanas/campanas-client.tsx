@@ -149,7 +149,7 @@ export function CampanasClient({
               <TableHeader>
                 <TableRow>
                   <TableHead>Código</TableHead><TableHead>Título / Descripción</TableHead><TableHead>Faena</TableHead>
-                  <TableHead>Acredita</TableHead>
+                  <TableHead>Actividad PDTP</TableHead>
                   <TableHead>Estado</TableHead><TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
@@ -168,8 +168,8 @@ export function CampanasClient({
                     <TableCell className="text-[var(--color-text-muted)]">{cmp.worksiteName}</TableCell>
                     <TableCell>
                       {/* Corregible mientras no esté hecha: una campaña hecha ya
-                          acreditó, y cambiarle el número dejaría la ejecución apuntando a
-                          otra actividad. */}
+                          cerró con este número en su historial y en su evento
+                          disparador, y cambiárselo los dejaría apuntando a otra actividad. */}
                       {canManage && cmp.status !== "done" ? (
                         <PdtpActivityPicker label="Actividad" options={catalogActivities} value={activityOf(cmp).startsWith("legacy:") ? "" : activityOf(cmp)} onChange={(value) => handleSetActivity(cmp.id, value)} />
                       ) : (
@@ -207,12 +207,15 @@ export function CampanasClient({
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>Marcar Campaña como Hecha</DialogTitle>
+            {/* PREV-I10: desde b5ff6c1f cerrar una campaña no acredita; prometerlo
+                hacía que se diera la actividad por cumplida sin ir a Capacitación. */}
             <DialogDescription>
-              Se gatillará automáticamente la auto-acreditación en PDTP, si la campaña declara actividades PDTP.
+              Cerrar una campaña legado queda en su historial, pero no acredita el PDTP: las N°85 a N°89
+              se acreditan completando su campaña en Capacitación.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <Field label="Fecha en que se hizo la campaña" htmlFor="campaign-held-on" helper="Es la fecha con la que el PDTP cuenta el cumplimiento, no la de hoy.">
+            <Field label="Fecha en que se hizo la campaña" htmlFor="campaign-held-on" helper="La fecha en que ocurrió, no la de hoy.">
               <DatePicker id="campaign-held-on" ariaLabel="Fecha en que se hizo la campaña" value={heldOn} onChange={setHeldOn} />
             </Field>
             <EvidenceField
@@ -233,7 +236,7 @@ export function CampanasClient({
               onClick={handleMarkDone}
               disabled={isPending || !evidenceUrl.trim() || !heldOn}
             >
-              {isPending ? "Guardando..." : "Confirmar y Acreditar PDTP"}
+              {isPending ? "Guardando..." : "Confirmar cierre"}
             </Button>
           </DialogFooter>
         </DialogContent>

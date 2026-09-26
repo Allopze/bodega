@@ -202,7 +202,13 @@ export function ProgramLifecycleControls({
 
       <div className="grid gap-px border-t border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-2 lg:grid-cols-4">
         <LifecycleStep label="Elaboración" value={program.elaboratedByName} done />
-        <LifecycleStep label="Versión congelada" value={program.reviewStartedAt ? "Registrada" : "Pendiente"} done={!!program.reviewStartedAt} />
+        {/* PREV-I14: un programa activo o cerrado tiene su versión congelada por
+            definición, aunque venga de antes de que se registrara el envío. */}
+        <LifecycleStep
+          label="Versión congelada"
+          value={program.reviewStartedAt || program.status === "active" || program.status === "closed" ? "Registrada" : "Pendiente"}
+          done={!!program.reviewStartedAt || program.status === "active" || program.status === "closed"}
+        />
         {steps.map((step) => (
           <LifecycleStep
             key={step.id}

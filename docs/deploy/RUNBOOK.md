@@ -49,7 +49,13 @@ Corren bajo perfiles de compose y su caída **no** tumba la aplicación, pero s�
 silencio; por eso conviene revisarlos cuando algo "dejó de actualizarse solo".
 
 - `backup-scheduler` (perfil `backup`): respaldo diario a `BACKUP_HOUR` UTC, retención `RETENTION_DAYS` (30 por defecto), destino remoto opcional `GDRIVE_BACKUPS_DEST`.
-- `cron`: tareas programadas de la plataforma. Requiere `CRON_SECRET`.
+- `cron`: tareas programadas de la plataforma. Requiere `CRON_SECRET`. Es el **único
+  scheduler** de los endpoints `/api/cron/*`: la lista de trabajos vive en
+  `scripts/cron-runner.mjs` y el crontab se escribe desde `docker-compose.yml` (la paridad la
+  verifica `lib/__tests__/deploy-workflow.test.ts`). No agendar el mismo endpoint en GitHub
+  Actions: el workflow `prevention-inspection-programs.yml` se retiró el 2026-09-26 porque
+  duplicaba la corrida del contenedor. `pdtp-evidence-gc` queda fuera a propósito hasta que
+  su barrido tenga auditoría y modo de prueba (plan de pendientes, tanda T7).
 - `migrate`, `sync-rbac`, `normalize-epp-skus`: `restart: "no"`, son de un solo tiro. Que estén detenidos es lo normal.
 
 ## Objetivos de servicio

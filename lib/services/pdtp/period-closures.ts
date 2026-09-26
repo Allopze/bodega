@@ -49,8 +49,10 @@
 
 import { createHash } from "node:crypto"
 import { and, desc, eq, sql } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type DB, type Tx } from "@/db"
 import {
+  pdtpActivities,
+  pdtpExecutions,
   pdtpPeriodClosures,
   pdtpPrograms,
   users,
@@ -67,7 +69,7 @@ import {
 } from "./helpers"
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 import { buildPdtpRe36Document, type PdtpRe36Document, type PdtpRe36DeviationRow } from "./re36-document"
-import { getPdtpComplianceIndicators, getPdtpIntegralCompliance, type PdtpComplianceIndicators, type PdtpIntegralCompliance } from "./compliance"
+import { getPdtpComplianceIndicators, getPdtpIntegralCompliance, cutPdtpComplianceIndicatorsToMonth, type PdtpComplianceIndicators, type PdtpIntegralCompliance } from "./compliance"
 import { getPdtpManagementReport, type PdtpManagementReport } from "./management-report"
 import { currentPdtpPeriod, pdtpActivationPeriod } from "./period"
 import { pdtpMonthLabel as monthLabel } from "./period-guard"
@@ -154,9 +156,14 @@ function canonicalJson(value: unknown): string {
  * no su presencia en la foto.
  */
 function digestOf(snapshot: PdtpPeriodClosureSnapshot): string {
+  // `integral` tampoco entra: es una cifra corrida del año (su eje de
+  // ejecución es el anual y sus ejes de verificación y cierre miran todas las
+  // acciones abiertas), así que cambia con el trabajo de meses posteriores.
+  // Se guarda en la foto como referencia, pero no mide "lo del mes" (W1-N02).
   const comparable = {
     ...snapshot,
     re36: { ...snapshot.re36, changeControl: null },
+    integral: null,
   }
   return createHash("sha256").update(canonicalJson(comparable)).digest("hex")
 }
@@ -279,7 +286,11 @@ export async function buildPdtpPeriodClosureSnapshot(input: {
     schemaVersion: 1,
     cutoff: { year: input.year, month: input.month, asOf },
     re36,
-    indicators,
+    // W1-N02: el indicador se congela al mes del corte. Sin recortarlo, lo
+    // aprobado en un mes posterior (y `toDate` medido contra hoy) cambiaba la
+    // foto y todo cierre aparecía desviado en cuanto se operaba el mes
+    // siguiente.
+    indicators: cutPdtpComplianceIndicatorsToMonth(indicators, input.month),
     integral,
     managementReport,
     deviations: re36.deviations,
@@ -323,9 +334,13 @@ async function loadClosableContext(programId: string, worksiteId: string, year: 
 
   // No se cierra un mes que todavía no termina de ocurrir: la foto sería de un
   // mes a medias y la versión siguiente reemplazaría la que ya se distribuyó.
+  // PREV-I02: el mes en curso tampoco; la comparación era `>` y lo dejaba pasar.
   const current = currentPdtpPeriod()
   if (year > current.year || (year === current.year && month > current.month)) {
     throw new Error("No se puede cerrar un mes que aún no ocurre.")
+  }
+  if (year === current.year && month === current.month) {
+    throw new Error(`El mes de ${monthLabel(year, month)} aún no termina: solo se puede cerrar un mes ya terminado.`)
   }
 
   // Ni un mes anterior a la activación: ahí el programa no exigía nada, así
@@ -335,7 +350,36 @@ async function loadClosableContext(programId: string, worksiteId: string, year: 
     throw new Error("El programa aún no estaba activo en ese mes: no hay nada que cerrar.")
   }
 
+  await assertNoPendingSubmissions(db, programId, worksiteId, year, month)
+
   return program
+}
+
+/**
+ * PREV-I02: un envío `submitted` de un mes cerrado queda congelado —el guard de
+ * `approvePdtpExecution`/`rejectPdtpExecution` lo rechaza— hasta que alguien
+ * reabra, y la foto lo registra como no ejecutado. Antes de cerrar se exige
+ * resolverlos; el mensaje dice cuántos para que se sepa qué falta.
+ *
+ * Corre antes del snapshot (falla rápido) y otra vez dentro de la transacción
+ * del cierre, que es la lectura que vale.
+ */
+async function assertNoPendingSubmissions(client: DB | Tx, programId: string, worksiteId: string, year: number, month: number) {
+  const [row] = await client.select({ pending: sql<number>`count(*)::int` })
+    .from(pdtpExecutions)
+    .innerJoin(pdtpActivities, eq(pdtpActivities.id, pdtpExecutions.activityId))
+    .where(and(
+      eq(pdtpActivities.programId, programId),
+      eq(pdtpExecutions.worksiteId, worksiteId),
+      eq(pdtpExecutions.year, year),
+      eq(pdtpExecutions.month, month),
+      eq(pdtpExecutions.status, "submitted"),
+    ))
+  const pending = Number(row?.pending ?? 0)
+  if (pending > 0) {
+    const label = pending === 1 ? "1 envío pendiente de aprobación" : `${pending} envíos pendientes de aprobación`
+    throw new Error(`El mes de ${monthLabel(year, month)} tiene ${label} en esta faena. Apruébalos o recházalos antes de cerrarlo.`)
+  }
 }
 
 /**
@@ -370,6 +414,7 @@ export async function closePdtpPeriod(
   const id = pdtpPeriodClosureId(data.programId, data.worksiteId, data.year, data.month)
 
   return db.transaction(async (tx) => {
+    await assertNoPendingSubmissions(tx, data.programId, data.worksiteId, data.year, data.month)
     const [previous] = await tx.select({ version: pdtpPeriodClosures.version, status: pdtpPeriodClosures.status, digest: pdtpPeriodClosures.digest })
       .from(pdtpPeriodClosures).where(eq(pdtpPeriodClosures.id, id)).limit(1)
 

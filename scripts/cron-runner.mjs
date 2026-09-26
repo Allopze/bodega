@@ -103,6 +103,65 @@ const JOBS = Object.freeze({
     kind: "sync",
     codePrefix: "GENDOCS_CRON_",
   },
+  // PREV-C04: Prevención no tenía ningún job agendado. Comparten prefijo como
+  // los tres de DTE: el runner sólo necesita saber qué contrato leer.
+  // `pdtp-evidence-gc` queda FUERA a propósito: su barrido puede borrar
+  // evidencia que aún respalda una acreditación, y no se agenda hasta que
+  // aterrice el arreglo que la preserva (PREV-B03).
+  "pdtp-weekly-reminders": {
+    url: "http://app:3000/api/cron/pdtp-weekly-reminders",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "PREVENTION_CRON_",
+  },
+  "prevention-capa-reminders": {
+    url: "http://app:3000/api/cron/prevention-capa-reminders",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "PREVENTION_CRON_",
+  },
+  "prevention-training-reminders": {
+    url: "http://app:3000/api/cron/prevention-training-reminders",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "PREVENTION_CRON_",
+  },
+  "prevention-cphs-alerts": {
+    url: "http://app:3000/api/cron/prevention-cphs-alerts",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "PREVENTION_CRON_",
+  },
+  "prevention-incident-reminders": {
+    url: "http://app:3000/api/cron/prevention-incident-reminders",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "PREVENTION_CRON_",
+  },
+  "prevention-inspection-programs": {
+    url: "http://app:3000/api/cron/prevention-inspection-programs",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "PREVENTION_CRON_",
+  },
+  "prevention-document-ack-reminders": {
+    url: "http://app:3000/api/cron/prevention-document-ack-reminders",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "PREVENTION_CRON_",
+  },
+  "sst-weekly-alerts": {
+    url: "http://app:3000/api/cron/sst-weekly-alerts",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "SST_CRON_",
+  },
+  "deadline-reminders": {
+    url: "http://app:3000/api/cron/deadline-reminders",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "DEADLINE_REMINDERS_",
+  },
 })
 
 // Mapa de sufijos: cada job combina esto con su propio `codePrefix`, así que
@@ -111,6 +170,10 @@ const JOBS = Object.freeze({
 const SYNC_OUTCOME_SUFFIXES = new Map([
   ["success", { status: 200, exitCode: 0, ok: true, suffix: "SUCCESS" }],
   ["disabled", { status: 200, exitCode: 0, ok: true, suffix: "DISABLED" }],
+  // Un disparo que encontró el candado tomado (`withCronLock` → `skipped`) no
+  // es una falla: la corrida anterior sigue haciendo el trabajo. Es el caso de
+  // los recordatorios, que no distinguen "conflicto" de "ya lo hizo otro".
+  ["skipped", { status: 200, exitCode: 0, ok: true, suffix: "SKIPPED" }],
   ["conflict", { status: 409, exitCode: 2, ok: false, suffix: "ACTIVE_RUN" }],
   ["partial", { status: 503, exitCode: 1, ok: false, suffix: "PARTIAL" }],
   ["failed", { status: 503, exitCode: 1, ok: false, suffix: "FAILED" }],

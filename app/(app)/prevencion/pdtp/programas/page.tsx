@@ -115,7 +115,9 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
                 <div className="mt-3 flex items-center gap-4 text-xs text-[var(--color-text-subtle)]">
                   {indicators?.annual && (
                     <span title={`Plan / ejecutado agregado sobre ${countOf(indicators.worksiteCount, "faena autorizada", "faenas autorizadas")}`}>
-                      Cumplimiento ({indicators.worksiteCount} {pluralize(indicators.worksiteCount, "faena")}): {indicators.annual.percent !== null ? `${Math.round(indicators.annual.percent * 100)}%` : "—"}
+                      {/* PREV-I15: a la fecha, y el avance anual como dato aparte. */}
+                      Cumplimiento a la fecha ({indicators.worksiteCount} {pluralize(indicators.worksiteCount, "faena")}): {indicators.toDate.percent !== null ? `${Math.round(indicators.toDate.percent * 100)}%` : "—"}
+                      {" · "}avance anual {indicators.annual.percent !== null ? `${Math.round(indicators.annual.percent * 100)}%` : "—"}
                     </span>
                   )}
                   <span>Elaborado por: {program.elaboratedByName}</span>

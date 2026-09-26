@@ -19,6 +19,7 @@ export type PdtpConstanciaDebt = {
   n: number
   activityName: string
   evidenceRequirement: string | null
+  manualEvidencePolicy: string
   responsibleDisplay: string
   worksiteId: string
   worksiteName: string
@@ -126,6 +127,7 @@ export async function listPdtpConstanciaActivities(scope: WorksiteScope): Promis
         n: activity.n,
         activityName: activity.activity,
         evidenceRequirement: activity.evidenceRequirement,
+        manualEvidencePolicy: activity.manualEvidencePolicy,
         responsibleDisplay: activity.responsibleDisplay,
         worksiteId,
         worksiteName: worksiteNameById.get(worksiteId) ?? worksiteId,

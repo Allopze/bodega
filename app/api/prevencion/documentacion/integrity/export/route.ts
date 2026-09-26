@@ -8,6 +8,7 @@ import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getDocumentIntegrityFindings } from "@/lib/services/prevention-documents-library"
 import { todayInChile } from "@/lib/utils"
+import { sanitizeCell as safe } from "@/lib/reports/export-module/excel-builder"
 
 export async function GET() {
   const session = await auth()
@@ -36,10 +37,18 @@ export async function GET() {
     { header: "Acción requerida", key: "recommendedAction", width: 72 },
     { header: "Utilizable como evidencia", key: "evidenceUsable", width: 24 },
   ]
+  // PREV-K03: el título y los textos vienen de datos editables; sin
+  // `sanitizeCell`, un título que empieza con "=" se abría como fórmula.
   for (const finding of findings) {
     sheet.addRow({
-      ...finding,
       severity: finding.severity === "critico" ? "Crítico" : "Alto",
+      code: safe(finding.code),
+      documentId: safe(finding.documentId),
+      documentTitle: safe(finding.documentTitle),
+      versionId: safe(finding.versionId),
+      linkId: safe(finding.linkId),
+      detail: safe(finding.detail),
+      recommendedAction: safe(finding.recommendedAction),
       evidenceUsable: "No",
     })
   }

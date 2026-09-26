@@ -247,6 +247,11 @@ export async function decidePdtpApprovalStep(args: {
       if (rules.includes("not_elaborator") && program.elaboratedByUserId === actorUserId) {
         throw new Error(`La persona que elaboró el programa no puede resolver el paso ${step.label}.`)
       }
+      // PREV-M05: quien lo envió a revisión tampoco. Sin esto, un prevencionista
+      // que no lo creó podía editarlo, enviarlo y aprobarlo él mismo.
+      if (rules.includes("not_elaborator") && program.reviewStartedByUserId === actorUserId) {
+        throw new Error(`La persona que envió el programa a revisión no puede resolver el paso ${step.label}.`)
+      }
       if (rules.includes("different_from_previous")) {
         const previous = [...steps].reverse().find((item) => item.stepOrder < step.stepOrder)
         if (previous && decisionByCode.get(previous.code)?.actorUserId === actorUserId) {

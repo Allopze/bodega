@@ -82,4 +82,14 @@ describe("CoverageSummaryCard", () => {
     expect(screen.queryByRole("progressbar")).toBeNull()
     expect(screen.queryByRole("link")).toBeNull()
   })
+
+  it("en un programa ya firmado no dice que las actividades frenan la firma (PREV-I14)", () => {
+    render(<CoverageSummaryCard
+      report={report({ groups: [{ status: "code_gap", blocks: true, issues: [issue(12, "code_gap")] }] })}
+      programId="p-1"
+      programStatus="active"
+    />)
+    expect(screen.queryByText(/frenan la firma/)).toBeNull()
+    expect(screen.getByText(/no tienen cómo acreditarse/)).toBeDefined()
+  })
 })

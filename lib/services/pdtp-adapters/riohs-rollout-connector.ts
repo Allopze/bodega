@@ -37,7 +37,6 @@ import {
 } from "@/db/schema"
 import { logger } from "@/lib/logger"
 import { RIOHS_DOCUMENT_TYPE_CODE } from "@/lib/prevention/riohs"
-import { resolvePdtpActivityIdsForNumbers } from "@/lib/services/pdtp/accreditation"
 import { PDTP_COVERAGE_CASE_METADATA_KEY } from "@/lib/services/pdtp/compliance"
 import {
   cancelPdtpObligation,
@@ -50,7 +49,7 @@ import {
   assignDocumentVersionToWorkforce,
 } from "@/lib/services/prevention-documents/distribution"
 import { chileDateParts } from "@/lib/utils"
-import { resolvePdtpProgramActorUserId } from "./obligation-kit"
+import { resolvePdtpProgramActorUserId, resolvePdtpActivityIdsOrSkip } from "./obligation-kit"
 
 export const RIOHS_ROLLOUT_ACTIVITY_NUMBER = 18
 
@@ -104,13 +103,13 @@ async function rolloutWorksites(version: RolloutVersion): Promise<Array<{ worksi
     // El motor resuelve qué versión del programa rige esa faena en esa fecha;
     // lanza si la faena no pertenece a ningún programa activo, que acá es un
     // "no aplica", no un error.
-    const resolved = await resolvePdtpActivityIdsForNumbers({
+    const resolved = await resolvePdtpActivityIdsOrSkip({
       worksiteId,
       occurredAt: version.becameCurrentAt,
       activityNumbers: [RIOHS_ROLLOUT_ACTIVITY_NUMBER],
       sourceType: "documento",
       sourceId: riohsRolloutSourceId(version.versionId),
-    }).catch(() => null)
+    })
     const activityId = resolved?.activityIdByN.get(RIOHS_ROLLOUT_ACTIVITY_NUMBER)
     if (resolved && activityId) result.push({ worksiteId, programId: resolved.programId, activityId })
   }

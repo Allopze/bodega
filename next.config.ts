@@ -28,6 +28,13 @@ const nextConfig: NextConfig = {
       // maximum, so domain validation is always reached for accepted files.
       bodySizeLimit: "21mb",
     },
+    // PREV-I09: `proxy.ts` intercepta /api y toda la app, y Next bufferea el
+    // cuerpo que pasa por el proxy hasta este tope (10 MB por defecto). Lo que
+    // sobra se trunca SIN error: un PDF de 12 MB llegaba cortado a la ruta de
+    // evidencia PDTP (límite 25 MB) y fallaba como "Body inválido". La subida
+    // más grande es la de alcotest (25 MB + 1 MB de sobre); 27 MB la cubre, y
+    // también a las Server Actions de 21 MB de arriba.
+    proxyClientMaxBodySize: "27mb",
   },
   // Tesseract calcula por defecto el worker Node desde su propio __dirname.
   // Si Turbopack lo integra al bundle, ese dirname queda congelado como

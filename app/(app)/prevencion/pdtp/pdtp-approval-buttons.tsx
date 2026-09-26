@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { MONTH_LABELS } from "@/lib/utils"
 import { approvePdtpExecutionAction, rejectPdtpExecutionAction } from "./actions"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
@@ -12,6 +13,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+
+/* PREV-I14: "M7S2" era un código interno. La etiqueta dice el mes y la semana. */
+function periodShort(exec: { month: number; week: number }): string {
+  return `${MONTH_LABELS[exec.month - 1]} · sem. ${exec.week}`
+}
+function periodLabel(exec: { month: number; week: number }): string {
+  return `${MONTH_LABELS[exec.month - 1]} semana ${exec.week}`
+}
 
 type PendingApproval = {
   id: string
@@ -71,7 +80,7 @@ export function PdtpApprovalButtons({
                     setError(result.message ?? "Error al aprobar la ejecución.")
                     toast.error(result.message ?? "Error al aprobar la ejecución.")
                   } else {
-                    toast.success(`Ejecución M${exec.month}S${exec.week} aprobada.`)
+                    toast.success(`Ejecución de ${periodLabel(exec)} aprobada.`)
                   }
                 } finally {
                   setPendingId(null)
@@ -80,16 +89,16 @@ export function PdtpApprovalButtons({
             >
               <button
                 type="submit"
-                aria-label={`Aprobar ejecución M${exec.month}S${exec.week}`}
+                aria-label={`Aprobar ejecución ${periodLabel(exec)}`}
                 disabled={pendingId === exec.id || rejectingId !== null}
                 className="rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-2)] disabled:opacity-50"
               >
-                {pendingId === exec.id ? "Aprobando…" : `✓ M${exec.month}S${exec.week}`}
+                {pendingId === exec.id ? "Aprobando…" : `✓ ${periodShort(exec)}`}
               </button>
             </form>
             <button
               type="button"
-              aria-label={`Rechazar ejecución M${exec.month}S${exec.week}`}
+              aria-label={`Rechazar ejecución ${periodLabel(exec)}`}
               disabled={pendingId === exec.id || rejectingId !== null}
               onClick={() => {
                 setRejectingId(exec.id)
@@ -98,7 +107,7 @@ export function PdtpApprovalButtons({
               }}
               className="rounded border border-[var(--color-danger-line)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-tint)] disabled:opacity-50"
             >
-              ✗ M{exec.month}S{exec.week}
+              ✗ {periodShort(exec)}
             </button>
           </React.Fragment>
         ))}

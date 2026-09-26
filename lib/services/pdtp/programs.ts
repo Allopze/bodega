@@ -4,7 +4,9 @@ import { nanoid } from "@/lib/id"
 import {
   pdtpActivities,
   pdtpActivityChecklists,
+  pdtpActivityExecutionConfigs,
   pdtpActivityExecutorAssignments,
+  pdtpActivityReminderRules,
   pdtpActivityDocumentRequirements,
   pdtpActivitySchedule,
   pdtpActivityScheduleOverrides,
@@ -473,6 +475,11 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
             recurrenceRule: activity.recurrenceRule, triggerType: activity.triggerType,
             triggerDescription: activity.triggerDescription, dueDays: activity.dueDays, dueHours: activity.dueHours,
             evidenceRequirement: activity.evidenceRequirement, mechanism: activity.mechanism, indicatorMode: activity.indicatorMode,
+            // C05-A: la política de evidencia es contenido firmado (las 19
+            // excepciones de PREV-B02). La programación fechada sólo vale en el
+            // mismo año; reanclarla a otro año es trabajo de la copia anual.
+            manualEvidencePolicy: activity.manualEvidencePolicy,
+            scheduleDefinition: sourceProgram.year === year ? activity.scheduleDefinition : null,
             subjectSource: activity.subjectSource, subjectCapabilityCodes: activity.subjectCapabilityCodes,
             targetValue: activity.targetValue, targetUnit: activity.targetUnit,
             minAnnualExecutions: activity.minAnnualExecutions,
@@ -483,7 +490,7 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
 
         if (activityIdMap.size > 0) {
           const sourceActivityIds = [...activityIdMap.keys()]
-          const [scheduleRows, membershipRows, sourceLinks, checklistRows, overrideRows, exclusionRows, paramRows, executorRows, documentRequirementRows] = await Promise.all([
+          const [scheduleRows, membershipRows, sourceLinks, checklistRows, overrideRows, exclusionRows, paramRows, executorRows, documentRequirementRows, executionConfigRows, reminderRuleRows] = await Promise.all([
             tx.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, sourceActivityIds)),
             tx.select().from(pdtpSheetActivities).where(inArray(pdtpSheetActivities.activityId, sourceActivityIds)),
             tx.select().from(preventionPdtpSourceLinks).where(inArray(preventionPdtpSourceLinks.activityId, sourceActivityIds)),
@@ -493,6 +500,8 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
             tx.select().from(pdtpActivityWorksiteParams).where(inArray(pdtpActivityWorksiteParams.activityId, sourceActivityIds)),
             tx.select().from(pdtpActivityExecutorAssignments).where(inArray(pdtpActivityExecutorAssignments.activityId, sourceActivityIds)),
             tx.select().from(pdtpActivityDocumentRequirements).where(inArray(pdtpActivityDocumentRequirements.activityId, sourceActivityIds)),
+            tx.select().from(pdtpActivityExecutionConfigs).where(inArray(pdtpActivityExecutionConfigs.activityId, sourceActivityIds)),
+            tx.select().from(pdtpActivityReminderRules).where(inArray(pdtpActivityReminderRules.activityId, sourceActivityIds)),
           ])
           const copiedSchedule: Array<typeof pdtpActivitySchedule.$inferInsert> = []
           for (const cell of scheduleRows) {
@@ -599,6 +608,41 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
               id: `pdtp-executor-${nanoid()}`,
               activityId: activityIdMap.get(assignment.activityId)!,
               roleId: assignment.roleId,
+              createdAt: now,
+              updatedAt: now,
+            }))).onConflictDoNothing()
+          }
+
+          // C05-A: destino, política de cumplimiento y evidencia aceptada, y los
+          // recordatorios configurados. Sin esto la actividad de la v+1 quedaba
+          // sin conector ni avisos. El id sigue la convención de
+          // `updatePdtpActivity` (una configuración por actividad).
+          if (executionConfigRows.length > 0) {
+            await tx.insert(pdtpActivityExecutionConfigs).values(executionConfigRows.map((config) => {
+              const newActivityId = activityIdMap.get(config.activityId)!
+              return {
+                id: `pdtp-exec-config-${newActivityId}`,
+                activityId: newActivityId,
+                destinationConnectorKey: config.destinationConnectorKey,
+                accreditationBindingId: config.accreditationBindingId,
+                completionPolicy: config.completionPolicy,
+                evidenceRequired: config.evidenceRequired,
+                acceptedEvidenceKinds: config.acceptedEvidenceKinds,
+                createdAt: now,
+                updatedAt: now,
+              }
+            })).onConflictDoNothing()
+          }
+
+          if (reminderRuleRows.length > 0) {
+            await tx.insert(pdtpActivityReminderRules).values(reminderRuleRows.map((rule) => ({
+              id: `pdtp-reminder-rule-${nanoid()}`,
+              activityId: activityIdMap.get(rule.activityId)!,
+              offsetValue: rule.offsetValue,
+              offsetUnit: rule.offsetUnit,
+              recipientKind: rule.recipientKind,
+              recipientUserId: rule.recipientUserId,
+              isActive: rule.isActive,
               createdAt: now,
               updatedAt: now,
             }))).onConflictDoNothing()

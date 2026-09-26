@@ -26,7 +26,7 @@ export const LEGACY_ACTION_TABLES = Object.freeze([
  * @typedef {object} MigrationPreflightReport
  * @property {Record<(typeof LEGACY_ACTION_TABLES)[number], number>} legacyActionRows
  * @property {{ dualBusinessLinks: number, duplicatePurchaseInvoices: number }} dte
- * @property {{ legacyObjectiveLinks: number, duplicateYears: number }} pdtp
+ * @property {{ legacyObjectiveLinks: number, duplicateYears: number, duplicateActiveYears: number }} pdtp
  * @property {{ duplicateApplicabilities: number }} legal
  * @property {{ duplicateProgramSlots: number }} inspections
  * @property {{ completedWithoutEvidence: number }} campaigns
@@ -51,6 +51,16 @@ export function assertMigrationPreflightReport(report) {
   if (report.dte.dualBusinessLinks > 0 || report.dte.duplicatePurchaseInvoices > 0) {
     blockers.push(
       `DTE dualBusinessLinks=${report.dte.dualBusinessLinks} duplicatePurchaseInvoices=${report.dte.duplicatePurchaseInvoices}`,
+    )
+  }
+  // 0329 (PREV-M01): el índice único parcial "un programa activo por año" no
+  // puede crearse si ya hay dos versiones activas del mismo año. Cuál queda
+  // vigente es decisión de Prevención (normalmente la de mayor versión, y la
+  // otra pasa a `closed`), no de la migración.
+  if ((report.pdtp.duplicateActiveYears ?? 0) > 0) {
+    blockers.push(
+      `PDTP años con programas activos duplicados=${report.pdtp.duplicateActiveYears} — ` +
+      "deja una sola versión activa por año (la otra a 'closed') antes de migrar.",
     )
   }
   if (report.pdtp.legacyObjectiveLinks > 0 || report.pdtp.duplicateYears > 0) {
@@ -136,7 +146,7 @@ export async function inspectMigrationPreconditions(sql) {
       ppa_corrective_actions: 0,
     },
     dte: { dualBusinessLinks: 0, duplicatePurchaseInvoices: 0 },
-    pdtp: { legacyObjectiveLinks: 0, duplicateYears: 0 },
+    pdtp: { legacyObjectiveLinks: 0, duplicateYears: 0, duplicateActiveYears: 0 },
     legal: { duplicateApplicabilities: 0 },
     inspections: { duplicateProgramSlots: 0 },
     campaigns: { completedWithoutEvidence: 0 },
@@ -239,6 +249,16 @@ export async function inspectMigrationPreconditions(sql) {
     // pair can make its unique index fail. Counting by year alone blocked the
     // normal v1/v2 state and made every local migration unnecessarily
     // unexecutable.
+    report.pdtp.duplicateActiveYears = await countUnsafe(sql, `
+      select count(*)::int as total
+      from (
+        select year
+        from pdtp_programs
+        where status = 'active'
+        group by year
+        having count(*) > 1
+      ) duplicates
+    `)
     report.pdtp.duplicateYears = await countUnsafe(sql, `
       select count(*)::int as total
       from (

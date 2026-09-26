@@ -57,4 +57,19 @@ describe("PDTP obligation actions are authorization boundaries", () => {
     expect(reportPdtpObligation).toHaveBeenCalledWith(expect.objectContaining({ userId: "trusted-user", scope: ["ws-own"] }))
     expect(cancelPdtpObligation).toHaveBeenCalledWith(expect.objectContaining({ userId: "trusted-user", scope: ["ws-own"] }))
   })
+
+  // PREV-I11: `closed_on_time` compara `reportedAt <= dueAt`. Con la fecha en
+  // manos del cliente, un POST armado cerraba a tiempo lo que venció hace un
+  // mes. El servicio la fija en `now()` cuando no se la pasan.
+  it("ignora un reportedAt enviado por el cliente", async () => {
+    await expect(reportPdtpObligationAction({
+      obligationId: "ob-1",
+      executedQuantity: 1,
+      evidenceText: "Registro verificable",
+      evidencePhotos: [],
+      reportedAt: "2026-01-02T12:00:00.000Z",
+    })).resolves.toEqual({ ok: true })
+    expect(reportPdtpObligation).toHaveBeenCalledTimes(1)
+    expect(reportPdtpObligation.mock.calls[0]![0]).not.toHaveProperty("reportedAt")
+  })
 })

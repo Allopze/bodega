@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, or, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { pdtpActivities, pdtpActivityWorksiteExclusions, pdtpExecutionDeviations, pdtpExecutions, pdtpChangeLog, pdtpObligations, pdtpPrograms, worksites } from "@/db/schema"
+import { pdtpActivities, pdtpActivityWorksiteAssignees, pdtpActivityWorksiteExclusions, pdtpExecutionDeviations, pdtpExecutions, pdtpChangeLog, pdtpObligations, pdtpPrograms, worksites } from "@/db/schema"
 import { pdtpExecutionId } from "./helpers"
 import { addPdtpChangeLogEntry, assertWorksiteAccess, pdtpCellLockKey } from "./helpers"
 import type { WorksiteScope } from "./helpers"
@@ -13,8 +13,23 @@ import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { isPdtpPeriodOnOrAfterActivation } from "./period"
 import { assertPdtpPeriodOpen } from "./period-guard"
+import { todayInChile } from "@/lib/utils"
 
-export async function markPdtpExecution(input: unknown, userId: string, scope: WorksiteScope) {
+export type MarkPdtpExecutionOptions = {
+  /**
+   * Quien administra el programa (`prevention:pdtp:override:manage`) puede
+   * corregir el envío pendiente de otra persona y registrar por la persona
+   * asignada. El resto sólo actúa sobre lo propio.
+   */
+  canActForOthers?: boolean
+}
+
+export async function markPdtpExecution(
+  input: unknown,
+  userId: string,
+  scope: WorksiteScope,
+  options: MarkPdtpExecutionOptions = {},
+) {
   const data = pdtpExecutionSchema.parse(input)
   assertWorksiteAccess(data.worksiteId, scope)
 
@@ -25,6 +40,7 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
     retiredEffectiveFrom: pdtpActivities.retiredEffectiveFrom,
     evidenceRequirement: pdtpActivities.evidenceRequirement,
     mechanism: pdtpActivities.mechanism,
+    manualEvidencePolicy: pdtpActivities.manualEvidencePolicy,
   }).from(pdtpActivities).where(eq(pdtpActivities.id, data.activityId)).limit(1)
   if (!activity) throw new Error("Actividad PDTP no encontrada.")
 
@@ -66,133 +82,23 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
     throw new Error("La actividad está excluida para esta faena y no admite ejecuciones.")
   }
 
-  // Si la ejecución ya está aprobada, no se permite reescribir. Sólo
-  // 'draft' o 'rejected' (devuelta para corrección) son editables.
-  // H-M3: también leemos evidenceUrl/evidencePhotos existentes para
-  // hacer append-only (preservar la historia de evidencias).
-  const [existing] = await db
-    .select({
-      status: pdtpExecutions.status,
-      evidenceUrl: pdtpExecutions.evidenceUrl,
-      evidencePhotos: pdtpExecutions.evidencePhotos,
-    })
-    .from(pdtpExecutions)
-    .where(and(
-      eq(pdtpExecutions.activityId, data.activityId),
-      eq(pdtpExecutions.worksiteId, data.worksiteId),
-      eq(pdtpExecutions.year, data.year),
-      eq(pdtpExecutions.month, data.month),
-      eq(pdtpExecutions.week, data.week),
-      isNull(pdtpExecutions.obligationId),
-    ))
-    .limit(1)
-  if (existing && existing.status === "approved") {
-    throw new Error("La ejecución ya fue aprobada y no se puede modificar.")
-  }
-
-  // Append-only: dedupe por nombre de archivo, preserva URLs previas
-  function fileName(url: string): string {
-    const idx = url.lastIndexOf("/")
-    return idx >= 0 ? url.slice(idx + 1) : url
-  }
-  const previousPhotos = Array.isArray(existing?.evidencePhotos) ? existing.evidencePhotos : []
-  const newPhotosInput = (data.evidencePhotos ?? []).filter(Boolean)
-  // H-B7: filtramos fotos nuevas cuyo archivo no exista físicamente
-  const verifiedNewPhotos = newPhotosInput.filter((url) => {
-    const absolutePath = resolvePdtpEvidenceFile(url)
-    if (!absolutePath || !existsSync(absolutePath)) {
-      logger.warn({ url }, "[pdtp] foto de evidencia sin archivo físico, descartada")
-      return false
+  // PREV-I03 (auditoría 2026-09-26): la asignación nominal era sólo un filtro
+  // de /pendientes — cualquiera con `execute` en la faena registraba la
+  // actividad de otra persona. Con una asignación vigente, registra la persona
+  // asignada; quien administra el programa puede hacerlo por ella.
+  if (!options.canActForOthers) {
+    const today = todayInChile()
+    const assignees = await db.select({ userId: pdtpActivityWorksiteAssignees.userId })
+      .from(pdtpActivityWorksiteAssignees)
+      .where(and(
+        eq(pdtpActivityWorksiteAssignees.activityId, data.activityId),
+        eq(pdtpActivityWorksiteAssignees.worksiteId, data.worksiteId),
+        lte(pdtpActivityWorksiteAssignees.validFrom, today),
+        or(isNull(pdtpActivityWorksiteAssignees.validUntil), gte(pdtpActivityWorksiteAssignees.validUntil, today)),
+      ))
+    if (assignees.length > 0 && !assignees.some((assignee) => assignee.userId === userId)) {
+      throw new Error("Esta actividad está asignada a otra persona en esta faena. Solo quien está asignado, o quien administra el programa, puede registrarla.")
     }
-    return true
-  })
-  const allPhotos = [...previousPhotos, ...verifiedNewPhotos]
-  const dedupedPhotos: string[] = []
-  const seen = new Set<string>()
-  for (const url of allPhotos) {
-    const name = fileName(url)
-    if (seen.has(name)) continue
-    seen.add(name)
-    dedupedPhotos.push(url)
-  }
-  // evidenceUrl: si viene uno nuevo, se usa; si no, se preserva el
-  // previo. Esto evita que un re-envío sin archivo borre el archivo
-  // que el prevencionista subió antes.
-  // H-B7: si se recibió una URL nueva, verificamos que el archivo
-  // físico exista; si no, descartamos la referencia y loggeamos.
-  // Razón: la DB no debe quedar con referencias a archivos inexistentes
-  // (un upload pudo fallar, el cliente pudo cerrar la pestaña, etc).
-  let nextEvidenceUrl: string | null = null
-  if (data.evidenceUrl) {
-    const absolutePath = resolvePdtpEvidenceFile(data.evidenceUrl)
-    if (absolutePath && existsSync(absolutePath)) {
-      nextEvidenceUrl = data.evidenceUrl
-    } else {
-      logger.warn(
-        { evidenceUrl: data.evidenceUrl, activityId: data.activityId, worksiteId: data.worksiteId },
-        "[pdtp] evidenceUrl no se pudo resolver a un archivo físico; se descarta la referencia"
-      )
-    }
-  } else {
-    nextEvidenceUrl = existing?.evidenceUrl ?? null
-  }
-
-  // Ronda de corrección (2026-09-23, hallazgo 1 de la revisión final de la
-  // rama): este gate GENÉRICO es el que existía en `main` (commit 64bbdeba)
-  // antes de Task 9 — cualquier actividad con `evidenceRequirement` exigía,
-  // como mínimo, texto o URL o foto (`hasEvidence`). La ronda de Task 9 (más
-  // abajo) lo REEMPLAZÓ por uno más estricto pero acotado a `constancia`, sin
-  // restaurar éste para el resto de los mecanismos: el resultado era que una
-  // actividad `enganche`/`compuesta` con `evidenceRequirement` (incluida toda
-  // la cadena RE-20, N°66-78) aceptaba una ejecución manual completamente
-  // vacía —ni texto, ni URL, ni foto— cuando antes de esta rama exigía al
-  // menos texto. Es una regresión real: se perdió algo que ya existía, no
-  // sólo "no se ganó" lo que Task 9 no se propuso ganar.
-  //
-  // Los dos gates conviven ahora, cada uno con su propio propósito:
-  // 1. Éste (genérico): para CUALQUIER mecanismo, exige texto o URL o foto —
-  //    nunca una ejecución completamente vacía. Se evalúa sobre lo que llegó
-  //    en ESTE envío (`data.*`, igual que en `main`) y excluye `constancia` a
-  //    propósito: una constancia sin evidencia real debe fallar con el
-  //    mensaje más específico del gate 2 ("adjunta un archivo"), no con este
-  //    genérico — si no, una constancia con sólo texto (que el gate 2 igual
-  //    rechaza) mostraría el mensaje que no dice qué falta en realidad.
-  // 2. El de Task 9 (`hasRealEvidence`, sin cambios de comportamiento): sólo
-  //    para `constancia`, exige archivo real ya verificado contra el disco.
-  const hasEvidence = Boolean(data.evidenceText?.trim())
-    || Boolean(data.evidenceUrl?.trim())
-    || (data.evidencePhotos?.length ?? 0) > 0
-  if (requirement && !hasEvidence && activity.mechanism !== "constancia") {
-    throw new Error(`Esta actividad exige evidencia: ${requirement}`)
-  }
-
-  // Task 9 (M2.1): una observación de texto ya no basta cuando la actividad
-  // exige evidencia — hasta ahora `evidenceText` sola satisfacía el
-  // requisito, y una "constancia" es exactamente el caso donde el texto
-  // libre no acredita nada por sí solo. Se evalúa sobre el resultado FINAL
-  // (`nextEvidenceUrl`/`dedupedPhotos`, ya verificados contra el archivo
-  // físico), no sobre lo que llegó en este envío puntual: un reenvío que
-  // sólo corrige el texto y no vuelve a adjuntar el archivo no debe perder
-  // la evidencia real que ya tenía guardada (H-M3, append-only). Mismo
-  // criterio de "evidencia real" que `isRealEvidence` en accreditation.ts
-  // (ruta de storage o URL), aplicado aquí sobre campos que el esquema ya
-  // restringe a `storage/pdtp-evidence/…`.
-  //
-  // Ronda de corrección (2026-09-23): acotado a `mechanism === 'constancia'`,
-  // igual que `assertPdtpActivityMechanism` en constancias.ts. Task 9 es
-  // "Constancias declara no se hizo/no aplica", no "endurecer la evidencia en
-  // todo el PDTP" — la versión sin acotar rompía, sin test que lo cubriera, el
-  // fallback `solo_manual` documentado en responsible-execution.ts:17-26:
-  // cuando ningún responsable de una actividad `enganche`/`compuesta` tiene el
-  // permiso del módulo que la acredita, el sistema permite registrarla a mano
-  // en la planilla con evidencia autodeclarada (texto). 19 actividades reales
-  // del catálogo 2026 (incluida toda la cadena RE-20, N°66-78) dependen de ese
-  // fallback — ver `scripts/apply-pdtp-2026-demand-slas.ts:77-175`. Una
-  // segunda ronda (arriba) restauró el gate genérico que `main` ya exigía: el
-  // fallback `solo_manual` siempre necesitó al menos texto, nunca "nada".
-  const hasRealEvidence = Boolean(nextEvidenceUrl) || dedupedPhotos.length > 0
-  if (requirement && activity.mechanism === "constancia" && !hasRealEvidence) {
-    throw new Error(`Esta actividad exige evidencia: ${requirement}. La observación no basta — adjunta un archivo (foto o PDF).`)
   }
 
   const now = new Date().toISOString()
@@ -200,8 +106,7 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
 
   // H-B8 (intencional): `evidenceText || null` colapsa string vacío a
   // null en DB. Es la convención del módulo: "sin texto de evidencia"
-  // ≡ NULL (semánticamente equivalente y simplifica queries). Lo mismo
-  // aplica a `evidenceUrl` cuando se preserva el previo inexistente.
+  // ≡ NULL (semánticamente equivalente y simplifica queries).
   return db.transaction(async (tx) => {
     // Exclusión mutua con los desvíos por celda (deviations.ts):
     // `not_applicable`/`reprogrammed` retiraron o movieron el planificado de
@@ -241,26 +146,114 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
       throw new Error("Esta celda tiene un desvío activo (no aplicable o reprogramado) y no admite ejecuciones.")
     }
 
+    // El registro previo de la celda se lee aquí, detrás del lock: la fusión
+    // de evidencias y el control de autor deciden sobre él, y leído afuera dos
+    // envíos concurrentes se pisaban la foto o el archivo del otro.
+    const [existing] = await tx
+      .select({
+        status: pdtpExecutions.status,
+        executedQuantity: pdtpExecutions.executedQuantity,
+        evidenceUrl: pdtpExecutions.evidenceUrl,
+        evidencePhotos: pdtpExecutions.evidencePhotos,
+        executedByUserId: pdtpExecutions.executedByUserId,
+        rejectionReason: pdtpExecutions.rejectionReason,
+      })
+      .from(pdtpExecutions)
+      .where(and(
+        eq(pdtpExecutions.activityId, data.activityId),
+        eq(pdtpExecutions.worksiteId, data.worksiteId),
+        eq(pdtpExecutions.year, data.year),
+        eq(pdtpExecutions.month, data.month),
+        eq(pdtpExecutions.week, data.week),
+        isNull(pdtpExecutions.obligationId),
+        // W1-N01: la fila de la carga manual es la única que el upsert de abajo
+        // puede escribir (`targetWhere` excluye `integration`). Leer una fila
+        // de integración aquí le prestaba su archivo a la carga manual —se
+        // saltaba PREV-B02— o la bloqueaba por estar ya aprobada.
+        ne(pdtpExecutions.origin, "integration"),
+      ))
+      .limit(1)
+      .for("update")
+    // Si la ejecución ya está aprobada, no se permite reescribir. Sólo
+    // 'draft' o 'rejected' (devuelta para corrección) son editables.
+    if (existing && existing.status === "approved") {
+      throw new Error("La ejecución ya fue aprobada y no se puede modificar.")
+    }
+    // PREV-B03: un envío pendiente es de quien lo registró. Reemplazarlo en
+    // silencio cambiaba cantidad, evidencia y autor de lo que el aprobador iba
+    // a revisar. Un rechazo sí devuelve la celda a cualquiera con `execute`.
+    if (
+      existing?.status === "submitted"
+      && existing.executedByUserId
+      && existing.executedByUserId !== userId
+      && !options.canActForOthers
+    ) {
+      throw new Error("Esta semana ya tiene un registro enviado por otra persona que espera aprobación. No se puede reemplazar: pide a quien lo registró que lo corrija, o que se rechace para volver a enviarlo.")
+    }
+
+    const { evidenceUrl: nextEvidenceUrl, evidencePhotos: dedupedPhotos } = mergePdtpEvidence(existing, data)
+
+    // Ronda de corrección (2026-09-23): gate GENÉRICO para CUALQUIER actividad
+    // con `evidenceRequirement` — nunca una ejecución completamente vacía. Se
+    // evalúa sobre lo que llegó en ESTE envío y excluye `constancia` a
+    // propósito: su falta de archivo la explica mejor el gate de abajo.
+    const hasEvidence = Boolean(data.evidenceText?.trim())
+      || Boolean(data.evidenceUrl?.trim())
+      || (data.evidencePhotos?.length ?? 0) > 0
+    if (requirement && !hasEvidence && activity.mechanism !== "constancia") {
+      throw new Error(`Esta actividad exige evidencia: ${requirement}`)
+    }
+
+    // Task 9 (M2.1): en una `constancia` que declara requisito, la observación
+    // no basta. Se evalúa sobre el resultado FINAL (ya verificado contra el
+    // disco): un reenvío que sólo corrige el texto no pierde el archivo real
+    // que ya tenía guardado.
+    const hasRealEvidence = Boolean(nextEvidenceUrl) || dedupedPhotos.length > 0
+    if (requirement && activity.mechanism === "constancia" && !hasRealEvidence) {
+      throw new Error(`Esta actividad exige evidencia: ${requirement}. La observación no basta — adjunta un archivo (foto o PDF).`)
+    }
+
+    // PREV-B02 (auditoría 2026-09-26): declarar una cantidad es declarar que
+    // la actividad se hizo, y eso exige evidencia verificable en toda
+    // actividad —no sólo en las que traían `evidenceRequirement`—. La única
+    // excepción es la declarada en `manualEvidencePolicy`, y aun así exige
+    // una observación escrita. Una cantidad cero no declara cumplimiento.
+    if (data.executedQuantity > 0 && !hasRealEvidence) {
+      if (activity.manualEvidencePolicy !== "declaration_allowed") {
+        throw new Error("Para declarar la actividad como realizada adjunta un archivo (foto o PDF) como evidencia verificable.")
+      }
+      if (!data.evidenceText?.trim()) {
+        throw new Error("Esta actividad admite una observación en lugar de un archivo, pero no puede quedar vacía: describe dónde está la evidencia o adjunta un archivo.")
+      }
+    }
+
+    // PREV-M03: `evidence_status` dice qué respalda esta carga. Antes quedaba
+    // en `pending` para siempre y una fila migrada conservaba
+    // `migrated_without_attachment` aunque después recibiera evidencia real.
+    const evidenceStatus = hasRealEvidence || Boolean(data.evidenceText?.trim())
+      ? "provided" as const
+      : "not_required" as const
+
     const [row] = await tx.insert(pdtpExecutions).values({
       id, activityId: data.activityId, worksiteId: data.worksiteId, year: data.year, month: data.month,
       week: data.week, executedQuantity: data.executedQuantity, status: "submitted",
       evidenceText: data.evidenceText || null, evidenceUrl: nextEvidenceUrl,
-      evidencePhotos: dedupedPhotos, executedByUserId: userId, executedAt: now, createdAt: now, updatedAt: now,
+      evidencePhotos: dedupedPhotos, evidenceStatus, executedByUserId: userId, executedAt: now, createdAt: now, updatedAt: now,
     }).onConflictDoUpdate({
       target: [pdtpExecutions.activityId, pdtpExecutions.worksiteId, pdtpExecutions.year, pdtpExecutions.month, pdtpExecutions.week],
       targetWhere: sql`${pdtpExecutions.obligationId} IS NULL AND ${pdtpExecutions.origin} <> 'integration'`,
       set: {
         executedQuantity: data.executedQuantity, status: "submitted",
         evidenceText: data.evidenceText || null, evidenceUrl: nextEvidenceUrl,
-        evidencePhotos: dedupedPhotos, executedByUserId: userId, executedAt: now,
+        evidencePhotos: dedupedPhotos, evidenceStatus, executedByUserId: userId, executedAt: now,
         // Limpia rechazo previo: cuando el prevencionista reenvía, la
-        // ejecución vuelve a 'submitted' con un nuevo intento.
+        // ejecución vuelve a 'submitted' con un nuevo intento. El motivo no se
+        // pierde: queda en el evento `pdtp.execution_resubmitted` de abajo.
         rejectedByUserId: null, rejectedAt: null, rejectionReason: null,
         updatedAt: now,
       },
-      // El SELECT previo permite preservar las evidencias; esta condición es
-      // la garantía de escritura: una aprobación concurrente nunca puede ser
-      // degradada de approved a submitted por este upsert.
+      // Esta condición es la garantía de escritura: una aprobación
+      // concurrente nunca puede ser degradada de approved a submitted.
       setWhere: ne(pdtpExecutions.status, "approved"),
     }).returning()
 
@@ -291,6 +284,8 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
       }
     }
 
+    // PREV-I04: el intento anterior (estado, motivo de rechazo, archivo y
+    // autor) queda en el evento; la fila sólo guarda el intento vigente.
     await recordOperationalActivity({
       eventType: existing ? "pdtp.execution_resubmitted" : "pdtp.execution_submitted",
       module: "pdtp",
@@ -298,10 +293,107 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
       entityId: row.id,
       worksiteId: data.worksiteId,
       actorUserId: userId,
-      payload: { year: data.year, month: data.month, week: data.week, status: "submitted" },
+      payload: {
+        year: data.year, month: data.month, week: data.week, status: "submitted",
+        ...(existing ? {
+          previousStatus: existing.status,
+          previousQuantity: existing.executedQuantity,
+          previousRejectionReason: existing.rejectionReason ?? null,
+          previousEvidenceUrl: existing.evidenceUrl ?? null,
+          previousExecutedByUserId: existing.executedByUserId ?? null,
+        } : {}),
+      },
     }, tx)
     return row
   })
+}
+
+function evidenceFileName(url: string): string {
+  const idx = url.lastIndexOf("/")
+  return idx >= 0 ? url.slice(idx + 1) : url
+}
+
+function pdtpEvidenceFileExists(url: string): boolean {
+  const absolutePath = resolvePdtpEvidenceFile(url)
+  return Boolean(absolutePath && existsSync(absolutePath))
+}
+
+/**
+ * Evidencia append-only de una celda (H-M3, PREV-B03). Las fotos previas se
+ * conservan, y un archivo principal reemplazado pasa a la lista en vez de
+ * perderse: así sigue referenciado —descargable y fuera del alcance del GC de
+ * huérfanos— aunque el intento vigente traiga otro.
+ *
+ * H-B7: una ruta nueva sin archivo físico (un upload que falló, una pestaña
+ * cerrada) se descarta y se conserva la previa; la BD nunca apunta a archivos
+ * inexistentes.
+ */
+function mergePdtpEvidence(
+  existing: { evidenceUrl: string | null; evidencePhotos: unknown } | undefined,
+  data: { activityId: string; worksiteId: string; evidenceUrl?: string; evidencePhotos?: string[] },
+): { evidenceUrl: string | null; evidencePhotos: string[] } {
+  const previousPhotos = Array.isArray(existing?.evidencePhotos) ? existing.evidencePhotos as string[] : []
+  const verifiedNewPhotos = (data.evidencePhotos ?? []).filter(Boolean).filter((url) => {
+    if (pdtpEvidenceFileExists(url)) return true
+    logger.warn({ url }, "[pdtp] foto de evidencia sin archivo físico, descartada")
+    return false
+  })
+
+  let evidenceUrl = existing?.evidenceUrl ?? null
+  let replaced: string | null = null
+  if (data.evidenceUrl) {
+    if (pdtpEvidenceFileExists(data.evidenceUrl)) {
+      if (evidenceUrl && evidenceUrl !== data.evidenceUrl) replaced = evidenceUrl
+      evidenceUrl = data.evidenceUrl
+    } else {
+      logger.warn(
+        { evidenceUrl: data.evidenceUrl, activityId: data.activityId, worksiteId: data.worksiteId },
+        "[pdtp] evidenceUrl no se pudo resolver a un archivo físico; se descarta la referencia",
+      )
+    }
+  }
+
+  const evidencePhotos: string[] = []
+  const seen = new Set<string>()
+  for (const url of [...previousPhotos, ...(replaced ? [replaced] : []), ...verifiedNewPhotos]) {
+    const name = evidenceFileName(url)
+    if (seen.has(name)) continue
+    seen.add(name)
+    evidencePhotos.push(url)
+  }
+  return { evidenceUrl, evidencePhotos }
+}
+
+/**
+ * PREV-B02: la aprobación vuelve a exigir evidencia verificable. Una ejecución
+ * puede llegar a la cola sin archivo (importada, o con un archivo que después
+ * desapareció del disco) y aprobarla la contaba como cumplida. Las de
+ * integración se respaldan en su registro de origen, no en un archivo.
+ */
+function assertExecutionHasEvidenceForApproval(
+  execution: {
+    origin: string
+    executedQuantity: number | string
+    evidenceUrl: string | null
+    evidencePhotos: unknown
+    evidenceText: string | null
+    evidenceStatus: string
+  },
+  manualEvidencePolicy: string | undefined,
+) {
+  if (execution.origin === "integration" || Number(execution.executedQuantity) <= 0) return
+  const photos = Array.isArray(execution.evidencePhotos) ? execution.evidencePhotos as string[] : []
+  const hasFile = [execution.evidenceUrl, ...photos].some((url) => typeof url === "string" && pdtpEvidenceFileExists(url))
+  if (hasFile) return
+  // PREV-M03: el texto automático de una fila migrada ("Migrado desde…; sin
+  // evidencia adjunta") no es una declaración de nadie. Mientras nadie la
+  // reenvíe con evidencia propia, no se aprueba ni por la excepción.
+  if (
+    manualEvidencePolicy === "declaration_allowed"
+    && execution.evidenceText?.trim()
+    && execution.evidenceStatus !== "migrated_without_attachment"
+  ) return
+  throw new Error("No se puede aprobar: la ejecución está sin evidencia verificable (no se adjuntó un archivo o ya no existe). Recházala para que se corrija.")
 }
 
 /**
@@ -320,6 +412,25 @@ async function assertPdtpPeriodOpenForExecution(
     .from(pdtpActivities).where(eq(pdtpActivities.id, execution.activityId)).limit(1)
   if (!activity) return
   await assertPdtpPeriodOpen(activity.programId, execution.worksiteId, execution.year, execution.month, tx)
+}
+
+/**
+ * Programa, versión y número de la actividad de una ejecución: lo que
+ * necesitan el control de cambios y la política de evidencia al aprobar o
+ * rechazar. Se lee con el `tx` de la operación.
+ */
+async function loadExecutionActivityContext(tx: Tx, activityId: string) {
+  const [context] = await tx.select({
+    programId: pdtpActivities.programId,
+    n: pdtpActivities.n,
+    manualEvidencePolicy: pdtpActivities.manualEvidencePolicy,
+    programVersion: pdtpPrograms.version,
+  })
+    .from(pdtpActivities)
+    .innerJoin(pdtpPrograms, eq(pdtpPrograms.id, pdtpActivities.programId))
+    .where(eq(pdtpActivities.id, activityId))
+    .limit(1)
+  return context
 }
 
 export async function approvePdtpExecution(executionId: string, userId: string, scope: WorksiteScope) {
@@ -342,6 +453,8 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
     }
     assertWorksiteAccess(execution.worksiteId, scope)
     await assertPdtpPeriodOpenForExecution(tx, execution)
+    const context = await loadExecutionActivityContext(tx, execution.activityId)
+    assertExecutionHasEvidenceForApproval(execution, context?.manualEvidencePolicy)
 
     const now = new Date().toISOString()
     const [updated] = await tx.update(pdtpExecutions)
@@ -386,6 +499,17 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
       actorUserId: userId,
       payload: { status: "approved", obligationCompleted: Boolean(execution.obligationId) },
     }, tx)
+    // PREV-I04: aprobar cambia lo que el programa declara cumplido; queda en
+    // su control de cambios, igual que desvíos y cierres.
+    if (context) {
+      await addPdtpChangeLogEntry(
+        context.programId, context.programVersion, userId, `execution:${updated.id}`,
+        { status: execution.status },
+        { status: "approved" },
+        `Ejecución de la actividad N°${context.n} (mes ${execution.month}, semana ${execution.week}) aprobada.`,
+        tx,
+      )
+    }
     return updated
   })
 }
@@ -441,8 +565,18 @@ export async function rejectPdtpExecution(
       entityId: updated.id,
       worksiteId: execution.worksiteId,
       actorUserId: userId,
-      payload: { status: "rejected", hasObligation: Boolean(execution.obligationId) },
+      payload: { status: "rejected", hasObligation: Boolean(execution.obligationId), reason: reason.trim() },
     }, tx)
+    const context = await loadExecutionActivityContext(tx, execution.activityId)
+    if (context) {
+      await addPdtpChangeLogEntry(
+        context.programId, context.programVersion, userId, `execution:${updated.id}`,
+        { status: execution.status },
+        { status: "rejected", reason: reason.trim() },
+        `Ejecución de la actividad N°${context.n} (mes ${execution.month}, semana ${execution.week}) rechazada. Motivo: ${reason.trim()}`,
+        tx,
+      )
+    }
     return updated
   })
 }

@@ -1,9 +1,11 @@
-import { and, eq, inArray, isNull, or } from "drizzle-orm"
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
+  pdtpPrograms,
   pdtpActivityExecutionConfigs,
   pdtpActivityReminderRules,
+  pdtpActivityWorksiteExclusions,
   pdtpReminderDeliveries,
   pdtpScheduledInstances,
   worksites,
@@ -42,6 +44,7 @@ export async function runPdtpScheduledInstanceReminders(asOf = new Date()): Prom
     rule: pdtpActivityReminderRules,
     config: pdtpActivityExecutionConfigs,
     worksiteName: worksites.name,
+    programActivatedAt: pdtpPrograms.activatedAt,
   }).from(pdtpScheduledInstances)
     .innerJoin(pdtpActivities, eq(pdtpActivities.id, pdtpScheduledInstances.activityId))
     .innerJoin(pdtpActivityReminderRules, and(
@@ -50,7 +53,24 @@ export async function runPdtpScheduledInstanceReminders(asOf = new Date()): Prom
     ))
     .leftJoin(pdtpActivityExecutionConfigs, eq(pdtpActivityExecutionConfigs.activityId, pdtpScheduledInstances.activityId))
     .innerJoin(worksites, eq(worksites.id, pdtpScheduledInstances.worksiteId))
-    .where(inArray(pdtpScheduledInstances.status, ["pending", "in_progress", "submitted"]))
+    .innerJoin(pdtpPrograms, eq(pdtpPrograms.id, pdtpScheduledInstances.programId))
+    .where(and(
+      inArray(pdtpScheduledInstances.status, ["pending", "in_progress", "submitted"]),
+      // C05-A: la v+1 copia las reglas de recordatorio; sin este filtro la
+      // versión reemplazada seguía avisando en paralelo. Sólo se avisa lo que
+      // la bandeja de ejecutables mostraría (`listPdtpExecutableInstances`):
+      // programa vigente, actividad no retirada, faena activa y no excluida, y
+      // nada anterior a la activación.
+      eq(pdtpPrograms.status, "active"),
+      eq(pdtpActivities.status, "active"),
+      eq(worksites.isActive, true),
+      sql`(${pdtpPrograms.activatedAt} IS NULL OR ${pdtpScheduledInstances.scheduledFor} >= (${pdtpPrograms.activatedAt} AT TIME ZONE 'America/Santiago')::date)`,
+      sql`NOT EXISTS (
+        SELECT 1 FROM ${pdtpActivityWorksiteExclusions}
+        WHERE ${pdtpActivityWorksiteExclusions.activityId} = ${pdtpScheduledInstances.activityId}
+          AND ${pdtpActivityWorksiteExclusions.worksiteId} = ${pdtpScheduledInstances.worksiteId}
+      )`,
+    ))
 
   const notifiedUserIds = new Set<string>()
   let notificationsCreated = 0
@@ -59,6 +79,9 @@ export async function runPdtpScheduledInstanceReminders(asOf = new Date()): Prom
   for (const row of rows) {
     const targetAt = pdtpReminderTargetAt(row.instance.scheduledFor, row.rule.offsetValue, row.rule.offsetUnit as PdtpReminderOffsetUnit)
     if (asOf.getTime() < new Date(targetAt).getTime()) continue
+    // Un aviso cuyo momento cayó antes de que esta versión entrara en vigencia
+    // le correspondía a la versión anterior, que ya lo dio (C05-A).
+    if (row.programActivatedAt && new Date(targetAt).getTime() < new Date(row.programActivatedAt).getTime()) continue
     const connector = getPdtpExecutionConnector(row.config?.destinationConnectorKey)
     if (!connector) continue
 

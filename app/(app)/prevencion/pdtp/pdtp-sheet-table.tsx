@@ -477,6 +477,7 @@ export function PdtpSheetTable({
                                   effectiveFrom={effectiveFrom}
                                   evidenceRequirement={activity.evidenceRequirement}
                                   mechanism={activity.mechanism}
+                                  manualEvidencePolicy={activity.manualEvidencePolicy}
                                 />}
                                 {canManageProgram && <PdtpOverrideForm
                                   programId={view.program.id}
@@ -651,6 +652,12 @@ export function PdtpSheetTable({
                           })}
                           <TableCellNum className={`font-semibold whitespace-nowrap ${rowPy}`}>
                             {formatQuantity(planViewMode === "historico" ? activity.totalPlanned : activity.effectiveTotalPlanned)}<span className="text-[var(--color-success-ink)]"> / {formatQuantity(planViewMode === "historico" ? activity.totalExecuted : activity.effectiveTotalExecuted)}</span>
+                            {/* PREV-C01: lo enviado sin revisar no es "ejecutado"; se muestra aparte. */}
+                            {(activity.pendingTotalExecuted ?? 0) > 0 && (
+                              <span className="block text-xs font-normal text-[var(--color-warning-ink)]">
+                                +{formatQuantity(activity.pendingTotalExecuted ?? 0)} por aprobar
+                              </span>
+                            )}
                           </TableCellNum>
                           {canOperate && worksiteId && (
                             <TableCell className={rowPy}>
@@ -664,6 +671,7 @@ export function PdtpSheetTable({
                                   effectiveFrom={effectiveFrom}
                                   evidenceRequirement={activity.evidenceRequirement}
                                   mechanism={activity.mechanism}
+                                  manualEvidencePolicy={activity.manualEvidencePolicy}
                                 />}
                                 {canManageProgram && <PdtpOverrideForm
                                   programId={view.program.id}

@@ -103,9 +103,9 @@ export type PdtpInstrumentRecord =
       title: string
       status: string
       worksiteId: string
-      /** Siempre `true`: una campaña en borrador es trabajo por hacer, no un
-       *  instrumento faltante. Ver la nota al pie de `loadPdtpInstrumentIndex`. */
-      usable: true
+      /** Siempre `false`: desde b5ff6c1f cerrar una campaña no acredita el
+       *  PDTP. Ver la nota al pie de `loadPdtpInstrumentIndex`. */
+      usable: false
     }
 
 export type PdtpInstrumentNumberSets = {
@@ -246,13 +246,16 @@ export async function loadPdtpInstrumentIndex(client: QueryClient = db): Promise
     record(row.ack as number[] | null, entry)
   }
 
-  // Campañas sin condición de estado: una campaña en borrador es trabajo por
-  // hacer, no un instrumento faltante.
+  // PREV-I10: una campaña declara sus números pero no los vuelve ejecutables.
+  // Desde b5ff6c1f cerrarla ya no acredita (las 85-89 las acredita su
+  // ocurrencia CAM-* del catálogo anual), así que contarla como vigente daba
+  // por habilitada una actividad cuyo único respaldo no mueve el cumplimiento.
+  // Se sigue registrando como declarada: el informe tiene que poder nombrarla.
   for (const row of campaigns) {
     record(row.n as number[] | null, {
       kind: "campaign",
       id: row.id, code: row.code, title: row.title, status: row.status,
-      worksiteId: row.worksiteId, usable: true,
+      worksiteId: row.worksiteId, usable: false,
     }, row.worksiteId)
   }
 

@@ -37,9 +37,18 @@ type PdtpExecutionFormProps = {
    * abajo prometía lo mismo para los dos casos.
    */
   mechanism?: string | null
+  /**
+   * PREV-B02: qué basta para declarar la actividad realizada. Por defecto un
+   * archivo; `declaration_allowed` es la excepción declarada en la actividad
+   * (respaldo fuera de la plataforma) y aun así exige una observación.
+   */
+  manualEvidencePolicy?: string | null
 }
 
-export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, defaultWeek, effectiveFrom, evidenceRequirement, mechanism }: PdtpExecutionFormProps) {
+/** Mismo tope que `POST /api/prevencion/pdtp/evidence`. */
+const MAX_EVIDENCE_BYTES = 25 * 1024 * 1024
+
+export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, defaultWeek, effectiveFrom, evidenceRequirement, mechanism, manualEvidencePolicy }: PdtpExecutionFormProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [open, setOpen] = React.useState(false)
   const programYear = year ?? codeYear()
@@ -64,6 +73,14 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
     async (_prev, formData) => {
       const { toast } = await import("@/lib/toast")
       const file = fileInputRef.current?.files?.[0]
+      // PREV-I09: un archivo sobre el tope se rechaza acá, con un motivo que
+      // se entiende, en vez de llegar al servidor y volver como un error de
+      // formato.
+      if (file && file.size > MAX_EVIDENCE_BYTES) {
+        const message = "El archivo supera 25 MB. Comprímelo o divide el PDF antes de subirlo."
+        toast.error(message)
+        return { ok: false, message }
+      }
       if (file) {
         const uploadData = new FormData()
         uploadData.set("file", file)
@@ -96,15 +113,18 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
     null,
   )
   const [pending, startTransition] = React.useTransition()
-  // Sólo `constancia` exige archivo real (Task 9 + ronda 2026-09-23, ver
-  // `markPdtpExecution`): para el resto de los mecanismos la observación de
-  // texto sigue bastando cuando no se adjunta evidencia.
-  const requiresRealEvidence = !!evidenceRequirement && mechanism === "constancia"
-  const observationLabel = !evidenceRequirement
-    ? "Observación"
-    : requiresRealEvidence
-      ? "Observación (no reemplaza la evidencia exigida — adjunta un archivo)"
-      : "Observación (obligatoria si no adjuntas evidencia)"
+  // PREV-B02 (ver `markPdtpExecution`): declarar una cantidad exige un
+  // archivo, salvo la excepción declarada en la actividad —y una `constancia`
+  // con requisito nunca la admite—. La observación sólo reemplaza al archivo
+  // en esa excepción.
+  const declarationAllowed = manualEvidencePolicy === "declaration_allowed"
+    && !(evidenceRequirement && mechanism === "constancia")
+  const observationLabel = declarationAllowed
+    ? "Observación (obligatoria si no adjuntas un archivo)"
+    : "Observación (no reemplaza al archivo)"
+  const evidenceHelp = declarationAllowed
+    ? "Si la evidencia está fuera de la plataforma, basta una observación escrita que diga dónde está."
+    : "Adjunta una foto o un PDF: sin un archivo la actividad no se puede declarar realizada."
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -118,7 +138,7 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
         <DialogHeader>
           <DialogTitle>Registrar ejecución</DialogTitle>
           <DialogDescription>
-            Ingresa la cantidad ejecutada para el período indicado. Puedes adjuntar evidencia fotográfica o un PDF.
+            Ingresa la cantidad ejecutada para el período indicado y adjunta la evidencia (foto o PDF).
           </DialogDescription>
         </DialogHeader>
         <form
@@ -200,12 +220,12 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
               type="text"
               placeholder={evidenceRequirement ? evidenceRequirement : "Opcional"}
               aria-label="Observación"
-              aria-required={!!evidenceRequirement}
+              aria-required={declarationAllowed}
               className="h-9 w-full rounded-md border border-[var(--color-border-control)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
             />
           </Field>
 
-          <Field label="Evidencia (foto o PDF)" htmlFor="exec-file">
+          <Field label="Evidencia (foto o PDF)" htmlFor="exec-file" hint={evidenceHelp}>
             <FileInput
               ref={fileInputRef}
               id="exec-file"

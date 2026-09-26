@@ -5,8 +5,9 @@
  * del Programa de Trabajo Preventivo SG-SST a los responsables con
  * permiso `prevention:pdtp:execute` por faena.
  *
- * Llamar semanalmente vía cron externo (Vercel cron, GitHub Actions, etc.):
- *   curl -H "Authorization: Bearer $CRON_SECRET" https://yourdomain/api/cron/pdtp-weekly-reminders
+ * Lo agenda el servicio `cron` de docker-compose.yml vía
+ * `scripts/cron-runner.mjs` (PREV-C04), cuyo contrato exige `outcome` y `code`
+ * en cada respuesta: sin ellos el runner daba por rota una corrida buena.
  */
 
 import { type NextRequest, NextResponse } from "next/server"
@@ -33,11 +34,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   if (!secret) {
     logger.error("[cron/pdtp-weekly-reminders] CRON_SECRET is not configured")
-    return NextResponse.json({ error: "Cron secret not configured" }, { status: 500 })
+    return NextResponse.json({ ok: false, outcome: "failed", code: "PREVENTION_CRON_CONFIGURATION", error: "Cron secret not configured" }, { status: 500 })
   }
 
   if (!verifyCronSecret(authHeader, secret)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return NextResponse.json({ ok: false, outcome: "unauthorized", code: "PREVENTION_CRON_UNAUTHORIZED", error: "Unauthorized" }, { status: 401 })
   }
 
   try {
@@ -73,10 +74,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       // corrida en vez de una.
       reconciled: await withCronLock("pdtp-fulfillment-reconcile", () => reconcilePdtpFulfillmentEvents({ limit: 200 })),
     }))
-    if ("skipped" in chained) return NextResponse.json({ ok: true, ...chained })
+    if ("skipped" in chained) return NextResponse.json({ ok: true, outcome: "skipped", code: "PREVENTION_CRON_SKIPPED", reason: chained.reason })
     const { result, vencidas, obligations, signatures, scheduledInstances, triggerEvents, scheduledReminders, legalFolders, riohsRollouts, reconciled } = chained
     logger.info("[cron/pdtp-weekly-reminders] Completed", { ...result, vencidas, obligations, signatures, scheduledInstances, triggerEvents, scheduledReminders, legalFolders, riohsRollouts, reconciled })
-    return NextResponse.json({ ok: true, ...result, vencidas, obligations, signatures, scheduledInstances, triggerEvents, scheduledReminders, legalFolders, riohsRollouts, reconciled })
+    return NextResponse.json({ ok: true, outcome: "success", code: "PREVENTION_CRON_SUCCESS", ...result, vencidas, obligations, signatures, scheduledInstances, triggerEvents, scheduledReminders, legalFolders, riohsRollouts, reconciled })
   } catch (err) {
     // H-B11: en producción, no exponer err.message al cliente porque
     // puede filtrar paths internos, queries SQL, etc. Loguear el
@@ -85,8 +86,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     logger.error("[cron/pdtp-weekly-reminders] Fatal error", err)
     const isProd = process.env.NODE_ENV === "production"
     return NextResponse.json(
-      { error: isProd ? "Internal cron error" : (err instanceof Error ? err.message : "Unknown error") },
-      { status: 500 },
+      { ok: false, outcome: "failed", code: "PREVENTION_CRON_FAILED", error: isProd ? "Internal cron error" : (err instanceof Error ? err.message : "Unknown error") },
+      { status: 503 },
     )
   }
 }

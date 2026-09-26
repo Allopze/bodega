@@ -2,8 +2,9 @@ import { and, desc, eq, isNull, ne } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { pdtpActivities, pdtpProgramWorksites, pdtpPrograms } from "@/db/schema"
 import { logger } from "@/lib/logger"
-import { countOf } from "@/lib/utils"
+import { countOf, todayInChile } from "@/lib/utils"
 import { addPdtpChangeLogEntry } from "./helpers"
+import { handoverPdtpWorksiteAssignees } from "./assignees"
 import { computePdtpProgramContentDigest, computePdtpProgramContentDigestForStoredVersion } from "./content-digest"
 import { assertPdtpFulfillmentCoverage, type PdtpCoverageScope, type PdtpFulfillmentCoverageIssue } from "./fulfillment"
 import {
@@ -459,8 +460,9 @@ export async function activatePdtpProgram(programId: string, userId: string) {
     }
 
     const now = new Date().toISOString()
-    await tx.update(pdtpPrograms).set({ status: "closed", updatedAt: now })
+    const replaced = await tx.update(pdtpPrograms).set({ status: "closed", updatedAt: now })
       .where(and(eq(pdtpPrograms.year, program.year), eq(pdtpPrograms.status, "active"), ne(pdtpPrograms.id, programId)))
+      .returning({ id: pdtpPrograms.id })
 
     const [updated] = await tx.update(pdtpPrograms)
       .set({ status: "active", activatedByUserId: userId, activatedAt: now, updatedAt: now })
@@ -473,6 +475,10 @@ export async function activatePdtpProgram(programId: string, userId: string) {
       ))
       .returning()
     if (!updated) throw new Error("El programa cambió mientras se activaba. Recarga e intenta nuevamente.")
+
+    // C05-A: las asignaciones nominales vigentes pasan a la versión que entra
+    // en vigencia, en la misma transacción que cierra la anterior.
+    await handoverPdtpWorksiteAssignees(replaced.map((row) => row.id), programId, todayInChile(), tx)
 
     await addPdtpChangeLogEntry(
       programId,

@@ -37,9 +37,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   try {
     const outcome = await withCronLock(JOB, () => runDeadlineReminders())
-    if ("skipped" in outcome) {
+    if ("skipped" in outcome && outcome.skipped === true) {
       logger.warn(`[cron/${JOB}] otra corrida en curso`)
-      return NextResponse.json({ ok: true, outcome: "skipped", code: "DEADLINE_REMINDERS_CONFLICT", reason: outcome.reason }, { status: 200 })
+      // `_SKIPPED` y no `_CONFLICT`: el runner arma el código esperado como
+      // prefijo + sufijo del desenlace, y con otro sufijo rechazaba el disparo.
+      return NextResponse.json({ ok: true, outcome: "skipped", code: "DEADLINE_REMINDERS_SKIPPED", reason: outcome.reason }, { status: 200 })
     }
     logger.info(`[cron/${JOB}] completado`, outcome)
     return NextResponse.json({ ok: true, outcome: "success", code: "DEADLINE_REMINDERS_SUCCESS", ...outcome })

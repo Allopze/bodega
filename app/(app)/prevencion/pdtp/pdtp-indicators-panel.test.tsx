@@ -32,6 +32,7 @@ const DATA: PdtpComplianceIndicators = {
     { quarter: 4, planned: 0, executed: 0, percent: null },
   ],
   annual: { planned: 20, executed: 9, percent: 0.45, zeroActivityMonths: 1, zeroActivityIds: ["act-1", "act-2"] },
+  toDate: { throughMonth: 9, planned: 10, executed: 9, percent: 0.9 },
   lastExecutionUpdatedAt: "2026-01-15T10:30:00.000Z",
   subjectRosterIssues: [],
 }
@@ -57,9 +58,12 @@ describe("PdtpIndicatorsPanel — render compacto actual", () => {
     expect(screen.getByText(/Verificación/).parentElement).toHaveTextContent("Verificación 80%")
     expect(screen.getByText(/Cierre/).parentElement).toHaveTextContent("Cierre 50%")
 
-    const annualTile = screen.getByText("Cumplimiento anual").closest("div")!.parentElement!
-    expect(annualTile).toHaveTextContent("45%")
-    expect(annualTile).toHaveTextContent("Plan 20 · ejecutado 9")
+    // PREV-I15: la cifra principal es el cumplimiento a la fecha; el avance
+    // contra el plan de todo el año queda como dato secundario, rotulado.
+    const toDateTile = screen.getByText("Cumplimiento a la fecha").closest("a")!
+    expect(toDateTile).toHaveTextContent("90%")
+    expect(toDateTile).toHaveTextContent("hasta Sep · plan 10 · ejecutado 9")
+    expect(toDateTile).toHaveTextContent("Avance anual 45% · plan 20 · ejecutado 9")
 
     const metaTile = screen.getByText("Meta anual").closest("div")!.parentElement!
     expect(metaTile).toHaveTextContent("85%")
@@ -117,7 +121,7 @@ describe("PdtpIndicatorsPanel — render compacto actual", () => {
     expect(screen.getByText(/Datos al/)).toBeInTheDocument()
     expect(screen.getByText(/Última ejecución aprobada/)).toBeInTheDocument()
 
-    const annualLink = screen.getByText("Cumplimiento anual").closest("a")!
+    const annualLink = screen.getByText("Cumplimiento a la fecha").closest("a")!
     expect(annualLink).toHaveAttribute("href", "#registros-pdtp")
   })
 

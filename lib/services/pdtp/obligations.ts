@@ -255,6 +255,22 @@ export async function reportPdtpObligation(input: {
     if (activity.evidenceRequirement?.trim() && !hasEvidence) {
       throw new Error(`Adjunta o describe la evidencia requerida: ${activity.evidenceRequirement}`)
     }
+    // PREV-B02: el mismo criterio que la planilla. Un caso manual declara que
+    // la actividad se hizo, y eso exige un archivo salvo la excepción
+    // declarada en la actividad. Los que abren los conectores (`integration`)
+    // se respaldan en su registro de origen.
+    if (obligation.origin !== "integration") {
+      const hasFile = Boolean(evidenceUrl) || photos.some((url) => {
+        const absolutePath = resolvePdtpEvidenceFile(url)
+        return Boolean(absolutePath && existsSync(absolutePath))
+      })
+      if (!hasFile && activity.manualEvidencePolicy !== "declaration_allowed") {
+        throw new Error("Para declarar la actividad como realizada adjunta un archivo (foto o PDF) como evidencia verificable.")
+      }
+      if (!hasFile && !input.evidenceText?.trim()) {
+        throw new Error("Esta actividad admite una observación en lugar de un archivo, pero no puede quedar vacía: describe dónde está la evidencia o adjunta un archivo.")
+      }
+    }
     const slot = periodSlot(reportedAt)
     const now = new Date().toISOString()
     const [execution] = await tx.insert(pdtpExecutions).values({

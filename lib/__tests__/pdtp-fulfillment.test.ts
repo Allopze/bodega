@@ -86,6 +86,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.preventionInspectionTemplates)
   await inMemoryDb.delete(schema.preventionEmergencyPlans)
+  await inMemoryDb.delete(schema.preventionCampaigns)
   await inMemoryDb.delete(schema.preventionTrainingCatalogItems)
   await inMemoryDb.delete(schema.sstDocumentTypes)
   await inMemoryDb.delete(schema.sstDocumentCategories)
@@ -448,11 +449,14 @@ describe("resolvePdtpFulfillmentTarget", () => {
     expect(target.ctaLabel).toBe("Ir a cumplirla")
   })
 
-  it("conserva el destino histórico de una campaña que aún no migró al catálogo", () => {
+  // PREV-I10: desde b5ff6c1f cerrar una campaña no acredita; la N°88 se cumple
+  // completando su ocurrencia CAM-07 del catálogo de capacitación. Mandar a
+  // Campañas era mandar a registrar trabajo que no cuenta.
+  it("la N°88 lleva al catálogo de capacitación (CAM-07), no a Campañas", () => {
     const target = resolvePdtpFulfillmentTarget({ mechanism: "enganche", n: 88 }, WS_ID)
     expect(target.kind).toBe("operational")
-    expect(target.module).toBe("campanas")
-    expect(target.href).toBe(`/prevencion/campanas?faena=${WS_ID}`)
+    expect(target.module).toBe("capacitacion")
+    expect(target.href).toBe(`/prevencion/capacitacion?faena=${WS_ID}`)
   })
 
   it("la N°1 lleva al flujo de aprobación del programa concreto", () => {
@@ -569,6 +573,21 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
     expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([
       expect.objectContaining({ n: 35, status: "segregated_valid", destinationModule: "riesgos" }),
     ])
+  })
+
+  // PREV-I10: una campaña declara números pero ya no acredita (b5ff6c1f): no
+  // puede dar por habilitada una actividad que sólo ella respalda.
+  it("una campaña que declara el número no lo vuelve ejecutable", async () => {
+    await seedProgram("draft")
+    await seedActivity({ n: 88, mechanism: "enganche", evidenceRequirement: null })
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.preventionCampaigns).values({
+      id: "camp-88", worksiteId: WS_ID, code: "CAMP-88", title: "Puntos ciegos",
+      status: "pending", pdtpActivityNumbers: [88], createdByUserId: USER_ID, createdAt: now, updatedAt: now,
+    })
+
+    const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
+    expect(issues.filter((issue) => issue.n === 88)).toEqual([expect.objectContaining({ status: "instrument_required" })])
   })
 
   it("una plantilla en borrador declara el número pero no lo vuelve ejecutable", async () => {

@@ -556,6 +556,22 @@ exit $?
     expect(dockerfile).toContain("COPY --from=build /app/scripts/cron-runner.mjs")
   })
 
+  // PREV-C04: un job declarado en el runner que nadie agenda es un job que no
+  // corre. Así pasaron meses sin un solo recordatorio de Prevención.
+  it("agenda en el crontab cada job que declara el runner", () => {
+    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
+    const runner = readFileSync(path.join(repoRoot, "scripts/cron-runner.mjs"), "utf8")
+    const cronService = cronServiceFromCompose(compose)
+    const jobs = [...runner.matchAll(/^ {2}"?([a-z0-9-]+)"?: \{\n\s+url:/gm)].map((match) => match[1]!)
+    expect(jobs).toContain("pdtp-weekly-reminders")
+
+    const unscheduled = jobs.filter((job) => !cronService.includes(`cron-runner.mjs ${job} `))
+    expect(unscheduled).toEqual([])
+    // Fuera hasta que el barrido deje de poder borrar evidencia vigente (PREV-B03).
+    expect(runner).not.toContain("api/cron/pdtp-evidence-gc")
+    expect(cronService).not.toContain("pdtp-evidence-gc")
+  })
+
   it("releases app before cron and verifies both images plus a protected smoke", () => {
     const workflow = readFileSync(path.join(repoRoot, ".github/workflows/deploy.yml"), "utf8")
     const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")

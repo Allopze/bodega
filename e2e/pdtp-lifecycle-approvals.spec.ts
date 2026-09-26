@@ -90,7 +90,7 @@ test.describe("PDTP — Ciclo de vida y aprobaciones", () => {
   test("aprobar una ejecución pendiente la remueve de la lista", async ({ page }) => {
     await page.goto("/prevencion/pdtp/aprobaciones")
 
-    const approveButton = page.getByRole("button", { name: "Aprobar ejecución M7S2" })
+    const approveButton = page.getByRole("button", { name: "Aprobar ejecución Jul semana 2" })
     await expect(approveButton).toBeVisible()
     await approveButton.click()
     await expect(page.locator("[data-sonner-toast]").getByText(/aprobada/)).toBeVisible()
@@ -98,13 +98,13 @@ test.describe("PDTP — Ciclo de vida y aprobaciones", () => {
     // La aprobación es un form action (auto-refresca); recargar además
     // confirma que el cambio quedó persistido en el servidor.
     await page.reload()
-    await expect(page.getByRole("button", { name: "Aprobar ejecución M7S2" })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Aprobar ejecución Jul semana 2" })).toHaveCount(0)
   })
 
   test("rechazar una ejecución pendiente con motivo la remueve de la lista", async ({ page }) => {
     await page.goto("/prevencion/pdtp/aprobaciones")
 
-    await page.getByRole("button", { name: "Rechazar ejecución M7S3" }).click()
+    await page.getByRole("button", { name: "Rechazar ejecución Jul semana 3" }).click()
     await expect(page.getByRole("dialog", { name: "Rechazar ejecución" })).toBeVisible()
     await page.getByPlaceholder("Motivo del rechazo (mín. 3 caracteres)").fill("Evidencia insuficiente E2E")
     await page.getByRole("button", { name: "Rechazar y devolver" }).click()
@@ -113,6 +113,6 @@ test.describe("PDTP — Ciclo de vida y aprobaciones", () => {
     // El rechazo se dispara desde un onClick (no un form action), por lo que
     // no auto-refresca la lista SSR — recargar confirma el estado persistido.
     await page.reload()
-    await expect(page.getByRole("button", { name: "Rechazar ejecución M7S3" })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Rechazar ejecución Jul semana 3" })).toHaveCount(0)
   })
 })

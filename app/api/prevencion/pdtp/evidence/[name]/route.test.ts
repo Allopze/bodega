@@ -6,13 +6,14 @@ const mockResolveWorksiteScope = vi.hoisted(() => vi.fn())
 const mockAssertWorksiteAccess = vi.hoisted(() => vi.fn())
 const mockResolvePdtpEvidenceFile = vi.hoisted(() => vi.fn())
 const mockReadFile = vi.hoisted(() => vi.fn())
+const mockWarn = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuth }))
 vi.mock("@/lib/auth/can", () => ({ can: mockCan }))
 vi.mock("@/lib/auth/scope", () => ({ resolveWorksiteScope: mockResolveWorksiteScope }))
 vi.mock("@/lib/services/prevention-pdtp", () => ({ assertWorksiteAccess: mockAssertWorksiteAccess }))
 vi.mock("@/lib/storage/config", () => ({ resolvePdtpEvidenceFile: mockResolvePdtpEvidenceFile }))
-vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: vi.fn() } }))
+vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: mockWarn } }))
 
 // Drizzle db shim: any select chain resolves to [{ worksiteId }] or [].
 const queryResult = vi.hoisted(() => ({ rows: [] as Array<{ worksiteId: string }> }))
@@ -119,5 +120,17 @@ describe("GET /api/prevencion/pdtp/evidence/[name]", () => {
     const { GET } = await import("./route")
     const res = await GET(makeRequest("ghost.jpg") as never, { params: Promise.resolve({ name: "ghost.jpg" }) })
     expect(res.status).toBe(404)
+    // PREV-I13: una evidencia referenciada cuyo archivo desapareció deja rastro;
+    // el 404 al usuario sigue siendo el mismo que el de un acceso denegado.
+    expect(mockWarn).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(mockWarn.mock.calls[0])).toContain("ghost.jpg")
+  })
+
+  it("los demás 404 (sin dueño o fuera del alcance) no se registran como archivo perdido", async () => {
+    mockWarn.mockClear()
+    queryResult.rows = []
+    const { GET } = await import("./route")
+    await GET(makeRequest("abc.jpg") as never, { params: Promise.resolve({ name: "abc.jpg" }) })
+    expect(mockWarn).not.toHaveBeenCalled()
   })
 })

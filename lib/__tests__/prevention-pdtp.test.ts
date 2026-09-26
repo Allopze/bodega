@@ -1098,6 +1098,17 @@ describe("prevention PDTP service", () => {
       evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
 
+    // PREV-C01: enviada y sin revisar es "por aprobar", no ejecutado.
+    const pendingView = await getPdtpSheetView(2026, "sup_jt", "ws-1")
+    const pendingRow = pendingView?.activities.find((item) => item.n === 38)
+    expect(pendingRow?.monthlyExecuted[0]).toBe(0)
+    expect(pendingRow?.pendingTotalExecuted).toBe(4)
+
+    const { approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, activity!.id))
+    await approvePdtpExecution(execution!.id, "user-approver", ["ws-1"])
+
     const view = await getPdtpSheetView(2026, "sup_jt", "ws-1")
     const row = view?.activities.find((item) => item.n === 38)
 
@@ -1809,6 +1820,18 @@ describe("prevention PDTP service", () => {
     const { program } = await loadCatalog()
     await submitForReview(program.id)
     await expect(approvePdtpProgramJdpr(program.id, "user-1")).rejects.toThrow(/elaboró/i)
+  })
+
+  // PREV-M05: el paso JDPR sólo excluía al elaborador. Un prevencionista que no
+  // creó el programa podía editarlo, enviarlo a revisión y aprobarlo él mismo.
+  it("rejects JDPR approval by whoever submitted the program for review", async () => {
+    const { approvePdtpProgramJdpr, submitPdtpProgramForReview } = await import("@/lib/services/prevention-pdtp")
+    const { program } = await loadCatalog()
+    await prepareProgramForReview(program.id)
+    await submitPdtpProgramForReview(program.id, "user-jdpr-2")
+
+    await expect(approvePdtpProgramJdpr(program.id, "user-jdpr-2")).rejects.toThrow(/envió el programa a revisión/i)
+    await expect(approvePdtpProgramJdpr(program.id, "user-jdpr")).resolves.toMatchObject({ approvedByJdprUserId: "user-jdpr" })
   })
 
   it("treats an identical lifecycle retry as idempotent", async () => {
@@ -3655,6 +3678,10 @@ describe("prevention PDTP service", () => {
       targetUnit: "%",
       sheetCodes: ["pdtp_general"],
     }, "user-1")
+    // PREV-B02: el respaldo de este caso vive en el expediente del incidente;
+    // la actividad declara explícitamente que basta la observación escrita.
+    await inMemoryDb.update(schema.pdtpActivities).set({ manualEvidencePolicy: "declaration_allowed" })
+      .where(eq(schema.pdtpActivities.id, activity.id))
     await inMemoryDb.update(schema.pdtpActivities).set({ mechanism: "constancia" })
       .where(eq(schema.pdtpActivities.id, activity.id))
     // PDTP-003: el fixture no asocia faenas; se declara el alcance corporativo,

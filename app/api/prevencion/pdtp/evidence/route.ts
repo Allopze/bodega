@@ -105,8 +105,11 @@ export async function POST(request: Request) {
     const checksumSha256 = createHash("sha256").update(buffer).digest("hex")
     return NextResponse.json({ path: relativePath, checksumSha256 }, { status: 201 })
   } catch (err) {
+    // PREV-K02: una falla al escribir en disco es del servidor, no del
+    // archivo, y su mensaje de fs trae la ruta absoluta. Se registra completo
+    // y al cliente sólo le llega un 500 genérico; los errores de validación
+    // del archivo ya salieron antes con 400.
     logger.error("[pdtp/evidence]", err)
-    const message = err instanceof Error ? err.message : "Error al subir el archivo."
-    return NextResponse.json({ error: message }, { status: 400 })
+    return NextResponse.json({ error: "No se pudo guardar el archivo. Intenta nuevamente." }, { status: 500 })
   }
 }

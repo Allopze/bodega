@@ -18,7 +18,6 @@
  */
 
 import type { WorkerLifecycleEvent } from "@/lib/services/workers"
-import { resolvePdtpActivityIdsForNumbers } from "@/lib/services/pdtp/accreditation"
 import { resolvePdtpEffectiveActivitiesForWorksite } from "@/lib/services/pdtp/worksites"
 import {
   countOutcome,
@@ -26,6 +25,7 @@ import {
   ensureSubjectObligation,
   resolvePdtpProgramActorUserId,
   type ObligationSweepCounters,
+  resolvePdtpActivityIdsOrSkip,
 } from "./obligation-kit"
 
 /**
@@ -92,13 +92,13 @@ export async function onWorkerEnteredDotacion(
     for (const activityNumber of WORKER_ENTRY_ACTIVITY_NUMBERS) {
       let effective = effectiveByWorksite.get(event.worksiteId)
       if (!effective) {
-        const resolved = await resolvePdtpActivityIdsForNumbers({
+        const resolved = await resolvePdtpActivityIdsOrSkip({
           worksiteId: event.worksiteId,
           occurredAt: event.occurredAt,
           activityNumbers: [...WORKER_ENTRY_ACTIVITY_NUMBERS],
           sourceType: SOURCE_TYPE,
           sourceId: episodeIdFor(event),
-        }).catch(() => null)
+        })
         if (!resolved) {
           // Sin programa activo para esta faena: no hay nada que abrir y no es
           // un error. Se cuenta como omitida una vez por actividad.

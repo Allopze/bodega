@@ -171,9 +171,9 @@ export async function onInspectionCompleted(input: {
  * `executedAt` y `reviewedAt` al reabrir— y con la acreditación de la revisión
  * el desfase era doble: quedaba viva la firma de un run sin firmante.
  *
- * Las ejecuciones ya aprobadas por una persona NO se tocan: eso lo decide
- * `revokePdtpAccreditation`, que las reporta en `skippedApproved`. Deshacer una
- * aprobación humana es una decisión humana.
+ * Las ejecuciones ya aprobadas por una persona también se revierten
+ * (PREV-B01): `revokePdtpAccreditation` las reporta en `revertedApproved` y
+ * deja la reversión en el control de cambios del programa.
  */
 export async function onInspectionReverted(input: {
   runId: string

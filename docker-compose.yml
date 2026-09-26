@@ -306,6 +306,27 @@ services:
         # Documentos generados → Cloudreve — sube lo que el archivado en línea
         # no alcanzó (Cloudreve caído) y arma los Excel pendientes.
         */15 * * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs generated-documents-archive >/proc/1/fd/1 2>&1
+        # Prevención — PREV-C04: estos endpoints existían y nadie los llamaba.
+        # Los avisos diarios salen entre 06:05 y 06:55, antes de la jornada y
+        # desfasados de los de arriba. Todos deduplican por día/plazo, así que
+        # repetir una corrida no duplica avisos. El GC de evidencia PDTP queda
+        # fuera a propósito hasta que no pueda borrar evidencia vigente (B03).
+        # Programas de inspección: se materializan antes de que alguien abra la
+        # pantalla del día.
+        50 4 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-inspection-programs >/proc/1/fd/1 2>&1
+        5 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-capa-reminders >/proc/1/fd/1 2>&1
+        10 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-training-reminders >/proc/1/fd/1 2>&1
+        20 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-cphs-alerts >/proc/1/fd/1 2>&1
+        25 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-document-ack-reminders >/proc/1/fd/1 2>&1
+        35 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs sst-weekly-alerts >/proc/1/fd/1 2>&1
+        # Plazos de documentos de flota, revisiones de MIPER y derechos del titular.
+        55 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs deadline-reminders >/proc/1/fd/1 2>&1
+        # Incidentes — cada hora: el carril de notificación avisa en la ventana
+        # de 6 h previa al plazo legal, y una corrida diaria la saltaría entera.
+        10 * * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-incident-reminders >/proc/1/fd/1 2>&1
+        # PDTP — semanal, lunes 07:15: recordatorios, reconciliación de
+        # ocurrencias y reintento del libro de acreditaciones (pending/error).
+        15 7 * * 1 CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs pdtp-weekly-reminders >/proc/1/fd/1 2>&1
         EOF
         # Si el montaje de zoneinfo se rompe, esto lo delata: debe decir -04 o
         # -03, nunca UTC. Los horarios de abajo se leen contra esta hora.

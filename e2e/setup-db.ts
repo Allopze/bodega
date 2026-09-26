@@ -2158,6 +2158,7 @@ async function main() {
   await db.update(schema.dteDocuments)
     .set(await cacheCandidateDteFiles())
     .where(eq(schema.dteDocuments.id, "dte-e2e-candidato-oc"))
+  await writePdtpEvidenceFixture()
 
   // Advance the OC sequence past the fixture code (OC-2026-0001) so the
   // first real app call gets OC-2026-0002 and doesn't collide.
@@ -2644,6 +2645,8 @@ async function main() {
     month: 7,
     week: 1,
     executedQuantity: 1,
+    // PREV-B02: aprobar exige un archivo real (ver writePdtpEvidenceFixture).
+    evidenceUrl: PDTP_E2E_EVIDENCE_URL,
     status: "submitted",
     createdAt: now,
     updatedAt: now,
@@ -2661,6 +2664,8 @@ async function main() {
       month: 7,
       week: 2,
       executedQuantity: 1,
+      // PREV-B02: aprobar exige un archivo real (ver writePdtpEvidenceFixture).
+      evidenceUrl: PDTP_E2E_EVIDENCE_URL,
       status: "submitted",
       createdAt: now,
       updatedAt: now,
@@ -2673,6 +2678,8 @@ async function main() {
       month: 7,
       week: 3,
       executedQuantity: 1,
+      // PREV-B02: aprobar exige un archivo real (ver writePdtpEvidenceFixture).
+      evidenceUrl: PDTP_E2E_EVIDENCE_URL,
       status: "submitted",
       createdAt: now,
       updatedAt: now,
@@ -2696,6 +2703,9 @@ async function main() {
     triggerDescription: "Ingreso de un trabajador nuevo",
     dueDays: 5,
     evidenceRequirement: "Registro de inducción firmado",
+    // Espejo de la N°15 real: el registro firmado vive en el expediente
+    // físico, una de las excepciones declaradas de PREV-B02.
+    manualEvidencePolicy: "declaration_allowed",
     indicatorMode: "closed_on_time",
     sourceSheetRow: 2,
     createdAt: now,
@@ -3027,6 +3037,24 @@ async function main() {
  * La identidad del XML tiene que calzar con la fila (tipo, folio, RUT y monto)
  * o `assertSameIdentity` lo rechaza, que es justo lo que debe hacer.
  */
+const PDTP_E2E_EVIDENCE_NAME = "e2e-acta-pdtp.pdf"
+const PDTP_E2E_EVIDENCE_URL = `storage/pdtp-evidence/${PDTP_E2E_EVIDENCE_NAME}`
+
+/**
+ * Evidencia física de las ejecuciones PDTP sembradas. Desde PREV-B02 aprobar
+ * vuelve a comprobar que el archivo exista en disco: una ejecución sembrada
+ * sin archivo ya no se puede aprobar, que es justo lo que debe pasar.
+ */
+async function writePdtpEvidenceFixture() {
+  const { resolvePdtpEvidenceDir } = await import("../lib/storage/config")
+  const { jsPDF } = await import("jspdf")
+  const pdf = new jsPDF()
+  pdf.text("Acta de charla de seguridad — E2E", 14, 20)
+  const dir = resolvePdtpEvidenceDir()
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(path.join(dir, PDTP_E2E_EVIDENCE_NAME), Buffer.from(pdf.output("arraybuffer")))
+}
+
 async function cacheCandidateDteFiles() {
   const { createDtePath, resolveDteDir } = await import("../lib/storage/config")
   const { jsPDF } = await import("jspdf")

@@ -22,9 +22,13 @@ import type { PdtpCoverageReport } from "@/lib/services/prevention-pdtp"
 export function CoverageSummaryCard({
   report,
   programId,
+  programStatus = "draft",
 }: {
   report: PdtpCoverageReport
   programId: string
+  /** PREV-I14: la firma sólo está por delante de un borrador; un programa
+   * activo ya la tiene y el bloqueo significa que la actividad no acredita. */
+  programStatus?: string
 }) {
   // Un programa sin actividades activas no tiene nada que medir; la página ya
   // muestra su propio estado vacío.
@@ -74,7 +78,10 @@ export function CoverageSummaryCard({
       <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
         {blockingCount > 0 && (
           <li className="text-[var(--color-danger-ink)]">
-            <strong className="font-semibold tabular-nums">{blockingCount}</strong> frenan la firma del programa
+            <strong className="font-semibold tabular-nums">{blockingCount}</strong>{" "}
+            {programStatus === "draft" || programStatus === "rejected"
+              ? "frenan la firma del programa"
+              : "no tienen cómo acreditarse"}
           </li>
         )}
         {pendingCount > 0 && (

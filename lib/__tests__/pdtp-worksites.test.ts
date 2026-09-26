@@ -1,10 +1,19 @@
-import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
+import { mkdirSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { drizzle } from "drizzle-orm/pglite"
 import { eq } from "drizzle-orm"
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
+
+// PREV-B02: "Se hizo" exige un archivo real en disco; las ejecuciones de este
+// archivo adjuntan éste.
+process.env.STORAGE_PATH = path.join(tmpdir(), `pdtp-evidence-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+mkdirSync(path.join(process.env.STORAGE_PATH, "pdtp-evidence"), { recursive: true })
+writeFileSync(path.join(process.env.STORAGE_PATH, "pdtp-evidence", "acta.pdf"), "%PDF-1.4")
+const EVIDENCE_URL = "storage/pdtp-evidence/acta.pdf"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -368,6 +377,7 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     await inMemoryDb.update(schema.pdtpPrograms).set({ status: "active" }).where(eq(schema.pdtpPrograms.id, program.id))
 
     await expect(markPdtpExecution({
+      evidenceUrl: EVIDENCE_URL,
       activityId: activity.id,
       worksiteId: "ws-1",
       year: 2045,
@@ -394,6 +404,7 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     await inMemoryDb.update(schema.pdtpPrograms).set({ status: "active" }).where(eq(schema.pdtpPrograms.id, program.id))
 
     await expect(markPdtpExecution({
+      evidenceUrl: EVIDENCE_URL,
       activityId: activity.id,
       worksiteId: "ws-1",
       year: 2046,
@@ -402,6 +413,7 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
       executedQuantity: 1,
     }, "user-1", ["ws-1"])).resolves.toEqual(expect.objectContaining({ month: 7, week: 4 }))
     await expect(markPdtpExecution({
+      evidenceUrl: EVIDENCE_URL,
       activityId: activity.id,
       worksiteId: "ws-1",
       year: 2046,

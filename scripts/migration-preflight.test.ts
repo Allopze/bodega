@@ -14,7 +14,7 @@ function cleanReport(): MigrationPreflightReport {
       ppa_corrective_actions: 0,
     },
     dte: { dualBusinessLinks: 0, duplicatePurchaseInvoices: 0 },
-    pdtp: { legacyObjectiveLinks: 0, duplicateYears: 0 },
+    pdtp: { legacyObjectiveLinks: 0, duplicateYears: 0, duplicateActiveYears: 0 },
     legal: { duplicateApplicabilities: 0 },
     inspections: { duplicateProgramSlots: 0 },
     campaigns: { completedWithoutEvidence: 0 },
@@ -56,9 +56,18 @@ describe("migration preflight", () => {
 
   it("bloquea una migración anual PDTP que no fue reconciliada", () => {
     const report = cleanReport()
-    report.pdtp = { legacyObjectiveLinks: 1, duplicateYears: 2 }
+    report.pdtp = { legacyObjectiveLinks: 1, duplicateYears: 2, duplicateActiveYears: 0 }
 
     expect(() => assertMigrationPreflightReport(report)).toThrow(/PDTP.*1.*2/)
+  })
+
+  // 0329 (PREV-M01): el índice único parcial "un programa activo por año" no
+  // puede crearse si la base ya trae dos versiones activas del mismo año.
+  it("bloquea años con dos programas PDTP activos antes de crear el índice único", () => {
+    const report = cleanReport()
+    report.pdtp.duplicateActiveYears = 1
+
+    expect(() => assertMigrationPreflightReport(report)).toThrow(/PDTP.*activos.*1/)
   })
 
   // LEGAL-04: el índice único parcial de aplicabilidad con proceso nulo no se
