@@ -431,6 +431,16 @@ describe("PdtpSheetTable — PREV-C06 atrasadas", () => {
     expect(within(row).getByText("Atrasado · 2 meses")).toBeDefined()
   })
 
+  // PREV-C07: la marca del mes lista también el "No aplica" que espera
+  // revisión; sin decirlo, se leería como ya aplicado al planificado.
+  it("la marca del mes dice cuándo un 'No aplica' está en revisión", () => {
+    const withPending = makeActivity("act-na", "10", "Con no aplica pendiente", withPlanned(7, 1), ZERO12, [], null, ZERO12, [
+      { id: "dev-na", month: 7, week: 2, kind: "not_applicable", reason: "Faena detenida por mantención.", targetMonth: null, targetWeek: null, status: "pending_review" } as never,
+    ])
+    render(<PdtpSheetTable view={makeView([withPending])} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+    expect(screen.getByLabelText(/Desvíos declarados en el mes/).getAttribute("title")).toMatch(/No aplica \(en revisión\)/)
+  })
+
   it("'Registrar' de una actividad atrasada abre en la primera celda vencida", () => {
     render(<PdtpSheetTable view={makeView([marchDebt])} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" canExecute worksiteId="ws-1" />)
     const row = screen.getByText("Trimestral impaga de marzo").closest("tr")!

@@ -143,7 +143,9 @@ function PdtpDeviationMonthMark({ deviations }: { deviations: SheetDeviation[] }
       const destino = deviation.targetMonth !== null && deviation.targetWeek !== null
         ? ` → ${MONTH_LABELS[deviation.targetMonth - 1]} sem ${deviation.targetWeek}`
         : ""
-      return `${pdtpDeviationKindLabel(deviation.kind)} · sem ${deviation.week}${destino}: ${deviation.reason}`
+      // PREV-C07: un "No aplica" en revisión todavía no cambió el planificado.
+      const enRevision = deviation.status === "pending_review" ? " (en revisión)" : ""
+      return `${pdtpDeviationKindLabel(deviation.kind)}${enRevision} · sem ${deviation.week}${destino}: ${deviation.reason}`
     })
     .join("\n")
   return (
