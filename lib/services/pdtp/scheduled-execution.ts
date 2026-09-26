@@ -168,12 +168,12 @@ export async function startPdtpScheduledInstance(input: {
   const instrumentId = resolvePdtpScheduledInstrument(candidate.config.accreditationBindingId, input.instrumentId)
   const startKey = pdtpScheduledExecutionStartIdempotencyKey(candidate.instance.id, connector.key, instrumentId)
   const now = new Date().toISOString()
-  const updated = await db.transaction(async (tx) => {
+  const { instance: updated, created } = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM ${pdtpScheduledInstances} WHERE ${pdtpScheduledInstances.id} = ${candidate.instance.id} FOR UPDATE`)
     const [current] = await tx.select().from(pdtpScheduledInstances)
       .where(eq(pdtpScheduledInstances.id, candidate.instance.id)).limit(1)
     if (!current) throw new Error("Instancia programada no encontrada.")
-    if (["completed", "not_applicable", "cancelled"].includes(current.status)) return current
+    if (["completed", "not_applicable", "cancelled"].includes(current.status)) return { instance: current, created: false }
     const metadata = {
       ...sourceMetadata(current.sourceMetadataJson),
       startIdempotencyKey: startKey,
@@ -190,7 +190,10 @@ export async function startPdtpScheduledInstance(input: {
       eq(pdtpScheduledInstances.id, current.id),
       eq(pdtpScheduledInstances.status, current.status),
     )).returning()
-    return row ?? current
+    // `created` se decide aquí, con la fila bloqueada: comparar el
+    // `startedAt` devuelto con `now` nunca coincidía, porque la base devuelve
+    // el timestamp en su propio formato de texto y no en ISO (PREV-M08).
+    return { instance: row ?? current, created: Boolean(row) && !current.startedAt }
   })
 
   return {
@@ -204,7 +207,7 @@ export async function startPdtpScheduledInstance(input: {
       worksiteId: updated.worksiteId,
       instrumentId,
     }),
-    created: updated.startedAt === now,
+    created,
   }
 }
 
