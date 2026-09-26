@@ -239,7 +239,11 @@ export function ProgramLifecycleControls({
         </div>
       </div>
 
-      <div className="grid gap-px border-t border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-2 lg:grid-cols-4">
+      {/* PREV-I14: las etapas son una secuencia, así que se anuncian como lista
+          ordenada. `flex-wrap` + `basis` reparte tantas por fila como quepan
+          (una sola a 390 px) sin columnas fijas que un valor largo desborde;
+          `gap-px` sobre el fondo de borde dibuja los separadores. */}
+      <ol aria-label="Etapas del programa" className="flex flex-wrap gap-px border-t border-[var(--color-border)] bg-[var(--color-border)]">
         <LifecycleStep label="Elaboración" value={program.elaboratedByName} done />
         {/* PREV-I14: un programa activo o cerrado tiene su versión congelada por
             definición, aunque venga de antes de que se registrara el envío. */}
@@ -256,7 +260,7 @@ export function ProgramLifecycleControls({
             done={step.decision?.decision === "approved"}
           />
         ))}
-      </div>
+      </ol>
 
       {children}
     </section>
@@ -284,16 +288,16 @@ function expandRoleAbbreviations(label: string): string | undefined {
 
 function LifecycleStep({ label, value, done }: { label: string; value: string; done: boolean }) {
   return (
-    <div className="bg-[var(--color-surface)] px-4 py-2.5">
+    <li className="min-w-0 flex-[1_1_12rem] bg-[var(--color-surface)] px-4 py-2.5">
       {/* La sigla expandida ("PDTP" → su nombre completo) vivía sólo en el
           `title`: MICRO-001 pedía expandir siglas, y hacerlo por hover deja
           fuera al teclado y al teléfono. `Tooltip` responde a foco; `tabIndex`
           hace alcanzable un rótulo que si no, no lo sería. */}
       <Tooltip content={expandRoleAbbreviations(label)} side="top">
-        <p tabIndex={0} className="w-fit rounded-(--radius-sm) text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">{label}</p>
+        <p tabIndex={0} className="w-fit max-w-full break-words rounded-(--radius-sm) text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">{label}</p>
       </Tooltip>
-      <p className={done ? "mt-0.5 text-xs font-medium text-[var(--color-success-ink)]" : "mt-0.5 text-xs text-[var(--color-text-muted)]"}>{value}</p>
-    </div>
+      <p className={done ? "mt-0.5 text-xs font-medium break-words text-[var(--color-success-ink)]" : "mt-0.5 text-xs break-words text-[var(--color-text-muted)]"}>{value}</p>
+    </li>
   )
 }
 
