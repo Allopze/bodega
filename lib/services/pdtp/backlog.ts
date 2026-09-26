@@ -112,8 +112,12 @@ export function describePdtpFulfillmentError(input: {
 export function describePdtpRejection(resultJson: unknown): string {
   const result = (resultJson ?? {}) as {
     skippedOutOfPeriod?: { occurredYear?: number; programYear?: number }
+    skippedYearClosed?: { occurredYear?: number }
     skippedExcluded?: number[]
     skippedNotFound?: number[]
+  }
+  if (result.skippedYearClosed) {
+    return `El programa ${result.skippedYearClosed.occurredYear ?? "de ese año"} ya fue cerrado formalmente: el hecho llegó tarde y no se acredita.`
   }
   if (result.skippedOutOfPeriod) {
     const { occurredYear, programYear } = result.skippedOutOfPeriod
@@ -202,7 +206,7 @@ export async function countPdtpFulfillmentBacklog(programId: string, options?: {
   digestVerificationMessage: string | null
 }> {
   const [[programScope], programMembers, activeWorksites] = await Promise.all([
-    db.select({ appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites })
+    db.select({ appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites, year: pdtpPrograms.year })
       .from(pdtpPrograms)
       .where(eq(pdtpPrograms.id, programId))
       .limit(1),
@@ -235,19 +239,36 @@ export async function countPdtpFulfillmentBacklog(programId: string, options?: {
       ? inArray(pdtpFulfillmentEvents.worksiteId, scopedEventWorksiteIds)
       : sql`false`
     : undefined
+  /*
+   * PREV-C03.5: el libro se acota al año del programa. En enero, los hechos del
+   * año nuevo esperan su programa con la marca `[no-active-program]`; sin este
+   * filtro aparecían como errores en el panel del año que se está cerrando, y
+   * los rechazos del año cerrado en el panel del nuevo. El año del hecho es el
+   * de la celda del cronograma que declara (`periodOverride`, `plannedYear`) o,
+   * si no declara ninguna, el de su fecha en Chile: la misma regla que usa el
+   * motor para resolver el programa. La excepción es un hecho rechazado por
+   * caer fuera de período (PDTP-002: típicamente una entrega retroactiva de un
+   * año sin programa): se muestra en el panel del programa contra el que se
+   * resolvió, que es donde alguien puede mirarlo.
+   */
+  const yearScope = programScope
+    ? sql`(COALESCE((${pdtpFulfillmentEvents.periodOverrideJson} ->> 'year')::int, ${pdtpFulfillmentEvents.plannedYear}, EXTRACT(YEAR FROM (${pdtpFulfillmentEvents.occurredAt} AT TIME ZONE 'America/Santiago'))::int) = ${programScope.year}
+      OR ((${pdtpFulfillmentEvents.resultJson} -> 'skippedOutOfPeriod' ->> 'programYear')::int = ${programScope.year}))`
+    : undefined
+  const scope = and(memberScope, yearScope)
   const [[pendingRow], [erroredRow], [erroredWaitingRow], [rejectedRow], rejectedRows, [lastErrorEvent], [programDigest]] = await Promise.all([
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
-      .where(and(eq(pdtpFulfillmentEvents.status, "pending"), memberScope)),
+      .where(and(eq(pdtpFulfillmentEvents.status, "pending"), scope)),
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
-      .where(and(eq(pdtpFulfillmentEvents.status, "error"), memberScope)),
+      .where(and(eq(pdtpFulfillmentEvents.status, "error"), scope)),
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
       .where(and(
         eq(pdtpFulfillmentEvents.status, "error"),
         like(pdtpFulfillmentEvents.lastError, `${NO_ACTIVE_PROGRAM_LAST_ERROR_TAG}%`),
-        memberScope,
+        scope,
       )),
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
-      .where(and(eq(pdtpFulfillmentEvents.status, "rejected"), memberScope)),
+      .where(and(eq(pdtpFulfillmentEvents.status, "rejected"), scope)),
     db.select({
       sourceType: pdtpFulfillmentEvents.sourceType,
       sourceId: pdtpFulfillmentEvents.sourceId,
@@ -256,7 +277,7 @@ export async function countPdtpFulfillmentBacklog(programId: string, options?: {
       worksiteName: worksites.name,
     }).from(pdtpFulfillmentEvents)
       .leftJoin(worksites, eq(worksites.id, pdtpFulfillmentEvents.worksiteId))
-      .where(and(eq(pdtpFulfillmentEvents.status, "rejected"), memberScope))
+      .where(and(eq(pdtpFulfillmentEvents.status, "rejected"), scope))
       .orderBy(desc(pdtpFulfillmentEvents.updatedAt))
       .limit(5),
     // El `leftJoin` es a propósito: una faena borrada no debe hacer desaparecer
@@ -269,7 +290,7 @@ export async function countPdtpFulfillmentBacklog(programId: string, options?: {
       worksiteName: worksites.name,
     }).from(pdtpFulfillmentEvents)
       .leftJoin(worksites, eq(worksites.id, pdtpFulfillmentEvents.worksiteId))
-      .where(and(eq(pdtpFulfillmentEvents.status, "error"), memberScope))
+      .where(and(eq(pdtpFulfillmentEvents.status, "error"), scope))
       .orderBy(desc(pdtpFulfillmentEvents.updatedAt))
       .limit(1),
     db.select({ contentDigest: pdtpPrograms.contentDigest }).from(pdtpPrograms)

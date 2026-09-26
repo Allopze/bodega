@@ -29,7 +29,7 @@
  * libro de intentos alrededor de esas dos funciones.
  */
 
-import { and, desc, eq, inArray, lte } from "drizzle-orm"
+import { and, asc, desc, eq, gt, inArray, lte, or } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   pdtpActivities,
@@ -394,6 +394,41 @@ export async function recordPendingPdtpFulfillmentEvent(
 }
 
 /**
+ * PREV-C03.6: variante transaccional para un hecho que el motor ya resolvió y
+ * decidió NO acreditar (año cerrado formalmente). Deja la constancia `rejected`
+ * con el resultado, en la misma transacción del módulo fuente, para que el
+ * hecho tardío quede visible en el libro sin revertir el cierre que lo originó.
+ */
+export async function recordRejectedPdtpFulfillmentEvent(
+  input: AccreditationInput & { sourceVersion?: string; returnHref?: string },
+  result: AccreditationResult,
+  client: QueryClient,
+): Promise<void> {
+  const eventId = await upsertPendingEvent({
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    eventType: "completed",
+    worksiteId: input.worksiteId,
+    occurredAt: input.occurredAt,
+    quantity: input.executedQuantity ?? 1,
+    evidenceRef: input.evidenceRef ?? null,
+    activityNumbers: input.activityNumbers,
+    catalogActivityIds: input.catalogActivityIds,
+    sourceVersion: input.sourceVersion ?? null,
+    returnHref: input.returnHref ?? null,
+    periodOverride: input.plannedPeriod ?? null,
+    plannedYear: input.plannedYear,
+    autoApproveByUserId: input.autoApproveByUserId,
+  }, client)
+  await client.update(pdtpFulfillmentEvents).set({
+    status: "rejected",
+    resultJson: result as unknown as Record<string, unknown>,
+    programId: result.skippedYearClosed?.programId ?? result.resolvedProgramId ?? null,
+    updatedAt: new Date().toISOString(),
+  }).where(eq(pdtpFulfillmentEvents.id, eventId))
+}
+
+/**
  * Registra un intento de acreditación de forma durable y lo ejecuta.
  *
  * Reemplaza el patrón `try { accreditPdtpFromEvent(input) } catch { log }` que
@@ -561,17 +596,36 @@ export async function recordPendingPdtpFulfillmentRevocation(
  * hecho operacional los escribió. Una carga histórica retroactiva es una
  * decisión aparte, con motivo y aprobación explícitos.
  */
-export async function reconcilePdtpFulfillmentEvents(input: { limit?: number } = {}): Promise<{
+export type PdtpFulfillmentReconcileCursor = { createdAt: string; id: string }
+
+export async function reconcilePdtpFulfillmentEvents(input: {
+  limit?: number
+  /** Continúa después de este evento (orden `createdAt, id`). Lo usa
+   * `drainPdtpFulfillmentEvents` para no volver a tomar los mismos eventos
+   * que siguen esperando en cada lote. */
+  after?: PdtpFulfillmentReconcileCursor
+} = {}): Promise<{
   processed: number
   accredited: number
   rejected: number
   stillPending: number
   errored: number
+  /** Último evento del lote, para continuar desde ahí. */
+  cursor: PdtpFulfillmentReconcileCursor | null
 }> {
   const limit = input.limit ?? 200
+  const after = input.after
   const pending = await db.select().from(pdtpFulfillmentEvents)
-    .where(inArray(pdtpFulfillmentEvents.status, ["pending", "error"]))
-    .orderBy(pdtpFulfillmentEvents.createdAt)
+    .where(and(
+      inArray(pdtpFulfillmentEvents.status, ["pending", "error"]),
+      after
+        ? or(
+            gt(pdtpFulfillmentEvents.createdAt, after.createdAt),
+            and(eq(pdtpFulfillmentEvents.createdAt, after.createdAt), gt(pdtpFulfillmentEvents.id, after.id)),
+          )
+        : undefined,
+    ))
+    .orderBy(asc(pdtpFulfillmentEvents.createdAt), asc(pdtpFulfillmentEvents.id))
     .limit(limit)
 
   const targetRows = pending.length === 0 ? [] : await db.select({
@@ -693,7 +747,53 @@ export async function reconcilePdtpFulfillmentEvents(input: { limit?: number } =
     }
   }
 
-  return { processed: pending.length, accredited, rejected, stillPending, errored }
+  const last = pending.at(-1)
+  return {
+    processed: pending.length,
+    accredited,
+    rejected,
+    stillPending,
+    errored,
+    cursor: last ? { createdAt: last.createdAt, id: last.id } : null,
+  }
+}
+
+/**
+ * PREV-C03.5: vacía el libro recorriéndolo entero, lote a lote, en vez de
+ * reintentar sólo los primeros N. Tras activar el programa de enero pueden
+ * esperar cientos de hechos, y con un lote fijo de 50 ordenado por antigüedad
+ * los eventos que siguen esperando (de un año todavía sin programa) ocupaban
+ * siempre los mismos lugares. El cursor avanza, así que termina aunque ninguno
+ * se resuelva; `maxBatches` es sólo un tope de seguridad.
+ */
+export async function drainPdtpFulfillmentEvents(input: { batchSize?: number; maxBatches?: number } = {}): Promise<{
+  processed: number
+  accredited: number
+  rejected: number
+  stillPending: number
+  errored: number
+  batches: number
+  exhausted: boolean
+}> {
+  const batchSize = input.batchSize ?? 200
+  const maxBatches = input.maxBatches ?? 100
+  const total = { processed: 0, accredited: 0, rejected: 0, stillPending: 0, errored: 0, batches: 0, exhausted: false }
+  let after: PdtpFulfillmentReconcileCursor | undefined
+  while (total.batches < maxBatches) {
+    const batch = await reconcilePdtpFulfillmentEvents({ limit: batchSize, after })
+    total.batches++
+    total.processed += batch.processed
+    total.accredited += batch.accredited
+    total.rejected += batch.rejected
+    total.stillPending += batch.stillPending
+    total.errored += batch.errored
+    if (batch.processed < batchSize || !batch.cursor) {
+      total.exhausted = true
+      break
+    }
+    after = batch.cursor
+  }
+  return total
 }
 
 // ── Destino externo (`resolvePdtpFulfillmentTarget`) ───────────────────────
