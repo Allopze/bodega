@@ -5,7 +5,7 @@ import { Progress } from "@/components/ui/progress"
 import { getPdtpComplianceIndicators, getPdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
 import { listPendingPdtpExecutions } from "@/lib/services/prevention-pdtp"
 import { getPdtpComplianceIndicatorsForScope } from "@/lib/services/pdtp/compliance"
-import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { currentPdtpPeriod, pdtpReferencePeriodForYear } from "@/lib/services/pdtp/period"
 import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 
 type PdtpComplianceCardProps = {
@@ -177,7 +177,7 @@ export async function loadPdtpComplianceSummary(worksiteIds: string[]) {
    * Un año ya terminado se mide completo (diciembre, semana 4).
    */
   const { primary: year, closing: closingYear } = await getPdtpOperationalYears()
-  const period = year < today.year ? { year, month: 12, week: 4 } : { ...today, year }
+  const period = pdtpReferencePeriodForYear(year, today)
   const targetWorksiteId = worksiteIds.length === 1 ? worksiteIds[0] : undefined
   /*
    * Multi-faena usa el mismo agregado que la sección Prevención

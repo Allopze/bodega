@@ -16,7 +16,7 @@ import {
 } from "@/lib/services/prevention-pdtp"
 import { isPdtpActionOpen } from "@/lib/services/pdtp/checklist-domain"
 import { listScopedWorksites } from "@/lib/services/ppa"
-import { currentPdtpPeriod, type PdtpPeriod } from "@/lib/services/pdtp/period"
+import { pdtpReferencePeriodForYear, type PdtpPeriod } from "@/lib/services/pdtp/period"
 import { getLatestPdtpPeriodClosure } from "@/lib/services/pdtp/period-closures"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -95,7 +95,9 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   ])
   const focusProgram = activeProgram ?? (programsForYear.length === 1 ? programsForYear[0]! : null)
   const mustChooseProgram = !focusProgram && programsForYear.length > 1
-  const currentPeriod = currentPdtpPeriod()
+  // El año en cierre (p. ej. 2026 durante enero de 2027) se lee en diciembre:
+  // "pendientes del mes" y "en cero" no pueden mirar el enero del calendario.
+  const currentPeriod = pdtpReferencePeriodForYear(year)
   let effectiveWorksites = scopedWorksites
   let hasUndeclaredActiveScope = false
   if (focusProgram) {

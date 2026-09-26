@@ -517,8 +517,12 @@ export async function reopenPdtpPeriod(
     if (closure.status === "reopened") throw new Error("Este mes ya está reabierto.")
     // PREV-C03.6: el cierre anual se apoya en los cierres mensuales; reabrir un
     // mes de un año cerrado le quitaría el sustento sin que nadie lo note.
+    // FOR SHARE: `closePdtpProgramYear` toma las versiones del año FOR UPDATE.
+    // Sin este lock la reapertura leía `yearClosedAt` nulo mientras el cierre
+    // anual —que ya había contado este mes como cerrado— seguía en curso, y el
+    // año quedaba cerrado sobre un mes reabierto.
     const [owner] = await tx.select({ year: pdtpPrograms.year, yearClosedAt: pdtpPrograms.yearClosedAt })
-      .from(pdtpPrograms).where(eq(pdtpPrograms.id, closure.programId)).limit(1)
+      .from(pdtpPrograms).where(eq(pdtpPrograms.id, closure.programId)).limit(1).for("share")
     if (owner?.yearClosedAt) {
       throw new Error(`El año ${owner.year} está cerrado formalmente: sus meses ya no se pueden reabrir.`)
     }

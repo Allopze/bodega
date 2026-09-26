@@ -94,13 +94,19 @@ beforeEach(async () => {
 })
 
 describe("closePdtpProgramYear — cuándo se puede", () => {
+  it("cerrar el año exige alcance sobre todas las faenas: afecta a cada una", async () => {
+    const { closePdtpProgramYear } = await import("@/lib/services/pdtp/year-close")
+    await expect(closePdtpProgramYear(`pdtp-${YEAR}-v1`, USER_ID, REASON, ["ws-a"]))
+      .rejects.toThrow(/alcance global de faenas/)
+  })
+
   it("no cierra antes de que termine el año en Chile", async () => {
     await seedVersion(1, "active", `${YEAR}-01-02T12:00:00.000Z`)
     await addMember(`pdtp-${YEAR}-v1`, WS_A, `${YEAR}-01-01T12:00:00.000Z`)
     await closeMonths(`pdtp-${YEAR}-v1`, WS_A, ALL_MONTHS)
     // 31-dic 22:00 en Santiago = 1-ene 01:00 UTC: todavía es diciembre.
     at(`${YEAR + 1}-01-01T01:00:00.000Z`)
-    await expect(closePdtpProgramYear(`pdtp-${YEAR}-v1`, USER_ID, REASON)).rejects.toThrow(/todavía no termina/)
+    await expect(closePdtpProgramYear(`pdtp-${YEAR}-v1`, USER_ID, REASON, "all")).rejects.toThrow(/todavía no termina/)
   })
 
   it("no cierra si a una faena operativa le falta un mes, y dice cuál", async () => {
@@ -114,7 +120,7 @@ describe("closePdtpProgramYear — cuándo se puede", () => {
     const readiness = await getPdtpYearCloseReadiness(`pdtp-${YEAR}-v1`)
     expect(readiness.canClose).toBe(false)
     expect(readiness.missing).toEqual([{ worksiteId: WS_B, worksiteName: "Faena B", months: [12] }])
-    await expect(closePdtpProgramYear(`pdtp-${YEAR}-v1`, USER_ID, REASON)).rejects.toThrow(/Faena B: diciembre/)
+    await expect(closePdtpProgramYear(`pdtp-${YEAR}-v1`, USER_ID, REASON, "all")).rejects.toThrow(/Faena B: diciembre/)
   })
 
   it("una faena incorporada a mitad de año solo debe los meses desde su incorporación", async () => {
@@ -133,7 +139,7 @@ describe("closePdtpProgramYear — cuándo se puede", () => {
     await addMember(`pdtp-${YEAR}-v1`, WS_A, `${YEAR}-01-01T12:00:00.000Z`)
     await closeMonths(`pdtp-${YEAR}-v1`, WS_A, ALL_MONTHS)
     at(`${YEAR + 1}-01-20T15:00:00.000Z`)
-    await expect(closePdtpProgramYear(`pdtp-${YEAR}-v1`, USER_ID, REASON)).rejects.toThrow(/revisión abierta/)
+    await expect(closePdtpProgramYear(`pdtp-${YEAR}-v1`, USER_ID, REASON, "all")).rejects.toThrow(/revisión abierta/)
   })
 })
 
@@ -148,7 +154,7 @@ describe("closePdtpProgramYear — efecto", () => {
     await closeMonths(`pdtp-${YEAR}-v2`, WS_A, [7, 8, 9, 10, 11, 12])
     at(`${YEAR + 1}-01-20T15:00:00.000Z`)
 
-    const closed = await closePdtpProgramYear(`pdtp-${YEAR}-v2`, USER_ID, REASON)
+    const closed = await closePdtpProgramYear(`pdtp-${YEAR}-v2`, USER_ID, REASON, "all")
     expect(closed.status).toBe("closed")
     const versions = await inMemoryDb.select().from(schema.pdtpPrograms)
     expect(versions.every((version) => version.yearClosedAt !== null)).toBe(true)
@@ -157,7 +163,7 @@ describe("closePdtpProgramYear — efecto", () => {
     expect(log?.note).toMatch(new RegExp(`Año ${YEAR} cerrado formalmente`))
 
     // Idempotente para el mismo usuario y motivo.
-    await expect(closePdtpProgramYear(`pdtp-${YEAR}-v2`, USER_ID, REASON)).resolves.toMatchObject({ id: `pdtp-${YEAR}-v2` })
+    await expect(closePdtpProgramYear(`pdtp-${YEAR}-v2`, USER_ID, REASON, "all")).resolves.toMatchObject({ id: `pdtp-${YEAR}-v2` })
   })
 
   it("un año cerrado no se puede archivar", async () => {
@@ -165,7 +171,7 @@ describe("closePdtpProgramYear — efecto", () => {
     await addMember(`pdtp-${YEAR}-v1`, WS_A, `${YEAR}-01-01T12:00:00.000Z`)
     await closeMonths(`pdtp-${YEAR}-v1`, WS_A, ALL_MONTHS)
     at(`${YEAR + 1}-01-20T15:00:00.000Z`)
-    await closePdtpProgramYear(`pdtp-${YEAR}-v1`, USER_ID, REASON)
+    await closePdtpProgramYear(`pdtp-${YEAR}-v1`, USER_ID, REASON, "all")
     await expect(archivePdtpProgram(`pdtp-${YEAR}-v1`, USER_ID, "Archivar el año ya cerrado")).rejects.toThrow(/año cerrado/)
   })
 
@@ -195,7 +201,7 @@ describe("closePdtpProgramYear — efecto", () => {
     await addMember(`pdtp-${YEAR}-v1`, WS_A, `${YEAR}-01-01T12:00:00.000Z`)
     await closeMonths(`pdtp-${YEAR}-v1`, WS_A, ALL_MONTHS)
     at(`${YEAR + 1}-01-20T15:00:00.000Z`)
-    await closePdtpProgramYear(`pdtp-${YEAR}-v1`, USER_ID, REASON)
+    await closePdtpProgramYear(`pdtp-${YEAR}-v1`, USER_ID, REASON, "all")
     await expect(reopenPdtpPeriod(
       { closureId: `closure-pdtp-${YEAR}-v1-${WS_A}-6`, reason: "Corregir un registro de junio" },
       USER_ID,

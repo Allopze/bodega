@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { ZodError } from "zod"
 import { guardAuth, guardPermission } from "@/lib/auth/can"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { safeActionMessage } from "@/lib/action-error"
 import {
   submitPdtpProgramForReview,
@@ -230,7 +231,8 @@ export async function closePdtpProgramYearAction(programId: string, reason: stri
   if (guard.error) return guard.error
   try {
     const parsed = pdtpProgramLifecycleReasonSchema.parse({ programId, reason })
-    await closePdtpProgramYear(parsed.programId, guard.session.user.id, parsed.reason)
+    const worksiteScope = resolveWorksiteScope(guard.session)
+    await closePdtpProgramYear(parsed.programId, guard.session.user.id, parsed.reason, worksiteScope.mode === "all" ? "all" : worksiteScope.ids)
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${programId}`)
     return { ok: true }

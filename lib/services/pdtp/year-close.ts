@@ -29,6 +29,7 @@ import { addPdtpChangeLogEntry } from "./helpers"
 import { effectiveActivationFor, pdtpActivationPeriod } from "./period"
 import { pdtpMonthLabel } from "./period-guard"
 import { listPdtpProgramOperatingWorksiteIds } from "./worksites"
+import type { WorksiteScope } from "./helpers"
 
 type QueryClient = Tx | typeof db
 
@@ -179,7 +180,10 @@ function yearCloseReason(value: string): string {
  * Cierra formalmente el año del programa. Idempotente para el mismo usuario y
  * motivo (un doble clic devuelve el mismo resultado).
  */
-export async function closePdtpProgramYear(programId: string, userId: string, rawReason: string) {
+export async function closePdtpProgramYear(programId: string, userId: string, rawReason: string, scope: WorksiteScope) {
+  // Cierra el año de todas las faenas a la vez: igual que editar la cobertura
+  // del programa, no es una decisión que quepa en un alcance parcial.
+  if (scope !== "all") throw new Error("Se requiere alcance global de faenas para cerrar el año del programa.")
   const reason = yearCloseReason(rawReason)
   return db.transaction(async (tx) => {
     const [target] = await tx.select({ year: pdtpPrograms.year }).from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)

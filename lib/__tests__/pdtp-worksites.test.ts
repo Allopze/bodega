@@ -123,6 +123,27 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     await expect(assertPdtpWorksiteCanOperateProgram(program.id, "ws-3")).resolves.toBeUndefined()
   })
 
+  it("editar la membresía conserva la fecha de incorporación de las faenas que ya estaban", async () => {
+    const { setPdtpProgramWorksites } = await import("@/lib/services/pdtp/worksites")
+    const { program } = await createDraftProgramWithActivity(2042)
+    await setPdtpProgramWorksites(program.id, ["ws-1"], "user-1")
+    // Como la deja la copia de una revisión: la faena venía operando desde enero.
+    await inMemoryDb.update(schema.pdtpProgramWorksites)
+      .set({ addedAt: "2042-01-05T12:00:00.000Z" })
+      .where(eq(schema.pdtpProgramWorksites.programId, program.id))
+
+    await setPdtpProgramWorksites(program.id, ["ws-1", "ws-2"], "user-1")
+
+    const rows = await inMemoryDb.select().from(schema.pdtpProgramWorksites)
+      .where(eq(schema.pdtpProgramWorksites.programId, program.id))
+    const addedAt = new Map(rows.map((row) => [row.worksiteId, row.addedAt]))
+    // Si se reiniciara, el porcentaje y el cierre anual dejarían de exigirle
+    // los meses anteriores a la edición.
+    expect(new Date(addedAt.get("ws-1")!).toISOString()).toBe("2042-01-05T12:00:00.000Z")
+    // La recién agregada se incorpora hoy.
+    expect(new Date(addedAt.get("ws-2")!).toISOString()).not.toBe("2042-01-05T12:00:00.000Z")
+  })
+
   it("un programa activo sin membresía ni alcance corporativo falla cerrado", async () => {
     const { assertPdtpWorksiteCanOperateProgram } = await import("@/lib/services/pdtp/worksites")
     const { program } = await createDraftProgramWithActivity(2041)

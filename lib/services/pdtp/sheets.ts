@@ -257,9 +257,11 @@ export async function getPdtpAggregatedSheetViewByProgram(
     return {
       worksiteId,
       planned: scheduleRows.reduce((total, row) => total + row.plannedQuantity, 0),
-      executed: executionRows.filter((row) => row.status === "approved").reduce((total, row) => total + row.executedQuantity, 0),
+      // Misma regla que el resto de la planilla: la semana cargada a mano y
+      // acreditada desde su módulo cuenta una vez (PREV-C02).
+      executed: approvedExecutedByMonth(executionRows).reduce((total, value) => total + value, 0),
       historicalPlanned: raw?.scheduleRows.reduce((total, row) => total + row.plannedQuantity, 0) ?? 0,
-      historicalExecuted: raw?.executionRows.filter((row) => row.status === "approved").reduce((total, row) => total + row.executedQuantity, 0) ?? 0,
+      historicalExecuted: approvedExecutedByMonth(raw?.executionRows ?? []).reduce((total, value) => total + value, 0),
     }
   })
   for (const { scheduleRows, executionRows } of loadedPerWorksite) {

@@ -7,6 +7,7 @@ import {
   filterPdtpRowsFromActivation,
   isPdtpActivityZeroThisMonth,
   isPdtpPeriodOnOrAfterActivation,
+  pdtpReferencePeriodForYear,
   resolvePdtpOperationalYears,
   type PdtpPeriod,
 } from "@/lib/services/pdtp/period"
@@ -300,5 +301,21 @@ describe("resolvePdtpOperationalYears — año operativo y cierre pendiente (PRE
   it("en diciembre con el año siguiente ya activo, el operativo sigue siendo el año en curso", () => {
     expect(resolvePdtpOperationalYears([program(2026, "active"), program(2027, "active")], 2026))
       .toEqual({ primary: 2026, closing: null })
+  })
+})
+
+describe("pdtpReferencePeriodForYear", () => {
+  const today = { year: 2027, month: 1, week: 2 }
+
+  it("el año en curso se mide a hoy", () => {
+    expect(pdtpReferencePeriodForYear(2027, today)).toEqual(today)
+  })
+
+  it("un año ya terminado —el que está en cierre— se mide completo, en diciembre", () => {
+    expect(pdtpReferencePeriodForYear(2026, today)).toEqual({ year: 2026, month: 12, week: 4 })
+  })
+
+  it("un año que aún no empieza se mide en su primera semana", () => {
+    expect(pdtpReferencePeriodForYear(2028, today)).toEqual({ year: 2028, month: 1, week: 1 })
   })
 })

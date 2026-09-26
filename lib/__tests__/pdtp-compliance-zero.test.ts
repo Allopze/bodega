@@ -482,7 +482,7 @@ describe("Actividades planificadas en cero junto al cumplimiento mensual", () =>
     expect(totalBoth).toEqual({ planned: 4, executed: 1 })
   })
 
-  it("una obligación que vence en el año siguiente no suma al enero del programa (PREV-M07)", async () => {
+  it("una obligación que vence en el año siguiente cuenta en diciembre de su programa, no en enero ni en ninguno (PREV-M07)", async () => {
     const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
     const programId = "pdtp-zero-prog-11"
     const worksiteId = "ws-zero-11"
@@ -504,7 +504,11 @@ describe("Actividades planificadas en cero junto al cumplimiento mensual", () =>
 
     const result = await getPdtpComplianceIndicators(programId, worksiteId)
     expect(result!.monthly[0]).toMatchObject({ planned: 1, executed: 1 })
-    expect(result!.annual.planned).toBe(1)
+    // El caso nació en 2042 y la actividad es del programa 2042: el de 2043
+    // no lo ve nunca (sus actividades son otras), así que descartarlo aquí lo
+    // perdía. Cuenta en el último mes del año de su programa.
+    expect(result!.monthly[11]).toMatchObject({ planned: 1, executed: 1 })
+    expect(result!.annual.planned).toBe(2)
   })
 
   it("el reporte de gestión topa por actividad y mes y no cuenta dos veces la misma semana (PREV-C02)", async () => {
@@ -566,6 +570,31 @@ describe("Actividades planificadas en cero junto al cumplimiento mensual", () =>
 
     const june = (await getPdtpComplianceIndicators(programId, worksiteId))!.monthly[5]!
     expect(june).toMatchObject({ planned: 2, executed: 1, percent: 0.5 })
+  })
+
+  it("la planilla agregada cuenta una vez la misma semana también en los totales por faena (PREV-C02)", async () => {
+    const { getPdtpAggregatedSheetViewByProgram } = await import("@/lib/services/pdtp/sheets")
+    const programId = "pdtp-zero-prog-15"
+    const worksiteId = "ws-zero-15"
+    const sheetCode = "pdtp_general"
+    await inMemoryDb.insert(schema.worksites).values({ id: worksiteId, name: "Faena Zero 15", code: "FZ15", isActive: true })
+    await seedProgram(programId, 2046)
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true }).where(eq(schema.pdtpPrograms.id, programId))
+    await seedActivity(programId, "act-agg-a", 1)
+    await seedSchedule("act-agg-a", 2046, 2, 1)
+    await seedSheetMembership(programId, sheetCode, ["act-agg-a"])
+    await seedApprovedExecution("act-agg-a", worksiteId, 2046, 2, 1)
+    await inMemoryDb.insert(schema.pdtpExecutions).values({
+      id: "exec-agg-int", activityId: "act-agg-a", worksiteId, year: 2046, month: 2, week: 1,
+      executedQuantity: 1, status: "approved", origin: "integration", sourceType: "inspeccion", sourceId: "run-agg",
+      idempotencyKey: "pdtp-accredit:act-agg-a:ws-zero-15:inspeccion:run-agg", createdAt: now(), updatedAt: now(),
+    })
+
+    const view = await getPdtpAggregatedSheetViewByProgram(programId, sheetCode, [worksiteId], { year: 2046, month: 12, week: 4 })
+    const summary = view!.worksiteSummaries.find((row) => row.worksiteId === worksiteId)!
+    expect(summary.historicalExecuted).toBe(1)
+    expect(summary.executed).toBe(1)
+    expect(view!.activities[0]!.monthlyExecuted[1]).toBe(1)
   })
 
   it("la planilla y su Excel no cuentan dos veces la misma semana y el % sale de su columna computable (PREV-C02)", async () => {

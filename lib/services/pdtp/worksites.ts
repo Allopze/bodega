@@ -87,12 +87,21 @@ export async function setPdtpProgramWorksites(
 
     const before = await tx.select().from(pdtpProgramWorksites)
       .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true)))
+    const beforeByWorksite = new Map(before.map((row) => [row.worksiteId, row]))
     await tx.delete(pdtpProgramWorksites).where(eq(pdtpProgramWorksites.programId, programId))
     const rows: PdtpProgramWorksite[] = uniqueIds.length === 0
       ? []
-      : await tx.insert(pdtpProgramWorksites).values(uniqueIds.map((worksiteId) => ({
-        id: nanoid(), programId, worksiteId, isActive: true, addedByUserId: userId, addedAt: now,
-      }))).returning()
+      : await tx.insert(pdtpProgramWorksites).values(uniqueIds.map((worksiteId) => {
+        // Una faena que ya era miembro conserva su incorporación: `addedAt`
+        // corta lo exigible en el porcentaje y en el cierre anual, y reiniciarlo
+        // al editar la lista de una v2 borraba los meses que ya debía.
+        const previous = beforeByWorksite.get(worksiteId)
+        return {
+          id: nanoid(), programId, worksiteId, isActive: true,
+          addedByUserId: previous?.addedByUserId ?? userId,
+          addedAt: previous?.addedAt ?? now,
+        }
+      })).returning()
     const declaredScope = uniqueIds.length > 0 ? false : appliesToAllWorksites
     if (declaredScope !== undefined && declaredScope !== program.appliesToAllWorksites) {
       await tx.update(pdtpPrograms)

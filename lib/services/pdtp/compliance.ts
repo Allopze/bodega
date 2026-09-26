@@ -122,10 +122,12 @@ type ApprovedExecution = Awaited<ReturnType<typeof loadProgramScheduleAndExecuti
  * sobre la misma actividad no, porque su sujeto ya está en el padrón y contarla
  * sería exigirlo dos veces.
  *
- * `year`: el año del programa. Una obligación que vence en otro año no cuenta
- * (PREV-M07): antes una de diciembre que vencía en enero del año siguiente se
- * sumaba al enero del mismo programa y cambiaba un mes ya cerrado. El mismo
- * filtro aplica a lo realizado que alimenta el piso anual, cuando hay `dueAt`.
+ * `year`: el año del programa. Una obligación que vence fuera de ese año cuenta
+ * en su mes límite —diciembre si vence después, enero si venció antes—
+ * (PREV-M07). Antes una de diciembre que vencía en enero del año siguiente se
+ * sumaba al enero del mismo programa. Tampoco se descarta: la obligación es de
+ * una actividad de este programa (desde PREV-C03.6 nace en el programa del año
+ * de su hecho) y el programa del año siguiente no la vería nunca.
  */
 export const PDTP_COVERAGE_CASE_METADATA_KEY = "countsAsCoverageCase"
 
@@ -153,8 +155,10 @@ async function loadClosedOnTimeByActivityMonth(activityIds: string[], worksiteId
   for (const row of rows) {
     if (coverageActivityIds.has(row.activityId)
       && (row.metadata as Record<string, unknown> | null)?.[PDTP_COVERAGE_CASE_METADATA_KEY] !== true) continue
-    const due = row.dueAt ? chileDateParts(row.dueAt) : null
-    if (due && due.year !== year) continue
+    const dueParts = row.dueAt ? chileDateParts(row.dueAt) : null
+    const due = dueParts && {
+      month: dueParts.year > year ? 12 : dueParts.year < year ? 1 : dueParts.month,
+    }
     if (row.status === "completed") completedByActivity.set(row.activityId, (completedByActivity.get(row.activityId) ?? 0) + 1)
     if (!due) continue // sin plazo no hay mes al que asignarla.
     const key = `${row.activityId}:${due.month}`

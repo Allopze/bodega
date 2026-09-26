@@ -44,6 +44,18 @@ export function currentPdtpPeriod(now: Date = new Date()): PdtpPeriod {
   return { year, month, week }
 }
 
+/**
+ * El período contra el que se lee un programa de `year`: hoy si es el año en
+ * curso; diciembre, semana 4 si ya terminó —el año que está en cierre se mide
+ * completo, no contra el enero del calendario—; su primera semana si todavía
+ * no empieza.
+ */
+export function pdtpReferencePeriodForYear(year: number, today: PdtpPeriod = currentPdtpPeriod()): PdtpPeriod {
+  if (year < today.year) return { year, month: 12, week: 4 }
+  if (year > today.year) return { year, month: 1, week: 1 }
+  return today
+}
+
 export type PdtpOperationalYears = {
   /** El año que el tablero y las pantallas muestran por omisión. */
   primary: number
