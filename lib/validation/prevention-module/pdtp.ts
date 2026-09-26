@@ -445,6 +445,14 @@ export const pdtpObligationCancelSchema = z.object({
 
 export const pdtpProgramCreateSchema = z.object({
   year: z.coerce.number().int().min(2024, "El año debe ser al menos 2024").max(2100, "El año no puede superar 2100"),
+  // PREV-C03.1: origen del contenido. Sin origen, el servicio aplica el por
+  // omisión (D20): la versión vigente del año anterior, o la Base.
+  origin: z.enum(["previous_program", "base"]).optional(),
+  sourceProgramId: z.string().trim().optional(),
+}).superRefine((value, ctx) => {
+  if (value.origin === "previous_program" && !value.sourceProgramId) {
+    ctx.addIssue({ code: "custom", path: ["sourceProgramId"], message: "Selecciona el programa a copiar." })
+  }
 })
 
 export const pdtpTemplatePublishSchema = z.object({

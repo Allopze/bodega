@@ -227,7 +227,9 @@ export {
 export type { PdtpActivityWorksiteAdjustmentInput, PdtpCphsHeadcountSweep } from "./worksites"
 export { cleanupPdtpEvidenceOrphans } from "./evidence-gc"
 export type { CleanupPdtpEvidenceOrphansOptions, CleanupPdtpEvidenceOrphansResult } from "./evidence-gc"
-export { createAnnualPdtpProgram, createPdtpRevision, updatePdtpProgram, listPdtpPrograms, getPdtpProgram, deletePdtpProgram } from "./programs"
+export { createAnnualPdtpProgram, createPdtpRevision, updatePdtpProgram, listPdtpPrograms, getPdtpProgram, deletePdtpProgram, listPdtpCopySourceCandidates, resolvePdtpCopySourceCandidate, describePdtpCopyReport } from "./programs"
+export type { PdtpAnnualProgramSource, CreateAnnualPdtpProgramResult } from "./programs"
+export type { PdtpProgramCopyReport, PdtpProgramCopyMode } from "./program-copy"
 /** @internal Fixture helper; product code must use createAnnualPdtpProgram. */
 export { createLegacyPdtpProgramForTests } from "./programs"
 export { stagePdtpXlsxImport, applyPdtpImportBatch, cancelPdtpImportBatch, finalizePdtpImportBootstrap, rollbackPdtpImportBatch, getPdtpImportBatch, linkPdtpImportCandidate } from "./imports"

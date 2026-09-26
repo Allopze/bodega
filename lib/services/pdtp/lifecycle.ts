@@ -492,6 +492,22 @@ export async function activatePdtpProgram(programId: string, userId: string) {
     // C05-A: las asignaciones nominales vigentes pasan a la versión que entra
     // en vigencia, en la misma transacción que cierra la anterior.
     await handoverPdtpWorksiteAssignees(replaced.map((row) => row.id), programId, todayInChile(), tx)
+    // PREV-C03.1 (D20): el programa del año siguiente copiado desde el anterior
+    // no reemplaza a nadie (el año anterior sigue activo hasta su cierre), pero
+    // hereda sus asignaciones nominales vigentes al entrar en vigencia. Rigen
+    // desde el 1 de enero del año nuevo (o desde hoy, si ya empezó) y sólo para
+    // cuentas activas; las del año anterior quedan intactas.
+    const copiedFrom = (updated.sourceMetadataJson as { copiedFrom?: { programId?: unknown; year?: unknown } } | null)?.copiedFrom
+    if (
+      replaced.length === 0
+      && typeof copiedFrom?.programId === "string"
+      && typeof copiedFrom.year === "number"
+      && copiedFrom.year < updated.year
+    ) {
+      const today = todayInChile()
+      const yearStart = `${updated.year}-01-01`
+      await handoverPdtpWorksiteAssignees([copiedFrom.programId], programId, today > yearStart ? today : yearStart, tx, { onlyActiveUsers: true })
+    }
 
     await addPdtpChangeLogEntry(
       programId,

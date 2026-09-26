@@ -11,37 +11,36 @@ test.describe("PDTP — Creación y edición de programas", () => {
     await login(page)
   })
 
-  test("la página de creación muestra solo año y resumen de la Base 2026", async ({ page }) => {
+  test("la creación ofrece copiar la versión vigente del año anterior, con la Base como alternativa (PREV-C03.1)", async ({ page }) => {
     await page.goto("/prevencion/pdtp/nuevo")
 
     await expect(page.getByRole("heading", { name: "Nuevo programa preventivo" })).toBeVisible()
     await expect(page.getByLabel("Año del programa")).toBeVisible()
-    // La descripción vive en el PageHeader y se repite como eco visual en la
-    // barra superior; el contrato es el bloque semántico.
-    await expect(page.getByText("Base preventiva 2026").first()).toBeVisible()
+    // El año sugerido es el siguiente sin programa (2028: el fixture ya tiene
+    // 2026 activo y 2027 en borrador). Un borrador no es vigente, así que la
+    // copia recomendada es la del programa 2026 activo, no la del 2027.
+    await expect(page.getByRole("radio", { name: /Copiar el programa 2026/ })).toHaveAttribute("aria-checked", "true")
+    await expect(page.getByRole("radio", { name: /Base preventiva 2026/ })).toBeVisible()
     await expect(page.getByLabel("Título del programa")).toHaveCount(0)
-    await expect(page.getByText(/programa anterior|crear en blanco/i)).toHaveCount(0)
+    await expect(page.getByText(/crear en blanco/i)).toHaveCount(0)
   })
 
-  test("si el año ya existe lo abre sin duplicarlo", async ({ page }) => {
+  test("si el año ya existe lo dice y enlaza al existente sin duplicarlo", async ({ page }) => {
     await page.goto("/prevencion/pdtp/nuevo")
-    // El rótulo del botón ("Crear" vs "Abrir") lo decide el cliente al detectar
-    // que el año ya existe, o sea que depende del `onChange` de React: si el
-    // `fill` llega antes de hidratar, el valor queda en el DOM pero el handler
-    // nunca corre y el botón se queda en "Crear" para siempre. Se reintenta el
-    // cambio hasta que el cliente reacciona. Se alterna el valor porque volver
-    // a llenar "2027" sobre un DOM que ya dice "2027" no dispara `onChange`
-    // después de una hidratación tardía.
+    // El aviso lo decide el cliente al detectar que el año ya existe, o sea que
+    // depende del `onChange` de React: si el `fill` llega antes de hidratar, el
+    // valor queda en el DOM pero el handler nunca corre. Se reintenta el cambio
+    // hasta que el cliente reacciona, alternando el valor porque volver a llenar
+    // "2027" sobre un DOM que ya dice "2027" no dispara `onChange`.
     await expect.poll(async () => {
       await page.getByLabel("Año del programa").fill("2026")
       await page.getByLabel("Año del programa").fill("2027")
-      return page.getByRole("button", { name: "Abrir programa anual" }).count()
-      // 45 s y no 15: el fixture de 2027 no lo borra nadie —otros specs sólo lo
-      // leen—, así que cuando esto agota su presupuesto es la hidratación, que
-      // con la máquina cargada tarda más que el margen original.
+      return page.getByRole("link", { name: "Abrir el programa 2027", exact: true }).count()
     }, { timeout: 45_000 }).toBeGreaterThan(0)
-    await page.getByRole("button", { name: "Abrir programa anual" }).click()
-    await expect(page).toHaveURL(/\/prevencion\/pdtp\/pdtp-draft-e2e\/editar/, { timeout: 15_000 })
+    await expect(page.getByText("El programa 2027 ya existe")).toBeVisible()
+    await expect(page.getByRole("button", { name: "Crear programa anual" })).toHaveCount(0)
+    await page.getByRole("link", { name: "Abrir el programa 2027", exact: true }).click()
+    await expect(page).toHaveURL(/\/prevencion\/pdtp\/pdtp-draft-e2e$/, { timeout: 15_000 })
   })
 
   test("el editor muestra únicamente Actividades, Ajustes por faena y Revisión", async ({ page }) => {

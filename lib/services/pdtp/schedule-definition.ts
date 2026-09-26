@@ -238,3 +238,86 @@ export function expandPdtpScheduleDefinition(
   if (definition.kind === "recurring") return expandRecurring(definition, programPeriod)
   return []
 }
+
+export type PdtpScheduleRemapNote = {
+  kind:
+    /** El rango cubría todo el período de origen y pasa a cubrir todo el año destino. */
+    | "full_year"
+    /** Rango parcial (p. ej. desde la activación o una v+1): se re-ancla fecha a fecha. */
+    | "partial_range"
+    /** Semanal sin días explícitos: se fija el día de la semana de origen. */
+    | "weekdays_fixed"
+    /** Cada N (>1) días o semanas: el ritmo continúa desde el inicio del año destino. */
+    | "phase_may_shift"
+    /** Un 29 de febrero pasó al 28 porque el año destino no es bisiesto. */
+    | "leap_day_moved"
+  message: string
+}
+
+function isoWeekday(date: string): number {
+  const day = toUtcDate(parseCivilDate(date)).getUTCDay()
+  return day === 0 ? 7 : day
+}
+
+function remapCivilDate(value: string, targetYear: number): { date: string; leapDayMoved: boolean } {
+  const { month, day } = parseCivilDate(value)
+  const lastDay = daysInMonth(targetYear, month)
+  const clamped = Math.min(day, lastDay)
+  return {
+    date: `${String(targetYear).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(clamped).padStart(2, "0")}`,
+    leapDayMoved: clamped !== day,
+  }
+}
+
+/**
+ * PREV-C03.1: traslada una programación fechada al año siguiente para la copia
+ * anual del programa.
+ *
+ * Re-anclar fecha a fecha no basta, y la diferencia se nota en el calendario:
+ * - una semanal sin `weekdays` usa el día de la semana de su `startDate`, y el
+ *   mismo día del año siguiente cae otro día de la semana (2026-01-05 es lunes,
+ *   2027-01-05 martes). Se fijan los días explícitos con la fecha de origen;
+ * - un rango que cubría el año completo pasa a cubrir el año destino completo,
+ *   en vez de arrastrar un borde que ya no corresponde;
+ * - un rango parcial (desde la activación o desde una v+1 a mitad de año) se
+ *   re-ancla literalmente y queda anotado, porque quizá haya que ampliarlo.
+ *
+ * Devuelve las notas para el informe de copia.
+ */
+export function remapPdtpScheduleDefinitionToYear(
+  definition: PdtpScheduleDefinition | null | undefined,
+  input: { sourcePeriod: { startDate: string; endDate: string }; targetYear: number },
+): { definition: PdtpScheduleDefinition | null; notes: PdtpScheduleRemapNote[] } {
+  if (!definition) return { definition: definition ?? null, notes: [] }
+  const notes: PdtpScheduleRemapNote[] = []
+
+  if (definition.kind === "one_time") {
+    const { date, leapDayMoved } = remapCivilDate(definition.date, input.targetYear)
+    if (leapDayMoved) notes.push({ kind: "leap_day_moved", message: `La fecha ${definition.date} pasó al ${date}: ${input.targetYear} no es bisiesto.` })
+    return { definition: { ...definition, date }, notes }
+  }
+  if (definition.kind !== "recurring") return { definition, notes }
+
+  const next: Extract<PdtpScheduleDefinition, { kind: "recurring" }> = { ...definition }
+  if (definition.unit === "week" && !definition.weekdays?.length) {
+    next.weekdays = [isoWeekday(definition.startDate)]
+    notes.push({ kind: "weekdays_fixed", message: "Semanal sin días declarados: se conserva el día de la semana de origen." })
+  }
+  const coversFullSourcePeriod = definition.startDate === input.sourcePeriod.startDate && definition.endDate === input.sourcePeriod.endDate
+  if (coversFullSourcePeriod) {
+    next.startDate = `${input.targetYear}-01-01`
+    next.endDate = `${input.targetYear}-12-31`
+    notes.push({ kind: "full_year", message: `Cubre el año completo ${input.targetYear}.` })
+  } else {
+    const start = remapCivilDate(definition.startDate, input.targetYear)
+    const end = remapCivilDate(definition.endDate, input.targetYear)
+    next.startDate = start.date
+    next.endDate = end.date
+    notes.push({ kind: "partial_range", message: `Rango parcial re-anclado: ${start.date} a ${end.date}. Revisa si debe cubrir el año completo.` })
+    if (start.leapDayMoved || end.leapDayMoved) notes.push({ kind: "leap_day_moved", message: `Un 29 de febrero pasó al 28: ${input.targetYear} no es bisiesto.` })
+  }
+  if ((definition.unit === "day" || definition.unit === "week") && Math.trunc(definition.every) > 1) {
+    notes.push({ kind: "phase_may_shift", message: `Cada ${Math.trunc(definition.every)} ${definition.unit === "day" ? "días" : "semanas"}: el ritmo parte de nuevo desde el inicio del rango en ${input.targetYear}.` })
+  }
+  return { definition: next, notes }
+}

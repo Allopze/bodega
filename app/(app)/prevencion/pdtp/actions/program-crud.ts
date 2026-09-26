@@ -52,11 +52,28 @@ export async function createPdtpProgramAction(
 
   let programId: string
   try {
-    const parsed = pdtpProgramCreateSchema.parse({ year: formData.get("year") })
+    const parsed = pdtpProgramCreateSchema.parse({
+      year: formData.get("year"),
+      origin: formData.get("origin") || undefined,
+      sourceProgramId: formData.get("sourceProgramId") || undefined,
+    })
     const result = await createAnnualPdtpProgram({
       year: parsed.year,
       userId: session.user.id,
+      source: parsed.origin === "previous_program" && parsed.sourceProgramId
+        ? { kind: "previous_program", programId: parsed.sourceProgramId }
+        : parsed.origin === "base" ? { kind: "base" } : undefined,
     })
+    // PREV-C03.1: si el año ya existía no se crea otro ni se reemplaza; se
+    // avisa en vez de redirigir en silencio a un programa que quizá se creó
+    // con otro origen.
+    if (!result.created) {
+      return {
+        ok: false,
+        message: `El programa ${parsed.year} ya existe (v${result.program.version}); no se creó otro.`,
+        programId: result.programId,
+      }
+    }
     programId = result.programId
   } catch (e) {
     return fail(e)
