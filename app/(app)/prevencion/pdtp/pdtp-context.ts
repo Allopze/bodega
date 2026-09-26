@@ -1,3 +1,5 @@
+import { codeYear } from "@/lib/utils"
+
 export interface PdtpListQuery {
   hoja?: string
   faena?: string
@@ -16,7 +18,7 @@ export interface PdtpActivitiesQuery extends PdtpListQuery {
   asignado?: string
 }
 
-export function resolvePdtpYear(value: string | undefined, currentYear = new Date().getFullYear()): number {
+export function resolvePdtpYear(value: string | undefined, currentYear = codeYear()): number {
   const year = Number(value)
   return Number.isInteger(year) && year >= 2024 && year <= 2100 ? year : currentYear
 }

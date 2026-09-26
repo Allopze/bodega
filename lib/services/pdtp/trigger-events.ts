@@ -5,6 +5,7 @@ import { createPdtpObligation } from "./obligations"
 import { getPdtpExecutionConnector } from "./connectors"
 import type { PdtpScheduleDefinition } from "./schedule-definition"
 import { logger } from "@/lib/logger"
+import { chileDateParts } from "@/lib/utils"
 
 type QueryClient = Tx | DB
 
@@ -105,27 +106,37 @@ export async function reconcilePdtpTriggerEvents(input: { limit?: number; now?: 
   if (events.length === 0) return { processed: 0, pending: 0, ignored: 0, errors: 0 }
 
   const activities = await db.select().from(pdtpActivities).where(eq(pdtpActivities.status, "active"))
-  const programs = await db.select({ id: pdtpPrograms.id, status: pdtpPrograms.status }).from(pdtpPrograms)
+  const programs = await db.select({ id: pdtpPrograms.id, status: pdtpPrograms.status, year: pdtpPrograms.year }).from(pdtpPrograms)
   const activePrograms = new Set(programs.filter((program) => program.status === "active").map((program) => program.id))
+  const programYear = new Map(programs.map((program) => [program.id, program.year]))
   let processed = 0
   let pending = 0
   let ignored = 0
   let errors = 0
 
   for (const event of events) {
-    const matches = activities.filter((activity) => {
-      if (!activePrograms.has(activity.programId)) return false
+    /*
+     * PREV-C03.6: la obligación pertenece al programa del AÑO del hecho, con la
+     * misma regla que la acreditación (`resolvePdtpActiveProgramForEvent`). Sin
+     * este filtro, con 2026 y 2027 activos a la vez (diciembre-enero) cada
+     * disparo creaba una obligación en cada programa, y con 2027 en borrador el
+     * ingreso de un trabajador en enero se imputaba al programa 2026.
+     */
+    const eventYear = chileDateParts(new Date(event.occurredAt)).year
+    const triggerMatches = activities.filter((activity) => {
       const definition = activity.scheduleDefinition
       return isScheduleEvent(definition)
         && definition.triggerConnectorKey === event.connectorKey
         && definition.triggerEventKey === event.eventKey
     })
-    const inactiveMatches = activities.some((activity) => {
-      const definition = activity.scheduleDefinition
-      return isScheduleEvent(definition)
-        && definition.triggerConnectorKey === event.connectorKey
-        && definition.triggerEventKey === event.eventKey
-    })
+    const matches = triggerMatches.filter((activity) => activePrograms.has(activity.programId) && programYear.get(activity.programId) === eventYear)
+    // Espera si el programa de su año existe pero no está activo, o si el hecho
+    // es de un año posterior a todos los programas con esta actividad (el
+    // programa del año todavía no se crea). Un hecho de un año ya superado sin
+    // programa vigente no tiene dónde ir.
+    const latestMatchingYear = Math.max(...triggerMatches.map((activity) => programYear.get(activity.programId) ?? 0))
+    const inactiveMatches = triggerMatches.some((activity) => programYear.get(activity.programId) === eventYear)
+      || (triggerMatches.length > 0 && eventYear > latestMatchingYear)
     if (matches.length === 0) {
       if (inactiveMatches) {
         pending++

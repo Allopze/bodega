@@ -16,6 +16,7 @@ import {
   getPdtpApprovalStep,
   getPdtpProgram,
   assertAllRequiredPdtpApprovalStepsApproved,
+  closePdtpProgramYear,
 } from "@/lib/services/prevention-pdtp"
 import { drainPdtpFulfillmentEvents } from "@/lib/services/pdtp/fulfillment"
 import { withCronLock } from "@/lib/services/cron-lock"
@@ -210,6 +211,26 @@ export async function archivePdtpProgramAction(programId: string, reason: string
   try {
     const parsed = pdtpProgramLifecycleReasonSchema.parse({ programId, reason })
     await archivePdtpProgram(parsed.programId, guard.session.user.id, parsed.reason)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${programId}`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+/**
+ * PREV-C03.6: cierre formal del año. Reutiliza el permiso de ciclo de vida
+ * (`prevention:pdtp:lifecycle:manage`, el mismo que reabre y archiva): cerrar el
+ * año es la misma clase de decisión sobre el expediente, con motivo auditable.
+ * No hace falta un permiso nuevo ni cambios de RBAC.
+ */
+export async function closePdtpProgramYearAction(programId: string, reason: string): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:lifecycle:manage")
+  if (guard.error) return guard.error
+  try {
+    const parsed = pdtpProgramLifecycleReasonSchema.parse({ programId, reason })
+    await closePdtpProgramYear(parsed.programId, guard.session.user.id, parsed.reason)
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${programId}`)
     return { ok: true }

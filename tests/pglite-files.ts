@@ -147,6 +147,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-revision-midyear.test.ts",
   // T5 (cambio de año 2027): transición, cierre anual y copia al año siguiente.
   "lib/__tests__/pdtp-year-transition.test.ts",
+  "lib/__tests__/pdtp-year-close.test.ts",
   // DEPLOY-0329: el SQL del chequeo de años con dos programas activos.
   "lib/__tests__/migration-preflight-pdtp-active.test.ts",
   "lib/__tests__/risk-map-gc.test.ts",

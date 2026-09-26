@@ -85,6 +85,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpFulfillmentEventTargets)
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpTriggerEvents)
+  await inMemoryDb.delete(schema.pdtpObligations)
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpChangeLog)
@@ -208,5 +209,59 @@ describe("PREV-C03.6 — un hecho tardío de un año cerrado", () => {
     const backlog = await countPdtpFulfillmentBacklog(programId(OLD_YEAR))
     expect(backlog.rejected).toBe(1)
     expect(backlog.recentRejected[0]?.reason).toMatch(/cerrado formalmente/)
+  })
+})
+
+describe("PREV-C03.6 — dos programas activos de años distintos no duplican obligaciones", () => {
+  async function makeEventTriggered(year: number) {
+    await inMemoryDb.update(schema.pdtpActivities).set({
+      scheduleDefinition: { version: 1, kind: "event", triggerConnectorKey: "worker", triggerEventKey: "worker_created", dueValue: 5, dueUnit: "day" },
+      dueDays: 5,
+      evidenceRequirement: "Registro de inducción firmado",
+      indicatorMode: "closed_on_time",
+    }).where(eq(schema.pdtpActivities.id, activityId(year)))
+  }
+
+  it("un disparo de diciembre crea UNA obligación, en el programa de su año; uno de enero, en el del año nuevo", async () => {
+    const { recordPdtpTriggerEvent, reconcilePdtpTriggerEvents } = await import("@/lib/services/pdtp/trigger-events")
+    await seedProgram(OLD_YEAR, "active")
+    await seedProgram(NEW_YEAR, "active")
+    await makeEventTriggered(OLD_YEAR)
+    await makeEventTriggered(NEW_YEAR)
+
+    await recordPdtpTriggerEvent({
+      connectorKey: "worker", eventKey: "worker_created", sourceType: "evaluacion_sst", sourceId: "worker-dic",
+      worksiteId: WS_ID, occurredAt: `${OLD_YEAR}-12-20T15:00:00.000Z`,
+    })
+    await recordPdtpTriggerEvent({
+      connectorKey: "worker", eventKey: "worker_created", sourceType: "evaluacion_sst", sourceId: "worker-ene",
+      worksiteId: WS_ID, occurredAt: `${NEW_YEAR}-01-05T15:00:00.000Z`,
+    })
+    const summary = await reconcilePdtpTriggerEvents()
+    expect(summary.processed).toBe(2)
+
+    const obligations = await inMemoryDb.select().from(schema.pdtpObligations)
+    expect(obligations).toHaveLength(2)
+    expect(obligations.find((row) => row.sourceId === "worker-dic")?.programId).toBe(programId(OLD_YEAR))
+    expect(obligations.find((row) => row.sourceId === "worker-ene")?.programId).toBe(programId(NEW_YEAR))
+  })
+
+  it("un disparo de enero con el año nuevo en borrador espera a que se active, sin caer en el año anterior", async () => {
+    const { recordPdtpTriggerEvent, reconcilePdtpTriggerEvents } = await import("@/lib/services/pdtp/trigger-events")
+    await seedProgram(OLD_YEAR, "active")
+    await seedProgram(NEW_YEAR, "draft")
+    await makeEventTriggered(OLD_YEAR)
+    await makeEventTriggered(NEW_YEAR)
+    await recordPdtpTriggerEvent({
+      connectorKey: "worker", eventKey: "worker_created", sourceType: "evaluacion_sst", sourceId: "worker-ene-espera",
+      worksiteId: WS_ID, occurredAt: `${NEW_YEAR}-01-05T15:00:00.000Z`,
+    })
+    expect(await reconcilePdtpTriggerEvents()).toMatchObject({ processed: 0, pending: 1 })
+    expect(await inMemoryDb.select().from(schema.pdtpObligations)).toHaveLength(0)
+
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "active" }).where(eq(schema.pdtpPrograms.id, programId(NEW_YEAR)))
+    expect(await reconcilePdtpTriggerEvents()).toMatchObject({ processed: 1 })
+    const [obligation] = await inMemoryDb.select().from(schema.pdtpObligations)
+    expect(obligation?.programId).toBe(programId(NEW_YEAR))
   })
 })

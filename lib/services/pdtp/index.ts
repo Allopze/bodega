@@ -59,7 +59,11 @@ export {
   getCurrentPdtpBase2026Version,
   PDTP_BASE_2026_TEMPLATE_CODE,
 } from "./templates"
-export { getActivePdtpProgram } from "./lifecycle"
+export { getActivePdtpProgram, getPdtpOperationalYears } from "./lifecycle"
+export { resolvePdtpOperationalYears } from "./period"
+export type { PdtpOperationalYears } from "./period"
+export { closePdtpProgramYear, getPdtpYearCloseReadiness } from "./year-close"
+export type { PdtpYearCloseReadiness, PdtpYearCloseMissingMonths } from "./year-close"
 export {
   listPdtpExecutorRoleOptions,
   listPdtpActivityExecutorAssignments,
@@ -178,7 +182,7 @@ export { applyPdtpSchedulePresetToActivities } from "./schedule-batch"
 export type { PdtpScheduleBatchInput, PdtpScheduleBatchResult, PdtpScheduleBatchSkipReason } from "./schedule-batch"
 export { PDTP_SCHEDULE_PRESETS, presetToCells, presetToRule } from "./schedule-presets"
 export type { PdtpSchedulePresetKey, PdtpSchedulePresetParams } from "./schedule-presets"
-export { findPdtpWeeklyPending, runPdtpWeeklyReminders, runPdtpActionPlanVencidasReminders, runPdtpObligationReminders, runPdtpSignaturePendingReminders } from "./reminders"
+export { findPdtpWeeklyPending, runPdtpWeeklyReminders, runPdtpActionPlanVencidasReminders, runPdtpObligationReminders, runPdtpSignaturePendingReminders, runPdtpYearCloseReminders } from "./reminders"
 export type { PdtpPendingTarget, PdtpWeeklyPendingResult, PdtpActionVencidasReminderResult, PdtpObligationReminderResult, PdtpSignaturePendingResult } from "./reminders"
 export { setPdtpActivityOverride, deletePdtpActivityOverride, loadPdtpOverrides, applyOverridesToSchedule } from "./overrides"
 export {

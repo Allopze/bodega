@@ -3076,7 +3076,7 @@ export async function remindTemplateApproval(input: unknown, access: InspectionA
  * al prevencionista que memorice o transcriba números sueltos. */
 export async function listInspectionPdtpActivityOptions(access: InspectionAccess) {
   requireAccess(access, "prevention:inspections:view")
-  return db.select({
+  const rows = await db.select({
     n: pdtpActivities.n,
     name: pdtpActivities.activity,
     year: pdtpPrograms.year,
@@ -3084,6 +3084,15 @@ export async function listInspectionPdtpActivityOptions(access: InspectionAccess
     .innerJoin(pdtpPrograms, eq(pdtpPrograms.id, pdtpActivities.programId))
     .where(and(eq(pdtpPrograms.status, "active"), eq(pdtpActivities.status, "active")))
     .orderBy(desc(pdtpPrograms.year), asc(pdtpActivities.n))
+  // PREV-C03.6: en diciembre-enero conviven dos programas activos (el año que
+  // se cierra y el nuevo). La plantilla declara números, no años, así que cada
+  // número se ofrece una sola vez, con el nombre del programa más reciente.
+  const seen = new Set<number>()
+  return rows.filter((row) => {
+    if (seen.has(row.n)) return false
+    seen.add(row.n)
+    return true
+  })
 }
 
 /**

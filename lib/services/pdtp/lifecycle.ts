@@ -1,8 +1,8 @@
-import { and, desc, eq, isNull, ne } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { pdtpActivities, pdtpProgramWorksites, pdtpPrograms } from "@/db/schema"
 import { logger } from "@/lib/logger"
-import { countOf, todayInChile } from "@/lib/utils"
+import { codeYear, countOf, todayInChile } from "@/lib/utils"
 import { addPdtpChangeLogEntry } from "./helpers"
 import { handoverPdtpWorksiteAssignees } from "./assignees"
 import { computePdtpProgramContentDigest, computePdtpProgramContentDigestForStoredVersion } from "./content-digest"
@@ -14,6 +14,7 @@ import {
   listPdtpApprovalProgress,
 } from "./approval-flow"
 import { materializePdtpScheduledInstances } from "./scheduled-instances"
+import { resolvePdtpOperationalYears, type PdtpOperationalYears } from "./period"
 import { isPdtpLegalFolderActivity, listPdtpActivityDocumentRequirements } from "./document-requirements"
 import { sweepPdtpLegalFolders } from "@/lib/services/pdtp-adapters/legal-folder-connector"
 import { reconcilePdtpTriggerEvents } from "./trigger-events"
@@ -111,6 +112,18 @@ export async function getActivePdtpProgram(year: number) {
     and(eq(pdtpPrograms.year, year), eq(pdtpPrograms.status, "active")),
   ).orderBy(desc(pdtpPrograms.version)).limit(1)
   return program ?? null
+}
+
+/**
+ * PREV-C03.7: año operativo y año en cierre, leídos de la base. Ver
+ * `resolvePdtpOperationalYears` (period.ts) para la regla.
+ */
+export async function getPdtpOperationalYears(now: Date = new Date()): Promise<PdtpOperationalYears> {
+  const calendarYear = codeYear(now)
+  const programs = await db.select({ year: pdtpPrograms.year, status: pdtpPrograms.status, yearClosedAt: pdtpPrograms.yearClosedAt })
+    .from(pdtpPrograms)
+    .where(inArray(pdtpPrograms.year, [calendarYear - 1, calendarYear]))
+  return resolvePdtpOperationalYears(programs, calendarYear)
 }
 
 type PdtpActivityRow = typeof pdtpActivities.$inferSelect
@@ -588,6 +601,9 @@ export async function archivePdtpProgram(programId: string, userId: string, rawR
     const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
     if (!program) throw new Error("Programa PDTP no encontrado.")
     if (program.status === "archived" && program.archivedByUserId === userId && program.archiveReason === reason) return program
+    // PREV-C03.6: un año cerrado formalmente es evidencia del programa. Archivarlo
+    // lo sacaría de las vistas y de la resolución de hechos por fecha.
+    if (program.yearClosedAt) throw new Error(`El programa pertenece a un año cerrado (${program.year}): no se puede archivar.`)
     if (!["in_review", "rejected", "closed"].includes(program.status)) {
       throw new Error("Solo se pueden archivar programas revisados, rechazados o cerrados.")
     }

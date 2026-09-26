@@ -16,16 +16,17 @@ import {
   sstDocuments, sstDocumentVersions, worksites,
 } from "@/db/schema"
 import { MATRIX_PERMISSION, MATRIX_TRANSITIONS } from "@/lib/services/prevention-risk-legal"
-import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation, type PdtpPeriod } from "./period"
+import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation, resolvePdtpOperationalYears, type PdtpPeriod } from "./period"
 import { logger } from "@/lib/logger"
 import { countOf } from "@/lib/utils"
-import { createNotifications, getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
+import { createNotifications, getUserIdsWithPermission, getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
 import { listVencidas } from "./followups"
 import { loadProgramScheduleAndExecutions } from "./helpers"
 import { listPdtpObligationReminderCandidates, recordPdtpObligationReminder, type PdtpReminderWindow } from "./obligations"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { listPdtpActivityAssignees } from "./assignees"
-import { todayInChile } from "@/lib/utils"
+import { codeYear, todayInChile } from "@/lib/utils"
+import { getPdtpYearCloseReadiness } from "./year-close"
 
 export type PdtpPendingTarget = {
   worksiteId: string
@@ -570,4 +571,57 @@ export async function runPdtpSignaturePendingReminders(asOf = new Date()): Promi
   }
 
   return { pending: pending.length, remindersDue, notifiedUsers: notifiedUserIds.size }
+}
+
+export type PdtpYearCloseReminderResult = {
+  /** El año que sigue abierto después de terminar, o `null` si no hay ninguno. */
+  closingYear: number | null
+  canClose: boolean
+  pendingMonths: number
+  notifiedUsers: number
+}
+
+/**
+ * PREV-C03.6/C03.7: el año anterior sigue abierto después de terminar. Mientras
+ * no se cierre formalmente, sigue recibiendo hechos y su resultado no queda
+ * congelado; y los recordatorios semanales ya no lo miran porque siguen al año
+ * civil. Este aviso va a quien puede cerrarlo (permiso de ciclo de vida) y dice
+ * qué falta: los cierres mensuales pendientes o, si ya no falta nada, que el
+ * año está listo para cerrarse. Uno por semana, con clave de deduplicación.
+ */
+export async function runPdtpYearCloseReminders(asOf = new Date()): Promise<PdtpYearCloseReminderResult> {
+  const calendarYear = codeYear(asOf)
+  const programs = await db.select({ year: pdtpPrograms.year, status: pdtpPrograms.status, yearClosedAt: pdtpPrograms.yearClosedAt })
+    .from(pdtpPrograms)
+    .where(inArray(pdtpPrograms.year, [calendarYear - 1, calendarYear]))
+  const { primary, closing } = resolvePdtpOperationalYears(programs, calendarYear)
+  const closingYear = closing ?? (primary < calendarYear ? primary : null)
+  if (closingYear === null) return { closingYear: null, canClose: false, pendingMonths: 0, notifiedUsers: 0 }
+
+  const [program] = await db.select({ id: pdtpPrograms.id }).from(pdtpPrograms)
+    .where(and(eq(pdtpPrograms.year, closingYear), eq(pdtpPrograms.status, "active")))
+    .orderBy(desc(pdtpPrograms.version))
+    .limit(1)
+  if (!program) return { closingYear, canClose: false, pendingMonths: 0, notifiedUsers: 0 }
+
+  const readiness = await getPdtpYearCloseReadiness(program.id)
+  const pendingMonths = readiness.missing.reduce((total, row) => total + row.months.length, 0)
+  const recipients = await getUserIdsWithPermission("prevention:pdtp:lifecycle:manage")
+  if (recipients.length === 0) {
+    logger.warn({ closingYear }, "[pdtp/year-close-reminders] Nadie tiene permiso para cerrar el año.")
+    return { closingYear, canClose: readiness.canClose, pendingMonths, notifiedUsers: 0 }
+  }
+  const period = currentPdtpPeriod(asOf)
+  await createNotifications(recipients, {
+    type: "system_alert",
+    title: `Cierre pendiente del programa preventivo ${closingYear}`,
+    body: readiness.canClose
+      ? `Todos los meses de ${closingYear} están cerrados. Cierra formalmente el año para que deje de recibir hechos tardíos.`
+      : `El año ${closingYear} terminó y sigue abierto: faltan ${countOf(pendingMonths, "cierre mensual", "cierres mensuales")} antes de poder cerrarlo.`,
+    entityType: "pdtp_program",
+    entityId: program.id,
+    entityHref: `/prevencion/pdtp/${program.id}`,
+    dedupeKey: `pdtp-year-close:${closingYear}:${period.year}-${period.month}-W${period.week}`,
+  })
+  return { closingYear, canClose: readiness.canClose, pendingMonths, notifiedUsers: recipients.length }
 }

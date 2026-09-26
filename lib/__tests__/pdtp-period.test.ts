@@ -7,6 +7,7 @@ import {
   filterPdtpRowsFromActivation,
   isPdtpActivityZeroThisMonth,
   isPdtpPeriodOnOrAfterActivation,
+  resolvePdtpOperationalYears,
   type PdtpPeriod,
 } from "@/lib/services/pdtp/period"
 
@@ -271,5 +272,33 @@ describe("deriveActivityStatus — desvíos 'no realizada'", () => {
     // contando la actividad en `zeroActivityIds` y el filtro del visor tiene
     // que mostrar lo mismo que el indicador cuenta.
     expect(isPdtpActivityZeroThisMonth({ indicatorMode: "planned_vs_completed" }, at(7, 1), zeros(), period)).toBe(true)
+  })
+})
+
+describe("resolvePdtpOperationalYears — año operativo y cierre pendiente (PREV-C03.7, D23)", () => {
+  const program = (year: number, status: string, yearClosedAt: string | null = null) => ({ year, status, yearClosedAt })
+
+  it("enero con el año anterior activo y el nuevo en borrador: el operativo sigue siendo el anterior", () => {
+    expect(resolvePdtpOperationalYears([program(2026, "active"), program(2027, "draft")], 2027))
+      .toEqual({ primary: 2026, closing: null })
+  })
+
+  it("con los dos activos, el operativo es el nuevo y el anterior queda con cierre pendiente", () => {
+    expect(resolvePdtpOperationalYears([program(2026, "active"), program(2027, "active")], 2027))
+      .toEqual({ primary: 2027, closing: 2026 })
+  })
+
+  it("con el año anterior cerrado formalmente, no queda cierre pendiente", () => {
+    expect(resolvePdtpOperationalYears([program(2026, "closed", "2027-01-20T12:00:00.000Z"), program(2027, "active")], 2027))
+      .toEqual({ primary: 2027, closing: null })
+  })
+
+  it("sin programas, el año civil", () => {
+    expect(resolvePdtpOperationalYears([], 2027)).toEqual({ primary: 2027, closing: null })
+  })
+
+  it("en diciembre con el año siguiente ya activo, el operativo sigue siendo el año en curso", () => {
+    expect(resolvePdtpOperationalYears([program(2026, "active"), program(2027, "active")], 2026))
+      .toEqual({ primary: 2026, closing: null })
   })
 })

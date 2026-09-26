@@ -14,6 +14,7 @@ vi.mock("../actions", () => ({
   rejectPdtpProgramAsLegalAction: vi.fn(),
   reopenRejectedPdtpProgramAction: vi.fn(),
   archivePdtpProgramAction: vi.fn(),
+  closePdtpProgramYearAction: vi.fn(),
 }))
 
 const baseProgram = {
@@ -162,5 +163,46 @@ describe("ProgramLifecycleControls", () => {
     expect(screen.getByText(/Falta justificar la programación crítica/)).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Reabrir versión" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Archivar versión" })).toBeInTheDocument()
+  })
+
+  describe("cierre anual (PREV-C03.6)", () => {
+    const activeProgram = { ...baseProgram, status: "active", year: 2025, yearClosedAt: null, contentDigest: "d".repeat(64), reviewStartedAt: "2025-01-02T12:00:00.000Z" }
+
+    it("ofrece cerrar el año terminado cuando todos los meses están cerrados", () => {
+      render(<ProgramLifecycleControls
+        program={activeProgram}
+        permissions={permissions}
+        yearClose={{ year: 2025, canClose: true, blockers: [] }}
+      />)
+      expect(screen.getByRole("button", { name: "Cerrar el año 2025" })).toBeEnabled()
+    })
+
+    it("explica qué falta en vez de dejar fallar el cierre", () => {
+      render(<ProgramLifecycleControls
+        program={activeProgram}
+        permissions={permissions}
+        yearClose={{ year: 2025, canClose: false, blockers: ["Faltan cierres mensuales del año 2025. Faena Norte: diciembre."] }}
+      />)
+      expect(screen.getByText(/Faena Norte: diciembre/)).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Cerrar el año 2025" })).toBeDisabled()
+    })
+
+    it("sin permiso de ciclo de vida no se ofrece", () => {
+      render(<ProgramLifecycleControls
+        program={activeProgram}
+        permissions={{ ...permissions, canManageLifecycle: false }}
+        yearClose={{ year: 2025, canClose: true, blockers: [] }}
+      />)
+      expect(screen.queryByRole("button", { name: /Cerrar el año/ })).not.toBeInTheDocument()
+    })
+
+    it("un año cerrado se nombra como tal y no se puede archivar", () => {
+      render(<ProgramLifecycleControls
+        program={{ ...activeProgram, status: "closed", yearClosedAt: "2026-01-20T12:00:00.000Z" }}
+        permissions={permissions}
+      />)
+      expect(screen.getByText(/año 2025 está cerrado formalmente/)).toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: "Archivar versión" })).not.toBeInTheDocument()
+    })
   })
 })
