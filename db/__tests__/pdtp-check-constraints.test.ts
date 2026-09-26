@@ -149,6 +149,25 @@ describe("PDTP CHECK constraints SQL", () => {
     )
   })
 
+  it("pdtp_programs: un cierre anual solo cabe en una versión cerrada o archivada (PREV-C03.6)", async () => {
+    const closedAt = new Date().toISOString()
+    await expectCheckViolation(
+      inMemoryDb.update(schema.pdtpPrograms).set({ yearClosedAt: closedAt }).where(eq(schema.pdtpPrograms.id, "p1")),
+      "pdtp_programs_year_closed_status_check",
+    )
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ status: "closed", yearClosedAt: closedAt, yearClosedByUserId: "u1", yearCloseReason: "Cierre anual" })
+      .where(eq(schema.pdtpPrograms.id, "p1"))
+    const [row] = await inMemoryDb.select().from(schema.pdtpPrograms).where(eq(schema.pdtpPrograms.id, "p1"))
+    expect(row?.yearClosedAt).not.toBeNull()
+    // Borrar al usuario que cerró el año no borra el cierre (ON DELETE SET NULL).
+    await inMemoryDb.delete(schema.pdtpActivities)
+    await inMemoryDb.delete(schema.users).where(eq(schema.users.id, "u1"))
+    const [after] = await inMemoryDb.select().from(schema.pdtpPrograms).where(eq(schema.pdtpPrograms.id, "p1"))
+    expect(after?.yearClosedByUserId).toBeNull()
+    expect(after?.yearClosedAt).not.toBeNull()
+  })
+
   it("pdtp_programs rechaza compliance_target fuera de 0-1", async () => {
     const now = new Date().toISOString()
     await expectCheckViolation(
