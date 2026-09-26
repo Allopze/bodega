@@ -882,17 +882,34 @@ export const pdtpExecutionDeviations = pgTable("pdtp_execution_deviations", {
   withdrawnByUserId:  text("withdrawn_by_user_id").references(() => users.id),
   withdrawnAt:        timestamp("withdrawn_at", { withTimezone: true, mode: "string" }),
   withdrawReason:     text("withdraw_reason"),
+  /**
+   * PREV-C07 (D8): revisión del "No aplica". Un N/A nuevo nace
+   * `pending_review` y no toca el denominador hasta que otra persona con
+   * `prevention:pdtp:approve` lo aprueba (`active`) o lo rechaza
+   * (`rejected`). SET NULL: dar de baja a quien revisó no borra la revisión.
+   */
+  reviewedByUserId:   text("reviewed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  reviewedAt:         timestamp("reviewed_at", { withTimezone: true, mode: "string" }),
+  reviewReason:       text("review_reason"),
 }, (table) => [
-  // Una sola celda puede tener un desvío activo a la vez; retirar uno libera
-  // la celda para registrar otro. Sin el WHERE, un desvío retirado
-  // bloquearía indefinidamente registrar uno nuevo en la misma celda.
-  uniqueIndex("pdtp_execution_deviations_cell_active_unique").on(table.activityId, table.worksiteId, table.year, table.month, table.week).where(sql`${table.status} = 'active'`),
+  // Una sola celda puede tener un desvío abierto a la vez —vigente o esperando
+  // revisión—; retirarlo o rechazarlo libera la celda para registrar otro. Un
+  // N/A pendiente ocupa la celda: dos declaraciones en revisión sobre la misma
+  // semana dejarían al revisor aprobando una sin ver la otra.
+  uniqueIndex("pdtp_execution_deviations_cell_open_unique").on(table.activityId, table.worksiteId, table.year, table.month, table.week).where(sql`${table.status} IN ('active', 'pending_review')`),
   index("pdtp_execution_deviations_worksite_period_idx").on(table.worksiteId, table.year, table.month),
   check("pdtp_execution_deviations_month_check", sql`${table.month} BETWEEN 1 AND 12`),
   check("pdtp_execution_deviations_week_check", sql`${table.week} BETWEEN 1 AND 4`),
   check("pdtp_execution_deviations_kind_check", sql`${table.kind} IN ('not_performed', 'not_applicable', 'reprogrammed')`),
   check("pdtp_execution_deviations_reason_check", sql`length(trim(${table.reason})) >= 10`),
-  check("pdtp_execution_deviations_status_check", sql`${table.status} IN ('active', 'withdrawn')`),
+  check("pdtp_execution_deviations_status_check", sql`${table.status} IN ('active', 'pending_review', 'rejected', 'withdrawn')`),
+  // Sólo el "No aplica" pasa por revisión: los otros dos tipos no sacan
+  // planificado del denominador sin dejar rastro (D8).
+  check("pdtp_execution_deviations_pending_review_kind_check", sql`${table.status} NOT IN ('pending_review', 'rejected') OR ${table.kind} = 'not_applicable'`),
+  // Segregación: quien declaró no revisa su propia declaración.
+  check("pdtp_execution_deviations_reviewer_not_creator_check", sql`${table.reviewedByUserId} IS NULL OR ${table.reviewedByUserId} <> ${table.createdByUserId}`),
+  // Un rechazo explica por qué. El actor no se exige acá: la FK es SET NULL.
+  check("pdtp_execution_deviations_rejected_check", sql`${table.status} <> 'rejected' OR (${table.reviewedAt} IS NOT NULL AND length(trim(COALESCE(${table.reviewReason}, ''))) >= 10)`),
   // Equivalencia, no implicación: un `reprogrammed` SIEMPRE trae destino, y
   // ningún otro tipo lo trae.
   check("pdtp_execution_deviations_target_check", sql`(${table.kind} <> 'reprogrammed') = (${table.targetMonth} IS NULL AND ${table.targetWeek} IS NULL)`),
