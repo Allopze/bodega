@@ -3,13 +3,14 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { findPdtpWeeklyPending, listPendingPdtpExecutions, getPdtpProgram } from "@/lib/services/prevention-pdtp"
+import { findPdtpWeeklyPending, listPendingPdtpExecutions, listPendingPdtpNotApplicable, getPdtpProgram } from "@/lib/services/prevention-pdtp"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { PdtpApprovalButtons } from "../pdtp-approval-buttons"
 import { PdtpEvidenceThumbs } from "../pdtp-evidence-thumbs"
 import { WeeklyScheduledSection } from "./weekly-scheduled-section"
+import { NotApplicableReviewSection } from "./not-applicable-review-section"
 import { countOf } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Aprobaciones PDTP" }
@@ -37,9 +38,12 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
   // findPdtpWeeklyPending() recorre TODAS las faenas activas (lo necesita el
   // cron); acá se filtra al alcance real del usuario antes de mostrarlo. Las
   // dos lecturas son independientes, así que se resuelven en paralelo.
-  const [pending, weeklyPendingAll] = await Promise.all([
+  // PREV-C07: los "No aplica" en revisión se aprueban acá, con el mismo
+  // permiso y el mismo alcance de faenas que las ejecuciones.
+  const [pending, weeklyPendingAll, pendingNotApplicable] = await Promise.all([
     listPendingPdtpExecutions(worksiteIds, program ? { programId: program.id } : {}),
     findPdtpWeeklyPending(),
+    listPendingPdtpNotApplicable(worksiteIds, program ? { programId: program.id } : {}),
   ])
   const weeklyPending = worksiteIds === "all" ? weeklyPendingAll : weeklyPendingAll.filter((target) => worksiteIds.includes(target.worksiteId))
   // H-M4: el description debe reflejar el scope real del usuario para
@@ -168,6 +172,8 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
           </Table>
         </TableRoot>
       )}
+
+      <NotApplicableReviewSection items={pendingNotApplicable} currentUserId={session.user.id} />
 
       <WeeklyScheduledSection targets={weeklyPending} />
     </PageContainer>

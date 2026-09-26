@@ -1,5 +1,5 @@
 import { CheckCircle, Target, ChartBar } from "@phosphor-icons/react/dist/ssr"
-import { cn, formatDateTime, MONTH_LABELS, QUARTER_LABELS } from "@/lib/utils"
+import { cn, countOf, formatDateTime, MONTH_LABELS, QUARTER_LABELS } from "@/lib/utils"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { PersistedDetails } from "./persisted-details"
 import { buildPdtpActivitiesHref } from "./pdtp-context"
@@ -29,10 +29,17 @@ function ComplianceBar({ value, target }: { value: number | null; target: number
   )
 }
 
-export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId }: {
+export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId, declaredNotApplicable }: {
   data: PdtpComplianceIndicators
   integral?: PdtpIntegralCompliance | null
   asOf?: string
+  /**
+   * PREV-C07 (D8): celdas "No aplica" del alcance. `approved` ya salieron del
+   * denominador; `pending` esperan revisión y todavía cuentan. Viaja aparte
+   * de `data` porque `PdtpComplianceIndicators` es la forma congelada en la
+   * foto de cada cierre.
+   */
+  declaredNotApplicable?: { approved: number; pending: number }
   /** Faena elegida en la vista que llama a este panel (no viaja en `data`:
    * el indicador agregado por alcance no tiene una sola faena). Se usa solo
    * para conservar el filtro al enlazar al visor de actividades. */
@@ -104,6 +111,12 @@ export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId }: {
               <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
                 Avance anual {fmtPct(annual.percent)} · plan {annual.planned} · ejecutado {annual.executed}
               </p>
+              {declaredNotApplicable && (declaredNotApplicable.approved > 0 || declaredNotApplicable.pending > 0) && (
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  No aplica: {countOf(declaredNotApplicable.approved, "semana fuera del cálculo", "semanas fuera del cálculo")}
+                  {declaredNotApplicable.pending > 0 ? ` · ${declaredNotApplicable.pending} en revisión` : ""}
+                </p>
+              )}
             </div>
           </a>
 

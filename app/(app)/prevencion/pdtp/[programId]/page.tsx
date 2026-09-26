@@ -15,6 +15,7 @@ import {
   listPdtpReconciliationCandidates,
   listPdtpProgramSheets,
   getPdtpYearCloseReadiness,
+  countPdtpNotApplicable,
 } from "@/lib/services/prevention-pdtp"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { listCatalogActivities } from "@/lib/services/pdtp/catalog-activities"
@@ -105,14 +106,16 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
     listPdtpProgramWorksites(programId),
   ])
   const selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, worksites)
-  const [[view, indicators, integral], approvalProgress] = await Promise.all([
+  const [[view, indicators, integral, declaredNotApplicable], approvalProgress] = await Promise.all([
     selectedWorksiteId
       ? Promise.all([
         getPdtpSheetViewByProgram(programId, sheetCode, selectedWorksiteId),
         getPdtpComplianceIndicators(programId, selectedWorksiteId),
         getPdtpIntegralCompliance(programId, selectedWorksiteId),
+        // PREV-C07: cuántas semanas "No aplica" hay junto al porcentaje.
+        countPdtpNotApplicable(programId, [selectedWorksiteId]),
       ])
-      : Promise.resolve([null, null, null] as const),
+      : Promise.resolve([null, null, null, undefined] as const),
     getPdtpApprovalProgress(programId),
   ])
   // Dos lecturas de la compuerta que antes iban en serie. `submitBlockers` son
@@ -352,7 +355,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         </ProgramLifecycleControls>
 
         {/* Compliance indicators */}
-        {indicators && <PdtpIndicatorsPanel data={indicators} integral={integral} asOf={renderedAt} worksiteId={selectedWorksiteId} />}
+        {indicators && <PdtpIndicatorsPanel data={indicators} integral={integral} asOf={renderedAt} worksiteId={selectedWorksiteId} declaredNotApplicable={declaredNotApplicable} />}
 
         <div className="flex flex-wrap items-center gap-3 border-y border-[var(--color-border)] py-3">
           {sheetOptions.length > 0 ? (
