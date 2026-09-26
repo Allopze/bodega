@@ -325,7 +325,8 @@ describe("PDTP objetivos: servicio y huella", () => {
     }, "user-1")
     await setPdtpActivityObjective({ programId: program.id, activityId: activity.id, objectiveId: objective.id }, "user-1")
 
-    expect(CURRENT_PDTP_CONTENT_SCHEMA_VERSION).toBe(19)
+    // 20 (PREV-C03.2): `manualEvidencePolicy` entra al contenido firmado.
+    expect(CURRENT_PDTP_CONTENT_SCHEMA_VERSION).toBe(20)
 
     type SnapshotShape = {
       schemaVersion: number
@@ -355,5 +356,10 @@ describe("PDTP objetivos: servicio y huella", () => {
     expect(v17.activities).toEqual([expect.objectContaining({ objectiveCode: "1", scheduleDefinition: null })])
     expect(v17.executionConfigs).toEqual([])
     expect(v17.reminderRules).toEqual([])
+
+    const v19 = await buildPdtpProgramContentSnapshot(program.id, undefined, { schemaVersion: 19 }) as unknown as SnapshotShape
+    const v20 = await buildPdtpProgramContentSnapshot(program.id, undefined, { schemaVersion: 20 }) as unknown as SnapshotShape
+    expect(v19.activities.some((entry) => "manualEvidencePolicy" in entry)).toBe(false)
+    expect(v20.activities).toEqual([expect.objectContaining({ manualEvidencePolicy: "file_required" })])
   })
 })

@@ -565,15 +565,34 @@ describe("Program CRUD actions", () => {
     const fd = makeFormData({ year: "2026" })
     await expect(createPdtpProgramAction(null, fd)).rejects.toThrow("REDIRECT:")
     expect(mockGuardPermission).toHaveBeenCalledWith("prevention:pdtp:program:manage")
-    expect(mockCreateAnnualPdtpProgram).toHaveBeenCalledWith({ year: 2026, userId: "user-1" })
+    expect(mockCreateAnnualPdtpProgram).toHaveBeenCalledWith({ year: 2026, userId: "user-1", source: undefined })
     expect(mockRedirect).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/editar")
   })
 
-  it("abre el programa existente cuando el servicio anual indica que no creó uno nuevo", async () => {
-    mockCreateAnnualPdtpProgram.mockResolvedValueOnce({ programId: "prog-existing", created: false })
-    const fd = makeFormData({ year: "2027" })
+  it("pasa el origen elegido al servicio (PREV-C03.1)", async () => {
+    const fd = makeFormData({ year: "2027", origin: "previous_program", sourceProgramId: "pdtp-2026-v2" })
     await expect(createPdtpProgramAction(null, fd)).rejects.toThrow("REDIRECT:")
-    expect(mockRedirect).toHaveBeenCalledWith("/prevencion/pdtp/prog-existing/editar")
+    expect(mockCreateAnnualPdtpProgram).toHaveBeenCalledWith({
+      year: 2027, userId: "user-1", source: { kind: "previous_program", programId: "pdtp-2026-v2" },
+    })
+    const base = makeFormData({ year: "2027", origin: "base" })
+    await expect(createPdtpProgramAction(null, base)).rejects.toThrow("REDIRECT:")
+    expect(mockCreateAnnualPdtpProgram).toHaveBeenLastCalledWith({ year: 2027, userId: "user-1", source: { kind: "base" } })
+  })
+
+  it("rechaza copiar sin indicar qué programa", async () => {
+    const res = await createPdtpProgramAction(null, makeFormData({ year: "2027", origin: "previous_program" }))
+    expect(res.ok).toBe(false)
+    expect(mockCreateAnnualPdtpProgram).not.toHaveBeenCalled()
+  })
+
+  it("avisa que el año ya existe en vez de redirigir en silencio (PREV-C03.1)", async () => {
+    mockCreateAnnualPdtpProgram.mockResolvedValueOnce({ programId: "prog-existing", created: false, program: { version: 1 } } as never)
+    const fd = makeFormData({ year: "2027" })
+    const res = await createPdtpProgramAction(null, fd)
+    expect(res).toMatchObject({ ok: false, programId: "prog-existing" })
+    expect(res.message).toMatch(/2027 ya existe/)
+    expect(mockRedirect).not.toHaveBeenCalled()
   })
 
   it("createPdtpProgramAction retorna error con año inválido", async () => {

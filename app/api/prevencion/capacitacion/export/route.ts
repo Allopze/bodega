@@ -8,7 +8,7 @@ import { buildTrainingOccurrenceExport } from "@/lib/services/prevention-trainin
 import { buildXlsxBuffer } from "@/lib/reports/export"
 import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
-import { resolvePredefinedTrainingCatalogYear } from "@/lib/prevention/training-occurrences-catalog"
+import { resolveTrainingOccurrenceYear } from "@/lib/services/prevention-training-occurrences"
 
 export async function GET(request: Request) {
   const session = await auth()
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
       scope: resolveWorksiteScope(session),
       permissions: session.user.permissions,
     }, {
-      year: resolvePredefinedTrainingCatalogYear(url.searchParams.get("year")),
+      year: await resolveTrainingOccurrenceYear(url.searchParams.get("year") ?? url.searchParams.get("anio")),
       worksiteId,
     })
     const bytes = await buildXlsxBuffer(report)

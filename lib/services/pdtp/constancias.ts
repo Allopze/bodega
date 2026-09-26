@@ -13,6 +13,7 @@ import { pdtpActivities, pdtpPrograms, pdtpProgramWorksites, worksites } from "@
 import { currentPdtpPeriod, filterPdtpRowsFromActivation, pdtpActivationPeriod, type PdtpPeriod } from "./period"
 import { loadProgramScheduleAndExecutions, type WorksiteScope } from "./helpers"
 import { resolveProgramWorksiteIds } from "./worksites"
+import { getPdtpOperationalYears } from "./operational-years"
 
 export type PdtpConstanciaDebt = {
   activityId: string
@@ -23,6 +24,10 @@ export type PdtpConstanciaDebt = {
   responsibleDisplay: string
   worksiteId: string
   worksiteName: string
+  /** PREV-C03.7: año del programa al que pertenece la deuda (puede ser el año en cierre). */
+  programYear: number
+  /** Corte de activación del programa de esa deuda, para el formulario. */
+  effectiveFrom: PdtpPeriod | null
   /** Primer mes impago, ≤ mes en curso — misma regla que `impago.mes` en
    * operational-work-queue.ts (D12), para que esta lista y el badge de
    * /pendientes cuenten exactamente lo mismo. */
@@ -42,34 +47,37 @@ export type PdtpConstanciaView = {
   /** Recorta los meses/semanas ofrecidos en el formulario: no se puede
    * marcar una constancia en un período anterior a la activación. */
   effectiveFrom: PdtpPeriod | null
+  /**
+   * PREV-C03.7: el año anterior, cuando sigue activo sin cierre anual mientras
+   * el nuevo ya opera. Sus deudas vienen en `debts` rotuladas con su año: las
+   * constancias de diciembre vencen justo en enero y no pueden desaparecer.
+   */
+  closingYear: number | null
   debts: PdtpConstanciaDebt[]
 }
 
-/**
- * Lista, por (actividad, faena), la deuda de constancia abierta hoy: una
- * fila por el primer mes impago, no una por cada mes vencido, para no
- * inundar la pantalla con la misma deuda repetida.
- */
-export async function listPdtpConstanciaActivities(scope: WorksiteScope): Promise<PdtpConstanciaView | null> {
-  if (scope !== "all" && scope.length === 0) return null
-  const period = currentPdtpPeriod()
+type ProgramRow = typeof pdtpPrograms.$inferSelect
+
+async function activeProgramOfYear(year: number): Promise<ProgramRow | null> {
   const [program] = await db.select().from(pdtpPrograms)
-    .where(and(eq(pdtpPrograms.status, "active"), eq(pdtpPrograms.year, period.year)))
+    .where(and(eq(pdtpPrograms.status, "active"), eq(pdtpPrograms.year, year)))
     .orderBy(desc(pdtpPrograms.version))
     .limit(1)
-  if (!program) return null
+  return program ?? null
+}
 
+/**
+ * Las deudas de UN programa, contando los meses hasta `throughMonth` (el mes en
+ * curso, o diciembre si el año del programa ya terminó).
+ */
+async function programConstanciaDebts(program: ProgramRow, scope: WorksiteScope, throughMonth: number): Promise<PdtpConstanciaDebt[]> {
   const activities = await db.select().from(pdtpActivities).where(and(
     eq(pdtpActivities.programId, program.id),
     eq(pdtpActivities.status, "active"),
     eq(pdtpActivities.mechanism, "constancia"),
     eq(pdtpActivities.scheduleMode, "scheduled"),
   ))
-  const empty: PdtpConstanciaView = {
-    programId: program.id, programYear: program.year,
-    effectiveFrom: pdtpActivationPeriod(program.activatedAt), debts: [],
-  }
-  if (activities.length === 0) return empty
+  if (activities.length === 0) return []
   const activityIds = activities.map((activity) => activity.id)
 
   const [members, allActiveWorksites] = await Promise.all([
@@ -83,13 +91,14 @@ export async function listPdtpConstanciaActivities(scope: WorksiteScope): Promis
     allActiveWorksites.map((worksite) => worksite.id),
     program.appliesToAllWorksites,
   )
-  if (worksiteIds.length === 0) return empty
+  if (worksiteIds.length === 0) return []
 
   const worksiteRows = await db.select({ id: worksites.id, name: worksites.name })
     .from(worksites).where(inArray(worksites.id, worksiteIds))
   const worksiteNameById = new Map(worksiteRows.map((worksite) => [worksite.id, worksite.name]))
 
   const activityById = new Map(activities.map((activity) => [activity.id, activity]))
+  const effectiveFrom = pdtpActivationPeriod(program.activatedAt)
   const debts: PdtpConstanciaDebt[] = []
 
   const perWorksite = await Promise.all(
@@ -103,7 +112,7 @@ export async function listPdtpConstanciaActivities(scope: WorksiteScope): Promis
       const plannedCells = filterPdtpRowsFromActivation(scheduleRows, program.activatedAt)
         .filter((row) => row.activityId === activityId
           && row.year === program.year
-          && row.month <= period.month
+          && row.month <= throughMonth
           && row.plannedQuantity > 0)
         .map((row) => ({ month: row.month, week: row.week }))
       if (plannedCells.length === 0) continue
@@ -122,6 +131,8 @@ export async function listPdtpConstanciaActivities(scope: WorksiteScope): Promis
       // sobre la primera — la misma que el badge de /pendientes considera
       // vencida antes que las demás.
       const dueWeek = Math.min(...plannedCells.filter((cell) => cell.month === dueMonth).map((cell) => cell.week))
+      // Un año ya terminado no tiene "mes en curso": todo lo impago está vencido.
+      const yearIsOver = throughMonth === 12 && program.year < currentPdtpPeriod().year
       debts.push({
         activityId,
         n: activity.n,
@@ -131,21 +142,53 @@ export async function listPdtpConstanciaActivities(scope: WorksiteScope): Promis
         responsibleDisplay: activity.responsibleDisplay,
         worksiteId,
         worksiteName: worksiteNameById.get(worksiteId) ?? worksiteId,
+        programYear: program.year,
+        effectiveFrom,
         dueMonth,
         dueWeek,
-        status: dueMonth < period.month ? "overdue" : "pending",
-        overdueMonths: unpaidMonths.filter((month) => month < period.month).length,
+        status: yearIsOver || dueMonth < throughMonth ? "overdue" : "pending",
+        overdueMonths: unpaidMonths.filter((month) => yearIsOver || month < throughMonth).length,
       })
     }
   }
+  return debts
+}
 
+/**
+ * Lista, por (actividad, faena), la deuda de constancia abierta hoy: una
+ * fila por el primer mes impago, no una por cada mes vencido, para no
+ * inundar la pantalla con la misma deuda repetida.
+ *
+ * PREV-C03.7: el programa es el del año operativo, y si el año anterior sigue
+ * con cierre pendiente se suman sus deudas (rotuladas por año).
+ */
+export async function listPdtpConstanciaActivities(scope: WorksiteScope): Promise<PdtpConstanciaView | null> {
+  if (scope !== "all" && scope.length === 0) return null
+  const period = currentPdtpPeriod()
+  const { primary, closing } = await getPdtpOperationalYears()
+  const program = await activeProgramOfYear(primary)
+  if (!program) return null
+  const closingProgram = closing ? await activeProgramOfYear(closing) : null
+  const throughMonthFor = (year: number) => (year < period.year ? 12 : period.month)
+
+  const debts = [
+    ...await programConstanciaDebts(program, scope, throughMonthFor(program.year)),
+    ...(closingProgram ? await programConstanciaDebts(closingProgram, scope, 12) : []),
+  ]
   debts.sort((a, b) => (
     (a.status === "overdue" ? 0 : 1) - (b.status === "overdue" ? 0 : 1)
+    || a.programYear - b.programYear
     || a.n - b.n
     || a.worksiteName.localeCompare(b.worksiteName, "es-CL")
   ))
 
-  return { programId: program.id, programYear: program.year, effectiveFrom: pdtpActivationPeriod(program.activatedAt), debts }
+  return {
+    programId: program.id,
+    programYear: program.year,
+    effectiveFrom: pdtpActivationPeriod(program.activatedAt),
+    closingYear: closingProgram?.year ?? null,
+    debts,
+  }
 }
 
 /**

@@ -34,7 +34,7 @@ import {
   revokePdtpAccreditationWithClient,
   type AccreditationInput,
 } from "@/lib/services/pdtp/accreditation"
-import { linkPdtpScheduledInstancesToFulfillment, recordPdtpFulfillmentEvent, recordPendingPdtpFulfillmentEvent, recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
+import { linkPdtpScheduledInstancesToFulfillment, recordPdtpFulfillmentEvent, recordPendingPdtpFulfillmentEvent, recordPdtpFulfillmentRevocation, recordRejectedPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
 import { recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
 import { PDTP_CPHS_ACTIVITY_NUMBERS } from "@/lib/services/pdtp/worksites"
 import { pdtpCatalogActivityIdForLegacyNumber, pdtpCatalogActivityIdsForLegacyNumbers } from "./catalog-activities-2026"
@@ -140,6 +140,13 @@ export async function onInspectionCompleted(input: {
         throw new Error(
           `La plantilla de inspección referencia actividades PDTP inexistentes: ${result.skippedNotFound.join(", ")}.`,
         )
+      }
+      if (result.skippedYearClosed) {
+        // PREV-C03.6: el año del hecho ya se cerró formalmente. El trabajo de
+        // terreno ocurrió y la inspección se cierra igual; el hecho tardío
+        // queda rechazado y visible en el libro de cumplimiento.
+        await recordRejectedPdtpFulfillmentEvent(accreditation, result, client)
+        return
       }
       if (result.skippedOutOfPeriod) {
         throw new Error(

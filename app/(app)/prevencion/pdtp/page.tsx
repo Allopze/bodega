@@ -34,6 +34,8 @@ import {
 import { PdtpDashboardChartsLazy } from "./pdtp-dashboard-charts-lazy"
 import { pdtpProgramStatusLabel } from "@/lib/prevention/pdtp"
 import { CreatePdtpRevisionButton } from "./[programId]/create-pdtp-revision-button"
+import { Callout } from "@/components/ui/callout"
+import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 
 export const metadata: Metadata = { title: "Dashboard de Cumplimiento (PDTP SG-SST)" }
 
@@ -70,7 +72,10 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   const requestedWorksite = one(query.faena)
   const requestedYear = one(query.anio)
 
-  const year = resolvePdtpYear(requestedYear)
+  // PREV-C03.7 (D23): sin ?anio, el año operativo (en enero puede seguir siendo
+  // el anterior); con dos años activos, el anterior queda como cierre pendiente.
+  const operationalYears = await getPdtpOperationalYears()
+  const year = resolvePdtpYear(requestedYear, operationalYears.primary)
   const canManageProgram = can(session, "prevention:pdtp:program:manage")
 
   const scope = resolveWorksiteScope(session)
@@ -238,6 +243,13 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
           </div>
         }
       />
+
+      {operationalYears.closing && operationalYears.closing !== year && (
+        <Callout tone="warning" className="mb-4" title={`PDTP ${operationalYears.closing} · cierre pendiente`}>
+          El programa {operationalYears.closing} sigue abierto: cierra diciembre en cada faena y luego el año desde su ficha.{" "}
+          <Link href={`/prevencion/pdtp?anio=${operationalYears.closing}`} className="font-medium underline">Ver {operationalYears.closing}</Link>
+        </Callout>
+      )}
 
       {/* Barra de Filtros Primarios */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-xs">

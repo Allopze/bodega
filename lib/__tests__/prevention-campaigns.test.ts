@@ -497,7 +497,7 @@ describe("Ronda de corrección 1/5 — doble conteo 85-89 (campaña legado + CAM
 
     // 2) Completa la ocurrencia CAM-07 equivalente, mismo período (m06-w1).
     await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb as unknown as DB, WS_ID, YEAR)
-    const occurrence = (await listTrainingOccurrences(trainingAccess))
+    const occurrence = (await listTrainingOccurrences(trainingAccess, { year: YEAR }))
       .find((row) => row.code === "CAM-07" && row.slotKey === "m06-w1")
     if (!occurrence) throw new Error("No se encontró la ocurrencia CAM-07 m06-w1 de prueba.")
 

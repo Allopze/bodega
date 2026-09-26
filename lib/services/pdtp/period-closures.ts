@@ -515,6 +515,13 @@ export async function reopenPdtpPeriod(
     if (!closure) throw new Error("Cierre PDTP no encontrado.")
     assertWorksiteAccess(closure.worksiteId, scope)
     if (closure.status === "reopened") throw new Error("Este mes ya está reabierto.")
+    // PREV-C03.6: el cierre anual se apoya en los cierres mensuales; reabrir un
+    // mes de un año cerrado le quitaría el sustento sin que nadie lo note.
+    const [owner] = await tx.select({ year: pdtpPrograms.year, yearClosedAt: pdtpPrograms.yearClosedAt })
+      .from(pdtpPrograms).where(eq(pdtpPrograms.id, closure.programId)).limit(1)
+    if (owner?.yearClosedAt) {
+      throw new Error(`El año ${owner.year} está cerrado formalmente: sus meses ya no se pueden reabrir.`)
+    }
 
     const now = new Date().toISOString()
     const [updated] = await tx.update(pdtpPeriodClosures).set({

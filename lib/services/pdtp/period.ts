@@ -44,6 +44,44 @@ export function currentPdtpPeriod(now: Date = new Date()): PdtpPeriod {
   return { year, month, week }
 }
 
+export type PdtpOperationalYears = {
+  /** El año que el tablero y las pantallas muestran por omisión. */
+  primary: number
+  /**
+   * El año anterior, cuando sigue activo sin cierre anual mientras el nuevo ya
+   * opera: "cierre pendiente de <año>" (D23). `null` si no hay nada que cerrar
+   * o si el año anterior ES el operativo (el nuevo todavía no se activa).
+   */
+  closing: number | null
+}
+
+/**
+ * PREV-C03.7: qué año muestra la plataforma por omisión en torno al cambio de
+ * año. El 1 de enero el año civil cambia, pero el programa nuevo puede no estar
+ * activo todavía y el anterior sigue recibiendo el cierre de diciembre: mostrar
+ * el año civil dejaba el tablero vacío (o con un borrador en cero) y hacía
+ * desaparecer el resultado del año que se está cerrando.
+ *
+ * - Año civil con programa activo → ese año; y si el anterior sigue activo sin
+ *   cierre anual, queda como `closing`.
+ * - Año civil sin programa activo, pero el anterior activo → el anterior.
+ * - En cualquier otro caso → el año civil.
+ *
+ * Pura: recibe los programas (año, estado, cierre anual) y el año civil en
+ * Chile. La variante con base es `getPdtpOperationalYears` (lifecycle.ts).
+ */
+export function resolvePdtpOperationalYears(
+  programs: ReadonlyArray<{ year: number; status: string; yearClosedAt?: string | null }>,
+  calendarYear: number,
+): PdtpOperationalYears {
+  const isOpenActive = (year: number) => programs.some((program) => program.year === year && program.status === "active" && !program.yearClosedAt)
+  const currentActive = isOpenActive(calendarYear)
+  const previousOpen = isOpenActive(calendarYear - 1)
+  if (currentActive) return { primary: calendarYear, closing: previousOpen ? calendarYear - 1 : null }
+  if (previousOpen) return { primary: calendarYear - 1, closing: null }
+  return { primary: calendarYear, closing: null }
+}
+
 /**
  * El PDTP se vuelve exigible cuando se activa la versión ya aprobada. Como el
  * calendario firmado solo tiene granularidad mes/semana, la semana de

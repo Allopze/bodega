@@ -15,6 +15,7 @@ export {
   rejectPdtpProgramAsLegalAction,
   reopenRejectedPdtpProgramAction,
   archivePdtpProgramAction,
+  closePdtpProgramYearAction,
 } from "./actions/program-lifecycle"
 
 export {

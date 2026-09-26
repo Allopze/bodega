@@ -23,7 +23,7 @@ import {
   GRD_MEETING_SLOTS_2026,
   HYGIENE_MEASUREMENT_PDTP_ACTIVITY_NUMBER,
   HYGIENE_MEASUREMENT_SLOTS_2026,
-  PROGRAM_SLOT_YEAR,
+  PROGRAM_SLOT_BASE_YEAR,
   resolveProgramSlotYear,
 } from "@/lib/prevention/program-slots-2026"
 
@@ -82,9 +82,12 @@ describe("las casillas congeladas coinciden con el cronograma del programa", () 
     expect(ALCOTEST_DISPATCH_SLOTS_2026.at(-1)!.slotKey).toBe("m12-w1")
   })
 
-  it("un año sin cronograma declarado cae al único que existe", () => {
-    expect(resolveProgramSlotYear(2027)).toBe(PROGRAM_SLOT_YEAR)
-    expect(resolveProgramSlotYear("no es un año")).toBe(PROGRAM_SLOT_YEAR)
-    expect(resolveProgramSlotYear(2026)).toBe(2026)
+  it("respeta el año pedido (PREV-C03.4) y usa el respaldo ante basura", () => {
+    expect(resolveProgramSlotYear(2027, 2026)).toBe(2027)
+    expect(resolveProgramSlotYear("2028", 2026)).toBe(2028)
+    expect(resolveProgramSlotYear("no es un año", 2027)).toBe(2027)
+    expect(resolveProgramSlotYear(1999, 2027)).toBe(2027)
+    expect(resolveProgramSlotYear(2026, 2027)).toBe(2026)
+    expect(PROGRAM_SLOT_BASE_YEAR).toBe(2026)
   })
 })

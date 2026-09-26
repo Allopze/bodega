@@ -70,10 +70,10 @@ describe("ocurrencias de capacitación", () => {
 
     // 390 = 102 (Task 5 + Task 8 + Task 13) + 288 de la Task 16: CAP-21 (48,
     // N°53) + CAP-22..26 (48 cada una, las 5 réplicas de la N°38).
-    await expect(ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)).resolves.toBe(390)
-    await expect(ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)).resolves.toBe(0)
+    await expect(ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID, 2026)).resolves.toBe(390)
+    await expect(ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID, 2026)).resolves.toBe(0)
 
-    const rows = await listTrainingOccurrences(ACCESS)
+    const rows = await listTrainingOccurrences(ACCESS, { year: 2026 })
     expect(rows).toHaveLength(390)
     const target = rows.find((row) => row.code === "CAP-02" && row.slotKey === "m09-w4")
     expect(target).toMatchObject({ status: "pending", scheduledMonth: 9, scheduledWeek: 4, version: 1 })
@@ -143,8 +143,8 @@ describe("ocurrencias de capacitación", () => {
     }, ACCESS)).rejects.toThrow()
 
     await inMemoryDb.update(schema.worksites).set({ isActive: false }).where(eq(schema.worksites.id, WORKSITE_ID))
-    expect(await listTrainingOccurrences(ACCESS)).toEqual([])
-    expect((await listTrainingOccurrences(ACCESS, { includeInactiveWorksites: true })).length).toBe(390)
+    expect(await listTrainingOccurrences(ACCESS, { year: 2026 })).toEqual([])
+    expect((await listTrainingOccurrences(ACCESS, { year: 2026, includeInactiveWorksites: true })).length).toBe(390)
   })
 
   /*
@@ -187,8 +187,8 @@ describe("ocurrencias de capacitación", () => {
       sourceSheetRow: 27, createdAt: now, updatedAt: now,
     })
 
-    await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)
-    const target = (await listTrainingOccurrences(ACCESS)).find((row) => row.code === "CAP-15")
+    await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID, 2026)
+    const target = (await listTrainingOccurrences(ACCESS, { year: 2026 })).find((row) => row.code === "CAP-15")
     if (!target) throw new Error("No se encontró la ocurrencia CAP-15 (N°16) de prueba.")
     expect(target).toMatchObject({ slotKey: "annual", pdtpActivityNumbers: [16] })
 
@@ -236,8 +236,8 @@ describe("ocurrencias de capacitación", () => {
       uploadTrainingOccurrenceEvidence,
     } = await import("@/lib/services/prevention-training-occurrences")
 
-    await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)
-    const rows = await listTrainingOccurrences(ACCESS)
+    await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID, 2026)
+    const rows = await listTrainingOccurrences(ACCESS, { year: 2026 })
     const target = rows.find((row) => row.code === "CAP-02" && row.slotKey === "m09-w4")
     if (!target) throw new Error("No se encontró la ocurrencia de prueba.")
 
@@ -311,8 +311,8 @@ describe("ocurrencias de capacitación", () => {
       recordTrainingOccurrenceStatus,
     } = await import("@/lib/services/prevention-training-occurrences")
 
-    await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)
-    const rows = await listTrainingOccurrences(ACCESS)
+    await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID, 2026)
+    const rows = await listTrainingOccurrences(ACCESS, { year: 2026 })
     const target = rows.find((row) => row.code === "CAP-02" && row.slotKey === "m09-w4")
     if (!target) throw new Error("No se encontró la ocurrencia de prueba.")
 
@@ -357,8 +357,8 @@ describe("ocurrencias de capacitación", () => {
       recordTrainingOccurrenceStatus,
     } = await import("@/lib/services/prevention-training-occurrences")
 
-    await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)
-    const target = (await listTrainingOccurrences(ACCESS)).find((row) => row.code === "CAP-01")
+    await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID, 2026)
+    const target = (await listTrainingOccurrences(ACCESS, { year: 2026 })).find((row) => row.code === "CAP-01")
     if (!target) throw new Error("No se encontró la ocurrencia de prueba.")
 
     await inMemoryDb.insert(schema.preventionTrainingOccurrenceEvidence).values({

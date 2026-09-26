@@ -452,6 +452,7 @@ export async function handoverPdtpWorksiteAssignees(
   toProgramId: string,
   today: string,
   tx: Tx,
+  options: { onlyActiveUsers?: boolean } = {},
 ): Promise<number> {
   if (fromProgramIds.length === 0) return 0
   const [sourceActivities, targetActivities] = await Promise.all([
@@ -472,10 +473,19 @@ export async function handoverPdtpWorksiteAssignees(
     inArray(pdtpActivityWorksiteAssignees.activityId, sourceActivities.map((row) => row.id)),
     or(isNull(pdtpActivityWorksiteAssignees.validUntil), sql`${pdtpActivityWorksiteAssignees.validUntil} >= ${today}`),
   ))
+  // PREV-C03.1: al pasar al año siguiente no se traspasa a quien ya no tiene
+  // cuenta activa; dentro del mismo año (v+1) se conserva el comportamiento.
+  const activeUserIds = options.onlyActiveUsers && open.length > 0
+    ? new Set((await tx.select({ id: users.id }).from(users).where(and(
+        inArray(users.id, [...new Set(open.map((assignment) => assignment.userId))]),
+        eq(users.isActive, true),
+      ))).map((row) => row.id))
+    : null
   const now = new Date().toISOString()
   const rows = open.flatMap((assignment) => {
     const activityId = targetFor.get(assignment.activityId)
     if (!activityId) return []
+    if (activeUserIds && !activeUserIds.has(assignment.userId)) return []
     return [{
       id: `pdtp-assignee-${nanoid()}`,
       activityId,

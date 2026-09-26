@@ -62,6 +62,15 @@ export const pdtpPrograms = pgTable("pdtp_programs", {
   lastReopenedByUserId:  text("last_reopened_by_user_id").references(() => users.id),
   lastReopenedAt:        timestamp("last_reopened_at", { withTimezone: true, mode: "string" }),
   lastReopenReason:      text("last_reopen_reason"),
+  /**
+   * PREV-C03.6: cierre formal del año. Se marca en TODAS las versiones del año
+   * a la vez; con el año cerrado el programa deja de aceptar hechos tardíos
+   * (acreditación por evento, registros, desvíos) y no se puede archivar.
+   * Solo una versión ya fuera de operación (closed/archived) puede tenerlo.
+   */
+  yearClosedAt:          timestamp("year_closed_at", { withTimezone: true, mode: "string" }),
+  yearClosedByUserId:    text("year_closed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  yearCloseReason:       text("year_close_reason"),
   createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
   complianceTarget:      numeric("compliance_target", { precision: 5, scale: 2, mode: "number" }).notNull().default(0.9),
@@ -86,6 +95,7 @@ export const pdtpPrograms = pgTable("pdtp_programs", {
   check("pdtp_programs_year_check", sql`${table.year} BETWEEN 2024 AND 2100`),
   check("pdtp_programs_period_check", sql`${table.periodStart} IS NULL OR ${table.periodEnd} IS NULL OR ${table.periodStart} <= ${table.periodEnd}`),
   check("pdtp_programs_validity_check", sql`${table.validFrom} IS NULL OR ${table.validUntil} IS NULL OR ${table.validFrom} <= ${table.validUntil}`),
+  check("pdtp_programs_year_closed_status_check", sql`${table.yearClosedAt} IS NULL OR ${table.status} IN ('closed', 'archived')`),
   check("pdtp_programs_pesos_sum_check", sql`${table.pesoEjecucion} + ${table.pesoVerificacion} + ${table.pesoCierre} = 1`),
 ])
 

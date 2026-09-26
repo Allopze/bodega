@@ -14,6 +14,7 @@ import {
   getPdtpDocumentMetadata,
   listPdtpReconciliationCandidates,
   listPdtpProgramSheets,
+  getPdtpYearCloseReadiness,
 } from "@/lib/services/prevention-pdtp"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { listCatalogActivities } from "@/lib/services/pdtp/catalog-activities"
@@ -158,6 +159,11 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
     ? undefined
     : worksites.map((worksite) => worksite.id)
   const backlog = await countPdtpFulfillmentBacklog(programId, { worksiteIds: backlogWorksiteIds })
+  // PREV-C03.6: el cierre anual sólo se ofrece sobre la versión activa de un
+  // año que ya terminó (Chile). Durante el año no hay nada que mostrar.
+  const yearClose = program.status === "active" && canManageLifecycle && currentPeriod.year > program.year
+    ? await getPdtpYearCloseReadiness(programId)
+    : null
   const hasDigestRevisionIssue = backlog.digestDrift || backlog.digestVerificationUnavailable
   const showRevisionCta = shouldOfferPdtpRevision({
     digestDrift: hasDigestRevisionIssue,
@@ -329,6 +335,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
           program={program}
           permissions={{ canSubmitReview, canApprove, canSignLegal, canActivate, canManageLifecycle }}
           submitBlockers={submitBlockers}
+          yearClose={yearClose ? { year: yearClose.year, canClose: yearClose.canClose, blockers: yearClose.blockers } : null}
           approvalSteps={approvalProgress.map((step) => ({
             id: step.id,
             code: step.code,

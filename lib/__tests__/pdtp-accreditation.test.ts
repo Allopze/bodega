@@ -810,24 +810,58 @@ describe("revokePdtpAccreditation", () => {
 // ── Regresiones 2026-08-04 ────────────────────────────────────────────────────
 
 describe("evento fuera del año del programa", () => {
-  it("no acredita y lo reporta, en vez de sellar la fila con el año del programa", async () => {
-    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+  it("un hecho del año SIGUIENTE espera al programa de su año (PREV-C03.5): lanza PdtpNoActiveProgramError", async () => {
+    const { accreditPdtpFromEvent, PdtpNoActiveProgramError } = await import("@/lib/services/pdtp/accreditation")
 
-    // Único programa activo: el del año en curso. El evento ocurre al año siguiente.
-    const result = await accreditPdtpFromEvent({
+    // Único programa activo: el del año en curso. El evento ocurre al año
+    // siguiente, cuando su programa todavía no se activa. Antes devolvía
+    // `skippedOutOfPeriod` y el libro lo dejaba `rejected` (terminal): un hecho
+    // de enero nunca se acreditaba al activar el año nuevo.
+    await expect(accreditPdtpFromEvent({
       sourceType: "capacitacion",
       sourceId: "sesion-anio-siguiente",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
       occurredAt: `${PROGRAM_YEAR + 1}-01-20T12:00:00.000Z`,
-    })
-
-    expect(result.accredited).toHaveLength(0)
-    expect(result.skippedOutOfPeriod).toMatchObject({ occurredYear: PROGRAM_YEAR + 1, programYear: PROGRAM_YEAR })
+    })).rejects.toBeInstanceOf(PdtpNoActiveProgramError)
 
     // Antes esto creaba una ejecución del año del programa, mes 1, indistinguible de una real.
     const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
     expect(rows).toHaveLength(0)
+  })
+
+  it("un hecho de un año ANTERIOR sin programa propio sigue reportándose como fuera de período", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    const result = await accreditPdtpFromEvent({
+      sourceType: "capacitacion",
+      sourceId: "sesion-anio-anterior",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: `${PROGRAM_YEAR - 1}-11-20T12:00:00.000Z`,
+    })
+    expect(result.accredited).toHaveLength(0)
+    expect(result.skippedOutOfPeriod).toMatchObject({ occurredYear: PROGRAM_YEAR - 1, programYear: PROGRAM_YEAR })
+    expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(0)
+  })
+
+  it("un año formalmente cerrado (PREV-C03.6) rechaza los hechos tardíos con su motivo", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ status: "closed", yearClosedAt: new Date().toISOString(), yearCloseReason: "Cierre anual de prueba" })
+      .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+    const result = await accreditPdtpFromEvent({
+      sourceType: "capacitacion",
+      sourceId: "sesion-tardia",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: `${PROGRAM_YEAR}-06-20T12:00:00.000Z`,
+    })
+    expect(result.accredited).toHaveLength(0)
+    expect(result.skippedYearClosed).toMatchObject({ occurredYear: PROGRAM_YEAR, programId: PROGRAM_ID })
+    expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(0)
+
+    const { describePdtpRejection } = await import("@/lib/services/pdtp/backlog")
+    expect(describePdtpRejection(result)).toMatch(/cerrado formalmente/)
   })
 
   it("sí acredita cuando el año coincide, con el año de ocurrencia", async () => {

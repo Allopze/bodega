@@ -44,7 +44,7 @@ import {
   preventionTrainingCatalogItems,
   sstDocumentTypes,
 } from "@/db/schema"
-import { PREDEFINED_TRAINING_CATALOG_VERSION } from "@/lib/prevention/training-occurrences-catalog"
+import { PREDEFINED_TRAINING_CATALOG_VERSION, isTrainingCatalogYear, trainingCatalogVersionForYear } from "@/lib/prevention/training-occurrences-catalog"
 
 type QueryClient = DB | Tx
 
@@ -152,7 +152,12 @@ function emptySets(): PdtpInstrumentNumberSets {
  * del `inArray(courses.map(id))` que había antes: esa dependencia de datos era
  * el único motivo de que la carga fueran tres olas secuenciales en vez de una.
  */
-export async function loadPdtpInstrumentIndex(client: QueryClient = db): Promise<PdtpInstrumentIndex> {
+export async function loadPdtpInstrumentIndex(client: QueryClient = db, options: { year?: number } = {}): Promise<PdtpInstrumentIndex> {
+  // PREV-C03.4: el catálogo de capacitación que habilita las actividades es el
+  // del año del programa (2027 tiene su propia versión); sin año, el base.
+  const trainingCatalogVersion = options.year !== undefined && isTrainingCatalogYear(options.year)
+    ? trainingCatalogVersionForYear(options.year)
+    : PREDEFINED_TRAINING_CATALOG_VERSION
   const [templates, catalogItems, docTypes, campaigns, plans] = await Promise.all([
     client.select({
       id: preventionInspectionTemplates.id,
@@ -173,7 +178,7 @@ export async function loadPdtpInstrumentIndex(client: QueryClient = db): Promise
       isActive: preventionTrainingCatalogItems.isActive,
       n: preventionTrainingCatalogItems.pdtpActivityNumbers,
     }).from(preventionTrainingCatalogItems)
-      .where(eq(preventionTrainingCatalogItems.catalogVersion, PREDEFINED_TRAINING_CATALOG_VERSION)),
+      .where(eq(preventionTrainingCatalogItems.catalogVersion, trainingCatalogVersion)),
     client.select({
       id: sstDocumentTypes.id,
       code: sstDocumentTypes.code,

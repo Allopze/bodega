@@ -25,6 +25,7 @@ vi.mock("@/lib/services/prevention-pdtp", () => ({
   runPdtpActionPlanVencidasReminders: ok,
   runPdtpObligationReminders: ok,
   runPdtpSignaturePendingReminders: ok,
+  runPdtpYearCloseReminders: ok,
 }))
 vi.mock("@/lib/services/pdtp/fulfillment", () => ({ reconcilePdtpFulfillmentEvents: ok }))
 vi.mock("@/lib/services/pdtp/scheduled-instances", () => ({ reconcilePdtpScheduledInstances: ok }))

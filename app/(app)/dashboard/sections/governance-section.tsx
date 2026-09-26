@@ -3,8 +3,7 @@ import { KpiCard } from "@/components/ui/kpi-card"
 import { getDashboardCounters } from "@/lib/services/prevention-documents/search"
 import { getPpaStats } from "@/lib/services/ppa-module/calculos"
 import { getDashboardStats } from "@/lib/services/sst-module/dashboard"
-import { listTrainingOccurrences } from "@/lib/services/prevention-training-occurrences"
-import { resolvePredefinedTrainingCatalogYear } from "@/lib/prevention/training-occurrences-catalog"
+import { listTrainingOccurrences, resolveTrainingOccurrenceYear } from "@/lib/services/prevention-training-occurrences"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { DomainSection } from "../dashboard-domain-shell"
 import { periodScopeLabel } from "../dashboard-scope"
@@ -28,7 +27,7 @@ export async function GovernanceSection({ session, scope, worksiteScope, worksit
     has("prevention:training:view")
       ? listTrainingOccurrences(
           { userId: session.user.id, scope: worksiteScope, permissions },
-          { year: resolvePredefinedTrainingCatalogYear(undefined) },
+          { year: await resolveTrainingOccurrenceYear(undefined) },
         ).catch(() => [])
       : Promise.resolve([]),
   ])

@@ -5,6 +5,7 @@ import {
   getPdtpIsoWeek,
   listPdtpIsoWeeksIntersectingMonth,
   assertPdtpScheduleDefinitionWithinPeriod,
+  remapPdtpScheduleDefinitionToYear,
   type PdtpScheduleDefinition,
 } from "@/lib/services/pdtp/schedule-definition"
 
@@ -117,5 +118,63 @@ describe("PDTP schedule definitions", () => {
       { version: 1, kind: "event", triggerConnectorKey: "worker", triggerEventKey: "worker_created", dueValue: 24, dueUnit: "hour" },
       { startDate: "2027-01-01", endDate: "2027-12-31" },
     )).not.toThrow()
+  })
+})
+
+describe("remapPdtpScheduleDefinitionToYear — copia al año siguiente (PREV-C03.1)", () => {
+  const period2026 = { startDate: "2026-01-01", endDate: "2026-12-31" }
+  const period2027 = { startDate: "2027-01-01", endDate: "2027-12-31" }
+
+  it("deja intactas las definiciones sin fechas", () => {
+    for (const definition of [
+      null,
+      { version: 1, kind: "event", triggerConnectorKey: "worker", triggerEventKey: "worker_created", dueValue: 5, dueUnit: "day" },
+      { version: 1, kind: "on_demand", dueValue: 2, dueUnit: "hour" },
+      { version: 1, kind: "legacy_grid" },
+    ] as const) {
+      const result = remapPdtpScheduleDefinitionToYear(definition as PdtpScheduleDefinition | null, { sourcePeriod: period2026, targetYear: 2027 })
+      expect(result.definition).toEqual(definition)
+      expect(result.notes).toEqual([])
+    }
+  })
+
+  it("una fecha única se traslada al año destino; el 29 de febrero de un bisiesto cae al 28", () => {
+    expect(remapPdtpScheduleDefinitionToYear({ version: 1, kind: "one_time", date: "2026-04-15" }, { sourcePeriod: period2026, targetYear: 2027 }).definition)
+      .toEqual({ version: 1, kind: "one_time", date: "2027-04-15" })
+    const leap = remapPdtpScheduleDefinitionToYear(
+      { version: 1, kind: "one_time", date: "2028-02-29" },
+      { sourcePeriod: { startDate: "2028-01-01", endDate: "2028-12-31" }, targetYear: 2029 },
+    )
+    expect(leap.definition).toEqual({ version: 1, kind: "one_time", date: "2029-02-28" })
+    expect(leap.notes.map((note) => note.kind)).toContain("leap_day_moved")
+  })
+
+  it("una recurrencia de todo el año cubre todo el año destino", () => {
+    const result = remapPdtpScheduleDefinitionToYear({
+      version: 1, kind: "recurring", startDate: "2026-01-01", endDate: "2026-12-31", every: 1, unit: "month", dayOfMonth: 10,
+    }, { sourcePeriod: period2026, targetYear: 2027 })
+    expect(result.definition).toMatchObject({ startDate: "2027-01-01", endDate: "2027-12-31", every: 1, unit: "month", dayOfMonth: 10 })
+    expect(result.notes.map((note) => note.kind)).toEqual(["full_year"])
+    expect(() => assertPdtpScheduleDefinitionWithinPeriod(result.definition, period2027)).not.toThrow()
+  })
+
+  it("una semanal sin días explícitos conserva el día de la semana de origen", () => {
+    // 2026-01-05 es lunes; 2027-01-05 es martes. Sin fijar el día, la copia
+    // pasaba a programarse los martes.
+    const source: PdtpScheduleDefinition = { version: 1, kind: "recurring", startDate: "2026-01-05", endDate: "2026-12-28", every: 1, unit: "week" }
+    const result = remapPdtpScheduleDefinitionToYear(source, { sourcePeriod: period2026, targetYear: 2027 })
+    expect(result.definition).toMatchObject({ startDate: "2027-01-05", endDate: "2027-12-28", weekdays: [1] })
+    expect(result.notes.map((note) => note.kind)).toEqual(expect.arrayContaining(["weekdays_fixed", "partial_range"]))
+    const weekdays = expandPdtpScheduleDefinition(result.definition!, period2027).map((occurrence) => new Date(`${occurrence.scheduledFor}T12:00:00Z`).getUTCDay())
+    expect(new Set(weekdays)).toEqual(new Set([1]))
+  })
+
+  it("una recurrencia de todo un año bisiesto pasa entera al año siguiente", () => {
+    const result = remapPdtpScheduleDefinitionToYear(
+      { version: 1, kind: "recurring", startDate: "2028-01-01", endDate: "2028-12-31", every: 2, unit: "week", weekdays: [3] },
+      { sourcePeriod: { startDate: "2028-01-01", endDate: "2028-12-31" }, targetYear: 2029 },
+    )
+    expect(result.definition).toMatchObject({ startDate: "2029-01-01", endDate: "2029-12-31", weekdays: [3] })
+    expect(result.notes.map((note) => note.kind)).toEqual(expect.arrayContaining(["full_year", "phase_may_shift"]))
   })
 })

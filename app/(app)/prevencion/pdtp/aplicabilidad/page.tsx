@@ -8,7 +8,7 @@ import { pdtpActivities, pdtpActivityWorksiteAssignees, pdtpActivityWorksiteExcl
 import { and, desc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm"
 import { todayInChile } from "@/lib/utils"
 import { listPdtpProgramWorksites, resolveProgramWorksiteIds } from "@/lib/services/pdtp"
-import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
@@ -31,7 +31,8 @@ export default async function PdtpAplicabilidadPage() {
 
   // La matriz es operativa para el período actual. Un programa histórico
   // activo de otro año no debe desplazar la versión vigente de este período.
-  const period = currentPdtpPeriod()
+  // PREV-C03.7: el período operativo (en enero puede seguir siendo el año anterior).
+  const period = { year: (await getPdtpOperationalYears()).primary }
   const programs = await db.select().from(pdtpPrograms)
     .where(and(eq(pdtpPrograms.status, "active"), eq(pdtpPrograms.year, period.year)))
     .orderBy(desc(pdtpPrograms.version))

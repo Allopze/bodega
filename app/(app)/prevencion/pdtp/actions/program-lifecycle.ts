@@ -16,8 +16,9 @@ import {
   getPdtpApprovalStep,
   getPdtpProgram,
   assertAllRequiredPdtpApprovalStepsApproved,
+  closePdtpProgramYear,
 } from "@/lib/services/prevention-pdtp"
-import { reconcilePdtpFulfillmentEvents } from "@/lib/services/pdtp/fulfillment"
+import { drainPdtpFulfillmentEvents } from "@/lib/services/pdtp/fulfillment"
 import { withCronLock } from "@/lib/services/cron-lock"
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/prevention"
@@ -63,9 +64,11 @@ async function activatePdtpIfAllStepsApproved(programId: string, userId: string)
   // semanal recorre las mismas filas y las dos escrituras colisionarían contra
   // el índice único de ejecuciones. El programa ya quedó `active`, así que un
   // fallo aquí no debe reportarse como fallo de activación: se registra y se
-  // deja para que el cron semanal lo retome.
+  // deja para que el cron semanal lo retome. PREV-C03.5: se vacía el libro
+  // completo por lotes (con cursor), no sólo los 50 más antiguos: tras activar
+  // el programa del año nuevo esperan todos los hechos de enero.
   try {
-    await withCronLock("pdtp-fulfillment-reconcile", () => reconcilePdtpFulfillmentEvents({ limit: 50 }))
+    await withCronLock("pdtp-fulfillment-reconcile", () => drainPdtpFulfillmentEvents({ batchSize: 50 }))
   } catch (err) {
     logger.error({ err, programId }, "[pdtp-lifecycle] No se pudo reconciliar el libro de cumplimiento tras activar.")
   }
@@ -150,7 +153,7 @@ export async function activatePdtpProgramAction(programId: string): Promise<Acti
     // mismo candado propio. El programa ya quedó `active`, así que un fallo
     // de reconciliación no debe reportarse como fallo de activación.
     try {
-      await withCronLock("pdtp-fulfillment-reconcile", () => reconcilePdtpFulfillmentEvents({ limit: 50 }))
+      await withCronLock("pdtp-fulfillment-reconcile", () => drainPdtpFulfillmentEvents({ batchSize: 50 }))
     } catch (err) {
       logger.error({ err, programId }, "[pdtp-lifecycle] No se pudo reconciliar el libro de cumplimiento tras activar.")
     }
@@ -208,6 +211,26 @@ export async function archivePdtpProgramAction(programId: string, reason: string
   try {
     const parsed = pdtpProgramLifecycleReasonSchema.parse({ programId, reason })
     await archivePdtpProgram(parsed.programId, guard.session.user.id, parsed.reason)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${programId}`)
+    return { ok: true }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
+/**
+ * PREV-C03.6: cierre formal del año. Reutiliza el permiso de ciclo de vida
+ * (`prevention:pdtp:lifecycle:manage`, el mismo que reabre y archiva): cerrar el
+ * año es la misma clase de decisión sobre el expediente, con motivo auditable.
+ * No hace falta un permiso nuevo ni cambios de RBAC.
+ */
+export async function closePdtpProgramYearAction(programId: string, reason: string): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:lifecycle:manage")
+  if (guard.error) return guard.error
+  try {
+    const parsed = pdtpProgramLifecycleReasonSchema.parse({ programId, reason })
+    await closePdtpProgramYear(parsed.programId, guard.session.user.id, parsed.reason)
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${programId}`)
     return { ok: true }

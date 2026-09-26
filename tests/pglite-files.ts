@@ -145,6 +145,10 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-execution-integrity.test.ts",
   // C05-A: la revisión v+1 copia todo el contenido de la actividad.
   "lib/__tests__/pdtp-revision-midyear.test.ts",
+  // T5 (cambio de año 2027): transición, cierre anual y copia al año siguiente.
+  "lib/__tests__/pdtp-year-transition.test.ts",
+  "lib/__tests__/pdtp-year-close.test.ts",
+  "lib/__tests__/pdtp-year-copy.test.ts",
   // DEPLOY-0329: el SQL del chequeo de años con dos programas activos.
   "lib/__tests__/migration-preflight-pdtp-active.test.ts",
   "lib/__tests__/risk-map-gc.test.ts",

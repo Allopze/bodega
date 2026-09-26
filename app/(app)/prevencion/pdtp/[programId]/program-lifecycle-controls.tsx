@@ -22,6 +22,7 @@ import { pdtpProgramStatusLabel, pdtpProgramStatusVariant } from "@/lib/preventi
 import {
   activatePdtpProgramAction,
   archivePdtpProgramAction,
+  closePdtpProgramYearAction,
   decidePdtpApprovalStepAction,
   reopenRejectedPdtpProgramAction,
   submitPdtpProgramForReviewAction,
@@ -37,6 +38,17 @@ type ProgramLifecycle = {
   approvedByJdprAt: string | null
   approvedByLegalAt: string | null
   rejectionReason: string | null
+  /** PREV-C03.6: año del programa y cierre formal del año (todas sus versiones). */
+  year?: number
+  yearClosedAt?: string | null
+}
+
+/** Lo que el servidor calculó sobre el cierre anual (`getPdtpYearCloseReadiness`).
+ *  Sólo se entrega cuando el año del programa ya terminó y la versión está activa. */
+type YearCloseState = {
+  year: number
+  canClose: boolean
+  blockers: string[]
 }
 
 type LifecyclePermissions = {
@@ -64,7 +76,10 @@ function nextStep(program: ProgramLifecycle, pendingStep: ApprovalStepProgress |
   }
   if (program.status === "rejected") return "Corrige las observaciones y reabre una nueva versión de contenido."
   if (program.status === "active") return "La versión aprobada está vigente y su contenido base permanece bloqueado."
-  if (program.status === "closed") return "El expediente está cerrado y no admite nuevas ejecuciones."
+  if (program.status === "closed" && program.yearClosedAt) {
+    return `El año${program.year ? ` ${program.year}` : ""} está cerrado formalmente: no admite hechos nuevos ni tardíos.`
+  }
+  if (program.status === "closed") return "Reemplazada por una versión posterior: conserva la evidencia de su período y no admite nuevas ejecuciones."
   if (program.status === "archived") return "Esta versión se conserva solo como expediente histórico."
   if (pendingStep) return `Contenido congelado; falta completar: ${pendingStep.label}.`
   return "Todas las decisiones están completas; falta aceptar y activar la versión. La vigencia comenzará en ese momento."
@@ -75,11 +90,14 @@ export function ProgramLifecycleControls({
   permissions,
   approvalSteps,
   submitBlockers = [],
+  yearClose,
   children,
 }: {
   program: ProgramLifecycle
   permissions: LifecyclePermissions
   approvalSteps?: ApprovalStepProgress[]
+  /** PREV-C03.6: estado del cierre anual, si el año del programa ya terminó. */
+  yearClose?: YearCloseState | null
   /** Motivos por los que el contenido todavía no se puede enviar a revisión.
    *  El servidor los vuelve a comprobar; aquí se anticipan para que el operador
    *  no descubra el bloqueo recién al pulsar el botón. */
@@ -106,7 +124,9 @@ export function ProgramLifecycleControls({
   const pendingStep = steps.find((step) => step.isRequired && step.decision?.decision !== "approved")
 
   const canDecideCurrentStep = program.status === "in_review" && !!pendingStep?.canDecide
-  const canArchive = ["in_review", "rejected", "closed"].includes(program.status) && permissions.canManageLifecycle
+  // Un año cerrado formalmente es evidencia: no se archiva (el servidor también lo impide).
+  const canArchive = ["in_review", "rejected", "closed"].includes(program.status) && permissions.canManageLifecycle && !program.yearClosedAt
+  const showYearClose = program.status === "active" && !!yearClose && permissions.canManageLifecycle
 
   return (
     <section aria-labelledby="program-lifecycle-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -127,6 +147,13 @@ export function ProgramLifecycleControls({
             <Callout tone="warning" className="mt-2 max-w-3xl" title="Pendiente antes de enviar a revisión:">
               <ul className="list-disc space-y-0.5 pl-5">
                 {submitBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+              </ul>
+            </Callout>
+          )}
+          {showYearClose && yearClose && !yearClose.canClose && yearClose.blockers.length > 0 && (
+            <Callout tone="warning" className="mt-2 max-w-3xl" title={`Pendiente antes de cerrar el año ${yearClose.year}:`}>
+              <ul className="list-disc space-y-0.5 pl-5">
+                {yearClose.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
               </ul>
             </Callout>
           )}
@@ -185,6 +212,18 @@ export function ProgramLifecycleControls({
               confirmLabel="Reabrir versión"
               pending={pending}
               onConfirm={(reason) => run(() => reopenRejectedPdtpProgramAction(program.id, reason))}
+            />
+          )}
+          {showYearClose && yearClose && (
+            <ReasonAction
+              title={`Cerrar el año ${yearClose.year}`}
+              description={`Todas las versiones de ${yearClose.year} quedarán cerradas. Los hechos que lleguen después para ese año se rechazarán y quedarán visibles en el libro de cumplimiento, sus meses ya no se podrán reabrir y el año no se podrá archivar. No hay forma de deshacerlo desde la plataforma.`}
+              confirmLabel={`Cerrar el año ${yearClose.year}`}
+              destructive
+              disabled={!yearClose.canClose}
+              disabledReason="Resuelve primero los puntos pendientes listados arriba."
+              pending={pending}
+              onConfirm={(reason) => run(() => closePdtpProgramYearAction(program.id, reason))}
             />
           )}
           {canArchive && (
@@ -301,6 +340,8 @@ function ReasonAction({
   pending,
   destructive = false,
   variant = "secondary",
+  disabled = false,
+  disabledReason,
   onConfirm,
 }: {
   title: string
@@ -309,11 +350,17 @@ function ReasonAction({
   pending: boolean
   destructive?: boolean
   variant?: "secondary" | "ghost"
+  disabled?: boolean
+  disabledReason?: string
   onConfirm: (reason: string) => void
 }) {
   const [open, setOpen] = React.useState(false)
   const [reason, setReason] = React.useState("")
   const valid = reason.trim().length >= 10
+
+  if (disabled) {
+    return <Button size="sm" variant={destructive ? "destructive" : variant} disabled title={disabledReason}>{confirmLabel}</Button>
+  }
 
   function confirm() {
     if (!valid) return

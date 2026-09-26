@@ -17,7 +17,8 @@ import {
 import type { CgrdAccess } from "@/lib/services/prevention-cgrd-access"
 import { db } from "@/db"
 import { listGrdMeetingSlots, resolveProgramActivationPeriod } from "@/lib/services/prevention-program-slots"
-import { PROGRAM_SLOT_YEAR } from "@/lib/prevention/program-slots-2026"
+import { resolveProgramSlotYear } from "@/lib/prevention/program-slots-2026"
+import { getPdtpOperationalYears } from "@/lib/services/prevention-pdtp"
 import { CgrdWorkbench } from "./cgrd-workbench"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
@@ -28,7 +29,7 @@ const one = (value?: string | string[]) => Array.isArray(value) ? value[0] : val
 export default async function CgrdPage({
   searchParams,
 }: {
-  searchParams: Promise<{ faena?: string | string[] }>
+  searchParams: Promise<{ faena?: string | string[]; anio?: string | string[] }>
 }) {
   let session
   try { session = await requireAuth() }
@@ -68,12 +69,14 @@ export default async function CgrdPage({
   /* Las casillas cuelgan de la FAENA y no del comité, igual que la matriz: la
    * N°81 se espera aunque el comité todavía no esté constituido, y ésa es
    * justamente la brecha que el checklist tiene que mostrar. */
-  const meetingSlots = worksiteId ? await listGrdMeetingSlots(db, worksiteId) : []
-  const slotYear = PROGRAM_SLOT_YEAR
+  // PREV-C03.4/C03.7: el año de las casillas viene de ?anio o, si falta, del
+  // año operativo (en enero puede seguir siendo el anterior).
+  const slotYear = resolveProgramSlotYear(one(query.anio), (await getPdtpOperationalYears()).primary)
+  const meetingSlots = worksiteId ? await listGrdMeetingSlots(db, worksiteId, slotYear) : []
   const notApplicableSuggestion = worksiteId
     ? await suggestGrdSlotNotApplicableReason(worksiteId)
     : null
-  const activationPeriod = await resolveProgramActivationPeriod(worksiteId || undefined)
+  const activationPeriod = await resolveProgramActivationPeriod(worksiteId || undefined, slotYear)
 
   const latestMatrix = matrices.length > 0
     ? [...matrices].sort((a, b) => b.matrixVersion - a.matrixVersion)[0]!

@@ -232,7 +232,7 @@ describe("matriz GRD — borrador → publicada, N°80", () => {
 describe("casillas del programa del CGRD — N°81", () => {
   async function casillaYComite() {
     const { ensureGrdMeetingSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
-    await ensureGrdMeetingSlotsForWorksiteTx(inMemoryDb as unknown as DB, WS_A)
+    await ensureGrdMeetingSlotsForWorksiteTx(inMemoryDb as unknown as DB, WS_A, 2026)
     const committee = await constituteGrdCommittee({
       worksiteId: WS_A, name: "CGRD", constitutedOn: "2026-01-10",
       mandateEndsOn: "2028-01-10", evidenceUrl: EVIDENCE,
@@ -348,7 +348,7 @@ describe("actas de reunión — N°81", () => {
    * aunque la casilla ya esté marcada cumplida. */
   it("un acta tardía acredita la celda planificada de la casilla, no el mes real del acta", async () => {
     const { ensureGrdMeetingSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
-    await ensureGrdMeetingSlotsForWorksiteTx(inMemoryDb as unknown as DB, WS_A)
+    await ensureGrdMeetingSlotsForWorksiteTx(inMemoryDb as unknown as DB, WS_A, 2026)
     const [febrero] = await inMemoryDb.select().from(schema.preventionGrdMeetingSlots)
       .where(eq(schema.preventionGrdMeetingSlots.slotKey, "m02-w1"))
     expect(febrero).toMatchObject({ scheduledMonth: 2, scheduledWeek: 1 })

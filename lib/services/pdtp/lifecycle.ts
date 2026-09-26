@@ -113,6 +113,9 @@ export async function getActivePdtpProgram(year: number) {
   return program ?? null
 }
 
+/** PREV-C03.7: ver `operational-years.ts`. */
+export { getPdtpOperationalYears } from "./operational-years"
+
 type PdtpActivityRow = typeof pdtpActivities.$inferSelect
 
 /**
@@ -479,6 +482,22 @@ export async function activatePdtpProgram(programId: string, userId: string) {
     // C05-A: las asignaciones nominales vigentes pasan a la versión que entra
     // en vigencia, en la misma transacción que cierra la anterior.
     await handoverPdtpWorksiteAssignees(replaced.map((row) => row.id), programId, todayInChile(), tx)
+    // PREV-C03.1 (D20): el programa del año siguiente copiado desde el anterior
+    // no reemplaza a nadie (el año anterior sigue activo hasta su cierre), pero
+    // hereda sus asignaciones nominales vigentes al entrar en vigencia. Rigen
+    // desde el 1 de enero del año nuevo (o desde hoy, si ya empezó) y sólo para
+    // cuentas activas; las del año anterior quedan intactas.
+    const copiedFrom = (updated.sourceMetadataJson as { copiedFrom?: { programId?: unknown; year?: unknown } } | null)?.copiedFrom
+    if (
+      replaced.length === 0
+      && typeof copiedFrom?.programId === "string"
+      && typeof copiedFrom.year === "number"
+      && copiedFrom.year < updated.year
+    ) {
+      const today = todayInChile()
+      const yearStart = `${updated.year}-01-01`
+      await handoverPdtpWorksiteAssignees([copiedFrom.programId], programId, today > yearStart ? today : yearStart, tx, { onlyActiveUsers: true })
+    }
 
     await addPdtpChangeLogEntry(
       programId,
@@ -521,6 +540,12 @@ export async function activatePdtpProgram(programId: string, userId: string) {
     // N°19: una carpeta que ya estaba completa acredita el mes en curso desde
     // el día de la activación, sin esperar a la próxima carga ni al cron.
     await sweepPdtpLegalFolders({ programId })
+    // PREV-C03.4 (D22): las casillas del año (simulacros, CGRD, alcotest,
+    // higiene y capacitación) nacen al activar el programa de ese año, en cada
+    // faena operativa. Import dinámico: el agregador arrastra los servicios de
+    // cada submódulo y no tiene por qué cargarse con el ciclo de vida.
+    const { ensurePreventionProgramSlotsForProgram } = await import("@/lib/services/prevention-program-slots")
+    await ensurePreventionProgramSlotsForProgram(programId)
   } catch (error) {
     logger.error({ error, programId }, "[pdtp-lifecycle] No se pudieron materializar o reconciliar las instancias nuevas tras activar.")
   }
@@ -588,6 +613,9 @@ export async function archivePdtpProgram(programId: string, userId: string, rawR
     const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
     if (!program) throw new Error("Programa PDTP no encontrado.")
     if (program.status === "archived" && program.archivedByUserId === userId && program.archiveReason === reason) return program
+    // PREV-C03.6: un año cerrado formalmente es evidencia del programa. Archivarlo
+    // lo sacaría de las vistas y de la resolución de hechos por fecha.
+    if (program.yearClosedAt) throw new Error(`El programa pertenece a un año cerrado (${program.year}): no se puede archivar.`)
     if (!["in_review", "rejected", "closed"].includes(program.status)) {
       throw new Error("Solo se pueden archivar programas revisados, rechazados o cerrados.")
     }

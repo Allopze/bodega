@@ -21,44 +21,67 @@ const BASE = {
   contentDigest: "sha256:base-2026",
 }
 
+const CANDIDATE_2026 = { year: 2026, programId: "pdtp-2026-v2", version: 2, status: "active", activityCount: 85 }
+
+function hiddenValue(form: HTMLElement, name: string) {
+  return (form.querySelector(`input[type="hidden"][name="${name}"]`) as HTMLInputElement | null)?.value
+}
+
 describe("PdtpCreateProgramForm", () => {
-  it("muestra solo el año y el resumen de la Base", () => {
-    render(<PdtpCreateProgramForm suggestedYear={2027} existingYears={[2026]} baseRevision={BASE} />)
+  it("preselecciona copiar la versión vigente del año anterior y envía el origen (PREV-C03.1)", () => {
+    const { container } = render(<PdtpCreateProgramForm suggestedYear={2027} existingPrograms={[]} copyCandidates={[CANDIDATE_2026]} baseRevision={BASE} />)
 
     expect(screen.getByLabelText("Año del programa")).toHaveValue(2027)
-    expect(screen.getByText("Base preventiva para 2027")).toBeDefined()
-    expect(screen.getByText(/Revisión 1 · 87 actividades/)).toBeDefined()
+    const copy = screen.getByRole("radio", { name: /Copiar el programa 2026 \(v2\)/ })
+    expect(copy).toHaveAttribute("aria-checked", "true")
+    expect(screen.getByRole("radio", { name: /Base preventiva 2026/ })).toHaveAttribute("aria-checked", "false")
+    expect(hiddenValue(container, "origin")).toBe("previous_program")
+    expect(hiddenValue(container, "sourceProgramId")).toBe("pdtp-2026-v2")
     expect(screen.getByRole("button", { name: "Crear programa anual" })).toBeEnabled()
-    expect(screen.queryByText(/plantilla/i)).toBeNull()
-    expect(screen.queryByText(/programa vacío/i)).toBeNull()
   })
 
-  it("si el año ya existe, indica que abrirá el programa sin duplicarlo", () => {
-    render(<PdtpCreateProgramForm suggestedYear={2026} existingYears={[2026]} baseRevision={BASE} />)
-
-    expect(screen.getByText("Existente")).toBeDefined()
-    expect(screen.getByRole("button", { name: "Abrir programa anual" })).toBeEnabled()
-    expect(screen.getByText(/se abrirá el existente/i)).toBeDefined()
+  it("permite elegir la Base preventiva 2026 en vez de la copia", () => {
+    const { container } = render(<PdtpCreateProgramForm suggestedYear={2027} existingPrograms={[]} copyCandidates={[CANDIDATE_2026]} baseRevision={BASE} />)
+    fireEvent.click(screen.getByRole("radio", { name: /Base preventiva 2026/ }))
+    expect(hiddenValue(container, "origin")).toBe("base")
+    expect(hiddenValue(container, "sourceProgramId")).toBe("")
   })
 
-  it("actualiza el año mostrado y la decisión al cambiar el año", () => {
-    render(<PdtpCreateProgramForm suggestedYear={2027} existingYears={[2028]} baseRevision={BASE} />)
-
-    fireEvent.change(screen.getByLabelText("Año del programa"), { target: { value: "2028" } })
-    expect(screen.getByText("Base preventiva para 2028")).toBeDefined()
-    expect(screen.getByRole("button", { name: "Abrir programa anual" })).toBeEnabled()
+  it("sin programa anterior, ofrece solo la Base", () => {
+    const { container } = render(<PdtpCreateProgramForm suggestedYear={2027} existingPrograms={[]} copyCandidates={[]} baseRevision={BASE} />)
+    expect(screen.queryByRole("radio", { name: /Copiar el programa/ })).toBeNull()
+    expect(screen.getByRole("radio", { name: /Base preventiva 2026/ })).toHaveAttribute("aria-checked", "true")
+    expect(screen.getByText(/Revisión 1 · 87 actividades/)).toBeDefined()
+    expect(hiddenValue(container, "origin")).toBe("base")
   })
 
-  it("bloquea la creación mientras no exista una revisión de Base para el año", () => {
-    render(<PdtpCreateProgramForm suggestedYear={2027} existingYears={[]} baseRevision={null} />)
+  it("el candidato se recalcula al cambiar el año: solo sirven años anteriores", () => {
+    render(<PdtpCreateProgramForm
+      suggestedYear={2027}
+      existingPrograms={[]}
+      copyCandidates={[CANDIDATE_2026, { year: 2025, programId: "pdtp-2025-v1", version: 1, status: "closed", activityCount: 80 }]}
+      baseRevision={BASE}
+    />)
+    fireEvent.change(screen.getByLabelText("Año del programa"), { target: { value: "2026" } })
+    expect(screen.getByRole("radio", { name: /Copiar el programa 2025 \(v1\)/ })).toHaveAttribute("aria-checked", "true")
+  })
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Base 2027 no instalada")
+  it("si el año ya existe, lo dice, enlaza al existente y no ofrece crear otro", () => {
+    render(<PdtpCreateProgramForm
+      suggestedYear={2026}
+      existingPrograms={[{ year: 2026, id: "pdtp-2026-v2", creationMode: "base_2026", status: "active", version: 2 }]}
+      copyCandidates={[]}
+      baseRevision={BASE}
+    />)
+    expect(screen.getByText(/El programa 2026 ya existe/)).toBeDefined()
+    expect(screen.getByText(/creado desde la Base preventiva 2026/)).toBeDefined()
+    expect(screen.getByRole("link", { name: "Abrir el programa 2026" })).toHaveAttribute("href", "/prevencion/pdtp/pdtp-2026-v2")
+    expect(screen.queryByRole("button", { name: "Crear programa anual" })).toBeNull()
+  })
+
+  it("bloquea la creación si no hay programa anterior ni Base instalada", () => {
+    render(<PdtpCreateProgramForm suggestedYear={2027} existingPrograms={[]} copyCandidates={[]} baseRevision={null} />)
+    expect(screen.getByRole("alert")).toHaveTextContent("No hay desde dónde crear el programa 2027")
     expect(screen.getByRole("button", { name: "Crear programa anual" })).toBeDisabled()
-  })
-
-  it("permite abrir un año existente aunque la base no esté disponible", () => {
-    render(<PdtpCreateProgramForm suggestedYear={2027} existingYears={[2027]} baseRevision={null} />)
-
-    expect(screen.getByRole("button", { name: "Abrir programa anual" })).toBeEnabled()
   })
 })

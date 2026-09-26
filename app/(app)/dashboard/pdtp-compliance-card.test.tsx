@@ -57,4 +57,51 @@ describe("PdtpComplianceCard", () => {
     expect(screen.getByText(/Global · 3 faenas/)).toBeDefined()
     expect(container.querySelector('[style="width: 50%;"]')).toBeTruthy()
   })
+
+  // PREV-C03.7 (D23): el 1 de enero el resultado del año anterior no desaparece.
+  it("muestra una línea de cierre pendiente con enlace al año que se está cerrando", () => {
+    render(
+      <PdtpComplianceCard
+        year={2027}
+        closingYear={2026}
+        worksiteCount={3}
+        pendingCount={0}
+        target={0.9}
+        percent={0.1}
+        integralPercent={null}
+        planned={100}
+        executed={10}
+        expectedPercent={0.08}
+        variancePercent={2}
+        lastExecutionUpdatedAt={null}
+        month={1}
+        week={2}
+      />,
+    )
+    expect(screen.getByText("PDTP 2027")).toBeDefined()
+    const link = screen.getByRole("link", { name: /PDTP 2026 · cierre pendiente/ })
+    expect(link.getAttribute("href")).toBe("/prevencion/pdtp?anio=2026")
+  })
+
+  it("sin año en cierre no agrega la línea", () => {
+    render(
+      <PdtpComplianceCard
+        year={2026}
+        worksiteCount={1}
+        worksiteId="ws-1"
+        pendingCount={0}
+        target={0.9}
+        percent={0.5}
+        integralPercent={null}
+        planned={10}
+        executed={5}
+        expectedPercent={0.5}
+        variancePercent={0}
+        lastExecutionUpdatedAt={null}
+        month={7}
+        week={2}
+      />,
+    )
+    expect(screen.queryByText(/cierre pendiente/)).toBeNull()
+  })
 })

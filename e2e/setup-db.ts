@@ -2206,6 +2206,73 @@ async function main() {
     createdAt: now,
     updatedAt: now,
   })
+  /* PREV-C03.6/C03.7 (tanda T5): dos años propios, sin tocar el fixture 2026.
+   *
+   * - 2024 (cierre anual): activo, con la faena E2E como única faena y sus
+   *   doce cierres mensuales hechos. Es el único año que e2e/pdtp-cierre-anual
+   *   cierra; ningún otro spec lo lee.
+   * - 2025 (transición): activo y sin cerrar mientras corre el año civil
+   *   siguiente, que es exactamente la situación de enero con dos programas
+   *   activos (el reloj del servidor no se controla desde Playwright). El
+   *   tablero, /prevencion/pdtp y el menú de cierres deben mostrar su cierre
+   *   pendiente; e2e/pdtp-transicion-anual lo verifica sin mutarlo.
+   *
+   * Ninguno declara actividades: no agregan obligaciones, casillas ni opciones
+   * a los otros specs. */
+  await db.insert(schema.pdtpPrograms).values([
+    {
+      id: "pdtp-2024-e2e",
+      year: 2024,
+      version: 1,
+      status: "active",
+      appliesToAllWorksites: false,
+      title: "Programa PDTP 2024 E2E (cierre anual)",
+      periodStart: "2024-01-01",
+      periodEnd: "2024-12-31",
+      elaboratedByUserId: "user-admin-e2e",
+      elaboratedByName: "Admin E2E",
+      elaboratedByTitle: "Prevencionista",
+      activatedAt: "2024-01-02T12:00:00.000Z",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "pdtp-2025-e2e",
+      year: 2025,
+      version: 1,
+      status: "active",
+      appliesToAllWorksites: false,
+      title: "Programa PDTP 2025 E2E (transición)",
+      periodStart: "2025-01-01",
+      periodEnd: "2025-12-31",
+      elaboratedByUserId: "user-admin-e2e",
+      elaboratedByName: "Admin E2E",
+      elaboratedByTitle: "Prevencionista",
+      activatedAt: "2025-01-02T12:00:00.000Z",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+  await db.insert(schema.pdtpProgramWorksites).values([
+    { id: "pdtp-2024-e2e-ws", programId: "pdtp-2024-e2e", worksiteId: "ws-e2e", isActive: true, addedByUserId: "user-admin-e2e", addedAt: "2024-01-01T12:00:00.000Z" },
+    { id: "pdtp-2025-e2e-ws", programId: "pdtp-2025-e2e", worksiteId: "ws-e2e", isActive: true, addedByUserId: "user-admin-e2e", addedAt: "2025-01-01T12:00:00.000Z" },
+  ])
+  await db.insert(schema.pdtpPeriodClosures).values(Array.from({ length: 12 }, (_, index) => ({
+    id: `pdtp-2024-e2e-closure-${index + 1}`,
+    programId: "pdtp-2024-e2e",
+    worksiteId: "ws-e2e",
+    year: 2024,
+    month: index + 1,
+    status: "closed",
+    version: 1,
+    snapshotJson: {},
+    digest: "0".repeat(64),
+    closedByUserId: "user-admin-e2e",
+    closedAt: `2024-${String(index + 1).padStart(2, "0")}-28T12:00:00.000Z`,
+    closeReason: "Cierre mensual del fixture 2024",
+    createdAt: now,
+    updatedAt: now,
+  })))
   /* Catálogo corporativo de actividades preventivas.
    *
    * Desde `33490263 feat(pdtp): centralize preventive activities catalog` el

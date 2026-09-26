@@ -29,7 +29,7 @@ import {
   preventionTrainingCatalogItems,
   preventionTrainingOccurrences,
 } from "@/db/schema"
-import { PREDEFINED_TRAINING_CATALOG_VERSION } from "@/lib/prevention/training-occurrences-catalog"
+import { TRAINING_CATALOG_VERSIONS } from "@/lib/prevention/training-occurrences-catalog"
 import { chileDateParts } from "@/lib/utils"
 import { effectiveActivationFor, isPdtpPeriodOnOrAfterActivation } from "@/lib/services/pdtp/period"
 import {
@@ -66,7 +66,9 @@ export async function loadObligationBackedCatalogActivities(): Promise<Map<strin
       .from(preventionTrainingCatalogItems)
       .where(and(
         eq(preventionTrainingCatalogItems.isActive, true),
-        eq(preventionTrainingCatalogItems.catalogVersion, PREDEFINED_TRAINING_CATALOG_VERSION),
+        // PREV-C03.4: hay un catálogo por año; con dos programas activos
+        // (diciembre-enero) cuentan los dos.
+        inArray(preventionTrainingCatalogItems.catalogVersion, [...TRAINING_CATALOG_VERSIONS]),
       )),
   ])
   if (programs.length === 0 || items.length === 0) return new Map()

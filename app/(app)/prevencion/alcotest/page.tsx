@@ -11,7 +11,8 @@ import {
 } from "@/lib/services/prevention-alcotest"
 import { listAlcotestSlotsForWorksite, resolveAlcotestSlotFacts } from "@/lib/services/prevention-alcotest-slots"
 import { resolveProgramActivationPeriod } from "@/lib/services/prevention-program-slots"
-import { PROGRAM_SLOT_YEAR } from "@/lib/prevention/program-slots-2026"
+import { resolveProgramSlotYear } from "@/lib/prevention/program-slots-2026"
+import { getPdtpOperationalYears } from "@/lib/services/prevention-pdtp"
 import { formatDateTime } from "@/lib/utils"
 import { AlcotestWorkbench } from "./alcotest-workbench"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
@@ -25,7 +26,7 @@ function one(value: string | string[] | undefined) {
 export default async function AlcotestPage({
   searchParams,
 }: {
-  searchParams: Promise<{ faena?: string | string[] }>
+  searchParams: Promise<{ faena?: string | string[]; anio?: string | string[] }>
 }) {
   let session
   try { session = await requireAuth() }
@@ -47,12 +48,15 @@ export default async function AlcotestPage({
   const query = await searchParams
   const requested = one(query.faena)
   const worksiteId = worksites.some((item) => item.id === requested) ? requested! : worksites[0]?.id
+  // PREV-C03.4/C03.7: el año de las casillas viene de ?anio o, si falta, del
+  // año operativo (en enero puede seguir siendo el anterior).
+  const slotYear = resolveProgramSlotYear(one(query.anio), (await getPdtpOperationalYears()).primary)
 
   const slots = worksiteId
-    ? await listAlcotestSlotsForWorksite(scope, worksiteId, PROGRAM_SLOT_YEAR)
+    ? await listAlcotestSlotsForWorksite(scope, worksiteId, slotYear)
     : []
   const facts = await resolveAlcotestSlotFacts(slots)
-  const activationPeriod = await resolveProgramActivationPeriod(worksiteId)
+  const activationPeriod = await resolveProgramActivationPeriod(worksiteId, slotYear)
 
   const slotRows = slots.map((slot) => ({
     id: slot.id,
@@ -83,7 +87,7 @@ export default async function AlcotestPage({
       worksites={worksites}
       selectedWorksiteId={worksiteId ?? null}
       slotRows={slotRows}
-      slotYear={PROGRAM_SLOT_YEAR}
+      slotYear={slotYear}
       activationPeriod={activationPeriod}
       initialTests={tests}
       initialDispatches={dispatches}

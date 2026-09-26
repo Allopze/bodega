@@ -4,6 +4,9 @@ import {
   PREDEFINED_TRAINING_CATALOG_VERSION,
   PREDEFINED_TRAINING_CATALOG,
   resolvePredefinedTrainingCatalogYear,
+  resolveTrainingCatalogYear,
+  trainingCatalogVersionForYear,
+  isTrainingCatalogYear,
   occurrenceSeedRows,
 } from "@/lib/prevention/training-occurrences-catalog"
 
@@ -175,8 +178,27 @@ describe("catálogo predefinido de capacitación", () => {
       .toMatchObject({ scheduledMonth: 9, scheduledWeek: 4 })
   })
 
-  it("normaliza años no publicados al único programa operativo", () => {
+  it("normaliza años no publicados al programa base", () => {
     expect(resolvePredefinedTrainingCatalogYear("2025")).toBe(PREDEFINED_TRAINING_CATALOG_YEAR)
     expect(resolvePredefinedTrainingCatalogYear("no-es-un-año")).toBe(PREDEFINED_TRAINING_CATALOG_YEAR)
+  })
+
+  it("el catálogo es por año: 2027 existe como copia del 2026 con su propia versión (PREV-C03.4, D22)", () => {
+    expect(isTrainingCatalogYear(2027)).toBe(true)
+    expect(isTrainingCatalogYear(2025)).toBe(false)
+    expect(trainingCatalogVersionForYear(2026)).toBe("programa-capacitacion-2026-v1")
+    expect(trainingCatalogVersionForYear(2027)).toBe("programa-capacitacion-2027-v1")
+    expect(() => trainingCatalogVersionForYear(2025)).toThrow(/2025/)
+    // Ya no fuerza 2026: un año publicado se respeta; uno no publicado cae al respaldo.
+    expect(resolveTrainingCatalogYear("2027", 2026)).toBe(2027)
+    expect(resolveTrainingCatalogYear("2031", 2027)).toBe(2027)
+    expect(resolvePredefinedTrainingCatalogYear("2027")).toBe(2027)
+  })
+
+  it("siembra ocurrencias con ids del año pedido; un año sin catálogo no siembra nada", () => {
+    const rows = PREDEFINED_TRAINING_CATALOG.flatMap((item) => occurrenceSeedRows(item, "faena-1", 2027))
+    expect(rows).toHaveLength(390)
+    expect(rows.every((row) => row.year === 2027 && row.id.startsWith("training-occurrence-2027-"))).toBe(true)
+    expect(() => occurrenceSeedRows(PREDEFINED_TRAINING_CATALOG[0]!, "faena-1", 2025)).toThrow(/2025/)
   })
 })

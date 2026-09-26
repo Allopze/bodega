@@ -9,6 +9,7 @@ import {
   getMaterialEnvironmentalEvents,
 } from "@/lib/services/prevention-indicadores"
 import { getPdtpComplianceIndicatorsForScope } from "@/lib/services/pdtp/compliance"
+import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { loadPdtpComplianceSummary, PdtpComplianceCard } from "../pdtp-compliance-card"
 import { DomainSection } from "../dashboard-domain-shell"
@@ -28,6 +29,11 @@ import { pct } from "./shared"
 export async function PreventionSection({ session, worksiteScope, worksiteIds, currentYear }: DomainSectionsProps) {
   const permissions = session.user.permissions
   const has = (permission: string) => permissions.includes(permission)
+  // PREV-C03.7: el KPI del PDTP mide el año operativo (en enero puede seguir
+  // siendo el anterior); las tasas e indicadores siguen el año civil por norma.
+  const pdtpYear = has("prevention:pdtp:view")
+    ? (await getPdtpOperationalYears().catch(() => null))?.primary ?? currentYear
+    : currentYear
 
   const [capa, incidents, legal, risk, sstYear, envEvents, pdtpByWorksite, pdtpSummary] = await Promise.all([
     has("prevention:capa:view")
@@ -40,7 +46,7 @@ export async function PreventionSection({ session, worksiteScope, worksiteIds, c
     has("prevention:risk:view") ? getRiskDashboard({ userId: session.user.id, scope: worksiteScope, permissions }).catch(() => null) : Promise.resolve(null),
     has("prevention:indicadores:view") ? getCanonicalSafetyIndicatorYear(currentYear, worksiteScope).catch(() => null) : Promise.resolve(null),
     has("prevention:indicadores:view") ? getMaterialEnvironmentalEvents(currentYear, worksiteScope).catch(() => null) : Promise.resolve(null),
-    has("prevention:pdtp:view") ? getPdtpComplianceIndicatorsForScope(currentYear, worksiteIds).catch(() => null) : Promise.resolve(null),
+    has("prevention:pdtp:view") ? getPdtpComplianceIndicatorsForScope(pdtpYear, worksiteIds).catch(() => null) : Promise.resolve(null),
     /*
      * La tarjeta de cumplimiento PDTP vivía en el aside del Centro de Control.
      * Se muda acá, junto al resto del detalle preventivo: en el Resumen ahora
@@ -86,7 +92,7 @@ export async function PreventionSection({ session, worksiteScope, worksiteIds, c
         <>
           <KpiCard icon={<Certificate size={16} />} label="Cumplimiento PDTP"
             value={pdtpPercent === null ? "—" : `${Math.round(pdtpPercent * 100)}%`}
-            detail={pdtpPercent === null ? "Sin programa activo" : `Avance acreditado · año ${currentYear}`} href="/prevencion/pdtp" />
+            detail={pdtpPercent === null ? "Sin programa activo" : `Avance acreditado · año ${pdtpYear}`} href={`/prevencion/pdtp?anio=${pdtpYear}`} />
           <KpiCard icon={<Siren size={16} />} label="Incidentes abiertos" value={String(incidents.totalOpen)}
             detail={incidents.fatalOrSerious > 0 ? `${incidents.fatalOrSerious} fatal(es) o grave(s) · ahora` : "Ninguno fatal ni grave, ahora"}
             tone={incidents.fatalOrSerious > 0 ? "signal" : "neutral"} href="/prevencion/incidentes?quick=open" />

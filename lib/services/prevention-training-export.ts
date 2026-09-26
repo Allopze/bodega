@@ -2,12 +2,12 @@ import type { ReportCell, ReportData, ReportSheet } from "@/lib/reports/export"
 import { sanitizeCell as safeCell } from "@/lib/reports/export-module/excel-builder"
 import {
   listTrainingOccurrences,
+  resolveTrainingOccurrenceYear,
   type TrainingOccurrenceAccess,
 } from "@/lib/services/prevention-training-occurrences"
 import {
-  PREDEFINED_TRAINING_CATALOG,
-  PREDEFINED_TRAINING_CATALOG_VERSION,
-  resolvePredefinedTrainingCatalogYear,
+  trainingCatalogItemsForYear,
+  trainingCatalogVersionForYear,
 } from "@/lib/prevention/training-occurrences-catalog"
 import { todayInChile } from "@/lib/utils"
 
@@ -28,7 +28,7 @@ export async function buildTrainingOccurrenceExport(
     throw new Error("Registro de capacitación no encontrado o fuera de alcance.")
   }
 
-  const year = resolvePredefinedTrainingCatalogYear(filters.year)
+  const year = await resolveTrainingOccurrenceYear(filters.year)
   const worksiteId = filters.worksiteId?.trim() || undefined
   const occurrences = await listTrainingOccurrences(access, {
     year,
@@ -78,7 +78,7 @@ export async function buildTrainingOccurrenceExport(
     sheet(
       "Catálogo",
       ["Código", "Actividad", "Tipo", "Audiencia", "Fila fuente", "Cronograma", "Actividades PDTP", "Versión"],
-      PREDEFINED_TRAINING_CATALOG.map((item) => [
+      trainingCatalogItemsForYear(year).map((item) => [
         safeCell(item.code),
         safeCell(item.title),
         typeLabelForExport(item.itemType),
@@ -86,7 +86,7 @@ export async function buildTrainingOccurrenceExport(
         item.sourceRow,
         safeCell(item.schedule.map((slot) => scheduleLabelForExport(slot.month, slot.week)).join("; ")),
         safeCell(item.pdtpActivityNumbers.join(", ")),
-        safeCell(PREDEFINED_TRAINING_CATALOG_VERSION),
+        safeCell(trainingCatalogVersionForYear(year)),
       ]),
     ),
   ]

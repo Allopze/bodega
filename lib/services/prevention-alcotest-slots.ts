@@ -39,7 +39,6 @@ import {
 import {
   ALCOTEST_CONTROL_PDTP_ACTIVITY_NUMBERS,
   ALCOTEST_DISPATCH_PDTP_ACTIVITY_NUMBER,
-  PROGRAM_SLOT_YEAR,
   resolveAlcotestActivityNumber,
 } from "@/lib/prevention/program-slots-2026"
 import { assertWorksiteAccess, type WorksiteScope } from "@/lib/services/pdtp/helpers"
@@ -68,7 +67,7 @@ export type AlcotestSlotView = typeof preventionAlcotestSlots.$inferSelect & {
 export async function listAlcotestSlotsForWorksite(
   scope: WorksiteScope,
   worksiteId: string,
-  year = PROGRAM_SLOT_YEAR,
+  year: number,
   client: Client = db,
 ): Promise<AlcotestSlotView[]> {
   assertWorksiteAccess(worksiteId, scope)

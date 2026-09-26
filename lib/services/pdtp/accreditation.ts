@@ -115,6 +115,12 @@ export type AccreditationResult = {
    * para `loadProgramScheduleAndExecutions`, que filtra por `program.year`.
    */
   skippedOutOfPeriod?: { occurredYear: number; programYear: number; activityNumbers: number[]; catalogActivityIds?: string[] }
+  /**
+   * PREV-C03.6: el programa del año del hecho existe, pero su año ya se cerró
+   * formalmente (`yearClosedAt`). Un hecho tardío no se imputa a un año
+   * cerrado: queda rechazado y visible en el libro de cumplimiento.
+   */
+  skippedYearClosed?: { occurredYear: number; programId: string; activityNumbers: number[]; catalogActivityIds?: string[] }
 }
 
 export type AccreditationInput = {
@@ -245,7 +251,9 @@ type ResolvedProgramEvent =
   // El programa existe y está activo, pero no cubre el año del evento. Se
   // conserva `programYear` para que el caller (accreditPdtpFromEvent) pueda
   // seguir reportando `skippedOutOfPeriod` con el dato real, no un relleno.
-  | { ok: false; occurredYear: number; programYear: number }
+  | { ok: false; reason: "out_of_period"; occurredYear: number; programYear: number }
+  // PREV-C03.6: la versión del año existe, pero el año se cerró formalmente.
+  | { ok: false; reason: "year_closed"; occurredYear: number; programYear: number; programId: string }
 
 /**
  * Resuelve el programa activo aplicable a un evento (faena + fecha), con las
@@ -348,8 +356,24 @@ async function resolvePdtpActiveProgramForEvent(
   // debe explicar ese rechazo y dejar el evento en el libro de cumplimiento.
   // Si no existe una versión del año, conservamos un programa de otro año sólo
   // para devolver `skippedOutOfPeriod` con contexto, como antes.
-  const program = effectiveForDate[0]
-    ?? (sameYear.length === 0 ? applicable[0] ?? null : null)
+  const fallbackProgram = sameYear.length === 0 ? applicable[0] ?? null : null
+  /*
+   * PREV-C03.5: el hecho es de un año POSTERIOR al del programa vigente más
+   * reciente. Es el caso de todo enero mientras el programa del año nuevo se
+   * redacta o se firma: no hay que imputarlo al año anterior ni descartarlo,
+   * hay que esperar. `PdtpNoActiveProgramError` deja el evento reintentable
+   * (libro en `error` con la marca `[no-active-program]`, y en la rama
+   * transaccional del conector de inspecciones, `pending`), y el reconciliador
+   * lo acredita cuando se activa el programa de su año. Antes devolvía
+   * `ok:false`: el libro lo marcaba `rejected` —terminal— y el conector de
+   * inspecciones revertía el cierre del run.
+   */
+  if (!effectiveForDate[0] && fallbackProgram && occurredYear > fallbackProgram.year) {
+    throw new PdtpNoActiveProgramError(
+      `Aún no hay programa PDTP activo para ${occurredYear}; el hecho ${input.sourceType}:${input.sourceId} se acreditará al activarlo.`,
+    )
+  }
+  const program = effectiveForDate[0] ?? fallbackProgram
 
   if (!program) {
     throw new PdtpNoActiveProgramError(
@@ -390,7 +414,18 @@ async function resolvePdtpActiveProgramForEvent(
       },
       "[resolvePdtpActiveProgramForEvent] El evento ocurrió fuera del año del programa activo.",
     )
-    return { ok: false, occurredYear, programYear: program.year }
+    return { ok: false, reason: "out_of_period", occurredYear, programYear: program.year }
+  }
+
+  // PREV-C03.6: un año cerrado formalmente no admite hechos tardíos. Se
+  // comprueba después de la membresía para que una faena ajena siga
+  // explicándose como tal.
+  if (program.yearClosedAt) {
+    logger.warn(
+      { sourceType: input.sourceType, sourceId: input.sourceId, worksiteId: input.worksiteId, programId: program.id, occurredYear },
+      "[resolvePdtpActiveProgramForEvent] El año del hecho ya está cerrado formalmente.",
+    )
+    return { ok: false, reason: "year_closed", occurredYear, programYear: program.year, programId: program.id }
   }
 
   return { ok: true, program, occurredYear, slot }
@@ -557,6 +592,19 @@ export async function accreditPdtpFromEvent(
     },
     client,
   )
+  if (!resolved.ok && resolved.reason === "year_closed") {
+    return {
+      accredited: [],
+      skippedExcluded: [],
+      skippedNotFound: [],
+      skippedYearClosed: {
+        occurredYear: resolved.occurredYear,
+        programId: resolved.programId,
+        activityNumbers,
+        ...(catalogActivityIds.length > 0 ? { catalogActivityIds } : {}),
+      },
+    }
+  }
   if (!resolved.ok) {
     return {
       accredited: [],
