@@ -14,7 +14,16 @@ import type { ReportData, ReportCell, ReportSheet } from "@/lib/reports/export"
 import { listActionsByProgram, countActionsByExecution } from "./action-plan"
 import { listFollowups } from "./followups"
 import { readPdtpActivityContent } from "./activity-content"
-import { deriveActivityStatus, filterPdtpRowsFromActivation, type PdtpActivityStatus, type PdtpPeriod } from "./period"
+import {
+  countOverdueMonths,
+  currentPdtpPeriod,
+  deriveActivityStatus,
+  effectiveActivationFor,
+  filterPdtpRowsFromActivation,
+  type PdtpActivityStatus,
+  type PdtpActivityStatusOptions,
+  type PdtpPeriod,
+} from "./period"
 import { effectiveApprovedExecutionsByCell, pdtpCountedExecuted } from "./compliance"
 
 /**
@@ -161,6 +170,8 @@ export type PdtpAggregateActivityWorksite = {
   planned: number
   executed: number
   status: PdtpActivityStatus
+  /** Meses vencidos e impagos en esta faena (badge "Atrasado · N meses"). */
+  overdueMonths: number
   /** Valores previos a la activación, dentro de la aplicabilidad declarada. */
   historicalPlanned: number
   historicalExecuted: number
@@ -207,13 +218,19 @@ export async function getPdtpAggregatedSheetViewByProgram(
   sheetCode: string,
   worksiteIds: string[],
   period: PdtpPeriod,
+  /** Hoy, para el corte de lo vencido (`pdtpOverdueCutoffMonth`). */
+  today: PdtpPeriod = currentPdtpPeriod(),
 ): Promise<PdtpAggregatedSheetView | null> {
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) return null
-  const members = await db.select({ worksiteId: pdtpProgramWorksites.worksiteId })
+  // La misma lectura trae la incorporación de cada faena: el corte de
+  // exigibilidad es por faena (`effectiveActivationFor`), una sola consulta
+  // para todas en vez de una por faena.
+  const members = await db.select({ worksiteId: pdtpProgramWorksites.worksiteId, addedAt: pdtpProgramWorksites.addedAt })
     .from(pdtpProgramWorksites)
     .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true)))
   const memberIds = new Set(members.map((member) => member.worksiteId))
+  const addedAtByWorksite = new Map(members.map((member) => [member.worksiteId, member.addedAt]))
   const authorizedWorksiteIds = members.length === 0
     ? (program.appliesToAllWorksites ? [...new Set(worksiteIds)] : [])
     : [...new Set(worksiteIds.filter((worksiteId) => memberIds.has(worksiteId)))]
@@ -229,12 +246,18 @@ export async function getPdtpAggregatedSheetViewByProgram(
     db.select().from(pdtpActivities).where(and(inArray(pdtpActivities.id, activityIds), eq(pdtpActivities.programId, programId))),
     Promise.all(authorizedWorksiteIds.map(async (worksiteId) => ({ worksiteId, ...(await loadProgramScheduleAndExecutions(activityIds, program.year, worksiteId)) }))),
   ])
-  const effectivePerWorksite = loadedPerWorksite.map((entry) => ({
-    ...entry,
-    scheduleRows: filterPdtpRowsFromActivation(entry.scheduleRows, program.activatedAt),
-    executionRows: filterPdtpRowsFromActivation(entry.executionRows, program.activatedAt),
-    deviationRows: filterPdtpRowsFromActivation(entry.deviationRows, program.activatedAt),
-  }))
+  // PREV-C06: cada faena se recorta desde su propia incorporación. Con el corte
+  // único del programa, una faena incorporada en junio arrastraba las casillas
+  // de marzo y la planilla la marcaba atrasada.
+  const effectivePerWorksite = loadedPerWorksite.map((entry) => {
+    const cutoff = effectiveActivationFor(program.activatedAt, addedAtByWorksite.get(entry.worksiteId) ?? null)
+    return {
+      ...entry,
+      scheduleRows: filterPdtpRowsFromActivation(entry.scheduleRows, cutoff),
+      executionRows: filterPdtpRowsFromActivation(entry.executionRows, cutoff),
+      deviationRows: filterPdtpRowsFromActivation(entry.deviationRows, cutoff),
+    }
+  })
   // La vista agregada mezcla faenas: los desvíos se concatenan (cada uno
   // pertenece a una faena concreta) y "no realizada" se suma, igual que
   // `planned`/`executed`.
@@ -329,15 +352,24 @@ export async function getPdtpAggregatedSheetViewByProgram(
         .forEach((executed, index) => { historicalExecutedByMonth[index]! += executed })
       countedTotalExecuted += countedTotal(historicalPlannedByMonth, historicalExecutedByMonth)
       effectiveCountedTotalExecuted += countedTotal(plannedByMonth, executedByMonth)
+      // D9: un envío pendiente de aprobación paga el mes para el estado (no
+      // para el indicador, que sigue contando sólo lo aprobado).
+      const submittedByMonth = Array.from({ length: 12 }, () => 0)
+      for (const row of executionRows) {
+        if (row.activityId === activity.id && row.status === "submitted") submittedByMonth[row.month - 1]! += row.executedQuantity
+      }
+      const statusOptions: PdtpActivityStatusOptions = {
+        monthlyNotPerformed: monthlyNotPerformedFrom(deviationRows.filter((row) => row.activityId === activity.id)),
+        monthlySubmitted: submittedByMonth,
+        programYear: program.year,
+        today,
+      }
       return {
         worksiteId,
         planned: plannedByMonth.reduce((sum, value) => sum + value, 0),
         executed: executedByMonth.reduce((sum, value) => sum + value, 0),
-        status: deriveActivityStatus(plannedByMonth, executedByMonth, period, {
-          monthlyNotPerformed: monthlyNotPerformedFrom(
-            deviationRows.filter((row) => row.activityId === activity.id),
-          ),
-        }),
+        status: deriveActivityStatus(plannedByMonth, executedByMonth, period, statusOptions),
+        overdueMonths: countOverdueMonths(plannedByMonth, executedByMonth, period, statusOptions),
         historicalPlanned: historicalPlannedByMonth.reduce((sum, value) => sum + value, 0),
         historicalExecuted: historicalExecutedByMonth.reduce((sum, value) => sum + value, 0),
       }
@@ -384,8 +416,12 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
   // servicio también se consume desde rutas históricas y callers internos.
   // No permitas que un `programId + faena` directo lea planificación o
   // ejecuciones fuera del alcance declarado por el programa.
+  // PREV-C06: el corte de exigibilidad de la faena es el más tardío entre la
+  // activación del programa y su incorporación (`effectiveActivationFor`); la
+  // misma consulta de membresía trae `addedAt`.
+  let activationCutoff: string | null | undefined = program.activatedAt
   if (worksiteId) {
-    const members = await db.select({ worksiteId: pdtpProgramWorksites.worksiteId })
+    const members = await db.select({ worksiteId: pdtpProgramWorksites.worksiteId, addedAt: pdtpProgramWorksites.addedAt })
       .from(pdtpProgramWorksites)
       .where(and(
         eq(pdtpProgramWorksites.programId, programId),
@@ -397,6 +433,10 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
       ? program.appliesToAllWorksites || !["active", "closed"].includes(program.status)
       : members.some((member) => member.worksiteId === worksiteId)
     if (!allowed) return null
+    activationCutoff = effectiveActivationFor(
+      program.activatedAt,
+      members.find((member) => member.worksiteId === worksiteId)?.addedAt ?? null,
+    )
   }
 
   const sheet = await resolveSheetForProgram(programId, sheetCode)
@@ -424,7 +464,7 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
   // Los desvíos ya vienen filtrados por exclusión y vigencia desde la costura
   // única; acá sólo se recortan desde la activación, igual que el resto de lo
   // que la vista muestra como "efectivo".
-  const deviationRows = filterPdtpRowsFromActivation(loaded.deviationRows, program.activatedAt)
+  const deviationRows = filterPdtpRowsFromActivation(loaded.deviationRows, activationCutoff)
   const deviationsByActivity = new Map<string, DeviationRow[]>()
   for (const row of deviationRows) {
     const current = deviationsByActivity.get(row.activityId) ?? []
@@ -463,7 +503,7 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
     // from a different program that was filtered out above).
     if (!activity) continue
     const schedule = (scheduleByActivity.get(activity.id) ?? []).sort((a, b) => a.month - b.month || a.week - b.week)
-    const effectiveSchedule = filterPdtpRowsFromActivation(schedule, program.activatedAt)
+    const effectiveSchedule = filterPdtpRowsFromActivation(schedule, activationCutoff)
     const monthlyPlanned = Array.from({ length: 12 }, () => 0)
     const monthlyExecuted = Array.from({ length: 12 }, () => 0)
     const effectiveMonthlyPlanned = Array.from({ length: 12 }, () => 0)
@@ -497,7 +537,7 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
     for (const cell of effectiveSchedule) {
       effectiveMonthlyPlanned[cell.month - 1] = (effectiveMonthlyPlanned[cell.month - 1] ?? 0) + cell.plannedQuantity
     }
-    const effectiveActivityExecutions = filterPdtpRowsFromActivation(activityExecutions, program.activatedAt)
+    const effectiveActivityExecutions = filterPdtpRowsFromActivation(activityExecutions, activationCutoff)
     approvedExecutedByMonth(effectiveActivityExecutions).forEach((executed, index) => {
       effectiveMonthlyExecuted[index] = (effectiveMonthlyExecuted[index] ?? 0) + executed
       approvedMonthlyExecuted[index] = (approvedMonthlyExecuted[index] ?? 0) + executed

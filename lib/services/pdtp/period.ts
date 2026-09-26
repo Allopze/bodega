@@ -179,37 +179,95 @@ export function filterPdtpRowsFromActivation<T extends PdtpPeriodRow>(
 }
 
 /**
- * Cuántos desvíos `not_performed` activos tiene la actividad en cada mes
- * (índice 0 = enero). Lo arma `sheets.ts` a partir de `deviationRows` de la
- * costura única; omitirlo deja el comportamiento previo a los desvíos.
+ * Hasta qué mes (1–12, inclusive) del programa `programYear` hay deuda
+ * **vencida**: un mes vence cuando terminó, tanto para el período que se está
+ * mirando como para hoy. `0` = nada vencido todavía.
+ *
+ * - Año en curso: los meses anteriores al menor entre el mes mirado y el de
+ *   hoy. Mirar septiembre en mayo no vuelve vencidos junio y julio.
+ * - Año ya terminado: los meses anteriores al mirado, salvo que se mire
+ *   diciembre —que es como `pdtpReferencePeriodForYear` lee un año en cierre—:
+ *   entonces diciembre también terminó y vencen los 12.
+ * - Año que no empieza: nada.
+ *
+ * PREV-C06: sin este corte el estado sólo miraba el mes en curso, y una
+ * trimestral no hecha en marzo se leía en mayo como "No programada".
  */
-export type PdtpActivityStatusOptions = { monthlyNotPerformed?: number[] }
+export function pdtpOverdueCutoffMonth(programYear: number, period: PdtpPeriod, today: PdtpPeriod = period): number {
+  const todayCut = programYear < today.year ? 12 : programYear > today.year ? 0 : today.month - 1
+  const periodCut = period.year > programYear
+    ? 12
+    : period.year < programYear
+      ? 0
+      : programYear < today.year && period.month === 12 ? 12 : period.month - 1
+  return Math.max(0, Math.min(todayCut, periodCut))
+}
+
+/**
+ * Datos opcionales del estado de una actividad. Todos son por mes (índice
+ * 0 = enero).
+ *
+ * - `monthlyNotPerformed`: desvíos `not_performed` activos. Lo arma
+ *   `sheets.ts` desde la costura única.
+ * - `monthlySubmitted`: cantidad enviada y aún sin revisar (D9: "un envío paga
+ *   el mes"). Un mes con un envío pendiente no es deuda muda: el responsable
+ *   ya respondió y lo que falta es la revisión.
+ * - `programYear` y `today`: alimentan `pdtpOverdueCutoffMonth`. Sin ellos el
+ *   año es el del período y hoy es el propio período, que es el
+ *   comportamiento previo (vencen los meses anteriores al mirado) y mantiene
+ *   la función pura.
+ */
+export type PdtpActivityStatusOptions = {
+  monthlyNotPerformed?: number[]
+  monthlySubmitted?: number[]
+  programYear?: number
+  today?: PdtpPeriod
+}
 
 /** Un mes con un "no realizada" declarado ya está explicado: no es deuda muda. */
 function hasDeclaredNotPerformed(options: PdtpActivityStatusOptions | undefined, monthIndex: number): boolean {
   return (options?.monthlyNotPerformed?.[monthIndex] ?? 0) > 0
 }
 
+function overdueCutoff(period: PdtpPeriod, options: PdtpActivityStatusOptions | undefined): number {
+  return pdtpOverdueCutoffMonth(options?.programYear ?? period.year, period, options?.today ?? period)
+}
+
+/**
+ * Un mes vencido es deuda cuando tenía plan, no tiene ejecución, no tiene un
+ * envío esperando revisión (D9) y nadie declaró por qué no se hizo.
+ */
+function isUnpaidMonth(
+  monthlyPlanned: number[],
+  monthlyExecuted: number[],
+  monthIndex: number,
+  options: PdtpActivityStatusOptions | undefined,
+): boolean {
+  const planned = monthlyPlanned[monthIndex] ?? 0
+  const executed = monthlyExecuted[monthIndex] ?? 0
+  const submitted = options?.monthlySubmitted?.[monthIndex] ?? 0
+  return planned > 0 && executed === 0 && submitted === 0 && !hasDeclaredNotPerformed(options, monthIndex)
+}
+
 /**
  * Derive the status of a single activity for a given period.
  *
- * Status rules:
- * - 'not_scheduled': nothing planned this month (monthlyPlanned[month - 1] is 0 or undefined)
- * - 'executed': something executed this month (monthlyExecuted[month - 1] > 0)
- * - 'not_performed': nada ejecutado este mes, pero hay un desvío "no
- *   realizada" activo que declara el motivo (`options.monthlyNotPerformed`)
- * - 'overdue': planned in an earlier month with nothing executed
- * - 'pending': planned this month, not executed, no earlier unexecuted months
+ * PREV-C06: la deuda vencida se evalúa **primero**. Si algún mes ya vencido
+ * (`pdtpOverdueCutoffMonth`) quedó impago, la actividad está `overdue` sin
+ * importar qué pase en el mes en curso: ni "no programada este mes" ni una
+ * ejecución de este mes esconden un mes anterior en cero.
  *
- * Una ejecución gana sobre la declaración: si el mes tiene ejecutado > 0 el
- * estado es `executed` aunque quede un desvío colgando (de hecho
- * `markPdtpExecution` retira el `not_performed` al registrar cantidad > 0).
+ * Sin deuda vencida, manda el mes en curso:
+ * - 'not_scheduled': nada planificado este mes;
+ * - 'executed': algo ejecutado este mes;
+ * - 'not_performed': sin ejecutar, con un desvío "no realizada" que declara
+ *   el motivo;
+ * - 'pending': planificado este mes y sin ejecutar.
  *
- * Un mes **anterior** con un `not_performed` declarado no produce `overdue`:
- * la deuda está explicada y la actividad no se arrastra como atrasada mes a
- * mes por algo que ya tiene motivo registrado. Lo que no cambia es el
- * indicador: `compliance.ts` sigue contando esa celda en cero (el planificado
- * no se toca), y este estado sólo describe cómo se muestra.
+ * Un mes vencido con un `not_performed` declarado, o con un envío pendiente
+ * de aprobación (D9), no produce `overdue`: la deuda está explicada o espera
+ * revisión. Lo que no cambia es el indicador: `compliance.ts` sigue contando
+ * esa celda en cero hasta que se apruebe.
  */
 export function deriveActivityStatus(
   monthlyPlanned: number[],
@@ -217,44 +275,19 @@ export function deriveActivityStatus(
   period: PdtpPeriod,
   options?: PdtpActivityStatusOptions,
 ): PdtpActivityStatus {
+  if (countOverdueMonths(monthlyPlanned, monthlyExecuted, period, options) > 0) return "overdue"
+
   const currentMonthPlanned = monthlyPlanned[period.month - 1] ?? 0
   const currentMonthExecuted = monthlyExecuted[period.month - 1] ?? 0
-
-  // If nothing planned this month
-  if (currentMonthPlanned === 0 || currentMonthPlanned === undefined) {
-    return "not_scheduled"
-  }
-
-  // If something executed this month
-  if (currentMonthExecuted > 0) {
-    return "executed"
-  }
-
-  if (hasDeclaredNotPerformed(options, period.month - 1)) {
-    return "not_performed"
-  }
-
-  // Check if there are any earlier unexecuted planned months
-  for (let i = 0; i < period.month - 1; i++) {
-    const planned = monthlyPlanned[i] ?? 0
-    const executed = monthlyExecuted[i] ?? 0
-    if (planned > 0 && executed === 0 && !hasDeclaredNotPerformed(options, i)) {
-      return "overdue"
-    }
-  }
-
-  // Planned this month, not executed, no earlier unexecuted months
+  if (currentMonthPlanned === 0) return "not_scheduled"
+  if (currentMonthExecuted > 0) return "executed"
+  if (hasDeclaredNotPerformed(options, period.month - 1)) return "not_performed"
   return "pending"
 }
 
 /**
- * Count how many past months have planned but zero executed activity.
- * Used to derive badge severity (e.g. "Atrasado · 2 meses").
- * Returns 0 if status is not "overdue".
- *
- * Misma regla que `deriveActivityStatus`: un mes con "no realizada" declarada
- * no engrosa el contador — si lo hiciera, el badge diría "Atrasado · 2 meses"
- * sobre meses que el propio badge de estado ya dejó de considerar atrasados.
+ * Cuántos meses vencidos quedaron impagos (misma regla que
+ * `deriveActivityStatus`). Alimenta el badge "Atrasado · 2 meses".
  */
 export function countOverdueMonths(
   monthlyPlanned: number[],
@@ -262,13 +295,55 @@ export function countOverdueMonths(
   period: PdtpPeriod,
   options?: PdtpActivityStatusOptions,
 ): number {
+  const cutoff = overdueCutoff(period, options)
   let count = 0
-  for (let i = 0; i < period.month - 1; i++) {
-    const planned = monthlyPlanned[i] ?? 0
-    const executed = monthlyExecuted[i] ?? 0
-    if (planned > 0 && executed === 0 && !hasDeclaredNotPerformed(options, i)) count++
+  for (let i = 0; i < cutoff; i++) {
+    if (isUnpaidMonth(monthlyPlanned, monthlyExecuted, i, options)) count++
   }
   return count
+}
+
+/**
+ * Primer mes vencido e impago (1–12), o `null`. El formulario "Registrar" de
+ * una actividad atrasada abre ahí: la deuda más antigua es la que se salda
+ * primero.
+ */
+export function pdtpFirstOverdueMonth(
+  monthlyPlanned: number[],
+  monthlyExecuted: number[],
+  period: PdtpPeriod,
+  options?: PdtpActivityStatusOptions,
+): number | null {
+  const cutoff = overdueCutoff(period, options)
+  for (let i = 0; i < cutoff; i++) {
+    if (isUnpaidMonth(monthlyPlanned, monthlyExecuted, i, options)) return i + 1
+  }
+  return null
+}
+
+/**
+ * Orden de gravedad para agregar estados entre faenas: atrasada, no
+ * realizada, pendiente, ejecutada, no programada.
+ */
+const PDTP_STATUS_SEVERITY: Record<PdtpActivityStatus, number> = {
+  overdue: 4,
+  not_performed: 3,
+  pending: 2,
+  executed: 1,
+  not_scheduled: 0,
+}
+
+/**
+ * Estado de una actividad sobre varias faenas: el **peor caso** (D9). Sumar
+ * primero plan y ejecución entre faenas y derivar después dejaba que la
+ * ejecución de una faena tapara el mes en cero de otra.
+ */
+export function aggregatePdtpActivityStatus(statuses: readonly PdtpActivityStatus[]): PdtpActivityStatus {
+  let worst: PdtpActivityStatus = "not_scheduled"
+  for (const status of statuses) {
+    if (PDTP_STATUS_SEVERITY[status] > PDTP_STATUS_SEVERITY[worst]) worst = status
+  }
+  return worst
 }
 
 /**
@@ -279,28 +354,21 @@ export function countOverdueMonths(
  * `approvedExecutionRows`), llevado al visor de actividades para que el
  * enlace del indicador muestre lo mismo que cuenta.
  *
- * `pending` y `overdue` son ambos "cero ejecución este mes" para
- * `deriveActivityStatus` — la única diferencia entre ellos es si además hay
- * un mes *anterior* con el mismo hueco — así que "en cero" es su unión.
+ * Es un criterio **del mes**, no de la actividad: desde PREV-C06 una
+ * actividad con deuda anterior es `overdue` aunque este mes esté ejecutado,
+ * así que este filtro ya no se deriva de `deriveActivityStatus` —lo haría
+ * contar actividades que el indicador no cuenta—.
  *
  * `coverage` y `closed_on_time` quedan excluidos, igual que en
  * `compliance.ts`: tienen su propia regla todo-o-nada y un cero ahí significa
  * "no se acreditó el padrón/plazo", no "no se hizo nada".
  *
  * `approvedMonthlyExecuted` **debe** venir filtrado a solo `status ===
- * "approved"` — no pasar `effectiveMonthlyExecuted` de `PdtpSheetView`, que
- * cuenta cualquier estado (`submitted` incluida) y es correcto para la tabla
- * pero no para este filtro: una ejecución enviada y aún sin aprobar sigue
- * siendo "en cero" para el indicador, aunque la tabla ya la muestre como
- * hecha. Este desacople causó un bug real (ronda 2/5, tarea 1.4): el filtro
- * excluía actividades que el indicador seguía contando en cero.
+ * "approved"`: una ejecución enviada y aún sin aprobar sigue siendo "en cero"
+ * para el indicador (ronda 2/5, tarea 1.4).
  *
- * **No recibe `monthlyNotPerformed` a propósito**: un desvío "no realizada"
- * declara el motivo pero no toca el planificado, así que la actividad sigue
- * en cero para `compliance.ts` (`zeroActivityIds`). Pasarle las opciones
- * haría que el filtro "En cero" del visor dejara de mostrar justamente las
- * actividades que el indicador cuenta — el desacople que este helper existe
- * para evitar.
+ * Tampoco mira los desvíos "no realizada": declaran el motivo pero no tocan
+ * el planificado, así que la actividad sigue en cero para `compliance.ts`.
  */
 export function isPdtpActivityZeroThisMonth(
   activity: { indicatorMode?: string | null },
@@ -309,6 +377,75 @@ export function isPdtpActivityZeroThisMonth(
   period: PdtpPeriod,
 ): boolean {
   if (activity.indicatorMode === "coverage" || activity.indicatorMode === "closed_on_time") return false
-  const status = deriveActivityStatus(monthlyPlanned, approvedMonthlyExecuted, period)
-  return status === "pending" || status === "overdue"
+  const planned = monthlyPlanned[period.month - 1] ?? 0
+  const executed = approvedMonthlyExecuted[period.month - 1] ?? 0
+  return planned > 0 && executed === 0
+}
+
+/**
+ * Período PDTP de un día chileno ya resuelto (`AAAA-MM-DD`, p. ej.
+ * `todayInChile()`), o `null` si no es una fecha. Existe para que un
+ * componente cliente mida el atraso contra el "hoy" que calculó el servidor,
+ * sin volver a preguntarle al reloj del navegador.
+ */
+export function pdtpPeriodFromChileDate(value: string | null | undefined): PdtpPeriod | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? "")
+  if (!match) return null
+  const [, year, month, day] = match
+  return { year: Number(year), month: Number(month), week: Math.min(4, Math.ceil(Number(day) / 7)) }
+}
+
+/** Lo mínimo de una fila de planilla (`PdtpSheetView`) para derivar su estado. */
+export type PdtpStatusSource = {
+  effectiveMonthlyPlanned: number[]
+  effectiveMonthlyExecuted: number[]
+  monthlyNotPerformed?: number[]
+  /** Vista por faena: lo enviado y sin revisar (D9). */
+  pendingMonthlyExecuted?: number[]
+  /** Vista agregada: el estado ya resuelto en cada faena. */
+  worksiteSummaries?: ReadonlyArray<{ status: PdtpActivityStatus; overdueMonths?: number }>
+}
+
+export type PdtpSheetActivityStatus = {
+  status: PdtpActivityStatus
+  overdueMonths: number
+  /** Primer mes vencido e impago; sólo en la vista por faena. */
+  firstOverdueMonth: number | null
+}
+
+/**
+ * La única regla de estado de una fila de la planilla. La usan la tabla
+ * (conteos, filtro y badge: `statusOf` en `pdtp-sheet-table.tsx`) y el KPI
+ * "Atrasadas" del tablero, para que el número del tile y el largo de la lista
+ * a la que enlaza no puedan divergir.
+ *
+ * - Vista agregada (trae `worksiteSummaries` con al menos una faena): el peor
+ *   caso de las faenas (`aggregatePdtpActivityStatus`).
+ * - Vista por faena: `deriveActivityStatus` sobre los arreglos efectivos,
+ *   con lo enviado como mes pagado (D9).
+ */
+export function pdtpSheetActivityStatus(
+  activity: PdtpStatusSource,
+  period: PdtpPeriod,
+  context: { programYear: number; today: PdtpPeriod },
+): PdtpSheetActivityStatus {
+  const summaries = activity.worksiteSummaries
+  if (summaries && summaries.length > 0) {
+    return {
+      status: aggregatePdtpActivityStatus(summaries.map((summary) => summary.status)),
+      overdueMonths: Math.max(0, ...summaries.map((summary) => summary.overdueMonths ?? 0)),
+      firstOverdueMonth: null,
+    }
+  }
+  const options: PdtpActivityStatusOptions = {
+    monthlyNotPerformed: activity.monthlyNotPerformed,
+    monthlySubmitted: activity.pendingMonthlyExecuted,
+    programYear: context.programYear,
+    today: context.today,
+  }
+  return {
+    status: deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, period, options),
+    overdueMonths: countOverdueMonths(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, period, options),
+    firstOverdueMonth: pdtpFirstOverdueMonth(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, period, options),
+  }
 }

@@ -8,6 +8,7 @@ import {
   getPdtpAggregatedSheetViewByProgram,
   getPdtpComplianceByCategoryForScope,
   getPdtpComplianceIndicatorsForScope,
+  getPdtpSheetViewByProgram,
   listActionsByProgram,
   listPdtpProgramWorksites,
   listPdtpPrograms,
@@ -16,7 +17,7 @@ import {
 } from "@/lib/services/prevention-pdtp"
 import { isPdtpActionOpen } from "@/lib/services/pdtp/checklist-domain"
 import { listScopedWorksites } from "@/lib/services/ppa"
-import { pdtpReferencePeriodForYear, type PdtpPeriod } from "@/lib/services/pdtp/period"
+import { currentPdtpPeriod, pdtpReferencePeriodForYear, pdtpSheetActivityStatus, type PdtpPeriod, type PdtpStatusSource } from "@/lib/services/pdtp/period"
 import { getLatestPdtpPeriodClosure } from "@/lib/services/pdtp/period-closures"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -207,10 +208,24 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
     ? await getLatestPdtpPeriodClosure(focusProgram.id, effectiveWorksites.map((worksite) => worksite.id))
     : null
 
-  const aggregateForKpis = focusProgram
-    ? await getPdtpAggregatedSheetViewByProgram(focusProgram.id, "pdtp_general", effectiveWorksites.map((worksite) => worksite.id), currentPeriod)
+  // PREV-C06: "Atrasadas" es exactamente la lista a la que enlaza —la vista
+  // semanal de actividades con `estado=overdue`—: misma hoja, misma faena (la
+  // elegida, o el agregado del alcance con peor caso por faena), mismo período
+  // y la misma regla (`pdtpSheetActivityStatus`). Antes contaba sobre todas las
+  // faenas aunque hubiera una elegida, y con una regla que ocultaba la deuda.
+  const today = currentPdtpPeriod()
+  const viewForKpis = focusProgram
+    ? selectedWorksiteId
+      ? await getPdtpSheetViewByProgram(focusProgram.id, "pdtp_general", selectedWorksiteId)
+      : await getPdtpAggregatedSheetViewByProgram(focusProgram.id, "pdtp_general", effectiveWorksites.map((worksite) => worksite.id), currentPeriod, today)
     : null
-  const overdueActivityCount = aggregateForKpis?.activities.filter((activity) => activity.worksiteSummaries.some((summary) => summary.status === "overdue")).length ?? 0
+  const overdueActivityCount = viewForKpis && focusProgram
+    ? viewForKpis.activities.filter((activity) => pdtpSheetActivityStatus(
+        { ...activity, worksiteSummaries: "worksiteSummaries" in activity ? activity.worksiteSummaries as PdtpStatusSource["worksiteSummaries"] : undefined },
+        currentPeriod,
+        { programYear: focusProgram.year, today },
+      ).status === "overdue").length
+    : 0
 
   return (
     <PageContainer>

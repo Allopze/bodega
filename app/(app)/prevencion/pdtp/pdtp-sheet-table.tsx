@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/table"
 import { MetaBadge } from "@/components/states/state-badge"
 import type { PdtpAggregateActivityWorksite, PdtpSheetView } from "@/lib/services/prevention-pdtp"
-import { deriveActivityStatus, countOverdueMonths, isPdtpActivityZeroThisMonth, pdtpActivationPeriod, type PdtpActivityStatusFilter, type PdtpPeriod } from "@/lib/services/pdtp/period"
+import { isPdtpActivityZeroThisMonth, pdtpActivationPeriod, pdtpPeriodFromChileDate, pdtpSheetActivityStatus, type PdtpActivityStatusFilter, type PdtpPeriod, type PdtpSheetActivityStatus } from "@/lib/services/pdtp/period"
 import { PdtpExecutionForm } from "./pdtp-execution-form"
 import { PdtpApprovalButtons } from "./pdtp-approval-buttons"
 import { PdtpOverrideForm } from "./pdtp-override-form"
@@ -72,7 +72,7 @@ function PdtpAggregateBreakdown({ summaries, worksiteNames, planViewMode, bare =
   const chips = <div className="mt-1 flex flex-wrap gap-1.5">{summaries.map((summary) => {
     const planned = planViewMode === "historico" ? summary.historicalPlanned : summary.planned
     const executed = planViewMode === "historico" ? summary.historicalExecuted : summary.executed
-    const statusLabel = summary.status === "executed" ? "Ejecutada" : summary.status === "overdue" ? "Atrasada" : summary.status === "pending" ? "Pendiente" : "No programada"
+    const statusLabel = summary.status === "executed" ? "Ejecutada" : summary.status === "overdue" ? "Atrasada" : summary.status === "pending" ? "Pendiente" : summary.status === "not_performed" ? "No realizada" : "No programada"
     return <MetaBadge key={summary.worksiteId} meta={{ label: `${worksiteNames[summary.worksiteId] ?? "Faena"}: Plan ${formatQuantity(planned)} · ejecutado ${formatQuantity(executed)} · Estado exigible: ${statusLabel}`, variant: "outline" }} />
   })}</div>
   // `bare`: sin <details> propio, para vivir dentro del expander único de la
@@ -117,12 +117,17 @@ type SheetActivity = PdtpSheetView["activities"][number]
 type SheetDeviation = SheetActivity["deviations"][number]
 
 /**
- * Los desvíos "no realizada" del mes, en el formato que `deriveActivityStatus`
- * y `countOverdueMonths` esperan. `monthlyNotPerformed` lo calcula `sheets.ts`
- * desde la costura única.
+ * Celda en la que abre "Registrar": la primera semana planificada del primer
+ * mes vencido e impago (PREV-C06), o el período mirado si no hay atraso. La
+ * deuda más antigua es la que se salda primero, y abrir en la semana de hoy
+ * obligaba a buscarla a mano.
  */
-function statusOptions(activity: SheetActivity): { monthlyNotPerformed?: number[] } {
-  return { monthlyNotPerformed: activity.monthlyNotPerformed }
+function registerCellFor(activity: SheetActivity, status: PdtpSheetActivityStatus, currentPeriod: PdtpPeriod): { month: number; week: number } {
+  if (status.status !== "overdue" || status.firstOverdueMonth === null) return { month: currentPeriod.month, week: currentPeriod.week }
+  const weeks = activity.effectiveSchedule
+    .filter((cell) => cell.month === status.firstOverdueMonth && cell.plannedQuantity > 0)
+    .map((cell) => cell.week)
+  return { month: status.firstOverdueMonth, week: weeks.length > 0 ? Math.min(...weeks) : 1 }
 }
 
 /**
@@ -237,6 +242,25 @@ export function PdtpSheetTable({
     ? "Plan / ejecutado incluye todas las semanas registradas aplicables a la faena; el estado sigue lo exigible desde la activación."
     : "Plan / ejecutado y estado consideran sólo las semanas exigibles desde la activación; las exclusiones por faena se respetan en ambos modos."
 
+  // PREV-C06: la ÚNICA derivación de estado de la tabla. Conteos, filtro,
+  // badge, filas de la vista semanal y la celda de "Registrar" pasan por acá;
+  // el KPI "Atrasadas" del tablero usa la misma `pdtpSheetActivityStatus`.
+  // "Hoy" viene del servidor (`today`) para no depender del reloj del navegador.
+  const todayPeriod = pdtpPeriodFromChileDate(today) ?? currentPeriod
+  const programYear = view.program.year ?? currentPeriod.year
+  const statusCache = new Map<string, PdtpSheetActivityStatus>()
+  const statusOf = (activity: SheetActivity): PdtpSheetActivityStatus => {
+    const cached = statusCache.get(activity.id)
+    if (cached) return cached
+    const resolved = pdtpSheetActivityStatus(
+      { ...activity, worksiteSummaries: aggregateSummaries(activity) ?? undefined },
+      currentPeriod,
+      { programYear, today: todayPeriod },
+    )
+    statusCache.set(activity.id, resolved)
+    return resolved
+  }
+
   const plannedQuantityForCurrentWeek = (activity: PdtpSheetView["activities"][number]) =>
     activity.effectiveSchedule
       .filter((cell) => cell.month === currentPeriod.month && cell.week === currentPeriod.week)
@@ -257,8 +281,11 @@ export function PdtpSheetTable({
       )
     : objectiveFilteredActivities
 
+  // D9: la vista semanal también muestra lo atrasado, aunque esta semana no
+  // tenga plan. Es la vista de trabajo de la faena y el destino del KPI
+  // "Atrasadas": sin esto el tile contaba filas que la lista no mostraba.
   const weeklyActivities = objectiveScopedActivities.filter(
-    (activity) => plannedQuantityForCurrentWeek(activity) > 0,
+    (activity) => plannedQuantityForCurrentWeek(activity) > 0 || statusOf(activity).status === "overdue",
   )
 
   // Derive status for all activities in the current view
@@ -268,11 +295,10 @@ export function PdtpSheetTable({
   const INITIAL_ROW_LIMIT = 30
   const [showAll, setShowAll] = React.useState(false)
   // Compute status counts for the summary
-  const statusCounts: PdtpStatusCounts = React.useMemo(() => {
+  const statusCounts: PdtpStatusCounts = (() => {
     const counts = { executed: 0, pending: 0, overdue: 0, not_scheduled: 0, not_performed: 0, zero: 0 }
     for (const activity of sourceActivities) {
-      const s = deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod, statusOptions(activity))
-      counts[s]++
+      counts[statusOf(activity).status]++
       // `zero` se superpone a `pending`/`overdue` (ver el comentario de
       // `PdtpStatusCounts`): se recalcula aparte, no se deriva de `counts[s]`.
       // Usa `approvedMonthlyExecuted`, no `effectiveMonthlyExecuted`: el
@@ -284,7 +310,7 @@ export function PdtpSheetTable({
       }
     }
     return counts
-  }, [sourceActivities, currentPeriod])
+  })()
 
   // Apply filter, then pagination for large tables. "en_cero" no es un
   // `PdtpActivityStatus` exacto: es `pending ∪ overdue` sin `coverage`/
@@ -299,9 +325,7 @@ export function PdtpSheetTable({
       ? sourceActivities.filter((activity) =>
           isPdtpActivityZeroThisMonth(activity, activity.effectiveMonthlyPlanned, activity.approvedMonthlyExecuted, currentPeriod),
         )
-      : sourceActivities.filter((activity) =>
-          deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod, statusOptions(activity)) === statusFilter,
-        )
+      : sourceActivities.filter((activity) => statusOf(activity).status === statusFilter)
 
   // La paginación se mide sobre lo que realmente se ve: si el filtro de estado
   // deja pocas filas no hay nada que paginar, y el contador del botón tiene que
@@ -399,8 +423,9 @@ export function PdtpSheetTable({
                       </TableCell>
                     </TableRow>
                     {group.activities.map((activity) => {
-                      const status = deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod, statusOptions(activity))
-                      const overdueMonths = countOverdueMonths(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod, statusOptions(activity))
+                      const resolvedStatus = statusOf(activity)
+                      const { status, overdueMonths } = resolvedStatus
+                      const registerCell = registerCellFor(activity, resolvedStatus, currentPeriod)
                       return (
                         <TableRow key={activity.id}>
                           <TableCell className={`font-mono text-xs text-[var(--color-text-faint)] ${rowPy}`}>
@@ -472,8 +497,8 @@ export function PdtpSheetTable({
                                   activityId={activity.id}
                                   worksiteId={worksiteId}
                                   year={view.program.year}
-                                  defaultMonth={currentPeriod.month}
-                                  defaultWeek={currentPeriod.week}
+                                  defaultMonth={registerCell.month}
+                                  defaultWeek={registerCell.week}
                                   effectiveFrom={effectiveFrom}
                                   evidenceRequirement={activity.evidenceRequirement}
                                   mechanism={activity.mechanism}
@@ -568,8 +593,9 @@ export function PdtpSheetTable({
                       </TableCell>
                     </TableRow>
                     {group.activities.map((activity) => {
-                      const status = deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod, statusOptions(activity))
-                      const overdueMonths = countOverdueMonths(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod, statusOptions(activity))
+                      const resolvedStatus = statusOf(activity)
+                      const { status, overdueMonths } = resolvedStatus
+                      const registerCell = registerCellFor(activity, resolvedStatus, currentPeriod)
                       // `group` + `group-hover` en las celdas sticky: su fondo
                       // sólido tapaba el hover de la fila y el gris se veía solo
                       // de ESTADO a la derecha — la "fila cortada" de la
@@ -666,8 +692,8 @@ export function PdtpSheetTable({
                                   activityId={activity.id}
                                   worksiteId={worksiteId}
                                   year={view.program.year}
-                                  defaultMonth={currentPeriod.month}
-                                  defaultWeek={currentPeriod.week}
+                                  defaultMonth={registerCell.month}
+                                  defaultWeek={registerCell.week}
                                   effectiveFrom={effectiveFrom}
                                   evidenceRequirement={activity.evidenceRequirement}
                                   mechanism={activity.mechanism}

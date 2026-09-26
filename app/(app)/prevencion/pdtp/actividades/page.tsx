@@ -16,7 +16,7 @@ import {
   type PdtpAggregatedSheetView,
 } from "@/lib/services/prevention-pdtp"
 import { listScopedWorksites } from "@/lib/services/ppa"
-import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { pdtpReferencePeriodForYear } from "@/lib/services/pdtp/period"
 import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 import type { PdtpActivityStatusFilter } from "@/lib/services/pdtp/period"
 import { todayInChile } from "@/lib/utils"
@@ -118,7 +118,9 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
   const sheetCode = sheets.some((sheet) => sheet.code === one(query.hoja))
     ? one(query.hoja)!
     : sheets.find((sheet) => sheet.code === "pdtp_general")?.code ?? sheets[0]?.code ?? "pdtp_general"
-  const basePeriod = currentPdtpPeriod()
+  // Un año ya terminado se lee en diciembre (T1), igual que el tablero: sin
+  // esto, el visor de un año en cierre medía el atraso contra el mes de hoy.
+  const basePeriod = pdtpReferencePeriodForYear(year)
   const requestedMonth = Number(one(query.mes))
   const requestedWeek = Number(one(query.semana))
   const currentPeriod = {
