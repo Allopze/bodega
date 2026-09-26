@@ -69,6 +69,8 @@ function makeActivity(
     totalExecuted,
     effectiveTotalPlanned: totalPlanned,
     effectiveTotalExecuted: totalExecuted,
+    countedTotalExecuted: totalExecuted,
+    effectiveCountedTotalExecuted: totalExecuted,
     executions,
     notes,
   } as unknown as PdtpSheetView["activities"][number]

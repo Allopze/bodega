@@ -20,13 +20,20 @@ const pdtpEvidencePhotoItem = z
   .string()
   .regex(PDTP_EVIDENCE_URL_RE, "Cada foto debe estar bajo storage/pdtp-evidence/ con extensión válida")
 
+/**
+ * Techo de la cantidad declarada (PREV-C02). El cumplimiento ya topa cada
+ * actividad a su plan del mes, pero sin techo un error de tipeo (100000000)
+ * llegaba intacto a la planilla, al Excel y al reporte.
+ */
+export const PDTP_MAX_EXECUTED_QUANTITY = 100_000
+
 export const pdtpExecutionSchema = z.object({
   activityId:       z.string().min(1, "Actividad requerida"),
   worksiteId:       z.string().min(1, "Faena requerida"),
   year:             z.coerce.number().int().min(2000).max(2100),
   month:            z.coerce.number().int().min(1).max(12),
   week:             z.coerce.number().int().min(1).max(4),
-  executedQuantity: z.coerce.number().min(0),
+  executedQuantity: z.coerce.number().min(0).max(PDTP_MAX_EXECUTED_QUANTITY, "La cantidad no puede superar 100.000."),
   evidenceText:     z.string().max(2000).optional().or(z.literal("")),
   evidenceUrl:      pdtpEvidenceUrl.optional(),
   evidencePhotos:   z.array(pdtpEvidencePhotoItem).default([]),

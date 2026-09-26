@@ -311,9 +311,14 @@ export async function loadApprovedExecutionsForWorksites(
   activation?: { programId: string; activatedAt: string | null },
 ) {
   if (activityIds.length === 0 || worksiteIds.length === 0) {
-    return { scheduleRows: [], executionRows: [] } as {
+    return { scheduleRows: [], executionRows: [], perWorksite: [] } as {
       scheduleRows: Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["scheduleRows"]
       executionRows: Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["executionRows"]
+      perWorksite: Array<{
+        worksiteId: string
+        scheduleRows: Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["scheduleRows"]
+        executionRows: Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["executionRows"]
+      }>
     }
   }
   const perWorksite = await Promise.all(
@@ -334,5 +339,12 @@ export async function loadApprovedExecutionsForWorksites(
   return {
     scheduleRows: perWorksite.flatMap((entry) => entry.scheduleRows),
     executionRows: perWorksite.flatMap((entry) => entry.executionRows.filter((row) => row.status === "approved")),
+    // PREV-C02: el tope por actividad y mes se aplica por faena; aplanado ya no
+    // se sabe a qué faena pertenece cada fila de plan.
+    perWorksite: perWorksite.map((entry, index) => ({
+      worksiteId: worksiteIds[index]!,
+      scheduleRows: entry.scheduleRows,
+      executionRows: entry.executionRows.filter((row) => row.status === "approved"),
+    })),
   }
 }

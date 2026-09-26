@@ -20,6 +20,7 @@ import { effectiveActivationFor, filterPdtpRowsFromActivation } from "./period"
 import { PDTP_ANNUAL_MINIMUM_MONTH, pdtpAnnualMinimumFloor } from "./annual-minimum"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { chileDateParts } from "@/lib/utils"
+import { pdtpScheduledInstanceCountsAsExecuted } from "./scheduled-compliance"
 
 export type PdtpComplianceMonth = {
   month: number
@@ -32,11 +33,9 @@ export type PdtpComplianceMonth = {
   /**
    * Cuántas actividades del "resto" (ni `coverage` ni `closed_on_time`)
    * tuvieron planificación este mes (`p > 0`) y ninguna ejecución aprobada
-   * (`rawExecuted === 0`). No cambia `percent` ni `executed` — el techo de
-   * sobrecumplimiento por mes sigue permitiendo que una actividad compense a
-   * otra (decisión de jefatura, ver comentario del bucle mensual); esto solo
-   * expone cuántas quedaron en cero para que un 100 % no oculte que hubo
-   * actividades sin ninguna ejecución. `coverage` y `closed_on_time` no
+   * (`rawExecuted === 0`). No cambia `percent` ni `executed`: desde PREV-C02
+   * cada actividad topa a su plan del mes (ver el bucle mensual), así que una
+   * actividad en cero ya baja el %; esto nombra cuáles fueron. `coverage` y `closed_on_time` no
    * cuentan aquí: son todo-o-nada por su propia regla y un cero ahí significa
    * "no se acreditó el padrón/plazo", no "no se hizo nada".
    */
@@ -104,13 +103,6 @@ export type PdtpComplianceIndicators = {
 
 type ApprovedExecution = Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["executionRows"][number]
 
-const CHILE_MONTH_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", month: "numeric" })
-
-/** Mes (1-12) en que cae una fecha, contado en hora de Chile. */
-function chileMonthOf(iso: string): number {
-  return Number(CHILE_MONTH_FORMAT.format(new Date(iso)))
-}
-
 /**
  * Denominador y numerador de `closed_on_time` por actividad-mes: cuántas
  * obligaciones vencían ese mes (según `dueAt`) y cuántas de ésas se cerraron
@@ -129,10 +121,15 @@ function chileMonthOf(iso: string): number {
  * nuevo a la dotación (N°18) sí es un caso; una brecha de capacitación abierta
  * sobre la misma actividad no, porque su sujeto ya está en el padrón y contarla
  * sería exigirlo dos veces.
+ *
+ * `year`: el año del programa. Una obligación que vence en otro año no cuenta
+ * (PREV-M07): antes una de diciembre que vencía en enero del año siguiente se
+ * sumaba al enero del mismo programa y cambiaba un mes ya cerrado. El mismo
+ * filtro aplica a lo realizado que alimenta el piso anual, cuando hay `dueAt`.
  */
 export const PDTP_COVERAGE_CASE_METADATA_KEY = "countsAsCoverageCase"
 
-async function loadClosedOnTimeByActivityMonth(activityIds: string[], worksiteIds: string[], coverageActivityIds: ReadonlySet<string> = new Set()) {
+async function loadClosedOnTimeByActivityMonth(activityIds: string[], worksiteIds: string[], year: number, coverageActivityIds: ReadonlySet<string> = new Set()) {
   const planned = new Map<string, number>()
   const executed = new Map<string, number>()
   /** Cierres `completed` por actividad en el año, a tiempo o no y tengan o no
@@ -156,46 +153,46 @@ async function loadClosedOnTimeByActivityMonth(activityIds: string[], worksiteId
   for (const row of rows) {
     if (coverageActivityIds.has(row.activityId)
       && (row.metadata as Record<string, unknown> | null)?.[PDTP_COVERAGE_CASE_METADATA_KEY] !== true) continue
+    const due = row.dueAt ? chileDateParts(row.dueAt) : null
+    if (due && due.year !== year) continue
     if (row.status === "completed") completedByActivity.set(row.activityId, (completedByActivity.get(row.activityId) ?? 0) + 1)
-    if (!row.dueAt) continue // sin plazo no hay mes al que asignarla.
-    const key = `${row.activityId}:${chileMonthOf(row.dueAt)}`
+    if (!due) continue // sin plazo no hay mes al que asignarla.
+    const key = `${row.activityId}:${due.month}`
     planned.set(key, (planned.get(key) ?? 0) + 1)
-    const onTime = row.status === "completed" && (!!row.reportedAt && row.reportedAt <= row.dueAt)
+    const onTime = row.status === "completed" && (!!row.reportedAt && !!row.dueAt && row.reportedAt <= row.dueAt)
     if (onTime) executed.set(key, (executed.get(key) ?? 0) + 1)
   }
   return { planned, executed, completedByActivity }
 }
 
 /**
- * Una ejecución manual/XLS y la integración de una inspección pueden describir
- * el mismo trabajo. Por celda semanal se toma la mayor cobertura entre ambas
- * fuentes alternativas; otras integraciones siguen sumando porque representan
- * mecanismos distintos (capacitación, EPP, etc.).
+ * Lo ejecutado de cada celda semanal, sin contar dos veces el mismo trabajo
+ * (PREV-C02, auditoría 2026-09-26). La carga manual/XLS y lo que acreditan los
+ * submódulos pueden describir la misma semana: se toma el **mayor** entre la
+ * carga manual y la suma de las acreditaciones. Antes sólo las inspecciones se
+ * deduplicaban y el resto se sumaba a la carga manual, así que registrar a mano
+ * una semana ya acreditada contaba doble. Las acreditaciones entre sí siguen
+ * sumando: son hechos distintos (dos inspecciones, un acta y una capacitación).
+ * Quien necesita declarar un total mayor lo hace en la carga manual, con su
+ * evidencia.
  *
  * Exportada (tarea 1.5, RE-36) para que el documento cuente `E` con la misma
- * regla de deduplicación que este indicador — antes era privada
- * (`effectiveApprovedExecutions`) y sólo esta función la invocaba. El único
- * cambio de comportamiento es agregar `week` a cada celda devuelta (antes se
- * calculaba en la clave interna pero no se exponía); los llamados existentes
- * de este archivo re-agrupan por `activityId:month` y no leen `week`, así que
- * no cambian.
+ * regla de deduplicación que este indicador.
  *
- * API pública ahora: quien la llame debe saber que el objeto devuelto
- * **pierde `worksiteId` y `year`** (la deduplicación interna sí los usa como
- * parte de la clave por celda, pero no viajan en el resultado). Por lo
- * tanto, solo debe invocarse con filas ya acotadas a **una** faena y **un**
- * año — si se le pasan filas de varias faenas o años mezcladas, dos celdas
- * distintas (misma actividad/mes/semana, pero de faena o año distinto)
- * colisionan en la misma entrada del resultado agregado.
+ * El objeto devuelto **pierde `worksiteId` y `year`** (la deduplicación sí los
+ * usa como parte de la clave por celda, pero no viajan en el resultado). Por lo
+ * tanto, sólo debe invocarse con filas ya acotadas a **una** faena y **un**
+ * año: con filas mezcladas, dos celdas distintas colisionarían al reagrupar.
  */
-export function effectiveApprovedExecutionsByCell(rows: ApprovedExecution[]) {
+export function effectiveApprovedExecutionsByCell(
+  rows: Array<Pick<ApprovedExecution, "activityId" | "worksiteId" | "year" | "month" | "week" | "origin" | "executedQuantity">>,
+) {
   const cells = new Map<string, {
     activityId: string
     month: number
     week: number
-    inspectionQuantity: number
-    legacyQuantity: number
-    otherIntegrationQuantity: number
+    manualQuantity: number
+    integrationQuantity: number
   }>()
   for (const row of rows) {
     const key = `${row.activityId}:${row.worksiteId}:${row.year}:${row.month}:${row.week}`
@@ -203,26 +200,31 @@ export function effectiveApprovedExecutionsByCell(rows: ApprovedExecution[]) {
       activityId: row.activityId,
       month: row.month,
       week: row.week,
-      inspectionQuantity: 0,
-      legacyQuantity: 0,
-      otherIntegrationQuantity: 0,
+      manualQuantity: 0,
+      integrationQuantity: 0,
     }
-    if (row.origin === "integration" && row.sourceType === "inspeccion") {
-      cell.inspectionQuantity += row.executedQuantity
-    } else if (row.origin === "integration") {
-      cell.otherIntegrationQuantity += row.executedQuantity
-    } else {
-      cell.legacyQuantity += row.executedQuantity
-    }
+    if (row.origin === "integration") cell.integrationQuantity += row.executedQuantity
+    else cell.manualQuantity += row.executedQuantity
     cells.set(key, cell)
   }
   return [...cells.values()].map((cell) => ({
     activityId: cell.activityId,
     month: cell.month,
     week: cell.week,
-    executedQuantity: Math.max(cell.inspectionQuantity, cell.legacyQuantity)
-      + cell.otherIntegrationQuantity,
+    executedQuantity: Math.max(cell.manualQuantity, cell.integrationQuantity),
   }))
+}
+
+/**
+ * Lo que una actividad aporta al cumplimiento de un mes (PREV-C02, decisión
+ * 2026-09-26 que reemplaza la "respuesta 2.4"): como máximo lo planificado de
+ * esa actividad en ese mes, y nada si no tenía plan. Una actividad
+ * sobreejecutada ya no compensa a otra que quedó en cero. Es la regla que
+ * comparten el indicador, el avance por eje, el reporte de gestión, los
+ * objetivos del cierre y la planilla.
+ */
+export function pdtpCountedExecuted(planned: number, executed: number): number {
+  return planned > 0 ? Math.min(executed, planned) : 0
 }
 
 /**
@@ -344,9 +346,6 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   }
   // El cumplimiento formal solo incorpora ejecuciones validadas. Las
   // submitted siguen visibles en el tablero operativo y en aprobaciones.
-  const approvedExecutionRows = executionRows.filter((row) => row.status === "approved")
-  const effectiveExecutionRows = effectiveApprovedExecutionsByCell(approvedExecutionRows)
-
   // Las actividades nuevas no usan la grilla histórica de cuatro bloques. Sus
   // ocurrencias se leen como instancias independientes y se incorporan a los
   // mismos acumuladores mensuales que el resto, manteniendo intacta la
@@ -381,6 +380,14 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     // el corte incluye además su fecha de incorporación al programa.
     return instance.scheduledFor >= activationCutoff.slice(0, 10)
   })
+  // PREV-I08-a: una ocurrencia completada ya aporta su cantidad planificada;
+  // la ejecución enlazada a ella es el mismo hecho y no suma de nuevo.
+  const countedInstanceIds = new Set(eligibleScheduledInstances
+    .filter((instance) => pdtpScheduledInstanceCountsAsExecuted(instance.status))
+    .map((instance) => instance.id))
+  const approvedExecutionRows = executionRows.filter((row) => row.status === "approved"
+    && !(row.scheduledInstanceId && countedInstanceIds.has(row.scheduledInstanceId)))
+  const effectiveExecutionRows = effectiveApprovedExecutionsByCell(approvedExecutionRows)
 
   // Modo de indicador por actividad: 'coverage' se calcula todo-o-nada; el resto
   // se capa en lo planificado (R3). El cómputo es por actividad-mes para poder
@@ -495,7 +502,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     executedByActivityMonth.set(key, (executedByActivityMonth.get(key) ?? 0) + row.executedQuantity)
   }
   for (const row of eligibleScheduledInstances) {
-    if (row.status !== "completed") continue
+    if (!pdtpScheduledInstanceCountsAsExecuted(row.status)) continue
     const month = Number(row.scheduledFor.slice(5, 7))
     if (month < 1 || month > 12) continue
     const key = `${row.activityId}:${month}`
@@ -516,7 +523,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     planned: closedOnTimePlanned,
     executed: closedOnTimeExecuted,
     completedByActivity: closedOnTimeCompleted,
-  } = await loadClosedOnTimeByActivityMonth(closedOnTimeActivityIds, worksiteId ? [worksiteId] : [], coverageActivityIds)
+  } = await loadClosedOnTimeByActivityMonth(closedOnTimeActivityIds, worksiteId ? [worksiteId] : [], year, coverageActivityIds)
 
   // Piso anual (`minAnnualExecutions`): cuánto puso cada actividad en el
   // denominador del año y cuánto realizó, contara o no. Se acumula en el bucle
@@ -532,16 +539,14 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     // Actividades de cobertura: todo o nada por actividad (respuesta 2.2).
     let coveragePlanned = 0
     let coverageExecuted = 0
-    // Resto de actividades: el techo de sobrecumplimiento se aplica al TOTAL del
-    // mes (respuesta 2.4 = "por mes"), permitiendo que una actividad compense a
-    // otra dentro del mismo mes.
+    // Resto de actividades: cada una aporta como máximo su plan del mes
+    // (`pdtpCountedExecuted`, PREV-C02). Hasta el 2026-09-26 el techo se
+    // aplicaba al total del mes (respuesta 2.4) y una actividad sobreejecutada
+    // compensaba a otra en cero; esa regla se reemplazó.
     let restPlanned = 0
-    let restRawExecuted = 0
+    let restExecuted = 0
     // Actividades del "resto" con planificación este mes y cero ejecución
-    // aprobada. No participa en `percent` ni en `executed` — solo documenta,
-    // para el mismo mes que ya compensó una actividad con otra, cuáles
-    // quedaron exactamente en cero (R3 sigue intacto; esto es un dato nuevo,
-    // no una corrección de la fórmula).
+    // aprobada: el detalle de qué quedó sin hacer.
     const zeroActivityIds: string[] = []
     for (const activityId of allActivityIds) {
       const p = plannedByActivityMonth.get(`${activityId}:${month}`) ?? 0
@@ -588,16 +593,15 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
         coverageExecuted += closedOnTimeExecuted.get(key) ?? 0
         bumpAnnual(annualMeasuredByActivity, activityId, casesDue)
       } else {
-        // Resto: se agrupa por total del mes (respuesta 2.4 = "por mes"), sin
-        // condicionar el ejecutado a que la misma actividad tuviera planificado
-        // ese mes — así una actividad puede compensar a otra dentro del mes.
+        // Resto: tope por actividad y mes (PREV-C02). Lo ejecutado sin plan
+        // en el mes no aporta, y el excedente no cubre a otra actividad.
         restPlanned += p
-        restRawExecuted += rawExecuted
+        restExecuted += pdtpCountedExecuted(p, rawExecuted)
         if (p > 0 && rawExecuted === 0) zeroActivityIds.push(activityId)
       }
     }
     const planned = coveragePlanned + restPlanned
-    const executed = coverageExecuted + Math.min(restRawExecuted, restPlanned)
+    const executed = coverageExecuted + restExecuted
     const percent = planned > 0 ? Math.round((executed / planned) * 100) / 100 : null
     return {
       month, planned, executed, percent,
@@ -825,9 +829,6 @@ export async function getPdtpComplianceByCategoryForScope(
     worksiteIds,
     { programId: program.id, activatedAt: program.activatedAt },
   )
-  const scheduleRows = loaded.scheduleRows
-  const executionRows = loaded.executionRows
-
   const totals = new Map<string, { planned: number; executed: number }>()
   const bump = (activityId: string, field: "planned" | "executed", amount: number) => {
     const category = categoryByActivity.get(activityId)
@@ -836,36 +837,32 @@ export async function getPdtpComplianceByCategoryForScope(
     entry[field] += amount
     totals.set(category, entry)
   }
-  // PREV-C01: lo calendarizado se topa por mes, con la misma regla que el
-  // indicador (respuesta 2.4: compensación dentro del mes, no entre meses).
-  // Topar sólo al final, por año, dejaba que una ejecución de un mes sin plan
-  // cubriera un mes en cero y el eje mostraba más avance que el tablero.
-  const scheduledByCategoryMonth = new Map<string, { planned: number; executed: number }>()
-  const bumpMonth = (activityId: string, month: number, field: "planned" | "executed", amount: number) => {
-    const category = categoryByActivity.get(activityId)
-    if (!category) return
-    const key = `${category}\u0000${month}`
-    const entry = scheduledByCategoryMonth.get(key) ?? { planned: 0, executed: 0 }
-    entry[field] += amount
-    scheduledByCategoryMonth.set(key, entry)
-  }
-  for (const row of scheduleRows) bumpMonth(row.activityId, row.month, "planned", row.plannedQuantity)
-  for (const row of effectiveApprovedExecutionsByCell(executionRows)) {
-    bumpMonth(row.activityId, row.month, "executed", row.executedQuantity)
-  }
-  for (const [key, { planned, executed }] of scheduledByCategoryMonth) {
-    const category = key.slice(0, key.indexOf("\u0000"))
-    const entry = totals.get(category) ?? { planned: 0, executed: 0 }
-    entry.planned += planned
-    entry.executed += Math.min(executed, planned)
-    totals.set(category, entry)
+  // PREV-C01/C02: lo calendarizado se topa por faena, actividad y mes, con la
+  // misma regla que el indicador (`pdtpCountedExecuted`): una actividad no
+  // cubre a otra ni un mes sin plan cubre uno en cero.
+  for (const entry of loaded.perWorksite) {
+    const plannedByActivityMonth = new Map<string, number>()
+    for (const row of entry.scheduleRows) {
+      const key = `${row.activityId}:${row.month}`
+      plannedByActivityMonth.set(key, (plannedByActivityMonth.get(key) ?? 0) + row.plannedQuantity)
+      bump(row.activityId, "planned", row.plannedQuantity)
+    }
+    const executedByActivityMonth = new Map<string, number>()
+    for (const cell of effectiveApprovedExecutionsByCell(entry.executionRows)) {
+      const key = `${cell.activityId}:${cell.month}`
+      executedByActivityMonth.set(key, (executedByActivityMonth.get(key) ?? 0) + cell.executedQuantity)
+    }
+    for (const [key, executed] of executedByActivityMonth) {
+      const activityId = key.slice(0, key.lastIndexOf(":"))
+      bump(activityId, "executed", pdtpCountedExecuted(plannedByActivityMonth.get(key) ?? 0, executed))
+    }
   }
 
   // Casos por plazo: cada obligación vencida pesa 1 en el denominador y cada
   // cierre dentro de plazo pesa 1 en el numerador, con la misma regla que el
   // cálculo mensual (`loadClosedOnTimeByActivityMonth`). Se suma sobre todos
   // los meses porque este desglose agrupa por eje, no por mes.
-  const closedOnTime = await loadClosedOnTimeByActivityMonth(closedOnTimeIds, worksiteIds)
+  const closedOnTime = await loadClosedOnTimeByActivityMonth(closedOnTimeIds, worksiteIds, program.year)
   for (const [key, cases] of closedOnTime.planned) {
     bump(key.slice(0, key.lastIndexOf(":")), "planned", cases)
   }
@@ -891,7 +888,7 @@ export async function getPdtpComplianceByCategoryForScope(
       ))
     const excluded = new Set(exclusions.map((row) => `${row.activityId}:${row.worksiteId}`))
     for (const worksiteId of worksiteIds) {
-      const perWorksite = await loadClosedOnTimeByActivityMonth(minimumIds, [worksiteId])
+      const perWorksite = await loadClosedOnTimeByActivityMonth(minimumIds, [worksiteId], program.year)
       for (const activity of withMinimum) {
         if (excluded.has(`${activity.id}:${worksiteId}`)) continue
         let measured = 0

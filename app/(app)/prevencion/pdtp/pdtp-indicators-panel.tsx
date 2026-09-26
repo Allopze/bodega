@@ -5,11 +5,11 @@ import { PersistedDetails } from "./persisted-details"
 import { buildPdtpActivitiesHref } from "./pdtp-context"
 import type { PdtpComplianceIndicators, PdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
 
-/** Título exacto acordado para la columna "En cero": explica qué mide y por
- * qué el % mensual puede seguir en 100 % aunque existan actividades en cero
- * (el techo de sobrecumplimiento sigue siendo por mes, no cambia por esto). */
+/** Título de la columna "En cero". Desde PREV-C02 cada actividad topa a su
+ * plan del mes, así que una actividad en cero siempre baja el % mensual: ya
+ * no hay compensación entre actividades que explicar. */
 const ZERO_ACTIVITIES_COLUMN_TITLE =
-  "Actividades con planificación en el mes y ninguna ejecución aprobada. El % mensual puede llegar a 100 % por compensación entre actividades."
+  "Actividades con planificación en el mes y ninguna ejecución aprobada. Cada una baja el % mensual: lo que otra actividad hizo de más no la compensa."
 
 function fmtPct(ratio: number | null): string {
   if (ratio === null) return "—"

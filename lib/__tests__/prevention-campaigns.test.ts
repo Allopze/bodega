@@ -387,9 +387,9 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
  * completar la ocurrencia `CAM-*` equivalente del catálogo de capacitación
  * (`recordTrainingOccurrenceStatus`) TAMBIÉN la acreditaba — el motor de
  * cumplimiento (`effectiveApprovedExecutionsByCell`,
- * lib/services/pdtp/compliance.ts) sólo deduplica `"inspeccion"` contra la
- * ejecución manual (toma el máximo); `"campana"` y `"capacitacion_ocurrencia"`
- * caen en el mismo acumulador (`otherIntegrationQuantity`) y se SUMAN. Cerrar
+ * lib/services/pdtp/compliance.ts) sólo deduplica la ejecución manual contra
+ * las acreditaciones (max, PREV-C02); dos acreditaciones —`"campana"` y
+ * `"capacitacion_ocurrencia"`— de la misma celda se SUMAN. Cerrar
  * la campaña legado de la N°88 y completar CAM-07 (su equivalente, Task 13)
  * del mismo período dejaba `executedQuantity = 2` contra `plannedQuantity = 1`.
  *

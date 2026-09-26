@@ -69,7 +69,7 @@ import {
 } from "./helpers"
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 import { buildPdtpRe36Document, type PdtpRe36Document, type PdtpRe36DeviationRow } from "./re36-document"
-import { getPdtpComplianceIndicators, getPdtpIntegralCompliance, cutPdtpComplianceIndicatorsToMonth, type PdtpComplianceIndicators, type PdtpIntegralCompliance } from "./compliance"
+import { getPdtpComplianceIndicators, getPdtpIntegralCompliance, cutPdtpComplianceIndicatorsToMonth, pdtpCountedExecuted, type PdtpComplianceIndicators, type PdtpIntegralCompliance } from "./compliance"
 import { getPdtpManagementReport, type PdtpManagementReport } from "./management-report"
 import { currentPdtpPeriod, pdtpActivationPeriod } from "./period"
 import { pdtpMonthLabel as monthLabel } from "./period-guard"
@@ -203,7 +203,7 @@ export type PdtpPeriodClosureSnapshot = {
  * en la hoja de cargo—, y sumarlas sin deduplicar contaría dos veces lo mismo.
  * Sólo se acumulan los meses hasta el corte.
  */
-function objectivesFromRe36(document: PdtpRe36Document, cutoffMonth: number): PdtpPeriodClosureObjective[] {
+export function objectivesFromRe36(document: PdtpRe36Document, cutoffMonth: number): PdtpPeriodClosureObjective[] {
   const seenActivityIds = new Set<string>()
   const totals = new Map<string, { code: string; name: string; planned: number; executed: number }>()
 
@@ -215,29 +215,31 @@ function objectivesFromRe36(document: PdtpRe36Document, cutoffMonth: number): Pd
       const name = row.objectiveName ?? "Sin objetivo declarado"
       const entry = totals.get(code) ?? { code, name, planned: 0, executed: 0 }
       for (let month = 1; month <= cutoffMonth; month++) {
+        let monthPlanned = 0
+        let monthExecuted = 0
         for (let week = 1; week <= 4; week++) {
           const cell = row.cells[(month - 1) * 4 + (week - 1)]
           if (!cell) continue
-          entry.planned += cell.p ?? 0
-          entry.executed += cell.e ?? 0
+          monthPlanned += cell.p ?? 0
+          monthExecuted += cell.e ?? 0
         }
+        // PREV-C02: mismo tope que el indicador, por actividad y mes. Una
+        // actividad sobreejecutada no cubre a otra del mismo objetivo.
+        entry.planned += monthPlanned
+        entry.executed += pdtpCountedExecuted(monthPlanned, monthExecuted)
       }
       totals.set(code, entry)
     }
   }
 
   return [...totals.values()]
-    .map((entry) => {
-      // Mismo techo que el indicador mensual: sobrecumplir no sube del 100 %.
-      const capped = Math.min(entry.executed, entry.planned)
-      return {
-        code: entry.code,
-        name: entry.name,
-        planned: entry.planned,
-        executed: capped,
-        percent: entry.planned > 0 ? Math.round((capped / entry.planned) * 100) / 100 : null,
-      }
-    })
+    .map((entry) => ({
+      code: entry.code,
+      name: entry.name,
+      planned: entry.planned,
+      executed: entry.executed,
+      percent: entry.planned > 0 ? Math.round((entry.executed / entry.planned) * 100) / 100 : null,
+    }))
     .sort((left, right) => left.code.localeCompare(right.code))
 }
 

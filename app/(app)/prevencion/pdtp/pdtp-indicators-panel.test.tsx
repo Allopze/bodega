@@ -147,7 +147,7 @@ describe("PdtpIndicatorsPanel — render compacto actual", () => {
     const header = within(details).getByText("En cero")
     expect(header).toHaveAttribute(
       "title",
-      "Actividades con planificación en el mes y ninguna ejecución aprobada. El % mensual puede llegar a 100 % por compensación entre actividades.",
+      "Actividades con planificación en el mes y ninguna ejecución aprobada. Cada una baja el % mensual: lo que otra actividad hizo de más no la compensa.",
     )
 
     // Febrero: 2 actividades en cero, enlazadas con el helper existente (no

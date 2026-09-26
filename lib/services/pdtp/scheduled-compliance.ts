@@ -38,6 +38,15 @@ function completionBucket(row: PdtpScheduledComplianceRow): "on_time" | "late" |
   return completedDate <= row.scheduledFor ? "on_time" : "late"
 }
 
+/**
+ * Si una ocurrencia ya aporta su cantidad planificada como ejecutada. Es el
+ * único criterio: el indicador lo usa además para no volver a sumar la
+ * ejecución enlazada a esa ocurrencia (PREV-I08-a).
+ */
+export function pdtpScheduledInstanceCountsAsExecuted(status: string): boolean {
+  return status === "completed"
+}
+
 export function calculatePdtpScheduledInstanceCompliance(
   rows: readonly PdtpScheduledComplianceRow[],
 ): PdtpScheduledCompliance {
@@ -61,7 +70,7 @@ export function calculatePdtpScheduledInstanceCompliance(
     }
 
     planned += amount
-    if (row.status === "completed") {
+    if (pdtpScheduledInstanceCountsAsExecuted(row.status)) {
       completed += amount
       const bucket = completionBucket(row)
       if (bucket === "on_time") completedOnTime += amount

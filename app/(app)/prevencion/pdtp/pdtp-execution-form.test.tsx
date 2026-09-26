@@ -53,6 +53,19 @@ describe("PdtpExecutionForm", () => {
     expect(screen.getByText(/basta una observación escrita/i)).toBeTruthy()
   })
 
+  it("en una actividad de enganche avisa que la acreditación del módulo y la carga manual cuentan una sola vez (PREV-C02)", () => {
+    render(<PdtpExecutionForm activityId="a" worksiteId="ws-1" year={2026} mechanism="enganche" />)
+    fireEvent.click(screen.getByRole("button", { name: "Registrar" }))
+    expect(screen.getByText(/cuenta una sola vez/i)).toBeTruthy()
+    expect((screen.getByLabelText("Cantidad") as HTMLInputElement).max).toBe("100000")
+  })
+
+  it("en una actividad sin fuente automática no muestra el aviso de fuente única", () => {
+    render(<PdtpExecutionForm activityId="a" worksiteId="ws-1" year={2026} mechanism="constancia" />)
+    fireEvent.click(screen.getByRole("button", { name: "Registrar" }))
+    expect(screen.queryByText(/cuenta una sola vez/i)).toBeNull()
+  })
+
   it("rechaza en el cliente un archivo sobre 25 MB sin intentar subirlo (PREV-I09)", async () => {
     render(<PdtpExecutionForm activityId="a" worksiteId="ws-1" year={2026} />)
     fireEvent.click(screen.getByRole("button", { name: "Registrar" }))

@@ -193,11 +193,10 @@ export async function closeCampaign(input: unknown, access: CampaignAccess) {
   // equivalente del catálogo de capacitación
   // (`recordTrainingOccurrenceStatus`, lib/services/prevention-training-occurrences.ts).
   // El motor de cumplimiento (`effectiveApprovedExecutionsByCell`,
-  // lib/services/pdtp/compliance.ts) sólo deduplica entre `sourceType:
-  // "inspeccion"` y las ejecuciones manuales (toma el máximo); todo lo demás,
-  // incluidos "campana" y "capacitacion_ocurrencia", cae en el mismo
-  // acumulador (`otherIntegrationQuantity`) y SE SUMA — no es tolerancia ni
-  // idempotencia. Cerrar la campaña legado de una actividad y además completar
+  // lib/services/pdtp/compliance.ts) sólo deduplica la carga manual contra
+  // las acreditaciones (desde PREV-C02 toma max(manual, Σ acreditaciones));
+  // las acreditaciones entre sí, incluidas "campana" y
+  // "capacitacion_ocurrencia", SE SUMAN — no es tolerancia ni idempotencia. Cerrar la campaña legado de una actividad y además completar
   // su CAM-* del mismo período dejaba una celda con `executedQuantity = 2`
   // contra `plannedQuantity = 1`: doble conteo real.
   //

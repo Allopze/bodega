@@ -102,9 +102,9 @@ async function linkedEvidencePath(engagementId: string): Promise<string | null> 
  * también la acreditaría al cerrar la coordinación — dos caminos vivos que el
  * motor de cumplimiento suma sin deduplicar, el mismo patrón que ya se
  * corrigió para 85-89 (campaña legado + CAM-* del catálogo, ver commit
- * b5ff6c1f: `effectiveApprovedExecutionsByCell` sólo deduplica `"inspeccion"`
- * contra la ejecución manual; todo lo demás cae en el mismo acumulador y se
- * suma).
+ * b5ff6c1f: `effectiveApprovedExecutionsByCell` sólo deduplica la ejecución
+ * manual contra las acreditaciones —max(manual, Σ acreditaciones) desde
+ * PREV-C02—; dos acreditaciones de la misma celda se suman).
  *
  * Resuelve el programa activo con `resolvePdtpActivityIdsForNumbers`: la
  * misma función que la acreditación real usará más abajo, así este guard no

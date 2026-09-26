@@ -198,6 +198,7 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
                 name="executedQuantity"
                 type="number"
                 min="0"
+                max="100000"
                 step="0.25"
                 defaultValue="1"
                 aria-label="Cantidad"
@@ -210,6 +211,15 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
           {evidenceRequirement && (
             <p className="rounded-md bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
               Esta actividad exige evidencia: {evidenceRequirement}
+            </p>
+          )}
+
+          {/* PREV-C02 (D3): la misma semana acreditada desde su módulo y
+              cargada a mano vale el mayor de los dos, no la suma. Sin enlace:
+              el destino depende de la actividad y lo resuelve la ficha. */}
+          {(mechanism === "enganche" || mechanism === "compuesta") && (
+            <p className="rounded-md bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
+              Esta actividad también se acredita desde su módulo de origen. Si esa semana ya quedó acreditada allí, lo que registres aquí cuenta una sola vez: vale el mayor de los dos, no la suma.
             </p>
           )}
 

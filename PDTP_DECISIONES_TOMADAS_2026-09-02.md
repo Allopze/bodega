@@ -118,7 +118,22 @@ el DS 44 exige, distinto del paritario, y hoy sus tres actividades sólo tienen 
 5. **Los módulos nuevos:** D11 (el más chico), luego D09 (peso normativo) y D08.
 6. **D18 al final**, cuando ya se sepa cuántas constancias quedan de verdad.
 
-## 4. Referencias
+## 4. Decisión posterior: el tope del porcentaje pasa a ser por actividad y mes (2026-09-26)
+
+Reemplaza la "respuesta 2.4", que aplicaba el tope al total del mes (`min(ΣE, ΣP)`). Con esa regla una actividad
+sobreejecutada compensaba a otra que quedó en cero, y un mes podía marcar 100 % con actividades sin hacer
+(hallazgo PREV-C02 de `qa/reports/2026-09-26-prevencion-production-readiness.md`).
+
+- **Regla nueva:** cada actividad aporta al mes como máximo lo que tenía planificado (`pdtpCountedExecuted`), y
+  nada si no tenía plan ese mes. El excedente se sigue mostrando, pero no cuenta.
+- **Misma semana, dos fuentes:** la carga manual y la acreditación desde el módulo de origen valen el mayor de los
+  dos, no la suma.
+- **Dónde rige:** indicador mensual y anual, cumplimiento a la fecha, avance por eje, reporte de gestión, objetivos
+  del cierre de período, planilla y su Excel (columna "Ejecutado computable").
+- **Efecto esperado:** los porcentajes bajan donde había compensación. Los cierres ya emitidos conservan su foto.
+- **Origen:** decisión D1 del plan de pendientes de la auditoría de Prevención, tomada el 2026-09-26.
+
+## 5. Referencias
 
 - Registro navegable de las 22 decisiones y su resolución: [PDTP_DECISIONES_TOMADAS_2026-09-02.html](PDTP_DECISIONES_TOMADAS_2026-09-02.html)
 - Registro de las 87 actividades: [PDTP_REGISTRO_ACTIVIDADES_2026-09-01.html](PDTP_REGISTRO_ACTIVIDADES_2026-09-01.html)

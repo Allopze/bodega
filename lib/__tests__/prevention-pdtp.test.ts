@@ -139,6 +139,13 @@ await inMemoryDb.insert(schema.pdtpCatalogActivityRevisions).values(
   }),
 )
 
+/** Planificado de una actividad en enero de 2026 (grilla sembrada por el catálogo). */
+async function plannedInJanuary(activityId: string): Promise<number> {
+  const rows = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
+    .where(and(eq(schema.pdtpActivitySchedule.activityId, activityId), eq(schema.pdtpActivitySchedule.month, 1)))
+  return rows.reduce((sum, row) => sum + Number(row.plannedQuantity), 0)
+}
+
 afterAll(async () => {
   delete testGlobal.__db
   await pg.close()
@@ -1389,8 +1396,9 @@ describe("prevention PDTP service", () => {
 
     const result = await getPdtpComplianceIndicators(2026, "ws-1")
     // Solo act2 (approved) cuenta; submitted y draft se mantienen como avance
-    // operativo, pero no forman parte del cumplimiento formal.
-    expect(result!.monthly[0]!.executed).toBe(2)
+    // operativo, pero no forman parte del cumplimiento formal. Desde PREV-C02
+    // cada actividad aporta como máximo su plan del mes.
+    expect(result!.monthly[0]!.executed).toBe(Math.min(2, await plannedInJanuary(act2.id)))
     expect(exec1.status).toBe("submitted")
   })
 
@@ -1516,7 +1524,13 @@ describe("prevention PDTP service", () => {
     await loadActiveCatalog()
     await inMemoryDb.insert(schema.worksites).values({ id: "ws-2", name: "Faena B", code: "FB", isActive: true })
 
-    const activities = await inMemoryDb.select().from(schema.pdtpActivities)
+    // Dos actividades con plan en enero: desde PREV-C02 lo ejecutado sin plan
+    // en el mes no aporta, así que el agregado se mide sobre actividades que
+    // sí tenían algo que cumplir.
+    const januaryPlanned = await inMemoryDb.selectDistinct({ activityId: schema.pdtpActivitySchedule.activityId })
+      .from(schema.pdtpActivitySchedule).where(eq(schema.pdtpActivitySchedule.month, 1))
+    const plannedIds = new Set(januaryPlanned.map((row) => row.activityId))
+    const activities = (await inMemoryDb.select().from(schema.pdtpActivities)).filter((activity) => plannedIds.has(activity.id))
     const act1 = activities[0]!
     const act2 = activities[1]!
 
@@ -1535,12 +1549,15 @@ describe("prevention PDTP service", () => {
     const unscoped = await getPdtpComplianceIndicators(2026)
     expect(unscoped!.annual.executed).toBe(0)
 
-    // El scope agrega entre faenas (enero, muy por debajo del techo del mes): 3 + 2 = 5.
+    // El scope agrega entre faenas. Cada actividad aporta como máximo su plan
+    // del mes en su faena (PREV-C02).
+    const expected = Math.min(3, await plannedInJanuary(act1.id)) + Math.min(2, await plannedInJanuary(act2.id))
+    expect(expected).toBeGreaterThan(0)
     const scoped = await getPdtpComplianceIndicatorsForScope(2026, ["ws-1", "ws-2"])
     expect(scoped).not.toBeNull()
     expect(scoped!.worksiteCount).toBe(2)
-    expect(scoped!.monthly[0]!.executed).toBe(5)
-    expect(scoped!.annual.executed).toBe(5)
+    expect(scoped!.monthly[0]!.executed).toBe(expected)
+    expect(scoped!.annual.executed).toBe(expected)
     // El planificado se cuenta una vez por faena agregada, no una vez global.
     const single = await getPdtpComplianceIndicators(2026, "ws-1")
     expect(scoped!.annual.planned).toBe(single!.annual.planned * 2)
@@ -1552,8 +1569,8 @@ describe("prevention PDTP service", () => {
     // cosas y antes recalculaba el indicador una vez por faena en un segundo
     // round-trip, además de mostrar 0 % al no elegir faena.
     expect(scoped!.perWorksite.map((entry) => entry.worksiteId)).toEqual(["ws-1", "ws-2"])
-    expect(scoped!.perWorksite[0]!.indicators!.annual.executed).toBe(3)
-    expect(scoped!.perWorksite[1]!.indicators!.annual.executed).toBe(2)
+    expect(scoped!.perWorksite[0]!.indicators!.annual.executed).toBe(Math.min(3, await plannedInJanuary(act1.id)))
+    expect(scoped!.perWorksite[1]!.indicators!.annual.executed).toBe(Math.min(2, await plannedInJanuary(act2.id)))
   })
 
   it("aplica la regla de dotación CPHS (<25 excluye la N°11) y el cumplimiento respeta la exclusión (R4)", async () => {
@@ -3136,7 +3153,10 @@ describe("prevention PDTP service", () => {
     // filtro "deviates" más abajo. H-17 (AUDITORIA_BUGS_2026-08-05.md): elegir
     // explícitamente, con orden determinista, una actividad con más de una
     // unidad planificada en el año, en vez de `activities[0]` sin `ORDER BY`.
-    const candidateRow = report!.activities.find((row) => row.planned > 1)!
+    // PREV-C02: lo ejecutado topa a lo planificado del mes, así que además
+    // tiene que tener plan en enero —el mes que se registra abajo—.
+    const januaryPlanned = new Map(await Promise.all(activities.map(async (activity) => [activity.n, await plannedInJanuary(activity.id)] as const)))
+    const candidateRow = report!.activities.find((row) => row.planned > 1 && (januaryPlanned.get(row.activityNumber) ?? 0) > 0)!
     const target = activities.find((activity) => activity.n === candidateRow.activityNumber)!
     const execution = await markPdtpExecution({
       activityId: target.id, worksiteId: "ws-1", year: program.year, month: 1, week: 1, executedQuantity: 1,

@@ -184,10 +184,9 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   const executedCount = indicators?.annual.executed ?? 0
   const pendingCount = Math.max(0, (currentMonthData?.planned ?? 0) - (currentMonthData?.executed ?? 0))
   // Expone cuántas de las pendientes del mes vigente no tienen NINGUNA
-  // ejecución aprobada (distinto de "no llegó al 100%"): el % mensual puede
-  // compensar una actividad sobreejecutada con otra en cero y marcar el mes
-  // en 100%, así que este número es el que de verdad dice si algo quedó sin
-  // tocar (tarea 1.4, no cambia la fórmula de `percent`).
+  // ejecución aprobada (distinto de "no llegó al 100%"). Desde PREV-C02 cada
+  // una ya baja el % mensual —el excedente de otra actividad no la compensa—;
+  // este número dice cuáles quedaron sin tocar (tarea 1.4).
   const zeroActivitiesThisMonth = currentMonthData?.zeroActivities ?? 0
   const zeroActivitiesLabel = countOf(zeroActivitiesThisMonth, "actividad en cero", "actividades en cero")
   // Sin faena elegida, `zeroActivitiesThisMonth` es la UNIÓN entre las faenas

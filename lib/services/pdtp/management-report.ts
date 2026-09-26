@@ -10,6 +10,7 @@ import { pdtpActivities, pdtpActivityWorksiteParams, pdtpPrograms } from "@/db/s
 import { assertWorksiteAccess, loadProgramScheduleAndExecutions, type WorksiteScope } from "./helpers"
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 import { filterPdtpRowsFromActivation } from "./period"
+import { effectiveApprovedExecutionsByCell, pdtpCountedExecuted } from "./compliance"
 
 export type PdtpManagementReportActivityRow = {
   activityNumber: number
@@ -55,7 +56,7 @@ const INDICATOR_DEFINITIONS = [
   {
     code: "avance_actividad",
     label: "Avance por actividad",
-    formula: "Cantidad ejecutada y aprobada / cantidad planificada de la actividad, con ajustes de faena aplicados, en el período filtrado.",
+    formula: "Cantidad ejecutada y aprobada / cantidad planificada de la actividad, con ajustes de faena aplicados, en el período filtrado. Cada mes aporta como máximo lo planificado ese mes, y la carga manual y lo acreditado por otro módulo en la misma semana cuentan una vez.",
   },
   {
     code: "desviacion",
@@ -159,21 +160,35 @@ export async function getPdtpManagementReport(input: {
     deviationsByActivity.set(row.activityId, entry)
   }
 
-  const plannedByActivity = new Map<string, number>()
+  // PREV-C02: la misma regla que el indicador. Cada semana cuenta una vez
+  // (`effectiveApprovedExecutionsByCell`: el mayor entre la carga manual y lo
+  // acreditado) y cada mes aporta como máximo su plan (`pdtpCountedExecuted`):
+  // lo sobreejecutado en enero no cubre marzo.
+  const plannedByActivityMonth = new Map<string, number>()
   for (const row of scheduleRows) {
     if (!inPeriod(row.month)) continue
-    plannedByActivity.set(row.activityId, (plannedByActivity.get(row.activityId) ?? 0) + row.plannedQuantity)
+    const key = `${row.activityId}:${row.month}`
+    plannedByActivityMonth.set(key, (plannedByActivityMonth.get(key) ?? 0) + row.plannedQuantity)
   }
+  const executedByActivityMonth = new Map<string, number>()
+  for (const cell of effectiveApprovedExecutionsByCell(approvedExecutions)) {
+    if (!inPeriod(cell.month)) continue
+    const key = `${cell.activityId}:${cell.month}`
+    executedByActivityMonth.set(key, (executedByActivityMonth.get(key) ?? 0) + cell.executedQuantity)
+  }
+  const plannedByActivity = new Map<string, number>()
   const executedByActivity = new Map<string, number>()
-  for (const row of approvedExecutions) {
-    if (!inPeriod(row.month)) continue
-    executedByActivity.set(row.activityId, (executedByActivity.get(row.activityId) ?? 0) + row.executedQuantity)
+  for (const [key, planned] of plannedByActivityMonth) {
+    const activityId = key.slice(0, key.lastIndexOf(":"))
+    plannedByActivity.set(activityId, (plannedByActivity.get(activityId) ?? 0) + planned)
+    const counted = pdtpCountedExecuted(planned, executedByActivityMonth.get(key) ?? 0)
+    executedByActivity.set(activityId, (executedByActivity.get(activityId) ?? 0) + counted)
   }
 
   const reportActivities: PdtpManagementReportActivityRow[] = scheduledActivities
     .map((activity) => {
       const planned = plannedByActivity.get(activity.id) ?? 0
-      const executed = Math.min(executedByActivity.get(activity.id) ?? 0, planned)
+      const executed = executedByActivity.get(activity.id) ?? 0
       const percent = planned > 0 ? Math.round((executed / planned) * 100) / 100 : null
       const meetsTarget = percent !== null && percent >= program.complianceTarget
       const responsible = effectiveResponsibleByActivity.get(activity.id)!

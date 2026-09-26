@@ -1,6 +1,7 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import { eq } from "drizzle-orm"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
@@ -177,7 +178,7 @@ beforeEach(async () => {
  * actividades sin cambiar ni `percent` ni `executed`.
  */
 describe("Actividades planificadas en cero junto al cumplimiento mensual", () => {
-  it("compensa el % mensual entre actividades (fórmula intacta) y expone las que quedaron en cero", async () => {
+  it("una actividad sobreejecutada no compensa a las que quedaron en cero (PREV-C02, reemplaza la respuesta 2.4)", async () => {
     const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
 
     const programId = "pdtp-zero-prog-1"
@@ -203,14 +204,13 @@ describe("Actividades planificadas en cero junto al cumplimiento mensual", () =>
     const result = await getPdtpComplianceIndicators(programId, worksiteId)
     const march = result!.monthly[2]!
 
-    // La fórmula no cambia: R3 sigue topando el mes a 100% aunque A compensó
-    // a B y C (planned=3, executed=min(3,3)=3).
+    // Tope por actividad y mes: A aporta como máximo su plan (1), y B y C en
+    // cero no se cubren con el excedente de A (planned=3, executed=1).
     expect(march.planned).toBe(3)
-    expect(march.executed).toBe(3)
-    expect(march.percent).toBe(1)
+    expect(march.executed).toBe(1)
+    expect(march.percent).toBe(0.33)
 
-    // Pero B y C no tuvieron ninguna ejecución aprobada este mes: el 100 %
-    // no las cuenta como hechas, y ahora eso se puede ver.
+    // B y C no tuvieron ninguna ejecución aprobada este mes.
     expect(march.zeroActivities).toBe(2)
     expect(new Set(march.zeroActivityIds)).toEqual(new Set([actB, actC]))
 
@@ -421,4 +421,189 @@ describe("Actividades planificadas en cero junto al cumplimiento mensual", () =>
     const scope = await getPdtpComplianceIndicatorsForScope(programId, [worksiteId])
     expect(scope!.toDate).toEqual({ throughMonth: month, planned: 1, executed: 1, percent: 1 })
   })
+
+  it("la carga manual y la acreditación de la misma semana no suman dos, ni cubren otra actividad en cero (R2 de la auditoría)", async () => {
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    const programId = "pdtp-zero-prog-8"
+    const worksiteId = "ws-zero-8"
+    await inMemoryDb.insert(schema.worksites).values({ id: worksiteId, name: "Faena Zero 8", code: "FZ8", isActive: true })
+    await seedProgram(programId, 2039)
+    await seedActivity(programId, "act-r2-a", 1)
+    await seedActivity(programId, "act-r2-b", 2)
+    await seedSchedule("act-r2-a", 2039, 4, 1)
+    await seedSchedule("act-r2-b", 2039, 4, 1)
+    await seedApprovedExecution("act-r2-a", worksiteId, 2039, 4, 1)
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpExecutions).values({
+      id: "exec-r2-integration", activityId: "act-r2-a", worksiteId, year: 2039, month: 4, week: 1,
+      executedQuantity: 1, status: "approved", origin: "integration", sourceType: "capacitacion_ocurrencia", sourceId: "occ-r2",
+      idempotencyKey: "pdtp-accredit:act-r2-a:ws-zero-8:capacitacion_ocurrencia:occ-r2", createdAt: now, updatedAt: now,
+    })
+
+    const april = (await getPdtpComplianceIndicators(programId, worksiteId))!.monthly[3]!
+    expect(april).toMatchObject({ planned: 2, executed: 1, percent: 0.5 })
+  })
+
+  it("lo ejecutado en un mes sin plan para esa actividad no cubre otra actividad planificada en cero", async () => {
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    const programId = "pdtp-zero-prog-9"
+    const worksiteId = "ws-zero-9"
+    await inMemoryDb.insert(schema.worksites).values({ id: worksiteId, name: "Faena Zero 9", code: "FZ9", isActive: true })
+    await seedProgram(programId, 2040)
+    await seedActivity(programId, "act-noplan-a", 1)
+    await seedActivity(programId, "act-noplan-b", 2)
+    await seedSchedule("act-noplan-a", 2040, 5, 1)
+    await seedApprovedExecution("act-noplan-b", worksiteId, 2040, 5, 1)
+    const may = (await getPdtpComplianceIndicators(programId, worksiteId))!.monthly[4]!
+    expect(may).toMatchObject({ planned: 1, executed: 0 })
+  })
+
+  it("el avance por eje topa por faena, actividad y mes (PREV-C02)", async () => {
+    const { getPdtpComplianceByCategoryForScope } = await import("@/lib/services/pdtp/compliance")
+    const programId = "pdtp-zero-prog-10"
+    await inMemoryDb.insert(schema.worksites).values([
+      { id: "ws-zero-10a", name: "Faena 10A", code: "F10A", isActive: true },
+      { id: "ws-zero-10b", name: "Faena 10B", code: "F10B", isActive: true },
+    ])
+    await seedProgram(programId, 2041)
+    await seedActivity(programId, "act-eje-a", 1)
+    await seedActivity(programId, "act-eje-b", 2)
+    await seedSchedule("act-eje-a", 2041, 6, 1)
+    await seedSchedule("act-eje-b", 2041, 6, 1)
+    // A sobreejecutada en la faena A; B en cero; nada en la faena B.
+    await seedApprovedExecution("act-eje-a", "ws-zero-10a", 2041, 6, 2)
+
+    const onlyA = await getPdtpComplianceByCategoryForScope(programId, ["ws-zero-10a"])
+    const totalA = onlyA!.reduce((acc, row) => ({ planned: acc.planned + row.planned, executed: acc.executed + row.executed }), { planned: 0, executed: 0 })
+    expect(totalA).toEqual({ planned: 2, executed: 1 })
+
+    const both = await getPdtpComplianceByCategoryForScope(programId, ["ws-zero-10a", "ws-zero-10b"])
+    const totalBoth = both!.reduce((acc, row) => ({ planned: acc.planned + row.planned, executed: acc.executed + row.executed }), { planned: 0, executed: 0 })
+    expect(totalBoth).toEqual({ planned: 4, executed: 1 })
+  })
+
+  it("una obligación que vence en el año siguiente no suma al enero del programa (PREV-M07)", async () => {
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    const programId = "pdtp-zero-prog-11"
+    const worksiteId = "ws-zero-11"
+    await inMemoryDb.insert(schema.worksites).values({ id: worksiteId, name: "Faena Zero 11", code: "FZ11", isActive: true })
+    await seedProgram(programId, 2042)
+    await inMemoryDb.insert(schema.pdtpActivities).values({
+      id: "act-m07", programId, n: 1, activity: "Investigar incidentes", program: "Prevención",
+      responsibleSlugs: ["prevencionista"], responsibleDisplay: "Prevencionista",
+      scheduleMode: "on_demand", indicatorMode: "closed_on_time", sourceSheetRow: 1, createdAt: now(), updatedAt: now(),
+    })
+    const obligation = (id: string, dueAt: string) => ({
+      id, programId, activityId: "act-m07", worksiteId, mode: "on_demand", status: "completed",
+      dueAt, reportedAt: dueAt, completedAt: dueAt, idempotencyKey: id, origin: "manual", manualReason: "Caso registrado en la faena", createdAt: now(), updatedAt: now(),
+    })
+    await inMemoryDb.insert(schema.pdtpObligations).values([
+      obligation("obl-m07-jan", "2042-01-15T15:00:00.000Z"),
+      obligation("obl-m07-next-year", "2043-01-10T15:00:00.000Z"),
+    ])
+
+    const result = await getPdtpComplianceIndicators(programId, worksiteId)
+    expect(result!.monthly[0]).toMatchObject({ planned: 1, executed: 1 })
+    expect(result!.annual.planned).toBe(1)
+  })
+
+  it("el reporte de gestión topa por actividad y mes y no cuenta dos veces la misma semana (PREV-C02)", async () => {
+    const { getPdtpManagementReport } = await import("@/lib/services/pdtp/management-report")
+    const programId = "pdtp-zero-prog-12"
+    const worksiteId = "ws-zero-12"
+    await inMemoryDb.insert(schema.worksites).values({ id: worksiteId, name: "Faena Zero 12", code: "FZ12", isActive: true })
+    await seedProgram(programId, 2043)
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true }).where(eq(schema.pdtpPrograms.id, programId))
+    await seedActivity(programId, "act-rep-a", 1)
+    await inMemoryDb.update(schema.pdtpActivities).set({ scheduleMode: "scheduled" }).where(eq(schema.pdtpActivities.id, "act-rep-a"))
+    await seedSchedule("act-rep-a", 2043, 1, 1)
+    await seedSchedule("act-rep-a", 2043, 3, 1)
+    // Enero: manual 2 aprobada + acreditación 1 la misma semana; marzo en cero.
+    await seedApprovedExecution("act-rep-a", worksiteId, 2043, 1, 2)
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpExecutions).values({
+      id: "exec-rep-int", activityId: "act-rep-a", worksiteId, year: 2043, month: 1, week: 1,
+      executedQuantity: 1, status: "approved", origin: "integration", sourceType: "inspeccion", sourceId: "run-rep",
+      idempotencyKey: "pdtp-accredit:act-rep-a:ws-zero-12:inspeccion:run-rep", createdAt: now, updatedAt: now,
+    })
+
+    const report = await getPdtpManagementReport({ programId, worksiteId, scope: "all" })
+    const row = report!.activities.find((activity) => activity.activityNumber === 1)!
+    expect(row).toMatchObject({ planned: 2, executed: 1, percent: 0.5 })
+  })
+
+  it("una ejecución enlazada a una instancia completada no suma encima de la instancia (PREV-I08-a)", async () => {
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    const programId = "pdtp-zero-prog-14"
+    const worksiteId = "ws-zero-14"
+    const year = 2045
+    await inMemoryDb.insert(schema.worksites).values({ id: worksiteId, name: "Faena Zero 14", code: "FZ14", isActive: true })
+    await seedProgram(programId, year)
+    await seedActivity(programId, "act-inst-a", 1)
+    await inMemoryDb.update(schema.pdtpActivities).set({
+      scheduleMode: "scheduled",
+      scheduleDefinition: { version: 1, kind: "recurring", startDate: `${year}-01-01`, endDate: `${year}-12-31`, every: 2, unit: "week", weekdays: [1] },
+    }).where(eq(schema.pdtpActivities.id, "act-inst-a"))
+    const instance = (id: string, day: string, status: string) => ({
+      id, programId, activityId: "act-inst-a", worksiteId,
+      scheduledFor: `${year}-06-${day}`, isoWeekYear: year, isoWeek: 23, plannedQuantity: 1,
+      status, completedAt: status === "completed" ? `${year}-06-${day}T14:00:00.000Z` : null,
+      completedByUserId: status === "completed" ? USER_ID : null,
+      idempotencyKey: `pdtp-scheduled:act-inst-a:${worksiteId}:${year}-06-${day}`,
+      sourceMetadataJson: { generatedFrom: "schedule_definition" }, createdAt: now(), updatedAt: now(),
+    })
+    // Dos ocurrencias en junio: una completada (con su ejecución enlazada) y
+    // otra pendiente. El mes vale 1 de 2, no 2 de 2.
+    await inMemoryDb.insert(schema.pdtpScheduledInstances).values([
+      instance("inst-done", "02", "completed"),
+      instance("inst-pending", "16", "pending"),
+    ])
+    await inMemoryDb.insert(schema.pdtpExecutions).values({
+      id: "exec-inst-done", activityId: "act-inst-a", worksiteId, year, month: 6, week: 1,
+      executedQuantity: 1, status: "approved", scheduledInstanceId: "inst-done",
+      executedByUserId: USER_ID, createdAt: now(), updatedAt: now(),
+    })
+
+    const june = (await getPdtpComplianceIndicators(programId, worksiteId))!.monthly[5]!
+    expect(june).toMatchObject({ planned: 2, executed: 1, percent: 0.5 })
+  })
+
+  it("la planilla y su Excel no cuentan dos veces la misma semana y el % sale de su columna computable (PREV-C02)", async () => {
+    const { getPdtpSheetViewByProgram, buildPdtpExport } = await import("@/lib/services/pdtp/sheets")
+    const programId = "pdtp-zero-prog-13"
+    const worksiteId = "ws-zero-13"
+    const sheetCode = "pdtp_general"
+    await inMemoryDb.insert(schema.worksites).values({ id: worksiteId, name: "Faena Zero 13", code: "FZ13", isActive: true })
+    await seedProgram(programId, 2044)
+    await seedActivity(programId, "act-sheet-a", 1)
+    await seedSchedule("act-sheet-a", 2044, 1, 1)
+    await seedSchedule("act-sheet-a", 2044, 3, 1)
+    await seedSheetMembership(programId, sheetCode, ["act-sheet-a"])
+    // Enero: manual 2 aprobada + acreditación 1 la misma semana; marzo en cero.
+    await seedApprovedExecution("act-sheet-a", worksiteId, 2044, 1, 2)
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpExecutions).values({
+      id: "exec-sheet-int", activityId: "act-sheet-a", worksiteId, year: 2044, month: 1, week: 1,
+      executedQuantity: 1, status: "approved", origin: "integration", sourceType: "inspeccion", sourceId: "run-sheet",
+      idempotencyKey: "pdtp-accredit:act-sheet-a:ws-zero-13:inspeccion:run-sheet", createdAt: now, updatedAt: now,
+    })
+
+    const view = await getPdtpSheetViewByProgram(programId, sheetCode, worksiteId)
+    const activity = view!.activities.find((a) => a.id === "act-sheet-a")!
+    // La celda cuenta una vez: max(manual 2, integración 1) = 2. La
+    // sobreejecución se sigue viendo, pero no suma la acreditación encima.
+    expect(activity.monthlyExecuted[0]).toBe(2)
+    expect(activity.totalExecuted).toBe(2)
+    expect(view!.monthlyTotals[0]!.executed).toBe(2)
+    // Lo computable topa por mes: enero 1 de 1, marzo 0 de 1.
+    expect(activity.countedTotalExecuted).toBe(1)
+
+    const report = await buildPdtpExport({ programId, year: 2044, sheetCode, worksiteId, scope: [worksiteId] })
+    const row = report.rows[0]!
+    const cell = (header: string) => row[report.headers.indexOf(header)]
+    expect(cell("Ejecutado anual histórico")).toBe(2)
+    expect(cell("Ejecutado computable histórico")).toBe(1)
+    expect(cell("% histórico")).toBe(50)
+  })
 })
+

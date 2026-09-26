@@ -15,6 +15,7 @@ import { listActionsByProgram, countActionsByExecution } from "./action-plan"
 import { listFollowups } from "./followups"
 import { readPdtpActivityContent } from "./activity-content"
 import { deriveActivityStatus, filterPdtpRowsFromActivation, type PdtpActivityStatus, type PdtpPeriod } from "./period"
+import { effectiveApprovedExecutionsByCell, pdtpCountedExecuted } from "./compliance"
 
 /**
  * No conformes por ejecución, para el distintivo de la planilla.
@@ -44,6 +45,25 @@ async function countNoCumpleByExecution(executionIds: string[]): Promise<Map<str
   return result
 }
 
+/**
+ * Lo aprobado por mes con cada semana contada una vez (PREV-C02): la carga
+ * manual y la acreditación de la misma celda valen `max`, no la suma — la
+ * misma regla que `compliance.ts`.
+ */
+function approvedExecutedByMonth(
+  rows: Array<Parameters<typeof effectiveApprovedExecutionsByCell>[0][number] & { status: string }>,
+): number[] {
+  const months = Array.from({ length: 12 }, () => 0)
+  for (const cell of effectiveApprovedExecutionsByCell(rows.filter((row) => row.status === "approved"))) {
+    months[cell.month - 1]! += cell.executedQuantity
+  }
+  return months
+}
+
+function countedTotal(plannedByMonth: number[], executedByMonth: number[]): number {
+  return plannedByMonth.reduce((sum, planned, index) => sum + pdtpCountedExecuted(planned, executedByMonth[index] ?? 0), 0)
+}
+
 export type PdtpSheetView = {
   program: typeof pdtpPrograms.$inferSelect
   sheet: typeof pdtpSheets.$inferSelect
@@ -58,6 +78,13 @@ export type PdtpSheetView = {
     monthlyExecuted: number[]
     effectiveTotalPlanned: number
     effectiveTotalExecuted: number
+    /**
+     * PREV-C02: lo que la actividad aporta al cumplimiento — por faena y mes,
+     * como máximo lo planificado (`pdtpCountedExecuted`). `totalExecuted`
+     * sigue mostrando la sobreejecución; el % sale de estos.
+     */
+    countedTotalExecuted: number
+    effectiveCountedTotalExecuted: number
     effectiveMonthlyPlanned: number[]
     effectiveMonthlyExecuted: number[]
     /**
@@ -274,15 +301,18 @@ export async function getPdtpAggregatedSheetViewByProgram(
       monthlyPlanned[row.month - 1]! += row.plannedQuantity
       monthlyTotals[row.month - 1]!.planned += row.plannedQuantity
     }
-    for (const row of executionsByActivity.get(activity.id) ?? []) {
-      if (row.status !== "approved") continue
-      monthlyExecuted[row.month - 1]! += row.executedQuantity
-      monthlyTotals[row.month - 1]!.executed += row.executedQuantity
-    }
+    approvedExecutedByMonth(executionsByActivity.get(activity.id) ?? []).forEach((executed, index) => {
+      monthlyExecuted[index]! += executed
+      monthlyTotals[index]!.executed += executed
+    })
     for (const row of effectiveSchedule) effectiveMonthlyPlanned[row.month - 1]! += row.plannedQuantity
-    for (const row of effectiveExecutionsByActivity.get(activity.id) ?? []) {
-      if (row.status === "approved") effectiveMonthlyExecuted[row.month - 1]! += row.executedQuantity
-    }
+    approvedExecutedByMonth(effectiveExecutionsByActivity.get(activity.id) ?? []).forEach((executed, index) => {
+      effectiveMonthlyExecuted[index]! += executed
+    })
+    // Lo computable topa por faena y mes: sumar primero entre faenas dejaría
+    // que la sobreejecución de una cubra a otra que quedó en cero.
+    let countedTotalExecuted = 0
+    let effectiveCountedTotalExecuted = 0
     const activityWorksiteSummaries = effectivePerWorksite.map(({ worksiteId, scheduleRows, executionRows, deviationRows }) => {
       const raw = rawByWorksite.get(worksiteId)
       const plannedByMonth = Array.from({ length: 12 }, () => 0)
@@ -290,9 +320,13 @@ export async function getPdtpAggregatedSheetViewByProgram(
       const historicalPlannedByMonth = Array.from({ length: 12 }, () => 0)
       const historicalExecutedByMonth = Array.from({ length: 12 }, () => 0)
       for (const row of scheduleRows) if (row.activityId === activity.id) plannedByMonth[row.month - 1]! += row.plannedQuantity
-      for (const row of executionRows) if (row.activityId === activity.id && row.status === "approved") executedByMonth[row.month - 1]! += row.executedQuantity
+      approvedExecutedByMonth(executionRows.filter((row) => row.activityId === activity.id))
+        .forEach((executed, index) => { executedByMonth[index]! += executed })
       for (const row of raw?.scheduleRows ?? []) if (row.activityId === activity.id) historicalPlannedByMonth[row.month - 1]! += row.plannedQuantity
-      for (const row of raw?.executionRows ?? []) if (row.activityId === activity.id && row.status === "approved") historicalExecutedByMonth[row.month - 1]! += row.executedQuantity
+      approvedExecutedByMonth((raw?.executionRows ?? []).filter((row) => row.activityId === activity.id))
+        .forEach((executed, index) => { historicalExecutedByMonth[index]! += executed })
+      countedTotalExecuted += countedTotal(historicalPlannedByMonth, historicalExecutedByMonth)
+      effectiveCountedTotalExecuted += countedTotal(plannedByMonth, executedByMonth)
       return {
         worksiteId,
         planned: plannedByMonth.reduce((sum, value) => sum + value, 0),
@@ -326,6 +360,8 @@ export async function getPdtpAggregatedSheetViewByProgram(
       totalExecuted: monthlyExecuted.reduce((sum, value) => sum + value, 0),
       effectiveTotalPlanned: effectiveMonthlyPlanned.reduce((sum, value) => sum + value, 0),
       effectiveTotalExecuted: effectiveMonthlyExecuted.reduce((sum, value) => sum + value, 0),
+      countedTotalExecuted,
+      effectiveCountedTotalExecuted,
       executions: [],
       worksiteSummaries: activityWorksiteSummaries,
     })
@@ -449,19 +485,21 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
       if (execution.status === "submitted") {
         pendingMonthlyExecuted[execution.month - 1] = (pendingMonthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
       }
-      if (execution.status !== "approved") continue
-      monthlyExecuted[execution.month - 1] = (monthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
-      monthlyTotals[execution.month - 1]!.executed += execution.executedQuantity
     }
+    // PREV-C02: la carga manual y la acreditación de la misma semana cuentan
+    // una vez (`max`), igual que el indicador.
+    approvedExecutedByMonth(activityExecutions).forEach((executed, index) => {
+      monthlyExecuted[index] = (monthlyExecuted[index] ?? 0) + executed
+      monthlyTotals[index]!.executed += executed
+    })
     for (const cell of effectiveSchedule) {
       effectiveMonthlyPlanned[cell.month - 1] = (effectiveMonthlyPlanned[cell.month - 1] ?? 0) + cell.plannedQuantity
     }
     const effectiveActivityExecutions = filterPdtpRowsFromActivation(activityExecutions, program.activatedAt)
-    for (const execution of effectiveActivityExecutions) {
-      if (execution.status !== "approved") continue
-      effectiveMonthlyExecuted[execution.month - 1] = (effectiveMonthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
-      approvedMonthlyExecuted[execution.month - 1] = (approvedMonthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
-    }
+    approvedExecutedByMonth(effectiveActivityExecutions).forEach((executed, index) => {
+      effectiveMonthlyExecuted[index] = (effectiveMonthlyExecuted[index] ?? 0) + executed
+      approvedMonthlyExecuted[index] = (approvedMonthlyExecuted[index] ?? 0) + executed
+    })
 
     const activityDeviations = deviationsByActivity.get(activity.id) ?? []
 
@@ -474,6 +512,8 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
       totalExecuted: monthlyExecuted.reduce((s, v) => s + v, 0),
       effectiveTotalPlanned: effectiveMonthlyPlanned.reduce((s, v) => s + v, 0),
       effectiveTotalExecuted: effectiveMonthlyExecuted.reduce((s, v) => s + v, 0),
+      countedTotalExecuted: countedTotal(monthlyPlanned, monthlyExecuted),
+      effectiveCountedTotalExecuted: countedTotal(effectiveMonthlyPlanned, effectiveMonthlyExecuted),
       pendingMonthlyExecuted,
       pendingTotalExecuted: pendingMonthlyExecuted.reduce((s, v) => s + v, 0),
       executions: activityExecutions
@@ -531,8 +571,8 @@ export async function buildPdtpExport({ programId, year, sheetCode, worksiteId, 
   ])
   const headers = [
     "N°", "Actividad preventiva", "Guía de ejecución", "Responsables", ...monthHeaders,
-    "Plan anual histórico", "Ejecutado anual histórico", "% histórico",
-    "Plan anual exigible", "Ejecutado anual exigible", "% exigible",
+    "Plan anual histórico", "Ejecutado anual histórico", "Ejecutado computable histórico", "% histórico",
+    "Plan anual exigible", "Ejecutado anual exigible", "Ejecutado computable exigible", "% exigible",
   ]
   const rows: ReportCell[][] = view.activities.map((activity) => {
     const content = readPdtpActivityContent(activity)
@@ -542,13 +582,16 @@ export async function buildPdtpExport({ programId, year, sheetCode, worksiteId, 
       activity.effectiveMonthlyPlanned[index] ?? 0,
       activity.effectiveMonthlyExecuted[index] ?? 0,
     ])
-    const historicalPercent = activity.totalPlanned > 0 ? Math.round((activity.totalExecuted / activity.totalPlanned) * 100) : null
-    const effectivePercent = activity.effectiveTotalPlanned > 0 ? Math.round((activity.effectiveTotalExecuted / activity.effectiveTotalPlanned) * 100) : null
+    // PREV-C02: el % sale de la columna computable (cada mes topado a su
+    // plan), no del ejecutado bruto — que sigue a la vista para no esconder
+    // la sobreejecución, pero ya no compensa los meses en cero.
+    const historicalPercent = activity.totalPlanned > 0 ? Math.round((activity.countedTotalExecuted / activity.totalPlanned) * 100) : null
+    const effectivePercent = activity.effectiveTotalPlanned > 0 ? Math.round((activity.effectiveCountedTotalExecuted / activity.effectiveTotalPlanned) * 100) : null
     return [
       activity.n, content.activityDescription, content.executionGuidance, activity.responsibleDisplay,
       ...monthly,
-      activity.totalPlanned, activity.totalExecuted, historicalPercent,
-      activity.effectiveTotalPlanned, activity.effectiveTotalExecuted, effectivePercent,
+      activity.totalPlanned, activity.totalExecuted, activity.countedTotalExecuted, historicalPercent,
+      activity.effectiveTotalPlanned, activity.effectiveTotalExecuted, activity.effectiveCountedTotalExecuted, effectivePercent,
     ]
   })
 

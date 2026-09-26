@@ -60,3 +60,17 @@ describe("pdtpExecutionSchema — evidence URL validation", () => {
     expect(r.evidencePhotos).toEqual([])
   })
 })
+
+describe("pdtpExecutionSchema — techo de cantidad (PREV-C02)", () => {
+  const base = { activityId: "act-1", worksiteId: "ws-1", year: 2026, month: 1, week: 1 }
+
+  it("acepta hasta 100.000", () => {
+    expect(pdtpExecutionSchema.parse({ ...base, executedQuantity: 100_000 }).executedQuantity).toBe(100_000)
+  })
+
+  it("rechaza sobre 100.000 con un mensaje legible", () => {
+    const result = pdtpExecutionSchema.safeParse({ ...base, executedQuantity: 100_001 })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.message).toBe("La cantidad no puede superar 100.000.")
+  })
+})
