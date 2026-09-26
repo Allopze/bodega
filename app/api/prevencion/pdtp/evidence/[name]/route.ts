@@ -4,9 +4,10 @@
  * Sirve un archivo de evidencia PDTP previamente subido a
  * `storage/pdtp-evidence/`. El nombre llega por URL y se valida contra
  * el `isSafeStorageName` (sin traversal) y contra la DB: el archivo debe
- * estar referenciado en `pdtp_executions.evidence_url` o en
- * `pdtp_executions.evidence_photos` de una ejecución dentro del scope
- * de faenas del usuario.
+ * estar referenciado —por igualdad exacta de la ruta, PREV-M02-A— por una
+ * ejecución, por la evidencia del plan de acción del PDTP o por una instancia
+ * programada (PREV-I05) dentro del scope de faenas del usuario
+ * (`findPdtpEvidenceOwner`).
  *
  * Auth: requiere sesión y permiso `prevention:pdtp:view`. Aplica
  * `assertWorksiteAccess` para impedir fuga cross-worksite.
@@ -16,14 +17,12 @@ export const runtime = "nodejs"
 
 import { type NextRequest, NextResponse } from "next/server"
 import { promises as fs } from "node:fs"
-import { and, inArray, like, or, sql, type SQL } from "drizzle-orm"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 import { assertWorksiteAccess } from "@/lib/services/prevention-pdtp"
-import { db } from "@/db"
-import { pdtpExecutions } from "@/db/schema"
+import { findPdtpEvidenceOwner } from "@/lib/services/pdtp/evidence-references"
 import { logger } from "@/lib/logger"
 
 const PDTP_EVIDENCE_PREFIX = "storage/pdtp-evidence/"
@@ -55,23 +54,8 @@ export async function GET(
   const scopeIds: string[] | "all" = scope.mode === "all" ? "all" : scope.ids
 
   try {
-    const safeName = name.replace(/[%_]/g, (m) => `\\${m}`)
-    const likePattern = `%${safeName}%`
-    const nameMatch = or(
-      like(pdtpExecutions.evidenceUrl, likePattern),
-      sql`${pdtpExecutions.evidencePhotos}::text LIKE ${likePattern}`,
-    )
-    const where: SQL = scope.mode === "all"
-      ? nameMatch ?? sql`false`
-      : and(nameMatch, inArray(pdtpExecutions.worksiteId, scope.ids)) ?? sql`false`
-
-    const rows = await db
-      .select({ worksiteId: pdtpExecutions.worksiteId })
-      .from(pdtpExecutions)
-      .where(where)
-      .limit(1)
-
-    const ownerWorksite = rows[0]?.worksiteId
+    const owner = await findPdtpEvidenceOwner(name, scopeIds)
+    const ownerWorksite = owner?.worksiteId
     if (!ownerWorksite) {
       return NextResponse.json({ error: "Evidencia no encontrada" }, { status: 404 })
     }

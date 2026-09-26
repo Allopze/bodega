@@ -245,4 +245,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/ti-attachments-pglite.test.ts",
   // ── PDTP (Prevención) ────────────────────────────────────────────────────
   "lib/services/pdtp-adapters/external-engagement-accreditation-connector.test.ts",
+  // T4 (evidencia e historial): bitácora de envíos, sha256 y segregación.
+  "lib/__tests__/pdtp-execution-history.test.ts",
+  "lib/__tests__/pdtp-evidence-references.test.ts",
 ]
