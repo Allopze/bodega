@@ -314,6 +314,10 @@ services:
         # Programas de inspección: se materializan antes de que alguien abra la
         # pantalla del día.
         50 4 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-inspection-programs >/proc/1/fd/1 2>&1
+        # Integridad de la evidencia PDTP (PREV-I13-C) — 05:15: cada archivo que
+        # la base referencia existe y conserva su sha256. Sólo observa; la
+        # alerta es el log de error del servicio.
+        15 5 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs pdtp-evidence-integrity >/proc/1/fd/1 2>&1
         5 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-capa-reminders >/proc/1/fd/1 2>&1
         10 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-training-reminders >/proc/1/fd/1 2>&1
         20 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-cphs-alerts >/proc/1/fd/1 2>&1

@@ -564,6 +564,8 @@ exit $?
     const cronService = cronServiceFromCompose(compose)
     const jobs = [...runner.matchAll(/^ {2}"?([a-z0-9-]+)"?: \{\n\s+url:/gm)].map((match) => match[1]!)
     expect(jobs).toContain("pdtp-weekly-reminders")
+    // PREV-I13-C: el escaneo de integridad de evidencia PDTP corre a diario.
+    expect(jobs).toContain("pdtp-evidence-integrity")
 
     const unscheduled = jobs.filter((job) => !cronService.includes(`cron-runner.mjs ${job} `))
     expect(unscheduled).toEqual([])

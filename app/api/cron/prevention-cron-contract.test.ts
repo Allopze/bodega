@@ -41,6 +41,7 @@ vi.mock("@/lib/services/prevention-inspection-scheduler", () => ({ materializePr
 vi.mock("@/lib/services/prevention-document-ack-reminders", () => ({ runPreventionDocumentAckReminders: ok }))
 vi.mock("@/lib/services/sst-alerts", () => ({ checkOverdueWeeklyAlerts: ok }))
 vi.mock("@/lib/services/deadline-reminders", () => ({ runDeadlineReminders: ok }))
+vi.mock("@/lib/services/pdtp/evidence-integrity", () => ({ scanPdtpEvidenceIntegrity: ok }))
 
 const { runCronJob } = await import("../../../scripts/cron-runner.mjs")
 
@@ -54,6 +55,8 @@ const ROUTES = {
   "prevention-document-ack-reminders": { load: () => import("./prevention-document-ack-reminders/route"), prefix: "PREVENTION_CRON_" },
   "sst-weekly-alerts": { load: () => import("./sst-weekly-alerts/route"), prefix: "SST_CRON_" },
   "deadline-reminders": { load: () => import("./deadline-reminders/route"), prefix: "DEADLINE_REMINDERS_" },
+  // PREV-I13-C: escaneo de integridad de la evidencia PDTP.
+  "pdtp-evidence-integrity": { load: () => import("./pdtp-evidence-integrity/route"), prefix: "PREVENTION_CRON_" },
 } as const
 
 type JobName = keyof typeof ROUTES
@@ -103,5 +106,37 @@ describe.each(Object.keys(ROUTES) as JobName[])("cron %s llamado por el runner",
     expect(body).toMatchObject({ ok: false, outcome: "failed", code: `${prefix}FAILED` })
     expect(exitCode).toBe(1)
     expect(log.mock.calls.flat().join(" ")).not.toContain("DTE_CRON_RUNNER_CONTRACT")
+  })
+})
+
+describe("cron pdtp-evidence-integrity (PREV-I13-C)", () => {
+  it("encontrar evidencia perdida no es una falla del cron: sale 0 y reporta los conteos", async () => {
+    mocks.work.mockResolvedValue({
+      ok: false, references: 3, checkedFiles: 2, missingCount: 1, checksumMismatchCount: 0, withoutChecksum: 1,
+      missing: [{ path: "storage/pdtp-evidence/perdida.pdf", owners: [{ source: "execution", ownerId: "exec-1", worksiteId: "ws-1" }] }],
+      checksumMismatches: [],
+    })
+    const { status, body, exitCode } = await runThroughRunner("pdtp-evidence-integrity")
+    expect(status).toBe(200)
+    expect(exitCode).toBe(0)
+    expect(body).toMatchObject({
+      ok: true, outcome: "success", code: "PREVENTION_CRON_SUCCESS",
+      integrity: { ok: false, missingCount: 1, checksumMismatchCount: 0, checkedFiles: 2 },
+    })
+    expect(body.integrity.missingSample).toEqual(["storage/pdtp-evidence/perdida.pdf"])
+  })
+
+  it("la respuesta cabe en el límite del runner aunque falten miles de archivos", async () => {
+    const missing = Array.from({ length: 5000 }, (_, i) => ({
+      path: `storage/pdtp-evidence/${"x".repeat(20)}-${i}.pdf`,
+      owners: [{ source: "execution", ownerId: `exec-${i}`, worksiteId: "ws-1" }],
+    }))
+    mocks.work.mockResolvedValue({
+      ok: false, references: 5000, checkedFiles: 5000, missingCount: 5000, checksumMismatchCount: 0, withoutChecksum: 0,
+      missing, checksumMismatches: [],
+    })
+    const { body, exitCode } = await runThroughRunner("pdtp-evidence-integrity")
+    expect(exitCode).toBe(0)
+    expect(JSON.stringify(body).length).toBeLessThan(32 * 1024)
   })
 })

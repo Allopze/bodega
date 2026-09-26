@@ -150,6 +150,12 @@ const JOBS = Object.freeze({
     kind: "sync",
     codePrefix: "PREVENTION_CRON_",
   },
+  "pdtp-evidence-integrity": {
+    url: "http://app:3000/api/cron/pdtp-evidence-integrity",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "PREVENTION_CRON_",
+  },
   "sst-weekly-alerts": {
     url: "http://app:3000/api/cron/sst-weekly-alerts",
     timeoutMs: 5 * 60 * 1_000,
