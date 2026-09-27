@@ -1,7 +1,7 @@
 /**
  * I12 (T7b): rendimiento del cumplimiento PDTP sin mover una sola cifra.
  *
- * Dos redes, sobre el mismo conjunto sintético (`helpers/pdtp-compliance-fixture.ts`):
+ * Dos redes, sobre el mismo conjunto sintético (`lib/testing/pdtp-compliance-fixture.ts`):
  *
  * 1. **Cifras doradas.** `pdtp-compliance-golden-2025.json` se generó con el
  *    código ANTERIOR a la optimización (commit de esta prueba) y guarda cada
@@ -22,7 +22,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
-import { seedPdtpComplianceFixture, type PdtpComplianceFixture } from "./helpers/pdtp-compliance-fixture"
+import { seedPdtpComplianceFixture, type PdtpComplianceFixture } from "@/lib/testing/pdtp-compliance-fixture"
 
 const queries = { count: 0 }
 const pg = new PGlite()
