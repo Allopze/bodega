@@ -40,6 +40,8 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
+  // PREV-I04: la historia de las ejecuciones PDTP vive en `audit_log`, que referencia a `users`.
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.pdtpExecutionDeviations)
   await inMemoryDb.delete(schema.pdtpChangeLog)
   await inMemoryDb.delete(schema.pdtpExecutions)
