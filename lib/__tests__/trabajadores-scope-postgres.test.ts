@@ -17,6 +17,7 @@ import ExcelJS from "exceljs"
 import type { Session } from "next-auth"
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
+import { truncateImmutableTable } from "@/lib/testing/immutable-tables"
 import {
   assertSafeDestructiveDatabase,
   getDatabaseNameFromUrl,
@@ -115,6 +116,11 @@ describeIf("trabajadores export/import — alcance de faena (real Postgres)", ()
     const db = getTestDb()
     await db.delete(schema.auditLog)
     await db.delete(schema.users)
+    // Mismo orden que la contraparte PGlite: el historial de cargos (inmutable,
+    // con FK a workers) lo escriben las pruebas de importación y bloqueaba el
+    // borrado de workers en el beforeEach siguiente.
+    await db.delete(schema.workerCapabilityOverrides)
+    await truncateImmutableTable(db, "worker_position_history")
     await db.delete(schema.workers)
     await db.delete(schema.worksites)
     await db.insert(schema.worksites).values([
