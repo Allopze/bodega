@@ -94,7 +94,11 @@ export function PageHeader({ title, description, actions, headerActions, breadcr
           )}
         </div>
         {actions && (
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 lg:hidden">
+          // `[&>div]:flex-wrap`: muchas páginas agrupan sus acciones en su
+          // propio `<div className="flex items-center gap-2">`. Ese div no
+          // envolvía y, a 390 px, la fila se salía del pozo del shell (7 px en
+          // /prevencion/pdtp). Se corrige aquí y no página por página.
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 lg:hidden [&>div]:flex-wrap">
             {actions}
           </div>
         )}

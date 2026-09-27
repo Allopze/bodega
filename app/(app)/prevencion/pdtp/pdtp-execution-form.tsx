@@ -23,6 +23,13 @@ type ExecState = { ok: boolean; message?: string; fieldErrors?: Record<string, s
 
 type PdtpExecutionFormProps = {
   activityId: string
+  /**
+   * PREV-I01: N° y nombre de la actividad, para que el diálogo diga qué se
+   * está registrando. En el teléfono la fila queda fuera de la vista al abrir
+   * el diálogo y, sin esto, "Registrar ejecución" no nombraba ninguna.
+   */
+  activityN?: number
+  activityName?: string
   worksiteId: string
   year?: number
   defaultMonth?: number
@@ -48,7 +55,7 @@ type PdtpExecutionFormProps = {
 /** Mismo tope que `POST /api/prevencion/pdtp/evidence`. */
 const MAX_EVIDENCE_BYTES = 25 * 1024 * 1024
 
-export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, defaultWeek, effectiveFrom, evidenceRequirement, mechanism, manualEvidencePolicy }: PdtpExecutionFormProps) {
+export function PdtpExecutionForm({ activityId, activityN, activityName, worksiteId, year, defaultMonth, defaultWeek, effectiveFrom, evidenceRequirement, mechanism, manualEvidencePolicy }: PdtpExecutionFormProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [open, setOpen] = React.useState(false)
   const programYear = year ?? codeYear()
@@ -136,9 +143,16 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Registrar ejecución</DialogTitle>
+          <DialogTitle>
+            Registrar ejecución{activityN !== undefined ? ` · N°${activityN}` : ""}
+          </DialogTitle>
           <DialogDescription>
-            Ingresa la cantidad ejecutada para el período indicado y adjunta la evidencia (foto o PDF).
+            {activityName && (
+              <span className="block font-medium text-[var(--color-text)]">{activityName}</span>
+            )}
+            <span className="block">
+              Ingresa la cantidad ejecutada para el período indicado y adjunta la evidencia (foto o PDF).
+            </span>
           </DialogDescription>
         </DialogHeader>
         <form

@@ -528,6 +528,78 @@ describe("PdtpSheetTable — paginación de la vista anual", () => {
   })
 })
 
+describe("PdtpSheetTable — paginación de la vista semanal (W8)", () => {
+  // Plan en la semana en curso (julio, semana 2): todas entran a la vista semanal.
+  const WEEK_PLAN = withPlanned(7, 1)
+
+  function makeMany(count: number) {
+    return Array.from({ length: count }, (_, i) =>
+      makeActivity(`w-${i}`, String(i + 1), `Semanal número ${i + 1}`, WEEK_PLAN, ZERO12),
+    ) as unknown as PdtpSheetView["activities"]
+  }
+
+  it("con más de 30 actividades pagina de a 30 y deja llegar a las restantes", () => {
+    render(<PdtpSheetTable view={makeView(makeMany(35))} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+
+    expect(screen.getByText("Semanal número 30")).toBeDefined()
+    expect(screen.queryByText("Semanal número 31")).toBeNull()
+
+    // Antes la vista semanal cortaba en 30 en silencio: sin botón ni páginas,
+    // las actividades 31+ no se podían ver ni registrar.
+    fireEvent.click(screen.getByRole("button", { name: "Página siguiente" }))
+
+    expect(screen.getByText("Semanal número 31")).toBeDefined()
+    expect(screen.getByText("Semanal número 35")).toBeDefined()
+    expect(screen.queryByText("Semanal número 1")).toBeNull()
+  })
+
+  it("con 30 o menos no muestra paginación", () => {
+    render(<PdtpSheetTable view={makeView(makeMany(30))} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+
+    expect(screen.getByText("Semanal número 30")).toBeDefined()
+    expect(screen.queryByRole("button", { name: "Página siguiente" })).toBeNull()
+  })
+
+  it("al cambiar el filtro de estado vuelve a la primera página", () => {
+    const pending = makeMany(35)
+    render(<PdtpSheetTable view={makeView(pending)} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Página siguiente" }))
+    expect(screen.getByText("Semanal número 31")).toBeDefined()
+
+    fireEvent.click(screen.getByRole("button", { name: /Pendientes/ }))
+    expect(screen.getByText("Semanal número 1")).toBeDefined()
+  })
+})
+
+describe("PdtpSheetTable — registro en móvil (PREV-I01, D29)", () => {
+  const activity = makeActivity("act-movil", "7", "Charla de 5 minutos", withPlanned(7, 1), ZERO12)
+
+  it("en la vista anual sólo el N° queda fijo bajo md; la columna Actividad se fija desde md", () => {
+    render(<PdtpSheetTable view={makeView([activity])} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" canExecute worksiteId="ws-1" />)
+
+    const header = screen.getByRole("columnheader", { name: "Actividad" })
+    const cell = screen.getByText("Charla de 5 minutos").closest("td")!
+    for (const element of [header, cell]) {
+      const classes = element.className.split(/\s+/)
+      expect(classes).not.toContain("sticky")
+      expect(classes).toContain("md:sticky")
+    }
+    const numberHeader = screen.getByRole("columnheader", { name: "N°" })
+    expect(numberHeader.className.split(/\s+/)).toContain("sticky")
+  })
+
+  it("'Registrar' abre un diálogo con el N° y el nombre de la actividad", () => {
+    render(<PdtpSheetTable view={makeView([activity])} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" canExecute worksiteId="ws-1" />)
+
+    const row = screen.getByText("Charla de 5 minutos").closest("tr")!
+    fireEvent.click(within(row).getByRole("button", { name: "Registrar" }))
+    const dialog = screen.getByRole("dialog")
+    expect(within(dialog).getByRole("heading", { name: /N°7/ })).toBeDefined()
+    expect(within(dialog).getByText("Charla de 5 minutos")).toBeDefined()
+  })
+})
+
 describe("PdtpSheetTable — agrupación por objetivo", () => {
   const OBJECTIVES = [
     { id: "obj-1", code: "1", name: "Objetivo Uno" },

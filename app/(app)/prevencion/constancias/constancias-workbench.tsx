@@ -121,6 +121,8 @@ export function ConstanciasWorkbench({
                     <div className="flex flex-wrap justify-end gap-2">
                       <PdtpExecutionForm
                         activityId={row.activityId}
+                        activityN={row.n}
+                        activityName={row.activityName}
                         worksiteId={row.worksiteId}
                         year={row.programYear}
                         defaultMonth={row.dueMonth}
