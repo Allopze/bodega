@@ -421,7 +421,12 @@ const DataTableInner = <T extends Record<string, unknown>>({
       </TableRoot>
 
       {renderMobileCard && (
-        <div className="grid gap-2 md:hidden">
+        // `grid-cols-1` = `minmax(0, 1fr)`. Sin él la pista implícita es
+        // `auto`, cuyo mínimo es el min-content de la tarjeta: un correo con
+        // `truncate` o un badge `whitespace-nowrap` la ensanchaban más allá del
+        // pozo (+20 px en Usuarios y +27 en Recepción a 320 px), y el pozo
+        // —`overflow-x-hidden`— recortaba el estado y la acción de cada tarjeta.
+        <div className="grid grid-cols-1 gap-2 md:hidden">
           {loading ? (
             Array.from({ length: Math.min(pageSize, 5) }).map((_, i) => (
               <SkeletonRow key={i} cols={2} />

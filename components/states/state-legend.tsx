@@ -25,11 +25,15 @@ export function StateLegend({ officeName }: { officeName?: string }) {
       </summary>
       <ul className="space-y-2 border-t border-[var(--color-border)] px-4 py-3">
         {RECEPTION_STATES.map((state) => (
-          <li key={state} className="flex items-start gap-3">
+          // `flex-wrap` + `basis-48`: el badge más largo ("Parcialmente
+          // recibido en…") ocupa casi todo el ancho a 320 px y la descripción
+          // quedaba en una columna de una palabra que se salía del pozo. Bajo
+          // ese ancho la descripción pasa debajo del badge.
+          <li key={state} className="flex flex-wrap items-start gap-x-3 gap-y-1">
             <span className="shrink-0">
               <StateBadge state={state} entity="oc" size="sm" officeName={officeName} />
             </span>
-            <span className="text-xs text-[var(--color-text-muted)]">
+            <span className="min-w-0 flex-1 basis-48 text-xs text-[var(--color-text-muted)]">
               {describeState(OC_STATE_META[state].description, officeName)}
             </span>
           </li>

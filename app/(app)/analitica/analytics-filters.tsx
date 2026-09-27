@@ -54,7 +54,10 @@ export function AnalyticsFiltersBar({
 
   return (
     <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]" aria-label="Filtros de analítica">
-      <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] lg:items-end">
+      {/* `grid-cols-1` (= `minmax(0, 1fr)`): con la pista implícita `auto`
+          el valor de un `Select` crecía hasta su min-content y la columna se
+          salía 141 px del pozo a 320 px. */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] lg:items-end">
         <div className="grid gap-1.5">
           <label className="text-xs font-medium text-[var(--color-text-subtle)]" htmlFor="analytics-from">Desde</label>
           <DatePicker id="analytics-from" value={fromDate} onChange={setFromDate} placeholder="Desde" />

@@ -29,7 +29,9 @@ const PaginationInner = React.memo(function PaginationInner({ page, total, perPa
   if (totalPages <= 1) return null
 
   return (
-    <div className={cn("flex items-center justify-between gap-4 py-3 px-4 border-t border-[var(--color-border)]", className)}>
+    // `flex-wrap`: salvaguarda. Con sólo tres controles bajo `sm` la fila cabe
+    // en 320 px, pero un rango de cinco dígitos no debe volver a sacarla del pozo.
+    <div className={cn("flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3 px-4 border-t border-[var(--color-border)]", className)}>
       <p className="text-xs text-[var(--color-text-subtle)]">
         <span className="font-mono tabular-nums">{from}</span>
         {" – "}
@@ -47,12 +49,13 @@ const PaginationInner = React.memo(function PaginationInner({ page, total, perPa
         </PageButton>
         {pageNums.map((p, i) =>
           p === "…" ? (
-            <span key={`ellipsis-${i}`} className="w-8 text-center text-xs text-[var(--color-text-subtle)]">…</span>
+            <span key={`ellipsis-${i}`} className="hidden w-8 text-center text-xs text-[var(--color-text-subtle)] sm:inline">…</span>
           ) : (
             <PageButton
               key={p}
               onClick={goToPage(p as number)}
               active={p === page}
+              hideOnMobile={p !== page}
               aria-label={`Ir a página ${p}`}
               aria-current={p === page ? "page" : undefined}
             >
@@ -74,12 +77,19 @@ const PaginationInner = React.memo(function PaginationInner({ page, total, perPa
 
 export const Pagination = PaginationInner
 
+/**
+ * Bajo `sm` cada control mide 44 × 44 px (WCAG 2.5.5, como `ServerPagination`
+ * y los `icon-mobile`) y sólo se ven anterior, la actual y siguiente: siete
+ * controles de 44 px no caben en 320 px. Desde `sm` vuelven los números a 28 px,
+ * que sigue sobre el mínimo AA de 24 px (WCAG 2.5.8).
+ */
 function PageButton({
-  children, active, disabled, onClick, ...rest
+  children, active, disabled, onClick, hideOnMobile, ...rest
 }: {
   children: React.ReactNode
   active?: boolean
   disabled?: boolean
+  hideOnMobile?: boolean
   onClick?: () => void
   "aria-label"?: string
   "aria-current"?: "page" | undefined
@@ -89,7 +99,8 @@ function PageButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "h-7 min-w-7 px-2 rounded-[var(--radius)] text-xs font-medium",
+        "h-11 min-w-11 sm:h-7 sm:min-w-7 items-center justify-center px-2 rounded-[var(--radius)] text-xs font-medium",
+        hideOnMobile ? "hidden sm:inline-flex" : "inline-flex",
         // Emil: specify exact properties, not 'all'
         "transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
         "disabled:pointer-events-none disabled:opacity-35",

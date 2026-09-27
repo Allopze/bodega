@@ -52,7 +52,10 @@ export function FilterToolbar({
             apilaba en vertical dejando media pantalla vacía. `w-auto` los
             devuelve a su ancho natural; `max-w-full` evita que una opción
             larga desborde la barra en pantallas angostas. */}
-        <div className="flex flex-wrap items-center gap-2 [&>button]:w-auto [&>button]:max-w-full">
+        {/* `min-w-0`: este grupo es un ítem flex de la fila de arriba y sin él
+            no podía quedar más angosto que su contenido; unas pestañas con
+            scroll propio (Higiene) lo ensanchaban 163 px fuera del pozo. */}
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 [&>button]:w-auto [&>button]:max-w-full">
           {children}
 
           {overflowFilters && (

@@ -304,17 +304,22 @@ export function PdtpSheetTable({
   const viewActivities = viewMode === "semana" ? weeklyActivities : objectiveScopedActivities
   const sourceActivities = viewActivities
 
-  const INITIAL_ROW_LIMIT = 30
-  const [showAll, setShowAll] = React.useState(false)
-  // W8: la vista semanal pagina de a 30. Antes cortaba en 30 sin botón ni
-  // páginas (el "Mostrar las N" sólo existía en la anual), así que la
-  // actividad 31 en adelante no se podía ver ni registrar. La página viaja en
-  // `?page=` para que volver desde una ficha deje al usuario donde estaba.
-  const requestedWeeklyPage = Number.parseInt(searchParams.get("page") ?? "1", 10)
-  const [weeklyPage, setWeeklyPage] = React.useState(
-    Number.isSafeInteger(requestedWeeklyPage) && requestedWeeklyPage > 1 ? requestedWeeklyPage : 1,
-  )
-  const weeklyTableRef = React.useRef<HTMLDivElement>(null)
+  // Las dos vistas paginan de a 30 con el mismo `Pagination` y la página en
+  // `?page=`. W8: la semanal cortaba en 30 sin botón ni páginas, y la
+  // actividad 31 en adelante no se podía ver ni registrar. La anual ofrecía en
+  // cambio "Mostrar las N": expandido, volver desde una ficha la dejaba otra vez
+  // en 30 (el estado no viajaba en la URL) y la tabla crecía a 100+ filas con
+  // un control de registro cada una. La página en la URL deja al usuario donde
+  // estaba al volver, en cualquiera de las dos vistas.
+  const ROWS_PER_PAGE = 30
+  const requestedPageParam = searchParams.get("page") ?? "1"
+  const requestedPage = Number.parseInt(requestedPageParam, 10)
+  const pageFromUrl = Number.isSafeInteger(requestedPage) && requestedPage > 1 ? requestedPage : 1
+  const [page, setPage] = React.useState(pageFromUrl)
+  // Cambiar de vista, faena u hoja borra `?page=` (lo hace `useUrlFilters`):
+  // sin esto la tabla seguía en la página 3 de la vista anterior.
+  React.useEffect(() => setPage(pageFromUrl), [pageFromUrl])
+  const tableRef = React.useRef<HTMLDivElement>(null)
   // Compute status counts for the summary
   const statusCounts: PdtpStatusCounts = (() => {
     const counts = { executed: 0, pending: 0, overdue: 0, not_scheduled: 0, not_performed: 0, zero: 0 }
@@ -352,26 +357,21 @@ export function PdtpSheetTable({
   // deja pocas filas no hay nada que paginar, y el contador del botón tiene que
   // hablar de esas filas y no del total sin filtrar.
   const totalActivityCount = filteredActivities.length
-  const needsPagination = viewMode === "anual" && totalActivityCount > INITIAL_ROW_LIMIT && !showAll
-  const weeklyTotalPages = Math.max(1, Math.ceil(totalActivityCount / INITIAL_ROW_LIMIT))
+  const totalPages = Math.max(1, Math.ceil(totalActivityCount / ROWS_PER_PAGE))
   // Un `?page=` mayor que las páginas que quedan (p. ej. tras registrar y que
   // la lista se acorte) cae en la última en vez de mostrar una tabla vacía.
-  const currentWeeklyPage = Math.min(weeklyPage, weeklyTotalPages)
-  const displayActivities = viewMode === "semana"
-    ? filteredActivities.slice((currentWeeklyPage - 1) * INITIAL_ROW_LIMIT, currentWeeklyPage * INITIAL_ROW_LIMIT)
-    : needsPagination
-      ? filteredActivities.slice(0, INITIAL_ROW_LIMIT)
-      : filteredActivities
+  const currentPage = Math.min(page, totalPages)
+  const displayActivities = filteredActivities.slice((currentPage - 1) * ROWS_PER_PAGE, currentPage * ROWS_PER_PAGE)
 
-  const goToWeeklyPage = (next: number) => {
-    setWeeklyPage(next)
+  const goToPage = (next: number) => {
+    setPage(next)
     const params = new URLSearchParams(searchParams.toString())
     if (next > 1) params.set("page", String(next))
     else params.delete("page")
     router.replace(`${pathname}${params.size ? `?${params}` : ""}`, { scroll: false })
     // La tabla tiene su propio scroll vertical (`stickyHeader`): sin esto la
     // página nueva se abría a la altura donde estaba el botón.
-    weeklyTableRef.current?.scrollTo?.({ top: 0 })
+    tableRef.current?.scrollTo?.({ top: 0 })
   }
 
   // La agrupación por objetivo sólo aplica a la vista anual y sólo si el
@@ -393,7 +393,7 @@ export function PdtpSheetTable({
             activeFilter={statusFilter}
             onFilter={(next) => {
               setStatusFilter(next)
-              setWeeklyPage(1)
+              setPage(1)
               const params = new URLSearchParams(searchParams.toString())
               if (next === "all") params.delete("estado")
               else params.set("estado", next)
@@ -440,7 +440,7 @@ export function PdtpSheetTable({
           </div>
         ) : (
           <>
-          <TableRoot ref={weeklyTableRef} stickyHeader>
+          <TableRoot ref={tableRef} stickyHeader>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -582,10 +582,10 @@ export function PdtpSheetTable({
             </Table>
           </TableRoot>
           <Pagination
-            page={currentWeeklyPage}
+            page={currentPage}
             total={totalActivityCount}
-            perPage={INITIAL_ROW_LIMIT}
-            onPage={goToWeeklyPage}
+            perPage={ROWS_PER_PAGE}
+            onPage={goToPage}
           />
           </>
         )
@@ -602,7 +602,7 @@ export function PdtpSheetTable({
             <p id="pdtp-horizontal-scroll-hint" className="mb-2 text-xs text-[var(--color-text-muted)] sm:hidden">
               Desliza horizontalmente para revisar más semanas y columnas.
             </p>
-            <TableRoot stickyHeader aria-describedby="pdtp-horizontal-scroll-hint pdtp-plan-view-description">
+            <TableRoot ref={tableRef} stickyHeader aria-describedby="pdtp-horizontal-scroll-hint pdtp-plan-view-description">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -793,17 +793,12 @@ export function PdtpSheetTable({
               </TableBody>
             </Table>
           </TableRoot>
-          {needsPagination && (
-            <div className="mt-3 text-center">
-              <button
-                type="button"
-                onClick={() => setShowAll(true)}
-                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm text-[var(--color-primary)] transition-colors hover:bg-[var(--color-surface-2)]"
-              >
-                Mostrar las {totalActivityCount} actividades ({totalActivityCount - INITIAL_ROW_LIMIT} más)
-              </button>
-            </div>
-          )}
+          <Pagination
+            page={currentPage}
+            total={totalActivityCount}
+            perPage={ROWS_PER_PAGE}
+            onPage={goToPage}
+          />
           </>
         )
       )}

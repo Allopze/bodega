@@ -6,7 +6,9 @@ import type { SummaryStat } from "./summary-bar"
 /** Variante inline para encabezados compactos. */
 export function SummaryBarCompactStrip({ stats, className }: { stats: SummaryStat[]; className?: string }) {
   return (
-    <div className={cn("flex items-center gap-3 whitespace-nowrap text-xs", className)}>
+    // Envuelve por celda —cada una sigue `whitespace-nowrap`— para caber en el
+    // TopBar a 1024 px: toda la tira en una línea lo desbordaba (Bodega, +59 px).
+    <div className={cn("flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-0.5 text-xs", className)}>
       {stats.map((stat, i) => {
         const numeric = typeof stat.value === "number" ? stat.value : Number.parseFloat(String(stat.value)) || 0
         const isZero = numeric === 0
@@ -22,7 +24,7 @@ export function SummaryBarCompactStrip({ stats, className }: { stats: SummarySta
           </>
         )
         return (
-          <div key={stat.key} className="flex items-center gap-2">
+          <div key={stat.key} className="flex items-center gap-2 whitespace-nowrap">
             {i > 0 && <span className="text-[var(--color-border-strong)]" aria-hidden>·</span>}
             {stat.href ? (
               <Link href={stat.href} className="flex items-center gap-2 transition-colors hover:text-[var(--color-primary)]" title={stat.label}>

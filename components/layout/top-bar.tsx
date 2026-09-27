@@ -83,7 +83,10 @@ const TopBarInner = React.memo(function TopBarInner({
       // de la curva— y toda la fila quedaba pegada al borde. A 72px el centro
       // cae justo en los 36px del radio y la fila respira por arriba y por abajo.
       // Móvil no tiene pozo ni curva: se queda en 3.5rem.
-      "flex items-center h-[3.5rem] lg:h-[4.5rem] px-4 md:px-6 gap-3",
+      // `min-h` y no `h` en desktop: las acciones ahora envuelven (ver su
+      // contenedor) y con alto fijo una segunda fila se montaba sobre el
+      // contenido. En el caso normal, una sola fila, mide lo mismo que antes.
+      "flex items-center h-[3.5rem] lg:h-auto lg:min-h-[4.5rem] lg:py-2 px-4 md:px-6 gap-3",
       // Sin fondo propio: la barra scrollea con el contenido (no es `sticky`),
       // así que hereda el del `<main>` y con él la sombra `inset` del pozo —
       // header y zona de trabajo quedan indistinguibles, sin costura ni
@@ -113,7 +116,10 @@ const TopBarInner = React.memo(function TopBarInner({
 
       {/* Desktop: contexto de página + chip de faena (si aplica) */}
       <div className="flex-1 min-w-0 hidden lg:flex items-center gap-3">
-        <div className="min-w-0 flex-1">
+        {/* `min-w-32`: las acciones de abajo ahora pueden encogerse, y sin un
+            piso el título (`flex-1`, base 0) era lo primero en quedarse en
+            cero. Con el piso el título se trunca pero sigue leyéndose. */}
+        <div className="min-w-32 flex-1">
           {header.title && (
             <div className="flex min-w-0 flex-col">
               {/* El breadcrumb sólo existía en el bloque local del `PageHeader`,
@@ -132,7 +138,7 @@ const TopBarInner = React.memo(function TopBarInner({
                     descripción larga lo truncaba a "Pendientes de f…" incluso
                     a 1920px (auditoría UI/UX 2026-08-05, A3). El `max-w` cubre
                     el caso patológico de un título larguísimo sin descripción. */}
-                <p title={header.title} className="max-w-[36rem] shrink-0 truncate text-lg font-bold tracking-tight text-(--color-text)">
+                <p title={header.title} className="max-w-[min(36rem,100%)] shrink-0 truncate text-lg font-bold tracking-tight text-(--color-text)">
                   {header.title}
                 </p>
                 {/* Estaba en `2xl:block`, así que en un laptop de 1440 se perdían
@@ -162,8 +168,13 @@ const TopBarInner = React.memo(function TopBarInner({
             </span>
           </div>
         )}
+        {/* `min-w-0` + `flex-wrap`, no `shrink-0`: a 1024 px (sidebar
+            abierto) las métricas de Bodega + su CTA medían 646 px y la fila se
+            salía 59 px del pozo, que recortaba el botón. Ahora la tira de
+            métricas envuelve en dos líneas dentro de la altura del TopBar y el
+            CTA —que no se parte— conserva su ancho. */}
         {header.actions && (
-          <div className="hidden shrink-0 items-center gap-1.5 lg:flex">
+          <div className="hidden min-w-0 flex-wrap items-center justify-end gap-1.5 lg:flex">
             {header.actions}
           </div>
         )}

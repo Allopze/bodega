@@ -52,8 +52,10 @@ export function OcDetailItems({
 
   return (
     <>
-      {/* Mobile cards */}
-      <div className="grid gap-2 md:hidden">
+      {/* Mobile cards. `grid-cols-1` (= `minmax(0, 1fr)`), como en `DataTable`:
+          con la pista `auto` una tarjeta crecía hasta su min-content y se
+          salía del pozo. */}
+      <div className="grid grid-cols-1 gap-2 md:hidden">
         {order.items.map((item) => {
           const reqItem = item.requestItemId ? reqItemMap[item.requestItemId] : null
           const product = item.productId ? productMap[item.productId] : null

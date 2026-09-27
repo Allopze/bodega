@@ -11,7 +11,7 @@ import { Field } from "@/components/ui/field"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRoot } from "@/components/ui/table"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { CONTAINER_STATUS_LABELS, containerStatusVariant, type ContainerStatus } from "@/lib/prevention/containers"
@@ -102,7 +102,11 @@ export function ContainerList({ rows, worksites, canManage }: {
           title="Sin contenedores"
           description="Da de alta los contenedores de la faena para poder inspeccionarlos: la inspección del Anexo 14 exige elegir uno del catálogo."
         />
-      : <Table>
+      // `TableRoot` da el desplazamiento horizontal propio de la tabla: sin él
+      // las seis columnas se salían 308 px del pozo a 320 px y el pozo
+      // —`overflow-x-hidden`— recortaba Estado y las acciones.
+      : <TableRoot aria-label="Contenedores">
+        <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Código</TableHead>
@@ -134,7 +138,8 @@ export function ContainerList({ rows, worksites, canManage }: {
               </TableCell>
             </TableRow>)}
           </TableBody>
-        </Table>}
+        </Table>
+        </TableRoot>}
   </div>
 }
 

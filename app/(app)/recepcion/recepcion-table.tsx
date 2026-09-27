@@ -207,13 +207,16 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
                 detectada, en `danger`— no llegaban al teléfono. Ahora la señal
                 de guía manda, igual que en la fila de escritorio, y el recuento
                 queda como respaldo cuando no hay guía viva. */}
+            {/* `whitespace-normal`: `Badge` no parte línea —es lo correcto en una
+                celda—, pero aquí lleva una frase y a 320 px se salía del pozo.
+                Faltaba además el espacio: se leía "1ítem pendiente…". */}
             {guideSignal ? (
               <div className="mt-2">
-                <MetaBadge meta={guideSignal} />
+                <MetaBadge meta={guideSignal} className="max-w-full whitespace-normal" />
               </div>
             ) : gap > 0 ? (
               <div className="mt-2">
-                <MetaBadge meta={{ label: `${gap}${gap === 1 ? "ítem pendiente de recepción en faena" : "ítems pendientes de recepción en faena"}`, variant: "warning" }} />
+                <MetaBadge meta={{ label: `${gap} ${gap === 1 ? "ítem pendiente de recepción en faena" : "ítems pendientes de recepción en faena"}`, variant: "warning" }} className="max-w-full whitespace-normal" />
               </div>
             ) : null}
             {activeGuide ? (
