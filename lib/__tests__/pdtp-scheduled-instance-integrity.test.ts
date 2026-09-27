@@ -21,7 +21,7 @@ import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { eq, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
@@ -161,6 +161,46 @@ beforeEach(async () => {
   // escondería cualquier doble conteo.
   await seedInstance(INST_A, `${Y}-03-02`)
   await seedInstance(INST_B, `${Y}-03-20`)
+})
+
+/* Revisión final 2026-09-27 (hallazgo 5): la materialización corta por el día
+ * de activación en hora de Chile (`todayInChile(activatedAt)`), pero el
+ * indicador cortaba por la fecha UTC (`activatedAt.slice(0, 10)`). Una
+ * activación a las 22:00 de Chile ya es el día siguiente en UTC: la ocurrencia
+ * de ese día quedaba materializada por la versión y fuera de su indicador, y
+ * contada en el de la versión anterior. */
+describe("hallazgo 5 — el día de activación se mide en Chile", () => {
+  // 02-03 a las 22:00 en Chile (UTC-3 en marzo) = 03-03 01:00 UTC.
+  const ACTIVATED_22H_CHILE = `${Y}-03-03T01:00:00.000Z`
+  // Postgres devuelve `timestamptz` en la zona de la sesión. PGlite usa
+  // `Etc/GMT+4`, que escondía el defecto (01:00Z se lee "21:00-04" del día
+  // anterior); el Postgres del despliegue corre en UTC.
+  let previousTimeZone = "Etc/GMT+4"
+  beforeEach(async () => {
+    previousTimeZone = String((await pg.query<{ TimeZone: string }>("SHOW TIME ZONE")).rows[0]!.TimeZone)
+    await pg.exec("SET TIME ZONE 'UTC'")
+  })
+  afterEach(async () => {
+    await pg.exec(`SET TIME ZONE '${previousTimeZone}'`)
+  })
+
+  it("la ocurrencia del día de activación (hora de Chile) cuenta en el indicador de la versión", async () => {
+    await inMemoryDb.update(schema.pdtpPrograms).set({ activatedAt: ACTIVATED_22H_CHILE }).where(eq(schema.pdtpPrograms.id, PROGRAM))
+    expect(await marchIndicator()).toMatchObject({ planned: 2 })
+  })
+
+  it("y deja de contar en la versión anterior, cuya ventana termina ese día", async () => {
+    const now = nowIso()
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "closed" }).where(eq(schema.pdtpPrograms.id, PROGRAM))
+    await inMemoryDb.insert(schema.pdtpPrograms).values({
+      id: `${PROGRAM}-v2`, version: 2, year: Y, title: `PDTP ${Y} ocurrencias v2`, status: "active", appliesToAllWorksites: true,
+      elaboratedByName: "X", elaboratedByTitle: "Y", activatedAt: ACTIVATED_22H_CHILE,
+      creationMode: "blank", complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
+      createdAt: now, updatedAt: now,
+    })
+    // Las dos ocurrencias (02-03 y 20-03) ya son de la v2.
+    expect(await marchIndicator()).toMatchObject({ planned: 0 })
+  })
 })
 
 describe("vía manual (PREV-I08-c)", () => {
