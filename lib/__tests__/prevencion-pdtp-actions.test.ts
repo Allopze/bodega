@@ -251,7 +251,7 @@ describe("Program lifecycle actions", () => {
 
   // T6: la activación vale aunque falle un paso posterior; la acción lo dice.
   it("activatePdtpProgramAction avisa el paso posterior que falló sin marcar la activación como fallida", async () => {
-    mockActivatePdtpProgram.mockResolvedValueOnce({ id: "prog-1", status: "active", postActivationWarnings: ["sembrar las casillas del año"] })
+    mockActivatePdtpProgram.mockResolvedValueOnce({ id: "prog-1", status: "active", postActivationWarnings: ["sembrar las casillas del año"] } as never)
     const res = await activatePdtpProgramAction("prog-1")
     expect(res.ok).toBe(true)
     expect(res.message).toMatch(/Programa activado\. Aviso: no se pudo sembrar las casillas del año/)

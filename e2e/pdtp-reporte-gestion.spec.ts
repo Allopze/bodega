@@ -56,6 +56,7 @@ test.describe("PDTP — Reporte de gestión", () => {
     const downloadPromise = page.waitForEvent("download")
     await page.getByRole("link", { name: "Descargar Excel" }).click()
     const download = await downloadPromise
-    expect(download.suggestedFilename()).toMatch(/pdtp-reporte-gestion-2026\.xlsx/)
+    // PREV-C05-C (T6): el archivo lleva la versión que mide.
+    expect(download.suggestedFilename()).toMatch(/pdtp-reporte-gestion-2026-v1\.xlsx/)
   })
 })
