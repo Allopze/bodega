@@ -31,7 +31,7 @@ vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: vi.fn() } }))
 vi.mock("@/lib/combustibles/queries", () => ({ buildFuelLoadsWhere: vi.fn(() => undefined) }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
-import { deleteFuelLoadAction, registerFuelLoadAction, createFuelSupplierAction, deleteFuelSupplierAction } from "@/app/(app)/combustibles/actions"
+import { deleteFuelLoadAction, registerFuelLoadAction, createFuelSupplierAction, toggleFuelSupplierActive } from "@/app/(app)/combustibles/actions"
 import { exportFuelLoadsXlsxAction } from "@/app/(app)/combustibles/actions-module/export"
 import { recordAudit } from "@/lib/audit"
 import type { ActionState } from "@/lib/validation/masters"
@@ -128,7 +128,16 @@ describe("createFuelSupplierAction", () => {
   })
 })
 
-describe("deleteFuelSupplierAction", () => {
+// Antes vía `deleteFuelSupplierAction`, un envoltorio sin llamadores de UI que
+// se retiró: exponía una server action más para la misma operación.
+function makeDeactivateSupplierForm(id: string) {
+  const formData = new FormData()
+  formData.set("id", id)
+  formData.set("activate", "false")
+  return formData
+}
+
+describe("toggleFuelSupplierActive (desactivar)", () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mockRequirePermission.mockResolvedValue(makeSession())
@@ -136,7 +145,7 @@ describe("deleteFuelSupplierAction", () => {
 
   it("returns error if permission denied", async () => {
     mockRequirePermission.mockRejectedValueOnce(new Error("no"))
-    const res = await deleteFuelSupplierAction("sup-1")
+    const res = await toggleFuelSupplierActive({ ok: false }, makeDeactivateSupplierForm("sup-1"))
     expect(res.ok).toBe(false)
   })
 
@@ -155,7 +164,7 @@ describe("deleteFuelSupplierAction", () => {
       createdAt: "2026-01-01",
       updatedAt: "2026-01-01",
     })
-    const res = await deleteFuelSupplierAction("sup-1")
+    const res = await toggleFuelSupplierActive({ ok: false }, makeDeactivateSupplierForm("sup-1"))
     expect(res.ok).toBe(true)
     expect(res.message).toContain("Proveedor desactivado")
   })
