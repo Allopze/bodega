@@ -210,6 +210,45 @@ describe("closePdtpProgramYear — efecto", () => {
     await expect(closePdtpProgramYear(`pdtp-${YEAR}-v2`, USER_ID, REASON, "all")).resolves.toMatchObject({ id: `pdtp-${YEAR}-v2` })
   })
 
+  /* Revisión final 2026-09-27 (hallazgo 3, T6 × T5): con la v2 activada a
+   * mitad de marzo, las dos versiones cierran marzo por sus propias semanas
+   * (cada cierre revisa sólo los pendientes de su versión). Contar cualquier
+   * cierre dejaba cerrar el año con las semanas de marzo de la v1 sin
+   * revisar. En un mes partido se exige el cierre de cada versión dueña. */
+  it("en el mes partido por la activación exige el cierre de cada versión, y dice cuál falta", async () => {
+    await seedVersion(1, "closed", `${YEAR}-01-02T12:00:00.000Z`)
+    // Semana 3 de marzo.
+    await seedVersion(2, "active", `${YEAR}-03-16T15:00:00.000Z`)
+    await addMember(`pdtp-${YEAR}-v1`, WS_A, `${YEAR}-01-01T12:00:00.000Z`)
+    await addMember(`pdtp-${YEAR}-v2`, WS_A, `${YEAR}-01-01T12:00:00.000Z`)
+    await closeMonths(`pdtp-${YEAR}-v1`, WS_A, [1, 2])
+    await closeMonths(`pdtp-${YEAR}-v2`, WS_A, [3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+    at(`${YEAR + 1}-01-20T15:00:00.000Z`)
+
+    const readiness = await getPdtpYearCloseReadiness(`pdtp-${YEAR}-v2`)
+    expect(readiness.canClose).toBe(false)
+    expect(readiness.missing).toEqual([expect.objectContaining({ worksiteId: WS_A, months: [3] })])
+    expect(readiness.blockers.join(" ")).toMatch(/Faena A: marzo \(v1\)/)
+    await expect(closePdtpProgramYear(`pdtp-${YEAR}-v2`, USER_ID, REASON, "all")).rejects.toThrow(/marzo \(v1\)/)
+
+    await closeMonths(`pdtp-${YEAR}-v1`, WS_A, [3])
+    expect((await getPdtpYearCloseReadiness(`pdtp-${YEAR}-v2`)).canClose).toBe(true)
+  })
+
+  it("en el mes partido, una faena que la v1 no operaba sólo debe el cierre de la v2", async () => {
+    await seedVersion(1, "closed", `${YEAR}-01-02T12:00:00.000Z`)
+    await seedVersion(2, "active", `${YEAR}-03-16T15:00:00.000Z`)
+    await addMember(`pdtp-${YEAR}-v1`, WS_A, `${YEAR}-01-01T12:00:00.000Z`)
+    await addMember(`pdtp-${YEAR}-v2`, WS_A, `${YEAR}-01-01T12:00:00.000Z`)
+    // La faena B se incorporó recién con la v2, en marzo.
+    await addMember(`pdtp-${YEAR}-v2`, WS_B, `${YEAR}-03-16T15:00:00.000Z`)
+    await closeMonths(`pdtp-${YEAR}-v1`, WS_A, [1, 2, 3])
+    await closeMonths(`pdtp-${YEAR}-v2`, WS_A, [3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+    await closeMonths(`pdtp-${YEAR}-v2`, WS_B, [3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+    at(`${YEAR + 1}-01-20T15:00:00.000Z`)
+    expect((await getPdtpYearCloseReadiness(`pdtp-${YEAR}-v2`)).canClose).toBe(true)
+  })
+
   it("un año cerrado no se puede archivar", async () => {
     await seedVersion(1, "active", `${YEAR}-01-02T12:00:00.000Z`)
     await addMember(`pdtp-${YEAR}-v1`, WS_A, `${YEAR}-01-01T12:00:00.000Z`)

@@ -237,7 +237,7 @@ describe("scanPdtpEvidenceIntegrity (PREV-I13-C)", () => {
 
 describe("cleanupPdtpEvidenceOrphans usa la misma fuente", () => {
   it("no borra un archivo que sólo referencia el historial o una instancia", async () => {
-    const twoHours = 2 * 60 * 60 * 1000
+    const twoHours = 25 * 60 * 60 * 1000
     writeEvidence("solo-historial.pdf", "H", twoHours)
     writeEvidence("solo-instancia.pdf", "I", twoHours)
     writeEvidence("huerfano.pdf", "O", twoHours)

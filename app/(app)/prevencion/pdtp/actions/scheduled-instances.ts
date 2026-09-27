@@ -81,16 +81,16 @@ export async function recordPdtpScheduledInstanceOutcomeAction(input: unknown): 
     if (!guard.session.user.permissions.includes(permission as Permission)) {
       return { ok: false, message: "No tienes permiso para registrar este resultado." }
     }
-    assertWorksiteAccess(context.instance.worksiteId, (() => {
-      const scope = resolveWorksiteScope(guard.session)
-      return scope.mode === "all" ? "all" : scope.mode === "none" ? [] : scope.ids
-    })())
+    const resolvedScope = resolveWorksiteScope(guard.session)
+    const scope = resolvedScope.mode === "all" ? "all" as const : resolvedScope.mode === "none" ? [] : resolvedScope.ids
+    assertWorksiteAccess(context.instance.worksiteId, scope)
     const updated = await recordPdtpScheduledInstanceOutcome({
       instanceId: parsed.instanceId,
       action: parsed.action,
       userId: guard.session.user.id,
       evidenceRef: parsed.evidenceRef,
       reason: parsed.reason,
+      scope,
     })
     revalidatePath("/pendientes")
     revalidatePath(`/prevencion/pdtp/${updated.programId}`)

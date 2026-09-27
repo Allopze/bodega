@@ -22,6 +22,7 @@ import { sanitizeCell as excelSafe } from "@/lib/reports/export-module/excel-bui
 import type { CapaQuickFilter } from "@/lib/prevention/capa-list-filters"
 import { chileDateParts, codeYear, todayInChile} from "@/lib/utils"
 import { checkEvidence, describeEvidenceProblems } from "@/lib/validation/evidence-contract"
+import { assertPdtpEvidenceLinkable } from "@/lib/services/pdtp/evidence-references"
 import { REASON_MAX_LENGTH, isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
 export const CAPA_STATUSES = [
@@ -793,6 +794,14 @@ export async function addCapaEvidenceWithClient(
     if (!current || !scopeAllows(access.scope, current.worksiteId)) throw new Error("Acción CAPA no encontrada o fuera de alcance.")
     if (current.version !== input.expectedVersion) throw new Error("La acción cambió en otra sesión. Recarga antes de continuar.")
     if (["closed", "cancelled"].includes(current.status)) throw new Error("No se puede agregar evidencia a una acción cerrada o cancelada.")
+    // Revisión final 2026-09-27: la descarga PDTP autoriza la evidencia de una
+    // CAPA por la ruta; una ruta del directorio PDTP ya vinculada a otra faena
+    // fuera del alcance no se adopta desde aquí.
+    await assertPdtpEvidenceLinkable(client, {
+      paths: [input.reference],
+      worksiteId: current.worksiteId,
+      scope: access.scope.mode === "all" ? "all" : access.scope.ids,
+    })
     const now = new Date().toISOString()
     const [evidence] = await client.insert(preventionCapaEvidence).values({
       id: `capae-${nanoid()}`,

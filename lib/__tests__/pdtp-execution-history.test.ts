@@ -53,7 +53,7 @@ afterAll(async () => {
 
 const { markPdtpExecution, approvePdtpExecution, rejectPdtpExecution } = await import("@/lib/services/pdtp/executions")
 const { createPdtpObligation, reportPdtpObligation } = await import("@/lib/services/pdtp/obligations")
-const { revokePdtpAccreditation } = await import("@/lib/services/pdtp/accreditation")
+const { accreditPdtpFromEvent, revokePdtpAccreditation } = await import("@/lib/services/pdtp/accreditation")
 const { listPdtpExecutionHistory } = await import("@/lib/services/pdtp/execution-history")
 
 const { year: YEAR, month: CURRENT_MONTH } = chileDateParts()
@@ -217,6 +217,65 @@ describe("PREV-I04 — historial de envíos en la bitácora", () => {
     expect(history.map((entry) => entry.changeType)).toEqual(["submitted", "rejected"])
     expect(history[0]).toMatchObject({ actorName: `Nombre ${USER_A}`, attempt: 1, files: [first] })
     expect(history[1]).toMatchObject({ actorName: `Nombre ${APPROVER}`, reason: "Ilegible" })
+  })
+})
+
+/* Revisión final 2026-09-27 (hallazgo 4, T4 × T3): la acreditación por
+ * integración crea y actualiza ejecuciones —incluida la aprobación
+ * automática y la reacreditación de una fila rechazada— y sólo la revocación
+ * dejaba historial. */
+describe("hallazgo 4 — la acreditación por integración deja historial", () => {
+  const occurredAt = () => {
+    const today = chileDateParts()
+    return `${today.year}-${String(today.month).padStart(2, "0")}-01T15:00:00.000Z`
+  }
+
+  it("la aprobación automática deja una fila 'approved', sin intento previo, con quien aprueba y la fuente", async () => {
+    const result = await accreditPdtpFromEvent({
+      sourceType: "inspeccion", sourceId: "run-hist-auto", worksiteId: WS, activityNumbers: [1],
+      occurredAt: occurredAt(), autoApproveByUserId: APPROVER, evidenceRef: "Inspección completada: run-hist-auto",
+    })
+    const executionId = result.accredited[0]!.executionId
+    const entries = await auditRows(executionId)
+    expect(entries.map((entry) => entry.after?.changeType)).toEqual(["approved"])
+    expect(entries[0]!.userId).toBe(APPROVER)
+    expect(entries[0]!.before).toBeNull()
+    expect(entries[0]!.after).toMatchObject({ status: "approved", executedQuantity: 1, evidenceText: "Inspección completada: run-hist-auto" })
+    expect(entries[0]!.reason).toMatch(/inspeccion.*run-hist-auto/)
+  })
+
+  it("sin aprobación automática deja 'submitted' sin actor humano; reacreditar tras un rechazo deja 'resubmitted'", async () => {
+    const first = await accreditPdtpFromEvent({
+      sourceType: "campana", sourceId: "camp-hist", worksiteId: WS, activityNumbers: [1], occurredAt: occurredAt(),
+    })
+    const executionId = first.accredited[0]!.executionId
+    await rejectPdtpExecution(executionId, APPROVER, "La campaña no corresponde a esta faena", "all")
+    await accreditPdtpFromEvent({
+      sourceType: "campana", sourceId: "camp-hist", worksiteId: WS, activityNumbers: [1], occurredAt: occurredAt(),
+    })
+    const entries = await auditRows(executionId)
+    expect(entries.map((entry) => entry.after?.changeType)).toEqual(["submitted", "rejected", "resubmitted"])
+    expect(entries[0]!.userId).toBeNull()
+    expect(entries[2]!.userId).toBeNull()
+    expect(entries[2]!.before).toMatchObject({ status: "rejected", rejectionReason: "La campaña no corresponde a esta faena" })
+    expect(entries[2]!.after).toMatchObject({ status: "submitted" })
+  })
+
+  it("un evento reentregado sobre un envío que no cambió no agrega historia", async () => {
+    const input = { sourceType: "campana" as const, sourceId: "camp-hist-dup", worksiteId: WS, activityNumbers: [1], occurredAt: occurredAt() }
+    const result = await accreditPdtpFromEvent(input)
+    await accreditPdtpFromEvent(input)
+    expect((await auditRows(result.accredited[0]!.executionId)).map((entry) => entry.after?.changeType)).toEqual(["submitted"])
+  })
+
+  it("un evento repetido sobre una ejecución ya aprobada no agrega historia", async () => {
+    const input = {
+      sourceType: "inspeccion" as const, sourceId: "run-hist-dup", worksiteId: WS, activityNumbers: [1],
+      occurredAt: occurredAt(), autoApproveByUserId: APPROVER,
+    }
+    const result = await accreditPdtpFromEvent(input)
+    await accreditPdtpFromEvent(input)
+    expect(await auditRows(result.accredited[0]!.executionId)).toHaveLength(1)
   })
 })
 

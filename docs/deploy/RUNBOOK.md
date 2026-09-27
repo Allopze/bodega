@@ -56,8 +56,14 @@ silencio; por eso conviene revisarlos cuando algo "dejó de actualizarse solo".
   Actions: el workflow `prevention-inspection-programs.yml` se retiró el 2026-09-26 porque
   duplicaba la corrida del contenedor. `pdtp-evidence-gc` (diario, 04:30) corre **en modo de
   prueba** salvo `PDTP_EVIDENCE_GC_DELETE=true` en `app`: no borra nada y deja cada corrida
-  con huérfanos en `audit_log` (`storage_orphan_sweep`). Cómo revisarlo y cuándo encender el
-  borrado: `docs/deploy/DESPLIEGUE_PREVENCION_2026-09.md`, sección 6.
+  con huérfanos en `audit_log` (`storage_orphan_sweep`). Sólo considera huérfano un archivo
+  sin referencia y con **más de 24 horas** (mínimo fijo desde la revisión final del
+  2026-09-27: en terreno se sube y se envía horas después; `olderThanMs` menor responde 400).
+  Las respuestas del cron y de `POST /api/prevencion/pdtp/evidence/gc` traen conteos y una
+  muestra de 20 nombres; la lista completa está en la fila de auditoría. Si un envío llega
+  después de que el barrido borró su upload, falla con "ya no está en el almacenamiento" y
+  hay que volver a subir el archivo. Cómo revisarlo y cuándo encender el
+  borrado: `docs/deploy/DESPLIEGUE_PREVENCION_2026-09.md`, sección 8.
   `pdtp-evidence-integrity` (diario, 05:15) sólo observa: busca evidencia PDTP referenciada
   que falte en disco o cuyo sha256 ya no coincida. Responde `success` aunque encuentre
   pérdidas; la alerta es la línea `[pdtp/evidence-integrity]` con nivel `error` en el log de
@@ -76,6 +82,13 @@ silencio; por eso conviene revisarlos cuando algo "dejó de actualizarse solo".
   respaldo previo: `docker compose run --rm revert-pdtp-revoked-approvals node
   scripts/revert-pdtp-revoked-approvals.mjs --apply --actor <userId>`. Omite y lista meses y
   programas cerrados, y declara el período ciego anterior al 03-09-2026.
+
+> **Rollback de código tras las migraciones 0330–0333 de Prevención.** Volver a una imagen
+> anterior a `prevencion/integracion-final` con el esquema ya migrado no es transparente: el
+> borrado de programas y actividades falla por `RESTRICT` (0333), los "No aplica" en revisión
+> quedan invisibles y los nuevos nacen sin revisión (0331), un año cerrado vuelve a aceptar
+> registros (0330). Preferir corregir hacia adelante; si no se puede, ventana de congelamiento
+> del PDTP según `DESPLIEGUE_PREVENCION_2026-09.md`, sección 4.
 
 ## Objetivos de servicio
 

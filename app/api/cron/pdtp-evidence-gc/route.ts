@@ -13,7 +13,7 @@
  *
  * Query params:
  *   - dryRun=true: fuerza el modo de prueba aunque la variable esté encendida.
- *   - olderThanMs=N: ventana de gracia en ms (default y mínimo: 1 h). Un valor
+ *   - olderThanMs=N: ventana de gracia en ms (default y mínimo: 24 h). Un valor
  *     menor responde 400: un upload todavía sin vincular no es un huérfano.
  *
  * Responde con el contrato del runner (`outcome` + `code`, prefijo
@@ -31,24 +31,12 @@ import { type NextRequest, NextResponse } from "next/server"
 import {
   cleanupPdtpEvidenceOrphans,
   cleanupRiskMapOrphans,
-  MIN_ORPHAN_AGE_MS,
   type CleanupPdtpEvidenceOrphansResult,
 } from "@/lib/services/pdtp/evidence-gc"
+import { MIN_ORPHAN_AGE_LABEL, MIN_ORPHAN_AGE_MS, summarizeOrphanCleanup } from "@/lib/services/pdtp/evidence-gc-policy"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
-
-const SAMPLE_SIZE = 20
-
-function summarize(result: CleanupPdtpEvidenceOrphansResult) {
-  return {
-    scanned: result.scanned,
-    deleted: result.deleted,
-    kept: result.kept,
-    failed: result.failed,
-    deletedSample: result.deletedNames.slice(0, SAMPLE_SIZE),
-  }
-}
 
 /** Borrado real sólo con la variable encendida y sin `?dryRun=true`. */
 function resolveDryRun(req: NextRequest): boolean {
@@ -71,7 +59,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const olderThanMs = olderThanMsParam ? Number(olderThanMsParam) : undefined
   if (olderThanMs !== undefined && (!Number.isFinite(olderThanMs) || olderThanMs < MIN_ORPHAN_AGE_MS)) {
     return NextResponse.json(
-      { ok: false, outcome: "failed", code: "PREVENTION_CRON_INVALID_REQUEST", error: `olderThanMs inválido: el mínimo es ${MIN_ORPHAN_AGE_MS} (1 hora).` },
+      { ok: false, outcome: "failed", code: "PREVENTION_CRON_INVALID_REQUEST", error: `olderThanMs inválido: el mínimo es ${MIN_ORPHAN_AGE_MS} (${MIN_ORPHAN_AGE_LABEL}).` },
       { status: 400 },
     )
   }
@@ -93,8 +81,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       outcome: "success",
       code: "PREVENTION_CRON_SUCCESS",
       dryRun,
-      pdtpEvidence: summarize(pdtpEvidence),
-      riskMap: summarize(riskMap),
+      pdtpEvidence: summarizeOrphanCleanup(pdtpEvidence),
+      riskMap: summarizeOrphanCleanup(riskMap),
     })
   } catch (err) {
     logger.error("[cron/pdtp-evidence-gc] failed", err)

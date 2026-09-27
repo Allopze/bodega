@@ -438,21 +438,26 @@ export const pdtpActivityWorksiteExclusionSchema = z.object({
   reason: z.string().trim().min(10, "El motivo debe tener al menos 10 caracteres").max(1000),
 })
 
+/**
+ * Lo que la acción de usuario acepta para crear una obligación (revisión final
+ * 2026-09-27, NEW-01). Siempre es **manual**: no hay `origin`, ni fecha ni
+ * metadatos de la fuente. Antes el cliente podía declarar `origin:
+ * "integration"`, y una obligación integrada se salta la exigencia de archivo
+ * al reportar y al aprobar (PREV-B02) y toma su plazo de `sourceOccurredAt`
+ * (I11). Las integradas las crean sólo los conectores del servidor, llamando
+ * a `createPdtpObligation` directamente. `sourceType`/`sourceId` quedan: una
+ * actividad disparada exige nombrar el caso que la originó, y en una
+ * obligación manual son sólo su rótulo (la clave idempotente usa
+ * `clientRequestId`). Zod descarta las claves que no declara.
+ */
 export const pdtpObligationCreateSchema = z.object({
   activityId: z.string().min(1, "Actividad requerida"),
   worksiteId: z.string().min(1, "Faena requerida"),
-  origin: z.enum(["manual", "integration"]),
   clientRequestId: z.string().trim().min(8).max(500),
   sourceType: z.string().trim().min(1).max(100).nullable().optional(),
   sourceId: z.string().trim().min(1).max(500).nullable().optional(),
-  sourceOccurredAt: z.iso.datetime({ offset: true }).nullable().optional(),
   plannedQuantity: z.coerce.number().positive().max(1000000).default(1),
-  manualReason: z.string().trim().max(3000).nullable().optional(),
-  sourceMetadata: z.record(z.string(), z.unknown()).default({}),
-}).superRefine((value, ctx) => {
-  if (value.origin === "manual" && (value.manualReason?.length ?? 0) < 10) {
-    ctx.addIssue({ code: "custom", path: ["manualReason"], message: "El registro manual exige un motivo de al menos 10 caracteres" })
-  }
+  manualReason: z.string().trim().min(10, "El registro manual exige un motivo de al menos 10 caracteres").max(3000),
 })
 
 export const pdtpObligationReportSchema = z.object({

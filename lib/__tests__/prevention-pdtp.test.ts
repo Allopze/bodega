@@ -872,6 +872,46 @@ describe("prevention PDTP service", () => {
     expect(rolledBack!.status).toBe("rolled_back")
   })
 
+  /* Revisión final 2026-09-27 (hallazgo 4): las celdas E migradas nacen
+   * `submitted` y esperan aprobación como cualquier envío, pero no dejaban
+   * historial (PREV-I04): el detalle de verificación las mostraba sin origen. */
+  it("las ejecuciones migradas desde el Excel dejan su entrada 'submitted' en el historial", async () => {
+    const { readFile } = await import("node:fs/promises")
+    const { applyPdtpImportBatch, createLegacyPdtpProgramForTests, stagePdtpXlsxImport } = await import("@/lib/services/prevention-pdtp")
+    const program = await createLegacyPdtpProgramForTests({ year: 2026, title: "Migración con ejecutadas 2026", userId: "user-1" })
+    const bytes = await readFile(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath))
+    const staged = await stagePdtpXlsxImport({
+      programId: program.id,
+      bytes,
+      fileName: "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      userId: "user-1",
+    })
+    // El libro oficial no trae celdas E; se agrega una al preview guardado.
+    const [batch] = await inMemoryDb.select().from(schema.pdtpImportBatches).where(eq(schema.pdtpImportBatches.id, staged.batch.id))
+    const preview = batch!.previewJson as { catalog: { activities: Array<{ n: number }>; importedExecutions?: unknown[] } }
+    const activityNumber = preview.catalog.activities[0]!.n
+    preview.catalog.importedExecutions = [{
+      activityNumber, month: 3, week: 1, executedQuantity: 2,
+      sourceSheet: "PDTP", sourceRow: 10, sourceColumn: "E", sourceCell: "E10",
+    }]
+    await inMemoryDb.update(schema.pdtpImportBatches).set({ previewJson: preview }).where(eq(schema.pdtpImportBatches.id, staged.batch.id))
+
+    const applied = await applyPdtpImportBatch({
+      batchId: staged.batch.id, userId: "user-1", worksiteId: "ws-1", scope: ["ws-1"],
+      acceptMissingEvidence: true, acceptanceReason: "Migración histórica sin respaldo digital",
+    })
+    expect(applied).toMatchObject({ importedExecutionCount: 1 })
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.origin, "xlsx_import"))
+    const history = await inMemoryDb.select().from(schema.auditLog)
+      .where(and(eq(schema.auditLog.entityType, "pdtp:execution"), eq(schema.auditLog.entityId, execution!.id)))
+    expect(history).toHaveLength(1)
+    expect(history[0]!.userId).toBe("user-1")
+    expect(history[0]!.oldState).toBeNull()
+    expect(JSON.parse(history[0]!.newState!)).toMatchObject({ changeType: "submitted", status: "submitted", executedQuantity: 2 })
+    expect(history[0]!.reason).toMatch(/PROGRAMA_ACTIVIDADES_DEFINITIVO\.xlsx/)
+  })
+
   it("creates an unknown imported activity as draft and blocks apply until explicit linking", async () => {
     const { readFile } = await import("node:fs/promises")
     const { applyPdtpImportBatch, createLegacyPdtpProgramForTests, linkPdtpImportCandidate, rollbackPdtpImportBatch, stagePdtpXlsxImport } = await import("@/lib/services/prevention-pdtp")
@@ -2837,25 +2877,21 @@ describe("prevention PDTP service", () => {
     expect(second.evidenceUrl).toBe("storage/pdtp-evidence/preservada.pdf")
   })
 
-  it("H-B7: descarta evidenceUrl cuyo archivo físico no existe", async () => {
+  it("H-B7: una evidenceUrl nueva cuyo archivo físico no existe hace fallar el envío (revisión final, hallazgo 2)", async () => {
     const { markPdtpExecution } = await import("@/lib/services/prevention-pdtp")
     await loadActiveCatalog()
 
     const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 40))
 
     // No escribimos el archivo en disco → resolvePdtpEvidenceFile
-    // retorna un path que existsSync rechaza. `evidencePhotos` sí apunta a un
-    // archivo real (Task 9: la actividad exige evidencia real, y esta prueba
-    // es sobre `evidenceUrl` específicamente, no sobre si hay o no evidencia).
-    const row = await markPdtpExecution({
+    // retorna un path que existsSync rechaza. Antes se guardaba la ejecución
+    // sin esa ruta, en silencio; ahora el envío falla y lo dice.
+    await expect(markPdtpExecution({
       activityId: activity!.id, worksiteId: "ws-1", year: 2026, month: 6, week: 3,
       executedQuantity: 1,
       evidenceUrl: "storage/pdtp-evidence/inexistente.pdf",
       evidencePhotos: [GENERIC_EVIDENCE_URL],
-    }, "user-1", ["ws-1"])
-
-    // Se guarda la ejecución pero sin evidenceUrl (se loggea warning)
-    expect(row.evidenceUrl).toBeNull()
+    }, "user-1", ["ws-1"])).rejects.toThrow(/"inexistente\.pdf" ya no está en el almacenamiento/)
   })
 
   it("creates and copies a non-2026 program without inheriting the workbook as product structure", async () => {

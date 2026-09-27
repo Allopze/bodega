@@ -39,8 +39,17 @@ import {
   type PdtpIndicatorActivity,
 } from "./request-cache"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
-import { chileDateParts } from "@/lib/utils"
+import { chileDateParts, todayInChile } from "@/lib/utils"
 import { pdtpScheduledInstanceCountsAsExecuted } from "./scheduled-compliance"
+
+/**
+ * Día chileno (YYYY-MM-DD) de un instante guardado. Una fecha pura ya es un día
+ * y se devuelve tal cual: pasarla por `Date` la leería como medianoche UTC, que
+ * en Chile es el día anterior.
+ */
+function pdtpChileDay(value: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : todayInChile(value)
+}
 
 export type PdtpComplianceMonth = {
   month: number
@@ -709,19 +718,27 @@ async function loadPdtpIndicatorInputsForTargets(
   const cutoffFor = (target: PdtpIndicatorTarget) => target
     ? effectiveActivationFor(program.activatedAt, addedAtByWorksite.get(target) ?? null)
     : program.activatedAt
+  // Revisión final 2026-09-27 (hallazgo 5): los cortes por día se miden en
+  // Chile, igual que la materialización (`todayInChile(program.activatedAt)`
+  // en scheduled-instances.ts). `activatedAt.slice(0, 10)` era la fecha UTC:
+  // una activación a las 22:00 de Chile ya es el día siguiente en UTC, y la
+  // ocurrencia de ese día quedaba fuera del indicador de la versión que la
+  // materializó y dentro del de la anterior.
   const successorActivatedAt = window?.successor?.activatedAt ?? null
+  const successorDay = successorActivatedAt ? pdtpChileDay(successorActivatedAt) : null
   const instancesByWorksite = groupRowsByWorksite(worksiteInstances)
   const eligibleInstancesFor = (target: PdtpIndicatorTarget) => {
     const activationCutoff = cutoffFor(target)
+    const activationDay = activationCutoff ? pdtpChileDay(activationCutoff) : null
     return (target ? instancesByWorksite.get(target) ?? [] : consolidatedInstances).filter((instance) => {
       // PREV-C05-B: la ocurrencia desde el día de activación de la sucesora es
       // de la sucesora (mismo corte por día que usa su materialización).
-      if (successorActivatedAt && instance.scheduledFor >= successorActivatedAt.slice(0, 10)) return false
-      if (!activationCutoff) return true
+      if (successorDay && instance.scheduledFor >= successorDay) return false
+      if (!activationDay) return true
       // Las instancias materializadas antes del día de activación no deben
       // inventar deuda en el indicador de una versión recién firmada. Con faena,
       // el corte incluye además su fecha de incorporación al programa.
-      return instance.scheduledFor >= activationCutoff.slice(0, 10)
+      return instance.scheduledFor >= activationDay
     })
   }
   const eligibleByTarget = new Map(targets.map((target) => [target, eligibleInstancesFor(target)]))

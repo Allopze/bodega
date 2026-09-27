@@ -7,6 +7,8 @@ import { getPdtpExecutionConnector } from "./connectors"
 import { assertPdtpPeriodOpen } from "./period-guard"
 import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 import { PDTP_REASON_MIN_LENGTH } from "@/lib/prevention/pdtp"
+import { assertPdtpEvidenceLinkable } from "./evidence-references"
+import type { WorksiteScope } from "./helpers"
 
 export type PdtpScheduledInstanceAction = "submit" | "complete" | "not_applicable" | "cancel"
 
@@ -37,7 +39,7 @@ export function assertPdtpScheduledInstanceTransition(currentStatus: string, act
 
 /**
  * Motivo recortado de un resultado, o `null` si no trae. PREV-C07: el "No
- * aplica" de una instancia exige el mismo mínimo que el de una celda
+ * aplica" (y, desde la revisión final, la cancelación) de una instancia exige el mismo mínimo que el de una celda
  * (`PDTP_REASON_MIN_LENGTH`, igual que `pdtpDeviationSchema` y el CHECK de
  * `pdtp_execution_deviations`); antes bastaban 3 caracteres.
  */
@@ -47,6 +49,14 @@ export function assertPdtpScheduledOutcomeReason(nextStatus: string, rawReason: 
     if (!reason) throw new Error("Indica por qué la instancia no aplica.")
     if (reason.length < PDTP_REASON_MIN_LENGTH) {
       throw new Error(`El motivo de "no aplica" debe tener al menos ${PDTP_REASON_MIN_LENGTH} caracteres.`)
+    }
+  }
+  // Revisión final 2026-09-27: cancelar también saca la ocurrencia del
+  // denominador, así que exige el mismo mínimo (antes bastaban 3 caracteres).
+  if (nextStatus === "cancelled") {
+    if (!reason) throw new Error("Indica el motivo de cancelación.")
+    if (reason.length < PDTP_REASON_MIN_LENGTH) {
+      throw new Error(`El motivo de cancelación debe tener al menos ${PDTP_REASON_MIN_LENGTH} caracteres.`)
     }
   }
   return reason
@@ -232,6 +242,11 @@ export async function recordPdtpScheduledInstanceOutcome(input: {
   userId?: string | null
   evidenceRef?: string | null
   reason?: string | null
+  /**
+   * Alcance de faenas de quien registra. Decide si una evidencia ya vinculada
+   * a otra faena puede reutilizarse; sin alcance, sólo la propia faena.
+   */
+  scope?: WorksiteScope
 }, client: ScheduledExecutionClient = db) {
   assertPdtpScheduledInstanceManualAction(input.action)
   const now = new Date().toISOString()
@@ -247,14 +262,13 @@ export async function recordPdtpScheduledInstanceOutcome(input: {
     const period = scheduledPeriod(row.scheduledFor)
     await assertPdtpPeriodOpen(row.programId, row.worksiteId, period.year, period.month, tx)
     const reason = assertPdtpScheduledOutcomeReason(nextStatus, input.reason)
-    if (nextStatus === "cancelled" && (!reason || reason.length < 3)) {
-      throw new Error("Indica el motivo de cancelación.")
-    }
+
     if (input.evidenceRef) {
       const evidenceFile = resolvePdtpEvidenceFile(input.evidenceRef)
       if (!evidenceFile || !existsSync(evidenceFile)) {
         throw new Error("La evidencia adjunta no existe en el almacenamiento autorizado.")
       }
+      await assertPdtpEvidenceLinkable(tx, { paths: [input.evidenceRef], worksiteId: row.worksiteId, scope: input.scope ?? [] })
     }
     const metadata = {
       ...sourceMetadata(row.sourceMetadataJson),

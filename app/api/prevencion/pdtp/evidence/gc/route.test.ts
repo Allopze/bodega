@@ -17,7 +17,7 @@ vi.mock("@/lib/auth/auth", () => ({ auth: () => mocks.auth() }))
 vi.mock("@/lib/auth/can", () => ({ can: (...args: unknown[]) => Reflect.apply(mocks.can, null, args) }))
 vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock("@/lib/services/pdtp/evidence-gc", () => ({
-  MIN_ORPHAN_AGE_MS: 60 * 60 * 1000,
+  MIN_ORPHAN_AGE_MS: 24 * 60 * 60 * 1000,
   cleanupPdtpEvidenceOrphans: (...args: unknown[]) => Reflect.apply(mocks.cleanup, null, args),
 }))
 
@@ -55,6 +55,23 @@ describe("POST /api/prevencion/pdtp/evidence/gc", () => {
     const response = await call("?olderThanMs=1000")
     expect(response.status).toBe(400)
     expect(mocks.cleanup).not.toHaveBeenCalled()
+  })
+
+  it("rechaza una ventana menor a 24 horas (revisión final, hallazgo 2)", async () => {
+    const response = await call(`?olderThanMs=${2 * 60 * 60 * 1000}`)
+    expect(response.status).toBe(400)
+    expect((await response.json()).error).toMatch(/24 horas/)
+    expect(mocks.cleanup).not.toHaveBeenCalled()
+  })
+
+  it("la respuesta lleva una muestra acotada, no la lista completa de nombres", async () => {
+    const names = Array.from({ length: 5000 }, (_, i) => `${"x".repeat(21)}-${i}.pdf`)
+    mocks.cleanup.mockResolvedValue({ scanned: 5000, deleted: 5000, kept: 0, failed: 0, deletedNames: names })
+    const body = await (await call()).json()
+    expect(body).toMatchObject({ ok: true, deleted: 5000 })
+    expect(body.deletedNames).toBeUndefined()
+    expect(body.deletedSample).toHaveLength(20)
+    expect(JSON.stringify(body).length).toBeLessThan(32 * 1024)
   })
 
   it("sin permiso responde 403", async () => {

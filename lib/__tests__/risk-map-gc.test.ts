@@ -44,7 +44,7 @@ let originalStoragePath: string | undefined
 
 /** Dos horas atrás: fuera de la ventana de gracia del recolector. */
 function ageFile(file: string): void {
-  const old = new Date(Date.now() - 2 * 60 * 60 * 1000)
+  const old = new Date(Date.now() - 25 * 60 * 60 * 1000)
   utimesSync(file, old, old)
 }
 
