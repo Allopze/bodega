@@ -3,14 +3,20 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { findPdtpWeeklyPending, listPendingPdtpExecutions, listPendingPdtpNotApplicable, getPdtpProgram } from "@/lib/services/prevention-pdtp"
+import {
+  findPdtpWeeklyPending,
+  listPendingPdtpExecutions,
+  listPendingPdtpNotApplicable,
+  listPendingPdtpScheduledInstanceOutcomes,
+  getPdtpProgram,
+} from "@/lib/services/prevention-pdtp"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { PdtpApprovalButtons } from "../pdtp-approval-buttons"
 import { PdtpEvidenceThumbs } from "../pdtp-evidence-thumbs"
 import { WeeklyScheduledSection } from "./weekly-scheduled-section"
-import { NotApplicableReviewSection } from "./not-applicable-review-section"
+import { NotApplicableReviewSection, type NotApplicableReviewItem } from "./not-applicable-review-section"
 import { countOf } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Aprobaciones PDTP" }
@@ -40,11 +46,30 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
   // dos lecturas son independientes, así que se resuelven en paralelo.
   // PREV-C07: los "No aplica" en revisión se aprueban acá, con el mismo
   // permiso y el mismo alcance de faenas que las ejecuciones.
-  const [pending, weeklyPendingAll, pendingNotApplicable] = await Promise.all([
+  // Desde 0334 también el "no aplica" y la cancelación de ocurrencias
+  // programadas, en la misma sección y con la misma regla.
+  const [pending, weeklyPendingAll, pendingCellNotApplicable, pendingScheduledOutcomes] = await Promise.all([
     listPendingPdtpExecutions(worksiteIds, program ? { programId: program.id } : {}),
     findPdtpWeeklyPending(),
     listPendingPdtpNotApplicable(worksiteIds, program ? { programId: program.id } : {}),
+    listPendingPdtpScheduledInstanceOutcomes(worksiteIds, program ? { programId: program.id } : {}),
   ])
+  const pendingNotApplicable: NotApplicableReviewItem[] = [
+    ...pendingCellNotApplicable.map((item) => ({ ...item, kind: "cell" as const })),
+    ...pendingScheduledOutcomes.map((item) => ({
+      kind: "instance" as const,
+      id: item.id,
+      outcome: item.outcome,
+      scheduledFor: item.scheduledFor,
+      activityN: item.activityN,
+      activityName: item.activityName,
+      worksiteName: item.worksiteName,
+      reason: item.reason,
+      createdByUserId: item.requestedByUserId,
+      createdByName: item.requestedByName,
+      createdAt: item.requestedAt,
+    })),
+  ].sort((left, right) => left.createdAt.localeCompare(right.createdAt))
   const weeklyPending = worksiteIds === "all" ? weeklyPendingAll : weeklyPendingAll.filter((target) => worksiteIds.includes(target.worksiteId))
   // H-M4: el description debe reflejar el scope real del usuario para
   // no inducir a error (un usuario de faena solo ve sus faenas).

@@ -24,6 +24,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import { and, asc, eq } from "drizzle-orm"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { seedPdtpEvidenceUpload } from "@/lib/testing/pdtp-evidence-upload-fixture"
 import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
 
@@ -64,9 +65,12 @@ const EVENT_ACT_ID = `${PROGRAM_ID}-a-002`
 const USER_A = "user-history-a"
 const APPROVER = "user-history-approver"
 
-function evidenceFile(name: string, content = `%PDF-1.4 ${name}`): string {
+/** PREV-M02-B (0334): el archivo y su fila del registro de subidas (faena de la suite). */
+async function evidenceFile(name: string, content = `%PDF-1.4 ${name}`, uploader: string = USER_A): Promise<string> {
   writeFileSync(join(tmpEvidenceRoot, "pdtp-evidence", name), content)
-  return `storage/pdtp-evidence/${name}`
+  const path = `storage/pdtp-evidence/${name}`
+  await seedPdtpEvidenceUpload(inMemoryDb, { path, worksiteId: WS, userId: uploader })
+  return path
 }
 
 function sha256(content: string): string {
@@ -136,7 +140,7 @@ beforeEach(async () => {
 
 describe("PREV-I04 — historial de envíos en la bitácora", () => {
   it("el primer envío deja una fila 'submitted' con el intento 1 y la ruta del archivo", async () => {
-    const url = evidenceFile("hist-1.pdf")
+    const url = await evidenceFile("hist-1.pdf")
     await markPdtpExecution(cell({ evidenceUrl: url, evidenceText: "Acta firmada" }), USER_A, "all")
     const row = await executionRow()
     const [entry, ...rest] = await auditRows(row!.id)
@@ -149,11 +153,11 @@ describe("PREV-I04 — historial de envíos en la bitácora", () => {
   })
 
   it("rechazar y reenviar deja el motivo, el archivo rechazado y el intento 2", async () => {
-    const first = evidenceFile("hist-rechazada.pdf")
+    const first = await evidenceFile("hist-rechazada.pdf")
     await markPdtpExecution(cell({ evidenceUrl: first }), USER_A, "all")
     const row = await executionRow()
     await rejectPdtpExecution(row!.id, APPROVER, "Falta la firma del supervisor", "all")
-    const second = evidenceFile("hist-corregida.pdf")
+    const second = await evidenceFile("hist-corregida.pdf")
     await markPdtpExecution(cell({ evidenceUrl: second }), USER_A, "all")
 
     const entries = await auditRows(row!.id)
@@ -172,7 +176,7 @@ describe("PREV-I04 — historial de envíos en la bitácora", () => {
   })
 
   it("aprobar deja una fila 'approved' con el aprobador", async () => {
-    await markPdtpExecution(cell({ evidenceUrl: evidenceFile("hist-aprobar.pdf") }), USER_A, "all")
+    await markPdtpExecution(cell({ evidenceUrl: await evidenceFile("hist-aprobar.pdf") }), USER_A, "all")
     const row = await executionRow()
     await approvePdtpExecution(row!.id, APPROVER, "all")
     const entries = await auditRows(row!.id)
@@ -201,7 +205,7 @@ describe("PREV-I04 — historial de envíos en la bitácora", () => {
   })
 
   it("una transición que falla no deja historia a medias", async () => {
-    await markPdtpExecution(cell({ evidenceUrl: evidenceFile("hist-self.pdf") }), USER_A, "all")
+    await markPdtpExecution(cell({ evidenceUrl: await evidenceFile("hist-self.pdf") }), USER_A, "all")
     const row = await executionRow()
     await expect(approvePdtpExecution(row!.id, USER_A, "all")).rejects.toThrow(/no puede aprobarlo/i)
     const entries = await auditRows(row!.id)
@@ -209,7 +213,7 @@ describe("PREV-I04 — historial de envíos en la bitácora", () => {
   })
 
   it("listPdtpExecutionHistory devuelve la línea de tiempo en orden, con nombres y archivos", async () => {
-    const first = evidenceFile("hist-list-1.pdf")
+    const first = await evidenceFile("hist-list-1.pdf")
     await markPdtpExecution(cell({ evidenceUrl: first }), USER_A, "all")
     const row = await executionRow()
     await rejectPdtpExecution(row!.id, APPROVER, "Ilegible", "all")
@@ -282,7 +286,7 @@ describe("hallazgo 4 — la acreditación por integración deja historial", () =
 describe("W5-SHA — sha256 del archivo al vincularlo", () => {
   it("guarda el sha256 calculado en el servidor, por ruta, y lo copia al historial", async () => {
     const content = "%PDF-1.4 contenido firmado"
-    const url = evidenceFile("sha-1.pdf", content)
+    const url = await evidenceFile("sha-1.pdf", content)
     await markPdtpExecution(cell({ evidenceUrl: url }), USER_A, "all")
     const row = await executionRow()
     expect((row!.sourceMetadataJson as Record<string, unknown>).evidenceSha256).toEqual({ [url]: sha256(content) })
@@ -291,9 +295,9 @@ describe("W5-SHA — sha256 del archivo al vincularlo", () => {
   })
 
   it("un reenvío conserva el sha256 de los archivos anteriores y suma el del nuevo", async () => {
-    const first = evidenceFile("sha-a.pdf", "A")
+    const first = await evidenceFile("sha-a.pdf", "A")
     await markPdtpExecution(cell({ evidenceUrl: first }), USER_A, "all")
-    const second = evidenceFile("sha-b.pdf", "B")
+    const second = await evidenceFile("sha-b.pdf", "B")
     await markPdtpExecution(cell({ evidenceUrl: second }), USER_A, "all")
     const row = await executionRow()
     expect((row!.sourceMetadataJson as Record<string, unknown>).evidenceSha256).toEqual({
@@ -313,12 +317,12 @@ async function manualObligation() {
 describe("PREV-B03 en obligaciones — el reporte rechazado no pierde su archivo", () => {
   it("reportar de nuevo tras un rechazo conserva el archivo anterior como referencia", async () => {
     const obligation = await manualObligation()
-    const first = evidenceFile("oblig-1.pdf")
+    const first = await evidenceFile("oblig-1.pdf")
     const { execution } = await reportPdtpObligation({
       obligationId: obligation.id, executedQuantity: 1, evidenceUrl: first, userId: USER_A, scope: "all",
     })
     await rejectPdtpExecution(execution.id, APPROVER, "Informe incompleto", "all")
-    const second = evidenceFile("oblig-2.pdf", "segundo")
+    const second = await evidenceFile("oblig-2.pdf", "segundo")
     const { execution: again } = await reportPdtpObligation({
       obligationId: obligation.id, executedQuantity: 1, evidenceUrl: second, userId: USER_A, scope: "all",
     })
@@ -332,7 +336,7 @@ describe("PREV-B03 en obligaciones — el reporte rechazado no pierde su archivo
 
 describe("PREV-M08 — segregación: quien registró no aprueba", () => {
   it("el autor de una ejecución no puede aprobarla; otra persona sí", async () => {
-    await markPdtpExecution(cell({ evidenceUrl: evidenceFile("seg-1.pdf") }), USER_A, "all")
+    await markPdtpExecution(cell({ evidenceUrl: await evidenceFile("seg-1.pdf") }), USER_A, "all")
     const row = await executionRow()
     await expect(approvePdtpExecution(row!.id, USER_A, "all")).rejects.toThrow(/no puede aprobarlo/i)
     expect((await executionRow())?.status).toBe("submitted")
@@ -343,14 +347,14 @@ describe("PREV-M08 — segregación: quien registró no aprueba", () => {
   it("quien reporta una obligación tampoco aprueba su ejecución", async () => {
     const obligation = await manualObligation()
     const { execution } = await reportPdtpObligation({
-      obligationId: obligation.id, executedQuantity: 1, evidenceUrl: evidenceFile("seg-oblig.pdf"), userId: USER_A, scope: "all",
+      obligationId: obligation.id, executedQuantity: 1, evidenceUrl: await evidenceFile("seg-oblig.pdf"), userId: USER_A, scope: "all",
     })
     await expect(approvePdtpExecution(execution.id, USER_A, "all")).rejects.toThrow(/no puede aprobarlo/i)
   })
 
   it("tras un reenvío por otra persona (administrador), el autor original sí puede aprobar y el nuevo autor no", async () => {
-    await markPdtpExecution(cell({ evidenceUrl: evidenceFile("seg-a.pdf") }), USER_A, "all")
-    await markPdtpExecution(cell({ evidenceUrl: evidenceFile("seg-b.pdf") }), APPROVER, "all", { canActForOthers: true })
+    await markPdtpExecution(cell({ evidenceUrl: await evidenceFile("seg-a.pdf") }), USER_A, "all")
+    await markPdtpExecution(cell({ evidenceUrl: await evidenceFile("seg-b.pdf", undefined, APPROVER) }), APPROVER, "all", { canActForOthers: true })
     const row = await executionRow()
     await expect(approvePdtpExecution(row!.id, APPROVER, "all")).rejects.toThrow(/no puede aprobarlo/i)
     await approvePdtpExecution(row!.id, USER_A, "all")

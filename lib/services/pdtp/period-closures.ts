@@ -76,6 +76,7 @@ import { getPdtpManagementReport, type PdtpManagementReport } from "./management
 import { currentPdtpPeriod, pdtpActivationPeriod } from "./period"
 import { pdtpMonthLabel as monthLabel } from "./period-guard"
 import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/enqueue"
+import { countPendingPdtpScheduledOutcomesForMonth } from "./scheduled-outcome-review"
 
 /* ── Corte reproducible ──────────────────────────────────────────────────── */
 
@@ -384,7 +385,10 @@ async function assertNoPendingNotApplicable(client: DB | Tx, programId: string, 
       eq(pdtpExecutionDeviations.month, month),
       eq(pdtpExecutionDeviations.status, "pending_review"),
     ))
+  // PREV-C07 sobre ocurrencias (0334): un "no aplica" o una cancelación de
+  // ocurrencia en revisión también cuenta todavía; mismo motivo, misma regla.
   const pending = Number(row?.pending ?? 0)
+    + await countPendingPdtpScheduledOutcomesForMonth(client, { programId, worksiteId, year, month })
   if (pending > 0) {
     const label = pending === 1 ? '1 "no aplica" en revisión' : `${pending} "no aplica" en revisión`
     throw new Error(`El mes de ${monthLabel(year, month)} tiene ${label} en esta faena. Apruébalos o recházalos en Aprobaciones antes de cerrarlo.`)

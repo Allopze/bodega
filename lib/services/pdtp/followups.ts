@@ -57,6 +57,7 @@ export async function addFollowup(input: PdtpFollowupInput, userId: string) {
       paths: [input.evidenciaUrl, ...(input.evidenciaPhotos ?? [])],
       worksiteId: initialCapa.worksiteId,
       scope: [],
+      userId,
     })
 
     /*

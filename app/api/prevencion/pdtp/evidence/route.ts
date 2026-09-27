@@ -12,7 +12,8 @@ import {
 import { nanoid } from "@/lib/id"
 import { QUOTATION_EXTENSION_BY_MIME } from "@/lib/storage/quotation-content-type"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
-import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
+import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
+import { recordPdtpEvidenceUpload } from "@/lib/services/pdtp/evidence-uploads"
 import { createPdtpEvidencePath, resolvePdtpEvidenceDir, resolveStorageFile } from "@/lib/storage/config"
 import { logger } from "@/lib/logger"
 import { createHash } from "node:crypto"
@@ -39,6 +40,12 @@ const MAX_FILE_SIZE = 25 * 1024 * 1024
  * desde aquí no podía cumplir el contrato que la evidencia de inspección sí
  * cumplía desde el principio. Es el único punto donde el contenido del archivo
  * está en memoria: calcularlo después obligaría a volver a leerlo del disco.
+ *
+ * PREV-M02-B (0334): cada subida deja su fila en `pdtp_evidence_uploads`
+ * (ruta, quien subió, faena, actividad si vino, sha256, tamaño y tipo). Es lo
+ * que permite a `assertPdtpEvidenceLinkable` decidir de quién es un archivo que
+ * todavía no referencia ninguna fila. Si el registro falla, el archivo se borra
+ * y la subida responde 500: un archivo sin dueño no se podría vincular.
  */
 export async function POST(request: Request) {
   const guard = await guardAnyPermission(["prevention:pdtp:execute", "prevention:constancias:execute"])
@@ -97,6 +104,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: validated.error }, { status: 400 })
   }
 
+  const activityId = String(form.get("activityId") ?? "").trim() || null
+  let writtenFile: string | null = null
   try {
     // PREV-M02-A: la extensión interna sale del MIME que declararon los bytes
     // mágicos, no del nombre del cliente. Un PNG llamado "acta.pdf" quedaba
@@ -106,11 +115,27 @@ export async function POST(request: Request) {
     const storageName = `${nanoid(20)}${extension}`
     const dir = resolvePdtpEvidenceDir()
     await mkdirp(dir)
-    await writeBuffer(resolveStorageFile(dir, storageName), Buffer.from(buffer))
+    const absolutePath = resolveStorageFile(dir, storageName)
+    await writeBuffer(absolutePath, Buffer.from(buffer))
+    writtenFile = absolutePath
     const relativePath = createPdtpEvidencePath(storageName)
     const checksumSha256 = createHash("sha256").update(buffer).digest("hex")
+    await recordPdtpEvidenceUpload({
+      path: relativePath,
+      uploadedByUserId: session.user.id,
+      worksiteId,
+      activityId,
+      sha256: checksumSha256,
+      sizeBytes: buffer.byteLength,
+      mimeType: validated.mimeType,
+    })
     return NextResponse.json({ path: relativePath, checksumSha256 }, { status: 201 })
   } catch (err) {
+    if (writtenFile) {
+      // El archivo quedó en disco pero no su dueño: nadie podría vincularlo y
+      // el GC lo borraría en 24 h. Se borra ya.
+      await removeFile(writtenFile).catch((removeErr) => logger.warn("[pdtp/evidence] no se pudo borrar el archivo sin registro", removeErr))
+    }
     // PREV-K02: una falla al escribir en disco es del servidor, no del
     // archivo, y su mensaje de fs trae la ruta absoluta. Se registra completo
     // y al cliente sólo le llega un 500 genérico; los errores de validación

@@ -23,6 +23,7 @@ const CATEGORY_BY_PREFIX: Record<string, string> = {
   pdtp_program_activity: "Actividad",
   revision: "Revisión",
   schedule: "Planificación",
+  scheduled_instance: "Ocurrencia programada",
   template: "Plantilla",
   worksite_adjustment: "Ajuste por faena",
   worksite_exclusion: "Exclusión por faena",

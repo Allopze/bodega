@@ -10,13 +10,16 @@
  * descarga sólo miraba ejecuciones (PREV-I05: la evidencia CAPA daba 404) y el
  * GC no miraba instancias. Este módulo es la fuente única (PREV-I13-C).
  */
-import { and, eq, inArray, ne, or, sql, type SQL } from "drizzle-orm"
+import { existsSync } from "node:fs"
+import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { auditLog, pdtpExecutions, pdtpScheduledInstances, preventionCapaActions, preventionCapaEvidence } from "@/db/schema"
 import { capaEsDelPdtp } from "./capa-view"
 import { PDTP_EVIDENCE_PATH_PREFIX } from "./evidence-href"
 import { PDTP_EXECUTION_HISTORY_ENTITY, parsePdtpHistoryState, pdtpEvidenceSha256Map, pdtpHistoryEvidencePaths } from "./execution-history"
 import type { WorksiteScope } from "./helpers"
+import { findPdtpEvidenceUpload } from "./evidence-uploads"
+import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 
 export type PdtpEvidenceSource = "execution" | "capa" | "history" | "instance"
 
@@ -167,31 +170,26 @@ export function isPdtpEvidencePath(path: string): boolean {
 }
 
 /**
- * Faenas distintas de `worksiteId` cuyas filas ya referencian `path`, en las
- * cuatro fuentes (ejecuciones, CAPA, instancias e historial de envíos).
+ * Faenas cuyas filas ya referencian `path`, en las cuatro fuentes
+ * (ejecuciones, CAPA, instancias e historial de envíos). Una fila de bitácora
+ * sin faena queda como `""`: no dice de quién es y se trata como ajena.
  */
-async function foreignPdtpEvidenceWorksites(client: Tx | typeof db, path: string, worksiteId: string): Promise<Set<string>> {
+async function pdtpEvidenceReferencingWorksites(client: Tx | typeof db, path: string): Promise<Set<string>> {
   const quoted = JSON.stringify(path)
   const [executions, capaRows, instances, historyRows] = await Promise.all([
     client.select({ worksiteId: pdtpExecutions.worksiteId })
       .from(pdtpExecutions)
-      .where(and(
-        or(
-          eq(pdtpExecutions.evidenceUrl, path),
-          sql`${pdtpExecutions.evidencePhotos} @> ${JSON.stringify([path])}::jsonb`,
-        ),
-        ne(pdtpExecutions.worksiteId, worksiteId),
+      .where(or(
+        eq(pdtpExecutions.evidenceUrl, path),
+        sql`${pdtpExecutions.evidencePhotos} @> ${JSON.stringify([path])}::jsonb`,
       )),
     client.select({ worksiteId: preventionCapaActions.worksiteId })
       .from(preventionCapaEvidence)
       .innerJoin(preventionCapaActions, eq(preventionCapaActions.id, preventionCapaEvidence.actionId))
-      .where(and(eq(preventionCapaEvidence.reference, path), ne(preventionCapaActions.worksiteId, worksiteId))),
+      .where(eq(preventionCapaEvidence.reference, path)),
     client.select({ worksiteId: pdtpScheduledInstances.worksiteId })
       .from(pdtpScheduledInstances)
-      .where(and(
-        sql`${pdtpScheduledInstances.sourceMetadataJson}->>'evidenceRef' = ${path}`,
-        ne(pdtpScheduledInstances.worksiteId, worksiteId),
-      )),
+      .where(sql`${pdtpScheduledInstances.sourceMetadataJson}->>'evidenceRef' = ${path}`),
     // El historial guarda los estados como JSON en texto: se busca la ruta
     // entre comillas, que es como la serializa `recordModuleHistory`.
     client.select({ worksiteId: auditLog.worksiteId })
@@ -199,15 +197,13 @@ async function foreignPdtpEvidenceWorksites(client: Tx | typeof db, path: string
       .where(and(
         eq(auditLog.entityType, PDTP_EXECUTION_HISTORY_ENTITY),
         or(sql`strpos(${auditLog.oldState}, ${quoted}) > 0`, sql`strpos(${auditLog.newState}, ${quoted}) > 0`),
-        sql`${auditLog.worksiteId} IS DISTINCT FROM ${worksiteId}`,
       )),
   ])
-  const foreign = new Set<string>()
+  const worksites = new Set<string>()
   for (const row of [...executions, ...capaRows, ...instances, ...historyRows]) {
-    // Una fila de bitácora sin faena no dice de quién es: se trata como ajena.
-    foreign.add(row.worksiteId ?? "")
+    worksites.add(row.worksiteId ?? "")
   }
-  return foreign
+  return worksites
 }
 
 /**
@@ -221,22 +217,67 @@ async function foreignPdtpEvidenceWorksites(client: Tx | typeof db, path: string
  * salvo que esa faena también esté en el alcance de quien vincula (ya podía
  * descargarlo). Volver a vincular un archivo propio —reenvío, fusión
  * append-only de la evidencia anterior— no cambia nada: sus filas son de la
- * misma faena. Un archivo recién subido todavía no tiene filas y pasa.
+ * misma faena.
+ *
+ * PREV-M02-B (0334): una ruta que **ninguna** fila referencia todavía (un
+ * archivo recién subido) se decide por el registro de subidas
+ * (`pdtp_evidence_uploads`):
+ *
+ * - tiene que haberse subido para la faena destino —aunque quien vincula tenga
+ *   las dos faenas en su alcance: el archivo se subió "para" una; volver a
+ *   subirlo para la otra no cuesta nada—, y
+ * - tiene que vincularlo quien lo subió. No hay excepción por permiso: el
+ *   archivo no está en ninguna parte todavía, así que nadie pierde nada si
+ *   otra persona tiene que subirlo de nuevo, y una excepción sería justo la
+ *   puerta que este registro cierra.
+ *
+ * Regla heredada: un archivo sin fila de registro (subido antes de 0334, o una
+ * ruta inventada) sólo se vincula si ya lo referencia alguna fila de la misma
+ * faena o de una faena del alcance (los casos de arriba); si no lo referencia
+ * nadie, se rechaza con un mensaje que pide volver a subirlo.
  *
  * Sólo mira el directorio PDTP: es el único que sirve la descarga PDTP.
  * Corre con el cliente de la transacción que escribe la referencia.
  */
 export async function assertPdtpEvidenceLinkable(
   client: Tx | typeof db,
-  input: { paths: ReadonlyArray<string | null | undefined>; worksiteId: string; scope: WorksiteScope },
+  input: {
+    paths: ReadonlyArray<string | null | undefined>
+    worksiteId: string
+    scope: WorksiteScope
+    /** Quien vincula; `null` si no se conoce (entonces un archivo sin referencias no pasa). */
+    userId: string | null
+  },
 ): Promise<void> {
   const paths = [...new Set(input.paths.filter((path): path is string => typeof path === "string" && isPdtpEvidencePath(path)))]
   for (const path of paths) {
-    const foreign = await foreignPdtpEvidenceWorksites(client, path, input.worksiteId)
-    const outOfScope = [...foreign].filter((worksiteId) => input.scope !== "all" && (!worksiteId || !input.scope.includes(worksiteId)))
+    const name = path.slice(PDTP_EVIDENCE_PATH_PREFIX.length)
+    const referencing = await pdtpEvidenceReferencingWorksites(client, path)
+    const outOfScope = [...referencing].filter((worksiteId) => (
+      worksiteId !== input.worksiteId
+      && input.scope !== "all"
+      && (!worksiteId || !input.scope.includes(worksiteId))
+    ))
     if (outOfScope.length > 0) {
-      const name = path.slice(PDTP_EVIDENCE_PATH_PREFIX.length)
       throw new Error(`El archivo de evidencia "${name}" ya está vinculado a otra faena y no se puede usar aquí. Sube el archivo desde esta faena.`)
+    }
+    if (referencing.size > 0) continue
+    // Un archivo que no está en disco no se puede descargar ni apropiar; el
+    // llamador ya rechaza esa ruta con su propio mensaje ("ya no está en el
+    // almacenamiento", típicamente porque el GC lo borró junto con su fila de
+    // registro), que es más útil que "no tiene registro de subida".
+    const absolutePath = resolvePdtpEvidenceFile(path)
+    if (!absolutePath || !existsSync(absolutePath)) continue
+
+    const upload = await findPdtpEvidenceUpload(client, path)
+    if (!upload) {
+      throw new Error(`El archivo de evidencia "${name}" no tiene registro de subida (es anterior a la actualización o no se subió desde la plataforma). Vuelve a subirlo desde esta faena.`)
+    }
+    if (upload.worksiteId !== input.worksiteId) {
+      throw new Error(`El archivo de evidencia "${name}" se subió para otra faena y no se puede usar aquí. Sube el archivo desde esta faena.`)
+    }
+    if (!input.userId || upload.uploadedByUserId !== input.userId) {
+      throw new Error(`El archivo de evidencia "${name}" lo subió otra persona y todavía no está vinculado: sólo puede usarlo quien lo subió. Sube tu propio archivo.`)
     }
   }
 }

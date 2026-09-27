@@ -22,6 +22,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import { eq } from "drizzle-orm"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { seedPdtpEvidenceUpload } from "@/lib/testing/pdtp-evidence-upload-fixture"
 import * as schema from "@/db/schema"
 
 // PREV-B02: registrar "Se hizo" exige un archivo real en disco. Las pruebas
@@ -152,6 +153,12 @@ async function insertSubmittedExecution(activityId: string, worksiteId: string, 
   })
   return { id }
 }
+
+// PREV-M02-B (0334): el archivo de prueba compartido figura como subido por
+// user-1 para ws-1, que es quien lo vincula primero en estas pruebas.
+beforeEach(async () => {
+  await seedPdtpEvidenceUpload(inMemoryDb, { path: EVIDENCE_URL, worksiteId: "ws-1", userId: "user-1" })
+})
 
 describe("closePdtpPeriod: la foto congelada", () => {
   it("crea el snapshot con re36, indicadores, desvíos y objetivos, y un digest de 64 caracteres", async () => {
@@ -488,7 +495,8 @@ describe("mes cerrado: bloqueo de escrituras", () => {
     const { markPdtpExecution } = await import("@/lib/services/prevention-pdtp")
     const { activity } = await closedProgram()
 
-    // Otra faena, mismo mes.
+    // Otra faena, mismo mes. PREV-M02-B: el archivo, subido para esa faena.
+    await seedPdtpEvidenceUpload(inMemoryDb, { path: EVIDENCE_URL, worksiteId: "ws-2", userId: "user-1" })
     await expect(markPdtpExecution({
       activityId: activity.id, worksiteId: "ws-2", year: YEAR, month: MONTH, week: 1, executedQuantity: 1, evidenceUrl: EVIDENCE_URL,
     }, "user-1", "all")).resolves.toBeTruthy()

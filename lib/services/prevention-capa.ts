@@ -801,6 +801,7 @@ export async function addCapaEvidenceWithClient(
       paths: [input.reference],
       worksiteId: current.worksiteId,
       scope: access.scope.mode === "all" ? "all" : access.scope.ids,
+      userId: access.ctx.userId,
     })
     const now = new Date().toISOString()
     const [evidence] = await client.insert(preventionCapaEvidence).values({

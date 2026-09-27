@@ -8,18 +8,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 
 const reviewPdtpNotApplicableAction = vi.fn(async (_formData: FormData) => ({ ok: true }))
+const reviewPdtpScheduledInstanceOutcomeAction = vi.fn(async (_formData: FormData) => ({ ok: true }))
+const withdrawPdtpScheduledInstanceOutcomeAction = vi.fn(async (_formData: FormData) => ({ ok: true }))
 vi.mock("../actions", () => ({
   reviewPdtpNotApplicableAction: (fd: FormData) => reviewPdtpNotApplicableAction(fd),
+  reviewPdtpScheduledInstanceOutcomeAction: (fd: FormData) => reviewPdtpScheduledInstanceOutcomeAction(fd),
+  withdrawPdtpScheduledInstanceOutcomeAction: (fd: FormData) => withdrawPdtpScheduledInstanceOutcomeAction(fd),
 }))
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-import { NotApplicableReviewSection } from "./not-applicable-review-section"
+import { NotApplicableReviewSection, type NotApplicableCellReviewItem, type ScheduledOutcomeReviewItem } from "./not-applicable-review-section"
 
 afterEach(cleanup)
-beforeEach(() => { reviewPdtpNotApplicableAction.mockClear() })
+beforeEach(() => {
+  reviewPdtpNotApplicableAction.mockClear()
+  reviewPdtpScheduledInstanceOutcomeAction.mockClear()
+  withdrawPdtpScheduledInstanceOutcomeAction.mockClear()
+})
 
-const row = (overrides: Partial<Parameters<typeof NotApplicableReviewSection>[0]["items"][number]> = {}) => ({
+const row = (overrides: Partial<NotApplicableCellReviewItem> = {}): NotApplicableCellReviewItem => ({
   id: "dev-1",
   activityN: 12,
   activityName: "Charla de 5 minutos",
@@ -77,5 +85,61 @@ describe("NotApplicableReviewSection", () => {
     render(<NotApplicableReviewSection items={[row({ createdByUserId: "user-revisa" })]} currentUserId="user-revisa" />)
     expect(screen.queryByRole("button", { name: /Aprobar/ })).not.toBeInTheDocument()
     expect(screen.getByText(/lo revisa otra persona/)).toBeInTheDocument()
+  })
+})
+
+/* PREV-C07 sobre ocurrencias (0334): la misma bandeja recibe el "no aplica" y
+ * la cancelación de una ocurrencia programada. */
+const instanceRow = (overrides: Partial<ScheduledOutcomeReviewItem> = {}): ScheduledOutcomeReviewItem => ({
+  kind: "instance" as const,
+  id: "req-1",
+  outcome: "not_applicable" as const,
+  scheduledFor: "2026-03-02",
+  activityN: 7,
+  activityName: "Inspección de andamios",
+  worksiteName: "Faena Sur",
+  reason: "La faena estuvo detenida por mantención mayor.",
+  createdByUserId: "user-declara",
+  createdByName: "Declarante",
+  createdAt: "2026-03-03T12:00:00.000Z",
+  ...overrides,
+})
+
+describe("NotApplicableReviewSection — ocurrencias programadas", () => {
+  it("muestra la fecha de la ocurrencia y qué se pide", () => {
+    render(<NotApplicableReviewSection items={[instanceRow(), instanceRow({ id: "req-2", outcome: "cancelled", activityN: 8 })]} currentUserId="user-revisa" />)
+    const [na, cancel] = screen.getAllByRole("listitem")
+    expect(within(na!).getByText(/Ocurrencia del 02-03-2026/)).toBeInTheDocument()
+    expect(within(na!).getByText(/"No aplica"/)).toBeInTheDocument()
+    expect(within(cancel!).getByText(/Cancelación/)).toBeInTheDocument()
+  })
+
+  it("aprobar envía el id de la solicitud a la acción de ocurrencias", async () => {
+    render(<NotApplicableReviewSection items={[instanceRow()]} currentUserId="user-revisa" />)
+    fireEvent.click(screen.getByRole("button", { name: /Aprobar "no aplica" de N°7/ }))
+    await waitFor(() => expect(reviewPdtpScheduledInstanceOutcomeAction).toHaveBeenCalledTimes(1))
+    const sent = reviewPdtpScheduledInstanceOutcomeAction.mock.calls[0]![0]
+    expect(sent.get("requestId")).toBe("req-1")
+    expect(sent.get("decision")).toBe("approve")
+    expect(reviewPdtpNotApplicableAction).not.toHaveBeenCalled()
+  })
+
+  it("rechazar una cancelación exige motivo y va a la acción de ocurrencias", async () => {
+    render(<NotApplicableReviewSection items={[instanceRow({ outcome: "cancelled" })]} currentUserId="user-revisa" />)
+    fireEvent.click(screen.getByRole("button", { name: /Rechazar cancelación de N°7/ }))
+    const confirm = await screen.findByRole("button", { name: "Rechazar" })
+    fireEvent.change(screen.getByLabelText("Motivo del rechazo"), { target: { value: "La ocurrencia no está duplicada." } })
+    fireEvent.click(confirm)
+    await waitFor(() => expect(reviewPdtpScheduledInstanceOutcomeAction).toHaveBeenCalledTimes(1))
+    expect(reviewPdtpScheduledInstanceOutcomeAction.mock.calls[0]![0].get("reason")).toBe("La ocurrencia no está duplicada.")
+  })
+
+  it("quien la pidió no la revisa pero puede retirarla, con confirmación", async () => {
+    render(<NotApplicableReviewSection items={[instanceRow({ createdByUserId: "user-revisa" })]} currentUserId="user-revisa" />)
+    expect(screen.queryByRole("button", { name: /Aprobar/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /Retirar "no aplica" de N°7/ }))
+    fireEvent.click(await screen.findByRole("button", { name: "Retirar solicitud" }))
+    await waitFor(() => expect(withdrawPdtpScheduledInstanceOutcomeAction).toHaveBeenCalledTimes(1))
+    expect(withdrawPdtpScheduledInstanceOutcomeAction.mock.calls[0]![0].get("requestId")).toBe("req-1")
   })
 })

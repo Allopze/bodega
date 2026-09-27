@@ -19,6 +19,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import { and, eq } from "drizzle-orm"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { seedPdtpEvidenceUpload } from "@/lib/testing/pdtp-evidence-upload-fixture"
 import * as schema from "@/db/schema"
 
 process.env.STORAGE_PATH = path.join(tmpdir(), `pdtp-revision-windows-${Date.now()}`)
@@ -126,6 +127,12 @@ async function seedRevisedYear(options: { v2ActivatedAt?: string; cells?: Array<
   ACTIVITY_N = activity.n
   return { v1Id: v1.id, v2Id: revision.programId, v1ActivityId: activity.id, v2ActivityId: v2Activity!.id }
 }
+
+// PREV-M02-B (0334): el archivo de prueba compartido figura como subido por
+// user-1 para ws-1, que es quien lo vincula primero en estas pruebas.
+beforeEach(async () => {
+  await seedPdtpEvidenceUpload(inMemoryDb, { path: EVIDENCE_URL, worksiteId: "ws-1", userId: "user-1" })
+})
 
 describe("C05-B — la v1 cerrada por reemplazo admite los meses de su ventana (D24)", () => {
   it("registra una ejecución tardía de marzo en la v1 cerrada", async () => {

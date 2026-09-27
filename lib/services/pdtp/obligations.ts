@@ -282,7 +282,7 @@ export async function reportPdtpObligation(input: {
     // PREV-B03: el reporte rechazado es evidencia del intento anterior. Antes
     // se reemplazaba y su archivo quedaba sin referencia (inaccesible y
     // candidato al GC). Se aplica la misma fusión append-only de la planilla.
-    await assertPdtpEvidenceLinkable(tx, { paths: [evidenceUrl, ...photos], worksiteId: obligation.worksiteId, scope: input.scope })
+    await assertPdtpEvidenceLinkable(tx, { paths: [evidenceUrl, ...photos], worksiteId: obligation.worksiteId, scope: input.scope, userId: input.userId })
     const merged = mergePdtpEvidence(existing, {
       activityId: obligation.activityId,
       worksiteId: obligation.worksiteId,

@@ -7,7 +7,8 @@
  * recorre cada referencia al directorio `storage/pdtp-evidence/` que conoce la
  * base (`collectPdtpEvidenceReferences`: ejecuciones, CAPA, historial e
  * instancias) y comprueba que el archivo exista y que su sha256, cuando se
- * registró al vincularlo (W5-SHA), siga coincidiendo.
+ * registró al vincularlo (W5-SHA) o, en su defecto, al subirlo (registro de
+ * subidas, PREV-M02-B), siga coincidiendo.
  *
  * Sólo observa: no borra, no corrige y no toca la base. La alerta es el log
  * (D28: "sólo logs por ahora"): `logger.error` con los conteos y una muestra
@@ -18,6 +19,7 @@ import { logger } from "@/lib/logger"
 import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 import { sha256OfPdtpEvidence } from "./evidence-files"
 import { collectPdtpEvidenceReferences, isPdtpEvidencePath, type PdtpEvidenceSource } from "./evidence-references"
+import { loadPdtpEvidenceUploadSha256 } from "./evidence-uploads"
 
 export type PdtpEvidenceOwnerRef = { source: PdtpEvidenceSource; ownerId: string; worksiteId: string | null }
 
@@ -49,6 +51,14 @@ export async function scanPdtpEvidenceIntegrity(): Promise<PdtpEvidenceIntegrity
     entry.owners.push({ source: ref.source, ownerId: ref.ownerId, worksiteId: ref.worksiteId })
     if (ref.sha256) entry.sha256.add(ref.sha256)
     byPath.set(ref.path, entry)
+  }
+
+  // PREV-M02-B (0334): el sha256 que registró la subida sirve de referencia
+  // cuando ninguna fila guardó uno (por ejemplo, una instancia programada).
+  const uploadSha256 = await loadPdtpEvidenceUploadSha256([...byPath.keys()])
+  for (const [path, entry] of byPath) {
+    const registered = uploadSha256.get(path)
+    if (entry.sha256.size === 0 && registered) entry.sha256.add(registered)
   }
 
   const result: PdtpEvidenceIntegrityResult = {

@@ -15,6 +15,7 @@ import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { seedPdtpEvidenceUpload } from "@/lib/testing/pdtp-evidence-upload-fixture"
 import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
 
@@ -287,6 +288,7 @@ describe("markPdtpExecution — evidencia mínima declarada", () => {
 
   it("acepta la misma constancia con un archivo real de evidencia adjunto", async () => {
     writeFileSync(join(tmpEvidenceRoot, "pdtp-evidence", "certificado-vigente.pdf"), "%PDF-1.4 test")
+    await seedPdtpEvidenceUpload(inMemoryDb, { path: "storage/pdtp-evidence/certificado-vigente.pdf", worksiteId: WS_A, userId: "user-constancias-1" })
     await expect(markPdtpExecution({
       activityId: ACT_ID, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
       executedQuantity: 1, evidenceText: "Acta firmada por los 12 asistentes",
@@ -296,6 +298,7 @@ describe("markPdtpExecution — evidencia mínima declarada", () => {
 
   it("un reenvío que sólo corrige el texto conserva el archivo ya adjuntado (append-only)", async () => {
     writeFileSync(join(tmpEvidenceRoot, "pdtp-evidence", "certificado-reenvio.pdf"), "%PDF-1.4 test")
+    await seedPdtpEvidenceUpload(inMemoryDb, { path: "storage/pdtp-evidence/certificado-reenvio.pdf", worksiteId: WS_A, userId: "user-constancias-1" })
     await markPdtpExecution({
       activityId: ACT_ID, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
       executedQuantity: 1, evidenceText: "Primer envío con archivo",

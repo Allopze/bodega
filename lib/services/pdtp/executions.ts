@@ -227,6 +227,7 @@ export async function markPdtpExecution(
       paths: [data.evidenceUrl, ...(data.evidencePhotos ?? [])],
       worksiteId: data.worksiteId,
       scope,
+      userId,
     })
     const { evidenceUrl: nextEvidenceUrl, evidencePhotos: dedupedPhotos } = mergePdtpEvidence(existing, data)
 
