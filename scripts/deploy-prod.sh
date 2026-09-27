@@ -8,6 +8,10 @@ set -euo pipefail
 #         PROD_PUBLIC_URL=https://... npm run deploy:prod     # override edge URL
 #         SKIP_FUEL_PREFLIGHT_GATE=1 npm run deploy:prod      # forzar pese al preflight
 #
+# `npm run deploy:dev` corre ESTE mismo script contra el entorno de pruebas
+# (scripts/deploy-dev.sh sólo fija el destino). Un solo camino de despliegue:
+# lo que se ensaya en dev es exactamente lo que después corre en prod.
+#
 # Producción vive en OTRA máquina desde 2026-08-28 (antes compartía el daemon
 # Docker con este checkout). La imagen se sigue construyendo acá, sobre `main`,
 # pero ahora viaja por SSH y todo lo que toca prod pasa por `run_in_prod`.
@@ -45,6 +49,10 @@ SKIP_FUEL_PREFLIGHT_GATE="${SKIP_FUEL_PREFLIGHT_GATE:-}"
 # Lo único que se comprueba desde fuera del servidor: que el túnel publique
 # esta release. Nada de lo demás pasa por el borde de Cloudflare.
 PROD_PUBLIC_URL="${PROD_PUBLIC_URL:-https://plataforma.portalchome.cl}"
+# Sólo deploy:dev lo fija, cuando el entorno de pruebas no publica URL.
+[ -n "${SKIP_PUBLIC_SMOKE:-}" ] && PROD_PUBLIC_URL=""
+# Nombre del entorno en los mensajes; deploy-dev.sh lo cambia.
+DEPLOY_LABEL="${DEPLOY_LABEL:-producción}"
 DEPLOY_STARTED_SECONDS=$SECONDS
 
 format_duration() {
@@ -80,7 +88,7 @@ prod_ssh_opts=(-o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -
 case "${PROD_SSH#*@}" in
   # El registro está proxeado por Cloudflare, así que el 22 no pasa de largo.
   # Si algún día prod queda accesible por IP directa, esto se apaga solo.
-  *.portalchome.cl) prod_ssh_opts+=(-o "ProxyCommand=cloudflared access ssh --hostname %h") ;;
+  *.portalchome.cl|*.allopze.dev) prod_ssh_opts+=(-o "ProxyCommand=cloudflared access ssh --hostname %h") ;;
 esac
 
 # Con BatchMode el fallo de un binario que falta sale como un error de SSH sin
@@ -151,7 +159,7 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
-echo "About to deploy $(git rev-parse --short HEAD) ($(git log -1 --format=%s)) to $PROD_SSH:$PROD_DIR"
+echo "About to deploy $(git rev-parse --short HEAD) ($(git log -1 --format=%s)) to $DEPLOY_LABEL: $PROD_SSH:$PROD_DIR"
 read -p "Continue? [y/N] " confirm
 if [ "$confirm" != "y" ]; then
   echo "Aborted."
@@ -686,7 +694,7 @@ run_timed "Protected cron smoke" run_protected_cron_smoke
 ROLLBACK_ARMED=0
 trap - EXIT
 echo
-echo "Deploy complete: app and cron use $IMAGE."
+echo "Deploy complete ($DEPLOY_LABEL): app and cron use $IMAGE."
 
 # Cada deploy carga una imagen completa en el servidor y deja la anterior
 # tagueada como `:prev`. Ya no hay un daemon compartido con este checkout que
@@ -699,9 +707,13 @@ prod_run docker image prune -f | tail -1
 # servidor, así que no distingue "la release está sana" de "el túnel publica esta
 # release": con cloudflared caído en prod —o todavía vivo en el box viejo— el
 # deploy pasaba verde igual.
-echo "==> Smoke público a través del túnel ($PROD_PUBLIC_URL)"
+if [ -z "$PROD_PUBLIC_URL" ]; then
+  echo "==> Smoke público omitido: $DEPLOY_LABEL no declara URL pública (DEV_PUBLIC_URL)"
+fi
+echo "==> Smoke público a través del túnel (${PROD_PUBLIC_URL:-sin URL})"
 public_smoke_ok=0
-for attempt in $(seq 1 6); do
+[ -z "$PROD_PUBLIC_URL" ] && public_smoke_ok=1
+for attempt in $( [ -n "$PROD_PUBLIC_URL" ] && seq 1 6); do
   if curl -sf --max-time 20 "$PROD_PUBLIC_URL/api/health" >/dev/null; then
     public_smoke_ok=1
     break
@@ -718,7 +730,7 @@ if [ "$public_smoke_ok" -ne 1 ]; then
   echo "       No se hace rollback: la imagen nueva ya se verificó del lado del servidor."
   exit 1
 fi
-echo "    200 OK desde fuera"
+[ -n "$PROD_PUBLIC_URL" ] && echo "    200 OK desde fuera"
 
 echo
 echo "==> Verificando Base preventiva 2026..."

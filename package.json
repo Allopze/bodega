@@ -98,6 +98,7 @@
     "analyze": "bash scripts/run-resource-guard.sh next experimental-analyze",
     "release": "bash scripts/run-resource-guard.sh tsx scripts/release.ts",
     "deploy:prod": "bash scripts/deploy-prod.sh",
+    "deploy:dev": "bash scripts/deploy-dev.sh",
     "doctor": "bash scripts/run-resource-guard.sh npx react-doctor@latest"
   },
   "dependencies": {
