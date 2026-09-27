@@ -380,13 +380,26 @@ async function resolvePdtpActiveProgramForEvent(
       `Aún no hay programa PDTP activo para ${occurredYear}; el hecho ${input.sourceType}:${input.sourceId} se acreditará al activarlo.`,
     )
   }
-  const program = effectiveForDate[0] ?? fallbackProgram
+  const candidateProgram = effectiveForDate[0] ?? fallbackProgram
 
-  if (!program) {
+  if (!candidateProgram) {
     throw new PdtpNoActiveProgramError(
       `Sin programa PDTP activo para el evento ${input.sourceType}:${input.sourceId} en faena ${input.worksiteId}.`,
     )
   }
+
+  /*
+   * PREV-C03.5/C03.6 (T3): la fila del programa se toma `FOR SHARE`, en serie
+   * con el `FOR UPDATE` de `closePdtpProgramYear`. Con la lectura simple de
+   * arriba, en READ COMMITTED un hecho tardío no esperaba al cierre anual en
+   * curso, veía el año abierto y escribía su ejecución en un año que se estaba
+   * cerrando. Es la misma corrección que `reopenPdtpPeriod`. Sólo protege si
+   * la escritura va en la misma transacción: por eso `accreditPdtpFromEvent`
+   * abre una. El estado y el cierre se releen de la fila bloqueada.
+   */
+  const [lockedProgram] = await client.select({ status: pdtpPrograms.status, yearClosedAt: pdtpPrograms.yearClosedAt })
+    .from(pdtpPrograms).where(eq(pdtpPrograms.id, candidateProgram.id)).limit(1).for("share")
+  const program = lockedProgram ? { ...candidateProgram, ...lockedProgram } : candidateProgram
 
   if (program.status !== "active" && program.status !== "closed") {
     throw new PdtpNoActiveProgramError(`El programa ${program.id} no está vigente para acreditar hechos (estado: ${program.status}).`)
@@ -530,6 +543,17 @@ const AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE: readonly PdtpAccreditationSo
 export async function accreditPdtpFromEvent(
   input: AccreditationInput,
   client: AccreditationClient = db,
+): Promise<AccreditationResult> {
+  // PREV-C03.5 (T3): resolución y escritura van en una sola transacción (un
+  // savepoint si el conector ya trae la suya), para que el `FOR SHARE` del
+  // programa se sostenga hasta escribir la ejecución. De paso, las escrituras
+  // de varias actividades de un mismo hecho quedan atómicas.
+  return client.transaction((tx) => accreditPdtpFromEventInTransaction(input, tx as Tx))
+}
+
+async function accreditPdtpFromEventInTransaction(
+  input: AccreditationInput,
+  client: Tx,
 ): Promise<AccreditationResult> {
   const isAutoApproveEligibleSourceType = AUTO_APPROVE_SOURCE_TYPES_UNCONDITIONAL.includes(input.sourceType)
     || AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE.includes(input.sourceType)
