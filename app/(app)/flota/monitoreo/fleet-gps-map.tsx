@@ -18,6 +18,10 @@ export function FleetGpsMap({ positions }: { positions: FleetGpsPosition[] }) {
   const [error, setError] = useState<string | null>(null)
   const style = mapStyleUrl()
 
+  // Falso positivo de React Doctor: los `nextMap.on(...)` se liberan con
+  // `map.remove()` en el cleanup de abajo, que según MapLibre desregistra
+  // todos los handlers y el WebGL del mapa. `disposed` cubre el import async.
+  // react-doctor-disable-next-line react-doctor/effect-needs-cleanup
   useEffect(() => {
     if (!element.current || !style || positions.length === 0) return
     let disposed = false

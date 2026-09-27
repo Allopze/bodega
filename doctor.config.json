@@ -8,7 +8,14 @@
       "db/migrations/**",
       "odoo-19.0/**",
       "erpnext-develop/**",
-      "chome_conciliador_odoo_erpnext_pack/**"
+      "chome_conciliador_odoo_erpnext_pack/**",
+      ".claude/**",
+      "strix_runs/**",
+      "storage/**",
+      "coverage/**",
+      "test-results/**",
+      "playwright-report/**",
+      ".tmp/**"
     ]
   },
   "rules": {

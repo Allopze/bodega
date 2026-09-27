@@ -32,6 +32,10 @@ const TYPE_PERMISSIONS: Record<string, Permission[]> = {
   trabajadores: ["admin:workers"],
 }
 
+// Falso positivo de React Doctor: el único "efecto" del GET son `Map.set()`
+// sobre mapas locales de agrupación (proveedores por producto, capacidades por
+// cargo). La ruta sólo lee; no escribe en base de datos ni en disco.
+// react-doctor-disable-next-line react-doctor/nextjs-no-side-effect-in-get-handler
 export async function GET(req: NextRequest) {
   const session = await auth()
   if (!session) {
