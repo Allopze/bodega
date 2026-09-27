@@ -17,6 +17,7 @@
  * (`recordPdtpScheduledInstanceOutcome`).
  */
 import { mkdirSync, writeFileSync } from "node:fs"
+import { seedPdtpEvidenceUpload } from "@/lib/testing/pdtp-evidence-upload-fixture"
 import { tmpdir } from "node:os"
 import path, { join } from "node:path"
 import { PGlite } from "@electric-sql/pglite"
@@ -79,6 +80,13 @@ const PREV_ACTOR = { userId: PREV, roles: ["prevencionista_faena"], canRegisterA
 function evidenceFile(name: string): string {
   writeFileSync(join(tmpEvidenceRoot, "pdtp-evidence", name), "%PDF-1.4 test")
   return `storage/pdtp-evidence/${name}`
+}
+
+/** PREV-M02-B (0334): el archivo se enlaza a nombre de quien lo "subió". */
+async function uploadedEvidence(name: string, userId: string): Promise<string> {
+  const path = evidenceFile(name)
+  await seedPdtpEvidenceUpload(inMemoryDb, { path, worksiteId: WS, userId })
+  return path
 }
 
 function cell(activityId: string, overrides: Record<string, unknown> = {}) {
@@ -177,36 +185,36 @@ describe("decidePdtpRegistrationAuthority — la regla sin base de datos", () =>
 
 describe("PREV-I03 — planilla (markPdtpExecution)", () => {
   it("el jefe de terreno registra la actividad que le toca por cargo", async () => {
-    await markPdtpExecution(cell(ACT_JT), JT, "all", { actor: JT_ACTOR })
+    await markPdtpExecution(cell(ACT_JT, { evidenceUrl: await uploadedEvidence(`${ACT_JT}-${Math.random().toString(36).slice(2)}.pdf`, JT) }), JT, "all", { actor: JT_ACTOR })
     expect((await executionOf(ACT_JT))?.executedByUserId).toBe(JT)
   })
 
   it("un rol global no operacional no registra una actividad ajena", async () => {
-    await expect(markPdtpExecution(cell(ACT_JT), LEGAL, "all", { actor: LEGAL_ACTOR }))
+    await expect(markPdtpExecution(cell(ACT_JT, { evidenceUrl: await uploadedEvidence(`${ACT_JT}-${Math.random().toString(36).slice(2)}.pdf`, LEGAL) }), LEGAL, "all", { actor: LEGAL_ACTOR }))
       .rejects.toThrow(/Solo su responsable/)
     expect(await executionOf(ACT_JT)).toBeUndefined()
   })
 
   it("el rol que opera por un responsable sin cuenta registra (D21)", async () => {
-    await markPdtpExecution(cell(ACT_CONDUCTORES), JT, "all", { actor: JT_ACTOR })
+    await markPdtpExecution(cell(ACT_CONDUCTORES, { evidenceUrl: await uploadedEvidence(`${ACT_CONDUCTORES}-${Math.random().toString(36).slice(2)}.pdf`, JT) }), JT, "all", { actor: JT_ACTOR })
     expect((await executionOf(ACT_CONDUCTORES))?.executedByUserId).toBe(JT)
   })
 
   it("un responsable inactivo en el catálogo no le da la actividad a nadie", async () => {
-    await expect(markPdtpExecution(cell(ACT_RETIRADO), JT, "all", { actor: JT_ACTOR }))
+    await expect(markPdtpExecution(cell(ACT_RETIRADO, { evidenceUrl: await uploadedEvidence(`${ACT_RETIRADO}-${Math.random().toString(36).slice(2)}.pdf`, JT) }), JT, "all", { actor: JT_ACTOR }))
       .rejects.toThrow(/Prevención/)
   })
 
   it("Prevención registra cualquier actividad de su faena", async () => {
-    await markPdtpExecution(cell(ACT_JT), PREV, "all", { actor: PREV_ACTOR })
+    await markPdtpExecution(cell(ACT_JT, { evidenceUrl: await uploadedEvidence(`${ACT_JT}-${Math.random().toString(36).slice(2)}.pdf`, PREV) }), PREV, "all", { actor: PREV_ACTOR })
     expect((await executionOf(ACT_JT))?.executedByUserId).toBe(PREV)
   })
 
   it("con asignación nominal, otro responsable del mismo cargo no registra y la persona asignada sí", async () => {
     await assign(ACT_JT, JT)
-    await expect(markPdtpExecution(cell(ACT_JT), JT_2, "all", { actor: JT_2_ACTOR }))
+    await expect(markPdtpExecution(cell(ACT_JT, { evidenceUrl: await uploadedEvidence(`${ACT_JT}-${Math.random().toString(36).slice(2)}.pdf`, JT_2) }), JT_2, "all", { actor: JT_2_ACTOR }))
       .rejects.toThrow(/asignada a otra persona/i)
-    await markPdtpExecution(cell(ACT_JT), JT, "all", { actor: JT_ACTOR })
+    await markPdtpExecution(cell(ACT_JT, { evidenceUrl: await uploadedEvidence(`${ACT_JT}-${Math.random().toString(36).slice(2)}.pdf`, JT) }), JT, "all", { actor: JT_ACTOR })
     expect((await executionOf(ACT_JT))?.executedByUserId).toBe(JT)
   })
 })
@@ -227,7 +235,7 @@ describe("PREV-I03 — reporte de obligación (reportPdtpObligation)", () => {
   it("un rol global no operacional no reporta la obligación de otro cargo", async () => {
     const obligationId = await openObligation()
     await expect(reportPdtpObligation({
-      obligationId, executedQuantity: 1, evidenceUrl: evidenceFile("obl-legal.pdf"),
+      obligationId, executedQuantity: 1, evidenceUrl: await uploadedEvidence("obl-legal.pdf", LEGAL),
       userId: LEGAL, scope: "all", actor: LEGAL_ACTOR,
     })).rejects.toThrow(/Solo su responsable/)
   })
@@ -235,7 +243,7 @@ describe("PREV-I03 — reporte de obligación (reportPdtpObligation)", () => {
   it("el responsable por cargo la reporta", async () => {
     const obligationId = await openObligation()
     const result = await reportPdtpObligation({
-      obligationId, executedQuantity: 1, evidenceUrl: evidenceFile("obl-jt.pdf"),
+      obligationId, executedQuantity: 1, evidenceUrl: await uploadedEvidence("obl-jt.pdf", JT),
       userId: JT, scope: "all", actor: JT_ACTOR,
     })
     expect(result.execution.executedByUserId).toBe(JT)
