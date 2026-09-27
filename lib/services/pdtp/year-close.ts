@@ -14,6 +14,8 @@
  *   año (o desde que la faena se incorporó, lo que ocurra después) hasta
  *   diciembre, y el cierre de cualquier versión del año vale: una v2 activada en
  *   julio no hace desaparecer los cierres de enero a junio, que son de la v1.
+ *   Salvo en el mes partido por la activación de una sucesora: ahí cada
+ *   versión dueña de sus semanas debe haberlo cerrado (revisión final).
  * - **No antes de que termine el año.** Diciembre tiene que poder cerrarse, y
  *   para eso el programa sigue activo en enero.
  * - **Todas las versiones a la vez.** `yearClosedAt` se escribe en cada versión
@@ -29,6 +31,7 @@ import { addPdtpChangeLogEntry } from "./helpers"
 import { effectiveActivationFor, pdtpActivationPeriod } from "./period"
 import { pdtpMonthLabel } from "./period-guard"
 import { listPdtpProgramOperatingWorksiteIds } from "./worksites"
+import { isPdtpMonthBeforeSuccessor, resolvePdtpVersionWindows, type PdtpVersionWindow } from "./version-window"
 import type { WorksiteScope } from "./helpers"
 
 type QueryClient = Tx | typeof db
@@ -45,6 +48,12 @@ export type PdtpYearCloseMissingMonths = {
   /** La faena ya fue dada de baja: se le exigen los meses previos a la baja,
    * y la ficha del programa deja elegirla para cerrarlos. */
   deactivated?: true
+  /**
+   * Meses partidos por la activación de una versión sucesora en los que falta
+   * el cierre de alguna de las versiones dueñas (número de versión). Un mes
+   * que aparece aquí también está en `months`.
+   */
+  versionMonths?: Array<{ month: number; versions: number[] }>
 }
 
 export type PdtpYearCloseReadiness = {
@@ -59,8 +68,23 @@ export type PdtpYearCloseReadiness = {
   missing: PdtpYearCloseMissingMonths[]
 }
 
-function monthsLabel(year: number, months: number[]): string {
-  return months.map((month) => pdtpMonthLabel(year, month).replace(` de ${year}`, "")).join(", ")
+function monthsLabel(year: number, months: number[], versionMonths: PdtpYearCloseMissingMonths["versionMonths"] = []): string {
+  return months.map((month) => {
+    const name = pdtpMonthLabel(year, month).replace(` de ${year}`, "")
+    const split = versionMonths.find((row) => row.month === month)
+    return split ? `${name} (${split.versions.map((version) => `v${version}`).join(", ")})` : name
+  }).join(", ")
+}
+
+/**
+ * ¿La versión es dueña de alguna semana del mes? Su ventana va desde su semana
+ * de activación hasta la de la sucesora (`version-window.ts`); la primera
+ * versión es la línea de base de los meses anteriores a toda activación.
+ */
+function versionOwnsMonth(window: PdtpVersionWindow, year: number, month: number): boolean {
+  if (window.from && window.from.year === year && window.from.month > month) return false
+  if (window.from && window.from.year > year) return false
+  return isPdtpMonthBeforeSuccessor(year, month, window.until)
 }
 
 async function computeReadiness(programId: string, client: QueryClient): Promise<PdtpYearCloseReadiness> {
@@ -115,10 +139,12 @@ async function computeReadiness(programId: string, client: QueryClient): Promise
       // Todas las versiones del año y también las membresías inactivas: una
       // faena dada de baja deja su fila con `isActive = false`.
       client.select({
+        programId: pdtpProgramWorksites.programId,
         worksiteId: pdtpProgramWorksites.worksiteId,
         addedAt: pdtpProgramWorksites.addedAt,
       }).from(pdtpProgramWorksites).where(inArray(pdtpProgramWorksites.programId, versionIds)),
       client.select({
+        programId: pdtpPeriodClosures.programId,
         worksiteId: pdtpPeriodClosures.worksiteId,
         month: pdtpPeriodClosures.month,
       }).from(pdtpPeriodClosures).where(and(
@@ -152,11 +178,36 @@ async function computeReadiness(programId: string, client: QueryClient): Promise
       const current = addedAtByWorksite.get(row.worksiteId)
       if (!current || Date.parse(row.addedAt) < Date.parse(current)) addedAtByWorksite.set(row.worksiteId, row.addedAt)
     }
-    const closedMonthsByWorksite = new Map<string, Set<number>>()
+    // Qué versiones cerraron cada mes de cada faena.
+    const closersByWorksiteMonth = new Map<string, Set<string>>()
     for (const closure of closures) {
-      const months = closedMonthsByWorksite.get(closure.worksiteId) ?? new Set<number>()
-      months.add(closure.month)
-      closedMonthsByWorksite.set(closure.worksiteId, months)
+      const key = `${closure.worksiteId}:${closure.month}`
+      const closers = closersByWorksiteMonth.get(key) ?? new Set<string>()
+      closers.add(closure.programId)
+      closersByWorksiteMonth.set(key, closers)
+    }
+    // Revisión final 2026-09-27 (hallazgo 3, T6 × T5): el mes en que se
+    // activó una sucesora tiene semanas de dos versiones, y cada una lo cierra
+    // revisando sólo los pendientes de sus actividades. Ahí se exige el cierre
+    // de cada versión dueña que la faena opera y que todavía puede cerrar (una
+    // archivada ya no). En los demás meses basta el cierre de cualquiera, como
+    // antes: una v2 no hace desaparecer los cierres de la v1.
+    const windows = [...resolvePdtpVersionWindows(versions).values()]
+    const versionById = new Map(versions.map((version) => [version.id, version]))
+    const membersByVersion = new Map<string, Set<string>>()
+    for (const row of memberships) {
+      const members = membersByVersion.get(row.programId) ?? new Set<string>()
+      members.add(row.worksiteId)
+      membersByVersion.set(row.programId, members)
+    }
+    const operates = (programId: string, worksiteId: string) => {
+      const members = membersByVersion.get(programId)
+      if (members && members.size > 0) return members.has(worksiteId)
+      return Boolean(versionById.get(programId)?.appliesToAllWorksites)
+    }
+    const ownersByMonth = new Map<number, PdtpVersionWindow[]>()
+    for (let month = 1; month <= 12; month++) {
+      ownersByMonth.set(month, windows.filter((window) => versionOwnsMonth(window, year, month)))
     }
     for (const worksiteId of candidateIds) {
       const worksite = worksiteById.get(worksiteId)
@@ -169,23 +220,37 @@ async function computeReadiness(programId: string, client: QueryClient): Promise
       const firstMonth = !activation || activation.year < year ? 1 : activation.year > year ? 13 : activation.month
       const deactivated = worksite?.deactivatedAt ? chileDateParts(worksite.deactivatedAt) : null
       const lastMonth = !deactivated || deactivated.year > year ? 12 : deactivated.year < year ? 0 : deactivated.month - 1
-      const closed = closedMonthsByWorksite.get(worksiteId) ?? new Set<number>()
       const months: number[] = []
+      const versionMonths: NonNullable<PdtpYearCloseMissingMonths["versionMonths"]> = []
       for (let month = firstMonth; month <= lastMonth; month++) {
-        if (!closed.has(month)) months.push(month)
+        const closers = closersByWorksiteMonth.get(`${worksiteId}:${month}`) ?? new Set<string>()
+        const owners = ownersByMonth.get(month) ?? []
+        const required = owners.length > 1
+          ? owners.filter((window) => window.status !== "archived" && operates(window.programId, worksiteId))
+          : []
+        if (required.length > 0) {
+          const pending = required.filter((window) => !closers.has(window.programId))
+          if (pending.length > 0) {
+            months.push(month)
+            versionMonths.push({ month, versions: pending.map((window) => window.version) })
+          }
+        } else if (closers.size === 0) {
+          months.push(month)
+        }
       }
       if (months.length > 0) {
         missing.push({
           worksiteId,
           worksiteName: worksite?.name ?? worksiteId,
           months,
+          ...(versionMonths.length > 0 ? { versionMonths } : {}),
           ...(deactivatedCandidateIds.includes(worksiteId) ? { worksiteCode: worksite?.code ?? "", deactivated: true as const } : {}),
         })
       }
     }
     missing.sort((left, right) => left.worksiteName.localeCompare(right.worksiteName, "es"))
     if (missing.length > 0) {
-      const detail = missing.map((row) => `${row.worksiteName}: ${monthsLabel(year, row.months)}`).join("; ")
+      const detail = missing.map((row) => `${row.worksiteName}: ${monthsLabel(year, row.months, row.versionMonths)}`).join("; ")
       blockers.push(`Faltan cierres mensuales del año ${year}. ${detail}.`)
     }
   }
