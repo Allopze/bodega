@@ -3,6 +3,8 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { can, requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { pdtpRegistrationActorFromSession } from "@/lib/auth/pdtp-registration"
+import { listPdtpRegistrableActivityIds } from "@/lib/services/pdtp/registration-authority"
 import {
   getActivePdtpProgram,
   getPdtpAggregatedSheetViewByProgram,
@@ -135,6 +137,12 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
       ? await getPdtpSheetViewByProgram(program.id, sheetCode, selectedWorksiteId)
       : await getPdtpAggregatedSheetViewByProgram(program.id, sheetCode, worksites.map((worksite) => worksite.id), currentPeriod)
   const aggregateView = view && "aggregate" in view ? view as PdtpAggregatedSheetView : null
+  // PREV-I03: "Registrar" sólo donde el servidor lo aceptaría de esta persona.
+  const canExecute = Boolean(selectedWorksiteId) && can(session, "prevention:pdtp:execute")
+  const registrationActor = pdtpRegistrationActorFromSession(session)
+  const registrableActivityIds = canExecute && selectedWorksiteId && view && !registrationActor.canRegisterAnyActivity
+    ? [...await listPdtpRegistrableActivityIds({ activityIds: view.activities.map((a) => a.id), worksiteId: selectedWorksiteId, actor: registrationActor })]
+    : undefined
   const selectedSheet = sheets.find((sheet) => sheet.code === sheetCode)
   const activityViewerHref = buildPdtpActivitiesHref({
     programa: program.id,
@@ -218,7 +226,7 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
                 </details>
               </>
             )}
-            <PdtpSheetTable view={view} worksiteId={selectedWorksiteId} canExecute={Boolean(selectedWorksiteId) && can(session, "prevention:pdtp:execute")} viewMode={viewMode} currentPeriod={currentPeriod} sheetCode={sheetCode} initialStatusFilter={statusFilter} aggregateWorksiteNames={Object.fromEntries(worksites.map((worksite) => [worksite.id, worksite.name]))} objectives={objectives} objectiveFilter={objectiveFilter} assigneesByActivity={assigneesByActivity} canManageAssignees={Boolean(selectedWorksiteId) && can(session, "prevention:pdtp:assignee:manage")} assigneeFilterUserId={assigneeFilterUserId} today={today} />
+            <PdtpSheetTable view={view} worksiteId={selectedWorksiteId} canExecute={canExecute} registrableActivityIds={registrableActivityIds} viewMode={viewMode} currentPeriod={currentPeriod} sheetCode={sheetCode} initialStatusFilter={statusFilter} aggregateWorksiteNames={Object.fromEntries(worksites.map((worksite) => [worksite.id, worksite.name]))} objectives={objectives} objectiveFilter={objectiveFilter} assigneesByActivity={assigneesByActivity} canManageAssignees={Boolean(selectedWorksiteId) && can(session, "prevention:pdtp:assignee:manage")} assigneeFilterUserId={assigneeFilterUserId} today={today} />
           </>
         )}
       </div>

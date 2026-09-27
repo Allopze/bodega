@@ -3,6 +3,8 @@ import Link from "next/link"
 import { redirect, notFound } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { pdtpRegistrationActorFromSession } from "@/lib/auth/pdtp-registration"
+import { listPdtpRegistrableActivityIds } from "@/lib/services/pdtp/registration-authority"
 import {
   getPdtpSheetViewByProgram,
   getPdtpProgram,
@@ -174,6 +176,11 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const canManageLifecycle = can(session, "prevention:pdtp:lifecycle:manage")
   const canExecute = can(session, "prevention:pdtp:execute")
   const canManageProgram = can(session, "prevention:pdtp:program:manage")
+  // PREV-I03: "Registrar" sólo donde el servidor lo aceptaría de esta persona.
+  const registrationActor = pdtpRegistrationActorFromSession(session)
+  const registrableActivityIds = canExecute && selectedWorksiteId && view && !registrationActor.canRegisterAnyActivity
+    ? [...await listPdtpRegistrableActivityIds({ activityIds: view.activities.map((a) => a.id), worksiteId: selectedWorksiteId, actor: registrationActor })]
+    : undefined
   const hasUndeclaredActiveScope = program.status === "active"
     && !program.appliesToAllWorksites
     && programWorksites.length === 0
@@ -432,6 +439,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
               view={view}
               worksiteId={selectedWorksiteId}
               canExecute={canExecute}
+              registrableActivityIds={registrableActivityIds}
               canManageProgram={canManageProgram}
               canApprove={canApprove}
               pendingApprovals={pendingApprovals}

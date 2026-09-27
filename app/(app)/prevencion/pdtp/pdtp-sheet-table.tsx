@@ -204,6 +204,12 @@ type PdtpSheetTableProps = {
   assigneeFilterUserId?: string
   /** Día chileno de hoy (`AAAA-MM-DD`), resuelto en el servidor. */
   today?: string
+  /**
+   * PREV-I03: actividades que esta persona puede registrar en la faena (las de
+   * su cargo, las asignadas a ella). Sin la lista se ofrece todo —Prevención—.
+   * Esconde el botón; la frontera real es el servidor.
+   */
+  registrableActivityIds?: readonly string[]
 }
 
 const EMPTY_OBJECTIVES: ObjectiveSummary[] = []
@@ -228,8 +234,11 @@ export function PdtpSheetTable({
   canManageAssignees = false,
   assigneeFilterUserId,
   today = "",
+  registrableActivityIds,
 }: PdtpSheetTableProps) {
   const canOperate = canExecute || canManageProgram || canManageAssignees
+  const registrable = React.useMemo(() => registrableActivityIds ? new Set(registrableActivityIds) : null, [registrableActivityIds])
+  const canRegister = (activityId: string) => canExecute && (registrable === null || registrable.has(activityId))
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -525,7 +534,7 @@ export function PdtpSheetTable({
                           {canOperate && worksiteId && (
                             <TableCell className={rowPy}>
                               <div className="flex flex-wrap items-center gap-1.5">
-                                {canExecute && <PdtpExecutionForm
+                                {canRegister(activity.id) && <PdtpExecutionForm
                                   activityId={activity.id}
                                   activityN={activity.n}
                                   activityName={activity.activity}
@@ -732,7 +741,7 @@ export function PdtpSheetTable({
                           {canOperate && worksiteId && (
                             <TableCell className={rowPy}>
                               <div className="flex flex-wrap items-center gap-1.5">
-                                {canExecute && <PdtpExecutionForm
+                                {canRegister(activity.id) && <PdtpExecutionForm
                                   activityId={activity.id}
                                   activityN={activity.n}
                                   activityName={activity.activity}
