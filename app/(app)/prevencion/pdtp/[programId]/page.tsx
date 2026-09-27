@@ -6,8 +6,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
   getPdtpSheetViewByProgram,
   getPdtpProgram,
-  getPdtpComplianceIndicators,
-  getPdtpIntegralCompliance,
+  getPdtpComplianceWithIntegral,
   getPdtpApprovalProgress,
   getPdtpSubmitReviewBlockers,
   getPdtpCoverageReport,
@@ -117,18 +116,21 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   ])
   const worksites = withYearCloseDeactivatedWorksites(accessibleWorksites, yearClose?.missing, worksiteIds)
   const selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, worksites)
-  const [[view, indicators, integral, declaredNotApplicable], approvalProgress] = await Promise.all([
+  const [[view, compliance, declaredNotApplicable], approvalProgress] = await Promise.all([
     selectedWorksiteId
       ? Promise.all([
         getPdtpSheetViewByProgram(programId, sheetCode, selectedWorksiteId),
-        getPdtpComplianceIndicators(programId, selectedWorksiteId),
-        getPdtpIntegralCompliance(programId, selectedWorksiteId),
+        // I12: indicador e integral de un solo cálculo (antes el integral
+        // volvía a calcular el indicador entero).
+        getPdtpComplianceWithIntegral(programId, selectedWorksiteId),
         // PREV-C07: cuántas semanas "No aplica" hay junto al porcentaje.
         countPdtpNotApplicable(programId, [selectedWorksiteId]),
       ])
-      : Promise.resolve([null, null, null, undefined] as const),
+      : Promise.resolve([null, null, undefined] as const),
     getPdtpApprovalProgress(programId),
   ])
+  const indicators = compliance?.indicators ?? null
+  const integral = compliance?.integral ?? null
   // Dos lecturas de la compuerta que antes iban en serie. `submitBlockers` son
   // los requisitos de contenido del envío, que se consultan acá para mostrarlos
   // en la tarjeta de estado en vez de dejar que el envío falle.

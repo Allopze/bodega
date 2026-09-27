@@ -268,7 +268,7 @@ export type { PdtpFollowupInput } from "./followups"
 export { addFollowup, listFollowups, listVencidas } from "./followups"
 
 export type { PdtpIntegralCompliance, PdtpIntegralComplianceAxes } from "./compliance"
-export { getPdtpIntegralCompliance, getPdtpIntegralComplianceForScope } from "./compliance"
+export { getPdtpComplianceWithIntegral, getPdtpIntegralCompliance, getPdtpIntegralComplianceForScope } from "./compliance"
 
 export type { PdtpManagementReport, PdtpManagementReportFilters, PdtpManagementReportActivityRow } from "./management-report"
 export { getPdtpManagementReport, resolveActivePdtpProgramId } from "./management-report"
