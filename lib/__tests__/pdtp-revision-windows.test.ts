@@ -366,3 +366,96 @@ describe("C05-C — el reporte de gestión es de una versión y lo dice", () => 
     expect(v2!.versionLabel).toMatch(/^v2 \(desde el/)
   })
 })
+
+describe("C05-D — la activación traspasa desvíos y asignaciones a la versión nueva", () => {
+  // Activación "hoy" (15-oct, semana 3): la ventana de v2 empieza ahí.
+  const ACTIVATED_NOW = `${YEAR}-10-15T15:00:00.000Z`
+
+  async function seedHandover() {
+    const seeded = await seedRevisedYear({ v2ActivatedAt: ACTIVATED_NOW, cells: [[10, 2], [10, 3], [11, 2]] })
+    await inMemoryDb.insert(schema.worksites).values([
+      { id: "ws-2", name: "Faena 2", code: "F2", isActive: true },
+      { id: "ws-3", name: "Faena 3", code: "F3", isActive: true },
+    ])
+    const createdAt = new Date().toISOString()
+    const base = { activityId: seeded.v1ActivityId, year: YEAR, reason: REASON, createdByUserId: "user-1", createdAt }
+    await inMemoryDb.insert(schema.pdtpExecutionDeviations).values([
+      // En la semana de activación: ya es de v2.
+      { ...base, id: "dev-na-pending", worksiteId: "ws-1", month: 10, week: 3, kind: "not_applicable", status: "pending_review" },
+      { ...base, id: "dev-np-active", worksiteId: "ws-2", month: 10, week: 3, kind: "not_performed", status: "active" },
+      // Origen en la ventana de v1, destino en la de v2.
+      { ...base, id: "dev-reprog", worksiteId: "ws-1", month: 10, week: 2, kind: "reprogrammed", targetMonth: 11, targetWeek: 2, status: "active" },
+      // Enteramente de v1: no se toca.
+      { ...base, id: "dev-own-v1", worksiteId: "ws-2", month: 10, week: 2, kind: "not_performed", status: "active" },
+      // v2 excluye la actividad en esta faena: no hay dónde traspasarlo.
+      { ...base, id: "dev-excluded", worksiteId: "ws-3", month: 10, week: 3, kind: "not_performed", status: "active" },
+    ])
+    await inMemoryDb.insert(schema.pdtpActivityWorksiteExclusions).values({
+      id: "excl-v2-ws3", activityId: seeded.v2ActivityId, worksiteId: "ws-3", reason: "La faena no aplica en la versión nueva", createdAt,
+    })
+    return seeded
+  }
+
+  it("traspasa cada desvío abierto de la ventana de v2 con su estado, y retira el original", async () => {
+    const { handoverPdtpOperationalLayer } = await import("@/lib/services/pdtp/operational-handover")
+    const { v1Id, v2Id, v2ActivityId } = await seedHandover()
+    const result = await inMemoryDb.transaction((tx) => handoverPdtpOperationalLayer([v1Id], v2Id, {
+      today: `${YEAR}-10-15`, userId: "user-2", activatedAt: ACTIVATED_NOW,
+    }, tx as never))
+
+    const moved = await inMemoryDb.select().from(schema.pdtpExecutionDeviations)
+      .where(eq(schema.pdtpExecutionDeviations.activityId, v2ActivityId))
+    const byCell = new Map(moved.map((row) => [`${row.worksiteId}:${row.month}:${row.week}:${row.kind}`, row]))
+    // D24/C07: el "no aplica" en revisión sigue en revisión, ahora en v2, con quien lo declaró.
+    expect(byCell.get("ws-1:10:3:not_applicable")).toMatchObject({ status: "pending_review", createdByUserId: "user-1", reason: REASON })
+    expect(byCell.get("ws-2:10:3:not_performed")).toMatchObject({ status: "active" })
+    expect(byCell.get("ws-1:10:2:reprogrammed")).toMatchObject({ status: "active", targetMonth: 11, targetWeek: 2 })
+    expect(moved).toHaveLength(3)
+
+    const originals = new Map((await inMemoryDb.select().from(schema.pdtpExecutionDeviations)
+      .where(eq(schema.pdtpExecutionDeviations.activityId, (await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.programId, v1Id)))[0]!.id)))
+      .map((row) => [row.id, row]))
+    expect(originals.get("dev-na-pending")).toMatchObject({ status: "withdrawn", withdrawnByUserId: "user-2" })
+    expect(originals.get("dev-na-pending")!.withdrawReason).toMatch(/v2/)
+    expect(originals.get("dev-np-active")!.status).toBe("withdrawn")
+    // La reprogramación sigue sacando el planificado del origen, que es de v1.
+    expect(originals.get("dev-reprog")!.status).toBe("active")
+    expect(originals.get("dev-own-v1")!.status).toBe("active")
+    // Sin destino válido en v2: se retira igual (ya no es de v1) y queda explicado.
+    expect(originals.get("dev-excluded")!.status).toBe("withdrawn")
+    expect(result.deviations.handed).toBe(3)
+    expect(result.deviations.skipped).toEqual([expect.objectContaining({ deviationId: "dev-excluded", reason: expect.stringMatching(/excluida/) })])
+
+    const [log] = await inMemoryDb.select().from(schema.pdtpChangeLog)
+      .where(and(eq(schema.pdtpChangeLog.programId, v2Id), eq(schema.pdtpChangeLog.section, "handover")))
+    expect(log!.note).toMatch(/3 desvíos/)
+    expect(log!.note).toMatch(/excluida/)
+  })
+
+  it("es idempotente: repetir el traspaso no duplica", async () => {
+    const { handoverPdtpOperationalLayer } = await import("@/lib/services/pdtp/operational-handover")
+    const { v1Id, v2Id, v2ActivityId } = await seedHandover()
+    const run = () => inMemoryDb.transaction((tx) => handoverPdtpOperationalLayer([v1Id], v2Id, {
+      today: `${YEAR}-10-15`, userId: "user-2", activatedAt: ACTIVATED_NOW,
+    }, tx as never))
+    await run()
+    const again = await run()
+    expect(again.deviations.handed).toBe(0)
+    expect(await inMemoryDb.select().from(schema.pdtpExecutionDeviations).where(eq(schema.pdtpExecutionDeviations.activityId, v2ActivityId))).toHaveLength(3)
+  })
+
+  it("también traspasa las asignaciones nominales (reutiliza el traspaso de T0)", async () => {
+    const { handoverPdtpOperationalLayer } = await import("@/lib/services/pdtp/operational-handover")
+    const { v1Id, v2Id, v1ActivityId, v2ActivityId } = await seedHandover()
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpActivityWorksiteAssignees).values({
+      id: "asg-v1", activityId: v1ActivityId, worksiteId: "ws-1", userId: "user-1", validFrom: `${YEAR}-01-01`, createdAt: now, updatedAt: now,
+    })
+    const result = await inMemoryDb.transaction((tx) => handoverPdtpOperationalLayer([v1Id], v2Id, {
+      today: `${YEAR}-10-15`, userId: "user-2", activatedAt: ACTIVATED_NOW,
+    }, tx as never))
+    expect(result.assignees).toBe(1)
+    const moved = await inMemoryDb.select().from(schema.pdtpActivityWorksiteAssignees).where(eq(schema.pdtpActivityWorksiteAssignees.activityId, v2ActivityId))
+    expect(moved).toHaveLength(1)
+  })
+})

@@ -5,6 +5,7 @@ import { logger } from "@/lib/logger"
 import { countOf, todayInChile } from "@/lib/utils"
 import { addPdtpChangeLogEntry } from "./helpers"
 import { handoverPdtpWorksiteAssignees } from "./assignees"
+import { handoverPdtpOperationalLayer } from "./operational-handover"
 import { computePdtpProgramContentDigest, computePdtpProgramContentDigestForStoredVersion } from "./content-digest"
 import { assertPdtpFulfillmentCoverage, type PdtpCoverageScope, type PdtpFulfillmentCoverageIssue } from "./fulfillment"
 import {
@@ -479,9 +480,11 @@ export async function activatePdtpProgram(programId: string, userId: string) {
       .returning()
     if (!updated) throw new Error("El programa cambió mientras se activaba. Recarga e intenta nuevamente.")
 
-    // C05-A: las asignaciones nominales vigentes pasan a la versión que entra
-    // en vigencia, en la misma transacción que cierra la anterior.
-    await handoverPdtpWorksiteAssignees(replaced.map((row) => row.id), programId, todayInChile(), tx)
+    // C05-A/C05-D: la capa operacional que ya no es de la versión anterior
+    // —asignaciones nominales vigentes y desvíos abiertos de las semanas desde
+    // esta activación— pasa a la que entra en vigencia, en la misma
+    // transacción que cierra la anterior (`operational-handover.ts`).
+    await handoverPdtpOperationalLayer(replaced.map((row) => row.id), programId, { today: todayInChile(), userId, activatedAt: now }, tx)
     // PREV-C03.1 (D20): el programa del año siguiente copiado desde el anterior
     // no reemplaza a nadie (el año anterior sigue activo hasta su cierre), pero
     // hereda sus asignaciones nominales vigentes al entrar en vigencia. Rigen
