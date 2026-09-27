@@ -101,7 +101,12 @@ export function InvoiceAllocationEditor({ purchaseOrderId, line, orderItems }: {
               </fieldset>
             ))}
           </div>
-          <Button type="button" variant="secondary" disabled={disabled || draft.rows.length >= Math.min(100, orderItems.length)} onClick={() => setDraft(current => ({ ...current, rows: [...current.rows, { key: `new-${++rowSequence.current}`, purchaseOrderItemId: "", quantity: "", subtotal: "" }] }))}>Añadir asignación</Button>
+          <Button type="button" variant="secondary" disabled={disabled || draft.rows.length >= Math.min(100, orderItems.length)} onClick={() => {
+            // La clave se reserva fuera del updater: React puede invocar el
+            // updater dos veces (StrictMode) y el contador no debe avanzar en él.
+            const key = `new-${++rowSequence.current}`
+            setDraft(current => ({ ...current, rows: [...current.rows, { key, purchaseOrderItemId: "", quantity: "", subtotal: "" }] }))
+          }}>Añadir asignación</Button>
           <div aria-live="polite" className="space-y-1 font-mono text-sm tabular-nums break-words">
             <p>Cantidad asignada: {assignedQuantity} · Restante: {Number((line.quantity - assignedQuantity).toFixed(6))}</p>
             <p>Subtotal asignado: {formatCLP(assignedSubtotal)} · Restante: {formatCLP(line.subtotal - assignedSubtotal)}</p>

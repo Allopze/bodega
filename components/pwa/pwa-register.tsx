@@ -12,6 +12,11 @@ import * as React from "react"
 const SW_URL = "/sw.js"
 
 export function PwaRegister() {
+  // Falso positivo de React Doctor: los listeners se agregan cuando
+  // `register()` resuelve, fuera del alcance que el analizador sigue, y el
+  // cleanup de abajo libera los tres recursos (intervalo, `updatefound` y
+  // `statechange`); `disposed` evita asignarlos si el efecto ya se desmontó.
+  // react-doctor-disable-next-line react-doctor/effect-needs-cleanup
   React.useEffect(() => {
     if (!("serviceWorker" in navigator)) return
 
@@ -21,17 +26,24 @@ export function PwaRegister() {
     // the listener would be allocated after cleanup and never released.
     let disposed = false
     let registration: ServiceWorkerRegistration | null = null
+    // El worker nuevo que se está observando. Su listener también se libera
+    // en el cleanup: antes quedaba colgado del worker tras desmontar.
+    let watchedWorker: ServiceWorker | null = null
+
+    const onStateChange = () => {
+      if (watchedWorker?.state === "activated") {
+        // New SW is active — could show a "refresh" prompt
+        console.log("[PWA] New service worker activated")
+      }
+    }
 
     const onUpdateFound = () => {
       const newWorker = registration?.installing
       if (!newWorker) return
 
-      newWorker.addEventListener("statechange", () => {
-        if (newWorker.state === "activated") {
-          // New SW is active — could show a "refresh" prompt
-          console.log("[PWA] New service worker activated")
-        }
-      })
+      watchedWorker?.removeEventListener("statechange", onStateChange)
+      watchedWorker = newWorker
+      newWorker.addEventListener("statechange", onStateChange)
     }
 
     navigator.serviceWorker
@@ -56,6 +68,8 @@ export function PwaRegister() {
       disposed = true
       if (checkInterval !== null) clearInterval(checkInterval)
       registration?.removeEventListener("updatefound", onUpdateFound)
+      watchedWorker?.removeEventListener("statechange", onStateChange)
+      watchedWorker = null
       registration = null
     }
   }, [])
