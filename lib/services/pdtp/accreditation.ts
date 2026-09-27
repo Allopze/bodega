@@ -32,6 +32,7 @@ import { logger } from "@/lib/logger"
 import { addPdtpChangeLogEntry } from "./helpers"
 import { pdtpExecutionHistorySnapshot, recordPdtpExecutionHistory } from "./execution-history"
 import { PDTP_DEVIATION_LABELS, type PdtpDeviationKind } from "./deviations"
+import { syncPdtpScheduledInstanceFromExecution } from "./scheduled-execution"
 
 type AccreditationClient = DB | Tx
 
@@ -953,6 +954,7 @@ export async function revokePdtpAccreditationWithClient(
       evidenceUrl: pdtpExecutions.evidenceUrl,
       evidencePhotos: pdtpExecutions.evidencePhotos,
       evidenceText: pdtpExecutions.evidenceText,
+      scheduledInstanceId: pdtpExecutions.scheduledInstanceId,
     })
     .from(pdtpExecutions)
     .where(
@@ -1049,6 +1051,7 @@ export async function revokePdtpAccreditationWithClient(
     if (!updated) continue
     revoked.push({ activityId: execution.activityId, executionId: execution.id })
     await recordRevocationHistory(client, input, execution, updated)
+    if (execution.scheduledInstanceId) await reopenScheduledInstanceForRevocation(client, input, execution.id)
     if (manuallyApproved) {
       revertedApproved.push({ activityId: execution.activityId, executionId: execution.id })
       const [context] = await client.select({
@@ -1085,6 +1088,32 @@ export async function revokePdtpAccreditationWithClient(
   )
 
   return { revoked, revertedApproved }
+}
+
+/**
+ * PREV-I08-b: la ocurrencia programada enlazada a una ejecución revertida se
+ * reabre y se desenlaza. Va en un savepoint y una falla sólo se registra: la
+ * revocación corre dentro de la transacción del módulo de origen (reabrir o
+ * cancelar una inspección) y el PDTP no debe revertir ese flujo por la
+ * ocurrencia. Aun si falla, el indicador queda correcto: la ejecución ya está
+ * en borrador y una ocurrencia sólo cuenta con su ejecución aprobada (D19).
+ * La ejecución ya está bloqueada acá, así que el orden ejecución → ocurrencia
+ * se conserva.
+ */
+async function reopenScheduledInstanceForRevocation(client: Tx, input: RevocationInput, executionId: string) {
+  try {
+    await client.transaction((savepoint) => syncPdtpScheduledInstanceFromExecution(savepoint as Tx, {
+      executionId,
+      trigger: "revocation",
+      userId: input.revokedBy ?? null,
+      reason: input.reason ?? "Evento fuente cancelado o anulado.",
+    }))
+  } catch (err) {
+    logger.warn(
+      { err, executionId, sourceType: input.sourceType, sourceId: input.sourceId },
+      "[revokePdtpAccreditation] No se pudo reabrir la ocurrencia programada enlazada.",
+    )
+  }
 }
 
 /**

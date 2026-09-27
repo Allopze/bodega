@@ -34,3 +34,23 @@ describe("scheduled execution start", () => {
     expect(assertPdtpScheduledOutcomeReason("completed", null)).toBeNull()
   })
 })
+
+// PREV-I08-c/e (D19): el estado de una ocurrencia enlazada sale del estado de
+// su ejecución en el libro, nunca de metadatos que manda un cliente.
+describe("pdtpScheduledInstanceStatusForExecution", () => {
+  it("aprobada completa, enviada queda enviada, y lo demás vuelve a trabajo abierto", async () => {
+    const { pdtpScheduledInstanceStatusForExecution } = await import("@/lib/services/pdtp/scheduled-execution")
+    expect(pdtpScheduledInstanceStatusForExecution({ executionStatus: "approved", startedAt: null })).toBe("completed")
+    expect(pdtpScheduledInstanceStatusForExecution({ executionStatus: "submitted", startedAt: null })).toBe("submitted")
+    expect(pdtpScheduledInstanceStatusForExecution({ executionStatus: "rejected", startedAt: "2026-03-01T10:00:00.000Z" })).toBe("in_progress")
+    expect(pdtpScheduledInstanceStatusForExecution({ executionStatus: "draft", startedAt: null })).toBe("pending")
+  })
+
+  it("la vía manual ya no completa una ocurrencia: se completa al aprobar su ejecución", async () => {
+    const { assertPdtpScheduledInstanceManualAction } = await import("@/lib/services/pdtp/scheduled-execution")
+    expect(() => assertPdtpScheduledInstanceManualAction("complete")).toThrow(/aprobar/i)
+    for (const action of ["submit", "not_applicable", "cancel"] as const) {
+      expect(() => assertPdtpScheduledInstanceManualAction(action)).not.toThrow()
+    }
+  })
+})

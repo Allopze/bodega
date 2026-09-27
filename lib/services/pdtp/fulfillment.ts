@@ -41,6 +41,8 @@ import {
   pdtpAccreditationBindings,
   pdtpFulfillmentEvents,
   pdtpFulfillmentEventTargets,
+  pdtpExecutions,
+  pdtpPeriodClosures,
   pdtpScheduledInstances,
   pdtpResponsibleCatalog,
   permissions,
@@ -65,8 +67,8 @@ import { PDTP_NO_EXECUTOR_ROLE_REASON } from "@/lib/prevention/pdtp"
 import { describePdtpInstrumentGap, type PdtpCoverageInstrument } from "./instrument-gap"
 import { loadPdtpInstrumentIndex, type PdtpInstrumentRecord } from "./instruments"
 import { legacyPdtpActivityNumberForCatalogId } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
-import { getPdtpExecutionConnector } from "./connectors"
-import { recordPdtpScheduledInstanceOutcome } from "./scheduled-execution"
+import { getPdtpExecutionConnector, pdtpConnectorAcceptsFulfillmentSource } from "./connectors"
+import { syncPdtpScheduledInstanceFromExecution } from "./scheduled-execution"
 import { todayInChile } from "@/lib/utils"
 
 type QueryClient = DB | Tx
@@ -245,27 +247,32 @@ function fulfillmentCivilDate(occurredAt: string): string {
   return todayInChile(parsed)
 }
 
-function connectorAcceptsFulfillmentEvent(
-  connectorKey: string,
-  sourceType: AccreditationInput["sourceType"],
-  metadata: Record<string, unknown>,
-): boolean {
-  const connector = getPdtpExecutionConnector(connectorKey)
-  if (!connector) return false
-  const eventKey = typeof metadata.eventKey === "string" ? metadata.eventKey.trim() : ""
-  return connector.supportedEvents.some((event) => event.sourceType === sourceType && (!eventKey || event.key === eventKey))
-}
-
 /**
  * Enlaza el hecho nativo que ya acreditó el ledger con la ocurrencia fechada
  * que lo originó. La acreditación por actividad/número sigue siendo la fuente
- * de verdad para `pdtp_executions`; esta costura sólo cambia el estado de la
- * instancia y guarda la referencia verificable del registro fuente.
+ * de verdad para `pdtp_executions`; esta costura sólo enlaza la ejecución y
+ * deja que `syncPdtpScheduledInstanceFromExecution` derive el estado de la
+ * ocurrencia desde el estado de esa ejecución (PREV-I08-d/e, D19).
  *
- * La selección es deliberadamente una sola ocurrencia por actividad: la más
- * reciente exigible en la faena y no posterior al hecho. Si el hecho vuelve a
- * entrar, la ejecución idempotente ya estará enlazada y la instancia terminal
- * no vuelve a ser candidata.
+ * - Ya no pasa la `evidenceRef` del conector ni construye metadatos: la
+ *   referencia descriptiva ("Inspección completada: …") no es un archivo PDTP
+ *   y hacía fallar el enlace para siempre, y los metadatos del conector
+ *   (`sourceApproved`) decidían el estado sin mirar la aprobación.
+ * - Todas las políticas enlazan, `manual_confirmed` incluida: la política ya
+ *   no decide si cuenta —sólo cuenta lo aprobado— y una ocurrencia sin enlazar
+ *   contaba su ejecución por el libro además de quedar vencida.
+ * - Una ejecución ya enlazada sólo se resincroniza (reacreditar no busca otra
+ *   candidata).
+ * - No se enlaza a una ocurrencia de un mes cerrado: el hecho cuenta en su
+ *   propio mes y la foto del cierre no cambia (mismo criterio que I02).
+ * - El conector acepta la fuente por sus eventos o por sus bindings
+ *   (`pdtpConnectorAcceptsFulfillmentSource`, PREV-I08-f).
+ *
+ * La selección es una sola ocurrencia por actividad: la más reciente exigible
+ * en la faena y no posterior al hecho. Cada enlace va en su propio savepoint:
+ * el hecho nativo ya está guardado y acreditado, y una carrera o una
+ * inconsistencia de la ocurrencia no debe deshacerlo. Si el enlace falla, la
+ * ejecución queda sin enlazar y sigue contando por el libro.
  */
 export async function linkPdtpScheduledInstancesToFulfillment(
   input: AccreditationInput,
@@ -274,20 +281,27 @@ export async function linkPdtpScheduledInstancesToFulfillment(
 ): Promise<void> {
   if (result.accredited.length === 0) return
 
-  const activityIds = [...new Set(result.accredited.map((entry) => entry.activityId))]
+  const executionIds = [...new Set(result.accredited.map((entry) => entry.executionId))]
+  const executions = await client.select({ id: pdtpExecutions.id, scheduledInstanceId: pdtpExecutions.scheduledInstanceId })
+    .from(pdtpExecutions).where(inArray(pdtpExecutions.id, executionIds))
+  const linkedInstanceByExecution = new Map(executions.map((row) => [row.id, row.scheduledInstanceId]))
+
+  const pendingLink = result.accredited.filter((entry) => !linkedInstanceByExecution.get(entry.executionId))
+  const activityIds = [...new Set(pendingLink.map((entry) => entry.activityId))]
   const occurredDate = fulfillmentCivilDate(input.occurredAt)
-  const candidates = await client.select({
+  const candidates = activityIds.length === 0 ? [] : await client.select({
     id: pdtpScheduledInstances.id,
+    programId: pdtpScheduledInstances.programId,
     activityId: pdtpScheduledInstances.activityId,
     scheduledFor: pdtpScheduledInstances.scheduledFor,
-    status: pdtpScheduledInstances.status,
-    completionPolicy: pdtpActivityExecutionConfigs.completionPolicy,
     destinationConnectorKey: pdtpActivityExecutionConfigs.destinationConnectorKey,
+    bindingSourceType: pdtpAccreditationBindings.sourceType,
   }).from(pdtpScheduledInstances)
     .innerJoin(
       pdtpActivityExecutionConfigs,
       eq(pdtpActivityExecutionConfigs.activityId, pdtpScheduledInstances.activityId),
     )
+    .leftJoin(pdtpAccreditationBindings, eq(pdtpAccreditationBindings.id, pdtpActivityExecutionConfigs.accreditationBindingId))
     .where(and(
       inArray(pdtpScheduledInstances.activityId, activityIds),
       eq(pdtpScheduledInstances.worksiteId, input.worksiteId),
@@ -296,61 +310,60 @@ export async function linkPdtpScheduledInstancesToFulfillment(
     ))
     .orderBy(desc(pdtpScheduledInstances.scheduledFor), desc(pdtpScheduledInstances.createdAt))
 
-  const metadata = input.metadata ?? {}
-  const sourceApproved = Boolean(input.autoApproveByUserId)
-    || metadata.sourceApproved === true
-    || metadata.approvalStatus === "approved"
-    || (typeof metadata.approvedAt === "string" && metadata.approvedAt.trim().length > 0)
+  const closedMonths = candidates.length === 0 ? new Set<string>() : new Set((await client.select({
+    programId: pdtpPeriodClosures.programId,
+    year: pdtpPeriodClosures.year,
+    month: pdtpPeriodClosures.month,
+  }).from(pdtpPeriodClosures).where(and(
+    inArray(pdtpPeriodClosures.programId, [...new Set(candidates.map((row) => row.programId))]),
+    eq(pdtpPeriodClosures.worksiteId, input.worksiteId),
+    eq(pdtpPeriodClosures.status, "closed"),
+  ))).map((row) => `${row.programId}:${row.year}:${row.month}`))
+  const inClosedMonth = (row: { programId: string; scheduledFor: string }) =>
+    closedMonths.has(`${row.programId}:${Number(row.scheduledFor.slice(0, 4))}:${Number(row.scheduledFor.slice(5, 7))}`)
+
+  const eventKey = typeof input.metadata?.eventKey === "string" ? input.metadata.eventKey : null
   const usedInstances = new Set<string>()
 
-  for (const accredited of result.accredited) {
-    const candidate = candidates.find((row) => (
-      row.activityId === accredited.activityId
-      && !usedInstances.has(row.id)
-      && connectorAcceptsFulfillmentEvent(row.destinationConnectorKey, input.sourceType, metadata)
-    ))
-    if (!candidate) continue
-
-    let action: "submit" | "complete" | null = null
-    if (candidate.completionPolicy === "source_completed") action = "complete"
-    else if (candidate.completionPolicy === "source_approved") action = sourceApproved ? "complete" : "submit"
-    else if (candidate.completionPolicy === "checklist_completed") {
-      action = metadata.checklistCompleted === true || metadata.checklistStatus === "completed"
-        ? "complete"
-        : "submit"
-    }
-    if (!action) continue
-
-    usedInstances.add(candidate.id)
+  const syncInSavepoint = async (entry: AccreditationResult["accredited"][number], attachToInstanceId?: string) => {
     try {
-      await recordPdtpScheduledInstanceOutcome({
-        instanceId: candidate.id,
-        action,
+      const run = (tx: Tx) => syncPdtpScheduledInstanceFromExecution(tx, {
+        executionId: entry.executionId,
+        attachToInstanceId,
+        trigger: "source",
         userId: input.autoApproveByUserId ?? null,
-        evidenceRef: input.evidenceRef ?? null,
-        completedAt: input.occurredAt,
-        sourceMetadata: {
-          ...metadata,
-          sourceRecordId: input.sourceId,
-          sourceType: input.sourceType,
-          sourceCompleted: true,
-          executionId: accredited.executionId,
-          ...(sourceApproved ? { sourceApproved: true, approvedAt: input.occurredAt } : {}),
-        },
-      }, client)
+      })
+      await client.transaction((tx) => run(tx as Tx))
     } catch (err) {
-      // El hecho nativo ya está guardado y acreditado. Una política de
-      // evidencia incompleta o una carrera de otro enlace no debe deshacerlo;
-      // queda en el libro durable para que un reintento posterior reconcilie
-      // la instancia sin duplicar la ejecución.
       logger.warn({
         err,
-        instanceId: candidate.id,
-        activityId: candidate.activityId,
+        instanceId: attachToInstanceId ?? linkedInstanceByExecution.get(entry.executionId) ?? null,
+        activityId: entry.activityId,
         sourceType: input.sourceType,
         sourceId: input.sourceId,
       }, "[pdtp-fulfillment] No se pudo enlazar la instancia programada al hecho nativo.")
     }
+  }
+
+  for (const accredited of result.accredited) {
+    if (linkedInstanceByExecution.get(accredited.executionId)) {
+      await syncInSavepoint(accredited)
+      continue
+    }
+    const candidate = candidates.find((row) => (
+      row.activityId === accredited.activityId
+      && !usedInstances.has(row.id)
+      && !inClosedMonth(row)
+      && pdtpConnectorAcceptsFulfillmentSource({
+        connectorKey: row.destinationConnectorKey,
+        sourceType: input.sourceType,
+        eventKey,
+        bindingSourceType: row.bindingSourceType,
+      })
+    ))
+    if (!candidate) continue
+    usedInstances.add(candidate.id)
+    await syncInSavepoint(accredited, candidate.id)
   }
 }
 

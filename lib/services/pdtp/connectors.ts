@@ -229,3 +229,37 @@ export function listPdtpExecutionConnectors(): readonly PdtpExecutionConnector[]
 export function getPdtpExecutionConnector(key: string | null | undefined): PdtpExecutionConnector | undefined {
   return key ? BY_KEY.get(key) : undefined
 }
+
+/**
+ * Si el hecho de una fuente puede cumplir una ocurrencia cuyo destino es este
+ * conector (PREV-I08-f).
+ *
+ * Acepta por los tipos de fuente de sus eventos **y** por los de sus bindings.
+ * Antes sólo miraba los eventos: Capacitación declara el binding
+ * `capacitacion_ocurrencia` pero su único evento es de `capacitacion`, e
+ * Higiene declara `vigilancia` con un evento sólo de `higiene`, así que esas
+ * ocurrencias nunca se enlazaban. No se agregan eventos nuevos al registro:
+ * `supportedEvents` también habilita disparadores configurables y un evento
+ * que nadie emite dejaría disparadores muertos.
+ *
+ * - `eventKey`, si llega, sólo filtra contra los eventos de ese mismo tipo de
+ *   fuente; una fuente sin eventos propios (sólo binding) no se invalida.
+ * - `bindingSourceType` es el tipo de fuente del instrumento que la actividad
+ *   fijó en su configuración anual: si lo fijó, sólo ese tipo cumple.
+ */
+export function pdtpConnectorAcceptsFulfillmentSource(input: {
+  connectorKey: string | null | undefined
+  sourceType: string
+  eventKey?: string | null
+  bindingSourceType?: string | null
+}): boolean {
+  const connector = getPdtpExecutionConnector(input.connectorKey)
+  if (!connector) return false
+  if (input.bindingSourceType && input.bindingSourceType !== input.sourceType) return false
+  const eventsOfSource = connector.supportedEvents.filter((event) => event.sourceType === input.sourceType)
+  const eventKey = input.eventKey?.trim()
+  if (eventsOfSource.length > 0) {
+    return !eventKey || eventsOfSource.some((event) => event.key === eventKey)
+  }
+  return connector.supportedBindingSourceTypes.includes(input.sourceType)
+}

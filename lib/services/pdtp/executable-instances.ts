@@ -190,7 +190,10 @@ export function pdtpExecutableInstancesSourceSql(
         ELSE 'Pendiente'
       END AS status_label,
       CASE WHEN ${pdtpScheduledInstances.scheduledFor} < ${chileToday} THEN 'high' ELSE 'normal' END AS priority,
-      (${pdtpScheduledInstances.status} = 'submitted' AND ${pdtpActivityExecutionConfigs.completionPolicy} = 'source_approved') AS blocked,
+      -- PREV-I08-e (D19): una ocurrencia enviada espera la aprobación de su
+      -- ejecución en el PDTP cualquiera sea la política; ya no hay nada que
+      -- ejecutar en el módulo de origen.
+      (${pdtpScheduledInstances.status} = 'submitted') AS blocked,
       ${pdtpScheduledInstances.createdAt}::text AS created_at,
       ${pdtpScheduledInstances.scheduledFor}::text AS source_due_at,
       COALESCE(${pdtpScheduledInstances.responsibleUserId}, scheduled_assigned_to_me.user_id) AS native_assignee_user_id,

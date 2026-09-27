@@ -177,7 +177,11 @@ describe("recordPdtpFulfillmentEvent — el hecho no se pierde", () => {
     expect(executions).toHaveLength(1)
   })
 
-  it("acredita también la instancia programada correspondiente al hecho nativo", async () => {
+  /* Hasta T3 este caso esperaba `completed`: con `source_completed` el enlace
+   * completaba la ocurrencia aunque la ejecución de la campaña quedara
+   * `submitted`, y el indicador la contaba mientras la planilla no (PREV-I08-e).
+   * D19: la ocurrencia queda enlazada y enviada; se completa al aprobar. */
+  it("enlaza la instancia programada al hecho nativo y la deja enviada hasta aprobar su ejecución", async () => {
     await seedProgram("active")
     const scheduledFor = todayInChile()
     await seedActivity({
@@ -206,7 +210,7 @@ describe("recordPdtpFulfillmentEvent — el hecho no se pierde", () => {
 
     const [instance] = await inMemoryDb.select().from(schema.pdtpScheduledInstances)
       .where(eq(schema.pdtpScheduledInstances.id, "scheduled-fulfillment-1"))
-    expect(instance?.status).toBe("completed")
+    expect(instance?.status).toBe("submitted")
     expect(instance?.sourceMetadataJson).toMatchObject({ sourceRecordId: "campana-scheduled-1" })
 
     const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)

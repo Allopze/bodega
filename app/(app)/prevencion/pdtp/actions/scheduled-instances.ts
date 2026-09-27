@@ -61,12 +61,16 @@ export async function startPdtpScheduledInstanceAction(input: unknown): Promise<
   }
 }
 
-/** Registra envío, cumplimiento, no aplica o cancelación de una ocurrencia. */
+/**
+ * Registra envío, "no aplica" o cancelación de una ocurrencia (PREV-I08-c).
+ * Completar no se ofrece: la ocurrencia se cumple al aprobar su ejecución en
+ * el PDTP (D19). Se autentica antes de validar, como la acción de inicio.
+ */
 export async function recordPdtpScheduledInstanceOutcomeAction(input: unknown): Promise<ActionState> {
+  const guard = await guardAuth()
+  if (guard.error) return guard.error
   try {
     const parsed = pdtpScheduledInstanceOutcomeSchema.parse(input)
-    const guard = await guardAuth()
-    if (guard.error) return guard.error
     const context = await getPdtpScheduledInstanceStartContext(parsed.instanceId)
     if (!context) throw new Error("Instancia programada no encontrada.")
     const permission = parsed.action === "not_applicable"
@@ -87,7 +91,6 @@ export async function recordPdtpScheduledInstanceOutcomeAction(input: unknown): 
       userId: guard.session.user.id,
       evidenceRef: parsed.evidenceRef,
       reason: parsed.reason,
-      sourceMetadata: parsed.sourceMetadata,
     })
     revalidatePath("/pendientes")
     revalidatePath(`/prevencion/pdtp/${updated.programId}`)
