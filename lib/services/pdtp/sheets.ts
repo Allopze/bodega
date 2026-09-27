@@ -3,7 +3,7 @@ import { db } from "@/db"
 import { pdtpActivities, pdtpActivitySchedule, pdtpExecutionDeviations, pdtpExecutions, pdtpPrograms, pdtpProgramWorksites, pdtpSheetActivities, pdtpSheets, preventionInspectionRuns } from "@/db/schema"
 import { MONTH_LABELS } from "./constants"
 import { SHEET_EXPORT_NAMES } from "@/lib/services/pdtp-adapters/sheet-meta-2026"
-import { assertWorksiteAccess, emptyMonthlyTotals, loadProgramScheduleAndExecutions, resolveSheetForProgram } from "./helpers"
+import { assertWorksiteAccess, emptyMonthlyTotals, loadProgramScheduleAndExecutions, loadProgramScheduleAndExecutionsForWorksites, resolveSheetForProgram } from "./helpers"
 import type { WorksiteScope } from "./helpers"
 import type { PdtpSheetCode } from "@/lib/services/prevention-pdtp-catalog"
 import type { ReportData, ReportCell, ReportSheet } from "@/lib/reports/export"
@@ -258,7 +258,10 @@ export async function getPdtpAggregatedSheetViewByProgram(
   const activityIds = memberships.map((membership) => membership.activityId)
   const [activityRows, loadedPerWorksite] = await Promise.all([
     db.select().from(pdtpActivities).where(and(inArray(pdtpActivities.id, activityIds), eq(pdtpActivities.programId, programId))),
-    Promise.all(authorizedWorksiteIds.map(async (worksiteId) => ({ worksiteId, ...(await loadProgramScheduleAndExecutions(activityIds, program.year, worksiteId)) }))),
+    // I12: una carga para todas las faenas, con la costura aplicada por faena
+    // (antes, siete consultas por faena).
+    loadProgramScheduleAndExecutionsForWorksites(activityIds, program.year, authorizedWorksiteIds)
+      .then((byWorksite) => authorizedWorksiteIds.map((worksiteId) => ({ worksiteId, ...byWorksite.get(worksiteId)! }))),
   ])
   // PREV-C06: cada faena se recorta desde su propia incorporación. Con el corte
   // único del programa, una faena incorporada en junio arrastraba las casillas

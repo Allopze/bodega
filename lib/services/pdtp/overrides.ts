@@ -257,6 +257,27 @@ export async function loadPdtpOverrides(
 }
 
 /**
+ * I12: los overrides de varias faenas en una sola consulta. Mismo filtro que
+ * `loadPdtpOverrides` con una faena, repetido por cada una: quien llama agrupa
+ * por `worksiteId`.
+ */
+export async function loadPdtpOverridesForWorksites(
+  activityIds: string[],
+  year: number,
+  worksiteIds: readonly string[],
+): Promise<PdtpActivityScheduleOverride[]> {
+  if (activityIds.length === 0 || worksiteIds.length === 0) return []
+  return db
+    .select()
+    .from(pdtpActivityScheduleOverrides)
+    .where(and(
+      inArray(pdtpActivityScheduleOverrides.activityId, activityIds),
+      eq(pdtpActivityScheduleOverrides.year, year),
+      inArray(pdtpActivityScheduleOverrides.worksiteId, [...worksiteIds]),
+    ))
+}
+
+/**
  * Mezcla la planificación global con los overrides por faena, produciendo
  * un set "efectivo" para una faena específica. Si no hay override para
  * una celda, se mantiene el plan global. Si la celda global no existe

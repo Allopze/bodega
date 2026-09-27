@@ -650,6 +650,24 @@ export async function loadPdtpDeviations(
 }
 
 /**
+ * I12: desvíos activos de varias faenas en una sola consulta, con el mismo
+ * filtro que `loadPdtpDeviations`; quien llama agrupa por `worksiteId`.
+ */
+export async function loadPdtpDeviationsForWorksites(
+  activityIds: string[],
+  year: number,
+  worksiteIds: readonly string[],
+): Promise<PdtpExecutionDeviation[]> {
+  if (activityIds.length === 0 || worksiteIds.length === 0) return []
+  return db.select().from(pdtpExecutionDeviations).where(and(
+    inArray(pdtpExecutionDeviations.activityId, activityIds),
+    inArray(pdtpExecutionDeviations.worksiteId, [...worksiteIds]),
+    eq(pdtpExecutionDeviations.year, year),
+    eq(pdtpExecutionDeviations.status, "active"),
+  ))
+}
+
+/**
  * Aplica los desvíos activos a un calendario ya resuelto por
  * `loadProgramScheduleAndExecutions` (overrides + exclusiones ya aplicados).
  * Pura: no consulta la base de datos, sólo transforma filas. Los desvíos

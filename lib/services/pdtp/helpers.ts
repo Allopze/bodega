@@ -13,8 +13,9 @@ import {
   worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
-import { applyDeviationsToSchedule, loadPdtpDeviations } from "./deviations"
+import type { PdtpActivityScheduleOverride, PdtpExecutionDeviation } from "@/db/schema"
+import { applyOverridesToSchedule, loadPdtpOverridesForWorksites } from "./overrides"
+import { applyDeviationsToSchedule, loadPdtpDeviationsForWorksites } from "./deviations"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { effectiveActivationFor, filterPdtpRowsFromActivation } from "./period"
 import { filterPdtpRowsBeforeSuccessor } from "./version-window"
@@ -211,38 +212,156 @@ export async function loadWorksiteAddedAt(
   return row?.addedAt ?? null
 }
 
-export async function loadProgramScheduleAndExecutions(activityIds: string[], year: number, worksiteId?: string) {
+/**
+ * I12: la incorporación de varias faenas en una sola consulta (`null` cuando la
+ * faena no tiene fila de membresía, igual que `loadWorksiteAddedAt`).
+ */
+export async function loadWorksiteAddedAtMap(
+  programId: string, worksiteIds: readonly string[],
+): Promise<Map<string, string | null>> {
+  const unique = [...new Set(worksiteIds)]
+  const byWorksite = new Map<string, string | null>(unique.map((worksiteId) => [worksiteId, null]))
+  if (unique.length === 0) return byWorksite
+  const rows = await db.select({ worksiteId: pdtpProgramWorksites.worksiteId, addedAt: pdtpProgramWorksites.addedAt })
+    .from(pdtpProgramWorksites)
+    .where(and(
+      eq(pdtpProgramWorksites.programId, programId),
+      inArray(pdtpProgramWorksites.worksiteId, unique),
+    ))
+  // (programa, faena) es único: a lo más una fila por faena.
+  for (const row of rows) byWorksite.set(row.worksiteId, row.addedAt)
+  return byWorksite
+}
+
+/** Una ejecución del libro con lo mínimo de su ocurrencia enlazada (PREV-I08-a). */
+export type PdtpExecutionWithLinkedInstance = typeof pdtpExecutions.$inferSelect & {
+  linkedInstance: Pick<typeof pdtpScheduledInstances.$inferSelect, "id" | "status" | "scheduledFor" | "plannedQuantity"> | null
+}
+
+export type PdtpLoadedScheduleAndExecutions = {
+  scheduleRows: Array<typeof pdtpActivitySchedule.$inferSelect>
+  executionRows: PdtpExecutionWithLinkedInstance[]
+  deviationRows: PdtpExecutionDeviation[]
+}
+
+export async function loadProgramScheduleAndExecutions(activityIds: string[], year: number, worksiteId?: string): Promise<PdtpLoadedScheduleAndExecutions> {
+  if (worksiteId) {
+    return (await loadProgramScheduleAndExecutionsForWorksites(activityIds, year, [worksiteId])).get(worksiteId)!
+  }
+  // Sin faena no hay ejecuciones, overrides, exclusiones ni desvíos: sólo el
+  // calendario global recortado por la vigencia de cada actividad.
+  const [scheduleRows, activityRows] = await Promise.all([
+    db.select().from(pdtpActivitySchedule).where(and(
+      inArray(pdtpActivitySchedule.activityId, activityIds),
+      eq(pdtpActivitySchedule.year, year),
+    )),
+    loadActivityRetirement(activityIds),
+  ])
+  return assembleWorksiteScheduleAndExecutions({
+    year,
+    worksiteId: undefined,
+    scheduleRows,
+    executionRows: await attachLinkedScheduledInstances([] as Array<typeof pdtpExecutions.$inferSelect>),
+    overrideRows: [],
+    exclusionRows: [],
+    retirementByActivity: new Map(activityRows.map((row) => [row.id, row])),
+    deviationRows: [],
+  })
+}
+
+function loadActivityRetirement(activityIds: string[]) {
+  return db.select({
+    id: pdtpActivities.id,
+    status: pdtpActivities.status,
+    retiredEffectiveFrom: pdtpActivities.retiredEffectiveFrom,
+  }).from(pdtpActivities).where(inArray(pdtpActivities.id, activityIds))
+}
+
+/**
+ * I12: el calendario efectivo, las ejecuciones y los desvíos de **varias**
+ * faenas con un número fijo de consultas (antes, siete por faena). Cada faena
+ * recibe exactamente lo que `loadProgramScheduleAndExecutions(activityIds,
+ * year, faena)` le daría: las consultas son las mismas con `IN` en vez de `=`,
+ * y la costura (overrides → exclusiones → vigencia → desvíos → vigencia) se
+ * aplica faena por faena con sus propias filas. El calendario global es común
+ * a todas; sus filas se comparten entre faenas y nadie las muta.
+ */
+export async function loadProgramScheduleAndExecutionsForWorksites(
+  activityIds: string[],
+  year: number,
+  worksiteIds: readonly string[],
+): Promise<Map<string, PdtpLoadedScheduleAndExecutions>> {
+  const unique = [...new Set(worksiteIds)]
+  const result = new Map<string, PdtpLoadedScheduleAndExecutions>()
+  if (unique.length === 0) return result
+  if (activityIds.length === 0) {
+    for (const worksiteId of unique) result.set(worksiteId, { scheduleRows: [], executionRows: [], deviationRows: [] })
+    return result
+  }
   const [scheduleRows, rawExecutionRows, overrideRows, exclusionRows, activityRows, deviationRows] = await Promise.all([
     db.select().from(pdtpActivitySchedule).where(and(
       inArray(pdtpActivitySchedule.activityId, activityIds),
       eq(pdtpActivitySchedule.year, year),
     )),
-    worksiteId
-      ? db.select().from(pdtpExecutions).where(and(inArray(pdtpExecutions.activityId, activityIds), eq(pdtpExecutions.worksiteId, worksiteId), eq(pdtpExecutions.year, year), isNull(pdtpExecutions.obligationId)))
-      : Promise.resolve([] as Array<typeof pdtpExecutions.$inferSelect>),
-    worksiteId
-      ? loadPdtpOverrides(activityIds, year, worksiteId)
-      : Promise.resolve([] as Awaited<ReturnType<typeof loadPdtpOverrides>>),
-    worksiteId
-      ? db.select({ activityId: pdtpActivityWorksiteExclusions.activityId }).from(pdtpActivityWorksiteExclusions)
-          .where(and(inArray(pdtpActivityWorksiteExclusions.activityId, activityIds), eq(pdtpActivityWorksiteExclusions.worksiteId, worksiteId)))
-      : Promise.resolve([] as Array<{ activityId: string }>),
-    db.select({
-      id: pdtpActivities.id,
-      status: pdtpActivities.status,
-      retiredEffectiveFrom: pdtpActivities.retiredEffectiveFrom,
-    }).from(pdtpActivities).where(inArray(pdtpActivities.id, activityIds)),
-    worksiteId
-      ? loadPdtpDeviations(activityIds, year, worksiteId)
-      : Promise.resolve([] as Awaited<ReturnType<typeof loadPdtpDeviations>>),
+    db.select().from(pdtpExecutions).where(and(
+      inArray(pdtpExecutions.activityId, activityIds),
+      inArray(pdtpExecutions.worksiteId, unique),
+      eq(pdtpExecutions.year, year),
+      isNull(pdtpExecutions.obligationId),
+    )),
+    loadPdtpOverridesForWorksites(activityIds, year, unique),
+    db.select({ activityId: pdtpActivityWorksiteExclusions.activityId, worksiteId: pdtpActivityWorksiteExclusions.worksiteId })
+      .from(pdtpActivityWorksiteExclusions)
+      .where(and(inArray(pdtpActivityWorksiteExclusions.activityId, activityIds), inArray(pdtpActivityWorksiteExclusions.worksiteId, unique))),
+    loadActivityRetirement(activityIds),
+    loadPdtpDeviationsForWorksites(activityIds, year, unique),
   ])
   const executionRows = await attachLinkedScheduledInstances(rawExecutionRows)
+  const retirementByActivity = new Map(activityRows.map((row) => [row.id, row]))
+  const groupByWorksite = <T extends { worksiteId: string }>(rows: T[]) => {
+    const grouped = new Map<string, T[]>()
+    for (const row of rows) {
+      const list = grouped.get(row.worksiteId)
+      if (list) list.push(row)
+      else grouped.set(row.worksiteId, [row])
+    }
+    return grouped
+  }
+  const executionsByWorksite = groupByWorksite(executionRows)
+  const overridesByWorksite = groupByWorksite(overrideRows)
+  const exclusionsByWorksite = groupByWorksite(exclusionRows)
+  const deviationsByWorksite = groupByWorksite(deviationRows)
+  for (const worksiteId of unique) {
+    result.set(worksiteId, assembleWorksiteScheduleAndExecutions({
+      year,
+      worksiteId,
+      scheduleRows,
+      executionRows: executionsByWorksite.get(worksiteId) ?? [],
+      overrideRows: overridesByWorksite.get(worksiteId) ?? [],
+      exclusionRows: exclusionsByWorksite.get(worksiteId) ?? [],
+      retirementByActivity,
+      deviationRows: deviationsByWorksite.get(worksiteId) ?? [],
+    }))
+  }
+  return result
+}
+
+function assembleWorksiteScheduleAndExecutions<E extends { activityId: string; year: number; month: number; week: number }>(input: {
+  year: number
+  worksiteId: string | undefined
+  scheduleRows: Array<typeof pdtpActivitySchedule.$inferSelect>
+  executionRows: E[]
+  overrideRows: PdtpActivityScheduleOverride[]
+  exclusionRows: Array<{ activityId: string }>
+  retirementByActivity: Map<string, { id: string; status: string; retiredEffectiveFrom: string | null }>
+  deviationRows: PdtpExecutionDeviation[]
+}) {
+  const { year, worksiteId, scheduleRows, executionRows, overrideRows, exclusionRows, retirementByActivity, deviationRows } = input
   // Aplicabilidad por faena (regla R4): una actividad excluida de la faena
   // (p. ej. CPHS en faenas con <25 trabajadores) no aporta al denominador ni al
   // ejecutado de esa faena. Antes las exclusiones se firmaban (content-digest)
   // pero no se aplicaban al cómputo.
   const excluded = new Set(exclusionRows.map((row) => row.activityId))
-  const retirementByActivity = new Map(activityRows.map((row) => [row.id, row]))
   const withoutExcluded = <T extends { activityId: string }>(rows: T[]) =>
     excluded.size === 0 ? rows : rows.filter((row) => !excluded.has(row.activityId))
   const effectiveForPeriod = <
@@ -349,22 +468,23 @@ export async function loadApprovedExecutionsForWorksites(
       }>
     }
   }
-  const perWorksite = await Promise.all(
-    worksiteIds.map(async (worksiteId) => {
-      const entry = await loadProgramScheduleAndExecutions(activityIds, year, worksiteId)
-      if (!activation) return { ...entry, cutoff: null as string | null }
-      const cutoff = effectiveActivationFor(
-        activation.activatedAt,
-        await loadWorksiteAddedAt(activation.programId, worksiteId),
-      )
-      return {
-        ...entry,
-        cutoff,
-        scheduleRows: filterPdtpRowsBeforeSuccessor(filterPdtpRowsFromActivation(entry.scheduleRows, cutoff), activation.until),
-        executionRows: filterPdtpRowsBeforeSuccessor(filterPdtpRowsFromActivation(entry.executionRows, cutoff), activation.until),
-      }
-    }),
-  )
+  // I12: una carga para todas las faenas (antes, siete consultas y la
+  // incorporación por cada una); el corte sigue aplicándose faena por faena.
+  const [loadedByWorksite, addedAtByWorksite] = await Promise.all([
+    loadProgramScheduleAndExecutionsForWorksites(activityIds, year, worksiteIds),
+    activation ? loadWorksiteAddedAtMap(activation.programId, worksiteIds) : Promise.resolve(null),
+  ])
+  const perWorksite = worksiteIds.map((worksiteId) => {
+    const entry = loadedByWorksite.get(worksiteId)!
+    if (!activation) return { ...entry, cutoff: null as string | null }
+    const cutoff = effectiveActivationFor(activation.activatedAt, addedAtByWorksite?.get(worksiteId) ?? null)
+    return {
+      ...entry,
+      cutoff,
+      scheduleRows: filterPdtpRowsBeforeSuccessor(filterPdtpRowsFromActivation(entry.scheduleRows, cutoff), activation.until),
+      executionRows: filterPdtpRowsBeforeSuccessor(filterPdtpRowsFromActivation(entry.executionRows, cutoff), activation.until),
+    }
+  })
   return {
     scheduleRows: perWorksite.flatMap((entry) => entry.scheduleRows),
     executionRows: perWorksite.flatMap((entry) => entry.executionRows.filter((row) => row.status === "approved")),
