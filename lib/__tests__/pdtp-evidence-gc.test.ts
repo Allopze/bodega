@@ -25,6 +25,7 @@ let tempDir: string
 let originalStoragePath: string | undefined
 
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.preventionCapaEvidence)
   await inMemoryDb.delete(schema.preventionCapaActions)
   await inMemoryDb.delete(schema.pdtpExecutions)
@@ -172,5 +173,78 @@ describe("cleanupPdtpEvidenceOrphans", () => {
     const { cleanupPdtpEvidenceOrphans } = await import("@/lib/services/pdtp/evidence-gc")
     const result = await cleanupPdtpEvidenceOrphans()
     expect(result.scanned).toBe(0)
+  })
+
+  /* W5-GC (T7a, D13): el barrido se agenda en modo de prueba. Para que las
+   * semanas de revisión sirvan de algo, cada corrida que encuentra huérfanos
+   * deja constancia en `audit_log` —qué habría borrado o qué borró— y la
+   * ventana de gracia no puede bajar de una hora aunque alguien lo pida. */
+  it("deja en audit_log lo que borró, con el directorio y el modo", async () => {
+    const orphanName = "abc-orphan-audit.pdf"
+    writeFileSync(join(tempDir, "pdtp-evidence", orphanName), "PDF_OLD")
+    const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    const { utimesSync } = await import("node:fs")
+    utimesSync(join(tempDir, "pdtp-evidence", orphanName), oldTime, oldTime)
+
+    const { cleanupPdtpEvidenceOrphans } = await import("@/lib/services/pdtp/evidence-gc")
+    await cleanupPdtpEvidenceOrphans({ olderThanMs: 60 * 60 * 1000 })
+
+    const rows = await inMemoryDb.select().from(schema.auditLog)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!).toMatchObject({ action: "delete", entityType: "storage_orphan_sweep", userId: null })
+    expect(JSON.parse(rows[0]!.newState!)).toMatchObject({
+      label: "pdtp/evidence-gc", dryRun: false, deleted: 1, names: [orphanName], truncated: false,
+    })
+  })
+
+  it("en modo de prueba audita los candidatos sin borrarlos", async () => {
+    const orphanName = "abc-orphan-dry.pdf"
+    writeFileSync(join(tempDir, "pdtp-evidence", orphanName), "PDF_OLD")
+    const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    const { utimesSync, existsSync } = await import("node:fs")
+    utimesSync(join(tempDir, "pdtp-evidence", orphanName), oldTime, oldTime)
+
+    const { cleanupPdtpEvidenceOrphans } = await import("@/lib/services/pdtp/evidence-gc")
+    await cleanupPdtpEvidenceOrphans({ dryRun: true, olderThanMs: 60 * 60 * 1000 })
+
+    expect(existsSync(join(tempDir, "pdtp-evidence", orphanName))).toBe(true)
+    const [row] = await inMemoryDb.select().from(schema.auditLog)
+    expect(JSON.parse(row!.newState!)).toMatchObject({ dryRun: true, deleted: 1, names: [orphanName] })
+    expect(row!.reason).toMatch(/prueba/i)
+  })
+
+  it("una corrida sin huérfanos no escribe en audit_log", async () => {
+    const { cleanupPdtpEvidenceOrphans } = await import("@/lib/services/pdtp/evidence-gc")
+    await cleanupPdtpEvidenceOrphans({ olderThanMs: 60 * 60 * 1000 })
+    expect(await inMemoryDb.select().from(schema.auditLog)).toHaveLength(0)
+  })
+
+  it("la ventana de gracia no baja de una hora aunque se pida menos", async () => {
+    const orphanName = "abc-orphan-30min.pdf"
+    writeFileSync(join(tempDir, "pdtp-evidence", orphanName), "PDF")
+    const halfHourAgo = new Date(Date.now() - 30 * 60 * 1000)
+    const { utimesSync, existsSync } = await import("node:fs")
+    utimesSync(join(tempDir, "pdtp-evidence", orphanName), halfHourAgo, halfHourAgo)
+
+    const { cleanupPdtpEvidenceOrphans } = await import("@/lib/services/pdtp/evidence-gc")
+    const result = await cleanupPdtpEvidenceOrphans({ olderThanMs: 0 })
+
+    expect(result.deleted).toBe(0)
+    expect(existsSync(join(tempDir, "pdtp-evidence", orphanName))).toBe(true)
+  })
+
+  it("el barrido de planos de riesgo también audita", async () => {
+    const { promises: fs, utimesSync } = await import("node:fs")
+    await fs.mkdir(join(tempDir, "risk-map"), { recursive: true })
+    const orphanName = "plano-huerfano.png"
+    writeFileSync(join(tempDir, "risk-map", orphanName), "PNG")
+    const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    utimesSync(join(tempDir, "risk-map", orphanName), oldTime, oldTime)
+
+    const { cleanupRiskMapOrphans } = await import("@/lib/services/pdtp/evidence-gc")
+    await cleanupRiskMapOrphans({ dryRun: true })
+
+    const [row] = await inMemoryDb.select().from(schema.auditLog)
+    expect(JSON.parse(row!.newState!)).toMatchObject({ label: "risk-map/evidence-gc", dryRun: true, names: [orphanName] })
   })
 })

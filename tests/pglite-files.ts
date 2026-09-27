@@ -141,6 +141,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-cgrd.test.ts",
   "lib/__tests__/pdtp-coverage-sources.test.ts",
   "lib/__tests__/pdtp-evidence-gc.test.ts",
+  // PREV-M04/M09 (T7a): RESTRICT en ejecuciones, desvíos y cierres + guardas D26.
+  "lib/__tests__/pdtp-delete-restrict.test.ts",
   // Auditoría 2026-09-26: evidencia obligatoria, envíos ajenos y asignación nominal.
   "lib/__tests__/pdtp-execution-integrity.test.ts",
   // C05-A: la revisión v+1 copia todo el contenido de la actividad.

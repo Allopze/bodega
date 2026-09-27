@@ -1,7 +1,10 @@
-import { and, desc, eq, inArray, lt, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, lt, ne, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
   pdtpActivities,
+  pdtpExecutionDeviations,
+  pdtpExecutions,
+  pdtpPeriodClosures,
   pdtpPrograms,
   pdtpSheets,
   users as schemaUsers,
@@ -564,10 +567,35 @@ export async function deletePdtpProgram(programId: string) {
     if (!program) throw new Error("Programa PDTP no encontrado.")
     assertPdtpProgramEditableState(program)
 
-    // El delete cascadea a hojas/actividades/schedule/ejecuciones/overrides/
-    // change_log (FK ON DELETE CASCADE). No escribimos un changelog "programa
-    // eliminado" después: el programa ya no existe, y la fila violaría su
-    // propia FK (además, el cascade ya borró el historial previo).
+    // PREV-M04 / D26: un borrador se borra sólo si no tiene ejecuciones
+    // aprobadas ni cierres. Desde la migración 0333 la base lo exige también
+    // (`ON DELETE RESTRICT` en ejecuciones, desvíos y cierres): lo que sí puede
+    // irse con el borrador se borra aquí, explícitamente, en vez de confiar en
+    // una cascada que también se llevaba evidencia aprobada.
+    const programActivityIds = tx.select({ id: pdtpActivities.id }).from(pdtpActivities)
+      .where(eq(pdtpActivities.programId, programId))
+    const approvedCount = (await tx.select({ approvedCount: sql<number>`count(*)::int` }).from(pdtpExecutions)
+      .where(and(inArray(pdtpExecutions.activityId, programActivityIds), eq(pdtpExecutions.status, "approved"))))[0]?.approvedCount ?? 0
+    if (approvedCount > 0) {
+      throw new Error(`No se puede eliminar el programa: tiene ${countOf(approvedCount, "ejecución aprobada", "ejecuciones aprobadas")}. Una ejecución aprobada es evidencia de cumplimiento y no se borra.`)
+    }
+    const closureCount = (await tx.select({ closureCount: sql<number>`count(*)::int` }).from(pdtpPeriodClosures)
+      .where(eq(pdtpPeriodClosures.programId, programId)))[0]?.closureCount ?? 0
+    if (closureCount > 0) {
+      throw new Error(`No se puede eliminar el programa: tiene ${countOf(closureCount, "cierre mensual emitido", "cierres mensuales emitidos")}.`)
+    }
+    // `ne("approved")` aunque la guarda ya contó cero: si una aprobación entra
+    // en carrera, la fila queda y la RESTRICT de la base aborta el borrado en
+    // vez de llevarse la evidencia.
+    await tx.delete(pdtpExecutions).where(and(
+      inArray(pdtpExecutions.activityId, programActivityIds),
+      ne(pdtpExecutions.status, "approved"),
+    ))
+    await tx.delete(pdtpExecutionDeviations).where(inArray(pdtpExecutionDeviations.activityId, programActivityIds))
+
+    // El resto cascadea (hojas/actividades/schedule/overrides/change_log). No
+    // escribimos un changelog "programa eliminado" después: el programa ya no
+    // existe, y la fila violaría su propia FK.
     await tx.delete(pdtpPrograms).where(eq(pdtpPrograms.id, programId))
   })
 }

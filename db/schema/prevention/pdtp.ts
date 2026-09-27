@@ -723,6 +723,9 @@ export const pdtpObligations = pgTable("pdtp_obligations", {
   index("pdtp_obligations_scope_status_due_idx").on(table.worksiteId, table.status, table.dueAt),
   index("pdtp_obligations_program_mode_idx").on(table.programId, table.mode),
   index("pdtp_obligations_source_idx").on(table.sourceType, table.sourceId),
+  // PREV-M09: búsquedas por actividad y faena (obligación abierta por sujeto,
+  // conectores RIOHS/RE-20) y el chequeo de la FK de `activity_id`.
+  index("pdtp_obligations_activity_worksite_idx").on(table.activityId, table.worksiteId),
   check("pdtp_obligations_mode_check", sql`${table.mode} IN ('on_demand', 'triggered')`),
   check("pdtp_obligations_status_check", sql`${table.status} IN ('pending', 'overdue', 'reported', 'completed', 'cancelled')`),
   check("pdtp_obligations_origin_check", sql`${table.origin} IN ('manual', 'integration')`),
@@ -733,7 +736,12 @@ export const pdtpObligations = pgTable("pdtp_obligations", {
 
 export const pdtpExecutions = pgTable("pdtp_executions", {
   id:               text("id").primaryKey(),
-  activityId:       text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "cascade" }),
+  /** `restrict` (PREV-M04): una ejecución aprobada es evidencia de cumplimiento.
+   * Antes el borrado de un programa o actividad la arrastraba por cascada, y un
+   * SQL manual se llevaba ejecuciones aprobadas sin rastro. Quien borra una
+   * actividad debe borrar antes, explícitamente, lo que sí puede irse
+   * (`deletePdtpProgram`, D26). */
+  activityId:       text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "restrict" }),
   worksiteId:       text("worksite_id").notNull().references(() => worksites.id),
   year:             integer("year").notNull(),
   month:            integer("month").notNull(),
@@ -773,7 +781,12 @@ export const pdtpExecutions = pgTable("pdtp_executions", {
   uniqueIndex("pdtp_executions_idempotency_key_unique").on(table.idempotencyKey),
   uniqueIndex("pdtp_executions_scheduled_instance_unique").on(table.scheduledInstanceId),
   index("pdtp_executions_import_batch_idx").on(table.importBatchId),
-  index("pdtp_executions_scheduled_instance_idx").on(table.scheduledInstanceId),
+  // PREV-M09: el único índice que empezaba por `activity_id` era el único
+  // parcial de arriba, que no sirve fuera de su predicado (ni para el chequeo
+  // de la FK de `activity_id`). El redundante
+  // `pdtp_executions_scheduled_instance_idx` se retiró: el único
+  // `pdtp_executions_scheduled_instance_unique` cubre la misma columna.
+  index("pdtp_executions_activity_worksite_year_idx").on(table.activityId, table.worksiteId, table.year),
   foreignKey({ columns: [table.scheduledInstanceId], foreignColumns: [pdtpScheduledInstances.id], name: "pdtp_exec_scheduled_instance_fk" }).onDelete("set null"),
   check("pdtp_executions_status_check", sql`${table.status} IN ('draft', 'submitted', 'approved', 'rejected')`),
   check("pdtp_executions_month_check", sql`${table.month} BETWEEN 1 AND 12`),
@@ -866,7 +879,9 @@ export const pdtpTriggerEvents = pgTable("pdtp_trigger_events", {
  */
 export const pdtpExecutionDeviations = pgTable("pdtp_execution_deviations", {
   id:                 text("id").primaryKey(),
-  activityId:         text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "cascade" }),
+  /** `restrict` (PREV-M04): un desvío revisado explica el denominador de un
+   * mes que pudo cerrarse; no se va por cascada con la actividad. */
+  activityId:         text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "restrict" }),
   worksiteId:         text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
   year:               integer("year").notNull(),
   month:              integer("month").notNull(),
@@ -953,7 +968,9 @@ export const pdtpExecutionDeviations = pgTable("pdtp_execution_deviations", {
  */
 export const pdtpPeriodClosures = pgTable("pdtp_period_closures", {
   id:                 text("id").primaryKey(),
-  programId:          text("program_id").notNull().references(() => pdtpPrograms.id, { onDelete: "cascade" }),
+  /** `restrict` (PREV-M04): un cierre firmado y distribuido no se borra con su
+   * programa. D26: un borrador con cierres no se puede borrar. */
+  programId:          text("program_id").notNull().references(() => pdtpPrograms.id, { onDelete: "restrict" }),
   /** `restrict`: un cierre es evidencia distribuida; borrar la faena que lo
    * originó lo dejaría sin sujeto. Las faenas se desactivan, no se borran. */
   worksiteId:         text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),

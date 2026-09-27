@@ -54,8 +54,10 @@ silencio; por eso conviene revisarlos cuando algo "dejó de actualizarse solo".
   `scripts/cron-runner.mjs` y el crontab se escribe desde `docker-compose.yml` (la paridad la
   verifica `lib/__tests__/deploy-workflow.test.ts`). No agendar el mismo endpoint en GitHub
   Actions: el workflow `prevention-inspection-programs.yml` se retiró el 2026-09-26 porque
-  duplicaba la corrida del contenedor. `pdtp-evidence-gc` queda fuera a propósito hasta que
-  su barrido tenga auditoría y modo de prueba (plan de pendientes, tanda T7).
+  duplicaba la corrida del contenedor. `pdtp-evidence-gc` (diario, 04:30) corre **en modo de
+  prueba** salvo `PDTP_EVIDENCE_GC_DELETE=true` en `app`: no borra nada y deja cada corrida
+  con huérfanos en `audit_log` (`storage_orphan_sweep`). Cómo revisarlo y cuándo encender el
+  borrado: `docs/deploy/DESPLIEGUE_PREVENCION_2026-09.md`, sección 6.
   `pdtp-evidence-integrity` (diario, 05:15) sólo observa: busca evidencia PDTP referenciada
   que falte en disco o cuyo sha256 ya no coincida. Responde `success` aunque encuentre
   pérdidas; la alerta es la línea `[pdtp/evidence-integrity]` con nivel `error` en el log de

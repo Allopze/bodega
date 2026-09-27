@@ -595,9 +595,19 @@ exit $?
 
     const unscheduled = jobs.filter((job) => !cronService.includes(`cron-runner.mjs ${job} `))
     expect(unscheduled).toEqual([])
-    // Fuera hasta que el barrido deje de poder borrar evidencia vigente (PREV-B03).
-    expect(runner).not.toContain("api/cron/pdtp-evidence-gc")
-    expect(cronService).not.toContain("pdtp-evidence-gc")
+    // W5-GC (T7a, D13): el barrido de huérfanos corre a diario en modo de
+    // prueba. El borrado real se enciende en `app`, no en el crontab.
+    expect(jobs).toContain("pdtp-evidence-gc")
+    expect(cronService).not.toMatch(/PDTP_EVIDENCE_GC_DELETE=\S*\s+node/)
+  })
+
+  // W5-GC (T7a, D13): la variable que habilita el borrado real la lee la ruta,
+  // que corre en `app`. Si el compose no la inyecta, encenderla en el .env de
+  // producción no haría nada y el barrido seguiría en prueba sin avisar.
+  it("inyecta en app la variable que enciende el borrado real del GC de evidencia", () => {
+    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
+    const appService = appServiceFromCompose(compose)
+    expect(appService).toMatch(/\n\s+- PDTP_EVIDENCE_GC_DELETE=\$\{PDTP_EVIDENCE_GC_DELETE:-\}/)
   })
 
   it("releases app before cron and verifies both images plus a protected smoke", () => {

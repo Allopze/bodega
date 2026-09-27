@@ -34,6 +34,10 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivityWorksiteParams)
   // Antes que las faenas: la FK de CAPA hacia `worksites` es RESTRICT.
   await inMemoryDb.delete(schema.preventionCapaActions)
+  // PREV-M04 (0333): ejecuciones, desvíos y cierres son RESTRICT hacia la
+  // actividad/programa; la cascada ya no los limpia.
+  await inMemoryDb.delete(schema.pdtpExecutions)
+  await inMemoryDb.delete(schema.pdtpExecutionDeviations)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.sstEvaluations)

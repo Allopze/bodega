@@ -38,6 +38,11 @@ afterAll(async () => {
 // cuelga de esa cascada: faenas, usuarios y las hojas plantilla (`programId
 // IS NULL`, que no referencian ningún programa).
 beforeEach(async () => {
+  // PREV-M04 (0333): ejecuciones, desvíos y cierres son RESTRICT hacia la
+  // actividad/programa; la cascada ya no los limpia.
+  await inMemoryDb.delete(schema.pdtpExecutions)
+  await inMemoryDb.delete(schema.pdtpExecutionDeviations)
+  await inMemoryDb.delete(schema.pdtpPeriodClosures)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.pdtpSheets).where(isNull(schema.pdtpSheets.programId))
   await inMemoryDb.delete(schema.worksites)

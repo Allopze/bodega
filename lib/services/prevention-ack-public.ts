@@ -6,6 +6,7 @@ import {
   workers,
 } from "@/db/schema"
 import { verifyPreventionAckToken } from "@/lib/services/prevention-ack-token"
+import { permitCrewAckWindow } from "@/lib/prevention/permits"
 
 /**
  * `CAP-002` / `PER-002` (auditoría 2026-09-14): lecturas de la vía de acuse sin
@@ -34,6 +35,7 @@ export async function getPermitCrewAckPublicView(crewId: string, token: unknown)
   const [row] = await db.select({
     crew: preventionPermitCrew,
     permitCode: preventionWorkPermits.code,
+    permitStatus: preventionWorkPermits.status,
     taskDescription: preventionWorkPermits.taskDescription,
     location: preventionWorkPermits.location,
     firstName: workers.firstName,
@@ -45,6 +47,9 @@ export async function getPermitCrewAckPublicView(crewId: string, token: unknown)
     .where(eq(preventionPermitCrew.id, crewId))
     .limit(1)
   if (!row) return null
+  // PREV-M06: la misma ventana que aplica la mutación. Un acuse ya dado se
+  // sigue mostrando como dado (`acknowledgedAt`), aunque el permiso termine.
+  const window = permitCrewAckWindow(row.permitStatus)
   return {
     kind: "permiso",
     targetId: crewId,
@@ -52,7 +57,7 @@ export async function getPermitCrewAckPublicView(crewId: string, token: unknown)
     title: `Permiso ${row.permitCode}`,
     detail: `${row.taskDescription} · ${row.location}`,
     acknowledgedAt: row.crew.acknowledgedAt,
-    eligible: true,
-    ineligibleReason: null,
+    eligible: window.open,
+    ineligibleReason: window.reason,
   }
 }

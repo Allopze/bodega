@@ -17,18 +17,19 @@ RCLONE_DEST="${RCLONE_DEST:-}"
 TIMESTAMP="$(date '+%Y-%m-%d-%H%M%S')"
 LOG_FILE="${LOG_FILE:-/var/log/bodega-storage-backup.log}"
 
+# PREV-I13-D: sin origen o sin destino no hubo copia, y eso es una falla, no un
+# aviso. Antes salía con 0 y el cron lo registraba como respaldo hecho.
 if [ ! -d "$STORAGE_PATH" ]; then
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: Storage path ${STORAGE_PATH} does not exist. Skipping."
-  exit 0
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Storage path ${STORAGE_PATH} does not exist. No backup was performed." >&2
+  exit 1
 fi
 
 if [ -z "$RCLONE_DEST" ]; then
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: RCLONE_DEST not set. Skipping remote backup."
-  echo "  Set RCLONE_DEST, e.g.: RCLONE_DEST=s3:my-bucket/bodega-storage"
-  echo "  For a local copy, consider: rsync -a ${STORAGE_PATH}/ /srv/bodega/backups/storage/"
-  echo "  NOTE: This is informational only — no backup was performed."
-  echo "---"
-  exit 0
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: RCLONE_DEST not set. No backup was performed." >&2
+  echo "  Set RCLONE_DEST, e.g.: RCLONE_DEST=s3:my-bucket/bodega-storage" >&2
+  echo "  For a local copy, consider: rsync -a ${STORAGE_PATH}/ /srv/bodega/backups/storage/" >&2
+  echo "---" >&2
+  exit 1
 fi
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting storage backup..."

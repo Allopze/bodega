@@ -16,7 +16,17 @@ infraestructura), Cloudreve (WebDAV) y, opcionalmente, Google Drive vía rclone.
 | `postgres.dump`     | `pg_dump -Fc --compress=9` de la base completa                    |
 | `storage.tar.gz`    | Volumen de adjuntos (`STORAGE_PATH`)                              |
 | `env-config.tar.gz` | `.env` (whitelist de variables), `system-info.json`, volúmenes    |
-| `manifest.json`     | sha256 y tamaño de los tres anteriores, versión de app, hostname  |
+| `manifest.json`     | sha256 y tamaño de los tres anteriores, `file_count` del tar de storage, versión de app, hostname |
+
+**El respaldo no parte con el storage vacío (PREV-I13-D).** Antes del `pg_dump`
+el orquestador cuenta los archivos de `STORAGE_PATH` (sin los `.health-*.tmp`).
+Si no hay ninguno —o el directorio no existe— aborta con
+`BACKUP_FAILED_STEP=storage_precondition` en `.backup-status`: un volumen que no
+montó producía un respaldo "OK" sin evidencia, y con la retención de 30 días
+esos snapshots terminan reemplazando a los buenos. Para una instalación nueva
+sin adjuntos, `BACKUP_ALLOW_EMPTY_STORAGE=true` deja continuar (y el manifiesto
+declara `file_count: 0`). `scripts/backup-storage.sh` (copia rclone suelta) sale
+con 1 si falta el origen o `RCLONE_DEST`: sin destino no hubo copia.
 
 No entran al respaldo, a propósito:
 
@@ -210,6 +220,23 @@ persona de verdad, no uno hecho para la ocasión— en una base desechable, y ex
 que lo restaurado tenga al menos `DRILL_MIN_TABLES` tablas **y datos**: un dump
 truncado suele traer el esquema y ningún registro.
 
+**También ensaya el storage (PREV-I13-E).** Sobre el `storage.tar.gz` del último
+snapshot (`snapshots/<fecha>/`), aunque no haya base de ensayo:
+
+| Comprobación | Si falla |
+| --- | --- |
+| Existe el tar y el `manifest.json` del snapshot | CRITICAL |
+| El sha256 del tar coincide con el del manifiesto | CRITICAL |
+| `tar -tzf` lo puede listar | CRITICAL |
+| Los archivos listados coinciden con `file_count` del manifiesto | CRITICAL |
+| El manifiesto declara el storage omitido (sin sha256) | WARNING |
+| Cada archivo que la base restaurada referencia (evidencia PDTP y del plan de acción, instancias, planos de riesgo, evidencia de inspecciones) está en el tar | WARNING, con el conteo y hasta 5 rutas |
+
+Lo que falta en el tar es WARNING y no CRITICAL porque puede faltar ya en el
+storage vivo —eso lo alerta a diario `pdtp-evidence-integrity`— y en ese caso
+ningún respaldo lo tendría. El resultado lleva un bloque `storage` con `files`,
+`sha256_ok`, `references_checked` y `references_missing`.
+
 `DRILL_DATABASE_URL` **se destruye en cada ensayo** (`DROP SCHEMA public
 CASCADE`). Nunca apuntarla a la base de la aplicación. Si está vacía el ensayo
 no corre y el resultado es WARNING, no OK: un ensayo que no se hizo no prueba
@@ -224,8 +251,8 @@ día. El resultado queda en `${BACKUP_DIR}/restore-drill.json` y lo recoge
 | --- | --- |
 | Nunca se ensayó | WARNING |
 | El último ensayo tiene más de `DRILL_MAX_AGE_DAYS` (8) | WARNING |
-| El ensayo no pudo ejecutarse | WARNING |
-| El ensayo falló | **CRITICAL** — ese respaldo no es restaurable |
+| El ensayo no pudo ejecutarse, o faltan en el tar archivos que la base referencia | WARNING |
+| El ensayo falló (dump o tar de storage) | **CRITICAL** — ese respaldo no es restaurable |
 
 ## Restauración catastrófica (servidor nuevo)
 

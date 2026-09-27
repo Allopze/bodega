@@ -54,6 +54,27 @@ export const PERMIT_TRANSITIONS: Record<string, readonly string[]> = {
   cancelled: [],
 }
 
+/**
+ * PREV-M06 (D27): ¿se puede acusar el AST de un permiso en este estado?
+ *
+ * La ventana sale de la tabla de transiciones —un estado es terminal cuando ya
+ * no tiene salida— y no de una lista copiada en cada llamador, que es como una
+ * lista se desincroniza. Abierta en borrador, pendiente, aprobado, vigente y
+ * suspendido; cerrada en cerrado, rechazado y cancelado. Sin TTL: el enlace no
+ * caduca por tiempo, caduca cuando el permiso termina.
+ */
+export function permitCrewAckWindow(status: string): { open: true; reason: null } | { open: false; reason: string } {
+  const next = PERMIT_TRANSITIONS[status]
+  if (next && next.length > 0) return { open: true, reason: null }
+  const label = PERMIT_STATUS_LABELS[status]
+  return {
+    open: false,
+    reason: label
+      ? `El permiso está ${label.toLowerCase()}: ya no admite acuse del AST.`
+      : "El permiso está en un estado que ya no admite acuse del AST.",
+  }
+}
+
 export interface PermitBlocker {
   kind:
     | "control_pending"

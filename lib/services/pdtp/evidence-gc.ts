@@ -15,9 +15,15 @@
  * `collectPdtpEvidenceReferences` (evidence-references.ts), no aquí.
  *
  * Por seguridad, sólo se eliminan archivos más viejos que `olderThanMs`
- * (default 1 hora) para no borrar archivos recién subidos que aún no
+ * (default y mínimo: 1 hora) para no borrar archivos recién subidos que aún no
  * fueron vinculados por `markPdtpExecution` (porque el cliente puede
- * tardar entre el upload y el submit del form).
+ * tardar entre el upload y el submit del form). W5-GC (T7a): un valor menor
+ * se eleva al mínimo; antes `olderThanMs=0` borraba un upload en curso.
+ *
+ * Cada corrida que encuentra huérfanos deja una fila en `audit_log`
+ * (`storage_orphan_sweep`) con el directorio, el modo y los nombres: el cron
+ * corre en modo de prueba (D13) y esa fila es lo que se revisa antes de
+ * habilitar el borrado real con `PDTP_EVIDENCE_GC_DELETE=true`.
  *
  * Uso:
  *   await cleanupPdtpEvidenceOrphans({ dryRun: true })
@@ -31,9 +37,21 @@ import { db } from "@/db"
 import { preventionInspectionAnswerEvidence, preventionRiskMapLayouts } from "@/db/schema"
 import { resolveInspectionEvidenceDir, resolvePdtpEvidenceDir, resolveRiskMapDir } from "@/lib/storage/config"
 import { logger } from "@/lib/logger"
+import { recordAudit } from "@/lib/audit"
 import { collectPdtpEvidenceReferences } from "./evidence-references"
 
-const DEFAULT_OLDER_THAN_MS = 60 * 60 * 1000 // 1 hora
+/** Ventana de gracia por omisión y mínima (W5-GC): 1 hora. */
+export const MIN_ORPHAN_AGE_MS = 60 * 60 * 1000
+const DEFAULT_OLDER_THAN_MS = MIN_ORPHAN_AGE_MS
+
+/** Nombres que se guardan por fila de auditoría; el resto se cuenta. */
+const AUDIT_NAME_LIMIT = 500
+
+/** La ventana efectiva: nunca menor que `MIN_ORPHAN_AGE_MS`. */
+export function resolveOrphanAgeMs(olderThanMs: number | undefined): number {
+  if (olderThanMs === undefined || !Number.isFinite(olderThanMs)) return DEFAULT_OLDER_THAN_MS
+  return Math.max(olderThanMs, MIN_ORPHAN_AGE_MS)
+}
 
 export type CleanupPdtpEvidenceOrphansResult = {
   scanned: number
@@ -47,12 +65,14 @@ export type CleanupPdtpEvidenceOrphansResult = {
 export type CleanupPdtpEvidenceOrphansOptions = {
   olderThanMs?: number
   dryRun?: boolean
+  /** Quien lo pidió, para la fila de auditoría. `null`/ausente = el cron. */
+  actorUserId?: string | null
 }
 
 export async function cleanupPdtpEvidenceOrphans(
   options: CleanupPdtpEvidenceOrphansOptions = {},
 ): Promise<CleanupPdtpEvidenceOrphansResult> {
-  const olderThanMs = options.olderThanMs ?? DEFAULT_OLDER_THAN_MS
+  const olderThanMs = resolveOrphanAgeMs(options.olderThanMs)
   const dryRun = options.dryRun ?? false
   const result: CleanupPdtpEvidenceOrphansResult = {
     scanned: 0,
@@ -76,7 +96,7 @@ export async function cleanupPdtpEvidenceOrphans(
     if (name) referenced.add(name)
   }
 
-  await sweepOrphans({ dir, referenced, olderThanMs, dryRun, label: "pdtp/evidence-gc" }, result)
+  await sweepOrphans({ dir, referenced, olderThanMs, dryRun, label: "pdtp/evidence-gc", actorUserId: options.actorUserId ?? null }, result)
 
   logger.info("[pdtp/evidence-gc] done", { ...result, dryRun })
   return result
@@ -90,6 +110,61 @@ export async function cleanupPdtpEvidenceOrphans(
  * del mismo barrido son dos lugares donde ajustar el umbral y olvidar uno.
  */
 async function sweepOrphans(args: {
+  dir: string
+  referenced: Set<string>
+  olderThanMs: number
+  dryRun: boolean
+  label: string
+  actorUserId?: string | null
+}, result: CleanupPdtpEvidenceOrphansResult): Promise<void> {
+  const before = { deleted: result.deleted, failed: result.failed, names: result.deletedNames.length }
+  await sweepDirectory(args, result)
+  await auditSweep(args, {
+    deleted: result.deleted - before.deleted,
+    failed: result.failed - before.failed,
+    names: result.deletedNames.slice(before.names),
+  })
+}
+
+/**
+ * W5-GC: constancia de la corrida. Sólo cuando hubo algo —un candidato o una
+ * falla—: una fila diaria vacía sería ruido y ocultaría las que importan. En
+ * modo de prueba `deleted` son los que se HABRÍAN borrado.
+ */
+async function auditSweep(
+  args: { label: string; dryRun: boolean; olderThanMs: number; actorUserId?: string | null },
+  outcome: { deleted: number; failed: number; names: string[] },
+): Promise<void> {
+  if (outcome.deleted === 0 && outcome.failed === 0) return
+  const at = new Date().toISOString()
+  try {
+    await recordAudit({
+      userId: args.actorUserId ?? null,
+      action: "delete",
+      entityType: "storage_orphan_sweep",
+      entityId: `${args.label}@${at}`,
+      entityCode: args.label,
+      newState: {
+        label: args.label,
+        dryRun: args.dryRun,
+        olderThanMs: args.olderThanMs,
+        deleted: outcome.deleted,
+        failed: outcome.failed,
+        names: outcome.names.slice(0, AUDIT_NAME_LIMIT),
+        truncated: outcome.names.length > AUDIT_NAME_LIMIT,
+      },
+      reason: args.dryRun
+        ? "Barrido de archivos huérfanos en modo de prueba: no se borró nada; la lista es lo que se habría borrado."
+        : "Barrido de archivos huérfanos: se borraron archivos sin referencia en la base.",
+    })
+  } catch (err) {
+    // La auditoría no puede tumbar el barrido ya hecho (en modo real los
+    // archivos ya se borraron): el log lleva los mismos datos.
+    logger.error(`[${args.label}] no se pudo auditar el barrido`, { err, ...outcome, dryRun: args.dryRun })
+  }
+}
+
+async function sweepDirectory(args: {
   dir: string
   referenced: Set<string>
   olderThanMs: number
@@ -144,7 +219,7 @@ async function sweepOrphans(args: {
 export async function cleanupInspectionEvidenceOrphans(
   options: CleanupPdtpEvidenceOrphansOptions = {},
 ): Promise<CleanupPdtpEvidenceOrphansResult> {
-  const olderThanMs = options.olderThanMs ?? DEFAULT_OLDER_THAN_MS
+  const olderThanMs = resolveOrphanAgeMs(options.olderThanMs)
   const dryRun = options.dryRun ?? false
   const result: CleanupPdtpEvidenceOrphansResult = {
     scanned: 0, deleted: 0, kept: 0, failed: 0, deletedNames: [],
@@ -160,7 +235,7 @@ export async function cleanupInspectionEvidenceOrphans(
 
   await sweepOrphans({
     dir: resolveInspectionEvidenceDir(),
-    referenced, olderThanMs, dryRun,
+    referenced, olderThanMs, dryRun, actorUserId: options.actorUserId ?? null,
     label: "inspections/evidence-gc",
   }, result)
 
@@ -190,7 +265,7 @@ export async function cleanupInspectionEvidenceOrphans(
 export async function cleanupRiskMapOrphans(
   options: CleanupPdtpEvidenceOrphansOptions = {},
 ): Promise<CleanupPdtpEvidenceOrphansResult> {
-  const olderThanMs = options.olderThanMs ?? DEFAULT_OLDER_THAN_MS
+  const olderThanMs = resolveOrphanAgeMs(options.olderThanMs)
   const dryRun = options.dryRun ?? false
   const result: CleanupPdtpEvidenceOrphansResult = {
     scanned: 0, deleted: 0, kept: 0, failed: 0, deletedNames: [],
@@ -209,7 +284,7 @@ export async function cleanupRiskMapOrphans(
 
   await sweepOrphans({
     dir: resolveRiskMapDir(),
-    referenced, olderThanMs, dryRun,
+    referenced, olderThanMs, dryRun, actorUserId: options.actorUserId ?? null,
     label: "risk-map/evidence-gc",
   }, result)
 
