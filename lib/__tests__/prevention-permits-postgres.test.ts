@@ -159,12 +159,13 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
     const readiness = await service.evaluatePermitReadiness(permitId, REQUESTER)
     expect(readiness.allowed).toBe(false)
     const kinds = new Set(readiness.blockers.map((item) => item.kind))
-    // Controles sin verificar, sin aislamiento, sin medición y sin AST, todos
-    // a la vez. La competencia de cada integrante salió de la evaluación el
-    // 2026-09-19, con el modelo de capacitación por persona.
+    // Controles sin verificar, sin aislamiento, sin medición, sin AST y la
+    // cuadrilla sin acusarlo (PER-001, `requiresCrewAcknowledgement` por
+    // defecto), todos a la vez. La competencia de cada integrante salió de la
+    // evaluación el 2026-09-19, con el modelo de capacitación por persona.
     expect(kinds).toEqual(new Set([
       "control_pending", "isolation_missing", "measurement_missing",
-      "jsa_missing",
+      "jsa_missing", "crew_ack_missing",
     ]))
   })
 
