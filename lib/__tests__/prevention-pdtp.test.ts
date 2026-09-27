@@ -67,6 +67,11 @@ mkdirSync(tmpEvidenceDir, { recursive: true })
 const GENERIC_EVIDENCE_NAME = "generic-test-evidence.pdf"
 const GENERIC_EVIDENCE_URL = `storage/pdtp-evidence/${GENERIC_EVIDENCE_NAME}`
 writeFileSync(join(tmpEvidenceDir, GENERIC_EVIDENCE_NAME), "%PDF-1.4 test")
+// Revisión final 2026-09-27 (hallazgo 1): un archivo vinculado en una faena no
+// se reutiliza en otra fuera del alcance de quien registra. Las pruebas que
+// registran en "ws-2" con alcance ["ws-2"] usan su propio archivo genérico.
+const GENERIC_EVIDENCE_URL_WS2 = "storage/pdtp-evidence/generic-test-evidence-ws2.pdf"
+writeFileSync(join(tmpEvidenceDir, "generic-test-evidence-ws2.pdf"), "%PDF-1.4 test ws2")
 
 vi.mock("@/lib/storage/config", () => ({
   resolvePdtpEvidenceFile: (filePath: string) => {
@@ -1589,7 +1594,7 @@ describe("prevention PDTP service", () => {
     await approvePdtpExecution(exec1.id, "user-approver", ["ws-1"])
     const exec2 = await markPdtpExecution({
       activityId: act2.id, worksiteId: "ws-2", year: 2026, month: 1, week: 1, executedQuantity: 2,
-      evidenceText: "Registro de la actividad 2 en Faena B", evidenceUrl: GENERIC_EVIDENCE_URL,
+      evidenceText: "Registro de la actividad 2 en Faena B", evidenceUrl: GENERIC_EVIDENCE_URL_WS2,
     }, "user-1", ["ws-2"])
     await approvePdtpExecution(exec2.id, "user-approver", ["ws-2"])
 
@@ -2285,7 +2290,7 @@ describe("prevention PDTP service", () => {
     // Pending, worksite B
     await markPdtpExecution({
       activityId: act2!.id, worksiteId: "ws-2", year: 2026, month: 1, week: 2, executedQuantity: 1,
-      evidenceText: "Registro verificable del caso B", evidenceUrl: GENERIC_EVIDENCE_URL,
+      evidenceText: "Registro verificable del caso B", evidenceUrl: GENERIC_EVIDENCE_URL_WS2,
     }, "user-1", ["ws-2"])
     // Approved (not pending) — must be excluded
     const exec3 = await markPdtpExecution({
