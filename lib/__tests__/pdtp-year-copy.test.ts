@@ -62,6 +62,11 @@ const { addPdtpActivity } = await import("@/lib/services/prevention-pdtp")
 const lifecycle = await import("@/lib/services/pdtp/lifecycle")
 
 beforeEach(async () => {
+  // Desde M04 (T7a) ejecuciones, desvíos y cierres restringen el borrado de
+  // actividades y programas: se limpian antes.
+  await inMemoryDb.delete(schema.pdtpPeriodClosures)
+  await inMemoryDb.delete(schema.pdtpExecutionDeviations)
+  await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.pdtpFulfillmentEventTargets)
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpScheduledInstances)
