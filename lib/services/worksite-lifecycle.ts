@@ -246,6 +246,7 @@ export async function setWorksiteActive(input: SetWorksiteActiveInput): Promise<
 
     await tx.update(worksites).set({
       isActive: input.activate,
+      deactivatedAt: input.activate ? null : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }).where(eq(worksites.id, current.id))
 

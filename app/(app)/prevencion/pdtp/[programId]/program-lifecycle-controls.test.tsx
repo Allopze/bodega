@@ -224,6 +224,20 @@ describe("ProgramLifecycleControls", () => {
       expect(screen.getByRole("button", { name: "Cerrar el año 2025" })).toBeDisabled()
     })
 
+    it("enlaza cada faena dada de baja con meses pendientes, para poder cerrarlos", () => {
+      render(<ProgramLifecycleControls
+        program={activeProgram}
+        permissions={permissions}
+        yearClose={{
+          year: 2025, canClose: false,
+          blockers: ["Faltan cierres mensuales del año 2025. Faena Sur: mayo, junio."],
+          deactivatedWorksites: [{ name: "Faena Sur", href: "/prevencion/pdtp/prog-1?faena=ws-sur" }],
+        }}
+      />)
+      expect(screen.getByRole("link", { name: "Cerrar los meses de Faena Sur (dada de baja)" }))
+        .toHaveAttribute("href", "/prevencion/pdtp/prog-1?faena=ws-sur")
+    })
+
     it("sin permiso de ciclo de vida no se ofrece", () => {
       render(<ProgramLifecycleControls
         program={activeProgram}

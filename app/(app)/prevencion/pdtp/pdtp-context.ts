@@ -65,3 +65,21 @@ export function resolveSelectedWorksiteId(
   }
   return worksites.length === 1 ? worksites.at(0)?.id : undefined
 }
+
+/**
+ * Faenas elegibles en la ficha del programa: las operativas y, cuando el año
+ * está por cerrarse, las dadas de baja que todavía deben meses (decisión
+ * 2026-09-26). Sin esto, esos meses no se podrían cerrar desde ninguna parte y
+ * el año quedaría bloqueado. Nunca amplía el alcance del usuario.
+ */
+export function withYearCloseDeactivatedWorksites<T extends { id: string; name: string; code: string }>(
+  worksites: T[],
+  missing: Array<{ worksiteId: string; worksiteName: string; worksiteCode?: string; deactivated?: true }> | null | undefined,
+  scope: string[] | "all",
+): Array<T | { id: string; name: string; code: string }> {
+  const extra = (missing ?? [])
+    .filter((row) => row.deactivated && (scope === "all" || scope.includes(row.worksiteId)))
+    .filter((row) => !worksites.some((worksite) => worksite.id === row.worksiteId))
+    .map((row) => ({ id: row.worksiteId, name: `${row.worksiteName} (dada de baja)`, code: row.worksiteCode ?? "" }))
+  return [...worksites, ...extra]
+}

@@ -24,7 +24,7 @@
 import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { pdtpPeriodClosures, pdtpProgramWorksites, pdtpPrograms, worksites } from "@/db/schema"
-import { todayInChile } from "@/lib/utils"
+import { chileDateParts, todayInChile } from "@/lib/utils"
 import { addPdtpChangeLogEntry } from "./helpers"
 import { effectiveActivationFor, pdtpActivationPeriod } from "./period"
 import { pdtpMonthLabel } from "./period-guard"
@@ -38,8 +38,13 @@ const OPEN_REVISION_STATUSES = ["draft", "in_review", "rejected"] as const
 export type PdtpYearCloseMissingMonths = {
   worksiteId: string
   worksiteName: string
+  /** Presente en las faenas dadas de baja, para ofrecerlas en el selector. */
+  worksiteCode?: string
   /** Meses (1-12) exigibles que no tienen un cierre vigente de ninguna versión del año. */
   months: number[]
+  /** La faena ya fue dada de baja: se le exigen los meses previos a la baja,
+   * y la ficha del programa deja elegirla para cerrarlos. */
+  deactivated?: true
 }
 
 export type PdtpYearCloseReadiness = {
@@ -105,45 +110,78 @@ async function computeReadiness(programId: string, client: QueryClient): Promise
       .map((version) => version.activatedAt!)
       .sort((left, right) => Date.parse(left) - Date.parse(right))[0] ?? null
     const operatingWorksiteIds = await listPdtpProgramOperatingWorksiteIds(active.id, client)
-    const [memberships, closures, worksiteRows] = await Promise.all([
-      operatingWorksiteIds.length === 0 ? [] : client.select({
+    const versionIds = versions.map((version) => version.id)
+    const [memberships, closures, deactivatedRows] = await Promise.all([
+      // Todas las versiones del año y también las membresías inactivas: una
+      // faena dada de baja deja su fila con `isActive = false`.
+      client.select({
         worksiteId: pdtpProgramWorksites.worksiteId,
         addedAt: pdtpProgramWorksites.addedAt,
-      }).from(pdtpProgramWorksites).where(and(
-        eq(pdtpProgramWorksites.programId, active.id),
-        eq(pdtpProgramWorksites.isActive, true),
-        inArray(pdtpProgramWorksites.worksiteId, operatingWorksiteIds),
-      )),
+      }).from(pdtpProgramWorksites).where(inArray(pdtpProgramWorksites.programId, versionIds)),
       client.select({
         worksiteId: pdtpPeriodClosures.worksiteId,
         month: pdtpPeriodClosures.month,
       }).from(pdtpPeriodClosures).where(and(
-        inArray(pdtpPeriodClosures.programId, versions.map((version) => version.id)),
+        inArray(pdtpPeriodClosures.programId, versionIds),
         eq(pdtpPeriodClosures.year, year),
         eq(pdtpPeriodClosures.status, "closed"),
       )),
-      operatingWorksiteIds.length === 0 ? [] : client.select({ id: worksites.id, name: worksites.name })
-        .from(worksites).where(inArray(worksites.id, operatingWorksiteIds)),
+      client.select({ id: worksites.id }).from(worksites).where(and(
+        eq(worksites.isActive, false),
+        isNotNull(worksites.deactivatedAt),
+      )),
     ])
-    const addedAtByWorksite = new Map(memberships.map((row) => [row.worksiteId, row.addedAt]))
+    // Decisión 2026-09-26: una faena dada de baja debe los meses completos
+    // anteriores a su baja. Entra si operaba el programa: era miembro de alguna
+    // versión del año o el programa es corporativo. Sin fecha de baja (bajas
+    // anteriores a la columna) no se sabe cuándo dejó de operar y no se le exige.
+    const memberIds = new Set(memberships.map((row) => row.worksiteId))
+    const deactivatedCandidateIds = deactivatedRows
+      .map((row) => row.id)
+      .filter((id) => !operatingWorksiteIds.includes(id) && (memberIds.has(id) || active.appliesToAllWorksites))
+    const candidateIds = [...operatingWorksiteIds, ...deactivatedCandidateIds]
+    const worksiteRows = candidateIds.length === 0 ? [] : await client.select({
+      id: worksites.id, name: worksites.name, code: worksites.code, createdAt: worksites.createdAt, deactivatedAt: worksites.deactivatedAt,
+    }).from(worksites).where(inArray(worksites.id, candidateIds))
+    const worksiteById = new Map(worksiteRows.map((row) => [row.id, row]))
+
+    // La incorporación más antigua entre las versiones del año: una v2 no borra
+    // lo que la faena ya debía desde la v1.
+    const addedAtByWorksite = new Map<string, string>()
+    for (const row of memberships) {
+      const current = addedAtByWorksite.get(row.worksiteId)
+      if (!current || Date.parse(row.addedAt) < Date.parse(current)) addedAtByWorksite.set(row.worksiteId, row.addedAt)
+    }
     const closedMonthsByWorksite = new Map<string, Set<number>>()
     for (const closure of closures) {
       const months = closedMonthsByWorksite.get(closure.worksiteId) ?? new Set<number>()
       months.add(closure.month)
       closedMonthsByWorksite.set(closure.worksiteId, months)
     }
-    const nameById = new Map(worksiteRows.map((row) => [row.id, row.name]))
-    for (const worksiteId of operatingWorksiteIds) {
-      const activation = pdtpActivationPeriod(effectiveActivationFor(firstActivatedAt, addedAtByWorksite.get(worksiteId) ?? null))
+    for (const worksiteId of candidateIds) {
+      const worksite = worksiteById.get(worksiteId)
+      // Sin membresía (programa corporativo) la faena debe desde que existe en
+      // la plataforma, no desde la activación del programa.
+      const joinedAt = addedAtByWorksite.get(worksiteId) ?? worksite?.createdAt ?? null
+      const activation = pdtpActivationPeriod(effectiveActivationFor(firstActivatedAt, joinedAt))
       // Activada antes del año (un programa importado) exige el año completo;
       // activada después, no exige nada.
       const firstMonth = !activation || activation.year < year ? 1 : activation.year > year ? 13 : activation.month
+      const deactivated = worksite?.deactivatedAt ? chileDateParts(worksite.deactivatedAt) : null
+      const lastMonth = !deactivated || deactivated.year > year ? 12 : deactivated.year < year ? 0 : deactivated.month - 1
       const closed = closedMonthsByWorksite.get(worksiteId) ?? new Set<number>()
       const months: number[] = []
-      for (let month = firstMonth; month <= 12; month++) {
+      for (let month = firstMonth; month <= lastMonth; month++) {
         if (!closed.has(month)) months.push(month)
       }
-      if (months.length > 0) missing.push({ worksiteId, worksiteName: nameById.get(worksiteId) ?? worksiteId, months })
+      if (months.length > 0) {
+        missing.push({
+          worksiteId,
+          worksiteName: worksite?.name ?? worksiteId,
+          months,
+          ...(deactivatedCandidateIds.includes(worksiteId) ? { worksiteCode: worksite?.code ?? "", deactivated: true as const } : {}),
+        })
+      }
     }
     missing.sort((left, right) => left.worksiteName.localeCompare(right.worksiteName, "es"))
     if (missing.length > 0) {

@@ -26,6 +26,14 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await inMemoryDb.delete(schema.auditLog)
+  // Reactivar una faena le siembra las casillas del año (PREV-C03.4).
+  await inMemoryDb.delete(schema.preventionTrainingOccurrenceEvidence)
+  await inMemoryDb.delete(schema.preventionTrainingOccurrences)
+  await inMemoryDb.delete(schema.preventionHygieneMeasurementSlots)
+  await inMemoryDb.delete(schema.preventionProtocolApplicabilities)
+  await inMemoryDb.delete(schema.preventionAlcotestSlots)
+  await inMemoryDb.delete(schema.preventionGrdMeetingSlots)
+  await inMemoryDb.delete(schema.preventionEmergencyDrillSlots)
   await inMemoryDb.delete(schema.preventionCapaTransitions)
   await inMemoryDb.delete(schema.preventionCapaActions)
   await inMemoryDb.delete(schema.pdtpProgramWorksites)
@@ -97,7 +105,17 @@ describe("worksite lifecycle", () => {
     const audits = await inMemoryDb.select().from(schema.auditLog)
 
     expect(worksite?.isActive).toBe(false)
+    // Cuándo dejó de operar: el cierre anual del PDTP le exige los meses
+    // completos anteriores a la baja y ninguno después.
+    expect(worksite?.deactivatedAt).toBeTruthy()
     expect(membership?.isActive).toBe(false)
+
+    await setWorksiteActive({
+      worksiteId: "ws-life", activate: true, actorUserId: "actor-1", actorEmail: "admin@example.test",
+      scope: { mode: "all", ids: [] },
+    })
+    const [reactivated] = await inMemoryDb.select().from(schema.worksites).where(eq(schema.worksites.id, "ws-life"))
+    expect(reactivated?.deactivatedAt).toBeNull()
     expect(capas.find((row) => row.id === "capa-life-open")).toMatchObject({
       status: "cancelled", cancelledByUserId: "actor-1", version: 2,
     })

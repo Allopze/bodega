@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Tooltip } from "@/components/ui/tooltip"
 import { MetaBadge } from "@/components/states/state-badge"
@@ -49,6 +50,9 @@ type YearCloseState = {
   year: number
   canClose: boolean
   blockers: string[]
+  /** Faenas dadas de baja que todavía deben meses: se enlazan a su vista para
+   * cerrarlos, porque no aparecen entre las faenas operativas. */
+  deactivatedWorksites?: Array<{ name: string; href: string }>
 }
 
 type LifecyclePermissions = {
@@ -155,6 +159,17 @@ export function ProgramLifecycleControls({
               <ul className="list-disc space-y-0.5 pl-5">
                 {yearClose.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
               </ul>
+              {(yearClose.deactivatedWorksites?.length ?? 0) > 0 && (
+                <ul className="mt-2 space-y-0.5">
+                  {yearClose.deactivatedWorksites!.map((worksite) => (
+                    <li key={worksite.href}>
+                      <Link href={worksite.href} className="font-medium underline">
+                        Cerrar los meses de {worksite.name} (dada de baja)
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </Callout>
           )}
           {program.status === "rejected" && program.rejectionReason && (

@@ -93,6 +93,50 @@ beforeEach(async () => {
   ])
 })
 
+describe("qué meses debe cada faena (decisión 2026-09-26)", () => {
+  it("una faena dada de baja en julio debe los meses completos anteriores, no los posteriores", async () => {
+    await seedVersion(1, "active", `${YEAR}-01-02T12:00:00.000Z`)
+    await addMember(`pdtp-${YEAR}-v1`, WS_A, `${YEAR}-01-01T12:00:00.000Z`)
+    await addMember(`pdtp-${YEAR}-v1`, WS_B, `${YEAR}-01-01T12:00:00.000Z`)
+    await closeMonths(`pdtp-${YEAR}-v1`, WS_A, ALL_MONTHS)
+    await closeMonths(`pdtp-${YEAR}-v1`, WS_B, [1, 2, 3, 4])
+    // Como la deja `setWorksiteActive`: membresía y faena inactivas, con fecha.
+    await inMemoryDb.update(schema.pdtpProgramWorksites).set({ isActive: false }).where(eq(schema.pdtpProgramWorksites.worksiteId, WS_B))
+    await inMemoryDb.update(schema.worksites).set({ isActive: false, deactivatedAt: `${YEAR}-07-15T15:00:00.000Z` }).where(eq(schema.worksites.id, WS_B))
+    at(`${YEAR + 1}-01-20T15:00:00.000Z`)
+
+    const readiness = await getPdtpYearCloseReadiness(`pdtp-${YEAR}-v1`)
+    expect(readiness.missing).toEqual([{ worksiteId: WS_B, worksiteName: "Faena B", worksiteCode: "FB", months: [5, 6], deactivated: true }])
+
+    await closeMonths(`pdtp-${YEAR}-v1`, WS_B, [5, 6])
+    expect((await getPdtpYearCloseReadiness(`pdtp-${YEAR}-v1`)).canClose).toBe(true)
+  })
+
+  it("una faena dada de baja antes de la columna de fecha no debe nada: no se sabe cuándo dejó de operar", async () => {
+    await seedVersion(1, "active", `${YEAR}-01-02T12:00:00.000Z`)
+    await addMember(`pdtp-${YEAR}-v1`, WS_A, `${YEAR}-01-01T12:00:00.000Z`)
+    await addMember(`pdtp-${YEAR}-v1`, WS_B, `${YEAR}-01-01T12:00:00.000Z`)
+    await closeMonths(`pdtp-${YEAR}-v1`, WS_A, ALL_MONTHS)
+    await inMemoryDb.update(schema.pdtpProgramWorksites).set({ isActive: false }).where(eq(schema.pdtpProgramWorksites.worksiteId, WS_B))
+    await inMemoryDb.update(schema.worksites).set({ isActive: false }).where(eq(schema.worksites.id, WS_B))
+    at(`${YEAR + 1}-01-20T15:00:00.000Z`)
+
+    expect((await getPdtpYearCloseReadiness(`pdtp-${YEAR}-v1`)).missing).toEqual([])
+  })
+
+  it("en un programa corporativo, una faena creada en octubre debe desde octubre", async () => {
+    await seedVersion(1, "active", `${YEAR}-01-02T12:00:00.000Z`)
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true }).where(eq(schema.pdtpPrograms.id, `pdtp-${YEAR}-v1`))
+    await inMemoryDb.update(schema.worksites).set({ createdAt: `${YEAR - 1}-06-01T12:00:00.000Z` }).where(eq(schema.worksites.id, WS_A))
+    await inMemoryDb.update(schema.worksites).set({ createdAt: `${YEAR}-10-05T12:00:00.000Z` }).where(eq(schema.worksites.id, WS_B))
+    await closeMonths(`pdtp-${YEAR}-v1`, WS_A, ALL_MONTHS)
+    at(`${YEAR + 1}-01-20T15:00:00.000Z`)
+
+    expect((await getPdtpYearCloseReadiness(`pdtp-${YEAR}-v1`)).missing)
+      .toEqual([{ worksiteId: WS_B, worksiteName: "Faena B", months: [10, 11, 12] }])
+  })
+})
+
 describe("closePdtpProgramYear — cuándo se puede", () => {
   it("cerrar el año exige alcance sobre todas las faenas: afecta a cada una", async () => {
     const { closePdtpProgramYear } = await import("@/lib/services/pdtp/year-close")
