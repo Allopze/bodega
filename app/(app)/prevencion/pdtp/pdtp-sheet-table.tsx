@@ -14,6 +14,7 @@ import {
   TableRoot,
   TableRow,
 } from "@/components/ui/table"
+import { Pagination } from "@/components/ui/pagination"
 import { MetaBadge } from "@/components/states/state-badge"
 import type { PdtpAggregateActivityWorksite, PdtpSheetView } from "@/lib/services/prevention-pdtp"
 import { isPdtpActivityZeroThisMonth, pdtpActivationPeriod, pdtpPeriodFromChileDate, pdtpSheetActivityStatus, type PdtpActivityStatusFilter, type PdtpPeriod, type PdtpSheetActivityStatus } from "@/lib/services/pdtp/period"
@@ -296,6 +297,15 @@ export function PdtpSheetTable({
 
   const INITIAL_ROW_LIMIT = 30
   const [showAll, setShowAll] = React.useState(false)
+  // W8: la vista semanal pagina de a 30. Antes cortaba en 30 sin botón ni
+  // páginas (el "Mostrar las N" sólo existía en la anual), así que la
+  // actividad 31 en adelante no se podía ver ni registrar. La página viaja en
+  // `?page=` para que volver desde una ficha deje al usuario donde estaba.
+  const requestedWeeklyPage = Number.parseInt(searchParams.get("page") ?? "1", 10)
+  const [weeklyPage, setWeeklyPage] = React.useState(
+    Number.isSafeInteger(requestedWeeklyPage) && requestedWeeklyPage > 1 ? requestedWeeklyPage : 1,
+  )
+  const weeklyTableRef = React.useRef<HTMLDivElement>(null)
   // Compute status counts for the summary
   const statusCounts: PdtpStatusCounts = (() => {
     const counts = { executed: 0, pending: 0, overdue: 0, not_scheduled: 0, not_performed: 0, zero: 0 }
@@ -333,10 +343,27 @@ export function PdtpSheetTable({
   // deja pocas filas no hay nada que paginar, y el contador del botón tiene que
   // hablar de esas filas y no del total sin filtrar.
   const totalActivityCount = filteredActivities.length
-  const needsPagination = totalActivityCount > INITIAL_ROW_LIMIT && !showAll
-  const displayActivities = needsPagination
-    ? filteredActivities.slice(0, INITIAL_ROW_LIMIT)
-    : filteredActivities
+  const needsPagination = viewMode === "anual" && totalActivityCount > INITIAL_ROW_LIMIT && !showAll
+  const weeklyTotalPages = Math.max(1, Math.ceil(totalActivityCount / INITIAL_ROW_LIMIT))
+  // Un `?page=` mayor que las páginas que quedan (p. ej. tras registrar y que
+  // la lista se acorte) cae en la última en vez de mostrar una tabla vacía.
+  const currentWeeklyPage = Math.min(weeklyPage, weeklyTotalPages)
+  const displayActivities = viewMode === "semana"
+    ? filteredActivities.slice((currentWeeklyPage - 1) * INITIAL_ROW_LIMIT, currentWeeklyPage * INITIAL_ROW_LIMIT)
+    : needsPagination
+      ? filteredActivities.slice(0, INITIAL_ROW_LIMIT)
+      : filteredActivities
+
+  const goToWeeklyPage = (next: number) => {
+    setWeeklyPage(next)
+    const params = new URLSearchParams(searchParams.toString())
+    if (next > 1) params.set("page", String(next))
+    else params.delete("page")
+    router.replace(`${pathname}${params.size ? `?${params}` : ""}`, { scroll: false })
+    // La tabla tiene su propio scroll vertical (`stickyHeader`): sin esto la
+    // página nueva se abría a la altura donde estaba el botón.
+    weeklyTableRef.current?.scrollTo?.({ top: 0 })
+  }
 
   // La agrupación por objetivo sólo aplica a la vista anual y sólo si el
   // programa declaró objetivos: fuera de eso, un único grupo "Actividades",
@@ -357,9 +384,11 @@ export function PdtpSheetTable({
             activeFilter={statusFilter}
             onFilter={(next) => {
               setStatusFilter(next)
+              setWeeklyPage(1)
               const params = new URLSearchParams(searchParams.toString())
               if (next === "all") params.delete("estado")
               else params.set("estado", next)
+              params.delete("page")
               router.replace(`${pathname}${params.size ? `?${params}` : ""}`, { scroll: false })
             }}
           />
@@ -401,7 +430,8 @@ export function PdtpSheetTable({
             </p>
           </div>
         ) : (
-          <TableRoot stickyHeader>
+          <>
+          <TableRoot ref={weeklyTableRef} stickyHeader>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -497,6 +527,8 @@ export function PdtpSheetTable({
                               <div className="flex flex-wrap items-center gap-1.5">
                                 {canExecute && <PdtpExecutionForm
                                   activityId={activity.id}
+                                  activityN={activity.n}
+                                  activityName={activity.activity}
                                   worksiteId={worksiteId}
                                   year={view.program.year}
                                   defaultMonth={registerCell.month}
@@ -540,6 +572,13 @@ export function PdtpSheetTable({
               </TableBody>
             </Table>
           </TableRoot>
+          <Pagination
+            page={currentWeeklyPage}
+            total={totalActivityCount}
+            perPage={INITIAL_ROW_LIMIT}
+            onPage={goToWeeklyPage}
+          />
+          </>
         )
       ) : (
         filteredActivities.length === 0 ? (
@@ -559,7 +598,10 @@ export function PdtpSheetTable({
               <TableHeader>
                 <TableRow>
                   <TableHead className="sticky left-0 z-20 w-12 bg-[var(--color-surface-2)] shadow-[1px_0_0_var(--color-border)]">N°</TableHead>
-                  <TableHead className="sticky left-12 z-20 min-w-[22rem] bg-[var(--color-surface-2)] shadow-[1px_0_0_var(--color-border)]">Actividad</TableHead>
+                  {/* PREV-I01 (D29): bajo `md` sólo el N° queda fijo. Con N° + Actividad
+                      fijos (48 + 352 px) la columna ocupaba todo el ancho de un
+                      teléfono y tapaba "Registrar" por más que se deslizara. */}
+                  <TableHead className="min-w-[22rem] md:sticky md:left-12 md:z-20 md:shadow-[1px_0_0_var(--color-border)]">Actividad</TableHead>
                   <TableHead>Estado</TableHead>
                   {visibleMonths.map((mi) => (
                     <TableHead
@@ -607,7 +649,7 @@ export function PdtpSheetTable({
                           <TableCell className={`sticky left-0 z-10 bg-[var(--color-surface)] group-hover:bg-[var(--color-surface-2)] font-mono text-xs text-[var(--color-text-faint)] shadow-[1px_0_0_var(--color-border)] ${rowPy}`}>
                             {activity.n}
                           </TableCell>
-                          <TableCell className={`sticky left-12 z-10 bg-[var(--color-surface)] group-hover:bg-[var(--color-surface-2)] shadow-[1px_0_0_var(--color-border)] ${rowPy}`}>
+                          <TableCell className={`md:sticky md:left-12 md:z-10 md:bg-[var(--color-surface)] md:group-hover:bg-[var(--color-surface-2)] md:shadow-[1px_0_0_var(--color-border)] ${rowPy}`}>
                             <div className="max-w-[36rem]">
                               <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
                               <details className="mt-1 text-[11px] text-[var(--color-text-muted)]">
@@ -692,6 +734,8 @@ export function PdtpSheetTable({
                               <div className="flex flex-wrap items-center gap-1.5">
                                 {canExecute && <PdtpExecutionForm
                                   activityId={activity.id}
+                                  activityN={activity.n}
+                                  activityName={activity.activity}
                                   worksiteId={worksiteId}
                                   year={view.program.year}
                                   defaultMonth={registerCell.month}
