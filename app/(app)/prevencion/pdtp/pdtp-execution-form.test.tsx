@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 
 const mockMarkPdtpExecutionFormAction = vi.hoisted(() => vi.fn(async () => ({ ok: true })))
 const mockToast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
@@ -64,6 +64,14 @@ describe("PdtpExecutionForm", () => {
     render(<PdtpExecutionForm activityId="a" worksiteId="ws-1" year={2026} mechanism="constancia" />)
     fireEvent.click(screen.getByRole("button", { name: "Registrar" }))
     expect(screen.queryByText(/cuenta una sola vez/i)).toBeNull()
+  })
+
+  it("el diálogo dice qué actividad se está registrando: N° y nombre (PREV-I01)", () => {
+    render(<PdtpExecutionForm activityId="a" worksiteId="ws-1" year={2026} activityN={42} activityName="Inspección de extintores" />)
+    fireEvent.click(screen.getByRole("button", { name: "Registrar" }))
+    const dialog = screen.getByRole("dialog")
+    expect(within(dialog).getByRole("heading", { name: /N°42/ })).toBeTruthy()
+    expect(within(dialog).getByText("Inspección de extintores")).toBeTruthy()
   })
 
   it("rechaza en el cliente un archivo sobre 25 MB sin intentar subirlo (PREV-I09)", async () => {
