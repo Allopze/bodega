@@ -7,9 +7,10 @@ y la migración 0329.
 
 Qué trae respecto de `main`, que termina en la migración 0328:
 
-- **Cinco migraciones, de 0329 a 0333** (sección 1). Tres agregan columnas o índices. 0331
+- **Seis migraciones, de 0329 a 0334** (sección 1). Tres agregan columnas o índices. 0331
   cambia los estados posibles de un "No aplica". 0333 cambia tres FK de `CASCADE` a `RESTRICT`
-  y crea dos índices sin `CONCURRENTLY`.
+  y crea dos índices sin `CONCURRENTLY`. 0334 (rama `prevencion/c07-m02b`) crea dos tablas
+  nuevas y vacías: solicitudes de "no aplica"/cancelación de ocurrencias y registro de subidas.
 - Los cambios de comportamiento de las tandas T0 a T7b y de la revisión final. El detalle
   está en `qa/reports/2026-09-26-prevencion-*.md`, `qa/reports/2026-09-27-prevencion-*.md` y
   `qa/reports/2026-09-27-prevencion-revision-final.md`. Lo que ven los usuarios está en la
@@ -30,7 +31,9 @@ que hacer **antes**, las contingencias, la vuelta atrás y la verificación **de
 | **0332** | Columna `worksites.deactivated_at`: una faena dada de baja debe los meses anteriores a su baja al cerrar el año | Ninguno: es aditiva y nula | — |
 | **0333** | `ON DELETE RESTRICT` (antes `CASCADE`) en `pdtp_executions.activity_id`, `pdtp_execution_deviations.activity_id` y `pdtp_period_closures.program_id`. Índices `pdtp_executions_activity_worksite_year_idx` y `pdtp_obligations_activity_worksite_idx`. Borra el índice redundante `pdtp_executions_scheduled_instance_idx` | **Bloqueos.** Recrear cada FK valida la tabla hija completa con bloqueo sobre ella y sobre la padre. `CREATE INDEX` sin `CONCURRENTLY` bloquea las escrituras de `pdtp_executions` y `pdtp_obligations` mientras construye. La validación no puede fallar: la FK con `CASCADE` ya impedía los huérfanos | Q6: tamaño de las tablas |
 
-Las cinco se aplican en la misma corrida del servicio `migrate`, en orden, cada una en su
+| **0334** | Tablas nuevas `pdtp_scheduled_instance_outcome_requests` (el "no aplica" y la cancelación de una ocurrencia programada nacen en revisión, PREV-C07) y `pdtp_evidence_uploads` (dueño y sha256 de cada archivo subido a `storage/pdtp-evidence/`, PREV-M02-B). Sólo `CREATE TABLE`, FK e índices sobre las tablas nuevas; no toca filas existentes ni trae `DROP` | **Mínimo.** Las FK nuevas toman un bloqueo breve (`SHARE ROW EXCLUSIVE`) sobre `users`, `worksites`, `pdtp_activities` y `pdtp_scheduled_instances`, pero validan tablas vacías. Riesgo de comportamiento, no de datos: (a) desde el despliegue un "no aplica"/cancelación de ocurrencia no cambia el % hasta aprobarse; (b) un archivo subido **antes** del despliegue y todavía sin vincular ya no se puede vincular (regla heredada, ver sección 3) | Después: `select count(*) from pdtp_scheduled_instance_outcome_requests` y `from pdtp_evidence_uploads` en 0 justo tras migrar; la segunda crece con cada subida. Los "no aplica" y cancelaciones de ocurrencias anteriores siguen con su estado (no se revisan de nuevo) |
+
+Las seis se aplican en la misma corrida del servicio `migrate`, en orden, cada una en su
 transacción. Ninguna trae un `DROP` sin `IF EXISTS`, porque `npm run db:verify-migrations`
 lo exige.
 
@@ -163,8 +166,13 @@ ellos:
   persona con permiso de aprobación lo acepte o lo rechace. Mientras tanto, la semana sigue
   contando en el denominador y el mes no se puede cerrar. Los "No aplica" que ya estaban
   vigentes antes del despliegue siguen activos.
-- **Cancelar una ocurrencia programada** exige un motivo de al menos 10 caracteres, igual que
-  "No aplica".
+- **"No aplica" y cancelación de una ocurrencia programada (0334).** Igual que el de una
+  semana: exige un motivo de al menos 10 caracteres, queda **en revisión** y la ocurrencia sigue
+  contando hasta que otra persona con permiso de aprobación lo acepte en Aprobaciones ("No aplica
+  por revisar"). El "no aplica" no se puede declarar sobre una ocurrencia que todavía no ocurre;
+  la cancelación sí (por ejemplo, una ocurrencia duplicada). Quien lo pidió puede retirarlo desde
+  la misma sección. Un mes con solicitudes pendientes no se puede cerrar. Los "no aplica" y
+  cancelaciones de ocurrencias anteriores al despliegue quedan como están.
 - **Cierre del año.** El año se cierra formalmente desde el 1 de enero siguiente, con un
   motivo, cuando cada faena tiene cerrados todos sus meses. Si en un mes se activó una revisión
   (v2), ese mes se cierra **en cada versión**: la anterior cierra sus semanas y la nueva las
@@ -173,6 +181,12 @@ ellos:
   el envío llega después y el archivo ya no está, el formulario avisa que "ya no está en el
   almacenamiento" y hay que volver a subirlo. Un archivo ya vinculado a una faena no se puede
   reutilizar en otra: hay que subirlo de nuevo desde la faena que corresponde.
+- **Archivos recién subidos (0334).** Un archivo que todavía no se envió sólo lo puede usar
+  quien lo subió y en la faena para la que lo subió. Si otra persona o desde otra faena intenta
+  usarlo, el formulario pide subir uno propio. **Los archivos subidos antes del despliegue y que
+  todavía no se habían enviado no se pueden usar**: el aviso dice que "no tiene registro de
+  subida" y hay que volver a subirlos. Los que ya estaban vinculados a una faena se siguen
+  pudiendo reenviar desde esa misma faena.
 - **Obligaciones.** Un caso registrado a mano siempre queda como manual y lleva motivo. Los
   casos integrados los abre sólo el sistema, desde el módulo de origen.
 
@@ -236,6 +250,13 @@ nuevo. Era cierto con 0329 sola. **Con 0330, 0331, 0332 y 0333 ya no lo es:**
   - Ignora los `rejected`, que es lo correcto.
 - **0330.** El código viejo no conoce el cierre anual: un año cerrado volvería a aceptar
   registros y acreditaciones.
+- **0334.** El código viejo no conoce las solicitudes: un "no aplica" o una cancelación de
+  ocurrencia vuelven a aplicarse al instante y sin revisión, y las solicitudes pendientes quedan
+  sin bandeja (no se pierden; se revisan al volver al código nuevo, aunque la ocurrencia pudo
+  cambiar entretanto y la aprobación lo rechazará si ya tiene resultado). El código viejo tampoco
+  escribe el registro de subidas: los archivos que se suban mientras corra quedarán "sin registro"
+  para el código nuevo y habrá que volver a subirlos si no alcanzaron a vincularse. Las tablas
+  nuevas no molestan al código viejo.
 - **0332.** El código viejo no fija `deactivated_at` al dar de baja una faena. Después, el
   cierre anual no le exigirá a esa faena los meses anteriores a la baja.
 
@@ -312,11 +333,13 @@ de acreditación) y tampoco escribe.
 1. Los 11 crons de la sección 5 aparecen en `cron_runs` en su primera ventana.
 2. El workflow de GitHub Actions `prevention-inspection-programs.yml` ya no existe, así que la
    materialización de inspecciones corre una sola vez al día, desde el contenedor.
-3. El `created_at` máximo de `drizzle.__drizzle_migrations` es `1790477821468` (0333), y Q5
+3. El `created_at` máximo de `drizzle.__drizzle_migrations` es `1790517415741` (0334; si se
+   despliega sin la rama `prevencion/c07-m02b`, `1790477821468`, 0333), y Q5
    muestra los mismos conteos que antes del despliegue (todavía no hay estados nuevos).
 4. Recorrido corto en `/prevencion/pdtp`: registrar sin archivo muestra el mensaje de evidencia
    obligatoria; declarar un "No aplica" lo deja "en revisión"; el tablero y el listado de
-   programas muestran la misma cifra.
+   programas muestran la misma cifra. Subir un archivo deja una fila en `pdtp_evidence_uploads`
+   con la faena y el usuario de quien subió.
 5. Rechazar con motivo los envíos de Q2 que correspondan.
 6. Correr el reporte B01 (sección 5) y revisarlo con Prevención.
 
