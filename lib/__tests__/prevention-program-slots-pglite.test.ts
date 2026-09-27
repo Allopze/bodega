@@ -436,6 +436,60 @@ describe("casillas por año (PREV-C03.4, D22)", () => {
     expect(drills.every((row) => row.year === NEXT_YEAR && row.worksiteId === WORKSITE_ID)).toBe(true)
   })
 
+  // T6 (revisión adversarial de T5): la siembra sólo insertaba. Una v2 que
+  // mueve el simulacro de abril a mayo dejaba viva la casilla de abril.
+  it("activar una v2 que mueve una actividad quita la casilla pendiente que ya no planifica, sin tocar lo resuelto ni lo de v1", async () => {
+    const { ensurePreventionProgramSlotsForProgram } = await import("@/lib/services/prevention-program-slots")
+    const v1 = await seedActiveProgram(NEXT_YEAR, [[1, 1], [4, 3], [6, 2], [10, 3]])
+    await ensurePreventionProgramSlotsForProgram(v1)
+    // Junio quedó declarado no aplicable: es un hecho, no se borra.
+    await inMemoryDb.update(schema.preventionEmergencyDrillSlots).set({
+      status: "not_applicable", notApplicableAt: new Date().toISOString(), notApplicableByUserId: USER_ID,
+      notApplicableReason: "La faena estuvo detenida todo junio",
+    }).where(eq(schema.preventionEmergencyDrillSlots.slotKey, "m06-w2"))
+
+    const now = new Date().toISOString()
+    const v2 = `pdtp-${NEXT_YEAR}-v2`
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "closed" }).where(eq(schema.pdtpPrograms.id, v1))
+    await inMemoryDb.insert(schema.pdtpPrograms).values({
+      id: v2, year: NEXT_YEAR, version: 2, status: "active", title: `PDTP ${NEXT_YEAR} v2`,
+      elaboratedByName: "P", elaboratedByTitle: "P", appliesToAllWorksites: true,
+      activatedAt: `${NEXT_YEAR}-03-10T15:00:00.000Z`, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.pdtpActivities).values({
+      id: `${v2}-a-084`, programId: v2, n: 84, activity: "Simulacros", program: "Emergencias",
+      responsibleSlugs: [], responsibleDisplay: "PRF", sourceSheetRow: 1, createdAt: now, updatedAt: now,
+    })
+    for (const [month, week] of [[5, 3], [10, 3]] as const) {
+      await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+        id: `sched-${v2}-${month}-${week}`, activityId: `${v2}-a-084`, year: NEXT_YEAR, month, week, plannedQuantity: 1, sourceColumn: "P",
+      })
+    }
+    const counts = await ensurePreventionProgramSlotsForProgram(v2)
+
+    const drills = await inMemoryDb.select().from(schema.preventionEmergencyDrillSlots)
+    expect(drills.map((row) => `${row.slotKey}:${row.status}`).sort()).toEqual([
+      // Enero es de la ventana de v1: la planificó la versión que regía.
+      "m01-w1:pending",
+      "m05-w3:pending",
+      "m06-w2:not_applicable",
+      "m10-w3:pending",
+    ])
+    expect(counts.staleRemoved).toBe(1)
+  })
+
+  it("en enero, con el año anterior cerrado y el nuevo sin activar, una faena nueva no recibe casillas del año cerrado", async () => {
+    const { ensurePreventionProgramSlotsForWorksiteTx, resolveProgramSlotYearsForWorksite } = await import("@/lib/services/prevention-program-slots")
+    const programId = await seedActiveProgram(2026, [[3, 3], [9, 3]])
+    await inMemoryDb.update(schema.pdtpPrograms).set({
+      status: "closed", yearClosedAt: new Date().toISOString(), yearClosedByUserId: USER_ID, yearCloseReason: "Cierre anual 2026 revisado",
+    }).where(eq(schema.pdtpPrograms.id, programId))
+    await seedActiveProgram(NEXT_YEAR, [[4, 3]], "draft")
+    expect(await resolveProgramSlotYearsForWorksite(inMemoryDb, WORKSITE_ID)).toEqual([])
+    await ensurePreventionProgramSlotsForWorksiteTx(inMemoryDb, WORKSITE_ID)
+    expect(await inMemoryDb.select().from(schema.preventionEmergencyDrillSlots)).toHaveLength(0)
+  })
+
   it("una faena que no opera en el programa del año no recibe sus casillas", async () => {
     const { ensurePreventionProgramSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
     const programId = await seedActiveProgram(NEXT_YEAR, [[4, 3]])

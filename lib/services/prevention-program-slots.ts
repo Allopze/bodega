@@ -27,12 +27,13 @@
  * comportamiento anterior.
  */
 
-import { and, desc, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, notExists, notInArray, or, type AnyColumn, type SQL } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   pdtpActivities,
   pdtpActivitySchedule,
   pdtpPrograms,
+  preventionAlcotestSlotEvidence,
   preventionAlcotestSlots,
   preventionEmergencyDrillSlots,
   preventionGrdMeetingSlots,
@@ -55,7 +56,7 @@ import {
 } from "@/lib/prevention/program-slots-2026"
 import { isTrainingCatalogYear } from "@/lib/prevention/training-occurrences-catalog"
 import { MINSAL_PROTOCOLS } from "@/lib/prevention/minsal-protocols"
-import { effectiveActivationFor, pdtpActivationPeriod } from "./pdtp/period"
+import { effectiveActivationFor, pdtpActivationPeriod, type PdtpPeriod } from "./pdtp/period"
 import { loadWorksiteAddedAt } from "./pdtp/helpers"
 import { listPdtpProgramOperatingWorksiteIds } from "./pdtp/worksites"
 import { legacyPdtpActivityNumberForCatalogId } from "./pdtp-adapters/catalog-activities-2026"
@@ -161,7 +162,16 @@ export async function resolveProgramSlotYearsForWorksite(client: Client, worksit
   const activePrograms = await client.select({ id: pdtpPrograms.id, year: pdtpPrograms.year })
     .from(pdtpPrograms)
     .where(eq(pdtpPrograms.status, "active"))
-  if (activePrograms.length === 0) return [PROGRAM_SLOT_BASE_YEAR]
+  // Sin ningún programa activo se siembra el año base, que es el arranque de la
+  // plataforma y de los fixtures. Pero no si ese año ya se cerró formalmente
+  // (T6): en enero, entre el cierre del año anterior y la activación del
+  // nuevo, una faena nueva recibía casillas de un año que nadie puede cumplir.
+  if (activePrograms.length === 0) {
+    const [closedBase] = await client.select({ id: pdtpPrograms.id }).from(pdtpPrograms)
+      .where(and(eq(pdtpPrograms.year, PROGRAM_SLOT_BASE_YEAR), isNotNull(pdtpPrograms.yearClosedAt)))
+      .limit(1)
+    return closedBase ? [] : [PROGRAM_SLOT_BASE_YEAR]
+  }
   const years = new Set<number>()
   for (const program of activePrograms) {
     const operating = await listPdtpProgramOperatingWorksiteIds(program.id, client)
@@ -340,6 +350,74 @@ export type PreventionProgramSlotCounts = {
   hygieneMeasurements: number
 }
 
+/** Al activar, además: casillas pendientes que la planificación vigente ya no pide. */
+export type PreventionProgramActivationSlotCounts = PreventionProgramSlotCounts & { staleRemoved: number }
+
+/** Desde el período (mes, semana) inclusive. */
+function fromPeriod(table: { scheduledMonth: AnyColumn; scheduledWeek: AnyColumn }, period: PdtpPeriod): SQL {
+  return or(
+    gt(table.scheduledMonth, period.month),
+    and(eq(table.scheduledMonth, period.month), gte(table.scheduledWeek, period.week)),
+  )!
+}
+
+/**
+ * T6 (revisión de T5): la siembra sólo inserta (`onConflictDoNothing`). Una
+ * revisión v+1 que mueve el simulacro de abril a mayo creaba la casilla de
+ * mayo y dejaba viva la de abril, que el programa vigente ya no pide.
+ *
+ * Quita las casillas **pendientes, sin hecho y sin evidencia** del año que la
+ * planificación vigente ya no pide, y sólo desde la semana de activación de
+ * esa planificación: lo anterior lo planificó la versión que regía entonces y
+ * sigue siendo exigible en su ventana (D24). Nunca toca una casilla cumplida,
+ * no hecha o declarada no aplicable: ésas son hechos. Borrar y no "cancelar"
+ * porque las tablas no tienen ese estado (y una migración está fuera de T6);
+ * una casilla pendiente sin hecho ni evidencia no guarda nada que perder.
+ */
+async function removeStaleProgramSlotsTx(
+  client: Client,
+  worksiteId: string,
+  year: number,
+  schedules: ProgramSlotSchedules,
+  since: PdtpPeriod,
+): Promise<number> {
+  const keys = (slots: readonly ProgramSlot[]) => slots.map((slot) => slot.slotKey)
+  const families = [
+    { table: preventionEmergencyDrillSlots, keys: keys(schedules.drills), fact: preventionEmergencyDrillSlots.drillId },
+    { table: preventionGrdMeetingSlots, keys: keys(schedules.grdMeetings), fact: preventionGrdMeetingSlots.meetingId },
+    { table: preventionHygieneMeasurementSlots, keys: keys(schedules.hygieneMeasurements), fact: preventionHygieneMeasurementSlots.measurementId },
+  ] as const
+  let removed = 0
+  for (const family of families) {
+    const deleted = await client.delete(family.table).where(and(
+      eq(family.table.worksiteId, worksiteId),
+      eq(family.table.year, year),
+      eq(family.table.status, "pending"),
+      isNull(family.fact),
+      family.keys.length > 0 ? notInArray(family.table.slotKey, [...family.keys]) : undefined,
+      fromPeriod(family.table, since),
+    )).returning({ id: family.table.id })
+    removed += deleted.length
+  }
+  for (const [kind, slots] of [["control", schedules.alcotestControl], ["envio", schedules.alcotestDispatch]] as const) {
+    const wanted = keys(slots)
+    const deleted = await client.delete(preventionAlcotestSlots).where(and(
+      eq(preventionAlcotestSlots.worksiteId, worksiteId),
+      eq(preventionAlcotestSlots.year, year),
+      eq(preventionAlcotestSlots.kind, kind),
+      eq(preventionAlcotestSlots.status, "pending"),
+      isNull(preventionAlcotestSlots.testId),
+      isNull(preventionAlcotestSlots.dispatchId),
+      wanted.length > 0 ? notInArray(preventionAlcotestSlots.slotKey, wanted) : undefined,
+      fromPeriod(preventionAlcotestSlots, since),
+      notExists(client.select({ id: preventionAlcotestSlotEvidence.id }).from(preventionAlcotestSlotEvidence)
+        .where(eq(preventionAlcotestSlotEvidence.slotId, preventionAlcotestSlots.id))),
+    )).returning({ id: preventionAlcotestSlots.id })
+    removed += deleted.length
+  }
+  return removed
+}
+
 /**
  * Todas las casillas del programa para una faena, en una llamada.
  *
@@ -390,13 +468,23 @@ export async function ensurePreventionProgramSlotsForWorksiteTx(
  * transacción por faena, igual que el backfill, para que una falla no descarte
  * lo ya sembrado. Idempotente.
  */
-export async function ensurePreventionProgramSlotsForProgram(programId: string): Promise<PreventionProgramSlotCounts> {
-  const [program] = await db.select({ year: pdtpPrograms.year }).from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
-  const totals: PreventionProgramSlotCounts = { training: 0, drills: 0, grdMeetings: 0, alcotest: 0, protocols: 0, hygieneMeasurements: 0 }
+export async function ensurePreventionProgramSlotsForProgram(programId: string): Promise<PreventionProgramActivationSlotCounts> {
+  const [program] = await db.select({ year: pdtpPrograms.year, activatedAt: pdtpPrograms.activatedAt, status: pdtpPrograms.status })
+    .from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+  const totals: PreventionProgramActivationSlotCounts = { training: 0, drills: 0, grdMeetings: 0, alcotest: 0, protocols: 0, hygieneMeasurements: 0, staleRemoved: 0 }
   if (!program) return totals
+  const since = pdtpActivationPeriod(program.activatedAt)
   for (const worksiteId of await listPdtpProgramOperatingWorksiteIds(programId)) {
-    const counts = await db.transaction((tx) => ensurePreventionProgramSlotsForWorksiteTx(tx, worksiteId, { years: [program.year] }))
-    for (const key of Object.keys(totals) as Array<keyof PreventionProgramSlotCounts>) totals[key] += counts[key]
+    const counts = await db.transaction(async (tx) => {
+      const seeded = await ensurePreventionProgramSlotsForWorksiteTx(tx, worksiteId, { years: [program.year] })
+      // Sólo la versión vigente decide qué sobra, y sólo desde su activación.
+      const schedules = program.status === "active" && since?.year === program.year
+        ? await resolveProgramSlotSchedules(tx, program.year)
+        : null
+      const staleRemoved = schedules && since ? await removeStaleProgramSlotsTx(tx, worksiteId, program.year, schedules, since) : 0
+      return { ...seeded, staleRemoved }
+    })
+    for (const key of Object.keys(totals) as Array<keyof PreventionProgramActivationSlotCounts>) totals[key] += counts[key]
   }
   return totals
 }
