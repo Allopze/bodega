@@ -16,6 +16,7 @@ import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 import { addPdtpChangeLogEntry, assertWorksiteAccess, isActivePdtpWorksite, type WorksiteScope } from "./helpers"
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 import { mergePdtpEvidence } from "./executions"
+import { assertPdtpEvidenceLinkable } from "./evidence-references"
 import { hashPdtpEvidenceFiles } from "./evidence-files"
 import { pdtpExecutionHistorySnapshot, pdtpNextSubmissionMetadata, recordPdtpExecutionHistory } from "./execution-history"
 import { isPdtpActivityEffectiveAt } from "./retirement"
@@ -281,6 +282,7 @@ export async function reportPdtpObligation(input: {
     // PREV-B03: el reporte rechazado es evidencia del intento anterior. Antes
     // se reemplazaba y su archivo quedaba sin referencia (inaccesible y
     // candidato al GC). Se aplica la misma fusión append-only de la planilla.
+    await assertPdtpEvidenceLinkable(tx, { paths: [evidenceUrl, ...photos], worksiteId: obligation.worksiteId, scope: input.scope })
     const merged = mergePdtpEvidence(existing, {
       activityId: obligation.activityId,
       worksiteId: obligation.worksiteId,

@@ -7,6 +7,8 @@ import { getPdtpExecutionConnector } from "./connectors"
 import { assertPdtpPeriodOpen } from "./period-guard"
 import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 import { PDTP_REASON_MIN_LENGTH } from "@/lib/prevention/pdtp"
+import { assertPdtpEvidenceLinkable } from "./evidence-references"
+import type { WorksiteScope } from "./helpers"
 
 export type PdtpScheduledInstanceAction = "submit" | "complete" | "not_applicable" | "cancel"
 
@@ -232,6 +234,11 @@ export async function recordPdtpScheduledInstanceOutcome(input: {
   userId?: string | null
   evidenceRef?: string | null
   reason?: string | null
+  /**
+   * Alcance de faenas de quien registra. Decide si una evidencia ya vinculada
+   * a otra faena puede reutilizarse; sin alcance, sólo la propia faena.
+   */
+  scope?: WorksiteScope
 }, client: ScheduledExecutionClient = db) {
   assertPdtpScheduledInstanceManualAction(input.action)
   const now = new Date().toISOString()
@@ -255,6 +262,7 @@ export async function recordPdtpScheduledInstanceOutcome(input: {
       if (!evidenceFile || !existsSync(evidenceFile)) {
         throw new Error("La evidencia adjunta no existe en el almacenamiento autorizado.")
       }
+      await assertPdtpEvidenceLinkable(tx, { paths: [input.evidenceRef], worksiteId: row.worksiteId, scope: input.scope ?? [] })
     }
     const metadata = {
       ...sourceMetadata(row.sourceMetadataJson),

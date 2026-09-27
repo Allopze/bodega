@@ -16,6 +16,7 @@ import { assertPdtpPeriodOpen } from "./period-guard"
 import { syncPdtpScheduledInstanceFromExecution } from "./scheduled-execution"
 import { todayInChile } from "@/lib/utils"
 import { hashPdtpEvidenceFiles } from "./evidence-files"
+import { assertPdtpEvidenceLinkable } from "./evidence-references"
 import {
   pdtpExecutionHistorySnapshot,
   pdtpNextSubmissionMetadata,
@@ -220,6 +221,13 @@ export async function markPdtpExecution(
       throw new Error("Esta semana ya tiene un registro enviado por otra persona que espera aprobación. No se puede reemplazar: pide a quien lo registró que lo corrija, o que se rechace para volver a enviarlo.")
     }
 
+    // Revisión final 2026-09-27: una ruta que ya es de otra faena no se
+    // vincula aquí (la descarga autoriza por la fila que la referencia).
+    await assertPdtpEvidenceLinkable(tx, {
+      paths: [data.evidenceUrl, ...(data.evidencePhotos ?? [])],
+      worksiteId: data.worksiteId,
+      scope,
+    })
     const { evidenceUrl: nextEvidenceUrl, evidencePhotos: dedupedPhotos } = mergePdtpEvidence(existing, data)
 
     // Ronda de corrección (2026-09-23): gate GENÉRICO para CUALQUIER actividad

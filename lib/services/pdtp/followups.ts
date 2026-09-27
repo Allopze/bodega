@@ -16,6 +16,7 @@ import {
   transitionCapaActionWithClient,
 } from "@/lib/services/prevention-capa"
 import { classifyEvidence } from "@/lib/validation/evidence-contract"
+import { assertPdtpEvidenceLinkable } from "./evidence-references"
 
 function capaAccess(userId: string) {
   return {
@@ -49,6 +50,14 @@ export async function addFollowup(input: PdtpFollowupInput, userId: string) {
     if (!initialCapa) throw new Error("Acción no encontrada.")
     let capa = initialCapa
     const access = capaAccess(userId)
+    // Revisión final 2026-09-27: la evidencia de una acción del plan PDTP se
+    // descarga por la CAPA que la referencia; una ruta ya vinculada a otra
+    // faena no se adopta aquí.
+    await assertPdtpEvidenceLinkable(tx, {
+      paths: [input.evidenciaUrl, ...(input.evidenciaPhotos ?? [])],
+      worksiteId: initialCapa.worksiteId,
+      scope: [],
+    })
 
     /*
      * P4 (auditoría 2026-09-14): esto etiquetaba `evidenciaUrl` como

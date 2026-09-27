@@ -10,8 +10,8 @@
  * descarga sólo miraba ejecuciones (PREV-I05: la evidencia CAPA daba 404) y el
  * GC no miraba instancias. Este módulo es la fuente única (PREV-I13-C).
  */
-import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm"
-import { db } from "@/db"
+import { and, eq, inArray, ne, or, sql, type SQL } from "drizzle-orm"
+import { db, type Tx } from "@/db"
 import { auditLog, pdtpExecutions, pdtpScheduledInstances, preventionCapaActions, preventionCapaEvidence } from "@/db/schema"
 import { capaEsDelPdtp } from "./capa-view"
 import { PDTP_EVIDENCE_PATH_PREFIX } from "./evidence-href"
@@ -164,4 +164,79 @@ export async function collectPdtpEvidenceReferences(): Promise<PdtpEvidenceRefer
 
 export function isPdtpEvidencePath(path: string): boolean {
   return path.startsWith(PDTP_EVIDENCE_PATH_PREFIX)
+}
+
+/**
+ * Faenas distintas de `worksiteId` cuyas filas ya referencian `path`, en las
+ * cuatro fuentes (ejecuciones, CAPA, instancias e historial de envíos).
+ */
+async function foreignPdtpEvidenceWorksites(client: Tx | typeof db, path: string, worksiteId: string): Promise<Set<string>> {
+  const quoted = JSON.stringify(path)
+  const [executions, capaRows, instances, historyRows] = await Promise.all([
+    client.select({ worksiteId: pdtpExecutions.worksiteId })
+      .from(pdtpExecutions)
+      .where(and(
+        or(
+          eq(pdtpExecutions.evidenceUrl, path),
+          sql`${pdtpExecutions.evidencePhotos} @> ${JSON.stringify([path])}::jsonb`,
+        ),
+        ne(pdtpExecutions.worksiteId, worksiteId),
+      )),
+    client.select({ worksiteId: preventionCapaActions.worksiteId })
+      .from(preventionCapaEvidence)
+      .innerJoin(preventionCapaActions, eq(preventionCapaActions.id, preventionCapaEvidence.actionId))
+      .where(and(eq(preventionCapaEvidence.reference, path), ne(preventionCapaActions.worksiteId, worksiteId))),
+    client.select({ worksiteId: pdtpScheduledInstances.worksiteId })
+      .from(pdtpScheduledInstances)
+      .where(and(
+        sql`${pdtpScheduledInstances.sourceMetadataJson}->>'evidenceRef' = ${path}`,
+        ne(pdtpScheduledInstances.worksiteId, worksiteId),
+      )),
+    // El historial guarda los estados como JSON en texto: se busca la ruta
+    // entre comillas, que es como la serializa `recordModuleHistory`.
+    client.select({ worksiteId: auditLog.worksiteId })
+      .from(auditLog)
+      .where(and(
+        eq(auditLog.entityType, PDTP_EXECUTION_HISTORY_ENTITY),
+        or(sql`strpos(${auditLog.oldState}, ${quoted}) > 0`, sql`strpos(${auditLog.newState}, ${quoted}) > 0`),
+        sql`${auditLog.worksiteId} IS DISTINCT FROM ${worksiteId}`,
+      )),
+  ])
+  const foreign = new Set<string>()
+  for (const row of [...executions, ...capaRows, ...instances, ...historyRows]) {
+    // Una fila de bitácora sin faena no dice de quién es: se trata como ajena.
+    foreign.add(row.worksiteId ?? "")
+  }
+  return foreign
+}
+
+/**
+ * Revisión final 2026-09-27 (toma de evidencia entre faenas): la descarga
+ * autoriza por la fila que referencia el archivo (`findPdtpEvidenceOwner`), así
+ * que vincular una ruta que ya es de otra faena equivalía a apropiarse del
+ * archivo: quien opera la faena B escribía en su celda la ruta de un PDF de la
+ * faena A y después lo descargaba como propio.
+ *
+ * Al vincular se exige que ninguna fila de **otra** faena referencie la ruta,
+ * salvo que esa faena también esté en el alcance de quien vincula (ya podía
+ * descargarlo). Volver a vincular un archivo propio —reenvío, fusión
+ * append-only de la evidencia anterior— no cambia nada: sus filas son de la
+ * misma faena. Un archivo recién subido todavía no tiene filas y pasa.
+ *
+ * Sólo mira el directorio PDTP: es el único que sirve la descarga PDTP.
+ * Corre con el cliente de la transacción que escribe la referencia.
+ */
+export async function assertPdtpEvidenceLinkable(
+  client: Tx | typeof db,
+  input: { paths: ReadonlyArray<string | null | undefined>; worksiteId: string; scope: WorksiteScope },
+): Promise<void> {
+  const paths = [...new Set(input.paths.filter((path): path is string => typeof path === "string" && isPdtpEvidencePath(path)))]
+  for (const path of paths) {
+    const foreign = await foreignPdtpEvidenceWorksites(client, path, input.worksiteId)
+    const outOfScope = [...foreign].filter((worksiteId) => input.scope !== "all" && (!worksiteId || !input.scope.includes(worksiteId)))
+    if (outOfScope.length > 0) {
+      const name = path.slice(PDTP_EVIDENCE_PATH_PREFIX.length)
+      throw new Error(`El archivo de evidencia "${name}" ya está vinculado a otra faena y no se puede usar aquí. Sube el archivo desde esta faena.`)
+    }
+  }
 }
