@@ -140,8 +140,8 @@ describeIf("CAPA backfill and concurrency on real Postgres", () => {
     }
 
     const concurrent = await Promise.allSettled([
-      declarePpaCorrection({ ppaId: "ppa-workflow-test", expectedPpaVersion: 1, expectedCapaVersion: 1 }, correctAccess),
-      declarePpaCorrection({ ppaId: "ppa-workflow-test", expectedPpaVersion: 1, expectedCapaVersion: 1 }, correctAccess),
+      declarePpaCorrection({ ppaId: "ppa-workflow-test", expectedPpaVersion: 1, expectedCapaVersion: 1, declaration: "Se instaló la baranda y se señalizó el área" }, correctAccess),
+      declarePpaCorrection({ ppaId: "ppa-workflow-test", expectedPpaVersion: 1, expectedCapaVersion: 1, declaration: "Se instaló la baranda y se señalizó el área" }, correctAccess),
     ])
     expect(concurrent.filter((result) => result.status === "fulfilled")).toHaveLength(1)
     expect(concurrent.filter((result) => result.status === "rejected")).toHaveLength(1)
@@ -170,6 +170,7 @@ describeIf("CAPA backfill and concurrency on real Postgres", () => {
 
     await declarePpaCorrection({
       ppaId: "ppa-workflow-test", expectedPpaVersion: 3, expectedCapaVersion: 4,
+      declaration: "Se instaló la baranda y se señalizó el área",
     }, correctAccess)
     await verifyPpaCorrection({
       ppaId: "ppa-workflow-test", expectedPpaVersion: 4, expectedCapaVersion: 6,
