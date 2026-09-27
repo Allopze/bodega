@@ -145,6 +145,22 @@ El script sólo lee (`reportPdtpPeriodClosureDrift`, probado en `pdtp-period-clo
 Imprime cuántos cierres revisó y cuáles quedarían desviados. Si son pocos, basta comunicarlo a
 la jefatura. Si son muchos, conviene evaluar una foto `schemaVersion 2` antes de desplegar.
 
+**Q8 (I03). Actividades que quedarán solo para Prevención.** Desde I03, sin asignación nominal registra una actividad quien tenga un rol responsable de ella (`responsible_slugs` → catálogo activo → `role_name` u `operated_by_role_name`); Prevención y administración registran cualquiera. Las actividades que devuelve esta consulta no tienen un responsable mapeado a un rol, así que después del despliegue solo Prevención podrá registrarlas. Revisarlas con la jefatura y completar el catálogo o las asignaciones antes de desplegar:
+
+```sql
+select p.year, p.version, a.n, a.activity, a.responsible_display
+from pdtp_activities a
+join pdtp_programs p on p.id = a.program_id and p.status = 'active'
+where a.status = 'active'
+  and not exists (
+    select 1
+    from jsonb_array_elements_text(case when jsonb_typeof(a.responsible_slugs) = 'array' then a.responsible_slugs else '[]'::jsonb end) s(slug)
+    join pdtp_responsible_catalog c on c.slug = s.slug and c.is_active
+    where coalesce(c.role_name, c.operated_by_role_name) is not null
+  )
+order by p.year, a.n;
+```
+
 ## 3. Antes: comunicación a los usuarios
 
 La jefatura de Prevención avisa a los responsables **48 h antes**. Esto es lo que cambia para
