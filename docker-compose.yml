@@ -60,6 +60,10 @@ services:
       # de los enlaces antiguos sin vencimiento (ver .env.example).
       - PREVENTION_ACK_TTL_DAYS=${PREVENTION_ACK_TTL_DAYS:-}
       - PREVENTION_ACK_LEGACY_UNTIL=${PREVENTION_ACK_LEGACY_UNTIL:-}
+      # Llave AES-256 (base64, 32 bytes) del dominio sensible de Prevención:
+      # salud ocupacional, casos reservados y privacidad. Vacía = dominio deshabilitado.
+      - PREVENTION_DATA_ENCRYPTION_KEY=${PREVENTION_DATA_ENCRYPTION_KEY:-}
+      - PREVENTION_DATA_ENCRYPTION_KEY_VERSION=${PREVENTION_DATA_ENCRYPTION_KEY_VERSION:-v1}
       - APP_URL=${APP_URL:?err}
       - PDF_RENDER_ORIGIN=${PDF_RENDER_ORIGIN:-http://127.0.0.1:3000}
       # Archivado de documentos generados en Cloudreve. Esta llave solo existe

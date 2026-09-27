@@ -67,4 +67,14 @@ describe("backup-orchestrator ENV_WHITELIST", () => {
   it("no guarda la passphrase con la que se cifra el propio snapshot", () => {
     expect(orchestratorWhitelist()).not.toContain("BACKUP_ENCRYPTION_PASSPHRASE")
   })
+
+  it("el servicio app recibe la llave del dominio sensible de Prevención", () => {
+    // Sin ella, salud ocupacional, casos reservados y privacidad responden
+    // "el dominio sensible está deshabilitado" (prevention-field-encryption.ts).
+    // La guía de restauración la trata como obligatoria, pero el compose nunca
+    // se la pasaba al contenedor.
+    const vars = composeAppEnvVars()
+    expect(vars).toContain("PREVENTION_DATA_ENCRYPTION_KEY")
+    expect(vars).toContain("PREVENTION_DATA_ENCRYPTION_KEY_VERSION")
+  })
 })

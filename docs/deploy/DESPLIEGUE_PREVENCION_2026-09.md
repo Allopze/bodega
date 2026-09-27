@@ -232,6 +232,19 @@ una fecha válida impide que la aplicación arranque, igual que `PREVENTION_ACK_
 rotar `AUTH_SECRET` sin dejar el anterior en `AUTH_SECRET_PREVIOUS`, lo que también cierra las
 sesiones.
 
+### 3.2 Llave del dominio sensible de Prevención
+
+Hasta esta rama, `docker-compose.yml` no le pasaba `PREVENTION_DATA_ENCRYPTION_KEY` (ni su versión) al contenedor `app`. Sin esa llave, salud ocupacional, casos reservados y privacidad responden "el dominio sensible está deshabilitado". Ahora `app` la recibe, y el respaldo de configuración la guarda.
+
+Antes de desplegar, en el servidor, sin imprimir el valor:
+
+```sh
+grep -c '^PREVENTION_DATA_ENCRYPTION_KEY=.\+' "$PROD_DIR/.env"
+```
+
+- **`1`:** hay llave, y el dominio sensible **se activa** con este despliegue. Avisar a Prevención y verificar después que la ficha de salud ocupacional abre.
+- **`0`:** no hay llave y el dominio sigue deshabilitado, como hasta ahora. Generar una solo si se decide activarlo: 32 bytes en base64, que se guardan en el gestor de secretos y se respaldan. Perder la llave hace ilegibles los datos cifrados.
+
 ## 4. Contingencias y vuelta atrás
 
 `deploy-prod.sh` imprime al inicio `imagen: <IMAGE> (rollback: <PREV_IMAGE>)`. Por defecto son
