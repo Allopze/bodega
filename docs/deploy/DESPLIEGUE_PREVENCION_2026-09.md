@@ -138,8 +138,9 @@ La jefatura de Prevención avisa a los responsables **48 h antes**:
 `pdtp-evidence-gc` barre los archivos huérfanos de `storage/pdtp-evidence/` y
 `storage/risk-map/`: los que ninguna fila de la base referencia (ejecuciones, plan
 de acción, historial de envíos, instancias programadas y planos) y que tienen más
-de una hora. La ventana de gracia no baja de una hora aunque se pida menos (la
-ruta responde 400).
+de 24 horas. La ventana de gracia no baja de 24 horas aunque se pida menos (la
+ruta responde 400); la revisión final del 2026-09-27 la subió desde una hora
+porque en terreno se sube la foto y se envía el formulario horas después.
 
 - **Agenda:** diario a las 04:30, después del respaldo nocturno (03:00 UTC), en
   `scripts/cron-runner.mjs` y en el crontab del servicio `cron`.

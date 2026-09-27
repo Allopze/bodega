@@ -49,7 +49,7 @@ vi.mock("@/lib/services/sst-alerts", () => ({ checkOverdueWeeklyAlerts: ok }))
 vi.mock("@/lib/services/deadline-reminders", () => ({ runDeadlineReminders: ok }))
 vi.mock("@/lib/services/pdtp/evidence-integrity", () => ({ scanPdtpEvidenceIntegrity: ok }))
 vi.mock("@/lib/services/pdtp/evidence-gc", () => ({
-  MIN_ORPHAN_AGE_MS: 60 * 60 * 1000,
+  MIN_ORPHAN_AGE_MS: 24 * 60 * 60 * 1000,
   cleanupPdtpEvidenceOrphans: (...args: unknown[]) => Reflect.apply(mocks.pdtpGc, null, args),
   cleanupRiskMapOrphans: (...args: unknown[]) => Reflect.apply(mocks.riskMapGc, null, args),
 }))
@@ -216,6 +216,13 @@ describe("cron pdtp-evidence-gc (W5-GC)", () => {
     const { status, body } = await callRoute("?olderThanMs=60000")
     expect(status).toBe(400)
     expect(body).toMatchObject({ ok: false })
+    expect(mocks.pdtpGc).not.toHaveBeenCalled()
+  })
+
+  it("rechaza una ventana de 2 horas: el mínimo es de 24 (revisión final, hallazgo 2)", async () => {
+    const { status, body } = await callRoute(`?olderThanMs=${2 * 60 * 60 * 1000}`)
+    expect(status).toBe(400)
+    expect(body.error).toMatch(/24 horas/)
     expect(mocks.pdtpGc).not.toHaveBeenCalled()
   })
 

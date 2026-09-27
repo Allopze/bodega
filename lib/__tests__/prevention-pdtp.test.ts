@@ -2837,25 +2837,21 @@ describe("prevention PDTP service", () => {
     expect(second.evidenceUrl).toBe("storage/pdtp-evidence/preservada.pdf")
   })
 
-  it("H-B7: descarta evidenceUrl cuyo archivo físico no existe", async () => {
+  it("H-B7: una evidenceUrl nueva cuyo archivo físico no existe hace fallar el envío (revisión final, hallazgo 2)", async () => {
     const { markPdtpExecution } = await import("@/lib/services/prevention-pdtp")
     await loadActiveCatalog()
 
     const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 40))
 
     // No escribimos el archivo en disco → resolvePdtpEvidenceFile
-    // retorna un path que existsSync rechaza. `evidencePhotos` sí apunta a un
-    // archivo real (Task 9: la actividad exige evidencia real, y esta prueba
-    // es sobre `evidenceUrl` específicamente, no sobre si hay o no evidencia).
-    const row = await markPdtpExecution({
+    // retorna un path que existsSync rechaza. Antes se guardaba la ejecución
+    // sin esa ruta, en silencio; ahora el envío falla y lo dice.
+    await expect(markPdtpExecution({
       activityId: activity!.id, worksiteId: "ws-1", year: 2026, month: 6, week: 3,
       executedQuantity: 1,
       evidenceUrl: "storage/pdtp-evidence/inexistente.pdf",
       evidencePhotos: [GENERIC_EVIDENCE_URL],
-    }, "user-1", ["ws-1"])
-
-    // Se guarda la ejecución pero sin evidenceUrl (se loggea warning)
-    expect(row.evidenceUrl).toBeNull()
+    }, "user-1", ["ws-1"])).rejects.toThrow(/"inexistente\.pdf" ya no está en el almacenamiento/)
   })
 
   it("creates and copies a non-2026 program without inheriting the workbook as product structure", async () => {

@@ -13,7 +13,7 @@
  * - PREV-I03: con una asignación nominal vigente, sólo la persona asignada
  *   registra la actividad en esa faena.
  */
-import { mkdirSync, writeFileSync } from "node:fs"
+import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path, { join } from "node:path"
 import { PGlite } from "@electric-sql/pglite"
@@ -124,6 +124,31 @@ describe("PREV-B02 — evidencia obligatoria para 'Se hizo'", () => {
   it("una ruta con formato válido pero sin archivo físico no cuenta como evidencia", async () => {
     await expect(markPdtpExecution(cell({ evidenceUrl: "storage/pdtp-evidence/no-existe.pdf" }), USER_A, "all"))
       .rejects.toThrow(/adjunta un archivo/i)
+  })
+
+  /* Revisión final 2026-09-27 (hallazgo 2): el GC puede haber borrado un
+   * upload que se vinculó tarde. Una ruta NUEVA sin archivo ya no se descarta
+   * en silencio —el envío salía con la evidencia de otro intento o sin ella—:
+   * falla y dice qué pasó. */
+  it("una ruta nueva sin archivo físico falla con un mensaje claro, aunque venga otra evidencia real", async () => {
+    const real = evidenceFile("real-con-fantasma.pdf")
+    await expect(markPdtpExecution(cell({ evidenceUrl: "storage/pdtp-evidence/fantasma.pdf", evidencePhotos: [real] }), USER_A, "all"))
+      .rejects.toThrow(/"fantasma\.pdf" ya no está en el almacenamiento/)
+    await expect(markPdtpExecution(cell({ evidenceUrl: real, evidencePhotos: ["storage/pdtp-evidence/foto-fantasma.jpg"] }), USER_A, "all"))
+      .rejects.toThrow(/"foto-fantasma\.jpg" ya no está en el almacenamiento/)
+    expect(await executionRow()).toBeUndefined()
+  })
+
+  it("una ruta ya guardada cuyo archivo desapareció se sigue tolerando al reenviar", async () => {
+    const first = evidenceFile("guardado-y-perdido.pdf")
+    await markPdtpExecution(cell({ evidenceUrl: first }), USER_A, "all")
+    await rejectPdtpExecution((await executionRow())!.id, APPROVER, "Falta la firma", "all")
+    rmSync(join(tmpEvidenceRoot, "pdtp-evidence", "guardado-y-perdido.pdf"))
+    const second = evidenceFile("reemplazo.pdf")
+    const row = await markPdtpExecution(cell({ evidenceUrl: first, evidencePhotos: [second] }), USER_A, "all")
+    expect(row.status).toBe("submitted")
+    expect(row.evidenceUrl).toBe(first)
+    expect(row.evidencePhotos).toEqual([second])
   })
 
   it("acepta la ejecución con un archivo real", async () => {

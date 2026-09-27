@@ -55,7 +55,7 @@ describe("cleanupPdtpEvidenceOrphans", () => {
     writeFileSync(join(tempDir, "pdtp-evidence", orphanOldName), "PDF_OLD")
 
     // Mtime antiguo para orphan-old
-    const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000) // 2h
+    const oldTime = new Date(Date.now() - 25 * 60 * 60 * 1000) // 2h
     const { utimesSync } = await import("node:fs")
     utimesSync(join(tempDir, "pdtp-evidence", orphanOldName), oldTime, oldTime)
 
@@ -116,7 +116,7 @@ describe("cleanupPdtpEvidenceOrphans", () => {
     for (const name of [capaPhotoName, orphanName]) {
       writeFileSync(join(tempDir, "pdtp-evidence", name), "DATA")
     }
-    const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    const oldTime = new Date(Date.now() - 25 * 60 * 60 * 1000)
     const { utimesSync } = await import("node:fs")
     for (const name of [capaPhotoName, orphanName]) {
       utimesSync(join(tempDir, "pdtp-evidence", name), oldTime, oldTime)
@@ -152,7 +152,7 @@ describe("cleanupPdtpEvidenceOrphans", () => {
   it("dryRun=true no elimina archivos", async () => {
     const orphanName = "abc-orphan.pdf"
     writeFileSync(join(tempDir, "pdtp-evidence", orphanName), "PDF_OLD")
-    const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    const oldTime = new Date(Date.now() - 25 * 60 * 60 * 1000)
     const { utimesSync } = await import("node:fs")
     utimesSync(join(tempDir, "pdtp-evidence", orphanName), oldTime, oldTime)
 
@@ -182,7 +182,7 @@ describe("cleanupPdtpEvidenceOrphans", () => {
   it("deja en audit_log lo que borró, con el directorio y el modo", async () => {
     const orphanName = "abc-orphan-audit.pdf"
     writeFileSync(join(tempDir, "pdtp-evidence", orphanName), "PDF_OLD")
-    const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    const oldTime = new Date(Date.now() - 25 * 60 * 60 * 1000)
     const { utimesSync } = await import("node:fs")
     utimesSync(join(tempDir, "pdtp-evidence", orphanName), oldTime, oldTime)
 
@@ -200,7 +200,7 @@ describe("cleanupPdtpEvidenceOrphans", () => {
   it("en modo de prueba audita los candidatos sin borrarlos", async () => {
     const orphanName = "abc-orphan-dry.pdf"
     writeFileSync(join(tempDir, "pdtp-evidence", orphanName), "PDF_OLD")
-    const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    const oldTime = new Date(Date.now() - 25 * 60 * 60 * 1000)
     const { utimesSync, existsSync } = await import("node:fs")
     utimesSync(join(tempDir, "pdtp-evidence", orphanName), oldTime, oldTime)
 
@@ -217,6 +217,24 @@ describe("cleanupPdtpEvidenceOrphans", () => {
     const { cleanupPdtpEvidenceOrphans } = await import("@/lib/services/pdtp/evidence-gc")
     await cleanupPdtpEvidenceOrphans({ olderThanMs: 60 * 60 * 1000 })
     expect(await inMemoryDb.select().from(schema.auditLog)).toHaveLength(0)
+  })
+
+  /* Revisión final 2026-09-27 (hallazgo 2): quien sube en terreno puede
+   * enviar el formulario horas después. Una hora de gracia borraba ese upload
+   * antes del envío; el mínimo es ahora de 24 horas. */
+  it("un upload de hace 2 horas todavía sin vincular no se toca, aunque se pida una hora", async () => {
+    const orphanName = "abc-upload-2h.pdf"
+    writeFileSync(join(tempDir, "pdtp-evidence", orphanName), "PDF")
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    const { utimesSync, existsSync } = await import("node:fs")
+    utimesSync(join(tempDir, "pdtp-evidence", orphanName), twoHoursAgo, twoHoursAgo)
+
+    const { cleanupPdtpEvidenceOrphans, MIN_ORPHAN_AGE_MS } = await import("@/lib/services/pdtp/evidence-gc")
+    expect(MIN_ORPHAN_AGE_MS).toBe(24 * 60 * 60 * 1000)
+    const result = await cleanupPdtpEvidenceOrphans({ olderThanMs: 60 * 60 * 1000 })
+
+    expect(result.deleted).toBe(0)
+    expect(existsSync(join(tempDir, "pdtp-evidence", orphanName))).toBe(true)
   })
 
   it("la ventana de gracia no baja de una hora aunque se pida menos", async () => {
@@ -238,7 +256,7 @@ describe("cleanupPdtpEvidenceOrphans", () => {
     await fs.mkdir(join(tempDir, "risk-map"), { recursive: true })
     const orphanName = "plano-huerfano.png"
     writeFileSync(join(tempDir, "risk-map", orphanName), "PNG")
-    const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    const oldTime = new Date(Date.now() - 25 * 60 * 60 * 1000)
     utimesSync(join(tempDir, "risk-map", orphanName), oldTime, oldTime)
 
     const { cleanupRiskMapOrphans } = await import("@/lib/services/pdtp/evidence-gc")

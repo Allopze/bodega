@@ -381,9 +381,14 @@ function pdtpEvidenceFileExists(url: string): boolean {
  * perderse: así sigue referenciado —descargable y fuera del alcance del GC de
  * huérfanos— aunque el intento vigente traiga otro.
  *
- * H-B7: una ruta nueva sin archivo físico (un upload que falló, una pestaña
- * cerrada) se descarta y se conserva la previa; la BD nunca apunta a archivos
- * inexistentes.
+ * H-B7 / revisión final 2026-09-27 (hallazgo 2): una ruta **nueva** sin
+ * archivo físico (un upload que falló, o que el GC ya barrió porque el envío
+ * llegó tarde) hace fallar el envío con un mensaje claro. Antes se descartaba
+ * en silencio y el intento salía sin esa evidencia, o con la del intento
+ * anterior, sin que nadie se enterara. Una ruta que la celda **ya** tenía
+ * guardada se tolera aunque su archivo haya desaparecido: el escaneo de
+ * integridad la reporta, y no es algo que quien reenvía pueda arreglar.
+ * La BD nunca apunta a un archivo nuevo inexistente.
  *
  * Exportada porque `reportPdtpObligation` aplica la misma regla: reportar de
  * nuevo una obligación rechazada reemplazaba el archivo y el del intento
@@ -394,23 +399,31 @@ export function mergePdtpEvidence(
   data: { activityId: string; worksiteId: string; evidenceUrl?: string; evidencePhotos?: string[] },
 ): { evidenceUrl: string | null; evidencePhotos: string[] } {
   const previousPhotos = Array.isArray(existing?.evidencePhotos) ? existing.evidencePhotos as string[] : []
-  const verifiedNewPhotos = (data.evidencePhotos ?? []).filter(Boolean).filter((url) => {
-    if (pdtpEvidenceFileExists(url)) return true
-    logger.warn({ url }, "[pdtp] foto de evidencia sin archivo físico, descartada")
-    return false
-  })
+  const stored = new Set([existing?.evidenceUrl, ...previousPhotos].filter((url): url is string => Boolean(url)))
+  const assertLinkable = (url: string) => {
+    if (stored.has(url) || pdtpEvidenceFileExists(url)) return
+    logger.warn(
+      { url, activityId: data.activityId, worksiteId: data.worksiteId },
+      "[pdtp] evidencia nueva sin archivo físico: se rechaza el envío",
+    )
+    throw new Error(
+      `El archivo de evidencia "${evidenceFileName(url)}" ya no está en el almacenamiento (la subida falló o expiró antes de enviar). `
+      + "Vuelve a subirlo: adjunta un archivo nuevo y envía otra vez.",
+    )
+  }
+  const newPhotos = (data.evidencePhotos ?? []).filter(Boolean)
+  newPhotos.forEach(assertLinkable)
+  // Lo ya guardado cuyo archivo desapareció no se vuelve a vincular (queda
+  // donde estaba), igual que antes.
+  const verifiedNewPhotos = newPhotos.filter(pdtpEvidenceFileExists)
 
   let evidenceUrl = existing?.evidenceUrl ?? null
   let replaced: string | null = null
   if (data.evidenceUrl) {
+    assertLinkable(data.evidenceUrl)
     if (pdtpEvidenceFileExists(data.evidenceUrl)) {
       if (evidenceUrl && evidenceUrl !== data.evidenceUrl) replaced = evidenceUrl
       evidenceUrl = data.evidenceUrl
-    } else {
-      logger.warn(
-        { evidenceUrl: data.evidenceUrl, activityId: data.activityId, worksiteId: data.worksiteId },
-        "[pdtp] evidenceUrl no se pudo resolver a un archivo físico; se descarta la referencia",
-      )
     }
   }
 

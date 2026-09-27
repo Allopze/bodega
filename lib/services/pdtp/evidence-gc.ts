@@ -15,10 +15,10 @@
  * `collectPdtpEvidenceReferences` (evidence-references.ts), no aquí.
  *
  * Por seguridad, sólo se eliminan archivos más viejos que `olderThanMs`
- * (default y mínimo: 1 hora) para no borrar archivos recién subidos que aún no
+ * (default y mínimo: 24 horas) para no borrar archivos recién subidos que aún no
  * fueron vinculados por `markPdtpExecution` (porque el cliente puede
- * tardar entre el upload y el submit del form). W5-GC (T7a): un valor menor
- * se eleva al mínimo; antes `olderThanMs=0` borraba un upload en curso.
+ * tardar horas entre el upload y el submit del form). W5-GC (T7a): un valor
+ * menor se eleva al mínimo; antes `olderThanMs=0` borraba un upload en curso.
  *
  * Cada corrida que encuentra huérfanos deja una fila en `audit_log`
  * (`storage_orphan_sweep`) con el directorio, el modo y los nombres: el cron
@@ -39,9 +39,9 @@ import { resolveInspectionEvidenceDir, resolvePdtpEvidenceDir, resolveRiskMapDir
 import { logger } from "@/lib/logger"
 import { recordAudit } from "@/lib/audit"
 import { collectPdtpEvidenceReferences } from "./evidence-references"
+import { MIN_ORPHAN_AGE_MS } from "./evidence-gc-policy"
 
-/** Ventana de gracia por omisión y mínima (W5-GC): 1 hora. */
-export const MIN_ORPHAN_AGE_MS = 60 * 60 * 1000
+export { MIN_ORPHAN_AGE_LABEL, MIN_ORPHAN_AGE_MS, ORPHAN_SAMPLE_SIZE, summarizeOrphanCleanup } from "./evidence-gc-policy"
 const DEFAULT_OLDER_THAN_MS = MIN_ORPHAN_AGE_MS
 
 /** Nombres que se guardan por fila de auditoría; el resto se cuenta. */
@@ -61,6 +61,7 @@ export type CleanupPdtpEvidenceOrphansResult = {
   /** Nombres de los archivos eliminados. */
   deletedNames: string[]
 }
+
 
 export type CleanupPdtpEvidenceOrphansOptions = {
   olderThanMs?: number
