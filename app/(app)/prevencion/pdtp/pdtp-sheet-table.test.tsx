@@ -11,8 +11,10 @@ vi.mock("./actions", () => ({
   approvePdtpExecutionAction: vi.fn(),
 }))
 
+const routerReplace = vi.hoisted(() => vi.fn())
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: vi.fn() }),
+  useRouter: () => ({ replace: routerReplace }),
   usePathname: () => "/prevencion/pdtp/actividades",
   useSearchParams: () => new URLSearchParams(),
 }))
@@ -20,6 +22,7 @@ vi.mock("next/navigation", () => ({
 afterEach(() => {
   cleanup()
   window.localStorage.clear()
+  routerReplace.mockClear()
 })
 
 const CURRENT_PERIOD: PdtpPeriod = { year: 2026, month: 7, week: 2 }
@@ -480,22 +483,31 @@ describe("PdtpSheetTable — paginación de la vista anual", () => {
     ) as unknown as PdtpSheetView["activities"]
   }
 
-  it("corta en 30 filas y expande al pulsar el botón", () => {
+  // La anual pagina igual que la semanal (W8): mismo primitivo `Pagination`,
+  // misma página en `?page=`. Antes ofrecía "Mostrar las N", que al expandir
+  // perdía el estado al volver desde una ficha y dejaba 100+ filas con
+  // controles de registro en una sola tabla.
+  it("pagina de a 30 con el mismo primitivo que la semanal y deja llegar a las restantes", () => {
     const view = makeView(makeMany(35))
     render(<PdtpSheetTable view={view} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
 
     expect(screen.getByText("Actividad número 30")).toBeDefined()
     expect(screen.queryByText("Actividad número 31")).toBeNull()
+    expect(screen.queryByRole("button", { name: /Mostrar las/ })).toBeNull()
 
-    const button = screen.getByRole("button", { name: /Mostrar las 35 actividades/ })
-    fireEvent.click(button)
+    fireEvent.click(screen.getByRole("button", { name: "Página siguiente" }))
 
-    // Regresión: la agrupación estaba memoizada con `filteredActivities` como
-    // dependencia, así que al expandir el botón desaparecía pero la tabla seguía
-    // mostrando 30 filas, sin forma de reintentar.
     expect(screen.getByText("Actividad número 31")).toBeDefined()
     expect(screen.getByText("Actividad número 35")).toBeDefined()
-    expect(screen.queryByRole("button", { name: /Mostrar las 35 actividades/ })).toBeNull()
+    expect(screen.queryByText("Actividad número 1")).toBeNull()
+  })
+
+  it("la página viaja en ?page= con router.replace y sin mover el scroll", () => {
+    render(<PdtpSheetTable view={makeView(makeMany(35))} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Ir a página 2" }))
+
+    expect(routerReplace).toHaveBeenCalledWith("/prevencion/pdtp/actividades?page=2", { scroll: false })
   })
 
   it("no pagina cuando el total no supera el límite", () => {
@@ -503,13 +515,12 @@ describe("PdtpSheetTable — paginación de la vista anual", () => {
     render(<PdtpSheetTable view={view} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
 
     expect(screen.getByText("Actividad número 30")).toBeDefined()
-    expect(screen.queryByRole("button", { name: /Mostrar las/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Página siguiente" })).toBeNull()
   })
 
-  it("el contador del botón habla de las filas filtradas, no del total sin filtrar", () => {
+  it("la paginación cuenta las filas filtradas, no el total sin filtrar", () => {
     // 40 actividades: 35 pendientes en julio + 5 ejecutadas. Al filtrar por
-    // "Ejecutadas" quedan 5 filas, así que no debe ofrecerse paginación —antes
-    // `needsPagination` miraba el total sin filtrar y el botón prometía 40.
+    // "Ejecutadas" quedan 5 filas, así que no debe ofrecerse paginación.
     const pending = Array.from({ length: 35 }, (_, i) =>
       makeActivity(`p-${i}`, String(i + 1), `Pendiente ${i + 1}`, ANNUAL_PLAN, ZERO12),
     )
@@ -519,11 +530,11 @@ describe("PdtpSheetTable — paginación de la vista anual", () => {
     const view = makeView([...pending, ...executed] as unknown as PdtpSheetView["activities"])
     render(<PdtpSheetTable view={view} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
 
-    expect(screen.getByRole("button", { name: /Mostrar las 40 actividades/ })).toBeDefined()
+    expect(screen.getByRole("button", { name: "Ir a página 2" })).toBeDefined()
 
     fireEvent.click(screen.getByRole("button", { name: /Ejecutadas/ }))
 
-    expect(screen.queryByRole("button", { name: /Mostrar las/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Página siguiente" })).toBeNull()
     expect(screen.getByText("Ejecutada 1")).toBeDefined()
   })
 })
