@@ -21,6 +21,7 @@ import { hashPdtpEvidenceFiles } from "./evidence-files"
 import { pdtpExecutionHistorySnapshot, pdtpNextSubmissionMetadata, recordPdtpExecutionHistory } from "./execution-history"
 import { isPdtpActivityEffectiveAt } from "./retirement"
 import { assertPdtpActorMayRegister, type PdtpRegistrationActor } from "./registration-authority"
+import { textSearchSql } from "@/lib/adquisiciones/list-query"
 
 export type PdtpObligationOrigin = "manual" | "integration"
 export type PdtpObligationStatus = "pending" | "overdue" | "reported" | "completed" | "cancelled"
@@ -506,6 +507,90 @@ export async function listPdtpObligations(input: {
     )).orderBy(asc(pdtpObligations.dueAt), asc(pdtpActivities.n))
   const now = input.now ?? new Date()
   return rows.map((row) => ({ ...row, effectiveStatus: effectiveStatus(row.obligation.status, row.obligation.dueAt, now) }))
+}
+
+export type PdtpObligationListFilter = "open" | "pending" | "overdue" | "reported"
+
+export type PdtpObligationStatusCounts = { pending: number; overdue: number; reported: number }
+
+/**
+ * Estado efectivo en SQL, espejo exacto de `effectiveStatus`: una `pending`
+ * cuyo plazo ya pasó cuenta como `overdue` aunque el cron todavía no la haya
+ * marcado. Filtrar por el estado guardado dejaría esas filas en "Pendientes".
+ */
+function effectiveStatusSql(now: Date) {
+  const nowIso = now.toISOString()
+  return sql<string>`CASE
+    WHEN ${pdtpObligations.status} = 'pending' AND ${pdtpObligations.dueAt} IS NOT NULL AND ${pdtpObligations.dueAt} < ${nowIso}::timestamptz THEN 'overdue'
+    ELSE ${pdtpObligations.status}
+  END`
+}
+
+/**
+ * PREV-M09: la bandeja de `/prevencion/pdtp/obligaciones`, paginada y filtrada
+ * en la base. `listPdtpObligations` traía todo el trabajo abierto sin límite y
+ * la pantalla filtraba en memoria; sigue existiendo, sin paginar, para quien
+ * necesita el conjunto completo (indicador de demanda, expediente).
+ *
+ * `counts` alimenta los tiles: se calcula con los mismos filtros de faena y
+ * texto, pero sin el de estado, porque cada tile *es* un filtro de estado.
+ */
+export async function listPdtpObligationsPage(input: {
+  scope: WorksiteScope
+  filter?: PdtpObligationListFilter
+  worksiteId?: string
+  search?: string
+  limit: number
+  offset: number
+  now?: Date
+}) {
+  if (input.worksiteId) assertWorksiteAccess(input.worksiteId, input.scope)
+  const emptyCounts: PdtpObligationStatusCounts = { pending: 0, overdue: 0, reported: 0 }
+  if (input.scope !== "all" && input.scope.length === 0) return { rows: [], total: 0, counts: emptyCounts }
+  const now = input.now ?? new Date()
+  const effective = effectiveStatusSql(now)
+  const filter = input.filter ?? "open"
+  const baseWhere = and(
+    inArray(pdtpObligations.status, ["pending", "overdue", "reported"]),
+    input.worksiteId ? eq(pdtpObligations.worksiteId, input.worksiteId) : undefined,
+    input.scope === "all" ? undefined : inArray(pdtpObligations.worksiteId, input.scope),
+    textSearchSql(input.search ?? "", [pdtpActivities.activity, worksites.name, pdtpObligations.sourceType, pdtpObligations.sourceId]),
+  )
+  const where = and(baseWhere, filter === "open" ? undefined : sql`${effective} = ${filter}`)
+
+  const [rows, countRows] = await Promise.all([
+    db.select({
+      obligation: pdtpObligations,
+      activityNumber: pdtpActivities.n,
+      activityName: pdtpActivities.activity,
+      worksiteName: worksites.name,
+    }).from(pdtpObligations)
+      .innerJoin(pdtpActivities, eq(pdtpObligations.activityId, pdtpActivities.id))
+      .innerJoin(worksites, eq(pdtpObligations.worksiteId, worksites.id))
+      .where(where)
+      // `id` desempata: sin un orden total, dos páginas podían repetir o saltarse filas.
+      .orderBy(asc(pdtpObligations.dueAt), asc(pdtpActivities.n), asc(pdtpObligations.id))
+      .limit(input.limit)
+      .offset(input.offset),
+    db.select({ status: effective, count: sql<number>`count(*)::int` })
+      .from(pdtpObligations)
+      .innerJoin(pdtpActivities, eq(pdtpObligations.activityId, pdtpActivities.id))
+      .innerJoin(worksites, eq(pdtpObligations.worksiteId, worksites.id))
+      .where(baseWhere)
+      // Por posición: el CASE lleva `now` como parámetro y repetirlo en el
+      // GROUP BY genera otro placeholder que Postgres no reconoce como igual.
+      .groupBy(sql`1`),
+  ])
+  const counts = { ...emptyCounts }
+  for (const row of countRows) {
+    if (row.status === "pending" || row.status === "overdue" || row.status === "reported") counts[row.status] = Number(row.count)
+  }
+  const total = filter === "open" ? counts.pending + counts.overdue + counts.reported : counts[filter]
+  return {
+    rows: rows.map((row) => ({ ...row, effectiveStatus: effectiveStatus(row.obligation.status, row.obligation.dueAt, now) })),
+    total,
+    counts,
+  }
 }
 
 export async function listPdtpDemandActivities() {

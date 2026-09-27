@@ -149,6 +149,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-execution-integrity.test.ts",
   // PREV-I03 (resto): registra lo propio —asignado o responsable por cargo— salvo Prevención.
   "lib/__tests__/pdtp-registration-authority.test.ts",
+  // PREV-M09: obligaciones paginadas y filtradas en la base.
+  "lib/__tests__/pdtp-obligations-pagination.test.ts",
   // C05-A: la revisión v+1 copia todo el contenido de la actividad.
   "lib/__tests__/pdtp-revision-midyear.test.ts",
   // T6 (PREV-C05-B/C/D): ventanas por versión, consolidación anual y traspaso.
