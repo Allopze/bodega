@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs"
 import path from "node:path"
 import { performance } from "node:perf_hooks"
 import postgres from "postgres"
@@ -268,8 +269,97 @@ async function main() {
         .orderBy(desc(schema.fuelLoads.month))
       return rows.length
     })
+
+    await measurePdtpCompliance(client, db)
   } finally {
     await client.end()
+  }
+}
+
+/**
+ * Bloque PDTP (I12, T7b): el cumplimiento del tablero `/prevencion/pdtp` y de
+ * la ficha del programa sobre 10 faenas × 80 actividades por versión, con dos
+ * versiones del año (`lib/testing/pdtp-compliance-fixture.ts`). Mide los
+ * servicios reales —no una consulta suelta—, así que cuenta también el
+ * abanico de consultas: cada fila dice cuántas hizo la lectura y la mediana
+ * de cinco corridas en caliente, con el mismo SLO que el resto.
+ *
+ * Los servicios leen `@/db`; se les entrega esta misma conexión (con un logger
+ * que cuenta) antes de importarlos, así que nunca abren otra ni leen la
+ * `DATABASE_URL` del entorno.
+ */
+async function measurePdtpCompliance(client: ReturnType<typeof postgres>, db: ReturnType<typeof drizzle<typeof schema>>) {
+  const queries = { count: 0 }
+  const countingDb = drizzle(client, { schema, logger: { logQuery: () => { queries.count += 1 } } })
+  ;(globalThis as { __db?: unknown }).__db = countingDb
+  process.env.DATABASE_URL = databaseUrl
+
+  const { seedPdtpComplianceFixture } = await import("../lib/testing/pdtp-compliance-fixture")
+  const fixture = await seedPdtpComplianceFixture(db as never, { year: 2025, worksiteCount: 10, activityCount: 80, prefix: "pdtpperf" })
+  const compliance = await import("../lib/services/pdtp/compliance")
+  const sheets = await import("../lib/services/pdtp/sheets")
+  const program = fixture.activeProgramId
+  const worksites = fixture.worksiteIds
+  const period = { year: fixture.year, month: 12, week: 4 }
+  const today = { year: fixture.year + 1, month: 1, week: 1 }
+  // La ficha pedía indicador e integral por separado; desde I12, de un solo cálculo.
+  const withIntegral = (compliance as Record<string, unknown>).getPdtpComplianceWithIntegral as
+    ((programId: string, worksiteId: string) => Promise<unknown>) | undefined
+  const ficha = (worksiteId: string) => withIntegral
+    ? withIntegral(program, worksiteId)
+    : Promise.all([compliance.getPdtpComplianceIndicators(program, worksiteId), compliance.getPdtpIntegralCompliance(program, worksiteId)])
+
+  console.log("")
+  console.log(`PDTP: ${worksites.length} faenas × 80 actividades × 2 versiones (${fixture.year}).`)
+  console.log("")
+  console.log("| Lectura PDTP | Consultas | ms (mediana de 5) |")
+  console.log("| --- | ---: | ---: |")
+  const readings: Array<[string, () => Promise<unknown>]> = [
+    ["tablero: cumplimiento consolidado, 10 faenas", () => compliance.getPdtpComplianceIndicatorsForScope(program, worksites, { consolidateYear: true })],
+    ["tablero: avance por eje, 10 faenas", () => compliance.getPdtpComplianceByCategoryForScope(program, worksites)],
+    ["tablero: planilla agregada (atrasadas), 10 faenas", () => sheets.getPdtpAggregatedSheetViewByProgram(program, "pdtp_general", worksites, period, today)],
+    ["tablero: las tres lecturas como la página", async () => {
+      await Promise.all([
+        compliance.getPdtpComplianceIndicatorsForScope(program, worksites, { consolidateYear: true }),
+        compliance.getPdtpComplianceByCategoryForScope(program, worksites),
+      ])
+      await sheets.getPdtpAggregatedSheetViewByProgram(program, "pdtp_general", worksites, period, today)
+    }],
+    ["ficha: indicador + integral de una faena", () => ficha(worksites[0]!)],
+    ["inicio: año consolidado de una faena", () => compliance.getPdtpYearComplianceIndicators(program, worksites[0]!)],
+  ]
+  // Comparación de cifras entre dos versiones del código sobre este mismo
+  // conjunto: `PERF_PDTP_DUMP=archivo.json` guarda los resultados completos.
+  if (process.env.PERF_PDTP_DUMP) {
+    const dump: Record<string, unknown> = {
+      scope: await compliance.getPdtpComplianceIndicatorsForScope(program, worksites, { consolidateYear: true }),
+      scopeV1: await compliance.getPdtpComplianceIndicatorsForScope(fixture.v1ProgramId, worksites),
+      category: await compliance.getPdtpComplianceByCategoryForScope(program, worksites),
+      sheet: await sheets.getPdtpAggregatedSheetViewByProgram(program, "pdtp_general", worksites, period, today),
+    }
+    for (const worksiteId of worksites) {
+      dump[`indicators.${worksiteId}`] = await compliance.getPdtpComplianceIndicators(program, worksiteId)
+      dump[`integral.${worksiteId}`] = await compliance.getPdtpIntegralCompliance(program, worksiteId)
+      dump[`year.${worksiteId}`] = await compliance.getPdtpYearComplianceIndicators(program, worksiteId)
+    }
+    writeFileSync(process.env.PERF_PDTP_DUMP, JSON.stringify(dump))
+  }
+  for (const [label, fn] of readings) {
+    await fn()
+    const times: number[] = []
+    let count = 0
+    for (let run = 0; run < 5; run++) {
+      queries.count = 0
+      const start = performance.now()
+      await fn()
+      times.push(performance.now() - start)
+      count = queries.count
+    }
+    const median = times.sort((a, b) => a - b)[2]!
+    console.log(`| ${label} | ${count.toLocaleString("es-CL")} | ${median.toFixed(1)} |`)
+    if (median > DEFAULT_SLO_MS) {
+      throw new Error(`PERF SLO exceeded for "${label}": ${median.toFixed(1)}ms > ${DEFAULT_SLO_MS}ms`)
+    }
   }
 }
 

@@ -71,7 +71,7 @@ import {
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 import { assertPdtpProgramAcceptsPeriod } from "./version-window"
 import { buildPdtpRe36Document, type PdtpRe36Document, type PdtpRe36DeviationRow } from "./re36-document"
-import { getPdtpComplianceIndicators, getPdtpIntegralCompliance, cutPdtpComplianceIndicatorsToMonth, pdtpCountedExecuted, type PdtpComplianceIndicators, type PdtpIntegralCompliance } from "./compliance"
+import { getPdtpComplianceWithIntegral, cutPdtpComplianceIndicatorsToMonth, pdtpCountedExecuted, type PdtpComplianceIndicators, type PdtpIntegralCompliance } from "./compliance"
 import { getPdtpManagementReport, type PdtpManagementReport } from "./management-report"
 import { currentPdtpPeriod, pdtpActivationPeriod } from "./period"
 import { pdtpMonthLabel as monthLabel } from "./period-guard"
@@ -266,7 +266,7 @@ export async function buildPdtpPeriodClosureSnapshot(input: {
 
   const asOf = pdtpPeriodCutoffIso(input.year, input.month)
 
-  const [re36, indicators, integral, managementReport] = await Promise.all([
+  const [re36, { indicators, integral }, managementReport] = await Promise.all([
     buildPdtpRe36Document({
       programId: input.programId,
       worksiteId: input.worksiteId,
@@ -274,8 +274,8 @@ export async function buildPdtpPeriodClosureSnapshot(input: {
       asOf,
       cutoffMonth: input.month,
     }),
-    getPdtpComplianceIndicators(input.programId, input.worksiteId),
-    getPdtpIntegralCompliance(input.programId, input.worksiteId),
+    // I12: indicador e integral de un solo cálculo, mismas cifras.
+    getPdtpComplianceWithIntegral(input.programId, input.worksiteId),
     getPdtpManagementReport({
       programId: input.programId,
       worksiteId: input.worksiteId,

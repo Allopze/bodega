@@ -98,6 +98,9 @@ export type PdtpSubjectRosterResolution = {
   explanation: string
 }
 
+/** El padrón sin la nómina nominal: lo que el cálculo del indicador necesita. */
+export type PdtpSubjectRosterSummary = Omit<PdtpSubjectRosterResolution, "members">
+
 function monthBounds({ year, month }: PdtpSubjectPeriod): { from: string; to: string } {
   const from = `${year}-${String(month).padStart(2, "0")}-01`
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
@@ -260,20 +263,23 @@ function currentSurveillanceCycle(
  * motivo real sí descuenta, como siempre.
  */
 function countExpuestosGes(worksiteId: string): Promise<number> {
-  const today = todayInChile()
   return countOne(db.select({ count: sql<number>`count(distinct ${preventionExposureGroupMembers.workerId})::int` })
     .from(preventionExposureGroupMembers)
     .innerJoin(preventionExposureGroups, eq(preventionExposureGroups.id, preventionExposureGroupMembers.groupId))
-    .where(and(
-      eq(preventionExposureGroups.worksiteId, worksiteId),
-      eq(preventionExposureGroups.surveillanceRequired, true),
-      eq(preventionExposureGroups.isActive, true),
-      isNull(preventionExposureGroupMembers.leftOn),
-      or(
-        notExists(currentSurveillanceCycle((status) => eq(status, "exempt"), today, { excludePlaceholderExemption: true })),
-        exists(currentSurveillanceCycle((status) => ne(status, "exempt"), today)),
-      ),
-    )))
+    .where(and(eq(preventionExposureGroups.worksiteId, worksiteId), expuestosGesMembership(todayInChile()))))
+}
+
+/** Membresía que es padrón de vigilancia (ver `countExpuestosGes`), sin la faena. */
+function expuestosGesMembership(today: string) {
+  return and(
+    eq(preventionExposureGroups.surveillanceRequired, true),
+    eq(preventionExposureGroups.isActive, true),
+    isNull(preventionExposureGroupMembers.leftOn),
+    or(
+      notExists(currentSurveillanceCycle((status) => eq(status, "exempt"), today, { excludePlaceholderExemption: true })),
+      exists(currentSurveillanceCycle((status) => ne(status, "exempt"), today)),
+    ),
+  )
 }
 
 /** Vehículos y equipos activos de la faena. Padrón de las inspecciones de equipos. */
@@ -330,16 +336,7 @@ async function resolveCapabilityRoster(
   capabilityCodes: readonly string[] | null | undefined,
 ): Promise<PdtpSubjectRosterResolution> {
   const codes = normalizeCapabilityCodes(capabilityCodes)
-  if (codes.length === 0) {
-    return {
-      source: "trabajadores_capacidad",
-      status: "not_configured",
-      count: 0,
-      capabilityCodes: [],
-      members: [],
-      explanation: "La actividad no tiene capacidades configuradas para construir su padrón.",
-    }
-  }
+  if (codes.length === 0) return { ...CAPABILITY_NOT_CONFIGURED, members: [] }
 
   const inheritedRows = await db.select({
     workerId: workers.id,
@@ -421,16 +418,38 @@ async function resolveCapabilityRoster(
 
   const members = [...byWorker.values()].sort((left, right) =>
     left.workerName.localeCompare(right.workerName) || left.workerId.localeCompare(right.workerId))
-  const count = members.length
+  return { ...capabilityRosterSummary(codes, members.length), members }
+}
+
+/** Lo que dice el padrón por capacidad según cuántos trabajadores lo componen. */
+function capabilityRosterSummary(codes: string[], count: number): PdtpSubjectRosterSummary {
   return {
     source: "trabajadores_capacidad",
     status: count > 0 ? "resolved" : "pending_classification",
     count,
     capabilityCodes: codes,
-    members,
     explanation: count > 0
       ? `${countOf(count, "trabajador activo", "trabajadores activos")} de la faena ${count === 1 ? "cumple" : "cumplen"} al menos una capacidad configurada.`
       : "La faena no tiene trabajadores activos clasificados con las capacidades configuradas.",
+  }
+}
+
+const CAPABILITY_NOT_CONFIGURED: PdtpSubjectRosterSummary = {
+  source: "trabajadores_capacidad",
+  status: "not_configured",
+  count: 0,
+  capabilityCodes: [],
+  explanation: "La actividad no tiene capacidades configuradas para construir su padrón.",
+}
+
+/** Lo que dice el padrón de una fuente que sólo cuenta sujetos. */
+function countRosterSummary(source: PdtpSubjectSource, count: number): PdtpSubjectRosterSummary {
+  return {
+    source,
+    status: count > 0 ? "resolved" : "pending_classification",
+    count,
+    capabilityCodes: [],
+    explanation: `${countOf(count, "sujeto resuelto", "sujetos resueltos")} desde la fuente ${source}.`,
   }
 }
 
@@ -458,14 +477,7 @@ export async function resolvePdtpSubjectRoster(
     case "trabajadores_nuevos": count = await countTrabajadoresNuevos(worksiteId, period); break
     default: return null
   }
-  return {
-    source,
-    status: count > 0 ? "resolved" : "pending_classification",
-    count,
-    capabilityCodes: [],
-    members: [],
-    explanation: `${countOf(count, "sujeto resuelto", "sujetos resueltos")} desde la fuente ${source}.`,
-  }
+  return { ...countRosterSummary(source, count), members: [] }
 }
 
 /**
@@ -481,4 +493,175 @@ export async function resolvePdtpSubjectCount(
   options: PdtpSubjectRosterOptions = {},
 ): Promise<number | null> {
   return (await resolvePdtpSubjectRoster(source, worksiteId, period, options))?.count ?? null
+}
+
+/**
+ * I12: el padrón de varias faenas y actividades con una consulta por fuente.
+ *
+ * Antes el indicador preguntaba por cada actividad de cobertura en cada faena,
+ * y por las de flujo además mes por mes (12 consultas por actividad y faena).
+ * Acá cada fuente pedida se cuenta **agrupada por faena** —y la de flujo, por
+ * faena y mes— con las mismas condiciones que `resolvePdtpSubjectRoster`; las
+ * de capacidad, una vez por conjunto de capacidades. `get` devuelve lo mismo
+ * que `resolvePdtpSubjectRoster` sin la nómina nominal (`members`), que el
+ * indicador no usa. Lo fija `pdtp-compliance-performance.test.ts`.
+ */
+export type PdtpSubjectRosterBatch = {
+  get(
+    source: string | null,
+    worksiteId: string,
+    period: PdtpSubjectPeriod,
+    options?: PdtpSubjectRosterOptions,
+  ): PdtpSubjectRosterSummary | null
+}
+
+export async function loadPdtpSubjectRosterBatch(
+  requests: ReadonlyArray<{ source: string | null; capabilityCodes?: readonly string[] | null }>,
+  worksiteIds: readonly string[],
+  year: number,
+): Promise<PdtpSubjectRosterBatch> {
+  const worksites = [...new Set(worksiteIds)]
+  const sources = new Set(requests.map((request) => request.source).filter((source): source is string => source !== null))
+  const codeSets = new Map<string, string[]>()
+  for (const request of requests) {
+    if (request.source !== "trabajadores_capacidad") continue
+    const codes = normalizeCapabilityCodes(request.capabilityCodes)
+    if (codes.length > 0) codeSets.set(codes.join(","), codes)
+  }
+  const countsBySource = new Map<string, Map<string, number>>()
+  const flowCounts = new Map<string, number>()
+  const capabilityCounts = new Map<string, Map<string, number>>()
+  const tally = (rows: Array<{ worksiteId: string | null; count: number }>) =>
+    new Map(rows.filter((row) => row.worksiteId !== null).map((row) => [row.worksiteId!, row.count]))
+
+  if (worksites.length > 0) {
+    await Promise.all([
+      sources.has("dotacion") && db.select({ worksiteId: workers.worksiteId, count: sql<number>`count(*)::int` }).from(workers)
+        .where(and(inArray(workers.worksiteId, worksites), eq(workers.isActive, true)))
+        .groupBy(workers.worksiteId)
+        .then((rows) => countsBySource.set("dotacion", tally(rows))),
+      sources.has("extintores") && db.select({ worksiteId: preventionEmergencyResources.worksiteId, count: sql<number>`count(*)::int` })
+        .from(preventionEmergencyResources)
+        .innerJoin(preventionEmergencyResourceTypes, eq(preventionEmergencyResourceTypes.id, preventionEmergencyResources.typeId))
+        .where(and(
+          inArray(preventionEmergencyResources.worksiteId, worksites),
+          eq(preventionEmergencyResourceTypes.resourceClass, "extinguisher"),
+          sql`${preventionEmergencyResources.status} <> 'out_of_service'`,
+        ))
+        .groupBy(preventionEmergencyResources.worksiteId)
+        .then((rows) => countsBySource.set("extintores", tally(rows))),
+      sources.has("expuestos_ges") && db.select({
+        worksiteId: preventionExposureGroups.worksiteId,
+        count: sql<number>`count(distinct ${preventionExposureGroupMembers.workerId})::int`,
+      })
+        .from(preventionExposureGroupMembers)
+        .innerJoin(preventionExposureGroups, eq(preventionExposureGroups.id, preventionExposureGroupMembers.groupId))
+        .where(and(inArray(preventionExposureGroups.worksiteId, worksites), expuestosGesMembership(todayInChile())))
+        .groupBy(preventionExposureGroups.worksiteId)
+        .then((rows) => countsBySource.set("expuestos_ges", tally(rows))),
+      sources.has("equipos") && db.select({ worksiteId: fuelVehicles.worksiteId, count: sql<number>`count(*)::int` }).from(fuelVehicles)
+        .where(and(inArray(fuelVehicles.worksiteId, worksites), eq(fuelVehicles.isActive, true)))
+        .groupBy(fuelVehicles.worksiteId)
+        .then((rows) => countsBySource.set("equipos", tally(rows))),
+      // Flujo: el mes sale de los mismos límites por mes que la consulta
+      // individual (`monthBounds`, comparación de texto en la base); una fecha
+      // que no cae en ningún mes queda sin cubeta y no se cuenta, igual que
+      // antes.
+      sources.has("trabajadores_nuevos") && (() => {
+        const months = Array.from({ length: 12 }, (_, index) => ({ month: index + 1, ...monthBounds({ year, month: index + 1 }) }))
+        const bucket = sql<number | null>`case ${sql.join(months.map(({ month, from, to }) =>
+          sql`when ${sstEvaluations.fechaEvaluacion} >= ${from} and ${sstEvaluations.fechaEvaluacion} <= ${to} then ${month}::int`), sql` `)} end`
+        return db.select({
+          worksiteId: sstEvaluations.worksiteId,
+          month: bucket,
+          count: sql<number>`count(distinct ${sstEvaluations.workerId})::int`,
+        })
+          .from(sstEvaluations)
+          .where(and(
+            inArray(sstEvaluations.worksiteId, worksites),
+            eq(sstEvaluations.definicionCode, "trabajador_nuevo"),
+            eq(sstEvaluations.estado, "cerrado"),
+            gte(sstEvaluations.fechaEvaluacion, months[0]!.from),
+            lte(sstEvaluations.fechaEvaluacion, months[11]!.to),
+          ))
+          // Por posición: la expresión del mes lleva parámetros y no se puede repetir tal cual.
+          .groupBy(sql`1`, sql`2`)
+          .then((rows) => {
+            for (const row of rows) {
+              if (row.month !== null) flowCounts.set(`${row.worksiteId}:${Number(row.month)}`, row.count)
+            }
+          })
+      })(),
+      ...[...codeSets.entries()].map(async ([key, codes]) => {
+        capabilityCounts.set(key, await countCapabilityRosterByWorksite(worksites, codes))
+      }),
+    ])
+  }
+
+  return {
+    get(source, worksiteId, period, options = {}) {
+      if (source === "trabajadores_capacidad") {
+        const codes = normalizeCapabilityCodes(options.capabilityCodes)
+        if (codes.length === 0) return CAPABILITY_NOT_CONFIGURED
+        const counts = capabilityCounts.get(codes.join(","))
+        if (!counts) throw new Error(`Padrón por capacidad no cargado: ${codes.join(",")}.`)
+        return capabilityRosterSummary(codes, counts.get(worksiteId) ?? 0)
+      }
+      if (source === null || !(PDTP_SUBJECT_SOURCES as readonly string[]).includes(source)) return null
+      if (!sources.has(source) || !worksites.includes(worksiteId)) {
+        throw new Error(`Padrón no cargado: ${source} en ${worksiteId}.`)
+      }
+      if (source === "trabajadores_nuevos") {
+        if (period.year !== year) throw new Error(`Padrón de flujo cargado para ${year}, no para ${period.year}.`)
+        return countRosterSummary(source, flowCounts.get(`${worksiteId}:${period.month}`) ?? 0)
+      }
+      return countRosterSummary(source as PdtpSubjectSource, countsBySource.get(source)?.get(worksiteId) ?? 0)
+    },
+  }
+}
+
+/**
+ * Cuántos trabajadores de cada faena componen el padrón por capacidad: las
+ * mismas dos ramas que `resolveCapabilityRoster` (herencia de cargo sin
+ * override, e inclusiones individuales), unidas por trabajador.
+ */
+async function countCapabilityRosterByWorksite(worksiteIds: string[], codes: string[]): Promise<Map<string, number>> {
+  const [inheritedRows, includedRows] = await Promise.all([
+    db.select({ workerId: workers.id, worksiteId: workers.worksiteId })
+      .from(workers)
+      .innerJoin(workerPositions, eq(workerPositions.id, workers.positionId))
+      .innerJoin(workerPositionCapabilities, eq(workerPositionCapabilities.positionId, workers.positionId))
+      .innerJoin(workerCapabilities, eq(workerCapabilities.id, workerPositionCapabilities.capabilityId))
+      .leftJoin(workerCapabilityOverrides, and(
+        eq(workerCapabilityOverrides.workerId, workers.id),
+        eq(workerCapabilityOverrides.capabilityId, workerCapabilities.id),
+      ))
+      .where(and(
+        inArray(workers.worksiteId, worksiteIds),
+        eq(workers.isActive, true),
+        eq(workerCapabilities.isActive, true),
+        inArray(workerCapabilities.code, codes),
+        isNull(workerCapabilityOverrides.id),
+      )),
+    db.select({ workerId: workers.id, worksiteId: workers.worksiteId })
+      .from(workerCapabilityOverrides)
+      .innerJoin(workers, eq(workers.id, workerCapabilityOverrides.workerId))
+      .innerJoin(workerCapabilities, eq(workerCapabilities.id, workerCapabilityOverrides.capabilityId))
+      .leftJoin(workerPositions, eq(workerPositions.id, workers.positionId))
+      .where(and(
+        inArray(workers.worksiteId, worksiteIds),
+        eq(workers.isActive, true),
+        eq(workerCapabilities.isActive, true),
+        eq(workerCapabilityOverrides.mode, "include"),
+        inArray(workerCapabilities.code, codes),
+      )),
+  ])
+  const workersBySite = new Map<string, Set<string>>()
+  for (const row of [...inheritedRows, ...includedRows]) {
+    if (!row.worksiteId) continue
+    const set = workersBySite.get(row.worksiteId) ?? new Set<string>()
+    set.add(row.workerId)
+    workersBySite.set(row.worksiteId, set)
+  }
+  return new Map([...workersBySite.entries()].map(([worksiteId, set]) => [worksiteId, set.size]))
 }

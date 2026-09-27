@@ -116,6 +116,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/pending-purchase-queue.test.ts",
   "lib/__tests__/pdtp-coverage-r2.test.ts",
   "lib/__tests__/pdtp-compliance-zero.test.ts",
+  // I12 (T7b): cifras doradas y presupuesto de consultas del cumplimiento PDTP.
+  "lib/__tests__/pdtp-compliance-performance.test.ts",
   // Tarea 3.2: desvíos por celda aplicados en la costura única
   // (loadProgramScheduleAndExecutions) — indicador, RE-36, exclusión mutua
   // con ejecuciones y no-alteración de la huella firmada.

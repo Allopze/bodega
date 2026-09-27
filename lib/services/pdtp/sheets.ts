@@ -3,7 +3,7 @@ import { db } from "@/db"
 import { pdtpActivities, pdtpActivitySchedule, pdtpExecutionDeviations, pdtpExecutions, pdtpPrograms, pdtpProgramWorksites, pdtpSheetActivities, pdtpSheets, preventionInspectionRuns } from "@/db/schema"
 import { MONTH_LABELS } from "./constants"
 import { SHEET_EXPORT_NAMES } from "@/lib/services/pdtp-adapters/sheet-meta-2026"
-import { assertWorksiteAccess, emptyMonthlyTotals, loadProgramScheduleAndExecutions, resolveSheetForProgram } from "./helpers"
+import { assertWorksiteAccess, emptyMonthlyTotals, loadProgramScheduleAndExecutions, loadProgramScheduleAndExecutionsForWorksites, resolveSheetForProgram } from "./helpers"
 import type { WorksiteScope } from "./helpers"
 import type { PdtpSheetCode } from "@/lib/services/prevention-pdtp-catalog"
 import type { ReportData, ReportCell, ReportSheet } from "@/lib/reports/export"
@@ -24,7 +24,8 @@ import {
   type PdtpActivityStatusOptions,
   type PdtpPeriod,
 } from "./period"
-import { filterPdtpRowsBeforeSuccessor, loadPdtpVersionWindow } from "./version-window"
+import { filterPdtpRowsBeforeSuccessor } from "./version-window"
+import { loadPdtpProgramForRequest, loadPdtpVersionWindowForRequest } from "./request-cache"
 import { effectiveApprovedExecutionsByCell, pdtpApplyScheduledInstanceCutoff, pdtpCountedExecuted } from "./compliance"
 
 /**
@@ -235,7 +236,8 @@ export async function getPdtpAggregatedSheetViewByProgram(
   /** Hoy, para el corte de lo vencido (`pdtpOverdueCutoffMonth`). */
   today: PdtpPeriod = currentPdtpPeriod(),
 ): Promise<PdtpAggregatedSheetView | null> {
-  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+  // I12: deduplicada por request con el indicador (`request-cache.ts`).
+  const program = await loadPdtpProgramForRequest(programId)
   if (!program) return null
   // La misma lectura trae la incorporación de cada faena: el corte de
   // exigibilidad es por faena (`effectiveActivationFor`), una sola consulta
@@ -258,14 +260,17 @@ export async function getPdtpAggregatedSheetViewByProgram(
   const activityIds = memberships.map((membership) => membership.activityId)
   const [activityRows, loadedPerWorksite] = await Promise.all([
     db.select().from(pdtpActivities).where(and(inArray(pdtpActivities.id, activityIds), eq(pdtpActivities.programId, programId))),
-    Promise.all(authorizedWorksiteIds.map(async (worksiteId) => ({ worksiteId, ...(await loadProgramScheduleAndExecutions(activityIds, program.year, worksiteId)) }))),
+    // I12: una carga para todas las faenas, con la costura aplicada por faena
+    // (antes, siete consultas por faena).
+    loadProgramScheduleAndExecutionsForWorksites(activityIds, program.year, authorizedWorksiteIds)
+      .then((byWorksite) => authorizedWorksiteIds.map((worksiteId) => ({ worksiteId, ...byWorksite.get(worksiteId)! }))),
   ])
   // PREV-C06: cada faena se recorta desde su propia incorporación. Con el corte
   // único del programa, una faena incorporada en junio arrastraba las casillas
   // de marzo y la planilla la marcaba atrasada.
   // PREV-C05-B: una versión reemplazada sólo se lee dentro de su ventana; lo
   // posterior es de su sucesora.
-  const until = (await loadPdtpVersionWindow(program.id))?.until ?? null
+  const until = (await loadPdtpVersionWindowForRequest(program.id))?.until ?? null
   const effectivePerWorksite = loadedPerWorksite.map((entry) => {
     const cutoff = effectiveActivationFor(program.activatedAt, addedAtByWorksite.get(entry.worksiteId) ?? null)
     const windowed = <T extends { year: number; month: number; week: number }>(rows: T[]) =>
@@ -428,7 +433,8 @@ export async function getPdtpAggregatedSheetViewByProgram(
  * y filtra las actividades al programa indicado.
  */
 export async function getPdtpSheetViewByProgram(programId: string, sheetCode: string, worksiteId?: string): Promise<PdtpSheetView | null> {
-  const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
+  // I12: deduplicada por request con el indicador (`request-cache.ts`).
+  const program = await loadPdtpProgramForRequest(programId)
   if (!program) return null
 
   // La página y el export filtran la faena antes de llegar acá, pero este
@@ -485,7 +491,7 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
   // que la vista muestra como "efectivo".
   // PREV-C05-B: lo "efectivo" de una versión reemplazada termina donde empieza
   // su sucesora.
-  const successorUntil = (await loadPdtpVersionWindow(program.id))?.until ?? null
+  const successorUntil = (await loadPdtpVersionWindowForRequest(program.id))?.until ?? null
   const windowed = <T extends { year: number; month: number; week: number }>(rows: T[]) =>
     filterPdtpRowsBeforeSuccessor(filterPdtpRowsFromActivation(rows, activationCutoff), successorUntil)
   const deviationRows = windowed(loaded.deviationRows)
