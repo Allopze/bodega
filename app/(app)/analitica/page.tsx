@@ -87,7 +87,9 @@ export default async function AnaliticaPage({
         }
       />
 
-      <div className="grid gap-5">
+      {/* `grid-cols-1` (= `minmax(0, 1fr)`): con la pista `auto` los filtros
+          ensanchaban la columna 141 px más allá del pozo a 320 px. */}
+      <div className="grid grid-cols-1 gap-5">
         <AnalyticsFiltersBar
           filters={data.filters}
           worksites={options.worksites}

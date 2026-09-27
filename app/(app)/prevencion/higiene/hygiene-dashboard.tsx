@@ -144,10 +144,12 @@ export function HygieneDashboard({
           </div>
         )}
       >
-        <div role="tablist" aria-label="Vista de higiene" className="flex gap-1 rounded-md border border-[var(--color-border)] p-1 w-fit">
+        {/* `max-w-full overflow-x-auto`, como `TabsList`: las cuatro pestañas
+            no caben en 320 px y se salían 30 px del pozo. */}
+        <div role="tablist" aria-label="Vista de higiene" className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-md border border-[var(--color-border)] p-1">
           {([["groups", `Grupos (${groups.length})`], ["programs", `Vigilancia (${programs.length})`], ["protocols", "Programa y protocolos"], ["summary", "Panel anonimizado"]] as const).map(([value, label]) => (
             <button key={value} type="button" role="tab" onClick={() => setFilters({ tab: value, vista: null })} aria-selected={tab === value}
-              className="rounded px-3 py-1 text-sm aria-selected:bg-[var(--color-primary-tint)]">
+              className="shrink-0 whitespace-nowrap rounded px-3 py-1 text-sm aria-selected:bg-[var(--color-primary-tint)]">
               {label}
             </button>
           ))}

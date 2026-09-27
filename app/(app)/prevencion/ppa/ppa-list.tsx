@@ -141,8 +141,10 @@ export function PpaList({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Quick-filters — underline tabs */}
-      <div className="flex items-end gap-0 border-b border-[var(--color-border)]">
+      {/* Quick-filters — underline tabs. `overflow-x-auto` como `TabsList`:
+          seis pestañas con contador miden ~680 px y a 320 px se salían 377 px
+          del pozo del shell, que las recortaba sin forma de alcanzarlas. */}
+      <div className="flex max-w-full items-end gap-0 overflow-x-auto border-b border-[var(--color-border)]">
         {QUICK_FILTERS.map((f) => {
           const active = estado === f.value
           const count = stats && f.countKey ? (stats[f.countKey] as number) : null
@@ -152,7 +154,7 @@ export function PpaList({
               type="button"
               onClick={() => onFilterChange({ estado: f.value })}
               className={cn(
-                "-mb-px px-3.5 pb-2.5 pt-1 text-sm font-medium",
+                "-mb-px shrink-0 whitespace-nowrap px-3.5 pb-2.5 pt-1 text-sm font-medium",
                 "border-b-2 transition-[color,border-color] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
                 active
                   ? f.tone === "signal"
@@ -212,8 +214,12 @@ export function PpaList({
           toValue={dateTo}
           onFromChange={(iso) => onFilterChange({ dateFrom: iso })}
           onToChange={(iso) => onFilterChange({ dateTo: iso })}
-          className="flex items-center gap-2"
-          pickerClassName="w-[9.5rem] h-8 text-xs"
+          // Bajo `sm` las dos fechas reparten el ancho en dos columnas: con
+          // 9.5rem fijos cada una sumaban 312 px y a 320 px se salían del pozo.
+          // `sm:h-8` y no `h-8`: en el teléfono conservan los 44 px del
+          // `DatePicker` como objetivo táctil.
+          className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center"
+          pickerClassName="w-full sm:w-[9.5rem] sm:h-8 text-xs"
         />
 
         {filtersActive && (
