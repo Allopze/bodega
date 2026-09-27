@@ -17,6 +17,10 @@ Registros SG-SST
 !db/seed/trabajadores_por_faena_actualizado.md
 .git
 .github
+# Configuración local de Claude Code y sus worktrees de trabajo
+# (.claude/worktrees/*): cada worktree es una copia completa del repo con su
+# propio .next/node_modules. Sin esta regla el contexto de build llegó a 46 GB.
+.claude/
 # Local documentation, virtual environments and generated evidence are not
 # inputs to the production image. Keeping them out avoids sending gigabytes of
 # unrelated data to the Docker daemon for every deploy build.
