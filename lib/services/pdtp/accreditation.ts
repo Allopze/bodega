@@ -962,6 +962,13 @@ export type RevocationInput = {
   programId?: string
   revokedBy?: string
   reason?: string
+  /**
+   * B01-BACKFILL: sólo estas ejecuciones del origen. Lo usa la corrección de
+   * las aprobaciones que la revocación anterior a B01 saltó, para no volver a
+   * escribir `revokedAt`/`revocationReason` sobre las filas del mismo origen
+   * que ya estaban revertidas (se perdería su traza original).
+   */
+  onlyExecutionIds?: string[]
 }
 
 /** Variante transaccional para callers que ya poseen la transacción fuente. */
@@ -1002,8 +1009,9 @@ export async function revokePdtpAccreditationWithClient(
     const metadata = (execution.sourceMetadataJson ?? {}) as Record<string, unknown>
     const keys = Array.isArray(metadata.accreditedKeys) ? metadata.accreditedKeys as string[] : []
     const targetKey = accreditationKey(execution.activityId, input.worksiteId, input.sourceType, input.sourceId)
-    return (execution.sourceType === input.sourceType && execution.sourceId === input.sourceId)
+    const sameSource = (execution.sourceType === input.sourceType && execution.sourceId === input.sourceId)
       || keys.includes(targetKey)
+    return sameSource && (!input.onlyExecutionIds || input.onlyExecutionIds.includes(execution.id))
   })
 
   const revoked: RevocationResult["revoked"] = []

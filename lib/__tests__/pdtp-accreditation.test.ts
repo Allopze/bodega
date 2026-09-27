@@ -687,6 +687,36 @@ describe("revokePdtpAccreditation", () => {
       && (entry.after as Record<string, unknown>)?.status === "draft")).toBe(true)
   })
 
+  /* B01-BACKFILL: la corrección de las aprobaciones que la revocación vieja
+   * saltó tiene que tocar sólo esas ejecuciones. Sin el filtro, la rama que
+   * pasa a borrador reescribía `revokedAt`/`revocationReason` de las filas del
+   * mismo origen que ya estaban revertidas y se perdía la traza original. */
+  it("onlyExecutionIds revierte sólo las ejecuciones indicadas del mismo origen", async () => {
+    const { accreditPdtpFromEvent, revokePdtpAccreditation } = await import("@/lib/services/pdtp/accreditation")
+    const accredited = await accreditPdtpFromEvent({
+      sourceType: "inspeccion",
+      sourceId: "run-rev-only",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N, REVIEW_ACT_N],
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
+    })
+    const [first, second] = accredited.accredited
+    await inMemoryDb.update(schema.pdtpExecutions)
+      .set({ status: "approved", approvedByUserId: USER_ID, approvedAt: new Date().toISOString() })
+      .where(eq(schema.pdtpExecutions.sourceId, "run-rev-only"))
+
+    const result = await revokePdtpAccreditation({
+      sourceType: "inspeccion",
+      sourceId: "run-rev-only",
+      worksiteId: WS_ID,
+      onlyExecutionIds: [second!.executionId],
+    })
+    expect(result.revoked).toEqual([{ activityId: second!.activityId, executionId: second!.executionId }])
+    const rows = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.sourceId, "run-rev-only"))
+    expect(rows.find((row) => row.id === first!.executionId)?.status).toBe("approved")
+    expect(rows.find((row) => row.id === second!.executionId)?.status).toBe("draft")
+  })
+
   it("revierte una aprobación automática cuando la inspección se reabre", async () => {
     const { accreditPdtpFromEvent, revokePdtpAccreditation } = await import("@/lib/services/pdtp/accreditation")
     const accredited = await accreditPdtpFromEvent({

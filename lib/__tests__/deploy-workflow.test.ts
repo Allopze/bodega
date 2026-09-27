@@ -444,6 +444,32 @@ describe("deploy workflow", () => {
     expect(compose).toContain('command: ["node", "scripts/reconcile-pdtp-fulfillment-events.cjs"]')
   })
 
+  /* PREV-B01-BACKFILL: la corrección de las aprobaciones revocadas antes del
+   * fix de B01 escribe sobre cifras ya informadas. El servicio de compose sólo
+   * reporta; aplicar exige el override explícito con `--apply --actor`, y el
+   * deploy nunca lo corre. */
+  it("empaqueta la corrección de B01 como un one-shot que por defecto sólo reporta", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
+    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
+    const packageJson = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8")) as { scripts: Record<string, string> }
+
+    const build = dockerfile.match(
+      /RUN .\/node_modules\/.bin\/esbuild scripts\/revert-pdtp-revoked-approvals\.ts[\s\S]*?--outfile=\/tmp\/revert-pdtp-revoked-approvals\.mjs/,
+    )?.[0]
+    expect(build).toBeDefined()
+    expect(build).toContain("--external:drizzle-orm")
+    expect(build).toContain("--external:postgres")
+    expect(dockerfile).toContain("COPY --from=build /tmp/revert-pdtp-revoked-approvals.mjs ./scripts/revert-pdtp-revoked-approvals.mjs")
+
+    const service = compose.match(/\n {2}revert-pdtp-revoked-approvals:\n[\s\S]*?command: \[[^\]]*\]/)?.[0]
+    expect(service).toBeDefined()
+    expect(service).toContain('command: ["node", "scripts/revert-pdtp-revoked-approvals.mjs"]')
+    expect(service).not.toContain("--apply")
+    expect(deployScript).not.toContain("revert-pdtp-revoked-approvals")
+    expect(packageJson.scripts["pdtp:revert-revoked-approvals"]).toContain("scripts/revert-pdtp-revoked-approvals.ts")
+  })
+
   it("emits the SST migrator as CommonJS", () => {
     const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
     const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")

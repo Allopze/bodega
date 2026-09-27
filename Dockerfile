@@ -256,6 +256,18 @@ RUN ./node_modules/.bin/esbuild scripts/reconcile-pdtp-fulfillment-events.ts \
     --external:postgres \
     --outfile=/tmp/reconcile-pdtp-fulfillment-events.cjs
 
+# PREV-B01-BACKFILL: corrige las aprobaciones que la revocación anterior al fix
+# de B01 dejó vivas. Por defecto sólo reporta; aplicar exige `--apply --actor`
+# por override explícito y el deploy nunca lo corre.
+RUN ./node_modules/.bin/esbuild scripts/revert-pdtp-revoked-approvals.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/revert-pdtp-revoked-approvals.mjs
+
 # Mismo motivo que sync-rbac: los one-shots de conciliación OC-factura viven en
 # TypeScript con alias `@/`, y la imagen de producción no lleva ni `tsx` ni el
 # source. Se bundlean acá y se corren con `node` desde `docker-compose.yml`.
@@ -552,6 +564,7 @@ COPY --from=build /tmp/apply-pdtp-objectives.mjs ./scripts/apply-pdtp-objectives
 COPY --from=build /tmp/apply-pdtp-demand-slas.mjs ./scripts/apply-pdtp-demand-slas.mjs
 COPY --from=build /tmp/apply-pdtp-legal-folder.mjs ./scripts/apply-pdtp-legal-folder.mjs
 COPY --from=build /tmp/reconcile-pdtp-fulfillment-events.cjs ./scripts/reconcile-pdtp-fulfillment-events.cjs
+COPY --from=build /tmp/revert-pdtp-revoked-approvals.mjs ./scripts/revert-pdtp-revoked-approvals.mjs
 COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconciliation.mjs ./scripts/preflight-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/rollback-purchase-invoice-reconciliation-statuses.mjs ./scripts/rollback-purchase-invoice-reconciliation-statuses.mjs

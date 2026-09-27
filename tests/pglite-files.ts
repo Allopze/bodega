@@ -261,4 +261,5 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-scheduled-start.test.ts",
   // T3 (fuentes: instancias e integración).
   "lib/__tests__/pdtp-scheduled-instance-integrity.test.ts",
+  "scripts/__tests__/revert-pdtp-revoked-approvals.test.ts",
 ]

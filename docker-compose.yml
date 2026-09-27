@@ -788,6 +788,27 @@ services:
       - PDTP_RECONCILE_LIMIT=${PDTP_RECONCILE_LIMIT:-}
     command: ["node", "scripts/reconcile-pdtp-fulfillment-events.cjs"]
 
+  # One-shot: PREV-B01-BACKFILL. Reporta (JSON) las aprobaciones humanas que la
+  # revocación anterior al fix de B01 dejó vivas sobre registros anulados. Por
+  # defecto NO escribe. Aplicar, después de revisar el reporte con Prevención
+  # y con respaldo previo:
+  #   docker compose run --rm revert-pdtp-revoked-approvals \
+  #     node scripts/revert-pdtp-revoked-approvals.mjs --apply --actor <userId>
+  # No está en deploy-prod.sh.
+  revert-pdtp-revoked-approvals:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/revert-pdtp-revoked-approvals.mjs"]
+
   # One-shot: diagnóstico READ ONLY de la conciliación OC-factura. No depende de
   # las columnas de proyección, así que deploy-prod.sh lo corre ANTES de migrar
   # para dejar registrado cuánta deriva traía la base. Nunca falla por hallazgos:
