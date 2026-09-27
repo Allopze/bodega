@@ -5,6 +5,7 @@ import { ZodError } from "zod"
 import { guardAuth } from "@/lib/auth/can"
 import type { Permission } from "@/modules/permissions"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { pdtpRegistrationActorFromSession } from "@/lib/auth/pdtp-registration"
 import { assertWorksiteAccess } from "@/lib/services/pdtp/helpers"
 import { safeActionMessage } from "@/lib/action-error"
 import type { ActionState } from "@/lib/validation/prevention"
@@ -91,6 +92,7 @@ export async function recordPdtpScheduledInstanceOutcomeAction(input: unknown): 
       evidenceRef: parsed.evidenceRef,
       reason: parsed.reason,
       scope,
+      actor: pdtpRegistrationActorFromSession(guard.session),
     })
     revalidatePath("/pendientes")
     revalidatePath(`/prevencion/pdtp/${updated.programId}`)

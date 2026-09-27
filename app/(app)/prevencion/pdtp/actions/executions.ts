@@ -10,6 +10,7 @@ import {
   markPdtpExecution,
 } from "@/lib/services/prevention-pdtp"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { pdtpRegistrationActorFromSession } from "@/lib/auth/pdtp-registration"
 import { parseZ } from "@/lib/actions/parse-z"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import type { ActionState } from "@/lib/validation/prevention"
@@ -71,9 +72,12 @@ export async function markPdtpExecutionAction(formData: FormData): Promise<Actio
       await assertPdtpActivityMechanism(parsed.data.activityId, "constancia")
     }
     // Sólo quien administra el programa corrige el envío pendiente de otra
-    // persona o registra por la persona asignada (PREV-B03, PREV-I03).
+    // persona (PREV-B03). Qué actividades puede registrar —las de su cargo, las
+    // que tiene asignadas o todas si es Prevención— lo decide el servicio con
+    // el actor de la sesión (PREV-I03).
     await markPdtpExecution(parsed.data, session.user.id, scopeToIds(resolveWorksiteScope(session)), {
       canActForOthers: can(session, "prevention:pdtp:override:manage"),
+      actor: pdtpRegistrationActorFromSession(session),
     })
     revalidateOperationalViews([REVALIDATE, "/prevencion/constancias"])
     return { ok: true }

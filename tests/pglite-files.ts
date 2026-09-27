@@ -147,6 +147,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-delete-restrict.test.ts",
   // Auditoría 2026-09-26: evidencia obligatoria, envíos ajenos y asignación nominal.
   "lib/__tests__/pdtp-execution-integrity.test.ts",
+  // PREV-I03 (resto): registra lo propio —asignado o responsable por cargo— salvo Prevención.
+  "lib/__tests__/pdtp-registration-authority.test.ts",
   // C05-A: la revisión v+1 copia todo el contenido de la actividad.
   "lib/__tests__/pdtp-revision-midyear.test.ts",
   // T6 (PREV-C05-B/C/D): ventanas por versión, consolidación anual y traspaso.

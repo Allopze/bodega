@@ -20,6 +20,7 @@ import { assertPdtpEvidenceLinkable } from "./evidence-references"
 import { hashPdtpEvidenceFiles } from "./evidence-files"
 import { pdtpExecutionHistorySnapshot, pdtpNextSubmissionMetadata, recordPdtpExecutionHistory } from "./execution-history"
 import { isPdtpActivityEffectiveAt } from "./retirement"
+import { assertPdtpActorMayRegister, type PdtpRegistrationActor } from "./registration-authority"
 
 export type PdtpObligationOrigin = "manual" | "integration"
 export type PdtpObligationStatus = "pending" | "overdue" | "reported" | "completed" | "cancelled"
@@ -228,6 +229,11 @@ export async function reportPdtpObligation(input: {
   reportedAt?: string
   userId: string
   scope: WorksiteScope
+  /**
+   * PREV-I03 (resto): quién reporta, resuelto de la sesión. La acción de
+   * servidor siempre lo pasa; los conectores (sin actor humano) no.
+   */
+  actor?: PdtpRegistrationActor
 }) {
   if (!Number.isFinite(input.executedQuantity) || input.executedQuantity <= 0) throw new Error("La cantidad ejecutada debe ser mayor que cero.")
   const reportedAt = validIso(input.reportedAt, new Date())
@@ -257,6 +263,9 @@ export async function reportPdtpObligation(input: {
     ])
     if (!program || program.status !== "active") throw new Error("El programa ya no está activo.")
     if (!activity) throw new Error("La actividad de la obligación ya no existe.")
+    if (input.actor) {
+      await assertPdtpActorMayRegister({ activityId: obligation.activityId, worksiteId: obligation.worksiteId, actor: input.actor }, tx)
+    }
     const hasEvidence = Boolean(input.evidenceText?.trim()) || Boolean(evidenceUrl) || photos.length > 0
     if (activity.evidenceRequirement?.trim() && !hasEvidence) {
       throw new Error(`Adjunta o describe la evidencia requerida: ${activity.evidenceRequirement}`)

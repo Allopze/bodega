@@ -9,6 +9,7 @@ import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 import { PDTP_REASON_MIN_LENGTH } from "@/lib/prevention/pdtp"
 import { assertPdtpEvidenceLinkable } from "./evidence-references"
 import type { WorksiteScope } from "./helpers"
+import { assertPdtpActorMayRegisterScheduledInstance, type PdtpRegistrationActor } from "./registration-authority"
 
 export type PdtpScheduledInstanceAction = "submit" | "complete" | "not_applicable" | "cancel"
 
@@ -247,8 +248,11 @@ export async function recordPdtpScheduledInstanceOutcome(input: {
    * a otra faena puede reutilizarse; sin alcance, sólo la propia faena.
    */
   scope?: WorksiteScope
+  /** PREV-I03: con actor, sólo envía quien responde por la actividad (registration-authority.ts). */
+  actor?: PdtpRegistrationActor
 }, client: ScheduledExecutionClient = db) {
   assertPdtpScheduledInstanceManualAction(input.action)
+  if (input.actor && input.action === "submit") await assertPdtpActorMayRegisterScheduledInstance({ instanceId: input.instanceId, actor: input.actor }, client)
   const now = new Date().toISOString()
   const execute = async (tx: ScheduledExecutionClient) => {
     await tx.execute(sql`SELECT id FROM ${pdtpScheduledInstances} WHERE ${pdtpScheduledInstances.id} = ${input.instanceId} FOR UPDATE`)
