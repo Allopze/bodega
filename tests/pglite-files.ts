@@ -230,6 +230,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/proveedores-actions.test.ts",
   "lib/__tests__/facturacion-clientes-identidad.test.ts",
   "lib/__tests__/cron-run-ledger.test.ts",
+  // PREV-I13: alertas por correo del escaneo de integridad y de crons de Prevención fallidos.
+  "lib/__tests__/prevention-ops-alerts.test.ts",
   "lib/__tests__/deadline-reminders.test.ts",
   "lib/reports/export-module/solicitudes.test.ts",
   "lib/__tests__/segregacion-dinero.test.ts",

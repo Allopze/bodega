@@ -9,9 +9,10 @@
  * instancias) y comprueba que el archivo exista y que su sha256, cuando se
  * registró al vincularlo (W5-SHA), siga coincidiendo.
  *
- * Sólo observa: no borra, no corrige y no toca la base. La alerta es el log
- * (D28: "sólo logs por ahora"): `logger.error` con los conteos y una muestra
- * de rutas, que en producción sí se emite.
+ * Sólo observa: no borra, no corrige y no toca la base. Deja el detalle en el
+ * log (`logger.error` con los conteos y una muestra de rutas); el aviso por la
+ * plataforma y por correo lo emite la ruta del cron con
+ * `alertPdtpEvidenceIntegrityIssues` (PREV-I13, reemplaza a D28).
  */
 import { promises as fs } from "node:fs"
 import { logger } from "@/lib/logger"
