@@ -15,22 +15,12 @@ vi.mock("@/lib/services/prevention-pdtp", () => ({ assertWorksiteAccess: mockAss
 vi.mock("@/lib/storage/config", () => ({ resolvePdtpEvidenceFile: mockResolvePdtpEvidenceFile }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: mockWarn } }))
 
-// Drizzle db shim: any select chain resolves to [{ worksiteId }] or [].
-const queryResult = vi.hoisted(() => ({ rows: [] as Array<{ worksiteId: string }> }))
-vi.mock("@/db", () => ({
-  get db() {
-    return {
-      select: () => ({
-        from: () => ({
-          where: () => ({
-            limit: () => Promise.resolve(queryResult.rows),
-          }),
-        }),
-      }),
-    }
-  },
-}))
-vi.mock("@/db/schema", () => ({ pdtpExecutions: {} }))
+// PREV-M02-A / PREV-I05: el dueño lo resuelve `findPdtpEvidenceOwner` (igualdad
+// exacta sobre ejecuciones, CAPA del PDTP e instancias). La ruta sólo decide
+// qué hacer con la respuesta.
+const queryResult = vi.hoisted(() => ({ rows: [] as Array<{ worksiteId: string; source?: string }> }))
+const mockFindOwner = vi.hoisted(() => vi.fn())
+vi.mock("@/lib/services/pdtp/evidence-references", () => ({ findPdtpEvidenceOwner: mockFindOwner }))
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual<typeof import("node:fs")>("node:fs")
   return {
@@ -55,6 +45,10 @@ describe("GET /api/prevencion/pdtp/evidence/[name]", () => {
     mockAssertWorksiteAccess.mockReturnValue(undefined)
     mockResolvePdtpEvidenceFile.mockImplementation((p: string) => `/srv/${p}`)
     mockReadFile.mockResolvedValue(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))
+    mockFindOwner.mockImplementation(async () => {
+      const row = queryResult.rows[0]
+      return row ? { worksiteId: row.worksiteId, source: row.source ?? "execution" } : null
+    })
   })
 
   it("rechaza sin sesión con 401", async () => {
@@ -132,5 +126,28 @@ describe("GET /api/prevencion/pdtp/evidence/[name]", () => {
     const { GET } = await import("./route")
     await GET(makeRequest("abc.jpg") as never, { params: Promise.resolve({ name: "abc.jpg" }) })
     expect(mockWarn).not.toHaveBeenCalled()
+  })
+
+  it("busca al dueño por el nombre exacto y con el alcance del usuario (PREV-M02-A)", async () => {
+    queryResult.rows = [{ worksiteId: "ws-1" }]
+    mockResolveWorksiteScope.mockReturnValueOnce({ mode: "some", ids: ["ws-1", "ws-2"] })
+    const { GET } = await import("./route")
+    await GET(makeRequest("abc.jpg") as never, { params: Promise.resolve({ name: "abc.jpg" }) })
+    expect(mockFindOwner).toHaveBeenCalledWith("abc.jpg", ["ws-1", "ws-2"])
+  })
+
+  it("sirve la evidencia del plan de acción del PDTP (PREV-I05)", async () => {
+    queryResult.rows = [{ worksiteId: "ws-1", source: "capa" }]
+    const { GET } = await import("./route")
+    const res = await GET(makeRequest("capa.jpg") as never, { params: Promise.resolve({ name: "capa.jpg" }) })
+    expect(res.status).toBe(200)
+  })
+
+  it("sin faenas en el alcance no consulta dueños y responde 404", async () => {
+    mockResolveWorksiteScope.mockReturnValueOnce({ mode: "none", ids: [] })
+    const { GET } = await import("./route")
+    const res = await GET(makeRequest("abc.jpg") as never, { params: Promise.resolve({ name: "abc.jpg" }) })
+    expect(res.status).toBe(404)
+    expect(mockFindOwner).not.toHaveBeenCalled()
   })
 })

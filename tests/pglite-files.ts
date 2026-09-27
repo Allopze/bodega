@@ -245,4 +245,18 @@ export const pgliteTestFiles = [
   "lib/__tests__/ti-attachments-pglite.test.ts",
   // ── PDTP (Prevención) ────────────────────────────────────────────────────
   "lib/services/pdtp-adapters/external-engagement-accreditation-connector.test.ts",
+  // Suites que instanciaban PGlite sin estar registradas: corrían en el proyecto
+  // paralelo y quedaban fuera de `npm run test:pglite` (PREV-M08). Las detecta
+  // `tests/pglite-files.test.ts`.
+  "lib/__tests__/prevention-campaigns.test.ts",
+  "lib/__tests__/prevention-incidents-re20.test.ts",
+  "lib/__tests__/fuel-log-integration.test.ts",
+  "lib/__tests__/fuel-tae-security-integration.test.ts",
+  "lib/__tests__/inspection-maintenance-lifecycle-pglite.test.ts",
+  "lib/__tests__/report-export-solicitudes-scope.test.ts",
+  "lib/__tests__/substitutions.test.ts",
+  // T4 (evidencia e historial): bitácora de envíos, sha256 y segregación.
+  "lib/__tests__/pdtp-execution-history.test.ts",
+  "lib/__tests__/pdtp-evidence-references.test.ts",
+  "lib/__tests__/pdtp-scheduled-start.test.ts",
 ]

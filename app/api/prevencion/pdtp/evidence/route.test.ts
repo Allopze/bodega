@@ -169,4 +169,33 @@ describe("POST /api/prevencion/pdtp/evidence", () => {
     expect(res.status).toBe(201)
     expect(json.path).toMatch(/^storage\/pdtp-evidence\/.+\.png$/)
   })
+
+  // PREV-M02-A: la extensión interna sale del tipo que detectaron los bytes
+  // mágicos, no del nombre que mandó el cliente. Un PNG llamado "acta.pdf" se
+  // guardaba como `.pdf` y la descarga lo servía como PDF.
+  it("un PNG con nombre .pdf se guarda con extensión .png (PREV-M02-A)", async () => {
+    const { POST } = await import("./route")
+    const file = new File([PNG_BYTES], "acta.pdf", { type: "application/pdf" })
+    const res = await POST(makeRequest({ file, worksiteId: "ws-1" }))
+    const json = await res.json()
+    expect(res.status).toBe(201)
+    expect(json.path).toMatch(/^storage\/pdtp-evidence\/[A-Za-z0-9_-]+\.png$/)
+  })
+
+  it("un PDF sin extensión en el nombre queda como .pdf (PREV-M02-A)", async () => {
+    const { POST } = await import("./route")
+    const file = new File([PDF_BYTES], "acta", { type: "" })
+    const res = await POST(makeRequest({ file, worksiteId: "ws-1" }))
+    const json = await res.json()
+    expect(res.status).toBe(201)
+    expect(json.path).toMatch(/^storage\/pdtp-evidence\/[A-Za-z0-9_-]+\.pdf$/)
+  })
+
+  it("un JPEG con extensión .jpeg en el nombre queda como .jpg (PREV-M02-A)", async () => {
+    const { POST } = await import("./route")
+    const file = new File([JPEG_BYTES], "foto.JPEG", { type: "image/jpeg" })
+    const res = await POST(makeRequest({ file, worksiteId: "ws-1" }))
+    const json = await res.json()
+    expect(json.path).toMatch(/^storage\/pdtp-evidence\/[A-Za-z0-9_-]+\.jpg$/)
+  })
 })

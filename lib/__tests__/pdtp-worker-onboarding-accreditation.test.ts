@@ -116,6 +116,8 @@ async function answerAll(overrides: Record<string, { estado: string; observacion
 }
 
 beforeEach(async () => {
+  // PREV-I04: la historia de las ejecuciones PDTP vive en `audit_log`, que referencia a `users`.
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   // Las ejecuciones antes que las obligaciones: `obligation_id` es
   // `ON DELETE SET NULL`, y anular dos de la misma celda a la vez choca contra

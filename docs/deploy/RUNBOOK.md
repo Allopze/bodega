@@ -56,6 +56,11 @@ silencio; por eso conviene revisarlos cuando algo "dejó de actualizarse solo".
   Actions: el workflow `prevention-inspection-programs.yml` se retiró el 2026-09-26 porque
   duplicaba la corrida del contenedor. `pdtp-evidence-gc` queda fuera a propósito hasta que
   su barrido tenga auditoría y modo de prueba (plan de pendientes, tanda T7).
+  `pdtp-evidence-integrity` (diario, 05:15) sólo observa: busca evidencia PDTP referenciada
+  que falte en disco o cuyo sha256 ya no coincida. Responde `success` aunque encuentre
+  pérdidas; la alerta es la línea `[pdtp/evidence-integrity]` con nivel `error` en el log de
+  `app`, con conteos y hasta 20 rutas con su dueño. Lo perdido se recupera del
+  `storage.tar.gz.gpg` nocturno mientras siga dentro de la retención.
 - `migrate`, `sync-rbac`, `normalize-epp-skus`: `restart: "no"`, son de un solo tiro. Que estén detenidos es lo normal.
 
 ## Objetivos de servicio

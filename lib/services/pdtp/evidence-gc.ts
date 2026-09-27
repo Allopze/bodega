@@ -3,16 +3,16 @@
  *
  * Recolector de archivos huérfanos en `storage/pdtp-evidence/`. Un archivo
  * se considera huérfano cuando su `name` (el nombre generado por
- * `nanoid`) no aparece en `pdtp_executions.evidence_url`, en
- * `pdtp_executions.evidence_photos` ni en `prevention_capa_evidence.reference`
- * de ninguna fila.
+ * `nanoid`) no aparece en ninguna referencia de `collectPdtpEvidenceReferences`
+ * (ejecuciones, evidencia CAPA, historial de envíos e instancias programadas).
  *
  * El directorio tiene DOS productores, no uno: `pdtp-execution-form.tsx` (que
  * vincula el archivo a `pdtp_executions`) y `execution-action-plan-panel.tsx`
  * (que lo vincula a `prevention_capa_evidence` vía `addPdtpFollowupAction`).
  * Ambos suben por el mismo endpoint. Consultar sólo la primera tabla borraba la
  * evidencia de cierre de acciones correctivas una hora después de subirla.
- * Cualquier consumidor nuevo del endpoint debe sumarse aquí.
+ * Cualquier consumidor nuevo del endpoint debe sumarse a
+ * `collectPdtpEvidenceReferences` (evidence-references.ts), no aquí.
  *
  * Por seguridad, sólo se eliminan archivos más viejos que `olderThanMs`
  * (default 1 hora) para no borrar archivos recién subidos que aún no
@@ -28,9 +28,10 @@
  */
 import { promises as fs } from "node:fs"
 import { db } from "@/db"
-import { pdtpExecutions, preventionCapaEvidence, preventionInspectionAnswerEvidence, preventionRiskMapLayouts } from "@/db/schema"
+import { preventionInspectionAnswerEvidence, preventionRiskMapLayouts } from "@/db/schema"
 import { resolveInspectionEvidenceDir, resolvePdtpEvidenceDir, resolveRiskMapDir } from "@/lib/storage/config"
 import { logger } from "@/lib/logger"
+import { collectPdtpEvidenceReferences } from "./evidence-references"
 
 const DEFAULT_OLDER_THAN_MS = 60 * 60 * 1000 // 1 hora
 
@@ -63,36 +64,17 @@ export async function cleanupPdtpEvidenceOrphans(
 
   const dir = resolvePdtpEvidenceDir()
 
-  // Carga todas las referencias conocidas de la DB, de los DOS productores del
-  // directorio. Construimos un set de nombres referenciados para detectar orphans.
+  // PREV-I13-C: las referencias salen de la fuente única
+  // (`collectPdtpEvidenceReferences`: ejecuciones, CAPA, historial de envíos e
+  // instancias). Antes esta lista se armaba aquí y no miraba las instancias ni
+  // el historial, así que borraba evidencia que sólo ellos referenciaban. Se
+  // conserva el nombre de CUALQUIER referencia, aunque no sea de este
+  // directorio: un nombre de más sólo conserva, nunca borra de más.
   const referenced = new Set<string>()
-  const addReference = (value: unknown) => {
-    if (typeof value !== "string" || value.length === 0) return
-    const name = value.split("/").pop()
+  for (const reference of await collectPdtpEvidenceReferences()) {
+    const name = reference.path.split("/").pop()
     if (name) referenced.add(name)
   }
-
-  const [rows, capaRows] = await Promise.all([
-    db
-      .select({
-        evidenceUrl: pdtpExecutions.evidenceUrl,
-        evidencePhotos: pdtpExecutions.evidencePhotos,
-      })
-      .from(pdtpExecutions),
-    // Evidencia de seguimiento de acciones correctivas: vive en otra tabla pero
-    // en el mismo directorio. `kind` puede ser 'url'/'note', cuyo `reference` no
-    // es un archivo; extraer su basename sólo puede añadir un nombre de más al
-    // set, que es el lado seguro (conserva, nunca borra de más).
-    db.select({ reference: preventionCapaEvidence.reference }).from(preventionCapaEvidence),
-  ])
-
-  for (const row of rows) {
-    addReference(row.evidenceUrl)
-    if (Array.isArray(row.evidencePhotos)) {
-      for (const p of row.evidencePhotos) addReference(p)
-    }
-  }
-  for (const row of capaRows) addReference(row.reference)
 
   await sweepOrphans({ dir, referenced, olderThanMs, dryRun, label: "pdtp/evidence-gc" }, result)
 

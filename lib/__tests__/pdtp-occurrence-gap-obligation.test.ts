@@ -114,6 +114,8 @@ async function seedOccurrence(input: {
 }
 
 beforeEach(async () => {
+  // PREV-I04: reportar una obligación deja historia en `audit_log`, que referencia a `users`.
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.pdtpObligations)
   await inMemoryDb.delete(schema.pdtpProgramWorksites)

@@ -13,11 +13,13 @@ import {
   listFollowups,
 } from "@/lib/services/prevention-pdtp"
 import { findInspectionTemplateForPdtpActivity } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
+import { listPdtpExecutionHistory } from "@/lib/services/pdtp/execution-history"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ExecutionActionPlanPanel } from "./execution-action-plan-panel"
+import { SubmissionHistory } from "./submission-history"
 
 export const metadata: Metadata = { title: "Verificación de ejecución PDTP" }
 
@@ -44,7 +46,11 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
   // módulo Inspecciones, que acredita el PDTP solo al completar el run.
   const inspectionTemplate = await findInspectionTemplateForPdtpActivity(activity.n)
 
-  const actionItems = await listActionPlanItems(executionId)
+  const [actionItems, history] = await Promise.all([
+    listActionPlanItems(executionId),
+    // PREV-I04: cada envío, rechazo, aprobación y reversión, con sus archivos.
+    listPdtpExecutionHistory(executionId),
+  ])
   const followupLists = await Promise.all(actionItems.map((item) => listFollowups(item.id)))
   const followupsByItem = Object.fromEntries(actionItems.map((item, i) => [item.id, followupLists[i]!]))
 
@@ -91,6 +97,8 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
             description="Su cumplimiento se respalda con la evidencia adjunta a la ejecución. Si la verificación levantó algo que corregir, regístralo como acción en el plan de acción."
           />
         )}
+
+        <SubmissionHistory entries={history} />
 
         <ExecutionActionPlanPanel
           executionId={executionId}

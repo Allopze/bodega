@@ -79,6 +79,8 @@ async function executionRow() {
 }
 
 beforeEach(async () => {
+  // PREV-I04: cada transición escribe en `audit_log`, que referencia a `users`.
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.operationalActivityEvents)
   await inMemoryDb.delete(schema.pdtpChangeLog)
   await inMemoryDb.delete(schema.pdtpExecutions)

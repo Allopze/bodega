@@ -30,6 +30,7 @@ import {
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { addPdtpChangeLogEntry } from "./helpers"
+import { pdtpExecutionHistorySnapshot, recordPdtpExecutionHistory } from "./execution-history"
 import { PDTP_DEVIATION_LABELS, type PdtpDeviationKind } from "./deviations"
 
 type AccreditationClient = DB | Tx
@@ -949,6 +950,9 @@ export async function revokePdtpAccreditationWithClient(
       sourceType: pdtpExecutions.sourceType,
       sourceId: pdtpExecutions.sourceId,
       sourceMetadataJson: pdtpExecutions.sourceMetadataJson,
+      evidenceUrl: pdtpExecutions.evidenceUrl,
+      evidencePhotos: pdtpExecutions.evidencePhotos,
+      evidenceText: pdtpExecutions.evidenceText,
     })
     .from(pdtpExecutions)
     .where(
@@ -1012,8 +1016,11 @@ export async function revokePdtpAccreditationWithClient(
       }).where(and(
         eq(pdtpExecutions.id, execution.id),
         eq(pdtpExecutions.status, "approved"),
-      )).returning({ id: pdtpExecutions.id })
-      if (updated) revoked.push({ activityId: execution.activityId, executionId: execution.id })
+      )).returning()
+      if (updated) {
+        revoked.push({ activityId: execution.activityId, executionId: execution.id })
+        await recordRevocationHistory(client, input, execution, updated)
+      }
       continue
     }
 
@@ -1038,9 +1045,10 @@ export async function revokePdtpAccreditationWithClient(
           eq(pdtpExecutions.status, execution.status),
         ),
       )
-      .returning({ id: pdtpExecutions.id })
+      .returning()
     if (!updated) continue
     revoked.push({ activityId: execution.activityId, executionId: execution.id })
+    await recordRevocationHistory(client, input, execution, updated)
     if (manuallyApproved) {
       revertedApproved.push({ activityId: execution.activityId, executionId: execution.id })
       const [context] = await client.select({
@@ -1077,6 +1085,28 @@ export async function revokePdtpAccreditationWithClient(
   )
 
   return { revoked, revertedApproved }
+}
+
+/**
+ * PREV-I04 (D10): la reversión cambia lo que el programa declara cumplido y
+ * nadie la tecleó en el PDTP; sin esta fila, una acreditación anulada no dejaba
+ * rastro en la historia de la ejecución.
+ */
+async function recordRevocationHistory(
+  client: Tx,
+  input: RevocationInput,
+  before: { status: string; executedQuantity: number; evidenceUrl: string | null; evidencePhotos: unknown; evidenceText: string | null; sourceMetadataJson: unknown },
+  after: typeof pdtpExecutions.$inferSelect,
+) {
+  await recordPdtpExecutionHistory(client, {
+    executionId: after.id,
+    worksiteId: input.worksiteId,
+    changeType: "revoked",
+    actorUserId: input.revokedBy ?? null,
+    reason: input.reason ?? "Evento fuente cancelado o anulado.",
+    before: pdtpExecutionHistorySnapshot(before),
+    after: pdtpExecutionHistorySnapshot(after),
+  })
 }
 
 export async function revokePdtpAccreditation(input: RevocationInput): Promise<RevocationResult> {

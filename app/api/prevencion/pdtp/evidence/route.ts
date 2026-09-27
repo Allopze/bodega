@@ -9,7 +9,8 @@ import {
   assertWorksiteAccess,
   type WorksiteScope,
 } from "@/lib/services/prevention-pdtp"
-import { generateStorageName } from "@/lib/services/prevention-documents/utils"
+import { nanoid } from "@/lib/id"
+import { QUOTATION_EXTENSION_BY_MIME } from "@/lib/storage/quotation-content-type"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
 import { createPdtpEvidencePath, resolvePdtpEvidenceDir, resolveStorageFile } from "@/lib/storage/config"
@@ -97,7 +98,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const storageName = generateStorageName(file.name)
+    // PREV-M02-A: la extensión interna sale del MIME que declararon los bytes
+    // mágicos, no del nombre del cliente. Un PNG llamado "acta.pdf" quedaba
+    // guardado como `.pdf` y la descarga lo servía como PDF. `PROOF` sólo
+    // admite PDF, JPEG y PNG, los tres del mapa: no hay caso sin extensión.
+    const extension = QUOTATION_EXTENSION_BY_MIME[validated.mimeType] ?? ""
+    const storageName = `${nanoid(20)}${extension}`
     const dir = resolvePdtpEvidenceDir()
     await mkdirp(dir)
     await writeBuffer(resolveStorageFile(dir, storageName), Buffer.from(buffer))

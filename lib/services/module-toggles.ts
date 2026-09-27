@@ -202,6 +202,7 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "analytics", submoduleHref: "/analitica", prefix: "/api/cron/operational-metric-snapshots" },
   { moduleId: "analytics", submoduleHref: "/analitica", prefix: "/api/cron/operational-snapshot-health" },
   { moduleId: "prevention", submoduleHref: "/prevencion/pdtp", prefix: "/api/cron/pdtp-evidence-gc" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/pdtp", prefix: "/api/cron/pdtp-evidence-integrity" },
   { moduleId: "prevention", submoduleHref: "/prevencion/pdtp", prefix: "/api/cron/pdtp-weekly-reminders" },
   { moduleId: "prevention", submoduleHref: "/prevencion/capa", prefix: "/api/cron/prevention-capa-reminders" },
   { moduleId: "prevention", submoduleHref: "/prevencion/cphs", prefix: "/api/cron/prevention-cphs-alerts" },
