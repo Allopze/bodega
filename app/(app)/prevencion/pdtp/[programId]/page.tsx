@@ -161,7 +161,9 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const backlogWorksiteIds = hasUndeclaredActiveScope && scope.mode === "all"
     ? undefined
     : worksites.map((worksite) => worksite.id)
-  const backlog = await countPdtpFulfillmentBacklog(programId, { worksiteIds: backlogWorksiteIds })
+  // PREV-I16: `sessionWorksiteIds` deja ver los hechos rechazados de faenas
+  // fuera de la membresía que el alcance de la sesión cubre.
+  const backlog = await countPdtpFulfillmentBacklog(programId, { worksiteIds: backlogWorksiteIds, sessionWorksiteIds: worksiteIds })
   // PREV-C03.6: el cierre anual sólo se ofrece sobre la versión activa de un
   // año que ya terminó (Chile). Durante el año no hay nada que mostrar.
   const yearClose = program.status === "active" && canManageLifecycle && currentPeriod.year > program.year

@@ -242,9 +242,14 @@ export class PdtpNoActiveProgramError extends Error {
  * aplica", igual que la falta de programa activo.
  */
 export class PdtpWorksiteNotInProgramError extends Error {
-  constructor(message: string) {
+  /** Programa contra el que se resolvió el hecho y faena que no es miembro (PREV-I16). */
+  readonly programId: string | null
+  readonly worksiteId: string | null
+  constructor(message: string, details?: { programId: string; worksiteId: string }) {
     super(message)
     this.name = "PdtpWorksiteNotInProgramError"
+    this.programId = details?.programId ?? null
+    this.worksiteId = details?.worksiteId ?? null
   }
 }
 
@@ -395,7 +400,10 @@ async function resolvePdtpActiveProgramForEvent(
       eq(pdtpProgramWorksites.isActive, true),
     ))
   if (explicitMemberships.length > 0 && !explicitMemberships.some((member) => member.worksiteId === input.worksiteId)) {
-    throw new PdtpWorksiteNotInProgramError(`La faena ${input.worksiteId} no pertenece al programa ${program.id}.`)
+    throw new PdtpWorksiteNotInProgramError(
+      `La faena ${input.worksiteId} no pertenece al programa ${program.id}.`,
+      { programId: program.id, worksiteId: input.worksiteId },
+    )
   }
   if (explicitMemberships.length === 0 && !program.appliesToAllWorksites) {
     throw new Error(`El programa ${program.id} no declara alcance corporativo ni una membresía de faena.`)

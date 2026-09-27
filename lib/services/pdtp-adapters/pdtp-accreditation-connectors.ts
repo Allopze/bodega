@@ -31,10 +31,19 @@ import { pdtpProgramWorksites, pdtpPrograms, worksites } from "@/db/schema"
 import {
   accreditPdtpFromEvent,
   PdtpNoActiveProgramError,
+  PdtpWorksiteNotInProgramError,
   revokePdtpAccreditationWithClient,
   type AccreditationInput,
 } from "@/lib/services/pdtp/accreditation"
-import { linkPdtpScheduledInstancesToFulfillment, recordPdtpFulfillmentEvent, recordPendingPdtpFulfillmentEvent, recordPdtpFulfillmentRevocation, recordRejectedPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
+import {
+  linkPdtpScheduledInstancesToFulfillment,
+  recordPdtpFulfillmentEvent,
+  recordPdtpFulfillmentEventOutsideProgram,
+  recordPendingPdtpFulfillmentEvent,
+  recordPdtpFulfillmentRevocation,
+  recordRejectedPdtpFulfillmentEvent,
+  recordResolvedPdtpFulfillmentRevocation,
+} from "@/lib/services/pdtp/fulfillment"
 import { recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
 import { PDTP_CPHS_ACTIVITY_NUMBERS } from "@/lib/services/pdtp/worksites"
 import { pdtpCatalogActivityIdForLegacyNumber, pdtpCatalogActivityIdsForLegacyNumbers } from "./catalog-activities-2026"
@@ -159,8 +168,17 @@ export async function onInspectionCompleted(input: {
       // atomicidad con su registro nativo.
       await linkPdtpScheduledInstancesToFulfillment(accreditation, result, client)
     } catch (err) {
-      // Sólo ese caso. Un número inexistente o una faena fuera del programa
-      // siguen tumbando el cierre: ésos sí hay que corregirlos antes de firmar.
+      // PREV-I16 (D16): una faena fuera de la membresía del programa vigente
+      // no bloquea el cierre. La membresía de un programa activo no se edita,
+      // así que bloquear sólo frenaba el trabajo en terreno sin corregir nada:
+      // el run se cierra y el hecho queda rechazado, con su motivo, en esta
+      // misma transacción. El error lo lanza la resolución, antes de escribir.
+      if (err instanceof PdtpWorksiteNotInProgramError) {
+        await recordPdtpFulfillmentEventOutsideProgram(accreditation, err, client)
+        return
+      }
+      // "Sin programa activo" queda pendiente. Un número inexistente sigue
+      // tumbando el cierre: ése sí hay que corregirlo antes de firmar.
       if (!(err instanceof PdtpNoActiveProgramError)) throw err
       await recordPendingPdtpFulfillmentEvent(accreditation, client)
     }
@@ -196,7 +214,10 @@ export async function onInspectionReverted(input: {
     reason: input.reason,
   }
   if (client) {
-    await revokePdtpAccreditationWithClient(revocation, client)
+    const result = await revokePdtpAccreditationWithClient(revocation, client)
+    // PREV-I16: la revocación también queda en el libro, así un `completed`
+    // que esperaba la activación del programa no se acredita después.
+    await recordResolvedPdtpFulfillmentRevocation(revocation, result, client)
     return
   }
   await recordPdtpFulfillmentRevocation(revocation)

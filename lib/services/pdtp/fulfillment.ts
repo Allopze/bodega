@@ -58,6 +58,7 @@ import {
   accreditPdtpFromEvent,
   revokePdtpAccreditationWithClient,
   PdtpNoActiveProgramError,
+  PdtpWorksiteNotInProgramError,
   type AccreditationInput,
   type AccreditationResult,
   type RevocationInput,
@@ -387,8 +388,8 @@ export async function linkPdtpScheduledInstancesToFulfillment(
 export async function recordPendingPdtpFulfillmentEvent(
   input: AccreditationInput & { sourceVersion?: string; returnHref?: string },
   client: QueryClient,
-): Promise<void> {
-  await upsertPendingEvent({
+): Promise<string> {
+  return upsertPendingEvent({
     sourceType: input.sourceType,
     sourceId: input.sourceId,
     eventType: "completed",
@@ -404,6 +405,53 @@ export async function recordPendingPdtpFulfillmentEvent(
     plannedYear: input.plannedYear,
     autoApproveByUserId: input.autoApproveByUserId,
   }, client)
+}
+
+/**
+ * Lo que el libro guarda en `result_json`. Es el resultado del motor más el
+ * caso que el motor no devuelve —lanza— y el libro sí registra: la faena no
+ * pertenece al programa vigente (PREV-I16).
+ */
+export type PdtpFulfillmentResultJson = AccreditationResult & {
+  skippedWorksiteNotInProgram?: { programId: string | null; worksiteId: string }
+}
+
+/**
+ * PREV-I16 (D16): la faena del hecho no está en la membresía vigente del
+ * programa. No es un error reintentable: la membresía de un programa activo no
+ * se edita y el corte por versión fija el programa por la fecha del hecho, así
+ * que reintentar nunca acreditaría. Tampoco puede asegurarse que la faena
+ * nunca fue miembro —al cerrarse una faena se desactiva su membresía y al
+ * reactivarla no vuelve—, por eso el motivo que ve el panel es neutro. Queda
+ * `rejected` con el programa contra el que se resolvió, fuera de la cola del
+ * reconciliador y visible en el panel del programa.
+ */
+async function markPdtpFulfillmentEventOutsideProgram(eventId: string, err: PdtpWorksiteNotInProgramError, worksiteId: string, client: QueryClient) {
+  const resultJson: PdtpFulfillmentResultJson = {
+    accredited: [],
+    skippedExcluded: [],
+    skippedNotFound: [],
+    skippedWorksiteNotInProgram: { programId: err.programId, worksiteId: err.worksiteId ?? worksiteId },
+  }
+  await client.update(pdtpFulfillmentEvents).set({
+    status: "rejected",
+    programId: err.programId,
+    resultJson: resultJson as unknown as Record<string, unknown>,
+    lastError: err.message,
+    updatedAt: new Date().toISOString(),
+  }).where(eq(pdtpFulfillmentEvents.id, eventId))
+  return resultJson
+}
+
+/** Variante transaccional de PREV-I16 para el cierre de inspecciones: el run se
+ * cierra y el hecho queda rechazado en la misma transacción. */
+export async function recordPdtpFulfillmentEventOutsideProgram(
+  input: AccreditationInput & { sourceVersion?: string; returnHref?: string },
+  err: PdtpWorksiteNotInProgramError,
+  client: QueryClient,
+): Promise<void> {
+  const eventId = await recordPendingPdtpFulfillmentEvent(input, client)
+  await markPdtpFulfillmentEventOutsideProgram(eventId, err, input.worksiteId, client)
 }
 
 /**
@@ -523,6 +571,15 @@ export async function recordPdtpFulfillmentEvent(input: AccreditationInput & {
     }
     return result
   } catch (err) {
+    if (err instanceof PdtpWorksiteNotInProgramError) {
+      // PREV-I16: rechazo definitivo con motivo, no un error de la cola.
+      const result = await markPdtpFulfillmentEventOutsideProgram(eventId, err, input.worksiteId, db)
+      logger.info(
+        { sourceType: input.sourceType, sourceId: input.sourceId, worksiteId: input.worksiteId, programId: err.programId },
+        "[pdtp-fulfillment] La faena no está en la membresía del programa vigente; el hecho queda rechazado.",
+      )
+      return result
+    }
     const now = new Date().toISOString()
     const lastError = formatFulfillmentLastError(err)
     await db.update(pdtpFulfillmentEvents).set({ status: "error", lastError, updatedAt: now })
@@ -598,6 +655,46 @@ export async function recordPendingPdtpFulfillmentRevocation(
 }
 
 /**
+ * PREV-I16: revocación ya resuelta dentro de la transacción del módulo de
+ * origen (reabrir o cancelar una inspección). Deja la constancia `revoked` en
+ * el libro con el resultado, en la misma transacción.
+ *
+ * Sin ella, un run cerrado sin programa activo dejaba su `completed` en
+ * `pending`; si se cancelaba antes de activar, la revocación no encontraba
+ * ejecuciones y no escribía nada, y al activar el reconciliador acreditaba
+ * —y autoaprobaba— un run cancelado. Con esta fila, la regla de "última
+ * intención" del reconciliador rechaza ese `completed` viejo. No se deja
+ * `pending`: el reconciliador volvería a revocar lo ya revocado y duplicaría
+ * la historia de la ejecución.
+ */
+export async function recordResolvedPdtpFulfillmentRevocation(
+  input: RevocationInput,
+  result: Awaited<ReturnType<typeof revokePdtpAccreditationWithClient>>,
+  client: QueryClient,
+): Promise<void> {
+  const eventId = await upsertPendingEvent({
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    eventType: "revoked",
+    worksiteId: input.worksiteId,
+    occurredAt: new Date().toISOString(),
+    quantity: 0,
+    evidenceRef: input.reason ?? null,
+    activityNumbers: [],
+    sourceVersion: null,
+    returnHref: null,
+    periodOverride: null,
+    plannedYear: null,
+    autoApproveByUserId: null,
+  }, client)
+  await client.update(pdtpFulfillmentEvents).set({
+    status: "revoked",
+    resultJson: result as unknown as Record<string, unknown>,
+    updatedAt: new Date().toISOString(),
+  }).where(eq(pdtpFulfillmentEvents.id, eventId))
+}
+
+/**
  * Reprocesa los eventos que quedaron `pending` o `error` — al activar un
  * programa, al corregir un mapeo, o por reintento manual. Idempotente por
  * `idempotency_key`: `accreditPdtpFromEvent` no duplica una ejecución ya
@@ -609,14 +706,27 @@ export async function recordPendingPdtpFulfillmentRevocation(
  * hecho operacional los escribió. Una carga histórica retroactiva es una
  * decisión aparte, con motivo y aprobación explícitos.
  */
-export type PdtpFulfillmentReconcileCursor = { createdAt: string; id: string }
+export type PdtpFulfillmentReconcileCursor = { updatedAt: string; id: string }
 
+/*
+ * PREV-I16: la cola se ordena por `updatedAt, id`, no por `createdAt`. Cada
+ * reintento pasa por `upsertPendingEvent`, que adelanta `updatedAt` pero no
+ * `createdAt`: con el orden anterior un error permanente se quedaba para
+ * siempre en la cabeza de la cola y, con más de `limit` de ellos, un hecho
+ * nuevo nunca se procesaba. Así lo recién reintentado pasa al final. El
+ * emparejamiento completed/revoked no depende del orden del lote: se decide
+ * con `updatedAt` precalculado más abajo.
+ */
 export async function reconcilePdtpFulfillmentEvents(input: {
   limit?: number
-  /** Continúa después de este evento (orden `createdAt, id`). Lo usa
+  /** Continúa después de este evento (orden `updatedAt, id`). Lo usa
    * `drainPdtpFulfillmentEvents` para no volver a tomar los mismos eventos
    * que siguen esperando en cada lote. */
   after?: PdtpFulfillmentReconcileCursor
+  /** Sólo eventos cuya última escritura es anterior o igual a este instante.
+   * El vaciado lo fija al empezar: un evento reintentado en esta misma pasada
+   * adelanta su `updatedAt` y no vuelve a entrar. */
+  updatedAtOrBefore?: string
 } = {}): Promise<{
   processed: number
   accredited: number
@@ -633,12 +743,13 @@ export async function reconcilePdtpFulfillmentEvents(input: {
       inArray(pdtpFulfillmentEvents.status, ["pending", "error"]),
       after
         ? or(
-            gt(pdtpFulfillmentEvents.createdAt, after.createdAt),
-            and(eq(pdtpFulfillmentEvents.createdAt, after.createdAt), gt(pdtpFulfillmentEvents.id, after.id)),
+            gt(pdtpFulfillmentEvents.updatedAt, after.updatedAt),
+            and(eq(pdtpFulfillmentEvents.updatedAt, after.updatedAt), gt(pdtpFulfillmentEvents.id, after.id)),
           )
         : undefined,
+      input.updatedAtOrBefore ? lte(pdtpFulfillmentEvents.updatedAt, input.updatedAtOrBefore) : undefined,
     ))
-    .orderBy(asc(pdtpFulfillmentEvents.createdAt), asc(pdtpFulfillmentEvents.id))
+    .orderBy(asc(pdtpFulfillmentEvents.updatedAt), asc(pdtpFulfillmentEvents.id))
     .limit(limit)
 
   const targetRows = pending.length === 0 ? [] : await db.select({
@@ -767,7 +878,7 @@ export async function reconcilePdtpFulfillmentEvents(input: {
     rejected,
     stillPending,
     errored,
-    cursor: last ? { createdAt: last.createdAt, id: last.id } : null,
+    cursor: last ? { updatedAt: last.updatedAt, id: last.id } : null,
   }
 }
 
@@ -792,8 +903,11 @@ export async function drainPdtpFulfillmentEvents(input: { batchSize?: number; ma
   const maxBatches = input.maxBatches ?? 100
   const total = { processed: 0, accredited: 0, rejected: 0, stillPending: 0, errored: 0, batches: 0, exhausted: false }
   let after: PdtpFulfillmentReconcileCursor | undefined
+  // PREV-I16: con la cola ordenada por `updatedAt`, un evento reintentado en
+  // esta pasada volvería a aparecer después del cursor; el tope lo deja fuera.
+  const startedAt = new Date().toISOString()
   while (total.batches < maxBatches) {
-    const batch = await reconcilePdtpFulfillmentEvents({ limit: batchSize, after })
+    const batch = await reconcilePdtpFulfillmentEvents({ limit: batchSize, after, updatedAtOrBefore: startedAt })
     total.batches++
     total.processed += batch.processed
     total.accredited += batch.accredited

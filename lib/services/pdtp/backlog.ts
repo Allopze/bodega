@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, like, sql } from "drizzle-orm"
+import { and, count, desc, eq, inArray, like, or, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpFulfillmentEvents, pdtpPrograms, pdtpProgramWorksites, worksites } from "@/db/schema"
 import {
@@ -113,8 +113,14 @@ export function describePdtpRejection(resultJson: unknown): string {
   const result = (resultJson ?? {}) as {
     skippedOutOfPeriod?: { occurredYear?: number; programYear?: number }
     skippedYearClosed?: { occurredYear?: number }
+    skippedWorksiteNotInProgram?: { programId?: string | null; worksiteId?: string }
     skippedExcluded?: number[]
     skippedNotFound?: number[]
+  }
+  // PREV-I16: neutro a propósito. La faena puede no haber sido nunca miembro o
+  // haber salido de la membresía al cerrarse (`worksite-lifecycle.ts`).
+  if (result.skippedWorksiteNotInProgram) {
+    return "La faena no está en la membresía vigente del programa (o salió de ella al cerrarse): el hecho quedó registrado, pero no acredita."
   }
   if (result.skippedYearClosed) {
     return `El programa ${result.skippedYearClosed.occurredYear ?? "de ese año"} ya fue cerrado formalmente: el hecho llegó tarde y no se acredita.`
@@ -159,7 +165,18 @@ export function describePdtpRejection(resultJson: unknown): string {
  * su diagnóstico global.
  * `digestDrift` compara la huella de ESTE programa contra lo firmado.
  */
-export async function countPdtpFulfillmentBacklog(programId: string, options?: { worksiteIds?: string[] }): Promise<{
+export async function countPdtpFulfillmentBacklog(programId: string, options?: {
+  worksiteIds?: string[]
+  /**
+   * PREV-I16: alcance de faenas de la sesión, que puede ser más amplio que
+   * las faenas miembro visibles. Sólo abre los rechazos que el motor atribuyó a
+   * ESTE programa (`programId`) en faenas que no son miembro —el caso de la
+   * faena fuera de la membresía—, que de otro modo nunca aparecían en el panel.
+   * Sin él, si se pasó `worksiteIds`, no se abre nada (seguro por defecto).
+   * Sin ninguna opción (preflight global) esos rechazos se cuentan todos.
+   */
+  sessionWorksiteIds?: string[] | "all"
+}): Promise<{
   pending: number
   errored: number
   /**
@@ -256,6 +273,23 @@ export async function countPdtpFulfillmentBacklog(programId: string, options?: {
       OR ((${pdtpFulfillmentEvents.resultJson} -> 'skippedOutOfPeriod' ->> 'programYear')::int = ${programScope.year}))`
     : undefined
   const scope = and(memberScope, yearScope)
+  /*
+   * PREV-I16: un rechazo con `programId = este programa` pertenece a él porque
+   * el motor lo resolvió así, aunque su faena no sea miembro (la faena fuera
+   * de la membresía). Se suma al alcance sólo para contar y listar rechazos,
+   * y sólo dentro del alcance de la sesión.
+   */
+  const sessionWorksiteIds = options?.sessionWorksiteIds
+  const sessionFilter = !options || sessionWorksiteIds === "all"
+    ? undefined
+    : sessionWorksiteIds
+      ? (sessionWorksiteIds.length > 0 ? inArray(pdtpFulfillmentEvents.worksiteId, sessionWorksiteIds) : sql`false`)
+      : visibleWorksiteIds
+        ? (visibleWorksiteIds.length > 0 ? inArray(pdtpFulfillmentEvents.worksiteId, visibleWorksiteIds) : sql`false`)
+        : undefined
+  const rejectedScope = memberScope === undefined
+    ? scope
+    : and(or(memberScope, and(eq(pdtpFulfillmentEvents.programId, programId), sessionFilter)), yearScope)
   const [[pendingRow], [erroredRow], [erroredWaitingRow], [rejectedRow], rejectedRows, [lastErrorEvent], [programDigest]] = await Promise.all([
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
       .where(and(eq(pdtpFulfillmentEvents.status, "pending"), scope)),
@@ -268,7 +302,7 @@ export async function countPdtpFulfillmentBacklog(programId: string, options?: {
         scope,
       )),
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
-      .where(and(eq(pdtpFulfillmentEvents.status, "rejected"), scope)),
+      .where(and(eq(pdtpFulfillmentEvents.status, "rejected"), rejectedScope)),
     db.select({
       sourceType: pdtpFulfillmentEvents.sourceType,
       sourceId: pdtpFulfillmentEvents.sourceId,
@@ -277,7 +311,7 @@ export async function countPdtpFulfillmentBacklog(programId: string, options?: {
       worksiteName: worksites.name,
     }).from(pdtpFulfillmentEvents)
       .leftJoin(worksites, eq(worksites.id, pdtpFulfillmentEvents.worksiteId))
-      .where(and(eq(pdtpFulfillmentEvents.status, "rejected"), scope))
+      .where(and(eq(pdtpFulfillmentEvents.status, "rejected"), rejectedScope))
       .orderBy(desc(pdtpFulfillmentEvents.updatedAt))
       .limit(5),
     // El `leftJoin` es a propósito: una faena borrada no debe hacer desaparecer
