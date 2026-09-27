@@ -18,6 +18,7 @@ import { tmpdir } from "node:os"
 import path, { join } from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import { eq } from "drizzle-orm"
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
@@ -42,6 +43,7 @@ afterAll(async () => {
 const { findPdtpEvidenceOwner, collectPdtpEvidenceReferences } = await import("@/lib/services/pdtp/evidence-references")
 const { scanPdtpEvidenceIntegrity } = await import("@/lib/services/pdtp/evidence-integrity")
 const { cleanupPdtpEvidenceOrphans } = await import("@/lib/services/pdtp/evidence-gc")
+const { recordPdtpEvidenceUpload } = await import("@/lib/services/pdtp/evidence-uploads")
 
 const WS = "ws-refs"
 const WS_OTHER = "ws-refs-other"
@@ -95,7 +97,17 @@ async function insertInstance(evidenceRef: string, worksiteId = WS) {
   })
 }
 
+async function uploadRow(path: string) {
+  const [row] = await inMemoryDb.select().from(schema.pdtpEvidenceUploads).where(eq(schema.pdtpEvidenceUploads.path, path))
+  return row
+}
+
+function sha(content: string) {
+  return createHash("sha256").update(content).digest("hex")
+}
+
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.pdtpEvidenceUploads)
   await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.preventionCapaEvidence)
   await inMemoryDb.delete(schema.preventionCapaActions)
@@ -250,5 +262,55 @@ describe("cleanupPdtpEvidenceOrphans usa la misma fuente", () => {
     expect(result.deletedNames).toEqual(["huerfano.pdf"])
     expect(existsSync(join(tempDir, "pdtp-evidence", "solo-historial.pdf"))).toBe(true)
     expect(existsSync(join(tempDir, "pdtp-evidence", "solo-instancia.pdf"))).toBe(true)
+  })
+})
+
+/* PREV-M02-B (0334): registro de subidas. */
+describe("registro de subidas (PREV-M02-B)", () => {
+  it("guarda ruta, quien subió, faena, actividad, sha256, tamaño y tipo", async () => {
+    const path = writeEvidence("subida.pdf", "PDF")
+    await recordPdtpEvidenceUpload({ path, uploadedByUserId: USER, worksiteId: WS, activityId: ACT, sha256: sha("PDF"), sizeBytes: 3, mimeType: "application/pdf" })
+    expect(await uploadRow(path)).toMatchObject({
+      path, uploadedByUserId: USER, worksiteId: WS, activityId: ACT, sha256: sha("PDF"), sizeBytes: 3, mimeType: "application/pdf",
+    })
+  })
+
+  it("una actividad que no existe no tumba la subida: se guarda sin actividad", async () => {
+    const path = writeEvidence("sin-actividad.pdf", "PDF")
+    await recordPdtpEvidenceUpload({ path, uploadedByUserId: USER, worksiteId: WS, activityId: "no-existe", sha256: sha("PDF"), sizeBytes: 3, mimeType: "application/pdf" })
+    expect((await uploadRow(path))?.activityId).toBeNull()
+  })
+
+  it("el GC borra la fila del registro del huérfano que borra, y no la de lo que conserva", async () => {
+    const old = 25 * 60 * 60 * 1000
+    const orphan = writeEvidence("huerfano-registrado.pdf", "O", old)
+    const kept = writeEvidence("vinculado-registrado.pdf", "K", old)
+    await recordPdtpEvidenceUpload({ path: orphan, uploadedByUserId: USER, worksiteId: WS, sha256: sha("O"), sizeBytes: 1, mimeType: "application/pdf" })
+    await recordPdtpEvidenceUpload({ path: kept, uploadedByUserId: USER, worksiteId: WS, sha256: sha("K"), sizeBytes: 1, mimeType: "application/pdf" })
+    await insertExecution("exec-1", WS, { evidenceUrl: kept })
+    const result = await cleanupPdtpEvidenceOrphans({ olderThanMs: 60 * 60 * 1000 })
+    expect(result.deletedNames).toEqual(["huerfano-registrado.pdf"])
+    expect(await uploadRow(orphan)).toBeUndefined()
+    expect(await uploadRow(kept)).toBeDefined()
+  })
+
+  it("en modo de prueba el GC no toca el registro", async () => {
+    const orphan = writeEvidence("huerfano-prueba.pdf", "O", 25 * 60 * 60 * 1000)
+    await recordPdtpEvidenceUpload({ path: orphan, uploadedByUserId: USER, worksiteId: WS, sha256: sha("O"), sizeBytes: 1, mimeType: "application/pdf" })
+    await cleanupPdtpEvidenceOrphans({ olderThanMs: 60 * 60 * 1000, dryRun: true })
+    expect(await uploadRow(orphan)).toBeDefined()
+  })
+
+  it("el escaneo de integridad usa el sha256 del registro cuando la referencia no guardó uno", async () => {
+    const intact = writeEvidence("registro-integro.pdf", "ORIGINAL")
+    const altered = writeEvidence("registro-alterado.pdf", "ALTERADO")
+    await recordPdtpEvidenceUpload({ path: intact, uploadedByUserId: USER, worksiteId: WS, sha256: sha("ORIGINAL"), sizeBytes: 8, mimeType: "application/pdf" })
+    await recordPdtpEvidenceUpload({ path: altered, uploadedByUserId: USER, worksiteId: WS, sha256: sha("ORIGINAL"), sizeBytes: 8, mimeType: "application/pdf" })
+    await insertExecution("exec-1", WS, { evidenceUrl: intact })
+    await insertExecution("exec-2", WS, { evidenceUrl: altered })
+    const result = await scanPdtpEvidenceIntegrity()
+    expect(result.withoutChecksum).toBe(0)
+    expect(result.checksumMismatchCount).toBe(1)
+    expect(result.checksumMismatches[0]).toMatchObject({ path: altered, expected: sha("ORIGINAL"), actual: sha("ALTERADO") })
   })
 })

@@ -53,6 +53,7 @@ const { recordPdtpScheduledInstanceOutcome } = await import("@/lib/services/pdtp
 const { addFollowup } = await import("@/lib/services/pdtp/followups")
 const { findPdtpEvidenceOwner } = await import("@/lib/services/pdtp/evidence-references")
 const { addCapaEvidence } = await import("@/lib/services/prevention-capa")
+const { recordPdtpEvidenceUpload } = await import("@/lib/services/pdtp/evidence-uploads")
 
 const { year: YEAR, month: CURRENT_MONTH } = chileDateParts()
 const PROGRAM_ID = "pdtp-link-v1"
@@ -65,10 +66,24 @@ const USER_B = "user-link-b"
 const APPROVER = "user-link-approver"
 const CHECKSUM = "a".repeat(64)
 
-function evidenceFile(name: string): string {
+/**
+ * Un archivo en disco. PREV-M02-B (0334): por defecto también su fila en el
+ * registro de subidas, como la deja `POST /api/prevencion/pdtp/evidence`;
+ * `owner: null` simula un archivo sin registro (anterior a 0334 o inventado).
+ */
+async function evidenceFile(name: string, owner: { worksiteId: string; userId: string } | null = { worksiteId: WS_A, userId: USER_A }): Promise<string> {
   writeFileSync(join(tmpEvidenceRoot, "pdtp-evidence", name), `%PDF-1.4 ${name}`)
-  return `storage/pdtp-evidence/${name}`
+  const path = `storage/pdtp-evidence/${name}`
+  if (owner) {
+    await recordPdtpEvidenceUpload({
+      path, uploadedByUserId: owner.userId, worksiteId: owner.worksiteId,
+      sha256: CHECKSUM, sizeBytes: 16, mimeType: "application/pdf",
+    })
+  }
+  return path
 }
+
+const OWNER_B = { worksiteId: WS_B, userId: USER_B }
 
 function cell(worksiteId: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -86,12 +101,13 @@ async function executionOf(worksiteId: string) {
 
 /** El archivo de la faena A, ya vinculado a su celda. */
 async function fileOfWorksiteA(name = "acta-faena-a.pdf") {
-  const url = evidenceFile(name)
+  const url = await evidenceFile(name)
   await markPdtpExecution(cell(WS_A, { evidenceUrl: url }), USER_A, [WS_A])
   return url
 }
 
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.pdtpEvidenceUploads)
   await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.operationalActivityEvents)
   await inMemoryDb.delete(schema.pdtpChangeLog)
@@ -146,13 +162,13 @@ describe("hallazgo 1 — la planilla no vincula el archivo de otra faena", () =>
 
   it("tampoco como foto", async () => {
     const url = await fileOfWorksiteA()
-    const own = evidenceFile("propia-b.pdf")
+    const own = await evidenceFile("propia-b.pdf", OWNER_B)
     await expect(markPdtpExecution(cell(WS_B, { evidenceUrl: own, evidencePhotos: [url] }), USER_B, [WS_B]))
       .rejects.toThrow(/otra faena/i)
   })
 
   it("un archivo referenciado sólo por una CAPA de la faena A también es ajeno", async () => {
-    const url = evidenceFile("capa-faena-a.pdf")
+    const url = await evidenceFile("capa-faena-a.pdf")
     const now = new Date().toISOString()
     await inMemoryDb.insert(schema.preventionCapaActions).values({
       id: "capa-link-a", code: "CAPA-LINK-0001", sourceType: "pdtp", sourceId: "exec-x",
@@ -168,14 +184,14 @@ describe("hallazgo 1 — la planilla no vincula el archivo de otra faena", () =>
   })
 
   it("reenviar el archivo propio tras un rechazo, y sumar uno nuevo, sigue funcionando", async () => {
-    const first = evidenceFile("propia-b-1.pdf")
+    const first = await evidenceFile("propia-b-1.pdf", OWNER_B)
     await markPdtpExecution(cell(WS_B, { evidenceUrl: first }), USER_B, [WS_B])
     await rejectPdtpExecution((await executionOf(WS_B))!.id, APPROVER, "Falta firma", "all")
     // Mismo archivo (la fila y su historial ya lo referencian, en la misma faena).
     await markPdtpExecution(cell(WS_B, { evidenceUrl: first }), USER_B, [WS_B])
     await rejectPdtpExecution((await executionOf(WS_B))!.id, APPROVER, "Ilegible", "all")
     // Archivo nuevo: el anterior pasa a las fotos (fusión append-only).
-    const second = evidenceFile("propia-b-2.pdf")
+    const second = await evidenceFile("propia-b-2.pdf", OWNER_B)
     const row = await markPdtpExecution(cell(WS_B, { evidenceUrl: second }), USER_B, [WS_B])
     expect(row.evidenceUrl).toBe(second)
     expect(row.evidencePhotos).toEqual([first])
@@ -247,5 +263,73 @@ describe("hallazgo 1 — obligaciones, instancias programadas y seguimiento CAPA
       scope: { mode: "some", ids: [WS_B] },
       permissions: ["prevention:capa:complete"],
     })).rejects.toThrow(/otra faena/i)
+  })
+})
+
+/* PREV-M02-B (0334): un archivo recién subido todavía no lo referencia ninguna
+ * fila, así que la regla del hallazgo 1 no lo cubría: quien adivinara su nombre
+ * (nanoid de 20) lo vinculaba desde otra faena. El registro de subidas lo
+ * cierra. */
+describe("M02-B — registro de dueño de las subidas", () => {
+  it("un archivo recién subido en la faena A no lo vincula la faena B aunque conozca el nombre", async () => {
+    const url = await evidenceFile("recien-subido-a.pdf")
+    await expect(markPdtpExecution(cell(WS_B, { evidenceUrl: url }), USER_B, [WS_B]))
+      .rejects.toThrow(/se subió para otra faena/i)
+    expect(await executionOf(WS_B)).toBeUndefined()
+  })
+
+  it("tampoco lo usa para otra faena quien lo subió, aunque tenga las dos en su alcance", async () => {
+    const url = await evidenceFile("subido-para-a.pdf")
+    await expect(markPdtpExecution(cell(WS_B, { evidenceUrl: url }), USER_A, [WS_A, WS_B]))
+      .rejects.toThrow(/se subió para otra faena/i)
+  })
+
+  it("en la misma faena, sólo lo vincula quien lo subió", async () => {
+    const url = await evidenceFile("subido-por-a.pdf")
+    await expect(markPdtpExecution(cell(WS_A, { evidenceUrl: url }), USER_B, [WS_A]))
+      .rejects.toThrow(/quien lo subió/i)
+    const row = await markPdtpExecution(cell(WS_A, { evidenceUrl: url }), USER_A, [WS_A])
+    expect(row.evidenceUrl).toBe(url)
+  })
+
+  it("un archivo sin registro ni referencias (anterior a 0334 o inventado) se rechaza con un mensaje claro", async () => {
+    const url = await evidenceFile("sin-registro.pdf", null)
+    await expect(markPdtpExecution(cell(WS_A, { evidenceUrl: url }), USER_A, [WS_A]))
+      .rejects.toThrow(/no tiene registro de subida/i)
+  })
+
+  it("regla heredada: un archivo sin registro que la misma faena ya referencia se sigue pudiendo vincular", async () => {
+    const url = await evidenceFile("heredado-b.pdf", null)
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.preventionCapaActions).values({
+      id: "capa-legacy-b", code: "CAPA-LINK-0009", sourceType: "pdtp", sourceId: "exec-legacy",
+      worksiteId: WS_B, finding: "Hallazgo", actionDescription: "Acción",
+      targetDate: "2026-12-01", createdByUserId: USER_B, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.preventionCapaEvidence).values({
+      id: "capaev-legacy-b", actionId: "capa-legacy-b", kind: "document", reference: url,
+      checksumSha256: CHECKSUM, uploadedByUserId: USER_B, createdAt: now,
+    })
+    const row = await markPdtpExecution(cell(WS_B, { evidenceUrl: url }), USER_B, [WS_B])
+    expect(row.evidenceUrl).toBe(url)
+  })
+
+  it("el resultado de una instancia usa el mismo registro: pasa con la subida propia, no con la ajena", async () => {
+    const now = new Date().toISOString()
+    const day = `${YEAR}-${String(CURRENT_MONTH).padStart(2, "0")}-01`
+    await inMemoryDb.insert(schema.pdtpScheduledInstances).values({
+      id: "inst-m02b", programId: PROGRAM_ID, activityId: ACT_ID, worksiteId: WS_B, scheduledFor: day,
+      isoWeekYear: YEAR, isoWeek: 1, status: "pending", idempotencyKey: "inst-m02b-key",
+      sourceMetadataJson: {}, createdAt: now, updatedAt: now,
+    })
+    const foreign = await evidenceFile("ajena-instancia.pdf")
+    await expect(recordPdtpScheduledInstanceOutcome({
+      instanceId: "inst-m02b", action: "submit", userId: USER_B, evidenceRef: foreign, scope: [WS_B],
+    })).rejects.toThrow(/se subió para otra faena/i)
+    const own = await evidenceFile("propia-instancia.pdf", OWNER_B)
+    const updated = await recordPdtpScheduledInstanceOutcome({
+      instanceId: "inst-m02b", action: "submit", userId: USER_B, evidenceRef: own, scope: [WS_B],
+    })
+    expect(updated.status).toBe("submitted")
   })
 })

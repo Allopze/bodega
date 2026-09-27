@@ -21,6 +21,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import { and, eq } from "drizzle-orm"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { seedPdtpEvidenceUpload } from "@/lib/testing/pdtp-evidence-upload-fixture"
 import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
 
@@ -59,9 +60,12 @@ const USER_A = "user-integrity-a"
 const USER_B = "user-integrity-b"
 const APPROVER = "user-integrity-approver"
 
-function evidenceFile(name: string): string {
+/** PREV-M02-B (0334): el archivo y su fila del registro de subidas (faena de la suite). */
+async function evidenceFile(name: string, uploader: string = USER_A): Promise<string> {
   writeFileSync(join(tmpEvidenceRoot, "pdtp-evidence", name), "%PDF-1.4 test")
-  return `storage/pdtp-evidence/${name}`
+  const path = `storage/pdtp-evidence/${name}`
+  await seedPdtpEvidenceUpload(inMemoryDb, { path, worksiteId: WS, userId: uploader })
+  return path
 }
 
 function cell(overrides: Record<string, unknown> = {}) {
@@ -131,7 +135,7 @@ describe("PREV-B02 — evidencia obligatoria para 'Se hizo'", () => {
    * en silencio —el envío salía con la evidencia de otro intento o sin ella—:
    * falla y dice qué pasó. */
   it("una ruta nueva sin archivo físico falla con un mensaje claro, aunque venga otra evidencia real", async () => {
-    const real = evidenceFile("real-con-fantasma.pdf")
+    const real = await evidenceFile("real-con-fantasma.pdf")
     await expect(markPdtpExecution(cell({ evidenceUrl: "storage/pdtp-evidence/fantasma.pdf", evidencePhotos: [real] }), USER_A, "all"))
       .rejects.toThrow(/"fantasma\.pdf" ya no está en el almacenamiento/)
     await expect(markPdtpExecution(cell({ evidenceUrl: real, evidencePhotos: ["storage/pdtp-evidence/foto-fantasma.jpg"] }), USER_A, "all"))
@@ -140,11 +144,11 @@ describe("PREV-B02 — evidencia obligatoria para 'Se hizo'", () => {
   })
 
   it("una ruta ya guardada cuyo archivo desapareció se sigue tolerando al reenviar", async () => {
-    const first = evidenceFile("guardado-y-perdido.pdf")
+    const first = await evidenceFile("guardado-y-perdido.pdf")
     await markPdtpExecution(cell({ evidenceUrl: first }), USER_A, "all")
     await rejectPdtpExecution((await executionRow())!.id, APPROVER, "Falta la firma", "all")
     rmSync(join(tmpEvidenceRoot, "pdtp-evidence", "guardado-y-perdido.pdf"))
-    const second = evidenceFile("reemplazo.pdf")
+    const second = await evidenceFile("reemplazo.pdf")
     const row = await markPdtpExecution(cell({ evidenceUrl: first, evidencePhotos: [second] }), USER_A, "all")
     expect(row.status).toBe("submitted")
     expect(row.evidenceUrl).toBe(first)
@@ -152,7 +156,7 @@ describe("PREV-B02 — evidencia obligatoria para 'Se hizo'", () => {
   })
 
   it("acepta la ejecución con un archivo real", async () => {
-    const url = evidenceFile("acta-a.pdf")
+    const url = await evidenceFile("acta-a.pdf")
     await markPdtpExecution(cell({ evidenceUrl: url }), USER_A, "all")
     expect((await executionRow())?.evidenceUrl).toBe(url)
   })
@@ -193,7 +197,7 @@ describe("PREV-B02 — evidencia obligatoria para 'Se hizo'", () => {
 
 describe("PREV-M03 — evidence_status refleja la evidencia real", () => {
   it("una carga con archivo queda 'provided' y una cantidad cero 'not_required'", async () => {
-    await markPdtpExecution(cell({ evidenceUrl: evidenceFile("estado-archivo.pdf") }), USER_A, "all")
+    await markPdtpExecution(cell({ evidenceUrl: await evidenceFile("estado-archivo.pdf") }), USER_A, "all")
     expect((await executionRow())?.evidenceStatus).toBe("provided")
     await inMemoryDb.delete(schema.pdtpExecutions)
     await markPdtpExecution(cell({ executedQuantity: 0 }), USER_A, "all")
@@ -234,7 +238,7 @@ describe("W1-N01 — una acreditación de integración no presta su archivo a la
       id: `exec-integration-${status}`, activityId: ACT_ID, worksiteId: WS, year: YEAR, month: CURRENT_MONTH, week: 1,
       executedQuantity: 1, status, origin: "integration", sourceType: "capacitacion_ocurrencia", sourceId: "occ-1",
       idempotencyKey: `pdtp-accredit:${ACT_ID}:${WS}:capacitacion_ocurrencia:occ-1-${status}`,
-      evidenceUrl: evidenceFile(`integracion-${status}.pdf`), executedByUserId: null, createdAt: now, updatedAt: now,
+      evidenceUrl: await evidenceFile(`integracion-${status}.pdf`), executedByUserId: null, createdAt: now, updatedAt: now,
     })
   }
 
@@ -245,7 +249,7 @@ describe("W1-N01 — una acreditación de integración no presta su archivo a la
 
   it("con una integración aprobada en la celda, la fila manual nace sin heredar sus archivos", async () => {
     await seedIntegration("approved")
-    const own = evidenceFile("manual-propio.pdf")
+    const own = await evidenceFile("manual-propio.pdf")
     await markPdtpExecution(cell({ evidenceUrl: own }), USER_A, "all")
     const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
       .where(and(eq(schema.pdtpExecutions.activityId, ACT_ID), eq(schema.pdtpExecutions.origin, "manual")))
@@ -257,9 +261,9 @@ describe("W1-N01 — una acreditación de integración no presta su archivo a la
 
 describe("PREV-B03 — un envío ajeno no se sobrescribe y la evidencia previa se conserva", () => {
   it("otra persona no puede reemplazar un envío pendiente ajeno", async () => {
-    const urlA = evidenceFile("acta-a2.pdf")
+    const urlA = await evidenceFile("acta-a2.pdf")
     await markPdtpExecution(cell({ evidenceUrl: urlA, evidenceText: "A" }), USER_A, "all")
-    const urlB = evidenceFile("acta-b2.pdf")
+    const urlB = await evidenceFile("acta-b2.pdf", USER_B)
     await expect(markPdtpExecution(cell({ evidenceUrl: urlB, executedQuantity: 3 }), USER_B, "all"))
       .rejects.toThrow(/otra persona/i)
     const row = await executionRow()
@@ -269,9 +273,9 @@ describe("PREV-B03 — un envío ajeno no se sobrescribe y la evidencia previa s
   })
 
   it("quien administra el programa puede corregirlo, y la evidencia anterior sigue referenciada", async () => {
-    const urlA = evidenceFile("acta-a3.pdf")
+    const urlA = await evidenceFile("acta-a3.pdf")
     await markPdtpExecution(cell({ evidenceUrl: urlA }), USER_A, "all")
-    const urlB = evidenceFile("acta-b3.pdf")
+    const urlB = await evidenceFile("acta-b3.pdf", USER_B)
     await markPdtpExecution(cell({ evidenceUrl: urlB }), USER_B, "all", { canActForOthers: true })
     const row = await executionRow()
     expect(row?.evidenceUrl).toBe(urlB)
@@ -279,9 +283,9 @@ describe("PREV-B03 — un envío ajeno no se sobrescribe y la evidencia previa s
   })
 
   it("el mismo autor reemplaza su archivo sin perder el anterior", async () => {
-    const first = evidenceFile("propio-1.pdf")
+    const first = await evidenceFile("propio-1.pdf")
     await markPdtpExecution(cell({ evidenceUrl: first }), USER_A, "all")
-    const second = evidenceFile("propio-2.pdf")
+    const second = await evidenceFile("propio-2.pdf")
     await markPdtpExecution(cell({ evidenceUrl: second }), USER_A, "all")
     const row = await executionRow()
     expect(row?.evidenceUrl).toBe(second)
@@ -289,11 +293,11 @@ describe("PREV-B03 — un envío ajeno no se sobrescribe y la evidencia previa s
   })
 
   it("tras un rechazo, el reenvío conserva la evidencia rechazada y deja el motivo en la historia", async () => {
-    const first = evidenceFile("rechazada.pdf")
+    const first = await evidenceFile("rechazada.pdf")
     await markPdtpExecution(cell({ evidenceUrl: first }), USER_A, "all")
     const row = await executionRow()
     await rejectPdtpExecution(row!.id, APPROVER, "El acta no tiene firmas", "all")
-    const second = evidenceFile("corregida.pdf")
+    const second = await evidenceFile("corregida.pdf")
     await markPdtpExecution(cell({ evidenceUrl: second }), USER_A, "all")
 
     const after = await executionRow()
@@ -312,7 +316,7 @@ describe("PREV-B03 — un envío ajeno no se sobrescribe y la evidencia previa s
   })
 
   it("aprobar y rechazar quedan en el control de cambios del programa", async () => {
-    const url = evidenceFile("para-aprobar.pdf")
+    const url = await evidenceFile("para-aprobar.pdf")
     await markPdtpExecution(cell({ evidenceUrl: url }), USER_A, "all")
     const row = await executionRow()
     await approvePdtpExecution(row!.id, APPROVER, "all")
@@ -333,19 +337,19 @@ describe("PREV-I03 — la asignación nominal se respeta al registrar", () => {
 
   it("con una asignación vigente a otra persona, no se puede registrar", async () => {
     await assign(USER_A)
-    await expect(markPdtpExecution(cell({ evidenceUrl: evidenceFile("no-asignado.pdf") }), USER_B, "all"))
+    await expect(markPdtpExecution(cell({ evidenceUrl: await evidenceFile("no-asignado.pdf", USER_B) }), USER_B, "all"))
       .rejects.toThrow(/asignada a otra persona/i)
   })
 
   it("la persona asignada sí registra", async () => {
     await assign(USER_A)
-    await markPdtpExecution(cell({ evidenceUrl: evidenceFile("asignado.pdf") }), USER_A, "all")
+    await markPdtpExecution(cell({ evidenceUrl: await evidenceFile("asignado.pdf") }), USER_A, "all")
     expect((await executionRow())?.executedByUserId).toBe(USER_A)
   })
 
   it("quien administra el programa puede registrar por la persona asignada", async () => {
     await assign(USER_A)
-    await markPdtpExecution(cell({ evidenceUrl: evidenceFile("override.pdf") }), USER_B, "all", { canActForOthers: true })
+    await markPdtpExecution(cell({ evidenceUrl: await evidenceFile("override.pdf", USER_B) }), USER_B, "all", { canActForOthers: true })
     expect((await executionRow())?.executedByUserId).toBe(USER_B)
   })
 
@@ -355,7 +359,7 @@ describe("PREV-I03 — la asignación nominal se respeta al registrar", () => {
       id: "assignee-old", activityId: ACT_ID, worksiteId: WS, userId: USER_A,
       validFrom: `${YEAR - 1}-01-01`, validUntil: `${YEAR - 1}-12-31`, createdAt: now, updatedAt: now,
     })
-    await markPdtpExecution(cell({ evidenceUrl: evidenceFile("vencida.pdf") }), USER_B, "all")
+    await markPdtpExecution(cell({ evidenceUrl: await evidenceFile("vencida.pdf", USER_B) }), USER_B, "all")
     expect((await executionRow())?.executedByUserId).toBe(USER_B)
   })
 })

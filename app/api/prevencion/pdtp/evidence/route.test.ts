@@ -8,6 +8,8 @@ const mockAssertWorksiteAccess = vi.hoisted(() => vi.fn())
 const mockAssertPdtpActivityMechanism = vi.hoisted(() => vi.fn())
 const mockMkdirp = vi.hoisted(() => vi.fn())
 const mockWriteBuffer = vi.hoisted(() => vi.fn())
+const mockRemoveFile = vi.hoisted(() => vi.fn())
+const mockRecordPdtpEvidenceUpload = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({
   guardPermission: mockGuardPermission,
@@ -24,6 +26,10 @@ vi.mock("@/lib/services/prevention-pdtp", () => ({
 vi.mock("@/lib/storage/helpers", () => ({
   mkdirp: mockMkdirp,
   writeBuffer: mockWriteBuffer,
+  removeFile: mockRemoveFile,
+}))
+vi.mock("@/lib/services/pdtp/evidence-uploads", () => ({
+  recordPdtpEvidenceUpload: mockRecordPdtpEvidenceUpload,
 }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: vi.fn() } }))
 
@@ -54,6 +60,8 @@ describe("POST /api/prevencion/pdtp/evidence", () => {
     mockAssertPdtpActivityMechanism.mockResolvedValue(undefined)
     mockMkdirp.mockResolvedValue(undefined)
     mockWriteBuffer.mockResolvedValue(undefined)
+    mockRemoveFile.mockResolvedValue(undefined)
+    mockRecordPdtpEvidenceUpload.mockResolvedValue({})
   })
 
   it("returns 403 when permission guard fails", async () => {
@@ -197,5 +205,43 @@ describe("POST /api/prevencion/pdtp/evidence", () => {
     const res = await POST(makeRequest({ file, worksiteId: "ws-1" }))
     const json = await res.json()
     expect(json.path).toMatch(/^storage\/pdtp-evidence\/[A-Za-z0-9_-]+\.jpg$/)
+  })
+
+  // PREV-M02-B (0334): cada subida deja su fila en el registro de dueños, con
+  // el mismo sha256 que se devuelve y el tipo que declararon los bytes.
+  it("registra la subida con quien subió, la faena, la actividad, el sha256, el tamaño y el tipo (PREV-M02-B)", async () => {
+    const { POST } = await import("./route")
+    const file = new File([PDF_BYTES], "acta.pdf", { type: "application/pdf" })
+    const res = await POST(makeRequest({ activityId: "act-9", file, worksiteId: "ws-1" }))
+    const json = await res.json()
+    expect(res.status).toBe(201)
+    expect(mockRecordPdtpEvidenceUpload).toHaveBeenCalledWith({
+      path: json.path,
+      uploadedByUserId: "user-1",
+      worksiteId: "ws-1",
+      activityId: "act-9",
+      sha256: json.checksumSha256,
+      sizeBytes: PDF_BYTES.length,
+      mimeType: "application/pdf",
+    })
+  })
+
+  it("sin actividad registra la subida con activityId null (PREV-M02-B)", async () => {
+    const { POST } = await import("./route")
+    const file = new File([PNG_BYTES], "foto.png", { type: "image/png" })
+    await POST(makeRequest({ file, worksiteId: "ws-1" }))
+    expect(mockRecordPdtpEvidenceUpload).toHaveBeenCalledWith(expect.objectContaining({ activityId: null, mimeType: "image/png" }))
+  })
+
+  it("si el registro falla, borra el archivo y responde 500: no queda un archivo sin dueño (PREV-M02-B)", async () => {
+    const { POST } = await import("./route")
+    mockRecordPdtpEvidenceUpload.mockRejectedValueOnce(new Error("connection refused 10.0.0.5"))
+    const file = new File([PDF_BYTES], "acta.pdf", { type: "application/pdf" })
+    const res = await POST(makeRequest({ file, worksiteId: "ws-1" }))
+    const json = await res.json()
+    expect(res.status).toBe(500)
+    expect(JSON.stringify(json)).not.toContain("10.0.0.5")
+    expect(mockRemoveFile).toHaveBeenCalledTimes(1)
+    expect(mockRemoveFile.mock.calls[0]![0]).toBe(mockWriteBuffer.mock.calls[0]![0])
   })
 })

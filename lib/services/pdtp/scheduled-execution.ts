@@ -284,12 +284,12 @@ export async function recordPdtpScheduledInstanceOutcome(input: {
   return isTransactionHost(client) ? client.transaction((tx) => execute(tx)) : execute(client as Tx)
 }
 
-async function assertEvidenceUsable(tx: Tx, evidenceRef: string, worksiteId: string, scope: WorksiteScope, _userId: string | null) {
+async function assertEvidenceUsable(tx: Tx, evidenceRef: string, worksiteId: string, scope: WorksiteScope, userId: string | null) {
   const evidenceFile = resolvePdtpEvidenceFile(evidenceRef)
   if (!evidenceFile || !existsSync(evidenceFile)) {
     throw new Error("La evidencia adjunta no existe en el almacenamiento autorizado.")
   }
-  await assertPdtpEvidenceLinkable(tx, { paths: [evidenceRef], worksiteId, scope })
+  await assertPdtpEvidenceLinkable(tx, { paths: [evidenceRef], worksiteId, scope, userId })
 }
 
 export type PdtpScheduledInstanceSyncTrigger = "source" | "approval" | "rejection" | "revocation"

@@ -5,6 +5,7 @@ import { and, eq, inArray, like, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { seedPdtpEvidenceUpload } from "@/lib/testing/pdtp-evidence-upload-fixture"
 import * as schema from "@/db/schema"
 import { extractPdtpCatalogFromWorkbook, readPdtpWorkbook } from "@/lib/services/prevention-pdtp-catalog"
 
@@ -252,6 +253,16 @@ beforeEach(async () => {
     { slug: "cphs", displayName: "Comité Paritario", roleName: "cphs", kind: "rbac_role" },
     { slug: "prevencionista", displayName: "Prevencionista", roleName: "prevencionista", kind: "rbac_role" },
   ])
+})
+
+// PREV-M02-B (0334): los archivos genéricos figuran como subidos por user-1,
+// cada uno para su faena, que es quien los vincula en estas pruebas.
+beforeEach(async () => {
+  const [ws1] = await inMemoryDb.select({ id: schema.worksites.id }).from(schema.worksites).where(eq(schema.worksites.id, "ws-1"))
+  const [ws2] = await inMemoryDb.select({ id: schema.worksites.id }).from(schema.worksites).where(eq(schema.worksites.id, "ws-2"))
+  const [user] = await inMemoryDb.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.id, "user-1"))
+  if (ws1 && user) await seedPdtpEvidenceUpload(inMemoryDb, { path: GENERIC_EVIDENCE_URL, worksiteId: "ws-1", userId: "user-1" })
+  if (ws2 && user) await seedPdtpEvidenceUpload(inMemoryDb, { path: GENERIC_EVIDENCE_URL_WS2, worksiteId: "ws-2", userId: "user-1" })
 })
 
 describe("prevention PDTP service", () => {
@@ -1592,6 +1603,7 @@ describe("prevention PDTP service", () => {
       evidenceText: "Registro de la actividad 1 en Faena A", evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(exec1.id, "user-approver", ["ws-1"])
+    await seedPdtpEvidenceUpload(inMemoryDb, { path: GENERIC_EVIDENCE_URL_WS2, worksiteId: "ws-2", userId: "user-1" })
     const exec2 = await markPdtpExecution({
       activityId: act2.id, worksiteId: "ws-2", year: 2026, month: 1, week: 1, executedQuantity: 2,
       evidenceText: "Registro de la actividad 2 en Faena B", evidenceUrl: GENERIC_EVIDENCE_URL_WS2,
@@ -2288,6 +2300,7 @@ describe("prevention PDTP service", () => {
       evidenceText: "Registro verificable del caso A", evidenceUrl: GENERIC_EVIDENCE_URL,
     }, "user-1", ["ws-1"])
     // Pending, worksite B
+    await seedPdtpEvidenceUpload(inMemoryDb, { path: GENERIC_EVIDENCE_URL_WS2, worksiteId: "ws-2", userId: "user-1" })
     await markPdtpExecution({
       activityId: act2!.id, worksiteId: "ws-2", year: 2026, month: 1, week: 2, executedQuantity: 1,
       evidenceText: "Registro verificable del caso B", evidenceUrl: GENERIC_EVIDENCE_URL_WS2,
@@ -2814,6 +2827,7 @@ describe("prevention PDTP service", () => {
     // existencia (H-B7) los acepte
     for (const name of ["foto-001.pdf", "foto-002.pdf", "foto-003.pdf"]) {
       writeFileSync(join(tmpEvidenceDir, name), "%PDF-1.4 test")
+      await seedPdtpEvidenceUpload(inMemoryDb, { path: `storage/pdtp-evidence/${name}`, worksiteId: "ws-1", userId: "user-1" })
     }
 
     // 1ra ejecución con foto 1
@@ -2865,6 +2879,7 @@ describe("prevention PDTP service", () => {
 
     // H-B7: pre-creamos el archivo físico
     writeFileSync(join(tmpEvidenceDir, "preservada.pdf"), "%PDF-1.4 test")
+    await seedPdtpEvidenceUpload(inMemoryDb, { path: "storage/pdtp-evidence/preservada.pdf", worksiteId: "ws-1", userId: "user-1" })
 
     // 1ra con evidencia
     await markPdtpExecution({

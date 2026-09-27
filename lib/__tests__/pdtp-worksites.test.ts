@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import { eq } from "drizzle-orm"
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { seedPdtpEvidenceUpload } from "@/lib/testing/pdtp-evidence-upload-fixture"
 import * as schema from "@/db/schema"
 
 // PREV-B02: "Se hizo" exige un archivo real en disco; las ejecuciones de este
@@ -72,6 +73,12 @@ async function createDraftProgramWithActivity(year: number) {
   }, "user-1")
   return { program, activity }
 }
+
+// PREV-M02-B (0334): el archivo de prueba compartido figura como subido por
+// user-1 para ws-1, que es quien lo vincula primero en estas pruebas.
+beforeEach(async () => {
+  await seedPdtpEvidenceUpload(inMemoryDb, { path: EVIDENCE_URL, worksiteId: "ws-1", userId: "user-1" })
+})
 
 describe("PDTP multifaena: membresía y exclusiones", () => {
   it("resolveProgramWorksiteIds: sin membresía declarada, sólo aplica a todo el scope si el programa lo declara", async () => {

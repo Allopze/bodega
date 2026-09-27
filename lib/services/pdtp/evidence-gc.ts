@@ -39,6 +39,8 @@ import { resolveInspectionEvidenceDir, resolvePdtpEvidenceDir, resolveRiskMapDir
 import { logger } from "@/lib/logger"
 import { recordAudit } from "@/lib/audit"
 import { collectPdtpEvidenceReferences } from "./evidence-references"
+import { deletePdtpEvidenceUploads } from "./evidence-uploads"
+import { PDTP_EVIDENCE_PATH_PREFIX } from "./evidence-href"
 import { MIN_ORPHAN_AGE_MS } from "./evidence-gc-policy"
 
 export { MIN_ORPHAN_AGE_LABEL, MIN_ORPHAN_AGE_MS, ORPHAN_SAMPLE_SIZE, summarizeOrphanCleanup } from "./evidence-gc-policy"
@@ -98,6 +100,18 @@ export async function cleanupPdtpEvidenceOrphans(
   }
 
   await sweepOrphans({ dir, referenced, olderThanMs, dryRun, label: "pdtp/evidence-gc", actorUserId: options.actorUserId ?? null }, result)
+
+  // PREV-M02-B (0334): la fila del registro de subidas de un archivo que ya no
+  // existe no sirve para nada. Sólo en modo real y sólo de lo que se borró.
+  if (!dryRun && result.deletedNames.length > 0) {
+    try {
+      await deletePdtpEvidenceUploads(result.deletedNames.map((name) => `${PDTP_EVIDENCE_PATH_PREFIX}${name}`))
+    } catch (err) {
+      // Los archivos ya se borraron: una fila de registro huérfana no autoriza
+      // nada (la ruta no existe), así que se registra y se sigue.
+      logger.error("[pdtp/evidence-gc] no se pudo limpiar el registro de subidas", { err, count: result.deletedNames.length })
+    }
+  }
 
   logger.info("[pdtp/evidence-gc] done", { ...result, dryRun })
   return result
