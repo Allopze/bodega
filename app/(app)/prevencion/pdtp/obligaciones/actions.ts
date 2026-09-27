@@ -4,6 +4,8 @@ import { ZodError } from "zod"
 import { safeActionMessage } from "@/lib/action-error"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { pdtpRegistrationActorFromSession } from "@/lib/auth/pdtp-registration"
+import type { PdtpRegistrationActor } from "@/lib/services/pdtp/registration-authority"
 import {
   cancelPdtpObligation,
   createPdtpObligation,
@@ -30,12 +32,12 @@ function scopeFromSession(session: NonNullable<Awaited<ReturnType<typeof guardPe
  */
 async function run(
   permission: "prevention:pdtp:execute" | "prevention:pdtp:obligation:cancel",
-  operation: (context: { userId: string; scope: WorksiteScope }) => Promise<unknown>,
+  operation: (context: { userId: string; scope: WorksiteScope; actor: PdtpRegistrationActor }) => Promise<unknown>,
 ): Promise<ActionState> {
   const guard = await guardPermission(permission)
   if (guard.error) return guard.error
   try {
-    await operation({ userId: guard.session!.user.id, scope: scopeFromSession(guard.session!) })
+    await operation({ userId: guard.session!.user.id, scope: scopeFromSession(guard.session!), actor: pdtpRegistrationActorFromSession(guard.session!) })
     revalidateOperationalViews(["/prevencion/pdtp/obligaciones", "/prevencion/pdtp/aprobaciones"])
     return { ok: true }
   } catch (error) {
@@ -68,7 +70,7 @@ export async function createPdtpObligationAction(input: unknown): Promise<Action
 }
 
 export async function reportPdtpObligationAction(input: unknown): Promise<ActionState> {
-  return run("prevention:pdtp:execute", ({ userId, scope }) => {
+  return run("prevention:pdtp:execute", ({ userId, scope, actor }) => {
     const parsed = pdtpObligationReportSchema.parse(input)
     return reportPdtpObligation({
       ...parsed,
@@ -76,6 +78,8 @@ export async function reportPdtpObligationAction(input: unknown): Promise<Action
       evidenceUrl: parsed.evidenceUrl ?? undefined,
       userId,
       scope,
+      // PREV-I03: reporta quien responde por la actividad, o Prevención.
+      actor,
     })
   })
 }

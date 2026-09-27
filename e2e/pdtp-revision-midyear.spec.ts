@@ -38,6 +38,8 @@ const V2 = "pdtp-2025-v3-revision-e2e"
 const ACTIVITY_NAME = "Charla mensual de revisión E2E"
 const AUTHOR = "jt@e2e.chome.cl"
 const REASON = "Marzo conciliado con la jefatura de faena tras el registro tardío."
+// PREV-I03: sin asignación, registra el rol responsable de la actividad.
+const CATALOG_SLUG = "jt-revision-e2e"
 
 const v1Activity = `${V1}-a-001`
 const v2Activity = `${V2}-a-001`
@@ -69,6 +71,7 @@ async function cleanup(sql: postgres.Sql) {
   await sql`update pdtp_programs set source_program_id = null where id in ${sql(programs)}`
   await sql`delete from pdtp_programs where id in ${sql(programs)}`
   await sql`update pdtp_programs set status = 'active' where id = ${FIXTURE_2025}`
+  await sql`delete from pdtp_responsible_catalog where slug = ${CATALOG_SLUG}`
 }
 
 async function v1Execution(month: number) {
@@ -100,6 +103,11 @@ test.describe.serial("PDTP — revisión v+1 a mitad de año (PREV-C05)", () => 
     try {
       await cleanup(sql)
       const now = new Date().toISOString()
+      await sql`
+        insert into pdtp_responsible_catalog (slug, display_name, role_name, kind, is_active)
+        values (${CATALOG_SLUG}, 'Jefe de terreno Revisión E2E', 'jefe_terreno', 'rbac_role', true)
+        on conflict (slug) do nothing
+      `
       await sql`update pdtp_programs set status = 'closed' where id = ${FIXTURE_2025}`
       for (const [id, version, status, activatedAt] of [
         [V1, 2, "closed", `${YEAR}-01-06T12:00:00.000Z`],
@@ -131,7 +139,7 @@ test.describe.serial("PDTP — revisión v+1 a mitad de año (PREV-C05)", () => 
             responsible_slugs, responsible_display, schedule_mode, source_sheet_row, created_at, updated_at
           ) values (
             ${activityId}, ${id}, 1, 1, 'active', ${ACTIVITY_NAME}, 'Programa E2E',
-            '[]'::jsonb, 'Jefe de terreno', 'scheduled', 1, ${now}, ${now}
+            ${sql.json([CATALOG_SLUG])}, 'Jefe de terreno', 'scheduled', 1, ${now}, ${now}
           )
         `
         await sql`

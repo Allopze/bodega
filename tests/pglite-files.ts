@@ -147,6 +147,10 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-delete-restrict.test.ts",
   // Auditoría 2026-09-26: evidencia obligatoria, envíos ajenos y asignación nominal.
   "lib/__tests__/pdtp-execution-integrity.test.ts",
+  // PREV-I03 (resto): registra lo propio —asignado o responsable por cargo— salvo Prevención.
+  "lib/__tests__/pdtp-registration-authority.test.ts",
+  // PREV-M09: obligaciones paginadas y filtradas en la base.
+  "lib/__tests__/pdtp-obligations-pagination.test.ts",
   // C05-A: la revisión v+1 copia todo el contenido de la actividad.
   "lib/__tests__/pdtp-revision-midyear.test.ts",
   // T6 (PREV-C05-B/C/D): ventanas por versión, consolidación anual y traspaso.
@@ -228,6 +232,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/proveedores-actions.test.ts",
   "lib/__tests__/facturacion-clientes-identidad.test.ts",
   "lib/__tests__/cron-run-ledger.test.ts",
+  // PREV-I13: alertas por correo del escaneo de integridad y de crons de Prevención fallidos.
+  "lib/__tests__/prevention-ops-alerts.test.ts",
   "lib/__tests__/deadline-reminders.test.ts",
   "lib/reports/export-module/solicitudes.test.ts",
   "lib/__tests__/segregacion-dinero.test.ts",

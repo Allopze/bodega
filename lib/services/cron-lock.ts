@@ -59,7 +59,24 @@ async function recorded<T>(
     return result
   } catch (err) {
     await closeRun(runId, startedAt, "failed", err instanceof Error ? err.message : String(err))
+    await alertCronFailure(jobName, err)
     throw err
+  }
+}
+
+/**
+ * PREV-I13: una corrida fallida de un cron de Prevención avisa por la
+ * plataforma y por correo (una vez por job y por día; ver
+ * `prevention-ops-alerts.ts`, que decide qué jobs cuentan). Import dinámico:
+ * la bitácora no arrastra el correo a cada ruta que la usa. Igual que la
+ * bitácora, el aviso nunca reemplaza al error original.
+ */
+async function alertCronFailure(jobName: string, err: unknown): Promise<void> {
+  try {
+    const { alertPreventionCronFailure } = await import("@/lib/services/prevention-ops-alerts")
+    await alertPreventionCronFailure(jobName, err)
+  } catch (alertErr) {
+    logger.error(`[cron/${jobName}] no se pudo emitir la alerta de falla`, alertErr)
   }
 }
 

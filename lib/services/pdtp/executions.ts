@@ -17,6 +17,7 @@ import { syncPdtpScheduledInstanceFromExecution } from "./scheduled-execution"
 import { todayInChile } from "@/lib/utils"
 import { hashPdtpEvidenceFiles } from "./evidence-files"
 import { assertPdtpEvidenceLinkable } from "./evidence-references"
+import { assertPdtpActorMayRegister, type PdtpRegistrationActor } from "./registration-authority"
 import {
   pdtpExecutionHistorySnapshot,
   pdtpNextSubmissionMetadata,
@@ -30,6 +31,14 @@ export type MarkPdtpExecutionOptions = {
    * asignada. El resto sólo actúa sobre lo propio.
    */
   canActForOthers?: boolean
+  /**
+   * PREV-I03 (resto): quién registra, resuelto de la sesión. Con `actor`, la
+   * ejecución sólo se acepta si es de su cargo, le está asignada o es
+   * Prevención (`registration-authority.ts`). Las acciones de servidor siempre
+   * lo pasan; sin él —llamadas internas y pruebas antiguas— sólo rige la
+   * asignación nominal, como antes.
+   */
+  actor?: PdtpRegistrationActor
 }
 
 const EXECUTION_PERIOD_MESSAGES = {
@@ -98,7 +107,9 @@ export async function markPdtpExecution(
   // de /pendientes — cualquiera con `execute` en la faena registraba la
   // actividad de otra persona. Con una asignación vigente, registra la persona
   // asignada; quien administra el programa puede hacerlo por ella.
-  if (!options.canActForOthers) {
+  if (options.actor) {
+    await assertPdtpActorMayRegister({ activityId: data.activityId, worksiteId: data.worksiteId, actor: options.actor })
+  } else if (!options.canActForOthers) {
     const today = todayInChile()
     const assignees = await db.select({ userId: pdtpActivityWorksiteAssignees.userId })
       .from(pdtpActivityWorksiteAssignees)

@@ -3,13 +3,13 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useSafeShellHeader } from "@/components/layout/header-context"
 import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
+import { FilterSearchInput } from "@/components/ui/filter-search-input"
 import { FileInput } from "@/components/ui/file-input"
 import { Input } from "@/components/ui/input"
 import { PageContainer } from "@/components/ui/page-container"
@@ -17,12 +17,14 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { formatDateTime } from "@/lib/utils"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { describePdtpDue } from "@/lib/services/pdtp/schedule-definition"
-import type { listPdtpDemandActivities, listPdtpObligations } from "@/lib/services/prevention-pdtp"
+import type { listPdtpDemandActivities } from "@/lib/services/prevention-pdtp"
+import type { listPdtpObligationsPage, PdtpObligationListFilter, PdtpObligationStatusCounts } from "@/lib/services/pdtp/obligations"
 import { cancelPdtpObligationAction, createPdtpObligationAction, reportPdtpObligationAction } from "./actions"
 
 type DemandActivity = Awaited<ReturnType<typeof listPdtpDemandActivities>>[number]
-type ObligationRow = Awaited<ReturnType<typeof listPdtpObligations>>[number]
+type ObligationRow = Awaited<ReturnType<typeof listPdtpObligationsPage>>["rows"][number]
 type Worksite = { id: string; name: string }
 
 /** Label + variante en un solo mapa: el color lo decide el estado. */
@@ -45,36 +47,37 @@ function clientRequestId() {
 }
 
 export function PdtpObligationsWorkbench({
-  worksites, activities, initialObligations, canExecute, canCancel,
+  worksites, activities, obligations, counts, total, pagination, filters, canExecute, canCancel, reportableObligationIds,
 }: {
   worksites: Worksite[]
   activities: DemandActivity[]
-  initialObligations: ObligationRow[]
+  /** Sólo la página visible (PREV-M09): el servidor pagina y filtra. */
+  obligations: ObligationRow[]
+  /** Contadores de los tiles, calculados en la base con los filtros de faena y texto. */
+  counts: PdtpObligationStatusCounts
+  /** Casos que cumplen todos los filtros (todas las páginas). */
+  total: number
+  /** `ServerPagination` ya armado en el servidor (sus enlaces son funciones de la URL). */
+  pagination?: React.ReactNode
+  filters: { status: PdtpObligationListFilter; worksiteId: string; search: string }
   canExecute: boolean
   /** Cancelar es gestión, no trabajo de terreno: permiso propio. */
   canCancel: boolean
+  /**
+   * PREV-I03: casos de la página que esta persona puede reportar. Sin la lista
+   * (Prevención) se ofrece en todos. El servidor rechaza igual.
+   */
+  reportableObligationIds?: readonly string[]
 }) {
   const router = useRouter()
-  const { searchQuery } = useSafeShellHeader()
-  const [status, setStatus] = React.useState("open")
-  const [worksiteId, setWorksiteId] = React.useState("all")
+  const { setFilter, clearFilters } = useUrlFilters()
   const [createOpen, setCreateOpen] = React.useState(false)
   const [reporting, setReporting] = React.useState<ObligationRow | null>(null)
   const [cancelling, setCancelling] = React.useState<ObligationRow | null>(null)
-  const query = searchQuery.trim().toLocaleLowerCase("es-CL")
-
-  const counts = React.useMemo(() => ({
-    pending: initialObligations.filter((row) => row.effectiveStatus === "pending").length,
-    overdue: initialObligations.filter((row) => row.effectiveStatus === "overdue").length,
-    reported: initialObligations.filter((row) => row.effectiveStatus === "reported").length,
-  }), [initialObligations])
-  const rows = initialObligations.filter((row) => {
-    if (status !== "open" && row.effectiveStatus !== status) return false
-    if (worksiteId !== "all" && row.obligation.worksiteId !== worksiteId) return false
-    if (!query) return true
-    return [row.activityName, row.worksiteName, row.obligation.sourceType, row.obligation.sourceId]
-      .filter(Boolean).some((value) => String(value).toLocaleLowerCase("es-CL").includes(query))
-  })
+  const reportable = React.useMemo(() => reportableObligationIds ? new Set(reportableObligationIds) : null, [reportableObligationIds])
+  const canReport = (row: ObligationRow) => canExecute && (reportable === null || reportable.has(row.obligation.id))
+  const isFiltered = filters.status !== "open" || filters.worksiteId !== "all" || filters.search !== ""
+  const hasAnyCase = counts.pending + counts.overdue + counts.reported > 0
 
   function openCreate() {
     setCreateOpen(true)
@@ -99,12 +102,12 @@ export function PdtpObligationsWorkbench({
       )}
 
       <div className="grid grid-cols-2 overflow-hidden border-y border-[var(--color-border)] sm:grid-cols-4">
-        {[
+        {([
           { key: "pending", label: "Pendientes", value: counts.pending, detail: "Dentro de plazo" },
           { key: "overdue", label: "Vencidas", value: counts.overdue, detail: "Requieren atención" },
           { key: "reported", label: "Por aprobar", value: counts.reported, detail: "Trabajo ya informado" },
-        ].map((metric) => (
-          <button key={metric.key} type="button" onClick={() => setStatus((current) => current === metric.key ? "open" : metric.key)} aria-pressed={status === metric.key} className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]">
+        ] as const).map((metric) => (
+          <button key={metric.key} type="button" onClick={() => setFilter("estado", filters.status === metric.key ? null : metric.key)} aria-pressed={filters.status === metric.key} className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]">
             <span className="text-eyebrow">{metric.label}</span>
             <strong className="mt-1 block font-mono text-xl tabular-nums">{metric.value}</strong>
             <span className="text-xs text-[var(--color-text-subtle)]">{metric.detail}</span>
@@ -113,7 +116,9 @@ export function PdtpObligationsWorkbench({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <Select value={status} onValueChange={setStatus}>
+        {/* PREV-M09: la búsqueda es en la base (la ruta está en ROUTES_WITH_OWN_SEARCH). */}
+        <FilterSearchInput param="q" placeholder="Buscar por actividad, faena o fuente..." ariaLabel="Buscar casos" />
+        <Select value={filters.status} onValueChange={(value) => setFilter("estado", value === "open" ? null : value)}>
           <SelectTrigger className="w-44" aria-label="Estado"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="open">Trabajo abierto</SelectItem>
@@ -122,7 +127,7 @@ export function PdtpObligationsWorkbench({
             <SelectItem value="reported">Por aprobar</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={worksiteId} onValueChange={setWorksiteId}>
+        <Select value={filters.worksiteId} onValueChange={(value) => setFilter("faena", value === "all" ? null : value)}>
           <SelectTrigger className="w-56" aria-label="Faena"><SelectValue /></SelectTrigger>
           <SelectContent><SelectItem value="all">Todas las faenas visibles</SelectItem>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
         </Select>
@@ -130,43 +135,46 @@ export function PdtpObligationsWorkbench({
 
       {activities.length === 0 ? (
         <EmptyState title="No hay actividades operables por evento" description="Activa un programa y confirma en el constructor cuáles actividades ocurren a demanda o por un evento, con plazo y evidencia definidos." />
-      ) : initialObligations.length === 0 ? (
+      ) : total === 0 && !isFiltered && !hasAnyCase ? (
         <EmptyState
           title="Sin casos"
           description="Aún no ha ocurrido una necesidad o evento. Esto no equivale a 0 % ni a 100 % de cumplimiento."
           action={canExecute ? <Button type="button" onClick={openCreate}>Registrar el primer caso</Button> : undefined}
         />
-      ) : rows.length === 0 ? (
-        <EmptyState compact title="No hay resultados con estos filtros" description="Cambia el estado, la faena o el texto del filtro superior." action={<Button type="button" variant="secondary" onClick={() => { setStatus("open"); setWorksiteId("all") }}>Limpiar filtros</Button>} />
+      ) : obligations.length === 0 ? (
+        <EmptyState compact title="No hay resultados con estos filtros" description="Cambia el estado, la faena o el texto de búsqueda." action={<Button type="button" variant="secondary" onClick={() => clearFilters()}>Limpiar filtros</Button>} />
       ) : (
-        <div className="mt-4 divide-y divide-[var(--color-border)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-          {rows.map((row) => (
-            <article key={row.obligation.id} className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_15rem_auto] lg:items-center">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <MetaBadge meta={metaFor(STATUS_META, row.effectiveStatus)} dot />
-                  <span className="font-mono text-xs text-[var(--color-text-subtle)]">Actividad {row.activityNumber}</span>
-                  <span className="text-xs text-[var(--color-text-subtle)]">{row.worksiteName}</span>
+        <div className="mt-4 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+          <div className="divide-y divide-[var(--color-border)]">
+            {obligations.map((row) => (
+              <article key={row.obligation.id} className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_15rem_auto] lg:items-center">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <MetaBadge meta={metaFor(STATUS_META, row.effectiveStatus)} dot />
+                    <span className="font-mono text-xs text-[var(--color-text-subtle)]">Actividad {row.activityNumber}</span>
+                    <span className="text-xs text-[var(--color-text-subtle)]">{row.worksiteName}</span>
+                  </div>
+                  <h2 className="mt-2 text-sm font-semibold text-[var(--color-text)]">{row.activityName}</h2>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    <ObligationOrigin obligation={row.obligation} />
+                  </p>
                 </div>
-                <h2 className="mt-2 text-sm font-semibold text-[var(--color-text)]">{row.activityName}</h2>
-                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                  <ObligationOrigin obligation={row.obligation} />
-                </p>
-              </div>
-              <div>
-                <p className="text-eyebrow">Plazo</p>
-                <p className={row.effectiveStatus === "overdue" ? "mt-1 text-sm font-semibold text-[var(--color-danger)]" : "mt-1 text-sm text-[var(--color-text)]"}>{dateTime(row.obligation.dueAt)}</p>
-                <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Cantidad esperada: {row.obligation.plannedQuantity}</p>
-              </div>
-              {(canExecute || canCancel) && (
-                <div className="flex flex-wrap justify-end gap-2">
-                  {canExecute && (row.effectiveStatus === "pending" || row.effectiveStatus === "overdue") && <Button type="button" size="sm" onClick={() => setReporting(row)}>Reportar trabajo</Button>}
-                  {canCancel && (row.effectiveStatus === "pending" || row.effectiveStatus === "overdue") && <Button type="button" size="sm" variant="ghost" onClick={() => setCancelling(row)}>Cancelar</Button>}
-                  {canExecute && row.effectiveStatus === "reported" && <Button type="button" size="sm" variant="secondary" onClick={() => router.push("/prevencion/pdtp/aprobaciones")}>Ir a aprobación</Button>}
+                <div>
+                  <p className="text-eyebrow">Plazo</p>
+                  <p className={row.effectiveStatus === "overdue" ? "mt-1 text-sm font-semibold text-[var(--color-danger)]" : "mt-1 text-sm text-[var(--color-text)]"}>{dateTime(row.obligation.dueAt)}</p>
+                  <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Cantidad esperada: {row.obligation.plannedQuantity}</p>
                 </div>
-              )}
-            </article>
-          ))}
+                {(canExecute || canCancel) && (
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {canReport(row) && (row.effectiveStatus === "pending" || row.effectiveStatus === "overdue") && <Button type="button" size="sm" onClick={() => setReporting(row)}>Reportar trabajo</Button>}
+                    {canCancel && (row.effectiveStatus === "pending" || row.effectiveStatus === "overdue") && <Button type="button" size="sm" variant="ghost" onClick={() => setCancelling(row)}>Cancelar</Button>}
+                    {canExecute && row.effectiveStatus === "reported" && <Button type="button" size="sm" variant="secondary" onClick={() => router.push("/prevencion/pdtp/aprobaciones")}>Ir a aprobación</Button>}
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+          {pagination}
         </div>
       )}
 

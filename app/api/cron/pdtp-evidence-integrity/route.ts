@@ -8,9 +8,12 @@
  *
  * Sólo observa: no borra ni corrige. Encontrar evidencia perdida no es una
  * falla del cron —el cron funcionó—, así que responde `success` con los
- * conteos; la alerta es el `logger.error` del servicio (D28: sólo logs por
- * ahora). La respuesta lleva conteos y una muestra acotada de rutas: el runner
- * lee como máximo 32 KiB y una lista completa lo rompería justo cuando más
+ * conteos. La alerta es el `logger.error` del servicio y, desde PREV-I13, un
+ * aviso en la plataforma y por correo a quienes restauran respaldos
+ * (`prevention-ops-alerts.ts`, una vez por día; reemplaza a D28).
+ *
+ * La respuesta lleva conteos y una muestra acotada de rutas: el runner lee
+ * como máximo 32 KiB y una lista completa lo rompería justo cuando más
  * importa.
  *
  * `outcome` y `code` son el contrato de `scripts/cron-runner.mjs`.
@@ -20,6 +23,7 @@ import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
 import { scanPdtpEvidenceIntegrity, type PdtpEvidenceIntegrityResult } from "@/lib/services/pdtp/evidence-integrity"
+import { alertPdtpEvidenceIntegrityIssues } from "@/lib/services/prevention-ops-alerts"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -56,6 +60,8 @@ export async function GET(request: NextRequest) {
     if ("skipped" in result && result.skipped === true) {
       return NextResponse.json({ ok: true, outcome: "skipped", code: "PREVENTION_CRON_SKIPPED", reason: result.reason })
     }
+    // Nunca lanza: una alerta que no sale no cambia el contrato de la ruta.
+    await alertPdtpEvidenceIntegrityIssues(result as Partial<PdtpEvidenceIntegrityResult>)
     const integrity = summarize(result as Partial<PdtpEvidenceIntegrityResult>)
     return NextResponse.json({ ok: true, outcome: "success", code: "PREVENTION_CRON_SUCCESS", integrity })
   } catch (error) {

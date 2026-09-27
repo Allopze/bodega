@@ -10,6 +10,7 @@ import { assertPdtpEvidenceLinkable } from "./evidence-references"
 import type { WorksiteScope } from "./helpers"
 import { requestPdtpScheduledInstanceOutcome, withdrawPendingPdtpScheduledOutcomeRequests, type PdtpScheduledInstanceRow } from "./scheduled-outcome-review"
 export { assertPdtpScheduledOutcomeReason } from "./scheduled-outcome-review"
+import { assertPdtpActorMayRegisterScheduledInstance, type PdtpRegistrationActor } from "./registration-authority"
 
 export type PdtpScheduledInstanceAction = "submit" | "complete" | "not_applicable" | "cancel"
 
@@ -228,8 +229,11 @@ export async function recordPdtpScheduledInstanceOutcome(input: {
    * a otra faena puede reutilizarse; sin alcance, sólo la propia faena.
    */
   scope?: WorksiteScope
+  /** PREV-I03: con actor, sólo envía quien responde por la actividad (registration-authority.ts). */
+  actor?: PdtpRegistrationActor
 }, client: ScheduledExecutionClient = db): Promise<PdtpScheduledInstanceRow & { outcomeRequestId?: string }> {
   assertPdtpScheduledInstanceManualAction(input.action)
+  if (input.actor && input.action === "submit") await assertPdtpActorMayRegisterScheduledInstance({ instanceId: input.instanceId, actor: input.actor }, client)
   const now = new Date().toISOString()
   const execute = async (tx: Tx): Promise<PdtpScheduledInstanceRow & { outcomeRequestId?: string }> => {
     if (input.action === "not_applicable" || input.action === "cancel") {
