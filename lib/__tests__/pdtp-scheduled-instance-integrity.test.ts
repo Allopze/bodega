@@ -220,6 +220,18 @@ describe("vía manual (PREV-I08-c)", () => {
     expect((await instance(INST_A)).status).toBe("pending")
   })
 
+  /* Revisión final 2026-09-27 (hallazgo 8): cancelar saca la ocurrencia del
+   * denominador igual que "no aplica" (que desde T2 exige 10 caracteres), y
+   * bastaban 3. */
+  it("cancelar exige un motivo de al menos 10 caracteres", async () => {
+    await seedConfig({ connector: "inspections" })
+    await expect(recordPdtpScheduledInstanceOutcome({ instanceId: INST_A, action: "cancel", userId: EXECUTOR, reason: "Duplicada" }))
+      .rejects.toThrow(/motivo de cancelación debe tener al menos 10 caracteres/)
+    expect((await instance(INST_A)).status).toBe("pending")
+    const cancelled = await recordPdtpScheduledInstanceOutcome({ instanceId: INST_A, action: "cancel", userId: EXECUTOR, reason: "Duplicada con la ocurrencia del 20" })
+    expect(cancelled.status).toBe("cancelled")
+  })
+
   it("con el mes abierto, 'no aplica' sigue funcionando", async () => {
     await seedConfig({ connector: "inspections" })
     const updated = await recordPdtpScheduledInstanceOutcome({ instanceId: INST_A, action: "not_applicable", userId: EXECUTOR, reason: "La faena estuvo detenida todo el mes" })
