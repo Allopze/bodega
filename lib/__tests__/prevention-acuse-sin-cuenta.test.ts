@@ -150,3 +150,75 @@ describe("PER-002 — acuse del AST sin cuenta de usuario", () => {
     expect(sinTocar!.acknowledgedAt).toBeNull()
   })
 })
+
+/* PREV-M06 (T7a, D27): el enlace no caduca por tiempo —sin TTL—, pero acusar un
+ * permiso que ya terminó (cerrado, cancelado o rechazado) no tiene sentido: el
+ * trabajo ya no se va a hacer bajo ese AST. Antes el enlace seguía acusando
+ * permisos cerrados y la vista pública decía `eligible: true` siempre. La
+ * ventana se calcula igual en la vista y en las dos vías de acuse, y se relee
+ * con la fila bloqueada para que un cierre en carrera no deje pasar un acuse. */
+describe("PREV-M06 — ventana de acuse por estado del permiso", () => {
+  async function permisoConCuadrilla() {
+    const tipo = await permits.createPermitType({
+      code: `M06-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+      name: "Trabajo en caliente (ventana de acuse)",
+      requiresIsolation: false,
+      requiresMeasurement: false,
+      requiresJsa: false,
+      requiresCrewAcknowledgement: true,
+      maxDurationHours: 8,
+      legalBasis: "DS 44/2024: tarea crítica con cuadrilla briefeada.",
+    }, APROBADOR)
+    const permiso = await permits.createWorkPermit({
+      permitTypeId: tipo.id, worksiteId: WS,
+      taskDescription: "Soldadura de soportes en nave.",
+      location: "Nave de mantención", supervisorUserId: APROBADOR.userId,
+      ...ventana(),
+      crew: [{ workerId: WORKER_SIN_CUENTA, role: "executor" }],
+      controls: [],
+    }, SOLICITANTE)
+    const [integrante] = await testDb.select().from(schema.preventionPermitCrew)
+      .where(eq(schema.preventionPermitCrew.permitId, permiso.id))
+    return { permiso, crewId: integrante!.id }
+  }
+
+  async function cancelar(permiso: { id: string; version: number }) {
+    await permits.transitionWorkPermit({
+      permitId: permiso.id, expectedVersion: permiso.version, toStatus: "cancelled",
+      reason: "La tarea se reprogramó para otra semana.",
+    }, SOLICITANTE)
+  }
+
+  it("un permiso cancelado ya no admite acuse por enlace, y la vista lo dice", async () => {
+    const { permiso, crewId } = await permisoConCuadrilla()
+    await cancelar(permiso)
+    const token = derivePreventionAckToken("permiso", crewId)
+
+    const vista = await getPermitCrewAckPublicView(crewId, token)
+    expect(vista).toMatchObject({ eligible: false })
+    expect(vista!.ineligibleReason).toMatch(/cancelado/i)
+
+    await expect(permits.acknowledgePermitCrewByPublicToken({ crewId, token })).rejects.toThrow(/ya no admite acuse/i)
+    const [sinTocar] = await testDb.select().from(schema.preventionPermitCrew)
+      .where(eq(schema.preventionPermitCrew.id, crewId))
+    expect(sinTocar!.acknowledgedAt).toBeNull()
+  })
+
+  it("un borrador todavía admite acuse: la ventana no depende de que esté aprobado", async () => {
+    const { crewId } = await permisoConCuadrilla()
+    const token = derivePreventionAckToken("permiso", crewId)
+    expect(await getPermitCrewAckPublicView(crewId, token)).toMatchObject({ eligible: true, ineligibleReason: null })
+    const acusado = await permits.acknowledgePermitCrewByPublicToken({ crewId, token })
+    expect(acusado.acknowledgedAt).not.toBeNull()
+  })
+
+  it("un acuse ya dado se sigue mostrando aunque el permiso haya terminado", async () => {
+    const { permiso, crewId } = await permisoConCuadrilla()
+    const token = derivePreventionAckToken("permiso", crewId)
+    await permits.acknowledgePermitCrewByPublicToken({ crewId, token })
+    await cancelar(permiso)
+    const vista = await getPermitCrewAckPublicView(crewId, token)
+    expect(vista!.acknowledgedAt).not.toBeNull()
+    expect(vista!.eligible).toBe(false)
+  })
+})

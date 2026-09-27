@@ -22,6 +22,7 @@ import { verifyPreventionAckToken } from "@/lib/services/prevention-ack-token"
 import {
   assessPermitActivation,
   isPermitExpired,
+  permitCrewAckWindow,
   plannedDurationHours,
   PERMIT_TRANSITIONS,
   type PermitBlocker,
@@ -582,6 +583,16 @@ export async function extendWorkPermit(input: unknown, access: PermitAccess) {
   })
 }
 
+/**
+ * PREV-M06 (D27): las dos vías de acuse aplican la misma ventana que muestra la
+ * vista pública (`permitCrewAckWindow`). Sin TTL: el enlace caduca cuando el
+ * permiso termina, no por tiempo.
+ */
+function assertPermitAckWindowOpen(status: string) {
+  const window = permitCrewAckWindow(status)
+  if (!window.open) throw new Error(window.reason)
+}
+
 /** Acuse del propio integrante de la cuadrilla sobre el AST y los controles. */
 export async function acknowledgePermitCrew(input: unknown, access: PermitAccess) {
   requireAccess(access, "prevention:permits:view")
@@ -597,9 +608,15 @@ export async function acknowledgePermitCrew(input: unknown, access: PermitAccess
       .innerJoin(preventionWorkPermits, eq(preventionPermitCrew.permitId, preventionWorkPermits.id))
       .leftJoin(users, eq(users.workerId, preventionPermitCrew.workerId))
       .where(eq(preventionPermitCrew.id, data.crewId)).limit(1)
+      // PREV-M06: la fila del integrante y la del permiso quedan bloqueadas
+      // hasta el commit. Sin esto, un cierre concurrente podía pasar entre la
+      // lectura del estado y la escritura del acuse. `users` va en LEFT JOIN y
+      // Postgres no bloquea el lado anulable: se nombran las dos tablas.
+      .for("update", { of: [preventionPermitCrew, preventionWorkPermits] })
     if (!row) throw new Error(NOT_FOUND)
     if (row.crewUserId !== access.userId) throw new Error("Sólo el propio integrante puede acusar el AST del permiso.")
     if (row.crew.acknowledgedAt) throw new Error("Este integrante ya acusó el permiso.")
+    assertPermitAckWindowOpen(row.permit.status)
 
     const now = nowIso()
     const signature = createHash("sha256").update(JSON.stringify({
@@ -649,8 +666,10 @@ export async function acknowledgePermitCrewByPublicToken(
       .from(preventionPermitCrew)
       .innerJoin(preventionWorkPermits, eq(preventionPermitCrew.permitId, preventionWorkPermits.id))
       .where(eq(preventionPermitCrew.id, crewId)).limit(1)
+      .for("update") // PREV-M06: ver `acknowledgePermitCrew`.
     if (!row) throw new Error(NOT_FOUND)
     if (row.crew.acknowledgedAt) throw new Error("Este integrante ya acusó el permiso.")
+    assertPermitAckWindowOpen(row.permit.status)
 
     const now = nowIso()
     const signature = createHash("sha256").update(JSON.stringify({
