@@ -171,7 +171,9 @@ export async function getPdtpManagementReport(input: {
     plannedByActivityMonth.set(key, (plannedByActivityMonth.get(key) ?? 0) + row.plannedQuantity)
   }
   const executedByActivityMonth = new Map<string, number>()
-  for (const cell of effectiveApprovedExecutionsByCell(approvedExecutions)) {
+  // PREV-I08-a: el hecho de una ocurrencia programada cuenta una vez, en la
+  // celda de su ocurrencia (el reporte no representa ocurrencias por su cuenta).
+  for (const cell of effectiveApprovedExecutionsByCell(approvedExecutions, { instanceCutoff: program.activatedAt, instanceCells: true })) {
     if (!inPeriod(cell.month)) continue
     const key = `${cell.activityId}:${cell.month}`
     executedByActivityMonth.set(key, (executedByActivityMonth.get(key) ?? 0) + cell.executedQuantity)

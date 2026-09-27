@@ -546,7 +546,10 @@ export async function buildPdtpRe36Document(input: {
   // deduplicación por celda que el indicador (`effectiveApprovedExecutionsByCell`).
   // La vista de hoja (`sheets.ts`) suma cualquier estado — no se usa aquí.
   const approvedExecutionRows = executionRows.filter((row) => row.status === "approved")
-  const effectiveExecutions = effectiveApprovedExecutionsByCell(approvedExecutionRows)
+  // PREV-I08-a: una ejecución enlazada a una ocurrencia que cuenta no se
+  // repite en `E`: el documento ya la muestra en su hoja de calendario de
+  // ocurrencias (`listPdtpRe36IsoCalendar`).
+  const effectiveExecutions = effectiveApprovedExecutionsByCell(approvedExecutionRows, { instanceCutoff: program.activatedAt })
 
   const plannedByCell = new Map<string, number>()
   for (const row of scheduleRows) {

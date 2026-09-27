@@ -42,9 +42,18 @@ function completionBucket(row: PdtpScheduledComplianceRow): "on_time" | "late" |
  * Si una ocurrencia ya aporta su cantidad planificada como ejecutada. Es el
  * único criterio: el indicador lo usa además para no volver a sumar la
  * ejecución enlazada a esa ocurrencia (PREV-I08-a).
+ *
+ * D19 (T3): sólo cuenta lo aprobado. Si la ocurrencia tiene una ejecución
+ * enlazada, cuenta sólo cuando esa ejecución está aprobada, aunque su estado
+ * diga `completed`: el enlace anterior a T3 completaba con la política
+ * `source_completed` sin mirar la aprobación, y esas filas heredadas no deben
+ * contar algo que la planilla no cuenta. Sin enlace (`linkedExecutionStatus`
+ * nulo o ausente) se mantiene la lectura por estado, que es lo que usan las
+ * funciones puras que no conocen el libro.
  */
-export function pdtpScheduledInstanceCountsAsExecuted(status: string): boolean {
-  return status === "completed"
+export function pdtpScheduledInstanceCountsAsExecuted(status: string, linkedExecutionStatus?: string | null): boolean {
+  if (status !== "completed") return false
+  return linkedExecutionStatus == null || linkedExecutionStatus === "approved"
 }
 
 export function calculatePdtpScheduledInstanceCompliance(

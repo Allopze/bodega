@@ -24,7 +24,7 @@ import {
   type PdtpActivityStatusOptions,
   type PdtpPeriod,
 } from "./period"
-import { effectiveApprovedExecutionsByCell, pdtpCountedExecuted } from "./compliance"
+import { effectiveApprovedExecutionsByCell, pdtpApplyScheduledInstanceCutoff, pdtpCountedExecuted } from "./compliance"
 
 /**
  * No conformes por ejecución, para el distintivo de la planilla.
@@ -63,7 +63,13 @@ function approvedExecutedByMonth(
   rows: Array<Parameters<typeof effectiveApprovedExecutionsByCell>[0][number] & { status: string }>,
 ): number[] {
   const months = Array.from({ length: 12 }, () => 0)
-  for (const cell of effectiveApprovedExecutionsByCell(rows.filter((row) => row.status === "approved"))) {
+  // PREV-I08-a: la planilla no representa ocurrencias programadas; el hecho de
+  // una ocurrencia que cuenta se lleva a la celda de esa ocurrencia, que es
+  // donde lo cuenta el indicador, y no se suma además en la suya. El corte de
+  // exigibilidad de la ocurrencia ya viene aplicado a las filas efectivas
+  // (`pdtpApplyScheduledInstanceCutoff`): la vista agregada mezcla faenas con
+  // cortes distintos.
+  for (const cell of effectiveApprovedExecutionsByCell(rows.filter((row) => row.status === "approved"), { instanceCells: true })) {
     months[cell.month - 1]! += cell.executedQuantity
   }
   return months
@@ -261,7 +267,7 @@ export async function getPdtpAggregatedSheetViewByProgram(
     return {
       ...entry,
       scheduleRows: filterPdtpRowsFromActivation(entry.scheduleRows, cutoff),
-      executionRows: filterPdtpRowsFromActivation(entry.executionRows, cutoff),
+      executionRows: pdtpApplyScheduledInstanceCutoff(filterPdtpRowsFromActivation(entry.executionRows, cutoff), cutoff ?? null),
       deviationRows: filterPdtpRowsFromActivation(entry.deviationRows, cutoff),
     }
   })
@@ -555,7 +561,7 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
     for (const cell of effectiveSchedule) {
       effectiveMonthlyPlanned[cell.month - 1] = (effectiveMonthlyPlanned[cell.month - 1] ?? 0) + cell.plannedQuantity
     }
-    const effectiveActivityExecutions = filterPdtpRowsFromActivation(activityExecutions, activationCutoff)
+    const effectiveActivityExecutions = pdtpApplyScheduledInstanceCutoff(filterPdtpRowsFromActivation(activityExecutions, activationCutoff), activationCutoff ?? null)
     approvedExecutedByMonth(effectiveActivityExecutions).forEach((executed, index) => {
       effectiveMonthlyExecuted[index] = (effectiveMonthlyExecuted[index] ?? 0) + executed
       approvedMonthlyExecuted[index] = (approvedMonthlyExecuted[index] ?? 0) + executed

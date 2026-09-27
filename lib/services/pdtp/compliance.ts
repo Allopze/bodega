@@ -16,7 +16,7 @@ import { PDTP_ESTADOS_CERRADOS } from "./checklist-domain"
 import { capaEstado } from "./capa-view"
 import { loadApprovedExecutionsForWorksites, loadProgramScheduleAndExecutions, loadWorksiteAddedAt } from "./helpers"
 import { isFlowSubjectSource, resolvePdtpSubjectRoster } from "./subject-registry"
-import { effectiveActivationFor, filterPdtpRowsFromActivation } from "./period"
+import { effectiveActivationFor, filterPdtpRowsFromActivation, pdtpPeriodFromChileDate } from "./period"
 import { PDTP_ANNUAL_MINIMUM_MONTH, pdtpAnnualMinimumFloor } from "./annual-minimum"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { chileDateParts } from "@/lib/utils"
@@ -189,7 +189,10 @@ async function loadClosedOnTimeByActivityMonth(activityIds: string[], worksiteId
  * año: con filas mezcladas, dos celdas distintas colisionarían al reagrupar.
  */
 export function effectiveApprovedExecutionsByCell(
-  rows: Array<Pick<ApprovedExecution, "activityId" | "worksiteId" | "year" | "month" | "week" | "origin" | "executedQuantity">>,
+  rows: Array<Pick<ApprovedExecution, "activityId" | "worksiteId" | "year" | "month" | "week" | "origin" | "executedQuantity"> & {
+    linkedInstance?: PdtpLinkedScheduledInstance | null
+  }>,
+  options: PdtpExecutionCellOptions = {},
 ) {
   const cells = new Map<string, {
     activityId: string
@@ -197,26 +200,107 @@ export function effectiveApprovedExecutionsByCell(
     week: number
     manualQuantity: number
     integrationQuantity: number
+    representedQuantity: number
   }>()
-  for (const row of rows) {
-    const key = `${row.activityId}:${row.worksiteId}:${row.year}:${row.month}:${row.week}`
+  const cellFor = (row: { activityId: string; worksiteId: string; year: number }, month: number, week: number) => {
+    const key = `${row.activityId}:${row.worksiteId}:${row.year}:${month}:${week}`
     const cell = cells.get(key) ?? {
-      activityId: row.activityId,
-      month: row.month,
-      week: row.week,
-      manualQuantity: 0,
-      integrationQuantity: 0,
+      activityId: row.activityId, month, week, manualQuantity: 0, integrationQuantity: 0, representedQuantity: 0,
     }
+    cells.set(key, cell)
+    return cell
+  }
+  const instanceCells: Array<{ row: { activityId: string; worksiteId: string; year: number }; instance: PdtpLinkedScheduledInstance }> = []
+  for (const row of rows) {
+    const cell = cellFor(row, row.month, row.week)
     if (row.origin === "integration") cell.integrationQuantity += row.executedQuantity
     else cell.manualQuantity += row.executedQuantity
-    cells.set(key, cell)
+    if (pdtpExecutionRepresentedByScheduledInstance(row, options.instanceCutoff)) {
+      cell.representedQuantity += row.executedQuantity
+      if (options.instanceCells) instanceCells.push({ row, instance: row.linkedInstance! })
+    }
   }
-  return [...cells.values()].map((cell) => ({
+  // PREV-I08-a: la parte de la celda que es el hecho de una ocurrencia se
+  // descuenta después de deduplicar, así una carga manual de la misma semana
+  // (el mismo hecho, D2) queda absorbida y lo que declare por encima sigue
+  // contando.
+  const result = [...cells.values()].map((cell) => ({
     activityId: cell.activityId,
     month: cell.month,
     week: cell.week,
-    executedQuantity: Math.max(cell.manualQuantity, cell.integrationQuantity),
+    executedQuantity: Math.max(0, Math.max(cell.manualQuantity, cell.integrationQuantity) - cell.representedQuantity),
   }))
+  for (const { row, instance } of instanceCells) {
+    const slot = pdtpPeriodFromChileDate(instance.scheduledFor)
+    if (!slot) continue
+    result.push({ activityId: row.activityId, month: slot.month, week: slot.week, executedQuantity: Number(instance.plannedQuantity) || 0 })
+  }
+  return result
+}
+
+/**
+ * Lo mínimo de una ocurrencia programada enlazada a una ejecución del libro
+ * (`pdtp_executions.scheduled_instance_id`). Lo adjunta
+ * `loadProgramScheduleAndExecutions` a cada ejecución enlazada.
+ */
+export type PdtpLinkedScheduledInstance = {
+  id: string
+  status: string
+  scheduledFor: string
+  plannedQuantity: number | string
+}
+
+export type PdtpExecutionCellOptions = {
+  /**
+   * Corte de exigibilidad de la vista (el mismo que pasa a
+   * `filterPdtpRowsFromActivation`). Una ocurrencia anterior no cuenta en el
+   * indicador, así que su ejecución tampoco se descuenta.
+   */
+  instanceCutoff?: string | null
+  /**
+   * Para las vistas que no representan ocurrencias (eje, reporte de gestión,
+   * planilla): el hecho descontado de su celda se suma en la celda de su
+   * ocurrencia, con la cantidad planificada de la ocurrencia, que es donde lo
+   * cuenta el indicador. Sin esto la vista lo perdería. El indicador y el
+   * RE-36 (que tiene su hoja de calendario de ocurrencias) no lo piden: allí
+   * la ocurrencia ya cuenta por su cuenta.
+   */
+  instanceCells?: boolean
+}
+
+/**
+ * Aplica de antemano el corte de exigibilidad de las ocurrencias a filas que
+ * luego se mezclan entre faenas (planilla agregada): la ocurrencia anterior al
+ * corte de su faena deja de representar a su ejecución, que vuelve a contar
+ * por el libro, igual que en el indicador de esa faena.
+ */
+export function pdtpApplyScheduledInstanceCutoff<T extends { scheduledInstanceId?: string | null; linkedInstance?: PdtpLinkedScheduledInstance | null }>(
+  rows: T[],
+  instanceCutoff: string | null,
+): T[] {
+  if (!instanceCutoff) return rows
+  return rows.map((row) => row.linkedInstance && row.linkedInstance.scheduledFor < instanceCutoff.slice(0, 10)
+    ? { ...row, linkedInstance: null }
+    : row)
+}
+
+/**
+ * PREV-I08-a, regla única de "un hecho, un conteo". Una ejecución aprobada
+ * enlazada a una ocurrencia que cuenta (completada, D19, y exigible según el
+ * corte de la vista) es el hecho de esa ocurrencia: no suma además en su celda
+ * del libro. La comparten el indicador, el eje, el reporte de gestión, la
+ * planilla, el RE-36 y los objetivos del cierre a través de
+ * `effectiveApprovedExecutionsByCell`.
+ */
+export function pdtpExecutionRepresentedByScheduledInstance(
+  row: { linkedInstance?: PdtpLinkedScheduledInstance | null },
+  instanceCutoff?: string | null,
+): boolean {
+  const instance = row.linkedInstance
+  if (!instance) return false
+  // La fila que llega acá ya está aprobada: por eso basta el estado de la ocurrencia.
+  if (!pdtpScheduledInstanceCountsAsExecuted(instance.status)) return false
+  return !instanceCutoff || instance.scheduledFor >= instanceCutoff.slice(0, 10)
 }
 
 /**
@@ -384,14 +468,30 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     // el corte incluye además su fecha de incorporación al programa.
     return instance.scheduledFor >= activationCutoff.slice(0, 10)
   })
-  // PREV-I08-a: una ocurrencia completada ya aporta su cantidad planificada;
-  // la ejecución enlazada a ella es el mismo hecho y no suma de nuevo.
-  const countedInstanceIds = new Set(eligibleScheduledInstances
-    .filter((instance) => pdtpScheduledInstanceCountsAsExecuted(instance.status))
-    .map((instance) => instance.id))
-  const approvedExecutionRows = executionRows.filter((row) => row.status === "approved"
-    && !(row.scheduledInstanceId && countedInstanceIds.has(row.scheduledInstanceId)))
-  const effectiveExecutionRows = effectiveApprovedExecutionsByCell(approvedExecutionRows)
+  // D19 (T3): una ocurrencia completada cuenta sólo si su ejecución enlazada
+  // está aprobada. El estado de esa ejecución se lee aparte, sin filtro de
+  // faena ni de exclusión: en la vista consolidada `executionRows` viene vacío
+  // y el predicado quedaría sin saber del enlace.
+  const linkedExecutionStatusByInstance = new Map<string, string>()
+  const completedInstanceIds = eligibleScheduledInstances
+    .filter((instance) => instance.status === "completed")
+    .map((instance) => instance.id)
+  if (completedInstanceIds.length > 0) {
+    const linked = await db.select({ scheduledInstanceId: pdtpExecutions.scheduledInstanceId, status: pdtpExecutions.status })
+      .from(pdtpExecutions)
+      .where(inArray(pdtpExecutions.scheduledInstanceId, completedInstanceIds))
+    for (const row of linked) {
+      if (row.scheduledInstanceId) linkedExecutionStatusByInstance.set(row.scheduledInstanceId, row.status)
+    }
+  }
+  const instanceCounts = (instance: { id: string; status: string }) =>
+    pdtpScheduledInstanceCountsAsExecuted(instance.status, linkedExecutionStatusByInstance.get(instance.id))
+  // PREV-I08-a: una ocurrencia que cuenta ya aporta su cantidad planificada;
+  // la ejecución enlazada a ella es el mismo hecho y no suma de nuevo en su
+  // celda. La regla vive en `effectiveApprovedExecutionsByCell` para que todas
+  // las vistas la apliquen igual, incluida la carga manual de la misma semana.
+  const approvedExecutionRows = executionRows.filter((row) => row.status === "approved")
+  const effectiveExecutionRows = effectiveApprovedExecutionsByCell(approvedExecutionRows, { instanceCutoff: activationCutoff })
 
   // Modo de indicador por actividad: 'coverage' se calcula todo-o-nada; el resto
   // se capa en lo planificado (R3). El cómputo es por actividad-mes para poder
@@ -506,7 +606,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     executedByActivityMonth.set(key, (executedByActivityMonth.get(key) ?? 0) + row.executedQuantity)
   }
   for (const row of eligibleScheduledInstances) {
-    if (!pdtpScheduledInstanceCountsAsExecuted(row.status)) continue
+    if (!instanceCounts(row)) continue
     const month = Number(row.scheduledFor.slice(5, 7))
     if (month < 1 || month > 12) continue
     const key = `${row.activityId}:${month}`
@@ -852,7 +952,9 @@ export async function getPdtpComplianceByCategoryForScope(
       bump(row.activityId, "planned", row.plannedQuantity)
     }
     const executedByActivityMonth = new Map<string, number>()
-    for (const cell of effectiveApprovedExecutionsByCell(entry.executionRows)) {
+    // PREV-I08-a: el eje no representa ocurrencias; el hecho de una ocurrencia
+    // se cuenta en su celda (`instanceCells`), igual que en el indicador.
+    for (const cell of effectiveApprovedExecutionsByCell(entry.executionRows, { instanceCutoff: entry.cutoff, instanceCells: true })) {
       const key = `${cell.activityId}:${cell.month}`
       executedByActivityMonth.set(key, (executedByActivityMonth.get(key) ?? 0) + cell.executedQuantity)
     }

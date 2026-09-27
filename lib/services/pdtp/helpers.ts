@@ -8,6 +8,7 @@ import {
   pdtpExecutions,
   pdtpProgramWorksites,
   pdtpPrograms,
+  pdtpScheduledInstances,
   pdtpSheets,
   worksites,
 } from "@/db/schema"
@@ -210,7 +211,7 @@ export async function loadWorksiteAddedAt(
 }
 
 export async function loadProgramScheduleAndExecutions(activityIds: string[], year: number, worksiteId?: string) {
-  const [scheduleRows, executionRows, overrideRows, exclusionRows, activityRows, deviationRows] = await Promise.all([
+  const [scheduleRows, rawExecutionRows, overrideRows, exclusionRows, activityRows, deviationRows] = await Promise.all([
     db.select().from(pdtpActivitySchedule).where(and(
       inArray(pdtpActivitySchedule.activityId, activityIds),
       eq(pdtpActivitySchedule.year, year),
@@ -234,6 +235,7 @@ export async function loadProgramScheduleAndExecutions(activityIds: string[], ye
       ? loadPdtpDeviations(activityIds, year, worksiteId)
       : Promise.resolve([] as Awaited<ReturnType<typeof loadPdtpDeviations>>),
   ])
+  const executionRows = await attachLinkedScheduledInstances(rawExecutionRows)
   // Aplicabilidad por faena (regla R4): una actividad excluida de la faena
   // (p. ej. CPHS en faenas con <25 trabajadores) no aporta al denominador ni al
   // ejecutado de esa faena. Antes las exclusiones se firmaban (content-digest)
@@ -290,6 +292,25 @@ export async function loadProgramScheduleAndExecutions(activityIds: string[], ye
 }
 
 /**
+ * PREV-I08-a: cada ejecución enlazada a una ocurrencia programada viaja con lo
+ * mínimo de esa ocurrencia, para que `effectiveApprovedExecutionsByCell` aplique
+ * en todas las vistas la misma regla de "un hecho, un conteo". Una consulta por
+ * carga, y sólo si alguna fila está enlazada.
+ */
+async function attachLinkedScheduledInstances<T extends { scheduledInstanceId: string | null }>(rows: T[]) {
+  const ids = [...new Set(rows.map((row) => row.scheduledInstanceId).filter((id): id is string => Boolean(id)))]
+  if (ids.length === 0) return rows.map((row) => ({ ...row, linkedInstance: null }))
+  const instances = await db.select({
+    id: pdtpScheduledInstances.id,
+    status: pdtpScheduledInstances.status,
+    scheduledFor: pdtpScheduledInstances.scheduledFor,
+    plannedQuantity: pdtpScheduledInstances.plannedQuantity,
+  }).from(pdtpScheduledInstances).where(inArray(pdtpScheduledInstances.id, ids))
+  const byId = new Map(instances.map((instance) => [instance.id, instance]))
+  return rows.map((row) => ({ ...row, linkedInstance: row.scheduledInstanceId ? byId.get(row.scheduledInstanceId) ?? null : null }))
+}
+
+/**
  * Schedule efectivo y ejecuciones **aprobadas** de un programa sobre varias
  * faenas, resueltas faena por faena para que overrides y exclusiones (R4) se
  * apliquen con el contexto de cada una — omitir la faena devuelve cero
@@ -316,6 +337,7 @@ export async function loadApprovedExecutionsForWorksites(
       executionRows: Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["executionRows"]
       perWorksite: Array<{
         worksiteId: string
+        cutoff: string | null
         scheduleRows: Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["scheduleRows"]
         executionRows: Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["executionRows"]
       }>
@@ -324,13 +346,14 @@ export async function loadApprovedExecutionsForWorksites(
   const perWorksite = await Promise.all(
     worksiteIds.map(async (worksiteId) => {
       const entry = await loadProgramScheduleAndExecutions(activityIds, year, worksiteId)
-      if (!activation) return entry
+      if (!activation) return { ...entry, cutoff: null as string | null }
       const cutoff = effectiveActivationFor(
         activation.activatedAt,
         await loadWorksiteAddedAt(activation.programId, worksiteId),
       )
       return {
         ...entry,
+        cutoff,
         scheduleRows: filterPdtpRowsFromActivation(entry.scheduleRows, cutoff),
         executionRows: filterPdtpRowsFromActivation(entry.executionRows, cutoff),
       }
@@ -343,6 +366,9 @@ export async function loadApprovedExecutionsForWorksites(
     // se sabe a qué faena pertenece cada fila de plan.
     perWorksite: perWorksite.map((entry, index) => ({
       worksiteId: worksiteIds[index]!,
+      // El corte de esta faena, para que el llamador lo use también como
+      // corte de exigibilidad de las ocurrencias (PREV-I08-a).
+      cutoff: entry.cutoff,
       scheduleRows: entry.scheduleRows,
       executionRows: entry.executionRows.filter((row) => row.status === "approved"),
     })),
