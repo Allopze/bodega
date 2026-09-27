@@ -7,12 +7,21 @@ import { eq } from "drizzle-orm"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
-import { assertSafeDestructiveDatabase } from "@/lib/testing/destructive-database-guard"
+import {
+  assertSafeDestructiveDatabase,
+  getDatabaseNameFromUrl,
+  getMaintenanceDatabaseUrl,
+  quotePostgresIdentifier,
+} from "@/lib/testing/destructive-database-guard"
 import { nanoid } from "@/lib/id"
 import { loadInvoiceLineAllocationsTx, replaceInvoiceLineAllocationsTx } from "@/lib/services/purchasing-module/invoice-line-allocations"
 
 const databaseUrl = process.env.INVOICE_ALLOCATIONS_CONCURRENCY_DATABASE_URL
-const describeIf = databaseUrl ? describe : describe.skip
+// Mismo par de variables que el resto de las suites *-postgres
+// (postgres-suites-gating.test.ts): era la única que se habilitaba sólo con la
+// URL, así que no seguía el contrato que usan CI y los scripts de corrida.
+const canUseDisposableDatabase = process.env.INVOICE_ALLOCATIONS_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET === "true"
+const describeIf = databaseUrl && canUseDisposableDatabase ? describe : describe.skip
 let client: postgres.Sql | undefined
 let db: DB
 let migrated = false
@@ -26,7 +35,12 @@ describeIf("invoice line allocations concurrency on real PostgreSQL", () => {
   beforeAll(async () => {
     // Reuse the repository's disposable-name/host guard. This suite never drops
     // schemas: the explicit test DSN authorizes isolated QA fixtures only.
-    assertSafeDestructiveDatabase({ databaseUrl: databaseUrl!, allowDestructiveReset: true, context: "INVOICE_ALLOCATIONS_CONCURRENCY" })
+    assertSafeDestructiveDatabase({ databaseUrl: databaseUrl!, allowDestructiveReset: canUseDisposableDatabase, context: "INVOICE_ALLOCATIONS_CONCURRENCY" })
+    // Como el resto de las suites *-postgres: la base desechable se crea si no
+    // existe. Sin esto el beforeAll moría con "database does not exist" y
+    // Vitest resumía la suite como "1 skipped" (el fallo sólo aparece bajo
+    // "Failed Suites"), así que se leía como saltada y no como rota.
+    await ensureDatabaseExists(databaseUrl!)
     client = postgres(databaseUrl!, { max: 3, connect_timeout: 5, onnotice: () => {} })
     db = drizzle(client, { schema })
     await migrate(db, { migrationsFolder: path.resolve(process.cwd(), "db/migrations") })
@@ -79,3 +93,18 @@ describeIf("invoice line allocations concurrency on real PostgreSQL", () => {
     expect(await db.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, ids.line))).toHaveLength(1)
   })
 })
+
+async function ensureDatabaseExists(url: string) {
+  const databaseName = getDatabaseNameFromUrl(url)
+  const maintenanceClient = postgres(getMaintenanceDatabaseUrl(url), { max: 1, onnotice: () => {} })
+  try {
+    const rows = await maintenanceClient<{ exists: number }[]>`
+      SELECT 1 AS exists FROM pg_database WHERE datname = ${databaseName} LIMIT 1
+    `
+    if (rows.length === 0) {
+      await maintenanceClient.unsafe(`CREATE DATABASE ${quotePostgresIdentifier(databaseName)}`)
+    }
+  } finally {
+    await maintenanceClient.end()
+  }
+}

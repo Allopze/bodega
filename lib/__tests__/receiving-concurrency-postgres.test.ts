@@ -89,6 +89,11 @@ describeIf("receiving concurrency on real Postgres", () => {
 
     const fulfilled = results.filter((r) => r.status === "fulfilled")
     const rejected = results.filter((r) => r.status === "rejected")
+    // El perdedor debe caer por el saldo que leyó tras el candado, no por
+    // otra validación: si no, la prueba pasaría sin medir la serialización.
+    expect((rejected[0] as PromiseRejectedResult | undefined)?.reason).toMatchObject({
+      message: expect.stringMatching(/exceeds pending quantity/),
+    })
 
     expect(fulfilled).toHaveLength(1)
     expect(rejected).toHaveLength(1)
@@ -184,6 +189,23 @@ async function seedReceivingFixture(db: ReturnType<typeof drizzle<typeof schema>
     createdAt: now,
     updatedAt: now,
   })
+  // La llegada a oficina ingresa el stock en la bodega-oficina: sin ella,
+  // `resolveOfficeWorksite` rechaza las dos recepciones antes del candado y la
+  // prueba no mide la serialización (y la carrera con la cancelación pasaba
+  // sola, porque la recepción nunca podía ganar).
+  await db.insert(schema.worksites).values({
+    id: "ws-rc-office",
+    name: "Oficina concurrencia recepción",
+    code: "RC-OFFICE",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.systemSettings).values({
+    key: "warehouse.office_worksite_id",
+    value: "ws-rc-office",
+    updatedAt: now,
+  })
   await db.insert(schema.suppliers).values({
     id: "sup-rc-test",
     name: "Proveedor concurrencia recepción",
@@ -217,7 +239,9 @@ async function seedReceivingFixture(db: ReturnType<typeof drizzle<typeof schema>
     requestId: "pr-rc-test",
     productId: "prod-rc-test",
     quantity: 10,
-    status: "in_purchase_order",
+    // Una OC `sent` ya movió sus ítems a `purchased` (sendOrder); la llegada a
+    // oficina sólo se acepta desde ahí.
+    status: "purchased",
     unitOfMeasure: "unidad",
   })
   await db.insert(schema.purchaseOrders).values({
@@ -260,7 +284,9 @@ async function seedReceivingCancellationFixture(db: ReturnType<typeof drizzle<ty
     requestId: "pr-rc-cancel-race",
     productId: "prod-rc-test",
     quantity: 10,
-    status: "in_purchase_order",
+    // Una OC `sent` ya movió sus ítems a `purchased` (sendOrder); la llegada a
+    // oficina sólo se acepta desde ahí.
+    status: "purchased",
     unitOfMeasure: "unidad",
   })
   await db.insert(schema.purchaseOrders).values({

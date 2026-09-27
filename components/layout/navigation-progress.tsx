@@ -1,54 +1,43 @@
 "use client"
 
 import * as React from "react"
-import { usePathname, useSearchParams } from "next/navigation"
+import { usePathname } from "next/navigation"
 
 export function NavigationProgress() {
   const pathname = usePathname()
-  const searchParams = useSearchParams()
   const [loading, setLoading] = React.useState(false)
   const [width, setWidth] = React.useState("0%")
   const prevPathRef = React.useRef(pathname)
-  const timerRefs = React.useRef<ReturnType<typeof setTimeout>[]>([])
 
-  const clearTimers = React.useCallback(() => {
-    for (const timer of timerRefs.current) clearTimeout(timer)
-    timerRefs.current = []
-  }, [])
-
-  const start = React.useCallback(() => {
-    clearTimers()
+  // Los timers los crea y los libera el mismo efecto: una navegación nueva
+  // (cambio de pathname) corre el cleanup de la anterior antes de reiniciar la
+  // barra, y desmontar la limpia. Antes vivían en un ref compartido que sólo se
+  // vaciaba desde otro efecto. `useSearchParams` no se comparaba nunca —la
+  // barra sólo reacciona al pathname— y se retiró.
+  React.useEffect(() => {
+    if (prevPathRef.current === pathname) return
+    prevPathRef.current = pathname
     setLoading(true)
     setWidth("0%")
     // Simulate a loading bar that starts fast then slows
-    const steps = [
-      { delay: 100, width: "30%" },
-      { delay: 300, width: "55%" },
-      { delay: 600, width: "75%" },
-      { delay: 1000, width: "90%" },
-    ]
-    for (const step of steps) {
-      timerRefs.current.push(setTimeout(() => setWidth(step.width), step.delay))
+    const step30 = setTimeout(() => setWidth("30%"), 100)
+    const step55 = setTimeout(() => setWidth("55%"), 300)
+    const step75 = setTimeout(() => setWidth("75%"), 600)
+    const step90 = setTimeout(() => setWidth("90%"), 1000)
+    const complete = setTimeout(() => setWidth("100%"), 1500)
+    const hide = setTimeout(() => {
+      setLoading(false)
+      setWidth("0%")
+    }, 1700)
+    return () => {
+      clearTimeout(step30)
+      clearTimeout(step55)
+      clearTimeout(step75)
+      clearTimeout(step90)
+      clearTimeout(complete)
+      clearTimeout(hide)
     }
-    timerRefs.current.push(setTimeout(() => {
-      setWidth("100%")
-      timerRefs.current.push(setTimeout(() => {
-        setLoading(false)
-        setWidth("0%")
-      }, 200))
-    }, 1500))
-  }, [clearTimers])
-
-  React.useEffect(() => {
-    if (prevPathRef.current !== pathname) {
-      prevPathRef.current = pathname
-      start()
-    }
-  }, [pathname, searchParams, start])
-
-  React.useEffect(() => {
-    return clearTimers
-  }, [clearTimers])
+  }, [pathname])
 
   if (!loading) return null
 

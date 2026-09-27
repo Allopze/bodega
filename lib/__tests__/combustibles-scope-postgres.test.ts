@@ -43,7 +43,9 @@ function scopedSession(worksiteIds: string[]): Session {
       name: "Admin Contrato Faena A",
       email: "actor@example.com",
       roles: ["admin_contrato"],
-      permissions: ["combustibles:manage_vehicles", "combustibles:revert", "combustibles:import"],
+      // `admin:fleet_vehicles` custodia el padrón desde e732a5ac2 (baja masiva
+      // incluida); igual que en combustibles-scope.test.ts (PGlite).
+      permissions: ["admin:fleet_vehicles", "combustibles:manage_vehicles", "combustibles:revert", "combustibles:import"],
       worksiteIds,
       primaryWorksiteId: worksiteIds[0] ?? null,
       avatarColor: null,

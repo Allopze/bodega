@@ -232,11 +232,3 @@ export async function toggleFuelSupplierActive(_prev: ActionState, formData: For
     return { ok: false, message: await dbErrMsg(e, activate ? "Error al activar" : "Error al desactivar") }
   }
 }
-
-/** Compatibility wrapper for old callers; new UI uses the form action above. */
-export async function deleteFuelSupplierAction(id: string): Promise<ActionState> {
-  const formData = new FormData()
-  formData.set("id", id)
-  formData.set("activate", "false")
-  return toggleFuelSupplierActive({ ok: false }, formData)
-}

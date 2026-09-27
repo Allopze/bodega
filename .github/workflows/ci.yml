@@ -284,6 +284,12 @@ jobs:
           # se ejecutó en CI y el job pasaba en verde sin correrla.
           PURCHASE_ORDERS_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           INVOICE_ALLOCATIONS_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          # Estas cuatro también las matcheaba el glob y se saltaban en verde por
+          # falta de variables (lo detecta lib/__tests__/postgres-suites-gating.test.ts).
+          EPP_REQUEST_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          TAE_IMPORT_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          PDTP_REVISION_WINDOW_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          PDTP_YEAR_CLOSE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           RECEIVING_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           DELIVERIES_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
@@ -293,6 +299,11 @@ jobs:
           ROLLUP_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           DTE_PORTAL_FENCING_ALLOW_DESTRUCTIVE_RESET: "true"
           PURCHASE_ORDERS_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
+          INVOICE_ALLOCATIONS_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
+          EPP_REQUEST_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
+          TAE_IMPORT_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
+          PDTP_REVISION_WINDOW_ALLOW_DESTRUCTIVE_RESET: "true"
+          PDTP_YEAR_CLOSE_ALLOW_DESTRUCTIVE_RESET: "true"
         run: npx vitest run --no-file-parallelism --reporter=verbose lib/__tests__/*concurrency-postgres.test.ts 2>&1
 
       - name: Cross-faena scope tests (real Postgres)
@@ -310,6 +321,14 @@ jobs:
           CODE_SEQUENCES_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           CODE_SEQUENCES_ALLOW_DESTRUCTIVE_RESET: "true"
         run: npx vitest run --no-file-parallelism --reporter=verbose lib/__tests__/code-sequences-postgres.test.ts 2>&1
+
+      # No la captura ningún glob de arriba (no es *concurrency ni *scope ni
+      # prevention-*): hasta el 2026-09-27 no corría en ningún gate.
+      - name: PDTP accreditation year close (real Postgres)
+        env:
+          PDTP_ACCREDIT_YEAR_CLOSE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          PDTP_ACCREDIT_YEAR_CLOSE_ALLOW_DESTRUCTIVE_RESET: "true"
+        run: npx vitest run --no-file-parallelism --reporter=verbose lib/__tests__/pdtp-accreditation-year-close-postgres.test.ts 2>&1
 
       # Estas suites son la evidencia principal del cierre P0/P1 de Prevención
       # (CAPA, incidentes, indicadores DS 44, privacidad, MIPER/legal y

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect, useEffectEvent, useRef } from "react"
+import { useState, useCallback, useEffect, useEffectEvent } from "react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { DriveHealth } from "@/lib/services/backups"
 
@@ -84,9 +84,6 @@ export default function SaHealthSection({ initialHealth, initialSummary }: SaHea
   const [intervalMs, setIntervalMs] = useState(getInitialInterval)
   const [secondsRemaining, setSecondsRemaining] = useState(0)
 
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
   const colors = COLORS[summary.status]
   const isAuto = intervalMs > 0
 
@@ -116,35 +113,33 @@ export default function SaHealthSection({ initialHealth, initialSummary }: SaHea
 
   // ── Manage intervals ────────────────────────────────────────────────────
 
-  const clearTimers = useCallback(() => {
-    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
-    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null }
-  }, [])
-
   const onRefreshTick = useEffectEvent(() => {
     refresh()
   })
 
   useEffect(() => {
-    clearTimers()
-
     if (!isAuto) {
       return
     }
 
     // Auto-refresh interval
-    intervalRef.current = setInterval(() => {
+    const refreshTimer = setInterval(() => {
       onRefreshTick()
       setSecondsRemaining(Math.floor(intervalMs / 1000))
     }, intervalMs)
 
     // Countdown ticker
-    countdownRef.current = setInterval(() => {
+    const countdownTimer = setInterval(() => {
       setSecondsRemaining((prev) => Math.max(0, prev - 1))
     }, 1000)
 
-    return clearTimers
-  }, [intervalMs, isAuto, clearTimers])
+    // Los dos timers son locales al efecto: el cleanup es el único dueño y
+    // corre antes de cada re-ejecución (cambio de intervalo) y al desmontar.
+    return () => {
+      clearInterval(refreshTimer)
+      clearInterval(countdownTimer)
+    }
+  }, [intervalMs, isAuto])
 
   // ── Interval change handler ──────────────────────────────────────────────
 

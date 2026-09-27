@@ -27,8 +27,8 @@ export async function GET(
   const { id } = await params
   try {
     const pdf = await getDteDocumentPdf(id)
-    const body = new Uint8Array(pdf.buffer.length)
-    body.set(pdf.buffer)
+    // Copia a un Uint8Array propio para el cuerpo de la respuesta.
+    const body = Uint8Array.from(pdf.buffer)
     return new Response(body, {
       headers: {
         "Content-Type": "application/pdf",

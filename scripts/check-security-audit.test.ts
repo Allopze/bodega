@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vitest"
 import {
-  AUDIT_ALLOWLIST,
+  type AuditAllowlistEntry,
   findExpiredAllowlistEntries,
-  findStreamingWorkbookWriterUsage,
+  findStaleAllowlistEntries,
   findUncoveredFindings,
-  hasRemoteImagePatterns,
   resolveGhsaIds,
 } from "./check-security-audit"
 
-const braceExpansionId = AUDIT_ALLOWLIST[0].ghsaId
-const sharpId = AUDIT_ALLOWLIST[1].ghsaId
+// Fixtures propias: el allowlist real puede quedar vacío (y hoy lo está), así
+// que las pruebas de la lógica no pueden depender de sus entradas.
+const braceExpansionId = "GHSA-mh99-v99m-4gvg"
+const sharpId = "GHSA-f88m-g3jw-g9cj"
+const allowlist: readonly AuditAllowlistEntry[] = [
+  { ghsaId: braceExpansionId, reason: "fixture", reviewBy: "2026-10-28" },
+  { ghsaId: sharpId, reason: "fixture", reviewBy: "2026-11-07" },
+]
 
 describe("resolveGhsaIds", () => {
   it("resolves a direct advisory", () => {
@@ -49,7 +54,7 @@ describe("findUncoveredFindings", () => {
         next: { severity: "high", via: ["sharp"] },
       },
     }
-    expect(findUncoveredFindings(report)).toEqual([])
+    expect(findUncoveredFindings(report, allowlist)).toEqual([])
   })
 
   it("flags a high finding tied to an advisory that isn't allowlisted", () => {
@@ -58,7 +63,7 @@ describe("findUncoveredFindings", () => {
         "some-lib": { severity: "high", range: ">=1.0.0", via: [{ url: "https://github.com/advisories/GHSA-new-new-newx" }] },
       },
     }
-    const problems = findUncoveredFindings(report)
+    const problems = findUncoveredFindings(report, allowlist)
     expect(problems).toHaveLength(1)
     expect(problems[0]).toContain("some-lib")
     expect(problems[0]).toContain("GHSA-new-new-newx")
@@ -70,46 +75,61 @@ describe("findUncoveredFindings", () => {
         "some-lib": { severity: "critical", via: [{ url: `https://github.com/advisories/${braceExpansionId}` }] },
       },
     }
-    const problems = findUncoveredFindings(report)
+    const problems = findUncoveredFindings(report, allowlist)
     expect(problems).toHaveLength(1)
     expect(problems[0]).toContain("crítica")
   })
 
   it("ignores moderate/low findings", () => {
     const report = { vulnerabilities: { "some-lib": { severity: "moderate", via: [] } } }
-    expect(findUncoveredFindings(report)).toEqual([])
+    expect(findUncoveredFindings(report, allowlist)).toEqual([])
+  })
+
+  it("flags every high finding when the allowlist is empty", () => {
+    const report = {
+      vulnerabilities: {
+        sharp: { severity: "high", via: [{ url: `https://github.com/advisories/${sharpId}` }] },
+      },
+    }
+    expect(findUncoveredFindings(report, [])).toHaveLength(1)
   })
 })
 
-describe("hasRemoteImagePatterns", () => {
-  it("detects remotePatterns", () => {
-    expect(hasRemoteImagePatterns("images: { remotePatterns: [{ hostname: 'x.com' }] }")).toBe(true)
+describe("findStaleAllowlistEntries", () => {
+  it("flags entries whose advisory no longer appears in npm audit", () => {
+    // El caso del 2026-09-27: npm audit ya no reportaba nada y las cuatro
+    // entradas seguían vigentes, justificando riesgos que habían desaparecido.
+    expect(findStaleAllowlistEntries({ vulnerabilities: {} }, allowlist).map((entry) => entry.ghsaId))
+      .toEqual([braceExpansionId, sharpId])
   })
 
-  it("detects images.domains", () => {
-    expect(hasRemoteImagePatterns("images: { domains: ['x.com'] }")).toBe(true)
+  it("keeps entries still reachable from a high finding, directly or through a chain", () => {
+    const report = {
+      vulnerabilities: {
+        "brace-expansion": { severity: "high", via: [{ url: `https://github.com/advisories/${braceExpansionId}` }] },
+        exceljs: { severity: "high", via: ["brace-expansion"] },
+      },
+    }
+    expect(findStaleAllowlistEntries(report, allowlist).map((entry) => entry.ghsaId)).toEqual([sharpId])
   })
 
-  it("does not flag configs without remote image sources", () => {
-    expect(hasRemoteImagePatterns("images: { formats: ['image/webp'] }")).toBe(false)
-  })
-})
-
-describe("findStreamingWorkbookWriterUsage", () => {
-  it("does not flag its own source file, which documents WorkbookWriter by name", () => {
-    // Regresión: una vez trackeado por git, este archivo aparecía en su propio
-    // git grep porque su justificación menciona "WorkbookWriter" y "exceljs/lib/stream".
-    expect(findStreamingWorkbookWriterUsage()).not.toContain("scripts/check-security-audit.ts")
+  it("treats an advisory only seen at moderate severity as stale (the allowlist covers high findings)", () => {
+    const report = {
+      vulnerabilities: {
+        sharp: { severity: "moderate", via: [{ url: `https://github.com/advisories/${sharpId}` }] },
+      },
+    }
+    expect(findStaleAllowlistEntries(report, allowlist).map((entry) => entry.ghsaId)).toContain(sharpId)
   })
 })
 
 describe("findExpiredAllowlistEntries", () => {
   it("returns nothing before any reviewBy date", () => {
-    expect(findExpiredAllowlistEntries("2000-01-01")).toEqual([])
+    expect(findExpiredAllowlistEntries("2000-01-01", allowlist)).toEqual([])
   })
 
   it("flags entries whose reviewBy date has passed", () => {
-    const expired = findExpiredAllowlistEntries("2999-01-01")
-    expect(expired.length).toBe(AUDIT_ALLOWLIST.length)
+    expect(findExpiredAllowlistEntries("2026-11-01", allowlist).map((entry) => entry.ghsaId)).toEqual([braceExpansionId])
+    expect(findExpiredAllowlistEntries("2999-01-01", allowlist)).toHaveLength(allowlist.length)
   })
 })

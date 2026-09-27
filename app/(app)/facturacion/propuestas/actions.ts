@@ -229,18 +229,19 @@ const transitionSchema = z.object({
  * autorizado internamente.
  */
 export async function transitionProposalAction(input: unknown): Promise<ActionResult> {
+  // Una sola guarda de entrada al módulo. El permiso ESPECÍFICO de cada
+  // transición (crear / revisar / aprobar) lo exige `assertProposalTransition`
+  // contra los permisos de la sesión: así la regla vive en un solo lugar y la
+  // prueba unitaria la ejercita sin base de datos. Va antes que el parseo: sin
+  // sesión no se contesta nada sobre la forma de la entrada.
+  const { session: actor, error } = await guardPermission("billing:view")
+  if (error) return error
+
   const parsed = transitionSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos inválidos" }
   }
   const { proposalId, transition, reason } = parsed.data
-
-  // Una sola guarda de entrada al módulo. El permiso ESPECÍFICO de cada
-  // transición (crear / revisar / aprobar) lo exige `assertProposalTransition`
-  // contra los permisos de la sesión: así la regla vive en un solo lugar y la
-  // prueba unitaria la ejercita sin base de datos.
-  const { session: actor, error } = await guardPermission("billing:view")
-  if (error) return error
 
   try {
     const proposal = await db.query.billingProposals.findFirst({
