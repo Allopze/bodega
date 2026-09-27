@@ -39,6 +39,10 @@ const WEEK = 2
 const AUTHOR = "jt@e2e.chome.cl"
 const PEER = "jefe.faena@e2e.chome.cl"
 const REJECTION = "El acta no trae la firma del supervisor E2E"
+// PREV-I03: sin asignación, registra quien tiene el rol responsable. La
+// actividad declara al jefe de terreno; sin esta fila no la registra nadie más
+// que Prevención.
+const CATALOG_SLUG = "jt-evidencia-e2e"
 
 const WEEKLY_URL = `/prevencion/pdtp/actividades?programa=${PROGRAM_ID}&faena=${WORKSITE_ID}&hoja=${SHEET_CODE}&vista=semana&mes=${MONTH}&semana=${WEEK}`
 
@@ -83,6 +87,11 @@ test.describe.serial("PDTP — evidencia con aprobación", () => {
     try {
       const now = new Date().toISOString()
       await sql`
+        insert into pdtp_responsible_catalog (slug, display_name, role_name, kind, is_active)
+        values (${CATALOG_SLUG}, 'Jefe de terreno Evidencia E2E', 'jefe_terreno', 'rbac_role', true)
+        on conflict (slug) do nothing
+      `
+      await sql`
         insert into pdtp_sheets (id, code, program_id, label, area, default_scope_roles, is_active)
         values (${SHEET_ID}, ${SHEET_CODE}, ${PROGRAM_ID}, ${SHEET_LABEL}, 'SG-SST', '[]'::jsonb, true)
         on conflict (id) do nothing
@@ -95,7 +104,7 @@ test.describe.serial("PDTP — evidencia con aprobación", () => {
         )
         values (
           ${ACTIVITY_ID}, ${PROGRAM_ID}, ${ACTIVITY_N}, 1, 'active', ${ACTIVITY_NAME}, 'Programa E2E',
-          '[]'::jsonb, 'Jefe de terreno', 'scheduled', ${ACTIVITY_N}, ${now}, ${now}
+          ${sql.json([CATALOG_SLUG])}, 'Jefe de terreno', 'scheduled', ${ACTIVITY_N}, ${now}, ${now}
         )
         on conflict (id) do nothing
       `
@@ -126,6 +135,7 @@ test.describe.serial("PDTP — evidencia con aprobación", () => {
       await sql`delete from pdtp_sheet_activities where activity_id = ${ACTIVITY_ID}`
       await sql`delete from pdtp_activities where id = ${ACTIVITY_ID}`
       await sql`delete from pdtp_sheets where id = ${SHEET_ID}`
+      await sql`delete from pdtp_responsible_catalog where slug = ${CATALOG_SLUG}`
     } finally { await sql.end() }
   })
 

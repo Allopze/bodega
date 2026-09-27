@@ -17,13 +17,19 @@ type ConstanciaView = Awaited<ReturnType<typeof listPdtpConstanciaActivities>>
 type Worksite = { id: string; name: string; code: string }
 
 export function ConstanciasWorkbench({
-  worksites, view, initialWorksiteId, canExecute,
+  worksites, view, initialWorksiteId, canExecute, registrableKeys,
 }: {
   worksites: Worksite[]
   view: ConstanciaView
   initialWorksiteId: string
   canExecute: boolean
+  /**
+   * PREV-I03: `faena|actividad` que esta persona puede registrar. Sin la lista
+   * (Prevención) se ofrece en todas. El servidor rechaza igual.
+   */
+  registrableKeys?: readonly string[]
 }) {
+  const registrable = React.useMemo(() => registrableKeys ? new Set(registrableKeys) : null, [registrableKeys])
   const { searchQuery } = useSafeShellHeader()
   const [status, setStatus] = React.useState("open")
   const [worksiteId, setWorksiteId] = React.useState(
@@ -119,7 +125,7 @@ export function ConstanciasWorkbench({
                   </div>
                   {canExecute && (
                     <div className="flex flex-wrap justify-end gap-2">
-                      <PdtpExecutionForm
+                      {(registrable === null || registrable.has(`${row.worksiteId}|${row.activityId}`)) && <PdtpExecutionForm
                         activityId={row.activityId}
                         activityN={row.n}
                         activityName={row.activityName}
@@ -134,7 +140,7 @@ export function ConstanciasWorkbench({
                         // en lib/services/pdtp/constancias.ts) — no viene en
                         // `PdtpConstanciaDebt` porque acá siempre es ese valor.
                         mechanism="constancia"
-                      />
+                      />}
                       <PdtpDeviationForm
                         activityId={row.activityId}
                         activityN={row.n}
