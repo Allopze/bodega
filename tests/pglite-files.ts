@@ -147,6 +147,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-execution-integrity.test.ts",
   // C05-A: la revisión v+1 copia todo el contenido de la actividad.
   "lib/__tests__/pdtp-revision-midyear.test.ts",
+  // T6 (PREV-C05-B/C/D): ventanas por versión, consolidación anual y traspaso.
+  "lib/__tests__/pdtp-revision-windows.test.ts",
   // T5 (cambio de año 2027): transición, cierre anual y copia al año siguiente.
   "lib/__tests__/pdtp-year-transition.test.ts",
   "lib/__tests__/pdtp-year-close.test.ts",

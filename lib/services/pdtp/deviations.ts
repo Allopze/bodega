@@ -53,6 +53,7 @@ import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation, type PdtpPeriod } from "./period"
 import { deriveScheduleHorizon } from "./recurrence"
 import { assertPdtpPeriodOpen } from "./period-guard"
+import { assertPdtpProgramAcceptsPeriod, assertPdtpProgramAcceptsReview, isPdtpPeriodInVersionWindow } from "./version-window"
 
 export type PdtpDeviationKind = "not_performed" | "not_applicable" | "reprogrammed"
 
@@ -106,6 +107,11 @@ export const PDTP_DEVIATION_LABELS: Record<PdtpDeviationKind, string> = {
  * sigue usable. Sin `callerTx` el comportamiento es el de siempre: su propia
  * transacción sobre `db`.
  */
+const DEVIATION_PERIOD_MESSAGES = {
+  notAcceptingMessage: "Solo se pueden registrar desvíos sobre programas PDTP en estado activo, o en los meses propios de una versión reemplazada.",
+  beforeActivationMessage: "El programa aún no estaba activo en el período seleccionado.",
+}
+
 export async function recordPdtpDeviation(
   input: unknown,
   userId: string,
@@ -136,20 +142,16 @@ export async function recordPdtpDeviation(
     periodEnd: pdtpPrograms.periodEnd,
   }).from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
-  if (program.status !== "active") {
-    throw new Error("Solo se pueden registrar desvíos sobre programas PDTP en estado activo.")
+  if (program.year !== data.year) {
+    throw new Error(`El desvío debe corresponder al año del programa (${program.year}).`)
   }
+  // PREV-C05-B (D24): la versión vigente, o una versión reemplazada dentro de
+  // su ventana. Se vuelve a comprobar dentro de la transacción, con lock.
+  const { window } = await assertPdtpProgramAcceptsPeriod(activity.programId, data, client, DEVIATION_PERIOD_MESSAGES)
 
   // Si el programa declara membresía de faenas, una faena fuera de ella no
   // puede declarar desvíos (mismo guard que overrides/ejecuciones).
   await assertPdtpWorksiteCanOperateProgram(activity.programId, data.worksiteId, client)
-
-  if (program.year !== data.year) {
-    throw new Error(`El desvío debe corresponder al año del programa (${program.year}).`)
-  }
-  if (!isPdtpPeriodOnOrAfterActivation(data, program.activatedAt)) {
-    throw new Error("El programa aún no estaba activo en el período seleccionado.")
-  }
   if (!isPdtpActivityEffectiveForPeriod(activity, data.year, data.month, data.week)) {
     throw new Error("La actividad está retirada para el período seleccionado y no admite desvíos.")
   }
@@ -209,6 +211,11 @@ export async function recordPdtpDeviation(
       if (!isPdtpPeriodOnOrAfterActivation(target, program.activatedAt)) {
         throw new Error("El destino de la reprogramación es anterior a la activación del programa: esa celda no se exige y el planificado desaparecería del cálculo.")
       }
+      // Una versión reemplazada no puede mover planificado a semanas de su
+      // sucesora: allá esa celda no la cuenta nadie.
+      if (window && !isPdtpPeriodInVersionWindow(target, window)) {
+        throw new Error("El destino de la reprogramación ya es de la versión sucesora del programa: reprográmalo en esa versión.")
+      }
       if (!isPdtpActivityEffectiveForPeriod(activity, target.year, target.month, target.week)) {
         throw new Error("La actividad está retirada para el período de destino de la reprogramación: no se puede mover planificado a una celda que ya no se exige.")
       }
@@ -240,6 +247,9 @@ export async function recordPdtpDeviation(
       // ninguna de las dos operaciones puede entrar mientras la otra está en
       // vuelo sobre la misma celda.
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${pdtpCellLockKey(data.activityId, data.worksiteId, data.year, data.month, data.week)}))`)
+      // PREV-C05-B: relectura con la fila del programa `FOR SHARE` (ver
+      // `markPdtpExecution`).
+      await assertPdtpProgramAcceptsPeriod(activity.programId, data, tx, { ...DEVIATION_PERIOD_MESSAGES, lock: true })
       // Mes cerrado: la foto del cierre congeló el planificado y el ejecutado
       // de ese mes. Un `reprogrammed` toca DOS meses —saca planificado del
       // origen y lo deposita en el destino—, así que los dos tienen que estar
@@ -385,6 +395,9 @@ export async function reviewPdtpNotApplicable(
     const [program] = await tx.select({ version: pdtpPrograms.version })
       .from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
     if (!program) throw new Error("Programa PDTP no encontrado.")
+    // PREV-C05-B (D24): una versión reemplazada revisa los "no aplica" de su
+    // ventana; un año cerrado formalmente ya no revisa nada.
+    await assertPdtpProgramAcceptsReview(activity.programId, deviation, tx)
     // Aprobar cambia el denominador de un mes; rechazar no, pero tampoco se
     // resuelve algo congelado en una foto: el cierre ya exige que no queden
     // pendientes (`closePdtpPeriod`).

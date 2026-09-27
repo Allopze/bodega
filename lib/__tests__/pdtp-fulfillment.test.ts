@@ -934,12 +934,14 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
       updatedAt: new Date().toISOString(),
     })
 
+    // PREV-C05-B (T6): el corte es por semana. La activación de v2 cae en la
+    // semana 4 de mayo en Chile, que ya es de v2; el hecho previo va antes.
     const beforeCutover = await accreditPdtpFromEvent({
       sourceType: "campana",
       sourceId: "cutover-before",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-05-31T12:00:00.000Z",
+      occurredAt: "2026-05-20T12:00:00.000Z",
     })
     const afterCutover = await accreditPdtpFromEvent({
       sourceType: "campana",

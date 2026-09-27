@@ -148,7 +148,7 @@ export async function activatePdtpProgramAction(programId: string): Promise<Acti
   if (guard.error) return guard.error
   const session = guard.session
   try {
-    await activatePdtpProgram(programId, session.user.id)
+    const activated = await activatePdtpProgram(programId, session.user.id)
     await scheduleGeneratedDocumentDrain(session.user.id)
     // Ver el comentario en `activatePdtpIfAllStepsApproved`: mismo motivo,
     // mismo candado propio. El programa ya quedó `active`, así que un fallo
@@ -159,10 +159,16 @@ export async function activatePdtpProgramAction(programId: string): Promise<Acti
       logger.error({ err, programId }, "[pdtp-lifecycle] No se pudo reconciliar el libro de cumplimiento tras activar.")
     }
     revalidatePath(REVALIDATE)
-    return { ok: true }
+    // T6: la activación vale aunque falle un paso posterior; se dice cuál.
+    const warnings = activated?.postActivationWarnings ?? []
+    return warnings.length > 0 ? { ok: true, message: postActivationMessage(warnings) } : { ok: true }
   } catch (e) {
     return fail(e)
   }
+}
+
+function postActivationMessage(steps: string[]): string {
+  return `Programa activado. Aviso: no se pudo ${steps.join("; ")}. Quedó registrado en el control de cambios y se reintentará.`
 }
 
 async function rejectPdtpProgramWithPermission(

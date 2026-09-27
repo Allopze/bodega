@@ -5,6 +5,7 @@ import { logger } from "@/lib/logger"
 import { countOf, todayInChile } from "@/lib/utils"
 import { addPdtpChangeLogEntry } from "./helpers"
 import { handoverPdtpWorksiteAssignees } from "./assignees"
+import { handoverPdtpOperationalLayer } from "./operational-handover"
 import { computePdtpProgramContentDigest, computePdtpProgramContentDigestForStoredVersion } from "./content-digest"
 import { assertPdtpFulfillmentCoverage, type PdtpCoverageScope, type PdtpFulfillmentCoverageIssue } from "./fulfillment"
 import {
@@ -479,9 +480,11 @@ export async function activatePdtpProgram(programId: string, userId: string) {
       .returning()
     if (!updated) throw new Error("El programa cambió mientras se activaba. Recarga e intenta nuevamente.")
 
-    // C05-A: las asignaciones nominales vigentes pasan a la versión que entra
-    // en vigencia, en la misma transacción que cierra la anterior.
-    await handoverPdtpWorksiteAssignees(replaced.map((row) => row.id), programId, todayInChile(), tx)
+    // C05-A/C05-D: la capa operacional que ya no es de la versión anterior
+    // —asignaciones nominales vigentes y desvíos abiertos de las semanas desde
+    // esta activación— pasa a la que entra en vigencia, en la misma
+    // transacción que cierra la anterior (`operational-handover.ts`).
+    await handoverPdtpOperationalLayer(replaced.map((row) => row.id), programId, { today: todayInChile(), userId, activatedAt: now }, tx)
     // PREV-C03.1 (D20): el programa del año siguiente copiado desde el anterior
     // no reemplaza a nadie (el año anterior sigue activo hasta su cierre), pero
     // hereda sus asignaciones nominales vigentes al entrar en vigencia. Rigen
@@ -530,26 +533,57 @@ export async function activatePdtpProgram(programId: string, userId: string) {
 
   // La firma/activación y la materialización viven en pasos separados: la
   // primera transacción no debe mantener una conexión abierta mientras se
-  // expanden recurrencias por faena. Ambas operaciones son idempotentes; si el
-  // proceso cae después de activar, el reconciliador puede retomarlas sin
-  // duplicar ocurrencias. No se revierte una activación válida por un fallo de
-  // infraestructura posterior, pero sí queda una señal operativa explícita.
-  try {
-    await materializePdtpScheduledInstances({ programId })
-    await reconcilePdtpTriggerEvents({ limit: 200 })
-    // N°19: una carpeta que ya estaba completa acredita el mes en curso desde
-    // el día de la activación, sin esperar a la próxima carga ni al cron.
-    await sweepPdtpLegalFolders({ programId })
-    // PREV-C03.4 (D22): las casillas del año (simulacros, CGRD, alcotest,
-    // higiene y capacitación) nacen al activar el programa de ese año, en cada
-    // faena operativa. Import dinámico: el agregador arrastra los servicios de
-    // cada submódulo y no tiene por qué cargarse con el ciclo de vida.
+  // expanden recurrencias por faena. Todas estas operaciones son idempotentes;
+  // si el proceso cae después de activar, el reconciliador puede retomarlas
+  // sin duplicar ocurrencias. No se revierte una activación válida por un
+  // fallo de infraestructura posterior.
+  //
+  // T6 (revisión de T5): antes era un solo try/catch que sólo dejaba un log,
+  // así que un fallo del primer paso se saltaba los demás y nadie en la
+  // plataforma se enteraba. Ahora cada paso corre por su cuenta y lo que falla
+  // queda en el control de cambios del programa y en el resultado, para que la
+  // acción lo diga.
+  const postActivationWarnings: string[] = []
+  const step = async (label: string, run: () => Promise<unknown>) => {
+    try {
+      await run()
+    } catch (error) {
+      logger.error({ error, programId, step: label }, "[pdtp-lifecycle] Falló un paso posterior a la activación.")
+      postActivationWarnings.push(label)
+    }
+  }
+  await step("materializar las ocurrencias programadas", () => materializePdtpScheduledInstances({ programId }))
+  await step("reconciliar los eventos disparadores", () => reconcilePdtpTriggerEvents({ limit: 200 }))
+  // N°19: una carpeta que ya estaba completa acredita el mes en curso desde
+  // el día de la activación, sin esperar a la próxima carga ni al cron.
+  await step("revisar la carpeta de requisitos legales", () => sweepPdtpLegalFolders({ programId }))
+  // PREV-C03.4 (D22): las casillas del año (simulacros, CGRD, alcotest,
+  // higiene y capacitación) nacen al activar el programa de ese año, en cada
+  // faena operativa; con una revisión v+1 además se quitan las pendientes que
+  // la versión nueva ya no planifica. Import dinámico: el agregador arrastra
+  // los servicios de cada submódulo y no tiene por qué cargarse con el ciclo
+  // de vida.
+  await step("sembrar las casillas del año (simulacros, CGRD, alcotest, higiene y capacitación)", async () => {
     const { ensurePreventionProgramSlotsForProgram } = await import("@/lib/services/prevention-program-slots")
     await ensurePreventionProgramSlotsForProgram(programId)
-  } catch (error) {
-    logger.error({ error, programId }, "[pdtp-lifecycle] No se pudieron materializar o reconciliar las instancias nuevas tras activar.")
+  })
+  if (postActivationWarnings.length > 0) {
+    try {
+      await addPdtpChangeLogEntry(
+        programId,
+        activated.version,
+        userId,
+        "lifecycle:post-activation",
+        null,
+        { failedSteps: postActivationWarnings },
+        `El programa quedó activo, pero no se pudo ${postActivationWarnings.join("; ")}. `
+        + "Los procesos programados lo reintentan; si persiste, avisa a soporte.",
+      )
+    } catch (error) {
+      logger.error({ error, programId }, "[pdtp-lifecycle] No se pudo registrar el aviso posterior a la activación.")
+    }
   }
-  return activated
+  return { ...activated, postActivationWarnings }
 }
 
 export async function reopenRejectedPdtpProgram(programId: string, userId: string, rawReason: string) {

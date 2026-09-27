@@ -5,6 +5,52 @@ import { describe, expect, it } from "vitest"
 import { PdtpComplianceCard } from "./pdtp-compliance-card"
 
 describe("PdtpComplianceCard", () => {
+  // PREV-C05-C (T6): tras una revisión a mitad de año el anual suma todas las
+  // versiones, y la tarjeta lo dice.
+  it("rotula el anual consolidado cuando el año tiene más de una versión", () => {
+    render(
+      <PdtpComplianceCard
+        year={2026}
+        worksiteCount={2}
+        pendingCount={0}
+        target={0.9}
+        percent={0.8}
+        integralPercent={null}
+        planned={10}
+        executed={8}
+        expectedPercent={0.7}
+        variancePercent={10}
+        lastExecutionUpdatedAt={null}
+        month={10}
+        week={2}
+        versionLabels={["v1", "v2"]}
+      />,
+    )
+    expect(screen.getByText(/Consolidado v1 \+ v2/)).toBeDefined()
+  })
+
+  it("no rotula versiones con una sola", () => {
+    render(
+      <PdtpComplianceCard
+        year={2026}
+        worksiteCount={2}
+        pendingCount={0}
+        target={0.9}
+        percent={0.8}
+        integralPercent={null}
+        planned={10}
+        executed={8}
+        expectedPercent={0.7}
+        variancePercent={10}
+        lastExecutionUpdatedAt={null}
+        month={10}
+        week={2}
+        versionLabels={["v1"]}
+      />,
+    )
+    expect(screen.queryByText(/Consolidado/)).toBeNull()
+  })
+
   it("formats fractional compliance as a human percentage", () => {
     const { container } = render(
       <PdtpComplianceCard

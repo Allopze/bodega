@@ -69,6 +69,7 @@ import {
   type WorksiteScope,
 } from "./helpers"
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
+import { assertPdtpProgramAcceptsPeriod } from "./version-window"
 import { buildPdtpRe36Document, type PdtpRe36Document, type PdtpRe36DeviationRow } from "./re36-document"
 import { getPdtpComplianceIndicators, getPdtpIntegralCompliance, cutPdtpComplianceIndicatorsToMonth, pdtpCountedExecuted, type PdtpComplianceIndicators, type PdtpIntegralCompliance } from "./compliance"
 import { getPdtpManagementReport, type PdtpManagementReport } from "./management-report"
@@ -327,13 +328,20 @@ async function loadClosableContext(programId: string, worksiteId: string, year: 
     activatedAt: pdtpPrograms.activatedAt,
   }).from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
-  if (program.status !== "active") {
-    throw new Error("Solo se puede cerrar el mes de un programa PDTP en estado activo.")
-  }
-  await assertPdtpWorksiteCanOperateProgram(programId, worksiteId)
   if (program.year !== year) {
     throw new Error(`El cierre debe corresponder al año del programa (${program.year}).`)
   }
+  // PREV-C05-B (D24): la versión vigente cierra sus meses, y una versión
+  // reemplazada cierra los de su ventana. El mes pertenece a la versión que
+  // era dueña de su primera semana: el mes en que se activó la sucesora lo
+  // cierra la versión anterior sólo si todavía era suyo al comenzar.
+  if (program.status !== "active") {
+    await assertPdtpProgramAcceptsPeriod(programId, { year, month, week: 1 }, db, {
+      notAcceptingMessage: "Solo se puede cerrar el mes de un programa PDTP en estado activo, o un mes propio de una versión reemplazada.",
+      beforeActivationMessage: "El programa aún no estaba activo en ese mes: no hay nada que cerrar.",
+    })
+  }
+  await assertPdtpWorksiteCanOperateProgram(programId, worksiteId)
 
   // No se cierra un mes que todavía no termina de ocurrir: la foto sería de un
   // mes a medias y la versión siguiente reemplazaría la que ya se distribuyó.

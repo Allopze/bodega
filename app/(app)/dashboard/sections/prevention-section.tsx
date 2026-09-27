@@ -46,7 +46,8 @@ export async function PreventionSection({ session, worksiteScope, worksiteIds, c
     has("prevention:risk:view") ? getRiskDashboard({ userId: session.user.id, scope: worksiteScope, permissions }).catch(() => null) : Promise.resolve(null),
     has("prevention:indicadores:view") ? getCanonicalSafetyIndicatorYear(currentYear, worksiteScope).catch(() => null) : Promise.resolve(null),
     has("prevention:indicadores:view") ? getMaterialEnvironmentalEvents(currentYear, worksiteScope).catch(() => null) : Promise.resolve(null),
-    has("prevention:pdtp:view") ? getPdtpComplianceIndicatorsForScope(pdtpYear, worksiteIds).catch(() => null) : Promise.resolve(null),
+    // PREV-C05-C: el año consolidado entre versiones, igual que la tarjeta.
+    has("prevention:pdtp:view") ? getPdtpComplianceIndicatorsForScope(pdtpYear, worksiteIds, { consolidateYear: true }).catch(() => null) : Promise.resolve(null),
     /*
      * La tarjeta de cumplimiento PDTP vivía en el aside del Centro de Control.
      * Se muda acá, junto al resto del detalle preventivo: en el Resumen ahora

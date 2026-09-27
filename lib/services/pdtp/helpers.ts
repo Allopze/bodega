@@ -17,6 +17,7 @@ import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
 import { applyDeviationsToSchedule, loadPdtpDeviations } from "./deviations"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { effectiveActivationFor, filterPdtpRowsFromActivation } from "./period"
+import { filterPdtpRowsBeforeSuccessor } from "./version-window"
 import { getPdtpActionWorksiteId } from "./capa-view"
 
 export type WorksiteScope = string[] | "all"
@@ -329,7 +330,12 @@ export async function loadApprovedExecutionsForWorksites(
    * `scheduleRows` no lleva `worksiteId`, así que después de aplanar ya no se
    * puede saber a qué corte someter cada fila.
    */
-  activation?: { programId: string; activatedAt: string | null },
+  activation?: {
+    programId: string
+    activatedAt: string | null
+    /** PREV-C05-B: primer período de la versión sucesora (exclusivo). */
+    until?: { year: number; month: number; week: number } | null
+  },
 ) {
   if (activityIds.length === 0 || worksiteIds.length === 0) {
     return { scheduleRows: [], executionRows: [], perWorksite: [] } as {
@@ -354,8 +360,8 @@ export async function loadApprovedExecutionsForWorksites(
       return {
         ...entry,
         cutoff,
-        scheduleRows: filterPdtpRowsFromActivation(entry.scheduleRows, cutoff),
-        executionRows: filterPdtpRowsFromActivation(entry.executionRows, cutoff),
+        scheduleRows: filterPdtpRowsBeforeSuccessor(filterPdtpRowsFromActivation(entry.scheduleRows, cutoff), activation.until),
+        executionRows: filterPdtpRowsBeforeSuccessor(filterPdtpRowsFromActivation(entry.executionRows, cutoff), activation.until),
       }
     }),
   )

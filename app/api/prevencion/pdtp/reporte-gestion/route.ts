@@ -169,6 +169,11 @@ export async function GET(request: NextRequest) {
     indicators.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } }
     indicators.addRow({})
     indicators.addRow({ code: "Meta del programa", label: `${Math.round(report.target * 100)}%`, formula: "" })
+    // PREV-C05-C: el reporte mide una versión; tras una revisión v+1 hay que
+    // poder saber de cuál es y qué semanas cubre.
+    if (report.versionLabel) {
+      indicators.addRow({ code: "Versión", label: safe(report.versionLabel), formula: "Cubre las semanas de esta versión: desde su activación hasta la de la versión que la reemplazó." })
+    }
 
     addExportMetadataSheet(workbook, session, {
       rowCount: report.activities.length,
@@ -182,7 +187,7 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": encodeContentDisposition(`pdtp-reporte-gestion-${report.year}.xlsx`, "attachment"),
+        "Content-Disposition": encodeContentDisposition(`pdtp-reporte-gestion-${report.year}${report.programVersion ? `-v${report.programVersion}` : ""}.xlsx`, "attachment"),
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
       },

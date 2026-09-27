@@ -29,6 +29,19 @@ vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
+/** T6: simula que la siembra de casillas posterior a la activación falla. */
+const slotSeeding = vi.hoisted(() => ({ fail: false }))
+vi.mock("@/lib/services/prevention-program-slots", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/services/prevention-program-slots")>()
+  return {
+    ...original,
+    ensurePreventionProgramSlotsForProgram: async (programId: string) => {
+      if (slotSeeding.fail) throw new Error("disco lleno")
+      return original.ensurePreventionProgramSlotsForProgram(programId)
+    },
+  }
+})
+
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 afterAll(async () => {
@@ -379,5 +392,54 @@ describe("createAnnualPdtpProgram — copia del año anterior (D20)", () => {
     await expect(createAnnualPdtpProgram({ year: TARGET_YEAR, userId: USER_ID })).rejects.toThrow(/Base preventiva 2026 aún no está publicada/)
     await seedSourceProgram()
     await expect(createAnnualPdtpProgram({ year: TARGET_YEAR, userId: USER_ID, source: { kind: "base" } })).rejects.toThrow(/Base preventiva 2026 aún no está publicada/)
+  })
+})
+
+describe("activatePdtpProgram — revisión v+1 (PREV-C05-D)", () => {
+  it("traspasa en la misma activación los desvíos abiertos cuya semana ya es de la versión nueva", async () => {
+    const { createPdtpRevision } = await import("@/lib/services/pdtp/programs")
+    const { configuredId, source } = await seedSourceProgram()
+    await inMemoryDb.insert(schema.pdtpExecutionDeviations).values({
+      id: "dev-reprog-wired", activityId: configuredId, worksiteId: WS_ID, year: SOURCE_YEAR, month: 3, week: 2,
+      kind: "reprogrammed", targetMonth: 4, targetWeek: 2, reason: "Se mueve por la parada de planta",
+      status: "active", createdByUserId: USER_ID, createdAt: new Date().toISOString(),
+    })
+    const revision = await createPdtpRevision({ sourceProgramId: source.id, userId: USER_ID })
+    await lifecycle.submitPdtpProgramForReview(revision.programId, USER_ID)
+    await lifecycle.approvePdtpProgramJdpr(revision.programId, JDPR)
+    await lifecycle.signPdtpProgramLegal(revision.programId, LEGAL)
+    const activated = await lifecycle.activatePdtpProgram(revision.programId, JDPR)
+    expect(activated.status).toBe("active")
+
+    const [copy] = await inMemoryDb.select().from(schema.pdtpActivities)
+      .where(and(eq(schema.pdtpActivities.programId, revision.programId), eq(schema.pdtpActivities.status, "active")))
+    const moved = await inMemoryDb.select().from(schema.pdtpExecutionDeviations)
+      .where(eq(schema.pdtpExecutionDeviations.activityId, copy!.id))
+    expect(moved).toEqual([expect.objectContaining({ kind: "reprogrammed", status: "active", month: 3, week: 2, targetMonth: 4, targetWeek: 2 })])
+    const [original] = await inMemoryDb.select().from(schema.pdtpExecutionDeviations)
+      .where(eq(schema.pdtpExecutionDeviations.id, "dev-reprog-wired"))
+    expect(original!.status).toBe("withdrawn")
+  })
+})
+
+describe("activatePdtpProgram — pasos posteriores a la activación (T6)", () => {
+  it("si la siembra de casillas falla, la activación queda vigente pero lo avisa y lo deja en el control de cambios", async () => {
+    const { createPdtpRevision } = await import("@/lib/services/pdtp/programs")
+    const { source } = await seedSourceProgram()
+    const revision = await createPdtpRevision({ sourceProgramId: source.id, userId: USER_ID })
+    await lifecycle.submitPdtpProgramForReview(revision.programId, USER_ID)
+    await lifecycle.approvePdtpProgramJdpr(revision.programId, JDPR)
+    await lifecycle.signPdtpProgramLegal(revision.programId, LEGAL)
+    slotSeeding.fail = true
+    try {
+      const activated = await lifecycle.activatePdtpProgram(revision.programId, JDPR)
+      expect(activated.status).toBe("active")
+      expect(activated.postActivationWarnings).toEqual([expect.stringMatching(/casillas/)])
+    } finally {
+      slotSeeding.fail = false
+    }
+    const [entry] = await inMemoryDb.select().from(schema.pdtpChangeLog)
+      .where(and(eq(schema.pdtpChangeLog.programId, revision.programId), eq(schema.pdtpChangeLog.section, "lifecycle:post-activation")))
+    expect(entry!.note).toMatch(/casillas/)
   })
 })

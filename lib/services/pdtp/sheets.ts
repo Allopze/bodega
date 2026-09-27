@@ -24,6 +24,7 @@ import {
   type PdtpActivityStatusOptions,
   type PdtpPeriod,
 } from "./period"
+import { filterPdtpRowsBeforeSuccessor, loadPdtpVersionWindow } from "./version-window"
 import { effectiveApprovedExecutionsByCell, pdtpApplyScheduledInstanceCutoff, pdtpCountedExecuted } from "./compliance"
 
 /**
@@ -262,13 +263,18 @@ export async function getPdtpAggregatedSheetViewByProgram(
   // PREV-C06: cada faena se recorta desde su propia incorporación. Con el corte
   // único del programa, una faena incorporada en junio arrastraba las casillas
   // de marzo y la planilla la marcaba atrasada.
+  // PREV-C05-B: una versión reemplazada sólo se lee dentro de su ventana; lo
+  // posterior es de su sucesora.
+  const until = (await loadPdtpVersionWindow(program.id))?.until ?? null
   const effectivePerWorksite = loadedPerWorksite.map((entry) => {
     const cutoff = effectiveActivationFor(program.activatedAt, addedAtByWorksite.get(entry.worksiteId) ?? null)
+    const windowed = <T extends { year: number; month: number; week: number }>(rows: T[]) =>
+      filterPdtpRowsBeforeSuccessor(filterPdtpRowsFromActivation(rows, cutoff), until)
     return {
       ...entry,
-      scheduleRows: filterPdtpRowsFromActivation(entry.scheduleRows, cutoff),
-      executionRows: pdtpApplyScheduledInstanceCutoff(filterPdtpRowsFromActivation(entry.executionRows, cutoff), cutoff ?? null),
-      deviationRows: filterPdtpRowsFromActivation(entry.deviationRows, cutoff),
+      scheduleRows: windowed(entry.scheduleRows),
+      executionRows: pdtpApplyScheduledInstanceCutoff(windowed(entry.executionRows), cutoff ?? null),
+      deviationRows: windowed(entry.deviationRows),
     }
   })
   // La vista agregada mezcla faenas: los desvíos se concatenan (cada uno
@@ -477,7 +483,12 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
   // Los desvíos ya vienen filtrados por exclusión y vigencia desde la costura
   // única; acá sólo se recortan desde la activación, igual que el resto de lo
   // que la vista muestra como "efectivo".
-  const deviationRows = filterPdtpRowsFromActivation(loaded.deviationRows, activationCutoff)
+  // PREV-C05-B: lo "efectivo" de una versión reemplazada termina donde empieza
+  // su sucesora.
+  const successorUntil = (await loadPdtpVersionWindow(program.id))?.until ?? null
+  const windowed = <T extends { year: number; month: number; week: number }>(rows: T[]) =>
+    filterPdtpRowsBeforeSuccessor(filterPdtpRowsFromActivation(rows, activationCutoff), successorUntil)
+  const deviationRows = windowed(loaded.deviationRows)
   // PREV-C07: los "No aplica" en revisión no pasan por la costura única (no
   // cambian el planificado), pero la faena tiene que verlos para seguirlos o
   // retirarlos. Sólo se agregan a la lista que se muestra.
@@ -527,7 +538,7 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
     // from a different program that was filtered out above).
     if (!activity) continue
     const schedule = (scheduleByActivity.get(activity.id) ?? []).sort((a, b) => a.month - b.month || a.week - b.week)
-    const effectiveSchedule = filterPdtpRowsFromActivation(schedule, activationCutoff)
+    const effectiveSchedule = windowed(schedule)
     const monthlyPlanned = Array.from({ length: 12 }, () => 0)
     const monthlyExecuted = Array.from({ length: 12 }, () => 0)
     const effectiveMonthlyPlanned = Array.from({ length: 12 }, () => 0)
@@ -561,7 +572,7 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
     for (const cell of effectiveSchedule) {
       effectiveMonthlyPlanned[cell.month - 1] = (effectiveMonthlyPlanned[cell.month - 1] ?? 0) + cell.plannedQuantity
     }
-    const effectiveActivityExecutions = pdtpApplyScheduledInstanceCutoff(filterPdtpRowsFromActivation(activityExecutions, activationCutoff), activationCutoff ?? null)
+    const effectiveActivityExecutions = pdtpApplyScheduledInstanceCutoff(windowed(activityExecutions), activationCutoff ?? null)
     approvedExecutedByMonth(effectiveActivityExecutions).forEach((executed, index) => {
       effectiveMonthlyExecuted[index] = (effectiveMonthlyExecuted[index] ?? 0) + executed
       approvedMonthlyExecuted[index] = (approvedMonthlyExecuted[index] ?? 0) + executed

@@ -16,6 +16,7 @@ import {
   type PdtpComplianceIndicators,
 } from "@/lib/services/prevention-pdtp"
 import { isPdtpActionOpen } from "@/lib/services/pdtp/checklist-domain"
+import type { PdtpComplianceVersion } from "@/lib/services/pdtp/compliance"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { currentPdtpPeriod, pdtpReferencePeriodForYear, pdtpSheetActivityStatus, type PdtpPeriod, type PdtpStatusSource } from "@/lib/services/pdtp/period"
 import { getLatestPdtpPeriodClosure } from "@/lib/services/pdtp/period-closures"
@@ -117,6 +118,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   }
 
   let indicators: PdtpComplianceIndicators | null = null
+  let yearVersions: PdtpComplianceVersion[] = []
   let actions: Awaited<ReturnType<typeof listActionsByProgram>> = []
   let monthlyTrendData: MonthlyTrendData[] = []
   let worksiteComplianceData: WorksiteComplianceData[] = []
@@ -129,7 +131,9 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
     // y el mismo fan-out alimenta la comparativa por faena — antes se recalculaba
     // una vez por faena en un segundo round-trip.
     const [scopeIndicators, categoryRes, actRes] = await Promise.all([
-      getPdtpComplianceIndicatorsForScope(focusProgram.id, effectiveWorksites.map((w) => w.id)),
+      // PREV-C05-C: el año consolidado entre versiones. Tras una revisión v+1
+      // a mitad de año, el tablero sigue mostrando enero..diciembre.
+      getPdtpComplianceIndicatorsForScope(focusProgram.id, effectiveWorksites.map((w) => w.id), { consolidateYear: true }),
       // Sigue a la faena elegida, como el resto de los KPI. La comparativa por
       // faena es el único gráfico que mira siempre todo el alcance.
       getPdtpComplianceByCategoryForScope(
@@ -145,6 +149,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
     indicators = selectedWorksiteId
       ? scopeIndicators?.perWorksite.find((entry) => entry.worksiteId === selectedWorksiteId)?.indicators ?? null
       : scopeIndicators
+    yearVersions = scopeIndicators?.versions ?? []
     actions = actRes
 
     // 1. Datos para gráfico de tendencia mensual
@@ -281,6 +286,12 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             <span className="text-xs text-[var(--color-text-muted)]">
               {activeProgram ? "Programa activo" : "Programa en borrador"}:{" "}
               <strong className="font-semibold text-[var(--color-text)]">{focusProgram.title} <span className="font-mono text-xs font-normal text-[var(--color-text-muted)]">v{focusProgram.version}</span></strong>
+            </span>
+          )}
+          {yearVersions.length > 1 && (
+            <span className="text-xs text-[var(--color-text-muted)]" data-testid="pdtp-year-versions">
+              Año consolidado:{" "}
+              <strong className="font-semibold text-[var(--color-text)]">{yearVersions.map((version) => version.label).join(" + ")}</strong>
             </span>
           )}
           {focusProgram && (

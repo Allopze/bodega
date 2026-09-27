@@ -18,6 +18,8 @@ import {
   countPdtpNotApplicable,
 } from "@/lib/services/prevention-pdtp"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { loadPdtpVersionWindow } from "@/lib/services/pdtp/version-window"
+import { Callout } from "@/components/ui/callout"
 import { listCatalogActivities } from "@/lib/services/pdtp/catalog-activities"
 import { getPendingPdtpApprovalsForView, getPdtpChangeLog, listAccessiblePdtpProgramWorksites, listPdtpProgramWorksites } from "@/lib/services/pdtp"
 import { PageContainer } from "@/components/ui/page-container"
@@ -32,7 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ChartBar, DotsThree, DownloadSimple, ListChecks, LockKey, PencilSimple, Wrench } from "@phosphor-icons/react/dist/ssr"
-import { countOf, formatDateSafe } from "@/lib/utils"
+import { countOf, formatDate, formatDateSafe } from "@/lib/utils"
 import { PdtpSheetTable } from "../pdtp-sheet-table"
 import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-sheet-table-ui"
 import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
@@ -147,6 +149,13 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
 
   const canApprove = can(session, "prevention:pdtp:approve")
   const canClosePeriod = can(session, "prevention:pdtp:close_period")
+  // PREV-C05-B (D24): una versión reemplazada por una revisión sigue
+  // admitiendo, en sus propias semanas, registros tardíos, aprobaciones,
+  // desvíos y cierres de mes. La página lo dice y ofrece el cierre.
+  const versionWindow = program.status === "closed" && !program.yearClosedAt
+    ? await loadPdtpVersionWindow(programId)
+    : null
+  const acceptsLateWork = Boolean(versionWindow?.successor)
 
   const pendingApprovals: Array<{ id: string; activityId: string; month: number; week: number }> =
     canApprove && selectedWorksiteId && view && view.activities.length > 0
@@ -228,7 +237,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
             {/* El cierre es por faena: sin una seleccionada no hay mes que
                 congelar, así que el botón no aparece en vez de aparecer y
                 fallar al enviarse. */}
-            {canClosePeriod && selectedWorksiteId && program.status === "active" && (
+            {canClosePeriod && selectedWorksiteId && (program.status === "active" || acceptsLateWork) && (
               <PdtpPeriodCloseButton
                 programId={programId}
                 worksiteId={selectedWorksiteId}
@@ -312,6 +321,13 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
       />
 
       <div className="space-y-4">
+        {versionWindow?.successor && (
+          <Callout tone="info" title={`Versión reemplazada por v${versionWindow.successor.version}`}>
+            Desde el {formatDate(versionWindow.successor.activatedAt)} rige la{" "}
+            <Link className="font-medium underline" href={`/prevencion/pdtp/${versionWindow.successor.programId}`}>v{versionWindow.successor.version}</Link>.
+            Esta versión sigue admitiendo registros tardíos, aprobaciones, desvíos y cierres de sus propias semanas; lo posterior se registra en la versión vigente.
+          </Callout>
+        )}
         {sourceProgram && (
           <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Linaje de revisión</p>
