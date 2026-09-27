@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react"
+import { render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { ProgramLifecycleControls } from "./program-lifecycle-controls"
 
@@ -148,6 +148,43 @@ describe("ProgramLifecycleControls", () => {
     expect(screen.getByText(/falta completar: Validación operacional/)).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Aprobar: Validación operacional" })).toBeInTheDocument()
     expect(screen.getByText("Aprobación final")).toBeInTheDocument()
+  })
+
+  /*
+   * PREV-I14: las etapas eran una grilla de `div` sin semántica. Un lector de
+   * pantalla no anunciaba que es una secuencia ni cuántos pasos tiene, y a 390 px
+   * la grilla de una columna dependía de que ningún valor largo la desbordara.
+   * Ahora son una lista ordenada que envuelve (flex-wrap): el orden es parte del
+   * significado (elaboración → congelamiento → decisiones), y jsdom no mide
+   * layout, así que el contrato de envoltura se fija por clase y se verifica en
+   * el navegador a 390 px.
+   */
+  it("expone las etapas como una lista ordenada que envuelve, con rótulo y estado por etapa", () => {
+    render(<ProgramLifecycleControls
+      program={{ ...baseProgram, status: "in_review", contentDigest: "e".repeat(64), reviewStartedAt: "2026-07-21T12:00:00.000Z" }}
+      permissions={permissions}
+      approvalSteps={[
+        { id: "s1", code: "tecnica", label: "Revisión técnica", isRequired: true, canDecide: false, decision: { decision: "approved", decidedAt: "2026-07-21T13:00:00.000Z" } },
+        { id: "s2", code: "operacion", label: "Validación operacional", isRequired: true, canDecide: true, decision: null },
+        { id: "s3", code: "final", label: "Aprobación final", isRequired: false, canDecide: false, decision: null },
+      ]}
+    />)
+
+    const list = screen.getByRole("list", { name: "Etapas del programa" })
+    expect(list.tagName).toBe("OL")
+    expect(list).toHaveClass("flex", "flex-wrap")
+    expect(list.className).not.toMatch(/grid-cols/)
+
+    const items = within(list).getAllByRole("listitem")
+    expect(items.map((item) => item.textContent)).toEqual([
+      "ElaboraciónAna Prevención",
+      "Versión congeladaRegistrada",
+      "Revisión técnicaAprobada",
+      "Validación operacionalPendiente",
+      "Aprobación finalOpcional · pendiente",
+    ])
+    // El rótulo de cada etapa sigue siendo alcanzable con teclado (tooltip de siglas).
+    expect(within(items[0]!).getByText("Elaboración")).toHaveAttribute("tabindex", "0")
   })
 
   it("explains a rejection and offers audited reopen or archive actions", () => {
