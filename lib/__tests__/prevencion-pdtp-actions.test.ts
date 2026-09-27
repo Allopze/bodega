@@ -249,6 +249,14 @@ describe("Program lifecycle actions", () => {
     expect(mockActivatePdtpProgram).toHaveBeenCalledWith("prog-1", "user-1")
   })
 
+  // T6: la activación vale aunque falle un paso posterior; la acción lo dice.
+  it("activatePdtpProgramAction avisa el paso posterior que falló sin marcar la activación como fallida", async () => {
+    mockActivatePdtpProgram.mockResolvedValueOnce({ id: "prog-1", status: "active", postActivationWarnings: ["sembrar las casillas del año"] })
+    const res = await activatePdtpProgramAction("prog-1")
+    expect(res.ok).toBe(true)
+    expect(res.message).toMatch(/Programa activado\. Aviso: no se pudo sembrar las casillas del año/)
+  })
+
   it("rechaza como JDPR o Legal con el permiso específico y motivo", async () => {
     expect((await rejectPdtpProgramAsJdprAction("prog-1", "Falta corregir el calendario anual.")).ok).toBe(true)
     expect(mockGuardPermission).toHaveBeenLastCalledWith("prevention:pdtp:approve")
