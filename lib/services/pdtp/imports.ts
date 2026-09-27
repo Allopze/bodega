@@ -10,9 +10,11 @@ import {
   pdtpCatalogActivities,
   pdtpCatalogActivityRevisions,
   pdtpDocumentHistory,
+  pdtpExecutionDeviations,
   pdtpExecutions,
   pdtpImportBatches,
   pdtpImportRows,
+  pdtpPeriodClosures,
   pdtpPrograms,
   pdtpResponsibleCatalog,
   pdtpRoleLegendEntries,
@@ -819,6 +821,52 @@ export async function finalizePdtpImportBootstrap(input: {
   return artifacts
 }
 
+/**
+ * PREV-M04 / D26: lo que un rollback no puede llevarse.
+ *
+ * - Ejecuciones del lote que ya se aprobaron: las aprobaciones no escriben en
+ *   el change log, así que la guarda de "cambios posteriores" no las veía y el
+ *   rollback borraba evidencia aprobada.
+ * - Cierres del programa en la faena del lote (o en cualquiera, si el lote no
+ *   tenía faena): un cierre congeló cifras que este lote alimentó.
+ * - Trabajo registrado sobre actividades que el lote creó (ejecuciones de otro
+ *   origen o desvíos): borrar la actividad lo arrastraría, y desde la 0333 la
+ *   base lo impide con un error de FK que nadie entendería.
+ */
+async function assertPdtpImportBatchReversible(
+  tx: Tx,
+  batch: typeof pdtpImportBatches.$inferSelect,
+  snapshot: ImportSnapshot,
+) {
+  const approved = (await tx.select({ approved: sql<number>`count(*)::int` }).from(pdtpExecutions)
+    .where(and(eq(pdtpExecutions.importBatchId, batch.id), eq(pdtpExecutions.status, "approved"))))[0]?.approved ?? 0
+  if (approved > 0) {
+    throw new Error(`No se puede revertir: el lote trajo ${countOf(approved, "ejecución que ya fue aprobada", "ejecuciones que ya fueron aprobadas")}. Una ejecución aprobada es evidencia de cumplimiento y no se borra.`)
+  }
+
+  const closures = (await tx.select({ closures: sql<number>`count(*)::int` }).from(pdtpPeriodClosures)
+    .where(and(
+      eq(pdtpPeriodClosures.programId, batch.programId),
+      batch.targetWorksiteId ? eq(pdtpPeriodClosures.worksiteId, batch.targetWorksiteId) : undefined,
+    )))[0]?.closures ?? 0
+  if (closures > 0) {
+    throw new Error(`No se puede revertir: el programa ya tiene ${countOf(closures, "cierre mensual emitido", "cierres mensuales emitidos")} en ${batch.targetWorksiteId ? "la faena del lote" : "sus faenas"}.`)
+  }
+
+  if (snapshot.newlyCreatedActivityIds.length > 0) {
+    const foreign = (await tx.select({ foreign: sql<number>`count(*)::int` }).from(pdtpExecutions)
+      .where(and(
+        inArray(pdtpExecutions.activityId, snapshot.newlyCreatedActivityIds),
+        sql`${pdtpExecutions.importBatchId} IS DISTINCT FROM ${batch.id}`,
+      )))[0]?.foreign ?? 0
+    const deviations = (await tx.select({ deviations: sql<number>`count(*)::int` }).from(pdtpExecutionDeviations)
+      .where(inArray(pdtpExecutionDeviations.activityId, snapshot.newlyCreatedActivityIds)))[0]?.deviations ?? 0
+    if (foreign + deviations > 0) {
+      throw new Error("No se puede revertir: las actividades que creó el lote ya tienen ejecuciones o desvíos registrados fuera de él.")
+    }
+  }
+}
+
 export async function rollbackPdtpImportBatch(input: { batchId: string; userId: string; reason: string; scope: WorksiteScope }) {
   if (input.reason.trim().length < 10) throw new Error("Indica un motivo de rollback de al menos 10 caracteres.")
   const now = new Date().toISOString()
@@ -858,6 +906,7 @@ export async function rollbackPdtpImportBatch(input: { batchId: string; userId: 
     if (hasLaterChange) throw new Error("No se puede revertir: el programa tiene cambios posteriores al lote.")
 
     const snapshot = batch.preApplySnapshotJson as ImportSnapshot
+    await assertPdtpImportBatchReversible(tx, batch, snapshot)
     const checklistIds = artifacts.checklistIdsCreated ?? []
     /* El guard que miraba respuestas operacionales se fue con el motor de
      * llenado: ya no hay instancias que puedan colgar de un checklist. Borrar

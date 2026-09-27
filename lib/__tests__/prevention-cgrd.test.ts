@@ -84,6 +84,9 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionCapaActions)
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpExecutions)
+  // PREV-M04 (0333): ejecuciones, desvíos y cierres son RESTRICT hacia la
+  // actividad/programa; la cascada ya no los limpia.
+  await inMemoryDb.delete(schema.pdtpExecutionDeviations)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.preventionGrdThreats)
