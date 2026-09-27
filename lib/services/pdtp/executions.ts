@@ -11,7 +11,7 @@ import { existsSync } from "node:fs"
 import { logger } from "@/lib/logger"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
-import { isPdtpPeriodOnOrAfterActivation } from "./period"
+import { assertPdtpProgramAcceptsPeriod, assertPdtpProgramAcceptsReview } from "./version-window"
 import { assertPdtpPeriodOpen } from "./period-guard"
 import { syncPdtpScheduledInstanceFromExecution } from "./scheduled-execution"
 import { todayInChile } from "@/lib/utils"
@@ -29,6 +29,10 @@ export type MarkPdtpExecutionOptions = {
    * asignada. El resto sólo actúa sobre lo propio.
    */
   canActForOthers?: boolean
+}
+
+const EXECUTION_PERIOD_MESSAGES = {
+  notAcceptingMessage: "Solo se pueden registrar ejecuciones contra programas PDTP en estado activo, o en los meses propios de una versión reemplazada.",
 }
 
 export async function markPdtpExecution(
@@ -58,19 +62,19 @@ export async function markPdtpExecution(
     activatedAt: pdtpPrograms.activatedAt,
   }).from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
-  if (program.status !== "active") throw new Error("Solo se pueden registrar ejecuciones contra programas PDTP en estado activo.")
-  // Si el programa declara membresía de faenas, una faena fuera de ella no
-  // puede registrar ejecuciones (ver lib/services/pdtp/worksites.ts).
-  await assertPdtpWorksiteCanOperateProgram(activity.programId, data.worksiteId)
   // Espejo del guard de overrides.ts: sin esto, una ejecución con el año
   // calendario (en vez del año del programa) queda huérfana — el detalle y
   // /aprobaciones consultan por `program.year`, así que nunca aparecería.
   if (program.year !== data.year) {
     throw new Error(`La ejecución debe corresponder al año del programa (${program.year}).`)
   }
-  if (!isPdtpPeriodOnOrAfterActivation(data, program.activatedAt)) {
-    throw new Error("El programa aún no estaba activo en el período seleccionado. Registra actividades desde su semana de activación.")
-  }
+  // PREV-C05-B (D24): la versión vigente acepta desde su activación; una v1
+  // cerrada por una revisión acepta los registros tardíos de su ventana. Se
+  // vuelve a comprobar dentro de la transacción, con la fila bloqueada.
+  await assertPdtpProgramAcceptsPeriod(activity.programId, data, db, EXECUTION_PERIOD_MESSAGES)
+  // Si el programa declara membresía de faenas, una faena fuera de ella no
+  // puede registrar ejecuciones (ver lib/services/pdtp/worksites.ts).
+  await assertPdtpWorksiteCanOperateProgram(activity.programId, data.worksiteId)
   // La actividad declara qué evidencia exige. El requisito se evalúa más
   // abajo (después de resolver `nextEvidenceUrl`/`dedupedPhotos`), una vez
   // verificado el archivo físico — ver el comentario junto a esa evaluación.
@@ -136,6 +140,11 @@ export async function markPdtpExecution(
     // que hace de la lectura una condición de escritura, igual que
     // `setWhere: ne(status, 'approved')` más abajo lo es para la aprobación.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${pdtpCellLockKey(data.activityId, data.worksiteId, data.year, data.month, data.week)}))`)
+    // PREV-C05-B: la ventana se relee con la fila del programa `FOR SHARE`, en
+    // serie con la activación de una sucesora (que cierra esta fila) y con el
+    // cierre anual. Leída afuera, una v1 vigente al validar podía quedar
+    // reemplazada antes del INSERT y la ejecución caería en semanas de la v2.
+    await assertPdtpProgramAcceptsPeriod(activity.programId, data, tx, { ...EXECUTION_PERIOD_MESSAGES, lock: true })
     // Mes cerrado: la foto del cierre ya se congeló y se distribuyó; escribir
     // sobre ese mes la dejaría mintiendo. Va DENTRO de la transacción, con el
     // `tx`, por lo mismo que la lectura del desvío de arriba: comprobarlo
@@ -450,11 +459,20 @@ function assertExecutionHasEvidenceForApproval(
  */
 async function assertPdtpPeriodOpenForExecution(
   tx: Tx,
-  execution: { activityId: string; worksiteId: string; year: number; month: number },
+  execution: { activityId: string; worksiteId: string; year: number; month: number; week: number; obligationId?: string | null },
 ): Promise<void> {
   const [activity] = await tx.select({ programId: pdtpActivities.programId })
     .from(pdtpActivities).where(eq(pdtpActivities.id, execution.activityId)).limit(1)
   if (!activity) return
+  // PREV-C05-B (D24): una aprobación o un rechazo no proceden en un año
+  // cerrado formalmente ni sobre una semana que ya es de la versión sucesora.
+  // Una ejecución de obligación no ocupa una celda del calendario: sólo la
+  // frena el año cerrado (la semana nunca es de otra versión).
+  await assertPdtpProgramAcceptsReview(
+    activity.programId,
+    execution.obligationId ? { year: execution.year, month: 1, week: 1 } : execution,
+    tx,
+  )
   await assertPdtpPeriodOpen(activity.programId, execution.worksiteId, execution.year, execution.month, tx)
 }
 

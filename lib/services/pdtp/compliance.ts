@@ -6,6 +6,7 @@ import {
   pdtpActivityWorksiteParams,
   pdtpExecutions,
   pdtpObligations,
+  pdtpProgramWorksites,
   pdtpPrograms,
   pdtpScheduledInstances,
   preventionCapaActions,
@@ -16,7 +17,15 @@ import { PDTP_ESTADOS_CERRADOS } from "./checklist-domain"
 import { capaEstado } from "./capa-view"
 import { loadApprovedExecutionsForWorksites, loadProgramScheduleAndExecutions, loadWorksiteAddedAt } from "./helpers"
 import { isFlowSubjectSource, resolvePdtpSubjectRoster } from "./subject-registry"
-import { effectiveActivationFor, filterPdtpRowsFromActivation, pdtpPeriodFromChileDate } from "./period"
+import { effectiveActivationFor, filterPdtpRowsFromActivation, pdtpPeriodFromChileDate, type PdtpPeriod } from "./period"
+import {
+  describePdtpVersionWindow,
+  filterPdtpRowsBeforeSuccessor,
+  isPdtpMonthBeforeSuccessor,
+  loadPdtpVersionWindow,
+  loadPdtpYearVersionWindows,
+  type PdtpVersionWindow,
+} from "./version-window"
 import { PDTP_ANNUAL_MINIMUM_MONTH, pdtpAnnualMinimumFloor } from "./annual-minimum"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { chileDateParts } from "@/lib/utils"
@@ -374,23 +383,171 @@ export function pdtpComplianceToDate(
   return { throughMonth, planned, executed, percent: planned > 0 ? Math.round((executed / planned) * 100) / 100 : null }
 }
 
-export async function getPdtpComplianceIndicators(yearOrProgramId: number | string, worksiteId?: string): Promise<PdtpComplianceIndicators | null> {
-  let program: typeof pdtpPrograms.$inferSelect | null = null
+type PdtpIndicatorProgram = typeof pdtpPrograms.$inferSelect
 
+type PdtpIndicatorActivity = {
+  id: string
+  n: number
+  catalogActivityId: string | null
+  indicatorMode: string
+  subjectSource: string | null
+  subjectCapabilityCodes: string[] | null
+  scheduleDefinition: unknown
+  minAnnualExecutions: number | null
+  status: string
+  retiredEffectiveFrom: string | null
+}
+
+/**
+ * Lo que una versión aporta al indicador de una faena, ya recortado a su
+ * ventana y agrupado por actividad y mes. Es la entrada de
+ * `computePdtpIndicatorsFromInputs`: con una sola versión el cálculo es el de
+ * siempre; con varias (C05-C) se suman por actividad de catálogo.
+ */
+type PdtpIndicatorInputs = {
+  program: PdtpIndicatorProgram
+  /** Primer período de la sucesora (exclusivo), o `null` si nadie la reemplazó. */
+  until: PdtpPeriod | null
+  activityRows: PdtpIndicatorActivity[]
+  plannedByActivityMonth: Map<string, number>
+  executedByActivityMonth: Map<string, number>
+  declaredNotPerformedByMonth: number[]
+  expectedByActivity: Map<string, number>
+  coverageTargetPctByActivity: Map<string, number>
+  derivedStockByActivity: Map<string, number>
+  derivedFlowByActivityMonth: Map<string, number>
+  subjectRosterIssues: PdtpComplianceIndicators["subjectRosterIssues"]
+  closedOnTimePlanned: Map<string, number>
+  closedOnTimeExecuted: Map<string, number>
+  closedOnTimeCompleted: Map<string, number>
+  lastExecutionUpdatedAt: string | null
+  approvedExecutionIds: string[]
+}
+
+async function resolveIndicatorProgram(yearOrProgramId: number | string): Promise<PdtpIndicatorProgram | null> {
   if (typeof yearOrProgramId === "string") {
     const [found] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, yearOrProgramId)).limit(1)
-    program = found ?? null
-  } else {
-    const programs = await db.select().from(pdtpPrograms)
-      .where(eq(pdtpPrograms.year, yearOrProgramId)).orderBy(desc(pdtpPrograms.version)).limit(10)
-    program = programs.find((p) => p.status === "active") ?? programs[0] ?? null
+    return found ?? null
   }
+  const programs = await db.select().from(pdtpPrograms)
+    .where(eq(pdtpPrograms.year, yearOrProgramId)).orderBy(desc(pdtpPrograms.version)).limit(10)
+  return programs.find((p) => p.status === "active") ?? programs[0] ?? null
+}
 
+function emptyPdtpComplianceIndicators(program: PdtpIndicatorProgram): PdtpComplianceIndicators {
+  return {
+    programId: program.id, year: program.year, target: program.complianceTarget,
+    monthly: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, planned: 0, executed: 0, percent: null, zeroActivities: 0, zeroActivityIds: [], declaredNotPerformed: 0 })),
+    quarterly: Array.from({ length: 4 }, (_, i) => ({ quarter: i + 1, planned: 0, executed: 0, percent: null })),
+    annual: { planned: 0, executed: 0, percent: null, zeroActivityMonths: 0, zeroActivityIds: [] },
+    toDate: pdtpComplianceToDate([], program.year),
+    lastExecutionUpdatedAt: null,
+    subjectRosterIssues: [],
+  }
+}
+
+export async function getPdtpComplianceIndicators(yearOrProgramId: number | string, worksiteId?: string): Promise<PdtpComplianceIndicators | null> {
+  const program = await resolveIndicatorProgram(yearOrProgramId)
   if (!program) return null
+  // PREV-C05-B: una versión reemplazada se mide sólo en su ventana. Sin
+  // sucesora `until` es `null` y el cálculo es exactamente el de siempre.
+  const window = await loadPdtpVersionWindow(program.id)
+  const inputs = await loadPdtpIndicatorInputs(program, worksiteId, window)
+  if (!inputs) return emptyPdtpComplianceIndicators(program)
+  return computePdtpIndicatorsFromInputs(program, worksiteId, [inputs])
+}
+
+/** Una versión del año, tal como se rotula junto al indicador consolidado. */
+export type PdtpComplianceVersion = {
+  programId: string
+  version: number
+  status: string
+  activatedAt: string | null
+  from: PdtpPeriod | null
+  until: PdtpPeriod | null
+  label: string
+}
+
+export type PdtpYearComplianceIndicators = PdtpComplianceIndicators & {
+  /** Versiones que componen el año, en orden de vigencia. Una sola = sin revisión. */
+  versions: PdtpComplianceVersion[]
+}
+
+function toComplianceVersion(window: PdtpVersionWindow & { status: string }): PdtpComplianceVersion {
+  return {
+    programId: window.programId,
+    version: window.version,
+    status: window.status,
+    activatedAt: window.activatedAt,
+    from: window.from,
+    until: window.until,
+    label: describePdtpVersionWindow(window),
+  }
+}
+
+/**
+ * PREV-C05-C (T6): el cumplimiento del **año**, consolidado entre versiones.
+ * Una revisión v+1 activada en noviembre dejaba el "anual" del tablero en
+ * noviembre y diciembre: la v2 corta en su activación y la v1 dejaba de
+ * mirarse. Acá cada versión aporta lo de su ventana (en cada faena, desde su
+ * propio corte por incorporación) y las actividades se juntan por identidad de
+ * catálogo (`catalogActivityId`, con caída al número): el tope por actividad y
+ * mes y el listado de actividades en cero se aplican una vez sobre la unión.
+ *
+ * Con una sola versión el resultado es **idéntico** a
+ * `getPdtpComplianceIndicators` (lo fija una prueba): es el mismo cálculo con
+ * una sola entrada.
+ */
+export async function getPdtpYearComplianceIndicators(
+  yearOrProgramId: number | string,
+  worksiteId?: string,
+): Promise<PdtpYearComplianceIndicators | null> {
+  const focus = await resolveIndicatorProgram(yearOrProgramId)
+  if (!focus) return null
+  const chain = (await loadPdtpYearVersionWindows(focus.year)).filter((window) => window.status !== "archived")
+  if (chain.length <= 1 || !chain.some((window) => window.programId === focus.id)) {
+    const single = await getPdtpComplianceIndicators(focus.id, worksiteId)
+    const own = chain.find((window) => window.programId === focus.id)
+    return single ? { ...single, versions: own ? [toComplianceVersion(own)] : [] } : null
+  }
+  const programs = await db.select().from(pdtpPrograms).where(inArray(pdtpPrograms.id, chain.map((window) => window.programId)))
+  const programById = new Map(programs.map((program) => [program.id, program]))
+  const parts: PdtpIndicatorInputs[] = []
+  for (const window of chain) {
+    const program = programById.get(window.programId)
+    if (!program) continue
+    // Una faena que no opera esta versión no le aporta nada.
+    if (worksiteId && !(await canPdtpProgramIncludeWorksite(program, worksiteId))) continue
+    const inputs = await loadPdtpIndicatorInputs(program, worksiteId, window)
+    if (inputs) parts.push(inputs)
+  }
+  const primary = programById.get(chain.at(-1)!.programId)!
+  const versions = chain.map(toComplianceVersion)
+  if (parts.length === 0) return { ...emptyPdtpComplianceIndicators(primary), versions }
+  return { ...(await computePdtpIndicatorsFromInputs(primary, worksiteId, parts)), versions }
+}
+
+/** ¿La faena opera esta versión? Mismo criterio que la membresía del programa. */
+async function canPdtpProgramIncludeWorksite(program: PdtpIndicatorProgram, worksiteId: string): Promise<boolean> {
+  const members = await db.select({ worksiteId: pdtpProgramWorksites.worksiteId })
+    .from(pdtpProgramWorksites)
+    .where(and(eq(pdtpProgramWorksites.programId, program.id), eq(pdtpProgramWorksites.isActive, true)))
+  return members.length === 0 ? program.appliesToAllWorksites : members.some((member) => member.worksiteId === worksiteId)
+}
+
+async function loadPdtpIndicatorInputs(
+  program: PdtpIndicatorProgram,
+  worksiteId: string | undefined,
+  window: Pick<PdtpVersionWindow, "until" | "successor"> | null,
+): Promise<PdtpIndicatorInputs | null> {
   const year = program.year
+  const until = window?.until ?? null
+  const successorActivatedAt = window?.successor?.activatedAt ?? null
 
   const activityRows = await db.select({
     id: pdtpActivities.id,
+    n: pdtpActivities.n,
+    catalogActivityId: pdtpActivities.catalogActivityId,
     indicatorMode: pdtpActivities.indicatorMode,
     subjectSource: pdtpActivities.subjectSource,
     subjectCapabilityCodes: pdtpActivities.subjectCapabilityCodes,
@@ -401,17 +558,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   }).from(pdtpActivities)
     .where(eq(pdtpActivities.programId, program.id))
 
-  if (activityRows.length === 0) {
-    return {
-      programId: program.id, year, target: program.complianceTarget,
-      monthly: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, planned: 0, executed: 0, percent: null, zeroActivities: 0, zeroActivityIds: [], declaredNotPerformed: 0 })),
-      quarterly: Array.from({ length: 4 }, (_, i) => ({ quarter: i + 1, planned: 0, executed: 0, percent: null })),
-      annual: { planned: 0, executed: 0, percent: null, zeroActivityMonths: 0, zeroActivityIds: [] },
-      toDate: pdtpComplianceToDate([], year),
-      lastExecutionUpdatedAt: null,
-      subjectRosterIssues: [],
-    }
-  }
+  if (activityRows.length === 0) return null
 
   const allActivityIds = activityRows.map((row) => row.id)
   const loaded = await loadProgramScheduleAndExecutions(allActivityIds, year, worksiteId)
@@ -422,13 +569,16 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   const activationCutoff = worksiteId
     ? effectiveActivationFor(program.activatedAt, await loadWorksiteAddedAt(program.id, worksiteId))
     : program.activatedAt
-  const scheduleRows = filterPdtpRowsFromActivation(loaded.scheduleRows, activationCutoff)
-  const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, activationCutoff)
+  // PREV-C05-B: y termina donde empieza la versión sucesora, si la hay.
+  const windowed = <T extends { year: number; month: number; week: number }>(rows: T[]) =>
+    filterPdtpRowsBeforeSuccessor(filterPdtpRowsFromActivation(rows, activationCutoff), until)
+  const scheduleRows = windowed(loaded.scheduleRows)
+  const executionRows = windowed(loaded.executionRows)
   // Métrica, no insumo del cálculo: los desvíos que transforman el
   // planificado ya vienen aplicados en `scheduleRows` desde la costura única.
   // Acá sólo se cuentan los "no realizada" por mes para exponerlos.
   const declaredNotPerformedByMonth = Array.from({ length: 12 }, () => 0)
-  for (const row of filterPdtpRowsFromActivation(loaded.deviationRows, activationCutoff)) {
+  for (const row of windowed(loaded.deviationRows)) {
     if (row.kind !== "not_performed") continue
     declaredNotPerformedByMonth[row.month - 1] = (declaredNotPerformedByMonth[row.month - 1] ?? 0) + 1
   }
@@ -462,6 +612,9 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
         ))
     : []
   const eligibleScheduledInstances = scheduledInstances.filter((instance) => {
+    // PREV-C05-B: la ocurrencia desde el día de activación de la sucesora es
+    // de la sucesora (mismo corte por día que usa su materialización).
+    if (successorActivatedAt && instance.scheduledFor >= successorActivatedAt.slice(0, 10)) return false
     if (!activationCutoff) return true
     // Las instancias materializadas antes del día de activación no deben
     // inventar deuda en el indicador de una versión recién firmada. Con faena,
@@ -493,11 +646,6 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   const approvedExecutionRows = executionRows.filter((row) => row.status === "approved")
   const effectiveExecutionRows = effectiveApprovedExecutionsByCell(approvedExecutionRows, { instanceCutoff: activationCutoff })
 
-  // Modo de indicador por actividad: 'coverage' se calcula todo-o-nada; el resto
-  // se capa en lo planificado (R3). El cómputo es por actividad-mes para poder
-  // aplicar reglas distintas por actividad y no dejar que una compense a otra.
-  const modeByActivity = new Map(activityRows.map((a) => [a.id, a.indicatorMode]))
-
   /**
    * Padrón por actividad. La cadena es: **override manual → padrón derivado del
    * registro de sujetos → cantidad planificada del mes**.
@@ -521,7 +669,6 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   /** Padrón derivado. Las fuentes de stock se resuelven una vez; las de flujo, por mes. */
   const derivedStockByActivity = new Map<string, number>()
   const derivedFlowByActivityMonth = new Map<string, number>()
-  const sourceByActivity = new Map<string, string | null>(activityRows.map((a) => [a.id, a.subjectSource]))
   const subjectRosterIssues: PdtpComplianceIndicators["subjectRosterIssues"] = []
 
   if (worksiteId) {
@@ -579,15 +726,6 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     }
   }
 
-  /** Padrón efectivo de una celda actividad-mes, o `null` si no hay ninguno. */
-  const padronFor = (activityId: string, month: number): number | null => {
-    const manual = expectedByActivity.get(activityId)
-    if (manual != null) return manual
-    const flow = derivedFlowByActivityMonth.get(`${activityId}:${month}`)
-    if (flow != null) return flow
-    return derivedStockByActivity.get(activityId) ?? null
-  }
-
   const plannedByActivityMonth = new Map<string, number>()
   for (const row of scheduleRows) {
     const key = `${row.activityId}:${row.month}`
@@ -629,6 +767,146 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     completedByActivity: closedOnTimeCompleted,
   } = await loadClosedOnTimeByActivityMonth(closedOnTimeActivityIds, worksiteId ? [worksiteId] : [], year, coverageActivityIds)
 
+  const lastExecutionUpdatedAt = approvedExecutionRows.reduce<string | null>((latest, row) => {
+    return !latest || row.updatedAt > latest ? row.updatedAt : latest
+  }, null)
+  const latestScheduledCompletion = eligibleScheduledInstances
+    .filter((row) => row.status === "completed")
+    .reduce<string | null>((latest, row) => !latest || row.updatedAt > latest ? row.updatedAt : latest, null)
+  const finalLastExecutionUpdatedAt = latestScheduledCompletion
+    && (!lastExecutionUpdatedAt || latestScheduledCompletion > lastExecutionUpdatedAt)
+    ? latestScheduledCompletion
+    : lastExecutionUpdatedAt
+
+  return {
+    program,
+    until,
+    activityRows,
+    plannedByActivityMonth,
+    executedByActivityMonth,
+    declaredNotPerformedByMonth,
+    expectedByActivity,
+    coverageTargetPctByActivity,
+    derivedStockByActivity,
+    derivedFlowByActivityMonth,
+    subjectRosterIssues,
+    closedOnTimePlanned,
+    closedOnTimeExecuted,
+    closedOnTimeCompleted,
+    lastExecutionUpdatedAt: finalLastExecutionUpdatedAt,
+    approvedExecutionIds: approvedExecutionRows.map((row) => row.id),
+  }
+}
+
+/**
+ * Clave de consolidación de cada actividad entre versiones: la actividad de la
+ * versión más reciente que comparte su identidad de catálogo (o, sin ella, su
+ * número). Con una sola versión es la identidad.
+ */
+function consolidationKeys(parts: readonly PdtpIndicatorInputs[]): Map<string, string> {
+  const keyOf = new Map<string, string>()
+  if (parts.length === 1) {
+    for (const activity of parts[0]!.activityRows) keyOf.set(activity.id, activity.id)
+    return keyOf
+  }
+  const identityOf = (part: PdtpIndicatorInputs, activity: PdtpIndicatorActivity) => {
+    // Un catálogo repetido dentro de la misma versión no identifica a nadie:
+    // se cae al número, que sí es único por programa.
+    const repeated = activity.catalogActivityId
+      && part.activityRows.filter((row) => row.catalogActivityId === activity.catalogActivityId).length > 1
+    return activity.catalogActivityId && !repeated ? `cat:${activity.catalogActivityId}` : `n:${activity.n}`
+  }
+  const representative = new Map<string, string>()
+  // La versión más reciente gana: se recorre de la última a la primera.
+  for (const part of [...parts].reverse()) {
+    for (const activity of part.activityRows) {
+      const identity = identityOf(part, activity)
+      if (!representative.has(identity)) representative.set(identity, activity.id)
+      keyOf.set(activity.id, representative.get(identity)!)
+    }
+  }
+  return keyOf
+}
+
+function remapActivityMonthMap(target: Map<string, number>, source: Map<string, number>, keyOf: Map<string, string>) {
+  for (const [key, value] of source) {
+    const separator = key.lastIndexOf(":")
+    const activityId = key.slice(0, separator)
+    const merged = `${keyOf.get(activityId) ?? activityId}${key.slice(separator)}`
+    target.set(merged, (target.get(merged) ?? 0) + value)
+  }
+}
+
+async function computePdtpIndicatorsFromInputs(
+  primary: PdtpIndicatorProgram,
+  worksiteId: string | undefined,
+  parts: readonly PdtpIndicatorInputs[],
+): Promise<PdtpComplianceIndicators> {
+  const year = primary.year
+  const keyOf = consolidationKeys(parts)
+  const key = (activityId: string) => keyOf.get(activityId) ?? activityId
+
+  /* Las filas representativas (de la versión más reciente) dan el modo, la
+   * fuente del padrón y el piso anual; el resto se suma. Los parámetros por
+   * faena se superponen de la más antigua a la más reciente. */
+  const representativeRows = new Map<string, PdtpIndicatorActivity & { until: PdtpPeriod | null }>()
+  const plannedByActivityMonth = new Map<string, number>()
+  const executedByActivityMonth = new Map<string, number>()
+  const closedOnTimePlanned = new Map<string, number>()
+  const closedOnTimeExecuted = new Map<string, number>()
+  const closedOnTimeCompleted = new Map<string, number>()
+  const expectedByActivity = new Map<string, number>()
+  const coverageTargetPctByActivity = new Map<string, number>()
+  const derivedStockByActivity = new Map<string, number>()
+  const derivedFlowByActivityMonth = new Map<string, number>()
+  const declaredNotPerformedByMonth = Array.from({ length: 12 }, () => 0)
+  const subjectRosterIssues: PdtpComplianceIndicators["subjectRosterIssues"] = []
+  let lastExecutionUpdatedAt: string | null = null
+  for (const part of parts) {
+    for (const activity of part.activityRows) {
+      if (key(activity.id) === activity.id) representativeRows.set(activity.id, { ...activity, until: part.until })
+    }
+    remapActivityMonthMap(plannedByActivityMonth, part.plannedByActivityMonth, keyOf)
+    remapActivityMonthMap(executedByActivityMonth, part.executedByActivityMonth, keyOf)
+    remapActivityMonthMap(closedOnTimePlanned, part.closedOnTimePlanned, keyOf)
+    remapActivityMonthMap(closedOnTimeExecuted, part.closedOnTimeExecuted, keyOf)
+    for (const [activityId, value] of part.closedOnTimeCompleted) {
+      closedOnTimeCompleted.set(key(activityId), (closedOnTimeCompleted.get(key(activityId)) ?? 0) + value)
+    }
+    for (const [activityId, value] of part.expectedByActivity) expectedByActivity.set(key(activityId), value)
+    for (const [activityId, value] of part.coverageTargetPctByActivity) coverageTargetPctByActivity.set(key(activityId), value)
+    for (const [activityId, value] of part.derivedStockByActivity) derivedStockByActivity.set(key(activityId), value)
+    for (const [monthKey, value] of part.derivedFlowByActivityMonth) {
+      const separator = monthKey.lastIndexOf(":")
+      derivedFlowByActivityMonth.set(`${key(monthKey.slice(0, separator))}${monthKey.slice(separator)}`, value)
+    }
+    part.declaredNotPerformedByMonth.forEach((count, index) => { declaredNotPerformedByMonth[index] = (declaredNotPerformedByMonth[index] ?? 0) + count })
+    for (const issue of part.subjectRosterIssues) {
+      if (key(issue.activityId) === issue.activityId) subjectRosterIssues.push(issue)
+    }
+    if (part.lastExecutionUpdatedAt && (!lastExecutionUpdatedAt || part.lastExecutionUpdatedAt > lastExecutionUpdatedAt)) {
+      lastExecutionUpdatedAt = part.lastExecutionUpdatedAt
+    }
+  }
+  const activityRows = [...representativeRows.values()]
+  const allActivityIds = activityRows.map((row) => row.id)
+
+  // Modo de indicador por actividad: 'coverage' se calcula todo-o-nada; el resto
+  // se capa en lo planificado (R3). El cómputo es por actividad-mes para poder
+  // aplicar reglas distintas por actividad y no dejar que una compense a otra.
+  const modeByActivity = new Map(activityRows.map((a) => [a.id, a.indicatorMode]))
+  const sourceByActivity = new Map<string, string | null>(activityRows.map((a) => [a.id, a.subjectSource]))
+  const untilByActivity = new Map(activityRows.map((a) => [a.id, a.until]))
+
+  /** Padrón efectivo de una celda actividad-mes, o `null` si no hay ninguno. */
+  const padronFor = (activityId: string, month: number): number | null => {
+    const manual = expectedByActivity.get(activityId)
+    if (manual != null) return manual
+    const flow = derivedFlowByActivityMonth.get(`${activityId}:${month}`)
+    if (flow != null) return flow
+    return derivedStockByActivity.get(activityId) ?? null
+  }
+
   // Piso anual (`minAnnualExecutions`): cuánto puso cada actividad en el
   // denominador del año y cuánto realizó, contara o no. Se acumula en el bucle
   // mensual —que es donde se decide qué cuenta— y se aplica al cierre.
@@ -661,7 +939,9 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
         // en el mes no hay nada que exigir. Una de flujo es al revés: el
         // denominador son los casos que ocurrieron, y ocurren cuando ocurren — la
         // N°18 no tiene calendario y aun así debe contar el mes que entró gente.
+        // PREV-C05-B: salvo los meses que ya son de la versión sucesora.
         const esFlujo = isFlowSubjectSource(sourceByActivity.get(activityId) ?? null)
+          && isPdtpMonthBeforeSuccessor(year, month, untilByActivity.get(activityId))
         bumpAnnual(annualPerformedByActivity, activityId, rawExecuted)
         const obligationKey = `${activityId}:${month}`
         const obligationCases = closedOnTimePlanned.get(obligationKey) ?? 0
@@ -690,11 +970,11 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
         // vencieron este mes, y el numerador los que se cerraron a tiempo —
         // se suman a `coverage*` porque comparten la misma regla todo-o-nada
         // por caso (cada obligación pesa 1, no se prorratea).
-        const key = `${activityId}:${month}`
-        const casesDue = closedOnTimePlanned.get(key) ?? 0
+        const monthKey = `${activityId}:${month}`
+        const casesDue = closedOnTimePlanned.get(monthKey) ?? 0
         if (casesDue === 0) continue // sin casos este mes: no es un 0%, es nada que medir.
         coveragePlanned += casesDue
-        coverageExecuted += closedOnTimeExecuted.get(key) ?? 0
+        coverageExecuted += closedOnTimeExecuted.get(monthKey) ?? 0
         bumpAnnual(annualMeasuredByActivity, activityId, casesDue)
       } else {
         // Resto: tope por actividad y mes (PREV-C02). Lo ejecutado sin plan
@@ -721,8 +1001,10 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   // —igual que una celda planificada futura ya cuenta en el denominador anual—
   // y con la regla todo-o-nada de los modos por caso: no compensa ni es
   // compensado por otra actividad.
+  // PREV-C05-B: lo exige sólo la versión dueña de diciembre (sin sucesora).
   if (worksiteId) {
     const withMinimum = activityRows.filter((a) => (a.minAnnualExecutions ?? 0) > 0
+      && a.until === null
       && isPdtpActivityEffectiveForPeriod(a, year, PDTP_ANNUAL_MINIMUM_MONTH, 4))
     const excludedIds = withMinimum.length === 0
       ? new Set<string>()
@@ -768,26 +1050,15 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     zeroActivityIds: [...new Set(monthly.flatMap((m) => m.zeroActivityIds))],
   }
 
-  const lastExecutionUpdatedAt = approvedExecutionRows.reduce<string | null>((latest, row) => {
-    return !latest || row.updatedAt > latest ? row.updatedAt : latest
-  }, null)
-  const latestScheduledCompletion = eligibleScheduledInstances
-    .filter((row) => row.status === "completed")
-    .reduce<string | null>((latest, row) => !latest || row.updatedAt > latest ? row.updatedAt : latest, null)
-  const finalLastExecutionUpdatedAt = latestScheduledCompletion
-    && (!lastExecutionUpdatedAt || latestScheduledCompletion > lastExecutionUpdatedAt)
-    ? latestScheduledCompletion
-    : lastExecutionUpdatedAt
-
   return {
-    programId: program.id,
+    programId: primary.id,
     year,
-    target: program.complianceTarget,
+    target: primary.complianceTarget,
     monthly,
     quarterly,
     annual,
     toDate: pdtpComplianceToDate(monthly, year),
-    lastExecutionUpdatedAt: finalLastExecutionUpdatedAt,
+    lastExecutionUpdatedAt,
     subjectRosterIssues,
   }
 }
@@ -802,15 +1073,34 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
 export async function getPdtpComplianceIndicatorsForScope(
   yearOrProgramId: number | string,
   worksiteIds: string[],
+  /**
+   * PREV-C05-C: `consolidateYear` agrega el cumplimiento del **año** entre
+   * versiones (`getPdtpYearComplianceIndicators`) en vez del de un solo
+   * programa. Es lo que muestran el tablero y la tarjeta de inicio; la ficha
+   * de cada versión sigue midiendo la suya.
+   */
+  options: { consolidateYear?: boolean } = {},
 ): Promise<(PdtpComplianceIndicators & {
   worksiteCount: number
   /** Desglose por faena, en el mismo orden que `worksiteIds`. Se expone para que
    * un consumidor que necesita el agregado *y* la comparativa por faena (el
    * tablero) no tenga que volver a calcular lo mismo N veces. */
   perWorksite: Array<{ worksiteId: string; indicators: PdtpComplianceIndicators | null }>
+  /** Sólo con `consolidateYear`: las versiones que componen el año. */
+  versions?: PdtpComplianceVersion[]
 }) | null> {
   if (worksiteIds.length === 0) return null
-  const perWorksiteResults = await Promise.all(worksiteIds.map((id) => getPdtpComplianceIndicators(yearOrProgramId, id)))
+  let versions: PdtpComplianceVersion[] | undefined
+  const perWorksiteResults: Array<PdtpComplianceIndicators | null> = await Promise.all(worksiteIds.map(async (id) => {
+    if (!options.consolidateYear) return getPdtpComplianceIndicators(yearOrProgramId, id)
+    const year = await getPdtpYearComplianceIndicators(yearOrProgramId, id)
+    if (!year) return null
+    // Las versiones son del año, no de la faena: se exponen una vez arriba.
+    const { versions: own, ...indicators } = year
+    versions ??= own
+    return indicators
+  }))
+  if (options.consolidateYear) versions ??= []
   const perWorksite = worksiteIds.map((worksiteId, index) => ({ worksiteId, indicators: perWorksiteResults[index] ?? null }))
   const resolved = perWorksiteResults.filter((x): x is PdtpComplianceIndicators => x !== null)
   if (resolved.length === 0) return null
@@ -864,6 +1154,7 @@ export async function getPdtpComplianceIndicatorsForScope(
     subjectRosterIssues,
     worksiteCount: worksiteIds.length,
     perWorksite,
+    ...(versions ? { versions } : {}),
   }
 }
 
@@ -931,7 +1222,7 @@ export async function getPdtpComplianceByCategoryForScope(
     scheduledIds,
     program.year,
     worksiteIds,
-    { programId: program.id, activatedAt: program.activatedAt },
+    { programId: program.id, activatedAt: program.activatedAt, until: (await loadPdtpVersionWindow(program.id))?.until ?? null },
   )
   const totals = new Map<string, { planned: number; executed: number }>()
   const bump = (activityId: string, field: "planned" | "executed", amount: number) => {
@@ -1174,24 +1465,37 @@ function weightIntegral(
 export async function getPdtpIntegralComplianceForScope(
   programId: string,
   worksiteIds: string[],
+  /** PREV-C05-C: los tres ejes sobre el año consolidado entre versiones. */
+  options: { consolidateYear?: boolean } = {},
 ): Promise<PdtpIntegralCompliance | null> {
   if (worksiteIds.length === 0) return null
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) return null
 
-  const scoped = await getPdtpComplianceIndicatorsForScope(program.id, worksiteIds)
+  const scoped = await getPdtpComplianceIndicatorsForScope(program.id, worksiteIds, options)
   const ejecucion = scoped?.annual.percent ?? null
 
-  const activityRows = await db.select({ id: pdtpActivities.id }).from(pdtpActivities)
-    .where(eq(pdtpActivities.programId, program.id))
-  const loaded = await loadApprovedExecutionsForWorksites(
-    activityRows.map((row) => row.id),
-    program.year,
-    worksiteIds,
-    { programId: program.id, activatedAt: program.activatedAt },
-  )
-  const executionRows = loaded.executionRows
-  const { verificacion, cierre } = await computeVerificacionYCierre(executionRows.map((row) => row.id))
+  // Con el año consolidado, verificación y cierre leen las ejecuciones de cada
+  // versión en su ventana; sin él, las del programa en la suya.
+  const windows = options.consolidateYear
+    ? (await loadPdtpYearVersionWindows(program.year)).filter((window) => window.status !== "archived")
+    : []
+  const sources = windows.some((window) => window.programId === program.id)
+    ? await db.select().from(pdtpPrograms).where(inArray(pdtpPrograms.id, windows.map((window) => window.programId)))
+    : [program]
+  const executionIds: string[] = []
+  for (const source of sources) {
+    const activityRows = await db.select({ id: pdtpActivities.id }).from(pdtpActivities)
+      .where(eq(pdtpActivities.programId, source.id))
+    const loaded = await loadApprovedExecutionsForWorksites(
+      activityRows.map((row) => row.id),
+      source.year,
+      worksiteIds,
+      { programId: source.id, activatedAt: source.activatedAt, until: (await loadPdtpVersionWindow(source.id))?.until ?? null },
+    )
+    executionIds.push(...loaded.executionRows.map((row) => row.id))
+  }
+  const { verificacion, cierre } = await computeVerificacionYCierre(executionIds)
 
   return weightIntegral(program, { ejecucion, verificacion, cierre })
 }
@@ -1231,7 +1535,10 @@ export async function getPdtpIntegralCompliance(
     const cutoff = worksiteId
       ? effectiveActivationFor(program.activatedAt, await loadWorksiteAddedAt(program.id, worksiteId))
       : program.activatedAt
-    const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, cutoff)
+    const executionRows = filterPdtpRowsBeforeSuccessor(
+      filterPdtpRowsFromActivation(loaded.executionRows, cutoff),
+      (await loadPdtpVersionWindow(program.id))?.until ?? null,
+    )
     // El indicador integral es formal: checklist y acciones también requieren
     // que la ejecución base haya sido aprobada.
     approvedExecutionIds = executionRows.reduce<string[]>((ids, execution) => {

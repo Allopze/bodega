@@ -29,6 +29,7 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
+import { resolvePdtpVersionOwningPeriod } from "./version-window"
 import { addPdtpChangeLogEntry } from "./helpers"
 import { pdtpExecutionHistorySnapshot, recordPdtpExecutionHistory } from "./execution-history"
 import { PDTP_DEVIATION_LABELS, type PdtpDeviationKind } from "./deviations"
@@ -344,18 +345,26 @@ async function resolvePdtpActiveProgramForEvent(
       ? members.includes(input.worksiteId)
       : candidate.appliesToAllWorksites
   })
-  const occurredAtMs = Date.parse(input.occurredAt)
   const sameYear = programs.filter((candidate) => candidate.year === occurredYear)
-  const effectiveForDate = sameYear
-    // v1 es la línea de base del año: los hechos históricos previos a la
-    // activación registrada siguen perteneciendo a ella. El corte temporal
-    // sólo nace al activar una revisión v+1, que es lo que evita que un
-    // reintento de un hecho anterior se desvíe a v2.
-    .filter((candidate) => candidate.version <= 1 || !candidate.activatedAt || !Number.isFinite(occurredAtMs) || Date.parse(candidate.activatedAt) <= occurredAtMs)
-    .sort((left, right) => {
-      const byActivation = Date.parse(right.activatedAt ?? "1970-01-01T00:00:00.000Z") - Date.parse(left.activatedAt ?? "1970-01-01T00:00:00.000Z")
-      return byActivation || right.version - left.version
-    })
+  /*
+   * PREV-C05-B (T6): la versión se resuelve por el **período** del hecho —la
+   * celda planificada si el conector la trae, si no la semana en que
+   * ocurrió—, con la misma ventana que usan las escrituras manuales
+   * (`version-window.ts`): cada versión es dueña desde su semana de
+   * activación hasta la de su sucesora, y la primera es la línea de base del
+   * año (los hechos anteriores a toda activación también son suyos). Antes se
+   * comparaba el instante del hecho con el de la activación: una capacitación
+   * planificada en marzo y cerrada en septiembre caía en la v2, que no tenía
+   * esa celda en su ventana, y un hecho del lunes de la semana de activación
+   * caía en la v1, que ya no era dueña de esa semana.
+   */
+  // Un año planificado distinto del real (anual sin celda, hecho fuera de su
+  // año): el período dueño es el borde del año planificado más cercano al hecho.
+  const ownerPeriod = !input.plannedPeriod && occurredYear !== actualOccurredYear
+    ? (occurredYear < actualOccurredYear ? { year: occurredYear, month: 12, week: 4 } : { year: occurredYear, month: 1, week: 1 })
+    : { year: occurredYear, month: slot.month, week: slot.week }
+  const owner = resolvePdtpVersionOwningPeriod(sameYear, ownerPeriod)
+  const effectiveForDate = owner ? [owner] : []
   // El corte temporal fija una sola versión: la última que ya estaba vigente
   // cuando ocurrió el hecho. No se busca una versión anterior que sí cubra la
   // faena, porque eso permitiría que un evento posterior a v2 volviera a v1

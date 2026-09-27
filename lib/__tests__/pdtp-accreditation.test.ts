@@ -953,12 +953,15 @@ describe("corte efectivo entre revisiones del programa", () => {
       updatedAt: new Date().toISOString(),
     })
 
+    // PREV-C05-B (T6): el corte es por semana, no por instante. La semana de
+    // activación de v2 (la 4 de junio en Chile) ya es de v2, así que el hecho
+    // "previo" se ubica en la semana anterior.
     const beforeCutover = await accreditPdtpFromEvent({
       sourceType: "capacitacion",
       sourceId: "cutover-before",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: `${PROGRAM_YEAR}-06-30T23:59:00.000Z`,
+      occurredAt: `${PROGRAM_YEAR}-06-20T23:59:00.000Z`,
     })
     const afterCutover = await accreditPdtpFromEvent({
       sourceType: "capacitacion",
@@ -974,7 +977,7 @@ describe("corte efectivo entre revisiones del programa", () => {
       activityNumbers: [ACT_N],
       // El reintento conserva la fecha operacional del hecho; la hora de
       // procesamiento no debe cambiar la versión que lo acredita.
-      occurredAt: `${PROGRAM_YEAR}-06-30T23:59:00.000Z`,
+      occurredAt: `${PROGRAM_YEAR}-06-20T23:59:00.000Z`,
     })
 
     expect(beforeCutover.accredited[0]).toMatchObject({ activityId: ACT_ID, created: true })

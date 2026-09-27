@@ -10,6 +10,7 @@ import { pdtpActivities, pdtpActivityWorksiteParams, pdtpPrograms } from "@/db/s
 import { assertWorksiteAccess, loadProgramScheduleAndExecutions, type WorksiteScope } from "./helpers"
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 import { filterPdtpRowsFromActivation } from "./period"
+import { describePdtpVersionWindow, filterPdtpRowsBeforeSuccessor, loadPdtpVersionWindow } from "./version-window"
 import { effectiveApprovedExecutionsByCell, pdtpCountedExecuted } from "./compliance"
 
 export type PdtpManagementReportActivityRow = {
@@ -43,6 +44,9 @@ export type PdtpManagementReportFilters = {
 export type PdtpManagementReport = {
   programId: string
   programTitle: string
+  /** PREV-C05-C: la versión que mide el reporte y las semanas que cubre. */
+  programVersion?: number
+  versionLabel?: string
   year: number
   worksiteId: string
   target: number
@@ -82,6 +86,11 @@ export async function getPdtpManagementReport(input: {
   if (!program) return null
   await assertPdtpWorksiteCanOperateProgram(program.id, input.worksiteId)
 
+  const window = await loadPdtpVersionWindow(program.id)
+  const versionFields = {
+    programVersion: program.version,
+    versionLabel: window ? describePdtpVersionWindow(window) : `v${program.version}`,
+  }
   const activities = await db.select().from(pdtpActivities)
     .where(eq(pdtpActivities.programId, program.id))
     .orderBy(pdtpActivities.displayOrder, pdtpActivities.n)
@@ -89,6 +98,7 @@ export async function getPdtpManagementReport(input: {
     return {
       programId: program.id,
       programTitle: program.title,
+      ...versionFields,
       year: program.year,
       worksiteId: input.worksiteId,
       target: program.complianceTarget,
@@ -140,9 +150,12 @@ export async function getPdtpManagementReport(input: {
   const loaded = activityIds.length > 0
     ? await loadProgramScheduleAndExecutions(activityIds, program.year, input.worksiteId)
     : { scheduleRows: [], executionRows: [], deviationRows: [] }
-  const scheduleRows = filterPdtpRowsFromActivation(loaded.scheduleRows, program.activatedAt)
-  const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, program.activatedAt)
-  const deviationRows = filterPdtpRowsFromActivation(loaded.deviationRows, program.activatedAt)
+  // PREV-C05-B: el reporte es de una versión, dentro de su ventana.
+  const windowed = <T extends { year: number; month: number; week: number }>(rows: T[]) =>
+    filterPdtpRowsBeforeSuccessor(filterPdtpRowsFromActivation(rows, program.activatedAt), window?.until)
+  const scheduleRows = windowed(loaded.scheduleRows)
+  const executionRows = windowed(loaded.executionRows)
+  const deviationRows = windowed(loaded.deviationRows)
   const approvedExecutions = executionRows.filter((row) => row.status === "approved")
 
   const inPeriod = (month: number) => (filters.monthFrom === undefined || month >= filters.monthFrom) && (filters.monthTo === undefined || month <= filters.monthTo)
@@ -214,6 +227,7 @@ export async function getPdtpManagementReport(input: {
   return {
     programId: program.id,
     programTitle: program.title,
+    ...versionFields,
     year: program.year,
     worksiteId: input.worksiteId,
     target: program.complianceTarget,
