@@ -113,6 +113,24 @@ describe("GET PDTP reporte de gestión", () => {
     expect(summary.getRow(2).getCell(8).value).toBe("2 no realizadas · 1 reprogramada")
   })
 
+  // PREV-C05-C (T6): el reporte es de UNA versión; el archivo y su hoja de
+  // indicadores dicen cuál y qué semanas cubre.
+  it("rotula el Excel con la versión y su ventana", async () => {
+    mockAuth.mockResolvedValue(session())
+    mockReport.mockResolvedValue({
+      ...BASE_REPORT,
+      programVersion: 1,
+      versionLabel: "v1 (desde el 01-01-2026, hasta la activación de v2 el 06-07-2026)",
+    })
+    const response = await GET(request("?year=2026"))
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-disposition")).toContain("pdtp-reporte-gestion-2026-v1.xlsx")
+    const reopened = new ExcelJS.Workbook()
+    await reopened.xlsx.load(await response.arrayBuffer())
+    const values = reopened.getWorksheet("Indicadores")!.getSheetValues().flat().map(String)
+    expect(values.some((value) => value.includes("hasta la activación de v2"))).toBe(true)
+  })
+
   it("escapes activity/responsible text that looks like a formula so Excel never evaluates it", async () => {
     mockAuth.mockResolvedValue(session())
     mockReport.mockResolvedValue({

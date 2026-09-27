@@ -89,7 +89,9 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
     <PageContainer>
       <PageHeader
         title="Reporte de gestión"
-        description="Avance, desviaciones y responsables por actividad, igual que en la descarga Excel."
+        // PREV-C05-C: el reporte mide una versión; tras una revisión v+1 se dice
+        // cuál y qué semanas cubre.
+        description={`Avance, desviaciones y responsables por actividad, igual que en la descarga Excel.${report?.versionLabel ? ` Versión ${report.versionLabel}.` : ""}`}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },

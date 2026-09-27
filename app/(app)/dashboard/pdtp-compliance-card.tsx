@@ -2,9 +2,9 @@ import Link from "next/link"
 import { ChartLineUp } from "@phosphor-icons/react/dist/ssr"
 import { cn, formatDateTime, MONTH_LABELS } from "@/lib/utils"
 import { Progress } from "@/components/ui/progress"
-import { getPdtpComplianceIndicators, getPdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
+import { getPdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
 import { listPendingPdtpExecutions } from "@/lib/services/prevention-pdtp"
-import { getPdtpComplianceIndicatorsForScope } from "@/lib/services/pdtp/compliance"
+import { getPdtpComplianceIndicatorsForScope, getPdtpYearComplianceIndicators } from "@/lib/services/pdtp/compliance"
 import { currentPdtpPeriod, pdtpReferencePeriodForYear } from "@/lib/services/pdtp/period"
 import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 
@@ -34,6 +34,13 @@ type PdtpComplianceCardProps = {
   lastExecutionUpdatedAt: string | null
   month: number
   week: number
+  /**
+   * PREV-C05-C (T6): las versiones del año que suma el anual ("v1", "v2").
+   * Con más de una, la tarjeta dice que el número es un consolidado: tras una
+   * revisión a mitad de año, sin el rótulo no se sabría que marzo viene de la
+   * versión anterior.
+   */
+  versionLabels?: string[]
 }
 
 /**
@@ -60,6 +67,7 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
     lastExecutionUpdatedAt,
     month,
     week,
+    versionLabels,
   } = props
   const targetPct = Math.round(target * 100)
   const value = percent === null ? 0 : Math.round(percent * 100)
@@ -151,6 +159,9 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
           </span>
         )}
         <span className="font-mono tabular-nums">{monthLabel} · S{week} · meta {targetPct}%</span>
+        {versionLabels && versionLabels.length > 1 && (
+          <span className="sm:col-span-2">Consolidado {versionLabels.join(" + ")}</span>
+        )}
         {lastExecutionUpdatedAt && (
           <span className="sm:col-span-2">Última ejecución validada: {formatDateTime(lastExecutionUpdatedAt)}</span>
         )}
@@ -186,9 +197,11 @@ export async function loadPdtpComplianceSummary(worksiteIds: string[]) {
    * global cuatro pantallas más abajo (I-04). El integral sigue siendo
    * por-faena: ese cálculo sí no tiene versión agregada.
    */
+  // PREV-C05-C: el anual del año, consolidado entre versiones (una revisión
+  // v+1 a mitad de año ya no deja el tablero con sólo sus meses).
   const indicators = targetWorksiteId
-    ? await getPdtpComplianceIndicators(period.year, targetWorksiteId)
-    : await getPdtpComplianceIndicatorsForScope(period.year, worksiteIds)
+    ? await getPdtpYearComplianceIndicators(period.year, targetWorksiteId)
+    : await getPdtpComplianceIndicatorsForScope(period.year, worksiteIds, { consolidateYear: true })
   if (!indicators) return null
   const [pending, integral] = await Promise.all([
     listPendingPdtpExecutions(worksiteIds, { year: period.year }),
@@ -220,5 +233,6 @@ export async function loadPdtpComplianceSummary(worksiteIds: string[]) {
     lastExecutionUpdatedAt: indicators.lastExecutionUpdatedAt,
     month: period.month,
     week: period.week,
+    versionLabels: (indicators.versions ?? []).map((version) => `v${version.version}`),
   } satisfies PdtpComplianceCardProps
 }
