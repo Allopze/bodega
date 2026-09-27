@@ -24,6 +24,18 @@ export function ppaAccreditedPath(worksiteId = "ws-e2e"): string {
   return `/ppa?faena=${worksiteId}&t=${token}`
 }
 
+/**
+ * PREV-M06: enlace público de acuse v2 con el vencimiento que se le pida.
+ * Repite —igual que `ppaAccreditedPath`— la derivación de
+ * `lib/services/prevention-ack-token.ts`.
+ */
+export function preventionAckPathWithExpiry(targetId: string, expUnixSeconds: number): string {
+  const mac = createHmac("sha256", E2E_AUTH_SECRET)
+    .update(`prevention:ack:v2:permiso:${targetId}:${expUnixSeconds}`)
+    .digest("hex")
+  return `/acuse/permiso/${encodeURIComponent(targetId)}/v2.${expUnixSeconds}.${mac}`
+}
+
 export async function clearRateLimits() {
   const databaseUrl = process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL
   if (!databaseUrl) return

@@ -56,6 +56,10 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
       - AUTH_SECRET=${AUTH_SECRET:?err}
       - AUTH_SECRET_PREVIOUS=${AUTH_SECRET_PREVIOUS:-}
+      # PREV-M06: vigencia del enlace público de acuse y ventana de transición
+      # de los enlaces antiguos sin vencimiento (ver .env.example).
+      - PREVENTION_ACK_TTL_DAYS=${PREVENTION_ACK_TTL_DAYS:-}
+      - PREVENTION_ACK_LEGACY_UNTIL=${PREVENTION_ACK_LEGACY_UNTIL:-}
       - APP_URL=${APP_URL:?err}
       - PDF_RENDER_ORIGIN=${PDF_RENDER_ORIGIN:-http://127.0.0.1:3000}
       # Archivado de documentos generados en Cloudreve. Esta llave solo existe

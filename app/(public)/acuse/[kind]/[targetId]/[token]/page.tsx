@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
 import { getPermitCrewAckPublicView } from "@/lib/services/prevention-ack-public"
+import { checkPreventionAckToken, PREVENTION_ACK_EXPIRED_MESSAGE } from "@/lib/services/prevention-ack-token"
 import { PublicAcknowledgementForm } from "./ack-form"
 
 export const dynamic = "force-dynamic"
@@ -27,6 +28,23 @@ export default async function PublicAcknowledgementPage({
 }) {
   const { kind, targetId, token } = await params
   if (kind !== "permiso") notFound()
+
+  // PREV-M06: el enlace vence por tiempo. Vencido se dice como tal —quien lo
+  // abre necesita saber que tiene que pedir otro—; se decide sólo con la firma,
+  // antes de tocar la base, así que tampoco revela si el destino existe.
+  if (checkPreventionAckToken("permiso", targetId, token) === "expired") {
+    return (
+      <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 px-4 py-8">
+        <header>
+          <p className="text-xs uppercase tracking-wide text-(--color-text-subtle)">Acuse de AST</p>
+          <h1 className="mt-1 text-lg font-semibold text-(--color-text)">Enlace vencido</h1>
+        </header>
+        <p role="status" className="rounded-(--radius-2xl) border border-(--color-border) bg-(--color-surface) p-4 text-sm text-(--color-text)">
+          {PREVENTION_ACK_EXPIRED_MESSAGE}
+        </p>
+      </main>
+    )
+  }
 
   const view = await getPermitCrewAckPublicView(targetId, token)
   // Un token inválido y un id inexistente responden igual: el enlace no puede

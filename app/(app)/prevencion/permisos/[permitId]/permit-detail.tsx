@@ -18,7 +18,7 @@ import {
   RESIDUAL_RISK_LABELS,
   permitStatusBadgeVariant,
 } from "@/lib/prevention/permits"
-import { formatDateTime } from "@/lib/utils"
+import { formatDate, formatDateTime } from "@/lib/utils"
 import {
   acknowledgePermitCrewAction,
   addPermitIsolationAction,
@@ -101,6 +101,8 @@ interface CrewItem {
   crewUserId: string | null
   /** PER-002: enlace de acuse sin cuenta; null si la persona sí tiene cuenta. */
   ackLink?: string | null
+  /** PREV-M06: el enlace vence; ISO del instante de vencimiento. */
+  ackLinkExpiresAt?: string | null
 }
 
 interface Readiness {
@@ -445,6 +447,7 @@ export function PermitDetail({
                              había forma de dejar de estarlo. */
                           : member.ackLink
                             ? (
+                              <>
                               <a
                                 href={member.ackLink}
                                 target="_blank"
@@ -453,6 +456,14 @@ export function PermitDetail({
                               >
                                 Enlace de acuse (sin cuenta)
                               </a>
+                              {/* PREV-M06: el enlace vence al cierre de ese día
+                                  chileno; se muestra el último día en que vale. */}
+                              {member.ackLinkExpiresAt ? (
+                                <span className="ml-2 text-xs text-(--color-text-muted)">
+                                  vigente hasta el {formatDate(new Date(Date.parse(member.ackLinkExpiresAt) - 1000))}
+                                </span>
+                              ) : null}
+                            </>
                             )
                             : "Pendiente"}
                     </TableCell>
