@@ -18,7 +18,7 @@ import type { WorksiteScope } from "@/lib/auth/scope"
 import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
-import { verifyPreventionAckToken } from "@/lib/services/prevention-ack-token"
+import { checkPreventionAckToken, PREVENTION_ACK_EXPIRED_MESSAGE } from "@/lib/services/prevention-ack-token"
 import {
   assessPermitActivation,
   isPermitExpired,
@@ -656,7 +656,13 @@ export async function acknowledgePermitCrewByPublicToken(
   context: { ip?: string | null; userAgent?: string | null } = {},
 ) {
   const crewId = String(input.crewId ?? "")
-  if (!crewId || !verifyPreventionAckToken("permiso", crewId, input.token)) throw new Error(NOT_FOUND)
+  if (!crewId) throw new Error(NOT_FOUND)
+  // PREV-M06: vencido y falso se distinguen —el vencido lo emitimos nosotros y
+  // el trabajador necesita saber que debe pedir otro—, sin tocar la base, así
+  // que el mensaje no dice nada sobre si el integrante existe.
+  const tokenStatus = checkPreventionAckToken("permiso", crewId, input.token)
+  if (tokenStatus === "expired") throw new Error(PREVENTION_ACK_EXPIRED_MESSAGE)
+  if (tokenStatus !== "valid") throw new Error(NOT_FOUND)
 
   return db.transaction(async (tx) => {
     const [row] = await tx.select({

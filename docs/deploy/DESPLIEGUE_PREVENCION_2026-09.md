@@ -205,6 +205,32 @@ ellos:
   pudiendo reenviar desde esa misma faena.
 - **Obligaciones.** Un caso registrado a mano siempre queda como manual y lleva motivo. Los
   casos integrados los abre sólo el sistema, desde el módulo de origen.
+- **Enlaces de acuse del AST (PREV-M06).** El enlace que se entrega (impreso o por mensaje) a
+  un integrante sin cuenta para acusar el AST de un permiso **ahora vence**: por defecto a los
+  14 días, al cierre de ese día. La ficha del permiso muestra junto al enlace "vigente hasta el
+  …". Quien abre un enlace vencido ve "El enlace venció; pide uno nuevo a tu supervisor": el
+  supervisor abre la ficha del permiso y entrega el enlace que aparece ahí, que ya es uno nuevo.
+  Tampoco se puede acusar un permiso cerrado, cancelado o rechazado (T7a). **Los enlaces
+  impresos antes del despliegue dejan de funcionar** salvo que se abra la ventana de transición
+  (sección 3.1).
+
+### 3.1 Ventana de transición de los enlaces de acuse antiguos
+
+Los enlaces emitidos antes del despliegue no llevan vencimiento (formato v1). Por defecto se
+rechazan con el mensaje de enlace vencido. Si en terreno hay permisos en curso con enlaces ya
+impresos, antes del despliegue se fija en el `.env` de producción:
+
+```bash
+PREVENTION_ACK_LEGACY_UNTIL=2026-10-15   # AAAA-MM-DD, hora de Chile, inclusive
+```
+
+Mientras esa fecha no haya pasado, los enlaces antiguos siguen abriendo el acuse (con la misma
+ventana por estado del permiso y un solo uso). A la medianoche chilena del día siguiente dejan
+de funcionar solos; después se borra la variable en el siguiente despliegue. Un valor que no sea
+una fecha válida impide que la aplicación arranque, igual que `PREVENTION_ACK_TTL_DAYS` fuera de
+1–90. Para invalidar **todos** los enlaces emitidos (por ejemplo, si se filtró una lista) hay que
+rotar `AUTH_SECRET` sin dejar el anterior en `AUTH_SECRET_PREVIOUS`, lo que también cierra las
+sesiones.
 
 ## 4. Contingencias y vuelta atrás
 

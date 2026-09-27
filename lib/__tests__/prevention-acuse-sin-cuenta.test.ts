@@ -222,3 +222,54 @@ describe("PREV-M06 — ventana de acuse por estado del permiso", () => {
     expect(vista!.eligible).toBe(false)
   })
 })
+
+/* PREV-M06 (parte temporal, 2026-09-27): el enlace v2 lleva su vencimiento
+ * firmado. Un enlace vencido no muestra nada del permiso ni acusa, y el error
+ * que ve el trabajador dice que venció —no "no encontrado"—, para que sepa que
+ * tiene que pedir otro. */
+describe("PREV-M06 — el enlace de acuse vence por tiempo", () => {
+  const HACE_UN_MES = () => new Date(Date.now() - 30 * 86_400_000)
+
+  async function integranteDeBorrador() {
+    const tipo = await permits.createPermitType({
+      code: `TTL-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+      name: "Trabajo en espacio confinado (vencimiento del enlace)",
+      requiresIsolation: false,
+      requiresMeasurement: false,
+      requiresJsa: false,
+      requiresCrewAcknowledgement: true,
+      maxDurationHours: 8,
+      legalBasis: "DS 44/2024: tarea crítica con cuadrilla briefeada.",
+    }, APROBADOR)
+    const permiso = await permits.createWorkPermit({
+      permitTypeId: tipo.id, worksiteId: WS,
+      taskDescription: "Inspección de estanque.",
+      location: "Patio de estanques", supervisorUserId: APROBADOR.userId,
+      ...ventana(),
+      crew: [{ workerId: WORKER_SIN_CUENTA, role: "executor" }],
+      controls: [],
+    }, SOLICITANTE)
+    const [integrante] = await testDb.select().from(schema.preventionPermitCrew)
+      .where(eq(schema.preventionPermitCrew.permitId, permiso.id))
+    return integrante!.id
+  }
+
+  it("un enlace vencido no muestra el permiso ni acusa, y el error dice que venció", async () => {
+    const crewId = await integranteDeBorrador()
+    const vencido = derivePreventionAckToken("permiso", crewId, HACE_UN_MES())
+
+    expect(await getPermitCrewAckPublicView(crewId, vencido)).toBeNull()
+    await expect(permits.acknowledgePermitCrewByPublicToken({ crewId, token: vencido }))
+      .rejects.toThrow(/El enlace venció; pide uno nuevo a tu supervisor/)
+
+    const [sinTocar] = await testDb.select().from(schema.preventionPermitCrew)
+      .where(eq(schema.preventionPermitCrew.id, crewId))
+    expect(sinTocar!.acknowledgedAt).toBeNull()
+  })
+
+  it("un enlace inválido sigue respondiendo 'no encontrado', no 'venció'", async () => {
+    const crewId = await integranteDeBorrador()
+    await expect(permits.acknowledgePermitCrewByPublicToken({ crewId, token: `v2.1.${"a".repeat(64)}` }))
+      .rejects.toThrow(/no encontrado/i)
+  })
+})

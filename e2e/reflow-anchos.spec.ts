@@ -137,6 +137,62 @@ for (const ancho of ANCHOS) {
   })
 }
 
+/**
+ * Catálogos PDTP a 1024 px (reflow 2026-09-27, "Remaining findings"): cuatro
+ * botones de página ("Publicar y agregar", "Nueva identidad de catálogo",
+ * "Nuevo responsable", "Nueva hoja") se apilaban en cuatro filas y el TopBar
+ * crecía a ~150 px sin desbordar — la prueba de arriba no lo veía porque no
+ * hay scroll, sólo una cabecera que se come la pantalla. Ahora es un único
+ * "Nuevo" que pregunta qué crear, y el TopBar mide lo mismo que en otra
+ * pantalla de administración con acciones.
+ */
+test.describe("Catálogos PDTP a 1024 px — un solo punto de entrada", () => {
+  test("el TopBar no crece respecto de otra pantalla de administración", async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 })
+    await login(page)
+    const alturaTopBar = async (path: string) => {
+      await page.goto(path)
+      await page.waitForLoadState("networkidle").catch(() => undefined)
+      const banner = page.getByRole("banner")
+      await expect(banner).toBeVisible()
+      return (await banner.boundingBox())!.height
+    }
+    const referencia = await alturaTopBar("/admin/usuarios")
+    const catalogos = await alturaTopBar("/admin/pdtp-catalogos")
+    expect(catalogos, `TopBar catálogos ${catalogos}px vs usuarios ${referencia}px`).toBeLessThanOrEqual(referencia + 8)
+    const medida = await medirDesborde(page)
+    expect(medida.documento).toBeLessThanOrEqual(1)
+    expect(medida.pozo ?? 0).toBeLessThanOrEqual(1)
+  })
+
+  test("el selector de alta se abre y recorre con teclado", async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 })
+    await login(page)
+    await page.goto("/admin/pdtp-catalogos")
+    await page.waitForLoadState("networkidle").catch(() => undefined)
+
+    const nuevo = page.getByRole("button", { name: "Nuevo", exact: true })
+    await nuevo.focus()
+    await page.keyboard.press("Enter")
+    const dialogo = page.getByRole("dialog", { name: "¿Qué quieres crear?" })
+    await expect(dialogo).toBeVisible()
+
+    // Tab recorre las opciones (botones nativos) sin salir del diálogo.
+    const vistos = new Set<string>()
+    for (let i = 0; i < 8; i++) {
+      await page.keyboard.press("Tab")
+      const eleccion = await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.choice ?? null)
+      if (eleccion) vistos.add(eleccion)
+    }
+    expect([...vistos]).toEqual(expect.arrayContaining(["identidad", "responsable", "hoja"]))
+
+    await dialogo.getByRole("button", { name: /Responsable/ }).focus()
+    await page.keyboard.press("Enter")
+    await expect(dialogo).toBeHidden()
+    await expect(page.getByRole("dialog")).toBeVisible()
+  })
+})
+
 test.describe("Reflow 320 px — la tarea sigue alcanzable", () => {
   test("el contenido principal y la navegación existen en el ancho mínimo", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 568 })
