@@ -688,6 +688,87 @@ export const pdtpScheduledInstances = pgTable("pdtp_scheduled_instances", {
   check("pdtp_scheduled_instances_cancel_reason_check", sql`${table.status} <> 'cancelled' OR length(trim(COALESCE(${table.cancellationReason}, ''))) >= 3`),
 ])
 
+/**
+ * PREV-C07 sobre ocurrencias (0334): solicitud de "no aplica" o de cancelación
+ * de una ocurrencia programada. Las dos sacan la ocurrencia del denominador,
+ * así que siguen la regla del N/A de celda (D8): nacen `pending_review` y la
+ * ocurrencia no cambia de estado —sigue contando— hasta que otra persona con
+ * `prevention:pdtp:approve` la aprueba (`approved`: recién ahí la ocurrencia
+ * pasa a `not_applicable`/`cancelled`) o la rechaza (`rejected`). Quien la
+ * pidió puede retirarla (`withdrawn`), y una ejecución aprobada que cumple la
+ * ocurrencia también la retira.
+ *
+ * Es una tabla y no columnas en la ocurrencia para conservar el historial: una
+ * ocurrencia puede tener una solicitud rechazada y después otra. Los "no
+ * aplica" y cancelaciones anteriores a 0334 no tienen fila y quedan como están.
+ */
+export const pdtpScheduledInstanceOutcomeRequests = pgTable("pdtp_scheduled_instance_outcome_requests", {
+  id:                 text("id").primaryKey(),
+  instanceId:         text("instance_id").notNull(),
+  outcome:            text("outcome").notNull(),
+  reason:             text("reason").notNull(),
+  /** Evidencia adjunta al pedirla; se copia a la ocurrencia al aprobar. */
+  evidenceRef:        text("evidence_ref"),
+  status:             text("status").notNull().default("pending_review"),
+  requestedByUserId:  text("requested_by_user_id").notNull(),
+  requestedAt:        timestamp("requested_at", { withTimezone: true, mode: "string" }).notNull(),
+  /** SET NULL: dar de baja a quien revisó no borra la revisión. */
+  reviewedByUserId:   text("reviewed_by_user_id"),
+  reviewedAt:         timestamp("reviewed_at", { withTimezone: true, mode: "string" }),
+  reviewReason:       text("review_reason"),
+  withdrawnByUserId:  text("withdrawn_by_user_id"),
+  withdrawnAt:        timestamp("withdrawn_at", { withTimezone: true, mode: "string" }),
+  withdrawReason:     text("withdraw_reason"),
+}, (table) => [
+  // Nombres explícitos: los que arma Drizzle pasan los 63 caracteres de
+  // Postgres y quedarían truncados.
+  foreignKey({ columns: [table.instanceId], foreignColumns: [pdtpScheduledInstances.id], name: "pdtp_sched_outcome_requests_instance_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.requestedByUserId], foreignColumns: [users.id], name: "pdtp_sched_outcome_requests_requested_by_fk" }),
+  foreignKey({ columns: [table.reviewedByUserId], foreignColumns: [users.id], name: "pdtp_sched_outcome_requests_reviewed_by_fk" }).onDelete("set null"),
+  foreignKey({ columns: [table.withdrawnByUserId], foreignColumns: [users.id], name: "pdtp_sched_outcome_requests_withdrawn_by_fk" }).onDelete("set null"),
+  // Una sola solicitud en revisión por ocurrencia: dos pendientes dejarían al
+  // revisor aprobando una sin ver la otra.
+  uniqueIndex("pdtp_sched_outcome_requests_pending_unique").on(table.instanceId).where(sql`${table.status} = 'pending_review'`),
+  index("pdtp_sched_outcome_requests_instance_idx").on(table.instanceId),
+  index("pdtp_sched_outcome_requests_status_idx").on(table.status, table.requestedAt),
+  check("pdtp_sched_outcome_requests_outcome_check", sql`${table.outcome} IN ('not_applicable', 'cancelled')`),
+  check("pdtp_sched_outcome_requests_status_check", sql`${table.status} IN ('pending_review', 'approved', 'rejected', 'withdrawn')`),
+  check("pdtp_sched_outcome_requests_reason_check", sql`length(trim(${table.reason})) >= 10`),
+  // Segregación: quien pidió no revisa su propia solicitud.
+  check("pdtp_sched_outcome_requests_reviewer_check", sql`${table.reviewedByUserId} IS NULL OR ${table.reviewedByUserId} <> ${table.requestedByUserId}`),
+  check("pdtp_sched_outcome_requests_reviewed_check", sql`${table.status} NOT IN ('approved', 'rejected') OR ${table.reviewedAt} IS NOT NULL`),
+  check("pdtp_sched_outcome_requests_rejected_check", sql`${table.status} <> 'rejected' OR length(trim(COALESCE(${table.reviewReason}, ''))) >= 10`),
+  check("pdtp_sched_outcome_requests_withdrawn_check", sql`${table.status} <> 'withdrawn' OR ${table.withdrawnAt} IS NOT NULL`),
+])
+
+/**
+ * PREV-M02-B (0334): registro de cada archivo subido a
+ * `storage/pdtp-evidence/` por `POST /api/prevencion/pdtp/evidence`. Un
+ * archivo recién subido todavía no lo referencia ninguna fila, y antes
+ * cualquiera que conociera su nombre podía vincularlo desde otra faena. Con
+ * este registro, `assertPdtpEvidenceLinkable` exige que una ruta sin
+ * referencias sea de la faena destino y de quien la subió.
+ *
+ * El sha256 es el del buffer que se escribió: el escaneo de integridad lo usa
+ * cuando la fila que referencia el archivo no guardó uno.
+ */
+export const pdtpEvidenceUploads = pgTable("pdtp_evidence_uploads", {
+  /** Ruta relativa tal como la devuelve la subida (`storage/pdtp-evidence/...`). */
+  path:               text("path").primaryKey(),
+  /** SET NULL: dar de baja a quien subió deja el archivo sin dueño vinculable. */
+  uploadedByUserId:   text("uploaded_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  worksiteId:         text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
+  activityId:         text("activity_id").references(() => pdtpActivities.id, { onDelete: "set null" }),
+  sha256:             text("sha256").notNull(),
+  sizeBytes:          integer("size_bytes").notNull(),
+  mimeType:           text("mime_type").notNull(),
+  createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  index("pdtp_evidence_uploads_worksite_idx").on(table.worksiteId),
+  check("pdtp_evidence_uploads_sha256_check", sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
+  check("pdtp_evidence_uploads_size_check", sql`${table.sizeBytes} > 0`),
+])
+
 /** Ocurrencia ejecutable de una actividad. Para `triggered` y `on_demand`
  * constituye el denominador real; no se infiere una cuota cuando no hubo
  * casos. La fuente e idempotencyKey permiten enlazar eventos operacionales
