@@ -58,6 +58,7 @@
     "pdtp:resign-inspection-templates": "tsx --env-file=.env.local scripts/resign-pdtp-2026-inspection-templates.ts",
     "pdtp:approve-inspection-templates": "tsx --env-file=.env.local scripts/approve-pdtp-2026-inspection-templates.ts",
     "pdtp:reconcile-fulfillment-events": "tsx --env-file=.env.local scripts/reconcile-pdtp-fulfillment-events.ts",
+    "pdtp:revert-revoked-approvals": "tsx --env-file=.env.local scripts/revert-pdtp-revoked-approvals.ts",
     "pdtp:bootstrap-2026": "tsx --env-file=.env.local scripts/bootstrap-pdtp-2026.ts",
     "pdtp:reconcile-annual": "tsx --env-file=.env.local scripts/reconcile-pdtp-annual-programs.ts",
     "pdtp:reprogram-2026-schedule": "tsx --env-file=.env.local scripts/reprogram-pdtp-2026-schedule.ts",

@@ -65,3 +65,33 @@ describe("PDTP execution connector registry", () => {
     expect(getPdtpExecutionConnector("activity-number-25")).toBeUndefined()
   })
 })
+
+// PREV-I08-f: una ocurrencia se enlaza al hecho de su fuente aunque la fuente
+// sólo esté declarada como instrumento (binding) del conector. Antes sólo se
+// miraban los eventos: la ocurrencia de capacitación y el control de vigilancia
+// nunca enlazaban su instancia.
+describe("pdtpConnectorAcceptsFulfillmentSource", () => {
+  it("acepta las fuentes declaradas como binding además de las de sus eventos", async () => {
+    const { pdtpConnectorAcceptsFulfillmentSource } = await import("@/lib/services/pdtp/connectors")
+    expect(pdtpConnectorAcceptsFulfillmentSource({ connectorKey: "training", sourceType: "capacitacion" })).toBe(true)
+    expect(pdtpConnectorAcceptsFulfillmentSource({ connectorKey: "training", sourceType: "capacitacion_ocurrencia" })).toBe(true)
+    expect(pdtpConnectorAcceptsFulfillmentSource({ connectorKey: "hygiene", sourceType: "higiene" })).toBe(true)
+    expect(pdtpConnectorAcceptsFulfillmentSource({ connectorKey: "hygiene", sourceType: "vigilancia" })).toBe(true)
+    expect(pdtpConnectorAcceptsFulfillmentSource({ connectorKey: "inspections", sourceType: "campana" })).toBe(false)
+    expect(pdtpConnectorAcceptsFulfillmentSource({ connectorKey: "no-existe", sourceType: "inspeccion" })).toBe(false)
+  })
+
+  it("el eventKey sólo filtra contra los eventos de ese mismo tipo de fuente", async () => {
+    const { pdtpConnectorAcceptsFulfillmentSource } = await import("@/lib/services/pdtp/connectors")
+    expect(pdtpConnectorAcceptsFulfillmentSource({ connectorKey: "hygiene", sourceType: "higiene", eventKey: "measurement_completed" })).toBe(true)
+    expect(pdtpConnectorAcceptsFulfillmentSource({ connectorKey: "hygiene", sourceType: "higiene", eventKey: "otro_evento" })).toBe(false)
+    // `vigilancia` no tiene eventos propios: un eventKey no la vuelve inválida.
+    expect(pdtpConnectorAcceptsFulfillmentSource({ connectorKey: "hygiene", sourceType: "vigilancia", eventKey: "measurement_completed" })).toBe(true)
+  })
+
+  it("si la actividad fija un instrumento, la fuente tiene que ser la de ese binding", async () => {
+    const { pdtpConnectorAcceptsFulfillmentSource } = await import("@/lib/services/pdtp/connectors")
+    expect(pdtpConnectorAcceptsFulfillmentSource({ connectorKey: "training", sourceType: "capacitacion_ocurrencia", bindingSourceType: "capacitacion_ocurrencia" })).toBe(true)
+    expect(pdtpConnectorAcceptsFulfillmentSource({ connectorKey: "training", sourceType: "capacitacion", bindingSourceType: "capacitacion_ocurrencia" })).toBe(false)
+  })
+})

@@ -11,7 +11,7 @@
 
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -72,6 +72,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivityWorksiteExclusions)
   await inMemoryDb.delete(schema.pdtpActivitySchedule)
   await inMemoryDb.delete(schema.pdtpActivities)
+  await inMemoryDb.delete(schema.pdtpProgramWorksites)
   await inMemoryDb.delete(schema.pdtpPrograms)
   // Motor transversal de inspecciones: sus runs referencian worksites con
   // RESTRICT, así que van antes que la faena.
@@ -684,6 +685,36 @@ describe("revokePdtpAccreditation", () => {
     const log = await inMemoryDb.select().from(schema.pdtpChangeLog)
     expect(log.some((entry) => entry.section === `execution:${r1.accredited[0]!.executionId}`
       && (entry.after as Record<string, unknown>)?.status === "draft")).toBe(true)
+  })
+
+  /* B01-BACKFILL: la corrección de las aprobaciones que la revocación vieja
+   * saltó tiene que tocar sólo esas ejecuciones. Sin el filtro, la rama que
+   * pasa a borrador reescribía `revokedAt`/`revocationReason` de las filas del
+   * mismo origen que ya estaban revertidas y se perdía la traza original. */
+  it("onlyExecutionIds revierte sólo las ejecuciones indicadas del mismo origen", async () => {
+    const { accreditPdtpFromEvent, revokePdtpAccreditation } = await import("@/lib/services/pdtp/accreditation")
+    const accredited = await accreditPdtpFromEvent({
+      sourceType: "inspeccion",
+      sourceId: "run-rev-only",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N, REVIEW_ACT_N],
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
+    })
+    const [first, second] = accredited.accredited
+    await inMemoryDb.update(schema.pdtpExecutions)
+      .set({ status: "approved", approvedByUserId: USER_ID, approvedAt: new Date().toISOString() })
+      .where(eq(schema.pdtpExecutions.sourceId, "run-rev-only"))
+
+    const result = await revokePdtpAccreditation({
+      sourceType: "inspeccion",
+      sourceId: "run-rev-only",
+      worksiteId: WS_ID,
+      onlyExecutionIds: [second!.executionId],
+    })
+    expect(result.revoked).toEqual([{ activityId: second!.activityId, executionId: second!.executionId }])
+    const rows = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.sourceId, "run-rev-only"))
+    expect(rows.find((row) => row.id === first!.executionId)?.status).toBe("approved")
+    expect(rows.find((row) => row.id === second!.executionId)?.status).toBe("draft")
   })
 
   it("revierte una aprobación automática cuando la inspección se reabre", async () => {
@@ -1376,6 +1407,110 @@ describe("una inspección acreditada alimenta los ejes de verificación y cierre
     const [persisted] = await inMemoryDb.select().from(schema.preventionInspectionRuns)
       .where(eq(schema.preventionInspectionRuns.id, run!.id))
     expect(persisted).toMatchObject({ status: "in_progress", executedAt: null, executedByUserId: null })
+  })
+
+  /* PREV-I16 (D16): la membresía de un programa activo no se edita, así que
+   * bloquear el cierre sólo frenaba el trabajo en terreno sin corregir nada.
+   * El run se cierra y el hecho queda rechazado con su motivo, en la misma
+   * transacción. */
+  it("cierra el run de una faena fuera de la membresía y deja el hecho rechazado", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    await inMemoryDb.insert(schema.worksites).values({ id: "ws-acc-member", name: "Faena miembro", code: "FM", isActive: true })
+    await inMemoryDb.insert(schema.pdtpProgramWorksites).values({
+      id: "pw-acc-member", programId: PROGRAM_ID, worksiteId: "ws-acc-member", isActive: true, addedAt: new Date().toISOString(),
+    })
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: "instpl-outside-member",
+      code: "inspeccion_faena_ajena",
+      versionLabel: "01",
+      name: "Inspección en faena ajena",
+      kind: "inspection",
+      definitionSnapshot: { sections: [] },
+      contentHash: "b".repeat(64),
+      status: "approved",
+      pdtpActivityNumbers: [ACT_N],
+      authorUserId: USER_ID,
+      approvedByUserId: USER_ID,
+      approvedAt: new Date().toISOString(),
+    })
+    const [run] = await inMemoryDb.insert(schema.preventionInspectionRuns).values({
+      id: "insrun-outside-member",
+      code: "INS-OUTSIDE-001",
+      templateId: "instpl-outside-member",
+      worksiteId: WS_ID,
+      status: "in_progress",
+      createdByUserId: USER_ID,
+    }).returning()
+
+    const completed = await service.completeInspectionRun({ runId: run!.id, expectedVersion: run!.version }, {
+      userId: USER_ID,
+      scope: { mode: "all", ids: [] },
+      permissions: ["prevention:inspections:execute", "prevention:inspections:view"],
+    })
+    expect(completed.run.status).toBe("completed")
+
+    const events = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
+      .where(eq(schema.pdtpFulfillmentEvents.sourceId, run!.id))
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ status: "rejected", programId: PROGRAM_ID })
+    expect(events[0]!.resultJson).toMatchObject({ skippedWorksiteNotInProgram: { programId: PROGRAM_ID, worksiteId: WS_ID } })
+    const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.sourceId, run!.id))
+    expect(executions).toHaveLength(0)
+  })
+
+  /* PREV-I16: un run cerrado sin programa activo deja su hecho `pending` en
+   * la transacción del cierre. Si el run se cancela antes de activar, la
+   * revocación transaccional no encontraba ejecuciones y no escribía nada: al
+   * activar, el reconciliador acreditaba —y autoaprobaba— el run cancelado. */
+  it("un run cerrado sin programa y cancelado antes de activar no se acredita al activar", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const { reconcilePdtpFulfillmentEvents } = await import("@/lib/services/pdtp/fulfillment")
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: "instpl-cancel-before-activation",
+      code: "inspeccion_cancelada_antes",
+      versionLabel: "01",
+      name: "Inspección cancelada antes de activar",
+      kind: "inspection",
+      definitionSnapshot: { sections: [] },
+      contentHash: "d".repeat(64),
+      status: "approved",
+      pdtpActivityNumbers: [ACT_N],
+      authorUserId: USER_ID,
+      approvedByUserId: USER_ID,
+      approvedAt: new Date().toISOString(),
+    })
+    const [run] = await inMemoryDb.insert(schema.preventionInspectionRuns).values({
+      id: "insrun-cancel-before-activation",
+      code: "INS-CANCEL-001",
+      templateId: "instpl-cancel-before-activation",
+      worksiteId: WS_ID,
+      status: "in_progress",
+      createdByUserId: USER_ID,
+    }).returning()
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "draft" }).where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+    const access = {
+      userId: USER_ID,
+      scope: { mode: "all" as const, ids: [] as [] },
+      permissions: ["prevention:inspections:execute", "prevention:inspections:view", "prevention:inspections:manage"],
+    }
+    const completed = await service.completeInspectionRun({ runId: run!.id, expectedVersion: run!.version }, access)
+    await service.transitionInspectionRun({
+      runId: run!.id,
+      expectedVersion: completed.run.version,
+      toStatus: "cancelled",
+      reason: "El equipo salió de la faena antes de revisar el reporte.",
+    }, access)
+
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "active" }).where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+    await reconcilePdtpFulfillmentEvents()
+
+    const executions = (await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.sourceId, run!.id))).filter((row) => row.status !== "draft")
+    expect(executions).toHaveLength(0)
+    const [completedEvent] = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
+      .where(and(eq(schema.pdtpFulfillmentEvents.sourceId, run!.id), eq(schema.pdtpFulfillmentEvents.eventType, "completed")))
+    expect(completedEvent?.status).toBe("rejected")
   })
 
   it("el % de la inspección entra al eje de verificación", async () => {

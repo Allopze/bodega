@@ -13,6 +13,7 @@ import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { isPdtpPeriodOnOrAfterActivation } from "./period"
 import { assertPdtpPeriodOpen } from "./period-guard"
+import { syncPdtpScheduledInstanceFromExecution } from "./scheduled-execution"
 import { todayInChile } from "@/lib/utils"
 import { hashPdtpEvidenceFiles } from "./evidence-files"
 import {
@@ -533,6 +534,13 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
       )).returning({ id: pdtpObligations.id })
       if (!closed) throw new Error("La obligación asociada cambió antes de completar su aprobación.")
     }
+    // PREV-I08-e: la ocurrencia programada enlazada se cumple al aprobar su
+    // ejecución (D19), en la misma transacción y con la ejecución ya bloqueada
+    // (orden ejecución → ocurrencia). Si el mes de la ocurrencia está cerrado,
+    // la aprobación falla: cambiaría un indicador ya congelado.
+    if (updated.scheduledInstanceId) {
+      await syncPdtpScheduledInstanceFromExecution(tx, { executionId: updated.id, trigger: "approval", userId })
+    }
     await recordOperationalActivity({
       eventType: "pdtp.execution_approved",
       module: "pdtp",
@@ -608,6 +616,12 @@ export async function rejectPdtpExecution(
         reportedAt: null,
         updatedAt: now,
       }).where(and(eq(pdtpObligations.id, execution.obligationId), eq(pdtpObligations.status, "reported")))
+    }
+    // PREV-I08-e: la ocurrencia vuelve a trabajo abierto, sin desenlazar: una
+    // rechazada puede corregirse y aprobarse después. Si llega otro hecho
+    // antes, el enlace desplaza a la rechazada.
+    if (updated.scheduledInstanceId) {
+      await syncPdtpScheduledInstanceFromExecution(tx, { executionId: updated.id, trigger: "rejection", userId, reason: reason.trim() })
     }
     await recordOperationalActivity({
       eventType: "pdtp.execution_rejected",

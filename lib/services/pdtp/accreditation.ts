@@ -32,6 +32,7 @@ import { logger } from "@/lib/logger"
 import { addPdtpChangeLogEntry } from "./helpers"
 import { pdtpExecutionHistorySnapshot, recordPdtpExecutionHistory } from "./execution-history"
 import { PDTP_DEVIATION_LABELS, type PdtpDeviationKind } from "./deviations"
+import { syncPdtpScheduledInstanceFromExecution } from "./scheduled-execution"
 
 type AccreditationClient = DB | Tx
 
@@ -241,9 +242,14 @@ export class PdtpNoActiveProgramError extends Error {
  * aplica", igual que la falta de programa activo.
  */
 export class PdtpWorksiteNotInProgramError extends Error {
-  constructor(message: string) {
+  /** Programa contra el que se resolvió el hecho y faena que no es miembro (PREV-I16). */
+  readonly programId: string | null
+  readonly worksiteId: string | null
+  constructor(message: string, details?: { programId: string; worksiteId: string }) {
     super(message)
     this.name = "PdtpWorksiteNotInProgramError"
+    this.programId = details?.programId ?? null
+    this.worksiteId = details?.worksiteId ?? null
   }
 }
 
@@ -374,13 +380,26 @@ async function resolvePdtpActiveProgramForEvent(
       `Aún no hay programa PDTP activo para ${occurredYear}; el hecho ${input.sourceType}:${input.sourceId} se acreditará al activarlo.`,
     )
   }
-  const program = effectiveForDate[0] ?? fallbackProgram
+  const candidateProgram = effectiveForDate[0] ?? fallbackProgram
 
-  if (!program) {
+  if (!candidateProgram) {
     throw new PdtpNoActiveProgramError(
       `Sin programa PDTP activo para el evento ${input.sourceType}:${input.sourceId} en faena ${input.worksiteId}.`,
     )
   }
+
+  /*
+   * PREV-C03.5/C03.6 (T3): la fila del programa se toma `FOR SHARE`, en serie
+   * con el `FOR UPDATE` de `closePdtpProgramYear`. Con la lectura simple de
+   * arriba, en READ COMMITTED un hecho tardío no esperaba al cierre anual en
+   * curso, veía el año abierto y escribía su ejecución en un año que se estaba
+   * cerrando. Es la misma corrección que `reopenPdtpPeriod`. Sólo protege si
+   * la escritura va en la misma transacción: por eso `accreditPdtpFromEvent`
+   * abre una. El estado y el cierre se releen de la fila bloqueada.
+   */
+  const [lockedProgram] = await client.select({ status: pdtpPrograms.status, yearClosedAt: pdtpPrograms.yearClosedAt })
+    .from(pdtpPrograms).where(eq(pdtpPrograms.id, candidateProgram.id)).limit(1).for("share")
+  const program = lockedProgram ? { ...candidateProgram, ...lockedProgram } : candidateProgram
 
   if (program.status !== "active" && program.status !== "closed") {
     throw new PdtpNoActiveProgramError(`El programa ${program.id} no está vigente para acreditar hechos (estado: ${program.status}).`)
@@ -394,7 +413,10 @@ async function resolvePdtpActiveProgramForEvent(
       eq(pdtpProgramWorksites.isActive, true),
     ))
   if (explicitMemberships.length > 0 && !explicitMemberships.some((member) => member.worksiteId === input.worksiteId)) {
-    throw new PdtpWorksiteNotInProgramError(`La faena ${input.worksiteId} no pertenece al programa ${program.id}.`)
+    throw new PdtpWorksiteNotInProgramError(
+      `La faena ${input.worksiteId} no pertenece al programa ${program.id}.`,
+      { programId: program.id, worksiteId: input.worksiteId },
+    )
   }
   if (explicitMemberships.length === 0 && !program.appliesToAllWorksites) {
     throw new Error(`El programa ${program.id} no declara alcance corporativo ni una membresía de faena.`)
@@ -521,6 +543,17 @@ const AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE: readonly PdtpAccreditationSo
 export async function accreditPdtpFromEvent(
   input: AccreditationInput,
   client: AccreditationClient = db,
+): Promise<AccreditationResult> {
+  // PREV-C03.5 (T3): resolución y escritura van en una sola transacción (un
+  // savepoint si el conector ya trae la suya), para que el `FOR SHARE` del
+  // programa se sostenga hasta escribir la ejecución. De paso, las escrituras
+  // de varias actividades de un mismo hecho quedan atómicas.
+  return client.transaction((tx) => accreditPdtpFromEventInTransaction(input, tx as Tx))
+}
+
+async function accreditPdtpFromEventInTransaction(
+  input: AccreditationInput,
+  client: Tx,
 ): Promise<AccreditationResult> {
   const isAutoApproveEligibleSourceType = AUTO_APPROVE_SOURCE_TYPES_UNCONDITIONAL.includes(input.sourceType)
     || AUTO_APPROVE_SOURCE_TYPES_WITH_REAL_EVIDENCE.includes(input.sourceType)
@@ -929,6 +962,13 @@ export type RevocationInput = {
   programId?: string
   revokedBy?: string
   reason?: string
+  /**
+   * B01-BACKFILL: sólo estas ejecuciones del origen. Lo usa la corrección de
+   * las aprobaciones que la revocación anterior a B01 saltó, para no volver a
+   * escribir `revokedAt`/`revocationReason` sobre las filas del mismo origen
+   * que ya estaban revertidas (se perdería su traza original).
+   */
+  onlyExecutionIds?: string[]
 }
 
 /** Variante transaccional para callers que ya poseen la transacción fuente. */
@@ -953,6 +993,7 @@ export async function revokePdtpAccreditationWithClient(
       evidenceUrl: pdtpExecutions.evidenceUrl,
       evidencePhotos: pdtpExecutions.evidencePhotos,
       evidenceText: pdtpExecutions.evidenceText,
+      scheduledInstanceId: pdtpExecutions.scheduledInstanceId,
     })
     .from(pdtpExecutions)
     .where(
@@ -968,8 +1009,9 @@ export async function revokePdtpAccreditationWithClient(
     const metadata = (execution.sourceMetadataJson ?? {}) as Record<string, unknown>
     const keys = Array.isArray(metadata.accreditedKeys) ? metadata.accreditedKeys as string[] : []
     const targetKey = accreditationKey(execution.activityId, input.worksiteId, input.sourceType, input.sourceId)
-    return (execution.sourceType === input.sourceType && execution.sourceId === input.sourceId)
+    const sameSource = (execution.sourceType === input.sourceType && execution.sourceId === input.sourceId)
       || keys.includes(targetKey)
+    return sameSource && (!input.onlyExecutionIds || input.onlyExecutionIds.includes(execution.id))
   })
 
   const revoked: RevocationResult["revoked"] = []
@@ -1049,6 +1091,7 @@ export async function revokePdtpAccreditationWithClient(
     if (!updated) continue
     revoked.push({ activityId: execution.activityId, executionId: execution.id })
     await recordRevocationHistory(client, input, execution, updated)
+    if (execution.scheduledInstanceId) await reopenScheduledInstanceForRevocation(client, input, execution.id)
     if (manuallyApproved) {
       revertedApproved.push({ activityId: execution.activityId, executionId: execution.id })
       const [context] = await client.select({
@@ -1085,6 +1128,32 @@ export async function revokePdtpAccreditationWithClient(
   )
 
   return { revoked, revertedApproved }
+}
+
+/**
+ * PREV-I08-b: la ocurrencia programada enlazada a una ejecución revertida se
+ * reabre y se desenlaza. Va en un savepoint y una falla sólo se registra: la
+ * revocación corre dentro de la transacción del módulo de origen (reabrir o
+ * cancelar una inspección) y el PDTP no debe revertir ese flujo por la
+ * ocurrencia. Aun si falla, el indicador queda correcto: la ejecución ya está
+ * en borrador y una ocurrencia sólo cuenta con su ejecución aprobada (D19).
+ * La ejecución ya está bloqueada acá, así que el orden ejecución → ocurrencia
+ * se conserva.
+ */
+async function reopenScheduledInstanceForRevocation(client: Tx, input: RevocationInput, executionId: string) {
+  try {
+    await client.transaction((savepoint) => syncPdtpScheduledInstanceFromExecution(savepoint as Tx, {
+      executionId,
+      trigger: "revocation",
+      userId: input.revokedBy ?? null,
+      reason: input.reason ?? "Evento fuente cancelado o anulado.",
+    }))
+  } catch (err) {
+    logger.warn(
+      { err, executionId, sourceType: input.sourceType, sourceId: input.sourceId },
+      "[revokePdtpAccreditation] No se pudo reabrir la ocurrencia programada enlazada.",
+    )
+  }
 }
 
 /**

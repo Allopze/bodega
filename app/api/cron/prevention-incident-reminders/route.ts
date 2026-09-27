@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
 import { runPreventionIncidentReminders } from "@/lib/services/prevention-incident-reminders"
+import { reconcileIncidentRe20Obligations } from "@/lib/services/pdtp-adapters/incident-accreditation-connector"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -22,7 +23,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, outcome: "unauthorized", code: "PREVENTION_CRON_UNAUTHORIZED", error: "Unauthorized" }, { status: 401 })
   }
   try {
-    const result = await withCronLock("prevention-incident-reminders", () => runPreventionIncidentReminders())
+    const result = await withCronLock("prevention-incident-reminders", async () => {
+      const reminders = await runPreventionIncidentReminders()
+      // D4 (T3): barrido de reparación de las obligaciones RE-20, cada hora y
+      // bajo el mismo candado. No lanza por diseño; el catch es la segunda red
+      // para que una falla suya no convierta en 503 los recordatorios legales.
+      const re20Obligations = await reconcileIncidentRe20Obligations().catch((error: unknown) => {
+        logger.error("[cron/prevention-incident-reminders] re20 sweep failed", error)
+        return { failed: true as const }
+      })
+      return { ...reminders, re20Obligations }
+    })
     if ("skipped" in result && result.skipped === true) return NextResponse.json({ ok: true, outcome: "skipped", code: "PREVENTION_CRON_SKIPPED", reason: result.reason })
     logger.info("[cron/prevention-incident-reminders] completed", result)
     return NextResponse.json({ ok: true, outcome: "success", code: "PREVENTION_CRON_SUCCESS", ...result })

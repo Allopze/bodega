@@ -41,6 +41,8 @@ import {
   pdtpAccreditationBindings,
   pdtpFulfillmentEvents,
   pdtpFulfillmentEventTargets,
+  pdtpExecutions,
+  pdtpPeriodClosures,
   pdtpScheduledInstances,
   pdtpResponsibleCatalog,
   permissions,
@@ -56,6 +58,7 @@ import {
   accreditPdtpFromEvent,
   revokePdtpAccreditationWithClient,
   PdtpNoActiveProgramError,
+  PdtpWorksiteNotInProgramError,
   type AccreditationInput,
   type AccreditationResult,
   type RevocationInput,
@@ -65,8 +68,8 @@ import { PDTP_NO_EXECUTOR_ROLE_REASON } from "@/lib/prevention/pdtp"
 import { describePdtpInstrumentGap, type PdtpCoverageInstrument } from "./instrument-gap"
 import { loadPdtpInstrumentIndex, type PdtpInstrumentRecord } from "./instruments"
 import { legacyPdtpActivityNumberForCatalogId } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
-import { getPdtpExecutionConnector } from "./connectors"
-import { recordPdtpScheduledInstanceOutcome } from "./scheduled-execution"
+import { getPdtpExecutionConnector, pdtpConnectorAcceptsFulfillmentSource } from "./connectors"
+import { syncPdtpScheduledInstanceFromExecution } from "./scheduled-execution"
 import { todayInChile } from "@/lib/utils"
 
 type QueryClient = DB | Tx
@@ -245,27 +248,32 @@ function fulfillmentCivilDate(occurredAt: string): string {
   return todayInChile(parsed)
 }
 
-function connectorAcceptsFulfillmentEvent(
-  connectorKey: string,
-  sourceType: AccreditationInput["sourceType"],
-  metadata: Record<string, unknown>,
-): boolean {
-  const connector = getPdtpExecutionConnector(connectorKey)
-  if (!connector) return false
-  const eventKey = typeof metadata.eventKey === "string" ? metadata.eventKey.trim() : ""
-  return connector.supportedEvents.some((event) => event.sourceType === sourceType && (!eventKey || event.key === eventKey))
-}
-
 /**
  * Enlaza el hecho nativo que ya acreditó el ledger con la ocurrencia fechada
  * que lo originó. La acreditación por actividad/número sigue siendo la fuente
- * de verdad para `pdtp_executions`; esta costura sólo cambia el estado de la
- * instancia y guarda la referencia verificable del registro fuente.
+ * de verdad para `pdtp_executions`; esta costura sólo enlaza la ejecución y
+ * deja que `syncPdtpScheduledInstanceFromExecution` derive el estado de la
+ * ocurrencia desde el estado de esa ejecución (PREV-I08-d/e, D19).
  *
- * La selección es deliberadamente una sola ocurrencia por actividad: la más
- * reciente exigible en la faena y no posterior al hecho. Si el hecho vuelve a
- * entrar, la ejecución idempotente ya estará enlazada y la instancia terminal
- * no vuelve a ser candidata.
+ * - Ya no pasa la `evidenceRef` del conector ni construye metadatos: la
+ *   referencia descriptiva ("Inspección completada: …") no es un archivo PDTP
+ *   y hacía fallar el enlace para siempre, y los metadatos del conector
+ *   (`sourceApproved`) decidían el estado sin mirar la aprobación.
+ * - Todas las políticas enlazan, `manual_confirmed` incluida: la política ya
+ *   no decide si cuenta —sólo cuenta lo aprobado— y una ocurrencia sin enlazar
+ *   contaba su ejecución por el libro además de quedar vencida.
+ * - Una ejecución ya enlazada sólo se resincroniza (reacreditar no busca otra
+ *   candidata).
+ * - No se enlaza a una ocurrencia de un mes cerrado: el hecho cuenta en su
+ *   propio mes y la foto del cierre no cambia (mismo criterio que I02).
+ * - El conector acepta la fuente por sus eventos o por sus bindings
+ *   (`pdtpConnectorAcceptsFulfillmentSource`, PREV-I08-f).
+ *
+ * La selección es una sola ocurrencia por actividad: la más reciente exigible
+ * en la faena y no posterior al hecho. Cada enlace va en su propio savepoint:
+ * el hecho nativo ya está guardado y acreditado, y una carrera o una
+ * inconsistencia de la ocurrencia no debe deshacerlo. Si el enlace falla, la
+ * ejecución queda sin enlazar y sigue contando por el libro.
  */
 export async function linkPdtpScheduledInstancesToFulfillment(
   input: AccreditationInput,
@@ -274,20 +282,27 @@ export async function linkPdtpScheduledInstancesToFulfillment(
 ): Promise<void> {
   if (result.accredited.length === 0) return
 
-  const activityIds = [...new Set(result.accredited.map((entry) => entry.activityId))]
+  const executionIds = [...new Set(result.accredited.map((entry) => entry.executionId))]
+  const executions = await client.select({ id: pdtpExecutions.id, scheduledInstanceId: pdtpExecutions.scheduledInstanceId })
+    .from(pdtpExecutions).where(inArray(pdtpExecutions.id, executionIds))
+  const linkedInstanceByExecution = new Map(executions.map((row) => [row.id, row.scheduledInstanceId]))
+
+  const pendingLink = result.accredited.filter((entry) => !linkedInstanceByExecution.get(entry.executionId))
+  const activityIds = [...new Set(pendingLink.map((entry) => entry.activityId))]
   const occurredDate = fulfillmentCivilDate(input.occurredAt)
-  const candidates = await client.select({
+  const candidates = activityIds.length === 0 ? [] : await client.select({
     id: pdtpScheduledInstances.id,
+    programId: pdtpScheduledInstances.programId,
     activityId: pdtpScheduledInstances.activityId,
     scheduledFor: pdtpScheduledInstances.scheduledFor,
-    status: pdtpScheduledInstances.status,
-    completionPolicy: pdtpActivityExecutionConfigs.completionPolicy,
     destinationConnectorKey: pdtpActivityExecutionConfigs.destinationConnectorKey,
+    bindingSourceType: pdtpAccreditationBindings.sourceType,
   }).from(pdtpScheduledInstances)
     .innerJoin(
       pdtpActivityExecutionConfigs,
       eq(pdtpActivityExecutionConfigs.activityId, pdtpScheduledInstances.activityId),
     )
+    .leftJoin(pdtpAccreditationBindings, eq(pdtpAccreditationBindings.id, pdtpActivityExecutionConfigs.accreditationBindingId))
     .where(and(
       inArray(pdtpScheduledInstances.activityId, activityIds),
       eq(pdtpScheduledInstances.worksiteId, input.worksiteId),
@@ -296,61 +311,60 @@ export async function linkPdtpScheduledInstancesToFulfillment(
     ))
     .orderBy(desc(pdtpScheduledInstances.scheduledFor), desc(pdtpScheduledInstances.createdAt))
 
-  const metadata = input.metadata ?? {}
-  const sourceApproved = Boolean(input.autoApproveByUserId)
-    || metadata.sourceApproved === true
-    || metadata.approvalStatus === "approved"
-    || (typeof metadata.approvedAt === "string" && metadata.approvedAt.trim().length > 0)
+  const closedMonths = candidates.length === 0 ? new Set<string>() : new Set((await client.select({
+    programId: pdtpPeriodClosures.programId,
+    year: pdtpPeriodClosures.year,
+    month: pdtpPeriodClosures.month,
+  }).from(pdtpPeriodClosures).where(and(
+    inArray(pdtpPeriodClosures.programId, [...new Set(candidates.map((row) => row.programId))]),
+    eq(pdtpPeriodClosures.worksiteId, input.worksiteId),
+    eq(pdtpPeriodClosures.status, "closed"),
+  ))).map((row) => `${row.programId}:${row.year}:${row.month}`))
+  const inClosedMonth = (row: { programId: string; scheduledFor: string }) =>
+    closedMonths.has(`${row.programId}:${Number(row.scheduledFor.slice(0, 4))}:${Number(row.scheduledFor.slice(5, 7))}`)
+
+  const eventKey = typeof input.metadata?.eventKey === "string" ? input.metadata.eventKey : null
   const usedInstances = new Set<string>()
 
-  for (const accredited of result.accredited) {
-    const candidate = candidates.find((row) => (
-      row.activityId === accredited.activityId
-      && !usedInstances.has(row.id)
-      && connectorAcceptsFulfillmentEvent(row.destinationConnectorKey, input.sourceType, metadata)
-    ))
-    if (!candidate) continue
-
-    let action: "submit" | "complete" | null = null
-    if (candidate.completionPolicy === "source_completed") action = "complete"
-    else if (candidate.completionPolicy === "source_approved") action = sourceApproved ? "complete" : "submit"
-    else if (candidate.completionPolicy === "checklist_completed") {
-      action = metadata.checklistCompleted === true || metadata.checklistStatus === "completed"
-        ? "complete"
-        : "submit"
-    }
-    if (!action) continue
-
-    usedInstances.add(candidate.id)
+  const syncInSavepoint = async (entry: AccreditationResult["accredited"][number], attachToInstanceId?: string) => {
     try {
-      await recordPdtpScheduledInstanceOutcome({
-        instanceId: candidate.id,
-        action,
+      const run = (tx: Tx) => syncPdtpScheduledInstanceFromExecution(tx, {
+        executionId: entry.executionId,
+        attachToInstanceId,
+        trigger: "source",
         userId: input.autoApproveByUserId ?? null,
-        evidenceRef: input.evidenceRef ?? null,
-        completedAt: input.occurredAt,
-        sourceMetadata: {
-          ...metadata,
-          sourceRecordId: input.sourceId,
-          sourceType: input.sourceType,
-          sourceCompleted: true,
-          executionId: accredited.executionId,
-          ...(sourceApproved ? { sourceApproved: true, approvedAt: input.occurredAt } : {}),
-        },
-      }, client)
+      })
+      await client.transaction((tx) => run(tx as Tx))
     } catch (err) {
-      // El hecho nativo ya está guardado y acreditado. Una política de
-      // evidencia incompleta o una carrera de otro enlace no debe deshacerlo;
-      // queda en el libro durable para que un reintento posterior reconcilie
-      // la instancia sin duplicar la ejecución.
       logger.warn({
         err,
-        instanceId: candidate.id,
-        activityId: candidate.activityId,
+        instanceId: attachToInstanceId ?? linkedInstanceByExecution.get(entry.executionId) ?? null,
+        activityId: entry.activityId,
         sourceType: input.sourceType,
         sourceId: input.sourceId,
       }, "[pdtp-fulfillment] No se pudo enlazar la instancia programada al hecho nativo.")
     }
+  }
+
+  for (const accredited of result.accredited) {
+    if (linkedInstanceByExecution.get(accredited.executionId)) {
+      await syncInSavepoint(accredited)
+      continue
+    }
+    const candidate = candidates.find((row) => (
+      row.activityId === accredited.activityId
+      && !usedInstances.has(row.id)
+      && !inClosedMonth(row)
+      && pdtpConnectorAcceptsFulfillmentSource({
+        connectorKey: row.destinationConnectorKey,
+        sourceType: input.sourceType,
+        eventKey,
+        bindingSourceType: row.bindingSourceType,
+      })
+    ))
+    if (!candidate) continue
+    usedInstances.add(candidate.id)
+    await syncInSavepoint(accredited, candidate.id)
   }
 }
 
@@ -374,8 +388,8 @@ export async function linkPdtpScheduledInstancesToFulfillment(
 export async function recordPendingPdtpFulfillmentEvent(
   input: AccreditationInput & { sourceVersion?: string; returnHref?: string },
   client: QueryClient,
-): Promise<void> {
-  await upsertPendingEvent({
+): Promise<string> {
+  return upsertPendingEvent({
     sourceType: input.sourceType,
     sourceId: input.sourceId,
     eventType: "completed",
@@ -391,6 +405,53 @@ export async function recordPendingPdtpFulfillmentEvent(
     plannedYear: input.plannedYear,
     autoApproveByUserId: input.autoApproveByUserId,
   }, client)
+}
+
+/**
+ * Lo que el libro guarda en `result_json`. Es el resultado del motor más el
+ * caso que el motor no devuelve —lanza— y el libro sí registra: la faena no
+ * pertenece al programa vigente (PREV-I16).
+ */
+export type PdtpFulfillmentResultJson = AccreditationResult & {
+  skippedWorksiteNotInProgram?: { programId: string | null; worksiteId: string }
+}
+
+/**
+ * PREV-I16 (D16): la faena del hecho no está en la membresía vigente del
+ * programa. No es un error reintentable: la membresía de un programa activo no
+ * se edita y el corte por versión fija el programa por la fecha del hecho, así
+ * que reintentar nunca acreditaría. Tampoco puede asegurarse que la faena
+ * nunca fue miembro —al cerrarse una faena se desactiva su membresía y al
+ * reactivarla no vuelve—, por eso el motivo que ve el panel es neutro. Queda
+ * `rejected` con el programa contra el que se resolvió, fuera de la cola del
+ * reconciliador y visible en el panel del programa.
+ */
+async function markPdtpFulfillmentEventOutsideProgram(eventId: string, err: PdtpWorksiteNotInProgramError, worksiteId: string, client: QueryClient) {
+  const resultJson: PdtpFulfillmentResultJson = {
+    accredited: [],
+    skippedExcluded: [],
+    skippedNotFound: [],
+    skippedWorksiteNotInProgram: { programId: err.programId, worksiteId: err.worksiteId ?? worksiteId },
+  }
+  await client.update(pdtpFulfillmentEvents).set({
+    status: "rejected",
+    programId: err.programId,
+    resultJson: resultJson as unknown as Record<string, unknown>,
+    lastError: err.message,
+    updatedAt: new Date().toISOString(),
+  }).where(eq(pdtpFulfillmentEvents.id, eventId))
+  return resultJson
+}
+
+/** Variante transaccional de PREV-I16 para el cierre de inspecciones: el run se
+ * cierra y el hecho queda rechazado en la misma transacción. */
+export async function recordPdtpFulfillmentEventOutsideProgram(
+  input: AccreditationInput & { sourceVersion?: string; returnHref?: string },
+  err: PdtpWorksiteNotInProgramError,
+  client: QueryClient,
+): Promise<void> {
+  const eventId = await recordPendingPdtpFulfillmentEvent(input, client)
+  await markPdtpFulfillmentEventOutsideProgram(eventId, err, input.worksiteId, client)
 }
 
 /**
@@ -510,6 +571,15 @@ export async function recordPdtpFulfillmentEvent(input: AccreditationInput & {
     }
     return result
   } catch (err) {
+    if (err instanceof PdtpWorksiteNotInProgramError) {
+      // PREV-I16: rechazo definitivo con motivo, no un error de la cola.
+      const result = await markPdtpFulfillmentEventOutsideProgram(eventId, err, input.worksiteId, db)
+      logger.info(
+        { sourceType: input.sourceType, sourceId: input.sourceId, worksiteId: input.worksiteId, programId: err.programId },
+        "[pdtp-fulfillment] La faena no está en la membresía del programa vigente; el hecho queda rechazado.",
+      )
+      return result
+    }
     const now = new Date().toISOString()
     const lastError = formatFulfillmentLastError(err)
     await db.update(pdtpFulfillmentEvents).set({ status: "error", lastError, updatedAt: now })
@@ -585,6 +655,46 @@ export async function recordPendingPdtpFulfillmentRevocation(
 }
 
 /**
+ * PREV-I16: revocación ya resuelta dentro de la transacción del módulo de
+ * origen (reabrir o cancelar una inspección). Deja la constancia `revoked` en
+ * el libro con el resultado, en la misma transacción.
+ *
+ * Sin ella, un run cerrado sin programa activo dejaba su `completed` en
+ * `pending`; si se cancelaba antes de activar, la revocación no encontraba
+ * ejecuciones y no escribía nada, y al activar el reconciliador acreditaba
+ * —y autoaprobaba— un run cancelado. Con esta fila, la regla de "última
+ * intención" del reconciliador rechaza ese `completed` viejo. No se deja
+ * `pending`: el reconciliador volvería a revocar lo ya revocado y duplicaría
+ * la historia de la ejecución.
+ */
+export async function recordResolvedPdtpFulfillmentRevocation(
+  input: RevocationInput,
+  result: Awaited<ReturnType<typeof revokePdtpAccreditationWithClient>>,
+  client: QueryClient,
+): Promise<void> {
+  const eventId = await upsertPendingEvent({
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    eventType: "revoked",
+    worksiteId: input.worksiteId,
+    occurredAt: new Date().toISOString(),
+    quantity: 0,
+    evidenceRef: input.reason ?? null,
+    activityNumbers: [],
+    sourceVersion: null,
+    returnHref: null,
+    periodOverride: null,
+    plannedYear: null,
+    autoApproveByUserId: null,
+  }, client)
+  await client.update(pdtpFulfillmentEvents).set({
+    status: "revoked",
+    resultJson: result as unknown as Record<string, unknown>,
+    updatedAt: new Date().toISOString(),
+  }).where(eq(pdtpFulfillmentEvents.id, eventId))
+}
+
+/**
  * Reprocesa los eventos que quedaron `pending` o `error` — al activar un
  * programa, al corregir un mapeo, o por reintento manual. Idempotente por
  * `idempotency_key`: `accreditPdtpFromEvent` no duplica una ejecución ya
@@ -596,14 +706,27 @@ export async function recordPendingPdtpFulfillmentRevocation(
  * hecho operacional los escribió. Una carga histórica retroactiva es una
  * decisión aparte, con motivo y aprobación explícitos.
  */
-export type PdtpFulfillmentReconcileCursor = { createdAt: string; id: string }
+export type PdtpFulfillmentReconcileCursor = { updatedAt: string; id: string }
 
+/*
+ * PREV-I16: la cola se ordena por `updatedAt, id`, no por `createdAt`. Cada
+ * reintento pasa por `upsertPendingEvent`, que adelanta `updatedAt` pero no
+ * `createdAt`: con el orden anterior un error permanente se quedaba para
+ * siempre en la cabeza de la cola y, con más de `limit` de ellos, un hecho
+ * nuevo nunca se procesaba. Así lo recién reintentado pasa al final. El
+ * emparejamiento completed/revoked no depende del orden del lote: se decide
+ * con `updatedAt` precalculado más abajo.
+ */
 export async function reconcilePdtpFulfillmentEvents(input: {
   limit?: number
-  /** Continúa después de este evento (orden `createdAt, id`). Lo usa
+  /** Continúa después de este evento (orden `updatedAt, id`). Lo usa
    * `drainPdtpFulfillmentEvents` para no volver a tomar los mismos eventos
    * que siguen esperando en cada lote. */
   after?: PdtpFulfillmentReconcileCursor
+  /** Sólo eventos cuya última escritura es anterior o igual a este instante.
+   * El vaciado lo fija al empezar: un evento reintentado en esta misma pasada
+   * adelanta su `updatedAt` y no vuelve a entrar. */
+  updatedAtOrBefore?: string
 } = {}): Promise<{
   processed: number
   accredited: number
@@ -620,12 +743,13 @@ export async function reconcilePdtpFulfillmentEvents(input: {
       inArray(pdtpFulfillmentEvents.status, ["pending", "error"]),
       after
         ? or(
-            gt(pdtpFulfillmentEvents.createdAt, after.createdAt),
-            and(eq(pdtpFulfillmentEvents.createdAt, after.createdAt), gt(pdtpFulfillmentEvents.id, after.id)),
+            gt(pdtpFulfillmentEvents.updatedAt, after.updatedAt),
+            and(eq(pdtpFulfillmentEvents.updatedAt, after.updatedAt), gt(pdtpFulfillmentEvents.id, after.id)),
           )
         : undefined,
+      input.updatedAtOrBefore ? lte(pdtpFulfillmentEvents.updatedAt, input.updatedAtOrBefore) : undefined,
     ))
-    .orderBy(asc(pdtpFulfillmentEvents.createdAt), asc(pdtpFulfillmentEvents.id))
+    .orderBy(asc(pdtpFulfillmentEvents.updatedAt), asc(pdtpFulfillmentEvents.id))
     .limit(limit)
 
   const targetRows = pending.length === 0 ? [] : await db.select({
@@ -754,7 +878,7 @@ export async function reconcilePdtpFulfillmentEvents(input: {
     rejected,
     stillPending,
     errored,
-    cursor: last ? { createdAt: last.createdAt, id: last.id } : null,
+    cursor: last ? { updatedAt: last.updatedAt, id: last.id } : null,
   }
 }
 
@@ -779,8 +903,11 @@ export async function drainPdtpFulfillmentEvents(input: { batchSize?: number; ma
   const maxBatches = input.maxBatches ?? 100
   const total = { processed: 0, accredited: 0, rejected: 0, stillPending: 0, errored: 0, batches: 0, exhausted: false }
   let after: PdtpFulfillmentReconcileCursor | undefined
+  // PREV-I16: con la cola ordenada por `updatedAt`, un evento reintentado en
+  // esta pasada volvería a aparecer después del cursor; el tope lo deja fuera.
+  const startedAt = new Date().toISOString()
   while (total.batches < maxBatches) {
-    const batch = await reconcilePdtpFulfillmentEvents({ limit: batchSize, after })
+    const batch = await reconcilePdtpFulfillmentEvents({ limit: batchSize, after, updatedAtOrBefore: startedAt })
     total.batches++
     total.processed += batch.processed
     total.accredited += batch.accredited

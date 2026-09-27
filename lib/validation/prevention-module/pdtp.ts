@@ -156,12 +156,18 @@ export const pdtpScheduledInstanceStartSchema = z.object({
   instrumentId: z.string().trim().min(1).max(200).nullable().optional(),
 })
 
+/**
+ * PREV-I08-c (D19): sin `sourceMetadata` —el servicio confiaba en
+ * `sourceApproved`/`sourceRecordId` del cliente— y sin `complete`: una
+ * ocurrencia se cumple sólo cuando su ejecución del libro queda aprobada.
+ * `z.object` descarta las claves desconocidas, así que un POST que todavía
+ * mande metadatos no llega al servicio con ellos.
+ */
 export const pdtpScheduledInstanceOutcomeSchema = z.object({
   instanceId: z.string().trim().min(1, "Instancia requerida"),
-  action: z.enum(["submit", "complete", "not_applicable", "cancel"]),
+  action: z.enum(["submit", "not_applicable", "cancel"]),
   evidenceRef: z.string().trim().max(2000).nullable().optional(),
   reason: z.string().trim().max(2000).nullable().optional(),
-  sourceMetadata: z.record(z.string(), z.unknown()).default({}),
 })
 
 export const pdtpReminderRuleSchema = z.object({

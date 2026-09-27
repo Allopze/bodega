@@ -43,3 +43,15 @@ describe("scheduled PDTP compliance", () => {
     })
   })
 })
+
+describe("pdtpScheduledInstanceCountsAsExecuted (D19: sólo cuenta lo aprobado)", () => {
+  it("una ocurrencia completada cuenta sólo si su ejecución enlazada está aprobada", async () => {
+    const { pdtpScheduledInstanceCountsAsExecuted } = await import("@/lib/services/pdtp/scheduled-compliance")
+    expect(pdtpScheduledInstanceCountsAsExecuted("completed", "approved")).toBe(true)
+    expect(pdtpScheduledInstanceCountsAsExecuted("completed", "submitted")).toBe(false)
+    expect(pdtpScheduledInstanceCountsAsExecuted("completed", "draft")).toBe(false)
+    expect(pdtpScheduledInstanceCountsAsExecuted("completed", null)).toBe(true)
+    expect(pdtpScheduledInstanceCountsAsExecuted("submitted", "approved")).toBe(false)
+    expect(pdtpScheduledInstanceCountsAsExecuted("not_applicable", "approved")).toBe(false)
+  })
+})

@@ -696,3 +696,154 @@ describe("Expediente cerrado e independencia del reinicio (F-04, F-09)", () => {
     })
   })
 })
+
+/*
+ * D4 (T3): los hitos RE-20 llaman al conector después de confirmar su
+ * transacción y el conector sólo registra en el log. Si el proceso cae entre
+ * el commit y el conector, el incidente queda sin sus obligaciones o sin el
+ * reporte del hito, y el indicador de plazo simplemente no lo ve. El barrido
+ * horario repara desde la fuente de verdad (las tablas del incidente).
+ */
+describe("barrido RE-20 (D4): reconcileIncidentRe20Obligations", () => {
+  const CREATED_AT = new Date(Date.now() - 2 * 60 * 60_000).toISOString()
+  const sweepAccess: IncidentAccess = {
+    ctx: { userId: USER_ID },
+    scope: { mode: "all", ids: [] },
+    permissions: ["prevention:incidents:view", "prevention:incidents:report", "prevention:incidents:investigate"],
+  }
+
+  async function insertIncidentDirectly(id: string, overrides: Partial<typeof schema.preventionIncidents.$inferInsert> = {}) {
+    await inMemoryDb.insert(schema.preventionIncidents).values({
+      id, code: `INC-${id}`, clientSubmissionId: `sub-${id}`, worksiteId: WS_ID, companyName: "Empresa Test",
+      eventType: "work_accident", occurredAt: OCCURRED_AT, knownAt: KNOWN_AT, location: "Planta",
+      initialNarrative: "Caída en escalera", reportedByUserId: USER_ID, actualSeverity: "medical_treatment",
+      potentialSeverity: "high", createdAt: CREATED_AT, updatedAt: CREATED_AT, ...overrides,
+    })
+  }
+
+  async function obligationsFor(incidentId: string) {
+    const rows = await inMemoryDb.select({
+      n: schema.pdtpActivities.n,
+      status: schema.pdtpObligations.status,
+      reportedAt: schema.pdtpObligations.reportedAt,
+      id: schema.pdtpObligations.id,
+    }).from(schema.pdtpObligations)
+      .innerJoin(schema.pdtpActivities, eq(schema.pdtpActivities.id, schema.pdtpObligations.activityId))
+      .where(and(eq(schema.pdtpObligations.sourceType, "incident"), eq(schema.pdtpObligations.sourceId, incidentId)))
+    return new Map(rows.map((row) => [row.n, row]))
+  }
+
+  beforeEach(async () => {
+    await inMemoryDb.delete(schema.pdtpPeriodClosures)
+    await inMemoryDb.delete(schema.pdtpObligations)
+    await inMemoryDb.update(schema.pdtpPrograms).set({ activatedAt: `${PROGRAM_YEAR}-01-01T03:00:00.000Z` })
+  })
+
+  it("crea las obligaciones de un incidente cuyo conector post-commit no corrió y reporta el aviso con su fecha", async () => {
+    const { reconcileIncidentRe20Obligations } = await import("@/lib/services/pdtp-adapters/incident-accreditation-connector")
+    await insertIncidentDirectly("inc-lost-1")
+    const summary = await reconcileIncidentRe20Obligations()
+    expect(summary.errors).toBe(0)
+
+    const obligations = await obligationsFor("inc-lost-1")
+    // Un accidente con tratamiento médico exige investigación: 66-78 salvo la 76.
+    expect([...obligations.keys()].sort((a, b) => a - b)).toEqual([66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 77, 78])
+    expect(obligations.get(66)?.status).toBe("reported")
+    expect(obligations.get(67)?.status).toBe("reported")
+    expect(new Date(obligations.get(66)!.reportedAt!).toISOString()).toBe(CREATED_AT)
+    expect(obligations.get(68)?.status).toMatch(/pending|overdue/)
+  })
+
+  it("reporta con la fecha real del hito una obligación que quedó pendiente", async () => {
+    const { reconcileIncidentRe20Obligations } = await import("@/lib/services/pdtp-adapters/incident-accreditation-connector")
+    await insertIncidentDirectly("inc-lost-2")
+    await reconcileIncidentRe20Obligations()
+    const preliminaryAt = new Date(Date.now() - 90 * 60_000).toISOString()
+    await inMemoryDb.insert(schema.preventionIncidentInvestigations).values({
+      id: "inv-lost-2", incidentId: "inc-lost-2", methodology: "arbol_causas", preliminaryReportText: "Informe preliminar",
+      preliminaryReportAt: preliminaryAt, startedByUserId: OTHER_USER_ID, startedAt: preliminaryAt, updatedAt: preliminaryAt,
+    })
+
+    await reconcileIncidentRe20Obligations()
+    const obligations = await obligationsFor("inc-lost-2")
+    for (const n of [68, 70]) {
+      expect(obligations.get(n)?.status).toBe("reported")
+      expect(new Date(obligations.get(n)!.reportedAt!).toISOString()).toBe(preliminaryAt)
+    }
+  })
+
+  it("no reenvía una ejecución que una persona rechazó", async () => {
+    const { reportPreventionIncident, createPreliminaryReport } = await import("@/lib/services/prevention-incidents")
+    const { rejectPdtpExecution } = await import("@/lib/services/pdtp/executions")
+    const { reconcileIncidentRe20Obligations } = await import("@/lib/services/pdtp-adapters/incident-accreditation-connector")
+    const res = await reportPreventionIncident({
+      access: sweepAccess,
+      input: {
+        worksiteId: WS_ID, companyName: "Empresa Test", eventType: "work_accident", occurredAt: OCCURRED_AT, knownAt: KNOWN_AT,
+        location: "Planta", initialNarrative: "Caída de altura", people: [], clientSubmissionId: "sub-d4-rejected",
+      },
+    })
+    await createPreliminaryReport({
+      incidentId: res.incident.id,
+      preliminaryReportText: "Informe preliminar enviado dentro de las 3 horas del evento.",
+      access: sweepAccess as unknown as Parameters<typeof createPreliminaryReport>[0]["access"],
+    })
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.activityId, "act-68"))
+    await rejectPdtpExecution(execution!.id, OTHER_USER_ID, "El informe no trae la firma del supervisor", "all")
+
+    await reconcileIncidentRe20Obligations()
+    const [after] = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.id, execution!.id))
+    expect(after).toMatchObject({ status: "rejected", rejectionReason: "El informe no trae la firma del supervisor" })
+    expect((await obligationsFor(res.incident.id)).get(68)?.status).toMatch(/pending|overdue/)
+  })
+
+  it("no reporta un hito en un mes cerrado", async () => {
+    const { reconcileIncidentRe20Obligations } = await import("@/lib/services/pdtp-adapters/incident-accreditation-connector")
+    const month = chileDateParts(new Date(CREATED_AT)).month
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpPeriodClosures).values({
+      id: "closure-d4", programId: PROGRAM_ID, worksiteId: WS_ID, year: PROGRAM_YEAR, month, status: "closed",
+      snapshotJson: {}, digest: "a".repeat(64), closedByUserId: OTHER_USER_ID, closedAt: now, closeReason: "Cierre del mes",
+      createdAt: now, updatedAt: now,
+    })
+    await insertIncidentDirectly("inc-closed-month")
+    const summary = await reconcileIncidentRe20Obligations()
+    expect(summary.skippedClosedPeriod).toBeGreaterThan(0)
+    const obligations = await obligationsFor("inc-closed-month")
+    expect(obligations.get(66)?.status).toMatch(/pending|overdue/)
+  })
+
+  it("completa una pérdida parcial: con sólo 66/67 reportadas crea las que faltan", async () => {
+    const { reconcileIncidentRe20Obligations } = await import("@/lib/services/pdtp-adapters/incident-accreditation-connector")
+    await insertIncidentDirectly("inc-partial")
+    await reconcileIncidentRe20Obligations()
+    // Simula la caída a mitad del conector: se pierden las filtrables.
+    const existing = await obligationsFor("inc-partial")
+    const filterableIds = [...existing.values()].filter((row) => row.n !== 66 && row.n !== 67).map((row) => row.id)
+    await inMemoryDb.delete(schema.pdtpObligations).where(inArray(schema.pdtpObligations.id, filterableIds))
+    expect((await obligationsFor("inc-partial")).size).toBe(2)
+
+    await reconcileIncidentRe20Obligations()
+    expect((await obligationsFor("inc-partial")).size).toBe(12)
+  })
+
+  it("no crea obligaciones para incidentes anteriores a la activación del programa", async () => {
+    const { reconcileIncidentRe20Obligations } = await import("@/lib/services/pdtp-adapters/incident-accreditation-connector")
+    await inMemoryDb.update(schema.pdtpPrograms).set({ activatedAt: new Date(Date.now() - 30 * 60_000).toISOString() })
+    await insertIncidentDirectly("inc-before-activation")
+    await reconcileIncidentRe20Obligations()
+    expect((await obligationsFor("inc-before-activation")).size).toBe(0)
+  })
+
+  it("es idempotente", async () => {
+    const { reconcileIncidentRe20Obligations } = await import("@/lib/services/pdtp-adapters/incident-accreditation-connector")
+    await insertIncidentDirectly("inc-idem")
+    await reconcileIncidentRe20Obligations()
+    const obligationsBefore = await inMemoryDb.select().from(schema.pdtpObligations)
+    const executionsBefore = await inMemoryDb.select().from(schema.pdtpExecutions)
+    const second = await reconcileIncidentRe20Obligations()
+    expect(second).toMatchObject({ created: 0, reported: 0, errors: 0 })
+    expect(await inMemoryDb.select().from(schema.pdtpObligations)).toHaveLength(obligationsBefore.length)
+    expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(executionsBefore.length)
+  })
+})

@@ -50,6 +50,7 @@ const {
   recordPdtpFulfillmentEvent,
   recordPdtpFulfillmentRevocation,
   reconcilePdtpFulfillmentEvents,
+  drainPdtpFulfillmentEvents,
   resolvePdtpFulfillmentTarget,
   assertPdtpFulfillmentCoverage,
 } = await import("@/lib/services/pdtp/fulfillment")
@@ -177,7 +178,11 @@ describe("recordPdtpFulfillmentEvent — el hecho no se pierde", () => {
     expect(executions).toHaveLength(1)
   })
 
-  it("acredita también la instancia programada correspondiente al hecho nativo", async () => {
+  /* Hasta T3 este caso esperaba `completed`: con `source_completed` el enlace
+   * completaba la ocurrencia aunque la ejecución de la campaña quedara
+   * `submitted`, y el indicador la contaba mientras la planilla no (PREV-I08-e).
+   * D19: la ocurrencia queda enlazada y enviada; se completa al aprobar. */
+  it("enlaza la instancia programada al hecho nativo y la deja enviada hasta aprobar su ejecución", async () => {
     await seedProgram("active")
     const scheduledFor = todayInChile()
     await seedActivity({
@@ -206,7 +211,7 @@ describe("recordPdtpFulfillmentEvent — el hecho no se pierde", () => {
 
     const [instance] = await inMemoryDb.select().from(schema.pdtpScheduledInstances)
       .where(eq(schema.pdtpScheduledInstances.id, "scheduled-fulfillment-1"))
-    expect(instance?.status).toBe("completed")
+    expect(instance?.status).toBe("submitted")
     expect(instance?.sourceMetadataJson).toMatchObject({ sourceRecordId: "campana-scheduled-1" })
 
     const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
@@ -409,6 +414,110 @@ describe("reconcilePdtpFulfillmentEvents", () => {
       .find((event) => event.eventType === "completed")
     expect(completed?.status).toBe("rejected")
     expect(completed?.lastError).toContain("revocado")
+  })
+})
+
+/*
+ * PREV-I16: una faena fuera de la membresía del programa vigente no es un
+ * error reintentable. La membresía de un programa activo no se edita, así que
+ * reintentar nunca acreditaría: quedaba en `error` para siempre, ocupaba la
+ * cabeza de la cola del reconciliador y no se veía en el panel.
+ */
+describe("faena fuera del programa y cola del reconciliador (PREV-I16)", () => {
+  async function seedMemberProgram() {
+    await seedProgram("active")
+    await seedActivity()
+    await inMemoryDb.insert(schema.worksites).values({ id: "ws-outside", name: "Faena externa", code: "EXT", isActive: true })
+    await inMemoryDb.insert(schema.pdtpProgramWorksites).values({
+      id: "member-i16", programId: PROGRAM_ID, worksiteId: WS_ID,
+      isActive: true, addedByUserId: USER_ID, addedAt: new Date().toISOString(),
+    })
+  }
+
+  it("deja el hecho rechazado (no en error) cuando la faena no es miembro del programa vigente", async () => {
+    await seedMemberProgram()
+    const result = await recordPdtpFulfillmentEvent({
+      sourceType: "campana", sourceId: "campana-fuera", worksiteId: "ws-outside",
+      activityNumbers: [ACT_N], occurredAt: new Date().toISOString(),
+    })
+    expect(result?.accredited).toEqual([])
+    const [event] = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
+      .where(eq(schema.pdtpFulfillmentEvents.sourceId, "campana-fuera"))
+    expect(event).toMatchObject({ status: "rejected", programId: PROGRAM_ID })
+    expect(event?.resultJson).toMatchObject({ skippedWorksiteNotInProgram: { programId: PROGRAM_ID, worksiteId: "ws-outside" } })
+    expect(describePdtpRejection(event?.resultJson)).toMatch(/membresía vigente del programa/)
+  })
+
+  it("el reconciliador convierte un error heredado de faena no miembro en rechazo y no lo vuelve a tomar", async () => {
+    await seedMemberProgram()
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpFulfillmentEvents).values({
+      id: "legacy-outside", sourceType: "campana", sourceId: "campana-heredada", eventType: "completed",
+      worksiteId: "ws-outside", occurredAt: now, quantity: 1, idempotencyKey: "pdtp-fulfillment:completed:campana:campana-heredada",
+      status: "error", lastError: `La faena ws-outside no pertenece al programa ${PROGRAM_ID}.`,
+      activityNumbers: [ACT_N], resultJson: {}, attempts: 3, createdAt: now, updatedAt: now,
+    })
+    const first = await reconcilePdtpFulfillmentEvents()
+    expect(first).toMatchObject({ processed: 1, rejected: 1, errored: 0 })
+    const second = await reconcilePdtpFulfillmentEvents()
+    expect(second.processed).toBe(0)
+  })
+
+  it("un error permanente no bloquea la cabeza de la cola", async () => {
+    await seedProgram("draft")
+    await seedActivity()
+    // E1, más antiguo: la entrega de EPP no puede autoaprobarse, así que el
+    // motor lanza en cada intento (error permanente).
+    await recordPdtpFulfillmentEvent({
+      sourceType: "epp", sourceId: "entrega-permanente", worksiteId: WS_ID,
+      activityNumbers: [ACT_N], occurredAt: new Date().toISOString(), autoApproveByUserId: USER_ID,
+    })
+    // E2, posterior: espera la activación del programa.
+    await recordPdtpFulfillmentEvent({
+      sourceType: "campana", sourceId: "campana-espera", worksiteId: WS_ID,
+      activityNumbers: [ACT_N], occurredAt: new Date().toISOString(),
+    })
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "active" }).where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+
+    await reconcilePdtpFulfillmentEvents({ limit: 1 })
+    await reconcilePdtpFulfillmentEvents({ limit: 1 })
+
+    const [waiting] = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
+      .where(eq(schema.pdtpFulfillmentEvents.sourceId, "campana-espera"))
+    expect(waiting?.status).toBe("accredited")
+  })
+
+  it("vaciar el libro recorre cada evento una sola vez aunque los reintentos cambien su orden", async () => {
+    await seedProgram("active")
+    await seedActivity()
+    for (const id of ["a", "b", "c"]) {
+      await recordPdtpFulfillmentEvent({
+        sourceType: "epp", sourceId: `entrega-${id}`, worksiteId: WS_ID,
+        activityNumbers: [ACT_N], occurredAt: new Date().toISOString(), autoApproveByUserId: USER_ID,
+      })
+    }
+    const summary = await drainPdtpFulfillmentEvents({ batchSize: 1, maxBatches: 10 })
+    expect(summary).toMatchObject({ processed: 3, errored: 3, exhausted: true })
+  })
+
+  it("el panel muestra el rechazo de una faena fuera del programa según el alcance de la sesión", async () => {
+    await seedMemberProgram()
+    await recordPdtpFulfillmentEvent({
+      sourceType: "campana", sourceId: "campana-fuera", worksiteId: "ws-outside",
+      activityNumbers: [ACT_N], occurredAt: new Date().toISOString(),
+    })
+    // Sin opciones (preflight global): se ve.
+    const global = await countPdtpFulfillmentBacklog(PROGRAM_ID)
+    expect(global.rejected).toBe(1)
+    expect(global.recentRejected[0]?.reason).toMatch(/membresía vigente del programa/)
+    // Faenas miembro visibles, sin alcance de sesión: seguro por defecto, no se abre.
+    expect((await countPdtpFulfillmentBacklog(PROGRAM_ID, { worksiteIds: [WS_ID] })).rejected).toBe(0)
+    // Con la sesión que cubre la faena externa, sí.
+    expect((await countPdtpFulfillmentBacklog(PROGRAM_ID, { worksiteIds: [WS_ID], sessionWorksiteIds: ["ws-outside"] })).rejected).toBe(1)
+    expect((await countPdtpFulfillmentBacklog(PROGRAM_ID, { worksiteIds: [WS_ID], sessionWorksiteIds: "all" })).rejected).toBe(1)
+    // Una sesión que no la cubre no la ve.
+    expect((await countPdtpFulfillmentBacklog(PROGRAM_ID, { worksiteIds: [WS_ID], sessionWorksiteIds: [WS_ID] })).rejected).toBe(0)
+    expect((await countPdtpFulfillmentBacklog(PROGRAM_ID, { worksiteIds: [WS_ID], sessionWorksiteIds: [] })).rejected).toBe(0)
   })
 })
 

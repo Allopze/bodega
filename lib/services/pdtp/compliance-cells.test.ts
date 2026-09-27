@@ -57,3 +57,64 @@ describe("pdtpCountedExecuted (PREV-C02, tope por actividad y mes)", () => {
     expect(pdtpCountedExecuted(0, 2)).toBe(0)
   })
 })
+
+/*
+ * PREV-I08-a, casos residuales (T3). Una ejecución aprobada enlazada a una
+ * ocurrencia programada que ya cuenta es el hecho de esa ocurrencia: cuenta
+ * una sola vez, con la misma regla en todas las vistas.
+ */
+describe("effectiveApprovedExecutionsByCell con ocurrencias programadas (PREV-I08-a)", () => {
+  const counted = { id: "inst-1", status: "completed", scheduledFor: "2026-03-02", plannedQuantity: 1 }
+  const total = (cells: Array<{ executedQuantity: number }>) => cells.reduce((sum, cell) => sum + cell.executedQuantity, 0)
+
+  it("la ejecución enlazada a una ocurrencia contada no suma en su celda", () => {
+    const cells = effectiveApprovedExecutionsByCell([
+      row({ origin: "integration", sourceType: "inspeccion", executedQuantity: 1, linkedInstance: counted }),
+    ])
+    expect(total(cells)).toBe(0)
+  })
+
+  it("una carga manual en la misma semana que la acreditación enlazada no suma encima de la ocurrencia", () => {
+    const cells = effectiveApprovedExecutionsByCell([
+      row({ origin: "manual", executedQuantity: 1 }),
+      row({ origin: "integration", sourceType: "inspeccion", executedQuantity: 1, linkedInstance: counted }),
+    ])
+    expect(total(cells)).toBe(0)
+  })
+
+  it("lo que la carga manual declara por encima de la acreditación enlazada sigue contando (D2)", () => {
+    const cells = effectiveApprovedExecutionsByCell([
+      row({ origin: "manual", executedQuantity: 3 }),
+      row({ origin: "integration", sourceType: "inspeccion", executedQuantity: 1, linkedInstance: counted }),
+    ])
+    expect(total(cells)).toBe(2)
+  })
+
+  it("una ocurrencia que no cuenta (enviada, no aplica, cancelada) deja la ejecución en el libro", () => {
+    for (const status of ["submitted", "not_applicable", "cancelled", "pending"]) {
+      const cells = effectiveApprovedExecutionsByCell([
+        row({ origin: "integration", executedQuantity: 1, linkedInstance: { ...counted, status } }),
+      ])
+      expect(total(cells)).toBe(1)
+    }
+  })
+
+  it("una ocurrencia anterior al corte de exigibilidad no cuenta: la ejecución sigue en el libro", () => {
+    const cells = effectiveApprovedExecutionsByCell([
+      row({ origin: "integration", executedQuantity: 1, linkedInstance: counted }),
+    ], { instanceCutoff: "2026-03-10T00:00:00.000Z" })
+    expect(total(cells)).toBe(1)
+  })
+
+  it("con `instanceCells` el hecho se mueve a la celda de su ocurrencia, una vez", () => {
+    const cells = effectiveApprovedExecutionsByCell([
+      row({ origin: "manual", month: 4, week: 1, executedQuantity: 1 }),
+      row({ origin: "integration", month: 4, week: 1, executedQuantity: 1, linkedInstance: { ...counted, scheduledFor: "2026-03-20", plannedQuantity: 2 } }),
+    ], { instanceCells: true })
+    const byCell = Object.fromEntries(cells.map((cell) => [`${cell.month}:${cell.week}`, cell.executedQuantity]))
+    // El 20 de marzo cae en la semana 3; la cantidad es la planificada de la ocurrencia.
+    expect(byCell["3:3"]).toBe(2)
+    expect(byCell["4:1"] ?? 0).toBe(0)
+    expect(total(cells)).toBe(2)
+  })
+})

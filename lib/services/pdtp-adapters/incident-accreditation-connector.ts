@@ -30,7 +30,26 @@
  * caso): un error acá queda en el log, nunca tumba el registro del incidente.
  */
 
+import { and, asc, eq, gte, isNotNull } from "drizzle-orm"
+import { db } from "@/db"
+import {
+  pdtpActivities,
+  pdtpExecutions,
+  pdtpObligations,
+  pdtpPrograms,
+  preventionIncidentDiffusion,
+  preventionIncidentHistory,
+  preventionIncidentInvestigations,
+  preventionIncidentNotifications,
+  preventionIncidents,
+  preventionIncidentShiftDiffusions,
+  preventionIncidentStatements,
+  worksites,
+} from "@/db/schema"
 import { logger } from "@/lib/logger"
+import { chileDateParts } from "@/lib/utils"
+import { assertPdtpPeriodOpen } from "@/lib/services/pdtp/period-guard"
+import { resolvePdtpActivityIdsOrSkip, resolvePdtpProgramActorUserId } from "./obligation-kit"
 import {
   incidentRequiresInvestigation,
   requiredIncidentNotificationTypes,
@@ -388,4 +407,251 @@ export async function onIncidentOnePageDiffused(input: { incidentId: string; wor
     n: 78, worksiteId: input.worksiteId, incidentId: input.incidentId, occurredAt: input.diffusedAt, userId: input.userId,
     evidenceText: `ONE PAGE RE-20-06 difundido: ${input.incidentId}`,
   })
+}
+
+// ── Barrido de reparación (D4, tanda T3) ──────────────────────────────────────
+
+export type IncidentRe20SweepSummary = {
+  incidentsScanned: number
+  incidentsWithOpenWork: number
+  created: number
+  reported: number
+  cancelled: number
+  skippedExistingExecution: number
+  skippedClosedPeriod: number
+  skippedNoActor: number
+  skippedNotApplicable: number
+  errors: number
+}
+
+type IncidentMilestone = { at: string; actorUserId: string | null; evidenceText: string }
+
+/**
+ * Hitos RE-20 ya registrados en las tablas del incidente, con su fecha real y
+ * su actor, por número de actividad. Es la fuente de verdad del barrido: el
+ * hito ocurrió aunque el conector post-commit no haya corrido.
+ *
+ * - N°69: la declaración más antigua de cualquier tipo, como el camino vivo.
+ * - N°72: la DIAT enviada; el actor sale de la primera entrada del historial
+ *   de notificación DIAT, y si no hay, del responsable del carril.
+ * - N°68/70: `preliminaryReportAt` es la fecha del último envío del
+ *   preliminar (el upsert la pisa al reenviar); el actor es quien inició la
+ *   investigación. Es una aproximación declarada.
+ */
+async function loadIncidentMilestones(incident: typeof preventionIncidents.$inferSelect): Promise<Map<number, IncidentMilestone>> {
+  const milestones = new Map<number, IncidentMilestone>()
+  const [[investigation], statements, [diat], diatHistory, [onePage], shiftDiffusions] = await Promise.all([
+    db.select().from(preventionIncidentInvestigations).where(eq(preventionIncidentInvestigations.incidentId, incident.id)).limit(1),
+    db.select({ createdAt: preventionIncidentStatements.createdAt, createdByUserId: preventionIncidentStatements.createdByUserId })
+      .from(preventionIncidentStatements).where(eq(preventionIncidentStatements.incidentId, incident.id))
+      .orderBy(asc(preventionIncidentStatements.createdAt)).limit(1),
+    db.select().from(preventionIncidentNotifications).where(and(
+      eq(preventionIncidentNotifications.incidentId, incident.id),
+      eq(preventionIncidentNotifications.notificationType, "diat"),
+      isNotNull(preventionIncidentNotifications.sentAt),
+    )).limit(1),
+    db.select({ actorUserId: preventionIncidentHistory.actorUserId, changeSet: preventionIncidentHistory.changeSet })
+      .from(preventionIncidentHistory).where(and(
+        eq(preventionIncidentHistory.incidentId, incident.id),
+        eq(preventionIncidentHistory.changeType, "notification"),
+      )).orderBy(asc(preventionIncidentHistory.createdAt)),
+    db.select({ diffusedAt: preventionIncidentDiffusion.diffusedAt, createdByUserId: preventionIncidentDiffusion.createdByUserId })
+      .from(preventionIncidentDiffusion).where(eq(preventionIncidentDiffusion.incidentId, incident.id))
+      .orderBy(asc(preventionIncidentDiffusion.diffusedAt)).limit(1),
+    db.select().from(preventionIncidentShiftDiffusions).where(and(
+      eq(preventionIncidentShiftDiffusions.incidentId, incident.id),
+      isNotNull(preventionIncidentShiftDiffusions.confirmedAt),
+    )).orderBy(asc(preventionIncidentShiftDiffusions.confirmedAt)),
+  ])
+
+  milestones.set(66, { at: incident.createdAt, actorUserId: incident.reportedByUserId, evidenceText: `Aviso de incidente registrado: ${incident.id}` })
+  milestones.set(67, { at: incident.createdAt, actorUserId: incident.reportedByUserId, evidenceText: `Aviso de incidente registrado: ${incident.id}` })
+  if (investigation?.preliminaryReportAt) {
+    for (const n of [68, 70]) {
+      milestones.set(n, { at: investigation.preliminaryReportAt, actorUserId: investigation.startedByUserId, evidenceText: `Informe preliminar RE-20-02 enviado: ${incident.id}` })
+    }
+  }
+  if (statements[0]) {
+    milestones.set(69, { at: statements[0].createdAt, actorUserId: statements[0].createdByUserId, evidenceText: `Declaración/Entrevista RE-20 firmada: ${incident.id}` })
+  }
+  if (diat?.sentAt) {
+    const historyActor = diatHistory.find((row) => (row.changeSet as { type?: unknown } | null)?.type === "diat")?.actorUserId
+    milestones.set(72, { at: diat.sentAt, actorUserId: historyActor ?? diat.responsibleUserId, evidenceText: `DIAT RE-20-07 emitida: ${incident.id}` })
+  }
+  if (investigation?.completedAt) {
+    for (const n of [73, 74]) {
+      milestones.set(n, { at: investigation.completedAt, actorUserId: investigation.completedByUserId, evidenceText: `Investigación definitiva RE-20-04 completada: ${incident.id}` })
+    }
+  }
+  const shift = shiftDiffusions.find((row) => row.kind === "shift")
+  if (shift?.confirmedAt) milestones.set(71, { at: shift.confirmedAt, actorUserId: shift.confirmedByUserId, evidenceText: `Difusión en turnos confirmada: ${incident.id}` })
+  const measures = shiftDiffusions.find((row) => row.kind !== "shift")
+  if (measures?.confirmedAt) milestones.set(75, { at: measures.confirmedAt, actorUserId: measures.confirmedByUserId, evidenceText: `Difusión de medidas correctivas confirmada: ${incident.id}` })
+  if (incident.closedAt) milestones.set(77, { at: incident.closedAt, actorUserId: incident.closedByUserId, evidenceText: `Expediente de incidente cerrado: ${incident.id}` })
+  if (onePage) milestones.set(78, { at: onePage.diffusedAt, actorUserId: onePage.createdByUserId, evidenceText: `ONE PAGE RE-20-06 difundido: ${incident.id}` })
+  return milestones
+}
+
+/**
+ * Red de seguridad de las obligaciones RE-20 (D4). Los ganchos post-commit de
+ * arriba siguen siendo el camino rápido; este barrido, que corre cada hora
+ * dentro del cron `prevention-incident-reminders`, repara lo que se pierda si
+ * el proceso cae entre el commit del incidente y el conector, o si un error
+ * transitorio los hizo fallar.
+ *
+ * Reglas:
+ * - Sólo programas activos y sólo incidentes creados desde su activación
+ *   (decisión por defecto): no hace cargas retroactivas que nacerían vencidas.
+ * - Entra todo incidente cuyas obligaciones no cubren el conjunto esperado
+ *   (66, 67 y las filtrables de su clasificación vigente) o que tiene alguna
+ *   pendiente o vencida. Así se repara también la pérdida parcial.
+ * - Crea con los servicios idempotentes de siempre y cancela lo que la
+ *   reclasificación ya no exige.
+ * - Reporta un hito sólo si la obligación está pendiente/vencida **y no tiene
+ *   ninguna ejecución** en el libro: una ejecución rechazada por una persona
+ *   no se reenvía nunca (el rechazo devuelve la obligación a pendiente).
+ * - Reporta con la fecha real del hito y sólo si ese mes está abierto.
+ * - Nunca lanza: las fallas se cuentan y se registran una vez por corrida.
+ *
+ * Límite conocido: lo perdido durante una versión v1 no se repara después de
+ * activar v2 (el corte es la activación de la versión activa), y el evento
+ * configurable `incident_registered` de `recordPdtpTriggerEvent` no se repara
+ * acá.
+ */
+export async function reconcileIncidentRe20Obligations(): Promise<IncidentRe20SweepSummary> {
+  const summary: IncidentRe20SweepSummary = {
+    incidentsScanned: 0, incidentsWithOpenWork: 0, created: 0, reported: 0, cancelled: 0,
+    skippedExistingExecution: 0, skippedClosedPeriod: 0, skippedNoActor: 0, skippedNotApplicable: 0, errors: 0,
+  }
+  const failures: Array<{ incidentId: string; message: string }> = []
+  try {
+    const programs = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.status, "active"))
+    for (const program of programs) {
+      if (!program.activatedAt) continue
+      const incidents = await db.select().from(preventionIncidents)
+        .innerJoin(worksites, eq(worksites.id, preventionIncidents.worksiteId))
+        .where(and(
+          gte(preventionIncidents.createdAt, program.activatedAt),
+          eq(worksites.isActive, true),
+        ))
+      for (const { prevention_incidents: incident } of incidents) {
+        if (chileDateParts(incident.createdAt).year !== program.year) continue
+        summary.incidentsScanned++
+        try {
+          await sweepIncident(program, incident, summary)
+        } catch (err) {
+          summary.errors++
+          failures.push({ incidentId: incident.id, message: err instanceof Error ? err.message : String(err) })
+        }
+      }
+    }
+  } catch (err) {
+    summary.errors++
+    failures.push({ incidentId: "*", message: err instanceof Error ? err.message : String(err) })
+  }
+  if (failures.length > 0) {
+    logger.error({ failures: failures.slice(0, 20), total: failures.length }, "[incident-pdtp-connector] El barrido RE-20 no pudo reparar algunos incidentes.")
+  }
+  return summary
+}
+
+async function sweepIncident(
+  program: typeof pdtpPrograms.$inferSelect,
+  incident: typeof preventionIncidents.$inferSelect,
+  summary: IncidentRe20SweepSummary,
+): Promise<void> {
+  const classification = {
+    eventType: incident.eventType as IncidentEventType,
+    actualSeverity: incident.actualSeverity,
+    potentialSeverity: incident.potentialSeverity,
+    isFatalOrSerious: incident.isFatalOrSerious,
+  }
+  const expected = [66, 67, ...applicableRe20FilterableNumbers(classification)]
+  const existing = await db.select({
+    id: pdtpObligations.id,
+    status: pdtpObligations.status,
+    n: pdtpActivities.n,
+  }).from(pdtpObligations)
+    .innerJoin(pdtpActivities, eq(pdtpActivities.id, pdtpObligations.activityId))
+    .where(and(
+      eq(pdtpObligations.sourceType, "incident"),
+      eq(pdtpObligations.sourceId, incident.id),
+      eq(pdtpActivities.programId, program.id),
+    ))
+  const existingNumbers = new Set(existing.map((row) => row.n))
+  const hasOpen = existing.some((row) => row.status === "pending" || row.status === "overdue")
+  if (!hasOpen && expected.every((n) => existingNumbers.has(n))) return
+  summary.incidentsWithOpenWork++
+
+  const resolved = await resolvePdtpActivityIdsOrSkip({
+    worksiteId: incident.worksiteId, occurredAt: incident.createdAt,
+    activityNumbers: RE20_OBLIGATION_ACTIVITY_NUMBERS, sourceType: "incident", sourceId: incident.id,
+  })
+  // Sin programa, faena fuera de la membresía o fuera del año: no aplica.
+  if (!resolved || resolved.programId !== program.id) {
+    summary.skippedNotApplicable++
+    return
+  }
+
+  const fallbackActor = await resolvePdtpProgramActorUserId(program.id)
+  for (const n of expected) {
+    const activityId = resolved.activityIdByN.get(n)
+    if (!activityId || existingNumbers.has(n)) continue
+    await createPdtpObligation({
+      activityId, worksiteId: incident.worksiteId, origin: "integration", sourceType: "incident", sourceId: incident.id,
+      sourceOccurredAt: incident.createdAt, userId: incident.reportedByUserId ?? fallbackActor, scope: "all",
+    })
+    summary.created++
+  }
+
+  // La reclasificación puede haber dejado de exigir alguna ya abierta.
+  if (incident.triagedAt) {
+    const before = await countCancelled(incident.id)
+    await reconcileIncidentObligationsAfterTriage({
+      incidentId: incident.id, worksiteId: incident.worksiteId, occurredAt: incident.createdAt,
+      userId: incident.triagedByUserId ?? incident.reportedByUserId, ...classification,
+    })
+    summary.cancelled += Math.max(0, (await countCancelled(incident.id)) - before)
+  }
+
+  const milestones = await loadIncidentMilestones(incident)
+  for (const n of expected) {
+    const activityId = resolved.activityIdByN.get(n)
+    const milestone = milestones.get(n)
+    if (!activityId || !milestone) continue
+    const obligation = await findPdtpObligationByIdempotencyKey(incidentObligationIdempotencyKey(activityId, incident.worksiteId, incident.id))
+    if (!obligation || (obligation.status !== "pending" && obligation.status !== "overdue")) continue
+    const [execution] = await db.select({ id: pdtpExecutions.id }).from(pdtpExecutions)
+      .where(eq(pdtpExecutions.obligationId, obligation.id)).limit(1)
+    if (execution) {
+      summary.skippedExistingExecution++
+      continue
+    }
+    const month = chileDateParts(milestone.at).month
+    try {
+      await assertPdtpPeriodOpen(program.id, incident.worksiteId, program.year, month)
+    } catch {
+      summary.skippedClosedPeriod++
+      continue
+    }
+    const actor = milestone.actorUserId ?? fallbackActor
+    if (!actor) {
+      summary.skippedNoActor++
+      continue
+    }
+    await reportPdtpObligation({
+      obligationId: obligation.id, executedQuantity: 1, evidenceText: milestone.evidenceText,
+      reportedAt: milestone.at, userId: actor, scope: "all",
+    })
+    summary.reported++
+  }
+}
+
+async function countCancelled(incidentId: string): Promise<number> {
+  const rows = await db.select({ id: pdtpObligations.id }).from(pdtpObligations).where(and(
+    eq(pdtpObligations.sourceType, "incident"),
+    eq(pdtpObligations.sourceId, incidentId),
+    eq(pdtpObligations.status, "cancelled"),
+  ))
+  return rows.length
 }
