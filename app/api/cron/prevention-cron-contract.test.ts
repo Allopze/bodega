@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   withCronLock: vi.fn(),
   work: vi.fn(),
   re20Sweep: vi.fn(),
+  pdtpGc: vi.fn(),
+  riskMapGc: vi.fn(),
 }))
 
 const ok = () => mocks.work()
@@ -46,6 +48,11 @@ vi.mock("@/lib/services/prevention-document-ack-reminders", () => ({ runPreventi
 vi.mock("@/lib/services/sst-alerts", () => ({ checkOverdueWeeklyAlerts: ok }))
 vi.mock("@/lib/services/deadline-reminders", () => ({ runDeadlineReminders: ok }))
 vi.mock("@/lib/services/pdtp/evidence-integrity", () => ({ scanPdtpEvidenceIntegrity: ok }))
+vi.mock("@/lib/services/pdtp/evidence-gc", () => ({
+  MIN_ORPHAN_AGE_MS: 60 * 60 * 1000,
+  cleanupPdtpEvidenceOrphans: (...args: unknown[]) => Reflect.apply(mocks.pdtpGc, null, args),
+  cleanupRiskMapOrphans: (...args: unknown[]) => Reflect.apply(mocks.riskMapGc, null, args),
+}))
 
 const { runCronJob } = await import("../../../scripts/cron-runner.mjs")
 
@@ -61,6 +68,8 @@ const ROUTES = {
   "deadline-reminders": { load: () => import("./deadline-reminders/route"), prefix: "DEADLINE_REMINDERS_" },
   // PREV-I13-C: escaneo de integridad de la evidencia PDTP.
   "pdtp-evidence-integrity": { load: () => import("./pdtp-evidence-integrity/route"), prefix: "PREVENTION_CRON_" },
+  // W5-GC (T7a): el barrido de huérfanos, agendado en modo de prueba (D13).
+  "pdtp-evidence-gc": { load: () => import("./pdtp-evidence-gc/route"), prefix: "PREVENTION_CRON_" },
 } as const
 
 type JobName = keyof typeof ROUTES
@@ -84,6 +93,10 @@ beforeEach(() => {
   mocks.work.mockResolvedValue({ skipped: 0 })
   mocks.withCronLock.mockImplementation(async (_name: string, run: () => Promise<unknown>) => run())
   mocks.re20Sweep.mockResolvedValue({ created: 0, reported: 0, errors: 0 })
+  const empty = { scanned: 0, deleted: 0, kept: 0, failed: 0, deletedNames: [] }
+  mocks.pdtpGc.mockImplementation(async () => { await mocks.work(); return empty })
+  mocks.riskMapGc.mockResolvedValue(empty)
+  delete process.env.PDTP_EVIDENCE_GC_DELETE
 })
 
 describe.each(Object.keys(ROUTES) as JobName[])("cron %s llamado por el runner", (job) => {
@@ -165,5 +178,53 @@ describe("cron pdtp-evidence-integrity (PREV-I13-C)", () => {
     const { body, exitCode } = await runThroughRunner("pdtp-evidence-integrity")
     expect(exitCode).toBe(0)
     expect(JSON.stringify(body).length).toBeLessThan(32 * 1024)
+  })
+})
+
+/* W5-GC (T7a, D13): el barrido se agenda, pero en modo de prueba. Borrar de
+ * verdad exige encender `PDTP_EVIDENCE_GC_DELETE=true` en el servicio `app`
+ * después de revisar una o dos semanas de filas `storage_orphan_sweep`. */
+describe("cron pdtp-evidence-gc (W5-GC)", () => {
+  async function callRoute(query = "") {
+    const { GET } = await import("./pdtp-evidence-gc/route")
+    const response = await GET(new NextRequest(`http://app:3000/api/cron/pdtp-evidence-gc${query}`, { headers: { authorization: "Bearer secreto" } }))
+    return { status: response.status, body: await response.json() }
+  }
+
+  it("sin la variable, corre en modo de prueba en los dos directorios", async () => {
+    const { status, body } = await callRoute()
+    expect(status).toBe(200)
+    expect(body).toMatchObject({ outcome: "success", dryRun: true })
+    expect(mocks.pdtpGc).toHaveBeenCalledWith(expect.objectContaining({ dryRun: true }))
+    expect(mocks.riskMapGc).toHaveBeenCalledWith(expect.objectContaining({ dryRun: true }))
+  })
+
+  it("con PDTP_EVIDENCE_GC_DELETE=true borra de verdad", async () => {
+    process.env.PDTP_EVIDENCE_GC_DELETE = "true"
+    const { body } = await callRoute()
+    expect(body).toMatchObject({ outcome: "success", dryRun: false })
+    expect(mocks.pdtpGc).toHaveBeenCalledWith(expect.objectContaining({ dryRun: false }))
+  })
+
+  it("?dryRun=true gana aunque la variable esté encendida", async () => {
+    process.env.PDTP_EVIDENCE_GC_DELETE = "true"
+    const { body } = await callRoute("?dryRun=true")
+    expect(body).toMatchObject({ dryRun: true })
+  })
+
+  it("rechaza una ventana de gracia menor a una hora", async () => {
+    const { status, body } = await callRoute("?olderThanMs=60000")
+    expect(status).toBe(400)
+    expect(body).toMatchObject({ ok: false })
+    expect(mocks.pdtpGc).not.toHaveBeenCalled()
+  })
+
+  it("la respuesta cabe en el límite del runner aunque haya miles de huérfanos", async () => {
+    const names = Array.from({ length: 5000 }, (_, i) => `${"x".repeat(21)}-${i}.pdf`)
+    mocks.pdtpGc.mockResolvedValue({ scanned: 5000, deleted: 5000, kept: 0, failed: 0, deletedNames: names })
+    const { body } = await callRoute()
+    expect(JSON.stringify(body).length).toBeLessThan(32 * 1024)
+    expect(body.pdtpEvidence).toMatchObject({ deleted: 5000 })
+    expect(body.pdtpEvidence.deletedSample).toHaveLength(20)
   })
 })

@@ -105,9 +105,6 @@ const JOBS = Object.freeze({
   },
   // PREV-C04: Prevención no tenía ningún job agendado. Comparten prefijo como
   // los tres de DTE: el runner sólo necesita saber qué contrato leer.
-  // `pdtp-evidence-gc` queda FUERA a propósito: su barrido puede borrar
-  // evidencia que aún respalda una acreditación, y no se agenda hasta que
-  // aterrice el arreglo que la preserva (PREV-B03).
   "pdtp-weekly-reminders": {
     url: "http://app:3000/api/cron/pdtp-weekly-reminders",
     timeoutMs: 5 * 60 * 1_000,
@@ -152,6 +149,14 @@ const JOBS = Object.freeze({
   },
   "pdtp-evidence-integrity": {
     url: "http://app:3000/api/cron/pdtp-evidence-integrity",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "PREVENTION_CRON_",
+  },
+  // W5-GC (T7a, D13): agendado en modo de prueba. El borrado real lo decide la
+  // ruta con `PDTP_EVIDENCE_GC_DELETE` en el servicio app, no este runner.
+  "pdtp-evidence-gc": {
+    url: "http://app:3000/api/cron/pdtp-evidence-gc",
     timeoutMs: 5 * 60 * 1_000,
     kind: "sync",
     codePrefix: "PREVENTION_CRON_",

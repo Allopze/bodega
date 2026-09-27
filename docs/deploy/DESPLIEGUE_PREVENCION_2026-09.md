@@ -120,7 +120,8 @@ La jefatura de Prevención avisa a los responsables **48 h antes**:
    - `prevention-incident-reminders` (cada hora);
    - `prevention-inspection-programs` (diario).
 
-   `pdtp-evidence-gc` **no** debe aparecer.
+   Desde la tanda T7a aparece además `pdtp-evidence-gc` (diario, 04:30), **en modo de
+   prueba**: ver "GC de evidencia en modo de prueba" más abajo.
 2. El workflow de GitHub Actions `prevention-inspection-programs.yml` ya no existe, así que la materialización de inspecciones corre una sola vez al día (desde el contenedor).
 3. Recorrido corto en `/prevencion/pdtp`:
    - registrar sin archivo muestra el mensaje de evidencia obligatoria;
@@ -130,4 +131,45 @@ La jefatura de Prevención avisa a los responsables **48 h antes**:
 ## 5. Qué no hacer
 
 - **No crear el programa 2027** hasta la tanda T5 del plan de pendientes. Hoy la creación anual parte de la Base 2026 y pierde configuración (PREV-C03).
-- No agendar `pdtp-evidence-gc` hasta la tanda T7 (barrido con auditoría y modo de prueba).
+- No encender `PDTP_EVIDENCE_GC_DELETE=true` sin haber revisado antes las filas del modo de prueba (ver abajo).
+
+## 6. GC de evidencia en modo de prueba (tanda T7a, W5-GC, D13)
+
+`pdtp-evidence-gc` barre los archivos huérfanos de `storage/pdtp-evidence/` y
+`storage/risk-map/`: los que ninguna fila de la base referencia (ejecuciones, plan
+de acción, historial de envíos, instancias programadas y planos) y que tienen más
+de una hora. La ventana de gracia no baja de una hora aunque se pida menos (la
+ruta responde 400).
+
+- **Agenda:** diario a las 04:30, después del respaldo nocturno (03:00 UTC), en
+  `scripts/cron-runner.mjs` y en el crontab del servicio `cron`.
+- **Modo:** de prueba mientras `PDTP_EVIDENCE_GC_DELETE` no valga `true` en el
+  servicio `app`. En modo de prueba no borra nada; la respuesta dice
+  `"dryRun": true` y cuenta en `deleted` lo que *habría* borrado.
+- **Constancia:** cada corrida que encuentra huérfanos deja una fila en
+  `audit_log` con `entity_type = 'storage_orphan_sweep'`, el directorio
+  (`entity_code`: `pdtp/evidence-gc` o `risk-map/evidence-gc`), el modo y hasta
+  500 nombres. Una corrida sin huérfanos no escribe nada.
+
+**Revisión antes de encender el borrado (1 a 2 semanas):**
+
+```sql
+SELECT created_at, entity_code, new_state::jsonb->>'dryRun' AS dry_run,
+       new_state::jsonb->>'deleted' AS candidatos, new_state::jsonb->'names' AS nombres
+FROM audit_log
+WHERE entity_type = 'storage_orphan_sweep'
+ORDER BY created_at DESC;
+```
+
+Para cada nombre candidato, confirmar que de verdad no lo usa nadie: que no lo
+sirva `/api/prevencion/pdtp/evidence/<nombre>` y que `pdtp-evidence-integrity` no
+lo reporte como perdido. Si un nombre aparece y se usa, **no encender**: hay un
+productor que no está en `collectPdtpEvidenceReferences` y hay que agregarlo ahí
+primero.
+
+**Encender el borrado real:** agregar `PDTP_EVIDENCE_GC_DELETE=true` al `.env` de
+producción y recrear `app` (`docker compose up -d --no-deps --force-recreate app`).
+La primera corrida siguiente deja una fila con `"dryRun": false`. Lo borrado sigue
+en el `storage.tar.gz` de los snapshots dentro de la retención. Para volver al modo
+de prueba, quitar la variable y recrear `app`. Una corrida manual en prueba, con la
+variable encendida, se pide con `?dryRun=true`.

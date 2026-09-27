@@ -83,6 +83,11 @@ services:
       # what actually put the values into the running app container.
       - CRON_SECRET=${CRON_SECRET:-}
       - CRON_ALLOWED_SOURCES=${CRON_ALLOWED_SOURCES:-}
+      # W5-GC (D13): el GC de evidencia PDTP corre a diario en modo de prueba.
+      # `true` habilita el borrado real; encenderlo sólo después de revisar una
+      # o dos semanas de filas `storage_orphan_sweep` en audit_log
+      # (docs/deploy/DESPLIEGUE_PREVENCION_2026-09.md).
+      - PDTP_EVIDENCE_GC_DELETE=${PDTP_EVIDENCE_GC_DELETE:-}
       - DTE_PORTAL_BASE_URL=${DTE_PORTAL_BASE_URL:-https://clientes.dtefacturaenlinea.cl/facturaenlinea}
       - DTE_PORTAL_RUT_USR=${DTE_PORTAL_RUT_USR:-}
       - DTE_PORTAL_RUT_EMP=${DTE_PORTAL_RUT_EMP:-}
@@ -309,8 +314,7 @@ services:
         # Prevención — PREV-C04: estos endpoints existían y nadie los llamaba.
         # Los avisos diarios salen entre 06:05 y 06:55, antes de la jornada y
         # desfasados de los de arriba. Todos deduplican por día/plazo, así que
-        # repetir una corrida no duplica avisos. El GC de evidencia PDTP queda
-        # fuera a propósito hasta que no pueda borrar evidencia vigente (B03).
+        # repetir una corrida no duplica avisos.
         # Programas de inspección: se materializan antes de que alguien abra la
         # pantalla del día.
         50 4 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-inspection-programs >/proc/1/fd/1 2>&1
@@ -318,6 +322,13 @@ services:
         # la base referencia existe y conserva su sha256. Sólo observa; la
         # alerta es el log de error del servicio.
         15 5 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs pdtp-evidence-integrity >/proc/1/fd/1 2>&1
+        # GC de huérfanos de evidencia PDTP y planos de riesgo (W5-GC, D13) —
+        # 04:30, después del respaldo nocturno (03:00 UTC): si algún día borra
+        # algo que no debía, el snapshot de esa noche todavía lo tiene. Corre en
+        # MODO DE PRUEBA salvo PDTP_EVIDENCE_GC_DELETE=true en el servicio app;
+        # cada corrida con huérfanos deja una fila storage_orphan_sweep en
+        # audit_log.
+        30 4 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs pdtp-evidence-gc >/proc/1/fd/1 2>&1
         5 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-capa-reminders >/proc/1/fd/1 2>&1
         10 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-training-reminders >/proc/1/fd/1 2>&1
         20 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-cphs-alerts >/proc/1/fd/1 2>&1
