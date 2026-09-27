@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   verifyCronSecret: vi.fn(),
   withCronLock: vi.fn(),
   work: vi.fn(),
+  re20Sweep: vi.fn(),
 }))
 
 const ok = () => mocks.work()
@@ -37,6 +38,9 @@ vi.mock("@/lib/services/prevention-capa-reminders", () => ({ runPreventionCapaRe
 vi.mock("@/lib/services/prevention-training-obligations", () => ({ runPreventionTrainingObligations: ok }))
 vi.mock("@/lib/services/prevention-cphs-reminders", () => ({ runPreventionCphsReminders: ok }))
 vi.mock("@/lib/services/prevention-incident-reminders", () => ({ runPreventionIncidentReminders: ok }))
+vi.mock("@/lib/services/pdtp-adapters/incident-accreditation-connector", () => ({
+  reconcileIncidentRe20Obligations: (...args: unknown[]) => Reflect.apply(mocks.re20Sweep, null, args),
+}))
 vi.mock("@/lib/services/prevention-inspection-scheduler", () => ({ materializeProgramRuns: ok, alertCriticalFindingsWithoutCapa: ok }))
 vi.mock("@/lib/services/prevention-document-ack-reminders", () => ({ runPreventionDocumentAckReminders: ok }))
 vi.mock("@/lib/services/sst-alerts", () => ({ checkOverdueWeeklyAlerts: ok }))
@@ -79,6 +83,7 @@ beforeEach(() => {
   // capacitación: una corrida buena no puede leerse como un disparo saltado.
   mocks.work.mockResolvedValue({ skipped: 0 })
   mocks.withCronLock.mockImplementation(async (_name: string, run: () => Promise<unknown>) => run())
+  mocks.re20Sweep.mockResolvedValue({ created: 0, reported: 0, errors: 0 })
 })
 
 describe.each(Object.keys(ROUTES) as JobName[])("cron %s llamado por el runner", (job) => {
@@ -106,6 +111,28 @@ describe.each(Object.keys(ROUTES) as JobName[])("cron %s llamado por el runner",
     expect(body).toMatchObject({ ok: false, outcome: "failed", code: `${prefix}FAILED` })
     expect(exitCode).toBe(1)
     expect(log.mock.calls.flat().join(" ")).not.toContain("DTE_CRON_RUNNER_CONTRACT")
+  })
+})
+
+/* D4 (T3): el barrido RE-20 corre cada hora dentro del cron de recordatorios
+ * de incidentes, bajo el mismo candado. Una falla del barrido no puede tumbar
+ * los recordatorios de plazos legales. */
+describe("cron prevention-incident-reminders con el barrido RE-20 (D4)", () => {
+  it("encadena el barrido y devuelve su resumen", async () => {
+    mocks.re20Sweep.mockResolvedValue({ created: 2, reported: 1, errors: 0 })
+    const { status, body, exitCode } = await runThroughRunner("prevention-incident-reminders")
+    expect(status).toBe(200)
+    expect(exitCode).toBe(0)
+    expect(mocks.re20Sweep).toHaveBeenCalledTimes(1)
+    expect(body).toMatchObject({ outcome: "success", re20Obligations: { created: 2, reported: 1 } })
+  })
+
+  it("si el barrido lanza, los recordatorios igual cuentan como corrida buena", async () => {
+    mocks.re20Sweep.mockRejectedValue(new Error("boom"))
+    const { status, body, exitCode } = await runThroughRunner("prevention-incident-reminders")
+    expect(status).toBe(200)
+    expect(exitCode).toBe(0)
+    expect(body).toMatchObject({ outcome: "success", re20Obligations: { failed: true } })
   })
 })
 

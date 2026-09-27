@@ -61,7 +61,19 @@ silencio; por eso conviene revisarlos cuando algo "dejó de actualizarse solo".
   pérdidas; la alerta es la línea `[pdtp/evidence-integrity]` con nivel `error` en el log de
   `app`, con conteos y hasta 20 rutas con su dueño. Lo perdido se recupera del
   `storage.tar.gz.gpg` nocturno mientras siga dentro de la retención.
+  `prevention-incident-reminders` (cada hora) encadena, bajo el mismo candado, el barrido
+  de reparación RE-20 (`reconcileIncidentRe20Obligations`, tanda T3/D4): crea las
+  obligaciones 66-78 que falten de incidentes creados desde la activación del programa y
+  reporta los hitos ya registrados con su fecha real, sólo si la obligación no tiene
+  ejecución y el mes está abierto. Su resumen va en `re20Obligations` de la respuesta; una
+  falla suya queda como `{ failed: true }` y en el log, sin tumbar los recordatorios.
 - `migrate`, `sync-rbac`, `normalize-epp-skus`: `restart: "no"`, son de un solo tiro. Que estén detenidos es lo normal.
+- `revert-pdtp-revoked-approvals` (tanda T3, PREV-B01-BACKFILL): de un solo tiro y **no** está
+  en el deploy. Por defecto sólo imprime el reporte JSON de las aprobaciones que la revocación
+  anterior al fix de B01 dejó vivas. Aplicar, tras revisar el reporte con Prevención y con
+  respaldo previo: `docker compose run --rm revert-pdtp-revoked-approvals node
+  scripts/revert-pdtp-revoked-approvals.mjs --apply --actor <userId>`. Omite y lista meses y
+  programas cerrados, y declara el período ciego anterior al 03-09-2026.
 
 ## Objetivos de servicio
 
