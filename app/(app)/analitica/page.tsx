@@ -87,8 +87,10 @@ export default async function AnaliticaPage({
         }
       />
 
-      {/* `grid-cols-1` (= `minmax(0, 1fr)`): con la pista `auto` los filtros
-          ensanchaban la columna 141 px más allá del pozo a 320 px. */}
+      {/* `grid-cols-1` (= `minmax(0, 1fr)`) aquí y en cada sección: con la
+          pista `auto` los filtros ensanchaban la columna 141 px más allá del
+          pozo a 320 px, y las tablas de las tarjetas —que desplazan dentro de
+          su `TableRoot`— otros 104 px. */}
       <div className="grid grid-cols-1 gap-5">
         <AnalyticsFiltersBar
           filters={data.filters}
@@ -99,7 +101,7 @@ export default async function AnaliticaPage({
 
         {/* 4 columnas y no 5: la sección tiene cuatro tarjetas y `xl:grid-cols-5`
             dejaba una columna vacía a la derecha en pantallas grandes. */}
-        <section aria-label="KPIs ejecutivos" className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <section aria-label="KPIs ejecutivos" className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <KpiCard
             icon={<ShoppingCart size={18} />}
             label="Gasto total"
@@ -146,7 +148,7 @@ export default async function AnaliticaPage({
           />
         </section>
 
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
           <Card>
             <CardHeader>
               <CardTitle>Tendencia mensual de gasto</CardTitle>
@@ -165,7 +167,7 @@ export default async function AnaliticaPage({
           </Card>
         </section>
 
-        <section className="grid gap-5 xl:grid-cols-2">
+        <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           <Card>
             <CardHeader>
               <CardTitle>Faenas con mayor gasto</CardTitle>
@@ -184,7 +186,7 @@ export default async function AnaliticaPage({
           </Card>}
         </section>
 
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <Card>
             <CardHeader>
               <CardTitle>Alertas accionables</CardTitle>
@@ -232,7 +234,7 @@ export default async function AnaliticaPage({
           </Card>
         </section>
 
-        <section className="grid gap-5 xl:grid-cols-2">
+        <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           <RankingTable
             title="Top proveedores"
             headers={["Proveedor", "Módulo", "Eventos", "Monto"]}
@@ -263,7 +265,7 @@ export default async function AnaliticaPage({
           />
         </section>
 
-        <section className="grid gap-5 xl:grid-cols-2">
+        <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           <RankingTable
             title="Rotación de bodega"
             headers={["Producto", "SKU", "Salidas", "Movimientos"]}

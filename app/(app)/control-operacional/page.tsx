@@ -205,7 +205,10 @@ export default async function OperationalControlPage({
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+      {/* `grid-cols-1` (= `minmax(0, 1fr)`) bajo xl: con la pista `auto` la
+          tabla de activos —que desplaza dentro de su `TableRoot`— ensanchaba
+          la columna 296 px fuera del pozo a 768 y 1024 px. */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Card>
           <CardHeader>
             <CardTitle as="h2">Activos y trabajo del período</CardTitle>
