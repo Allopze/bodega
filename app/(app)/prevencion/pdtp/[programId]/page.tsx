@@ -38,7 +38,7 @@ import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-she
 import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
 import { PdtpImportExcelDialog } from "../pdtp-import-excel-dialog"
 import { countPdtpFulfillmentBacklog } from "@/lib/services/pdtp/backlog"
-import { resolveSelectedWorksiteId } from "../pdtp-context"
+import { buildPdtpProgramHref, resolveSelectedWorksiteId, withYearCloseDeactivatedWorksites } from "../pdtp-context"
 import type { PdtpActivityStatusFilter } from "@/lib/services/pdtp/period"
 import { pdtpChangeLogCategory } from "@/lib/services/pdtp/change-log-labels"
 import { CoverageSummaryCard } from "./coverage-summary-card"
@@ -101,10 +101,19 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const worksiteIds: string[] | "all" =
     scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
   const coverageScope = worksiteIds === "all" ? undefined : { worksiteIds }
-  const [worksites, programWorksites] = await Promise.all([
+  // PREV-C03.6: el cierre anual sólo se ofrece sobre la versión activa de un
+  // año que ya terminó (Chile). Durante el año no hay nada que mostrar. Se lee
+  // antes de elegir la faena: una faena dada de baja que todavía debe meses
+  // tiene que poder elegirse para cerrarlos (decisión 2026-09-26).
+  const canReadYearClose = can(session, "prevention:pdtp:lifecycle:manage") || can(session, "prevention:pdtp:close_period")
+  const [accessibleWorksites, programWorksites, yearClose] = await Promise.all([
     listAccessiblePdtpProgramWorksites(programId, worksiteIds),
     listPdtpProgramWorksites(programId),
+    program.status === "active" && canReadYearClose && currentPeriod.year > program.year
+      ? getPdtpYearCloseReadiness(programId)
+      : Promise.resolve(null),
   ])
+  const worksites = withYearCloseDeactivatedWorksites(accessibleWorksites, yearClose?.missing, worksiteIds)
   const selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, worksites)
   const [[view, indicators, integral, declaredNotApplicable], approvalProgress] = await Promise.all([
     selectedWorksiteId
@@ -162,11 +171,6 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
     ? undefined
     : worksites.map((worksite) => worksite.id)
   const backlog = await countPdtpFulfillmentBacklog(programId, { worksiteIds: backlogWorksiteIds })
-  // PREV-C03.6: el cierre anual sólo se ofrece sobre la versión activa de un
-  // año que ya terminó (Chile). Durante el año no hay nada que mostrar.
-  const yearClose = program.status === "active" && canManageLifecycle && currentPeriod.year > program.year
-    ? await getPdtpYearCloseReadiness(programId)
-    : null
   const hasDigestRevisionIssue = backlog.digestDrift || backlog.digestVerificationUnavailable
   const showRevisionCta = shouldOfferPdtpRevision({
     digestDrift: hasDigestRevisionIssue,
@@ -338,7 +342,14 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
           program={program}
           permissions={{ canSubmitReview, canApprove, canSignLegal, canActivate, canManageLifecycle }}
           submitBlockers={submitBlockers}
-          yearClose={yearClose ? { year: yearClose.year, canClose: yearClose.canClose, blockers: yearClose.blockers } : null}
+          yearClose={yearClose && canManageLifecycle ? {
+            year: yearClose.year,
+            canClose: yearClose.canClose,
+            blockers: yearClose.blockers,
+            deactivatedWorksites: yearClose.missing
+              .filter((row) => row.deactivated && worksites.some((worksite) => worksite.id === row.worksiteId))
+              .map((row) => ({ name: row.worksiteName, href: buildPdtpProgramHref(programId, { hoja: sheetCode, faena: row.worksiteId }) })),
+          } : null}
           approvalSteps={approvalProgress.map((step) => ({
             id: step.id,
             code: step.code,

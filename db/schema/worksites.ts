@@ -17,6 +17,13 @@ export const worksites = pgTable("worksites", {
    */
   adminContratoLabel: text("admin_contrato_label"),
   isActive:  boolean("is_active").notNull().default(true),
+  /**
+   * Cuándo se cerró la faena (null mientras opera). Lo fija y lo limpia
+   * `setWorksiteActive`. El cierre anual del PDTP le exige los meses completos
+   * anteriores a esta fecha. Las bajas anteriores a la columna quedan en null:
+   * de ellas no se sabe la fecha y no se les exige nada.
+   */
+  deactivatedAt: timestamp("deactivated_at", { withTimezone: true, mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [

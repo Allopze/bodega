@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildPdtpActivitiesHref, buildPdtpProgramHref, resolvePdtpActivitiesReturnHref, resolvePdtpYear, resolveSelectedWorksiteId } from "./pdtp-context"
+import { buildPdtpActivitiesHref, buildPdtpProgramHref, resolvePdtpActivitiesReturnHref, resolvePdtpYear, resolveSelectedWorksiteId, withYearCloseDeactivatedWorksites } from "./pdtp-context"
 
 describe("PDTP context", () => {
   it("usa año calendario y descarta parámetros inválidos", () => {
@@ -36,5 +36,17 @@ describe("PDTP context", () => {
     expect(resolveSelectedWorksiteId(undefined, [{ id: "faena-1" }])).toBe("faena-1")
     expect(resolveSelectedWorksiteId(undefined, [{ id: "faena-1" }, { id: "faena-2" }])).toBeUndefined()
     expect(resolveSelectedWorksiteId("faena-2", [{ id: "faena-1" }, { id: "faena-2" }])).toBe("faena-2")
+  })
+
+  it("suma las faenas dadas de baja con meses por cerrar, dentro del alcance y rotuladas", () => {
+    const missing = [
+      { worksiteId: "faena-1", worksiteName: "Faena 1", months: [12] },
+      { worksiteId: "faena-baja", worksiteName: "Faena Baja", worksiteCode: "FB", months: [5], deactivated: true as const },
+      { worksiteId: "faena-ajena", worksiteName: "Faena Ajena", worksiteCode: "FA", months: [5], deactivated: true as const },
+    ]
+    expect(withYearCloseDeactivatedWorksites([{ id: "faena-1", name: "Faena 1", code: "F1" }], missing, ["faena-1", "faena-baja"]))
+      .toEqual([{ id: "faena-1", name: "Faena 1", code: "F1" }, { id: "faena-baja", name: "Faena Baja (dada de baja)", code: "FB" }])
+    expect(withYearCloseDeactivatedWorksites([{ id: "faena-1", name: "Faena 1", code: "F1" }], missing, "all")).toHaveLength(3)
+    expect(withYearCloseDeactivatedWorksites([{ id: "faena-1", name: "Faena 1", code: "F1" }], null, "all")).toHaveLength(1)
   })
 })
