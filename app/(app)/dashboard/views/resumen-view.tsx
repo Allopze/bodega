@@ -216,7 +216,11 @@ export async function ResumenView({
               contra su meta y el pulso de la operación. El detalle del PDTP
               —por faena, por actividad— vive en la pestaña de Prevención; A5
               impide que la misma cifra tenga dos representaciones acá. */}
-          <div className="grid gap-6 xl:grid-cols-2">
+          {/* `grid-cols-1` = `minmax(0, 1fr)`. Sin columnas declaradas la pista
+              implícita es `auto` y crece hasta el ancho fijo en px que recharts
+              midió para el gráfico: a 390 px las dos tarjetas se salían 9 px
+              del pozo del shell. */}
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             {/* `percent === null` es "sin acreditación todavía", no 0%: dibujar
                 un arco vacío afirmaría un incumplimiento que nadie midió. */}
             {canViewPdtp && pdtpSummary?.percent != null ? (

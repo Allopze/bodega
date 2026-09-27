@@ -28,4 +28,27 @@ describe("PageHeader", () => {
     expect(getByText("Biblioteca preventiva")).toBeDefined()
     expect(getByRole("button", { name: "Nueva carpeta" })).toBeDefined()
   })
+
+  it("en móvil deja envolver también a las acciones que la página agrupa en su propio <div>", () => {
+    // Diez páginas pasan `actions={<div className="flex items-center gap-2">…</div>}`.
+    // Ese div no envolvía, así que a 390 px su fila de botones se salía del
+    // pozo del shell (7 px en /prevencion/pdtp: "Nuevo programa" cortado).
+    const { getByRole } = render(
+      <ShellHeaderProvider>
+        <PageHeader
+          title="Programa de trabajo"
+          actions={(
+            <div className="flex items-center gap-2">
+              <button type="button">Ver actividades</button>
+              <button type="button">Nuevo programa</button>
+            </div>
+          )}
+        />
+      </ShellHeaderProvider>,
+    )
+
+    const mobileActions = getByRole("button", { name: "Nuevo programa" }).parentElement!.parentElement!
+    expect(mobileActions).toHaveClass("lg:hidden")
+    expect(mobileActions).toHaveClass("[&>div]:flex-wrap")
+  })
 })
