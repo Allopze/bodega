@@ -1,8 +1,8 @@
-import { test, expect } from "@playwright/test"
+import { test, expect, type Page } from "@playwright/test"
 import { login } from "./helpers"
 
 /**
- * Reflow en los anchos que faltaban: 320, 768 y 1024 (TASK-UI-004 y 014).
+ * Reflow en 320, 390, 768 y 1024 px (TASK-UI-004 y 014).
  *
  * La auditoría certificó 1920 y 390 con el capturador —cero scroll horizontal—
  * y dejó pendientes los otros tres. No era una omisión menor: 320 es donde el
@@ -15,6 +15,7 @@ import { login } from "./helpers"
  */
 const ANCHOS = [
   { name: "320", width: 320, height: 568 },
+  { name: "390", width: 390, height: 844 },
   { name: "768", width: 768, height: 1024 },
   { name: "1024", width: 1024, height: 768 },
 ] as const
@@ -32,7 +33,79 @@ const PANTALLAS = [
   { path: "/prevencion/capa", name: "CAPA" },
   { path: "/prevencion/pdtp", name: "PDTP Programas" },
   { path: "/admin/usuarios", name: "Usuarios" },
+  // Encontradas al barrer las 151 rutas estáticas midiendo el pozo: cada una
+  // desbordaba por una causa distinta de las de arriba (tabla sin `TableRoot`,
+  // pestañas sin scroll propio, retícula de filtros con pista `auto`, acciones
+  // del TopBar a 1024 px).
+  { path: "/admin/contenedores", name: "Contenedores" },
+  { path: "/analitica", name: "Analítica" },
+  { path: "/prevencion/ppa", name: "PPA" },
+  { path: "/prevencion/higiene", name: "Higiene" },
+  { path: "/admin/pdtp-catalogos", name: "Catálogos PDTP" },
 ] as const
+
+/**
+ * Qué se mide, y por qué no basta con `documentElement`.
+ *
+ * El documento no desplaza nada: el contenido vive dentro del pozo del shell
+ * (`[data-shell-scroll]`, ver `components/layout/app-shell.tsx`), que es el
+ * contenedor de scroll y lleva `overflow-x-hidden` como salvaguarda. Así, un
+ * hijo más ancho que la ventana no produce scroll horizontal en el documento
+ * —la versión anterior de esta prueba estaba verde— sino que queda **recortado**
+ * por el pozo: el usuario pierde la columna derecha sin forma de alcanzarla,
+ * que es peor que el scroll que WCAG 1.4.10 prohíbe. Se midió 129 px recortados
+ * en Solicitudes a 320 px con esta prueba en verde.
+ *
+ * Por eso se miden los dos. Para el pozo, `scrollWidth` sigue reportando el
+ * ancho real del contenido aunque `overflow-x-hidden` lo oculte.
+ *
+ * Cuando algo desborda, el mensaje nombra además los elementos culpables: los
+ * de más afuera cuyo borde derecho excede el pozo sin estar dentro de un
+ * contenedor que ya desplace en horizontal (una tabla ancha dentro de su
+ * `TableRoot` es correcta y no se reporta).
+ */
+async function medirDesborde(page: Page) {
+  return page.evaluate(() => {
+    const doc = document.documentElement
+    const pozo = document.querySelector<HTMLElement>("[data-shell-scroll]")
+    const documento = doc.scrollWidth - doc.clientWidth
+    if (!pozo) return { documento, pozo: null as number | null, culpables: [] as string[] }
+
+    const limite = pozo.getBoundingClientRect().left + pozo.clientWidth
+    const desplazaEnX = (el: Element) => {
+      const ox = getComputedStyle(el).overflowX
+      return ox === "auto" || ox === "scroll" || ox === "hidden" || ox === "clip"
+    }
+    const culpables: string[] = []
+    const visitar = (el: Element) => {
+      for (const hijo of Array.from(el.children)) {
+        const rect = hijo.getBoundingClientRect()
+        if (rect.width === 0 && rect.height === 0) {
+          visitar(hijo)
+          continue
+        }
+        if (rect.right > limite + 1) {
+          // Se baja hasta el nodo más profundo que todavía desborda: ese es
+          // el que hay que arreglar, no la retícula que lo contiene.
+          const hijosQueDesbordan = Array.from(hijo.children).some(
+            (n) => n.getBoundingClientRect().right > limite + 1,
+          )
+          if (hijosQueDesbordan && !desplazaEnX(hijo)) {
+            visitar(hijo)
+          } else {
+            const etiqueta = `${hijo.tagName.toLowerCase()}.${String(hijo.getAttribute("class") ?? "").split(" ").slice(0, 6).join(".")}`
+            culpables.push(`${etiqueta} (+${Math.round(rect.right - limite)}px)`)
+          }
+          if (culpables.length >= 5) return
+          continue
+        }
+        if (!desplazaEnX(hijo)) visitar(hijo)
+      }
+    }
+    visitar(pozo)
+    return { documento, pozo: pozo.scrollWidth - pozo.clientWidth, culpables }
+  })
+}
 
 for (const ancho of ANCHOS) {
   test.describe(`Reflow ${ancho.name} px`, () => {
@@ -45,13 +118,16 @@ for (const ancho of ANCHOS) {
         await page.goto(pantalla.path)
         await page.waitForLoadState("networkidle").catch(() => undefined)
 
-        const overflow = await page.evaluate(() => {
-          const doc = document.documentElement
-          // +1 absorbe el redondeo subpíxel del propio navegador; por encima de
-          // eso es desbordamiento real, no error de medición.
-          return doc.scrollWidth - doc.clientWidth
-        })
-        if (overflow > 1) desbordan.push(`${pantalla.name}: ${overflow}px`)
+        const medida = await medirDesborde(page)
+        // Sin pozo la medición del pozo no dice nada: si el shell cambia de
+        // forma, la prueba tiene que enterarse en vez de pasar en blanco.
+        expect(medida.pozo, `${pantalla.name}: no se encontró [data-shell-scroll]`).not.toBeNull()
+        // +1 absorbe el redondeo subpíxel del propio navegador; por encima de
+        // eso es desbordamiento real, no error de medición.
+        if (medida.documento > 1) desbordan.push(`${pantalla.name}: documento ${medida.documento}px`)
+        if ((medida.pozo ?? 0) > 1) {
+          desbordan.push(`${pantalla.name}: pozo ${medida.pozo}px ← ${medida.culpables.join(", ") || "sin culpable localizado"}`)
+        }
       }
 
       expect(desbordan).toEqual([])
