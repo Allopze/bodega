@@ -9,6 +9,12 @@ export type { PdtpExecutableInstanceKind, PdtpExecutableInstanceStatus, PdtpExec
 export { materializePdtpScheduledInstances, reconcilePdtpScheduledInstances, buildPdtpScheduledInstanceRows, derivePdtpScheduledInstanceStatus, pdtpScheduledInstanceIdempotencyKey } from "./scheduled-instances"
 export type { PdtpScheduledInstanceSeed, PdtpScheduledInstanceDerivedStatus } from "./scheduled-instances"
 export { getPdtpScheduledInstanceStartContext, pdtpScheduledExecutionStartIdempotencyKey, resolvePdtpScheduledInstrument, startPdtpScheduledInstance, assertPdtpScheduledInstanceTransition, recordPdtpScheduledInstanceOutcome } from "./scheduled-execution"
+export {
+  reviewPdtpScheduledInstanceOutcome,
+  withdrawPdtpScheduledInstanceOutcomeRequest,
+  listPendingPdtpScheduledInstanceOutcomes,
+  type PdtpPendingScheduledOutcome,
+} from "./scheduled-outcome-review"
 export type { PdtpScheduledInstanceAction } from "./scheduled-execution"
 export { assertPdtpTriggerEventSupported, pdtpTriggerEventIdempotencyKey, recordPdtpTriggerEvent, reconcilePdtpTriggerEvents } from "./trigger-events"
 export { calculatePdtpScheduledInstanceCompliance } from "./scheduled-compliance"

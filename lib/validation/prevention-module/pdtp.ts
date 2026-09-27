@@ -170,6 +170,22 @@ export const pdtpScheduledInstanceOutcomeSchema = z.object({
   reason: z.string().trim().max(2000).nullable().optional(),
 })
 
+/** PREV-C07 sobre ocurrencias: revisión de un "no aplica" o una cancelación. */
+export const pdtpScheduledInstanceOutcomeReviewSchema = z.object({
+  requestId: z.string().trim().min(1, "Solicitud requerida"),
+  decision: z.enum(["approve", "reject"]),
+  reason: z.string().trim().max(1000).optional().or(z.literal("")),
+}).superRefine((value, ctx) => {
+  if (value.decision === "reject" && (value.reason ?? "").trim().length < 10) {
+    ctx.addIssue({ code: "custom", path: ["reason"], message: "El motivo del rechazo debe tener al menos 10 caracteres" })
+  }
+})
+
+export const pdtpScheduledInstanceOutcomeWithdrawSchema = z.object({
+  requestId: z.string().trim().min(1, "Solicitud requerida"),
+  reason: z.string().trim().max(1000).optional().or(z.literal("")),
+})
+
 export const pdtpReminderRuleSchema = z.object({
   offsetValue: z.coerce.number().int().min(-8760).max(8760),
   offsetUnit: z.enum(["hour", "day"]).default("day"),

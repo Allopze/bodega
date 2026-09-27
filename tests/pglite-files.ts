@@ -268,5 +268,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-scheduled-start.test.ts",
   // T3 (fuentes: instancias e integración).
   "lib/__tests__/pdtp-scheduled-instance-integrity.test.ts",
+  // C07 sobre ocurrencias: "no aplica" y cancelación en revisión.
+  "lib/__tests__/pdtp-scheduled-instance-outcome-review.test.ts",
   "scripts/__tests__/revert-pdtp-revoked-approvals.test.ts",
 ]

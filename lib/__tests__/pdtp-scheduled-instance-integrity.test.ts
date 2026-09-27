@@ -49,6 +49,7 @@ afterAll(async () => {
 
 const { recordPdtpFulfillmentEvent, recordPdtpFulfillmentRevocation } = await import("@/lib/services/pdtp/fulfillment")
 const { recordPdtpScheduledInstanceOutcome } = await import("@/lib/services/pdtp/scheduled-execution")
+const { reviewPdtpScheduledInstanceOutcome } = await import("@/lib/services/pdtp/scheduled-outcome-review")
 const { approvePdtpExecution, rejectPdtpExecution } = await import("@/lib/services/pdtp/executions")
 const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
 const { revokePdtpAccreditationWithClient } = await import("@/lib/services/pdtp/accreditation")
@@ -97,6 +98,13 @@ async function closeMonth(month: number) {
   })
 }
 
+/** PREV-C07 (0334): "no aplica" y cancelar nacen en revisión; otra persona aprueba. */
+async function approvePendingOutcome(instanceId: string) {
+  const [request] = await inMemoryDb.select().from(schema.pdtpScheduledInstanceOutcomeRequests)
+    .where(eq(schema.pdtpScheduledInstanceOutcomeRequests.instanceId, instanceId))
+  return reviewPdtpScheduledInstanceOutcome({ requestId: request!.id, decision: "approve" }, APPROVER, "all")
+}
+
 async function instance(id: string) {
   const [row] = await inMemoryDb.select().from(schema.pdtpScheduledInstances).where(eq(schema.pdtpScheduledInstances.id, id))
   return row!
@@ -133,6 +141,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpFulfillmentEventTargets)
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpExecutions)
+  await inMemoryDb.delete(schema.pdtpScheduledInstanceOutcomeRequests)
   await inMemoryDb.delete(schema.pdtpScheduledInstances)
   await inMemoryDb.delete(schema.pdtpActivityExecutionConfigs)
   await inMemoryDb.delete(schema.pdtpActivitySchedule)
@@ -228,14 +237,19 @@ describe("vía manual (PREV-I08-c)", () => {
     await expect(recordPdtpScheduledInstanceOutcome({ instanceId: INST_A, action: "cancel", userId: EXECUTOR, reason: "Duplicada" }))
       .rejects.toThrow(/motivo de cancelación debe tener al menos 10 caracteres/)
     expect((await instance(INST_A)).status).toBe("pending")
-    const cancelled = await recordPdtpScheduledInstanceOutcome({ instanceId: INST_A, action: "cancel", userId: EXECUTOR, reason: "Duplicada con la ocurrencia del 20" })
-    expect(cancelled.status).toBe("cancelled")
+    const requested = await recordPdtpScheduledInstanceOutcome({ instanceId: INST_A, action: "cancel", userId: EXECUTOR, reason: "Duplicada con la ocurrencia del 20" })
+    // PREV-C07 (0334): queda en revisión hasta que otra persona la aprueba.
+    expect(requested.status).toBe("pending")
+    await approvePendingOutcome(INST_A)
+    expect((await instance(INST_A)).status).toBe("cancelled")
   })
 
   it("con el mes abierto, 'no aplica' sigue funcionando", async () => {
     await seedConfig({ connector: "inspections" })
-    const updated = await recordPdtpScheduledInstanceOutcome({ instanceId: INST_A, action: "not_applicable", userId: EXECUTOR, reason: "La faena estuvo detenida todo el mes" })
-    expect(updated.status).toBe("not_applicable")
+    const requested = await recordPdtpScheduledInstanceOutcome({ instanceId: INST_A, action: "not_applicable", userId: EXECUTOR, reason: "La faena estuvo detenida todo el mes" })
+    expect(requested.outcomeRequestId).toBeTruthy()
+    await approvePendingOutcome(INST_A)
+    expect((await instance(INST_A)).status).toBe("not_applicable")
   })
 })
 
@@ -370,7 +384,8 @@ describe("revocación (PREV-I08-b)", () => {
   it("revocar una ejecución enlazada a una ocurrencia cancelada no la reabre", async () => {
     await seedConfig({ connector: "campaigns" })
     await fact({ sourceType: "campana", sourceId: "camp-1", day: "03-02" })
-    await recordPdtpScheduledInstanceOutcome({ instanceId: INST_A, action: "cancel", userId: EXECUTOR, reason: "Duplicada con otra" })
+    await recordPdtpScheduledInstanceOutcome({ instanceId: INST_A, action: "cancel", userId: EXECUTOR, reason: "Duplicada con otra ocurrencia" })
+    await approvePendingOutcome(INST_A)
     const execution = await executionForSource("camp-1")
     await approvePdtpExecution(execution.id, APPROVER, "all")
     expect((await instance(INST_A)).status).toBe("cancelled")

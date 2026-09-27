@@ -2,18 +2,28 @@
 
 import { revalidatePath } from "next/cache"
 import { ZodError } from "zod"
-import { guardAuth } from "@/lib/auth/can"
+import { guardAuth, guardPermission } from "@/lib/auth/can"
 import type { Permission } from "@/modules/permissions"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { assertWorksiteAccess } from "@/lib/services/pdtp/helpers"
 import { safeActionMessage } from "@/lib/action-error"
 import type { ActionState } from "@/lib/validation/prevention"
-import { pdtpScheduledInstanceOutcomeSchema, pdtpScheduledInstanceStartSchema } from "@/lib/validation/prevention"
+import {
+  pdtpScheduledInstanceOutcomeReviewSchema,
+  pdtpScheduledInstanceOutcomeSchema,
+  pdtpScheduledInstanceOutcomeWithdrawSchema,
+  pdtpScheduledInstanceStartSchema,
+} from "@/lib/validation/prevention"
 import {
   getPdtpScheduledInstanceStartContext,
   recordPdtpScheduledInstanceOutcome,
   startPdtpScheduledInstance,
 } from "@/lib/services/pdtp/scheduled-execution"
+import {
+  reviewPdtpScheduledInstanceOutcome,
+  withdrawPdtpScheduledInstanceOutcomeRequest,
+} from "@/lib/services/pdtp/scheduled-outcome-review"
+import type { WorksiteScope } from "@/lib/services/pdtp/helpers"
 
 function fail(error: unknown): ActionState {
   if (error instanceof ZodError) {
@@ -61,10 +71,19 @@ export async function startPdtpScheduledInstanceAction(input: unknown): Promise<
   }
 }
 
+function scopeOf(session: Parameters<typeof resolveWorksiteScope>[0]): WorksiteScope {
+  const resolved = resolveWorksiteScope(session)
+  return resolved.mode === "all" ? "all" : resolved.mode === "none" ? [] : resolved.ids
+}
+
 /**
  * Registra envío, "no aplica" o cancelación de una ocurrencia (PREV-I08-c).
  * Completar no se ofrece: la ocurrencia se cumple al aprobar su ejecución en
  * el PDTP (D19). Se autentica antes de validar, como la acción de inicio.
+ *
+ * PREV-C07 (0334): "no aplica" y cancelar quedan en revisión; la respuesta lo
+ * dice (`pendingReview`) para que la pantalla no anuncie un cambio que todavía
+ * no ocurrió.
  */
 export async function recordPdtpScheduledInstanceOutcomeAction(input: unknown): Promise<ActionState> {
   const guard = await guardAuth()
@@ -94,8 +113,59 @@ export async function recordPdtpScheduledInstanceOutcomeAction(input: unknown): 
     })
     revalidatePath("/pendientes")
     revalidatePath(`/prevencion/pdtp/${updated.programId}`)
+    if (updated.outcomeRequestId) {
+      revalidatePath("/prevencion/pdtp/aprobaciones")
+      return {
+        ok: true,
+        message: "Quedó en revisión: el cumplimiento no cambia hasta que otra persona con permiso de aprobación lo apruebe.",
+        data: { instanceId: updated.id, status: updated.status, outcomeRequestId: updated.outcomeRequestId, pendingReview: true },
+      }
+    }
     return { ok: true, data: { instanceId: updated.id, status: updated.status } }
   } catch (error) {
     return fail(error)
+  }
+}
+
+/**
+ * PREV-C07 (0334): aprueba o rechaza el "no aplica" o la cancelación de una
+ * ocurrencia. Mismo permiso que revisar el N/A de una celda
+ * (`prevention:pdtp:approve`); la segregación la impone el servicio.
+ */
+export async function reviewPdtpScheduledInstanceOutcomeAction(formData: FormData): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:approve")
+  if (guard.error) return guard.error
+  const parsed = pdtpScheduledInstanceOutcomeReviewSchema.safeParse({
+    requestId: formData.get("requestId") ?? "",
+    decision: formData.get("decision") ?? "",
+    reason: formData.get("reason") ?? "",
+  })
+  if (!parsed.success) return fail(parsed.error)
+  try {
+    await reviewPdtpScheduledInstanceOutcome(parsed.data, guard.session.user.id, scopeOf(guard.session))
+    revalidatePath("/pendientes")
+    revalidatePath("/prevencion/pdtp", "layout")
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, message: safeActionMessage(error, "No se pudo revisar la solicitud. Intenta nuevamente.") }
+  }
+}
+
+/** Quien pidió el "no aplica" o la cancelación la retira mientras sigue en revisión. */
+export async function withdrawPdtpScheduledInstanceOutcomeAction(formData: FormData): Promise<ActionState> {
+  const guard = await guardAuth()
+  if (guard.error) return guard.error
+  const parsed = pdtpScheduledInstanceOutcomeWithdrawSchema.safeParse({
+    requestId: formData.get("requestId") ?? "",
+    reason: formData.get("reason") ?? "",
+  })
+  if (!parsed.success) return fail(parsed.error)
+  try {
+    await withdrawPdtpScheduledInstanceOutcomeRequest(parsed.data, guard.session.user.id, scopeOf(guard.session))
+    revalidatePath("/pendientes")
+    revalidatePath("/prevencion/pdtp", "layout")
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, message: safeActionMessage(error, "No se pudo retirar la solicitud. Intenta nuevamente.") }
   }
 }

@@ -72,4 +72,9 @@ export {
   distributePdtpPeriodClosureAction,
 } from "./actions/period-closures"
 
-export { startPdtpScheduledInstanceAction, recordPdtpScheduledInstanceOutcomeAction } from "./actions/scheduled-instances"
+export {
+  startPdtpScheduledInstanceAction,
+  recordPdtpScheduledInstanceOutcomeAction,
+  reviewPdtpScheduledInstanceOutcomeAction,
+  withdrawPdtpScheduledInstanceOutcomeAction,
+} from "./actions/scheduled-instances"

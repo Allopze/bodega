@@ -6,9 +6,10 @@ import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 import { getPdtpExecutionConnector } from "./connectors"
 import { assertPdtpPeriodOpen } from "./period-guard"
 import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
-import { PDTP_REASON_MIN_LENGTH } from "@/lib/prevention/pdtp"
 import { assertPdtpEvidenceLinkable } from "./evidence-references"
 import type { WorksiteScope } from "./helpers"
+import { requestPdtpScheduledInstanceOutcome, withdrawPendingPdtpScheduledOutcomeRequests, type PdtpScheduledInstanceRow } from "./scheduled-outcome-review"
+export { assertPdtpScheduledOutcomeReason } from "./scheduled-outcome-review"
 
 export type PdtpScheduledInstanceAction = "submit" | "complete" | "not_applicable" | "cancel"
 
@@ -35,31 +36,6 @@ export function assertPdtpScheduledInstanceTransition(currentStatus: string, act
   if (action === "complete") return "completed"
   if (action === "not_applicable") return "not_applicable"
   return "cancelled"
-}
-
-/**
- * Motivo recortado de un resultado, o `null` si no trae. PREV-C07: el "No
- * aplica" (y, desde la revisión final, la cancelación) de una instancia exige el mismo mínimo que el de una celda
- * (`PDTP_REASON_MIN_LENGTH`, igual que `pdtpDeviationSchema` y el CHECK de
- * `pdtp_execution_deviations`); antes bastaban 3 caracteres.
- */
-export function assertPdtpScheduledOutcomeReason(nextStatus: string, rawReason: string | null | undefined): string | null {
-  const reason = rawReason?.trim() || null
-  if (nextStatus === "not_applicable") {
-    if (!reason) throw new Error("Indica por qué la instancia no aplica.")
-    if (reason.length < PDTP_REASON_MIN_LENGTH) {
-      throw new Error(`El motivo de "no aplica" debe tener al menos ${PDTP_REASON_MIN_LENGTH} caracteres.`)
-    }
-  }
-  // Revisión final 2026-09-27: cancelar también saca la ocurrencia del
-  // denominador, así que exige el mismo mínimo (antes bastaban 3 caracteres).
-  if (nextStatus === "cancelled") {
-    if (!reason) throw new Error("Indica el motivo de cancelación.")
-    if (reason.length < PDTP_REASON_MIN_LENGTH) {
-      throw new Error(`El motivo de cancelación debe tener al menos ${PDTP_REASON_MIN_LENGTH} caracteres.`)
-    }
-  }
-  return reason
 }
 
 export function pdtpScheduledExecutionStartIdempotencyKey(
@@ -232,9 +208,14 @@ export async function startPdtpScheduledInstance(input: {
  * el cumplimiento sólo lo deriva `syncPdtpScheduledInstanceFromExecution`
  * desde la ejecución aprobada.
  *
- * Las tres acciones cambian lo que el indicador dice del mes de la ocurrencia
- * (no aplica y cancelar la sacan del denominador), así que todas pasan por
- * `assertPdtpPeriodOpen` dentro de la transacción, después del bloqueo.
+ * PREV-C07 (0334): "no aplica" y cancelar ya no cambian la ocurrencia. Dejan
+ * una solicitud en revisión (`requestPdtpScheduledInstanceOutcome`) y la
+ * ocurrencia sigue contando hasta que otra persona la aprueba
+ * (`reviewPdtpScheduledInstanceOutcome`). Lo devuelto es la ocurrencia tal
+ * como quedó, con `outcomeRequestId` cuando hay una solicitud.
+ *
+ * Las tres acciones comprueban el mes abierto dentro de la transacción,
+ * después del bloqueo.
  */
 export async function recordPdtpScheduledInstanceOutcome(input: {
   instanceId: string
@@ -247,10 +228,28 @@ export async function recordPdtpScheduledInstanceOutcome(input: {
    * a otra faena puede reutilizarse; sin alcance, sólo la propia faena.
    */
   scope?: WorksiteScope
-}, client: ScheduledExecutionClient = db) {
+}, client: ScheduledExecutionClient = db): Promise<PdtpScheduledInstanceRow & { outcomeRequestId?: string }> {
   assertPdtpScheduledInstanceManualAction(input.action)
   const now = new Date().toISOString()
-  const execute = async (tx: ScheduledExecutionClient) => {
+  const execute = async (tx: Tx): Promise<PdtpScheduledInstanceRow & { outcomeRequestId?: string }> => {
+    if (input.action === "not_applicable" || input.action === "cancel") {
+      const outcome = input.action === "cancel" ? "cancelled" : "not_applicable"
+      if (!input.userId) throw new Error("Falta quien registra el resultado.")
+      const userId = input.userId
+      const { instance, request } = await requestPdtpScheduledInstanceOutcome(tx, {
+        instanceId: input.instanceId,
+        outcome,
+        userId,
+        reason: input.reason,
+        evidenceRef: input.evidenceRef ?? null,
+        // Se valida con la ocurrencia bloqueada y después del mes abierto.
+        assertEvidence: input.evidenceRef
+          ? (row) => assertEvidenceUsable(tx, input.evidenceRef!, row.worksiteId, input.scope ?? [], userId)
+          : undefined,
+      })
+      return request ? { ...instance, outcomeRequestId: request.id } : instance
+    }
+
     await tx.execute(sql`SELECT id FROM ${pdtpScheduledInstances} WHERE ${pdtpScheduledInstances.id} = ${input.instanceId} FOR UPDATE`)
     const [row] = await tx.select().from(pdtpScheduledInstances)
       .where(eq(pdtpScheduledInstances.id, input.instanceId))
@@ -261,28 +260,18 @@ export async function recordPdtpScheduledInstanceOutcome(input: {
     if (nextStatus === row.status) return row
     const period = scheduledPeriod(row.scheduledFor)
     await assertPdtpPeriodOpen(row.programId, row.worksiteId, period.year, period.month, tx)
-    const reason = assertPdtpScheduledOutcomeReason(nextStatus, input.reason)
 
     if (input.evidenceRef) {
-      const evidenceFile = resolvePdtpEvidenceFile(input.evidenceRef)
-      if (!evidenceFile || !existsSync(evidenceFile)) {
-        throw new Error("La evidencia adjunta no existe en el almacenamiento autorizado.")
-      }
-      await assertPdtpEvidenceLinkable(tx, { paths: [input.evidenceRef], worksiteId: row.worksiteId, scope: input.scope ?? [] })
+      await assertEvidenceUsable(tx, input.evidenceRef, row.worksiteId, input.scope ?? [], input.userId ?? null)
     }
     const metadata = {
       ...sourceMetadata(row.sourceMetadataJson),
       ...(input.evidenceRef ? { evidenceRef: input.evidenceRef } : {}),
-      ...(reason ? { outcomeReason: reason } : {}),
       outcomeRecordedAt: now,
       ...(input.userId ? { outcomeRecordedByUserId: input.userId } : {}),
     }
     const [updated] = await tx.update(pdtpScheduledInstances).set({
       status: nextStatus,
-      notApplicableReason: nextStatus === "not_applicable" ? reason : row.notApplicableReason,
-      cancelledAt: nextStatus === "cancelled" ? now : row.cancelledAt,
-      cancelledByUserId: nextStatus === "cancelled" ? (input.userId ?? null) : row.cancelledByUserId,
-      cancellationReason: nextStatus === "cancelled" ? reason : row.cancellationReason,
       sourceMetadataJson: metadata,
       updatedAt: now,
     }).where(and(
@@ -292,7 +281,15 @@ export async function recordPdtpScheduledInstanceOutcome(input: {
     if (!updated) throw new Error("La instancia programada cambió antes de registrar el resultado.")
     return updated
   }
-  return isTransactionHost(client) ? client.transaction((tx) => execute(tx)) : execute(client)
+  return isTransactionHost(client) ? client.transaction((tx) => execute(tx)) : execute(client as Tx)
+}
+
+async function assertEvidenceUsable(tx: Tx, evidenceRef: string, worksiteId: string, scope: WorksiteScope, _userId: string | null) {
+  const evidenceFile = resolvePdtpEvidenceFile(evidenceRef)
+  if (!evidenceFile || !existsSync(evidenceFile)) {
+    throw new Error("La evidencia adjunta no existe en el almacenamiento autorizado.")
+  }
+  await assertPdtpEvidenceLinkable(tx, { paths: [evidenceRef], worksiteId, scope })
 }
 
 export type PdtpScheduledInstanceSyncTrigger = "source" | "approval" | "rejection" | "revocation"
@@ -404,6 +401,12 @@ export async function syncPdtpScheduledInstanceFromExecution(client: Tx, input: 
   if (nextStatus === "completed" && instance.status !== "completed" && input.trigger === "approval") {
     const period = scheduledPeriod(instance.scheduledFor)
     await assertPdtpPeriodOpen(instance.programId, instance.worksiteId, period.year, period.month, client)
+  }
+  if (nextStatus === "completed" && instance.status !== "completed") {
+    // PREV-C07: la ocurrencia se cumplió; un "no aplica" o una cancelación
+    // que esperaba revisión ya no tiene objeto. Ocurrencia ya bloqueada:
+    // el orden ejecución → ocurrencia → solicitud se mantiene.
+    await withdrawPendingPdtpScheduledOutcomeRequests(client, instance.id, input.userId ?? execution.approvedByUserId ?? null)
   }
   const occurredAt = typeof executionMetadata.occurredAt === "string" && executionMetadata.occurredAt.trim()
     ? executionMetadata.occurredAt
