@@ -218,7 +218,9 @@ if ! $DRIVE_ONLY; then
       ISSUES+=("El ensayo de restauración FALLÓ hace ${DRILL_AGE_DAYS}d: el respaldo no es restaurable")
       EXIT_CODE=2
     elif [ "$DRILL_STATUS" = "WARNING" ]; then
-      ISSUES+=("El ensayo de restauración no pudo ejecutarse (hace ${DRILL_AGE_DAYS}d)")
+      # PREV-I13-E: WARNING ya no significa sólo "no corrió"; también que la
+      # base restaurada referencia archivos que el tar de storage no trae.
+      ISSUES+=("El ensayo de restauración terminó con avisos hace ${DRILL_AGE_DAYS}d (no pudo ejecutarse, o faltan en el tar de storage archivos que la base referencia): ver ${DRILL_FILE}")
       [ "$EXIT_CODE" -lt 1 ] && EXIT_CODE=1
     else
       log "OK: Ensayo de restauración ${DRILL_STATUS} hace ${DRILL_AGE_DAYS}d"

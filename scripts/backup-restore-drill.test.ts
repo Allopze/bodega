@@ -11,6 +11,7 @@
  */
 import { describe, expect, it } from "vitest"
 import { execFileSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, utimesSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -41,6 +42,17 @@ function makeBackupDir(): string {
   mkdirSync(path.join(dir, "storage"), { recursive: true })
   mkdirSync(path.join(dir, "snapshots", "2026-09-14"), { recursive: true })
   writeFileSync(path.join(dir, "pg", "bodega-latest.dump"), "PGDMP-falso")
+  // PREV-I13-E: el ensayo también verifica el tar de storage del snapshot. Uno
+  // sano —un archivo, sha y conteo coherentes con el manifiesto— para que estas
+  // pruebas sigan mirando sólo la parte de PostgreSQL.
+  const snap = path.join(dir, "snapshots", "2026-09-14")
+  const staging = mkdtempSync(path.join(os.tmpdir(), "bodega-drill-stage-"))
+  mkdirSync(path.join(staging, "storage", "pdtp-evidence"), { recursive: true })
+  writeFileSync(path.join(staging, "storage", "pdtp-evidence", "a.pdf"), "A")
+  execFileSync("tar", ["-czf", path.join(snap, "storage.tar.gz"), "-C", staging, "storage"])
+  rmSync(staging, { recursive: true, force: true })
+  const sha = createHash("sha256").update(readFileSync(path.join(snap, "storage.tar.gz"))).digest("hex")
+  writeFileSync(path.join(snap, "manifest.json"), JSON.stringify({ components: { storage: { file: "storage.tar.gz", sha256: sha, file_count: 1 } } }))
   return dir
 }
 

@@ -113,6 +113,32 @@ MANIFEST_EOF
 
 INITIAL_SIZE=$(stat -c%s "$MANIFEST" 2>/dev/null || stat -f%z "$MANIFEST" 2>/dev/null)
 
+# ── 0. Precondición: el storage no está vacío ────────────────────────────────
+# PREV-I13-D: un volumen de storage que no montó (vacío o ausente) producía un
+# respaldo "OK" sin un solo archivo de evidencia, y con la retención de
+# ${RETENTION_DAYS} días esos snapshots terminan reemplazando a los buenos. Se
+# comprueba ANTES del pg_dump para no dejar un snapshot a medias que parezca
+# completo. `BACKUP_ALLOW_EMPTY_STORAGE=true` es el escape explícito para una
+# instalación nueva que todavía no tiene adjuntos.
+
+_FAILED_STEP="storage_precondition"
+STORAGE_SOURCE_FILES=0
+if [ -d "$STORAGE_PATH" ]; then
+  STORAGE_SOURCE_FILES=$(find "$STORAGE_PATH" -type f ! -name '.health-*.tmp' 2>/dev/null | wc -l | tr -d ' ')
+fi
+if [ "${STORAGE_SOURCE_FILES:-0}" -eq 0 ]; then
+  if [ "${BACKUP_ALLOW_EMPTY_STORAGE:-false}" = "true" ]; then
+    warn "STORAGE_PATH (${STORAGE_PATH}) está vacío o no existe; se continúa por BACKUP_ALLOW_EMPTY_STORAGE=true."
+  else
+    error "STORAGE_PATH (${STORAGE_PATH}) está vacío o no existe: ¿el volumen de storage no montó?"
+    error "  No se respalda un storage vacío como si fuera bueno. Si es una instalación sin adjuntos,"
+    error "  reintente con BACKUP_ALLOW_EMPTY_STORAGE=true."
+    exit 1
+  fi
+else
+  log "  Storage: ${STORAGE_SOURCE_FILES} archivos en ${STORAGE_PATH}"
+fi
+
 # ── 1. PostgreSQL Backup ─────────────────────────────────────────────────────
 
 log "[1/4] Realizando backup de PostgreSQL..."
@@ -198,11 +224,16 @@ if [ -d "$STORAGE_PATH" ]; then
 
   STORAGE_SIZE=$(bytes "$STORAGE_FILE")
   STORAGE_SHA256=$(sha256file "$STORAGE_FILE")
-  log "  Storage: ${STORAGE_SIZE} bytes | SHA256: ${STORAGE_SHA256}"
+  # PREV-I13-D: cuántos archivos trae el tar (no el directorio: incluye los
+  # documentos SST bajados de Cloudreve). El ensayo de restauración lo compara
+  # con lo que `tar -tzf` lista.
+  STORAGE_FILE_COUNT=$(tar -tzf "$STORAGE_FILE" | grep -vc '/$' || true)
+  log "  Storage: ${STORAGE_SIZE} bytes | ${STORAGE_FILE_COUNT} archivos | SHA256: ${STORAGE_SHA256}"
 else
   warn "STORAGE_PATH (${STORAGE_PATH}) no existe. Storage se omite."
   STORAGE_SIZE=0
   STORAGE_SHA256=""
+  STORAGE_FILE_COUNT=0
   touch "$STORAGE_FILE"  # archivo vacío para consistencia
 fi
 
@@ -240,6 +271,9 @@ ENV_WHITELIST=(
   STORAGE_PATH BACKUP_DIR BACKUP_SCRIPTS_PATH
   GDRIVE_BACKUPS_DEST RETENTION_DAYS RCLONE_CONFIG
   CRON_SECRET CRON_ALLOWED_SOURCES
+  # W5-GC (D13): si el borrado real del GC de evidencia estaba encendido, un
+  # restore debe dejarlo igual (y no volver en silencio al modo de prueba).
+  PDTP_EVIDENCE_GC_DELETE
   COPEC_USERNAME COPEC_PASSWORD COPEC_SYNC_START_DATE COPEC_SYNC_IMPORTER_EMAIL
   # Aramco Fleet (Esmax): mismo caso que Copec. Lo normal es que las
   # credenciales vivan cifradas en `system_settings`, pero estas variables son
@@ -370,6 +404,7 @@ cat > "$MANIFEST" <<MANIFEST_EOF
       "file": "storage.tar.gz",
       "size_bytes": ${STORAGE_SIZE},
       "sha256": "${STORAGE_SHA256}",
+      "file_count": ${STORAGE_FILE_COUNT:-0},
       "format": "tar.gz"
     },
     "config": {
