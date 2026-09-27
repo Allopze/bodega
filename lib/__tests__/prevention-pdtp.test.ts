@@ -872,6 +872,46 @@ describe("prevention PDTP service", () => {
     expect(rolledBack!.status).toBe("rolled_back")
   })
 
+  /* Revisión final 2026-09-27 (hallazgo 4): las celdas E migradas nacen
+   * `submitted` y esperan aprobación como cualquier envío, pero no dejaban
+   * historial (PREV-I04): el detalle de verificación las mostraba sin origen. */
+  it("las ejecuciones migradas desde el Excel dejan su entrada 'submitted' en el historial", async () => {
+    const { readFile } = await import("node:fs/promises")
+    const { applyPdtpImportBatch, createLegacyPdtpProgramForTests, stagePdtpXlsxImport } = await import("@/lib/services/prevention-pdtp")
+    const program = await createLegacyPdtpProgramForTests({ year: 2026, title: "Migración con ejecutadas 2026", userId: "user-1" })
+    const bytes = await readFile(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath))
+    const staged = await stagePdtpXlsxImport({
+      programId: program.id,
+      bytes,
+      fileName: "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      userId: "user-1",
+    })
+    // El libro oficial no trae celdas E; se agrega una al preview guardado.
+    const [batch] = await inMemoryDb.select().from(schema.pdtpImportBatches).where(eq(schema.pdtpImportBatches.id, staged.batch.id))
+    const preview = batch!.previewJson as { catalog: { activities: Array<{ n: number }>; importedExecutions?: unknown[] } }
+    const activityNumber = preview.catalog.activities[0]!.n
+    preview.catalog.importedExecutions = [{
+      activityNumber, month: 3, week: 1, executedQuantity: 2,
+      sourceSheet: "PDTP", sourceRow: 10, sourceColumn: "E", sourceCell: "E10",
+    }]
+    await inMemoryDb.update(schema.pdtpImportBatches).set({ previewJson: preview }).where(eq(schema.pdtpImportBatches.id, staged.batch.id))
+
+    const applied = await applyPdtpImportBatch({
+      batchId: staged.batch.id, userId: "user-1", worksiteId: "ws-1", scope: ["ws-1"],
+      acceptMissingEvidence: true, acceptanceReason: "Migración histórica sin respaldo digital",
+    })
+    expect(applied).toMatchObject({ importedExecutionCount: 1 })
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.origin, "xlsx_import"))
+    const history = await inMemoryDb.select().from(schema.auditLog)
+      .where(and(eq(schema.auditLog.entityType, "pdtp:execution"), eq(schema.auditLog.entityId, execution!.id)))
+    expect(history).toHaveLength(1)
+    expect(history[0]!.userId).toBe("user-1")
+    expect(history[0]!.oldState).toBeNull()
+    expect(JSON.parse(history[0]!.newState!)).toMatchObject({ changeType: "submitted", status: "submitted", executedQuantity: 2 })
+    expect(history[0]!.reason).toMatch(/PROGRAMA_ACTIVIDADES_DEFINITIVO\.xlsx/)
+  })
+
   it("creates an unknown imported activity as draft and blocks apply until explicit linking", async () => {
     const { readFile } = await import("node:fs/promises")
     const { applyPdtpImportBatch, createLegacyPdtpProgramForTests, linkPdtpImportCandidate, rollbackPdtpImportBatch, stagePdtpXlsxImport } = await import("@/lib/services/prevention-pdtp")

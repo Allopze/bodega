@@ -821,9 +821,9 @@ async function accreditPdtpFromEventInTransaction(
     // ejecución (`client` es la transacción del conector cuando la hay).
     await withdrawDeviationForAccreditedCell(activity)
 
-    // Verificar si ya existe
+    // Verificar si ya existe. La fila completa: su foto va al historial.
     const [existing] = await client
-      .select({ id: pdtpExecutions.id, status: pdtpExecutions.status })
+      .select()
       .from(pdtpExecutions)
       .where(eq(pdtpExecutions.idempotencyKey, idempotencyKey))
       .limit(1)
@@ -871,8 +871,11 @@ async function accreditPdtpFromEventInTransaction(
             sql`${pdtpExecutions.status} <> 'approved'`,
           ),
         )
-        .returning({ id: pdtpExecutions.id })
-      if (updated) accredited.push({ activityId: activity.id, activityN: activity.n, executionId: existing.id, created: false })
+        .returning()
+      if (updated) {
+        await recordAccreditationHistory(client, input, { before: existing, after: updated })
+        accredited.push({ activityId: activity.id, activityN: activity.n, executionId: existing.id, created: false })
+      }
     } else {
       // Crear nueva ejecución de integración
       const [created] = await client
@@ -905,9 +908,10 @@ async function accreditPdtpFromEventInTransaction(
         // La única colisión posible entre integraciones es la clave idempotente:
         // cada evento tiene su propia fila y puede coexistir con cargas manuales.
         .onConflictDoNothing()
-        .returning({ id: pdtpExecutions.id })
+        .returning()
 
       if (created) {
+        await recordAccreditationHistory(client, input, { before: null, after: created })
         accredited.push({ activityId: activity.id, activityN: activity.n, executionId: created.id, created: true })
       } else {
         // El mismo evento entró en paralelo: la clave única decide y releemos.
@@ -1184,6 +1188,42 @@ async function recordRevocationHistory(
     reason: input.reason ?? "Evento fuente cancelado o anulado.",
     before: pdtpExecutionHistorySnapshot(before),
     after: pdtpExecutionHistorySnapshot(after),
+  })
+}
+
+/**
+ * Revisión final 2026-09-27 (hallazgo 4, T4 × T3): cada escritura de la
+ * acreditación deja su entrada en el historial de envíos (PREV-I04), en la
+ * misma transacción. Una sola entrada por transición, con el formato de T4:
+ *
+ * - nace o vuelve `approved` (aprobación automática de la fuente): `approved`,
+ *   con quien la fuente declara como aprobador (`autoApproveByUserId`, el mismo
+ *   que queda en `approved_by_user_id`);
+ * - nace `submitted`: `submitted`; vuelve a `submitted` desde un borrador o un
+ *   rechazo: `resubmitted`. El actor es la integración, no una persona
+ *   (`actorUserId: null`, igual que los barridos de cron).
+ *
+ * El motivo nombra la fuente y su registro, que es lo que explica el hecho.
+ */
+async function recordAccreditationHistory(
+  client: Tx,
+  input: AccreditationInput,
+  change: { before: typeof pdtpExecutions.$inferSelect | null; after: typeof pdtpExecutions.$inferSelect },
+) {
+  const approved = change.after.status === "approved"
+  const before = change.before ? pdtpExecutionHistorySnapshot(change.before) : null
+  const after = pdtpExecutionHistorySnapshot(change.after)
+  // El mismo evento reentregado sobre un envío que sigue igual no es una
+  // transición: no agrega una entrada por cada reintento del conector.
+  if (before && JSON.stringify(before) === JSON.stringify(after)) return
+  await recordPdtpExecutionHistory(client, {
+    executionId: change.after.id,
+    worksiteId: change.after.worksiteId,
+    changeType: approved ? "approved" : change.before ? "resubmitted" : "submitted",
+    actorUserId: approved ? (change.after.approvedByUserId ?? null) : null,
+    reason: `Acreditación por integración desde ${input.sourceType} (${input.sourceId})${approved ? ", aprobada automáticamente por la fuente" : ""}.`,
+    before,
+    after,
   })
 }
 

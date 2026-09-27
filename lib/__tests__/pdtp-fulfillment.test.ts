@@ -96,6 +96,9 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.permissions)
   await inMemoryDb.delete(schema.roles)
   await inMemoryDb.delete(schema.worksites)
+  // La acreditación deja historial en `audit_log`, que referencia a `users`
+  // (revisión final 2026-09-27, hallazgo 4).
+  await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.users)
 
   await inMemoryDb.insert(schema.users).values({ id: USER_ID, name: "Prevencionista", email: "prev-fulfill@example.test", hashedPassword: "x" })

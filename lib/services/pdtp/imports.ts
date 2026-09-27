@@ -34,6 +34,7 @@ import { PDTP_2026_GENERAL_SHEET_NAME } from "@/lib/services/prevention-pdtp-cat
 import { PDTP_2026_PROGRAM_SOURCE } from "@/lib/services/pdtp-adapters/contract-2026"
 import { collectResponsibleCatalog, displayNameForActivity } from "@/lib/services/pdtp-adapters/responsible-catalog-2026"
 import { writePdtpActivityContent } from "./activity-content"
+import { pdtpExecutionHistorySnapshot, recordPdtpExecutionHistory } from "./execution-history"
 import {
   addPdtpChangeLogEntry,
   assertPdtpProgramEditableState,
@@ -710,7 +711,7 @@ export async function applyPdtpImportBatch(input: {
         throw new Error(`La ejecución ${execution.sourceCell} entra en conflicto con un registro existente de la actividad ${execution.activityNumber}.`)
       }
       if (!conflict) {
-        await tx.insert(pdtpExecutions).values({
+        const [inserted] = await tx.insert(pdtpExecutions).values({
           id: pdtpExecutionId(activityId, input.worksiteId, program.year, execution.month, execution.week),
           activityId, worksiteId: input.worksiteId, year: program.year, month: execution.month, week: execution.week,
           executedQuantity: execution.executedQuantity, status: "submitted",
@@ -719,6 +720,17 @@ export async function applyPdtpImportBatch(input: {
           origin: "xlsx_import", sourceType: "pdtp_xlsx_cell", sourceId: `${execution.sourceSheet}!${execution.sourceCell}`,
           idempotencyKey, importBatchId: batch.id, sourceMetadataJson: execution,
           evidenceStatus: "migrated_without_attachment", createdAt: now, updatedAt: now,
+        }).returning()
+        // Revisión final 2026-09-27 (hallazgo 4): la celda migrada entra a la
+        // cola como un envío más y deja su entrada en el historial (PREV-I04),
+        // con quien aplicó el lote y el origen en el motivo.
+        await recordPdtpExecutionHistory(tx, {
+          executionId: inserted!.id,
+          worksiteId: input.worksiteId,
+          changeType: "submitted",
+          actorUserId: input.userId,
+          reason: `Migrado desde ${batch.sourceFileName}, celda ${execution.sourceCell} (lote ${batch.id}).`,
+          after: pdtpExecutionHistorySnapshot(inserted!),
         })
         executionCount += 1
       }
