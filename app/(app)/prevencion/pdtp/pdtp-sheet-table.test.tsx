@@ -388,6 +388,68 @@ describe("PdtpSheetTable — filtro 'En cero'", () => {
   })
 })
 
+/**
+ * PREV-C06 (T2). La vista semanal era la que menos mostraba el atraso: sólo
+ * listaba lo planificado esta semana, así que una trimestral impaga de marzo
+ * desaparecía en julio, y el KPI "Atrasadas" del tablero enlazaba a una lista
+ * más corta que su número.
+ */
+describe("PdtpSheetTable — PREV-C06 atrasadas", () => {
+  const marchDebt = makeActivity("act-march", "7", "Trimestral impaga de marzo", withPlanned(3, 1), ZERO12)
+  const executedWithDebt = makeActivity("act-debt", "8", "Ejecutada este mes con deuda", [0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0], withPlanned(7, 1))
+  const onTrack = makeActivity("act-ok", "9", "Al día", withPlanned(7, 1), withPlanned(7, 1))
+
+  it("la vista semanal muestra la actividad atrasada aunque esta semana no tenga plan", () => {
+    render(<PdtpSheetTable view={makeView([marchDebt, onTrack])} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+    const row = screen.getByText("Trimestral impaga de marzo").closest("tr")!
+    expect(within(row).getByText(/Atrasado/)).toBeDefined()
+  })
+
+  it("una ejecución de este mes no esconde la deuda de un mes anterior", () => {
+    render(<PdtpSheetTable view={makeView([executedWithDebt])} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+    const row = screen.getByText("Ejecutada este mes con deuda").closest("tr")!
+    expect(within(row).getByText(/Atrasado/)).toBeDefined()
+  })
+
+  it("el filtro 'Atrasadas' de la vista semanal lista exactamente las actividades atrasadas", () => {
+    render(<PdtpSheetTable view={makeView([marchDebt, executedWithDebt, onTrack])} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" initialStatusFilter="overdue" />)
+    expect(screen.getByText("Trimestral impaga de marzo")).toBeDefined()
+    expect(screen.getByText("Ejecutada este mes con deuda")).toBeDefined()
+    expect(screen.queryByText("Al día")).toBeNull()
+  })
+
+  it("en la vista agregada manda el peor caso de las faenas", () => {
+    const aggregateActivity = {
+      ...onTrack,
+      worksiteSummaries: [
+        { worksiteId: "ws-1", planned: 1, executed: 1, status: "executed", overdueMonths: 0, historicalPlanned: 1, historicalExecuted: 1 },
+        { worksiteId: "ws-2", planned: 2, executed: 0, status: "overdue", overdueMonths: 2, historicalPlanned: 2, historicalExecuted: 0 },
+      ],
+    } as unknown as PdtpSheetView["activities"][number]
+    render(<PdtpSheetTable view={makeView([aggregateActivity])} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+    const row = screen.getByText("Al día").closest("tr")!
+    expect(within(row).getByText("Atrasado · 2 meses")).toBeDefined()
+  })
+
+  // PREV-C07: la marca del mes lista también el "No aplica" que espera
+  // revisión; sin decirlo, se leería como ya aplicado al planificado.
+  it("la marca del mes dice cuándo un 'No aplica' está en revisión", () => {
+    const withPending = makeActivity("act-na", "10", "Con no aplica pendiente", withPlanned(7, 1), ZERO12, [], null, ZERO12, [
+      { id: "dev-na", month: 7, week: 2, kind: "not_applicable", reason: "Faena detenida por mantención.", targetMonth: null, targetWeek: null, status: "pending_review" } as never,
+    ])
+    render(<PdtpSheetTable view={makeView([withPending])} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+    expect(screen.getByLabelText(/Desvíos declarados en el mes/).getAttribute("title")).toMatch(/No aplica \(en revisión\)/)
+  })
+
+  it("'Registrar' de una actividad atrasada abre en la primera celda vencida", () => {
+    render(<PdtpSheetTable view={makeView([marchDebt])} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" canExecute worksiteId="ws-1" />)
+    const row = screen.getByText("Trimestral impaga de marzo").closest("tr")!
+    fireEvent.click(within(row).getByRole("button", { name: "Registrar" }))
+    expect(screen.getByRole("combobox", { name: "Mes" })).toHaveTextContent("Mar")
+    expect(screen.getByRole("combobox", { name: "Semana" })).toHaveTextContent("2")
+  })
+})
+
 describe("PdtpExecutionForm — vigencia", () => {
   it("no ofrece períodos anteriores y parte en la semana de aceptación", () => {
     render(<PdtpExecutionForm

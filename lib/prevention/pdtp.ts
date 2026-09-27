@@ -98,7 +98,7 @@ export const PDTP_DEVIATION_KIND_LABELS: Record<PdtpDeviationKindValue, string> 
 /** Descripción corta de lo que cada tipo hace con lo planificado. */
 export const PDTP_DEVIATION_KIND_HINTS: Record<PdtpDeviationKindValue, string> = {
   not_performed: "La semana se sigue exigiendo y queda registrado por qué no se hizo.",
-  not_applicable: "La semana deja de exigirse: sale del cálculo de cumplimiento.",
+  not_applicable: "La semana deja de exigirse, pero recién cuando otra persona con permiso de aprobación lo revise: mientras tanto sigue contando.",
   reprogrammed: "Lo planificado se traslada a otra semana del mismo año.",
 }
 
@@ -193,4 +193,29 @@ export const PDTP_RESPONSIBLE_KIND_LABELS: Record<PdtpResponsibleKind, string> =
 
 export function pdtpResponsibleKindLabel(kind: string): string {
   return PDTP_RESPONSIBLE_KIND_LABELS[kind as PdtpResponsibleKind] ?? kind
+}
+
+/**
+ * Mínimo de caracteres de todo motivo del PDTP que cambia lo exigido o lo
+ * explica: desvíos, retiros, overrides, exclusiones y el "No aplica" de una
+ * instancia. Espejo del CHECK `pdtp_execution_deviations_reason_check`.
+ */
+export const PDTP_REASON_MIN_LENGTH = 10
+
+/**
+ * Estados de un desvío (`pdtp_execution_deviations.status`). PREV-C07: un
+ * "No aplica" nuevo nace `pending_review` y sólo saca la celda del
+ * denominador cuando otra persona lo aprueba (`active`).
+ */
+export type PdtpDeviationStatusValue = "active" | "pending_review" | "rejected" | "withdrawn"
+
+export const PDTP_DEVIATION_STATUS_LABELS: Record<PdtpDeviationStatusValue, string> = {
+  active: "Vigente",
+  pending_review: "En revisión",
+  rejected: "Rechazado",
+  withdrawn: "Retirado",
+}
+
+export function pdtpDeviationStatusLabel(status: string): string {
+  return PDTP_DEVIATION_STATUS_LABELS[status as PdtpDeviationStatusValue] ?? status
 }

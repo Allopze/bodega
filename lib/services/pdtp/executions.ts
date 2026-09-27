@@ -134,14 +134,21 @@ export async function markPdtpExecution(
     const [activeDeviation] = await tx.select({
       id: pdtpExecutionDeviations.id,
       kind: pdtpExecutionDeviations.kind,
+      status: pdtpExecutionDeviations.status,
     }).from(pdtpExecutionDeviations).where(and(
       eq(pdtpExecutionDeviations.activityId, data.activityId),
       eq(pdtpExecutionDeviations.worksiteId, data.worksiteId),
       eq(pdtpExecutionDeviations.year, data.year),
       eq(pdtpExecutionDeviations.month, data.month),
       eq(pdtpExecutionDeviations.week, data.week),
-      eq(pdtpExecutionDeviations.status, "active"),
+      inArray(pdtpExecutionDeviations.status, ["active", "pending_review"]),
     )).limit(1).for("update")
+    // PREV-C07: un "No aplica" en revisión ocupa la celda igual que uno
+    // vigente. Aceptar la ejecución dejaría al revisor aprobando una exclusión
+    // sobre una semana que ya declara trabajo hecho.
+    if (activeDeviation?.status === "pending_review") {
+      throw new Error("Esta celda tiene un 'no aplica' en revisión. Retíralo o espera a que se revise antes de registrar la ejecución.")
+    }
     if (activeDeviation && (activeDeviation.kind === "not_applicable" || activeDeviation.kind === "reprogrammed")) {
       throw new Error("Esta celda tiene un desvío activo (no aplicable o reprogramado) y no admite ejecuciones.")
     }

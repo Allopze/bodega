@@ -5,6 +5,7 @@ import { pdtpActivities, pdtpActivityExecutionConfigs, pdtpExecutions, pdtpProgr
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 import { getPdtpExecutionConnector, type PdtpEvidenceKind } from "./connectors"
 import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
+import { PDTP_REASON_MIN_LENGTH } from "@/lib/prevention/pdtp"
 
 export type PdtpScheduledInstanceAction = "submit" | "complete" | "not_applicable" | "cancel"
 
@@ -31,6 +32,23 @@ export function assertPdtpScheduledInstanceTransition(currentStatus: string, act
   if (action === "complete") return "completed"
   if (action === "not_applicable") return "not_applicable"
   return "cancelled"
+}
+
+/**
+ * Motivo recortado de un resultado, o `null` si no trae. PREV-C07: el "No
+ * aplica" de una instancia exige el mismo mínimo que el de una celda
+ * (`PDTP_REASON_MIN_LENGTH`, igual que `pdtpDeviationSchema` y el CHECK de
+ * `pdtp_execution_deviations`); antes bastaban 3 caracteres.
+ */
+export function assertPdtpScheduledOutcomeReason(nextStatus: string, rawReason: string | null | undefined): string | null {
+  const reason = rawReason?.trim() || null
+  if (nextStatus === "not_applicable") {
+    if (!reason) throw new Error("Indica por qué la instancia no aplica.")
+    if (reason.length < PDTP_REASON_MIN_LENGTH) {
+      throw new Error(`El motivo de "no aplica" debe tener al menos ${PDTP_REASON_MIN_LENGTH} caracteres.`)
+    }
+  }
+  return reason
 }
 
 export function pdtpScheduledExecutionStartIdempotencyKey(
@@ -237,10 +255,7 @@ export async function recordPdtpScheduledInstanceOutcome(input: {
 
     const nextStatus = assertPdtpScheduledInstanceTransition(row.instance.status, input.action)
     if (nextStatus === row.instance.status) return row.instance
-    const reason = input.reason?.trim() || null
-    if (nextStatus === "not_applicable" && (!reason || reason.length < 3)) {
-      throw new Error("Indica por qué la instancia no aplica.")
-    }
+    const reason = assertPdtpScheduledOutcomeReason(nextStatus, input.reason)
     if (nextStatus === "cancelled" && (!reason || reason.length < 3)) {
       throw new Error("Indica el motivo de cancelación.")
     }

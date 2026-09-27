@@ -395,6 +395,21 @@ export const pdtpDeviationWithdrawSchema = z.object({
   reason: z.string().trim().min(10, "El motivo debe tener al menos 10 caracteres").max(1000),
 })
 
+/**
+ * PREV-C07: revisión de un "No aplica" pendiente. Aprobar admite un
+ * comentario opcional; rechazar exige explicar por qué (espejo del CHECK
+ * `pdtp_execution_deviations_rejected_check`).
+ */
+export const pdtpNotApplicableReviewSchema = z.object({
+  deviationId: z.string().min(1, "Desvío requerido"),
+  decision: z.enum(["approve", "reject"]),
+  reason: z.string().trim().max(1000).optional().or(z.literal("")),
+}).superRefine((value, ctx) => {
+  if (value.decision === "reject" && (value.reason ?? "").trim().length < 10) {
+    ctx.addIssue({ code: "custom", path: ["reason"], message: "El motivo del rechazo debe tener al menos 10 caracteres" })
+  }
+})
+
 export const pdtpActivityOverrideSchema = z.object({
   activityId: z.string().min(1, "Actividad requerida"),
   worksiteId: z.string().min(1, "Faena requerida"),

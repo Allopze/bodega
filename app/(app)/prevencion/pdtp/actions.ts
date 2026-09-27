@@ -57,6 +57,7 @@ export {
 
 export {
   recordPdtpDeviationAction,
+  reviewPdtpNotApplicableAction,
   withdrawPdtpDeviationAction,
 } from "./actions/deviations"
 

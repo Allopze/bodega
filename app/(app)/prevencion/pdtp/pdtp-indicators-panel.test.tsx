@@ -181,4 +181,16 @@ describe("PdtpIndicatorsPanel — render compacto actual", () => {
     const marCells = marRow.querySelectorAll("td")
     expect(marCells[4]).toHaveTextContent("0")
   })
+
+  // PREV-C07 (D8): el "No aplica" saca celdas del denominador; el panel tiene
+  // que decir cuántas junto al porcentaje, y cuántas esperan revisión.
+  it("muestra junto al porcentaje cuántas celdas 'No aplica' están fuera del cálculo y cuántas en revisión", () => {
+    render(<PdtpIndicatorsPanel data={DATA} declaredNotApplicable={{ approved: 3, pending: 1 }} />)
+    expect(screen.getByText(/No aplica: 3 semanas fuera del cálculo · 1 en revisión/)).toBeInTheDocument()
+  })
+
+  it("sin 'No aplica' declarados no agrega ruido", () => {
+    render(<PdtpIndicatorsPanel data={DATA} declaredNotApplicable={{ approved: 0, pending: 0 }} />)
+    expect(screen.queryByText(/No aplica:/)).not.toBeInTheDocument()
+  })
 })

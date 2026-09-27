@@ -19,7 +19,7 @@
  */
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
-import { and, eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -48,7 +48,7 @@ const { recordDrillSlotStatus } = await import("@/lib/services/prevention-emerge
 const { recordGrdMeetingSlotStatus, constituteGrdCommittee, recordGrdMeeting, annulGrdMeeting } = await import("@/lib/services/prevention-cgrd")
 const { recordAlcotestSlotStatus } = await import("@/lib/services/prevention-alcotest-slots")
 const { recordTrainingOccurrenceStatus } = await import("@/lib/services/prevention-training-occurrences")
-const { recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
+const { recordPdtpDeviation, reviewPdtpNotApplicable } = await import("@/lib/services/pdtp/deviations")
 const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
 const { propagateSlotStatusToPdtp } = await import("@/lib/services/pdtp-adapters/slot-deviation-connector")
 
@@ -107,11 +107,12 @@ async function deviationsOf(n: number) {
     .where(eq(schema.pdtpExecutionDeviations.activityId, activityId(n)))
 }
 
+/** Desvíos abiertos: vigentes o, para un «no aplica», en revisión (PREV-C07). */
 async function activeDeviationsOf(n: number) {
   return inMemoryDb.select().from(schema.pdtpExecutionDeviations)
     .where(and(
       eq(schema.pdtpExecutionDeviations.activityId, activityId(n)),
-      eq(schema.pdtpExecutionDeviations.status, "active"),
+      inArray(schema.pdtpExecutionDeviations.status, ["active", "pending_review"]),
     ))
 }
 
@@ -204,7 +205,9 @@ describe("cada familia de casillas escribe su desvío en la celda del PDTP", () 
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
       worksiteId: WS, year: YEAR, month: 3, week: 3,
-      kind: "not_applicable", reason, status: "active", createdByUserId: USER_PRF,
+      // PREV-C07 (D8): todo «no aplica» nuevo nace en revisión, también el
+      // que propaga una casilla.
+      kind: "not_applicable", reason, status: "pending_review", createdByUserId: USER_PRF,
       targetMonth: null, targetWeek: null,
     })
 
@@ -212,6 +215,10 @@ describe("cada familia de casillas escribe su desvío en la celda del PDTP", () 
     // como incumplida. Marzo tenía planificado el simulacro (1) y el control
     // de alcotest de las N°30/31 y el envío N°32 (3 más); la CAP-02 quedó en
     // septiembre/octubre tras alinearla con la grilla real del PDTP.
+    // Mientras espera revisión sigue contando; lo aprueba otra persona.
+    const pending = await getPdtpComplianceIndicators(PROGRAM_ID, WS)
+    expect(pending!.monthly[2]!.planned).toBe(before!.monthly[2]!.planned)
+    await reviewPdtpNotApplicable({ deviationId: rows[0]!.id, decision: "approve" }, USER_ADMIN, "all")
     const after = await getPdtpComplianceIndicators(PROGRAM_ID, WS)
     expect(after!.monthly[2]!.planned).toBe(before!.monthly[2]!.planned - 1)
   })
@@ -367,7 +374,7 @@ describe("cada familia de casillas escribe su desvío en la celda del PDTP", () 
     }, TRAINING)
 
     expect(await deviationsOf(54)).toEqual([expect.objectContaining({
-      worksiteId: WS, year: YEAR, month: 9, week: 4, kind: "not_applicable", reason, status: "active", createdByUserId: USER_PRF,
+      worksiteId: WS, year: YEAR, month: 9, week: 4, kind: "not_applicable", reason, status: "pending_review", createdByUserId: USER_PRF,
     })])
   })
 

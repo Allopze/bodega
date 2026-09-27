@@ -14,7 +14,8 @@
  * su celda con `recordPdtpDeviation` —la única función que escribe esa tabla;
  * este archivo no reimplementa ninguna de sus validaciones—:
  *
- * - `not_applicable` → desvío `not_applicable` (la celda sale del denominador);
+ * - `not_applicable` → desvío `not_applicable`, que nace en revisión (PREV-C07,
+ *   D8) y saca la celda del denominador cuando otra persona lo aprueba;
  * - `not_completed` → desvío `not_performed` (la celda se sigue exigiendo; lo
  *   que queda es el motivo declarado).
  *
@@ -250,7 +251,9 @@ async function syncActivityCell(
       eq(pdtpExecutionDeviations.year, year),
       eq(pdtpExecutionDeviations.month, month),
       eq(pdtpExecutionDeviations.week, week),
-      eq(pdtpExecutionDeviations.status, "active"),
+      // PREV-C07: el "no aplica" que la casilla propagó nace en revisión; sigue
+      // siendo suyo para reconocerlo, reemplazarlo o retirarlo.
+      inArray(pdtpExecutionDeviations.status, ["active", "pending_review"]),
     ))
     .limit(1)
 

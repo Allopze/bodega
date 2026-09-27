@@ -418,7 +418,8 @@ describe("N°45 — la casilla anual del programa", () => {
     expect(deviations).toHaveLength(1)
     expect(deviations[0]).toMatchObject({
       worksiteId: WS_ID, year: PROGRAM_YEAR, month: 2, week: 2,
-      kind: "not_applicable", reason, status: "active", createdByUserId: USER_ID,
+      // PREV-C07 (D8): el «no aplica» de la casilla nace en revisión en el PDTP.
+      kind: "not_applicable", reason, status: "pending_review", createdByUserId: USER_ID,
     })
   })
 

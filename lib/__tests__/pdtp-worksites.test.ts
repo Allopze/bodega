@@ -508,6 +508,48 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     expect(JSON.stringify(aggregate)).not.toContain("Borrador privado")
   })
 
+  it("PREV-C06: estado por faena con su propio corte de incorporación, D9 y peor caso", async () => {
+    const { getPdtpAggregatedSheetViewByProgram, getPdtpSheetViewByProgram, setPdtpProgramWorksites } = await import("@/lib/services/prevention-pdtp")
+    const { program, activity } = await createDraftProgramWithActivity(2048)
+    const now = new Date().toISOString()
+    await inMemoryDb.update(schema.pdtpPrograms).set({ activatedAt: "2048-01-02T12:00:00.000Z" })
+      .where(eq(schema.pdtpPrograms.id, program.id))
+    const [sheet] = await inMemoryDb.select().from(schema.pdtpSheets)
+      .where(eq(schema.pdtpSheets.programId, program.id))
+    await inMemoryDb.insert(schema.pdtpSheetActivities).values({
+      id: "c06-membership", sheetId: sheet!.id, sheetCode: "pdtp_general", activityId: activity.id, sheetRow: 1, displayOrder: 1,
+    })
+    // Marzo y julio, semana 2: una trimestral que en julio debe marzo.
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values([
+      { id: "c06-mar", activityId: activity.id, year: 2048, month: 3, week: 2, plannedQuantity: 1, sourceColumn: "test" },
+      { id: "c06-jul", activityId: activity.id, year: 2048, month: 7, week: 2, plannedQuantity: 1, sourceColumn: "test" },
+    ])
+    await setPdtpProgramWorksites(program.id, ["ws-1", "ws-2", "ws-3"], "user-1", "all")
+    await inMemoryDb.update(schema.pdtpProgramWorksites).set({ addedAt: "2048-01-02T12:00:00.000Z" })
+      .where(eq(schema.pdtpProgramWorksites.programId, program.id))
+    // ws-3 entró en junio: marzo nunca le fue exigible.
+    await inMemoryDb.update(schema.pdtpProgramWorksites).set({ addedAt: "2048-06-01T12:00:00.000Z" })
+      .where(eq(schema.pdtpProgramWorksites.worksiteId, "ws-3"))
+    // ws-1 envió marzo y espera aprobación (D9: un envío paga el mes).
+    await inMemoryDb.insert(schema.pdtpExecutions).values({
+      id: "c06-submitted", activityId: activity.id, worksiteId: "ws-1", year: 2048, month: 3, week: 2, executedQuantity: 1,
+      status: "submitted", evidenceText: "Acta", evidencePhotos: [], sourceMetadataJson: {}, evidenceStatus: "provided", createdAt: now, updatedAt: now,
+    })
+
+    const period = { year: 2048, month: 7, week: 2 }
+    const aggregate = await getPdtpAggregatedSheetViewByProgram(program.id, "pdtp_general", ["ws-1", "ws-2", "ws-3"], period, period)
+    const summaries = aggregate?.activities[0]?.worksiteSummaries ?? []
+    expect(summaries.map((summary) => [summary.worksiteId, summary.status, summary.overdueMonths, summary.planned])).toEqual([
+      ["ws-1", "pending", 0, 2],
+      ["ws-2", "overdue", 1, 2],
+      ["ws-3", "pending", 0, 1],
+    ])
+
+    const single = await getPdtpSheetViewByProgram(program.id, "pdtp_general", "ws-3")
+    expect(single?.activities[0]?.effectiveMonthlyPlanned[2]).toBe(0)
+    expect(single?.activities[0]?.effectiveMonthlyPlanned[6]).toBe(1)
+  })
+
   it("el agregado falla cerrado a la membresía declarada del programa", async () => {
     const { getPdtpAggregatedSheetViewByProgram, setPdtpProgramWorksites } = await import("@/lib/services/prevention-pdtp")
     const { program, activity } = await createDraftProgramWithActivity(2050)

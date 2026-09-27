@@ -31,7 +31,7 @@
  */
 
 import { ZodError } from "zod"
-import { can, guardAnyPermission } from "@/lib/auth/can"
+import { can, guardAnyPermission, guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { safeActionMessage } from "@/lib/action-error"
 import { parseZ } from "@/lib/actions/parse-z"
@@ -40,11 +40,12 @@ import {
   assertPdtpActivityMechanism,
   getPdtpDeviationKindAndActivity,
   recordPdtpDeviation,
+  reviewPdtpNotApplicable,
   withdrawPdtpDeviation,
 } from "@/lib/services/prevention-pdtp"
 import type { Permission } from "@/modules/permissions"
 import type { ActionState } from "@/lib/validation/prevention"
-import { pdtpDeviationSchema, pdtpDeviationWithdrawSchema } from "@/lib/validation/prevention"
+import { pdtpDeviationSchema, pdtpDeviationWithdrawSchema, pdtpNotApplicableReviewSchema } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/pdtp"
 const CONSTANCIAS_REVALIDATE = "/prevencion/constancias"
@@ -160,5 +161,32 @@ export async function withdrawPdtpDeviationAction(formData: FormData): Promise<A
     return { ok: true }
   } catch (e) {
     return fail(e)
+  }
+}
+
+/**
+ * PREV-C07 (D8): aprueba o rechaza un "No aplica" pendiente. Revisar es
+ * aprobar: exige `prevention:pdtp:approve`, el mismo permiso que aprobar una
+ * ejecución, y no un permiso nuevo. Que quien declaró no revise lo impone el
+ * servicio (y el CHECK de la tabla), no la pantalla.
+ */
+export async function reviewPdtpNotApplicableAction(formData: FormData): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:approve")
+  if (guard.error) return guard.error
+  const session = guard.session
+
+  const parsed = parseZ(pdtpNotApplicableReviewSchema, {
+    deviationId: formData.get("deviationId") ?? "",
+    decision: formData.get("decision") ?? "",
+    reason: formData.get("reason") ?? "",
+  })
+  if (!parsed.ok) return parsed
+
+  try {
+    await reviewPdtpNotApplicable(parsed.data, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+    revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/aprobaciones`, CONSTANCIAS_REVALIDATE])
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, message: safeActionMessage(e, "No se pudo revisar el 'no aplica'. Intenta nuevamente.") }
   }
 }

@@ -18,6 +18,7 @@ const mockWithdrawPdtpDeviation = vi.hoisted(() => vi.fn())
 const mockGetPdtpDeviationKindAndActivity = vi.hoisted(() => vi.fn())
 const mockAssertPdtpActivityMechanism = vi.hoisted(() => vi.fn())
 const mockRevalidateOperationalViews = vi.hoisted(() => vi.fn())
+const mockReviewPdtpNotApplicable = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", async (importOriginal) => {
   // `can(session, permission)` se deja real: la acción lo usa para decidir
@@ -38,6 +39,7 @@ vi.mock("@/lib/services/prevention-pdtp", () => ({
   withdrawPdtpDeviation: mockWithdrawPdtpDeviation,
   getPdtpDeviationKindAndActivity: mockGetPdtpDeviationKindAndActivity,
   assertPdtpActivityMechanism: mockAssertPdtpActivityMechanism,
+  reviewPdtpNotApplicable: mockReviewPdtpNotApplicable,
 }))
 vi.mock("@/lib/services/operational-cache", () => ({
   revalidateOperationalViews: mockRevalidateOperationalViews,
@@ -183,5 +185,61 @@ describe("withdrawPdtpDeviationAction — mismo criterio de permisos que declara
 
     expect(result.ok).toBe(false)
     expect(mockWithdrawPdtpDeviation).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * PREV-C07 (D8): revisar un "No aplica" es aprobar, con el mismo permiso que
+ * aprobar una ejecución. No se crea un permiso nuevo.
+ */
+describe("reviewPdtpNotApplicableAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockResolveWorksiteScope.mockReturnValue({ mode: "some", ids: ["ws-1"] })
+    mockReviewPdtpNotApplicable.mockResolvedValue({ id: "dev-1", status: "active" })
+  })
+
+  it("exige prevention:pdtp:approve y pasa el alcance del revisor", async () => {
+    const { reviewPdtpNotApplicableAction } = await import("@/app/(app)/prevencion/pdtp/actions/deviations")
+    const session = sessionWith("prevention:pdtp:approve")
+    mockGuardPermission.mockResolvedValue({ session, error: null })
+
+    const result = await reviewPdtpNotApplicableAction(makeFormData({ deviationId: "dev-1", decision: "approve" }))
+
+    expect(result).toEqual({ ok: true })
+    expect(mockGuardPermission).toHaveBeenCalledWith("prevention:pdtp:approve")
+    expect(mockReviewPdtpNotApplicable).toHaveBeenCalledWith(
+      expect.objectContaining({ deviationId: "dev-1", decision: "approve" }), "user-1", ["ws-1"],
+    )
+  })
+
+  it("sin el permiso no llega al servicio", async () => {
+    const { reviewPdtpNotApplicableAction } = await import("@/app/(app)/prevencion/pdtp/actions/deviations")
+    mockGuardPermission.mockResolvedValue({ session: null, error: { ok: false, message: "No autorizado" } })
+
+    const result = await reviewPdtpNotApplicableAction(makeFormData({ deviationId: "dev-1", decision: "approve" }))
+
+    expect(result.ok).toBe(false)
+    expect(mockReviewPdtpNotApplicable).not.toHaveBeenCalled()
+  })
+
+  it("un rechazo sin motivo suficiente vuelve con el error de campo", async () => {
+    const { reviewPdtpNotApplicableAction } = await import("@/app/(app)/prevencion/pdtp/actions/deviations")
+    mockGuardPermission.mockResolvedValue({ session: sessionWith("prevention:pdtp:approve"), error: null })
+
+    const result = await reviewPdtpNotApplicableAction(makeFormData({ deviationId: "dev-1", decision: "reject", reason: "no" }))
+
+    expect(result.ok).toBe(false)
+    expect(mockReviewPdtpNotApplicable).not.toHaveBeenCalled()
+  })
+
+  it("las reglas del servicio (propia declaración, ya revisado) llegan como mensaje", async () => {
+    const { reviewPdtpNotApplicableAction } = await import("@/app/(app)/prevencion/pdtp/actions/deviations")
+    mockGuardPermission.mockResolvedValue({ session: sessionWith("prevention:pdtp:approve"), error: null })
+    mockReviewPdtpNotApplicable.mockRejectedValue(new Error("No puedes revisar tu propia declaración de 'no aplica': debe hacerlo otra persona."))
+
+    const result = await reviewPdtpNotApplicableAction(makeFormData({ deviationId: "dev-1", decision: "approve" }))
+
+    expect(result).toMatchObject({ ok: false, message: expect.stringMatching(/propia declaración/) })
   })
 })

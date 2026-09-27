@@ -34,10 +34,11 @@ import {
   pdtpExecutions,
   pdtpPrograms,
   users,
+  worksites,
   type PdtpExecutionDeviation,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { pdtpDeviationSchema, pdtpDeviationWithdrawSchema } from "@/lib/validation/prevention"
+import { pdtpDeviationSchema, pdtpDeviationWithdrawSchema, pdtpNotApplicableReviewSchema } from "@/lib/validation/prevention"
 import {
   addPdtpChangeLogEntry,
   assertWorksiteAccess,
@@ -49,7 +50,7 @@ import {
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
-import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation } from "./period"
+import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation, type PdtpPeriod } from "./period"
 import { deriveScheduleHorizon } from "./recurrence"
 import { assertPdtpPeriodOpen } from "./period-guard"
 
@@ -79,9 +80,13 @@ export const PDTP_DEVIATION_LABELS: Record<PdtpDeviationKind, string> = {
  * con cantidad > 0 —esto último dentro de la transacción y detrás del
  * advisory lock por celda, ver `pdtpCellLockKey`.
  *
- * La unicidad de un desvío activo por celda la impone el índice parcial de
- * `pdtp_execution_deviations` (WHERE status = 'active'); acá sólo se traduce
- * su violación a un mensaje legible.
+ * La unicidad de un desvío abierto por celda la impone el índice parcial de
+ * `pdtp_execution_deviations` (WHERE status IN ('active', 'pending_review'));
+ * acá sólo se traduce su violación a un mensaje legible.
+ *
+ * PREV-C07 (D8): un `not_applicable` nace `pending_review` y no se declara
+ * sobre una semana futura (`isPdtpCellInFuture`, el mismo validador que el
+ * `not_performed`).
  *
  * **El permiso no se valida acá**, y eso es a propósito: cada llamador llega
  * con el suyo ya comprobado. La planilla del PDTP exige
@@ -158,15 +163,11 @@ export async function recordPdtpDeviation(
     .limit(1)
   if (exclusion) throw new Error("La actividad está excluida para esta faena y no admite desvíos.")
 
-  if (data.kind === "not_performed") {
-    const current = currentPdtpPeriod()
-    const isFuturePeriod = data.year > current.year
-      || (data.year === current.year && data.month > current.month)
-      || (data.year === current.year && data.month === current.month && data.week > current.week)
-    if (isFuturePeriod) {
-      throw new Error("No se puede declarar 'no realizado' para un período que aún no ocurre.")
-    }
-  }
+  // PREV-C07: el "No aplica" tampoco se declara a futuro. Sobre una semana
+  // que no ocurrió no hay nada que constatar, y era la vía para vaciar el
+  // denominador del resto del año de una vez. Para mover trabajo a futuro
+  // está `reprogrammed`.
+  if (data.kind !== "reprogrammed") assertPdtpCellNotInFuture(data, data.kind)
 
   // `not_applicable` y `reprogrammed` transforman el planificado, así que son
   // los dos que no pueden convivir con una ejecución en la misma celda.
@@ -216,6 +217,12 @@ export async function recordPdtpDeviation(
 
   const now = new Date().toISOString()
   const id = nanoid()
+  // PREV-C07 (D8): el "No aplica" nace en revisión y no toca el denominador
+  // hasta que otra persona con `prevention:pdtp:approve` lo aprueba
+  // (`reviewPdtpNotApplicable`). Los otros dos tipos no cambian: `not_performed`
+  // no saca nada del cálculo y `reprogrammed` sólo lo declara quien administra
+  // metas (`override:manage`).
+  const initialStatus: "active" | "pending_review" = data.kind === "not_applicable" ? "pending_review" : "active"
   try {
     // Con `callerTx`, esto es un SAVEPOINT dentro de la transacción del llamador;
     // sin él, una transacción propia. El advisory lock de abajo es
@@ -272,7 +279,7 @@ export async function recordPdtpDeviation(
         reason: data.reason,
         targetMonth: data.kind === "reprogrammed" ? data.targetMonth! : null,
         targetWeek: data.kind === "reprogrammed" ? data.targetWeek! : null,
-        status: "active",
+        status: initialStatus,
         createdByUserId: userId,
         createdAt: now,
       }).returning()
@@ -284,8 +291,11 @@ export async function recordPdtpDeviation(
         {
           worksiteId: data.worksiteId, year: data.year, month: data.month, week: data.week,
           kind: data.kind, reason: data.reason, targetMonth: row.targetMonth, targetWeek: row.targetWeek,
+          status: initialStatus,
         },
-        `Desvío "${PDTP_DEVIATION_LABELS[data.kind]}" registrado para actividad ${activity.n}. Motivo: ${data.reason}`,
+        initialStatus === "pending_review"
+          ? `Desvío "${PDTP_DEVIATION_LABELS[data.kind]}" declarado para actividad ${activity.n}, pendiente de revisión. Motivo: ${data.reason}`
+          : `Desvío "${PDTP_DEVIATION_LABELS[data.kind]}" registrado para actividad ${activity.n}. Motivo: ${data.reason}`,
         tx,
       )
       return row
@@ -293,10 +303,216 @@ export async function recordPdtpDeviation(
     return await (callerTx ? callerTx.transaction(write) : db.transaction(write))
   } catch (e) {
     if (isUniqueViolation(e)) {
-      throw new Error("Ya existe un desvío activo para esta celda. Retíralo antes de registrar uno nuevo.")
+      throw new Error("Ya existe un desvío vigente o en revisión para esta celda. Retíralo antes de registrar uno nuevo.")
     }
     throw e
   }
+}
+
+/**
+ * ¿La celda es posterior a la semana en curso? Es el validador de celda que
+ * comparten el "no realizado" y el "no aplica": sobre una semana que todavía
+ * no ocurre no hay hecho que declarar.
+ */
+export function isPdtpCellInFuture(
+  cell: { year: number; month: number; week: number },
+  current: PdtpPeriod = currentPdtpPeriod(),
+): boolean {
+  return cell.year > current.year
+    || (cell.year === current.year && cell.month > current.month)
+    || (cell.year === current.year && cell.month === current.month && cell.week > current.week)
+}
+
+function assertPdtpCellNotInFuture(cell: { year: number; month: number; week: number }, kind: PdtpDeviationKind): void {
+  if (isPdtpCellInFuture(cell)) {
+    throw new Error(`No se puede declarar '${PDTP_DEVIATION_LABELS[kind]}' para un período que aún no ocurre.`)
+  }
+}
+
+/**
+ * PREV-C07 (D8): aprueba o rechaza un "No aplica" pendiente.
+ *
+ * - Aprobar lo deja `active`: recién ahí la costura única saca la celda del
+ *   denominador.
+ * - Rechazar lo deja `rejected` con motivo: la celda se sigue exigiendo y
+ *   queda libre para otro desvío.
+ *
+ * Reglas: quien lo declaró no lo revisa (también lo impone el CHECK
+ * `pdtp_execution_deviations_reviewer_not_creator_check`); el revisor tiene
+ * alcance sobre la faena; el mes no está cerrado; y para aprobar la celda no
+ * puede haber recibido una ejecución mientras esperaba.
+ *
+ * Orden de bloqueos: advisory lock de la celda → `FOR UPDATE` de la fila. Es
+ * el mismo orden que `recordPdtpDeviation` y `markPdtpExecution` (advisory
+ * primero, filas después); tomarlos al revés contra una de ellas podía cruzar
+ * las esperas. La celda se lee antes, sin lock, sólo para saber qué clave
+ * bloquear; todo lo que decide se relee detrás de los dos locks.
+ *
+ * El permiso (`prevention:pdtp:approve`) lo valida la acción, igual que en
+ * el resto del servicio.
+ */
+export async function reviewPdtpNotApplicable(
+  input: unknown,
+  reviewerUserId: string,
+  scope: WorksiteScope,
+): Promise<PdtpExecutionDeviation> {
+  const data = pdtpNotApplicableReviewSchema.parse(input)
+  const [target] = await db.select({
+    activityId: pdtpExecutionDeviations.activityId,
+    worksiteId: pdtpExecutionDeviations.worksiteId,
+    year: pdtpExecutionDeviations.year,
+    month: pdtpExecutionDeviations.month,
+    week: pdtpExecutionDeviations.week,
+  }).from(pdtpExecutionDeviations).where(eq(pdtpExecutionDeviations.id, data.deviationId)).limit(1)
+  if (!target) throw new Error("Desvío PDTP no encontrado.")
+  assertWorksiteAccess(target.worksiteId, scope)
+
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${pdtpCellLockKey(target.activityId, target.worksiteId, target.year, target.month, target.week)}))`)
+    const [deviation] = await tx.select().from(pdtpExecutionDeviations)
+      .where(eq(pdtpExecutionDeviations.id, data.deviationId)).limit(1).for("update")
+    if (!deviation) throw new Error("Desvío PDTP no encontrado.")
+    if (deviation.kind !== "not_applicable" || deviation.status !== "pending_review") {
+      throw new Error("Este desvío no está pendiente de revisión.")
+    }
+    if (deviation.createdByUserId === reviewerUserId) {
+      throw new Error("No puedes revisar tu propia declaración de 'no aplica': debe hacerlo otra persona.")
+    }
+
+    const [activity] = await tx.select({ programId: pdtpActivities.programId, n: pdtpActivities.n })
+      .from(pdtpActivities).where(eq(pdtpActivities.id, deviation.activityId)).limit(1)
+    if (!activity) throw new Error("Actividad PDTP no encontrada.")
+    const [program] = await tx.select({ version: pdtpPrograms.version })
+      .from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
+    if (!program) throw new Error("Programa PDTP no encontrado.")
+    // Aprobar cambia el denominador de un mes; rechazar no, pero tampoco se
+    // resuelve algo congelado en una foto: el cierre ya exige que no queden
+    // pendientes (`closePdtpPeriod`).
+    await assertPdtpPeriodOpen(activity.programId, deviation.worksiteId, deviation.year, deviation.month, tx)
+
+    if (data.decision === "approve") {
+      const [conflictingExecution] = await tx.select({ executedQuantity: pdtpExecutions.executedQuantity })
+        .from(pdtpExecutions).where(and(
+          eq(pdtpExecutions.activityId, deviation.activityId),
+          eq(pdtpExecutions.worksiteId, deviation.worksiteId),
+          eq(pdtpExecutions.year, deviation.year),
+          eq(pdtpExecutions.month, deviation.month),
+          eq(pdtpExecutions.week, deviation.week),
+          isNull(pdtpExecutions.obligationId),
+          inArray(pdtpExecutions.status, ["submitted", "approved"]),
+        )).limit(1).for("update")
+      if (conflictingExecution && conflictingExecution.executedQuantity > 0) {
+        throw new Error("La celda ya tiene una ejecución registrada: no se puede aprobar el 'no aplica'. Recházalo o pide que se retire.")
+      }
+    }
+
+    const now = new Date().toISOString()
+    const reason = data.reason?.trim() || null
+    const nextStatus = data.decision === "approve" ? "active" : "rejected"
+    const [updated] = await tx.update(pdtpExecutionDeviations).set({
+      status: nextStatus,
+      reviewedByUserId: reviewerUserId,
+      reviewedAt: now,
+      reviewReason: reason,
+    }).where(and(
+      eq(pdtpExecutionDeviations.id, deviation.id),
+      eq(pdtpExecutionDeviations.status, "pending_review"),
+    )).returning()
+    if (!updated) throw new Error("El desvío cambió de estado antes de poder revisarse. Actualiza la página e inténtalo nuevamente.")
+
+    const label = data.decision === "approve" ? "aprobado" : "rechazado"
+    await addPdtpChangeLogEntry(
+      activity.programId, program.version, reviewerUserId, `deviation:${activity.n}`,
+      { status: "pending_review", kind: deviation.kind, month: deviation.month, week: deviation.week },
+      { status: nextStatus, reviewedByUserId: reviewerUserId, reason },
+      `"No aplica" ${label} para actividad ${activity.n} (${deviation.month}/${deviation.year}, semana ${deviation.week}).${reason ? ` Motivo: ${reason}` : ""}`,
+      tx,
+    )
+    return updated
+  })
+}
+
+export type PdtpPendingNotApplicable = {
+  id: string
+  programId: string
+  activityId: string
+  activityN: number
+  activityName: string
+  worksiteId: string
+  worksiteName: string
+  year: number
+  month: number
+  week: number
+  reason: string
+  createdByUserId: string
+  createdByName: string
+  createdAt: string
+}
+
+/**
+ * Bandeja de "No aplica" pendientes de revisión, acotada al alcance de faenas
+ * del revisor y, opcionalmente, a un programa. Más antiguos primero: es el
+ * orden en que se revisan.
+ */
+export async function listPendingPdtpNotApplicable(
+  worksiteIds: string[] | "all",
+  options: { programId?: string } = {},
+): Promise<PdtpPendingNotApplicable[]> {
+  if (worksiteIds !== "all" && worksiteIds.length === 0) return []
+  const rows = await db.select({
+    id: pdtpExecutionDeviations.id,
+    programId: pdtpActivities.programId,
+    activityId: pdtpExecutionDeviations.activityId,
+    activityN: pdtpActivities.n,
+    activityName: pdtpActivities.activity,
+    worksiteId: pdtpExecutionDeviations.worksiteId,
+    worksiteName: worksites.name,
+    year: pdtpExecutionDeviations.year,
+    month: pdtpExecutionDeviations.month,
+    week: pdtpExecutionDeviations.week,
+    reason: pdtpExecutionDeviations.reason,
+    createdByUserId: pdtpExecutionDeviations.createdByUserId,
+    createdByName: users.name,
+    createdAt: pdtpExecutionDeviations.createdAt,
+  }).from(pdtpExecutionDeviations)
+    .innerJoin(pdtpActivities, eq(pdtpActivities.id, pdtpExecutionDeviations.activityId))
+    .innerJoin(worksites, eq(worksites.id, pdtpExecutionDeviations.worksiteId))
+    .innerJoin(users, eq(users.id, pdtpExecutionDeviations.createdByUserId))
+    .where(and(
+      eq(pdtpExecutionDeviations.status, "pending_review"),
+      eq(pdtpExecutionDeviations.kind, "not_applicable"),
+      worksiteIds === "all" ? undefined : inArray(pdtpExecutionDeviations.worksiteId, worksiteIds),
+      options.programId ? eq(pdtpActivities.programId, options.programId) : undefined,
+    ))
+    .orderBy(pdtpExecutionDeviations.createdAt)
+  return rows
+}
+
+/**
+ * PREV-C07: cuántas celdas "No aplica" tiene el programa en esas faenas, para
+ * mostrarlo junto al porcentaje (`declaredNotApplicable`). `approved` son las
+ * que ya salieron del denominador; `pending`, las que esperan revisión y
+ * todavía cuentan.
+ */
+export async function countPdtpNotApplicable(
+  programId: string,
+  worksiteIds: string[],
+): Promise<{ approved: number; pending: number }> {
+  if (worksiteIds.length === 0) return { approved: 0, pending: 0 }
+  const rows = await db.select({
+    status: pdtpExecutionDeviations.status,
+    total: sql<number>`count(*)::int`,
+  }).from(pdtpExecutionDeviations)
+    .innerJoin(pdtpActivities, eq(pdtpActivities.id, pdtpExecutionDeviations.activityId))
+    .where(and(
+      eq(pdtpActivities.programId, programId),
+      eq(pdtpExecutionDeviations.kind, "not_applicable"),
+      inArray(pdtpExecutionDeviations.status, ["active", "pending_review"]),
+      inArray(pdtpExecutionDeviations.worksiteId, worksiteIds),
+    ))
+    .groupBy(pdtpExecutionDeviations.status)
+  const byStatus = new Map(rows.map((row) => [row.status, Number(row.total)]))
+  return { approved: byStatus.get("active") ?? 0, pending: byStatus.get("pending_review") ?? 0 }
 }
 
 /**
@@ -325,7 +541,9 @@ export async function withdrawPdtpDeviation(
       .where(eq(pdtpExecutionDeviations.id, deviationId)).limit(1)
     if (!deviation) throw new Error("Desvío PDTP no encontrado.")
     assertWorksiteAccess(deviation.worksiteId, scope)
-    if (deviation.status !== "active") throw new Error("El desvío ya fue retirado.")
+    // PREV-C07: un "No aplica" en revisión también se retira (quien lo declaró
+    // se equivocó, o ya no corresponde). Uno rechazado o retirado, no.
+    if (deviation.status !== "active" && deviation.status !== "pending_review") throw new Error("El desvío ya no está vigente: fue retirado o rechazado.")
 
     const [activity] = await tx.select({ programId: pdtpActivities.programId, n: pdtpActivities.n })
       .from(pdtpActivities).where(eq(pdtpActivities.id, deviation.activityId)).limit(1)
@@ -351,13 +569,13 @@ export async function withdrawPdtpDeviation(
       withdrawReason: reason,
     }).where(and(
       eq(pdtpExecutionDeviations.id, deviationId),
-      eq(pdtpExecutionDeviations.status, "active"),
+      eq(pdtpExecutionDeviations.status, deviation.status),
     )).returning()
     if (!updated) throw new Error("El desvío cambió de estado antes de poder retirarse. Actualiza la página e inténtalo nuevamente.")
 
     await addPdtpChangeLogEntry(
       activity.programId, program.version, userId, `deviation:${activity.n}`,
-      { status: "active", kind: deviation.kind, month: deviation.month, week: deviation.week },
+      { status: deviation.status, kind: deviation.kind, month: deviation.month, week: deviation.week },
       { status: "withdrawn", reason },
       `Desvío retirado para actividad ${activity.n}. Motivo: ${reason}`,
       tx,

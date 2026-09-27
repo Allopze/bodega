@@ -431,8 +431,77 @@ describe("PDTP CHECK constraints SQL", () => {
       await insertDeviation({ id: "dev-a" })
       await expectCheckViolation(
         insertDeviation({ id: "dev-b" }),
-        "pdtp_execution_deviations_cell_active_unique",
+        "pdtp_execution_deviations_cell_open_unique",
       )
+    })
+
+    /* ── PREV-C07 (M-1): revisión del "No aplica" ─────────────────────────── */
+    describe("revisión del 'No aplica' (PREV-C07)", () => {
+      beforeEach(async () => {
+        await inMemoryDb.insert(schema.users).values({
+          id: "u-reviewer", name: "Revisora", email: "reviewer@test", hashedPassword: "x", isActive: true,
+        }).onConflictDoNothing()
+      })
+
+      const insertReviewable = (overrides: Record<string, unknown> = {}) => {
+        const now = new Date().toISOString()
+        return inMemoryDb.insert(schema.pdtpExecutionDeviations).values({
+          id: "na-1", activityId: "a1", worksiteId: "w1", year: 2026, month: 1, week: 1,
+          kind: "not_applicable", reason: "La faena estuvo detenida por mantención",
+          status: "pending_review", createdByUserId: "u1", createdAt: now,
+          ...overrides,
+        } as never)
+      }
+
+      it("acepta un 'No aplica' pendiente de revisión (sanity)", async () => {
+        await insertReviewable()
+      })
+
+      it("un pendiente ocupa la celda: no admite otro desvío abierto", async () => {
+        await insertReviewable()
+        await expectCheckViolation(
+          insertDeviation({ id: "dev-otro", kind: "not_performed" }),
+          "pdtp_execution_deviations_cell_open_unique",
+        )
+      })
+
+      it("un rechazado libera la celda", async () => {
+        const now = new Date().toISOString()
+        await insertReviewable({ status: "rejected", reviewedByUserId: "u-reviewer", reviewedAt: now, reviewReason: "No corresponde: la faena operó normal" })
+        await insertDeviation({ id: "dev-despues" })
+      })
+
+      it("sólo el 'No aplica' pasa por revisión", async () => {
+        await expectCheckViolation(
+          insertReviewable({ kind: "not_performed" }),
+          "pdtp_execution_deviations_pending_review_kind_check",
+        )
+      })
+
+      it("quien lo declaró no puede revisarlo", async () => {
+        const now = new Date().toISOString()
+        await expectCheckViolation(
+          insertReviewable({ status: "active", reviewedByUserId: "u1", reviewedAt: now }),
+          "pdtp_execution_deviations_reviewer_not_creator_check",
+        )
+      })
+
+      it("un rechazo exige fecha y motivo de al menos 10 caracteres", async () => {
+        const now = new Date().toISOString()
+        await expectCheckViolation(
+          insertReviewable({ status: "rejected", reviewedByUserId: "u-reviewer", reviewedAt: now, reviewReason: "corto" }),
+          "pdtp_execution_deviations_rejected_check",
+        )
+      })
+
+      it("borrar a quien revisó deja la revisión sin actor, no la borra (FK SET NULL)", async () => {
+        const now = new Date().toISOString()
+        await insertReviewable({ status: "active", reviewedByUserId: "u-reviewer", reviewedAt: now })
+        await inMemoryDb.delete(schema.users).where(eq(schema.users.id, "u-reviewer"))
+        const [row] = await inMemoryDb.select().from(schema.pdtpExecutionDeviations).where(eq(schema.pdtpExecutionDeviations.id, "na-1"))
+        expect(row?.status).toBe("active")
+        expect(row?.reviewedByUserId).toBeNull()
+      })
     })
 
     it("un desvío retirado no bloquea registrar uno nuevo activo en la misma celda", async () => {

@@ -18,8 +18,10 @@ import {
 import {
   PDTP_DEVIATION_KIND_HINTS,
   PDTP_DEVIATION_KIND_LABELS,
+  pdtpDeviationStatusLabel,
   type PdtpDeviationKindValue,
 } from "@/lib/prevention/pdtp"
+import { MetaBadge } from "@/components/states/state-badge"
 import { MONTH_LABELS } from "@/lib/utils"
 import { recordPdtpDeviationAction } from "./actions"
 
@@ -97,7 +99,11 @@ export function PdtpDeviationForm({
       if (!result.ok) {
         toast.error(result.message ?? "No se pudo registrar el desvío.")
       } else {
-        toast.success("Desvío registrado.")
+        // PREV-C07: el "No aplica" queda en revisión; decir "registrado" a
+        // secas hacía creer que el cumplimiento ya había cambiado.
+        toast.success(formData.get("kind") === "not_applicable"
+          ? "\"No aplica\" enviado a revisión. El cumplimiento no cambia hasta que otra persona lo apruebe."
+          : "Desvío registrado.")
         setOpen(false)
         // El diálogo sigue montado: el desvío siguiente parte de la celda, no del último usado.
         setKind(availableKinds[0] ?? "not_performed")
@@ -267,6 +273,8 @@ type PdtpDeviationListProps = {
     reason: string
     targetMonth: number | null
     targetWeek: number | null
+    /** PREV-C07: `pending_review` para un "No aplica" que espera revisión. */
+    status?: string
   }>
   /** Sólo se ofrece "Retirar" a quien puede declarar algún desvío. */
   canWithdraw?: boolean
@@ -297,6 +305,9 @@ export function PdtpDeviationList({ deviations, canWithdraw = false }: PdtpDevia
               <span className="font-mono">
                 → {MONTH_LABELS[deviation.targetMonth - 1]} · Sem {deviation.targetWeek}
               </span>
+            )}
+            {deviation.status === "pending_review" && (
+              <MetaBadge meta={{ label: pdtpDeviationStatusLabel(deviation.status), variant: "warning" }} />
             )}
           </div>
           <p className="mt-0.5 text-[var(--color-text-muted)]">{deviation.reason}</p>

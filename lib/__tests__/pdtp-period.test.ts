@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  aggregatePdtpActivityStatus,
   countOverdueMonths,
   currentPdtpPeriod,
   deriveActivityStatus,
@@ -7,7 +8,11 @@ import {
   filterPdtpRowsFromActivation,
   isPdtpActivityZeroThisMonth,
   isPdtpPeriodOnOrAfterActivation,
+  pdtpFirstOverdueMonth,
+  pdtpOverdueCutoffMonth,
+  pdtpPeriodFromChileDate,
   pdtpReferencePeriodForYear,
+  pdtpSheetActivityStatus,
   resolvePdtpOperationalYears,
   type PdtpPeriod,
 } from "@/lib/services/pdtp/period"
@@ -166,13 +171,15 @@ describe("deriveActivityStatus", () => {
     expect(status).toBe("overdue")
   })
 
-  it("returns 'executed' even if there are earlier unexecuted months, as long as current month is executed", () => {
+  // PREV-C06: antes devolvía "executed" — una ejecución del mes en curso
+  // escondía un mes anterior en cero. La deuda vencida se evalúa primero.
+  it("returns 'overdue' when an earlier month is unpaid, even if the current month is executed", () => {
     const monthlyPlanned = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
     const monthlyExecuted = [0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0]
     const period: PdtpPeriod = { year: 2026, month: 7, week: 1 }
 
     const status = deriveActivityStatus(monthlyPlanned, monthlyExecuted, period)
-    expect(status).toBe("executed")
+    expect(status).toBe("overdue")
   })
 
   it("handles undefined values in arrays (treats as 0)", () => {
@@ -317,5 +324,137 @@ describe("pdtpReferencePeriodForYear", () => {
 
   it("un año que aún no empieza se mide en su primera semana", () => {
     expect(pdtpReferencePeriodForYear(2028, today)).toEqual({ year: 2028, month: 1, week: 1 })
+  })
+})
+
+/**
+ * PREV-C06 (T2): el atraso se evalúa primero y sobre los meses ya vencidos,
+ * no sólo sobre el mes en curso. Antes una trimestral no hecha en marzo se
+ * veía en mayo como "No programada en este período" y una ejecución de este
+ * mes escondía los meses anteriores en cero.
+ */
+describe("PREV-C06 — atraso por deuda vencida", () => {
+  const zeros = () => Array.from({ length: 12 }, () => 0)
+  const at = (entries: Record<number, number>) => {
+    const arr = zeros()
+    for (const [month, value] of Object.entries(entries)) arr[Number(month) - 1] = value
+    return arr
+  }
+
+  describe("pdtpOverdueCutoffMonth", () => {
+    it("año en curso: vencen los meses anteriores al mes de hoy", () => {
+      expect(pdtpOverdueCutoffMonth(2026, { year: 2026, month: 5, week: 2 }, { year: 2026, month: 5, week: 2 })).toBe(4)
+    })
+
+    it("mirar un mes futuro no adelanta el vencimiento: manda hoy", () => {
+      expect(pdtpOverdueCutoffMonth(2026, { year: 2026, month: 9, week: 1 }, { year: 2026, month: 5, week: 2 })).toBe(4)
+    })
+
+    it("mirar un mes pasado mide la deuda a ese mes", () => {
+      expect(pdtpOverdueCutoffMonth(2026, { year: 2026, month: 3, week: 1 }, { year: 2026, month: 5, week: 2 })).toBe(2)
+    })
+
+    it("un año terminado leído en diciembre (pdtpReferencePeriodForYear) tiene los 12 meses vencidos", () => {
+      const today = { year: 2027, month: 1, week: 2 }
+      expect(pdtpOverdueCutoffMonth(2026, pdtpReferencePeriodForYear(2026, today), today)).toBe(12)
+    })
+
+    it("un año que no empieza no tiene nada vencido", () => {
+      expect(pdtpOverdueCutoffMonth(2028, { year: 2028, month: 1, week: 1 }, { year: 2027, month: 1, week: 2 })).toBe(0)
+    })
+  })
+
+  const period: PdtpPeriod = { year: 2026, month: 5, week: 2 }
+
+  it("una trimestral no hecha en marzo es 'atrasada' en mayo aunque mayo no tenga plan", () => {
+    const planned = at({ 3: 1, 6: 1 })
+    expect(deriveActivityStatus(planned, zeros(), period, { today: period })).toBe("overdue")
+    expect(countOverdueMonths(planned, zeros(), period, { today: period })).toBe(1)
+  })
+
+  it("una ejecución de este mes no esconde un mes anterior en cero", () => {
+    const planned = at({ 2: 1, 5: 1 })
+    expect(deriveActivityStatus(planned, at({ 5: 1 }), period, { today: period })).toBe("overdue")
+  })
+
+  it("D9: un mes con un envío pendiente de aprobación no cuenta como atraso", () => {
+    const planned = at({ 3: 1, 5: 1 })
+    expect(deriveActivityStatus(planned, zeros(), period, { today: period, monthlySubmitted: at({ 3: 1 }) })).toBe("pending")
+    expect(countOverdueMonths(planned, zeros(), period, { today: period, monthlySubmitted: at({ 3: 1 }) })).toBe(0)
+  })
+
+  it("el mes en curso todavía no vence: planificado y sin ejecutar es 'pendiente'", () => {
+    expect(deriveActivityStatus(at({ 5: 1 }), zeros(), period, { today: period })).toBe("pending")
+  })
+
+  it("un año cerrado se mide completo: diciembre sin ejecutar también es atraso", () => {
+    const today = { year: 2027, month: 1, week: 2 }
+    const reference = pdtpReferencePeriodForYear(2026, today)
+    expect(deriveActivityStatus(at({ 12: 1 }), zeros(), reference, { programYear: 2026, today })).toBe("overdue")
+  })
+
+  it("mirar un mes futuro no vuelve 'atrasados' los meses que todavía no terminan", () => {
+    const today = { year: 2026, month: 5, week: 2 }
+    const future = { year: 2026, month: 9, week: 1 }
+    expect(deriveActivityStatus(at({ 6: 1, 9: 1 }), zeros(), future, { today })).toBe("pending")
+  })
+
+  it("pdtpFirstOverdueMonth devuelve el primer mes vencido sin pagar", () => {
+    const planned = at({ 2: 1, 3: 1, 5: 1 })
+    expect(pdtpFirstOverdueMonth(planned, at({ 2: 1 }), period, { today: period })).toBe(3)
+    expect(pdtpFirstOverdueMonth(at({ 5: 1 }), zeros(), period, { today: period })).toBeNull()
+  })
+
+  it("'en cero' sigue siendo sólo el mes en curso: la deuda anterior no mete una actividad ejecutada este mes", () => {
+    const planned = at({ 2: 1, 5: 1 })
+    expect(isPdtpActivityZeroThisMonth({ indicatorMode: null }, planned, at({ 5: 1 }), period)).toBe(false)
+    expect(isPdtpActivityZeroThisMonth({ indicatorMode: null }, planned, zeros(), period)).toBe(true)
+  })
+
+  describe("aggregatePdtpActivityStatus — peor caso entre faenas", () => {
+    it("una faena atrasada hace atrasada a la actividad aunque otra esté ejecutada", () => {
+      expect(aggregatePdtpActivityStatus(["executed", "overdue", "not_scheduled"])).toBe("overdue")
+    })
+
+    it("sin atrasos, 'no realizada' pesa más que 'pendiente' y ésta más que 'ejecutada'", () => {
+      expect(aggregatePdtpActivityStatus(["executed", "pending", "not_performed"])).toBe("not_performed")
+      expect(aggregatePdtpActivityStatus(["executed", "pending"])).toBe("pending")
+      expect(aggregatePdtpActivityStatus(["not_scheduled", "executed"])).toBe("executed")
+    })
+
+    it("sin faenas no hay estado que agregar", () => {
+      expect(aggregatePdtpActivityStatus([])).toBe("not_scheduled")
+    })
+  })
+
+  describe("pdtpSheetActivityStatus — la única regla de la planilla y del KPI", () => {
+    const context = { programYear: 2026, today: period }
+
+    it("vista por faena: deriva de los arreglos efectivos y cuenta lo enviado como pagado (D9)", () => {
+      const activity = { effectiveMonthlyPlanned: at({ 3: 1, 5: 1 }), effectiveMonthlyExecuted: zeros(), monthlyNotPerformed: zeros() }
+      expect(pdtpSheetActivityStatus(activity, period, context)).toEqual({ status: "overdue", overdueMonths: 1, firstOverdueMonth: 3 })
+      expect(pdtpSheetActivityStatus({ ...activity, pendingMonthlyExecuted: at({ 3: 1 }) }, period, context))
+        .toEqual({ status: "pending", overdueMonths: 0, firstOverdueMonth: null })
+    })
+
+    it("vista agregada: el peor caso de las faenas, no la suma", () => {
+      const activity = {
+        // Sumadas, las dos faenas "cubren" marzo: la agregación ingenua diría pendiente.
+        effectiveMonthlyPlanned: at({ 3: 2, 5: 2 }),
+        effectiveMonthlyExecuted: at({ 3: 1 }),
+        monthlyNotPerformed: zeros(),
+        worksiteSummaries: [
+          { status: "pending" as const, overdueMonths: 0 },
+          { status: "overdue" as const, overdueMonths: 2 },
+        ],
+      }
+      expect(pdtpSheetActivityStatus(activity, period, context)).toEqual({ status: "overdue", overdueMonths: 2, firstOverdueMonth: null })
+    })
+  })
+
+  it("pdtpPeriodFromChileDate lee el día chileno AAAA-MM-DD", () => {
+    expect(pdtpPeriodFromChileDate("2026-05-09")).toEqual({ year: 2026, month: 5, week: 2 })
+    expect(pdtpPeriodFromChileDate("2026-05-31")).toEqual({ year: 2026, month: 5, week: 4 })
+    expect(pdtpPeriodFromChileDate("")).toBeNull()
   })
 })

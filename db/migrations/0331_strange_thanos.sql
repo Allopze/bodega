@@ -1,0 +1,11 @@
+ALTER TABLE "pdtp_execution_deviations" DROP CONSTRAINT IF EXISTS "pdtp_execution_deviations_status_check";--> statement-breakpoint
+DROP INDEX IF EXISTS "pdtp_execution_deviations_cell_active_unique";--> statement-breakpoint
+ALTER TABLE "pdtp_execution_deviations" ADD COLUMN "reviewed_by_user_id" text;--> statement-breakpoint
+ALTER TABLE "pdtp_execution_deviations" ADD COLUMN "reviewed_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "pdtp_execution_deviations" ADD COLUMN "review_reason" text;--> statement-breakpoint
+ALTER TABLE "pdtp_execution_deviations" ADD CONSTRAINT "pdtp_execution_deviations_reviewed_by_user_id_users_id_fk" FOREIGN KEY ("reviewed_by_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "pdtp_execution_deviations_cell_open_unique" ON "pdtp_execution_deviations" USING btree ("activity_id","worksite_id","year","month","week") WHERE "pdtp_execution_deviations"."status" IN ('active', 'pending_review');--> statement-breakpoint
+ALTER TABLE "pdtp_execution_deviations" ADD CONSTRAINT "pdtp_execution_deviations_pending_review_kind_check" CHECK ("pdtp_execution_deviations"."status" NOT IN ('pending_review', 'rejected') OR "pdtp_execution_deviations"."kind" = 'not_applicable');--> statement-breakpoint
+ALTER TABLE "pdtp_execution_deviations" ADD CONSTRAINT "pdtp_execution_deviations_reviewer_not_creator_check" CHECK ("pdtp_execution_deviations"."reviewed_by_user_id" IS NULL OR "pdtp_execution_deviations"."reviewed_by_user_id" <> "pdtp_execution_deviations"."created_by_user_id");--> statement-breakpoint
+ALTER TABLE "pdtp_execution_deviations" ADD CONSTRAINT "pdtp_execution_deviations_rejected_check" CHECK ("pdtp_execution_deviations"."status" <> 'rejected' OR ("pdtp_execution_deviations"."reviewed_at" IS NOT NULL AND length(trim(COALESCE("pdtp_execution_deviations"."review_reason", ''))) >= 10));--> statement-breakpoint
+ALTER TABLE "pdtp_execution_deviations" ADD CONSTRAINT "pdtp_execution_deviations_status_check" CHECK ("pdtp_execution_deviations"."status" IN ('active', 'pending_review', 'rejected', 'withdrawn'));
