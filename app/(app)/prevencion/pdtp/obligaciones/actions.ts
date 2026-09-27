@@ -52,13 +52,15 @@ async function run(
 
 export async function createPdtpObligationAction(input: unknown): Promise<ActionState> {
   return run("prevention:pdtp:execute", ({ userId, scope }) => {
+    // NEW-01: desde la acción sólo nacen obligaciones manuales; ver el
+    // esquema. La fecha del hecho es la del servidor.
     const parsed = pdtpObligationCreateSchema.parse(input)
     return createPdtpObligation({
       ...parsed,
+      origin: "manual",
       sourceType: parsed.sourceType ?? undefined,
       sourceId: parsed.sourceId ?? undefined,
-      sourceOccurredAt: parsed.sourceOccurredAt ?? undefined,
-      manualReason: parsed.manualReason ?? undefined,
+      sourceMetadata: {},
       userId,
       scope,
     })

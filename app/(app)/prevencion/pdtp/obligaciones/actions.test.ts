@@ -51,6 +51,38 @@ describe("PDTP obligation actions are authorization boundaries", () => {
     }))
   })
 
+  /* Revisión final 2026-09-27 (NEW-01): el esquema de la acción aceptaba
+   * `origin: "integration"` y la fecha/metadatos de la fuente desde el
+   * cliente. Una obligación "integrada" se salta la exigencia de archivo al
+   * reportar y al aprobar (PREV-B02) y su fecha de origen fija el plazo (I11).
+   * Sólo los conectores del servidor crean integradas, por el servicio. */
+  it("una llamada armada con origin 'integration' crea igual una obligación manual, sin fecha ni metadatos de fuente", async () => {
+    await expect(createPdtpObligationAction({
+      activityId: "activity-1",
+      worksiteId: "ws-own",
+      origin: "integration",
+      clientRequestId: "request-forged",
+      sourceType: "inspeccion",
+      sourceId: "run-forged",
+      sourceOccurredAt: "2020-01-01T00:00:00.000Z",
+      sourceMetadata: { approvalMode: "automatic_source_event" },
+      manualReason: "Motivo que se ve legítimo en la llamada",
+      plannedQuantity: 1,
+    })).resolves.toEqual({ ok: true })
+    const call = createPdtpObligation.mock.calls[0]![0]
+    expect(call).toMatchObject({ origin: "manual", sourceMetadata: {}, userId: "trusted-user" })
+    expect(call.sourceOccurredAt).toBeUndefined()
+  })
+
+  it("sin motivo, la llamada armada como integración se rechaza como cualquier manual", async () => {
+    const result = await createPdtpObligationAction({
+      activityId: "activity-1", worksiteId: "ws-own", origin: "integration", clientRequestId: "request-forged-2",
+      sourceType: "inspeccion", sourceId: "run-forged", sourceOccurredAt: "2026-09-01T00:00:00.000Z",
+    })
+    expect(result).toMatchObject({ ok: false })
+    expect(createPdtpObligation).not.toHaveBeenCalled()
+  })
+
   it("derives actor and scope for reporting and cancellation", async () => {
     await reportPdtpObligationAction({ obligationId: "ob-1", executedQuantity: 1, evidenceText: "Registro verificable", evidencePhotos: [] })
     await cancelPdtpObligationAction({ obligationId: "ob-2", reason: "Caso duplicado y formalmente fusionado" })
