@@ -288,8 +288,25 @@ verifica `lib/__tests__/deploy-workflow.test.ts`. Estos son los **11** de Preven
 | `deadline-reminders` | diario 06:55 | |
 | `prevention-incident-reminders` | cada hora, minuto 10 | Encadena el barrido de reparación del RE-20 |
 | `prevention-inspection-programs` | diario 04:50 | Reemplaza al workflow de GitHub Actions retirado |
-| `pdtp-evidence-integrity` | diario 05:15 | Sólo observa. La alerta es la línea `[pdtp/evidence-integrity]` con nivel `error` |
+| `pdtp-evidence-integrity` | diario 05:15 | Sólo observa. Deja la línea `[pdtp/evidence-integrity]` con nivel `error` y, si hay pérdidas, avisa (ver "Alertas") |
 | `pdtp-evidence-gc` | diario 04:30 | **En modo de prueba** (sección 8) |
+
+**Alertas (PREV-I13, reemplaza a D28).** Usan la infraestructura de avisos existente
+(`createNotifications`: campana de la plataforma + correo por `lib/email/smtp.ts`), sin
+proveedor nuevo. Lógica en `lib/services/prevention-ops-alerts.ts`:
+
+- `pdtp-evidence-integrity` con archivos perdidos o alterados → usuarios activos con
+  `admin:backups` (por defecto administrador y jefatura: quienes restauran respaldos).
+- Cualquiera de estos 11 jobs (más `pdtp-fulfillment-reconcile`, encadenado al semanal) que
+  termine en `failed` en `cron_runs` → usuarios activos con `admin:ops_settings` (por
+  defecto administrador). El gancho está en `withCronLock`.
+- Como máximo **un aviso por job y por día** (`dedupeKey` con el día chileno).
+- Sin `RESEND_API_KEY` o con el envío de correos desactivado, el aviso queda en la campana
+  y el log registra un `warn` "correo no configurado". La alerta nunca cambia el código de
+  salida ni el error del cron.
+
+Para verificar tras el despliegue: que al menos un usuario activo tenga cada permiso (si no,
+el log dice "nadie a quien avisar").
 
 Procesos de un solo tiro que **sólo informan** y que el deploy no corre:
 
