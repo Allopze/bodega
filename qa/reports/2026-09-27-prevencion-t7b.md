@@ -56,7 +56,7 @@ Los rangos vienen de dos corridas de cada lado. Las consultas no dependen ya del
 
 ## Las cifras no cambian (evidencia)
 
-1. **Dorado generado antes de optimizar.** El commit `920d6b38` agrega el conjunto sintético y `lib/__tests__/fixtures/pdtp-compliance-golden-2025.json`, generado con el código **anterior**. Dos corridas sin regenerar coincidieron, así que es determinista. El dorado cubre 73 lecturas:
+1. **Dorado generado antes de optimizar.** El commit `920d6b38` agrega el conjunto sintético y `lib/__tests__/fixtures/pdtp-compliance-golden-2025.json`, generado con el código **anterior**. Dos corridas sin regenerar coincidieron, así que es determinista. El dorado cubre 71 lecturas:
    - tablero consolidado y por versión, y un subconjunto de faenas;
    - eje con todas las faenas y con una;
    - integral por alcance, consolidado y por versión;
