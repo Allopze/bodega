@@ -68,7 +68,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
         </div>}
       />
       {/* INC-001: lo que llega por el canal público del trabajador, donde se tría. */}
-      {(canReport || canTriage) && <PublicIncidentReportsPanel scope={access.scope} canTriage={canTriage} canConvert={canTriage && canReport} />}
+      {(canReport || canTriage) && <PublicIncidentReportsPanel scope={access.scope} canTriage={canTriage} canConvert={canTriage} />}
       <IncidentList incidents={incidents} worksites={worksites} counts={counts} canReport={canReport} indicatorContext={indicatorLabel ? `Fuente del indicador de ${indicatorLabel} · ${effectiveMonthFrom ?? "—"}-${effectiveMonthTo ?? "—"}/${query.year ?? ""}` : undefined} />
       <PdtpScheduledActivityPanelServer connectorKey="incidents" />
     </PageContainer>

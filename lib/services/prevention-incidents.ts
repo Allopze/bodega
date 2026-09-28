@@ -548,9 +548,13 @@ export async function reportPreventionIncident(args: {
    */
   fromPublicReport?: { reportId: string; notes: string }
 }) {
-  requireAccess(args.access, "prevention:incidents:report")
+  // Abrir el incidente desde el buzón es parte del triage del reporte, no un
+  // reporte nuevo: quien clasifica (`incidents:triage`) puede hacerlo aunque no
+  // reporte (jefa_chome). El reporte original ya lo hizo el trabajador.
+  const permission = args.fromPublicReport ? "prevention:incidents:triage" : "prevention:incidents:report"
+  requireAccess(args.access, permission)
   const input = reportIncidentSchema.parse(args.input)
-  requireAccess(args.access, "prevention:incidents:report", input.worksiteId)
+  requireAccess(args.access, permission, input.worksiteId)
   const fatalOrSerious = input.isFatalOrSerious || input.actualSeverity === "serious" || input.actualSeverity === "fatal"
 
   const result = await db.transaction(async (tx) => {

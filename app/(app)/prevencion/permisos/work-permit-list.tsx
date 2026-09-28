@@ -10,7 +10,7 @@ import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
-import { PERMIT_STATUS_LABELS, permitStatusBadgeVariant } from "@/lib/prevention/permits"
+import { PERMIT_STATUS_LABELS, permitStatusMeta } from "@/lib/prevention/permits"
 import {
   isPermitQuickFilter,
   matchesPermitQuickFilter,
@@ -173,7 +173,7 @@ export function WorkPermitList({ permits, canManage, canRequest, types, worksite
             <ResponsiveDataListCard
               title={<Link href={`/prevencion/permisos/${item.id}`} className="font-mono hover:underline">{item.code}</Link>}
               description={item.taskDescription}
-              status={<MetaBadge meta={{ label: `${PERMIT_STATUS_LABELS[item.status] ?? item.status}`, variant: permitStatusBadgeVariant(item.status) }} />}
+              status={<MetaBadge meta={permitStatusMeta(item)} />}
               actions={<Button asChild type="button" variant="ghost" size="sm"><Link href={`/prevencion/permisos/${item.id}`}>Ver permiso</Link></Button>}
             >
               <ResponsiveDataListField label="Tipo">{item.typeName}</ResponsiveDataListField>
@@ -205,7 +205,7 @@ export function WorkPermitList({ permits, canManage, canRequest, types, worksite
                 <span className="block text-xs text-[var(--color-text-subtle)]">{item.location}</span>
               </TableCell>
               <TableCell>
-                <MetaBadge meta={{ label: `${PERMIT_STATUS_LABELS[item.status] ?? item.status}`, variant: permitStatusBadgeVariant(item.status) }} />
+                <MetaBadge meta={permitStatusMeta(item)} />
                 {item.suspensionReason && (
                   <span className="mt-1 block max-w-xs text-xs text-[var(--color-text-subtle)]">{item.suspensionReason}</span>
                 )}

@@ -905,6 +905,10 @@ export const preventionModule = {
     { roleSlug: "prevencionista",       permission: "prevention:incidents:view" },
     { roleSlug: "prevencionista",       permission: "prevention:incidents:triage" },
     { roleSlug: "prevencionista",       permission: "prevention:incidents:investigate" },
+    // Ficha reservada del incidente (identidad y lesión): la completa quien
+    // investiga en el equipo central de SST. Sin ningún rol con el permiso, el
+    // formulario de la vista reservada no lo veía nadie.
+    { roleSlug: "prevencionista",       permission: "prevention:incidents:view_sensitive" },
     { roleSlug: "prevencionista",       permission: "prevention:incidents:notify" },
     { roleSlug: "prevencionista",       permission: "prevention:incidents:export" },
     /* Responsable de la n=42 y la n=43 (procedimientos de trabajo seguro) y sin

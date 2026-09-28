@@ -193,6 +193,17 @@ describe("INC-001 — canal público de reporte", () => {
     expect(incidents.filter((row) => row.initialNarrative === BASE.narrative)).toHaveLength(1)
   })
 
+  // Quien clasifica sin reportar (jefa_chome) abre el incidente desde el
+  // buzón: es parte del triage, no un reporte nuevo.
+  it("con sólo incidents:triage convierte el reporte", async () => {
+    const report = await pendingReport(WS)
+    const { incident } = await convertPublicIncidentReport({
+      access: access(["prevention:incidents:triage", "prevention:incidents:view"]),
+      input: { reportId: report.id, eventType: "dangerous_incident", companyName: "Empresa Mandante", occurredTime: "00:30", notes: "La jefatura abre el incidente sin permiso de reporte." },
+    })
+    expect(incident.worksiteId).toBe(WS)
+  })
+
   it("no convierte un reporte de una faena fuera de alcance", async () => {
     const report = await pendingReport(WS_OTRA)
     await expect(convertPublicIncidentReport({

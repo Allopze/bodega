@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  permitStatusMeta,
   assessPermitActivation,
   isPermitExpired,
   plannedDurationHours,
@@ -354,5 +355,20 @@ describe("máquina de estados", () => {
 
   it("un permiso suspendido puede reanudarse o cerrarse", () => {
     expect(PERMIT_TRANSITIONS.suspended).toEqual(expect.arrayContaining(["active", "closed"]))
+  })
+})
+
+describe("permitStatusMeta", () => {
+  const now = "2026-09-28T12:00:00.000Z"
+  it("un aprobado con la ventana vencida se muestra como vencido sin activar", () => {
+    expect(permitStatusMeta({ status: "approved", plannedEndAt: "2026-09-28T11:00:00.000Z" }, now))
+      .toEqual({ label: "Vencido sin activar", variant: "warning" })
+  })
+  it("un aprobado dentro de su ventana sigue aprobado", () => {
+    expect(permitStatusMeta({ status: "approved", plannedEndAt: "2026-09-28T13:00:00.000Z" }, now))
+      .toEqual({ label: "Aprobado", variant: "info" })
+  })
+  it("los demás estados no cambian aunque la ventana haya pasado", () => {
+    expect(permitStatusMeta({ status: "closed", plannedEndAt: "2026-09-01T00:00:00.000Z" }, now).label).toBe("Cerrado")
   })
 })

@@ -30,7 +30,7 @@ export function PublicReportActions({ reportId, reportCode, occurredAt, canConve
   reportId: string
   reportCode: string
   occurredAt: string
-  /** Abrir el incidente también es reportarlo: exige `incidents:report`. */
+  /** Abrir el incidente desde el buzón es parte del triage: basta `incidents:triage`. */
   canConvert: boolean
 }) {
   const router = useRouter()
