@@ -58,20 +58,16 @@ rojo; se corrigió cuando la prueba pasó a verde.
 - **`pdtp-ocurrencia-no-aplica-revision`.** Fallaba **también en `main`**. Era una carrera de la prueba:
   consultaba la base antes de que terminara la acción. Se corrigió la spec, no el producto.
 
-## Decisiones que quedan al usuario
+## Decisiones (resueltas con el usuario, commit 113e2e63)
 
-1. **Permisos `approved` vencidos.** Hoy siguen `approved` y la activación los bloquea por
-   `window_expired`. Cancelarlos solos exige migración, porque el CHECK pide `cancelledByUserId`.
-2. **Acta CGRD sin quórum.** Se puede registrar, pero no acredita la N°81 ni llena la casilla del programa.
-   Confirmar el criterio.
-3. **Versión de un documento archivado.** Responde 410 salvo a los roles de flujo documental (manage,
-   review, approve, publish). ¿410 para todos?
-4. **Carga masiva.** Las clases `personal`/`client_secret` exigen ahora `manage_restricted`.
-5. **Segregación del rechazo de un cambio.** No admite la excepción `sign_own_work`, igual que la aprobación.
-6. **Bandeja pública de incidentes.** Solo `incidents:triage` actúa. Convertir exige además `incidents:report`,
-   así que `jefa_chome` puede descartar pero no convertir.
-7. **Roles por omisión.** Ningún rol tiene por defecto `view_sensitive` ni `health:view_clinical`: los
-   formularios nuevos sólo los ve quien reciba esos permisos.
+1. **Permisos `approved` vencidos:** siguen `approved` y la activación los bloquea. Ahora se muestran «Vencido sin activar» en la lista y en la ficha. Sin migración.
+2. **Acta CGRD sin quórum:** se registra, pero no acredita la N°81. Se mantiene.
+3. **Versión de un documento archivado:** 410, salvo roles del flujo documental. Se mantiene.
+4. **Carga masiva `personal`/`client_secret`:** exige `manage_restricted`. Se mantiene: es la regla de la subida individual.
+5. **Bandeja pública de incidentes:** convertir exige sólo `incidents:triage`; `jefa_chome` ya puede.
+6. **Roles por omisión:** `prevencionista` recibe `incidents:view_sensitive`. `health:view_clinical` sigue sin rol por omisión. **Aplicar con `npm run db:seed`** al desplegar.
+
+La prueba de la conversión con sólo `triage` se escribió junto con el fix (no se vio en rojo).
 
 ## Sin recorrer
 
