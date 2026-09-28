@@ -3,12 +3,13 @@ import { redirect } from "next/navigation"
 import { requireAuth, can, canAny } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { db } from "@/db"
-import { sstEvaluations, sstWeeklyEvaluations } from "@/db/schema/sst"
+import { sstWeeklyEvaluations } from "@/db/schema/sst"
 import { workers, worksites } from "@/db/schema/worksites"
-import { eq, desc } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { resolveEvaluatorRole } from "@/lib/sst/resolve-evaluator-role"
+import { listWorkerEvaluations } from "@/lib/services/sst-module/worker-evaluations"
 import { WorkerEvaluations } from "./worker-evaluations"
 import { evaluationsForVisit, listOpenEvaluationVisits } from "./visit-context"
 
@@ -64,12 +65,9 @@ export default async function WorkerEvaluationsPage({ params }: Props) {
     redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/trabajador")}`)
   }
 
-  // Fetch all evaluations for this worker
-  const evaluations = await db
-    .select()
-    .from(sstEvaluations)
-    .where(eq(sstEvaluations.workerId, workerId))
-    .orderBy(desc(sstEvaluations.createdAt))
+  // Sólo las evaluaciones de faenas del alcance (#33): la faena actual del
+  // trabajador no dice nada de dónde se hicieron sus actas anteriores.
+  const evaluations = await listWorkerEvaluations(workerId, worksiteIds)
 
   const openVisits = listOpenEvaluationVisits(evaluations, worker.worksiteId)
   // Con una sola visita en borrador se muestra como el caso de trabajo actual.

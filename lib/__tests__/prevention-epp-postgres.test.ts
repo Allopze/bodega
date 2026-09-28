@@ -24,6 +24,9 @@ let testDb: ReturnType<typeof drizzle<typeof schema>> | undefined
 const scopeA = { mode: "some", ids: ["ws-epp-a"] } as WorksiteScope
 const MANAGER = { userId: "epp-manager", scope: scopeA, permissions: ["prevention:epp:view", "prevention:epp:manage"] }
 const OUTSIDER = { userId: "epp-outsider", scope: { mode: "some", ids: ["ws-epp-b"] } as WorksiteScope, permissions: ["prevention:epp:view", "prevention:epp:manage"] }
+// Un requisito global o por cargo sin faena rige en todas las faenas: sólo lo
+// crea quien las ve todas (#32).
+const GLOBAL_MANAGER = { userId: "epp-global", scope: { mode: "all", ids: [] } as WorksiteScope, permissions: ["prevention:epp:view", "prevention:epp:manage"] }
 
 function getDb() {
   if (!testDb) throw new Error("Test database not initialised")
@@ -66,7 +69,7 @@ describeIf("EPP preventivo on real PostgreSQL", () => {
     await service.createEppRequirement({
       eppTypeId: "eppt-cabeza", scopeType: "global",
       enforcement: "blocking", reason: "DS 594 art. 53: protección de cabeza obligatoria en toda faena.",
-    }, MANAGER)
+    }, GLOBAL_MANAGER)
 
     const gaps = await service.listEppCoverageGaps(MANAGER)
     expect(gaps.some((gap) => gap.workerId === "wk-a1" && gap.gapType === "missing")).toBe(true)
@@ -135,6 +138,56 @@ describeIf("EPP preventivo on real PostgreSQL", () => {
     const outsiderGaps = await service.listEppCoverageGaps(OUTSIDER)
     expect(outsiderGaps.every((gap) => gap.worksiteId !== "ws-epp-a")).toBe(true)
   })
+
+  it("un usuario acotado a faenas no crea ni modifica requisitos que rigen en todas (#32)", async () => {
+    const service = await import("@/lib/services/prevention-epp")
+    const reason = "Requisito que rige fuera de la faena de quien lo crea."
+    await expect(service.createEppRequirement({ eppTypeId: "eppt-cabeza", scopeType: "global", enforcement: "warning", reason }, MANAGER))
+      .rejects.toThrow(/todas las faenas/)
+    await expect(service.createEppRequirement({ eppTypeId: "eppt-cabeza", scopeType: "position", scopeValue: "Operador", enforcement: "warning", reason }, MANAGER))
+      .rejects.toThrow(/todas las faenas/)
+
+    const [global] = await getDb().select().from(schema.preventionEppRequirements)
+      .where(eq(schema.preventionEppRequirements.scopeType, "global"))
+    expect(global).toBeDefined()
+    await expect(service.updateEppRequirement({ id: global!.id, enforcement: "warning", reason }, MANAGER)).rejects.toThrow(/todas las faenas/)
+    await expect(service.deactivateEppRequirement({ id: global!.id, reason }, MANAGER)).rejects.toThrow(/todas las faenas/)
+    const [after] = await getDb().select().from(schema.preventionEppRequirements).where(eq(schema.preventionEppRequirements.id, global!.id))
+    expect(after).toMatchObject({ enforcement: "blocking", isActive: true })
+
+    // Por cargo, pero dentro de su faena, sí puede.
+    const own = await service.createEppRequirement({ eppTypeId: "eppt-cabeza", scopeType: "position", scopeValue: "Operador", worksiteId: "ws-epp-a", enforcement: "warning", reason }, MANAGER)
+    expect(own.worksiteId).toBe("ws-epp-a")
+  })
+
+  it("el listado de requisitos respeta el alcance de faena y muestra los globales (#32)", async () => {
+    const service = await import("@/lib/services/prevention-epp")
+    await service.createEppRequirement({ eppTypeId: "eppt-cabeza", scopeType: "worksite", worksiteId: "ws-epp-a", enforcement: "warning", reason: "Casco en la faena norte por trabajos en altura." }, MANAGER)
+    const outsiderRows = await service.listEppRequirements(OUTSIDER)
+    expect(outsiderRows.some((row) => row.requirement.worksiteId === "ws-epp-a")).toBe(false)
+    expect(outsiderRows.some((row) => row.requirement.worksiteId === null)).toBe(true)
+
+    const managerRows = await service.listEppRequirements(MANAGER)
+    expect(managerRows.some((row) => row.requirement.worksiteId === "ws-epp-a")).toBe(true)
+    expect(managerRows.some((row) => row.requirement.worksiteId === null)).toBe(true)
+
+    // El alcance total no filtra: ve los de faena y los globales.
+    const globalRows = await service.listEppRequirements(GLOBAL_MANAGER)
+    expect(globalRows.some((row) => row.requirement.worksiteId === "ws-epp-a")).toBe(true)
+    expect(globalRows.some((row) => row.requirement.worksiteId === null)).toBe(true)
+  })
+
+  it("el peligro MIPER y el requisito legal citados deben existir y ser de la faena del requisito (#32)", async () => {
+    const service = await import("@/lib/services/prevention-epp")
+    const base = { eppTypeId: "eppt-cabeza", scopeType: "worksite", worksiteId: "ws-epp-a", enforcement: "warning", reason: "Casco exigido por el peligro de caída de objetos." } as const
+    await expect(service.createEppRequirement({ ...base, riskEntryId: "entry-epp-b" }, GLOBAL_MANAGER)).rejects.toThrow(/peligro.*otra faena/i)
+    await expect(service.createEppRequirement({ ...base, riskEntryId: "entry-inexistente" }, GLOBAL_MANAGER)).rejects.toThrow(/peligro.*no existe/i)
+    await expect(service.createEppRequirement({ ...base, legalRequirementId: "legal-inexistente" }, GLOBAL_MANAGER)).rejects.toThrow(/requisito legal.*no existe/i)
+
+    const created = await service.createEppRequirement({ ...base, riskEntryId: "entry-epp-a" }, MANAGER)
+    expect(created.riskEntryId).toBe("entry-epp-a")
+    await expect(service.updateEppRequirement({ id: created.id, riskEntryId: "entry-epp-b" }, GLOBAL_MANAGER)).rejects.toThrow(/peligro.*otra faena/i)
+  })
 })
 
 async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) {
@@ -151,7 +204,32 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
   await database.insert(schema.users).values([
     { id: "epp-manager", name: "Gestor de EPP", email: "epp-manager@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "epp-outsider", name: "Ajeno", email: "epp-outsider@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
+    { id: "epp-global", name: "Gestor global", email: "epp-global@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
   ])
+  // Un peligro MIPER por faena, para probar que el requisito sólo cita el de la suya.
+  await database.insert(schema.preventionRiskMethodologies).values({
+    id: "meth-epp", code: "ISP", name: "Matriz ISP", versionLabel: "v1", kind: "primary", authoritySource: "ISP", createdByUserId: "epp-global",
+  })
+  for (const ws of ["a", "b"] as const) {
+    await database.insert(schema.preventionRiskMatrices).values({
+      id: `matrix-epp-${ws}`, worksiteId: `ws-epp-${ws}`, matrixVersion: 1, title: `MIPER ${ws}`, status: "draft",
+      methodologyId: "meth-epp", methodologySnapshot: {},
+      revisionReason: "Versión inicial de la matriz para la prueba.",
+      participationSummary: "Participación documentada del comité paritario.",
+      consultationEvidenceReference: "acta-consulta", createdByUserId: "epp-global",
+    })
+    await database.insert(schema.preventionRiskProcesses).values({ id: `proc-epp-${ws}`, worksiteId: `ws-epp-${ws}`, code: "P1", name: "Montaje" })
+    await database.insert(schema.preventionRiskTasks).values({ id: `task-epp-${ws}`, processId: `proc-epp-${ws}`, code: "T1", name: "Izaje" })
+    await database.insert(schema.preventionRiskPositions).values({ id: `pos-epp-${ws}`, taskId: `task-epp-${ws}`, code: "C1", name: "Rigger" })
+    await database.insert(schema.preventionRiskEntries).values({
+      id: `entry-epp-${ws}`, matrixId: `matrix-epp-${ws}`, processId: `proc-epp-${ws}`, taskId: `task-epp-${ws}`, positionId: `pos-epp-${ws}`,
+      hazardCode: "H1", hazard: "Caída de objetos", riskFactor: "Carga suspendida", expectedEventOrDamage: "Golpe en la cabeza",
+      exposedPeopleDescription: "Cuadrilla de izaje", genderConsiderations: "Sin diferencias declaradas.",
+      sensitiveWorkerConsiderations: "Sin trabajadores sensibles asignados.",
+      inherentDimensions: {}, inherentLevel: "high", residualDimensions: {}, residualLevel: "medium",
+      responsibleSnapshot: "Supervisor de izaje",
+    })
+  }
   // `epp_types` ya viene poblado por la migración semilla del catálogo EPP
   // (0091): 'eppt-cabeza' es una de las 9 filas canónicas, no se duplica.
   await database.insert(schema.productCategories).values([

@@ -294,6 +294,45 @@ describe("casillas del programa del CGRD — N°81", () => {
 })
 
 describe("actas de reunión — N°81", () => {
+  /* #35: el acta es de una sesión ya realizada; una fecha futura acreditaba
+   * por adelantado una sesión que todavía no ocurre. El límite es el día
+   * civil chileno, no UTC. */
+  it("rechaza un acta con fecha de sesión futura", async () => {
+    const committee = await constituteGrdCommittee({ worksiteId: WS_A, name: "CGRD", constitutedOn: "2026-03-01", mandateEndsOn: "2028-03-01", evidenceUrl: EVIDENCE }, MANAGER)
+    const tomorrow = new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString()
+    await expect(recordGrdMeeting({
+      committeeId: committee.id, heldOn: tomorrow, agenda: "Revisión de amenazas del período",
+      minutes: "Acta de la sesión con el detalle suficiente de lo tratado", quorumReached: true, evidenceUrl: EVIDENCE,
+    }, MANAGER)).rejects.toThrow(/futura/)
+    expect(await inMemoryDb.select().from(schema.preventionGrdMeetings)).toHaveLength(0)
+    expect(await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.activityId, `${PROGRAM_ID}-a-81`))).toHaveLength(0)
+  })
+
+  /* #35: el quórum declarado no condicionaba nada. Sin quórum el acta se
+   * registra igual —la sesión existió y lo tratado queda en la bitácora—, pero
+   * no es una sesión válida del comité: no acredita la N°81 ni llena una
+   * casilla del programa. */
+  it("un acta sin quórum se registra pero no acredita la N°81 ni llena la casilla", async () => {
+    const committee = await constituteGrdCommittee({ worksiteId: WS_A, name: "CGRD", constitutedOn: "2026-03-01", mandateEndsOn: "2028-03-01", evidenceUrl: EVIDENCE }, MANAGER)
+    const meeting = await recordGrdMeeting({
+      committeeId: committee.id, heldOn: "2026-04-01T15:00:00.000Z", agenda: "Revisión de amenazas del período",
+      minutes: "Acta de la sesión con el detalle suficiente de lo tratado", quorumReached: false, evidenceUrl: EVIDENCE,
+    }, MANAGER)
+    expect(meeting.quorumReached).toBe(false)
+    expect(await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.activityId, `${PROGRAM_ID}-a-81`))).toHaveLength(0)
+
+    const { ensureGrdMeetingSlotsForWorksiteTx } = await import("@/lib/services/prevention-program-slots")
+    await ensureGrdMeetingSlotsForWorksiteTx(inMemoryDb as unknown as DB, WS_A, 2026)
+    const [slot] = await inMemoryDb.select().from(schema.preventionGrdMeetingSlots).limit(1)
+    expect(slot).toBeDefined()
+    await expect(recordGrdMeeting({
+      committeeId: committee.id, heldOn: "2026-04-02T15:00:00.000Z", agenda: "Revisión de amenazas del período",
+      minutes: "Acta de la sesión con el detalle suficiente de lo tratado", quorumReached: false, evidenceUrl: EVIDENCE, slotId: slot!.id,
+    }, MANAGER)).rejects.toThrow(/quórum/)
+    const [intacta] = await inMemoryDb.select().from(schema.preventionGrdMeetingSlots).where(eq(schema.preventionGrdMeetingSlots.id, slot!.id))
+    expect(intacta!.status).not.toBe("completed")
+  })
+
   it("registra el acta ya realizada y acredita la N°81", async () => {
     const committee = await constituteGrdCommittee({ worksiteId: WS_A, name: "CGRD", constitutedOn: "2026-03-01", mandateEndsOn: "2028-03-01", evidenceUrl: EVIDENCE }, MANAGER)
     const meeting = await recordGrdMeeting({

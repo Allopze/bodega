@@ -576,6 +576,10 @@ function RecordMeetingDialog({ open, onOpenChange, committeeId, openSlots, onDon
         <Field label="Fecha y hora de la sesión" required><Input type="datetime-local" value={heldOn} onChange={(event) => setHeldOn(event.target.value)} /></Field>
         <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={quorumReached} onChange={(event) => setQuorumReached(event.target.checked)} /> Hubo quórum</label>
       </div>
+      {/* #35: el servicio no acredita ni llena casilla sin quórum; se dice antes de enviar. */}
+      {!quorumReached ? (
+        <p className="text-xs text-[var(--color-warning-ink)]">Sin quórum el acta queda registrada, pero no acredita la N°81 ni cumple una casilla del programa: deja la casilla en «Ninguna».</p>
+      ) : null}
       <Field label="Tabla / agenda" required><Textarea value={agenda} onChange={(event) => setAgenda(event.target.value)} rows={2} maxLength={5000} /></Field>
       <Field label="Acta" required helper="Mínimo 20 caracteres."><Textarea value={minutes} onChange={(event) => setMinutes(event.target.value)} rows={5} maxLength={20000} /></Field>
       <EvidenceField label="Evidencia del acta" helper="Sube el acta firmada, o pega su enlace." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />

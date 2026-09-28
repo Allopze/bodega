@@ -182,7 +182,7 @@ export async function createEmergencyPlan(input: unknown, access: EmergencyAcces
  * (`archiveEmergencyPlan`), lo que libera el índice parcial de un plan activo
  * por faena, y se crea el que lo reemplaza.
  */
-async function loadEditablePlan(tx: Tx, planId: string, access: EmergencyAccess) {
+export async function loadEditablePlan(tx: Tx, planId: string, access: EmergencyAccess) {
   const [plan] = await tx.select().from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, planId)).limit(1)
   if (!plan) throw new EmergencyDomainError(NOT_FOUND)
   requireAccess(access, "prevention:emergency:manage", plan.worksiteId)

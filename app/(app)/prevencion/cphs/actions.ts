@@ -50,6 +50,19 @@ function accessFromSession(session: Awaited<ReturnType<typeof guardPermission>>[
   return { userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
 }
 
+/**
+ * #43: estas reglas las sostiene sólo un índice único parcial (ver
+ * `db/schema/prevention/cphs.ts`). Cuando dos altas compiten, la segunda llega
+ * al índice: sin este mapa el usuario veía un error genérico. Cada constraint
+ * sólo puede saltar en su propio flujo, así que un mapa común basta.
+ */
+const CPHS_UNIQUE_MESSAGES: Record<string, string> = {
+  prevention_committee_active_worksite_unique: "Esta faena ya tiene un comité paritario activo. Disuélvelo antes de constituir otro.",
+  prevention_committee_member_unique: "Esa persona ya es integrante activo de este comité.",
+  prevention_committee_commission_unique: "El comité ya tiene una comisión activa con ese nombre.",
+  prevention_committee_commission_member_unique: "Ese integrante ya integra esta comisión.",
+}
+
 // La autorización se resuelve en cada acción, no dentro de este helper.
 async function run(access: CphsAccess, operation: (access: CphsAccess) => Promise<unknown>): Promise<ActionState> {
   try {
@@ -64,7 +77,7 @@ async function run(access: CphsAccess, operation: (access: CphsAccess) => Promis
     return { ok: true }
   } catch (error) {
     if (error instanceof ZodError) return actionErrorResult(error, "Revisa los campos marcados.")
-    return actionErrorResult(error, "No se pudo completar la operación.")
+    return actionErrorResult(error, "No se pudo completar la operación.", { unique: CPHS_UNIQUE_MESSAGES })
   }
 }
 

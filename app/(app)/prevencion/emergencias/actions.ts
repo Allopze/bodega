@@ -92,9 +92,7 @@ export async function addEmergencyRoleAction(input: unknown): Promise<ActionStat
 export async function linkResourcesToPlanAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:emergency:manage")
   if (guard.error) return guard.error
-  const session = guard.session
-  if (!session) return { ok: false, message: "Sesión no disponible." }
-  return run(accessFromSession(session), "linkResourcesToPlan", () => linkResourcesToPlan(input, session.user.id))
+  return run(accessFromSession(guard.session), "linkResourcesToPlan", (access) => linkResourcesToPlan(input, access))
 }
 
 export async function addEmergencyContactAction(input: unknown): Promise<ActionState> {
