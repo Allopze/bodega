@@ -933,6 +933,19 @@ export async function transitionLegalRequirement(input: unknown, access: RiskLeg
     if (requirement.version !== data.expectedVersion) throw new RiskLegalDomainError("El requisito cambió mientras lo revisabas.")
     if (data.toStatus === "reviewed" && requirement.createdByUserId === access.userId) throw new RiskLegalDomainError("Quien creó el requisito no puede revisarlo.")
     if (data.toStatus === "approved" && (requirement.createdByUserId === access.userId || requirement.reviewedByUserId === access.userId)) throw new RiskLegalDomainError("La aprobación legal debe estar segregada de creación y revisión.")
+    /* D4: publicar es la cuarta firma, igual que en la MIPER, y no comprobaba
+     * nada: `approve_applicability` cubre aprobar y publicar, así que la misma
+     * persona firmaba las dos. Se copia la regla de `transitionRiskMatrix`,
+     * con la misma excepción por cargo y la misma constancia (INC-002). */
+    const signing = resolveOwnWorkSigning({
+      signedByUserId: data.toStatus === "published" ? requirement.approvedByUserId : null,
+      actorUserId: access.userId,
+      permissions: access.permissions,
+      what: "Publicar el requisito legal",
+    })
+    if (!signing.ok) {
+      throw new RiskLegalDomainError("Quien aprobó el requisito legal no puede publicarlo: debe firmarlo otra persona.")
+    }
     const now = new Date().toISOString()
     const updates: Partial<typeof preventionLegalRequirements.$inferInsert> = { status: data.toStatus, version: requirement.version + 1, updatedAt: now }
     if (data.toStatus === "reviewed") Object.assign(updates, { reviewedByUserId: access.userId, reviewedAt: now })
@@ -1020,7 +1033,7 @@ export async function transitionLegalRequirement(input: unknown, access: RiskLeg
     }
     const [updated] = await tx.update(preventionLegalRequirements).set(updates).where(and(eq(preventionLegalRequirements.id, requirement.id), eq(preventionLegalRequirements.version, data.expectedVersion), eq(preventionLegalRequirements.status, requirement.status))).returning()
     if (!updated) throw new RiskLegalDomainError("El requisito cambió mientras lo revisabas.")
-    await history(tx, { domain: "legal", entityType: "requirement", entityId: requirement.id, changeType: data.toStatus, reason: data.reason, beforeState: { status: requirement.status, version: requirement.version }, afterState: { status: updated.status, version: updated.version, hash: updated.publishedHashSha256 }, actorUserId: access.userId })
+    await history(tx, { domain: "legal", entityType: "requirement", entityId: requirement.id, changeType: data.toStatus, reason: signing.usedException ? `${data.reason ?? ""} [Firma propia: publicado por quien lo aprobó, con la excepción prevention:sign_own_work.]`.trim() : data.reason, beforeState: { status: requirement.status, version: requirement.version }, afterState: { status: updated.status, version: updated.version, hash: updated.publishedHashSha256, ownWorkExceptionUsed: signing.usedException }, actorUserId: access.userId })
     return updated
   })
 }
@@ -1044,6 +1057,21 @@ export async function proposeLegalApplicability(input: unknown, access: RiskLega
     }
     const existingConditions = [eq(preventionLegalApplicabilities.requirementId, data.requirementId), eq(preventionLegalApplicabilities.worksiteId, data.worksiteId), data.processId ? eq(preventionLegalApplicabilities.processId, data.processId) : isNull(preventionLegalApplicabilities.processId)]
     const [existing] = await tx.select().from(preventionLegalApplicabilities).where(and(...existingConditions)).limit(1)
+    /* D5: el upsert pisaba también una aplicabilidad ya APROBADA —borraba la
+     * firma de aprobación y devolvía el cumplimiento a "sin evaluar"— sin
+     * versión esperada ni motivo, así que un segundo envío del formulario
+     * deshacía una decisión firmada sin que nadie lo notara. Re-evaluar lo
+     * aprobado sigue siendo posible (el ámbito de una faena cambia), pero
+     * explícito: sobre la versión que se vio y diciendo por qué. */
+    if (existing && data.expectedVersion !== undefined && existing.version !== data.expectedVersion) {
+      throw new RiskLegalDomainError("La aplicabilidad cambió mientras la revisabas. Recarga antes de continuar.")
+    }
+    const reopensApproved = Boolean(existing?.approvedAt)
+    if (existing && reopensApproved) {
+      if (data.expectedVersion === undefined || !data.reevaluationReason) {
+        throw new RiskLegalDomainError("La aplicabilidad de este requisito en la faena ya está aprobada: para re-evaluarla indica el motivo de la re-evaluación.")
+      }
+    }
     const now = new Date().toISOString()
     const values = {
       processId: data.processId ?? null,
@@ -1070,7 +1098,10 @@ export async function proposeLegalApplicability(input: unknown, access: RiskLega
       // concurrencia que el resto del módulo en vez de un error de Postgres.
       : await tx.insert(preventionLegalApplicabilities).values({ id: `legalapp-${nanoid()}`, requirementId: data.requirementId, worksiteId: data.worksiteId, ...values }).onConflictDoNothing().returning()
     if (!saved) throw new RiskLegalDomainError("La aplicabilidad cambió mientras la revisabas. Recarga antes de continuar.")
-    await history(tx, { domain: "legal", entityType: "applicability", entityId: saved.id, worksiteId: data.worksiteId, changeType: data.applicabilityStatus, reason: data.rationale, beforeState: existing ?? null, afterState: saved, actorUserId: access.userId })
+    const historyReason = reopensApproved
+      ? `Re-evaluación de una aplicabilidad aprobada: ${data.reevaluationReason}. Nuevo fundamento: ${data.rationale}`
+      : data.rationale
+    await history(tx, { domain: "legal", entityType: "applicability", entityId: saved.id, worksiteId: data.worksiteId, changeType: data.applicabilityStatus, reason: historyReason, beforeState: existing ?? null, afterState: saved, actorUserId: access.userId })
     return saved
   })
 }

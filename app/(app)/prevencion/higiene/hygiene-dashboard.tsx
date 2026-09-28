@@ -64,7 +64,7 @@ interface AgentOption {
 
 export function HygieneDashboard({
   groups, programs, summary, agents, worksites, protocolWorksites, applicabilities,
-  measurementSlots, slotYear, activationPeriods, canRecordMeasurementSlots, today, canManage,
+  measurementSlots, slotYear, activationPeriods, canRecordMeasurementSlots, today, canManage, canAssess,
 }: {
   groups: GroupItem[]
   programs: ProgramItem[]
@@ -78,7 +78,10 @@ export function HygieneDashboard({
   activationPeriods: Record<string, PdtpPeriod | null>
   canRecordMeasurementSlots: boolean
   today: string
+  /** Catálogo global de agentes (`prevention:hygiene:manage`). */
   canManage: boolean
+  /** GES, programas y protocolos de la faena (`prevention:hygiene:assess`). */
+  canAssess: boolean
 }) {
   const { searchQuery } = useSafeShellHeader()
   const { getFilter, setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
@@ -136,11 +139,11 @@ export function HygieneDashboard({
         onRemoveChip={() => setFilters({ vista: null })}
         onClearAll={() => clearUrlFilters(["tab"])}
         hasActiveFilters={quickFilter !== "all"}
-        actions={canManage && (
+        actions={(canManage || canAssess) && (
           <div className="flex flex-wrap gap-2">
-            <NewAgentDialog />
-            {agents.length > 0 && worksites.length > 0 && tab === "groups" && <NewGroupDialog agents={agents} worksites={worksites} />}
-            {worksites.length > 0 && tab === "programs" && <NewProgramDialog agents={agents} worksites={worksites} />}
+            {canManage && <NewAgentDialog />}
+            {canAssess && agents.length > 0 && worksites.length > 0 && tab === "groups" && <NewGroupDialog agents={agents} worksites={worksites} />}
+            {canAssess && worksites.length > 0 && tab === "programs" && <NewProgramDialog agents={agents} worksites={worksites} />}
           </div>
         )}
       >
@@ -165,7 +168,7 @@ export function HygieneDashboard({
           activationPeriods={activationPeriods}
           canRecordMeasurementSlots={canRecordMeasurementSlots}
           today={today}
-          canManage={canManage}
+          canAssess={canAssess}
         />
       )}
 
@@ -176,7 +179,7 @@ export function HygieneDashboard({
           description={groups.length === 0
             ? "Un grupo de exposición similar reúne a quienes comparten agente, proceso y condiciones, de modo que una medición represente a todas las personas del grupo."
             : "Ajusta el texto del buscador superior."}
-          action={canManage && groups.length === 0 && agents.length > 0 && worksites.length > 0 ? <NewGroupDialog agents={agents} worksites={worksites} /> : undefined}
+          action={canAssess && groups.length === 0 && agents.length > 0 && worksites.length > 0 ? <NewGroupDialog agents={agents} worksites={worksites} /> : undefined}
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
@@ -233,7 +236,7 @@ export function HygieneDashboard({
           description={programs.length === 0
             ? "Un programa de vigilancia matricula al grupo completo: la nómina se deriva de la pertenencia al grupo de exposición, no se arma a mano."
             : "Ajusta el texto del buscador superior."}
-          action={canManage && programs.length === 0 && worksites.length > 0 ? <NewProgramDialog agents={agents} worksites={worksites} /> : undefined}
+          action={canAssess && programs.length === 0 && worksites.length > 0 ? <NewProgramDialog agents={agents} worksites={worksites} /> : undefined}
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">

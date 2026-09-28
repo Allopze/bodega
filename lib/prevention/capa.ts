@@ -61,7 +61,10 @@ export function capaSourceHref(sourceType: string, sourceId: string) {
   if (sourceType === "sst_evaluation") return `/prevencion/${sourceId}`
   if (sourceType === "pdtp") return "/prevencion/pdtp"
   if (sourceType === "incident") return `/prevencion/incidentes/${sourceId}`
-  if (sourceType === "risk") return `/prevencion/miper/${sourceId}`
+  // El `sourceId` de una CAPA de riesgo es el id del control verificado como
+  // ineficaz (`verifyRiskControl`), no el de la matriz: `/prevencion/miper/<id>`
+  // no existe como ruta (D7).
+  if (sourceType === "risk") return `/prevencion/miper/controles/${sourceId}`
   if (sourceType === "legal_requirement") return `/prevencion/requisitos-legales/${sourceId}`
   // La ficha de competencias del trabajador dejó de existir el 2026-09-19; el
   // origen `training` va al control anual, que es donde vive la evidencia.

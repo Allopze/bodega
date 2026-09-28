@@ -161,6 +161,10 @@ export const legalApplicabilityProposalSchema = z.object({
   responsibleSnapshot: z.string().trim().min(2).max(300),
   evidenceReference: z.string().trim().max(3000).nullable().optional(),
   evidenceDueAt: date.nullable().optional(),
+  /** Versión de la aplicabilidad existente que se vio al abrir el formulario. */
+  expectedVersion: z.coerce.number().int().positive().optional(),
+  /** Obligatorio cuando se re-evalúa una aplicabilidad ya aprobada (D5). */
+  reevaluationReason: reason.nullable().optional(),
 })
 
 export const legalApplicabilityApprovalSchema = z.object({

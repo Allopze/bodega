@@ -67,14 +67,14 @@ interface WorkerOption {
   position: string | null
 }
 
-export function GroupDetail({ group, worksiteName, agent, members, measurements, eligibleWorkers, canManage, canMeasure }: {
+export function GroupDetail({ group, worksiteName, agent, members, measurements, eligibleWorkers, canAssess, canMeasure }: {
   group: GroupInfo
   worksiteName: string
   agent: AgentInfo
   members: MemberInfo[]
   measurements: MeasurementInfo[]
   eligibleWorkers: WorkerOption[]
-  canManage: boolean
+  canAssess: boolean
   canMeasure: boolean
 }) {
   const activeMembers = members.filter((item) => !item.leftOn)
@@ -111,7 +111,7 @@ export function GroupDetail({ group, worksiteName, agent, members, measurements,
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Integrantes ({activeMembers.length} activos)</h2>
-          {canManage && group.isActive && eligibleWorkers.length > 0 && (
+          {canAssess && group.isActive && eligibleWorkers.length > 0 && (
             <AddMemberDialog groupId={group.id} eligibleWorkers={eligibleWorkers} existingNames={activeMembers.map((m) => m.workerName)} />
           )}
         </div>

@@ -10,6 +10,7 @@ import {
   worksites,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { requireDifferentActor } from "@/lib/auth/segregation"
 import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { assessChangeReadiness, CHANGE_DIMENSIONS } from "@/lib/prevention/change"
@@ -19,6 +20,7 @@ import {
   updateCapaActionWithClient,
 } from "@/lib/services/prevention-capa"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
+import { createRiskReviewTriggerWithClient } from "@/lib/services/prevention-risk-legal"
 import { addDaysToPlainDate, codeYear, todayInChile } from "@/lib/utils"
 
 type Client = DB | Tx
@@ -329,6 +331,9 @@ export const approveSchema = z.object({
  * aprobado cuando se acerca o pasa (MOC-05), igual que hace con la reevaluación
  * de un protocolo MINSAL o la carga de un extintor.
  */
+/** Mismo plazo operacional interno que la revisión MIPER que abre un incidente. */
+const CHANGE_MIPER_REVIEW_DAYS = 10
+
 export async function approveChangeRequest(input: unknown, access: ChangeAccess) {
   const data = approveSchema.parse(input)
   return db.transaction(async (tx) => {
@@ -339,7 +344,7 @@ export async function approveChangeRequest(input: unknown, access: ChangeAccess)
     if (!OPEN_STATUSES.includes(request.status)) throw new Error("El cambio ya fue decidido.")
     if (request.requestedByUserId === access.userId) throw new Error("Quien solicita el cambio no puede aprobarlo.")
 
-    const assessments = await tx.select({ dimension: preventionChangeAssessments.dimension, evaluated: preventionChangeAssessments.evaluated })
+    const assessments = await tx.select({ dimension: preventionChangeAssessments.dimension, evaluated: preventionChangeAssessments.evaluated, impacted: preventionChangeAssessments.impacted })
       .from(preventionChangeAssessments).where(eq(preventionChangeAssessments.changeRequestId, request.id))
     const readiness = assessChangeReadiness({ assessments, plannedReviewDate: data.plannedReviewDate })
     if (!readiness.ready) throw new Error(readiness.blockers.join(" "))
@@ -358,6 +363,26 @@ export async function approveChangeRequest(input: unknown, access: ChangeAccess)
     )).returning()
     if (!updated) throw new Error("El cambio cambió mientras lo editabas. Recarga y reintenta.")
     await history(tx, { entityType: "change_request", entityId: request.id, worksiteId: request.worksiteId, changeType: "approved", reason: "Cambio aprobado", beforeState: request, afterState: updated, actorUserId: access.userId })
+
+    /* D2: un cambio aprobado que impacta los riesgos o el mapa de riesgos deja
+     * la MIPER de la faena desactualizada, y hasta ahora nada lo pedía: la
+     * evaluación decía "impacta" y el ciclo terminaba ahí. Se abre la misma
+     * tarea de revisión que abre un incidente (`work_change`), con su plazo
+     * operacional interno de 10 días y una clave idempotente por cambio: una
+     * sola revisión aunque impacten las dos dimensiones. Se resuelve en la
+     * MIPER publicando una versión posterior, como cualquier otro disparador. */
+    const miperImpacted = assessments.some((row) => row.impacted && (row.dimension === "risk" || row.dimension === "miper"))
+    if (miperImpacted) {
+      await createRiskReviewTriggerWithClient(tx, {
+        worksiteId: request.worksiteId,
+        triggerType: "work_change",
+        sourceType: "change",
+        sourceId: request.id,
+        description: `Revisar y publicar la MIPER por el cambio aprobado «${request.title}». Plazo operacional interno: ${CHANGE_MIPER_REVIEW_DAYS} días.`.slice(0, 3000),
+        dueAt: addDaysToPlainDate(todayInChile(), CHANGE_MIPER_REVIEW_DAYS),
+        idempotencyKey: `change:miper:${request.id}`,
+      }, access.userId)
+    }
     return updated
   })
 }
@@ -378,6 +403,12 @@ export async function rejectChangeRequest(input: unknown, access: ChangeAccess) 
     requireAccess(access, "prevention:change:approve", request.worksiteId)
     if (request.version !== data.expectedVersion) throw new Error("El cambio cambió mientras lo editabas. Recarga y reintenta.")
     if (!OPEN_STATUSES.includes(request.status)) throw new Error("El cambio ya fue decidido.")
+    /* D3: rechazar es la otra mitad de la misma decisión. Sin esta regla quien
+     * solicitó el cambio —si además tiene el permiso de aprobar— lo cerraba sin
+     * que nadie más lo mirara, justo lo que la aprobación le prohíbe. Sin
+     * excepción por `sign_own_work`, igual que la aprobación. */
+    const segregation = requireDifferentActor({ actedByUserId: request.requestedByUserId, actorUserId: access.userId }, "Rechazar el cambio")
+    if (!segregation.ok) throw new Error(segregation.message)
 
     const now = nowIso()
     const [updated] = await tx.update(preventionChangeRequests).set({
@@ -424,10 +455,13 @@ export async function getChangeRequestDetail(changeRequestId: string, access: Ch
   const byDimension = new Map(assessments.map((row) => [row.dimension, row]))
   const ordered = CHANGE_DIMENSIONS.map((dimension) => byDimension.get(dimension)).filter((row): row is typeof assessments[number] => Boolean(row))
 
+  // La ficha no exige la fecha de revisión: se declara al aprobar, en el mismo
+  // diálogo que esta disponibilidad habilita (D1). `approveChangeRequest`
+  // vuelve a evaluar todo, fecha incluida.
   const readiness = assessChangeReadiness({
     assessments: ordered.map((row) => ({ dimension: row.dimension, evaluated: row.evaluated })),
     plannedReviewDate: row.request.plannedReviewDate,
-  })
+  }, { requireReviewDate: false })
 
   return { request: row.request, worksiteName: row.worksiteName, assessments: ordered, readiness }
 }
