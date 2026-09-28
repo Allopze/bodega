@@ -211,6 +211,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/requests-delete.test.ts",
   "lib/__tests__/sst-alerts.test.ts",
   "lib/__tests__/sst-delete-evaluation.test.ts",
+  "lib/__tests__/sst-worker-evaluations-scope.test.ts",
   "lib/__tests__/sst-integrity-constraints.test.ts",
   "lib/__tests__/stock-alerts.test.ts",
   "lib/__tests__/bodega-min-stock-bulk.test.ts",
