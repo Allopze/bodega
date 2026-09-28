@@ -439,6 +439,35 @@ describe("createDocument — la confidencialidad hereda la clase de dato y el ti
 })
 
 /*
+ * Mismo piso al editar: cambiar la clase de dato de un documento existente a
+ * «Sensible preventivo» lo dejaba `publico_interno`, visible para cualquiera con
+ * `docs:view`, aunque al crearlo con esa clase habría quedado sensible.
+ */
+describe("updateDocumentMetadata — cambiar la clase de dato sube la confidencialidad", () => {
+  it("pasar a sensible preventivo deja el documento sensible, y exige el permiso", async () => {
+    const { updateDocumentMetadata } = await import("@/lib/services/prevention-documents-library")
+    const doc = await createTestDocument()
+    await expect(updateDocumentMetadata({
+      input: { id: doc.id, dataClass: "sensitive_preventive" }, ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"],
+    })).rejects.toThrow(/sensibles/)
+    const updated = await updateDocumentMetadata({
+      input: { id: doc.id, dataClass: "sensitive_preventive" }, ctx: CTX, scope: SCOPE_WS1,
+      permissions: ["prevention:docs:manage", "prevention:docs:manage_sensitive"],
+    })
+    expect(updated.confidentiality).toBe("sensible")
+  })
+
+  it("editar sólo el título no reclasifica", async () => {
+    const { updateDocumentMetadata } = await import("@/lib/services/prevention-documents-library")
+    const doc = await createTestDocument()
+    const updated = await updateDocumentMetadata({
+      input: { id: doc.id, title: "Título corregido" }, ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"],
+    })
+    expect(updated.confidentiality).toBe("publico_interno")
+  })
+})
+
+/*
  * FX-A (A2): «Nueva versión de…» listaba los documentos del tipo sin filtrar
  * confidencialidad: el título de un documento sensible llegaba a quien no
  * puede abrirlo.

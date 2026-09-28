@@ -32,7 +32,7 @@ vi.mock("@/db", () => ({
   get Tx() { return undefined },
 }))
 
-const { executePreventionPrivacyRight } = await import("@/lib/services/prevention-privacy-rights")
+const { executePreventionPrivacyRight, getPreventionPrivacyRequestWorkbench } = await import("@/lib/services/prevention-privacy-rights")
 const { getPreventionPrivacyExportDataset, listGeneralLibrarySensitiveAccess } = await import("@/lib/services/prevention-privacy")
 
 const NOW = "2026-09-27T10:00:00.000Z"
@@ -178,6 +178,24 @@ describe("A9 — la auditoría de biblioteca no muestra títulos de documentos q
 
     const full = await listGeneralLibrarySensitiveAccess(SCOPE, ["prevention:privacy:audit", "prevention:docs:manage_sensitive"])
     expect(full.map((row) => row.documentId).sort()).toEqual(["doc-oper", "doc-sens"])
+  })
+})
+
+describe("el inventario de la solicitud no muestra títulos de documentos que quien atiende no puede leer", () => {
+  const workbench = (permissions: string[]) => getPreventionPrivacyRequestWorkbench({
+    requestId: "req-access", ctx: { userId: "u-fx" }, scope: SCOPE, permissions,
+  })
+
+  it("sin docs:manage_sensitive, el documento sensible queda como contador", async () => {
+    const bundle = await workbench([MANAGE])
+    expect(bundle?.inventory.documentLinks).toEqual([])
+    expect(bundle?.restrictedDocumentCount).toBe(1)
+  })
+
+  it("con el permiso, se lista", async () => {
+    const bundle = await workbench([MANAGE, "prevention:docs:manage_sensitive"])
+    expect(bundle?.inventory.documentLinks.map((row) => row.documentId)).toEqual(["doc-sens"])
+    expect(bundle?.restrictedDocumentCount).toBe(0)
   })
 })
 

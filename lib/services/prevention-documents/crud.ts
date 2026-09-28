@@ -154,6 +154,7 @@ export async function updateDocumentMetadata(args: {
   }
 
   const patch: Record<string, unknown> = { updatedAt: now }
+  let newTypeDefaultConfidentiality: string | null = null
   if (data.typeId !== undefined && (data.typeId || null) !== doc.typeId) {
     if (data.typeId) {
       const [type] = await db.select({
@@ -161,6 +162,7 @@ export async function updateDocumentMetadata(args: {
         code: sstDocumentTypes.code,
         isActive: sstDocumentTypes.isActive,
         requiresAcknowledgment: sstDocumentTypes.requiresAcknowledgment,
+        defaultConfidentiality: sstDocumentTypes.defaultConfidentiality,
       }).from(sstDocumentTypes).where(eq(sstDocumentTypes.id, data.typeId)).limit(1)
       if (!type || !type.isActive) throw new PreventionDocumentDomainError("El tipo documental seleccionado no existe o está inactivo.")
       // Clasificar como RIOHS un documento ya vigente lo haría pasar por
@@ -174,6 +176,7 @@ export async function updateDocumentMetadata(args: {
       }
       patch.typeId = data.typeId
       patch.categorySlug = type.categorySlug
+      newTypeDefaultConfidentiality = type.defaultConfidentiality
       if (type.requiresAcknowledgment && !doc.requiresAcknowledgment && data.requiresAcknowledgment === undefined) {
         patch.requiresAcknowledgment = true
       }
@@ -186,6 +189,21 @@ export async function updateDocumentMetadata(args: {
   if (data.description !== undefined) patch.description = data.description || null
   if (data.worksiteId !== undefined) patch.worksiteId = data.worksiteId || null
   if (data.confidentiality !== undefined) patch.confidentiality = data.confidentiality
+  // Mismo piso que al crear (`minimumDocumentConfidentiality`): pasar un
+  // documento a «Sensible preventivo» o a un tipo restringido no puede dejarlo
+  // `publico_interno`. Sólo se recalcula si cambia algo de lo que lo decide, para
+  // no reclasificar documentos antiguos al corregirles el título.
+  if (data.confidentiality !== undefined || data.dataClass !== undefined || newTypeDefaultConfidentiality !== null) {
+    const effective = minimumDocumentConfidentiality({
+      requested: (data.confidentiality ?? doc.confidentiality) as SstDocumentConfidentiality,
+      dataClass: data.dataClass ?? doc.dataClass,
+      typeDefault: newTypeDefaultConfidentiality,
+    })
+    if (effective !== doc.confidentiality || data.confidentiality !== undefined) {
+      assertConfidentialityAllowed(effective, args.permissions)
+      patch.confidentiality = effective
+    }
+  }
   if (data.dataClass !== undefined) patch.dataClass = data.dataClass
   if (data.effectiveFrom !== undefined) patch.effectiveFrom = data.effectiveFrom || null
   if (data.expiresAt !== undefined) patch.expiresAt = data.expiresAt || null
