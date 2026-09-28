@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
@@ -53,6 +54,7 @@ interface WorkQueueWorkbenchProps {
 }
 
 export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
+  useWorksiteFilterPresence()
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()

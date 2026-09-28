@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -42,6 +43,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
   canVerify: boolean
   programId: string
 }) {
+  useWorksiteFilterPresence()
   const router = useRouter()
   const searchParams = useSearchParams()
 

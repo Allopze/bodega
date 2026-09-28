@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import { useMemo, useState, useTransition } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ArrowCounterClockwise, FunnelSimple, SpinnerGap, X } from "@phosphor-icons/react"
@@ -48,6 +49,7 @@ export function ConsumptionFiltersBar({
   hasExplicitDateRange,
   proveedor,
 }: ConsumptionFiltersProps) {
+  useWorksiteFilterPresence()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()

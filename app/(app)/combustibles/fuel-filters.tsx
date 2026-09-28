@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { WorksiteSelect } from "@/components/ui/worksite-select"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
@@ -27,6 +28,7 @@ interface FuelFiltersProps {
 }
 
 export function FuelFilters({ vehicles, suppliers, worksites, products, currentFilters }: FuelFiltersProps) {
+  useWorksiteFilterPresence()
   const { setFilter, setFilters, clearFilters } = useUrlFilters()
 
   function setProductFilter(value: string) {

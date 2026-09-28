@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import { useRouter, useSearchParams } from "next/navigation"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { FilterSearchInput } from "@/components/ui/filter-search-input"
@@ -21,6 +22,7 @@ export function DocumentsFilters({
   worksites: Array<{ id: string; name: string }>
   current: { q?: string; faena?: string; tipo?: string; desde?: string; hasta?: string }
 }) {
+  useWorksiteFilterPresence()
   const router = useRouter()
   const searchParams = useSearchParams()
 

@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
 import { render, screen } from "@testing-library/react"
+import * as React from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { Session } from "next-auth"
 import { readFileSync } from "node:fs"
-import { ShellHeaderProvider } from "./header-context"
+import { ShellHeaderProvider, useWorksiteFilterPresence } from "./header-context"
 import { TopBar } from "./top-bar"
 
 let pathname = "/dashboard"
@@ -62,5 +63,47 @@ describe("TopBar", () => {
     )
 
     expect(await screen.findByRole("searchbox", { name: "Filtrar en esta página" })).toBeInTheDocument()
+  })
+
+  describe("chip de la faena de sesión", () => {
+    function FaenaFilter({ active = true }: { active?: boolean }) {
+      useWorksiteFilterPresence(active)
+      return null
+    }
+
+    function Shell({ children }: { children?: React.ReactNode }) {
+      return (
+        <ShellHeaderProvider>
+          <TopBar session={makeSession()} onMenuToggle={vi.fn()} worksiteName="Oficina Central" />
+          {children}
+        </ShellHeaderProvider>
+      )
+    }
+
+    it("se muestra en una vista sin selector de faena", () => {
+      render(<Shell />)
+      expect(screen.getByText("Oficina Central")).toBeInTheDocument()
+    })
+
+    // Al lado de un filtro en Masisa, "Tu faena: Oficina Central" se leía
+    // como "la pantalla no cambió".
+    it("se oculta mientras la vista tiene un selector de faena y vuelve al quitarlo", () => {
+      const view = render(<Shell><FaenaFilter /></Shell>)
+      expect(screen.queryByText("Oficina Central")).not.toBeInTheDocument()
+
+      view.rerender(<Shell />)
+      expect(screen.getByText("Oficina Central")).toBeInTheDocument()
+    })
+
+    it("no se oculta cuando el filtro declara que no muestra el selector", () => {
+      render(<Shell><FaenaFilter active={false} /></Shell>)
+      expect(screen.getByText("Oficina Central")).toBeInTheDocument()
+    })
+
+    it("sigue oculto mientras quede al menos un selector montado", () => {
+      const view = render(<Shell><FaenaFilter /><FaenaFilter /></Shell>)
+      view.rerender(<Shell><FaenaFilter /></Shell>)
+      expect(screen.queryByText("Oficina Central")).not.toBeInTheDocument()
+    })
   })
 })

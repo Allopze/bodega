@@ -6,7 +6,7 @@ import { List, MagnifyingGlass, MapPin, X } from "@phosphor-icons/react"
 import type { Session as AuthSession } from "next-auth"
 import { cn } from "@/lib/utils"
 import { BrandMark } from "./brand-mark"
-import { useSafeShellHeader, useShellHeader } from "./header-context"
+import { useHasWorksiteFilter, useSafeShellHeader, useShellHeader } from "./header-context"
 
 const NotificationBell = React.lazy(() =>
   import("./notification-bell").then((m) => ({ default: m.NotificationBell }))
@@ -45,6 +45,7 @@ const TopBarInner = React.memo(function TopBarInner({
 }: TopBarProps) {
   const pathname = usePathname()
   const { header } = useShellHeader()
+  const hasWorksiteFilter = useHasWorksiteFilter()
   const { searchQuery, setSearchQuery } = useSafeShellHeader()
   const searchRef = React.useRef<HTMLInputElement>(null)
 
@@ -155,8 +156,11 @@ const TopBarInner = React.memo(function TopBarInner({
         </div>
         {/* Es la faena de la sesión, no un filtro de la vista. Sin la etiqueta se
             leía como "estoy viendo sólo esta faena" en páginas que listan varias
-            (Bodega agrupa por faena y la de la sesión puede no aparecer). */}
-        {worksiteName && (
+            (Bodega agrupa por faena y la de la sesión puede no aparecer).
+            Con un selector de faena en la vista se oculta: aun rotulado, "Tu
+            faena: Oficina Central" junto a un filtro en Masisa se leía como
+            "la pantalla no cambió", y el selector ya dice qué faena se ve. */}
+        {worksiteName && !hasWorksiteFilter && (
           <div
             title={`Tu faena: ${worksiteName}`}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-(--radius) bg-(--color-surface-2) border border-(--color-border)"

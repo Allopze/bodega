@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import * as React from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
@@ -30,6 +31,7 @@ export function AccessFilters({
   worksites: Option[]
   systems: Option[]
 }) {
+  useWorksiteFilterPresence()
   const router = useRouter()
   const pathname = usePathname()
 

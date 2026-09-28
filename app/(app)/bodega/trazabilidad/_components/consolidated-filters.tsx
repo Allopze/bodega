@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import * as React from "react"
 import {
   MagnifyingGlass,
@@ -86,6 +87,7 @@ export function ConsolidatedFilters({
   suppliers,
   current,
 }: Props) {
+  useWorksiteFilterPresence()
   const { setFilter, setFilters, clearFilters } = useUrlFilters()
   const [sheetOpen, setSheetOpen] = React.useState(false)
   const [searchValue, setSearchValue] = React.useState(current.q)

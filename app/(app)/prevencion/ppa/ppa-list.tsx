@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -88,6 +89,7 @@ export function PpaList({
   canReview,
   stats,
 }: Props) {
+  useWorksiteFilterPresence(worksiteOptions.length > 1)
   const router = useRouter()
   const [state, dispatch] = React.useReducer(
     ppaListReducer,

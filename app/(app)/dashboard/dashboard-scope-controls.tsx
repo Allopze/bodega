@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { SegmentedControl } from "@/components/ui/segmented-control"
@@ -45,6 +46,7 @@ export function DashboardScopeControls({
    */
   allWorksitesLabel: string
 }) {
+  useWorksiteFilterPresence(worksites.length > 1)
   const router = useRouter()
   /*
    * `useTransition` y no un `useState` propio: el estado a mano se ponía en

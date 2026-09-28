@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -97,6 +98,7 @@ export function ActivityReadinessWorkbench({
     () => [...new Set(rows.flatMap((row) => row.worksiteNames ?? []))].sort((a, b) => a.localeCompare(b, "es-CL")),
     [rows],
   )
+  useWorksiteFilterPresence(worksiteOptions.length > 0)
   const kindOptions = React.useMemo(
     () => [...new Set(rows.map((row) => row.instrumentKind).filter((value): value is string => Boolean(value)))].sort(),
     [rows],

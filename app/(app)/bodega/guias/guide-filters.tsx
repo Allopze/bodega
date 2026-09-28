@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import { useRouter, useSearchParams } from "next/navigation"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { FilterSearchInput } from "@/components/ui/filter-search-input"
@@ -26,6 +27,7 @@ const STATUS_OPTIONS = Object.entries(DISPATCH_GUIDE_STATE_META).map(([value, me
  * input de la shell del que dependía. Ahora es server-side, como el resto.
  */
 export function GuideFilters({ worksites, current }: GuideFiltersProps) {
+  useWorksiteFilterPresence()
   const router = useRouter()
   const searchParams = useSearchParams()
 

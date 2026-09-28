@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import * as React from "react"
 import { DownloadSimple, MagnifyingGlass } from "@phosphor-icons/react"
 import { usePathname } from "next/navigation"
@@ -58,6 +59,7 @@ const ServerListFiltersInner = React.memo(function ServerListFiltersInner({
   exportTipo,
   actions,
 }: ServerListFiltersProps) {
+  useWorksiteFilterPresence(Boolean(worksiteOptions?.length))
   const pathname = usePathname()
   const { searchParams, setFilter, setFilters } = useUrlFilters({
     debounceMs: 350,

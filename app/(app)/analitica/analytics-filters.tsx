@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import { useRouter, useSearchParams } from "next/navigation"
 import * as React from "react"
 import { Funnel, X } from "@phosphor-icons/react"
@@ -30,6 +31,7 @@ export function AnalyticsFiltersBar({
   suppliers: Option[]
   vehicles: Array<Option & { plate?: string }>
 }) {
+  useWorksiteFilterPresence()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [fromDate, setFromDate] = React.useState(filters.fromDate)

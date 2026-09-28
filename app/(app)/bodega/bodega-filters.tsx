@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import { useRouter, useSearchParams } from "next/navigation"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { FilterSearchInput } from "@/components/ui/filter-search-input"
@@ -47,6 +48,7 @@ const VIEW_PARAMS = ["stock", "tipo", "producto", "desde", "hasta", "page", "kar
  * paginado en el servidor, buscar sólo miraba la página en pantalla.
  */
 export function BodegaFilters({ view, worksites, products = [], ownWorksiteId = "", current }: BodegaFiltersProps) {
+  useWorksiteFilterPresence()
   const router = useRouter()
   const searchParams = useSearchParams()
 

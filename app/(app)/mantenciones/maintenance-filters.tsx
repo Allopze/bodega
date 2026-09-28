@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -20,6 +21,7 @@ interface MaintenanceFiltersProps {
 }
 
 export function MaintenanceFilters({ vehicles, worksites, current }: MaintenanceFiltersProps) {
+  useWorksiteFilterPresence()
   const router = useRouter()
   const searchParams = useSearchParams()
 

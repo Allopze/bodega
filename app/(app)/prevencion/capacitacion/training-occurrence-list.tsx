@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
@@ -121,6 +122,7 @@ function updateRoute(router: ReturnType<typeof useRouter>, pathname: string, wor
 }
 
 export function TrainingOccurrenceList({ rows, worksites, selectedYear, selectedWorksiteId, canRecord, activationPeriod }: Props) {
+  useWorksiteFilterPresence()
   const router = useRouter()
   const pathname = usePathname()
   const { searchQuery, setSearchQuery } = useSafeShellHeader()

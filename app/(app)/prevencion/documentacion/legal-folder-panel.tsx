@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 /**
  * Carpeta de requisitos legales (N°19) de una faena: qué documentos exige el
  * programa preventivo, en qué estado está cada uno y si el mes en curso ya
@@ -67,6 +68,7 @@ export function LegalFolderPanel({
   canManage: boolean
   canUploadCorporate: boolean
 }) {
+  useWorksiteFilterPresence(worksites.length > 1)
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()

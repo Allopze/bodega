@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { AnomalyCaseCard } from "./anomaly-case-card"
 import { AnomalyDistributionChart } from "./anomaly-charts-lazy"
 import { FilterSelect } from "@/components/ui/filter-select"
+import { WorksiteFilterPresence } from "@/components/layout/header-context"
 
 export const metadata: Metadata = { title: "Anomalías de combustible" }
 
@@ -88,6 +89,7 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
       />
 
       <form className="mb-4 grid gap-3 border-y border-(--color-border) py-4 md:grid-cols-4">
+        <WorksiteFilterPresence />
         <FilterSelect name="faena" defaultValue={sp.faena} options={worksitesList.map((w) => ({ value: w.id, label: w.name }))} placeholder="Todas las faenas" />
         <FilterSelect name="estado" defaultValue={sp.estado} options={Object.entries(ANOMALY_STATUS_LABELS).map(([k, v]) => ({ value: k, label: v }))} placeholder="Todos los estados" />
         <FilterSelect name="severidad" defaultValue={sp.severidad} options={Object.entries(ANOMALY_SEVERITY_LABELS).map(([k, v]) => ({ value: k, label: v }))} placeholder="Todas las severidades" />

@@ -31,6 +31,7 @@ import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, sql } from "
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
 import type { DeliverableEppOption, DeliveryStockProductOption } from "./delivery-form.types"
 import { DeliveryFormSheet } from "./delivery-form-sheet"
+import { DeliveryFilters } from "./delivery-filters"
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 import { getTraceableDeliveryBalance } from "@/lib/services/delivery-eligibility"
 
@@ -54,9 +55,23 @@ export default async function Page({
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
   const requestedItemId = typeof sp.item === "string" ? sp.item : ""
 
+  // Las faenas visibles van antes que el historial: `?faena=` sólo filtra si
+  // está dentro del alcance. Una faena ajena o cerrada se ignora en vez de
+  // dejar la pantalla vacía y sin salida.
+  const allWorksites = await db
+    .select({ id: worksites.id, name: worksites.name })
+    .from(worksites)
+    .where(and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)))
+    .orderBy(asc(worksites.name))
+  const faena = allWorksites.some((worksite) => worksite.id === requestedWorksiteId) ? requestedWorksiteId : ""
+
+  // El filtro va en el servidor: el historial está paginado y filtrarlo en
+  // memoria sólo alcanzaría a la página en pantalla. Filtra por la faena del
+  // trabajador (columna "Faena"), el mismo criterio que la exportación.
   const historyScope = and(
     eq(deliveries.destinationType, "worker"),
     worksiteScopeSql(session, deliveries.worksiteId),
+    faena ? eq(deliveries.worksiteId, faena) : undefined,
   )
 
   // History pagination
@@ -73,12 +88,7 @@ export default async function Page({
 
   const pageHref = (page: number) => buildPaginationHref("/entregas", sp, page)
 
-  const [allWorksites, allWorkers, stockRows, receivedItems, historyRows] = await Promise.all([
-    db
-      .select({ id: worksites.id, name: worksites.name })
-      .from(worksites)
-      .where(and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)))
-      .orderBy(asc(worksites.name)),
+  const [allWorkers, stockRows, receivedItems, historyRows] = await Promise.all([
     db
       .select({
         id: workers.id,
@@ -164,7 +174,6 @@ export default async function Page({
   ])
 
   const worksiteOptions = allWorksites.map((worksite) => ({ id: worksite.id, name: worksite.name }))
-  const visibleWorksiteIds = new Set(worksiteOptions.map((worksite) => worksite.id))
   const worksiteNameById = new Map(worksiteOptions.map((worksite) => [worksite.id, worksite.name]))
 
   const workerOptions = allWorkers
@@ -282,11 +291,7 @@ export default async function Page({
   // en `stockProducts[0]` elegía una bodega arbitraria (la consulta de stock no
   // lleva ORDER BY) y en la práctica abría en la bodega de oficina, que tiene
   // stock pero no trabajadores de faena.
-  const initialWorksiteId = initialDeliverable?.worksiteId
-    ?? (requestedWorksiteId && visibleWorksiteIds.has(requestedWorksiteId) ? requestedWorksiteId : undefined)
-  const worksiteScopeLabel = requestedWorksiteId && visibleWorksiteIds.has(requestedWorksiteId)
-    ? worksiteNameById.get(requestedWorksiteId) ?? "faena seleccionada"
-    : "todas las faenas permitidas"
+  const initialWorksiteId = initialDeliverable?.worksiteId ?? (faena || undefined)
 
   const visibleHistory = historyRows
   const historyDeliveryIds = visibleHistory.map((delivery) => delivery.id)
@@ -404,7 +409,7 @@ export default async function Page({
               />
             )}
             <Button asChild variant="secondary" size="sm">
-              <a href="/api/entregas/export" download>
+              <a href={faena ? `/api/entregas/export?faena=${encodeURIComponent(faena)}` : "/api/entregas/export"} download>
                 <DownloadSimple size={15} aria-hidden />
                 Exportar Excel
               </a>
@@ -412,9 +417,9 @@ export default async function Page({
           </div>
         }
       />
-      <p className="mb-3 text-xs text-(--color-text-subtle)" aria-live="polite">
-        Alcance de faena: <span className="font-medium text-(--color-text-muted)">{worksiteScopeLabel}</span>
-      </p>
+      {/* Reemplaza a un "Alcance de faena: X" que sólo preseleccionaba la
+          bodega del formulario mientras el historial seguía mostrando todas. */}
+      <DeliveryFilters worksites={worksiteOptions} faena={faena} />
 
       <div className="flex flex-col gap-6">
         {/* La captura depende de stock físico, no de una solicitud EPP
@@ -461,12 +466,26 @@ export default async function Page({
 
           {deliveriesForTable.length === 0 ? (
             <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-              <EmptyState
-                icon={<User size={22} />}
-                title="Sin entregas registradas"
-                description="Cuando registres una entrega, quedará disponible en este historial."
-                compact
-              />
+              {faena ? (
+                <EmptyState
+                  icon={<User size={22} />}
+                  title="Sin entregas en esta faena"
+                  description={`Todavía no se registran entregas a trabajadores de ${worksiteNameById.get(faena) ?? "esta faena"}.`}
+                  action={
+                    <Button asChild variant="secondary" size="sm">
+                      <Link href="/entregas" scroll={false}>Ver todas las faenas</Link>
+                    </Button>
+                  }
+                  compact
+                />
+              ) : (
+                <EmptyState
+                  icon={<User size={22} />}
+                  title="Sin entregas registradas"
+                  description="Cuando registres una entrega, quedará disponible en este historial."
+                  compact
+                />
+              )}
             </div>
           ) : (
             <DeliveriesTable deliveries={deliveriesForTable} canViewTraceability={canViewTraceability} canVoid={canVoidDelivery} />

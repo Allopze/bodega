@@ -1,5 +1,6 @@
 "use client"
 
+import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import * as React from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { FilterToolbar } from "@/components/ui/filter-toolbar"
@@ -63,6 +64,7 @@ function SelectFilter({ value, onValue, allLabel, ariaLabel, options }: {
 }
 
 export function AssetFilters({ types, workers, worksites, suppliers, current }: AssetFiltersProps) {
+  useWorksiteFilterPresence()
   const router = useRouter()
   const pathname = usePathname()
 
