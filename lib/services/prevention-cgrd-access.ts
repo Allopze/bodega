@@ -1,7 +1,7 @@
 /**
  * Piezas compartidas del dominio CGRD (comité, matriz, amenazas, actas):
- * una sola definición de alcance y una sola bitácora, reusando
- * `preventionGovernanceHistory` (ya domain-agnóstico, el mismo que usa CPHS).
+ * una sola definición de alcance y una sola bitácora, `recordModuleHistory`
+ * sobre `audit_log` (lib/audit.ts), la misma que usa CPHS.
  */
 import { inArray, sql } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
