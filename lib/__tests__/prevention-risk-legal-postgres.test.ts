@@ -263,6 +263,7 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     const author = access("risk-author", ["prevention:legal:view", "prevention:legal:assess", "prevention:capa:manage"], ["ws-risk-a", "ws-risk-b"])
     const reviewer = access("risk-reviewer", ["prevention:legal:assess"], ["ws-risk-a", "ws-risk-b"])
     const approver = access("risk-approver", ["prevention:legal:approve_applicability"], ["ws-risk-a", "ws-risk-b"])
+    const publisher = access("risk-publisher", ["prevention:legal:approve_applicability"], ["ws-risk-a", "ws-risk-b"])
     const requirement = await service.createLegalRequirementDraft({
       code: "DS44-ART7", sourceType: "regulatory", authority: "Ministerio del Trabajo", sourceTitle: "Decreto Supremo N°44", sourceReference: "DS 44/2024", sourceUrl: "https://www.bcn.cl/leychile/navegar?idNorma=1205298", article: "Artículo 7", requirement: "Confeccionar y revisar una matriz de identificación de peligros y evaluación de riesgos por procesos, tareas y puestos.", versionLabel: "Vigente desde 2025-02-01", validFrom: "2025-02-01", topic: "MIPER", chomeRole: "Entidad empleadora", evidenceRequired: "MIPER publicada, participación y evidencia de revisión", frequency: "Anual y por disparador",
     }, author)
@@ -270,7 +271,14 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     const submitted = await service.transitionLegalRequirement({ requirementId: requirement.id, expectedVersion: requirement.version, toStatus: "in_review", reason: "Requisito enviado a revisión normativa independiente." }, author)
     const reviewed = await service.transitionLegalRequirement({ requirementId: requirement.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: "Fuente oficial y granularidad del requisito verificadas." }, reviewer)
     const approved = await service.transitionLegalRequirement({ requirementId: requirement.id, expectedVersion: reviewed.version, toStatus: "approved", reason: "Requisito aprobado para incorporar al registro legal." }, approver)
-    const published = await service.transitionLegalRequirement({ requirementId: requirement.id, expectedVersion: approved.version, toStatus: "published", reason: "Publicación formal del requisito y su versión vigente." }, approver)
+    /* D4: publicar es la cuarta firma, como en la MIPER. Quien aprobó el
+     * requisito no puede publicarlo él mismo: con el mismo permiso cubriendo
+     * los dos pasos, la segregación dependía sólo de que nadie lo intentara. */
+    const selfPublish = service.transitionLegalRequirement({ requirementId: requirement.id, expectedVersion: approved.version, toStatus: "published", reason: "Quien aprobó intenta publicar el requisito." }, approver)
+    await expect(selfPublish).rejects.toThrow(/no puede publicarlo/i)
+    await expect(selfPublish).rejects.toBeInstanceOf(service.RiskLegalDomainError)
+    const published = await service.transitionLegalRequirement({ requirementId: requirement.id, expectedVersion: approved.version, toStatus: "published", reason: "Publicación formal del requisito y su versión vigente." }, publisher)
+    expect(published.publishedByUserId).toBe("risk-publisher")
     expect(published.publishedHashSha256).toMatch(/^[a-f0-9]{64}$/)
     await expect(service.proposeLegalApplicability({ requirementId: requirement.id, worksiteId: "ws-risk-b", applicabilityStatus: "proposed_not_applicable", rationale: "No aplica", responsibleSnapshot: "Prevención" }, author)).rejects.toThrow()
     const nonApplicable = await service.proposeLegalApplicability({ requirementId: requirement.id, worksiteId: "ws-risk-b", applicabilityStatus: "proposed_not_applicable", rationale: "La faena se encuentra cerrada y sin personas ni procesos activos.", responsibleSnapshot: "Prevención corporativa" }, author)
@@ -296,7 +304,7 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     const revisionSubmitted = await service.transitionLegalRequirement({ requirementId: revision.id, expectedVersion: revision.version, toStatus: "in_review", reason: "Actualización normativa enviada a revisión independiente." }, author)
     const revisionReviewed = await service.transitionLegalRequirement({ requirementId: revision.id, expectedVersion: revisionSubmitted.version, toStatus: "reviewed", reason: "Nueva redacción y fuente oficial contrastadas." }, reviewer)
     const revisionApproved = await service.transitionLegalRequirement({ requirementId: revision.id, expectedVersion: revisionReviewed.version, toStatus: "approved", reason: "Versión actualizada aprobada por rol segregado." }, approver)
-    const revisionPublished = await service.transitionLegalRequirement({ requirementId: revision.id, expectedVersion: revisionApproved.version, toStatus: "published", reason: "Nueva versión del requisito publicada sin sobrescribir evidencia." }, approver)
+    const revisionPublished = await service.transitionLegalRequirement({ requirementId: revision.id, expectedVersion: revisionApproved.version, toStatus: "published", reason: "Nueva versión del requisito publicada sin sobrescribir evidencia." }, publisher)
     const revisedApplicability = await service.proposeLegalApplicability({
       requirementId: revisionPublished.id,
       worksiteId: "ws-risk-a",
@@ -714,6 +722,7 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     const author = access("risk-author", ["prevention:legal:view", "prevention:legal:assess"])
     const reviewer = access("risk-reviewer", ["prevention:legal:assess"])
     const approver = access("risk-approver", ["prevention:legal:approve_applicability"])
+    const publisher = access("risk-publisher", ["prevention:legal:approve_applicability"])
     const [current] = await getDb().select().from(schema.preventionLegalRequirements).where(eq(schema.preventionLegalRequirements.id, legalRequirementId))
     expect(current).toMatchObject({ code: "DS44-ART7", status: "published" })
 
@@ -744,7 +753,7 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     const v3Submitted = await service.transitionLegalRequirement({ requirementId: v3.id, expectedVersion: v3.version, toStatus: "in_review", reason: "Actualización 2026 enviada a revisión normativa." }, author)
     const v3Reviewed = await service.transitionLegalRequirement({ requirementId: v3.id, expectedVersion: v3Submitted.version, toStatus: "reviewed", reason: "Redacción y fuente oficial contrastadas nuevamente." }, reviewer)
     const v3Approved = await service.transitionLegalRequirement({ requirementId: v3.id, expectedVersion: v3Reviewed.version, toStatus: "approved", reason: "Actualización aprobada por rol segregado." }, approver)
-    const v3Published = await service.transitionLegalRequirement({ requirementId: v3.id, expectedVersion: v3Approved.version, toStatus: "published", reason: "Publicación de la versión 2026 del requisito." }, approver)
+    const v3Published = await service.transitionLegalRequirement({ requirementId: v3.id, expectedVersion: v3Approved.version, toStatus: "published", reason: "Publicación de la versión 2026 del requisito." }, publisher)
 
     expect(v3Published).toMatchObject({ status: "published", supersedesRequirementId: current!.id })
     const [replaced] = await getDb().select().from(schema.preventionLegalRequirements).where(eq(schema.preventionLegalRequirements.id, current!.id))
@@ -814,7 +823,7 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     const staleSubmitted = await service.transitionLegalRequirement({ requirementId: stale.id, expectedVersion: stale.version, toStatus: "in_review", reason: "Borrador rezagado enviado a revisión normativa." }, author)
     const staleReviewed = await service.transitionLegalRequirement({ requirementId: stale.id, expectedVersion: staleSubmitted.version, toStatus: "reviewed", reason: "Redacción del borrador rezagado contrastada." }, reviewer)
     const staleApproved = await service.transitionLegalRequirement({ requirementId: stale.id, expectedVersion: staleReviewed.version, toStatus: "approved", reason: "Borrador rezagado aprobado por rol segregado." }, approver)
-    const stalePublished = await service.transitionLegalRequirement({ requirementId: stale.id, expectedVersion: staleApproved.version, toStatus: "published", reason: "Publicación del borrador rezagado." }, approver)
+    const stalePublished = await service.transitionLegalRequirement({ requirementId: stale.id, expectedVersion: staleApproved.version, toStatus: "published", reason: "Publicación del borrador rezagado." }, access("risk-publisher", ["prevention:legal:approve_applicability"]))
 
     // El enlace del borrador no sobrevive: apuntaba a un requisito que ya
     // estaba superado, y quien realmente quedó reemplazado es el adelantado.
@@ -925,6 +934,65 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
       rationale: "Intento de pronunciarse sobre un texto cuya vigencia ya terminó.",
       responsibleSnapshot: "Prevención corporativa",
     }, legalActors(["ws-risk-b"]).author)).rejects.toThrow(/no vigente/i)
+  })
+
+  /* D4: la excepción `prevention:sign_own_work` —la misma que usa la MIPER—
+   * permite a la jefatura técnica publicar lo que aprobó, pero deja constancia
+   * en la bitácora: una firma propia no queda indistinguible de una ajena. */
+  it("lets the approver publish a legal requirement only with sign_own_work, and records the exception", async () => {
+    const service = await import("@/lib/services/prevention-risk-legal")
+    const actors = legalActors()
+    const chief = access("risk-approver", ["prevention:legal:view", "prevention:legal:approve_applicability", "prevention:sign_own_work"])
+    const published = await publishRequirement(service, {
+      code: "DS44-ART30", requirement: "Mantener el registro de la entrega de información de riesgos a cada persona.",
+      versionLabel: "Vigente", validFrom: "2025-01-01",
+    }, { ...actors, publisher: chief })
+    expect(published).toMatchObject({ status: "published", publishedByUserId: "risk-approver", approvedByUserId: "risk-approver" })
+    const [entry] = await readModuleHistory(getDb(), {
+      module: "risk_legal:legal", entityType: "requirement", entityId: published.id, changeType: "published",
+    })
+    expect(entry?.reason).toMatch(/Firma propia/)
+    expect(entry?.afterState).toEqual(expect.objectContaining({ ownWorkExceptionUsed: true }))
+  })
+
+  /* D5: volver a proponer la aplicabilidad de una decisión ya aprobada la
+   * devolvía a "propuesta" —borrando la firma de aprobación y el estado de
+   * cumplimiento— sin versión esperada ni motivo. Una re-evaluación de lo
+   * aprobado tiene que ser explícita: sobre la versión que se vio y diciendo
+   * por qué. */
+  it("refuses to silently reopen an approved applicability and demands version plus reason to re-evaluate it", async () => {
+    const service = await import("@/lib/services/prevention-risk-legal")
+    const actors = legalActors()
+    const requirement = await publishRequirement(service, {
+      code: "DS44-ART31", requirement: "Capacitar a las personas trabajadoras en los riesgos de su puesto.",
+      versionLabel: "Vigente", validFrom: "2025-01-01",
+    }, actors)
+    const base = {
+      requirementId: requirement.id, worksiteId: "ws-risk-a", applicabilityStatus: "proposed_not_applicable" as const,
+      rationale: "La faena ya no tiene personal propio: toda la dotación es contratista.",
+      responsibleSnapshot: "Prevención corporativa",
+    }
+    const proposed = await service.proposeLegalApplicability({ ...base, applicabilityStatus: "proposed_applicable", rationale: "La faena mantiene personal propio expuesto a los riesgos del puesto." }, actors.author)
+    const approved = await service.approveLegalApplicability({ applicabilityId: proposed.id, expectedVersion: proposed.version, reason: "Aplicabilidad contrastada contra la dotación vigente." }, actors.approver)
+    expect(approved.applicabilityStatus).toBe("applicable")
+
+    await expect(service.proposeLegalApplicability(base, actors.author)).rejects.toThrow(/ya está aprobada/i)
+    await expect(service.proposeLegalApplicability({ ...base, expectedVersion: approved.version, reevaluationReason: "corto" }, actors.author)).rejects.toThrow()
+    await expect(service.proposeLegalApplicability({
+      ...base, expectedVersion: approved.version - 1, reevaluationReason: "Cambió la dotación de la faena tras el traspaso a contratistas.",
+    }, actors.author)).rejects.toThrow(/cambió mientras/i)
+
+    const [untouched] = await getDb().select().from(schema.preventionLegalApplicabilities).where(eq(schema.preventionLegalApplicabilities.id, proposed.id))
+    expect(untouched).toMatchObject({ applicabilityStatus: "applicable", approvedByUserId: "risk-approver", version: approved.version })
+
+    const reopened = await service.proposeLegalApplicability({
+      ...base, expectedVersion: approved.version, reevaluationReason: "Cambió la dotación de la faena tras el traspaso a contratistas.",
+    }, actors.author)
+    expect(reopened).toMatchObject({ id: proposed.id, applicabilityStatus: "proposed_not_applicable", approvedByUserId: null, version: approved.version + 1 })
+    const entries = await readModuleHistory(getDb(), {
+      module: "risk_legal:legal", entityType: "applicability", entityId: proposed.id, changeType: "proposed_not_applicable",
+    })
+    expect(entries.some((entry) => entry.reason?.includes("Re-evaluación de una aplicabilidad aprobada") && entry.reason.includes("traspaso a contratistas"))).toBe(true)
   })
 
   // LEGAL-04: con proceso nulo —lo que envía el formulario por defecto— el
@@ -1072,7 +1140,7 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
 async function publishRequirement(
   service: typeof import("@/lib/services/prevention-risk-legal"),
   fields: { code: string; requirement: string; versionLabel: string; validFrom: string; validTo?: string },
-  actors: { author: ReturnType<typeof access>; reviewer: ReturnType<typeof access>; approver: ReturnType<typeof access> },
+  actors: { author: ReturnType<typeof access>; reviewer: ReturnType<typeof access>; approver: ReturnType<typeof access>; publisher?: ReturnType<typeof access> },
 ) {
   const draft = await service.createLegalRequirementDraft({
     ...fields, sourceType: "regulatory", authority: "Ministerio del Trabajo",
@@ -1082,7 +1150,7 @@ async function publishRequirement(
   const submitted = await service.transitionLegalRequirement({ requirementId: draft.id, expectedVersion: draft.version, toStatus: "in_review", reason: `Envío a revisión de ${fields.versionLabel}.` }, actors.author)
   const reviewed = await service.transitionLegalRequirement({ requirementId: draft.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: `Revisión normativa de ${fields.versionLabel}.` }, actors.reviewer)
   const approved = await service.transitionLegalRequirement({ requirementId: draft.id, expectedVersion: reviewed.version, toStatus: "approved", reason: `Aprobación segregada de ${fields.versionLabel}.` }, actors.approver)
-  return service.transitionLegalRequirement({ requirementId: draft.id, expectedVersion: approved.version, toStatus: "published", reason: `Publicación de ${fields.versionLabel}.` }, actors.approver)
+  return service.transitionLegalRequirement({ requirementId: draft.id, expectedVersion: approved.version, toStatus: "published", reason: `Publicación de ${fields.versionLabel}.` }, actors.publisher ?? legalActors().publisher)
 }
 
 function access(userId: string, permissions: string[], ids: string[] = ["ws-risk-a"]) {
@@ -1095,6 +1163,8 @@ function legalActors(ids: string[] = ["ws-risk-a"]) {
     author: access("risk-author", ["prevention:legal:view", "prevention:legal:assess"], ids),
     reviewer: access("risk-reviewer", ["prevention:legal:assess"], ids),
     approver: access("risk-approver", ["prevention:legal:view", "prevention:legal:approve_applicability"], ids),
+    // D4: la publicación la firma alguien distinto de quien aprobó.
+    publisher: access("risk-publisher", ["prevention:legal:view", "prevention:legal:approve_applicability"], ids),
   }
 }
 
