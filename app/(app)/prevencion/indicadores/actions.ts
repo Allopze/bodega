@@ -7,7 +7,6 @@ import { unexpectedActionError } from "@/lib/actions/safe-server-action"
 import { parseZ } from "@/lib/actions/parse-z"
 import {
   approveSafetyIndicatorDenominator,
-  upsertSafetyIndicatorMonth,
   upsertSafetyIndicatorDenominator,
   closeSafetyIndicatorPeriod,
   SafetyIndicatorDomainError,
@@ -16,7 +15,6 @@ import {
   approveSafetyIndicatorDenominatorSchema,
   closeSafetyIndicatorPeriodSchema,
   safetyIndicatorDenominatorSchema,
-  safetyIndicatorMonthSchema,
 } from "@/lib/validation/prevention-module/safety-indicators"
 import type { ActionState } from "@/lib/validation/prevention"
 
@@ -43,21 +41,6 @@ function refresh() {
 function fail(error: unknown): ActionState {
   if (error instanceof SafetyIndicatorDomainError) return { ok: false, message: error.message }
   return unexpectedActionError(error, "prevencion/indicadores/actions")
-}
-
-export async function saveSafetyIndicatorMonthAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:indicadores:manage")
-  if (guard.error) return guard.error
-  const session = guard.session
-  const parsed = parseZ(safetyIndicatorMonthSchema, input)
-  if (!parsed.ok) return parsed
-  try {
-    await upsertSafetyIndicatorMonth(parsed.data, session.user.id, resolveWorksiteScope(session), session.user.permissions.includes("prevention:indicadores:close"))
-    refresh()
-    return { ok: true }
-  } catch (e) {
-    return fail(e)
-  }
 }
 
 export async function closeSafetyIndicatorPeriodAction(input: unknown): Promise<ActionState> {

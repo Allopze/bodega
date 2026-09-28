@@ -115,7 +115,9 @@ function updateRoute(router: ReturnType<typeof useRouter>, pathname: string, wor
   const params = new URLSearchParams()
   if (worksiteId) params.set("faena", worksiteId)
   params.set("year", String(year))
-  router.replace(`${pathname}?${params.toString()}`)
+  // Faena y año son estado de la vista: sin `scroll: false` cada cambio de filtro
+  // devolvía al usuario al inicio de la página (patrón de AGENTS.md).
+  router.replace(`${pathname}?${params.toString()}`, { scroll: false })
 }
 
 export function TrainingOccurrenceList({ rows, worksites, selectedYear, selectedWorksiteId, canRecord, activationPeriod }: Props) {

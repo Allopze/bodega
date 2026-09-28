@@ -127,23 +127,6 @@ describe("prevencion SST actions", () => {
     })
   })
 
-  describe("listEvaluationsAction", () => {
-    it("denies without sst:view", async () => {
-      mockAuthFn.mockResolvedValue(makeSession("other:perm"))
-      const { listEvaluationsAction } = await import("@/app/(app)/prevencion/actions")
-      const r = await listEvaluationsAction()
-      expect(r.ok).toBe(false)
-    })
-
-    it("lists evaluations on happy path", async () => {
-      mockAuthFn.mockResolvedValue(makeSession("sst:view", [], true))
-      mockListEvaluations.mockResolvedValue([{ id: "eval-1", workerName: "Juan", worksiteName: "Faena" }])
-      const { listEvaluationsAction } = await import("@/app/(app)/prevencion/actions")
-      const r = await listEvaluationsAction()
-      expect(r.ok).toBe(true); expect(r.data?.evaluations).toHaveLength(1)
-    })
-  })
-
   describe("closeEvaluationAction", () => {
     it("denies without sst:close", async () => {
       mockAuthFn.mockResolvedValue(makeSession("sst:create"))

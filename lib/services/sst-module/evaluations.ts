@@ -415,24 +415,3 @@ export async function deleteEvaluation(id: string, worksiteIds: string[] | "all"
   // de los conectores post-commit.
   if (revocation) await recordPdtpFulfillmentRevocation(revocation)
 }
-
-export async function closeEvaluationVisit(visitId: string, worksiteIds: string[] | "all", userId: string) {
-  const [visit] = await db.select().from(sstEvaluationVisits).where(eq(sstEvaluationVisits.id, visitId)).limit(1)
-  if (!visit || (worksiteIds !== "all" && !worksiteIds.includes(visit.worksiteId))) throw new Error("Visita no encontrada o sin acceso.")
-  if (visit.estado === "cerrada") return visit
-  const evaluations = await db.select({ estado: sstEvaluations.estado }).from(sstEvaluations).where(eq(sstEvaluations.visitId, visitId))
-  if (evaluations.length === 0 || evaluations.some((evaluation) => evaluation.estado !== "cerrado")) throw new Error("No se puede cerrar la visita mientras existan participaciones pendientes.")
-  const now = new Date().toISOString()
-  const [closed] = await db.update(sstEvaluationVisits).set({ estado: "cerrada", closedByUserId: userId, closedAt: now, updatedAt: now }).where(eq(sstEvaluationVisits.id, visitId)).returning()
-  return closed!
-}
-
-export async function reopenEvaluationVisit(visitId: string, reason: string, worksiteIds: string[] | "all", userId: string) {
-  if (reason.trim().length < 3) throw new Error("Indica el motivo de la reapertura.")
-  const [visit] = await db.select().from(sstEvaluationVisits).where(eq(sstEvaluationVisits.id, visitId)).limit(1)
-  if (!visit || (worksiteIds !== "all" && !worksiteIds.includes(visit.worksiteId))) throw new Error("Visita no encontrada o sin acceso.")
-  if (visit.estado !== "cerrada") throw new Error("Solo se puede reabrir una visita cerrada.")
-  const now = new Date().toISOString()
-  const [reopened] = await db.update(sstEvaluationVisits).set({ estado: "borrador", reopenedByUserId: userId, reopenedAt: now, reopeningReason: reason.trim(), updatedAt: now }).where(eq(sstEvaluationVisits.id, visitId)).returning()
-  return reopened!
-}

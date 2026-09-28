@@ -11,8 +11,6 @@ import { workers } from "@/db/schema/worksites"
 import { eq } from "drizzle-orm"
 import {
   createEvaluation,
-  getEvaluation,
-  listEvaluations,
   closeEvaluation,
   archiveEvaluationPdf,
   deleteEvaluation,
@@ -87,43 +85,7 @@ export async function createEvaluationAction(
 
 // ── listEvaluationsAction ─────────────────────────────────────────────────────
 
-export async function listEvaluationsAction(
-  filters?: { tipo?: string; estado?: string; workerId?: string },
-  limit = 50,
-  offset = 0,
-): Promise<ActionState & { data?: { evaluations: (SstEvaluation & { workerName: string; worksiteName: string })[] } }> {
-  const { session, error } = await guardPermission("sst:view")
-  if (error) return error
-
-  const scope = resolveWorksiteScope(session)
-  const worksiteIds = scopeToIds(scope)
-
-  try {
-    const evaluations = await listEvaluations({ worksiteIds, ...filters }, limit, offset)
-    return { ok: true, data: { evaluations } }
-  } catch (e) {
-    return actionErrorResult(e, "Error al listar evaluaciones")
-  }
-}
-
 // ── getEvaluationAction ───────────────────────────────────────────────────────
-
-export async function getEvaluationAction(
-  id: string,
-): Promise<ActionState & { data?: { evaluation: SstEvaluation | null } }> {
-  const { session, error } = await guardPermission("sst:view")
-  if (error) return error
-
-  const scope = resolveWorksiteScope(session)
-  const worksiteIds = scopeToIds(scope)
-
-  try {
-    const evaluation = await getEvaluation(id, worksiteIds)
-    return { ok: true, data: { evaluation } }
-  } catch (e) {
-    return actionErrorResult(e, "Error al obtener la evaluación")
-  }
-}
 
 // ── closeEvaluationAction ─────────────────────────────────────────────────────
 
