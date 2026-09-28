@@ -117,6 +117,22 @@ describe("Field", () => {
     expect(control).toHaveAttribute("aria-invalid", "true")
   })
 
+  /*
+   * Un control que declara su propio nombre lo conserva: inyectarle
+   * aria-labelledby lo pisaba ("Firma de prevencionista" pasaba a ser
+   * "Firma: prevencionista") y rompía a quien lo localiza por nombre (acta de
+   * cierre de inspecciones).
+   */
+  it("sin htmlFor, respeta el aria-label propio del control y sólo le suma la descripción", () => {
+    render(
+      <Field label="Firma: prevencionista" hint="Nombre de quien firma.">
+        <Input aria-label="Firma de prevencionista" />
+      </Field>,
+    )
+    const control = screen.getByRole("textbox", { name: "Firma de prevencionista" })
+    expect(control).toHaveAccessibleDescription("Nombre de quien firma.")
+  })
+
   it("renders FieldGroup", () => {
     const { container } = render(
       <FieldGroup>

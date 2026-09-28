@@ -42,14 +42,19 @@ function Field({ label, htmlFor, required, helper, hint, error, className, child
   // Sin `htmlFor`, un Field con ayuda o error caía al layout con <div> y el
   // label no se asociaba a nada: el control quedaba sin nombre accesible, y un
   // error por campo se lo quitaba a un control que antes lo tenía. Si el hijo es
-  // un control único, se le enlazan label y descripción con ids propios.
+  // un control único, se le enlazan label y descripción con ids propios. Si el
+  // control ya declara su nombre (`aria-label`/`aria-labelledby`) se respeta y
+  // sólo se le suma la descripción: pisarlo cambiaba el nombre con que se lo
+  // localiza (el acta de cierre de inspecciones).
   const generatedId = React.useId()
   const linkSingleControl = !htmlFor && Boolean(error || helperText) && isSingleControl(children)
   const idBase = htmlFor ?? (linkSingleControl ? generatedId : undefined)
   const descriptionId = idBase && (error || helperText)
     ? `${idBase}-${error ? "error" : "helper"}`
     : undefined
-  const labelId = idBase ? `${idBase}-label` : undefined
+  const labelId = htmlFor
+    ? `${htmlFor}-label`
+    : linkSingleControl && !controlHasOwnName(children) ? `${generatedId}-label` : undefined
   const content = labelId || descriptionId
     ? addLabelAndDescriptionToSingleControl(children, labelId, descriptionId, !!error)
     : children
@@ -106,6 +111,12 @@ const LABELABLE_TAGS = new Set(["input", "select", "textarea", "button", "meter"
  * `fieldset`…— es un contenedor: se cae al layout con `<div>`, donde el label
  * no se asocia a nada y cada control conserva su propio nombre.
  */
+function controlHasOwnName(children: React.ReactNode): boolean {
+  const [child] = React.Children.toArray(children)
+  if (!React.isValidElement<Record<string, unknown>>(child)) return false
+  return typeof child.props["aria-label"] === "string" || typeof child.props["aria-labelledby"] === "string"
+}
+
 function isSingleControl(children: React.ReactNode): boolean {
   const childArray = React.Children.toArray(children)
   return childArray.length === 1 && wrapsASingleControl(childArray[0])
