@@ -10,13 +10,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { MetaBadge, PPA_STATE_META } from "@/components/states/state-badge"
 import { toast } from "@/lib/toast"
-import { formatDate } from "@/lib/utils"
+import { formatDate, formatDateTime } from "@/lib/utils"
 import type { getPreventionPrivacyRequestWorkbench } from "@/lib/services/prevention-privacy-rights"
 import { nanoid } from "@/lib/id"
 import {
   HEALTH_FITNESS_LABELS,
   HEALTH_RECORD_STATUS_LABELS,
   HEALTH_RECORD_TYPE_LABELS,
+  PRIVACY_EXECUTION_DOMAIN_LABELS,
+  PRIVACY_EXECUTION_OPERATION_LABELS,
+  PRIVACY_EXECUTION_OUTCOME_LABELS,
   RESERVED_CASE_CATEGORY_LABELS,
   RESERVED_CASE_STATUS_LABELS,
   SST_DOCUMENT_STATUS_LABELS,
@@ -174,8 +177,10 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
           {bundle.executions.length === 0 ? <p className="text-xs text-(--color-text-muted)">Aún no hay una mutación demostrable para este derecho.</p> : (
             <ul className="space-y-2">{bundle.executions.map((execution) => (
               <li key={execution.id} className="rounded-md border border-(--color-border) p-2 text-xs">
-                <p className="font-medium">{execution.operation} · {execution.domain}</p>
-                <p>{execution.createdAt.slice(0, 16).replace("T", " ")} · {execution.outcome}</p>
+                {/* Operación, dominio y resultado son enums del esquema: se
+                    traducen con el mismo catálogo que el inventario. */}
+                <p className="font-medium">{labelOf(PRIVACY_EXECUTION_OPERATION_LABELS, execution.operation)} · {labelOf(PRIVACY_EXECUTION_DOMAIN_LABELS, execution.domain)}</p>
+                <p>{formatDateTime(execution.createdAt)} · {labelOf(PRIVACY_EXECUTION_OUTCOME_LABELS, execution.outcome)}</p>
                 <p className="font-mono text-[10px] text-(--color-text-muted)">{execution.beforeHash.slice(0, 10)}… → {execution.afterHash.slice(0, 10)}…</p>
               </li>
             ))}</ul>
@@ -186,7 +191,7 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && !busy && setSelected(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Ejecutar {operation}</DialogTitle>
+            <DialogTitle>Ejecutar {labelOf(PRIVACY_EXECUTION_OPERATION_LABELS, operation).toLocaleLowerCase("es-CL")}</DialogTitle>
             <DialogDescription>{selected?.label}. La bitácora guardará hashes y campos afectados, nunca el contenido clínico o reservado.</DialogDescription>
           </DialogHeader>
           <Field label="Motivo y evidencia revisada" htmlFor="privacy-execution-reason" required>

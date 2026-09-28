@@ -62,6 +62,22 @@ describe("privacy-right execution workbench", () => {
     expect(screen.getByText(/^PPA · \d{2}-\d{2}-\d{4}$/)).toBeInTheDocument()
   })
 
+  // H4: la evidencia de ejecución imprimía `deletion · health_record` y
+  // `applied`; quien responde la solicitud necesita leerlo en español.
+  it("names the execution operation, domain and outcome in Spanish", () => {
+    const withExecution = {
+      ...bundle(),
+      executions: [{
+        id: "exec-1", operation: "deletion", domain: "health_record", outcome: "blocked_retention",
+        createdAt: "2026-07-18T15:30:00.000Z", beforeHash: "a".repeat(64), afterHash: "b".repeat(64),
+      }],
+    } as unknown as Parameters<typeof PrivacyRightExecutionWorkbench>[0]["bundle"]
+    render(<PrivacyRightExecutionWorkbench bundle={withExecution} />)
+    expect(screen.getByText("Supresión · Registro de salud")).toBeInTheDocument()
+    expect(screen.getByText(/Bloqueada por retención legal$/)).toBeInTheDocument()
+    expect(screen.queryByText(/health_record|blocked_retention/)).not.toBeInTheDocument()
+  })
+
   it("hides execution while legal retention is active", () => {
     render(<PrivacyRightExecutionWorkbench bundle={bundle({ legalHold: true, status: "suspendida_retencion" })} />)
     expect(screen.queryByRole("button", { name: "Ejecutar" })).not.toBeInTheDocument()

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useState, type FormEvent } from "react"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
@@ -153,6 +154,8 @@ export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagina
 }) {
   const { canEdit, canReview, canApprove } = permissions
   const published = dashboard.matrices.filter((item) => item.status === "published")
+  const controlsByEntry = new Map<string, Dashboard["controls"]>()
+  for (const control of dashboard.controls) controlsByEntry.set(control.riskEntryId, [...(controlsByEntry.get(control.riskEntryId) ?? []), control])
   const router = useRouter()
   const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState(() => resolveMiperTab(searchParams.get("tab")))
@@ -185,7 +188,7 @@ export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagina
           {dashboard.matrices.length === 0 ? <EmptyState title="Sin versiones MIPER" description="Crea la primera versión usando una metodología validada." /> : dashboard.matrices.map((matrix) => {
             const entries = dashboard.entries.filter((item) => item.entry.matrixId === matrix.id)
             return <section key={matrix.id} className="rounded-lg border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><h2 className="font-semibold">{matrix.title} · v{matrix.matrixVersion}</h2><MetaBadge meta={{ label: STATUS_LABEL[matrix.status] ?? matrix.status, variant: variant(matrix.status) }} /></div><p className="mt-1 text-sm text-[var(--color-text-subtle)]">{entries.length} peligro(s) · {matrix.revisionReason}</p>{matrix.publishedHashSha256 && <p className="mt-1 font-mono text-xs">SHA-256 {matrix.publishedHashSha256.slice(0, 16)}…</p>}</div><div className="flex flex-wrap gap-2">{matrix.status === "draft" && canEdit && <AddRiskDialog matrixId={matrix.id} />}{matrix.status === "published" && <Button variant="secondary" asChild><a href={`/api/prevencion/miper/${matrix.id}/export`} download>Exportar Excel</a></Button>}<MatrixTransition matrix={matrix} currentUserId={currentUserId} permissions={permissions} today={today} /></div></div>
-              {entries.length > 0 && <div className="mt-3 grid gap-2 md:grid-cols-2">{entries.slice(0, 8).map(({ entry, process, task, position }) => <div key={entry.id} className="rounded border p-3 text-sm"><div className="flex justify-between gap-2"><strong>{entry.hazardCode} · {entry.hazard}</strong>{entry.isCritical && <MetaBadge meta={{ label: "Crítico", variant: "danger" }} />}</div><p className="mt-1 text-[var(--color-text-subtle)]">{process.name} → {task.name} → {position.name}</p><p className="mt-1">Residual: {riskLevelLabel(entry.residualLevel)}</p></div>)}</div>}
+              {entries.length > 0 && <div className="mt-3 grid gap-2 md:grid-cols-2">{entries.slice(0, 8).map(({ entry, process, task, position }) => <div key={entry.id} className="rounded border p-3 text-sm"><div className="flex justify-between gap-2"><strong>{entry.hazardCode} · {entry.hazard}</strong>{entry.isCritical && <MetaBadge meta={{ label: "Crítico", variant: "danger" }} />}</div><p className="mt-1 text-[var(--color-text-subtle)]">{process.name} → {task.name} → {position.name}</p><p className="mt-1">Residual: {riskLevelLabel(entry.residualLevel)}</p>{/* La ficha de cada control —donde se verifica— existía pero ninguna pantalla la enlazaba: sólo se llegaba desde la cobertura del PDTP. */}{controlsByEntry.get(entry.id)?.length ? <ul className="mt-2 space-y-1 border-t pt-2" aria-label={`Controles de ${entry.hazard}`}>{controlsByEntry.get(entry.id)!.map((control) => <li key={control.id}><Link href={`/prevencion/miper/controles/${control.id}`} className="text-[var(--color-primary)] underline-offset-2 hover:underline">{control.description}</Link>{control.isCritical ? <span className="ml-1 text-xs text-[var(--color-danger-ink)]">· crítico</span> : null}</li>)}</ul> : null}</div>)}</div>}
             </section>
           })}
         </div></TabsContent>

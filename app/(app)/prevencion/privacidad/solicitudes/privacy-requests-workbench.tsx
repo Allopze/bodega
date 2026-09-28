@@ -19,9 +19,10 @@ import {
 } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
-import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
+import { MetaBadge, metaFor } from "@/components/states/state-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { PRIVACY_REQUEST_STATUS_META, PRIVACY_RIGHT_LABELS } from "@/lib/prevention/privacy-inventory"
 
 interface PrivacyRequestRow {
   id: string
@@ -46,23 +47,10 @@ interface Props {
   pagination: PaginationState
 }
 
-const STATUS: Record<string, StateMetaInput> = {
-  recibida: { label: "Recibida", variant: "default" },
-  validando_identidad: { label: "Validando identidad", variant: "warning" },
-  en_proceso: { label: "En proceso", variant: "info" },
-  suspendida_retencion: { label: "Retención legal", variant: "danger" },
-  completada: { label: "Completada", variant: "success" },
-  rechazada: { label: "Rechazada", variant: "danger" },
-}
-
-const RIGHTS: Record<string, string> = {
-  access: "Acceso",
-  rectification: "Rectificación",
-  deletion: "Supresión",
-  opposition: "Oposición",
-  portability: "Portabilidad",
-  restriction: "Restricción",
-}
+// Catálogos compartidos con la ficha de la solicitud (server component), que no
+// puede importar valores de este módulo cliente.
+const STATUS = PRIVACY_REQUEST_STATUS_META
+const RIGHTS = PRIVACY_RIGHT_LABELS
 
 type PendingAction = {
   row: PrivacyRequestRow
