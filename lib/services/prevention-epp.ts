@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm"
+import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm"
 import { z } from "zod"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
@@ -9,6 +9,9 @@ import {
   eppTypes,
   preventionCapaActions,
   preventionEppRequirements,
+  preventionLegalRequirements,
+  preventionRiskEntries,
+  preventionRiskMatrices,
   products,
   worksites,
   workers,
@@ -43,6 +46,53 @@ function scopeAllows(scope: WorksiteScope, worksiteId: string) {
 function requireAccess(access: EppAccess, permission: string, worksiteId?: string) {
   if (!access.permissions.includes(permission) || (worksiteId && !scopeAllows(access.scope, worksiteId))) {
     throw new Error(NOT_FOUND)
+  }
+}
+
+/**
+ * #32: un requisito sin faena (global, o por cargo sin faena) rige en TODAS
+ * las faenas. Crearlo, cambiarlo o desactivarlo desde un alcance acotado le
+ * imponía —o le quitaba— obligaciones de EPP a faenas que ese usuario no ve.
+ */
+function requireRequirementScope(access: EppAccess, worksiteId: string | null | undefined) {
+  if (worksiteId) {
+    requireAccess(access, "prevention:epp:manage", worksiteId)
+    return
+  }
+  requireAccess(access, "prevention:epp:manage")
+  if (access.scope.mode !== "all") {
+    throw new Error("Un requisito sin faena rige en todas las faenas: sólo puede gestionarlo quien tiene alcance sobre todas las faenas. Indica tu faena.")
+  }
+}
+
+/**
+ * #32: el peligro MIPER citado justifica el requisito, así que tiene que ser
+ * de la faena donde el requisito rige (una matriz es siempre de una faena).
+ * El requisito legal es un catálogo sin faena: basta con que exista. Sin esto
+ * un requisito de la faena A podía declararse fundado en el MIPER de la B.
+ */
+async function assertRequirementReferences(client: Client, args: {
+  worksiteId: string | null
+  riskEntryId?: string | null
+  legalRequirementId?: string | null
+}) {
+  if (args.riskEntryId) {
+    const [entry] = await client.select({ worksiteId: preventionRiskMatrices.worksiteId })
+      .from(preventionRiskEntries)
+      .innerJoin(preventionRiskMatrices, eq(preventionRiskEntries.matrixId, preventionRiskMatrices.id))
+      .where(eq(preventionRiskEntries.id, args.riskEntryId))
+      .limit(1)
+    if (!entry) throw new Error("El peligro MIPER indicado no existe.")
+    if (args.worksiteId && entry.worksiteId !== args.worksiteId) {
+      throw new Error("El peligro MIPER indicado es de otra faena: el requisito sólo puede citar peligros de su propia faena.")
+    }
+  }
+  if (args.legalRequirementId) {
+    const [legal] = await client.select({ id: preventionLegalRequirements.id })
+      .from(preventionLegalRequirements)
+      .where(eq(preventionLegalRequirements.id, args.legalRequirementId))
+      .limit(1)
+    if (!legal) throw new Error("El requisito legal indicado no existe.")
   }
 }
 
@@ -109,12 +159,17 @@ export const escalateBlockingEppGapsSchema = z.object({
 
 export async function createEppRequirement(input: unknown, access: EppAccess) {
   const data = requirementSchema.parse(input)
-  requireAccess(access, "prevention:epp:manage", data.worksiteId ?? undefined)
+  requireRequirementScope(access, data.worksiteId)
 
   // Fila + historial en la misma transacción: `prevention_epp_history` es el
   // registro inmutable del dominio, y si su insert fallaba tras el de la fila
   // quedaba un cambio de obligatoriedad de EPP sin traza.
   return db.transaction(async (tx) => {
+    await assertRequirementReferences(tx, {
+      worksiteId: data.worksiteId ?? null,
+      riskEntryId: data.riskEntryId,
+      legalRequirementId: data.legalRequirementId,
+    })
     const [created] = await tx.insert(preventionEppRequirements).values({
       id: `peppr-${nanoid()}`,
       eppTypeId: data.eppTypeId,
@@ -152,7 +207,7 @@ export async function updateEppRequirement(input: unknown, access: EppAccess) {
     where: eq(preventionEppRequirements.id, data.id),
   })
   if (!existing) throw new Error(NOT_FOUND)
-  if (existing.worksiteId) requireAccess(access, "prevention:epp:manage", existing.worksiteId)
+  requireRequirementScope(access, existing.worksiteId)
 
   // `updatedAt` es timestamptz: con `todayInChile()` se guardaba "2026-08-17"
   // y se perdía la hora del cambio.
@@ -164,6 +219,11 @@ export async function updateEppRequirement(input: unknown, access: EppAccess) {
   if (data.riskEntryId        !== undefined) patch.riskEntryId        = data.riskEntryId
 
   return db.transaction(async (tx) => {
+    await assertRequirementReferences(tx, {
+      worksiteId: existing.worksiteId,
+      riskEntryId: data.riskEntryId,
+      legalRequirementId: data.legalRequirementId,
+    })
     const [updated] = await tx
       .update(preventionEppRequirements)
       .set(patch)
@@ -198,7 +258,7 @@ export async function deactivateEppRequirement(input: unknown, access: EppAccess
     where: eq(preventionEppRequirements.id, data.id),
   })
   if (!existing) throw new Error(NOT_FOUND)
-  if (existing.worksiteId) requireAccess(access, "prevention:epp:manage", existing.worksiteId)
+  requireRequirementScope(access, existing.worksiteId)
   if (!existing.isActive) throw new Error("El requisito ya está desactivado.")
 
   return db.transaction(async (tx) => {
@@ -342,6 +402,7 @@ export async function escalateBlockingEppGapsToCapa(access: EppAccess, args: { t
 
 export async function listEppRequirements(access: EppAccess) {
   requireAccess(access, "prevention:epp:view")
+  const requirementScope = scopeCondition(access.scope, preventionEppRequirements.worksiteId)
   // `preferredFamilyId` se guardaba y no se leía en ninguna parte: el hint del
   // formulario ofrece "ayuda a Bodega a saber qué entregar" y no llegaba nada.
   return db.select({
@@ -354,6 +415,11 @@ export async function listEppRequirements(access: EppAccess) {
     .innerJoin(eppTypes, eq(preventionEppRequirements.eppTypeId, eppTypes.id))
     .leftJoin(worksites, eq(preventionEppRequirements.worksiteId, worksites.id))
     .leftJoin(eppProductFamilies, eq(preventionEppRequirements.preferredFamilyId, eppProductFamilies.id))
+    // #32: sin filtro, un usuario de una faena veía los requisitos de todas.
+    // Los que no tienen faena rigen en todas, así que se le muestran siempre.
+    // Ojo: `or(x, undefined)` se reduce a `x`, así que el alcance total (que
+    // no filtra) se trata aparte o sólo vería los globales.
+    .where(requirementScope ? or(isNull(preventionEppRequirements.worksiteId), requirementScope) : undefined)
     .orderBy(asc(eppTypes.label))
     .limit(500)
 }
