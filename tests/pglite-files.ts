@@ -175,6 +175,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-capa-list.test.ts",
   "lib/__tests__/prevention-capa-manual-y-exencion.test.ts",
   "lib/__tests__/prevention-incident-public-reports.test.ts",
+  "lib/__tests__/prevention-incidents-workflow-gaps.test.ts",
   "lib/__tests__/prevention-cphs-program-persistence.test.ts",
   "lib/__tests__/prevention-cphs-certification-persistence.test.ts",
   "lib/__tests__/backfill-cphs-mandatory-sessions.test.ts",
