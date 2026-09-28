@@ -25,6 +25,7 @@ import {
 } from "@/lib/prevention/inspections"
 import { formatDate, formatDateTime } from "@/lib/utils"
 import { createInspectionRunAction } from "./actions"
+import { InspectionTemplateSelect } from "./template-select"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import {
@@ -566,7 +567,7 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
           <Field label="Plantilla" required>
-            <Select value={templateId} onValueChange={handleTemplateChange}><SelectTrigger aria-label="Plantilla"><SelectValue placeholder="Selecciona una plantilla" /></SelectTrigger><SelectContent>{templates.map((item) => <SelectItem key={item.id} value={item.id}>{INSPECTION_KIND_LABELS[item.kind] ?? item.kind} · {item.name} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="templateId" value={templateId} />
+            <InspectionTemplateSelect templates={templates} value={templateId} onValueChange={handleTemplateChange} /><input type="hidden" name="templateId" value={templateId} />
           </Field>
           <Field label="Faena" required>
             <Select value={worksiteId} onValueChange={handleWorksiteChange}><SelectTrigger aria-label="Faena de la inspección"><SelectValue placeholder="Selecciona la faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />

@@ -43,6 +43,7 @@ import { classifyPdtp2026InspectionWiring } from "@/lib/prevention/inspection-wi
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { formatDate, todayInChile } from "@/lib/utils"
+import { InspectionTemplateSelect } from "./template-select"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 import {
@@ -1526,7 +1527,7 @@ function RunProgramNowButton({ program }: { program: ProgramItem }) {
 /* ── Alta de programación ─────────────────────────────────────────────────── */
 
 export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWorksite, subjectsByWorksite = {} }: {
-  templates: { id: string; name: string; versionLabel: string; sourceDefinitionCode?: string | null }[]
+  templates: { id: string; name: string; versionLabel: string; kind?: string | null; sourceDefinitionCode?: string | null }[]
   worksites: { id: string; name: string }[]
   assignees: InspectionAssigneeOption[]
   riskEntriesByWorksite: Record<string, { id: string; hazardCode: string; hazard: string }[]>
@@ -1605,7 +1606,7 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
           <Field label="Plantilla">
-            <Select value={templateId} onValueChange={setTemplateId}><SelectTrigger aria-label="Plantilla"><SelectValue placeholder="Selecciona una plantilla" /></SelectTrigger><SelectContent>{templates.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="templateId" value={templateId} />
+            <InspectionTemplateSelect templates={templates} value={templateId} onValueChange={setTemplateId} /><input type="hidden" name="templateId" value={templateId} />
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Faena">

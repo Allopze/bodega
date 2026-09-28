@@ -5,7 +5,20 @@ import * as SelectPrimitive from "@radix-ui/react-select"
 import { CaretUp, CaretDown } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 
-export const SelectGroup = SelectPrimitive.Group
+// La búsqueda oculta cada SelectItem con `hidden`, pero el grupo no se entera:
+// su rótulo quedaba solo, encabezando una sección vacía. Un grupo sin ninguna
+// opción visible se oculta entero.
+export const SelectGroup = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Group>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Group>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Group
+    ref={ref}
+    className={cn("[&:not(:has([role=option]:not([hidden])))]:hidden", className)}
+    {...props}
+  />
+))
+SelectGroup.displayName = SelectPrimitive.Group.displayName
 export const SelectValue = SelectPrimitive.Value
 
 export const SelectScrollUpButton = React.forwardRef<

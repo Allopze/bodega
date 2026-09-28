@@ -63,7 +63,7 @@ export default async function ProgramacionInspeccionPage({ searchParams }: {
   }
 
   const approvedTemplates = templates.flatMap((item) => item.status === "approved"
-    ? [{ id: item.id, name: item.name, versionLabel: item.versionLabel, sourceDefinitionCode: item.sourceDefinitionCode }]
+    ? [{ id: item.id, name: item.name, versionLabel: item.versionLabel, kind: item.kind, sourceDefinitionCode: item.sourceDefinitionCode }]
     : [])
 
   return (
