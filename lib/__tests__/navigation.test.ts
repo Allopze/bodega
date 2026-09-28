@@ -302,4 +302,28 @@ describe("sidebar navigation", () => {
       expect(isHrefActive(childHref, `${childHref}/detail`)).toBe(true)
     }
   })
+
+  /* FX-B (B8): la bandeja de incidentes exige `incidents:view`, pero el menú la
+   * mostraba también con sólo `incidents:report`, y ese usuario terminaba en
+   * /forbidden. Quien sólo reporta conserva su camino: la página de reporte. */
+  it("shows the incidents inbox only with incidents:view and keeps the report page for report-only users", () => {
+    const withPermissions = (permissions: string[]) => ({
+      ...adminSession,
+      user: { ...adminSession.user, roles: [], permissions },
+    }) satisfies Session
+    const hrefs = (session: Session) => flattenNavTargets(session).map((target) => target.href)
+
+    const reportOnly = hrefs(withPermissions(["prevention:incidents:report"]))
+    expect(reportOnly).not.toContain("/prevencion/incidentes")
+    expect(reportOnly).toContain("/prevencion/incidentes/reportar")
+
+    const viewer = hrefs(withPermissions(["prevention:incidents:view"]))
+    expect(viewer).toContain("/prevencion/incidentes")
+    expect(viewer).not.toContain("/prevencion/incidentes/reportar")
+
+    const both = hrefs(withPermissions(["prevention:incidents:view", "prevention:incidents:report"]))
+    expect(both.filter((href) => href === "/prevencion/incidentes")).toHaveLength(1)
+    expect(both.filter((href) => href === "/prevencion/incidentes/reportar")).toHaveLength(1)
+  })
 })
+

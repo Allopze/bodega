@@ -443,14 +443,20 @@ export const preventionModule = {
           href: "/prevencion/incidentes",
           iconName: "Siren",
           group: "Cumplimiento del programa",
-          permissions: ["prevention:incidents:view", "prevention:incidents:report"],
-          children: [
-            {
-              label: "Reportar incidente",
-              href: "/prevencion/incidentes/reportar",
-              permissions: ["prevention:incidents:report"],
-            },
-          ],
+          // Mismo permiso que la página (`requirePermission` en
+          // incidentes/page.tsx). Antes bastaba `incidents:report` para verla
+          // en el menú y quien sólo reporta caía en /forbidden.
+          permissions: ["prevention:incidents:view"],
+        },
+        {
+          // Hermano y no hijo: un submenú sólo se muestra si su padre es
+          // visible, y quien sólo reporta no ve la bandeja pero sí debe
+          // encontrar dónde reportar.
+          label: "Reportar incidente",
+          href: "/prevencion/incidentes/reportar",
+          iconName: "MegaphoneSimple",
+          group: "Cumplimiento del programa",
+          permissions: ["prevention:incidents:report"],
         },
         {
           // El módulo compara requisitos por cargo/faena contra las entregas de
