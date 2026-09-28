@@ -1,8 +1,8 @@
 "use server"
 
 import { ZodError } from "zod"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { can, guardAnyPermission, guardPermission } from "@/lib/auth/can"
-import { safeActionMessage } from "@/lib/action-error"
 import {
   approvePdtpExecution,
   assertPdtpActivityMechanism,
@@ -40,7 +40,7 @@ function fail(error: unknown): ActionState {
   // para el operador")` y son la única pista de por qué la operación no
   // avanza. `safeActionMessage` las deja pasar y sigue ocultando los errores
   // de driver y de esquema.
-  return { ok: false, message: safeActionMessage(error, "No se pudo completar la acción. Intenta nuevamente.") }
+  return actionErrorResult(error, "No se pudo completar la acción. Intenta nuevamente.")
 }
 
 export async function markPdtpExecutionAction(formData: FormData): Promise<ActionState> {

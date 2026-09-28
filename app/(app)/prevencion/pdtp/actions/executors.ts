@@ -1,8 +1,8 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { guardPermission } from "@/lib/auth/can"
-import { safeActionMessage } from "@/lib/action-error"
 import { setPdtpActivityExecutorAssignments } from "@/lib/services/prevention-pdtp"
 import type { ActionState } from "@/lib/validation/prevention"
 
@@ -42,6 +42,6 @@ export async function setPdtpActivityExecutorAssignmentsAction(input: {
     revalidatePath(`${ROOT}/${programId}/editar`)
     return { ok: true }
   } catch (error) {
-    return { ok: false, message: safeActionMessage(error, "No se pudieron actualizar los ejecutores.") }
+    return actionErrorResult(error, "No se pudieron actualizar los ejecutores.")
   }
 }

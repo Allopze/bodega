@@ -1,7 +1,7 @@
 "use server"
 
 import { ZodError } from "zod"
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
@@ -40,7 +40,7 @@ async function run(
     if (error instanceof ZodError) {
       return { ok: false, message: "Revisa los campos marcados.", fieldErrors: error.flatten().fieldErrors as Record<string, string[]> }
     }
-    return { ok: false, message: safeActionMessage(error, "No se pudo completar la acción. Intenta nuevamente.") }
+    return actionErrorResult(error, "No se pudo completar la acción. Intenta nuevamente.")
   }
 }
 

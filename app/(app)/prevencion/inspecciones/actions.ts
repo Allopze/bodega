@@ -1,6 +1,6 @@
 "use server"
 
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
@@ -74,7 +74,7 @@ async function run(
     revalidatePath(`${BASE}/[runId]`, "page")
     return { ok: true, data: extract?.(result) }
   } catch (error) {
-    return { ok: false, message: safeActionMessage(error, "No se pudo completar la operación.") }
+    return actionErrorResult(error, "No se pudo completar la operación.")
   }
 }
 

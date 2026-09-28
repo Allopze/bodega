@@ -1,8 +1,8 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { guardPermission } from "@/lib/auth/can"
-import { safeActionMessage } from "@/lib/action-error"
 import {
   upsertPdtpObjective,
   deletePdtpObjective,
@@ -50,7 +50,7 @@ export async function upsertPdtpObjectiveAction(input: {
     revalidateProgram(input.programId)
     return { ok: true, objectiveId: objective.id }
   } catch (error) {
-    return { ok: false, message: safeActionMessage(error, "No se pudo guardar el objetivo.") }
+    return actionErrorResult(error, "No se pudo guardar el objetivo.")
   }
 }
 
@@ -69,7 +69,7 @@ export async function deletePdtpObjectiveAction(input: {
     revalidateProgram(input.programId)
     return { ok: true }
   } catch (error) {
-    return { ok: false, message: safeActionMessage(error, "No se pudo eliminar el objetivo.") }
+    return actionErrorResult(error, "No se pudo eliminar el objetivo.")
   }
 }
 
@@ -89,7 +89,7 @@ export async function reorderPdtpObjectivesAction(input: {
     revalidateProgram(input.programId)
     return { ok: true }
   } catch (error) {
-    return { ok: false, message: safeActionMessage(error, "No se pudo reordenar los objetivos.") }
+    return actionErrorResult(error, "No se pudo reordenar los objetivos.")
   }
 }
 
@@ -114,6 +114,6 @@ export async function setPdtpActivityObjectiveAction(input: {
     revalidateProgram(input.programId)
     return { ok: true }
   } catch (error) {
-    return { ok: false, message: safeActionMessage(error, "No se pudo actualizar el objetivo de la actividad.") }
+    return actionErrorResult(error, "No se pudo actualizar el objetivo de la actividad.")
   }
 }

@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { ZodError } from "zod"
 import { unexpectedActionError } from "@/lib/actions/safe-server-action"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
@@ -54,7 +55,7 @@ async function run(access: RiskLegalAccess, operation: (access: RiskLegalAccess)
     revalidatePath("/prevencion/pdtp/cobertura")
     return { ok: true }
   } catch (error) {
-    if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados.", fieldErrors: error.flatten().fieldErrors as Record<string, string[]> }
+    if (error instanceof ZodError) return actionErrorResult(error, "Revisa los campos marcados.")
     return fail(error)
   }
 }

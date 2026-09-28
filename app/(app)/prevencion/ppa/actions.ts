@@ -1,6 +1,6 @@
 "use server"
 
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -52,7 +52,7 @@ function refreshPpa(id: string) {
 }
 
 function failure(error: unknown, fallback: string): ActionState {
-  return { ok: false, message: safeActionMessage(error, fallback) }
+  return actionErrorResult(error, fallback)
 }
 
 export interface PpaListClientFilters {
@@ -77,7 +77,7 @@ export async function listPpaAction(
     const [rows, total] = await Promise.all([listPpa(f, limit, offset), countPpa(f)])
     return { ok: true, data: { rows, total } }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al listar PPA") }
+    return actionErrorResult(e, "Error al listar PPA")
   }
 }
 
@@ -91,7 +91,7 @@ export async function getPpaAction(
     const ppa = await getPpa(id, worksiteIds)
     return { ok: true, data: { ppa } }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al obtener el PPA") }
+    return actionErrorResult(e, "Error al obtener el PPA")
   }
 }
 
@@ -121,7 +121,7 @@ export async function reviewPpaAction(
 
     return { ok: true, message: "Revisión registrada" }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al registrar la revisión") }
+    return actionErrorResult(e, "Error al registrar la revisión")
   }
 }
 
@@ -250,7 +250,7 @@ export async function getPpaStatsAction(): Promise<ActionState & { data?: { stat
     const stats = await getPpaStats(worksiteIds)
     return { ok: true, data: { stats } }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al obtener indicadores") }
+    return actionErrorResult(e, "Error al obtener indicadores")
   }
 }
 
@@ -270,6 +270,6 @@ export async function revokePpaTokenAction(
     refreshPpa(id)
     return { ok: true, message: "Acceso público revocado. El enlace ya no muestra el resultado." }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al revocar el acceso público") }
+    return actionErrorResult(e, "Error al revocar el acceso público")
   }
 }

@@ -1,6 +1,6 @@
 "use server"
 
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -27,7 +27,7 @@ function refresh(actionId: string) {
 }
 
 function fail(error: unknown, fallback: string): ActionState {
-  return { ok: false, message: safeActionMessage(error, fallback) }
+  return actionErrorResult(error, fallback)
 }
 
 function permissionForTransition(target: CapaStatus) {

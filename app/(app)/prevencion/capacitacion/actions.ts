@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { recordTrainingOccurrenceStatus } from "@/lib/services/prevention-training-occurrences"
@@ -34,6 +34,6 @@ export async function recordTrainingOccurrenceStatusAction(input: unknown): Prom
         : "Capacitación marcada como no hecha.",
     }
   } catch (error) {
-    return { ok: false, message: safeActionMessage(error, "No se pudo actualizar la capacitación.") }
+    return actionErrorResult(error, "No se pudo actualizar la capacitación.")
   }
 }

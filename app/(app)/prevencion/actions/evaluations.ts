@@ -1,6 +1,6 @@
 "use server"
 
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 
 import { revalidatePath } from "next/cache"
 import { logger } from "@/lib/logger"
@@ -81,7 +81,7 @@ export async function createEvaluationAction(
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Evaluación creada", data: { id: evaluation.id } }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al crear la evaluación") }
+    return actionErrorResult(e, "Error al crear la evaluación")
   }
 }
 
@@ -102,7 +102,7 @@ export async function listEvaluationsAction(
     const evaluations = await listEvaluations({ worksiteIds, ...filters }, limit, offset)
     return { ok: true, data: { evaluations } }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al listar evaluaciones") }
+    return actionErrorResult(e, "Error al listar evaluaciones")
   }
 }
 
@@ -121,7 +121,7 @@ export async function getEvaluationAction(
     const evaluation = await getEvaluation(id, worksiteIds)
     return { ok: true, data: { evaluation } }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al obtener la evaluación") }
+    return actionErrorResult(e, "Error al obtener la evaluación")
   }
 }
 
@@ -143,7 +143,7 @@ export async function closeEvaluationAction(
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${id}`)
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al cerrar la evaluación") }
+    return actionErrorResult(e, "Error al cerrar la evaluación")
   }
 
   // Best-effort: guarda copia PDF en la biblioteca documental. Se ejecuta
@@ -180,6 +180,6 @@ export async function deleteEvaluationAction(
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Evaluación eliminada" }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al eliminar la evaluación") }
+    return actionErrorResult(e, "Error al eliminar la evaluación")
   }
 }

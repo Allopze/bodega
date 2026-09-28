@@ -69,21 +69,5 @@ export async function history(client: Client, args: {
   })
 }
 
-/**
- * Violación de índice único en Postgres (23505) sobre la constraint indicada.
- *
- * Recorre la cadena de `cause`: drizzle envuelve el error del driver en un
- * `DrizzleQueryError`, así que `code` y `constraint_name` no están en el objeto
- * de primer nivel — mirar sólo ahí hacía que el mensaje legible nunca saltara.
- */
-export function isUniqueViolation(error: unknown, constraint: string): boolean {
-  let current: unknown = error
-  for (let depth = 0; current && depth < 5; depth++) {
-    const candidate = current as { code?: string; constraint_name?: string; constraint?: string; cause?: unknown }
-    if (candidate.code === "23505" && (candidate.constraint_name === constraint || candidate.constraint === constraint)) {
-      return true
-    }
-    current = candidate.cause
-  }
-  return false
-}
+/** Movido a `lib/action-error.ts`, junto a `isForeignKeyViolation`. */
+export { isUniqueViolation } from "@/lib/action-error"

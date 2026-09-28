@@ -1,10 +1,10 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { ZodError } from "zod"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { safeActionMessage } from "@/lib/action-error"
 import {
   createActionPlanItem,
   updateActionPlanItem,
@@ -40,7 +40,7 @@ function fail(e: unknown): ActionState {
   // para el operador")` y son la única pista de por qué la operación no
   // avanza. `safeActionMessage` las deja pasar y sigue ocultando los errores
   // de driver y de esquema.
-  return { ok: false, message: safeActionMessage(e, "No se pudo completar la acción. Intenta nuevamente.") }
+  return actionErrorResult(e, "No se pudo completar la acción. Intenta nuevamente.")
 }
 
 // ── Plan de acción ──────────────────────────────────────────────────────────
