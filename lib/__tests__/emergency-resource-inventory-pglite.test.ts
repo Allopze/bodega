@@ -22,6 +22,7 @@ import {
   assignEmergencyResource,
   confirmEmergencyInventoryImport,
   exportEmergencyInventoryXlsx,
+  linkResourcesToPlan,
   listEmergencyResourceCoverage,
   previewEmergencyInventoryImport,
 } from "@/lib/services/worksite-inventory"
@@ -380,5 +381,42 @@ describe("inventario canónico de activos de emergencia", () => {
     // La recepción final conforme restauró EXT-001. La cancelación de EXT-002
     // no restauró su punto, así que esa brecha permanece abierta.
     expect(openAssignments[0]?.count).toBe(1)
+  })
+
+  // #34: la acción armaba el acceso (alcance incluido) y lo descartaba; el
+  // servicio no miraba ni la faena del usuario ni el estado del plan.
+  it("vincular recursos a un plan exige alcance sobre su faena y un plan en borrador", async () => {
+    const resources = await testDb.select({ id: schema.preventionEmergencyResources.id })
+      .from(schema.preventionEmergencyResources)
+      .where(eq(schema.preventionEmergencyResources.worksiteId, worksiteId))
+    const resourceIds = resources.map((resource) => resource.id)
+    expect(resourceIds.length).toBeGreaterThan(0)
+    await testDb.insert(schema.preventionEmergencyPlans).values([
+      { id: "plan-link-archived", worksiteId, code: "PE-LINK-ARCH", title: "Plan anterior", status: "archived", createdByUserId: userId },
+      { id: "plan-link-draft", worksiteId, code: "PE-LINK-DRAFT", title: "Plan vigente", status: "draft", createdByUserId: userId },
+    ])
+    const planAccess = { userId, scope: { mode: "some", ids: [worksiteId] }, permissions: ["prevention:emergency:manage"] } as const
+    const linkedPlan = async () => (await testDb.select({ planId: schema.preventionEmergencyResources.planId })
+      .from(schema.preventionEmergencyResources)
+      .where(eq(schema.preventionEmergencyResources.id, resourceIds[0]!)))[0]?.planId
+
+    await expect(linkResourcesToPlan({ planId: "plan-link-draft", resourceIds }, { ...planAccess, scope: { mode: "some", ids: ["ws-ajena"] } }))
+      .rejects.toThrow(/fuera de alcance/)
+    await expect(linkResourcesToPlan({ planId: "plan-link-draft", resourceIds }, { ...planAccess, permissions: [] }))
+      .rejects.toThrow(/fuera de alcance/)
+    await expect(linkResourcesToPlan({ planId: "plan-link-archived", resourceIds }, planAccess))
+      .rejects.toThrow(/archivado/)
+    expect(await linkedPlan()).toBeNull()
+
+    await expect(linkResourcesToPlan({ planId: "plan-link-draft", resourceIds }, planAccess))
+      .resolves.toEqual({ linked: resourceIds.length })
+    expect(await linkedPlan()).toBe("plan-link-draft")
+
+    // Aprobado, el plan queda congelado: tampoco admite recursos nuevos.
+    await testDb.update(schema.preventionEmergencyPlans)
+      .set({ status: "approved", approvedByUserId: userId, approvedAt: new Date().toISOString() })
+      .where(eq(schema.preventionEmergencyPlans.id, "plan-link-draft"))
+    await expect(linkResourcesToPlan({ planId: "plan-link-draft", resourceIds }, planAccess))
+      .rejects.toThrow(/aprobado/)
   })
 })

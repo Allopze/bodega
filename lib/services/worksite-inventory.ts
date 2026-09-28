@@ -53,6 +53,7 @@ import {
   type EmergencyImportPreview,
 } from "@/lib/services/emergency-resource-catalog"
 import { todayInChile } from "@/lib/utils"
+import { loadEditablePlan, type EmergencyAccess } from "@/lib/services/prevention-emergency"
 
 export interface InventoryAccess {
   userId: string
@@ -908,21 +909,21 @@ export async function deleteWorksiteResource(input: unknown, access: InventoryAc
  * Declara en un plan los recursos que ya existen en el inventario de su faena.
  * Reemplaza al alta: Prevención elige, no crea.
  *
- * Lo guarda `prevention:emergency:manage` desde la acción; acá se comprueba que
- * los recursos pertenezcan a la faena del plan, que es la invariante que el
- * selector no puede garantizar por sí solo.
+ * `loadEditablePlan` exige `prevention:emergency:manage` sobre la faena del
+ * plan y que el plan siga en borrador (#34): antes sólo lo guardaba el permiso
+ * de la acción, sin alcance, así que un usuario de otra faena podía declarar
+ * recursos en un plan ajeno, o en uno aprobado o archivado. Acá además se
+ * comprueba que los recursos pertenezcan a la faena del plan, que es la
+ * invariante que el selector no puede garantizar por sí solo.
  */
-export async function linkResourcesToPlan(input: unknown, actorUserId: string) {
+export async function linkResourcesToPlan(input: unknown, access: EmergencyAccess) {
   const data = z.object({
     planId: z.string().min(1),
     resourceIds: z.array(z.string().min(1)).min(1).max(500),
   }).parse(input)
 
   return db.transaction(async (tx) => {
-    const [plan] = await tx.select({ id: preventionEmergencyPlans.id, worksiteId: preventionEmergencyPlans.worksiteId })
-      .from(preventionEmergencyPlans)
-      .where(eq(preventionEmergencyPlans.id, data.planId)).limit(1)
-    if (!plan) throw new Error("Plan no encontrado.")
+    const plan = await loadEditablePlan(tx, data.planId, access)
 
     const rows = await tx.select({ id: preventionEmergencyResources.id })
       .from(preventionEmergencyResources)
@@ -942,7 +943,7 @@ export async function linkResourcesToPlan(input: unknown, actorUserId: string) {
       action: "update",
       entityType: "prevention_emergency_plan",
       entityId: plan.id,
-      userId: actorUserId,
+      userId: access.userId,
       newState: { linkedResourceIds: data.resourceIds },
       reason: `El plan declara ${rows.length} recurso(s) del inventario de la faena`,
     }, tx)
