@@ -865,28 +865,7 @@ async function main() {
   }))
   await db.insert(schema.preventionExposureMeasurements).values(mediciones)
 
-  const cambios = Array.from({ length: 12 }, (_, i) => {
-    const d = int(5, 200)
-    return {
-      id: id("chg"), worksiteId: pick(worksites).id, code: `GC-2026-${String(i + 1).padStart(3, "0")}`,
-      title: "Cambio operacional", changeType: pick(["proceso", "equipo", "instalacion", "procedimiento", "dotacion"] as const),
-      description: "Cambio evaluado según DS 44 art. 15.", reason: "Mejora operacional.",
-      riskLevel: pick(["low", "medium", "high"] as const),
-      ...(d < 40
-        ? { status: pick(["draft", "under_evaluation"] as const) }
-        : {
-            // Un cambio aprobado exige aprobador y fecha, o la restricción lo rechaza.
-            status: pick(["approved", "implemented", "closed"] as const),
-            approvedByUserId: jefa,
-            approvedAt: iso(daysAgo(Math.max(0, d - 5))),
-            // El DS 44 exige fecha de revisión posterior para aprobar un cambio.
-            plannedReviewDate: day(daysAgo(d - 60)),
-          }),
-      requestedByUserId: admin, createdAt: iso(daysAgo(d)), updatedAt: iso(daysAgo(d)),
-    }
-  })
-  await db.insert(schema.preventionChangeRequests).values(cambios)
-  console.log(`  Terreno: ${inspections.length} inspecciones · ${findings.length} hallazgos · ${permits.length} permisos · ${drills.length} simulacros · ${agreements.length} acuerdos · ${mediciones.length} mediciones · ${cambios.length} cambios`)
+  console.log(`  Terreno: ${inspections.length} inspecciones · ${findings.length} hallazgos · ${permits.length} permisos · ${drills.length} simulacros · ${agreements.length} acuerdos · ${mediciones.length} mediciones`)
 
 
   // ── Instantáneas diarias: sin esto no hay sparklines ni backlog comparado ──

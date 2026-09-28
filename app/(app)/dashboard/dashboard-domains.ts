@@ -86,7 +86,7 @@ export const DASHBOARD_DOMAINS: Record<DashboardDomainKey, DashboardDomain> = {
     title: "Control preventivo en terreno",
     shortTitle: "Terreno",
     anchor: "dominio-terreno",
-    permissions: ["prevention:inspections:view", "prevention:permits:view", "prevention:emergency:view", "prevention:hygiene:view", "prevention:change:view", "prevention:cphs:view"],
+    permissions: ["prevention:inspections:view", "prevention:permits:view", "prevention:emergency:view", "prevention:hygiene:view", "prevention:cphs:view"],
   },
   gobernanza: {
     key: "gobernanza",

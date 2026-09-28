@@ -51,6 +51,7 @@ import { codeYear, todayInChile } from "@/lib/utils"
 import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/enqueue"
 import { resolveSubject, assertContainerSubject } from "./programs"
 import { itemsFromDefinition } from "./templates"
+import { resolveRunDefinition } from "./epp-rows"
 import { transitionInspectionRun } from "./transitions"
 
 /* ── Ejecución ────────────────────────────────────────────────────────────── */
@@ -219,7 +220,8 @@ async function saveAnswersWithClient(tx: Tx, args: {
   const [template] = await tx.select().from(preventionInspectionTemplates)
     .where(eq(preventionInspectionTemplates.id, run.templateId)).limit(1)
   if (!template) throw new Error(NOT_FOUND)
-  const items = itemsFromDefinition(template.definitionSnapshot as unknown as ChecklistDefinition)
+  const definition = await resolveRunDefinition(tx, template.definitionSnapshot as unknown as ChecklistDefinition, run)
+  const items = itemsFromDefinition(definition)
   const itemBySpec = new Map(items.map((item) => [`${item.sectionId}::${item.itemId}`, item]))
 
   // B-03: validar TODO antes de escribir nada. El CHECK de Postgres queda como
@@ -458,7 +460,7 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
     const [template] = await tx.select().from(preventionInspectionTemplates)
       .where(eq(preventionInspectionTemplates.id, run.templateId)).limit(1)
     if (!template) throw new Error(NOT_FOUND)
-    const definition = template.definitionSnapshot as unknown as ChecklistDefinition
+    const definition = await resolveRunDefinition(tx, template.definitionSnapshot as unknown as ChecklistDefinition, run)
     const items = itemsFromDefinition(definition)
     if (template.sourceDefinitionCode === "inspeccion_no_planeada") {
       const participants = await tx.select({ id: preventionInspectionRunParticipants.id })

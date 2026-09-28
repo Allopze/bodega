@@ -115,10 +115,6 @@ export const preventionModule = {
     "prevention:emergency:manage",
     "prevention:emergency:approve",
     "prevention:emergency:drill_execute",
-    "prevention:change:view",
-    "prevention:change:manage",
-    "prevention:change:evaluate",
-    "prevention:change:approve",
     "prevention:epp:view",
     "prevention:epp:manage",
     "prevention:sign_own_work",
@@ -251,10 +247,6 @@ export const preventionModule = {
     "prevention:emergency:manage": { id: "p-prev-emg-manage", description: "Crear planes de emergencia y administrar escenarios, organigrama, recursos y contactos" },
     "prevention:emergency:approve": { id: "p-prev-emg-approve", description: "Aprobar el plan de emergencia de forma segregada de quien lo creó" },
     "prevention:emergency:drill_execute": { id: "p-prev-emg-drill", description: "Programar y completar simulacros del plan de emergencia" },
-    "prevention:change:view": { id: "p-prev-chg-view", description: "Ver solicitudes de gestión del cambio y sus dimensiones de impacto" },
-    "prevention:change:manage": { id: "p-prev-chg-manage", description: "Crear solicitudes de gestión del cambio" },
-    "prevention:change:evaluate": { id: "p-prev-chg-eval", description: "Evaluar el impacto del cambio por dimensión (riesgo, permiso, capacitación, documento, MIPER, emergencia)" },
-    "prevention:change:approve": { id: "p-prev-chg-approve", description: "Aprobar o rechazar el cambio de forma segregada de quien lo solicitó" },
     "prevention:epp:view": { id: "p-prev-epp-view", description: "Ver requisitos de EPP obligatorio y brechas de cobertura" },
     "prevention:epp:manage": { id: "p-prev-epp-manage", description: "Crear requisitos de EPP obligatorio y escalar brechas bloqueantes a CAPA" },
     /**
@@ -473,13 +465,6 @@ export const preventionModule = {
         // conserva acceso directo para registros anteriores, pero no se
         // ofrece como segunda bandeja de alta.
         {
-          label: "Emergencias",
-          href: "/prevencion/emergencias",
-          iconName: "Siren",
-          group: "Cumplimiento del programa",
-          permissions: ["prevention:emergency:view"],
-        },
-        {
           label: "Comités paritarios",
           href: "/prevencion/cphs",
           iconName: "UsersThree",
@@ -509,6 +494,17 @@ export const preventionModule = {
               href: "/prevencion/cgrd/mapa",
               permissions: ["prevention:risk:view"],
             },
+            {
+              // El plan de emergencia es el instrumento operativo de la gestión
+              // de riesgos de desastres (DS 44): vive dentro de GRD por decisión
+              // de Prevención (2026-09-28). La ruta y el permiso no cambian;
+              // quien sólo tiene `emergency:view` (jefe_mantencion, responsable
+              // de las n=83 y n=84) lo sigue viendo porque el padre se conserva
+              // por sus hijos visibles (`getVisibleAreas`).
+              label: "Plan de emergencia",
+              href: "/prevencion/emergencias",
+              permissions: ["prevention:emergency:view"],
+            },
           ],
         },
 
@@ -530,13 +526,6 @@ export const preventionModule = {
           iconName: "Heartbeat",
           group: "En terreno",
           permissions: ["prevention:hygiene:view"],
-        },
-        {
-          label: "Gestión del cambio",
-          href: "/prevencion/gestion-cambio",
-          iconName: "GearSix",
-          group: "En terreno",
-          permissions: ["prevention:change:view"],
         },
 
         // ── Seguimiento ─────────────────────────────────────────────────────
@@ -1211,27 +1200,6 @@ export const preventionModule = {
     { roleSlug: "administrador",        permission: "prevention:emergency:manage" },
     { roleSlug: "administrador",        permission: "prevention:emergency:approve" },
     { roleSlug: "administrador",        permission: "prevention:emergency:drill_execute" },
-    // Gestión del cambio. Igual criterio que emergencias: aprobar queda
-    // reservado a jefatura y la segregación real (quien solicita no aprueba)
-    // se valida en el servicio.
-    { roleSlug: "jefe_terreno",         permission: "prevention:change:view" },
-    { roleSlug: "admin_contrato",       permission: "prevention:change:view" },
-    { roleSlug: "prevencionista_faena", permission: "prevention:change:view" },
-    { roleSlug: "prevencionista_faena", permission: "prevention:change:manage" },
-    { roleSlug: "admin_contrato", permission: "prevention:change:manage" },
-    { roleSlug: "prevencionista_faena", permission: "prevention:change:evaluate" },
-    { roleSlug: "admin_contrato", permission: "prevention:change:evaluate" },
-    { roleSlug: "prevencionista",       permission: "prevention:change:view" },
-    { roleSlug: "prevencionista",       permission: "prevention:change:manage" },
-    { roleSlug: "prevencionista",       permission: "prevention:change:evaluate" },
-    { roleSlug: "prevencionista",       permission: "prevention:change:approve" },
-    { roleSlug: "cphs",                 permission: "prevention:change:view" },
-    { roleSlug: "jefa_chome",           permission: "prevention:change:view" },
-    { roleSlug: "jefa_chome",           permission: "prevention:change:approve" },
-    { roleSlug: "administrador",        permission: "prevention:change:view" },
-    { roleSlug: "administrador",        permission: "prevention:change:manage" },
-    { roleSlug: "administrador",        permission: "prevention:change:evaluate" },
-    { roleSlug: "administrador",        permission: "prevention:change:approve" },
     // EPP preventivo. Dashboard de cobertura: view es de lectura amplia,
     // manage crea requisitos y escala brechas bloqueantes a CAPA.
     { roleSlug: "jefe_terreno",         permission: "prevention:epp:view" },

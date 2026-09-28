@@ -1,6 +1,6 @@
 import type { ChecklistItem, ChecklistSection } from '../types'
 
-function eppMatrixRow(
+export function eppMatrixRow(
   id: string,
   label: string,
   danoPotencial: NonNullable<ChecklistItem['danoPotencial']>,
@@ -33,9 +33,12 @@ function eppMatrixRow(
  * Cada dimensión se persiste por separado. `matrix` sólo decide la presentación
  * visual: no vuelve a fusionar Uso y Estado en una respuesta ambigua.
  */
+/** Sección de la matriz trabajador × EPP; sus filas se arman desde la bodega de la faena. */
+export const EPP_USE_SECTION_ID = 'uso_estado_epp'
+
 export const EPP_SECTIONS: ChecklistSection[] = [
   {
-    id: 'uso_estado_epp',
+    id: EPP_USE_SECTION_ID,
     title: 'Uso y estado de EPP por trabajador',
     description:
       'Para cada EPP responda por separado Uso (Sí/No/N/A) y Estado (Bueno/Regular/Malo). Bloqueador solar conserva Uso y Registro como columnas independientes.',

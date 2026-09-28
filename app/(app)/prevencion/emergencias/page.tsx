@@ -52,8 +52,9 @@ export default async function EmergenciasPage({ searchParams }: { searchParams: 
         description="Planes de emergencia por faena, escenarios, organigrama de respuesta, recursos, contactos y simulacros con resultado derivado a CAPA."
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
-          { label: "Prevención" },
-          { label: "Emergencias" },
+          { label: "Prevención", href: "/prevencion" },
+          { label: "Gestión de riesgos de desastres", href: "/prevencion/cgrd" },
+          { label: "Plan de emergencia" },
         ]} />}
         // Layout 5 / A3: vivía en la barra de filtros y sólo en la pestaña
         // Planes. Crear un plan es acción de página: va en el header, en ambas

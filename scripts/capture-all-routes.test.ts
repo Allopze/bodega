@@ -270,7 +270,6 @@ describe("capture-all-routes route inventory", () => {
       expect.objectContaining({ slug: "prevencion-capa-detalle", path: "/prevencion/capa/capa-audit-1" }),
       expect.objectContaining({ slug: "prevencion-requisito-legal", path: "/prevencion/requisitos-legales/legal-requirement-audit-1" }),
       expect.objectContaining({ slug: "prevencion-privacidad-solicitud", path: "/prevencion/privacidad/solicitudes/privacy-request-audit-1" }),
-      expect.objectContaining({ slug: "prevencion-gestion-cambio-detalle", path: "/prevencion/gestion-cambio/cambio-audit-1" }),
       expect.objectContaining({ slug: "prevencion-emergencias-plan-detalle", path: "/prevencion/emergencias/plan-audit-1" }),
       expect.objectContaining({ slug: "prevencion-permiso-detalle", path: "/prevencion/permisos/permit-audit-1" }),
       expect.objectContaining({ slug: "prevencion-cphs-comite-detalle", path: "/prevencion/cphs/comite-audit-1" }),

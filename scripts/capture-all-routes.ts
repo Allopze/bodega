@@ -791,8 +791,6 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-emergencias-plan-detalle", path: "/prevencion/emergencias/plan-audit-1", auth: true },
   { slug: "prevencion-coordinacion", path: "/prevencion/coordinacion", auth: true, notes: "Visitas, fiscalizaciones y coordinación del DS 44 art. 20." },
   { slug: "prevencion-coordinacion-detalle", path: "/prevencion/coordinacion/eng-audit-1", auth: true },
-  { slug: "prevencion-gestion-cambio", path: "/prevencion/gestion-cambio", auth: true },
-  { slug: "prevencion-gestion-cambio-detalle", path: "/prevencion/gestion-cambio/cambio-audit-1", auth: true },
   { slug: "prevencion-epp-preventivo", path: "/prevencion/epp-preventivo", auth: true },
   { slug: "prevencion-documentacion", path: "/prevencion/documentacion", auth: true },
   { slug: "prevencion-documentacion-detalle", path: "/prevencion/documentacion/doc-audit-1", auth: true },
@@ -2015,34 +2013,6 @@ async function prepareDatabase(captureDbUrl: string) {
     createdAt: now,
     updatedAt: now,
   })
-
-  // Gestión de cambio con las seis dimensiones del flujo evaluadas. Una de
-  // ellas queda enlazada a CAPA para mostrar la medida operativa en vez de un
-  // formulario vacío o una falsa aprobación.
-  await db.insert(schema.preventionChangeRequests).values({
-    id: "cambio-audit-1",
-    worksiteId,
-    code: "MOC-2026-001",
-    title: "Cambio de resguardo en línea de corte",
-    changeType: "equipo",
-    description: "Se reemplazará el resguardo lateral de la línea de corte por una guarda enclavada.",
-    reason: "Cerrar el hallazgo CAPA-2026-001 y reducir exposición a partes móviles.",
-    riskLevel: "high",
-    status: "under_evaluation",
-    plannedReviewDate: "2026-07-15",
-    requestedByUserId: "user-audit-prevencion",
-    version: 1,
-    createdAt: now,
-    updatedAt: now,
-  })
-  await db.insert(schema.preventionChangeAssessments).values([
-    { id: "change-assessment-audit-risk", changeRequestId: "cambio-audit-1", dimension: "risk", evaluated: true, impacted: true, notes: "La guarda modifica el control crítico y requiere verificación previa al reinicio.", actionRequired: true, capaActionId: "capa-audit-1", evaluatedByUserId: "user-audit-prevencion", evaluatedAt: now, createdAt: now, updatedAt: now },
-    { id: "change-assessment-audit-permit", changeRequestId: "cambio-audit-1", dimension: "permit", evaluated: true, impacted: false, notes: "No cambia la autorización vigente de trabajo.", actionRequired: false, evaluatedByUserId: "user-audit-prevencion", evaluatedAt: now, createdAt: now, updatedAt: now },
-    { id: "change-assessment-audit-training", changeRequestId: "cambio-audit-1", dimension: "training", evaluated: true, impacted: true, notes: "La cuadrilla recibe inducción antes del uso de la guarda enclavada.", actionRequired: false, evaluatedByUserId: "user-audit-prevencion", evaluatedAt: now, createdAt: now, updatedAt: now },
-    { id: "change-assessment-audit-document", changeRequestId: "cambio-audit-1", dimension: "document", evaluated: true, impacted: true, notes: "Debe actualizarse la pauta de inspección de preuso.", actionRequired: false, evaluatedByUserId: "user-audit-prevencion", evaluatedAt: now, createdAt: now, updatedAt: now },
-    { id: "change-assessment-audit-miper", changeRequestId: "cambio-audit-1", dimension: "miper", evaluated: true, impacted: true, notes: "Se revisará el control de atrapamiento en la matriz vigente.", actionRequired: false, evaluatedByUserId: "user-audit-prevencion", evaluatedAt: now, createdAt: now, updatedAt: now },
-    { id: "change-assessment-audit-emergency", changeRequestId: "cambio-audit-1", dimension: "emergency", evaluated: true, impacted: false, notes: "No altera rutas de evacuación ni recursos de emergencia.", actionRequired: false, evaluatedByUserId: "user-audit-prevencion", evaluatedAt: now, createdAt: now, updatedAt: now },
-  ])
 
   await db.insert(schema.suppliers).values([
     {

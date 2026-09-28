@@ -51,17 +51,16 @@ PREVENCIÓN
 │   ├── Incidentes y accidentes (/prevencion/incidentes) -> Flujo legal RE-20 y DIAT
 │   ├── Requisitos de EPP (/prevencion/epp-preventivo) -> Cruce de dotación vs. entregas de bodega
 │   ├── Campañas preventivas (/prevencion/campanas) -> Se hizo / no se hizo, con evidencia de difusión (N°85-89)
-│   ├── Emergencias (/prevencion/emergencias) -> Planes, brigadas, extintores y simulacros
 │   ├── Comités paritarios (/prevencion/cphs) -> Actas, reuniones y certificación Mutual
 │   └── Gestión de riesgos de desastres (/prevencion/cgrd) -> Comité y matriz de amenazas DS 44
-│       └── Mapa de riesgos (/prevencion/cgrd/mapa) -> Plano de la faena con los peligros de la MIPER ubicados
+│       ├── Mapa de riesgos (/prevencion/cgrd/mapa) -> Plano de la faena con los peligros de la MIPER ubicados
+│       └── Plan de emergencia (/prevencion/emergencias) -> Planes, brigadas, extintores y simulacros
 │
 ├── 3. EN TERRENO
 │   ├── Para, Piensa y Actúa (/prevencion/ppa) -> Tarjetas de detención y control en terreno
 │   ├── Evaluaciones SST (/prevencion/evaluaciones) -> Inducción y acompañamiento de 4 semanas
 │   ├── Permisos de trabajo (/prevencion/permisos) -> Trabajos críticos, AST y bloqueo LOTO
-│   ├── Higiene y vigilancia (/prevencion/higiene) -> Protocolos MINSAL (PREXOR, PLANESI, TMERT)
-│   └── Gestión del cambio (/prevencion/gestion-cambio) -> Evaluación de modificaciones operacionales
+│   └── Higiene y vigilancia (/prevencion/higiene) -> Protocolos MINSAL (PREXOR, PLANESI, TMERT)
 │
 └── 4. SEGUIMIENTO Y GOBERNANZA
     ├── Visitas y coordinación (/prevencion/coordinacion) -> Fiscalizaciones DT/SEREMI y Mutual
@@ -100,7 +99,7 @@ Para facilitar la lectura durante la operación, el manual se organiza en los si
 *   **Parte 4: Gobernanza y Seguimiento**
     *   [16. Comités Paritarios (CPHS)](./parte-4-gobernanza-y-seguimiento/16-comites-paritarios-cphs.md)
     *   [17. Comité de Gestión de Riesgo de Desastres (CGRD) y Mapa de Riesgos](./parte-4-gobernanza-y-seguimiento/17-gestion-riesgo-desastres-cgrd.md)
-    *   [18. Gestión del Cambio (MOC)](./parte-4-gobernanza-y-seguimiento/18-gestion-del-cambio-moc.md)
+    *   [18. Gestión del Cambio (MOC)](./parte-4-gobernanza-y-seguimiento/18-gestion-del-cambio-moc.md) — módulo retirado el 2026-09-28
     *   [19. Visitas Externas y Fiscalizaciones](./parte-4-gobernanza-y-seguimiento/19-visitas-coordinacion-externa.md)
     *   [20. Indicadores Estadísticos SST y Cierre Mensual](./parte-4-gobernanza-y-seguimiento/20-indicadores-sst-cierre-mensual.md)
     *   [21. Registro Documental y Difusión de PTS](./parte-4-gobernanza-y-seguimiento/21-registro-documental-pts.md)

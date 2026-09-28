@@ -64,6 +64,29 @@ describe("sidebar navigation", () => {
     expect(commandTargets.map((target) => target.href)).not.toContain("/servicios")
   })
 
+  it("nests the emergency plan under GRD and keeps it reachable without cgrd:view", () => {
+    const grd = (permissions: string[]) => getVisibleAreas({
+      ...adminSession,
+      user: { ...adminSession.user, roles: ["jefe_mantencion"], permissions },
+    }).flatMap((area) => area.items).find((item) => item.label === "Gestión de riesgos de desastres")
+
+    // Con el permiso del comité, el padre abre su propia pantalla y el plan es un hijo.
+    const full = grd(["prevention:cgrd:view", "prevention:emergency:view"])
+    expect(full?.href).toBe("/prevencion/cgrd")
+    expect(full?.children?.map((child) => child.href)).toContain("/prevencion/emergencias")
+
+    // jefe_mantencion: responsable del plan (n=83) y sin cgrd:view. El padre se
+    // conserva por su hijo y apunta a él en vez de mandar a /forbidden.
+    const onlyEmergency = grd(["prevention:emergency:view"])
+    expect(onlyEmergency?.href).toBe("/prevencion/emergencias")
+    expect(onlyEmergency?.children?.map((child) => child.href)).toEqual(["/prevencion/emergencias"])
+
+    expect(grd([])).toBeUndefined()
+    const flat = getVisibleAreas({ ...adminSession, user: { ...adminSession.user, permissions: ["prevention:emergency:view"] } })
+      .flatMap((area) => area.items)
+    expect(flat.filter((item) => item.href === "/prevencion/emergencias" && item.label !== "Gestión de riesgos de desastres")).toEqual([])
+  })
+
   it("shows analytics under reportes when the user has analytics permission", () => {
     const session = {
       ...adminSession,

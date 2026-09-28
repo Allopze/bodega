@@ -1,5 +1,7 @@
 # Capítulo 18: Gestión del Cambio (MOC)
 
+> **Módulo retirado el 2026-09-28** por decisión de Prevención: ya no aparece en el menú ni tiene pantalla. Lo registrado antes se conserva en la base (`prevention_change_requests`), sin lectura desde la plataforma. Este capítulo queda como referencia histórica.
+
 > **Marco Normativo:** Decreto Supremo 44 y Estándar de Gestión del Cambio Operacional (Management of Change - MOC).  
 > **Ruta en Plataforma:** Menú > En terreno > **Gestión del cambio** (`/prevencion/gestion-cambio`).  
 > **Permisos del Sistema:** `prevention:change:manage` (solicitar), `evaluate` (evaluar) y `approve` (aprobar).

@@ -40,11 +40,34 @@ const PERMISSION_TO_MODULE = new Map<string, string>(
     .flatMap((module) => module.permissions.map((permission) => [permission, module.id] as const)),
 )
 
+interface ToggleableNavItem {
+  label?: string
+  href: string
+  permissions?: readonly string[]
+  children?: ToggleableNavItem[]
+}
+
+/**
+ * Entradas del menú que son submódulo con interruptor propio: cada ítem de
+ * primer nivel y, además, cada hijo que vive en otro árbol de rutas que su
+ * padre. "Plan de emergencia" (`/prevencion/emergencias`) cuelga de GRD en el
+ * menú desde el 2026-09-28 pero sigue siendo su propio submódulo; "Mapa de
+ * riesgos" (`/prevencion/cgrd/mapa`) está bajo el prefijo del padre y lo
+ * gobierna el interruptor de GRD, como antes.
+ */
+export function toggleableNavItems<T extends ToggleableNavItem>(items: readonly T[]): T[] {
+  return items.flatMap((item) => [
+    item,
+    ...((item.children ?? []) as T[]).filter((child) =>
+      child.href !== item.href && !child.href.startsWith(`${item.href}/`)),
+  ])
+}
+
 const NAV_ROUTE_TARGETS = (registry as readonly {
   id: string
-  nav?: Array<{ items: Array<{ href: string; permissions?: readonly string[] }> }>
+  nav?: Array<{ items: ToggleableNavItem[] }>
 }[]).flatMap((module) => (module.nav ?? []).flatMap((section) =>
-  section.items.map((item) => ({
+  toggleableNavItems(section.items).map((item) => ({
     moduleId: module.id,
     submoduleHref: item.href,
     prefix: item.href,
@@ -234,7 +257,6 @@ const PERMISSION_TARGET_OVERRIDES: Array<{ test: (permission: string) => boolean
   { test: (permission) => permission.startsWith("prevention:cphs:"), href: "/prevencion/cphs" },
   { test: (permission) => permission.startsWith("prevention:hygiene:") || permission.startsWith("prevention:health:"), href: "/prevencion/higiene" },
   { test: (permission) => permission.startsWith("prevention:emergency:"), href: "/prevencion/emergencias" },
-  { test: (permission) => permission.startsWith("prevention:change:"), href: "/prevencion/gestion-cambio" },
   { test: (permission) => permission.startsWith("prevention:epp:"), href: "/prevencion/epp-preventivo" },
   // Las campañas del programa anual se registran en el catálogo controlado;
   // el permiso legado conserva compatibilidad, pero ya no deriva al alta libre.
@@ -496,7 +518,7 @@ export async function getAllModuleToggles(): Promise<ModuleToggle[]> {
   const results: ModuleToggle[] = []
 
   for (const mod of modEntries) {
-    const navItems = mod.nav?.flatMap((section) => section.items) ?? []
+    const navItems = mod.nav?.flatMap((section) => toggleableNavItems(section.items)) ?? []
 
     const submodules: SubmoduleToggle[] = navItems.map((item) => ({
       label:        item.label,

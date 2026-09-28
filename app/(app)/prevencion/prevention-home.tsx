@@ -46,7 +46,6 @@ export async function PreventionHome() {
     // equipos de emergencia, y al revés (EMERGENCIAS-08).
     includeProtocols: can(session, "prevention:hygiene:view") && routeIsEnabled("/prevencion/higiene", toggleState),
     includeEmergencyResources: can(session, "prevention:emergency:view") && routeIsEnabled("/prevencion/emergencias", toggleState),
-    includeChangeReviews: can(session, "prevention:change:view") && routeIsEnabled("/prevencion/gestion-cambio", toggleState),
   })).filter((item) => routeIsEnabled(item.href, toggleState))
 
   // I-11 (auditoría UI/UX 2026-08-25): "Atención requerida" —la única sección
