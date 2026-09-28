@@ -13,9 +13,10 @@ interface Props {
   families: { id: string; name: string; eppTypeId: string | null }[]
   worksites: { id: string; name: string }[]
   canManage: boolean
+  allowOrgWideScopes: boolean
 }
 
-export function EppTabs({ gaps, requirements, eppTypes, families, worksites, canManage }: Props) {
+export function EppTabs({ gaps, requirements, eppTypes, families, worksites, canManage, allowOrgWideScopes }: Props) {
   const [tab, setTab] = React.useState<"coverage" | "requirements">("coverage")
 
   return (
@@ -31,7 +32,7 @@ export function EppTabs({ gaps, requirements, eppTypes, families, worksites, can
             referencia. */}
         <TabsContent value="coverage"><EppGapList gaps={gaps} canEscalate={canManage} /></TabsContent>
         <TabsContent value="requirements">
-          <EppRequirementList requirements={requirements} eppTypes={eppTypes} families={families} worksites={worksites} canManage={canManage} />
+          <EppRequirementList requirements={requirements} eppTypes={eppTypes} families={families} worksites={worksites} canManage={canManage} allowOrgWideScopes={allowOrgWideScopes} />
         </TabsContent>
       </Tabs>
     </div>

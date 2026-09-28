@@ -23,12 +23,13 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
+import { isUniqueViolation } from "@/lib/action-error"
 import { encryptPreventionPayload } from "@/lib/security/prevention-field-encryption"
 import {
   findContextualSubjectMarkers,
   findDirectSubjectMarkers,
 } from "@/lib/services/prevention-privacy-redaction"
-import type { RequestContext } from "@/lib/services/prevention-documents/utils"
+import { canReadDocumentConfidentiality, type RequestContext } from "@/lib/services/prevention-documents/utils"
 
 const executionSchema = z.object({
   requestId: z.string().min(1),
@@ -111,6 +112,8 @@ export async function executePreventionPrivacyRight(args: {
   ctx: RequestContext
   scope: WorksiteScope
   permissions: readonly string[]
+  /** Clave del envío (la genera el diálogo al abrirse). */
+  idempotencyKey?: string
 }) {
   requireManagePermission(args.permissions)
   const input = executionSchema.parse(args.input)
@@ -119,6 +122,15 @@ export async function executePreventionPrivacyRight(args: {
   if (!requestRow) throw new Error("Solicitud no encontrada o fuera de alcance.")
   const [subject] = await db.select().from(workers).where(eq(workers.id, requestRow.subjectWorkerId)).limit(1)
   if (!subject || !scopeAllows(args.scope, subject.worksiteId)) throw new Error("Solicitud no encontrada o fuera de alcance.")
+  // La clave se namespacea por solicitud y actor: reutilizarla en otra
+  // solicitud no puede devolver el resultado de la primera. Se consulta antes
+  // de las reglas de estado porque un reintento de algo ya aplicado debe
+  // devolver lo aplicado, no volver a evaluarlo.
+  const storedKey = args.idempotencyKey ? `${requestRow.id}:${args.ctx.userId}:${args.idempotencyKey}` : null
+  if (storedKey) {
+    const prior = await findExecutionByIdempotencyKey(storedKey)
+    if (prior) return { ...prior, replayed: true }
+  }
   if (requestRow.status !== "en_proceso" || !requestRow.identityVerifiedAt) {
     throw new Error("La identidad debe estar validada y la solicitud en proceso.")
   }
@@ -126,7 +138,7 @@ export async function executePreventionPrivacyRight(args: {
   assertRightMatchesOperation(requestRow.rightType, input.operation)
   const now = new Date().toISOString()
 
-  return db.transaction(async (tx) => {
+  const runExecution = () => db.transaction(async (tx) => {
     let before: unknown
     let after: unknown
     let details: Record<string, unknown>
@@ -151,6 +163,13 @@ export async function executePreventionPrivacyRight(args: {
           clinicalPayload: z.record(z.string(), z.unknown()).optional(),
         }).parse(input.changes)
         if (Object.keys(parsed).length === 0) throw new Error("Indica al menos una rectificación.")
+        // La aptitud y las restricciones son dato de salud: las protege
+        // `health:view_restrictions`, igual que en el inventario de abajo. El
+        // permiso de privacidad no alcanza para reescribirlas a ciegas.
+        if ((parsed.fitnessStatus !== undefined || parsed.restrictionsSummary !== undefined)
+          && !args.permissions.includes("prevention:health:view_restrictions")) {
+          throw new Error("No tienes autorización para rectificar la aptitud o las restricciones ocupacionales.")
+        }
         if (parsed.clinicalPayload && !args.permissions.includes("prevention:health:upload_clinical")) {
           throw new Error("No tienes autorización clínica nominativa para rectificar el payload.")
         }
@@ -174,6 +193,15 @@ export async function executePreventionPrivacyRight(args: {
         after = { ...record, ...projectionChanges, clinicalCiphertext: clinicalPayload ? "replaced" : clinical?.encryptedPayload ?? null }
         details = { changedFields: Object.keys(parsed), preservation: "registro operacional conservado" }
       } else if (input.operation === "deletion") {
+        // Suprimir purga el expediente clínico cifrado y borra las restricciones:
+        // exige lo mismo que leerlos. Sin esto, `manage_requests` bastaba para
+        // destruir un expediente que ese rol no puede ni abrir.
+        if (!args.permissions.includes("prevention:health:view_restrictions")) {
+          throw new Error("No tienes autorización para suprimir la aptitud o las restricciones ocupacionales.")
+        }
+        if (clinical && !args.permissions.includes("prevention:health:view_clinical")) {
+          throw new Error("No tienes autorización clínica nominativa para suprimir el expediente clínico.")
+        }
         await tx.delete(preventionHealthClinicalPayloads).where(eq(preventionHealthClinicalPayloads.healthRecordId, record.id))
         await tx.update(preventionHealthRecords).set({
           status: "archivado",
@@ -320,7 +348,11 @@ export async function executePreventionPrivacyRight(args: {
           eq(sstDocumentLinks.entityId, subject.id),
           isNull(sstDocumentLinks.removedAt),
         )).for("update").limit(1)
-      if (!linkRow || (linkRow.document.worksiteId && !scopeAllows(args.scope, linkRow.document.worksiteId))) {
+      // La confidencialidad también: el mismo criterio que la biblioteca, que
+      // oculta el documento a quien no puede gestionar su nivel.
+      if (!linkRow
+        || (linkRow.document.worksiteId && !scopeAllows(args.scope, linkRow.document.worksiteId))
+        || !canReadDocumentConfidentiality(linkRow.document.confidentiality, args.permissions)) {
         throw new Error("Documento no encontrado o fuera de alcance.")
       }
       before = linkRow.link
@@ -366,6 +398,7 @@ export async function executePreventionPrivacyRight(args: {
       reason: input.reason,
       details,
       actorUserId: args.ctx.userId,
+      idempotencyKey: storedKey,
       createdAt: now,
     }).returning()
     if (!execution) throw new Error("No se pudo registrar la ejecución del derecho.")
@@ -385,6 +418,27 @@ export async function executePreventionPrivacyRight(args: {
     })
     return execution
   })
+
+  try {
+    return { ...await runExecution(), replayed: false }
+  } catch (error) {
+    // Dos envíos simultáneos con la misma clave pasan la consulta de arriba; el
+    // segundo choca con el UNIQUE, su transacción se deshace entera (también
+    // la mutación del dominio) y se devuelve lo que aplicó el primero.
+    if (storedKey && isUniqueViolation(error, IDEMPOTENCY_CONSTRAINT)) {
+      const prior = await findExecutionByIdempotencyKey(storedKey)
+      if (prior) return { ...prior, replayed: true }
+    }
+    throw error
+  }
+}
+
+const IDEMPOTENCY_CONSTRAINT = "prevention_privacy_request_executions_idempotency_key_unique"
+
+async function findExecutionByIdempotencyKey(key: string) {
+  const [row] = await db.select().from(preventionPrivacyRequestExecutions)
+    .where(eq(preventionPrivacyRequestExecutions.idempotencyKey, key)).limit(1)
+  return row ?? null
 }
 
 /**
@@ -443,6 +497,7 @@ export async function getPreventionPrivacyRequestWorkbench(args: {
       documentId: sstDocuments.id,
       title: sstDocuments.title,
       status: sstDocuments.status,
+      confidentiality: sstDocuments.confidentiality,
     }).from(sstDocumentLinks).innerJoin(sstDocuments, eq(sstDocumentLinks.documentId, sstDocuments.id))
       .where(and(eq(sstDocumentLinks.entityType, "worker"), eq(sstDocumentLinks.entityId, subject.id), isNull(sstDocumentLinks.removedAt))),
     db.select().from(preventionPrivacyRequestExecutions)
@@ -464,6 +519,15 @@ export async function getPreventionPrivacyRequestWorkbench(args: {
     : []
   const restrictedReservedCaseCount = reservedCases.length - visibleReservedCases.length
 
+  // Mismo criterio para los documentos vinculados: atender la solicitud no da
+  // acceso a la biblioteca sensible. Sin `docs:manage_sensitive` el título de
+  // un documento sensible no se muestra, pero se cuenta, para no dar por
+  // completo un inventario que no lo está.
+  const visibleDocumentLinks = documentLinks
+    .filter((row) => canReadDocumentConfidentiality(row.confidentiality, args.permissions))
+    .map(({ confidentiality: _confidentiality, ...row }) => row)
+  const restrictedDocumentCount = documentLinks.length - visibleDocumentLinks.length
+
   return {
     request: requestRow,
     subject: {
@@ -482,9 +546,10 @@ export async function getPreventionPrivacyRequestWorkbench(args: {
       })),
       reservedCases: visibleReservedCases,
       ppas,
-      documentLinks,
+      documentLinks: visibleDocumentLinks,
     },
     restrictedReservedCaseCount,
+    restrictedDocumentCount,
     executions,
     restrictions,
     history,

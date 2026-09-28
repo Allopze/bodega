@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, inArray, isNull, like, lte, or, sql, type SQL, isNotNull } from "drizzle-orm"
+import { and, count, desc, eq, gte, inArray, isNull, like, lte, ne, or, sql, type SQL, isNotNull } from "drizzle-orm"
 import { db } from "@/db"
 import {
   sstDocuments,
@@ -89,7 +89,10 @@ export async function searchDocuments(input: SstDocumentSearchInput, scope: Work
     else conditions.push(isNull(sstDocuments.folderId))
   }
   if (data.categorySlug) conditions.push(eq(sstDocuments.categorySlug, data.categorySlug))
+  // Sin estado explícito es la biblioteca: lo archivado vive en la papelera,
+  // que sí pide `status: "archivado"`. Antes la lista principal lo mostraba.
   if (data.status) conditions.push(eq(sstDocuments.status, data.status))
+  else conditions.push(ne(sstDocuments.status, "archivado"))
   if (data.confidentiality) conditions.push(eq(sstDocuments.confidentiality, data.confidentiality))
   if (data.worksiteId) conditions.push(eq(sstDocuments.worksiteId, data.worksiteId))
   if (data.responsibleUserId) conditions.push(eq(sstDocuments.responsibleUserId, data.responsibleUserId))

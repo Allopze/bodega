@@ -60,6 +60,12 @@ export async function GET(_request: Request, ctx: RouteCtx) {
     "prevention:docs:approve",
     "prevention:docs:publish",
   )
+  // Un documento archivado ya no está publicado: el endpoint principal responde
+  // 410 y éste servía igual su versión vigente a quien sólo puede ver. Quien
+  // gestiona el ciclo sí la abre —es quien decide restaurarlo desde la papelera.
+  if (doc.status === "archivado" && !canInspectWorkflow) {
+    return NextResponse.json({ error: "Documento archivado" }, { status: 410 })
+  }
   if (!isPublishedCurrent && !canInspectWorkflow) {
     return NextResponse.json({ error: "Versión no encontrada" }, { status: 404 })
   }

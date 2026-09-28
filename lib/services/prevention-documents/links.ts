@@ -19,7 +19,7 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import type { WorksiteScope } from "@/lib/auth/scope"
-import { assertScopeAccess, recordAuditEntry } from "./utils"
+import { assertConfidentialityAllowed, assertScopeAccess, recordAuditEntry, type SstDocumentConfidentiality } from "./utils"
 import { PreventionDocumentDomainError } from "./errors"
 
 export const DOCUMENT_LINK_ENTITY_TYPES = [
@@ -201,6 +201,7 @@ export async function resolveDocumentLinkTarget(entityType: DocumentLinkEntityTy
 
 export async function createDocumentLink(args: {
   documentId: string; entityType: DocumentLinkEntityType; entityId: string; notes?: string; userId: string; scope: WorksiteScope
+  permissions: readonly string[]
 }) {
   const entityId = args.entityId.trim()
   const notes = args.notes?.trim() || null
@@ -209,6 +210,9 @@ export async function createDocumentLink(args: {
   const [document] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, args.documentId)).limit(1)
   if (!document) throw new PreventionDocumentDomainError("Documento no encontrado.")
   assertScopeAccess(document.worksiteId, args.scope)
+  // Vincular expone el documento en la ficha de la entidad: la faena no basta,
+  // hay que poder gestionar su confidencialidad.
+  assertConfidentialityAllowed(document.confidentiality as SstDocumentConfidentiality, args.permissions)
   const target = await resolveDocumentLinkTarget(args.entityType, entityId)
   if (!target) throw new PreventionDocumentDomainError("La entidad que intentas vincular no existe.")
   if (target.worksiteId) assertScopeAccess(target.worksiteId, args.scope)
@@ -225,12 +229,15 @@ export async function createDocumentLink(args: {
   return created
 }
 
-export async function removeDocumentLink(args: { linkId: string; reason: string; userId: string; scope: WorksiteScope }) {
+export async function removeDocumentLink(args: {
+  linkId: string; reason: string; userId: string; scope: WorksiteScope; permissions: readonly string[]
+}) {
   if (args.reason.trim().length < 3) throw new PreventionDocumentDomainError("Indica el motivo del retiro del vínculo.")
   const [row] = await db.select({ link: sstDocumentLinks, document: sstDocuments }).from(sstDocumentLinks)
     .innerJoin(sstDocuments, eq(sstDocumentLinks.documentId, sstDocuments.id)).where(and(eq(sstDocumentLinks.id, args.linkId), isNull(sstDocumentLinks.removedAt))).limit(1)
   if (!row) throw new PreventionDocumentDomainError("Vínculo no encontrado o ya retirado.")
   assertScopeAccess(row.document.worksiteId, args.scope)
+  assertConfidentialityAllowed(row.document.confidentiality as SstDocumentConfidentiality, args.permissions)
   const now = new Date().toISOString()
   await db.update(sstDocumentLinks).set({ removedByUserId: args.userId, removedAt: now, removalReason: args.reason.trim() }).where(eq(sstDocumentLinks.id, args.linkId))
   await recordAuditEntry({ documentId: row.document.id, userId: args.userId, action: "unlink", comment: args.reason.trim(), metadata: { linkId: args.linkId, entityType: row.link.entityType, entityId: row.link.entityId } })

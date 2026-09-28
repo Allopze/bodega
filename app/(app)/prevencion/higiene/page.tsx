@@ -18,6 +18,7 @@ import { resolveProgramSlotYear } from "@/lib/prevention/program-slots-2026"
 import { getPdtpOperationalYears } from "@/lib/services/prevention-pdtp"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { HygieneDashboard } from "./hygiene-dashboard"
+import { HygieneCreateButton } from "./hygiene-dialogs"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "Higiene y vigilancia" }
@@ -32,7 +33,12 @@ export default async function HigienePage({ searchParams }: { searchParams: Prom
     scope: resolveWorksiteScope(session),
     permissions: session.user.permissions,
   }
+  // D8: `manage` es sólo el catálogo global de agentes; GES, programas,
+  // matrículas y protocolos los resuelve el servidor con `assess`, que es lo
+  // que tiene el prevencionista de faena. Gatear todo con `manage` le ocultaba
+  // acciones que el servidor sí le permite.
   const canManage = session.user.permissions.includes("prevention:hygiene:manage")
+  const canAssess = session.user.permissions.includes("prevention:hygiene:assess")
   // La casilla N°45 la resuelve quien registra la medición: es el permiso del hecho.
   const canRecordMeasurementSlots = session.user.permissions.includes("prevention:hygiene:measure")
   // PREV-C03.4/C03.7: el año de las casillas viene de ?anio o, si falta, del
@@ -44,8 +50,9 @@ export default async function HigienePage({ searchParams }: { searchParams: Prom
     listExposureGroups(access),
     listSurveillancePrograms(access),
     getAnonymizedExposureSummary(access),
-    canManage ? listExposureAgents(access) : Promise.resolve([]),
-    canManage ? listHygieneWorksites(access) : Promise.resolve([]),
+    // Crear un GES o un programa elige agente y faena: hace falta con `assess`.
+    canManage || canAssess ? listExposureAgents(access) : Promise.resolve([]),
+    canManage || canAssess ? listHygieneWorksites(access) : Promise.resolve([]),
     listProtocolApplicabilities(access),
     listHygieneMeasurementSlots(access, slotYear),
   ])
@@ -72,6 +79,14 @@ export default async function HigienePage({ searchParams }: { searchParams: Prom
           { label: "Prevención" },
           { label: "Higiene" },
         ]} />}
+        actions={
+          <HygieneCreateButton
+            agents={agents.map((item) => ({ id: item.id, code: item.code, name: item.name, unit: item.unit }))}
+            worksites={worksites}
+            canManage={canManage}
+            canAssess={canAssess}
+          />
+        }
       />
       <HygieneDashboard
         groups={groups.map((row) => ({
@@ -131,7 +146,7 @@ export default async function HigienePage({ searchParams }: { searchParams: Prom
         activationPeriods={activationPeriods}
         canRecordMeasurementSlots={canRecordMeasurementSlots}
         today={todayInChile()}
-        canManage={canManage}
+        canAssess={canAssess}
       />
       <PdtpScheduledActivityPanelServer connectorKey="hygiene" />
     </PageContainer>

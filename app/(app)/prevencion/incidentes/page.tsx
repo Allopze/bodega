@@ -52,6 +52,9 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
   ])
   const canReport = can(session, "prevention:incidents:report")
   const canExport = can(session, "prevention:incidents:export")
+  // Triar el buzón es clasificar; abrir el incidente desde un reporte es además
+  // reportarlo, con el permiso de siempre.
+  const canTriage = can(session, "prevention:incidents:triage")
 
   return (
     <PageContainer>
@@ -65,7 +68,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
         </div>}
       />
       {/* INC-001: lo que llega por el canal público del trabajador, donde se tría. */}
-      {canReport && <PublicIncidentReportsPanel scope={access.scope} />}
+      {(canReport || canTriage) && <PublicIncidentReportsPanel scope={access.scope} canTriage={canTriage} canConvert={canTriage} />}
       <IncidentList incidents={incidents} worksites={worksites} counts={counts} canReport={canReport} indicatorContext={indicatorLabel ? `Fuente del indicador de ${indicatorLabel} · ${effectiveMonthFrom ?? "—"}-${effectiveMonthTo ?? "—"}/${query.year ?? ""}` : undefined} />
       <PdtpScheduledActivityPanelServer connectorKey="incidents" />
     </PageContainer>

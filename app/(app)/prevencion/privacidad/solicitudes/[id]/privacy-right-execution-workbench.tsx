@@ -10,13 +10,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { MetaBadge, PPA_STATE_META } from "@/components/states/state-badge"
 import { toast } from "@/lib/toast"
-import { formatDate } from "@/lib/utils"
+import { formatDate, formatDateTime } from "@/lib/utils"
 import type { getPreventionPrivacyRequestWorkbench } from "@/lib/services/prevention-privacy-rights"
 import { nanoid } from "@/lib/id"
 import {
   HEALTH_FITNESS_LABELS,
   HEALTH_RECORD_STATUS_LABELS,
   HEALTH_RECORD_TYPE_LABELS,
+  PRIVACY_EXECUTION_DOMAIN_LABELS,
+  PRIVACY_EXECUTION_OPERATION_LABELS,
+  PRIVACY_EXECUTION_OUTCOME_LABELS,
   RESERVED_CASE_CATEGORY_LABELS,
   RESERVED_CASE_STATUS_LABELS,
   SST_DOCUMENT_STATUS_LABELS,
@@ -40,6 +43,9 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
   const [purposeScope, setPurposeScope] = React.useState("")
   const [changesJson, setChangesJson] = React.useState("{}")
   const [busy, setBusy] = React.useState(false)
+  // Una clave por apertura del diálogo, no por clic: reintentar tras un error de
+  // red tiene que llegar como el mismo envío para que el servidor lo reconozca.
+  const [idempotencyKey, setIdempotencyKey] = React.useState("")
 
   // Quien atiende una solicitud legal decide sobre estos registros: mostrar el
   // enum crudo (`vigente · apto`, `ley_karin · en_investigacion`) le hacía
@@ -83,6 +89,7 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
 
   function openExecution(row: InventoryRow) {
     setSelected(row)
+    setIdempotencyKey(nanoid())
     setReason("")
     setPurposeScope("")
     const initial = operation === "deletion" && row.domain === "reserved_case"
@@ -103,7 +110,7 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
       const response = await fetch(`/api/prevencion/privacidad/solicitudes/${bundle.request.id}/execute`, {
         method: "POST",
         // El endpoint exige Idempotency-Key (8-64 chars) y responde 400 sin él.
-        headers: { "content-type": "application/json", "idempotency-key": nanoid() },
+        headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
         body: JSON.stringify({
           domain: selected.domain,
           entityId: selected.id,
@@ -160,6 +167,14 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
               requieren acceso nominativo al caso. Derívalo a quien integre el comité investigador.
             </p>
           ) : null}
+          {bundle.restrictedDocumentCount > 0 ? (
+            // Mismo criterio para los documentos sensibles vinculados: atender la
+            // solicitud no da acceso a la biblioteca sensible.
+            <p className="mt-3 text-xs text-(--color-text-muted)">
+              {bundle.restrictedDocumentCount} documento(s) sensible(s) vinculado(s) al titular no se muestran:
+              requieren el permiso de documentos sensibles. Derívalo a quien lo tenga.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -170,8 +185,10 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
           {bundle.executions.length === 0 ? <p className="text-xs text-(--color-text-muted)">Aún no hay una mutación demostrable para este derecho.</p> : (
             <ul className="space-y-2">{bundle.executions.map((execution) => (
               <li key={execution.id} className="rounded-md border border-(--color-border) p-2 text-xs">
-                <p className="font-medium">{execution.operation} · {execution.domain}</p>
-                <p>{execution.createdAt.slice(0, 16).replace("T", " ")} · {execution.outcome}</p>
+                {/* Operación, dominio y resultado son enums del esquema: se
+                    traducen con el mismo catálogo que el inventario. */}
+                <p className="font-medium">{labelOf(PRIVACY_EXECUTION_OPERATION_LABELS, execution.operation)} · {labelOf(PRIVACY_EXECUTION_DOMAIN_LABELS, execution.domain)}</p>
+                <p>{formatDateTime(execution.createdAt)} · {labelOf(PRIVACY_EXECUTION_OUTCOME_LABELS, execution.outcome)}</p>
                 <p className="font-mono text-[10px] text-(--color-text-muted)">{execution.beforeHash.slice(0, 10)}… → {execution.afterHash.slice(0, 10)}…</p>
               </li>
             ))}</ul>
@@ -182,7 +199,7 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && !busy && setSelected(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Ejecutar {operation}</DialogTitle>
+            <DialogTitle>Ejecutar {labelOf(PRIVACY_EXECUTION_OPERATION_LABELS, operation).toLocaleLowerCase("es-CL")}</DialogTitle>
             <DialogDescription>{selected?.label}. La bitácora guardará hashes y campos afectados, nunca el contenido clínico o reservado.</DialogDescription>
           </DialogHeader>
           <Field label="Motivo y evidencia revisada" htmlFor="privacy-execution-reason" required>

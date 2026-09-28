@@ -106,7 +106,7 @@ test.describe("PDTP — Ciclo de vida y aprobaciones", () => {
 
     await page.getByRole("button", { name: "Rechazar ejecución Jul semana 3" }).click()
     await expect(page.getByRole("dialog", { name: "Rechazar ejecución" })).toBeVisible()
-    await page.getByPlaceholder("Motivo del rechazo (mín. 3 caracteres)").fill("Evidencia insuficiente E2E")
+    await page.getByPlaceholder(/^Motivo del rechazo/).fill("Evidencia insuficiente E2E")
     await page.getByRole("button", { name: "Rechazar y devolver" }).click()
     await expect(page.locator("[data-sonner-toast]").getByText(/rechazada/)).toBeVisible()
 

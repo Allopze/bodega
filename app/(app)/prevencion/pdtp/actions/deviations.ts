@@ -31,9 +31,9 @@
  */
 
 import { ZodError } from "zod"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { can, guardAnyPermission, guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { safeActionMessage } from "@/lib/action-error"
 import { parseZ } from "@/lib/actions/parse-z"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import {
@@ -68,7 +68,7 @@ function fail(error: unknown): ActionState {
   // "el destino cae fuera del horizonte"…) son la única pista que tiene el
   // operador de por qué no avanza: `safeActionMessage` las deja pasar y sigue
   // ocultando errores de driver y de esquema.
-  return { ok: false, message: safeActionMessage(error, "No se pudo registrar el desvío. Intenta nuevamente.") }
+  return actionErrorResult(error, "No se pudo registrar el desvío. Intenta nuevamente.")
 }
 
 /**
@@ -187,6 +187,6 @@ export async function reviewPdtpNotApplicableAction(formData: FormData): Promise
     revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/aprobaciones`, CONSTANCIAS_REVALIDATE])
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "No se pudo revisar el 'no aplica'. Intenta nuevamente.") }
+    return actionErrorResult(e, "No se pudo revisar el 'no aplica'. Intenta nuevamente.")
   }
 }

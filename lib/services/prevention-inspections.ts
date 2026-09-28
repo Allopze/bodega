@@ -45,7 +45,7 @@ export {
   closeInspectionFinding,
 } from "./prevention-inspections/runs"
 
-export { transitionInspectionRun, reassignInspectionRun } from "./prevention-inspections/transitions"
+export { transitionInspectionRun } from "./prevention-inspections/transitions"
 
 export {
   addRunDocument,

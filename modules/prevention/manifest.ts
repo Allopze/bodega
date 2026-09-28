@@ -161,7 +161,7 @@ export const preventionModule = {
     "prevention:cgrd:matrix:publish":   { id: "p-prev-cgrd-matrix-publish",   description: "Publicar una versión de la matriz GRD" },
     "prevention:cgrd:meeting:manage":   { id: "p-prev-cgrd-meeting-manage",   description: "Registrar el acta de una sesión del CGRD" },
     "prevention:campaign:view":         { id: "p-prev-camp-v",    description: "Ver campañas preventivas" },
-    "prevention:campaign:manage":       { id: "p-prev-camp-m",    description: "Crear, registrar asistencia y cerrar campañas preventivas" },
+    "prevention:campaign:manage":       { id: "p-prev-camp-m",    description: "Cerrar las campañas preventivas del registro histórico y subir su evidencia (las del programa se registran en el PDTP)" },
     "prevention:engagement:view":       { id: "p-prev-engage-v", description: "Ver coordinaciones con el mandante, fiscalizaciones y visitas del organismo administrador" },
     "prevention:engagement:manage":     { id: "p-prev-engage-m", description: "Registrar interacciones externas, sus medidas prescritas y cerrarlas" },
     "prevention:docs:view":               { id: "p-prev-docs-v",    description: "Ver la documentación preventiva" },
@@ -443,14 +443,20 @@ export const preventionModule = {
           href: "/prevencion/incidentes",
           iconName: "Siren",
           group: "Cumplimiento del programa",
-          permissions: ["prevention:incidents:view", "prevention:incidents:report"],
-          children: [
-            {
-              label: "Reportar incidente",
-              href: "/prevencion/incidentes/reportar",
-              permissions: ["prevention:incidents:report"],
-            },
-          ],
+          // Mismo permiso que la página (`requirePermission` en
+          // incidentes/page.tsx). Antes bastaba `incidents:report` para verla
+          // en el menú y quien sólo reporta caía en /forbidden.
+          permissions: ["prevention:incidents:view"],
+        },
+        {
+          // Hermano y no hijo: un submenú sólo se muestra si su padre es
+          // visible, y quien sólo reporta no ve la bandeja pero sí debe
+          // encontrar dónde reportar.
+          label: "Reportar incidente",
+          href: "/prevencion/incidentes/reportar",
+          iconName: "MegaphoneSimple",
+          group: "Cumplimiento del programa",
+          permissions: ["prevention:incidents:report"],
         },
         {
           // El módulo compara requisitos por cargo/faena contra las entregas de
@@ -899,6 +905,10 @@ export const preventionModule = {
     { roleSlug: "prevencionista",       permission: "prevention:incidents:view" },
     { roleSlug: "prevencionista",       permission: "prevention:incidents:triage" },
     { roleSlug: "prevencionista",       permission: "prevention:incidents:investigate" },
+    // Ficha reservada del incidente (identidad y lesión): la completa quien
+    // investiga en el equipo central de SST. Sin ningún rol con el permiso, el
+    // formulario de la vista reservada no lo veía nadie.
+    { roleSlug: "prevencionista",       permission: "prevention:incidents:view_sensitive" },
     { roleSlug: "prevencionista",       permission: "prevention:incidents:notify" },
     { roleSlug: "prevencionista",       permission: "prevention:incidents:export" },
     /* Responsable de la n=42 y la n=43 (procedimientos de trabajo seguro) y sin

@@ -67,6 +67,11 @@ beforeAll(async () => {
     { id: SOLICITANTE.userId, name: "Solicitante", email: "solicitante@acuse.cl", hashedPassword: "x", isActive: true },
     { id: APROBADOR.userId, name: "Aprobador", email: "aprobador@acuse.cl", hashedPassword: "x", isActive: true },
   ])
+  // #21: el supervisor del permiso debe poder verificar en la faena; se le da
+  // el permiso efectivo en vez de esquivar la validación.
+  await testDb.insert(schema.permissions).values({ id: "perm-verify", name: "prevention:permits:verify", module: "prevention" })
+  await testDb.insert(schema.userPermissions).values({ userId: APROBADOR.userId, permissionId: "perm-verify" })
+  await testDb.insert(schema.worksiteUsers).values({ userId: APROBADOR.userId, worksiteId: WS })
 
 })
 

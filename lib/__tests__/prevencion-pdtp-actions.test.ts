@@ -307,9 +307,13 @@ describe("Execution approval actions", () => {
     expect(mockApprovePdtpExecution).toHaveBeenCalledWith("exec-1", "user-1", "all")
   })
 
-  it("rejectPdtpExecutionAction requiere motivo de al menos 3 caracteres", async () => {
+  it("rejectPdtpExecutionAction requiere motivo de al menos 10 caracteres", async () => {
     const res = await rejectPdtpExecutionAction("exec-1", "no")
     expect(res.ok).toBe(false)
+    // #24: 3 caracteres ya no bastan; el mínimo es el del resto del PDTP.
+    const corto = await rejectPdtpExecutionAction("exec-1", "Ilegible")
+    expect(corto.ok).toBe(false)
+    expect(mockRejectPdtpExecution).not.toHaveBeenCalled()
   })
 
   it("rejectPdtpExecutionAction rechaza ejecución con motivo válido", async () => {

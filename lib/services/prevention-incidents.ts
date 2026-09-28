@@ -13,6 +13,7 @@ import {
   preventionIncidentAbsencePeriods,
   preventionIncidentPeople,
   preventionIncidentPersonSensitivePayloads,
+  preventionIncidentPublicReports,
   preventionIncidents,
   preventionIncidentClassificationCatalog,
   preventionIncidentStatements,
@@ -51,7 +52,7 @@ import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification
 import { onSafetyIndicatorPeriodReopened } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { invalidateClosedIndicatorPeriodWithClient, type ReopenedPeriodRevocation } from "@/lib/services/prevention-indicadores"
 import { createRiskReviewTriggerWithClient } from "@/lib/services/prevention-risk-legal"
-import { codeYear, todayInChile } from "@/lib/utils"
+import { addDaysToPlainDate, codeYear, todayInChile } from "@/lib/utils"
 import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/enqueue"
 
 const CHILE_YEAR_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric" })
@@ -363,7 +364,10 @@ const restartSchema = z.object({
 })
 
 const TRANSITIONS: Record<IncidentStatus, readonly IncidentStatus[]> = {
-  reported: ["triage"],
+  // reported → triage no pasa por aquí: sólo `triagePreventionIncident` hace ese
+  // paso, porque es el que exige gravedades, medidas y responsable y el que abre
+  // (o libera) los carriles legales. La transición genérica lo saltaba entero.
+  reported: [],
   triage: ["immediate_measures"],
   immediate_measures: ["under_investigation"],
   under_investigation: ["pending_capa"],
@@ -408,6 +412,9 @@ export function incidentNotificationDeadline(knownAt: string) {
   return new Date(known.getTime() + 24 * 60 * 60 * 1000).toISOString()
 }
 
+/** Carriles que sólo existen porque el evento se calificó fatal/grave. */
+const FATAL_OR_SERIOUS_LANES: IncidentNotificationType[] = ["fatal_dt", "fatal_seremi", "restart_authorization"]
+
 export function requiredIncidentNotificationTypes(args: {
   eventType: IncidentEventType
   isFatalOrSerious: boolean
@@ -415,7 +422,7 @@ export function requiredIncidentNotificationTypes(args: {
   const result: IncidentNotificationType[] = []
   if (["work_accident", "commute_accident"].includes(args.eventType)) result.push("diat")
   if (args.eventType === "suspected_occupational_disease") result.push("diep")
-  if (args.isFatalOrSerious) result.push("fatal_dt", "fatal_seremi", "restart_authorization")
+  if (args.isFatalOrSerious) result.push(...FATAL_OR_SERIOUS_LANES)
   return result
 }
 
@@ -534,10 +541,20 @@ async function updateNotificationAssignment(client: IncidentClient, args: {
 export async function reportPreventionIncident(args: {
   input: unknown
   access: IncidentAccess
+  /**
+   * El incidente nace de un reporte del canal del trabajador. Va fuera de
+   * `input` a propósito: la acción del formulario de reporte sólo pasa `input`,
+   * así que no puede vincular (ni cerrar) un reporte del buzón por su cuenta.
+   */
+  fromPublicReport?: { reportId: string; notes: string }
 }) {
-  requireAccess(args.access, "prevention:incidents:report")
+  // Abrir el incidente desde el buzón es parte del triage del reporte, no un
+  // reporte nuevo: quien clasifica (`incidents:triage`) puede hacerlo aunque no
+  // reporte (jefa_chome). El reporte original ya lo hizo el trabajador.
+  const permission = args.fromPublicReport ? "prevention:incidents:triage" : "prevention:incidents:report"
+  requireAccess(args.access, permission)
   const input = reportIncidentSchema.parse(args.input)
-  requireAccess(args.access, "prevention:incidents:report", input.worksiteId)
+  requireAccess(args.access, permission, input.worksiteId)
   const fatalOrSerious = input.isFatalOrSerious || input.actualSeverity === "serious" || input.actualSeverity === "fatal"
 
   const result = await db.transaction(async (tx) => {
@@ -587,6 +604,25 @@ export async function reportPreventionIncident(args: {
         throw new Error("La clave de sincronización ya fue utilizada por otro reporte.")
       }
       return { incident: existing, idempotentReplay: true }
+    }
+
+    if (args.fromPublicReport) {
+      // Misma transacción que el alta: o el reporte queda triado apuntando a
+      // este incidente, o no se crea el incidente. Dos personas convirtiendo el
+      // mismo reporte no abren dos expedientes.
+      const [linked] = await tx.update(preventionIncidentPublicReports).set({
+        status: "triaged",
+        triagedByUserId: args.access.ctx.userId,
+        triagedAt: now,
+        triageNotes: args.fromPublicReport.notes,
+        incidentId,
+        updatedAt: now,
+      }).where(and(
+        eq(preventionIncidentPublicReports.id, args.fromPublicReport.reportId),
+        eq(preventionIncidentPublicReports.status, "pending"),
+        eq(preventionIncidentPublicReports.worksiteId, input.worksiteId),
+      )).returning({ id: preventionIncidentPublicReports.id })
+      if (!linked) throw new Error("El reporte ya fue triado o no existe.")
     }
 
     for (const personInput of input.people) {
@@ -692,6 +728,10 @@ export async function classifyIncidentPersonForIndicators(args: {
       )).limit(1)
     if (!current) throw new Error("Persona del incidente no encontrada o fuera de alcance.")
     requireAccess(args.access, "prevention:incidents:investigate", current.incident.worksiteId)
+    // No pasa por `findIncidentForMutation` porque carga la persona junto al
+    // incidente, así que la regla del expediente cerrado se repite aquí: una
+    // reclasificación posterior cambiaría las tasas que sustentó el cierre.
+    if (current.incident.status === "closed") throw new Error("El incidente está cerrado y su expediente es inmutable.")
     if (current.incident.version !== input.expectedIncidentVersion || current.person.version !== input.expectedPersonVersion) {
       throw new Error("El incidente o la clasificación cambiaron; recarga antes de guardar.")
     }
@@ -874,15 +914,17 @@ async function auditIncidentSensitiveAccess(args: {
   purpose: string
   outcome: "granted" | "denied"
   reasonCode?: string
+  action?: "read_incident_sensitive" | "create" | "update"
+  client?: IncidentClient
 }) {
-  await db.insert(preventionSensitiveAccessAudit).values({
+  await (args.client ?? db).insert(preventionSensitiveAccessAudit).values({
     id: `psa-${nanoid()}`,
     domain: "incident",
     entityId: args.incidentId,
     subjectWorkerId: args.workerId ?? null,
     worksiteId: args.worksiteId,
     actorUserId: args.access.ctx.userId,
-    action: "read_incident_sensitive",
+    action: args.action ?? "read_incident_sensitive",
     purpose: args.purpose,
     outcome: args.outcome,
     reasonCode: args.reasonCode ?? null,
@@ -988,6 +1030,96 @@ export async function getPreventionIncidentDetail(args: {
   }
 }
 
+const personSensitiveSchema = z.object({
+  incidentId: z.string().min(1),
+  personId: z.string().min(1),
+  purpose: z.string().trim().min(3, "Indica el propósito del registro").max(300),
+  sensitive: sensitivePersonSchema,
+})
+
+/**
+ * Completa o corrige la ficha reservada (identidad, lesión) de una persona del
+ * incidente. El formulario de reporte promete que esos datos se completan
+ * después en la vista reservada, pero sólo el reporte los escribía: quien
+ * reportaba sin ellos dejaba la ficha vacía para siempre.
+ *
+ * Mismo control que la lectura reservada: `view_sensitive` + faena, con
+ * propósito declarado y una línea en la auditoría de acceso sensible, concedida
+ * o denegada. El historial general dice qué campos se tocaron, nunca su valor.
+ */
+export async function savePreventionIncidentPersonSensitive(args: {
+  input: unknown
+  access: IncidentAccess
+}) {
+  const input = personSensitiveSchema.parse(args.input)
+  const [target] = await db.select({ worksiteId: preventionIncidents.worksiteId }).from(preventionIncidents)
+    .where(eq(preventionIncidents.id, input.incidentId)).limit(1)
+  if (!target) throw new Error("Incidente no encontrado o fuera de alcance.")
+  if (!hasPermission(args.access.permissions, "prevention:incidents:view_sensitive") || !scopeAllows(args.access.scope, target.worksiteId)) {
+    await auditIncidentSensitiveAccess({
+      access: args.access,
+      incidentId: input.incidentId,
+      worksiteId: target.worksiteId,
+      purpose: input.purpose,
+      outcome: "denied",
+      reasonCode: "permission_or_scope",
+      action: "update",
+    })
+    throw new Error("Incidente no encontrado o fuera de alcance.")
+  }
+
+  return db.transaction(async (tx) => {
+    const incident = await findIncidentForMutation(tx, input.incidentId)
+    const [person] = await tx.select({ id: preventionIncidentPeople.id, workerId: preventionIncidentPeople.workerId })
+      .from(preventionIncidentPeople)
+      .where(and(eq(preventionIncidentPeople.id, input.personId), eq(preventionIncidentPeople.incidentId, incident.id)))
+      .limit(1)
+    if (!person) throw new Error("Persona del incidente no encontrada o fuera de alcance.")
+    const [existing] = await tx.select({ id: preventionIncidentPersonSensitivePayloads.id })
+      .from(preventionIncidentPersonSensitivePayloads)
+      .where(eq(preventionIncidentPersonSensitivePayloads.personId, person.id)).limit(1)
+    const now = nowIso()
+    // Mismo contexto de cifrado que el reporte: la lectura reservada no distingue
+    // una ficha nacida al reportar de una completada después.
+    const encrypted = encryptPreventionPayload(input.sensitive, `incident-person:${person.id}`)
+    await tx.insert(preventionIncidentPersonSensitivePayloads).values({
+      id: `incps-${nanoid()}`,
+      personId: person.id,
+      ...encrypted,
+      createdByUserId: args.access.ctx.userId,
+      updatedByUserId: args.access.ctx.userId,
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: preventionIncidentPersonSensitivePayloads.personId,
+      set: { ...encrypted, updatedByUserId: args.access.ctx.userId, updatedAt: now },
+    })
+    const action = existing ? "update" : "create"
+    await appendHistory(tx, {
+      incidentId: incident.id,
+      changeType: "person",
+      actorUserId: args.access.ctx.userId,
+      reason: existing ? "Ficha reservada de la persona actualizada" : "Ficha reservada de la persona completada",
+      changeSet: {
+        personId: person.id,
+        sensitiveFields: Object.entries(input.sensitive).filter(([, value]) => Boolean(value)).map(([key]) => key),
+      },
+      createdAt: now,
+    })
+    await auditIncidentSensitiveAccess({
+      access: args.access,
+      incidentId: incident.id,
+      worksiteId: incident.worksiteId,
+      workerId: person.workerId,
+      purpose: input.purpose,
+      outcome: "granted",
+      action,
+      client: tx,
+    })
+    return { incidentId: incident.id, personId: person.id, action }
+  })
+}
+
 export async function triagePreventionIncident(args: {
   input: unknown
   access: IncidentAccess
@@ -1035,6 +1167,22 @@ export async function triagePreventionIncident(args: {
       administratorName: input.administratorName,
       now,
     })
+    // Si el reporte nació fatal/grave, sus carriles DT, SEREMI y reinicio ya
+    // existen. Un triage que lo baja no los borra —el insert es idempotente—, y
+    // el cierre sólo acepta carriles enviados, autorizados o no requeridos: el
+    // incidente quedaba sin poder cerrarse nunca. Se liberan los que siguen
+    // abiertos; uno ya enviado o autorizado es un hecho y se conserva.
+    const releasedNotificationLanes = input.isFatalOrSerious
+      ? []
+      : (await tx.update(preventionIncidentNotifications).set({
+        status: "not_required",
+        updatedAt: now,
+      }).where(and(
+        eq(preventionIncidentNotifications.incidentId, incident.id),
+        inArray(preventionIncidentNotifications.notificationType, FATAL_OR_SERIOUS_LANES),
+        inArray(preventionIncidentNotifications.status, ["pending", "overdue"]),
+      )).returning({ notificationType: preventionIncidentNotifications.notificationType }))
+        .map((lane) => lane.notificationType)
     await appendHistory(tx, {
       incidentId: incident.id,
       changeType: "triage",
@@ -1049,6 +1197,7 @@ export async function triagePreventionIncident(args: {
         operationsSuspended: input.operationsSuspended,
         evacuated: input.evacuated,
         notificationResponsibleUserId: input.notificationResponsibleUserId ?? null,
+        ...(releasedNotificationLanes.length > 0 ? { releasedNotificationLanes } : {}),
       },
       createdAt: now,
     })
@@ -1236,10 +1385,14 @@ export async function savePreventionIncidentInvestigation(args: {
       ? encryptPreventionPayload(input.interviews, `incident-investigation:${existing[0]?.id ?? incident.id}`)
       : null
     const investigationId = existing[0]?.id ?? `inci-${nanoid()}`
+    // Con el incidente en CAPA, la investigación completa es la compuerta que lo
+    // dejó pasar. Desmarcarla la volvía "en curso" y borraba quién y cuándo la
+    // cerró, mientras el incidente seguía avanzando sobre esa base.
+    if (!input.complete && existing[0]?.status === "completed" && incident.status === "pending_capa") {
+      throw new Error("La investigación ya está completa y el incidente avanzó a CAPA: no puede volver a quedar en curso. Mantén marcada «investigación completa» para guardar cambios.")
+    }
     let miperTrigger: typeof preventionRiskReviewTriggers.$inferSelect | null = null
     if (input.miperUpdateRequired) {
-      const due = new Date()
-      due.setUTCDate(due.getUTCDate() + 10)
       const triggerType = incident.eventType === "suspected_occupational_disease"
         ? "occupational_disease"
         : incident.eventType === "work_accident"
@@ -1254,7 +1407,9 @@ export async function savePreventionIncidentInvestigation(args: {
         sourceId: incident.id,
         description: `Revisar y publicar la MIPER por el incidente ${incident.code}. Plazo operacional interno: 10 días.`,
         assignedToUserId: args.access.ctx.userId,
-        dueAt: due.toISOString().slice(0, 10),
+        // Plazo civil chileno: en UTC, entre las 20:00 y la medianoche de Chile
+        // el plazo contaba desde mañana y regalaba un día.
+        dueAt: addDaysToPlainDate(todayInChile(), 10),
         idempotencyKey: `incident:miper:${incident.id}`,
       }, args.access.ctx.userId)
     }
@@ -1838,7 +1993,11 @@ export async function confirmIncidentDiffusion(args: {
   access: IncidentAccess
 }) {
   const input = re20TextSchemas.confirmDiffusion.parse(args)
-  const [row] = await db.select({ diffusion: preventionIncidentShiftDiffusions, worksiteId: preventionIncidents.worksiteId })
+  const [row] = await db.select({
+    diffusion: preventionIncidentShiftDiffusions,
+    worksiteId: preventionIncidents.worksiteId,
+    incidentStatus: preventionIncidents.status,
+  })
     .from(preventionIncidentShiftDiffusions)
     .innerJoin(preventionIncidents, eq(preventionIncidentShiftDiffusions.incidentId, preventionIncidents.id))
     .where(eq(preventionIncidentShiftDiffusions.id, input.diffusionId)).limit(1)
@@ -1857,6 +2016,9 @@ export async function confirmIncidentDiffusion(args: {
     throw new Error("Quien marcó la difusión no puede confirmarla: debe hacerlo otra persona.")
   }
   if (row.diffusion.status === "confirmed") return row.diffusion // idempotente
+  // Marcar la difusión ya exige un expediente abierto (`getInvestigableIncident`);
+  // confirmarla acredita la n=71/75 y también escribe sobre él.
+  if (row.incidentStatus === "closed") throw new Error("El incidente está cerrado y su expediente es inmutable.")
 
   const now = new Date().toISOString()
   const [updated] = await db.update(preventionIncidentShiftDiffusions).set({

@@ -216,11 +216,11 @@ describe("PREV-I04 — historial de envíos en la bitácora", () => {
     const first = await evidenceFile("hist-list-1.pdf")
     await markPdtpExecution(cell({ evidenceUrl: first }), USER_A, "all")
     const row = await executionRow()
-    await rejectPdtpExecution(row!.id, APPROVER, "Ilegible", "all")
+    await rejectPdtpExecution(row!.id, APPROVER, "El acta está ilegible", "all")
     const history = await listPdtpExecutionHistory(row!.id)
     expect(history.map((entry) => entry.changeType)).toEqual(["submitted", "rejected"])
     expect(history[0]).toMatchObject({ actorName: `Nombre ${USER_A}`, attempt: 1, files: [first] })
-    expect(history[1]).toMatchObject({ actorName: `Nombre ${APPROVER}`, reason: "Ilegible" })
+    expect(history[1]).toMatchObject({ actorName: `Nombre ${APPROVER}`, reason: "El acta está ilegible" })
   })
 })
 

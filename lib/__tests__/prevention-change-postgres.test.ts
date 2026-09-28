@@ -176,7 +176,10 @@ describeIf("Gestión del cambio on real PostgreSQL", () => {
       }, MANAGER)
     }
     const detail = await service.getChangeRequestDetail(changeId, MANAGER)
-    expect(detail?.readiness.ready).toBe(false) // aún falta la fecha de revisión, que se declara al aprobar
+    // D1: la fecha de revisión se declara en el mismo diálogo de aprobación, así
+    // que la ficha no puede exigirla para habilitar ese diálogo. Antes quedaba
+    // `ready: false` para siempre y el botón "Aprobar cambio" nunca se activaba.
+    expect(detail?.readiness).toEqual({ ready: true, blockers: [] })
     expect(detail?.assessments.every((row) => row.evaluated)).toBe(true)
   })
 
@@ -207,6 +210,22 @@ describeIf("Gestión del cambio on real PostgreSQL", () => {
     }, MANAGER_WITH_APPROVE)).rejects.toThrow(/no puede aprobarlo/)
   })
 
+  /**
+   * D3: rechazar también es decidir el cambio. Sin la segregación, quien lo
+   * solicitó —y reúne el permiso de aprobar— lo cerraba él mismo sin que nadie
+   * más lo revisara, la misma decisión que la aprobación ya le prohíbe.
+   */
+  it("refuses rejection by the requester, even holding the approve permission", async () => {
+    const service = await import("@/lib/services/prevention-change")
+    const before = await readVersion(changeId)
+    await expect(service.rejectChangeRequest({
+      changeRequestId: changeId, expectedVersion: before, rejectedReason: "Lo rechazo yo mismo.",
+    }, MANAGER_WITH_APPROVE)).rejects.toThrow(/persona distinta/)
+    const [request] = await getDb().select().from(schema.preventionChangeRequests).where(eq(schema.preventionChangeRequests.id, changeId))
+    expect(request?.status).toBe("under_evaluation")
+    expect(request?.version).toBe(before)
+  })
+
   it("approves the change once every dimension is evaluated and a review date is set", async () => {
     const service = await import("@/lib/services/prevention-change")
     const approved = await service.approveChangeRequest({
@@ -215,6 +234,47 @@ describeIf("Gestión del cambio on real PostgreSQL", () => {
     expect(approved.status).toBe("approved")
     expect(approved.plannedReviewDate).toBe(REVIEW_DATE)
     expect(approved.approvedByUserId).toBe("chg-approver")
+
+    /* D2: la dimensión de riesgos quedó impactada (la reevaluación del caso
+     * TOCTOU), así que aprobar el cambio abre la revisión de la MIPER de la
+     * faena, con el mismo plazo interno de 10 días que usa un incidente. */
+    const triggers = await getDb().select().from(schema.preventionRiskReviewTriggers)
+      .where(eq(schema.preventionRiskReviewTriggers.sourceId, changeId))
+    expect(triggers).toHaveLength(1)
+    expect(triggers[0]).toMatchObject({
+      worksiteId: "ws-chg-a",
+      triggerType: "work_change",
+      sourceType: "change",
+      status: "pending",
+      dueAt: addDaysToPlainDate(todayInChile(), 10),
+      idempotencyKey: `change:miper:${changeId}`,
+      createdByUserId: "chg-approver",
+    })
+  })
+
+  it("approves a change with the six dimensions evaluated and no MIPER impact without opening a MIPER review", async () => {
+    const service = await import("@/lib/services/prevention-change")
+    const request = await service.createChangeRequest({
+      worksiteId: "ws-chg-a", title: "Cambio sin impacto en riesgos", changeType: "software",
+      description: "Actualización menor del sistema de turnos.",
+      reason: "El proveedor liberó una versión con correcciones.",
+    }, MANAGER)
+    for (const dimension of CHANGE_DIMENSIONS) {
+      await service.evaluateChangeDimension({
+        changeRequestId: request.id, dimension, impacted: false, actionRequired: false,
+      }, MANAGER)
+    }
+    const detail = await service.getChangeRequestDetail(request.id, APPROVER)
+    expect(detail?.readiness.ready).toBe(true)
+
+    const approved = await service.approveChangeRequest({
+      changeRequestId: request.id, expectedVersion: await readVersion(request.id), plannedReviewDate: REVIEW_DATE,
+    }, APPROVER)
+    expect(approved.status).toBe("approved")
+
+    const triggers = await getDb().select().from(schema.preventionRiskReviewTriggers)
+      .where(eq(schema.preventionRiskReviewTriggers.sourceId, request.id))
+    expect(triggers).toEqual([])
   })
 
   /**

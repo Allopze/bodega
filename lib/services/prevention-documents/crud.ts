@@ -35,6 +35,7 @@ import {
   assertScopeAccess,
   assertConfidentialityAllowed,
   assertGeneralLibraryContentAllowed,
+  minimumDocumentConfidentiality,
   readFileToBuffer,
   persistFileOnDisk,
   generateStorageName,
@@ -66,13 +67,23 @@ export async function createDocument({ data, ctx, scope, permissions }: CreateDo
       parsed.worksiteId = folder.worksiteId
     }
   }
+  let typeDefaultConfidentiality: string | null = null
   if (parsed.typeId) {
     // La categoría la define el tipo: dos fuentes para lo mismo divergían.
-    const [type] = await db.select({ categorySlug: sstDocumentTypes.categorySlug, isActive: sstDocumentTypes.isActive })
-      .from(sstDocumentTypes).where(eq(sstDocumentTypes.id, parsed.typeId)).limit(1)
+    const [type] = await db.select({
+      categorySlug: sstDocumentTypes.categorySlug,
+      isActive: sstDocumentTypes.isActive,
+      defaultConfidentiality: sstDocumentTypes.defaultConfidentiality,
+    }).from(sstDocumentTypes).where(eq(sstDocumentTypes.id, parsed.typeId)).limit(1)
     if (!type || !type.isActive) throw new PreventionDocumentDomainError("El tipo documental seleccionado no existe o está inactivo.")
     parsed.categorySlug = type.categorySlug
+    typeDefaultConfidentiality = type.defaultConfidentiality
   }
+  parsed.confidentiality = minimumDocumentConfidentiality({
+    requested: parsed.confidentiality,
+    dataClass: parsed.dataClass,
+    typeDefault: typeDefaultConfidentiality,
+  })
   assertScopeAccess(parsed.worksiteId || null, scope)
   assertConfidentialityAllowed(parsed.confidentiality, permissions)
   assertGeneralLibraryContentAllowed({ dataClass: parsed.dataClass, title: parsed.title })
@@ -143,6 +154,7 @@ export async function updateDocumentMetadata(args: {
   }
 
   const patch: Record<string, unknown> = { updatedAt: now }
+  let newTypeDefaultConfidentiality: string | null = null
   if (data.typeId !== undefined && (data.typeId || null) !== doc.typeId) {
     if (data.typeId) {
       const [type] = await db.select({
@@ -150,6 +162,7 @@ export async function updateDocumentMetadata(args: {
         code: sstDocumentTypes.code,
         isActive: sstDocumentTypes.isActive,
         requiresAcknowledgment: sstDocumentTypes.requiresAcknowledgment,
+        defaultConfidentiality: sstDocumentTypes.defaultConfidentiality,
       }).from(sstDocumentTypes).where(eq(sstDocumentTypes.id, data.typeId)).limit(1)
       if (!type || !type.isActive) throw new PreventionDocumentDomainError("El tipo documental seleccionado no existe o está inactivo.")
       // Clasificar como RIOHS un documento ya vigente lo haría pasar por
@@ -163,6 +176,7 @@ export async function updateDocumentMetadata(args: {
       }
       patch.typeId = data.typeId
       patch.categorySlug = type.categorySlug
+      newTypeDefaultConfidentiality = type.defaultConfidentiality
       if (type.requiresAcknowledgment && !doc.requiresAcknowledgment && data.requiresAcknowledgment === undefined) {
         patch.requiresAcknowledgment = true
       }
@@ -175,6 +189,21 @@ export async function updateDocumentMetadata(args: {
   if (data.description !== undefined) patch.description = data.description || null
   if (data.worksiteId !== undefined) patch.worksiteId = data.worksiteId || null
   if (data.confidentiality !== undefined) patch.confidentiality = data.confidentiality
+  // Mismo piso que al crear (`minimumDocumentConfidentiality`): pasar un
+  // documento a «Sensible preventivo» o a un tipo restringido no puede dejarlo
+  // `publico_interno`. Sólo se recalcula si cambia algo de lo que lo decide, para
+  // no reclasificar documentos antiguos al corregirles el título.
+  if (data.confidentiality !== undefined || data.dataClass !== undefined || newTypeDefaultConfidentiality !== null) {
+    const effective = minimumDocumentConfidentiality({
+      requested: (data.confidentiality ?? doc.confidentiality) as SstDocumentConfidentiality,
+      dataClass: data.dataClass ?? doc.dataClass,
+      typeDefault: newTypeDefaultConfidentiality,
+    })
+    if (effective !== doc.confidentiality || data.confidentiality !== undefined) {
+      assertConfidentialityAllowed(effective, args.permissions)
+      patch.confidentiality = effective
+    }
+  }
   if (data.dataClass !== undefined) patch.dataClass = data.dataClass
   if (data.effectiveFrom !== undefined) patch.effectiveFrom = data.effectiveFrom || null
   if (data.expiresAt !== undefined) patch.expiresAt = data.expiresAt || null
@@ -332,12 +361,15 @@ async function resolveDirectPublication(
 /* ── Archivado lógico ───────────────────────────────────────────────────── */
 
 export async function archiveDocument(args: {
-  input: unknown; ctx: RequestContext; scope: WorksiteScope
+  input: unknown; ctx: RequestContext; scope: WorksiteScope; permissions: readonly string[]
 }) {
   const data = sstDocumentArchiveSchema.parse(args.input)
   const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, data.documentId))
   if (!doc) throw new PreventionDocumentDomainError("Documento no encontrado.")
   assertScopeAccess(doc.worksiteId, args.scope)
+  // La faena no basta: quien no puede ver un documento sensible (el detalle y
+  // la búsqueda se lo ocultan) tampoco puede archivarlo conociendo su id.
+  assertConfidentialityAllowed(doc.confidentiality as SstDocumentConfidentiality, args.permissions)
 
   const now = new Date().toISOString()
   // Documento y versiones en la misma transacción: un fallo entremedio dejaba
@@ -355,38 +387,50 @@ export async function archiveDocument(args: {
 }
 
 export async function restoreDocument(args: {
-  input: { documentId: string; comment?: string }; ctx: RequestContext; scope: WorksiteScope
+  input: { documentId: string; comment?: string }; ctx: RequestContext; scope: WorksiteScope; permissions: readonly string[]
 }) {
   const [doc] = await db.select().from(sstDocuments).where(eq(sstDocuments.id, args.input.documentId))
   if (!doc) throw new PreventionDocumentDomainError("Documento no encontrado.")
   assertScopeAccess(doc.worksiteId, args.scope)
+  assertConfidentialityAllowed(doc.confidentiality as SstDocumentConfidentiality, args.permissions)
   if (doc.status !== "archivado") throw new PreventionDocumentDomainError("Sólo se pueden restaurar documentos archivados.")
 
   const now = new Date().toISOString()
-  const [updated] = await db.update(sstDocuments)
-    .set({ status: "borrador", updatedAt: now })
-    .where(eq(sstDocuments.id, args.input.documentId))
-    .returning()
-  if (!updated) throw new Error("No se pudo restaurar el documento.")
-  await recordStatusChange({
-    entityType: "sst_document",
-    entityId: args.input.documentId,
-    fromStatus: "archivado",
-    toStatus: "borrador",
-    changedBy: args.ctx.userId,
-    reason: args.input.comment || "Restaurado desde biblioteca documental",
+  // El archivado no toca las versiones vigentes ni `currentVersionId`. Volver
+  // siempre a `borrador` dejaba un borrador que apunta a una versión vigente —
+  // el hallazgo DRAFT_WITH_PUBLISHED_VERSION de integridad— y bloqueaba su
+  // distribución. El documento vuelve al estado que su versión actual sostiene.
+  return db.transaction(async (tx) => {
+    const [current] = doc.currentVersionId
+      ? await tx.select({ status: sstDocumentVersions.status }).from(sstDocumentVersions)
+        .where(and(eq(sstDocumentVersions.id, doc.currentVersionId), eq(sstDocumentVersions.documentId, doc.id))).limit(1)
+      : []
+    const toStatus = current?.status === "vigente" ? "vigente" : "borrador"
+    const [updated] = await tx.update(sstDocuments)
+      .set({ status: toStatus, updatedAt: now })
+      .where(and(eq(sstDocuments.id, args.input.documentId), eq(sstDocuments.status, "archivado")))
+      .returning()
+    if (!updated) throw new PreventionDocumentDomainError("El documento cambió mientras se restauraba. Recarga e intenta de nuevo.")
+    await recordStatusChange({
+      entityType: "sst_document",
+      entityId: args.input.documentId,
+      fromStatus: "archivado",
+      toStatus,
+      changedBy: args.ctx.userId,
+      reason: args.input.comment || "Restaurado desde biblioteca documental",
+    }, tx)
+    await recordAuditEntry({
+      documentId: args.input.documentId,
+      userId: args.ctx.userId,
+      userEmail: args.ctx.userEmail,
+      action: "status_change",
+      fromStatus: "archivado",
+      toStatus,
+      comment: args.input.comment || null,
+      ip: args.ctx.ip,
+    }, tx)
+    return updated
   })
-  await recordAuditEntry({
-    documentId: args.input.documentId,
-    userId: args.ctx.userId,
-    userEmail: args.ctx.userEmail,
-    action: "status_change",
-    fromStatus: "archivado",
-    toStatus: "borrador",
-    comment: args.input.comment || null,
-    ip: args.ctx.ip,
-  })
-  return updated
 }
 
 /* ── Lectura ────────────────────────────────────────────────────────────── */

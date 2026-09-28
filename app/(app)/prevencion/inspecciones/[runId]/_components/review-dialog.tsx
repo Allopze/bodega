@@ -36,8 +36,10 @@ export function ReviewDialog({ run, findings, currentUserId, version, assignees,
   const review = React.useMemo(() => assessRunReview({
     executedByUserId: run.executedByUserId,
     reviewerUserId: currentUserId,
-    findings: findings.map((item) => ({ id: item.id, description: item.description, criticality: item.criticality, capaActionId: item.capaActionId })),
-  }), [run.executedByUserId, currentUserId, findings])
+    findings: findings.map((item) => ({ id: item.id, description: item.description, criticality: item.criticality, capaActionId: item.capaActionId, status: item.status })),
+    // Sin esto la vista pedía una independencia que el servidor no exige (#47).
+    executorOfRecord: run.executorOfRecord,
+  }), [run.executedByUserId, run.executorOfRecord, currentUserId, findings])
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

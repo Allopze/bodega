@@ -21,8 +21,9 @@ test.describe("Prevención — Permisos de trabajo PTAR y LOTO", () => {
     await expect(page).toHaveURL(/\/prevencion\/permisos/)
     await expectPageTitle(page, "Permisos de trabajo")
 
-    // Verificación de botón de nuevo permiso o tipos
-    const nuevoBtn = page.getByRole("button", { name: /Solicitar permiso|Nuevo permiso/i })
+    // Alta de permiso o de tipo: con los dos permisos es un único "Nuevo" en el
+    // header que pregunta qué crear; con uno solo, el botón directo.
+    const nuevoBtn = page.getByRole("button", { name: /^(Solicitar permiso|Nuevo permiso|Nuevo tipo|Nuevo)$/i })
     if (await nuevoBtn.count() > 0) {
       await expect(nuevoBtn.first()).toBeVisible()
     }

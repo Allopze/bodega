@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
+import { Flask, Heartbeat, UsersThree } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { CreateChoiceButton, type CreateChoice } from "@/components/ui/create-choice-button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -10,6 +12,7 @@ import { AGENT_TYPE_LABELS } from "@/lib/prevention/hygiene"
 import { createExposureAgentAction, createExposureGroupAction, createSurveillanceProgramAction } from "./actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { useControllableDialog, type ControllableDialogProps } from "@/lib/hooks/use-controllable-dialog"
 
 interface AgentOption {
   id: string
@@ -20,9 +23,10 @@ interface AgentOption {
 
 /* ── Alta de agente ───────────────────────────────────────────────────────── */
 
-export function NewAgentDialog() {
-  const [open, setOpen] = React.useState(false)
+export function NewAgentDialog(control: ControllableDialogProps = {}) {
   const [agentType, setAgentType] = React.useState(Object.keys(AGENT_TYPE_LABELS)[0] ?? "physical")
+  // El diálogo sigue montado tras crear: parte de cero al abrir.
+  const { open, setOpen, controlled } = useControllableDialog(control, () => setAgentType(Object.keys(AGENT_TYPE_LABELS)[0] ?? "physical"))
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -41,10 +45,9 @@ export function NewAgentDialog() {
     }), () => setOpen(false))
   }
 
-  // El diálogo sigue montado tras crear: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (value) setAgentType(Object.keys(AGENT_TYPE_LABELS)[0] ?? "physical"); setOpen(value) }}>
-      <DialogTrigger asChild><Button size="sm" variant="secondary">Nuevo agente</Button></DialogTrigger>
+    <Dialog open={open} onOpenChange={setOpen}>
+      {!controlled && <DialogTrigger asChild><Button size="sm" variant="secondary">Nuevo agente</Button></DialogTrigger>}
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
@@ -54,25 +57,25 @@ export function NewAgentDialog() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Código"><Input name="code" required minLength={2} maxLength={60} placeholder="SIO2-CRIST" /></Field>
-            <Field label="Tipo">
+            <Field label="Código" error={operation.fieldError("code")}><Input name="code" required minLength={2} maxLength={60} placeholder="SIO2-CRIST" /></Field>
+            <Field label="Tipo" error={operation.fieldError("agentType")}>
               <Select value={agentType} onValueChange={setAgentType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(AGENT_TYPE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="agentType" value={agentType} />
             </Field>
           </div>
-          <Field label="Nombre"><Input name="name" required minLength={3} maxLength={200} placeholder="Sílice cristalina respirable" /></Field>
+          <Field label="Nombre" error={operation.fieldError("name")}><Input name="name" required minLength={3} maxLength={200} placeholder="Sílice cristalina respirable" /></Field>
           <div className="grid gap-3 md:grid-cols-3">
-            <Field label="Límite permisible" hint="Opcional. Vacío = no comparable.">
+            <Field label="Límite permisible" hint="Opcional. Vacío = no comparable." error={operation.fieldError("permissibleLimit")}>
               <Input name="permissibleLimit" type="number" step="any" min={0} />
             </Field>
-            <Field label="Unidad"><Input name="unit" required maxLength={40} placeholder="mg/m³" /></Field>
-            <Field label="Factor nivel de acción" hint="0-1. Ej: 0.5 = 50% del límite.">
+            <Field label="Unidad" error={operation.fieldError("unit")}><Input name="unit" required maxLength={40} placeholder="mg/m³" /></Field>
+            <Field label="Factor nivel de acción" hint="0-1. Ej: 0.5 = 50% del límite." error={operation.fieldError("actionLevelFactor")}>
               <Input name="actionLevelFactor" type="number" step="any" min={0.01} max={1} defaultValue={0.5} required />
             </Field>
           </div>
-          <Field label="Fundamento del límite" hint="Mínimo 5 caracteres. Norma o protocolo de origen.">
+          <Field label="Fundamento del límite" hint="Mínimo 5 caracteres. Norma o protocolo de origen." error={operation.fieldError("limitBasis")}>
             <Textarea name="limitBasis" required minLength={5} maxLength={2000} placeholder="DS 594/1999, art. 66" />
           </Field>
-          <Field label="Protocolo de vigilancia" hint="Opcional."><Input name="surveillanceProtocol" maxLength={200} /></Field>
+          <Field label="Protocolo de vigilancia" hint="Opcional." error={operation.fieldError("surveillanceProtocol")}><Input name="surveillanceProtocol" maxLength={200} /></Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Crear agente</Button></DialogFooter>
         </form>
@@ -83,10 +86,14 @@ export function NewAgentDialog() {
 
 /* ── Alta de GES ──────────────────────────────────────────────────────────── */
 
-export function NewGroupDialog({ agents, worksites }: { agents: AgentOption[]; worksites: { id: string; name: string }[] }) {
-  const [open, setOpen] = React.useState(false)
+export function NewGroupDialog({ agents, worksites, ...control }: { agents: AgentOption[]; worksites: { id: string; name: string }[] } & ControllableDialogProps) {
   const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
   const [agentId, setAgentId] = React.useState(agents[0]?.id ?? "")
+  // El diálogo sigue montado tras crear: parte de cero al abrir.
+  const { open, setOpen, controlled } = useControllableDialog(control, () => {
+    setWorksiteId(worksites[0]?.id ?? "")
+    setAgentId(agents[0]?.id ?? "")
+  })
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -103,16 +110,9 @@ export function NewGroupDialog({ agents, worksites }: { agents: AgentOption[]; w
     }), () => setOpen(false))
   }
 
-  // El diálogo sigue montado tras crear: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={(value) => {
-      if (value) {
-        setWorksiteId(worksites[0]?.id ?? "")
-        setAgentId(agents[0]?.id ?? "")
-      }
-      setOpen(value)
-    }}>
-      <DialogTrigger asChild><Button size="sm">Nuevo grupo de exposición</Button></DialogTrigger>
+    <Dialog open={open} onOpenChange={setOpen}>
+      {!controlled && <DialogTrigger asChild><Button size="sm">Nuevo grupo de exposición</Button></DialogTrigger>}
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
@@ -145,10 +145,14 @@ export function NewGroupDialog({ agents, worksites }: { agents: AgentOption[]; w
 
 /* ── Alta de programa de vigilancia ───────────────────────────────────────── */
 
-export function NewProgramDialog({ agents, worksites }: { agents: AgentOption[]; worksites: { id: string; name: string }[] }) {
-  const [open, setOpen] = React.useState(false)
+export function NewProgramDialog({ agents, worksites, ...control }: { agents: AgentOption[]; worksites: { id: string; name: string }[] } & ControllableDialogProps) {
   const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
   const [agentId, setAgentId] = React.useState("_none")
+  // El diálogo sigue montado tras crear: parte de cero al abrir.
+  const { open, setOpen, controlled } = useControllableDialog(control, () => {
+    setWorksiteId(worksites[0]?.id ?? "")
+    setAgentId("_none")
+  })
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -166,16 +170,9 @@ export function NewProgramDialog({ agents, worksites }: { agents: AgentOption[];
     }), () => setOpen(false))
   }
 
-  // El diálogo sigue montado tras crear: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={(value) => {
-      if (value) {
-        setWorksiteId(worksites[0]?.id ?? "")
-        setAgentId("_none")
-      }
-      setOpen(value)
-    }}>
-      <DialogTrigger asChild><Button size="sm">Nuevo programa de vigilancia</Button></DialogTrigger>
+    <Dialog open={open} onOpenChange={setOpen}>
+      {!controlled && <DialogTrigger asChild><Button size="sm">Nuevo programa de vigilancia</Button></DialogTrigger>}
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
@@ -205,4 +202,49 @@ export function NewProgramDialog({ agents, worksites }: { agents: AgentOption[];
       </DialogContent>
     </Dialog>
   )
+}
+
+/* ── Alta desde el header de página ───────────────────────────────────────── */
+
+/**
+ * Layout 5 / A3: las tres altas vivían en la barra de filtros y cambiaban con
+ * la pestaña (GES sólo en Grupos, programa sólo en Vigilancia). Ahora hay un
+ * único "Nuevo" en el header, igual en todas las pestañas.
+ *
+ * El gateo es el de siempre (D8): el agente es catálogo global y exige
+ * `manage`; GES y programa son de la faena y los resuelve el servidor con
+ * `assess`. Un GES además necesita un agente y una faena a los que apuntar.
+ */
+export function HygieneCreateButton({ agents, worksites, canManage, canAssess }: {
+  agents: AgentOption[]
+  worksites: { id: string; name: string }[]
+  canManage: boolean
+  canAssess: boolean
+}) {
+  const choices: CreateChoice[] = []
+  if (canManage) choices.push({
+    key: "agente",
+    label: "Agente de exposición",
+    description: "Catálogo global: agente con su límite permisible y nivel de acción.",
+    icon: <Flask size={18} />,
+    soloLabel: "Nuevo agente",
+    render: (state) => <NewAgentDialog {...state} />,
+  })
+  if (canAssess && agents.length > 0 && worksites.length > 0) choices.push({
+    key: "grupo",
+    label: "Grupo de exposición similar",
+    description: "Personas que comparten agente, proceso y condiciones en una faena.",
+    icon: <UsersThree size={18} />,
+    soloLabel: "Nuevo grupo de exposición",
+    render: (state) => <NewGroupDialog agents={agents} worksites={worksites} {...state} />,
+  })
+  if (canAssess && worksites.length > 0) choices.push({
+    key: "programa",
+    label: "Programa de vigilancia",
+    description: "Protocolo de vigilancia ocupacional con su periodicidad de control.",
+    icon: <Heartbeat size={18} />,
+    soloLabel: "Nuevo programa de vigilancia",
+    render: (state) => <NewProgramDialog agents={agents} worksites={worksites} {...state} />,
+  })
+  return <CreateChoiceButton choices={choices} description="Elige qué agregar a higiene y vigilancia." />
 }

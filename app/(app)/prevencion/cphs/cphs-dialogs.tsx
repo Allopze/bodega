@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
+import { ClipboardText, UsersThree } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { CreateChoiceButton, type CreateChoice } from "@/components/ui/create-choice-button"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -10,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { closeManagementReviewAction, constituteCommitteeAction, createManagementReviewAction } from "./actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { useControllableDialog, type ControllableDialogProps } from "@/lib/hooks/use-controllable-dialog"
 import { toLocalInputValue } from "@/lib/utils"
 import { nanoid } from "@/lib/id"
 
@@ -19,13 +22,14 @@ export function NewCommitteeDialog({
   worksites,
   initialWorksiteId,
   trigger,
+  ...control
 }: {
   worksites: { id: string; name: string }[]
   initialWorksiteId?: string
   /** Disparador propio (p. ej. un botón de alerta por faena); por defecto "Nuevo comité". */
   trigger?: React.ReactNode
-}) {
-  const [open, setOpen] = React.useState(false)
+} & ControllableDialogProps) {
+  const { open, setOpen, controlled } = useControllableDialog(control)
   const requestedWorksiteId = initialWorksiteId
     && worksites.some((worksite) => worksite.id === initialWorksiteId)
     ? initialWorksiteId
@@ -48,7 +52,7 @@ export function NewCommitteeDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger ?? <Button size="sm">Nuevo comité</Button>}</DialogTrigger>
+      {!controlled && <DialogTrigger asChild>{trigger ?? <Button size="sm">Nuevo comité</Button>}</DialogTrigger>}
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
@@ -58,15 +62,15 @@ export function NewCommitteeDialog({
               designaciones de presidencia y secretaría se sostienen al incorporar integrantes.
             </DialogDescription>
           </DialogHeader>
-          <Field label="Faena">
+          <Field label="Faena" error={operation.fieldError("worksiteId")}>
             <Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
           </Field>
-          <Field label="Nombre"><Input name="name" required minLength={3} maxLength={200} placeholder="CPHS Faena Central" /></Field>
+          <Field label="Nombre" error={operation.fieldError("name")}><Input name="name" required minLength={3} maxLength={200} placeholder="CPHS Faena Central" /></Field>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Constituido el" required><DatePicker name="constitutedOn" /></Field>
-            <Field label="Mandato hasta" hint="Debe ser posterior a la constitución." required><DatePicker name="mandateEndsOn" /></Field>
+            <Field label="Constituido el" required error={operation.fieldError("constitutedOn")}><DatePicker name="constitutedOn" error={Boolean(operation.fieldError("constitutedOn"))} /></Field>
+            <Field label="Mandato hasta" hint="Debe ser posterior a la constitución." required error={operation.fieldError("mandateEndsOn")}><DatePicker name="mandateEndsOn" error={Boolean(operation.fieldError("mandateEndsOn"))} /></Field>
           </div>
-          <Field label="Día de sesión mensual" hint="Opcional. Día del mes (1-28) en que suele convocarse.">
+          <Field label="Día de sesión mensual" hint="Opcional. Día del mes (1-28) en que suele convocarse." error={operation.fieldError("meetingDayOfMonth")}>
             <Input name="meetingDayOfMonth" type="number" min={1} max={28} className="w-24" />
           </Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
@@ -79,10 +83,10 @@ export function NewCommitteeDialog({
 
 /* ── Alta de revisión por la dirección ────────────────────────────────────── */
 
-export function NewReviewDialog({ worksites }: { worksites: { id: string; name: string }[] }) {
-  const [open, setOpen] = React.useState(false)
+export function NewReviewDialog({ worksites, ...control }: { worksites: { id: string; name: string }[] } & ControllableDialogProps) {
   const [defaultValue, setDefaultValue] = React.useState("")
   const [worksiteId, setWorksiteId] = React.useState("_all")
+  const { open, setOpen, controlled } = useControllableDialog(control, () => setDefaultValue(toLocalInputValue(new Date())))
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -98,8 +102,8 @@ export function NewReviewDialog({ worksites }: { worksites: { id: string; name: 
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (value) setDefaultValue(toLocalInputValue(new Date())); setOpen(value) }}>
-      <DialogTrigger asChild><Button size="sm" variant="secondary">Nueva revisión por la dirección</Button></DialogTrigger>
+    <Dialog open={open} onOpenChange={setOpen}>
+      {!controlled && <DialogTrigger asChild><Button size="sm" variant="secondary">Nueva revisión por la dirección</Button></DialogTrigger>}
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
@@ -119,6 +123,41 @@ export function NewReviewDialog({ worksites }: { worksites: { id: string; name: 
       </DialogContent>
     </Dialog>
   )
+}
+
+/* ── Alta desde el header de página ───────────────────────────────────────── */
+
+/**
+ * Layout 5 / A3: "Nuevo comité" y "Nueva revisión" vivían en la barra de
+ * pestañas y cambiaban según la pestaña abierta, así que para crear una
+ * revisión había que adivinar que primero tocaba ir a esa pestaña. Ahora hay un
+ * único "Nuevo" en el header; cada opción conserva su permiso de siempre
+ * (`cphs:manage` para constituir, `governance:review` para revisar).
+ */
+export function CphsCreateButton({ worksites, initialWorksiteId, canManage, canReview }: {
+  worksites: { id: string; name: string }[]
+  initialWorksiteId?: string
+  canManage: boolean
+  canReview: boolean
+}) {
+  const choices: CreateChoice[] = []
+  if (canManage && worksites.length > 0) choices.push({
+    key: "comite",
+    label: "Comité paritario",
+    description: "Constituye el comité de un centro de trabajo, con su mandato y cadencia de sesiones.",
+    icon: <UsersThree size={18} />,
+    soloLabel: "Nuevo comité",
+    render: (state) => <NewCommitteeDialog key={initialWorksiteId ?? "default"} worksites={worksites} initialWorksiteId={initialWorksiteId} {...state} />,
+  })
+  if (canReview) choices.push({
+    key: "revision",
+    label: "Revisión por la dirección",
+    description: "Evaluación periódica del sistema de gestión; nace en preparación.",
+    icon: <ClipboardText size={18} />,
+    soloLabel: "Nueva revisión por la dirección",
+    render: (state) => <NewReviewDialog worksites={worksites} {...state} />,
+  })
+  return <CreateChoiceButton choices={choices} description="Elige qué agregar a CPHS y gobernanza." />
 }
 
 /* ── Cierre de revisión por la dirección ──────────────────────────────────── */

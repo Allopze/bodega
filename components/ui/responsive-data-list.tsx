@@ -30,7 +30,12 @@ export function ResponsiveDataListCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate text-sm font-medium text-[var(--color-text)]">{title}</h3>
+          {/* `[&>a]:block [&>a]:truncate`: casi todas las listas pasan el título
+              como `<Link>`. Inline dentro del `truncate`, su caja conservaba el
+              ancho completo del texto: el recorte era sólo visual y el enlace
+              medía más que el pozo (14 px en /prevencion/emergencias a 390). Como
+              bloque, la caja del enlace es la del título y la elipsis cae en él. */}
+          <h3 className="truncate text-sm font-medium text-[var(--color-text)] [&>a]:block [&>a]:truncate">{title}</h3>
           {description && (
             <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">{description}</div>
           )}

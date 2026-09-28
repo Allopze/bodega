@@ -1,7 +1,7 @@
 "use server"
 
 import { ZodError } from "zod"
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import type { CgrdAccess } from "@/lib/services/prevention-cgrd-access"
@@ -30,6 +30,18 @@ function accessFromSession(session: Awaited<ReturnType<typeof guardPermission>>[
   return { userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
 }
 
+/**
+ * #43: un órgano activo por faena y un integrante activo una vez por comité
+ * los sostiene sólo un índice único parcial (`db/schema/prevention/cgrd.ts`).
+ * En una carrera la segunda alta llega al índice; sin este mapa el usuario
+ * veía un error genérico.
+ */
+const CGRD_UNIQUE_MESSAGES: Record<string, string> = {
+  prevention_grd_committee_active_worksite_unique: "Esta faena ya tiene un comité GRD activo. Disuélvelo antes de constituir otro.",
+  prevention_grd_coordinator_active_unique: "Esta faena ya tiene un coordinador GRD vigente. Termina su designación antes de designar otro.",
+  prevention_grd_member_unique: "Esa persona ya es integrante activo de este comité.",
+}
+
 async function run(access: CgrdAccess, operation: (access: CgrdAccess) => Promise<unknown>): Promise<ActionState> {
   try {
     await operation(access)
@@ -39,7 +51,7 @@ async function run(access: CgrdAccess, operation: (access: CgrdAccess) => Promis
     if (error instanceof ZodError) {
       return { ok: false, message: "Revisa los campos marcados.", fieldErrors: error.flatten().fieldErrors as Record<string, string[]> }
     }
-    return { ok: false, message: safeActionMessage(error, "No se pudo completar la acción. Intenta nuevamente.") }
+    return actionErrorResult(error, "No se pudo completar la acción. Intenta nuevamente.", { unique: CGRD_UNIQUE_MESSAGES })
   }
 }
 

@@ -9,8 +9,8 @@ const mockInsertValues = vi.hoisted(() => vi.fn(() => ({
   onConflictDoNothing: mockInsertOnConflictDoNothing,
 })))
 
-vi.mock("@/db", () => ({
-  db: {
+vi.mock("@/db", () => {
+  const db = {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
         where: mockSelectWhere,
@@ -22,8 +22,10 @@ vi.mock("@/db", () => ({
     insert: vi.fn(() => ({
       values: mockInsertValues,
     })),
-  },
-}))
+    transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(db)),
+  }
+  return { db }
+})
 
 vi.mock("@/lib/audit", () => ({
   recordAudit: vi.fn(),
@@ -105,6 +107,7 @@ describe("prevention documents library service", () => {
       input: { documentId: "sdoc-1", comment: "Restaurar" },
       ctx,
       scope: { mode: "some", ids: ["ws-1"] },
+      permissions: [],
     })
 
     expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({ status: "borrador" }))
@@ -113,7 +116,7 @@ describe("prevention documents library service", () => {
       entityId: "sdoc-1",
       fromStatus: "archivado",
       toStatus: "borrador",
-    }))
+    }), expect.anything())
   })
 })
 

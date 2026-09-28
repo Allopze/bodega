@@ -59,7 +59,7 @@ export function PapeleraView({ folders, documents, canRestore, userId }: Props) 
     startTransition(async () => {
       const res = await restoreSstDocumentAction({ documentId })
       if (res.ok) {
-        toast.success(`Documento "${title}" restaurado como borrador.`)
+        toast.success(res.message ?? `Documento "${title}" restaurado.`)
         router.refresh()
       } else {
         toast.error(res.message ?? "No se pudo restaurar el documento.")
@@ -74,7 +74,7 @@ export function PapeleraView({ folders, documents, canRestore, userId }: Props) 
       <div className="space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-(--color-text-subtle)">
-            Elementos archivados. Restaurar una carpeta la devuelve a su ubicación; restaurar un documento lo deja como borrador.
+            Elementos archivados. Restaurar una carpeta la devuelve a su ubicación; restaurar un documento lo devuelve vigente si su versión actual lo estaba, o como borrador si no.
           </p>
           <div className="flex items-center gap-2">
             <ViewModeToggle userId={userId} value={viewMode} onChange={setViewMode} />
@@ -108,7 +108,7 @@ export function PapeleraView({ folders, documents, canRestore, userId }: Props) 
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-(--color-text-subtle)">
-          Elementos archivados. Restaurar una carpeta la devuelve a su ubicación; restaurar un documento lo deja como borrador.
+          Elementos archivados. Restaurar una carpeta la devuelve a su ubicación; restaurar un documento lo devuelve vigente si su versión actual lo estaba, o como borrador si no.
         </p>
         <div className="flex items-center gap-2">
           <ViewModeToggle userId={userId} value={viewMode} onChange={setViewMode} />

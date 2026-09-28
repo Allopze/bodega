@@ -12,6 +12,7 @@ import {
   listPermitWorksites,
   listWorkPermits,
 } from "@/lib/services/prevention-permits"
+import { PermitCreateButton } from "./permit-dialogs"
 import { WorkPermitList } from "./work-permit-list"
 
 export const metadata: Metadata = { title: "Permisos de trabajo" }
@@ -40,6 +41,23 @@ export default async function PermisosPage() {
     canRequest ? listPermitSupervisors(access) : Promise.resolve([]),
   ])
 
+  const activeTypes = types.flatMap((item) => item.isActive ? [{
+    id: item.id,
+    code: item.code,
+    name: item.name,
+    requiresIsolation: item.requiresIsolation,
+    requiresMeasurement: item.requiresMeasurement,
+    requiresJsa: item.requiresJsa,
+    requiresCrewAcknowledgement: item.requiresCrewAcknowledgement,
+    maxDurationHours: item.maxDurationHours,
+  }] : [])
+  const workerOptions = workers.map((worker) => ({
+    id: worker.id,
+    name: `${worker.lastName}, ${worker.firstName}`,
+    position: worker.position,
+    worksiteId: worker.worksiteId,
+  }))
+
   return (
     <PageContainer>
       <PageHeader
@@ -51,11 +69,21 @@ export default async function PermisosPage() {
           { label: "Permisos de trabajo" },
         ]} />}
         actions={
-          session.user.permissions.includes("prevention:permits:export") ? (
-            <Button asChild variant="secondary">
-              <a href="/api/prevencion/permisos/export" download>Exportar Excel</a>
-            </Button>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            {session.user.permissions.includes("prevention:permits:export") && (
+              <Button asChild variant="secondary">
+                <a href="/api/prevencion/permisos/export" download>Exportar Excel</a>
+              </Button>
+            )}
+            <PermitCreateButton
+              canManage={canManage}
+              canRequest={canRequest}
+              types={activeTypes}
+              worksites={worksites}
+              workers={workerOptions}
+              supervisors={supervisors}
+            />
+          </div>
         }
       />
       <WorkPermitList
@@ -78,23 +106,9 @@ export default async function PermisosPage() {
         }))}
         canManage={canManage}
         canRequest={canRequest}
-        types={types.flatMap((item) => item.isActive ? [{
-          id: item.id,
-          code: item.code,
-          name: item.name,
-          requiresIsolation: item.requiresIsolation,
-          requiresMeasurement: item.requiresMeasurement,
-          requiresJsa: item.requiresJsa,
-          requiresCrewAcknowledgement: item.requiresCrewAcknowledgement,
-          maxDurationHours: item.maxDurationHours,
-        }] : [])}
+        types={activeTypes}
         worksites={worksites}
-        workers={workers.map((worker) => ({
-          id: worker.id,
-          name: `${worker.lastName}, ${worker.firstName}`,
-          position: worker.position,
-          worksiteId: worker.worksiteId,
-        }))}
+        workers={workerOptions}
         supervisors={supervisors}
       />
     </PageContainer>

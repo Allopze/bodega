@@ -1,6 +1,6 @@
 "use server"
 
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 
 import { revalidatePath } from "next/cache"
 import { logger } from "@/lib/logger"
@@ -11,8 +11,6 @@ import { workers } from "@/db/schema/worksites"
 import { eq } from "drizzle-orm"
 import {
   createEvaluation,
-  getEvaluation,
-  listEvaluations,
   closeEvaluation,
   archiveEvaluationPdf,
   deleteEvaluation,
@@ -81,49 +79,13 @@ export async function createEvaluationAction(
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Evaluación creada", data: { id: evaluation.id } }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al crear la evaluación") }
+    return actionErrorResult(e, "Error al crear la evaluación")
   }
 }
 
 // ── listEvaluationsAction ─────────────────────────────────────────────────────
 
-export async function listEvaluationsAction(
-  filters?: { tipo?: string; estado?: string; workerId?: string },
-  limit = 50,
-  offset = 0,
-): Promise<ActionState & { data?: { evaluations: (SstEvaluation & { workerName: string; worksiteName: string })[] } }> {
-  const { session, error } = await guardPermission("sst:view")
-  if (error) return error
-
-  const scope = resolveWorksiteScope(session)
-  const worksiteIds = scopeToIds(scope)
-
-  try {
-    const evaluations = await listEvaluations({ worksiteIds, ...filters }, limit, offset)
-    return { ok: true, data: { evaluations } }
-  } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al listar evaluaciones") }
-  }
-}
-
 // ── getEvaluationAction ───────────────────────────────────────────────────────
-
-export async function getEvaluationAction(
-  id: string,
-): Promise<ActionState & { data?: { evaluation: SstEvaluation | null } }> {
-  const { session, error } = await guardPermission("sst:view")
-  if (error) return error
-
-  const scope = resolveWorksiteScope(session)
-  const worksiteIds = scopeToIds(scope)
-
-  try {
-    const evaluation = await getEvaluation(id, worksiteIds)
-    return { ok: true, data: { evaluation } }
-  } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al obtener la evaluación") }
-  }
-}
 
 // ── closeEvaluationAction ─────────────────────────────────────────────────────
 
@@ -143,7 +105,7 @@ export async function closeEvaluationAction(
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${id}`)
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al cerrar la evaluación") }
+    return actionErrorResult(e, "Error al cerrar la evaluación")
   }
 
   // Best-effort: guarda copia PDF en la biblioteca documental. Se ejecuta
@@ -180,6 +142,6 @@ export async function deleteEvaluationAction(
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Evaluación eliminada" }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al eliminar la evaluación") }
+    return actionErrorResult(e, "Error al eliminar la evaluación")
   }
 }

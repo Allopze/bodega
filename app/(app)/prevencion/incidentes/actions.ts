@@ -1,6 +1,6 @@
 "use server"
 
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 
 import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
@@ -20,11 +20,13 @@ import {
   recordPreventionIncidentNotification,
   reportPreventionIncident,
   savePreventionIncidentInvestigation,
+  savePreventionIncidentPersonSensitive,
   transitionPreventionIncident,
   triagePreventionIncident,
   type IncidentStatus,
 } from "@/lib/services/prevention-incidents"
 import { scheduleGeneratedDocumentDrain } from "@/lib/services/generated-documents/schedule"
+import { convertPublicIncidentReport, discardPublicIncidentReport } from "@/lib/services/prevention-incident-reports"
 
 const ROOT = "/prevencion/incidentes"
 
@@ -37,7 +39,7 @@ function access(session: NonNullable<Awaited<ReturnType<typeof guardPermission>>
 }
 
 function fail(error: unknown, fallback: string): ActionState {
-  return { ok: false, message: safeActionMessage(error, fallback) }
+  return actionErrorResult(error, fallback)
 }
 
 function refresh(incidentId?: string) {
@@ -270,6 +272,47 @@ export async function confirmIncidentDiffusionAction(args: { incidentId: string;
   }
 }
 
+/**
+ * Ficha reservada de una persona del incidente. Mismo permiso que abrir la
+ * vista reservada: quien no puede leer esos datos tampoco los escribe.
+ */
+export async function savePreventionIncidentPersonSensitiveAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:incidents:view_sensitive")
+  if (guard.error) return guard.error
+  try {
+    const result = await savePreventionIncidentPersonSensitive({ input, access: access(guard.session) })
+    refresh(result.incidentId)
+    return { ok: true, message: result.action === "create" ? "Ficha reservada registrada" : "Ficha reservada actualizada" }
+  } catch (error) {
+    return fail(error, "No se pudo guardar la ficha reservada")
+  }
+}
 
+/*
+ * Buzón del canal del trabajador. Decidir si un reporte es un incidente es el
+ * mismo acto que clasificar uno: `prevention:incidents:triage`. El servicio
+ * vuelve a comprobar el permiso y la faena del reporte.
+ */
+export async function convertPublicIncidentReportAction(input: unknown): Promise<ActionState & { incidentId?: string }> {
+  const guard = await guardPermission("prevention:incidents:triage")
+  if (guard.error) return guard.error
+  try {
+    const result = await convertPublicIncidentReport({ input, access: access(guard.session) })
+    refresh(result.incident.id)
+    return { ok: true, message: `Incidente ${result.incident.code} abierto desde el reporte`, incidentId: result.incident.id }
+  } catch (error) {
+    return fail(error, "No se pudo abrir el incidente desde el reporte")
+  }
+}
 
-
+export async function discardPublicIncidentReportAction(args: { reportId: string; reason: string }): Promise<ActionState> {
+  const guard = await guardPermission("prevention:incidents:triage")
+  if (guard.error) return guard.error
+  try {
+    await discardPublicIncidentReport({ reportId: args.reportId, reason: args.reason, access: access(guard.session) })
+    refresh()
+    return { ok: true, message: "Reporte descartado" }
+  } catch (error) {
+    return fail(error, "No se pudo descartar el reporte")
+  }
+}

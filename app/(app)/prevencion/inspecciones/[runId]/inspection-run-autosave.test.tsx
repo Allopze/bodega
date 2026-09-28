@@ -68,7 +68,7 @@ function renderRun() {
         scheduledFor: null, executedAt: null, reviewedAt: null, reviewComment: null,
         conformingCount: 0, partialCount: 0, nonConformingCount: 0, notApplicableCount: 0,
         compliancePercent: null, officialComplianceBasisPoints: null, normalizedComplianceBasisPoints: null,
-        executedByUserId: null, closingResult: null, closingRestrictions: null, closingSignatures: null,
+        executedByUserId: null, executorOfRecord: null, closingResult: null, closingRestrictions: null, closingSignatures: null,
         locationLatitude: null, locationLongitude: null, version: 1,
       }}
       templateKind="inspection"

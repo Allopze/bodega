@@ -4,12 +4,14 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DocumentGrid, type GridDocument, type GridFolder } from "@/components/prevention/document-grid"
 import { ViewModeToggle } from "@/components/prevention/view-mode-toggle"
 import { DocumentViewerModal } from "./document-viewer-modal"
 import type { Props, FolderRow } from "./documentacion-view.types"
+import { pluralize } from "@/lib/utils"
 import { DRAG_MIME } from "./documentacion-view.types"
 import { DocumentTableRow } from "./documentacion-view-table-row"
 import { FolderTableRow } from "./documentacion-view-folder-row"
@@ -37,6 +39,34 @@ export function DocumentacionView(props: Props) {
   } = props
 
   const f = useDocumentacionView(documents, folders, folderOptions, currentFolderId, props.searchParams, canManage, canArchive, userId)
+
+  // Archivar desde el menú o en lote se ejecutaba al primer clic, sin pedir
+  // confirmación; la ficha del documento sí la pedía (`archive-button.tsx`).
+  // Todas las rutas pasan ahora por el mismo diálogo.
+  const [archiveRequest, setArchiveRequest] = React.useState<
+    | { kind: "document"; id: string; title: string }
+    | { kind: "folder"; folder: FolderRow }
+    | { kind: "selected-documents" }
+    | { kind: "selected-folders" }
+    | null
+  >(null)
+  const archiveCopy = archiveRequest?.kind === "document"
+    ? { title: "Archivar documento", description: `«${archiveRequest.title}» se marca como archivado. Las versiones aprobadas y vigentes se mantienen como evidencia histórica.` }
+    : archiveRequest?.kind === "folder"
+      ? { title: "Archivar carpeta", description: `La carpeta «${archiveRequest.folder.name}» se archiva y deja de aparecer en la biblioteca. Puedes restaurarla después.` }
+      : archiveRequest?.kind === "selected-documents"
+        ? { title: "Archivar documentos seleccionados", description: `Se archivarán ${f.selectedDocuments.size} ${pluralize(f.selectedDocuments.size, "documento", "documentos")}. Las versiones aprobadas y vigentes se mantienen como evidencia histórica.` }
+        : { title: "Archivar carpetas seleccionadas", description: `Se archivarán ${f.selectedFolders.size} ${pluralize(f.selectedFolders.size, "carpeta", "carpetas")}. Puedes restaurarlas después.` }
+
+  function confirmArchive() {
+    const request = archiveRequest
+    setArchiveRequest(null)
+    if (!request) return
+    if (request.kind === "document") f.archiveDocument(request.id)
+    else if (request.kind === "folder") f.archiveFolder(request.folder)
+    else if (request.kind === "selected-documents") f.archiveSelectedDocuments()
+    else f.archiveSelectedFolders()
+  }
 
   const gridFolders: GridFolder[] = f.filteredFolders
   const gridDocuments: GridDocument[] = f.filteredDocuments.map((d) => ({
@@ -98,7 +128,7 @@ export function DocumentacionView(props: Props) {
               <span className="text-sm font-medium text-(--color-text)">{f.selectedCount} seleccionados</span>
               <div className="flex gap-2">
                 {canArchive && f.selectedFolders.size > 0 && (
-                  <Button type="button" size="sm" variant="secondary" onClick={f.archiveSelectedFolders} disabled={f.pending}>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => setArchiveRequest({ kind: "selected-folders" })} disabled={f.pending}>
                     Archivar carpetas seleccionadas
                   </Button>
                 )}
@@ -113,7 +143,7 @@ export function DocumentacionView(props: Props) {
                   </Button>
                 )}
                 {canArchive && f.selectedDocuments.size > 0 && (
-                  <Button type="button" size="sm" variant="secondary" onClick={f.archiveSelectedDocuments} disabled={f.pending}>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => setArchiveRequest({ kind: "selected-documents" })} disabled={f.pending}>
                     Archivar documentos seleccionados
                   </Button>
                 )}
@@ -151,7 +181,7 @@ export function DocumentacionView(props: Props) {
                       onToggleSelected={() => f.toggleFolderSelection(folder.id)}
                       onContextMenu={(event) => f.openFolderMenu(event, folder)}
                       onRestore={() => f.restoreFolder(folder)}
-                      onArchive={() => f.archiveFolder(folder)}
+                      onArchive={() => setArchiveRequest({ kind: "folder", folder })}
                       onRename={() => f.openFolderAction(folder, "rename")}
                       onMove={() => f.openFolderAction(folder, "move")}
                       onDragStart={(event) => {
@@ -243,11 +273,11 @@ export function DocumentacionView(props: Props) {
           currentFolderId={currentFolderId}
           onClose={() => f.setMenu(null)}
           onFolderAction={(folder, action) => f.openFolderAction(folder as FolderRow, action)}
-          onArchiveFolder={(folder) => f.archiveFolder(folder as FolderRow)}
+          onArchiveFolder={(folder) => setArchiveRequest({ kind: "folder", folder: folder as FolderRow })}
           onViewDocumentDetail={(id) => f.setViewerDocId(id)}
           onDownloadDocument={() => {}}
           onMoveDocument={(id) => { f.setMoveDocumentId(id); f.setMoveFolderId(currentFolderId ?? "") }}
-          onArchiveDocument={(id) => f.archiveDocument(id)}
+          onArchiveDocument={(id) => setArchiveRequest({ kind: "document", id, title: documents.find((doc) => doc.id === id)?.title ?? "El documento" })}
         />
       )}
 
@@ -269,6 +299,17 @@ export function DocumentacionView(props: Props) {
         onParentChange={f.setFolderActionParentId}
         onSubmit={f.submitFolderMove}
         onClose={f.closeFolderAction}
+      />
+
+      <ConfirmDialog
+        open={archiveRequest !== null}
+        onOpenChange={(open) => { if (!open) setArchiveRequest(null) }}
+        title={archiveCopy.title}
+        description={archiveCopy.description}
+        variant="destructive"
+        confirmLabel="Archivar"
+        loading={f.pending}
+        onConfirm={confirmArchive}
       />
 
       <DocumentViewerModal

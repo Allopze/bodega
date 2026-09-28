@@ -1,6 +1,6 @@
 "use server"
 
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 
 import { revalidatePath } from "next/cache"
 import { guardAuth, canAny, can } from "@/lib/auth/can"
@@ -48,6 +48,6 @@ export async function saveResponsesAction(
     revalidatePath(`${REVALIDATE}/${evaluationId}`)
     return { ok: true, message: "Respuestas guardadas" }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al guardar respuestas") }
+    return actionErrorResult(e, "Error al guardar respuestas")
   }
 }

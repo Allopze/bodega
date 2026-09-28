@@ -10,7 +10,7 @@ import postgres from "postgres"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
-import { eq, sql } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import * as schema from "@/db/schema"
 import {
   assertSafeDestructiveDatabase,
@@ -205,12 +205,18 @@ describeIf("CAPA backfill and concurrency on real Postgres", () => {
 
     const { buildCapaExport } = await import("@/lib/services/prevention-capa")
     const exportReport = await buildCapaExport({
+      ctx: { userId: "user-capa-verifier" },
       scope: { mode: "all", ids: [] }, permissions: ["prevention:capa:view"],
     })
     expect(exportReport.sheets?.map((sheet) => sheet.worksheetName)).toEqual([
       "Acciones CAPA", "Transiciones", "Evidencias", "Seguimientos",
     ])
     expect(exportReport.headers).toContain("Evaluación de eficacia")
+    // FX-B (B10): como el registro de incidentes, sacar el Excel CAPA deja
+    // rastro de quién exportó y cuánto.
+    const exportAudits = await db.select().from(schema.auditLog)
+      .where(and(eq(schema.auditLog.entityType, "prevention_capa_register"), eq(schema.auditLog.action, "export")))
+    expect(exportAudits).toEqual([expect.objectContaining({ userId: "user-capa-verifier", entityId: "scope" })])
 
     await expect(cancelPpa({
       ppaId: "ppa-cancel-test", expectedPpaVersion: 1, reason: "x",

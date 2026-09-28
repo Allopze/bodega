@@ -57,6 +57,21 @@ vi.mock("@/lib/storage/helpers", () => ({
   removeFile: async (filePath: string) => fs.unlink(filePath).catch(() => undefined),
 }))
 
+// Para ejercitar las acciones de servidor contra la misma BD: la sesión la
+// fija cada test con `sessionPermissions`.
+const sessionPermissions = vi.hoisted(() => ({ current: [] as string[] }))
+vi.mock("@/lib/auth/can", () => ({
+  guardPermission: async () => ({
+    session: { user: { id: "user-1", email: "prev@example.test", permissions: sessionPermissions.current } },
+    error: null,
+  }),
+}))
+vi.mock("@/lib/auth/scope", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/scope")>()),
+  resolveWorksiteScope: () => ({ mode: "some", ids: ["ws-1"] }),
+}))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 afterAll(async () => {
@@ -68,11 +83,13 @@ const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31])
 
 beforeEach(async () => {
   await inMemoryDb.delete(schema.sstDocumentAudit)
+  await inMemoryDb.delete(schema.sstDocumentLinks)
   await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.statusHistory)
   await inMemoryDb.delete(schema.sstDocumentVersions)
   await inMemoryDb.delete(schema.sstDocuments)
   await inMemoryDb.delete(schema.sstDocumentFolders)
+  await inMemoryDb.delete(schema.sstDocumentTypes)
   await inMemoryDb.delete(schema.sstDocumentCategories)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
@@ -218,26 +235,26 @@ describe("prevention-documents-library — persistencia real (PGlite)", () => {
       ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"],
     })
 
-    const archived = await archiveDocument({ input: { documentId: doc.id, comment: "Ya no aplica" }, ctx: CTX, scope: SCOPE_WS1 })
+    const archived = await archiveDocument({ input: { documentId: doc.id, comment: "Ya no aplica" }, ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"] })
     expect(archived.status).toBe("archivado")
     const [archivedVersion] = await inMemoryDb.select().from(schema.sstDocumentVersions)
     expect(archivedVersion?.status).toBe("archivado")
 
-    const restored = await restoreDocument({ input: { documentId: doc.id }, ctx: CTX, scope: SCOPE_WS1 })
+    const restored = await restoreDocument({ input: { documentId: doc.id }, ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"] })
     expect(restored.status).toBe("borrador")
   })
 
   it("rechaza restaurar un documento que no está archivado", async () => {
     const doc = await createTestDocument()
     const { restoreDocument } = await import("@/lib/services/prevention-documents-library")
-    await expect(restoreDocument({ input: { documentId: doc.id }, ctx: CTX, scope: SCOPE_WS1 }))
+    await expect(restoreDocument({ input: { documentId: doc.id }, ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"] }))
       .rejects.toThrow(/archivados/i)
   })
 
   it("rechaza subir versiones a un documento ya archivado", async () => {
     const doc = await createTestDocument()
     const { archiveDocument, uploadDocumentVersion } = await import("@/lib/services/prevention-documents-library")
-    await archiveDocument({ input: { documentId: doc.id }, ctx: CTX, scope: SCOPE_WS1 })
+    await archiveDocument({ input: { documentId: doc.id }, ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"] })
 
     await expect(uploadDocumentVersion({
       input: { documentId: doc.id, file: { name: "procedimiento.pdf", type: "application/pdf", size: PDF_BYTES.byteLength, buffer: PDF_BYTES } },
@@ -275,5 +292,204 @@ describe("prevention-documents-library — persistencia real (PGlite)", () => {
     expect(stat.isFile()).toBe(true)
     // La carpeta física existe.
     expect((await fs.stat(join(tmpStorageDir, "Procedimientos"))).isDirectory()).toBe(true)
+  })
+})
+
+/*
+ * FX-A (A1): archivar, restaurar, vincular, desvincular y regularizar miraban
+ * la faena pero no la confidencialidad. Quien no tiene
+ * `docs:manage_sensitive` no puede ni abrir un documento sensible (el detalle
+ * y la búsqueda lo ocultan), pero sí podía archivarlo o colgarle vínculos
+ * conociendo su id.
+ */
+describe("prevention-documents-library — confidencialidad en acciones sobre el documento", () => {
+  const MANAGE_ONLY = ["prevention:docs:manage"] as const
+  const WITH_SENSITIVE = ["prevention:docs:manage", "prevention:docs:manage_sensitive"] as const
+
+  async function createSensitiveDocument() {
+    const { createDocument } = await import("@/lib/services/prevention-documents-library")
+    return createDocument({
+      data: { categorySlug: "gestion_preventiva", title: "Informe de investigación reservado", worksiteId: "ws-1", confidentiality: "sensible" },
+      ctx: CTX, scope: SCOPE_WS1, permissions: WITH_SENSITIVE,
+    })
+  }
+
+  it("no archiva ni restaura un documento sensible sin docs:manage_sensitive", async () => {
+    const doc = await createSensitiveDocument()
+    const { archiveDocument, restoreDocument } = await import("@/lib/services/prevention-documents-library")
+    await expect(archiveDocument({ input: { documentId: doc.id }, ctx: CTX, scope: SCOPE_WS1, permissions: MANAGE_ONLY }))
+      .rejects.toThrow(/sensibles/)
+    const [still] = await inMemoryDb.select().from(schema.sstDocuments).where(eq(schema.sstDocuments.id, doc.id))
+    expect(still?.status).toBe("borrador")
+
+    await archiveDocument({ input: { documentId: doc.id }, ctx: CTX, scope: SCOPE_WS1, permissions: WITH_SENSITIVE })
+    await expect(restoreDocument({ input: { documentId: doc.id }, ctx: CTX, scope: SCOPE_WS1, permissions: MANAGE_ONLY }))
+      .rejects.toThrow(/sensibles/)
+  })
+
+  it("no vincula ni desvincula un documento sensible sin docs:manage_sensitive", async () => {
+    const doc = await createSensitiveDocument()
+    const { createDocumentLink, removeDocumentLink } = await import("@/lib/services/prevention-documents-library")
+    await expect(createDocumentLink({
+      documentId: doc.id, entityType: "training", entityId: "occ-inexistente", userId: "user-1", scope: SCOPE_WS1, permissions: MANAGE_ONLY,
+    })).rejects.toThrow(/sensibles/)
+
+    await inMemoryDb.insert(schema.sstDocumentLinks).values({
+      id: "sdlink-1", documentId: doc.id, entityType: "training", entityId: "occ-1", createdAt: new Date().toISOString(),
+    })
+    await expect(removeDocumentLink({ linkId: "sdlink-1", reason: "Ya no aplica", userId: "user-1", scope: SCOPE_WS1, permissions: MANAGE_ONLY }))
+      .rejects.toThrow(/sensibles/)
+    const [link] = await inMemoryDb.select().from(schema.sstDocumentLinks).where(eq(schema.sstDocumentLinks.id, "sdlink-1"))
+    expect(link?.removedAt).toBeNull()
+  })
+
+  it("no regulariza la integridad de un documento sensible sin docs:manage_sensitive", async () => {
+    const doc = await createSensitiveDocument()
+    const { regularizeDocumentIntegrityFinding } = await import("@/lib/services/prevention-documents-library")
+    await expect(regularizeDocumentIntegrityFinding({
+      documentId: doc.id, findingCode: "DRAFT_WITH_PUBLISHED_VERSION", action: "clear_invalid_current_version",
+      reason: "Regularización de prueba", userId: "user-1", scope: SCOPE_WS1, permissions: MANAGE_ONLY,
+    })).rejects.toThrow(/sensibles/)
+  })
+})
+
+/*
+ * FX-A (A4): la biblioteca principal no pasa `status`, y `searchDocuments`
+ * sólo excluía archivados cuando se lo pasaban: la papelera se veía también en
+ * la lista principal.
+ */
+describe("searchDocuments — archivados fuera de la lista principal", () => {
+  it("sin filtro de estado no devuelve archivados; con status=archivado (papelera) sí", async () => {
+    const kept = await createTestDocument({ title: "Documento activo" })
+    const trashed = await createTestDocument({ title: "Documento en papelera" })
+    const { archiveDocument, searchDocuments } = await import("@/lib/services/prevention-documents-library")
+    await archiveDocument({ input: { documentId: trashed.id }, ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"] })
+
+    const main = await searchDocuments({ page: 1, pageSize: 50 }, SCOPE_WS1, ["prevention:docs:manage"])
+    expect(main.rows.map((row) => row.id)).toEqual([kept.id])
+    expect(main.total).toBe(1)
+
+    const trash = await searchDocuments({ status: "archivado", page: 1, pageSize: 50 }, SCOPE_WS1, ["prevention:docs:manage"])
+    expect(trash.rows.map((row) => row.id)).toEqual([trashed.id])
+  })
+})
+
+/*
+ * FX-A (A5): restaurar dejaba `borrador` aunque `currentVersionId` siguiera
+ * apuntando a una versión vigente (el archivado no toca las vigentes). Eso es
+ * exactamente el hallazgo de integridad DRAFT_WITH_PUBLISHED_VERSION y bloquea
+ * la distribución del documento restaurado.
+ */
+describe("restoreDocument — vuelve al estado que su versión vigente sostiene", () => {
+  it("restaura como vigente si la versión actual está vigente", async () => {
+    const doc = await createTestDocument()
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.sstDocumentVersions).values({
+      id: "sdv-vigente", documentId: doc.id, version: 1, status: "vigente", fileName: "p.pdf", storageName: "p.pdf",
+      filePath: "storage/sst-documents/p.pdf", mimeType: "application/pdf", fileSize: 6, checksum: "abc",
+      uploadedBy: "user-1", approvedBy: "user-1", approvedAt: now, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.update(schema.sstDocuments).set({ status: "vigente", currentVersionId: "sdv-vigente" }).where(eq(schema.sstDocuments.id, doc.id))
+    const { archiveDocument, restoreDocument } = await import("@/lib/services/prevention-documents-library")
+    await archiveDocument({ input: { documentId: doc.id }, ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"] })
+
+    const restored = await restoreDocument({ input: { documentId: doc.id }, ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"] })
+    expect(restored.status).toBe("vigente")
+    const history = await inMemoryDb.select().from(schema.statusHistory).where(eq(schema.statusHistory.entityId, doc.id))
+    expect(history.at(-1)?.toStatus).toBe("vigente")
+  })
+})
+
+/*
+ * FX-A (A6): la carga masiva (y la tipada) no envían `confidentiality`, así que
+ * todo quedaba `publico_interno` aunque la persona declarara «Sensible
+ * preventivo» o el tipo documental exigiera otra cosa: visible para cualquiera
+ * con `docs:view`.
+ */
+describe("createDocument — la confidencialidad hereda la clase de dato y el tipo", () => {
+  it("una clase de dato sensible deja el documento sensible, y exige el permiso", async () => {
+    const { createDocument } = await import("@/lib/services/prevention-documents-library")
+    const data = { categorySlug: "gestion_preventiva", title: "Evaluación psicosocial", worksiteId: "ws-1", dataClass: "sensitive_preventive" }
+    const row = await createDocument({
+      data, ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage", "prevention:docs:manage_sensitive"],
+    })
+    expect(row.confidentiality).toBe("sensible")
+    await expect(createDocument({ data, ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"] }))
+      .rejects.toThrow(/sensibles/)
+  })
+
+  it("un tipo con confidencialidad por defecto la impone al documento", async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.sstDocumentTypes).values({
+      id: "type-restr", categorySlug: "gestion_preventiva", code: "EXP_PERSONAL", name: "Expediente personal",
+      defaultConfidentiality: "restringido", createdAt: now, updatedAt: now,
+    })
+    const { createDocument } = await import("@/lib/services/prevention-documents-library")
+    const row = await createDocument({
+      data: { categorySlug: "gestion_preventiva", typeId: "type-restr", title: "Expediente", worksiteId: "ws-1" },
+      ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage", "prevention:docs:manage_restricted"],
+    })
+    expect(row.confidentiality).toBe("restringido")
+  })
+
+  it("una clase operacional sin tipo sigue siendo público interno", async () => {
+    const row = await createTestDocument()
+    expect(row.confidentiality).toBe("publico_interno")
+  })
+})
+
+/*
+ * Mismo piso al editar: cambiar la clase de dato de un documento existente a
+ * «Sensible preventivo» lo dejaba `publico_interno`, visible para cualquiera con
+ * `docs:view`, aunque al crearlo con esa clase habría quedado sensible.
+ */
+describe("updateDocumentMetadata — cambiar la clase de dato sube la confidencialidad", () => {
+  it("pasar a sensible preventivo deja el documento sensible, y exige el permiso", async () => {
+    const { updateDocumentMetadata } = await import("@/lib/services/prevention-documents-library")
+    const doc = await createTestDocument()
+    await expect(updateDocumentMetadata({
+      input: { id: doc.id, dataClass: "sensitive_preventive" }, ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"],
+    })).rejects.toThrow(/sensibles/)
+    const updated = await updateDocumentMetadata({
+      input: { id: doc.id, dataClass: "sensitive_preventive" }, ctx: CTX, scope: SCOPE_WS1,
+      permissions: ["prevention:docs:manage", "prevention:docs:manage_sensitive"],
+    })
+    expect(updated.confidentiality).toBe("sensible")
+  })
+
+  it("editar sólo el título no reclasifica", async () => {
+    const { updateDocumentMetadata } = await import("@/lib/services/prevention-documents-library")
+    const doc = await createTestDocument()
+    const updated = await updateDocumentMetadata({
+      input: { id: doc.id, title: "Título corregido" }, ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"],
+    })
+    expect(updated.confidentiality).toBe("publico_interno")
+  })
+})
+
+/*
+ * FX-A (A2): «Nueva versión de…» listaba los documentos del tipo sin filtrar
+ * confidencialidad: el título de un documento sensible llegaba a quien no
+ * puede abrirlo.
+ */
+describe("listSstDocumentsOfTypeAction — no filtra títulos de documentos que no se pueden ver", () => {
+  it("omite los sensibles sin docs:manage_sensitive y los muestra con él", async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.sstDocumentTypes).values({
+      id: "type-pts", categorySlug: "gestion_preventiva", code: "PTS", name: "Procedimiento", createdAt: now, updatedAt: now,
+    })
+    const { createDocument } = await import("@/lib/services/prevention-documents-library")
+    const all = ["prevention:docs:manage", "prevention:docs:manage_sensitive"]
+    const open = await createDocument({ data: { categorySlug: "gestion_preventiva", typeId: "type-pts", title: "PTS público", worksiteId: "ws-1" }, ctx: CTX, scope: SCOPE_WS1, permissions: all })
+    const secret = await createDocument({ data: { categorySlug: "gestion_preventiva", typeId: "type-pts", title: "PTS reservado", worksiteId: "ws-1", confidentiality: "sensible" }, ctx: CTX, scope: SCOPE_WS1, permissions: all })
+    const { listSstDocumentsOfTypeAction } = await import("@/app/(app)/prevencion/documentacion/actions/typed-upload")
+
+    sessionPermissions.current = ["prevention:docs:manage"]
+    const limited = await listSstDocumentsOfTypeAction({ typeId: "type-pts", worksiteId: "ws-1" })
+    expect(limited.data?.documents.map((d) => d.id)).toEqual([open.id])
+
+    sessionPermissions.current = all
+    const full = await listSstDocumentsOfTypeAction({ typeId: "type-pts", worksiteId: "ws-1" })
+    expect(full.data?.documents.map((d) => d.id).sort()).toEqual([open.id, secret.id].sort())
   })
 })

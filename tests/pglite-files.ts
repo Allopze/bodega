@@ -175,6 +175,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-capa-list.test.ts",
   "lib/__tests__/prevention-capa-manual-y-exencion.test.ts",
   "lib/__tests__/prevention-incident-public-reports.test.ts",
+  "lib/__tests__/prevention-incidents-workflow-gaps.test.ts",
   "lib/__tests__/prevention-cphs-program-persistence.test.ts",
   "lib/__tests__/prevention-cphs-certification-persistence.test.ts",
   "lib/__tests__/backfill-cphs-mandatory-sessions.test.ts",
@@ -186,6 +187,10 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-emergency-plan-seed.test.ts",
   // PER-001 y E2E-005 de la auditoría 2026-09-14.
   "lib/__tests__/prevention-permit-crew-ack-blocker.test.ts",
+  // FX-C: vencimiento, supervisor/peligro validados y avisos del permiso.
+  "lib/__tests__/prevention-permit-workflow-gates-pglite.test.ts",
+  // FX-C: un hallazgo cerrado no bloquea la revisión ni se deriva a CAPA.
+  "lib/__tests__/prevention-inspection-closed-finding-gates-pglite.test.ts",
   "lib/__tests__/prevention-acuse-sin-cuenta.test.ts",
   "lib/__tests__/prevention-risk-control-ineffective-capa.test.ts",
   "lib/__tests__/pdtp-preventive-organization-obligation.test.ts",
@@ -211,6 +216,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/requests-delete.test.ts",
   "lib/__tests__/sst-alerts.test.ts",
   "lib/__tests__/sst-delete-evaluation.test.ts",
+  "lib/__tests__/sst-worker-evaluations-scope.test.ts",
   "lib/__tests__/sst-integrity-constraints.test.ts",
   "lib/__tests__/stock-alerts.test.ts",
   "lib/__tests__/bodega-min-stock-bulk.test.ts",
@@ -228,6 +234,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/password-reset.test.ts",
   // PRI-002: ejercita la supresión de un caso reservado contra PGlite migrado.
   "lib/__tests__/prevention-privacy-reserved-redaction.test.ts",
+  // FX-A: permisos de dominio e idempotencia persistida al ejecutar derechos.
+  "lib/__tests__/prevention-privacy-execution-authorization.test.ts",
   "lib/__tests__/admin-productos-identidad-y-baja.test.ts",
   "lib/__tests__/proveedores-actions.test.ts",
   "lib/__tests__/facturacion-clientes-identidad.test.ts",
@@ -270,6 +278,7 @@ export const pgliteTestFiles = [
   // T4 (evidencia e historial): bitácora de envíos, sha256 y segregación.
   "lib/__tests__/pdtp-execution-history.test.ts",
   "lib/__tests__/pdtp-evidence-link-ownership.test.ts",
+  "lib/__tests__/prevention-capa-evidence-file.test.ts",
   "lib/__tests__/pdtp-evidence-references.test.ts",
   "lib/__tests__/pdtp-scheduled-start.test.ts",
   // T3 (fuentes: instancias e integración).

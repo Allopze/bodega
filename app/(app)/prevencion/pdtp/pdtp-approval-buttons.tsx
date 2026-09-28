@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { MONTH_LABELS } from "@/lib/utils"
+import { PDTP_REASON_MIN_LENGTH } from "@/lib/prevention/pdtp"
 import { approvePdtpExecutionAction, rejectPdtpExecutionAction } from "./actions"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
@@ -118,13 +119,13 @@ export function PdtpApprovalButtons({
           <DialogHeader>
             <DialogTitle>Rechazar ejecución</DialogTitle>
             <DialogDescription>
-              Indica el motivo por el que se devuelve esta ejecución al prevencionista. La ejecución volverá a estado &quot;rejected&quot; y podrá ser corregida y reenviada.
+              Indica el motivo por el que se devuelve esta ejecución al prevencionista. La ejecución quedará rechazada y podrá corregirse y reenviarse.
             </DialogDescription>
           </DialogHeader>
           <Textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="Motivo del rechazo (mín. 3 caracteres)"
+            placeholder={`Motivo del rechazo (mín. ${PDTP_REASON_MIN_LENGTH} caracteres)`}
             rows={4}
             maxLength={1000}
           />
@@ -143,7 +144,7 @@ export function PdtpApprovalButtons({
               variant="destructive"
               size="sm"
               onClick={handleReject}
-              disabled={submittingReject || reason.trim().length < 3}
+              disabled={submittingReject || reason.trim().length < PDTP_REASON_MIN_LENGTH}
             >
               {submittingReject ? "Rechazando…" : "Rechazar y devolver"}
             </Button>

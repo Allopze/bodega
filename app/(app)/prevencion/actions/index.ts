@@ -1,8 +1,6 @@
 // ── Evaluation CRUD ──────────────────────────────────────────────────────────
 export {
   createEvaluationAction,
-  listEvaluationsAction,
-  getEvaluationAction,
   closeEvaluationAction,
   deleteEvaluationAction,
 } from "./evaluations"
@@ -11,13 +9,11 @@ export {
 export { saveResponsesAction } from "./responses"
 
 // ── Followups ────────────────────────────────────────────────────────────────
-export { markFollowupAction, getFollowupsAction } from "./followups"
+export { markFollowupAction } from "./followups"
 
 // ── Action Plan ──────────────────────────────────────────────────────────────
 export { saveActionPlanItemAction, deleteActionPlanItemAction } from "./action-plan"
 
 // ── Weekly Evaluations ───────────────────────────────────────────────────────
-export { getWeeklyEvaluationsAction, markWeekCompletedAction } from "./weekly"
+export { markWeekCompletedAction } from "./weekly"
 
-// ── Dashboard ────────────────────────────────────────────────────────────────
-export { getDashboardStatsAction, listWorkerEvaluationsAction } from "./dashboard"

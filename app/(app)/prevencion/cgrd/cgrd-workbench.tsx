@@ -4,6 +4,9 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { DatePicker } from "@/components/ui/date-picker"
+import { DateTimePicker } from "@/components/ui/date-time-picker"
 import { ProgramSlotList, type ProgramSlotRow } from "@/components/prevention/program-slot-list"
 import type { PdtpPeriod } from "@/lib/services/pdtp/period"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -15,7 +18,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { formatDateTime } from "@/lib/utils"
+import { formatDateTime, toLocalInputValue } from "@/lib/utils"
 import {
   GRD_COMMITTEE_MIN_HEADCOUNT, GRD_MATRIX_STATUS_LABELS, GRD_STRUCTURE_LABELS,
 } from "@/lib/prevention/cgrd"
@@ -53,6 +56,22 @@ async function handle(promise: Promise<{ ok: boolean; message?: string }>, onDon
   onDone(result.ok ? undefined : (result.message ?? "No se pudo completar la acción."))
 }
 
+/**
+ * Acto irreversible del CGRD que pide motivo: terminar una designación,
+ * disolver el comité, quitar un integrante, anular un acta. Antes eran
+ * `window.prompt`, y un motivo de menos de 10 caracteres se descartaba sin
+ * aviso: el usuario no sabía por qué no había pasado nada.
+ */
+type ReasonRequest = {
+  title: string
+  description: string
+  confirmLabel: string
+  reasonLabel: string
+  run: (reason: string) => Promise<{ ok: boolean; message?: string }>
+}
+
+type FieldErrors = Record<string, string[] | undefined>
+
 export function CgrdWorkbench({
   worksites, selectedWorksiteId, committee, structure, members, matrices, latestMatrixThreats, meetings, meetingSlots, slotYear, notApplicableSuggestion, activationPeriod, agreements, workerCandidates,
   canManageCommittee, canEditMatrix, canPublishMatrix, canManageMeetings, scheduledPanel,
@@ -86,6 +105,19 @@ export function CgrdWorkbench({
   const [publishingMatrix, setPublishingMatrix] = React.useState<Matrix | null>(null)
   const [recordMeetingOpen, setRecordMeetingOpen] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [reasonRequest, setReasonRequest] = React.useState<ReasonRequest | null>(null)
+  const [reasonPending, setReasonPending] = React.useState(false)
+
+  async function confirmReason(reason: string) {
+    if (!reasonRequest) return
+    setReasonPending(true)
+    try {
+      // Se cierra con cualquier resultado: el error se pinta en la alerta de la
+      // página, que el diálogo modal dejaría tapada.
+      await handle(reasonRequest.run(reason), onDone)
+      setReasonRequest(null)
+    } finally { setReasonPending(false) }
+  }
 
   function onDone(message?: string) {
     if (message) { setError(message); return }
@@ -214,10 +246,14 @@ export function CgrdWorkbench({
               <div className="flex gap-2">
                 <Button type="button" size="sm" variant="secondary" onClick={() => setConstituteOpen(true)}>Constituir comité</Button>
                 <Button type="button" size="sm" variant="ghost" onClick={() => {
-                  const reason = window.prompt("Motivo del término de la designación (mínimo 10 caracteres):")
-                  if (reason && reason.trim().length >= 10) {
-                    void handle(endGrdCoordinatorAction({ coordinatorId: structure.coordinator!.id, expectedVersion: structure.coordinator!.version, reason }), onDone)
-                  }
+                  const coordinator = structure.coordinator!
+                  setReasonRequest({
+                    title: "Terminar designación",
+                    description: "La faena queda sin coordinador GRD vigente hasta que se designe otro o se constituya el comité.",
+                    confirmLabel: "Terminar designación",
+                    reasonLabel: "Motivo del término de la designación",
+                    run: (reason) => endGrdCoordinatorAction({ coordinatorId: coordinator.id, expectedVersion: coordinator.version, reason }),
+                  })
                 }}>Terminar designación</Button>
               </div>
             )}
@@ -250,12 +286,13 @@ export function CgrdWorkbench({
                 <p className="text-xs text-[var(--color-text-subtle)]">Constituido {committee.constitutedOn} · mandato hasta {committee.mandateEndsOn}</p>
               </div>
               {canManageCommittee && (
-                <Button type="button" variant="destructive" size="sm" onClick={() => {
-                  const reason = window.prompt("Motivo de la disolución (mínimo 10 caracteres):")
-                  if (reason && reason.trim().length >= 10) {
-                    void handle(dissolveGrdCommitteeAction({ committeeId: committee.id, expectedVersion: committee.version, reason }), onDone)
-                  }
-                }}>Disolver</Button>
+                <Button type="button" variant="destructive" size="sm" onClick={() => setReasonRequest({
+                  title: "Disolver comité",
+                  description: `${committee.name} deja de estar vigente. La faena queda sin comité GRD hasta que se constituya otro.`,
+                  confirmLabel: "Disolver",
+                  reasonLabel: "Motivo de la disolución",
+                  run: (reason) => dissolveGrdCommitteeAction({ committeeId: committee.id, expectedVersion: committee.version, reason }),
+                })}>Disolver</Button>
               )}
             </div>
 
@@ -274,10 +311,13 @@ export function CgrdWorkbench({
                       <li key={member.id} className="flex items-center justify-between py-2 text-sm">
                         <span>{worker ? `${worker.lastName}, ${worker.firstName}` : member.workerId} {member.role ? <span className="text-xs text-[var(--color-text-subtle)]">· {member.role}</span> : null}</span>
                         {canManageCommittee && (
-                          <Button type="button" size="sm" variant="ghost" onClick={() => {
-                            const reason = window.prompt("Motivo (mínimo 10 caracteres):")
-                            if (reason && reason.trim().length >= 10) void handle(removeGrdMemberAction({ memberId: member.id, reason }), onDone)
-                          }}>Quitar</Button>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => setReasonRequest({
+                            title: "Quitar integrante",
+                            description: `${worker ? `${worker.firstName} ${worker.lastName}` : "La persona"} deja de integrar el comité.`,
+                            confirmLabel: "Quitar",
+                            reasonLabel: "Motivo",
+                            run: (reason) => removeGrdMemberAction({ memberId: member.id, reason }),
+                          })}>Quitar</Button>
                         )}
                       </li>
                     )
@@ -311,10 +351,13 @@ export function CgrdWorkbench({
                       )}
                     </div>
                     {canManageMeetings && !meeting.annulledAt && (
-                      <Button type="button" size="sm" variant="ghost" onClick={() => {
-                        const reason = window.prompt("Motivo de la anulación (mínimo 10 caracteres). Revierte la N°81 que acreditó:")
-                        if (reason && reason.trim().length >= 10) void handle(annulGrdMeetingAction({ meetingId: meeting.id, reason }), onDone)
-                      }}>Anular</Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => setReasonRequest({
+                        title: `Anular acta ${meeting.code}`,
+                        description: "Revierte la N°81 que el acta acreditó. El acta no se borra: queda marcada como anulada con su motivo.",
+                        confirmLabel: "Anular acta",
+                        reasonLabel: "Motivo de la anulación",
+                        run: (reason) => annulGrdMeetingAction({ meetingId: meeting.id, reason }),
+                      })}>Anular</Button>
                     )}
                   </li>
                 ))}
@@ -361,6 +404,17 @@ export function CgrdWorkbench({
           <PublishMatrixDialog matrix={publishingMatrix} onClose={() => setPublishingMatrix(null)} onDone={onDone} />
         </>
       )}
+      <ConfirmDialog
+        open={reasonRequest !== null}
+        onOpenChange={(open) => { if (!open) setReasonRequest(null) }}
+        title={reasonRequest?.title ?? ""}
+        description={reasonRequest?.description ?? ""}
+        variant="destructive"
+        confirmLabel={reasonRequest?.confirmLabel}
+        reasonLabel={reasonRequest?.reasonLabel ?? "Motivo"}
+        loading={reasonPending}
+        onConfirm={(reason) => { void confirmReason(reason) }}
+      />
       {committee && (
         <>
           <AddMemberDialog open={addMemberOpen} onOpenChange={setAddMemberOpen} committeeId={committee.id} workers={workerCandidates} onDone={onDone} />
@@ -377,11 +431,13 @@ function ConstituteDialog({ open, onOpenChange, worksiteId, onDone }: { open: bo
   const [mandateEndsOn, setMandateEndsOn] = React.useState("")
   const [evidenceUrl, setEvidenceUrl] = React.useState("")
   const [pending, setPending] = React.useState(false)
+  const [fieldErrors, setFieldErrors] = React.useState<FieldErrors>({})
 
   async function save() {
     setPending(true)
     try {
       const result = await constituteGrdCommitteeAction({ worksiteId, name, constitutedOn, mandateEndsOn, evidenceUrl })
+      setFieldErrors(result.ok ? {} : (result.fieldErrors ?? {}))
       if (result.ok) { onOpenChange(false); setName(""); setConstitutedOn(""); setMandateEndsOn(""); setEvidenceUrl("") }
       onDone(result.ok ? undefined : result.message)
     } finally { setPending(false) }
@@ -390,10 +446,10 @@ function ConstituteDialog({ open, onOpenChange, worksiteId, onDone }: { open: bo
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent>
     <DialogHeader><DialogTitle>Constituir CGRD</DialogTitle><DialogDescription>Comité de Gestión de Riesgos de Desastres, distinto del Comité Paritario.</DialogDescription></DialogHeader>
     <div className="space-y-4">
-      <Field label="Nombre" required><Input value={name} onChange={(event) => setName(event.target.value)} maxLength={300} /></Field>
+      <Field label="Nombre" required error={fieldErrors.name?.[0]}><Input value={name} onChange={(event) => setName(event.target.value)} maxLength={300} /></Field>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Constituido el" required><Input type="date" value={constitutedOn} onChange={(event) => setConstitutedOn(event.target.value)} /></Field>
-        <Field label="Mandato hasta" required><Input type="date" value={mandateEndsOn} onChange={(event) => setMandateEndsOn(event.target.value)} /></Field>
+        <Field label="Constituido el" required error={fieldErrors.constitutedOn?.[0]}><DatePicker value={constitutedOn} onChange={setConstitutedOn} ariaLabel="Constituido el" error={Boolean(fieldErrors.constitutedOn)} /></Field>
+        <Field label="Mandato hasta" required error={fieldErrors.mandateEndsOn?.[0]}><DatePicker value={mandateEndsOn} onChange={setMandateEndsOn} ariaLabel="Mandato hasta" error={Boolean(fieldErrors.mandateEndsOn)} /></Field>
       </div>
       <EvidenceField label="Evidencia del acta de constitución" helper="Sube el acta de constitución, o pega su enlace." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
     </div>
@@ -522,9 +578,10 @@ function RecordMeetingDialog({ open, onOpenChange, committeeId, openSlots, onDon
   const [evidenceUrl, setEvidenceUrl] = React.useState("")
   const [drafts, setDrafts] = React.useState<DraftAgreement[]>([])
   const [pending, setPending] = React.useState(false)
+  const [fieldErrors, setFieldErrors] = React.useState<FieldErrors>({})
 
   function reset() {
-    setSlotId("_none"); setHeldOn(""); setAgenda(""); setMinutes(""); setQuorumReached(true); setEvidenceUrl(""); setDrafts([])
+    setSlotId("_none"); setHeldOn(""); setAgenda(""); setMinutes(""); setQuorumReached(true); setEvidenceUrl(""); setDrafts([]); setFieldErrors({})
   }
 
   function updateDraft(index: number, patch: Partial<DraftAgreement>) {
@@ -549,6 +606,7 @@ function RecordMeetingDialog({ open, onOpenChange, committeeId, openSlots, onDon
           targetDate: draft.targetDate,
         })),
       })
+      setFieldErrors(result.ok ? {} : (result.fieldErrors ?? {}))
       if (result.ok) { onOpenChange(false); reset() }
       onDone(result.ok ? undefined : result.message)
     } finally { setPending(false) }
@@ -573,11 +631,17 @@ function RecordMeetingDialog({ open, onOpenChange, committeeId, openSlots, onDon
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Fecha y hora de la sesión" required><Input type="datetime-local" value={heldOn} onChange={(event) => setHeldOn(event.target.value)} /></Field>
+        {/* El acta se registra después de la sesión y el servicio rechaza una
+            fecha futura: el calendario no ofrece días posteriores a hoy. */}
+        <Field label="Fecha y hora de la sesión" required error={fieldErrors.heldOn?.[0]}><DateTimePicker value={heldOn} onChange={setHeldOn} max={toLocalInputValue(new Date())} error={Boolean(fieldErrors.heldOn)} /></Field>
         <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={quorumReached} onChange={(event) => setQuorumReached(event.target.checked)} /> Hubo quórum</label>
       </div>
-      <Field label="Tabla / agenda" required><Textarea value={agenda} onChange={(event) => setAgenda(event.target.value)} rows={2} maxLength={5000} /></Field>
-      <Field label="Acta" required helper="Mínimo 20 caracteres."><Textarea value={minutes} onChange={(event) => setMinutes(event.target.value)} rows={5} maxLength={20000} /></Field>
+      {/* #35: el servicio no acredita ni llena casilla sin quórum; se dice antes de enviar. */}
+      {!quorumReached ? (
+        <p className="text-xs text-[var(--color-warning-ink)]">Sin quórum el acta queda registrada, pero no acredita la N°81 ni cumple una casilla del programa: deja la casilla en «Ninguna».</p>
+      ) : null}
+      <Field label="Tabla / agenda" required error={fieldErrors.agenda?.[0]}><Textarea value={agenda} onChange={(event) => setAgenda(event.target.value)} rows={2} maxLength={5000} /></Field>
+      <Field label="Acta" required helper="Mínimo 20 caracteres." error={fieldErrors.minutes?.[0]}><Textarea value={minutes} onChange={(event) => setMinutes(event.target.value)} rows={5} maxLength={20000} /></Field>
       <EvidenceField label="Evidencia del acta" helper="Sube el acta firmada, o pega su enlace." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
 
       <div className="rounded-lg border border-[var(--color-border)] p-3">
@@ -609,7 +673,7 @@ function RecordMeetingDialog({ open, onOpenChange, committeeId, openSlots, onDon
                       </SelectContent>
                     </Select>
                   </Field>
-                  <Field label="Plazo" required><Input type="date" value={draft.targetDate} onChange={(event) => updateDraft(index, { targetDate: event.target.value })} /></Field>
+                  <Field label="Plazo" required><DatePicker value={draft.targetDate} onChange={(targetDate) => updateDraft(index, { targetDate })} ariaLabel={`Plazo del acuerdo ${index + 1}`} /></Field>
                 </div>
               </div>
             ))}
@@ -628,14 +692,16 @@ function DesignateCoordinatorDialog({ open, onOpenChange, worksiteId, workers, o
   const [designatedOn, setDesignatedOn] = React.useState("")
   const [evidenceUrl, setEvidenceUrl] = React.useState("")
   const [pending, setPending] = React.useState(false)
+  const [fieldErrors, setFieldErrors] = React.useState<FieldErrors>({})
 
   const [prevOpen, setPrevOpen] = React.useState(open)
-  if (open !== prevOpen) { setPrevOpen(open); if (open) { setWorkerId(""); setDesignatedOn(""); setEvidenceUrl("") } }
+  if (open !== prevOpen) { setPrevOpen(open); if (open) { setWorkerId(""); setDesignatedOn(""); setEvidenceUrl(""); setFieldErrors({}) } }
 
   async function save() {
     setPending(true)
     try {
       const result = await designateGrdCoordinatorAction({ worksiteId, workerId, designatedOn, evidenceUrl })
+      setFieldErrors(result.ok ? {} : (result.fieldErrors ?? {}))
       if (result.ok) onOpenChange(false)
       onDone(result.ok ? undefined : result.message)
     } finally { setPending(false) }
@@ -650,13 +716,13 @@ function DesignateCoordinatorDialog({ open, onOpenChange, worksiteId, workers, o
       </DialogDescription>
     </DialogHeader>
     <div className="space-y-4">
-      <Field label="Persona" required>
+      <Field label="Persona" required error={fieldErrors.workerId?.[0]}>
         <Select value={workerId} onValueChange={setWorkerId}>
           <SelectTrigger><SelectValue placeholder="Selecciona a la persona" /></SelectTrigger>
           <SelectContent>{workers.map((worker) => <SelectItem key={worker.id} value={worker.id}>{worker.lastName}, {worker.firstName}</SelectItem>)}</SelectContent>
         </Select>
       </Field>
-      <Field label="Designado el" required><Input type="date" value={designatedOn} onChange={(event) => setDesignatedOn(event.target.value)} /></Field>
+      <Field label="Designado el" required error={fieldErrors.designatedOn?.[0]}><DatePicker value={designatedOn} onChange={setDesignatedOn} ariaLabel="Designado el" error={Boolean(fieldErrors.designatedOn)} /></Field>
       <EvidenceField label="Evidencia de la designación" helper="Sube el acta de designación, o pega su enlace." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
     </div>
     <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !workerId || !designatedOn || !evidenceUrl.trim()}>{pending ? "Designando..." : "Designar"}</Button></DialogFooter>

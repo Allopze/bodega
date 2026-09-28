@@ -22,7 +22,7 @@ export default async function PreventionPrivacyAuditPage() {
   const scope = resolveWorksiteScope(session)
   const [domainAudit, libraryAudit] = await Promise.all([
     listPreventionSensitiveAccessAudit(scope),
-    listGeneralLibrarySensitiveAccess(scope),
+    listGeneralLibrarySensitiveAccess(scope, session.user.permissions),
   ])
 
   return (

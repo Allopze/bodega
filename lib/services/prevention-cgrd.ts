@@ -27,7 +27,10 @@
  *   del CGRD, así que no hay regla que computar: `assessQuorum` del CPHS mide
  *   mayoría de titulares y presencia de ambas representaciones, y eso existe
  *   porque el CPHS es bipartito por DS 54. Quien registra el acta declara si
- *   hubo quórum y queda registrado con autor y fecha en la bitácora.
+ *   hubo quórum y queda registrado con autor y fecha en la bitácora. Esa
+ *   declaración sí condiciona el acta (#35): sin quórum la sesión se registra
+ *   —existió y lo tratado queda— pero no es una sesión válida del comité, así
+ *   que no acredita la N°81 ni llena una casilla del programa.
  */
 import { z } from "zod"
 import { and, asc, eq, inArray, sql } from "drizzle-orm"
@@ -46,7 +49,7 @@ import {
 } from "@/db/schema"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { nanoid } from "@/lib/id"
-import { codeYear } from "@/lib/utils"
+import { codeYear, todayInChile } from "@/lib/utils"
 import {
   GRD_COMMITTEE_MIN_HEADCOUNT,
   grdStructureSatisfies,
@@ -592,6 +595,21 @@ export async function listGrdMatrices(access: CgrdAccess, worksiteId?: string) {
  */
 export async function recordGrdMeeting(input: unknown, access: CgrdAccess) {
   const data = grdMeetingRecordSchema.parse(input)
+  /* #35: el acta es de una sesión ya realizada. Una fecha futura acreditaba
+   * por adelantado la N°81 de una sesión que todavía no ocurre. Se compara el
+   * día civil chileno: en UTC, una sesión de las 21:00 de hoy ya sería
+   * "mañana". */
+  if (todayInChile(data.heldOn) > todayInChile()) {
+    throw new Error("La fecha de la sesión no puede ser futura: el acta se registra después de realizada.")
+  }
+  /* #35: no se rechaza el acta sin quórum —cerrarla sin quórum sigue siendo
+   * posible, porque la sesión ocurrió y sus acuerdos se persiguen igual—, pero
+   * no cuenta como sesión del comité: no puede cumplir una casilla del programa
+   * y más abajo no acredita la N°81. Se avisa en vez de ignorar la casilla en
+   * silencio, que dejaría a quien la eligió creyendo que quedó cumplida. */
+  if (data.slotId && !data.quorumReached) {
+    throw new Error("Una sesión sin quórum no cumple la casilla del programa. Regístrala sin casilla: queda en la bitácora, pero no acredita la N°81.")
+  }
 
   const result = await db.transaction(async (tx) => {
     const [committee] = await tx.select().from(preventionGrdCommittees).where(eq(preventionGrdCommittees.id, data.committeeId)).limit(1)
@@ -679,6 +697,8 @@ export async function recordGrdMeeting(input: unknown, access: CgrdAccess) {
    * del programa activo (`yearOfOccurrence`). Acreditar con la fecha de
    * digitación le anotaría a septiembre una sesión de junio, y dejaría fuera
    * del programa una sesión de diciembre cargada en enero. */
+  // #35: sin quórum no hay sesión válida que acreditar (ver arriba).
+  if (!result.meeting.quorumReached) return result.meeting
   await onGrdMeetingClosed({
     meetingId: result.meeting.id, worksiteId: result.worksiteId,
     heldOn: result.meeting.heldOn, evidenceUrl: result.meeting.evidenceUrl,

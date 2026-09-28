@@ -147,6 +147,13 @@ const JOBS = Object.freeze({
     kind: "sync",
     codePrefix: "PREVENTION_CRON_",
   },
+  // #18: suspende los permisos de trabajo vigentes cuya ventana venció.
+  "prevention-permit-expiry": {
+    url: "http://app:3000/api/cron/prevention-permit-expiry",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "PREVENTION_CRON_",
+  },
   "pdtp-evidence-integrity": {
     url: "http://app:3000/api/cron/pdtp-evidence-integrity",
     timeoutMs: 5 * 60 * 1_000,

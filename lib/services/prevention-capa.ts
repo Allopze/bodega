@@ -14,6 +14,7 @@ import {
   worksiteUsers,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import type { RequestContext } from "@/lib/services/prevention-documents/utils"
@@ -23,6 +24,9 @@ import type { CapaQuickFilter } from "@/lib/prevention/capa-list-filters"
 import { chileDateParts, codeYear, todayInChile} from "@/lib/utils"
 import { checkEvidence, describeEvidenceProblems } from "@/lib/validation/evidence-contract"
 import { assertPdtpEvidenceLinkable } from "@/lib/services/pdtp/evidence-references"
+import { createHash } from "node:crypto"
+import { readFile } from "node:fs/promises"
+import { resolveCapaEvidenceFile } from "@/lib/storage/config"
 import { REASON_MAX_LENGTH, isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
 export const CAPA_STATUSES = [
@@ -803,6 +807,11 @@ export async function addCapaEvidenceWithClient(
       scope: access.scope.mode === "all" ? "all" : access.scope.ids,
       userId: access.ctx.userId,
     })
+    await assertCapaEvidenceFileAuthentic(client, {
+      reference: input.reference,
+      checksumSha256: input.checksumSha256,
+      worksiteId: current.worksiteId,
+    })
     const now = new Date().toISOString()
     const [evidence] = await client.insert(preventionCapaEvidence).values({
       id: `capae-${nanoid()}`,
@@ -824,6 +833,24 @@ export async function addCapaEvidenceWithClient(
       changeSet: { evidenceId: evidence!.id, kind: input.kind }, actorUserId: access.ctx.userId, createdAt: now,
     })
     return { evidence: evidence!, action: updated }
+}
+
+/**
+ * Compuerta de la subida de un archivo de evidencia (B9): la ruta que lo guarda
+ * no escribe la evidencia —eso lo hace `addCapaEvidence` con la ruta y el
+ * checksum que devuelve—, pero no debe aceptar archivos para una CAPA fuera de
+ * la faena de quien sube, ni para una que ya no admite evidencia.
+ */
+export async function assertCapaEvidenceUploadAllowed(args: {
+  actionId: string
+  scope: WorksiteScope
+  permissions: readonly string[]
+}) {
+  requirePermission(args.permissions, "prevention:capa:complete")
+  const [action] = await db.select({ worksiteId: preventionCapaActions.worksiteId, status: preventionCapaActions.status })
+    .from(preventionCapaActions).where(eq(preventionCapaActions.id, args.actionId)).limit(1)
+  if (!action || !scopeAllows(args.scope, action.worksiteId)) throw new Error("Acción CAPA no encontrada o fuera de alcance.")
+  if (["closed", "cancelled"].includes(action.status)) throw new Error("No se puede agregar evidencia a una acción cerrada o cancelada.")
 }
 
 export async function addCapaEvidence(args: {
@@ -1125,12 +1152,25 @@ function capaStatusLabel(status: string) {
 }
 
 export async function buildCapaExport(args: {
+  ctx: RequestContext
   scope: WorksiteScope
   permissions: readonly string[]
 }): Promise<ReportData> {
   const actions = await listCapaActions(args)
   const actionIds = actions.slice(0, 10_000).map((item) => item.id)
   const rowLimitApplied = actions.length > 10_000
+  // Mismo rastro que el registro de incidentes (`buildIncidentRegisterExport`):
+  // el Excel CAPA saca hallazgos, responsables y evidencia de la plataforma, y
+  // sin esta línea no quedaba quién lo descargó ni cuántas acciones llevaba.
+  await recordAudit({
+    userId: args.ctx.userId,
+    action: "export",
+    entityType: "prevention_capa_register",
+    entityId: "scope",
+    newState: { actionCount: actionIds.length, rowLimitApplied },
+    reason: "Exportación Excel de acciones CAPA dentro del alcance autorizado",
+    ipAddress: args.ctx.ip,
+  })
   if (actionIds.length === 0) {
     return {
       filenameBase: `capa_${todayInChile()}`,
@@ -1228,5 +1268,51 @@ export async function buildCapaExport(args: {
       },
     ],
     rowLimitApplied,
+  }
+}
+
+/**
+ * Evidencia subida desde la propia CAPA (`storage/capa-evidence/`).
+ *
+ * La subida calcula el SHA-256 en el servidor, pero el formulario lo devuelve
+ * junto con la ruta y hasta ahora se guardaban tal cual: un checksum inventado,
+ * o una ruta a un archivo que no existe, bastaba para que el contrato de
+ * evidencia diera por implementada la acción. Por eso el checksum se recalcula
+ * sobre el archivo guardado. Y una ruta ya vinculada a una CAPA de otra faena no
+ * se adopta, mismo criterio que `assertPdtpEvidenceLinkable` para el PDTP.
+ *
+ * Sin registro de dueño de la subida (como `pdtp_evidence_uploads`): el nombre
+ * es un nanoid de 20 caracteres y no hay ruta para descargarlo, así que lo que
+ * importa acá es que el archivo sea el declarado. Rutas de otros directorios no
+ * se tocan.
+ */
+async function assertCapaEvidenceFileAuthentic(
+  client: DB | Tx,
+  input: { reference: string; checksumSha256?: string | null; worksiteId: string },
+): Promise<void> {
+  const absolutePath = resolveCapaEvidenceFile(input.reference)
+  if (!absolutePath) return
+
+  let content: Buffer
+  try {
+    content = await readFile(absolutePath)
+  } catch {
+    throw new Error("El archivo de evidencia no está en el almacenamiento. Vuelve a subirlo.")
+  }
+  const actual = createHash("sha256").update(content).digest("hex")
+  if (!input.checksumSha256 || actual !== input.checksumSha256.toLowerCase()) {
+    throw new Error("El archivo de evidencia no corresponde al que se subió. Vuelve a subirlo.")
+  }
+
+  const linkedElsewhere = await client.select({ worksiteId: preventionCapaActions.worksiteId })
+    .from(preventionCapaEvidence)
+    .innerJoin(preventionCapaActions, eq(preventionCapaActions.id, preventionCapaEvidence.actionId))
+    .where(and(
+      eq(preventionCapaEvidence.reference, input.reference),
+      ne(preventionCapaActions.worksiteId, input.worksiteId),
+    ))
+    .limit(1)
+  if (linkedElsewhere.length > 0) {
+    throw new Error("Este archivo de evidencia ya está vinculado a una acción de otra faena. Sube el archivo desde esta faena.")
   }
 }

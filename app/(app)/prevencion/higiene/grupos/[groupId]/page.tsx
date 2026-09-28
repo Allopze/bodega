@@ -25,9 +25,12 @@ export default async function GrupoPage({ params }: { params: Promise<{ groupId:
   const detail = await listGroupMeasurements(groupId, access)
   if (!detail) notFound()
 
-  const canManage = auth.user.permissions.includes("prevention:hygiene:manage")
+  // Incorporar integrantes es `assess` en el servidor (`addExposureGroupMember`):
+  // con `manage` —el catálogo global de agentes— el prevencionista de faena,
+  // que sí puede hacerlo, no veía el botón (D8).
+  const canAssess = auth.user.permissions.includes("prevention:hygiene:assess")
   const canMeasure = auth.user.permissions.includes("prevention:hygiene:measure")
-  const allWorkers = canManage ? await listHygieneWorkers(access) : []
+  const allWorkers = canAssess ? await listHygieneWorkers(access) : []
   const eligibleWorkers = allWorkers.filter((worker) => worker.worksiteId === detail.group.worksiteId)
 
   return (
@@ -86,7 +89,7 @@ export default async function GrupoPage({ params }: { params: Promise<{ groupId:
           name: `${worker.lastName}, ${worker.firstName}`,
           position: worker.position,
         }))}
-        canManage={canManage}
+        canAssess={canAssess}
         canMeasure={canMeasure}
       />
     </PageContainer>

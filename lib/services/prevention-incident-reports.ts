@@ -38,7 +38,9 @@ import { preventionIncidentPublicReports, worksites } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { INCIDENT_REPORT_CATEGORIES } from "@/lib/prevention/incident-report-categories"
-import { codeYear } from "@/lib/utils"
+import { INCIDENT_EVENT_TYPES, reportPreventionIncident, type IncidentAccess } from "@/lib/services/prevention-incidents"
+import { chileLocalDateTimeToUtc, codeYear } from "@/lib/utils"
+import { reasonSchema } from "@/lib/validation/reason-thresholds"
 
 export { INCIDENT_REPORT_CATEGORIES, INCIDENT_REPORT_CATEGORY_LABELS } from "@/lib/prevention/incident-report-categories"
 
@@ -116,29 +118,87 @@ export async function listPublicIncidentReports(args: {
     .limit(args.limit ?? 100)
 }
 
-/**
- * Cierra el triage de un reporte. No abre el incidente formal por sí solo: eso
- * sigue pasando por `reportPreventionIncident`, con su permiso y sus plazos.
+/*
+ * Triage del buzón. Antes existía `triagePublicIncidentReport` sin llamador y
+ * sin acceso: ni permiso ni faena, así que no podía exponerse y los reportes
+ * quedaban `pending` para siempre. Las dos salidas exigen ahora el permiso de
+ * triage de incidentes en la faena del reporte, el mismo que clasifica un
+ * incidente formal: decidir si algo es un incidente es el mismo acto.
  */
-export async function triagePublicIncidentReport(args: {
-  reportId: string
-  status: "triaged" | "discarded"
-  notes: string
-  incidentId?: string | null
-  actorUserId: string
-}) {
+
+const TRIAGE_PERMISSION = "prevention:incidents:triage"
+
+async function loadPendingReportForTriage(reportId: string, access: IncidentAccess) {
+  const [report] = await db.select().from(preventionIncidentPublicReports)
+    .where(eq(preventionIncidentPublicReports.id, reportId)).limit(1)
+  const inScope = report && (access.scope.mode === "all"
+    || (access.scope.mode === "some" && access.scope.ids.includes(report.worksiteId)))
+  if (!report || !inScope || !access.permissions.includes(TRIAGE_PERMISSION)) {
+    throw new Error("Reporte no encontrado o fuera de alcance.")
+  }
+  if (report.status !== "pending") throw new Error("El reporte ya fue triado o no existe.")
+  return report
+}
+
+const discardSchema = z.object({
+  reportId: z.string().min(1),
+  reason: reasonSchema("por qué se descarta el reporte"),
+})
+
+/** Descarta un reporte del buzón con motivo. No abre ni toca incidentes. */
+export async function discardPublicIncidentReport(args: { reportId: string; reason: string; access: IncidentAccess }) {
+  const data = discardSchema.parse({ reportId: args.reportId, reason: args.reason })
+  await loadPendingReportForTriage(data.reportId, args.access)
   const now = new Date().toISOString()
   const [updated] = await db.update(preventionIncidentPublicReports).set({
-    status: args.status,
-    triagedByUserId: args.actorUserId,
+    status: "discarded",
+    triagedByUserId: args.access.ctx.userId,
     triagedAt: now,
-    triageNotes: args.notes,
-    incidentId: args.incidentId ?? null,
+    triageNotes: data.reason,
+    incidentId: null,
     updatedAt: now,
   }).where(and(
-    eq(preventionIncidentPublicReports.id, args.reportId),
+    eq(preventionIncidentPublicReports.id, data.reportId),
     eq(preventionIncidentPublicReports.status, "pending"),
   )).returning()
   if (!updated) throw new Error("El reporte ya fue triado o no existe.")
   return updated
+}
+
+const convertSchema = z.object({
+  reportId: z.string().min(1),
+  eventType: z.enum(INCIDENT_EVENT_TYPES, "Selecciona el tipo de evento"),
+  companyName: z.string().trim().min(2, "Indica la empresa del evento").max(300),
+  occurredTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Indica la hora aproximada del evento"),
+  notes: reasonSchema("por qué se abre el incidente"),
+})
+
+/**
+ * Convierte un reporte del buzón en el incidente formal, por la misma puerta
+ * que cualquier reporte (`reportPreventionIncident`: su permiso, sus carriles y
+ * sus plazos). Lo que el trabajador escribió se copia tal cual; quien tría sólo
+ * aporta lo que el canal no pide —tipo de evento, empresa y hora—.
+ */
+export async function convertPublicIncidentReport(args: { input: unknown; access: IncidentAccess }) {
+  const data = convertSchema.parse(args.input)
+  const report = await loadPendingReportForTriage(data.reportId, args.access)
+  return reportPreventionIncident({
+    access: args.access,
+    input: {
+      // Determinista por reporte: un doble envío del diálogo es un replay, no
+      // un segundo expediente.
+      clientSubmissionId: `public-report:${report.id}`,
+      worksiteId: report.worksiteId,
+      companyName: data.companyName,
+      eventType: data.eventType,
+      occurredAt: chileLocalDateTimeToUtc(`${report.occurredAt}T${data.occurredTime}`),
+      // La organización conoció el hecho cuando el reporte llegó al buzón, no
+      // cuando alguien lo leyó: desde ahí corre el plazo DIAT/DIEP.
+      knownAt: new Date(report.createdAt).toISOString(),
+      location: report.location,
+      initialNarrative: report.narrative,
+      people: [],
+    },
+    fromPublicReport: { reportId: report.id, notes: data.notes },
+  })
 }

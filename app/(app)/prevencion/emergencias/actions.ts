@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { ZodError } from "zod"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -49,7 +50,7 @@ async function run(access: EmergencyAccess, action: string, operation: (access: 
     revalidatePath(`${BASE}/[planId]`, "page")
     return { ok: true }
   } catch (error) {
-    if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados.", fieldErrors: error.flatten().fieldErrors as Record<string, string[]> }
+    if (error instanceof ZodError) return actionErrorResult(error, "Revisa los campos marcados.")
     if (error instanceof EmergencyDomainError) return { ok: false, message: error.message }
     return unexpectedActionError(error, `prevencion/emergencias/${action}`)
   }
@@ -91,9 +92,7 @@ export async function addEmergencyRoleAction(input: unknown): Promise<ActionStat
 export async function linkResourcesToPlanAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:emergency:manage")
   if (guard.error) return guard.error
-  const session = guard.session
-  if (!session) return { ok: false, message: "Sesión no disponible." }
-  return run(accessFromSession(session), "linkResourcesToPlan", () => linkResourcesToPlan(input, session.user.id))
+  return run(accessFromSession(guard.session), "linkResourcesToPlan", (access) => linkResourcesToPlan(input, access))
 }
 
 export async function addEmergencyContactAction(input: unknown): Promise<ActionState> {
@@ -159,7 +158,7 @@ export async function remindEmergencyPlanApprovalAction(input: unknown): Promise
     revalidatePath(BASE)
     return { ok: true, data: { notified: result.notified } }
   } catch (error) {
-    if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados." }
+    if (error instanceof ZodError) return actionErrorResult(error, "Revisa los campos marcados.")
     if (error instanceof EmergencyDomainError) return { ok: false, message: error.message }
     return unexpectedActionError(error, "prevencion/emergencias/remind-plan-approval")
   }
@@ -174,7 +173,7 @@ export async function recordDrillSlotStatusAction(input: unknown): Promise<Actio
     revalidatePath(BASE)
     return { ok: true }
   } catch (error) {
-    if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados." }
+    if (error instanceof ZodError) return actionErrorResult(error, "Revisa los campos marcados.")
     if (error instanceof EmergencyDomainError) return { ok: false, message: error.message }
     return unexpectedActionError(error, "prevencion/emergencias/record-drill-slot")
   }

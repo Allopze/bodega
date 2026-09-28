@@ -81,13 +81,15 @@ export default async function EvaluacionDetailPage({ params }: Props) {
   return (
     <PageContainer>
       <PageHeader
-        title={`Evaluación ${evaluation.definicionCode}`}
+        // El código (`trabajador_nuevo`) es la llave interna de la definición;
+        // lo que la persona reconoce es su título (regla A6 de AGENTS.md).
+        title={definition.title}
         description={`${workerName} · ${worksiteName}`}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio",        href: "/dashboard"  },
             { label: "Evaluaciones SST", href: "/prevencion" },
-            { label: evaluation.definicionCode               },
+            { label: definition.title                         },
           ]} />
         }
       />

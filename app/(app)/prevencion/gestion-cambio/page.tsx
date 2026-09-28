@@ -5,6 +5,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { listChangeRequests, listChangeWorksites } from "@/lib/services/prevention-change"
+import { NewChangeDialog } from "./change-dialogs"
 import { ChangeList } from "./change-list"
 
 export const metadata: Metadata = { title: "Gestión del cambio" }
@@ -36,6 +37,10 @@ export default async function GestionCambioPage() {
           { label: "Prevención" },
           { label: "Gestión del cambio" },
         ]} />}
+        // Layout 5 / A3: crear es una acción de página, así que vive en el
+        // header y no en una fila propia sobre la tabla. El estado vacío
+        // conserva su CTA (A4).
+        actions={canManage && worksites.length > 0 ? <NewChangeDialog worksites={worksites} /> : undefined}
       />
       <ChangeList
         changes={changes.map((row) => ({

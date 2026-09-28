@@ -13,10 +13,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   ENERGY_SOURCE_LABELS,
   PERMIT_CREW_ROLE_LABELS,
-  PERMIT_STATUS_LABELS,
   PERMIT_TRANSITIONS,
   RESIDUAL_RISK_LABELS,
-  permitStatusBadgeVariant,
+  permitStatusMeta,
 } from "@/lib/prevention/permits"
 import { formatDate, formatDateTime } from "@/lib/utils"
 import {
@@ -193,7 +192,7 @@ export function PermitDetail({
   })
 
   const facts = [
-    { label: "Estado", value: PERMIT_STATUS_LABELS[permit.status] ?? permit.status },
+    { label: "Estado", value: permitStatusMeta(permit).label },
     { label: "Tipo", value: `${typeName} (${typeCode})` },
     { label: "Faena", value: worksiteName },
     { label: "Lugar", value: permit.location },
@@ -218,7 +217,7 @@ export function PermitDetail({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <MetaBadge meta={{ label: PERMIT_STATUS_LABELS[permit.status] ?? permit.status, variant: permitStatusBadgeVariant(permit.status) }} />
+          <MetaBadge meta={permitStatusMeta(permit)} />
           {note?.text && <span className="text-sm text-[var(--color-text-subtle)]">{note.label}: {note.text}</span>}
         </div>
         <div className="flex flex-wrap gap-2">

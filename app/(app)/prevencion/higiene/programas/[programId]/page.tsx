@@ -25,8 +25,10 @@ export default async function ProgramaPage({ params }: { params: Promise<{ progr
   const detail = await listProgramEnrollments(programId, access)
   if (!detail) notFound()
 
-  const canManage = auth.user.permissions.includes("prevention:hygiene:manage")
-  const allGroups = canManage ? await listExposureGroups(access) : []
+  // Matricular y registrar resultados son `assess` en el servidor
+  // (`enrollGroupInSurveillance`, `recordSurveillanceOutcome`), no `manage` (D8).
+  const canAssess = auth.user.permissions.includes("prevention:hygiene:assess")
+  const allGroups = canAssess ? await listExposureGroups(access) : []
   const eligibleGroups = allGroups.filter((row) => row.group.worksiteId === detail.program.worksiteId && row.group.isActive)
 
   return (
@@ -61,9 +63,10 @@ export default async function ProgramaPage({ params }: { params: Promise<{ progr
           status: item.status,
           attendedOn: item.attendedOn,
           absenceReason: item.absenceReason,
+          updatedAt: item.updatedAt,
         }))}
         eligibleGroups={eligibleGroups.map((row) => ({ id: row.group.id, name: row.group.name, memberCount: row.memberCount }))}
-        canManage={canManage}
+        canAssess={canAssess}
       />
     </PageContainer>
   )

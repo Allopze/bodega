@@ -43,6 +43,23 @@ export function permitStatusBadgeVariant(status: string): "default" | "info" | "
   return "default"
 }
 
+/**
+ * Estado a mostrar. Un permiso aprobado cuya ventana planificada ya pasó sigue
+ * `approved` en la base —cancelarlo solo exigiría un actor de sistema que el
+ * CHECK de cancelación no admite— pero ya no se puede activar
+ * (`window_expired`, mismo corte que este). Rotularlo «Aprobado» hacía creer
+ * que seguía disponible.
+ */
+export function permitStatusMeta(
+  permit: { status: string; plannedEndAt: string },
+  now: string = new Date().toISOString(),
+): { label: string; variant: ReturnType<typeof permitStatusBadgeVariant> } {
+  if (permit.status === "approved" && Date.parse(permit.plannedEndAt) <= Date.parse(now)) {
+    return { label: "Vencido sin activar", variant: "warning" }
+  }
+  return { label: PERMIT_STATUS_LABELS[permit.status] ?? permit.status, variant: permitStatusBadgeVariant(permit.status) }
+}
+
 export const PERMIT_TRANSITIONS: Record<string, readonly string[]> = {
   draft: ["pending_approval", "cancelled"],
   pending_approval: ["approved", "rejected", "cancelled"],

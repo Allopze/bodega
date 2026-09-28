@@ -24,6 +24,13 @@ export interface DateTimePickerProps {
   id?: string
   disabled?: boolean
   error?: boolean
+  /**
+   * Cotas locales `YYYY-MM-DDTHH:mm`. Acotan el calendario por su parte de
+   * fecha —el control de hora es un `<input type="time">` que no sabe del día—,
+   * así que la hora exacta la sigue validando el servidor.
+   */
+  min?: string
+  max?: string
   "aria-describedby"?: string
 }
 
@@ -40,6 +47,8 @@ export function DateTimePicker({
   id,
   disabled,
   error,
+  min,
+  max,
   "aria-describedby": ariaDescribedBy,
 }: DateTimePickerProps) {
   const initial = splitDateTime(defaultValue)
@@ -66,6 +75,8 @@ export function DateTimePicker({
         onChange={(nextDate) => update(nextDate, current.time)}
         disabled={disabled}
         error={error}
+        min={min?.slice(0, 10) || undefined}
+        max={max?.slice(0, 10) || undefined}
         ariaLabel="Fecha"
         aria-describedby={ariaDescribedBy}
       />

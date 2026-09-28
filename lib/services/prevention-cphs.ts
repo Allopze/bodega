@@ -697,8 +697,10 @@ const closeMeetingSchema = z.object({
 })
 
 /**
- * Cierra el acta. Exige quórum real —mayoría de titulares Y presencia de ambas
- * representaciones, ver `assessQuorum`—: sin él la sesión no produce acuerdos
+ * Cierra el acta. Exige quórum real —al menos un integrante presente de cada
+ * representación, titular o el suplente que lo reemplaza (DS 54 art. 17, ver
+ * `assessQuorum`); la mayoría de titulares se calcula y se informa, pero no
+ * condiciona el quórum—: sin él la sesión no produce acuerdos
  * válidos, así que el cierre se rechaza en vez de registrar una reunión que
  * el DS 44 no reconocería. Cada acuerdo se deriva a CAPA común.
  */

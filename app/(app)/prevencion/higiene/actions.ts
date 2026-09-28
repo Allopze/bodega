@@ -1,6 +1,6 @@
 "use server"
 
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 
 import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
@@ -38,7 +38,7 @@ async function run(access: HygieneAccess, operation: (access: HygieneAccess) => 
     revalidatePath(`${BASE}/programas/[programId]`, "page")
     return { ok: true }
   } catch (error) {
-    return { ok: false, message: safeActionMessage(error, "No se pudo completar la operación.") }
+    return actionErrorResult(error, "No se pudo completar la operación.")
   }
 }
 

@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
+import { FileText, ShieldCheck } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { CreateChoiceButton, type CreateChoice } from "@/components/ui/create-choice-button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
@@ -12,6 +14,7 @@ import { toLocalInputValue } from "@/lib/utils"
 import { createPermitTypeAction, createWorkPermitAction } from "./actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { useControllableDialog, type ControllableDialogProps } from "@/lib/hooks/use-controllable-dialog"
 import { nanoid } from "@/lib/id"
 
 interface PermitTypeItem {
@@ -35,12 +38,14 @@ interface WorkerOption {
 interface SupervisorOption {
   id: string
   name: string
+  /** Faenas donde puede verificar: el servicio exige la del permiso (#21). */
+  worksiteIds: string[]
 }
 
 /* ── Alta de tipo de permiso ──────────────────────────────────────────────── */
 
-export function PermitTypeDialog() {
-  const [open, setOpen] = React.useState(false)
+export function PermitTypeDialog(control: ControllableDialogProps = {}) {
+  const { open, setOpen, controlled } = useControllableDialog(control)
   const [requiresMeasurement, setRequiresMeasurement] = React.useState(false)
   const [requiresIsolation, setRequiresIsolation] = React.useState(false)
   const [requiresJsa, setRequiresJsa] = React.useState(true)
@@ -73,7 +78,7 @@ export function PermitTypeDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="secondary">Nuevo tipo</Button></DialogTrigger>
+      {!controlled && <DialogTrigger asChild><Button size="sm" variant="secondary">Nuevo tipo</Button></DialogTrigger>}
       <DialogContent>
         <form onSubmit={submit} className="max-h-[70vh] space-y-4 overflow-y-auto">
           <DialogHeader>
@@ -84,10 +89,10 @@ export function PermitTypeDialog() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Código"><Input name="code" required minLength={2} maxLength={60} placeholder="ESP-CONF" /></Field>
-            <Field label="Duración máxima (horas)"><Input name="maxDurationHours" type="number" min={1} max={72} defaultValue={12} required /></Field>
+            <Field label="Código" error={operation.fieldError("code")}><Input name="code" required minLength={2} maxLength={60} placeholder="ESP-CONF" /></Field>
+            <Field label="Duración máxima (horas)" error={operation.fieldError("maxDurationHours")}><Input name="maxDurationHours" type="number" min={1} max={72} defaultValue={12} required /></Field>
           </div>
-          <Field label="Nombre"><Input name="name" required minLength={3} maxLength={200} placeholder="Trabajo en espacio confinado" /></Field>
+          <Field label="Nombre" error={operation.fieldError("name")}><Input name="name" required minLength={3} maxLength={200} placeholder="Trabajo en espacio confinado" /></Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Checkbox
               label="Exige acuse del AST por la cuadrilla"
@@ -102,18 +107,18 @@ export function PermitTypeDialog() {
           </div>
           {requiresMeasurement && (
             <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Vigencia de la medición (minutos)" hint="Una lectura más antigua que esto ya no habilita.">
+              <Field label="Vigencia de la medición (minutos)" hint="Una lectura más antigua que esto ya no habilita." error={operation.fieldError("measurementValidityMinutes")}>
                 <Input name="measurementValidityMinutes" type="number" min={1} max={1440} defaultValue={60} required />
               </Field>
-              <Field label="Vigencia de la calibración (días)" hint="Opcional. Con un valor, el equipo debe declarar una calibración más reciente que eso para habilitar.">
+              <Field label="Vigencia de la calibración (días)" hint="Opcional. Con un valor, el equipo debe declarar una calibración más reciente que eso para habilitar." error={operation.fieldError("measurementCalibrationValidityDays")}>
                 <Input name="measurementCalibrationValidityDays" type="number" min={1} max={3650} />
               </Field>
             </div>
           )}
-          <Field label="Fundamento normativo" hint="Mínimo 5 caracteres.">
+          <Field label="Fundamento normativo" hint="Mínimo 5 caracteres." error={operation.fieldError("legalBasis")}>
             <Textarea name="legalBasis" required minLength={5} maxLength={2000} placeholder="DS 44/2024 art. 18: tarea crítica" />
           </Field>
-          <Field label="Descripción"><Textarea name="description" maxLength={2000} /></Field>
+          <Field label="Descripción" error={operation.fieldError("description")}><Textarea name="description" maxLength={2000} /></Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Crear tipo</Button></DialogFooter>
         </form>
@@ -124,22 +129,29 @@ export function PermitTypeDialog() {
 
 /* ── Alta de permiso ──────────────────────────────────────────────────────── */
 
-export function NewPermitDialog({ types, worksites, workers, supervisors }: {
+export function NewPermitDialog({ types, worksites, workers, supervisors, ...control }: {
   types: PermitTypeItem[]
   worksites: { id: string; name: string }[]
   workers: WorkerOption[]
   supervisors: SupervisorOption[]
-}) {
-  const [open, setOpen] = React.useState(false)
+} & ControllableDialogProps) {
   const [typeId, setTypeId] = React.useState(types[0]?.id ?? "")
   const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
   const [crew, setCrew] = React.useState<Record<string, string>>({})
   const [workerQuery, setWorkerQuery] = React.useState("")
   const [controls, setControls] = React.useState<{ id: string; description: string; isMandatory: boolean }[]>([])
-  const [supervisorUserId, setSupervisorUserId] = React.useState(supervisors[0]?.id ?? "")
+  const supervisorsFor = (id: string) => supervisors.filter((item) => item.worksiteIds.includes(id))
+  const [supervisorUserId, setSupervisorUserId] = React.useState(supervisorsFor(worksites[0]?.id ?? "")[0]?.id ?? "")
   const [defaultStart, setDefaultStart] = React.useState("")
   const [defaultEnd, setDefaultEnd] = React.useState("")
   const operation = useOperation()
+  const { open, setOpen, controlled } = useControllableDialog(control, () => {
+    // datetime-local espera hora local; toISOString() (UTC) adelantaba
+    // el prefill 3-4 h respecto de la hora chilena.
+    const now = new Date()
+    setDefaultStart(toLocalInputValue(now))
+    setDefaultEnd(toLocalInputValue(new Date(now.getTime() + 4 * 3_600_000)))
+  })
 
   const type = types.find((item) => item.id === typeId)
   const eligible = workers.filter((worker) => worker.worksiteId === worksiteId)
@@ -152,6 +164,9 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
   function changeWorksite(value: string) {
     setWorksiteId(value)
     setCrew({}) // la cuadrilla anterior pertenece a la faena anterior
+    // El supervisor también es de la faena: uno que no verifica en la nueva
+    // sería rechazado por el servicio al enviar.
+    setSupervisorUserId(supervisorsFor(value)[0]?.id ?? "")
   }
 
   function toggleWorker(workerId: string, checked: boolean) {
@@ -187,20 +202,8 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(value) => {
-        if (value) {
-          // datetime-local espera hora local; toISOString() (UTC) adelantaba
-          // el prefill 3-4 h respecto de la hora chilena.
-          const now = new Date()
-          setDefaultStart(toLocalInputValue(now))
-          setDefaultEnd(toLocalInputValue(new Date(now.getTime() + 4 * 3_600_000)))
-        }
-        setOpen(value)
-      }}
-    >
-      <DialogTrigger asChild><Button size="sm">Nuevo permiso</Button></DialogTrigger>
+    <Dialog open={open} onOpenChange={setOpen}>
+      {!controlled && <DialogTrigger asChild><Button size="sm">Nuevo permiso</Button></DialogTrigger>}
       <DialogContent>
         <form onSubmit={submit} className="max-h-[70vh] space-y-4 overflow-y-auto">
           <DialogHeader>
@@ -236,8 +239,8 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
           </Field>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Supervisor">
-              <Select value={supervisorUserId} onValueChange={setSupervisorUserId}><SelectTrigger><SelectValue placeholder="Selecciona supervisor" /></SelectTrigger><SelectContent>{supervisors.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="supervisorUserId" value={supervisorUserId} />
+            <Field label="Supervisor" hint={supervisorsFor(worksiteId).length === 0 ? "Nadie con permiso de verificar está asignado a esta faena." : undefined}>
+              <Select value={supervisorUserId} onValueChange={setSupervisorUserId}><SelectTrigger><SelectValue placeholder="Selecciona supervisor" /></SelectTrigger><SelectContent>{supervisorsFor(worksiteId).map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="supervisorUserId" value={supervisorUserId} />
             </Field>
             <Field label="Peligro MIPER de origen" hint="Opcional. ID del peligro en la matriz.">
               <Input name="riskEntryId" placeholder="ID del peligro en la MIPER" />
@@ -324,4 +327,41 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
       </DialogContent>
     </Dialog>
   )
+}
+
+/* ── Alta desde el header de página ───────────────────────────────────────── */
+
+/**
+ * Layout 5 / A3: "Nuevo tipo" y "Nuevo permiso" eran dos botones parecidos en
+ * la barra de filtros, lejos del "Exportar Excel" del header. Ahora hay un
+ * único "Nuevo" junto a Exportar que pregunta qué crear. Cada opción conserva
+ * su gateo: el tipo es catálogo (`permits:manage`); el permiso exige
+ * `permits:request` y al menos un tipo activo y una faena.
+ */
+export function PermitCreateButton({ canManage, canRequest, types, worksites, workers, supervisors }: {
+  canManage: boolean
+  canRequest: boolean
+  types: PermitTypeItem[]
+  worksites: { id: string; name: string }[]
+  workers: WorkerOption[]
+  supervisors: SupervisorOption[]
+}) {
+  const choices: CreateChoice[] = []
+  if (canRequest && types.length > 0 && worksites.length > 0) choices.push({
+    key: "permiso",
+    label: "Permiso de trabajo",
+    description: "Solicitud para una tarea crítica, con cuadrilla, AST y controles.",
+    icon: <FileText size={18} />,
+    soloLabel: "Nuevo permiso",
+    render: (state) => <NewPermitDialog types={types} worksites={worksites} workers={workers} supervisors={supervisors} {...state} />,
+  })
+  if (canManage) choices.push({
+    key: "tipo",
+    label: "Tipo de permiso",
+    description: "Catálogo: qué exige cada clase de trabajo (aislamiento, mediciones, AST) y su duración máxima.",
+    icon: <ShieldCheck size={18} />,
+    soloLabel: "Nuevo tipo",
+    render: (state) => <PermitTypeDialog {...state} />,
+  })
+  return <CreateChoiceButton choices={choices} description="Elige qué agregar a permisos de trabajo." />
 }

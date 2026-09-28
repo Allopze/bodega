@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -253,6 +254,9 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
   const filesRef = React.useRef<File[]>([])
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  // Reabrir deshace una verificación de eficacia: se confirma en un diálogo que
+  // pide el motivo (antes, un `window.prompt` sin mínimo visible).
+  const [reopenOpen, setReopenOpen] = React.useState(false)
   const estadoNuevo = selectedStatus ?? estado
 
   async function handleAddFollowup() {
@@ -328,13 +332,14 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
     }
   }
 
-  async function handleReopen() {
-    const motivo = window.prompt("Motivo de la reapertura:")
-    if (!motivo) return
+  async function handleReopen(motivo: string) {
     setPending(true)
     setError(null)
     try {
       const result = await reopenPdtpActionPlanItemAction({ itemId, motivo })
+      // El diálogo se cierra también si falla: el error se pinta en el panel,
+      // que el diálogo modal taparía.
+      setReopenOpen(false)
       if (!result.ok) setError(result.message ?? "Error al reabrir.")
       else onChange()
     } finally {
@@ -411,9 +416,20 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
               <Button size="sm" onClick={handleVerify} disabled={pending}>Verificar eficacia</Button>
             )}
             {canVerify && estado === "verificado" && (
-              <Button size="sm" variant="destructive" onClick={handleReopen} disabled={pending}>Reabrir</Button>
+              <Button size="sm" variant="destructive" onClick={() => setReopenOpen(true)} disabled={pending}>Reabrir</Button>
             )}
           </div>
+          <ConfirmDialog
+            open={reopenOpen}
+            onOpenChange={setReopenOpen}
+            title="Reabrir acción"
+            description="La acción deja de estar verificada y vuelve a seguimiento. El motivo queda en su historial."
+            variant="destructive"
+            confirmLabel="Reabrir"
+            reasonLabel="Motivo de la reapertura"
+            loading={pending}
+            onConfirm={(motivo) => { void handleReopen(motivo) }}
+          />
         </div>
       )}
     </div>

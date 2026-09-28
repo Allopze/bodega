@@ -1,13 +1,12 @@
 "use server"
 
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { markFollowup, getFollowups } from "@/lib/services/sst"
+import { markFollowup } from "@/lib/services/sst"
 import type { ActionState } from "@/lib/validation/sst"
 import type { sstFollowupMarkSchema } from "@/lib/validation/sst"
-import { sstScheduledFollowups } from "@/db/schema/sst"
 import type { z } from "zod"
 import { scopeToIds } from "./helpers"
 import { REVALIDATE } from "./revalidate"
@@ -28,23 +27,6 @@ export async function markFollowupAction(
     revalidateOperationalViews([REVALIDATE])
     return { ok: true, message: "Seguimiento actualizado" }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al actualizar el seguimiento") }
-  }
-}
-
-export async function getFollowupsAction(
-  evaluationId: string,
-): Promise<ActionState & { data?: { followups: typeof sstScheduledFollowups.$inferSelect[] } }> {
-  const { session, error } = await guardPermission("sst:view")
-  if (error) return error
-
-  const scope = resolveWorksiteScope(session)
-  const worksiteIds = scopeToIds(scope)
-
-  try {
-    const followups = await getFollowups(evaluationId, worksiteIds)
-    return { ok: true, data: { followups } }
-  } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al obtener seguimientos") }
+    return actionErrorResult(e, "Error al actualizar el seguimiento")
   }
 }

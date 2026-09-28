@@ -289,13 +289,18 @@ describe("enlace con la ejecución del libro (PREV-I08-d/e/f)", () => {
     expect(await marchIndicator()).toMatchObject({ planned: 2, executed: 1 })
   })
 
-  it("rechazar devuelve la ocurrencia a pendiente sin desenlazar; aprobar después la completa", async () => {
+  it("rechazar devuelve la ocurrencia a pendiente sin desenlazar; aprobar tras el reenvío la completa", async () => {
     await seedConfig({ connector: "campaigns" })
     await fact({ sourceType: "campana", sourceId: "camp-1", day: "03-02" })
     const execution = await executionForSource("camp-1")
     await rejectPdtpExecution(execution.id, APPROVER, "Falta el acta de la campaña", "all")
     expect((await instance(INST_A)).status).toBe("pending")
     expect((await executionForSource("camp-1")).scheduledInstanceId).toBe(INST_A)
+    // #23: una rechazada no se aprueba directo; antes el test lo hacía y así
+    // fijaba el defecto. El reenvío del mismo hecho la devuelve a 'submitted'.
+    await expect(approvePdtpExecution(execution.id, APPROVER, "all")).rejects.toThrow(/submitted/)
+    await fact({ sourceType: "campana", sourceId: "camp-1", day: "03-02" })
+    expect((await executionForSource("camp-1")).status).toBe("submitted")
     await approvePdtpExecution(execution.id, APPROVER, "all")
     expect((await instance(INST_A)).status).toBe("completed")
   })

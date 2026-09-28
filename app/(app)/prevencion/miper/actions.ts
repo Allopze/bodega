@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { ZodError } from "zod"
 import { unexpectedActionError } from "@/lib/actions/safe-server-action"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
@@ -10,8 +11,6 @@ import type { Permission } from "@/modules/permissions"
 import {
   addRiskEntry,
   createRiskMatrixDraft,
-  createRiskMethodology,
-  createRiskReviewTrigger,
   ensureIspRiskMethodology,
   resolveRiskReviewTrigger,
   transitionRiskMatrix,
@@ -54,7 +53,7 @@ async function run(access: RiskLegalAccess, operation: (access: RiskLegalAccess)
     revalidatePath("/prevencion/pdtp/cobertura")
     return { ok: true }
   } catch (error) {
-    if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados.", fieldErrors: error.flatten().fieldErrors as Record<string, string[]> }
+    if (error instanceof ZodError) return actionErrorResult(error, "Revisa los campos marcados.")
     return fail(error)
   }
 }
@@ -63,12 +62,6 @@ export async function ensureIspRiskMethodologyAction(): Promise<ActionState> {
   const guard = await guardPermission("prevention:risk:edit")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), ensureIspRiskMethodology)
-}
-
-export async function createRiskMethodologyAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:risk:edit")
-  if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => createRiskMethodology(input, access))
 }
 
 export async function createRiskMatrixDraftAction(input: unknown): Promise<ActionState> {
@@ -94,12 +87,6 @@ export async function transitionRiskMatrixAction(input: unknown): Promise<Action
   // La matriz publicada se arma y se sube a Cloudreve después de responder.
   if (state.ok && toStatus === "published") await scheduleGeneratedDocumentDrain(guard.session.user.id)
   return state
-}
-
-export async function createRiskReviewTriggerAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:risk:edit")
-  if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => createRiskReviewTrigger(input, access))
 }
 
 export async function resolveRiskReviewTriggerAction(input: unknown): Promise<ActionState> {

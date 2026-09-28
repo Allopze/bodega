@@ -4,7 +4,7 @@ import { can, requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { RiskMapPanel } from "./risk-map-panel"
+import { RiskMapHeaderActions, RiskMapPanel } from "./risk-map-panel"
 import { loadRiskMapProps } from "./risk-map-data"
 
 export const metadata: Metadata = { title: "Mapa de riesgos" }
@@ -41,6 +41,13 @@ export default async function MapaRiesgosPage() {
           { label: "Gestión de riesgos de desastres", href: "/prevencion/cgrd" },
           { label: "Mapa de riesgos" },
         ]} />}
+        actions={
+          <RiskMapHeaderActions
+            worksites={riskMap.worksites}
+            layoutWorksiteIds={riskMap.layouts.map((item) => item.worksiteId)}
+            canEdit={riskMap.canEdit}
+          />
+        }
       />
       <RiskMapPanel {...riskMap} />
     </PageContainer>

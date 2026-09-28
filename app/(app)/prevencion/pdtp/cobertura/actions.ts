@@ -1,8 +1,8 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { ZodError } from "zod"
-import { safeActionMessage } from "@/lib/action-error"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
@@ -23,12 +23,12 @@ async function run(access: RiskLegalAccess, operation: (access: RiskLegalAccess)
     revalidatePath("/prevencion/pdtp/cobertura")
     return { ok: true }
   } catch (error) {
-    if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados.", fieldErrors: error.flatten().fieldErrors as Record<string, string[]> }
+    if (error instanceof ZodError) return actionErrorResult(error, "Revisa los campos marcados.")
     // Los servicios PDTP lanzan sus reglas de negocio como `new Error("texto
     // para el operador")` y son la única pista de por qué la operación no
     // avanza. `safeActionMessage` las deja pasar y sigue ocultando los errores
     // de driver y de esquema.
-    return { ok: false, message: safeActionMessage(error, "No se pudo completar la acción. Intenta nuevamente.") }
+    return actionErrorResult(error, "No se pudo completar la acción. Intenta nuevamente.")
   }
 }
 

@@ -15,6 +15,7 @@ const PREVENTION_ALCOTEST_EVIDENCE_PREFIX = "storage/prevention-alcotest-evidenc
 const CAMPAIGN_EVIDENCE_PREFIX = "storage/campaign-evidence/"
 const CGRD_EVIDENCE_PREFIX = "storage/cgrd-evidence/"
 const HYGIENE_EVIDENCE_PREFIX = "storage/hygiene-evidence/"
+const CAPA_EVIDENCE_PREFIX = "storage/capa-evidence/"
 const RISK_MAP_PREFIX = "storage/risk-map/"
 const FUEL_IMPORT_PREFIX = "storage/imports/"
 const FUEL_TAE_EVIDENCE_PREFIX = "storage/fuel-tae/"
@@ -448,6 +449,29 @@ export function resolveHygieneEvidenceFile(filePath: string): string | null {
   const storageName = filePath.slice(HYGIENE_EVIDENCE_PREFIX.length)
   if (!isSafeStorageName(storageName)) return null
   return path.join(/*turbopackIgnore: true*/ resolveHygieneEvidenceDir(), storageName)
+}
+
+/* ── Evidencia de acciones CAPA ───────────────────────────────────────────
+ * El acta o la foto con que se implementa una acción correctiva subida desde la
+ * propia CAPA. Antes no había dónde subirla: el contrato de evidencia exige una
+ * ruta almacenada con su SHA-256 y sólo una URL externa lo cumplía.
+ */
+export function resolveCapaEvidenceDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "capa-evidence")
+}
+
+export function createCapaEvidencePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid capa evidence storage name")
+  }
+  return `${CAPA_EVIDENCE_PREFIX}${storageName}`
+}
+
+export function resolveCapaEvidenceFile(filePath: string): string | null {
+  if (!filePath.startsWith(CAPA_EVIDENCE_PREFIX)) return null
+  const storageName = filePath.slice(CAPA_EVIDENCE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolveCapaEvidenceDir(), storageName)
 }
 
 /* ── Evidencia de las casillas de alcotest ────────────────────────────────

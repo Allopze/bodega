@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 
 describe("Field", () => {
   it("renders label and children", () => {
@@ -86,6 +87,50 @@ describe("Field", () => {
     )
 
     expect(screen.getByLabelText("Observaciones")).toBeDefined()
+  })
+
+  /*
+   * Sin `htmlFor`, con ayuda o error, el label caía al layout con <div> y no se
+   * asociaba a nada: el control quedaba sin nombre accesible. Lo destapó el E2E
+   * de gestión del cambio (el textarea "Descripción del cambio" con su "Mínimo
+   * 10 caracteres." no se encontraba por su rótulo), y afectaba a cualquier
+   * Field sin id que mostrara un error por campo.
+   */
+  it("sin htmlFor, con ayuda, el control conserva su nombre y su descripción", () => {
+    render(
+      <Field label="Descripción del cambio" hint="Mínimo 10 caracteres.">
+        <Textarea name="description" />
+      </Field>,
+    )
+    const control = screen.getByRole("textbox", { name: "Descripción del cambio" })
+    expect(control).toHaveAccessibleDescription("Mínimo 10 caracteres.")
+  })
+
+  it("sin htmlFor, con error, el control conserva su nombre y queda inválido", () => {
+    render(
+      <Field label="Motivo" error="El motivo es obligatorio.">
+        <Input name="reason" />
+      </Field>,
+    )
+    const control = screen.getByRole("textbox", { name: "Motivo" })
+    expect(control).toHaveAccessibleDescription("El motivo es obligatorio.")
+    expect(control).toHaveAttribute("aria-invalid", "true")
+  })
+
+  /*
+   * Un control que declara su propio nombre lo conserva: inyectarle
+   * aria-labelledby lo pisaba ("Firma de prevencionista" pasaba a ser
+   * "Firma: prevencionista") y rompía a quien lo localiza por nombre (acta de
+   * cierre de inspecciones).
+   */
+  it("sin htmlFor, respeta el aria-label propio del control y sólo le suma la descripción", () => {
+    render(
+      <Field label="Firma: prevencionista" hint="Nombre de quien firma.">
+        <Input aria-label="Firma de prevencionista" />
+      </Field>,
+    )
+    const control = screen.getByRole("textbox", { name: "Firma de prevencionista" })
+    expect(control).toHaveAccessibleDescription("Nombre de quien firma.")
   })
 
   it("renders FieldGroup", () => {

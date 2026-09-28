@@ -52,6 +52,7 @@ export const PREVENTION_ALERT_JOBS = [
   "prevention-incident-reminders",
   "prevention-inspection-programs",
   "prevention-document-ack-reminders",
+  "prevention-permit-expiry",
   "sst-weekly-alerts",
   "deadline-reminders",
 ] as const

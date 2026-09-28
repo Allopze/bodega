@@ -6,11 +6,10 @@ import {
   preventionInspectionRuns,
   preventionInspectionTemplates,
 } from "@/db/schema"
-import { history, NOT_FOUND, nowIso, requireAccess, scopeAllows, type InspectionAccess } from "@/lib/services/prevention-inspections-access"
+import { history, NOT_FOUND, nowIso, scopeAllows, type InspectionAccess } from "@/lib/services/prevention-inspections-access"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import {
   assertInspectionRunTransition,
-  TRANSITION_REASON_MIN_LENGTH,
   type InspectionRunStatus,
 } from "@/lib/prevention/inspections"
 import { onInspectionCompleted, onInspectionReverted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
@@ -92,6 +91,7 @@ export async function transitionInspectionRun(input: unknown, access: Inspection
         description: finding.description,
         criticality: finding.criticality,
         capaActionId: finding.capaActionId,
+        status: finding.status,
       })),
     })
 
@@ -194,49 +194,4 @@ export async function transitionInspectionRun(input: unknown, access: Inspection
   })
 
   return result
-}
-
-/**
- * Reasignar el ejecutante de una inspección aún no ejecutada (función #12).
- *
- * Función hermana del motor de transiciones, no un destino más: no cambia de
- * estado. Meter cambios de campo arbitrarios en `transitionInspectionRun` lo
- * convertiría en un `update` genérico y le haría perder su valor como guarda.
- */
-export async function reassignInspectionRun(input: unknown, access: InspectionAccess) {
-  const data = z.object({
-    runId: z.string().min(1),
-    expectedVersion: z.number().int().positive(),
-    assignedToUserId: z.string().min(1).nullable(),
-    reason: z.string().trim().min(TRANSITION_REASON_MIN_LENGTH).max(3000),
-  }).parse(input)
-
-  return db.transaction(async (tx) => {
-    const [run] = await tx.select().from(preventionInspectionRuns)
-      .where(eq(preventionInspectionRuns.id, data.runId)).limit(1)
-    if (!run) throw new Error(NOT_FOUND)
-    requireAccess(access, "prevention:inspections:manage", run.worksiteId)
-    if (run.version !== data.expectedVersion) throw new Error("La inspección cambió mientras la editabas. Recarga y reintenta.")
-    if (!["planned", "in_progress"].includes(run.status)) {
-      throw new Error("Sólo puede reasignarse una inspección que aún no fue ejecutada.")
-    }
-
-    const now = nowIso()
-    const [updated] = await tx.update(preventionInspectionRuns).set({
-      assignedToUserId: data.assignedToUserId,
-      version: run.version + 1,
-      updatedAt: now,
-    }).where(and(
-      eq(preventionInspectionRuns.id, run.id),
-      eq(preventionInspectionRuns.version, data.expectedVersion),
-    )).returning()
-    if (!updated) throw new Error("La inspección cambió mientras la editabas. Recarga y reintenta.")
-
-    await history(tx, {
-      entityType: "run", entityId: run.id, worksiteId: run.worksiteId,
-      changeType: "reassigned", reason: data.reason,
-      beforeState: run, afterState: updated, actorUserId: access.userId,
-    })
-    return updated
-  })
 }
