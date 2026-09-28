@@ -45,17 +45,20 @@ export default async function PdtpTemplatesPage() {
         <div className="space-y-4">
           {templates.map((template) => (
             <section key={template.id} className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+              {/* Reflow 390 px: el bloque de texto es un ítem flex; sin `min-w-0`
+                  crece hasta el min-content de la descripción (una palabra
+                  larga, como un nombre de archivo) y se salía 76 px del pozo. */}
               <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-border)] px-4 py-4">
-                <div>
-                  <h2 className="font-semibold text-[var(--color-text)]">{template.name}</h2>
-                  <p className="mt-1 text-sm text-[var(--color-text-muted)]">{template.description || "Base reutilizable sin descripción."}</p>
+                <div className="min-w-0 flex-1 basis-60">
+                  <h2 className="break-words font-semibold text-[var(--color-text)]">{template.name}</h2>
+                  <p className="mt-1 break-words text-sm text-[var(--color-text-muted)]">{template.description || "Base reutilizable sin descripción."}</p>
                 </div>
                 <MetaBadge meta={{ label: `${template.isActive ? "Activa" : "Inactiva"}`, variant: template.isActive ? "success" : "default" }} />
               </div>
               <div className="divide-y divide-[var(--color-border)]">
                 {template.versions.map((version, index) => (
-                  <div key={version.id} className="grid gap-3 px-4 py-3 lg:grid-cols-[12rem_1fr]">
-                    <div>
+                  <div key={version.id} className="grid grid-cols-1 gap-3 px-4 py-3 lg:grid-cols-[12rem_minmax(0,1fr)]">
+                    <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold text-[var(--color-text)]">Versión {version.version}</span>
                         {index === 0 && <MetaBadge meta={{ label: "Actual", variant: "info" }} />}
@@ -67,7 +70,7 @@ export default async function PdtpTemplatesPage() {
                         Publicada {formatDate(version.publishedAt)}
                       </p>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
                         {countOf(version.programs.length, "programa fijado", "programas fijados")} a esta versión
                       </p>
@@ -76,8 +79,10 @@ export default async function PdtpTemplatesPage() {
                       ) : (
                         <ul className="mt-2 flex flex-wrap gap-2">
                           {version.programs.map((program) => (
-                            <li key={program.id}>
-                              <Button asChild variant="secondary" size="sm">
+                            <li key={program.id} className="max-w-full">
+                              {/* `Button` es `whitespace-nowrap`: con un título largo el
+                                  chip no envolvía y salía del pozo a 390 px. */}
+                              <Button asChild variant="secondary" size="sm" className="h-auto min-h-11 max-w-full whitespace-normal break-words py-1.5 text-left sm:min-h-[30px]">
                                 <Link href={`/prevencion/pdtp/${program.id}`}>{program.title} · {program.year} v{program.version}</Link>
                               </Button>
                             </li>

@@ -12,8 +12,9 @@ import {
   listRequirementWorksites,
   getEppCoverageDataHealth,
 } from "@/lib/services/prevention-epp"
-import { isEvaluableScope } from "@/lib/prevention/epp"
+import { canCreateEppRequirement, isEvaluableScope } from "@/lib/prevention/epp"
 import { EppTabs } from "./epp-tabs"
+import { NewRequirementDialog } from "./epp-dialogs"
 import { CoverageDataHealth } from "./coverage-data-health"
 
 import { Button } from "@/components/ui/button"
@@ -32,6 +33,8 @@ export default async function EppPreventivoPage() {
     permissions: session.user.permissions,
   }
   const canManage = session.user.permissions.includes("prevention:epp:manage")
+  // Global y por cargo no llevan faena: el servidor sólo los acepta con alcance total.
+  const allowOrgWideScopes = access.scope.mode === "all"
 
   const [gaps, requirements, eppTypes, families, worksites, dataHealth] = await Promise.all([
     listEppCoverageGaps(access),
@@ -53,11 +56,16 @@ export default async function EppPreventivoPage() {
           { label: "Requisitos de EPP" },
         ]} />}
         actions={
-          <Button asChild variant="secondary" size="sm">
-            <a href="/api/prevencion/epp/export" download>
-              Exportar cobertura Excel
-            </a>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="secondary" size="sm">
+              <a href="/api/prevencion/epp/export" download>
+                Exportar cobertura Excel
+              </a>
+            </Button>
+            {canCreateEppRequirement({ canManage, eppTypes, worksites, allowOrgWideScopes }) && (
+              <NewRequirementDialog eppTypes={eppTypes} families={families} worksites={worksites} allowOrgWideScopes={allowOrgWideScopes} />
+            )}
+          </div>
         }
       />
       <CoverageDataHealth
@@ -78,11 +86,13 @@ export default async function EppPreventivoPage() {
           isActive: row.requirement.isActive,
           preferredFamilyName: row.preferredFamilyName,
           isEvaluable: isEvaluableScope(row.requirement.scopeType),
+          hasWorksite: row.requirement.worksiteId !== null,
         }))}
         eppTypes={eppTypes}
         families={families}
         worksites={worksites}
         canManage={canManage}
+        allowOrgWideScopes={allowOrgWideScopes}
       />
       <PdtpScheduledActivityPanelServer connectorKey="epp" />
     </PageContainer>

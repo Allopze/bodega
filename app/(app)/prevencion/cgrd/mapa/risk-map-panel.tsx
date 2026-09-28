@@ -53,13 +53,33 @@ interface Props {
  * a un peligro de la MIPER publicada. No hay librería de mapas en el repo —
  * el overlay es CSS puro sobre una imagen responsiva.
  */
+/** La faena del mapa sale de `?mapWorksite=`; la comparten el panel y el header. */
+function resolveRiskMapWorksiteId(worksites: { id: string }[], requested: string | null) {
+  return worksites.some((item) => item.id === requested) ? requested! : worksites[0]?.id ?? ""
+}
+
+/**
+ * Layout 5 / A3: cargar o reemplazar el plano es la acción de la página, así
+ * que va en el header y no en una fila sobre la imagen. Lee la faena de la URL
+ * —el selector del panel la escribe ahí con `router.replace`— para subir el
+ * plano a la faena que se está mirando. El estado vacío conserva su CTA (A4).
+ */
+export function RiskMapHeaderActions({ worksites, layoutWorksiteIds, canEdit }: {
+  worksites: { id: string }[]
+  layoutWorksiteIds: string[]
+  canEdit: boolean
+}) {
+  const searchParams = useSearchParams()
+  if (!canEdit || worksites.length === 0) return null
+  const worksiteId = resolveRiskMapWorksiteId(worksites, searchParams.get("mapWorksite"))
+  // `key`: al cambiar de faena el diálogo parte de cero.
+  return <UploadLayoutDialog key={worksiteId} worksiteId={worksiteId} replacing={layoutWorksiteIds.includes(worksiteId)} />
+}
+
 export function RiskMapPanel({ worksites, layouts, entriesByWorksite, canEdit }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const requestedWorksiteId = searchParams.get("mapWorksite")
-  const [worksiteId, setWorksiteId] = React.useState(() => (
-    worksites.some((item) => item.id === requestedWorksiteId) ? requestedWorksiteId! : worksites[0]?.id ?? ""
-  ))
+  const [worksiteId, setWorksiteId] = React.useState(() => resolveRiskMapWorksiteId(worksites, searchParams.get("mapWorksite")))
   const layout = layouts.find((item) => item.worksiteId === worksiteId)
   const entries = entriesByWorksite[worksiteId] ?? []
   const navigateWorksite = React.useCallback((value: string) => {
@@ -94,10 +114,7 @@ export function RiskMapPanel({ worksites, layouts, entriesByWorksite, canEdit }:
         />
       ) : (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">{layout.title} ({layout.markers.length} marcador{layout.markers.length === 1 ? "" : "es"})</h2>
-            {canEdit && <UploadLayoutDialog worksiteId={worksiteId} replacing />}
-          </div>
+          <h2 className="text-sm font-semibold">{layout.title} ({layout.markers.length} marcador{layout.markers.length === 1 ? "" : "es"})</h2>
           <RiskMapImage layout={layout} entries={entries} canEdit={canEdit} />
         </div>
       )}

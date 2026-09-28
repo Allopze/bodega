@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
+import { FileText, ShieldCheck } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { CreateChoiceButton, type CreateChoice } from "@/components/ui/create-choice-button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
@@ -12,6 +14,7 @@ import { toLocalInputValue } from "@/lib/utils"
 import { createPermitTypeAction, createWorkPermitAction } from "./actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { useControllableDialog, type ControllableDialogProps } from "@/lib/hooks/use-controllable-dialog"
 import { nanoid } from "@/lib/id"
 
 interface PermitTypeItem {
@@ -41,8 +44,8 @@ interface SupervisorOption {
 
 /* ── Alta de tipo de permiso ──────────────────────────────────────────────── */
 
-export function PermitTypeDialog() {
-  const [open, setOpen] = React.useState(false)
+export function PermitTypeDialog(control: ControllableDialogProps = {}) {
+  const { open, setOpen, controlled } = useControllableDialog(control)
   const [requiresMeasurement, setRequiresMeasurement] = React.useState(false)
   const [requiresIsolation, setRequiresIsolation] = React.useState(false)
   const [requiresJsa, setRequiresJsa] = React.useState(true)
@@ -75,7 +78,7 @@ export function PermitTypeDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="secondary">Nuevo tipo</Button></DialogTrigger>
+      {!controlled && <DialogTrigger asChild><Button size="sm" variant="secondary">Nuevo tipo</Button></DialogTrigger>}
       <DialogContent>
         <form onSubmit={submit} className="max-h-[70vh] space-y-4 overflow-y-auto">
           <DialogHeader>
@@ -126,13 +129,12 @@ export function PermitTypeDialog() {
 
 /* ── Alta de permiso ──────────────────────────────────────────────────────── */
 
-export function NewPermitDialog({ types, worksites, workers, supervisors }: {
+export function NewPermitDialog({ types, worksites, workers, supervisors, ...control }: {
   types: PermitTypeItem[]
   worksites: { id: string; name: string }[]
   workers: WorkerOption[]
   supervisors: SupervisorOption[]
-}) {
-  const [open, setOpen] = React.useState(false)
+} & ControllableDialogProps) {
   const [typeId, setTypeId] = React.useState(types[0]?.id ?? "")
   const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
   const [crew, setCrew] = React.useState<Record<string, string>>({})
@@ -143,6 +145,13 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
   const [defaultStart, setDefaultStart] = React.useState("")
   const [defaultEnd, setDefaultEnd] = React.useState("")
   const operation = useOperation()
+  const { open, setOpen, controlled } = useControllableDialog(control, () => {
+    // datetime-local espera hora local; toISOString() (UTC) adelantaba
+    // el prefill 3-4 h respecto de la hora chilena.
+    const now = new Date()
+    setDefaultStart(toLocalInputValue(now))
+    setDefaultEnd(toLocalInputValue(new Date(now.getTime() + 4 * 3_600_000)))
+  })
 
   const type = types.find((item) => item.id === typeId)
   const eligible = workers.filter((worker) => worker.worksiteId === worksiteId)
@@ -193,20 +202,8 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(value) => {
-        if (value) {
-          // datetime-local espera hora local; toISOString() (UTC) adelantaba
-          // el prefill 3-4 h respecto de la hora chilena.
-          const now = new Date()
-          setDefaultStart(toLocalInputValue(now))
-          setDefaultEnd(toLocalInputValue(new Date(now.getTime() + 4 * 3_600_000)))
-        }
-        setOpen(value)
-      }}
-    >
-      <DialogTrigger asChild><Button size="sm">Nuevo permiso</Button></DialogTrigger>
+    <Dialog open={open} onOpenChange={setOpen}>
+      {!controlled && <DialogTrigger asChild><Button size="sm">Nuevo permiso</Button></DialogTrigger>}
       <DialogContent>
         <form onSubmit={submit} className="max-h-[70vh] space-y-4 overflow-y-auto">
           <DialogHeader>
@@ -330,4 +327,41 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
       </DialogContent>
     </Dialog>
   )
+}
+
+/* ── Alta desde el header de página ───────────────────────────────────────── */
+
+/**
+ * Layout 5 / A3: "Nuevo tipo" y "Nuevo permiso" eran dos botones parecidos en
+ * la barra de filtros, lejos del "Exportar Excel" del header. Ahora hay un
+ * único "Nuevo" junto a Exportar que pregunta qué crear. Cada opción conserva
+ * su gateo: el tipo es catálogo (`permits:manage`); el permiso exige
+ * `permits:request` y al menos un tipo activo y una faena.
+ */
+export function PermitCreateButton({ canManage, canRequest, types, worksites, workers, supervisors }: {
+  canManage: boolean
+  canRequest: boolean
+  types: PermitTypeItem[]
+  worksites: { id: string; name: string }[]
+  workers: WorkerOption[]
+  supervisors: SupervisorOption[]
+}) {
+  const choices: CreateChoice[] = []
+  if (canRequest && types.length > 0 && worksites.length > 0) choices.push({
+    key: "permiso",
+    label: "Permiso de trabajo",
+    description: "Solicitud para una tarea crítica, con cuadrilla, AST y controles.",
+    icon: <FileText size={18} />,
+    soloLabel: "Nuevo permiso",
+    render: (state) => <NewPermitDialog types={types} worksites={worksites} workers={workers} supervisors={supervisors} {...state} />,
+  })
+  if (canManage) choices.push({
+    key: "tipo",
+    label: "Tipo de permiso",
+    description: "Catálogo: qué exige cada clase de trabajo (aislamiento, mediciones, AST) y su duración máxima.",
+    icon: <ShieldCheck size={18} />,
+    soloLabel: "Nuevo tipo",
+    render: (state) => <PermitTypeDialog {...state} />,
+  })
+  return <CreateChoiceButton choices={choices} description="Elige qué agregar a permisos de trabajo." />
 }

@@ -16,7 +16,7 @@ import {
 import { listWorksiteOrganizations } from "@/lib/services/prevention-cphs-organization"
 import { assessMeetingCadence, isMandateExpired } from "@/lib/prevention/cphs"
 import { CommitteeList } from "./committee-list"
-import { NewCommitteeDialog } from "./cphs-dialogs"
+import { CphsCreateButton, NewCommitteeDialog } from "./cphs-dialogs"
 import { todayInChile } from "@/lib/utils"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
@@ -68,6 +68,7 @@ export default async function CphsPage({
           { label: "Prevención" },
           { label: "CPHS" },
         ]} />}
+        actions={<CphsCreateButton worksites={worksites} initialWorksiteId={initialWorksiteId} canManage={canManage} canReview={canReview} />}
       />
       {cphsGaps.length > 0 && (
         <Callout
