@@ -47,6 +47,11 @@ function bundle(overrides: Record<string, unknown> = {}) {
 }
 
 describe("privacy-right execution workbench", () => {
+  it("avisa cuántos documentos sensibles vinculados no puede ver quien atiende", () => {
+    render(<PrivacyRightExecutionWorkbench bundle={{ ...bundle(), restrictedDocumentCount: 2 }} />)
+    expect(screen.getByText(/2 documento\(s\) sensible\(s\) vinculado\(s\) al titular no se muestran/)).toBeInTheDocument()
+  })
+
   it("offers the domain mutation only after identity validation and without hold", () => {
     render(<PrivacyRightExecutionWorkbench bundle={bundle()} />)
     expect(screen.getAllByRole("button", { name: "Ejecutar" })).toHaveLength(2)

@@ -167,6 +167,14 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
               requieren acceso nominativo al caso. Derívalo a quien integre el comité investigador.
             </p>
           ) : null}
+          {bundle.restrictedDocumentCount > 0 ? (
+            // Mismo criterio para los documentos sensibles vinculados: atender la
+            // solicitud no da acceso a la biblioteca sensible.
+            <p className="mt-3 text-xs text-(--color-text-muted)">
+              {bundle.restrictedDocumentCount} documento(s) sensible(s) vinculado(s) al titular no se muestran:
+              requieren el permiso de documentos sensibles. Derívalo a quien lo tenga.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 
