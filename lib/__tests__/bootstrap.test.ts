@@ -22,6 +22,7 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 import {
   ensureSystemRbac,
+  GRANT_ADDITIONS,
   SYSTEM_ROLE_PERMISSIONS,
   getUserCount,
   generateInvitationToken,
@@ -186,6 +187,20 @@ describe("auth bootstrap service", () => {
       eq(schema.rolePermissions.roleId, grant.roleId), eq(schema.rolePermissions.permissionId, grant.permissionId),
     ))
     expect(afterRemoval).toHaveLength(0)
+  })
+
+  /*
+   * Una alta puntual es la réplica en producción de un cambio de
+   * `defaultGrants`: si no coincide con uno, o el id tiene un error de tipeo,
+   * la BD nueva y la de producción terminan con permisos distintos (o el
+   * deploy cae por la FK). Y una clave repetida se saltaría la segunda alta.
+   */
+  it("cada alta puntual replica un default declarado y tiene clave propia", () => {
+    const defaults = new Set(SYSTEM_ROLE_PERMISSIONS.map((grant) => `${grant.roleId}|${grant.permissionId}`))
+    const notDefault = GRANT_ADDITIONS.filter((addition) => !defaults.has(`${addition.roleId}|${addition.permissionId}`))
+    expect(notDefault).toEqual([])
+    const keys = GRANT_ADDITIONS.map((addition) => addition.key)
+    expect(new Set(keys).size).toBe(keys.length)
   })
 
   it("getUserCount returns user count accurately", async () => {

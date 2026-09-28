@@ -27,11 +27,71 @@ const RETIRED_PERMISSION_NAMES = [
  * un administrador la quita en `/admin/roles`, el siguiente deploy no la
  * reinstala. Sólo para cambios de default decididos; la clave no se reutiliza.
  */
-const GRANT_ADDITIONS = [
+export const GRANT_ADDITIONS = [
   // El rol completa la ficha reservada del incidente (identidad y lesión); sin
   // ningún rol con el permiso, el formulario de la vista reservada no lo veía
   // nadie. Decisión del 2026-09-28.
   { key: "2026-09-28-prevencionista-incidents-view-sensitive", roleId: "rol-prev", permissionId: "p-prev-inc-sensitive" },
+  // Adquisiciones para la jefatura de faena, al nivel del solicitante de faena:
+  // crear y ver sus solicitudes, y recibir en faena. Decisión del 2026-09-28.
+  ...(["rol-admin-contrato", "rol-jt", "rol-sup-terreno"] as const).flatMap((roleId) =>
+    (["p-req-create", "p-req-own", "p-rec-reg-faena", "p-rec-view"] as const).map((permissionId) => ({
+      key: `2026-09-28-${roleId}-${permissionId}`,
+      roleId,
+      permissionId,
+    })),
+  ),
+  // El administrador de contrato ve y opera Prevención igual que el
+  // prevencionista de faena, dentro de sus faenas asignadas, salvo lo que se
+  // segrega de la línea de mando en terreno: habilitar el inicio de un permiso
+  // de trabajo, revisar inspecciones y cerrar el mes del PDTP (que además
+  // habilita registrar actividades ajenas); y el envío mensual de alcotest
+  // (N°32), que el catálogo asigna sólo al PRF. Decisión del 2026-09-28.
+  ...([
+    "p-ppa-view",
+    "p-ppa-review",
+    "p-ppa-correct",
+    "p-prev-alcotest-view",
+    "p-prev-alcotest-register",
+    "p-prev-cgrd-committee-manage",
+    "p-prev-cgrd-meeting-manage",
+    "p-prev-camp-v",
+    "p-prev-camp-m",
+    "p-prev-engage-v",
+    "p-prev-engage-m",
+    "p-prev-docs-distribute",
+    "p-prev-docs-ack",
+    "p-prev-ind-close",
+    "p-prev-risk-view",
+    "p-prev-risk-edit",
+    "p-prev-legal-view",
+    "p-prev-legal-assess",
+    "p-prev-capa-view",
+    "p-prev-capa-manage",
+    "p-prev-capa-complete",
+    "p-prev-inc-triage",
+    "p-prev-inc-invest",
+    "p-prev-inc-export",
+    "p-prev-inc-diffuse",
+    "p-prev-train-record",
+    "p-prev-permit-verify",
+    "p-prev-permit-approve",
+    "p-prev-permit-close",
+    "p-prev-insp-manage",
+    "p-prev-cphs-manage",
+    "p-prev-hyg-view",
+    "p-prev-hyg-measure",
+    "p-prev-hyg-assess",
+    "p-prev-emg-manage",
+    "p-prev-chg-manage",
+    "p-prev-chg-eval",
+    "p-prev-epp-manage",
+    "p-sst-close",
+  ] as const).map((permissionId) => ({
+    key: `2026-09-28-rol-admin-contrato-prevencion-${permissionId}`,
+    roleId: "rol-admin-contrato" as const,
+    permissionId,
+  })),
 ] as const
 
 async function applyGrantAdditions(executor: typeof db | Tx) {

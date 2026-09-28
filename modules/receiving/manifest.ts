@@ -43,5 +43,12 @@ export const receivingModule = {
     { roleSlug: "prevencionista_faena", permission: "receiving:view" },
     { roleSlug: "jefe_mantencion", permission: "receiving:register_faena" },
     { roleSlug: "jefe_mantencion", permission: "receiving:view" },
+    // Reciben en su faena lo que solicitan (ver `requests/manifest.ts`).
+    { roleSlug: "admin_contrato",     permission: "receiving:register_faena" },
+    { roleSlug: "admin_contrato",     permission: "receiving:view" },
+    { roleSlug: "jefe_terreno",       permission: "receiving:register_faena" },
+    { roleSlug: "jefe_terreno",       permission: "receiving:view" },
+    { roleSlug: "supervisor_terreno", permission: "receiving:register_faena" },
+    { roleSlug: "supervisor_terreno", permission: "receiving:view" },
   ],
 } as const satisfies ModuleManifest

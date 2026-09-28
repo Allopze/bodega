@@ -193,6 +193,7 @@ describe("prevention module RBAC", () => {
       expect(ALL_MODULE_PERMISSIONS).toContain(permission)
     }
     expect(rolesFor("prevention:campaign:manage")).toEqual([
+      "admin_contrato",
       "administrador",
       "prevencionista",
       "prevencionista_faena",
@@ -234,7 +235,7 @@ describe("prevention module RBAC", () => {
       "administrador", "prevencionista", "prevencionista_faena",
     ].sort())
     expect(rolesFor("prevention:alcotest:register").sort()).toEqual([
-      "administrador", "jefe_terreno", "prevencionista", "prevencionista_faena", "supervisor_terreno",
+      "admin_contrato", "administrador", "jefe_terreno", "prevencionista", "prevencionista_faena", "supervisor_terreno",
     ].sort())
 
     // CGRD del DS 44 (G15): comité propio, distinto del CPHS. Matriz GRD
@@ -306,7 +307,7 @@ describe("prevention module RBAC", () => {
       .sort()
 
     expect(rolesFor("prevention:capa:complete")).toEqual([
-      "administrador", "jefa_chome", "prevencionista", "prevencionista_faena",
+      "admin_contrato", "administrador", "jefa_chome", "prevencionista", "prevencionista_faena",
     ])
     expect(rolesFor("prevention:capa:verify")).toEqual(["administrador", "jefa_chome", "prevencionista"])
     expect(rolesFor("prevention:capa:close")).toEqual(["administrador", "jefa_chome"])

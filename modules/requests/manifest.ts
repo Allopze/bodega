@@ -53,5 +53,14 @@ export const requestsModule = {
     // Jefe de mantención: crea y ve las propias (sin view_all)
     { roleSlug: "jefe_mantencion", permission: "requests:create" },
     { roleSlug: "jefe_mantencion", permission: "requests:view_own" },
+    // Jefatura de faena (administración de contrato y terreno): como el
+    // solicitante de faena, crea y ve las propias. El alcance lo da la faena
+    // asignada: los tres roles son no globales.
+    { roleSlug: "admin_contrato",     permission: "requests:create" },
+    { roleSlug: "admin_contrato",     permission: "requests:view_own" },
+    { roleSlug: "jefe_terreno",       permission: "requests:create" },
+    { roleSlug: "jefe_terreno",       permission: "requests:view_own" },
+    { roleSlug: "supervisor_terreno", permission: "requests:create" },
+    { roleSlug: "supervisor_terreno", permission: "requests:view_own" },
   ],
 } as const satisfies ModuleManifest

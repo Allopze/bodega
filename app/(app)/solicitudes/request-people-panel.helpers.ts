@@ -32,6 +32,8 @@ export function roleContextLabel(roleContext: string | null) {
     prevencionista: "Prevención",
     jefe_mantencion: "Jefe de mantención",
     admin_contrato: "Administrador de contrato",
+    jefe_terreno: "Jefe de terreno",
+    supervisor_terreno: "Supervisor de terreno",
     prevencionista_faena: "Prevencionista de faena",
   }
   if (!roleContext) return "Rol no registrado"

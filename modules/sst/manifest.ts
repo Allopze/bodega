@@ -44,6 +44,7 @@ export const sstModule = {
      * así que su cumplimiento dependía de que alguien de la jefatura entrara a
      * firmar cada acta de cada faena. El alcance por faena lo acota. */
     { roleSlug: "prevencionista_faena", permission: "sst:close" },
+    { roleSlug: "admin_contrato", permission: "sst:close" },
     /* El instrumento declara que el Acta de Cierre la firman "supervisor y
      * prevencionista", y la planilla asigna la n=15 y la n=52 al supervisor y
      * al jefe de terreno. No tenían ni `sst:view`: el acta que deben firmar no

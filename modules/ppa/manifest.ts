@@ -40,8 +40,11 @@ export const ppaModule = {
   defaultGrants: [
     // Revisión en faena (responsable directo).
     { roleSlug: "prevencionista_faena", permission: "ppa:view" },
+    { roleSlug: "admin_contrato", permission: "ppa:view" },
     { roleSlug: "prevencionista_faena", permission: "ppa:review" },
+    { roleSlug: "admin_contrato", permission: "ppa:review" },
     { roleSlug: "prevencionista_faena", permission: "ppa:correct" },
+    { roleSlug: "admin_contrato", permission: "ppa:correct" },
     // Prevención de oficina y jefatura.
     { roleSlug: "prevencionista", permission: "ppa:view" },
     { roleSlug: "prevencionista", permission: "ppa:review" },
