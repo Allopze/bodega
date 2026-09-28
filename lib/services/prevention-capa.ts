@@ -14,6 +14,7 @@ import {
   worksiteUsers,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import type { RequestContext } from "@/lib/services/prevention-documents/utils"
@@ -826,6 +827,24 @@ export async function addCapaEvidenceWithClient(
     return { evidence: evidence!, action: updated }
 }
 
+/**
+ * Compuerta de la subida de un archivo de evidencia (B9): la ruta que lo guarda
+ * no escribe la evidencia —eso lo hace `addCapaEvidence` con la ruta y el
+ * checksum que devuelve—, pero no debe aceptar archivos para una CAPA fuera de
+ * la faena de quien sube, ni para una que ya no admite evidencia.
+ */
+export async function assertCapaEvidenceUploadAllowed(args: {
+  actionId: string
+  scope: WorksiteScope
+  permissions: readonly string[]
+}) {
+  requirePermission(args.permissions, "prevention:capa:complete")
+  const [action] = await db.select({ worksiteId: preventionCapaActions.worksiteId, status: preventionCapaActions.status })
+    .from(preventionCapaActions).where(eq(preventionCapaActions.id, args.actionId)).limit(1)
+  if (!action || !scopeAllows(args.scope, action.worksiteId)) throw new Error("Acción CAPA no encontrada o fuera de alcance.")
+  if (["closed", "cancelled"].includes(action.status)) throw new Error("No se puede agregar evidencia a una acción cerrada o cancelada.")
+}
+
 export async function addCapaEvidence(args: {
   input: unknown
   ctx: RequestContext
@@ -1125,12 +1144,25 @@ function capaStatusLabel(status: string) {
 }
 
 export async function buildCapaExport(args: {
+  ctx: RequestContext
   scope: WorksiteScope
   permissions: readonly string[]
 }): Promise<ReportData> {
   const actions = await listCapaActions(args)
   const actionIds = actions.slice(0, 10_000).map((item) => item.id)
   const rowLimitApplied = actions.length > 10_000
+  // Mismo rastro que el registro de incidentes (`buildIncidentRegisterExport`):
+  // el Excel CAPA saca hallazgos, responsables y evidencia de la plataforma, y
+  // sin esta línea no quedaba quién lo descargó ni cuántas acciones llevaba.
+  await recordAudit({
+    userId: args.ctx.userId,
+    action: "export",
+    entityType: "prevention_capa_register",
+    entityId: "scope",
+    newState: { actionCount: actionIds.length, rowLimitApplied },
+    reason: "Exportación Excel de acciones CAPA dentro del alcance autorizado",
+    ipAddress: args.ctx.ip,
+  })
   if (actionIds.length === 0) {
     return {
       filenameBase: `capa_${todayInChile()}`,

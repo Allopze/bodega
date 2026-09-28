@@ -51,6 +51,10 @@ export const EVIDENCE_STORAGE_PREFIXES = {
    * PDTP: la retención y la auditabilidad de cada dominio son las suyas. */
   campaign: "storage/campaign-evidence",
   cgrd: "storage/cgrd-evidence",
+  /* La CAPA sigue aceptando rutas de los otros dominios (evidencia que llega de
+   * una inspección o del PDTP); éste es el espacio para lo que se sube desde la
+   * propia acción, que antes no tenía dónde guardarse. */
+  capa: "storage/capa-evidence",
 } as const
 
 export type EvidenceDomain = keyof typeof EVIDENCE_STORAGE_PREFIXES

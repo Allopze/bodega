@@ -99,6 +99,8 @@ export async function addCapaEvidenceAction(input: {
   expectedVersion: number
   kind: "document" | "photo" | "url" | "note"
   reference: string
+  /** SHA-256 del archivo subido: un documento o una foto no se acreditan sin él. */
+  checksumSha256?: string
   description?: string
 }): Promise<ActionState> {
   const guard = await guardPermission("prevention:capa:complete")

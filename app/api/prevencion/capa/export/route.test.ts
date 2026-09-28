@@ -39,6 +39,8 @@ describe("GET CAPA Excel", () => {
     expect(response.headers.get("content-type")).toContain("spreadsheetml")
     expect(response.headers.get("x-content-type-options")).toBe("nosniff")
     expect(mockBuild).toHaveBeenCalledWith({
+      // FX-B (B10): el actor viaja para que la exportación quede auditada.
+      ctx: { userId: "u1" },
       scope: { mode: "some", ids: ["w1"] },
       permissions: ["prevention:capa:view"],
     })

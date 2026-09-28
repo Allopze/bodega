@@ -47,6 +47,8 @@ export function CapaControls({ action, users, permissions }: Props) {
   const [pending, startTransition] = React.useTransition()
   const [evidenceKind, setEvidenceKind] = React.useState<"document" | "photo" | "url">("photo")
   const [evidenceReference, setEvidenceReference] = React.useState("")
+  const [evidenceFile, setEvidenceFile] = React.useState<File | null>(null)
+  const evidenceIsFile = evidenceKind === "photo" || evidenceKind === "document"
   const [evidenceDescription, setEvidenceDescription] = React.useState("")
   const [followupNote, setFollowupNote] = React.useState("")
   const [progress, setProgress] = React.useState("")
@@ -86,14 +88,39 @@ export function CapaControls({ action, users, permissions }: Props) {
   }
 
   function addEvidence() {
-    if (evidenceReference.trim().length < 3) return toast.error("Indica una referencia verificable.")
-    run(() => addCapaEvidenceAction({
-      actionId: action.id,
-      expectedVersion: action.version,
-      kind: evidenceKind,
-      reference: evidenceReference,
-      description: evidenceDescription || undefined,
-    }))
+    if (!evidenceIsFile) {
+      if (evidenceReference.trim().length < 3) return toast.error("Indica una URL verificable.")
+      return run(() => addCapaEvidenceAction({
+        actionId: action.id,
+        expectedVersion: action.version,
+        kind: evidenceKind,
+        reference: evidenceReference,
+        description: evidenceDescription || undefined,
+      }))
+    }
+    if (!evidenceFile) return toast.error("Adjunta el archivo de la evidencia.")
+    // Un documento o una foto se sube primero: el contrato de evidencia exige la
+    // ruta almacenada y su SHA-256, y un texto libre ya no la acredita.
+    run(async () => {
+      const form = new FormData()
+      form.set("actionId", action.id)
+      form.set("file", evidenceFile)
+      const response = await fetch("/api/prevencion/capa/evidence", { method: "POST", body: form })
+      const uploaded = await response.json().catch(() => null) as { path?: string; checksumSha256?: string; error?: string } | null
+      if (!response.ok || !uploaded?.path || !uploaded.checksumSha256) {
+        return { ok: false, message: uploaded?.error ?? "No se pudo subir el archivo de evidencia." }
+      }
+      const result = await addCapaEvidenceAction({
+        actionId: action.id,
+        expectedVersion: action.version,
+        kind: evidenceKind,
+        reference: uploaded.path,
+        checksumSha256: uploaded.checksumSha256,
+        description: evidenceDescription || undefined,
+      })
+      if (result.ok) setEvidenceFile(null)
+      return result
+    })
   }
 
   function addFollowup() {
@@ -187,13 +214,25 @@ export function CapaControls({ action, users, permissions }: Props) {
             {permissions.close && action.status === "verified" && (
               <Button size="sm" onClick={() => transition("closed")} loading={pending}>Cerrar CAPA</Button>
             )}
-            {permissions.verify && (action.status === "verified" || action.status === "closed") && (
+            {permissions.verify && action.status === "verified" && (
               <Button size="sm" variant="secondary" onClick={() => transition("reopened", { effectivenessStatus: "ineffective" })} loading={pending}>Reabrir</Button>
             )}
             {permissions.manage && ["pending", "in_progress", "pending_verification", "reopened"].includes(action.status) && (
               <Button size="sm" variant="destructive" onClick={() => transition("cancelled")} loading={pending}>Cancelar CAPA</Button>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Una CAPA cerrada es terminal para todo lo demás, pero el servicio la deja
+          reabrir cuando la medida resultó ineficaz; el botón vivía dentro del
+          bloque de estados abiertos y nunca se mostraba. */}
+      {permissions.verify && !ppaDriven && action.status === "closed" && (
+        <div className="space-y-3 border-t border-[var(--color-border)] pt-3">
+          <Field label="Motivo de la reapertura" htmlFor="capa-reopen-reason">
+            <Textarea id="capa-reopen-reason" rows={2} value={transitionReason} onChange={(event) => setTransitionReason(event.target.value)} maxLength={2000} />
+          </Field>
+          <Button size="sm" variant="secondary" onClick={() => transition("reopened", { effectivenessStatus: "ineffective" })} loading={pending}>Reabrir</Button>
         </div>
       )}
 
@@ -204,7 +243,9 @@ export function CapaControls({ action, users, permissions }: Props) {
             <Field label="Cómo se comprobó la eficacia" htmlFor="capa-effectiveness">
               <Textarea id="capa-effectiveness" rows={3} value={effectivenessAssessment} onChange={(event) => setEffectivenessAssessment(event.target.value)} maxLength={3000} />
             </Field>
-            {permissions.overrideSegregation && (action.priority === "high" || action.priority === "critical") && (
+            {/* El servicio exige segregación en toda prioridad; limitar el campo a
+                alta/crítica dejaba sin salida a una baja o media. */}
+            {permissions.overrideSegregation && (
               <Field label="Excepción de segregación (sólo si corresponde)" htmlFor="capa-segregation">
                 <Textarea id="capa-segregation" rows={2} value={segregationReason} onChange={(event) => setSegregationReason(event.target.value)} maxLength={2000} />
               </Field>
@@ -226,9 +267,15 @@ export function CapaControls({ action, users, permissions }: Props) {
                 <SelectItem value="url">URL verificable</SelectItem>
               </SelectContent>
             </Select>
-            <Field label="Referencia" htmlFor="capa-evidence-reference">
-              <Input id="capa-evidence-reference" value={evidenceReference} onChange={(event) => setEvidenceReference(event.target.value)} maxLength={4000} />
-            </Field>
+            {evidenceIsFile ? (
+              <Field label="Archivo" htmlFor="capa-evidence-file" hint="PDF, JPG o PNG, hasta 25 MB.">
+                <Input id="capa-evidence-file" type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => setEvidenceFile(event.target.files?.[0] ?? null)} />
+              </Field>
+            ) : (
+              <Field label="URL verificable" htmlFor="capa-evidence-reference">
+                <Input id="capa-evidence-reference" type="url" value={evidenceReference} onChange={(event) => setEvidenceReference(event.target.value)} maxLength={4000} placeholder="https://" />
+              </Field>
+            )}
             <Field label="Descripción (opcional)" htmlFor="capa-evidence-description">
               <Textarea id="capa-evidence-description" rows={2} value={evidenceDescription} onChange={(event) => setEvidenceDescription(event.target.value)} maxLength={1000} />
             </Field>
