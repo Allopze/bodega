@@ -155,6 +155,39 @@ describe("auth bootstrap service", () => {
     expect(grants.length).toBeGreaterThan(0)
   })
 
+  /*
+   * Un default nuevo sobre un permiso y un rol que YA existen no se propagaba
+   * (sólo se estrenan los permisos o roles nuevos). Las altas puntuales se
+   * aplican una sola vez por deploy y quedan registradas: si después un
+   * administrador las quita por la UI, no vuelven.
+   */
+  it("aplica una alta puntual una vez y respeta que luego se quite", async () => {
+    const grant = { roleId: "rol-prev", permissionId: "p-prev-inc-sensitive" }
+    const marker = "rbac:grant-addition:2026-09-28-prevencionista-incidents-view-sensitive"
+    await ensureSystemRbac()
+    // Estado de producción: rol y permiso existen, el grant y la marca no.
+    await inMemoryDb.delete(schema.rolePermissions).where(and(
+      eq(schema.rolePermissions.roleId, grant.roleId), eq(schema.rolePermissions.permissionId, grant.permissionId),
+    ))
+    await inMemoryDb.delete(schema.systemSettings).where(eq(schema.systemSettings.key, marker))
+
+    await ensureSystemRbac()
+    const applied = await inMemoryDb.select().from(schema.rolePermissions).where(and(
+      eq(schema.rolePermissions.roleId, grant.roleId), eq(schema.rolePermissions.permissionId, grant.permissionId),
+    ))
+    expect(applied).toHaveLength(1)
+
+    // El administrador la quita: el siguiente deploy no la reinstala.
+    await inMemoryDb.delete(schema.rolePermissions).where(and(
+      eq(schema.rolePermissions.roleId, grant.roleId), eq(schema.rolePermissions.permissionId, grant.permissionId),
+    ))
+    await ensureSystemRbac()
+    const afterRemoval = await inMemoryDb.select().from(schema.rolePermissions).where(and(
+      eq(schema.rolePermissions.roleId, grant.roleId), eq(schema.rolePermissions.permissionId, grant.permissionId),
+    ))
+    expect(afterRemoval).toHaveLength(0)
+  })
+
   it("getUserCount returns user count accurately", async () => {
     // Initial user count on empty db (since we haven't added users yet)
     await inMemoryDb.delete(schema.users)

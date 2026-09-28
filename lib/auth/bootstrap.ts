@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "crypto"
-import { count, inArray } from "drizzle-orm"
+import { count, eq, inArray } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { permissions, rolePermissions, roles, userPermissions, users } from "@/db/schema"
+import { permissions, rolePermissions, roles, systemSettings, userPermissions, users } from "@/db/schema"
 import { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "@/lib/auth/system-rbac"
 
 export { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "@/lib/auth/system-rbac"
@@ -21,6 +21,35 @@ const RETIRED_PERMISSION_NAMES = [
 ] as const
 
 /**
+ * Altas puntuales de un default sobre un permiso y un rol que YA existen en la
+ * BD: el caso que `ensureSystemRbac` no propaga solo (ver su JSDoc). Cada una se
+ * aplica una única vez por BD y deja su marca en `system_settings`: si después
+ * un administrador la quita en `/admin/roles`, el siguiente deploy no la
+ * reinstala. Sólo para cambios de default decididos; la clave no se reutiliza.
+ */
+const GRANT_ADDITIONS = [
+  // El rol completa la ficha reservada del incidente (identidad y lesión); sin
+  // ningún rol con el permiso, el formulario de la vista reservada no lo veía
+  // nadie. Decisión del 2026-09-28.
+  { key: "2026-09-28-prevencionista-incidents-view-sensitive", roleId: "rol-prev", permissionId: "p-prev-inc-sensitive" },
+] as const
+
+async function applyGrantAdditions(executor: typeof db | Tx) {
+  for (const addition of GRANT_ADDITIONS) {
+    const marker = `rbac:grant-addition:${addition.key}`
+    const [done] = await executor.select({ key: systemSettings.key }).from(systemSettings)
+      .where(eq(systemSettings.key, marker)).limit(1)
+    if (done) continue
+    await executor.insert(rolePermissions)
+      .values({ roleId: addition.roleId, permissionId: addition.permissionId })
+      .onConflictDoNothing()
+    await executor.insert(systemSettings)
+      .values({ key: marker, value: new Date().toISOString() })
+      .onConflictDoNothing()
+  }
+}
+
+/**
  * Idempotently seeds system roles/permissions. Accepts an optional transaction
  * executor so callers (e.g. the bootstrap registration) can run it atomically
  * within their own transaction — passing `tx` también evita reentrar en la
@@ -38,8 +67,8 @@ const RETIRED_PERMISSION_NAMES = [
  *
  * Consecuencias que hay que tener presentes:
  * - Cambiar el `defaultGrants` de un permiso que **ya existe** en producción no
- *   se propaga solo: hay que replicarlo en `/admin/roles` (o retirar el permiso
- *   vía `RETIRED_PERMISSION_NAMES` y volver a introducirlo).
+ *   se propaga solo: hay que replicarlo en `/admin/roles`, o declararlo en
+ *   `GRANT_ADDITIONS` para que el próximo deploy lo aplique una vez.
  * - Quitar un permiso del manifiesto sin listarlo en `RETIRED_PERMISSION_NAMES`
  *   deja sus grants vivos en la BD. Esa lista es la vía explícita para retirar.
  */
@@ -102,6 +131,8 @@ export async function ensureSystemRbac(executor: typeof db | Tx = db) {
     // corrida anterior interrumpida: sembrar de nuevo no debe fallar.
     await executor.insert(rolePermissions).values(grantsToSeed).onConflictDoNothing()
   }
+
+  await applyGrantAdditions(executor)
 }
 
 export async function getUserCount() {
