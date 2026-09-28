@@ -44,4 +44,29 @@ describe("useOperation", () => {
     expect(onSuccess).toHaveBeenCalled()
     expect(result.current.message).toBe("")
   })
+
+  /*
+   * El hook descartaba `fieldErrors`: la acción decía qué campo fallaba y el
+   * diálogo sólo podía mostrar «Revisa los campos marcados.».
+   */
+  it("expone los errores por campo de la acción", async () => {
+    const { result } = renderHook(() => useOperation())
+    act(() => result.current.run(async () => ({
+      ok: false,
+      message: "Revisa los campos marcados: El motivo es obligatorio.",
+      fieldErrors: { reason: ["El motivo es obligatorio.", "Otro"] },
+    })))
+    await waitFor(() => expect(result.current.fieldError("reason")).toBe("El motivo es obligatorio."))
+    expect(result.current.fieldErrors).toEqual({ reason: ["El motivo es obligatorio.", "Otro"] })
+    expect(result.current.fieldError("otro")).toBeUndefined()
+  })
+
+  it("una nueva operación limpia los errores por campo anteriores", async () => {
+    const { result } = renderHook(() => useOperation())
+    act(() => result.current.run(async () => ({ ok: false, fieldErrors: { reason: ["x"] } })))
+    await waitFor(() => expect(result.current.fieldError("reason")).toBe("x"))
+    act(() => result.current.run(async () => ({ ok: true })))
+    await waitFor(() => expect(result.current.message).toBe("Guardado correctamente."))
+    expect(result.current.fieldErrors).toEqual({})
+  })
 })

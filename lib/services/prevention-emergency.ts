@@ -474,9 +474,9 @@ export async function setEmergencyPlanPdtpActivities(input: unknown, access: Eme
   const data = setPlanPdtpActivitiesSchema.parse(input)
   return db.transaction(async (tx) => {
     const [plan] = await tx.select().from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, data.planId)).limit(1)
-    if (!plan) throw new Error(NOT_FOUND)
+    if (!plan) throw new EmergencyDomainError(NOT_FOUND)
     requireAccess(access, "prevention:emergency:manage", plan.worksiteId)
-    if (plan.version !== data.expectedVersion) throw new Error("El plan cambió mientras lo editabas. Recarga y reintenta.")
+    if (plan.version !== data.expectedVersion) throw new EmergencyDomainError("El plan cambió mientras lo editabas. Recarga y reintenta.")
     if (plan.status === "archived") throw new EmergencyDomainError("Un plan archivado no admite cambios.")
 
     /*
@@ -501,7 +501,7 @@ export async function setEmergencyPlanPdtpActivities(input: unknown, access: Eme
       eq(preventionEmergencyPlans.id, plan.id),
       eq(preventionEmergencyPlans.version, data.expectedVersion),
     )).returning()
-    if (!updated) throw new Error("El plan cambió mientras lo editabas. Recarga y reintenta.")
+    if (!updated) throw new EmergencyDomainError("El plan cambió mientras lo editabas. Recarga y reintenta.")
     await history(tx, {
       entityType: "plan", entityId: plan.id, worksiteId: plan.worksiteId, changeType: "pdtp_activities_set",
       // El historial nombra lo que se cableó. Repetir el snapshot conservado
@@ -1325,11 +1325,11 @@ export async function remindEmergencyPlanApproval(input: unknown, access: Emerge
 
   const [plan] = await db.select().from(preventionEmergencyPlans)
     .where(eq(preventionEmergencyPlans.id, data.planId)).limit(1)
-  if (!plan) throw new Error("Plan de emergencia no encontrado.")
+  if (!plan) throw new EmergencyDomainError("Plan de emergencia no encontrado.")
   // El permiso se verifica contra la faena del plan: el alcance por faena es
   // parte del contrato de este módulo, a diferencia de las plantillas.
   requireAccess(access, "prevention:emergency:manage", plan.worksiteId)
-  if (plan.status !== "draft") throw new Error("Sólo un plan en borrador espera aprobación.")
+  if (plan.status !== "draft") throw new EmergencyDomainError("Sólo un plan en borrador espera aprobación.")
 
   const approverIds = await getUserIdsWithPermission("prevention:emergency:approve")
   const approvers = approverIds.length === 0 ? [] : await db.select({ id: users.id, name: users.name }).from(users)
@@ -1337,7 +1337,7 @@ export async function remindEmergencyPlanApproval(input: unknown, access: Emerge
     // un botón deshabilitado. Se excluye del destinatario.
     .where(and(inArray(users.id, approverIds), eq(users.isActive, true)))
   const targets = approvers.filter((approver) => approver.id !== plan.createdByUserId)
-  if (targets.length === 0) throw new Error("Nadie distinto de quien creó el plan puede aprobarlo. Avisa a un administrador.")
+  if (targets.length === 0) throw new EmergencyDomainError("Nadie distinto de quien creó el plan puede aprobarlo. Avisa a un administrador.")
 
   await createNotifications(targets.map((approver) => approver.id), {
     type: "system_alert",

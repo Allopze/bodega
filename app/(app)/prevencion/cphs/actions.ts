@@ -1,6 +1,6 @@
 "use server"
 
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 
 import { revalidatePath } from "next/cache"
 import { ZodError } from "zod"
@@ -63,8 +63,8 @@ async function run(access: CphsAccess, operation: (access: CphsAccess) => Promis
     revalidatePath(`${BASE}/[committeeId]/certificacion`, "page")
     return { ok: true }
   } catch (error) {
-    if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados.", fieldErrors: error.flatten().fieldErrors as Record<string, string[]> }
-    return { ok: false, message: safeActionMessage(error, "No se pudo completar la operación.") }
+    if (error instanceof ZodError) return actionErrorResult(error, "Revisa los campos marcados.")
+    return actionErrorResult(error, "No se pudo completar la operación.")
   }
 }
 

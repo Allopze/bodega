@@ -1,7 +1,12 @@
 import type { Instrumentation } from "next"
 import { validateEnv } from "@/lib/env"
+import { configureZodLocale } from "@/lib/validation/zod-locale"
 
 export async function register() {
+  // Antes que cualquier request: los mensajes de validación que devuelven las
+  // server actions salen de aquí (ver lib/validation/zod-locale.ts).
+  configureZodLocale()
+
   // Fail fast on missing required environment variables so the process
   // crashes with a clear message instead of dying deep inside a request.
   if (process.env.NEXT_RUNTIME === "nodejs") {

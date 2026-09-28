@@ -1,7 +1,7 @@
 "use server"
 
 import { ZodError } from "zod"
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { pdtpRegistrationActorFromSession } from "@/lib/auth/pdtp-registration"
@@ -48,7 +48,7 @@ async function run(
     // para el operador")` y son la única pista de por qué la operación no
     // avanza. `safeActionMessage` las deja pasar y sigue ocultando los errores
     // de driver y de esquema.
-    return { ok: false, message: safeActionMessage(error, "No se pudo completar la acción. Intenta nuevamente.") }
+    return actionErrorResult(error, "No se pudo completar la acción. Intenta nuevamente.")
   }
 }
 

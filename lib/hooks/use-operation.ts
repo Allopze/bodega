@@ -3,7 +3,13 @@
 import * as React from "react"
 import { toast } from "@/lib/toast"
 
-export type OperationResult = { ok: boolean; message?: string; data?: Record<string, unknown> }
+export type OperationResult = {
+  ok: boolean
+  message?: string
+  data?: Record<string, unknown>
+  /** Errores por campo (forma de `parseZ` / `actionErrorResult`). */
+  fieldErrors?: Record<string, string[]>
+}
 
 export type OperationOptions = {
   /** "message" (default): el resultado se expone en `message`. "toast": se notifica con toast.success/error. */
@@ -24,6 +30,9 @@ export function useOperation(options?: OperationOptions) {
   const { feedback = "message", onSuccess: onGlobalSuccess } = options ?? {}
   const [pending, startTransition] = React.useTransition()
   const [message, setMessage] = React.useState("")
+  // Antes el hook descartaba `fieldErrors`: aunque la acción dijera qué campo
+  // fallaba, el diálogo sólo podía mostrar «Revisa los campos marcados.».
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string[]>>({})
 
   /**
    * `onSuccess` recibe el resultado completo: algunas acciones devuelven datos
@@ -39,8 +48,10 @@ export function useOperation(options?: OperationOptions) {
    */
   function run(operation: () => Promise<OperationResult>, onSuccess?: (result: OperationResult) => void) {
     setMessage("")
+    setFieldErrors({})
     startTransition(async () => {
       const result = await operation()
+      if (!result.ok && result.fieldErrors) setFieldErrors(result.fieldErrors)
       if (result.ok) {
         if (feedback === "toast") {
           toast.success(result.message ?? "Cambio registrado")
@@ -57,5 +68,8 @@ export function useOperation(options?: OperationOptions) {
     })
   }
 
-  return { pending, message, setMessage, run }
+  /** Primer error del campo, listo para `<Field error={fieldError("nombre")}>`. */
+  const fieldError = React.useCallback((name: string) => fieldErrors[name]?.[0], [fieldErrors])
+
+  return { pending, message, setMessage, fieldErrors, fieldError, run }
 }

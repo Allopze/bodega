@@ -1,8 +1,8 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { guardPermission } from "@/lib/auth/can"
-import { safeActionMessage } from "@/lib/action-error"
 import { parseZ } from "@/lib/actions/parse-z"
 import { setPdtpActivityDocumentRequirements } from "@/lib/services/prevention-pdtp"
 import { pdtpActivityDocumentRequirementsSchema } from "@/lib/validation/prevention-module/pdtp"
@@ -32,6 +32,6 @@ export async function setPdtpActivityDocumentRequirementsAction(input: unknown):
     revalidatePath(`${ROOT}/${parsed.data.programId}/editar`)
     return { ok: true, message: "Carpeta documental guardada." }
   } catch (error) {
-    return { ok: false, message: safeActionMessage(error, "No se pudo guardar la carpeta documental.") }
+    return actionErrorResult(error, "No se pudo guardar la carpeta documental.")
   }
 }

@@ -1,13 +1,13 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { ZodError } from "zod"
 import { guardAuth, guardPermission } from "@/lib/auth/can"
 import type { Permission } from "@/modules/permissions"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { pdtpRegistrationActorFromSession } from "@/lib/auth/pdtp-registration"
 import { assertWorksiteAccess } from "@/lib/services/pdtp/helpers"
-import { safeActionMessage } from "@/lib/action-error"
 import type { ActionState } from "@/lib/validation/prevention"
 import {
   pdtpScheduledInstanceOutcomeReviewSchema,
@@ -34,7 +34,7 @@ function fail(error: unknown): ActionState {
       fieldErrors: error.flatten().fieldErrors as Record<string, string[]>,
     }
   }
-  return { ok: false, message: safeActionMessage(error, "No se pudo abrir la actividad programada.") }
+  return actionErrorResult(error, "No se pudo abrir la actividad programada.")
 }
 
 /** Reserva una instancia y entrega el enlace al formulario nativo del conector. */
@@ -149,7 +149,7 @@ export async function reviewPdtpScheduledInstanceOutcomeAction(formData: FormDat
     revalidatePath("/prevencion/pdtp", "layout")
     return { ok: true }
   } catch (error) {
-    return { ok: false, message: safeActionMessage(error, "No se pudo revisar la solicitud. Intenta nuevamente.") }
+    return actionErrorResult(error, "No se pudo revisar la solicitud. Intenta nuevamente.")
   }
 }
 
@@ -168,6 +168,6 @@ export async function withdrawPdtpScheduledInstanceOutcomeAction(formData: FormD
     revalidatePath("/prevencion/pdtp", "layout")
     return { ok: true }
   } catch (error) {
-    return { ok: false, message: safeActionMessage(error, "No se pudo retirar la solicitud. Intenta nuevamente.") }
+    return actionErrorResult(error, "No se pudo retirar la solicitud. Intenta nuevamente.")
   }
 }

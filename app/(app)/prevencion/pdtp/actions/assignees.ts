@@ -13,9 +13,9 @@
  */
 
 import { ZodError } from "zod"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { safeActionMessage } from "@/lib/action-error"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import {
   listPdtpAssigneeCandidates,
@@ -50,7 +50,7 @@ export async function listPdtpAssigneeCandidatesAction(
   try {
     return { ok: true, candidates: await listPdtpAssigneeCandidates(activityId, worksiteId) }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "No se pudo cargar la lista de personas.") }
+    return actionErrorResult(e, "No se pudo cargar la lista de personas.")
   }
 }
 
@@ -89,6 +89,6 @@ export async function setPdtpActivityAssigneesAction(formData: FormData): Promis
     }
     // Los motivos del servicio ("Fulano no puede recibir esta actividad en esta
     // faena…") son la única pista que tiene quien asigna de por qué no avanza.
-    return { ok: false, message: safeActionMessage(e, "No se pudo guardar la asignación. Intenta nuevamente.") }
+    return actionErrorResult(e, "No se pudo guardar la asignación. Intenta nuevamente.")
   }
 }

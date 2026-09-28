@@ -1,10 +1,10 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { ZodError } from "zod"
 import { guardAuth, guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { safeActionMessage } from "@/lib/action-error"
 import {
   submitPdtpProgramForReview,
   approvePdtpProgramJdpr,
@@ -43,7 +43,7 @@ function fail(error: unknown): ActionState {
   // operador")` y son la única pista de por qué no se puede avanzar (p. ej.
   // actividades sin clasificar antes de enviar a revisión). `safeActionMessage`
   // las deja pasar y sigue ocultando los errores de driver y de esquema.
-  return { ok: false, message: safeActionMessage(error, "No se pudo completar la acción. Intenta nuevamente.") }
+  return actionErrorResult(error, "No se pudo completar la acción. Intenta nuevamente.")
 }
 
 async function activatePdtpIfAllStepsApproved(programId: string, userId: string): Promise<void> {

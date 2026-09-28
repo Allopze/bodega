@@ -2,6 +2,11 @@
 
 import { useState, useCallback } from "react"
 import type { ZodSchema, ZodError } from "zod"
+import { configureZodLocale } from "@/lib/validation/zod-locale"
+
+// El cliente no pasa por `instrumentation.ts`: sin esto, la validación en el
+// navegador seguía mostrando los mensajes por defecto de Zod en inglés.
+configureZodLocale()
 
 /**
  * Client-side validation hook for `onBlur` and submit-time checks.

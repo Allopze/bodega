@@ -1,6 +1,6 @@
 "use server"
 
-import { safeActionMessage } from "@/lib/action-error"
+import { actionErrorResult } from "@/lib/actions/action-error-result"
 
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -28,7 +28,7 @@ export async function markFollowupAction(
     revalidateOperationalViews([REVALIDATE])
     return { ok: true, message: "Seguimiento actualizado" }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al actualizar el seguimiento") }
+    return actionErrorResult(e, "Error al actualizar el seguimiento")
   }
 }
 
@@ -45,6 +45,6 @@ export async function getFollowupsAction(
     const followups = await getFollowups(evaluationId, worksiteIds)
     return { ok: true, data: { followups } }
   } catch (e) {
-    return { ok: false, message: safeActionMessage(e, "Error al obtener seguimientos") }
+    return actionErrorResult(e, "Error al obtener seguimientos")
   }
 }
