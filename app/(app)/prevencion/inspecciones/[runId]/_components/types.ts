@@ -22,6 +22,8 @@ export interface RunInfo {
   officialComplianceBasisPoints: number | null
   normalizedComplianceBasisPoints: number | null
   executedByUserId: string | null
+  /** De la plantilla: con `declared_in_form` quien transcribe sí puede revisar. */
+  executorOfRecord: string | null
   closingResult: string | null
   closingRestrictions: string | null
   closingSignatures: { role: string; name: string; userId: string | null; signedAt: string }[] | null

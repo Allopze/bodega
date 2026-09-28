@@ -98,6 +98,21 @@ export async function uploadRiskMapLayout(input: unknown, access: RiskLegalAcces
   })
 }
 
+/**
+ * ¿El peligro pertenece a la matriz MIPER VIGENTE (publicada) de esa faena?
+ *
+ * Una sola definición para todo lo que se ancla a un peligro —el marcador del
+ * plano y el permiso de trabajo (#21)—: ni el riesgo de otro centro de trabajo,
+ * ni el de un borrador o una versión reemplazada.
+ */
+export async function isPublishedRiskEntryOfWorksite(client: Client, riskEntryId: string, worksiteId: string): Promise<boolean> {
+  const [entry] = await client.select({ worksiteId: preventionRiskMatrices.worksiteId })
+    .from(preventionRiskEntries)
+    .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
+    .where(and(eq(preventionRiskEntries.id, riskEntryId), eq(preventionRiskMatrices.status, "published"))).limit(1)
+  return Boolean(entry) && entry!.worksiteId === worksiteId
+}
+
 /* ── Marcadores ───────────────────────────────────────────────────────────── */
 
 const addMarkerSchema = z.object({
@@ -123,11 +138,7 @@ export async function addRiskMapMarker(input: unknown, access: RiskLegalAccess) 
     // publicadas; esto lo vuelve la regla y no una cortesía de la UI (y es la
     // otra mitad del reapuntado de MIPER-05: sin esto un marcador podía nacer
     // sobre una entrada `superseded`).
-    const [entry] = await tx.select({ id: preventionRiskEntries.id, worksiteId: preventionRiskMatrices.worksiteId })
-      .from(preventionRiskEntries)
-      .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
-      .where(and(eq(preventionRiskEntries.id, data.riskEntryId), eq(preventionRiskMatrices.status, "published"))).limit(1)
-    if (!entry || entry.worksiteId !== layout.worksiteId) {
+    if (!(await isPublishedRiskEntryOfWorksite(tx, data.riskEntryId, layout.worksiteId))) {
       throw new RiskLegalDomainError("El peligro debe pertenecer a la matriz MIPER vigente de esta misma faena.")
     }
 

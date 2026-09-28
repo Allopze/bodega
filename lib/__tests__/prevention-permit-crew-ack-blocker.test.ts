@@ -65,6 +65,11 @@ beforeAll(async () => {
     { id: APROBADOR.userId, name: "Aprobador", email: "aprobador@perack.cl", hashedPassword: "x", isActive: true },
     { id: OPERADOR.userId, name: "Ana Pérez", email: "ana@perack.cl", hashedPassword: "x", isActive: true, workerId: "wk-perack" },
   ])
+  // #21: el supervisor del permiso debe poder verificar en la faena; se le da
+  // el permiso efectivo en vez de esquivar la validación.
+  await testDb.insert(schema.permissions).values({ id: "perm-verify", name: "prevention:permits:verify", module: "prevention" })
+  await testDb.insert(schema.userPermissions).values({ userId: APROBADOR.userId, permissionId: "perm-verify" })
+  await testDb.insert(schema.worksiteUsers).values({ userId: APROBADOR.userId, worksiteId: WS })
 })
 
 /** Deja un permiso aprobado, con cuadrilla y sin ningún otro bloqueador vivo. */

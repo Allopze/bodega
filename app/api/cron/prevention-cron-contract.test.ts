@@ -45,6 +45,7 @@ vi.mock("@/lib/services/pdtp-adapters/incident-accreditation-connector", () => (
 }))
 vi.mock("@/lib/services/prevention-inspection-scheduler", () => ({ materializeProgramRuns: ok, alertCriticalFindingsWithoutCapa: ok }))
 vi.mock("@/lib/services/prevention-document-ack-reminders", () => ({ runPreventionDocumentAckReminders: ok }))
+vi.mock("@/lib/services/prevention-permits", () => ({ suspendExpiredPermits: ok }))
 vi.mock("@/lib/services/sst-alerts", () => ({ checkOverdueWeeklyAlerts: ok }))
 vi.mock("@/lib/services/deadline-reminders", () => ({ runDeadlineReminders: ok }))
 vi.mock("@/lib/services/pdtp/evidence-integrity", () => ({ scanPdtpEvidenceIntegrity: ok }))
@@ -64,6 +65,8 @@ const ROUTES = {
   "prevention-incident-reminders": { load: () => import("./prevention-incident-reminders/route"), prefix: "PREVENTION_CRON_" },
   "prevention-inspection-programs": { load: () => import("./prevention-inspection-programs/route"), prefix: "PREVENTION_CRON_" },
   "prevention-document-ack-reminders": { load: () => import("./prevention-document-ack-reminders/route"), prefix: "PREVENTION_CRON_" },
+  // #18: el vencimiento de permisos existía y sólo lo llamaba una prueba.
+  "prevention-permit-expiry": { load: () => import("./prevention-permit-expiry/route"), prefix: "PREVENTION_CRON_" },
   "sst-weekly-alerts": { load: () => import("./sst-weekly-alerts/route"), prefix: "SST_CRON_" },
   "deadline-reminders": { load: () => import("./deadline-reminders/route"), prefix: "DEADLINE_REMINDERS_" },
   // PREV-I13-C: escaneo de integridad de la evidencia PDTP.

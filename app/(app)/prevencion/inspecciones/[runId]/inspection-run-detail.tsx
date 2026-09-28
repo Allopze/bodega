@@ -22,6 +22,7 @@ import {
   formatSignatureRole,
   resultBadgeVariant,
   resultSelectToneClass,
+  reviewerIsExecutorOfRecord,
   runStatusBadgeVariant,
   summarizeCompliance,
   validateAnswerRow,
@@ -584,7 +585,13 @@ export function InspectionRunDetail({
       ].filter(Boolean).join(" · ") || "No acredita ninguna actividad",
     },
   ]
-  const isExecutor = run.executedByUserId === currentUserId
+  // #47: la misma regla que aplica el servidor. Con `declared_in_form` quien
+  // transcribió no es el ejecutante de registro y sí puede revisar.
+  const isExecutor = reviewerIsExecutorOfRecord({
+    executedByUserId: run.executedByUserId,
+    reviewerUserId: currentUserId,
+    executorOfRecord: run.executorOfRecord,
+  })
   const canCurrentUserReview = run.status === "completed" && canReview && !isExecutor
   // I-08: el bloqueo cubría sólo la auto-revisión. Quien ejecutó SIN permiso
   // de revisión (p. ej. el jefe de terreno) tampoco puede cerrarla y antes no
@@ -638,7 +645,8 @@ export function InspectionRunDetail({
                   {(canExecute || canReview) && (
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        {canExecute && finding.status === "open" && <CapaDialog finding={finding} assignees={assignees} hasVehicle={!!run.subjectVehicleId} />}
+                        {/* #20: el servidor no deriva desde un run ya revisado; reabrirlo es el camino. */}
+                        {canExecute && run.status === "completed" && finding.status === "open" && <CapaDialog finding={finding} assignees={assignees} hasVehicle={!!run.subjectVehicleId} />}
                         {canStopVehicle && run.subjectVehicleId && ["high", "critical"].includes(finding.criticality) && (
                           <StopVehicleDialog finding={finding} subjectLabel={run.subjectLabel} />
                         )}

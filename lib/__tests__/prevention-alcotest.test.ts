@@ -328,6 +328,43 @@ describe("recordAlcoholTestDispatch", () => {
   })
 })
 
+/* #22: el período del envío es el mes CIVIL chileno. Con límites `Date.UTC`,
+ * un control del 31 de marzo a las 23:30 (02:30Z del 1 de abril) caía en abril
+ * y uno del 28 de febrero a las 22:00 (01:00Z del 1 de marzo), en marzo. */
+describe("recordAlcoholTestDispatch — período en hora de Chile (#22)", () => {
+  it("cuenta el último día del mes hasta la medianoche chilena, no la UTC", async () => {
+    await seedProgramAndActivities()
+    // 31-mar 23:30 CLT (UTC-3): es de marzo.
+    await recordAlcoholTest({ worksiteId: WS_ID, ...SUBJECT, shift: "noche", performedAt: "2026-04-01T02:30:00.000Z" }, USER_PRF, ["prevencionista_faena"], [WS_ID])
+    const dispatch = await recordAlcoholTestDispatch(
+      { worksiteId: WS_ID, year: 2026, month: 3, recipient: "Mutualidad" },
+      USER_PRF, [WS_ID],
+    )
+    expect(dispatch.testCount).toBe(1)
+  })
+
+  it("no cuenta en el mes siguiente lo que en Chile todavía era el mes anterior", async () => {
+    await seedProgramAndActivities()
+    // 28-feb 22:00 CLT: es de febrero, aunque en UTC ya sea 1 de marzo.
+    await recordAlcoholTest({ worksiteId: WS_ID, ...SUBJECT, shift: "noche", performedAt: "2026-03-01T01:00:00.000Z" }, USER_PRF, ["prevencionista_faena"], [WS_ID])
+    const dispatch = await recordAlcoholTestDispatch(
+      { worksiteId: WS_ID, year: 2026, month: 3, recipient: "Mutualidad" },
+      USER_PRF, [WS_ID],
+    )
+    expect(dispatch.testCount).toBe(0)
+  })
+
+  it("rechaza enviar un mes que todavía no termina", async () => {
+    // El índice único (faena, año, mes) congela el conteo: registrar el envío a
+    // mitad de mes dejaría fuera para siempre los controles que faltan.
+    const { year, month } = chileDateParts()
+    await expect(recordAlcoholTestDispatch(
+      { worksiteId: WS_ID, year, month, recipient: "Mutualidad" },
+      USER_PRF, [WS_ID],
+    )).rejects.toThrow(/no ha terminado/)
+  })
+})
+
 describe("listAlcoholTests / listAlcoholTestDispatches", () => {
   it("respetan el alcance de faenas del usuario", async () => {
     await seedProgramAndActivities()

@@ -92,6 +92,7 @@ export async function transitionInspectionRun(input: unknown, access: Inspection
         description: finding.description,
         criticality: finding.criticality,
         capaActionId: finding.capaActionId,
+        status: finding.status,
       })),
     })
 

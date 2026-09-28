@@ -720,6 +720,25 @@ export function requiresCapa(criticality: string): boolean {
 }
 
 /**
+ * ¿Firmar la revisión rompería la independencia de quien ejecutó?
+ *
+ * Con `declared_in_form`, `executedByUserId` es quien transcribió y no quien
+ * ejecutó el acto —esa persona está nombrada dentro del formulario—, así que no
+ * hay conflicto en que firme (D04). Es la única definición de la regla: el
+ * servidor la aplica en `assessRunReview` y la ficha la usa para decidir si
+ * ofrece "Revisar y cerrar" (#47). Duplicarla en la vista es cómo se
+ * desalinearon.
+ */
+export function reviewerIsExecutorOfRecord(args: {
+  executedByUserId: string | null
+  reviewerUserId: string
+  executorOfRecord?: string | null
+}): boolean {
+  if (args.executorOfRecord === "declared_in_form") return false
+  return Boolean(args.executedByUserId) && args.executedByUserId === args.reviewerUserId
+}
+
+/**
  * Revisar y cerrar exige independencia de quien ejecutó y que todo hallazgo alto
  * o crítico tenga una CAPA enlazada — ver `CAPA_REQUIRED_CRITICALITIES`. Un
  * hallazgo grave sin acción es exactamente lo que la auditoría no acepta como
@@ -728,7 +747,14 @@ export function requiresCapa(criticality: string): boolean {
 export function assessRunReview(args: {
   executedByUserId: string | null
   reviewerUserId: string
-  findings: { id: string; description: string; criticality: string; capaActionId: string | null }[]
+  /**
+   * `status` es opcional para los llamadores que ya filtran, pero quien lo pase
+   * obtiene la regla completa: un hallazgo `closed` ya se resolvió —a mano con
+   * motivo, o al cerrar su CAPA— y no puede seguir exigiendo una acción que el
+   * propio cierre declaró innecesaria (#17). Es el mismo criterio con que
+   * `completeInspectionRun` decide el cierre automático (`ne(status, 'closed')`).
+   */
+  findings: { id: string; description: string; criticality: string; capaActionId: string | null; status?: string }[]
   /**
    * De la plantilla. Con `declared_in_form`, `executedByUserId` es quien
    * transcribió y no quien ejecutó el acto, así que no hay conflicto de
@@ -738,11 +764,11 @@ export function assessRunReview(args: {
   executorOfRecord?: string | null
 }): { allowed: boolean; blockers: ReviewBlocker[] } {
   const blockers: ReviewBlocker[] = []
-  const transcribed = args.executorOfRecord === "declared_in_form"
-  if (!transcribed && args.executedByUserId && args.executedByUserId === args.reviewerUserId) {
+  if (reviewerIsExecutorOfRecord(args)) {
     blockers.push({ kind: "executor_is_reviewer", detail: "Quien ejecutó la inspección no puede revisarla y cerrarla." })
   }
   for (const finding of args.findings) {
+    if (finding.status === "closed") continue
     if (requiresCapa(finding.criticality) && !finding.capaActionId) {
       blockers.push({
         kind: "critical_finding_without_capa",
@@ -809,7 +835,7 @@ export function assertInspectionRunTransition(args: {
   actorUserId: string
   executedByUserId?: string | null
   reason?: string
-  findings?: { id: string; description: string; criticality: string; capaActionId: string | null }[]
+  findings?: { id: string; description: string; criticality: string; capaActionId: string | null; status?: string }[]
   /** De la plantilla del run; ver `assessRunReview`. */
   executorOfRecord?: string | null
 }) {

@@ -347,6 +347,13 @@ services:
         # Incidentes — cada hora: el carril de notificación avisa en la ventana
         # de 6 h previa al plazo legal, y una corrida diaria la saltaría entera.
         10 * * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-incident-reminders >/proc/1/fd/1 2>&1
+        # Permisos de trabajo — cada 15 min (#18): un permiso vencido que sigue
+        # `active` aparenta habilitar trabajo de alto riesgo. Las ventanas se
+        # piden en horas (máximo del tipo, típicamente 8 h), así que una corrida
+        # horaria dejaría hasta 59 min de permiso vencido "vigente"; 15 min lo
+        # acota sin cargar la base (una consulta por los `active`). Desfasado a
+        # :07 de los jobs de :00/:15/:30/:45.
+        7,22,37,52 * * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-permit-expiry >/proc/1/fd/1 2>&1
         # PDTP — semanal, lunes 07:15: recordatorios, reconciliación de
         # ocurrencias y reintento del libro de acreditaciones (pending/error).
         15 7 * * 1 CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs pdtp-weekly-reminders >/proc/1/fd/1 2>&1

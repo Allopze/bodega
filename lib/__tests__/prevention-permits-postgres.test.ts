@@ -367,7 +367,7 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
     expect(await service.getWorkPermitDetail(permitId, OUTSIDER)).toBeNull()
   })
 
-  it("auto-suspends an active permit whose window has expired", async () => {
+  it("auto-suspends only an ACTIVE permit whose window has expired", async () => {
     const service = await import("@/lib/services/prevention-permits")
     const permit = await service.createWorkPermit({
       permitTypeId: confinedTypeId, worksiteId: "ws-pm-a",
@@ -383,6 +383,18 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
       .set({ plannedStartAt: "2020-01-01T00:00:00.000Z", plannedEndAt: "2020-01-01T06:00:00.000Z" })
       .where(eq(schema.preventionWorkPermits.id, permit.id))
 
+    // #18: `approved → suspended` no existe en PERMIT_TRANSITIONS. Un aprobado
+    // vencido se queda aprobado (activarlo ya lo bloquea `window_expired`).
+    await service.suspendExpiredPermits()
+    const [stillApproved] = await getDb().select().from(schema.preventionWorkPermits)
+      .where(eq(schema.preventionWorkPermits.id, permit.id))
+    expect(stillApproved).toMatchObject({ status: "approved" })
+
+    // Habilitarlo exige controles, aislamiento y mediciones que este caso no
+    // prueba; se deja vigente directo para ejercitar sólo el barrido.
+    await getDb().update(schema.preventionWorkPermits)
+      .set({ status: "active", activatedByUserId: "pm-approver", activatedAt: "2020-01-01T01:00:00.000Z" })
+      .where(eq(schema.preventionWorkPermits.id, permit.id))
     const result = await service.suspendExpiredPermits()
     expect(result.suspended).toBeGreaterThanOrEqual(1)
     const [after] = await getDb().select().from(schema.preventionWorkPermits)
@@ -416,6 +428,10 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
     { id: "pm-crew-a1", name: "Ana Pérez", email: "pm-crew-a1@local.invalid", hashedPassword: "hash", workerId: "wk-a1", createdAt: now, updatedAt: now },
     { id: "pm-crew-a2", name: "Bruno Soto", email: "pm-crew-a2@local.invalid", hashedPassword: "hash", workerId: "wk-a2", createdAt: now, updatedAt: now },
   ])
+  // #21: el supervisor del permiso debe poder verificar en su faena.
+  await database.insert(schema.permissions).values({ id: "perm-pm-verify", name: "prevention:permits:verify", module: "prevention" })
+  await database.insert(schema.userPermissions).values({ userId: "pm-approver", permissionId: "perm-pm-verify" })
+  await database.insert(schema.worksiteUsers).values({ userId: "pm-approver", worksiteId: "ws-pm-a" })
 }
 
 async function resetDatabase(url: string) {

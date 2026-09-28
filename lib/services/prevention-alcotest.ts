@@ -16,6 +16,7 @@ import { and, asc, eq, gte, inArray, lt } from "drizzle-orm"
 import { db } from "@/db"
 import { alcoholTestDispatches, alcoholTests, serviceEquipment, workers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { chileLocalDateTimeToUtc } from "@/lib/utils"
 import { assertWorksiteAccess, type WorksiteScope } from "@/lib/services/pdtp/helpers"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
 import { recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
@@ -266,8 +267,19 @@ export async function recordAlcoholTestDispatch(
   }
   const sentAt = input.sentAt ?? new Date().toISOString()
 
-  const periodStart = new Date(Date.UTC(input.year, input.month - 1, 1)).toISOString()
-  const periodEnd = new Date(Date.UTC(input.year, input.month, 1)).toISOString()
+  // #22: el período es el mes CIVIL chileno. Con `Date.UTC` el corte caía 3–4 h
+  // antes de la medianoche local: el control del último día de noche se iba al
+  // mes siguiente. `chileLocalDateTimeToUtc` resuelve el desfase de cada borde
+  // (-03 o -04), que cambia con el horario de verano.
+  const monthStart = (year: number, month: number) =>
+    chileLocalDateTimeToUtc(`${year}-${String(month).padStart(2, "0")}-01T00:00`)
+  const periodStart = monthStart(input.year, input.month)
+  const periodEnd = input.month === 12 ? monthStart(input.year + 1, 1) : monthStart(input.year, input.month + 1)
+  // El índice único (faena, año, mes) congela `testCount`: registrar el envío
+  // de un mes en curso dejaría fuera para siempre los controles que faltan.
+  if (Date.parse(periodEnd) > Date.now()) {
+    throw new Error(`El período ${input.year}-${String(input.month).padStart(2, "0")} todavía no ha terminado: el envío se registra cuando cierra el mes.`)
+  }
   const testsInPeriod = await db.select().from(alcoholTests).where(and(
     eq(alcoholTests.worksiteId, input.worksiteId),
     gte(alcoholTests.performedAt, periodStart),
