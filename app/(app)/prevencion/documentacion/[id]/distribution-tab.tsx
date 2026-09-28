@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -48,6 +49,9 @@ export function DistributionTab(props: Props) {
   const [recipientId, setRecipientId] = useState("")
   const [reason, setReason] = useState("")
   const [isPending, startTransition] = useTransition()
+  // Destinatario a eximir: el motivo se pide en un diálogo con etiqueta y foco
+  // gestionado, no en un `window.prompt` que el lector de pantalla no anuncia.
+  const [exemptingId, setExemptingId] = useState<string | null>(null)
   const currentTargets = useMemo(
     () => distribution.filter((target) => target.versionId === currentVersionId),
     [currentVersionId, distribution],
@@ -63,6 +67,24 @@ export function DistributionTab(props: Props) {
 
   return (
     <div className="space-y-4">
+      <ConfirmDialog
+        open={exemptingId !== null}
+        onOpenChange={(open) => { if (!open) setExemptingId(null) }}
+        title="Eximir destinatario"
+        description="El destinatario deja de contar como pendiente de acuse para esta versión. Queda registrado quién lo eximió y por qué."
+        variant="warning"
+        confirmLabel="Eximir"
+        reasonLabel="Motivo de la exención"
+        loading={isPending}
+        onConfirm={(exemptionReason) => {
+          if (!exemptingId) return
+          const targetId = exemptingId
+          runAction(
+            () => exemptSstDocumentRecipientAction({ documentId, targetId, reason: exemptionReason }),
+            () => setExemptingId(null),
+          )
+        }}
+      />
       {canAck && myTarget?.status === "pendiente" && !alreadyAcknowledged && currentVersionId ? (
         <Card>
           <CardHeader><CardTitle>Tu acuse está pendiente</CardTitle></CardHeader>
@@ -179,7 +201,7 @@ export function DistributionTab(props: Props) {
                           size="sm"
                           variant="secondary"
                           disabled={isPending}
-                          onClick={() => exemptTarget(target.id)}
+                          onClick={() => setExemptingId(target.id)}
                         >
                           Eximir
                         </Button>
@@ -195,17 +217,12 @@ export function DistributionTab(props: Props) {
     </div>
   )
 
-  function exemptTarget(targetId: string) {
-    const exemptionReason = window.prompt("Motivo de la exención:")?.trim()
-    if (!exemptionReason) return
-    runAction(() => exemptSstDocumentRecipientAction({ documentId, targetId, reason: exemptionReason }))
-  }
-
-  function runAction(operation: () => Promise<{ ok: boolean; message?: string }>) {
+  function runAction(operation: () => Promise<{ ok: boolean; message?: string }>, onSuccess?: () => void) {
     startTransition(async () => {
       const result = await operation()
       if (result.ok) {
         toast.success(result.message ?? "Distribución actualizada.")
+        onSuccess?.()
         onChanged()
       } else {
         toast.error(result.message ?? "No se pudo actualizar la distribución.")

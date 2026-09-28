@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Field } from "@/components/ui/field"
@@ -56,6 +57,9 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
   const [coveragePercentInput, setCoveragePercentInput] = useState<string>("")
   const [reasonInput, setReasonInput] = useState<string>("")
   const [dialogOpen, setDialogOpen] = useState(false)
+  // Actividad que se va a excluir. El motivo se pedía con `prompt()`; ahora con
+  // un diálogo que muestra el mínimo y no deja confirmar un motivo corto.
+  const [excluding, setExcluding] = useState<AplicabilidadActivity | null>(null)
 
   const currentWorksite = worksites.find((w) => w.id === selectedWorksiteId)
 
@@ -71,21 +75,27 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
 
   const handleToggleExclusion = (act: AplicabilidadActivity, isExcluded: boolean) => {
     if (!canManage || !selectedWorksiteId) return
-    const promptReason = isExcluded
-      ? "Inclusión manual autorizada por Jefatura"
-      : prompt(`Motivo de exclusión para N° ${act.n} en ${currentWorksite?.name} (mínimo 10 caracteres):`)
-    if (!promptReason || promptReason.trim().length < 10) {
-      setMessage("Debe ingresar una justificación válida de al menos 10 caracteres.")
+    // Reincluir no pide motivo: vuelve al estado por defecto del programa.
+    if (isExcluded) {
+      applyExclusion(act, false, "Inclusión manual autorizada por Jefatura")
       return
     }
+    setMessage("")
+    setExcluding(act)
+  }
+
+  const applyExclusion = (act: AplicabilidadActivity, excluded: boolean, reason: string, onDone?: () => void) => {
     run(
       () => setPdtpActivityWorksiteAdjustmentAction({
         activityId: act.id,
         worksiteId: selectedWorksiteId,
-        excluded: !isExcluded,
-        reason: promptReason.trim(),
+        excluded,
+        reason: reason.trim(),
       }),
-      () => router.refresh(),
+      () => {
+        onDone?.()
+        router.refresh()
+      },
     )
   }
 
@@ -138,6 +148,24 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={excluding !== null}
+        onOpenChange={(open) => { if (!open) setExcluding(null) }}
+        title={excluding ? `Excluir N° ${excluding.n} en ${currentWorksite?.name ?? "la faena"}` : "Excluir actividad"}
+        description="La actividad deja de exigirse en esta faena y sale del denominador del programa. El motivo queda registrado."
+        variant="warning"
+        confirmLabel="Excluir"
+        reasonLabel="Motivo de exclusión"
+        loading={pending}
+        onConfirm={(reason) => {
+          if (!excluding) return
+          // Se cierra antes de enviar: el resultado —éxito o rechazo— se
+          // anuncia en la línea de estado de la página, que el modal taparía.
+          const act = excluding
+          setExcluding(null)
+          applyExclusion(act, true, reason)
+        }}
+      />
       {message && !dialogOpen && (
         <p role="status" className="text-sm text-[var(--color-text-muted)]">{message}</p>
       )}

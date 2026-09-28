@@ -1,10 +1,11 @@
 "use client"
 
-import { useRef, useTransition } from "react"
+import { useRef, useState, useTransition } from "react"
 import { UploadSimple } from "@phosphor-icons/react"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
 import { FileInput } from "@/components/ui/file-input"
@@ -52,9 +53,28 @@ export function VersionsTab({
 }: Props) {
   const [isPending, startTransition] = useTransition()
   const fileRef = useRef<File | null>(null)
+  // Versión a observar. Antes era un `window.prompt`: sin etiqueta accesible,
+  // sin foco gestionado y bloqueado por algunos navegadores. El diálogo pide la
+  // observación con el mismo umbral de motivo que el resto de la plataforma.
+  const [observing, setObserving] = useState<{ documentId: string; versionId: string } | null>(null)
 
   return (
     <div className="space-y-4">
+      <ConfirmDialog
+        open={observing !== null}
+        onOpenChange={(open) => { if (!open) setObserving(null) }}
+        title="Observar versión"
+        description="La versión vuelve a quien la subió para que corrija lo que describas."
+        variant="warning"
+        confirmLabel="Registrar observación"
+        reasonLabel="Observación que debe corregirse"
+        loading={isPending}
+        onConfirm={(comment) => {
+          if (!observing) return
+          const input = observing
+          runWorkflow(() => observeSstDocumentVersionAction({ ...input, comment }), () => setObserving(null))
+        }}
+      />
       {permissions.manage && !isArchived ? (
         <Card>
           <CardHeader><CardTitle>Subir nueva versión</CardTitle></CardHeader>
@@ -188,7 +208,7 @@ export function VersionsTab({
               size="sm"
               variant="secondary"
               disabled={isPending}
-              onClick={() => observeVersion(input)}
+              onClick={() => setObserving(input)}
             >
               Observar
             </Button>
@@ -219,17 +239,12 @@ export function VersionsTab({
     return null
   }
 
-  function observeVersion(input: { documentId: string; versionId: string }) {
-    const comment = window.prompt("Describe la observación que debe corregirse:")?.trim()
-    if (!comment) return
-    runWorkflow(() => observeSstDocumentVersionAction({ ...input, comment }))
-  }
-
-  function runWorkflow(operation: () => Promise<{ ok: boolean; message?: string }>) {
+  function runWorkflow(operation: () => Promise<{ ok: boolean; message?: string }>, onSuccess?: () => void) {
     startTransition(async () => {
       const result = await operation()
       if (result.ok) {
         toast.success(result.message ?? "Estado documental actualizado.")
+        onSuccess?.()
         onUploaded()
       } else {
         toast.error(result.message ?? "No se pudo actualizar el estado documental.")
