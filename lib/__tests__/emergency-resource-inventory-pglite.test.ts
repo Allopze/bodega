@@ -7,6 +7,7 @@ import path from "node:path"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import type { EmergencyAccess } from "@/lib/services/prevention-emergency"
 
 const pg = new PGlite()
 const testDb = drizzle(pg, { schema }) as unknown as DB
@@ -395,7 +396,7 @@ describe("inventario canónico de activos de emergencia", () => {
       { id: "plan-link-archived", worksiteId, code: "PE-LINK-ARCH", title: "Plan anterior", status: "archived", createdByUserId: userId },
       { id: "plan-link-draft", worksiteId, code: "PE-LINK-DRAFT", title: "Plan vigente", status: "draft", createdByUserId: userId },
     ])
-    const planAccess = { userId, scope: { mode: "some", ids: [worksiteId] }, permissions: ["prevention:emergency:manage"] } as const
+    const planAccess: EmergencyAccess = { userId, scope: { mode: "some", ids: [worksiteId] }, permissions: ["prevention:emergency:manage"] }
     const linkedPlan = async () => (await testDb.select({ planId: schema.preventionEmergencyResources.planId })
       .from(schema.preventionEmergencyResources)
       .where(eq(schema.preventionEmergencyResources.id, resourceIds[0]!)))[0]?.planId
