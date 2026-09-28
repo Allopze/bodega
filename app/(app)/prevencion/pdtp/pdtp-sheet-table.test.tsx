@@ -186,7 +186,7 @@ describe("PdtpSheetTable — weekly filter", () => {
 
     expect(screen.getByText("Actividad ejecutada")).toBeDefined()
     expect(screen.getByText("Actividad sin plan este mes")).toBeDefined()
-    expect(screen.getByText("No programada en este período")).toBeDefined()
+    expect(screen.getByText("No programada este mes")).toBeDefined()
   })
 
   it("preserves the signed annual plan but does not mark pre-activation months overdue", () => {

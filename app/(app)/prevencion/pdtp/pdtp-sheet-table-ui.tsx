@@ -22,7 +22,7 @@ const STATUS_BADGE: Record<PdtpActivityStatus, StatusConfig> = {
   executed: { label: "Ejecutado", variant: "success" },
   pending: { label: "Pendiente", variant: "default" },
   overdue: { label: "Atrasado", variant: "danger" },
-  not_scheduled: { label: "No programada en este período", variant: "outline" },
+  not_scheduled: { label: "No programada este mes", variant: "outline" },
   // Ámbar, no rojo: hay un motivo declarado. Sigue sin ejecutarse y sigue
   // contando en cero para el indicador, pero no es lo mismo que una deuda
   // sin explicación.

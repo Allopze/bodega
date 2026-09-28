@@ -73,7 +73,7 @@ function PdtpAggregateBreakdown({ summaries, worksiteNames, planViewMode, bare =
   const chips = <div className="mt-1 flex flex-wrap gap-1.5">{summaries.map((summary) => {
     const planned = planViewMode === "historico" ? summary.historicalPlanned : summary.planned
     const executed = planViewMode === "historico" ? summary.historicalExecuted : summary.executed
-    const statusLabel = summary.status === "executed" ? "Ejecutada" : summary.status === "overdue" ? "Atrasada" : summary.status === "pending" ? "Pendiente" : summary.status === "not_performed" ? "No realizada" : "No programada"
+    const statusLabel = summary.status === "executed" ? "Ejecutada" : summary.status === "overdue" ? "Atrasada" : summary.status === "pending" ? "Pendiente" : summary.status === "not_performed" ? "No realizada" : "No programada este mes"
     return <MetaBadge key={summary.worksiteId} meta={{ label: `${worksiteNames[summary.worksiteId] ?? "Faena"}: Plan ${formatQuantity(planned)} · ejecutado ${formatQuantity(executed)} · Estado exigible: ${statusLabel}`, variant: "outline" }} />
   })}</div>
   // `bare`: sin <details> propio, para vivir dentro del expander único de la
