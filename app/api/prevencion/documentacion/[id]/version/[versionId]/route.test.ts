@@ -125,4 +125,23 @@ describe("GET document version authorization", () => {
       userId: "user-1",
     }))
   })
+
+  // FX-A (A3): el endpoint principal responde 410 para un documento archivado;
+  // éste servía igual su versión vigente a quien sólo tiene `docs:view`.
+  it("does not serve the current version of an archived document to a general viewer", async () => {
+    dbState.doc = doc({ currentVersionId: "sdv-draft", status: "archivado" })
+    dbState.version = version({ status: "vigente" })
+
+    expect((await requestVersion()).status).toBe(410)
+    expect(mockReadFile).not.toHaveBeenCalled()
+  })
+
+  it("lets a document manager inspect a version of an archived document", async () => {
+    dbState.doc = doc({ currentVersionId: "sdv-draft", status: "archivado" })
+    dbState.version = version({ status: "vigente" })
+    mockAuth.mockResolvedValue(session(["prevention:docs:view", "prevention:docs:manage"]))
+    mockCanAny.mockReturnValue(true)
+
+    expect((await requestVersion()).status).toBe(200)
+  })
 })

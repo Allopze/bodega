@@ -8,7 +8,7 @@
  * (carpeta de requisitos legales N°19, entrega del RIOHS N°18).
  */
 import { revalidatePath } from "next/cache"
-import { and, desc, eq, isNull, ne } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
 import { sstDocuments } from "@/db/schema"
@@ -17,6 +17,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { logger } from "@/lib/logger"
 import { parseZ } from "@/lib/actions/parse-z"
 import {
+  allowedDocumentConfidentialities,
   archiveDocument,
   createDocument,
   updateDocumentMetadata,
@@ -149,6 +150,7 @@ export async function uploadTypedSstDocumentAction(
           input: { documentId, comment: "Archivado automáticamente: falló la carga de la primera versión." },
           ctx,
           scope,
+          permissions: session.user.permissions,
         })
       } catch (archiveError) {
         logger.error("[prevencion/documentacion] falló la compensación de la carga tipada", archiveError)
@@ -198,6 +200,9 @@ export async function listSstDocumentsOfTypeAction(input: {
         eq(sstDocuments.typeId, input.typeId),
         input.worksiteId ? eq(sstDocuments.worksiteId, input.worksiteId) : isNull(sstDocuments.worksiteId),
         ne(sstDocuments.status, "archivado"),
+        // Igual que la búsqueda: el título de un documento que no se puede
+        // abrir tampoco se ofrece como «Nueva versión de…».
+        inArray(sstDocuments.confidentiality, allowedDocumentConfidentialities(guard.session.user.permissions)),
       ))
       .orderBy(desc(sstDocuments.updatedAt))
       .limit(20)

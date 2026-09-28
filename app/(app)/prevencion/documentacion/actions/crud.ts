@@ -91,6 +91,7 @@ export async function createAndUploadSstDocumentAction(formData: FormData): Prom
           input: { documentId, comment: "Archivado automáticamente: falló la carga de la primera versión." },
           ctx: await clientCtx(session),
           scope: resolveWorksiteScope(session),
+          permissions: session.user.permissions,
         })
       } catch (archiveError) {
         logger.error("[prevencion/documentacion] falló la compensación de carga inicial", archiveError)
@@ -145,6 +146,7 @@ export async function archiveSstDocumentAction(input: { documentId: string; comm
       input: parsed.data,
       ctx: await clientCtx(session),
       scope: resolveWorksiteScope(session),
+      permissions: session.user.permissions,
     })
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${parsed.data.documentId}`)
@@ -160,14 +162,20 @@ export async function restoreSstDocumentAction(input: { documentId: string; comm
   const session = guard.session
   if (!input.documentId) return { ok: false, message: "Documento requerido." }
   try {
-    await restoreDocument({
+    const restored = await restoreDocument({
       input,
       ctx: await clientCtx(session),
       scope: resolveWorksiteScope(session),
+      permissions: session.user.permissions,
     })
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${input.documentId}`)
-    return { ok: true, message: "Documento restaurado como borrador." }
+    return {
+      ok: true,
+      message: restored.status === "vigente"
+        ? "Documento restaurado con su versión vigente."
+        : "Documento restaurado como borrador.",
+    }
   } catch (e) {
     return fail(e)
   }

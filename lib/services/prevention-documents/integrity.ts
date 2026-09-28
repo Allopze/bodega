@@ -10,7 +10,7 @@ import {
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { allowedDocumentConfidentialities, assertGeneralLibraryContentAllowed } from "./utils"
-import { assertScopeAccess } from "./utils"
+import { assertConfidentialityAllowed, assertScopeAccess, type SstDocumentConfidentiality } from "./utils"
 import { inspectDocumentLinkTargets } from "./links"
 import { PreventionDocumentDomainError } from "./errors"
 
@@ -57,6 +57,7 @@ export async function regularizeDocumentIntegrityFinding(args: {
   reason: string
   userId: string
   scope: WorksiteScope
+  permissions: readonly string[]
 }) {
   const reason = args.reason.trim()
   if (reason.length < 5 || reason.length > 2000) {
@@ -68,6 +69,8 @@ export async function regularizeDocumentIntegrityFinding(args: {
       .where(eq(sstDocuments.id, args.documentId)).for("update").limit(1)
     if (!doc) throw new PreventionDocumentDomainError("Documento no encontrado.")
     assertScopeAccess(doc.worksiteId, args.scope)
+    // Regularizar cambia estado y versión vigente: exige lo mismo que editar.
+    assertConfidentialityAllowed(doc.confidentiality as SstDocumentConfidentiality, args.permissions)
     const now = new Date().toISOString()
     const before: Record<string, unknown> = {
       documentStatus: doc.status,

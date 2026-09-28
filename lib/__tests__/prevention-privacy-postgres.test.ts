@@ -151,24 +151,26 @@ describeIf("privacy rights and sensitive backup/restore on real Postgres", () =>
   it("validates document-link existence/scope and permits audited re-link after removal", async () => {
     const { createDocumentLink, removeDocumentLink } = await import("@/lib/services/prevention-documents/links")
     const scope = { mode: "some" as const, ids: ["ws-privacy"] }
+    // `doc-sensitive` es sensible: vincularlo exige gestionar esa confidencialidad.
+    const permissions = ["prevention:docs:link", "prevention:docs:manage_sensitive"]
     const first = await createDocumentLink({
       documentId: "doc-sensitive", entityType: "worker", entityId: "worker-privacy",
-      notes: "Titular estructural", userId: "privacy-manager", scope,
+      notes: "Titular estructural", userId: "privacy-manager", scope, permissions,
     })
     await removeDocumentLink({
-      linkId: first.id, reason: "Corrección controlada del vínculo", userId: "privacy-manager", scope,
+      linkId: first.id, reason: "Corrección controlada del vínculo", userId: "privacy-manager", scope, permissions,
     })
     await expect(createDocumentLink({
       documentId: "doc-sensitive", entityType: "worker", entityId: "worker-privacy",
-      notes: "Vínculo corregido", userId: "privacy-manager", scope,
+      notes: "Vínculo corregido", userId: "privacy-manager", scope, permissions,
     })).resolves.toMatchObject({ entityId: "worker-privacy" })
     await expect(createDocumentLink({
       documentId: "doc-sensitive", entityType: "worker", entityId: "worker-missing",
-      userId: "privacy-manager", scope,
+      userId: "privacy-manager", scope, permissions,
     })).rejects.toThrow(/no existe/i)
     await expect(createDocumentLink({
       documentId: "doc-sensitive", entityType: "worker", entityId: "worker-privacy-foreign",
-      userId: "privacy-manager", scope,
+      userId: "privacy-manager", scope, permissions,
     })).rejects.toThrow(/sin acceso|otra faena/i)
   })
 
@@ -188,6 +190,7 @@ describeIf("privacy rights and sensitive backup/restore on real Postgres", () =>
       reason: "Referencia contrastada contra inventario de versiones",
       userId: "privacy-manager",
       scope: { mode: "some", ids: ["ws-privacy"] },
+      permissions: ["prevention:docs:publish"],
     })
     const [doc] = await db.select().from(schema.sstDocuments).where(eq(schema.sstDocuments.id, "doc-invalid-current"))
     expect(doc).toMatchObject({ status: "borrador", currentVersionId: null })

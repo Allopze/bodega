@@ -126,6 +126,35 @@ export function assertConfidentialityAllowed(
   }
 }
 
+const CONFIDENTIALITY_RANK: Record<SstDocumentConfidentiality, number> = {
+  publico_interno: 0,
+  restringido: 1,
+  sensible: 2,
+}
+
+/**
+ * Confidencialidad mínima que exige lo que el documento contiene. La carga
+ * masiva y la tipada no preguntan confidencialidad —preguntan la clase de dato
+ * o el tipo—, así que sin este piso todo quedaba `publico_interno`, visible
+ * para cualquiera con `docs:view`, aunque se declarara «Sensible preventivo».
+ * `sensitive_preventive` → `sensible` es el mismo par que ya usa el archivo de
+ * evaluaciones (`evaluation-archive.ts`); datos personales y secretos de
+ * cliente no son de toda la empresa, quedan `restringido`.
+ */
+export function minimumDocumentConfidentiality(args: {
+  requested: SstDocumentConfidentiality
+  dataClass?: string | null
+  typeDefault?: string | null
+}): SstDocumentConfidentiality {
+  const candidates: SstDocumentConfidentiality[] = [args.requested]
+  if (args.dataClass === "sensitive_preventive") candidates.push("sensible")
+  if (args.dataClass === "personal" || args.dataClass === "client_secret") candidates.push("restringido")
+  if (args.typeDefault && args.typeDefault in CONFIDENTIALITY_RANK) {
+    candidates.push(args.typeDefault as SstDocumentConfidentiality)
+  }
+  return candidates.reduce((max, c) => CONFIDENTIALITY_RANK[c] > CONFIDENTIALITY_RANK[max] ? c : max)
+}
+
 export function allowedDocumentConfidentialities(
   userPermissions: readonly string[],
 ): SstDocumentConfidentiality[] {
