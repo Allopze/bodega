@@ -33,7 +33,9 @@ async function evaluateAllDimensions(page: Page) {
     const evaluar = page.getByRole("button", { name: "Evaluar", exact: true }).first()
     await expect(evaluar).toBeVisible({ timeout: 30_000 })
     await evaluar.click()
-    const dialog = page.getByRole("dialog")
+    // La ficha también deja en el DOM un popover cerrado con role="dialog":
+    // se acota al diálogo que se acaba de abrir.
+    const dialog = page.getByRole("dialog").filter({ has: page.getByRole("button", { name: "Guardar evaluación", exact: true }) })
     await dialog.getByRole("textbox", { name: /Notas/ }).fill("El cambio no altera esta dimensión: control vigente suficiente.")
     await dialog.getByRole("button", { name: "Guardar evaluación", exact: true }).click()
     await expect(dialog).toBeHidden({ timeout: 30_000 })
@@ -51,7 +53,7 @@ test.describe("Prevención — Gestión del cambio", () => {
     await page.goto("/prevencion/gestion-cambio")
     await expectPageTitle(page, "Gestión del cambio")
     await page.getByRole("button", { name: "Nuevo cambio", exact: true }).first().click()
-    const createDialog = page.getByRole("dialog")
+    const createDialog = page.getByRole("dialog", { name: "Nueva solicitud de gestión del cambio" })
     await createDialog.getByRole("textbox", { name: "Título" }).fill(title)
     await createDialog.getByRole("combobox", { name: "Tipo de cambio" }).click()
     await page.getByRole("option", { name: "Proveedor o contratista", exact: true }).click()
@@ -60,7 +62,7 @@ test.describe("Prevención — Gestión del cambio", () => {
     await createDialog.getByRole("button", { name: "Crear", exact: true }).click()
     await expect(createDialog).toBeHidden({ timeout: 30_000 })
 
-    await page.getByRole("link", { name: title, exact: true }).click()
+    await page.getByRole("link", { name: new RegExp(`${title}$`) }).click()
     await expect(page).toHaveURL(/\/prevencion\/gestion-cambio\/[^/?]+$/, { timeout: 30_000 })
     const changeUrl = page.url()
 
@@ -78,7 +80,7 @@ test.describe("Prevención — Gestión del cambio", () => {
     const aprobar = page.getByRole("button", { name: "Aprobar cambio", exact: true })
     await expect(aprobar).toBeEnabled({ timeout: 30_000 })
     await aprobar.click()
-    const approveDialog = page.getByRole("dialog")
+    const approveDialog = page.getByRole("dialog", { name: "Aprobar cambio" })
     const reviewDate = tomorrowInChile()
     await pickCurrentMonthDate(page, "Seleccionar fecha", reviewDate)
     await approveDialog.getByRole("button", { name: "Aprobar", exact: true }).click()

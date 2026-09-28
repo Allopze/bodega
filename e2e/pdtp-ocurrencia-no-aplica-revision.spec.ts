@@ -133,12 +133,18 @@ test.describe.serial("PDTP — revisión del 'no aplica' y la cancelación de oc
     await expect(own.getByRole("button", { name: /Aprobar/ })).toHaveCount(0)
     await own.getByRole("button", { name: new RegExp(`Retirar "no aplica" de N°${ACTIVITY_N}`) }).click()
     await page.getByRole("dialog").getByRole("button", { name: "Retirar solicitud" }).click()
+    // La fila deja de coincidir en cuanto abre la confirmación: esperar sólo a
+    // que desaparezca dejaba leer la base antes de que la acción terminara. El
+    // aviso sale cuando la acción ya respondió.
+    await expect(page.locator("[data-sonner-toast]").getByText(/retirada/i)).toBeVisible()
     await expect(page.getByRole("listitem").filter({ hasText: REASON_OWN })).toHaveCount(0)
 
     const sql = openDb()
     try {
-      const [request] = await sql`select status, withdrawn_by_user_id from pdtp_scheduled_instance_outcome_requests where id = ${REQ_OWN}`
-      expect(request).toMatchObject({ status: "withdrawn", withdrawn_by_user_id: ADMIN_ID })
+      await expect.poll(async () => {
+        const [row] = await sql`select status, withdrawn_by_user_id from pdtp_scheduled_instance_outcome_requests where id = ${REQ_OWN}`
+        return row
+      }).toMatchObject({ status: "withdrawn", withdrawn_by_user_id: ADMIN_ID })
       const [instance] = await sql`select status from pdtp_scheduled_instances where id = ${INSTANCES[2].id}`
       expect(instance!.status).toBe("pending")
     } finally { await sql.end() }
