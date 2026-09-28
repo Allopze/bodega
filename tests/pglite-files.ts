@@ -271,6 +271,7 @@ export const pgliteTestFiles = [
   // T4 (evidencia e historial): bitácora de envíos, sha256 y segregación.
   "lib/__tests__/pdtp-execution-history.test.ts",
   "lib/__tests__/pdtp-evidence-link-ownership.test.ts",
+  "lib/__tests__/prevention-capa-evidence-file.test.ts",
   "lib/__tests__/pdtp-evidence-references.test.ts",
   "lib/__tests__/pdtp-scheduled-start.test.ts",
   // T3 (fuentes: instancias e integración).
