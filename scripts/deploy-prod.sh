@@ -459,7 +459,13 @@ fi
 
 # La migración SST es idempotente y conserva el origen local; debe ejecutarse
 # después de que la base ya tenga el esquema y antes de levantar la nueva app.
-run_timed "Migrando documentos SST a Cloudreve" run_in_prod docker compose run --rm migrate-sst-to-cloudreve
+# deploy:dev la salta (SKIP_SST_CLOUDREVE_MIGRATION): el entorno de pruebas no
+# tiene Cloudreve a propósito, y sin credenciales el script sale con 2.
+if [ -n "${SKIP_SST_CLOUDREVE_MIGRATION:-}" ]; then
+  echo "==> Migración de documentos SST a Cloudreve omitida: $DEPLOY_LABEL no usa Cloudreve"
+else
+  run_timed "Migrando documentos SST a Cloudreve" run_in_prod docker compose run --rm migrate-sst-to-cloudreve
+fi
 
 run_timed "Normalizando SKUs de EPP y servicios" run_in_prod docker compose run --rm normalize-epp-skus
 

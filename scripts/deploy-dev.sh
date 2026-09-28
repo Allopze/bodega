@@ -11,7 +11,8 @@ set -euo pipefail
 # No es un segundo script de despliegue: fija el destino y delega en
 # deploy-prod.sh, así dev ensaya los mismos pasos (migraciones, backfills,
 # rollback, smokes) que después corren en prod, también sólo desde `main`.
-# Única diferencia: sin DEV_PUBLIC_URL se omite el smoke por el túnel.
+# Diferencias: sin DEV_PUBLIC_URL se omite el smoke por el túnel, y se salta
+# la migración de documentos SST a Cloudreve (dev no tiene Cloudreve).
 # El .env de allá es estado de ese servidor, igual que en prod: si apunta a
 # integraciones reales (SII, proveedores de combustible, correo), el cron de
 # dev las va a llamar.
@@ -26,5 +27,6 @@ else
   export SKIP_PUBLIC_SMOKE=1
 fi
 export DEPLOY_LABEL="dev"
+export SKIP_SST_CLOUDREVE_MIGRATION=1
 
 exec bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deploy-prod.sh" "$@"
