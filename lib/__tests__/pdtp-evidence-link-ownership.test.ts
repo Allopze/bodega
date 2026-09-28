@@ -189,7 +189,7 @@ describe("hallazgo 1 — la planilla no vincula el archivo de otra faena", () =>
     await rejectPdtpExecution((await executionOf(WS_B))!.id, APPROVER, "Falta firma", "all")
     // Mismo archivo (la fila y su historial ya lo referencian, en la misma faena).
     await markPdtpExecution(cell(WS_B, { evidenceUrl: first }), USER_B, [WS_B])
-    await rejectPdtpExecution((await executionOf(WS_B))!.id, APPROVER, "Ilegible", "all")
+    await rejectPdtpExecution((await executionOf(WS_B))!.id, APPROVER, "El acta está ilegible", "all")
     // Archivo nuevo: el anterior pasa a las fotos (fusión append-only).
     const second = await evidenceFile("propia-b-2.pdf", OWNER_B)
     const row = await markPdtpExecution(cell(WS_B, { evidenceUrl: second }), USER_B, [WS_B])

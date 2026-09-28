@@ -2650,7 +2650,7 @@ describe("prevention PDTP service", () => {
     expect(exec.status).toBe("submitted")
 
     // No se puede rechazar fuera de scope (antes de rechazar)
-    await expect(rejectPdtpExecution(exec.id, "user-1", "X", ["ws-other"])).rejects.toThrow(/sin acceso/i)
+    await expect(rejectPdtpExecution(exec.id, "user-1", "Fuera de mi alcance", ["ws-other"])).rejects.toThrow(/sin acceso/i)
 
     // Rechazar con motivo
     const rejected = await rejectPdtpExecution(exec.id, "user-1", "Cantidad debe ser 3, no 1", ["ws-1"])
@@ -2730,6 +2730,35 @@ describe("prevention PDTP service", () => {
 
     await expect(rejectPdtpExecution(exec.id, "user-1", "", ["ws-1"])).rejects.toThrow(/motivo del rechazo/i)
     await expect(rejectPdtpExecution(exec.id, "user-1", "   ", ["ws-1"])).rejects.toThrow(/motivo del rechazo/i)
+    // #24: el motivo exige el mismo mínimo que el resto del módulo (10), y
+    // cuenta sin los espacios de relleno.
+    await expect(rejectPdtpExecution(exec.id, "user-1", "Ilegible", ["ws-1"])).rejects.toThrow(/al menos 10 caracteres/i)
+    await expect(rejectPdtpExecution(exec.id, "user-1", "   Ilegible     ", ["ws-1"])).rejects.toThrow(/al menos 10 caracteres/i)
+    const [stored] = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.id, exec.id))
+    expect(stored!.status).toBe("submitted")
+  })
+
+  it("approvePdtpExecution: una ejecución rechazada no se aprueba sin reenvío (#23)", async () => {
+    const { markPdtpExecution, rejectPdtpExecution, approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
+    await loadActiveCatalog()
+
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 3))
+    const exec = await markPdtpExecution({
+      activityId: activity!.id,
+      worksiteId: "ws-1",
+      year: 2026,
+      month: 7,
+      week: 1,
+      executedQuantity: 1,
+      evidenceText: "Registro verificable del caso",
+      evidenceUrl: GENERIC_EVIDENCE_URL,
+    }, "user-1", ["ws-1"])
+    await rejectPdtpExecution(exec.id, "user-approver", "El acta no trae las firmas", ["ws-1"])
+
+    await expect(approvePdtpExecution(exec.id, "user-approver", ["ws-1"])).rejects.toThrow(/submitted/)
+    const [stored] = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.id, exec.id))
+    expect(stored!.status).toBe("rejected")
+    expect(stored!.rejectionReason).toBe("El acta no trae las firmas")
   })
 
   it("getPdtpSheetView prefiere el programa activo sobre el más reciente por versión", async () => {

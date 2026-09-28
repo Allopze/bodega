@@ -15,6 +15,7 @@ import { assertPdtpProgramAcceptsPeriod, assertPdtpProgramAcceptsReview } from "
 import { assertPdtpPeriodOpen } from "./period-guard"
 import { syncPdtpScheduledInstanceFromExecution } from "./scheduled-execution"
 import { todayInChile } from "@/lib/utils"
+import { PDTP_REASON_MIN_LENGTH } from "@/lib/prevention/pdtp"
 import { hashPdtpEvidenceFiles } from "./evidence-files"
 import { assertPdtpEvidenceLinkable } from "./evidence-references"
 import { assertPdtpActorMayRegister, type PdtpRegistrationActor } from "./registration-authority"
@@ -534,8 +535,11 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
     const [execution] = await tx.select().from(pdtpExecutions).where(eq(pdtpExecutions.id, executionId)).limit(1)
     if (!execution) throw new Error("Ejecución PDTP no encontrada.")
     if (execution.status === "approved") throw new Error("La ejecución ya fue aprobada.")
-    if (execution.status !== "submitted" && execution.status !== "rejected") {
-      throw new Error("Solo se pueden aprobar ejecuciones en estado 'submitted' o 'rejected'.")
+    // #23: una rechazada vuelve al ejecutor para corregirse; sólo su reenvío
+    // (`markPdtpExecution`, que la deja en 'submitted') la devuelve a la cola.
+    // Aprobarla directo daba por cumplido justo lo que el revisor objetó.
+    if (execution.status !== "submitted") {
+      throw new Error("Solo se pueden aprobar ejecuciones en estado 'submitted'. Una rechazada debe reenviarse antes de aprobarse.")
     }
     // Segregación: quien registró el cumplimiento no puede ser quien lo
     // aprueba. `executedByUserId` es null en las de `origin: 'integration'`
@@ -570,7 +574,7 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
       })
       .where(and(
         eq(pdtpExecutions.id, executionId),
-        inArray(pdtpExecutions.status, ["submitted", "rejected"]),
+        eq(pdtpExecutions.status, "submitted"),
       )).returning()
     if (!updated) throw new Error("La ejecución cambió de estado antes de poder aprobarse. Actualiza la página e inténtalo nuevamente.")
     if (execution.obligationId) {
@@ -632,6 +636,11 @@ export async function rejectPdtpExecution(
 ) {
   if (!reason || reason.trim().length === 0) {
     throw new Error("Debes indicar el motivo del rechazo.")
+  }
+  // #24: el servicio repite el mínimo del esquema porque también lo llaman
+  // conectores y scripts que no pasan por la acción.
+  if (reason.trim().length < PDTP_REASON_MIN_LENGTH) {
+    throw new Error(`El motivo del rechazo debe tener al menos ${PDTP_REASON_MIN_LENGTH} caracteres.`)
   }
   if (reason.length > 1000) {
     throw new Error("El motivo del rechazo no puede superar 1000 caracteres.")

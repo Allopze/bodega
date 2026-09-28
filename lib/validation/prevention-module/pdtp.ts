@@ -45,7 +45,9 @@ export const pdtpExecutionApprovalSchema = z.object({
 
 export const pdtpExecutionRejectionSchema = z.object({
   executionId: z.string().min(1, "Ejecución requerida"),
-  reason: z.string().trim().min(3, "El motivo debe tener al menos 3 caracteres").max(1000),
+  // #24: mismo mínimo que el resto de los motivos del PDTP
+  // (`PDTP_REASON_MIN_LENGTH`): "Mal" no le dice al ejecutor qué corregir.
+  reason: z.string().trim().min(10, "El motivo debe tener al menos 10 caracteres").max(1000),
 })
 
 export const pdtpScheduleCellSchema = z.object({
