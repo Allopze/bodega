@@ -35,6 +35,8 @@ interface WorkerOption {
 interface SupervisorOption {
   id: string
   name: string
+  /** Faenas donde puede verificar: el servicio exige la del permiso (#21). */
+  worksiteIds: string[]
 }
 
 /* ── Alta de tipo de permiso ──────────────────────────────────────────────── */
@@ -136,7 +138,8 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
   const [crew, setCrew] = React.useState<Record<string, string>>({})
   const [workerQuery, setWorkerQuery] = React.useState("")
   const [controls, setControls] = React.useState<{ id: string; description: string; isMandatory: boolean }[]>([])
-  const [supervisorUserId, setSupervisorUserId] = React.useState(supervisors[0]?.id ?? "")
+  const supervisorsFor = (id: string) => supervisors.filter((item) => item.worksiteIds.includes(id))
+  const [supervisorUserId, setSupervisorUserId] = React.useState(supervisorsFor(worksites[0]?.id ?? "")[0]?.id ?? "")
   const [defaultStart, setDefaultStart] = React.useState("")
   const [defaultEnd, setDefaultEnd] = React.useState("")
   const operation = useOperation()
@@ -152,6 +155,9 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
   function changeWorksite(value: string) {
     setWorksiteId(value)
     setCrew({}) // la cuadrilla anterior pertenece a la faena anterior
+    // El supervisor también es de la faena: uno que no verifica en la nueva
+    // sería rechazado por el servicio al enviar.
+    setSupervisorUserId(supervisorsFor(value)[0]?.id ?? "")
   }
 
   function toggleWorker(workerId: string, checked: boolean) {
@@ -236,8 +242,8 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
           </Field>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Supervisor">
-              <Select value={supervisorUserId} onValueChange={setSupervisorUserId}><SelectTrigger><SelectValue placeholder="Selecciona supervisor" /></SelectTrigger><SelectContent>{supervisors.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="supervisorUserId" value={supervisorUserId} />
+            <Field label="Supervisor" hint={supervisorsFor(worksiteId).length === 0 ? "Nadie con permiso de verificar está asignado a esta faena." : undefined}>
+              <Select value={supervisorUserId} onValueChange={setSupervisorUserId}><SelectTrigger><SelectValue placeholder="Selecciona supervisor" /></SelectTrigger><SelectContent>{supervisorsFor(worksiteId).map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="supervisorUserId" value={supervisorUserId} />
             </Field>
             <Field label="Peligro MIPER de origen" hint="Opcional. ID del peligro en la matriz.">
               <Input name="riskEntryId" placeholder="ID del peligro en la MIPER" />

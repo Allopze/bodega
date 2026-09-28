@@ -209,6 +209,7 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "prevention", submoduleHref: "/prevencion/documentacion", prefix: "/api/cron/prevention-document-ack-reminders" },
   { moduleId: "prevention", submoduleHref: "/prevencion/incidentes", prefix: "/api/cron/prevention-incident-reminders" },
   { moduleId: "prevention", submoduleHref: "/prevencion/inspecciones", prefix: "/api/cron/prevention-inspection-programs" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/permisos", prefix: "/api/cron/prevention-permit-expiry" },
   { moduleId: "prevention", submoduleHref: "/prevencion/capacitacion", prefix: "/api/cron/prevention-training-reminders" },
   { moduleId: "sst", submoduleHref: "/prevencion/evaluaciones", prefix: "/api/cron/sst-weekly-alerts" },
 ]

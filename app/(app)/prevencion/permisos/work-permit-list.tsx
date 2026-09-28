@@ -63,7 +63,7 @@ interface Props {
   types: PermitTypeItem[]
   worksites: { id: string; name: string }[]
   workers: WorkerOption[]
-  supervisors: { id: string; name: string }[]
+  supervisors: { id: string; name: string; worksiteIds: string[] }[]
 }
 
 const COLUMNS = [

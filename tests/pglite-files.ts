@@ -186,6 +186,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-emergency-plan-seed.test.ts",
   // PER-001 y E2E-005 de la auditoría 2026-09-14.
   "lib/__tests__/prevention-permit-crew-ack-blocker.test.ts",
+  // FX-C: vencimiento, supervisor/peligro validados y avisos del permiso.
+  "lib/__tests__/prevention-permit-workflow-gates-pglite.test.ts",
   // FX-C: un hallazgo cerrado no bloquea la revisión ni se deriva a CAPA.
   "lib/__tests__/prevention-inspection-closed-finding-gates-pglite.test.ts",
   "lib/__tests__/prevention-acuse-sin-cuenta.test.ts",

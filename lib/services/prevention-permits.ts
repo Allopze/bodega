@@ -17,7 +17,10 @@ import {
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
-import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
+import { logger } from "@/lib/logger"
+import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
+import { createNotifications } from "@/lib/services/notifications"
+import { isPublishedRiskEntryOfWorksite } from "@/lib/services/prevention-risk-map"
 import { checkPreventionAckToken, PREVENTION_ACK_EXPIRED_MESSAGE } from "@/lib/services/prevention-ack-token"
 import {
   assessPermitActivation,
@@ -116,6 +119,78 @@ async function bumpPermitVersion(client: Client, permitId: string, now: string) 
     .where(eq(preventionWorkPermits.id, permitId))
 }
 
+/**
+ * Envía un aviso sin dejar que su fallo tumbe una transición ya confirmada.
+ * Mismo criterio que en inspecciones (`notifySafely` de runs.ts).
+ */
+async function notifySafely(label: string, send: () => Promise<void>) {
+  try {
+    await send()
+  } catch (error) {
+    logger.error({ err: error }, `[permits] no se pudo notificar (${label})`)
+  }
+}
+
+type PermitRow = typeof preventionWorkPermits.$inferSelect
+
+/**
+ * Avisos del flujo (#63). Van después del commit: si el aviso fallara dentro de
+ * la transacción, el permiso no cambiaría de estado por un problema de correo.
+ *
+ * - Enviar a aprobación → quienes pueden aprobar EN ESA faena. Sin esto el
+ *   aprobador descubría el permiso abriendo la bandeja.
+ * - Aprobado → solicitante y supervisor: son quienes lo llevan a terreno.
+ * - Suspendido → solicitante y supervisor: suspender es detener el trabajo, y
+ *   quien está en terreno tiene que saberlo ya. Incluye la suspensión automática
+ *   por vencimiento (`actorUserId` nulo).
+ *
+ * Nunca se avisa a quien ejecutó el acto: ya lo sabe.
+ */
+async function notifyPermitTransition(permit: PermitRow, toStatus: string, actorUserId: string | null) {
+  const exceptActor = (ids: (string | null)[]) =>
+    [...new Set(ids.filter((id): id is string => Boolean(id) && id !== actorUserId))]
+  const base = {
+    type: "system_alert" as const,
+    entityType: "work_permit",
+    entityId: permit.id,
+    entityHref: `/prevencion/permisos/${permit.id}`,
+  }
+
+  if (toStatus === "pending_approval") {
+    await notifySafely("permiso por aprobar", async () => {
+      const approvers = await getUserIdsWithPermissionForWorksite("prevention:permits:approve", permit.worksiteId)
+      // Quien solicitó no puede aprobar su propio permiso (segregación).
+      const targets = exceptActor(approvers).filter((id) => id !== permit.requestedByUserId)
+      await createNotifications(targets, {
+        ...base,
+        title: "Permiso de trabajo por aprobar",
+        body: `${permit.code} · ${permit.location}: ${permit.taskDescription}`,
+        dedupeKey: `permit:pending_approval:${permit.id}:${permit.version}`,
+      })
+    })
+  }
+  if (toStatus === "approved") {
+    await notifySafely("permiso aprobado", async () => {
+      await createNotifications(exceptActor([permit.requestedByUserId, permit.supervisorUserId]), {
+        ...base,
+        title: "Permiso de trabajo aprobado",
+        body: `${permit.code} · ${permit.location}. Falta habilitarlo en terreno antes de iniciar.`,
+        dedupeKey: `permit:approved:${permit.id}:${permit.version}`,
+      })
+    })
+  }
+  if (toStatus === "suspended") {
+    await notifySafely("permiso suspendido", async () => {
+      await createNotifications(exceptActor([permit.requestedByUserId, permit.supervisorUserId]), {
+        ...base,
+        title: "Permiso de trabajo suspendido",
+        body: `${permit.code} · ${permit.location}: ${permit.suspensionReason ?? "sin motivo declarado"}. El trabajo debe detenerse.`,
+        dedupeKey: `permit:suspended:${permit.id}:${permit.version}`,
+      })
+    })
+  }
+}
+
 /* ── Catálogo ─────────────────────────────────────────────────────────────── */
 
 export async function createPermitType(input: unknown, access: PermitAccess) {
@@ -146,7 +221,21 @@ export async function createWorkPermit(input: unknown, access: PermitAccess) {
   const data = workPermitSchema.parse(input)
   requireAccess(access, "prevention:permits:request", data.worksiteId)
 
+  // #21: el supervisor es quien verifica los controles en terreno, así que debe
+  // poder hacerlo en ESTA faena. Antes se guardaba cualquier id de usuario y el
+  // permiso quedaba a cargo de alguien que no podía verificar nada.
+  const supervisors = await getUserIdsWithPermissionForWorksite("prevention:permits:verify", data.worksiteId)
+  if (!supervisors.includes(data.supervisorUserId)) {
+    throw new Error("El supervisor debe tener permiso para verificar permisos de trabajo en esta faena.")
+  }
+
   return db.transaction(async (tx) => {
+    // #21: el peligro de origen, si se declara, es de la MIPER vigente de la
+    // misma faena. Es la misma regla que el marcador del mapa de riesgos.
+    if (data.riskEntryId && !(await isPublishedRiskEntryOfWorksite(tx, data.riskEntryId, data.worksiteId))) {
+      throw new Error("El peligro debe pertenecer a la matriz MIPER vigente de esta misma faena.")
+    }
+
     const [type] = await tx.select().from(preventionPermitTypes)
       .where(eq(preventionPermitTypes.id, data.permitTypeId)).limit(1)
     if (!type || !type.isActive) throw new Error("El tipo de permiso no existe o está inactivo.")
@@ -500,7 +589,7 @@ export async function transitionWorkPermit(input: unknown, access: PermitAccess)
     })
   }
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [permit] = await tx.select().from(preventionWorkPermits)
       .where(eq(preventionWorkPermits.id, data.permitId)).limit(1)
     if (!permit) throw new Error(NOT_FOUND)
@@ -548,6 +637,9 @@ export async function transitionWorkPermit(input: unknown, access: PermitAccess)
     await history(tx, { permitId: permit.id, changeType: "status", fromStatus: permit.status, toStatus: data.toStatus, reason: data.reason, beforeState: permit, afterState: updated, actorUserId: access.userId })
     return updated
   })
+
+  await notifyPermitTransition(result, data.toStatus, access.userId)
+  return result
 }
 
 export async function extendWorkPermit(input: unknown, access: PermitAccess) {
@@ -693,16 +785,27 @@ export async function acknowledgePermitCrewByPublicToken(
   })
 }
 
-/** Suspende automáticamente los permisos vigentes cuya ventana ya venció. */
+/**
+ * Suspende automáticamente los permisos VIGENTES cuya ventana ya venció.
+ *
+ * Sólo `active` (#18): `approved → suspended` no existe en `PERMIT_TRANSITIONS`,
+ * y un barrido de sistema no puede saltarse la máquina de estados que el
+ * servicio sí respeta. Un permiso aprobado y vencido tampoco habilita trabajo
+ * —activarlo lo bloquea `window_expired` en `assessPermitActivation`—, así que
+ * se deja en `approved` para que una persona lo extienda o lo cancele.
+ * Cancelarlo aquí no es posible sin actor: el CHECK
+ * `prevention_work_permit_cancel_consistent` exige `cancelledByUserId`.
+ */
 export async function suspendExpiredPermits() {
   const now = nowIso()
   const candidates = await db.select().from(preventionWorkPermits)
-    .where(inArray(preventionWorkPermits.status, ["active", "approved"]))
+    .where(eq(preventionWorkPermits.status, "active"))
   const expired = candidates.filter((permit) => isPermitExpired(permit, now))
   if (expired.length === 0) return { suspended: 0 }
 
+  let suspended = 0
   for (const permit of expired) {
-    await db.transaction(async (tx) => {
+    const updated = await db.transaction(async (tx) => {
       const [updated] = await tx.update(preventionWorkPermits).set({
         status: "suspended",
         suspendedAt: now,
@@ -716,13 +819,24 @@ export async function suspendExpiredPermits() {
         suspensionReason: "Suspensión automática: la ventana autorizada del permiso venció.",
         version: permit.version + 1,
         updatedAt: now,
-      }).where(and(eq(preventionWorkPermits.id, permit.id), eq(preventionWorkPermits.version, permit.version))).returning()
+      }).where(and(
+        eq(preventionWorkPermits.id, permit.id),
+        eq(preventionWorkPermits.version, permit.version),
+        eq(preventionWorkPermits.status, "active"),
+      )).returning()
       if (updated) {
         await history(tx, { permitId: permit.id, changeType: "status", fromStatus: permit.status, toStatus: "suspended", reason: "Vigencia del permiso vencida", actorUserId: null })
       }
+      return updated ?? null
     })
+    // Un CAS perdido (alguien lo cerró o extendió entremedio) no es una
+    // suspensión: no se cuenta ni se avisa.
+    if (updated) {
+      suspended += 1
+      await notifyPermitTransition(updated, "suspended", null)
+    }
   }
-  return { suspended: expired.length }
+  return { suspended }
 }
 
 /* ── Consultas ────────────────────────────────────────────────────────────── */
@@ -846,15 +960,29 @@ export async function listPermitWorkers(access: PermitAccess) {
 
 /**
  * Candidatos a supervisor del permiso: personas habilitadas para verificar
- * controles en terreno. El servicio no restringe `supervisorUserId` a la faena
- * del permiso, así que esta lista tampoco lo hace.
+ * controles en terreno.
+ *
+ * Devuelve `worksiteIds` porque `createWorkPermit` exige que el supervisor
+ * verifique en la faena del permiso (#21): el formulario filtra por la faena
+ * elegida y así el rechazo no aparece recién al enviar. Misma fuente que el
+ * servicio (`getUserIdsWithPermissionForWorksite`), una consulta por faena del
+ * alcance —son pocas—.
  */
 export async function listPermitSupervisors(access: PermitAccess) {
   requireAccess(access, "prevention:permits:view")
-  const ids = await getUserIdsWithPermission("prevention:permits:verify")
-  if (ids.length === 0) return []
-  return db.select({ id: users.id, name: users.name })
+  const permitWorksites = await listPermitWorksites(access)
+  const byWorksite = await Promise.all(permitWorksites.map(async (worksite) => ({
+    worksiteId: worksite.id,
+    userIds: await getUserIdsWithPermissionForWorksite("prevention:permits:verify", worksite.id),
+  })))
+  const worksitesByUser = new Map<string, string[]>()
+  for (const { worksiteId, userIds } of byWorksite) {
+    for (const userId of userIds) worksitesByUser.set(userId, [...(worksitesByUser.get(userId) ?? []), worksiteId])
+  }
+  if (worksitesByUser.size === 0) return []
+  const rows = await db.select({ id: users.id, name: users.name })
     .from(users)
-    .where(and(inArray(users.id, ids), eq(users.isActive, true)))
+    .where(and(inArray(users.id, [...worksitesByUser.keys()]), eq(users.isActive, true)))
     .orderBy(asc(users.name))
+  return rows.map((row) => ({ ...row, worksiteIds: worksitesByUser.get(row.id) ?? [] }))
 }
