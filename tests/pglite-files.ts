@@ -229,6 +229,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/password-reset.test.ts",
   // PRI-002: ejercita la supresión de un caso reservado contra PGlite migrado.
   "lib/__tests__/prevention-privacy-reserved-redaction.test.ts",
+  // FX-A: permisos de dominio e idempotencia persistida al ejecutar derechos.
+  "lib/__tests__/prevention-privacy-execution-authorization.test.ts",
   "lib/__tests__/admin-productos-identidad-y-baja.test.ts",
   "lib/__tests__/proveedores-actions.test.ts",
   "lib/__tests__/facturacion-clientes-identidad.test.ts",

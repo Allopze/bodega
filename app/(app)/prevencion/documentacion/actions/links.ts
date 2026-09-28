@@ -30,6 +30,7 @@ export async function createSstDocumentLinkAction(input: {
       notes: input.notes,
       userId: guard.session.user.id,
       scope: resolveWorksiteScope(guard.session),
+      permissions: guard.session.user.permissions,
     })
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${input.documentId}`)
@@ -52,6 +53,7 @@ export async function removeSstDocumentLinkAction(input: {
       reason: input.reason,
       userId: guard.session.user.id,
       scope: resolveWorksiteScope(guard.session),
+      permissions: guard.session.user.permissions,
     })
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${input.documentId}`)

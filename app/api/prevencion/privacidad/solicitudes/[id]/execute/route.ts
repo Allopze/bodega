@@ -10,18 +10,12 @@ export const runtime = "nodejs"
 
 interface RouteContext { params: Promise<{ id: string }> }
 
-const idempotencyCache = new Map<string, { result: unknown; timestamp: number }>()
-const IDEMPOTENCY_TTL_MS = 86_400_000 // 24 horas
-
 export async function POST(request: Request, context: RouteContext) {
   const idempotencyKey = request.headers.get("idempotency-key")
   if (!idempotencyKey || idempotencyKey.length < 8 || idempotencyKey.length > 64) {
     return NextResponse.json({ error: "Se requiere el header Idempotency-Key (8-64 caracteres)" }, { status: 400 })
   }
 
-  // La caché se consulta DESPUÉS de autenticar y autorizar: antes, un no
-  // autenticado que adivinara u observara una clave recibía el resultado
-  // cacheado sin pasar por `auth()`.
   const session = await auth()
   if (!session) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
   if (!session.user.permissions.includes("prevention:privacy:manage_requests")) {
@@ -32,22 +26,11 @@ export async function POST(request: Request, context: RouteContext) {
   catch { return NextResponse.json({ error: "Body JSON inválido" }, { status: 400 }) }
   const { id } = await context.params
 
-  // La clave se namespacea por usuario y solicitud: sin eso, reutilizar la misma
-  // `Idempotency-Key` en OTRA solicitud devolvía el resultado de la primera y la
-  // segunda ejecución del derecho se omitía en silencio.
-  const cacheKey = `${session.user.id}:${id}:${idempotencyKey}`
-  const cached = idempotencyCache.get(cacheKey)
-  if (cached && Date.now() - cached.timestamp < IDEMPOTENCY_TTL_MS) {
-    return NextResponse.json(cached.result, {
-      status: 200,
-      headers: { "Cache-Control": "private, max-age=0, no-store" },
-    })
-  }
-
-  // Limpiar entradas expiradas periódicamente
-  for (const [key, value] of idempotencyCache) {
-    if (Date.now() - value.timestamp > IDEMPOTENCY_TTL_MS) idempotencyCache.delete(key)
-  }
+  // La idempotencia vive en `prevention_privacy_request_executions`
+  // (`executePreventionPrivacyRight`), namespaceada por solicitud y actor, y se
+  // resuelve después de autenticar y autorizar. Antes era un `Map` de este
+  // proceso: un reinicio o una segunda instancia la perdían y el mismo envío
+  // podía ejecutar dos veces un derecho irreversible.
   try {
     const execution = await executePreventionPrivacyRight({
       input: { ...body, requestId: id },
@@ -59,11 +42,11 @@ export async function POST(request: Request, context: RouteContext) {
       },
       scope: resolveWorksiteScope(session),
       permissions: session.user.permissions,
+      idempotencyKey,
     })
     const result = { execution: { id: execution.id, outcome: execution.outcome } }
-    idempotencyCache.set(cacheKey, { result, timestamp: Date.now() })
     return NextResponse.json(result, {
-      status: 201,
+      status: execution.replayed ? 200 : 201,
       headers: { "Cache-Control": "private, max-age=0, no-store" },
     })
   } catch (error) {

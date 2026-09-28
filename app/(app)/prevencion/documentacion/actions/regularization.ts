@@ -25,6 +25,7 @@ export async function regularizeSstDocumentIntegrityAction(input: {
       ...input,
       userId: guard.session.user.id,
       scope: resolveWorksiteScope(guard.session),
+      permissions: guard.session.user.permissions,
     })
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${input.documentId}`)

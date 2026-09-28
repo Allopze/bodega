@@ -188,6 +188,16 @@ export const preventionPrivacyRequestExecutions = pgTable("prevention_privacy_re
   reason:      text("reason").notNull(),
   details:     jsonb("details").notNull().default(sql`'{}'::jsonb`),
   actorUserId: text("actor_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  /**
+   * Clave de idempotencia del envío, namespaceada por solicitud y actor
+   * (`<requestId>:<userId>:<clave del cliente>`). Ejecutar un derecho es
+   * irreversible y la clave vivía en un `Map` del proceso: se perdía al
+   * reiniciar y no se compartía entre instancias, así que un reintento podía
+   * ejecutar dos veces. Nullable a propósito: las ejecuciones previas no
+   * tuvieron clave persistida e inventarles una no prueba nada; Postgres admite
+   * varios NULL bajo UNIQUE.
+   */
+  idempotencyKey: text("idempotency_key").unique(),
   createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   index("prevention_privacy_execution_request_idx").on(table.requestId, table.createdAt),

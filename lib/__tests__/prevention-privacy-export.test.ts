@@ -10,7 +10,7 @@ vi.mock("@/lib/services/prevention-privacy", () => ({
 
 import { buildPreventionPrivacySubjectExport } from "@/lib/services/prevention-privacy-export"
 
-function dataset(includesClinical: boolean) {
+function dataset(includesClinical: boolean, includesFitness = true) {
   return {
     request: {
       id: "ppr-1",
@@ -42,6 +42,7 @@ function dataset(includesClinical: boolean) {
       payload: { diagnosis: "contenido clínico", nested: { value: "=FORMULA" } },
     }] : [],
     includesClinical,
+    includesFitness,
     purpose: "respuesta a derecho de acceso",
   }
 }
@@ -102,5 +103,30 @@ describe("privacy subject Excel", () => {
     expect(clinical?.getColumn("D").values.slice(2)).toEqual(["clinical", "clinical"])
     expect(clinical?.getColumn("C").values).toContain("'=FORMULA")
     expect(mockRecordDelivery).toHaveBeenCalledWith(expect.objectContaining({ includesClinical: true }))
+  })
+
+  // FX-A (A8): sin `health:view_restrictions` el dataset llega sin aptitud; la
+  // planilla lo dice en vez de dejar celdas vacías que parecen «sin datos».
+  it("declares fitness data as not included when the exporter cannot read it", async () => {
+    mockGetDataset.mockResolvedValue(dataset(false, false))
+    const result = await buildPreventionPrivacySubjectExport({
+      requestId: "ppr-1",
+      includeClinical: false,
+      purpose: "respuesta a derecho de acceso",
+      ctx: { userId: "privacy-admin" },
+      scope: { mode: "all", ids: [] },
+      permissions: ["prevention:privacy:export_subject"],
+    })
+    const Excel = await import("exceljs")
+    const workbook = new Excel.Workbook()
+    await workbook.xlsx.load(result.bytes.buffer.slice(
+      result.bytes.byteOffset,
+      result.bytes.byteOffset + result.bytes.byteLength,
+    ) as ArrayBuffer)
+    const health = workbook.getWorksheet("Salud ocupacional")
+    expect(health?.getCell("D2").value).toBe("No incluido")
+    expect(health?.getCell("E2").value).toBe("No incluido")
+    const scopeValues = workbook.getWorksheet("Alcance y custodia")?.getColumn("B").values ?? []
+    expect(scopeValues.some((value) => String(value).startsWith("No: requiere permiso de aptitud"))).toBe(true)
   })
 })
