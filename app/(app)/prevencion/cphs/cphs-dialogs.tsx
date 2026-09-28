@@ -58,15 +58,15 @@ export function NewCommitteeDialog({
               designaciones de presidencia y secretaría se sostienen al incorporar integrantes.
             </DialogDescription>
           </DialogHeader>
-          <Field label="Faena">
+          <Field label="Faena" error={operation.fieldError("worksiteId")}>
             <Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
           </Field>
-          <Field label="Nombre"><Input name="name" required minLength={3} maxLength={200} placeholder="CPHS Faena Central" /></Field>
+          <Field label="Nombre" error={operation.fieldError("name")}><Input name="name" required minLength={3} maxLength={200} placeholder="CPHS Faena Central" /></Field>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Constituido el" required><DatePicker name="constitutedOn" /></Field>
-            <Field label="Mandato hasta" hint="Debe ser posterior a la constitución." required><DatePicker name="mandateEndsOn" /></Field>
+            <Field label="Constituido el" required error={operation.fieldError("constitutedOn")}><DatePicker name="constitutedOn" error={Boolean(operation.fieldError("constitutedOn"))} /></Field>
+            <Field label="Mandato hasta" hint="Debe ser posterior a la constitución." required error={operation.fieldError("mandateEndsOn")}><DatePicker name="mandateEndsOn" error={Boolean(operation.fieldError("mandateEndsOn"))} /></Field>
           </div>
-          <Field label="Día de sesión mensual" hint="Opcional. Día del mes (1-28) en que suele convocarse.">
+          <Field label="Día de sesión mensual" hint="Opcional. Día del mes (1-28) en que suele convocarse." error={operation.fieldError("meetingDayOfMonth")}>
             <Input name="meetingDayOfMonth" type="number" min={1} max={28} className="w-24" />
           </Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}

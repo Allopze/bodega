@@ -38,11 +38,11 @@ export function NewPlanDialog({ worksites }: { worksites: { id: string; name: st
               Nace en preparación. Aprobarlo exige declarar al menos un escenario y un rol del organigrama de emergencia.
             </DialogDescription>
           </DialogHeader>
-          <Field label="Faena">
+          <Field label="Faena" error={operation.fieldError("worksiteId")}>
             <Select value={worksiteId} onValueChange={setWorksiteId}><SelectTrigger><SelectValue placeholder="Selecciona faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
           </Field>
-          <Field label="Título"><Input name="title" required minLength={3} maxLength={200} placeholder="Plan de emergencia Faena Central" /></Field>
-          <Field label="Descripción" hint="Opcional."><Textarea name="description" maxLength={5000} /></Field>
+          <Field label="Título" error={operation.fieldError("title")}><Input name="title" required minLength={3} maxLength={200} placeholder="Plan de emergencia Faena Central" /></Field>
+          <Field label="Descripción" hint="Opcional." error={operation.fieldError("description")}><Textarea name="description" maxLength={5000} /></Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Crear</Button></DialogFooter>
         </form>

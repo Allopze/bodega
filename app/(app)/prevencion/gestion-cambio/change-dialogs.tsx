@@ -52,7 +52,7 @@ export function NewChangeDialog({ worksites }: { worksites: { id: string; name: 
               Nace con las seis dimensiones de impacto pendientes de evaluar. Aprobarla exige evaluarlas todas y declarar una fecha de revisión posterior.
             </DialogDescription>
           </DialogHeader>
-          <Field label="Faena">
+          <Field label="Faena" error={operation.fieldError("worksiteId")}>
             <Select value={worksiteId} onValueChange={setWorksiteId}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -60,9 +60,9 @@ export function NewChangeDialog({ worksites }: { worksites: { id: string; name: 
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Título"><Input name="title" required minLength={3} maxLength={200} /></Field>
+          <Field label="Título" error={operation.fieldError("title")}><Input name="title" required minLength={3} maxLength={200} /></Field>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Tipo de cambio">
+            <Field label="Tipo de cambio" error={operation.fieldError("changeType")}>
               <Select value={changeType} onValueChange={setChangeType}>
                 <SelectTrigger><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger>
                 <SelectContent>
@@ -71,7 +71,7 @@ export function NewChangeDialog({ worksites }: { worksites: { id: string; name: 
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Nivel de riesgo">
+            <Field label="Nivel de riesgo" error={operation.fieldError("riskLevel")}>
               <Select value={riskLevel} onValueChange={setRiskLevel}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -83,10 +83,10 @@ export function NewChangeDialog({ worksites }: { worksites: { id: string; name: 
               </Select>
             </Field>
           </div>
-          <Field label="Descripción del cambio" hint="Mínimo 10 caracteres.">
+          <Field label="Descripción del cambio" hint="Mínimo 10 caracteres." error={operation.fieldError("description")}>
             <Textarea name="description" required minLength={10} maxLength={5000} />
           </Field>
-          <Field label="Motivo" hint="Mínimo 5 caracteres.">
+          <Field label="Motivo" hint="Mínimo 5 caracteres." error={operation.fieldError("reason")}>
             <Textarea name="reason" required minLength={5} maxLength={3000} />
           </Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}

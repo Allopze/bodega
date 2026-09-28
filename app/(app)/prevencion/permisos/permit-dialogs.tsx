@@ -86,10 +86,10 @@ export function PermitTypeDialog() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Código"><Input name="code" required minLength={2} maxLength={60} placeholder="ESP-CONF" /></Field>
-            <Field label="Duración máxima (horas)"><Input name="maxDurationHours" type="number" min={1} max={72} defaultValue={12} required /></Field>
+            <Field label="Código" error={operation.fieldError("code")}><Input name="code" required minLength={2} maxLength={60} placeholder="ESP-CONF" /></Field>
+            <Field label="Duración máxima (horas)" error={operation.fieldError("maxDurationHours")}><Input name="maxDurationHours" type="number" min={1} max={72} defaultValue={12} required /></Field>
           </div>
-          <Field label="Nombre"><Input name="name" required minLength={3} maxLength={200} placeholder="Trabajo en espacio confinado" /></Field>
+          <Field label="Nombre" error={operation.fieldError("name")}><Input name="name" required minLength={3} maxLength={200} placeholder="Trabajo en espacio confinado" /></Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Checkbox
               label="Exige acuse del AST por la cuadrilla"
@@ -104,18 +104,18 @@ export function PermitTypeDialog() {
           </div>
           {requiresMeasurement && (
             <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Vigencia de la medición (minutos)" hint="Una lectura más antigua que esto ya no habilita.">
+              <Field label="Vigencia de la medición (minutos)" hint="Una lectura más antigua que esto ya no habilita." error={operation.fieldError("measurementValidityMinutes")}>
                 <Input name="measurementValidityMinutes" type="number" min={1} max={1440} defaultValue={60} required />
               </Field>
-              <Field label="Vigencia de la calibración (días)" hint="Opcional. Con un valor, el equipo debe declarar una calibración más reciente que eso para habilitar.">
+              <Field label="Vigencia de la calibración (días)" hint="Opcional. Con un valor, el equipo debe declarar una calibración más reciente que eso para habilitar." error={operation.fieldError("measurementCalibrationValidityDays")}>
                 <Input name="measurementCalibrationValidityDays" type="number" min={1} max={3650} />
               </Field>
             </div>
           )}
-          <Field label="Fundamento normativo" hint="Mínimo 5 caracteres.">
+          <Field label="Fundamento normativo" hint="Mínimo 5 caracteres." error={operation.fieldError("legalBasis")}>
             <Textarea name="legalBasis" required minLength={5} maxLength={2000} placeholder="DS 44/2024 art. 18: tarea crítica" />
           </Field>
-          <Field label="Descripción"><Textarea name="description" maxLength={2000} /></Field>
+          <Field label="Descripción" error={operation.fieldError("description")}><Textarea name="description" maxLength={2000} /></Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Crear tipo</Button></DialogFooter>
         </form>

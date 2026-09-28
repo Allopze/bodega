@@ -3,6 +3,7 @@
 import * as React from "react"
 import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
+import { DateTimePicker } from "@/components/ui/date-time-picker"
 import { Button } from "@/components/ui/button"
 import { FileInput } from "@/components/ui/file-input"
 import { ProgramSlotList, type ProgramSlotRow } from "@/components/prevention/program-slot-list"
@@ -737,22 +738,24 @@ function AddContactDialog({ planId }: { planId: string }) {
 
 function ScheduleDrillDialog({ planId, scenarioTypes }: { planId: string; scenarioTypes: ScenarioTypeOption[] }) {
   const [open, setOpen] = React.useState(false)
-  const [defaultValue, setDefaultValue] = React.useState("")
+  const [scheduledFor, setScheduledFor] = React.useState("")
   const [scenarioType, setScenarioType] = React.useState("")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    // El `DateTimePicker` no es un input nativo `required`: sin esta guarda un
+    // valor vacío llegaba a `new Date("")` y `toISOString()` lanzaba.
+    if (!scheduledFor) { operation.setMessage("Indica la fecha y hora del simulacro."); return }
     operation.run(() => scheduleEmergencyDrillAction({
       planId,
-      scenarioType: form.get("scenarioType"),
-      scheduledFor: new Date(String(form.get("scheduledFor"))).toISOString(),
+      scenarioType,
+      scheduledFor: new Date(scheduledFor).toISOString(),
     }), () => setOpen(false))
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (value) { setDefaultValue(toLocalInputValue(new Date())); setScenarioType("") } setOpen(value) }}>
+    <Dialog open={open} onOpenChange={(value) => { if (value) { setScheduledFor(toLocalInputValue(new Date())); setScenarioType(""); operation.setMessage("") } setOpen(value) }}>
       <DialogTrigger asChild><Button size="sm">Programar simulacro</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
@@ -760,10 +763,12 @@ function ScheduleDrillDialog({ planId, scenarioTypes }: { planId: string; scenar
             <DialogTitle>Programar simulacro</DialogTitle>
             <DialogDescription>Sólo un plan aprobado puede programar simulacros.</DialogDescription>
           </DialogHeader>
-          <Field label="Escenario">
-            <Select value={scenarioType} onValueChange={setScenarioType}><SelectTrigger><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger><SelectContent>{scenarioTypes.map((item) => <SelectItem key={item.code} value={item.code}>{item.label}{item.isActive ? "" : " · inactivo"}</SelectItem>)}</SelectContent></Select><input type="hidden" name="scenarioType" value={scenarioType} />
+          <Field label="Escenario" error={operation.fieldError("scenarioType")}>
+            <Select value={scenarioType} onValueChange={setScenarioType}><SelectTrigger><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger><SelectContent>{scenarioTypes.map((item) => <SelectItem key={item.code} value={item.code}>{item.label}{item.isActive ? "" : " · inactivo"}</SelectItem>)}</SelectContent></Select>
           </Field>
-          <Field label="Fecha y hora"><Input name="scheduledFor" type="datetime-local" required defaultValue={defaultValue} /></Field>
+          <Field label="Fecha y hora" required error={operation.fieldError("scheduledFor")}>
+            <DateTimePicker value={scheduledFor} onChange={setScheduledFor} error={Boolean(operation.fieldError("scheduledFor"))} />
+          </Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Programar</Button></DialogFooter>
         </form>
@@ -803,6 +808,7 @@ function CompleteDrillDialog({ drill, assignees, openSlots }: {
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!executedAt) { operation.setMessage("Indica cuándo se realizó el simulacro."); return }
     const form = new FormData(event.currentTarget)
     const durationMinutes = String(form.get("durationMinutes") ?? "").trim()
     const evacuationSeconds = String(form.get("evacuationSeconds") ?? "").trim()
@@ -838,7 +844,7 @@ function CompleteDrillDialog({ drill, assignees, openSlots }: {
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (value) setExecutedAt(toLocalInputValue(new Date())); setOpen(value) }}>
+    <Dialog open={open} onOpenChange={(value) => { if (value) { setExecutedAt(toLocalInputValue(new Date())); operation.setMessage("") } setOpen(value) }}>
       <DialogTrigger asChild><Button size="sm" variant="secondary">Completar</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="max-h-[75vh] space-y-4 overflow-y-auto">
@@ -853,12 +859,13 @@ function CompleteDrillDialog({ drill, assignees, openSlots }: {
 
           {/* Acotado entre la fecha programada y ahora, que es lo mismo que
               valida el servicio: no ofrecer una fecha que va a rechazar. */}
-          <Field label="Realizado el" hint="Entre la fecha programada y ahora.">
-            <Input
-              type="datetime-local" required value={executedAt}
+          <Field label="Realizado el" required hint="Entre la fecha programada y ahora." error={operation.fieldError("executedAt")}>
+            <DateTimePicker
+              value={executedAt}
               min={toLocalInputValue(new Date(drill.scheduledFor))}
               max={toLocalInputValue(new Date())}
-              onChange={(event) => setExecutedAt(event.target.value)}
+              onChange={setExecutedAt}
+              error={Boolean(operation.fieldError("executedAt"))}
             />
           </Field>
 
@@ -898,15 +905,15 @@ function CompleteDrillDialog({ drill, assignees, openSlots }: {
           </Field>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Duración (min)" hint="Opcional."><Input name="durationMinutes" type="number" min={1} /></Field>
-            <Field label="Tiempo de evacuación (s)" hint="Opcional."><Input name="evacuationSeconds" type="number" min={1} /></Field>
+            <Field label="Duración (min)" hint="Opcional." error={operation.fieldError("durationMinutes")}><Input name="durationMinutes" type="number" min={1} /></Field>
+            <Field label="Tiempo de evacuación (s)" hint="Opcional." error={operation.fieldError("evacuationSeconds")}><Input name="evacuationSeconds" type="number" min={1} /></Field>
           </div>
 
-          <Field label="Resultado">
+          <Field label="Resultado" error={operation.fieldError("outcome")}>
             <Select value={outcome || "_none"} onValueChange={(v) => setOutcome(v === "_none" ? "" : v as "satisfactory" | "needs_improvement")}><SelectTrigger><SelectValue placeholder="Selecciona un resultado" /></SelectTrigger><SelectContent><SelectItem value="_none" className="hidden">Selecciona un resultado</SelectItem><SelectItem value="satisfactory">Satisfactorio</SelectItem><SelectItem value="needs_improvement">Requiere mejora</SelectItem></SelectContent></Select>
           </Field>
 
-          <Field label="Observaciones" hint="Opcional."><Textarea name="observations" maxLength={5000} /></Field>
+          <Field label="Observaciones" hint="Opcional." error={operation.fieldError("observations")}><Textarea name="observations" maxLength={5000} /></Field>
 
           {outcome === "needs_improvement" && (
             <div className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
@@ -915,7 +922,7 @@ function CompleteDrillDialog({ drill, assignees, openSlots }: {
                 <Field label="Responsable" hint="Opcional.">
                   <Select value={responsibleUserId} onValueChange={setResponsibleUserId}><SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="responsibleUserId" value={responsibleUserId === "_none" ? "" : responsibleUserId} />
                 </Field>
-                <Field label="Plazo" required><DatePicker name="targetDate" /></Field>
+                <Field label="Plazo" required error={operation.fieldError("targetDate")}><DatePicker name="targetDate" /></Field>
               </div>
             </div>
           )}
