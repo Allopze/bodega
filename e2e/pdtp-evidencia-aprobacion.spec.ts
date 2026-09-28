@@ -173,7 +173,7 @@ test.describe.serial("PDTP — evidencia con aprobación", () => {
     expect(download.headers()["content-type"]).toBe("application/pdf")
 
     await page.getByRole("button", { name: `Rechazar ejecución Jun semana ${WEEK}` }).click()
-    await page.getByPlaceholder("Motivo del rechazo (mín. 3 caracteres)").fill(REJECTION)
+    await page.getByPlaceholder(/^Motivo del rechazo/).fill(REJECTION)
     await page.getByRole("button", { name: "Rechazar y devolver" }).click()
     await expect(page.locator("[data-sonner-toast]").getByText(/rechazada/i)).toBeVisible()
     await expect.poll(async () => (await executionRow())?.status).toBe("rejected")
