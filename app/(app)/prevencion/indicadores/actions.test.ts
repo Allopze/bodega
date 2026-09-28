@@ -4,7 +4,6 @@ const guardPermission = vi.hoisted(() => vi.fn())
 const resolveWorksiteScope = vi.hoisted(() => vi.fn())
 const approveDenominator = vi.hoisted(() => vi.fn())
 const saveDenominator = vi.hoisted(() => vi.fn())
-const saveMonth = vi.hoisted(() => vi.fn())
 const closePeriod = vi.hoisted(() => vi.fn())
 const SafetyIndicatorDomainError = vi.hoisted(() => class SafetyIndicatorDomainError extends Error {
   constructor(message: string) {
@@ -19,7 +18,6 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("@/lib/services/prevention-indicadores", () => ({
   approveSafetyIndicatorDenominator: approveDenominator,
   upsertSafetyIndicatorDenominator: saveDenominator,
-  upsertSafetyIndicatorMonth: saveMonth,
   closeSafetyIndicatorPeriod: closePeriod,
   SafetyIndicatorDomainError,
 }))
@@ -28,7 +26,6 @@ import {
   approveSafetyIndicatorDenominatorAction,
   closeSafetyIndicatorPeriodAction,
   saveSafetyIndicatorDenominatorAction,
-  saveSafetyIndicatorMonthAction,
 } from "./actions"
 
 const denied = { session: null, error: { ok: false, message: "No tienes permisos" } }
@@ -100,25 +97,10 @@ describe("indicator server actions are authorization boundaries", () => {
     expect(closePeriod).not.toHaveBeenCalled()
   })
 
-  // Fase 1 (H-27 paso 4a): las 4 actions validan con `parseZ` en el boundary,
+  // Fase 1 (H-27 paso 4a): las actions validan con `parseZ` en el boundary,
   // antes de invocar el servicio. Un input inválido se rechaza aquí mismo —
   // el servicio nunca se llama — y devuelve `fieldErrors` estructurados.
   describe("parseZ boundary rejects invalid input without invoking the service", () => {
-    it("saveSafetyIndicatorMonthAction", async () => {
-      guardPermission.mockResolvedValue({ session, error: null })
-
-      const result = await saveSafetyIndicatorMonthAction({ worksiteId: "", year: 2020, month: 13 })
-
-      expect(result.ok).toBe(false)
-      expect(result.message).toBe("Revisa los campos marcados.")
-      expect(result.fieldErrors).toEqual({
-        worksiteId: ["Faena requerida"],
-        year: ["El año debe ser al menos 2024"],
-        month: ["Too big: expected number to be <=12"],
-      })
-      expect(saveMonth).not.toHaveBeenCalled()
-    })
-
     it("saveSafetyIndicatorDenominatorAction", async () => {
       guardPermission.mockResolvedValue({ session, error: null })
 
@@ -216,10 +198,9 @@ describe("los rechazos de negocio llegan con su motivo", () => {
       .resolves.toEqual({ ok: false, message: "El denominador cambió; recarga antes de guardar." })
   })
 
-  it("aprobar, cerrar y registrar el mes también", async () => {
+  it("aprobar y cerrar también", async () => {
     approveDenominator.mockRejectedValue(new SafetyIndicatorDomainError("Quien preparó el denominador no puede aprobarlo."))
     closePeriod.mockRejectedValue(new SafetyIndicatorDomainError("El período no puede cerrarse: denominador sin aprobar."))
-    saveMonth.mockRejectedValue(new SafetyIndicatorDomainError("El período está cerrado; la corrección exige permiso de cierre y un motivo trazable."))
 
     await expect(approveSafetyIndicatorDenominatorAction({
       denominatorId: "den-1", expectedVersion: 2, decision: "approved", reason: "Fuente cuadrada y evidencia revisada",
@@ -227,8 +208,6 @@ describe("los rechazos de negocio llegan con su motivo", () => {
     await expect(closeSafetyIndicatorPeriodAction({
       worksiteId: "ws-own", year: 2026, month: 7, reason: "Conciliación mensual aprobada y documentada.",
     })).resolves.toEqual({ ok: false, message: "El período no puede cerrarse: denominador sin aprobar." })
-    await expect(saveSafetyIndicatorMonthAction({ worksiteId: "ws-own", year: 2026, month: 7 }))
-      .resolves.toEqual({ ok: false, message: "El período está cerrado; la corrección exige permiso de cierre y un motivo trazable." })
   })
 
   it("un error inesperado sigue oculto tras el mensaje genérico", async () => {

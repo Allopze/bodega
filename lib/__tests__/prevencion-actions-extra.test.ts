@@ -77,7 +77,6 @@ import {
   markFollowupAction,
   deleteEvaluationAction,
   markWeekCompletedAction,
-  getDashboardStatsAction,
 } from "@/app/(app)/prevencion/actions"
 
 function makeSession() {
@@ -328,25 +327,5 @@ describe("markWeekCompletedAction", () => {
     const res = await markWeekCompletedAction("we-1")
     expect(res.ok).toBe(true)
     expect(res.message).toContain("Semana marcada como completada")
-  })
-})
-
-describe("getDashboardStatsAction", () => {
-  beforeEach(() => {
-    vi.resetAllMocks()
-    mockGuardPermission.mockResolvedValue({ session: makeSession(), error: null })
-  })
-
-  it("returns error if permission denied", async () => {
-    mockGuardPermission.mockResolvedValueOnce({ session: null, error: { ok: false, message: "No" } })
-    const res = await getDashboardStatsAction()
-    expect(res.ok).toBe(false)
-  })
-
-  it("returns dashboard stats", async () => {
-    const res = await getDashboardStatsAction()
-    expect(res.ok).toBe(true)
-    expect(res.data?.total).toBe(5)
-    expect(res.data?.cerrado).toBe(2)
   })
 })
