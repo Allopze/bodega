@@ -11,8 +11,6 @@ import type { Permission } from "@/modules/permissions"
 import {
   addRiskEntry,
   createRiskMatrixDraft,
-  createRiskMethodology,
-  createRiskReviewTrigger,
   ensureIspRiskMethodology,
   resolveRiskReviewTrigger,
   transitionRiskMatrix,
@@ -66,12 +64,6 @@ export async function ensureIspRiskMethodologyAction(): Promise<ActionState> {
   return run(accessFromSession(guard.session), ensureIspRiskMethodology)
 }
 
-export async function createRiskMethodologyAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:risk:edit")
-  if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => createRiskMethodology(input, access))
-}
-
 export async function createRiskMatrixDraftAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:risk:edit")
   if (guard.error) return guard.error
@@ -95,12 +87,6 @@ export async function transitionRiskMatrixAction(input: unknown): Promise<Action
   // La matriz publicada se arma y se sube a Cloudreve después de responder.
   if (state.ok && toStatus === "published") await scheduleGeneratedDocumentDrain(guard.session.user.id)
   return state
-}
-
-export async function createRiskReviewTriggerAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:risk:edit")
-  if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => createRiskReviewTrigger(input, access))
 }
 
 export async function resolveRiskReviewTriggerAction(input: unknown): Promise<ActionState> {
