@@ -13,8 +13,6 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("@/lib/services/prevention-risk-legal", () => ({
   addRiskEntry: vi.fn(),
   createRiskMatrixDraft,
-  createRiskMethodology: vi.fn(),
-  createRiskReviewTrigger: vi.fn(),
   ensureIspRiskMethodology: vi.fn(),
   resolveRiskReviewTrigger: vi.fn(),
   transitionRiskMatrix,

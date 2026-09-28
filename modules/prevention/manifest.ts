@@ -161,7 +161,7 @@ export const preventionModule = {
     "prevention:cgrd:matrix:publish":   { id: "p-prev-cgrd-matrix-publish",   description: "Publicar una versión de la matriz GRD" },
     "prevention:cgrd:meeting:manage":   { id: "p-prev-cgrd-meeting-manage",   description: "Registrar el acta de una sesión del CGRD" },
     "prevention:campaign:view":         { id: "p-prev-camp-v",    description: "Ver campañas preventivas" },
-    "prevention:campaign:manage":       { id: "p-prev-camp-m",    description: "Crear, registrar asistencia y cerrar campañas preventivas" },
+    "prevention:campaign:manage":       { id: "p-prev-camp-m",    description: "Cerrar las campañas preventivas del registro histórico y subir su evidencia (las del programa se registran en el PDTP)" },
     "prevention:engagement:view":       { id: "p-prev-engage-v", description: "Ver coordinaciones con el mandante, fiscalizaciones y visitas del organismo administrador" },
     "prevention:engagement:manage":     { id: "p-prev-engage-m", description: "Registrar interacciones externas, sus medidas prescritas y cerrarlas" },
     "prevention:docs:view":               { id: "p-prev-docs-v",    description: "Ver la documentación preventiva" },

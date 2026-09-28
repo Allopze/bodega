@@ -497,6 +497,7 @@ export async function getPreventionPrivacyRequestWorkbench(args: {
       documentId: sstDocuments.id,
       title: sstDocuments.title,
       status: sstDocuments.status,
+      confidentiality: sstDocuments.confidentiality,
     }).from(sstDocumentLinks).innerJoin(sstDocuments, eq(sstDocumentLinks.documentId, sstDocuments.id))
       .where(and(eq(sstDocumentLinks.entityType, "worker"), eq(sstDocumentLinks.entityId, subject.id), isNull(sstDocumentLinks.removedAt))),
     db.select().from(preventionPrivacyRequestExecutions)
@@ -518,6 +519,15 @@ export async function getPreventionPrivacyRequestWorkbench(args: {
     : []
   const restrictedReservedCaseCount = reservedCases.length - visibleReservedCases.length
 
+  // Mismo criterio para los documentos vinculados: atender la solicitud no da
+  // acceso a la biblioteca sensible. Sin `docs:manage_sensitive` el título de
+  // un documento sensible no se muestra, pero se cuenta, para no dar por
+  // completo un inventario que no lo está.
+  const visibleDocumentLinks = documentLinks
+    .filter((row) => canReadDocumentConfidentiality(row.confidentiality, args.permissions))
+    .map(({ confidentiality: _confidentiality, ...row }) => row)
+  const restrictedDocumentCount = documentLinks.length - visibleDocumentLinks.length
+
   return {
     request: requestRow,
     subject: {
@@ -536,9 +546,10 @@ export async function getPreventionPrivacyRequestWorkbench(args: {
       })),
       reservedCases: visibleReservedCases,
       ppas,
-      documentLinks,
+      documentLinks: visibleDocumentLinks,
     },
     restrictedReservedCaseCount,
+    restrictedDocumentCount,
     executions,
     restrictions,
     history,
