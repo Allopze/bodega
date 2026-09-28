@@ -145,3 +145,21 @@ describe("CAPA state machine", () => {
     expect(mockTransaction).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * D7: la CAPA que abre un control crítico ineficaz guarda como `sourceId` el
+ * id del CONTROL (`verifyRiskControl`), no el de la matriz, así que el enlace a
+ * `/prevencion/miper/<id>` caía en una ruta que no existe. La ficha del control
+ * vive en `/prevencion/miper/controles/[id]`.
+ */
+describe("enlace al origen de una CAPA", () => {
+  it("una CAPA de riesgo apunta a la ficha del control que la originó", async () => {
+    const { capaSourceHref } = await import("@/lib/prevention/capa")
+    expect(capaSourceHref("risk", "riskcontrol-abc")).toBe("/prevencion/miper/controles/riskcontrol-abc")
+  })
+
+  it("una CAPA de evaluación SST apunta al detalle de la evaluación", async () => {
+    const { capaSourceHref } = await import("@/lib/prevention/capa")
+    expect(capaSourceHref("sst_evaluation", "eval-1")).toBe("/prevencion/eval-1")
+  })
+})
