@@ -9,6 +9,14 @@ import type { ActionState } from "@/lib/validation/prevention"
 
 const BASE = "/prevencion/capacitacion"
 
+// Un mapa y no un ternario: con dos ramas, «No aplica» caía en «no hecha» y el
+// aviso contradecía lo que la persona acababa de declarar.
+const STATUS_MESSAGES: Record<string, string> = {
+  completed: "Capacitación marcada como hecha.",
+  not_completed: "Capacitación marcada como no hecha.",
+  not_applicable: "Capacitación declarada como no aplicable.",
+}
+
 /**
  * La única acción del módulo: marcar una ocurrencia como hecha o no hecha.
  *
@@ -27,12 +35,7 @@ export async function recordTrainingOccurrenceStatusAction(input: unknown): Prom
       permissions: guard.session.user.permissions,
     })
     revalidatePath(BASE)
-    return {
-      ok: true,
-      message: result.status === "completed"
-        ? "Capacitación marcada como hecha."
-        : "Capacitación marcada como no hecha.",
-    }
+    return { ok: true, message: STATUS_MESSAGES[result.status] ?? "Capacitación actualizada." }
   } catch (error) {
     return actionErrorResult(error, "No se pudo actualizar la capacitación.")
   }
