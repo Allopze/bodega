@@ -25,7 +25,7 @@ import {
   type HygieneDashboardTab,
   type HygieneQuickFilter,
 } from "@/lib/prevention/hygiene-dashboard-filters"
-import { NewAgentDialog, NewGroupDialog, NewProgramDialog } from "./hygiene-dialogs"
+import { NewGroupDialog, NewProgramDialog } from "./hygiene-dialogs"
 
 interface GroupItem {
   id: string
@@ -64,7 +64,7 @@ interface AgentOption {
 
 export function HygieneDashboard({
   groups, programs, summary, agents, worksites, protocolWorksites, applicabilities,
-  measurementSlots, slotYear, activationPeriods, canRecordMeasurementSlots, today, canManage, canAssess,
+  measurementSlots, slotYear, activationPeriods, canRecordMeasurementSlots, today, canAssess,
 }: {
   groups: GroupItem[]
   programs: ProgramItem[]
@@ -78,8 +78,6 @@ export function HygieneDashboard({
   activationPeriods: Record<string, PdtpPeriod | null>
   canRecordMeasurementSlots: boolean
   today: string
-  /** Catálogo global de agentes (`prevention:hygiene:manage`). */
-  canManage: boolean
   /** GES, programas y protocolos de la faena (`prevention:hygiene:assess`). */
   canAssess: boolean
 }) {
@@ -139,13 +137,6 @@ export function HygieneDashboard({
         onRemoveChip={() => setFilters({ vista: null })}
         onClearAll={() => clearUrlFilters(["tab"])}
         hasActiveFilters={quickFilter !== "all"}
-        actions={(canManage || canAssess) && (
-          <div className="flex flex-wrap gap-2">
-            {canManage && <NewAgentDialog />}
-            {canAssess && agents.length > 0 && worksites.length > 0 && tab === "groups" && <NewGroupDialog agents={agents} worksites={worksites} />}
-            {canAssess && worksites.length > 0 && tab === "programs" && <NewProgramDialog agents={agents} worksites={worksites} />}
-          </div>
-        )}
       >
         {/* `max-w-full overflow-x-auto`, como `TabsList`: las cuatro pestañas
             no caben en 320 px y se salían 30 px del pozo. */}

@@ -12,6 +12,7 @@ import {
   listEmergencyPlansPage,
   listEmergencyWorksites,
 } from "@/lib/services/prevention-emergency"
+import { NewPlanDialog } from "./emergencias-dialogs"
 import { EmergencyList } from "./emergency-list"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
@@ -54,6 +55,10 @@ export default async function EmergenciasPage({ searchParams }: { searchParams: 
           { label: "Prevención" },
           { label: "Emergencias" },
         ]} />}
+        // Layout 5 / A3: vivía en la barra de filtros y sólo en la pestaña
+        // Planes. Crear un plan es acción de página: va en el header, en ambas
+        // pestañas (un simulacro se programa desde el detalle del plan).
+        actions={canManage && worksites.length > 0 ? <NewPlanDialog worksites={worksites} /> : undefined}
       />
       <EmergencyList
         plans={plansPage.rows.map((row) => ({

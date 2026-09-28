@@ -16,13 +16,22 @@ const SCOPE_TYPES = EPP_REQUIREMENT_INPUT_SCOPES
 interface EppTypeOption { id: string; label: string }
 interface FamilyOption { id: string; name: string; eppTypeId: string | null }
 
-export function NewRequirementDialog({ eppTypes, families, worksites }: {
+export function NewRequirementDialog({ eppTypes, families, worksites, allowOrgWideScopes }: {
   eppTypes: EppTypeOption[]
   families: FamilyOption[]
   worksites: { id: string; name: string }[]
+  /**
+   * `resolveWorksiteScope(session).mode === "all"`. Un requisito global o por
+   * cargo no lleva faena y rige en todas: el servidor sólo lo acepta de quien
+   * tiene alcance total (`requireRequirementScope`). Ofrecérselo a un usuario
+   * de faena terminaba siempre en un error al enviar.
+   */
+  allowOrgWideScopes: boolean
 }) {
+  const scopeTypes = allowOrgWideScopes ? SCOPE_TYPES : SCOPE_TYPES.filter((type) => type === "worksite")
+  const defaultScope = scopeTypes[0] ?? "worksite"
   const [open, setOpen] = React.useState(false)
-  const [scopeType, setScopeType] = React.useState("global")
+  const [scopeType, setScopeType] = React.useState<string>(defaultScope)
   const [eppTypeId, setEppTypeId] = React.useState(eppTypes[0]?.id ?? "")
   const [enforcement, setEnforcement] = React.useState("warning")
   const [worksiteId, setWorksiteId] = React.useState("")
@@ -50,7 +59,7 @@ export function NewRequirementDialog({ eppTypes, families, worksites }: {
   return (
     <Dialog open={open} onOpenChange={(value) => {
       if (value) {
-        setScopeType("global")
+        setScopeType(defaultScope)
         setEppTypeId(eppTypes[0]?.id ?? "")
         setEnforcement("warning")
         setWorksiteId("")
@@ -76,11 +85,14 @@ export function NewRequirementDialog({ eppTypes, families, worksites }: {
             </Select>
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Alcance">
+            <Field
+              label="Alcance"
+              hint={allowOrgWideScopes ? undefined : "Tu alcance es por faena. Los requisitos de toda la organización o por cargo los declara quien ve todas las faenas."}
+            >
               <Select value={scopeType} onValueChange={setScopeType}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {SCOPE_TYPES.map((type) => <SelectItem key={type} value={type}>{EPP_REQUIREMENT_SCOPE_LABELS[type]}</SelectItem>)}
+                  {scopeTypes.map((type) => <SelectItem key={type} value={type}>{EPP_REQUIREMENT_SCOPE_LABELS[type]}</SelectItem>)}
                 </SelectContent>
               </Select>
             </Field>

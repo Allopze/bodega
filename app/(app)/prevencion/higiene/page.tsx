@@ -18,6 +18,7 @@ import { resolveProgramSlotYear } from "@/lib/prevention/program-slots-2026"
 import { getPdtpOperationalYears } from "@/lib/services/prevention-pdtp"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { HygieneDashboard } from "./hygiene-dashboard"
+import { HygieneCreateButton } from "./hygiene-dialogs"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "Higiene y vigilancia" }
@@ -78,6 +79,14 @@ export default async function HigienePage({ searchParams }: { searchParams: Prom
           { label: "Prevención" },
           { label: "Higiene" },
         ]} />}
+        actions={
+          <HygieneCreateButton
+            agents={agents.map((item) => ({ id: item.id, code: item.code, name: item.name, unit: item.unit }))}
+            worksites={worksites}
+            canManage={canManage}
+            canAssess={canAssess}
+          />
+        }
       />
       <HygieneDashboard
         groups={groups.map((row) => ({
@@ -137,7 +146,6 @@ export default async function HigienePage({ searchParams }: { searchParams: Prom
         activationPeriods={activationPeriods}
         canRecordMeasurementSlots={canRecordMeasurementSlots}
         today={todayInChile()}
-        canManage={canManage}
         canAssess={canAssess}
       />
       <PdtpScheduledActivityPanelServer connectorKey="hygiene" />

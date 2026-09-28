@@ -32,7 +32,9 @@ test.describe("Prevención — CGRD: mapa de riesgos espacial", () => {
     }, { timeout: 45_000 }).toBeGreaterThan(0)
     await page.getByRole("option", { name: "Faena E2E" }).click()
 
-    await page.getByRole("button", { name: "Cargar plano" }).click()
+    // El CTA del estado vacío: el del header lee la faena de la URL, que el
+    // selector actualiza con `router.replace` y podría ir un render atrás.
+    await page.locator("#main-content").getByRole("button", { name: "Cargar plano" }).click()
     const uploadDialog = page.getByRole("dialog", { name: "Cargar plano de riesgos" })
     await uploadDialog.getByRole("textbox", { name: "Título" }).fill("Planta principal E2E")
     await page.locator("#riskmap-file").setInputFiles({

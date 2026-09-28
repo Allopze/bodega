@@ -114,12 +114,6 @@ export function CommitteeList({ committees, meetings, reviews, worksites, assign
             Revisión por la dirección ({reviews.length})
           </button>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {tab === "committees" && canManage && worksites.length > 0 && (
-            <NewCommitteeDialog key={initialWorksiteId ?? "default"} worksites={worksites} initialWorksiteId={initialWorksiteId} />
-          )}
-          {tab === "reviews" && canReview && <NewReviewDialog worksites={worksites} />}
-        </div>
       </div>
 
       {tab === "committees" && (filteredCommittees.length === 0 ? (

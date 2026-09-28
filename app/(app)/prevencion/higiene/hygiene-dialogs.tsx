@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
+import { Flask, Heartbeat, UsersThree } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { CreateChoiceButton, type CreateChoice } from "@/components/ui/create-choice-button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -10,6 +12,7 @@ import { AGENT_TYPE_LABELS } from "@/lib/prevention/hygiene"
 import { createExposureAgentAction, createExposureGroupAction, createSurveillanceProgramAction } from "./actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { useControllableDialog, type ControllableDialogProps } from "@/lib/hooks/use-controllable-dialog"
 
 interface AgentOption {
   id: string
@@ -20,9 +23,10 @@ interface AgentOption {
 
 /* ── Alta de agente ───────────────────────────────────────────────────────── */
 
-export function NewAgentDialog() {
-  const [open, setOpen] = React.useState(false)
+export function NewAgentDialog(control: ControllableDialogProps = {}) {
   const [agentType, setAgentType] = React.useState(Object.keys(AGENT_TYPE_LABELS)[0] ?? "physical")
+  // El diálogo sigue montado tras crear: parte de cero al abrir.
+  const { open, setOpen, controlled } = useControllableDialog(control, () => setAgentType(Object.keys(AGENT_TYPE_LABELS)[0] ?? "physical"))
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -41,10 +45,9 @@ export function NewAgentDialog() {
     }), () => setOpen(false))
   }
 
-  // El diálogo sigue montado tras crear: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (value) setAgentType(Object.keys(AGENT_TYPE_LABELS)[0] ?? "physical"); setOpen(value) }}>
-      <DialogTrigger asChild><Button size="sm" variant="secondary">Nuevo agente</Button></DialogTrigger>
+    <Dialog open={open} onOpenChange={setOpen}>
+      {!controlled && <DialogTrigger asChild><Button size="sm" variant="secondary">Nuevo agente</Button></DialogTrigger>}
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
@@ -83,10 +86,14 @@ export function NewAgentDialog() {
 
 /* ── Alta de GES ──────────────────────────────────────────────────────────── */
 
-export function NewGroupDialog({ agents, worksites }: { agents: AgentOption[]; worksites: { id: string; name: string }[] }) {
-  const [open, setOpen] = React.useState(false)
+export function NewGroupDialog({ agents, worksites, ...control }: { agents: AgentOption[]; worksites: { id: string; name: string }[] } & ControllableDialogProps) {
   const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
   const [agentId, setAgentId] = React.useState(agents[0]?.id ?? "")
+  // El diálogo sigue montado tras crear: parte de cero al abrir.
+  const { open, setOpen, controlled } = useControllableDialog(control, () => {
+    setWorksiteId(worksites[0]?.id ?? "")
+    setAgentId(agents[0]?.id ?? "")
+  })
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -103,16 +110,9 @@ export function NewGroupDialog({ agents, worksites }: { agents: AgentOption[]; w
     }), () => setOpen(false))
   }
 
-  // El diálogo sigue montado tras crear: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={(value) => {
-      if (value) {
-        setWorksiteId(worksites[0]?.id ?? "")
-        setAgentId(agents[0]?.id ?? "")
-      }
-      setOpen(value)
-    }}>
-      <DialogTrigger asChild><Button size="sm">Nuevo grupo de exposición</Button></DialogTrigger>
+    <Dialog open={open} onOpenChange={setOpen}>
+      {!controlled && <DialogTrigger asChild><Button size="sm">Nuevo grupo de exposición</Button></DialogTrigger>}
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
@@ -145,10 +145,14 @@ export function NewGroupDialog({ agents, worksites }: { agents: AgentOption[]; w
 
 /* ── Alta de programa de vigilancia ───────────────────────────────────────── */
 
-export function NewProgramDialog({ agents, worksites }: { agents: AgentOption[]; worksites: { id: string; name: string }[] }) {
-  const [open, setOpen] = React.useState(false)
+export function NewProgramDialog({ agents, worksites, ...control }: { agents: AgentOption[]; worksites: { id: string; name: string }[] } & ControllableDialogProps) {
   const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
   const [agentId, setAgentId] = React.useState("_none")
+  // El diálogo sigue montado tras crear: parte de cero al abrir.
+  const { open, setOpen, controlled } = useControllableDialog(control, () => {
+    setWorksiteId(worksites[0]?.id ?? "")
+    setAgentId("_none")
+  })
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -166,16 +170,9 @@ export function NewProgramDialog({ agents, worksites }: { agents: AgentOption[];
     }), () => setOpen(false))
   }
 
-  // El diálogo sigue montado tras crear: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={(value) => {
-      if (value) {
-        setWorksiteId(worksites[0]?.id ?? "")
-        setAgentId("_none")
-      }
-      setOpen(value)
-    }}>
-      <DialogTrigger asChild><Button size="sm">Nuevo programa de vigilancia</Button></DialogTrigger>
+    <Dialog open={open} onOpenChange={setOpen}>
+      {!controlled && <DialogTrigger asChild><Button size="sm">Nuevo programa de vigilancia</Button></DialogTrigger>}
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
@@ -205,4 +202,49 @@ export function NewProgramDialog({ agents, worksites }: { agents: AgentOption[];
       </DialogContent>
     </Dialog>
   )
+}
+
+/* ── Alta desde el header de página ───────────────────────────────────────── */
+
+/**
+ * Layout 5 / A3: las tres altas vivían en la barra de filtros y cambiaban con
+ * la pestaña (GES sólo en Grupos, programa sólo en Vigilancia). Ahora hay un
+ * único "Nuevo" en el header, igual en todas las pestañas.
+ *
+ * El gateo es el de siempre (D8): el agente es catálogo global y exige
+ * `manage`; GES y programa son de la faena y los resuelve el servidor con
+ * `assess`. Un GES además necesita un agente y una faena a los que apuntar.
+ */
+export function HygieneCreateButton({ agents, worksites, canManage, canAssess }: {
+  agents: AgentOption[]
+  worksites: { id: string; name: string }[]
+  canManage: boolean
+  canAssess: boolean
+}) {
+  const choices: CreateChoice[] = []
+  if (canManage) choices.push({
+    key: "agente",
+    label: "Agente de exposición",
+    description: "Catálogo global: agente con su límite permisible y nivel de acción.",
+    icon: <Flask size={18} />,
+    soloLabel: "Nuevo agente",
+    render: (state) => <NewAgentDialog {...state} />,
+  })
+  if (canAssess && agents.length > 0 && worksites.length > 0) choices.push({
+    key: "grupo",
+    label: "Grupo de exposición similar",
+    description: "Personas que comparten agente, proceso y condiciones en una faena.",
+    icon: <UsersThree size={18} />,
+    soloLabel: "Nuevo grupo de exposición",
+    render: (state) => <NewGroupDialog agents={agents} worksites={worksites} {...state} />,
+  })
+  if (canAssess && worksites.length > 0) choices.push({
+    key: "programa",
+    label: "Programa de vigilancia",
+    description: "Protocolo de vigilancia ocupacional con su periodicidad de control.",
+    icon: <Heartbeat size={18} />,
+    soloLabel: "Nuevo programa de vigilancia",
+    render: (state) => <NewProgramDialog agents={agents} worksites={worksites} {...state} />,
+  })
+  return <CreateChoiceButton choices={choices} description="Elige qué agregar a higiene y vigilancia." />
 }

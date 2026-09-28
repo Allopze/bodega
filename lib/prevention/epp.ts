@@ -20,6 +20,21 @@ export const EPP_REQUIREMENT_SCOPE_LABELS: Record<string, string> = {
  */
 export const EPP_REQUIREMENT_INPUT_SCOPES = ["global", "worksite", "position"] as const
 
+/**
+ * Condición única del alta de requisito, compartida por el header de la página
+ * y el estado vacío: además de `prevention:epp:manage` hace falta un tipo de EPP
+ * y, para quien sólo puede declarar por faena (sin alcance total, ver
+ * `requireRequirementScope`), al menos una faena en su alcance.
+ */
+export function canCreateEppRequirement({ canManage, eppTypes, worksites, allowOrgWideScopes }: {
+  canManage: boolean
+  eppTypes: readonly unknown[]
+  worksites: readonly unknown[]
+  allowOrgWideScopes: boolean
+}): boolean {
+  return canManage && eppTypes.length > 0 && (allowOrgWideScopes || worksites.length > 0)
+}
+
 /** Un alcance persistido que el cálculo no sabe evaluar todavía. */
 export function isEvaluableScope(scopeType: string): boolean {
   return (EPP_REQUIREMENT_INPUT_SCOPES as readonly string[]).includes(scopeType)

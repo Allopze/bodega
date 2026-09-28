@@ -143,14 +143,6 @@ export function WorkPermitList({ permits, canManage, canRequest, types, worksite
         onRemoveChip={handleRemoveChip}
         onClearAll={clearUrlFilters}
         hasActiveFilters={status !== "all" || worksite !== "all" || quickFilter !== "all"}
-        actions={
-          <>
-            {canManage && <PermitTypeDialog />}
-            {canRequest && types.length > 0 && worksites.length > 0 && (
-              <NewPermitDialog types={types} worksites={worksites} workers={workers} supervisors={supervisors} />
-            )}
-          </>
-        }
       >
         <Select value={status} onValueChange={(value) => setFilters({ status: value === "all" ? null : value })}>
           <SelectTrigger className="w-56" aria-label="Estado del permiso"><SelectValue placeholder="Estado" /></SelectTrigger>

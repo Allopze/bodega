@@ -177,7 +177,6 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
         onRemoveChip={() => setFilters({ vista: null })}
         onClearAll={() => clearUrlFilters(["tab"])}
         hasActiveFilters={quickFilter !== "all"}
-        actions={tab === "plans" && canManage && worksites.length > 0 ? <NewPlanDialog worksites={worksites} /> : undefined}
       >
         <div role="tablist" aria-label="Vista de emergencias" className="flex gap-1 rounded-md border border-[var(--color-border)] p-1 w-fit">
           <button type="button" role="tab" onClick={() => setFilters({ tab: "plans", vista: null })} aria-selected={tab === "plans"}
