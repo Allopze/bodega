@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { PrivacyRightExecutionWorkbench } from "./privacy-right-execution-workbench"
 
@@ -65,5 +65,38 @@ describe("privacy-right execution workbench", () => {
   it("hides execution while legal retention is active", () => {
     render(<PrivacyRightExecutionWorkbench bundle={bundle({ legalHold: true, status: "suspendida_retencion" })} />)
     expect(screen.queryByRole("button", { name: "Ejecutar" })).not.toBeInTheDocument()
+  })
+
+  // FX-A (A10): la clave se generaba en cada clic. Un reintento tras un error
+  // de red —justo el caso que la idempotencia cubre— mandaba otra clave y el
+  // servidor lo trataba como un envío nuevo. La clave nace al abrir el diálogo.
+  it("reuses one idempotency key per dialog opening and renews it on the next opening", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "caída de red" }), { status: 503 }))
+      .mockResolvedValue(new Response(JSON.stringify({ execution: { id: "e-1", outcome: "applied" } }), { status: 201 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const keyOf = (call: number) => (fetchMock.mock.calls[call]![1] as RequestInit & { headers: Record<string, string> }).headers["idempotency-key"]
+
+    render(<PrivacyRightExecutionWorkbench bundle={bundle()} />)
+    const openFirst = () => fireEvent.click(screen.getAllByRole("button", { name: "Ejecutar" })[0]!)
+    const apply = () => {
+      fireEvent.change(screen.getByLabelText(/Motivo y evidencia revisada/), { target: { value: "Titular validado solicita supresión" } })
+      fireEvent.click(screen.getByRole("button", { name: "Aplicar y auditar" }))
+    }
+
+    openFirst()
+    apply()
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Aplicar y auditar" })).toBeEnabled())
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar y auditar" }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(keyOf(1)).toBe(keyOf(0))
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Aplicar y auditar" })).not.toBeInTheDocument())
+    openFirst()
+    apply()
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    expect(keyOf(2)).not.toBe(keyOf(0))
+    vi.unstubAllGlobals()
   })
 })

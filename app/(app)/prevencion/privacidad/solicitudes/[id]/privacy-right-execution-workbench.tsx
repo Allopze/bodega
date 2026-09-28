@@ -40,6 +40,9 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
   const [purposeScope, setPurposeScope] = React.useState("")
   const [changesJson, setChangesJson] = React.useState("{}")
   const [busy, setBusy] = React.useState(false)
+  // Una clave por apertura del diálogo, no por clic: reintentar tras un error de
+  // red tiene que llegar como el mismo envío para que el servidor lo reconozca.
+  const [idempotencyKey, setIdempotencyKey] = React.useState("")
 
   // Quien atiende una solicitud legal decide sobre estos registros: mostrar el
   // enum crudo (`vigente · apto`, `ley_karin · en_investigacion`) le hacía
@@ -83,6 +86,7 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
 
   function openExecution(row: InventoryRow) {
     setSelected(row)
+    setIdempotencyKey(nanoid())
     setReason("")
     setPurposeScope("")
     const initial = operation === "deletion" && row.domain === "reserved_case"
@@ -103,7 +107,7 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
       const response = await fetch(`/api/prevencion/privacidad/solicitudes/${bundle.request.id}/execute`, {
         method: "POST",
         // El endpoint exige Idempotency-Key (8-64 chars) y responde 400 sin él.
-        headers: { "content-type": "application/json", "idempotency-key": nanoid() },
+        headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
         body: JSON.stringify({
           domain: selected.domain,
           entityId: selected.id,

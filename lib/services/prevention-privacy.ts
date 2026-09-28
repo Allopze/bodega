@@ -14,7 +14,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
-import type { RequestContext } from "@/lib/services/prevention-documents/utils"
+import { allowedDocumentConfidentialities, type RequestContext } from "@/lib/services/prevention-documents/utils"
 import { getPreventionClinicalPayload } from "@/lib/services/prevention-health"
 import { hasRequiredPrivacyExecutionEvidence } from "@/lib/services/prevention-privacy-rights"
 
@@ -385,13 +385,21 @@ export async function getPreventionPrivacyExportDataset(args: {
       })))
     : []
 
+  // Aptitud y restricciones son dato de salud: `export_subject` no las abre,
+  // igual que el inventario de la solicitud. Sin el permiso se entregan
+  // vacías y la planilla lo declara, para que la entrega incompleta se vea y
+  // la complete quien sí puede leerlas.
+  const includesFitness = args.permissions.includes("prevention:health:view_restrictions")
   return {
     request: requestRow,
     worker,
     worksite: worksite ?? null,
-    healthRecords,
+    healthRecords: healthRecords.map((record) => includesFitness
+      ? record
+      : { ...record, fitnessStatus: null, restrictionsSummary: null }),
     clinicalPayloads,
     includesClinical: args.includeClinical,
+    includesFitness,
     purpose,
   }
 }
@@ -444,7 +452,13 @@ export async function listPreventionSensitiveAccessAudit(scope: WorksiteScope, l
     .limit(Math.min(Math.max(limit, 1), 2000))
 }
 
-export async function listGeneralLibrarySensitiveAccess(scope: WorksiteScope, limit = 500) {
+/**
+ * `privacy:audit` audita accesos, no lee la biblioteca: el título de un
+ * documento sensible ("Evaluación psicosocial de …") ya es el dato que la
+ * confidencialidad protege. Se listan sólo los documentos cuyo nivel el
+ * auditor puede leer, con el mismo criterio que la búsqueda.
+ */
+export async function listGeneralLibrarySensitiveAccess(scope: WorksiteScope, permissions: readonly string[], limit = 500) {
   if (scope.mode === "none") return []
   const scopeWhere = scope.mode === "some"
     ? or(inArray(sstDocuments.worksiteId, scope.ids), isNull(sstDocuments.worksiteId))
@@ -464,6 +478,7 @@ export async function listGeneralLibrarySensitiveAccess(scope: WorksiteScope, li
     .innerJoin(sstDocuments, eq(sstDocuments.id, sstDocumentAudit.documentId))
     .where(and(
       scopeWhere,
+      inArray(sstDocuments.confidentiality, allowedDocumentConfidentialities(permissions)),
       or(
         eq(sstDocuments.confidentiality, "sensible"),
         eq(sstDocuments.dataClass, "sensitive_preventive"),

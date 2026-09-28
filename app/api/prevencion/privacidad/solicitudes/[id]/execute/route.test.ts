@@ -19,7 +19,7 @@ async function post() {
 describe("POST privacy right execution", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockExecute.mockResolvedValue({ id: "execution-1", outcome: "applied" })
+    mockExecute.mockResolvedValue({ id: "execution-1", outcome: "applied", replayed: false })
   })
 
   it("rejects a general prevention role before invoking the domain service", async () => {
@@ -36,5 +36,16 @@ describe("POST privacy right execution", () => {
     expect(mockExecute).toHaveBeenCalledWith(expect.objectContaining({
       input: expect.objectContaining({ requestId: "ppr-1" }),
     }))
+  })
+
+  // FX-A (A10): la clave llega al servicio, que la persiste; un reintento con
+  // la misma clave responde 200 con la ejecución previa en vez de otra nueva.
+  it("forwards the idempotency key and answers a replay with 200", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "manager", permissions: ["prevention:privacy:manage_requests"] } })
+    mockExecute.mockResolvedValue({ id: "execution-1", outcome: "applied", replayed: true })
+    const response = await post()
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ execution: { id: "execution-1", outcome: "applied" } })
+    expect(mockExecute).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: "test-key-12345678" }))
   })
 })

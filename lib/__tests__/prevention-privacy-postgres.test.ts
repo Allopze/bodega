@@ -79,7 +79,8 @@ describeIf("privacy rights and sensitive backup/restore on real Postgres", () =>
     const access = {
       ctx: { userId: "privacy-manager" },
       scope: { mode: "some" as const, ids: ["ws-privacy"] },
-      permissions: ["prevention:privacy:manage_requests"],
+      // Suprimir purga el expediente clínico: exige los permisos de salud (FX-A).
+      permissions: ["prevention:privacy:manage_requests", "prevention:health:view_restrictions", "prevention:health:view_clinical"],
     }
 
     const execution = await executePreventionPrivacyRight({
@@ -146,6 +147,31 @@ describeIf("privacy rights and sensitive backup/restore on real Postgres", () =>
     const [reservedCase] = await db.select().from(schema.preventionReservedCases)
       .where(eq(schema.preventionReservedCases.id, "reserved-privacy"))
     expect(reservedCase?.encryptedPayload).not.toContain("Titular")
+  })
+
+  /*
+   * FX-A (A10): con Postgres real y conexiones distintas, dos envíos
+   * simultáneos con la misma clave pasan la consulta previa; el UNIQUE decide
+   * y el perdedor devuelve la ejecución del ganador.
+   */
+  it("keeps a single execution for concurrent submissions with the same idempotency key", async () => {
+    const { executePreventionPrivacyRight } = await import("@/lib/services/prevention-privacy-rights")
+    const submit = () => executePreventionPrivacyRight({
+      ctx: { userId: "privacy-manager" },
+      scope: { mode: "some" as const, ids: ["ws-privacy"] },
+      permissions: ["prevention:privacy:manage_requests"],
+      idempotencyKey: "concurrent-key-1",
+      input: {
+        requestId: "privacy-rectify-health", domain: "health_record", entityId: "health-target",
+        operation: "rectification", reason: "Titular validado corrige el emisor", changes: { issuerName: "Emisor corregido" },
+      },
+    })
+    const results = await Promise.all([submit(), submit(), submit()])
+    expect(new Set(results.map((row) => row.id)).size).toBe(1)
+    expect(results.filter((row) => !row.replayed)).toHaveLength(1)
+    const rows = await getDb().select().from(schema.preventionPrivacyRequestExecutions)
+      .where(eq(schema.preventionPrivacyRequestExecutions.requestId, "privacy-rectify-health"))
+    expect(rows).toHaveLength(1)
   })
 
   it("validates document-link existence/scope and permits audited re-link after removal", async () => {
@@ -287,6 +313,7 @@ async function seedFixture(db: ReturnType<typeof drizzle<typeof schema>>) {
   })
   await db.insert(schema.preventionPrivacyRequests).values([
     { id: "privacy-delete-health", subjectWorkerId: "worker-privacy", rightType: "deletion", status: "en_proceso", requestScope: "Suprimir expediente clínico", receivedAt: now, handledByUserId: "privacy-manager", createdByUserId: "privacy-manager", identityVerifiedAt: now, identityVerifiedByUserId: "privacy-manager", createdAt: now, updatedAt: now },
+    { id: "privacy-rectify-health", subjectWorkerId: "worker-privacy", rightType: "rectification", status: "en_proceso", requestScope: "Rectificar emisor", receivedAt: now, handledByUserId: "privacy-manager", createdByUserId: "privacy-manager", identityVerifiedAt: now, identityVerifiedByUserId: "privacy-manager", createdAt: now, updatedAt: now },
     { id: "privacy-delete-reserved", subjectWorkerId: "worker-privacy", rightType: "deletion", status: "en_proceso", requestScope: "Suprimir vínculo en caso reservado", receivedAt: now, handledByUserId: "privacy-manager", createdByUserId: "privacy-manager", identityVerifiedAt: now, identityVerifiedByUserId: "privacy-manager", createdAt: now, updatedAt: now },
   ])
   const reserved = encryptPreventionPayload({ reporter: "Titular Prueba", testimony: "evidencia" }, "reserved:reserved-privacy")

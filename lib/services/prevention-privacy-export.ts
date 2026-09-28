@@ -56,6 +56,9 @@ export async function buildPreventionPrivacySubjectExport(args: {
     ["Alcance solicitado", dataset.request.requestScope, "personal"],
     ["Propósito de esta entrega", dataset.purpose, "personal"],
     ["Contenido clínico incluido", dataset.includesClinical ? "Sí" : "No", "clinical"],
+    ["Aptitud y restricciones incluidas", dataset.includesFitness
+      ? "Sí"
+      : "No: requiere permiso de aptitud ocupacional. Completar la entrega con quien lo tenga.", "sensitive_preventive"],
     ["Custodia", "Archivo confidencial. Entregar sólo al titular cuya identidad fue validada y por canal autorizado.", "personal"],
     ["Exclusión deliberada", "No incluye auditorías internas, datos de terceros ni casos reservados sin vinculación estructurada al titular.", "reserved_investigation"],
   ] as const
@@ -103,8 +106,8 @@ export async function buildPreventionPrivacySubjectExport(args: {
       id: safeCell(record.id),
       recordType: safeCell(record.recordType),
       status: safeCell(record.status),
-      fitnessStatus: safeCell(record.fitnessStatus),
-      restrictions: safeCell(record.restrictionsSummary),
+      fitnessStatus: dataset.includesFitness ? safeCell(record.fitnessStatus) : "No incluido",
+      restrictions: dataset.includesFitness ? safeCell(record.restrictionsSummary) : "No incluido",
       validFrom: safeCell(record.validFrom),
       validUntil: safeCell(record.validUntil),
       issuer: safeCell(record.issuerName),
