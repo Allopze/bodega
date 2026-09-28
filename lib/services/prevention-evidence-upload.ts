@@ -1,7 +1,7 @@
 /**
  * lib/services/prevention-evidence-upload.ts
  *
- * Subida de un archivo de evidencia para Campañas, CGRD e Higiene.
+ * Subida de un archivo de evidencia para Campañas, CGRD, Higiene y CAPA.
  *
  * Existe porque la simplificación de 2026-09-14 hizo la evidencia
  * **obligatoria** en ambos módulos y ninguno tenía dónde subir un archivo: la
@@ -21,9 +21,11 @@ import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
 import {
   createCampaignEvidencePath,
+  createCapaEvidencePath,
   createCgrdEvidencePath,
   createHygieneEvidencePath,
   resolveCampaignEvidenceDir,
+  resolveCapaEvidenceDir,
   resolveCgrdEvidenceDir,
   resolveHygieneEvidenceDir,
   resolveStorageFile,
@@ -32,12 +34,13 @@ import {
 /** Mismo tope que la evidencia del PDTP: son el mismo tipo de respaldo. */
 export const PREVENTION_EVIDENCE_MAX_FILE_SIZE = 25 * 1024 * 1024
 
-export type PreventionEvidenceDomain = "campaign" | "cgrd" | "hygiene"
+export type PreventionEvidenceDomain = "campaign" | "cgrd" | "hygiene" | "capa"
 
 const DOMAINS = {
   campaign: { dir: resolveCampaignEvidenceDir, toPath: createCampaignEvidencePath },
   cgrd: { dir: resolveCgrdEvidenceDir, toPath: createCgrdEvidencePath },
   hygiene: { dir: resolveHygieneEvidenceDir, toPath: createHygieneEvidencePath },
+  capa: { dir: resolveCapaEvidenceDir, toPath: createCapaEvidencePath },
 } as const
 
 export class PreventionEvidenceError extends Error {

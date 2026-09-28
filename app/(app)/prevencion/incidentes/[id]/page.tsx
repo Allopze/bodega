@@ -26,6 +26,7 @@ import {
 } from "@/lib/services/prevention-incidents"
 import { IncidentWorkflowPanel, type IncidentInvestigationSnapshot } from "./incident-workflow-panel"
 import { RE20Panel } from "./re20-panel"
+import { SensitivePersonForm } from "./sensitive-person-form"
 
 export const metadata: Metadata = { title: "Detalle de incidente" }
 
@@ -143,7 +144,11 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
               <h2 className="font-semibold">Personas involucradas</h2>
               {bundle.people.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-subtle)]">No se registraron personas en el reporte inicial.</p> : <ul className="mt-3 space-y-2">{bundle.people.map((person) => <li key={person.id} className="rounded-lg bg-[var(--color-surface-2)] p-3 text-sm"><p className="font-medium">{person.displayLabel}</p><p className="text-xs text-[var(--color-text-subtle)]">{person.employerName} · {person.relationshipType}</p></li>)}</ul>}
               {canSensitive && !requestSensitive && <form method="get" className="mt-4 space-y-2"><input type="hidden" name="sensitive" value="1" /><Label htmlFor="sensitive-purpose">Propósito de acceso</Label><Input id="sensitive-purpose" name="purpose" required minLength={3} maxLength={300} placeholder="Investigación del incidente…" /><Button type="submit" variant="secondary" size="sm"><LockKeyOpen className="size-4" />Abrir vista reservada</Button></form>}
-              {requestSensitive && <div className="mt-4 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-3"><p className="text-xs font-semibold">Vista reservada auditada · propósito: {query.purpose}</p>{bundle.sensitivePeople.length === 0 ? <p className="mt-2 text-xs">No hay payload sensible.</p> : <ul className="mt-2 space-y-2">{bundle.sensitivePeople.map((entry) => <li key={entry.personId} className="text-xs"><pre className="whitespace-pre-wrap font-sans">{JSON.stringify(entry.payload, null, 2)}</pre></li>)}</ul>}</div>}
+              {requestSensitive && <div className="mt-4 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-3"><p className="text-xs font-semibold">Vista reservada auditada · propósito: {query.purpose}</p>{bundle.sensitivePeople.length === 0 ? <p className="mt-2 text-xs">No hay payload sensible.</p> : <ul className="mt-2 space-y-2">{bundle.sensitivePeople.map((entry) => <li key={entry.personId} className="text-xs"><pre className="whitespace-pre-wrap font-sans">{JSON.stringify(entry.payload, null, 2)}</pre></li>)}</ul>}
+                {/* El reporte promete que la identidad y la lesión se completan
+                    aquí; con el expediente cerrado la ficha queda de sólo lectura. */}
+                {canSensitive && incident.status !== "closed" && bundle.people.length > 0 && <div className="mt-3 space-y-4 border-t border-[var(--color-warning-line)] pt-3">{bundle.people.map((person) => <SensitivePersonForm key={`${person.id}-${incident.version}`} incidentId={incident.id} personId={person.id} personLabel={person.displayLabel} purpose={query.purpose ?? ""} payload={bundle.sensitivePeople.find((entry) => entry.personId === person.id)?.payload ?? null} />)}</div>}
+              </div>}
             </section>
 
             <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

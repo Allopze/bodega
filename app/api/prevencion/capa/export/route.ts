@@ -15,6 +15,7 @@ export async function GET() {
   if (!can(session, "prevention:capa:view")) return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   try {
     const report = await buildCapaExport({
+      ctx: { userId: session.user.id },
       scope: resolveWorksiteScope(session),
       permissions: session.user.permissions,
     })

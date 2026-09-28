@@ -29,7 +29,8 @@ vi.mock("@/db", () => ({ get db() { return testGlobal.__db } }))
 const {
   submitPublicIncidentReport,
   listPublicIncidentReports,
-  triagePublicIncidentReport,
+  discardPublicIncidentReport,
+  convertPublicIncidentReport,
 } = await import("@/lib/services/prevention-incident-reports")
 
 const WS = "ws-inc001"
@@ -121,17 +122,91 @@ describe("INC-001 — canal público de reporte", () => {
     expect(todas.some((row) => row.worksiteId === WS_OTRA)).toBe(true)
   })
 
-  it("el triage cierra el reporte una sola vez y queda con responsable", async () => {
-    const { code } = await submitPublicIncidentReport({ ...BASE, isAnonymous: true })
+  /* FX-B (B6): el triage del buzón no tenía llamador. `triagePublicIncidentReport`
+   * no recibía acceso —ni permiso ni faena— y los reportes quedaban `pending`
+   * para siempre. Ahora se descartan con motivo o se convierten en el incidente
+   * formal, y las dos vías exigen `prevention:incidents:triage` en la faena. */
+  async function pendingReport(worksiteId = WS) {
+    const { code } = await submitPublicIncidentReport({ ...BASE, worksiteId, isAnonymous: true })
     const [row] = await testDb.select().from(schema.preventionIncidentPublicReports)
       .where(eq(schema.preventionIncidentPublicReports.code, code))
-    const triado = await triagePublicIncidentReport({
-      reportId: row!.id, status: "triaged", notes: "Se abrió el incidente formal.", actorUserId: TRIADOR,
+    return row!
+  }
+
+  it("descartar exige el permiso de triage en la faena del reporte, y ocurre una sola vez", async () => {
+    const report = await pendingReport()
+    await expect(discardPublicIncidentReport({
+      reportId: report.id, reason: "Reporte repetido del mismo evento.", access: access(["prevention:incidents:report"]),
+    })).rejects.toThrow(/no encontrado o fuera de alcance/i)
+    await expect(discardPublicIncidentReport({
+      reportId: report.id, reason: "Reporte repetido del mismo evento.", access: access(TRIAGE, [WS_OTRA]),
+    })).rejects.toThrow(/no encontrado o fuera de alcance/i)
+
+    const discarded = await discardPublicIncidentReport({
+      reportId: report.id, reason: "Reporte repetido del mismo evento.", access: access(TRIAGE),
     })
-    expect(triado.status).toBe("triaged")
-    expect(triado.triagedByUserId).toBe(TRIADOR)
-    await expect(triagePublicIncidentReport({
-      reportId: row!.id, status: "discarded", notes: "Repetido.", actorUserId: TRIADOR,
+    expect(discarded).toMatchObject({ status: "discarded", triagedByUserId: TRIADOR, triageNotes: "Reporte repetido del mismo evento.", incidentId: null })
+    await expect(discardPublicIncidentReport({
+      reportId: report.id, reason: "Segundo descarte del mismo reporte.", access: access(TRIAGE),
     })).rejects.toThrow(/ya fue triado/i)
   })
+
+  it("descartar exige un motivo", async () => {
+    const report = await pendingReport()
+    await expect(discardPublicIncidentReport({ reportId: report.id, reason: "corto", access: access(TRIAGE) }))
+      .rejects.toThrow()
+  })
+
+  it("convertir abre el incidente formal con los datos del reporte y deja el reporte triado", async () => {
+    const report = await pendingReport()
+    const { incident } = await convertPublicIncidentReport({
+      access: access(TRIAGE),
+      input: {
+        reportId: report.id,
+        eventType: "dangerous_incident",
+        companyName: "Empresa Mandante",
+        occurredTime: "00:30",
+        notes: "Se abre el incidente formal para investigar la carga suspendida.",
+      },
+    })
+    expect(incident).toMatchObject({
+      status: "reported",
+      worksiteId: WS,
+      eventType: "dangerous_incident",
+      location: BASE.location,
+      initialNarrative: BASE.narrative,
+      reportedByUserId: TRIADOR,
+    })
+    // El organismo conoció el hecho cuando el reporte llegó al buzón, no cuando
+    // alguien lo leyó: es desde ahí que corre el plazo legal.
+    expect(new Date(incident.knownAt).getTime()).toBe(new Date(report.createdAt).getTime())
+    const [triaged] = await testDb.select().from(schema.preventionIncidentPublicReports)
+      .where(eq(schema.preventionIncidentPublicReports.id, report.id))
+    expect(triaged).toMatchObject({ status: "triaged", incidentId: incident.id, triagedByUserId: TRIADOR })
+
+    await expect(convertPublicIncidentReport({
+      access: access(TRIAGE),
+      input: { reportId: report.id, eventType: "dangerous_incident", companyName: "Empresa Mandante", occurredTime: "00:30", notes: "Segunda conversión del mismo reporte." },
+    })).rejects.toThrow(/ya fue triado/i)
+    const incidents = await testDb.select().from(schema.preventionIncidents)
+      .where(eq(schema.preventionIncidents.worksiteId, WS))
+    expect(incidents.filter((row) => row.initialNarrative === BASE.narrative)).toHaveLength(1)
+  })
+
+  it("no convierte un reporte de una faena fuera de alcance", async () => {
+    const report = await pendingReport(WS_OTRA)
+    await expect(convertPublicIncidentReport({
+      access: access(TRIAGE),
+      input: { reportId: report.id, eventType: "dangerous_incident", companyName: "Empresa Mandante", occurredTime: "00:30", notes: "Intento desde otra faena." },
+    })).rejects.toThrow(/no encontrado o fuera de alcance/i)
+    const [untouched] = await testDb.select().from(schema.preventionIncidentPublicReports)
+      .where(eq(schema.preventionIncidentPublicReports.id, report.id))
+    expect(untouched!.status).toBe("pending")
+  })
 })
+
+const TRIAGE = ["prevention:incidents:report", "prevention:incidents:triage", "prevention:incidents:view"]
+
+function access(permissions: string[], ids = [WS]) {
+  return { ctx: { userId: TRIADOR }, scope: { mode: "some" as const, ids }, permissions }
+}

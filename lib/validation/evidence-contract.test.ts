@@ -22,7 +22,7 @@ describe("los prefijos son los que la plataforma tiene de verdad", () => {
     // `campaign` y `cgrd` entran con la simplificación de 2026-09-14: su
     // evidencia pasó a ser obligatoria y estrenaron dónde subir el archivo.
     expect(Object.keys(EVIDENCE_STORAGE_PREFIXES).sort())
-      .toEqual(["campaign", "cgrd", "inspection", "pdtp", "training"])
+      .toEqual(["campaign", "capa", "cgrd", "inspection", "pdtp", "training"])
   })
 
   it("cada dominio apunta a su propio directorio, sin solaparse", () => {
