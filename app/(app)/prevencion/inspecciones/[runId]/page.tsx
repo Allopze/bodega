@@ -6,7 +6,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { getInspectionRunDetail, listInspectionReviewers } from "@/lib/services/prevention-inspections"
 import { listWorksiteAssignableUsers } from "@/lib/services/prevention-capa"
-import { closingActFromDefinition } from "@/lib/prevention/inspections"
+import { closingActFromDefinition, reviewerIsExecutorOfRecord } from "@/lib/prevention/inspections"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { InspectionRunDetail } from "./inspection-run-detail"
 
@@ -37,7 +37,11 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
   // I-08: sólo se resuelve cuando el bloqueo aplica (misma condición que
   // `reviewBlocked` en el cliente) — `getUserIdsWithPermissionForWorksite`
   // son consultas de más que no tienen por qué correr en cada apertura.
-  const reviewBlocked = detail.run.status === "completed" && detail.run.executedByUserId === auth.user.id
+  const reviewBlocked = detail.run.status === "completed" && reviewerIsExecutorOfRecord({
+    executedByUserId: detail.run.executedByUserId,
+    reviewerUserId: auth.user.id,
+    executorOfRecord: detail.executorOfRecord,
+  })
   const reviewers = reviewBlocked ? await listInspectionReviewers(access, detail.run.worksiteId) : []
   const definition = detail.definitionSnapshot as unknown as ChecklistDefinition
 
@@ -75,6 +79,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           officialComplianceBasisPoints: detail.run.officialComplianceBasisPoints,
           normalizedComplianceBasisPoints: detail.run.normalizedComplianceBasisPoints,
           executedByUserId: detail.run.executedByUserId,
+          executorOfRecord: detail.executorOfRecord,
           closingResult: detail.run.closingResult,
           closingRestrictions: detail.run.closingRestrictions,
           closingSignatures: detail.run.closingSignatures,

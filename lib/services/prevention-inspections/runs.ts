@@ -779,6 +779,15 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
     if (!row) throw new Error(NOT_FOUND)
     requireAccess(access, "prevention:inspections:execute", row.run.worksiteId)
     if (row.finding.capaActionId) throw new Error("El hallazgo ya tiene una acción CAPA enlazada.")
+    // #20: derivar abre trabajo correctivo (y, con equipo, una mantención). Sobre
+    // un hallazgo ya cerrado o un run que el registro da por terminado, esa
+    // acción nacería sin nada vivo que corregir. Reabrir la inspección es el
+    // camino para rectificar un run revisado.
+    if (row.finding.status === "closed") throw new Error("El hallazgo ya está cerrado: no se puede derivar a CAPA.")
+    if (row.run.status === "cancelled") throw new Error("La inspección está cancelada: sus hallazgos no se derivan a CAPA.")
+    if (row.run.status === "reviewed") {
+      throw new Error("La inspección ya fue revisada y cerrada: reábrela para derivar un hallazgo a CAPA.")
+    }
 
     const { priority, dueInDays, requiresImmediateStop } = capaPriorityForCriticality(row.finding.criticality)
     const capa = await createCapaActionWithClient(tx, {

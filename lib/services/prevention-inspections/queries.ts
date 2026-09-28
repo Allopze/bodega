@@ -238,6 +238,7 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     templateKind: preventionInspectionTemplates.kind,
     sourceDefinitionCode: preventionInspectionTemplates.sourceDefinitionCode,
     definitionSnapshot: preventionInspectionTemplates.definitionSnapshot,
+    executorOfRecord: preventionInspectionTemplates.executorOfRecord,
     // Enlace fuente → PDTP: hasta ahora sólo existía el inverso
     // (`findInspectionTemplateForPdtpActivity`), así que quien abría una
     // inspección no podía saber si alimentaba el programa anual ni con qué.
