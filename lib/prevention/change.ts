@@ -62,18 +62,25 @@ export interface ChangeReadinessResult {
  * sin trazabilidad de qué se evaluó y cuándo se revisa si la evaluación
  * siguió siendo válida — el mismo defecto que "cerrar sin conclusiones" en
  * la revisión por la dirección de CPHS.
+ *
+ * `requireReviewDate: false` es para la ficha del cambio, no para la decisión.
+ * La fecha se declara en el mismo diálogo de aprobación y se escribe al
+ * aprobar, así que antes de aprobar siempre es null: si la ficha la exigía, el
+ * botón que abre ese diálogo nacía deshabilitado y ningún cambio podía
+ * aprobarse nunca (D1). La aprobación sigue exigiéndola, con la fecha que trae.
  */
 export function assessChangeReadiness(input: {
   assessments: ChangeAssessmentRow[]
   plannedReviewDate: string | null
-}): ChangeReadinessResult {
+}, options: { requireReviewDate?: boolean } = {}): ChangeReadinessResult {
+  const requireReviewDate = options.requireReviewDate ?? true
   const blockers: string[] = []
   const evaluated = new Set(input.assessments.filter((row) => row.evaluated).map((row) => row.dimension))
   const missing = CHANGE_DIMENSIONS.filter((dimension) => !evaluated.has(dimension))
   if (missing.length > 0) {
     blockers.push(`Faltan por evaluar: ${missing.map((d) => CHANGE_DIMENSION_LABELS[d]).join(", ")}.`)
   }
-  if (!input.plannedReviewDate) {
+  if (requireReviewDate && !input.plannedReviewDate) {
     blockers.push("El cambio no declara una fecha de revisión posterior.")
   }
   return { ready: blockers.length === 0, blockers }

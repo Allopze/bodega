@@ -43,6 +43,24 @@ describe("disponibilidad de la gestión del cambio", () => {
     expect(result.blockers).toHaveLength(2)
   })
 
+  /**
+   * D1: la fecha de revisión sólo existe en el diálogo de aprobación y se
+   * escribe al aprobar, así que la ficha la tiene siempre en null. Si la ficha
+   * exigía la fecha, el botón "Aprobar cambio" nacía deshabilitado y nadie
+   * podía llegar al campo donde se declara: ningún cambio se aprobaba nunca.
+   */
+  it("la ficha, que aún no conoce la fecha de revisión, queda lista con las 6 dimensiones evaluadas", () => {
+    const result = assessChangeReadiness({ assessments: allEvaluated(), plannedReviewDate: null }, { requireReviewDate: false })
+    expect(result).toEqual({ ready: true, blockers: [] })
+  })
+
+  it("sin exigir la fecha, las dimensiones pendientes siguen bloqueando", () => {
+    const result = assessChangeReadiness({ assessments: [], plannedReviewDate: null }, { requireReviewDate: false })
+    expect(result.ready).toBe(false)
+    expect(result.blockers).toHaveLength(1)
+    expect(result.blockers[0]).toContain("Faltan por evaluar")
+  })
+
   it("una dimensión no evaluada en la lista cuenta igual que ausente", () => {
     const assessments = [{ dimension: "risk", evaluated: false }]
     const result = assessChangeReadiness({ assessments, plannedReviewDate: "2026-12-01" })
