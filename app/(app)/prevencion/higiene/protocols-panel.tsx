@@ -52,7 +52,7 @@ function statusVariant(status: ProtocolApplicabilityStatus): "success" | "outlin
  * de un grupo: la cumple la primera medición del año, de cualquier GES.
  */
 export function ProtocolsPanel({
-  worksites, applicabilities, measurementSlots, slotYear, activationPeriods, canRecordMeasurementSlots, today, canManage,
+  worksites, applicabilities, measurementSlots, slotYear, activationPeriods, canRecordMeasurementSlots, today, canAssess,
 }: {
   worksites: { id: string; name: string }[]
   applicabilities: ApplicabilityRow[]
@@ -61,7 +61,7 @@ export function ProtocolsPanel({
   activationPeriods: Record<string, PdtpPeriod | null>
   canRecordMeasurementSlots: boolean
   today: string
-  canManage: boolean
+  canAssess: boolean
 }) {
   /* La faena viaja en la URL (`?faena=`) y no en un `useState`: el panel sólo
    * se pinta en la pestaña "protocols", así que cambiar de pestaña lo desmonta
@@ -134,7 +134,7 @@ export function ProtocolsPanel({
               <TableHead>Base legal</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Reevaluación</TableHead>
-              {canManage && <TableHead>Acciones</TableHead>}
+              {canAssess && <TableHead>Acciones</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -153,7 +153,7 @@ export function ProtocolsPanel({
                       ? <span className={item.overdue ? "text-[var(--color-danger)]" : undefined}>{item.nextAssessmentOn}</span>
                       : <span className="text-[var(--color-text-muted)]">—</span>}
                   </TableCell>
-                  {canManage && (
+                  {canAssess && (
                     <TableCell>
                       <Button type="button" size="sm" variant="secondary" onClick={() => setEditing({ code: item.code, shortName: item.shortName, row })}>
                         Declarar

@@ -1,7 +1,7 @@
 /** Real PostgreSQL proof for industrial hygiene: exposure limits, GES and surveillance. */
 import path from "node:path"
 import postgres from "postgres"
-import { eq, sql } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
@@ -250,6 +250,44 @@ describeIf("Higiene industrial on real PostgreSQL", () => {
     expect(updated).toMatchObject({ status: "attended", healthRecordId: "hr-1" })
     // La matrícula no guarda ningún dato clínico: sólo el enlace.
     expect(Object.keys(updated)).not.toContain("diagnosis")
+  })
+
+  /**
+   * D6: la matrícula sólo se bloqueaba con FOR UPDATE, que serializa pero no
+   * detecta que la pantalla estaba vieja: un segundo registrador pisaba el
+   * resultado del primero. Y un control asistido podía volver a "citado",
+   * borrando en los hechos un control realizado sin la trazabilidad de la
+   * corrección a ausente, que es la única reversión deliberada.
+   */
+  it("refuses a stale outcome and never walks an attended control back to summoned", async () => {
+    const service = await import("@/lib/services/prevention-hygiene")
+    const readEnrollment = async () => {
+      const [row] = await getDb().select().from(schema.preventionSurveillanceEnrollments)
+        .where(and(
+          eq(schema.preventionSurveillanceEnrollments.programId, programId),
+          eq(schema.preventionSurveillanceEnrollments.workerId, "wk-a1"),
+          eq(schema.preventionSurveillanceEnrollments.status, "attended"),
+        )).limit(1)
+      return row!
+    }
+    const attended = await readEnrollment()
+
+    await expect(service.recordSurveillanceOutcome({
+      enrollmentId: attended.id, status: "absent", absenceReason: "Registro desde una pantalla vieja.",
+      expectedUpdatedAt: "2020-01-01T00:00:00.000Z",
+    }, HYGIENIST)).rejects.toThrow(/cambió mientras/)
+
+    await expect(service.recordSurveillanceOutcome({
+      enrollmentId: attended.id, status: "summoned", expectedUpdatedAt: attended.updatedAt,
+    }, HYGIENIST)).rejects.toThrow(/ya asistido/)
+    expect((await readEnrollment()).updatedAt).toBe(attended.updatedAt)
+
+    // La corrección deliberada a ausente sigue disponible, con la versión vigente.
+    const corrected = await service.recordSurveillanceOutcome({
+      enrollmentId: attended.id, status: "absent", absenceReason: "Se corrigió: nunca asistió al control.",
+      expectedUpdatedAt: attended.updatedAt,
+    }, HYGIENIST)
+    expect(corrected.status).toBe("absent")
   })
 
   it("publishes an anonymized summary and suppresses groups too small to publish", async () => {

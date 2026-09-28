@@ -36,6 +36,8 @@ interface EnrollmentInfo {
   status: string
   attendedOn: string | null
   absenceReason: string | null
+  /** Sello de la última escritura: viaja como versión esperada (D6). */
+  updatedAt: string
 }
 
 interface GroupOption {
@@ -52,11 +54,11 @@ function statusBadgeVariant(status: string): "default" | "warning" | "success" |
   return "default"
 }
 
-export function ProgramDetail({ program, enrollments, eligibleGroups, canManage }: {
+export function ProgramDetail({ program, enrollments, eligibleGroups, canAssess }: {
   program: ProgramInfo
   enrollments: EnrollmentInfo[]
   eligibleGroups: GroupOption[]
-  canManage: boolean
+  canAssess: boolean
 }) {
   const overdue = enrollments.filter((item) => ["pending", "summoned"].includes(item.status) && item.dueOn < todayInChile()).length
   // Personas, no filas: cada control asistido abre el ciclo siguiente, así que
@@ -88,7 +90,7 @@ export function ProgramDetail({ program, enrollments, eligibleGroups, canManage 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Ciclos de control ({enrollments.length})</h2>
-          {canManage && program.status === "active" && eligibleGroups.length > 0 && (
+          {canAssess && program.status === "active" && eligibleGroups.length > 0 && (
             <EnrollGroupDialog programId={program.id} eligibleGroups={eligibleGroups} />
           )}
         </div>
@@ -106,7 +108,7 @@ export function ProgramDetail({ program, enrollments, eligibleGroups, canManage 
                   <TableHead>Matriculado</TableHead>
                   <TableHead>Vence</TableHead>
                   <TableHead>Estado</TableHead>
-                  {canManage && <TableHead className="text-right">Acción</TableHead>}
+                  {canAssess && <TableHead className="text-right">Acción</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -122,7 +124,7 @@ export function ProgramDetail({ program, enrollments, eligibleGroups, canManage 
                         <span className="mt-1 block text-xs text-[var(--color-text-subtle)]">{item.absenceReason}</span>
                       )}
                     </TableCell>
-                    {canManage && (
+                    {canAssess && (
                       <TableCell className="text-right">
                         {(item.status === "pending" || item.status === "summoned") && <OutcomeDialog enrollment={item} periodicityMonths={program.periodicityMonths} />}
                       </TableCell>
@@ -207,6 +209,7 @@ function OutcomeDialog({ enrollment, periodicityMonths }: { enrollment: Enrollme
       attendedOn: status === "attended" ? attendedOn || null : null,
       healthRecordId: healthRecordId || null,
       absenceReason: status === "absent" || status === "exempt" ? absenceReason || null : null,
+      expectedUpdatedAt: enrollment.updatedAt,
     }), () => setOpen(false))
   }
 

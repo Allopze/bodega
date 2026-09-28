@@ -777,6 +777,12 @@ export async function recordSurveillanceOutcome(input: unknown, access: HygieneA
     attendedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     healthRecordId: z.string().min(1).nullable().optional(),
     absenceReason: z.string().trim().max(REASON_MAX_LENGTH).nullable().optional(),
+    /**
+     * El `updatedAt` de la matrícula que vio quien registra. La tabla no tiene
+     * columna `version` y agregarla es una migración; el sello de la última
+     * escritura cumple el mismo papel mientras se compare bajo el FOR UPDATE.
+     */
+    expectedUpdatedAt: z.string().min(1).optional(),
   }).parse(input)
 
   let accreditation: Parameters<typeof onSurveillanceControlAttended>[0] | null = null
@@ -793,6 +799,22 @@ export async function recordSurveillanceOutcome(input: unknown, access: HygieneA
       .limit(1)
     if (!row) throw new Error(NOT_FOUND)
     requireAccess(access, "prevention:hygiene:assess", row.program.worksiteId)
+
+    /* D6: el FOR UPDATE serializa dos registros, pero no detecta que el segundo
+     * se decidió mirando una matrícula que ya cambió: sin comparar la versión
+     * vista, el último en llegar pisaba al primero sin saberlo. Opcional como
+     * `expectedVersion` en `setProtocolApplicability`; la pantalla siempre lo
+     * envía. */
+    if (data.expectedUpdatedAt !== undefined && row.enrollment.updatedAt !== data.expectedUpdatedAt) {
+      throw new Error("La matrícula cambió mientras la revisabas. Recarga y vuelve a intentarlo.")
+    }
+    /* Un control asistido sólo se corrige a ausente (o se exime): esa es la
+     * reversión deliberada, que devuelve la ejecución del PDTP y deja motivo.
+     * Volverlo a "citado" borraba en los hechos un control realizado sin
+     * motivo ni rastro de la corrección. */
+    if (row.enrollment.status === "attended" && data.status === "summoned") {
+      throw new Error("El control ya asistido no puede volver a quedar citado: si no se realizó, corrígelo a ausente indicando el motivo.")
+    }
 
     if (data.status === "attended" && !data.attendedOn) {
       throw new Error("Registrar asistencia exige la fecha del control.")
