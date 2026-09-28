@@ -73,7 +73,9 @@ export function capaSourceHref(sourceType: string, sourceId: string) {
   if (sourceType === "inspection") return `/prevencion/inspecciones/${sourceId}`
   if (sourceType === "external_engagement") return `/prevencion/coordinacion/${sourceId}`
   if (sourceType === "gps_onway") return "/flota/monitoreo"
-  if (sourceType === "change") return `/prevencion/gestion-cambio/${sourceId}`
+  // Gestión del cambio se retiró el 2026-09-28: la CAPA conserva su origen
+  // rotulado, pero ya no hay ficha adonde llevarla.
+  if (sourceType === "change") return null
   if (sourceType === "epp") return `/prevencion/epp-preventivo?workerId=${encodeURIComponent(sourceId.split(":")[0] ?? sourceId)}`
   return null
 }

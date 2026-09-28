@@ -3,7 +3,6 @@ import { db } from "@/db"
 import {
   ppaSubmissions,
   preventionCapaActions,
-  preventionChangeRequests,
   preventionCommitteeMeetings,
   preventionCommittees,
   preventionEmergencyResources,
@@ -21,7 +20,7 @@ import { todayInChile } from "@/lib/utils"
 
 export type PreventionAttentionItem = {
   id: string
-  kind: "action" | "evaluation" | "ppa" | "inspection" | "cphs" | "protocol" | "emergency_resource" | "change_review"
+  kind: "action" | "evaluation" | "ppa" | "inspection" | "cphs" | "protocol" | "emergency_resource"
   title: string
   detail: string
   worksiteName: string
@@ -83,8 +82,6 @@ export async function getPreventionAttention(args: {
   includeProtocols?: boolean
   /** Vencimiento e inspección de equipos de emergencia — `prevention:emergency:view`. */
   includeEmergencyResources?: boolean
-  /** Fecha de revisión de un cambio aprobado — `prevention:change:view`. */
-  includeChangeReviews?: boolean
   limit?: number
 }): Promise<PreventionAttentionItem[]> {
   if (args.worksiteIds !== "all" && args.worksiteIds.length === 0) return []
@@ -185,7 +182,6 @@ export async function getPreventionAttention(args: {
   items.push(...await complianceAttentionItems(scope, today, limit, {
     protocols: args.includeProtocols ?? false,
     emergencyResources: args.includeEmergencyResources ?? false,
-    changeReviews: args.includeChangeReviews ?? false,
   }))
 
   return pickAttention(items, limit)
@@ -268,16 +264,13 @@ function addDaysIso(date: string, days: number): string {
 
 
 /**
- * Tres relojes que hasta ahora no miraba nadie.
+ * Dos relojes que hasta ahora no miraba nadie.
  *
  *  · La reevaluación de un protocolo MINSAL declarado aplicable.
  *  · El vencimiento o la inspección atrasada de un equipo de emergencia
  *    (carga del extintor, caducidad del botiquín).
- *  · La fecha de revisión posterior de un cambio aprobado (MOC-05): se exigía
- *    para aprobar (`assessChangeReadiness`), se guardaba y nadie la leía nunca,
- *    así que llegado el día no pasaba nada.
  *
- * Las tres fechas existían en la base y ninguna consulta las leía: un extintor
+ * Las dos fechas existían en la base y ninguna consulta las leía: un extintor
  * descargado no aparecía en ninguna pantalla.
  *
  * Cada fuente lleva su propio interruptor porque cada una responde a un permiso
@@ -287,12 +280,12 @@ async function complianceAttentionItems(
   scope: (column: typeof worksites.id) => ReturnType<typeof inArray> | undefined,
   today: string,
   limit: number,
-  include: { protocols: boolean; emergencyResources: boolean; changeReviews: boolean },
+  include: { protocols: boolean; emergencyResources: boolean },
 ): Promise<PreventionAttentionItem[]> {
-  if (!include.protocols && !include.emergencyResources && !include.changeReviews) return []
+  if (!include.protocols && !include.emergencyResources) return []
   const soon = addDaysIso(today, 30)
 
-  const [protocols, resources, changes] = await Promise.all([
+  const [protocols, resources] = await Promise.all([
     include.protocols ? db.select({
       id: preventionProtocolApplicabilities.id,
       protocolCode: preventionProtocolApplicabilities.protocolCode,
@@ -330,23 +323,6 @@ async function complianceAttentionItems(
         ),
       ))
       .orderBy(asc(preventionEmergencyResources.expiresAt)).limit(limit) : [],
-    include.changeReviews ? db.select({
-      id: preventionChangeRequests.id,
-      code: preventionChangeRequests.code,
-      title: preventionChangeRequests.title,
-      plannedReviewDate: preventionChangeRequests.plannedReviewDate,
-      worksiteName: worksites.name,
-    })
-      .from(preventionChangeRequests)
-      .innerJoin(worksites, eq(preventionChangeRequests.worksiteId, worksites.id))
-      .where(and(
-        scope(worksites.id),
-        // Sólo `approved`: implementado y cerrado ya pasaron por su revisión, y
-        // rechazado nunca la tuvo.
-        eq(preventionChangeRequests.status, "approved"),
-        lte(preventionChangeRequests.plannedReviewDate, soon),
-      ))
-      .orderBy(asc(preventionChangeRequests.plannedReviewDate)).limit(limit) : [],
   ])
 
   const items: PreventionAttentionItem[] = []
@@ -381,20 +357,6 @@ async function complianceAttentionItems(
       worksiteName: row.worksiteName,
       dueDate,
       href: "/prevencion/emergencias",
-      tone: overdue ? "danger" : "warning",
-    })
-  }
-
-  for (const row of changes) {
-    if (!row.plannedReviewDate) continue
-    const overdue = row.plannedReviewDate < today
-    items.push({
-      id: `change_review:${row.id}`, kind: "change_review",
-      title: overdue ? "Revisión de cambio vencida" : "Revisión de cambio por vencer",
-      detail: `${row.code} · ${row.title}`,
-      worksiteName: row.worksiteName,
-      dueDate: row.plannedReviewDate,
-      href: `/prevencion/gestion-cambio/${row.id}`,
       tone: overdue ? "danger" : "warning",
     })
   }

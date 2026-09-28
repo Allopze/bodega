@@ -27,6 +27,7 @@ import {
   type InspectionListFilters,
 } from "@/lib/services/prevention-inspections"
 import { todayInChile } from "@/lib/utils"
+import { eppInspectionItemKind } from "@/lib/prevention/epp-inspection-rows"
 
 function sheet(worksheetName: string, headers: string[], rows: ReportCell[][]): ReportSheet {
   return { worksheetName, headers, rows }
@@ -73,9 +74,11 @@ export async function buildInspectionExport(
    * salía como "Cumple" donde el papel firmado dice "Bueno" (INS-07/INS-13).
    */
   const itemContext = new Map<string, { sectionTitle: string; kind?: FieldKind }>()
+  const sectionTitle = new Map<string, string>()
   for (const row of runs) {
     const definition = (row.templateSnapshot ?? null) as ChecklistDefinition | null
     for (const section of definition?.sections ?? []) {
+      sectionTitle.set(`${row.run.templateId}::${section.id}`, section.title)
       for (const item of section.items) {
         itemContext.set(`${row.run.templateId}::${section.id}::${item.id}`, {
           sectionTitle: section.title,
@@ -85,8 +88,16 @@ export async function buildInspectionExport(
     }
   }
   const templateOfRun = new Map(runs.map((row) => [row.run.id, row.run.templateId]))
-  const contextOf = (runId: string, sectionId: string, itemId: string) =>
-    itemContext.get(`${templateOfRun.get(runId) ?? ""}::${sectionId}::${itemId}`)
+  const contextOf = (runId: string, sectionId: string, itemId: string) => {
+    const templateId = templateOfRun.get(runId) ?? ""
+    const found = itemContext.get(`${templateId}::${sectionId}::${itemId}`)
+    if (found) return found
+    // Las filas de la inspección de EPP salen de la bodega de la faena y no
+    // están en el snapshot de la plantilla; su escala se lee del sufijo.
+    const kind = eppInspectionItemKind(sectionId, itemId)
+    const title = sectionTitle.get(`${templateId}::${sectionId}`)
+    return kind && title ? { sectionTitle: title, kind } : undefined
+  }
   const [answers, findings, participants] = ids.length === 0 ? [[], [], []] : await Promise.all([
     db.select().from(preventionInspectionAnswers).where(inArray(preventionInspectionAnswers.runId, ids)),
     db.select().from(preventionInspectionFindings).where(inArray(preventionInspectionFindings.runId, ids)),

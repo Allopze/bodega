@@ -10,7 +10,7 @@ import type { Session } from "next-auth"
 import { db } from "@/db"
 import {
   fleetVehicleDocuments, fuelMonthlyStatements, fuelVehicles, purchaseOrders, receiptItems, receipts,
-  preventionCapaActions, preventionChangeRequests, preventionCommitteeAgreements,
+  preventionCapaActions, preventionCommitteeAgreements,
   preventionCommitteeMeetings,
   preventionCommittees, preventionEmergencyDrills, preventionExposureGroups,
   preventionExposureMeasurements, preventionInspectionFindings,
@@ -163,7 +163,6 @@ export interface FieldControlSummary {
   drillsCompleted: number
   committeeAgreementsOpen: number
   measurementsAboveLimit: number
-  changeRequestsOpen: number
   /**
    * Qué submódulos puede ver esta sesión. La sección omite los que no, en vez
    * de mostrar un cero que se lee como "no hay nada" (ver `visibleFieldControl`).
@@ -172,13 +171,13 @@ export interface FieldControlSummary {
 }
 
 export type FieldControlModule =
-  | "inspections" | "permits" | "drills" | "committee" | "hygiene" | "change"
+  | "inspections" | "permits" | "drills" | "committee" | "hygiene"
 
 export type FieldControlVisibility = Record<FieldControlModule, boolean>
 
 /**
- * DASH-001 (auditoría 2026-09-14): la sección de terreno agrupa seis módulos
- * que en su propia ruta exigen seis permisos distintos, y el tablero los
+ * DASH-001 (auditoría 2026-09-14): la sección de terreno agrupa cinco módulos
+ * que en su propia ruta exigen cinco permisos distintos, y el tablero los
  * cargaba y dibujaba todos con que la sesión tuviera **uno cualquiera** de
  * ellos. El agrupamiento visual se había vuelto la condición de lectura.
  *
@@ -191,7 +190,6 @@ const FIELD_CONTROL_PERMISSION: Record<FieldControlModule, string> = {
   drills:      "prevention:emergency:view",
   committee:   "prevention:cphs:view",
   hygiene:     "prevention:hygiene:view",
-  change:      "prevention:change:view",
 }
 
 export function visibleFieldControl(permissions: readonly string[]): FieldControlVisibility {
@@ -202,12 +200,12 @@ export function visibleFieldControl(permissions: readonly string[]): FieldContro
 }
 
 /**
- * Resumen de los seis dominios de control preventivo en terreno que no tenían
+ * Resumen de los cinco dominios de control preventivo en terreno que no tenían
  * ninguna función de agregación: inspecciones, permisos de trabajo, simulacros,
- * acuerdos del comité paritario, higiene industrial y gestión del cambio.
+ * acuerdos del comité paritario e higiene industrial.
  *
  * Van juntos en una consulta y en una sección porque comparten la misma
- * pregunta —¿el control preventivo se está ejecutando en terreno?— y porque seis
+ * pregunta —¿el control preventivo se está ejecutando en terreno?— y porque cinco
  * secciones más habrían devuelto la pantalla al muro que esta auditoría
  * desarmó.
  *
@@ -232,7 +230,6 @@ export async function getFieldControlSummary(
   const drillScope = worksiteScopeSql(session, preventionEmergencyDrills.worksiteId, worksiteId)
   // Ni la reunión ni la medición tienen faena: cuelgan del comité y del GES.
   const committeeScope = worksiteScopeSql(session, preventionCommittees.worksiteId, worksiteId)
-  const changeScope = worksiteScopeSql(session, preventionChangeRequests.worksiteId, worksiteId)
   const exposureGroupScope = worksiteScopeSql(session, preventionExposureGroups.worksiteId, worksiteId)
 
   const visible = visibleFieldControl(session.user.permissions ?? [])
@@ -240,7 +237,7 @@ export async function getFieldControlSummary(
   // garantía de que el dato no llega al render por descuido.
   const skip = <T,>(value: T) => Promise.resolve([value])
 
-  const [[inspections], [findings], [permits], [drills], [agreements], [measurements], [changes]] = await Promise.all([
+  const [[inspections], [findings], [permits], [drills], [agreements], [measurements]] = await Promise.all([
     !visible.inspections ? skip({ compliance: null, reviewed: 0 }) : db.select({
       compliance: sql<number | null>`AVG(${preventionInspectionRuns.compliancePercent})`,
       reviewed: sql<number>`COUNT(*) FILTER (WHERE ${preventionInspectionRuns.status} = 'reviewed')::int`,
@@ -286,9 +283,6 @@ export async function getFieldControlSummary(
       .innerJoin(preventionExposureGroups, eq(preventionExposureMeasurements.groupId, preventionExposureGroups.id))
       .where(and(exposureGroupScope, eq(preventionExposureMeasurements.outcome, "above_limit"))),
 
-    !visible.change ? skip({ value: 0 }) : db.select({ value: count() })
-      .from(preventionChangeRequests)
-      .where(and(changeScope, sql`${preventionChangeRequests.status} NOT IN ('closed', 'cancelled', 'rejected')`)),
   ])
 
   const compliance = inspections?.compliance == null ? null : Math.round(Number(inspections.compliance))
@@ -303,7 +297,6 @@ export async function getFieldControlSummary(
     drillsCompleted: Number(drills?.completed ?? 0),
     committeeAgreementsOpen: Number(agreements?.value ?? 0),
     measurementsAboveLimit: Number(measurements?.value ?? 0),
-    changeRequestsOpen: Number(changes?.value ?? 0),
     visible,
   }
 }

@@ -10,7 +10,8 @@ export default function Loading() {
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Prevención", href: "/prevencion" },
-            { label: "Emergencias" },
+            { label: "Gestión de riesgos de desastres", href: "/prevencion/cgrd" },
+            { label: "Plan de emergencia" },
           ]} />
         }
       />

@@ -40,7 +40,6 @@ vi.mock("@/db", () => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-const { createChangeRequest } = await import("@/lib/services/prevention-change")
 const { addEmergencyResource, createEmergencyPlan } = await import("@/lib/services/prevention-emergency")
 const { getPreventionAttention } = await import("@/lib/services/prevention-attention")
 const { gatherCertificationEvidence } = await import("@/lib/services/prevention-cphs-certification")
@@ -50,7 +49,6 @@ const ACCESS = {
   userId: "u-tz",
   scope: ALL,
   permissions: [
-    "prevention:change:manage",
     "prevention:emergency:manage",
     "prevention:emergency:view",
   ],
@@ -75,8 +73,6 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionEmergencyResources)
   await inMemoryDb.delete(schema.auditLog)
   await inMemoryDb.delete(schema.preventionEmergencyPlans)
-  await inMemoryDb.delete(schema.preventionChangeAssessments)
-  await inMemoryDb.delete(schema.preventionChangeRequests)
   await inMemoryDb.delete(schema.preventionCommitteeMeetings)
   await inMemoryDb.delete(schema.preventionCommittees)
   await inMemoryDb.delete(schema.worksites)
@@ -113,24 +109,9 @@ describe("codeYear() y todayInChile() a las 23:00 de Chile", () => {
   })
 })
 
-/* ── MOC-09 y EMERGENCIAS-12: el año del correlativo ──────────────────────── */
+/* ── EMERGENCIAS-12: el año del correlativo ──────────────────────── */
 
 describe("códigos generados la noche del 31 de diciembre", () => {
-  it("MOC-09: el cambio nace con el año chileno en el código", async () => {
-    fijarReloj(NOCHEVIEJA)
-
-    const cambio = await createChangeRequest({
-      worksiteId: "ws-tz",
-      title: "Cambio de proveedor de andamios",
-      changeType: "proveedor",
-      description: "Se reemplaza al proveedor de andamios certificados.",
-      reason: "Término de contrato del proveedor anterior.",
-    }, ACCESS)
-
-    expect(cambio.code).toMatch(/^GC-2026-/)
-    expect(cambio.code).not.toMatch(/^GC-2027-/)
-  })
-
   it("EMERGENCIAS-12: el plan de emergencia también", async () => {
     fijarReloj(NOCHEVIEJA)
 

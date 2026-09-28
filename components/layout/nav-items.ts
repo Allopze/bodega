@@ -146,22 +146,24 @@ export function getVisibleAreas(
   for (const area of AREA_TREE) {
     const items: NavItem[] = []
     for (const item of area.items) {
-      if (!canSeeNav(item, session)) continue
       const moduleId = HREF_TO_MODULE.get(item.href)
       // La puerta de recuperación nunca se oculta: si Administración se apaga
       // por error, es el único camino para volver a encenderlo y el menú es
       // donde el administrador lo busca.
       const isRecoveryDoor = item.href === MODULE_TOGGLE_RECOVERY_PATH
-      if (!isRecoveryDoor) {
-        if (enabledModuleIds && moduleId && !enabledModuleIds.has(moduleId)) continue
-        if (disabledSubmoduleHrefs?.has(item.href)) continue
-      }
+      if (!isRecoveryDoor && enabledModuleIds && moduleId && !enabledModuleIds.has(moduleId)) continue
 
-      items.push({
-        ...item,
-        children: item.children?.filter((child) =>
-          canSeeNav(child, session) && !disabledSubmoduleHrefs?.has(child.href)),
-      })
+      const children = item.children?.filter((child) =>
+        canSeeNav(child, session) && !disabledSubmoduleHrefs?.has(child.href))
+      const selfVisible = canSeeNav(item, session) && (isRecoveryDoor || !disabledSubmoduleHrefs?.has(item.href))
+      // Mismo criterio que `getAdminAreas`: el padre se conserva por sus hijos
+      // visibles, porque su permiso y el de ellos no siempre coinciden. "Plan de
+      // emergencia" cuelga de GRD y lo necesita quien tiene `emergency:view` sin
+      // `cgrd:view` (jefe_mantencion). Su `href` pasa al primer hijo visible
+      // para no mandar a /forbidden a quien no puede abrir la pantalla del padre.
+      if (!selfVisible && !children?.length) continue
+      const href = selfVisible ? item.href : (children?.[0]?.href ?? item.href)
+      items.push({ ...item, href, children })
     }
 
     if (items.length === 0) continue

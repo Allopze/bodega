@@ -203,6 +203,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/emergency-resource-inventory-pglite.test.ts",
   "lib/__tests__/prevention-containers-pglite.test.ts",
   "lib/__tests__/prevention-inspection-container-subject-pglite.test.ts",
+  "lib/__tests__/prevention-inspection-epp-rows-pglite.test.ts",
   // Faltaba desde que se escribió (Grupo B): instancia PGlite y migra, así que
   // en el proyecto paralelo competía por CPU y corría con el timeout de 20 s,
   // no con los 60 s que necesita la instrumentación de `--coverage` del CI.

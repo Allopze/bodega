@@ -19,6 +19,7 @@ import { summarizeTimelyClosure } from "@/lib/prevention/inspections"
 import { listOfferedDeviations } from "@/lib/services/prevention-deviations"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { todayInChile } from "@/lib/utils"
+import { resolveRunDefinition } from "./epp-rows"
 
 /* ── Consultas ────────────────────────────────────────────────────────────── */
 
@@ -295,13 +296,21 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
    * plantilla de checklist no lo necesita: ahí la gravedad la declara el ítem.
    * Por CÓDIGO y no por id de fila: la selección pertenece al instrumento, no a
    * la versión, y así sobrevive a un versionado. */
-  const definition = run.definitionSnapshot as unknown as ChecklistDefinition
+  // La inspección de EPP arma sus filas desde la bodega de la faena: la ficha,
+  // el acta impresa y el guardado leen la misma definición efectiva.
+  const definition = await resolveRunDefinition(
+    db,
+    run.definitionSnapshot as unknown as ChecklistDefinition,
+    { id: run.run.id, worksiteId: run.run.worksiteId, status: run.run.status },
+    new Map(answers.map((row) => [row.itemId, row.itemLabel] as const)),
+  )
   const deviationCatalog = definition?.recordsDeviations
     ? await listOfferedDeviations(run.templateCode)
     : []
 
   return {
     ...run,
+    definitionSnapshot: definition as unknown as typeof run.definitionSnapshot,
     answers: answers.map((row) => ({ ...row, evidence: evidenceByAnswer.get(row.id) ?? [] })),
     findings: findings.map((row) => ({ ...row, evidence: evidenceByFinding.get(row.id) ?? [] })),
     documents,

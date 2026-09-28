@@ -14,11 +14,11 @@ import type { DomainSectionsProps } from "./shared"
 // ── Control preventivo en terreno ────────────────────────────────────────────
 
 /**
- * Los seis dominios que no tenían representación: inspecciones, permisos de
- * trabajo, simulacros, acuerdos del comité, higiene y gestión del cambio.
+ * Los cinco dominios que no tenían representación: inspecciones, permisos de
+ * trabajo, simulacros, acuerdos del comité e higiene.
  *
- * Van en **una** sección y no en seis: comparten la pregunta "¿el control
- * preventivo se está ejecutando en terreno?", y seis secciones más habrían
+ * Van en **una** sección y no en cinco: comparten la pregunta "¿el control
+ * preventivo se está ejecutando en terreno?", y cinco secciones más habrían
  * devuelto la pantalla al muro que esta auditoría desarmó.
  *
  * Casi todas sus cifras son estado actual y por eso no heredan el período. La
@@ -127,14 +127,6 @@ function fieldControlSummaryStats(field: Awaited<ReturnType<typeof getFieldContr
       value: field.committeeAgreementsOpen,
       secondary: "Con acción CAPA sin cerrar · ahora",
       href: "/prevencion/cphs",
-      tone: "signal",
-    },
-    !field.visible.change ? null : {
-      key: "change-open",
-      label: "Gestión del cambio abierta",
-      value: field.changeRequestsOpen,
-      secondary: "Cambios sin cerrar · ahora",
-      href: "/prevencion/gestion-cambio",
       tone: "signal",
     },
   ]

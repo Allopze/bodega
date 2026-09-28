@@ -71,8 +71,9 @@ export default async function PlanEmergenciaPage({ params, searchParams }: { par
         description={`${detail.plan.code} · ${detail.worksiteName}`}
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
-          { label: "Prevención" },
-          { label: "Emergencias", href: "/prevencion/emergencias" },
+          { label: "Prevención", href: "/prevencion" },
+          { label: "Gestión de riesgos de desastres", href: "/prevencion/cgrd" },
+          { label: "Plan de emergencia", href: "/prevencion/emergencias" },
           { label: detail.plan.title },
         ]} />}
       />

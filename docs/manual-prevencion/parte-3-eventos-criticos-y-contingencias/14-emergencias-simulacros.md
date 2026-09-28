@@ -1,7 +1,7 @@
 # Capítulo 14: Planes de Emergencia, Recursos y Simulacros
 
 > **Marco Normativo:** Decreto Supremo 594 (Condiciones de Seguridad y Protección contra Incendios), Decreto Supremo 44 y Normas Chilenas NCh 934 / NCh 1430 (Extintores Portátiles).  
-> **Ruta en Plataforma:** Menú > Cumplimiento del programa > **Emergencias** (`/prevencion/emergencias`).  
+> **Ruta en Plataforma:** Menú > Cumplimiento del programa > Gestión de riesgos de desastres > **Plan de emergencia** (`/prevencion/emergencias`).  
 > **Actividades PDTP Asociadas:** N° 83 (Aprobación del Plan de Emergencia) y N° 84 (Ejecución de Simulacro).
 
 ---

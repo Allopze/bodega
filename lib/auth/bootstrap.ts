@@ -18,6 +18,12 @@ const RETIRED_PERMISSION_NAMES = [
   "operations:assign_work",
   "traceability:view",
   "traceability:reconcile_integrity",
+  // Gestión del cambio se retiró por decisión de Prevención (2026-09-28). Sus
+  // tablas se conservan con lo ya registrado; nada las lee ni las escribe.
+  "prevention:change:view",
+  "prevention:change:manage",
+  "prevention:change:evaluate",
+  "prevention:change:approve",
 ] as const
 
 /**
@@ -83,8 +89,6 @@ export const GRANT_ADDITIONS = [
     "p-prev-hyg-measure",
     "p-prev-hyg-assess",
     "p-prev-emg-manage",
-    "p-prev-chg-manage",
-    "p-prev-chg-eval",
     "p-prev-epp-manage",
     "p-sst-close",
   ] as const).map((permissionId) => ({
