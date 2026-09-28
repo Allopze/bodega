@@ -13,7 +13,8 @@ const mockResolveWorksiteScope = vi.hoisted(() => vi.fn(() => ({ mode: "all" as 
 const mockCreateDocument = vi.hoisted(() => vi.fn(async () => ({ id: "doc-1" })))
 const mockUploadDocumentVersion = vi.hoisted(() => vi.fn(async () => ({ id: "ver-1", version: 1 })))
 const mockArchiveDocument = vi.hoisted(() => vi.fn(async () => undefined))
-const mockRestoreDocument = vi.hoisted(() => vi.fn(async () => undefined))
+// Devuelve el documento restaurado: la acción avisa a qué estado volvió.
+const mockRestoreDocument = vi.hoisted(() => vi.fn(async (): Promise<{ status: string }> => ({ status: "vigente" })))
 const mockCreateDocumentFolder = vi.hoisted(() => vi.fn(async () => ({ id: "folder-1" })))
 const mockRenameDocumentFolder = vi.hoisted(() => vi.fn(async () => undefined))
 const mockMoveDocumentFolder = vi.hoisted(() => vi.fn(async () => undefined))
@@ -291,7 +292,14 @@ describe("restoreSstDocumentAction", () => {
   it("restaura documento válido", async () => {
     const res = await restoreSstDocumentAction({ documentId: "doc-1" })
     expect(res.ok).toBe(true)
+    expect(res.message).toBe("Documento restaurado con su versión vigente.")
     expect(mockRestoreDocument).toHaveBeenCalled()
+  })
+
+  it("avisa cuando el documento vuelve como borrador", async () => {
+    mockRestoreDocument.mockResolvedValueOnce({ status: "borrador" })
+    const res = await restoreSstDocumentAction({ documentId: "doc-1" })
+    expect(res.message).toBe("Documento restaurado como borrador.")
   })
 })
 
