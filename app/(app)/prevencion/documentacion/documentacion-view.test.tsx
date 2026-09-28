@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { DocumentacionView } from "./documentacion-view"
 
@@ -29,7 +29,7 @@ import {
   restoreSstDocumentFolderAction,
 } from "./actions"
 
-afterEach(() => cleanup())
+afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 const counters = {
   total: 1,
@@ -57,6 +57,12 @@ function firstFolderTile() {
   const trigger = matches.find((el) => el.tagName !== "INPUT")
   if (!trigger) throw new Error("Expected folder trigger (link or tile) to be present")
   return trigger
+}
+
+/** Confirma el diálogo de archivado que se abre antes de llamar al servidor. */
+function confirmArchive(title: string) {
+  const dialog = screen.getByRole("dialog", { name: title })
+  fireEvent.click(within(dialog).getByRole("button", { name: "Archivar" }))
 }
 
 const FOLDER = {
@@ -275,7 +281,34 @@ describe("DocumentacionView", () => {
 
     fireEvent.contextMenu(firstFolderTile())
     fireEvent.click(screen.getByRole("menuitem", { name: "Archivar" }))
+    // Archivar pide confirmación antes de llamar al servidor.
+    expect(archiveSstDocumentFolderAction).not.toHaveBeenCalled()
+    confirmArchive("Archivar carpeta")
     await waitFor(() => expect(archiveSstDocumentFolderAction).toHaveBeenCalledWith({ id: "sdf-1" }))
+  })
+
+  it("cancelar la confirmación no archiva la carpeta", () => {
+    render(
+      <DocumentacionView
+        counters={counters}
+        expiring={[]}
+        documents={[]}
+        folders={[FOLDER]}
+        breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
+        searchParams={{}}
+        total={0}
+        canManage
+        canArchive
+        userId="test-user"
+      />,
+    )
+
+    fireEvent.contextMenu(firstFolderTile())
+    fireEvent.click(screen.getByRole("menuitem", { name: "Archivar" }))
+    const dialog = screen.getByRole("dialog", { name: "Archivar carpeta" })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }))
+    expect(screen.queryByRole("dialog", { name: "Archivar carpeta" })).not.toBeInTheDocument()
+    expect(archiveSstDocumentFolderAction).not.toHaveBeenCalled()
   })
 
   /*
@@ -331,6 +364,8 @@ describe("DocumentacionView", () => {
 
     expect(screen.getByText("2 seleccionados")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Archivar carpetas seleccionadas" }))
+    expect(archiveSstDocumentFolderAction).not.toHaveBeenCalled()
+    confirmArchive("Archivar carpetas seleccionadas")
     await waitFor(() => expect(archiveSstDocumentFolderAction).toHaveBeenCalledWith({ id: "sdf-1" }))
   })
 
@@ -386,6 +421,8 @@ describe("DocumentacionView", () => {
     fireEvent.click(screen.getByLabelText("Seleccionar documento Procedimiento trabajo seguro"))
     fireEvent.click(screen.getByLabelText("Seleccionar documento Matriz de riesgos"))
     fireEvent.click(screen.getByRole("button", { name: "Archivar documentos seleccionados" }))
+    expect(archiveSstDocumentAction).not.toHaveBeenCalled()
+    confirmArchive("Archivar documentos seleccionados")
     await waitFor(() => expect(archiveSstDocumentAction).toHaveBeenCalledWith({ documentId: "sdoc-1" }))
     expect(archiveSstDocumentAction).toHaveBeenCalledWith({ documentId: "sdoc-2" })
   })

@@ -54,25 +54,25 @@ export function NewAgentDialog() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Código"><Input name="code" required minLength={2} maxLength={60} placeholder="SIO2-CRIST" /></Field>
-            <Field label="Tipo">
+            <Field label="Código" error={operation.fieldError("code")}><Input name="code" required minLength={2} maxLength={60} placeholder="SIO2-CRIST" /></Field>
+            <Field label="Tipo" error={operation.fieldError("agentType")}>
               <Select value={agentType} onValueChange={setAgentType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(AGENT_TYPE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="agentType" value={agentType} />
             </Field>
           </div>
-          <Field label="Nombre"><Input name="name" required minLength={3} maxLength={200} placeholder="Sílice cristalina respirable" /></Field>
+          <Field label="Nombre" error={operation.fieldError("name")}><Input name="name" required minLength={3} maxLength={200} placeholder="Sílice cristalina respirable" /></Field>
           <div className="grid gap-3 md:grid-cols-3">
-            <Field label="Límite permisible" hint="Opcional. Vacío = no comparable.">
+            <Field label="Límite permisible" hint="Opcional. Vacío = no comparable." error={operation.fieldError("permissibleLimit")}>
               <Input name="permissibleLimit" type="number" step="any" min={0} />
             </Field>
-            <Field label="Unidad"><Input name="unit" required maxLength={40} placeholder="mg/m³" /></Field>
-            <Field label="Factor nivel de acción" hint="0-1. Ej: 0.5 = 50% del límite.">
+            <Field label="Unidad" error={operation.fieldError("unit")}><Input name="unit" required maxLength={40} placeholder="mg/m³" /></Field>
+            <Field label="Factor nivel de acción" hint="0-1. Ej: 0.5 = 50% del límite." error={operation.fieldError("actionLevelFactor")}>
               <Input name="actionLevelFactor" type="number" step="any" min={0.01} max={1} defaultValue={0.5} required />
             </Field>
           </div>
-          <Field label="Fundamento del límite" hint="Mínimo 5 caracteres. Norma o protocolo de origen.">
+          <Field label="Fundamento del límite" hint="Mínimo 5 caracteres. Norma o protocolo de origen." error={operation.fieldError("limitBasis")}>
             <Textarea name="limitBasis" required minLength={5} maxLength={2000} placeholder="DS 594/1999, art. 66" />
           </Field>
-          <Field label="Protocolo de vigilancia" hint="Opcional."><Input name="surveillanceProtocol" maxLength={200} /></Field>
+          <Field label="Protocolo de vigilancia" hint="Opcional." error={operation.fieldError("surveillanceProtocol")}><Input name="surveillanceProtocol" maxLength={200} /></Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Crear agente</Button></DialogFooter>
         </form>

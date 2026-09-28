@@ -12,6 +12,8 @@
  * puede crear sinónimos ni quedarse corta.
  */
 
+import type { StateMetaInput } from "@/components/states/state-badge"
+
 /** `prevention_health_records.record_type` */
 export const HEALTH_RECORD_TYPE_LABELS: Record<string, string> = {
   aptitud: "Aptitud",
@@ -61,6 +63,60 @@ export const SST_DOCUMENT_STATUS_LABELS: Record<string, string> = {
   vencido: "Vencido",
   reemplazado: "Reemplazado",
   archivado: "Archivado",
+}
+
+/**
+ * `prevention_privacy_requests.status`, con el color de su badge. Vivía como
+ * constante privada del listado de solicitudes —un módulo cliente— y la ficha
+ * de la solicitud, que es un server component y no puede importar valores de
+ * ahí, imprimía el enum crudo (`suspendida_retencion`).
+ */
+export const PRIVACY_REQUEST_STATUS_META: Record<string, StateMetaInput> = {
+  recibida: { label: "Recibida", variant: "default" },
+  validando_identidad: { label: "Validando identidad", variant: "warning" },
+  en_proceso: { label: "En proceso", variant: "info" },
+  suspendida_retencion: { label: "Retención legal", variant: "danger" },
+  completada: { label: "Completada", variant: "success" },
+  rechazada: { label: "Rechazada", variant: "danger" },
+}
+
+/** `prevention_privacy_requests.right_type`. Lo usaban, duplicado, el listado y la ficha. */
+export const PRIVACY_RIGHT_LABELS: Record<string, string> = {
+  access: "Acceso",
+  rectification: "Rectificación",
+  deletion: "Supresión",
+  opposition: "Oposición",
+  portability: "Portabilidad",
+  restriction: "Restricción",
+}
+
+/**
+ * `prevention_privacy_request_executions.operation`. Es el verbo de lo que se
+ * hizo sobre el registro, no el derecho pedido: por eso «Supresión» y no
+ * «Derecho de supresión».
+ */
+export const PRIVACY_EXECUTION_OPERATION_LABELS: Record<string, string> = {
+  rectification: "Rectificación",
+  deletion: "Supresión",
+  opposition: "Oposición",
+  restriction: "Restricción",
+}
+
+/** `prevention_privacy_request_executions.domain` */
+export const PRIVACY_EXECUTION_DOMAIN_LABELS: Record<string, string> = {
+  health_record: "Registro de salud",
+  reserved_case: "Caso reservado",
+  ppa: "PPA",
+  document: "Documento",
+  processing_restriction: "Restricción de tratamiento",
+}
+
+/** `prevention_privacy_request_executions.outcome` */
+export const PRIVACY_EXECUTION_OUTCOME_LABELS: Record<string, string> = {
+  applied: "Aplicada",
+  partially_applied: "Aplicada parcialmente",
+  blocked_retention: "Bloqueada por retención legal",
+  rejected: "Rechazada",
 }
 
 /**

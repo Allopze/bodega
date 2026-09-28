@@ -1,12 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
+import { addDaysToPlainDate, formatDate, todayInChile } from "@/lib/utils"
 import Link from "next/link"
 import { HardHat } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
@@ -37,6 +38,9 @@ export function EppGapList({ gaps, canEscalate }: Props) {
   const gapType = getFilter("tipo") || "all"
   const [pending, startTransition] = React.useTransition()
   const [message, setMessage] = React.useState<string | null>(null)
+  // Escalar crea una CAPA por persona y tipo de EPP de un solo clic: se
+  // confirma con el número de brechas y el plazo antes de abrirlas.
+  const [confirmOpen, setConfirmOpen] = React.useState(false)
 
   const query = searchQuery.trim().toLocaleLowerCase("es-CL")
   const filtered = gaps.filter((gap) => {
@@ -61,6 +65,7 @@ export function EppGapList({ gaps, canEscalate }: Props) {
 
   function escalate() {
     setMessage(null)
+    setConfirmOpen(false)
     startTransition(async () => {
       const result = await escalateBlockingEppGapsAction({ targetDate: defaultTargetDate() })
       setMessage(result.ok
@@ -80,7 +85,7 @@ export function EppGapList({ gaps, canEscalate }: Props) {
           </p>
           {canEscalate && (
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="destructive" disabled={pending} onClick={escalate}>
+              <Button size="sm" variant="destructive" disabled={pending} onClick={() => setConfirmOpen(true)}>
                 Escalar brechas bloqueantes a CAPA
               </Button>
               <Button size="sm" variant="secondary" asChild>
@@ -88,6 +93,16 @@ export function EppGapList({ gaps, canEscalate }: Props) {
               </Button>
             </div>
           )}{message && <p role="status" className="mt-2 text-sm">{message}</p>}
+          <ConfirmDialog
+            open={confirmOpen}
+            onOpenChange={setConfirmOpen}
+            title="Escalar brechas bloqueantes a CAPA"
+            description={`Se abrirá una acción CAPA por persona y tipo de EPP para las ${blockingCount} brecha(s) bloqueante(s), con plazo al ${formatDate(defaultTargetDate())}. Las que ya tienen una acción abierta no se duplican.`}
+            variant="warning"
+            confirmLabel="Escalar a CAPA"
+            loading={pending}
+            onConfirm={escalate}
+          />
         </div>
       )}
 

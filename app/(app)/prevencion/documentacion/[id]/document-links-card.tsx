@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { LinkSimple, Trash } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -42,6 +43,10 @@ export function DocumentLinksCard({ documentId, links, canLink, onMutated }: Pro
   const [entityId, setEntityId] = React.useState("")
   const [notes, setNotes] = React.useState("")
   const [pending, startTransition] = React.useTransition()
+  // Vínculo a retirar. El motivo se pide en un diálogo accesible —antes, un
+  // `window.prompt`— y el diálogo sólo se cierra si el retiro prosperó, para no
+  // perder lo escrito cuando el servidor lo rechaza.
+  const [removingId, setRemovingId] = React.useState<string | null>(null)
 
   function addLink() {
     startTransition(async () => {
@@ -57,15 +62,14 @@ export function DocumentLinksCard({ documentId, links, canLink, onMutated }: Pro
     })
   }
 
-  function removeLink(linkId: string) {
-    const reason = window.prompt("Motivo del retiro del vínculo:")?.trim()
-    if (!reason) return
+  function removeLink(linkId: string, reason: string) {
     startTransition(async () => {
       const result = await removeSstDocumentLinkAction({ documentId, linkId, reason })
       if (!result.ok) {
         toast.error(result.message ?? "No se pudo retirar el vínculo.")
         return
       }
+      setRemovingId(null)
       toast.success(result.message ?? "Vínculo retirado.")
       refresh()
     })
@@ -73,6 +77,17 @@ export function DocumentLinksCard({ documentId, links, canLink, onMutated }: Pro
 
   return (
     <Card>
+      <ConfirmDialog
+        open={removingId !== null}
+        onOpenChange={(open) => { if (!open) setRemovingId(null) }}
+        title="Retirar vínculo"
+        description="El documento deja de estar asociado a esta entidad. El retiro queda en la trazabilidad del documento."
+        variant="destructive"
+        confirmLabel="Retirar vínculo"
+        reasonLabel="Motivo del retiro"
+        loading={pending}
+        onConfirm={(reason) => { if (removingId) removeLink(removingId, reason) }}
+      />
       <CardHeader><CardTitle>Vínculos operacionales</CardTitle></CardHeader>
       <CardContent className="space-y-3">
         {links.length === 0 ? (
@@ -86,7 +101,7 @@ export function DocumentLinksCard({ documentId, links, canLink, onMutated }: Pro
                   <p className="break-all text-xs text-(--color-text-muted)">{link.entityId}{link.notes ? ` · ${link.notes}` : ""}</p>
                 </div>
                 {canLink ? (
-                  <Button type="button" size="icon" variant="ghost" aria-label="Retirar vínculo" disabled={pending} onClick={() => removeLink(link.id)}>
+                  <Button type="button" size="icon" variant="ghost" aria-label="Retirar vínculo" disabled={pending} onClick={() => setRemovingId(link.id)}>
                     <Trash size={15} />
                   </Button>
                 ) : null}
