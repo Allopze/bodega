@@ -376,7 +376,7 @@ const DIALOG_COPY: Record<DialogTargetStatus, {
     title: "Declarar que la capacitación no aplica",
     confirmLabel: "Confirmar no aplica",
     confirmVariant: "secondary",
-    notice: { tone: "neutral", text: "La actividad saldrá del programa de esta faena: no cuenta como cumplida ni como incumplida. El motivo queda registrado y es lo que un fiscalizador va a leer." },
+    notice: { tone: "neutral", text: "Queda en revisión hasta que otra persona lo apruebe. Si lo aprueba, la actividad sale del programa de esta faena: no cuenta como cumplida ni como incumplida. El motivo queda registrado y es lo que un fiscalizador va a leer." },
     observationLabel: "Motivo",
     observationHelper: `Obligatorio: explica por qué no corresponde en esta faena (al menos ${NOT_APPLICABLE_REASON_MIN} caracteres).`,
     observationPlaceholder: "Ej.: la faena no opera equipos de izaje, por lo que el curso no corresponde.",

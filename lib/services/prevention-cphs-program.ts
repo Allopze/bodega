@@ -26,6 +26,7 @@ import {
 } from "@/lib/prevention/cphs-program"
 import {
   CPHS_NOT_FOUND,
+  nullIfCphsNotFound,
   nowIso,
   recordGovernanceHistory,
   requireCphsAccess,
@@ -515,7 +516,7 @@ export interface ProgramStatus {
 
 export async function getProgramStatus(programId: string, access: CphsAccess): Promise<ProgramStatus | null> {
   requireCphsAccess(access, "prevention:cphs:view")
-  const context = await loadProgramContext(db, programId).catch(() => null)
+  const context = await loadProgramContext(db, programId).catch(nullIfCphsNotFound)
   if (!context) return null
   requireCphsAccess(access, "prevention:cphs:view", context.worksiteId)
 

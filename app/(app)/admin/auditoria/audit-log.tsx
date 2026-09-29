@@ -53,7 +53,8 @@ export function AuditLog({ entries }: { entries: AuditRow[] }) {
       caption="Log de Auditoría"
       columns={COLUMNS}
       rows={entries}
-      searchKeys={["userEmail", "entityType", "entityCode", "action"]}
+      // M-18: también por id, para seguir la historia de un registro puntual.
+      searchKeys={["userEmail", "entityType", "entityCode", "entityId", "action"]}
       pageSize={30}
 
       emptyTitle="Sin entradas de auditoría"

@@ -50,12 +50,14 @@ type PdtpExecutionFormProps = {
    * (respaldo fuera de la plataforma) y aun así exige una observación.
    */
   manualEvidencePolicy?: string | null
+  /** PRV-08: semanas ya aprobadas por debajo de lo planificado. */
+  partialApprovedCells?: Array<{ month: number; week: number; executed: number; planned: number }>
 }
 
 /** Mismo tope que `POST /api/prevencion/pdtp/evidence`. */
 const MAX_EVIDENCE_BYTES = 25 * 1024 * 1024
 
-export function PdtpExecutionForm({ activityId, activityN, activityName, worksiteId, year, defaultMonth, defaultWeek, effectiveFrom, evidenceRequirement, mechanism, manualEvidencePolicy }: PdtpExecutionFormProps) {
+export function PdtpExecutionForm({ activityId, activityN, activityName, worksiteId, year, defaultMonth, defaultWeek, effectiveFrom, evidenceRequirement, mechanism, manualEvidencePolicy, partialApprovedCells = [] }: PdtpExecutionFormProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [open, setOpen] = React.useState(false)
   const programYear = year ?? codeYear()
@@ -127,6 +129,7 @@ export function PdtpExecutionForm({ activityId, activityN, activityName, worksit
     null,
   )
   const [pending, startTransition] = React.useTransition()
+  const partialCell = partialApprovedCells.find((cell) => String(cell.month) === selectedMonth && String(cell.week) === selectedWeek)
   // PREV-B02 (ver `markPdtpExecution`): declarar una cantidad exige un
   // archivo, salvo la excepción declarada en la actividad —y una `constancia`
   // con requisito nunca la admite—. La observación sólo reemplaza al archivo
@@ -151,7 +154,7 @@ export function PdtpExecutionForm({ activityId, activityN, activityName, worksit
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            Registrar ejecución{activityN !== undefined ? ` · N°${activityN}` : ""}
+            {partialCell ? "Registrar complemento" : "Registrar ejecución"}{activityN !== undefined ? ` · N°${activityN}` : ""}
           </DialogTitle>
           <DialogDescription>
             {activityName && (
@@ -169,6 +172,11 @@ export function PdtpExecutionForm({ activityId, activityN, activityName, worksit
           <input type="hidden" name="activityId" value={activityId} />
           <input type="hidden" name="worksiteId" value={worksiteId} />
           <input type="hidden" name="year" value={programYear} />
+          {partialCell && (
+            <p role="status" className="rounded-[var(--radius)] bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
+              Esta semana ya tiene {partialCell.executed} de {partialCell.planned} aprobadas. Lo que registres se suma como complemento y queda en revisión; lo aprobado no cambia.
+            </p>
+          )}
 
           <div className="grid grid-cols-3 gap-3">
             <Field label="Mes" htmlFor="exec-month">

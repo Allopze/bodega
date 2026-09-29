@@ -8,9 +8,9 @@
  * simulacros) se muestra como el chip "En el módulo de origen", sin enlace
  * (D12), porque la ruta PDTP no la sirve y respondía 404.
  */
-import { ArrowSquareOut, FileText, FileImage, LinkSimple } from "@phosphor-icons/react/dist/ssr"
+import { ArrowSquareOut, FileText, FileImage, LinkSimple, Robot } from "@phosphor-icons/react/dist/ssr"
 import { Tooltip } from "@/components/ui/tooltip"
-import { pdtpEvidenceFileName, pdtpEvidenceHref } from "@/lib/services/pdtp/evidence-href"
+import { pdtpEvidenceFileName, pdtpEvidenceHref, pdtpSyntheticEvidenceLabel } from "@/lib/services/pdtp/evidence-href"
 
 export type PdtpEvidenceItem = {
   url: string
@@ -37,11 +37,17 @@ export function PdtpEvidenceThumbs({
   evidencePhotos,
   evidenceText,
   max = 3,
+  origin = null,
 }: {
   evidenceUrl: string | null
   evidencePhotos: string[]
   evidenceText: string | null
   max?: number
+  /**
+   * C-04: con `integration`, la observación la escribió el módulo de origen, no
+   * una persona, y se muestra como rótulo automático en vez de como cita.
+   */
+  origin?: string | null
 }) {
   const items: PdtpEvidenceItem[] = []
   if (evidenceUrl) items.push({ url: evidenceUrl, kind: classify(evidenceUrl) })
@@ -66,7 +72,8 @@ export function PdtpEvidenceThumbs({
           )
         }
         if (link.kind === "note") {
-          return <span key={item.url} className="text-[11px] italic text-[var(--color-text-muted)]">{link.text}</span>
+          // C-04: una referencia de texto la genera siempre el módulo de origen.
+          return <SyntheticLabel key={item.url} text={link.text} />
         }
         const isExternal = link.kind === "external"
         return (
@@ -86,11 +93,27 @@ export function PdtpEvidenceThumbs({
       {items.length > max && (
         <span className="text-[11px] text-[var(--color-text-faint)]">+{items.length - max}</span>
       )}
-      {evidenceText && (
-        <p className="basis-full text-[11px] italic text-[var(--color-text-muted)]">
-          “{evidenceText.length > 140 ? `${evidenceText.slice(0, 140)}…` : evidenceText}”
-        </p>
-      )}
+      {evidenceText && (origin === "integration"
+        ? <SyntheticLabel text={evidenceText} />
+        : (
+          <p className="basis-full text-[11px] italic text-[var(--color-text-muted)]">
+            “{evidenceText.length > 140 ? `${evidenceText.slice(0, 140)}…` : evidenceText}”
+          </p>
+        ))}
     </div>
+  )
+}
+
+/** Rótulo que escribió un módulo de origen: se distingue de una observación de persona (C-04). */
+function SyntheticLabel({ text }: { text: string }) {
+  const label = pdtpSyntheticEvidenceLabel(text)
+  return (
+    <Tooltip side="top" content="Rótulo automático del módulo que registró el hecho.">
+      <span tabIndex={0} className={`${CHIP_CLASS} cursor-default`}>
+        <Robot size={11} aria-hidden="true" />
+        <span className="sr-only">Automático: </span>
+        {label.length > 80 ? `${label.slice(0, 80)}…` : label}
+      </span>
+    </Tooltip>
   )
 }

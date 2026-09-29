@@ -68,3 +68,16 @@ export function pdtpEvidenceFileName(path: string): string {
   const index = path.lastIndexOf("/")
   return index >= 0 ? path.slice(index + 1) : path
 }
+
+/**
+ * C-03 (auditoría 2026-09-28): los conectores rotulan la evidencia con el id
+ * interno del registro de origen ("Entrega EPP: bYpyCTc20g…"). Ese id no le dice
+ * nada a quien aprueba; se quita y queda el rótulo. Sólo se recorta un sufijo
+ * con forma de id generado (12+ caracteres, con letras y dígitos, sin espacios).
+ */
+export function pdtpSyntheticEvidenceLabel(text: string): string {
+  const match = /^(.+?):\s*([A-Za-z0-9_-]{12,})$/.exec(text.trim())
+  if (!match) return text
+  const [, label, id] = match
+  return /[A-Za-z]/.test(id!) && /\d/.test(id!) ? label!.trim() : text
+}

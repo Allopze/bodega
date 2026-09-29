@@ -6,7 +6,7 @@
  * abre en el módulo de origen y aquí se muestra como un chip sin enlace.
  */
 import { describe, expect, it } from "vitest"
-import { pdtpEvidenceHref } from "./evidence-href"
+import { pdtpEvidenceHref, pdtpSyntheticEvidenceLabel } from "./evidence-href"
 
 describe("pdtpEvidenceHref", () => {
   it("una ruta del directorio PDTP se descarga por la ruta PDTP", () => {
@@ -66,5 +66,15 @@ describe("pdtpEvidenceHref", () => {
     expect(pdtpEvidenceHref(null)).toBeNull()
     expect(pdtpEvidenceHref(undefined)).toBeNull()
     expect(pdtpEvidenceHref("   ")).toBeNull()
+  })
+})
+
+describe("pdtpSyntheticEvidenceLabel (C-03)", () => {
+  it("quita el id interno del final", () => {
+    expect(pdtpSyntheticEvidenceLabel("Entrega EPP: bYpyCTc20gK9xQ1")).toBe("Entrega EPP")
+  })
+  it("no toca un texto sin id ni una palabra larga sin dígitos", () => {
+    expect(pdtpSyntheticEvidenceLabel("Acta firmada: conforme")).toBe("Acta firmada: conforme")
+    expect(pdtpSyntheticEvidenceLabel("Motivo: responsabilidades")).toBe("Motivo: responsabilidades")
   })
 })

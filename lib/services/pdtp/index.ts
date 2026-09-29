@@ -140,7 +140,7 @@ export {
 } from "./approval-flow"
 export type { PdtpApprovalStepInput, PdtpApprovalSegregationRule } from "./approval-flow"
 export { getPdtpAggregatedSheetViewByProgram, getPdtpSheetView, getPdtpSheetViewByProgram, buildPdtpExport } from "./sheets"
-export { markPdtpExecution, approvePdtpExecution, rejectPdtpExecution, listPendingPdtpExecutions, getPendingPdtpApprovalsForView, getPdtpChangeLog } from "./executions"
+export { markPdtpExecution, approvePdtpExecution, rejectPdtpExecution, listPendingPdtpExecutions, getPendingPdtpApprovalsForView, getPdtpChangeLog, countPdtpChangeLog } from "./executions"
 export {
   getPdtpComplianceIndicators, getPdtpComplianceIndicatorsForScope, getPdtpComplianceByCategoryForScope,
   effectiveApprovedExecutionsByCell,

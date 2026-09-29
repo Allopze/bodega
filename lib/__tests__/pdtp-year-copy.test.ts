@@ -189,6 +189,14 @@ async function seedSourceProgram() {
 }
 
 describe("createAnnualPdtpProgram — copia del año anterior (D20)", () => {
+  it("la cabecera lleva el cargo real de quien elabora, no siempre «Prevencionista» (C-01)", async () => {
+    await seedSourceProgram()
+    await inMemoryDb.insert(schema.roles).values({ id: "role-jdpr-copy", name: "jefatura_dpr_copia", label: "Jefatura del DPR" })
+    await inMemoryDb.insert(schema.userRoles).values({ userId: JDPR, roleId: "role-jdpr-copy" })
+    const result = await createAnnualPdtpProgram({ year: TARGET_YEAR, userId: JDPR })
+    expect(result.program).toMatchObject({ elaboratedByName: "Jefatura", elaboratedByTitle: "Jefatura del DPR" })
+  })
+
   it("por omisión copia la versión vigente del año anterior, con período, título y cabecera del año nuevo", async () => {
     const { source } = await seedSourceProgram()
     const result = await createAnnualPdtpProgram({ year: TARGET_YEAR, userId: USER_ID })

@@ -100,6 +100,7 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
       evidenceUrl: string | null
       evidencePhotos: string[]
       needsApprovalReason: boolean
+      origin: string
     }>
   }>()
   for (const execution of pending) {
@@ -125,6 +126,7 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
       evidenceUrl: execution.evidenceUrl,
       evidencePhotos: execution.evidencePhotos,
       needsApprovalReason: execution.needsApprovalReason,
+      origin: execution.origin,
     })
   }
   const groupedRows = [...rows.values()]
@@ -187,6 +189,7 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
                               evidenceUrl={exec.evidenceUrl}
                               evidencePhotos={exec.evidencePhotos}
                               evidenceText={exec.evidenceText}
+                              origin={exec.origin}
                             />
                           ))}
                         </div>

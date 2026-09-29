@@ -238,7 +238,7 @@ function SlotDialog({
 
         <div className={`rounded-xl px-3.5 py-3 text-sm ${isNotApplicable ? "bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]" : "bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)]"}`}>
           {isNotApplicable
-            ? "La actividad saldrá del programa de esta faena: no cuenta como cumplida ni como incumplida. El motivo queda registrado y es lo que un fiscalizador va a leer."
+            ? "Queda en revisión hasta que otra persona lo apruebe. Si lo aprueba, la actividad sale del programa de esta faena: no cuenta como cumplida ni como incumplida. El motivo queda registrado y es lo que un fiscalizador va a leer."
             : "Queda declarado que la actividad planificada no se realizó."}
         </div>
 

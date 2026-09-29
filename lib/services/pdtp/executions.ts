@@ -765,6 +765,7 @@ export type PendingPdtpExecution = {
   executedAt: string | null
   /** PRV-02: llegó de otro módulo sin evidencia verificada; aprobarla exige motivo. */
   needsApprovalReason: boolean
+  origin: string
 }
 
 export function pdtpExecutionNeedsApprovalReason(row: { origin: string; evidenceStatus: string }): boolean {
@@ -814,9 +815,30 @@ export async function listPendingPdtpExecutions(
 
   return rows.map(({ origin, evidenceStatus, ...r }) => ({
     ...r,
+    origin,
     evidencePhotos: Array.isArray(r.evidencePhotos) ? r.evidencePhotos : [],
     needsApprovalReason: pdtpExecutionNeedsApprovalReason({ origin, evidenceStatus }),
   }))
+}
+
+/**
+ * PRV-20 (auditoría 2026-09-28): cuántas ejecuciones esperan aprobación. El
+ * tile "Ejecutadas" sólo cuenta las aprobadas, así que un trabajo registrado y
+ * sin aprobar desaparecía del resumen sin decir que existía.
+ */
+export async function countPendingPdtpExecutions(scope: WorksiteScope, filter: { programId: string; worksiteId?: string | null }): Promise<number> {
+  if (scope !== "all" && scope.length === 0) return 0
+  const [row] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(pdtpExecutions)
+    .innerJoin(pdtpActivities, eq(pdtpExecutions.activityId, pdtpActivities.id))
+    .where(and(
+      eq(pdtpExecutions.status, "submitted"),
+      eq(pdtpActivities.programId, filter.programId),
+      filter.worksiteId ? eq(pdtpExecutions.worksiteId, filter.worksiteId) : undefined,
+      scope === "all" ? undefined : inArray(pdtpExecutions.worksiteId, scope),
+    ))
+  return Number(row?.total ?? 0)
 }
 
 export async function getPendingPdtpApprovalsForView(params: {
@@ -847,11 +869,22 @@ export async function getPendingPdtpApprovalsForView(params: {
   }))
 }
 
-export async function getPdtpChangeLog(programId: string) {
+/**
+ * M-18 (auditoría 2026-09-28): el control de cambios mostraba sólo las 20
+ * entradas más recientes y lo anterior no se podía consultar desde la
+ * plataforma. Ahora se pagina.
+ */
+export async function getPdtpChangeLog(programId: string, options: { offset?: number; limit?: number } = {}) {
   return db
     .select()
     .from(pdtpChangeLog)
     .where(eq(pdtpChangeLog.programId, programId))
-    .orderBy(desc(pdtpChangeLog.changedAt))
-    .limit(20)
+    .orderBy(desc(pdtpChangeLog.changedAt), desc(pdtpChangeLog.id))
+    .limit(options.limit ?? 20)
+    .offset(options.offset ?? 0)
+}
+
+export async function countPdtpChangeLog(programId: string): Promise<number> {
+  const [row] = await db.select({ total: sql<number>`count(*)::int` }).from(pdtpChangeLog).where(eq(pdtpChangeLog.programId, programId))
+  return Number(row?.total ?? 0)
 }

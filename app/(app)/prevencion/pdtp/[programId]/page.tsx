@@ -23,7 +23,9 @@ import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import { loadPdtpVersionWindow } from "@/lib/services/pdtp/version-window"
 import { Callout } from "@/components/ui/callout"
 import { listCatalogActivities } from "@/lib/services/pdtp/catalog-activities"
-import { getPendingPdtpApprovalsForView, getPdtpChangeLog, listAccessiblePdtpProgramWorksites, listPdtpProgramWorksites } from "@/lib/services/pdtp"
+import { countPdtpChangeLog, getPendingPdtpApprovalsForView, getPdtpChangeLog, listAccessiblePdtpProgramWorksites, listPdtpProgramWorksites } from "@/lib/services/pdtp"
+import { ServerPagination } from "@/components/ui/server-pagination"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -59,7 +61,7 @@ export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SS
 
 type PdtpPageProps = {
   params: Promise<{ programId: string }>
-  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; estado?: string | string[]; overrideError?: string | string[]; overrideNotice?: string | string[] }>
+  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; estado?: string | string[]; overrideError?: string | string[]; overrideNotice?: string | string[]; cambios?: string | string[] }>
 }
 
 export default async function PdtpDetailPage({ params, searchParams }: PdtpPageProps) {
@@ -473,7 +475,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         )}
 
         {/* Change log */}
-        <PdtpChangeLogSection programId={programId} />
+        <PdtpChangeLogSection programId={programId} query={query} />
 
       </div>
     </PageContainer>
@@ -546,13 +548,16 @@ async function PdtpDocumentMetadataSection({ programId, canReconcile }: { progra
   )
 }
 
-async function PdtpChangeLogSection({ programId }: { programId: string }) {
-  const entries = await getPdtpChangeLog(programId)
+const CHANGE_LOG_PAGE_SIZE = 20
 
-  if (entries.length === 0) return null
+async function PdtpChangeLogSection({ programId, query }: { programId: string; query: Record<string, string | string[] | undefined> }) {
+  const totalItems = await countPdtpChangeLog(programId)
+  if (totalItems === 0) return null
+  const pagination = resolvePagination({ pageParam: query.cambios, totalItems, pageSize: CHANGE_LOG_PAGE_SIZE })
+  const entries = await getPdtpChangeLog(programId, { offset: pagination.offset, limit: pagination.limit })
 
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+    <div id="control-de-cambios" className="scroll-mt-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="border-b border-[var(--color-border)] px-4 py-3">
         <h3 className="text-sm font-semibold text-[var(--color-text)]">Control de cambios</h3>
       </div>
@@ -565,6 +570,14 @@ async function PdtpChangeLogSection({ programId }: { programId: string }) {
           </div>
         ))}
       </div>
+      {pagination.totalPages > 1 && (
+        <ServerPagination
+          className="border-t border-[var(--color-border)] px-4 py-2"
+          pagination={pagination}
+          // Sin los avisos de un envío anterior: paginar no los repite.
+          hrefForPage={(page) => buildPaginationHref(`/prevencion/pdtp/${programId}`, { ...query, overrideError: undefined, overrideNotice: undefined }, page, "cambios")}
+        />
+      )}
     </div>
   )
 }

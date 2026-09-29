@@ -20,6 +20,7 @@ import type { PdtpComplianceVersion } from "@/lib/services/pdtp/compliance"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { currentPdtpPeriod, pdtpReferencePeriodForYear, pdtpSheetActivityStatus, type PdtpPeriod, type PdtpStatusSource } from "@/lib/services/pdtp/period"
 import { getLatestPdtpPeriodClosure } from "@/lib/services/pdtp/period-closures"
+import { countPendingPdtpExecutions } from "@/lib/services/pdtp/executions"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
@@ -79,6 +80,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   const operationalYears = await getPdtpOperationalYears()
   const year = resolvePdtpYear(requestedYear, operationalYears.primary)
   const canManageProgram = can(session, "prevention:pdtp:program:manage")
+  const canApprove = can(session, "prevention:pdtp:approve")
 
   const scope = resolveWorksiteScope(session)
   const worksiteScopeIds: string[] | "all" =
@@ -123,6 +125,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   let monthlyTrendData: MonthlyTrendData[] = []
   let worksiteComplianceData: WorksiteComplianceData[] = []
   let categoryBreakdownData: CategoryBreakdownData[] = []
+  let pendingApprovalCount = 0
 
   if (focusProgram) {
     // UX-01: `getPdtpComplianceIndicators` sin faena deja `executed` en 0 aunque
@@ -130,7 +133,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
     // sin faena). El agregado se pide sobre las faenas autorizadas del usuario,
     // y el mismo fan-out alimenta la comparativa por faena — antes se recalculaba
     // una vez por faena en un segundo round-trip.
-    const [scopeIndicators, categoryRes, actRes] = await Promise.all([
+    const [scopeIndicators, categoryRes, actRes, pendingApprovalRes] = await Promise.all([
       // PREV-C05-C: el año consolidado entre versiones. Tras una revisión v+1
       // a mitad de año, el tablero sigue mostrando enero..diciembre.
       getPdtpComplianceIndicatorsForScope(focusProgram.id, effectiveWorksites.map((w) => w.id), { consolidateYear: true }),
@@ -143,7 +146,12 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
       listActionsByProgram(focusProgram.id, effectiveWorksites.map((worksite) => worksite.id), {
         worksiteId: selectedWorksiteId,
       }),
+      countPendingPdtpExecutions(effectiveWorksites.map((worksite) => worksite.id), {
+        programId: focusProgram.id,
+        worksiteId: selectedWorksiteId,
+      }),
     ])
+    pendingApprovalCount = pendingApprovalRes
 
     // Con faena elegida se usa su desglose; sin faena, el agregado del alcance.
     indicators = selectedWorksiteId
@@ -168,7 +176,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
       const percent = entry.indicators?.annual.percent
       return {
         name: worksite?.name ?? entry.worksiteId,
-        percent: percent != null ? Math.round(percent * 100) : 0,
+        percent: percent != null ? Math.round(percent * 100) : null,
         executed: entry.indicators?.annual.executed ?? 0,
         scheduled: entry.indicators?.annual.planned ?? 0,
       }
@@ -181,7 +189,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
       category: entry.category,
       scheduled: entry.planned,
       executed: entry.executed,
-      percent: entry.percent !== null ? Math.round(entry.percent * 100) : 0,
+      percent: entry.percent !== null ? Math.round(entry.percent * 100) : null,
     }))
   }
 
@@ -381,9 +389,15 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
               value={String(executedCount)}
               // PREV-C01: es el ejecutado del indicador —aprobado y con el tope
               // del mes—, no el conteo de registros; el rótulo lo decía mal.
-              detail={`Aprobadas que cuentan para el cumplimiento ${year}`}
+              detail={`Aprobadas que cuentan para el cumplimiento ${year}${pendingApprovalCount > 0 && !canApprove ? ` · ${countOf(pendingApprovalCount, "por aprobar", "por aprobar")}` : ""}`}
               icon={<ShieldCheck size={22} className="text-[var(--color-success-ink)]" />}
               href={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "anual", "executed", currentPeriod) : undefined}
+              // PRV-20: lo registrado y aún sin aprobar no suma arriba; se
+              // dice cuánto es y se lleva a la bandeja de quien puede aprobar.
+              secondaryAction={pendingApprovalCount > 0 && canApprove ? {
+                label: `${countOf(pendingApprovalCount, "ejecución por aprobar", "ejecuciones por aprobar")} →`,
+                href: "/prevencion/pdtp/aprobaciones",
+              } : undefined}
             />
             <KpiCard
               label="Pendientes"

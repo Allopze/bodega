@@ -8,7 +8,10 @@ import {
   pdtpPeriodClosures,
   pdtpPrograms,
   pdtpSheets,
+  roles as schemaRoles,
+  userRoles as schemaUserRoles,
   users as schemaUsers,
+  workers as schemaWorkers,
 } from "@/db/schema"
 import { countOf } from "@/lib/utils"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, isUniqueViolation, pdtpProgramId } from "./helpers"
@@ -19,6 +22,32 @@ import { getCurrentPdtpBase2026Version, getPdtpTemplateVersion, instantiatePdtpT
 
 type LegacyPdtpProgramCreateInput = {
   year: number; title: string; userId: string; copySheetsFromProgramId?: string; templateVersionId?: string; revisionFromProgramId?: string; appliesToAllWorksites?: boolean
+}
+
+
+/**
+ * C-01 (auditoría 2026-09-28): el cargo de quien elabora el programa. Antes era
+ * siempre "Prevencionista", aunque lo creara la jefatura o el administrador: el
+ * documento firmable decía algo que no era cierto. Se toma el cargo de su ficha
+ * de trabajador, o el rol de la plataforma, en ese orden.
+ */
+async function resolvePdtpElaborator(tx: Tx, userId: string): Promise<{ elaboratedByName: string; elaboratedByTitle: string }> {
+  const [elaborator] = await tx.select({ name: schemaUsers.name, position: schemaWorkers.position })
+    .from(schemaUsers)
+    .leftJoin(schemaWorkers, eq(schemaWorkers.id, schemaUsers.workerId))
+    .where(eq(schemaUsers.id, userId))
+    .limit(1)
+  const name = elaborator?.name?.trim()
+  if (!name) return { elaboratedByName: "Equipo de Prevención", elaboratedByTitle: "Sistema" }
+  const position = elaborator?.position?.trim()
+  if (position) return { elaboratedByName: name, elaboratedByTitle: position }
+  const [role] = await tx.select({ label: schemaRoles.label })
+    .from(schemaUserRoles)
+    .innerJoin(schemaRoles, eq(schemaRoles.id, schemaUserRoles.roleId))
+    .where(eq(schemaUserRoles.userId, userId))
+    .orderBy(schemaRoles.label)
+    .limit(1)
+  return { elaboratedByName: name, elaboratedByTitle: role?.label?.trim() || "Prevencionista" }
 }
 
 export type PdtpAnnualProgramSource =
@@ -147,13 +176,9 @@ export async function createAnnualPdtpProgram(input: {
       source = candidate ? { kind: "previous_program", programId: candidate.id } : { kind: "base" }
     }
 
-    const [elaborator] = await tx.select({ name: schemaUsers.name }).from(schemaUsers)
-      .where(eq(schemaUsers.id, input.userId))
-      .limit(1)
+    const { elaboratedByName, elaboratedByTitle } = await resolvePdtpElaborator(tx, input.userId)
     const now = new Date().toISOString()
     const programId = pdtpProgramId(input.year, 1)
-    const elaboratedByName = elaborator?.name?.trim() || "Equipo de Prevención"
-    const elaboratedByTitle = elaborator?.name?.trim() ? "Prevencionista" : "Sistema"
 
     if (source.kind === "previous_program") {
       const sourceProgram = await assertCopyableSource(source.programId, input.year, tx)
@@ -428,13 +453,7 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
         throw new Error("La versión de plantilla seleccionada ya no existe.")
       }
 
-      const [elaborator] = await tx
-        .select({ name: schemaUsers.name })
-        .from(schemaUsers)
-        .where(eq(schemaUsers.id, input.userId))
-        .limit(1)
-      const elaboratedByName = elaborator?.name?.trim() || "Equipo de Prevención"
-      const elaboratedByTitle = elaborator?.name?.trim() ? "Prevencionista" : "Sistema"
+      const { elaboratedByName, elaboratedByTitle } = await resolvePdtpElaborator(tx, input.userId)
 
       const [program] = await tx.insert(pdtpPrograms).values({
         id: programId,
