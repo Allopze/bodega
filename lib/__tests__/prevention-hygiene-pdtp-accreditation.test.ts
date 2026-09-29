@@ -526,6 +526,23 @@ describe("N°46-49 — pronunciamiento sobre protocolos MINSAL", () => {
 
     expect(await executionsFor(46)).toHaveLength(0)
   })
+
+  // PRV-04 (auditoría 2026-09-28): retirar un pronunciamiento ya evaluado
+  // revoca lo que acreditó; antes la N°46 seguía cumplida.
+  it("retirar el pronunciamiento revoca la acreditación de la evaluación anterior", async () => {
+    await setProtocolApplicability({
+      worksiteId: WS_ID, protocolCode: "prexor", status: "applicable",
+      justification: "La faena opera maquinaria con ruido sobre 85 dB(A).",
+    }, access)
+    const [acreditada] = await executionsFor(46)
+    expect(acreditada).toBeTruthy()
+
+    await setProtocolApplicability({ worksiteId: WS_ID, protocolCode: "prexor", status: "pending_assessment" }, access)
+
+    const [revocada] = await executionsFor(46)
+    expect(revocada!.status).toBe("draft")
+    expect((revocada!.sourceMetadataJson as Record<string, unknown>).revokedAt).toBeTruthy()
+  })
 })
 
 // ── N°50: control de vigilancia ───────────────────────────────────────────────

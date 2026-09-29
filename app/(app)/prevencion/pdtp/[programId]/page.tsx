@@ -11,6 +11,7 @@ import {
   getPdtpComplianceWithIntegral,
   getPdtpApprovalProgress,
   getPdtpSubmitReviewBlockers,
+  getPdtpUnplannedScheduledWarnings,
   getPdtpCoverageReport,
   getPdtpDocumentMetadata,
   listPdtpReconciliationCandidates,
@@ -145,9 +146,10 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   // ocultar la lista justo ahí dejaba al operador sin la única vista que le
   // dice qué actividades no están acreditando y por qué, que es precisamente
   // el trabajo que le queda por delante.
-  const [submitBlockers, coverageReport] = await Promise.all([
+  const [submitBlockers, coverageReport, submitWarnings] = await Promise.all([
     program.status === "draft" ? getPdtpSubmitReviewBlockers(programId) : Promise.resolve([] as string[]),
     getPdtpCoverageReport(programId, coverageScope),
+    program.status === "draft" ? getPdtpUnplannedScheduledWarnings(programId) : Promise.resolve([] as string[]),
   ])
   const hasBlockingCoverageIssues = coverageReport.groups.some((group) => group.blocks)
 
@@ -369,6 +371,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
           program={program}
           permissions={{ canSubmitReview, canApprove, canSignLegal, canActivate, canManageLifecycle }}
           submitBlockers={submitBlockers}
+          submitWarnings={submitWarnings}
           yearClose={yearClose && canManageLifecycle ? {
             year: yearClose.year,
             canClose: yearClose.canClose,

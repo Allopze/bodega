@@ -61,6 +61,25 @@ beforeEach(async () => {
 })
 
 describe("ocurrencias de capacitación", () => {
+  // PRV-06 (auditoría 2026-09-28): una casilla pendiente que el catálogo
+  // vigente ya no pide —resto de una siembra anterior a la alineación con el
+  // PDTP— no se ofrece; una con historia sí se conserva.
+  it("no ofrece casillas pendientes que el catálogo vigente ya no pide", async () => {
+    const { ensurePreventionTrainingOccurrencesForWorksiteTx, listTrainingOccurrences } = await import("@/lib/services/prevention-training-occurrences")
+    await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID, 2026)
+    const [cap02] = await inMemoryDb.select({ catalogItemId: schema.preventionTrainingOccurrences.catalogItemId })
+      .from(schema.preventionTrainingOccurrences)
+      .where(eq(schema.preventionTrainingOccurrences.slotKey, "m09-w4")).limit(1)
+    await inMemoryDb.insert(schema.preventionTrainingOccurrences).values([
+      { id: "occ-obsoleta-pendiente", catalogItemId: cap02!.catalogItemId, worksiteId: WORKSITE_ID, year: 2026, slotKey: "m03-w2", scheduledMonth: 3, scheduledWeek: 2, status: "pending", version: 1 },
+      { id: "occ-obsoleta-hecha", catalogItemId: cap02!.catalogItemId, worksiteId: WORKSITE_ID, year: 2026, slotKey: "m04-w3", scheduledMonth: 4, scheduledWeek: 3, status: "not_applicable", notApplicableReason: "Se reemplazó por la del catálogo alineado.", notApplicableAt: new Date().toISOString(), notApplicableByUserId: USER_ID, version: 1 },
+    ] as (typeof schema.preventionTrainingOccurrences.$inferInsert)[])
+
+    const ids = new Set((await listTrainingOccurrences(ACCESS, { year: 2026 })).map((row) => row.id))
+    expect(ids.has("occ-obsoleta-pendiente")).toBe(false)
+    expect(ids.has("occ-obsoleta-hecha")).toBe(true)
+  })
+
   it("crea el cronograma idempotente, exige evidencia y conserva las correcciones", async () => {
     const {
       ensurePreventionTrainingOccurrencesForWorksiteTx,

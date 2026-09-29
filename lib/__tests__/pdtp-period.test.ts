@@ -135,6 +135,17 @@ describe("effectiveActivationFor", () => {
 })
 
 describe("deriveActivityStatus", () => {
+  // PRV-07 (auditoría 2026-09-28): 1 de 4 en un mes vencido es deuda, no "hecho".
+  it("un mes vencido ejecutado sólo en parte cuenta como atrasado", () => {
+    const planned = [4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    const executed = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    const period = { year: 2026, month: 3, week: 1 }
+    expect(deriveActivityStatus(planned, executed, period)).toBe("overdue")
+    expect(countOverdueMonths(planned, executed, period)).toBe(1)
+    // Cubierto completo, ya no.
+    expect(deriveActivityStatus(planned, [4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], period)).toBe("not_scheduled")
+  })
+
   it("returns 'not_scheduled' when nothing is planned for the month", () => {
     const monthlyPlanned = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     const monthlyExecuted = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]

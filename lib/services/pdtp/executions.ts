@@ -131,7 +131,7 @@ export async function markPdtpExecution(
   }
 
   const now = new Date().toISOString()
-  const id = pdtpExecutionId(data.activityId, data.worksiteId, data.year, data.month, data.week)
+  const baseId = pdtpExecutionId(data.activityId, data.worksiteId, data.year, data.month, data.week)
   // W5-SHA: el checksum de lo que llega se calcula aquí, en el servidor y
   // fuera de la transacción (lee el archivo completo). Dentro sólo se guardan
   // los de las rutas que de verdad quedaron vinculadas.
@@ -194,8 +194,10 @@ export async function markPdtpExecution(
     // El registro previo de la celda se lee aquí, detrás del lock: la fusión
     // de evidencias y el control de autor deciden sobre él, y leído afuera dos
     // envíos concurrentes se pisaban la foto o el archivo del otro.
-    const [existing] = await tx
+    const [latest] = await tx
       .select({
+        id: pdtpExecutions.id,
+        sequence: pdtpExecutions.sequence,
         status: pdtpExecutions.status,
         executedQuantity: pdtpExecutions.executedQuantity,
         evidenceUrl: pdtpExecutions.evidenceUrl,
@@ -219,13 +221,18 @@ export async function markPdtpExecution(
         // saltaba PREV-B02— o la bloqueaba por estar ya aprobada.
         ne(pdtpExecutions.origin, "integration"),
       ))
+      .orderBy(desc(pdtpExecutions.sequence))
       .limit(1)
       .for("update")
-    // Si la ejecución ya está aprobada, no se permite reescribir. Sólo
-    // 'draft' o 'rejected' (devuelta para corrección) son editables.
-    if (existing && existing.status === "approved") {
-      throw new Error("La ejecución ya fue aprobada y no se puede modificar.")
-    }
+    // Una ejecución aprobada no se reescribe. PRV-08 (auditoría 2026-09-28):
+    // registrar sobre una celda cuya última carga ya está aprobada crea un
+    // complemento (secuencia siguiente) que vuelve a pasar por aprobación, en
+    // vez de dejar la celda cerrada. El indicador suma las cargas de la celda y
+    // las topa en lo planificado, así que un complemento no infla el %.
+    const isComplement = latest?.status === "approved"
+    const existing = isComplement ? undefined : latest
+    const sequence = isComplement ? latest!.sequence + 1 : (latest?.sequence ?? 1)
+    const id = existing?.id ?? (sequence === 1 ? baseId : `${baseId}-s${sequence}`)
     // PREV-B03: un envío pendiente es de quien lo registró. Reemplazarlo en
     // silencio cambiaba cantidad, evidencia y autor de lo que el aprobador iba
     // a revisar. Un rechazo sí devuelve la celda a cualquiera con `execute`.
@@ -299,12 +306,12 @@ export async function markPdtpExecution(
 
     const [row] = await tx.insert(pdtpExecutions).values({
       id, activityId: data.activityId, worksiteId: data.worksiteId, year: data.year, month: data.month,
-      week: data.week, executedQuantity: data.executedQuantity, status: "submitted",
+      week: data.week, sequence, executedQuantity: data.executedQuantity, status: "submitted",
       evidenceText: data.evidenceText || null, evidenceUrl: nextEvidenceUrl,
       evidencePhotos: dedupedPhotos, evidenceStatus, executedByUserId: userId, executedAt: now, createdAt: now, updatedAt: now,
       sourceMetadataJson,
     }).onConflictDoUpdate({
-      target: [pdtpExecutions.activityId, pdtpExecutions.worksiteId, pdtpExecutions.year, pdtpExecutions.month, pdtpExecutions.week],
+      target: [pdtpExecutions.activityId, pdtpExecutions.worksiteId, pdtpExecutions.year, pdtpExecutions.month, pdtpExecutions.week, pdtpExecutions.sequence],
       targetWhere: sql`${pdtpExecutions.obligationId} IS NULL AND ${pdtpExecutions.origin} <> 'integration'`,
       set: {
         executedQuantity: data.executedQuantity, status: "submitted",
@@ -507,7 +514,7 @@ function assertExecutionHasEvidenceForApproval(
  * El programa se resuelve desde la actividad porque la fila de ejecución sólo
  * conoce la celda. Se hace con el `tx` de la operación, no con `db`.
  */
-async function assertPdtpPeriodOpenForExecution(
+export async function assertPdtpPeriodOpenForExecution(
   tx: Tx,
   execution: { activityId: string; worksiteId: string; year: number; month: number; week: number; obligationId?: string | null },
 ): Promise<void> {

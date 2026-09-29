@@ -227,60 +227,9 @@ export async function onInspectionReverted(input: {
 }
 
 // ── Conector: Capacitación ────────────────────────────────────────────────────
-
-/**
- * Llama desde `closeTrainingSession` cuando la sesión queda `completed`.
- *
- * @param attendedCount - Cantidad de asistentes con resultado aprobado/no_required.
- * @param activityNumbers - Números de actividad PDTP del curso.
- */
-export async function onTrainingSessionClosed(input: {
-  sessionId: string
-  worksiteId: string
-  closedAt: string
-  attendedCount: number
-  activityNumbers?: number[]
-  catalogActivityIds?: string[]
-}): Promise<void> {
-  await recordPdtpTriggerEventSafe({
-    connectorKey: "training",
-    eventKey: "session_closed",
-    sourceType: "capacitacion",
-    sourceId: input.sessionId,
-    worksiteId: input.worksiteId,
-    occurredAt: input.closedAt,
-    payload: { sessionId: input.sessionId, attendedCount: input.attendedCount },
-  })
-  if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
-
-  await safeAccredit({
-    sourceType: "capacitacion",
-    sourceId: input.sessionId,
-    worksiteId: input.worksiteId,
-    ...(input.catalogActivityIds?.length ? { catalogActivityIds: input.catalogActivityIds } : { activityNumbers: input.activityNumbers }),
-    occurredAt: input.closedAt,
-    // La cantidad ejecutada es el número de personas que completaron la sesión
-    executedQuantity: Math.max(1, input.attendedCount),
-    evidenceRef: `Sesión de capacitación cerrada: ${input.sessionId}`,
-  })
-}
-
-/**
- * Revierte la acreditación cuando una sesión se cancela.
- */
-export async function onTrainingSessionCancelled(input: {
-  sessionId: string
-  worksiteId: string
-  cancelledBy?: string
-}): Promise<void> {
-  await recordPdtpFulfillmentRevocation({
-    sourceType: "capacitacion",
-    sourceId: input.sessionId,
-    worksiteId: input.worksiteId,
-    revokedBy: input.cancelledBy,
-    reason: "Sesión de capacitación cancelada.",
-  })
-}
+// La capacitación acredita por ocurrencia (`prevention-training-occurrences.ts`).
+// `onTrainingSessionClosed/Cancelled` se retiraron (M-22, 2026-09-28): nadie
+// los llamaba desde que se eliminó el modelo de cursos por persona.
 
 // ── Conector: EPP ─────────────────────────────────────────────────────────────
 
@@ -703,7 +652,9 @@ export async function onEmergencyPlanApproved(input: {
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_EMERGENCY_PLAN_ACTIVITY_NUMBER)],
     occurredAt: input.approvedAt,
-    executedQuantity: Math.max(1, input.scenarioCount),
+    // PRV-19 #16 (auditoría 2026-09-28): un plan aprobado es una ejecución de la
+    // N°83, no una por escenario; la cantidad de escenarios queda en metadatos.
+    executedQuantity: 1,
     evidenceRef: `Plan de emergencia aprobado: ${input.planCode}`,
     metadata: { planCode: input.planCode, scenarioCount: input.scenarioCount },
   })
@@ -751,6 +702,10 @@ export async function onSafetyIndicatorPeriodClosed(input: {
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_INDICATORS_ACTIVITY_NUMBER)],
     occurredAt: input.closedAt,
+    // PRV-19 #15 (auditoría 2026-09-28): acredita el mes del indicador, no el
+    // del cierre. Cerrar agosto en septiembre pagaba septiembre, y diciembre
+    // cerrado en enero caía en el programa del año siguiente.
+    plannedPeriod: { year: input.year, month: input.month, week: 4 },
     executedQuantity: 1,
     evidenceRef: `Período de indicadores ${input.year}-${String(input.month).padStart(2, "0")} cerrado.`,
     metadata: { year: input.year, month: input.month },

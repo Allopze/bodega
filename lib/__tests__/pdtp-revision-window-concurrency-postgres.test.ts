@@ -19,7 +19,7 @@ import path from "node:path"
 import postgres from "postgres"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest"
 import { sql } from "drizzle-orm"
 import * as schema from "@/db/schema"
 import {
@@ -97,6 +97,10 @@ describeIf("ventana de la v1 contra la activación concurrente de la v2 (Postgre
   })
 
   it("una ejecución de la v1 que llega mientras se activa la v2 espera y luego se rechaza", async () => {
+    // PRV-03: registrar exige que la semana ya haya ocurrido; sólo `Date` se
+    // fija, así el `setTimeout` de la espera sigue siendo real.
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date(`${YEAR}-12-31T15:00:00.000Z`) })
+    onTestFinished(() => { vi.useRealTimers() })
     const { markPdtpExecution } = await import("@/lib/services/pdtp/executions")
 
     let write: Promise<unknown> | undefined

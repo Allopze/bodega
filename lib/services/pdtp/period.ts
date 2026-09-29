@@ -253,8 +253,12 @@ function overdueCutoff(period: PdtpPeriod, options: PdtpActivityStatusOptions | 
 }
 
 /**
- * Un mes vencido es deuda cuando tenía plan, no tiene ejecución, no tiene un
- * envío esperando revisión (D9) y nadie declaró por qué no se hizo.
+ * Un mes vencido es deuda cuando tenía plan, lo ejecutado no lo cubre, no tiene
+ * un envío esperando revisión (D9) y nadie declaró por qué no se hizo.
+ *
+ * PRV-07 (auditoría 2026-09-28): antes bastaba cualquier ejecución (`executed
+ * === 0`), así que 1 de 4 charlas en un mes vencido escondía el atraso aunque
+ * el porcentaje contara 25 %.
  */
 function isUnpaidMonth(
   monthlyPlanned: number[],
@@ -265,7 +269,7 @@ function isUnpaidMonth(
   const planned = monthlyPlanned[monthIndex] ?? 0
   const executed = monthlyExecuted[monthIndex] ?? 0
   const submitted = options?.monthlySubmitted?.[monthIndex] ?? 0
-  return planned > 0 && executed === 0 && submitted === 0 && !hasDeclaredNotPerformed(options, monthIndex)
+  return planned > 0 && executed < planned && submitted === 0 && !hasDeclaredNotPerformed(options, monthIndex)
 }
 
 /**

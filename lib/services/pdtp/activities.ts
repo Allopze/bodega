@@ -630,6 +630,20 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
   // silenciosa de cantidad planificada, que es el denominador del indicador—
   // y sin entrada de changelog que lo dejara trazado.
   return db.transaction(async (tx) => {
+    // M-17 (auditoría 2026-09-28): la validación de arriba corre sin candado.
+    // Entre ese SELECT y esta escritura otra sesión podía enviar el programa a
+    // revisión o editar la misma actividad. Se vuelve a comprobar con el
+    // programa bloqueado para lectura y la actividad para escritura.
+    await tx.execute(sql`SELECT id FROM ${pdtpPrograms} WHERE ${pdtpPrograms.id} = ${program.id} FOR SHARE`)
+    await tx.execute(sql`SELECT id FROM ${pdtpActivities} WHERE ${pdtpActivities.id} = ${activity.id} FOR UPDATE`)
+    const [lockedProgram] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, program.id)).limit(1)
+    if (!lockedProgram) throw new Error("Programa PDTP no encontrado.")
+    assertPdtpProgramEditableState(lockedProgram)
+    const [lockedActivity] = await tx.select({ updatedAt: pdtpActivities.updatedAt, status: pdtpActivities.status })
+      .from(pdtpActivities).where(eq(pdtpActivities.id, activity.id)).limit(1)
+    if (!lockedActivity || lockedActivity.status === "retired" || lockedActivity.updatedAt !== activity.updatedAt) {
+      throw new Error("La actividad cambió en otra sesión mientras la editabas. Recarga y vuelve a intentarlo.")
+    }
     const { currentCells, currentSource, scheduleDiff } = await writePdtpActivitySchedule(tx, {
       activityId: input.activityId,
       programYear: program.year,

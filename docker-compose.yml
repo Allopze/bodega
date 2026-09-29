@@ -337,6 +337,13 @@ services:
         # cada corrida con huérfanos deja una fila storage_orphan_sweep en
         # audit_log.
         30 4 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs pdtp-evidence-gc >/proc/1/fd/1 2>&1
+        # PRV-14: reconciliación diaria del libro de cumplimiento PDTP (05:45),
+        # antes de los avisos de la mañana.
+        45 5 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs pdtp-daily-reconcile >/proc/1/fd/1 2>&1
+        # PRV-14: jobs de Prevención que superaron su cadencia sin correr bien.
+        40 * * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-cron-staleness >/proc/1/fd/1 2>&1
+        # PRV-14: estado de los respaldos desde fuera del scheduler de respaldos.
+        40 8 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs backup-health >/proc/1/fd/1 2>&1
         5 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-capa-reminders >/proc/1/fd/1 2>&1
         10 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-training-reminders >/proc/1/fd/1 2>&1
         20 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-cphs-alerts >/proc/1/fd/1 2>&1

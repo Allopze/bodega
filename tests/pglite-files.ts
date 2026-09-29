@@ -150,6 +150,10 @@ export const pgliteTestFiles = [
   // Auditoría de production readiness 2026-09-28: prueba de realidad de 10
   // actividades más PRV-01/02/03 (evidencia verificada, segregación, futuro).
   "lib/__tests__/pdtp-production-readiness.test.ts",
+  // PRV-05/PRV-12: cancelar obligaciones y anular aprobaciones pasan por revisión.
+  "lib/__tests__/pdtp-review-requests.test.ts",
+  // PRV-14: vigilancia de crons de Prevención detenidos.
+  "lib/__tests__/cron-staleness.test.ts",
   // PREV-I03 (resto): registra lo propio —asignado o responsable por cargo— salvo Prevención.
   "lib/__tests__/pdtp-registration-authority.test.ts",
   // PREV-M09: obligaciones paginadas y filtradas en la base.

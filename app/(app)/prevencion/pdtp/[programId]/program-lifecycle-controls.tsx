@@ -94,6 +94,7 @@ export function ProgramLifecycleControls({
   permissions,
   approvalSteps,
   submitBlockers = [],
+  submitWarnings = [],
   yearClose,
   children,
 }: {
@@ -106,6 +107,8 @@ export function ProgramLifecycleControls({
    *  El servidor los vuelve a comprobar; aquí se anticipan para que el operador
    *  no descubra el bloqueo recién al pulsar el botón. */
   submitBlockers?: string[]
+  /** M-14: avisos que no bloquean el envío (p. ej. actividades periódicas sin planificar). */
+  submitWarnings?: string[]
   /** Sección adicional (p. ej. metadata del documento importado) que se
    *  pliega dentro de la misma tarjeta en vez de vivir en un bloque aparte. */
   children?: React.ReactNode
@@ -151,6 +154,13 @@ export function ProgramLifecycleControls({
             <Callout tone="warning" className="mt-2 max-w-3xl" title="Pendiente antes de enviar a revisión:">
               <ul className="list-disc space-y-0.5 pl-5">
                 {submitBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+              </ul>
+            </Callout>
+          )}
+          {program.status === "draft" && submitWarnings.length > 0 && (
+            <Callout tone="info" className="mt-2 max-w-3xl" title="Revisa antes de enviar a revisión:">
+              <ul className="list-disc space-y-0.5 pl-5">
+                {submitWarnings.map((warning) => <li key={warning}>{warning}</li>)}
               </ul>
             </Callout>
           )}

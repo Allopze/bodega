@@ -7,7 +7,6 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { pdtpRegistrationActorFromSession } from "@/lib/auth/pdtp-registration"
 import type { PdtpRegistrationActor } from "@/lib/services/pdtp/registration-authority"
 import {
-  cancelPdtpObligation,
   createPdtpObligation,
   reportPdtpObligation,
   type WorksiteScope,
@@ -19,6 +18,7 @@ import {
   type ActionState,
 } from "@/lib/validation/prevention"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
+import { requestPdtpObligationCancellation } from "@/lib/services/pdtp/review-requests"
 
 function scopeFromSession(session: NonNullable<Awaited<ReturnType<typeof guardPermission>>["session"]>): WorksiteScope {
   const scope = resolveWorksiteScope(session)
@@ -84,7 +84,14 @@ export async function reportPdtpObligationAction(input: unknown): Promise<Action
   })
 }
 
+/**
+ * PRV-05 (auditoría 2026-09-28): cancelar saca la obligación del indicador de
+ * plazos, así que desde la pantalla ya no se cancela directo: se pide, y otra
+ * persona la aprueba en Aprobaciones.
+ */
 export async function cancelPdtpObligationAction(input: unknown): Promise<ActionState> {
-  return run("prevention:pdtp:obligation:cancel", ({ userId, scope }) =>
-    cancelPdtpObligation({ ...pdtpObligationCancelSchema.parse(input), userId, scope }))
+  return run("prevention:pdtp:obligation:cancel", ({ userId, scope }) => {
+    const parsed = pdtpObligationCancelSchema.parse(input)
+    return requestPdtpObligationCancellation({ targetId: parsed.obligationId, reason: parsed.reason }, userId, scope)
+  })
 }

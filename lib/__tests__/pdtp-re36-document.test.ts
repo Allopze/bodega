@@ -43,6 +43,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.pdtpExecutionDeviations)
   await inMemoryDb.delete(schema.pdtpPeriodClosures)
+  await inMemoryDb.delete(schema.pdtpProgramWorksites)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.pdtpSheets).where(isNull(schema.pdtpSheets.programId))
   await inMemoryDb.delete(schema.worksites)
@@ -403,6 +404,31 @@ describe("buildPdtpRe36Document", () => {
     // daría 5 (2 del override + 3) contra un indicador que sigue en 3 —
     // exactamente el bug que este test existe para atrapar.
     expect(sumP).toBe(3)
+    expect(sumP).toBe(indicators!.annual.planned)
+  })
+
+  // PRV-09 (auditoría 2026-09-28): el documento recortaba sólo por la
+  // activación del programa; el indicador, además, por la incorporación de la
+  // faena. Una faena incorporada después de feb-S1 mostraba en el RE-36 una
+  // celda que el tablero ya no le exigía.
+  it("recorta también por la incorporación de la faena, igual que el indicador", async () => {
+    await seedBaseFixture()
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ activatedAt: "2033-01-03T15:00:00.000Z" })
+      .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+    await inMemoryDb.insert(schema.pdtpProgramWorksites).values({
+      id: "re36-pw-tardia", programId: PROGRAM_ID, worksiteId: WORKSITE_ID, isActive: true,
+      addedByUserId: USER_ID, addedAt: "2033-02-10T15:00:00.000Z",
+    })
+
+    const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    const doc = await buildPdtpRe36Document({ programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all" })
+    const indicators = await getPdtpComplianceIndicators(PROGRAM_ID, WORKSITE_ID)
+    const sheet = doc.sheets.find((s) => s.code === "general")!
+    const rowA = sheet.rows.find((row) => row.activityId === "act-a")!
+    expect(rowA.cells[(2 - 1) * 4 + (1 - 1)]!.p).toBeNull()
+    const sumP = sheet.rows.reduce((total, row) => total + row.cells.reduce((sum, cell) => sum + (cell.p ?? 0), 0), 0)
     expect(sumP).toBe(indicators!.annual.planned)
   })
 

@@ -49,6 +49,8 @@ import { pdtpActivities, pdtpExecutionDeviations } from "@/db/schema"
 import { logger } from "@/lib/logger"
 import { PdtpNoActiveProgramError, resolvePdtpActivityIdsForNumbers } from "@/lib/services/pdtp/accreditation"
 import { recordPdtpDeviation, withdrawPdtpDeviation } from "@/lib/services/pdtp/deviations"
+import { isPdtpCellInFuture } from "@/lib/services/pdtp/period"
+import { assertPdtpPeriodOpen } from "@/lib/services/pdtp/period-guard"
 
 /** Lo que una casilla declara hacia su celda del PDTP. */
 export type SlotPdtpDeclaration = {
@@ -161,10 +163,12 @@ export async function propagateSlotStatusToPdtp(tx: Tx, input: SlotPdtpPropagati
   }
 
   let activities: Array<{ id: string; n: number }>
+  let programId: string
   try {
     const resolved = await tx.transaction((sp) => resolveCellActivities(sp, input, { year, month, week }))
     if (!resolved) return
-    activities = resolved
+    activities = resolved.activities
+    programId = resolved.programId
   } catch (err) {
     if (err instanceof PdtpNoActiveProgramError) {
       logger.warn({ ...logContext, err }, "[slot-pdtp-connector] Sin programa PDTP activo: la casilla cambia y el PDTP no se ajusta.")
@@ -172,6 +176,18 @@ export async function propagateSlotStatusToPdtp(tx: Tx, input: SlotPdtpPropagati
       logger.error({ ...logContext, err }, "[slot-pdtp-connector] No se pudo resolver la actividad PDTP de la casilla.")
     }
     return
+  }
+
+  // PRV-16 (auditoría 2026-09-28): si el PDTP no va a aceptar el desvío por
+  // una razón que la persona tiene que saber —la semana todavía no ocurre, o el
+  // mes ya se cerró—, la casilla tampoco cambia. Antes el rechazo quedaba sólo
+  // en el log: la casilla decía «No aplica» y la celda seguía exigida.
+  if (input.next && activities.length > 0) {
+    const label = SLOT_STATUS_LABELS[input.next.kind]
+    if (isPdtpCellInFuture({ year, month, week })) {
+      throw new Error(`No se puede declarar «${label}» para una semana que aún no ocurre: el programa preventivo no lo registraría.`)
+    }
+    await assertPdtpPeriodOpen(programId, input.worksiteId, year, month, tx)
   }
 
   const declareOn = input.declareOnActivityNumbers ? new Set(input.declareOnActivityNumbers) : null
@@ -192,7 +208,7 @@ async function resolveCellActivities(
   client: Tx,
   input: SlotPdtpPropagationInput,
   cell: { year: number; month: number; week: number },
-): Promise<Array<{ id: string; n: number }> | null> {
+): Promise<{ programId: string; activities: Array<{ id: string; n: number }> } | null> {
   const numbers = "activityNumbers" in input.activities ? [...input.activities.activityNumbers] : []
   const resolved = await resolvePdtpActivityIdsForNumbers({
     worksiteId: input.worksiteId,
@@ -215,19 +231,23 @@ async function resolveCellActivities(
         "[slot-pdtp-connector] Actividades de la casilla que el programa no tiene; se omiten.",
       )
     }
-    return numbers.flatMap((n) => {
-      const id = resolved.activityIdByN.get(n)
-      return id ? [{ id, n }] : []
-    })
+    return {
+      programId: resolved.programId,
+      activities: numbers.flatMap((n) => {
+        const id = resolved.activityIdByN.get(n)
+        return id ? [{ id, n }] : []
+      }),
+    }
   }
   // Identidad de catálogo (vínculos de acreditación de capacitación): se busca
   // en el mismo programa que ya resolvió faena, año y versión.
-  return client.select({ id: pdtpActivities.id, n: pdtpActivities.n })
+  const activities = await client.select({ id: pdtpActivities.id, n: pdtpActivities.n })
     .from(pdtpActivities)
     .where(and(
       eq(pdtpActivities.programId, resolved.programId),
       inArray(pdtpActivities.catalogActivityId, [...input.activities.catalogActivityIds]),
     ))
+  return { programId: resolved.programId, activities }
 }
 
 async function syncActivityCell(

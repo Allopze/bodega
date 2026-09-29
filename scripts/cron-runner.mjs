@@ -111,6 +111,28 @@ const JOBS = Object.freeze({
     kind: "sync",
     codePrefix: "PREVENTION_CRON_",
   },
+  // PRV-14 (auditoría 2026-09-28): la reconciliación del libro PDTP corre a
+  // diario y aparte de los recordatorios; la vigilancia de jobs detenidos, cada hora.
+  "pdtp-daily-reconcile": {
+    url: "http://app:3000/api/cron/pdtp-daily-reconcile",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "PREVENTION_CRON_",
+  },
+  "prevention-cron-staleness": {
+    url: "http://app:3000/api/cron/prevention-cron-staleness",
+    timeoutMs: 60 * 1_000,
+    kind: "sync",
+    codePrefix: "PREVENTION_CRON_",
+  },
+  // PRV-14: el estado de los respaldos lo pedía sólo el propio scheduler de
+  // respaldos; si ese contenedor no corría, nadie avisaba.
+  "backup-health": {
+    url: "http://app:3000/api/cron/backup-health",
+    timeoutMs: 60 * 1_000,
+    kind: "sync",
+    codePrefix: "BACKUP_CRON_",
+  },
   "prevention-capa-reminders": {
     url: "http://app:3000/api/cron/prevention-capa-reminders",
     timeoutMs: 5 * 60 * 1_000,

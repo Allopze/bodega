@@ -1,6 +1,6 @@
-import { and, desc, eq, isNull, ne } from "drizzle-orm"
+import { and, desc, eq, gt, inArray, isNull, ne } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { pdtpActivities, pdtpProgramWorksites, pdtpPrograms } from "@/db/schema"
+import { pdtpActivities, pdtpActivitySchedule, pdtpProgramWorksites, pdtpPrograms } from "@/db/schema"
 import { logger } from "@/lib/logger"
 import { countOf, todayInChile } from "@/lib/utils"
 import { addPdtpChangeLogEntry } from "./helpers"
@@ -159,6 +159,27 @@ export function pdtpSubmitReviewBlockers(activities: PdtpActivityRow[]): string[
     )
   }
   return blockers
+}
+
+/**
+ * M-14 (auditoría 2026-09-28): una actividad periódica sin ninguna celda
+ * planificada no entra al denominador y nadie lo nota: queda fuera del
+ * cumplimiento en silencio. Se avisa en la tarjeta del programa antes de
+ * enviarlo a revisión; no bloquea, porque puede ser deliberado (una actividad
+ * que se planificará en la revisión de mitad de año).
+ */
+export async function getPdtpUnplannedScheduledWarnings(programId: string, client: Tx | typeof db = db): Promise<string[]> {
+  const activities = await client.select().from(pdtpActivities).where(eq(pdtpActivities.programId, programId))
+  const scheduled = activities.filter((activity) => activity.status === "active" && activity.scheduleMode === "scheduled")
+  if (scheduled.length === 0) return []
+  const planned = await client.selectDistinct({ activityId: pdtpActivitySchedule.activityId })
+    .from(pdtpActivitySchedule)
+    .where(and(inArray(pdtpActivitySchedule.activityId, scheduled.map((activity) => activity.id)), gt(pdtpActivitySchedule.plannedQuantity, 0)))
+  const withPlan = new Set(planned.map((row) => row.activityId))
+  const unplanned = scheduled.filter((activity) => !withPlan.has(activity.id))
+  if (unplanned.length === 0) return []
+  const list = unplanned.slice(0, 10).map((activity) => `N°${activity.n}`).join(", ")
+  return [`${countOf(unplanned.length, "actividad periódica", "actividades periódicas")} no ${unplanned.length === 1 ? "tiene" : "tienen"} ninguna semana planificada (${list}${unplanned.length > 10 ? ", …" : ""}). Planifícalas o clasifícalas como a demanda antes de enviar el programa a revisión.`]
 }
 
 /**

@@ -544,7 +544,8 @@ describe("resolvePdtpFulfillmentTarget", () => {
   it.each([
     [10, "inspecciones", "/prevencion/inspecciones"],
     [53, "capacitacion", "/prevencion/capacitacion"],
-    [62, "epp", "/prevencion/epp-preventivo"],
+    // PRV-19 #12: la entrega de EPP se registra en Bodega.
+    [62, "epp", "/entregas"],
     [35, "riesgos", "/prevencion/miper"],
     [84, "emergencias", "/prevencion/emergencias"],
   ])("la n=%i se cumple en %s", (n, moduleName, prefix) => {

@@ -1597,6 +1597,49 @@ describe("prevention PDTP service", () => {
     }
   })
 
+  // PRV-11 (auditoría 2026-09-28): corregir el padrón con el programa vigente
+  // rige desde el mes del cambio; los meses anteriores conservan el suyo.
+  it("un cambio del padrón en septiembre no reescribe el cumplimiento de enero", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2032-01-02T15:00:00.000Z") })
+    try {
+      const {
+        createLegacyPdtpProgramForTests, addPdtpActivity, submitPdtpProgramForReview, approvePdtpProgramJdpr,
+        signPdtpProgramLegal, activatePdtpProgram, markPdtpExecution, approvePdtpExecution,
+        getPdtpComplianceIndicators,
+      } = await import("@/lib/services/prevention-pdtp")
+      const program = await createLegacyPdtpProgramForTests({ year: 2032, title: "Programa padrón", userId: "user-1" })
+      const activity = await addPdtpActivity({
+        programId: program.id, activity: "Cobertura con padrón que cambia",
+        program: "Guía", responsibleSlugs: ["prf"], responsibleDisplay: "Prevencionista",
+        scheduleMode: "scheduled",
+        recurrenceRule: { frequency: "monthly", interval: 1, plannedQuantity: 3, weekOfMonth: 1 },
+        evidenceRequirement: "Registro", indicatorMode: "coverage", sheetCodes: [],
+      }, "user-1")
+      await prepareProgramForReview(program.id)
+      await inMemoryDb.update(schema.pdtpActivities).set({ indicatorMode: "coverage" }).where(eq(schema.pdtpActivities.id, activity.id))
+      await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true }).where(eq(schema.pdtpPrograms.id, program.id))
+      await submitPdtpProgramForReview(program.id, "user-1")
+      await approvePdtpProgramJdpr(program.id, "user-jdpr")
+      await signPdtpProgramLegal(program.id, "user-legal")
+      await activatePdtpProgram(program.id, "user-jdpr")
+
+      const { setPdtpActivityWorksiteParams } = await import("@/lib/services/pdtp/worksites")
+      await setPdtpActivityWorksiteParams(activity.id, "ws-1", { expectedSubjectCount: 4 }, "user-1")
+      const enero = await markPdtpExecution({ activityId: activity.id, worksiteId: "ws-1", year: 2032, month: 1, week: 1, executedQuantity: 4, evidenceText: "Cobertura completa de enero", evidenceUrl: GENERIC_EVIDENCE_URL }, "user-1", ["ws-1"])
+      await approvePdtpExecution(enero.id, "user-approver", ["ws-1"])
+      expect((await getPdtpComplianceIndicators(program.id, "ws-1"))!.monthly[0]).toMatchObject({ planned: 4, executed: 4 })
+
+      vi.setSystemTime(new Date("2032-09-10T15:00:00.000Z"))
+      await setPdtpActivityWorksiteParams(activity.id, "ws-1", { expectedSubjectCount: 6 }, "user-1")
+
+      const after = await getPdtpComplianceIndicators(program.id, "ws-1")
+      expect(after!.monthly[0]).toMatchObject({ planned: 4, executed: 4 }) // enero conserva su padrón
+      expect(after!.monthly[8]).toMatchObject({ planned: 6 }) // septiembre, el nuevo
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("getPdtpComplianceIndicatorsForScope aggregates approved executions across authorized worksites instead of returning 0 without a faena (UX-01)", async () => {
     const { getPdtpComplianceIndicators, getPdtpComplianceIndicatorsForScope, markPdtpExecution, approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
     await loadActiveCatalog()
@@ -2697,7 +2740,9 @@ describe("prevention PDTP service", () => {
     expect(approved.approvedByUserId).toBe("user-approver")
   })
 
-  it("markPdtpExecution: rechaza modificar una ejecución ya aprobada", async () => {
+  // PRV-08 (auditoría 2026-09-28): la aprobada no se reescribe; registrar sobre
+  // su celda crea un complemento que vuelve a pasar por aprobación.
+  it("markPdtpExecution: sobre una celda aprobada crea un complemento, no reescribe la aprobada", async () => {
     const { markPdtpExecution, approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
     await loadActiveCatalog()
 
@@ -2714,16 +2759,20 @@ describe("prevention PDTP service", () => {
     }, "user-1", ["ws-1"])
     await approvePdtpExecution(exec.id, "user-approver", ["ws-1"])
 
-    // Re-envío debe fallar
-    await expect(markPdtpExecution({
+    const complement = await markPdtpExecution({
       activityId: activity!.id,
       worksiteId: "ws-1",
       year: 2026,
       month: 4,
       week: 1,
-      executedQuantity: 5,
-      evidenceText: "Registro verificable del caso (reenvío)",
-    }, "user-1", ["ws-1"])).rejects.toThrow(/ya fue aprobada/i)
+      executedQuantity: 2,
+      evidenceText: "Las dos charlas que faltaban",
+      evidenceUrl: GENERIC_EVIDENCE_URL,
+    }, "user-1", ["ws-1"])
+    expect(complement).toMatchObject({ status: "submitted", sequence: 2, executedQuantity: 2 })
+    expect(complement.id).not.toBe(exec.id)
+    const [original] = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.id, exec.id))
+    expect(original).toMatchObject({ status: "approved", executedQuantity: 1 })
   })
 
   it("rejectPdtpExecution: rechaza si el motivo está vacío", async () => {

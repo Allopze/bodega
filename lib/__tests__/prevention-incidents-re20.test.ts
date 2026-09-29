@@ -452,6 +452,45 @@ describe("Filtrado del RE-20 por tipo de evento (M1.1)", () => {
     }
   })
 
+  // M-23 (auditoría 2026-09-28): antes esperaba al barrido horario.
+  it("el triage que sube la severidad abre en el acto las obligaciones que pasan a aplicar", async () => {
+    const { reportPreventionIncident, triagePreventionIncident } = await import("@/lib/services/prevention-incidents")
+    const res = await reportPreventionIncident({
+      access,
+      input: {
+        worksiteId: WS_ID,
+        companyName: "Empresa Test",
+        eventType: "material_damage",
+        occurredAt: OCCURRED_AT,
+        knownAt: KNOWN_AT,
+        location: "Bodega principal",
+        initialNarrative: "Golpe de un montacargas contra una estantería vacía, en principio sin daño relevante.",
+        actualSeverity: "none",
+        potentialSeverity: "low",
+        isFatalOrSerious: false,
+        people: [],
+        clientSubmissionId: "sub-re20-triage-agrava",
+      },
+    })
+    expect((await obligationsOf(res.incident.id)).map((o) => o.activityId)).not.toContain("act-73")
+
+    await triagePreventionIncident({
+      access,
+      input: {
+        incidentId: res.incident.id,
+        expectedVersion: res.incident.version,
+        actualSeverity: "minor",
+        potentialSeverity: "medium",
+        isFatalOrSerious: false,
+        operationsSuspended: false,
+        evacuated: false,
+        immediateMeasures: "Se aisló el panel eléctrico dañado y se señalizó el área.",
+        reason: "En terreno se vio daño a un panel eléctrico: amerita investigación formal del RE-20.",
+      },
+    })
+    expect((await obligationsOf(res.incident.id)).map((o) => o.activityId)).toContain("act-73")
+  })
+
   it("el triage que baja la severidad de un daño material a 'sin investigación' cancela las obligaciones filtrables ya creadas", async () => {
     const { reportPreventionIncident, triagePreventionIncident } = await import("@/lib/services/prevention-incidents")
 

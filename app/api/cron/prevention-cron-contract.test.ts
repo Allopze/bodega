@@ -36,6 +36,8 @@ vi.mock("@/lib/services/pdtp/trigger-events", () => ({ reconcilePdtpTriggerEvent
 vi.mock("@/lib/services/pdtp/scheduled-reminders", () => ({ runPdtpScheduledInstanceReminders: ok }))
 vi.mock("@/lib/services/pdtp-adapters/legal-folder-connector", () => ({ sweepPdtpLegalFolders: ok }))
 vi.mock("@/lib/services/pdtp-adapters/riohs-rollout-connector", () => ({ reconcilePdtpRiohsRollouts: ok }))
+vi.mock("@/lib/services/pdtp-adapters/external-engagement-accreditation-connector", () => ({ replayDeferredMandanteCoordinations: ok }))
+vi.mock("@/lib/services/cron-staleness", () => ({ findStalePreventionCronJobs: async () => { await mocks.work(); return [] } }))
 vi.mock("@/lib/services/prevention-capa-reminders", () => ({ runPreventionCapaReminders: ok }))
 vi.mock("@/lib/services/prevention-training-obligations", () => ({ runPreventionTrainingObligations: ok }))
 vi.mock("@/lib/services/prevention-cphs-reminders", () => ({ runPreventionCphsReminders: ok }))
@@ -59,6 +61,8 @@ const { runCronJob } = await import("../../../scripts/cron-runner.mjs")
 
 const ROUTES = {
   "pdtp-weekly-reminders": { load: () => import("./pdtp-weekly-reminders/route"), prefix: "PREVENTION_CRON_" },
+  "pdtp-daily-reconcile": { load: () => import("./pdtp-daily-reconcile/route"), prefix: "PREVENTION_CRON_" },
+  "prevention-cron-staleness": { load: () => import("./prevention-cron-staleness/route"), prefix: "PREVENTION_CRON_" },
   "prevention-capa-reminders": { load: () => import("./prevention-capa-reminders/route"), prefix: "PREVENTION_CRON_" },
   "prevention-training-reminders": { load: () => import("./prevention-training-reminders/route"), prefix: "PREVENTION_CRON_" },
   "prevention-cphs-alerts": { load: () => import("./prevention-cphs-alerts/route"), prefix: "PREVENTION_CRON_" },

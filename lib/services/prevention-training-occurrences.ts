@@ -21,6 +21,7 @@ import {
   isTrainingCatalogYear,
   resolveTrainingCatalogYear,
   occurrenceSeedRows,
+  trainingCatalogSlotKeysForYear,
   trainingCatalogItemId,
   trainingCatalogItemsForYear,
   trainingCatalogVersionForYear,
@@ -293,7 +294,7 @@ export async function listTrainingOccurrences(
 
   const year = filters.year
   if (!isTrainingCatalogYear(year)) return []
-  const rows = await db.select({
+  const allRows = await db.select({
     occurrence: preventionTrainingOccurrences,
     catalog: preventionTrainingCatalogItems,
     worksiteName: worksites.name,
@@ -320,6 +321,11 @@ export async function listTrainingOccurrences(
       asc(preventionTrainingOccurrences.slotKey),
     )
 
+  // PRV-06: una casilla pendiente que el catálogo vigente ya no pide no se
+  // ofrece: marcarla hecha acreditaría una celda sin plan. Las que ya tienen
+  // estado se conservan, son historia.
+  const validSlots = trainingCatalogSlotKeysForYear(year)
+  const rows = allRows.filter((row) => row.occurrence.status !== "pending" || validSlots.has(`${row.catalog.code}:${row.occurrence.slotKey}`))
   if (rows.length === 0) return []
   const occurrenceIds = rows.map((row) => row.occurrence.id)
   const evidenceRows = await db.select().from(preventionTrainingOccurrenceEvidence)

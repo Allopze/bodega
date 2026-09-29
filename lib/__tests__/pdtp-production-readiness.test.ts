@@ -174,17 +174,20 @@ describe("prueba de realidad PDTP: ciclo manual", () => {
     await expect(approvePdtpExecution(id, APR, "all")).rejects.toThrow(/aún no ocurre/)
   })
 
-  it("múltiples ejecuciones: el doble envío concurrente no duplica la celda", async () => {
+  it("PRV-08: múltiples ejecuciones en la misma celda con complemento; el doble envío no duplica", async () => {
     const { approvePdtpExecution } = await services()
     const first = await mark("multiple", 2, 2, { evidenceUrl: EV("acta.pdf") })
     await approvePdtpExecution(first.id, APR, "all")
+    // Dos envíos simultáneos del complemento convergen en una sola fila.
     await Promise.allSettled([
-      mark("multiple", 2, 2, { evidenceUrl: EV("acta3.pdf") }, 2),
-      mark("multiple", 2, 2, { evidenceUrl: EV("acta3.pdf") }, 2),
+      mark("multiple", 2, 2, { evidenceUrl: EV("acta3.pdf") }),
+      mark("multiple", 2, 2, { evidenceUrl: EV("acta3.pdf") }),
     ])
-    const rows = (await executionsOf("multiple")).filter((row) => row.week === 2)
-    expect(rows).toHaveLength(1)
-    await approvePdtpExecution(rows[0]!.id, APR, "all")
+    const rows = (await executionsOf("multiple")).filter((row) => row.week === 1)
+    expect(rows.map((row) => row.sequence).sort()).toEqual([1, 2])
+    const complement = rows.find((row) => row.sequence === 2)!
+    expect(complement.status).toBe("submitted")
+    await approvePdtpExecution(complement.id, APR, "all")
   })
 })
 

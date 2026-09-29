@@ -229,8 +229,11 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
   46: higiene(), 47: higiene(), 48: higiene(), 49: higiene(), 50: higiene(),
 
   // ── EPP ─────────────────────────────────────────────────────────────────
-  // El módulo es `epp-preventivo`; `/prevencion/epp` era un 404.
-  62: { module: "epp", permission: "prevention:epp:manage", href: (w) => `/prevencion/epp-preventivo?faena=${w}` },
+  // PRV-19 #12 (auditoría 2026-09-28): la entrega de EPP se registra en
+  // `/entregas` (Bodega), que es lo que acredita la N°62. `/prevencion/epp-preventivo`
+  // es la matriz de EPP: ni registra entregas ni lee `?faena`, así que "Iniciar"
+  // llevaba a un callejón sin salida.
+  62: { module: "epp", permission: "deliveries:create", href: (w) => `/entregas?faena=${w}` },
 
   // ── Incidentes (RE-20) ──────────────────────────────────────────────────
   //

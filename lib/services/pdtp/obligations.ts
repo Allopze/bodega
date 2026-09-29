@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs"
 import { and, asc, eq, inArray, isNotNull, lte, ne, sql } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type Tx } from "@/db"
 import {
   pdtpActivities,
   pdtpActivityWorksiteExclusions,
@@ -8,6 +8,7 @@ import {
   pdtpObligationReminders,
   pdtpObligations,
   pdtpPrograms,
+  pdtpReviewRequests,
   worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -387,7 +388,22 @@ export async function reportPdtpObligation(input: {
   })
 }
 
+/**
+ * Cancelación directa: la usan los conectores del sistema (RIOHS, triage de
+ * incidentes), que retiran obligaciones que dejaron de aplicar por un hecho del
+ * propio módulo. Una persona no cancela por aquí: pide la cancelación y otra la
+ * revisa (`requestPdtpObligationCancellation`, PRV-05).
+ */
 export async function cancelPdtpObligation(input: {
+  obligationId: string
+  userId: string
+  reason: string
+  scope: WorksiteScope
+}) {
+  return db.transaction((tx) => applyPdtpObligationCancellation(tx, input))
+}
+
+export async function applyPdtpObligationCancellation(tx: Tx, input: {
   obligationId: string
   userId: string
   reason: string
@@ -395,51 +411,50 @@ export async function cancelPdtpObligation(input: {
 }) {
   const reason = input.reason.trim()
   if (reason.length < 10) throw new Error("Indica un motivo de cancelación de al menos 10 caracteres.")
-  return db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT id FROM ${pdtpObligations} WHERE ${pdtpObligations.id} = ${input.obligationId} FOR UPDATE`)
-    const [obligation] = await tx.select().from(pdtpObligations).where(eq(pdtpObligations.id, input.obligationId)).limit(1)
-    if (!obligation) throw new Error("Obligación PDTP no encontrada.")
-    assertWorksiteAccess(obligation.worksiteId, input.scope)
-    if (obligation.status === "cancelled") return obligation
-    if (obligation.status === "reported" || obligation.status === "completed") {
-      throw new Error("Una obligación reportada debe corregirse mediante su ejecución, no cancelarse.")
-    }
-    const now = new Date().toISOString()
-    const [updated] = await tx.update(pdtpObligations).set({
-      status: "cancelled",
-      cancelledByUserId: input.userId,
-      cancelledAt: now,
-      cancellationReason: reason,
-      updatedAt: now,
-    }).where(and(
-      eq(pdtpObligations.id, obligation.id),
-      inArray(pdtpObligations.status, ["pending", "overdue"]),
-    )).returning()
-    if (!updated) throw new Error("La obligación cambió de estado antes de cancelarse.")
-    const [program] = await tx.select({ version: pdtpPrograms.version }).from(pdtpPrograms)
-      .where(eq(pdtpPrograms.id, obligation.programId)).limit(1)
-    if (!program) throw new Error("Programa PDTP no encontrado.")
-    await addPdtpChangeLogEntry(
-      obligation.programId,
-      program.version,
-      input.userId,
-      `obligation:${obligation.id}:cancellation`,
-      { status: obligation.status, cancellationReason: obligation.cancellationReason },
-      { status: updated.status, cancellationReason: updated.cancellationReason },
-      "Obligación preventiva cancelada con motivo trazable.",
-      tx,
-    )
-    await recordOperationalActivity({
-      eventType: "pdtp.obligation_cancelled",
-      module: "pdtp",
-      entityType: "pdtp_obligation",
-      entityId: updated.id,
-      worksiteId: updated.worksiteId,
-      actorUserId: input.userId,
-      payload: { status: updated.status },
-    }, tx)
-    return updated
-  })
+  await tx.execute(sql`SELECT id FROM ${pdtpObligations} WHERE ${pdtpObligations.id} = ${input.obligationId} FOR UPDATE`)
+  const [obligation] = await tx.select().from(pdtpObligations).where(eq(pdtpObligations.id, input.obligationId)).limit(1)
+  if (!obligation) throw new Error("Obligación PDTP no encontrada.")
+  assertWorksiteAccess(obligation.worksiteId, input.scope)
+  if (obligation.status === "cancelled") return obligation
+  if (obligation.status === "reported" || obligation.status === "completed") {
+    throw new Error("Una obligación reportada debe corregirse mediante su ejecución, no cancelarse.")
+  }
+  const now = new Date().toISOString()
+  const [updated] = await tx.update(pdtpObligations).set({
+    status: "cancelled",
+    cancelledByUserId: input.userId,
+    cancelledAt: now,
+    cancellationReason: reason,
+    updatedAt: now,
+  }).where(and(
+    eq(pdtpObligations.id, obligation.id),
+    inArray(pdtpObligations.status, ["pending", "overdue"]),
+  )).returning()
+  if (!updated) throw new Error("La obligación cambió de estado antes de cancelarse.")
+  const [program] = await tx.select({ version: pdtpPrograms.version }).from(pdtpPrograms)
+    .where(eq(pdtpPrograms.id, obligation.programId)).limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  await addPdtpChangeLogEntry(
+    obligation.programId,
+    program.version,
+    input.userId,
+    `obligation:${obligation.id}:cancellation`,
+    { status: obligation.status, cancellationReason: obligation.cancellationReason },
+    { status: updated.status, cancellationReason: updated.cancellationReason },
+    "Obligación preventiva cancelada con motivo trazable.",
+    tx,
+  )
+  await recordOperationalActivity({
+    eventType: "pdtp.obligation_cancelled",
+    module: "pdtp",
+    entityType: "pdtp_obligation",
+    entityId: updated.id,
+    worksiteId: updated.worksiteId,
+    actorUserId: input.userId,
+    payload: { status: updated.status },
+  }, tx)
+  return updated
+
 }
 
 /**
@@ -564,6 +579,8 @@ export async function listPdtpObligationsPage(input: {
       activityNumber: pdtpActivities.n,
       activityName: pdtpActivities.activity,
       worksiteName: worksites.name,
+      // PRV-05: una cancelación pedida y todavía sin revisar.
+      pendingCancellation: sql<boolean>`EXISTS (SELECT 1 FROM ${pdtpReviewRequests} WHERE ${pdtpReviewRequests.kind} = 'obligation_cancellation' AND ${pdtpReviewRequests.targetId} = ${pdtpObligations.id} AND ${pdtpReviewRequests.status} = 'pending_review')`,
     }).from(pdtpObligations)
       .innerJoin(pdtpActivities, eq(pdtpObligations.activityId, pdtpActivities.id))
       .innerJoin(worksites, eq(pdtpObligations.worksiteId, worksites.id))

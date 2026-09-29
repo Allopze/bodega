@@ -110,6 +110,7 @@ export {
 export {
   pdtpSubmitReviewBlockers,
   getPdtpSubmitReviewBlockers,
+  getPdtpUnplannedScheduledWarnings,
   getPdtpCoverageReport,
   pdtpCoverageIssueBlocksLifecycle,
   submitPdtpProgramForReview,

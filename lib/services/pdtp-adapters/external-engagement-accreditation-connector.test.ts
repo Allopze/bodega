@@ -263,7 +263,9 @@ describe("N°20 tras la reclasificación a 'enganche' (Task 12)", () => {
  * impedir la segunda vía mientras el mecanismo siga siendo 'constancia'.
  */
 describe("Guard contra el doble conteo mientras la N°20 siga siendo 'constancia' (hallazgo 2, revisión final)", () => {
-  it("con mechanism: 'constancia', cerrar una coordinación con el mandante NO acredita nada (ni ejecución ni evento)", async () => {
+  // PRV-22 (auditoría 2026-09-28): no acredita, pero ya no se pierde: el hecho
+  // queda diferido en el libro y se acredita cuando la N°20 deja de ser constancia.
+  it("con mechanism: 'constancia', cerrar una coordinación con el mandante NO acredita, pero deja el hecho diferido", async () => {
     await inMemoryDb.delete(schema.pdtpActivities)
     await seedActivity("constancia")
 
@@ -276,7 +278,15 @@ describe("Guard contra el doble conteo mientras la N°20 siga siendo 'constancia
 
     const fulfillmentEvents = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
       .where(eq(schema.pdtpFulfillmentEvents.sourceId, `coordinacion-mandante:${created.id}`))
-    expect(fulfillmentEvents).toHaveLength(0)
+    expect(fulfillmentEvents).toHaveLength(1)
+    expect(fulfillmentEvents[0]).toMatchObject({ status: "rejected", resultJson: expect.objectContaining({ deferredReason: "mechanism_constancia" }) })
+
+    // Cuando la N°20 pasa a enganche, el reconciliador lo acredita.
+    await inMemoryDb.update(schema.pdtpActivities).set({ mechanism: "enganche" }).where(eq(schema.pdtpActivities.id, ACT_ID))
+    const { replayDeferredMandanteCoordinations } = await import("@/lib/services/pdtp-adapters/external-engagement-accreditation-connector")
+    await expect(replayDeferredMandanteCoordinations()).resolves.toMatchObject({ replayed: 1, stillDeferred: 0 })
+    const replayed = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.activityId, ACT_ID))
+    expect(replayed).toHaveLength(1)
 
     // El cierre no debe fallar ni lanzar — es tolerante, sólo deja rastro.
     expect(logger.warn).toHaveBeenCalledWith(

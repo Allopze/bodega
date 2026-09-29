@@ -201,6 +201,45 @@ entorno del proceso que ejecuta `backup-verify.sh` (el mismo del cron de
 respaldo). Si falta, el resultado es WARNING: los respaldos siguen subiendo
 cifrados, pero nadie está comprobando que sean recuperables.
 
+### Quién avisa si el respaldo deja de correr (PRV-14)
+
+`backup-scheduler` corre bajo `profiles: ["backup"]`: un `docker compose up -d`
+sin `--profile backup` **no lo levanta**. Desde la auditoría del 2026-09-28 el
+contenedor `cron` pide además `/api/cron/backup-health` todos los días a las
+08:40 (`scripts/cron-runner.mjs backup-health`), así que un respaldo ausente o
+fallido avisa aunque el scheduler esté apagado. Tras cada despliegue, comprobar:
+
+```bash
+docker compose --profile backup ps backup-scheduler   # debe figurar "running"
+```
+
+## Restaurar evidencia puntual (sin restaurar todo)
+
+Cuando el escaneo diario `pdtp-evidence-integrity` (05:15) avisa archivos
+faltantes o con sha256 distinto, se recuperan sólo esos archivos del snapshot
+de la noche anterior. El aviso lista cada ruta con su dueño (ejecución, CAPA,
+ocurrencia) y su faena.
+
+```bash
+# 1. Bajar y descifrar el snapshot del día elegido (ver "Cifrado del snapshot").
+gpg --batch --pinentry-mode loopback --passphrase-file <archivo> \
+    -o /tmp/storage.tar.gz -d storage.tar.gz.gpg
+# 2. Listar lo que hay para las rutas avisadas.
+tar -tzf /tmp/storage.tar.gz | grep -F -f rutas-avisadas.txt
+# 3. Extraer sólo esas rutas en un directorio temporal.
+mkdir -p /tmp/restore && tar -xzf /tmp/storage.tar.gz -C /tmp/restore -T rutas-avisadas.txt
+# 4. Verificar el sha256 contra el que registró la plataforma antes de copiarlo.
+sha256sum /tmp/restore/<ruta>
+# 5. Copiar al volumen de storage con el dueño del contenedor (uid 1001).
+sudo install -o 1001 -g 1001 -m 0640 /tmp/restore/<ruta> <STORAGE_HOST_PATH>/<ruta>
+```
+
+El sha256 registrado está en `pdtp_evidence_uploads.sha256` o
+`prevention_evidence_uploads.sha256` (y en el historial de envíos de la
+ejecución). Un archivo cuyo sha256 no coincide **no** se copia: no es el que se
+presentó como evidencia. Lo subido después del último respaldo (RPO 24 h) no
+está en el snapshot.
+
 ## Ensayo semanal de restauración
 
 La verificación diaria comprueba que el respaldo exista, pese lo suyo y que la

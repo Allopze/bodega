@@ -12,15 +12,10 @@
 
 import { type NextRequest, NextResponse } from "next/server"
 import { runPdtpWeeklyReminders, runPdtpActionPlanVencidasReminders, runPdtpObligationReminders, runPdtpSignaturePendingReminders, runPdtpYearCloseReminders } from "@/lib/services/prevention-pdtp"
-import { reconcilePdtpFulfillmentEvents } from "@/lib/services/pdtp/fulfillment"
-import { reconcilePdtpScheduledInstances } from "@/lib/services/pdtp/scheduled-instances"
-import { reconcilePdtpTriggerEvents } from "@/lib/services/pdtp/trigger-events"
 import { runPdtpScheduledInstanceReminders } from "@/lib/services/pdtp/scheduled-reminders"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
-import { sweepPdtpLegalFolders } from "@/lib/services/pdtp-adapters/legal-folder-connector"
-import { reconcilePdtpRiohsRollouts } from "@/lib/services/pdtp-adapters/riohs-rollout-connector"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -54,33 +49,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       // PREV-C03.6: el año anterior terminó y sigue abierto; avisa a quien
       // puede cerrarlo qué falta (los recordatorios semanales siguen al año civil).
       yearClose: await runPdtpYearCloseReminders(),
-      // Las ocurrencias se generan al activar y se reconcilian acá para cubrir
-      // nuevas faenas o una corrida interrumpida. Las claves únicas hacen que
-      // repetir el cron sea seguro.
-      scheduledInstances: await reconcilePdtpScheduledInstances({ limit: 100 }),
-      triggerEvents: await reconcilePdtpTriggerEvents({ limit: 200 }),
       scheduledReminders: await runPdtpScheduledInstanceReminders(),
-      // N°19: acredita el mes en curso de cada carpeta de requisitos legales
-      // que está completa aunque nadie haya cargado nada esta semana.
-      legalFolders: await sweepPdtpLegalFolders(),
-      // N°18: abre la entrega del RIOHS vigente donde falte, asigna a quien se
-      // incorporó y cancela la de versiones reemplazadas.
-      riohsRollouts: await reconcilePdtpRiohsRollouts(),
-      // Retoma lo que quedó en el libro de cumplimiento (`pending`/`error`) sin
-      // esperar a la activación de un programa o al script manual del deploy.
-      // Candado distinto anidado dentro del de arriba: es seguro porque
-      // `withCronLock` (`lib/services/cron-lock.ts`) llama `client.reserve()`
-      // en cada invocación, así que el candado anidado corre sobre una
-      // SEGUNDA conexión reservada, no la misma — dos claves distintas, cada
-      // una con su propia conexión, sin cruce al liberar. El costo real: este
-      // cron mantiene dos conexiones del pool reservadas durante toda la
-      // corrida en vez de una.
-      reconciled: await withCronLock("pdtp-fulfillment-reconcile", () => reconcilePdtpFulfillmentEvents({ limit: 200 })),
+      // PRV-14 (auditoría 2026-09-28): la reconciliación del libro (instancias,
+      // disparadores, carpetas legales, RIOHS, cumplimiento) pasó al job diario
+      // `pdtp-daily-reconcile`, con cada paso independiente.
     }))
     if ("skipped" in chained) return NextResponse.json({ ok: true, outcome: "skipped", code: "PREVENTION_CRON_SKIPPED", reason: chained.reason })
-    const { result, vencidas, obligations, signatures, yearClose, scheduledInstances, triggerEvents, scheduledReminders, legalFolders, riohsRollouts, reconciled } = chained
-    logger.info("[cron/pdtp-weekly-reminders] Completed", { ...result, vencidas, obligations, signatures, yearClose, scheduledInstances, triggerEvents, scheduledReminders, legalFolders, riohsRollouts, reconciled })
-    return NextResponse.json({ ok: true, outcome: "success", code: "PREVENTION_CRON_SUCCESS", ...result, vencidas, obligations, signatures, yearClose, scheduledInstances, triggerEvents, scheduledReminders, legalFolders, riohsRollouts, reconciled })
+    const { result, vencidas, obligations, signatures, yearClose, scheduledReminders } = chained
+    logger.info("[cron/pdtp-weekly-reminders] Completed", { ...result, vencidas, obligations, signatures, yearClose, scheduledReminders })
+    return NextResponse.json({ ok: true, outcome: "success", code: "PREVENTION_CRON_SUCCESS", ...result, vencidas, obligations, signatures, yearClose, scheduledReminders })
   } catch (err) {
     // H-B11: en producción, no exponer err.message al cliente porque
     // puede filtrar paths internos, queries SQL, etc. Loguear el

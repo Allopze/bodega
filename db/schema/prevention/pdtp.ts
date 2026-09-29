@@ -742,6 +742,55 @@ export const pdtpScheduledInstanceOutcomeRequests = pgTable("pdtp_scheduled_inst
 ])
 
 /**
+ * PRV-05 / PRV-12 (auditoría 2026-09-28): cambios que sacan algo del
+ * cumplimiento y que una sola persona podía hacer sin revisión.
+ *
+ * - `obligation_cancellation`: cancelar una obligación "cuando corresponda"
+ *   la saca del indicador de plazos. Antes bastaba el permiso y un motivo, y
+ *   ni siquiera se respetaba un mes cerrado.
+ * - `execution_annulment`: anular una ejecución manual ya aprobada (un error
+ *   del aprobador, una evidencia que resultó falsa). Antes no existía ninguna
+ *   vía: la aprobación quedaba para siempre.
+ *
+ * Mismo contrato que `pdtp_scheduled_instance_outcome_requests`: la pide una
+ * persona con motivo, la revisa otra, y la fila queda como historial.
+ */
+export const pdtpReviewRequests = pgTable("pdtp_review_requests", {
+  id:                 text("id").primaryKey(),
+  kind:               text("kind").notNull(),
+  /** Obligación o ejecución, según `kind`. */
+  targetId:           text("target_id").notNull(),
+  programId:          text("program_id").notNull(),
+  worksiteId:         text("worksite_id").notNull(),
+  reason:             text("reason").notNull(),
+  status:             text("status").notNull().default("pending_review"),
+  requestedByUserId:  text("requested_by_user_id").notNull(),
+  requestedAt:        timestamp("requested_at", { withTimezone: true, mode: "string" }).notNull(),
+  reviewedByUserId:   text("reviewed_by_user_id"),
+  reviewedAt:         timestamp("reviewed_at", { withTimezone: true, mode: "string" }),
+  reviewReason:       text("review_reason"),
+  withdrawnByUserId:  text("withdrawn_by_user_id"),
+  withdrawnAt:        timestamp("withdrawn_at", { withTimezone: true, mode: "string" }),
+}, (table) => [
+  foreignKey({ columns: [table.programId], foreignColumns: [pdtpPrograms.id], name: "pdtp_review_requests_program_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.worksiteId], foreignColumns: [worksites.id], name: "pdtp_review_requests_worksite_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.requestedByUserId], foreignColumns: [users.id], name: "pdtp_review_requests_requested_by_fk" }),
+  foreignKey({ columns: [table.reviewedByUserId], foreignColumns: [users.id], name: "pdtp_review_requests_reviewed_by_fk" }).onDelete("set null"),
+  foreignKey({ columns: [table.withdrawnByUserId], foreignColumns: [users.id], name: "pdtp_review_requests_withdrawn_by_fk" }).onDelete("set null"),
+  uniqueIndex("pdtp_review_requests_pending_unique").on(table.kind, table.targetId).where(sql`${table.status} = 'pending_review'`),
+  index("pdtp_review_requests_status_idx").on(table.status, table.worksiteId, table.requestedAt),
+  check("pdtp_review_requests_kind_check", sql`${table.kind} IN ('obligation_cancellation', 'execution_annulment')`),
+  check("pdtp_review_requests_status_check", sql`${table.status} IN ('pending_review', 'approved', 'rejected', 'withdrawn')`),
+  check("pdtp_review_requests_reason_check", sql`length(trim(${table.reason})) >= 10`),
+  check("pdtp_review_requests_reviewer_check", sql`${table.reviewedByUserId} IS NULL OR ${table.reviewedByUserId} <> ${table.requestedByUserId}`),
+  check("pdtp_review_requests_reviewed_check", sql`${table.status} NOT IN ('approved', 'rejected') OR ${table.reviewedAt} IS NOT NULL`),
+  check("pdtp_review_requests_rejected_check", sql`${table.status} <> 'rejected' OR length(trim(COALESCE(${table.reviewReason}, ''))) >= 10`),
+  check("pdtp_review_requests_withdrawn_check", sql`${table.status} <> 'withdrawn' OR ${table.withdrawnAt} IS NOT NULL`),
+])
+
+export type PdtpReviewRequest = typeof pdtpReviewRequests.$inferSelect
+
+/**
  * PREV-M02-B (0334): registro de cada archivo subido a
  * `storage/pdtp-evidence/` por `POST /api/prevencion/pdtp/evidence`. Un
  * archivo recién subido todavía no lo referencia ninguna fila, y antes
@@ -848,14 +897,23 @@ export const pdtpExecutions = pgTable("pdtp_executions", {
   evidenceStatus:    text("evidence_status").notNull().default("pending"),
   obligationId:      text("obligation_id").references(() => pdtpObligations.id, { onDelete: "set null" }),
   scheduledInstanceId: text("scheduled_instance_id"),
+  /**
+   * PRV-08 (auditoría 2026-09-28): orden de la carga manual dentro de su celda.
+   * La 1 es la carga de siempre; una 2, 3… es un complemento que se registra
+   * cuando la anterior ya está aprobada (4 charlas planificadas, 2 aprobadas: las
+   * otras 2 se registran en la misma semana y pasan por aprobación). Antes la
+   * celda quedaba cerrada y el resto sólo cabía con una fecha falsa.
+   */
+  sequence:         integer("sequence").notNull().default(1),
   createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
-  // Una sola carga editable/manual por celda. Las integraciones tienen su propia
+  // Una sola carga editable/manual por celda y secuencia. Las integraciones tienen su propia
   // identidad (`idempotency_key`) y pueden coexistir en el mismo período: así
   // una inspección no aprueba ni sobrescribe una carga humana pendiente y dos
   // inspecciones simultáneas no compiten por la misma fila física.
-  uniqueIndex("pdtp_executions_activity_scope_period_unique").on(table.activityId, table.worksiteId, table.year, table.month, table.week).where(sql`${table.obligationId} IS NULL AND ${table.origin} <> 'integration'`),
+  uniqueIndex("pdtp_executions_activity_scope_period_unique").on(table.activityId, table.worksiteId, table.year, table.month, table.week, table.sequence).where(sql`${table.obligationId} IS NULL AND ${table.origin} <> 'integration'`),
+  check("pdtp_executions_sequence_check", sql`${table.sequence} >= 1`),
   uniqueIndex("pdtp_executions_obligation_unique").on(table.obligationId),
   index("pdtp_executions_worksite_period_idx").on(table.worksiteId, table.year, table.month),
   index("pdtp_executions_status_idx").on(table.status),
@@ -1366,6 +1424,30 @@ export const pdtpActivityDocumentRequirements = pgTable("pdtp_activity_document_
 ])
 
 /* ── PDTP Activity Worksite Params (parámetros por faena: R1 sujetos, R2 cobertura) ── */
+/**
+ * PRV-11 (auditoría 2026-09-28): el padrón manual (`expected_subject_count`)
+ * se edita con el programa activo porque es un hecho del mundo, no contenido
+ * firmado. Pero se aplicaba a los doce meses: subirlo en septiembre recalculaba
+ * enero a agosto. Cada cambio queda acá con el mes desde el que rige, y el
+ * cálculo usa para cada mes el valor vigente en ese mes (`previous_count` para
+ * los meses anteriores al cambio).
+ */
+export const pdtpActivityPadronChanges = pgTable("pdtp_activity_padron_changes", {
+  id:              text("id").primaryKey(),
+  activityId:      text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "cascade" }),
+  worksiteId:      text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
+  year:            integer("year").notNull(),
+  effectiveMonth:  integer("effective_month").notNull(),
+  previousCount:   integer("previous_count"),
+  newCount:        integer("new_count"),
+  changedByUserId: text("changed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  changedAt:       timestamp("changed_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  index("pdtp_activity_padron_changes_lookup_idx").on(table.activityId, table.worksiteId, table.year, table.effectiveMonth),
+  check("pdtp_activity_padron_changes_month_check", sql`${table.effectiveMonth} BETWEEN 1 AND 12`),
+  check("pdtp_activity_padron_changes_counts_check", sql`(${table.previousCount} IS NULL OR ${table.previousCount} >= 0) AND (${table.newCount} IS NULL OR ${table.newCount} >= 0)`),
+])
+
 export const pdtpActivityWorksiteParams = pgTable("pdtp_activity_worksite_params", {
   id:                   text("id").primaryKey(),
   activityId:           text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "cascade" }),

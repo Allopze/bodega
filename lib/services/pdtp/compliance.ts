@@ -1,7 +1,8 @@
-import { and, eq, inArray, ne } from "drizzle-orm"
+import { and, asc, eq, inArray, ne } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivityWorksiteExclusions,
+  pdtpActivityPadronChanges,
   pdtpActivityWorksiteParams,
   pdtpExecutions,
   pdtpObligations,
@@ -446,6 +447,7 @@ type PdtpIndicatorInputs = {
   executedByActivityMonth: Map<string, number>
   declaredNotPerformedByMonth: number[]
   expectedByActivity: Map<string, number>
+  manualPadronByActivityMonth: Map<string, number | null>
   coverageTargetPctByActivity: Map<string, number>
   derivedStockByActivity: Map<string, number>
   derivedFlowByActivityMonth: Map<string, number>
@@ -666,7 +668,7 @@ async function loadPdtpIndicatorInputsForTargets(
 
   const [
     loadedByWorksite, consolidatedLoaded, addedAtByWorksite, worksiteInstances, consolidatedInstances,
-    paramRows, rosters, closedOnTimeRows, minimumExclusions,
+    paramRows, rosters, closedOnTimeRows, minimumExclusions, padronChangeRows,
   ] = await Promise.all([
     loadProgramScheduleAndExecutionsForWorksites(allActivityIds, year, worksiteIds),
     withoutWorksite ? loadProgramScheduleAndExecutions(allActivityIds, year) : Promise.resolve(null),
@@ -708,6 +710,22 @@ async function loadPdtpIndicatorInputsForTargets(
             inArray(pdtpActivityWorksiteExclusions.activityId, minimumActivityIds),
             inArray(pdtpActivityWorksiteExclusions.worksiteId, worksiteIds),
           ))
+      : Promise.resolve([]),
+    // PRV-11: vigencias del padrón manual, para no reescribir meses pasados.
+    worksiteIds.length > 0
+      ? db.select({
+          activityId: pdtpActivityPadronChanges.activityId,
+          worksiteId: pdtpActivityPadronChanges.worksiteId,
+          effectiveMonth: pdtpActivityPadronChanges.effectiveMonth,
+          previousCount: pdtpActivityPadronChanges.previousCount,
+        })
+          .from(pdtpActivityPadronChanges)
+          .where(and(
+            inArray(pdtpActivityPadronChanges.activityId, allActivityIds),
+            inArray(pdtpActivityPadronChanges.worksiteId, worksiteIds),
+            eq(pdtpActivityPadronChanges.year, year),
+          ))
+          .orderBy(asc(pdtpActivityPadronChanges.effectiveMonth), asc(pdtpActivityPadronChanges.changedAt))
       : Promise.resolve([]),
   ])
 
@@ -761,6 +779,7 @@ async function loadPdtpIndicatorInputsForTargets(
   }
 
   const paramsByWorksite = groupRowsByWorksite(paramRows)
+  const padronChangesByWorksite = groupRowsByWorksite(padronChangeRows)
   const closedOnTimeByWorksite = groupRowsByWorksite(closedOnTimeRows)
   const minimumExclusionsByWorksite = groupRowsByWorksite(minimumExclusions)
   const coverageActivityIds = new Set(activityRows.filter((a) => a.indicatorMode === "coverage").map((a) => a.id))
@@ -775,6 +794,7 @@ async function loadPdtpIndicatorInputsForTargets(
       eligibleScheduledInstances: eligibleByTarget.get(target)!,
       linkedExecutionStatusByInstance,
       paramRows: target ? paramsByWorksite.get(target) ?? [] : [],
+      padronChanges: target ? padronChangesByWorksite.get(target) ?? [] : [],
       rosters,
       // Sin faena no hay obligaciones que mirar, mismo límite que el padrón derivado.
       closedOnTime: tallyClosedOnTime(target ? closedOnTimeByWorksite.get(target) ?? [] : [], year, coverageActivityIds),
@@ -794,6 +814,8 @@ function assemblePdtpIndicatorInputs(input: {
   eligibleScheduledInstances: Array<{ id: string; activityId: string; scheduledFor: string; plannedQuantity: number; status: string; updatedAt: string }>
   linkedExecutionStatusByInstance: ReadonlyMap<string, string>
   paramRows: Array<{ activityId: string; expectedSubjectCount: number | null; targetCoveragePercent: number | null }>
+  /** PRV-11: cambios del padrón manual del año, ordenados por mes de vigencia. */
+  padronChanges: Array<{ activityId: string; effectiveMonth: number; previousCount: number | null }>
   rosters: PdtpSubjectRosterBatch | null
   closedOnTime: ReturnType<typeof tallyClosedOnTime>
   minimumExcludedActivityIds: ReadonlySet<string>
@@ -846,6 +868,8 @@ function assemblePdtpIndicatorInputs(input: {
    * silenciosamente por la cantidad planificada.
    */
   const expectedByActivity = new Map<string, number>()
+  /** PRV-11: padrón manual por actividad y mes cuando hubo cambios en el año (`null` = sin manual ese mes). */
+  const manualPadronByActivityMonth = new Map<string, number | null>()
   const coverageTargetPctByActivity = new Map<string, number>()
   /** Padrón derivado. Las fuentes de stock se resuelven una vez; las de flujo, por mes. */
   const derivedStockByActivity = new Map<string, number>()
@@ -856,6 +880,21 @@ function assemblePdtpIndicatorInputs(input: {
     for (const row of input.paramRows) {
       if (row.expectedSubjectCount != null) expectedByActivity.set(row.activityId, row.expectedSubjectCount)
       if (row.targetCoveragePercent != null) coverageTargetPctByActivity.set(row.activityId, Number(row.targetCoveragePercent))
+    }
+    // PRV-11: el padrón vigente en cada mes. Para un mes anterior a un cambio
+    // rige el valor previo de ese cambio; desde el último cambio, el actual.
+    const changesByActivity = new Map<string, Array<{ effectiveMonth: number; previousCount: number | null }>>()
+    for (const change of input.padronChanges) {
+      const list = changesByActivity.get(change.activityId) ?? []
+      list.push(change)
+      changesByActivity.set(change.activityId, list)
+    }
+    for (const [activityId, changes] of changesByActivity) {
+      for (let month = 1; month <= 12; month++) {
+        const nextChange = changes.find((change) => change.effectiveMonth > month)
+        const value = nextChange ? nextChange.previousCount : expectedByActivity.get(activityId) ?? null
+        manualPadronByActivityMonth.set(`${activityId}:${month}`, value)
+      }
     }
 
     // Sólo se lee el padrón de las actividades que de verdad miden por
@@ -946,6 +985,7 @@ function assemblePdtpIndicatorInputs(input: {
     executedByActivityMonth,
     declaredNotPerformedByMonth,
     expectedByActivity,
+    manualPadronByActivityMonth,
     coverageTargetPctByActivity,
     derivedStockByActivity,
     derivedFlowByActivityMonth,
@@ -1017,6 +1057,7 @@ function computePdtpIndicatorsFromInputs(
   const closedOnTimeExecuted = new Map<string, number>()
   const closedOnTimeCompleted = new Map<string, number>()
   const expectedByActivity = new Map<string, number>()
+  const manualPadronByActivityMonth = new Map<string, number | null>()
   const coverageTargetPctByActivity = new Map<string, number>()
   const derivedStockByActivity = new Map<string, number>()
   const derivedFlowByActivityMonth = new Map<string, number>()
@@ -1035,6 +1076,10 @@ function computePdtpIndicatorsFromInputs(
       closedOnTimeCompleted.set(key(activityId), (closedOnTimeCompleted.get(key(activityId)) ?? 0) + value)
     }
     for (const [activityId, value] of part.expectedByActivity) expectedByActivity.set(key(activityId), value)
+    for (const [monthKey, value] of part.manualPadronByActivityMonth) {
+      const separator = monthKey.lastIndexOf(":")
+      manualPadronByActivityMonth.set(`${key(monthKey.slice(0, separator))}${monthKey.slice(separator)}`, value)
+    }
     for (const [activityId, value] of part.coverageTargetPctByActivity) coverageTargetPctByActivity.set(key(activityId), value)
     for (const [activityId, value] of part.derivedStockByActivity) derivedStockByActivity.set(key(activityId), value)
     for (const [monthKey, value] of part.derivedFlowByActivityMonth) {
@@ -1061,8 +1106,16 @@ function computePdtpIndicatorsFromInputs(
 
   /** Padrón efectivo de una celda actividad-mes, o `null` si no hay ninguno. */
   const padronFor = (activityId: string, month: number): number | null => {
-    const manual = expectedByActivity.get(activityId)
-    if (manual != null) return manual
+    // PRV-11: si el padrón manual cambió en el año, rige el valor vigente en
+    // ese mes; un `null` en ese mes cae al padrón derivado, igual que sin manual.
+    const monthKey = `${activityId}:${month}`
+    if (manualPadronByActivityMonth.has(monthKey)) {
+      const vigente = manualPadronByActivityMonth.get(monthKey)
+      if (vigente != null) return vigente
+    } else {
+      const manual = expectedByActivity.get(activityId)
+      if (manual != null) return manual
+    }
     const flow = derivedFlowByActivityMonth.get(`${activityId}:${month}`)
     if (flow != null) return flow
     return derivedStockByActivity.get(activityId) ?? null

@@ -184,8 +184,28 @@ export async function onProtocolApplicabilityAssessed(input: {
   version: number
   assessedOn: string
   nextAssessmentOn: string | null
+  /** Estado que tenía el pronunciamiento antes de este cambio. */
+  previousStatus?: string | null
+  /** PRV-02: quién hizo el pronunciamiento. */
+  actorUserId?: string | null
 }): Promise<void> {
-  if (input.status === "pending_assessment") return
+  if (input.status === "pending_assessment") {
+    // PRV-04 (auditoría 2026-09-28): volver a "pendiente de evaluar" retira el
+    // pronunciamiento anterior. Antes se retornaba sin más y la N°46–49 seguía
+    // cumplida sobre una evaluación que ya nadie sostiene. Las reevaluaciones
+    // trimestrales no revocan nada: cada versión es su propia ocurrencia.
+    const retracted = input.previousStatus === "applicable" || input.previousStatus === "not_applicable"
+    if (retracted && input.version > 1) {
+      await recordPdtpFulfillmentRevocation({
+        sourceType: "higiene",
+        sourceId: `protocolo:${input.applicabilityId}:v${input.version - 1}`,
+        worksiteId: input.worksiteId,
+        revokedBy: input.actorUserId ?? undefined,
+        reason: `Pronunciamiento del protocolo ${input.protocolShortName} retirado: vuelve a pendiente de evaluar.`,
+      })
+    }
+    return
+  }
 
   const activityNumber = pdtpActivityNumberForProtocol(input.protocolCode)
   if (activityNumber === null) return

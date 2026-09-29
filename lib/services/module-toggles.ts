@@ -227,6 +227,8 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "prevention", submoduleHref: "/prevencion/pdtp", prefix: "/api/cron/pdtp-evidence-gc" },
   { moduleId: "prevention", submoduleHref: "/prevencion/pdtp", prefix: "/api/cron/pdtp-evidence-integrity" },
   { moduleId: "prevention", submoduleHref: "/prevencion/pdtp", prefix: "/api/cron/pdtp-weekly-reminders" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/pdtp", prefix: "/api/cron/pdtp-daily-reconcile" },
+  { moduleId: "prevention", submoduleHref: "/prevencion", prefix: "/api/cron/prevention-cron-staleness" },
   { moduleId: "prevention", submoduleHref: "/prevencion/capa", prefix: "/api/cron/prevention-capa-reminders" },
   { moduleId: "prevention", submoduleHref: "/prevencion/cphs", prefix: "/api/cron/prevention-cphs-alerts" },
   { moduleId: "prevention", submoduleHref: "/prevencion/documentacion", prefix: "/api/cron/prevention-document-ack-reminders" },

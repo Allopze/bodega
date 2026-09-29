@@ -1032,7 +1032,13 @@ export async function cancelEmergencyDrill(input: unknown, access: EmergencyAcce
     if (!drill) throw new EmergencyDomainError(NOT_FOUND)
     requireAccess(access, "prevention:emergency:drill_execute", drill.worksiteId)
     if (drill.version !== data.expectedVersion) throw new EmergencyDomainError("El simulacro cambió mientras lo editabas. Recarga y reintenta.")
-    if (drill.status !== "scheduled") throw new EmergencyDomainError("Sólo un simulacro programado puede cancelarse.")
+    // PRV-19 #8 (auditoría 2026-09-28): un simulacro completado también se
+    // anula —mal registrado, de otra faena—; su acreditación de la N°84 se
+    // revoca con el mismo motivo. Antes sólo se cancelaba uno programado y un
+    // error de registro quedaba acreditado para siempre.
+    if (drill.status !== "scheduled" && drill.status !== "completed") {
+      throw new EmergencyDomainError("Sólo un simulacro programado o completado puede cancelarse.")
+    }
 
     const now = nowIso()
     const [updated] = await tx.update(preventionEmergencyDrills).set({
@@ -1058,11 +1064,9 @@ export async function cancelEmergencyDrill(input: unknown, access: EmergencyAcce
     }).where(eq(preventionEmergencyDrillSlots.drillId, drill.id))
 
     // Revertir la N°84 con el mismo `sourceId` (el propio drillId) que usó
-    // `onEmergencyDrillCompleted`. Defensa en profundidad: el guard de arriba
-    // sólo deja cancelar un simulacro "scheduled", el mismo estado que
-    // `completeEmergencyDrill` excluye, así que hoy esta rama nunca encuentra
-    // una acreditación viva que revocar — se deja cableada por si esa vía
-    // cambia (o una anulación administrativa reabre un simulacro completado).
+    // `onEmergencyDrillCompleted`. Para uno programado no hay nada vivo que
+    // revocar y la revocación es un no-op; para uno completado es la que
+    // saca la N°84 del cumplimiento.
     revocation = {
       sourceType: "emergencia",
       sourceId: updated.id,

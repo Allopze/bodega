@@ -7,12 +7,10 @@
  * (N°79), anular un acta CGRD (N°81), cancelar un simulacro (N°84) y borrar un
  * acta SST (N°15, 17, 18, 23, 52, 63; la N°19 pasó a Documentación el 2026-09-24).
  *
- * Dos de los cuatro (simulacro, acta SST) tienen una máquina de estados que
- * en la práctica de hoy nunca deja llegar a la revocación con una
- * acreditación viva: `cancelEmergencyDrill` sólo acepta un registro todavía
- * "scheduled" — el mismo estado que excluye el cierre que acredita — y
- * `deleteEvaluation` rechaza borrar un acta "cerrado", que es justamente la
- * que acredita. Se revoca de todas formas, en defensa de profundidad: si ese
+ * El acta SST tiene una máquina de estados que en la práctica de hoy nunca
+ * deja llegar a la revocación con una acreditación viva: `deleteEvaluation`
+ * rechaza borrar un acta "cerrado", que es justamente la que acredita. (El
+ * simulacro completado ya se anula de verdad desde PRV-19 #8.) Se revoca de todas formas, en defensa de profundidad: si ese
  * guard cambia mañana, o una vía administrativa revierte el estado por otro
  * camino, la acreditación huérfana no debe sobrevivir. Esos dos casos
  * manipulan el estado directo en la base para poder ejercitar esa rama —
@@ -370,7 +368,10 @@ describe("el acta del simulacro es obligatoria", () => {
 })
 
 describe("cancelEmergencyDrill revoca la N°84", () => {
-  it("defensa en profundidad: hoy sólo un simulacro 'scheduled' se cancela, el mismo estado que completeEmergencyDrill excluye", async () => {
+  // PRV-19 #8 (auditoría 2026-09-28): un simulacro completado se anula y su
+  // N°84 se revoca. Antes el guard sólo aceptaba "scheduled" y esta rama era
+  // código muerto; la prueba forzaba el estado a mano.
+  it("anular un simulacro completado revoca la N°84", async () => {
     const plan = await createEmergencyPlan({ worksiteId: WS_ID, title: "Plan de emergencia de prueba" }, EMERGENCY_MANAGER)
     await addEmergencyScenario({
       planId: plan.id, type: "incendio_estructural", title: "Incendio de prueba",
@@ -405,16 +406,8 @@ describe("cancelEmergencyDrill revoca la N°84", () => {
     expect(withActivities.pdtpActivityNumbers).toEqual([84])
     expect(await executionsFor(84)).toHaveLength(1)
 
-    // `cancelEmergencyDrill` exige status "scheduled", que `completeEmergencyDrill`
-    // ya dejó atrás. Se fuerza el estado de vuelta a mano por la misma razón que
-    // en el acta CGRD: probar el cableado de la revocación para cuando esa vía
-    // exista, no un caso que el guard actual permita hoy.
-    await inMemoryDb.update(schema.preventionEmergencyDrills)
-      .set({ status: "scheduled" })
-      .where(eq(schema.preventionEmergencyDrills.id, drill.id))
-
     await cancelEmergencyDrill({
-      drillId: drill.id, expectedVersion: completed.version, reason: "Se reprograma por lluvia",
+      drillId: drill.id, expectedVersion: completed.version, reason: "Se registró en la faena equivocada",
     }, EMERGENCY_MANAGER)
 
     const revocacion = await revocationEventFor(drill.id)

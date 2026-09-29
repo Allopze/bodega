@@ -6,6 +6,12 @@ import {
 } from "@/lib/services/pdtp/connectors"
 
 describe("PDTP execution connector registry", () => {
+  // PRV-19 #12 (auditoría 2026-09-28): "Iniciar" una entrega de EPP lleva a Bodega.
+  it("EPP arranca en /entregas, donde se registra la entrega que acredita la N°62", () => {
+    const epp = listPdtpExecutionConnectors().find((connector) => connector.key === "epp")!
+    expect(epp.buildStartHref({ id: "i-1", programId: "p-1", activityId: "a-62", worksiteId: "ws-1" })).toMatch(/^\/entregas\?/)
+  })
+
   it("declares the real prevention destinations without activity-number branching", () => {
     const keys = listPdtpExecutionConnectors().map((connector) => connector.key)
     expect(keys).toEqual([
@@ -26,7 +32,8 @@ describe("PDTP execution connector registry", () => {
   it("exposes event and completion capabilities for a selected connector", () => {
     const training = getPdtpExecutionConnector("training")
     expect(training).toBeDefined()
-    expect(training?.supportedEvents.some((event) => event.key === "session_closed")).toBe(true)
+    // M-22: ningún módulo emite `session_closed`; la capacitación acredita por ocurrencia.
+    expect(training?.supportedEvents.some((event) => event.key === "session_closed")).toBe(false)
     expect(training?.supportedCompletionPolicies).toContain("source_completed")
     expect(training?.supportedEvidenceKinds).toContain("generated_record")
   })

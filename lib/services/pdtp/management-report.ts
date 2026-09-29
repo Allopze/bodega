@@ -7,9 +7,9 @@
 import { and, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpActivityWorksiteParams, pdtpPrograms } from "@/db/schema"
-import { assertWorksiteAccess, loadProgramScheduleAndExecutions, type WorksiteScope } from "./helpers"
+import { assertWorksiteAccess, loadProgramScheduleAndExecutions, loadWorksiteAddedAt, type WorksiteScope } from "./helpers"
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
-import { filterPdtpRowsFromActivation } from "./period"
+import { effectiveActivationFor, filterPdtpRowsFromActivation } from "./period"
 import { describePdtpVersionWindow, filterPdtpRowsBeforeSuccessor, loadPdtpVersionWindow } from "./version-window"
 import { effectiveApprovedExecutionsByCell, pdtpCountedExecuted } from "./compliance"
 
@@ -151,8 +151,12 @@ export async function getPdtpManagementReport(input: {
     ? await loadProgramScheduleAndExecutions(activityIds, program.year, input.worksiteId)
     : { scheduleRows: [], executionRows: [], deviationRows: [] }
   // PREV-C05-B: el reporte es de una versión, dentro de su ventana.
+  // PRV-09 (auditoría 2026-09-28): el mismo corte por faena que el indicador
+  // (`effectiveActivationFor`): una faena incorporada en junio no debe enero
+  // a mayo ni en el tablero ni en este reporte.
+  const cutoff = effectiveActivationFor(program.activatedAt, await loadWorksiteAddedAt(program.id, input.worksiteId))
   const windowed = <T extends { year: number; month: number; week: number }>(rows: T[]) =>
-    filterPdtpRowsBeforeSuccessor(filterPdtpRowsFromActivation(rows, program.activatedAt), window?.until)
+    filterPdtpRowsBeforeSuccessor(filterPdtpRowsFromActivation(rows, cutoff), window?.until)
   const scheduleRows = windowed(loaded.scheduleRows)
   const executionRows = windowed(loaded.executionRows)
   const deviationRows = windowed(loaded.deviationRows)

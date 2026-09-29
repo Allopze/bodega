@@ -431,7 +431,10 @@ describe("la casilla es la fuente de verdad: el PDTP nunca bloquea su cambio de 
     expect(logger.warn).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("Sin programa PDTP activo"))
   })
 
-  it("un mes cerrado del PDTP rechaza el desvío dentro de su savepoint y la casilla cambia igual", async () => {
+  // PRV-16 (auditoría 2026-09-28): antes la casilla cambiaba igual y el rechazo
+  // quedaba sólo en el log, así que la casilla decía «No aplica» y el programa
+  // seguía exigiendo la celda. Ahora el cambio no se hace y la persona ve por qué.
+  it("un mes cerrado del PDTP impide el «no aplica» de la casilla, con un error visible", async () => {
     await seedActiveProgram()
     const now = new Date().toISOString()
     await inMemoryDb.insert(schema.pdtpPeriodClosures).values({
@@ -442,22 +445,15 @@ describe("la casilla es la fuente de verdad: el PDTP nunca bloquea su cambio de 
     })
     const slot = await drillSlot("m03-w3")
 
-    const updated = await recordDrillSlotStatus({
+    await expect(recordDrillSlotStatus({
       slotId: slot.id, expectedVersion: slot.version, status: "not_applicable",
       notApplicableReason: "La faena no tiene instalaciones fijas que evacuar.",
-    }, EMERGENCY)
+    }, EMERGENCY)).rejects.toThrow(/cerrado/)
 
-    expect(updated.status).toBe("not_applicable")
     const [persisted] = await inMemoryDb.select().from(schema.preventionEmergencyDrillSlots)
       .where(eq(schema.preventionEmergencyDrillSlots.id, slot.id))
-    expect(persisted!.status).toBe("not_applicable")
+    expect(persisted!.status).toBe("pending")
     expect(await deviationsOf(84)).toHaveLength(0)
-    // El rechazo ocurrió DENTRO del savepoint, después de tomar el advisory
-    // lock de la celda: es la regla de mes cerrado de `recordPdtpDeviation`.
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ activityN: 84, err: expect.objectContaining({ message: expect.stringContaining("cerrado") }) }),
-      expect.stringContaining("rechazó el desvío"),
-    )
   })
 
   it("un error de SQL dentro del PDTP se deshace en su savepoint: la transacción de la casilla sigue viva y confirma", async () => {
