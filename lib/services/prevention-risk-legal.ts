@@ -595,6 +595,7 @@ export async function transitionRiskMatrix(input: unknown, access: RiskLegalAcce
       const entries = await tx.select({ id: preventionRiskEntries.id }).from(preventionRiskEntries)
         .where(eq(preventionRiskEntries.matrixId, matrix.id))
       accreditation = {
+        actorUserId: access.userId,
         matrixId: matrix.id,
         worksiteId: matrix.worksiteId,
         matrixVersion: matrix.matrixVersion,

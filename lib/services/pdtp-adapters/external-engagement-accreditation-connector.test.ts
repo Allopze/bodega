@@ -21,6 +21,9 @@ import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
 import { PDTP_2026_CATALOG_ACTIVITIES } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 
+// PRV-01: la evidencia se verifica en disco; nunca en el storage del repo.
+process.env.STORAGE_PATH = path.join((await import("node:os")).tmpdir(), `engagement-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
 const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb }
@@ -104,10 +107,17 @@ async function linkEvidenceDocument(engagementId: string) {
     worksiteId: WS_ID, status: "vigente", uploadedBy: USER_ID,
     createdAt: now, updatedAt: now,
   })
+  // PRV-01: el acta existe en disco y su checksum es el real.
+  const { createHash } = await import("node:crypto")
+  const { mkdirSync, writeFileSync } = await import("node:fs")
+  const { resolveSstDocumentFile } = await import("@/lib/storage/config")
+  const absolute = resolveSstDocumentFile("storage/sst-documents/coordinacion-test/acta.pdf")!
+  mkdirSync(path.dirname(absolute), { recursive: true })
+  writeFileSync(absolute, "%PDF-1.4 acta de coordinación")
   await inMemoryDb.insert(schema.sstDocumentVersions).values({
     id: "docv-engagement-1", documentId: "doc-engagement-1", version: 1, status: "vigente",
     fileName: "acta.pdf", storageName: "acta.pdf", filePath: "storage/sst-documents/coordinacion-test/acta.pdf",
-    mimeType: "application/pdf", fileSize: 100, checksum: "abc123", uploadedBy: USER_ID,
+    mimeType: "application/pdf", fileSize: 100, checksum: createHash("sha256").update("%PDF-1.4 acta de coordinación").digest("hex"), uploadedBy: USER_ID,
     createdAt: now, updatedAt: now,
   })
   await inMemoryDb.update(schema.sstDocuments).set({ currentVersionId: "docv-engagement-1" }).where(eq(schema.sstDocuments.id, "doc-engagement-1"))

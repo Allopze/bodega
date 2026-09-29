@@ -184,6 +184,7 @@ export async function onExternalEngagementClosed(input: {
     executedQuantity: 1,
     evidenceRef,
     autoApproveByUserId: input.closedByUserId,
+    actorUserId: input.closedByUserId,
     metadata: { kind: input.kind, counterpartyType: input.counterpartyType },
   })
 }

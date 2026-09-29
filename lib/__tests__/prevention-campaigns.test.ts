@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { seedPreventionEvidenceUpload } from "@/lib/testing/prevention-evidence-upload-fixture"
 import * as schema from "@/db/schema"
 import type { CampaignAccess } from "@/lib/services/prevention-campaigns"
 import type { TrainingOccurrenceAccess } from "@/lib/services/prevention-training-occurrences"
@@ -16,6 +17,9 @@ import { chileDateParts } from "@/lib/utils"
  * camino feliz al cambiar de año civil. Se siembran con el año en curso. */
 const PROGRAM_YEAR = chileDateParts().year
 
+
+// PRV-01: la evidencia es un archivo subido de verdad; nunca en el storage del repo.
+process.env.STORAGE_PATH = path.join((await import("node:os")).tmpdir(), `prev-evidence-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -62,6 +66,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionCampaigns)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
+  await inMemoryDb.delete(schema.preventionEvidenceUploads)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
 
@@ -161,14 +166,15 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
       pdtpActivityNumbers: [85],
     }, access)
 
+    const evidencia = await seedPreventionEvidenceUpload(inMemoryDb, { domain: "campaign", uploadedByUserId: USER_ID })
     const result = await closeCampaign({
       campaignId: campaign!.id,
-      heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "https://drive.chome.cl/acta-campana",
+      heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: evidencia,
     }, access)
 
     expect(result.campaign!.status).toBe("done")
     expect(result.campaign!.completedByUserId).toBe(USER_ID)
-    expect(result.campaign!.evidenceUrl).toBe("https://drive.chome.cl/acta-campana")
+    expect(result.campaign!.evidenceUrl).toBe(evidencia)
     expect(result.pdtpAccredited).toBe(false)
     expect(result.pdtpPending).toBe(false)
 
@@ -212,17 +218,24 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
       }, access)).rejects.toThrow()
     })
 
-    it("acepta una URL navegable y un archivo del storage de campañas", async () => {
+    // PRV-01 (auditoría 2026-09-28): la URL externa ya no es evidencia, y una
+    // ruta sólo vale si la plataforma registró su subida.
+    it("rechaza una URL externa y una ruta que nadie subió; acepta el archivo subido", async () => {
       const { closeCampaign } = await import("@/lib/services/prevention-campaigns")
 
       const conUrl = await campañaAbierta("Campaña con URL")
       await expect(closeCampaign({
         campaignId: conUrl, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "https://drive.chome.cl/acta-campana",
-      }, access)).resolves.toBeTruthy()
+      }, access)).rejects.toThrow()
+
+      const conRutaInventada = await campañaAbierta("Campaña con ruta inventada")
+      await expect(closeCampaign({
+        campaignId: conRutaInventada, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "storage/campaign-evidence/acta-2026.pdf",
+      }, access)).rejects.toThrow(/subido/)
 
       const conArchivo = await campañaAbierta("Campaña con archivo")
       await expect(closeCampaign({
-        campaignId: conArchivo, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "storage/campaign-evidence/acta-2026.pdf",
+        campaignId: conArchivo, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "campaign", uploadedByUserId: USER_ID }),
       }, access)).resolves.toBeTruthy()
     })
   })
@@ -244,7 +257,7 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
 
     const result = await closeCampaign({
       campaignId: campaign!.id,
-      heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "https://drive.chome.cl/acta-campana",
+      heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "campaign", uploadedByUserId: USER_ID }),
     }, access)
 
     expect(result.campaign!.status).toBe("done")
@@ -280,7 +293,7 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
 
     const result = await closeCampaign({
       campaignId: campaign!.id,
-      heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "https://drive.chome.cl/acta-campana",
+      heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "campaign", uploadedByUserId: USER_ID }),
     }, access)
 
     // La campaña se marca hecha igual: el PDTP no manda sobre el módulo fuente.
@@ -312,7 +325,7 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
 
     await closeCampaign({
       campaignId: campaign!.id, heldOn: `${PROGRAM_YEAR}-03-12`,
-      evidenceUrl: "https://drive.chome.cl/acta-campana",
+      evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "campaign", uploadedByUserId: USER_ID }),
     }, access)
 
     const [triggerEvent] = await inMemoryDb.select().from(schema.pdtpTriggerEvents)
@@ -329,7 +342,7 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
     }, access)
     await closeCampaign({
       campaignId: campaign!.id, heldOn: `${PROGRAM_YEAR}-04-01`,
-      evidenceUrl: "https://drive.chome.cl/acta-campana",
+      evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "campaign", uploadedByUserId: USER_ID }),
     }, access)
 
     const [triggerEvent] = await inMemoryDb.select().from(schema.pdtpTriggerEvents)
@@ -344,7 +357,7 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
     }, access)
 
     await expect(closeCampaign({
-      campaignId: campaign!.id, heldOn: "", evidenceUrl: "https://drive.chome.cl/acta-campana",
+      campaignId: campaign!.id, heldOn: "", evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "campaign", uploadedByUserId: USER_ID }),
     }, access)).rejects.toThrow()
   })
 
@@ -357,10 +370,10 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
       pdtpActivityNumbers: [85],
     }, access)
 
-    await closeCampaign({ campaignId: campaign!.id, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "https://drive.chome.cl/acta-1" }, access)
+    await closeCampaign({ campaignId: campaign!.id, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "campaign", uploadedByUserId: USER_ID }) }, access)
 
     await expect(closeCampaign({
-      campaignId: campaign!.id, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "https://drive.chome.cl/acta-2",
+      campaignId: campaign!.id, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "campaign", uploadedByUserId: USER_ID }),
     }, access)).rejects.toThrow(/ya está marcada como hecha/i)
   })
 
@@ -373,7 +386,7 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
       pdtpActivityNumbers: [85],
     }, access)
 
-    await closeCampaign({ campaignId: campaign!.id, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "https://drive.chome.cl/acta" }, access)
+    await closeCampaign({ campaignId: campaign!.id, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "campaign", uploadedByUserId: USER_ID }) }, access)
 
     await expect(setCampaignPdtpActivities({
       campaignId: campaign!.id, pdtpActivityNumbers: [86],
@@ -488,7 +501,7 @@ describe("Ronda de corrección 1/5 — doble conteo 85-89 (campaña legado + CAM
     await closeCampaign({
       campaignId: campaign!.id,
       heldOn: `${YEAR}-06-05`,
-      evidenceUrl: "https://drive.chome.cl/acta-vial",
+      evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "campaign", uploadedByUserId: USER_ID }),
     }, access)
 
     const executionsAfterCampaignClose = await inMemoryDb.select().from(schema.pdtpExecutions)

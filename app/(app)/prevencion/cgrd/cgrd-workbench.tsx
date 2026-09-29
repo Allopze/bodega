@@ -451,7 +451,7 @@ function ConstituteDialog({ open, onOpenChange, worksiteId, onDone }: { open: bo
         <Field label="Constituido el" required error={fieldErrors.constitutedOn?.[0]}><DatePicker value={constitutedOn} onChange={setConstitutedOn} ariaLabel="Constituido el" error={Boolean(fieldErrors.constitutedOn)} /></Field>
         <Field label="Mandato hasta" required error={fieldErrors.mandateEndsOn?.[0]}><DatePicker value={mandateEndsOn} onChange={setMandateEndsOn} ariaLabel="Mandato hasta" error={Boolean(fieldErrors.mandateEndsOn)} /></Field>
       </div>
-      <EvidenceField label="Evidencia del acta de constitución" helper="Sube el acta de constitución, o pega su enlace." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
+      <EvidenceField label="Evidencia del acta de constitución" helper="Sube el acta de constitución (PDF o imagen)." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
     </div>
     <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || name.trim().length < 3 || !constitutedOn || !mandateEndsOn || !evidenceUrl.trim()}>{pending ? "Constituyendo..." : "Constituir"}</Button></DialogFooter>
   </DialogContent></Dialog>
@@ -556,7 +556,7 @@ function PublishMatrixDialog({ matrix, onClose, onDone }: { matrix: Matrix | nul
   return <Dialog open={matrix !== null} onOpenChange={(value) => { if (!value) onClose() }}><DialogContent>
     <DialogHeader><DialogTitle>Publicar matriz GRD</DialogTitle><DialogDescription>Cierra la N°80 del PDTP. Reemplaza cualquier versión publicada anteriormente en esta faena.</DialogDescription></DialogHeader>
     <div className="space-y-4">
-      <EvidenceField label="Evidencia de la matriz publicada" helper="Sube el documento de la matriz, o pega su enlace." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
+      <EvidenceField label="Evidencia de la matriz publicada" helper="Sube el documento de la matriz (PDF o imagen)." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
     </div>
     <DialogFooter><Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !evidenceUrl.trim()}>{pending ? "Publicando..." : "Publicar"}</Button></DialogFooter>
   </DialogContent></Dialog>
@@ -642,7 +642,7 @@ function RecordMeetingDialog({ open, onOpenChange, committeeId, openSlots, onDon
       ) : null}
       <Field label="Tabla / agenda" required error={fieldErrors.agenda?.[0]}><Textarea value={agenda} onChange={(event) => setAgenda(event.target.value)} rows={2} maxLength={5000} /></Field>
       <Field label="Acta" required helper="Mínimo 20 caracteres." error={fieldErrors.minutes?.[0]}><Textarea value={minutes} onChange={(event) => setMinutes(event.target.value)} rows={5} maxLength={20000} /></Field>
-      <EvidenceField label="Evidencia del acta" helper="Sube el acta firmada, o pega su enlace." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
+      <EvidenceField label="Evidencia del acta" helper="Sube el acta firmada (PDF o imagen)." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
 
       <div className="rounded-lg border border-[var(--color-border)] p-3">
         <div className="flex items-center justify-between">
@@ -723,7 +723,7 @@ function DesignateCoordinatorDialog({ open, onOpenChange, worksiteId, workers, o
         </Select>
       </Field>
       <Field label="Designado el" required error={fieldErrors.designatedOn?.[0]}><DatePicker value={designatedOn} onChange={setDesignatedOn} ariaLabel="Designado el" error={Boolean(fieldErrors.designatedOn)} /></Field>
-      <EvidenceField label="Evidencia de la designación" helper="Sube el acta de designación, o pega su enlace." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
+      <EvidenceField label="Evidencia de la designación" helper="Sube el acta de designación (PDF o imagen)." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
     </div>
     <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !workerId || !designatedOn || !evidenceUrl.trim()}>{pending ? "Designando..." : "Designar"}</Button></DialogFooter>
   </DialogContent></Dialog>

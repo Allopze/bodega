@@ -149,6 +149,7 @@ export async function onExposureMeasurementRecorded(input: {
     executedQuantity: 1,
     evidenceRef,
     autoApproveByUserId: input.recordedByUserId,
+    actorUserId: input.recordedByUserId,
     metadata: {
       groupCode: input.groupCode,
       agentCode: input.agentCode,

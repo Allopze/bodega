@@ -1126,6 +1126,11 @@ export const pdtpFulfillmentEvents = pgTable("pdtp_fulfillment_events", {
   /** Usuario que originó una aprobación automática cuando el evento se
    * reconcilia después de que el programa queda activo. */
   autoApproveByUserId: text("auto_approve_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  /** PRV-02 (auditoría 2026-09-28): quién registró el hecho en su módulo. Se
+   * reenvía al reconciliar para que la ejecución lo lleve en
+   * `executed_by_user_id` y esa persona no pueda aprobar su propio
+   * cumplimiento. */
+  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
   /**
    * Números de actividad (`pdtp_activities.n`, no el id) que este evento
    * intenta acreditar — el mismo vocabulario que `AccreditationInput`. Un solo

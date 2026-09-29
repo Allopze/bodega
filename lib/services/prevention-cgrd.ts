@@ -35,6 +35,7 @@
 import { z } from "zod"
 import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
+import { claimPreventionEvidenceUpload } from "@/lib/services/prevention-evidence-upload"
 import {
   preventionCapaActions,
   preventionGrdAgreements,
@@ -151,6 +152,7 @@ export async function designateGrdCoordinator(input: unknown, access: CgrdAccess
     if (!worker || !worker.isActive) throw new Error("La persona no existe o está inactiva.")
     if (worker.worksiteId !== data.worksiteId) throw new Error("El coordinador debe pertenecer al centro de trabajo que coordina.")
 
+    await claimPreventionEvidenceUpload(tx, { path: data.evidenceUrl, domain: "cgrd", worksiteId: data.worksiteId, userId: access.userId })
     const [created] = await tx.insert(preventionGrdCoordinators).values({
       id: `grdco-${nanoid()}`,
       worksiteId: data.worksiteId,
@@ -172,6 +174,7 @@ export async function designateGrdCoordinator(input: unknown, access: CgrdAccess
     // 25 personas el acto exigible es designar al coordinador, no constituir
     // un comité que la norma no pide.
     await onGrdStructureEstablished({
+      actorUserId: access.userId,
       kind: "coordinator", id: created.id, worksiteId: created.worksiteId,
       establishedOn: created.designatedOn, evidenceUrl: created.evidenceUrl,
     })
@@ -247,6 +250,7 @@ export async function constituteGrdCommittee(input: unknown, access: CgrdAccess)
     const [coordinator] = await tx.select().from(preventionGrdCoordinators)
       .where(and(eq(preventionGrdCoordinators.worksiteId, data.worksiteId), eq(preventionGrdCoordinators.status, "active"))).limit(1)
 
+    await claimPreventionEvidenceUpload(tx, { path: data.evidenceUrl, domain: "cgrd", worksiteId: data.worksiteId, userId: access.userId })
     const [created] = await tx.insert(preventionGrdCommittees).values({
       id: `grdc-${nanoid()}`,
       worksiteId: data.worksiteId,
@@ -286,6 +290,7 @@ export async function constituteGrdCommittee(input: unknown, access: CgrdAccess)
     // N°79. Fuera de la transacción y sin propagar el error: el comité ya
     // existe y la acreditación puede reintentarse (mismo patrón que CPHS).
     await onGrdStructureEstablished({
+      actorUserId: access.userId,
       kind: "committee", id: created.id, worksiteId: created.worksiteId,
       establishedOn: created.constitutedOn, evidenceUrl: created.evidenceUrl,
     })
@@ -544,6 +549,7 @@ export async function publishGrdMatrix(input: unknown, access: CgrdAccess) {
       }
     }
 
+    await claimPreventionEvidenceUpload(tx, { path: data.evidenceUrl, domain: "cgrd", worksiteId: matrix.worksiteId, userId: access.userId })
     const [updated] = await tx.update(preventionGrdMatrices).set({
       status: "published",
       version: matrix.version + 1,
@@ -567,6 +573,7 @@ export async function publishGrdMatrix(input: unknown, access: CgrdAccess) {
 
     const threats = await tx.select({ id: preventionGrdThreats.id }).from(preventionGrdThreats).where(eq(preventionGrdThreats.matrixId, matrix.id))
     accreditation = {
+      actorUserId: access.userId,
       matrixId: matrix.id, worksiteId: matrix.worksiteId, matrixVersion: matrix.matrixVersion,
       publishedAt: updated.publishedAt ?? now, threatCount: threats.length, evidenceUrl: updated.evidenceUrl ?? data.evidenceUrl,
     }
@@ -617,6 +624,7 @@ export async function recordGrdMeeting(input: unknown, access: CgrdAccess) {
     requireGrdAccess(access, "prevention:cgrd:meeting:manage", committee.worksiteId)
     if (committee.status !== "active") throw new Error("Un comité disuelto o vencido no puede registrar sesiones.")
 
+    await claimPreventionEvidenceUpload(tx, { path: data.evidenceUrl, domain: "cgrd", worksiteId: committee.worksiteId, userId: access.userId })
     const [created] = await tx.insert(preventionGrdMeetings).values({
       id: `grdmt-${nanoid()}`,
       code: `CGRD-${codeYear()}-${nanoid(8).toUpperCase()}`,

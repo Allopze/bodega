@@ -123,6 +123,7 @@ async function upsertPendingEvent(input: {
   periodOverride: { year: number; month: number; week: number } | null
   plannedYear?: number | null
   autoApproveByUserId?: string | null
+  actorUserId?: string | null
 }, client: QueryClient = db) {
   const idempotencyKey = fulfillmentIdempotencyKey(input.sourceType, input.sourceId, input.eventType)
 
@@ -154,6 +155,7 @@ async function upsertPendingEvent(input: {
         autoApproveByUserId: input.autoApproveByUserId === undefined
           ? existing.autoApproveByUserId
           : input.autoApproveByUserId,
+        actorUserId: input.actorUserId === undefined ? existing.actorUserId : input.actorUserId,
         updatedAt: now,
       })
       .where(eq(pdtpFulfillmentEvents.id, existing.id))
@@ -179,6 +181,7 @@ async function upsertPendingEvent(input: {
     activityNumbers: input.activityNumbers ?? [],
     plannedYear: input.plannedYear ?? null,
     autoApproveByUserId: input.autoApproveByUserId ?? null,
+    actorUserId: input.actorUserId ?? null,
     resultJson: {},
     attempts: 1,
     createdAt: now,
@@ -404,6 +407,7 @@ export async function recordPendingPdtpFulfillmentEvent(
     periodOverride: input.plannedPeriod ?? null,
     plannedYear: input.plannedYear,
     autoApproveByUserId: input.autoApproveByUserId,
+    actorUserId: input.actorUserId,
   }, client)
 }
 
@@ -480,6 +484,7 @@ export async function recordRejectedPdtpFulfillmentEvent(
     periodOverride: input.plannedPeriod ?? null,
     plannedYear: input.plannedYear,
     autoApproveByUserId: input.autoApproveByUserId,
+    actorUserId: input.actorUserId,
   }, client)
   await client.update(pdtpFulfillmentEvents).set({
     status: "rejected",
@@ -539,6 +544,7 @@ export async function recordPdtpFulfillmentEvent(input: AccreditationInput & {
       periodOverride: input.plannedPeriod ?? null,
       plannedYear: input.plannedYear,
       autoApproveByUserId: input.autoApproveByUserId,
+      actorUserId: input.actorUserId,
     })
   } catch (err) {
     // No se pudo ni dejar constancia del intento. Mismo criterio que antes:
@@ -833,6 +839,7 @@ export async function reconcilePdtpFulfillmentEvents(input: {
         plannedPeriod: event.periodOverrideJson ?? undefined,
         plannedYear: event.plannedYear ?? undefined,
         autoApproveByUserId: event.autoApproveByUserId ?? undefined,
+        actorUserId: event.actorUserId ?? undefined,
       })
       if (!result) {
         errored++

@@ -485,6 +485,7 @@ export async function registerWorkerStockDelivery(
   // la faena de la persona equipada.
   if (deliveredEpp) {
     await onEppDeliveryCompleted({
+      actorUserId: input.deliveredBy,
       deliveryId,
       worksiteId: input.sourceWorksiteId,
       deliveredAt,

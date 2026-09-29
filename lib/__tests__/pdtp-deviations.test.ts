@@ -15,7 +15,7 @@ import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { eq } from "drizzle-orm"
-import { afterAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { seedPdtpEvidenceUpload } from "@/lib/testing/pdtp-evidence-upload-fixture"
 import * as schema from "@/db/schema"
@@ -141,6 +141,10 @@ describe("recordPdtpDeviation: efecto de cada tipo a través de la costura únic
   })
 
   it("reprogrammed mueve P de mar S2 a abr S1 y una ejecución aprobada en abr S1 acredita", async () => {
+    // PRV-03: registrar exige que la semana ya haya ocurrido; el reloj se
+    // fija al cierre del año del programa (legacy, sin corte de activación).
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2061-12-31T15:00:00.000Z") })
+    try {
     const { recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
     const { markPdtpExecution, approvePdtpExecution } = await import("@/lib/services/prevention-pdtp")
     const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
@@ -163,6 +167,9 @@ describe("recordPdtpDeviation: efecto de cada tipo a través de la costura únic
     expect(indicators!.monthly[3]!.planned).toBe(3) // abril hereda el planificado movido
     expect(indicators!.monthly[3]!.executed).toBe(3)
     expect(indicators!.monthly[3]!.percent).toBe(1) // fracción 0-1, no 0-100
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("not_performed mantiene P, E=0 y cuenta en zeroActivities", async () => {

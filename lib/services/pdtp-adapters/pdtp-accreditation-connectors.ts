@@ -93,6 +93,8 @@ export async function onInspectionCompleted(input: {
   completedByUserId: string
   activityNumbers?: number[]
   catalogActivityIds?: string[]
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }, client?: Tx): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "inspections",
@@ -116,6 +118,7 @@ export async function onInspectionCompleted(input: {
   const executedQuantity = 1
 
   const accreditation: AccreditationInput = {
+    actorUserId: input.actorUserId ?? input.completedByUserId,
     sourceType: "inspeccion",
     sourceId: input.runId,
     worksiteId: input.worksiteId,
@@ -295,6 +298,8 @@ export async function onEppDeliveryCompleted(input: {
   activityNumbers?: number[]
   catalogActivityIds?: string[]
   evidenceRef?: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "epp",
@@ -311,6 +316,7 @@ export async function onEppDeliveryCompleted(input: {
   if (catalogActivityIds.length === 0) return
 
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "epp",
     sourceId: input.deliveryId,
     worksiteId: input.worksiteId,
@@ -336,6 +342,8 @@ export async function onCphsCommitteeConstituted(input: {
   committeeId: string
   worksiteId: string
   constitutedOn: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "cphs",
@@ -347,6 +355,7 @@ export async function onCphsCommitteeConstituted(input: {
     payload: { committeeId: input.committeeId },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "cphs",
     sourceId: input.committeeId,
     worksiteId: input.worksiteId,
@@ -370,6 +379,8 @@ export async function onManagementReviewClosed(input: {
   reviewId: string
   worksiteId: string
   heldAt: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "cphs",
@@ -381,6 +392,7 @@ export async function onManagementReviewClosed(input: {
     payload: { reviewId: input.reviewId },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "cphs",
     sourceId: input.reviewId,
     worksiteId: input.worksiteId,
@@ -427,6 +439,8 @@ export async function onEmergencyDrillCompleted(input: {
    * recibiera una ruta sintética, la ejecución queda `submitted` igual.
    */
   completedByUserId: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "emergencies",
@@ -440,6 +454,7 @@ export async function onEmergencyDrillCompleted(input: {
   if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   await safeAccredit({
+    actorUserId: input.actorUserId ?? input.completedByUserId,
     sourceType: "emergencia",
     sourceId: input.drillId,
     worksiteId: input.worksiteId,
@@ -481,6 +496,8 @@ export async function onEmergencyDrillCompleted(input: {
 export async function onPdtpProgramLegallyApproved(input: {
   programId: string
   approvedAt: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   const [[program], members] = await Promise.all([
     db.select({ appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites })
@@ -503,6 +520,7 @@ export async function onPdtpProgramLegallyApproved(input: {
 
   for (const worksiteId of worksiteIds) {
     await safeAccredit({
+      actorUserId: input.actorUserId ?? null,
       sourceType: "aprobacion_programa",
       sourceId: input.programId,
       worksiteId,
@@ -535,6 +553,8 @@ export async function onRiskMatrixPublished(input: {
   matrixVersion: number
   publishedAt: string
   entryCount: number
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "miper",
@@ -546,6 +566,7 @@ export async function onRiskMatrixPublished(input: {
     payload: { matrixId: input.matrixId, matrixVersion: input.matrixVersion, entryCount: input.entryCount },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "miper",
     sourceId: `miper:${input.matrixId}`,
     worksiteId: input.worksiteId,
@@ -573,6 +594,8 @@ export async function onDocumentVersionPublished(input: {
   publishedAt: string
   activityNumbers?: number[]
   catalogActivityIds?: string[]
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "documentation",
@@ -586,6 +609,7 @@ export async function onDocumentVersionPublished(input: {
   if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "documento",
     sourceId: `documento:${input.versionId}`,
     worksiteId: input.worksiteId,
@@ -612,6 +636,8 @@ export async function onDocumentAcknowledged(input: {
   acknowledgedAt: string
   activityNumbers?: number[]
   catalogActivityIds?: string[]
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "documentation",
@@ -625,6 +651,7 @@ export async function onDocumentAcknowledged(input: {
   if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "documento",
     sourceId: `acuse:${input.versionId}:${input.targetId}`,
     worksiteId: input.worksiteId,
@@ -657,6 +684,8 @@ export async function onEmergencyPlanApproved(input: {
   planCode: string
   approvedAt: string
   scenarioCount: number
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "emergencies",
@@ -668,6 +697,7 @@ export async function onEmergencyPlanApproved(input: {
     payload: { planId: input.planId, planCode: input.planCode, scenarioCount: input.scenarioCount },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "emergencia",
     sourceId: `plan:${input.planId}`,
     worksiteId: input.worksiteId,
@@ -702,6 +732,8 @@ export async function onSafetyIndicatorPeriodClosed(input: {
   year: number
   month: number
   closedAt: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "indicators",
@@ -713,6 +745,7 @@ export async function onSafetyIndicatorPeriodClosed(input: {
     payload: { snapshotId: input.snapshotId, year: input.year, month: input.month },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "indicadores",
     sourceId: `indicadores:${input.snapshotId}`,
     worksiteId: input.worksiteId,
@@ -774,6 +807,8 @@ export async function onGrdStructureEstablished(input: {
   worksiteId: string
   establishedOn: string
   evidenceUrl: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "cgrd",
@@ -785,6 +820,7 @@ export async function onGrdStructureEstablished(input: {
     payload: { kind: input.kind, id: input.id },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "cgrd",
     sourceId: `cgrd-${input.kind}:${input.id}`,
     worksiteId: input.worksiteId,
@@ -804,6 +840,8 @@ export async function onGrdMatrixPublished(input: {
   publishedAt: string
   threatCount: number
   evidenceUrl: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "cgrd",
@@ -815,6 +853,7 @@ export async function onGrdMatrixPublished(input: {
     payload: { matrixId: input.matrixId, matrixVersion: input.matrixVersion, threatCount: input.threatCount },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "cgrd",
     sourceId: `cgrd-matrix:${input.matrixId}`,
     worksiteId: input.worksiteId,
@@ -857,6 +896,8 @@ export async function onGrdMeetingClosed(input: {
    * igualmente `accreditPdtpFromEvent`, no este conector.
    */
   recordedByUserId: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "cgrd",
@@ -868,6 +909,7 @@ export async function onGrdMeetingClosed(input: {
     payload: { meetingId: input.meetingId },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? input.recordedByUserId,
     sourceType: "cgrd",
     sourceId: `cgrd-meeting:${input.meetingId}`,
     worksiteId: input.worksiteId,

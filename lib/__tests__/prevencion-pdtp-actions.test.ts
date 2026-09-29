@@ -304,7 +304,7 @@ describe("Execution approval actions", () => {
   it("approvePdtpExecutionAction aprueba ejecución válida", async () => {
     const res = await approvePdtpExecutionAction("exec-1")
     expect(res.ok).toBe(true)
-    expect(mockApprovePdtpExecution).toHaveBeenCalledWith("exec-1", "user-1", "all")
+    expect(mockApprovePdtpExecution).toHaveBeenCalledWith("exec-1", "user-1", "all", { reason: undefined })
   })
 
   it("rejectPdtpExecutionAction requiere motivo de al menos 10 caracteres", async () => {

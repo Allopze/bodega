@@ -414,6 +414,7 @@ function pdtpCompletionInput(args: {
     executedQuantity: 1,
     evidenceRef: args.evidenceRef ?? undefined,
     autoApproveByUserId: args.actorUserId,
+    actorUserId: args.actorUserId,
     plannedYear: args.year,
     sourceVersion: args.catalogVersion,
     returnHref: occurrenceReturnHref(args.worksiteId, args.year),

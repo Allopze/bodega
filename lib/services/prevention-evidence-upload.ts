@@ -16,8 +16,12 @@
  */
 
 import { createHash } from "node:crypto"
-import { generateStorageName } from "@/lib/services/prevention-documents/utils"
+import { eq } from "drizzle-orm"
+import { db, type Tx } from "@/db"
+import { preventionEvidenceUploads } from "@/db/schema"
+import { nanoid } from "@/lib/id"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
+import { QUOTATION_EXTENSION_BY_MIME } from "@/lib/storage/quotation-content-type"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
 import {
   createCampaignEvidencePath,
@@ -54,13 +58,19 @@ export class PreventionEvidenceError extends Error {
  * Guarda el archivo y devuelve la ruta relativa con la que se referencia desde
  * la base, más su checksum. El checksum se calcula acá, sobre el mismo buffer
  * que se escribe: es el único punto donde el contenido está en memoria.
+ *
+ * PRV-01 (auditoría 2026-09-28): además deja la fila de dueño en
+ * `prevention_evidence_uploads`. Sin ella, la acreditación automática no puede
+ * distinguir un archivo subido de una ruta inventada. M-21: la extensión sale
+ * del tipo detectado por contenido, nunca del nombre que manda el cliente.
  */
 export async function storePreventionEvidence(input: {
   domain: PreventionEvidenceDomain
   fileName: string
   fileSize: number
   buffer: Uint8Array
-}): Promise<{ path: string; checksumSha256: string }> {
+  uploadedByUserId: string | null
+}, client: typeof db | Tx = db): Promise<{ path: string; checksumSha256: string }> {
   if (input.fileSize > PREVENTION_EVIDENCE_MAX_FILE_SIZE) {
     throw new PreventionEvidenceError(
       `El archivo supera el máximo permitido de ${Math.round(PREVENTION_EVIDENCE_MAX_FILE_SIZE / 1024 / 1024)} MB.`,
@@ -71,20 +81,65 @@ export async function storePreventionEvidence(input: {
   if (validated.error) throw new PreventionEvidenceError(validated.error)
 
   const { dir: resolveDir, toPath } = DOMAINS[input.domain]
-  const storageName = generateStorageName(input.fileName)
+  const storageName = `${nanoid(20)}${QUOTATION_EXTENSION_BY_MIME[validated.mimeType] ?? ""}`
   const dir = resolveDir()
   await mkdirp(dir)
   await writeBuffer(resolveStorageFile(dir, storageName), Buffer.from(input.buffer))
 
-  return {
-    path: toPath(storageName),
-    checksumSha256: createHash("sha256").update(input.buffer).digest("hex"),
+  const path = toPath(storageName)
+  const checksumSha256 = createHash("sha256").update(input.buffer).digest("hex")
+  await client.insert(preventionEvidenceUploads).values({
+    path,
+    domain: input.domain,
+    uploadedByUserId: input.uploadedByUserId,
+    worksiteId: null,
+    sha256: checksumSha256,
+    sizeBytes: input.fileSize,
+    mimeType: validated.mimeType,
+    createdAt: new Date().toISOString(),
+  })
+  return { path, checksumSha256 }
+}
+
+/**
+ * Liga un archivo subido a la faena del acto que lo usa como evidencia. Es la
+ * contraparte de `assertPdtpEvidenceLinkable` para los dominios de Prevención:
+ *
+ * - el archivo tiene que haberse subido por la plataforma (hay fila);
+ * - la primera vez lo reclama quien lo subió, para su faena;
+ * - una vez ligado a una faena, sólo se reutiliza dentro de esa misma faena.
+ *
+ * Se llama dentro de la transacción del acto, así que un rechazo no deja nada
+ * a medio escribir.
+ */
+export async function claimPreventionEvidenceUpload(
+  client: typeof db | Tx,
+  input: { path: string; domain: PreventionEvidenceDomain; worksiteId: string; userId: string },
+): Promise<void> {
+  const [row] = await client.select().from(preventionEvidenceUploads)
+    .where(eq(preventionEvidenceUploads.path, input.path))
+    .for("update")
+    .limit(1)
+  if (!row || row.domain !== input.domain) {
+    throw new PreventionEvidenceError("La evidencia debe ser un archivo subido a la plataforma desde este formulario.")
   }
+  if (row.worksiteId) {
+    if (row.worksiteId !== input.worksiteId) {
+      throw new PreventionEvidenceError("Ese archivo ya respalda un registro de otra faena y no se puede reutilizar aquí.")
+    }
+    return
+  }
+  if (row.uploadedByUserId !== input.userId) {
+    throw new PreventionEvidenceError("Sólo quien subió el archivo puede vincularlo por primera vez.")
+  }
+  await client.update(preventionEvidenceUploads)
+    .set({ worksiteId: input.worksiteId, claimedAt: new Date().toISOString() })
+    .where(eq(preventionEvidenceUploads.path, input.path))
 }
 
 /**
  * Tipo de contenido por extensión, para servir el archivo de vuelta. El
- * nombre almacenado siempre lo generó `generateStorageName`, así que la
+ * nombre almacenado siempre lo generó `storePreventionEvidence` (nanoid + extensión del MIME real), así que la
  * extensión ya viene acotada; `octet-stream` es el piso seguro para lo que no
  * se reconozca. Mismo criterio que la ruta de evidencia del PDTP.
  */

@@ -260,6 +260,7 @@ export async function dispatchDocumentVersionCurrentEffects(effects: DocumentVer
   try {
     if (effects.publishAccreditation && effects.worksiteId) {
       await onDocumentVersionPublished({
+        actorUserId: effects.actorUserId,
         documentId: effects.documentId,
         versionId: effects.versionId,
         worksiteId: effects.worksiteId,

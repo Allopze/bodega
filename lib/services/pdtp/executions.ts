@@ -15,6 +15,7 @@ import { assertPdtpProgramAcceptsPeriod, assertPdtpProgramAcceptsReview } from "
 import { assertPdtpPeriodOpen } from "./period-guard"
 import { syncPdtpScheduledInstanceFromExecution } from "./scheduled-execution"
 import { todayInChile } from "@/lib/utils"
+import { assertPdtpCellNotInFuture } from "./period"
 import { PDTP_REASON_MIN_LENGTH } from "@/lib/prevention/pdtp"
 import { hashPdtpEvidenceFiles } from "./evidence-files"
 import { assertPdtpEvidenceLinkable } from "./evidence-references"
@@ -103,6 +104,10 @@ export async function markPdtpExecution(
   if (exclusion) {
     throw new Error("La actividad está excluida para esta faena y no admite ejecuciones.")
   }
+  // PRV-03 (auditoría 2026-09-28): el "no aplica" ya rechazaba semanas
+  // futuras; la ejecución no, y se demostró que noviembre podía quedar
+  // "cumplido" en septiembre.
+  assertPdtpCellNotInFuture(data, "No se puede registrar como realizada una semana que aún no ocurre.")
 
   // PREV-I03 (auditoría 2026-09-26): la asignación nominal era sólo un filtro
   // de /pendientes — cualquiera con `execute` en la faena registraba la
@@ -467,8 +472,19 @@ function assertExecutionHasEvidenceForApproval(
     evidenceStatus: string
   },
   manualEvidencePolicy: string | undefined,
+  approvalReason: string | undefined,
 ) {
-  if (execution.origin === "integration" || Number(execution.executedQuantity) <= 0) return
+  if (Number(execution.executedQuantity) <= 0) return
+  // PRV-02 (auditoría 2026-09-28): una integración ya no se aprueba "porque
+  // viene de otro módulo". Si su evidencia quedó verificada (`provided`, ver
+  // `verifyIntegrationEvidence`) basta el registro de origen; si no, quien
+  // aprueba tiene que dejar dicho qué revisó.
+  if (execution.origin === "integration") {
+    if (pdtpExecutionNeedsApprovalReason(execution) && (approvalReason?.trim().length ?? 0) < PDTP_REASON_MIN_LENGTH) {
+      throw new Error(`Esta ejecución llegó desde su módulo de origen sin evidencia verificable. Para aprobarla indica qué revisaste (mínimo ${PDTP_REASON_MIN_LENGTH} caracteres).`)
+    }
+    return
+  }
   const photos = Array.isArray(execution.evidencePhotos) ? execution.evidencePhotos as string[] : []
   const hasFile = [execution.evidenceUrl, ...photos].some((url) => typeof url === "string" && pdtpEvidenceFileExists(url))
   if (hasFile) return
@@ -529,7 +545,12 @@ async function loadExecutionActivityContext(tx: Tx, activityId: string) {
   return context
 }
 
-export async function approvePdtpExecution(executionId: string, userId: string, scope: WorksiteScope) {
+export async function approvePdtpExecution(
+  executionId: string,
+  userId: string,
+  scope: WorksiteScope,
+  options: { reason?: string } = {},
+) {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM ${pdtpExecutions} WHERE id = ${executionId} FOR UPDATE`)
     const [execution] = await tx.select().from(pdtpExecutions).where(eq(pdtpExecutions.id, executionId)).limit(1)
@@ -553,7 +574,9 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
     assertWorksiteAccess(execution.worksiteId, scope)
     await assertPdtpPeriodOpenForExecution(tx, execution)
     const context = await loadExecutionActivityContext(tx, execution.activityId)
-    assertExecutionHasEvidenceForApproval(execution, context?.manualEvidencePolicy)
+    assertExecutionHasEvidenceForApproval(execution, context?.manualEvidencePolicy, options.reason)
+    // PRV-03: no se aprueba el cumplimiento de una semana que todavía no ocurre.
+    assertPdtpCellNotInFuture(execution, "No se puede aprobar una ejecución de una semana que aún no ocurre.")
 
     const now = new Date().toISOString()
     const [updated] = await tx.update(pdtpExecutions)
@@ -569,6 +592,7 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
           approvalMode: "manual",
           manuallyApprovedByUserId: userId,
           manuallyApprovedAt: now,
+          ...(options.reason?.trim() ? { approvalReason: options.reason.trim() } : {}),
         },
         updatedAt: now,
       })
@@ -620,7 +644,7 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
         context.programId, context.programVersion, userId, `execution:${updated.id}`,
         { status: execution.status },
         { status: "approved" },
-        `Ejecución de la actividad N°${context.n} (mes ${execution.month}, semana ${execution.week}) aprobada.`,
+        `Ejecución de la actividad N°${context.n} (mes ${execution.month}, semana ${execution.week}) aprobada.${options.reason?.trim() ? ` Motivo: ${options.reason.trim()}` : ""}`,
         tx,
       )
     }
@@ -731,6 +755,12 @@ export type PendingPdtpExecution = {
   evidencePhotos: string[]
   executedByUserId: string | null
   executedAt: string | null
+  /** PRV-02: llegó de otro módulo sin evidencia verificada; aprobarla exige motivo. */
+  needsApprovalReason: boolean
+}
+
+export function pdtpExecutionNeedsApprovalReason(row: { origin: string; evidenceStatus: string }): boolean {
+  return row.origin === "integration" && row.evidenceStatus !== "provided"
 }
 
 export async function listPendingPdtpExecutions(
@@ -760,6 +790,8 @@ export async function listPendingPdtpExecutions(
       evidencePhotos: pdtpExecutions.evidencePhotos,
       executedByUserId: pdtpExecutions.executedByUserId,
       executedAt: pdtpExecutions.executedAt,
+      origin: pdtpExecutions.origin,
+      evidenceStatus: pdtpExecutions.evidenceStatus,
     })
     .from(pdtpExecutions)
     .innerJoin(pdtpActivities, eq(pdtpExecutions.activityId, pdtpActivities.id))
@@ -772,9 +804,10 @@ export async function listPendingPdtpExecutions(
     ))
     .orderBy(asc(worksites.name), asc(pdtpExecutions.month), asc(pdtpExecutions.week))
 
-  return rows.map((r) => ({
+  return rows.map(({ origin, evidenceStatus, ...r }) => ({
     ...r,
     evidencePhotos: Array.isArray(r.evidencePhotos) ? r.evidencePhotos : [],
+    needsApprovalReason: pdtpExecutionNeedsApprovalReason({ origin, evidenceStatus }),
   }))
 }
 
@@ -782,14 +815,16 @@ export async function getPendingPdtpApprovalsForView(params: {
   worksiteId: string
   year: number
   activityIds: string[]
-}): Promise<Array<{ id: string; activityId: string; month: number; week: number }>> {
+}): Promise<Array<{ id: string; activityId: string; month: number; week: number; needsApprovalReason: boolean }>> {
   if (params.activityIds.length === 0) return []
-  return db
+  const rows = await db
     .select({
       id: pdtpExecutions.id,
       activityId: pdtpExecutions.activityId,
       month: pdtpExecutions.month,
       week: pdtpExecutions.week,
+      origin: pdtpExecutions.origin,
+      evidenceStatus: pdtpExecutions.evidenceStatus,
     })
     .from(pdtpExecutions)
     .where(and(
@@ -798,6 +833,10 @@ export async function getPendingPdtpApprovalsForView(params: {
       eq(pdtpExecutions.year, params.year),
       inArray(pdtpExecutions.activityId, params.activityIds),
     ))
+  return rows.map(({ origin, evidenceStatus, ...row }) => ({
+    ...row,
+    needsApprovalReason: pdtpExecutionNeedsApprovalReason({ origin, evidenceStatus }),
+  }))
 }
 
 export async function getPdtpChangeLog(programId: string) {

@@ -431,6 +431,7 @@ export async function approveEmergencyPlan(input: unknown, access: EmergencyAcce
     // escenarios, no el plan: el programa la planifica por amenaza (D13), y la
     // aprobación ya exigió que haya al menos uno. Se dispara después del commit.
     accreditation = {
+      actorUserId: access.userId,
       planId: plan.id,
       worksiteId: plan.worksiteId,
       planCode: plan.code,

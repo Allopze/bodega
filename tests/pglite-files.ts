@@ -147,6 +147,9 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-delete-restrict.test.ts",
   // Auditoría 2026-09-26: evidencia obligatoria, envíos ajenos y asignación nominal.
   "lib/__tests__/pdtp-execution-integrity.test.ts",
+  // Auditoría de production readiness 2026-09-28: prueba de realidad de 10
+  // actividades más PRV-01/02/03 (evidencia verificada, segregación, futuro).
+  "lib/__tests__/pdtp-production-readiness.test.ts",
   // PREV-I03 (resto): registra lo propio —asignado o responsable por cargo— salvo Prevención.
   "lib/__tests__/pdtp-registration-authority.test.ts",
   // PREV-M09: obligaciones paginadas y filtradas en la base.

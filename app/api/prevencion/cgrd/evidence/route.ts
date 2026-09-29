@@ -54,6 +54,7 @@ export async function POST(request: Request) {
       fileName: file.name,
       fileSize: file.size,
       buffer: new Uint8Array(await file.arrayBuffer()),
+      uploadedByUserId: guard.session.user.id,
     })
     return NextResponse.json(result, { status: 201 })
   } catch (error) {

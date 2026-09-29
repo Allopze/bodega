@@ -34,6 +34,7 @@ import { addPdtpChangeLogEntry } from "./helpers"
 import { pdtpExecutionHistorySnapshot, recordPdtpExecutionHistory } from "./execution-history"
 import { PDTP_DEVIATION_LABELS, type PdtpDeviationKind } from "./deviations"
 import { syncPdtpScheduledInstanceFromExecution } from "./scheduled-execution"
+import { isVerifiableIntegrationSource, storageEvidenceExists, verifyIntegrationEvidence } from "./integration-evidence"
 
 type AccreditationClient = DB | Tx
 
@@ -171,6 +172,13 @@ export type AccreditationInput = {
    * campo.
    */
   autoApproveByUserId?: string
+  /**
+   * PRV-02 (auditoría 2026-09-28): quién registró el hecho en su módulo. Se
+   * guarda como `executedByUserId` de la ejecución: sin él, la segregación de
+   * `approvePdtpExecution` no veía a nadie y quien originó el hecho podía
+   * aprobar su propio cumplimiento.
+   */
+  actorUserId?: string | null
 }
 
 // ── Helpers internos ──────────────────────────────────────────────────────────
@@ -587,7 +595,17 @@ async function accreditPdtpFromEventInTransaction(
   // como evidencia entregada; un rótulo descriptivo ("Inspección completada: …")
   // no lo es.
   const isStorageRef = input.evidenceRef?.startsWith("storage/") ?? false
-  const isRealEvidence = isStorageRef || /^https?:\/\//.test(input.evidenceRef ?? "")
+  // PRV-01 (auditoría 2026-09-28): la evidencia se verifica, no se deduce del
+  // texto. Para las fuentes que se auto-aprueban con evidencia real, el archivo
+  // tiene que existir, tener fila de dueño de la misma faena y conservar su
+  // sha256 (`verifyIntegrationEvidence`). Para las demás, al menos tiene que
+  // existir. Una URL externa ya no cuenta como evidencia entregada.
+  const evidenceCheck = isVerifiableIntegrationSource(input.sourceType)
+    ? await verifyIntegrationEvidence({ ref: input.evidenceRef, sourceType: input.sourceType, worksiteId: input.worksiteId }, client)
+    : null
+  const isRealEvidence = evidenceCheck
+    ? evidenceCheck.verified
+    : await storageEvidenceExists(input.evidenceRef)
 
   /*
    * M0.4 (2026-09-22): las fuentes "condicionadas" (alcotest, emergencia,
@@ -841,6 +859,8 @@ async function accreditPdtpFromEventInTransaction(
       occurredAt: input.occurredAt,
       ...(input.plannedYear !== undefined ? { plannedYear: input.plannedYear } : {}),
       ...(input.plannedPeriod ? { plannedPeriod: input.plannedPeriod } : {}),
+      ...(evidenceCheck?.verified ? { evidenceSha256: evidenceCheck.sha256 } : {}),
+      ...(evidenceCheck && !evidenceCheck.verified && input.evidenceRef ? { evidenceRejection: evidenceCheck.reason } : {}),
       ...(canAutoApprove ? {
         approvalMode: "automatic_source_event",
         automaticApprovedByUserId: input.autoApproveByUserId,
@@ -862,6 +882,7 @@ async function accreditPdtpFromEventInTransaction(
           evidenceUrl: isStorageRef ? input.evidenceRef : null,
           evidenceStatus: evidenceStatusFor(activity.evidenceRequirement),
           sourceMetadataJson: sourceMetadata,
+          ...(input.actorUserId ? { executedByUserId: input.actorUserId, executedAt: input.occurredAt } : {}),
           updatedAt: now,
         })
         .where(
@@ -897,6 +918,8 @@ async function accreditPdtpFromEventInTransaction(
           evidenceUrl: isStorageRef ? input.evidenceRef : null,
           evidencePhotos: [],
           origin: "integration",
+          executedByUserId: input.actorUserId ?? null,
+          executedAt: input.actorUserId ? input.occurredAt : null,
           sourceType: input.sourceType,
           sourceId: input.sourceId,
           idempotencyKey,

@@ -11,12 +11,15 @@ const mockResolveWorksiteScope = vi.hoisted(() => vi.fn())
 const mockAssertUpload = vi.hoisted(() => vi.fn())
 const mockMkdirp = vi.hoisted(() => vi.fn())
 const mockWriteBuffer = vi.hoisted(() => vi.fn())
+// PRV-01: la subida deja la fila de dueño en `prevention_evidence_uploads`.
+const mockInsertValues = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({ guardPermission: mockGuardPermission }))
 vi.mock("@/lib/auth/scope", () => ({ resolveWorksiteScope: mockResolveWorksiteScope }))
 vi.mock("@/lib/services/prevention-capa", () => ({ assertCapaEvidenceUploadAllowed: mockAssertUpload }))
 vi.mock("@/lib/storage/helpers", () => ({ mkdirp: mockMkdirp, writeBuffer: mockWriteBuffer }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: vi.fn() } }))
+vi.mock("@/db", () => ({ db: { insert: () => ({ values: mockInsertValues }) } }))
 
 const session = { user: { id: "user-1", permissions: ["prevention:capa:complete"] } }
 const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34])
@@ -36,6 +39,7 @@ describe("POST /api/prevencion/capa/evidence", () => {
     mockAssertUpload.mockResolvedValue(undefined)
     mockMkdirp.mockResolvedValue(undefined)
     mockWriteBuffer.mockResolvedValue(undefined)
+    mockInsertValues.mockResolvedValue(undefined)
   })
 
   it("exige prevention:capa:complete", async () => {

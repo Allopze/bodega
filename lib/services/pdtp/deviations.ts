@@ -50,7 +50,8 @@ import {
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
-import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation, type PdtpPeriod } from "./period"
+import { assertPdtpCellNotInFuture, isPdtpPeriodOnOrAfterActivation } from "./period"
+export { isPdtpCellInFuture } from "./period"
 import { deriveScheduleHorizon } from "./recurrence"
 import { assertPdtpPeriodOpen } from "./period-guard"
 import { assertPdtpProgramAcceptsPeriod, assertPdtpProgramAcceptsReview, isPdtpPeriodInVersionWindow } from "./version-window"
@@ -169,7 +170,7 @@ export async function recordPdtpDeviation(
   // que no ocurrió no hay nada que constatar, y era la vía para vaciar el
   // denominador del resto del año de una vez. Para mover trabajo a futuro
   // está `reprogrammed`.
-  if (data.kind !== "reprogrammed") assertPdtpCellNotInFuture(data, data.kind)
+  if (data.kind !== "reprogrammed") assertDeviationCellNotInFuture(data, data.kind)
 
   // `not_applicable` y `reprogrammed` transforman el planificado, así que son
   // los dos que no pueden convivir con una ejecución en la misma celda.
@@ -319,24 +320,8 @@ export async function recordPdtpDeviation(
   }
 }
 
-/**
- * ¿La celda es posterior a la semana en curso? Es el validador de celda que
- * comparten el "no realizado" y el "no aplica": sobre una semana que todavía
- * no ocurre no hay hecho que declarar.
- */
-export function isPdtpCellInFuture(
-  cell: { year: number; month: number; week: number },
-  current: PdtpPeriod = currentPdtpPeriod(),
-): boolean {
-  return cell.year > current.year
-    || (cell.year === current.year && cell.month > current.month)
-    || (cell.year === current.year && cell.month === current.month && cell.week > current.week)
-}
-
-function assertPdtpCellNotInFuture(cell: { year: number; month: number; week: number }, kind: PdtpDeviationKind): void {
-  if (isPdtpCellInFuture(cell)) {
-    throw new Error(`No se puede declarar '${PDTP_DEVIATION_LABELS[kind]}' para un período que aún no ocurre.`)
-  }
+function assertDeviationCellNotInFuture(cell: { year: number; month: number; week: number }, kind: PdtpDeviationKind): void {
+  assertPdtpCellNotInFuture(cell, `No se puede declarar '${PDTP_DEVIATION_LABELS[kind]}' para un período que aún no ocurre.`)
 }
 
 /**

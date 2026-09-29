@@ -90,13 +90,13 @@ export async function markPdtpExecutionFormAction(formData: FormData): Promise<A
   return markPdtpExecutionAction(formData)
 }
 
-export async function approvePdtpExecutionAction(executionId: string): Promise<ActionState> {
+export async function approvePdtpExecutionAction(executionId: string, reason?: string): Promise<ActionState> {
   const guard = await guardPermission("prevention:pdtp:approve")
   if (guard.error) return guard.error
   const session = guard.session
   try {
-    const parsed = pdtpExecutionApprovalSchema.parse({ executionId })
-    await approvePdtpExecution(parsed.executionId, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+    const parsed = pdtpExecutionApprovalSchema.parse({ executionId, reason })
+    await approvePdtpExecution(parsed.executionId, session.user.id, scopeToIds(resolveWorksiteScope(session)), { reason: parsed.reason })
     revalidateOperationalViews([REVALIDATE, "/prevencion/pdtp/aprobaciones"])
     return { ok: true }
   } catch (e) {

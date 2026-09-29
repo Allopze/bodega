@@ -220,7 +220,7 @@ export function CampanasClient({
             </Field>
             <EvidenceField
               label="Evidencia de difusión (foto, lista de asistencia, acta)"
-              helper="Sube el archivo, o pega el enlace si ya vive en Drive/SharePoint."
+              helper="Sube el archivo (PDF o imagen)."
               uploadUrl="/api/prevencion/campanas/evidence"
               value={evidenceUrl}
               onChange={setEvidenceUrl}

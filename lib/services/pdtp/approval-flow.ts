@@ -202,7 +202,7 @@ export async function decidePdtpApprovalStep(args: {
   // cumple con la firma de Legal y RRHH sobre este mismo programa. Se acredita
   // DESPUÉS del commit para no dejar ejecuciones huérfanas si la decisión se
   // revierte.
-  let programApproved: { programId: string; approvedAt: string } | null = null
+  let programApproved: { programId: string; approvedAt: string; actorUserId: string } | null = null
   try {
     const result = await db.transaction(async (tx) => {
       const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, args.programId)).limit(1)
@@ -279,7 +279,7 @@ export async function decidePdtpApprovalStep(args: {
       } else if (step.code === "legal") {
         programUpdates.approvedByLegalUserId = actorUserId
         programUpdates.approvedByLegalAt = now
-        programApproved = { programId: args.programId, approvedAt: now }
+        programApproved = { programId: args.programId, approvedAt: now, actorUserId }
       }
 
       const [updated] = await tx.update(pdtpPrograms).set(programUpdates).where(and(

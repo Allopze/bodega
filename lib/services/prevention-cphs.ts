@@ -82,6 +82,7 @@ export async function constituteCommittee(input: unknown, access: CphsAccess) {
   // Acredita la N°11 del PDTP en esta faena. Fuera de la transacción y sin
   // propagar el error: el comité ya existe y la acreditación puede reintentarse.
   await onCphsCommitteeConstituted({
+    actorUserId: access.userId,
     committeeId: created.id,
     worksiteId: data.worksiteId,
     constitutedOn: data.constitutedOn,
@@ -986,6 +987,7 @@ export async function closeManagementReview(input: unknown, access: CphsAccess) 
     // dispara DESPUÉS del commit.
     if (review.worksiteId) {
       accreditation = {
+        actorUserId: access.userId,
         reviewId: review.id,
         worksiteId: review.worksiteId,
         heldAt: review.heldAt,

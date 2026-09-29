@@ -1467,6 +1467,10 @@ describe("prevention PDTP service", () => {
   })
 
   it("caps overcompliance at the planned quantity per cell in the indicator (regla R3, respuesta 2.4)", async () => {
+    // PRV-03: registrar exige que la semana ya haya ocurrido; el reloj se
+    // fija en la semana 1 de enero del año del programa, la celda que registra.
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2029-01-02T15:00:00.000Z") })
+    try {
     const {
       createLegacyPdtpProgramForTests, addPdtpActivity, submitPdtpProgramForReview, approvePdtpProgramJdpr,
       signPdtpProgramLegal, activatePdtpProgram, markPdtpExecution, approvePdtpExecution,
@@ -1513,9 +1517,16 @@ describe("prevention PDTP service", () => {
     // El dato crudo permanece intacto en pdtpExecutions (el techo es solo del indicador).
     const [raw] = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.id, execution.id))
     expect(raw!.executedQuantity).toBe(3)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("coverage activities are all-or-nothing per month (R1/R2, respuesta 2.2)", async () => {
+    // PRV-03: registrar exige que la semana ya haya ocurrido; el reloj se
+    // fija en la semana 1 de enero del año del programa, la celda que registra.
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2031-01-02T15:00:00.000Z") })
+    try {
     const {
       createLegacyPdtpProgramForTests, addPdtpActivity, submitPdtpProgramForReview, approvePdtpProgramJdpr,
       signPdtpProgramLegal, activatePdtpProgram, markPdtpExecution, approvePdtpExecution,
@@ -1581,6 +1592,9 @@ describe("prevention PDTP service", () => {
     // Mes 1: padrón = 4 por actividad; denominador = 4 + 4 = 8;
     // ejecutado = 0 (incompleta) + 4 (completa) = 4.
     expect(result!.monthly[0]).toMatchObject({ planned: 8, executed: 4, percent: 0.5 })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("getPdtpComplianceIndicatorsForScope aggregates approved executions across authorized worksites instead of returning 0 without a faena (UX-01)", async () => {

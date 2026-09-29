@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest"
 import { PdtpSheetTable } from "./pdtp-sheet-table"
 import { PdtpExecutionForm } from "./pdtp-execution-form"
 import type { PdtpSheetView } from "@/lib/services/prevention-pdtp"
@@ -455,6 +455,9 @@ describe("PdtpSheetTable — PREV-C06 atrasadas", () => {
 
 describe("PdtpExecutionForm — vigencia", () => {
   it("no ofrece períodos anteriores y parte en la semana de aceptación", () => {
+    // Con el año ya terminado, todo mes desde la aceptación es registrable.
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-12-31T15:00:00.000Z") })
+    onTestFinished(() => { vi.useRealTimers() })
     render(<PdtpExecutionForm
       activityId="act-midyear"
       worksiteId="ws-1"
@@ -471,6 +474,22 @@ describe("PdtpExecutionForm — vigencia", () => {
     expect(screen.queryByRole("option", { name: "Jun" })).not.toBeInTheDocument()
     expect(screen.getByRole("option", { name: "Jul" })).toBeInTheDocument()
     expect(screen.getByRole("option", { name: "Dic" })).toBeInTheDocument()
+  })
+
+  // PRV-03 (auditoría 2026-09-28): una semana que todavía no ocurre no se ofrece.
+  it("no ofrece meses ni semanas posteriores a la semana en curso", () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-15T15:00:00.000Z") })
+    onTestFinished(() => { vi.useRealTimers() })
+    render(<PdtpExecutionForm activityId="act-1" worksiteId="ws-1" year={2026} defaultMonth={9} defaultWeek={3} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Registrar" }))
+    fireEvent.click(screen.getByRole("combobox", { name: "Mes" }))
+    expect(screen.getByRole("option", { name: "Sep" })).toBeInTheDocument()
+    expect(screen.queryByRole("option", { name: "Oct" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("option", { name: "Sep" }))
+    fireEvent.click(screen.getByRole("combobox", { name: "Semana" }))
+    expect(screen.getByRole("option", { name: "3" })).toBeInTheDocument()
+    expect(screen.queryByRole("option", { name: "4" })).not.toBeInTheDocument()
   })
 })
 

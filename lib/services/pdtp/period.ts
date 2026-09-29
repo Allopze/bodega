@@ -45,6 +45,25 @@ export function currentPdtpPeriod(now: Date = new Date()): PdtpPeriod {
 }
 
 /**
+ * ¿La celda es posterior a la semana en curso? Es el validador de celda que
+ * comparten el "no realizado", el "no aplica" y —desde PRV-03 (auditoría
+ * 2026-09-28)— el registro y la aprobación de ejecuciones: sobre una semana que
+ * todavía no ocurre no hay hecho que declarar.
+ */
+export function isPdtpCellInFuture(
+  cell: { year: number; month: number; week: number },
+  current: PdtpPeriod = currentPdtpPeriod(),
+): boolean {
+  return cell.year > current.year
+    || (cell.year === current.year && cell.month > current.month)
+    || (cell.year === current.year && cell.month === current.month && cell.week > current.week)
+}
+
+export function assertPdtpCellNotInFuture(cell: { year: number; month: number; week: number }, message: string): void {
+  if (isPdtpCellInFuture(cell)) throw new Error(message)
+}
+
+/**
  * El período contra el que se lee un programa de `year`: hoy si es el año en
  * curso; diciembre, semana 4 si ya terminó —el año que está en cierre se mide
  * completo, no contra el enero del calendario—; su primera semana si todavía

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog"
 import { PencilSimple } from "@phosphor-icons/react"
 import { markPdtpExecutionFormAction } from "./actions"
-import type { PdtpPeriod } from "@/lib/services/pdtp/period"
+import { currentPdtpPeriod, isPdtpCellInFuture, type PdtpPeriod } from "@/lib/services/pdtp/period"
 import { codeYear, MONTH_LABELS } from "@/lib/utils"
 
 type ExecState = { ok: boolean; message?: string; fieldErrors?: Record<string, string[]> } | null
@@ -60,15 +60,22 @@ export function PdtpExecutionForm({ activityId, activityN, activityName, worksit
   const [open, setOpen] = React.useState(false)
   const programYear = year ?? codeYear()
   const firstEffectiveMonth = effectiveFrom?.year === programYear ? effectiveFrom.month : 1
+  // PRV-03 (auditoría 2026-09-28): una semana que todavía no ocurre no se
+  // ofrece; el servidor la rechaza de todos modos.
+  const today = currentPdtpPeriod()
   const allowedMonths = Array.from(
     { length: MONTH_LABELS.length - firstEffectiveMonth + 1 },
     (_, index) => index + firstEffectiveMonth,
+  ).filter((month) => !isPdtpCellInFuture({ year: programYear, month, week: 1 }, today))
+  const initialMonth = Math.min(
+    allowedMonths.at(-1) ?? firstEffectiveMonth,
+    Math.max(firstEffectiveMonth, defaultMonth ?? firstEffectiveMonth),
   )
-  const initialMonth = Math.max(firstEffectiveMonth, defaultMonth ?? firstEffectiveMonth)
   const weeksForMonth = (month: number) => [1, 2, 3, 4].filter((week) => (
-    effectiveFrom?.year !== programYear
-    || month !== effectiveFrom.month
-    || week >= effectiveFrom.week
+    (effectiveFrom?.year !== programYear
+      || month !== effectiveFrom.month
+      || week >= effectiveFrom.week)
+    && !isPdtpCellInFuture({ year: programYear, month, week }, today)
   ))
   const initialWeeks = weeksForMonth(initialMonth)
   const initialWeekCandidate = defaultWeek ?? initialWeeks[0] ?? 1

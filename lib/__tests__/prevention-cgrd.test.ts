@@ -13,9 +13,13 @@ import type { DB } from "@/db"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { seedPreventionEvidenceUpload } from "@/lib/testing/prevention-evidence-upload-fixture"
 import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
 import type { WorksiteScope } from "@/lib/auth/scope"
+
+// PRV-01: evidencia real en un directorio temporal, nunca en el storage del repo.
+process.env.STORAGE_PATH = path.join((await import("node:os")).tmpdir(), `cgrd-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -65,7 +69,9 @@ const OUTSIDER = { userId: "user-cgrd-outsider", scope: scopeB, permissions: [
   "prevention:cgrd:view", "prevention:cgrd:committee:manage", "prevention:cgrd:matrix:edit", "prevention:cgrd:meeting:manage",
 ] }
 
-const EVIDENCE = "https://drive.chome.cl/cgrd-evidencia"
+// PRV-01 (auditoría 2026-09-28): la evidencia del CGRD es un archivo subido a
+// la plataforma y ligado a la faena; ya no una URL. Se siembra en beforeEach.
+const EVIDENCE = "storage/cgrd-evidence/acta-cgrd-test.pdf"
 
 async function seedPdtpActivity(n: 79 | 80 | 81) {
   const now = new Date().toISOString()
@@ -97,6 +103,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionGrdCoordinators)
   await inMemoryDb.delete(schema.preventionGrdCommittees)
   await inMemoryDb.delete(schema.workers)
+  await inMemoryDb.delete(schema.preventionEvidenceUploads)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
 
@@ -109,6 +116,10 @@ beforeEach(async () => {
     { id: WS_A, name: "Faena A", code: "FCA", isActive: true },
     { id: WS_B, name: "Faena B", code: "FCB", isActive: true },
   ])
+  await seedPreventionEvidenceUpload(inMemoryDb, { domain: "cgrd", uploadedByUserId: USER_MANAGER, name: "acta-cgrd-test.pdf" })
+  await inMemoryDb.update(schema.preventionEvidenceUploads)
+    .set({ worksiteId: WS_A, claimedAt: new Date().toISOString() })
+    .where(eq(schema.preventionEvidenceUploads.path, EVIDENCE))
   await inMemoryDb.insert(schema.workers).values([
     { id: WORKER_A, firstName: "Ana", lastName: "Pérez", worksiteId: WS_A, isActive: true },
     { id: WORKER_B, firstName: "Bruno", lastName: "Soto", worksiteId: WS_B, isActive: true },
@@ -130,7 +141,7 @@ describe("constituteGrdCommittee", () => {
 
     const executions = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.activityId, `${PROGRAM_ID}-a-79`))
     expect(executions).toHaveLength(1)
-    expect(executions[0]?.evidenceText).toBe(EVIDENCE)
+    expect(executions[0]?.evidenceUrl).toBe(EVIDENCE)
   })
 
   it("exige evidencia de la constitución", async () => {
@@ -208,7 +219,7 @@ describe("matriz GRD — borrador → publicada, N°80", () => {
 
     const executions = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.activityId, `${PROGRAM_ID}-a-80`))
     expect(executions).toHaveLength(1)
-    expect(executions[0]?.evidenceText).toBe(EVIDENCE)
+    expect(executions[0]?.evidenceUrl).toBe(EVIDENCE)
 
     const threatId = (await inMemoryDb.select().from(schema.preventionGrdThreats).where(eq(schema.preventionGrdThreats.matrixId, matrix.id)))[0]!.id
     await expect(removeGrdThreat({ threatId }, MANAGER)).rejects.toThrow(/versión en borrador/)
@@ -416,6 +427,20 @@ describe("actas de reunión — N°81", () => {
       committeeId: committee.id, heldOn: "2026-04-01T15:00:00.000Z", agenda: "Revisión de amenazas del período",
       minutes: "Acta de la sesión con el detalle suficiente de lo tratado", quorumReached: true, evidenceUrl: "",
     }, MANAGER)).rejects.toThrow()
+  })
+
+  it("rechaza una URL externa como evidencia del acta (PRV-01)", async () => {
+    const committee = await constituteGrdCommittee({ worksiteId: WS_A, name: "CGRD", constitutedOn: "2026-03-01", mandateEndsOn: "2028-03-01", evidenceUrl: EVIDENCE }, MANAGER)
+    await expect(recordGrdMeeting({
+      committeeId: committee.id, heldOn: "2026-04-01T15:00:00.000Z", agenda: "Revisión de amenazas del período",
+      minutes: "Acta de la sesión con el detalle suficiente de lo tratado", quorumReached: true, evidenceUrl: "https://drive.chome.cl/cgrd-acta",
+    }, MANAGER)).rejects.toThrow(/storage\/cgrd-evidence/)
+  })
+
+  it("no reutiliza en la faena B un archivo ya ligado a la faena A (PRV-01)", async () => {
+    const managerAll = { ...MANAGER, scope: scopeAll }
+    await expect(constituteGrdCommittee({ worksiteId: WS_B, name: "CGRD B", constitutedOn: "2026-03-01", mandateEndsOn: "2028-03-01", evidenceUrl: EVIDENCE }, managerAll))
+      .rejects.toThrow(/otra faena/)
   })
 
   it("un comité disuelto no puede registrar sesiones", async () => {

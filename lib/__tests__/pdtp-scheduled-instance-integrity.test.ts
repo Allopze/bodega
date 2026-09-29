@@ -281,7 +281,7 @@ describe("enlace con la ejecución del libro (PREV-I08-d/e/f)", () => {
     await seedConfig({ connector: "campaigns" })
     await fact({ sourceType: "campana", sourceId: "camp-1", day: "03-02" })
     const execution = await executionForSource("camp-1")
-    await approvePdtpExecution(execution.id, APPROVER, "all")
+    await approvePdtpExecution(execution.id, APPROVER, "all", { reason: "Revisé el registro de origen en su módulo." })
     const row = await instance(INST_A)
     expect(row.status).toBe("completed")
     expect(row.completedByUserId).toBe(APPROVER)
@@ -298,10 +298,10 @@ describe("enlace con la ejecución del libro (PREV-I08-d/e/f)", () => {
     expect((await executionForSource("camp-1")).scheduledInstanceId).toBe(INST_A)
     // #23: una rechazada no se aprueba directo; antes el test lo hacía y así
     // fijaba el defecto. El reenvío del mismo hecho la devuelve a 'submitted'.
-    await expect(approvePdtpExecution(execution.id, APPROVER, "all")).rejects.toThrow(/submitted/)
+    await expect(approvePdtpExecution(execution.id, APPROVER, "all", { reason: "Revisé el registro de origen en su módulo." })).rejects.toThrow(/submitted/)
     await fact({ sourceType: "campana", sourceId: "camp-1", day: "03-02" })
     expect((await executionForSource("camp-1")).status).toBe("submitted")
-    await approvePdtpExecution(execution.id, APPROVER, "all")
+    await approvePdtpExecution(execution.id, APPROVER, "all", { reason: "Revisé el registro de origen en su módulo." })
     expect((await instance(INST_A)).status).toBe("completed")
   })
 
@@ -313,7 +313,7 @@ describe("enlace con la ejecución del libro (PREV-I08-d/e/f)", () => {
     const execution = await executionForSource("camp-1")
     expect(execution.scheduledInstanceId).toBe("inst-si-feb")
     await closeMonth(2)
-    await expect(approvePdtpExecution(execution.id, APPROVER, "all")).rejects.toThrow(/febrero.*cerrado/)
+    await expect(approvePdtpExecution(execution.id, APPROVER, "all", { reason: "Revisé el registro de origen en su módulo." })).rejects.toThrow(/febrero.*cerrado/)
     expect((await executionForSource("camp-1")).status).toBe("submitted")
   })
 
@@ -392,7 +392,7 @@ describe("revocación (PREV-I08-b)", () => {
     await recordPdtpScheduledInstanceOutcome({ instanceId: INST_A, action: "cancel", userId: EXECUTOR, reason: "Duplicada con otra ocurrencia" })
     await approvePendingOutcome(INST_A)
     const execution = await executionForSource("camp-1")
-    await approvePdtpExecution(execution.id, APPROVER, "all")
+    await approvePdtpExecution(execution.id, APPROVER, "all", { reason: "Revisé el registro de origen en su módulo." })
     expect((await instance(INST_A)).status).toBe("cancelled")
     // La ocurrencia cancelada no cuenta: la ejecución aprobada cuenta por el libro.
     expect(await marchIndicator()).toMatchObject({ planned: 1, executed: 1 })

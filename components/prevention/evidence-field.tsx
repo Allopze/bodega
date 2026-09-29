@@ -2,12 +2,14 @@
 
 import * as React from "react"
 import { FileInput } from "@/components/ui/file-input"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
 
 /**
- * Campo de evidencia con las dos vías que el contrato acepta: subir el archivo
- * a la plataforma, o pegar el enlace a un documento que ya vive fuera.
+ * Campo de evidencia: el archivo se sube a la plataforma.
+ *
+ * PRV-01 (auditoría 2026-09-28): antes aceptaba además pegar un enlace externo,
+ * y ese enlace auto-aprobaba el programa sin que nadie viera el documento.
+ * Ahora la evidencia es siempre un archivo subido.
  *
  * Existe porque la simplificación de 2026-09-14 hizo la evidencia obligatoria
  * en Campañas y CGRD sin darles dónde subirla: el campo pedía "archivo subido"
@@ -15,8 +17,7 @@ import { Label } from "@/components/ui/field"
  * el formulario— para que el error de subida se vea en su propio campo y no
  * arrastre consigo el resto del acto (marcar la campaña, publicar la matriz).
  *
- * `value` es lo que viaja al servidor: una ruta `storage/...` cuando se subió
- * un archivo, o la URL tal cual cuando se pegó una.
+ * `value` es lo que viaja al servidor: la ruta `storage/...` del archivo subido.
  */
 export function EvidenceField({
   label,
@@ -66,14 +67,6 @@ export function EvidenceField({
       {uploading && <p className="text-xs text-[var(--color-text-muted)]">Subiendo…</p>}
       {uploaded && !uploading && (
         <p className="text-xs text-[var(--color-success-ink)]">Archivo subido y adjunto.</p>
-      )}
-      {!uploaded && (
-        <Input
-          placeholder="…o pega el enlace: https://..."
-          value={value}
-          disabled={disabled || uploading}
-          onChange={(event) => onChange(event.target.value)}
-        />
       )}
       {error && <p role="alert" className="text-xs text-[var(--color-danger)]">{error}</p>}
       {helper && !error && <p className="text-xs text-[var(--color-text-muted)]">{helper}</p>}
