@@ -470,6 +470,34 @@ describe("deploy workflow", () => {
     expect(packageJson.scripts["pdtp:revert-revoked-approvals"]).toContain("scripts/revert-pdtp-revoked-approvals.ts")
   })
 
+  /* PRV-01/PRV-03 (auditoría de production readiness 2026-09-28): a diferencia
+   * de B01, la devolución a revisión de las aprobaciones sin evidencia
+   * verificable sí corre en cada deploy. No toca meses cerrados, es
+   * idempotente y no aborta el deploy (PDTP_UNVERIFIED_DEPLOY_MODE). */
+  it("aplica en el deploy la devolución de aprobaciones sin evidencia verificable, después de conciliar", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
+    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
+
+    const build = dockerfile.match(
+      /RUN .\/node_modules\/.bin\/esbuild scripts\/report-pdtp-unverified-auto-approvals\.ts[\s\S]*?--outfile=\/tmp\/apply-pdtp-unverified-approvals\.mjs/,
+    )?.[0]
+    expect(build).toBeDefined()
+    expect(build).toContain("--external:drizzle-orm")
+    expect(build).toContain("--external:postgres")
+    expect(dockerfile).toContain("COPY --from=build /tmp/apply-pdtp-unverified-approvals.mjs ./scripts/apply-pdtp-unverified-approvals.mjs")
+
+    const service = compose.match(/\n {2}apply-pdtp-unverified-approvals:\n[\s\S]*?command: \[[^\]]*\]/)?.[0]
+    expect(service).toBeDefined()
+    expect(service).toContain("PDTP_UNVERIFIED_DEPLOY_MODE=true")
+    expect(service).toContain('command: ["node", "scripts/apply-pdtp-unverified-approvals.mjs"]')
+
+    const reconcile = deployScript.indexOf("docker compose run --rm reconcile-pdtp-fulfillment-events")
+    const unverified = deployScript.indexOf("docker compose run --rm apply-pdtp-unverified-approvals")
+    expect(reconcile).toBeGreaterThan(-1)
+    expect(unverified).toBeGreaterThan(reconcile)
+  })
+
   it("emits the SST migrator as CommonJS", () => {
     const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
     const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")

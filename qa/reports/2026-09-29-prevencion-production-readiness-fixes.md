@@ -41,7 +41,7 @@
 - **PRV-01 — evidencia de integración verificada.** Una ejecución que llega de otro módulo sólo cuenta como "evidencia entregada" si el archivo existe, es del dominio de la fuente, está registrado para la misma faena y su sha256 coincide. Una URL externa ya no cuenta. CGRD y Campañas aceptan sólo archivos subidos. Hay un registro de subidas por dominio (`prevention_evidence_uploads`, 0336).
 - **PRV-02 — segregación en integración.** Se guarda quién originó el hecho, así que esa persona no puede aprobarlo. Aprobar una integración sin evidencia verificada exige un motivo, que queda en la ejecución (probado en E2E).
 - **PRV-03 — sin ejecuciones futuras.** El servidor rechaza registrar o aprobar una semana que no ha ocurrido. El formulario no la ofrece.
-- **Saneamiento.** `npm run pdtp:report-unverified-auto-approvals`: dry-run por defecto; `--apply --actor` devuelve a revisión las aprobaciones automáticas sin evidencia verificable. En `bodega_dev` encontró 0.
+- **Saneamiento.** Devuelve a revisión las aprobaciones automáticas sin evidencia verificable y las de semanas futuras. **Corre en cada deploy**: one-shot `apply-pdtp-unverified-approvals` en `deploy-prod.sh`, después de la conciliación. No toca meses cerrados, es idempotente, firma `PDTP_UNVERIFIED_ACTOR_USER_ID` o el primer administrador, y no aborta el deploy. A mano: `npm run pdtp:report-unverified-approvals` (sólo reporta) o con `-- --apply --actor=<id>`. En `bodega_dev` encontró 0. Probado sobre la base desechable del E2E con una auto-aprobación de evidencia inexistente: la devolvió a revisión con traza y la segunda corrida no repitió nada.
 
 ### Fase 2 — integridad funcional
 
@@ -153,7 +153,7 @@
 1. **Migraciones 0336–0342 sobre una copia de producción.** Verificar que corren y cuánto tardan. En particular:
    - el trigger de sólo agregar (0340) exime a las bases cuyo nombre contiene `test`, `e2e`, `tmp`, `temp` o `capture`: **confirmar que el nombre de la base de producción no calza**;
    - `NOT VALID` en 0341 no valida filas antiguas.
-2. **`pdtp:report-unverified-auto-approvals` en dry-run contra producción** antes de liberar; aplicar con `--actor` si encuentra filas.
+2. **Anticipar el saneamiento**, que el deploy aplica solo. `PDTP_UNVERIFIED_DRY_RUN=true docker compose run --rm apply-pdtp-unverified-approvals` antes de liberar dice cuántas aprobaciones volverán a la cola, y por lo tanto cuánto baja el cumplimiento hasta que se revisen. Conviene fijar `PDTP_UNVERIFIED_ACTOR_USER_ID` para que la corrección no quede firmada por "el primer administrador".
 3. **Crons en el contenedor:** `pdtp-daily-reconcile`, `prevention-cron-staleness` y `backup-health`. Revisar `cron_runs` y que la alerta llegue.
 4. **Del checklist original:**
    - respaldo activo y perfil `backup`;

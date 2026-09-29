@@ -400,6 +400,30 @@ Procesos de un solo tiro que **sólo informan** y que el deploy no corre:
 `preflight-pdtp-wiring`, en cambio, sí corre dentro del deploy (es el diagnóstico del cableado
 de acreditación) y tampoco escribe.
 
+**Proceso de un solo tiro que el deploy sí aplica: aprobaciones sin evidencia verificable
+(PRV-01/PRV-03).** El servicio `apply-pdtp-unverified-approvals` corre en cada deploy, después de
+`reconcile-pdtp-fulfillment-events`. Devuelve a `submitted` —a la cola de Aprobaciones— las
+ejecuciones aprobadas automáticamente cuya evidencia no pasa la verificación (archivo
+inexistente, de otra faena, sin registro o con otro sha256) y las aprobadas en semanas futuras.
+
+- **Nunca modifica un mes cerrado.** Lo lista como "mes cerrado" y lo deja como está: su cifra ya
+  quedó congelada e informada.
+- **Deja traza.** Cada ejecución devuelta queda en el control de cambios del programa y en su
+  historial, firmada por `PDTP_UNVERIFIED_ACTOR_USER_ID` o, si la variable falta, por el primer
+  usuario con rol `administrador`.
+- **Es idempotente y no aborta el deploy.** La segunda corrida ya no encuentra nada; si falla,
+  el log lo dice y el próximo deploy lo retoma.
+- **El log del paso es el reporte:** cuántas revisó, cuáles devolvió y por qué.
+
+**Efecto visible:** el cumplimiento baja por lo devuelto hasta que alguien lo apruebe con motivo
+o lo rechace. Para anticiparlo, antes del deploy, en sólo lectura:
+
+```sh
+PDTP_UNVERIFIED_DRY_RUN=true docker compose run --rm apply-pdtp-unverified-approvals
+# o, desde un checkout y con un usuario de solo lectura:
+DATABASE_URL=<usuario de solo lectura> npm run pdtp:report-unverified-approvals
+```
+
 ## 6. Después: verificación
 
 1. Los 11 crons de la sección 5 aparecen en `cron_runs` en su primera ventana.

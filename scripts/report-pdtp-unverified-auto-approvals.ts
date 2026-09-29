@@ -12,6 +12,16 @@
  *   npm run pdtp:report-unverified-approvals              # sólo reporta
  *   npm run pdtp:report-unverified-approvals -- --apply --actor=<userId>
  *
+ * En el deploy (`scripts/deploy-prod.sh`, one-shot
+ * `apply-pdtp-unverified-approvals`) corre con `PDTP_UNVERIFIED_DEPLOY_MODE`:
+ *
+ * - aplica, atribuyendo la corrección a `PDTP_UNVERIFIED_ACTOR_USER_ID` o, si
+ *   falta, al primer usuario con rol `administrador` (mismo patrón que
+ *   `apply-pdtp-2026-mechanisms.ts`);
+ * - `PDTP_UNVERIFIED_DRY_RUN=true` lo deja en sólo reportar;
+ * - un error se informa y no aborta el deploy: la corrección es idempotente
+ *   (sólo toca filas `approved`) y el deploy siguiente la retoma.
+ *
  * - Nunca borra nada: cambia el estado y deja la traza en el control de
  *   cambios del programa y en el historial de la ejecución.
  * - Un mes ya cerrado no se toca (su cifra está congelada en la foto del
@@ -19,15 +29,19 @@
  */
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpExecutions, pdtpPrograms, users } from "@/db/schema"
+import { pdtpActivities, pdtpExecutions, pdtpPrograms, roles, userRoles, users } from "@/db/schema"
 import { addPdtpChangeLogEntry } from "@/lib/services/pdtp/helpers"
 import { pdtpExecutionHistorySnapshot, recordPdtpExecutionHistory } from "@/lib/services/pdtp/execution-history"
 import { verifyIntegrationEvidence } from "@/lib/services/pdtp/integration-evidence"
 import { isPdtpCellInFuture } from "@/lib/services/pdtp/period"
 import { assertPdtpPeriodOpen } from "@/lib/services/pdtp/period-guard"
 
-const apply = process.argv.includes("--apply")
-const actor = process.argv.find((arg) => arg.startsWith("--actor="))?.slice("--actor=".length)
+const DEPLOY_MODE = process.env.PDTP_UNVERIFIED_DEPLOY_MODE === "true"
+const apply = DEPLOY_MODE
+  ? process.env.PDTP_UNVERIFIED_DRY_RUN !== "true"
+  : process.argv.includes("--apply")
+let actor = process.argv.find((arg) => arg.startsWith("--actor="))?.slice("--actor=".length)
+  ?? (process.env.PDTP_UNVERIFIED_ACTOR_USER_ID?.trim() || undefined)
 const VERIFIABLE = ["alcotest", "emergencia", "cgrd", "higiene", "engagement"] as const
 
 type Finding = {
@@ -39,7 +53,21 @@ type Finding = {
   reason: string
 }
 
+/** En el deploy, sin actor explícito firma el primer administrador. */
+async function resolveDeployActor(): Promise<string | undefined> {
+  const [row] = await db.select({ userId: userRoles.userId })
+    .from(userRoles)
+    .innerJoin(roles, eq(roles.id, userRoles.roleId))
+    .where(eq(roles.name, "administrador"))
+    .limit(1)
+  return row?.userId
+}
+
 async function main() {
+  if (apply && !actor && DEPLOY_MODE) {
+    actor = await resolveDeployActor()
+    if (!actor) throw new Error("No hay ningún usuario con rol `administrador`. Pasa PDTP_UNVERIFIED_ACTOR_USER_ID.")
+  }
   if (apply && !actor) throw new Error("--apply exige --actor=<userId> (quien firma la corrección).")
   if (apply) {
     const [actorRow] = await db.select({ id: users.id }).from(users).where(eq(users.id, actor!)).limit(1)
@@ -136,5 +164,9 @@ async function main() {
 
 main().then(() => process.exit(0)).catch((error) => {
   console.error(error)
+  if (DEPLOY_MODE) {
+    console.error("[pdtp-unverified-approvals] falló en el deploy; no se aborta: el paso es idempotente y el próximo deploy lo retoma.")
+    process.exit(0)
+  }
   process.exit(1)
 })

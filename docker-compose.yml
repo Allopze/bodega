@@ -821,6 +821,30 @@ services:
       - PDTP_RECONCILE_LIMIT=${PDTP_RECONCILE_LIMIT:-}
     command: ["node", "scripts/reconcile-pdtp-fulfillment-events.cjs"]
 
+  # One-shot (PRV-01/PRV-03, auditoría de production readiness 2026-09-28):
+  # devuelve a revisión las aprobaciones automáticas cuya evidencia no se puede
+  # verificar y las de semanas futuras. Corre en cada deploy, después de la
+  # conciliación: idempotente (sólo toca filas `approved` que siguen sin
+  # verificar) y nunca modifica un mes cerrado. Firma
+  # PDTP_UNVERIFIED_ACTOR_USER_ID o, sin ella, el primer `administrador`.
+  #   PDTP_UNVERIFIED_DRY_RUN=true docker compose run --rm apply-pdtp-unverified-approvals
+  apply-pdtp-unverified-approvals:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - PDTP_UNVERIFIED_DEPLOY_MODE=true
+      - PDTP_UNVERIFIED_ACTOR_USER_ID=${PDTP_UNVERIFIED_ACTOR_USER_ID:-}
+      - PDTP_UNVERIFIED_DRY_RUN=${PDTP_UNVERIFIED_DRY_RUN:-}
+    command: ["node", "scripts/apply-pdtp-unverified-approvals.mjs"]
+
   # One-shot: PREV-B01-BACKFILL. Reporta (JSON) las aprobaciones humanas que la
   # revocación anterior al fix de B01 dejó vivas sobre registros anulados. Por
   # defecto NO escribe. Aplicar, después de revisar el reporte con Prevención
