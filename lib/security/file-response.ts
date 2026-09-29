@@ -5,8 +5,14 @@
  * sesión de quien lo abre.
  *
  * Sólo PDF e imágenes rasterizadas se muestran en el navegador; el resto se
- * descarga. Y toda respuesta de archivo lleva `nosniff` y una CSP `sandbox`, que
- * aísla el documento aunque el navegador decida mostrarlo.
+ * descarga, y toda respuesta de archivo lleva `nosniff` para que el navegador
+ * no reinterprete el tipo.
+ *
+ * No se agrega una CSP propia: el proxy reescribe `Content-Security-Policy` en
+ * todas las respuestas (verificado en E2E, `pdtp-evidencia-aprobacion.spec.ts`)
+ * con la política de la plataforma, cuyo `script-src` por nonce ya impide que un
+ * archivo mostrado en el navegador ejecute scripts. Un `sandbox` además rompería
+ * el visor de PDF de Chrome.
  */
 const INLINE_SAFE_MIME = new Set([
   "application/pdf",
@@ -27,5 +33,4 @@ export function fileDisposition(mimeType: string | null | undefined, wantsDownlo
 
 export const UNTRUSTED_FILE_HEADERS = {
   "X-Content-Type-Options": "nosniff",
-  "Content-Security-Policy": "sandbox",
 } as const

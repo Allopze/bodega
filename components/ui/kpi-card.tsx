@@ -112,7 +112,8 @@ export function KpiCard({
         {secondaryAction && (
           <Link
             href={secondaryAction.href}
-            className="relative z-10 mt-2 self-start text-xs font-semibold text-[var(--color-primary)] underline-offset-2 hover:underline focus-visible:underline"
+            // min-h-6: objetivo táctil de 24 px (WCAG 2.5.8), también sobre la capa del enlace principal.
+            className="relative z-10 mt-1.5 inline-flex min-h-6 items-center self-start text-xs font-semibold text-[var(--color-primary)] underline-offset-2 hover:underline focus-visible:underline"
           >
             {secondaryAction.label}
           </Link>

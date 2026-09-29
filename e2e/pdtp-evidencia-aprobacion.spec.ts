@@ -171,6 +171,12 @@ test.describe.serial("PDTP — evidencia con aprobación", () => {
     const download = await page.request.get(`/api/prevencion/pdtp/evidence/${name}`)
     expect(download.status()).toBe(200)
     expect(download.headers()["content-type"]).toBe("application/pdf")
+    // M-03: sin reinterpretar el tipo, y con la CSP de la plataforma (script
+    // por nonce): un archivo mostrado en el navegador no ejecuta scripts.
+    expect(download.headers()["x-content-type-options"]).toBe("nosniff")
+    const scriptSrc = /script-src ([^;]+)/.exec(download.headers()["content-security-policy"] ?? "")?.[1] ?? ""
+    expect(scriptSrc).toMatch(/'nonce-[^']+'/)
+    expect(scriptSrc).not.toContain("unsafe-inline")
 
     await page.getByRole("button", { name: `Rechazar ejecución Jun semana ${WEEK}` }).click()
     await page.getByPlaceholder(/^Motivo del rechazo/).fill(REJECTION)
