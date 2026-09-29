@@ -70,9 +70,11 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivitySchedule)
   await inMemoryDb.delete(schema.pdtpSheetActivities)
   await inMemoryDb.delete(schema.pdtpActivities)
+  await inMemoryDb.delete(schema.pdtpReviewRequests)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
   await inMemoryDb.delete(schema.auditLog)
+  await inMemoryDb.delete(schema.pdtpEvidenceUploads)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
 
@@ -303,7 +305,7 @@ describe("closePdtpPeriod: validaciones", () => {
 
     await expect(closePdtpPeriod({
       programId: program.id, worksiteId: "ws-1", year: YEAR, month: MONTH, reason: REASON,
-    }, "user-1", "all")).rejects.toThrow(/1 "no aplica" en revisión/i)
+    }, "user-1", "all")).rejects.toThrow(/1 desvío \("no aplica" o reprogramación\) en revisión/i)
 
     await reviewPdtpNotApplicable({ deviationId: deviation.id, decision: "approve" }, "user-2", "all")
     await expect(closePdtpPeriod({
@@ -485,10 +487,12 @@ describe("mes cerrado: bloqueo de escrituras", () => {
       activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: MONTH, week: 1,
       plannedQuantity: 9, reason: "Ajuste de meta por dotación de la faena.",
     }, "user-1", "all")
+    // M-06: volver al catálogo desde una meta mayor es una reducción y queda
+    // en revisión; lo que importa acá es que el mes abierto no la bloquea.
     await expect(deletePdtpActivityOverride({
       activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: MONTH, week: 1,
       reason: "Se revierte la meta especial de la faena.",
-    }, "user-1", "all")).resolves.toBeUndefined()
+    }, "user-1", "all")).resolves.toMatchObject({ status: expect.stringMatching(/applied|pending_review/) })
   })
 
   it("no bloquea otra faena ni otro mes", async () => {

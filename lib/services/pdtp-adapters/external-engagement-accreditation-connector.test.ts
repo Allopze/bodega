@@ -21,6 +21,9 @@ import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
 import { PDTP_2026_CATALOG_ACTIVITIES } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 
+// PRV-01: la evidencia se verifica en disco; nunca en el storage del repo.
+process.env.STORAGE_PATH = path.join((await import("node:os")).tmpdir(), `engagement-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
 const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb }
@@ -104,10 +107,17 @@ async function linkEvidenceDocument(engagementId: string) {
     worksiteId: WS_ID, status: "vigente", uploadedBy: USER_ID,
     createdAt: now, updatedAt: now,
   })
+  // PRV-01: el acta existe en disco y su checksum es el real.
+  const { createHash } = await import("node:crypto")
+  const { mkdirSync, writeFileSync } = await import("node:fs")
+  const { resolveSstDocumentFile } = await import("@/lib/storage/config")
+  const absolute = resolveSstDocumentFile("storage/sst-documents/coordinacion-test/acta.pdf")!
+  mkdirSync(path.dirname(absolute), { recursive: true })
+  writeFileSync(absolute, "%PDF-1.4 acta de coordinación")
   await inMemoryDb.insert(schema.sstDocumentVersions).values({
     id: "docv-engagement-1", documentId: "doc-engagement-1", version: 1, status: "vigente",
     fileName: "acta.pdf", storageName: "acta.pdf", filePath: "storage/sst-documents/coordinacion-test/acta.pdf",
-    mimeType: "application/pdf", fileSize: 100, checksum: "abc123", uploadedBy: USER_ID,
+    mimeType: "application/pdf", fileSize: 100, checksum: createHash("sha256").update("%PDF-1.4 acta de coordinación").digest("hex"), uploadedBy: USER_ID,
     createdAt: now, updatedAt: now,
   })
   await inMemoryDb.update(schema.sstDocuments).set({ currentVersionId: "docv-engagement-1" }).where(eq(schema.sstDocuments.id, "doc-engagement-1"))
@@ -253,7 +263,9 @@ describe("N°20 tras la reclasificación a 'enganche' (Task 12)", () => {
  * impedir la segunda vía mientras el mecanismo siga siendo 'constancia'.
  */
 describe("Guard contra el doble conteo mientras la N°20 siga siendo 'constancia' (hallazgo 2, revisión final)", () => {
-  it("con mechanism: 'constancia', cerrar una coordinación con el mandante NO acredita nada (ni ejecución ni evento)", async () => {
+  // PRV-22 (auditoría 2026-09-28): no acredita, pero ya no se pierde: el hecho
+  // queda diferido en el libro y se acredita cuando la N°20 deja de ser constancia.
+  it("con mechanism: 'constancia', cerrar una coordinación con el mandante NO acredita, pero deja el hecho diferido", async () => {
     await inMemoryDb.delete(schema.pdtpActivities)
     await seedActivity("constancia")
 
@@ -266,7 +278,15 @@ describe("Guard contra el doble conteo mientras la N°20 siga siendo 'constancia
 
     const fulfillmentEvents = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
       .where(eq(schema.pdtpFulfillmentEvents.sourceId, `coordinacion-mandante:${created.id}`))
-    expect(fulfillmentEvents).toHaveLength(0)
+    expect(fulfillmentEvents).toHaveLength(1)
+    expect(fulfillmentEvents[0]).toMatchObject({ status: "rejected", resultJson: expect.objectContaining({ deferredReason: "mechanism_constancia" }) })
+
+    // Cuando la N°20 pasa a enganche, el reconciliador lo acredita.
+    await inMemoryDb.update(schema.pdtpActivities).set({ mechanism: "enganche" }).where(eq(schema.pdtpActivities.id, ACT_ID))
+    const { replayDeferredMandanteCoordinations } = await import("@/lib/services/pdtp-adapters/external-engagement-accreditation-connector")
+    await expect(replayDeferredMandanteCoordinations()).resolves.toMatchObject({ replayed: 1, stillDeferred: 0 })
+    const replayed = await inMemoryDb.select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.activityId, ACT_ID))
+    expect(replayed).toHaveLength(1)
 
     // El cierre no debe fallar ni lanzar — es tolerante, sólo deja rastro.
     expect(logger.warn).toHaveBeenCalledWith(

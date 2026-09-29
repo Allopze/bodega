@@ -48,6 +48,7 @@ import {
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import {
   CPHS_NOT_FOUND,
+  nullIfCphsNotFound,
   nowIso,
   recordGovernanceHistory,
   requireCphsAccess,
@@ -393,7 +394,7 @@ export interface DossierStatus {
  * el snapshot guardado, que es lo que se auditó.
  */
 export async function getCertificationDossier(dossierId: string, access: CphsAccess): Promise<DossierStatus | null> {
-  const context = await loadDossier(dossierId).catch(() => null)
+  const context = await loadDossier(dossierId).catch(nullIfCphsNotFound)
   if (!context) return null
   requireCphsAccess(access, "prevention:cphs:view", context.worksiteId)
 

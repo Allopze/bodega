@@ -4,6 +4,12 @@ const INTERNAL_MESSAGE_PATTERNS = [
   /(?:^|\n)failed query:/i,
   /(?:^|\n)params?:/i,
   /(?:^|\n)query:\s*(?:insert|update|delete|select)\b/i,
+  // M-16 (auditoría 2026-09-28): los errores del sistema de archivos
+  // ("ENOENT: no such file or directory, open '/srv/app/storage/…'") le
+  // mostraban al usuario la ruta del servidor.
+  /\b(?:ENOENT|EACCES|EPERM|EISDIR|ENOTDIR|EMFILE|ENOSPC|EROFS)\b/,
+  /(?:^|[\s'"(])\/(?:srv|app|home|var|tmp|usr|opt|etc|data|mnt)\//,
+  /\b[A-Z]:\\/,
 ]
 
 /**

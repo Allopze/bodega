@@ -46,3 +46,14 @@ export function resolveTrustedClientIp(requestHeaders: Pick<Headers, "get">): st
 
   return cloudflareClientIp
 }
+
+/**
+ * IP para la bitácora: la misma identidad confiable, o `undefined` cuando no se
+ * puede establecer. M-04 (auditoría 2026-09-28): las rutas de datos sensibles
+ * (salud, privacidad, archivos reservados) anotaban `x-forwarded-for`, que es
+ * entrada del cliente: cualquiera podía escribir la IP que quisiera en la traza.
+ */
+export function trustedAuditIp(requestHeaders: Pick<Headers, "get">): string | undefined {
+  const ip = resolveTrustedClientIp(requestHeaders)
+  return ip === UNRESOLVED_RATE_LIMIT_IP ? undefined : ip
+}

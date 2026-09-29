@@ -6,7 +6,8 @@ import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
 import { replacePdtpAccreditationBindings } from "@/lib/services/pdtp/accreditation-bindings"
-import { checkEvidence, evidencePathSchema } from "@/lib/validation/evidence-contract"
+import { evidencePathSchema } from "@/lib/validation/evidence-contract"
+import { claimPreventionEvidenceUpload } from "@/lib/services/prevention-evidence-upload"
 
 export interface CampaignAccess {
   userId: string
@@ -78,10 +79,9 @@ export async function createCampaign(input: unknown, access: CampaignAccess) {
  * http/https alcanzable. Obligatoria al marcar la campaña como hecha: una
  * campaña sin evidencia no es oponible ante un fiscalizador.
  */
-const campaignEvidenceSchema = z.string().trim().min(1, "Adjunta la evidencia de difusión de la campaña.").refine(
-  (value) => evidencePathSchema().safeParse(value).success || checkEvidence({ kind: "url", reference: value }).length === 0,
-  "La evidencia debe ser un archivo subido a la campaña o una URL http/https",
-)
+// PRV-01 (2026-09-28): sólo un archivo subido a la plataforma; ya no una URL.
+const campaignEvidenceSchema = z.string().trim().min(1, "Adjunta la evidencia de difusión de la campaña.")
+  .pipe(evidencePathSchema(["campaign"]))
 
 /**
  * Las cinco campañas que el programa 2026 planifica, con la actividad que cada
@@ -161,6 +161,7 @@ export async function closeCampaign(input: unknown, access: CampaignAccess) {
 
   if (campaign.status === "done") throw new CampaignDomainError("La campaña ya está marcada como hecha.")
 
+  await claimPreventionEvidenceUpload(db, { path: data.evidenceUrl, domain: "campaign", worksiteId: campaign.worksiteId, userId: access.userId })
   const now = new Date().toISOString()
   const [updated] = await db.update(preventionCampaigns)
     .set({

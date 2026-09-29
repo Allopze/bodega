@@ -873,6 +873,7 @@ export async function closeSafetyIndicatorPeriod(
   // propia conexión, y llamarlo dentro de la transacción dejaría una
   // ejecución huérfana si ésta revierte.
   await onSafetyIndicatorPeriodClosed({
+    actorUserId: userId,
     worksiteId: data.worksiteId,
     snapshotId: outcome.snapshot.id,
     year: data.year,

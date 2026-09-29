@@ -48,6 +48,8 @@
     "db:seed-emergency-plans": "tsx --env-file-if-exists=.env.local scripts/seed-prevention-emergency-plans.ts",
     "pdtp:apply-all": "bash scripts/apply-pdtp-data.sh",
     "pdtp:report-closure-drift": "tsx --env-file-if-exists=.env.local scripts/report-pdtp-closure-drift.ts",
+    "pdtp:report-unverified-approvals": "tsx --env-file-if-exists=.env.local scripts/report-pdtp-unverified-auto-approvals.ts",
+    "prevention:retire-obsolete-training-occurrences": "tsx --env-file-if-exists=.env.local scripts/retire-obsolete-training-occurrences.ts",
     "pdtp:apply-catalog-decisions": "tsx --env-file=.env.local scripts/apply-pdtp-2026-catalog-decisions.ts",
     "pdtp:apply-worksite-scope": "tsx --env-file=.env.local scripts/apply-pdtp-2026-worksite-scope.ts",
     "pdtp:apply-mechanisms": "tsx --env-file=.env.local scripts/apply-pdtp-2026-mechanisms.ts",

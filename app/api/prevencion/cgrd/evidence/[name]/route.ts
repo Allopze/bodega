@@ -13,7 +13,7 @@ export const runtime = "nodejs"
 
 import { type NextRequest, NextResponse } from "next/server"
 import { promises as fs } from "node:fs"
-import { and, eq, inArray, like, type SQL } from "drizzle-orm"
+import { and, eq, inArray, type SQL } from "drizzle-orm"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope, type WorksiteScope } from "@/lib/auth/scope"
@@ -26,6 +26,7 @@ import {
   preventionGrdMeetings,
 } from "@/db/schema"
 import { logger } from "@/lib/logger"
+import { UNTRUSTED_FILE_HEADERS } from "@/lib/security/file-response"
 import { inferEvidenceContentType } from "@/lib/services/prevention-evidence-upload"
 
 const CGRD_EVIDENCE_PREFIX = "storage/cgrd-evidence/"
@@ -54,22 +55,25 @@ export async function GET(
   if (scope.mode === "none") return NextResponse.json({ error: "Evidencia no encontrada" }, { status: 404 })
 
   try {
-    const likePattern = `%${name.replace(/[%_]/g, (m) => `\\${m}`)}%`
+    // PRV-18 (auditoría 2026-09-28): igualdad exacta con la ruta, no `LIKE`.
+    // Con `LIKE %nombre%` bastaba que una fila propia contuviera el nombre
+    // —dentro de una URL, por ejemplo— para descargar el archivo de otra faena.
+    const storedPath = `${CGRD_EVIDENCE_PREFIX}${name}`
 
     /* Los cuatro dominios que guardan evidencia del CGRD. Se consultan en
      * paralelo y basta con que uno la reclame: el archivo pertenece al módulo,
      * no a una tabla en particular. */
     const [committees, coordinators, matrices, meetings] = await Promise.all([
       db.select({ id: preventionGrdCommittees.id }).from(preventionGrdCommittees)
-        .where(scoped(like(preventionGrdCommittees.evidenceUrl, likePattern), preventionGrdCommittees.worksiteId, scope)).limit(1),
+        .where(scoped(eq(preventionGrdCommittees.evidenceUrl, storedPath), preventionGrdCommittees.worksiteId, scope)).limit(1),
       db.select({ id: preventionGrdCoordinators.id }).from(preventionGrdCoordinators)
-        .where(scoped(like(preventionGrdCoordinators.evidenceUrl, likePattern), preventionGrdCoordinators.worksiteId, scope)).limit(1),
+        .where(scoped(eq(preventionGrdCoordinators.evidenceUrl, storedPath), preventionGrdCoordinators.worksiteId, scope)).limit(1),
       db.select({ id: preventionGrdMatrices.id }).from(preventionGrdMatrices)
-        .where(scoped(like(preventionGrdMatrices.evidenceUrl, likePattern), preventionGrdMatrices.worksiteId, scope)).limit(1),
+        .where(scoped(eq(preventionGrdMatrices.evidenceUrl, storedPath), preventionGrdMatrices.worksiteId, scope)).limit(1),
       // El acta cuelga del comité, así que la faena se alcanza por el join.
       db.select({ id: preventionGrdMeetings.id }).from(preventionGrdMeetings)
         .innerJoin(preventionGrdCommittees, eq(preventionGrdMeetings.committeeId, preventionGrdCommittees.id))
-        .where(scoped(like(preventionGrdMeetings.evidenceUrl, likePattern), preventionGrdCommittees.worksiteId, scope)).limit(1),
+        .where(scoped(eq(preventionGrdMeetings.evidenceUrl, storedPath), preventionGrdCommittees.worksiteId, scope)).limit(1),
     ])
 
     const found = committees[0] ?? coordinators[0] ?? matrices[0] ?? meetings[0]
@@ -81,7 +85,7 @@ export async function GET(
       headers: {
         "Content-Type": inferEvidenceContentType(name),
         "Cache-Control": "private, max-age=300",
-        "X-Content-Type-Options": "nosniff",
+        ...UNTRUSTED_FILE_HEADERS,
       },
     })
   } catch (err) {

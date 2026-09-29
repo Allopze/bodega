@@ -1,19 +1,21 @@
 import { z } from "zod"
-import { checkEvidence, evidencePathSchema } from "@/lib/validation/evidence-contract"
+import { evidencePathSchema } from "@/lib/validation/evidence-contract"
 
 const reason = z.string().trim().min(10).max(2000)
 const plainDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 
 /**
- * Evidencia del CGRD, bajo el contrato único (P4): una ruta del storage de
- * CGRD, o una URL http/https alcanzable. Obligatoria en cada acto que
- * acredita una actividad del PDTP — constituir, publicar, cerrar acta —, no
- * "cualquier cosa": un acto sin evidencia no es oponible ante un fiscalizador.
+ * Evidencia del CGRD, bajo el contrato único (P4): un archivo subido al storage
+ * de CGRD. Obligatoria en cada acto que acredita una actividad del PDTP
+ * —constituir, publicar, cerrar acta—: un acto sin evidencia no es oponible
+ * ante un fiscalizador.
+ *
+ * PRV-01 (auditoría 2026-09-28): ya no se acepta una URL externa. Con una URL
+ * pegada la N°81 se auto-aprobaba sin que nadie viera el documento; el
+ * servicio además exige que el archivo tenga fila de subida y sea de la faena
+ * (`claimPreventionEvidenceUpload`).
  */
-const evidenceUrl = z.string().trim().min(1, "Adjunta la evidencia.").refine(
-  (value) => evidencePathSchema().safeParse(value).success || checkEvidence({ kind: "url", reference: value }).length === 0,
-  "La evidencia debe ser un archivo subido o una URL http/https",
-)
+const evidenceUrl = z.string().trim().min(1, "Adjunta la evidencia.").pipe(evidencePathSchema(["cgrd"]))
 
 export const grdCommitteeConstituteSchema = z.object({
   worksiteId: z.string().min(1),

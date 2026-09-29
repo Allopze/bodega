@@ -35,6 +35,7 @@ describe("admin roles service persistence", () => {
       { id: "perm-read", name: "catalog:read", description: "Leer catálogo", module: "catalog" },
       { id: "perm-write", name: "catalog:write", description: "Editar catálogo", module: "catalog" },
       { id: "perm-export", name: "catalog:export", description: "Exportar catálogo", module: "catalog" },
+      { id: "perm-pdtp-program", name: "prevention:pdtp:program:manage", description: "Programa PDTP", module: "prevention" },
     ])
   })
 
@@ -86,5 +87,16 @@ describe("admin roles service persistence", () => {
       isGlobal: true,
       permissionIds: expect.arrayContaining(["perm-read", "perm-write", "perm-export"]),
     })])
+  })
+
+  it("un rol de faena no puede recibir un permiso que abarca todas las faenas (M-05)", async () => {
+    const actor = { userId: "admin-test", userEmail: "admin@test.local" }
+    const base = { name: "Prevencionista Faena X", label: "Prevencionista faena X", isGlobal: false, permissionIds: ["perm-read", "perm-pdtp-program"] }
+    await expect(createRoleWithPermissions({ id: "role-faena", ...base }, actor)).rejects.toThrow("sólo se puede otorgar a un rol con visibilidad global")
+
+    await createRoleWithPermissions({ id: "role-faena", ...base, permissionIds: ["perm-read"] }, actor)
+    await expect(updateRoleWithPermissions("role-faena", { id: "role-faena", ...base }, actor)).rejects.toThrow("visibilidad global")
+    // Global, sí.
+    await expect(updateRoleWithPermissions("role-faena", { id: "role-faena", ...base, isGlobal: true }, actor)).resolves.toMatchObject({ isGlobal: true })
   })
 })

@@ -6,7 +6,7 @@
  * abre en el módulo de origen y aquí se muestra como un chip sin enlace.
  */
 import { describe, expect, it } from "vitest"
-import { pdtpEvidenceHref } from "./evidence-href"
+import { pdtpEvidenceHref, pdtpSyntheticEvidenceLabel } from "./evidence-href"
 
 describe("pdtpEvidenceHref", () => {
   it("una ruta del directorio PDTP se descarga por la ruta PDTP", () => {
@@ -24,6 +24,18 @@ describe("pdtpEvidenceHref", () => {
     })
     expect(pdtpEvidenceHref("storage/prevention-alcotest-evidence/a.jpg")?.kind).toBe("source_module")
     expect(pdtpEvidenceHref("storage/prevention-drill-evidence/b.png")?.kind).toBe("source_module")
+  })
+
+  it("la evidencia de un módulo con descarga propia se enlaza a esa ruta (PRV-21)", () => {
+    expect(pdtpEvidenceHref("storage/hygiene-evidence/lab_01.pdf")).toEqual({
+      kind: "module_file",
+      name: "lab_01.pdf",
+      href: "/api/prevencion/higiene/evidence/lab_01.pdf",
+    })
+    expect(pdtpEvidenceHref("storage/cgrd-evidence/acta.pdf")?.kind).toBe("module_file")
+    expect(pdtpEvidenceHref("storage/campaign-evidence/foto.jpg")?.kind).toBe("module_file")
+    // Un nombre con traversal no se vuelve enlace.
+    expect(pdtpEvidenceHref("storage/hygiene-evidence/../x.pdf")?.kind).toBe("source_module")
   })
 
   it("una URL http(s) se abre tal cual", () => {
@@ -54,5 +66,15 @@ describe("pdtpEvidenceHref", () => {
     expect(pdtpEvidenceHref(null)).toBeNull()
     expect(pdtpEvidenceHref(undefined)).toBeNull()
     expect(pdtpEvidenceHref("   ")).toBeNull()
+  })
+})
+
+describe("pdtpSyntheticEvidenceLabel (C-03)", () => {
+  it("quita el id interno del final", () => {
+    expect(pdtpSyntheticEvidenceLabel("Entrega EPP: bYpyCTc20gK9xQ1")).toBe("Entrega EPP")
+  })
+  it("no toca un texto sin id ni una palabra larga sin dígitos", () => {
+    expect(pdtpSyntheticEvidenceLabel("Acta firmada: conforme")).toBe("Acta firmada: conforme")
+    expect(pdtpSyntheticEvidenceLabel("Motivo: responsabilidades")).toBe("Motivo: responsabilidades")
   })
 })

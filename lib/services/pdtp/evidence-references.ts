@@ -13,7 +13,7 @@
 import { existsSync } from "node:fs"
 import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { auditLog, pdtpExecutions, pdtpScheduledInstances, preventionCapaActions, preventionCapaEvidence } from "@/db/schema"
+import { auditLog, pdtpExecutions, pdtpScheduledInstanceOutcomeRequests, pdtpScheduledInstances, preventionCapaActions, preventionCapaEvidence } from "@/db/schema"
 import { capaEsDelPdtp } from "./capa-view"
 import { PDTP_EVIDENCE_PATH_PREFIX } from "./evidence-href"
 import { PDTP_EXECUTION_HISTORY_ENTITY, parsePdtpHistoryState, pdtpEvidenceSha256Map, pdtpHistoryEvidencePaths } from "./execution-history"
@@ -21,7 +21,13 @@ import type { WorksiteScope } from "./helpers"
 import { findPdtpEvidenceUpload } from "./evidence-uploads"
 import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 
-export type PdtpEvidenceSource = "execution" | "capa" | "history" | "instance"
+/**
+ * `outcome_request`: la evidencia de una solicitud de resultado de una
+ * ocurrencia programada. PRV-17 (auditoría 2026-09-28): el GC no la miraba, así
+ * que el archivo de una solicitud todavía en revisión —o rechazada, que conserva
+ * su traza— se borraba como huérfano, y el revisor tampoco podía descargarlo.
+ */
+export type PdtpEvidenceSource = "execution" | "capa" | "history" | "instance" | "outcome_request"
 
 export type PdtpEvidenceReference = {
   path: string
@@ -90,17 +96,27 @@ export async function findPdtpEvidenceOwner(name: string, scope: WorksiteScope):
     .limit(1)
   if (instance) return { worksiteId: instance.worksiteId, source: "instance" }
 
+  const [outcomeRequest] = await db.select({ worksiteId: pdtpScheduledInstances.worksiteId })
+    .from(pdtpScheduledInstanceOutcomeRequests)
+    .innerJoin(pdtpScheduledInstances, eq(pdtpScheduledInstances.id, pdtpScheduledInstanceOutcomeRequests.instanceId))
+    .where(and(
+      eq(pdtpScheduledInstanceOutcomeRequests.evidenceRef, path),
+      inScope(pdtpScheduledInstances.worksiteId, scope),
+    ))
+    .limit(1)
+  if (outcomeRequest) return { worksiteId: outcomeRequest.worksiteId, source: "outcome_request" }
+
   return null
 }
 
 /**
- * Todas las referencias a evidencia que la base conoce, de las cuatro fuentes.
+ * Todas las referencias a evidencia que la base conoce, de las cinco fuentes.
  * Incluye rutas de otros directorios (integraciones) y textos: quien consume
  * decide qué le importa —el escaneo sólo mira el directorio PDTP; el GC
  * conserva cualquier nombre mencionado, que es el lado seguro—.
  */
 export async function collectPdtpEvidenceReferences(): Promise<PdtpEvidenceReference[]> {
-  const [executions, capaRows, instances, historyRows] = await Promise.all([
+  const [executions, capaRows, instances, historyRows, outcomeRequests] = await Promise.all([
     db.select({
       id: pdtpExecutions.id,
       worksiteId: pdtpExecutions.worksiteId,
@@ -133,12 +149,26 @@ export async function collectPdtpEvidenceReferences(): Promise<PdtpEvidenceRefer
     })
       .from(auditLog)
       .where(eq(auditLog.entityType, PDTP_EXECUTION_HISTORY_ENTITY)),
+    db.select({
+      id: pdtpScheduledInstanceOutcomeRequests.id,
+      worksiteId: pdtpScheduledInstances.worksiteId,
+      evidenceRef: pdtpScheduledInstanceOutcomeRequests.evidenceRef,
+    })
+      .from(pdtpScheduledInstanceOutcomeRequests)
+      .innerJoin(pdtpScheduledInstances, eq(pdtpScheduledInstances.id, pdtpScheduledInstanceOutcomeRequests.instanceId))
+      .where(sql`${pdtpScheduledInstanceOutcomeRequests.evidenceRef} IS NOT NULL`),
   ])
 
   const references: PdtpEvidenceReference[] = []
 
   for (const row of executions) {
     const sha = pdtpEvidenceSha256Map(row.sourceMetadataJson)
+    // La acreditación por integración guarda el sha256 verificado como texto
+    // (PRV-01), no como mapa por ruta: corresponde a `evidenceUrl`.
+    const integrationSha = (row.sourceMetadataJson as { evidenceSha256?: unknown } | null)?.evidenceSha256
+    if (row.evidenceUrl && typeof integrationSha === "string" && /^[0-9a-f]{64}$/.test(integrationSha)) {
+      sha[row.evidenceUrl] ??= integrationSha
+    }
     const photos = Array.isArray(row.evidencePhotos) ? row.evidencePhotos : []
     const paths = [row.evidenceUrl, ...photos].filter((value): value is string => typeof value === "string" && value.length > 0)
     for (const path of new Set(paths)) {
@@ -152,6 +182,10 @@ export async function collectPdtpEvidenceReferences(): Promise<PdtpEvidenceRefer
   for (const row of instances) {
     if (!row.evidenceRef) continue
     references.push({ path: row.evidenceRef, source: "instance", ownerId: row.id, worksiteId: row.worksiteId, sha256: null })
+  }
+  for (const row of outcomeRequests) {
+    if (!row.evidenceRef) continue
+    references.push({ path: row.evidenceRef, source: "outcome_request", ownerId: row.id, worksiteId: row.worksiteId, sha256: null })
   }
   for (const row of historyRows) {
     const before = parsePdtpHistoryState(row.oldState)
@@ -176,7 +210,7 @@ export function isPdtpEvidencePath(path: string): boolean {
  */
 async function pdtpEvidenceReferencingWorksites(client: Tx | typeof db, path: string): Promise<Set<string>> {
   const quoted = JSON.stringify(path)
-  const [executions, capaRows, instances, historyRows] = await Promise.all([
+  const [executions, capaRows, instances, historyRows, outcomeRequests] = await Promise.all([
     client.select({ worksiteId: pdtpExecutions.worksiteId })
       .from(pdtpExecutions)
       .where(or(
@@ -198,9 +232,13 @@ async function pdtpEvidenceReferencingWorksites(client: Tx | typeof db, path: st
         eq(auditLog.entityType, PDTP_EXECUTION_HISTORY_ENTITY),
         or(sql`strpos(${auditLog.oldState}, ${quoted}) > 0`, sql`strpos(${auditLog.newState}, ${quoted}) > 0`),
       )),
+    client.select({ worksiteId: pdtpScheduledInstances.worksiteId })
+      .from(pdtpScheduledInstanceOutcomeRequests)
+      .innerJoin(pdtpScheduledInstances, eq(pdtpScheduledInstances.id, pdtpScheduledInstanceOutcomeRequests.instanceId))
+      .where(eq(pdtpScheduledInstanceOutcomeRequests.evidenceRef, path)),
   ])
   const worksites = new Set<string>()
-  for (const row of [...executions, ...capaRows, ...instances, ...historyRows]) {
+  for (const row of [...executions, ...capaRows, ...instances, ...historyRows, ...outcomeRequests]) {
     worksites.add(row.worksiteId ?? "")
   }
   return worksites

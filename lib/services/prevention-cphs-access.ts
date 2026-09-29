@@ -40,6 +40,16 @@ export function requireCphsAccess(access: CphsAccess, permission: string, worksi
   }
 }
 
+/**
+ * M-10 (auditoría 2026-09-28): convierte en `null` sólo el "no existe o fuera
+ * de alcance"; cualquier otro error se relanza. Un `.catch(() => null)` hacía
+ * que una base caída se viera como un 404 y no dejara rastro.
+ */
+export function nullIfCphsNotFound(error: unknown): null {
+  if (error instanceof Error && error.message === CPHS_NOT_FOUND) return null
+  throw error
+}
+
 export function cphsScopeCondition(scope: WorksiteScope, column: AnyPgColumn) {
   if (scope.mode === "all") return undefined
   if (scope.mode === "none" || scope.ids.length === 0) return sql`false`

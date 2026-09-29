@@ -34,6 +34,8 @@ export interface PdtpExecutionConnector {
   key: string
   label: string
   moduleHref: string
+  /** Dónde se registra el hecho, si no es la portada del módulo (ver EPP). */
+  startModuleHref?: string
   configurePermission: Permission
   executePermission: Permission
   supportedEvents: readonly PdtpConnectorEvent[]
@@ -76,7 +78,7 @@ function connector(input: Omit<PdtpExecutionConnector, "listInstruments" | "buil
         }))
     },
     buildStartHref(instance) {
-      return startHref(input.moduleHref, instance)
+      return startHref(input.startModuleHref ?? input.moduleHref, instance)
     },
   }
 }
@@ -94,7 +96,9 @@ const CONNECTORS: readonly PdtpExecutionConnector[] = [
     key: "training", label: "Capacitación", moduleHref: "/prevencion/capacitacion",
     configurePermission: "prevention:training:record", executePermission: "prevention:training:record",
     supportedBindingSourceTypes: ["capacitacion", "capacitacion_ocurrencia"],
-    supportedEvents: [{ key: "session_closed", label: "Actividad marcada como hecha", sourceType: "capacitacion" }],
+    // M-22 (auditoría 2026-09-28): `session_closed` nadie lo emitía desde que se
+    // retiraron los cursos por persona; la capacitación acredita por ocurrencia.
+    supportedEvents: [],
     supportedCompletionPolicies: ["source_completed", "source_approved", "manual_confirmed"],
     supportedEvidenceKinds: ["file", "photo", "signature", "generated_record"],
   }),
@@ -164,7 +168,9 @@ const CONNECTORS: readonly PdtpExecutionConnector[] = [
     supportedEvidenceKinds: ["file", "generated_record"],
   }),
   connector({
-    key: "epp", label: "EPP", moduleHref: "/prevencion/epp-preventivo",
+    // PRV-19 #12 (auditoría 2026-09-28): la entrega se registra en Bodega; la
+    // matriz de EPP no registra entregas y dejaba "Iniciar" sin salida.
+    key: "epp", label: "EPP", moduleHref: "/prevencion/epp-preventivo", startModuleHref: "/entregas",
     configurePermission: "prevention:epp:manage", executePermission: "prevention:epp:manage",
     supportedBindingSourceTypes: ["epp"],
     supportedEvents: [{ key: "delivery_completed", label: "Entrega de EPP completada", sourceType: "epp" }],

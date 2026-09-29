@@ -93,6 +93,8 @@ export async function onInspectionCompleted(input: {
   completedByUserId: string
   activityNumbers?: number[]
   catalogActivityIds?: string[]
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }, client?: Tx): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "inspections",
@@ -116,6 +118,7 @@ export async function onInspectionCompleted(input: {
   const executedQuantity = 1
 
   const accreditation: AccreditationInput = {
+    actorUserId: input.actorUserId ?? input.completedByUserId,
     sourceType: "inspeccion",
     sourceId: input.runId,
     worksiteId: input.worksiteId,
@@ -224,60 +227,9 @@ export async function onInspectionReverted(input: {
 }
 
 // ── Conector: Capacitación ────────────────────────────────────────────────────
-
-/**
- * Llama desde `closeTrainingSession` cuando la sesión queda `completed`.
- *
- * @param attendedCount - Cantidad de asistentes con resultado aprobado/no_required.
- * @param activityNumbers - Números de actividad PDTP del curso.
- */
-export async function onTrainingSessionClosed(input: {
-  sessionId: string
-  worksiteId: string
-  closedAt: string
-  attendedCount: number
-  activityNumbers?: number[]
-  catalogActivityIds?: string[]
-}): Promise<void> {
-  await recordPdtpTriggerEventSafe({
-    connectorKey: "training",
-    eventKey: "session_closed",
-    sourceType: "capacitacion",
-    sourceId: input.sessionId,
-    worksiteId: input.worksiteId,
-    occurredAt: input.closedAt,
-    payload: { sessionId: input.sessionId, attendedCount: input.attendedCount },
-  })
-  if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
-
-  await safeAccredit({
-    sourceType: "capacitacion",
-    sourceId: input.sessionId,
-    worksiteId: input.worksiteId,
-    ...(input.catalogActivityIds?.length ? { catalogActivityIds: input.catalogActivityIds } : { activityNumbers: input.activityNumbers }),
-    occurredAt: input.closedAt,
-    // La cantidad ejecutada es el número de personas que completaron la sesión
-    executedQuantity: Math.max(1, input.attendedCount),
-    evidenceRef: `Sesión de capacitación cerrada: ${input.sessionId}`,
-  })
-}
-
-/**
- * Revierte la acreditación cuando una sesión se cancela.
- */
-export async function onTrainingSessionCancelled(input: {
-  sessionId: string
-  worksiteId: string
-  cancelledBy?: string
-}): Promise<void> {
-  await recordPdtpFulfillmentRevocation({
-    sourceType: "capacitacion",
-    sourceId: input.sessionId,
-    worksiteId: input.worksiteId,
-    revokedBy: input.cancelledBy,
-    reason: "Sesión de capacitación cancelada.",
-  })
-}
+// La capacitación acredita por ocurrencia (`prevention-training-occurrences.ts`).
+// `onTrainingSessionClosed/Cancelled` se retiraron (M-22, 2026-09-28): nadie
+// los llamaba desde que se eliminó el modelo de cursos por persona.
 
 // ── Conector: EPP ─────────────────────────────────────────────────────────────
 
@@ -295,6 +247,8 @@ export async function onEppDeliveryCompleted(input: {
   activityNumbers?: number[]
   catalogActivityIds?: string[]
   evidenceRef?: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "epp",
@@ -311,6 +265,7 @@ export async function onEppDeliveryCompleted(input: {
   if (catalogActivityIds.length === 0) return
 
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "epp",
     sourceId: input.deliveryId,
     worksiteId: input.worksiteId,
@@ -336,6 +291,8 @@ export async function onCphsCommitteeConstituted(input: {
   committeeId: string
   worksiteId: string
   constitutedOn: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "cphs",
@@ -347,6 +304,7 @@ export async function onCphsCommitteeConstituted(input: {
     payload: { committeeId: input.committeeId },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "cphs",
     sourceId: input.committeeId,
     worksiteId: input.worksiteId,
@@ -370,6 +328,8 @@ export async function onManagementReviewClosed(input: {
   reviewId: string
   worksiteId: string
   heldAt: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "cphs",
@@ -381,6 +341,7 @@ export async function onManagementReviewClosed(input: {
     payload: { reviewId: input.reviewId },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "cphs",
     sourceId: input.reviewId,
     worksiteId: input.worksiteId,
@@ -427,6 +388,8 @@ export async function onEmergencyDrillCompleted(input: {
    * recibiera una ruta sintética, la ejecución queda `submitted` igual.
    */
   completedByUserId: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "emergencies",
@@ -440,6 +403,7 @@ export async function onEmergencyDrillCompleted(input: {
   if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   await safeAccredit({
+    actorUserId: input.actorUserId ?? input.completedByUserId,
     sourceType: "emergencia",
     sourceId: input.drillId,
     worksiteId: input.worksiteId,
@@ -481,6 +445,8 @@ export async function onEmergencyDrillCompleted(input: {
 export async function onPdtpProgramLegallyApproved(input: {
   programId: string
   approvedAt: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   const [[program], members] = await Promise.all([
     db.select({ appliesToAllWorksites: pdtpPrograms.appliesToAllWorksites })
@@ -503,6 +469,7 @@ export async function onPdtpProgramLegallyApproved(input: {
 
   for (const worksiteId of worksiteIds) {
     await safeAccredit({
+      actorUserId: input.actorUserId ?? null,
       sourceType: "aprobacion_programa",
       sourceId: input.programId,
       worksiteId,
@@ -535,6 +502,8 @@ export async function onRiskMatrixPublished(input: {
   matrixVersion: number
   publishedAt: string
   entryCount: number
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "miper",
@@ -546,6 +515,7 @@ export async function onRiskMatrixPublished(input: {
     payload: { matrixId: input.matrixId, matrixVersion: input.matrixVersion, entryCount: input.entryCount },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "miper",
     sourceId: `miper:${input.matrixId}`,
     worksiteId: input.worksiteId,
@@ -573,6 +543,8 @@ export async function onDocumentVersionPublished(input: {
   publishedAt: string
   activityNumbers?: number[]
   catalogActivityIds?: string[]
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "documentation",
@@ -586,6 +558,7 @@ export async function onDocumentVersionPublished(input: {
   if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "documento",
     sourceId: `documento:${input.versionId}`,
     worksiteId: input.worksiteId,
@@ -612,6 +585,8 @@ export async function onDocumentAcknowledged(input: {
   acknowledgedAt: string
   activityNumbers?: number[]
   catalogActivityIds?: string[]
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "documentation",
@@ -625,6 +600,7 @@ export async function onDocumentAcknowledged(input: {
   if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "documento",
     sourceId: `acuse:${input.versionId}:${input.targetId}`,
     worksiteId: input.worksiteId,
@@ -657,6 +633,8 @@ export async function onEmergencyPlanApproved(input: {
   planCode: string
   approvedAt: string
   scenarioCount: number
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "emergencies",
@@ -668,12 +646,15 @@ export async function onEmergencyPlanApproved(input: {
     payload: { planId: input.planId, planCode: input.planCode, scenarioCount: input.scenarioCount },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "emergencia",
     sourceId: `plan:${input.planId}`,
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_EMERGENCY_PLAN_ACTIVITY_NUMBER)],
     occurredAt: input.approvedAt,
-    executedQuantity: Math.max(1, input.scenarioCount),
+    // PRV-19 #16 (auditoría 2026-09-28): un plan aprobado es una ejecución de la
+    // N°83, no una por escenario; la cantidad de escenarios queda en metadatos.
+    executedQuantity: 1,
     evidenceRef: `Plan de emergencia aprobado: ${input.planCode}`,
     metadata: { planCode: input.planCode, scenarioCount: input.scenarioCount },
   })
@@ -702,6 +683,8 @@ export async function onSafetyIndicatorPeriodClosed(input: {
   year: number
   month: number
   closedAt: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "indicators",
@@ -713,11 +696,16 @@ export async function onSafetyIndicatorPeriodClosed(input: {
     payload: { snapshotId: input.snapshotId, year: input.year, month: input.month },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "indicadores",
     sourceId: `indicadores:${input.snapshotId}`,
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_INDICATORS_ACTIVITY_NUMBER)],
     occurredAt: input.closedAt,
+    // PRV-19 #15 (auditoría 2026-09-28): acredita el mes del indicador, no el
+    // del cierre. Cerrar agosto en septiembre pagaba septiembre, y diciembre
+    // cerrado en enero caía en el programa del año siguiente.
+    plannedPeriod: { year: input.year, month: input.month, week: 4 },
     executedQuantity: 1,
     evidenceRef: `Período de indicadores ${input.year}-${String(input.month).padStart(2, "0")} cerrado.`,
     metadata: { year: input.year, month: input.month },
@@ -774,6 +762,8 @@ export async function onGrdStructureEstablished(input: {
   worksiteId: string
   establishedOn: string
   evidenceUrl: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "cgrd",
@@ -785,6 +775,7 @@ export async function onGrdStructureEstablished(input: {
     payload: { kind: input.kind, id: input.id },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "cgrd",
     sourceId: `cgrd-${input.kind}:${input.id}`,
     worksiteId: input.worksiteId,
@@ -804,6 +795,8 @@ export async function onGrdMatrixPublished(input: {
   publishedAt: string
   threatCount: number
   evidenceUrl: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "cgrd",
@@ -815,6 +808,7 @@ export async function onGrdMatrixPublished(input: {
     payload: { matrixId: input.matrixId, matrixVersion: input.matrixVersion, threatCount: input.threatCount },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? null,
     sourceType: "cgrd",
     sourceId: `cgrd-matrix:${input.matrixId}`,
     worksiteId: input.worksiteId,
@@ -857,6 +851,8 @@ export async function onGrdMeetingClosed(input: {
    * igualmente `accreditPdtpFromEvent`, no este conector.
    */
   recordedByUserId: string
+  /** PRV-02: quién registró el hecho de origen. */
+  actorUserId?: string | null
 }): Promise<void> {
   await recordPdtpTriggerEventSafe({
     connectorKey: "cgrd",
@@ -868,6 +864,7 @@ export async function onGrdMeetingClosed(input: {
     payload: { meetingId: input.meetingId },
   })
   await safeAccredit({
+    actorUserId: input.actorUserId ?? input.recordedByUserId,
     sourceType: "cgrd",
     sourceId: `cgrd-meeting:${input.meetingId}`,
     worksiteId: input.worksiteId,

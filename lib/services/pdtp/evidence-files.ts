@@ -14,6 +14,11 @@ import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 export async function sha256OfPdtpEvidence(path: string): Promise<string | null> {
   const absolutePath = resolvePdtpEvidenceFile(path)
   if (!absolutePath) return null
+  return sha256OfFile(absolutePath)
+}
+
+/** sha256 de un archivo ya resuelto a ruta absoluta, o `null` si no existe. */
+export async function sha256OfFile(absolutePath: string): Promise<string | null> {
   try {
     const hash = createHash("sha256")
     for await (const chunk of createReadStream(absolutePath)) hash.update(chunk as Buffer)

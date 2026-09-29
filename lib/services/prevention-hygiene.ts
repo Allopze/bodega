@@ -1196,6 +1196,8 @@ export async function setProtocolApplicability(input: unknown, access: HygieneAc
       version: saved!.version,
       assessedOn: lastAssessedOn,
       nextAssessmentOn: saved!.nextAssessmentOn,
+      previousStatus: existing?.status ?? null,
+      actorUserId: access.userId,
     }
 
     return saved

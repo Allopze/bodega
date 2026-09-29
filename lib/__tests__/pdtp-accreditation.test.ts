@@ -10,6 +10,7 @@
  */
 
 import path from "node:path"
+import { tmpdir } from "node:os"
 import { PGlite } from "@electric-sql/pglite"
 import { and, eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
@@ -25,6 +26,9 @@ testGlobal.__db = inMemoryDb
 
 import { vi } from "vitest"
 import { chileDateParts } from "@/lib/utils"
+
+// PRV-01: las pruebas de evidencia escriben archivos reales; nunca en el storage del repo.
+process.env.STORAGE_PATH = path.join(tmpdir(), `pdtp-accreditation-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
 /* El motor sólo acredita cuando el año del programa coincide con el del evento
  * (ver `accreditation.ts`: "El evento ocurrió fuera del año del programa
@@ -81,6 +85,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionInspectionRuns)
   await inMemoryDb.delete(schema.preventionInspectionPrograms)
   await inMemoryDb.delete(schema.preventionInspectionTemplates)
+  await inMemoryDb.delete(schema.preventionEvidenceUploads)
   await inMemoryDb.delete(schema.worksites)
   /* La bitácora de estos módulos pasó al `audit_log` compartido, y su FK a
    * `users` impide borrar un usuario que actuó. Va antes que `users`. */
@@ -215,14 +220,25 @@ describe("PDTP-001 — «no requiere evidencia» y «faltó la evidencia»", () 
   })
 
   it("un archivo real la deja entregada", async () => {
+    const { mkdirSync, writeFileSync } = await import("node:fs")
+    const { resolvePdtpEvidenceDir } = await import("@/lib/storage/config")
+    mkdirSync(resolvePdtpEvidenceDir(), { recursive: true })
+    writeFileSync(path.join(resolvePdtpEvidenceDir(), "comprobante-firmado.pdf"), "%PDF-1.4")
     const ejecucion = await acreditar("storage/pdtp-evidence/comprobante-firmado.pdf")
     expect(ejecucion?.evidenceStatus).toBe("provided")
     expect(ejecucion?.evidenceUrl).toBe("storage/pdtp-evidence/comprobante-firmado.pdf")
   })
 
-  it("una URL también", async () => {
+  // PRV-01 (auditoría 2026-09-28): una ruta que no existe ya no se lee como
+  // "evidencia entregada", ni una URL externa.
+  it("una ruta a un archivo que no existe queda pendiente", async () => {
+    const ejecucion = await acreditar("storage/pdtp-evidence/no-existe.pdf")
+    expect(ejecucion?.evidenceStatus).toBe("pending")
+  })
+
+  it("una URL externa queda pendiente", async () => {
     const ejecucion = await acreditar("https://drive.chome.cl/comprobante")
-    expect(ejecucion?.evidenceStatus).toBe("provided")
+    expect(ejecucion?.evidenceStatus).toBe("pending")
   })
 
   it("una actividad que NO declara requisito sigue en «no requiere»", async () => {
@@ -541,45 +557,99 @@ describe("accreditPdtpFromEvent", () => {
    * pasado `autoApproveByUserId`.
    */
   describe("M0.4 — auto-aprobación condicionada a evidencia real (alcotest, emergencia, cgrd)", () => {
-    it.each([
-      ["alcotest", "storage/prevention-alcotest-evidence/planilla.pdf"],
-      ["emergencia", "storage/prevention-drill-evidence/acta.pdf"],
-      ["cgrd", "storage/cgrd-evidence/acta.pdf"],
-    ] as const)("%s con ruta de storage se auto-aprueba", async (sourceType, evidenceRef) => {
+    // PRV-01 (auditoría 2026-09-28): "evidencia real" es un archivo que existe,
+    // que la plataforma registró al subirlo y que pertenece a la faena del hecho.
+    // Antes bastaba la forma del texto y una ruta inventada se aprobaba sola.
+    const seedCgrdUpload = async (name: string, worksiteId: string | null) => {
+      const { mkdirSync, writeFileSync } = await import("node:fs")
+      const { resolveCgrdEvidenceDir } = await import("@/lib/storage/config")
+      mkdirSync(resolveCgrdEvidenceDir(), { recursive: true })
+      const content = `%PDF-1.4 ${name}`
+      writeFileSync(path.join(resolveCgrdEvidenceDir(), name), content)
+      const { createHash } = await import("node:crypto")
+      await inMemoryDb.insert(schema.preventionEvidenceUploads).values({
+        path: `storage/cgrd-evidence/${name}`,
+        domain: "cgrd",
+        uploadedByUserId: USER_ID,
+        worksiteId,
+        sha256: createHash("sha256").update(content).digest("hex"),
+        sizeBytes: content.length,
+        mimeType: "application/pdf",
+        createdAt: new Date().toISOString(),
+        claimedAt: worksiteId ? new Date().toISOString() : null,
+      })
+      return `storage/cgrd-evidence/${name}`
+    }
+
+    const acreditarConEvidencia = async (
+      sourceType: "alcotest" | "emergencia" | "cgrd",
+      sourceId: string,
+      evidenceRef: string,
+    ) => {
       const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
       const result = await accreditPdtpFromEvent({
         sourceType,
-        sourceId: `${sourceType}-real-storage`,
+        sourceId,
         worksiteId: WS_ID,
         activityNumbers: [ACT_N],
         occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
         evidenceRef,
         autoApproveByUserId: USER_ID,
+        actorUserId: USER_ID,
       })
       const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
         .where(eq(schema.pdtpExecutions.id, result.accredited[0]!.executionId))
-      expect(execution).toMatchObject({ status: "approved", approvedByUserId: USER_ID })
-      expect((execution!.sourceMetadataJson as Record<string, unknown>).approvalMode).toBe("automatic_source_event")
+      return execution!
+    }
+
+    it("un acta CGRD subida, de la faena y con su sha256 se auto-aprueba", async () => {
+      const ref = await seedCgrdUpload(`acta-real-${Date.now()}.pdf`, WS_ID)
+      const execution = await acreditarConEvidencia("cgrd", "cgrd-real-storage", ref)
+      expect(execution).toMatchObject({ status: "approved", approvedByUserId: USER_ID, evidenceStatus: "provided", executedByUserId: USER_ID })
+      const metadata = execution.sourceMetadataJson as Record<string, unknown>
+      expect(metadata.approvalMode).toBe("automatic_source_event")
+      expect(metadata.evidenceSha256).toMatch(/^[0-9a-f]{64}$/)
+    })
+
+    it.each([
+      ["alcotest", "storage/prevention-alcotest-evidence/no-existe.pdf"],
+      ["emergencia", "storage/prevention-drill-evidence/no-existe.pdf"],
+      ["cgrd", "storage/cgrd-evidence/no-existe.pdf"],
+    ] as const)("%s con una ruta de storage sin archivo ni registro queda submitted (PRV-01)", async (sourceType, evidenceRef) => {
+      const execution = await acreditarConEvidencia(sourceType, `${sourceType}-ruta-inventada`, evidenceRef)
+      expect(execution).toMatchObject({ status: "submitted", approvedByUserId: null })
+      expect(execution.evidenceStatus).not.toBe("provided")
+      expect((execution.sourceMetadataJson as Record<string, unknown>).evidenceRejection).toBe("not_registered")
     })
 
     it.each([
       ["alcotest", "https://drive.chome.cl/alcotest-acta"],
-      ["emergencia", "https://drive.chome.cl/simulacro-acta"],
+      ["emergencia", "https://x"],
       ["cgrd", "https://drive.chome.cl/cgrd-acta"],
-    ] as const)("%s con URL http(s) también se auto-aprueba", async (sourceType, evidenceRef) => {
-      const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
-      const result = await accreditPdtpFromEvent({
-        sourceType,
-        sourceId: `${sourceType}-real-url`,
-        worksiteId: WS_ID,
-        activityNumbers: [ACT_N],
-        occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
-        evidenceRef,
-        autoApproveByUserId: USER_ID,
-      })
-      const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
-        .where(eq(schema.pdtpExecutions.id, result.accredited[0]!.executionId))
-      expect(execution?.status).toBe("approved")
+    ] as const)("%s con una URL externa queda submitted: la URL no es evidencia verificable (PRV-01)", async (sourceType, evidenceRef) => {
+      const execution = await acreditarConEvidencia(sourceType, `${sourceType}-url`, evidenceRef)
+      expect(execution.status).toBe("submitted")
+      expect(execution.evidenceStatus).not.toBe("provided")
+      expect((execution.sourceMetadataJson as Record<string, unknown>).evidenceRejection).toBe("external_url")
+    })
+
+    it("un acta registrada para otra faena no respalda esta (PRV-01)", async () => {
+      await inMemoryDb.insert(schema.worksites).values({ id: "ws-otra-acta", name: "Otra faena", code: "OTRA", isActive: true }).onConflictDoNothing()
+      const ref = await seedCgrdUpload(`acta-otra-${Date.now()}.pdf`, "ws-otra-acta")
+      const execution = await acreditarConEvidencia("cgrd", "cgrd-otra-faena", ref)
+      expect(execution.status).toBe("submitted")
+      expect((execution.sourceMetadataJson as Record<string, unknown>).evidenceRejection).toBe("other_worksite")
+    })
+
+    it("un acta cuyo archivo cambió después de subirse no se auto-aprueba (PRV-01)", async () => {
+      const name = `acta-alterada-${Date.now()}.pdf`
+      const ref = await seedCgrdUpload(name, WS_ID)
+      const { writeFileSync } = await import("node:fs")
+      const { resolveCgrdEvidenceDir } = await import("@/lib/storage/config")
+      writeFileSync(path.join(resolveCgrdEvidenceDir(), name), "%PDF-1.4 contenido reemplazado")
+      const execution = await acreditarConEvidencia("cgrd", "cgrd-alterada", ref)
+      expect(execution.status).toBe("submitted")
+      expect((execution.sourceMetadataJson as Record<string, unknown>).evidenceRejection).toBe("checksum_mismatch")
     })
 
     it.each([
@@ -767,7 +837,7 @@ describe("revokePdtpAccreditation", () => {
     })
     await inMemoryDb.update(schema.pdtpExecutions).set({ status: "submitted" })
       .where(eq(schema.pdtpExecutions.id, executionId))
-    await approvePdtpExecution(executionId, USER_ID, "all")
+    await approvePdtpExecution(executionId, USER_ID, "all", { reason: "Revisé el registro de origen en su módulo." })
 
     const revoked = await revokePdtpAccreditation({
       sourceType: "inspeccion",

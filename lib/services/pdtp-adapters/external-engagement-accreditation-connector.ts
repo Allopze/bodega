@@ -33,12 +33,12 @@
  * (`closeExternalEngagement`), y un fallo acá no debe deshacerla.
  */
 
-import { and, desc, eq, isNull } from "drizzle-orm"
+import { and, desc, eq, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, sstDocumentLinks, sstDocuments, sstDocumentVersions } from "@/db/schema"
+import { pdtpActivities, pdtpFulfillmentEvents, sstDocumentLinks, sstDocuments, sstDocumentVersions } from "@/db/schema"
 import { logger } from "@/lib/logger"
 import { resolvePdtpActivityIdsForNumbers } from "@/lib/services/pdtp/accreditation"
-import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
+import { recordPdtpFulfillmentEvent, recordRejectedPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
 import { pdtpCatalogActivityIdForLegacyNumber } from "./catalog-activities-2026"
 
 /** N°20: "Coordinar programas preventivos con la empresa mandante" (DS 44 art. 20). */
@@ -161,22 +161,13 @@ export async function onExternalEngagementClosed(input: {
 
   const occurredAt = occurredAtFromChileDate(input.occurredOn)
 
-  if (await mandanteActivityIsStillConstancia(input.worksiteId, occurredAt)) {
-    logger.warn(
-      { engagementId: input.engagementId, worksiteId: input.worksiteId },
-      "[external-engagement-pdtp-connector] La N°20 sigue clasificada 'constancia': no se acredita desde este conector para evitar el doble conteo con Constancias. Declárala en Constancias hasta correr `npm run pdtp:apply-mechanisms`.",
-    )
-    return
-  }
-
   const linkedPath = await linkedEvidencePath(input.engagementId)
   const reference = input.officialReference?.trim() || null
   const evidenceRef = linkedPath
     ?? reference
     ?? `Reunión de coordinación (DS 44 art. 20) con la empresa mandante: ${input.engagementId}`
-
-  await recordPdtpFulfillmentEvent({
-    sourceType: "engagement",
+  const event = {
+    sourceType: "engagement" as const,
     sourceId: `coordinacion-mandante:${input.engagementId}`,
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_MANDANTE_COORDINATION_ACTIVITY_NUMBER)],
@@ -184,6 +175,62 @@ export async function onExternalEngagementClosed(input: {
     executedQuantity: 1,
     evidenceRef,
     autoApproveByUserId: input.closedByUserId,
+    actorUserId: input.closedByUserId,
     metadata: { kind: input.kind, counterpartyType: input.counterpartyType },
-  })
+  }
+
+  if (await mandanteActivityIsStillConstancia(input.worksiteId, occurredAt)) {
+    // PRV-22 (auditoría 2026-09-28): antes se retornaba sin dejar rastro y la
+    // reunión se perdía para siempre cuando la N°20 pasaba a "enganche". Ahora
+    // el hecho queda en el libro como diferido, y
+    // `replayDeferredMandanteCoordinations` lo acredita cuando el mecanismo
+    // cambie. No se acredita ahora para no contarlo dos veces con Constancias.
+    logger.warn(
+      { engagementId: input.engagementId, worksiteId: input.worksiteId },
+      "[external-engagement-pdtp-connector] La N°20 sigue clasificada 'constancia': el hecho queda diferido en el libro hasta que corra `npm run pdtp:apply-mechanisms`.",
+    )
+    await recordRejectedPdtpFulfillmentEvent(event, {
+      accredited: [], skippedExcluded: [], skippedNotFound: [],
+      deferredReason: DEFERRED_MECHANISM_CONSTANCIA,
+    } as Parameters<typeof recordRejectedPdtpFulfillmentEvent>[1], db)
+    return
+  }
+
+  await recordPdtpFulfillmentEvent(event)
+}
+
+const DEFERRED_MECHANISM_CONSTANCIA = "mechanism_constancia"
+
+/**
+ * PRV-22: acredita las coordinaciones con el mandante que quedaron diferidas
+ * mientras la N°20 era constancia, una vez que ya no lo es. Idempotente: cada
+ * hecho tiene su clave en el libro. La llama el reconciliador del PDTP.
+ */
+export async function replayDeferredMandanteCoordinations(): Promise<{ replayed: number; stillDeferred: number }> {
+  const deferred = await db.select().from(pdtpFulfillmentEvents).where(and(
+    eq(pdtpFulfillmentEvents.sourceType, "engagement"),
+    eq(pdtpFulfillmentEvents.status, "rejected"),
+    sql`${pdtpFulfillmentEvents.resultJson}->>'deferredReason' = ${DEFERRED_MECHANISM_CONSTANCIA}`,
+  ))
+  let replayed = 0
+  let stillDeferred = 0
+  for (const event of deferred) {
+    if (await mandanteActivityIsStillConstancia(event.worksiteId, event.occurredAt)) {
+      stillDeferred++
+      continue
+    }
+    await recordPdtpFulfillmentEvent({
+      sourceType: "engagement",
+      sourceId: event.sourceId,
+      worksiteId: event.worksiteId,
+      catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_MANDANTE_COORDINATION_ACTIVITY_NUMBER)],
+      occurredAt: event.occurredAt,
+      executedQuantity: Number(event.quantity),
+      evidenceRef: event.evidenceRef ?? undefined,
+      autoApproveByUserId: event.autoApproveByUserId ?? undefined,
+      actorUserId: event.actorUserId ?? undefined,
+    })
+    replayed++
+  }
+  return { replayed, stillDeferred }
 }

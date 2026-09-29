@@ -390,7 +390,7 @@ async function assertNoPendingNotApplicable(client: DB | Tx, programId: string, 
   const pending = Number(row?.pending ?? 0)
     + await countPendingPdtpScheduledOutcomesForMonth(client, { programId, worksiteId, year, month })
   if (pending > 0) {
-    const label = pending === 1 ? '1 "no aplica" en revisión' : `${pending} "no aplica" en revisión`
+    const label = pending === 1 ? '1 desvío ("no aplica" o reprogramación) en revisión' : `${pending} desvíos ("no aplica" o reprogramación) en revisión`
     throw new Error(`El mes de ${monthLabel(year, month)} tiene ${label} en esta faena. Apruébalos o recházalos en Aprobaciones antes de cerrarlo.`)
   }
 }

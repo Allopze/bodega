@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs"
+import { recordModuleHistory } from "@/lib/audit"
 import { and, eq, sql } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import { pdtpActivities, pdtpActivityExecutionConfigs, pdtpExecutions, pdtpPrograms, pdtpScheduledInstances } from "@/db/schema"
@@ -181,6 +182,19 @@ export async function startPdtpScheduledInstance(input: {
       eq(pdtpScheduledInstances.id, current.id),
       eq(pdtpScheduledInstances.status, current.status),
     )).returning()
+    // M-08: el primer inicio queda en la bitácora con quién lo abrió.
+    if (row && !current.startedAt) {
+      await recordModuleHistory(tx, {
+        module: "pdtp",
+        entityType: "scheduled_instance",
+        entityId: row.id,
+        worksiteId: row.worksiteId,
+        changeType: "started",
+        beforeState: { status: current.status },
+        afterState: { status: row.status, connector: connector.key, instrumentId },
+        actorUserId: input.userId,
+      })
+    }
     // `created` se decide aquí, con la fila bloqueada: comparar el
     // `startedAt` devuelto con `now` nunca coincidía, porque la base devuelve
     // el timestamp en su propio formato de texto y no en ISO (PREV-M08).
@@ -283,6 +297,18 @@ export async function recordPdtpScheduledInstanceOutcome(input: {
       eq(pdtpScheduledInstances.status, row.status),
     )).returning()
     if (!updated) throw new Error("La instancia programada cambió antes de registrar el resultado.")
+    // M-08 (auditoría 2026-09-28): la transición queda en la bitácora, no sólo
+    // en `source_metadata_json`, que se sobrescribe.
+    await recordModuleHistory(tx, {
+      module: "pdtp",
+      entityType: "scheduled_instance",
+      entityId: updated.id,
+      worksiteId: updated.worksiteId,
+      changeType: input.action,
+      beforeState: { status: row.status },
+      afterState: { status: updated.status, ...(input.evidenceRef ? { evidenceRef: input.evidenceRef } : {}) },
+      actorUserId: input.userId ?? null,
+    })
     return updated
   }
   return isTransactionHost(client) ? client.transaction((tx) => execute(tx)) : execute(client as Tx)

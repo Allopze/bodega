@@ -167,7 +167,9 @@ export function PdtpObligationsWorkbench({
                 {(canExecute || canCancel) && (
                   <div className="flex flex-wrap justify-end gap-2">
                     {canReport(row) && (row.effectiveStatus === "pending" || row.effectiveStatus === "overdue") && <Button type="button" size="sm" onClick={() => setReporting(row)}>Reportar trabajo</Button>}
-                    {canCancel && (row.effectiveStatus === "pending" || row.effectiveStatus === "overdue") && <Button type="button" size="sm" variant="ghost" onClick={() => setCancelling(row)}>Cancelar</Button>}
+                    {canCancel && (row.effectiveStatus === "pending" || row.effectiveStatus === "overdue") && (row.pendingCancellation
+                      ? <span className="self-center text-xs text-[var(--color-text-muted)]">Cancelación en revisión</span>
+                      : <Button type="button" size="sm" variant="ghost" onClick={() => setCancelling(row)}>Cancelar</Button>)}
                     {canExecute && row.effectiveStatus === "reported" && <Button type="button" size="sm" variant="secondary" onClick={() => router.push("/prevencion/pdtp/aprobaciones")}>Ir a aprobación</Button>}
                   </div>
                 )}
@@ -310,13 +312,15 @@ function CancelObligationDialog({ row, onClose, onSaved }: { row: ObligationRow 
     } finally {
       setPending(false)
     }
-    if (!result.ok) { setError(result.message ?? "No se pudo cancelar la obligación."); return }
+    if (!result.ok) { setError(result.message ?? "No se pudo pedir la cancelación."); return }
+    const { toast } = await import("@/lib/toast")
+    toast.success("Cancelación pedida: queda en revisión hasta que otra persona la apruebe.")
     onClose(); onSaved()
   }
   return <Dialog open={row !== null} onOpenChange={(value) => { if (!value) onClose() }}><DialogContent>
-    <DialogHeader><DialogTitle>Cancelar obligación</DialogTitle><DialogDescription>La cancelación no contará como caso cumplido y conservará el motivo en la trazabilidad.</DialogDescription></DialogHeader>
+    <DialogHeader><DialogTitle>Pedir cancelación</DialogTitle><DialogDescription>La cancelación saca la obligación del indicador de plazos, así que la aprueba otra persona en Aprobaciones. Mientras tanto la obligación se sigue exigiendo.</DialogDescription></DialogHeader>
     <div><Field label="Motivo" required><Textarea value={reason} onChange={(event) => setReason(event.target.value)} minLength={10} maxLength={3000} rows={3} /></Field>{error && <p role="alert" className="mt-2 text-sm text-[var(--color-danger)]">{error}</p>}</div>
-    <DialogFooter><Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Volver</Button><Button type="button" variant="destructive" onClick={save} disabled={pending || reason.trim().length < 10}>{pending ? "Cancelando..." : "Confirmar cancelación"}</Button></DialogFooter>
+    <DialogFooter><Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Volver</Button><Button type="button" variant="destructive" onClick={save} disabled={pending || reason.trim().length < 10}>{pending ? "Enviando..." : "Pedir cancelación"}</Button></DialogFooter>
   </DialogContent></Dialog>
 }
 

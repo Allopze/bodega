@@ -43,6 +43,9 @@ import type { PdtpEvidenceIntegrityResult } from "@/lib/services/pdtp/evidence-i
  */
 export const PREVENTION_ALERT_JOBS = [
   "pdtp-weekly-reminders",
+  // PRV-14: la reconciliación del libro pasó a su propio job diario.
+  "pdtp-daily-reconcile",
+  "prevention-cron-staleness",
   "pdtp-fulfillment-reconcile",
   "pdtp-evidence-integrity",
   "pdtp-evidence-gc",
@@ -155,5 +158,32 @@ export async function alertPdtpEvidenceIntegrityIssues(result: Partial<Integrity
     })
   } catch (err) {
     logger.error("[prevention-alerts] no se pudo avisar el resultado del escaneo de integridad", err)
+  }
+}
+
+/**
+ * PRV-14 (auditoría 2026-09-28): un job que dejó de correr no falla, así que
+ * `alertPreventionCronFailure` nunca se enteraba. Lo llama el job
+ * `prevention-cron-staleness` con los jobs que superaron su cadencia sin una
+ * corrida exitosa. Un aviso por día.
+ */
+export async function alertPreventionCronStaleness(stale: Array<{ jobName: string; lastSuccessAt: string | null; maxAgeHours: number }>): Promise<void> {
+  if (stale.length === 0) return
+  try {
+    const detail = stale
+      .map((job) => `${job.jobName} (${job.lastSuccessAt ? `última corrida exitosa ${job.lastSuccessAt.slice(0, 16).replace("T", " ")} UTC` : "sin corridas exitosas registradas"}; se espera cada ${job.maxAgeHours} h)`)
+      .join(" · ")
+    await notify({
+      context: "cron/prevention-cron-staleness",
+      permission: CRON_FAILURE_RECIPIENT_PERMISSION,
+      title: `${plural(stale.length, "cron de Prevención dejó", "crons de Prevención dejaron")} de correr`,
+      body: `${detail}. Revisa que el contenedor cron esté arriba y que CRON_SECRET coincida; los avisos, recordatorios y reconciliaciones de esos jobs no están saliendo.`,
+      entityType: "cron_run",
+      entityId: "prevention-cron-staleness",
+      entityHref: "/admin",
+      dedupeKey: `prevention-cron-stale:${todayInChile()}`,
+    })
+  } catch (err) {
+    logger.error("[prevention-alerts] no se pudo avisar de crons detenidos", err)
   }
 }

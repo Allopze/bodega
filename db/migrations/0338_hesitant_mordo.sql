@@ -1,0 +1,4 @@
+DROP INDEX IF EXISTS "pdtp_executions_activity_scope_period_unique";--> statement-breakpoint
+ALTER TABLE "pdtp_executions" ADD COLUMN "sequence" integer DEFAULT 1 NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "pdtp_executions_activity_scope_period_unique" ON "pdtp_executions" USING btree ("activity_id","worksite_id","year","month","week","sequence") WHERE "pdtp_executions"."obligation_id" IS NULL AND "pdtp_executions"."origin" <> 'integration';--> statement-breakpoint
+ALTER TABLE "pdtp_executions" ADD CONSTRAINT "pdtp_executions_sequence_check" CHECK ("pdtp_executions"."sequence" >= 1);

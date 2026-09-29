@@ -189,6 +189,28 @@ async function seedSourceProgram() {
 }
 
 describe("createAnnualPdtpProgram — copia del año anterior (D20)", () => {
+  it("la copia conserva número e identidad de catálogo: el contrato de destinos sigue apuntando al mismo módulo (M-13)", async () => {
+    const { engancheDestinationFor } = await import("@/lib/services/pdtp-adapters/fulfillment-contract-2026")
+    const { source } = await seedSourceProgram()
+    const result = await createAnnualPdtpProgram({ year: TARGET_YEAR, userId: USER_ID })
+    const identity = (rows: Array<typeof schema.pdtpActivities.$inferSelect>) => rows
+      .map((row) => ({ n: row.n, catalogActivityId: row.catalogActivityId, mechanism: row.mechanism }))
+      .sort((a, b) => a.n - b.n)
+    const sourceRows = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.programId, source.id))
+    const copyRows = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.programId, result.program.id))
+    // Las retiradas no pasan al año nuevo; las demás conservan su identidad.
+    expect(identity(copyRows)).toEqual(identity(sourceRows.filter((row) => row.status !== "retired")))
+    for (const row of copyRows) expect(engancheDestinationFor(row.n)).toEqual(engancheDestinationFor(sourceRows.find((s) => s.n === row.n)!.n))
+  })
+
+  it("la cabecera lleva el cargo real de quien elabora, no siempre «Prevencionista» (C-01)", async () => {
+    await seedSourceProgram()
+    await inMemoryDb.insert(schema.roles).values({ id: "role-jdpr-copy", name: "jefatura_dpr_copia", label: "Jefatura del DPR" })
+    await inMemoryDb.insert(schema.userRoles).values({ userId: JDPR, roleId: "role-jdpr-copy" })
+    const result = await createAnnualPdtpProgram({ year: TARGET_YEAR, userId: JDPR })
+    expect(result.program).toMatchObject({ elaboratedByName: "Jefatura", elaboratedByTitle: "Jefatura del DPR" })
+  })
+
   it("por omisión copia la versión vigente del año anterior, con período, título y cabecera del año nuevo", async () => {
     const { source } = await seedSourceProgram()
     const result = await createAnnualPdtpProgram({ year: TARGET_YEAR, userId: USER_ID })

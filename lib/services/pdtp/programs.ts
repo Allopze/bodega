@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, lt, ne, sql } from "drizzle-orm"
+import { recordAudit } from "@/lib/audit"
 import { db, type Tx } from "@/db"
 import {
   pdtpActivities,
@@ -7,7 +8,10 @@ import {
   pdtpPeriodClosures,
   pdtpPrograms,
   pdtpSheets,
+  roles as schemaRoles,
+  userRoles as schemaUserRoles,
   users as schemaUsers,
+  workers as schemaWorkers,
 } from "@/db/schema"
 import { countOf } from "@/lib/utils"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, isUniqueViolation, pdtpProgramId } from "./helpers"
@@ -18,6 +22,32 @@ import { getCurrentPdtpBase2026Version, getPdtpTemplateVersion, instantiatePdtpT
 
 type LegacyPdtpProgramCreateInput = {
   year: number; title: string; userId: string; copySheetsFromProgramId?: string; templateVersionId?: string; revisionFromProgramId?: string; appliesToAllWorksites?: boolean
+}
+
+
+/**
+ * C-01 (auditoría 2026-09-28): el cargo de quien elabora el programa. Antes era
+ * siempre "Prevencionista", aunque lo creara la jefatura o el administrador: el
+ * documento firmable decía algo que no era cierto. Se toma el cargo de su ficha
+ * de trabajador, o el rol de la plataforma, en ese orden.
+ */
+async function resolvePdtpElaborator(tx: Tx, userId: string): Promise<{ elaboratedByName: string; elaboratedByTitle: string }> {
+  const [elaborator] = await tx.select({ name: schemaUsers.name, position: schemaWorkers.position })
+    .from(schemaUsers)
+    .leftJoin(schemaWorkers, eq(schemaWorkers.id, schemaUsers.workerId))
+    .where(eq(schemaUsers.id, userId))
+    .limit(1)
+  const name = elaborator?.name?.trim()
+  if (!name) return { elaboratedByName: "Equipo de Prevención", elaboratedByTitle: "Sistema" }
+  const position = elaborator?.position?.trim()
+  if (position) return { elaboratedByName: name, elaboratedByTitle: position }
+  const [role] = await tx.select({ label: schemaRoles.label })
+    .from(schemaUserRoles)
+    .innerJoin(schemaRoles, eq(schemaRoles.id, schemaUserRoles.roleId))
+    .where(eq(schemaUserRoles.userId, userId))
+    .orderBy(schemaRoles.label)
+    .limit(1)
+  return { elaboratedByName: name, elaboratedByTitle: role?.label?.trim() || "Prevencionista" }
 }
 
 export type PdtpAnnualProgramSource =
@@ -146,13 +176,9 @@ export async function createAnnualPdtpProgram(input: {
       source = candidate ? { kind: "previous_program", programId: candidate.id } : { kind: "base" }
     }
 
-    const [elaborator] = await tx.select({ name: schemaUsers.name }).from(schemaUsers)
-      .where(eq(schemaUsers.id, input.userId))
-      .limit(1)
+    const { elaboratedByName, elaboratedByTitle } = await resolvePdtpElaborator(tx, input.userId)
     const now = new Date().toISOString()
     const programId = pdtpProgramId(input.year, 1)
-    const elaboratedByName = elaborator?.name?.trim() || "Equipo de Prevención"
-    const elaboratedByTitle = elaborator?.name?.trim() ? "Prevencionista" : "Sistema"
 
     if (source.kind === "previous_program") {
       const sourceProgram = await assertCopyableSource(source.programId, input.year, tx)
@@ -427,13 +453,7 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
         throw new Error("La versión de plantilla seleccionada ya no existe.")
       }
 
-      const [elaborator] = await tx
-        .select({ name: schemaUsers.name })
-        .from(schemaUsers)
-        .where(eq(schemaUsers.id, input.userId))
-        .limit(1)
-      const elaboratedByName = elaborator?.name?.trim() || "Equipo de Prevención"
-      const elaboratedByTitle = elaborator?.name?.trim() ? "Prevencionista" : "Sistema"
+      const { elaboratedByName, elaboratedByTitle } = await resolvePdtpElaborator(tx, input.userId)
 
       const [program] = await tx.insert(pdtpPrograms).values({
         id: programId,
@@ -558,7 +578,7 @@ export async function getPdtpProgram(programId: string) {
   return program ?? null
 }
 
-export async function deletePdtpProgram(programId: string) {
+export async function deletePdtpProgram(programId: string, userId: string | null = null) {
   // Lock + re-chequeo: borrar en carrera con un submit-a-revisión cascadearía
   // hojas/actividades/ejecuciones de un programa que ya entró a revisión.
   await db.transaction(async (tx) => {
@@ -587,6 +607,29 @@ export async function deletePdtpProgram(programId: string) {
     // `ne("approved")` aunque la guarda ya contó cero: si una aprobación entra
     // en carrera, la fila queda y la RESTRICT de la base aborta el borrado en
     // vez de llevarse la evidencia.
+    // M-19 (auditoría 2026-09-28): el borrado no dejaba rastro. Antes de borrar
+    // se deja en `audit_log` —que no cuelga del programa— qué se fue: cuántas
+    // actividades, qué ejecuciones y con qué archivos de evidencia (el GC puede
+    // borrarlos después, al quedar sin referencias).
+    const removedExecutions = await tx.select({ id: pdtpExecutions.id, status: pdtpExecutions.status, evidenceUrl: pdtpExecutions.evidenceUrl, evidencePhotos: pdtpExecutions.evidencePhotos })
+      .from(pdtpExecutions).where(and(inArray(pdtpExecutions.activityId, programActivityIds), ne(pdtpExecutions.status, "approved")))
+    const activityCount = (await tx.select({ n: sql<number>`count(*)::int` }).from(pdtpActivities).where(eq(pdtpActivities.programId, programId)))[0]?.n ?? 0
+    await recordAudit({
+      userId,
+      action: "delete",
+      entityType: "pdtp_program",
+      entityId: programId,
+      entityCode: `${program.year} v${program.version}`,
+      oldState: {
+        title: program.title,
+        status: program.status,
+        activityCount,
+        executions: removedExecutions.map((row) => ({ id: row.id, status: row.status })),
+        evidencePaths: removedExecutions.flatMap((row) => [row.evidenceUrl, ...(Array.isArray(row.evidencePhotos) ? row.evidencePhotos as string[] : [])]).filter(Boolean),
+      },
+      reason: "Borrador de programa eliminado.",
+    }, tx)
+
     await tx.delete(pdtpExecutions).where(and(
       inArray(pdtpExecutions.activityId, programActivityIds),
       ne(pdtpExecutions.status, "approved"),
@@ -595,7 +638,11 @@ export async function deletePdtpProgram(programId: string) {
 
     // El resto cascadea (hojas/actividades/schedule/overrides/change_log). No
     // escribimos un changelog "programa eliminado" después: el programa ya no
-    // existe, y la fila violaría su propia FK.
+    // existe, y la fila violaría su propia FK. PRV-13: el changelog es de sólo
+    // agregar; su cascada se permite sólo aquí, local a esta transacción, y el
+    // resumen de arriba ya quedó en `audit_log`.
+    await tx.execute(sql`SELECT set_config('app.audit_maintenance', 'on', true)`)
     await tx.delete(pdtpPrograms).where(eq(pdtpPrograms.id, programId))
+    await tx.execute(sql`SELECT set_config('app.audit_maintenance', 'off', true)`)
   })
 }

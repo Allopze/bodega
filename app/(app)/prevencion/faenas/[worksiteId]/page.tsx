@@ -7,6 +7,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { getWorksiteOrganization } from "@/lib/services/prevention-cphs-organization"
 import { listCommitteeWorkers } from "@/lib/services/prevention-cphs"
 import { WorksiteProfile } from "./worksite-profile"
+import { nullIfCphsNotFound } from "@/lib/services/prevention-cphs-access"
 
 export const metadata: Metadata = { title: "Ficha preventiva de faena" }
 
@@ -23,7 +24,10 @@ export default async function FichaPreventivaPage({ params }: { params: Promise<
     permissions: session.user.permissions,
   }
 
-  const profile = await getWorksiteOrganization(worksiteId, access).catch(() => null)
+  // M-10 (auditoría 2026-09-28): sólo "no existe o fuera de alcance" es un 404.
+  // Cualquier otro error (base caída, consulta rota) se relanza para que llegue
+  // a la página de error y al log, en vez de fingir que la faena no existe.
+  const profile = await getWorksiteOrganization(worksiteId, access).catch(nullIfCphsNotFound)
   if (!profile) notFound()
 
   const canManage = session.user.permissions.includes("prevention:cphs:manage")

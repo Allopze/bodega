@@ -337,11 +337,12 @@ export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<v
   const faena = String(fd.get("faena") ?? "")
   const programId = String(fd.get("programId") ?? "")
   const detailPath = programId ? `${REVALIDATE}/${programId}` : REVALIDATE
-  const backTo = (errorMessage?: string): never => {
+  const backTo = (errorMessage?: string, notice?: string): never => {
     const params = new URLSearchParams()
     if (hoja) params.set("hoja", hoja)
     if (faena) params.set("faena", faena)
     if (errorMessage) params.set("overrideError", errorMessage)
+    if (notice) params.set("overrideNotice", notice)
     const qs = params.toString()
     redirect(qs ? `${detailPath}?${qs}` : detailPath)
   }
@@ -351,6 +352,7 @@ export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<v
   const session = guard.session
 
   const mode = String(fd.get("mode") ?? "set")
+  let result: Awaited<ReturnType<typeof setPdtpActivityOverride>>
   try {
     const parsed = pdtpActivityOverrideSchema.parse({
       activityId: fd.get("activityId"),
@@ -361,17 +363,18 @@ export async function setPdtpActivityOverrideFormAction(fd: FormData): Promise<v
       plannedQuantity: fd.get("plannedQuantity"),
       reason: fd.get("reason"),
     })
-    if (mode === "delete" || parsed.plannedQuantity === 0) {
-      await deletePdtpActivityOverride(parsed, session.user.id, scopeToIds(resolveWorksiteScope(session)))
-    } else {
-      await setPdtpActivityOverride(parsed, session.user.id, scopeToIds(resolveWorksiteScope(session)))
-    }
+    result = mode === "delete" || parsed.plannedQuantity === 0
+      ? await deletePdtpActivityOverride(parsed, session.user.id, scopeToIds(resolveWorksiteScope(session)))
+      : await setPdtpActivityOverride(parsed, session.user.id, scopeToIds(resolveWorksiteScope(session)))
   } catch (e) {
     return backTo(fail(e).message)
   }
   revalidatePath(REVALIDATE)
   if (programId) revalidatePath(detailPath)
-  return backTo()
+  // M-06: una reducción no se aplica todavía; se avisa que quedó en revisión.
+  return result.status === "pending_review"
+    ? backTo(undefined, "La meta baja, así que quedó en revisión: se aplicará cuando otra persona la apruebe en Aprobaciones.")
+    : backTo()
 }
 
 // ── Document reconciliation ──────────────────────────────────────────────────

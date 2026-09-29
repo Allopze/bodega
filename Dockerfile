@@ -256,6 +256,19 @@ RUN ./node_modules/.bin/esbuild scripts/reconcile-pdtp-fulfillment-events.ts \
     --external:postgres \
     --outfile=/tmp/reconcile-pdtp-fulfillment-events.cjs
 
+# PRV-01/PRV-03 (auditoría de production readiness 2026-09-28): devuelve a
+# revisión las aprobaciones automáticas cuya evidencia no se puede verificar y
+# las de semanas futuras. A diferencia de B01, sí corre en cada deploy
+# (PDTP_UNVERIFIED_DEPLOY_MODE): es idempotente y no toca meses cerrados.
+RUN ./node_modules/.bin/esbuild scripts/report-pdtp-unverified-auto-approvals.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/apply-pdtp-unverified-approvals.mjs
+
 # PREV-B01-BACKFILL: corrige las aprobaciones que la revocación anterior al fix
 # de B01 dejó vivas. Por defecto sólo reporta; aplicar exige `--apply --actor`
 # por override explícito y el deploy nunca lo corre.
@@ -565,6 +578,7 @@ COPY --from=build /tmp/apply-pdtp-demand-slas.mjs ./scripts/apply-pdtp-demand-sl
 COPY --from=build /tmp/apply-pdtp-legal-folder.mjs ./scripts/apply-pdtp-legal-folder.mjs
 COPY --from=build /tmp/reconcile-pdtp-fulfillment-events.cjs ./scripts/reconcile-pdtp-fulfillment-events.cjs
 COPY --from=build /tmp/revert-pdtp-revoked-approvals.mjs ./scripts/revert-pdtp-revoked-approvals.mjs
+COPY --from=build /tmp/apply-pdtp-unverified-approvals.mjs ./scripts/apply-pdtp-unverified-approvals.mjs
 COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconciliation.mjs ./scripts/preflight-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/rollback-purchase-invoice-reconciliation-statuses.mjs ./scripts/rollback-purchase-invoice-reconciliation-statuses.mjs

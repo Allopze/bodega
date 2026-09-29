@@ -7,6 +7,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { MaterialEnvironmentalDashboard } from "./material-environmental-dashboard"
 import { ExportMaterialAmbientalButton } from "./material-environmental-export-button"
 import { getMaterialEnvironmentalEvents } from "@/lib/services/prevention-indicadores"
+import { codeYear } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Daño material y ambiental" }
 
@@ -21,7 +22,8 @@ export default async function MaterialAmbientalPage({ searchParams }: PageProps)
   if (!can(session, "prevention:indicadores:view")) redirect("/forbidden")
 
   const query = await searchParams
-  const currentYear = new Date().getFullYear()
+  // C-05: el año de Chile, no el del reloj del servidor (UTC en producción).
+  const currentYear = codeYear()
   const year = Number(query.year) || currentYear
 
   const { worksites, eventData } = await getMaterialEnvironmentalEvents(year, resolveWorksiteScope(session))

@@ -4,6 +4,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { executePreventionPrivacyRight } from "@/lib/services/prevention-privacy-rights"
 import { safeActionMessage } from "@/lib/action-error"
 import { logger } from "@/lib/logger"
+import { trustedAuditIp } from "@/lib/security/login-rate-limit-ip"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -37,7 +38,7 @@ export async function POST(request: Request, context: RouteContext) {
       ctx: {
         userId: session.user.id,
         userEmail: session.user.email ?? undefined,
-        ip: request.headers.get("x-forwarded-for") ?? undefined,
+        ip: trustedAuditIp(request.headers),
         userAgent: request.headers.get("user-agent") ?? undefined,
       },
       scope: resolveWorksiteScope(session),

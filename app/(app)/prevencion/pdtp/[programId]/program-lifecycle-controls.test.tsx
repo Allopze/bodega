@@ -58,6 +58,17 @@ describe("ProgramLifecycleControls", () => {
     expect(screen.getByRole("button", { name: "Enviar a revisión" })).toBeDisabled()
   })
 
+  // M-14 (auditoría 2026-09-28): una periódica sin planificar se avisa sin bloquear.
+  it("avisa de actividades periódicas sin planificar sin bloquear el envío", () => {
+    render(<ProgramLifecycleControls
+      program={baseProgram}
+      permissions={permissions}
+      submitWarnings={["1 actividad periódica no tiene ninguna semana planificada (N°12)."]}
+    />)
+    expect(screen.getByText(/no tiene ninguna semana planificada/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Enviar a revisión" })).toBeEnabled()
+  })
+
   it("shows the signed content version and only the next valid technical decision", () => {
     render(<ProgramLifecycleControls program={{
       ...baseProgram,

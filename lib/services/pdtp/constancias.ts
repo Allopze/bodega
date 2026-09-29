@@ -10,8 +10,8 @@
 import { and, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpPrograms, pdtpProgramWorksites, worksites } from "@/db/schema"
-import { currentPdtpPeriod, filterPdtpRowsFromActivation, pdtpActivationPeriod, type PdtpPeriod } from "./period"
-import { loadProgramScheduleAndExecutions, type WorksiteScope } from "./helpers"
+import { currentPdtpPeriod, effectiveActivationFor, filterPdtpRowsFromActivation, pdtpActivationPeriod, type PdtpPeriod } from "./period"
+import { loadProgramScheduleAndExecutions, loadWorksiteAddedAtMap, type WorksiteScope } from "./helpers"
 import { resolveProgramWorksiteIds } from "./worksites"
 import { getPdtpOperationalYears } from "./operational-years"
 
@@ -105,11 +105,13 @@ async function programConstanciaDebts(program: ProgramRow, scope: WorksiteScope,
     worksiteIds.map((worksiteId) => loadProgramScheduleAndExecutions(activityIds, program.year, worksiteId)
       .then((loaded) => ({ worksiteId, ...loaded }))),
   )
+  // PRV-09: el mismo corte por faena que el indicador.
+  const addedAtByWorksite = await loadWorksiteAddedAtMap(program.id, worksiteIds)
   for (const { worksiteId, scheduleRows, executionRows } of perWorksite) {
     for (const activityId of activityIds) {
       const activity = activityById.get(activityId)
       if (!activity) continue
-      const plannedCells = filterPdtpRowsFromActivation(scheduleRows, program.activatedAt)
+      const plannedCells = filterPdtpRowsFromActivation(scheduleRows, effectiveActivationFor(program.activatedAt, addedAtByWorksite.get(worksiteId) ?? null))
         .filter((row) => row.activityId === activityId
           && row.year === program.year
           && row.month <= throughMonth

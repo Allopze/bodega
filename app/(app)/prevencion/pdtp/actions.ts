@@ -6,6 +6,12 @@ export {
 } from "./actions/executions"
 
 export {
+  requestPdtpExecutionAnnulmentAction,
+  reviewPdtpReviewRequestAction,
+  withdrawPdtpReviewRequestAction,
+} from "./actions/review-requests"
+
+export {
   submitPdtpProgramForReviewAction,
   decidePdtpApprovalStepAction,
   approvePdtpProgramJdprAction,

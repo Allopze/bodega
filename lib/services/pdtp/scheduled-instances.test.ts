@@ -50,8 +50,16 @@ describe("PDTP scheduled instances", () => {
   })
 
   it("derives overdue and completed-late without persisting extra states", () => {
-    expect(derivePdtpScheduledInstanceStatus({ status: "pending", scheduledFor: "2027-01-10", now: "2027-01-11T00:00:00.000Z" })).toBe("overdue")
-    expect(derivePdtpScheduledInstanceStatus({ status: "completed", scheduledFor: "2027-01-10", completedAt: "2027-01-11T00:00:00.000Z", now: "2027-01-12T00:00:00.000Z" })).toBe("completed_late")
+    expect(derivePdtpScheduledInstanceStatus({ status: "pending", scheduledFor: "2027-01-10", now: "2027-01-11T12:00:00.000Z" })).toBe("overdue")
+    expect(derivePdtpScheduledInstanceStatus({ status: "completed", scheduledFor: "2027-01-10", completedAt: "2027-01-11T12:00:00.000Z", now: "2027-01-12T12:00:00.000Z" })).toBe("completed_late")
     expect(derivePdtpScheduledInstanceStatus({ status: "completed", scheduledFor: "2027-01-10", completedAt: "2027-01-10T12:00:00.000Z", now: "2027-01-12T00:00:00.000Z" })).toBe("completed")
+  })
+
+  // PRV-10 (auditoría 2026-09-28): el día es el de Chile, no el UTC.
+  it("una ocurrencia cumplida a las 22:00 de su día no se informa atrasada", () => {
+    // 2027-01-10 22:00 en Chile (verano, UTC-3) = 2027-01-11T01:00Z.
+    expect(derivePdtpScheduledInstanceStatus({ status: "completed", scheduledFor: "2027-01-10", completedAt: "2027-01-11T01:00:00.000Z", now: "2027-01-11T01:30:00.000Z" })).toBe("completed")
+    // A las 21:30 del mismo día una pendiente todavía no vence.
+    expect(derivePdtpScheduledInstanceStatus({ status: "pending", scheduledFor: "2027-01-10", now: "2027-01-11T00:30:00.000Z" })).toBe("pending")
   })
 })

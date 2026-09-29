@@ -173,6 +173,17 @@ describe("la revocación de la N°7 comparte clave con su acreditación", () => 
       .toBe("El denominador aprobado se corrigió.")
   })
 
+  // PRV-19 #15 (auditoría 2026-09-28): el cierre del mes M hecho en M+1 paga
+  // la celda de M, no la del mes en que se cerró.
+  it("acredita el mes del indicador aunque se cierre el mes siguiente", async () => {
+    await onSafetyIndicatorPeriodClosed({
+      worksiteId: WS_ID, snapshotId: SNAPSHOT_ID, year: PROGRAM_YEAR, month: MONTH,
+      closedAt: new Date(Date.UTC(PROGRAM_YEAR, MONTH, 5, 15)).toISOString(), // día 5 del mes siguiente
+    })
+    const [acreditada] = await executions()
+    expect(acreditada).toMatchObject({ year: PROGRAM_YEAR, month: MONTH })
+  })
+
   it("una clave que no es la del cierre no revoca nada — el defecto original", async () => {
     // Es la regresión exacta: el conector sellaba con el id de la faena. Si
     // alguien lo vuelve a hacer, esta ejecución seguiría viva y el libro

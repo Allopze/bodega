@@ -281,21 +281,35 @@ export async function runPdtpObligationReminders(asOf = new Date()): Promise<Pdt
   const notifiedUserIds = new Set<string>()
   let notificationsCreated = 0
 
+  // M-11 (auditoría 2026-09-28): antes eran dos consultas por obligación y una
+  // más por destinatario. Los destinatarios se resuelven una vez por faena y
+  // los recordatorios ya enviados se leen de una sola vez.
+  const recipientsByWorksite = new Map<string, Promise<string[]>>()
+  const recipientsFor = (worksiteId: string) => {
+    let recipients = recipientsByWorksite.get(worksiteId)
+    if (!recipients) {
+      recipients = getUserIdsWithPermissionForWorksite("prevention:pdtp:execute", worksiteId)
+      recipientsByWorksite.set(worksiteId, recipients)
+    }
+    return recipients
+  }
+  const obligationIds = [...new Set(candidates.map((candidate) => candidate.obligation.id))]
+  const alreadySent = new Set<string>()
+  for (let index = 0; index < obligationIds.length; index += 500) {
+    const rows = await db.select({
+      obligationId: pdtpObligationReminders.obligationId,
+      recipientUserId: pdtpObligationReminders.recipientUserId,
+      reminderWindow: pdtpObligationReminders.reminderWindow,
+    })
+      .from(pdtpObligationReminders)
+      .where(inArray(pdtpObligationReminders.obligationId, obligationIds.slice(index, index + 500)))
+    for (const row of rows) alreadySent.add(`${row.obligationId}:${row.recipientUserId}:${row.reminderWindow}`)
+  }
+
   for (const candidate of candidates) {
-    const recipientIds = await getUserIdsWithPermissionForWorksite(
-      "prevention:pdtp:execute",
-      candidate.obligation.worksiteId,
-    )
+    const recipientIds = await recipientsFor(candidate.obligation.worksiteId)
     for (const recipientUserId of recipientIds) {
-      const [alreadyRecorded] = await db.select({ id: pdtpObligationReminders.id })
-        .from(pdtpObligationReminders)
-        .where(and(
-          eq(pdtpObligationReminders.obligationId, candidate.obligation.id),
-          eq(pdtpObligationReminders.recipientUserId, recipientUserId),
-          eq(pdtpObligationReminders.reminderWindow, candidate.window),
-        ))
-        .limit(1)
-      if (alreadyRecorded) continue
+      if (alreadySent.has(`${candidate.obligation.id}:${recipientUserId}:${candidate.window}`)) continue
 
       const copy = OBLIGATION_WINDOW_COPY[candidate.window]
       const dedupeKey = `pdtp-obligation:${candidate.obligation.id}:${recipientUserId}:${candidate.window}`

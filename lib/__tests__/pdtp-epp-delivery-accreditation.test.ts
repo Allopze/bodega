@@ -24,6 +24,9 @@ import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
 
+// PRV-01: la evidencia se verifica en disco; nunca en el storage del repo.
+process.env.STORAGE_PATH = path.join((await import("node:os")).tmpdir(), `epp-delivery-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
 const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb }
@@ -165,6 +168,10 @@ describe("registerWorkerStockDelivery acredita la N°62 del PDTP", () => {
   })
 
   it("captura la ruta del adjunto de respaldo como evidencia real", async () => {
+    const { mkdirSync, writeFileSync } = await import("node:fs")
+    const { resolveDeliveriesDir } = await import("@/lib/storage/config")
+    mkdirSync(resolveDeliveriesDir(), { recursive: true })
+    writeFileSync(path.join(resolveDeliveriesDir(), "comprobante.pdf"), "%PDF-1.4")
     await registerWorkerStockDelivery({
       sourceWorksiteId: WS_ID, workerId: WORKER_ID, deliveredBy: USER_ID,
       items: [{ productId: EPP_PRODUCT_ID, quantity: 1 }],
@@ -182,6 +189,24 @@ describe("registerWorkerStockDelivery acredita la N°62 del PDTP", () => {
     const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
       .where(eq(schema.pdtpExecutions.activityId, ACT_ID))
     expect(execution?.evidenceStatus).toBe("provided")
+  })
+
+  // PRV-01 (auditoría 2026-09-28): una ruta que no existe en disco ya no se
+  // declara "evidencia entregada".
+  it("un adjunto que no existe en disco deja la evidencia pendiente", async () => {
+    await registerWorkerStockDelivery({
+      sourceWorksiteId: WS_ID, workerId: WORKER_ID, deliveredBy: USER_ID,
+      items: [{ productId: EPP_PRODUCT_ID, quantity: 1 }],
+      proofAttachment: {
+        fileName: "perdido.pdf",
+        filePath: "storage/deliveries/perdido.pdf",
+        fileSize: 1024,
+        mimeType: "application/pdf",
+      },
+    })
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, ACT_ID))
+    expect(execution?.evidenceStatus).not.toBe("provided")
   })
 
   it("una entrega sin ningún EPP no acredita nada", async () => {

@@ -351,6 +351,11 @@ export function PlanDetail({
                             <CancelDrillDialog drill={drill} />
                           </div>
                         )}
+                        {drill.status === "completed" && (
+                          <div className="flex justify-end gap-2">
+                            <CancelDrillDialog drill={drill} annul />
+                          </div>
+                        )}
                       </TableCell>
                     )}
                   </TableRow>
@@ -940,7 +945,7 @@ function CompleteDrillDialog({ drill, assignees, openSlots }: {
  * lugar borraría que el simulacro anterior no se realizó.
  */
 
-function CancelDrillDialog({ drill }: { drill: DrillInfo }) {
+function CancelDrillDialog({ drill, annul = false }: { drill: DrillInfo; annul?: boolean }) {
   const [open, setOpen] = React.useState(false)
   const operation = useOperation()
 
@@ -956,20 +961,22 @@ function CancelDrillDialog({ drill }: { drill: DrillInfo }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="ghost">Cancelar</Button></DialogTrigger>
+      <DialogTrigger asChild><Button size="sm" variant="ghost">{annul ? "Anular" : "Cancelar"}</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
-            <DialogTitle>Cancelar simulacro</DialogTitle>
+            <DialogTitle>{annul ? "Anular simulacro realizado" : "Cancelar simulacro"}</DialogTitle>
             <DialogDescription>
-              El simulacro queda cancelado con su motivo, no se borra. Para reprogramarlo, cancélalo y programa uno nuevo.
+              {annul
+                ? "Úsalo si el simulacro se registró por error. Queda anulado con su motivo, no se borra; su casilla vuelve a pendiente y deja de acreditar la N°84 del programa."
+                : "El simulacro queda cancelado con su motivo, no se borra. Para reprogramarlo, cancélalo y programa uno nuevo."}
             </DialogDescription>
           </DialogHeader>
           <Field label="Motivo" htmlFor="cancel-drill-reason" hint="Mínimo 10 caracteres.">
             <Textarea id="cancel-drill-reason" name="reason" required minLength={10} maxLength={1000} rows={3} />
           </Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending}>Cancelar simulacro</Button></DialogFooter>
+          <DialogFooter><Button type="submit" disabled={operation.pending}>{annul ? "Anular simulacro" : "Cancelar simulacro"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

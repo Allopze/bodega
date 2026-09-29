@@ -45,6 +45,25 @@ export function currentPdtpPeriod(now: Date = new Date()): PdtpPeriod {
 }
 
 /**
+ * ¿La celda es posterior a la semana en curso? Es el validador de celda que
+ * comparten el "no realizado", el "no aplica" y —desde PRV-03 (auditoría
+ * 2026-09-28)— el registro y la aprobación de ejecuciones: sobre una semana que
+ * todavía no ocurre no hay hecho que declarar.
+ */
+export function isPdtpCellInFuture(
+  cell: { year: number; month: number; week: number },
+  current: PdtpPeriod = currentPdtpPeriod(),
+): boolean {
+  return cell.year > current.year
+    || (cell.year === current.year && cell.month > current.month)
+    || (cell.year === current.year && cell.month === current.month && cell.week > current.week)
+}
+
+export function assertPdtpCellNotInFuture(cell: { year: number; month: number; week: number }, message: string): void {
+  if (isPdtpCellInFuture(cell)) throw new Error(message)
+}
+
+/**
  * El período contra el que se lee un programa de `year`: hoy si es el año en
  * curso; diciembre, semana 4 si ya terminó —el año que está en cierre se mide
  * completo, no contra el enero del calendario—; su primera semana si todavía
@@ -234,8 +253,12 @@ function overdueCutoff(period: PdtpPeriod, options: PdtpActivityStatusOptions | 
 }
 
 /**
- * Un mes vencido es deuda cuando tenía plan, no tiene ejecución, no tiene un
- * envío esperando revisión (D9) y nadie declaró por qué no se hizo.
+ * Un mes vencido es deuda cuando tenía plan, lo ejecutado no lo cubre, no tiene
+ * un envío esperando revisión (D9) y nadie declaró por qué no se hizo.
+ *
+ * PRV-07 (auditoría 2026-09-28): antes bastaba cualquier ejecución (`executed
+ * === 0`), así que 1 de 4 charlas en un mes vencido escondía el atraso aunque
+ * el porcentaje contara 25 %.
  */
 function isUnpaidMonth(
   monthlyPlanned: number[],
@@ -246,7 +269,7 @@ function isUnpaidMonth(
   const planned = monthlyPlanned[monthIndex] ?? 0
   const executed = monthlyExecuted[monthIndex] ?? 0
   const submitted = options?.monthlySubmitted?.[monthIndex] ?? 0
-  return planned > 0 && executed === 0 && submitted === 0 && !hasDeclaredNotPerformed(options, monthIndex)
+  return planned > 0 && executed < planned && submitted === 0 && !hasDeclaredNotPerformed(options, monthIndex)
 }
 
 /**

@@ -77,6 +77,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
   await inMemoryDb.delete(schema.auditLog)
+  await inMemoryDb.delete(schema.pdtpEvidenceUploads)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
   await inMemoryDb.insert(schema.users).values([

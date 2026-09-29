@@ -7,6 +7,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { transitionPreventionPrivacyRequest } from "@/lib/services/prevention-privacy"
 import { safeActionMessage } from "@/lib/action-error"
 import { logger } from "@/lib/logger"
+import { trustedAuditIp } from "@/lib/security/login-rate-limit-ip"
 
 interface RouteContext { params: Promise<{ id: string }> }
 
@@ -27,7 +28,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       ctx: {
         userId: session.user.id,
         userEmail: session.user.email ?? undefined,
-        ip: request.headers.get("x-forwarded-for") ?? undefined,
+        ip: trustedAuditIp(request.headers),
         userAgent: request.headers.get("user-agent") ?? undefined,
       },
       scope: resolveWorksiteScope(session),

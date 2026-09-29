@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
+import { UNTRUSTED_FILE_HEADERS } from "@/lib/security/file-response"
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { can, canAccessWorksite, canAny } from "@/lib/auth/can"
@@ -87,6 +88,7 @@ export async function GET(_request: Request, ctx: RouteCtx) {
       headers: {
         "Content-Type": version.mimeType ?? "application/octet-stream",
         "Content-Disposition": encodeContentDisposition(version.fileName, "attachment"),
+        ...UNTRUSTED_FILE_HEADERS,
         "Cache-Control": "private, max-age=0, no-cache",
       },
     })

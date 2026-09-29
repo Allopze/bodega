@@ -17,6 +17,8 @@ import { PdtpApprovalButtons } from "../pdtp-approval-buttons"
 import { PdtpEvidenceThumbs } from "../pdtp-evidence-thumbs"
 import { WeeklyScheduledSection } from "./weekly-scheduled-section"
 import { NotApplicableReviewSection, type NotApplicableReviewItem } from "./not-applicable-review-section"
+import { ReviewRequestsSection } from "./review-requests-section"
+import { listPendingPdtpReviewRequests } from "@/lib/services/pdtp/review-requests"
 import { countOf } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Aprobaciones PDTP" }
@@ -48,11 +50,12 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
   // permiso y el mismo alcance de faenas que las ejecuciones.
   // Desde 0334 también el "no aplica" y la cancelación de ocurrencias
   // programadas, en la misma sección y con la misma regla.
-  const [pending, weeklyPendingAll, pendingCellNotApplicable, pendingScheduledOutcomes] = await Promise.all([
+  const [pending, weeklyPendingAll, pendingCellNotApplicable, pendingScheduledOutcomes, pendingReviewRequests] = await Promise.all([
     listPendingPdtpExecutions(worksiteIds, program ? { programId: program.id } : {}),
     findPdtpWeeklyPending(),
     listPendingPdtpNotApplicable(worksiteIds, program ? { programId: program.id } : {}),
     listPendingPdtpScheduledInstanceOutcomes(worksiteIds, program ? { programId: program.id } : {}),
+    listPendingPdtpReviewRequests(worksiteIds, program ? { programId: program.id } : {}),
   ])
   const pendingNotApplicable: NotApplicableReviewItem[] = [
     ...pendingCellNotApplicable.map((item) => ({ ...item, kind: "cell" as const })),
@@ -96,6 +99,8 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
       evidenceText: string | null
       evidenceUrl: string | null
       evidencePhotos: string[]
+      needsApprovalReason: boolean
+      origin: string
     }>
   }>()
   for (const execution of pending) {
@@ -120,6 +125,8 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
       evidenceText: execution.evidenceText,
       evidenceUrl: execution.evidenceUrl,
       evidencePhotos: execution.evidencePhotos,
+      needsApprovalReason: execution.needsApprovalReason,
+      origin: execution.origin,
     })
   }
   const groupedRows = [...rows.values()]
@@ -182,6 +189,7 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
                               evidenceUrl={exec.evidenceUrl}
                               evidencePhotos={exec.evidencePhotos}
                               evidenceText={exec.evidenceText}
+                              origin={exec.origin}
                             />
                           ))}
                         </div>
@@ -199,6 +207,8 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
       )}
 
       <NotApplicableReviewSection items={pendingNotApplicable} currentUserId={session.user.id} />
+
+      <ReviewRequestsSection items={pendingReviewRequests} currentUserId={session.user.id} />
 
       <WeeklyScheduledSection targets={weeklyPending} />
     </PageContainer>

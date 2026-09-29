@@ -166,7 +166,7 @@ export async function deletePdtpProgramAction(
 
   try {
     const parsed = pdtpProgramDeleteSchema.parse({ programId: formData.get("programId") })
-    await deletePdtpProgramService(parsed.programId)
+    await deletePdtpProgramService(parsed.programId, guard.session.user.id)
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
@@ -190,7 +190,7 @@ export async function createPdtpSheetAction(
       label: formData.get("label"),
       area: formData.get("area"),
     })
-    await createPdtpSheet(parsed)
+    await createPdtpSheet(parsed, guard.session.user.id)
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }
@@ -211,7 +211,7 @@ export async function deletePdtpSheetAction(
       sheetId: formData.get("sheetId"),
       programId: formData.get("programId"),
     })
-    await deletePdtpSheetService(parsed.sheetId, parsed.programId)
+    await deletePdtpSheetService(parsed.sheetId, parsed.programId, guard.session.user.id)
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${parsed.programId}/editar`)
     return { ok: true }

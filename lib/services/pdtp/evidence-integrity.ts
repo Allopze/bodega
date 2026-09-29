@@ -2,6 +2,11 @@
  * Escaneo de integridad entre la base y el disco para la evidencia PDTP
  * (PREV-I13-C).
  *
+ * M-12 (auditoría 2026-09-28): recorre también la evidencia de los otros
+ * dominios de Prevención que una ejecución referencia (alcotest, simulacros,
+ * higiene, CGRD, documentos…). Antes sólo miraba `storage/pdtp-evidence/`, así
+ * que el respaldo de toda la acreditación por integración quedaba fuera.
+ *
  * La auditoría lo planteó así: si desaparecen las evidencias de 40
  * actividades, nadie lo detecta hasta que un auditor hace clic. Este escaneo
  * recorre cada referencia al directorio `storage/pdtp-evidence/` que conoce la
@@ -17,16 +22,16 @@
  */
 import { promises as fs } from "node:fs"
 import { logger } from "@/lib/logger"
-import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
-import { sha256OfPdtpEvidence } from "./evidence-files"
-import { collectPdtpEvidenceReferences, isPdtpEvidencePath, type PdtpEvidenceSource } from "./evidence-references"
+import { sha256OfFile } from "./evidence-files"
+import { collectPdtpEvidenceReferences, type PdtpEvidenceSource } from "./evidence-references"
+import { resolvePreventionEvidenceFile } from "./integration-evidence"
 import { loadPdtpEvidenceUploadSha256 } from "./evidence-uploads"
 
 export type PdtpEvidenceOwnerRef = { source: PdtpEvidenceSource; ownerId: string; worksiteId: string | null }
 
 export type PdtpEvidenceIntegrityResult = {
   ok: boolean
-  /** Referencias al directorio PDTP encontradas en la base (una ruta puede tener varias). */
+  /** Referencias a archivos de la plataforma encontradas en la base (una ruta puede tener varias). */
   references: number
   /** Archivos distintos revisados. */
   checkedFiles: number
@@ -44,7 +49,9 @@ function describeFinding(item: { path: string; owners: PdtpEvidenceOwnerRef[] })
 }
 
 export async function scanPdtpEvidenceIntegrity(): Promise<PdtpEvidenceIntegrityResult> {
-  const references = (await collectPdtpEvidenceReferences()).filter((ref) => isPdtpEvidencePath(ref.path))
+  // Sólo las rutas que resuelven a un directorio de evidencia conocido: una
+  // URL histórica o un texto libre no son un archivo que se pueda perder.
+  const references = (await collectPdtpEvidenceReferences()).filter((ref) => resolvePreventionEvidenceFile(ref.path) !== null)
 
   const byPath = new Map<string, { owners: PdtpEvidenceOwnerRef[]; sha256: Set<string> }>()
   for (const ref of references) {
@@ -75,7 +82,7 @@ export async function scanPdtpEvidenceIntegrity(): Promise<PdtpEvidenceIntegrity
 
   for (const [path, entry] of [...byPath.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     result.checkedFiles++
-    const absolutePath = resolvePdtpEvidenceFile(path)
+    const absolutePath = resolvePreventionEvidenceFile(path)
     const exists = absolutePath
       ? await fs.stat(absolutePath).then((stat) => stat.isFile(), () => false)
       : false
@@ -87,7 +94,7 @@ export async function scanPdtpEvidenceIntegrity(): Promise<PdtpEvidenceIntegrity
       result.withoutChecksum++
       continue
     }
-    const actual = await sha256OfPdtpEvidence(path)
+    const actual = await sha256OfFile(absolutePath!)
     if (!actual) {
       result.missing.push({ path, owners: entry.owners })
       continue

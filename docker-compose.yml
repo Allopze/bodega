@@ -337,6 +337,13 @@ services:
         # cada corrida con huérfanos deja una fila storage_orphan_sweep en
         # audit_log.
         30 4 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs pdtp-evidence-gc >/proc/1/fd/1 2>&1
+        # PRV-14: reconciliación diaria del libro de cumplimiento PDTP (05:45),
+        # antes de los avisos de la mañana.
+        45 5 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs pdtp-daily-reconcile >/proc/1/fd/1 2>&1
+        # PRV-14: jobs de Prevención que superaron su cadencia sin correr bien.
+        40 * * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-cron-staleness >/proc/1/fd/1 2>&1
+        # PRV-14: estado de los respaldos desde fuera del scheduler de respaldos.
+        40 8 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs backup-health >/proc/1/fd/1 2>&1
         5 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-capa-reminders >/proc/1/fd/1 2>&1
         10 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-training-reminders >/proc/1/fd/1 2>&1
         20 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-cphs-alerts >/proc/1/fd/1 2>&1
@@ -813,6 +820,30 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
       - PDTP_RECONCILE_LIMIT=${PDTP_RECONCILE_LIMIT:-}
     command: ["node", "scripts/reconcile-pdtp-fulfillment-events.cjs"]
+
+  # One-shot (PRV-01/PRV-03, auditoría de production readiness 2026-09-28):
+  # devuelve a revisión las aprobaciones automáticas cuya evidencia no se puede
+  # verificar y las de semanas futuras. Corre en cada deploy, después de la
+  # conciliación: idempotente (sólo toca filas `approved` que siguen sin
+  # verificar) y nunca modifica un mes cerrado. Firma
+  # PDTP_UNVERIFIED_ACTOR_USER_ID o, sin ella, el primer `administrador`.
+  #   PDTP_UNVERIFIED_DRY_RUN=true docker compose run --rm apply-pdtp-unverified-approvals
+  apply-pdtp-unverified-approvals:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - PDTP_UNVERIFIED_DEPLOY_MODE=true
+      - PDTP_UNVERIFIED_ACTOR_USER_ID=${PDTP_UNVERIFIED_ACTOR_USER_ID:-}
+      - PDTP_UNVERIFIED_DRY_RUN=${PDTP_UNVERIFIED_DRY_RUN:-}
+    command: ["node", "scripts/apply-pdtp-unverified-approvals.mjs"]
 
   # One-shot: PREV-B01-BACKFILL. Reporta (JSON) las aprobaciones humanas que la
   # revocación anterior al fix de B01 dejó vivas sobre registros anulados. Por

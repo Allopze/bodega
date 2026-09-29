@@ -12,9 +12,10 @@ vi.mock("@/db", () => ({
   db: {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          limit: vi.fn(async () => mocks.alreadyRecorded ? [{ id: "reminder-1" }] : []),
-        })),
+        // M-11: los recordatorios ya enviados se leen de una vez por lote.
+        where: vi.fn(async () => mocks.alreadyRecorded
+          ? [{ obligationId: "obligation-1", recipientUserId: "user-1", reminderWindow: "due_1d" }]
+          : []),
       })),
     })),
   },

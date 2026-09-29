@@ -41,6 +41,9 @@ export const pdtpExecutionSchema = z.object({
 
 export const pdtpExecutionApprovalSchema = z.object({
   executionId: z.string().min(1, "Ejecución requerida"),
+  // PRV-02: sólo se exige (en el servicio) cuando la ejecución llegó de otro
+  // módulo sin evidencia verificada.
+  reason: z.string().trim().max(1000).optional(),
 })
 
 export const pdtpExecutionRejectionSchema = z.object({

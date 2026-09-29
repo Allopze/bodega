@@ -47,4 +47,18 @@ describe("PdtpEvidenceThumbs", () => {
     expect(screen.getAllByRole("link")).toHaveLength(1)
     expect(screen.getByText("En el módulo de origen")).toBeTruthy()
   })
+
+  it("un rótulo de integración se ve como automático y sin el id interno (C-03/C-04)", () => {
+    render(<PdtpEvidenceThumbs evidenceUrl="Entrega EPP: bYpyCTc20gK9xQ1" evidencePhotos={[]} evidenceText="Acta cerrada: a1B2c3D4e5F6g7" origin="integration" />)
+    expect(screen.getByText("Entrega EPP")).toBeTruthy()
+    expect(screen.getByText("Acta cerrada")).toBeTruthy()
+    expect(screen.getAllByText("Automático:")).toHaveLength(2)
+    expect(screen.queryByText(/bYpyCTc20g/)).toBeNull()
+  })
+
+  it("la observación de una persona se sigue mostrando como cita", () => {
+    render(<PdtpEvidenceThumbs evidenceUrl={null} evidencePhotos={[]} evidenceText="Se hizo en el comedor" origin="manual" />)
+    expect(screen.getByText("“Se hizo en el comedor”")).toBeTruthy()
+    expect(screen.queryByText("Automático:")).toBeNull()
+  })
 })

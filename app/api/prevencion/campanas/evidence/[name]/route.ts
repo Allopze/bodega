@@ -13,7 +13,7 @@ export const runtime = "nodejs"
 
 import { type NextRequest, NextResponse } from "next/server"
 import { promises as fs } from "node:fs"
-import { and, inArray, like } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -21,6 +21,7 @@ import { resolveCampaignEvidenceFile } from "@/lib/storage/config"
 import { db } from "@/db"
 import { preventionCampaigns } from "@/db/schema"
 import { logger } from "@/lib/logger"
+import { UNTRUSTED_FILE_HEADERS } from "@/lib/security/file-response"
 import { inferEvidenceContentType } from "@/lib/services/prevention-evidence-upload"
 
 const CAMPAIGN_EVIDENCE_PREFIX = "storage/campaign-evidence/"
@@ -43,8 +44,8 @@ export async function GET(
   if (scope.mode === "none") return NextResponse.json({ error: "Evidencia no encontrada" }, { status: 404 })
 
   try {
-    const likePattern = `%${name.replace(/[%_]/g, (m) => `\\${m}`)}%`
-    const nameMatch = like(preventionCampaigns.evidenceUrl, likePattern)
+    // PRV-18 (auditoría 2026-09-28): igualdad exacta con la ruta, no `LIKE`.
+    const nameMatch = eq(preventionCampaigns.evidenceUrl, `${CAMPAIGN_EVIDENCE_PREFIX}${name}`)
     const rows = await db.select({ id: preventionCampaigns.id })
       .from(preventionCampaigns)
       .where(scope.mode === "all" ? nameMatch : and(nameMatch, inArray(preventionCampaigns.worksiteId, scope.ids)))
@@ -57,7 +58,7 @@ export async function GET(
       headers: {
         "Content-Type": inferEvidenceContentType(name),
         "Cache-Control": "private, max-age=300",
-        "X-Content-Type-Options": "nosniff",
+        ...UNTRUSTED_FILE_HEADERS,
       },
     })
   } catch (err) {

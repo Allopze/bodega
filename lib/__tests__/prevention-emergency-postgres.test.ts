@@ -532,7 +532,7 @@ describeIf("Emergencias on real PostgreSQL", () => {
     // Un simulacro cancelado ya no vuelve a cancelarse ni a completarse.
     await expect(service.cancelEmergencyDrill({
       drillId: programado.id, expectedVersion: cancelado.version, reason: "Motivo suficientemente largo.",
-    }, EXECUTOR)).rejects.toThrow(/programado puede cancelarse/)
+    }, EXECUTOR)).rejects.toThrow(/programado o completado puede cancelarse/)
     await expect(service.completeEmergencyDrill({
       drillId: programado.id, expectedVersion: cancelado.version,
       executedAt: SECOND_DRILL_EXECUTED_AT, outcome: "satisfactory",

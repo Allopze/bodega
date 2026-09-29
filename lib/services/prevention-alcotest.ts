@@ -213,6 +213,7 @@ export async function recordAlcoholTest(
     // M0.4: el motor exige además evidencia real para auto-aprobar esta
     // fuente — un control extraordinario sin casilla ni URL queda `submitted`.
     autoApproveByUserId: performedByUserId,
+    actorUserId: performedByUserId,
     metadata: {
       alcoholTestId: id,
       result: input.result ?? "negativo",
@@ -338,6 +339,7 @@ export async function recordAlcoholTestDispatch(
       ?? `Envío de registros ${input.year}-${String(input.month).padStart(2, "0")} a ${input.recipient}`,
     // M0.4: igual que en el control — sólo auto-aprueba con evidencia real.
     autoApproveByUserId: sentByUserId,
+    actorUserId: sentByUserId,
     metadata: { alcoholTestDispatchId: id, year: input.year, month: input.month, testCount: testsInPeriod.length },
   })
 

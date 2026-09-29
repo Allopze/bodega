@@ -123,6 +123,26 @@ type SheetDeviation = SheetActivity["deviations"][number]
  * deuda más antigua es la que se salda primero, y abrir en la semana de hoy
  * obligaba a buscarla a mano.
  */
+/**
+ * PRV-08 (auditoría 2026-09-28): semanas con una ejecución aprobada que no
+ * alcanzó lo planificado. Registrar ahí crea un complemento revisable, y el
+ * formulario lo dice en vez de parecer que reescribe lo aprobado.
+ */
+function partialApprovedCellsFor(activity: SheetActivity): Array<{ month: number; week: number; executed: number; planned: number }> {
+  const approved = new Map<string, number>()
+  for (const execution of activity.executions) {
+    if (execution.status !== "approved") continue
+    const key = `${execution.month}-${execution.week}`
+    approved.set(key, (approved.get(key) ?? 0) + execution.executedQuantity)
+  }
+  return activity.effectiveSchedule.flatMap((cell) => {
+    const executed = approved.get(`${cell.month}-${cell.week}`) ?? 0
+    return executed > 0 && executed < cell.plannedQuantity
+      ? [{ month: cell.month, week: cell.week, executed, planned: cell.plannedQuantity }]
+      : []
+  })
+}
+
 function registerCellFor(activity: SheetActivity, status: PdtpSheetActivityStatus, currentPeriod: PdtpPeriod): { month: number; week: number } {
   if (status.status !== "overdue" || status.firstOverdueMonth === null) return { month: currentPeriod.month, week: currentPeriod.week }
   const weeks = activity.effectiveSchedule
@@ -546,6 +566,7 @@ export function PdtpSheetTable({
                                   evidenceRequirement={activity.evidenceRequirement}
                                   mechanism={activity.mechanism}
                                   manualEvidencePolicy={activity.manualEvidencePolicy}
+                                  partialApprovedCells={partialApprovedCellsFor(activity)}
                                 />}
                                 {canManageProgram && <PdtpOverrideForm
                                   programId={view.program.id}
@@ -753,6 +774,7 @@ export function PdtpSheetTable({
                                   evidenceRequirement={activity.evidenceRequirement}
                                   mechanism={activity.mechanism}
                                   manualEvidencePolicy={activity.manualEvidencePolicy}
+                                  partialApprovedCells={partialApprovedCellsFor(activity)}
                                 />}
                                 {canManageProgram && <PdtpOverrideForm
                                   programId={view.program.id}

@@ -93,9 +93,13 @@ export function derivePdtpScheduledInstanceStatus(input: {
   completedAt?: string | null
   now?: string
 }): PdtpScheduledInstanceDerivedStatus {
-  const now = (input.now ?? new Date().toISOString()).slice(0, 10)
+  // PRV-10 (auditoría 2026-09-28): el día se mide en hora de Chile. Con
+  // `.slice(0, 10)` sobre un ISO UTC, entre las 20:00 y la medianoche una
+  // ocurrencia cumplida a tiempo se informaba "atrasada" y una pendiente
+  // vencía un día antes.
+  const now = todayInChile(input.now ? new Date(input.now) : new Date())
   if (input.status === "completed") {
-    return input.completedAt && input.completedAt.slice(0, 10) > input.scheduledFor ? "completed_late" : "completed"
+    return input.completedAt && todayInChile(new Date(input.completedAt)) > input.scheduledFor ? "completed_late" : "completed"
   }
   if ((input.status === "pending" || input.status === "in_progress" || input.status === "submitted") && now > input.scheduledFor) return "overdue"
   return input.status as PdtpScheduledInstanceDerivedStatus

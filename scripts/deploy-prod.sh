@@ -635,6 +635,13 @@ run_timed "Diagnóstico del cableado de acreditación del PDTP" run_in_prod dock
 # anteriores. Idempotente; nunca aborta el deploy por su cuenta.
 run_timed "Reconciliando eventos de cumplimiento pendientes del PDTP" run_in_prod docker compose run --rm reconcile-pdtp-fulfillment-events
 
+# Después de la conciliación, para mirar el estado final: devuelve a revisión
+# las aprobaciones automáticas sin evidencia verificable y las de semanas
+# futuras (PRV-01/PRV-03). Idempotente, no toca meses cerrados y nunca aborta el
+# deploy por su cuenta (PDTP_UNVERIFIED_DEPLOY_MODE). El log del paso lista cada
+# ejecución devuelta; quedan en Aprobaciones para que una persona las revise.
+run_timed "Devolviendo a revisión aprobaciones PDTP sin evidencia verificable" run_in_prod docker compose run --rm apply-pdtp-unverified-approvals
+
 # The durable database marker, not merely a host env var, determines whether
 # the immediately previous image is safe. A failed probe is deliberately
 # conservative: after the app has been replaced, an operator must choose a

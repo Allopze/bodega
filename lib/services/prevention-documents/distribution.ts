@@ -329,6 +329,7 @@ export async function acknowledgeDocumentVersion(args: DistributionContext & {
       const accreditationTarget = await resolvePdtpAccreditationTarget({ sourceType: "documento", sourceId: doc.typeId, eventType: "acknowledge", legacyActivityNumbers: activityNumbers }, tx)
       if (accreditationTarget.catalogActivityIds?.length || accreditationTarget.activityNumbers?.length) {
         accreditation = {
+          actorUserId: args.ctx.userId,
           versionId: version.id,
           targetId: target.id,
           worksiteId: doc.worksiteId,

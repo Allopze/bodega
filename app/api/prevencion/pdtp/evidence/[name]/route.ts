@@ -24,6 +24,7 @@ import { resolvePdtpEvidenceFile } from "@/lib/storage/config"
 import { assertWorksiteAccess } from "@/lib/services/prevention-pdtp"
 import { findPdtpEvidenceOwner } from "@/lib/services/pdtp/evidence-references"
 import { logger } from "@/lib/logger"
+import { UNTRUSTED_FILE_HEADERS } from "@/lib/security/file-response"
 
 const PDTP_EVIDENCE_PREFIX = "storage/pdtp-evidence/"
 
@@ -68,6 +69,7 @@ export async function GET(
       headers: {
         "Content-Type": contentType,
         "Cache-Control": "private, max-age=300",
+        ...UNTRUSTED_FILE_HEADERS,
       },
     })
   } catch (err) {

@@ -207,8 +207,12 @@ async function saveAnswersWithClient(tx: Tx, args: {
     .where(eq(preventionInspectionRuns.id, args.runId)).limit(1)
   if (!run) throw new Error(NOT_FOUND)
   requireAccess(args.access, "prevention:inspections:execute", run.worksiteId)
-  if (["reviewed", "cancelled"].includes(run.status)) {
-    throw new Error("No se pueden modificar respuestas de una inspección cerrada o cancelada.")
+  // PRV-19 #13 (auditoría 2026-09-28): `completed` también. La inspección
+  // completada ya acreditó el PDTP con sus conteos y hallazgos; reescribirle las
+  // respuestas no los recalculaba y el servidor lo permitía aunque la UI no.
+  // Corregirla es reabrirla, que deja traza.
+  if (["completed", "reviewed", "cancelled"].includes(run.status)) {
+    throw new Error("No se pueden modificar respuestas de una inspección completada, cerrada o cancelada. Para corregirla, reábrela.")
   }
   // C-02: antes no había control de concurrencia y dos inspectores con el
   // mismo run abierto se pisaban en silencio. El cliente recibe de vuelta la

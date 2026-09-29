@@ -37,9 +37,9 @@ import {
 import { listPdtpApprovalSteps } from "./approval-flow"
 import { listPdtpActivityAssignees } from "./assignees"
 import { cutPdtpComplianceIndicatorsToMonth, effectiveApprovedExecutionsByCell, getPdtpComplianceIndicators } from "./compliance"
-import { assertWorksiteAccess, loadProgramScheduleAndExecutions, type WorksiteScope } from "./helpers"
+import { assertWorksiteAccess, loadProgramScheduleAndExecutions, loadWorksiteAddedAt, type WorksiteScope } from "./helpers"
 import { listPdtpObjectives } from "./objectives"
-import { filterPdtpRowsFromActivation } from "./period"
+import { effectiveActivationFor, filterPdtpRowsFromActivation } from "./period"
 import { getPdtpProgram } from "./programs"
 import { listPdtpProgramSheets } from "./sheet-management"
 import { derivePdtpScheduledInstanceStatus } from "./scheduled-instances"
@@ -535,12 +535,14 @@ export async function buildPdtpRe36Document(input: {
   // Única costura para overrides/exclusiones/vigencia (D del brief): no se
   // reimplementa nada de eso aquí.
   const loaded = await loadProgramScheduleAndExecutions(allActivityIds, program.year, input.worksiteId)
-  // Mismo recorte de vigencia que `getPdtpComplianceIndicators` (activación del
-  // programa): sin este filtro, un programa con `activatedAt` posterior al
-  // inicio del cronograma mostraría en el documento celdas que el indicador ya
-  // descartó, rompiendo la coherencia Σp === indicators.annual.planned.
-  const scheduleRows = filterPdtpRowsFromActivation(loaded.scheduleRows, program.activatedAt)
-  const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, program.activatedAt)
+  // Mismo recorte de vigencia que `getPdtpComplianceIndicators`: la activación
+  // del programa o, si fue posterior, la incorporación de la faena. Sin este
+  // filtro el documento mostraría celdas que el indicador ya descartó,
+  // rompiendo la coherencia Σp === indicators.annual.planned. PRV-09
+  // (auditoría 2026-09-28): antes sólo miraba la activación del programa.
+  const cutoff = effectiveActivationFor(program.activatedAt, await loadWorksiteAddedAt(program.id, input.worksiteId))
+  const scheduleRows = filterPdtpRowsFromActivation(loaded.scheduleRows, cutoff)
+  const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, cutoff)
 
   // Coherencia dura: `E` cuenta solo ejecuciones aprobadas, con la misma
   // deduplicación por celda que el indicador (`effectiveApprovedExecutionsByCell`).
@@ -575,7 +577,7 @@ export async function buildPdtpRe36Document(input: {
   // "se reportó la semana y no se ejecutó" es exactamente lo que la leyenda
   // del formato define como `E = 0` (`legend.e0`), y dejarlo vacío haría que
   // esa semana se leyera como "no se reportó".
-  const deviationRows = filterPdtpRowsFromActivation(loaded.deviationRows, program.activatedAt)
+  const deviationRows = filterPdtpRowsFromActivation(loaded.deviationRows, cutoff)
     .filter((row) => !excludedActivityIds.has(row.activityId))
   const cellKeyOf = (activityId: string, month: number, week: number) => `${activityId}:${month}:${week}`
   const notesByCell = new Map<string, string[]>()

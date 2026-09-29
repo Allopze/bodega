@@ -660,3 +660,16 @@ export function occurrenceSeedRows(
     version: 1,
   }))
 }
+
+/**
+ * PRV-06 (auditoría 2026-09-28): las casillas `código:slotKey` que el catálogo
+ * vigente del año pide. La siembra sólo agrega (nunca retira), así que después
+ * de alinear el catálogo con la grilla del PDTP quedaron ocurrencias de casillas
+ * que ya no existen; las pendientes se ocultan y las retira
+ * `scripts/retire-obsolete-training-occurrences.ts`.
+ */
+export function trainingCatalogSlotKeysForYear(year: number): Set<string> {
+  return new Set(
+    trainingCatalogItemsForYear(year).flatMap((item) => occurrenceSeedRows(item, "_", year).map((row) => `${row.catalogCode}:${row.slotKey}`)),
+  )
+}

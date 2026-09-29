@@ -43,6 +43,8 @@ PDTP_DATA_STEPS=(
   "db:seed-pdtp-inspection-templates|seed-inspection-templates"
   "db:preflight-pdtp-wiring|preflight-pdtp-wiring"
   "pdtp:reconcile-fulfillment-events|reconcile-pdtp-fulfillment-events"
+  # En dev sólo reporta (sin `--apply`); en producción el one-shot aplica.
+  "pdtp:report-unverified-approvals|apply-pdtp-unverified-approvals"
 )
 
 # Pasos que NO saben simular: no tienen modo de sólo lectura, así que en un

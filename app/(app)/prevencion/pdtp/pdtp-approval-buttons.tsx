@@ -28,6 +28,8 @@ type PendingApproval = {
   activityId: string
   month: number
   week: number
+  /** PRV-02: llegó de otro módulo sin evidencia verificada; aprobarla pide motivo. */
+  needsApprovalReason?: boolean
 }
 
 export function PdtpApprovalButtons({
@@ -42,8 +44,29 @@ export function PdtpApprovalButtons({
   const [rejectingId, setRejectingId] = React.useState<string | null>(null)
   const [reason, setReason] = React.useState("")
   const [submittingReject, setSubmittingReject] = React.useState(false)
+  const [approvingWithReason, setApprovingWithReason] = React.useState<PendingApproval | null>(null)
+  const [approvalReason, setApprovalReason] = React.useState("")
   const pending = pendingApprovals.filter((e) => e.activityId === activityId)
   if (pending.length === 0) return null
+
+  async function approve(exec: PendingApproval, reasonText?: string) {
+    setPendingId(exec.id)
+    setError(null)
+    try {
+      const { toast } = await import("@/lib/toast")
+      const result = await approvePdtpExecutionAction(exec.id, reasonText)
+      if (!result.ok) {
+        setError(result.message ?? "Error al aprobar la ejecución.")
+        toast.error(result.message ?? "Error al aprobar la ejecución.")
+      } else {
+        toast.success(`Ejecución de ${periodLabel(exec)} aprobada.`)
+        setApprovingWithReason(null)
+        setApprovalReason("")
+      }
+    } finally {
+      setPendingId(null)
+    }
+  }
 
   async function handleReject() {
     if (!rejectingId || !reason.trim()) return
@@ -72,20 +95,12 @@ export function PdtpApprovalButtons({
           <React.Fragment key={exec.id}>
             <form
               action={async () => {
-                setPendingId(exec.id)
-                setError(null)
-                try {
-                  const { toast } = await import("@/lib/toast")
-                  const result = await approvePdtpExecutionAction(exec.id)
-                  if (!result.ok) {
-                    setError(result.message ?? "Error al aprobar la ejecución.")
-                    toast.error(result.message ?? "Error al aprobar la ejecución.")
-                  } else {
-                    toast.success(`Ejecución de ${periodLabel(exec)} aprobada.`)
-                  }
-                } finally {
-                  setPendingId(null)
+                if (exec.needsApprovalReason) {
+                  setApprovingWithReason(exec)
+                  setApprovalReason("")
+                  return
                 }
+                await approve(exec)
               }}
             >
               <button
@@ -147,6 +162,45 @@ export function PdtpApprovalButtons({
               disabled={submittingReject || reason.trim().length < PDTP_REASON_MIN_LENGTH}
             >
               {submittingReject ? "Rechazando…" : "Rechazar y devolver"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={approvingWithReason !== null} onOpenChange={(open) => { if (!open) { setApprovingWithReason(null); setApprovalReason("") } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Aprobar sin evidencia verificada</DialogTitle>
+            <DialogDescription>
+              Esta ejecución llegó desde su módulo de origen sin un archivo que la plataforma pueda verificar. Si la apruebas, indica qué revisaste para darla por cumplida; el motivo queda en el historial del programa.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={approvalReason}
+            onChange={(e) => setApprovalReason(e.target.value)}
+            placeholder={`Qué revisaste (mín. ${PDTP_REASON_MIN_LENGTH} caracteres)`}
+            aria-label="Motivo de la aprobación"
+            rows={4}
+            maxLength={1000}
+          />
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => { setApprovingWithReason(null); setApprovalReason("") }}
+              disabled={pendingId !== null}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => { if (approvingWithReason) void approve(approvingWithReason, approvalReason) }}
+              disabled={pendingId !== null || approvalReason.trim().length < PDTP_REASON_MIN_LENGTH}
+            >
+              {pendingId !== null ? "Aprobando…" : "Aprobar con motivo"}
             </Button>
           </DialogFooter>
         </DialogContent>

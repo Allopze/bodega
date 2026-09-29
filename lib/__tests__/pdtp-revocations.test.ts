@@ -7,12 +7,10 @@
  * (N°79), anular un acta CGRD (N°81), cancelar un simulacro (N°84) y borrar un
  * acta SST (N°15, 17, 18, 23, 52, 63; la N°19 pasó a Documentación el 2026-09-24).
  *
- * Dos de los cuatro (simulacro, acta SST) tienen una máquina de estados que
- * en la práctica de hoy nunca deja llegar a la revocación con una
- * acreditación viva: `cancelEmergencyDrill` sólo acepta un registro todavía
- * "scheduled" — el mismo estado que excluye el cierre que acredita — y
- * `deleteEvaluation` rechaza borrar un acta "cerrado", que es justamente la
- * que acredita. Se revoca de todas formas, en defensa de profundidad: si ese
+ * El acta SST tiene una máquina de estados que en la práctica de hoy nunca
+ * deja llegar a la revocación con una acreditación viva: `deleteEvaluation`
+ * rechaza borrar un acta "cerrado", que es justamente la que acredita. (El
+ * simulacro completado ya se anula de verdad desde PRV-19 #8.) Se revoca de todas formas, en defensa de profundidad: si ese
  * guard cambia mañana, o una vía administrativa revierte el estado por otro
  * camino, la acreditación huérfana no debe sobrevivir. Esos dos casos
  * manipulan el estado directo en la base para poder ejercitar esa rama —
@@ -32,10 +30,14 @@ import { and, eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { seedPreventionEvidenceUpload } from "@/lib/testing/prevention-evidence-upload-fixture"
 import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { readModuleHistory } from "@/lib/testing/audit-history"
+
+// PRV-01: la evidencia es un archivo subido de verdad; nunca en el storage del repo.
+process.env.STORAGE_PATH = path.join((await import("node:os")).tmpdir(), `prev-evidence-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -129,6 +131,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.sstEvaluations)
 
   await inMemoryDb.delete(schema.workers)
+  await inMemoryDb.delete(schema.preventionEvidenceUploads)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
 
@@ -201,7 +204,7 @@ describe("dissolveGrdCommittee revoca la N°79", () => {
   it("el sourceId lleva el mismo prefijo que onGrdStructureEstablished usó al constituirlo", async () => {
     const committee = await constituteGrdCommittee({
       worksiteId: WS_ID, name: "CGRD Faena Revocaciones", constitutedOn: "2026-03-01", mandateEndsOn: "2028-03-01",
-      evidenceUrl: "https://drive.chome.cl/cgrd-evidencia",
+      evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "cgrd", uploadedByUserId: USER_ID }),
     }, CGRD_ACCESS)
     expect(await executionsFor(79)).toHaveLength(1)
 
@@ -223,7 +226,7 @@ describe("endGrdCoordinator revoca la N°79", () => {
   it("terminar la designación revierte lo que acreditó designarla", async () => {
     const coordinator = await designateGrdCoordinator({
       worksiteId: WS_ID, workerId: WORKER_ID, designatedOn: `${PROGRAM_YEAR}-03-10`,
-      evidenceUrl: "https://drive.chome.cl/cgrd-designacion",
+      evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "cgrd", uploadedByUserId: USER_ID }),
     }, CGRD_ACCESS)
     expect(await executionsFor(79)).toHaveLength(1)
 
@@ -247,13 +250,13 @@ describe("annulGrdMeeting revoca la N°81", () => {
   it("anular el acta revierte la acreditación y conserva la fila", async () => {
     const committee = await constituteGrdCommittee({
       worksiteId: WS_ID, name: "CGRD Faena Revocaciones", constitutedOn: `${PROGRAM_YEAR}-03-01`, mandateEndsOn: `${PROGRAM_YEAR + 2}-03-01`,
-      evidenceUrl: "https://drive.chome.cl/cgrd-evidencia",
+      evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "cgrd", uploadedByUserId: USER_ID }),
     }, CGRD_ACCESS)
     const meeting = await recordGrdMeeting({
       committeeId: committee.id, heldOn: `${PROGRAM_YEAR}-04-01T15:00:00.000Z`,
       agenda: "Agenda de prueba con largo suficiente",
       minutes: "Acta de la sesión de prueba, con contenido suficiente.",
-      quorumReached: true, evidenceUrl: "https://drive.chome.cl/cgrd-acta",
+      quorumReached: true, evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "cgrd", uploadedByUserId: USER_ID }),
     }, CGRD_ACCESS)
     expect(await executionsFor(81)).toHaveLength(1)
 
@@ -278,13 +281,13 @@ describe("annulGrdMeeting revoca la N°81", () => {
   it("no se anula dos veces", async () => {
     const committee = await constituteGrdCommittee({
       worksiteId: WS_ID, name: "CGRD doble anulación", constitutedOn: `${PROGRAM_YEAR}-03-01`, mandateEndsOn: `${PROGRAM_YEAR + 2}-03-01`,
-      evidenceUrl: "https://drive.chome.cl/cgrd-evidencia",
+      evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "cgrd", uploadedByUserId: USER_ID }),
     }, CGRD_ACCESS)
     const meeting = await recordGrdMeeting({
       committeeId: committee.id, heldOn: `${PROGRAM_YEAR}-04-02T15:00:00.000Z`,
       agenda: "Agenda de prueba con largo suficiente",
       minutes: "Acta de la sesión de prueba, con contenido suficiente.",
-      quorumReached: true, evidenceUrl: "https://drive.chome.cl/cgrd-acta",
+      quorumReached: true, evidenceUrl: await seedPreventionEvidenceUpload(inMemoryDb, { domain: "cgrd", uploadedByUserId: USER_ID }),
     }, CGRD_ACCESS)
 
     await annulGrdMeeting({ meetingId: meeting.id, reason: "Motivo de prueba suficiente" }, CGRD_ACCESS)
@@ -365,7 +368,10 @@ describe("el acta del simulacro es obligatoria", () => {
 })
 
 describe("cancelEmergencyDrill revoca la N°84", () => {
-  it("defensa en profundidad: hoy sólo un simulacro 'scheduled' se cancela, el mismo estado que completeEmergencyDrill excluye", async () => {
+  // PRV-19 #8 (auditoría 2026-09-28): un simulacro completado se anula y su
+  // N°84 se revoca. Antes el guard sólo aceptaba "scheduled" y esta rama era
+  // código muerto; la prueba forzaba el estado a mano.
+  it("anular un simulacro completado revoca la N°84", async () => {
     const plan = await createEmergencyPlan({ worksiteId: WS_ID, title: "Plan de emergencia de prueba" }, EMERGENCY_MANAGER)
     await addEmergencyScenario({
       planId: plan.id, type: "incendio_estructural", title: "Incendio de prueba",
@@ -400,16 +406,8 @@ describe("cancelEmergencyDrill revoca la N°84", () => {
     expect(withActivities.pdtpActivityNumbers).toEqual([84])
     expect(await executionsFor(84)).toHaveLength(1)
 
-    // `cancelEmergencyDrill` exige status "scheduled", que `completeEmergencyDrill`
-    // ya dejó atrás. Se fuerza el estado de vuelta a mano por la misma razón que
-    // en el acta CGRD: probar el cableado de la revocación para cuando esa vía
-    // exista, no un caso que el guard actual permita hoy.
-    await inMemoryDb.update(schema.preventionEmergencyDrills)
-      .set({ status: "scheduled" })
-      .where(eq(schema.preventionEmergencyDrills.id, drill.id))
-
     await cancelEmergencyDrill({
-      drillId: drill.id, expectedVersion: completed.version, reason: "Se reprograma por lluvia",
+      drillId: drill.id, expectedVersion: completed.version, reason: "Se registró en la faena equivocada",
     }, EMERGENCY_MANAGER)
 
     const revocacion = await revocationEventFor(drill.id)

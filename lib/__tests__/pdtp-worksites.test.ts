@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { drizzle } from "drizzle-orm/pglite"
 import { eq } from "drizzle-orm"
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { seedPdtpEvidenceUpload } from "@/lib/testing/pdtp-evidence-upload-fixture"
 import * as schema from "@/db/schema"
@@ -39,6 +39,8 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
+  await inMemoryDb.delete(schema.pdtpEvidenceUploads)
+  await inMemoryDb.delete(schema.pdtpExecutionDeviations)
   await inMemoryDb.delete(schema.worksites)
   // La auditoría conserva el usuario que ejecutó cada operación; limpiar el
   // log antes de recrear el fixture evita que la FK bloquee el DELETE de users.
@@ -416,6 +418,10 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
   })
 
   it("aplica el retiro por período y conserva planificación y ejecución previas", async () => {
+    // PRV-03: registrar exige que la semana ya haya ocurrido; el reloj se
+    // fija al cierre del año del programa (legacy, sin corte de activación).
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2046-12-31T15:00:00.000Z") })
+    try {
     const { retirePdtpActivity } = await import("@/lib/services/pdtp/activities")
     const { loadProgramScheduleAndExecutions } = await import("@/lib/services/pdtp/helpers")
     const { markPdtpExecution } = await import("@/lib/services/prevention-pdtp")
@@ -453,6 +459,9 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     const effective = await loadProgramScheduleAndExecutions([activity.id], 2046, "ws-1")
     expect(effective.scheduleRows.map((row) => [row.month, row.week])).toEqual([[7, 4]])
     expect(effective.executionRows).toEqual([expect.objectContaining({ month: 7, week: 4 })])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("agrega por faena aplicando overrides y exclusiones, sin filtrar evidencia entre faenas", async () => {

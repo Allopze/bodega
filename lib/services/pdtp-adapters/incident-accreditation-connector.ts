@@ -279,11 +279,10 @@ export async function reconcileIncidentObligationsAfterTriage(input: {
 }): Promise<void> {
   const stillApplicable = new Set(applicableRe20FilterableNumbers(input))
   const noLongerApplicable = RE20_FILTERABLE_ACTIVITY_NUMBERS.filter((n) => !stillApplicable.has(n))
-  if (noLongerApplicable.length === 0) return
 
   const resolved = await resolvePdtpActivityIdsForNumbers({
     worksiteId: input.worksiteId, occurredAt: input.occurredAt,
-    activityNumbers: noLongerApplicable, sourceType: "incident", sourceId: input.incidentId,
+    activityNumbers: [...RE20_FILTERABLE_ACTIVITY_NUMBERS], sourceType: "incident", sourceId: input.incidentId,
   }).catch((err: unknown) => {
     logger.error(
       { err, incidentId: input.incidentId, worksiteId: input.worksiteId },
@@ -292,6 +291,17 @@ export async function reconcileIncidentObligationsAfterTriage(input: {
     return null
   })
   if (!resolved) return
+
+  // M-23 (auditoría 2026-09-28): un triage que agrava el incidente abre ya las
+  // obligaciones que pasan a aplicar; antes esperaban al barrido horario.
+  // `ensureIncidentObligation` es idempotente: las que ya existían no cambian.
+  for (const n of stillApplicable) {
+    const activityId = resolved.activityIdByN.get(n)
+    if (!activityId) continue
+    await ensureIncidentObligation({
+      activityId, worksiteId: input.worksiteId, incidentId: input.incidentId, occurredAt: input.occurredAt, userId: input.userId,
+    })
+  }
 
   for (const n of noLongerApplicable) {
     const activityId = resolved.activityIdByN.get(n)

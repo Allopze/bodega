@@ -350,11 +350,12 @@ test.describe("Dashboard operacional", () => {
   })
 
   /*
-   * Los seis dominios que no tenían representación (inspecciones, permisos,
-   * simulacros, comité, higiene, gestión del cambio) viven en **una** vista:
-   * seis más habrían devuelto la pantalla al muro que la auditoría desarmó.
+   * Los dominios que no tenían representación (inspecciones, permisos,
+   * simulacros, comité, higiene) viven en **una** vista: uno por vista habría
+   * devuelto la pantalla al muro que la auditoría desarmó. Gestión del cambio
+   * era el sexto; se retiró de la plataforma en `cfe3a925` y su tile con él.
    */
-  test("el control preventivo en terreno agrupa los seis dominios que faltaban", async ({ page }) => {
+  test("el control preventivo en terreno agrupa los dominios que faltaban", async ({ page }) => {
     await page.goto("/dashboard?vista=terreno")
     const seccion = page.getByRole("region", { name: "Control preventivo en terreno" })
     await expect(seccion).toBeVisible()
@@ -362,10 +363,10 @@ test.describe("Dashboard operacional", () => {
     for (const kpi of [
       "Cumplimiento de inspecciones", "Hallazgos críticos abiertos", "Permisos de trabajo activos",
       "Simulacros por mejorar", "Mediciones sobre el límite", "Acuerdos del comité abiertos",
-      "Gestión del cambio abierta",
     ]) {
       await expect(seccion.getByText(kpi, { exact: true })).toBeVisible()
     }
+    await expect(seccion.getByText("Gestión del cambio abierta", { exact: true })).toHaveCount(0)
   })
 
   test("una faena inexistente cae a todas en vez de dejar el tablero en cero", async ({ page }) => {

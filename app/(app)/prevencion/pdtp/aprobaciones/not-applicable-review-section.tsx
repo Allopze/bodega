@@ -38,9 +38,13 @@ type ReviewItemBase = {
 /** "No aplica" de una celda (semana) de la planilla. */
 export type NotApplicableCellReviewItem = ReviewItemBase & {
   kind?: "cell"
+  /** M-06: la reprogramación de una semana se revisa aquí mismo. */
+  deviationKind?: "not_applicable" | "reprogrammed"
   year: number
   month: number
   week: number
+  targetMonth?: number | null
+  targetWeek?: number | null
 }
 
 /**
@@ -70,16 +74,16 @@ export function NotApplicableReviewSection({ items, currentUserId }: { items: No
   return (
     <section id="no-aplica" className="mt-6 scroll-mt-4">
       <h2 className="text-sm font-semibold text-[var(--color-text)]">
-        &quot;No aplica&quot; por revisar{items.length > 0 ? ` (${items.length})` : ""}
+        &quot;No aplica&quot; y reprogramaciones por revisar{items.length > 0 ? ` (${items.length})` : ""}
       </h2>
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-        Semanas u ocurrencias programadas que alguien declaró como no aplicables o pidió cancelar. No cambian el cumplimiento hasta que otra persona las aprueba.
+        Semanas u ocurrencias programadas que alguien declaró como no aplicables, reprogramó o pidió cancelar. No cambian el cumplimiento hasta que otra persona las aprueba.
       </p>
       {items.length === 0 ? (
         <EmptyState
           compact
           title='Sin "no aplica" por revisar'
-          description="Cuando alguien declare que una semana u ocurrencia no aplica, o pida cancelar una ocurrencia, en una faena de tu alcance, aparecerá acá para que la apruebes o la rechaces."
+          description="Cuando alguien declare que una semana u ocurrencia no aplica, reprograme una semana o pida cancelar una ocurrencia en una faena de tu alcance, aparecerá acá para que la apruebes o la rechaces."
         />
       ) : (
         <ul className="mt-3 divide-y divide-[var(--color-border)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -101,8 +105,17 @@ function describeItem(item: NotApplicableReviewItem) {
       rejectEffect: item.outcome === "cancelled" ? "La ocurrencia se mantiene" : "La ocurrencia vuelve a exigirse",
     }
   }
+  const period = `${MONTH_LABELS[item.month - 1]} · semana ${item.week} de ${item.year}`
+  if (item.deviationKind === "reprogrammed" && item.targetMonth) {
+    return {
+      period: `${period} → ${MONTH_LABELS[item.targetMonth - 1]} · semana ${item.targetWeek ?? "?"}`,
+      what: "Reprogramación",
+      actionNoun: "reprogramación",
+      rejectEffect: "La semana se mantiene en su fecha original",
+    }
+  }
   return {
-    period: `${MONTH_LABELS[item.month - 1]} · semana ${item.week} de ${item.year}`,
+    period,
     what: null,
     actionNoun: "\"no aplica\"",
     rejectEffect: "La semana vuelve a exigirse",

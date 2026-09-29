@@ -53,7 +53,7 @@ describe("contrato de cumplimiento de las actividades de enganche", () => {
     const declared = new Set<string>(preventionModule.permissions as readonly string[])
     for (const [n, destination] of Object.entries(PDTP_2026_ENGANCHE_DESTINATIONS)) {
       if (!destination.permission) continue
-      if (destination.permission.startsWith("sst:")) continue // otro módulo
+      if (destination.permission.startsWith("sst:") || destination.permission.startsWith("deliveries:")) continue // otro módulo
       expect(declared, `N°${n} → ${destination.permission}`).toContain(destination.permission)
     }
   })

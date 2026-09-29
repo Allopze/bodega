@@ -25,6 +25,7 @@ export function KpiCard({
   glossary,
   href,
   sparkline,
+  secondaryAction,
 }: {
   icon: ReactNode
   label: string
@@ -44,6 +45,13 @@ export function KpiCard({
   href?: string
   /** Serie real; se dibuja sólo con ≥2 puntos. Nunca una serie inventada. */
   sparkline?: number[]
+  /**
+   * Un segundo destino dentro del tile (p. ej. "3 por aprobar →"). Como el tile
+   * entero ya es un enlace y un `<a>` no puede contener otro, con esta opción el
+   * enlace principal pasa a ser una capa que cubre la tarjeta y el secundario
+   * queda por encima.
+   */
+  secondaryAction?: { label: string; href: string }
 }) {
   const hasSparkline = Array.isArray(sparkline) && sparkline.length >= 2
   const card = (
@@ -52,6 +60,7 @@ export function KpiCard({
     // selector fiable sólo podía comprobarse a ojo.
     <Card data-kpi-card="" className={cn(
       "transition-all duration-(--duration-fast)",
+      secondaryAction && "relative",
       tone === "signal" && "ring-1 ring-[var(--color-signal-line)]",
       tone === "danger" && "ring-1 ring-[var(--color-danger-line)]",
     )}>
@@ -100,8 +109,21 @@ export function KpiCard({
             )}
           </div>
         )}
+        {secondaryAction && (
+          <Link
+            href={secondaryAction.href}
+            // min-h-6: objetivo táctil de 24 px (WCAG 2.5.8), también sobre la capa del enlace principal.
+            className="relative z-10 mt-1.5 inline-flex min-h-6 items-center self-start text-xs font-semibold text-[var(--color-primary)] underline-offset-2 hover:underline focus-visible:underline"
+          >
+            {secondaryAction.label}
+          </Link>
+        )}
       </CardContent>
+      {secondaryAction && href && (
+        <Link href={href} aria-label={`${label}: ${value}`} className="absolute inset-0 rounded-[inherit] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]" />
+      )}
     </Card>
   )
+  if (secondaryAction) return card
   return href ? <Link href={href} className="block h-full">{card}</Link> : card
 }

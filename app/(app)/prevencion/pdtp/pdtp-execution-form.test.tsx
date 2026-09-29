@@ -26,6 +26,14 @@ beforeEach(() => {
 })
 
 describe("PdtpExecutionForm", () => {
+  it("en una semana aprobada parcialmente ofrece registrar un complemento (PRV-08)", () => {
+    render(<PdtpExecutionForm activityId="a" worksiteId="ws-1" year={2025} defaultMonth={3} defaultWeek={1}
+      partialApprovedCells={[{ month: 3, week: 1, executed: 1, planned: 3 }]} />)
+    fireEvent.click(screen.getByRole("button", { name: "Registrar" }))
+    expect(screen.getByRole("heading", { name: /Registrar complemento/ })).toBeTruthy()
+    expect(screen.getByText(/ya tiene 1 de 3 aprobadas/)).toBeTruthy()
+  })
+
   it("vincula la subida de evidencia con la actividad que se está acreditando", async () => {
     render(<PdtpExecutionForm activityId="activity-constancia" worksiteId="ws-1" year={2026} />)
 

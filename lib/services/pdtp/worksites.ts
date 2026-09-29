@@ -15,6 +15,7 @@ import { db, type DB, type Tx } from "@/db"
 import { CPHS_MIN_HEADCOUNT, resolvePreventiveOrganization } from "@/lib/prevention/cphs-organization"
 import {
   pdtpActivities,
+  pdtpActivityPadronChanges,
   pdtpActivityScheduleOverrides,
   pdtpActivityWorksiteExclusions,
   pdtpActivityWorksiteParams,
@@ -30,6 +31,7 @@ import {
 import { nanoid } from "@/lib/id"
 import { countOf } from "@/lib/utils"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, assertWorksiteAccess, type WorksiteScope } from "./helpers"
+import { currentPdtpPeriod } from "./period"
 
 /** Faenas miembro de un programa. La ausencia de filas sólo equivale a todas
  * las faenas cuando el programa declaró explícitamente alcance corporativo.
@@ -478,6 +480,37 @@ export async function assertPdtpWorksiteCanOperateProgram(
  * que el ajuste unificado: el padrón se corrige siempre, la meta y el responsable
  * sólo con el programa editable.
  */
+/**
+ * PRV-11 (auditoría 2026-09-28): deja constancia de un cambio del padrón
+ * manual con el mes desde el que rige, para que el cálculo no reescriba los
+ * meses anteriores. Sólo cuando el programa ya rige: en borrador todavía no hay
+ * meses que proteger.
+ */
+async function recordPdtpPadronChange(client: DB | Tx, input: {
+  program: { status: string; year: number }
+  activityId: string
+  worksiteId: string
+  previous: number | null
+  next: number | null
+  userId: string
+}) {
+  if (input.previous === input.next) return
+  if (input.program.status !== "active" && input.program.status !== "closed") return
+  const today = currentPdtpPeriod()
+  const effectiveMonth = input.program.year === today.year ? today.month : input.program.year < today.year ? 12 : 1
+  await client.insert(pdtpActivityPadronChanges).values({
+    id: `pdtp-padron-${nanoid()}`,
+    activityId: input.activityId,
+    worksiteId: input.worksiteId,
+    year: input.program.year,
+    effectiveMonth,
+    previousCount: input.previous,
+    newCount: input.next,
+    changedByUserId: input.userId,
+    changedAt: new Date().toISOString(),
+  })
+}
+
 export async function setPdtpActivityWorksiteParams(
   activityId: string,
   worksiteId: string,
@@ -508,14 +541,24 @@ export async function setPdtpActivityWorksiteParams(
     || (params.responsibleReason !== undefined
       && (params.responsibleReason ?? null) !== (existing?.responsibleReason ?? null))
 
-  if (changesTarget || changesResponsible) {
+  const changesPadron = params.expectedSubjectCount !== undefined
+    && (params.expectedSubjectCount ?? null) !== (existing?.expectedSubjectCount ?? null)
+  let program: typeof pdtpPrograms.$inferSelect | undefined
+  if (changesTarget || changesResponsible || changesPadron) {
     const [activity] = await db.select({ programId: pdtpActivities.programId })
       .from(pdtpActivities).where(eq(pdtpActivities.id, activityId)).limit(1)
     if (!activity) throw new Error("Actividad PDTP no encontrada.")
-    const [program] = await db.select().from(pdtpPrograms)
+    ;[program] = await db.select().from(pdtpPrograms)
       .where(eq(pdtpPrograms.id, activity.programId)).limit(1)
     if (!program) throw new Error("Programa PDTP no encontrado.")
-    assertPdtpProgramEditableState(program)
+    if (changesTarget || changesResponsible) assertPdtpProgramEditableState(program)
+  }
+  if (changesPadron && program) {
+    await recordPdtpPadronChange(db, {
+      program, activityId, worksiteId, userId,
+      previous: existing?.expectedSubjectCount ?? null,
+      next: params.expectedSubjectCount ?? null,
+    })
   }
 
   if (existing) {
@@ -752,6 +795,11 @@ export async function setPdtpActivityWorksiteAdjustment(
     }).onConflictDoUpdate({
       target: [pdtpActivityWorksiteParams.activityId, pdtpActivityWorksiteParams.worksiteId],
       set: paramsValues,
+    })
+    await recordPdtpPadronChange(tx, {
+      program, activityId: input.activityId, worksiteId: input.worksiteId, userId,
+      previous: previousParams?.expectedSubjectCount ?? null,
+      next: paramsValues.expectedSubjectCount ?? null,
     })
 
     if (input.schedule !== undefined) {

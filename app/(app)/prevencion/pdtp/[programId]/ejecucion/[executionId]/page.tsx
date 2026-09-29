@@ -16,6 +16,7 @@ import { findInspectionTemplateForPdtpActivity } from "@/lib/services/pdtp-adapt
 import { listPdtpExecutionHistory } from "@/lib/services/pdtp/execution-history"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { RequestAnnulmentButton } from "./request-annulment-button"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ExecutionActionPlanPanel } from "./execution-action-plan-panel"
@@ -56,12 +57,18 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
 
   const canManageActions = can(session, "prevention:pdtp:action:manage")
   const canVerifyActions = can(session, "prevention:pdtp:action:verify")
+  // PRV-12: una aprobación manual se corrige pidiendo su anulación. La de
+  // integración se corrige en su módulo de origen, que revoca acá.
+  const canRequestAnnulment = can(session, "prevention:pdtp:approve")
+    && execution.status === "approved"
+    && execution.origin !== "integration"
 
   return (
     <PageContainer width="workbench">
       <PageHeader
         title={`Verificación N°${activity.n}: ${activity.activity}`}
         description={`Período ${execution.month}/${execution.year} · Semana ${execution.week} · Cantidad ejecutada: ${execution.executedQuantity}`}
+        actions={canRequestAnnulment ? <RequestAnnulmentButton executionId={execution.id} label={`N°${activity.n}`} /> : undefined}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },

@@ -16,6 +16,9 @@ import * as schema from "@/db/schema"
 import { chileDateParts } from "@/lib/utils"
 import { readModuleHistory } from "@/lib/testing/audit-history"
 
+// PRV-01: evidencia real en un directorio temporal, nunca en el storage del repo.
+process.env.STORAGE_PATH = path.join((await import("node:os")).tmpdir(), `alcotest-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
 const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb }
@@ -660,14 +663,23 @@ describe("cumplir la casilla con el hecho", () => {
  * `accreditPdtpFromEvent` exige — de ahí el helper propio.
  */
 async function evidenciaRealEn(slotId: string) {
+  // PRV-01 (auditoría 2026-09-28): "real" es un archivo que existe con el
+  // sha256 que quedó registrado; una fila sin archivo ya no auto-aprueba.
+  const { createHash } = await import("node:crypto")
+  const { mkdirSync, writeFileSync } = await import("node:fs")
+  const { resolvePreventionAlcotestEvidenceDir } = await import("@/lib/storage/config")
+  const name = `planilla-real-${slotId}.pdf`
+  const content = `%PDF-1.4 ${slotId}`
+  mkdirSync(resolvePreventionAlcotestEvidenceDir(), { recursive: true })
+  writeFileSync(path.join(resolvePreventionAlcotestEvidenceDir(), name), content)
   await inMemoryDb.insert(schema.preventionAlcotestSlotEvidence).values({
     id: `alcev-real-${slotId}`,
     slotId,
     fileName: "planilla-real.pdf",
-    storagePath: `storage/prevention-alcotest-evidence/${slotId}/planilla-real.pdf`,
+    storagePath: `storage/prevention-alcotest-evidence/${name}`,
     mimeType: "application/pdf",
-    fileSizeBytes: 1024,
-    sha256: "b".repeat(64),
+    fileSizeBytes: content.length,
+    sha256: createHash("sha256").update(content).digest("hex"),
     state: "active",
     uploadedByUserId: USER_PRF,
   })

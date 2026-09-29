@@ -661,6 +661,18 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     expect(findings[0]?.criticality).toBe(criticalityFromDanoPotencial(failing.danoPotencial))
   })
 
+  // PRV-19 #13 (auditoría 2026-09-28): la completada ya acreditó con sus
+  // conteos; el servidor no le deja reescribir respuestas (la UI tampoco).
+  it("no reescribe las respuestas de una inspección completada", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const answers = answersForAll(itemsCache, (item) => answerFor(item, "conforming"))
+    await expect(service.saveInspectionAnswers({ runId, expectedVersion: runVersion, answers }, AUTHOR))
+      .rejects.toThrow(/completada/)
+    const [stored] = await getDb().select().from(schema.preventionInspectionRuns)
+      .where(eq(schema.preventionInspectionRuns.id, runId))
+    expect(stored!.nonConformingCount).toBe(1)
+  })
+
   it("surfaces a completed inspection as pending review in Prevention attention", async () => {
     const { getPreventionAttention } = await import("@/lib/services/prevention-attention")
     const items = await getPreventionAttention({

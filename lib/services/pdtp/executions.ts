@@ -15,6 +15,7 @@ import { assertPdtpProgramAcceptsPeriod, assertPdtpProgramAcceptsReview } from "
 import { assertPdtpPeriodOpen } from "./period-guard"
 import { syncPdtpScheduledInstanceFromExecution } from "./scheduled-execution"
 import { todayInChile } from "@/lib/utils"
+import { assertPdtpCellNotInFuture } from "./period"
 import { PDTP_REASON_MIN_LENGTH } from "@/lib/prevention/pdtp"
 import { hashPdtpEvidenceFiles } from "./evidence-files"
 import { assertPdtpEvidenceLinkable } from "./evidence-references"
@@ -103,6 +104,10 @@ export async function markPdtpExecution(
   if (exclusion) {
     throw new Error("La actividad está excluida para esta faena y no admite ejecuciones.")
   }
+  // PRV-03 (auditoría 2026-09-28): el "no aplica" ya rechazaba semanas
+  // futuras; la ejecución no, y se demostró que noviembre podía quedar
+  // "cumplido" en septiembre.
+  assertPdtpCellNotInFuture(data, "No se puede registrar como realizada una semana que aún no ocurre.")
 
   // PREV-I03 (auditoría 2026-09-26): la asignación nominal era sólo un filtro
   // de /pendientes — cualquiera con `execute` en la faena registraba la
@@ -126,7 +131,7 @@ export async function markPdtpExecution(
   }
 
   const now = new Date().toISOString()
-  const id = pdtpExecutionId(data.activityId, data.worksiteId, data.year, data.month, data.week)
+  const baseId = pdtpExecutionId(data.activityId, data.worksiteId, data.year, data.month, data.week)
   // W5-SHA: el checksum de lo que llega se calcula aquí, en el servidor y
   // fuera de la transacción (lee el archivo completo). Dentro sólo se guardan
   // los de las rutas que de verdad quedaron vinculadas.
@@ -180,7 +185,8 @@ export async function markPdtpExecution(
     // vigente. Aceptar la ejecución dejaría al revisor aprobando una exclusión
     // sobre una semana que ya declara trabajo hecho.
     if (activeDeviation?.status === "pending_review") {
-      throw new Error("Esta celda tiene un 'no aplica' en revisión. Retíralo o espera a que se revise antes de registrar la ejecución.")
+      const what = activeDeviation.kind === "reprogrammed" ? "una reprogramación" : "un 'no aplica'"
+      throw new Error(`Esta celda tiene ${what} en revisión. Retírala o espera a que se revise antes de registrar la ejecución.`)
     }
     if (activeDeviation && (activeDeviation.kind === "not_applicable" || activeDeviation.kind === "reprogrammed")) {
       throw new Error("Esta celda tiene un desvío activo (no aplicable o reprogramado) y no admite ejecuciones.")
@@ -189,8 +195,10 @@ export async function markPdtpExecution(
     // El registro previo de la celda se lee aquí, detrás del lock: la fusión
     // de evidencias y el control de autor deciden sobre él, y leído afuera dos
     // envíos concurrentes se pisaban la foto o el archivo del otro.
-    const [existing] = await tx
+    const [latest] = await tx
       .select({
+        id: pdtpExecutions.id,
+        sequence: pdtpExecutions.sequence,
         status: pdtpExecutions.status,
         executedQuantity: pdtpExecutions.executedQuantity,
         evidenceUrl: pdtpExecutions.evidenceUrl,
@@ -214,13 +222,18 @@ export async function markPdtpExecution(
         // saltaba PREV-B02— o la bloqueaba por estar ya aprobada.
         ne(pdtpExecutions.origin, "integration"),
       ))
+      .orderBy(desc(pdtpExecutions.sequence))
       .limit(1)
       .for("update")
-    // Si la ejecución ya está aprobada, no se permite reescribir. Sólo
-    // 'draft' o 'rejected' (devuelta para corrección) son editables.
-    if (existing && existing.status === "approved") {
-      throw new Error("La ejecución ya fue aprobada y no se puede modificar.")
-    }
+    // Una ejecución aprobada no se reescribe. PRV-08 (auditoría 2026-09-28):
+    // registrar sobre una celda cuya última carga ya está aprobada crea un
+    // complemento (secuencia siguiente) que vuelve a pasar por aprobación, en
+    // vez de dejar la celda cerrada. El indicador suma las cargas de la celda y
+    // las topa en lo planificado, así que un complemento no infla el %.
+    const isComplement = latest?.status === "approved"
+    const existing = isComplement ? undefined : latest
+    const sequence = isComplement ? latest!.sequence + 1 : (latest?.sequence ?? 1)
+    const id = existing?.id ?? (sequence === 1 ? baseId : `${baseId}-s${sequence}`)
     // PREV-B03: un envío pendiente es de quien lo registró. Reemplazarlo en
     // silencio cambiaba cantidad, evidencia y autor de lo que el aprobador iba
     // a revisar. Un rechazo sí devuelve la celda a cualquiera con `execute`.
@@ -294,12 +307,12 @@ export async function markPdtpExecution(
 
     const [row] = await tx.insert(pdtpExecutions).values({
       id, activityId: data.activityId, worksiteId: data.worksiteId, year: data.year, month: data.month,
-      week: data.week, executedQuantity: data.executedQuantity, status: "submitted",
+      week: data.week, sequence, executedQuantity: data.executedQuantity, status: "submitted",
       evidenceText: data.evidenceText || null, evidenceUrl: nextEvidenceUrl,
       evidencePhotos: dedupedPhotos, evidenceStatus, executedByUserId: userId, executedAt: now, createdAt: now, updatedAt: now,
       sourceMetadataJson,
     }).onConflictDoUpdate({
-      target: [pdtpExecutions.activityId, pdtpExecutions.worksiteId, pdtpExecutions.year, pdtpExecutions.month, pdtpExecutions.week],
+      target: [pdtpExecutions.activityId, pdtpExecutions.worksiteId, pdtpExecutions.year, pdtpExecutions.month, pdtpExecutions.week, pdtpExecutions.sequence],
       targetWhere: sql`${pdtpExecutions.obligationId} IS NULL AND ${pdtpExecutions.origin} <> 'integration'`,
       set: {
         executedQuantity: data.executedQuantity, status: "submitted",
@@ -467,8 +480,19 @@ function assertExecutionHasEvidenceForApproval(
     evidenceStatus: string
   },
   manualEvidencePolicy: string | undefined,
+  approvalReason: string | undefined,
 ) {
-  if (execution.origin === "integration" || Number(execution.executedQuantity) <= 0) return
+  if (Number(execution.executedQuantity) <= 0) return
+  // PRV-02 (auditoría 2026-09-28): una integración ya no se aprueba "porque
+  // viene de otro módulo". Si su evidencia quedó verificada (`provided`, ver
+  // `verifyIntegrationEvidence`) basta el registro de origen; si no, quien
+  // aprueba tiene que dejar dicho qué revisó.
+  if (execution.origin === "integration") {
+    if (pdtpExecutionNeedsApprovalReason(execution) && (approvalReason?.trim().length ?? 0) < PDTP_REASON_MIN_LENGTH) {
+      throw new Error(`Esta ejecución llegó desde su módulo de origen sin evidencia verificable. Para aprobarla indica qué revisaste (mínimo ${PDTP_REASON_MIN_LENGTH} caracteres).`)
+    }
+    return
+  }
   const photos = Array.isArray(execution.evidencePhotos) ? execution.evidencePhotos as string[] : []
   const hasFile = [execution.evidenceUrl, ...photos].some((url) => typeof url === "string" && pdtpEvidenceFileExists(url))
   if (hasFile) return
@@ -491,7 +515,7 @@ function assertExecutionHasEvidenceForApproval(
  * El programa se resuelve desde la actividad porque la fila de ejecución sólo
  * conoce la celda. Se hace con el `tx` de la operación, no con `db`.
  */
-async function assertPdtpPeriodOpenForExecution(
+export async function assertPdtpPeriodOpenForExecution(
   tx: Tx,
   execution: { activityId: string; worksiteId: string; year: number; month: number; week: number; obligationId?: string | null },
 ): Promise<void> {
@@ -529,7 +553,12 @@ async function loadExecutionActivityContext(tx: Tx, activityId: string) {
   return context
 }
 
-export async function approvePdtpExecution(executionId: string, userId: string, scope: WorksiteScope) {
+export async function approvePdtpExecution(
+  executionId: string,
+  userId: string,
+  scope: WorksiteScope,
+  options: { reason?: string } = {},
+) {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM ${pdtpExecutions} WHERE id = ${executionId} FOR UPDATE`)
     const [execution] = await tx.select().from(pdtpExecutions).where(eq(pdtpExecutions.id, executionId)).limit(1)
@@ -553,7 +582,9 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
     assertWorksiteAccess(execution.worksiteId, scope)
     await assertPdtpPeriodOpenForExecution(tx, execution)
     const context = await loadExecutionActivityContext(tx, execution.activityId)
-    assertExecutionHasEvidenceForApproval(execution, context?.manualEvidencePolicy)
+    assertExecutionHasEvidenceForApproval(execution, context?.manualEvidencePolicy, options.reason)
+    // PRV-03: no se aprueba el cumplimiento de una semana que todavía no ocurre.
+    assertPdtpCellNotInFuture(execution, "No se puede aprobar una ejecución de una semana que aún no ocurre.")
 
     const now = new Date().toISOString()
     const [updated] = await tx.update(pdtpExecutions)
@@ -569,6 +600,7 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
           approvalMode: "manual",
           manuallyApprovedByUserId: userId,
           manuallyApprovedAt: now,
+          ...(options.reason?.trim() ? { approvalReason: options.reason.trim() } : {}),
         },
         updatedAt: now,
       })
@@ -620,7 +652,7 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
         context.programId, context.programVersion, userId, `execution:${updated.id}`,
         { status: execution.status },
         { status: "approved" },
-        `Ejecución de la actividad N°${context.n} (mes ${execution.month}, semana ${execution.week}) aprobada.`,
+        `Ejecución de la actividad N°${context.n} (mes ${execution.month}, semana ${execution.week}) aprobada.${options.reason?.trim() ? ` Motivo: ${options.reason.trim()}` : ""}`,
         tx,
       )
     }
@@ -731,6 +763,13 @@ export type PendingPdtpExecution = {
   evidencePhotos: string[]
   executedByUserId: string | null
   executedAt: string | null
+  /** PRV-02: llegó de otro módulo sin evidencia verificada; aprobarla exige motivo. */
+  needsApprovalReason: boolean
+  origin: string
+}
+
+export function pdtpExecutionNeedsApprovalReason(row: { origin: string; evidenceStatus: string }): boolean {
+  return row.origin === "integration" && row.evidenceStatus !== "provided"
 }
 
 export async function listPendingPdtpExecutions(
@@ -760,6 +799,8 @@ export async function listPendingPdtpExecutions(
       evidencePhotos: pdtpExecutions.evidencePhotos,
       executedByUserId: pdtpExecutions.executedByUserId,
       executedAt: pdtpExecutions.executedAt,
+      origin: pdtpExecutions.origin,
+      evidenceStatus: pdtpExecutions.evidenceStatus,
     })
     .from(pdtpExecutions)
     .innerJoin(pdtpActivities, eq(pdtpExecutions.activityId, pdtpActivities.id))
@@ -772,24 +813,48 @@ export async function listPendingPdtpExecutions(
     ))
     .orderBy(asc(worksites.name), asc(pdtpExecutions.month), asc(pdtpExecutions.week))
 
-  return rows.map((r) => ({
+  return rows.map(({ origin, evidenceStatus, ...r }) => ({
     ...r,
+    origin,
     evidencePhotos: Array.isArray(r.evidencePhotos) ? r.evidencePhotos : [],
+    needsApprovalReason: pdtpExecutionNeedsApprovalReason({ origin, evidenceStatus }),
   }))
+}
+
+/**
+ * PRV-20 (auditoría 2026-09-28): cuántas ejecuciones esperan aprobación. El
+ * tile "Ejecutadas" sólo cuenta las aprobadas, así que un trabajo registrado y
+ * sin aprobar desaparecía del resumen sin decir que existía.
+ */
+export async function countPendingPdtpExecutions(scope: WorksiteScope, filter: { programId: string; worksiteId?: string | null }): Promise<number> {
+  if (scope !== "all" && scope.length === 0) return 0
+  const [row] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(pdtpExecutions)
+    .innerJoin(pdtpActivities, eq(pdtpExecutions.activityId, pdtpActivities.id))
+    .where(and(
+      eq(pdtpExecutions.status, "submitted"),
+      eq(pdtpActivities.programId, filter.programId),
+      filter.worksiteId ? eq(pdtpExecutions.worksiteId, filter.worksiteId) : undefined,
+      scope === "all" ? undefined : inArray(pdtpExecutions.worksiteId, scope),
+    ))
+  return Number(row?.total ?? 0)
 }
 
 export async function getPendingPdtpApprovalsForView(params: {
   worksiteId: string
   year: number
   activityIds: string[]
-}): Promise<Array<{ id: string; activityId: string; month: number; week: number }>> {
+}): Promise<Array<{ id: string; activityId: string; month: number; week: number; needsApprovalReason: boolean }>> {
   if (params.activityIds.length === 0) return []
-  return db
+  const rows = await db
     .select({
       id: pdtpExecutions.id,
       activityId: pdtpExecutions.activityId,
       month: pdtpExecutions.month,
       week: pdtpExecutions.week,
+      origin: pdtpExecutions.origin,
+      evidenceStatus: pdtpExecutions.evidenceStatus,
     })
     .from(pdtpExecutions)
     .where(and(
@@ -798,13 +863,28 @@ export async function getPendingPdtpApprovalsForView(params: {
       eq(pdtpExecutions.year, params.year),
       inArray(pdtpExecutions.activityId, params.activityIds),
     ))
+  return rows.map(({ origin, evidenceStatus, ...row }) => ({
+    ...row,
+    needsApprovalReason: pdtpExecutionNeedsApprovalReason({ origin, evidenceStatus }),
+  }))
 }
 
-export async function getPdtpChangeLog(programId: string) {
+/**
+ * M-18 (auditoría 2026-09-28): el control de cambios mostraba sólo las 20
+ * entradas más recientes y lo anterior no se podía consultar desde la
+ * plataforma. Ahora se pagina.
+ */
+export async function getPdtpChangeLog(programId: string, options: { offset?: number; limit?: number } = {}) {
   return db
     .select()
     .from(pdtpChangeLog)
     .where(eq(pdtpChangeLog.programId, programId))
-    .orderBy(desc(pdtpChangeLog.changedAt))
-    .limit(20)
+    .orderBy(desc(pdtpChangeLog.changedAt), desc(pdtpChangeLog.id))
+    .limit(options.limit ?? 20)
+    .offset(options.offset ?? 0)
+}
+
+export async function countPdtpChangeLog(programId: string): Promise<number> {
+  const [row] = await db.select({ total: sql<number>`count(*)::int` }).from(pdtpChangeLog).where(eq(pdtpChangeLog.programId, programId))
+  return Number(row?.total ?? 0)
 }

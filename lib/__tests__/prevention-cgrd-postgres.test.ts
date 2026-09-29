@@ -15,6 +15,7 @@ import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
+import { seedPreventionEvidenceUpload } from "@/lib/testing/prevention-evidence-upload-fixture"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import {
   assertSafeDestructiveDatabase,
@@ -38,7 +39,8 @@ const MANAGER = { userId: "grdpg-manager", scope: scopeA, permissions: ["prevent
 /** Jefatura/administrador: publica, sin editar. */
 const PUBLISHER = { userId: "grdpg-publisher", scope: scopeAll, permissions: ["prevention:cgrd:view", "prevention:cgrd:matrix:publish"] }
 
-const EVIDENCE = "https://drive.chome.cl/cgrd-evidencia"
+// PRV-01 (auditoría 2026-09-28): un archivo subido y ligado a la faena, no una URL.
+const EVIDENCE = "storage/cgrd-evidence/acta-grdpg.pdf"
 
 function getDb() {
   if (!testDb) throw new Error("Test database not initialised")
@@ -59,6 +61,11 @@ describeIf("CGRD sobre PostgreSQL real", () => {
     process.env.DATABASE_URL = databaseUrl
     vi.resetModules()
     await seedFixture(getDb())
+    process.env.STORAGE_PATH = path.join((await import("node:os")).tmpdir(), `cgrd-pg-${Date.now()}`)
+    await seedPreventionEvidenceUpload(getDb(), { domain: "cgrd", uploadedByUserId: "grdpg-manager", name: "acta-grdpg.pdf" })
+    await getDb().update(schema.preventionEvidenceUploads)
+      .set({ worksiteId: "ws-grdpg-a", claimedAt: new Date().toISOString() })
+      .where(eq(schema.preventionEvidenceUploads.path, EVIDENCE))
   }, 60_000)
 
   afterAll(async () => {

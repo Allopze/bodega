@@ -26,8 +26,11 @@ afterAll(async () => {
  *   legales/trazabilidad) deben sobrevivir a la eliminación de la
  *   faena. Si negocio necesita "borrar" una faena, debe usar
  *   `isActive = false` (soft delete).
- * - `pdtp_activity_schedule_overrides.worksiteId`: CASCADE. Los
- *   overrides son configuración de planificación, no datos legales.
+ * - `pdtp_activity_schedule_overrides.worksiteId`: RESTRICT desde M-07
+ *   (auditoría 2026-09-28). Antes era CASCADE por "configuración", pero una
+ *   meta por faena cambia el denominador de meses que pueden estar cerrados y
+ *   firmados: borrarla en cascada reescribía el cumplimiento histórico. Igual
+ *   que desvíos y subidas de evidencia.
  */
 describe("PDTP — política de cascade en worksite (H-B12)", () => {
   beforeEach(async () => {
@@ -87,7 +90,7 @@ describe("PDTP — política de cascade en worksite (H-B12)", () => {
     expect(execs).toHaveLength(1)
   })
 
-  it("pdtp_activity_schedule_overrides SÍ se borra en cascada cuando se elimina la faena (configuración)", async () => {
+  it("pdtp_activity_schedule_overrides impide borrar la faena (M-07: RESTRICT)", async () => {
     await setupProgramAndActivity()
     const now = new Date().toISOString()
     await inMemoryDb.insert(schema.pdtpActivityScheduleOverrides).values({
@@ -97,14 +100,10 @@ describe("PDTP — política de cascade en worksite (H-B12)", () => {
       createdAt: now, updatedAt: now,
     })
 
-    // Para poder borrar la faena, primero borramos la ejecución
-    // (que no se borra en cascada).
-    await inMemoryDb.delete(schema.pdtpExecutions)
-
-    // Ahora sí podemos borrar la faena. El override se va en cascada.
-    await inMemoryDb.delete(schema.worksites).where(eq(schema.worksites.id, "w1"))
-
-    const overrides = await inMemoryDb.select().from(schema.pdtpActivityScheduleOverrides)
-    expect(overrides).toHaveLength(0)
+    const thrown = await inMemoryDb.delete(schema.worksites).where(eq(schema.worksites.id, "w1")).then(() => null, (e: unknown) => e)
+    expect(thrown).toBeTruthy()
+    const cause = (thrown as { cause?: { message?: string } }).cause
+    expect(`${(thrown as Error).message}\n${cause?.message ?? ""}`).toMatch(/violates RESTRICT|foreign key|constraint/i)
+    expect(await inMemoryDb.select().from(schema.pdtpActivityScheduleOverrides)).toHaveLength(1)
   })
 })

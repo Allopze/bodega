@@ -5,11 +5,13 @@ const resolveWorksiteScope = vi.hoisted(() => vi.fn())
 const createPdtpObligation = vi.hoisted(() => vi.fn())
 const reportPdtpObligation = vi.hoisted(() => vi.fn())
 const cancelPdtpObligation = vi.hoisted(() => vi.fn())
+const requestPdtpObligationCancellation = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({ guardPermission }))
 vi.mock("@/lib/auth/scope", () => ({ resolveWorksiteScope }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("@/lib/services/prevention-pdtp", () => ({ createPdtpObligation, reportPdtpObligation, cancelPdtpObligation }))
+vi.mock("@/lib/services/pdtp/review-requests", () => ({ requestPdtpObligationCancellation }))
 
 import { cancelPdtpObligationAction, createPdtpObligationAction, reportPdtpObligationAction } from "./actions"
 
@@ -23,6 +25,7 @@ describe("PDTP obligation actions are authorization boundaries", () => {
     createPdtpObligation.mockResolvedValue({})
     reportPdtpObligation.mockResolvedValue({})
     cancelPdtpObligation.mockResolvedValue({})
+    requestPdtpObligationCancellation.mockResolvedValue({})
   })
 
   it("fails closed without execute permission", async () => {
@@ -87,7 +90,11 @@ describe("PDTP obligation actions are authorization boundaries", () => {
     await reportPdtpObligationAction({ obligationId: "ob-1", executedQuantity: 1, evidenceText: "Registro verificable", evidencePhotos: [] })
     await cancelPdtpObligationAction({ obligationId: "ob-2", reason: "Caso duplicado y formalmente fusionado" })
     expect(reportPdtpObligation).toHaveBeenCalledWith(expect.objectContaining({ userId: "trusted-user", scope: ["ws-own"] }))
-    expect(cancelPdtpObligation).toHaveBeenCalledWith(expect.objectContaining({ userId: "trusted-user", scope: ["ws-own"] }))
+    // PRV-05: desde la pantalla se pide la cancelación; no se cancela directo.
+    expect(cancelPdtpObligation).not.toHaveBeenCalled()
+    expect(requestPdtpObligationCancellation).toHaveBeenCalledWith(
+      { targetId: "ob-2", reason: "Caso duplicado y formalmente fusionado" }, "trusted-user", ["ws-own"],
+    )
   })
 
   // PREV-I11: `closed_on_time` compara `reportedAt <= dueAt`. Con la fecha en
