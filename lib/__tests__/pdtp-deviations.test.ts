@@ -54,6 +54,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
+  await inMemoryDb.delete(schema.pdtpEvidenceUploads)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
 
@@ -150,11 +151,18 @@ describe("recordPdtpDeviation: efecto de cada tipo a través de la costura únic
     const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
     const { program, activity } = await createActiveProgramWithScheduledCell(2061, { month: 3, week: 2, plannedQuantity: 3 })
 
-    await recordPdtpDeviation({
+    const reprogramming = await recordPdtpDeviation({
       activityId: activity.id, worksiteId: "ws-1", year: 2061, month: 3, week: 2,
       kind: "reprogrammed", reason: "Se reprograma por indisponibilidad del relator asignado.",
       targetMonth: 4, targetWeek: 1,
     }, "user-1", "all")
+    // M-06: la reprogramación nace en revisión y no mueve nada hasta que otra
+    // persona la aprueba.
+    expect(reprogramming.status).toBe("pending_review")
+    const { reviewPdtpNotApplicable } = await import("@/lib/services/pdtp/deviations")
+    const pendingIndicators = await getPdtpComplianceIndicators(program.id, "ws-1")
+    expect(pendingIndicators!.monthly[2]!.planned).toBe(3)
+    await reviewPdtpNotApplicable({ deviationId: reprogramming.id, decision: "approve" }, "user-2", "all")
 
     const execution = await markPdtpExecution({
       evidenceUrl: EVIDENCE_URL,
@@ -412,11 +420,13 @@ describe("desvíos y vigencia por retiro (costura única, dos pasadas)", () => {
     const { program, activity } = await createActiveProgramWithScheduledCell(2075, { month: 3, week: 1, plannedQuantity: 4 })
 
     // Desvío válido al registrarse: la actividad todavía rige todo el año.
-    await recordPdtpDeviation({
+    const reprogramming = await recordPdtpDeviation({
       activityId: activity.id, worksiteId: "ws-1", year: 2075, month: 3, week: 1,
       kind: "reprogrammed", reason: "Se reprograma a agosto por disponibilidad del relator.",
       targetMonth: 8, targetWeek: 1,
     }, "user-1", "all")
+    const { reviewPdtpNotApplicable } = await import("@/lib/services/pdtp/deviations")
+    await reviewPdtpNotApplicable({ deviationId: reprogramming.id, decision: "approve" }, "user-2", "all")
 
     // Retiro declarado después: el destino (agosto) deja de regir.
     await inMemoryDb.update(schema.pdtpActivities)
@@ -442,6 +452,10 @@ describe("acreditación por integración sobre una celda con desvío activo (la 
       reason: "Desvío declarado antes de que llegara la evidencia del módulo de origen.",
       ...(kind === "reprogrammed" ? { targetMonth: 5, targetWeek: 1 } : {}),
     }, "user-1", "all")
+    if (deviation.status === "pending_review") {
+      const { reviewPdtpNotApplicable } = await import("@/lib/services/pdtp/deviations")
+      await reviewPdtpNotApplicable({ deviationId: deviation.id, decision: "approve" }, "user-2", "all")
+    }
 
     const result = await accreditPdtpFromEvent({
       sourceType: "capacitacion",

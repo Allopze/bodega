@@ -10,12 +10,13 @@ import {
 } from "@/lib/services/prevention-privacy"
 import { safeActionMessage } from "@/lib/action-error"
 import { logger } from "@/lib/logger"
+import { trustedAuditIp } from "@/lib/security/login-rate-limit-ip"
 
 function requestContext(request: Request, user: { id: string; email?: string | null }) {
   return {
     userId: user.id,
     userEmail: user.email ?? undefined,
-    ip: request.headers.get("x-forwarded-for") ?? undefined,
+    ip: trustedAuditIp(request.headers),
     userAgent: request.headers.get("user-agent") ?? undefined,
   }
 }

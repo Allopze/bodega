@@ -179,6 +179,13 @@ export async function migratePGlite(pg: PGlite, migrationsFolder: string): Promi
   `).catch(() => {
     /* code_sequences table might not exist in some PGlite setups */
   })
+
+  // PRV-13 (0340): la bitácora es de sólo agregar salvo en mantenimiento o en
+  // una base desechable. PGlite se llama `postgres`, no lleva el sufijo de base
+  // de pruebas, así que los fixtures que vacían `audit_log`/`pdtp_change_log`
+  // entre pruebas declaran mantenimiento para toda la sesión. La prueba del
+  // trigger lo apaga para ejercitarlo (`pdtp-audit-append-only.test.ts`).
+  await pg.exec("SET app.audit_maintenance = 'on'")
 }
 
 export { splitSqlStatements }

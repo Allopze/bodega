@@ -203,6 +203,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpImportBatches)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
+  await inMemoryDb.delete(schema.pdtpReviewRequests)
   await inMemoryDb.delete(schema.pdtpPrograms)
   // Las corridas y plantillas de inspección referencian `users` y `worksites` con
   // onDelete: "restrict" (la plantilla, por su `authorUserId`), así que se borran
@@ -219,6 +220,9 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionAlcotestSlots)
   await inMemoryDb.delete(schema.preventionGrdMeetingSlots)
   await inMemoryDb.delete(schema.preventionEmergencyDrillSlots)
+  await inMemoryDb.delete(schema.pdtpEvidenceUploads)
+  await inMemoryDb.delete(schema.pdtpExecutionDeviations)
+  await inMemoryDb.delete(schema.pdtpActivityScheduleOverrides)
   await inMemoryDb.delete(schema.worksites)
   // `audit_log.user_id` referencia users y se acumula durante los casos de
   // esta suite; debe retirarse antes de recrear los usuarios del fixture.
@@ -2863,7 +2867,7 @@ describe("prevention PDTP service", () => {
       activityId: activity!.id, worksiteId: "ws-2", year: 2026, month: 1, week: 1, plannedQuantity: 4,
       reason: "Ajuste por dotación efectiva de la faena",
     }, "user-1", "all")
-    expect(created.plannedQuantity).toBe(4)
+    expect(created).toMatchObject({ status: "applied", override: { plannedQuantity: 4 } })
 
     // delete con scope [] no puede borrar
     await expect(deletePdtpActivityOverride({
@@ -2871,11 +2875,17 @@ describe("prevention PDTP service", () => {
       reason: "Retorno a la meta corporativa vigente",
     }, "user-1", [])).rejects.toThrow(/sin acceso/i)
 
-    // delete con scope que contiene ws-2 sí
-    await deletePdtpActivityOverride({
+    // delete con scope que contiene ws-2 sí. Volver al catálogo desde una
+    // meta mayor es una reducción (M-06): la aplica la aprobación de otra
+    // persona, que también queda en el control de cambios.
+    const reduction = await deletePdtpActivityOverride({
       activityId: activity!.id, worksiteId: "ws-2", year: 2026, month: 1, week: 1,
       reason: "Retorno a la meta corporativa vigente",
     }, "user-1", ["ws-2"])
+    if (reduction.status === "pending_review") {
+      const { reviewPdtpReviewRequest } = await import("@/lib/services/pdtp/review-requests")
+      await reviewPdtpReviewRequest({ requestId: reduction.requestId, decision: "approve" }, "user-jdpr", "all")
+    }
     const remaining = await inMemoryDb.select().from(schema.pdtpActivityScheduleOverrides)
       .where(eq(schema.pdtpActivityScheduleOverrides.worksiteId, "ws-2"))
     expect(remaining).toHaveLength(0)

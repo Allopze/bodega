@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
+import { fileDisposition, UNTRUSTED_FILE_HEADERS } from "@/lib/security/file-response"
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { can, canAccessWorksite } from "@/lib/auth/can"
@@ -83,8 +84,9 @@ export async function GET(request: Request, ctx: RouteCtx) {
     return new Response(new Blob([new Uint8Array(file)], { type: version.mimeType ?? "application/octet-stream" }), {
       headers: {
         "Content-Type": version.mimeType ?? "application/octet-stream",
-        "Content-Disposition": encodeContentDisposition(version.fileName, shouldDownload ? "attachment" : "inline"),
+        "Content-Disposition": encodeContentDisposition(version.fileName, fileDisposition(version.mimeType, shouldDownload)),
         "Cache-Control": "private, max-age=30",
+        ...UNTRUSTED_FILE_HEADERS,
       },
     })
   } catch (err) {

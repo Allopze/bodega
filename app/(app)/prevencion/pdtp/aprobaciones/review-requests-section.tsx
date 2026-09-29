@@ -22,8 +22,9 @@ import type { PendingPdtpReviewRequest } from "@/lib/services/pdtp/review-reques
 import { reviewPdtpReviewRequestAction, withdrawPdtpReviewRequestAction } from "../actions"
 
 /**
- * PRV-05 / PRV-12 (auditoría 2026-09-28): cancelaciones de obligaciones y
- * anulaciones de aprobaciones que esperan a una segunda persona. Mientras
+ * PRV-05 / PRV-12 / M-06 (auditoría 2026-09-28): cancelaciones de
+ * obligaciones, anulaciones de aprobaciones y reducciones de meta que esperan
+ * a una segunda persona. Mientras
  * están acá no cambian nada del cumplimiento. Igual que en "No aplica", quien
  * pidió ve su fila sin botones de revisión y puede retirarla.
  */
@@ -31,16 +32,16 @@ export function ReviewRequestsSection({ items, currentUserId }: { items: Pending
   return (
     <section id="solicitudes" className="mt-6 scroll-mt-4">
       <h2 className="text-sm font-semibold text-[var(--color-text)]">
-        Cancelaciones y anulaciones por revisar{items.length > 0 ? ` (${items.length})` : ""}
+        Cancelaciones, anulaciones y reducciones de meta por revisar{items.length > 0 ? ` (${items.length})` : ""}
       </h2>
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-        Pedidos para cancelar una obligación o anular una ejecución ya aprobada. No cambian el cumplimiento hasta que otra persona los aprueba.
+        Pedidos para cancelar una obligación, anular una ejecución ya aprobada o bajar la meta de una faena. No cambian el cumplimiento hasta que otra persona los aprueba.
       </p>
       {items.length === 0 ? (
         <EmptyState
           compact
-          title="Sin cancelaciones ni anulaciones por revisar"
-          description="Cuando alguien pida cancelar una obligación o anular una ejecución aprobada en una faena de tu alcance, aparecerá acá para que la apruebes o la rechaces."
+          title="Sin solicitudes por revisar"
+          description="Cuando alguien pida cancelar una obligación, anular una ejecución aprobada o bajar una meta en una faena de tu alcance, aparecerá acá para que la apruebes o la rechaces."
         />
       ) : (
         <ul className="mt-3 divide-y divide-[var(--color-border)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -59,7 +60,7 @@ function ReviewRequestRow({ item, isOwn }: { item: PendingPdtpReviewRequest; isO
   const [rejecting, setRejecting] = React.useState(false)
   const [withdrawing, setWithdrawing] = React.useState(false)
   const [reason, setReason] = React.useState("")
-  const noun = item.kind === "obligation_cancellation" ? "cancelación" : "anulación"
+  const noun = item.kind === "obligation_cancellation" ? "cancelación" : item.kind === "override_reduction" ? "reducción de meta" : "anulación"
 
   const decide = (decision: "approve" | "reject") => {
     operation.run(async () => {
@@ -120,7 +121,7 @@ function ReviewRequestRow({ item, isOwn }: { item: PendingPdtpReviewRequest; isO
           <DialogHeader>
             <DialogTitle>Rechazar {noun}</DialogTitle>
             <DialogDescription>
-              {item.kind === "obligation_cancellation" ? "La obligación se sigue exigiendo." : "La aprobación se mantiene."} El motivo queda en el control de cambios del programa.
+              {item.kind === "obligation_cancellation" ? "La obligación se sigue exigiendo." : item.kind === "override_reduction" ? "La meta se mantiene." : "La aprobación se mantiene."} El motivo queda en el control de cambios del programa.
             </DialogDescription>
           </DialogHeader>
           <Field label="Motivo del rechazo" htmlFor={`rr-reject-${item.id}`} hint={`Al menos ${PDTP_REASON_MIN_LENGTH} caracteres.`}>

@@ -684,8 +684,10 @@ export const pdtpScheduledInstances = pgTable("pdtp_scheduled_instances", {
   check("pdtp_scheduled_instances_status_check", sql`${table.status} IN ('pending', 'in_progress', 'submitted', 'completed', 'not_applicable', 'cancelled')`),
   check("pdtp_scheduled_instances_iso_week_check", sql`${table.isoWeek} BETWEEN 1 AND 53`),
   check("pdtp_scheduled_instances_quantity_check", sql`${table.plannedQuantity} > 0`),
-  check("pdtp_scheduled_instances_not_applicable_reason_check", sql`${table.status} <> 'not_applicable' OR length(trim(COALESCE(${table.notApplicableReason}, ''))) >= 3`),
-  check("pdtp_scheduled_instances_cancel_reason_check", sql`${table.status} <> 'cancelled' OR length(trim(COALESCE(${table.cancellationReason}, ''))) >= 3`),
+  // M-09 (auditoría 2026-09-28): mismo mínimo de 10 caracteres que el resto
+  // de los motivos del módulo (antes 3).
+  check("pdtp_scheduled_instances_not_applicable_reason_check", sql`${table.status} <> 'not_applicable' OR length(trim(COALESCE(${table.notApplicableReason}, ''))) >= 10`),
+  check("pdtp_scheduled_instances_cancel_reason_check", sql`${table.status} <> 'cancelled' OR length(trim(COALESCE(${table.cancellationReason}, ''))) >= 10`),
 ])
 
 /**
@@ -751,6 +753,9 @@ export const pdtpScheduledInstanceOutcomeRequests = pgTable("pdtp_scheduled_inst
  * - `execution_annulment`: anular una ejecución manual ya aprobada (un error
  *   del aprobador, una evidencia que resultó falsa). Antes no existía ninguna
  *   vía: la aprobación quedaba para siempre.
+ * - `override_reduction` (M-06): bajar la meta de una faena en una celda saca
+ *   planificado del denominador. `targetId` es el id determinista del override
+ *   y `payloadJson` la celda y la cantidad pedida.
  *
  * Mismo contrato que `pdtp_scheduled_instance_outcome_requests`: la pide una
  * persona con motivo, la revisa otra, y la fila queda como historial.
@@ -763,6 +768,8 @@ export const pdtpReviewRequests = pgTable("pdtp_review_requests", {
   programId:          text("program_id").notNull(),
   worksiteId:         text("worksite_id").notNull(),
   reason:             text("reason").notNull(),
+  /** Datos propios del tipo (celda y cantidad de un `override_reduction`). */
+  payloadJson:        jsonb("payload_json"),
   status:             text("status").notNull().default("pending_review"),
   requestedByUserId:  text("requested_by_user_id").notNull(),
   requestedAt:        timestamp("requested_at", { withTimezone: true, mode: "string" }).notNull(),
@@ -779,7 +786,7 @@ export const pdtpReviewRequests = pgTable("pdtp_review_requests", {
   foreignKey({ columns: [table.withdrawnByUserId], foreignColumns: [users.id], name: "pdtp_review_requests_withdrawn_by_fk" }).onDelete("set null"),
   uniqueIndex("pdtp_review_requests_pending_unique").on(table.kind, table.targetId).where(sql`${table.status} = 'pending_review'`),
   index("pdtp_review_requests_status_idx").on(table.status, table.worksiteId, table.requestedAt),
-  check("pdtp_review_requests_kind_check", sql`${table.kind} IN ('obligation_cancellation', 'execution_annulment')`),
+  check("pdtp_review_requests_kind_check", sql`${table.kind} IN ('obligation_cancellation', 'execution_annulment', 'override_reduction')`),
   check("pdtp_review_requests_status_check", sql`${table.status} IN ('pending_review', 'approved', 'rejected', 'withdrawn')`),
   check("pdtp_review_requests_reason_check", sql`length(trim(${table.reason})) >= 10`),
   check("pdtp_review_requests_reviewer_check", sql`${table.reviewedByUserId} IS NULL OR ${table.reviewedByUserId} <> ${table.requestedByUserId}`),
@@ -806,7 +813,7 @@ export const pdtpEvidenceUploads = pgTable("pdtp_evidence_uploads", {
   path:               text("path").primaryKey(),
   /** SET NULL: dar de baja a quien subió deja el archivo sin dueño vinculable. */
   uploadedByUserId:   text("uploaded_by_user_id").references(() => users.id, { onDelete: "set null" }),
-  worksiteId:         text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
+  worksiteId:         text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
   activityId:         text("activity_id").references(() => pdtpActivities.id, { onDelete: "set null" }),
   sha256:             text("sha256").notNull(),
   sizeBytes:          integer("size_bytes").notNull(),
@@ -1021,7 +1028,7 @@ export const pdtpExecutionDeviations = pgTable("pdtp_execution_deviations", {
   /** `restrict` (PREV-M04): un desvío revisado explica el denominador de un
    * mes que pudo cerrarse; no se va por cascada con la actividad. */
   activityId:         text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "restrict" }),
-  worksiteId:         text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
+  worksiteId:         text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
   year:               integer("year").notNull(),
   month:              integer("month").notNull(),
   week:               integer("week").notNull(),
@@ -1059,7 +1066,8 @@ export const pdtpExecutionDeviations = pgTable("pdtp_execution_deviations", {
   check("pdtp_execution_deviations_status_check", sql`${table.status} IN ('active', 'pending_review', 'rejected', 'withdrawn')`),
   // Sólo el "No aplica" pasa por revisión: los otros dos tipos no sacan
   // planificado del denominador sin dejar rastro (D8).
-  check("pdtp_execution_deviations_pending_review_kind_check", sql`${table.status} NOT IN ('pending_review', 'rejected') OR ${table.kind} = 'not_applicable'`),
+  // M-06 (auditoría 2026-09-28): la reprogramación también nace en revisión.
+  check("pdtp_execution_deviations_pending_review_kind_check", sql`${table.status} NOT IN ('pending_review', 'rejected') OR ${table.kind} IN ('not_applicable', 'reprogrammed')`),
   // Segregación: quien declaró no revisa su propia declaración.
   check("pdtp_execution_deviations_reviewer_not_creator_check", sql`${table.reviewedByUserId} IS NULL OR ${table.reviewedByUserId} <> ${table.createdByUserId}`),
   // Un rechazo explica por qué. El actor no se exige acá: la FK es SET NULL.
@@ -1306,7 +1314,7 @@ export const pdtpSheetActivities = pgTable("pdtp_sheet_activities", {
 export const pdtpActivityScheduleOverrides = pgTable("pdtp_activity_schedule_overrides", {
   id:              text("id").primaryKey(),
   activityId:      text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "cascade" }),
-  worksiteId:      text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
+  worksiteId:      text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
   year:            integer("year").notNull(),
   month:           integer("month").notNull(),
   week:            integer("week").notNull(),

@@ -43,6 +43,7 @@ beforeEach(async () => {
   await tdb.delete(schema.auditLog)
   await tdb.delete(schema.pdtpChangeLog)
   await tdb.delete(schema.pdtpExecutions)
+  await tdb.delete(schema.pdtpActivityScheduleOverrides)
   await tdb.delete(schema.pdtpObligations)
   await tdb.delete(schema.pdtpPeriodClosures)
   await tdb.delete(schema.pdtpActivitySchedule)
@@ -51,6 +52,7 @@ beforeEach(async () => {
   await tdb.delete(schema.pdtpPrograms)
   await tdb.delete(schema.pdtpResponsibleCatalog)
   await tdb.delete(schema.pdtpEvidenceUploads)
+  await tdb.delete(schema.pdtpExecutionDeviations)
   await tdb.delete(schema.worksites)
   await tdb.delete(schema.users)
   await tdb.insert(schema.users).values([
@@ -167,5 +169,50 @@ describe("anulación de una ejecución aprobada (PRV-12)", () => {
       A, "all", { canActForOthers: true },
     )
     await expect(requestPdtpExecutionAnnulment({ targetId: submitted.id, reason: "Todavía no se aprobó nada." }, B, "all")).rejects.toThrow(/aprobada/)
+  })
+})
+
+describe("reducción de meta por faena (M-06)", () => {
+  const cell = () => ({ activityId, worksiteId: WS, year: YEAR, month: 3, week: 1 })
+  const override = async () => (await tdb.select().from(schema.pdtpActivityScheduleOverrides))[0] ?? null
+
+  it("subir la meta se aplica al tiro; bajarla espera a otra persona", async () => {
+    const { setPdtpActivityOverride } = await import("@/lib/services/pdtp/overrides")
+    const { reviewPdtpReviewRequest, listPendingPdtpReviewRequests } = await import("@/lib/services/pdtp/review-requests")
+    await expect(setPdtpActivityOverride({ ...cell(), plannedQuantity: 3, reason: "La faena duplicó su dotación." }, A, "all"))
+      .resolves.toMatchObject({ status: "applied" })
+    expect((await override())!.plannedQuantity).toBe(3)
+
+    const reduction = await setPdtpActivityOverride({ ...cell(), plannedQuantity: 1, reason: "La dotación volvió a la normal." }, A, "all")
+    expect(reduction.status).toBe("pending_review")
+    expect((await override())!.plannedQuantity).toBe(3)
+    const [listed] = await listPendingPdtpReviewRequests("all")
+    expect(listed).toMatchObject({ kind: "override_reduction", description: expect.stringContaining("de 3 a 1") })
+
+    await expect(reviewPdtpReviewRequest({ requestId: listed!.id, decision: "approve" }, A, "all")).rejects.toThrow(/propia/)
+    await reviewPdtpReviewRequest({ requestId: listed!.id, decision: "approve" }, B, "all")
+    expect(await override()).toMatchObject({ plannedQuantity: 1, updatedByUserId: B })
+  })
+
+  it("volver al catálogo desde una meta mayor también es una reducción", async () => {
+    const { setPdtpActivityOverride, deletePdtpActivityOverride } = await import("@/lib/services/pdtp/overrides")
+    const { reviewPdtpReviewRequest } = await import("@/lib/services/pdtp/review-requests")
+    await setPdtpActivityOverride({ ...cell(), plannedQuantity: 4, reason: "La faena duplicó su dotación." }, A, "all")
+    const result = await deletePdtpActivityOverride({ ...cell(), reason: "Se vuelve a la meta corporativa." }, A, "all")
+    expect(result.status).toBe("pending_review")
+    expect(await override()).not.toBeNull()
+    await expect(setPdtpActivityOverride({ ...cell(), plannedQuantity: 2, reason: "Otra reducción mientras tanto." }, A, "all")).rejects.toThrow(/en revisión/)
+
+    await reviewPdtpReviewRequest({ requestId: (result as { requestId: string }).requestId, decision: "approve" }, B, "all")
+    expect(await override()).toBeNull()
+  })
+
+  it("rechazarla deja la meta como estaba", async () => {
+    const { setPdtpActivityOverride } = await import("@/lib/services/pdtp/overrides")
+    const { reviewPdtpReviewRequest } = await import("@/lib/services/pdtp/review-requests")
+    await setPdtpActivityOverride({ ...cell(), plannedQuantity: 5, reason: "La faena duplicó su dotación." }, A, "all")
+    const result = await setPdtpActivityOverride({ ...cell(), plannedQuantity: 0.5, reason: "Se reduce la meta sin respaldo." }, A, "all")
+    await reviewPdtpReviewRequest({ requestId: (result as { requestId: string }).requestId, decision: "reject", reason: "No hay respaldo para bajar la meta." }, B, "all")
+    expect((await override())!.plannedQuantity).toBe(5)
   })
 })

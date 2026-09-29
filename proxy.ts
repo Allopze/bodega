@@ -1,17 +1,16 @@
 import { auth } from "@/lib/auth/auth"
+import { isPublicPath, matchesRoutePrefix } from "@/lib/security/public-paths"
 import { NextResponse } from "next/server"
 import { createCspHeader } from "@/lib/security/csp"
 import { getNavigationToggleState, MODULE_TOGGLE_RECOVERY_PATH, resolveModuleRoute, routeIsEnabled } from "@/lib/services/module-toggles"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
+import { isCrossOriginMutation } from "@/lib/security/same-origin"
 
 function withSecurityHeaders(response: NextResponse, csp: string) {
   response.headers.set("Content-Security-Policy", csp)
   return response
 }
 
-function matchesRoutePrefix(pathname: string, prefix: string) {
-  return pathname === prefix || pathname.startsWith(`${prefix}/`)
-}
 
 export default auth(async (req) => {
   const { pathname } = req.nextUrl
@@ -41,23 +40,8 @@ export default auth(async (req) => {
   // `wget` con redirecciones, los schedulers reportaban éxito sin ejecutar
   // nada. Al agregar una ruta nueva bajo /api/cron, verificar el secreto es
   // obligatorio: acá ya no hay sesión que la proteja.
-  // NOTE: se lista "/api/backups/config" y NO "/api/backups". El cotejo es por
-  // prefijo, así que el prefijo corto habría abierto también `/status` y
-  // `/drive-health`, que se protegen por sesión y permiso. Sólo `config` se
-  // autentica con CRON_SECRET —la consume el backup-scheduler—, así que sólo
-  // ella puede prescindir de la sesión.
-  const publicPaths = [
-    "/login", "/registro", "/recuperar", "/api/auth", "/api/health",
-    "/api/cron",
-    "/api/backups/config",
-    "/ppa",
-    "/tae", "/api/tae/access", "/api/tae/submit", "/api/tae/identity",
-    // CAP-002/PER-002: "/acuse" es la vía de acuse sin cuenta (capacitación y
-    // AST de permiso). La credencial es el token HMAC de la propia URL, que el
-    // servicio verifica; el panel autenticado sigue viviendo bajo /prevencion.
-    "/acuse",
-  ]
-  if (publicPaths.some((prefix) => matchesRoutePrefix(pathname, prefix))) {
+  // La lista y su criterio viven en `lib/security/public-paths.ts`.
+  if (isPublicPath(pathname)) {
     // Redirect authenticated users away from login
     if (isLoggedIn && (pathname === "/login" || pathname === "/registro")) {
       return withSecurityHeaders(NextResponse.redirect(new URL("/dashboard", req.url)), csp)
@@ -88,6 +72,17 @@ export default auth(async (req) => {
     const loginUrl = new URL("/login", req.url)
     loginUrl.searchParams.set("callbackUrl", pathname)
     return withSecurityHeaders(NextResponse.redirect(loginUrl), csp)
+  }
+
+  // M-02: una mutación a un route handler autenticado tiene que venir de la
+  // propia plataforma. Las Server Actions ya verifican su origen en Next; los
+  // handlers de `/api` no. Criterio en `lib/security/same-origin.ts`.
+  if (pathname.startsWith("/api/") && isCrossOriginMutation({
+    method: req.method,
+    headers: req.headers,
+    configuredOrigin: process.env.AUTH_URL ?? process.env.NEXTAUTH_URL,
+  })) {
+    return withSecurityHeaders(NextResponse.json({ error: "Origen no permitido" }, { status: 403 }), csp)
   }
 
   // Punto único de aplicación para TODO lo autenticado, páginas incluidas.

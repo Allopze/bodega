@@ -59,7 +59,7 @@ export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SS
 
 type PdtpPageProps = {
   params: Promise<{ programId: string }>
-  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; estado?: string | string[]; overrideError?: string | string[] }>
+  searchParams: Promise<{ hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; estado?: string | string[]; overrideError?: string | string[]; overrideNotice?: string | string[] }>
 }
 
 export default async function PdtpDetailPage({ params, searchParams }: PdtpPageProps) {
@@ -89,6 +89,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const requestedWorksite = Array.isArray(query.faena) ? query.faena[0] : query.faena
   const requestedView = Array.isArray(query.vista) ? query.vista[0] : query.vista
   const overrideError = Array.isArray(query.overrideError) ? query.overrideError[0] : query.overrideError
+  const overrideNotice = Array.isArray(query.overrideNotice) ? query.overrideNotice[0] : query.overrideNotice
   const viewMode: "semana" | "anual" = requestedView === "anual" ? "anual" : "semana"
   // La tabla escribe ?estado= al filtrar (router.replace); sin leerlo acá, un
   // enlace compartido o una recarga volvían el filtro a "Todas".
@@ -415,6 +416,11 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         {overrideError && (
           <p className="rounded-[var(--radius)] border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger)]">
             {overrideError}
+          </p>
+        )}
+        {!overrideError && overrideNotice && (
+          <p role="status" className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm text-[var(--color-text)]">
+            {overrideNotice}
           </p>
         )}
 

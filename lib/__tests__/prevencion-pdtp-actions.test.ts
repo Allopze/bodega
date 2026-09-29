@@ -43,8 +43,8 @@ const MockPdtpScheduleConflictError = vi.hoisted(() => class PdtpScheduleConflic
 const mockAddPdtpActivity = vi.hoisted(() => vi.fn(async () => undefined))
 const mockRetirePdtpActivity = vi.hoisted(() => vi.fn(async () => undefined))
 const mockReorderPdtpActivities = vi.hoisted(() => vi.fn(async () => undefined))
-const mockSetPdtpActivityOverride = vi.hoisted(() => vi.fn(async () => undefined))
-const mockDeletePdtpActivityOverride = vi.hoisted(() => vi.fn(async () => undefined))
+const mockSetPdtpActivityOverride = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => ({ status: "applied" as const, override: null })))
+const mockDeletePdtpActivityOverride = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => ({ status: "applied" as const, override: null })))
 const mockCreateAnnualPdtpProgram = vi.hoisted(() => vi.fn(async () => ({ programId: "prog-1", created: true })))
 const mockCreatePdtpRevision = vi.hoisted(() => vi.fn(async () => ({ programId: "prog-2", program: { id: "prog-2", status: "draft" } })))
 const mockDecidePdtpRevisionDiff = vi.hoisted(() => vi.fn(async () => undefined))
@@ -652,7 +652,7 @@ describe("Program CRUD actions", () => {
     const fd = makeFormData({ programId: "prog-1" })
     const res = await deletePdtpProgramAction(null, fd)
     expect(res.ok).toBe(true)
-    expect(mockDeletePdtpProgram).toHaveBeenCalledWith("prog-1")
+    expect(mockDeletePdtpProgram).toHaveBeenCalledWith("prog-1", "user-1")
   })
 
   it("normaliza la identidad de una diferencia antes de aplicarla", async () => {
@@ -719,6 +719,6 @@ describe("Sheet CRUD actions", () => {
     const fd = makeFormData({ sheetId: "sheet-1", programId: "prog-1" })
     const res = await deletePdtpSheetAction(null, fd)
     expect(res.ok).toBe(true)
-    expect(mockDeletePdtpSheet).toHaveBeenCalledWith("sheet-1", "prog-1")
+    expect(mockDeletePdtpSheet).toHaveBeenCalledWith("sheet-1", "prog-1", "user-1")
   })
 })

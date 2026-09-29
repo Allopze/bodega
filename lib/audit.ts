@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm"
 import { db, type DB } from "@/db"
 import { auditLog, statusHistory } from "@/db/schema"
 import { nanoid } from "./id"
-import { UNRESOLVED_RATE_LIMIT_IP, resolveTrustedClientIp } from "./security/login-rate-limit-ip"
+import { trustedAuditIp } from "./security/login-rate-limit-ip"
 
 type AuditDb = Pick<DB, "insert">
 
@@ -54,8 +54,7 @@ interface AuditParams {
 async function resolverIpDeAuditoria(): Promise<string | undefined> {
   try {
     const { headers } = await import("next/headers")
-    const ip = resolveTrustedClientIp(await headers())
-    return ip === UNRESOLVED_RATE_LIMIT_IP ? undefined : ip
+    return trustedAuditIp(await headers())
   } catch {
     // Sin contexto de petición (cron, scripts de mantención, seeds).
     return undefined

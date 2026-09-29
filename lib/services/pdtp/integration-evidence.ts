@@ -186,6 +186,22 @@ const anyEvidenceResolvers = () => [
 ]
 
 /**
+ * Ruta absoluta de un archivo de evidencia de cualquier dominio de Prevención
+ * (o del PDTP), o `null` si la ruta no pertenece a ninguno o intenta salir de
+ * su directorio. M-12: el escaneo de integridad recorre así la evidencia que
+ * llega por integración, no sólo la del directorio PDTP.
+ */
+export function resolvePreventionEvidenceFile(ref: string | null | undefined): string | null {
+  const value = ref?.trim()
+  if (!value?.startsWith("storage/")) return null
+  for (const resolve of anyEvidenceResolvers()) {
+    const absolute = resolve(value)
+    if (absolute) return absolute
+  }
+  return null
+}
+
+/**
  * Para las fuentes que nunca se auto-aprueban (documentos, CPHS, EPP…): la
  * ejecución sólo puede afirmar `evidenceStatus = "provided"` si la ruta apunta
  * a un archivo de la plataforma que existe. Sin esto, una ruta rota se leía

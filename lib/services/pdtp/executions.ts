@@ -185,7 +185,8 @@ export async function markPdtpExecution(
     // vigente. Aceptar la ejecución dejaría al revisor aprobando una exclusión
     // sobre una semana que ya declara trabajo hecho.
     if (activeDeviation?.status === "pending_review") {
-      throw new Error("Esta celda tiene un 'no aplica' en revisión. Retíralo o espera a que se revise antes de registrar la ejecución.")
+      const what = activeDeviation.kind === "reprogrammed" ? "una reprogramación" : "un 'no aplica'"
+      throw new Error(`Esta celda tiene ${what} en revisión. Retírala o espera a que se revise antes de registrar la ejecución.`)
     }
     if (activeDeviation && (activeDeviation.kind === "not_applicable" || activeDeviation.kind === "reprogrammed")) {
       throw new Error("Esta celda tiene un desvío activo (no aplicable o reprogramado) y no admite ejecuciones.")

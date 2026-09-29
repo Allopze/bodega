@@ -5,6 +5,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getPreventionReservedCase } from "@/lib/services/prevention-reserved-cases"
+import { trustedAuditIp } from "@/lib/security/login-rate-limit-ip"
 
 interface RouteContext { params: Promise<{ id: string }> }
 
@@ -21,7 +22,7 @@ export async function GET(request: Request, context: RouteContext) {
       ctx: {
         userId: session.user.id,
         userEmail: session.user.email ?? undefined,
-        ip: request.headers.get("x-forwarded-for") ?? undefined,
+        ip: trustedAuditIp(request.headers),
         userAgent: request.headers.get("user-agent") ?? undefined,
       },
       scope: resolveWorksiteScope(session),

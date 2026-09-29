@@ -8,6 +8,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { createPreventionHealthRecord } from "@/lib/services/prevention-health"
 import { safeActionMessage } from "@/lib/action-error"
 import { logger } from "@/lib/logger"
+import { trustedAuditIp } from "@/lib/security/login-rate-limit-ip"
 
 export async function POST(request: Request) {
   const session = await auth()
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
       ctx: {
         userId: session.user.id,
         userEmail: session.user.email ?? undefined,
-        ip: request.headers.get("x-forwarded-for") ?? undefined,
+        ip: trustedAuditIp(request.headers),
         userAgent: request.headers.get("user-agent") ?? undefined,
       },
       scope: resolveWorksiteScope(session),

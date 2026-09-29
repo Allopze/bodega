@@ -8,6 +8,8 @@
  *   plazos. Antes bastaba el permiso y un motivo, incluso en un mes cerrado.
  * - Anular una ejecución manual ya aprobada: el error del aprobador o una
  *   evidencia que resultó falsa. Antes no había ninguna vía para corregirlo.
+ * - Reducir una meta por faena (M-06): baja el denominador. La solicitud la
+ *   crea `overrides.ts`; aquí se aprueba y se aplica.
  *
  * Replica el contrato de `scheduled-outcome-review.ts`: una sola solicitud en
  * revisión por objeto, la revisa alguien distinto de quien la pidió (también
@@ -20,6 +22,7 @@ import { z } from "zod"
 import { db, type Tx } from "@/db"
 import {
   pdtpActivities,
+  pdtpActivityScheduleOverrides,
   pdtpExecutions,
   pdtpObligations,
   pdtpPrograms,
@@ -39,8 +42,9 @@ import { assertPdtpPeriodOpen } from "./period-guard"
 import { assertPdtpProgramAcceptsReview } from "./version-window"
 import { pdtpExecutionHistorySnapshot, recordPdtpExecutionHistory } from "./execution-history"
 import { syncPdtpScheduledInstanceFromExecution } from "./scheduled-execution"
+import { removePdtpActivityOverride, writePdtpActivityOverride, type PdtpOverrideReductionPayload } from "./overrides"
 
-export type PdtpReviewRequestKind = "obligation_cancellation" | "execution_annulment"
+export type PdtpReviewRequestKind = "obligation_cancellation" | "execution_annulment" | "override_reduction"
 
 const reasonSchema = z.string().trim().min(PDTP_REASON_MIN_LENGTH, `El motivo debe tener al menos ${PDTP_REASON_MIN_LENGTH} caracteres`).max(1000)
 
@@ -166,6 +170,34 @@ export async function requestPdtpExecutionAnnulment(input: unknown, userId: stri
   })
 }
 
+async function applyOverrideReduction(tx: Tx, request: PdtpReviewRequest, reviewerUserId: string) {
+  const payload = request.payloadJson as PdtpOverrideReductionPayload | null
+  if (!payload) throw new Error("La solicitud no trae la celda a reducir.")
+  const [activity] = await tx.select({ programId: pdtpActivities.programId, n: pdtpActivities.n }).from(pdtpActivities)
+    .where(eq(pdtpActivities.id, payload.activityId)).limit(1)
+  if (!activity) throw new Error("Actividad PDTP no encontrada.")
+  const [program] = await tx.select({ status: pdtpPrograms.status, version: pdtpPrograms.version }).from(pdtpPrograms)
+    .where(eq(pdtpPrograms.id, activity.programId)).limit(1)
+  if (!program || program.status !== "active") throw new Error("El programa ya no está activo: la reducción quedó sin objeto.")
+  await assertPdtpPeriodOpen(activity.programId, payload.worksiteId, payload.year, payload.month, tx)
+  const [existing] = await tx.select().from(pdtpActivityScheduleOverrides).where(and(
+    eq(pdtpActivityScheduleOverrides.activityId, payload.activityId),
+    eq(pdtpActivityScheduleOverrides.worksiteId, payload.worksiteId),
+    eq(pdtpActivityScheduleOverrides.year, payload.year),
+    eq(pdtpActivityScheduleOverrides.month, payload.month),
+    eq(pdtpActivityScheduleOverrides.week, payload.week),
+  )).limit(1).for("update")
+  const cell = { activityId: payload.activityId, worksiteId: payload.worksiteId, year: payload.year, month: payload.month, week: payload.week, reason: request.reason }
+  const common = { programId: activity.programId, programVersion: program.version, activityN: activity.n }
+  // La meta la aplica quien aprueba: es la segunda persona la que asume el cambio.
+  if (payload.mode === "delete") {
+    if (existing) await removePdtpActivityOverride(tx, { ...cell, ...common, existing }, reviewerUserId)
+  } else {
+    await writePdtpActivityOverride(tx, { ...cell, ...common, plannedQuantity: payload.plannedQuantity, before: existing ?? null }, reviewerUserId)
+  }
+  return activity
+}
+
 async function applyExecutionAnnulment(tx: Tx, request: PdtpReviewRequest, reviewerUserId: string) {
   const { execution, activity } = await lockExecution(tx, request.targetId)
   if (execution.status !== "approved") throw new Error("La ejecución ya no está aprobada; la solicitud quedó sin objeto.")
@@ -238,6 +270,9 @@ export async function reviewPdtpReviewRequest(input: unknown, reviewerUserId: st
         await assertObligationPeriodOpen(tx, obligation)
         await applyPdtpObligationCancellation(tx, { obligationId: obligation.id, userId: reviewerUserId, reason: request.reason, scope })
         note = "Cancelación de obligación aprobada por una segunda persona."
+      } else if (request.kind === "override_reduction") {
+        const activity = await applyOverrideReduction(tx, request, reviewerUserId)
+        note = `Reducción de meta por faena de la N°${activity.n} aprobada por una segunda persona.`
       } else {
         const activity = await applyExecutionAnnulment(tx, request, reviewerUserId)
         note = `Anulación de la ejecución de la N°${activity.n} aprobada por una segunda persona.`
@@ -245,7 +280,9 @@ export async function reviewPdtpReviewRequest(input: unknown, reviewerUserId: st
     } else {
       note = request.kind === "obligation_cancellation"
         ? "Cancelación de obligación rechazada: la obligación se sigue exigiendo."
-        : "Anulación de ejecución rechazada: la aprobación se mantiene."
+        : request.kind === "override_reduction"
+          ? "Reducción de meta rechazada: la meta se mantiene."
+          : "Anulación de ejecución rechazada: la aprobación se mantiene."
     }
 
     const now = new Date().toISOString()
@@ -315,6 +352,13 @@ export async function listPendingPdtpReviewRequests(
     .orderBy(desc(pdtpReviewRequests.requestedAt))
   if (rows.length === 0) return []
 
+  const reductionActivityIds = rows.filter((row) => row.request.kind === "override_reduction")
+    .map((row) => (row.request.payloadJson as PdtpOverrideReductionPayload | null)?.activityId)
+    .filter((id): id is string => !!id)
+  const reductionActivities = reductionActivityIds.length
+    ? await db.select({ id: pdtpActivities.id, n: pdtpActivities.n, name: pdtpActivities.activity }).from(pdtpActivities).where(inArray(pdtpActivities.id, reductionActivityIds))
+    : []
+  const reductionActivityById = new Map(reductionActivities.map((row) => [row.id, row]))
   const obligationIds = rows.filter((row) => row.request.kind === "obligation_cancellation").map((row) => row.request.targetId)
   const executionIds = rows.filter((row) => row.request.kind === "execution_annulment").map((row) => row.request.targetId)
   const [obligations, executions] = await Promise.all([
@@ -335,7 +379,11 @@ export async function listPendingPdtpReviewRequests(
   return rows.map(({ request, worksiteName, requestedByName }) => {
     const obligation = obligationById.get(request.targetId)
     const execution = executionById.get(request.targetId)
-    const description = request.kind === "obligation_cancellation"
+    const reduction = request.kind === "override_reduction" ? request.payloadJson as PdtpOverrideReductionPayload | null : null
+    const reductionActivity = reduction ? reductionActivityById.get(reduction.activityId) : undefined
+    const description = reduction
+      ? `Bajar la meta de la N°${reductionActivity?.n ?? "?"} ${reductionActivity?.name ?? ""} (mes ${reduction.month}, semana ${reduction.week}) de ${reduction.previousQuantity} a ${reduction.plannedQuantity}${reduction.mode === "delete" ? " (vuelve al catálogo)" : ""}`.replace(/\s+/g, " ")
+      : request.kind === "obligation_cancellation"
       ? `Cancelar la obligación de la N°${obligation?.n ?? "?"} ${obligation?.name ?? ""}`.trim()
       : `Anular la ejecución aprobada de la N°${execution?.n ?? "?"} ${execution?.name ?? ""} (mes ${execution?.month ?? "?"}, semana ${execution?.week ?? "?"})`.trim()
     return {

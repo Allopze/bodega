@@ -154,6 +154,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-review-requests.test.ts",
   // PRV-14: vigilancia de crons de Prevención detenidos.
   "lib/__tests__/cron-staleness.test.ts",
+  // PRV-13: bitácora de sólo agregar (trigger 0340).
+  "lib/__tests__/pdtp-audit-append-only.test.ts",
   // PREV-I03 (resto): registra lo propio —asignado o responsable por cargo— salvo Prevención.
   "lib/__tests__/pdtp-registration-authority.test.ts",
   // PREV-M09: obligaciones paginadas y filtradas en la base.

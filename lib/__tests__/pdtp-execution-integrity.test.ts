@@ -92,6 +92,9 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivityWorksiteAssignees)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
+  await inMemoryDb.delete(schema.pdtpEvidenceUploads)
+  await inMemoryDb.delete(schema.pdtpExecutionDeviations)
+  await inMemoryDb.delete(schema.pdtpActivityScheduleOverrides)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
 

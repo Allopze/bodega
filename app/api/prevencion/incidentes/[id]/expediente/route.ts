@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger"
 import { buildXlsxBuffer } from "@/lib/reports/export"
 import { buildIncidentCaseExport } from "@/lib/services/prevention-incident-export"
 import { encodeContentDisposition } from "@/lib/utils"
+import { trustedAuditIp } from "@/lib/security/login-rate-limit-ip"
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const session = await auth()
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       includeSensitive,
       purpose,
       access: {
-        ctx: { userId: session.user.id, ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(), userAgent: request.headers.get("user-agent") ?? undefined },
+        ctx: { userId: session.user.id, ip: trustedAuditIp(request.headers), userAgent: request.headers.get("user-agent") ?? undefined },
         scope: resolveWorksiteScope(session),
         permissions: session.user.permissions,
       },

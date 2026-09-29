@@ -39,6 +39,8 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
+  await inMemoryDb.delete(schema.pdtpEvidenceUploads)
+  await inMemoryDb.delete(schema.pdtpExecutionDeviations)
   await inMemoryDb.delete(schema.worksites)
   // La auditoría conserva el usuario que ejecutó cada operación; limpiar el
   // log antes de recrear el fixture evita que la FK bloquee el DELETE de users.

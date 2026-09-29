@@ -13,7 +13,7 @@
  *   integridad y para el GC.
  */
 import { createHash } from "node:crypto"
-import { mkdtempSync, rmSync, utimesSync, writeFileSync, existsSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path, { join } from "node:path"
 import { PGlite } from "@electric-sql/pglite"
@@ -112,6 +112,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionCapaEvidence)
   await inMemoryDb.delete(schema.preventionCapaActions)
   await inMemoryDb.delete(schema.pdtpExecutions)
+  await inMemoryDb.delete(schema.pdtpScheduledInstanceOutcomeRequests)
   await inMemoryDb.delete(schema.pdtpScheduledInstances)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
@@ -181,6 +182,22 @@ describe("findPdtpEvidenceOwner — CAPA del PDTP e instancias (PREV-I05)", () =
   })
 })
 
+describe("evidencia de solicitudes de resultado (PRV-17)", () => {
+  it("el GC la ve y el revisor la puede descargar mientras la solicitud está en revisión", async () => {
+    await insertInstance(evidencePath("inst-base.pdf"))
+    await inMemoryDb.insert(schema.pdtpScheduledInstanceOutcomeRequests).values({
+      id: "req-1", instanceId: "inst-1", outcome: "not_applicable", reason: "Faena detenida por lluvias",
+      evidenceRef: evidencePath("solicitud.pdf"), requestedByUserId: USER, requestedAt: now,
+    })
+    const refs = await collectPdtpEvidenceReferences()
+    expect(refs.filter((ref) => ref.source === "outcome_request")).toEqual([
+      { path: evidencePath("solicitud.pdf"), source: "outcome_request", ownerId: "req-1", worksiteId: WS, sha256: null },
+    ])
+    expect(await findPdtpEvidenceOwner("solicitud.pdf", [WS])).toMatchObject({ worksiteId: WS, source: "outcome_request" })
+    expect(await findPdtpEvidenceOwner("solicitud.pdf", [WS_OTHER])).toBeNull()
+  })
+})
+
 describe("collectPdtpEvidenceReferences — fuente única (PREV-I13-C)", () => {
   it("reúne ejecuciones, CAPA, historial e instancias", async () => {
     await insertExecution("exec-1", WS, {
@@ -240,10 +257,26 @@ describe("scanPdtpEvidenceIntegrity (PREV-I13-C)", () => {
     expect(result.checksumMismatches[0]).toMatchObject({ path: url })
   })
 
-  it("la evidencia de otro módulo no se busca en el directorio PDTP", async () => {
-    await insertExecution("exec-1", WS, { origin: "integration", evidenceUrl: "storage/prevention-training-evidence/acta.pdf" })
+  it("revisa también la evidencia de otros módulos que llegó por integración (M-12)", async () => {
+    const { resolvePreventionTrainingEvidenceFile } = await import("@/lib/storage/config")
+    const present = "storage/prevention-training-evidence/acta.pdf"
+    const absolute = resolvePreventionTrainingEvidenceFile(present)!
+    mkdirSync(path.dirname(absolute), { recursive: true })
+    writeFileSync(absolute, "acta alterada")
+    await insertExecution("exec-1", WS, {
+      origin: "integration",
+      evidenceUrl: present,
+      // Forma en que la acreditación guarda el sha256 verificado (PRV-01).
+      sourceMetadataJson: { evidenceSha256: createHash("sha256").update("acta original").digest("hex") },
+    })
+    await insertExecution("exec-2", WS, { origin: "integration", evidenceUrl: "storage/prevention-alcotest-evidence/perdida.jpg" })
+    // Una URL histórica no es un archivo de la plataforma: no se cuenta.
+    await insertExecution("exec-3", WS, { origin: "integration", evidenceUrl: "https://drive.example.com/acta" })
+
     const result = await scanPdtpEvidenceIntegrity()
-    expect(result).toMatchObject({ ok: true, checkedFiles: 0, missingCount: 0 })
+    expect(result).toMatchObject({ ok: false, checkedFiles: 2, missingCount: 1, checksumMismatchCount: 1 })
+    expect(result.missing[0]).toMatchObject({ path: "storage/prevention-alcotest-evidence/perdida.jpg" })
+    expect(result.checksumMismatches[0]).toMatchObject({ path: present })
   })
 })
 

@@ -26,6 +26,18 @@ describe("pdtpEvidenceHref", () => {
     expect(pdtpEvidenceHref("storage/prevention-drill-evidence/b.png")?.kind).toBe("source_module")
   })
 
+  it("la evidencia de un módulo con descarga propia se enlaza a esa ruta (PRV-21)", () => {
+    expect(pdtpEvidenceHref("storage/hygiene-evidence/lab_01.pdf")).toEqual({
+      kind: "module_file",
+      name: "lab_01.pdf",
+      href: "/api/prevencion/higiene/evidence/lab_01.pdf",
+    })
+    expect(pdtpEvidenceHref("storage/cgrd-evidence/acta.pdf")?.kind).toBe("module_file")
+    expect(pdtpEvidenceHref("storage/campaign-evidence/foto.jpg")?.kind).toBe("module_file")
+    // Un nombre con traversal no se vuelve enlace.
+    expect(pdtpEvidenceHref("storage/hygiene-evidence/../x.pdf")?.kind).toBe("source_module")
+  })
+
   it("una URL http(s) se abre tal cual", () => {
     expect(pdtpEvidenceHref("https://drive.example.com/acta")).toEqual({
       kind: "external",

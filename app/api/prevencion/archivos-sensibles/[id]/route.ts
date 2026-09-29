@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth/auth"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { readPreventionSensitiveFile } from "@/lib/services/prevention-sensitive-files"
 import { encodeContentDisposition } from "@/lib/utils"
+import { trustedAuditIp } from "@/lib/security/login-rate-limit-ip"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -22,7 +23,7 @@ export async function GET(request: Request, context: RouteContext) {
       ctx: {
         userId: session.user.id,
         userEmail: session.user.email ?? undefined,
-        ip: request.headers.get("x-forwarded-for") ?? undefined,
+        ip: trustedAuditIp(request.headers),
         userAgent: request.headers.get("user-agent") ?? undefined,
       },
       scope: resolveWorksiteScope(session),

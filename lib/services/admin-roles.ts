@@ -6,6 +6,27 @@ import { nanoid } from "@/lib/id"
 /** Roles that cannot be deleted and whose core permissions cannot be emptied. */
 export const PROTECTED_ROLE_SLUGS = new Set(["administrador"])
 
+/**
+ * M-05 (auditoría de production readiness 2026-09-28): permisos que operan
+ * sobre todas las faenas a la vez y que sus servicios no acotan por faena.
+ * `prevention:pdtp:program:manage` edita el catálogo, el cronograma y las metas
+ * de todo el programa: otorgarlo a un rol de faena le daría, sin decirlo, la
+ * planificación de las faenas ajenas. Sólo un rol global puede tenerlo.
+ */
+export const GLOBAL_ONLY_PERMISSIONS = new Set(["prevention:pdtp:program:manage"])
+
+async function assertScopedRoleHasNoGlobalOnlyPermissions(input: RoleInput, client: Tx | typeof db): Promise<void> {
+  if (input.isGlobal || input.permissionIds.length === 0) return
+  const rows = await (client as typeof db)
+    .select({ name: permissions.name })
+    .from(permissions)
+    .where(inArray(permissions.id, [...new Set(input.permissionIds)]))
+  const offending = rows.map((row) => row.name).filter((name) => GLOBAL_ONLY_PERMISSIONS.has(name))
+  if (offending.length > 0) {
+    throw new Error(`El permiso ${offending.join(", ")} abarca todas las faenas: sólo se puede otorgar a un rol con visibilidad global.`)
+  }
+}
+
 export interface RoleInput {
   id?: string
   name: string
@@ -71,6 +92,7 @@ export async function createRoleWithPermissions(input: RoleInput, _actor: AdminA
 
   const existing = await (client as typeof db).query.roles.findFirst({ where: eq(roles.name, slug) })
   if (existing) throw new Error(`Ya existe un rol con el slug "${slug}"`)
+  await assertScopedRoleHasNoGlobalOnlyPermissions(input, client)
 
   const id = input.id ?? `role-${nanoid()}`
   await (client as typeof db).insert(roles).values({
@@ -112,6 +134,7 @@ export async function updateRoleWithPermissions(
     if (PROTECTED_ROLE_SLUGS.has(current.name) && input.permissionIds.length === 0) {
       throw new Error("El rol administrador debe conservar al menos un permiso")
     }
+    await assertScopedRoleHasNoGlobalOnlyPermissions(input, tx)
 
     const slug = toSlug(input.name) || current.name
     if (slug !== current.name) {
