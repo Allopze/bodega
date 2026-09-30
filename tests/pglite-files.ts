@@ -22,6 +22,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/miper-entries.test.ts",
   // MIPER F1: foto viva del documento con nombres de diccionario y medidas.
   "lib/__tests__/miper-snapshot-service.test.ts",
+  // MIPER F1: flujo completo (envío, observaciones, aprobación técnica y Legal y RRHH).
+  "lib/__tests__/miper-workflow.test.ts",
   "db/__tests__/operational-integrity-constraints.test.ts",
   "db/__tests__/pdtp-worksite-cascade.test.ts",
   "db/__tests__/pdtp-check-constraints.test.ts",
