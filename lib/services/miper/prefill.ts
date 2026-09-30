@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, sql } from "drizzle-orm"
 import { roles, userRoles, users, workers, worksites, worksiteUsers } from "@/db/schema"
 import { headcountFromSexCounts } from "@/lib/prevention/miper/names"
-import { getCompanyProfile } from "@/lib/services/system-settings"
+import { getCompanyProfileWithClient } from "@/lib/services/system-settings"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import type { Client } from "./shared"
 
@@ -20,7 +20,7 @@ export type MiperHeaderPrefill = {
  */
 export async function buildMiperHeaderPrefill(client: Client, worksiteId: string): Promise<MiperHeaderPrefill> {
   const [profile, [worksite], [representative], sexCounts] = await Promise.all([
-    getCompanyProfile(),
+    getCompanyProfileWithClient(client),
     client.select({ name: worksites.name, commune: worksites.commune }).from(worksites).where(eq(worksites.id, worksiteId)).limit(1),
     client.select({ id: users.id, name: users.name }).from(worksiteUsers)
       .innerJoin(userRoles, eq(userRoles.userId, worksiteUsers.userId))

@@ -1,4 +1,4 @@
-import { db, type DB } from "@/db"
+import { db, type DB, type Tx } from "@/db"
 import { systemSettings } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { recordAudit } from "@/lib/audit"
@@ -471,41 +471,58 @@ export async function setEmailsEnabled(
   })
 }
 
+/** Perfil a partir de los valores ya leídos, con los mismos defaults para uno y otro lector. */
+function profileFrom(byField: Partial<Record<keyof CompanyProfile, string>>): CompanyProfile {
+  return {
+    name:             cleanSetting(byField.name) || DEFAULT_COMPANY_PROFILE.name,
+    rut:              cleanSetting(byField.rut) || DEFAULT_COMPANY_PROFILE.rut,
+    businessActivity: cleanSetting(byField.businessActivity) || DEFAULT_COMPANY_PROFILE.businessActivity,
+    address:          cleanSetting(byField.address) || DEFAULT_COMPANY_PROFILE.address,
+    branchAddress:    cleanSetting(byField.branchAddress) || DEFAULT_COMPANY_PROFILE.branchAddress,
+    phone:            cleanSetting(byField.phone) || DEFAULT_COMPANY_PROFILE.phone,
+    email:            cleanSetting(byField.email) || DEFAULT_COMPANY_PROFILE.email,
+    website:          cleanSetting(byField.website) || DEFAULT_COMPANY_PROFILE.website,
+    adherentNumber:   cleanSetting(byField.adherentNumber),
+  }
+}
+
 /**
- * Get the configured company profile used in printable purchase orders.
- * Missing fields fall back to empty strings, while the company name defaults to Chome.
+ * Perfil de empresa configurado, usado en las órdenes de compra imprimibles y en
+ * el encabezado RE-04 de la MIPER. Los campos vacíos caen a su default; el
+ * nombre, a Chome.
  */
 export async function getCompanyProfile(): Promise<CompanyProfile> {
   try {
+    const fields = Object.keys(COMPANY_PROFILE_KEYS) as Array<keyof CompanyProfile>
     const rows = await Promise.all(
-      Object.values(COMPANY_PROFILE_KEYS).map((key) =>
+      fields.map((field) =>
         db.query.systemSettings.findFirst({
-          where: eq(systemSettings.key, key),
+          where: eq(systemSettings.key, COMPANY_PROFILE_KEYS[field]),
         })
       )
     )
-
-    const byKey = Object.fromEntries(
-      rows
-        .filter((row): row is { key: string; value: string; updatedAt: string } => !!row)
-        .map((row) => [row.key, row.value])
-    )
-
-    return {
-      name:             cleanSetting(byKey[COMPANY_PROFILE_KEYS.name]) || DEFAULT_COMPANY_PROFILE.name,
-      rut:              cleanSetting(byKey[COMPANY_PROFILE_KEYS.rut]) || DEFAULT_COMPANY_PROFILE.rut,
-      businessActivity: cleanSetting(byKey[COMPANY_PROFILE_KEYS.businessActivity]) || DEFAULT_COMPANY_PROFILE.businessActivity,
-      address:          cleanSetting(byKey[COMPANY_PROFILE_KEYS.address]) || DEFAULT_COMPANY_PROFILE.address,
-      branchAddress:    cleanSetting(byKey[COMPANY_PROFILE_KEYS.branchAddress]) || DEFAULT_COMPANY_PROFILE.branchAddress,
-      phone:            cleanSetting(byKey[COMPANY_PROFILE_KEYS.phone]) || DEFAULT_COMPANY_PROFILE.phone,
-      email:            cleanSetting(byKey[COMPANY_PROFILE_KEYS.email]) || DEFAULT_COMPANY_PROFILE.email,
-      website:          cleanSetting(byKey[COMPANY_PROFILE_KEYS.website]) || DEFAULT_COMPANY_PROFILE.website,
-      adherentNumber:   cleanSetting(byKey[COMPANY_PROFILE_KEYS.adherentNumber]),
-    }
+    return profileFrom(Object.fromEntries(fields.map((field, index) => [field, rows[index]?.value])))
   } catch (err) {
     logger.error("Error fetching company profile settings, using defaults:", err)
     return DEFAULT_COMPANY_PROFILE
   }
+}
+
+/**
+ * El mismo perfil, leído por el cliente que se le pase. Quien ya está dentro de
+ * una transacción —la MIPER al prellenar su encabezado— tiene que leer por ELLA:
+ * `getCompanyProfile` usa la conexión global y en PGlite, de una sola conexión,
+ * una consulta por fuera mientras la transacción está abierta se queda
+ * esperando y cuelga.
+ */
+export async function getCompanyProfileWithClient(client: DB | Tx): Promise<CompanyProfile> {
+  const fields = Object.keys(COMPANY_PROFILE_KEYS) as Array<keyof CompanyProfile>
+  const rows = await Promise.all(
+    fields.map((field) =>
+      client.select({ value: systemSettings.value }).from(systemSettings).where(eq(systemSettings.key, COMPANY_PROFILE_KEYS[field])).limit(1)
+    )
+  )
+  return profileFrom(Object.fromEntries(fields.map((field, index) => [field, rows[index]?.[0]?.value])))
 }
 
 /**

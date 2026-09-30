@@ -14,6 +14,10 @@ export const pgliteTestFiles = [
   "db/__tests__/miper-constraints.test.ts",
   // MIPER F1: diccionarios por faena y prellenado del encabezado RE-04.
   "lib/__tests__/miper-dictionaries-prefill.test.ts",
+  // MIPER F1: catálogo transversal de factores de riesgo (alta, baja lógica y uso).
+  "lib/__tests__/miper-risk-factors.test.ts",
+  // MIPER F1: crear MIPER por faena y período, encabezado y descarte de borrador.
+  "lib/__tests__/miper-matrices.test.ts",
   "db/__tests__/operational-integrity-constraints.test.ts",
   "db/__tests__/pdtp-worksite-cascade.test.ts",
   "db/__tests__/pdtp-check-constraints.test.ts",
