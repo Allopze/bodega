@@ -187,11 +187,6 @@ export function resolveGeneratedArchiveStagingDir(): string {
   return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "generated-archive")
 }
 
-/** Excel original de cada lote de importación de riesgos (MIPER). */
-export function resolveRiskImportsDir(): string {
-  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "risk-imports")
-}
-
 export function resolveFleetDir(): string {
   return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "flota")
 }
