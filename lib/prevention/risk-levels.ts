@@ -16,6 +16,8 @@
  * base (`prevention_risk_entries_*_level_valid`).
  */
 
+import { criticalityOf, RISK_CLASSIFICATIONS, type RiskClassification } from "@/lib/prevention/miper/methodology"
+
 export const RISK_LEVELS = ["low", "medium", "high", "critical"] as const
 
 export type RiskLevel = typeof RISK_LEVELS[number]
@@ -37,7 +39,8 @@ export const RISK_LEVEL_COLOR: Record<RiskLevel, string> = {
 /** Sinónimos aceptados al entrar (Excel histórico, seeds, el enum inglés viejo). */
 const ALIASES: Record<string, RiskLevel> = {
   low: "low", bajo: "low", baja: "low", leve: "low", menor: "low", insignificante: "low", trivial: "low", aceptable: "low",
-  medium: "medium", medio: "medium", media: "medium", moderate: "medium", moderado: "medium", moderada: "medium", tolerable: "medium",
+  medium: "medium", medio: "medium", media: "medium", moderate: "medium", moderado: "medium", moderada: "medium",
+  tolerable: "low",
   high: "high", alto: "high", alta: "high", importante: "high", severo: "high", grave: "high",
   critical: "critical", critico: "critical", critica: "critical", "muy alto": "critical", "muy alta": "critical", extremo: "critical", intolerable: "critical", inaceptable: "critical",
 }
@@ -58,4 +61,15 @@ export function riskLevelLabel(value: string) {
 export function riskLevelColor(value: string) {
   const level = normalizeRiskLevel(value)
   return level ? RISK_LEVEL_COLOR[level] : "var(--color-text-subtle)"
+}
+
+/**
+ * Nivel de 4 escalones de una fila MIPER. Manda la clasificación RE-04; sólo las
+ * filas legacy (metodología anterior, sin P×C) caen a `residual_level`.
+ */
+export function effectiveRiskLevel(input: { classification?: string | null; residualLevel?: string | null }): RiskLevel | null {
+  if (input.classification && (RISK_CLASSIFICATIONS as readonly string[]).includes(input.classification)) {
+    return criticalityOf(input.classification as RiskClassification)
+  }
+  return input.residualLevel ? normalizeRiskLevel(input.residualLevel) : null
 }
