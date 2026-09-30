@@ -55,6 +55,12 @@ export const workers = pgTable("workers", {
   rut:         text("rut").unique(),
   firstName:   text("first_name").notNull(),
   lastName:    text("last_name").notNull(),
+  /**
+   * Sexo registral. Null = sin registrar. Los valores son los de
+   * `lib/person-sex.ts` y coinciden con `prevention_incident_people.sex`, que
+   * lo copia al vincular al trabajador en un incidente.
+   */
+  sex:         text("sex"),
   /** Compatibilidad temporal: retirar después de migrar todos los lectores. */
   position:       text("position"),
   positionId:     text("position_id").references(() => workerPositions.id, { onDelete: "restrict" }),
@@ -71,6 +77,7 @@ export const workers = pgTable("workers", {
 }, (table) => [
   index("workers_position_idx").on(table.positionId),
   index("workers_worksite_position_active_idx").on(table.worksiteId, table.positionId, table.isActive),
+  check("workers_sex_valid", sql`${table.sex} IS NULL OR ${table.sex} IN ('female', 'male', 'intersex', 'unspecified')`),
 ])
 
 /** Excepciones individuales a las capacidades heredadas desde el cargo. */

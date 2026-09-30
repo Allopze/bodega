@@ -21,6 +21,7 @@ type WorkerRow = {
   rut:         string | null
   firstName:   string
   lastName:    string
+  sex:         string | null
   position:    string | null
   positionId:  string | null
   positionNeedsReview: boolean

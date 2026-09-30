@@ -49,6 +49,7 @@ export async function createWorker(_prev: ActionState, formData: FormData): Prom
     position:   formData.get("position") || undefined,
     worksiteId: formData.get("worksiteId"),
     isActive:   formData.get("isActive") === "on",
+    sex:        formData.get("sex") || undefined,
     sizeTop:    formData.get("sizeTop") || undefined,
     sizeBottom: formData.get("sizeBottom") || undefined,
     sizeShoe:   formData.get("sizeShoe") || undefined,
@@ -83,6 +84,7 @@ export async function createWorker(_prev: ActionState, formData: FormData): Prom
         position:   resolved.position.name,
         worksiteId: d.worksiteId,
         isActive:   d.isActive,
+        sex:        d.sex || null,
         sizeTop:    d.sizeTop || null,
         sizeBottom: d.sizeBottom || null,
         sizeShoe:   d.sizeShoe || null,
@@ -134,6 +136,7 @@ export async function updateWorker(_prev: ActionState, formData: FormData): Prom
     position:   formData.get("position") || undefined,
     worksiteId: formData.get("worksiteId"),
     isActive:   formData.get("isActive") === "on",
+    sex:        formData.get("sex") || undefined,
     sizeTop:    formData.get("sizeTop") || undefined,
     sizeBottom: formData.get("sizeBottom") || undefined,
     sizeShoe:   formData.get("sizeShoe") || undefined,
@@ -201,6 +204,7 @@ export async function updateWorker(_prev: ActionState, formData: FormData): Prom
         position:   resolved.position.name,
         worksiteId: d.worksiteId,
         isActive:   d.isActive,
+        sex:        d.sex || null,
         sizeTop:    d.sizeTop || null,
         sizeBottom: d.sizeBottom || null,
         sizeShoe:   d.sizeShoe || null,
@@ -243,6 +247,9 @@ export async function updateWorker(_prev: ActionState, formData: FormData): Prom
       rut: d.rut,
       position: positionName,
       ...(isTransfer ? { worksiteId: d.worksiteId } : {}),
+      // Sólo el hecho, no el valor: la auditoría es append-only y no debe
+      // volverse una segunda copia de un dato personal sensible.
+      ...((current.sex ?? null) !== (d.sex || null) ? { sexoModificado: true } : {}),
       ...(transferPendings ? { pendientesEnFaenaDeOrigen: transferPendings.items } : {}),
     },
   })

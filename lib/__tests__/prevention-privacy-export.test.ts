@@ -22,6 +22,7 @@ function dataset(includesClinical: boolean, includesFitness = true) {
       rut: "11111111-1",
       firstName: "=INJECT",
       lastName: "Titular",
+      sex: "female",
       position: "Operador",
       worksiteId: "ws-1",
     },
@@ -71,6 +72,9 @@ describe("privacy subject Excel", () => {
     ) as ArrayBuffer)
     expect(workbook.getWorksheet("Clínico")).toBeUndefined()
     expect(workbook.getWorksheet("Titular")?.getCell("C2").value).toBe("'=INJECT")
+    // El acceso entrega todo dato personal del padrón, con su etiqueta legible.
+    expect(workbook.getWorksheet("Titular")?.getCell("E1").value).toBe("Sexo")
+    expect(workbook.getWorksheet("Titular")?.getCell("E2").value).toBe("Mujer")
     expect(workbook.getWorksheet("Salud ocupacional")?.getCell("J2").value).toBe("sensitive_preventive")
     expect(result.checksumSha256).toMatch(/^[a-f0-9]{64}$/)
     expect(mockRecordDelivery).toHaveBeenCalledWith(expect.objectContaining({

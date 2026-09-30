@@ -3,6 +3,7 @@ import ExcelJS from "exceljs"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { sanitizeCell as safeCell } from "@/lib/reports/export-module/excel-builder"
 import type { RequestContext } from "@/lib/services/prevention-documents/utils"
+import { personSexLabel } from "@/lib/person-sex"
 import {
   getPreventionPrivacyExportDataset,
   recordPreventionPrivacyDelivery,
@@ -73,6 +74,7 @@ export async function buildPreventionPrivacySubjectExport(args: {
     { header: "RUT", key: "rut", width: 18 },
     { header: "Nombres", key: "firstName", width: 28 },
     { header: "Apellidos", key: "lastName", width: 28 },
+    { header: "Sexo", key: "sex", width: 16 },
     { header: "Cargo", key: "position", width: 30 },
     { header: "Faena", key: "worksite", width: 32 },
     { header: "Clasificación", key: "classification", width: 20 },
@@ -82,11 +84,12 @@ export async function buildPreventionPrivacySubjectExport(args: {
     rut: safeCell(dataset.worker.rut),
     firstName: safeCell(dataset.worker.firstName),
     lastName: safeCell(dataset.worker.lastName),
+    sex: personSexLabel(dataset.worker.sex),
     position: safeCell(dataset.worker.position),
     worksite: safeCell(dataset.worksite?.name),
     classification: "personal",
   })
-  styleSheet(subjectSheet, "G")
+  styleSheet(subjectSheet, "H")
 
   const healthSheet = workbook.addWorksheet("Salud ocupacional")
   healthSheet.columns = [

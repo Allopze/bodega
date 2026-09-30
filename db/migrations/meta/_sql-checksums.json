@@ -341,5 +341,6 @@
   "0339_worthless_morgan_stark": "6206e4b208ce916be02ca8b2c89920506550a4cb6b215ae9e3a9b8bc25359690",
   "0340_audit_append_only": "3cdf7148a6dae375de8a9b332a0f973e7309a33070ee770d986a6f1e57be73dd",
   "0341_pdtp_review_reprogramming_restrict_fk": "0c8f78938174d5ca57e4e6c0f8a6102f221ecb49650117f301ff5e74216d0b5b",
-  "0342_pdtp_review_requests_override_reduction": "da5ded632bc27335b202e84200c0c55543d3be8a3f39c33b2988020b6293c821"
+  "0342_pdtp_review_requests_override_reduction": "da5ded632bc27335b202e84200c0c55543d3be8a3f39c33b2988020b6293c821",
+  "0343_worker_sex": "55e1c60514b83dcc920c0a8b7093d28592591a202665cd940daaedf617b473ff"
 }

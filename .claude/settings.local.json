@@ -3,7 +3,9 @@
     "allow": [
       "Bash(npx vitest *)",
       "Bash(npx tsc *)",
-      "Bash(python3 -)"
+      "Bash(python3 -)",
+      "Bash(psql \"postgres://postgres:postgres@127.0.0.1:55432/bodega_audit_e2e\" -Atc \"select count\\(*\\) from sst_document_types\")",
+      "Bash(psql \"postgres://postgres:postgres@127.0.0.1:55432/bodega_audit_e2e\" -Atc \"select count\\(*\\) from sst_document_categories\")"
     ]
   }
 }

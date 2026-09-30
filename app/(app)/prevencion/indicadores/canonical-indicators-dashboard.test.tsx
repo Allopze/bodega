@@ -84,7 +84,7 @@ function makeView(): CanonicalIndicatorYearView {
       worksiteName: "Faena Norte",
       monthly,
       semesters: [result(1, { endMonth: 6 }), result(7, { endMonth: 12 })],
-      annual: result(1, { startMonth: 1, endMonth: 12, sexBreakdown: [{ sex: "F", value: null, suppressed: true }] }),
+      annual: result(1, { startMonth: 1, endMonth: 12, sexBreakdown: [{ sex: "female", value: null, suppressed: true }, { sex: "unspecified", value: 6, suppressed: false }] }),
     }],
     denominators: [],
     closedPeriods: [],
@@ -98,6 +98,9 @@ describe("CanonicalIndicatorsDashboard", () => {
 
     expect(screen.getAllByText("No calculable").length).toBeGreaterThan(0)
     expect(screen.getByText("Oculto por grupo pequeño (<5)")).toBeDefined()
+    // Etiquetas en español; `unspecified` agrupa también lo no registrado.
+    expect(screen.getByText("Mujer:")).toBeDefined()
+    expect(screen.getByText("Sin dato:")).toBeDefined()
     expect(screen.getByRole("link", { name: /Frecuencia · Enero/i })).toHaveAttribute(
       "href",
       "/prevencion/incidentes?year=2026&monthFrom=1&monthTo=1&indicator=frequency&worksiteId=ws-own",

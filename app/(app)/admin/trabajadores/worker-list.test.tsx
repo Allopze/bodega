@@ -14,7 +14,7 @@ import { WorkerList } from "./worker-list"
 
 function worker(id: string, firstName: string, isActive: boolean, position?: { name: string; needsReview: boolean }) {
   return {
-    id, rut: null, firstName, lastName: "Prueba",
+    id, rut: null, firstName, lastName: "Prueba", sex: null,
     position: position?.name ?? null,
     positionId: position ? "pos-1" : null,
     positionNeedsReview: position?.needsReview ?? false,

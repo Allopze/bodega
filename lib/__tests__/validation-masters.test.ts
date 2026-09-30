@@ -432,6 +432,14 @@ describe("workerSchema", () => {
     expect(result.success).toBe(false)
   })
 
+  it("acepta sexo vacío o del catálogo y rechaza otro valor", () => {
+    const base = { firstName: "Carlos", lastName: "Muñoz", worksiteId: "ws-1" }
+    expect(workerSchema.safeParse({ ...base, sex: "" }).success).toBe(true)
+    expect(workerSchema.safeParse({ ...base, sex: "male" }).success).toBe(true)
+    expect(workerSchema.safeParse({ ...base, sex: "intersex" }).success).toBe(true)
+    expect(workerSchema.safeParse({ ...base, sex: "otro" }).success).toBe(false)
+  })
+
   it("accepts optional RUT", () => {
     const result = workerSchema.safeParse({
       firstName: "Carlos",

@@ -14,6 +14,7 @@ import { sizeFamilyForWorkerField } from "@/lib/products/size-catalog"
 import type { WorkerSizeField } from "@/lib/products/product-size"
 import type { SizeFamilyOption } from "@/app/(app)/admin/productos/product-form.types"
 import type { WorkerPositionOption } from "@/app/(app)/admin/cargos/types"
+import { PERSON_SEX_LABELS, PERSON_SEX_VALUES } from "@/lib/person-sex"
 
 // Qué campo del padrón alimenta cada familia del catálogo ya no vive acá: el
 // cruce se deriva de `attributeName` con `sizeFamilyForWorkerField` y las
@@ -28,6 +29,7 @@ interface WorkerForEdit {
   rut:        string | null
   firstName:  string
   lastName:   string
+  sex:        string | null
   position:   string | null
   positionId: string | null
   positionNeedsReview: boolean
@@ -62,6 +64,7 @@ export function WorkerForm({ open, onClose, editWorker, worksites, sizeFamilies,
     ?? ""
   const [selectedPositionId, setSelectedPositionId] = useState(defaultPositionId)
   const [selectedWorksiteId, setSelectedWorksiteId] = useState(editWorker?.worksiteId ?? "")
+  const [selectedSex, setSelectedSex] = useState(editWorker?.sex ?? "")
   const [sizes, setSizes] = useState({
     sizeTop: editWorker?.sizeTop ?? "",
     sizeBottom: editWorker?.sizeBottom ?? "",
@@ -114,6 +117,21 @@ export function WorkerForm({ open, onClose, editWorker, worksites, sizeFamilies,
 
           <Field label="RUT" htmlFor="wrk-rut" helper="Con o sin puntos y guion: 12.345.678-9, 12345678-9 o 123456789" error={state.fieldErrors?.rut?.[0]}>
             <Input id="wrk-rut" name="rut" defaultValue={editWorker?.rut ?? ""} placeholder="12345678-9" error={!!state.fieldErrors?.rut} className="font-mono" />
+          </Field>
+
+          <Field label="Sexo" htmlFor="wrk-sex" helper="Se usa en la desagregación por sexo de los indicadores de accidentabilidad." error={state.fieldErrors?.sex?.[0]}>
+            <input type="hidden" name="sex" value={selectedSex} />
+            <Select value={selectedSex || NONE} onValueChange={(v) => setSelectedSex(v === NONE ? "" : v)}>
+              <SelectTrigger id="wrk-sex" error={Boolean(state.fieldErrors?.sex)}>
+                <SelectValue placeholder="Sin registrar" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Sin registrar</SelectItem>
+                {PERSON_SEX_VALUES.map((value) => (
+                  <SelectItem key={value} value={value}>{PERSON_SEX_LABELS[value]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
 
           <Field label="Cargo" htmlFor="wrk-pos" required error={state.fieldErrors?.positionId?.[0]}>

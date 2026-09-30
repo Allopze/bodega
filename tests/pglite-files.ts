@@ -280,6 +280,8 @@ export const pgliteTestFiles = [
   // `tests/pglite-files.test.ts`.
   "lib/__tests__/prevention-campaigns.test.ts",
   "lib/__tests__/prevention-incidents-re20.test.ts",
+  // El incidente copia el sexo del padrón al vincular al trabajador.
+  "lib/__tests__/prevention-incidents-worker-sex.test.ts",
   "lib/__tests__/fuel-log-integration.test.ts",
   "lib/__tests__/fuel-tae-security-integration.test.ts",
   "lib/__tests__/inspection-maintenance-lifecycle-pglite.test.ts",
