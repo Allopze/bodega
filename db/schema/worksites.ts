@@ -10,6 +10,8 @@ export const worksites = pgTable("worksites", {
   code:      text("code").notNull().unique(),   // e.g. "FN-001"
   address:   text("address"),
   region:    text("region"),
+  /** Comuna del centro de trabajo: encabezado RE-04 de la MIPER. */
+  commune:   text("commune"),
   /**
    * Título del cargo `admin_contrato` en el contrato de esta faena:
    * "Administrador de contrato" o "Supervisor de faena" son la misma persona.

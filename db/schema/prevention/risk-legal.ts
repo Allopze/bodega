@@ -34,44 +34,83 @@ export const preventionRiskMethodologies = pgTable("prevention_risk_methodologie
   check("prevention_risk_methodologies_kind_valid", sql`${table.kind} IN ('primary', 'special')`),
 ])
 
+/* ── Catálogo de factores de riesgo (RE-04) ─────────────────────────────── */
+export const preventionRiskFactors = pgTable("prevention_risk_factors", {
+  id: text("id").primaryKey(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("prevention_risk_factors_code_unique").on(table.code),
+  uniqueIndex("prevention_risk_factors_name_unique").on(table.name),
+])
+
+/* ── Diccionario: lugar de trabajo específico ───────────────────────────── */
+export const preventionRiskLocations = pgTable("prevention_risk_locations", {
+  id: text("id").primaryKey(),
+  worksiteId: text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  normalizedName: text("normalized_name").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("prevention_risk_locations_scope_name_unique").on(table.worksiteId, table.normalizedName),
+])
+
 export const preventionRiskProcesses = pgTable("prevention_risk_processes", {
   id: text("id").primaryKey(),
   worksiteId: text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
   code: text("code").notNull(),
   name: text("name").notNull(),
+  /* Clave de igualdad del diccionario de actividades (lib/prevention/miper/names).
+   * Nula en filas de la metodología anterior: esas no participan del
+   * autocompletado y no chocan con el índice. */
+  normalizedName: text("normalized_name"),
   description: text("description"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("prevention_risk_processes_scope_code_unique").on(table.worksiteId, table.code),
+  uniqueIndex("prevention_risk_processes_scope_name_unique").on(table.worksiteId, table.normalizedName),
   index("prevention_risk_processes_scope_active_idx").on(table.worksiteId, table.isActive),
 ])
 
 export const preventionRiskTasks = pgTable("prevention_risk_tasks", {
   id: text("id").primaryKey(),
-  processId: text("process_id").notNull().references(() => preventionRiskProcesses.id, { onDelete: "cascade" }),
+  /* Nulo en el modelo RE-04: tarea y puesto cuelgan de la faena, no uno del otro
+   * (en el RE-04 real la misma tarea aparece con varios puestos). */
+  processId: text("process_id").references(() => preventionRiskProcesses.id, { onDelete: "cascade" }),
+  worksiteId: text("worksite_id").references(() => worksites.id, { onDelete: "cascade" }),
   code: text("code").notNull(),
   name: text("name").notNull(),
+  normalizedName: text("normalized_name"),
   isRoutine: boolean("is_routine").notNull().default(true),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("prevention_risk_tasks_process_code_unique").on(table.processId, table.code),
+  uniqueIndex("prevention_risk_tasks_scope_name_unique").on(table.worksiteId, table.normalizedName),
 ])
 
 export const preventionRiskPositions = pgTable("prevention_risk_positions", {
   id: text("id").primaryKey(),
-  taskId: text("task_id").notNull().references(() => preventionRiskTasks.id, { onDelete: "cascade" }),
+  taskId: text("task_id").references(() => preventionRiskTasks.id, { onDelete: "cascade" }),
+  worksiteId: text("worksite_id").references(() => worksites.id, { onDelete: "cascade" }),
   code: text("code").notNull(),
   name: text("name").notNull(),
+  normalizedName: text("normalized_name"),
   workerPositionKey: text("worker_position_key"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("prevention_risk_positions_task_code_unique").on(table.taskId, table.code),
+  uniqueIndex("prevention_risk_positions_scope_name_unique").on(table.worksiteId, table.normalizedName),
 ])
 
 export const preventionRiskMatrices = pgTable("prevention_risk_matrices", {
@@ -80,6 +119,13 @@ export const preventionRiskMatrices = pgTable("prevention_risk_matrices", {
   matrixVersion: integer("matrix_version").notNull(),
   title: text("title").notNull(),
   status: text("status").notNull().default("draft"),
+  /* Revisión en curso (§6 del spec). `status` es el ciclo de vida y aquí
+   * `published` significa VIGENTE; se conserva el valor para que los
+   * consumidores que filtran `status = 'published'` sigan funcionando. */
+  reviewState: text("review_state").notNull().default("none"),
+  period: integer("period"),
+  /** Matriz creada con la metodología anterior (inherente/residual): sólo lectura. */
+  isLegacy: boolean("is_legacy").notNull().default(false),
   methodologyId: text("methodology_id").notNull().references(() => preventionRiskMethodologies.id, { onDelete: "restrict" }),
   methodologySnapshot: jsonb("methodology_snapshot").notNull(),
   revisionReason: text("revision_reason").notNull(),
@@ -100,6 +146,25 @@ export const preventionRiskMatrices = pgTable("prevention_risk_matrices", {
   // (DS 44 art. 62) y no puede quedar apuntando a un id inexistente.
   supersedesMatrixId: text("supersedes_matrix_id").references((): AnyPgColumn => preventionRiskMatrices.id, { onDelete: "restrict" }),
   publishedHashSha256: text("published_hash_sha256"),
+  // ── Encabezado RE-04 (prellenado desde faena y empresa; editable) ──
+  iperCode: text("iper_code"),
+  elaboratedOn: text("elaborated_on"),
+  updatedOn: text("updated_on"),
+  companyName: text("company_name"),
+  companyRut: text("company_rut"),
+  companyAddress: text("company_address"),
+  companyCommune: text("company_commune"),
+  economicActivity: text("economic_activity"),
+  adherentNumber: text("adherent_number"),
+  worksiteName: text("worksite_name"),
+  /* Representante de CHOME en la faena (Administrador de contrato). NO el
+   * representante legal corporativo: ver spec §4.8. */
+  siteRepresentativeUserId: text("site_representative_user_id").references(() => users.id),
+  siteRepresentativeName: text("site_representative_name"),
+  headcountTotal: integer("headcount_total"),
+  headcountMale: integer("headcount_male"),
+  headcountFemale: integer("headcount_female"),
+  headcountOther: integer("headcount_other"),
   createdByUserId: text("created_by_user_id").notNull().references(() => users.id),
   reviewedByUserId: text("reviewed_by_user_id").references(() => users.id),
   reviewedAt: timestamp("reviewed_at", { withTimezone: true, mode: "string" }),
@@ -117,35 +182,66 @@ export const preventionRiskMatrices = pgTable("prevention_risk_matrices", {
   // Un lote de importación genera a lo más una matriz: es el invariante que
   // `activateRiskImportBatch` comprobaba sólo en aplicación.
   uniqueIndex("prevention_risk_matrices_source_batch_unique").on(table.sourceImportBatchId).where(sql`${table.sourceImportBatchId} IS NOT NULL`),
-  check("prevention_risk_matrices_status_valid", sql`${table.status} IN ('draft', 'in_review', 'reviewed', 'approved', 'published', 'superseded')`),
+  // Un MIPER no reemplazado por (faena, período): el período nuevo copia al
+  // vigente y lo reemplaza al aprobarse (§3 del spec).
+  uniqueIndex("prevention_risk_matrices_scope_period_open_unique").on(table.worksiteId, table.period)
+    .where(sql`${table.status} <> 'superseded' AND ${table.period} IS NOT NULL`),
+  check("prevention_risk_matrices_status_valid", sql`${table.status} IN ('draft', 'published', 'superseded')`),
   check("prevention_risk_matrices_version_positive", sql`${table.matrixVersion} > 0 AND ${table.version} > 0`),
-  check("prevention_risk_matrices_publish_evidence", sql`${table.status} NOT IN ('approved', 'published', 'superseded') OR (${table.reviewedByUserId} IS NOT NULL AND ${table.approvedByUserId} IS NOT NULL)`),
+  check("prevention_risk_matrices_publish_evidence", sql`${table.status} NOT IN ('published', 'superseded') OR (${table.reviewedByUserId} IS NOT NULL AND ${table.approvedByUserId} IS NOT NULL)`),
+  check("prevention_risk_matrices_superseded_idle", sql`${table.status} <> 'superseded' OR ${table.reviewState} = 'none'`),
+  check("prevention_risk_matrices_review_state_valid", sql`${table.reviewState} IN ('none', 'in_review', 'observed', 'pending_approval')`),
+  check("prevention_risk_matrices_dates_order", sql`${table.elaboratedOn} IS NULL OR ${table.updatedOn} IS NULL OR ${table.updatedOn} >= ${table.elaboratedOn}`),
+  check("prevention_risk_matrices_headcount_sum", sql`${table.headcountTotal} IS NULL OR ${table.headcountMale} IS NULL OR ${table.headcountFemale} IS NULL OR ${table.headcountOther} IS NULL OR ${table.headcountMale} + ${table.headcountFemale} + ${table.headcountOther} = ${table.headcountTotal}`),
+  check("prevention_risk_matrices_headcount_non_negative", sql`coalesce(${table.headcountTotal}, 0) >= 0 AND coalesce(${table.headcountMale}, 0) >= 0 AND coalesce(${table.headcountFemale}, 0) >= 0 AND coalesce(${table.headcountOther}, 0) >= 0`),
+  check("prevention_risk_matrices_period_valid", sql`${table.period} IS NULL OR ${table.period} BETWEEN 2000 AND 2100`),
 ])
 
 export const preventionRiskEntries = pgTable("prevention_risk_entries", {
   id: text("id").primaryKey(),
   matrixId: text("matrix_id").notNull().references(() => preventionRiskMatrices.id, { onDelete: "cascade" }),
-  processId: text("process_id").notNull().references(() => preventionRiskProcesses.id, { onDelete: "restrict" }),
-  taskId: text("task_id").notNull().references(() => preventionRiskTasks.id, { onDelete: "restrict" }),
-  positionId: text("position_id").notNull().references(() => preventionRiskPositions.id, { onDelete: "restrict" }),
+  /** N° visible del RE-04. Orden, no identidad: sin índice único (se renumera al insertar/borrar). */
+  rowNumber: integer("row_number"),
+  // Nulos mientras la fila se completa en la grilla.
+  processId: text("process_id").references(() => preventionRiskProcesses.id, { onDelete: "restrict" }),
+  taskId: text("task_id").references(() => preventionRiskTasks.id, { onDelete: "restrict" }),
+  positionId: text("position_id").references(() => preventionRiskPositions.id, { onDelete: "restrict" }),
+  locationId: text("location_id").references(() => preventionRiskLocations.id, { onDelete: "restrict" }),
   hazardCode: text("hazard_code").notNull(),
-  hazard: text("hazard").notNull(),
-  riskFactor: text("risk_factor").notNull(),
-  expectedEventOrDamage: text("expected_event_or_damage").notNull(),
-  exposedPeopleDescription: text("exposed_people_description").notNull(),
+  hazard: text("hazard"),
+  riskFactorId: text("risk_factor_id").references(() => preventionRiskFactors.id, { onDelete: "restrict" }),
+  isRoutine: boolean("is_routine"),
+  risk: text("risk"),
+  probableDamage: text("probable_damage"),
+  exposedFemale: integer("exposed_female").notNull().default(0),
+  exposedMale: integer("exposed_male").notNull().default(0),
+  exposedOther: integer("exposed_other").notNull().default(0),
+  probability: integer("probability"),
+  consequence: integer("consequence"),
+  /* MR y clasificación RE-04 (lib/prevention/miper/methodology.ts#classify).
+   * Generadas: ningún camino —UI, seed, script— puede guardar una clasificación
+   * incoherente con P×C. */
+  magnitude: integer("magnitude").generatedAlwaysAs(sql`"probability" * "consequence"`),
+  classification: text("classification").generatedAlwaysAs(sql`CASE WHEN "probability" IS NULL OR "consequence" IS NULL THEN NULL WHEN "probability" * "consequence" <= 2 THEN 'tolerable' WHEN "probability" * "consequence" = 4 THEN 'moderate' WHEN "probability" * "consequence" = 8 THEN 'important' ELSE 'intolerable' END`),
+  controlledStatus: text("controlled_status"),
+  // ── Metodología anterior (filas legacy). Nulas en el modelo RE-04; se eliminan
+  //    en una migración posterior, cuando no quede ninguna fila legacy. ──
+  riskFactor: text("risk_factor"),
+  expectedEventOrDamage: text("expected_event_or_damage"),
+  exposedPeopleDescription: text("exposed_people_description"),
   exposedPeopleCount: integer("exposed_people_count"),
-  genderConsiderations: text("gender_considerations").notNull(),
-  sensitiveWorkerConsiderations: text("sensitive_worker_considerations").notNull(),
+  genderConsiderations: text("gender_considerations"),
+  sensitiveWorkerConsiderations: text("sensitive_worker_considerations"),
   specialMethodologyReference: text("special_methodology_reference"),
-  inherentDimensions: jsonb("inherent_dimensions").notNull(),
+  inherentDimensions: jsonb("inherent_dimensions"),
   inherentScore: numeric("inherent_score", { precision: 12, scale: 4, mode: "number" }),
-  inherentLevel: text("inherent_level").notNull(),
-  residualDimensions: jsonb("residual_dimensions").notNull(),
+  inherentLevel: text("inherent_level"),
+  residualDimensions: jsonb("residual_dimensions"),
   residualScore: numeric("residual_score", { precision: 12, scale: 4, mode: "number" }),
-  residualLevel: text("residual_level").notNull(),
+  residualLevel: text("residual_level"),
   isCritical: boolean("is_critical").notNull().default(false),
   responsibleUserId: text("responsible_user_id").references(() => users.id),
-  responsibleSnapshot: text("responsible_snapshot").notNull(),
+  responsibleSnapshot: text("responsible_snapshot"),
   evidenceReference: text("evidence_reference"),
   sourceRowNumber: integer("source_row_number"),
   sourceOriginal: jsonb("source_original"),
@@ -155,17 +251,23 @@ export const preventionRiskEntries = pgTable("prevention_risk_entries", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex("prevention_risk_entries_matrix_identity_unique").on(table.matrixId, table.processId, table.taskId, table.positionId, table.hazardCode),
+  index("prevention_risk_entries_matrix_row_idx").on(table.matrixId, table.rowNumber),
   index("prevention_risk_entries_matrix_level_idx").on(table.matrixId, table.residualLevel),
   /* MIPER-01: el nivel era texto libre al escribir y un enum inglés al leer, así
    * que convivían "Alto", "critico", "moderate" y "high" en la misma columna y la
    * UI pintaba en gris todo lo que no fuera inglés. La fuente de verdad es
    * lib/prevention/risk-levels (`RISK_LEVELS`); esto la vuelve exigible también
-   * para lo que entra por seeds y scripts, que no pasan por Zod. */
-  check("prevention_risk_entries_inherent_level_valid", sql`${table.inherentLevel} IN ('low', 'medium', 'high', 'critical')`),
-  check("prevention_risk_entries_residual_level_valid", sql`${table.residualLevel} IN ('low', 'medium', 'high', 'critical')`),
+   * para lo que entra por seeds y scripts, que no pasan por Zod. Ahora la columna
+   * es nula en las filas RE-04, de modo que el CHECK admite el nulo. */
+  check("prevention_risk_entries_inherent_level_valid", sql`${table.inherentLevel} IN ('low', 'medium', 'high', 'critical') OR ${table.inherentLevel} IS NULL`),
+  check("prevention_risk_entries_residual_level_valid", sql`${table.residualLevel} IN ('low', 'medium', 'high', 'critical') OR ${table.residualLevel} IS NULL`),
   check("prevention_risk_entries_exposed_count_valid", sql`${table.exposedPeopleCount} IS NULL OR ${table.exposedPeopleCount} >= 0`),
   check("prevention_risk_entries_version_positive", sql`${table.version} > 0`),
+  check("prevention_risk_entries_probability_valid", sql`${table.probability} IS NULL OR ${table.probability} IN (1, 2, 4)`),
+  check("prevention_risk_entries_consequence_valid", sql`${table.consequence} IS NULL OR ${table.consequence} IN (1, 2, 4)`),
+  check("prevention_risk_entries_controlled_valid", sql`${table.controlledStatus} IS NULL OR ${table.controlledStatus} IN ('yes', 'partial', 'no')`),
+  check("prevention_risk_entries_exposed_non_negative", sql`${table.exposedFemale} >= 0 AND ${table.exposedMale} >= 0 AND ${table.exposedOther} >= 0`),
+  check("prevention_risk_entries_row_number_positive", sql`${table.rowNumber} IS NULL OR ${table.rowNumber} >= 1`),
 ])
 
 /* ── Mapa de riesgos espacial ─────────────────────────────────────────────
@@ -217,7 +319,7 @@ export const preventionRiskControls = pgTable("prevention_risk_controls", {
   performanceStandard: text("performance_standard"),
   verificationFrequency: text("verification_frequency"),
   responsibleUserId: text("responsible_user_id").references(() => users.id),
-  responsibleSnapshot: text("responsible_snapshot").notNull(),
+  responsibleSnapshot: text("responsible_snapshot"),
   dueDate: text("due_date"),
   status: text("status").notNull().default("proposed"),
   evidenceReference: text("evidence_reference"),

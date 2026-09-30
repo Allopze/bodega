@@ -1,0 +1,5 @@
+ALTER TABLE "prevention_risk_matrices" DROP CONSTRAINT IF EXISTS "prevention_risk_matrices_status_valid";--> statement-breakpoint
+ALTER TABLE "prevention_risk_matrices" DROP CONSTRAINT IF EXISTS "prevention_risk_matrices_publish_evidence";--> statement-breakpoint
+ALTER TABLE "prevention_risk_matrices" ADD CONSTRAINT "prevention_risk_matrices_superseded_idle" CHECK ("prevention_risk_matrices"."status" <> 'superseded' OR "prevention_risk_matrices"."review_state" = 'none');--> statement-breakpoint
+ALTER TABLE "prevention_risk_matrices" ADD CONSTRAINT "prevention_risk_matrices_status_valid" CHECK ("prevention_risk_matrices"."status" IN ('draft', 'published', 'superseded'));--> statement-breakpoint
+ALTER TABLE "prevention_risk_matrices" ADD CONSTRAINT "prevention_risk_matrices_publish_evidence" CHECK ("prevention_risk_matrices"."status" NOT IN ('published', 'superseded') OR ("prevention_risk_matrices"."reviewed_by_user_id" IS NOT NULL AND "prevention_risk_matrices"."approved_by_user_id" IS NOT NULL));
