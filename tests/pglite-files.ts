@@ -24,6 +24,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/miper-snapshot-service.test.ts",
   // MIPER F1: flujo completo (envío, observaciones, aprobación técnica y Legal y RRHH).
   "lib/__tests__/miper-workflow.test.ts",
+  // MIPER F1: espacio de trabajo, bandeja por rol, lista e historial.
+  "lib/__tests__/miper-queries.test.ts",
   "db/__tests__/operational-integrity-constraints.test.ts",
   "db/__tests__/pdtp-worksite-cascade.test.ts",
   "db/__tests__/pdtp-check-constraints.test.ts",
