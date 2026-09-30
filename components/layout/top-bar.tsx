@@ -37,6 +37,17 @@ const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/r
  *  segmentos consume `useSafeShellHeader` ni renderiza un `DataTable`. */
 const FORM_ROUTE = /\/(editar|nuevo|crear)(\/|$)/
 
+/** El espacio de trabajo de una MIPER tiene dos tablas (matriz y programa)
+ *  con buscadores propios rotulados: la regla de búsqueda pide ocultar el de
+ *  la shell. La portada, el catálogo y la ficha de control lo conservan. */
+const OWN_SEARCH_PATTERNS = [/^\/prevencion\/miper\/(?!factores(?:\/|$)|controles(?:\/|$))[^/]+$/]
+
+export function hidesShellSearch(pathname: string) {
+  return ROUTES_WITH_OWN_SEARCH.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+    || OWN_SEARCH_PATTERNS.some((pattern) => pattern.test(pathname))
+    || FORM_ROUTE.test(pathname)
+}
+
 const TopBarInner = React.memo(function TopBarInner({
   onMenuToggle,
   className,
@@ -74,8 +85,7 @@ const TopBarInner = React.memo(function TopBarInner({
   // These routes have their own per-screen search bar (URL-synced,
   // server-side). The top-bar in-memory search is inert there — hide it so
   // users don't see two search inputs with different behaviours.
-  const hideSearch = ROUTES_WITH_OWN_SEARCH.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
-    || FORM_ROUTE.test(pathname)
+  const hideSearch = hidesShellSearch(pathname)
 
   return (
     <header className={cn(
