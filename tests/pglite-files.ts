@@ -20,6 +20,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/miper-matrices.test.ts",
   // MIPER F1: filas y medidas con concurrencia optimista, inserción y borrado.
   "lib/__tests__/miper-entries.test.ts",
+  // MIPER F1: foto viva del documento con nombres de diccionario y medidas.
+  "lib/__tests__/miper-snapshot-service.test.ts",
   "db/__tests__/operational-integrity-constraints.test.ts",
   "db/__tests__/pdtp-worksite-cascade.test.ts",
   "db/__tests__/pdtp-check-constraints.test.ts",
