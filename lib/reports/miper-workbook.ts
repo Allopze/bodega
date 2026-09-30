@@ -1,73 +1,114 @@
 /**
- * Libro Excel de una MIPER publicada. Lo comparten la descarga
- * (`app/api/prevencion/miper/[id]/export`) y el archivado de documentos
- * generados, para que la copia que queda en Cloudreve al publicar sea el mismo
- * libro que se descarga. La hoja de metadatos de quien descarga la agrega la
- * ruta: describe a una persona, no a la matriz.
+ * Libro Excel RE-04 de una versión SELLADA de la MIPER. Lo comparten la
+ * descarga (`app/api/prevencion/miper/[id]/export`) y el archivado automático
+ * al aprobar, así que la copia archivada es el mismo libro que se descarga. Se
+ * arma desde la foto de la versión, nunca desde los datos vivos: lo que se
+ * archiva es exactamente lo que se aprobó. La hoja "Programa de Trabajo" llega
+ * en F2.
  */
-import type ExcelJS from "exceljs"
+import ExcelJS from "exceljs"
 import { sanitizeCell as safe } from "@/lib/reports/export-module/excel-builder"
-import { riskLevelLabel } from "@/lib/prevention/risk-levels"
-import type { getPublishedRiskMatrix } from "@/lib/services/prevention-risk-legal"
+import { CLASSIFICATION_CRITERIA, CLASSIFICATION_LABEL, CONSEQUENCE_LEVELS, PROBABILITY_LEVELS, RISK_CLASSIFICATIONS } from "@/lib/prevention/miper/methodology"
+import { CONTROL_HIERARCHY_LABEL, CONTROLLED_STATUS_LABEL, type MiperSnapshot } from "@/lib/prevention/miper/snapshot"
+import type { getMiperVersion } from "@/lib/services/miper/queries"
+import { formatDate } from "@/lib/utils"
 
-export type PublishedRiskMatrixDetail = Awaited<ReturnType<typeof getPublishedRiskMatrix>>
+export type MiperVersionDetail = Awaited<ReturnType<typeof getMiperVersion>>
 
-/**
- * El nivel se almacena normalizado en inglés (`high`), pero este archivo lo lee
- * un fiscalizador: sale como "Alto", igual que en pantalla. Es el único lector
- * del nivel que no pasaba por `riskLevelLabel()`.
- */
-function level(value: unknown) {
-  return value ? riskLevelLabel(String(value)) : ""
+const FILL: Record<string, string> = { tolerable: "FFD9EAD3", moderate: "FFFFF2CC", important: "FFF4CCCC", intolerable: "FFC00000" }
+const HEADER_FILL = "FF1F3864"
+
+function headerStyle(row: ExcelJS.Row) {
+  row.font = { bold: true, color: { argb: "FFFFFFFF" } }
+  row.alignment = { vertical: "middle", horizontal: "center", wrapText: true }
+  row.eachCell((cell) => { cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } } })
 }
 
-/**
- * Las dimensiones son un JSON (`{"assessment":"high"}`): volcarlo crudo entrega
- * una celda ilegible con el nivel en inglés dentro. Se traduce el nivel y se
- * aplana a "clave: valor".
- */
-function dimensions(value: unknown) {
-  if (!value) return ""
-  if (typeof value !== "object") return String(value)
-  return Object.entries(value as Record<string, unknown>)
-    .map(([key, raw]) => `${key}: ${key === "assessment" ? level(raw) : String(raw ?? "")}`)
-    .join(" · ")
+export function miperFilenameBase(detail: MiperVersionDetail) {
+  return `RE-04-MIPER-${detail.worksiteCode}-${detail.version.period ?? "sin-periodo"}-v${detail.version.versionNumber}`
 }
 
-function style(sheet: { getRow: (row: number) => { font: object; fill: object } }) {
-  sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }
-  sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } }
-}
+export async function buildMiperWorkbook(detail: MiperVersionDetail) {
+  const snapshot = detail.version.snapshot as MiperSnapshot
+  const h = snapshot.header
+  const workbook = new ExcelJS.Workbook()
+  workbook.creator = "Plataforma CHOME"
 
-export async function buildMiperWorkbook(detail: PublishedRiskMatrixDetail): Promise<ExcelJS.Workbook> {
-  const { Workbook } = await import("exceljs")
-  const workbook = new Workbook()
-  workbook.creator = "Plataforma Chome"
-  workbook.created = new Date()
-  const matrix = workbook.addWorksheet("Matriz MIPER")
-  matrix.columns = [
-    { header: "Faena", key: "worksite", width: 24 }, { header: "Versión", key: "version", width: 10 }, { header: "Proceso", key: "process", width: 24 },
-    { header: "Tarea", key: "task", width: 28 }, { header: "Puesto", key: "position", width: 24 }, { header: "Código peligro", key: "code", width: 16 },
-    { header: "Peligro", key: "hazard", width: 34 }, { header: "Factor", key: "factor", width: 30 }, { header: "Evento/daño", key: "damage", width: 34 },
-    { header: "Personas expuestas", key: "exposed", width: 30 }, { header: "Cantidad", key: "count", width: 10 }, { header: "Enfoque de género", key: "gender", width: 34 },
-    { header: "Sensibilidad", key: "sensitivity", width: 34 }, { header: "Evaluación inherente", key: "inherent", width: 28 }, { header: "Nivel inherente", key: "inherentLevel", width: 16 },
-    { header: "Evaluación residual", key: "residual", width: 28 }, { header: "Nivel residual", key: "residualLevel", width: 16 }, { header: "Crítico", key: "critical", width: 10 },
-    { header: "Responsable", key: "responsible", width: 24 }, { header: "Evidencia", key: "evidence", width: 34 }, { header: "Metodología especial", key: "special", width: 28 },
+  const sheet = workbook.addWorksheet("RE-04 IPER", {
+    pageSetup: { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "12:13" },
+  })
+  sheet.mergeCells("A1:U1")
+  sheet.getCell("A1").value = "Matriz de Identificación de Peligros y Evaluación de Riesgos (IPER)"
+  sheet.getCell("A1").font = { bold: true, size: 14 }
+  // `safe()` devuelve el valor ya neutralizado (string | number | boolean):
+  // las columnas de valor no son sólo texto.
+  const headerRows: Array<[string, ExcelJS.CellValue, string, ExcelJS.CellValue]> = [
+    ["CÓDIGO IPER", safe(h.iperCode ?? "RE-04"), "FECHA ELABORACIÓN", h.elaboratedOn ? formatDate(h.elaboratedOn) : ""],
+    ["RAZÓN SOCIAL", safe(h.companyName ?? ""), "FECHA ACTUALIZACIÓN", h.updatedOn ? formatDate(h.updatedOn) : ""],
+    ["RUT EMPLEADOR", safe(h.companyRut ?? ""), "PERÍODO / VERSIÓN", `${h.period ?? ""} · v${detail.version.versionNumber}`],
+    ["DIRECCIÓN / COMUNA", safe([h.companyAddress, h.companyCommune].filter(Boolean).join(", ")), "N° DE ADHERENTE", safe(h.adherentNumber ?? "")],
+    ["ACTIVIDAD ECONÓMICA PRINCIPAL", safe(h.economicActivity ?? ""), "NOMBRE CENTRO DE TRABAJO", safe(h.worksiteName ?? detail.worksiteName)],
+    ["REPRESENTANTE DE LA EMPRESA EN LA FAENA (ADMINISTRADOR DE CONTRATO)", safe(h.siteRepresentativeName ?? ""), "N° TRABAJADORES (TOTAL / H / M / OTRO)", `${h.headcountTotal ?? ""} / ${h.headcountMale ?? ""} / ${h.headcountFemale ?? ""} / ${h.headcountOther ?? ""}`],
+    ["NOMBRE QUIEN ELABORÓ", safe(detail.version.elaboratedByName), "NOMBRE QUIEN REVISÓ", safe(detail.version.technicalReviewerName)],
+    ["NOMBRE QUIEN APROBÓ (LEGAL Y RRHH)", safe(detail.version.approverName), "FECHA DE APROBACIÓN", formatDate(detail.version.approvedAt)],
   ]
-  for (const row of detail.entries) matrix.addRow({ worksite: safe(detail.worksiteName), version: detail.matrix.matrixVersion, process: safe(row.process.name), task: safe(row.task.name), position: safe(row.position.name), code: safe(row.entry.hazardCode), hazard: safe(row.entry.hazard), factor: safe(row.entry.riskFactor), damage: safe(row.entry.expectedEventOrDamage), exposed: safe(row.entry.exposedPeopleDescription), count: row.entry.exposedPeopleCount ?? "", gender: safe(row.entry.genderConsiderations), sensitivity: safe(row.entry.sensitiveWorkerConsiderations), inherent: safe(dimensions(row.entry.inherentDimensions)), inherentLevel: level(row.entry.inherentLevel), residual: safe(dimensions(row.entry.residualDimensions)), residualLevel: level(row.entry.residualLevel), critical: row.entry.isCritical ? "Sí" : "No", responsible: safe(row.entry.responsibleSnapshot), evidence: safe(row.entry.evidenceReference), special: safe(row.entry.specialMethodologyReference) })
-  style(matrix); matrix.autoFilter = { from: "A1", to: "U1" }
-  const controls = workbook.addWorksheet("Controles")
-  controls.columns = [{ header: "Peligro ID", key: "risk", width: 26 }, { header: "Descripción", key: "description", width: 44 }, { header: "Jerarquía", key: "hierarchy", width: 18 }, { header: "Existente", key: "existing", width: 12 }, { header: "Crítico", key: "critical", width: 12 }, { header: "Estándar de desempeño", key: "standard", width: 42 }, { header: "Frecuencia", key: "frequency", width: 18 }, { header: "Responsable", key: "responsible", width: 24 }, { header: "Estado", key: "status", width: 16 }, { header: "Eficacia", key: "effectiveness", width: 16 }, { header: "Evidencia", key: "evidence", width: 36 }]
-  for (const control of detail.controls) controls.addRow({ risk: control.riskEntryId, description: safe(control.description), hierarchy: control.hierarchy, existing: control.isExisting ? "Sí" : "No", critical: control.isCritical ? "Sí" : "No", standard: safe(control.performanceStandard), frequency: safe(control.verificationFrequency), responsible: safe(control.responsibleSnapshot), status: control.status, effectiveness: control.effectivenessStatus, evidence: safe(control.evidenceReference) })
-  style(controls)
-  const approval = workbook.addWorksheet("Aprobación")
-  approval.addRows([["Campo", "Valor"], ["Estado", detail.matrix.status], ["Metodología", safe(detail.matrix.methodologySnapshot)], ["Motivo", safe(detail.matrix.revisionReason)], ["Participación", safe(detail.matrix.participationSummary)], ["Evidencia consulta", safe(detail.matrix.consultationEvidenceReference)], ["Revisor", detail.matrix.reviewedByUserId ?? ""], ["Fecha revisión", detail.matrix.reviewedAt ?? ""], ["Aprobador", detail.matrix.approvedByUserId ?? ""], ["Fecha aprobación", detail.matrix.approvedAt ?? ""], ["Publicador", detail.matrix.publishedByUserId ?? ""], ["Fecha publicación", detail.matrix.publishedAt ?? ""], ["Vigencia", detail.matrix.effectiveFrom ?? ""], ["Próxima revisión", detail.matrix.reviewDueAt ?? ""], ["SHA-256", detail.matrix.publishedHashSha256 ?? ""]]); style(approval)
-  const triggers = workbook.addWorksheet("Revisiones")
-  triggers.addRow(["Tipo", "Origen", "Descripción", "Estado", "Vence", "Resolución", "Actor", "Fecha"])
-  detail.triggers.forEach((item) => triggers.addRow([item.triggerType, `${safe(item.sourceType)}:${safe(item.sourceId)}`, safe(item.description), item.status, item.dueAt, safe(item.resolution), item.resolvedByUserId ?? "", item.resolvedAt ?? ""])); style(triggers)
-  return workbook
-}
+  headerRows.forEach(([labelA, valueA, labelB, valueB], index) => {
+    const row = sheet.getRow(3 + index)
+    row.getCell(1).value = labelA; row.getCell(4).value = valueA
+    row.getCell(11).value = labelB; row.getCell(14).value = valueB
+    row.getCell(1).font = { bold: true }; row.getCell(11).font = { bold: true }
+  })
 
-export function miperFilenameBase(detail: Pick<PublishedRiskMatrixDetail, "worksiteName" | "matrix">): string {
-  return `MIPER_${detail.worksiteName}_v${detail.matrix.matrixVersion}`
+  const top = sheet.getRow(12)
+  const labels = ["N°", "ACTIVIDAD", "TAREA", "PUESTO DE TRABAJO", "LUGAR DE TRABAJO ESPECÍFICO", "N° DE TRABAJADORES", "", "", "FACTORES DE RIESGO", "RUTINARIA / NO RUTINARIA", "PELIGRO", "RIESGO", "DAÑO PROBABLE", "EVALUACIÓN DEL RIESGO", "", "", "", "MEDIDA DE CONTROL", "¿ESTÁ CONTROLADO EL RIESGO?", "RESPONSABLE", "PLAZOS"]
+  labels.forEach((label, index) => { top.getCell(index + 1).value = label })
+  const sub = sheet.getRow(13)
+  ;[[6, "F"], [7, "M"], [8, "OTRO"], [14, "PROBABILIDAD"], [15, "CONSECUENCIA"], [16, "MR"], [17, "CLASIFICACIÓN DEL RIESGO"]].forEach(([col, label]) => { sub.getCell(col as number).value = label as string })
+  sheet.mergeCells("F12:H12"); sheet.mergeCells("N12:Q12")
+  for (const col of [1, 2, 3, 4, 5, 9, 10, 11, 12, 13, 18, 19, 20, 21]) sheet.mergeCells(12, col, 13, col)
+  headerStyle(top); headerStyle(sub)
+
+  for (const entry of snapshot.entries) {
+    const measures = entry.controls.map((control) => `${CONTROL_HIERARCHY_LABEL[control.hierarchy]}: ${control.description}`).join("\n")
+    const responsible = [...new Set(entry.controls.map((control) => control.responsibleName).filter(Boolean))].join("\n")
+    const deadlines = entry.controls.map((control) => (control.dueDate ? formatDate(control.dueDate) : "")).filter(Boolean).join("\n")
+    const row = sheet.addRow([
+      entry.rowNumber, safe(entry.activity ?? ""), safe(entry.task ?? ""), safe(entry.position ?? ""), safe(entry.location ?? ""),
+      entry.exposedFemale, entry.exposedMale, entry.exposedOther, safe(entry.riskFactor ?? ""),
+      entry.isRoutine === null ? "" : entry.isRoutine ? "Rutinaria" : "No rutinaria",
+      safe(entry.hazard ?? ""), safe(entry.risk ?? ""), safe(entry.probableDamage ?? ""),
+      entry.probability ?? "", entry.consequence ?? "", entry.magnitude ?? "",
+      entry.classification ? CLASSIFICATION_LABEL[entry.classification].toUpperCase() : "",
+      safe(measures), entry.controlledStatus ? CONTROLLED_STATUS_LABEL[entry.controlledStatus] : "", safe(responsible), deadlines,
+    ])
+    row.alignment = { vertical: "top", wrapText: true }
+    if (entry.classification) {
+      const cell = row.getCell(17)
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: FILL[entry.classification]! } }
+      cell.font = { bold: true, color: { argb: entry.classification === "intolerable" ? "FFFFFFFF" : "FF000000" } }
+    }
+  }
+  const widths = [5, 22, 22, 20, 20, 5, 5, 6, 16, 13, 28, 24, 26, 8, 8, 6, 14, 48, 14, 20, 12]
+  widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width })
+  sheet.views = [{ state: "frozen", xSplit: 3, ySplit: 13 }]
+
+  const changes = workbook.addWorksheet("Modificaciones")
+  headerStyle(changes.addRow(["Revisión", "Fecha", "Modificaciones", "Responsable", "Aprobó"]))
+  for (const version of detail.versions) changes.addRow([version.versionNumber, formatDate(version.approvedAt), safe(version.changeSummary), safe(version.elaboratedByName), safe(version.approverName)])
+  changes.columns = [{ width: 10 }, { width: 14 }, { width: 70 }, { width: 28 }, { width: 28 }]
+
+  const criteria = workbook.addWorksheet("Criterios de Evaluación IPER")
+  headerStyle(criteria.addRow(["PROBABILIDAD", "VALOR", "CRITERIO"]))
+  for (const level of PROBABILITY_LEVELS) criteria.addRow([level.label, level.value, level.description])
+  criteria.addRow([])
+  headerStyle(criteria.addRow(["CONSECUENCIA", "VALOR", "CRITERIO"]))
+  for (const level of CONSEQUENCE_LEVELS) criteria.addRow([level.label, level.value, level.description])
+  criteria.addRow([])
+  headerStyle(criteria.addRow(["CLASIFICACIÓN", "MR", "CRITERIO"]))
+  const bandMr: Record<string, string> = { tolerable: "1 - 2", moderate: "4", important: "8", intolerable: "16" }
+  for (const classification of RISK_CLASSIFICATIONS) criteria.addRow([CLASSIFICATION_LABEL[classification].toUpperCase(), bandMr[classification], CLASSIFICATION_CRITERIA[classification]])
+  criteria.columns = [{ width: 30 }, { width: 10 }, { width: 110 }]
+  criteria.eachRow((row) => { row.alignment = { vertical: "top", wrapText: true } })
+
+  return workbook
 }
