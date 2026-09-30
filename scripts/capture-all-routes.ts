@@ -2447,6 +2447,8 @@ async function prepareDatabase(captureDbUrl: string) {
     matrixVersion: 1,
     title: "MIPER Faena Mininco 2026",
     status: "published",
+    // Datos de la metodología anterior: la MIPER RE-04 es la del flujo nuevo.
+    isLegacy: true,
     methodologyId: "risk-methodology-audit-1",
     methodologySnapshot: { code: "MIPER-5X5", name: "Matriz de probabilidad y consecuencia 5×5", versionLabel: "2026.1", kind: "primary", authoritySource: "Metodología preventiva interna alineada con DS 44", configuration: { probabilityScale: 5, consequenceScale: 5 } },
     revisionReason: "Revisión anual previa a la ejecución del programa preventivo.",

@@ -212,12 +212,12 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
   // ── MIPER ───────────────────────────────────────────────────────────────
   35: {
     module: "riesgos",
-    permission: "prevention:risk:publish",
+    permission: "prevention:risk:approve_legal",
     // `/prevencion/miper`, no `/prevencion/riesgos`: la segunda no existe. Nadie
     // lo notó porque la cola de pendientes mandaba todo a la planilla y este
     // href no se usaba.
     href: (w) => `/prevencion/miper?faena=${w}`,
-    segregated: "Publicar una revisión de la matriz exige firma distinta de quien la editó (segregación del módulo MIPER).",
+    segregated: "Aprobar una versión de la matriz exige que la firme Legal y RRHH, distinto de quien la elaboró y de quien la revisó técnicamente.",
   },
 
   // ── Alcotest ────────────────────────────────────────────────────────────

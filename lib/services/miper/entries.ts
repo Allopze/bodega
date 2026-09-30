@@ -67,7 +67,8 @@ export async function saveMiperEntry(input: unknown, access: MiperAccess): Promi
     const columns = await toColumns(tx, matrix.worksiteId, data.values)
     const now = nowIso()
     if (!data.entryId) {
-      const [{ maxRow }] = await tx.select({ maxRow: sql<number>`coalesce(max(${preventionRiskEntries.rowNumber}), 0)::int` }).from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, matrix.id))
+      const [row] = await tx.select({ maxRow: sql<number>`coalesce(max(${preventionRiskEntries.rowNumber}), 0)::int` }).from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, matrix.id))
+      const maxRow = row?.maxRow ?? 0
       const after = Math.min(data.insertAfterRowNumber ?? maxRow, maxRow)
       if (after < maxRow) {
         await tx.update(preventionRiskEntries).set({ rowNumber: sql`${preventionRiskEntries.rowNumber} + 1` })

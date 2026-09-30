@@ -55,8 +55,8 @@ describe("prevention module RBAC", () => {
       "prevention:risk:view",
       "prevention:risk:edit",
       "prevention:risk:review",
-      "prevention:risk:approve",
-      "prevention:risk:publish",
+      "prevention:risk:approve_legal",
+      "prevention:risk:catalog:manage",
       "prevention:risk:override_segregation",
       "prevention:legal:view",
       "prevention:legal:assess",
@@ -337,12 +337,13 @@ describe("prevention module RBAC", () => {
       .map((grant) => grant.roleSlug)
       .sort()
 
-    expect(rolesFor("prevention:risk:approve")).toEqual(["administrador", "jefa_chome", "prevencionista"])
-    expect(rolesFor("prevention:risk:publish")).toEqual(["administrador", "jefa_chome", "prevencionista"])
+    expect(rolesFor("prevention:risk:review")).toEqual(["administrador", "jefa_chome", "prevencionista"])
+    expect(rolesFor("prevention:risk:approve_legal")).toEqual(["administrador", "gerente_legal_rrhh"])
+    expect(rolesFor("prevention:risk:catalog:manage")).toEqual(["administrador", "prevencionista"])
     // Quien levanta la matriz en faena no la firma en ningún paso.
     expect(rolesFor("prevention:risk:edit")).toContain("prevencionista_faena")
-    expect(rolesFor("prevention:risk:approve")).not.toContain("prevencionista_faena")
-    expect(rolesFor("prevention:risk:publish")).not.toContain("prevencionista_faena")
+    expect(rolesFor("prevention:risk:review")).not.toContain("prevencionista_faena")
+    expect(rolesFor("prevention:risk:approve_legal")).not.toContain("prevencionista_faena")
 
     // Cerrar el caso es de jefatura; investigarlo y difundirlo, de terreno.
     expect(rolesFor("prevention:incidents:close")).toEqual(["administrador", "jefa_chome", "prevencionista"])

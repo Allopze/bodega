@@ -152,7 +152,8 @@ export async function discardMiperDraft(input: unknown, access: MiperAccess) {
     if (matrix.version !== data.expectedVersion) throw new RiskLegalDomainError(STALE)
     const [round] = await tx.select({ id: preventionRiskReviewRounds.id }).from(preventionRiskReviewRounds).where(eq(preventionRiskReviewRounds.matrixId, matrix.id)).limit(1)
     if (round) throw new RiskLegalDomainError("Este borrador ya pasó por revisión: su historia se conserva y no se puede descartar.")
-    const [{ count }] = await tx.select({ count: sql<number>`count(*)::int` }).from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, matrix.id))
+    const [counted] = await tx.select({ count: sql<number>`count(*)::int` }).from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, matrix.id))
+    const count = counted?.count ?? 0
     // La traza sobrevive a la matriz: audit_log no tiene FK a ella.
     await miperHistory(tx, {
       matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "matrix", objectId: matrix.id, changeType: "deleted",

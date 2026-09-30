@@ -22,6 +22,7 @@ import {
 } from "@/db/schema"
 import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
+import { effectiveRiskLevel } from "@/lib/prevention/risk-levels"
 import type { RiskLegalAccess } from "@/lib/services/prevention-risk-legal"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 
@@ -185,7 +186,7 @@ export interface RiskMapView {
     label: string | null
     riskEntryId: string
     hazard: string
-    residualLevel: string
+    riskLevel: string
   }>
 }
 
@@ -205,13 +206,14 @@ export async function listRiskMapsForScope(worksiteIds: string[], access: RiskLe
     marker: preventionRiskMapMarkers,
     hazard: preventionRiskEntries.hazard,
     residualLevel: preventionRiskEntries.residualLevel,
+    classification: preventionRiskEntries.classification,
   })
     .from(preventionRiskMapMarkers)
     .innerJoin(preventionRiskEntries, eq(preventionRiskEntries.id, preventionRiskMapMarkers.riskEntryId))
-    // El mapa nunca sirve un peligro de una matriz que ya no rige. Al publicar una
-    // revisión, `repointRiskMapMarkers` reapunta los marcadores, y `addRiskMapMarker`
-    // exige matriz publicada al crearlos; este filtro cubre la tercera vía: filas
-    // históricas anteriores a ambas reglas, que de otro modo seguirían pintándose.
+    // El mapa nunca sirve un peligro de una matriz que ya no rige:
+    // `addRiskMapMarker` exige matriz publicada al crearlos, y este filtro cubre
+    // la otra vía —filas históricas anteriores a esa regla, y marcadores que
+    // apuntan a una versión reemplazada—, que de otro modo seguirían pintándose.
     // Se filtra en lectura en vez de borrarlas por migración: un marcador es trabajo
     // manual de posicionamiento y no se destruye sin que alguien lo decida.
     .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
@@ -229,8 +231,8 @@ export async function listRiskMapsForScope(worksiteIds: string[], access: RiskLe
       yPct: row.marker.yPct,
       label: row.marker.label,
       riskEntryId: row.marker.riskEntryId,
-      hazard: row.hazard,
-      residualLevel: row.residualLevel,
+      hazard: row.hazard ?? "Peligro sin describir",
+      riskLevel: effectiveRiskLevel(row) ?? "medium",
     })
     markersByLayout.set(row.marker.layoutId, list)
   }

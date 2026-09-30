@@ -41,8 +41,8 @@ async function setReviewState(client: Client, matrix: Matrix, reviewState: Miper
 }
 
 async function nextRoundNumber(client: Client, matrixId: string) {
-  const [{ max }] = await client.select({ max: sql<number>`coalesce(max(${preventionRiskReviewRounds.roundNumber}), 0)::int` }).from(preventionRiskReviewRounds).where(eq(preventionRiskReviewRounds.matrixId, matrixId))
-  return max + 1
+  const [row] = await client.select({ max: sql<number>`coalesce(max(${preventionRiskReviewRounds.roundNumber}), 0)::int` }).from(preventionRiskReviewRounds).where(eq(preventionRiskReviewRounds.matrixId, matrixId))
+  return (row?.max ?? 0) + 1
 }
 
 async function latestVersion(client: Client, matrixId: string) {
@@ -51,8 +51,8 @@ async function latestVersion(client: Client, matrixId: string) {
 }
 
 async function countObservations(client: Client, where: SQL | undefined) {
-  const [{ count }] = await client.select({ count: sql<number>`count(*)::int` }).from(preventionRiskObservations).where(where)
-  return count
+  const [row] = await client.select({ count: sql<number>`count(*)::int` }).from(preventionRiskObservations).where(where)
+  return row?.count ?? 0
 }
 
 function assertNotSubmitter(access: MiperAccess, submittedByUserId: string, message: string) {
@@ -237,7 +237,8 @@ export async function approveMiperFinal(input: unknown, access: MiperAccess) {
       dueAt: addDaysToPlainDate(todayInChile(), 30),
     }).onConflictDoNothing()
     await enqueueGeneratedDocumentTx(tx, { kind: "miper", entityId: versionId, milestone: "aprobada", worksiteId: matrix.worksiteId, occurredAt: now, actorUserId: access.userId })
-    const [{ count: entryCount }] = await tx.select({ count: sql<number>`count(*)::int` }).from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, matrix.id))
+    const [counted] = await tx.select({ count: sql<number>`count(*)::int` }).from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, matrix.id))
+    const entryCount = counted?.count ?? 0
     accreditation = { actorUserId: access.userId, matrixId: matrix.id, worksiteId: matrix.worksiteId, matrixVersion: versionNumber, publishedAt: now, entryCount }
     await miperHistory(tx, {
       matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "version", objectId: versionId, changeType: "version_sealed",

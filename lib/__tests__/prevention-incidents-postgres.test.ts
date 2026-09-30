@@ -246,45 +246,34 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
       input: { ...investigationBase, expectedIncidentVersion: opened.incident.version, miperUpdated: false, complete: true, reason: "Intento de completar la investigación con el disparador MIPER abierto" },
     })).rejects.toThrow(/antes de cerrar la investigación/)
 
-    // Publicación real de la MIPER que resuelve el disparador, con segregación
-    // autor / revisor / aprobador.
-    const risk = await import("@/lib/services/prevention-risk-legal")
+    // Publicación real de la MIPER (flujo RE-04) que resuelve el disparador, con
+    // segregación elaboración / revisión técnica / aprobación Legal y RRHH.
+    const matricesSvc = await import("@/lib/services/miper/matrices")
+    const entriesSvc = await import("@/lib/services/miper/entries")
+    const workflow = await import("@/lib/services/miper/workflow")
+    const riskLegal = await import("@/lib/services/prevention-risk-legal")
     const riskAccess = (userId: string, permissions: string[]) => ({ userId, scope: { mode: "some" as const, ids: ["ws-incidents"] }, permissions })
     const riskAuthor = riskAccess("incident-reporter", ["prevention:risk:view", "prevention:risk:edit"])
     const riskReviewer = riskAccess("incident-verifier", ["prevention:risk:review"])
-    const riskApprover = riskAccess("incident-risk-approver", ["prevention:risk:approve"])
-    // Publicar la MIPER exige firma distinta de quien la aprobó.
-    const riskPublisher = riskAccess("incident-risk-publisher", ["prevention:risk:publish"])
-    const methodology = await risk.ensureIspRiskMethodology(riskAuthor)
-    const matrix = await risk.createRiskMatrixDraft({
-      worksiteId: "ws-incidents", title: "MIPER revisada por incidente grave", methodologyId: methodology.id,
-      revisionReason: "Revisión obligatoria por accidente grave con barrera de ingeniería fallida.",
-      participationSummary: "Revisión con línea de mando, CPHS y operadores involucrados.",
-      consultationEvidenceReference: "acta-participacion-incidente-001",
+    const riskApprover = riskAccess("incident-risk-approver", ["prevention:risk:approve_legal"])
+    const { id: matrixId } = await matricesSvc.createMiper({ worksiteId: "ws-incidents", period: 2026, revisionReason: "Revisión obligatoria por accidente grave con barrera de ingeniería fallida." }, riskAuthor)
+    const [created] = await getDb().select().from(schema.preventionRiskMatrices).where(eq(schema.preventionRiskMatrices.id, matrixId))
+    await matricesSvc.updateMiperHeader({
+      matrixId, expectedVersion: created!.version, iperCode: "RE-04", elaboratedOn: "2026-07-01", updatedOn: null,
+      companyName: "Chome", companyRut: "78.023.530-6", companyAddress: "Dirección", companyCommune: "Comuna", economicActivity: "Servicios",
+      adherentNumber: null, worksiteName: "Faena incidentes", siteRepresentativeUserId: null, siteRepresentativeName: "Administrador de contrato",
+      headcountTotal: 4, headcountMale: 4, headcountFemale: 0, headcountOther: 0, participationSummary: "", consultationEvidenceReference: "",
     }, riskAuthor)
-    await risk.addRiskEntry({
-      matrixId: matrix.id,
-      process: { code: "PROC-INC", name: "Clasificación de residuos" },
-      task: { code: "TASK-INC", name: "Operar línea de clasificación", isRoutine: true },
-      position: { code: "POS-INC", name: "Operador de línea" },
-      hazardCode: "INC-01", hazard: "Contacto con zona de riesgo por barrera insuficiente",
-      riskFactor: "Operación industrial con equipos en movimiento",
-      expectedEventOrDamage: "Lesión grave con tiempo perdido",
-      exposedPeopleDescription: "Operadores de la línea de clasificación",
-      exposedPeopleCount: 4,
-      genderConsiderations: "Evaluar diferencias de exposición y ajuste de EPP.",
-      sensitiveWorkerConsiderations: "Validar restricciones sin exponer diagnósticos.",
-      inherentDimensions: { probability: 4, consequence: 5 }, inherentScore: 20, inherentLevel: "Alto",
-      residualDimensions: { probability: 2, consequence: 5 }, residualScore: 10, residualLevel: "Medio",
-      isCritical: true, responsibleSnapshot: "Jefatura de operaciones",
-      controls: [{ description: "Barrera de ingeniería certificada con verificación periódica", hierarchy: "engineering", isExisting: false, isCritical: true, performanceStandard: "Resistencia certificada y anclaje verificado", verificationFrequency: "Mensual", responsibleSnapshot: "Jefatura de operaciones", status: "implemented" }],
-    }, riskAuthor)
-    const submitted = await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: matrix.version, toStatus: "in_review", reason: "Revisión post incidente enviada al circuito formal." }, riskAuthor)
-    const reviewed = await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: "Causas y controles del incidente contrastados en terreno." }, riskReviewer)
-    const approvedMatrix = await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: reviewed.version, toStatus: "approved", reason: "Aprobación segregada de la revisión post incidente." }, riskApprover)
-    await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: approvedMatrix.version, toStatus: "published", reason: "Publicación de la MIPER revisada por el incidente.", effectiveFrom: "2026-07-18" }, riskPublisher)
-    const resolvedTrigger = await risk.resolveRiskReviewTrigger({
-      triggerId: miperTrigger!.id, matrixId: matrix.id,
+    const entry = await entriesSvc.saveMiperEntry({ matrixId, values: { activity: "Clasificación de residuos", task: "Operar línea de clasificación", position: "Operador de línea", riskFactorId: "riskfactor-mecanico", hazard: "Contacto con zona de riesgo por barrera insuficiente", risk: "Atrapamiento", probableDamage: "Lesión grave con tiempo perdido", probability: 2, consequence: 4, controlledStatus: "partial", isRoutine: true } }, riskAuthor)
+    await entriesSvc.saveMiperControl({ matrixId, entryId: entry.id, values: { hierarchy: "engineering", description: "Barrera física con enclavamiento en la línea", responsibleName: "Jefatura de operaciones", dueDate: "2026-09-30" } }, riskAuthor)
+    let [m] = await getDb().select().from(schema.preventionRiskMatrices).where(eq(schema.preventionRiskMatrices.id, matrixId))
+    await workflow.submitMiperForReview({ matrixId, expectedVersion: m!.version }, riskAuthor)
+    ;[m] = await getDb().select().from(schema.preventionRiskMatrices).where(eq(schema.preventionRiskMatrices.id, matrixId))
+    await workflow.approveMiperTechnicalReview({ matrixId, expectedVersion: m!.version }, riskReviewer)
+    ;[m] = await getDb().select().from(schema.preventionRiskMatrices).where(eq(schema.preventionRiskMatrices.id, matrixId))
+    await workflow.approveMiperFinal({ matrixId, expectedVersion: m!.version, changeSummary: "Actualización por accidente grave." }, riskApprover)
+    const resolvedTrigger = await riskLegal.resolveRiskReviewTrigger({
+      triggerId: miperTrigger!.id, matrixId,
       resolution: "MIPER republicada incorporando la barrera certificada como control crítico.",
     }, riskReviewer)
     expect(resolvedTrigger.status).toBe("completed")

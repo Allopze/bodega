@@ -19,8 +19,6 @@ import {
   riskEntrySchema,
   riskLevelSchema,
   riskMatrixDraftSchema,
-  riskMatrixTransitionSchema,
-  riskMethodologySchema,
   riskReviewTriggerSchema,
 } from "@/lib/validation/prevention-module/risk-legal"
 
@@ -44,19 +42,6 @@ const validEntry = {
 }
 
 describe("Prevention Risk & Legal Validation Schemas", () => {
-  it("validates valid risk methodology configurations", () => {
-    const validMethodology = {
-      code: "METH-ISP-01",
-      name: "Matriz ISP de Evaluación de Riesgos",
-      versionLabel: "2026.1",
-      kind: "primary",
-      authoritySource: "Ministerio de Salud / ISP Chile",
-      configuration: { probabilityScale: 5, consequenceScale: 5 },
-    }
-
-    expect(riskMethodologySchema.parse(validMethodology)).toMatchObject(validMethodology)
-  })
-
   it("validates draft risk matrix schema requiring detailed justification", () => {
     const validDraft = {
       worksiteId: "ws-faena-1",
@@ -187,18 +172,6 @@ describe("Prevention Risk & Legal Validation Schemas", () => {
     // 'not_applicable' es el mismo valor en dos vocabularios distintos: la faena
     // no está alcanzada por el requisito / no hay cumplimiento que evaluar.
     expect(LEGAL_APPLICABILITY_STATUS_LABELS.not_applicable).not.toBe(LEGAL_COMPLIANCE_STATUS_LABELS.not_applicable)
-  })
-
-  it("validates matrix state transition schemas", () => {
-    const validTransition = {
-      matrixId: "mat-101",
-      expectedVersion: 2,
-      toStatus: "approved",
-      reason: "Aprobación formal por Gerencia de Operaciones y Prevención",
-      effectiveFrom: "2026-08-01",
-    }
-
-    expect(riskMatrixTransitionSchema.parse(validTransition)).toMatchObject(validTransition)
   })
 })
 

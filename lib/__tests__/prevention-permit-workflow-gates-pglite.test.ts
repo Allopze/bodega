@@ -90,6 +90,8 @@ async function seedMatrix(id: string, worksiteId: string, status: "published" | 
   await testDb.insert(schema.preventionRiskMatrices).values({
     id, worksiteId, matrixVersion: version, title: `MIPER ${id}`, status,
     methodologyId: "meth-pwg", methodologySnapshot: {},
+    // Fixture con la forma de la metodología anterior.
+    isLegacy: true,
     revisionReason: "Versión de la matriz para la prueba de permisos.",
     participationSummary: "Participación documentada del comité paritario.",
     consultationEvidenceReference: "acta-consulta-pwg",

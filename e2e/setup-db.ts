@@ -3066,6 +3066,8 @@ async function main() {
   await db.insert(schema.preventionRiskMatrices).values({
     id: "riskmatrix-e2e", worksiteId: "ws-e2e", matrixVersion: 1, title: "MIPER E2E",
     status: "published", methodologyId: "riskmethod-e2e", methodologySnapshot: {},
+    // Datos de la metodología anterior: la MIPER RE-04 es la del flujo nuevo.
+    isLegacy: true,
     revisionReason: "Fixture E2E para el mapa de riesgos espacial, mínimo diez caracteres.",
     participationSummary: "Participación de fixture E2E, mínimo diez caracteres.",
     consultationEvidenceReference: "Evidencia de fixture E2E",

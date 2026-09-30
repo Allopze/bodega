@@ -1,5 +1,6 @@
 import "server-only"
 import type { ComponentProps } from "react"
+import { effectiveRiskLevel } from "@/lib/prevention/risk-levels"
 import { getRiskDashboard } from "@/lib/services/prevention-risk-legal"
 import { listRiskMapsForScope } from "@/lib/services/prevention-risk-map"
 import type { RiskMapPanel } from "./risk-map-panel"
@@ -25,11 +26,11 @@ export async function loadRiskMapProps(
   const publishedMatrixWorksite = new Map(
     dashboard.matrices.filter((matrix) => matrix.status === "published").map((matrix) => [matrix.id, matrix.worksiteId]),
   )
-  const entriesByWorksite: Record<string, { id: string; hazard: string; residualLevel: string }[]> = {}
+  const entriesByWorksite: Record<string, { id: string; hazard: string; riskLevel: string }[]> = {}
   for (const { entry } of dashboard.entries) {
     const worksiteId = publishedMatrixWorksite.get(entry.matrixId)
     if (!worksiteId) continue
-    ;(entriesByWorksite[worksiteId] ??= []).push({ id: entry.id, hazard: entry.hazard, residualLevel: entry.residualLevel })
+    ;(entriesByWorksite[worksiteId] ??= []).push({ id: entry.id, hazard: entry.hazard ?? "Peligro sin describir", riskLevel: effectiveRiskLevel(entry) ?? "medium" })
   }
 
   return {

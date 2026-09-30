@@ -161,7 +161,7 @@ const CONNECTORS: readonly PdtpExecutionConnector[] = [
   }),
   connector({
     key: "miper", label: "MIPER y requisitos legales", moduleHref: "/prevencion/miper",
-    configurePermission: "prevention:risk:edit", executePermission: "prevention:risk:publish",
+    configurePermission: "prevention:risk:edit", executePermission: "prevention:risk:approve_legal",
     supportedBindingSourceTypes: ["miper", "requisito_legal"],
     supportedEvents: [{ key: "review_published", label: "Revisión publicada", sourceType: "miper" }],
     supportedCompletionPolicies: ["source_completed", "source_approved"],

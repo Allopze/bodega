@@ -15,7 +15,7 @@ import {
   preventionEmergencyPlans, preventionRiskMatrices,
   sstDocuments, sstDocumentVersions, worksites,
 } from "@/db/schema"
-import { MATRIX_PERMISSION, MATRIX_TRANSITIONS } from "@/lib/services/prevention-risk-legal"
+import { pendingSignaturePermission } from "@/lib/prevention/miper/states"
 import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation, type PdtpPeriod } from "./period"
 import { getPdtpOperationalYears } from "./operational-years"
 import { logger } from "@/lib/logger"
@@ -460,9 +460,12 @@ async function findPendingSignatures(): Promise<PendingSignature[]> {
       id: preventionRiskMatrices.id,
       worksiteId: preventionRiskMatrices.worksiteId,
       title: preventionRiskMatrices.title,
-      status: preventionRiskMatrices.status,
+      reviewState: preventionRiskMatrices.reviewState,
       updatedAt: preventionRiskMatrices.updatedAt,
-    }).from(preventionRiskMatrices).where(inArray(preventionRiskMatrices.status, ["in_review", "reviewed", "approved"])),
+    }).from(preventionRiskMatrices).where(and(
+      inArray(preventionRiskMatrices.reviewState, ["in_review", "pending_approval"]),
+      eq(preventionRiskMatrices.isLegacy, false),
+    )),
     db.select({
       id: sstDocumentVersions.id,
       status: sstDocumentVersions.status,
@@ -487,18 +490,16 @@ async function findPendingSignatures(): Promise<PendingSignature[]> {
     })
   }
 
-  /* El permiso sale del paso SIGUIENTE, no del actual: una matriz en
-   * `in_review` espera a quien pueda llevarla a `reviewed`. Los dos mapas son
-   * los del propio servicio de transición — si cambia la máquina de estados,
-   * cambia esto con ella. */
+  /* La firma pendiente sale del estado de revisión: en revisión técnica espera
+   * a la Jefatura; pendiente de aprobación, a Legal y RRHH. Mismas reglas que
+   * el servicio de flujo (lib/prevention/miper/states.ts). */
   for (const matrix of riskMatrices) {
-    const next = MATRIX_TRANSITIONS[matrix.status]?.find((to) => to !== "draft")
-    const permission = next ? MATRIX_PERMISSION[next] : undefined
+    const permission = pendingSignaturePermission(matrix.reviewState)
     if (!permission) continue
     pending.push({
       entityType: "risk_matrix", entityId: matrix.id, worksiteId: matrix.worksiteId,
-      title: matrix.title, status: matrix.status, updatedAt: matrix.updatedAt,
-      permission, href: `/prevencion/miper`,
+      title: matrix.title, status: matrix.reviewState, updatedAt: matrix.updatedAt,
+      permission, href: `/prevencion/miper/${matrix.id}?tab=revision`,
     })
   }
 
