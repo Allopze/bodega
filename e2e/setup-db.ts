@@ -142,6 +142,39 @@ async function main() {
     worksiteId: "ws-e2e",
     isPrimary: true,
   })
+  /* MIPER F1 (spec 2026-09-30): las tres firmas del flujo, cada una con sólo su
+   * permiso, para que el E2E pruebe la segregación real y no la del admin.
+   *
+   * Van como roles propios y no sobre `rol-admin` porque el flujo RE-04 prohíbe
+   * que una misma persona envíe, revise y apruebe: con el admin —que tiene los
+   * cuatro permisos— el E2E certificaría la excepción, no la regla. Los ids de
+   * permiso son los del manifiesto (`modules/prevention/manifest.ts`) y
+   * `SYSTEM_PERMISSIONS` los sembró arriba, así que la FK se cumple.
+   *
+   * `prevencionista` sólo aparecía hasta acá como rótulo de firma en otros
+   * fixtures, no como `roles.name`: el nombre queda libre para la jefatura. */
+  const miperRoles = [
+    { id: "rol-prev-faena-e2e", name: "prevencionista_faena", label: "Prevencionista faena", isGlobal: false, permissions: ["p-prev-risk-view", "p-prev-risk-edit"] },
+    { id: "rol-prev-jefa-e2e", name: "prevencionista", label: "Jefe del Departamento de Prevención de Riesgos", isGlobal: true, permissions: ["p-prev-risk-view", "p-prev-risk-review"] },
+    { id: "rol-legal-e2e", name: "gerente_legal_rrhh", label: "Gerencia Legal y Recursos Humanos", isGlobal: true, permissions: ["p-prev-risk-view", "p-prev-risk-approve-legal"] },
+  ]
+  for (const role of miperRoles) {
+    await db.insert(schema.roles).values({ id: role.id, name: role.name, label: role.label, description: `${role.label} — E2E MIPER`, isGlobal: role.isGlobal })
+    await db.insert(schema.rolePermissions).values(role.permissions.map((permissionId) => ({ roleId: role.id, permissionId })))
+  }
+  const miperUsers = [
+    // Acotada a ws-e2e: la MIPER de una faena sólo la edita quien la tiene en
+    // su alcance, y ese recorte también es parte de lo que se prueba.
+    { id: "user-prev-faena-e2e", name: "Prevencionista Faena E2E", email: "prev.faena@e2e.chome.cl", roleId: "rol-prev-faena-e2e", scoped: true },
+    { id: "user-jefa-prev-e2e", name: "Jefa Prevención E2E", email: "jefa.prevencion@e2e.chome.cl", roleId: "rol-prev-jefa-e2e", scoped: false },
+    { id: "user-legal-e2e", name: "Legal y RRHH E2E", email: "legal.rrhh@e2e.chome.cl", roleId: "rol-legal-e2e", scoped: false },
+  ]
+  for (const user of miperUsers) {
+    await db.insert(schema.users).values({ id: user.id, name: user.name, email: user.email, hashedPassword: password, avatarColor: "200", isActive: true, createdAt: now, updatedAt: now })
+    await db.insert(schema.userRoles).values({ userId: user.id, roleId: user.roleId })
+    if (user.scoped) await db.insert(schema.worksiteUsers).values({ userId: user.id, worksiteId: "ws-e2e", isPrimary: true })
+  }
+
   /* Segundo jefe de terreno de la MISMA faena (Fase 5). Dos personas con el
    * mismo cargo es la situación que hace necesaria la asignación nominal: sin
    * ella la misma fila le aparece a los dos en /pendientes y ninguno sabe si
