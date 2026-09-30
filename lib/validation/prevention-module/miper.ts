@@ -45,7 +45,7 @@ export const miperHeaderSchema = z.object({
   }
 })
 
-export const miperEntryValuesSchema = z.object({
+export const miperEntryValuesSchema = z.strictObject({
   activity: optText(300),
   task: optText(300),
   position: optText(300),
@@ -61,7 +61,7 @@ export const miperEntryValuesSchema = z.object({
   probability: scale.nullable().optional(),
   consequence: scale.nullable().optional(),
   controlledStatus: z.enum(["yes", "partial", "no"]).nullable().optional(),
-}).strict()
+})
 
 export const miperEntrySaveSchema = z.object({
   matrixId: id,
