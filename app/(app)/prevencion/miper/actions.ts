@@ -40,7 +40,7 @@ function fail(error: unknown): ActionState {
   return unexpectedActionError(error, "prevencion/miper/actions")
 }
 
-async function guarded<T>(permission: Permission, input: unknown, operation: (access: MiperAccess) => Promise<T>, options: { revalidate?: boolean; data?: (result: T) => Record<string, unknown>; after?: (session: Session) => Promise<void> } = {}): Promise<ActionState> {
+async function guarded<T>(permission: Permission, input: unknown, operation: (access: MiperAccess) => Promise<T>, options: { revalidate?: boolean; data?: (result: T) => Record<string, unknown>; success?: string; after?: (session: Session) => Promise<void> } = {}): Promise<ActionState> {
   const guard = await guardPermission(permission)
   if (guard.error) return guard.error
   try {
@@ -52,7 +52,10 @@ async function guarded<T>(permission: Permission, input: unknown, operation: (ac
     }
     if (options.after) await options.after(guard.session)
     const data = options.data?.(result)
-    return data ? { ok: true, data } : { ok: true }
+    // El mensaje de éxito es de la acción y no genérico: con `feedback: "toast"`,
+    // el hook notifica `result.message`, así que sin esto guardar antecedentes,
+    // enviar a revisión y sellar una versión se anunciaban igual.
+    return { ok: true, ...(options.success ? { message: options.success } : {}), ...(data ? { data } : {}) }
   } catch (error) {
     return fail(error)
   }
@@ -60,13 +63,13 @@ async function guarded<T>(permission: Permission, input: unknown, operation: (ac
 
 // ── Matriz ──
 export async function createMiperAction(input: unknown) {
-  return guarded("prevention:risk:edit", input, (access) => createMiper(input, access), { data: (result) => ({ id: result.id }) })
+  return guarded("prevention:risk:edit", input, (access) => createMiper(input, access), { data: (result) => ({ id: result.id }), success: "MIPER creada" })
 }
 export async function updateMiperHeaderAction(input: unknown) {
-  return guarded("prevention:risk:edit", input, (access) => updateMiperHeader(input, access), { data: (result) => ({ version: result.version }) })
+  return guarded("prevention:risk:edit", input, (access) => updateMiperHeader(input, access), { data: (result) => ({ version: result.version }), success: "Antecedentes guardados" })
 }
 export async function discardMiperDraftAction(input: unknown) {
-  return guarded("prevention:risk:edit", input, (access) => discardMiperDraft(input, access))
+  return guarded("prevention:risk:edit", input, (access) => discardMiperDraft(input, access), { success: "Borrador descartado" })
 }
 
 // ── Filas y medidas. Guardar una celda no revalida: la grilla conserva su
@@ -75,71 +78,72 @@ export async function saveMiperEntryAction(input: unknown) {
   return guarded("prevention:risk:edit", input, (access) => saveMiperEntry(input, access), { revalidate: false, data: (result) => ({ ...result }) })
 }
 export async function duplicateMiperEntryAction(input: unknown) {
-  return guarded("prevention:risk:edit", input, (access) => duplicateMiperEntry(input, access), { data: (result) => ({ ...result }) })
+  return guarded("prevention:risk:edit", input, (access) => duplicateMiperEntry(input, access), { data: (result) => ({ ...result }), success: "Riesgo duplicado" })
 }
 export async function deleteMiperEntryAction(input: unknown) {
-  return guarded("prevention:risk:edit", input, (access) => deleteMiperEntry(input, access))
+  return guarded("prevention:risk:edit", input, (access) => deleteMiperEntry(input, access), { success: "Riesgo eliminado" })
 }
 export async function saveMiperControlAction(input: unknown) {
-  return guarded("prevention:risk:edit", input, (access) => saveMiperControl(input, access), { data: (result) => ({ ...result }) })
+  return guarded("prevention:risk:edit", input, (access) => saveMiperControl(input, access), { data: (result) => ({ ...result }), success: "Medida guardada" })
 }
 export async function deleteMiperControlAction(input: unknown) {
-  return guarded("prevention:risk:edit", input, (access) => deleteMiperControl(input, access))
+  return guarded("prevention:risk:edit", input, (access) => deleteMiperControl(input, access), { success: "Medida eliminada" })
 }
 
 // ── Flujo ──
 export async function submitMiperAction(input: unknown) {
-  return guarded("prevention:risk:edit", input, (access) => submitMiperForReview(input, access))
+  return guarded("prevention:risk:edit", input, (access) => submitMiperForReview(input, access), { success: "MIPER enviada a revisión" })
 }
 /** Sólo marca la apertura; el servicio ignora a quien no revisa esa etapa. */
 export async function openMiperRoundAction(input: unknown) {
   return guarded("prevention:risk:view", input, (access) => openMiperReviewRound({ matrixId: matrixIdOf(input) ?? "" }, access), { revalidate: false })
 }
 export async function returnMiperAction(input: unknown) {
-  return guarded("prevention:risk:review", input, (access) => returnMiperWithObservations(input, access))
+  return guarded("prevention:risk:review", input, (access) => returnMiperWithObservations(input, access), { success: "MIPER devuelta con observaciones" })
 }
 export async function approveMiperTechnicalAction(input: unknown) {
-  return guarded("prevention:risk:review", input, (access) => approveMiperTechnicalReview(input, access))
+  return guarded("prevention:risk:review", input, (access) => approveMiperTechnicalReview(input, access), { success: "Revisión técnica aprobada" })
 }
 export async function requestMiperCorrectionsAction(input: unknown) {
-  return guarded("prevention:risk:approve_legal", input, (access) => requestMiperCorrections(input, access))
+  return guarded("prevention:risk:approve_legal", input, (access) => requestMiperCorrections(input, access), { success: "Correcciones solicitadas" })
 }
 export async function approveMiperFinalAction(input: unknown) {
   // La versión sellada se arma y archiva después de responder.
   return guarded("prevention:risk:approve_legal", input, (access) => approveMiperFinal(input, access), {
     data: (result) => ({ ...result }),
+    success: "Versión sellada",
     after: (session) => scheduleGeneratedDocumentDrain(session.user.id),
   })
 }
 
 // ── Observaciones: el servicio exige el permiso de la etapa observada. ──
 export async function addMiperObservationAction(input: unknown) {
-  return guarded("prevention:risk:view", input, (access) => addMiperObservation(input, access))
+  return guarded("prevention:risk:view", input, (access) => addMiperObservation(input, access), { success: "Observación registrada" })
 }
 export async function respondMiperObservationAction(input: unknown) {
-  return guarded("prevention:risk:edit", input, (access) => respondMiperObservation(input, access))
+  return guarded("prevention:risk:edit", input, (access) => respondMiperObservation(input, access), { success: "Respuesta guardada" })
 }
 export async function resolveMiperObservationAction(input: unknown) {
-  return guarded("prevention:risk:view", input, (access) => resolveMiperObservation(input, access))
+  return guarded("prevention:risk:view", input, (access) => resolveMiperObservation(input, access), { success: "Observación resuelta" })
 }
 export async function reopenMiperObservationAction(input: unknown) {
-  return guarded("prevention:risk:view", input, (access) => reopenMiperObservation(input, access))
+  return guarded("prevention:risk:view", input, (access) => reopenMiperObservation(input, access), { success: "Observación reabierta" })
 }
 
 // ── Catálogo ──
 export async function saveRiskFactorAction(input: unknown) {
-  return guarded("prevention:risk:catalog:manage", input, (access) => saveRiskFactor(input, access))
+  return guarded("prevention:risk:catalog:manage", input, (access) => saveRiskFactor(input, access), { success: "Factor guardado" })
 }
 export async function setRiskFactorActiveAction(input: unknown) {
-  return guarded("prevention:risk:catalog:manage", input, (access) => setRiskFactorActive(input, access))
+  return guarded("prevention:risk:catalog:manage", input, (access) => setRiskFactorActive(input, access), { success: "Estado del factor actualizado" })
 }
 
 // ── Se conservan del módulo anterior ──
 export async function resolveRiskReviewTriggerAction(input: unknown) {
-  return guarded("prevention:risk:review", input, (access) => resolveRiskReviewTrigger(input, access))
+  return guarded("prevention:risk:review", input, (access) => resolveRiskReviewTrigger(input, access), { success: "Tarea de revisión cerrada" })
 }
 export async function verifyRiskControlAction(input: unknown) {
-  const state = await guarded("prevention:risk:edit", input, (access) => verifyRiskControl(input, access))
+  const state = await guarded("prevention:risk:edit", input, (access) => verifyRiskControl(input, access), { success: "Control verificado" })
   // La ficha del control es una ruta dinámica.
   revalidatePath(`${BASE}/controles/[id]`, "page")
   return state

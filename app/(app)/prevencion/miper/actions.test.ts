@@ -53,8 +53,18 @@ describe("acciones MIPER: frontera de autorización", () => {
     guardPermission.mockResolvedValue({ session, error: null })
     createMiper.mockResolvedValue({ id: "m-new" })
     const state = await createMiperAction({ worksiteId: "ws-own", period: 2026, revisionReason: "x".repeat(12), userId: "spoofed" })
-    expect(state).toEqual({ ok: true, data: { id: "m-new" } })
+    expect(state).toEqual({ ok: true, data: { id: "m-new" }, message: "MIPER creada" })
     expect(createMiper).toHaveBeenCalledWith(expect.anything(), { userId: "trusted-user", scope: { mode: "some", ids: ["ws-own"] }, permissions: ["prevention:risk:edit"] })
+  })
+
+  it("cada paso del flujo anuncia lo que hizo, no un mensaje genérico", async () => {
+    guardPermission.mockResolvedValue({ session, error: null })
+    submitMiperForReview.mockResolvedValue({ roundId: "r1" })
+    approveMiperTechnicalReview.mockResolvedValue(undefined)
+    approveMiperFinal.mockResolvedValue({ versionId: "v1", versionNumber: 1 })
+    await expect(submitMiperAction({ matrixId: "m1", expectedVersion: 1 })).resolves.toEqual({ ok: true, message: "MIPER enviada a revisión" })
+    await expect(approveMiperTechnicalAction({ matrixId: "m1", expectedVersion: 2 })).resolves.toEqual({ ok: true, message: "Revisión técnica aprobada" })
+    await expect(approveMiperFinalAction({ matrixId: "m1", expectedVersion: 3, changeSummary: "Emisión inicial del documento." })).resolves.toEqual({ ok: true, data: { versionId: "v1", versionNumber: 1 }, message: "Versión sellada" })
   })
 
   it("guardar una fila devuelve la versión nueva y no revalida la página", async () => {

@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { createMiperAction } from "./actions"
 
-export type CreationWorksite = { id: string; name: string; vigenteId: string | null; vigentePeriod: number | null; vigenteIsLegacy: boolean }
+export type CreationWorksite = { id: string; name: string; vigenteId: string | null; vigentePeriod: number | null; vigenteIsLegacy: boolean; vigenteHasUnsentChanges: boolean }
 
 /**
  * Alta de una MIPER borrador. El punto de partida se elige explícitamente:
@@ -80,6 +80,13 @@ export function NewMiperDialog({ worksites, currentYear }: { worksites: Creation
           <Field label="Motivo" required helper="Por ejemplo: elaboración inicial, renovación anual, cambio de proceso.">
             <Textarea name="revisionReason" required minLength={10} />
           </Field>
+          {canCopy && source === "vigente" && worksite?.vigenteHasUnsentChanges && (
+            <p role="status" className="rounded-lg bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">
+              La MIPER vigente tiene cambios sin enviar a revisión. Al sellarse el período {currentYear} deja de ser el documento
+              vigente y esos cambios no quedarán en ninguna versión: si los necesitas, envíalos a revisión o corrígelos en la
+              vigente antes de crear el período nuevo.
+            </p>
+          )}
           {operation.message && <p role="status" className="text-sm text-[var(--color-danger-ink)]">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending || !worksiteId}>Crear borrador</Button></DialogFooter>
         </form>

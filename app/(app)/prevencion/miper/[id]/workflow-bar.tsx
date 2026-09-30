@@ -15,7 +15,7 @@ import { approveMiperFinalAction, approveMiperTechnicalAction, discardMiperDraft
 
 type Dialogs = "return" | "approveTechnical" | "requestCorrections" | "approveFinal" | "discard" | "blocking" | null
 
-export function WorkflowBar({ workspace, mode, issues, openObservations }: { workspace: MiperWorkspace; mode: WorkspaceMode; issues: CompletenessIssue[]; openObservations: number }) {
+export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenEntry }: { workspace: MiperWorkspace; mode: WorkspaceMode; issues: CompletenessIssue[]; openObservations: number; onOpenEntry?: (entryId: string) => void }) {
   const [dialog, setDialog] = useState<Dialogs>(null)
   const [changeSummary, setChangeSummary] = useState("")
   const operation = useOperation({ feedback: "toast" })
@@ -49,12 +49,21 @@ export function WorkflowBar({ workspace, mode, issues, openObservations }: { wor
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Faltan {blocking.length} datos para enviar</DialogTitle>
-            <DialogDescription>Corrige lo siguiente en la matriz o en los antecedentes. Cada fila marcada en la grilla muestra su detalle.</DialogDescription>
+            <DialogDescription>Corrige lo siguiente en la matriz o en los antecedentes. Los bloqueos de una fila abren su ficha para corregirla.</DialogDescription>
           </DialogHeader>
-          <ul className="max-h-80 list-disc space-y-1 overflow-y-auto pl-5 text-sm">
+          <ul className="max-h-80 space-y-1 overflow-y-auto pl-5 text-sm">
             {blocking.slice(0, 40).map((issue, index) => {
-              const row = issue.entryId ? workspace.snapshot.entries.find((entry) => entry.id === issue.entryId)?.rowNumber : null
-              return <li key={index}>{row ? `Riesgo #${row}: ` : "Antecedentes: "}{issue.message}</li>
+              const entry = issue.entryId ? workspace.snapshot.entries.find((item) => item.id === issue.entryId) : undefined
+              if (!entry || !onOpenEntry) {
+                return <li key={index} className="list-disc">{entry ? `Riesgo #${entry.rowNumber}: ` : "Antecedentes: "}{issue.message}</li>
+              }
+              return (
+                <li key={index} className="list-disc">
+                  <button type="button" className="text-left underline-offset-2 hover:underline" onClick={() => { close(); onOpenEntry(entry.id) }}>
+                    <span className="font-medium">Riesgo #{entry.rowNumber}</span>: {issue.message}
+                  </button>
+                </li>
+              )
             })}
           </ul>
         </DialogContent>

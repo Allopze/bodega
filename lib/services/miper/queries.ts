@@ -233,8 +233,23 @@ export async function listMiperCreationOptions(access: MiperAccess) {
   requireAccess(access, "prevention:risk:edit")
   const rows = await db.select({ id: worksites.id, name: worksites.name }).from(worksites)
     .where(and(eq(worksites.isActive, true), scopeCondition(access.scope, worksites.id))).orderBy(asc(worksites.name))
-  const vigentes = rows.length === 0 ? [] : await db.select({ id: preventionRiskMatrices.id, worksiteId: preventionRiskMatrices.worksiteId, period: preventionRiskMatrices.period, isLegacy: preventionRiskMatrices.isLegacy })
-    .from(preventionRiskMatrices).where(and(inArray(preventionRiskMatrices.worksiteId, rows.map((row) => row.id)), eq(preventionRiskMatrices.status, "published")))
+  const vigentes = rows.length === 0 ? [] : await db.select({
+    id: preventionRiskMatrices.id, worksiteId: preventionRiskMatrices.worksiteId, period: preventionRiskMatrices.period,
+    isLegacy: preventionRiskMatrices.isLegacy, status: preventionRiskMatrices.status, reviewState: preventionRiskMatrices.reviewState,
+    updatedAt: preventionRiskMatrices.updatedAt, publishedAt: preventionRiskMatrices.publishedAt,
+  }).from(preventionRiskMatrices).where(and(inArray(preventionRiskMatrices.worksiteId, rows.map((row) => row.id)), eq(preventionRiskMatrices.status, "published")))
   const byWorksite = new Map(vigentes.map((vigente) => [vigente.worksiteId, vigente]))
-  return { worksites: rows.map((row) => ({ id: row.id, name: row.name, vigenteId: byWorksite.get(row.id)?.id ?? null, vigentePeriod: byWorksite.get(row.id)?.period ?? null, vigenteIsLegacy: byWorksite.get(row.id)?.isLegacy ?? false })) }
+  return {
+    worksites: rows.map((row) => {
+      const vigente = byWorksite.get(row.id)
+      return {
+        id: row.id, name: row.name,
+        vigenteId: vigente?.id ?? null, vigentePeriod: vigente?.period ?? null, vigenteIsLegacy: vigente?.isLegacy ?? false,
+        /* Una MIPER vigente puede tener cambios sin enviar a revisión. Al sellar
+         * el período siguiente deja de ser el documento vigente y esos cambios no
+         * quedan en ninguna versión sellada: el diálogo lo advierte antes. */
+        vigenteHasUnsentChanges: vigente ? hasUnsentChanges(vigente) : false,
+      }
+    }),
+  }
 }

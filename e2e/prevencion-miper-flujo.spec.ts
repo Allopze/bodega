@@ -82,9 +82,9 @@ test("la prevencionista crea la MIPER, la completa y la envía a revisión", asy
   await page.getByLabel("Trabajadoras mujeres").fill("1")
   await page.getByLabel("Trabajadores otro").fill("0")
   await page.getByRole("button", { name: "Guardar antecedentes" }).click()
-  // `updateMiperHeaderAction` no devuelve mensaje: el toast es el genérico del
-  // hook de operaciones con `feedback: "toast"`.
-  await expect(textoVisible(page, "Cambio registrado")).toBeVisible()
+  // `updateMiperHeaderAction` anuncia lo que hizo, no el "Cambio registrado"
+  // genérico del hook.
+  await expect(textoVisible(page, "Antecedentes guardados")).toBeVisible()
 
   // Matriz (pasos 3–5): fila con P×C y clasificación automática.
   await page.getByRole("tab", { name: /Matriz/ }).click()

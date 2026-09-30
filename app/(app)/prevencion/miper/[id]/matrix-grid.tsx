@@ -309,7 +309,7 @@ export function MatrixGrid(props: MatrixGridProps) {
         </div>
       ) : (
         <>
-          <div className="hidden overflow-x-auto rounded-2xl border border-slate-200/70 bg-white md:block">
+          <div className="hidden overflow-x-auto rounded-2xl border border-[var(--color-border)] bg-white md:block">
             <table className="min-w-[2400px] table-fixed border-collapse">
               <caption className="sr-only">Matriz de identificación de peligros y evaluación de riesgos</caption>
               <thead className="sticky top-0 z-20 bg-[var(--color-surface-2)]">

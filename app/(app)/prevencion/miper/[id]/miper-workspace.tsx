@@ -51,6 +51,18 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
     router.replace(`?${params.toString()}`, { scroll: false })
   }, [router, searchParams])
 
+  /**
+   * Abre la ficha de una fila. Va en UNA escritura de la URL —con la pestaña
+   * incluida— porque dos `setParam` seguidos sobre el mismo `searchParams`
+   * perderían el primero: es el mismo cuidado que exige el filtrado.
+   */
+  const openEntry = useCallback((entryId: string) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("tab", "matriz")
+    params.set("fila", entryId)
+    router.replace(`?${params.toString()}`, { scroll: false })
+  }, [router, searchParams])
+
   const versionLabel = workspace.versions[0] ? `v${workspace.versions[0].versionNumber}` : "sin versión aprobada"
   return (
     <PageContainer width="full">
@@ -58,7 +70,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
         title={`MIPER ${[workspace.matrix.worksiteName, workspace.matrix.period].filter(Boolean).join(" ")}`}
         description={workspace.label}
         breadcrumb={<Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "MIPER", href: "/prevencion/miper" }, { label: [workspace.matrix.worksiteName, workspace.matrix.period].filter(Boolean).join(" ") }]} />}
-        actions={<WorkflowBar workspace={workspace} mode={mode} issues={issues} openObservations={openObservations} />}
+        actions={<WorkflowBar workspace={workspace} mode={mode} issues={issues} openObservations={openObservations} onOpenEntry={openEntry} />}
       />
       <div className="space-y-3">
         <SummaryStrip snapshot={liveSnapshot} authorName={workspace.openRound ? workspace.versions[0]?.elaboratedByName ?? null : null} submittedAt={workspace.openRound?.submittedAt ?? null} versionLabel={versionLabel} />
@@ -89,7 +101,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
               observedEntryIds={observedEntryIds}
               changeByEntry={changes}
               canObserve={mode.canObserve}
-              onOpenEntry={(entryId) => setParam("fila", entryId)}
+              onOpenEntry={openEntry}
               onStructureChanged={() => router.refresh()}
             />
           </TabsContent>
