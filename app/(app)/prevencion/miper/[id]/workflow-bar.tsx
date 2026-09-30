@@ -37,7 +37,7 @@ export function WorkflowBar({ workspace, mode, issues, openObservations }: { wor
         </Button>
       )}
       {mode.canReviewTechnical && <>
-        <Button variant="secondary" onClick={() => setDialog("return")}>Devolver con observaciones</Button>
+        <Button variant="secondary" onClick={() => setDialog("return")} disabled={openObservations === 0} title={openObservations === 0 ? "Registra al menos una observación antes de devolverla: el servidor la exige." : undefined}>Devolver con observaciones</Button>
         <Button onClick={() => setDialog("approveTechnical")} disabled={openObservations > 0} title={openObservations > 0 ? "Hay observaciones abiertas: devuelve la MIPER o resuélvelas." : undefined}>Aprobar revisión técnica</Button>
       </>}
       {mode.canApproveLegal && <>

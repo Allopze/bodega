@@ -18,7 +18,7 @@ export function RiskClassificationBadge({ classification, magnitude, size = "md"
     <span className={cn("inline-flex items-center gap-1 whitespace-nowrap rounded-md", size === "sm" ? "px-1.5 py-0.5 text-xs" : "px-2 py-1 text-xs", className)}>
       <Icon aria-hidden weight="bold" className="size-3.5" />
       {CLASSIFICATION_LABEL[classification]}
-      {typeof magnitude === "number" ? <span className="tabular-nums opacity-90">· MR {magnitude}</span> : null}
+      {typeof magnitude === "number" ? <span className="tabular-nums opacity-90"> · MR {magnitude}</span> : null}
     </span>
   )
 }

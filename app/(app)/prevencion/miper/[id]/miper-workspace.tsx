@@ -55,9 +55,9 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
   return (
     <PageContainer width="full">
       <PageHeader
-        title={`MIPER ${workspace.matrix.worksiteName} ${workspace.matrix.period ?? ""}`}
+        title={`MIPER ${[workspace.matrix.worksiteName, workspace.matrix.period].filter(Boolean).join(" ")}`}
         description={workspace.label}
-        breadcrumb={<Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "MIPER", href: "/prevencion/miper" }, { label: `${workspace.matrix.worksiteName} ${workspace.matrix.period ?? ""}` }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "MIPER", href: "/prevencion/miper" }, { label: [workspace.matrix.worksiteName, workspace.matrix.period].filter(Boolean).join(" ") }]} />}
         actions={<WorkflowBar workspace={workspace} mode={mode} issues={issues} openObservations={openObservations} />}
       />
       <div className="space-y-3">
