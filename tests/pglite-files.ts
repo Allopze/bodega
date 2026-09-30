@@ -18,6 +18,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/miper-risk-factors.test.ts",
   // MIPER F1: crear MIPER por faena y período, encabezado y descarte de borrador.
   "lib/__tests__/miper-matrices.test.ts",
+  // MIPER F1: filas y medidas con concurrencia optimista, inserción y borrado.
+  "lib/__tests__/miper-entries.test.ts",
   "db/__tests__/operational-integrity-constraints.test.ts",
   "db/__tests__/pdtp-worksite-cascade.test.ts",
   "db/__tests__/pdtp-check-constraints.test.ts",
