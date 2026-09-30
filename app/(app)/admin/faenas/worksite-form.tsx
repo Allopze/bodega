@@ -15,6 +15,7 @@ interface WorksiteForEdit {
   code:     string
   address:  string | null
   region:   string | null
+  commune:  string | null
   adminContratoLabel: string | null
   isActive: boolean
 }
@@ -67,6 +68,10 @@ export function WorksiteForm({ open, onClose, editWorksite }: WorksiteFormProps)
 
           <Field label="Región" htmlFor="ws-region" error={state.fieldErrors?.region?.[0]}>
             <Input id="ws-region" name="region" defaultValue={editWorksite?.region ?? ""} placeholder="Antofagasta" />
+          </Field>
+
+          <Field label="Comuna" htmlFor="ws-commune" error={state.fieldErrors?.commune?.[0]}>
+            <Input id="ws-commune" name="commune" defaultValue={editWorksite?.commune ?? ""} placeholder="Cabrero" />
           </Field>
 
           <Field label="Dirección" htmlFor="ws-address" error={state.fieldErrors?.address?.[0]}>

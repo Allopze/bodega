@@ -25,6 +25,7 @@ const configSchema = z.object({
     .optional()
     .refine((value) => !value || z.email().safeParse(value).success, "Correo inválido"),
   companyWebsite: z.string().trim().max(120, "Máximo 120 caracteres").optional(),
+  companyAdherentNumber: z.string().trim().max(60, "Máximo 60 caracteres").optional(),
 })
 
 export async function updateSystemSettings(
@@ -48,6 +49,7 @@ export async function updateSystemSettings(
     companyPhone:    formData.get("companyPhone")    || undefined,
     companyEmail:    formData.get("companyEmail")    || undefined,
     companyWebsite:  formData.get("companyWebsite")  || undefined,
+    companyAdherentNumber: formData.get("companyAdherentNumber") || undefined,
   }
 
   const parsed = configSchema.safeParse(raw)
@@ -68,6 +70,7 @@ export async function updateSystemSettings(
     companyPhone,
     companyEmail,
     companyWebsite,
+    companyAdherentNumber,
   } = parsed.data
 
   try {
@@ -87,6 +90,7 @@ export async function updateSystemSettings(
           phone:            companyPhone            ?? "",
           email:            companyEmail            ?? "",
           website:          companyWebsite          ?? "",
+          adherentNumber:   companyAdherentNumber   ?? "",
         },
         session.user.id,
         session.user.email ?? undefined,

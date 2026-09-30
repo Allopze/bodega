@@ -1,7 +1,5 @@
-import { createHash } from "node:crypto"
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm"
 import { z } from "zod"
-import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import { resolveOwnWorkSigning } from "@/lib/services/prevention-signing"
 import {
@@ -35,10 +33,9 @@ import {
   preventionRiskTasks,
   preventionTrainingCatalogItems,
   preventionTrainingOccurrences,
-  users,
   worksites,
 } from "@/db/schema"
-import type { WorksiteScope } from "@/lib/auth/scope"
+import { assertActiveUsers, requireAccess, scopeAllows, scopeCondition, sha256, type MiperAccess } from "@/lib/services/miper/shared"
 import { onRiskMatrixPublished } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
@@ -70,36 +67,12 @@ export { RiskLegalDomainError } from "./prevention-risk-legal-errors"
 
 type Client = DB | Tx
 
-export interface RiskLegalAccess {
-  userId: string
-  scope: WorksiteScope
-  permissions: readonly string[]
-}
-
-function scopeAllows(scope: WorksiteScope, worksiteId: string) {
-  return scope.mode === "all" || (scope.mode === "some" && scope.ids.includes(worksiteId))
-}
-
-function requireAccess(access: RiskLegalAccess, permission: string, worksiteId?: string) {
-  if (!access.permissions.includes(permission) || (worksiteId && !scopeAllows(access.scope, worksiteId))) {
-    throw new RiskLegalDomainError("Registro preventivo no encontrado o fuera de alcance.")
-  }
-}
-
-function scopeCondition(scope: WorksiteScope, column: AnyPgColumn) {
-  if (scope.mode === "all") return undefined
-  if (scope.mode === "none" || scope.ids.length === 0) return sql`false`
-  return inArray(column, scope.ids)
-}
+export type RiskLegalAccess = MiperAccess
 
 function addDays(date: string, days: number) {
   const value = new Date(`${date}T12:00:00.000Z`)
   value.setUTCDate(value.getUTCDate() + days)
   return value.toISOString().slice(0, 10)
-}
-
-function sha256(value: unknown) {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex")
 }
 
 async function history(client: Client, args: {
@@ -124,16 +97,6 @@ async function history(client: Client, args: {
     afterState: args.afterState,
     actorUserId: args.actorUserId ?? null,
   })
-}
-
-async function assertActiveUsers(client: Client, userIds: readonly (string | null | undefined)[]) {
-  const uniqueIds = [...new Set(userIds.filter((userId): userId is string => Boolean(userId)))]
-  if (uniqueIds.length === 0) return
-  const activeUsers = await client.select({ id: users.id }).from(users).where(and(
-    inArray(users.id, uniqueIds),
-    eq(users.isActive, true),
-  ))
-  if (activeUsers.length !== uniqueIds.length) throw new RiskLegalDomainError("La persona responsable no existe o está inactiva.")
 }
 
 async function assertActiveUser(client: Client, userId: string | null | undefined) {

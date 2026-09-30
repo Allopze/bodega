@@ -19,6 +19,8 @@ export interface CompanyProfile {
   phone:            string
   email:            string
   website:          string
+  /** N° de adherente a la mutualidad: encabezado RE-04 de la MIPER. */
+  adherentNumber:   string
 }
 
 /** Persistent keys for advanced operational parameters (admin:ops_settings). */
@@ -378,6 +380,7 @@ const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
   phone:            "41-3251368",
   email:            "",
   website:          "",
+  adherentNumber:   "",
 }
 
 const COMPANY_PROFILE_KEYS = {
@@ -389,6 +392,7 @@ const COMPANY_PROFILE_KEYS = {
   phone:            "company_phone",
   email:            "company_email",
   website:          "company_website",
+  adherentNumber:   "company_adherent_number",
 } as const satisfies Record<keyof CompanyProfile, string>
 
 /**
@@ -496,6 +500,7 @@ export async function getCompanyProfile(): Promise<CompanyProfile> {
       phone:            cleanSetting(byKey[COMPANY_PROFILE_KEYS.phone]) || DEFAULT_COMPANY_PROFILE.phone,
       email:            cleanSetting(byKey[COMPANY_PROFILE_KEYS.email]) || DEFAULT_COMPANY_PROFILE.email,
       website:          cleanSetting(byKey[COMPANY_PROFILE_KEYS.website]) || DEFAULT_COMPANY_PROFILE.website,
+      adherentNumber:   cleanSetting(byKey[COMPANY_PROFILE_KEYS.adherentNumber]),
     }
   } catch (err) {
     logger.error("Error fetching company profile settings, using defaults:", err)
@@ -559,6 +564,7 @@ export async function setCompanyProfile(
     phone:            cleanSetting(profile.phone),
     email:            cleanSetting(profile.email),
     website:          cleanSetting(profile.website),
+    adherentNumber:   cleanSetting(profile.adherentNumber),
   }
 
   const now = new Date().toISOString()

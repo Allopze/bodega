@@ -12,6 +12,8 @@ export const pgliteTestFiles = [
   "db/schema-consistency.test.ts",
   // MIPER F1: columnas generadas P×C, estados y versiones inmutables.
   "db/__tests__/miper-constraints.test.ts",
+  // MIPER F1: diccionarios por faena y prellenado del encabezado RE-04.
+  "lib/__tests__/miper-dictionaries-prefill.test.ts",
   "db/__tests__/operational-integrity-constraints.test.ts",
   "db/__tests__/pdtp-worksite-cascade.test.ts",
   "db/__tests__/pdtp-check-constraints.test.ts",
