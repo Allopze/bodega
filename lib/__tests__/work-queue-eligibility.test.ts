@@ -26,6 +26,12 @@ const SOLO_LECTURA: Record<WorkQueueSource, string> = {
   // E2E-004: la rama de pago nace con la misma regla, así que entra a la
   // batería de paridad con su permiso de sólo lectura.
   pago_compra: "billing:view",
+  // MIPER (F3): su permiso de vista es `prevention:risk:view` y NO abre ninguna
+  // de sus dos ramas. El responsable nominal de una actividad queda fuera de
+  // este mapa a propósito —registra con `risk:view` y su fila la emite la cola
+  // con ese caso contemplado—, así que la paridad se mantiene: con el permiso
+  // de lectura a secas, la bandeja no promete nada que no se pueda completar.
+  miper: "prevention:risk:view",
 }
 
 const FUENTES = Object.keys(WORK_QUEUE_ACTION_PERMISSIONS) as WorkQueueSource[]

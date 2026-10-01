@@ -18,6 +18,10 @@ export const OPERATIONAL_MODULE_LABELS: Record<OperationalModule, string> = {
   ppa:           "PPA",
   sst:           "SST",
   cphs:          "Comité Paritario",
+  // Matriz IPER (MIPER) y su Programa de Trabajo: el rótulo nombra el
+  // instrumento, no el flujo — la cola trae tanto la matriz esperando firma
+  // como la ocurrencia del programa que debe trabajo.
+  miper:         "MIPER",
 }
 
 export const STAGES = ["Solicitado", "Aprobación", "Compra", "Recepción", "Entrega"]

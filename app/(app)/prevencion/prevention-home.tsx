@@ -41,6 +41,11 @@ export async function PreventionHome() {
       ? inspectionQueueStatuses(session)
       : [],
     includeCphs: can(session, "prevention:cphs:view") && routeIsEnabled("/prevencion/cphs", toggleState),
+    // MIPER (§9.1): matrices esperando firma, ocurrencias vencidas del programa
+    // y bandas sin medida. Se enciende con el mismo criterio que las demás —el
+    // permiso de vista del módulo y la ruta habilitada—, no con el del acto: la
+    // bandeja reparte y el destino es quien vuelve a exigir el permiso.
+    includeMiper: can(session, "prevention:risk:view") && routeIsEnabled("/prevencion/miper", toggleState),
     // Fechas que ya existían en la base y que ninguna pantalla leía. Cada fuente
     // con SU permiso: era un solo interruptor y ver higiene abría también los
     // equipos de emergencia, y al revés (EMERGENCIAS-08).
