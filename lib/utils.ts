@@ -604,6 +604,20 @@ export function toLocalInputValue(date: Date): string {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16)
 }
 
+/**
+ * Valor para el atributo `dateTime` de `<time>`.
+ *
+ * Los timestamps que llegan de Postgres traen la forma `2026-10-01 16:41:11.518935+00`,
+ * que **no** es un datetime válido en HTML: el atributo exige la `T` y un offset con
+ * minutos. Sin normalizar, el marcado queda inválido para lectores de pantalla y para
+ * cualquier consumidor que lo parsee. Si el valor no se puede interpretar se devuelve
+ * tal cual, antes que inventar una fecha.
+ */
+export function toDateTimeAttr(date: Date | string | number): string {
+  const parsed = new Date(date)
+  return Number.isNaN(parsed.getTime()) ? String(date) : parsed.toISOString()
+}
+
 /** Divide un texto multilínea en un array de líneas no vacías. */
 export function linesToArray(value: string): string[] {
   return value.split("\n").map((line) => line.trim()).filter(Boolean)

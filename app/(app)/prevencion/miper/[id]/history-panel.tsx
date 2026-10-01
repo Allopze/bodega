@@ -1,7 +1,7 @@
 import { EmptyState } from "@/components/ui/empty-state"
 import { ROLE_CONTEXT_TEXT, historyLabel } from "@/lib/prevention/miper/history-labels"
 import type { MiperHistoryEvent, MiperWorkspace } from "@/lib/services/miper/queries"
-import { formatDate, formatDateTime } from "@/lib/utils"
+import { formatDate, formatDateTime, toDateTimeAttr } from "@/lib/utils"
 
 export type HistoryPanelProps = {
   workspace: MiperWorkspace
@@ -58,7 +58,7 @@ export function HistoryPanel({ workspace, history }: HistoryPanelProps) {
         <ol className="space-y-1 text-sm">
           {history.map((event) => (
             <li key={event.id} className="flex flex-wrap gap-x-2 border-b border-[var(--color-border)] py-1.5">
-              <time className="tabular-nums text-[var(--color-text-subtle)]" dateTime={event.at}>{formatDateTime(event.at)}</time>
+              <time className="tabular-nums text-[var(--color-text-subtle)]" dateTime={toDateTimeAttr(event.at)}>{formatDateTime(event.at)}</time>
               <span className="font-medium">{historyLabel(event.changeType)}</span>
               <span>{event.actorName ?? "Sistema"}{event.actingAs ? ` (${ROLE_CONTEXT_TEXT[event.actingAs] ?? "otro rol"})` : ""}</span>
               {event.reason && <span className="w-full text-[var(--color-text-subtle)]">{event.reason}</span>}

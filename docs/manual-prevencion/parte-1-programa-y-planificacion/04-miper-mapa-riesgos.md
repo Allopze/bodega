@@ -42,6 +42,18 @@ Cada faena tiene **una MIPER por período**, entendiendo por período el año (2
 
 Un borrador que nunca se envió a revisión se puede **descartar** desde su espacio de trabajo (queda auditado, no desaparece del registro). Una MIPER **Reemplazada** o rotulada **"metodología anterior"** es de solo lectura: no admite el flujo nuevo. Las MIPER creadas antes del rediseño RE-04 aparecen con la leyenda *"Vigente · metodología anterior"* y sirven solo para consultar el modelo antiguo (sin Probabilidad × Consecuencia).
 
+### Importar el RE-04 desde el Excel real
+
+Desde el mismo encabezado de la portada, **"Importar"** lee la hoja **«RE-04 IPER»** de un Excel del formato real y carga sus riesgos en el MIPER. Son **dos pasos explícitos**:
+
+1. **Revisar el archivo.** Se elige la **Faena**, el **Período del borrador** y el archivo `.xlsx`. La vista previa muestra **una fila por riesgo** con la fila del Excel, la actividad, el peligro/riesgo, la **evaluación que calcula la plataforma** y, si hay algo que mirar, el **problema por fila**: por ejemplo una Probabilidad o Consecuencia **fuera de la escala** (sólo valen **1, 2 y 4**) o un **factor de riesgo que el catálogo todavía no tiene**.
+2. **Cargar.** Con el lote ya revisado se elige el destino: **"Cargar en borrador"** (un borrador nuevo del período) o **"Agregar al vigente"**. Cada fila con un problema que impide cargar dice por qué y ese destino queda bloqueado; las que sólo avisan de un MR distinto **sí se cargan**.
+
+> [!IMPORTANT]
+> **MANDA LA PLATAFORMA, NO EL EXCEL.** La matriz y la clasificación que trae el archivo se **informan**, pero el valor que se guarda es el que calcula la plataforma (`P × C`). Una fila cuya Probabilidad o Consecuencia no esté en 1, 2 ó 4 **no se carga**, aunque se apriete el botón: la escritura vuelve a validarse en el servidor.
+
+Si el archivo usa **factores de riesgo que el catálogo no tiene**, la vista previa los lista y ofrece crearlos para poder cargar esas filas; quien no administra el catálogo lee el aviso de pedirlo.
+
 ### Antecedentes: los datos que se completan solos
 
 En la pestaña **Antecedentes** se completa el encabezado del formato RE-04. Todo valor prellenado se muestra con su origen ("Desde perfil de empresa: …", "Desde trabajadores activos de la faena: …") y se puede volver a traer con **"Restaurar valor prellenado"**:
@@ -60,9 +72,35 @@ Los cambios de un MIPER vigente se aplican de inmediato y quedan marcados como *
 
 1. Ingresa a `/prevencion/miper`.
 2. La pestaña **"Por hacer"** (por defecto) te muestra lo que te corresponde según tu rol: tus borradores, las MIPER con observaciones por responder y las vigentes con cambios sin enviar; a la Jefatura, su bandeja de revisión; a Legal y RRHH, las que esperan su firma.
-3. La pestaña **"Todas"** lista las MIPER con filtros por **Faena**, **Período** y **Estado**.
-4. La tabla muestra **Faena · Período · Estado · N° de riesgos · Distribución por clasificación · Última modificación**. Al hacer clic en una fila entras a su espacio de trabajo.
-5. Dentro de la MIPER, la pestaña **Matriz** se filtra por clasificación, factor de riesgo, "¿está controlado?", **observadas** y **modificadas**, y se puede agrupar por actividad, puesto o clasificación.
+3. La pestaña **"Resumen"** reúne el tablero del MIPER para tu alcance (ver abajo).
+4. La pestaña **"Todas"** lista las MIPER con filtros por **Faena**, **Período**, **Estado** y **Responsable** (quién tiene trabajo asignado: una actividad del programa o una medida).
+5. La tabla muestra **Faena · Período · Estado · N° de riesgos · Distribución por clasificación · Última modificación** (y **Avance** cuando llegas desde el tile del tablero). Al hacer clic en una fila entras a su espacio de trabajo.
+6. Dentro de la MIPER, la pestaña **Matriz** se filtra por clasificación, factor de riesgo, "¿está controlado?", **observadas** y **modificadas**, y se puede agrupar por actividad, puesto o clasificación.
+
+### La pestaña «Resumen»: el tablero del MIPER
+
+La pestaña **Resumen** mira todo el MIPER de tu alcance de una vez. Arriba hay **cuatro tiles** —cada uno es un enlace al subconjunto que resume, nunca una cifra suelta— y bajo ellos una **franja** con las cifras secundarias en texto:
+
+| Tile | Qué cuenta | Al hacer clic |
+|---|---|---|
+| **Por hacer** | Lo que espera tu revisión, tu firma o tu respuesta | abre tu bandeja «Por hacer» |
+| **Intolerables e Importantes** | Las filas en las dos bandas más graves | filtra «Todas» por esas dos bandas |
+| **Sin controlar** | Los riesgos no tolerables sin control declarado | filtra «Todas» por «Sin controlar» |
+| **Avance del programa** | Las ocurrencias realizadas del programa | abre «Todas» con la columna **Avance** |
+
+La **franja** informa *MIPER vigentes*, *Con observaciones*, *Tolerables*, *Moderados*, *Medidas pendientes* y *Actividades vencidas*. Debajo, la tabla por faena muestra el estado, la versión, la distribución por clasificación, los riesgos **sin controlar**, el **avance** y cuántas **alertas** (filas Intolerables/Importantes y ocurrencias vencidas o «No se hizo») tiene.
+
+> [!NOTE]
+> El avance del tablero es el **mismo** que deriva el Programa de Trabajo de las ocurrencias (ver "El avance", sección 9). Nunca se ingresa a mano.
+
+### La cola «Mi trabajo»
+
+Además de la portada del MIPER, tus pendientes aparecen en la **cola "Mi trabajo"** (`/dashboard?vista=trabajo` y `/pendientes`), junto a Solicitudes, Compras, PDTP y los demás módulos:
+
+*   **Revisar la MIPER {período}** (Jefatura de Prevención) mientras una MIPER espera la revisión técnica, y **Firmar la MIPER {período}** (Legal y RRHH) mientras espera la firma.
+*   **Registrar ejecución** de una ocurrencia del programa **vencida** o marcada **«No se hizo»**, para quien tiene el permiso de ejecución del programa o es su responsable nominal.
+
+El inicio de Prevención (`/prevencion`) lista los mismos hechos del MIPER —lo que espera firma, la ocurrencia vencida y la banda sin medida con responsable y plazo— bajo **"Atención requerida"**, en la primera sección de la pantalla.
 
 ### Cómo se leen las bandas en pantalla
 
@@ -234,6 +272,16 @@ Al aprobarse la primera versión del período, la MIPER queda **Vigente**, el pe
 | Aprobar como Legal y RRHH o solicitar correcciones | Gerencia de Legal y RRHH (`gerente_legal_rrhh`) y Administrador | `prevention:risk:approve_legal` |
 | Administrar el catálogo de factores de riesgo | Jefatura de Prevención y Administrador | `prevention:risk:catalog:manage` |
 
+### Los avisos del flujo (la campana)
+
+El flujo avisa por sí solo en la **campana** de notificaciones, con el **destinatario derivado del permiso y la faena** —nunca a todo el mundo— y **una sola vez por hecho**: volver a pasar por el mismo estado no duplica el aviso.
+
+*   **Por fila:** cuando una fila queda clasificada como **Intolerable**, avisa a quien edita la faena y a la Jefatura. El aviso enlaza directo a esa fila de la matriz.
+*   **Por paso del flujo:** *"MIPER enviada a revisión"* al siguiente responsable (la Jefatura en la revisión técnica, Legal y RRHH en la firma) y *"MIPER devuelta con observaciones"* a quien la elaboró. Cada **ronda** que vuelve a pasar es un paso nuevo y trae su propio aviso.
+*   **Por el calendario (barrido diario):** *"Actividad del Programa de Trabajo vencida"* (a la ocurrencia pendiente cuya fecha ya pasó) y *"Actividad del Programa registrada como «No se hizo»"* (a la Jefatura). Estos dos no nacen al guardar, sino del barrido diario del programa, porque dependen del calendario.
+
+El aviso queda en la campana; además, si la persona tiene activadas las **notificaciones por correo**, el mismo aviso puede llegar a su correo (ver *Perfil → Notificaciones*).
+
 ---
 
 ## 8. Versiones Selladas, Cambios Pendientes e Historial
@@ -241,7 +289,8 @@ Al aprobarse la primera versión del período, la MIPER queda **Vigente**, el pe
 *   **Cada aprobación sella una versión inmutable.** La versión guarda la foto exacta que se revisó (encabezado, filas y medidas), su firma técnica, la de Legal y RRHH, la fecha y el resumen de cambios. No se puede editar ni borrar: es la constancia de lo que estaba aprobado ese día.
 *   **La lista de versiones es la hoja *Modificaciones*.** En la pestaña **Historial** están la cadena de MIPER de la faena por período, las versiones selladas de cada una (con enlace y descarga) y la línea de tiempo de los eventos con actor, rol, fecha y hora.
 *   **El MIPER vigente es mutable.** Puedes corregirlo o agregar riesgos sin esperar al año siguiente: el cambio **aplica de inmediato** y queda rotulado como *cambio pendiente de revisión* hasta el próximo sellado. Cuando lo envías, se revisa y se aprueba, se sella la versión siguiente (vN+1) y la anterior sigue consultable.
-*   **Descargar la versión aprobada.** El botón **"Descargar vN (Excel)"** genera el libro RE-04 desde la foto sellada —no desde los datos vivos— con las hojas *RE-04 IPER*, *Modificaciones* y *Criterios de Evaluación IPER*. El mismo libro es el que queda archivado al aprobar.
+*   **Descargar la versión aprobada.** El botón **"Descargar vN (Excel)"** genera el libro RE-04 desde la foto sellada —no desde los datos vivos— con las hojas *RE-04 IPER*, *Programa de Trabajo*, *Modificaciones* y *Criterios de Evaluación IPER*. El mismo libro es el que queda archivado al aprobar.
+*   **Exportar el estado vivo.** El mismo libro tiene un modo **"estado vivo"**: la matriz sale del estado **actual** (con los cambios aplicados aún no sellados) y cada hoja lleva bien visible la leyenda **"Incluye cambios no aprobados"**, con el sufijo `-vivo` en el nombre del archivo para no confundirlo con la copia sellada. El **modo por defecto sigue siendo el sellado** —es lo que se archiva al aprobar—; el modo vivo se activa con el parámetro `estado=vivo` de la misma descarga.
 *   **Programa de Trabajo (RE-04.1):** el programa de actividades derivado de las medidas de la MIPER no se sella con la versión, pero **se pone en marcha con ella**: la primera aprobación es la que lo habilita a ejecutarse (ver «El Programa de Trabajo Preventivo (RE-04.1)», sección 9).
 
 ---
