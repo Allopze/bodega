@@ -3,14 +3,19 @@
  * descarga (`app/api/prevencion/miper/[id]/export`) y el archivado automático
  * al aprobar, así que la copia archivada es el mismo libro que se descarga. Se
  * arma desde la foto de la versión, nunca desde los datos vivos: lo que se
- * archiva es exactamente lo que se aprobó. La hoja "Programa de Trabajo" llega
- * en F2.
+ * archiva es exactamente lo que se aprobó. La única excepción es la hoja
+ * "Programa de Trabajo" (RE-04.1): el programa no vive en la foto sellada (ver
+ * `readLiveProgram`), así que se lee del estado vivo y la propia hoja lo declara.
  */
 import ExcelJS from "exceljs"
 import { sanitizeCell as safe } from "@/lib/reports/export-module/excel-builder"
 import { CLASSIFICATION_CRITERIA, CLASSIFICATION_LABEL, CONSEQUENCE_LEVELS, PROBABILITY_LEVELS, RISK_CLASSIFICATIONS } from "@/lib/prevention/miper/methodology"
+import type { ProgramProgress } from "@/lib/prevention/miper/progress"
+import type { ProgramScheduleKind } from "@/lib/prevention/miper/schedule"
 import { CONTROL_HIERARCHY_LABEL, CONTROLLED_STATUS_LABEL, type MiperSnapshot } from "@/lib/prevention/miper/snapshot"
+import { getProgramWorkspace, type ProgramActionView, type ProgramWorkspace } from "@/lib/services/miper/program-queries"
 import type { getMiperVersion } from "@/lib/services/miper/queries"
+import type { MiperAccess } from "@/lib/services/miper/shared"
 import { formatDate } from "@/lib/utils"
 
 export type MiperVersionDetail = Awaited<ReturnType<typeof getMiperVersion>>
@@ -28,9 +33,161 @@ export function miperFilenameBase(detail: MiperVersionDetail) {
   return `RE-04-MIPER-${detail.worksiteCode}-${detail.version.period ?? "sin-periodo"}-v${detail.version.versionNumber}`
 }
 
-export async function buildMiperWorkbook(detail: MiperVersionDetail) {
+const PROGRAM_FREQUENCY_LABEL: Record<ProgramScheduleKind, string> = {
+  once: "Única vez", monthly: "Mensual", quarterly: "Trimestral", semiannual: "Semestral", annual: "Anual",
+}
+
+/**
+ * Permiso de lectura para la consulta del programa hecha desde el libro. Quien
+ * llega acá (descarga o cron de archivado) ya autorizó la versión sellada antes
+ * de armar el libro; este acceso de sistema sólo vuelve a leer el programa, no
+ * amplía lo que la persona puede ver. Mismo patrón que `getMiperVersionForArchive`.
+ */
+const PROGRAM_READ_ACCESS: MiperAccess = {
+  userId: "system:miper-workbook",
+  scope: { mode: "all", ids: [] },
+  permissions: ["prevention:risk:view"],
+}
+
+/**
+ * DECISIÓN del Step 1 de la Task 9: el programa de la hoja sale de las **filas
+ * vivas** por `matrixId` al momento de armar el libro, no del `snapshot`.
+ *
+ * El `snapshot` sellado guarda encabezado, filas y medidas, pero no el programa
+ * RE-04.1. Meterlo ahí cambiaría la forma de `MiperSnapshot`, recalcularía
+ * `snapshot_sha256` de las versiones ya emitidas y arrastraría al motor de flujo
+ * —toca la huella firmada y el diff de "cambios pendientes"—, algo fuera del
+ * alcance de esta tarea. El plan admite explícitamente la alternativa: leerlo al
+ * momento de armar el libro y declararlo en la hoja ("programa al momento de la
+ * descarga"), que es además lo que hará la exportación del estado vivo de F3.
+ *
+ * La lectura es best-effort: si falla, la hoja RE-04.1 queda vacía con su
+ * mensaje. Un problema al leer el programa no debe tumbar la descarga del RE-04
+ * sellado (la ruta convierte cualquier error en un 404 "no encontrada", que para
+ * un documento ya aprobado sería peor que una hoja auxiliar vacía).
+ */
+async function readLiveProgram(matrixId: string): Promise<ProgramWorkspace | null> {
+  try {
+    return await getProgramWorkspace(matrixId, PROGRAM_READ_ACCESS)
+  } catch {
+    return null
+  }
+}
+
+function programScheduleLabel(action: ProgramActionView): string {
+  return action.scheduleKind === "once"
+    ? formatDate(action.startsOn)
+    : `${PROGRAM_FREQUENCY_LABEL[action.scheduleKind]} (desde ${formatDate(action.startsOn)})`
+}
+
+/** Fechas efectivas de las ocurrencias realizadas, una por línea. */
+function programEffectiveDates(action: ProgramActionView): string {
+  return action.occurrences
+    .filter((occurrence) => occurrence.outcome === "done" && occurrence.effectiveOn)
+    .map((occurrence) => formatDate(occurrence.effectiveOn as string))
+    .join("\n")
+}
+
+/**
+ * Avance derivado (§7.5): realizadas ÷ planificadas, con las fuera de plazo
+ * marcadas junto a las incumplidas y las vencidas. Nunca se ingresa a mano.
+ */
+function programProgressLabel(progress: ProgramProgress): string {
+  if (progress.planned === 0) return progress.failed > 0 ? `${progress.failed} incumplida(s) · 0 planificadas` : "—"
+  const parts = [`${progress.done}/${progress.planned} (${Math.round((progress.done / progress.planned) * 100)}%)`]
+  if (progress.late > 0) parts.push(`${progress.late} fuera de plazo`)
+  if (progress.failed > 0) parts.push(`${progress.failed} incumplida${progress.failed === 1 ? "" : "s"}`)
+  if (progress.overdue > 0) parts.push(`${progress.overdue} vencida${progress.overdue === 1 ? "" : "s"}`)
+  return parts.join(" · ")
+}
+
+const PROGRAM_COLUMNS = [
+  "N°", "PROCESO", "ACTIVIDAD / MEDIDA", "RESPONSABLE", "CENTRO DE TRABAJO",
+  "FRECUENCIA / FECHA PROGRAMADA", "FECHA DE EJECUCIÓN EFECTIVA", "AVANCE",
+]
+
+/**
+ * Hoja "Programa de Trabajo" (RE-04.1). Siempre presente —el formato RE-04 la
+ * espera—: si la versión no tiene programa se agrega vacía con su mensaje. El
+ * encabezado usa los datos del programa cuando existen y cae a la foto sellada
+ * para los campos de empresa (período, razón social, RUT, dirección y
+ * representante), por lo que incluso sin programa queda identificable.
+ */
+function addProgramSheet(workbook: ExcelJS.Workbook, detail: MiperVersionDetail, snapshot: MiperSnapshot, workspace: ProgramWorkspace | null) {
+  const h = snapshot.header
+  const program = workspace?.program ?? null
+  const sheet = workbook.addWorksheet("Programa de Trabajo", {
+    pageSetup: { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "13:13" },
+  })
+  sheet.mergeCells("A1:H1")
+  sheet.getCell("A1").value = "Programa de Trabajo Preventivo (RE-04.1)"
+  sheet.getCell("A1").font = { bold: true, size: 14 }
+  sheet.mergeCells("A2:H2")
+  sheet.getCell("A2").value = "Programa al momento de la descarga: se lee del estado vivo y puede incluir cambios posteriores a la aprobación de la versión."
+  sheet.getCell("A2").font = { italic: true, size: 9 }
+
+  const elaboratedOn = program?.elaboratedOn ?? h.elaboratedOn
+  const fields: Array<[string, ExcelJS.CellValue]> = [
+    ["PERÍODO", program ? program.period : (h.period ?? "")],
+    ["RAZÓN SOCIAL", safe(program?.companyName ?? h.companyName ?? "")],
+    ["RUT EMPLEADOR", safe(program?.companyRut ?? h.companyRut ?? "")],
+    ["DIRECCIÓN / COMUNA", safe([program?.companyAddress ?? h.companyAddress, program?.companyCommune ?? h.companyCommune].filter(Boolean).join(", "))],
+    // Nunca "representante legal": quien responde por la faena es el administrador
+    // de contrato (§4.8), también en el RE-04.1 (mismo rótulo que la hoja RE-04).
+    ["REPRESENTANTE DE LA EMPRESA EN LA FAENA (ADMINISTRADOR DE CONTRATO)", safe(program?.siteRepresentativeName ?? h.siteRepresentativeName ?? "")],
+    ["FECHA DE ELABORACIÓN", elaboratedOn ? formatDate(elaboratedOn) : ""],
+    ["N° DE CENTROS DE TRABAJO", program ? program.worksiteCount : ""],
+    ["FECHA DE ÚLTIMA REVISIÓN", program?.lastReviewedOn ? formatDate(program.lastReviewedOn) : ""],
+    ["ENCARGADO DEL PROGRAMA", safe(program?.programManagerName ?? "")],
+  ]
+  fields.forEach(([label, value], index) => {
+    const rowNumber = 3 + index
+    sheet.mergeCells(`A${rowNumber}:C${rowNumber}`)
+    sheet.mergeCells(`D${rowNumber}:H${rowNumber}`)
+    const row = sheet.getRow(rowNumber)
+    row.getCell(1).value = label
+    row.getCell(1).font = { bold: true }
+    row.getCell(4).value = value
+  })
+
+  const top = sheet.getRow(13)
+  PROGRAM_COLUMNS.forEach((label, index) => { top.getCell(index + 1).value = label })
+  headerStyle(top)
+
+  const actions = (workspace?.actions ?? []).filter((action) => action.status === "active")
+  if (actions.length === 0) {
+    sheet.mergeCells("A14:H14")
+    sheet.getCell("A14").value = "Esta versión no tiene actividades del Programa de Trabajo (RE-04.1) registradas."
+    sheet.getCell("A14").font = { italic: true }
+  }
+  for (const action of actions) {
+    const row = sheet.addRow([
+      action.actionNumber,
+      safe(action.processName ?? ""),
+      safe(action.description),
+      safe(action.responsibleName ?? ""),
+      safe(action.locationLabel ?? program?.worksiteName ?? detail.worksiteName),
+      safe(programScheduleLabel(action)),
+      safe(programEffectiveDates(action)),
+      safe(programProgressLabel(action.progress)),
+    ])
+    row.alignment = { vertical: "top", wrapText: true }
+  }
+
+  const widths = [5, 22, 40, 24, 22, 26, 20, 34]
+  widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width })
+  sheet.views = [{ state: "frozen", ySplit: 13 }]
+}
+
+/**
+ * `program` es la costura de pruebas: si se omite, el libro lee el programa vivo
+ * por `matrixId` (producción); si se pasa `null` o un workspace, se usa tal cual
+ * (tests, sin tocar la base).
+ */
+export async function buildMiperWorkbook(detail: MiperVersionDetail, program?: ProgramWorkspace | null) {
   const snapshot = detail.version.snapshot as MiperSnapshot
   const h = snapshot.header
+  const programWorkspace = program === undefined ? await readLiveProgram(detail.version.matrixId) : program
   const workbook = new ExcelJS.Workbook()
   workbook.creator = "Plataforma CHOME"
 
@@ -109,6 +266,8 @@ export async function buildMiperWorkbook(detail: MiperVersionDetail) {
   for (const classification of RISK_CLASSIFICATIONS) criteria.addRow([CLASSIFICATION_LABEL[classification].toUpperCase(), bandMr[classification], CLASSIFICATION_CRITERIA[classification]])
   criteria.columns = [{ width: 30 }, { width: 10 }, { width: 110 }]
   criteria.eachRow((row) => { row.alignment = { vertical: "top", wrapText: true } })
+
+  addProgramSheet(workbook, detail, snapshot, programWorkspace)
 
   return workbook
 }

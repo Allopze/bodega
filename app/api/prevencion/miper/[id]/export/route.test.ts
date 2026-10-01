@@ -95,7 +95,7 @@ describe("GET /api/prevencion/miper/[id]/export", () => {
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(await response.arrayBuffer())
     expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
-      "RE-04 IPER", "Modificaciones", "Criterios de Evaluación IPER", "Metadatos",
+      "RE-04 IPER", "Modificaciones", "Criterios de Evaluación IPER", "Programa de Trabajo", "Metadatos",
     ])
     expect(workbook.getWorksheet("RE-04 IPER")?.getCell("I14").value).toBe("'+factor")
     expect(workbook.getWorksheet("RE-04 IPER")?.getCell("K14").value).toBe("'=WEBSERVICE(\"https://example.test\")")
