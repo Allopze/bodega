@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, type FormEvent } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Field } from "@/components/ui/field"
@@ -27,7 +28,12 @@ export function VerifyControlForm({ controlId, expectedVersion, conflicted, canO
 }) {
   const [open, setOpen] = useState(false)
   const [effectivenessStatus, setEffectivenessStatus] = useState("effective")
-  const operation = useOperation()
+  const router = useRouter()
+  /* Con `feedback: "message"` y un `onSuccess` que cierra el diálogo, el éxito no
+   * lo veía nadie y la ficha seguía mostrando el estado viejo hasta recargar a
+   * mano — justo en el acto que más importa auditar. El toast con el mensaje de
+   * la acción y el refresh de la ficha cierran las dos cosas. */
+  const operation = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
