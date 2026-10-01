@@ -17,8 +17,8 @@
 const LEVEL = process.env.NODE_ENV === "production" ? "warn" : "debug"
 
 // Match both generic secrets and the DTE key-material vocabulary.  Keep this
-// deliberately broad: the logger is the last boundary before stdout, so a
-// false positive is preferable to a credential leaving the process.
+// deliberately broad: the logger is the last boundary before stdout/Sentry, so
+// a false positive is preferable to a credential leaving the process.
 const SENSITIVE_KEY = /(?:password|passphrase|hashed_?password|token|token_?hash|secret|authorization|cookie|rut(?:_?(?:usr|emp))?|email|importer_?email|phone|telefono|clave|cod_?emp|keyring|(?:private|encryption)_?key|ciphertext|envelope|(?:auth_)?tag|(?:initialization_?)?iv)/i
 
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi
@@ -27,7 +27,13 @@ const RUT_RE = /\b\d{1,2}\.?\d{3}\.?\d{3}-[\dkK]\b/g
 const DTE_ENVELOPE_RE = /\benc:v1:[A-Za-z0-9_-]+:[A-Za-z0-9_-]+:[A-Za-z0-9_-]+:[A-Za-z0-9_-]+\b/g
 const SECRET_ASSIGNMENT_RE = /(["']?(?:password|passphrase|token|secret|authorization|cookie|clave|rut(?:_?(?:usr|emp))?|email|importer_?email|cod_?emp|keyring|(?:private|encryption)_?key|ciphertext|envelope|(?:auth_)?tag|(?:initialization_?)?iv)["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,}&]+)/gi
 
-function redactString(value: string): string {
+/**
+ * Máscara de texto libre del logger: sobres DTE, asignaciones de secretos,
+ * correos y RUT. Se exporta para que la telemetría externa
+ * (`lib/security/telemetry-scrub.ts`) aplique exactamente el mismo criterio a
+ * los mensajes de excepción en vez de mantener una copia que diverja.
+ */
+export function redactString(value: string): string {
   return value
     .replace(DTE_ENVELOPE_RE, "[encrypted]")
     .replace(SECRET_ASSIGNMENT_RE, "$1[redacted]")
@@ -60,6 +66,52 @@ function redact(value: unknown, depth = 0, seen = new WeakSet<object>()): unknow
     out[key] = SENSITIVE_KEY.test(key) ? "[redacted]" : redact(val, depth + 1, seen)
   }
   return out
+}
+
+/**
+ * Destino externo de los errores (Sentry). Lo registra `sentry.server.config.ts`
+ * al iniciar; el logger nunca importa el SDK. Ese acople ya existió y hacía que
+ * cualquier script bundleado con esbuild que importara el logger arrastrara
+ * `@sentry/nextjs` y, con él, Next entero (ver el banner en el Dockerfile).
+ *
+ * Sólo se reenvían los `logger.error` que traen un `Error` (suelto o anidado en
+ * el contexto): con stack el evento sirve para depurar; un texto suelto queda
+ * en stdout. Así tampoco se duplica `onRequestError`, que loguea sin el
+ * `Error` y lo reporta a Sentry por su propia vía.
+ */
+export type LoggerErrorSink = (error: Error) => void
+
+let errorSink: LoggerErrorSink | null = null
+
+export function setLoggerErrorSink(sink: LoggerErrorSink | null): void {
+  errorSink = sink
+}
+
+/**
+ * El `Error` de un log, esté suelto o anidado dentro del objeto de contexto
+ * (`logger.error({ err }, "mensaje")`).
+ */
+function findError(value: unknown, depth = 0, seen = new WeakSet<object>()): Error | undefined {
+  if (value instanceof Error) return value
+  if (depth > 3 || value === null || typeof value !== "object") return undefined
+  if (seen.has(value as object)) return undefined
+  seen.add(value as object)
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    const found = findError(nested, depth + 1, seen)
+    if (found) return found
+  }
+  return undefined
+}
+
+function forwardError(args: unknown[]): void {
+  if (!errorSink) return
+  const error = findError(args)
+  if (!error) return
+  try {
+    errorSink(error)
+  } catch {
+    // El destino externo falló: el error ya quedó en stdout, que es lo que importa.
+  }
 }
 
 function shouldLog(level: "debug" | "info" | "warn" | "error"): boolean {
@@ -182,5 +234,6 @@ export const logger = {
 
   error(...args: unknown[]) {
     writeLog("error", args)
+    forwardError(args)
   },
 }

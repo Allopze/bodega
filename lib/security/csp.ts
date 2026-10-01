@@ -16,8 +16,24 @@
  *     interpolates user input into a style prop can lead to CSS
  *     exfiltration; tracked in AUDITORIA_COMPLETA.md.
  */
-export function createCspHeader(nonce: string, options: { isDev?: boolean } = {}): string {
+/**
+ * Origen de ingest de Sentry, derivado del DSN que el build inlineó en el
+ * cliente, en vez de un wildcard *.sentry.io: `connect-src` no se abre más de
+ * lo que el proyecto realmente usa (auditoría UIUX-018: sin esto el navegador
+ * bloquea el envío del evento).
+ */
+export function sentryConnectSrcOrigin(dsn: string | undefined = process.env.NEXT_PUBLIC_SENTRY_DSN): string | null {
+  if (!dsn?.trim()) return null
+  try {
+    return new URL(dsn.trim()).origin
+  } catch {
+    return null
+  }
+}
+
+export function createCspHeader(nonce: string, options: { isDev?: boolean; sentryDsn?: string } = {}): string {
   const isDev = options.isDev ?? process.env.NODE_ENV === "development"
+  const sentryOrigin = "sentryDsn" in options ? sentryConnectSrcOrigin(options.sentryDsn) : sentryConnectSrcOrigin()
   return [
     "default-src 'self'",
     // Next App Router inserta algunos chunks dinámicamente sin propagar el
@@ -33,7 +49,9 @@ export function createCspHeader(nonce: string, options: { isDev?: boolean } = {}
     // ya no hace falta habilitar un origen externo para pintar una imagen.
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
-    `connect-src 'self'${isDev ? " ws: wss:" : ""}`,
+    // El origen de Sentry va al final para que el prefijo de la directiva no
+    // dependa de si hay DSN (una aserción de test se rompió así el 2026-08-04).
+    `connect-src 'self'${isDev ? " ws: wss:" : ""}${sentryOrigin ? ` ${sentryOrigin}` : ""}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

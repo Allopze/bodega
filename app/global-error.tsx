@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect } from "react"
+import { reportBoundaryError } from "@/lib/observability/sentry-client"
 
 const BODY_STYLE = {
   display: "flex",
@@ -22,15 +24,20 @@ const BUTTON_STYLE = {
   fontSize: "0.875rem",
 } as const
 
-// Next entrega `error` a este límite, pero no se consume: el fallo detallado ya
-// queda registrado —y depurado— en su frontera de servidor, y desde el
-// navegador nunca se reenvía un mensaje o stack que pueda cargar credenciales.
+// Un error de servidor (con `digest`) ya lo reportó `onRequestError`; aquí sólo
+// se envían los que nacieron en el navegador, y pasan por el mismo `beforeSend`
+// que enmascara RUT, correos y secretos (lib/security/telemetry-scrub.ts).
 export default function GlobalError({
+  error,
   reset,
 }: {
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  useEffect(() => {
+    reportBoundaryError(error)
+  }, [error])
+
   return (
     <html lang="es">
       <head>

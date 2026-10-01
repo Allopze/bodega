@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { createCspHeader } from "@/lib/security/csp"
+import { createCspHeader, sentryConnectSrcOrigin } from "@/lib/security/csp"
 
 describe("createCspHeader (audit S-09)", () => {
   it("includes the nonce and same-origin scripts in production without unsafe script sources", () => {
@@ -60,4 +60,24 @@ describe("createCspHeader (audit S-09)", () => {
     expect(csp).not.toContain("wss:")
   })
 
+  it("abre connect-src sólo al origen de ingest del DSN de Sentry, no a *.sentry.io", () => {
+    const csp = createCspHeader("nonce", { isDev: false, sentryDsn: "https://abc@o123456.ingest.us.sentry.io/4511758501609552" })
+    const connectSrc = csp.split(";").find((p) => p.trim().startsWith("connect-src"))
+    expect(connectSrc?.trim()).toBe("connect-src 'self' https://o123456.ingest.us.sentry.io")
+    expect(csp).not.toContain("*.sentry.io")
+    // La clave pública y el id de proyecto no son parte del origen.
+    expect(csp).not.toContain("abc@")
+  })
+
+  it("con DSN en desarrollo conserva ws:/wss: delante del origen de Sentry", () => {
+    const csp = createCspHeader("nonce", { isDev: true, sentryDsn: "https://abc@o1.ingest.sentry.io/2" })
+    expect(csp).toContain("connect-src 'self' ws: wss: https://o1.ingest.sentry.io")
+  })
+
+  it("sin DSN, o con un DSN inválido, no agrega nada a connect-src", () => {
+    expect(sentryConnectSrcOrigin("")).toBeNull()
+    expect(sentryConnectSrcOrigin("no es una url")).toBeNull()
+    const csp = createCspHeader("nonce", { isDev: false, sentryDsn: "" })
+    expect(csp).toContain("connect-src 'self';")
+  })
 })

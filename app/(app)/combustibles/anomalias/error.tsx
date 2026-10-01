@@ -3,13 +3,17 @@
 import { useEffect } from "react"
 import { Warning, WifiSlash } from "@phosphor-icons/react"
 import { ReportErrorButton } from "@/components/report-error-button"
+import { reportBoundaryError } from "@/lib/observability/sentry-client"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { isNetworkError } from "@/lib/network-error"
 
 export default function AnomalyCasesError({ error, unstable_retry }: { error: Error & { digest?: string }; unstable_retry: () => void }) {
   const isNetwork = isNetworkError(error)
-  useEffect(() => { console.error(error) }, [error])
+  useEffect(() => {
+    console.error(error)
+    reportBoundaryError(error)
+  }, [error])
   return (
     <div className="flex min-h-[50vh] items-center justify-center p-8">
       <EmptyState

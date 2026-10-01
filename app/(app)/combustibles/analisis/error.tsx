@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { ChartLineUp, WifiSlash } from "@phosphor-icons/react"
 import { ReportErrorButton } from "@/components/report-error-button"
+import { reportBoundaryError } from "@/lib/observability/sentry-client"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { isNetworkError } from "@/lib/network-error"
@@ -17,6 +18,7 @@ export default function EquipmentPerformanceError({
   const isNetwork = isNetworkError(error)
   useEffect(() => {
     console.error(error)
+    reportBoundaryError(error)
   }, [error])
 
   return (

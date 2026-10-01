@@ -26,7 +26,7 @@ sobrevive para navegación, permisos y seed (ver [AGENTS.md](AGENTS.md)).
 | Hashing | bcryptjs | 3.x |
 | Notificaciones | Sonner (toasts) | 2.x |
 | Utilidades | clsx, tailwind-merge, class-variance-authority | latest |
-| Observabilidad | Sentry | latest |
+| Observabilidad | Sentry (`@sentry/nextjs` en servidor, `@sentry/browser` en navegador; sólo errores, sin `withSentryConfig`) | 11.x |
 | Testing | Vitest 4 + Playwright + Testing Library | latest |
 | Linting | ESLint 9 (`eslint-config-next`) | 9.x |
 
@@ -163,7 +163,8 @@ plataforma-chome/
 ├── storage/                          # Adjuntos en filesystem (configurable con STORAGE_PATH)
 ├── public/                           # Assets estáticos (logos SVG)
 └── Config: next.config.ts · drizzle.config.ts · vitest*.config.ts · playwright.config.ts
-          · eslint.config.mjs · postcss.config.mjs · tsconfig.json · sentry.*.config.ts
+          · eslint.config.mjs · postcss.config.mjs · tsconfig.json · sentry.server.config.ts
+          · instrumentation.ts · instrumentation-client.ts
 ```
 
 ### API routes

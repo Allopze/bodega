@@ -216,7 +216,8 @@ prod_env_keys() {
 }
 
 # El valor de UNA variable del .env de prod. Sólo se usa con nombres de este
-# script (POSTGRES_USER / POSTGRES_DB), nunca con entrada del operador.
+# script (POSTGRES_USER / POSTGRES_DB / NEXT_PUBLIC_SENTRY_DSN), nunca con
+# entrada del operador.
 prod_env_value() {
   prod_sh "grep -E '^[[:space:]]*(export[[:space:]]+)?$1=' $(printf '%q' "$PROD_DIR/.env") 2>/dev/null | tail -1" \
     | tr -d '\r' | sed -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//" | sed -E 's/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/'
@@ -365,8 +366,17 @@ dump_production_database() {
 
 run_timed "Dumping production database" dump_production_database
 
+# El DSN de Sentry del navegador se inlinea en el build (Dockerfile); se toma
+# del .env de prod para que la imagen reporte al mismo proyecto que el servidor.
+# Vacío = la imagen sale sin telemetría de cliente.
+PROD_SENTRY_PUBLIC_DSN="$(prod_env_value NEXT_PUBLIC_SENTRY_DSN)"
+if [ -z "$PROD_SENTRY_PUBLIC_DSN" ]; then
+  echo "    AVISO: NEXT_PUBLIC_SENTRY_DSN no está en $PROD_DIR/.env; la imagen no reportará errores del navegador."
+fi
+
 run_timed "Building image from $(pwd) (main)" docker buildx build --builder "$BUILDER" --target prod --tag "$IMAGE" --load --progress=plain \
-  --build-arg BODEGA_BUILD_SKIP_TYPECHECK=1 .
+  --build-arg BODEGA_BUILD_SKIP_TYPECHECK=1 \
+  --build-arg NEXT_PUBLIC_SENTRY_DSN="$PROD_SENTRY_PUBLIC_DSN" .
 
 # Prod dejó de compartir el daemon Docker con este checkout, así que la imagen
 # recién construida tiene que viajar.
