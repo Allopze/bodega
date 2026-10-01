@@ -79,6 +79,7 @@ export const preventionModule = {
     "prevention:risk:review",
     "prevention:risk:approve_legal",
     "prevention:risk:catalog:manage",
+    "prevention:risk:program:execute",
     "prevention:risk:override_segregation",
     "prevention:legal:view",
     "prevention:legal:assess",
@@ -211,6 +212,12 @@ export const preventionModule = {
     "prevention:risk:review": { id: "p-prev-risk-review", description: "Revisar técnicamente la MIPER (Jefatura del Departamento de Prevención), observarla y aprobarla técnicamente" },
     "prevention:risk:approve_legal": { id: "p-prev-risk-approve-legal", description: "Aprobar la MIPER como Legal y RRHH o solicitar correcciones; la aprobación sella una versión inmutable" },
     "prevention:risk:catalog:manage": { id: "p-prev-risk-catalog", description: "Administrar el catálogo de factores de riesgo de la MIPER" },
+    // Ejecutar el Programa de Trabajo de la MIPER (F2): registrar «Se hizo» /
+    // «No se hizo» y adjuntar la evidencia de sus actividades. Permiso propio y
+    // no `prevention:risk:edit`: quien levanta la matriz en faena no
+    // necesariamente lleva su programa, y al revés. Tampoco cuelga de
+    // `pdtp:execute`, que es el programa del DS 44 y no el de la MIPER.
+    "prevention:risk:program:execute": { id: "p-prev-risk-program-execute", description: "Registrar Se hizo / No se hizo y la evidencia de las actividades del Programa de Trabajo de la MIPER" },
     "prevention:risk:override_segregation": { id: "p-prev-risk-override", description: "Autorizar excepción fundamentada a la segregación de verificación de controles MIPER" },
     "prevention:legal:view": { id: "p-prev-legal-view", description: "Ver el registro legal y la aplicabilidad dentro de la faena autorizada" },
     "prevention:legal:assess": { id: "p-prev-legal-assess", description: "Preparar requisitos, proponer aplicabilidad y evaluar cumplimiento" },
@@ -840,6 +847,18 @@ export const preventionModule = {
     { roleSlug: "administrador", permission: "prevention:risk:approve_legal" },
     { roleSlug: "prevencionista", permission: "prevention:risk:catalog:manage" },
     { roleSlug: "administrador", permission: "prevention:risk:catalog:manage" },
+    /* Ejecución del Programa de Trabajo de la MIPER (F2, spec 2026-09-30 §6.3):
+     * la lleva quien está en faena —PRF, PR, JT, ST y el administrador de
+     * contrato— más el administrador. Ningún rol del flujo de firmas la recibe
+     * por defecto: ni la Jefatura del Depto. de Prevención (`jefa_chome`, el
+     * revisor técnico) ni Legal y RRHH (`gerente_legal_rrhh`, el aprobador
+     * final). Ejecutar el programa no es firmar la matriz. */
+    { roleSlug: "prevencionista_faena", permission: "prevention:risk:program:execute" },
+    { roleSlug: "prevencionista",       permission: "prevention:risk:program:execute" },
+    { roleSlug: "jefe_terreno",         permission: "prevention:risk:program:execute" },
+    { roleSlug: "supervisor_terreno",   permission: "prevention:risk:program:execute" },
+    { roleSlug: "admin_contrato",       permission: "prevention:risk:program:execute" },
+    { roleSlug: "administrador",        permission: "prevention:risk:program:execute" },
     { roleSlug: "cphs", permission: "prevention:risk:view" },
     { roleSlug: "jefe_terreno", permission: "prevention:risk:view" },
     { roleSlug: "administrador", permission: "prevention:risk:view" },

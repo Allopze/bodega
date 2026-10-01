@@ -57,6 +57,7 @@ describe("prevention module RBAC", () => {
       "prevention:risk:review",
       "prevention:risk:approve_legal",
       "prevention:risk:catalog:manage",
+      "prevention:risk:program:execute",
       "prevention:risk:override_segregation",
       "prevention:legal:view",
       "prevention:legal:assess",
@@ -350,6 +351,40 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:incidents:close")).not.toContain("jefe_terreno")
     expect(rolesFor("prevention:incidents:close")).not.toContain("prevencionista_faena")
     expect(rolesFor("prevention:incidents:diffuse")).toContain("jefe_terreno")
+  })
+
+  /* Ejecución del Programa de Trabajo de la MIPER (F2, spec 2026-09-30 §6.3).
+   * Permiso propio y no `prevention:risk:edit`: llevar el programa en faena no
+   * es corregir la matriz. Y, a diferencia de la ejecución del PDTP, ningún rol
+   * del flujo de firmas lo recibe por defecto —ni la Jefatura del Depto. de
+   * Prevención, que revisa, ni Legal y RRHH, que aprueban: ejecutar el programa
+   * no es firmar la matriz. */
+  it("gives program execution its own permission and keeps the signing flow out of it", () => {
+    const rolesFor = (permission: string) => preventionModule.defaultGrants
+      .filter((grant) => grant.permission === permission)
+      .map((grant) => grant.roleSlug)
+      .sort()
+
+    for (const permission of ["prevention:risk:program:execute"]) {
+      expect(preventionModule.permissions).toContain(permission)
+      expect(Object.keys(preventionModule.permissionMeta)).toContain(permission)
+      expect(ALL_MODULE_PERMISSIONS).toContain(permission)
+    }
+    // Conjunto cerrado del §6.3: terreno, prevención y administración.
+    expect(rolesFor("prevention:risk:program:execute")).toEqual([
+      "admin_contrato",
+      "administrador",
+      "jefe_terreno",
+      "prevencionista",
+      "prevencionista_faena",
+      "supervisor_terreno",
+    ])
+    // Ningún rol del flujo de firmas de la MIPER lo recibe por defecto: la
+    // Jefatura (`jefa_chome`) revisa y Legal y RRHH (`gerente_legal_rrhh`)
+    // aprueban; ninguno ejecuta el programa.
+    for (const role of ["jefa_chome", "gerente_legal_rrhh"]) {
+      expect(rolesFor("prevention:risk:program:execute")).not.toContain(role)
+    }
   })
 
   /*
