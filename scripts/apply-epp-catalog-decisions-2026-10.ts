@@ -74,9 +74,9 @@ const NEW_VARIANTS: ReadonlyArray<{ template: string; attribute: string; values:
 ]
 
 /** Precio de referencia único para todas las variantes activas de un nombre. */
-const GROUP_PRICES: ReadonlyArray<{ name: string; price: string }> = [
-  { name: "Buzo Tyvek 500 Xpert TY198S", price: "4100.00" },
-  { name: "Guante Cabritilla Activex sin forro gris", price: "930.00" },
+const GROUP_PRICES: ReadonlyArray<{ name: string; price: number }> = [
+  { name: "Buzo Tyvek 500 Xpert TY198S", price: 4100 },
+  { name: "Guante Cabritilla Activex sin forro gris", price: 930 },
 ]
 
 /** Valor único de un atributo en todas las variantes activas de un nombre. */
@@ -149,7 +149,7 @@ async function openProcurement(productId: string): Promise<string[]> {
   ]
 }
 
-async function audit(tx: Tx, product: { id: string; sku: string }, oldState: object, newState: object, why: string) {
+async function audit(tx: Tx, product: { id: string; sku: string }, oldState: Record<string, unknown>, newState: Record<string, unknown>, why: string) {
   await recordAudit({
     userId: null, action: "update", entityType: "product", entityId: product.id, entityCode: product.sku,
     oldState, newState, reason: `${REASON}: ${why}`,
@@ -310,7 +310,8 @@ async function runGroupPrices() {
   for (const plan of GROUP_PRICES) {
     for (const product of (await loadEppByName(plan.name)).filter((p) => p.isActive)) {
       const action = `precio de referencia → ${plan.price}`
-      // `numeric` vuelve como texto sin ceros a la derecha («930», no «930.00»).
+      // `reference_price` se declara con `mode: "number"` (db/schema/products.ts):
+      // Drizzle lo lee y lo escribe como número, no como texto.
       if (product.referencePrice != null && Number(product.referencePrice) === Number(plan.price)) continue
       if (!apply) { report({ sku: product.sku, action, result: "dry-run", detail: `era ${product.referencePrice}` }); continue }
       await db.transaction(async (tx) => {
