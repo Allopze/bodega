@@ -129,6 +129,43 @@ describe("libro RE-04 de una versión sellada de la MIPER", () => {
 
   it("nombra el archivo con el código de faena, el período y la versión", () => {
     expect(miperFilenameBase(detail)).toBe("RE-04-MIPER-BIO-2026-v2")
+    // El nombre del libro vivo se distingue del sellado.
+    expect(miperFilenameBase(detail, { liveState: true })).toBe("RE-04-MIPER-BIO-2026-v2-vivo")
+  })
+
+  it("en el sellado por defecto la matriz sale de la foto y no lleva la leyenda", async () => {
+    const workbook = await buildMiperWorkbook(detail, null)
+    expect(String(workbook.getWorksheet("RE-04 IPER")!.getCell("A1").value)).not.toContain("no aprobados")
+    // Sellado puro (versión vigente, programa no adelantado): sin aviso en RE-04.1.
+    expect(workbook.getWorksheet("Programa de Trabajo")!.getCell("A2").value).toBe("")
+  })
+
+  it("con liveState la matriz sale del estado vivo y las hojas llevan la leyenda", async () => {
+    const liveEntry = snapshot.entries[0]!
+    const liveSnapshot: MiperSnapshot = {
+      header: snapshot.header,
+      entries: [
+        { ...liveEntry, id: "live-1", hazard: "Peligro vivo" },
+        { ...liveEntry, id: "live-2", rowNumber: 2, hazard: "Otro peligro vivo" },
+      ],
+    }
+    const sealed = await buildMiperWorkbook(detail, null)
+    const live = await buildMiperWorkbook(detail, null, { liveState: true, liveSnapshot })
+
+    expect(String(sealed.getWorksheet("RE-04 IPER")!.getCell("A1").value)).not.toContain("no aprobados")
+    expect(String(live.getWorksheet("RE-04 IPER")!.getCell("A1").value)).toContain("Incluye cambios no aprobados")
+    expect(String(live.getWorksheet("Programa de Trabajo")!.getCell("A2").value)).toContain("Incluye cambios no aprobados")
+
+    // El sellado conserva la única fila de la foto; el vivo trae las dos del estado vivo.
+    expect(sealed.getWorksheet("RE-04 IPER")!.getCell("K14").value).toBe("Camión en pendiente")
+    expect(live.getWorksheet("RE-04 IPER")!.getCell("K14").value).toBe("Peligro vivo")
+    expect(live.getWorksheet("RE-04 IPER")!.getCell("K15").value).toBe("Otro peligro vivo")
+  })
+
+  it("en el sellado el aviso del programa aparece sólo si está adelantado respecto de la versión", async () => {
+    const ahead = { ...program, program: { ...program.program, lastReviewedOn: "2026-05-01" } } as unknown as ProgramWorkspace
+    const workbook = await buildMiperWorkbook(detail, ahead)
+    expect(String(workbook.getWorksheet("Programa de Trabajo")!.getCell("A2").value)).toContain("cambios posteriores a la aprobación")
   })
 
   it("agrega la hoja Programa de Trabajo (RE-04.1) con su encabezado y una línea por actividad", async () => {

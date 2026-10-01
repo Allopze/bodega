@@ -1,11 +1,36 @@
 /**
- * Libro Excel RE-04 de una versión SELLADA de la MIPER. Lo comparten la
- * descarga (`app/api/prevencion/miper/[id]/export`) y el archivado automático
- * al aprobar, así que la copia archivada es el mismo libro que se descarga. Se
- * arma desde la foto de la versión, nunca desde los datos vivos: lo que se
- * archiva es exactamente lo que se aprobó. La única excepción es la hoja
- * "Programa de Trabajo" (RE-04.1): el programa no vive en la foto sellada (ver
- * `readLiveProgram`), así que se lee del estado vivo y la propia hoja lo declara.
+ * Libro Excel RE-04 de una versión de la MIPER. Hay dos modos (Task 6 de la F3):
+ *
+ * 1. **Sellado (por defecto).** Lo comparten la descarga sin parámetros
+ *    (`app/api/prevencion/miper/[id]/export`) y el archivado automático al
+ *    aprobar (`generated-documents-archive`), así que la copia archivada es el
+ *    mismo libro que se descarga. La matriz sale de la foto de la versión
+ *    (`detail.version.snapshot`), nunca de los datos vivos: lo que se archiva es
+ *    exactamente lo que se aprobó.
+ * 2. **Estado vivo (`{ liveState: true, liveSnapshot }`).** La matriz sale del
+ *    estado vivo del MIPER (`buildMiperSnapshot`, lo pasa el llamador — este
+ *    módulo nunca toca la base) y cada hoja de la matriz y del programa lleva la
+ *    leyenda "Incluye cambios no aprobados". El nombre de archivo se distingue
+ *    con el sufijo "-vivo" (`miperFilenameBase`).
+ *
+ * **Criterio de la hoja "Programa de Trabajo" (RE-04.1) — se cierra en la Task 6.**
+ * El programa no vive en la foto sellada: meterlo en `MiperSnapshot` cambiaría su
+ * forma, recalcularía `snapshot_sha256` de las versiones ya emitidas y arrastraría
+ * al motor de flujo (huella firmada y diff de "cambios pendientes"), fuera del
+ * alcance de esta tarea. Por eso el programa se lee del **estado vivo en ambos
+ * modos** (F2 Task 9 lo admitió explícitamente) y la hoja declara su procedencia:
+ *
+ * - En **modo vivo** la hoja lleva la leyenda de la matriz, sin condiciones.
+ * - En **modo sellado** el aviso es **condicional** (Task 6, punto 4): sólo se
+ *   declara "programa al momento de la descarga" cuando el programa leído está
+ *   **adelantado** respecto de la versión exportada (una versión sellada posterior
+ *   existe, o el programa se revisó después de aprobarla). En el sellado puro —el
+ *   de la versión vigente— no hay aviso, para no contaminar el libro aprobado.
+ *
+ * La matriz sigue siendo SIEMPRE lo sellado en el modo por defecto: el único dato
+ * vivo del libro sellado es el programa, y va declarado. Si algún día el programa
+ * debe formar parte de la evidencia legal archivada, hay que sellarlo en la foto
+ * (trabajo mayor, no de esta tarea).
  */
 import ExcelJS from "exceljs"
 import { sanitizeCell as safe } from "@/lib/reports/export-module/excel-builder"
@@ -29,8 +54,27 @@ function headerStyle(row: ExcelJS.Row) {
   row.eachCell((cell) => { cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } } })
 }
 
-export function miperFilenameBase(detail: MiperVersionDetail) {
-  return `RE-04-MIPER-${detail.worksiteCode}-${detail.version.period ?? "sin-periodo"}-v${detail.version.versionNumber}`
+/**
+ * Leyenda obligatoria del modo vivo. Sólo se agrega cuando `liveState` está
+ * activo: el libro por defecto (sellado) nunca la lleva. El nombre de archivo
+ * usa el sufijo `-vivo` para que una descarga viva no se confunda con la sellada
+ * (misma faena, mismo período, misma versión).
+ */
+export const LIVE_LEGEND = "Incluye cambios no aprobados"
+
+export type MiperWorkbookOptions = {
+  /** Arma el libro desde el estado vivo. Por defecto, sellado. */
+  liveState?: boolean
+  /**
+   * Estado vivo de la matriz (salida de `buildMiperSnapshot`). Lo aporta el
+   * llamador; este módulo nunca lee la base. Sólo se usa con `liveState`.
+   */
+  liveSnapshot?: MiperSnapshot
+}
+
+export function miperFilenameBase(detail: MiperVersionDetail, options: { liveState?: boolean } = {}) {
+  const base = `RE-04-MIPER-${detail.worksiteCode}-${detail.version.period ?? "sin-periodo"}-v${detail.version.versionNumber}`
+  return options.liveState ? `${base}-vivo` : base
 }
 
 const PROGRAM_FREQUENCY_LABEL: Record<ProgramScheduleKind, string> = {
@@ -50,8 +94,9 @@ const PROGRAM_READ_ACCESS: MiperAccess = {
 }
 
 /**
- * DECISIÓN del Step 1 de la Task 9: el programa de la hoja sale de las **filas
- * vivas** por `matrixId` al momento de armar el libro, no del `snapshot`.
+ * DECISIÓN del Step 1 de la Task 9 (F2), reafirmada por la Task 6 (F3): el
+ * programa de la hoja sale de las **filas vivas** por `matrixId` al momento de
+ * armar el libro, no del `snapshot`, en ambos modos.
  *
  * El `snapshot` sellado guarda encabezado, filas y medidas, pero no el programa
  * RE-04.1. Meterlo ahí cambiaría la forma de `MiperSnapshot`, recalcularía
@@ -59,7 +104,9 @@ const PROGRAM_READ_ACCESS: MiperAccess = {
  * —toca la huella firmada y el diff de "cambios pendientes"—, algo fuera del
  * alcance de esta tarea. El plan admite explícitamente la alternativa: leerlo al
  * momento de armar el libro y declararlo en la hoja ("programa al momento de la
- * descarga"), que es además lo que hará la exportación del estado vivo de F3.
+ * descarga"). Lo que la Task 6 cierra es el **cómo se declara**: el aviso de la
+ * hoja RE-04.1 es condicional en el sellado (ver `addProgramSheet`) y se vuelve
+ * la leyenda de la matriz en el modo vivo.
  *
  * La lectura es best-effort: si falla, la hoja RE-04.1 queda vacía con su
  * mensaje. Un problema al leer el programa no debe tumbar la descarga del RE-04
@@ -72,6 +119,21 @@ async function readLiveProgram(matrixId: string): Promise<ProgramWorkspace | nul
   } catch {
     return null
   }
+}
+
+/**
+ * ¿El programa vivo está adelantado respecto de la versión sellada que se
+ * exporta? Es la condición del aviso de la hoja RE-04.1 en modo sellado (Task 6,
+ * punto 4). Dos señales, en orden: el programa revisado en una versión posterior
+ * a la aprobada; o, si no hay fecha, la existencia de una versión sellada más
+ * nueva que la exportada. En el sellado puro (versión vigente, sin programa
+ * posterior) devuelve `false` y la hoja no lleva aviso.
+ */
+function programIsAheadOfVersion(detail: MiperVersionDetail, workspace: ProgramWorkspace | null): boolean {
+  const reviewed = workspace?.program?.lastReviewedOn ?? null
+  if (reviewed && detail.version.approvedAt) return reviewed > detail.version.approvedAt
+  const latest = detail.versions.reduce((max, version) => Math.max(max, version.versionNumber), detail.version.versionNumber)
+  return latest > detail.version.versionNumber
 }
 
 function programScheduleLabel(action: ProgramActionView): string {
@@ -112,8 +174,12 @@ const PROGRAM_COLUMNS = [
  * encabezado usa los datos del programa cuando existen y cae a la foto sellada
  * para los campos de empresa (período, razón social, RUT, dirección y
  * representante), por lo que incluso sin programa queda identificable.
+ *
+ * El aviso de la fila 2 es condicional (Task 6, punto 4): en modo vivo es la
+ * leyenda de la matriz; en sellado sólo aparece cuando el programa leído está
+ * adelantado respecto de la versión exportada; en el sellado puro queda vacío.
  */
-function addProgramSheet(workbook: ExcelJS.Workbook, detail: MiperVersionDetail, snapshot: MiperSnapshot, workspace: ProgramWorkspace | null) {
+function addProgramSheet(workbook: ExcelJS.Workbook, detail: MiperVersionDetail, snapshot: MiperSnapshot, workspace: ProgramWorkspace | null, liveState: boolean) {
   const h = snapshot.header
   const program = workspace?.program ?? null
   const sheet = workbook.addWorksheet("Programa de Trabajo", {
@@ -123,7 +189,11 @@ function addProgramSheet(workbook: ExcelJS.Workbook, detail: MiperVersionDetail,
   sheet.getCell("A1").value = "Programa de Trabajo Preventivo (RE-04.1)"
   sheet.getCell("A1").font = { bold: true, size: 14 }
   sheet.mergeCells("A2:H2")
-  sheet.getCell("A2").value = "Programa al momento de la descarga: se lee del estado vivo y puede incluir cambios posteriores a la aprobación de la versión."
+  sheet.getCell("A2").value = liveState
+    ? `${LIVE_LEGEND}: el programa se lee del estado vivo del MIPER.`
+    : programIsAheadOfVersion(detail, workspace)
+      ? "Programa al momento de la descarga: se lee del estado vivo y puede incluir cambios posteriores a la aprobación de la versión."
+      : ""
   sheet.getCell("A2").font = { italic: true, size: 9 }
 
   const elaboratedOn = program?.elaboratedOn ?? h.elaboratedOn
@@ -181,11 +251,16 @@ function addProgramSheet(workbook: ExcelJS.Workbook, detail: MiperVersionDetail,
 
 /**
  * `program` es la costura de pruebas: si se omite, el libro lee el programa vivo
- * por `matrixId` (producción); si se pasa `null` o un workspace, se usa tal cual
- * (tests, sin tocar la base).
+ * por `matrixId` (producción, en ambos modos); si se pasa `null` o un workspace,
+ * se usa tal cual (tests, sin tocar la base).
+ *
+ * `options.liveState` cambia la fuente de la matriz: por defecto (sellado) sale
+ * de `detail.version.snapshot`; con `liveState` sale de `options.liveSnapshot`
+ * (el estado vivo) y el libro lleva la leyenda "Incluye cambios no aprobados".
  */
-export async function buildMiperWorkbook(detail: MiperVersionDetail, program?: ProgramWorkspace | null) {
-  const snapshot = detail.version.snapshot as MiperSnapshot
+export async function buildMiperWorkbook(detail: MiperVersionDetail, program?: ProgramWorkspace | null, options: MiperWorkbookOptions = {}) {
+  const liveState = options.liveState === true
+  const snapshot = liveState && options.liveSnapshot ? options.liveSnapshot : (detail.version.snapshot as MiperSnapshot)
   const h = snapshot.header
   const programWorkspace = program === undefined ? await readLiveProgram(detail.version.matrixId) : program
   const workbook = new ExcelJS.Workbook()
@@ -195,7 +270,9 @@ export async function buildMiperWorkbook(detail: MiperVersionDetail, program?: P
     pageSetup: { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "12:13" },
   })
   sheet.mergeCells("A1:U1")
-  sheet.getCell("A1").value = "Matriz de Identificación de Peligros y Evaluación de Riesgos (IPER)"
+  sheet.getCell("A1").value = liveState
+    ? `Matriz de Identificación de Peligros y Evaluación de Riesgos (IPER) — ${LIVE_LEGEND}`
+    : "Matriz de Identificación de Peligros y Evaluación de Riesgos (IPER)"
   sheet.getCell("A1").font = { bold: true, size: 14 }
   // `safe()` devuelve el valor ya neutralizado (string | number | boolean):
   // las columnas de valor no son sólo texto.
@@ -267,7 +344,7 @@ export async function buildMiperWorkbook(detail: MiperVersionDetail, program?: P
   criteria.columns = [{ width: 30 }, { width: 10 }, { width: 110 }]
   criteria.eachRow((row) => { row.alignment = { vertical: "top", wrapText: true } })
 
-  addProgramSheet(workbook, detail, snapshot, programWorkspace)
+  addProgramSheet(workbook, detail, snapshot, programWorkspace, liveState)
 
   return workbook
 }
