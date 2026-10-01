@@ -57,6 +57,10 @@ export interface SizeFamilyOption {
   family:        string
   attributeName: string
   codes:         string[]
+  /** Nombre de la escala para el asistente («Ropa», «Calzado»). */
+  label?:        string
+  /** Tallas que el asistente deja marcadas al elegir la escala. Sin él, todas. */
+  defaultCodes?: string[]
 }
 
 export interface ProductFormProps {

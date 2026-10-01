@@ -225,7 +225,7 @@ describe("deploy workflow", () => {
   it("empaqueta y copia los one-shots de tallas y del estado de solicitudes", () => {
     const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
 
-    for (const script of ["seed-size-catalog", "reconcile-epp-duplicate-sizes", "backfill-epp-clothing-sizes", "reconcile-request-status"]) {
+    for (const script of ["seed-size-catalog", "reconcile-epp-duplicate-sizes", "backfill-epp-clothing-sizes", "backfill-epp-size-ranges", "reconcile-request-status"]) {
       const build = dockerfile.match(new RegExp(
         `RUN ./node_modules/.bin/esbuild scripts/${script}\\.ts[\\s\\S]*?--outfile=/tmp/${script}\\.mjs`,
       ))?.[0]
@@ -237,6 +237,18 @@ describe("deploy workflow", () => {
       // deploy falla con "module not found" recién en producción.
       expect(dockerfile, script).toContain(`COPY --from=build /tmp/${script}.mjs ./scripts/${script}.mjs`)
     }
+  })
+
+  it("da `require` al bundle del backfill de rangos de talla", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const build = dockerfile.match(
+      /RUN .\/node_modules\/.bin\/esbuild scripts\/backfill-epp-size-ranges\.ts[\s\S]*?--outfile=\/tmp\/backfill-epp-size-ranges\.mjs/,
+    )?.[0]
+
+    // Sin el banner el script muere con «Dynamic require of "crypto" is not
+    // supported» antes de ejecutar una línea: pasó en el primer dry-run en
+    // producción (2026-10-01).
+    expect(build).toContain("const require=__cr(import.meta.url)")
   })
 
   /*

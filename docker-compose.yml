@@ -466,6 +466,30 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/backfill-epp-clothing-sizes.mjs", "--apply"]
 
+  # One-shot manual: completa 38..46 en todo calzado y S..3XL en toda ropa o
+  # pantalón para que Solicitudes pueda ofrecerlas, y da de baja (sin borrar)
+  # las variantes sin talla y sin stock ni historial que rompían el selector. A
+  # diferencia del de ropa **no corre en el deploy** y su comando por omisión es
+  # el dry-run: el catálogo histórico no declara `size_family`, así que decide
+  # por nombre + escala, y eso se revisa antes de escribir.
+  #
+  #   docker compose run --rm backfill-epp-size-ranges                                              # informa
+  #   docker compose run --rm backfill-epp-size-ranges node scripts/backfill-epp-size-ranges.mjs --apply  # escribe
+  #
+  backfill-epp-size-ranges:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/backfill-epp-size-ranges.mjs"]
+
   # One-shot: recalcula el estado derivado de las solicitudes que quedaron con
   # el que calculó una regla de cierre anterior. `purchase_requests.status` es
   # un derivado de sus ítems y el rollup solo lo recalcula cuando un ítem

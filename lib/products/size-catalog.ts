@@ -21,22 +21,40 @@ export interface SizeFamilyDefinition {
   /** Nombre del atributo que crea el asistente («Talla calzado»). */
   attributeName: string
   codes: readonly string[]
+  /**
+   * Tallas que se ofrecen marcadas al crear un producto de esta familia, y las
+   * que el backfill de rangos garantiza en el catálogo. Sin declarar, todas.
+   *
+   * No es lo mismo que `codes`: ahí conviene ser generoso (un trabajador chico
+   * puede necesitar un XS), pero *crear* por omisión una variante que nadie
+   * compra es basura de catálogo con SKU propio. Ropa y pantalón S..3XL es lo
+   * que muestra la compilación de compras 2022-2026 (el XS nunca se compró);
+   * calzado 38..46 es el rango que se pidió poder solicitar de todo calzado.
+   */
+  defaultCodes?: readonly string[]
+  /** Nombre de la escala para quien crea el producto («Ropa», «Calzado»). */
+  label: string
 }
 
 export const SIZE_FAMILIES: readonly SizeFamilyDefinition[] = [
   {
     family: "ropa",
     attributeName: "Talla",
+    label: "Ropa",
     codes: ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"],
+    defaultCodes: ["S", "M", "L", "XL", "2XL", "3XL"],
   },
   {
     family: "calzado",
     attributeName: "Talla calzado",
+    label: "Calzado",
     codes: ["36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46"],
+    defaultCodes: ["38", "39", "40", "41", "42", "43", "44", "45", "46"],
   },
   {
     family: "guantes",
     attributeName: "Talla guantes",
+    label: "Guantes",
     // Letras y no numeración europea (7-11): es lo que el catálogo actual ya
     // tiene escrito en sus atributos. Cambiarlo huerfanizaría esas variantes.
     codes: ["XS", "S", "M", "L", "XL", "2XL"],
@@ -44,6 +62,7 @@ export const SIZE_FAMILIES: readonly SizeFamilyDefinition[] = [
   {
     family: "pantalon",
     attributeName: "Talla inferior",
+    label: "Pantalón",
     // Letras, no numeración de cintura. Esta familia nació con cinturas 28..48
     // porque `workers.size_bottom` guardaba una, pero la compilación de compras
     // 2022-2026 no deja lugar a duda: 11 productos de pantalón, 4.491 unidades,
@@ -54,10 +73,12 @@ export const SIZE_FAMILIES: readonly SizeFamilyDefinition[] = [
     // trabajador puede ser L arriba y XL abajo, y `size_top`/`size_bottom`
     // existen justamente para capturar esa diferencia.
     codes: ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"],
+    defaultCodes: ["S", "M", "L", "XL", "2XL", "3XL"],
   },
   {
     family: "casco",
     attributeName: "Talla casco",
+    label: "Casco",
     // `Única` y no S/M/L/XL: manda la base. La migración 0088 sembró esta
     // familia con un solo código y es lo que el catálogo real usa —el casco de
     // obra chileno se ajusta con arnés, no se sizea—, así que la semilla que
@@ -103,4 +124,9 @@ export function sizeFamilyByAttributeName(attributeName: string): SizeFamilyDefi
 export function sizeFamilyForWorkerField(field: WorkerSizeField): string | null {
   return SIZE_FAMILIES.find((definition) => workerSizeFieldFor(definition.attributeName) === field)
     ?.family ?? null
+}
+
+/** Tallas marcadas por omisión de una familia (ver `defaultCodes`). */
+export function defaultSizeCodes(definition: Pick<SizeFamilyDefinition, "codes" | "defaultCodes">): readonly string[] {
+  return definition.defaultCodes ?? definition.codes
 }

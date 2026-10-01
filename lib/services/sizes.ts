@@ -12,7 +12,7 @@
  */
 import { db } from "@/db"
 import { sizeCatalog } from "@/db/schema/sizes"
-import { SIZE_FAMILIES, sizeCatalogRows } from "@/lib/products/size-catalog"
+import { SIZE_FAMILIES, defaultSizeCodes, sizeCatalogRows } from "@/lib/products/size-catalog"
 import { compareSizeLabels } from "@/lib/products/product-size"
 import { nanoid } from "@/lib/id"
 import { eq, asc } from "drizzle-orm"
@@ -26,6 +26,9 @@ export interface SizeFamilyOptions {
   family: string
   attributeName: string
   codes: string[]
+  label: string
+  /** Las de `defaultSizeCodes` que siguen activas en `size_catalog`. */
+  defaultCodes: string[]
 }
 
 /**
@@ -53,11 +56,19 @@ export async function getSizeFamilyOptions(): Promise<SizeFamilyOptions[]> {
     else byFamily.set(row.family, [row.code])
   }
 
-  return SIZE_FAMILIES.map((definition) => ({
-    family: definition.family,
-    attributeName: definition.attributeName,
-    codes: byFamily.get(definition.family) ?? [...definition.codes].sort(compareSizeLabels),
-  }))
+  return SIZE_FAMILIES.map((definition) => {
+    const codes = byFamily.get(definition.family) ?? [...definition.codes].sort(compareSizeLabels)
+    // Una talla por omisión dada de baja en la base no se ofrece marcada: manda
+    // la tabla, igual que para `codes`.
+    const defaults = new Set(defaultSizeCodes(definition))
+    return {
+      family: definition.family,
+      attributeName: definition.attributeName,
+      codes,
+      label: definition.label,
+      defaultCodes: codes.filter((code) => defaults.has(code)),
+    }
+  })
 }
 
 /**

@@ -1,4 +1,5 @@
 import { duplicateNormalizedNames, normalizeAttributeName } from "@/lib/products/attribute-names"
+import { isSizeAttributeName, normalizeSizeLabel } from "@/lib/products/product-size"
 import type { AttributeRow, SupplierRow, AttributeMultiValues, VariantCombo, WizardStep, WizardGeneralState, WizardCloseAction } from "./product-form.types"
 
 // ── Text helpers ─────────────────────────────────────────────────────────────
@@ -10,8 +11,13 @@ export { normalizeAttributeName as normalizeProductAttributeName } from "@/lib/p
  *  las variantes ya existentes de una familia, así que el cliente y el servidor
  *  siempre hablan del mismo identificador. */
 export function variantComboKey(attributes: Array<{ name: string; value: string }>): string {
+  // La talla se compara canonizada: `T/L` histórica y `L` nueva son la misma
+  // talla, y sin esto «Agregar tallas» ofrecía y creaba una segunda L.
   return JSON.stringify(
-    attributes.map((a) => [normalizeAttributeName(a.name), a.value.trim()]).sort(),
+    attributes.map((a) => [
+      normalizeAttributeName(a.name),
+      isSizeAttributeName(a.name) ? normalizeSizeLabel(a.value) : a.value.trim(),
+    ]).sort(),
   )
 }
 

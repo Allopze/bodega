@@ -26,8 +26,23 @@ describe("getSizeVariantPicker", () => {
     })
   })
 
-  it("does not flatten families with repeated size choices", () => {
-    expect(getSizeVariantPicker([variant("a", "M"), variant("b", "M")])).toBeNull()
+  it("ofrece talla aunque la familia tenga una fila histórica sin talla, y la deja fuera", () => {
+    const unsized: ProductOption = { ...variant("legacy", "x"), attributes: [{ id: "color", name: "Color", type: "select", isRequired: true, drivesQuantity: false, options: JSON.stringify(["Amarillo"]) }] }
+    const picker = getSizeVariantPicker([unsized, variant("l", "T/L", "Talla"), variant("s", "T/S", "Talla")])
+    expect(picker).toEqual({ attributeName: "Talla", choices: [{ id: "s", label: "T/S" }, { id: "l", label: "T/L" }] })
+  })
+
+  it("sin ninguna variante con talla no hay selector de talla", () => {
+    const noSize = (id: string): ProductOption => ({ ...variant(id, "x"), attributes: [] })
+    expect(getSizeVariantPicker([noSize("a"), noSize("b")])).toBeNull()
+  })
+
+  it("ofrece una talla repetida una sola vez, apuntando a la variante de SKU menor", () => {
+    const repeated = { ...variant("b", "M"), sku: "EPP-200" }
+    expect(getSizeVariantPicker([repeated, { ...variant("a", "M"), sku: "EPP-100" }, variant("l", "L")])).toEqual({
+      attributeName: "Talla calzado",
+      choices: [{ id: "a", label: "M" }, { id: "l", label: "L" }],
+    })
   })
 
   it("agrupa las tallas aunque el atributo venga con nombres distintos (migración parcial)", () => {
@@ -41,18 +56,18 @@ describe("getSizeVariantPicker", () => {
     })
   })
 
-  it("descarta la familia cuando el T/ de una talla la vuelve indistinguible de otra", () => {
+  it("trata `T/L` y `L` como la misma talla y la ofrece una vez", () => {
     // `T/L` canoniza a `L` (abreviatura de "Talla"): si la familia también
     // tiene una variante ya escrita `L`, son la misma talla dos veces y no se
     // puede ofrecer como dos opciones, aunque los nombres de atributo
     // coincidan.
-    expect(getSizeVariantPicker([variant("a", "T/L", "Talla"), variant("b", "L", "Talla")])).toBeNull()
+    expect(getSizeVariantPicker([variant("a", "T/L", "Talla"), variant("b", "L", "Talla")])?.choices).toEqual([{ id: "b", label: "L" }])
   })
 
-  it("descarta la familia cuando dos variantes son la misma talla escrita distinto", () => {
+  it("no ofrece dos veces la misma talla escrita distinto", () => {
     // `42` y `42.0` no son dos opciones: son la misma talla en dos filas, y
     // ofrecerlas obligaría a elegir entre variantes indistinguibles.
-    expect(getSizeVariantPicker([variant("a", "42"), variant("b", "42.0")])).toBeNull()
+    expect(getSizeVariantPicker([variant("a", "42"), variant("b", "42.0")])?.choices).toEqual([{ id: "a", label: "42" }])
   })
 
   it("ordena las tallas por escala y no por el orden de la consulta", () => {
