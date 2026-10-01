@@ -26,7 +26,7 @@ La MIPER ya no se piensa como una planilla que se sube una vez al año, sino com
 
 ## 2. La MIPER es un Documento Vivo por Faena y Período
 
-Cada faena tiene **una MIPER por período**, entendiendo por período el año (2026, 2027, …). Al abrir una MIPER encontrarás su espacio de trabajo con cuatro pestañas: **Antecedentes · Matriz · Revisión · Historial**.
+Cada faena tiene **una MIPER por período**, entendiendo por período el año (2026, 2027, …). Al abrir una MIPER encontrarás su espacio de trabajo con cinco pestañas: **Antecedentes · Matriz · Programa · Revisión · Historial**.
 
 ### Cómo crear la MIPER de un período nuevo
 
@@ -242,11 +242,104 @@ Al aprobarse la primera versión del período, la MIPER queda **Vigente**, el pe
 *   **La lista de versiones es la hoja *Modificaciones*.** En la pestaña **Historial** están la cadena de MIPER de la faena por período, las versiones selladas de cada una (con enlace y descarga) y la línea de tiempo de los eventos con actor, rol, fecha y hora.
 *   **El MIPER vigente es mutable.** Puedes corregirlo o agregar riesgos sin esperar al año siguiente: el cambio **aplica de inmediato** y queda rotulado como *cambio pendiente de revisión* hasta el próximo sellado. Cuando lo envías, se revisa y se aprueba, se sella la versión siguiente (vN+1) y la anterior sigue consultable.
 *   **Descargar la versión aprobada.** El botón **"Descargar vN (Excel)"** genera el libro RE-04 desde la foto sellada —no desde los datos vivos— con las hojas *RE-04 IPER*, *Modificaciones* y *Criterios de Evaluación IPER*. El mismo libro es el que queda archivado al aprobar.
-*   **Programa de Trabajo (RE-04.1):** el programa de actividades derivado de las medidas de la MIPER llega en la fase siguiente.
+*   **Programa de Trabajo (RE-04.1):** el programa de actividades derivado de las medidas de la MIPER no se sella con la versión, pero **se pone en marcha con ella**: la primera aprobación es la que lo habilita a ejecutarse (ver «El Programa de Trabajo Preventivo (RE-04.1)», sección 9).
 
 ---
 
-## 9. Difusión de la MIPER a los Trabajadores (Actividad PDTP N° 36)
+## 9. El Programa de Trabajo Preventivo (RE-04.1)
+
+> **Marco Normativo:** Decreto Supremo 44 (DS 44), Artículo 8 (Programa de Trabajo Preventivo).  
+> **Rutas en Plataforma:**  
+> *   Pestaña **Programa** del espacio de trabajo de una MIPER: `/prevencion/miper/[id]`  
+> **Permisos del Sistema:** `prevention:risk:edit` (administrar el programa) y `prevention:risk:program:execute` (registrar la ejecución).  
+> **Actividad PDTP Asociada:** N° 35 ("Mantener y actualizar inventario de riesgos MIPER").
+
+El **Programa de Trabajo Preventivo** es el formato **RE-04.1**: la lista de actividades concretas —con responsable y fecha— con que se llevan a la práctica en terreno las medidas de control de la matriz. Es **propio del MIPER**: hay **uno por faena y período**, nace con la matriz y se reemplaza con ella cuando entra el período siguiente. No debe confundirse con el **PDTP corporativo** (el programa anual de 81 actividades, que se opera en `/prevencion/pdtp`).
+
+La relación con el PDTP es **sólo de cobertura y acreditación**: una medida del MIPER puede declararse como fuente que cubre una actividad PDTP, y cada sellado de la matriz tiene sus dos efectos ya conocidos del programa anual.
+
+> [!IMPORTANT]
+> **QUÉ DISPARA EL SELLADO:** al aprobarse una versión de la MIPER (Legal y RRHH) (1) se **acredita la actividad N° 35** del PDTP —"Mantener y actualizar inventario de riesgos MIPER"— y (2) se **abre el plazo de 30 días** para actualizar el inventario. Ese mismo sellado es lo que **pone en marcha el programa**: un borrador tiene actividades, pero **no genera ocurrencias ejecutables** hasta la primera aprobación.
+
+### La pestaña «Programa» y sus permisos
+
+El programa vive en la pestaña **Programa** del espacio de trabajo de la MIPER, junto a Antecedentes, Matriz, Revisión e Historial. Allí se ve el **encabezado RE-04.1** (título, período, datos de empresa, representante, N° de centros de trabajo —calculado—, fecha de la última revisión sellada y encargado del programa) y la **tabla de actividades** con su avance.
+
+| Acción | Quién puede | Permiso |
+|---|---|---|
+| Ver el programa | Todo el que ve la MIPER de la faena | `prevention:risk:view` |
+| Administrar el programa: encabezado, actividades, vínculos, generar y retirar | Prevencionista de faena, Administrador de contrato y Jefatura de Prevención (en sus faenas) | `prevention:risk:edit` |
+| Registrar «Se hizo» / «No se hizo» y su evidencia | Prevencionista de faena, Prevencionista, Jefes y Supervisores de terreno, Administrador de contrato y Administrador (en sus faenas) | `prevention:risk:program:execute` |
+
+> [!NOTE]
+> **EL RESPONSABLE REGISTRA SIN EL PERMISO DE EJECUCIÓN:** quien figura como **responsable nominal** de una actividad puede registrar sus ocurrencias con solo ver la faena (`prevention:risk:view`), aunque no tenga `prevention:risk:program:execute`. Cualquier otra persona recibe el mismo aviso de "fuera de alcance" que ante un registro ajeno.
+
+### Las actividades del programa
+
+Cada actividad del RE-04.1 se registra con estas columnas:
+
+| Columna | Contenido |
+|---|---|
+| **N°** | Correlativo de la actividad en el programa. No se recicla: retirar una actividad no libera su número. |
+| **Proceso** | El proceso del **diccionario de actividades del MIPER** (no es texto libre). |
+| **Medida de control / actividad a realizar** | La descripción de lo que hay que ejecutar. |
+| **Responsable** | La persona a cargo; su nombre queda congelado en la actividad. |
+| **Centro de trabajo** | Por defecto, el nombre de la faena. |
+| **Fecha programada o frecuencia** | Una fecha única, o una frecuencia: **mensual, trimestral, semestral o anual**. |
+| **Fecha de ejecución efectiva** | La de la ocurrencia registrada. |
+| **Indicador de avance** | Calculado, nunca editado (ver «El avance»). |
+
+Una frecuencia mensual vence el **último día del mes**; el ancla es el mes de la fecha programada y de ahí se avanza por la frecuencia hasta el 31 de diciembre del período. Retirar una actividad exige **motivo**, detiene sus ocurrencias futuras y conserva intacto lo ya registrado con su evidencia.
+
+### Generar actividades desde el MIPER
+
+El botón **"Generar actividades"** recorre las medidas que aún **no tienen actividad** y **propone** agrupaciones: las medidas que describen lo mismo —comparadas por su descripción normalizada (minúsculas, sin tildes, sin puntuación ni palabras vacías) y agrupadas por similitud— caen juntas en una propuesta. El sistema **sólo propone**; la decisión siempre es de la persona:
+
+```mermaid
+graph TD
+    A[Medidas del MIPER<br/>sin actividad vinculada] --> B[Agrupación propuesta<br/>por similitud]
+    B --> C[Crear actividad nueva]
+    B --> D[Asociar a una actividad existente]
+    B --> E[Dejar sin actividad<br/>sólo Tolerable o Moderado]
+```
+
+El vínculo entre medidas y actividades es **N:M**: una actividad puede nacer de varias medidas, y varias medidas pueden colgar de una misma actividad, sin duplicar el vínculo. Desde una actividad se llega a los riesgos que la originaron, y desde un riesgo a sus medidas, actividades, ocurrencias y evidencias.
+
+> [!WARNING]
+> **INTOLERABLE E IMPORTANTE NO QUEDAN SIN PROGRAMA:** «dejar sin actividad» **no se ofrece** para una medida de un riesgo **Intolerable** o **Importante**: ambos exigen una medida con responsable y plazo, y la plataforma rechaza la decisión nombrando la fila. Además, un riesgo **Intolerable** exige que **al menos una de sus medidas esté vinculada a una actividad del programa** para que la MIPER pueda **enviarse a revisión**.
+
+### Las ocurrencias: la agenda de cada actividad
+
+Una ocurrencia es **una fecha en que la actividad debe ejecutarse**, nacida de su frecuencia. Nacen **sólo cuando la MIPER tiene una versión sellada**: un borrador no se ejecuta. Registrar tiene dos resultados:
+
+| Resultado | Exige | Efecto |
+|---|---|---|
+| **Se hizo** | Fecha de ejecución efectiva (**no futura**) y **al menos una evidencia**. Observación opcional. | Cuenta como realizada. Si la fecha es posterior al vencimiento, queda marcada como **fuera de plazo**. |
+| **No se hizo** | Un **motivo** (al menos 10 caracteres). La evidencia es opcional. | La ocurrencia queda **Incumplida** y cuenta 0. |
+
+> [!IMPORTANT]
+> **NADA SE BORRA:** un registro no se edita ni se elimina. Corregir es **anular con motivo** y volver a registrar: la ocurrencia retoma el resultado del registro vigente anterior (o vuelve a Pendiente) y el registro anulado permanece en el historial. Así, un «No se hizo» seguido de un «Se hizo (fuera de plazo)» son **dos registros visibles**, y no hay conversión automática de uno en otro.
+
+### El avance
+
+El avance se **deriva** de las ocurrencias; **nunca se ingresa a mano**:
+
+*   **Avance del período** = ocurrencias **realizadas ÷ planificadas** del período.
+*   Las **fuera de plazo** cuentan como realizadas pero quedan **marcadas**; las **vencidas** (pendientes cuya fecha ya pasó) se informan **aparte**.
+*   Cada actividad muestra su propio cociente sobre sus ocurrencias. Si no hay nada planificado, no hay porcentaje.
+*   Las ocurrencias de un programa reemplazado que quedan **«reemplazadas»** dejan de contar: salen del numerador y del denominador.
+
+### La evidencia
+
+Cada registro de ejecución se acredita con archivos. Se admiten **PDF, imágenes (JPEG y PNG), Word y Excel**. La evidencia **no se reemplaza**: se agrega al registro vigente, y **retirarla exige un motivo**. El archivo **no se borra** —puede ser necesario para una fiscalización—: la acreditación queda marcada y el retiro, auditado.
+
+### Integración con el PDTP corporativo
+
+Sin cambios en el programa anual: el MIPER **no reemplaza** al PDTP. La relación es la de siempre —una medida del MIPER puede declararse como **fuente de cobertura** de una actividad PDTP— y el sellado de la matriz sigue acreditando la **N° 35** y abriendo el reloj de **30 días** para actualizar el inventario. Las **ocurrencias** del programa MIPER son su propia agenda de ejecución, no actividades del catálogo PDTP.
+
+---
+
+## 10. Difusión de la MIPER a los Trabajadores (Actividad PDTP N° 36)
 
 El Artículo 7 del DS 44 exige que cada trabajador conozca los riesgos específicos de su puesto y firme la toma de conocimiento:
 
@@ -259,7 +352,7 @@ El Artículo 7 del DS 44 exige que cada trabajador conozca los riesgos específi
 
 ---
 
-## 10. El Mapa de Riesgos
+## 11. El Mapa de Riesgos
 
 El mapa de riesgos (DS 44 Art. 62) se documenta en el **capítulo 17 — Gestión del
 Riesgo de Desastres** (`/prevencion/cgrd/mapa`).
