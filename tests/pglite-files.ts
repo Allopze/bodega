@@ -26,6 +26,9 @@ export const pgliteTestFiles = [
   "lib/__tests__/miper-workflow.test.ts",
   // MIPER F1: espacio de trabajo, bandeja por rol, lista e historial.
   "lib/__tests__/miper-queries.test.ts",
+  // MIPER F2: programa de trabajo (vínculo único, ocurrencias y registros
+  // de sólo inserción).
+  "db/__tests__/miper-program-constraints.test.ts",
   "db/__tests__/operational-integrity-constraints.test.ts",
   "db/__tests__/pdtp-worksite-cascade.test.ts",
   "db/__tests__/pdtp-check-constraints.test.ts",
