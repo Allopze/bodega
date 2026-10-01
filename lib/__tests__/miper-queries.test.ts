@@ -70,4 +70,17 @@ describe("consultas MIPER", () => {
     expect(events.map((e) => e.changeType)).toEqual(expect.arrayContaining(["created", "entry_created"]))
     expect(events.find((e) => e.changeType === "created")).toMatchObject({ actorName: "Prevencionista Q", actingAs: "prevention:risk:edit" })
   })
+  it("la cadena de períodos de la faena trae los otros MIPER y excluye el propio", async () => {
+    // Una segunda MIPER de la misma faena, en otro período (§8.5). Se crea acá y
+    // no en el `beforeAll` para no alterar el conteo de las consultas previas.
+    const sibling = await createMiper({ worksiteId: "ws-q", period: 2027, revisionReason: "Período siguiente." }, author)
+    const ws = await q.getMiperWorkspace(matrixId, author)
+    const ids = ws.siblingMatrices.map((item) => item.id)
+    expect(ids).toContain(sibling.id)
+    expect(ids).not.toContain(matrixId)
+    const other = ws.siblingMatrices.find((item) => item.id === sibling.id)!
+    expect(other).toMatchObject({ period: 2027, label: "Borrador" })
+    // Ordenadas por período descendente: el período nuevo va primero.
+    expect(ws.siblingMatrices[0]!.id).toBe(sibling.id)
+  })
 })

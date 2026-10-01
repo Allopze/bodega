@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ACTING_AS_TEXT, historyLabel } from "./history-labels"
+import { ROLE_CONTEXT_TEXT, historyLabel } from "./history-labels"
 
 describe("rótulos del historial MIPER", () => {
   it("cada evento del flujo tiene un rótulo en español", () => {
@@ -12,6 +12,6 @@ describe("rótulos del historial MIPER", () => {
     expect(historyLabel("algo_nuevo")).toBe("Cambio registrado")
   })
   it("la capacidad con que actuó se muestra con el nombre del rol", () => {
-    expect(ACTING_AS_TEXT["prevention:risk:approve_legal"]).toBe("Legal y RRHH")
+    expect(ROLE_CONTEXT_TEXT["prevention:risk:approve_legal"]).toBe("Legal y RRHH")
   })
 })

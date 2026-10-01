@@ -71,7 +71,10 @@ export async function miperHistory(client: Client, args: {
     beforeState: args.before,
     afterState: args.after,
     actorUserId: args.actorUserId,
-    extra: { object: args.object, objectId: args.objectId, actingAs: args.actingAs },
+    /* La clave persistida del rol con que actuó la persona es `roleContext`
+     * (§4.9 del spec). El parámetro sigue llamándose `actingAs` para no romper
+     * el contrato que ya consumen los servicios de F1 (workflow, entries…). */
+    extra: { object: args.object, objectId: args.objectId, roleContext: args.actingAs },
   })
 }
 

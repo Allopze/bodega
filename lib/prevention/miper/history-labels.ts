@@ -1,9 +1,10 @@
 /**
  * Rótulos del historial (§4.9): nunca se muestra el `changeType` crudo (A6).
  *
- * Única fuente del rótulo de la capacidad (`actingAs`): la usan el servidor
+ * Única fuente del rótulo del rol con que actuó la persona: la clave
+ * persistida en el historial es `roleContext` (§4.9); la usan el servidor
  * (lib/services/miper/*) y el panel de historial del cliente. No existe un
- * `ACTING_AS_LABEL` en lib/services/miper/shared.ts que reemplazar.
+ * `ROLE_CONTEXT_LABEL` en lib/services/miper/shared.ts que reemplazar.
  */
 const LABELS: Record<string, string> = {
   created: "MIPER creada",
@@ -34,7 +35,7 @@ export function historyLabel(changeType: string) {
 }
 
 /** Nombre del rol con que se actuó, para la columna de actor de la bitácora. */
-export const ACTING_AS_TEXT: Record<string, string> = {
+export const ROLE_CONTEXT_TEXT: Record<string, string> = {
   "prevention:risk:edit": "Prevencionista",
   "prevention:risk:review": "Jefatura del Depto. de Prevención",
   "prevention:risk:approve_legal": "Legal y RRHH",

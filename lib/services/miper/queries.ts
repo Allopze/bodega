@@ -43,6 +43,11 @@ export type MiperWorkspace = {
   riskFactors: Array<{ id: string; name: string; isActive: boolean }>
   dictionaries: { activities: string[]; tasks: string[]; positions: string[]; locations: string[]; hazards: string[]; risks: string[]; damages: string[]; measures: string[] }
   responsibleOptions: Array<{ id: string; name: string }>
+  /**
+   * Cadena de MIPER de la faena (§8.5): los otros períodos de la misma faena,
+   * para que el Historial enlace cada uno con su estado. Excluye esta MIPER.
+   */
+  siblingMatrices: Array<{ id: string; period: number | null; status: string; reviewState: string; isLegacy: boolean; versionNumber: number | null; label: string }>
 }
 
 function hasUnsentChanges(matrix: { status: string; reviewState: string; updatedAt: string; publishedAt: string | null }) {
@@ -72,6 +77,16 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
   ])
   const controlVersionRows = entryVersionRows.length === 0 ? [] : await db.select({ id: preventionRiskControls.id, version: preventionRiskControls.version })
     .from(preventionRiskControls).where(inArray(preventionRiskControls.riskEntryId, entryVersionRows.map((entry) => entry.id)))
+
+  // §8.5: la cadena de MIPER de la faena por período. Se reusa `buildRows` para
+  // que el rótulo sea el mismo que ve la portada (incluye cambios sin enviar).
+  const siblingRows = await db.select({ matrix: preventionRiskMatrices, worksiteName: worksites.name }).from(preventionRiskMatrices)
+    .innerJoin(worksites, eq(worksites.id, preventionRiskMatrices.worksiteId))
+    .where(and(eq(preventionRiskMatrices.worksiteId, matrix.worksiteId), ne(preventionRiskMatrices.id, matrix.id)))
+    .orderBy(desc(preventionRiskMatrices.period), desc(preventionRiskMatrices.createdAt))
+  const siblingMatrices = (await buildRows(siblingRows)).map((row) => ({
+    id: row.id, period: row.period, status: row.status, reviewState: row.reviewState, isLegacy: row.isLegacy, versionNumber: row.versionNumber, label: row.label,
+  }))
 
   const lastVersionSnapshot = (versionRows[0]?.snapshot as MiperSnapshot | undefined) ?? null
   let reviewDiff: SnapshotDiff | null = null
@@ -110,6 +125,7 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
     riskFactors: factorRows,
     dictionaries: { ...dictionaryNames, ...suggestions },
     responsibleOptions,
+    siblingMatrices,
   }
 }
 
@@ -205,7 +221,9 @@ export async function getMiperHistory(matrixId: string, access: MiperAccess): Pr
   return rows.map(({ log, actorName }) => {
     let state: Record<string, unknown> = {}
     try { state = JSON.parse(log.newState ?? "{}") as Record<string, unknown> } catch { state = {} }
-    return { id: log.id, at: log.createdAt, actorName, actingAs: typeof state.actingAs === "string" ? state.actingAs : null, changeType: String(state.changeType ?? log.action), object: typeof state.object === "string" ? state.object : null, reason: log.reason }
+    // La clave persistida es `roleContext` (§4.9). La vista la expone como
+    // `actingAs` para no forzar cambios en la UI que ya la consume.
+    return { id: log.id, at: log.createdAt, actorName, actingAs: typeof state.roleContext === "string" ? state.roleContext : null, changeType: String(state.changeType ?? log.action), object: typeof state.object === "string" ? state.object : null, reason: log.reason }
   })
 }
 
