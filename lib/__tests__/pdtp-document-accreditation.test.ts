@@ -67,6 +67,26 @@ vi.mock("@/lib/storage/helpers", () => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
+/**
+ * Fecha base del test: día 15 y explícita, nunca el reloj de quien lo corre.
+ *
+ * La entrega de la N°18 no se siembra con una fecha del fixture: el producto la
+ * deriva del reloj (`becameCurrentAt` es el momento de la publicación y `dueAt`
+ * son 30 días después), y el indicador cuenta cada obligación en el mes de su
+ * `dueAt`. Con `new Date()` el mes afirmado —y el mes en que se planifica la
+ * N°19 del fixture— se movían con el calendario: cuando los 30 días caían
+ * dentro del mismo mes civil, la celda de la carpeta se sumaba al caso de la
+ * entrega y la aserción fallaba sin que el producto hubiera cambiado.
+ *
+ * El día 15 es deliberado: 30 días después siempre cae en el mes siguiente, así
+ * que la celda de la N°19 (mes base) y el caso de la N°18 (mes siguiente) no se
+ * pisan nunca. Se congela sólo `Date` (`toFake: ["Date"]`): PGlite y el driver
+ * se hablan por temporizadores reales, y congelarlos los dejaría esperando.
+ */
+const BASE_INSTANT = "2026-09-15T15:00:00.000Z" // 12:00 del 15-sep-2026 en Chile (UTC-3)
+vi.useFakeTimers({ toFake: ["Date"] })
+vi.setSystemTime(new Date(BASE_INSTANT))
+
 const documents = await import("@/lib/services/prevention-documents-library")
 const { seedDefaultCategories } = documents
 const { sweepPdtpLegalFolders, evaluatePdtpLegalFolder } = await import("@/lib/services/pdtp-adapters/legal-folder-connector")
@@ -75,12 +95,15 @@ const { approvePdtpExecution } = await import("@/lib/services/pdtp/executions")
 const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
 
 afterAll(async () => {
+  vi.useRealTimers()
   delete testGlobal.__db
   await pg.close()
   await fs.rm(tmpStorageDir, { recursive: true, force: true })
 })
 
-const { year: YEAR, month: MONTH } = chileDateParts()
+// El año y el mes del fixture salen de la misma fecha base que el reloj
+// congelado: lo sembrado y lo afirmado no pueden discrepar.
+const { year: YEAR, month: MONTH } = chileDateParts(BASE_INSTANT)
 const PROGRAM_ID = "pdtp-docs-v1"
 const WS_A = "ws-docs-a"
 const WS_B = "ws-docs-b"
@@ -147,7 +170,7 @@ const riohsMetadata = { riohsSections: [...RIOHS_SECTION_IDS] }
 
 beforeEach(async () => {
   await pg.exec(`TRUNCATE TABLE users, worksites, sst_document_categories, pdtp_programs RESTART IDENTITY CASCADE`)
-  const now = new Date().toISOString()
+  const now = BASE_INSTANT
   await inMemoryDb.insert(schema.users).values([UPLOADER, REVIEWER, APPROVER, JDPR].map((id) => ({
     id, name: id, email: `${id}@example.test`, hashedPassword: "x",
   })))
@@ -239,7 +262,7 @@ describe("carpeta de requisitos legales (N°19)", () => {
       { id: "req-riohs", activityId: FOLDER_ACTIVITY, documentTypeId: TYPE.riohs, scope: "corporativo", displayOrder: 0 },
       { id: "req-seremi", activityId: FOLDER_ACTIVITY, documentTypeId: TYPE.seremi, scope: "corporativo", mustFollowDocumentTypeId: TYPE.riohs, displayOrder: 1 },
       { id: "req-irl", activityId: FOLDER_ACTIVITY, documentTypeId: TYPE.irl, scope: "faena", displayOrder: 2 },
-    ].map((row) => ({ ...row, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })))
+    ].map((row) => ({ ...row, createdAt: BASE_INSTANT, updatedAt: BASE_INSTANT })))
   }
 
   async function folderExecutions(worksiteId?: string) {
@@ -358,7 +381,7 @@ describe("entrega de una versión del RIOHS a la dotación (N°18)", () => {
   const ACK_USER = "user-docs-worker"
 
   beforeEach(async () => {
-    const now = new Date().toISOString()
+    const now = BASE_INSTANT
     await inMemoryDb.insert(schema.workers).values([
       { id: WORKER_WITH_ACCOUNT, rut: "11111111-1", firstName: "Con", lastName: "Cuenta", worksiteId: WS_A, isActive: true, createdAt: now },
       { id: WORKER_NO_ACCOUNT, rut: "22222222-2", firstName: "Sin", lastName: "Cuenta", worksiteId: WS_A, isActive: true, createdAt: now },
@@ -416,7 +439,13 @@ describe("entrega de una versión del RIOHS a la dotación (N°18)", () => {
     expect(execution!.evidenceText).toContain("1 acuse(s) y 1 exención(es)")
 
     await approvePdtpExecution(execution!.id, JDPR, "all")
+    // El mes de la entrega sale de la misma fecha que la siembra: los 30 días
+    // de plazo del `dueAt`. Tiene que caer fuera del mes de la fecha base —donde
+    // el fixture planifica la N°19—, o el `planned: 1` de abajo mediría también
+    // la celda de la carpeta. Con la fecha base del test (día 15) es así por
+    // construcción; el guard lo dice si alguien la mueve.
     const dueMonth = chileDateParts(reported!.dueAt!).month
+    expect(dueMonth).not.toBe(MONTH)
     const indicators = await getPdtpComplianceIndicators(PROGRAM_ID, WS_A)
     // La entrega es un caso propio de la N°18, a tiempo. La ejecución que la
     // cierra no infla el padrón de trabajadores nuevos.
@@ -426,7 +455,7 @@ describe("entrega de una versión del RIOHS a la dotación (N°18)", () => {
   it("en la N°18 sólo cuenta como caso la obligación que lo declara, no cualquier obligación de cobertura", async () => {
     // Una obligación de otro conector sobre la misma actividad (una brecha de
     // capacitación, por ejemplo) no suma: su sujeto ya está en el padrón.
-    const now = new Date().toISOString()
+    const now = BASE_INSTANT
     const month = chileDateParts(now).month
     // El mes ya tiene la celda de la N°19 del fixture: se compara antes y después.
     const before = await getPdtpComplianceIndicators(PROGRAM_ID, WS_A)
@@ -468,7 +497,7 @@ describe("la carpeta como contenido firmado del programa", () => {
     const { buildPdtpProgramContentSnapshot } = await import("@/lib/services/pdtp/content-digest")
     await inMemoryDb.insert(schema.pdtpActivityDocumentRequirements).values({
       id: "req-snap", activityId: FOLDER_ACTIVITY, documentTypeId: TYPE.irl, scope: "faena", displayOrder: 0,
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      createdAt: BASE_INSTANT, updatedAt: BASE_INSTANT,
     })
     type Shape = { documentRequirements?: Array<Record<string, unknown>> }
     const v18 = await buildPdtpProgramContentSnapshot(PROGRAM_ID, undefined, { schemaVersion: 18 }) as unknown as Shape
@@ -485,7 +514,7 @@ describe("la carpeta como contenido firmado del programa", () => {
     ])
     await inMemoryDb.insert(schema.pdtpActivityDocumentRequirements).values({
       id: "req-gate", activityId: FOLDER_ACTIVITY, documentTypeId: TYPE.irl, scope: "faena", displayOrder: 0,
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      createdAt: BASE_INSTANT, updatedAt: BASE_INSTANT,
     })
     expect(await getPdtpLegalFolderBlockers(activities)).toEqual([])
   })
