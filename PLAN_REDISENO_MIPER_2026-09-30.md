@@ -6,9 +6,10 @@ Documento único del rediseño:
 
 - **Parte I, Diseño:** el spec aprobado, que cubre las tres fases (F1 núcleo, F2 Programa de Trabajo y F3 consolas).
 - **Parte II, Plan de implementación de la F1:** 21 tareas con pruebas, código, comandos de verificación y commits. **Ejecutada**: 30 commits en la rama `prevencion/miper-f1-nucleo` (último: `c3ea1d07`, migraciones 0344 y 0345).
-- **Parte III, Plan de implementación de la F2 (Programa de Trabajo):** 9 tareas con el mismo formato; **pendiente de aprobación**. El plan de F3 se agrega como Parte IV al integrar la F2.
+- **Parte III, Plan de implementación de la F2 (Programa de Trabajo):** 9 tareas con el mismo formato; **ejecutada**.
+- **Parte IV, Plan de implementación de la F3 (consolas):** 8 tareas con el mismo formato; **pendiente de aprobación**.
 
-Estado: F1 ejecutada en su rama (30 commits, `prevencion/miper-f1-nucleo`); Parte III (F2) pendiente de aprobación.
+Estado: F1 y F2 ejecutadas en la rama `prevencion/miper-f1-nucleo` (migraciones 0344–0347); Parte IV (F3) pendiente de aprobación.
 
 ---
 
@@ -8357,3 +8358,506 @@ git commit -m "test(miper): E2E de la ejecución del programa, hoja RE-04.1 y re
 ### Después de F2
 
 F3 (consolas, alertas, exportación del estado vivo e importación RE-04) tiene su propio plan, que se agrega como Parte IV cuando la F2 esté integrada. Hereda de F2: el tipo MIPER en `getPreventionAttention` y en la cola «Mi trabajo» para las ocurrencias vencidas y las «No se hizo», la notificación deduplicada de ambos casos, la hoja *Programa de Trabajo* de la exportación viva, y el E2E completo del §12.
+
+---
+
+## Parte IV — Plan de implementación de la F3 (consolas)
+
+> **For agentic workers:** REQUIRED SUB-SKILL: usa el mismo flujo que las Partes II y III: una tarea a la vez, test que falla primero, verificación acotada y commit. Los pasos van con checkbox (`- [ ]`).
+
+**Goal.** Que la MIPER se pueda **mirar entera, avisar sola, exportarse y alimentarse desde el Excel real**. Cuatro consolas sobre el modelo y el programa que ya existen: (1) un **Resumen** en la portada con cuatro tiles que llevan a una lista filtrada (no KPIs muertos) y una tabla por faena; (2) **alertas** que sólo se disparan cuando hay una acción que le toca a una persona concreta, deduplicadas y con destinatario derivado del permiso y la faena; (3) la **exportación del estado vivo** del mismo libro RE-04 que ya archiva cada aprobación, con la leyenda «Incluye cambios no aprobados»; y (4) la **importación RE-04** que lee la hoja real, mapea los textos conocidos, muestra los problemas por fila con el cálculo de la plataforma como mandante, y carga en un borrador o agrega al vivo. El entregable de la fase es el **E2E completo del §12**: los 17 pasos en un solo recorrido determinista.
+
+**Architecture.** Ninguna tabla nueva y ninguna migración esperada. La F3 es **lectura agregada + enganches** sobre lo que F1/F2 dejaron: un servicio de dashboard (`lib/services/miper/dashboard.ts`) que reusa `listMipers`/`listMiperInbox` y `programProgress` (puro); un módulo de notificaciones MIPER (`lib/services/miper/notifications.ts`) que arma **thunks** y los entrega a `notifyAfterCommit` para que el aviso salga después del COMMIT; un barrido diario (`lib/services/miper/reminders.ts` + `app/api/cron/prevention-miper-daily-sweep`) para lo que el flujo no puede ver en línea (ocurrencias vencidas); el modo «estado vivo» del libro (`buildMiperWorkbook(..., { liveState })`); y un importador nuevo (`lib/prevention/miper/re04-import.ts` puro + `lib/services/miper/import.ts`) que escribe en las tablas `prevention_risk_import_batches` / `_rows` **que ya existen**. La cola «Mi trabajo» y `getPreventionAttention` ganan el tipo MIPER como dos ramas más, con la misma proyección SQL y el mismo RBAC que el resto de la cola.
+
+**Tech Stack:** el mismo de la F1 y la F2. Sin dependencias nuevas: ExcelJS para leer y escribir; Playwright, vitest y PGlite para verificar.
+
+### Global Constraints
+
+Las de las Partes II y III siguen vigentes. Además, para la F3:
+
+- **PGlite: una sola conexión.** Dentro de una transacción abierta, **ninguna** consulta puede ir por la conexión global `db` o la suite se cuelga (la lección más cara de la F1). Todo servicio nuevo recibe `Client = DB | Tx` y no llama a `db` por dentro. `getUserIdsWithPermissionForWorksite` y `getUserIdsWithPermission` **usan `db` global**: por eso las notificaciones se resuelven en un thunk que corre **después** del COMMIT (`notifyAfterCommit`, `lib/services/notification-create.ts:252`), nunca dentro del callback de la transacción. Los tests PGlite usan el patrón de `lib/__tests__/miper-entries.test.ts` (`vi.mock("@/db", () => ({ get db() { return g.__db } }))`) y se registran en `tests/pglite-files.ts`.
+- **Migración 0348 (la siguiente libre tras 0344–0347) — sólo si aparece un cambio de esquema.** Este plan **no introduce tablas ni columnas**: el dashboard es lectura, los tipos de notificación son un `union` de TypeScript sobre `notifications.type` (columna `text`, no un enum de la base), las alertas de vencimiento se deduplican con el índice único parcial `notifications_user_dedupe_unique` que ya existe, y la importación reutiliza `prevention_risk_import_batches` / `prevention_risk_import_rows`. Por lo tanto `npm run db:generate` debe terminar en **«No schema changes»**. Si algún paso descubre que sí hace falta un cambio, **es** `0348`, se genera con `npm run db:generate -- --name miper_f3_<asunto>`, el SQL idempotente se anexa **sólo** a esa migración, todo `DROP` lleva `IF EXISTS` y los checksums se registran con `node scripts/verify-migration-chain.mjs --update-checksums`. Nunca editar `_journal.json` ni un `.sql` ya generado.
+- **RBAC por manifiesto, nunca en migraciones.** La F3 no agrega permisos: usa los siete de `modules/prevention/manifest.ts` (`prevention:risk:view|edit|review|approve_legal|catalog:manage|program:execute|override_segregation`). Si algún paso necesitara uno nuevo, va en `modules/prevention/manifest.ts`, con paridad en `modules/registry.ts`, `lib/services/module-toggles.ts`, navegación y `db:sync-rbac`; jamás en SQL.
+- **Excel sólo con ExcelJS.** Ni SheetJS ni `xlsx`. La lectura del RE-04 usa `ExcelJS.Workbook#xlsx.load`; toda celda escritas pasa por `sanitizeCell` de `lib/reports/export-module/excel-builder.ts`.
+- **UI del repo.** `PageHeader` + `PageContainer`, altas en `Dialog`/`Sheet`, pestañas y filtros en la URL con `router.replace(…, { scroll: false })` y **una sola escritura** por cambio (el bug de los tres `replace` que se pisaban en `miper-home.tsx`), `DatePicker` para fechas, tokens `-ink`/`--color-text-subtle` para texto, rótulos en español (nunca un enum crudo), `EmptyState` con CTA real y nada de KPIs estáticos sobre la matriz (regla A1, ver `summary-strip.tsx`).
+- **El avance nunca se ingresa ni se guarda.** `programProgress` (`lib/prevention/miper/progress.ts`) es la única fuente; el dashboard lo deriva de las ocurrencias ya leídas. Ninguna columna de avance existe.
+- **Todo lo asíncrono es idempotente.** Los avisos por barrido y los del flujo comparten la llave `dedupeKey`; volver a correr el cron no duplica avisos.
+- **Nada del flujo F1/F2 cambia de forma.** Los contratos que ya consumen `miper-home.tsx`, `miper-workspace.tsx` y el libro sellado se **extienden** (campos nuevos opcionales), no se reescriben.
+
+### Review Focus
+
+1. **Que ningún aviso salga dentro de la transacción.** Un `createNotifications` llamado dentro del callback notifica antes de tiempo y un ROLLBACK posterior no lo deshace (S-05 está escrito en `notification-create.ts`). Todo aviso pasa por `notifyAfterCommit` con un thunk que resuelve destinatarios **después** de `await db.transaction(...)`. Prueba en Tasks 3 y 5.
+2. **Que «fila pasa a Intolerable» se enganche donde la clasificación se escribe de verdad** —`saveMiperEntry` (`lib/services/miper/entries.ts:61`) y la importación— y no en `workflow.ts`, que recién la ve al enviar. La clasificación es una **columna generada** (`prevention_risk_entries.classification`): no hay evento de base que escuchar. Prueba en Tasks 3 y 7.
+3. **Que el tile «Por hacer» y la bandeja digan lo mismo.** El tile cuenta la misma condición que `listMiperInbox` (`in_review` para quien revisa, `pending_approval` para quien aprueba, `observed`/`draft`/cambios sin enviar para quien edita). Un dashboard con una regla paralela reintroduce el bug A-03 (rail 7 / lista 2). Prueba en Task 1.
+4. **Que la exportación del estado vivo no rompa el archivado legal.** El libro sellado lo comparte el cron `generated-documents-archive`: si el modo vivo se filtra al archivado, lo que se guarda como evidencia de aprobación deja de ser lo aprobado. El sellado debe seguir siendo el camino por defecto y el único del cron. Prueba en Task 6.
+5. **Que la importación nunca escriba un MR incoherente.** El MR y la clasificación del Excel se **informan** pero **no mandan**: vale `classify(p, c)` (`lib/prevention/miper/methodology.ts:56`) y la fila con MR distinto queda marcada. Una fila con P o C fuera de {1, 2, 4} no se carga: se detiene con problema por fila. Prueba en Task 7.
+
+### Prerrequisitos
+
+- [ ] F1 y F2 integradas en `prevencion/miper-f1-nucleo` (migraciones 0344–0347 aplicadas; `npm run db:generate` termina en «No schema changes»).
+- [ ] `npm run test:pglite`, `npm run test:fast` y `npm run test:e2e -- e2e/prevencion-miper-flujo.spec.ts e2e/prevencion-miper-programa.spec.ts` verdes en el punto de partida.
+- [ ] `pg_isready -h 127.0.0.1 -p 55432` (contenedor E2E) y la base de desarrollo en `127.0.0.1:5433` disponibles. **Nunca** apuntar a producción.
+- [ ] Tres usuarios sembrados por `e2e/setup-db.ts`: `prev.faena@e2e.chome.cl` (`prevencionista_faena`, scoped), `jefa.prevencion@e2e.chome.cl` (`prevencionista`, global) y `legal.rrhh@e2e.chome.cl` (`gerente_legal_rrhh`, global).
+
+### Mapa de archivos
+
+**Servicios y consultas**
+- Crear `lib/services/miper/dashboard.ts`: `getMiperDashboard` (tiles A1, franja secundaria y tabla por faena).
+- Modificar `lib/services/miper/queries.ts`: exportar un constructor de filas del dashboard que reusa `listMipers`/`listMiperInbox` y agrega `uncontrolledCount`.
+- Crear `lib/services/miper/notifications.ts`: thunks de aviso (Intolerable por fila, paso de revisión, ocurrencia, firma) y llaves de deduplicación.
+- Crear `lib/services/miper/import.ts`: staging y carga del RE-04 sobre las tablas de importación existentes.
+- Crear `lib/services/miper/reminders.ts`: `runMiperOccurrenceSweep` para el barrido diario.
+- Crear `lib/prevention/miper/re04-import.ts`: parser puro de la hoja *RE-04 IPER* (mapeo de textos, P/C, MR vs cálculo, factor desconocido).
+- Crear `lib/prevention/miper/business-days.ts`: días hábiles chilenos (no existe ninguno en `lib/`).
+
+**Alertas y flujo**
+- Modificar `db/schema/audit.ts`: miembros nuevos del `union` `NotificationType`.
+- Modificar `lib/services/miper/entries.ts`: enganche de «fila pasa a Intolerable» en `saveMiperEntry`.
+- Modificar `lib/services/miper/workflow.ts`: avisos de enviado/devuelto/pendiente de firma.
+- Modificar `lib/services/pdtp/reminders.ts`: escalón de 5 días hábiles en la firma pendiente que ya existe.
+- Modificar `app/api/cron/prevention-cron-contract.test.ts` y `scripts/cron-runner.mjs`: registrar el barrido diario.
+
+**Cola y atención**
+- Modificar `lib/services/prevention-attention.ts` (`kind: "miper"`, `includeMiper`).
+- Modificar `lib/services/operational-work-queue.ts` (ramas `miper_occurrence` y `miper_review`, `allowedModules`).
+- Modificar `lib/work-queue.types.ts` (`OperationalModule` gana `"miper"`) y los mapas de rótulos/íconos del workbench.
+- Modificar `lib/services/work-queue-eligibility.ts` (`WorkQueueSource` y permisos de la rama MIPER).
+- Modificar `app/(app)/prevencion/prevention-home.tsx` (encender `includeMiper`).
+
+**UI**
+- Crear `app/(app)/prevencion/miper/dashboard-panel.tsx` (pestaña «Resumen»).
+- Crear `app/(app)/prevencion/miper/import-dialog.tsx` (vista previa por fila y carga).
+- Modificar `app/(app)/prevencion/miper/miper-home.tsx` (pestaña «Resumen», filtro responsable, botón Importar) y `app/(app)/prevencion/miper/page.tsx` (carga y `searchParams`).
+- Modificar `app/(app)/prevencion/miper/actions.ts` (`previewRiskImportAction`, `commitRiskImportAction`).
+
+**Reportes, E2E y validación**
+- Modificar `lib/reports/miper-workbook.ts` (+ `lib/reports/miper-workbook.test.ts`) y `app/api/prevencion/miper/[id]/export/route.ts` (`?estado=vivo`).
+- Modificar `lib/validation/prevention-module/miper.ts` (esquemas de la importación).
+- Modificar `lib/prevention/miper/history-labels.ts` (rótulos de la importación).
+- Crear `e2e/prevencion-miper-completo.spec.ts`; modificar `e2e/setup-db.ts`.
+- Crear `qa/reports/<AAAA-MM-DD>-miper-f3.md`; actualizar el capítulo del manual de Prevención.
+- Registrar en `tests/pglite-files.ts`: `lib/__tests__/miper-dashboard.test.ts`, `lib/__tests__/miper-notifications.test.ts`, `lib/__tests__/miper-import.test.ts`, `lib/__tests__/miper-work-queue.test.ts`.
+
+---
+
+#### Task 1: Servicio de lectura del dashboard (tiles A1, franja y tabla por faena)
+
+**Files:**
+- Create: `lib/services/miper/dashboard.ts`
+- Create: `lib/__tests__/miper-dashboard.test.ts` (PGlite, registrar en `tests/pglite-files.ts`)
+- Modify: `lib/services/miper/queries.ts` (exportar `buildMiperListRows` desde el `buildRows` privado y agregar `uncontrolledCount` a `MiperListRow`)
+
+- [ ] **Step 1: Test que falla primero**
+
+`getMiperDashboard` se prueba contra una base sembrada con dos faenas: una con matriz `published` (riesgos Tolerable/Moderado/Importante/Intolerable, uno `controlledStatus = "no"`) con programa y ocurrencias (una `done`, una `pending` vencida), y otra en `in_review`.
+
+```ts
+const dash = await getMiperDashboard(access)
+expect(dash.tiles.find((t) => t.key === "critical")!.count).toBe(2)     // Importante + Intolerable
+expect(dash.tiles.find((t) => t.key === "uncontrolled")!.count).toBe(1) // controlledStatus = "no" no Tolerable
+expect(dash.tiles.find((t) => t.key === "todo")!.href).toContain("tab=porhacer")
+expect(dash.strip.actividadesVencidas).toBe(1)
+expect(dash.rows[0]!.progress.planned).toBe(2)
+```
+
+- [ ] **Step 2: Implementación de referencia**
+
+```ts
+// lib/services/miper/dashboard.ts
+export type MiperDashboardFilters = { worksiteId?: string; period?: number; state?: string; responsibleUserId?: string }
+export type MiperDashboardTileKey = "todo" | "critical" | "uncontrolled" | "progress"
+export type MiperDashboardTile = { key: MiperDashboardTileKey; label: string; count: number; hint: string; href: string }
+export type MiperDashboardStrip = {
+  vigentes: number; conObservaciones: number; tolerables: number; moderados: number
+  medidasPendientes: number; actividadesVencidas: number
+}
+export type MiperDashboardRow = {
+  matrixId: string; worksiteId: string; worksiteName: string; stateLabel: string; versionNumber: number | null
+  classificationCounts: Record<RiskClassification, number>; uncontrolledCount: number
+  progress: ProgramProgress; alertCount: number
+}
+export type MiperDashboard = { tiles: MiperDashboardTile[]; strip: MiperDashboardStrip; rows: MiperDashboardRow[] }
+export async function getMiperDashboard(access: MiperAccess, filters: MiperDashboardFilters = {}): Promise<MiperDashboard>
+```
+
+Reglas que no se inventan:
+- **«Por hacer»** reusa `listMiperInbox(access)` (misma condición de rol que la bandeja) y su `href` apunta a `?tab=porhacer`.
+- **«Intolerables + Importantes»** y **«sin controlar»** se cuentan con **una** agregación nueva sobre `preventionRiskEntries` (`classification IN ('important','intolerable')` y `controlledStatus = 'no' AND classification <> 'tolerable'`), enlazada a la lista con `?clasificacion=…` / `?control=no`.
+- **«Avance del programa»** suma las ocurrencias por faena y las pasa por `programProgress(occurrences, todayInChile())`; **nunca** lee una columna de avance.
+- La **franja secundaria** sale de los mismos datos y de `preventionRiskControls`/`preventionRiskProgramOccurrences` (medidas pendientes = controles sin `status = 'verified'`; actividades vencidas = ocurrencias `pending` con `due_on < today`).
+- El **filtro responsable** filtra por `preventionRiskProgramActions.responsibleUserId` **y** `preventionRiskControls.responsibleUserId` (unión): qué persona tiene trabajo asignado, no quién firmó.
+
+- [ ] **Step 3: Verificación**
+
+```bash
+npm run test:pglite -- lib/__tests__/miper-dashboard.test.ts
+```
+Resultado esperado: la suite completa del archivo pasa y el conteo de tiles/franja/tabla coincide con la semilla. (Si el runner ignora el argumento, correr `npm run test:pglite` y confirmar que el archivo aparece en la lista.)
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add lib/services/miper/dashboard.ts lib/services/miper/queries.ts lib/__tests__/miper-dashboard.test.ts tests/pglite-files.ts
+git commit -m "feat(miper): consulta del dashboard con tiles accionables, franja y tabla por faena"
+```
+
+---
+
+#### Task 2: Pestaña «Resumen» de la portada
+
+**Files:**
+- Create: `app/(app)/prevencion/miper/dashboard-panel.tsx`
+- Modify: `app/(app)/prevencion/miper/miper-home.tsx`, `app/(app)/prevencion/miper/page.tsx`
+
+- [ ] **Step 1: Test que falla primero (componente ligero)**
+
+Un test de render (jsdom, el patrón de los componentes de `miper-home`) que exige: (a) una pestaña `Resumen` antes de `Por hacer`; (b) cuatro tiles renderizados como `<Link>` (no como cajas de número); (c) la franja secundaria en texto; (d) la tabla por faena con columnas Estado, Versión, Clasificación, Sin controlar, Avance y Alertas.
+
+```ts
+render(<MiperHome {...props} dashboard={dash} />)
+expect(screen.getByRole("link", { name: /Intolerables e Importantes/ })).toHaveAttribute("href", expect.stringContaining("clasificacion="))
+expect(screen.getAllByRole("tab")).toHaveLength(3)
+```
+
+- [ ] **Step 2: Implementación de referencia**
+
+- `TABS = new Set(["resumen", "porhacer", "todas"])`; la pestaña por defecto sigue siendo `porhacer` para no cambiar la costumbre, pero `?tab=resumen` es enlace directo.
+- Los cuatro tiles son `Link` con `href` a la lista ya filtrada (regla A1: **accionables**, no KPIs): «Por hacer» → `?tab=porhacer`; Intolerables + Importantes → `?tab=todas&clasificacion=grave`; sin controlar → `?tab=todas&control=no`; avance → `?tab=todas&vista=avance`.
+- La **franja secundaria** reusa el formato de `app/(app)/prevencion/miper/[id]/summary-strip.tsx` (`<dl>` en texto, sin tarjetas): MIPER vigentes, con observaciones, Tolerables y Moderados, medidas pendientes, actividades vencidas.
+- Los **filtros primarios** (faena, período, estado, **responsable**) se escriben con el `update({...})` de una sola escritura que ya existe en `miper-home.tsx`; el `responsable` se agrega a `page.tsx` y al servicio.
+- La **tabla por faena** usa `DataTable` con `renderRow` navegando a `/prevencion/miper/{matrixId}`.
+
+- [ ] **Step 3: Verificación**
+
+```bash
+npm run test:fast -- app/(app)/prevencion/miper
+npm run typecheck
+```
+Resultado esperado: el test de render pasa; `typecheck` sin errores.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add 'app/(app)/prevencion/miper/dashboard-panel.tsx' 'app/(app)/prevencion/miper/miper-home.tsx' 'app/(app)/prevencion/miper/page.tsx'
+git commit -m "feat(miper): pestaña Resumen con tiles accionables, filtros y tabla por faena"
+```
+
+---
+
+#### Task 3: Alertas del flujo — tipos de notificación y avisos por fila y paso de revisión
+
+**Files:**
+- Modify: `db/schema/audit.ts` (el `union` `NotificationType`)
+- Create: `lib/services/miper/notifications.ts`, `lib/__tests__/miper-notifications.test.ts` (PGlite)
+- Modify: `lib/services/miper/entries.ts` (`saveMiperEntry`), `lib/services/miper/workflow.ts`
+
+- [ ] **Step 1: Test que falla primero**
+
+```ts
+// el guardado que cruza a Intolerable avisa una sola vez por fila
+await saveMiperEntry({ ...entry, probability: 4, consequence: 4 }, access)
+await saveMiperEntry({ ...entry, risk: "otra descripción" }, access)   // sigue Intolerable
+await drainPostCommit()                                                 // helper del test
+const notes = await db.select().from(notifications).where(eq(notifications.type, "miper_row_intolerable"))
+expect(notes).toHaveLength(2)  // prevencionista de la faena + Jefa, una sola vez por persona
+```
+
+- [ ] **Step 2: Implementación de referencia**
+
+Se declaran **de una vez** todos los miembros nuevos del `union` (los usan las Tasks 3 y 5):
+
+```ts
+// db/schema/audit.ts — dentro de NotificationType
+| "miper_row_intolerable"        // fila que pasa a Intolerable (dedup por fila)
+| "miper_review_pending"         // enviado a revisión → siguiente responsable
+| "miper_review_returned"        // devuelto con observaciones → quien editó
+| "miper_signature_pending"      // aprobado técnicamente → Legal y RRHH
+| "miper_signature_overdue"      // firma pendiente > 5 días hábiles (ver Task 5)
+| "miper_occurrence_overdue"     // ocurrencia vencida por barrido (ver Task 5)
+| "miper_occurrence_not_done"    // ocurrencia «No se hizo» → Jefa (ver Task 5)
+```
+
+`lib/services/miper/notifications.ts` expone funciones que **devuelven un thunk**, y nada más:
+
+```ts
+export function planMiperRowIntolerable(args: { matrixId: string; worksiteId: string; entryId: string; rowNumber: number }): () => Promise<void>
+export function planMiperReviewStep(args: { matrixId: string; worksiteId: string; reviewState: "in_review" | "pending_approval"; returned: boolean; actorUserId: string }): () => Promise<void>
+```
+
+- Destinatarios: `getUserIdsWithPermissionForWorksite("prevention:risk:edit", worksiteId)` para el prevencionista de la faena y `getUserIdsWithPermissionForWorksite("prevention:risk:review", worksiteId)` para la Jefa. Se unen, se quita el autor y se llama `notifyManyUser(ids, { type, title, body, entityType: "risk_legal:risk:miper", entityId, entityHref, dedupeKey })`.
+- **Dedup por fila** (Intolerable): `dedupeKey = miper-row-intolerable:${entryId}` — el índice único parcial `notifications_user_dedupe_unique` garantiza una sola por persona aunque la fila vuelva a Intolerable.
+- `saveMiperEntry` y `workflow.ts` llaman `notifyAfterCommit(planX(...))` **después** de que la transacción resuelve (jamás dentro del callback).
+- Los rótulos viven en español en la notificación; el `entityHref` apunta a `?tab=revision` o `?fila={entryId}`.
+
+- [ ] **Step 3: Verificación**
+
+```bash
+npm run test:pglite -- lib/__tests__/miper-notifications.test.ts
+npm run test:fast -- lib/services/miper
+```
+Resultado esperado: PGlite verde y, en el test, **ninguna** consulta de notificación se ejecuta antes del commit (se asevera con un contador que permanece en 0 dentro del `db.transaction`).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add db/schema/audit.ts lib/services/miper/notifications.ts lib/services/miper/entries.ts lib/services/miper/workflow.ts lib/__tests__/miper-notifications.test.ts tests/pglite-files.ts
+git commit -m "feat(miper): alertas de fila Intolerable y de cada paso de revisión, post-commit"
+```
+
+---
+
+#### Task 4: El tipo MIPER en `getPreventionAttention` y en la cola «Mi trabajo»
+
+**Files:**
+- Modify: `lib/services/prevention-attention.ts`, `app/(app)/prevencion/prevention-home.tsx`
+- Modify: `lib/services/operational-work-queue.ts`, `lib/work-queue.types.ts`, `lib/services/work-queue-eligibility.ts`, los mapas de rótulos/íconos del workbench
+- Create: `lib/__tests__/miper-work-queue.test.ts` (PGlite)
+
+- [ ] **Step 1: Test que falla primero**
+
+```ts
+const items = await getPreventionAttention({ worksiteIds: [ws.id], includeActions: false, includeEvaluations: false, includePpa: false, includeMiper: true })
+expect(items.some((i) => i.kind === "miper")).toBe(true)
+
+const queue = await getOperationalWorkQueue(session, { module: "miper" })
+expect(queue.items.every((i) => i.module === "miper")).toBe(true)
+expect(queue.items.some((i) => i.sourceType === "miper_occurrence")).toBe(true)
+```
+
+- [ ] **Step 2: Implementación de referencia**
+
+- `PreventionAttentionItem["kind"]` gana `"miper"`; `getPreventionAttention` gana `includeMiper?: boolean` y una fuente que emite: matrices en `in_review`/`pending_approval` (href `?tab=revision`), filas Intolerable sin medida con responsable y plazo, y ocurrencias vencidas. Ojo: `pickAttention` reparte round-robin por `kind`, así que **sumar un `kind` reduce los cupos de los demás** — se documenta en el propio `pickAttention`.
+- La cola gana `"miper"` en `OperationalModule` (`lib/work-queue.types.ts`) y **dos ramas** con la misma forma SQL de las demás (un `SELECT` de la unión, `inScope(...)` adentro):
+  - `miper_occurrence`: ocurrencias `pending` vencidas o `not_done` del responsable nominal o de quien tiene `prevention:risk:program:execute`; `href` a `?tab=programa&ocurrencia={id}`; `ctaLabel` «Registrar ejecución».
+  - `miper_review`: matrices en `in_review` (para `prevention:risk:review`) o `pending_approval` (para `prevention:risk:approve_legal`); `href` a `?tab=revision`; `ctaLabel` «Revisar» / «Firmar».
+- `parseOperationalQueueFilters` suma `"miper"` a `allowedModules`; `work-queue-eligibility.ts` suma `WorkQueueSource = "miper"` con `["prevention:risk:program:execute", "prevention:risk:review", "prevention:risk:approve_legal"]`; el workbench suma el módulo a su mapa de rótulos.
+- `prevention-home.tsx` enciende `includeMiper` con el mismo criterio con que ya enciende las demás fuentes.
+
+- [ ] **Step 3: Verificación**
+
+```bash
+npm run test:pglite -- lib/__tests__/miper-work-queue.test.ts
+npm run test:e2e -- e2e/operational-work-queue.spec.ts
+```
+Resultado esperado: el tipo MIPER aparece con su rótulo y enlace, y la cola existente no cambia para quien no ve MIPER.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add lib/services/prevention-attention.ts lib/services/operational-work-queue.ts lib/work-queue.types.ts lib/services/work-queue-eligibility.ts 'app/(app)/prevencion/prevention-home.tsx' lib/__tests__/miper-work-queue.test.ts tests/pglite-files.ts
+git commit -m "feat(miper): tipo MIPER en la atención de Prevención y en la cola Mi trabajo"
+```
+
+---
+
+#### Task 5: Barrido diario — ocurrencia vencida, «No se hizo» a la Jefa y firma > 5 días hábiles
+
+**Files:**
+- Create: `lib/services/miper/reminders.ts`, `lib/prevention/miper/business-days.ts` (+ test), `app/api/cron/prevention-miper-daily-sweep/route.ts` (+ test)
+- Modify: `lib/services/pdtp/reminders.ts`, `app/api/cron/prevention-cron-contract.test.ts`, `scripts/cron-runner.mjs`
+
+- [ ] **Step 1: Test que falla primero**
+
+```ts
+// días hábiles: del viernes 03-10 al martes 07-10 hay 1 hábil (sin feriados)
+expect(addBusinessDays("2030-10-03", 1)).toBe("2030-10-07")
+expect(businessDaysBetween("2030-09-20", "2030-10-04")).toBeGreaterThan(5)  // > 5 hábiles
+
+const r = await runMiperOccurrenceSweep()
+expect(r.overdueNotified).toBe(1)
+const again = await runMiperOccurrenceSweep()   // idempotente
+expect(again.overdueNotified).toBe(0)
+```
+
+- [ ] **Step 2: Implementación de referencia**
+
+- `lib/prevention/miper/business-days.ts` (nuevo, porque **no existe ningún helper de días hábiles en `lib/`**): `addBusinessDays(date, n)` y `businessDaysBetween(from, to)` en días civiles de Chile, saltando sábados, domingos y los feriados de Chile. Reusar la lista de feriados que ya consume `lib/__tests__/prevention-dia-civil-chileno.test.ts` si está exportada; si no, dejar la lista como constante documentada.
+- `runMiperOccurrenceSweep()` recorre las ocurrencias con `due_on < todayInChile()` y `outcome = 'pending'` y avisa a `responsable + prevencionista` con `dedupeKey = miper-occurrence-vencida:${occurrenceId}` (dedup **por ocurrencia**, no por día); y las ocurrencias `not_done` avisan a la Jefa (`getUserIdsWithPermissionForWorksite("prevention:risk:review", worksiteId)`) con `dedupeKey = miper-occurrence-no-hecha:${occurrenceId}`.
+- La app resuelve los destinatarios en el thunk post-commit; el cron no abre transacción (sólo lee y notifica).
+- **Firma pendiente > 5 días hábiles**: se extiende el recordatorio que **ya existe** en `lib/services/pdtp/reminders.ts` (líneas 381–580, hoy con escalones de 30/15/7 días **calendario** y corrida semanal). Se agrega un escalón `{ days: 5, business: true, bucket: "5d", copy: "lleva más de cinco días hábiles esperando firma" }` usando `businessDaysBetween` sobre `preventionRiskMatrices.updatedAt`, y `dedupeKey` sigue el patrón existente `pdtp-firma-pendiente:${entityType}:${entityId}:${status}:${bucket}`.
+- El cron `prevention-miper-daily-sweep` se registra en `scripts/cron-runner.mjs` y su contrato se agrega a `prevention-cron-contract.test.ts` (respuesta con `outcome` y `code`, y `withCronLock`).
+
+- [ ] **Step 3: Verificación**
+
+```bash
+npm run test:fast -- lib/prevention/miper/business-days.test.ts
+npm run test:fast -- app/api/cron/prevention-cron-contract.test.ts
+npm run test:pglite -- lib/__tests__/miper-reminders.test.ts
+```
+Resultado esperado: el barrido es idempotente (segunda corrida = 0 avisos nuevos), el contrato de cron pasa y los días hábiles respetan fines de semana y feriados.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add lib/prevention/miper/business-days.ts lib/prevention/miper/business-days.test.ts lib/services/miper/reminders.ts 'app/api/cron/prevention-miper-daily-sweep' lib/services/pdtp/reminders.ts app/api/cron/prevention-cron-contract.test.ts scripts/cron-runner.mjs
+git commit -m "feat(miper): barrido diario de ocurrencias y escalón de cinco días hábiles para la firma"
+```
+
+---
+
+#### Task 6: Exportación del estado vivo y cierre de la hoja *Programa de Trabajo*
+
+**Files:**
+- Modify: `lib/reports/miper-workbook.ts` (+ `lib/reports/miper-workbook.test.ts`), `app/api/prevencion/miper/[id]/export/route.ts`
+- Modify: el enlace de descarga del espacio de trabajo (offering «Descargar estado vivo»)
+
+- [ ] **Step 1: Test que falla primero**
+
+```ts
+const sealed = await buildMiperWorkbook(detail, null)                    // por defecto: sellado
+const live   = await buildMiperWorkbook(detail, null, { liveState: true, liveSnapshot })
+
+expect(sealed.getWorksheet("RE-04 IPER")!.getCell("A1").value).not.toContain("no aprobados")
+expect(live.getWorksheet("RE-04 IPER")!.getCell("A1").value).toContain("Incluye cambios no aprobados")
+expect(live.getWorksheet("Programa de Trabajo")!.getCell("A2").value).toContain("Incluye cambios no aprobados")
+// el sellado sale de la foto, el vivo de la fila viva
+expect(sealed.getWorksheet("RE-04 IPER")!.rowCount).toBe(fotoRowCount)
+```
+
+- [ ] **Step 2: Implementación de referencia**
+
+- `buildMiperWorkbook(detail, program?, options?: { liveState?: boolean; liveSnapshot?: MiperSnapshot })`. **Por defecto sellado** (lo que hoy hace). Con `liveState`, las hojas *RE-04 IPER* y *Criterios* se arman desde `liveSnapshot` (`buildMiperSnapshot(db, matrixId)`) y **cada hoja** lleva en su fila de título la leyenda «Incluye cambios no aprobados».
+- La ruta de exportación lee `?estado=vivo` (nuevo) y **sigue auditando** con `recordAudit`; el cron de archivado (`generated-documents-archive` → `kinds.ts:64`) **no** pasa `liveState`: guarda siempre el sellado.
+- **Lo que falta en la hoja *Programa de Trabajo* (F2)** — queda en esta tarea:
+  1. **Una fila por ocurrencia**, no una por actividad: el RE-04.1 espera cada ocurrencia planificada con su **fecha de ejecución efectiva** y su **avance** en la misma fila (hoy van agregadas en celdas multilínea).
+  2. **Columna de evidencia**: nombre(s) del archivo y enlace de descarga del registro vigente (`preventionRiskOccurrenceEvidence` no retirada); hoy no se imprime.
+  3. **Encabezado RE-04.1 completo** y con los mismos rótulos del formato (Período, Razón social, RUT, Dirección/Comuna, Representante de la empresa en la faena, Fecha de elaboración, N° de centros de trabajo, Fecha última revisión, Encargado). Hoy hay 9 campos; falta congelar el rótulo exacto y admitir «—» en vacío.
+  4. **La nota «Programa al momento de la descarga»** pasa a ser un aviso **condicional**: sólo cuando el programa leído está adelantado respecto de la versión sellada (o cuando `liveState`). En el sellado puro el programa no debería diferir.
+
+- [ ] **Step 3: Verificación**
+
+```bash
+npm run test:fast -- lib/reports/miper-workbook.test.ts
+```
+Resultado esperado: el libro por defecto es idéntico al de F2 (mismo `snapshot_sha256` recorrido en la hoja), el vivo lleva la leyenda, y la hoja *Programa de Trabajo* trae una fila por ocurrencia con su evidencia.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add lib/reports/miper-workbook.ts lib/reports/miper-workbook.test.ts 'app/api/prevencion/miper/[id]/export/route.ts' 'app/(app)/prevencion/miper/[id]'
+git commit -m "feat(miper): exportación del estado vivo con leyenda y hoja RE-04.1 por ocurrencia con evidencia"
+```
+
+---
+
+#### Task 7: Importación RE-04
+
+**Files:**
+- Create: `lib/prevention/miper/re04-import.ts` (+ test), `lib/services/miper/import.ts` (+ test PGlite `lib/__tests__/miper-import.test.ts`)
+- Create: `app/(app)/prevencion/miper/import-dialog.tsx`
+- Modify: `app/(app)/prevencion/miper/actions.ts`, `app/(app)/prevencion/miper/miper-home.tsx` (o el espacio de trabajo), `lib/validation/prevention-module/miper.ts`, `lib/prevention/miper/history-labels.ts`
+
+- [ ] **Step 1: Test que falla primero**
+
+```ts
+const preview = await previewRiskImport(fileBuffer, { worksiteId, target: "draft" }, access)
+expect(preview.rows[0]!.issues).toContainEqual(expect.objectContaining({ code: "mr_mismatch", excel: 8, calculated: 16 }))
+expect(preview.rows[1]!.issues).toContainEqual(expect.objectContaining({ code: "p_out_of_scale" }))
+expect(preview.rows[2]!.normalized.controlledStatus).toBe("yes")   // "SÍ, CONTROLADO"
+expect(preview.rows[3]!.normalized.isRoutine).toBe(false)          // "NO RUTINARIA"
+```
+
+- [ ] **Step 2: Implementación de referencia**
+
+- `lib/prevention/miper/re04-import.ts` es **puro**: recibe la matriz de celdas de la hoja *RE-04 IPER* ya extraída por ExcelJS y devuelve `{ rows: Array<{ rowNumber, original, normalized, issues, fingerprintSha256 }> }`.
+  - Mapeo de textos: `"SÍ, CONTROLADO" → "yes"`, `"PARCIALMENTE CONTROLADO" → "partial"`, `"NO CONTROLADO"`/vacío `→ "no"`; `"RUTINARIA" → true`, `"NO RUTINARIA" → false`.
+  - P y C: sólo `{1, 2, 4}`; otro valor produce `p_out_of_scale`/`c_out_of_scale` y la fila **no** se carga.
+  - MR y clasificación del Excel: se informan como `mr_mismatch`/`classification_mismatch` y **manda `classify(p, c)`**.
+  - Factor de riesgo: se normaliza el nombre y se mapea contra `prevention_risk_factors`; si no existe, `unknown_factor` y la vista previa ofrece crearlo (reusa `saveRiskFactorAction`).
+- `lib/services/miper/import.ts` escribe el lote en `prevention_risk_import_batches` / `prevention_risk_import_rows` (que se **reutilizan tal cual**, ver «Decisiones de diseño»): estado `staged` → `approved` → `activated`, `resolution` por fila (`creada_en_borrador` | `agregada_al_vivo` | `ignorada`) y `risk_entry_id` apuntando a la fila creada o actualizada.
+- Carga: destino `draft` crea el MIPER borrador y escribe las filas por `saveMiperEntry`; destino `live` agrega filas al MIPER vigente (queda `hasUnsentChanges = true`, visible en la bandeja como «Cambios sin enviar»).
+- La vista previa muestra **problemas por fila** con la fila del Excel, el valor leído y el cálculo mandante; `import-dialog.tsx` es un `Sheet` con tabla y botones «Cargar en borrador» / «Agregar al vigente».
+- Traza: cada fila importada se escribe con `sourceRowNumber`, `sourceOriginal` y `sourceNormalized` de `prevention_risk_entries` (columnas que ya existen) y el historial usa `import_applied` (rótulo nuevo en `history-labels.ts`).
+
+- [ ] **Step 3: Verificación**
+
+```bash
+npm run test:fast -- lib/prevention/miper/re04-import.test.ts
+npm run test:pglite -- lib/__tests__/miper-import.test.ts
+```
+Resultado esperado: el fixture de la hoja real produce los problemas esperados y ninguna fila con P/C fuera de escala se carga; el MR guardado es siempre `p × c`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add lib/prevention/miper/re04-import.ts lib/prevention/miper/re04-import.test.ts lib/services/miper/import.ts lib/__tests__/miper-import.test.ts 'app/(app)/prevencion/miper/import-dialog.tsx' 'app/(app)/prevencion/miper/actions.ts' 'app/(app)/prevencion/miper/miper-home.tsx' lib/validation/prevention-module/miper.ts lib/prevention/miper/history-labels.ts tests/pglite-files.ts
+git commit -m "feat(miper): importación RE-04 con vista previa por fila y carga a borrador o al vigente"
+```
+
+---
+
+#### Task 8: E2E completo del §12 y recorrido con informe
+
+**Files:**
+- Create: `e2e/prevencion-miper-completo.spec.ts`; modify: `e2e/setup-db.ts`
+- Create: `qa/reports/<AAAA-MM-DD>-miper-f3.md`
+- Modify: el capítulo del manual de Prevención
+
+- [ ] **Step 1: Escenario §12 en un solo recorrido determinista**
+
+Un spec serial (`test.describe.configure({ mode: "serial" })`) que encadena los **17 pasos** del §12 con tres usuarios sembrados (`prev.faena@e2e.chome.cl`, `jefa.prevencion@e2e.chome.cl`, `legal.rrhh@e2e.chome.cl`) más un responsable de actividad:
+
+1. La prevencionista entra a una faena y crea un MIPER nuevo.
+2. Completa antecedentes (prellenados desde la faena y la empresa).
+3. Agrega actividades, tareas y puestos; identifica peligros y riesgos.
+4. Selecciona P y C; la plataforma calcula MR y clasificación (nunca se escribe a mano).
+5. Define medidas con tipo de control, responsable y plazo.
+6. Genera las actividades del programa, reutilizando una para varias medidas.
+7. Envía a revisión.
+8. La Jefa revisa y observa un riesgo concreto.
+9. La prevencionista responde, corrige y reenvía; la Jefa ve la fila como «Modificada».
+10. La Jefa aprueba técnicamente; Legal y RRHH revisa y aprueba.
+11. El MIPER queda vigente (v1) y las actividades aparecen en el programa con ocurrencias.
+12. Un responsable marca «Se hizo» con fecha efectiva y evidencia; el avance se actualiza.
+13. Otra ocurrencia se marca «No se hizo» y queda Incumplida.
+14. La Jefa consulta el avance general (dashboard «Resumen» y programa).
+15. Desde una actividad se llega al riesgo que la originó; desde un riesgo, a sus medidas, actividades y evidencias.
+16. La prevencionista agrega un riesgo nuevo al MIPER vigente: aplica de inmediato, aparece como cambio pendiente, se envía, se revisa y se sella la v2; la v1 sigue consultable.
+17. Todo el proceso queda en el historial con actor, rol, fecha y hora.
+
+Locators por rol, `textoVisible()`, `campoInspeccion()` y `exact: true` (el patrón de `e2e/prevencion-miper-flujo.spec.ts`, que ya documenta por qué `exact` es obligatorio). Los pasos 1–5, 7–10, 16 y 17 ya existen en `prevencion-miper-flujo.spec.ts`; los 6 y 11–15 en `prevencion-miper-programa.spec.ts`. La tarea los unifica en **un** escenario sin duplicar datos a mano y sin consultar el Excel.
+
+- [ ] **Step 2: E2E de la fase**
+
+```bash
+npm run test:e2e -- e2e/prevencion-miper-completo.spec.ts
+```
+Resultado esperado: los 17 pasos verdes en un solo spec, determinista y re-ejecutable.
+
+- [ ] **Step 3: Recorrido con informe**
+
+Recorrido asistido en escritorio y móvil de las cuatro consolas (Resumen, alertas en la campana/cola, descarga sellada y viva, importación con problemas por fila), con el informe fechado en `qa/reports/<AAAA-MM-DD>-miper-f3.md`, declarando alcance y **lo no recorrido**.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add e2e/prevencion-miper-completo.spec.ts e2e/setup-db.ts qa/reports docs/manual-prevencion
+git commit -m "test(miper): E2E completo del §12, dashboard, alertas, exportación viva e importación RE-04"
+```
+
+---
+
+### Cierre de la F3
+
+**Queda fuera de la F3** (y se documenta como tal en `qa/reports/<AAAA-MM-DD>-miper-f3.md`):
+
+- El **retiro físico** de las columnas antiguas (`inherent_*`, `residual_*`, `expected_event_or_damage`, …) y de las filas `legacy`: la migración posterior sólo se hace cuando `scripts/migration-preflight.mjs` confirme que no quedan filas legacy en producción (§10 del spec).
+- El **mapa CGRD**, la **ficha de control** y la **CAPA por control ineficaz** siguen leyendo `residual_level` con el helper que cae a la clasificación RE-04 sólo en filas nuevas; su migración completa no es de esta fase.
+- La **notificación por correo** de los avisos MIPER: la F3 entrega notificación en la plataforma (campana + cola); el correo del flujo de revisión queda como decisión de producto abierta.
+- Los **umbrales de negocio** de la firma pendiente más allá del escalón de 5 días hábiles: la tabla de escalones queda como está (5/7/15/30), sujeta a revisión de la Jefa.
+
+**Puertas que hay que correr antes de dar la F3 por integrada** (§11 del spec):
+
+```bash
+npm run typecheck
+npm run lint
+npm run test:fast
+npm run test:pglite
+npm run test:e2e -- e2e/prevencion-miper-completo.spec.ts e2e/operational-work-queue.spec.ts
+npm run db:verify-migrations        # debe pasar; db:generate debe decir «No schema changes»
+npm run doctor
+npm run check:secrets
+```
+
+**Reporte de cierre:** `qa/reports/<AAAA-MM-DD>-miper-f3.md` con el rango de tareas, la lista de decisiones de diseño (reutilización de las tablas de importación, no reintroducción de `resolveRiskImportsDir()`, tiles como enlaces y no KPIs, umbral de 5 días hábiles) y las ambigüedades/contradicciones del spec contra el código de F1/F2.
+
