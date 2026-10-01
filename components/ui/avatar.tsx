@@ -14,18 +14,6 @@ const AvatarRoot = React.forwardRef<
 ))
 AvatarRoot.displayName = AvatarPrimitive.Root.displayName
 
-const AvatarImage = React.forwardRef<
-  React.ElementRef<typeof AvatarPrimitive.Image>,
-  React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Image>
->(({ className, ...props }, ref) => (
-  <AvatarPrimitive.Image
-    ref={ref}
-    className={cn("aspect-square h-full w-full object-cover", className)}
-    {...props}
-  />
-))
-AvatarImage.displayName = AvatarPrimitive.Image.displayName
-
 const AvatarFallback = React.forwardRef<
   React.ElementRef<typeof AvatarPrimitive.Fallback>,
   React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Fallback>
@@ -43,7 +31,12 @@ const AvatarFallback = React.forwardRef<
 AvatarFallback.displayName = AvatarPrimitive.Fallback.displayName
 
 /* ── Avatar: high-level component ────────────────────────────────────────── */
-// Uses DiceBear Glyphs API, falling back to initials if loading fails.
+// Deterministic local avatar: initials over a hue derived from the name. Antes
+// pedía el glifo a `api.dicebear.com`, lo que metía una dependencia y una
+// petición externa en cada render del sidebar, del menú de usuario y del listado
+// de usuarios; el glifo además sólo aparecía si la red respondía. Con iniciales
+// locales el avatar es instantáneo, funciona offline y la CSP puede dejar de
+// permitir ese origen.
 
 interface AvatarProps {
   name:       string
@@ -70,14 +63,11 @@ export function Avatar({ name, hue, size = "default", className }: AvatarProps) 
   const bg    = `oklch(0.72 0.09 ${h})`
   const color = `oklch(0.28 0.06 ${h})`
 
-  const avatarUrl = `https://api.dicebear.com/9.x/glyphs/svg?seed=${encodeURIComponent(name)}`
-
   return (
     <AvatarRoot
       className={cn(SIZE_CLASSES[size], className)}
       style={{ backgroundColor: bg }}
     >
-      <AvatarImage src={avatarUrl} alt={name} />
       <AvatarFallback style={{ color }} delayMs={0}>
         {initials}
       </AvatarFallback>
