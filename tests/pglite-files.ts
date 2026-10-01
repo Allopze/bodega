@@ -24,8 +24,13 @@ export const pgliteTestFiles = [
   "lib/__tests__/miper-snapshot-service.test.ts",
   // MIPER F1: flujo completo (envío, observaciones, aprobación técnica y Legal y RRHH).
   "lib/__tests__/miper-workflow.test.ts",
+  // MIPER F3 (§9.1): alertas del flujo (fila Intolerable, pasos de revisión) y
+  // barrido diario de ocurrencias, emitidas post-commit y deduplicadas.
+  "lib/__tests__/miper-notifications.test.ts",
   // MIPER F1: espacio de trabajo, bandeja por rol, lista e historial.
   "lib/__tests__/miper-queries.test.ts",
+  // MIPER F3: tablero del Resumen (tiles accionables, franja y tabla por faena).
+  "lib/__tests__/miper-dashboard.test.ts",
   // MIPER F2: programa de trabajo (vínculo único, ocurrencias y registros
   // de sólo inserción).
   "db/__tests__/miper-program-constraints.test.ts",
@@ -90,6 +95,9 @@ export const pgliteTestFiles = [
   "lib/__tests__/pend-003-cta-seguimiento-sst.test.ts",
   "lib/__tests__/operational-work-queue-capa-duplicada.test.ts",
   "lib/__tests__/operational-work-queue-row-identity.test.ts",
+  // MIPER F3 (§9.1): el tipo MIPER en la cola «Mi trabajo» —ocurrencias vencidas
+  // y matrices esperando firma— y en la atención de Prevención.
+  "lib/__tests__/miper-work-queue.test.ts",
   "lib/__tests__/combustibles-scope.test.ts",
   "lib/__tests__/ti-dashboard-assets-by-age.test.ts",
   "lib/__tests__/compras-export-invoice-filter.test.ts",

@@ -15,9 +15,13 @@ import { RiskClassificationBadge } from "@/components/prevention/risk-classifica
 import { RISK_CLASSIFICATIONS } from "@/lib/prevention/miper/methodology"
 import { formatDate } from "@/lib/utils"
 import type { MiperListRow } from "@/lib/services/miper/queries"
+import type { MiperDashboard } from "@/lib/services/miper/dashboard"
+import { MiperDashboardPanel } from "./dashboard-panel"
 import { NewMiperDialog, type CreationWorksite } from "./new-miper-dialog"
 
-const TABS = new Set(["porhacer", "todas"])
+// La pestaña vive en la URL. `porhacer` sigue siendo la de siempre por defecto
+// (no cambia la costumbre); `?tab=resumen` es enlace directo.
+const TABS = new Set(["resumen", "porhacer", "todas"])
 
 /** Rótulos en español de `status` + `review_state` (nunca el enum crudo). */
 const STATE_OPTIONS = [
@@ -46,9 +50,44 @@ function Distribution({ row }: { row: MiperListRow }) {
   )
 }
 
-export function MiperHome({ inbox, all, creationWorksites, currentYear, permissions }: {
+/**
+ * Filtros primarios (§8.6): faena, período, estado y responsable. El responsable
+ * es nuevo en la portada y sale de quién tiene trabajo asignado —actividad del
+ * programa o medida—, no de quién firmó.
+ */
+function FilterBar({ values, worksiteOptions, periodOptions, responsibleOptions, onChange }: {
+  values: { faena: string; periodo: string; estado: string; responsable: string }
+  worksiteOptions: Array<[string, string]>
+  periodOptions: number[]
+  responsibleOptions: Array<{ id: string; name: string }>
+  onChange: (next: Record<string, string | null>) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Select value={values.faena} onValueChange={(value) => onChange({ faena: value })}>
+        <SelectTrigger aria-label="Faena" className="w-56"><SelectValue placeholder="Todas las faenas" /></SelectTrigger>
+        <SelectContent><SelectItem value="all">Todas las faenas</SelectItem>{worksiteOptions.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent>
+      </Select>
+      <Select value={values.periodo} onValueChange={(value) => onChange({ periodo: value })}>
+        <SelectTrigger aria-label="Período" className="w-40"><SelectValue placeholder="Todos los períodos" /></SelectTrigger>
+        <SelectContent><SelectItem value="all">Todos los períodos</SelectItem>{periodOptions.map((period) => <SelectItem key={period} value={String(period)}>{period}</SelectItem>)}</SelectContent>
+      </Select>
+      <Select value={values.estado} onValueChange={(value) => onChange({ estado: value })}>
+        <SelectTrigger aria-label="Estado" className="w-56"><SelectValue /></SelectTrigger>
+        <SelectContent>{STATE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+      </Select>
+      <Select value={values.responsable} onValueChange={(value) => onChange({ responsable: value })}>
+        <SelectTrigger aria-label="Responsable" className="w-56"><SelectValue placeholder="Cualquier responsable" /></SelectTrigger>
+        <SelectContent><SelectItem value="all">Cualquier responsable</SelectItem>{responsibleOptions.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}</SelectContent>
+      </Select>
+    </div>
+  )
+}
+
+export function MiperHome({ inbox, all, dashboard, creationWorksites, currentYear, permissions }: {
   inbox: MiperListRow[]
   all: MiperListRow[]
+  dashboard: MiperDashboard
   creationWorksites: CreationWorksite[]
   currentYear: number
   permissions: { canEdit: boolean; canManageCatalog: boolean }
@@ -73,11 +112,44 @@ export function MiperHome({ inbox, all, creationWorksites, currentYear, permissi
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
   }, [router, pathname, searchParams])
 
+  const clearFilters = useCallback(() => {
+    update({ faena: null, periodo: null, estado: null, responsable: null, clasificacion: null, control: null, vista: null })
+  }, [update])
+
   // Las opciones de filtro salen de lo que ya se está listando: ofrecer una
   // faena que la persona no puede ver llevaría a una lista vacía sin explicación.
   const worksiteOptions = [...new Map(all.map((row) => [row.worksiteId, row.worksiteName])).entries()]
   const periodOptions = [...new Set(all.map((row) => row.period).filter((period): period is number => period !== null))].sort((a, b) => b - a)
-  const filtersActive = ["faena", "periodo", "estado"].some((key) => searchParams.get(key))
+  const filtersActive = ["faena", "periodo", "estado", "responsable"].some((key) => searchParams.get(key))
+  const filterValues = {
+    faena: searchParams.get("faena") ?? "all",
+    periodo: searchParams.get("periodo") ?? "all",
+    estado: searchParams.get("estado") ?? "all",
+    responsable: searchParams.get("responsable") ?? "all",
+  }
+
+  /* Los tiles del Resumen enlazan a esta lista con `clasificacion` o `control`.
+   * El subconjunto se acota con las MISMAS cifras que muestra el tablero —no con
+   * una regla paralela— y el responsable ya viene aplicado desde el servicio, así
+   * que basta con que la MIPER esté entre las filas del tablero. */
+  const tileFilters = [
+    searchParams.get("clasificacion") === "grave" ? "Intolerables e Importantes" : null,
+    searchParams.get("control") === "no" ? "Sin controlar" : null,
+    searchParams.get("vista") === "avance" ? "Con avance del programa" : null,
+  ].filter((label): label is string => label !== null)
+  const showAvance = searchParams.get("vista") === "avance"
+  const listRows = tileFilters.length === 0 ? all : all.filter((row) => {
+    const summary = dashboard.rows.find((candidate) => candidate.matrixId === row.id)
+    if (!summary) return false
+    if (searchParams.get("clasificacion") === "grave" && summary.classificationCounts.important + summary.classificationCounts.intolerable === 0) return false
+    if (searchParams.get("control") === "no" && summary.uncontrolledCount === 0) return false
+    return true
+  })
+  const avanceOf = (matrixId: string) => {
+    const progress = dashboard.rows.find((candidate) => candidate.matrixId === matrixId)?.progress
+    if (!progress || progress.ratio === null) return "—"
+    return `${Math.round(progress.ratio * 100)}% · ${progress.done}/${progress.planned}`
+  }
 
   return (
     <PageContainer width="wide">
@@ -92,9 +164,14 @@ export function MiperHome({ inbox, all, creationWorksites, currentYear, permissi
       />
       <Tabs value={tab} onValueChange={(value) => update({ tab: value })}>
         <TabsList>
+          <TabsTrigger value="resumen">Resumen</TabsTrigger>
           <TabsTrigger value="porhacer">Por hacer ({inbox.length})</TabsTrigger>
           <TabsTrigger value="todas">Todas</TabsTrigger>
         </TabsList>
+        <TabsContent value="resumen" className="space-y-3">
+          <FilterBar values={filterValues} worksiteOptions={worksiteOptions} periodOptions={periodOptions} responsibleOptions={dashboard.responsibleOptions} onChange={update} />
+          <MiperDashboardPanel dashboard={dashboard} filtersActive={filtersActive} onClearFilters={clearFilters} />
+        </TabsContent>
         <TabsContent value="porhacer" className="space-y-2">
           {inbox.length === 0 ? (
             <EmptyState
@@ -116,20 +193,16 @@ export function MiperHome({ inbox, all, creationWorksites, currentYear, permissi
           ))}
         </TabsContent>
         <TabsContent value="todas" className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            <Select value={searchParams.get("faena") ?? "all"} onValueChange={(value) => update({ faena: value })}>
-              <SelectTrigger aria-label="Faena" className="w-56"><SelectValue placeholder="Todas las faenas" /></SelectTrigger>
-              <SelectContent><SelectItem value="all">Todas las faenas</SelectItem>{worksiteOptions.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent>
-            </Select>
-            <Select value={searchParams.get("periodo") ?? "all"} onValueChange={(value) => update({ periodo: value })}>
-              <SelectTrigger aria-label="Período" className="w-40"><SelectValue placeholder="Todos los períodos" /></SelectTrigger>
-              <SelectContent><SelectItem value="all">Todos los períodos</SelectItem>{periodOptions.map((period) => <SelectItem key={period} value={String(period)}>{period}</SelectItem>)}</SelectContent>
-            </Select>
-            <Select value={searchParams.get("estado") ?? "all"} onValueChange={(value) => update({ estado: value })}>
-              <SelectTrigger aria-label="Estado" className="w-56"><SelectValue /></SelectTrigger>
-              <SelectContent>{STATE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
+          <FilterBar values={filterValues} worksiteOptions={worksiteOptions} periodOptions={periodOptions} responsibleOptions={dashboard.responsibleOptions} onChange={update} />
+          {tileFilters.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-[var(--color-text-subtle)]">Filtros del tablero:</span>
+              {tileFilters.map((label) => (
+                <span key={label} className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs">{label}</span>
+              ))}
+              <Button type="button" variant="ghost" size="sm" onClick={() => update({ clasificacion: null, control: null, vista: null })}>Quitar</Button>
+            </div>
+          )}
           <DataTable
             caption="MIPER por faena y período"
             columns={[
@@ -138,13 +211,14 @@ export function MiperHome({ inbox, all, creationWorksites, currentYear, permissi
               { key: "label", label: "Estado" },
               { key: "entryCount", label: "Riesgos", numeric: true },
               { key: "distribution", label: "Clasificación" },
+              ...(showAvance ? [{ key: "avance", label: "Avance", numeric: true }] : []),
               { key: "updatedAt", label: "Modificada", sortable: true },
             ]}
-            rows={all}
+            rows={listRows}
             searchKeys={["worksiteName", "label"]}
             emptyTitle="Sin MIPER para estos filtros"
             emptyDescription={permissions.canEdit ? "Cambia los filtros o crea la MIPER de una faena." : "Cambia los filtros para ver otras faenas o períodos."}
-            emptyAction={filtersActive ? <Button type="button" variant="secondary" size="sm" onClick={() => update({ faena: null, periodo: null, estado: null })}>Limpiar filtros</Button> : undefined}
+            emptyAction={filtersActive || tileFilters.length > 0 ? <Button type="button" variant="secondary" size="sm" onClick={clearFilters}>Limpiar filtros</Button> : undefined}
             renderRow={(row) => (
               <TableRow key={row.id} className="cursor-pointer" onClick={() => router.push(`/prevencion/miper/${row.id}`)}>
                 <TableCell><Link href={`/prevencion/miper/${row.id}`} className="font-medium hover:underline">{row.worksiteName}</Link></TableCell>
@@ -152,6 +226,7 @@ export function MiperHome({ inbox, all, creationWorksites, currentYear, permissi
                 <TableCell>{row.label}</TableCell>
                 <TableCell className="tabular-nums">{row.entryCount}</TableCell>
                 <TableCell><Distribution row={row} /></TableCell>
+                {showAvance ? <TableCell className="tabular-nums">{avanceOf(row.id)}</TableCell> : null}
                 <TableCell>{formatDate(row.updatedAt)}</TableCell>
               </TableRow>
             )}
