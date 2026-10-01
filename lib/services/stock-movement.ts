@@ -107,6 +107,18 @@ export interface StockDocumentResult {
 export async function registerStockDocument(
   input: ApplyMovementInput & { kind: StockDocumentKind },
 ): Promise<StockDocumentResult> {
+  return db.transaction((tx) => registerStockDocumentTx(tx, input))
+}
+
+/**
+ * Lo mismo dentro de una transacción ajena: para cuando el documento es una
+ * mitad de una operación mayor —el traspaso de saldo entre dos SKU que son el
+ * mismo producto— y no puede quedar registrado sin la otra.
+ */
+export async function registerStockDocumentTx(
+  tx: Tx,
+  input: ApplyMovementInput & { kind: StockDocumentKind },
+): Promise<StockDocumentResult> {
   const shape = STOCK_DOCUMENT_SHAPE[input.kind]
   if (!shape) throw new Error("Tipo de documento de stock desconocido")
 
@@ -115,61 +127,59 @@ export async function registerStockDocument(
     throw new Error("La cantidad de un movimiento de desecho debe ser mayor que cero")
   }
 
-  return db.transaction(async (tx) => {
-    const id = nanoid()
-    const code = await nextCodeTx(tx, shape.prefix, new Date().getFullYear())
-    await tx.insert(stockAdjustments).values({
-      id,
-      code,
-      kind: input.kind,
-      worksiteId: input.worksiteId,
-      productId: input.productId,
-      // La cabecera guarda siempre el efecto sobre el saldo: un desecho resta.
-      quantity: input.kind === "desecho" ? -magnitude : input.quantity,
-      reason: input.reason?.trim() ?? "", notes: input.notes ?? null, createdBy: input.performedBy,
-    })
-    await applyMovementTx(tx, {
-      ...input,
-      type: shape.movementType,
-      quantity: input.kind === "desecho" ? magnitude : input.quantity,
-      referenceType: "stock_adjustment",
-      referenceId: id,
-    })
-
-    /**
-     * STK-001 (auditoría 2026-09-13): la cabecera se escribe antes de mover el
-     * saldo, con la cantidad PEDIDA, y la rama de desecho de `applyMovementTx`
-     * recorta a lo disponible. Con 3 unidades en bodega, una baja de 10
-     * terminaba con éxito, el kardex anotaba −3 y el folio DES declaraba −10:
-     * un descuadre que ningún conteo posterior puede explicar.
-     *
-     * Un documento con folio siempre tiene efecto real —el propio esquema lo
-     * exige con `stock_adjustments_quantity_nonzero`—, así que la divergencia no
-     * se puede "reconciliar" escribiendo 0 en la cabecera: se rechaza y la
-     * transacción completa se deshace, sin folio a medias.
-     *
-     * El registro sin folio sigue disponible para el caso legítimo de dar de
-     * baja algo que ya salió de bodega (EPP entregado y descartado por el
-     * trabajador): ese camino usa `applyMovement` directamente, sin documento.
-     */
-    const [applied] = await tx
-      .select({ quantity: inventoryMovements.quantity })
-      .from(inventoryMovements)
-      .where(and(
-        eq(inventoryMovements.referenceType, "stock_adjustment"),
-        eq(inventoryMovements.referenceId, id),
-      ))
-      .limit(1)
-    const appliedQuantity = Math.abs(applied?.quantity ?? 0)
-    if (input.kind === "desecho" && appliedQuantity !== magnitude) {
-      throw new Error(
-        `Stock insuficiente para la baja: disponible ${appliedQuantity}, solicitado ${magnitude}. ` +
-        "Ajusta la cantidad o registra primero el ingreso que falta.",
-      )
-    }
-
-    return { id, code, requestedQuantity: magnitude, appliedQuantity }
+  const id = nanoid()
+  const code = await nextCodeTx(tx, shape.prefix, new Date().getFullYear())
+  await tx.insert(stockAdjustments).values({
+    id,
+    code,
+    kind: input.kind,
+    worksiteId: input.worksiteId,
+    productId: input.productId,
+    // La cabecera guarda siempre el efecto sobre el saldo: un desecho resta.
+    quantity: input.kind === "desecho" ? -magnitude : input.quantity,
+    reason: input.reason?.trim() ?? "", notes: input.notes ?? null, createdBy: input.performedBy,
   })
+  await applyMovementTx(tx, {
+    ...input,
+    type: shape.movementType,
+    quantity: input.kind === "desecho" ? magnitude : input.quantity,
+    referenceType: "stock_adjustment",
+    referenceId: id,
+  })
+
+  /**
+   * STK-001 (auditoría 2026-09-13): la cabecera se escribe antes de mover el
+   * saldo, con la cantidad PEDIDA, y la rama de desecho de `applyMovementTx`
+   * recorta a lo disponible. Con 3 unidades en bodega, una baja de 10
+   * terminaba con éxito, el kardex anotaba −3 y el folio DES declaraba −10:
+   * un descuadre que ningún conteo posterior puede explicar.
+   *
+   * Un documento con folio siempre tiene efecto real —el propio esquema lo
+   * exige con `stock_adjustments_quantity_nonzero`—, así que la divergencia no
+   * se puede "reconciliar" escribiendo 0 en la cabecera: se rechaza y la
+   * transacción completa se deshace, sin folio a medias.
+   *
+   * El registro sin folio sigue disponible para el caso legítimo de dar de
+   * baja algo que ya salió de bodega (EPP entregado y descartado por el
+   * trabajador): ese camino usa `applyMovement` directamente, sin documento.
+   */
+  const [applied] = await tx
+    .select({ quantity: inventoryMovements.quantity })
+    .from(inventoryMovements)
+    .where(and(
+      eq(inventoryMovements.referenceType, "stock_adjustment"),
+      eq(inventoryMovements.referenceId, id),
+    ))
+    .limit(1)
+  const appliedQuantity = Math.abs(applied?.quantity ?? 0)
+  if (input.kind === "desecho" && appliedQuantity !== magnitude) {
+    throw new Error(
+      `Stock insuficiente para la baja: disponible ${appliedQuantity}, solicitado ${magnitude}. ` +
+      "Ajusta la cantidad o registra primero el ingreso que falta.",
+    )
+  }
+
+  return { id, code, requestedQuantity: magnitude, appliedQuantity }
 }
 
 export async function registerStockAdjustment(input: ApplyMovementInput): Promise<StockDocumentResult> {

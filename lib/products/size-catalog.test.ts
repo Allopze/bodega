@@ -74,7 +74,7 @@ describe("sizeCatalogRows", () => {
       .map((row) => row.code)
 
     expect(codes("ropa")).toEqual(["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"])
-    expect(codes("calzado").slice(0, 4)).toEqual(["36", "37", "38", "39"])
+    expect(codes("calzado").slice(0, 4)).toEqual(["34", "35", "36", "37"])
   })
 
   it("empieza cada familia en cero y numera sin saltos", () => {

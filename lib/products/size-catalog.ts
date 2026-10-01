@@ -48,7 +48,8 @@ export const SIZE_FAMILIES: readonly SizeFamilyDefinition[] = [
     family: "calzado",
     attributeName: "Talla calzado",
     label: "Calzado",
-    codes: ["36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46"],
+    // 34 y 35: el Botín V-Flex Mujer se compra del 34 al 41 (decisión 2026-10-01).
+    codes: ["34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46"],
     defaultCodes: ["38", "39", "40", "41", "42", "43", "44", "45", "46"],
   },
   {

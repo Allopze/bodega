@@ -48,7 +48,7 @@ describe("syncSizeCatalog", () => {
 
     expect(result.created).toBeGreaterThan(0)
     expect(await codesOf("ropa")).toEqual(["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"])
-    expect(await codesOf("calzado")).toEqual(["36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46"])
+    expect(await codesOf("calzado")).toEqual(["34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46"])
   })
 
   it("es idempotente: correrlo dos veces no crea nada nuevo", async () => {
@@ -102,7 +102,7 @@ describe("syncSizeCatalog", () => {
 
     const codes = await codesOf("calzado")
     expect(codes[codes.length - 1]).toBe("47")
-    expect(codes.slice(0, 3)).toEqual(["36", "37", "38"])
+    expect(codes.slice(0, 3)).toEqual(["34", "35", "36"])
   })
 
   it("deja el display_order sin huecos ni empates", async () => {
