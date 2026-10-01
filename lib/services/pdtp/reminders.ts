@@ -15,7 +15,8 @@ import {
   preventionEmergencyPlans, preventionRiskMatrices,
   sstDocuments, sstDocumentVersions, worksites,
 } from "@/db/schema"
-import { MATRIX_PERMISSION, MATRIX_TRANSITIONS } from "@/lib/services/prevention-risk-legal"
+import { pendingSignaturePermission } from "@/lib/prevention/miper/states"
+import { businessDaysBetween } from "@/lib/prevention/miper/business-days"
 import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation, type PdtpPeriod } from "./period"
 import { getPdtpOperationalYears } from "./operational-years"
 import { logger } from "@/lib/logger"
@@ -387,12 +388,34 @@ export async function runPdtpActionPlanVencidasReminders(): Promise<PdtpActionVe
  * Tres escalones y no un aviso diario: el modo de falla de estas actividades es
  * lento —un plan de emergencia puede pasar semanas en borrador— y un correo
  * cada mañana se convierte en ruido que nadie abre a la tercera semana.
+ *
+ * El cuarto escalón (§9.1 del rediseño MIPER) **mide otra unidad**: cinco días
+ * **hábiles**, con feriado chileno descontado
+ * (`lib/prevention/miper/business-days.ts`). Convive con los de calendario sin
+ * tocarlos: la lista está ordenada de más severo a menos y `signatureBucketFor`
+ * devuelve el PRIMER escalón cumplido, así que 30/15/7 días calendario siguen
+ * respondiendo exactamente como antes. El de cinco días hábiles queda como
+ * último y sólo aparece en la ventana estrecha que los otros no cubren: una
+ * espera de seis días civiles con cinco hábiles dentro (un fin de semana a
+ * mitad de semana). Cuando la espera cruza los siete días civiles, el escalón
+ * de calendario se lleva el aviso — y como la clave de deduplicación lleva el
+ * escalón adentro, nadie recibe dos avisos por la misma espera.
  */
-const SIGNATURE_BUCKETS = [
+type SignatureBucket = {
+  /** Días de espera que hacen falta para este escalón, en la unidad que diga `business`. */
+  days: number
+  /** `true` cuenta días hábiles (sin feriados); ausente, días calendario. */
+  business?: boolean
+  bucket: string
+  copy: string
+}
+
+const SIGNATURE_BUCKETS: readonly SignatureBucket[] = [
   { days: 30, bucket: "30d", copy: "lleva más de un mes esperando firma" },
   { days: 15, bucket: "15d", copy: "lleva más de quince días esperando firma" },
   { days: 7, bucket: "7d", copy: "lleva más de una semana esperando firma" },
-] as const
+  { days: 5, business: true, bucket: "5d", copy: "lleva más de cinco días hábiles esperando firma" },
+]
 
 export type PdtpSignaturePendingResult = {
   /** Registros esperando firma, hayan cruzado un escalón o no. */
@@ -422,9 +445,12 @@ type PendingSignature = {
 }
 
 /** El escalón que corresponde, o `null` si todavía no cumple el primero. */
-function signatureBucketFor(updatedAt: string, asOf: Date): typeof SIGNATURE_BUCKETS[number] | null {
+function signatureBucketFor(updatedAt: string, asOf: Date): SignatureBucket | null {
   const elapsedDays = Math.floor((asOf.getTime() - new Date(updatedAt).getTime()) / 86_400_000)
-  return SIGNATURE_BUCKETS.find((step) => elapsedDays >= step.days) ?? null
+  const elapsedBusinessDays = businessDaysBetween(todayInChile(updatedAt), todayInChile(asOf))
+  return SIGNATURE_BUCKETS.find((step) => (
+    step.business ? elapsedBusinessDays >= step.days : elapsedDays >= step.days
+  )) ?? null
 }
 
 /**
@@ -460,9 +486,12 @@ async function findPendingSignatures(): Promise<PendingSignature[]> {
       id: preventionRiskMatrices.id,
       worksiteId: preventionRiskMatrices.worksiteId,
       title: preventionRiskMatrices.title,
-      status: preventionRiskMatrices.status,
+      reviewState: preventionRiskMatrices.reviewState,
       updatedAt: preventionRiskMatrices.updatedAt,
-    }).from(preventionRiskMatrices).where(inArray(preventionRiskMatrices.status, ["in_review", "reviewed", "approved"])),
+    }).from(preventionRiskMatrices).where(and(
+      inArray(preventionRiskMatrices.reviewState, ["in_review", "pending_approval"]),
+      eq(preventionRiskMatrices.isLegacy, false),
+    )),
     db.select({
       id: sstDocumentVersions.id,
       status: sstDocumentVersions.status,
@@ -487,18 +516,16 @@ async function findPendingSignatures(): Promise<PendingSignature[]> {
     })
   }
 
-  /* El permiso sale del paso SIGUIENTE, no del actual: una matriz en
-   * `in_review` espera a quien pueda llevarla a `reviewed`. Los dos mapas son
-   * los del propio servicio de transición — si cambia la máquina de estados,
-   * cambia esto con ella. */
+  /* La firma pendiente sale del estado de revisión: en revisión técnica espera
+   * a la Jefatura; pendiente de aprobación, a Legal y RRHH. Mismas reglas que
+   * el servicio de flujo (lib/prevention/miper/states.ts). */
   for (const matrix of riskMatrices) {
-    const next = MATRIX_TRANSITIONS[matrix.status]?.find((to) => to !== "draft")
-    const permission = next ? MATRIX_PERMISSION[next] : undefined
+    const permission = pendingSignaturePermission(matrix.reviewState)
     if (!permission) continue
     pending.push({
       entityType: "risk_matrix", entityId: matrix.id, worksiteId: matrix.worksiteId,
-      title: matrix.title, status: matrix.status, updatedAt: matrix.updatedAt,
-      permission, href: `/prevencion/miper`,
+      title: matrix.title, status: matrix.reviewState, updatedAt: matrix.updatedAt,
+      permission, href: `/prevencion/miper/${matrix.id}?tab=revision`,
     })
   }
 
@@ -573,7 +600,11 @@ export async function runPdtpSignaturePendingReminders(asOf = new Date()): Promi
      * repetir el mismo aviso todos los días. */
     const dedupeKey = `pdtp-firma-pendiente:${item.entityType}:${item.entityId}:${item.status}:${step.bucket}`
     await createNotifications(recipients, {
-      type: "system_alert",
+      /* El escalón de cinco días hábiles nace en el rediseño MIPER (§9.1), y
+       * su tipo lo dice — pero sólo para la MIPER: un plan de emergencia o una
+       * versión documental estancados no son avisos MIPER y siguen con el tipo
+       * genérico. */
+      type: item.entityType === "risk_matrix" && step.business ? "miper_signature_overdue" : "system_alert",
       title: "Hay un registro de Prevención esperando tu firma",
       body: `${SIGNATURE_ENTITY_LABEL[item.entityType] ?? "El registro"} “${item.title}” ${step.copy}.`,
       entityType: item.entityType,

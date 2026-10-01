@@ -1,0 +1,2 @@
+ALTER TABLE "workers" ADD COLUMN "sex" text;--> statement-breakpoint
+ALTER TABLE "workers" ADD CONSTRAINT "workers_sex_valid" CHECK ("workers"."sex" IS NULL OR "workers"."sex" IN ('female', 'male', 'intersex', 'unspecified'));

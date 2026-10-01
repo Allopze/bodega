@@ -2,134 +2,85 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const guardPermission = vi.hoisted(() => vi.fn())
 const resolveWorksiteScope = vi.hoisted(() => vi.fn())
-const createRiskMatrixDraft = vi.hoisted(() => vi.fn())
-const transitionRiskMatrix = vi.hoisted(() => vi.fn())
-const approveRiskImportBatch = vi.hoisted(() => vi.fn())
-const stageRiskImport = vi.hoisted(() => vi.fn())
+const createMiper = vi.hoisted(() => vi.fn())
+const saveMiperEntry = vi.hoisted(() => vi.fn())
+const submitMiperForReview = vi.hoisted(() => vi.fn())
+const approveMiperTechnicalReview = vi.hoisted(() => vi.fn())
+const approveMiperFinal = vi.hoisted(() => vi.fn())
+const revalidatePath = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({ guardPermission }))
 vi.mock("@/lib/auth/scope", () => ({ resolveWorksiteScope }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
-vi.mock("@/lib/services/prevention-risk-legal", () => ({
-  addRiskEntry: vi.fn(),
-  createRiskMatrixDraft,
-  ensureIspRiskMethodology: vi.fn(),
-  resolveRiskReviewTrigger: vi.fn(),
-  transitionRiskMatrix,
-}))
-vi.mock("@/lib/services/prevention-risk-import", () => ({
-  activateRiskImportBatch: vi.fn(),
-  approveRiskImportBatch,
-  resolveRiskImportRow: vi.fn(),
-  stageRiskImport,
-  RISK_IMPORT_MAX_BYTES: 10 * 1024 * 1024,
-}))
+vi.mock("next/cache", () => ({ revalidatePath }))
+vi.mock("@/lib/services/generated-documents/schedule", () => ({ scheduleGeneratedDocumentDrain: vi.fn() }))
+vi.mock("@/lib/services/prevention-risk-legal", () => ({ resolveRiskReviewTrigger: vi.fn(), verifyRiskControl: vi.fn() }))
+vi.mock("@/lib/services/miper/matrices", () => ({ createMiper, updateMiperHeader: vi.fn(), discardMiperDraft: vi.fn() }))
+vi.mock("@/lib/services/miper/entries", () => ({ saveMiperEntry, duplicateMiperEntry: vi.fn(), deleteMiperEntry: vi.fn(), saveMiperControl: vi.fn(), deleteMiperControl: vi.fn() }))
+vi.mock("@/lib/services/miper/observations", () => ({ addMiperObservation: vi.fn(), respondMiperObservation: vi.fn(), resolveMiperObservation: vi.fn(), reopenMiperObservation: vi.fn() }))
+vi.mock("@/lib/services/miper/workflow", () => ({ submitMiperForReview, openMiperReviewRound: vi.fn(), returnMiperWithObservations: vi.fn(), approveMiperTechnicalReview, requestMiperCorrections: vi.fn(), approveMiperFinal }))
+vi.mock("@/lib/services/miper/risk-factors", () => ({ saveRiskFactor: vi.fn(), setRiskFactorActive: vi.fn() }))
 
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
-import {
-  approveRiskImportBatchAction,
-  createRiskMatrixDraftAction,
-  stageRiskImportAction,
-  transitionRiskMatrixAction,
-} from "./actions"
+import { approveMiperFinalAction, approveMiperTechnicalAction, createMiperAction, saveMiperEntryAction, submitMiperAction } from "./actions"
 
-const denied = { session: null, error: { ok: false, message: "No tienes permisos" } }
-const session = {
-  user: {
-    id: "trusted-risk-user",
-    permissions: ["prevention:risk:edit", "prevention:risk:review", "prevention:risk:approve", "prevention:risk:publish"],
-  },
-}
+const denied = { session: null, error: { ok: false, message: "No tienes permisos para realizar esta acción" } }
+const session = { user: { id: "trusted-user", permissions: ["prevention:risk:edit"] } }
 
-describe("MIPER server actions are authorization boundaries", () => {
+describe("acciones MIPER: frontera de autorización", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resolveWorksiteScope.mockReturnValue({ mode: "some", ids: ["ws-own"] })
   })
 
-  it("blocks writes before invoking the domain service", async () => {
+  it("bloquea antes de llamar al servicio", async () => {
     guardPermission.mockResolvedValue(denied)
-
-    await expect(createRiskMatrixDraftAction({ worksiteId: "ws-foreign" })).resolves.toEqual(denied.error)
-
+    await expect(createMiperAction({ worksiteId: "ws-foreign" })).resolves.toEqual(denied.error)
     expect(guardPermission).toHaveBeenCalledWith("prevention:risk:edit")
-    expect(createRiskMatrixDraft).not.toHaveBeenCalled()
-  })
-
-  it("derives actor, scope and permissions from the authenticated session", async () => {
-    guardPermission.mockResolvedValue({ session, error: null })
-    createRiskMatrixDraft.mockResolvedValue({})
-    const forged = { worksiteId: "ws-own", userId: "forged-user", permissions: ["*"] }
-
-    await expect(createRiskMatrixDraftAction(forged)).resolves.toEqual({ ok: true })
-
-    expect(createRiskMatrixDraft).toHaveBeenCalledWith(forged, {
-      userId: "trusted-risk-user",
-      scope: { mode: "some", ids: ["ws-own"] },
-      permissions: session.user.permissions,
-    })
+    expect(createMiper).not.toHaveBeenCalled()
   })
 
   it.each([
-    ["reviewed", "prevention:risk:review"],
-    ["approved", "prevention:risk:approve"],
-    ["published", "prevention:risk:publish"],
-  ])("requires the specific %s workflow permission", async (toStatus, permission) => {
+    [submitMiperAction, "prevention:risk:edit"],
+    [approveMiperTechnicalAction, "prevention:risk:review"],
+    [approveMiperFinalAction, "prevention:risk:approve_legal"],
+  ])("cada paso del flujo exige su propio permiso", async (action, permission) => {
     guardPermission.mockResolvedValue(denied)
-
-    await transitionRiskMatrixAction({ matrixId: "matrix-1", toStatus })
-
+    await action({ matrixId: "m1", expectedVersion: 1 })
     expect(guardPermission).toHaveBeenCalledWith(permission)
-    expect(transitionRiskMatrix).not.toHaveBeenCalled()
   })
 
-  it("requires approval permission for an import batch", async () => {
-    guardPermission.mockResolvedValue(denied)
-
-    await approveRiskImportBatchAction("batch-1")
-
-    expect(guardPermission).toHaveBeenCalledWith("prevention:risk:approve")
-    expect(approveRiskImportBatch).not.toHaveBeenCalled()
-  })
-})
-
-/*
- * Todo error del servicio caía en «No se pudo completar la acción»: quien
- * intentaba publicar lo que él mismo aprobó, o avanzar una matriz que otra
- * persona acababa de cambiar, no se enteraba del motivo. El error de dominio
- * viaja con su mensaje; el resto sigue oculto tras el genérico.
- */
-describe("MIPER: los rechazos de negocio llegan con su motivo", () => {
-  const GENERIC = "No se pudo completar la acción. Intenta nuevamente."
-
-  beforeEach(() => {
-    vi.clearAllMocks()
-    resolveWorksiteScope.mockReturnValue({ mode: "some", ids: ["ws-own"] })
+  it("el actor, alcance y permisos salen de la sesión, no del input", async () => {
     guardPermission.mockResolvedValue({ session, error: null })
+    createMiper.mockResolvedValue({ id: "m-new" })
+    const state = await createMiperAction({ worksiteId: "ws-own", period: 2026, revisionReason: "x".repeat(12), userId: "spoofed" })
+    expect(state).toEqual({ ok: true, data: { id: "m-new" }, message: "MIPER creada" })
+    expect(createMiper).toHaveBeenCalledWith(expect.anything(), { userId: "trusted-user", scope: { mode: "some", ids: ["ws-own"] }, permissions: ["prevention:risk:edit"] })
   })
 
-  it("una transición rechazada devuelve el motivo del servicio", async () => {
-    transitionRiskMatrix.mockRejectedValue(new RiskLegalDomainError("Publicar exige una firma distinta de quien aprobó."))
-    await expect(transitionRiskMatrixAction({ matrixId: "matrix-1", toStatus: "published" }))
-      .resolves.toEqual({ ok: false, message: "Publicar exige una firma distinta de quien aprobó." })
+  it("cada paso del flujo anuncia lo que hizo, no un mensaje genérico", async () => {
+    guardPermission.mockResolvedValue({ session, error: null })
+    submitMiperForReview.mockResolvedValue({ roundId: "r1" })
+    approveMiperTechnicalReview.mockResolvedValue(undefined)
+    approveMiperFinal.mockResolvedValue({ versionId: "v1", versionNumber: 1 })
+    await expect(submitMiperAction({ matrixId: "m1", expectedVersion: 1 })).resolves.toEqual({ ok: true, message: "MIPER enviada a revisión" })
+    await expect(approveMiperTechnicalAction({ matrixId: "m1", expectedVersion: 2 })).resolves.toEqual({ ok: true, message: "Revisión técnica aprobada" })
+    await expect(approveMiperFinalAction({ matrixId: "m1", expectedVersion: 3, changeSummary: "Emisión inicial del documento." })).resolves.toEqual({ ok: true, data: { versionId: "v1", versionNumber: 1 }, message: "Versión sellada" })
   })
 
-  it("crear, aprobar un lote e importar también", async () => {
-    createRiskMatrixDraft.mockRejectedValue(new RiskLegalDomainError("La faena ya tiene una MIPER en borrador."))
-    approveRiskImportBatch.mockRejectedValue(new RiskLegalDomainError("El lote tiene filas sin resolver."))
-    stageRiskImport.mockRejectedValue(new RiskLegalDomainError("La planilla no trae la hoja de peligros."))
-    const formData = new FormData()
-    formData.set("worksiteId", "ws-own")
-    formData.set("file", new File(["x"], "miper.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }))
-
-    await expect(createRiskMatrixDraftAction({ worksiteId: "ws-own" })).resolves.toEqual({ ok: false, message: "La faena ya tiene una MIPER en borrador." })
-    await expect(approveRiskImportBatchAction("batch-1")).resolves.toEqual({ ok: false, message: "El lote tiene filas sin resolver." })
-    await expect(stageRiskImportAction(formData)).resolves.toEqual({ ok: false, message: "La planilla no trae la hoja de peligros." })
+  it("guardar una fila devuelve la versión nueva y no revalida la página", async () => {
+    guardPermission.mockResolvedValue({ session, error: null })
+    saveMiperEntry.mockResolvedValue({ id: "e1", version: 3, rowNumber: 1, magnitude: 8, classification: "important" })
+    await expect(saveMiperEntryAction({ matrixId: "m1", entryId: "e1", expectedVersion: 2, values: { probability: 2 } })).resolves.toEqual({ ok: true, data: { id: "e1", version: 3, rowNumber: 1, magnitude: 8, classification: "important" } })
+    expect(revalidatePath).not.toHaveBeenCalled()
   })
 
-  it("un error inesperado sigue oculto tras el mensaje genérico", async () => {
-    transitionRiskMatrix.mockRejectedValue(new Error('duplicate key value violates unique constraint "prevention_risk_matrices_pkey"'))
-    await expect(transitionRiskMatrixAction({ matrixId: "matrix-1", toStatus: "published" }))
-      .resolves.toEqual({ ok: false, message: GENERIC })
+  it("los rechazos de dominio llegan con su motivo; lo inesperado queda genérico", async () => {
+    guardPermission.mockResolvedValue({ session, error: null })
+    submitMiperForReview.mockRejectedValueOnce(new RiskLegalDomainError("Responde todas las observaciones antes de reenviar (2 sin responder)."))
+    await expect(submitMiperAction({ matrixId: "m1", expectedVersion: 4 })).resolves.toEqual({ ok: false, message: "Responde todas las observaciones antes de reenviar (2 sin responder)." })
+    submitMiperForReview.mockRejectedValueOnce(new Error("relation does not exist"))
+    const state = await submitMiperAction({ matrixId: "m1", expectedVersion: 4 })
+    expect(state.ok).toBe(false)
+    expect(state.message).not.toMatch(/relation/)
   })
 })

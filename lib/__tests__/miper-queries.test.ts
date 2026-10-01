@@ -1,0 +1,86 @@
+import path from "node:path"
+import { PGlite } from "@electric-sql/pglite"
+import { drizzle } from "drizzle-orm/pglite"
+import { eq } from "drizzle-orm"
+import { beforeAll, describe, expect, it, vi } from "vitest"
+import * as schema from "@/db/schema"
+import type { DB } from "@/db"
+import { migratePGlite } from "@/lib/testing/pglite-migrate"
+
+const pg = new PGlite()
+const testDb = drizzle(pg, { schema }) as unknown as DB
+const g = globalThis as typeof globalThis & { __db?: DB }
+g.__db = testDb
+vi.mock("@/db", () => ({ get db() { return g.__db } }))
+
+const { createMiper } = await import("@/lib/services/miper/matrices")
+const { saveMiperEntry } = await import("@/lib/services/miper/entries")
+const q = await import("@/lib/services/miper/queries")
+
+const author = { userId: "u-q", scope: { mode: "some" as const, ids: ["ws-q"] }, permissions: ["prevention:risk:view", "prevention:risk:edit"] }
+const jefa = { userId: "u-j", scope: { mode: "all" as const, ids: [] as [] }, permissions: ["prevention:risk:view", "prevention:risk:review"] }
+const outsider = { userId: "u-o", scope: { mode: "some" as const, ids: ["ws-other"] }, permissions: ["prevention:risk:view", "prevention:risk:edit"] }
+let matrixId = ""
+
+beforeAll(async () => {
+  await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
+  await testDb.insert(schema.worksites).values([{ id: "ws-q", name: "Faena Q", code: "Q" }, { id: "ws-other", name: "Otra", code: "O" }])
+  await testDb.insert(schema.users).values([
+    { id: "u-q", name: "Prevencionista Q", email: "q@q.cl", hashedPassword: "x", isActive: true },
+    { id: "u-j", name: "Jefa", email: "j@q.cl", hashedPassword: "x", isActive: true },
+    { id: "u-o", name: "Otra", email: "o@q.cl", hashedPassword: "x", isActive: true },
+  ])
+  await testDb.insert(schema.worksiteUsers).values({ userId: "u-q", worksiteId: "ws-q" })
+  matrixId = (await createMiper({ worksiteId: "ws-q", period: 2026, revisionReason: "Período para probar consultas." }, author)).id
+  await saveMiperEntry({ matrixId, values: { hazard: "Ruido", probability: 1, consequence: 2 } }, author)
+  await saveMiperEntry({ matrixId, values: { hazard: "Volcamiento", probability: 4, consequence: 4 } }, author)
+}, 60_000)
+
+describe("consultas MIPER", () => {
+  it("el espacio de trabajo trae foto, completitud, prellenado, diccionarios y responsables", async () => {
+    const ws = await q.getMiperWorkspace(matrixId, author)
+    expect(ws.label).toBe("Borrador")
+    expect(ws.snapshot.entries.map((e) => e.classification)).toEqual(["tolerable", "intolerable"])
+    expect(Object.keys(ws.entryVersions)).toHaveLength(2)
+    expect(ws.completeness.some((i) => i.severity === "error")).toBe(true)
+    expect(ws.riskFactors.length).toBeGreaterThan(5)
+    expect(ws.responsibleOptions.map((o) => o.id)).toContain("u-q")
+    expect(ws.pendingDiff.hasChanges).toBe(true)
+  })
+  it("fuera de alcance no se lee", async () => {
+    await expect(q.getMiperWorkspace(matrixId, outsider)).rejects.toThrow(/fuera de alcance/)
+  })
+  it("la lista cuenta filas por clasificación y respeta el alcance", async () => {
+    const rows = await q.listMipers(author)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.classificationCounts).toMatchObject({ tolerable: 1, intolerable: 1, moderate: 0, important: 0 })
+    expect(await q.listMipers(outsider)).toHaveLength(0)
+  })
+  it("la bandeja muestra a la prevencionista su borrador y a la Jefa lo enviado", async () => {
+    expect((await q.listMiperInbox(author)).map((r) => r.inboxReason)).toEqual(["Borrador"])
+    expect(await q.listMiperInbox(jefa)).toHaveLength(0)
+    // Forzar el estado sin pasar por la completitud: la bandeja sólo mira `review_state`.
+    await testDb.update(schema.preventionRiskMatrices).set({ reviewState: "in_review" }).where(eq(schema.preventionRiskMatrices.id, matrixId))
+    await testDb.insert(schema.preventionRiskReviewRounds).values({ id: "rq", matrixId, roundNumber: 1, stage: "technical", snapshot: { header: {}, entries: [] }, snapshotSha256: "c".repeat(64), submittedByUserId: "u-q" })
+    const inbox = await q.listMiperInbox(jefa)
+    expect(inbox.map((r) => [r.id, r.inboxReason, r.submittedByName])).toEqual([[matrixId, "Pendiente de tu revisión", "Prevencionista Q"]])
+  })
+  it("el historial lista eventos con actor y capacidad", async () => {
+    const events = await q.getMiperHistory(matrixId, author)
+    expect(events.map((e) => e.changeType)).toEqual(expect.arrayContaining(["created", "entry_created"]))
+    expect(events.find((e) => e.changeType === "created")).toMatchObject({ actorName: "Prevencionista Q", actingAs: "prevention:risk:edit" })
+  })
+  it("la cadena de períodos de la faena trae los otros MIPER y excluye el propio", async () => {
+    // Una segunda MIPER de la misma faena, en otro período (§8.5). Se crea acá y
+    // no en el `beforeAll` para no alterar el conteo de las consultas previas.
+    const sibling = await createMiper({ worksiteId: "ws-q", period: 2027, revisionReason: "Período siguiente." }, author)
+    const ws = await q.getMiperWorkspace(matrixId, author)
+    const ids = ws.siblingMatrices.map((item) => item.id)
+    expect(ids).toContain(sibling.id)
+    expect(ids).not.toContain(matrixId)
+    const other = ws.siblingMatrices.find((item) => item.id === sibling.id)!
+    expect(other).toMatchObject({ period: 2027, label: "Borrador" })
+    // Ordenadas por período descendente: el período nuevo va primero.
+    expect(ws.siblingMatrices[0]!.id).toBe(sibling.id)
+  })
+})

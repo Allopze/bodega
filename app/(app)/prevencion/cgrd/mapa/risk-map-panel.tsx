@@ -21,7 +21,7 @@ interface RiskMapMarker {
   label: string | null
   riskEntryId: string
   hazard: string
-  residualLevel: string
+  riskLevel: string
 }
 
 interface RiskMapLayout {
@@ -36,7 +36,7 @@ interface RiskMapLayout {
 interface RiskEntryOption {
   id: string
   hazard: string
-  residualLevel: string
+  riskLevel: string
 }
 
 interface Props {
@@ -164,13 +164,13 @@ function RiskMapImage({ layout, entries, canEdit }: { layout: RiskMapLayout; ent
           // El marcador es un punto de color sin texto: el `title` solo lo
           // nombraba al pasar el mouse, así que con lector de pantalla o con
           // teclado era un botón anónimo. `aria-label` lo nombra en serio.
-          const nombre = `${marker.hazard} · ${riskLevelLabel(marker.residualLevel)}`
+          const nombre = `${marker.hazard} · ${riskLevelLabel(marker.riskLevel)}`
           return (
             <button
               key={marker.id}
               type="button"
               className="absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow"
-              style={{ left: `${marker.xPct}%`, top: `${marker.yPct}%`, backgroundColor: riskLevelColor(marker.residualLevel) }}
+              style={{ left: `${marker.xPct}%`, top: `${marker.yPct}%`, backgroundColor: riskLevelColor(marker.riskLevel) }}
               aria-label={`Marcador de riesgo: ${nombre}`}
               title={nombre}
               onClick={(event) => { event.stopPropagation(); setSelectedMarker(marker) }}
@@ -291,7 +291,7 @@ function PlaceMarkerDialog({ layoutId, point, entries, onClose }: {
                 placeholder="Selecciona peligro"
                 options={entries.map((entry) => ({
                   value: entry.id,
-                  label: `${entry.hazard} · ${riskLevelLabel(entry.residualLevel)}`,
+                  label: `${entry.hazard} · ${riskLevelLabel(entry.riskLevel)}`,
                 }))}
               />
             </Field>
@@ -317,7 +317,7 @@ function MarkerDetailDialog({ marker, canEdit, onClose }: { marker: RiskMapMarke
           <DialogTitle>{marker.hazard}</DialogTitle>
           <DialogDescription>{marker.label ?? "Sin etiqueta."}</DialogDescription>
         </DialogHeader>
-        <MetaBadge meta={{ label: `${riskLevelLabel(marker.residualLevel)}`, variant: ["high", "critical"].includes(normalizeRiskLevel(marker.residualLevel) ?? "") ? "danger" : "warning" }} />
+        <MetaBadge meta={{ label: `${riskLevelLabel(marker.riskLevel)}`, variant: ["high", "critical"].includes(normalizeRiskLevel(marker.riskLevel) ?? "") ? "danger" : "warning" }} />
         {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
         <DialogFooter>
           {canEdit && (

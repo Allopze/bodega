@@ -54,6 +54,7 @@ import { invalidateClosedIndicatorPeriodWithClient, type ReopenedPeriodRevocatio
 import { createRiskReviewTriggerWithClient } from "@/lib/services/prevention-risk-legal"
 import { addDaysToPlainDate, codeYear, todayInChile } from "@/lib/utils"
 import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/enqueue"
+import { PERSON_SEX_VALUES } from "@/lib/person-sex"
 
 const CHILE_YEAR_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric" })
 const CHILE_MONTH_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", month: "numeric" })
@@ -110,7 +111,7 @@ const incidentPersonSchema = z.object({
   workerId: z.string().min(1).nullable().optional(),
   displayLabel: z.string().trim().min(2).max(120),
   employerName: z.string().trim().min(2).max(300),
-  sex: z.enum(["female", "male", "intersex", "unspecified"]).nullable().optional(),
+  sex: z.enum(PERSON_SEX_VALUES).nullable().optional(),
   relationshipType: z.enum(["employee", "contractor", "subcontractor", "visitor", "third_party"]),
   absenceAtLeastNormalShift: z.boolean().default(false),
   absenceDays: z.number().int().min(0).max(10000).default(0),
@@ -495,9 +496,10 @@ async function findIncidentForMutation(client: IncidentClient, incidentId: strin
 }
 
 async function assertWorkerScope(client: IncidentClient, workerId: string, worksiteId: string) {
-  const [worker] = await client.select({ id: workers.id }).from(workers)
+  const [worker] = await client.select({ id: workers.id, sex: workers.sex }).from(workers)
     .where(and(eq(workers.id, workerId), eq(workers.worksiteId, worksiteId), eq(workers.isActive, true))).limit(1)
   if (!worker) throw new Error("La persona vinculada no pertenece a la faena o está inactiva.")
+  return worker
 }
 
 async function createNotificationLanes(client: IncidentClient, args: {
@@ -558,8 +560,15 @@ export async function reportPreventionIncident(args: {
   const fatalOrSerious = input.isFatalOrSerious || input.actualSeverity === "serious" || input.actualSeverity === "fatal"
 
   const result = await db.transaction(async (tx) => {
+    // El sexo del padrón se copia al vincular: queda fijado en el incidente
+    // como estaba el día del evento, y corregir después la ficha no mueve la
+    // desagregación de indicadores ya informados. Lo que declare el reporte
+    // prevalece sobre el padrón.
+    const workerSexById = new Map<string, string | null>()
     for (const person of input.people) {
-      if (person.workerId) await assertWorkerScope(tx, person.workerId, input.worksiteId)
+      if (!person.workerId) continue
+      const worker = await assertWorkerScope(tx, person.workerId, input.worksiteId)
+      workerSexById.set(worker.id, worker.sex)
     }
 
     const now = nowIso()
@@ -633,7 +642,7 @@ export async function reportPreventionIncident(args: {
         workerId: personInput.workerId ?? null,
         displayLabel: personInput.displayLabel,
         employerName: personInput.employerName,
-        sex: personInput.sex ?? null,
+        sex: personInput.sex ?? (personInput.workerId ? workerSexById.get(personInput.workerId) : null) ?? null,
         relationshipType: personInput.relationshipType,
         absenceAtLeastNormalShift: personInput.absenceAtLeastNormalShift,
         absenceDays: personInput.absenceDays,

@@ -22,6 +22,10 @@ export const PREVENTION_CRON_MAX_AGE_HOURS: Readonly<Record<string, number>> = {
   "prevention-capa-reminders": 26,
   "prevention-training-reminders": 26,
   "prevention-cphs-alerts": 26,
+  // F3: barrido diario de ocurrencias del Programa de Trabajo (vencidas y «No se
+  // hizo»). Sin él acá, un cron detenido no se alerta y las alertas se apagan en
+  // silencio — que es justo lo que este vigilante existe para evitar.
+  "prevention-miper-daily-sweep": 26,
   "prevention-document-ack-reminders": 26,
   "sst-weekly-alerts": 26,
   "deadline-reminders": 26,

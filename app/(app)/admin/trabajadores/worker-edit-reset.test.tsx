@@ -34,7 +34,7 @@ const WORKSITES = [{ id: "ws-1", name: "Faena Uno" }, { id: "ws-2", name: "Faena
 
 function worker(id: string, firstName: string, positionId: string, worksiteId: string, sizeTop: string) {
   return {
-    id, rut: null, firstName, lastName: "Prueba", position: null,
+    id, rut: null, firstName, lastName: "Prueba", sex: null, position: null,
     positionId, positionNeedsReview: false,
     worksiteId, worksiteName: worksiteId === "ws-1" ? "Faena Uno" : "Faena Dos",
     isActive: true, createdAt: "2026-08-18T00:00:00.000Z",

@@ -13,15 +13,6 @@ export const riskLevelSchema = z.string().trim().min(1).max(100)
   .refine((value) => normalizeRiskLevel(value) !== null, { message: "Nivel de riesgo desconocido: usa bajo, medio, alto o crítico." })
   .transform((value) => normalizeRiskLevel(value)!)
 
-export const riskMethodologySchema = z.object({
-  code: z.string().trim().min(2).max(60),
-  name: z.string().trim().min(3).max(300),
-  versionLabel: z.string().trim().min(1).max(80),
-  kind: z.enum(["primary", "special"]),
-  authoritySource: z.string().trim().min(3).max(1000),
-  configuration: z.record(z.string(), z.unknown()).default({}),
-})
-
 export const riskMatrixDraftSchema = z.object({
   worksiteId: z.string().min(1),
   title: z.string().trim().min(5).max(500),
@@ -86,17 +77,6 @@ export const riskEntrySchema = z.object({
   sourceNormalized: z.record(z.string(), z.unknown()).nullable().optional(),
   normalizationDecision: z.string().trim().max(2000).nullable().optional(),
   controls: z.array(riskControlSchema).max(50).default([]),
-})
-
-export const riskMatrixTransitionSchema = z.object({
-  matrixId: z.string().min(1),
-  expectedVersion: z.coerce.number().int().positive(),
-  /* 'draft' es el retorno del revisor (MIPER-10): la máquina sólo avanzaba, así
-   * que una versión enviada a revisión con un error se quedaba trabada ahí. El
-   * motivo ya es obligatorio para toda transición y queda en el historial. */
-  toStatus: z.enum(["draft", "in_review", "reviewed", "approved", "published"]),
-  reason,
-  effectiveFrom: date.optional(),
 })
 
 /* MIPER-08: verificar un control es un acto separado de escribirlo, con

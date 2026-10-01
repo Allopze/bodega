@@ -10,6 +10,42 @@
  */
 export const pgliteTestFiles = [
   "db/schema-consistency.test.ts",
+  // MIPER F1: columnas generadas P×C, estados y versiones inmutables.
+  "db/__tests__/miper-constraints.test.ts",
+  // MIPER F1: diccionarios por faena y prellenado del encabezado RE-04.
+  "lib/__tests__/miper-dictionaries-prefill.test.ts",
+  // MIPER F1: catálogo transversal de factores de riesgo (alta, baja lógica y uso).
+  "lib/__tests__/miper-risk-factors.test.ts",
+  // MIPER F1: crear MIPER por faena y período, encabezado y descarte de borrador.
+  "lib/__tests__/miper-matrices.test.ts",
+  // MIPER F1: filas y medidas con concurrencia optimista, inserción y borrado.
+  "lib/__tests__/miper-entries.test.ts",
+  // MIPER F1: foto viva del documento con nombres de diccionario y medidas.
+  "lib/__tests__/miper-snapshot-service.test.ts",
+  // MIPER F1: flujo completo (envío, observaciones, aprobación técnica y Legal y RRHH).
+  "lib/__tests__/miper-workflow.test.ts",
+  // MIPER F3 (§9.1): alertas del flujo (fila Intolerable, pasos de revisión) y
+  // barrido diario de ocurrencias, emitidas post-commit y deduplicadas.
+  "lib/__tests__/miper-notifications.test.ts",
+  // MIPER F1: espacio de trabajo, bandeja por rol, lista e historial.
+  "lib/__tests__/miper-queries.test.ts",
+  // MIPER F3: tablero del Resumen (tiles accionables, franja y tabla por faena).
+  "lib/__tests__/miper-dashboard.test.ts",
+  // MIPER F3: importación del RE-04 (vista previa por fila, carga a borrador y
+  // agregado al vigente, aviso de fila Intolerable después del COMMIT).
+  "lib/__tests__/miper-import.test.ts",
+  // MIPER F2: programa de trabajo (vínculo único, ocurrencias y registros
+  // de sólo inserción).
+  "db/__tests__/miper-program-constraints.test.ts",
+  // MIPER F2: consulta del Programa de Trabajo (encabezado RE-04.1, actividades,
+  // ocurrencias con resultado vigente y avance derivado).
+  "lib/__tests__/miper-program-queries.test.ts",
+  // MIPER F2: servicio del programa (encabezado, actividades y vínculos),
+  // generación desde las medidas y ejecución de las ocurrencias.
+  "lib/__tests__/miper-program.test.ts",
+  "lib/__tests__/miper-program-generation.test.ts",
+  "lib/__tests__/miper-program-occurrences.test.ts",
+  "lib/__tests__/miper-program-execution.test.ts",
   "db/__tests__/operational-integrity-constraints.test.ts",
   "db/__tests__/pdtp-worksite-cascade.test.ts",
   "db/__tests__/pdtp-check-constraints.test.ts",
@@ -62,6 +98,9 @@ export const pgliteTestFiles = [
   "lib/__tests__/pend-003-cta-seguimiento-sst.test.ts",
   "lib/__tests__/operational-work-queue-capa-duplicada.test.ts",
   "lib/__tests__/operational-work-queue-row-identity.test.ts",
+  // MIPER F3 (§9.1): el tipo MIPER en la cola «Mi trabajo» —ocurrencias vencidas
+  // y matrices esperando firma— y en la atención de Prevención.
+  "lib/__tests__/miper-work-queue.test.ts",
   "lib/__tests__/combustibles-scope.test.ts",
   "lib/__tests__/ti-dashboard-assets-by-age.test.ts",
   "lib/__tests__/compras-export-invoice-filter.test.ts",
@@ -280,6 +319,8 @@ export const pgliteTestFiles = [
   // `tests/pglite-files.test.ts`.
   "lib/__tests__/prevention-campaigns.test.ts",
   "lib/__tests__/prevention-incidents-re20.test.ts",
+  // El incidente copia el sexo del padrón al vincular al trabajador.
+  "lib/__tests__/prevention-incidents-worker-sex.test.ts",
   "lib/__tests__/fuel-log-integration.test.ts",
   "lib/__tests__/fuel-tae-security-integration.test.ts",
   "lib/__tests__/inspection-maintenance-lifecycle-pglite.test.ts",

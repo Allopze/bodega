@@ -50,7 +50,7 @@ export default async function FaenasPage() {
       <FaenasList
         worksites={allWorksites.map((w) => ({
           id: w.id, name: w.name, code: w.code,
-          address: w.address, region: w.region, adminContratoLabel: w.adminContratoLabel,
+          address: w.address, region: w.region, commune: w.commune, adminContratoLabel: w.adminContratoLabel,
           isActive: w.isActive, createdAt: w.createdAt, updatedAt: w.updatedAt,
         }))}
         canCreateWorksites={canCreateWorksites}

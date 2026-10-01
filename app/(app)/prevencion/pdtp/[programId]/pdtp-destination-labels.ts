@@ -42,7 +42,7 @@ const PERMISSION_LABELS: Record<string, string> = {
   "prevention:indicadores:close": "cerrar indicadores",
   "prevention:inspections:execute": "registrar inspecciones",
   "prevention:pdtp:execute": "registrar cumplimiento en PDTP",
-  "prevention:risk:publish": "publicar controles de riesgo",
+  "prevention:risk:approve_legal": "aprobar la MIPER (Legal y RRHH)",
   "prevention:training:execute": "registrar capacitaciones",
   "prevention:training:record": "registrar capacitaciones",
   "sst:close": "cerrar la habilitación SST",

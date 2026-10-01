@@ -7,6 +7,7 @@ import {
   ClipboardText,
   ClockCounterClockwise,
   FileText,
+  ShieldWarning,
   ShoppingCart,
   Truck,
   UsersThree,
@@ -79,6 +80,10 @@ const MODULE_META: Partial<Record<WorkTaskType, ModuleMeta>> = {
   ppa:                { label: "PPA",          Icon: WarningCircle },
   sst:                { label: "SST",          Icon: CheckSquare },
   cphs:               { label: "Comité Paritario", Icon: UsersThree },
+  // Misma iconografía que el menú de Prevención (`ShieldWarning` en
+  // modules/prevention/manifest.ts): la fila de la cola y la entrada del menú
+  // tienen que reconocerse como el mismo módulo.
+  miper:              { label: "MIPER", Icon: ShieldWarning },
 }
 
 const moduleMeta = (type: WorkTaskType): ModuleMeta => MODULE_META[type] ?? MODULE_FALLBACK

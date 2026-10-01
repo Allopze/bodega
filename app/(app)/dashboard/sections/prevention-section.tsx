@@ -103,7 +103,7 @@ export async function PreventionSection({ session, worksiteScope, worksiteIds, c
             <KpiCard icon={<ShieldWarning size={16} />} label="Riesgos críticos sin control"
               value={String(risk.criticalBlockers.length)}
               detail={risk.criticalBlockers.length > 0 ? "Sin control verificado ni PDTP · ahora" : "Todos con control verificado"}
-              tone={risk.criticalBlockers.length > 0 ? "signal" : "neutral"} href="/prevencion/miper#bloqueos" />
+              tone={risk.criticalBlockers.length > 0 ? "signal" : "neutral"} href="/prevencion/miper?tab=todas" />
           )}
         </>
       }

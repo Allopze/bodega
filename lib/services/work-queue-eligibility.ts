@@ -30,6 +30,7 @@ export type WorkQueueSource =
   | "sst"
   | "cphs"
   | "pago_compra"
+  | "miper"
 
 /**
  * El permiso que exige de verdad el destino de la CTA de cada rama. Cada uno
@@ -84,6 +85,26 @@ export const WORK_QUEUE_ACTION_PERMISSIONS: Record<WorkQueueSource, readonly str
    * brecha de producto.
    */
   pago_compra: ["billing:confirm_payments"],
+  /*
+   * MIPER (§9.1, F3): la cola trae dos cosas del mismo instrumento —la matriz
+   * esperando firma y la ocurrencia del Programa de Trabajo que debe trabajo— y
+   * cada una exige el permiso de su acto, nunca el `:view` del módulo:
+   * «Registrar ejecución» es `prevention:risk:program:execute`; «Revisar» es la
+   * revisión técnica de la Jefatura del Depto. de Prevención
+   * (`prevention:risk:review`); «Firmar» es la aprobación final de Legal y RRHH
+   * (`prevention:risk:approve_legal`).
+   *
+   * Queda fuera, a propósito, el responsable NOMINAL de una actividad: ése
+   * registra con `risk:view` sobre su faena (`requireExecute` en
+   * lib/services/miper/program-execution.ts), y su fila la emite la cola con ese
+   * caso contemplado. Meter `risk:view` acá abriría la rama entera a quien sólo
+   * mira.
+   */
+  miper: [
+    "prevention:risk:program:execute",
+    "prevention:risk:review",
+    "prevention:risk:approve_legal",
+  ],
 }
 
 /**

@@ -32,7 +32,7 @@
 | **Cerrar Expediente RE-20 Definitivo** | ✅ Sí | ❌ No | ❌ No | ❌ No | ✅ Sí |
 | **Gestionar y Cerrar Acciones CAPA** | ✅ Verificar | 🛠️ Implementar | 🛠️ Implementar | 🛠️ Implementar | ✅ Todo el ciclo |
 | **Cerrar Estadística Mensual (N° 7)** | ✅ Sí | ❌ No | ❌ No | ❌ No | ✅ Sí |
-| **Publicar Matriz IPER / Matriz GRD** | ✏️ Proponer | 👁️ Solo ver | 👁️ Solo ver | 👁️ Solo ver | ✅ Publicar |
+| **Revisar la MIPER / Publicar Matriz GRD** | ✏️ Editar y enviar (sella Legal y RRHH) | 👁️ Solo ver | 👁️ Solo ver | 👁️ Solo ver | ✅ Revisar técnicamente y publicar la GRD |
 | **Aprobar Plan de Emergencia (N° 83)** | ✏️ Elaborar | 👁️ Solo ver | 👁️ Solo ver | 👁️ Solo ver | ✅ Aprobar |
 
 ---

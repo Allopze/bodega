@@ -14,6 +14,7 @@ import type { CanonicalIndicatorYearView } from "@/lib/services/prevention-indic
 import { denominatorDialogLabel, IndicatorDenominatorDialog } from "./indicator-denominator-dialog"
 import { DENOMINATOR_STATUS_LABELS, labelOrRaw, RECONCILIATION_LABELS } from "./denominator-labels"
 import { IndicatorPeriodCloseButton } from "./indicator-period-close-button"
+import { personSexLabel } from "@/lib/person-sex"
 
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
 
@@ -145,7 +146,7 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
               })}</TableBody></Table>
           </div>
           <div className="grid gap-3 md:grid-cols-2">{group.semesters.map((semester, index) => <div key={`semester-${index + 1}`} className="rounded-lg border border-[var(--color-border)] p-4"><div className="flex justify-between"><h3 className="font-medium">Semestre {index + 1}</h3><MetaBadge meta={{ label: STATUS_LABELS[semester.status] ?? semester.status, variant: statusVariant(semester.status) }} /></div><p className="mt-3 font-mono text-2xl font-semibold">{rate(metricValue(semester, "severityRate"))}</p><p className="text-xs text-[var(--color-text-subtle)]">Calculada desde los seis meses brutos, no desde un promedio de tasas.</p></div>)}</div>
-          {group.annual.sexBreakdown.length > 0 && <div className="rounded-lg border border-[var(--color-border)] p-4"><h3 className="font-medium">Desagregación por sexo</h3><div className="mt-3 flex flex-wrap gap-4 text-sm">{group.annual.sexBreakdown.map((item) => <p key={item.sex}><span className="text-[var(--color-text-subtle)]">{item.sex}:</span> {item.suppressed ? "Oculto por grupo pequeño (<5)" : item.value}</p>)}</div></div>}
+          {group.annual.sexBreakdown.length > 0 && <div className="rounded-lg border border-[var(--color-border)] p-4"><h3 className="font-medium">Desagregación por sexo</h3><div className="mt-3 flex flex-wrap gap-4 text-sm">{group.annual.sexBreakdown.map((item) => <p key={item.sex}><span className="text-[var(--color-text-subtle)]">{sexBreakdownLabel(item.sex)}:</span> {item.suppressed ? "Oculto por grupo pequeño (<5)" : item.value}</p>)}</div></div>}
         </TabsContent>
 
         <TabsContent value="denominators">
@@ -172,4 +173,13 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
       )}
     </div>
   )
+}
+
+/**
+ * El cálculo agrupa bajo `unspecified` tanto a quien no informa como a quien
+ * nadie registró (`safety-indicators-calc.ts`), así que aquí esa fila no puede
+ * decir «No informa»: sería afirmar que se preguntó.
+ */
+function sexBreakdownLabel(sex: string): string {
+  return sex === "unspecified" ? "Sin dato" : personSexLabel(sex)
 }

@@ -58,7 +58,7 @@ export default async function ProgramacionInspeccionPage({ searchParams }: {
       // Una consulta por tabla para todas las faenas, no dos por faena (INS-12).
       listInspectionSubjectsByWorksite(worksiteIds, access),
     ])
-    for (const [worksiteId, rows] of risks) riskEntriesByWorksite[worksiteId] = rows
+    for (const [worksiteId, rows] of risks) riskEntriesByWorksite[worksiteId] = rows.map((row) => ({ ...row, hazard: row.hazard ?? "Sin peligro descrito" }))
     subjectsByWorksite = subjects
   }
 

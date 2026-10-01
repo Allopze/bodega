@@ -79,6 +79,7 @@ export default async function TrabajadoresPage() {
           rut:          w.rut,
           firstName:    w.firstName,
           lastName:     w.lastName,
+          sex:          w.sex,
           position:     w.positionCatalog?.name ?? w.position,
           positionId:   w.positionId,
           positionNeedsReview: w.positionCatalog?.needsReview ?? false,

@@ -42,7 +42,7 @@
 | **32** | Registro formal de envío mensual alcotest | Mensual | PRF | `/prevencion/alcotest` | Clic en **"Registrar envío mensual"** |
 | **33** | Inspección de herramientas manuales | Mensual | Supervisor / PRF | `/prevencion/inspecciones` | Ejecución de pauta de herramientas |
 | **34** | Inspección de carros y ramplas | Mensual | Supervisor / PRF | `/prevencion/inspecciones` | Ejecución de pauta de carros de arrastre |
-| **35** | Publicación de versión Matriz IPER | Anual | PRF / JDPR | `/prevencion/miper` | Publicación formal de la matriz segregada |
+| **35** | Publicación de versión Matriz IPER | Anual | PRF / JDPR | `/prevencion/miper` | Sellado de la versión aprobada por Legal y RRHH |
 | **36** | Acuse de recibo difusión MIPER-DIF | Semestral | PRF | `/prevencion/documentacion` | Registro de firmas de difusión MIPER-DIF |
 | **37** | Curso de inducción a conductores | A demanda | PRF | Módulo de ingreso correspondiente | Actividad PDTP; no forma parte del catálogo anual controlado 2026 |
 | **38** | Charla de refuerzo operacional mensual | Mensual | Jefe de Terreno / Sup | Flujo histórico de sesiones | Registro histórico; no se crea como ocurrencia del catálogo anual 2026 |

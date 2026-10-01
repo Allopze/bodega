@@ -29,7 +29,9 @@ export function createCspHeader(nonce: string, options: { isDev?: boolean } = {}
     }`,
     "style-src-elem 'self' 'unsafe-inline'",
     "style-src-attr 'unsafe-inline'",
-    "img-src 'self' data: blob: https://api.dicebear.com",
+    // Los avatares son iniciales locales desde que se retiró `api.dicebear.com`:
+    // ya no hace falta habilitar un origen externo para pintar una imagen.
+    "img-src 'self' data: blob:",
     "font-src 'self' data:",
     `connect-src 'self'${isDev ? " ws: wss:" : ""}`,
     "object-src 'none'",

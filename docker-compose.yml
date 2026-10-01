@@ -349,6 +349,10 @@ services:
         20 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-cphs-alerts >/proc/1/fd/1 2>&1
         25 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-document-ack-reminders >/proc/1/fd/1 2>&1
         35 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs sst-weekly-alerts >/proc/1/fd/1 2>&1
+        # F3 (§9.1): barrido diario del Programa de Trabajo MIPER (ocurrencias
+        # vencidas y «No se hizo»). Deduplica por ocurrencia, así que repetir la
+        # corrida no duplica avisos.
+        45 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs prevention-miper-daily-sweep >/proc/1/fd/1 2>&1
         # Plazos de documentos de flota, revisiones de MIPER y derechos del titular.
         55 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs deadline-reminders >/proc/1/fd/1 2>&1
         # Incidentes — cada hora: el carril de notificación avisa en la ventana

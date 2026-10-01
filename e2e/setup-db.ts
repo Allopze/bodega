@@ -142,6 +142,39 @@ async function main() {
     worksiteId: "ws-e2e",
     isPrimary: true,
   })
+  /* MIPER F1 (spec 2026-09-30): las tres firmas del flujo, cada una con sólo su
+   * permiso, para que el E2E pruebe la segregación real y no la del admin.
+   *
+   * Van como roles propios y no sobre `rol-admin` porque el flujo RE-04 prohíbe
+   * que una misma persona envíe, revise y apruebe: con el admin —que tiene los
+   * cuatro permisos— el E2E certificaría la excepción, no la regla. Los ids de
+   * permiso son los del manifiesto (`modules/prevention/manifest.ts`) y
+   * `SYSTEM_PERMISSIONS` los sembró arriba, así que la FK se cumple.
+   *
+   * `prevencionista` sólo aparecía hasta acá como rótulo de firma en otros
+   * fixtures, no como `roles.name`: el nombre queda libre para la jefatura. */
+  const miperRoles = [
+    { id: "rol-prev-faena-e2e", name: "prevencionista_faena", label: "Prevencionista faena", isGlobal: false, permissions: ["p-prev-risk-view", "p-prev-risk-edit"] },
+    { id: "rol-prev-jefa-e2e", name: "prevencionista", label: "Jefe del Departamento de Prevención de Riesgos", isGlobal: true, permissions: ["p-prev-risk-view", "p-prev-risk-review"] },
+    { id: "rol-legal-e2e", name: "gerente_legal_rrhh", label: "Gerencia Legal y Recursos Humanos", isGlobal: true, permissions: ["p-prev-risk-view", "p-prev-risk-approve-legal"] },
+  ]
+  for (const role of miperRoles) {
+    await db.insert(schema.roles).values({ id: role.id, name: role.name, label: role.label, description: `${role.label} — E2E MIPER`, isGlobal: role.isGlobal })
+    await db.insert(schema.rolePermissions).values(role.permissions.map((permissionId) => ({ roleId: role.id, permissionId })))
+  }
+  const miperUsers = [
+    // Acotada a ws-e2e: la MIPER de una faena sólo la edita quien la tiene en
+    // su alcance, y ese recorte también es parte de lo que se prueba.
+    { id: "user-prev-faena-e2e", name: "Prevencionista Faena E2E", email: "prev.faena@e2e.chome.cl", roleId: "rol-prev-faena-e2e", scoped: true },
+    { id: "user-jefa-prev-e2e", name: "Jefa Prevención E2E", email: "jefa.prevencion@e2e.chome.cl", roleId: "rol-prev-jefa-e2e", scoped: false },
+    { id: "user-legal-e2e", name: "Legal y RRHH E2E", email: "legal.rrhh@e2e.chome.cl", roleId: "rol-legal-e2e", scoped: false },
+  ]
+  for (const user of miperUsers) {
+    await db.insert(schema.users).values({ id: user.id, name: user.name, email: user.email, hashedPassword: password, avatarColor: "200", isActive: true, createdAt: now, updatedAt: now })
+    await db.insert(schema.userRoles).values({ userId: user.id, roleId: user.roleId })
+    if (user.scoped) await db.insert(schema.worksiteUsers).values({ userId: user.id, worksiteId: "ws-e2e", isPrimary: true })
+  }
+
   /* Segundo jefe de terreno de la MISMA faena (Fase 5). Dos personas con el
    * mismo cargo es la situación que hace necesaria la asignación nominal: sin
    * ella la misma fila le aparece a los dos en /pendientes y ninguno sabe si
@@ -3066,6 +3099,8 @@ async function main() {
   await db.insert(schema.preventionRiskMatrices).values({
     id: "riskmatrix-e2e", worksiteId: "ws-e2e", matrixVersion: 1, title: "MIPER E2E",
     status: "published", methodologyId: "riskmethod-e2e", methodologySnapshot: {},
+    // Datos de la metodología anterior: la MIPER RE-04 es la del flujo nuevo.
+    isLegacy: true,
     revisionReason: "Fixture E2E para el mapa de riesgos espacial, mínimo diez caracteres.",
     participationSummary: "Participación de fixture E2E, mínimo diez caracteres.",
     consultationEvidenceReference: "Evidencia de fixture E2E",
@@ -3086,6 +3121,203 @@ async function main() {
     isCritical: false, responsibleSnapshot: "Admin E2E",
     version: 1, createdAt: now, updatedAt: now,
   })
+
+  /* ── MIPER F1: matrices dedicadas a las pruebas de interacción y de control ──
+   *
+   * `e2e/prevencion-miper-interacciones.spec.ts` y
+   * `e2e/prevencion-miper-controles.spec.ts` cubren lo que el recorrido de
+   * navegación declaró no verificado (`qa/reports/2026-09-30-miper-f1.md` §3).
+   * Necesitan (a) MIPER RE-04 **en borrador** que se puedan editar sin que otra
+   * prueba las mueva a medio camino y (b) una MIPER **vigente sellada** con
+   * medidas para abrir su ficha en `/prevencion/miper/controles/[id]`.
+   *
+   * Van en `ws-restricted-e2e` por dos motivos. Primero, `ws-e2e` ya tiene su
+   * matriz publicada (el índice único `…_one_published_scope_unique` admite una
+   * sola por faena). Segundo, al vivir en otra faena el corte por alcance tiene
+   * dónde ejercerse de verdad: un usuario acotado a `ws-e2e` que conoce el id de
+   * una de estas matrices recibe el 404 de «fuera de alcance» y no ve un dato.
+   *
+   * El `id` de cada matriz es parte del contrato de las pruebas —no se crean por
+   * UI—, así que los specs las nombran literalmente.
+   */
+  const miperDraftFixtures: (typeof schema.preventionRiskMatrices.$inferInsert)[] = [
+    { id: "riskmatrix-teclado-e2e", period: 2037 },
+    { id: "riskmatrix-estructura-e2e", period: 2038 },
+    { id: "riskmatrix-concurrencia-e2e", period: 2039 },
+  ].map((fixture, index) => ({
+    ...fixture,
+    worksiteId: "ws-restricted-e2e",
+    matrixVersion: index + 1,
+    title: `MIPER Faena Restringida E2E ${fixture.period}`,
+    status: "draft",
+    reviewState: "none",
+    isLegacy: false,
+    methodologyId: "riskmethod-e2e",
+    methodologySnapshot: {},
+    revisionReason: "Fixture E2E de las pruebas de interacción de la grilla MIPER.",
+    participationSummary: "Participación del comité de fixture E2E para las pruebas.",
+    consultationEvidenceReference: "Acta de consulta de fixture E2E",
+    createdByUserId: "user-admin-e2e",
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  }))
+  await db.insert(schema.preventionRiskMatrices).values(miperDraftFixtures)
+
+  /* Una MIPER **reemplazada** con su propia medida: es el tercer caso de la
+   * regla `canVerify` —la medida se sigue leyendo, pero de una versión que ya no
+   * rige—, y el único de los tres que depende del estado de la MIPER y no del
+   * control ni del permiso. Va antes de su sucesora porque la vigente la declara
+   * en `supersedes_matrix_id`. */
+  await db.insert(schema.preventionRiskMatrices).values({
+    id: "riskmatrix-reemplazada-e2e",
+    worksiteId: "ws-restricted-e2e",
+    matrixVersion: 5,
+    period: 2035,
+    title: "MIPER Faena Restringida E2E 2035",
+    status: "superseded",
+    reviewState: "none",
+    isLegacy: false,
+    methodologyId: "riskmethod-e2e",
+    methodologySnapshot: {},
+    revisionReason: "Fixture E2E de la medida de una MIPER ya reemplazada.",
+    participationSummary: "Participación del comité de fixture E2E para las pruebas.",
+    consultationEvidenceReference: "Acta de consulta de fixture E2E",
+    createdByUserId: "user-prev-faena-e2e",
+    reviewedByUserId: "user-admin-e2e",
+    reviewedAt: now,
+    approvedByUserId: "user-jefa-prev-e2e",
+    approvedAt: now,
+    publishedByUserId: "user-legal-e2e",
+    publishedAt: now,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskEntries).values({
+    id: "riskentry-reemplazada-e2e",
+    matrixId: "riskmatrix-reemplazada-e2e",
+    rowNumber: 1,
+    hazardCode: "HAZ-REEMPL-E2E",
+    hazard: "Proyección de partículas E2E",
+    risk: "Lesión ocular",
+    probableDamage: "Traumatismo ocular",
+    isRoutine: true,
+    exposedFemale: 0,
+    exposedMale: 2,
+    exposedOther: 0,
+    probability: 2,
+    consequence: 2,
+    controlledStatus: "yes",
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskControls).values({
+    id: "riskcontrol-reemplazado-e2e",
+    riskEntryId: "riskentry-reemplazada-e2e",
+    description: "Pantalla de protección en el punto de esmerilado.",
+    hierarchy: "engineering",
+    isExisting: false,
+    isCritical: false,
+    responsibleSnapshot: "Supervisor de turno E2E",
+    dueDate: "2026-03-31",
+    status: "implemented",
+    effectivenessStatus: "not_assessed",
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  await db.insert(schema.preventionRiskMatrices).values({
+    id: "riskmatrix-controles-e2e",
+    worksiteId: "ws-restricted-e2e",
+    matrixVersion: 4,
+    period: 2036,
+    title: "MIPER Faena Restringida E2E 2036",
+    status: "published",
+    reviewState: "none",
+    isLegacy: false,
+    methodologyId: "riskmethod-e2e",
+    methodologySnapshot: {},
+    revisionReason: "Fixture E2E de la ficha de verificación de un control.",
+    participationSummary: "Participación del comité de fixture E2E para las pruebas.",
+    consultationEvidenceReference: "Acta de consulta de fixture E2E",
+    publishedHashSha256: "3f1c0d5a7b9e24c68d0f1a3b5c7d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f801",
+    supersedesMatrixId: "riskmatrix-reemplazada-e2e",
+    /* `created_by_user_id` NO es el admin a propósito: la verificación de una
+     * medida exige una persona distinta de quien creó la versión MIPER
+     * (MIPER-08), y la prueba de la ficha necesita un actor sin conflicto para
+     * ver el formulario normal en vez del de excepción. */
+    createdByUserId: "user-prev-faena-e2e",
+    reviewedByUserId: "user-admin-e2e",
+    reviewedAt: now,
+    approvedByUserId: "user-jefa-prev-e2e",
+    approvedAt: now,
+    publishedByUserId: "user-legal-e2e",
+    publishedAt: now,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskEntries).values({
+    id: "riskentry-controles-e2e",
+    matrixId: "riskmatrix-controles-e2e",
+    rowNumber: 1,
+    hazardCode: "HAZ-CTRL-E2E",
+    hazard: "Atrapamiento en correa transportadora E2E",
+    risk: "Atrapamiento de la mano",
+    probableDamage: "Amputación de dedo",
+    isRoutine: true,
+    exposedFemale: 0,
+    exposedMale: 3,
+    exposedOther: 0,
+    /* P×C = 2×4 → MR 8 «Importante», que es el nivel efectivo que la ficha
+     * muestra como «Alto». Deliberadamente **no** es crítico: un riesgo crítico
+     * sin verificar se cuela en los bloqueos de «riesgos críticos sin control»
+     * que otros specs leen de la portada. */
+    probability: 2,
+    consequence: 4,
+    controlledStatus: "yes",
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskControls).values([
+    {
+      id: "riskcontrol-activo-e2e",
+      riskEntryId: "riskentry-controles-e2e",
+      description: "Guardas fijas en los puntos de atrapamiento de la correa.",
+      hierarchy: "engineering",
+      isExisting: true,
+      isCritical: false,
+      performanceStandard: "Guardas instaladas según DS 44, verificadas en el checklist mensual.",
+      verificationFrequency: "Mensual",
+      responsibleSnapshot: "Supervisor de turno E2E",
+      dueDate: "2026-12-31",
+      status: "implemented",
+      effectivenessStatus: "not_assessed",
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      // Retirada: la ficha NO debe ofrecer verificarla (`canVerify` la excluye).
+      id: "riskcontrol-retirado-e2e",
+      riskEntryId: "riskentry-controles-e2e",
+      description: "Señalización de advertencia en el pasillo de la correa.",
+      hierarchy: "administrative",
+      isExisting: false,
+      isCritical: false,
+      responsibleSnapshot: "Supervisor de turno E2E",
+      dueDate: "2026-06-30",
+      status: "retired",
+      effectivenessStatus: "not_assessed",
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
 
   await client.end()
 }

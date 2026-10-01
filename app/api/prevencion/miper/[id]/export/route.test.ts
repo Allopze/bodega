@@ -3,13 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 const mockAuth = vi.hoisted(() => vi.fn())
 const mockCan = vi.hoisted(() => vi.fn())
 const mockScope = vi.hoisted(() => vi.fn())
-const mockGetPublishedRiskMatrix = vi.hoisted(() => vi.fn())
+const mockGetMiperVersion = vi.hoisted(() => vi.fn())
 const mockRecordAudit = vi.hoisted(() => vi.fn())
+const mockBuildMiperSnapshot = vi.hoisted(() => vi.fn())
+const mockSnapshotSha = vi.hoisted(() => vi.fn(() => "live-hash"))
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuth }))
 vi.mock("@/lib/auth/can", () => ({ can: mockCan }))
 vi.mock("@/lib/auth/scope", () => ({ resolveWorksiteScope: mockScope }))
-vi.mock("@/lib/services/prevention-risk-legal", () => ({ getPublishedRiskMatrix: mockGetPublishedRiskMatrix }))
+vi.mock("@/lib/services/miper/queries", () => ({ getMiperVersion: mockGetMiperVersion }))
+vi.mock("@/lib/services/miper/snapshots", () => ({ buildMiperSnapshot: mockBuildMiperSnapshot, snapshotSha: mockSnapshotSha }))
 vi.mock("@/lib/audit", () => ({ recordAudit: mockRecordAudit }))
 
 function session(permissions: string[] = ["prevention:risk:view"]) {
@@ -25,58 +28,81 @@ function session(permissions: string[] = ["prevention:risk:view"]) {
   }
 }
 
+/** Versión sellada v2 tal como la devuelve `getMiperVersion`. */
+const detail = {
+  version: {
+    id: "version-2", matrixId: "matrix-1", versionNumber: 2, period: 2026, roundId: "round-1",
+    snapshot: {
+      header: {
+        period: 2026, iperCode: "RE-04", elaboratedOn: "2026-01-15", updatedOn: "2026-02-01",
+        companyName: "Biodiversa SpA", companyRut: "76.123.456-7", companyAddress: "Av. del Mar 100", companyCommune: "Santiago",
+        economicActivity: "Servicios ambientales", adherentNumber: "AD-123", worksiteName: "Faena Norte",
+        siteRepresentativeUserId: "u-rep", siteRepresentativeName: "Ana Representante",
+        headcountTotal: 10, headcountMale: 6, headcountFemale: 3, headcountOther: 1,
+        participationSummary: "Taller participativo", consultationEvidenceReference: "EVID-PAR-001",
+      },
+      entries: [{
+        id: "entry-1", rowNumber: 1,
+        activity: "Transporte", task: "Descarga", position: "Conductor", location: "Patio",
+        exposedFemale: 1, exposedMale: 4, exposedOther: 0,
+        riskFactorId: "rf-1", riskFactor: "+factor", isRoutine: true,
+        hazard: "=WEBSERVICE(\"https://example.test\")", risk: "Volcamiento", probableDamage: "Politraumatismo",
+        probability: 4, consequence: 4, magnitude: 16, classification: "intolerable", controlledStatus: "yes",
+        controls: [{ id: "ctl-1", hierarchy: "engineering", description: "Topes de descarga", responsibleUserId: "u-1", responsibleName: "Supervisor", dueDate: "2026-06-30", status: "implemented" }],
+      }],
+    },
+    snapshotSha256: "snapshot-hash-v2", changeSummary: "Emisión inicial",
+    elaboratedByUserId: "u-elabora", technicalReviewerUserId: "u-revisa", approverUserId: "u-aprueba",
+    elaboratedByName: "Elena Elabora", technicalReviewerName: "Revisora Técnica", approverName: "Alberto Aprueba",
+    approvedAt: "2026-03-01",
+  },
+  worksiteId: "ws-own", worksiteName: "Faena Norte", worksiteCode: "BIO", methodologySnapshot: {},
+  versions: [{ versionNumber: 2, approvedAt: "2026-03-01", changeSummary: "Emisión inicial", approverName: "Alberto Aprueba", elaboratedByName: "Elena Elabora" }],
+}
+
+/** Estado vivo de la matriz: dos filas, la primera con un peligro que no está en la foto. */
+const liveSnapshot = {
+  header: detail.version.snapshot.header,
+  entries: [
+    { ...detail.version.snapshot.entries[0], id: "entry-live-1", hazard: "Peligro vivo" },
+    { ...detail.version.snapshot.entries[0], id: "entry-live-2", rowNumber: 2, hazard: "Segundo peligro vivo" },
+  ],
+}
+
 describe("GET /api/prevencion/miper/[id]/export", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockAuth.mockResolvedValue(null)
     mockCan.mockReturnValue(false)
     mockScope.mockReturnValue({ mode: "some", ids: ["ws-own"] })
-    mockGetPublishedRiskMatrix.mockResolvedValue({
-      worksiteName: "Faena Norte",
-      matrix: {
-        id: "matrix-1", worksiteId: "ws-own", matrixVersion: 2, status: "published",
-        methodologySnapshot: { code: "ISP-v3" }, revisionReason: "Revisión anual",
-        participationSummary: "Consulta paritaria documentada", consultationEvidenceReference: "DOC-1",
-        reviewedByUserId: "reviewer", reviewedAt: "2026-07-01", approvedByUserId: "approver", approvedAt: "2026-07-02",
-        publishedByUserId: "publisher", publishedAt: "2026-07-03", effectiveFrom: "2026-07-03", reviewDueAt: "2027-07-03",
-        publishedHashSha256: "hash-miper-2",
-      },
-      entries: [{
-        process: { name: "Proceso principal" }, task: { name: "Tarea crítica" }, position: { name: "Operador" },
-        entry: {
-          id: "entry-1", hazardCode: "PEL-01", hazard: "=WEBSERVICE(\"https://example.test\")", riskFactor: "+factor",
-          expectedEventOrDamage: "Lesión", exposedPeopleDescription: "Personal operativo", exposedPeopleCount: 3,
-          genderConsiderations: "Exposición evaluada por sexo", sensitiveWorkerConsiderations: "Incluye personas especialmente sensibles",
-          inherentDimensions: { probability: 4, consequence: 4 }, inherentLevel: "critical", residualDimensions: { probability: 2, consequence: 2 },
-          residualLevel: "medium", isCritical: true, responsibleSnapshot: "Jefatura", evidenceReference: "EVID-1", specialMethodologyReference: "TMERT",
-        },
-      }],
-      controls: [{ riskEntryId: "entry-1", description: "Aislamiento", hierarchy: "engineering", isExisting: true, isCritical: true, performanceStandard: "100% operativo", verificationFrequency: "Mensual", responsibleSnapshot: "Supervisor", status: "implemented", effectivenessStatus: "verified_effective", evidenceReference: "CTRL-1" }],
-      triggers: [{ triggerType: "annual", sourceType: "system", sourceId: "matrix-1", description: "Revisión anual", status: "open", dueAt: "2027-07-03", resolution: null, resolvedByUserId: null, resolvedAt: null }],
-    })
+    mockGetMiperVersion.mockResolvedValue(detail as never)
+    mockBuildMiperSnapshot.mockResolvedValue(liveSnapshot as never)
   })
 
   it("requires authentication and view permission", async () => {
     const { GET } = await import("./route")
-    expect((await GET(new Request("http://localhost"), { params: Promise.resolve({ id: "matrix-1" }) })).status).toBe(401)
+    expect((await GET(new Request("http://localhost"), { params: Promise.resolve({ id: "version-2" }) })).status).toBe(401)
 
     mockAuth.mockResolvedValue(session([]))
-    expect((await GET(new Request("http://localhost"), { params: Promise.resolve({ id: "matrix-1" }) })).status).toBe(403)
-    expect(mockGetPublishedRiskMatrix).not.toHaveBeenCalled()
+    expect((await GET(new Request("http://localhost"), { params: Promise.resolve({ id: "version-2" }) })).status).toBe(403)
+    expect(mockGetMiperVersion).not.toHaveBeenCalled()
   })
 
-  it("exports the scoped published snapshot, neutralizes formulas and records audit", async () => {
+  it("exports the scoped sealed version, neutralizes formulas and records audit", async () => {
     mockAuth.mockResolvedValue(session())
     mockCan.mockReturnValue(true)
     const { GET } = await import("./route")
 
-    const response = await GET(new Request("http://localhost"), { params: Promise.resolve({ id: "matrix-1" }) })
+    const response = await GET(new Request("http://localhost"), { params: Promise.resolve({ id: "version-2" }) })
 
     expect(response.status).toBe(200)
     expect(response.headers.get("content-type")).toContain("spreadsheetml")
     expect(response.headers.get("cache-control")).toBe("no-store")
     expect(response.headers.get("x-content-type-options")).toBe("nosniff")
-    expect(mockGetPublishedRiskMatrix).toHaveBeenCalledWith("matrix-1", {
+    expect(response.headers.get("content-disposition")).toContain("RE-04-MIPER-BIO-2026-v2.xlsx")
+    // El sellado no consulta el estado vivo.
+    expect(mockBuildMiperSnapshot).not.toHaveBeenCalled()
+    expect(mockGetMiperVersion).toHaveBeenCalledWith("version-2", {
       userId: "risk-user", scope: { mode: "some", ids: ["ws-own"] }, permissions: ["prevention:risk:view"],
     })
 
@@ -84,22 +110,49 @@ describe("GET /api/prevencion/miper/[id]/export", () => {
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(await response.arrayBuffer())
     expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
-      "Matriz MIPER", "Controles", "Aprobación", "Revisiones", "Metadatos",
+      "RE-04 IPER", "Modificaciones", "Criterios de Evaluación IPER", "Programa de Trabajo", "Metadatos",
     ])
-    expect(workbook.getWorksheet("Matriz MIPER")?.getCell("G2").value).toBe("'=WEBSERVICE(\"https://example.test\")")
-    expect(workbook.getWorksheet("Aprobación")?.getCell("B15").value).toBe("hash-miper-2")
+    // El libro sellado no lleva la leyenda del estado vivo.
+    expect(String(workbook.getWorksheet("RE-04 IPER")?.getCell("A1").value)).not.toContain("no aprobados")
+    expect(workbook.getWorksheet("RE-04 IPER")?.getCell("I14").value).toBe("'+factor")
+    expect(workbook.getWorksheet("RE-04 IPER")?.getCell("K14").value).toBe("'=WEBSERVICE(\"https://example.test\")")
     expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
-      action: "export", entityType: "prevention_risk_matrix", entityId: "matrix-1",
+      action: "export", entityType: "prevention_risk_matrix_version", entityId: "version-2",
+      newState: expect.objectContaining({ estado: "sellado" }),
     }))
   })
 
-  it("does not reveal whether an out-of-scope matrix exists", async () => {
+  it("exports the live state with the legend and a distinct filename when ?estado=vivo", async () => {
     mockAuth.mockResolvedValue(session())
     mockCan.mockReturnValue(true)
-    mockGetPublishedRiskMatrix.mockRejectedValue(new Error("fuera de alcance"))
     const { GET } = await import("./route")
 
-    const response = await GET(new Request("http://localhost"), { params: Promise.resolve({ id: "matrix-foreign" }) })
+    const response = await GET(new Request("http://localhost/?estado=vivo"), { params: Promise.resolve({ id: "version-2" }) })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-disposition")).toContain("RE-04-MIPER-BIO-2026-v2-vivo.xlsx")
+    expect(mockBuildMiperSnapshot).toHaveBeenCalledWith(expect.anything(), "matrix-1")
+
+    const ExcelJS = await import("exceljs")
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(await response.arrayBuffer())
+    // La matriz sale del estado vivo y lleva la leyenda.
+    expect(String(workbook.getWorksheet("RE-04 IPER")?.getCell("A1").value)).toContain("Incluye cambios no aprobados")
+    expect(workbook.getWorksheet("RE-04 IPER")?.getCell("K14").value).toBe("Peligro vivo")
+    expect(String(workbook.getWorksheet("Programa de Trabajo")?.getCell("A2").value)).toContain("Incluye cambios no aprobados")
+    expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: "export", entityId: "version-2",
+      newState: expect.objectContaining({ estado: "vivo" }),
+    }))
+  })
+
+  it("does not reveal whether an out-of-scope version exists", async () => {
+    mockAuth.mockResolvedValue(session())
+    mockCan.mockReturnValue(true)
+    mockGetMiperVersion.mockRejectedValue(new Error("fuera de alcance"))
+    const { GET } = await import("./route")
+
+    const response = await GET(new Request("http://localhost"), { params: Promise.resolve({ id: "version-foreign" }) })
 
     expect(response.status).toBe(404)
     expect(await response.json()).toEqual({ error: "MIPER no encontrada o fuera de alcance" })

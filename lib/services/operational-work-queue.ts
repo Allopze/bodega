@@ -30,6 +30,10 @@ import {
   preventionInspectionFindings,
   preventionInspectionRuns,
   preventionInspectionTemplates,
+  preventionRiskMatrices,
+  preventionRiskProgramActions,
+  preventionRiskProgramOccurrences,
+  preventionRiskPrograms,
   products,
   purchaseOrderInvoiceItems,
   purchaseOrderInvoices,
@@ -1297,6 +1301,87 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     `)
   }
 
+  /* MIPER (§9.1, F3). Dos hechos distintos, dos ramas con la misma forma SQL que
+   * las demás —la autorización y la faena viven dentro del `SELECT`—: una
+   * ocurrencia del Programa de Trabajo que debe trabajo y una matriz esperando
+   * firma. La matriz se ve, la ejecución se registra: son permisos distintos y
+   * por eso las ramas no se mezclan.
+   */
+  const canExecuteMiperProgram = hasPermission(session, "prevention:risk:program:execute")
+  /* Quien no ejecuta el programa puede igual tener trabajo acá: el RESPONSABLE
+   * NOMINAL de una actividad lo registra con `risk:view` sobre su faena
+   * (`requireExecute` en lib/services/miper/program-execution.ts). Ofrecerle la
+   * fila a cualquiera con `risk:view` sería inventar tareas ajenas; el predicado
+   * de abajo acota la excepción a sus propias actividades, igual que el
+   * servicio. */
+  if (canActOnQueueSource(session.user.permissions, "miper") || hasPermission(session, "prevention:risk:view")) add("miper", sql`
+    SELECT 'miper_occurrence'::text AS source_type, ${preventionRiskProgramOccurrences.id} AS source_id,
+      'execute'::text AS action_key, 'miper'::text AS module,
+      CONCAT('N°', ${preventionRiskProgramActions.actionNumber}) AS code,
+      ${preventionRiskProgramActions.description} AS title,
+      CONCAT('Programa ', COALESCE(${preventionRiskPrograms.period}::text, ''),
+        COALESCE(CONCAT(' · ', ${preventionRiskProgramActions.responsibleSnapshot}), '')) AS subtitle,
+      ${preventionRiskPrograms.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
+      ${preventionRiskProgramOccurrences.outcome} AS status,
+      CASE WHEN ${preventionRiskProgramOccurrences.outcome} = 'not_done' THEN 'No se hizo' ELSE 'Vencida' END AS status_label,
+      'high'::text AS priority, false AS blocked,
+      ${preventionRiskProgramOccurrences.createdAt}::text AS created_at,
+      ${preventionRiskProgramOccurrences.dueOn} AS source_due_at,
+      ${preventionRiskProgramActions.responsibleUserId} AS native_assignee_user_id,
+      (SELECT ${users.name} FROM ${users} WHERE ${users.id} = ${preventionRiskProgramActions.responsibleUserId} LIMIT 1) AS native_assignee_name,
+      CONCAT('/prevencion/miper/', ${preventionRiskPrograms.matrixId}, '?tab=programa&ocurrencia=', ${preventionRiskProgramOccurrences.id}) AS href,
+      'Registrar ejecución'::text AS cta_label
+    FROM ${preventionRiskProgramOccurrences}
+    INNER JOIN ${preventionRiskProgramActions} ON ${preventionRiskProgramActions.id} = ${preventionRiskProgramOccurrences.actionId}
+    INNER JOIN ${preventionRiskPrograms} ON ${preventionRiskPrograms.id} = ${preventionRiskProgramActions.programId}
+    INNER JOIN ${worksites} ON ${worksites.id} = ${preventionRiskPrograms.worksiteId}
+    WHERE ${inScope(preventionRiskPrograms.worksiteId)}
+      -- Una actividad retirada ya no ejecuta nada: pedirle registro sería ruido.
+      AND ${preventionRiskProgramActions.status} = 'active'
+      -- Lo que debe trabajo: una pendiente con vencimiento pasado —la misma
+      -- regla que deriva el avance, programProgress— o una «No se hizo» ya
+      -- registrada. Las superseded quedan fuera solas: su outcome no es
+      -- ninguno de los dos.
+      AND (
+        (${preventionRiskProgramOccurrences.outcome} = 'pending' AND ${preventionRiskProgramOccurrences.dueOn} < ${startOfChileDay()})
+        OR ${preventionRiskProgramOccurrences.outcome} = 'not_done'
+      )
+      AND ${canExecuteMiperProgram ? sql`true` : sql`${preventionRiskProgramActions.responsibleUserId} = ${session.user.id}`}
+  `)
+
+  const canReviewMiper = hasPermission(session, "prevention:risk:review")
+  const canApproveMiper = hasPermission(session, "prevention:risk:approve_legal")
+  if (canReviewMiper || canApproveMiper) {
+    /* Las dos etapas de firma no son el mismo acto: la revisión técnica es de la
+     * Jefatura del Depto. de Prevención y la aprobación final de Legal y RRHH.
+     * Cada estado entra sólo si el usuario puede actuar sobre él (A-06). */
+    const reviewStates: string[] = []
+    if (canReviewMiper) reviewStates.push("in_review")
+    if (canApproveMiper) reviewStates.push("pending_approval")
+    add("miper", sql`
+      SELECT 'miper_review'::text AS source_type, ${preventionRiskMatrices.id} AS source_id,
+        CASE WHEN ${preventionRiskMatrices.reviewState} = 'in_review' THEN 'review' ELSE 'approve' END AS action_key,
+        'miper'::text AS module, NULL::text AS code,
+        CASE WHEN ${preventionRiskMatrices.reviewState} = 'in_review'
+          THEN CONCAT('Revisar la MIPER ', COALESCE(${preventionRiskMatrices.period}::text, ''))
+          ELSE CONCAT('Firmar la MIPER ', COALESCE(${preventionRiskMatrices.period}::text, '')) END AS title,
+        ${preventionRiskMatrices.title} AS subtitle,
+        ${preventionRiskMatrices.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
+        ${preventionRiskMatrices.reviewState} AS status,
+        CASE WHEN ${preventionRiskMatrices.reviewState} = 'in_review'
+          THEN 'Pendiente de revisión técnica' ELSE 'Pendiente de firma de Legal y RRHH' END AS status_label,
+        'high'::text AS priority, false AS blocked,
+        ${preventionRiskMatrices.updatedAt}::text AS created_at, NULL::text AS source_due_at,
+        ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
+        CONCAT('/prevencion/miper/', ${preventionRiskMatrices.id}, '?tab=revision') AS href,
+        CASE WHEN ${preventionRiskMatrices.reviewState} = 'in_review' THEN 'Revisar' ELSE 'Firmar' END AS cta_label
+      FROM ${preventionRiskMatrices}
+      INNER JOIN ${worksites} ON ${worksites.id} = ${preventionRiskMatrices.worksiteId}
+      WHERE ${inScope(preventionRiskMatrices.worksiteId)}
+        AND ${inArray(preventionRiskMatrices.reviewState, reviewStates)}
+    `)
+  }
+
   return branches
 }
 
@@ -1671,7 +1756,7 @@ export function parseOperationalQueueFilters(input: Record<string, string | stri
     const value = input[key]
     return Array.isArray(value) ? value[0] : value
   }
-  const allowedModules: OperationalModule[] = ["solicitudes", "aprobaciones", "compras", "recepciones", "entregas", "pdtp", "capa", "inspecciones", "documentacion", "ppa", "sst", "cphs"]
+  const allowedModules: OperationalModule[] = ["solicitudes", "aprobaciones", "compras", "recepciones", "entregas", "pdtp", "capa", "inspecciones", "documentacion", "ppa", "sst", "cphs", "miper"]
   const allowedPriorities: WorkPriority[] = ["critical", "high", "normal", "low"]
   const allowedQuick: OperationalQuickFilter[] = ["all", "critical", "overdue", "today", "blocked", "unassigned", "mine"]
   const allowedSort: OperationalSort[] = ["priority", "due", "oldest", "newest"]

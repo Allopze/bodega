@@ -62,7 +62,7 @@ export const GENERATED_DOCUMENT_KIND_SPECS: Record<GeneratedDocumentKind, Genera
     extension: "xlsx", renderMode: "inprocess", destination: "prevencion", viewPermission: "prevention:pdtp:view",
   },
   miper: {
-    kind: "miper", label: "Matriz MIPER publicada", moduleLabel: "MIPER",
+    kind: "miper", label: "Matriz MIPER aprobada (versión sellada)", moduleLabel: "MIPER",
     extension: "xlsx", renderMode: "inprocess", destination: "prevencion", viewPermission: "prevention:risk:view",
   },
   incidente: {

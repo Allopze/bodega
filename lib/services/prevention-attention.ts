@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lte, max, ne, or } from "drizzle-orm"
+import { and, asc, eq, inArray, lt, lte, max, ne, or, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   ppaSubmissions,
@@ -9,6 +9,12 @@ import {
   preventionInspectionRuns,
   preventionInspectionTemplates,
   preventionProtocolApplicabilities,
+  preventionRiskControls,
+  preventionRiskEntries,
+  preventionRiskMatrices,
+  preventionRiskProgramActions,
+  preventionRiskProgramOccurrences,
+  preventionRiskPrograms,
   sstEvaluations,
   worksites,
 } from "@/db/schema"
@@ -20,7 +26,7 @@ import { todayInChile } from "@/lib/utils"
 
 export type PreventionAttentionItem = {
   id: string
-  kind: "action" | "evaluation" | "ppa" | "inspection" | "cphs" | "protocol" | "emergency_resource"
+  kind: "action" | "evaluation" | "ppa" | "inspection" | "cphs" | "protocol" | "emergency_resource" | "miper"
   title: string
   detail: string
   worksiteName: string
@@ -45,6 +51,13 @@ function byUrgency(a: PreventionAttentionItem, b: PreventionAttentionItem) {
  * `kind` —el más urgente de cada uno primero, luego el segundo— y lo elegido
  * se reordena por urgencia al final, para que dentro de lo visible siga
  * mandando lo más urgente.
+ *
+ * 2026-10-01 (MIPER, §9.1): sumar un `kind` **reduce los cupos de los demás**.
+ * El reparto es un cupo por fuente por vuelta, así que cada tipo nuevo se lleva
+ * una fila de cada ronda antes de que cualquier otro repita. Es el
+ * comportamiento buscado —una fuente que no aparece nunca es el defecto que
+ * este reparto vino a corregir—, pero conviene saberlo antes de agregar el
+ * siguiente: con nueve tipos y `limit` 12, ninguna fuente pone más de dos filas.
  */
 export function pickAttention(items: PreventionAttentionItem[], limit: number): PreventionAttentionItem[] {
   const queues = new Map<PreventionAttentionItem["kind"], PreventionAttentionItem[]>()
@@ -82,6 +95,14 @@ export async function getPreventionAttention(args: {
   includeProtocols?: boolean
   /** Vencimiento e inspección de equipos de emergencia — `prevention:emergency:view`. */
   includeEmergencyResources?: boolean
+  /**
+   * MIPER (§9.1): matrices esperando la firma de la Jefatura del Depto. de
+   * Prevención o de Legal y RRHH, ocurrencias del Programa de Trabajo vencidas y
+   * bandas Intolerables o Importantes sin ninguna medida con responsable y
+   * plazo. Mismo interruptor que las demás fuentes: lo enciende quien tiene
+   * `prevention:risk:view` y el módulo está habilitado.
+   */
+  includeMiper?: boolean
   limit?: number
 }): Promise<PreventionAttentionItem[]> {
   if (args.worksiteIds !== "all" && args.worksiteIds.length === 0) return []
@@ -179,6 +200,7 @@ export async function getPreventionAttention(args: {
   }))
 
   if (args.includeCphs) items.push(...await cphsAttentionItems(scope, today, limit))
+  if (args.includeMiper) items.push(...await miperAttentionItems(scope, today, limit))
   items.push(...await complianceAttentionItems(scope, today, limit, {
     protocols: args.includeProtocols ?? false,
     emergencyResources: args.includeEmergencyResources ?? false,
@@ -251,6 +273,145 @@ async function cphsAttentionItems(
         dueDate: null, href, tone: "warning",
       })
     }
+  }
+
+  return items
+}
+
+/**
+ * El tipo MIPER (§9.1): lo que espera firma y lo que ya venció.
+ *
+ * Tres hechos que hasta ahora no aparecían en ninguna bandeja:
+ *
+ *  · Una MIPER en `in_review` o `pending_approval` está esperando la firma de
+ *    una persona concreta: la revisión técnica de la Jefatura del Depto. de
+ *    Prevención o la aprobación de Legal y RRHH. Se emiten las dos etapas; cuál
+ *    le toca a quien mira lo resuelve el permiso con el que el llamador enciende
+ *    la fuente.
+ *  · Una ocurrencia `pending` con vencimiento pasado es trabajo que ya debía
+ *    estar hecho. El avance del programa se **deriva** de estas filas y nunca se
+ *    guarda (`programProgress`, lib/prevention/miper/progress.ts), así que la
+ *    única forma de detectarlo es leer `due_on` contra el día civil chileno.
+ *  · Una fila Intolerable o Importante sin ninguna medida con responsable y
+ *    plazo es exactamente el defecto que deja la matriz sin programa.
+ *
+ * Ninguna de las tres es una notificación: el aviso a la persona concreta vive
+ * en el barrido diario. Acá se emite el pendiente para la portada.
+ */
+async function miperAttentionItems(
+  scope: (column: typeof worksites.id) => ReturnType<typeof inArray> | undefined,
+  today: string,
+  limit: number,
+): Promise<PreventionAttentionItem[]> {
+  const [matrices, occurrences, entries] = await Promise.all([
+    db.select({
+      id: preventionRiskMatrices.id,
+      title: preventionRiskMatrices.title,
+      period: preventionRiskMatrices.period,
+      reviewState: preventionRiskMatrices.reviewState,
+      worksiteName: worksites.name,
+    })
+      .from(preventionRiskMatrices)
+      .innerJoin(worksites, eq(preventionRiskMatrices.worksiteId, worksites.id))
+      .where(and(
+        scope(worksites.id),
+        inArray(preventionRiskMatrices.reviewState, ["in_review", "pending_approval"]),
+      ))
+      .orderBy(asc(preventionRiskMatrices.updatedAt)).limit(limit),
+    db.select({
+      id: preventionRiskProgramOccurrences.id,
+      dueOn: preventionRiskProgramOccurrences.dueOn,
+      actionNumber: preventionRiskProgramActions.actionNumber,
+      description: preventionRiskProgramActions.description,
+      matrixId: preventionRiskPrograms.matrixId,
+      worksiteName: worksites.name,
+    })
+      .from(preventionRiskProgramOccurrences)
+      .innerJoin(preventionRiskProgramActions, eq(preventionRiskProgramActions.id, preventionRiskProgramOccurrences.actionId))
+      .innerJoin(preventionRiskPrograms, eq(preventionRiskPrograms.id, preventionRiskProgramActions.programId))
+      .innerJoin(worksites, eq(preventionRiskPrograms.worksiteId, worksites.id))
+      .where(and(
+        scope(worksites.id),
+        eq(preventionRiskProgramActions.status, "active"),
+        eq(preventionRiskProgramOccurrences.outcome, "pending"),
+        // Vencida es `due_on` anterior al día civil chileno: la misma regla que
+        // `programProgress` (una pendiente que vence hoy todavía no lo está).
+        lt(preventionRiskProgramOccurrences.dueOn, today),
+      ))
+      .orderBy(asc(preventionRiskProgramOccurrences.dueOn)).limit(limit),
+    db.select({
+      id: preventionRiskEntries.id,
+      matrixId: preventionRiskEntries.matrixId,
+      classification: preventionRiskEntries.classification,
+      hazardCode: preventionRiskEntries.hazardCode,
+      hazard: preventionRiskEntries.hazard,
+      risk: preventionRiskEntries.risk,
+      worksiteName: worksites.name,
+    })
+      .from(preventionRiskEntries)
+      .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
+      .innerJoin(worksites, eq(preventionRiskMatrices.worksiteId, worksites.id))
+      .where(and(
+        scope(worksites.id),
+        ne(preventionRiskMatrices.status, "superseded"),
+        // Las dos bandas que no pueden quedar sin programa (§6.2). La columna es
+        // generada desde P×C, así que no hay forma de guardar una incoherente.
+        inArray(preventionRiskEntries.classification, ["important", "intolerable"]),
+        // «Importante sin medida» y «medida sin responsable o plazo» son el
+        // mismo predicado: no tener NINGUNA medida completa. Una actividad
+        // retirada ya no ejecuta nada, así que no cuenta como medida.
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${preventionRiskControls}
+          WHERE ${preventionRiskControls.riskEntryId} = ${preventionRiskEntries.id}
+            AND ${preventionRiskControls.status} <> 'retired'
+            AND ${preventionRiskControls.responsibleUserId} IS NOT NULL
+            AND ${preventionRiskControls.dueDate} IS NOT NULL
+        )`,
+      ))
+      .orderBy(asc(preventionRiskEntries.matrixId), asc(preventionRiskEntries.rowNumber)).limit(limit),
+  ])
+
+  const items: PreventionAttentionItem[] = []
+
+  for (const row of matrices) {
+    const awaitsLegal = row.reviewState === "pending_approval"
+    items.push({
+      id: `miper_review:${row.id}`, kind: "miper",
+      title: awaitsLegal
+        ? "MIPER esperando la firma de Legal y RRHH"
+        : "MIPER esperando revisión técnica",
+      detail: row.period ? `${row.title} · período ${row.period}` : row.title,
+      worksiteName: row.worksiteName, dueDate: null,
+      href: `/prevencion/miper/${row.id}?tab=revision`,
+      tone: "warning",
+    })
+  }
+
+  for (const row of occurrences) {
+    items.push({
+      id: `miper_occurrence:${row.id}`, kind: "miper",
+      title: `Ocurrencia vencida del programa · N°${row.actionNumber}`,
+      // El corte replica el de la cola del PDTP: una actividad se nombra, no se
+      // vuelca entera en una fila de bandeja.
+      detail: row.description.slice(0, 120),
+      worksiteName: row.worksiteName, dueDate: row.dueOn,
+      href: `/prevencion/miper/${row.matrixId}?tab=programa&ocurrencia=${row.id}`,
+      tone: "danger",
+    })
+  }
+
+  for (const row of entries) {
+    const intolerable = row.classification === "intolerable"
+    items.push({
+      id: `miper_entry:${row.id}`, kind: "miper",
+      title: intolerable
+        ? "Riesgo Intolerable sin medida con responsable y plazo"
+        : "Riesgo Importante sin medida con responsable y plazo",
+      detail: (row.risk ?? row.hazard ?? row.hazardCode).slice(0, 120),
+      worksiteName: row.worksiteName, dueDate: null,
+      href: `/prevencion/miper/${row.matrixId}?fila=${row.id}`,
+      tone: intolerable ? "danger" : "warning",
+    })
   }
 
   return items

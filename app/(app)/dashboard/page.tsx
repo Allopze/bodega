@@ -52,6 +52,7 @@ const MODULE_TO_TASK_TYPE: Record<OperationalModule, WorkTaskType> = {
   ppa: "ppa",
   sst: "sst",
   cphs: "cphs",
+  miper: "miper",
 }
 
 function toDashboardTask(item: Awaited<ReturnType<typeof getOperationalWorkQueue>>["items"][number]): DashboardTask {

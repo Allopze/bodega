@@ -51,6 +51,7 @@ describe("system settings company profile", () => {
       phone:            "41-3251368",
       email:            "",
       website:          "",
+      adherentNumber:   "",
     })
   })
 
@@ -64,6 +65,7 @@ describe("system settings company profile", () => {
       .mockResolvedValueOnce({ key: "company_phone", value: "+56 9 8765 4321" })
       .mockResolvedValueOnce({ key: "company_email", value: "compras@chome.cl" })
       .mockResolvedValueOnce({ key: "company_website", value: "www.chome.cl" })
+      .mockResolvedValueOnce({ key: "company_adherent_number", value: "252086" })
 
     await expect(getCompanyProfile()).resolves.toEqual({
       name:             "Chome SpA",
@@ -74,6 +76,7 @@ describe("system settings company profile", () => {
       phone:            "+56 9 8765 4321",
       email:            "compras@chome.cl",
       website:          "www.chome.cl",
+      adherentNumber:   "252086",
     })
   })
 
@@ -90,15 +93,20 @@ describe("system settings company profile", () => {
         phone:            " +56 9 8765 4321 ",
         email:            " compras@chome.cl ",
         website:          " www.chome.cl ",
+        adherentNumber:   " 252086 ",
       },
       "usr-admin",
       "admin@chome.cl",
     )
 
-    expect(mocks.insert).toHaveBeenCalledTimes(8)
+    expect(mocks.insert).toHaveBeenCalledTimes(9)
     expect(mocks.values).toHaveBeenCalledWith(expect.objectContaining({
       key:   "company_name",
       value: "Chome SpA",
+    }))
+    expect(mocks.values).toHaveBeenCalledWith(expect.objectContaining({
+      key:   "company_adherent_number",
+      value: "252086",
     }))
     expect(mocks.values).toHaveBeenCalledWith(expect.objectContaining({
       key:   "company_email",

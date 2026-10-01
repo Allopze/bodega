@@ -121,6 +121,17 @@ export type NotificationType =
   // la foto congelada del mes se distribuye a jefatura y responsables por
   // notificación y correo, con enlace al detalle del cierre y su descarga.
   | "pdtp_period_closed"
+  // Avisos del flujo MIPER y de su barrido diario (§9.1 del rediseño, F3). El
+  // destinatario siempre es una persona con una acción concreta, y cada aviso
+  // es deduplicado (por fila, por ronda o por ocurrencia) con el índice único
+  // parcial `notifications_user_dedupe_unique` de más abajo.
+  | "miper_row_intolerable"      // fila que pasa a Intolerable → prevencionista de la faena + Jefa
+  | "miper_review_pending"       // enviado a revisión → siguiente revisor (Jefatura)
+  | "miper_review_returned"      // devuelto con observaciones → quien editó
+  | "miper_signature_pending"    // aprobado técnicamente → Legal y RRHH
+  | "miper_signature_overdue"    // firma pendiente > 5 días hábiles → revisor o firmante
+  | "miper_occurrence_overdue"   // ocurrencia vencida por el barrido → responsable + prevencionista
+  | "miper_occurrence_not_done"  // ocurrencia «No se hizo» → Jefa
 
 export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),

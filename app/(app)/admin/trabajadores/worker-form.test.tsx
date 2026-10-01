@@ -28,6 +28,7 @@ describe("WorkerForm", () => {
           rut: null,
           firstName: "Ana",
           lastName: "Pérez",
+          sex: null,
           positionId: "pos-operador",
           position: "Operador",
           positionNeedsReview: true,
@@ -46,5 +47,52 @@ describe("WorkerForm", () => {
     expect(screen.getByText(/pendiente de revisión/i)).toBeTruthy()
     expect(document.querySelector('input[name="positionId"]')).toHaveValue("pos-operador")
     expect(document.querySelector('input[name="position"]')).toBeNull()
+  })
+
+  it("precarga el sexo guardado y lo envía con el formulario", () => {
+    render(
+      <WorkerForm
+        open
+        onClose={vi.fn()}
+        worksites={[{ id: "ws-1", name: "Faena Uno" }]}
+        sizeFamilies={[]}
+        positions={positions}
+        editWorker={{
+          id: "worker-2",
+          rut: null,
+          firstName: "Rosa",
+          lastName: "Díaz",
+          sex: "female",
+          positionId: "pos-operador",
+          position: "Operador",
+          positionNeedsReview: false,
+          worksiteId: "ws-1",
+          isActive: true,
+          sizeTop: null,
+          sizeBottom: null,
+          sizeShoe: null,
+          sizeGloves: null,
+          sizeHelmet: null,
+        }}
+      />,
+    )
+
+    expect(screen.getByRole("combobox", { name: "Sexo" })).toHaveTextContent("Mujer")
+    expect(document.querySelector('input[name="sex"]')).toHaveValue("female")
+  })
+
+  it("un trabajador nuevo queda sin sexo registrado hasta que se elija", () => {
+    render(
+      <WorkerForm
+        open
+        onClose={vi.fn()}
+        worksites={[{ id: "ws-1", name: "Faena Uno" }]}
+        sizeFamilies={[]}
+        positions={positions}
+      />,
+    )
+
+    expect(screen.getByRole("combobox", { name: "Sexo" })).toHaveTextContent("Sin registrar")
+    expect(document.querySelector('input[name="sex"]')).toHaveValue("")
   })
 })

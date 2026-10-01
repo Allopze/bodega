@@ -52,6 +52,8 @@ export const PREVENTION_ALERT_JOBS = [
   "prevention-capa-reminders",
   "prevention-training-reminders",
   "prevention-cphs-alerts",
+  // F3: el barrido diario del Programa de Trabajo también avisa si falla.
+  "prevention-miper-daily-sweep",
   "prevention-incident-reminders",
   "prevention-inspection-programs",
   "prevention-document-ack-reminders",

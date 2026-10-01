@@ -31,6 +31,7 @@ export async function createWorksite(_prev: ActionState, formData: FormData): Pr
     code:     formData.get("code"),
     address:  formData.get("address") || undefined,
     region:   formData.get("region")  || undefined,
+    commune:  formData.get("commune") || undefined,
     adminContratoLabel: formData.get("adminContratoLabel") || undefined,
     isActive: formData.get("isActive") === "on",
   })
@@ -44,7 +45,7 @@ export async function createWorksite(_prev: ActionState, formData: FormData): Pr
   const id = nanoid()
   try {
     await db.transaction(async (tx) => {
-      await tx.insert(worksites).values({ id, name: d.name, code: d.code, address: d.address ?? null, region: d.region ?? null, adminContratoLabel: d.adminContratoLabel || null, isActive: d.isActive })
+      await tx.insert(worksites).values({ id, name: d.name, code: d.code, address: d.address ?? null, region: d.region ?? null, commune: d.commune || null, adminContratoLabel: d.adminContratoLabel || null, isActive: d.isActive })
       if (d.isActive) await ensurePreventionProgramSlotsForWorksiteTx(tx, id)
       await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "worksite", entityId: id, entityCode: d.code, newState: { name: d.name, code: d.code, isActive: d.isActive } }, tx)
     })
@@ -67,6 +68,7 @@ export async function updateWorksite(_prev: ActionState, formData: FormData): Pr
     code:     formData.get("code"),
     address:  formData.get("address") || undefined,
     region:   formData.get("region")  || undefined,
+    commune:  formData.get("commune") || undefined,
     adminContratoLabel: formData.get("adminContratoLabel") || undefined,
     isActive: formData.get("isActive") === "on",
   })
@@ -83,7 +85,7 @@ export async function updateWorksite(_prev: ActionState, formData: FormData): Pr
     return { ok: false, message: "No tienes acceso a esta faena" }
   }
 
-  await db.update(worksites).set({ name: d.name, code: d.code, address: d.address ?? null, region: d.region ?? null, adminContratoLabel: d.adminContratoLabel || null, updatedAt: new Date().toISOString() }).where(eq(worksites.id, d.id))
+  await db.update(worksites).set({ name: d.name, code: d.code, address: d.address ?? null, region: d.region ?? null, commune: d.commune || null, adminContratoLabel: d.adminContratoLabel || null, updatedAt: new Date().toISOString() }).where(eq(worksites.id, d.id))
 
   await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "update", entityType: "worksite", entityId: d.id, entityCode: d.code, oldState: { name: current.name }, newState: { name: d.name } })
 

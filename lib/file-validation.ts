@@ -60,6 +60,15 @@ export const MimeType = {
 
 export type MimeTypeSet = ReadonlySet<string>
 
+/**
+ * Evidencia de una ocurrencia del Programa de Trabajo MIPER (§7.6 del spec F2):
+ * PDF, JPEG y PNG para la prueba gráfica, más Word y Excel porque un acta o un
+ * registro firmado llegan en formato Office. Se compone de los conjuntos ya
+ * definidos —nunca se vuelve a enumerar a mano— para que agregar un formato a
+ * PROOF u OFFICE se refleje acá solo.
+ */
+export const MIPER_EVIDENCE: MimeTypeSet = new Set([...MimeType.PROOF, ...MimeType.OFFICE])
+
 export interface ValidateFileResult {
   /** The authoritative MIME type derived from magic bytes. */
   mimeType: string

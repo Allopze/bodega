@@ -73,9 +73,9 @@ descontó— esa sesión. Los acuerdos ya derivados a CAPA siguen su propio curs
 El Mapa de Riesgos es un instrumento **distinto de la Matriz GRD** de este mismo capítulo: es el plano de la faena con los mayores peligros físicos ubicados sobre él, y sirve de inducción visual para visitas, transportistas y personal nuevo. Debe estar visible en el lugar de trabajo.
 
 > [!IMPORTANT]
-> Los marcadores del mapa salen de la **Matriz IPER publicada** de la faena (capítulo 4), **no** de la Matriz GRD de amenazas. Tres consecuencias prácticas:
-> - Una faena sin MIPER publicada verá el mapa vacío.
-> - Al publicar una revisión de la MIPER, los marcadores se reubican solos sobre los peligros que sobreviven, y el de un peligro retirado se elimina.
+> Los marcadores del mapa salen de la **versión sellada de la MIPER** de la faena (capítulo 4), **no** de la Matriz GRD de amenazas. Tres consecuencias prácticas:
+> - Una faena sin ninguna MIPER sellada verá el mapa vacío.
+> - Al sellarse una versión nueva de la MIPER, los marcadores se reubican solos sobre los peligros que sobreviven, y el de un peligro retirado se elimina.
 > - El mapa **no acredita ninguna actividad del PDTP**. Sí cuenta para el requisito Oro de la certificación del CPHS.
 
 Contenidos que se esperan sobre el plano:

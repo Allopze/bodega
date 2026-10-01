@@ -77,8 +77,9 @@ export const preventionModule = {
     "prevention:risk:view",
     "prevention:risk:edit",
     "prevention:risk:review",
-    "prevention:risk:approve",
-    "prevention:risk:publish",
+    "prevention:risk:approve_legal",
+    "prevention:risk:catalog:manage",
+    "prevention:risk:program:execute",
     "prevention:risk:override_segregation",
     "prevention:legal:view",
     "prevention:legal:assess",
@@ -207,10 +208,16 @@ export const preventionModule = {
     "prevention:incidents:view_sensitive": { id: "p-prev-inc-sensitive", description: "Acceder nominativamente a identidad, lesión y evidencia sensible de incidentes por propósito" },
     "prevention:incidents:export": { id: "p-prev-inc-export", description: "Exportar registro y expediente Excel de incidentes dentro del alcance" },
     "prevention:risk:view": { id: "p-prev-risk-view", description: "Ver MIPER, controles críticos, revisiones y cobertura dentro de la faena autorizada" },
-    "prevention:risk:edit": { id: "p-prev-risk-edit", description: "Crear versiones MIPER, importar peligros y gestionar disparadores de revisión" },
-    "prevention:risk:review": { id: "p-prev-risk-review", description: "Revisar técnicamente versiones MIPER de forma segregada" },
-    "prevention:risk:approve": { id: "p-prev-risk-approve", description: "Aprobar versiones y lotes MIPER de forma segregada" },
-    "prevention:risk:publish": { id: "p-prev-risk-publish", description: "Publicar una versión MIPER inmutable y activar el reloj PDTP" },
+    "prevention:risk:edit": { id: "p-prev-risk-edit", description: "Crear y corregir la MIPER de sus faenas, responder observaciones y enviarla a revisión" },
+    "prevention:risk:review": { id: "p-prev-risk-review", description: "Revisar técnicamente la MIPER (Jefatura del Departamento de Prevención), observarla y aprobarla técnicamente" },
+    "prevention:risk:approve_legal": { id: "p-prev-risk-approve-legal", description: "Aprobar la MIPER como Legal y RRHH o solicitar correcciones; la aprobación sella una versión inmutable" },
+    "prevention:risk:catalog:manage": { id: "p-prev-risk-catalog", description: "Administrar el catálogo de factores de riesgo de la MIPER" },
+    // Ejecutar el Programa de Trabajo de la MIPER (F2): registrar «Se hizo» /
+    // «No se hizo» y adjuntar la evidencia de sus actividades. Permiso propio y
+    // no `prevention:risk:edit`: quien levanta la matriz en faena no
+    // necesariamente lleva su programa, y al revés. Tampoco cuelga de
+    // `pdtp:execute`, que es el programa del DS 44 y no el de la MIPER.
+    "prevention:risk:program:execute": { id: "p-prev-risk-program-execute", description: "Registrar Se hizo / No se hizo y la evidencia de las actividades del Programa de Trabajo de la MIPER" },
     "prevention:risk:override_segregation": { id: "p-prev-risk-override", description: "Autorizar excepción fundamentada a la segregación de verificación de controles MIPER" },
     "prevention:legal:view": { id: "p-prev-legal-view", description: "Ver el registro legal y la aplicabilidad dentro de la faena autorizada" },
     "prevention:legal:assess": { id: "p-prev-legal-assess", description: "Preparar requisitos, proponer aplicabilidad y evaluar cumplimiento" },
@@ -824,29 +831,39 @@ export const preventionModule = {
     { roleSlug: "prevencionista", permission: "prevention:risk:view" },
     { roleSlug: "prevencionista", permission: "prevention:risk:edit" },
     { roleSlug: "prevencionista", permission: "prevention:risk:review" },
-    /* La jefatura del Departamento de Prevención firma la MIPER: es quien
-     * responde por el inventario de riesgos ante el fiscalizador, y dejar la
-     * última firma sólo en Jefatura la volvía un cuello de botella de dos
-     * personas. Aprobar sigue exigiendo no haber creado ni revisado; publicar,
-     * no haber aprobado — salvo por `prevention:sign_own_work`, su excepción
-     * declarada. */
-    { roleSlug: "prevencionista", permission: "prevention:risk:approve" },
-    { roleSlug: "prevencionista", permission: "prevention:risk:publish" },
     { roleSlug: "prevencionista_faena", permission: "prevention:risk:view" },
     { roleSlug: "admin_contrato", permission: "prevention:risk:view" },
     { roleSlug: "prevencionista_faena", permission: "prevention:risk:edit" },
     { roleSlug: "admin_contrato", permission: "prevention:risk:edit" },
     { roleSlug: "jefa_chome", permission: "prevention:risk:view" },
     { roleSlug: "jefa_chome", permission: "prevention:risk:review" },
-    { roleSlug: "jefa_chome", permission: "prevention:risk:approve" },
-    { roleSlug: "jefa_chome", permission: "prevention:risk:publish" },
+    /* Aprobación final de la MIPER (spec 2026-09-30 §6.3): una sola firma
+     * conjunta de Legal y RRHH. Es una clave nueva y no la antigua `approve`,
+     * porque los grants por defecto sólo se aplican cuando el permiso aparece
+     * por primera vez: reutilizarla habría dejado como aprobadores finales, sin
+     * decisión de nadie, a los roles que ya la tenían en la base. */
+    { roleSlug: "gerente_legal_rrhh", permission: "prevention:risk:view" },
+    { roleSlug: "gerente_legal_rrhh", permission: "prevention:risk:approve_legal" },
+    { roleSlug: "administrador", permission: "prevention:risk:approve_legal" },
+    { roleSlug: "prevencionista", permission: "prevention:risk:catalog:manage" },
+    { roleSlug: "administrador", permission: "prevention:risk:catalog:manage" },
+    /* Ejecución del Programa de Trabajo de la MIPER (F2, spec 2026-09-30 §6.3):
+     * la lleva quien está en faena —PRF, PR, JT, ST y el administrador de
+     * contrato— más el administrador. Ningún rol del flujo de firmas la recibe
+     * por defecto: ni la Jefatura del Depto. de Prevención (`jefa_chome`, el
+     * revisor técnico) ni Legal y RRHH (`gerente_legal_rrhh`, el aprobador
+     * final). Ejecutar el programa no es firmar la matriz. */
+    { roleSlug: "prevencionista_faena", permission: "prevention:risk:program:execute" },
+    { roleSlug: "prevencionista",       permission: "prevention:risk:program:execute" },
+    { roleSlug: "jefe_terreno",         permission: "prevention:risk:program:execute" },
+    { roleSlug: "supervisor_terreno",   permission: "prevention:risk:program:execute" },
+    { roleSlug: "admin_contrato",       permission: "prevention:risk:program:execute" },
+    { roleSlug: "administrador",        permission: "prevention:risk:program:execute" },
     { roleSlug: "cphs", permission: "prevention:risk:view" },
     { roleSlug: "jefe_terreno", permission: "prevention:risk:view" },
     { roleSlug: "administrador", permission: "prevention:risk:view" },
     { roleSlug: "administrador", permission: "prevention:risk:edit" },
     { roleSlug: "administrador", permission: "prevention:risk:review" },
-    { roleSlug: "administrador", permission: "prevention:risk:approve" },
-    { roleSlug: "administrador", permission: "prevention:risk:publish" },
     { roleSlug: "administrador", permission: "prevention:risk:override_segregation" },
     { roleSlug: "prevencionista", permission: "prevention:legal:view" },
     { roleSlug: "prevencionista", permission: "prevention:legal:assess" },

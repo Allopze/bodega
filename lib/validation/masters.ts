@@ -4,6 +4,7 @@ import { normalizeEquipmentCode } from "@/lib/products/service-items"
 import { duplicateNormalizedNames } from "@/lib/products/attribute-names"
 import { unitOfMeasureSchema } from "./product-catalogs"
 import { normalizeSizeLabel } from "@/lib/products/product-size"
+import { PERSON_SEX_VALUES } from "@/lib/person-sex"
 
 // ── Chilean RUT helper ────────────────────────────────────────────────────────
 // Canonical cleaning/validation lives in @/lib/rut (audit A-15).
@@ -89,6 +90,7 @@ export const worksiteSchema = z.object({
   code:     z.string().min(1, "Código requerido").max(20).toUpperCase(),
   address:  z.string().max(200).optional().or(z.literal("")),
   region:   z.string().max(60).optional().or(z.literal("")),
+  commune:  z.string().max(120).optional().or(z.literal("")),
   /** Título del cargo `admin_contrato` en el contrato de esta faena. */
   adminContratoLabel: z.string().max(60).optional().or(z.literal("")),
   isActive: z.coerce.boolean().default(true),
@@ -278,6 +280,8 @@ export const workerSchema = z.object({
   position:    z.string().trim().max(120).optional().or(z.literal("")),
   worksiteId:  z.string().min(1, "Selecciona una faena"),
   isActive:    z.coerce.boolean().default(true),
+  /** Vacío = sin registrar. */
+  sex:         z.enum(PERSON_SEX_VALUES, { message: "Sexo no válido" }).optional().or(z.literal("")),
   // Las tallas habituales se guardan en forma canónica. El padrón admitía texto
   // libre y acumulaba `42`, `42.0`, `T42`, `m` y `Mediana` para la misma talla,
   // así que la sugerencia al entregar fallaba por una diferencia de escritura.

@@ -32,7 +32,7 @@ export const preventionEvidenceUploads = pgTable("prevention_evidence_uploads", 
   claimedAt:         timestamp("claimed_at", { withTimezone: true, mode: "string" }),
 }, (table) => [
   index("prevention_evidence_uploads_worksite_idx").on(table.worksiteId),
-  check("prevention_evidence_uploads_domain_check", sql`${table.domain} IN ('campaign', 'cgrd', 'hygiene', 'capa')`),
+  check("prevention_evidence_uploads_domain_check", sql`${table.domain} IN ('campaign', 'cgrd', 'hygiene', 'capa', 'miper')`),
   check("prevention_evidence_uploads_sha256_check", sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
   check("prevention_evidence_uploads_size_check", sql`${table.sizeBytes} > 0`),
   check("prevention_evidence_uploads_claim_check", sql`(${table.worksiteId} IS NULL) = (${table.claimedAt} IS NULL)`),

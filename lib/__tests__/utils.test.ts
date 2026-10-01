@@ -18,6 +18,7 @@ import {
   formatDate,
   formatDateRelative,
   formatDateTime,
+  toDateTimeAttr,
   formatDateLong,
   toTitleCase,
   getInitials,
@@ -447,5 +448,16 @@ describe("formatPricePerLiter()", () => {
   it("devuelve VALUE_MISSING para valores no representables", () => {
     expect(formatPricePerLiter(NaN)).toBe("—")
     expect(formatPricePerLiter(Infinity)).toBe("—")
+  })
+})
+
+describe("toDateTimeAttr()", () => {
+  it("normaliza el timestamp de Postgres a ISO, que es lo que exige el atributo", () => {
+    // El crudo de Postgres no es un datetime válido en HTML: lleva espacio en vez
+    // de `T` y un offset sin minutos.
+    expect(toDateTimeAttr("2026-10-01 16:41:11.518935+00")).toBe("2026-10-01T16:41:11.518Z")
+  })
+  it("devuelve el valor crudo si no se puede interpretar, en vez de inventar una fecha", () => {
+    expect(toDateTimeAttr("no es una fecha")).toBe("no es una fecha")
   })
 })

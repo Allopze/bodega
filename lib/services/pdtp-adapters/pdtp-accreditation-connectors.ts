@@ -485,16 +485,12 @@ export async function onPdtpProgramLegallyApproved(input: {
 // ── Conector: MIPER ───────────────────────────────────────────────────────────
 
 /**
- * Llama desde `transitionRiskMatrix` cuando la matriz pasa a `published`,
- * después del commit.
+ * Llama desde `approveMiperFinal` cuando la versión queda sellada, después del
+ * commit.
  *
- * Publicar es el hecho que la N°35 mide ("mantener y actualizar el inventario de
- * riesgos"), y no aprobar: la matriz aprobada todavía no rige. La publicación
- * además sella un hash del contenido y jubila la anterior, así que es un evento
- * confirmado en sentido estricto.
- *
- * `sourceId` lleva la matriz publicada, que es una por revisión: republicar la
- * misma no vuelve a sumar, y la revisión siguiente es otra fila.
+ * Cada versión sellada es una actualización del inventario (N°35). La MIPER es
+ * un documento vivo: la clave de idempotencia lleva la versión para que cada
+ * actualización aprobada cuente una vez y sólo una.
  */
 export async function onRiskMatrixPublished(input: {
   matrixId: string
@@ -509,7 +505,7 @@ export async function onRiskMatrixPublished(input: {
     connectorKey: "miper",
     eventKey: "review_published",
     sourceType: "miper",
-    sourceId: `miper:${input.matrixId}`,
+    sourceId: `miper:${input.matrixId}:v${input.matrixVersion}`,
     worksiteId: input.worksiteId,
     occurredAt: input.publishedAt,
     payload: { matrixId: input.matrixId, matrixVersion: input.matrixVersion, entryCount: input.entryCount },
@@ -517,12 +513,12 @@ export async function onRiskMatrixPublished(input: {
   await safeAccredit({
     actorUserId: input.actorUserId ?? null,
     sourceType: "miper",
-    sourceId: `miper:${input.matrixId}`,
+    sourceId: `miper:${input.matrixId}:v${input.matrixVersion}`,
     worksiteId: input.worksiteId,
     catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_MIPER_ACTIVITY_NUMBER)],
     occurredAt: input.publishedAt,
     executedQuantity: 1,
-    evidenceRef: `MIPER v${input.matrixVersion} publicada: ${input.matrixId}`,
+    evidenceRef: `MIPER v${input.matrixVersion} aprobada: ${input.matrixId}`,
     metadata: { matrixVersion: input.matrixVersion, entryCount: input.entryCount },
   })
 }

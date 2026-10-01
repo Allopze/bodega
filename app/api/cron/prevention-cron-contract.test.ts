@@ -47,6 +47,8 @@ vi.mock("@/lib/services/pdtp-adapters/incident-accreditation-connector", () => (
 }))
 vi.mock("@/lib/services/prevention-inspection-scheduler", () => ({ materializeProgramRuns: ok, alertCriticalFindingsWithoutCapa: ok }))
 vi.mock("@/lib/services/prevention-document-ack-reminders", () => ({ runPreventionDocumentAckReminders: ok }))
+// F3 (§9.1): barrido diario del Programa de Trabajo MIPER.
+vi.mock("@/lib/services/miper/reminders", () => ({ runMiperOccurrenceSweep: ok }))
 vi.mock("@/lib/services/prevention-permits", () => ({ suspendExpiredPermits: ok }))
 vi.mock("@/lib/services/sst-alerts", () => ({ checkOverdueWeeklyAlerts: ok }))
 vi.mock("@/lib/services/deadline-reminders", () => ({ runDeadlineReminders: ok }))
@@ -69,6 +71,8 @@ const ROUTES = {
   "prevention-incident-reminders": { load: () => import("./prevention-incident-reminders/route"), prefix: "PREVENTION_CRON_" },
   "prevention-inspection-programs": { load: () => import("./prevention-inspection-programs/route"), prefix: "PREVENTION_CRON_" },
   "prevention-document-ack-reminders": { load: () => import("./prevention-document-ack-reminders/route"), prefix: "PREVENTION_CRON_" },
+  // F3 (§9.1): barrido diario de las ocurrencias del Programa de Trabajo MIPER.
+  "prevention-miper-daily-sweep": { load: () => import("./prevention-miper-daily-sweep/route"), prefix: "PREVENTION_CRON_" },
   // #18: el vencimiento de permisos existía y sólo lo llamaba una prueba.
   "prevention-permit-expiry": { load: () => import("./prevention-permit-expiry/route"), prefix: "PREVENTION_CRON_" },
   "sst-weekly-alerts": { load: () => import("./sst-weekly-alerts/route"), prefix: "SST_CRON_" },

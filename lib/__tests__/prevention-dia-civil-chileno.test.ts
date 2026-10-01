@@ -290,9 +290,13 @@ describe("MIPER-09 y LEGAL-08 · fecha por defecto de las pantallas", () => {
     const page = readFileSync("app/(app)/prevencion/miper/page.tsx", "utf8")
 
     // Sigue calculándose una sola vez en el componente de servidor y bajando
-    // como prop — es lo que evita el desajuste de hidratación.
-    expect(page).toContain("const today = todayInChile()")
-    expect(page).toContain("today={today}")
+    // como prop — es lo que evita el desajuste de hidratación. `codeYear()` lee
+    // el año del día civil chileno, no el del navegador.
+    expect(page).toContain("currentYear={codeYear()}")
+    // Y ningún componente de cliente lo recalcula por su cuenta: lo reciben.
+    const dialog = readFileSync("app/(app)/prevencion/miper/new-miper-dialog.tsx", "utf8")
+    expect(dialog).toContain("currentYear")
+    expect(dialog).not.toContain("codeYear(")
     expect(page).not.toContain("new Date().toISOString().slice(0, 10)")
   })
 

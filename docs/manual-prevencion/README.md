@@ -27,7 +27,7 @@ Para asegurar la transparencia y validez legal de los registros, la plataforma a
 | `jefe_terreno` | Jefe de Terreno (JT) / Jefe de Faena | Reporte de incidentes, investigación preliminar, ingesta de planillas físicas, toma de conocimiento y ejecución de medidas correctivas. |
 | `supervisor_terreno` | Supervisor de Turno / Operaciones | Registro de charla diaria de 5 minutos, acompañamiento de inspecciones, control de terreno y detención preventiva de tareas. |
 | `admin_contrato` | Administrador de Contrato | Emisión y carga formal de DIAT ante la Mutual, gestión de recursos, coordinación con el mandante y revisión de cumplimiento global. |
-| `prevencionista` | Jefa de Departamento de Prevención (JDPR) | Aprobación de plantillas, publicación de cursos, aprobación de matrices MIPER/CGRD, auditorías y gobernanza SG-SST. |
+| `prevencionista` | Jefa de Departamento de Prevención (JDPR) | Aprobación de plantillas, publicación de cursos, revisión técnica de la MIPER y publicación de la Matriz GRD, auditorías y gobernanza SG-SST. |
 
 ---
 

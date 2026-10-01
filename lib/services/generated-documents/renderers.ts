@@ -18,7 +18,6 @@ import {
   pdtpPrograms,
   preventionIncidents,
   preventionInspectionRuns,
-  preventionRiskMatrices,
   sstEvaluations,
   workers,
   type GeneratedDocumentArchive,
@@ -32,7 +31,7 @@ import { buildPdtpRe36Document } from "@/lib/services/pdtp/re36-document"
 import { pdtpClosureFilenameBase, pdtpClosureSheet } from "@/lib/services/pdtp/period-closure-export"
 import type { PdtpPeriodClosureSnapshot } from "@/lib/services/pdtp/period-closures"
 import { buildIncidentCaseArchive } from "@/lib/services/prevention-incident-export"
-import { getPublishedRiskMatrixForArchive } from "@/lib/services/prevention-risk-legal"
+import { getMiperVersionForArchive } from "@/lib/services/miper/queries"
 import { buildActaFilename } from "@/lib/sst/acta-filename"
 import { isGeneratedDocumentKind } from "./kinds"
 
@@ -173,11 +172,11 @@ async function producePdtpRe36(row: Row): Promise<ProducedDocument> {
 }
 
 async function produceMiper(row: Row): Promise<ProducedDocument> {
-  const [matrix] = await db.select({ status: preventionRiskMatrices.status })
-    .from(preventionRiskMatrices).where(eq(preventionRiskMatrices.id, row.entityId)).limit(1)
-  if (!matrix) throw new GeneratedDocumentError("SOURCE_NOT_FOUND", "La MIPER ya no existe")
-  if (matrix.status !== "published" && matrix.status !== "superseded") return SUPERSEDED
-  const detail = await getPublishedRiskMatrixForArchive(row.entityId)
+  // Desde F1 la entidad archivada es la versión sellada (inmutable). Una fila
+  // en cola que apunte a una matriz del modelo anterior ya no tiene libro que
+  // armar: se da por reemplazada.
+  let detail
+  try { detail = await getMiperVersionForArchive(row.entityId) } catch { return SUPERSEDED }
   const workbook = await buildMiperWorkbook(detail)
   const data = await workbook.xlsx.writeBuffer()
   return { outcome: "document", buffer: xlsxBuffer(data as ArrayBuffer), baseName: miperFilenameBase(detail) }

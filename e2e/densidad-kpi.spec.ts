@@ -161,7 +161,7 @@ test.describe("Densidad — todo KPI de subconjunto llega a su subconjunto", () 
   const KPIS_DE_SUBCONJUNTO = [
     { vista: "prevencion", label: "Incidentes abiertos", destino: "/prevencion/incidentes?quick=open" },
     { vista: "prevencion", label: "CAPA vencidas", destino: "/prevencion/capa?vista=overdue" },
-    { vista: "prevencion", label: "Riesgos críticos sin control", destino: "/prevencion/miper#bloqueos" },
+    { vista: "prevencion", label: "Riesgos críticos sin control", destino: "/prevencion/miper?tab=todas" },
     { vista: "terreno", label: "Hallazgos críticos abiertos", destino: "/prevencion/inspecciones?vista=critical" },
     { vista: "terreno", label: "Simulacros por mejorar", destino: "/prevencion/emergencias?tab=drills&vista=needs_improvement" },
     { vista: "terreno", label: "Mediciones sobre el límite", destino: "/prevencion/higiene?tab=groups&vista=above_limit" },

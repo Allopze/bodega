@@ -72,6 +72,20 @@ export function ConfigForm({ initialPdfMaxSizeMb, initialCompanyProfile }: Confi
                 className="font-mono"
               />
             </Field>
+            <Field
+              label="N° de adherente (mutualidad)"
+              htmlFor="company-adherent-number"
+              helper="Encabezado del RE-04 de la MIPER."
+              error={state.fieldErrors?.companyAdherentNumber?.[0]}
+            >
+              <Input
+                id="company-adherent-number"
+                name="companyAdherentNumber"
+                defaultValue={initialCompanyProfile.adherentNumber}
+                placeholder="252086"
+                error={!!state.fieldErrors?.companyAdherentNumber}
+              />
+            </Field>
           </div>
 
           <Field

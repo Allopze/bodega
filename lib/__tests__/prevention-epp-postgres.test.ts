@@ -214,6 +214,8 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
     await database.insert(schema.preventionRiskMatrices).values({
       id: `matrix-epp-${ws}`, worksiteId: `ws-epp-${ws}`, matrixVersion: 1, title: `MIPER ${ws}`, status: "draft",
       methodologyId: "meth-epp", methodologySnapshot: {},
+      // Fixture con la forma de la metodología anterior.
+      isLegacy: true,
       revisionReason: "Versión inicial de la matriz para la prueba.",
       participationSummary: "Participación documentada del comité paritario.",
       consultationEvidenceReference: "acta-consulta", createdByUserId: "epp-global",

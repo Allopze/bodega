@@ -17,6 +17,7 @@ export type WorkTaskType =
   | "ppa"
   | "sst"
   | "cphs"
+  | "miper"
 
 export type WorkPriority = "critical" | "high" | "normal" | "low"
 
@@ -38,6 +39,7 @@ export type OperationalModule =
   | "ppa"
   | "sst"
   | "cphs"
+  | "miper"
 
 /**
  * Criterio de orden de la cola operacional. Vive aquí por la misma razón que

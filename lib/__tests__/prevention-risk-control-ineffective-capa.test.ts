@@ -53,6 +53,8 @@ beforeAll(async () => {
   await testDb.insert(schema.preventionRiskMatrices).values({
     id: matrixId, worksiteId: WS, matrixVersion: 1, title: "MIPER Faena MIPER", status: "published",
     methodologyId: "meth-e2e005", methodologySnapshot: {},
+    // Fixture con la forma de la metodología anterior (nivel residual).
+    isLegacy: true,
     revisionReason: "Versión inicial de la matriz para la prueba.",
     participationSummary: "Participación documentada del comité paritario.",
     consultationEvidenceReference: "acta-consulta-e2e005",

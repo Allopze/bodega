@@ -95,14 +95,13 @@ describe("runPdtpSignaturePendingReminders", () => {
     }))
   })
 
-  /* El permiso sale del paso siguiente, no del actual: una matriz revisada
-   * espera a quien pueda aprobarla. */
+  /* El permiso sale del paso siguiente, no del actual: una matriz en revisión
+   * técnica espera a la Jefatura; pendiente de aprobación, a Legal y RRHH. */
   it("le pide a cada paso la firma que corresponde", async () => {
     queue({
       risk: [
-        { id: "miper-1", worksiteId: "ws-1", title: "MIPER en revisión", status: "in_review", updatedAt: hace(10) },
-        { id: "miper-2", worksiteId: "ws-1", title: "MIPER revisada", status: "reviewed", updatedAt: hace(10) },
-        { id: "miper-3", worksiteId: "ws-1", title: "MIPER aprobada", status: "approved", updatedAt: hace(10) },
+        { id: "miper-1", worksiteId: "ws-1", title: "MIPER en revisión", reviewState: "in_review", updatedAt: hace(10) },
+        { id: "miper-2", worksiteId: "ws-1", title: "MIPER pendiente de Legal y RRHH", reviewState: "pending_approval", updatedAt: hace(10) },
       ],
     })
 
@@ -111,8 +110,7 @@ describe("runPdtpSignaturePendingReminders", () => {
     const permisos = mocks.recipients.mock.calls.map(([permission]) => permission)
     expect(permisos).toEqual([
       "prevention:risk:review",
-      "prevention:risk:approve",
-      "prevention:risk:publish",
+      "prevention:risk:approve_legal",
     ])
   })
 

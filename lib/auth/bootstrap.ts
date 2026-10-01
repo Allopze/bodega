@@ -24,6 +24,14 @@ const RETIRED_PERMISSION_NAMES = [
   "prevention:change:manage",
   "prevention:change:evaluate",
   "prevention:change:approve",
+  /* El rediseño de la MIPER (F1, 2026-09-30) partió la firma en dos: la revisión
+   * técnica (`risk:review`) y una sola aprobación conjunta de Legal y RRHH
+   * (`risk:approve_legal`). `approve` y `publish` salieron del manifiesto, pero
+   * sus concesiones ya otorgadas sobrevivirían en la base y seguirían
+   * apareciendo en /admin/roles, así que se retiran por acá — que es la vía
+   * explícita que el repo tiene para esto. */
+  "prevention:risk:approve",
+  "prevention:risk:publish",
 ] as const
 
 /**
