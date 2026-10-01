@@ -95,6 +95,12 @@ export function EntrySheet({ workspace, entry, baseline, change, mode, userId: _
   if (!entry) return null
   const before = baseline?.entries.find((item) => item.id === entry.id) ?? null
   const observations = workspace.observations.filter((item) => item.entryId === entry.id)
+  /* Actividades del programa que ejecutan alguna medida de esta fila, sin repetir
+   * la actividad cuando cubre más de una medida del mismo riesgo. */
+  const controlIds = new Set(entry.controls.map((control) => control.id))
+  const entryActivities = workspace.controlActionLinks
+    .filter((link) => controlIds.has(link.controlId))
+    .filter((link, index, all) => all.findIndex((candidate) => candidate.actionId === link.actionId) === index)
   const fields: Array<[string, unknown]> = [
     ["activity", entry.activity], ["task", entry.task], ["position", entry.position], ["location", entry.location],
     ["exposedFemale", entry.exposedFemale], ["exposedMale", entry.exposedMale], ["exposedOther", entry.exposedOther],
@@ -156,6 +162,27 @@ export function EntrySheet({ workspace, entry, baseline, change, mode, userId: _
               ? <ControlEditor workspace={workspace} entryId={entry.id} control={null} onDone={() => { setEditingControl(null); onChanged() }} />
               : <Button size="sm" onClick={() => setEditingControl("new")}>Agregar medida</Button>)}
             <datalist id="miper-list-measures">{workspace.dictionaries.measures.map((value) => <option key={value} value={value} />)}</datalist>
+          </section>
+
+          {/* §7.3, el otro sentido de la trazabilidad: de este riesgo a las
+              actividades del programa que ejecutan sus medidas. Sin esto, la
+              relación sólo se podía recorrer desde el programa. */}
+          <section aria-label="Programa de Trabajo del riesgo" className="space-y-2">
+            <h3 className="text-sm font-semibold">Programa de Trabajo ({entryActivities.length})</h3>
+            {entryActivities.length === 0 ? (
+              <p className="text-sm text-[var(--color-text-subtle)]">
+                Ninguna medida de este riesgo está programada todavía.{" "}
+                <Link className="underline" href={`/prevencion/miper/${workspace.matrix.id}?tab=programa`}>Ir al programa</Link>
+              </p>
+            ) : (
+              <ul className="space-y-1 text-sm">
+                {entryActivities.map((activity) => (
+                  <li key={activity.actionId}>
+                    <span className="font-medium">Actividad #{activity.actionNumber}</span>: {activity.description}
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section aria-label="Observaciones del riesgo" className="space-y-2">

@@ -47,8 +47,22 @@ export function OccurrenceDialog({
   const [effectiveOn, setEffectiveOn] = React.useState("")
   const [evidencePath, setEvidencePath] = React.useState("")
   const [evidenceName, setEvidenceName] = React.useState("")
-  const operation = useOperation()
+  /* El toast lleva el mensaje de la acción: con el `feedback` por defecto, el
+   * éxito se quedaba en el estado del padre y nadie veía «Ocurrencia
+   * registrada: se hizo» — el diálogo ya se cerró. */
+  const operation = useOperation({ feedback: "toast" })
   const today = todayInChile()
+
+  /* El diálogo también se abre de forma controlada (el panel le pasa `open`), y
+   * en ese camino `onOpenChange` no se dispara: sin esto la fecha efectiva nacía
+   * vacía y el botón quedaba deshabilitado sin decir por qué. */
+  React.useEffect(() => {
+    if (!open) return
+    setOutcome("done")
+    setEffectiveOn(today)
+    setEvidencePath("")
+    setEvidenceName("")
+  }, [open, today])
 
   function handleOpenChange(value: boolean) {
     if (value) {

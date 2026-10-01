@@ -2,7 +2,8 @@ import { and, asc, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-or
 import { db } from "@/db"
 import {
   auditLog, preventionRiskControls, preventionRiskEntries, preventionRiskFactors, preventionRiskMatrices, preventionRiskMatrixVersions,
-  preventionRiskObservations, preventionRiskReviewRounds, users, worksites, worksiteUsers,
+  preventionRiskObservations, preventionRiskProgramActionControls, preventionRiskProgramActions, preventionRiskPrograms,
+  preventionRiskReviewRounds, users, worksites, worksiteUsers,
 } from "@/db/schema"
 import { checkMiperCompleteness, type CompletenessIssue } from "@/lib/prevention/miper/completeness"
 import { RISK_CLASSIFICATIONS, type RiskClassification } from "@/lib/prevention/miper/methodology"
@@ -55,6 +56,10 @@ export type MiperWorkspace = {
    * lee aparte con `getProgramWorkspace`.
    */
   program: ProgramHeaderView | null
+  /* Qué actividades del Programa de Trabajo ejecutan cada medida de este MIPER.
+   * La trazabilidad del §7.3 va en los dos sentidos: de la actividad a su fila y
+   * de la fila a sus actividades. */
+  controlActionLinks: Array<{ controlId: string; actionId: string; actionNumber: number; description: string }>
 }
 
 function hasUnsentChanges(matrix: { status: string; reviewState: string; updatedAt: string; publishedAt: string | null }) {
@@ -85,6 +90,20 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
   ])
   const controlVersionRows = entryVersionRows.length === 0 ? [] : await db.select({ id: preventionRiskControls.id, version: preventionRiskControls.version })
     .from(preventionRiskControls).where(inArray(preventionRiskControls.riskEntryId, entryVersionRows.map((entry) => entry.id)))
+
+  /* §7.3: qué actividad del programa ejecuta cada medida, para que desde la ficha
+   * de un riesgo se llegue a sus actividades (el otro sentido ya vive en el panel
+   * del programa). */
+  const controlActionLinks = await db.select({
+    controlId: preventionRiskProgramActionControls.controlId,
+    actionId: preventionRiskProgramActions.id,
+    actionNumber: preventionRiskProgramActions.actionNumber,
+    description: preventionRiskProgramActions.description,
+  }).from(preventionRiskProgramActionControls)
+    .innerJoin(preventionRiskProgramActions, eq(preventionRiskProgramActions.id, preventionRiskProgramActionControls.actionId))
+    .innerJoin(preventionRiskPrograms, eq(preventionRiskPrograms.id, preventionRiskProgramActions.programId))
+    .where(eq(preventionRiskPrograms.matrixId, matrix.id))
+    .orderBy(asc(preventionRiskProgramActions.actionNumber))
 
   // §8.5: la cadena de MIPER de la faena por período. Se reusa `buildRows` para
   // que el rótulo sea el mismo que ve la portada (incluye cambios sin enviar).
@@ -135,6 +154,7 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
     responsibleOptions,
     siblingMatrices,
     program,
+    controlActionLinks,
   }
 }
 

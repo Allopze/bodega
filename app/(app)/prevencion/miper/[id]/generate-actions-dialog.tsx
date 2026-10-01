@@ -93,7 +93,9 @@ export function GenerateActionsDialog({
   const [proposals, setProposals] = React.useState<{ measures: ProposedMeasure[]; groups: Array<{ key: string; description: string }> } | null>(null)
   const [drafts, setDrafts] = React.useState<Record<string, Draft>>({})
   const [error, setError] = React.useState<string | null>(null)
-  const operation = useOperation()
+  /* El resultado se anuncia por toast: el diálogo se cierra al aplicar, así que
+   * el mensaje del hook por defecto no lo veía nadie (hallazgo F2-02). */
+  const operation = useOperation({ feedback: "toast" })
 
   React.useEffect(() => {
     if (!open) return
