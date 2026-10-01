@@ -29,6 +29,15 @@ export const pgliteTestFiles = [
   // MIPER F2: programa de trabajo (vínculo único, ocurrencias y registros
   // de sólo inserción).
   "db/__tests__/miper-program-constraints.test.ts",
+  // MIPER F2: consulta del Programa de Trabajo (encabezado RE-04.1, actividades,
+  // ocurrencias con resultado vigente y avance derivado).
+  "lib/__tests__/miper-program-queries.test.ts",
+  // MIPER F2: servicio del programa (encabezado, actividades y vínculos),
+  // generación desde las medidas y ejecución de las ocurrencias.
+  "lib/__tests__/miper-program.test.ts",
+  "lib/__tests__/miper-program-generation.test.ts",
+  "lib/__tests__/miper-program-occurrences.test.ts",
+  "lib/__tests__/miper-program-execution.test.ts",
   "db/__tests__/operational-integrity-constraints.test.ts",
   "db/__tests__/pdtp-worksite-cascade.test.ts",
   "db/__tests__/pdtp-check-constraints.test.ts",

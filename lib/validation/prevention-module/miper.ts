@@ -106,6 +106,131 @@ export const riskFactorSaveSchema = z.object({
   sortOrder: z.coerce.number().int().min(0).max(10_000),
 })
 
+/* ── Programa de Trabajo Preventivo RE-04.1 (F2) ──────────────────────────
+ * Las validaciones de forma viven acá y las de dominio en el servicio: lo que
+ * se puede saber sin mirar la base (fechas, largos, correlativos) se rechaza
+ * antes de abrir la transacción. */
+
+const scheduleKind = z.enum(["once", "monthly", "quarterly", "semiannual", "annual"], { message: "Selecciona la frecuencia de la actividad." })
+const isoDateRequired = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Indica la fecha programada de la actividad.")
+
+/** Encabezado RE-04.1 (§7.1). Mismo contrato de versión que `updateMiperHeader`. */
+export const programHeaderSchema = z.object({
+  matrixId: id,
+  expectedVersion: version,
+  elaboratedOn: isoDate.nullable(),
+  companyName: z.string().trim().max(300).nullable(),
+  companyRut: z.string().trim().max(30).nullable(),
+  companyAddress: z.string().trim().max(300).nullable(),
+  companyCommune: z.string().trim().max(120).nullable(),
+  economicActivity: z.string().trim().max(300).nullable(),
+  adherentNumber: z.string().trim().max(60).nullable(),
+  worksiteName: z.string().trim().max(300).nullable(),
+  siteRepresentativeUserId: id.nullable(),
+  siteRepresentativeName: z.string().trim().max(300).nullable(),
+  programManagerUserId: id.nullable(),
+  headcountTotal: headcount,
+  headcountMale: headcount,
+  headcountFemale: headcount,
+  headcountOther: headcount,
+}).superRefine((value, ctx) => {
+  const parts = [value.headcountMale, value.headcountFemale, value.headcountOther]
+  if (value.headcountTotal !== null && parts.every((part) => part !== null) && parts.reduce<number>((sum, part) => sum + (part ?? 0), 0) !== value.headcountTotal) {
+    ctx.addIssue({ code: "custom", path: ["headcountTotal"], message: "Hombres + mujeres + otro debe sumar el total de trabajadores." })
+  }
+})
+
+/** Actividad del programa: alta (sin `actionId`) y edición (con `expectedVersion`). */
+export const programActionSchema = z.object({
+  matrixId: id,
+  actionId: id.optional(),
+  expectedVersion: version.optional(),
+  processId: id.nullable().optional(),
+  description: z.string().trim().min(3, "Describe la actividad o medida de control.").max(3000),
+  responsibleUserId: id.nullable().optional(),
+  responsibleName: z.string().trim().max(300).nullable().optional(),
+  locationLabel: z.string().trim().max(300).nullable().optional(),
+  scheduleKind,
+  /* Obligatoria: sin fecha de inicio no hay agenda de ocurrencias (§7.2). */
+  startsOn: isoDateRequired,
+}).refine((value) => !value.actionId || value.expectedVersion !== undefined, { path: ["expectedVersion"], message: "Falta la versión de la actividad; recarga el programa." })
+
+export const programActionRefSchema = z.object({ actionId: id, expectedVersion: version })
+
+/** Retirar exige motivo: la actividad deja de generar ocurrencias (§7.4). */
+export const programActionRetireSchema = programActionRefSchema.extend({
+  reason: z.string().trim().min(10, "Explica por qué se retira la actividad (al menos 10 caracteres).").max(3000),
+})
+
+/** Vínculo N:M actividad ↔ medida del MIPER (§7.3). */
+export const programLinkSchema = z.object({
+  programId: id,
+  actionId: id,
+  controlIds: z.array(id).min(1, "Selecciona al menos una medida del MIPER."),
+  link: z.boolean(),
+})
+
+export const programUnlinkSchema = z.object({ actionId: id, controlId: id })
+
+export const programProposeSchema = z.object({ matrixId: id })
+
+/** Decisión de la persona sobre una agrupación o medida (§7.3). */
+const generationDecisionSchema = z.object({
+  controlIds: z.array(id).min(1, "Selecciona al menos una medida."),
+  decision: z.enum(["create", "link", "leave"], { message: "Indica qué hacer con la medida." }),
+  actionId: id.optional(),
+  description: z.string().trim().min(3).max(3000).optional(),
+  responsibleUserId: id.nullable().optional(),
+  responsibleName: z.string().trim().max(300).nullable().optional(),
+  scheduleKind: scheduleKind.optional(),
+  startsOn: isoDate.optional(),
+  locationLabel: z.string().trim().max(300).nullable().optional(),
+})
+
+export const programGenerationSchema = z.object({
+  matrixId: id,
+  decisions: z.array(generationDecisionSchema).min(1, "No hay decisiones que aplicar.").max(500),
+})
+
+/* ── Ejecución de ocurrencias (§7.4) ──────────────────────────────────────
+ * `expectedVersion` viaja por compatibilidad con la interfaz del plan: la
+ * ocurrencia no tiene columna `version` (no es una fila editable), así que la
+ * concurrencia la da el carácter de sólo-inserción de los registros. */
+
+export const occurrenceRecordSchema = z.object({
+  occurrenceId: id,
+  expectedVersion: version.optional(),
+  outcome: z.enum(["done", "not_done"], { message: "Indica si la actividad se hizo o no se hizo." }),
+  effectiveOn: isoDate.nullable().optional(),
+  reason: z.string().trim().max(3000).nullable().optional(),
+  notes: z.string().trim().max(3000).nullable().optional(),
+  evidence: z.array(z.object({
+    evidenceUploadId: id,
+    description: z.string().trim().max(300).nullable().optional(),
+  })).max(20).optional(),
+})
+
+export const occurrenceRecordRefSchema = z.object({
+  recordId: id,
+  reason: z.string().trim().min(10, "Explica por qué se anula el registro (al menos 10 caracteres).").max(3000),
+})
+
+export const occurrenceEvidenceSchema = z.object({
+  recordId: id,
+  evidenceUploadId: id,
+  description: z.string().trim().max(300).nullable().optional(),
+})
+
+export const occurrenceEvidenceRefSchema = z.object({
+  evidenceId: id,
+  reason: z.string().trim().min(10, "Explica por qué se retira la evidencia (al menos 10 caracteres).").max(3000),
+})
+
+export type ProgramHeaderInput = z.infer<typeof programHeaderSchema>
+export type ProgramActionInput = z.infer<typeof programActionSchema>
+export type ProgramGenerationInput = z.infer<typeof programGenerationSchema>
+export type OccurrenceRecordInput = z.infer<typeof occurrenceRecordSchema>
+
 export type CreateMiperInput = z.infer<typeof createMiperSchema>
 export type MiperHeaderInput = z.infer<typeof miperHeaderSchema>
 export type MiperEntryValues = z.infer<typeof miperEntryValuesSchema>

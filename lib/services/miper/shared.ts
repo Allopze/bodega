@@ -15,7 +15,13 @@ export interface MiperAccess {
   permissions: readonly string[]
 }
 
-export type MiperHistoryObject = "matrix" | "header" | "entry" | "control" | "round" | "observation" | "version"
+export type MiperHistoryObject =
+  | "matrix" | "header" | "entry" | "control" | "round" | "observation" | "version"
+  /* Programa de Trabajo Preventivo RE-04.1 (F2): el programa, sus actividades,
+     las ocurrencias de ejecución y la evidencia que las acredita. La línea de
+     tiempo sigue colgando de la matriz, así que estos objetos viajan en
+     `newState.object` igual que los de la F1. */
+  | "program" | "program_action" | "occurrence" | "evidence"
 
 export const OUT_OF_SCOPE = "Registro preventivo no encontrado o fuera de alcance."
 

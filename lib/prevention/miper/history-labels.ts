@@ -28,6 +28,18 @@ const LABELS: Record<string, string> = {
   observation_reopened: "Observación reabierta",
   superseded: "Reemplazada por el período siguiente",
   deleted: "Borrador descartado",
+  // Programa de Trabajo (F2)
+  program_header_updated: "Antecedentes del programa modificados",
+  action_created: "Actividad agregada al programa",
+  action_updated: "Actividad del programa modificada",
+  action_retired: "Actividad del programa retirada",
+  controls_linked: "Medida vinculada a una actividad del programa",
+  controls_unlinked: "Medida desvinculada de una actividad del programa",
+  occurrence_done: "Ocurrencia registrada: se hizo",
+  occurrence_not_done: "Ocurrencia registrada: no se hizo",
+  occurrence_record_voided: "Registro de ocurrencia anulado",
+  evidence_added: "Evidencia agregada a una ocurrencia",
+  evidence_withdrawn: "Evidencia retirada de una ocurrencia",
 }
 
 export function historyLabel(changeType: string) {
@@ -40,4 +52,5 @@ export const ROLE_CONTEXT_TEXT: Record<string, string> = {
   "prevention:risk:review": "Jefatura del Depto. de Prevención",
   "prevention:risk:approve_legal": "Legal y RRHH",
   "prevention:risk:catalog:manage": "Administración del catálogo",
+  "prevention:risk:program:execute": "Ejecución del programa",
 }
