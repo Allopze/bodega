@@ -226,6 +226,45 @@ export const occurrenceEvidenceRefSchema = z.object({
   reason: z.string().trim().min(10, "Explica por qué se retira la evidencia (al menos 10 caracteres).").max(3000),
 })
 
+/* ── Importación del RE-04 (§9.3, Task 7 de la F3) ────────────────────────
+ * La vista previa recibe el archivo por `FormData` (lo lee la acción, no este
+ * esquema) y el compromiso identifica el lote ya preparado. Carga a un MIPER en
+ * borrador (`draft`, con período y motivo como cualquier alta) o al vigente
+ * (`live`, que no crea nada). Nada de esto toca la base. */
+
+export const riskImportTargetSchema = z.enum(["draft", "live"], {
+  message: "Indica si la importación crea un borrador o agrega las filas al MIPER vigente.",
+})
+
+const riskImportPeriodSchema = z.coerce.number().int().min(2000, "Período inválido").max(2100, "Período inválido").optional()
+
+export const riskImportPreviewSchema = z.object({
+  worksiteId: id,
+  target: riskImportTargetSchema.default("draft"),
+  period: riskImportPeriodSchema,
+  /* Sólo para la traza del lote: el archivo se lee en memoria y no se guarda. */
+  fileName: z.string().trim().min(1).max(300).optional(),
+})
+
+export const riskImportCommitSchema = z.object({
+  batchId: id,
+  worksiteId: id,
+  target: riskImportTargetSchema,
+  period: riskImportPeriodSchema,
+  /* Sólo para `draft`: es el motivo del alta y queda en la bitácora. */
+  revisionReason: z.string().trim().max(3000).optional(),
+}).superRefine((value, ctx) => {
+  if (value.target !== "draft") return
+  const reason = value.revisionReason ?? ""
+  if (reason.length > 0 && reason.length < 10) {
+    ctx.addIssue({ code: "custom", path: ["revisionReason"], message: "Describe el motivo en al menos 10 caracteres." })
+  }
+})
+
+export type RiskImportTargetInput = z.infer<typeof riskImportTargetSchema>
+export type RiskImportPreviewInput = z.infer<typeof riskImportPreviewSchema>
+export type RiskImportCommitInput = z.infer<typeof riskImportCommitSchema>
+
 export type ProgramHeaderInput = z.infer<typeof programHeaderSchema>
 export type ProgramActionInput = z.infer<typeof programActionSchema>
 export type ProgramGenerationInput = z.infer<typeof programGenerationSchema>

@@ -17,6 +17,7 @@ import { formatDate } from "@/lib/utils"
 import type { MiperListRow } from "@/lib/services/miper/queries"
 import type { MiperDashboard } from "@/lib/services/miper/dashboard"
 import { MiperDashboardPanel } from "./dashboard-panel"
+import { ImportMiperDialog } from "./import-dialog"
 import { NewMiperDialog, type CreationWorksite } from "./new-miper-dialog"
 
 // La pestaña vive en la URL. `porhacer` sigue siendo la de siempre por defecto
@@ -159,6 +160,7 @@ export function MiperHome({ inbox, all, dashboard, creationWorksites, currentYea
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "MIPER" }]} />}
         actions={<div className="flex gap-2">
           {permissions.canManageCatalog && <Button asChild variant="secondary"><Link href="/prevencion/miper/factores">Factores de riesgo</Link></Button>}
+          {permissions.canEdit && <ImportMiperDialog worksites={creationWorksites} currentYear={currentYear} canManageCatalog={permissions.canManageCatalog} />}
           {permissions.canEdit && <NewMiperDialog worksites={creationWorksites} currentYear={currentYear} />}
         </div>}
       />

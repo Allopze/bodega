@@ -31,6 +31,9 @@ export const pgliteTestFiles = [
   "lib/__tests__/miper-queries.test.ts",
   // MIPER F3: tablero del Resumen (tiles accionables, franja y tabla por faena).
   "lib/__tests__/miper-dashboard.test.ts",
+  // MIPER F3: importación del RE-04 (vista previa por fila, carga a borrador y
+  // agregado al vigente, aviso de fila Intolerable después del COMMIT).
+  "lib/__tests__/miper-import.test.ts",
   // MIPER F2: programa de trabajo (vínculo único, ocurrencias y registros
   // de sólo inserción).
   "db/__tests__/miper-program-constraints.test.ts",

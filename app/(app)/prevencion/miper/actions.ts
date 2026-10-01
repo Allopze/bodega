@@ -19,6 +19,7 @@ import { PreventionEvidenceError, storePreventionEvidence } from "@/lib/services
 import { resolveRiskReviewTrigger, verifyRiskControl } from "@/lib/services/prevention-risk-legal"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { deleteMiperControl, deleteMiperEntry, duplicateMiperEntry, saveMiperControl, saveMiperEntry } from "@/lib/services/miper/entries"
+import { commitRiskImport, previewRiskImport } from "@/lib/services/miper/import"
 import { createMiper, discardMiperDraft, updateMiperHeader } from "@/lib/services/miper/matrices"
 import { addMiperObservation, reopenMiperObservation, resolveMiperObservation, respondMiperObservation } from "@/lib/services/miper/observations"
 import { applyProgramGeneration, linkActionControls, proposeProgramActions, retireProgramAction, saveProgramAction, unlinkActionControl, updateProgramHeader } from "@/lib/services/miper/program"
@@ -376,4 +377,47 @@ export async function uploadProgramEvidenceAction(form: FormData): Promise<Actio
   } catch (error) {
     return fail(error)
   }
+}
+
+/* ── Importación del RE-04 real (§9.3, F3) ────────────────────────────────
+ * Dos pasos: la vista previa lee el `.xlsx` en memoria —no se guarda en ningún
+ * directorio— y congela el lote; la carga escribe las filas que pasaron los
+ * problemas por fila. La vista previa recibe `FormData` porque el archivo viaja
+ * como `File`; la carga es un objeto normal y entra por `guarded`, que aplica el
+ * RBAC y traduce los errores de dominio igual que el resto del módulo.
+ */
+
+/** Campo de texto de un `FormData`: cadena vacía y archivo no cuentan. */
+const formText = (value: FormDataEntryValue | null) => (typeof value === "string" && value.length > 0 ? value : null)
+
+export async function previewRiskImportAction(form: FormData): Promise<ActionState> {
+  const guard = await guardPermission("prevention:risk:edit")
+  if (guard.error) return guard.error
+  try {
+    const file = form.get("file")
+    if (!(file instanceof File) || file.size === 0) return { ok: false, message: "Adjunta el archivo del RE-04 en formato Excel (.xlsx)." }
+    const period = formText(form.get("period"))
+    const preview = await previewRiskImport(new Uint8Array(await file.arrayBuffer()), {
+      worksiteId: formText(form.get("worksiteId")) ?? "",
+      target: formText(form.get("target")) === "live" ? "live" : "draft",
+      ...(period ? { period: Number(period) } : {}),
+      fileName: file.name,
+    }, accessFrom(guard.session))
+    return {
+      ok: true,
+      message: `RE-04 leído: ${preview.totals.total} fila(s), ${preview.totals.ready} lista(s) para cargar`,
+      data: { preview },
+    }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export async function commitRiskImportAction(input: unknown) {
+  return guarded("prevention:risk:edit", input, (access) => commitRiskImport(input, access), {
+    data: (result) => ({ matrixId: result.matrixId, created: result.created, skipped: result.skipped }),
+    success: (result) => result.created === 0
+      ? "No se cargó ninguna fila: revisa los problemas por fila."
+      : `${result.created} fila(s) cargada(s)${result.skipped > 0 ? ` y ${result.skipped} detenida(s)` : ""}`,
+  })
 }

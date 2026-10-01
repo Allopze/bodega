@@ -40,6 +40,8 @@ const LABELS: Record<string, string> = {
   occurrence_record_voided: "Registro de ocurrencia anulado",
   evidence_added: "Evidencia agregada a una ocurrencia",
   evidence_withdrawn: "Evidencia retirada de una ocurrencia",
+  // Importación del RE-04 (F3): la traza de lo que entró desde el Excel real.
+  import_applied: "Filas importadas desde el RE-04",
 }
 
 export function historyLabel(changeType: string) {
