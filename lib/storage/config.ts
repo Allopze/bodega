@@ -16,6 +16,7 @@ const CAMPAIGN_EVIDENCE_PREFIX = "storage/campaign-evidence/"
 const CGRD_EVIDENCE_PREFIX = "storage/cgrd-evidence/"
 const HYGIENE_EVIDENCE_PREFIX = "storage/hygiene-evidence/"
 const CAPA_EVIDENCE_PREFIX = "storage/capa-evidence/"
+const MIPER_EVIDENCE_PREFIX = "storage/miper-evidence/"
 const RISK_MAP_PREFIX = "storage/risk-map/"
 const FUEL_IMPORT_PREFIX = "storage/imports/"
 const FUEL_TAE_EVIDENCE_PREFIX = "storage/fuel-tae/"
@@ -467,6 +468,29 @@ export function resolveCapaEvidenceFile(filePath: string): string | null {
   const storageName = filePath.slice(CAPA_EVIDENCE_PREFIX.length)
   if (!isSafeStorageName(storageName)) return null
   return path.join(/*turbopackIgnore: true*/ resolveCapaEvidenceDir(), storageName)
+}
+
+/* ── Evidencia de las ocurrencias del Programa de Trabajo (MIPER F2) ──────
+ * El acta, la foto o el registro con que se acredita un «Se hizo» del programa
+ * RE-04.1 (§7.6). Espacio propio, igual que el resto: el archivo acredita una
+ * ocurrencia y no se comparte con los demás dominios.
+ */
+export function resolveMiperEvidenceDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "miper-evidence")
+}
+
+export function createMiperEvidencePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid miper evidence storage name")
+  }
+  return `${MIPER_EVIDENCE_PREFIX}${storageName}`
+}
+
+export function resolveMiperEvidenceFile(filePath: string): string | null {
+  if (!filePath.startsWith(MIPER_EVIDENCE_PREFIX)) return null
+  const storageName = filePath.slice(MIPER_EVIDENCE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolveMiperEvidenceDir(), storageName)
 }
 
 /* ── Evidencia de las casillas de alcotest ────────────────────────────────

@@ -20,7 +20,7 @@ import { eq } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { preventionEvidenceUploads } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { validateFileBuffer, MimeType } from "@/lib/file-validation"
+import { validateFileBuffer, MimeType, MIPER_EVIDENCE } from "@/lib/file-validation"
 import { QUOTATION_EXTENSION_BY_MIME } from "@/lib/storage/quotation-content-type"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
 import {
@@ -28,23 +28,28 @@ import {
   createCapaEvidencePath,
   createCgrdEvidencePath,
   createHygieneEvidencePath,
+  createMiperEvidencePath,
   resolveCampaignEvidenceDir,
   resolveCapaEvidenceDir,
   resolveCgrdEvidenceDir,
   resolveHygieneEvidenceDir,
+  resolveMiperEvidenceDir,
   resolveStorageFile,
 } from "@/lib/storage/config"
 
 /** Mismo tope que la evidencia del PDTP: son el mismo tipo de respaldo. */
 export const PREVENTION_EVIDENCE_MAX_FILE_SIZE = 25 * 1024 * 1024
 
-export type PreventionEvidenceDomain = "campaign" | "cgrd" | "hygiene" | "capa"
+export type PreventionEvidenceDomain = "campaign" | "cgrd" | "hygiene" | "capa" | "miper"
 
 const DOMAINS = {
   campaign: { dir: resolveCampaignEvidenceDir, toPath: createCampaignEvidencePath },
   cgrd: { dir: resolveCgrdEvidenceDir, toPath: createCgrdEvidencePath },
   hygiene: { dir: resolveHygieneEvidenceDir, toPath: createHygieneEvidencePath },
   capa: { dir: resolveCapaEvidenceDir, toPath: createCapaEvidencePath },
+  /* MIPER F2 (§7.6): la evidencia de una ocurrencia del Programa de Trabajo
+   * admite además Word y Excel para actas y registros (MIPER_EVIDENCE). */
+  miper: { dir: resolveMiperEvidenceDir, toPath: createMiperEvidencePath },
 } as const
 
 export class PreventionEvidenceError extends Error {
@@ -77,7 +82,11 @@ export async function storePreventionEvidence(input: {
     )
   }
 
-  const validated = validateFileBuffer(input.buffer, input.fileSize, MimeType.PROOF)
+  /* El conjunto admitido depende del dominio: el Programa de Trabajo acepta
+   * además Word y Excel (§7.6), y para un paquete Office el validador necesita
+   * el nombre —compara la extensión contra el contenido real—. */
+  const allowed = input.domain === "miper" ? MIPER_EVIDENCE : MimeType.PROOF
+  const validated = validateFileBuffer(input.buffer, input.fileSize, allowed, input.fileName)
   if (validated.error) throw new PreventionEvidenceError(validated.error)
 
   const { dir: resolveDir, toPath } = DOMAINS[input.domain]

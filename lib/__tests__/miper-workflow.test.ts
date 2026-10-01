@@ -20,6 +20,7 @@ const { createMiper, updateMiperHeader } = await import("@/lib/services/miper/ma
 const entries = await import("@/lib/services/miper/entries")
 const obs = await import("@/lib/services/miper/observations")
 const wf = await import("@/lib/services/miper/workflow")
+const program = await import("@/lib/services/miper/program")
 
 const WS = "ws-w"
 const scope = { mode: "some" as const, ids: [WS] }
@@ -39,8 +40,18 @@ async function completeMatrix(period: number) {
     headcountTotal: 5, headcountMale: 4, headcountFemale: 1, headcountOther: 0, participationSummary: "", consultationEvidenceReference: "",
   }, author)
   const e = await entries.saveMiperEntry({ matrixId: id, values: { activity: "Transporte", task: "Descarga", position: "Conductor", riskFactorId: "riskfactor-mecanico", hazard: "Camión en pendiente", risk: "Volcamiento", probableDamage: "Politraumatismo", probability: 2, consequence: 4, controlledStatus: "partial", isRoutine: true } }, author)
-  await entries.saveMiperControl({ matrixId: id, entryId: e.id, values: { hierarchy: "administrative", description: "Procedimiento de descarga en pendiente", responsibleName: "Supervisor", dueDate: `${period}-06-30` } }, author)
-  return { id, entryId: e.id }
+  const control = await entries.saveMiperControl({ matrixId: id, entryId: e.id, values: { hierarchy: "administrative", description: "Procedimiento de descarga en pendiente", responsibleName: "Supervisor", dueDate: `${period}-06-30` } }, author)
+  return { id, entryId: e.id, controlId: control.id }
+}
+
+/**
+ * Vincula una medida del MIPER a una actividad del Programa de Trabajo. Es la
+ * precondición que la regla del Intolerable exige al enviar (§6.2 / §7.3).
+ */
+async function linkMeasureToProgram(matrixId: string, controlId: string, startsOn: string) {
+  const action = await program.saveProgramAction({ matrixId, description: "Procedimiento de descarga en pendiente", scheduleKind: "monthly", startsOn }, author)
+  const [row] = await testDb.select().from(schema.preventionRiskPrograms).where(eq(schema.preventionRiskPrograms.matrixId, matrixId))
+  await program.linkActionControls({ programId: row!.id, actionId: action.id, controlIds: [controlId], link: true }, author)
 }
 
 beforeAll(async () => {
@@ -55,7 +66,7 @@ beforeAll(async () => {
 
 describe("flujo MIPER de extremo a extremo (servicio)", () => {
   it("envío → observación por fila → corrección → reenvío → aprobación técnica → Legal y RRHH → v1 vigente", async () => {
-    const { id, entryId } = await completeMatrix(2026)
+    const { id, entryId, controlId } = await completeMatrix(2026)
     let m = await matrixRow(id)
     await wf.submitMiperForReview({ matrixId: id, expectedVersion: m.version }, author)
     m = await matrixRow(id)
@@ -75,6 +86,8 @@ describe("flujo MIPER de extremo a extremo (servicio)", () => {
     await expect(wf.submitMiperForReview({ matrixId: id, expectedVersion: m.version }, author)).rejects.toThrow(/Responde todas las observaciones/)
     const [row] = await testDb.select().from(schema.preventionRiskEntries).where(eq(schema.preventionRiskEntries.id, entryId))
     await entries.saveMiperEntry({ matrixId: id, entryId, expectedVersion: row!.version, values: { consequence: 4, probability: 4 } }, author) // → Intolerable
+    // La fila quedó Intolerable: el reenvío exige su medida dentro del programa.
+    await linkMeasureToProgram(id, controlId, "2026-03-01")
     await obs.respondMiperObservation({ observationId: obsId, response: "Se reevaluó: probabilidad alta, queda Intolerable." }, author)
     await wf.submitMiperForReview({ matrixId: id, expectedVersion: m.version }, author)
     m = await matrixRow(id)
@@ -145,6 +158,21 @@ describe("flujo MIPER de extremo a extremo (servicio)", () => {
     expect(m.reviewState).toBe("observed")
     const [o] = await testDb.select().from(schema.preventionRiskObservations).where(and(eq(schema.preventionRiskObservations.matrixId, id), eq(schema.preventionRiskObservations.stage, "legal_rrhh")))
     await obs.respondMiperObservation({ observationId: o!.id, response: "Responsable asignado: supervisor de turno." }, author)
+    await wf.submitMiperForReview({ matrixId: id, expectedVersion: m.version }, author)
+    expect((await matrixRow(id)).reviewState).toBe("in_review")
+  })
+
+  it("el Intolerable no se envía sin una medida vinculada al Programa de Trabajo", async () => {
+    const { id, entryId, controlId } = await completeMatrix(2028)
+    const [row] = await testDb.select().from(schema.preventionRiskEntries).where(eq(schema.preventionRiskEntries.id, entryId))
+    await entries.saveMiperEntry({ matrixId: id, entryId, expectedVersion: row!.version, values: { probability: 4, consequence: 4 } }, author) // → Intolerable
+    let m = await matrixRow(id)
+    await expect(wf.submitMiperForReview({ matrixId: id, expectedVersion: m.version }, author))
+      .rejects.toThrow(/Intolerable exige una medida vinculada a una actividad del Programa de Trabajo/)
+
+    // Con la medida del riesgo dentro del programa, el envío pasa.
+    await linkMeasureToProgram(id, controlId, "2028-03-01")
+    m = await matrixRow(id)
     await wf.submitMiperForReview({ matrixId: id, expectedVersion: m.version }, author)
     expect((await matrixRow(id)).reviewState).toBe("in_review")
   })

@@ -2,7 +2,7 @@ import { and, desc, eq, ne, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   preventionPdtpUpdateObligations, preventionRiskEntries, preventionRiskMatrices, preventionRiskMatrixVersions,
-  preventionRiskObservations, preventionRiskReviewRounds,
+  preventionRiskObservations, preventionRiskProgramActions, preventionRiskPrograms, preventionRiskReviewRounds,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { checkMiperCompleteness } from "@/lib/prevention/miper/completeness"
@@ -16,6 +16,7 @@ import { resolveOwnWorkSigning } from "@/lib/services/prevention-signing"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { miperApproveFinalSchema, miperCommentedDecisionSchema, miperWorkflowSchema } from "@/lib/validation/prevention-module/miper"
 import { buildMiperSnapshot, openRound, snapshotSha } from "./snapshots"
+import { programLinkedControlIds, syncOccurrences, supersedePendingOccurrences } from "./program-execution"
 import { type Client, lockMatrix, type MiperAccess, miperHistory, nowIso, requireAccess, userNames } from "./shared"
 
 type Matrix = typeof preventionRiskMatrices.$inferSelect
@@ -70,7 +71,11 @@ export async function submitMiperForReview(input: unknown, access: MiperAccess) 
   return db.transaction(async (tx) => {
     const matrix = await loadForAction(tx, data.matrixId, "submit", access, data.expectedVersion)
     const snapshot = await buildMiperSnapshot(tx, matrix.id)
-    const blocking = checkMiperCompleteness(snapshot).filter((issue) => issue.severity === "error")
+    /* El Intolerable no puede enviarse sin una medida dentro del Programa de
+     * Trabajo (§6.2 / §7.3): la regla vive en `checkMiperCompleteness` y acá se
+     * le entrega el conjunto de medidas ya vinculadas a una actividad. */
+    const linkedControlIds = await programLinkedControlIds(tx, matrix.id)
+    const blocking = checkMiperCompleteness(snapshot, { linkedControlIds, requireProgramLink: true }).filter((issue) => issue.severity === "error")
     if (blocking.length > 0) {
       throw new RiskLegalDomainError(`No se puede enviar a revisión: hay ${blocking.length} pendiente(s). ${blocking.slice(0, 3).map((issue) => issue.message).join(" ")}`)
     }
@@ -207,6 +212,10 @@ export async function approveMiperFinal(input: unknown, access: MiperAccess) {
       ))
       for (const vigente of vigentes) {
         await tx.update(preventionRiskMatrices).set({ status: "superseded", reviewState: "none", version: vigente.version + 1, updatedAt: now }).where(eq(preventionRiskMatrices.id, vigente.id))
+        /* Las ocurrencias pendientes del programa reemplazado pasan a
+         * `superseded` ("reemplazadas") y dejan de contar; lo ya registrado se
+         * conserva (§7.4). */
+        await supersedePendingOccurrences(tx, vigente.id)
         await miperHistory(tx, { matrixId: vigente.id, worksiteId: vigente.worksiteId, object: "matrix", objectId: vigente.id, changeType: "superseded", reason: `Reemplazada por la MIPER del período ${matrix.period}.`, after: { supersededByMatrixId: matrix.id }, actorUserId: access.userId, actingAs: "prevention:risk:approve_legal" })
       }
     }
@@ -221,6 +230,16 @@ export async function approveMiperFinal(input: unknown, access: MiperAccess) {
     })
 
     if (firstSeal) {
+      /* El MIPER en borrador tiene actividades pero no ocurrencias ejecutables:
+       * la primera aprobación las genera todas (§7.4). Ya dentro de la
+       * transacción, así que va por `tx` —nunca por la conexión global—. */
+      const [program] = await tx.select({ id: preventionRiskPrograms.id, period: preventionRiskPrograms.period }).from(preventionRiskPrograms)
+        .where(eq(preventionRiskPrograms.matrixId, matrix.id)).limit(1)
+      if (program) {
+        const actions = await tx.select().from(preventionRiskProgramActions)
+          .where(and(eq(preventionRiskProgramActions.programId, program.id), eq(preventionRiskProgramActions.status, "active")))
+        for (const action of actions) await syncOccurrences(tx, action, program.period)
+      }
       await createRiskReviewTriggerWithClient(tx, {
         worksiteId: matrix.worksiteId, matrixId: matrix.id, triggerType: "annual", sourceType: "risk_matrix", sourceId: matrix.id,
         description: `Revisión anual de la MIPER del período ${matrix.period}.`, dueAt: reviewDueAt, idempotencyKey: `miper:annual:${matrix.id}`,
