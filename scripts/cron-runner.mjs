@@ -169,6 +169,14 @@ const JOBS = Object.freeze({
     kind: "sync",
     codePrefix: "PREVENTION_CRON_",
   },
+  // F3 (MIPER §9.1): barrido diario del Programa de Trabajo — ocurrencias
+  // vencidas y «No se hizo», que el flujo no puede ver en línea.
+  "prevention-miper-daily-sweep": {
+    url: "http://app:3000/api/cron/prevention-miper-daily-sweep",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "PREVENTION_CRON_",
+  },
   // #18: suspende los permisos de trabajo vigentes cuya ventana venció.
   "prevention-permit-expiry": {
     url: "http://app:3000/api/cron/prevention-permit-expiry",
