@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { resolvePdtpEvidenceDir } from "@/lib/storage/config"
 import * as schema from "@/db/schema"
 
 const pg = new PGlite()
@@ -14,15 +15,40 @@ const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb 
 // @ts-expect-error PGlite is compatible at runtime
 testGlobal.__db = inMemoryDb
 
+/**
+ * Hermeticidad (esta suite borra archivos reales si se la deja suelta).
+ *
+ * El recolector deriva su directorio de `STORAGE_PATH` en cada llamada
+ * (`lib/storage/config.ts`: `resolveStorageDir()` → `resolvePdtpEvidenceDir()`).
+ * Si la variable queda vacía o vuelve al valor original, el barrido cae sobre
+ * `storage/` del repo y, como `dryRun` es `false` por defecto, lo BORRA.
+ *
+ * Por eso el archivo entero queda anclado a un sandbox propio desde el momento
+ * de importarse: se captura el valor original una sola vez —antes de que
+ * cualquier hook lo pise— y no se restaura hasta `afterAll`.
+ */
+const originalStoragePath = process.env.STORAGE_PATH
+const storageSandbox = mkdtempSync(join(tmpdir(), "pdtp-evidence-gc-sandbox-"))
+
+function restoreStoragePathEnv(): void {
+  // `process.env.X = undefined` guarda la cadena "undefined" en Node: si la
+  // variable no existía hay que borrarla, no asignarle `undefined`.
+  if (originalStoragePath === undefined) delete process.env.STORAGE_PATH
+  else process.env.STORAGE_PATH = originalStoragePath
+}
+
+process.env.STORAGE_PATH = storageSandbox
+
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 afterAll(async () => {
   delete testGlobal.__db
   await pg.close()
+  rmSync(storageSandbox, { recursive: true, force: true })
+  restoreStoragePathEnv()
 })
 
 let tempDir: string
-let originalStoragePath: string | undefined
 
 beforeEach(async () => {
   await inMemoryDb.delete(schema.auditLog)
@@ -32,15 +58,19 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
   tempDir = mkdtempSync(join(tmpdir(), "pdtp-evidence-gc-"))
-  originalStoragePath = process.env.STORAGE_PATH
   process.env.STORAGE_PATH = tempDir
   // Crear la estructura pdtp-evidence
   const { promises: fs } = await import("node:fs")
   await fs.mkdir(join(tempDir, "pdtp-evidence"), { recursive: true })
+  // Guardrail: el recolector tiene que apuntar al temp de la prueba. Si dejara
+  // de hacerlo, el barrido de más abajo borraría archivos reales de `storage/`.
+  expect(resolvePdtpEvidenceDir()).toBe(join(tempDir, "pdtp-evidence"))
 })
 
 afterEach(() => {
-  process.env.STORAGE_PATH = originalStoragePath
+  // Vuelve al sandbox del archivo, nunca al valor del entorno: entre tests el
+  // colector jamás debe poder resolver el `storage/` del repo.
+  process.env.STORAGE_PATH = storageSandbox
   rmSync(tempDir, { recursive: true, force: true })
 })
 
@@ -168,11 +198,22 @@ describe("cleanupPdtpEvidenceOrphans", () => {
   })
 
   it("devuelve resultado vacío si no hay directorio de storage", async () => {
-    rmSync(tempDir, { recursive: true, force: true })
-    process.env.STORAGE_PATH = originalStoragePath
+    // PROBLEMA QUE ESTO EVITA (nuevo, 2026-09-30): esta prueba restauraba el
+    // valor original de `STORAGE_PATH` —vacío en esta máquina— para simular un
+    // storage inexistente. Con la variable vacía, `resolveStorageDir()` cae al
+    // default `process.cwd()/storage`: el recolector barría el `storage/` real
+    // del repo y, en modo real (`dryRun` por defecto), borraba sus archivos.
+    // El directorio tiene que desaparecer, pero CUÁL desaparece lo decide la
+    // prueba: un temp propio, creado y borrado acá.
+    const missingDir = mkdtempSync(join(tmpdir(), "pdtp-evidence-gc-missing-"))
+    rmSync(missingDir, { recursive: true, force: true })
+    process.env.STORAGE_PATH = missingDir
+
     const { cleanupPdtpEvidenceOrphans } = await import("@/lib/services/pdtp/evidence-gc")
     const result = await cleanupPdtpEvidenceOrphans()
+
     expect(result.scanned).toBe(0)
+    expect(result.deleted).toBe(0)
   })
 
   /* W5-GC (T7a, D13): el barrido se agenda en modo de prueba. Para que las
