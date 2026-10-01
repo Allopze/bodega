@@ -16,11 +16,12 @@ import { AntecedentesForm } from "./antecedentes-form"
 import { EntrySheet } from "./entry-sheet"
 import { HistoryPanel } from "./history-panel"
 import { MatrixGrid } from "./matrix-grid"
+import { ProgramPanel } from "./program-panel"
 import { ReviewPanel } from "./review-panel"
 import { SummaryStrip } from "./summary-strip"
 import { WorkflowBar } from "./workflow-bar"
 
-const TABS = new Set(["antecedentes", "matriz", "revision", "historial"])
+const TABS = new Set(["antecedentes", "matriz", "programa", "revision", "historial"])
 
 export function MiperWorkspaceView({ workspace, history, mode, userId }: { workspace: MiperWorkspace; history: MiperHistoryEvent[]; mode: WorkspaceMode; userId: string }) {
   const router = useRouter()
@@ -84,6 +85,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
           <TabsList>
             <TabsTrigger value="antecedentes">Antecedentes</TabsTrigger>
             <TabsTrigger value="matriz">Matriz ({rows.length})</TabsTrigger>
+            <TabsTrigger value="programa">Programa</TabsTrigger>
             <TabsTrigger value="revision">Revisión{openObservations > 0 ? ` (${openObservations})` : ""}</TabsTrigger>
             <TabsTrigger value="historial">Historial</TabsTrigger>
           </TabsList>
@@ -103,6 +105,15 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
               canObserve={mode.canObserve}
               onOpenEntry={openEntry}
               onStructureChanged={() => router.refresh()}
+            />
+          </TabsContent>
+          <TabsContent value="programa">
+            <ProgramPanel
+              matrixId={workspace.matrix.id}
+              mode={mode}
+              userId={userId}
+              users={workspace.responsibleOptions}
+              onOpenRiskEntry={openEntry}
             />
           </TabsContent>
           <TabsContent value="revision"><ReviewPanel workspace={workspace} mode={mode} onOpenEntry={(entryId) => { setParam("fila", entryId) }} /></TabsContent>
