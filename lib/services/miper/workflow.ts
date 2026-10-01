@@ -16,6 +16,7 @@ import { resolveOwnWorkSigning } from "@/lib/services/prevention-signing"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { miperApproveFinalSchema, miperCommentedDecisionSchema, miperWorkflowSchema } from "@/lib/validation/prevention-module/miper"
 import { buildMiperSnapshot, openRound, snapshotSha } from "./snapshots"
+import { notifyMiperReviewStep } from "./notifications"
 import { programLinkedControlIds, syncOccurrences, supersedePendingOccurrences } from "./program-execution"
 import { type Client, lockMatrix, type MiperAccess, miperHistory, nowIso, requireAccess, userNames } from "./shared"
 
@@ -68,7 +69,7 @@ async function autoResolveAnswered(client: Client, matrixId: string, userId: str
 
 export async function submitMiperForReview(input: unknown, access: MiperAccess) {
   const data = miperWorkflowSchema.parse(input)
-  return db.transaction(async (tx) => {
+  const submitted = await db.transaction(async (tx) => {
     const matrix = await loadForAction(tx, data.matrixId, "submit", access, data.expectedVersion)
     const snapshot = await buildMiperSnapshot(tx, matrix.id)
     /* El Intolerable no puede enviarse sin una medida dentro del Programa de
@@ -97,8 +98,16 @@ export async function submitMiperForReview(input: unknown, access: MiperAccess) 
     })
     await setReviewState(tx, matrix, "in_review", now)
     await miperHistory(tx, { matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "round", objectId: roundId, changeType: "submitted", reason: data.comment ?? null, after: { entryCount: snapshot.entries.length }, actorUserId: access.userId, actingAs: "prevention:risk:edit" })
-    return { roundId }
+    return { roundId, worksiteId: matrix.worksiteId, matrixTitle: matrix.title }
   })
+
+  /* §9.1: «enviado → siguiente responsable». Después del COMMIT y fuera del
+   * callback, porque los destinatarios se resuelven con la conexión global. */
+  notifyMiperReviewStep({
+    matrixId: data.matrixId, worksiteId: submitted.worksiteId, matrixTitle: submitted.matrixTitle,
+    reviewState: "in_review", returned: false, actorUserId: access.userId, roundId: submitted.roundId,
+  })
+  return { roundId: submitted.roundId }
 }
 
 /** Marca que la revisora abrió la ronda: distingue "Enviado" de "En revisión". */
@@ -117,7 +126,7 @@ export async function openMiperReviewRound(input: { matrixId: string }, access: 
 
 export async function returnMiperWithObservations(input: unknown, access: MiperAccess) {
   const data = miperCommentedDecisionSchema.parse(input)
-  await db.transaction(async (tx) => {
+  const returned = await db.transaction(async (tx) => {
     const matrix = await loadForAction(tx, data.matrixId, "return", access, data.expectedVersion)
     const round = await openRound(tx, matrix.id)
     if (!round || round.stage !== "technical") throw new RiskLegalDomainError("No hay una ronda de revisión técnica abierta; recarga la MIPER.")
@@ -128,12 +137,20 @@ export async function returnMiperWithObservations(input: unknown, access: MiperA
     await tx.update(preventionRiskReviewRounds).set({ decision: "observed", decidedByUserId: access.userId, decidedAt: now, decisionComment: data.comment }).where(eq(preventionRiskReviewRounds.id, round.id))
     await setReviewState(tx, matrix, "observed", now)
     await miperHistory(tx, { matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "round", objectId: round.id, changeType: "returned", reason: data.comment, after: { openObservations: open }, actorUserId: access.userId, actingAs: "prevention:risk:review" })
+    return { roundId: round.id, worksiteId: matrix.worksiteId, matrixTitle: matrix.title, submitterUserId: round.submittedByUserId }
+  })
+
+  /* §9.1: «devuelto → quien editó» (el autor de la ronda que se devuelve). */
+  notifyMiperReviewStep({
+    matrixId: data.matrixId, worksiteId: returned.worksiteId, matrixTitle: returned.matrixTitle,
+    reviewState: "observed", returned: true, actorUserId: access.userId,
+    roundId: returned.roundId, submitterUserId: returned.submitterUserId,
   })
 }
 
 export async function approveMiperTechnicalReview(input: unknown, access: MiperAccess) {
   const data = miperWorkflowSchema.parse(input)
-  await db.transaction(async (tx) => {
+  const approved = await db.transaction(async (tx) => {
     const matrix = await loadForAction(tx, data.matrixId, "approve_technical", access, data.expectedVersion)
     const round = await openRound(tx, matrix.id)
     if (!round || round.stage !== "technical") throw new RiskLegalDomainError("No hay una ronda de revisión técnica abierta; recarga la MIPER.")
@@ -143,18 +160,28 @@ export async function approveMiperTechnicalReview(input: unknown, access: MiperA
     const now = nowIso()
     await autoResolveAnswered(tx, matrix.id, access.userId, now)
     await tx.update(preventionRiskReviewRounds).set({ decision: "approved", decidedByUserId: access.userId, decidedAt: now, decisionComment: data.comment ?? null }).where(eq(preventionRiskReviewRounds.id, round.id))
+    /* La ronda de Legal y RRHH nace acá: es la espera de firma que se avisa (y
+     * la que el cron de firma pendiente mide en días hábiles). */
+    const legalRoundId = `riskround-${nanoid()}`
     await tx.insert(preventionRiskReviewRounds).values({
-      id: `riskround-${nanoid()}`, matrixId: matrix.id, roundNumber: await nextRoundNumber(tx, matrix.id), stage: "legal_rrhh",
+      id: legalRoundId, matrixId: matrix.id, roundNumber: await nextRoundNumber(tx, matrix.id), stage: "legal_rrhh",
       snapshot: round.snapshot, snapshotSha256: round.snapshotSha256, submittedByUserId: round.submittedByUserId, submittedAt: now,
     })
     await setReviewState(tx, matrix, "pending_approval", now)
     await miperHistory(tx, { matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "round", objectId: round.id, changeType: "technical_approved", reason: data.comment ?? null, actorUserId: access.userId, actingAs: "prevention:risk:review" })
+    return { legalRoundId, worksiteId: matrix.worksiteId, matrixTitle: matrix.title }
+  })
+
+  /* §9.1: «pendiente de firma → siguiente responsable» = Legal y RRHH. */
+  notifyMiperReviewStep({
+    matrixId: data.matrixId, worksiteId: approved.worksiteId, matrixTitle: approved.matrixTitle,
+    reviewState: "pending_approval", returned: false, actorUserId: access.userId, roundId: approved.legalRoundId,
   })
 }
 
 export async function requestMiperCorrections(input: unknown, access: MiperAccess) {
   const data = miperCommentedDecisionSchema.parse(input)
-  await db.transaction(async (tx) => {
+  const asked = await db.transaction(async (tx) => {
     const matrix = await loadForAction(tx, data.matrixId, "request_corrections", access, data.expectedVersion)
     const round = await openRound(tx, matrix.id)
     if (!round || round.stage !== "legal_rrhh") throw new RiskLegalDomainError("No hay una aprobación Legal y RRHH pendiente; recarga la MIPER.")
@@ -165,6 +192,15 @@ export async function requestMiperCorrections(input: unknown, access: MiperAcces
     await tx.update(preventionRiskReviewRounds).set({ decision: "observed", decidedByUserId: access.userId, decidedAt: now, decisionComment: data.comment }).where(eq(preventionRiskReviewRounds.id, round.id))
     await setReviewState(tx, matrix, "observed", now)
     await miperHistory(tx, { matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "round", objectId: round.id, changeType: "corrections_requested", reason: data.comment, actorUserId: access.userId, actingAs: "prevention:risk:approve_legal" })
+    return { roundId: round.id, worksiteId: matrix.worksiteId, matrixTitle: matrix.title, submitterUserId: round.submittedByUserId }
+  })
+
+  /* §9.1: una solicitud de correcciones de Legal y RRHH también vuelve a quien
+   * elaboró, con el mismo aviso que una devolución técnica. */
+  notifyMiperReviewStep({
+    matrixId: data.matrixId, worksiteId: asked.worksiteId, matrixTitle: asked.matrixTitle,
+    reviewState: "observed", returned: true, actorUserId: access.userId,
+    roundId: asked.roundId, submitterUserId: asked.submitterUserId,
   })
 }
 

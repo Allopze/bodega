@@ -7,6 +7,7 @@ import { cleanMiperName } from "@/lib/prevention/miper/names"
 import { miperControlRefSchema, miperControlSaveSchema, miperEntryRefSchema, miperEntrySaveSchema, type MiperEntryValues } from "@/lib/validation/prevention-module/miper"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { resolveDictionaryId } from "./dictionaries"
+import { notifyMiperRowIntolerable } from "./notifications"
 import { assertActiveUsers, assertEditable, type Client, lockMatrix, type MiperAccess, miperHistory, nowIso, requireAccess, userNames } from "./shared"
 
 const STALE_ENTRY = "La fila cambió mientras la editabas. Recarga la matriz para ver el cambio de la otra persona."
@@ -60,12 +61,20 @@ async function toColumns(client: Client, worksiteId: string, values: MiperEntryV
 
 export async function saveMiperEntry(input: unknown, access: MiperAccess): Promise<SavedEntry> {
   const data = miperEntrySaveSchema.parse(input)
-  return db.transaction(async (tx) => {
+  /* Enganche de «fila pasa a Intolerable» (§9.1). La clasificación es una
+   * columna generada, así que no hay evento de base que escuchar: el único punto
+   * donde se escribe de verdad es acá (y la importación RE-04, que entra por
+   * `notifyMiperRowIntolerable`). La transacción devuelve si hubo cruce, y el
+   * aviso sale DESPUÉS de que resolvió —nunca dentro del callback—: sus
+   * destinatarios se resuelven con `getUserIdsWithPermissionForWorksite`, que usa
+   * la conexión global `db`. */
+  const result = await db.transaction(async (tx) => {
     const matrix = await lockMatrix(tx, data.matrixId)
     requireAccess(access, EDIT, matrix.worksiteId)
     assertEditable(matrix)
     const columns = await toColumns(tx, matrix.worksiteId, data.values)
     const now = nowIso()
+    const crossed = (before: string | null, after: string | null) => after === "intolerable" && before !== "intolerable"
     if (!data.entryId) {
       const [row] = await tx.select({ maxRow: sql<number>`coalesce(max(${preventionRiskEntries.rowNumber}), 0)::int` }).from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, matrix.id))
       const maxRow = row?.maxRow ?? 0
@@ -79,7 +88,7 @@ export async function saveMiperEntry(input: unknown, access: MiperAccess): Promi
       }).returning()
       await touchMatrix(tx, matrix.id, now)
       await miperHistory(tx, { matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "entry", objectId: created!.id, changeType: "entry_created", after: data.values, actorUserId: access.userId, actingAs: EDIT })
-      return saved(created!)
+      return { entry: saved(created!), notified: crossed(null, created!.classification), worksiteId: matrix.worksiteId, matrixTitle: matrix.title }
     }
     const [current] = await tx.select().from(preventionRiskEntries).where(and(eq(preventionRiskEntries.id, data.entryId), eq(preventionRiskEntries.matrixId, matrix.id))).limit(1)
     if (!current) throw new RiskLegalDomainError("La fila no existe en esta MIPER; recarga la matriz.")
@@ -93,8 +102,16 @@ export async function saveMiperEntry(input: unknown, access: MiperAccess): Promi
       before: Object.fromEntries(Object.keys(columns).map((key) => [key, current[key as keyof typeof current]])), after: columns,
       actorUserId: access.userId, actingAs: EDIT,
     })
-    return saved(updated)
+    return { entry: saved(updated), notified: crossed(current.classification, updated.classification), worksiteId: matrix.worksiteId, matrixTitle: matrix.title }
   })
+
+  if (result.notified) {
+    notifyMiperRowIntolerable({
+      matrixId: data.matrixId, worksiteId: result.worksiteId, matrixTitle: result.matrixTitle,
+      entryId: result.entry.id, rowNumber: result.entry.rowNumber, actorUserId: access.userId,
+    })
+  }
+  return result.entry
 }
 
 const duplicateSchema = z.object({ matrixId: z.string().min(1), entryId: z.string().min(1) })
