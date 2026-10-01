@@ -73,6 +73,13 @@ test("flechas, Enter y Escape mueven el foco a la misma columna y revierten la e
   await agregarFila(page, 1)
   await agregarFila(page, 2)
 
+  // Las columnas fijas calzan con su columna: con `min-width` en vez de `width`,
+  // `table-fixed` caía al reparto por contenido y «Tarea» (fija)
+  // se montaba sobre «Peligro».
+  const borde = (name: string) => page.getByRole("columnheader", { name, exact: true }).evaluate((th) => th.getBoundingClientRect())
+  const [tarea, peligro] = await Promise.all([borde("Tarea"), borde("Peligro")])
+  expect(Math.abs(tarea.right - peligro.left)).toBeLessThan(1)
+
   // Flechas: a la MISMA columna de la fila vecina, no a la celda siguiente.
   const peligro1 = cell(page, "Peligro", 1)
   const peligro2 = cell(page, "Peligro", 2)

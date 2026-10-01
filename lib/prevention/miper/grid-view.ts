@@ -9,16 +9,18 @@ export type GridFilters = {
   factorId: string
   onlyObserved: boolean
   onlyModified: boolean
+  /** Filas con datos que bloquean el envío a revisión. */
+  onlyIncomplete: boolean
 }
-export const EMPTY_FILTERS: GridFilters = { search: "", classifications: [], controlled: "all", factorId: "all", onlyObserved: false, onlyModified: false }
+export const EMPTY_FILTERS: GridFilters = { search: "", classifications: [], controlled: "all", factorId: "all", onlyObserved: false, onlyModified: false, onlyIncomplete: false }
 export type GroupBy = "none" | "activity" | "position" | "classification"
 
 export function activeFilterCount(filters: GridFilters) {
   return (filters.search ? 1 : 0) + (filters.classifications.length ? 1 : 0) + (filters.controlled !== "all" ? 1 : 0)
-    + (filters.factorId !== "all" ? 1 : 0) + (filters.onlyObserved ? 1 : 0) + (filters.onlyModified ? 1 : 0)
+    + (filters.factorId !== "all" ? 1 : 0) + (filters.onlyObserved ? 1 : 0) + (filters.onlyModified ? 1 : 0) + (filters.onlyIncomplete ? 1 : 0)
 }
 
-export function filterRows(rows: MiperEntrySnapshot[], filters: GridFilters, ctx: { observed: ReadonlySet<string>; modified: ReadonlySet<string> }) {
+export function filterRows(rows: MiperEntrySnapshot[], filters: GridFilters, ctx: { observed: ReadonlySet<string>; modified: ReadonlySet<string>; incomplete?: ReadonlySet<string> }) {
   const needle = normalizeMiperName(filters.search)
   return rows.filter((row) => {
     if (needle) {
@@ -30,6 +32,7 @@ export function filterRows(rows: MiperEntrySnapshot[], filters: GridFilters, ctx
     if (filters.factorId !== "all" && row.riskFactorId !== filters.factorId) return false
     if (filters.onlyObserved && !ctx.observed.has(row.id)) return false
     if (filters.onlyModified && !ctx.modified.has(row.id)) return false
+    if (filters.onlyIncomplete && !ctx.incomplete?.has(row.id)) return false
     return true
   })
 }

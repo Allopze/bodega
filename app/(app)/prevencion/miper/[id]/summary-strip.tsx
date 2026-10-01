@@ -1,14 +1,27 @@
 import { RiskClassificationBadge } from "@/components/prevention/risk-classification-badge"
-import { RISK_CLASSIFICATIONS } from "@/lib/prevention/miper/methodology"
+import { CLASSIFICATION_LABEL, RISK_CLASSIFICATIONS, type RiskClassification } from "@/lib/prevention/miper/methodology"
 import type { MiperSnapshot } from "@/lib/prevention/miper/snapshot"
-import { formatDate } from "@/lib/utils"
+import { cn, formatDate } from "@/lib/utils"
 
 /**
  * Franja de resumen en TEXTO (regla A1: nada de tarjetas de KPI sobre la
  * matriz). Es la cabecera de la vista de revisión del §8.4 y sirve igual a la
  * prevencionista.
+ *
+ * Con `onToggleClassification`, cada conteo por clasificación es además el
+ * filtro de la matriz (A1: una cifra accionable; A5: la clasificación no tiene
+ * otro control). Igual «No controlados» con `onToggleUncontrolled`.
  */
-export function SummaryStrip({ snapshot, authorName, submittedAt, versionLabel }: { snapshot: MiperSnapshot; authorName: string | null; submittedAt: string | null; versionLabel: string }) {
+export function SummaryStrip({ snapshot, authorName, submittedAt, versionLabel, activeClassifications = [], uncontrolledActive = false, onToggleClassification, onToggleUncontrolled }: {
+  snapshot: MiperSnapshot
+  authorName: string | null
+  submittedAt: string | null
+  versionLabel: string
+  activeClassifications?: readonly RiskClassification[]
+  uncontrolledActive?: boolean
+  onToggleClassification?: (classification: RiskClassification) => void
+  onToggleUncontrolled?: () => void
+}) {
   const entries = snapshot.entries
   const count = (cls: string) => entries.filter((entry) => entry.classification === cls).length
   const uncontrolled = entries.filter((entry) => entry.controlledStatus === "no").length
@@ -25,11 +38,36 @@ export function SummaryStrip({ snapshot, authorName, submittedAt, versionLabel }
       <div><dt className="inline text-[var(--color-text-subtle)]">Riesgos </dt><dd className="inline tabular-nums">{entries.length}</dd></div>
       <div className="flex flex-wrap gap-1.5">
         <dt className="sr-only">Distribución por clasificación</dt>
-        {[...RISK_CLASSIFICATIONS].reverse().map((cls) => <dd key={cls} className="inline-flex items-center gap-1"><RiskClassificationBadge classification={cls} size="sm" /><span className="tabular-nums">{count(cls)}</span></dd>)}
+        {[...RISK_CLASSIFICATIONS].reverse().map((cls) => {
+          const content = <><RiskClassificationBadge classification={cls} size="sm" /><span className="tabular-nums">{count(cls)}</span></>
+          if (!onToggleClassification) return <dd key={cls} className="inline-flex items-center gap-1">{content}</dd>
+          const active = activeClassifications.includes(cls)
+          return (
+            <dd key={cls}>
+              <button type="button" aria-pressed={active} onClick={() => onToggleClassification(cls)}
+                aria-label={`Filtrar la matriz: ${CLASSIFICATION_LABEL[cls]} (${count(cls)})`}
+                className={cn(toggleClass, active && activeClass)}>
+                {content}
+              </button>
+            </dd>
+          )
+        })}
       </div>
-      <div><dt className="inline text-[var(--color-text-subtle)]">No controlados </dt><dd className="inline tabular-nums">{uncontrolled}</dd></div>
+      <div>
+        <dt className="sr-only">No controlados</dt>
+        <dd>
+          {onToggleUncontrolled ? (
+            <button type="button" aria-pressed={uncontrolledActive} onClick={onToggleUncontrolled} className={cn(toggleClass, uncontrolledActive && activeClass)}>
+              <span className="text-[var(--color-text-subtle)]">No controlados</span> <span className="tabular-nums">{uncontrolled}</span>
+            </button>
+          ) : <><span className="text-[var(--color-text-subtle)]">No controlados</span> <span className="tabular-nums">{uncontrolled}</span></>}
+        </dd>
+      </div>
       <div><dt className="inline text-[var(--color-text-subtle)]">Medidas sin responsable </dt><dd className="inline tabular-nums">{noResponsible}</dd></div>
       <div><dt className="inline text-[var(--color-text-subtle)]">Medidas sin plazo </dt><dd className="inline tabular-nums">{noDeadline}</dd></div>
     </dl>
   )
 }
+
+const toggleClass = "inline-flex items-center gap-1 rounded-lg border border-transparent px-1 py-0.5 hover:border-[var(--color-border)] hover:bg-[var(--color-surface-2)]"
+const activeClass = "border-[var(--color-signal-ink)] bg-[var(--color-signal-tint)] hover:border-[var(--color-signal-ink)] hover:bg-[var(--color-signal-tint)]"

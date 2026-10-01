@@ -7,7 +7,8 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Callout } from "@/components/ui/callout"
 import { checkMiperCompleteness, issuesByEntry } from "@/lib/prevention/miper/completeness"
-import { CLASSIFICATION_CRITERIA } from "@/lib/prevention/miper/methodology"
+import { EMPTY_FILTERS, type GridFilters } from "@/lib/prevention/miper/grid-view"
+import { CLASSIFICATION_CRITERIA, type RiskClassification } from "@/lib/prevention/miper/methodology"
 import { changesByEntry, type EntryChange, type MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
 import type { MiperHistoryEvent, MiperWorkspace } from "@/lib/services/miper/queries"
@@ -56,6 +57,8 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
   const openObservations = workspace.observations.filter((observation) => observation.status === "open").length
   const observedEntryIds = useMemo(() => new Set(workspace.observations.flatMap((observation) => (observation.entryId && observation.status !== "resolved" ? [observation.entryId] : []))), [workspace.observations])
   const intolerable = rows.filter((row) => row.classification === "intolerable").length
+  const [filters, setFilters] = useState<GridFilters>(EMPTY_FILTERS)
+  const entryIssues = useMemo(() => issuesByEntry(issues), [issues])
 
   useEffect(() => {
     if (reviewing && workspace.openRound && !workspace.openRound.openedAt) void openMiperRoundAction({ matrixId: workspace.matrix.id })
@@ -80,6 +83,16 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
     router.replace(`?${params.toString()}`, { scroll: false })
   }, [router, searchParams])
 
+  /** Filtrar desde la franja siempre lleva a la matriz, que es lo que se filtra. */
+  const filterFromStrip = (next: GridFilters) => {
+    setFilters(next)
+    if (tab !== "matriz") setParam("tab", null)
+  }
+  const toggleClassification = (cls: RiskClassification) => filterFromStrip({
+    ...filters,
+    classifications: filters.classifications.includes(cls) ? filters.classifications.filter((item) => item !== cls) : [...filters.classifications, cls],
+  })
+
   const versionLabel = workspace.versions[0] ? `v${workspace.versions[0].versionNumber}` : "sin versión aprobada"
   return (
     <PageContainer width="full">
@@ -90,7 +103,9 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
         actions={<WorkflowBar workspace={workspace} mode={mode} issues={issues} openObservations={openObservations} onOpenEntry={openEntry} />}
       />
       <div className="space-y-3">
-        <SummaryStrip snapshot={liveSnapshot} authorName={workspace.openRound ? workspace.versions[0]?.elaboratedByName ?? null : null} submittedAt={workspace.openRound?.submittedAt ?? null} versionLabel={versionLabel} />
+        <SummaryStrip snapshot={liveSnapshot} authorName={workspace.openRound ? workspace.versions[0]?.elaboratedByName ?? null : null} submittedAt={workspace.openRound?.submittedAt ?? null} versionLabel={versionLabel}
+          activeClassifications={filters.classifications} onToggleClassification={toggleClassification}
+          uncontrolledActive={filters.controlled === "no"} onToggleUncontrolled={() => filterFromStrip({ ...filters, controlled: filters.controlled === "no" ? "all" : "no" })} />
         {reviewing && <Callout tone="info" title="Estás revisando la versión enviada">Los cambios que la prevencionista haga después del envío quedan para la ronda siguiente.</Callout>}
         {intolerable > 0 && (
           <Callout tone="danger" role="alert" title={`${intolerable} riesgo(s) Intolerable(s)`}>
@@ -115,12 +130,15 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
               editable={mode.canEdit && !reviewing}
               riskFactors={workspace.riskFactors}
               dictionaries={workspace.dictionaries}
-              issuesByEntry={issuesByEntry(issues)}
+              issuesByEntry={entryIssues}
               observedEntryIds={observedEntryIds}
               changeByEntry={changes}
               canObserve={mode.canObserve}
               onOpenEntry={openEntry}
               onStructureChanged={() => router.refresh()}
+              filters={filters}
+              onFiltersChange={setFilters}
+              hasBaseline={(reviewing ? workspace.reviewBaselineSnapshot : workspace.lastVersionSnapshot) !== null}
             />
           </TabsContent>
           <TabsContent value="programa">
