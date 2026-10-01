@@ -6,10 +6,11 @@ import { CheckCircle, WarningCircle, XCircle, CaretDown, CaretUp, Info } from "@
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ColorCell } from "./color-cell"
 import { cancelEppImportBatchAction, confirmEppImportBatchAction, reviewEppImportRowAction } from "../../actions"
 import { INITIAL_STATE } from "@/lib/form-state"
 import { toast } from "@/lib/toast"
-import { VALID_UNITS, VALID_COLORS, EPP_TYPES, RULE_LABELS, sizeFamilyForEppType, type NormalizedEppRow, type EppAttribute } from "@/lib/services/epp-import.types"
+import { VALID_UNITS, EPP_TYPES, RULE_LABELS, sizeFamilyForEppType, type NormalizedEppRow, type EppAttribute } from "@/lib/services/epp-import.types"
 import { SIZE_FAMILIES } from "@/lib/products/size-catalog"
 import { Table, TableBody, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
@@ -373,14 +374,7 @@ function DecisionRow({
         </td>
         <td className="px-2 py-2">
           <div className="flex gap-1">
-            <Select value={edit.color ?? ""} onValueChange={(v) => onUpdate("color", v)}>
-              <SelectTrigger className="h-7 w-20 text-xs">
-                <SelectValue placeholder="Color" />
-              </SelectTrigger>
-              <SelectContent>
-                {VALID_COLORS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <ColorCell value={edit.color} onChange={(next) => onUpdate("color", next)} />
             <input
               type="text"
               value={edit.talla ?? ""}
