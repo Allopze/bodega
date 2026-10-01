@@ -11,6 +11,7 @@ import { miperStatusLabel } from "@/lib/prevention/miper/states"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { listDictionaryNames, listFreeTextSuggestions } from "./dictionaries"
 import { buildMiperHeaderPrefill, type MiperHeaderPrefill } from "./prefill"
+import { getProgramHeader, type ProgramHeaderView } from "./program-queries"
 import { buildMiperSnapshot, openRound as findOpenRound } from "./snapshots"
 import { type MiperAccess, requireAccess, scopeAllows, scopeCondition, userNames } from "./shared"
 
@@ -48,6 +49,12 @@ export type MiperWorkspace = {
    * para que el Historial enlace cada uno con su estado. Excluye esta MIPER.
    */
   siblingMatrices: Array<{ id: string; period: number | null; status: string; reviewState: string; isLegacy: boolean; versionNumber: number | null; label: string }>
+  /**
+   * Encabezado del Programa de Trabajo RE-04.1 de esta MIPER, o `null` si aún no
+   * tiene programa. El detalle del panel (actividades, ocurrencias, avance) se
+   * lee aparte con `getProgramWorkspace`.
+   */
+  program: ProgramHeaderView | null
 }
 
 function hasUnsentChanges(matrix: { status: string; reviewState: string; updatedAt: string; publishedAt: string | null }) {
@@ -61,7 +68,7 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
   if (!row || !scopeAllows(access.scope, row.matrix.worksiteId)) throw new RiskLegalDomainError("MIPER no encontrada o fuera de alcance.")
   const matrix = row.matrix
 
-  const [snapshot, versionRows, round, observationRows, prefill, factorRows, dictionaryNames, suggestions, responsibleRows, entryVersionRows, allRounds] = await Promise.all([
+  const [snapshot, versionRows, round, observationRows, prefill, factorRows, dictionaryNames, suggestions, responsibleRows, entryVersionRows, allRounds, program] = await Promise.all([
     buildMiperSnapshot(db, matrix.id),
     db.select().from(preventionRiskMatrixVersions).where(eq(preventionRiskMatrixVersions.matrixId, matrix.id)).orderBy(desc(preventionRiskMatrixVersions.versionNumber)),
     findOpenRound(db, matrix.id),
@@ -74,6 +81,7 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
       .where(and(eq(worksiteUsers.worksiteId, matrix.worksiteId), eq(users.isActive, true))).orderBy(asc(users.name)),
     db.select({ id: preventionRiskEntries.id, version: preventionRiskEntries.version }).from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, matrix.id)),
     db.select().from(preventionRiskReviewRounds).where(eq(preventionRiskReviewRounds.matrixId, matrix.id)).orderBy(desc(preventionRiskReviewRounds.roundNumber)),
+    getProgramHeader(matrix.id),
   ])
   const controlVersionRows = entryVersionRows.length === 0 ? [] : await db.select({ id: preventionRiskControls.id, version: preventionRiskControls.version })
     .from(preventionRiskControls).where(inArray(preventionRiskControls.riskEntryId, entryVersionRows.map((entry) => entry.id)))
@@ -126,6 +134,7 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
     dictionaries: { ...dictionaryNames, ...suggestions },
     responsibleOptions,
     siblingMatrices,
+    program,
   }
 }
 
