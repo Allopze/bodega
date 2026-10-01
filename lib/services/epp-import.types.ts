@@ -35,7 +35,7 @@ export const UNIT_ALIASES: Record<string, string> = {
   servicio: "servicio", servicios: "servicio",
   dosis: "dosis",
 }
-export const COLOR_ALIASES: Record<string, string> = { blanco: "Blanco", negra: "Negro", negro: "Negro", azul: "Azul", "azul marino": "Azul marino", rojo: "Rojo", roja: "Rojo", amarillo: "Amarillo", amarilla: "Amarillo", verde: "Verde", gris: "Gris", claro: "Claro", transparente: "Transparente" }
+export const COLOR_ALIASES: Record<string, string> = { blanco: "Blanco", negra: "Negro", negro: "Negro", azul: "Azul", "azul marino": "Azul marino", rojo: "Rojo", roja: "Rojo", amarillo: "Amarillo", amarilla: "Amarillo", naranja: "Naranja", verde: "Verde", gris: "Gris", claro: "Claro", transparente: "Transparente" }
 
 // El vocabulario de tipos de ítem vive en `lib/products/epp-item-type`, sin
 // dependencias: lo importan el asistente de productos (cliente) y los backfills
@@ -237,7 +237,7 @@ export function normalizeEppRow(
   // ── Multi-color: comma-separated values in the color column ──────────
   const multiColorRaw = rawColor ? rawColor.split(",").map((s) => s.trim()).filter(Boolean) : null
   if (multiColorRaw && multiColorRaw.length > 1) {
-    const normalizedColors = multiColorRaw.map((c) => canonicalColor(c) ?? c).filter(Boolean)
+    const normalizedColors = [...new Set(multiColorRaw.map(columnColorLabel))]
     const existingColorAttr = findMatchingAttribute(corrections, "Color")
     if (existingColorAttr) {
       existingColorAttr.values = normalizedColors
@@ -246,11 +246,16 @@ export function normalizeEppRow(
       corrections.push({ name: "Color", value: normalizedColors.join(", "), values: normalizedColors })
     }
   } else {
-    const explicitColor = canonicalColor(rawColor)
+    // Un color de la columna que no está en `COLOR_ALIASES` (un «Naranja
+    // flúor», un color corporativo) se conserva tal cual: antes se descartaba en
+    // silencio. Sólo uno conocido puede contradecir al del nombre. (Los acentos
+    // ya los quitó `cleanText`, como en el resto de la fila.)
+    const knownColumnColor = canonicalColor(rawColor)
+    const explicitColor = rawColor ? columnColorLabel(rawColor) : null
     const colorsInName = Object.keys(COLOR_ALIASES).filter((color) => new RegExp(`\\b${escapeRegex(color)}\\b`, "i").test(workingName))
     if (colorsInName.length > 1 && /\//.test(workingName)) issues.push({ severity: "blocking", message: "El nombre contiene colores alternativos incompatibles." })
     const detectedColor = colorsInName.length === 1 ? canonicalColor(colorsInName[0]) : null
-    if (explicitColor && detectedColor && explicitColor !== detectedColor) issues.push({ severity: "blocking", message: "El color de la columna contradice el color del nombre." })
+    if (knownColumnColor && detectedColor && knownColumnColor !== detectedColor) issues.push({ severity: "blocking", message: "El color de la columna contradice el color del nombre." })
     const color = explicitColor ?? detectedColor
     if (color) {
       addAttribute(corrections, "Color", color)
@@ -368,6 +373,12 @@ function upsertSizeAttribute(attributes: EppAttribute[], resolved: ResolvedSizeA
 
 function canonicalColor(value: string | undefined) {
   return COLOR_ALIASES[normalizeKey(value ?? "")] ?? null
+}
+
+/** El canónico si se conoce; si no, el texto de la columna con mayúscula inicial. */
+function columnColorLabel(value: string) {
+  const trimmed = value.trim()
+  return canonicalColor(trimmed) ?? trimmed.charAt(0).toLocaleUpperCase("es-CL") + trimmed.slice(1)
 }
 
 function extractSize(value: string) {

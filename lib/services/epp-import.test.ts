@@ -220,6 +220,35 @@ describe("normalizeEppRow", () => {
     // Single color still included in identity key (backward compat)
     expect(result.identityKey).toContain("color=azul")
   })
+
+  it("keeps a single column color that is not in the alias list", () => {
+    // Antes se descartaba en silencio: «Naranja» o un color corporativo no
+    // llegaban al producto aunque la columna los trajera.
+    const result = normalizeEppRow({ name: "GUANTE NITRILO", unitOfMeasure: "par", color: "verde limón" })
+
+    expect(result.attributes).toEqual(expect.arrayContaining([
+      { name: "Color", value: "Verde limon" },
+    ]))
+    expect(result.issues).toEqual([])
+  })
+
+  it("does not flag a custom column color as contradicting a known color in the name", () => {
+    const result = normalizeEppRow({ name: "CHALECO AMARILLO", unitOfMeasure: "unidad", color: "Amarillo flúor" })
+
+    expect(result.attributes).toEqual(expect.arrayContaining([
+      { name: "Color", value: "Amarillo fluor" },
+    ]))
+    expect(result.issues).toEqual([])
+  })
+
+  it("recognizes naranja as a known color", () => {
+    const result = normalizeEppRow({ name: "CHALECO REFLECTANTE NARANJA", unitOfMeasure: "unidad" })
+
+    expect(result.attributes).toEqual(expect.arrayContaining([
+      { name: "Color", value: "Naranja" },
+    ]))
+    expect(result.name).toBe("Chaleco Reflectante")
+  })
 })
 
 describe("buildCorrections", () => {

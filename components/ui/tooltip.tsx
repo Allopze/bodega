@@ -58,6 +58,10 @@ function Tooltip({
 }) {
   const [hasOpened, setHasOpened] = React.useState(false)
 
+  // Sin contenido no hay tooltip: con `content={undefined}` (p. ej. un chip que
+  // sólo avisa cuando está deshabilitado) Radix igual abría una burbuja vacía.
+  if (content == null || content === false || content === "") return <>{children}</>
+
   return (
     <TooltipProvider delayDuration={delayDuration} skipDelayDuration={0}>
       <TooltipRoot

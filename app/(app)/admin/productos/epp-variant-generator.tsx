@@ -71,7 +71,7 @@ export interface VariantGeneratorProps {
  * vive dentro de un `<form>`, así que el submit por defecto crearía el producto
  * a medio configurar).
  */
-function AddValueInput({ label, placeholder, onAdd, buttonLabel = "Agregar" }: { label: string; placeholder: string; onAdd: (value: string) => void; buttonLabel?: string }) {
+export function AddValueInput({ label, placeholder, onAdd, buttonLabel = "Agregar" }: { label: string; placeholder: string; onAdd: (value: string) => void; buttonLabel?: string }) {
   const [draft, setDraft] = React.useState("")
 
   function commit() {
@@ -104,7 +104,7 @@ function AddValueInput({ label, placeholder, onAdd, buttonLabel = "Agregar" }: {
 
 // ── Chips ─────────────────────────────────────────────────────────────────────
 
-function ValueChip({ option, selected, exists, onToggle }: { option: string; selected: boolean; exists: boolean; onToggle: () => void }) {
+export function ValueChip({ option, selected, exists = false, onToggle }: { option: string; selected: boolean; exists?: boolean; onToggle: () => void }) {
   return (
     <Tooltip content={exists ? "Ya existe una variante con este valor" : undefined} side="top" delayDuration={300}>
       <button
