@@ -34,7 +34,23 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
   const [rows, setRows] = useState<MiperEntrySnapshot[]>(source.entries)
   useEffect(() => { setRows(source.entries) }, [source])
   const liveSnapshot = useMemo(() => ({ header: source.header, entries: rows }), [source.header, rows])
-  const issues = useMemo(() => checkMiperCompleteness(liveSnapshot), [liveSnapshot])
+  /**
+   * El mismo conjunto que el servicio entrega al validador al enviar
+   * (`programLinkedControlIds`): los controles del MIPER que ya tienen una
+   * actividad del Programa de Trabajo. Sin él, la UI no cuenta el pendiente del
+   * Intolerable y el bloqueo recién aparece cuando el servidor rechaza el envío
+   * (H2-01 del informe): la regla vive en el servicio y la pantalla la refleja.
+   * Depende de `workspace` —y no de `liveSnapshot`— porque el vínculo lo cambia
+   * el panel del programa, que revalida la ruta y trae un `workspace` nuevo.
+   */
+  const linkedControlIds = useMemo(
+    () => new Set(workspace.controlActionLinks.map((link) => link.controlId)),
+    [workspace.controlActionLinks],
+  )
+  const issues = useMemo(
+    () => checkMiperCompleteness(liveSnapshot, { linkedControlIds, requireProgramLink: true }),
+    [liveSnapshot, linkedControlIds],
+  )
   const diff = reviewing ? workspace.reviewDiff : workspace.pendingDiff
   const changes = useMemo<Map<string, EntryChange>>(() => (diff ? changesByEntry(diff) : new Map()), [diff])
   const openObservations = workspace.observations.filter((observation) => observation.status === "open").length

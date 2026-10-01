@@ -139,6 +139,22 @@ test("la prevencionista crea la MIPER, la completa y la envía a revisión", asy
   await expect(cell(page, "Peligro")).toHaveValue("Camión en pendiente")
   await expect(textoVisible(page, /Intolerable\s*·\s*MR 16/)).toBeVisible()
   await expect(page.getByRole("button", { name: /Medidas de control del riesgo 1 \(1\)/ })).toBeVisible()
+
+  // La F2 activó la regla del §5.1: un riesgo Intolerable no se envía sin una
+  // medida vinculada a una actividad del Programa de Trabajo, así que el flujo
+  // incluye ese paso (el detalle de la ejecución se prueba en
+  // `prevencion-miper-programa.spec.ts`).
+  await page.getByRole("tab", { name: "Programa" }).click()
+  await page.getByRole("button", { name: "Generar actividades" }).click()
+  const generador = page.getByRole("dialog", { name: "Generar actividades desde el MIPER" })
+  await generador.getByLabel("Actividad", { exact: true }).fill("Inspección de la pendiente de descarga")
+  await generador.getByRole("combobox", { name: "Responsable de la actividad de la fila 1" }).click()
+  await page.getByRole("option", { name: "Prevencionista Faena E2E", exact: true }).click()
+  await generador.getByRole("combobox", { name: "Frecuencia de la actividad de la fila 1" }).click()
+  await page.getByRole("option", { name: "Anual", exact: true }).click()
+  await generador.getByRole("button", { name: /Aplicar decisiones/ }).click()
+  await expect(generador).toBeHidden()
+
   await page.getByRole("button", { name: /^Enviar a revisión$/ }).click()
   await expect(estado(page, "Enviado a revisión")).toBeVisible()
 })

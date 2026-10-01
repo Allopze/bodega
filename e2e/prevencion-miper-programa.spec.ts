@@ -153,13 +153,16 @@ test("la prevencionista arma la matriz, el envío se bloquea sin medida vinculad
   await agregarMedida(page, 2, { hierarchy: "administrative", description: MEASURE_2 })
 
   // Paso 7 del §12, la regla dura: sin medida vinculada, el Intolerable no se envía.
-  // La validación del vínculo vive sólo en el servidor (la UI no la anticipa), así
-  // que el intento llega a la acción y la rechaza con su mensaje de dominio.
-  await page.getByRole("button", { name: /Enviar a revisión/ }).click()
-  await expect(page.locator("[data-sonner-toast]").filter({
-    hasText: "Un riesgo Intolerable exige una medida vinculada a una actividad del Programa de Trabajo",
-  })).toBeVisible()
-  // El rechazo no movió el estado: sigue en borrador.
+  // La UI **anticipa** el bloqueo del servidor (hallazgo H2-01 del informe): el
+  // botón anuncia el pendiente y el clic abre el detalle de lo que falta, en vez
+  // de dejar llegar el envío —y el rechazo— a la acción. El mismo conteo lo
+  // aplica el servidor al enviar, con `requireProgramLink`.
+  await page.getByRole("button", { name: "Enviar a revisión (1 pendientes)", exact: true }).click()
+  const bloqueo = page.getByRole("dialog", { name: "Faltan 1 datos para enviar" })
+  await expect(bloqueo).toContainText("Un riesgo Intolerable exige una medida vinculada a una actividad del Programa de Trabajo.")
+  await page.keyboard.press("Escape")
+  await expect(bloqueo).toBeHidden()
+  // El bloqueo no movió el estado: sigue en borrador.
   await expect(estado(page, /Borrador/)).toBeVisible()
 
   // Paso 6 del §12: generar las actividades del programa reutilizando una para varias medidas.
@@ -203,8 +206,10 @@ test("la prevencionista arma la matriz, el envío se bloquea sin medida vinculad
   await page.keyboard.press("Escape")
   await expect(page.getByRole("dialog", { name: "Actividad N° 1" })).toBeHidden()
 
-  // Con el vínculo hecho, el envío pasa.
-  await page.getByRole("button", { name: /^Enviar a revisión$/ }).click()
+  // Con el vínculo hecho, la UI deja de anunciar el pendiente (mismo hallazgo
+  // H2-01, el otro lado de la regresión) y el envío pasa.
+  await expect(page.getByRole("button", { name: /Enviar a revisión \(\d+ pendientes\)/ })).toHaveCount(0)
+  await page.getByRole("button", { name: "Enviar a revisión", exact: true }).click()
   await expect(estado(page, "Enviado a revisión")).toBeVisible()
 })
 
@@ -267,6 +272,16 @@ test("sellada la v1, el responsable marca «Se hizo» con fecha efectiva y evide
   await expect(sheet.getByText("Realizada")).toBeVisible()
   await expect(sheet.getByText("1/2 · 50% realizado")).toBeVisible()
   await expect(sheet.getByText("1 pendiente(s) · 0 incumplida(s)")).toBeVisible()
+
+  // La ficha de evidencia nombra el archivo como lo vio la persona (hallazgo
+  // H2-02 del informe): el rótulo es el nombre original que ella eligió y el
+  // nombre interno de almacenamiento queda como dato secundario, nunca al revés.
+  await sheet.getByRole("button", { name: "Ver la evidencia de la ocurrencia del 31-10-2026" }).click()
+  const evidencia = page.getByRole("dialog", { name: "Evidencia de la ocurrencia" })
+  await expect(evidencia.getByText("e2e-ejecucion.png")).toBeVisible()
+  await expect(evidencia.getByText(/^Archivo almacenado: [\w-]+\.png$/)).toBeVisible()
+  // El botón de retirar nombra el archivo con el mismo rótulo que ve la persona.
+  await expect(evidencia.getByRole("button", { name: "Retirar la evidencia e2e-ejecucion.png" })).toBeVisible()
 })
 
 test("la otra ocurrencia se marca «No se hizo»: queda Incumplida y cuenta 0", async ({ browser }) => {

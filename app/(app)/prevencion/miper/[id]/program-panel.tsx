@@ -513,7 +513,12 @@ export function ProgramPanel({
                                     {record.evidence.length > 0 && (
                                       <ul className="text-xs text-[var(--color-text-subtle)]">
                                         {record.evidence.map((item) => (
-                                          <li key={item.id}>{item.fileName}{item.withdrawnAt ? " (retirada)" : ""}{item.description ? ` · ${item.description}` : ""}</li>
+                                          /* El nombre que subió la persona vive en la
+                                           * descripción; `fileName` es el del almacenamiento,
+                                           * así que va como dato secundario (H2-02). */
+                                          <li key={item.id} title={item.fileName}>
+                                            {item.description?.trim() || item.fileName}{item.withdrawnAt ? " (retirada)" : ""}
+                                          </li>
                                         ))}
                                       </ul>
                                     )}

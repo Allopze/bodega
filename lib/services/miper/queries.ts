@@ -102,7 +102,10 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
   }).from(preventionRiskProgramActionControls)
     .innerJoin(preventionRiskProgramActions, eq(preventionRiskProgramActions.id, preventionRiskProgramActionControls.actionId))
     .innerJoin(preventionRiskPrograms, eq(preventionRiskPrograms.id, preventionRiskProgramActions.programId))
-    .where(eq(preventionRiskPrograms.matrixId, matrix.id))
+    /* Sólo actividades vivas: es el mismo criterio que `programLinkedControlIds`
+     * aplica al validar el envío, para que la UI no anuncie un pendiente que el
+     * servidor ya no aplica (ni al revés). */
+    .where(and(eq(preventionRiskPrograms.matrixId, matrix.id), eq(preventionRiskProgramActions.status, "active")))
     .orderBy(asc(preventionRiskProgramActions.actionNumber))
 
   // §8.5: la cadena de MIPER de la faena por período. Se reusa `buildRows` para

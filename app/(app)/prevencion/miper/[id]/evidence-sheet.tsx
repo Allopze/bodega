@@ -19,12 +19,26 @@ export const PROGRAM_EVIDENCE_ACCEPT = ".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xl
 export type OccurrenceEvidenceView = {
   id: string
   evidenceUploadId: string
+  /** Nombre **interno** de almacenamiento: nanoid + la extensión del MIME real. */
   fileName: string
+  /** Nombre con el que la persona subió el archivo —el que ella reconoce—, o su nota. */
   description: string | null
   uploadedAt: string
   uploadedByName: string | null
   withdrawnAt: string | null
   withdrawReason: string | null
+}
+
+/**
+ * El rótulo con el que se nombra una evidencia: el nombre **original** —el que la
+ * persona eligió al subir el archivo— viaja en `description` (es lo que manda el
+ * diálogo de registro y el alta de esta ficha); `fileName` es el nombre interno
+ * de almacenamiento, opaco para quien subió (`-nuSB8kSegyEGNhkvRzj.png`). Sin
+ * original —evidencia anterior a este rótulo— se cae al interno sin romperse, y
+ * cuando hay original el interno queda como dato secundario, nunca al revés.
+ */
+function evidenceLabel(item: OccurrenceEvidenceView) {
+  return item.description?.trim() || item.fileName
 }
 
 /**
@@ -126,12 +140,17 @@ export function EvidenceSheet({
   const [withdrawTarget, setWithdrawTarget] = React.useState<OccurrenceEvidenceView | null>(null)
   const [path, setPath] = React.useState("")
   const [description, setDescription] = React.useState("")
+  /* El nombre con el que la persona subió el archivo: es el rótulo que después
+   * muestra la ficha, así que se conserva aunque describa el archivo por escrito
+   * —el único campo donde puede viajar es `description`—. */
+  const [originalName, setOriginalName] = React.useState("")
   const operation = useOperation()
 
   function handleOpenChange(value: boolean) {
     if (value) {
       setPath("")
       setDescription("")
+      setOriginalName("")
       operation.setMessage("")
     }
     onOpenChange(value)
@@ -158,42 +177,47 @@ export function EvidenceSheet({
             <p className="text-sm text-[var(--color-text-subtle)]">Este registro todavía no tiene evidencia adjunta.</p>
           ) : (
             <ul className="space-y-2">
-              {evidence.map((item) => (
-                <li key={item.id} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] p-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="flex items-center gap-1.5 text-sm font-medium">
-                        <Paperclip size={14} aria-hidden />
-                        <span className="truncate">{item.fileName}</span>
-                      </p>
-                      {item.description && <p className="text-xs text-[var(--color-text-subtle)]">{item.description}</p>}
-                      <p className="text-xs text-[var(--color-text-subtle)]">
-                        Subida {formatDateTime(item.uploadedAt)}
-                        {item.uploadedByName ? ` por ${item.uploadedByName}` : ""}
-                      </p>
-                      {item.withdrawnAt && (
-                        <p className="mt-1 text-xs text-[var(--color-warning-ink)]">
-                          Retirada {formatDateTime(item.withdrawnAt)}: {item.withdrawReason}
+              {evidence.map((item) => {
+                const label = evidenceLabel(item)
+                return (
+                  <li key={item.id} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-1.5 text-sm font-medium">
+                          <Paperclip size={14} aria-hidden />
+                          <span className="truncate" title={label}>{label}</span>
                         </p>
-                      )}
+                        {item.description?.trim() && (
+                          <p className="text-xs text-[var(--color-text-subtle)]">Archivo almacenado: {item.fileName}</p>
+                        )}
+                        <p className="text-xs text-[var(--color-text-subtle)]">
+                          Subida {formatDateTime(item.uploadedAt)}
+                          {item.uploadedByName ? ` por ${item.uploadedByName}` : ""}
+                        </p>
+                        {item.withdrawnAt && (
+                          <p className="mt-1 text-xs text-[var(--color-warning-ink)]">
+                            Retirada {formatDateTime(item.withdrawnAt)}: {item.withdrawReason}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MetaBadge meta={item.withdrawnAt ? { label: "Retirada", variant: "outline" } : { label: "Vigente", variant: "success" }} />
+                        {canExecute && !item.withdrawnAt && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            aria-label={`Retirar la evidencia ${label}`}
+                            onClick={() => setWithdrawTarget(item)}
+                          >
+                            Retirar
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <MetaBadge meta={item.withdrawnAt ? { label: "Retirada", variant: "outline" } : { label: "Vigente", variant: "success" }} />
-                      {canExecute && !item.withdrawnAt && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          aria-label={`Retirar la evidencia ${item.fileName}`}
-                          onClick={() => setWithdrawTarget(item)}
-                        >
-                          Retirar
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              ))}
+                  </li>
+                )
+              })}
             </ul>
           )}
 
@@ -205,7 +229,7 @@ export function EvidenceSheet({
                 helper="PDF, JPEG, PNG, Word o Excel, hasta 25 MB."
                 value={path}
                 disabled={operation.pending}
-                onChange={(next) => setPath(next)}
+                onChange={(next, name) => { setPath(next); setOriginalName(name) }}
               />
               <Field label="Descripción" hint="Opcional. Qué muestra el archivo.">
                 <Input value={description} onChange={(event) => setDescription(event.target.value)} maxLength={300} />
@@ -216,8 +240,14 @@ export function EvidenceSheet({
                 size="sm"
                 disabled={operation.pending || !path}
                 onClick={() => operation.run(
-                  () => addOccurrenceEvidenceAction({ recordId: record!.id, evidenceUploadId: path, description: description || null }),
-                  () => { setPath(""); setDescription(""); onChanged() },
+                  // Sin descripción escrita, el rótulo es el nombre original del
+                  // archivo: es el mismo contrato que el diálogo de registro.
+                  () => addOccurrenceEvidenceAction({
+                    recordId: record!.id,
+                    evidenceUploadId: path,
+                    description: description.trim() || originalName.trim() || null,
+                  }),
+                  () => { setPath(""); setDescription(""); setOriginalName(""); onChanged() },
                 )}
               >
                 Agregar evidencia
@@ -235,7 +265,7 @@ export function EvidenceSheet({
         open={withdrawTarget !== null}
         onOpenChange={(value) => { if (!value) setWithdrawTarget(null) }}
         title="Retirar la evidencia"
-        description={withdrawTarget ? `${withdrawTarget.fileName} deja de respaldar este registro. El archivo no se borra.` : ""}
+        description={withdrawTarget ? `${evidenceLabel(withdrawTarget)} deja de respaldar este registro. El archivo no se borra.` : ""}
         confirmLabel="Retirar evidencia"
         variant="warning"
         reasonLabel="Motivo del retiro"
