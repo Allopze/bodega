@@ -5,11 +5,10 @@ Fecha: 2026-09-30
 Documento único del rediseño:
 
 - **Parte I, Diseño:** el spec aprobado, que cubre las tres fases (F1 núcleo, F2 Programa de Trabajo y F3 consolas).
-- **Parte II, Plan de implementación de la F1:** 21 tareas con pruebas, código, comandos de verificación y commits.
+- **Parte II, Plan de implementación de la F1:** 21 tareas con pruebas, código, comandos de verificación y commits. **Ejecutada**: 30 commits en la rama `prevencion/miper-f1-nucleo` (último: `c3ea1d07`, migraciones 0344 y 0345).
+- **Parte III, Plan de implementación de la F2 (Programa de Trabajo):** 9 tareas con el mismo formato; **pendiente de aprobación**. El plan de F3 se agrega como Parte IV al integrar la F2.
 
-Los planes de F2 y F3 se escriben al integrar la fase anterior y se agregan aquí como Partes III y IV.
-
-Estado: diseño aprobado; plan de F1 pendiente de aprobación y de elegir la modalidad de ejecución.
+Estado: F1 ejecutada en su rama (30 commits, `prevencion/miper-f1-nucleo`); Parte III (F2) pendiente de aprobación.
 
 ---
 
@@ -7879,3 +7878,482 @@ El resumen final para la persona usuaria debe seguir la sección 4 de `AGENTS.md
 ### Después de F1
 
 F2 (Programa de Trabajo) y F3 (consolas, alertas, exportación e importación) tienen cada una su propio plan, que se escribe cuando esta fase esté integrada. Cada plan parte del spec y del código que dejó la fase anterior. F2 activa en el validador la regla del Intolerable sin actividad (`requireProgramLink: true`) y agrega la pestaña "Programa" al espacio de trabajo.
+
+---
+
+## Parte III — Plan de implementación de la F2 (Programa de Trabajo)
+
+> **For agentic workers:** REQUIRED SUB-SKILL: usa el mismo flujo que la Parte II: una tarea a la vez, test que falla primero, verificación y commit. Los pasos van con checkbox (`- [ ]`).
+
+**Goal.** Que el Programa de Trabajo Preventivo RE-04.1 sea parte del MIPER y no una planilla aparte: cada medida de control puede vincularse a una actividad del programa, las actividades generan ocurrencias según su frecuencia, los responsables registran «Se hizo / No se hizo» con evidencia sin borrar historia, y el avance se calcula del registro —nunca se ingresa a mano—. El programa se activa con la aprobación del MIPER y se reemplaza con el período.
+
+**Architecture.** Cinco tablas nuevas en un esquema propio (`db/schema/prevention/program.ts`) colgando de `prevention_risk_matrices` y del diccionario de actividades que ya existe; un servicio por responsabilidad en `lib/services/miper/` (`program.ts`, `program-execution.ts`, `program-queries.ts`) que reutiliza `shared.ts` (acceso, alcance, historial, `lockMatrix`), y tres módulos puros en `lib/prevention/miper/` (`dedup.ts`, `schedule.ts`, `progress.ts`) que la UI también usa en vivo. La UI es una pestaña más del espacio de trabajo (`[id]/program-panel.tsx`) y las acciones entran en `actions.ts`.
+
+**Tech Stack:** el mismo de la F1. Sin dependencias nuevas.
+
+### Global Constraints
+
+Las de la Parte II siguen vigentes. Además:
+
+- **Los P y C, las bandas y el vocabulario de clasificación no se tocan.** El programa no evalúa riesgo: ejecuta medidas.
+- **Migración 0346.** Se genera con `npm run db:generate -- --name miper_f2_programa`; el SQL idempotente se anexa **sólo** a esa migración recién generada; los checksums se registran con `node scripts/verify-migration-chain.mjs --update-checksums`; `npm run db:verify-migrations` debe pasar y `npm run db:generate` terminar en «No schema changes». Nunca editar `_journal.json` ni un `.sql` ya generado. Todo `DROP` lleva `IF EXISTS`.
+- **PGlite: una consulta por la conexión global `db` dentro de una transacción abierta cuelga la suite** (PGlite tiene una sola conexión, y ésa es la lección más cara de la F1). Todo servicio nuevo recibe `Client = DB | Tx` y **nunca** llama a `db` por dentro: las lecturas auxiliares van por el mismo cliente (mira `getCompanyProfileWithClient` en `lib/services/system-settings.ts`, que existe exactamente por esto). Los tests PGlite usan el patrón de `lib/__tests__/miper-entries.test.ts` (`vi.mock("@/db", () => ({ get db() { return g.__db } }))`) y se registran en `tests/pglite-files.ts`.
+- **Concurrencia optimista** con `version` + `expectedVersion` en las filas editables (encabezado del programa, actividades) y mensaje de recarga en español, como en `entries.ts`.
+- **Toda mutación pasa por `miperHistory`** con `object: "program" | "program_action" | "occurrence" | "evidence"` (el tipo `MiperHistoryObject` se extiende) y `actingAs` = el permiso ejercido; los rótulos nuevos se agregan a `lib/prevention/miper/history-labels.ts`.
+- **El avance nunca se ingresa.** `progress.ts` es la única fuente y el servicio lo deriva; ninguna columna lo guarda.
+- **Los registros de ejecución y la evidencia son sólo-inserción.** Corregir es anular con motivo (y volver a registrar), jamás `UPDATE`/`DELETE` de contenido.
+- **Nada se ejecuta en borrador.** Un MIPER sin ninguna versión sellada no genera ocurrencias (`decisiones abiertas` §14.3 del spec).
+- **Permiso nuevo** `prevention:risk:program:execute` con los grants del §6.3, con paridad en `modules/registry.ts`, navegación, `lib/services/module-toggles.ts`, `db:sync-rbac` y `lib/__tests__/prevention-rbac.test.ts`. RBAC nunca en migraciones.
+- **Evidencia**: dominio `miper` sobre `storePreventionEvidence` / `claimPreventionEvidenceUpload`, conjunto `MIPER_EVIDENCE = PROOF ∪ OFFICE` compuesto desde `lib/file-validation.ts`. Retirar exige motivo y queda auditado; el archivo no se borra.
+- **UI**: `PageHeader` + `PageContainer`, altas en `Dialog`/`Sheet`, `router.replace(…, { scroll: false })` para pestañas y filtros, `DatePicker` para fechas, tokens `-ink` para texto, rótulos en español (nunca un enum crudo), y `EmptyState` con CTA real.
+
+### Review Focus
+
+1. **Que el avance sea derivado y consistente con las ocurrencias.** Una ocurrencia anulada no cuenta; una «fuera de plazo» cuenta como hecha y se marca; las `superseded` no entran en el denominador. Prueba en Task 6.
+2. **Que un MIPER en borrador no genere ocurrencias ejecutables** y que la primera aprobación las cree sin duplicar las ya generadas. Prueba en Task 5.
+3. **Que la deduplicación no fusione medidas distintas.** El sistema propone, la persona decide; «dejar sin actividad» sólo se ofrece para filas Tolerable o Moderado, y el Intolerable no puede enviarse sin una medida vinculada (Task 7 activa `requireProgramLink`). Prueba en Tasks 2 y 7.
+4. **Que registrar sobre una ocurrencia ajena no sea posible** para quien no tiene `program:execute` ni `risk:view` sobre la faena, y que el responsable nominal pueda registrar sin el permiso (regla del §6.3). Prueba en Task 6.
+5. **Que retirar una actividad no borre sus ocurrencias ya registradas** ni sus evidencias, y que al reemplazarse el período las pendientes queden `superseded` en vez de vencidas. Prueba en Tasks 5 y 6.
+
+### Prerrequisitos
+
+- [ ] La F1 integrada en `prevencion/miper-f1-nucleo` (migraciones 0344/0345 aplicadas, `db:generate` sin cambios).
+- [ ] `pg_isready -h 127.0.0.1 -p 55432` (contenedor E2E) y la base de desarrollo en `127.0.0.1:5433` disponibles. **Nunca** apuntar a producción.
+- [ ] `npm run test:pglite`, `npm run test:fast` y `npm run test:e2e` verdes en el punto de partida.
+
+### Mapa de archivos
+
+**Base de datos**
+- Crear `db/schema/prevention/program.ts` (las cinco tablas del §4.7).
+- Modificar `db/schema/prevention/index.ts` (`export * from "./program"`).
+- Crear `db/migrations/0346_miper_f2_programa.sql` + snapshot (generados) con SQL anexado.
+- Crear `db/__tests__/miper-program-constraints.test.ts` (PGlite) y registrarlo en `tests/pglite-files.ts`.
+
+**Lógica pura**
+- Crear `lib/prevention/miper/dedup.ts` (+ test): normalización de descripciones y agrupación por similitud de tokens.
+- Crear `lib/prevention/miper/schedule.ts` (+ test): fechas de ocurrencia por `schedule_kind`.
+- Crear `lib/prevention/miper/progress.ts` (+ test): avance por actividad y del programa.
+- Modificar `lib/prevention/miper/history-labels.ts` (+ test): rótulos de los eventos nuevos.
+- Modificar `lib/services/miper/shared.ts`: `MiperHistoryObject` gana `program`, `program_action`, `occurrence`, `evidence`.
+
+**Servicios**
+- Crear `lib/services/miper/program.ts`: encabezado, actividades, vínculo N:M, generación.
+- Crear `lib/services/miper/program-execution.ts`: ocurrencias, registros, anulación y evidencia.
+- Crear `lib/services/miper/program-queries.ts`: el programa del espacio de trabajo (paneles y exportación).
+- Modificar `lib/services/miper/workflow.ts`: crear ocurrencias al sellar la primera versión y marcar `superseded` cuando el período se reemplaza.
+- Modificar `lib/services/miper/completeness.ts` y su llamada en `workflow.ts`: `requireProgramLink`.
+
+**Permisos**
+- Modificar `modules/prevention/manifest.ts`, `modules/registry.ts`, `lib/services/module-toggles.ts` y `lib/__tests__/prevention-rbac.test.ts`.
+
+**UI**
+- Crear en `app/(app)/prevencion/miper/[id]/`: `program-panel.tsx`, `program-action-dialog.tsx`, `occurrence-dialog.tsx`, `evidence-sheet.tsx`, `generate-actions-dialog.tsx`.
+- Modificar `app/(app)/prevencion/miper/[id]/miper-workspace.tsx` (pestaña «Programa») y `app/(app)/prevencion/miper/actions.ts` (acciones nuevas).
+- Modificar `lib/services/miper/queries.ts` (`MiperWorkspace` gana `program`).
+
+**Reportes y E2E**
+- Modificar `lib/reports/miper-workbook.ts`: hoja *Programa de Trabajo* desde la versión sellada.
+- Crear `e2e/prevencion-miper-programa.spec.ts`; modificar `e2e/setup-db.ts`.
+- Crear `qa/reports/<fecha>-miper-f2.md` y actualizar el capítulo del manual.
+
+---
+
+#### Task 1: Esquema del programa y migración 0346
+
+**Files:**
+- Create: `db/schema/prevention/program.ts`
+- Modify: `db/schema/prevention/index.ts`
+- Create: `db/migrations/0346_miper_f2_programa.sql` (generada) + SQL anexado
+- Create: `db/__tests__/miper-program-constraints.test.ts`
+- Modify: `tests/pglite-files.ts`
+
+**Interfaces:**
+- Produce las tablas Drizzle `preventionRiskPrograms`, `preventionRiskProgramActions`, `preventionRiskProgramActionControls`, `preventionRiskProgramOccurrences`, `preventionRiskProgramOccurrenceRecords`, `preventionRiskOccurrenceEvidence`.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+// db/__tests__/miper-program-constraints.test.ts
+import path from "node:path"
+import { PGlite } from "@electric-sql/pglite"
+import { drizzle } from "drizzle-orm/pglite"
+import { eq } from "drizzle-orm"
+import { beforeAll, describe, expect, it } from "vitest"
+import * as schema from "@/db/schema"
+import { migratePGlite } from "@/lib/testing/pglite-migrate"
+
+const pg = new PGlite()
+const db = drizzle(pg, { schema })
+
+beforeAll(async () => {
+  await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
+  await db.insert(schema.worksites).values({ id: "ws-p", name: "Faena P", code: "P-1" })
+  await db.insert(schema.users).values({ id: "u-p", name: "Autora", email: "p@p.cl", hashedPassword: "x", isActive: true })
+  await db.insert(schema.preventionRiskMethodologies).values({ id: "m-p", code: "RE-04-CHOME", name: "RE-04", versionLabel: "REV-2026", kind: "primary", authoritySource: "RE-04", createdByUserId: "u-p" })
+  await db.insert(schema.preventionRiskMatrices).values({ id: "mx-p", worksiteId: "ws-p", matrixVersion: 1, title: "MIPER P 2026", period: 2026, methodologyId: "m-p", methodologySnapshot: {}, revisionReason: "Elaboración inicial.", participationSummary: "", consultationEvidenceReference: "", createdByUserId: "u-p" })
+  await db.insert(schema.preventionRiskPrograms).values({ id: "prog-p", matrixId: "mx-p", worksiteId: "ws-p", period: 2026, createdByUserId: "u-p" })
+}, 60_000)
+
+describe("restricciones del Programa de Trabajo (F2)", () => {
+  it("un programa por MIPER", async () => {
+    await expect(db.insert(schema.preventionRiskPrograms).values({ id: "prog-dup", matrixId: "mx-p", worksiteId: "ws-p", period: 2026, createdByUserId: "u-p" })).rejects.toThrow()
+  })
+
+  it("una ocurrencia por actividad y fecha", async () => {
+    await db.insert(schema.preventionRiskProgramActions).values({ id: "act-1", programId: "prog-p", actionNumber: 1, description: "Inspeccionar extintores", scheduleKind: "monthly", startsOn: "2026-03-01", status: "active", createdByUserId: "u-p" })
+    await db.insert(schema.preventionRiskProgramOccurrences).values({ id: "occ-1", actionId: "act-1", dueOn: "2026-03-31", outcome: "pending" })
+    await expect(db.insert(schema.preventionRiskProgramOccurrences).values({ id: "occ-dup", actionId: "act-1", dueOn: "2026-03-31", outcome: "pending" })).rejects.toThrow()
+  })
+
+  it("'Se hizo' exige fecha efectiva; 'No se hizo' exige motivo de al menos 10; anular exige motivo", async () => {
+    await expect(db.insert(schema.preventionRiskProgramOccurrenceRecords).values({ id: "r-bad", occurrenceId: "occ-1", outcome: "done", recordedByUserId: "u-p" })).rejects.toThrow()
+    await expect(db.insert(schema.preventionRiskProgramOccurrenceRecords).values({ id: "r-bad2", occurrenceId: "occ-1", outcome: "not_done", reason: "corto", recordedByUserId: "u-p" })).rejects.toThrow()
+    await db.insert(schema.preventionRiskProgramOccurrenceRecords).values({ id: "r-ok", occurrenceId: "occ-1", outcome: "done", effectiveOn: "2026-03-28", recordedByUserId: "u-p" })
+    await expect(db.update(schema.preventionRiskProgramOccurrenceRecords).set({ voidedAt: "2026-04-01T10:00:00.000Z", voidedByUserId: "u-p" }).where(eq(schema.preventionRiskProgramOccurrenceRecords.id, "r-ok"))).rejects.toThrow()
+  })
+
+  it("el vínculo actividad ↔ medida es único por par", async () => {
+    await db.insert(schema.preventionRiskEntries).values({ id: "e-1", matrixId: "mx-p", rowNumber: 1, hazardCode: "R-1", probability: 2, consequence: 4 })
+    await db.insert(schema.preventionRiskControls).values({ id: "c-1", riskEntryId: "e-1", description: "Topes", hierarchy: "engineering", status: "proposed" })
+    await db.insert(schema.preventionRiskProgramActionControls).values({ id: "l-1", actionId: "act-1", controlId: "c-1", linkedByUserId: "u-p" })
+    await expect(db.insert(schema.preventionRiskProgramActionControls).values({ id: "l-dup", actionId: "act-1", controlId: "c-1", linkedByUserId: "u-p" })).rejects.toThrow()
+  })
+})
+```
+
+Agregar `"db/__tests__/miper-program-constraints.test.ts"` a `pgliteTestFiles`.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npm run test:pglite -- db/__tests__/miper-program-constraints.test.ts`
+Expected: FAIL (las tablas no existen).
+
+- [ ] **Step 3: Write `db/schema/prevention/program.ts`**
+
+Sigue el estilo de `db/schema/prevention/miper.ts` (comentarios en español, `text` con `mode: "string"` para timestamps, CHECK con `sql`). Columnas exactas del §4.7:
+
+- `prevention_risk_programs`: `id`, `matrix_id` (FK `prevention_risk_matrices`, `cascade`, **único**), `worksite_id` (FK, `restrict`), `period` (integer), encabezado RE-04.1 —los mismos campos de empresa que la matriz más `program_manager_user_id` (FK `users`) y `elaborated_on`—, `version`, `created_by_user_id`, `created_at`, `updated_at`. CHECK del período (`BETWEEN 2000 AND 2100`) y `version > 0`.
+- `prevention_risk_program_actions`: `id`, `program_id` (FK `cascade`), `action_number` (integer ≥ 1), `process_id` (FK al diccionario `prevention_risk_processes`, `restrict`, **nullable**: la columna «Proceso» es la actividad del RE-04, no texto libre), `description`, `responsible_user_id` (FK `users`) + `responsible_snapshot`, `location_label`, `schedule_kind`, `starts_on`, `status`, `retired_at`, `retired_reason`, `version`, `created_by_user_id`, timestamps. Único `(program_id, action_number)`; CHECKs de `schedule_kind IN ('once','monthly','quarterly','semiannual','annual')`, `status IN ('active','retired')` y «retirada exige fecha y motivo (≥10)».
+- `prevention_risk_program_action_controls`: `id`, `action_id` (FK `cascade`), `control_id` (FK `prevention_risk_controls`, `cascade`), `linked_by_user_id`, `linked_at`. Único `(action_id, control_id)`.
+- `prevention_risk_program_occurrences`: `id`, `action_id` (FK `cascade`), `due_on`, `outcome`, `current_record_id` (FK a los registros, `set null`), `created_at`/`updated_at`. Único `(action_id, due_on)`; CHECK `outcome IN ('pending','done','not_done','superseded')`.
+- `prevention_risk_program_occurrence_records`: `id`, `occurrence_id` (FK `cascade`), `outcome` (`done|not_done`), `effective_on`, `late` (boolean default false), `reason`, `notes`, `recorded_by_user_id`, `recorded_at`, `voided_at`, `voided_by_user_id`, `void_reason`. CHECKs: `done` exige `effective_on`; `not_done` exige `length(trim(reason)) >= 10`; anulada exige `void_reason` y `voided_by_user_id`.
+- `prevention_risk_occurrence_evidence`: `id`, `record_id` (FK `cascade`), `evidence_upload_id` (FK `prevention_evidence_uploads`, `restrict`), `description`, `uploaded_by_user_id`, `uploaded_at`, `withdrawn_at`, `withdrawn_by_user_id`, `withdraw_reason`. CHECK: retirada exige motivo.
+
+- [ ] **Step 4: Generate the migration and append the SQL**
+
+Run: `npm run db:generate -- --name miper_f2_programa`
+Revisar el SQL: sólo `CREATE TABLE`, índices, FKs y CHECK; ningún `DROP TABLE`/`DROP COLUMN`. Si drizzle-kit pregunta por un renombre, responder «create column».
+
+Anexar al final de `0346_miper_f2_programa.sql`, tras un `--> statement-breakpoint`:
+- un índice parcial para las ocurrencias pendientes por actividad (`(action_id) WHERE outcome = 'pending'`), que es el que usa el barrido de vencidas;
+- un trigger de sólo-inserción sobre `prevention_risk_program_occurrence_records` que permita **únicamente** completar `voided_at`, `voided_by_user_id` y `void_reason` (patrón del trigger de la 0344: `CREATE OR REPLACE FUNCTION` + `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER`).
+
+- [ ] **Step 5: Register checksums, verify the chain and run the test**
+
+```bash
+node scripts/verify-migration-chain.mjs --update-checksums
+npm run db:verify-migrations
+npm run db:generate          # debe decir "No schema changes"
+npm run test:pglite -- db/__tests__/miper-program-constraints.test.ts db/schema-consistency.test.ts
+npm run db:migrate           # base de desarrollo (127.0.0.1:5433)
+```
+Expected: cadena verificada, sin cambios de esquema y los tests en verde. Si `schema-consistency` falla por una convención de nombres, corregir el **esquema** y regenerar (borrando los dos `.sql` y sus snapshots, y revirtiendo el journal y los checksums con `git checkout --`).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add db/schema db/migrations db/__tests__/miper-program-constraints.test.ts tests/pglite-files.ts
+git commit -m "feat(miper): esquema del Programa de Trabajo RE-04.1 (actividades, ocurrencias, registros y evidencia)"
+```
+
+---
+
+#### Task 2: Piezas puras — deduplicación, agenda y avance
+
+**Files:**
+- Create: `lib/prevention/miper/dedup.ts`, `lib/prevention/miper/schedule.ts`, `lib/prevention/miper/progress.ts`
+- Test: `lib/prevention/miper/dedup.test.ts`, `lib/prevention/miper/schedule.test.ts`, `lib/prevention/miper/progress.test.ts`
+
+**Interfaces:**
+- `normalizeMeasure(value: string): string` — minúsculas sin tildes, sin puntuación, sin palabras vacías (`de`, `la`, `el`, `los`, `y`, `para`, `con`, `en`, `del`), espacios colapsados.
+- `similarity(a: string, b: string): number` — Jaccard sobre los tokens de la forma normalizada.
+- `groupMeasures(measures: Array<{ id: string; description: string }>, threshold: number): Array<{ key: string; measures: string[] }>` — agrupa por similitud ≥ umbral **sin** fusionar transitivamente grupos distintos (cada medida cae en un solo grupo: el del representante más parecido, y si no supera el umbral, en el suyo).
+- `occurrenceDates(input: { scheduleKind: "once" | "monthly" | "quarterly" | "semiannual" | "annual"; startsOn: string; periodEnd: string }): string[]` — fechas `AAAA-MM-DD`, la primera ≥ `startsOn`, la última ≤ `periodEnd`, sin duplicados y ordenadas; `once` devuelve sólo `startsOn`.
+- `type OccurrenceOutcome = "pending" | "done" | "not_done" | "superseded"`.
+- `programProgress(occurrences: Array<{ outcome: OccurrenceOutcome; dueOn: string; late?: boolean }>, today: string): { done: number; late: number; pending: number; overdue: number; failed: number; planned: number; ratio: number | null }` — `planned` excluye las `superseded`; `ratio` es `null` si `planned` es 0; `overdue` son las `pending` con `dueOn < today`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Cubre, como mínimo: que dos descripciones casi iguales (`"Colocar topes de descarga"` / `"colocar topes de descarga en la pendiente"`) se agrupen y que dos medidas distintas (`"Instalar baranda"` / `"Capacitar en izaje"`) **no**; que `monthly` desde el 01-03 hasta el 31-12 dé 10 ocurrencias (las de fin de mes) y `quarterly` 4; que `once` dé una sola; que el avance con una anulada/no registrada cuente el resultado vigente; que `superseded` no entre en `planned`; y que `ratio` sea `null` con `planned = 0`.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `npm run test:fast -- lib/prevention/miper/dedup.test.ts lib/prevention/miper/schedule.test.ts lib/prevention/miper/progress.test.ts`
+Expected: FAIL (módulos inexistentes).
+
+- [ ] **Step 3: Implement**
+
+Sin dependencias. `schedule.ts` usa `Date.UTC` y devuelve «último día del mes» para las frecuencias mensuales (mismo criterio que el resto del repo para fechas civiles). El umbral de similitud queda como constante exportada `MEASURE_GROUP_THRESHOLD = 0.6`, documentada como ajustable con datos reales (decisión abierta §14.4 del spec).
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `npm run test:fast -- lib/prevention/miper/` → PASS en los cuatro archivos puros nuevos.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/prevention/miper/dedup.ts lib/prevention/miper/schedule.ts lib/prevention/miper/progress.ts lib/prevention/miper/dedup.test.ts lib/prevention/miper/schedule.test.ts lib/prevention/miper/progress.test.ts
+git commit -m "feat(miper): deduplicación de medidas, agenda de ocurrencias y cálculo de avance"
+```
+
+---
+
+#### Task 3: Servicio del programa — encabezado y actividades
+
+**Files:**
+- Create: `lib/services/miper/program.ts`
+- Modify: `lib/services/miper/shared.ts` (`MiperHistoryObject` gana `program`, `program_action`, `occurrence`, `evidence`)
+- Modify: `lib/validation/prevention-module/miper.ts` (schemas `programHeaderSchema`, `programActionSchema`, `programActionRefSchema`, `programLinkSchema`)
+- Test: `lib/__tests__/miper-program.test.ts` (PGlite; registrarlo en `tests/pglite-files.ts`)
+
+**Interfaces:**
+- `ensureProgram(client, matrix): Promise<typeof preventionRiskPrograms.$inferSelect>` — idempotente, con el encabezado prellenado desde la matriz y la faena; `program_manager_user_id` queda en el responsable de la faena si existe.
+- `updateProgramHeader(input, access): Promise<{ version: number }>` — mismo contrato de versión que `updateMiperHeader`.
+- `saveProgramAction(input, access): Promise<{ id: string; version: number; actionNumber: number }>` — alta (asigna `action_number` al final; `starts_on` obligatorio) y edición con `expectedVersion`; siempre re-sincroniza las ocurrencias futuras (Task 5) y respeta que un MIPER en borrador no las genere.
+- `retireProgramAction(input: { actionId, expectedVersion, reason }, access): Promise<void>` — exige motivo ≥10, marca `retired` y deja las ocurrencias ya registradas intactas.
+- `linkActionControls(input: { programId, actionId, controlIds, link }, access)` / `unlinkActionControl(input: { actionId, controlId }, access)`.
+- `listProgramActions` se expone desde `program-queries.ts` (Task 7).
+
+- [ ] **Step 1: Write the failing test**
+
+Cubre: que `ensureProgram` sea idempotente y prellene el encabezado; que una actividad exija `starts_on`; que el correlativo `action_number` no se repita al crear y borrar; que editar con versión vieja devuelva el mensaje de recarga; que retirar exija motivo y no toque las ocurrencias registradas; y que **sin `prevention:risk:edit` sobre la faena** cualquier mutación sea rechazada con «fuera de alcance».
+
+- [ ] **Step 2: Run test to verify it fails** → `npm run test:pglite -- lib/__tests__/miper-program.test.ts`
+
+- [ ] **Step 3: Implement `program.ts`**
+
+Calcado del patrón de `entries.ts`: `db.transaction` + `lockMatrix` + `requireAccess(access, EDIT, matrix.worksiteId)` + `assertEditable` + `miperHistory` + `for("update")`. `ensureProgram` **debe** leer el perfil de empresa por el cliente (`getCompanyProfileWithClient`), nunca por la conexión global.
+
+- [ ] **Step 4: Run test to verify it passes** → PASS (registrar el archivo en `tests/pglite-files.ts`).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/services/miper/program.ts lib/services/miper/shared.ts lib/validation/prevention-module/miper.ts lib/__tests__/miper-program.test.ts tests/pglite-files.ts
+git commit -m "feat(miper): servicio del Programa de Trabajo (encabezado, actividades y vínculos)"
+```
+
+---
+
+#### Task 4: Generación desde el MIPER con decisión de la persona
+
+**Files:**
+- Modify: `lib/services/miper/program.ts`
+- Test: `lib/__tests__/miper-program-generation.test.ts` (PGlite; registrarlo)
+
+**Interfaces:**
+- `proposeProgramActions(input: { matrixId: string }, access): Promise<{ measures: Array<{ controlId: string; entryId: string; rowNumber: number; description: string; classification: RiskClassification | null; suggestedGroupKey: string | null; linkedActionId: string | null }>; groups: Array<{ key: string; description: string; measures: string[] }> }>` — lee las medidas del MIPER **sin actividad vinculada**, propone agrupaciones con `groupMeasures` y marca las que **no** pueden quedar sin actividad (filas Intolerable o Importante).
+- `applyProgramGeneration(input: { matrixId: string; decisions: Array<{ controlIds: string[]; decision: "create" | "link" | "leave"; actionId?: string; description?: string; responsibleUserId?: string | null; responsibleName?: string | null; scheduleKind?: ProgramScheduleKind; startsOn?: string; locationLabel?: string | null }> }, access): Promise<{ created: number; linked: number; left: number }>`.
+
+- [ ] **Step 1: Write the failing test**
+
+Cubre: que las medidas ya vinculadas no vuelvan a proponerse; que una decisión `leave` sobre una medida de una fila Intolerable sea rechazada con un mensaje accionable; que `create` respete el `action_number` correlativo; que `link` reutilice una actividad existente sin duplicarla (N:M) y que aplicar dos veces la misma decisión no duplique vínculos.
+
+- [ ] **Step 2: Run test to verify it fails** → `npm run test:pglite -- lib/__tests__/miper-program-generation.test.ts`
+
+- [ ] **Step 3: Implement**
+
+`proposeProgramActions` es de sólo lectura salvo el `ensureProgram` idempotente. `applyProgramGeneration` va en una transacción, valida cada decisión contra la banda de su fila (una sola lectura de las filas incluidas en las decisiones) y deja el resultado en el historial (`object: "program_action"`, `changeType: "generated" | "linked" | "left_without_action"`).
+
+- [ ] **Step 4: Run test to verify it passes** → PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/services/miper/program.ts lib/__tests__/miper-program-generation.test.ts tests/pglite-files.ts
+git commit -m "feat(miper): generación de actividades desde las medidas, con agrupación propuesta"
+```
+
+---
+
+#### Task 5: Ocurrencias — ciclo de vida y supersesión
+
+**Files:**
+- Create: `lib/services/miper/program-execution.ts` (parte de ocurrencias)
+- Modify: `lib/services/miper/workflow.ts` (al sellar y al reemplazar el período)
+- Test: `lib/__tests__/miper-program-occurrences.test.ts` (PGlite; registrarlo)
+
+**Interfaces:**
+- `syncOccurrences(client, action): Promise<number>` — crea las que faltan desde `starts_on` hasta el 31-12 del período con `occurrenceDates`, **sin tocar** las existentes; es no-op si la matriz no tiene ninguna versión sellada (`status !== 'published'` y sin versiones).
+- `supersedePendingOccurrences(client, matrixId): Promise<number>` — al reemplazarse el MIPER, las ocurrencias `pending` del programa pasan a `superseded`.
+- En `workflow.ts`: tras sellar la **primera** versión, generar las ocurrencias de todas las actividades activas; al marcar el MIPER vigente como `superseded`, llamar a `supersedePendingOccurrences`.
+
+- [ ] **Step 1: Write the failing test**
+
+Cubre: que un MIPER en borrador cree actividades pero **cero** ocurrencias; que al sellar la v1 aparezcan las del período y que un segundo sellado **no** las duplique; que mover `starts_on` hacia adelante cree las nuevas y no borre las ya registradas; y que el período siguiente supersede las pendientes (y no las vencidas, que siguen contando en el histórico).
+
+- [ ] **Step 2: Run test to verify it fails** → `npm run test:pglite -- lib/__tests__/miper-program-occurrences.test.ts`
+
+- [ ] **Step 3: Implement**
+
+Todo por `client` (nada por la conexión global). El sellado ocurre dentro de la transacción de `approveMiperFinal`, así que `syncOccurrences` recibe `tx`: es exactamente el caso que cuelga la suite si se usa `db`.
+
+- [ ] **Step 4: Run tests** → `npm run test:pglite -- lib/__tests__/miper-program-occurrences.test.ts lib/__tests__/miper-workflow.test.ts` PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/services/miper/program-execution.ts lib/services/miper/workflow.ts lib/__tests__/miper-program-occurrences.test.ts tests/pglite-files.ts
+git commit -m "feat(miper): ocurrencias del programa ligadas al ciclo de vida del MIPER"
+```
+
+---
+
+#### Task 6: Ejecución — registros, anulación, evidencia y avance
+
+**Files:**
+- Modify: `lib/services/miper/program-execution.ts`
+- Test: `lib/__tests__/miper-program-execution.test.ts` (PGlite; registrarlo)
+
+**Interfaces:**
+- `recordOccurrence(input: { occurrenceId, expectedVersion, outcome: "done" | "not_done", effectiveOn?, reason?, notes?, evidence: Array<{ evidenceUploadId: string; description?: string }> }, access)`
+  - `done`: exige `effectiveOn` (no futura) y **al menos una evidencia**; `late = effectiveOn > dueOn`.
+  - `not_done`: exige `reason` ≥10; evidencia opcional.
+  - Sólo-inserción: nunca hace `UPDATE` de un registro previo; recalcula `occurrence.outcome` y `current_record_id`.
+- `voidOccurrenceRecord(input: { recordId, reason }, access)` — exige motivo, marca la anulación y devuelve la ocurrencia al resultado del registro vigente anterior (o `pending`).
+- `addOccurrenceEvidence(input: { recordId, evidenceUploadId, description? }, access)` y `withdrawOccurrenceEvidence(input: { evidenceId, reason }, access)`.
+- `getProgramProgress(client, matrixId): Promise<{ program: ReturnType<typeof programProgress>; byAction: Array<{ actionId: string; progress: ReturnType<typeof programProgress> }> }>` — deriva de las ocurrencias; **no** lee ninguna columna de avance.
+
+**Autorización (§6.3):** puede registrar quien tenga `prevention:risk:program:execute` **o** sea el `responsible_user_id` de la actividad y tenga `prevention:risk:view` sobre la faena. Cualquier otra persona: «fuera de alcance».
+
+- [ ] **Step 1: Write the failing test**
+
+Cubre: que «Se hizo» sin evidencia o con fecha futura sea rechazado; que «Se hizo (fuera de plazo)» sobre una Incumplida deje **dos** registros visibles y el avance cuente el vigente; que anular el registro vigente devuelva la ocurrencia al anterior o a `pending`; que el avance excluya `superseded` y cuente las vencidas aparte; que un tercero sin permiso no pueda registrar y que el responsable nominal sí (con `risk:view`); y que `withdrawOccurrenceEvidence` exija motivo y no borre el archivo.
+
+- [ ] **Step 2: Run test to verify it fails** → `npm run test:pglite -- lib/__tests__/miper-program-execution.test.ts`
+
+- [ ] **Step 3: Implement**
+
+La evidencia se guarda con `storePreventionEvidence` (dominio `miper`, conjunto `MIPER_EVIDENCE`) y se vincula por `evidence_upload_id`; el archivo nunca se borra. El trigger de la Task 1 impide cualquier `UPDATE` que no sea la anulación: si el servicio intenta corregir contenido, la base lo rechaza — y eso se prueba.
+
+- [ ] **Step 4: Run test to verify it passes** → PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/services/miper/program-execution.ts lib/__tests__/miper-program-execution.test.ts tests/pglite-files.ts
+git commit -m "feat(miper): ejecución del programa con registros inmutables, evidencia y avance derivado"
+```
+
+---
+
+#### Task 7: Permisos, paridad y la regla del Intolerable
+
+**Files:**
+- Modify: `modules/prevention/manifest.ts`, `modules/registry.ts`, `lib/services/module-toggles.ts`
+- Modify: `lib/services/miper/completeness.ts` (comentario de la regla) y la llamada en `lib/services/miper/workflow.ts`
+- Modify: `lib/__tests__/prevention-rbac.test.ts`
+- Test: `lib/prevention/miper/completeness.test.ts` (caso ya existente, activado) y `lib/__tests__/miper-workflow.test.ts`
+
+**Interfaces:**
+- Permiso `prevention:risk:program:execute` (id `p-prev-risk-program-execute`) con grants por defecto a `prevencionista_faena`, `prevencionista`, `jefe_terreno`, `supervisor_terreno`, `admin_contrato` y `administrador` (§6.3).
+- `submitMiperForReview` llama a `checkMiperCompleteness(snapshot, { requireProgramLink: true, linkedControlIds })`, donde `linkedControlIds` son los controles vinculados a alguna actividad del programa **activo** de ese MIPER.
+
+- [ ] **Step 1: Write the failing tests**
+
+En `prevention-rbac.test.ts`: que `rolesFor("prevention:risk:program:execute")` sea exactamente el conjunto del §6.3 y que ningún rol del flujo de firmas (Jefatura, Legal y RRHH) lo reciba por defecto. En `miper-workflow.test.ts`: que un MIPER con un riesgo Intolerable cuya única medida **no** está vinculada a una actividad **no** se pueda enviar, con el mensaje que nombra la regla, y que sí se pueda cuando está vinculada.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `NODE_ENV=test npm run test:fast -- lib/__tests__/prevention-rbac.test.ts` y `npm run test:pglite -- lib/__tests__/miper-workflow.test.ts`
+
+- [ ] **Step 3: Implement**
+
+Manifiesto, `registry.ts` (paridad de permisos por módulo), `module-toggles.ts` (visibilidad de la pestaña), y el validador. Revisar `scripts/sync-rbac.ts` para ver si poda permisos ausentes: si no lo hace, anotarlo como paso operativo en el informe final (igual que con los permisos retirados en F1).
+
+- [ ] **Step 4: Run tests** → las dos suites en verde, más `NODE_ENV=test npm run test:fast -- lib/prevention/miper`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add modules/prevention/manifest.ts modules/registry.ts lib/services/module-toggles.ts lib/services/miper/completeness.ts lib/services/miper/workflow.ts lib/__tests__/prevention-rbac.test.ts lib/__tests__/miper-workflow.test.ts
+git commit -m "feat(miper): permiso de ejecución del programa y regla del Intolerable vinculado"
+```
+
+---
+
+#### Task 8: Pestaña «Programa» del espacio de trabajo
+
+**Files:**
+- Create: `lib/services/miper/program-queries.ts`
+- Modify: `lib/services/miper/queries.ts` (`MiperWorkspace` gana `program`)
+- Create en `app/(app)/prevencion/miper/[id]/`: `program-panel.tsx`, `program-action-dialog.tsx`, `generate-actions-dialog.tsx`, `occurrence-dialog.tsx`, `evidence-sheet.tsx`
+- Modify: `app/(app)/prevencion/miper/[id]/miper-workspace.tsx` (pestaña), `app/(app)/prevencion/miper/actions.ts`, `lib/prevention/miper/workspace-mode.ts` (`canExecuteProgram`)
+
+**Interfaces:**
+- `getProgramWorkspace(matrixId, access): Promise<{ program: … | null; actions: ProgramActionView[]; proposals: … | null; progress: … }>` — una sola lectura para el panel.
+- `type ProgramActionView = { id: string; actionNumber: number; processName: string | null; description: string; responsibleName: string | null; locationLabel: string | null; scheduleKind: ProgramScheduleKind; startsOn: string; status: "active" | "retired"; controls: Array<{ id: string; rowNumber: number; description: string }>; occurrences: Array<{ id: string; dueOn: string; outcome: OccurrenceOutcome; late: boolean; effectiveOn: string | null; reason: string | null; evidenceCount: number }> ; progress: … }`.
+- Acciones nuevas en `actions.ts`: `saveProgramHeaderAction`, `saveProgramActionAction`, `retireProgramActionAction`, `linkProgramControlsAction`, `proposeProgramActionsAction`, `applyProgramGenerationAction`, `recordOccurrenceAction`, `voidOccurrenceRecordAction`, `addOccurrenceEvidenceAction`, `withdrawOccurrenceEvidenceAction`.
+
+- [ ] **Step 1: Write the failing test**
+
+`getProgramWorkspace` en PGlite (registrado): que devuelva las actividades con sus controles, las ocurrencias ordenadas por fecha con su resultado vigente y el avance derivado; y que fuera de alcance lance «fuera de alcance». Las acciones, con el patrón de `actions.test.ts`: cada una exige su permiso y el actor sale de la sesión.
+
+- [ ] **Step 2: Run test to verify it fails** → `npm run test:pglite -- lib/__tests__/miper-program-queries.test.ts`
+
+- [ ] **Step 3: Implement `program-queries.ts` y el panel**
+
+El panel muestra: encabezado RE-04.1 (con «N° de centros de trabajo» calculado y «Fecha última revisión» = `approved_at` de la última versión sellada); la tabla de actividades con avance por actividad (realizadas/pendientes/incumplidas/vencidas y el cociente), filtros en la URL y búsqueda propia rotulada (la pestaña entra en la excepción de `hidesShellSearch` que ya existe para el espacio de trabajo); el botón «Generar actividades» que abre `generate-actions-dialog.tsx` con las propuestas de la Task 4; y por actividad, un `Sheet` con sus ocurrencias, el registro de ejecución (DatePicker, evidencia, motivo) y el historial. Nada de avance editable. Estados vacíos con CTA real.
+
+- [ ] **Step 4: Run tests**
+
+```bash
+NODE_ENV=test npm run test:pglite -- lib/__tests__/miper-program-queries.test.ts
+NODE_ENV=test npm run test:fast -- "app/(app)/prevencion/miper" components/prevention lib/prevention/miper
+npm run typecheck && npm run lint
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/services/miper/program-queries.ts lib/services/miper/queries.ts "app/(app)/prevencion/miper" lib/prevention/miper/workspace-mode.ts lib/__tests__/miper-program-queries.test.ts tests/pglite-files.ts
+git commit -m "feat(miper): pestaña Programa con actividades, ocurrencias, evidencia y avance"
+```
+
+---
+
+#### Task 9: Reporte, E2E de la fase y recorrido con informe
+
+**Files:**
+- Modify: `lib/reports/miper-workbook.ts` (+ test) — hoja *Programa de Trabajo*
+- Create: `e2e/prevencion-miper-programa.spec.ts`; modify: `e2e/setup-db.ts`
+- Create: `qa/reports/<AAAA-MM-DD>-miper-f2.md`
+- Modify: el capítulo del manual de Prevención
+
+- [ ] **Step 1: Hoja *Programa de Trabajo* del libro RE-04**
+
+Desde la **versión sellada** (el `snapshot` guarda también las actividades y sus ocurrencias cuando se sella; si se decide no engordar la foto, se leen de la fila viva y se documenta el porqué). Encabezado RE-04.1 y una línea por actividad con su fecha programada, fecha efectiva, avance y evidencia. Test nuevo en `lib/reports/miper-workbook.test.ts`.
+
+- [ ] **Step 2: E2E de los pasos 6 y 11–15 del §12**
+
+Con tres usuarios: generar las actividades reutilizando una para varias medidas, aprobar, y que el responsable marque «Se hizo» con evidencia y «No se hizo»; comprobar el avance; y navegar del riesgo a su actividad y de la actividad al riesgo. Locators por rol, `textoVisible`, `exact: true`.
+
+- [ ] **Step 3: Correr y recorrer**
+
+```bash
+npm run test:e2e -- e2e/prevencion-miper-programa.spec.ts e2e/prevencion-miper-flujo.spec.ts
+```
+Después, recorrido asistido en escritorio y móvil de la pestaña Programa (actividad, ocurrencia, evidencia, avance, vencidas, retiro de actividad) con el informe fechado en `qa/reports/`, declarando alcance y lo no recorrido.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add lib/reports/miper-workbook.ts lib/reports/miper-workbook.test.ts e2e/setup-db.ts e2e/prevencion-miper-programa.spec.ts qa/reports
+git commit -m "test(miper): E2E de la ejecución del programa, hoja RE-04.1 y recorrido de la fase"
+```
+
+---
+
+### Después de F2
+
+F3 (consolas, alertas, exportación del estado vivo e importación RE-04) tiene su propio plan, que se agrega como Parte IV cuando la F2 esté integrada. Hereda de F2: el tipo MIPER en `getPreventionAttention` y en la cola «Mi trabajo» para las ocurrencias vencidas y las «No se hizo», la notificación deduplicada de ambos casos, la hoja *Programa de Trabajo* de la exportación viva, y el E2E completo del §12.
