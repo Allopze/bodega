@@ -390,6 +390,8 @@ export async function programLinkedControlIds(client: Client, matrixId: string):
     .from(preventionRiskProgramActionControls)
     .innerJoin(preventionRiskProgramActions, eq(preventionRiskProgramActions.id, preventionRiskProgramActionControls.actionId))
     .innerJoin(preventionRiskPrograms, eq(preventionRiskPrograms.id, preventionRiskProgramActions.programId))
-    .where(eq(preventionRiskPrograms.matrixId, matrixId))
+    /* Sólo las actividades vivas: el vínculo de una actividad retirada ya no
+     * programa nada, así que no puede ser lo que deja enviar un Intolerable. */
+    .where(and(eq(preventionRiskPrograms.matrixId, matrixId), eq(preventionRiskProgramActions.status, "active")))
   return new Set(rows.map((row) => row.controlId))
 }
