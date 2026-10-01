@@ -22,9 +22,11 @@ import {
   parseOptionsText, buildSingleVariantAttributes, generateVariantCombos, canAdvanceWizard, shouldShowConfirmClose, getStepAnimationClass,
   pickPrimarySupplier, otherSuppliers, buildSuppliersForSubmit, mergeEditAttributes, filterNewVariantCombos,
   ADVANCED_ATTRIBUTE_TYPES, blankAdvancedAttribute, setQuantityDriver, duplicateAttributeNames,
-  normalizeProductAttributeName, type AdvancedAttributeType,
+  normalizeProductAttributeName, variantComboKey, type AdvancedAttributeType,
 } from "./product-form.helpers"
-import type { ProductFormProps, ProductFormMode, WizardStep, WizardGeneralState, WizardSupplierState, AttributeMultiValues, VariantCombo, SupplierRow, AttributeRow } from "./product-form.types"
+import type { ProductFormProps, ProductFormMode, WizardStep, WizardGeneralState, WizardSupplierState, AttributeMultiValues, VariantCombo, SupplierRow, AttributeRow, SizeFamilyOption } from "./product-form.types"
+import { isSizeAttributeName } from "@/lib/products/product-size"
+import { defaultScaleCodes, suggestSizeScale } from "./size-scale.helpers"
 
 const ADVANCED_TYPE_LABELS: Record<string, string> = {
   text: "Texto",
@@ -97,7 +99,6 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
 
   // ─── Batch creation state ─────────────────────────────────────────────────
   const [batchPending, setBatchPending] = React.useState(false)
-  const [generatingVariants, setGeneratingVariants] = React.useState(false)
 
   // ── Wizard state ──────────────────────────────────────────────────────────
   const [stepDirection, setStepDirection] = React.useState<"forward" | "backward">("forward")
@@ -126,10 +127,15 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         .map((a) => ({ name: a.name, type: "select" as const, values: parseOptionsText(a.options), sizeFamily: a.sizeFamily }))
     }
     if (family) {
-      // En añadir-variante los ejes vienen de la familia pero con values vacíos:
-      // los valores ya existentes se ofrecen como opciones deshabilitadas (vía
-      // `existingValuesByAttr`), no preseleccionados — cada variante es única.
-      return family.attributes.map((a) => ({ name: a.name, type: "select" as const, values: [], sizeFamily: a.sizeFamily }))
+      // En añadir-variante los ejes vienen de la familia. La talla llega vacía:
+      // es lo que se viene a agregar. Un eje que la familia usa con un solo
+      // valor (Color: Amarillo, Modelo: Con logo) llega marcado: si no, había
+      // que elegirlo a mano para agregar una talla, y como se mostraba
+      // deshabilitado por «existe», no había forma de hacerlo.
+      return family.attributes.map((a) => ({
+        name: a.name, type: "select" as const, sizeFamily: a.sizeFamily,
+        values: !isSizeAttributeName(a.name) && a.values.length === 1 ? [...a.values] : [],
+      }))
     }
     return []
   })
@@ -142,7 +148,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     if (family) return family.advancedAttributes.map((a) => ({ ...a }))
     return []
   })
-  const [variants, setVariants] = React.useState<VariantCombo[]>(() => {
+  const [editVariants] = React.useState<VariantCombo[]>(() => {
     if (editProduct) {
       // On edit, reconstruct a single variant from the product's attributes
       const attrs = editProduct.attributes.map((a) => ({ name: a.name, value: parseOptionsText(a.options).join(", ") }))
@@ -185,10 +191,20 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     }
     return map
   }, [family])
+  /** Valores que no se pueden volver a crear. Sólo en el eje de talla, y sólo
+   *  si los otros ejes tienen un único valor: ahí una talla existente sí es la
+   *  combinación entera. Con más ejes variables (una L en un color nuevo es
+   *  válida) no se bloquea nada y el filtro por combinación omite las repetidas. */
+  const blockedValuesByAttr = React.useMemo(() => {
+    if (!family) return undefined
+    const sizeAxis = family.attributes.find((attr) => isSizeAttributeName(attr.name))
+    const othersFixed = family.attributes.every((attr) => attr === sizeAxis || attr.values.length <= 1)
+    if (!sizeAxis || !othersFixed) return {}
+    return { [normalizeProductAttributeName(sizeAxis.name)]: sizeAxis.values }
+  }, [family])
 
   // ── Category change auto-detects EPP flags (only for new products) ────────
   function handleCategoryChange(id: string) {
-    setVariants([])
     setGeneral((prev) => ({ ...prev, categoryId: id }))
     // En "añadir variante" la categoría viene fija de la familia y su plantilla
     // ya se aplicó en el alta original: cambiarla no debe re-mezclar templates.
@@ -228,7 +244,6 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
   // `handleCategoryChange`, y agregar un atributo de talla a un producto que no
   // es EPP no debería convertirlo en uno.
   function toggleAttrPreset(preset: { name: string; options: string[]; sizeFamily?: string }) {
-    setVariants([])
     setWizAttrs((prev) => {
       if (prev.some((a) => normalizeProductAttributeName(a.name) === normalizeProductAttributeName(preset.name))) {
         return prev.filter((a) => normalizeProductAttributeName(a.name) !== normalizeProductAttributeName(preset.name))
@@ -237,17 +252,35 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     })
   }
 
+  /**
+   * Un producto tiene a lo sumo un eje de talla: elegir otra escala lo
+   * reemplaza (en su misma posición) con las tallas típicas ya marcadas, y
+   * `null` lo quita. En edición se guarda una sola variante, así que la escala
+   * nueva llega sin marcar.
+   */
+  function setSizeScale(scale: SizeFamilyOption | null) {
+    setWizAttrs((prev) => {
+      const index = prev.findIndex((a) => isSizeAttributeName(a.name))
+      const rest = prev.filter((_, i) => i !== index)
+      if (!scale) return rest
+      const next: AttributeMultiValues = {
+        name: scale.attributeName, type: "select",
+        values: isEdit ? [] : defaultScaleCodes(scale),
+        sizeFamily: scale.family,
+      }
+      // La talla va primero cuando es nueva: es el eje por el que se busca.
+      return index === -1 ? [next, ...rest] : [...prev.slice(0, index), next, ...prev.slice(index + 1)]
+    })
+  }
+
   function updateAttrValues(name: string, values: string[]) {
     setWizAttrs((prev) => prev.map((a) => (a.name === name ? { ...a, values } : a)))
-    setVariants([])
   }
 
   // Quitar un atributo cualquiera, sea preset o venido de una plantilla de
-  // categoría. No pasa por `toggleAttrPreset` porque ese además fuerza
-  // `isEpp = true`, y borrar una fila no debería convertir el producto en EPP.
+  // categoría.
   function removeAttr(name: string) {
     setWizAttrs((prev) => prev.filter((a) => a.name !== name))
-    setVariants([])
   }
 
   // ── Advanced (non-select) attribute management ────────────────────────────
@@ -289,42 +322,47 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     setAdvAttrs((prev) => prev.filter((_, i) => i !== index))
   }
 
+  // ── Variantes: se derivan de lo marcado ───────────────────────────────────
+  // Antes había que apretar «Generar variantes» —y «Siguiente» también las
+  // generaba—: dos caminos para lo mismo, y un botón gris «selecciona valores»
+  // que no explicaba qué faltaba. La vista previa ahora se arma sola, y quitar
+  // una fila del preview se recuerda por su combinación, no por su posición.
+  const comboCount = wizAttrs.reduce((acc, a) => acc * Math.max(a.values.length, 1), 1)
+  const [removedComboKeys, setRemovedComboKeys] = React.useState<ReadonlySet<string>>(() => new Set())
+  const variantPlan = React.useMemo(() => {
+    if (isEdit || wizAttrs.length === 0 || wizAttrs.some((a) => a.values.length === 0) || comboCount > VARIANT_LIMIT) {
+      return { combos: [] as VariantCombo[], skippedExisting: 0 }
+    }
+    const combos = generateVariantCombos(general.name, wizAttrs)
+    // En "añadir variante" las combinaciones que ya existen en la familia no
+    // deben ofrecerse: cada variante es un producto con historial.
+    if (!family) return { combos, skippedExisting: 0 }
+    const { kept, removed } = filterNewVariantCombos(combos, family.existingVariantKeys)
+    return { combos: kept, skippedExisting: removed.length }
+  }, [isEdit, wizAttrs, general.name, family, comboCount])
+  const variants = isEdit
+    ? editVariants
+    : variantPlan.combos.filter((combo) => !removedComboKeys.has(variantComboKey(combo.attributes)))
+
   function removeVariant(index: number) {
-    setVariants((prev) => prev.filter((_, i) => i !== index))
+    const combo = variants[index]
+    if (!combo) return
+    setRemovedComboKeys((prev) => new Set(prev).add(variantComboKey(combo.attributes)))
   }
 
-  function generateVariants(): boolean {
-    setStepError(null)
-    if (wizAttrs.some((a) => a.values.length === 0)) {
-      setStepError("Selecciona al menos un valor en cada atributo o quita el atributo.")
-      return false
-    }
-    const comboCount = wizAttrs.reduce((acc, a) => acc * Math.max(a.values.length, 1), 1)
-    if (comboCount > VARIANT_LIMIT) {
-      setStepError(`Demasiadas combinaciones (${comboCount}). El máximo permitido es ${VARIANT_LIMIT}.`)
-      return false
-    }
-    setGeneratingVariants(true)
-    // Use setTimeout to yield to React so the loading state renders before computation
-    setTimeout(() => {
-      const combos = generateVariantCombos(general.name, wizAttrs)
-      // En "añadir variante" las combinaciones que ya existen en la familia no
-      // deben ofrecerse: cada variante es un producto con historial.
-      if (family) {
-        const { kept, removed } = filterNewVariantCombos(combos, family.existingVariantKeys)
-        setVariants(kept)
-        if (combos.length > 0 && kept.length === 0) {
-          setStepError("Las combinaciones que seleccionaste ya existen en la familia. Elige otro valor.")
-        } else if (removed.length > 0) {
-          setStepError(`Se omitió ${removed.length} combinación${removed.length === 1 ? "" : "es"} que ya existía en la familia.`)
-        }
-      } else {
-        setVariants(combos)
-      }
-      setGeneratingVariants(false)
-    }, 0)
-    return true
+  /** Qué impide pasar del paso 2, en palabras de quien lo usa; `null` si nada. */
+  function attributesStepError(): string | null {
+    const empty = wizAttrs.filter((a) => a.values.length === 0)
+    if (empty.length > 0) return `Marca al menos un valor en ${empty.map((a) => `«${a.name}»`).join(" y ")}, o quítalo.`
+    if (comboCount > VARIANT_LIMIT) return `Demasiadas combinaciones (${comboCount}). El máximo permitido es ${VARIANT_LIMIT}.`
+    if (isAddVariant && variants.length === 0) return "Marca al menos una talla o valor que la familia todavía no tenga."
+    return null
   }
+
+  // La escala sugerida por el nombre se aplica una sola vez, al llegar por
+  // primera vez a «Atributos» en un alta: quien la cambie o elija «Sin tallas»
+  // no debe verla reaparecer al ir y volver entre pasos.
+  const sizeSuggestionApplied = React.useRef(false)
 
   // ── Step navigation ──────────────────────────────────────────────────────
   const [stepError, setStepError] = React.useState<string | null>(null)
@@ -335,11 +373,16 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
       setStepError("Completa los campos requeridos antes de continuar.")
       return
     }
-    setStepDirection("forward")
-    // Regenerate variants when advancing from step 2, but block if limit exceeded
-    if (step === 2 && wizAttrs.length > 0 && variants.length === 0) {
-      if (!generateVariants()) return
+    if (step === 2) {
+      const error = attributesStepError()
+      if (error) { setStepError(error); return }
     }
+    if (step === 1 && mode === "create" && !sizeSuggestionApplied.current) {
+      sizeSuggestionApplied.current = true
+      const suggested = suggestSizeScale(general.name, sizeFamilies)
+      if (suggested && !wizAttrs.some((a) => isSizeAttributeName(a.name))) setSizeScale(suggested)
+    }
+    setStepDirection("forward")
     setStep((s) => Math.min(3, s + 1) as WizardStep)
   }
 
@@ -358,7 +401,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
       setStepError("Revisa los atributos: sus nombres deben ser únicos y cada variante debe tener un valor.")
       return
     }
-    if (generatingVariants || batchPending) { event.preventDefault(); return }
+    if (batchPending) { event.preventDefault(); return }
 
     // ── Batch path: intercept and call createProductVariantBatch directly ──
     // El modo "añadir variante" siempre pasa por el lote, aunque genere una
@@ -460,7 +503,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
                 id="p-name"
                 value={general.name}
                 disabled={isAddVariant}
-                onChange={(e) => { markDirty(); setVariants([]); setGeneral((p) => ({ ...p, name: e.target.value })) }}
+                onChange={(e) => { markDirty(); setGeneral((p) => ({ ...p, name: e.target.value })) }}
                 placeholder="Casco de seguridad blanco clase A"
                 error={!!state.fieldErrors?.name}
               />
@@ -732,18 +775,20 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
           <div className="space-y-4">
             <VariantGenerator
               singleVariant={isEdit}
+              lockedAxes={isAddVariant}
+              productName={general.name}
               sizeFamilies={sizeFamilies}
               wizAttrs={wizAttrs}
-              isEpp={general.isEpp}
+              onSetSizeScale={setSizeScale}
               onToggleAttr={toggleAttrPreset}
               onUpdateAttrValues={updateAttrValues}
               onRemoveAttr={removeAttr}
-              onGenerate={generateVariants}
-              generating={generatingVariants}
+              variantCount={comboCount > VARIANT_LIMIT ? comboCount : variants.length}
               variantLimit={VARIANT_LIMIT}
               variantWarnAt={VARIANT_WARN_AT}
               onMarkDirty={markDirty}
               existingValuesByAttr={existingValuesByAttr}
+              blockedValuesByAttr={blockedValuesByAttr}
             />
             {/* En edición el preview no aplica (se guarda una sola variante); en
                 alta y en añadir-variante sí, para ver qué se va a crear. */}
@@ -752,6 +797,11 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
               onRemove={removeVariant}
               onMarkDirty={markDirty}
             />}
+            {variantPlan.skippedExisting > 0 && (
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Se omite{variantPlan.skippedExisting === 1 ? "" : "n"} {variantPlan.skippedExisting} combinaci{variantPlan.skippedExisting === 1 ? "ón que ya existe" : "ones que ya existen"} en la familia.
+              </p>
+            )}
           </div>
         )
 

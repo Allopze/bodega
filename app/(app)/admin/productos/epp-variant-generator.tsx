@@ -2,13 +2,13 @@
 
 import * as React from "react"
 import { normalizeAttributeName } from "@/lib/products/attribute-names"
+import { isSizeAttributeName, normalizeSizeLabel } from "@/lib/products/product-size"
 import { X } from "@phosphor-icons/react"
 import { Tooltip } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { AttributeMultiValues, SizeFamilyOption } from "./product-form.types"
-
-// ── Attribute presets for quick-add ────────────────────────────────────────────
+import { defaultScaleCodes, resolveSizeScale, sizeScaleLabel, suggestSizeScale } from "./size-scale.helpers"
 
 /**
  * El color no es una talla y no vive en `size_catalog`: sigue siendo una lista
@@ -19,47 +19,47 @@ const COLOR_PRESET = {
   options: ["Amarillo", "Azul", "Blanco", "Gris", "Negro", "Naranja", "Rojo", "Verde"],
 } as const
 
-type AttributePreset = { name: string; options: string[]; sizeFamily?: string }
-
-function buildPresets(sizeFamilies: SizeFamilyOption[]): AttributePreset[] {
-  return [
-    ...sizeFamilies.map((family) => ({
-      name: family.attributeName,
-      options: family.codes,
-      sizeFamily: family.family,
-    })),
-    { name: COLOR_PRESET.name, options: [...COLOR_PRESET.options] },
-  ]
-}
-
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export interface VariantGeneratorProps {
   singleVariant?: boolean
+  /**
+   * Añadir-variante: los ejes son los de la familia. Se puede marcar qué tallas
+   * agregar, pero no cambiar de escala ni quitar el eje, o las variantes nuevas
+   * no compartirían atributos con las existentes.
+   */
+  lockedAxes?: boolean
+  /** Nombre del producto: de él sale la escala sugerida. */
+  productName: string
   wizAttrs: AttributeMultiValues[]
-  isEpp: boolean
   sizeFamilies: SizeFamilyOption[]
+  /** Reemplaza el eje de talla por esta escala (con sus tallas típicas), o lo quita con `null`. */
+  onSetSizeScale: (scale: SizeFamilyOption | null) => void
   onToggleAttr: (preset: { name: string; options: string[]; sizeFamily?: string }) => void
   onUpdateAttrValues: (name: string, values: string[]) => void
   /**
    * Quita un atributo del asistente. Separado de `onToggleAttr` a propósito:
    * ese sólo enumera los presets (así que no podía quitar un atributo venido de
-   * una plantilla de categoría) y además fuerza `isEpp = true`, que no es lo que
-   * significa borrar una fila.
+   * una plantilla de categoría).
    */
   onRemoveAttr: (name: string) => void
-  onGenerate: () => void
-  generating: boolean
+  /** Productos que se crearán con lo marcado (la vista previa se arma sola). */
+  variantCount: number
   variantLimit: number
   variantWarnAt: number
   onMarkDirty: () => void
   /**
-   * En el modo "añadir variante", los valores que ya existen en la familia se
-   * muestran como chips deshabilitados (con aviso) en lugar de preseleccionados:
-   * cada variante es un producto y no se puede recrear una combinación idéntica.
-   * Mapa por nombre de atributo normalizado → valores ya usados.
+   * En el modo "añadir variante", los valores que ya existen en la familia: se
+   * ofrecen como opciones aunque la escala no los traiga. Mapa por nombre de
+   * atributo normalizado → valores ya usados.
    */
   existingValuesByAttr?: Record<string, string[]>
+  /**
+   * Los que además no se pueden volver a marcar porque ya son una combinación
+   * entera (ver `blockedValuesByAttr` en el formulario): chip deshabilitado
+   * con «existe». Mismo formato que `existingValuesByAttr`.
+   */
+  blockedValuesByAttr?: Record<string, string[]>
 }
 
 // ── Add a value not covered by the preset ─────────────────────────────────────
@@ -71,7 +71,7 @@ export interface VariantGeneratorProps {
  * vive dentro de un `<form>`, así que el submit por defecto crearía el producto
  * a medio configurar).
  */
-function AddValueInput({ attributeName, onAdd, buttonLabel = "Agregar" }: { attributeName: string; onAdd: (value: string) => void; buttonLabel?: string }) {
+function AddValueInput({ label, placeholder, onAdd, buttonLabel = "Agregar" }: { label: string; placeholder: string; onAdd: (value: string) => void; buttonLabel?: string }) {
   const [draft, setDraft] = React.useState("")
 
   function commit() {
@@ -91,15 +91,44 @@ function AddValueInput({ attributeName, onAdd, buttonLabel = "Agregar" }: { attr
           e.preventDefault()
           commit()
         }}
-        placeholder="Agregar valor..."
-        aria-label={`Agregar un valor a ${attributeName}`}
-        className="h-7 max-w-40 text-xs"
+        placeholder={placeholder}
+        aria-label={label}
+        className="h-8 max-w-56 text-sm"
       />
-      <Button type="button" variant="ghost" size="sm" onClick={commit} disabled={!draft.trim()}>
+      <Button type="button" variant="secondary" size="sm" onClick={commit} disabled={!draft.trim()}>
         {buttonLabel}
       </Button>
     </div>
   )
+}
+
+// ── Chips ─────────────────────────────────────────────────────────────────────
+
+function ValueChip({ option, selected, exists, onToggle }: { option: string; selected: boolean; exists: boolean; onToggle: () => void }) {
+  return (
+    <Tooltip content={exists ? "Ya existe una variante con este valor" : undefined} side="top" delayDuration={300}>
+      <button
+        aria-pressed={selected}
+        type="button"
+        disabled={exists}
+        onClick={onToggle}
+        className={`min-w-11 rounded-(--radius-sm) px-3 py-1.5 text-sm font-medium transition-colors ${
+          exists
+            ? "cursor-not-allowed border border-dashed border-[var(--color-border)] text-[var(--color-text-faint)]"
+            : selected
+              ? "bg-[var(--color-primary)] text-white"
+              : "bg-[var(--color-surface)] text-[var(--color-text-subtle)] border border-[var(--color-border)] hover:border-[var(--color-primary)]"
+        }`}
+      >
+        {selected && "✓ "}{option}{exists && " · existe"}
+      </button>
+    </Tooltip>
+  )
+}
+
+function sameValue(attrName: string, left: string, right: string): boolean {
+  if (isSizeAttributeName(attrName)) return normalizeSizeLabel(left) === normalizeSizeLabel(right)
+  return left.trim().toLocaleLowerCase("es-CL") === right.trim().toLocaleLowerCase("es-CL")
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -107,192 +136,254 @@ function AddValueInput({ attributeName, onAdd, buttonLabel = "Agregar" }: { attr
 export function VariantGenerator({
   wizAttrs,
   singleVariant = false,
-  isEpp,
+  lockedAxes = false,
+  productName,
   sizeFamilies,
+  onSetSizeScale,
   onToggleAttr,
   onUpdateAttrValues,
   onRemoveAttr,
-  onGenerate,
-  generating,
+  variantCount,
   variantLimit,
   variantWarnAt,
   onMarkDirty,
   existingValuesByAttr,
+  blockedValuesByAttr,
 }: VariantGeneratorProps) {
-  const presets = React.useMemo(() => buildPresets(sizeFamilies), [sizeFamilies])
+  const sizeAttr = wizAttrs.find((attr) => isSizeAttributeName(attr.name)) ?? null
+  const otherAttrs = wizAttrs.filter((attr) => attr !== sizeAttr)
+  const activeScale = sizeAttr ? resolveSizeScale(sizeAttr, productName, sizeFamilies) : null
+  const suggested = suggestSizeScale(productName, sizeFamilies)
+  const hasColor = wizAttrs.some((a) => normalizeAttributeName(a.name) === normalizeAttributeName(COLOR_PRESET.name))
+
+  const existingFor = (attrName: string) => existingValuesByAttr?.[normalizeAttributeName(attrName)] ?? []
+  const isExisting = (attrName: string, value: string) =>
+    (blockedValuesByAttr?.[normalizeAttributeName(attrName)] ?? []).some((v) => sameValue(attrName, v, value))
+
+  function toggleValue(attr: AttributeMultiValues, option: string) {
+    onMarkDirty()
+    const selected = attr.values.includes(option)
+    onUpdateAttrValues(attr.name, selected
+      ? attr.values.filter((v) => v !== option)
+      : singleVariant ? [option] : [...attr.values, option])
+  }
+
+  function addValue(attr: AttributeMultiValues, value: string) {
+    if (attr.values.some((v) => sameValue(attr.name, v, value))) return
+    // No permitir agregar a mano un valor que ya existe en la familia: el chip
+    // ya está deshabilitado con ese aviso.
+    if (isExisting(attr.name, value)) return
+    onMarkDirty()
+    onUpdateAttrValues(attr.name, singleVariant ? [value] : [...attr.values, value])
+  }
+
+  /** Opciones de un eje: las de la escala/preset, las marcadas y las ya existentes. */
+  function optionsFor(attr: AttributeMultiValues, base: readonly string[]) {
+    const options: string[] = []
+    for (const value of [...base, ...attr.values, ...existingFor(attr.name)]) {
+      if (!options.some((known) => sameValue(attr.name, known, value))) options.push(value)
+    }
+    return options
+  }
+
+  const sizeOptions = sizeAttr ? optionsFor(sizeAttr, activeScale?.codes ?? []) : []
+  const selectable = (values: readonly string[]) => values.filter((value) => sizeAttr && !isExisting(sizeAttr.name, value))
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <p className="text-sm text-[var(--color-text-muted)]">
-        {singleVariant ? "Edita los atributos de este ítem. Para registrar otra talla o color con stock independiente, crea otra variante." : "Define talla, color u otros atributos. Cada combinación se creará como un producto con stock independiente."}
+        {singleVariant
+          ? "Edita la talla y los atributos de este ítem. Para otra talla con stock propio, usa «Agregar tallas» en el listado."
+          : "Marca las tallas y colores que existen. Cada combinación se crea como un producto con su propio stock."}
       </p>
 
-      {/* Atributos chip selector */}
-      <div className="rounded-(--radius) border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Atajos para EPP</p>
-        <div className="flex flex-wrap gap-2">
-          {presets.map((preset) => {
-            const isActive = wizAttrs.some((a) => normalizeAttributeName(a.name) === normalizeAttributeName(preset.name))
-            const tooltipContent = isActive
-              ? `Quitar «${preset.name}» del producto`
-              : preset.options.length <= 4
-                ? `Agregar «${preset.name}» (${preset.options.join(", ")})`
-                : `Agregar «${preset.name}» (${preset.options.length} opciones)`
-            return (
-              <Tooltip key={preset.name} content={tooltipContent} side="top" delayDuration={300}>
-                <Button
-                  type="button"
-                  variant={isActive ? "primary" : "secondary"}
-                  size="sm"
-                  onClick={() => { onMarkDirty(); onToggleAttr(preset) }}
-                >
-                  {isActive ? "✓ " : "+ "}{preset.name}
-                </Button>
-              </Tooltip>
-            )
-          })}
+      {/* ── Tallas ─────────────────────────────────────────────────────────── */}
+      <section aria-labelledby="wiz-sizes-title" className="rounded-(--radius) border border-[var(--color-border)] p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 id="wiz-sizes-title" className="text-sm font-semibold">Tallas</h3>
+          {!lockedAxes && suggested && (!activeScale || activeScale.family !== suggested.family) && (
+            <button
+              type="button"
+              className="text-xs font-medium text-[var(--color-primary-ink)] underline-offset-2 hover:underline"
+              onClick={() => { onMarkDirty(); onSetSizeScale(suggested) }}
+            >
+              Usar {sizeScaleLabel(suggested)}, sugerida para «{productName.trim()}»
+            </button>
+          )}
         </div>
-      </div>
 
-      <div>
-        <p className="text-sm font-medium">Otro atributo (medida, material, modelo…)</p>
-        <AddValueInput buttonLabel="Agregar atributo" attributeName="nuevo atributo" onAdd={(name) => {
-          if (wizAttrs.some((a) => normalizeAttributeName(a.name) === normalizeAttributeName(name))) return
-          onMarkDirty()
-          onToggleAttr({ name, options: [] })
-        }} />
-      </div>
+        {lockedAxes ? (
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+            {sizeAttr
+              ? `Escala de la familia: ${activeScale ? sizeScaleLabel(activeScale) : sizeAttr.name}. Marca las que faltan.`
+              : "Esta familia no se separa por talla."}
+          </p>
+        ) : (
+          <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label="Escala de tallas">
+            {sizeFamilies.map((option) => {
+              const checked = activeScale?.family === option.family
+              return (
+                <button
+                  key={option.family}
+                  type="button"
+                  role="radio"
+                  aria-checked={checked}
+                  onClick={() => { if (checked) return; onMarkDirty(); onSetSizeScale(option) }}
+                  className={`rounded-full px-3 py-1.5 text-sm transition-colors ${
+                    checked
+                      ? "bg-[var(--color-primary)] text-white font-semibold"
+                      : "border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-subtle)] hover:border-[var(--color-primary)]"
+                  }`}
+                >
+                  {sizeScaleLabel(option)}
+                  {suggested?.family === option.family && !checked && <span className="ml-1 text-xs text-[var(--color-text-faint)]">· sugerida</span>}
+                </button>
+              )
+            })}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!sizeAttr}
+              onClick={() => { if (!sizeAttr) return; onMarkDirty(); onSetSizeScale(null) }}
+              className={`rounded-full px-3 py-1.5 text-sm transition-colors ${
+                !sizeAttr
+                  ? "bg-[var(--color-primary)] text-white font-semibold"
+                  : "border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-subtle)] hover:border-[var(--color-primary)]"
+              }`}
+            >
+              Sin tallas
+            </button>
+          </div>
+        )}
 
-      {/* Attribute multi-select editors */}
-      {wizAttrs.length === 0 ? (
-        <p className="text-sm text-[var(--color-text-subtle)] italic">
-          Sin atributos. Si no agregas atributos, se creará un solo producto sin variantes.
-          {isEpp && " Al marcar atributos arriba, se activará el generador de variantes."}
-        </p>
-      ) : (
-        <div className="space-y-3">
-          {wizAttrs.map((attr) => {
-            const preset = presets.find((p) => normalizeAttributeName(p.name) === normalizeAttributeName(attr.name))
-            // Un atributo que no es preset (viene de una plantilla de categoría)
-            // trae sus opciones en `values`: sin este fallback se dibujaba una
-            // caja sin chips, `values` quedaba vacío y «Generar variantes» no se
-            // habilitaba nunca — y como el toggle de arriba sólo lista presets,
-            // tampoco se podía quitar. El paso 2 quedaba muerto.
-            // En añadir-variante los existentes de la familia se suman también a
-            // las opciones (deshabilitadas) aunque `values` empiece vacío.
-            const existingOptions = existingValuesByAttr?.[normalizeAttributeName(attr.name)] ?? []
-            const options = [...new Set([...(preset?.options ?? []), ...attr.values, ...existingOptions])]
-            return (
-              <div key={attr.name} className="rounded-(--radius) border border-[var(--color-border)] p-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium">{attr.name}</p>
+        {sizeAttr && (
+          <div className="mt-4">
+            {!singleVariant && (
+              <div className="mb-2 flex flex-wrap items-center gap-1">
+                <span className="mr-1 text-xs text-[var(--color-text-subtle)]">
+                  {sizeAttr.values.length} marcada{sizeAttr.values.length === 1 ? "" : "s"} ·
+                </span>
+                {activeScale && activeScale.defaultCodes && activeScale.defaultCodes.length < activeScale.codes.length && (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => { onMarkDirty(); onUpdateAttrValues(sizeAttr.name, selectable(defaultScaleCodes(activeScale))) }}>
+                    Típicas ({activeScale.defaultCodes[0]}–{activeScale.defaultCodes.at(-1)})
+                  </Button>
+                )}
+                <Button type="button" variant="ghost" size="sm" onClick={() => { onMarkDirty(); onUpdateAttrValues(sizeAttr.name, selectable(sizeOptions)) }}>
+                  Todas
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => { onMarkDirty(); onUpdateAttrValues(sizeAttr.name, []) }}>
+                  Ninguna
+                </Button>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {sizeOptions.map((option) => (
+                <ValueChip
+                  key={option}
+                  option={option}
+                  selected={sizeAttr.values.includes(option)}
+                  exists={isExisting(sizeAttr.name, option)}
+                  onToggle={() => toggleValue(sizeAttr, option)}
+                />
+              ))}
+            </div>
+            <AddValueInput
+              label={`Agregar otra talla a ${sizeAttr.name}`}
+              placeholder="Otra talla (p. ej. 47)"
+              onAdd={(value) => addValue(sizeAttr, value)}
+            />
+          </div>
+        )}
+      </section>
+
+      {/* ── Otros atributos ────────────────────────────────────────────────── */}
+      <section aria-labelledby="wiz-other-title" className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 id="wiz-other-title" className="text-sm font-semibold">Color y otros atributos <span className="font-normal text-[var(--color-text-subtle)]">(opcional)</span></h3>
+          {!lockedAxes && !hasColor && (
+            <Button type="button" variant="secondary" size="sm" onClick={() => { onMarkDirty(); onToggleAttr({ name: COLOR_PRESET.name, options: [...COLOR_PRESET.options] }) }}>
+              + Color
+            </Button>
+          )}
+        </div>
+
+        {otherAttrs.map((attr) => {
+          const isColor = normalizeAttributeName(attr.name) === normalizeAttributeName(COLOR_PRESET.name)
+          // Un atributo que no es preset (viene de una plantilla de categoría)
+          // trae sus opciones en `values`: sin este fallback se dibujaba una
+          // caja sin chips y el paso quedaba muerto.
+          const options = optionsFor(attr, isColor ? COLOR_PRESET.options : [])
+          return (
+            <div key={attr.name} className="rounded-(--radius) border border-[var(--color-border)] p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-sm font-medium">{attr.name}</p>
+                {!lockedAxes && (
                   <button
                     type="button"
                     onClick={() => { onMarkDirty(); onRemoveAttr(attr.name) }}
-                    className="inline-flex h-6 w-6 items-center justify-center rounded-(--radius-sm) text-[var(--color-text-faint)] transition-colors hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger)]"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-(--radius-sm) text-[var(--color-text-faint)] transition-colors hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger)]"
                     aria-label={`Quitar atributo ${attr.name}`}
                   >
-                    <X size={12} />
+                    <X size={14} />
                   </button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {options.map((option) => {
-                    const isSelected = attr.values.includes(option)
-                    // En "añadir variante" un valor que ya existe en la familia
-                    // no puede volverse a crear: se muestra deshabilitado, no
-                    // preseleccionado, para que no parezca una combinación nueva.
-                    const exists = !!existingValuesByAttr
-                      ?.[normalizeAttributeName(attr.name)]
-                      ?.some((v) => v.trim().toLocaleLowerCase("es-CL") === option.trim().toLocaleLowerCase("es-CL"))
-                    return (
-                      <Tooltip
-                        key={option}
-                        content={exists ? "Ya existe una variante con este valor en la familia" : undefined}
-                        side="top"
-                        delayDuration={300}
-                      >
-                        <button
-                          aria-pressed={isSelected}
-                          type="button"
-                          disabled={exists}
-                          onClick={() => {
-                            onMarkDirty()
-                            onUpdateAttrValues(attr.name, isSelected
-                              ? attr.values.filter((v) => v !== option)
-                              : singleVariant ? [option] : [...attr.values, option])
-                          }}
-                          className={`rounded-(--radius-sm) px-3 py-1.5 text-xs font-medium transition-colors ${
-                            exists
-                              ? "cursor-not-allowed border border-dashed border-[var(--color-border)] text-[var(--color-text-faint)]"
-                              : isSelected
-                                ? "bg-[var(--color-primary)] text-white"
-                                : "bg-[var(--color-surface)] text-[var(--color-text-subtle)] border border-[var(--color-border)] hover:border-[var(--color-primary)]"
-                          }`}
-                        >
-                          {isSelected && "✓ "}{option}{exists && " · existe"}
-                        </button>
-                      </Tooltip>
-                    )
-                  })}
-                </div>
-                <AddValueInput
-                  attributeName={attr.name}
-                  onAdd={(value) => {
-                    if (attr.values.includes(value)) return
-                    // No permitir agregar a mano un valor que ya existe en la
-                    // familia: el chip ya está deshabilitado con ese aviso.
-                    const existsInFamily = existingOptions.some(
-                      (v) => v.trim().toLocaleLowerCase("es-CL") === value.trim().toLocaleLowerCase("es-CL"),
-                    )
-                    if (existsInFamily) return
-                    onMarkDirty()
-                    onUpdateAttrValues(attr.name, singleVariant ? [value] : [...attr.values, value])
-                  }}
-                />
+                )}
               </div>
-            )
-          })}
+              <div className="flex flex-wrap gap-2">
+                {options.map((option) => (
+                  <ValueChip
+                    key={option}
+                    option={option}
+                    selected={attr.values.includes(option)}
+                    exists={isExisting(attr.name, option)}
+                    onToggle={() => toggleValue(attr, option)}
+                  />
+                ))}
+              </div>
+              <AddValueInput
+                label={`Agregar un valor a ${attr.name}`}
+                placeholder={`Otro valor de ${attr.name.toLocaleLowerCase("es-CL")}`}
+                onAdd={(value) => addValue(attr, value)}
+              />
+            </div>
+          )
+        })}
 
-          {/* Generate variants button */}
-          {!singleVariant && (() => {
-            const count = wizAttrs.reduce((acc, a) => acc * Math.max(a.values.length, 1), 1)
-            const isOverLimit = count > variantLimit
-            const isNearLimit = count > variantWarnAt && count <= variantLimit
-            const someEmpty = wizAttrs.some((a) => a.values.length === 0)
-            const tooltipMsg = someEmpty
-              ? "Selecciona al menos un valor en cada atributo"
-              : isOverLimit
-                ? `El máximo permitido es ${variantLimit} variantes. Reduce los valores.`
-                : "Genera todas las combinaciones como productos individuales"
-            return (
-              <Tooltip content={tooltipMsg} side="top" delayDuration={300}>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => { onMarkDirty(); onGenerate() }}
-                  disabled={generating || someEmpty || isOverLimit}
-                >
-                  {generating ? (
-                    <>
-                      <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent mr-1.5" />
-                      Generando...
-                    </>
-                  ) : someEmpty ? (
-                    "selecciona valores"
-                  ) : isOverLimit ? (
-                    `${count} combinaciones (máx. ${variantLimit})`
-                  ) : (
-                    <>
-                      Generar variantes ({count} combinaciones)
-                      {isNearLimit && <span className="ml-1.5 text-[var(--color-warning-ink)]">· máx. {variantLimit}</span>}
-                    </>
-                  )}
-                </Button>
-              </Tooltip>
-            )
-          })()}
-        </div>
-      )}
+        {!lockedAxes && (
+          <AddValueInput
+            label="Nombre del nuevo atributo"
+            placeholder="Nuevo atributo (p. ej. Material)"
+            buttonLabel="Agregar atributo"
+            onAdd={(name) => {
+              if (wizAttrs.some((a) => normalizeAttributeName(a.name) === normalizeAttributeName(name))) return
+              onMarkDirty()
+              onToggleAttr({ name, options: [] })
+            }}
+          />
+        )}
+      </section>
+
+      {/* ── Resumen ────────────────────────────────────────────────────────── */}
+      {!singleVariant && (() => {
+        const someEmpty = wizAttrs.some((a) => a.values.length === 0)
+        const message = wizAttrs.length === 0
+          ? "Sin tallas ni atributos: se creará un solo producto."
+          : someEmpty
+            ? `Marca al menos un valor en ${wizAttrs.filter((a) => a.values.length === 0).map((a) => `«${a.name}»`).join(" y ")}, o quítalo.`
+            : variantCount > variantLimit
+              ? `${variantCount} combinaciones: el máximo es ${variantLimit}. Desmarca valores.`
+              : variantCount === 1
+                ? "Se creará 1 producto."
+                : `Se crearán ${variantCount} productos, uno por combinación.`
+        const tone = someEmpty || variantCount > variantLimit
+          ? "text-[var(--color-warning-ink)]"
+          : "text-[var(--color-text-muted)]"
+        return (
+          <p role="status" className={`text-sm ${tone}`}>
+            {message}
+            {!someEmpty && variantCount > variantWarnAt && variantCount <= variantLimit && ` Cerca del máximo (${variantLimit}).`}
+          </p>
+        )
+      })()}
     </div>
   )
 }

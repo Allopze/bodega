@@ -383,4 +383,25 @@ describe("addMissingClothingSizeVariants", () => {
     })
     expect(variants).toHaveLength(1)
   })
+
+  it("cuenta como presente una talla histórica sin `size_family` y no la duplica", async () => {
+    // Lo que deja `epp-size-ranges` en una familia: la L histórica sin familia
+    // declarada y tallas nuevas declaradas `ropa`.
+    await createFamilyWithVariant({
+      familyId: "fam-mixta", canonicalName: "Chaleco mixto", productName: "Chaleco mixto",
+      sizeAttrName: "Talla", size: "S", sizeFamily: "ropa",
+    })
+    const legacyId = nanoid()
+    await inMemoryDb.insert(schema.products).values({
+      id: legacyId, sku: "EPP-SEED-legacy-L", name: "Chaleco mixto",
+      categoryId: CATEGORY_ID, familyId: "fam-mixta", isEpp: true, requiresPrevencion: true,
+    })
+    await inMemoryDb.insert(schema.productAttributes).values({
+      id: nanoid(), productId: legacyId, name: "Talla", type: "select", isRequired: true, options: JSON.stringify(["T/L"]),
+    })
+
+    const summary = await addMissingClothingSizeVariants()
+
+    expect(summary.results).toEqual([expect.objectContaining({ createdSizes: ["M", "XL", "2XL", "3XL"] })])
+  })
 })

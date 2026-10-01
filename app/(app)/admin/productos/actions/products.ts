@@ -24,11 +24,11 @@ import {
   generateUniqueProductSku, generateUniqueSkus,
   resolveManualEppFamily, ensureEppFamilyTx, applyEppFamilyFichaTx, REVALIDATE,
 } from "./helpers"
-import { resolveVariantAttributes } from "@/lib/products/variant-grouping"
+import { resolveVariantAttributes, variantGroupKey } from "@/lib/products/variant-grouping"
 import { productVariantBatchSchema, type ProductVariantBatchInput } from "./product-variant-batch.schema"
 import type { AttributeRow } from "../product-form.types"
 // Sólo helpers de texto/tipos: no arrastra nada de cliente ni de `@/db`.
-import { normalizeProductAttributeName, parseOptionsText } from "../product-form.helpers"
+import { normalizeProductAttributeName, parseOptionsText, variantComboKey } from "../product-form.helpers"
 
 // ── Product CRUD ──────────────────────────────────────────────────────────────
 
@@ -461,6 +461,60 @@ export async function getProductForEdit(id: string) {
  *  Devuelve la identidad de la familia (canonicalName, categoría, flags) y los
  *  ejes `select` existentes, más la firma de cada variante ya creada — el
  *  cliente la usa para no ofrecer crear una combinación repetida. */
+/**
+ * Abre «Agregar tallas» desde cualquier producto del listado.
+ *
+ * El asistente de añadir variante trabaja sobre `epp_product_families`, y el
+ * botón sólo aparecía en productos con familia. El catálogo importado casi no
+ * la tiene —sus variantes se reconocen por nombre (`variantGroupKey`)—, así que
+ * a un chaleco o un botín real no había cómo agregarle una talla desde la
+ * pantalla. Para un EPP sin familia se resuelve la familia por la misma vía que
+ * el alta manual (`resolveManualEppFamily`) y se le asigna a todo su grupo por
+ * nombre, que es justo el grupo que ya ven Solicitudes y este listado.
+ *
+ * Un producto que no es EPP no tiene familia en este modelo: devuelve `null`.
+ */
+export async function prepareAddVariantForProduct(productId: string) {
+  let session: Awaited<ReturnType<typeof requirePermission>>
+  try { session = await requirePermission("admin:products") }
+  catch { return null }
+
+  const product = await db.query.products.findFirst({ where: eq(products.id, productId) })
+  if (!product) return null
+  if (product.familyId) return getProductFamilyForAddVariant(product.familyId)
+  if (!product.isEpp) return null
+
+  const familyId = await db.transaction(async (tx) => {
+    const family = await resolveManualEppFamily(tx, { categoryId: product.categoryId, name: product.name, isEpp: true })
+    if (!family) return null
+
+    const groupKey = variantGroupKey(product)
+    const orphans = await tx.query.products.findMany({ where: (p, { isNull }) => isNull(p.familyId) })
+    const siblings = orphans.filter((candidate) => variantGroupKey(candidate) === groupKey)
+    if (siblings.length === 0) return family.id
+
+    await tx.update(products).set({ familyId: family.id }).where(inArray(products.id, siblings.map((sibling) => sibling.id)))
+    for (const sibling of siblings) {
+      await recordAudit({
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        action: "update",
+        entityType: "product",
+        entityId: sibling.id,
+        entityCode: sibling.sku,
+        oldState: { familyId: null },
+        newState: { familyId: family.id },
+        reason: "Agrupado en su familia EPP para agregarle tallas desde el catálogo.",
+      }, tx)
+    }
+    return family.id
+  })
+  if (!familyId) return null
+
+  revalidatePath("/admin/productos")
+  return getProductFamilyForAddVariant(familyId)
+}
+
 export async function getProductFamilyForAddVariant(familyId: string) {
   try { await requirePermission("admin:products") }
   catch { return null }
@@ -497,6 +551,9 @@ export async function getProductFamilyForAddVariant(familyId: string) {
     const parsed = parseOptionsText(attr.options ?? "")
     if (existing) {
       existing.values = [...new Set([...existing.values, ...parsed])]
+      // La escala la declara cualquier variante que la tenga: las históricas
+      // del importador llegan sin `size_family` y no deben tapar a las nuevas.
+      existing.sizeFamily ??= attr.sizeFamily ?? undefined
     } else {
       selectMap.set(key, {
         name: attr.name,
@@ -521,11 +578,7 @@ export async function getProductFamilyForAddVariant(familyId: string) {
       drivesQuantity: a.drivesQuantity,
     }))
 
-  const keys = family.products.map((product) => JSON.stringify(
-    resolveVariantAttributes(product.productAttributes)
-      .map((a) => [normalizeProductAttributeName(a.name), a.value])
-      .sort(),
-  ))
+  const keys = family.products.map((product) => variantComboKey(resolveVariantAttributes(product.productAttributes)))
 
   const preferred = family.products
     .flatMap((p) => p.productSuppliers)
@@ -689,15 +742,11 @@ export async function createProductVariantBatch(input: ProductVariantBatchInput)
           where: eq(products.familyId, familyId),
           with: { productAttributes: true },
         })
-        const existingSignatures = new Set(existingProducts.map((product) => JSON.stringify(
-          resolveVariantAttributes(product.productAttributes)
-            .map((a) => [normalizeProductAttributeName(a.name), a.value])
-            .sort(),
-        )))
+        // Misma firma que el cliente (`variantComboKey`): la talla canonizada,
+        // para que una `L` nueva no conviva con la `T/L` histórica.
+        const existingSignatures = new Set(existingProducts.map((product) => variantComboKey(resolveVariantAttributes(product.productAttributes))))
         for (const variant of d.variants) {
-          const signature = JSON.stringify(
-            variant.attributes.map((a) => [normalizeProductAttributeName(a.name), a.value]).sort(),
-          )
+          const signature = variantComboKey(variant.attributes)
           if (existingSignatures.has(signature)) {
             throw new Error(`La variante «${variant.name}» ya existe en la familia. No se puede volver a crear la misma combinación.`)
           }

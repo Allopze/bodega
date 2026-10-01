@@ -495,6 +495,24 @@ RUN ./node_modules/.bin/esbuild scripts/backfill-epp-clothing-sizes.ts \
     --external:postgres \
     --outfile=/tmp/backfill-epp-clothing-sizes.mjs
 
+# Completa 38..46 en todo calzado y S..3XL en toda ropa/pantalón para que
+# Solicitudes ofrezca esas tallas, y da de baja las variantes sin talla y sin
+# uso que rompían el selector. No corre en el deploy: crea variantes con SKU
+# propio en un catálogo que no declara `size_family`, así que se revisa el
+# dry-run antes de aplicar.
+# El banner no es opcional: el vocabulario de tipos EPP vive en
+# `epp-import.types.ts`, que importa exceljs (CJS, hace `require("crypto")`), y
+# sin `require` el bundle revienta al cargar.
+RUN ./node_modules/.bin/esbuild scripts/backfill-epp-size-ranges.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --banner:js='import{createRequire as __cr}from"module";import{fileURLToPath as __f}from"url";import{dirname as __d}from"path";const require=__cr(import.meta.url);const __filename=__f(import.meta.url);const __dirname=__d(__filename);' \
+    --outfile=/tmp/backfill-epp-size-ranges.mjs
+
 
 # ── Production stage: standalone build, minimal runtime ──
 FROM node:22.13-alpine AS prod
@@ -598,6 +616,7 @@ COPY --from=build /tmp/ensure-prevention-program-slots.mjs ./scripts/ensure-prev
 COPY --from=build /tmp/backfill-cphs-mandatory-sessions.mjs ./scripts/backfill-cphs-mandatory-sessions.mjs
 COPY --from=build /tmp/reconcile-epp-duplicate-sizes.mjs ./scripts/reconcile-epp-duplicate-sizes.mjs
 COPY --from=build /tmp/backfill-epp-clothing-sizes.mjs ./scripts/backfill-epp-clothing-sizes.mjs
+COPY --from=build /tmp/backfill-epp-size-ranges.mjs ./scripts/backfill-epp-size-ranges.mjs
 # Cron service uses this bounded internal HTTP runner instead of an inline
 # wget command. It is copied explicitly because Next standalone does not trace
 # scripts invoked only by Compose.

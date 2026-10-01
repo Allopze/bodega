@@ -24,12 +24,10 @@
  * misma familia: no hay otra fuente de esos valores para una talla que nunca
  * se compró.
  */
-import { sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { products, productAttributes, productSuppliers } from "@/db/schema"
-import { nanoid } from "@/lib/id"
 import { normalizeAttributeName } from "@/lib/products/attribute-names"
 import { resolveProductSize, normalizeSizeLabel } from "@/lib/products/product-size"
+import { insertSizeVariantFromTemplate } from "./epp-size-variant-clone"
 
 /**
  * Tallas que este backfill completa. Es el rango que el negocio realmente
@@ -68,17 +66,6 @@ export interface ClothingSizeSyncOptions {
   dryRun?: boolean
 }
 
-/** Siguiente SKU secuencial `EPP-NNN` visto desde dentro de la transacción. */
-async function nextEppSku(tx: Tx): Promise<string> {
-  const rows = await tx.select({ sku: products.sku }).from(products).where(sql`${products.sku} LIKE 'EPP-%'`)
-  let max = 0
-  for (const row of rows) {
-    const num = parseInt(row.sku.slice(4), 10)
-    if (!Number.isNaN(num) && num > max) max = num
-  }
-  return `EPP-${String(max + 1).padStart(3, "0")}`
-}
-
 async function syncFamily(
   tx: Tx,
   family: { id: string; canonicalName: string },
@@ -107,10 +94,14 @@ async function syncFamily(
   const existingLabels = new Set<string>()
   for (const variant of variants) {
     const size = resolveProductSize(variant.productAttributes)
-    if (!size || size.sizeFamily !== CLOTHING_SIZE_FAMILY) continue
+    if (!size) continue
+    // Presente es presente, declare o no la familia: una familia con `T/L`
+    // histórico (sin `size_family`) y tallas nuevas declaradas `ropa` —lo que
+    // deja `epp-size-ranges`— no debe recibir una segunda L.
+    existingLabels.add(normalizeSizeLabel(size.label))
+    if (size.sizeFamily !== CLOTHING_SIZE_FAMILY) continue
     sizeAttrName ??= size.attributeName
     templateVariant ??= variant
-    existingLabels.add(normalizeSizeLabel(size.label))
   }
 
   if (!sizeAttrName || !templateVariant) return null
@@ -138,57 +129,14 @@ async function syncFamily(
   const templateSizeAttr = templateVariant.productAttributes.find(
     (attr) => normalizeAttributeName(attr.name) === normalizeAttributeName(sizeAttrName!),
   )!
-  const templateOtherAttrs = templateVariant.productAttributes.filter((attr) => attr.id !== templateSizeAttr.id)
-  const preferredSupplier = templateVariant.productSuppliers.find((ps) => ps.isPreferred) ?? templateVariant.productSuppliers[0] ?? null
-
   const createdSizes: string[] = []
   for (const size of missingSizes) {
-    const sku = await nextEppSku(tx)
-    const productId = nanoid()
-
-    await tx.insert(products).values({
-      id: productId,
-      sku,
-      name: templateVariant.name,
-      description: templateVariant.description,
-      categoryId: templateVariant.categoryId,
-      familyId: family.id,
-      unitOfMeasure: templateVariant.unitOfMeasure,
-      isEpp: templateVariant.isEpp,
-      requiresPrevencion: templateVariant.requiresPrevencion,
-      isService: templateVariant.isService,
-      requiresWorker: templateVariant.requiresWorker,
-      equipmentKind: templateVariant.equipmentKind,
-      referencePrice: templateVariant.referencePrice,
-      isActive: templateVariant.isActive,
-      notes: templateVariant.notes,
-    })
-
-    if (templateOtherAttrs.length > 0) {
-      await tx.insert(productAttributes).values(templateOtherAttrs.map((attr) => ({
-        id: nanoid(), productId, categoryId: null,
-        name: attr.name, type: attr.type, isRequired: attr.isRequired,
-        options: attr.options, sizeFamily: attr.sizeFamily,
-        drivesQuantity: attr.drivesQuantity, sortOrder: attr.sortOrder,
-      })))
-    }
-
-    await tx.insert(productAttributes).values({
-      id: nanoid(), productId, categoryId: null,
-      name: sizeAttrName, type: "select", isRequired: true,
-      options: JSON.stringify([size]),
+    await insertSizeVariantFromTemplate(tx, {
+      template: templateVariant,
+      templateSizeAttr,
+      size,
       sizeFamily: templateSizeAttr.sizeFamily,
-      drivesQuantity: false,
-      sortOrder: templateSizeAttr.sortOrder,
     })
-
-    if (preferredSupplier) {
-      await tx.insert(productSuppliers).values({
-        id: nanoid(), productId, supplierId: preferredSupplier.supplierId,
-        unitPrice: preferredSupplier.unitPrice, isPreferred: true, notes: preferredSupplier.notes,
-      })
-    }
-
     createdSizes.push(size)
   }
 

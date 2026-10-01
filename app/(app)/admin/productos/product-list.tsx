@@ -9,6 +9,7 @@ import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { CategoryPanel, type CategoryForEdit } from "./category-panel"
 import { ProductForm } from "./product-form"
+import { Tooltip } from "@/components/ui/tooltip"
 import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -16,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { formatCLP, formatDateTime } from "@/lib/utils"
-import { toggleProductActive, getProductForEdit, getProductFamilyForAddVariant, bulkToggleProductActiveAction } from "./actions"
+import { toggleProductActive, getProductForEdit, prepareAddVariantForProduct, bulkToggleProductActiveAction } from "./actions"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { getProductWarnings, getFamilyWarnings, isProductEditDisabled, type ProductAttributeSummary } from "./product-list.helpers"
 import type { AttributeTemplateOption, SizeFamilyOption, ProductUnitOption } from "./product-form.types"
@@ -77,7 +78,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
   // Product sheet state
   const [productSheetOpen, setProductSheetOpen] = React.useState(false)
   const [editProductFull,  setEditProductFull]  = React.useState<Awaited<ReturnType<typeof getProductForEdit>>>(null)
-  const [addVariantFamily, setAddVariantFamily] = React.useState<Awaited<ReturnType<typeof getProductFamilyForAddVariant>>>(null)
+  const [addVariantFamily, setAddVariantFamily] = React.useState<Awaited<ReturnType<typeof prepareAddVariantForProduct>>>(null)
   const [loadingEditId,    setLoadingEditId]    = React.useState<string | null>(null)
   const [loadingFamilyId,  setLoadingFamilyId]  = React.useState<string | null>(null)
   const [productFormKey,   setProductFormKey]   = React.useState(0)
@@ -177,11 +178,12 @@ export function ProductList({ products, categories, allSuppliers, units, templat
 
   /** Abre el asistente en modo "añadir variante" para la familia de un
    *  producto: pre-carga la identidad de la familia para que las variantes
-   *  nuevas nazcan dentro de ella (y no en una familia duplicada). */
-  function openAddVariant(familyId: string, fallbackLabel: string) {
-    setLoadingFamilyId(familyId)
+   *  nuevas nazcan dentro de ella (y no en una familia duplicada). Un EPP sin
+   *  familia —casi todo el catálogo importado— la recibe en el servidor. */
+  function openAddVariant(rowId: string, productId: string, fallbackLabel: string) {
+    setLoadingFamilyId(rowId)
     startTransition(async () => {
-      const snapshot = await getProductFamilyForAddVariant(familyId)
+      const snapshot = await prepareAddVariantForProduct(productId)
       setLoadingFamilyId(null)
       if (snapshot) {
         setEditProductFull(null)
@@ -269,17 +271,18 @@ export function ProductList({ products, categories, allSuppliers, units, templat
               editDisabled={isProductEditDisabled(p, { loadingEditId, loadingFamilyId })}
               editPending={loadingEditId === p.id}
             />
-            {p.familyId && (
-              <button
-                type="button"
-                onClick={() => openAddVariant(p.familyId!, family.name)}
-                disabled={loadingFamilyId === p.familyId}
-                className="h-8 w-8 shrink-0 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-tint)] transition-colors disabled:opacity-50"
-                title="Añadir variante (talla/color con stock propio)"
-                aria-label={`Añadir variante a ${family.name}`}
-              >
-                <Plus size={16} className={loadingFamilyId === p.familyId ? "animate-spin" : undefined} />
-              </button>
+            {(p.familyId || p.isEpp) && (
+              <Tooltip content="Agregar tallas o colores (cada una con stock propio)" side="top" delayDuration={300}>
+                <button
+                  type="button"
+                  onClick={() => openAddVariant(family.id, p.id, family.name)}
+                  disabled={loadingFamilyId === family.id}
+                  className="h-8 w-8 shrink-0 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-tint)] transition-colors disabled:opacity-50"
+                  aria-label={`Agregar tallas a ${family.name}`}
+                >
+                  <Plus size={16} className={loadingFamilyId === family.id ? "animate-spin" : undefined} />
+                </button>
+              </Tooltip>
             )}
           </div>
         </TableCell>
@@ -360,17 +363,16 @@ export function ProductList({ products, categories, allSuppliers, units, templat
             editDisabled={isProductEditDisabled(p, { loadingEditId, loadingFamilyId })}
             editPending={loadingEditId === p.id}
           />
-          {p.familyId && (
+          {(p.familyId || p.isEpp) && (
             <button
               type="button"
-              onClick={() => openAddVariant(p.familyId!, family.name)}
-              disabled={loadingFamilyId === p.familyId}
+              onClick={() => openAddVariant(family.id, p.id, family.name)}
+              disabled={loadingFamilyId === family.id}
               className="inline-flex h-8 items-center gap-1 rounded-[var(--radius-sm)] px-2 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-tint)] transition-colors disabled:opacity-50"
-              title="Añadir variante (talla/color con stock propio)"
-              aria-label={`Añadir variante a ${family.name}`}
+              aria-label={`Agregar tallas a ${family.name}`}
             >
-              <Plus size={14} className={loadingFamilyId === p.familyId ? "animate-spin" : undefined} />
-              Variante
+              <Plus size={14} className={loadingFamilyId === family.id ? "animate-spin" : undefined} />
+              Tallas
             </button>
           )}
         </div>

@@ -78,7 +78,7 @@ function readFirst<T>(result: unknown): T | undefined {
   return Array.isArray(rows) ? rows[0] : undefined
 }
 
-async function countReferences(productId: string): Promise<{ total: number; detail: Record<string, number> }> {
+export async function countReferences(productId: string): Promise<{ total: number; detail: Record<string, number> }> {
   const detail: Record<string, number> = {}
   let total = 0
 
@@ -96,7 +96,7 @@ async function countReferences(productId: string): Promise<{ total: number; deta
   return { total, detail }
 }
 
-async function stockOf(productId: string): Promise<number> {
+export async function stockOf(productId: string): Promise<number> {
   const result = await db.execute(
     sql`select coalesce(sum(quantity), 0)::float as q from worksite_stock where product_id = ${productId}`,
   )
