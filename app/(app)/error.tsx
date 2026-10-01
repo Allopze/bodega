@@ -6,6 +6,7 @@ import { Warning } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ReportErrorButton } from "@/components/report-error-button"
+import { reportBoundaryError } from "@/lib/observability/sentry-client"
 
 export default function Error({
   error,
@@ -16,6 +17,7 @@ export default function Error({
 }) {
   useEffect(() => {
     console.error(error)
+    reportBoundaryError(error)
   }, [error])
 
   return (

@@ -51,7 +51,11 @@ const nextConfig: NextConfig = {
   // en runtime. Si el bundler lo integra al chunk del route handler, ese
   // `import.meta.url` apunta a .next/server/chunks/ y el render de la OC con
   // pdfcn falla **sólo en producción**: en `next dev` funciona.
-  serverExternalPackages: ["postgres", "tesseract.js", "tesseract.js-core", "pdfjs-dist", "takumi-pdf"],
+  // `@sentry/nextjs` trae `@sentry/node` y todo OpenTelemetry: bundlearlo en el
+  // compilado de servidor llevaba al worker de webpack sobre su heap de 4 GB
+  // (OOM medido el 2026-10-01). Externo, Node lo resuelve en runtime y el
+  // trazado standalone copia el paquete; el bundle de navegador sí lo incluye.
+  serverExternalPackages: ["postgres", "tesseract.js", "tesseract.js-core", "pdfjs-dist", "takumi-pdf", "@sentry/nextjs"],
   images: {
     formats: ["image/avif", "image/webp"],
     deviceSizes: [360, 480, 640, 750, 828, 1080, 1200, 1920],

@@ -6,9 +6,13 @@ import { Wrench } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ReportErrorButton } from "@/components/report-error-button"
+import { reportBoundaryError } from "@/lib/observability/sentry-client"
 
 export default function ReadinessError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  useEffect(() => { console.error(error) }, [error])
+  useEffect(() => {
+    console.error(error)
+    reportBoundaryError(error)
+  }, [error])
 
   return (
     <div className="flex min-h-[50vh] items-center justify-center p-8">

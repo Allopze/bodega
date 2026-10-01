@@ -41,9 +41,14 @@ FROM dev AS build
 # ~1 GB al pico de memoria y ~32 s. Por defecto viene vacío: un `docker build`
 # a mano sigue verificando tipos, como antes.
 ARG BODEGA_BUILD_SKIP_TYPECHECK=
+# DSN de Sentry del navegador: Next lo inlinea en los chunks de cliente y en la
+# CSP (connect-src) durante el build, así que tiene que llegar aquí y no en
+# runtime. Vacío = imagen sin telemetría de cliente. Lo pasa deploy-prod.sh.
+ARG NEXT_PUBLIC_SENTRY_DSN=
 RUN --mount=type=cache,id=chome-next,target=/app/.next/cache,sharing=locked \
     NODE_OPTIONS=--max-old-space-size=8192 \
     BODEGA_BUILD_SKIP_TYPECHECK="$BODEGA_BUILD_SKIP_TYPECHECK" \
+    NEXT_PUBLIC_SENTRY_DSN="$NEXT_PUBLIC_SENTRY_DSN" \
     DATABASE_URL=postgres://build:build@localhost:5432/build npm run build
 
 # Bundle the RBAC synchronizer while its TypeScript sources, path aliases and

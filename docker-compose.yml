@@ -124,6 +124,11 @@ services:
       # Outbound mail runs on Resend (lib/email/smtp.ts). Without this key the app
       # boots fine but stays silent (no emails: invitations, password reset, etc.).
       - RESEND_API_KEY=${RESEND_API_KEY:-}
+      # Errores de servidor a Sentry (sentry.server.config.ts). Vacío = sin
+      # telemetría. El DSN del navegador NO va aquí: se inlinea en el build
+      # (NEXT_PUBLIC_SENTRY_DSN, --build-arg en scripts/deploy-prod.sh).
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
       - STORAGE_PATH=${STORAGE_PATH:-/data/storage}
       # Backend de documentos SST: filesystem (default) o cloudreve. Solo
       # `cloudreve` activa las credenciales de abajo.
