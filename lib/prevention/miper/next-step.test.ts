@@ -32,6 +32,12 @@ describe("nextStepFor", () => {
     const step = nextStepFor(input({ issues: [{ scope: "header", field: "elaboratedOn", message: "Falta la fecha de elaboración.", severity: "error" }, entryIssue("a")] }))
     expect(step).toMatchObject({ title: "Completa la ficha del documento (1 dato(s))", description: "Falta la fecha de elaboración.", action: { kind: "ficha" } })
   })
+  it("5b. una matriz sin riesgos no manda a la ficha ni dice «lista para enviar»", () => {
+    const empty = { scope: "header" as const, field: "entries", message: "La matriz no tiene registros de evaluación.", severity: "error" as const }
+    expect(nextStepFor(input({ rows: [], issues: [empty] }))).toMatchObject({ title: "Empieza por la primera tarea", action: null })
+    const withHeader = nextStepFor(input({ rows: [], issues: [empty, { scope: "header", field: "elaboratedOn", message: "Falta la fecha de elaboración.", severity: "error" }] }))
+    expect(withHeader).toMatchObject({ title: "Completa la ficha del documento (1 dato(s))", action: { kind: "ficha" } })
+  })
   it("6. faltan datos: al pendiente más grave, con el filtro como alternativa", () => {
     const step = nextStepFor(input({ issues: [entryIssue("a"), entryIssue("b"), entryIssue("b")] }))
     expect(step).toMatchObject({ tone: "warning", title: "Faltan datos en 2 riesgo(s)", action: { kind: "riesgo", entryId: "b" }, secondary: { kind: "filtro" } })

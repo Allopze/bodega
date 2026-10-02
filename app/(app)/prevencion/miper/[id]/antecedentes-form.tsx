@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type FormEvent, type ReactNode } from "react"
+import { useEffect, useState, type FormEvent, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -43,11 +43,37 @@ function PrefilledField({ label, required, helper, error, onRestore, children }:
   )
 }
 
-export function AntecedentesForm({ workspace, editable }: { workspace: MiperWorkspace; editable: boolean }) {
+/** Lo que viaja al servidor: `period` lo fija la matriz al crearla y no se edita. */
+function payloadOf(header: Header) {
+  const { period: _period, ...payload } = header
+  return payload
+}
+
+/**
+ * Antecedentes RE-04 (identificación, dotación, responsables). Vive en la
+ * «Ficha del documento» (spec §5.7): `onSaved` la cierra al guardar y
+ * `onDirtyChange` le avisa si hay cambios sin guardar para pedir confirmación.
+ */
+export function AntecedentesForm({ workspace, editable, onSaved, onDirtyChange }: {
+  workspace: MiperWorkspace
+  editable: boolean
+  onSaved?: () => void
+  onDirtyChange?: (dirty: boolean) => void
+}) {
   const router = useRouter()
   const { prefill, matrix } = workspace
   const [header, setHeader] = useState<Header>(workspace.snapshot.header)
+  // Lo último que el servidor confirmó: contra esto se mide «sin guardar».
+  const [saved, setSaved] = useState<Header>(workspace.snapshot.header)
   const [version, setVersion] = useState(matrix.version)
+  const dirty = editable && JSON.stringify(payloadOf(header)) !== JSON.stringify(payloadOf(saved))
+  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
+    window.addEventListener("beforeunload", warn)
+    return () => window.removeEventListener("beforeunload", warn)
+  }, [dirty])
   const operation = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
   const set = <K extends keyof Header>(key: K, value: Header[K]) => setHeader((current) => ({ ...current, [key]: value }))
   const num = (value: string) => (value === "" ? null : Number(value))
@@ -102,17 +128,18 @@ export function AntecedentesForm({ workspace, editable }: { workspace: MiperWork
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    // `period` lo fija la matriz al crearla: no viaja en el formulario.
-    const { period: _period, ...payload } = header
-    operation.run(() => updateMiperHeaderAction({ matrixId: matrix.id, expectedVersion: version, ...payload }), (result) => {
+    const submitted = header
+    operation.run(() => updateMiperHeaderAction({ matrixId: matrix.id, expectedVersion: version, ...payloadOf(submitted) }), (result) => {
       if (typeof result.data?.version === "number") setVersion(result.data.version)
+      setSaved(submitted)
+      onSaved?.()
     })
   }
 
   return (
-    <form onSubmit={submit} className="space-y-6 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
+    <form onSubmit={submit} className="space-y-6">
       <section className="grid gap-4 md:grid-cols-3">
-        <h2 className="md:col-span-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Identificación</h2>
+        <h3 className="md:col-span-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Identificación</h3>
         {textField("iperCode")}
         <Field label="Período"><Input value={header.period ?? ""} disabled /></Field>
         <Field label={HEADER_FIELD_LABEL.elaboratedOn} required><DatePicker value={header.elaboratedOn ?? undefined} disabled={!editable} onChange={(iso) => set("elaboratedOn", iso)} /></Field>
@@ -128,20 +155,20 @@ export function AntecedentesForm({ workspace, editable }: { workspace: MiperWork
         {textField("worksiteName")}
       </section>
       <section className="grid gap-4 md:grid-cols-4">
-        <h2 className="md:col-span-4 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Dotación</h2>
+        <h3 className="md:col-span-4 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Dotación</h3>
         {numberField("headcountTotal")}{numberField("headcountMale")}{numberField("headcountFemale")}{numberField("headcountOther")}
         {sumMismatch && <p role="alert" className="md:col-span-4 text-sm text-[var(--color-danger-ink)]">Hombres + mujeres + otro suman {sum} y el total declarado es {header.headcountTotal}.</p>}
         {prefill.headcount.unrecorded > 0 && <p className="md:col-span-4 text-xs text-[var(--color-text-subtle)]">{prefill.headcount.unrecorded} trabajador(es) activo(s) no tienen el sexo registrado y se cuentan como &quot;otro&quot;. Complétalo en la ficha del trabajador.</p>}
       </section>
       <section className="grid gap-4 md:grid-cols-3">
-        <h2 className="md:col-span-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Responsables</h2>
+        <h3 className="md:col-span-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Responsables</h3>
         {textField("siteRepresentativeName", { required: true })}
         <Field label="Elaboró / revisó / aprobó" helper="Se registran solos con el flujo de revisión: no se escriben.">
           <Input disabled value={workspace.versions[0] ? `${workspace.versions[0].elaboratedByName} / ${workspace.versions[0].technicalReviewerName} / ${workspace.versions[0].approverName}` : "Se completa al aprobar la primera versión"} />
         </Field>
       </section>
       <section className="grid gap-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Participación</h2>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Participación</h3>
         <Field label={HEADER_FIELD_LABEL.participationSummary}><Textarea value={header.participationSummary} disabled={!editable} onChange={(event) => set("participationSummary", event.target.value)} /></Field>
         <Field label={HEADER_FIELD_LABEL.consultationEvidenceReference}><Input value={header.consultationEvidenceReference} disabled={!editable} onChange={(event) => set("consultationEvidenceReference", event.target.value)} /></Field>
       </section>

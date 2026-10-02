@@ -43,8 +43,10 @@ export function nextStepFor(input: NextStepInput): NextStep | null {
   }
   if (mode.canEdit) {
     const errors = input.issues.filter((issue) => issue.severity === "error")
-    const header = errors.filter((issue) => issue.scope === "header")
+    // «La matriz no tiene registros» es de cabecera, pero no se corrige en la ficha: se agrega una tarea.
+    const header = errors.filter((issue) => issue.scope === "header" && issue.field !== "entries")
     if (header.length > 0) return step("warning", `Completa la ficha del documento (${header.length} dato(s))`, header[0]!.message, { kind: "ficha" })
+    if (rows.length === 0) return step("info", "Empieza por la primera tarea", "La matriz todavía no tiene riesgos: usa «Nueva tarea» en la cabecera.")
     const pending = new Set(errors.flatMap((issue) => (issue.entryId ? [issue.entryId] : [])))
     if (pending.size > 0) {
       const first = firstPendingBySeverity(rows, pending)

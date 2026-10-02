@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Field } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
@@ -15,7 +16,16 @@ import { approveMiperFinalAction, approveMiperTechnicalAction, discardMiperDraft
 
 type Dialogs = "return" | "approveTechnical" | "requestCorrections" | "approveFinal" | "discard" | "blocking" | null
 
-export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenEntry }: { workspace: MiperWorkspace; mode: WorkspaceMode; issues: CompletenessIssue[]; openObservations: number; onOpenEntry?: (entryId: string) => void }) {
+/**
+ * Acciones de cabecera del espacio de trabajo (spec §4): «Ficha del documento»,
+ * la decisión principal del flujo y «Más» (descargar, descartar). El estado
+ * («sólo lectura», «enviaste esta ronda») lo dice ahora `NextStepCard`.
+ */
+export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenEntry, onOpenFicha }: {
+  workspace: MiperWorkspace; mode: WorkspaceMode; issues: CompletenessIssue[]; openObservations: number
+  onOpenEntry?: (entryId: string) => void
+  onOpenFicha?: () => void
+}) {
   const [dialog, setDialog] = useState<Dialogs>(null)
   const [changeSummary, setChangeSummary] = useState("")
   const operation = useOperation({ feedback: "toast" })
@@ -26,14 +36,14 @@ export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenE
   const canSubmit = mode.canEdit && ["none", "observed"].includes(matrix.reviewState) && (matrix.status === "draft" || matrix.reviewState === "observed" || workspace.pendingDiff.hasChanges)
   const neverSubmitted = matrix.status === "draft" && matrix.reviewState === "none" && workspace.versions.length === 0 && !workspace.openRound
   const latest = workspace.versions[0]
+  const canDiscard = mode.canEdit && neverSubmitted
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {latest && <Button asChild variant="secondary"><a href={`/api/prevencion/miper/${latest.id}/export`}>Descargar v{latest.versionNumber} (Excel)</a></Button>}
-      {mode.canEdit && neverSubmitted && <Button variant="secondary" onClick={() => setDialog("discard")}>Descartar borrador</Button>}
+      {onOpenFicha && <Button variant="secondary" onClick={onOpenFicha}>Ficha del documento</Button>}
       {canSubmit && (
         <Button onClick={() => blocking.length > 0 ? setDialog("blocking") : operation.run(() => submitMiperAction(base))} disabled={operation.pending}>
-          {matrix.reviewState === "observed" ? "Reenviar a revisión" : "Enviar a revisión"}{blocking.length > 0 ? ` (${blocking.length} pendientes)` : ""}
+          {matrix.reviewState === "observed" ? "Reenviar a revisión" : "Enviar a revisión"}
         </Button>
       )}
       {mode.canReviewTechnical && <>
@@ -44,18 +54,37 @@ export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenE
         <Button variant="secondary" onClick={() => setDialog("requestCorrections")}>Solicitar correcciones</Button>
         <Button onClick={() => setDialog("approveFinal")} disabled={openObservations > 0}>Aprobar (Legal y RRHH)</Button>
       </>}
+      {(latest || canDiscard) && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button variant="secondary" aria-label="Más acciones de la MIPER">Más</Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {latest && <DropdownMenuItem asChild><a href={`/api/prevencion/miper/${latest.id}/export`}>Descargar v{latest.versionNumber} (Excel)</a></DropdownMenuItem>}
+            {canDiscard && <DropdownMenuItem onSelect={() => setDialog("discard")}>Descartar borrador</DropdownMenuItem>}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       <Dialog open={dialog === "blocking"} onOpenChange={(open) => { if (!open) close() }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Faltan {blocking.length} datos para enviar</DialogTitle>
-            <DialogDescription>Corrige lo siguiente en la matriz o en los antecedentes. Los bloqueos de una fila abren su ficha para corregirla.</DialogDescription>
+            <DialogDescription>Corrige lo siguiente en los riesgos o en la ficha del documento. Cada bloqueo te lleva a donde se corrige.</DialogDescription>
           </DialogHeader>
           <ul className="max-h-80 space-y-1 overflow-y-auto pl-5 text-sm">
             {blocking.slice(0, 40).map((issue, index) => {
+              // «La matriz no tiene registros» es de cabecera, pero no se corrige en la ficha: se agrega una tarea.
+              if (issue.scope === "header" && issue.field !== "entries" && onOpenFicha) {
+                return (
+                  <li key={index} className="list-disc">
+                    <button type="button" className="text-left underline-offset-2 hover:underline" onClick={() => { close(); onOpenFicha() }}>
+                      <span className="font-medium">Ficha del documento</span>: {issue.message}
+                    </button>
+                  </li>
+                )
+              }
               const entry = issue.entryId ? workspace.snapshot.entries.find((item) => item.id === issue.entryId) : undefined
               if (!entry || !onOpenEntry) {
-                return <li key={index} className="list-disc">{entry ? `Riesgo #${entry.rowNumber}: ` : "Antecedentes: "}{issue.message}</li>
+                return <li key={index} className="list-disc">{entry ? `Riesgo #${entry.rowNumber}: ` : issue.field === "entries" ? "Matriz: " : "Ficha del documento: "}{issue.message}</li>
               }
               return (
                 <li key={index} className="list-disc">
@@ -100,8 +129,6 @@ export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenE
         </DialogContent>
       </Dialog>
 
-      {mode.readOnlyReason && <span className="text-sm text-[var(--color-text-subtle)]">{mode.readOnlyReason}</span>}
-      {mode.isSubmitter && workspace.openRound && <span className="text-sm text-[var(--color-text-subtle)]">Enviaste esta ronda: la revisa otra persona.</span>}
       <Link href="/prevencion/miper" className="sr-only">Volver a la lista</Link>
     </div>
   )
