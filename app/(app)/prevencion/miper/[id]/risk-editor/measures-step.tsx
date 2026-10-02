@@ -18,7 +18,7 @@ export function MeasuresStep({ entry, data, editable, autosave, issues }: StepPr
   const [editing, setEditing] = useState<string | "new" | null>(null)
   const deletion = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
   const done = () => { setEditing(null); router.refresh() }
-  const controlMessages = issues.filter((issue) => issue.severity === "error" && ["controls", "dueDate", "responsible", "description"].includes(issue.field))
+  const controlMessages = issues.filter((issue) => issue.severity === "error" && ["controlledStatus", "controls", "dueDate", "responsible", "description"].includes(issue.field))
   return (
     <div className="space-y-5">
       <section className="space-y-2" aria-labelledby={`${entry.id}-h-controlado`}>

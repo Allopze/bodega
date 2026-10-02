@@ -68,7 +68,10 @@ export function RiskEditor(props: RiskEditorProps) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link href={taskHref} className="text-sm font-medium text-[var(--color-primary-ink)] hover:underline">‹ Volver a la tarea</Link>
-        <SaveStatusIndicator status={autosave.status} editable={editable} />
+        <div className="flex items-center gap-2">
+          <SaveStatusIndicator status={autosave.status} editable={editable} />
+          {editable && autosave.status.state === "error" && <Button size="sm" variant="secondary" onClick={() => router.refresh()}>Recargar riesgo</Button>}
+        </div>
       </div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
@@ -83,16 +86,18 @@ export function RiskEditor(props: RiskEditorProps) {
             {EDITOR_STEPS.map((value, index) => (
               <TabsTrigger key={value} value={value}>
                 {index + 1}. {EDITOR_STEP_LABEL[value]}{value === "medidas" ? ` (${entry.controls.length})` : ""}
-                {counts[value] > 0 && <span className="ml-1.5 rounded-full bg-[var(--color-warning-tint)] px-1.5 tabular-nums text-[var(--color-warning-ink)]">{counts[value]}<span className="sr-only"> pendientes</span></span>}
+                {counts[value] > 0
+                  ? <><span className="sr-only"> · </span><span className="ml-1.5 rounded-full bg-[var(--color-warning-tint)] px-1.5 tabular-nums text-[var(--color-warning-ink)]">{counts[value]}<span className="sr-only"> pendientes</span></span></>
+                  : <span className="ml-1.5 text-[var(--color-success-ink)]"><span aria-hidden>✓</span><span className="sr-only"> · completo</span></span>}
               </TabsTrigger>
             ))}
           </TabsList>
           <TabsContent value="identificacion"><IdentificationStep {...stepProps} /></TabsContent>
           <TabsContent value="evaluacion"><EvaluationStep {...stepProps} /></TabsContent>
           <TabsContent value="medidas"><MeasuresStep {...stepProps} /></TabsContent>
-          <TabsContent value="seguimiento"><FollowUpStep entry={entry} data={data} mode={mode} change={change} baselineEntry={baselineEntry} /></TabsContent>
+          <TabsContent value="seguimiento"><FollowUpStep issues={issues} entry={entry} data={data} mode={mode} change={change} baselineEntry={baselineEntry} /></TabsContent>
         </Tabs>
-        <RiskAside entry={entry} issues={issues} onGoToStep={goToStep} />
+        <RiskAside entry={entry} issues={issues} onGoToStep={goToStep} canObserve={mode.canObserve} />
       </div>
       <nav aria-label="Recorrer riesgos" className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)] py-3">
         <div className="flex items-center gap-2">
@@ -102,7 +107,7 @@ export function RiskEditor(props: RiskEditorProps) {
         </div>
         {nextPending
           ? <Button asChild size="sm"><Link href={hrefToEntry(pathname, params, nextPending)}>Siguiente pendiente</Link></Button>
-          : <p className="text-sm text-[var(--color-success-ink)]">No quedan riesgos pendientes{matching ? " en este filtro" : ""}.</p>}
+          : <p className="text-sm text-[var(--color-success-ink)]">No quedan otros riesgos pendientes{matching ? " en este filtro" : ""}.</p>}
       </nav>
     </div>
   )
@@ -114,8 +119,8 @@ function EntryMenu({ matrixId, entry, version, taskHref, entryHref }: { matrixId
   const [busy, setBusy] = useState(false)
   async function duplicate() {
     setBusy(true)
-    const state = await duplicateMiperEntryAction({ matrixId, entryId: entry.id })
-    setBusy(false)
+    let state
+    try { state = await duplicateMiperEntryAction({ matrixId, entryId: entry.id }) } catch { toast.error("No se pudo duplicar el riesgo."); return } finally { setBusy(false) }
     if (!state.ok) { toast.error(state.message ?? "No se pudo duplicar el riesgo."); return }
     toast.success(`Riesgo #${entry.rowNumber} duplicado.`)
     const id = (state.data as { id?: unknown } | undefined)?.id
@@ -124,12 +129,11 @@ function EntryMenu({ matrixId, entry, version, taskHref, entryHref }: { matrixId
   }
   async function remove() {
     setBusy(true)
-    const state = await deleteMiperEntryAction({ matrixId, entryId: entry.id, expectedVersion: version })
-    setBusy(false)
-    setConfirming(false)
+    let state
+    try { state = await deleteMiperEntryAction({ matrixId, entryId: entry.id, expectedVersion: version }) } catch { toast.error("No se pudo eliminar el riesgo."); return } finally { setBusy(false); setConfirming(false) }
     if (!state.ok) { toast.error(state.message ?? "No se pudo eliminar el riesgo."); return }
     toast.success(`Riesgo #${entry.rowNumber} eliminado.`)
-    router.push(taskHref)
+    router.replace(taskHref)
   }
   return (
     <>

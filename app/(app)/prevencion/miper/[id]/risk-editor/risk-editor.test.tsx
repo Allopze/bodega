@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { act, render, screen } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { act, fireEvent, render, screen } from "@testing-library/react"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { taskKeyOf } from "@/lib/prevention/miper/matrix-tree"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
 
@@ -28,6 +29,7 @@ const props = (overrides: Partial<RiskEditorProps> = {}): RiskEditorProps => ({
 })
 
 describe("RiskEditor", () => {
+  afterEach(() => { vi.useRealTimers(); commit.mockClear() })
   it("abre en el primer paso con errores y muestra el mensaje en el chequeo", () => {
     render(<RiskEditor {...props()} />)
     expect(screen.getByRole("tab", { name: /Medidas de control/, selected: true })).toBeTruthy()
@@ -60,6 +62,55 @@ describe("RiskEditor", () => {
     expect(router.refresh).toHaveBeenCalledTimes(1)
     await act(async () => { await vi.advanceTimersByTimeAsync(2600) })
     expect(screen.getByText("Este riesgo ya no existe")).toBeTruthy()
-    vi.useRealTimers()
+  })
+  it("RF3: un guardado rechazado de «¿controlado?» muestra el mensaje y la selección refleja el valor del riesgo", () => {
+    const autosave = { ...props().autosave, fieldError: (_id: string, field: string) => (field === "controlledStatus" ? "No se pudo guardar el estado" : undefined) }
+    render(<RiskEditor {...props({ step: "medidas", autosave })} />)
+    expect(screen.getByText("No se pudo guardar el estado")).toBeTruthy()
+    const group = screen.getByRole("radiogroup", { name: "¿Está controlado el riesgo?" })
+    const checked = Array.from(group.querySelectorAll('[role="radio"]')).filter((node) => node.getAttribute("aria-checked") === "true")
+    expect(checked.map((node) => node.textContent)).toEqual(["No"])
+  })
+  it("RF5: un paso basura en la URL cae en el primer paso con errores", () => {
+    render(<RiskEditor {...props({ step: "x" as never })} />)
+    expect(screen.getByRole("tab", { name: /Medidas de control/, selected: true })).toBeTruthy()
+  })
+  it("RF4: «Volver a la matriz» conserva la ruta de la matriz", async () => {
+    router.refresh.mockClear()
+    vi.useFakeTimers()
+    render(<RiskEditor {...props({ entryId: "zzz" })} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(2600) })
+    expect(screen.getByRole("link", { name: "Volver a la matriz" }).getAttribute("href")).toBe("/prevencion/miper/m1")
+  })
+  it("en modo lectura no hay campos, menú ni guardado desde las tarjetas", () => {
+    commit.mockClear()
+    const { unmount } = render(<RiskEditor {...props({ editable: false, step: "identificacion" })} />)
+    expect(screen.queryByRole("spinbutton")).toBeNull()
+    expect(screen.queryByRole("combobox")).toBeNull()
+    expect(screen.queryByRole("button", { name: /Más acciones/ })).toBeNull()
+    unmount()
+    render(<RiskEditor {...props({ editable: false, step: "evaluacion" })} />)
+    const radio = screen.getAllByRole("radio").find((node) => node.getAttribute("aria-checked") !== "true")!
+    fireEvent.click(radio)
+    expect(commit).not.toHaveBeenCalled()
+  })
+  it("RF2: tras mover el riesgo de tarea, «Volver a la tarea» apunta a la nueva", () => {
+    render(<RiskEditor {...props({ rows: [entry("e1", 1, { task: "Nueva tarea" })] })} />)
+    expect(screen.getByRole("link", { name: /Volver a la tarea/ }).getAttribute("href")).toBe(`/prevencion/miper/m1?tarea=${taskKeyOf({ activity: "Transporte", task: "Nueva tarea" })}`)
+  })
+  it("«Observar este riesgo» sólo con permiso y lleva a Seguimiento", () => {
+    const { unmount } = render(<RiskEditor {...props()} />)
+    expect(screen.queryByRole("button", { name: "Observar este riesgo" })).toBeNull()
+    unmount()
+    render(<RiskEditor {...props({ mode: { ...mode, canObserve: true } })} />)
+    fireEvent.click(screen.getByRole("button", { name: "Observar este riesgo" }))
+    expect(router.replace).toHaveBeenCalledWith(expect.stringContaining("paso=seguimiento"), { scroll: false })
+  })
+  it("tras un error de guardado ofrece «Recargar riesgo»", () => {
+    router.refresh.mockClear()
+    const autosave = { ...props().autosave, status: { state: "error" as const, savedAt: null, message: "Versión desactualizada" } }
+    render(<RiskEditor {...props({ autosave })} />)
+    fireEvent.click(screen.getByRole("button", { name: "Recargar riesgo" }))
+    expect(router.refresh).toHaveBeenCalledTimes(1)
   })
 })

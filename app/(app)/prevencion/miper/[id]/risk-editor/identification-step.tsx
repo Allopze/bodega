@@ -38,9 +38,14 @@ export function IdentificationStep({ entry, data, editable, autosave, issues }: 
   const exposed = (field: "exposedFemale" | "exposedMale" | "exposedOther", label: string) => (
     <Field label={label} htmlFor={id(field)} error={autosave.fieldError(entry.id, field)}>
       <Input id={id(field)} type="number" min={0} inputMode="numeric" defaultValue={entry[field]} key={`${field}-${entry[field]}`}
-        onBlur={(event) => { const value = Math.max(0, Number(event.target.value) || 0); if (value !== entry[field]) commit({ [field]: value } as MiperEntryValues) }} />
+        onBlur={(event) => {
+          const value = Math.max(0, Math.trunc(Number(event.target.value) || 0))
+          if (value !== entry[field]) commit({ [field]: value } as MiperEntryValues)
+          else event.target.value = String(entry[field])
+        }} />
     </Field>
   )
+  const placementMissing = Boolean(missing("activity") || missing("task"))
   const factors = data.riskFactors.filter((factor) => factor.isActive || factor.id === entry.riskFactorId)
 
   return (
@@ -55,6 +60,7 @@ export function IdentificationStep({ entry, data, editable, autosave, issues }: 
           <div className="space-y-1.5">
             <p className="text-sm font-medium">¿Es una tarea rutinaria?</p>
             <ChoiceCardGroup label="¿Es una tarea rutinaria?" className="sm:grid-cols-2" options={[...ROUTINE]} value={entry.isRoutine === null ? null : entry.isRoutine ? "yes" : "no"} onChange={(value) => commit({ isRoutine: value === "yes" })} />
+            {autosave.fieldError(entry.id, "isRoutine") && <p role="alert" className="text-sm text-[var(--color-danger-ink)]">{autosave.fieldError(entry.id, "isRoutine")}</p>}
           </div>
           {text("hazard", "Peligro")}
           {text("risk", "Riesgo")}
@@ -73,8 +79,8 @@ export function IdentificationStep({ entry, data, editable, autosave, issues }: 
           {exposed("exposedOther", "Expuestos (otro)")}
         </div>
       </section>
-      <details className="rounded-xl border border-[var(--color-border)] p-3">
-        <summary className="cursor-pointer text-sm font-medium">Mover a otra actividad o tarea</summary>
+      <details open={placementMissing || undefined} className="rounded-xl border border-[var(--color-border)] p-3">
+        <summary className="cursor-pointer text-sm font-medium">{placementMissing ? "Actividad y tarea" : "Mover a otra actividad o tarea"}</summary>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           {text("activity", "Actividad")}
           {text("task", "Tarea")}
