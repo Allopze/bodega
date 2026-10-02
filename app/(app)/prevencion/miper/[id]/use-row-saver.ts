@@ -53,5 +53,8 @@ export function useRowSaver(matrixId: string, initialVersions: Record<string, nu
     versions.current = { ...versions.current, ...next }
   }, [])
 
-  return { save, sync }
+  /** Versión conocida de una fila: la que debe viajar al borrarla después de editarla. */
+  const versionOf = useCallback((entryId: string) => versions.current[entryId], [])
+
+  return { save, sync, versionOf }
 }
