@@ -166,26 +166,24 @@ async function main() {
   await db.insert(schema.serviceEquipment).values(equipmentRows).onConflictDoNothing()
   console.log(`  Equipos de servicio: ${equipmentRows.length}`)
 
-  // ── Stock por faena, con mínimos y algunos bajo el mínimo ─────────────────
+  // ── Stock por faena ───────────────────────────────────────────────────────
   const stockRows: (typeof schema.worksiteStock.$inferInsert)[] = []
   for (const ws of worksites) {
     for (const product of products.slice(0, 40)) {
-      const minStock = int(5, 40)
-      // ~18% bajo el mínimo: el tablero necesita alertas reales, no todas.
-      const quantity = chance(0.18) ? int(0, minStock - 1) : int(minStock, minStock * 4)
+      // ~18% agotado o casi: una bodega real no está pareja.
+      const quantity = chance(0.18) ? int(0, 4) : int(5, 160)
       stockRows.push({
         id: id("stk"),
         worksiteId: ws.id,
         productId: product.id,
         quantity,
-        minStock,
         lastMovementAt: iso(daysAgo(int(0, 60))),
         updatedAt: iso(daysAgo(int(0, 30))),
       })
     }
   }
   await db.insert(schema.worksiteStock).values(stockRows).onConflictDoNothing()
-  console.log(`  Stock: ${stockRows.length} filas (~18% bajo el mínimo)`)
+  console.log(`  Stock: ${stockRows.length} filas`)
 
 
   // ── Adquisiciones: 6 meses de solicitudes → OC → recepción → entrega ──────
@@ -871,11 +869,11 @@ async function main() {
   // ── Instantáneas diarias: sin esto no hay sparklines ni backlog comparado ──
   /*
    * `getOperationalSnapshotHistory` descarta los días **sin cobertura completa**
-   * (todas las faenas activas × las 5 métricas), así que hay que escribir la
+   * (todas las faenas activas × las 4 métricas), así que hay que escribir la
    * malla entera por día o la serie queda vacía. Es el mismo contrato que
    * verifica `/api/cron/operational-snapshot-health`.
    */
-  const METRICAS = ["backlog_requests", "backlog_orders", "backlog_capa", "backlog_pdtp", "stock_alerts"] as const
+  const METRICAS = ["backlog_requests", "backlog_orders", "backlog_capa", "backlog_pdtp"] as const
   const snapshots: (typeof schema.operationalMetricSnapshots.$inferInsert)[] = []
   const nivel = new Map<string, number>()
 

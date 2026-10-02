@@ -63,8 +63,6 @@ export async function GET(req: NextRequest) {
             productSku: products.sku,
             unitOfMeasure: products.unitOfMeasure,
             quantity: sql<number>`coalesce(${worksiteStock.quantity}, 0)`,
-            minStock: sql<number>`coalesce(${worksiteStock.minStock}, 0)`,
-            stockId: worksiteStock.id,
           })
           .from(products)
           .leftJoin(worksiteStock, and(
@@ -129,7 +127,6 @@ export async function GET(req: NextRequest) {
         ...row,
         productName: formatVariantProductName(row.productName, attributesById.get(row.productId)),
         quantity: Number(row.quantity),
-        minStock: Number(row.minStock),
       })),
       returns: returnRows.map((row) => ({
         ...row,

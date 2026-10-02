@@ -240,25 +240,6 @@ export const workerDeliverySchema = z.object({
   }
 })
 
-// ── Stock min threshold ─────────────────────────────────────────────────────
-export const setMinStockSchema = z.object({
-  stockId:   z.string().min(1),
-  minStock:  z.coerce.number().refine(Number.isFinite, "Valor inválido").min(0, "No puede ser negativo"),
-})
-
-/**
- * Definición masiva de mínimos: una fila por producto de la faena. El formulario
- * envía arreglos paralelos y la acción sólo conserva las filas efectivamente
- * tecleadas — una celda en blanco significa "no tocar", no "poner 0".
- */
-export const setMinStockBulkSchema = z.object({
-  worksiteId: z.string().min(1, "Selecciona una faena"),
-  items: z.array(z.object({
-    stockId:  z.string().min(1),
-    minStock: z.coerce.number().refine(Number.isFinite, "Valor inválido").min(0, "No puede ser negativo"),
-  })).min(1, "Escribe al menos un mínimo"),
-})
-
 /**
  * ENT-003 (auditoría 2026-09-14): `deliveredAt` sólo se validaba como fecha real
  * y no futura. Sin cota inferior, una entrega registrada hoy podía quedar
@@ -421,7 +402,5 @@ export type ReceiptFormData = z.infer<typeof receiptSchema>
 export type WorkerDeliveryFormData = z.infer<typeof workerDeliverySchema>
 export type WorkerStockDeliveryFormData = z.infer<typeof workerStockDeliverySchema>
 export type AdjustStockFormData = z.infer<typeof adjustStockSchema>
-export type SetMinStockFormData = z.infer<typeof setMinStockSchema>
-export type SetMinStockBulkFormData = z.infer<typeof setMinStockBulkSchema>
 export type DiscardStockFormData = z.infer<typeof discardStockSchema>
 export type ReturnStockFormData = z.infer<typeof returnStockSchema>

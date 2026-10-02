@@ -7,7 +7,6 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { can } from "@/lib/auth/can"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { formatCLP, formatDate } from "@/lib/utils"
-import { getCriticalStockAlertCount } from "@/lib/services/stock-alerts"
 import { getDashboardData } from "@/lib/services/dashboard"
 import { listOperationalActivity } from "@/lib/services/operational-activity"
 import {
@@ -54,7 +53,6 @@ export interface ResumenViewProps {
   session: Session
   scope: DashboardScope
   worksiteScope: WorksiteScope
-  pdtpScope: string[] | "all"
   /** Faenas del alcance ya resueltas a ids: varias funciones exigen `string[]`. */
   worksiteIds: string[]
   currentYear: number
@@ -75,7 +73,6 @@ export async function ResumenView({
   session,
   scope,
   worksiteScope,
-  pdtpScope,
   worksiteIds,
   currentYear,
   queueTotal,
@@ -86,7 +83,6 @@ export async function ResumenView({
   const canViewPurchasing = can(session, "purchasing:view")
   const canReceive = can(session, "receiving:view")
   const canDeliver = can(session, "deliveries:create")
-  const canViewStock = can(session, "warehouse:view_stock")
   const canViewEpp = can(session, "prevention:epp:view")
   const canViewPdtp = can(session, "prevention:pdtp:view")
   const canViewCapa = can(session, "prevention:capa:view")
@@ -114,21 +110,18 @@ export async function ResumenView({
   // Un solo lote: el bloque de prevención no depende del operacional, y
   // encadenarlos duplicaba la latencia de red de la página (P-01).
   const [
-    data, activity, stockAlertCount, eppGapsCount, periodMetrics, backlogComparisons, snapshotHistory,
+    data, activity, eppGapsCount, periodMetrics, backlogComparisons, snapshotHistory,
     pdtpSummary, activeProgram, allPrograms, capaCounts, incidentCounts, trend,
   ] = await Promise.all([
     getDashboardData(session, scopedWorksite),
     listOperationalActivity(session, 6),
-    canViewStock
-      ? optionalBlock("alertas de stock crítico", getCriticalStockAlertCount(pdtpScope), 0)
-      : Promise.resolve(0),
     canViewEpp
       ? optionalBlock("brechas de EPP", listEppCoverageGaps({ userId: session.user.id, scope: worksiteScope, permissions: session.user.permissions })
           .then((gaps) => gaps.filter((gap) => gap.enforcement === "blocking").length), 0)
       : Promise.resolve(0),
     getOperationalPeriodMetrics(session, { period: scope.period, worksiteId: scopedWorksite }),
     optionalBlock("comparativas de backlog", getOperationalBacklogComparisons(session, new Date(), scopedWorksite), []),
-    optionalBlock("histórico de indicadores", getOperationalSnapshotHistory(session, 30, new Date(), scopedWorksite), { backlog_requests: [], backlog_orders: [], backlog_capa: [], backlog_pdtp: [], stock_alerts: [] }),
+    optionalBlock("histórico de indicadores", getOperationalSnapshotHistory(session, 30, new Date(), scopedWorksite), { backlog_requests: [], backlog_orders: [], backlog_capa: [], backlog_pdtp: [] }),
     /*
      * DASH-003: cada bloque opcional se degrada por su cuenta. Antes, un fallo
      * de PDTP —una columna que faltaba en una base desincronizada— rechazaba
@@ -164,8 +157,6 @@ export async function ResumenView({
     pendingApprovals: data.metrics.pending_approvals,
     ordersPendingReceipt: data.metrics.orders_pending_receipt,
     activeOrders: backlogComparisons.find((entry) => entry.metric === "backlog_orders")?.current ?? 0,
-    stockAlerts: stockAlertCount,
-    stockTrend: snapshotHistory.stock_alerts,
     periodSpend: periodMetrics.spend.current,
     pdtpPercent: pdtpSummary?.percent ?? null,
     pdtpTarget: pdtpSummary?.target ?? 0.9,
@@ -174,7 +165,6 @@ export async function ResumenView({
     overdueCapa: capaCounts.overdue,
     canApprove,
     canReceive,
-    canViewStock,
     canViewPurchasing,
     canViewPdtp,
     canViewIncidents,
@@ -192,13 +182,11 @@ export async function ResumenView({
     pendingApprovals: data.metrics.pending_approvals,
     ordersPendingReceipt: data.metrics.orders_pending_receipt,
     deliveries: queueSummary.moduleCounts.entregas ?? 0,
-    stockAlerts: stockAlertCount,
     eppGaps: eppGapsCount,
     overdueCapa: capaCounts.overdue,
     canApprove,
     canReceive,
     canDeliver,
-    canViewStock,
     canViewEpp,
     canViewCapa,
   })
@@ -421,9 +409,6 @@ export function buildOperationalMetrics(input: {
   pendingApprovals: number
   ordersPendingReceipt: number
   activeOrders: number
-  stockAlerts: number
-  /** Serie diaria real de `stock_alerts`; la única de los tiles que existe. */
-  stockTrend: number[]
   periodSpend: number
   pdtpPercent: number | null
   pdtpTarget: number
@@ -432,7 +417,6 @@ export function buildOperationalMetrics(input: {
   overdueCapa: number
   canApprove: boolean
   canReceive: boolean
-  canViewStock: boolean
   canViewPurchasing: boolean
   canViewPdtp: boolean
   canViewIncidents: boolean
@@ -482,12 +466,6 @@ export function buildOperationalMetrics(input: {
       icon: "critical", href: href({ module: "capa" }),
       tone: input.overdueCapa > 0 ? "danger" : "neutral",
     } : null,
-    input.canViewStock ? {
-      key: "stock", label: "Stock crítico", value: input.stockAlerts,
-      description: input.stockAlerts > 0 ? "Productos bajo su mínimo definido" : "Todo sobre el mínimo definido",
-      icon: "stock", href: "/bodega?stock=low",
-      tone: input.stockAlerts > 0 ? "danger" : "neutral", sparkline: input.stockTrend,
-    } : null,
   ]
 
   const work: Array<DashboardMetric | null> = [
@@ -533,13 +511,11 @@ export function buildOperationalAlerts(input: {
   pendingApprovals: number
   ordersPendingReceipt: number
   deliveries: number
-  stockAlerts: number
   eppGaps: number
   overdueCapa: number
   canApprove: boolean
   canReceive: boolean
   canDeliver: boolean
-  canViewStock: boolean
   canViewEpp: boolean
   canViewCapa: boolean
 }): DashboardAlert[] {
@@ -549,7 +525,6 @@ export function buildOperationalAlerts(input: {
     input.overdueTasks > 0 ? { key: "overdue", title: "tareas vencidas", description: "Su fecha nativa o compromiso complementario ya venció.", count: input.overdueTasks, severity: "critical", href: href({ quick: "overdue" }) } : null,
     input.blockedTasks > 0 ? { key: "blocked", title: "procesos bloqueados", description: "Requieren resolver una observación, detención o condición previa.", count: input.blockedTasks, severity: "warning", href: href({ quick: "blocked" }) } : null,
     input.unassignedTasks > 0 ? { key: "unassigned", title: "tareas asignables sin responsable", description: "Revisiones y acciones que admiten una persona a cargo, pero no la tienen asignada.", count: input.unassignedTasks, severity: "warning", href: href({ quick: "unassigned" }) } : null,
-    input.canViewStock && input.stockAlerts > 0 ? { key: "stock", title: "productos con stock crítico", description: "El nivel actual está por debajo del mínimo definido para la faena.", count: input.stockAlerts, severity: "critical", href: "/bodega?stock=low" } : null,
     input.canViewCapa && input.overdueCapa > 0 ? { key: "capa", title: "acciones correctivas vencidas", description: "Su plazo de cierre comprometido ya venció.", count: input.overdueCapa, severity: "critical", href: href({ module: "capa" }) } : null,
     input.canApprove && input.pendingApprovals > 0 ? { key: "approvals", title: "ítems esperan aprobación", description: "Una decisión de aprobación desbloquea el siguiente paso de compra.", count: input.pendingApprovals, severity: "warning", href: href({ module: "aprobaciones" }) } : null,
     input.canReceive && input.ordersPendingReceipt > 0 ? { key: "receipts", title: "órdenes pendientes de recepción", description: "Registra la llegada para que la operación pueda avanzar.", count: input.ordersPendingReceipt, severity: "warning", href: href({ module: "recepciones" }) } : null,

@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import {
   ArrowBendUpLeft, ClipboardText, ArrowsDownUp, Plus, CaretRight, CaretLeft,
-  Trash, Gauge, Truck, Spinner, Warning,
+  Trash, Truck, Spinner, Warning,
 } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import {
@@ -18,11 +18,10 @@ import { ReturnPanel } from "./return-panel"
 import { AdjustPanel } from "./adjust-panel"
 import { DiscardPanel } from "./discard-panel"
 import { PhysicalInventoryPanel } from "./physical-inventory-panel"
-import { MinStockPanel } from "./min-stock-panel"
 import type { BodegaOptions } from "./movement-options"
 
 type WorksiteOption = { id: string; name: string }
-type MovementType = "return" | "count" | "adjust" | "discard" | "minstock"
+type MovementType = "return" | "count" | "adjust" | "discard"
 
 /**
  * Punto de entrada único para los movimientos de bodega.
@@ -56,11 +55,9 @@ export function BodegaMovementSheet({
     ...(canAdjust ? [{ key: "count" as const, label: "Conteo físico", desc: "Cerrar un conteo con ajuste automático por diferencia.", icon: <ClipboardText size={18} /> }] : []),
     ...(canAdjust ? [{ key: "adjust" as const, label: "Ajuste de inventario", desc: "Corregir una existencia con motivo.", icon: <ArrowsDownUp size={18} /> }] : []),
     ...(canAdjust ? [{ key: "discard" as const, label: "Baja por desecho", desc: "Retirar EPP dañado o vencido, con folio propio.", icon: <Trash size={18} /> }] : []),
-    ...(canRegister ? [{ key: "minstock" as const, label: "Definir stock mínimo", desc: "Fijar umbrales de toda una faena de una vez.", icon: <Gauge size={18} /> }] : []),
   ]
 
   const needsOptions = type !== null
-  const chosenWorksite = worksites.find((item) => item.id === worksiteId)
 
   React.useEffect(() => {
     if (!needsOptions || !worksiteId) {
@@ -210,14 +207,6 @@ export function BodegaMovementSheet({
                     )}
                     {type === "discard" && (
                       <DiscardPanel worksiteId={options.worksiteId} products={options.products} onDone={closeSheet} />
-                    )}
-                    {type === "minstock" && (
-                      <MinStockPanel
-                        worksiteId={options.worksiteId}
-                        worksiteName={chosenWorksite?.name ?? options.worksiteName}
-                        products={options.products}
-                        onDone={closeSheet}
-                      />
                     )}
                   </>
                 )}

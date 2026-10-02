@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest"
-import { createOrderSchema, receiptSchema, workerDeliverySchema, setMinStockSchema, returnStockSchema } from "../validation/operations"
+import { createOrderSchema, receiptSchema, workerDeliverySchema, returnStockSchema } from "../validation/operations"
 
 describe("Purchasing validation schemas", () => {
   describe("createOrderSchema", () => {
@@ -107,30 +107,6 @@ describe("Purchasing validation schemas", () => {
 })
 
 describe("Stock validation schemas", () => {
-  describe("setMinStockSchema", () => {
-    it("accepts valid input", () => {
-      expect(() => setMinStockSchema.parse({
-        stockId: "st-1",
-        minStock: 10,
-      })).not.toThrow()
-    })
-
-    it("rejects negative minStock", () => {
-      expect(() => setMinStockSchema.parse({
-        productId: "prod-1",
-        worksiteId: "ws-1",
-        minStock: -1,
-      })).toThrow()
-    })
-
-    it("rejects missing stockId", () => {
-      expect(() => setMinStockSchema.parse({
-        stockId: "",
-        minStock: 10,
-      })).toThrow()
-    })
-  })
-
   describe("workerDeliverySchema", () => {
     it("accepts valid input", () => {
       expect(() => workerDeliverySchema.parse({

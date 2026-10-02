@@ -19,8 +19,6 @@ const numbers = {
   pendingApprovals: 6,
   ordersPendingReceipt: 4,
   activeOrders: 11,
-  stockAlerts: 5,
-  stockTrend: [4, 5, 5],
   periodSpend: 12_400_000,
   pdtpPercent: 0.87,
   pdtpTarget: 0.9,
@@ -32,21 +30,21 @@ const numbers = {
 /** Jefatura: rol global con todos los permisos de lectura del tablero. */
 const jefatura = {
   scope, ...numbers,
-  canApprove: true, canReceive: true, canViewStock: true, canViewPurchasing: true,
+  canApprove: true, canReceive: true, canViewPurchasing: true,
   canViewPdtp: true, canViewIncidents: true, canViewCapa: true,
 }
 
-/** Solicitante de faena: sin dinero, sin prevención, sin bodega. */
+/** Solicitante de faena: sin dinero ni prevención. */
 const solicitante = {
   scope, ...numbers,
-  canApprove: false, canReceive: false, canViewStock: false, canViewPurchasing: false,
+  canApprove: false, canReceive: false, canViewPurchasing: false,
   canViewPdtp: false, canViewIncidents: false, canViewCapa: false,
 }
 
-/** Prevencionista de faena: prevención y bodega, sin dinero ni aprobaciones. */
+/** Prevencionista de faena: prevención y recepción, sin dinero ni aprobaciones. */
 const prevencionistaFaena = {
   scope, ...numbers,
-  canApprove: false, canReceive: true, canViewStock: true, canViewPurchasing: false,
+  canApprove: false, canReceive: true, canViewPurchasing: false,
   canViewPdtp: true, canViewIncidents: true, canViewCapa: true,
 }
 
@@ -105,11 +103,10 @@ describe("buildOperationalMetrics — ranuras", () => {
     const sinRecepcion = buildOperationalMetrics({ ...jefatura, canReceive: false })
     expect(sinRecepcion.map((m) => m.key)).toEqual(["spend", "incidents", "overdue"])
 
-    // Sin incidentes ni CAPA, riesgo cae en stock — y con su sparkline real.
+    // Sin incidentes ni CAPA la ranura de riesgo se cede: el stock crítico que
+    // la cerraba se retiró con el stock mínimo.
     const sinPrevencion = buildOperationalMetrics({ ...jefatura, canViewIncidents: false, canViewCapa: false })
-    const stock = sinPrevencion.find((m) => m.key === "stock")
-    expect(stock).toBeDefined()
-    expect(stock?.sparkline).toEqual([4, 5, 5])
+    expect(sinPrevencion.map((m) => m.key)).toEqual(["spend", "receipts", "overdue"])
   })
 
   it("sin tareas vencidas la ranura de trabajo cae en aprobaciones", () => {
@@ -129,7 +126,7 @@ describe("buildOperationalMetrics — ranuras", () => {
 
   // §3.3: cada cifra debe tener un destino que pueda acotar lo que cuenta. La
   // inversión baja a la lista con la ventana del período; incidentes pre-filtra
-  // "abiertos"; stock crítico pre-filtra bajo mínimo.
+  // "abiertos".
   it("la inversión lleva a compras con la ventana del período", () => {
     const spend = buildOperationalMetrics(jefatura).find((m) => m.key === "spend")
     expect(spend?.href).toMatch(/^\/compras\?desde=\d{4}-\d{2}-\d{2}&hasta=\d{4}-\d{2}-\d{2}$/)
@@ -140,9 +137,10 @@ describe("buildOperationalMetrics — ranuras", () => {
     expect(incidents?.href).toBe("/prevencion/incidentes?quick=open")
   })
 
-  it("el stock crítico pre-filtra bajo mínimo en bodega", () => {
-    const stock = buildOperationalMetrics({ ...jefatura, canViewIncidents: false, canViewCapa: false }).find((m) => m.key === "stock")
-    expect(stock?.href).toBe("/bodega?stock=low")
+  it("ya no ofrece el tile de stock crítico", () => {
+    for (const perfil of [jefatura, prevencionistaFaena, { ...jefatura, canViewIncidents: false, canViewCapa: false }]) {
+      expect(buildOperationalMetrics(perfil).map((m) => m.key)).not.toContain("stock")
+    }
   })
 
   // El PDTP ya no participa de la fila, así que su ausencia no la reordena.
@@ -162,11 +160,10 @@ describe("buildOperationalAlerts — sin repetir tiles", () => {
     pendingApprovals: 6,
     ordersPendingReceipt: 4,
     deliveries: 2,
-    stockAlerts: 5,
     eppGaps: 3,
     overdueCapa: 7,
     canApprove: true, canReceive: true, canDeliver: true,
-    canViewStock: true, canViewEpp: true, canViewCapa: true,
+    canViewEpp: true, canViewCapa: true,
   }
 
   // A5: una cifra no puede ser tile y alerta a la vez. Antes "críticas",
@@ -199,11 +196,8 @@ describe("buildOperationalAlerts — sin repetir tiles", () => {
     expect(alert?.href).toBe("/pendientes?quick=critical&worksiteId=ws-sur")
   })
 
-  it("la alerta de stock crítico pre-filtra bajo mínimo en bodega", () => {
-    const stockAlert = buildOperationalAlerts({
-      ...alertInput,
-      shownAsTile: new Set(["overdue"]), // sin tile de stock ocupando la ranura, la alerta sí aparece
-    }).find((a) => a.key === "stock")
-    expect(stockAlert?.href).toBe("/bodega?stock=low")
+  it("ya no emite la alerta de stock crítico", () => {
+    const keys = buildOperationalAlerts({ ...alertInput, shownAsTile: new Set<string>() }).map((a) => a.key)
+    expect(keys).not.toContain("stock")
   })
 })

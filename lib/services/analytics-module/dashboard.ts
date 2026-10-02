@@ -5,7 +5,7 @@ import {
   deliveries, deliveryItems, fuelEquipmentTypes, fuelLoads, fuelSuppliers, fuelVehicles,
   inventoryMovements, maintenanceRecords, products, productCategories,
   purchaseOrderItems, purchaseOrders, purchaseRequestItems, purchaseRequests,
-  suppliers, worksiteStock, worksites, workers,
+  suppliers, worksites, workers,
 } from "@/db/schema"
 import type { AnalyticsDashboardData, AnalyticsFilters } from "./types"
 import {
@@ -130,7 +130,6 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
 
   const orderScope = worksiteFilter(session, purchaseOrders.worksiteId)
   const requestScope = worksiteFilter(session, purchaseRequests.worksiteId)
-  const stockScope = worksiteFilter(session, worksiteStock.worksiteId)
   const movementScope = worksiteFilter(session, inventoryMovements.worksiteId)
   const deliveryScope = worksiteFilter(session, deliveries.worksiteId)
   const fuelScope = worksiteFilter(session, fuelLoads.worksiteId)
@@ -144,7 +143,7 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
   const previousFuelWhere = and(accountableFuelLoadsWhere(), fuelScope, gte(fuelLoads.loadDate, previous.fromDate), lte(fuelLoads.loadDate, previous.toDate), filters.worksiteId ? eq(fuelLoads.worksiteId, filters.worksiteId) : undefined, filters.vehicleId ? eq(fuelLoads.vehicleId, filters.vehicleId) : undefined)
   const maintenanceWhere = and(maintenanceScope, gte(maintenanceRecords.maintenanceDate, filters.fromDate), lte(maintenanceRecords.maintenanceDate, filters.toDate), filters.worksiteId ? eq(maintenanceRecords.worksiteId, filters.worksiteId) : undefined, filters.vehicleId ? eq(maintenanceRecords.vehicleId, filters.vehicleId) : undefined, sql`${maintenanceRecords.status} <> 'cancelled'`)
 
-  const [[purchaseSummary], [previousPurchaseSummary], [fuelSummary], [previousFuelSummary], [approvalSummary], [stockSummary], purchaseMonths, fuelMonths, purchaseModules, fuelModules, purchaseSuppliers, fuelSupplierRows, purchaseWorksites, fuelWorksites, vehicleRows, lastReadingRows, stockRows, rotationRows, eppRows, recentOrders, maintenanceRows] = await Promise.all([
+  const [[purchaseSummary], [previousPurchaseSummary], [fuelSummary], [previousFuelSummary], [approvalSummary], purchaseMonths, fuelMonths, purchaseModules, fuelModules, purchaseSuppliers, fuelSupplierRows, purchaseWorksites, fuelWorksites, vehicleRows, lastReadingRows, rotationRows, eppRows, recentOrders, maintenanceRows] = await Promise.all([
     db.select({ totalAmount: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)`, orderCount: sql<number>`COUNT(*)`, averageOrderAmount: sql<number>`COALESCE(AVG(${purchaseOrders.totalAmount}), 0)` }).from(purchaseOrders).where(orderWhere),
     db.select({ totalAmount: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)` }).from(purchaseOrders).where(previousOrderWhere),
     canViewFuel
@@ -154,7 +153,6 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
       ? db.select({ totalAmount: sql<number>`COALESCE(SUM(${fuelLoads.totalAmount}), 0)` }).from(fuelLoads).where(previousFuelWhere)
       : Promise.resolve([]),
     db.select({ pendingApprovals: sql<number>`COUNT(*) FILTER (WHERE ${purchaseRequestItems.status} = 'requested')` }).from(purchaseRequestItems).innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id)).where(and(requestScope, filters.worksiteId ? eq(purchaseRequests.worksiteId, filters.worksiteId) : undefined, dateFilter(filters, purchaseRequests.createdAt))),
-    db.select({ criticalStockCount: sql<number>`COUNT(*) FILTER (WHERE ${worksiteStock.minStock} > 0 AND ${worksiteStock.quantity} < ${worksiteStock.minStock})` }).from(worksiteStock).where(and(stockScope, filters.worksiteId ? eq(worksiteStock.worksiteId, filters.worksiteId) : undefined)),
     db.select({ month: chileMonthExpr(purchaseOrders.createdAt), module: sql<string>`'Compras'`, totalAmount: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)` }).from(purchaseOrders).where(orderWhere).groupBy(chileMonthExpr(purchaseOrders.createdAt)).orderBy(chileMonthExpr(purchaseOrders.createdAt)),
     canViewFuelCosts
       ? db.select({ month: fuelLoads.month, module: sql<string>`'Combustible'`, totalAmount: sql<number>`COALESCE(SUM(${fuelLoads.totalAmount}), 0)` }).from(fuelLoads).where(fuelWhere).groupBy(fuelLoads.month).orderBy(fuelLoads.month)
@@ -188,7 +186,6 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
         .where(and(fuelWhere, or(isNotNull(fuelLoads.odometerReading), isNotNull(fuelLoads.hourMeterReading))))
         .orderBy(fuelLoads.vehicleId, desc(fuelLoads.loadDate), desc(fuelLoads.createdAt))
       : Promise.resolve([]),
-    db.select({ productId: products.id, productName: products.name, sku: products.sku, worksiteName: worksites.name, currentQty: worksiteStock.quantity, minStock: worksiteStock.minStock }).from(worksiteStock).innerJoin(products, eq(worksiteStock.productId, products.id)).innerJoin(worksites, eq(worksiteStock.worksiteId, worksites.id)).where(and(stockScope, filters.worksiteId ? eq(worksiteStock.worksiteId, filters.worksiteId) : undefined, sql`${worksiteStock.minStock} > 0 AND ${worksiteStock.quantity} < ${worksiteStock.minStock}`)).orderBy(sql`${worksiteStock.quantity} - ${worksiteStock.minStock}`).limit(10),
     db.select({ productId: products.id, productName: products.name, sku: products.sku, totalOut: sql<number>`COALESCE(SUM(ABS(${inventoryMovements.quantity})), 0)`, movementCount: sql<number>`COUNT(*)` }).from(inventoryMovements).innerJoin(products, eq(inventoryMovements.productId, products.id)).where(and(movementScope, filters.worksiteId ? eq(inventoryMovements.worksiteId, filters.worksiteId) : undefined, chileDayRange(inventoryMovements.performedAt, filters.fromDate, filters.toDate), eq(inventoryMovements.type, "egreso_entrega"))).groupBy(products.id, products.name, products.sku).orderBy(desc(sql`COALESCE(SUM(ABS(${inventoryMovements.quantity})), 0)`)).limit(10),
     db.select({ productId: products.id, productName: products.name, workerName: sql<string>`COALESCE(${workers.firstName} || ' ' || ${workers.lastName}, ${deliveries.receiverName}, 'Sin trabajador')`, worksiteName: worksites.name, totalQty: sql<number>`COALESCE(SUM(${deliveryItems.quantity}), 0)`, deliveryCount: sql<number>`COUNT(*)` }).from(deliveryItems).innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id)).leftJoin(workers, eq(deliveries.workerId, workers.id)).leftJoin(worksites, eq(deliveries.worksiteId, worksites.id)).leftJoin(products, eq(deliveryItems.productId, products.id)).leftJoin(productCategories, eq(products.categoryId, productCategories.id)).where(and(deliveryScope, filters.worksiteId ? eq(deliveries.worksiteId, filters.worksiteId) : undefined, chileDayRange(deliveries.deliveredAt, filters.fromDate, filters.toDate), sql`(${products.isEpp} = true OR ${productCategories.isEpp} = true)`)).groupBy(products.id, products.name, workers.firstName, workers.lastName, deliveries.receiverName, worksites.name).orderBy(desc(sql`COALESCE(SUM(${deliveryItems.quantity}), 0)`)).limit(10),
     db.select({ id: purchaseOrders.id, code: purchaseOrders.code, worksiteName: worksites.name, supplierName: suppliers.name, totalAmount: purchaseOrders.totalAmount, createdAt: purchaseOrders.createdAt }).from(purchaseOrders).innerJoin(worksites, eq(purchaseOrders.worksiteId, worksites.id)).innerJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id)).where(orderWhere).orderBy(desc(purchaseOrders.createdAt)).limit(8),
@@ -214,16 +211,15 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
   const lastReadingByVehicle = new Map(lastReadingRows.map((r) => [r.vehicleId, r]))
   const vehicleCosts = vehicleRows.map((r) => { const fuelAmount = Number(r.totalFuelAmount ?? 0); const m = maintenanceByVehicle.get(r.id); const lastReading = lastReadingByVehicle.get(r.id); return { id: r.id, plate: r.plate, type: r.type, totalFuelAmount: fuelAmount, totalServiceAmount: m?.totalServiceAmount ?? 0, totalOperationalCost: fuelAmount + (m?.totalServiceAmount ?? 0), totalLiters: Number(r.totalLiters ?? 0), loadCount: Number(r.loadCount ?? 0), maintenanceCount: m?.maintenanceCount ?? 0, lastOdometerReading: lastReading?.odometerReading == null ? null : Number(lastReading.odometerReading), lastHourMeterReading: lastReading?.hourMeterReading == null ? null : Number(lastReading.hourMeterReading) } })
 
-  const stockRisks = stockRows.map((r) => ({ productId: r.productId, productName: r.productName, sku: r.sku, worksiteName: r.worksiteName, currentQty: Number(r.currentQty ?? 0), minStock: Number(r.minStock ?? 0) }))
   const productRotation = rotationRows.map((r) => ({ productId: r.productId, productName: r.productName, sku: r.sku, totalOut: Number(r.totalOut ?? 0), movementCount: Number(r.movementCount ?? 0) }))
   const eppDeliveries = eppRows.map((r) => ({ productId: r.productId ?? "sin-producto", productName: r.productName ?? "EPP sin catálogo", workerName: r.workerName, worksiteName: r.worksiteName ?? "Sin faena", totalQty: Number(r.totalQty ?? 0), deliveryCount: Number(r.deliveryCount ?? 0) }))
 
   const dataGaps = buildDataGaps(vehicleCosts, { includeMaintenanceCosts: canViewMaintenanceCosts })
-  const alerts = buildAlerts({ stockRisks, vehicleCosts, topSuppliers, eppDeliveries, totalSpend, thresholds, detectedAt, noData: totalSpend === 0 && stockRisks.length === 0 && eppDeliveries.length === 0, includeMaintenanceCosts: canViewMaintenanceCosts })
+  const alerts = buildAlerts({ vehicleCosts, topSuppliers, eppDeliveries, totalSpend, thresholds, detectedAt, noData: totalSpend === 0 && eppDeliveries.length === 0, includeMaintenanceCosts: canViewMaintenanceCosts })
 
   return {
-    filters, kpis: { totalSpend, previousTotalSpend: previousTotal, spendVariationPct: variationPct(totalSpend, previousTotal), purchaseOrderCount: Number(purchaseSummary?.orderCount ?? 0), pendingApprovals: Number(approvalSummary?.pendingApprovals ?? 0), criticalStockCount: Number(stockSummary?.criticalStockCount ?? 0), fuelLiters: Number(fuelSummary?.totalLiters ?? 0), fuelLoadCount: Number(fuelSummary?.loadCount ?? 0), averageOrderAmount: Number(purchaseSummary?.averageOrderAmount ?? 0) },
-    spendByMonth, spendByModule, topSuppliers, topWorksites, vehicleCosts, stockRisks, productRotation, eppDeliveries,
+    filters, kpis: { totalSpend, previousTotalSpend: previousTotal, spendVariationPct: variationPct(totalSpend, previousTotal), purchaseOrderCount: Number(purchaseSummary?.orderCount ?? 0), pendingApprovals: Number(approvalSummary?.pendingApprovals ?? 0), fuelLiters: Number(fuelSummary?.totalLiters ?? 0), fuelLoadCount: Number(fuelSummary?.loadCount ?? 0), averageOrderAmount: Number(purchaseSummary?.averageOrderAmount ?? 0) },
+    spendByMonth, spendByModule, topSuppliers, topWorksites, vehicleCosts, productRotation, eppDeliveries,
     recentOrders: recentOrders.map((r) => ({ id: r.id, code: r.code, worksiteName: r.worksiteName, supplierName: r.supplierName, totalAmount: Number(r.totalAmount ?? 0), createdAt: r.createdAt })),
     alerts, dataGaps,
   }

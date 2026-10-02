@@ -51,7 +51,6 @@ export async function bodegaRotacion(
         productSku:    products.sku,
         unitOfMeasure: products.unitOfMeasure,
         quantity:      worksiteStock.quantity,
-        minStock:      worksiteStock.minStock,
         lastMovementAt: worksiteStock.lastMovementAt,
       })
       .from(worksiteStock)
@@ -107,7 +106,6 @@ export async function bodegaRotacion(
       row.productSku ?? "",
       row.unitOfMeasure,
       row.quantity,
-      row.minStock > 0 ? row.minStock : "",
       consumed,
       Number(dailyRate.toFixed(2)),
       coverage === null ? "—" : coverage,
@@ -120,7 +118,7 @@ export async function bodegaRotacion(
     filenameBase: "bodega-rotacion",
     worksheetName: "Rotación",
     headers: [
-      "Faena", "Producto", "Talla", "SKU", "U/M", "Stock actual", "Stock mínimo",
+      "Faena", "Producto", "Talla", "SKU", "U/M", "Stock actual",
       `Consumo ${days} d`, "Consumo diario", "Cobertura (días)", "Último movimiento", "Stock muerto",
     ],
     rows,

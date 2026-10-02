@@ -269,8 +269,6 @@ export const pgliteTestFiles = [
   "lib/__tests__/sst-delete-evaluation.test.ts",
   "lib/__tests__/sst-worker-evaluations-scope.test.ts",
   "lib/__tests__/sst-integrity-constraints.test.ts",
-  "lib/__tests__/stock-alerts.test.ts",
-  "lib/__tests__/bodega-min-stock-bulk.test.ts",
   "lib/__tests__/stock-documents.test.ts",
   "lib/__tests__/stock-export.test.ts",
   "lib/__tests__/stock-availability-pglite.test.ts",

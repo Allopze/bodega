@@ -18,7 +18,6 @@ import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { can } from "@/lib/auth/can"
 import { getNavigationToggleState, routeIsEnabled, type NavigationToggleState } from "@/lib/services/module-toggles"
 import { registry } from "@/modules/registry"
-import { getCriticalStockAlertCount } from "@/lib/services/stock-alerts"
 import { getOperationalWorkCount } from "@/lib/services/operational-work-queue"
 import { badgeCountsTags } from "@/lib/services/operational-cache"
 import type { Session } from "next-auth"
@@ -67,12 +66,11 @@ const badgeCountsLoader = (tags: string[]) => unstable_cache(
       canViewAllRequests ? undefined : eq(purchaseRequests.requesterId, userId),
     )
 
-    const [[approvalRow], [purchaseRow], [receivingRow], [requestRow], stockAlertCount] = await Promise.all([
+    const [[approvalRow], [purchaseRow], [receivingRow], [requestRow]] = await Promise.all([
       db.select({ n: count() }).from(purchaseRequests).where(approvalFilter),
       db.select({ n: count() }).from(purchaseOrders).where(purchaseFilter),
       db.select({ n: count() }).from(purchaseOrders).where(receivingFilter),
       db.select({ n: count() }).from(purchaseRequests).where(requestFilter),
-      getCriticalStockAlertCount(isGlobal ? "all" : wsIds),
     ])
 
     return {
@@ -80,7 +78,6 @@ const badgeCountsLoader = (tags: string[]) => unstable_cache(
       "/aprobaciones": approvalRow?.n ?? 0,
       "/compras":      purchaseRow?.n ?? 0,
       "/recepcion":    receivingRow?.n ?? 0,
-      "/bodega":       stockAlertCount,
     }
   },
   ["badge-counts"],
@@ -128,7 +125,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const canApprove = can(session, "approvals:approve")
   const canViewPurchasing = can(session, "purchasing:view")
   const canViewReceiving = can(session, "receiving:view")
-  const canViewStock = can(session, "warehouse:view_stock")
   const canViewOperations = can(session, "operations:view_work")
   const badgeTags = badgeCountsTags({ isGlobal, worksiteIds: session.user.worksiteIds ?? [] })
 
@@ -148,7 +144,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     "/aprobaciones": canApprove ? rawBadgeCounts["/aprobaciones"] : 0,
     "/compras":      canViewPurchasing ? rawBadgeCounts["/compras"] : 0,
     "/recepcion":    canViewReceiving ? rawBadgeCounts["/recepcion"] : 0,
-    "/bodega":       canViewStock ? rawBadgeCounts["/bodega"] : 0,
     "/pendientes":   canViewOperations ? operationalWorkCount : 0,
   }
 

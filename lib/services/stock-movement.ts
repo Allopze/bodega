@@ -459,7 +459,6 @@ async function applyStockDelta(tx: Tx, input: ApplyMovementInput, now: string) {
         worksiteId: input.worksiteId,
         productId: input.productId,
         quantity: input.quantity,
-        minStock: 0,
         lastMovementAt: now,
         updatedAt: now,
       })

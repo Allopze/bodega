@@ -49,11 +49,6 @@ function readView(raw: string | string[] | undefined): BodegaView {
   return (VIEWS as string[]).includes(value) ? (value as BodegaView) : "stock"
 }
 
-function readStockState(raw: string | string[] | undefined): "" | "low" | "warn" {
-  const value = firstStr(raw)
-  return value === "low" || value === "warn" ? value : ""
-}
-
 function daysAgoIso(days: number): string {
   const date = new Date()
   date.setUTCDate(date.getUTCDate() - days)
@@ -72,7 +67,6 @@ export default async function BodegaPage({
   const sp = await searchParams
   const view = readView(sp.vista)
   const filters = parseListParams(sp)
-  const stockState = readStockState(sp.stock)
   const tipo = firstStr(sp.tipo)
   const producto = firstStr(sp.producto)
 
@@ -131,9 +125,6 @@ export default async function BodegaPage({
       .select({
         worksitesWithStock:  sql<number>`count(distinct ${worksiteStock.worksiteId}) filter (where ${worksiteStock.quantity} > 0)`,
         productsWithStock:   sql<number>`count(distinct ${worksiteStock.productId}) filter (where ${worksiteStock.quantity} > 0)`,
-        lowStock:            sql<number>`count(*) filter (where ${worksiteStock.minStock} > 0 and ${worksiteStock.quantity} <= ${worksiteStock.minStock})`,
-        warnStock:           sql<number>`count(*) filter (where ${worksiteStock.minStock} > 0 and ${worksiteStock.quantity} > ${worksiteStock.minStock} and ${worksiteStock.quantity} < ${worksiteStock.minStock} * 1.5)`,
-        minStockDefined:     sql<number>`count(*) filter (where ${worksiteStock.minStock} > 0)`,
       })
       .from(worksiteStock)
       .innerJoin(worksites, eq(worksiteStock.worksiteId, worksites.id))
@@ -190,7 +181,6 @@ export default async function BodegaPage({
           worksiteId:     worksiteStock.worksiteId,
           productId:      worksiteStock.productId,
           quantity:       worksiteStock.quantity,
-          minStock:       worksiteStock.minStock,
           lastMovementAt: worksiteStock.lastMovementAt,
           updatedAt:      worksiteStock.updatedAt,
           productName:    products.name,
@@ -267,7 +257,7 @@ export default async function BodegaPage({
   // familia, así que sin la talla la tabla muestra filas idénticas con saldos
   // distintos y no hay forma de saber cuál ajustar, desechar o contar. Se
   // resuelve acá, en el único punto por donde pasan tabla, kardex, ajustes,
-  // desechos, stock mínimo e inventario físico.
+  // desechos e inventario físico.
   const attributesById = await getProductAttributesByIds([
     ...stockRows.map((row) => row.productId),
     ...incomingOnlyRows.map((row) => row.productId),
@@ -289,7 +279,6 @@ export default async function BodegaPage({
       productId: row.productId,
       quantity: row.quantity,
       incoming: availability?.incoming ?? 0,
-      minStock: row.minStock,
       lastMovementAt: row.lastMovementAt,
       updatedAt: row.updatedAt,
       hasStockRecord: true,
@@ -307,7 +296,6 @@ export default async function BodegaPage({
       productId: row.productId,
       quantity: 0,
       incoming: row.incoming,
-      minStock: 0,
       lastMovementAt: null,
       updatedAt: "",
       hasStockRecord: false,
@@ -345,7 +333,7 @@ export default async function BodegaPage({
   }))
 
   const faenaFiltered = Boolean(faena) && faena !== ownWorksiteId
-  const hasFilters = Boolean(filters.q || faenaFiltered || stockState || tipo || producto || filters.desde || filters.hasta)
+  const hasFilters = Boolean(filters.q || faenaFiltered || tipo || producto || filters.desde || filters.hasta)
 
   return (
     <PageContainer>
@@ -357,9 +345,6 @@ export default async function BodegaPage({
             worksiteCount={visibleWorksites.length}
             worksitesWithStock={Number(summary?.worksitesWithStock ?? 0)}
             productsWithStock={Number(summary?.productsWithStock ?? 0)}
-            lowStockCount={Number(summary?.lowStock ?? 0)}
-            warnStockCount={Number(summary?.warnStock ?? 0)}
-            minStockDefinedCount={Number(summary?.minStockDefined ?? 0)}
             movementCount={Number(recentMovementRow[0]?.total ?? 0)}
             movementWindowDays={MOVEMENT_WINDOW_DAYS}
           />
@@ -394,7 +379,6 @@ export default async function BodegaPage({
         current={{
           q: filters.q,
           faena,
-          stock: stockState,
           tipo,
           producto,
           desde: filters.desde,
@@ -408,10 +392,8 @@ export default async function BodegaPage({
           stockByWorksite={stockByWorksite}
           receivingHref={canViewReceiving ? "/recepcion" : undefined}
           canExportStock={canExportStock}
-          stockState={stockState}
           hasFilters={hasFilters}
           truncated={stockRows.length >= STOCK_ROW_LIMIT}
-          canSetMinStock={canRegisterMovements}
         />
       ) : (
         <KardexSection

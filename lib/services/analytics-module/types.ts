@@ -5,7 +5,7 @@ export interface AnalyticsFilters {
 
 export interface AnalyticsKpis {
   totalSpend: number; previousTotalSpend: number; spendVariationPct: number | null
-  purchaseOrderCount: number; pendingApprovals: number; criticalStockCount: number
+  purchaseOrderCount: number; pendingApprovals: number
   fuelLiters: number; fuelLoadCount: number; averageOrderAmount: number
 }
 
@@ -32,11 +32,6 @@ export interface VehicleCostRow {
   lastOdometerReading: number | null; lastHourMeterReading: number | null
 }
 
-export interface StockRiskRow {
-  productId: string; productName: string; sku: string
-  worksiteName: string; currentQty: number; minStock: number
-}
-
 export interface RotationRow {
   productId: string; productName: string; sku: string
   totalOut: number; movementCount: number
@@ -58,7 +53,7 @@ export interface AnalyticsDashboardData {
   filters: Required<Pick<AnalyticsFilters, "fromDate" | "toDate">> & Omit<AnalyticsFilters, "fromDate" | "toDate">
   kpis: AnalyticsKpis; spendByMonth: SpendByMonthRow[]; spendByModule: SpendByModuleRow[]
   topSuppliers: RankingRow[]; topWorksites: WorksiteSpendRow[]; vehicleCosts: VehicleCostRow[]
-  stockRisks: StockRiskRow[]; productRotation: RotationRow[]; eppDeliveries: EppDeliveryRow[]
+  productRotation: RotationRow[]; eppDeliveries: EppDeliveryRow[]
   recentOrders: Array<{ id: string; code: string; worksiteName: string; supplierName: string; totalAmount: number; createdAt: string }>
   alerts: AnalyticsAlert[]; dataGaps: string[]
 }

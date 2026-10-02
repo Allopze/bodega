@@ -1,8 +1,8 @@
 /**
  * lib/__tests__/operational-metric-snapshots-capture.test.ts
  *
- * Cubre `captureOperationalMetricSnapshots`, el cron diario que alimenta tanto
- * "Backlog comparado" como el sparkline del tile de Stock crítico.
+ * Cubre `captureOperationalMetricSnapshots`, el cron diario que alimenta
+ * "Backlog comparado" y sus sparklines.
  *
  * El contrato que importa es la **cobertura completa**: escribe una fila por
  * cada (métrica × faena activa), con `"0"` explícito cuando la faena no aparece
@@ -60,14 +60,12 @@ function queueSelects(input: {
   orders?: Array<{ worksiteId: string; value: number }>
   capa?: Array<{ worksiteId: string; value: number }>
   obligations?: Array<{ worksiteId: string; value: number }>
-  stock?: Array<{ worksiteId: string; value: number }>
 }) {
   selectResults.push({ data: input.worksites.map((id) => ({ id })) })
   selectResults.push({ data: input.requests ?? [] })
   selectResults.push({ data: input.orders ?? [] })
   selectResults.push({ data: input.capa ?? [] })
   selectResults.push({ data: input.obligations ?? [] })
-  selectResults.push({ data: input.stock ?? [] })
 }
 
 const rowsFor = (metric: string) => insertedRows.filter((row) => row.metric === metric)
@@ -86,37 +84,19 @@ describe("captureOperationalMetricSnapshots", () => {
 
     const result = await captureOperationalMetricSnapshots(new Date("2026-07-30T15:00:00Z"))
 
-    // 5 métricas × 2 faenas
-    expect(result.written).toBe(10)
-    expect(insertedRows).toHaveLength(10)
+    // 4 métricas × 2 faenas. `stock_alerts` se retiró con el stock mínimo.
+    expect(result.written).toBe(8)
+    expect(insertedRows).toHaveLength(8)
     expect(new Set(insertedRows.map((row) => row.metric))).toEqual(new Set([
-      "backlog_requests", "backlog_orders", "backlog_capa", "backlog_pdtp", "stock_alerts",
+      "backlog_requests", "backlog_orders", "backlog_capa", "backlog_pdtp",
     ]))
-  })
-
-  // El tile de Stock crítico es el único de la tira de KPIs con sparkline, y su
-  // serie sale de esta métrica. Si desaparece del cron, el sparkline se queda
-  // vacío para siempre sin que nada falle.
-  it("captures stock_alerts with the value of each worksite", async () => {
-    queueSelects({
-      worksites: ["ws-1", "ws-2"],
-      stock: [{ worksiteId: "ws-1", value: 7 }, { worksiteId: "ws-2", value: 3 }],
-    })
-
-    await captureOperationalMetricSnapshots(new Date("2026-07-30T15:00:00Z"))
-
-    expect(rowsFor("stock_alerts").map((row) => [row.worksiteId, row.value])).toEqual([
-      ["ws-1", "7"],
-      ["ws-2", "3"],
-    ])
   })
 
   it("writes an explicit 0 for worksites absent from the GROUP BY", async () => {
     queueSelects({
       worksites: ["ws-1", "ws-2"],
-      // ws-2 no tiene solicitudes activas ni alertas de stock.
+      // ws-2 no tiene solicitudes activas.
       requests: [{ worksiteId: "ws-1", value: 5 }],
-      stock: [{ worksiteId: "ws-1", value: 2 }],
     })
 
     await captureOperationalMetricSnapshots(new Date("2026-07-30T15:00:00Z"))
@@ -125,7 +105,6 @@ describe("captureOperationalMetricSnapshots", () => {
       ["ws-1", "5"],
       ["ws-2", "0"],
     ])
-    expect(rowsFor("stock_alerts").find((row) => row.worksiteId === "ws-2")?.value).toBe("0")
   })
 
   it("resolves the snapshot date in Chile time", async () => {

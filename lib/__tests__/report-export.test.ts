@@ -100,7 +100,6 @@ beforeEach(() => {
       spendVariationPct: 35,
       purchaseOrderCount: 4,
       pendingApprovals: 2,
-      criticalStockCount: 3,
       fuelLiters: 350,
       fuelLoadCount: 7,
       averageOrderAmount: 300_000,
@@ -110,11 +109,10 @@ beforeEach(() => {
     topSuppliers: [{ id: "sup-1", name: "Proveedor Uno", module: "Compras", totalAmount: 1_200_000, count: 4 }],
     topWorksites: [{ id: "ws-1", name: "Faena Uno", totalAmount: 1_620_000 }],
     vehicleCosts: [{ id: "veh-1", plate: "AA-BB-11", type: "camioneta", totalFuelAmount: 420_000, totalServiceAmount: 0, totalOperationalCost: 420_000, totalLiters: 350, loadCount: 7 }],
-    stockRisks: [{ productId: "prod-1", productName: "Guante", sku: "EPP-001", worksiteName: "Faena Uno", currentQty: 2, minStock: 10 }],
     productRotation: [],
     eppDeliveries: [],
     recentOrders: [],
-    alerts: [{ type: "stock_bajo", severity: "critical", module: "Bodega", entityLabel: "Guante", reason: "Stock bajo", action: "Reponer", detectedAt: "2026-06-26" }],
+    alerts: [{ type: "proveedor_concentrado", severity: "medium", module: "Proveedores", entityLabel: "Proveedor Uno", reason: "Concentra 74% del gasto", action: "Validar alternativas", detectedAt: "2026-06-26" }],
     dataGaps: ["Sin kilometraje u horómetro en combustible."],
   })
   
@@ -263,8 +261,10 @@ describe("report export helpers", () => {
       ["KPI", "Gasto total", "2026-06-01 a 2026-06-30", 1_620_000],
       ["Gasto por tipo", "EPP", "", 700_000],
       ["Vehículos", "AA-BB-11", "camioneta · 350 L · 7 cargas", 420_000],
-      ["Alertas", "Bodega · Guante", "Stock bajo · Acción: Reponer", "critical"],
+      ["Alertas", "Proveedores · Proveedor Uno", "Concentra 74% del gasto · Acción: Validar alternativas", "medium"],
     ]))
+    // El stock mínimo se retiró: ni KPI ni sección de stock crítico.
+    expect(data.rows.some((row) => row[1] === "Stock crítico" || row[0] === "Stock crítico")).toBe(false)
   })
 
   it("analitica_resumen returns separate sheets for operational sections", async () => {
@@ -277,7 +277,6 @@ describe("report export helpers", () => {
       "Proveedores",
       "Faenas",
       "Vehículos",
-      "Stock",
       "EPP",
       "Alertas",
       "Brechas",
@@ -296,7 +295,6 @@ describe("report export helpers", () => {
       "Proveedores",
       "Faenas",
       "Vehículos",
-      "Stock",
       "EPP",
       "Alertas",
       "Brechas",

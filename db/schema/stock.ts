@@ -12,6 +12,9 @@ export const worksiteStock = pgTable("worksite_stock", {
   worksiteId:       text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
   productId:        text("product_id").notNull().references(() => products.id),
   quantity:         real("quantity").notNull().default(0),
+  // Retirado el 2026-10-02 junto con las alertas de quiebre: ya nada lo lee ni
+  // lo escribe. La columna se conserva para no perder los umbrales que había
+  // cargados en producción; borrarla exige una migración DROP deliberada.
   minStock:         real("min_stock").notNull().default(0),
   lastMovementAt:   text("last_movement_at"),
   updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),

@@ -14,52 +14,29 @@ interface WorksiteOption {
   name: string
 }
 
-export type StockState = "" | "low" | "warn"
-
-const isLowStock = (item: WorksiteStockWithProduct) => item.minStock > 0 && item.quantity <= item.minStock
-const isWarnStock = (item: WorksiteStockWithProduct) =>
-  item.minStock > 0 && item.quantity > item.minStock && item.quantity < item.minStock * 1.5
+/** Lo que está en 0 también se ve si tiene algo por recibir: si no, lo pedido
+ *  para una faena desaparecía justo mientras se esperaba. */
+const isVisibleItem = (item: WorksiteStockWithProduct) => item.quantity > 0 || item.incoming > 0
 
 export function StockSection({
   worksites,
   stockByWorksite,
   receivingHref,
   canExportStock,
-  stockState = "",
   hasFilters = false,
   truncated = false,
-  canSetMinStock = false,
 }: {
   worksites: WorksiteOption[]
   stockByWorksite: Record<string, WorksiteStockWithProduct[]>
   receivingHref?: string
   canExportStock?: boolean
-  /** `low` = bajo o en el mínimo · `warn` = por agotarse (bajo 1,5× el mínimo). */
-  stockState?: StockState
   hasFilters?: boolean
   /** El servidor recortó las filas: hay que avisarlo, no dejar creer que es todo. */
   truncated?: boolean
-  canSetMinStock?: boolean
 }) {
-
-  // En "bajo el mínimo" también entran las líneas agotadas (cantidad 0) con
-  // umbral definido: son exactamente las que cuenta el KPI del encabezado y sin
-  // ellas el KPI mostraba N y la vista "nada bajo el mínimo".
-  // Sin filtro, lo que está en 0 también se ve si tiene algo por recibir: si
-  // no, lo pedido para una faena desaparecía justo mientras se esperaba.
-  const isVisibleItem = (item: WorksiteStockWithProduct) => {
-    if (stockState === "low") return isLowStock(item)
-    if (stockState === "warn") return isWarnStock(item)
-    return item.quantity > 0 || item.incoming > 0
-  }
-
   const sortedWorksites = [...worksites].sort((a, b) => {
     const aItems = stockByWorksite[a.id] ?? []
     const bItems = stockByWorksite[b.id] ?? []
-    // Criticidad antes que alfabético: la faena con algo bajo mínimo va arriba.
-    const aLow = aItems.some(isLowStock)
-    const bLow = bItems.some(isLowStock)
-    if (aLow !== bLow) return aLow ? -1 : 1
     const aHasStock = aItems.some(isVisibleItem)
     const bHasStock = bItems.some(isVisibleItem)
     if (aHasStock !== bHasStock) return aHasStock ? -1 : 1
@@ -70,12 +47,10 @@ export function StockSection({
     .map((ws) => ({ ...ws, items: (stockByWorksite[ws.id] ?? []).filter(isVisibleItem) }))
     .filter((ws) => ws.items.length > 0)
 
-  // "Sin stock" es literal: la faena no tiene ninguna existencia. Se calcula
-  // contra `quantity > 0` y nunca contra el filtro activo — si no, en modo bajo
-  // mínimo una faena repleta pero sin nada bajo el umbral aparecería rotulada
-  // "Sin stock". Y con filtros activos el pie no aplica: la lista ya no es el
-  // universo de faenas sino un recorte.
-  const worksitesWithoutStock = stockState || hasFilters
+  // "Sin stock" es literal: la faena no tiene ninguna existencia, aunque tenga
+  // algo por recibir. Con filtros activos el pie no aplica: la lista ya no es
+  // el universo de faenas sino un recorte.
+  const worksitesWithoutStock = hasFilters
     ? []
     : sortedWorksites.filter((ws) => !(stockByWorksite[ws.id] ?? []).some((item) => item.quantity > 0))
 
@@ -130,7 +105,6 @@ export function StockSection({
       <StockTable
         worksites={worksitesWithStock}
         canExport={canExportStock}
-        canSetMinStock={canSetMinStock}
       />
 
       {truncated && (

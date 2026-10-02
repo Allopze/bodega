@@ -2,7 +2,7 @@
 import { and, count, desc, eq, gte, inArray, lt, sql } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
-import { operationalMetricSnapshots, pdtpObligations, preventionCapaActions, purchaseOrders, purchaseRequests, worksiteStock, worksites } from "@/db/schema"
+import { operationalMetricSnapshots, pdtpObligations, preventionCapaActions, purchaseOrders, purchaseRequests, worksites } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { todayInChile } from "@/lib/utils"
@@ -10,14 +10,12 @@ import { todayInChile } from "@/lib/utils"
 const BACKLOG_METRICS = ["backlog_requests", "backlog_orders", "backlog_capa", "backlog_pdtp"] as const
 
 /**
- * `stock_alerts` se instantánea igual que el backlog pero no es backlog: no
- * aparece en "Backlog comparado", alimenta la tendencia del tile de Stock
- * crítico. Es la única métrica de los tiles que se puede agregar por faena sin
- * perder fidelidad — las de la cola operacional dependen de los permisos del
- * usuario (`requests:view_own` filtra por `requesterId`), así que ninguna suma
- * por faena reconstruye la cifra que el tile muestra.
+ * Hasta 2026-10 también se capturaba `stock_alerts`, la tendencia del tile de
+ * Stock crítico. Se retiró con el stock mínimo; sus filas viejas siguen en la
+ * tabla y quedan fuera de toda lectura porque cada consulta filtra por esta
+ * lista.
  */
-const SNAPSHOT_METRICS = [...BACKLOG_METRICS, "stock_alerts"] as const
+const SNAPSHOT_METRICS = BACKLOG_METRICS
 
 export type OperationalBacklogMetric = typeof BACKLOG_METRICS[number]
 export type OperationalSnapshotMetric = typeof SNAPSHOT_METRICS[number]
@@ -45,18 +43,15 @@ async function currentBacklogRows(worksiteIds: string[]) {
 
 export async function captureOperationalMetricSnapshots(now = new Date()) {
   const snapshotDate = todayInChile(now)
-  const [activeWorksites, requests, orders, capa, obligations, stockAlerts] = await Promise.all([
+  const [activeWorksites, requests, orders, capa, obligations] = await Promise.all([
     db.select({ id: worksites.id }).from(worksites).where(eq(worksites.isActive, true)),
     db.select({ worksiteId: purchaseRequests.worksiteId, value: count() }).from(purchaseRequests).where(inArray(purchaseRequests.status, ["draft", "submitted", "in_review", "partially_approved", "approved", "in_purchasing"])).groupBy(purchaseRequests.worksiteId),
     db.select({ worksiteId: purchaseOrders.worksiteId, value: count() }).from(purchaseOrders).where(inArray(purchaseOrders.status, ["draft", "sent", "partially_office_received", "office_received", "partially_received"])).groupBy(purchaseOrders.worksiteId),
     db.select({ worksiteId: preventionCapaActions.worksiteId, value: count() }).from(preventionCapaActions).where(inArray(preventionCapaActions.status, ["pending", "in_progress", "pending_verification", "reopened"])).groupBy(preventionCapaActions.worksiteId),
     db.select({ worksiteId: pdtpObligations.worksiteId, value: count() }).from(pdtpObligations).where(inArray(pdtpObligations.status, ["pending", "overdue", "reported"])).groupBy(pdtpObligations.worksiteId),
-    // Mismo predicado que `getCriticalStockAlertCount`, agrupado por faena.
-    db.select({ worksiteId: worksiteStock.worksiteId, value: count() }).from(worksiteStock).where(sql`${worksiteStock.minStock} > 0 AND ${worksiteStock.quantity} < ${worksiteStock.minStock}`).groupBy(worksiteStock.worksiteId),
   ])
   const maps = [
     ["backlog_requests", requests], ["backlog_orders", orders], ["backlog_capa", capa], ["backlog_pdtp", obligations],
-    ["stock_alerts", stockAlerts],
   ] as const
   const rows = maps.flatMap(([metric, source]) => {
     const values = new Map(source.map((row) => [row.worksiteId, row.value]))

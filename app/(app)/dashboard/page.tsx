@@ -205,7 +205,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               session={session}
               scope={scope}
               worksiteScope={worksiteScope}
-              pdtpScope={pdtpScope}
               worksiteIds={scopeWorksiteIds}
               currentYear={currentYear}
               queueTotal={queue.total}

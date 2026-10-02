@@ -50,7 +50,6 @@ export async function getStockExport(
       productSku:     products.sku,
       unitOfMeasure:  products.unitOfMeasure,
       quantity:       worksiteStock.quantity,
-      minStock:       worksiteStock.minStock,
       lastMovementAt: worksiteStock.lastMovementAt,
     })
     .from(worksiteStock)
@@ -95,7 +94,6 @@ export async function getStockExport(
       productSku: r.productSku,
       unitOfMeasure: r.unitOfMeasure,
       quantity: 0,
-      minStock: 0,
       lastMovementAt: null,
     })),
   ].sort((a, b) => a.worksiteName.localeCompare(b.worksiteName, "es")
@@ -112,7 +110,6 @@ export async function getStockExport(
       "U/M",
       "En bodega",
       "Por recibir",
-      "Stock mínimo",
       "Último movimiento",
     ],
     rows: exportRows.map((r) => {
@@ -125,7 +122,6 @@ export async function getStockExport(
         r.unitOfMeasure,
         r.quantity,
         availability?.incoming ?? 0,
-        r.minStock,
         r.lastMovementAt ?? "",
       ]
     }),

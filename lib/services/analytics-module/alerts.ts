@@ -1,16 +1,12 @@
-import type { AnalyticsAlert, StockRiskRow, VehicleCostRow, RankingRow, EppDeliveryRow } from "./types"
+import type { AnalyticsAlert, VehicleCostRow, RankingRow, EppDeliveryRow } from "./types"
 
 export function buildAlerts(input: {
-  stockRisks: StockRiskRow[]; vehicleCosts: VehicleCostRow[]
+  vehicleCosts: VehicleCostRow[]
   topSuppliers: RankingRow[]; eppDeliveries: EppDeliveryRow[]
   totalSpend: number; thresholds: { vehicleMonthlyAnomalyAmount: number; supplierConcentrationPct: number; eppRecurringDeliveryCount: number }
   detectedAt: string; noData: boolean; includeMaintenanceCosts?: boolean
 }): AnalyticsAlert[] {
   const alerts: AnalyticsAlert[] = []
-
-  for (const row of input.stockRisks.slice(0, 5)) {
-    alerts.push({ type: "stock_bajo", severity: "critical", module: "Bodega", entityLabel: row.productName, reason: `${row.worksiteName}: stock ${row.currentQty} bajo mínimo ${row.minStock}.`, action: "Revisar reposición o traslado antes de aprobar nuevas salidas.", detectedAt: input.detectedAt })
-  }
 
   for (const row of input.vehicleCosts.filter((v) => v.totalOperationalCost >= input.thresholds.vehicleMonthlyAnomalyAmount).slice(0, 3)) {
     alerts.push({
