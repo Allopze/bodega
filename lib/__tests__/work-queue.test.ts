@@ -219,6 +219,37 @@ describe("buildRequestProgress", () => {
     expect(result.nextAction).toContain("Esperando recepción")
   })
 
+  it("does not let a rejected item hold back another item waiting for receipt", () => {
+    const result = buildRequestProgress("in_purchasing", [
+      { id: "rejected", productName: "Casco", status: "rejected", quantity: 1, unitOfMeasure: "unidad" },
+      { id: "purchased", productName: "Guantes", status: "purchased", quantity: 5, unitOfMeasure: "par" },
+    ])
+
+    expect(result.currentStage).toBe("Recepción")
+    expect(result.completedStages).toEqual(["Solicitado", "Aprobación", "Compra"])
+    expect(result.nextAction).toBe("Esperando recepción en oficina o bodega.")
+  })
+
+  it("keeps a closed request with only rejected items at the approval stage", () => {
+    const result = buildRequestProgress("closed", [
+      { id: "rejected", productName: "Casco", status: "rejected", quantity: 1, unitOfMeasure: "unidad" },
+    ])
+
+    expect(result.currentStage).toBe("Aprobación")
+    expect(result.completedStages).toEqual(["Solicitado", "Aprobación"])
+  })
+
+  it("marks reception complete for a closed request with received and rejected items", () => {
+    const result = buildRequestProgress("closed", [
+      { id: "received", productName: "Guantes", status: "received", quantity: 5, unitOfMeasure: "par" },
+      { id: "rejected", productName: "Casco", status: "rejected", quantity: 1, unitOfMeasure: "unidad" },
+    ])
+
+    expect(result.currentStage).toBe("Recepción")
+    expect(result.completedStages).toEqual(["Solicitado", "Aprobación", "Compra", "Recepción"])
+    expect(result.nextAction).toBe("La solicitud ya no requiere acciones.")
+  })
+
   it("returns Entrega stage for closed request", () => {
     const result = buildRequestProgress("closed", [
       { id: "1", productName: "Casco", status: "delivered", quantity: 5, unitOfMeasure: "unidad" },

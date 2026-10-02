@@ -118,7 +118,11 @@ export function requestNextAction(requestStatus: string, statuses: string[]): st
 
 export function requestCurrentStage(requestStatus: string, statuses: string[]): string {
   if (requestStatus === "draft") return "Solicitado"
-  if (statuses.some((status) => ["requested", "rejected"].includes(status))) return "Aprobación"
+  // `rejected` ya es terminal: no debe frenar otra línea que siguió a Compra
+  // o Recepción. Si todos los ítems fueron rechazados, la solicitud sí termina
+  // en Aprobación.
+  if (statuses.some((status) => status === "requested")
+    || (statuses.length > 0 && statuses.every((status) => status === "rejected"))) return "Aprobación"
   if (statuses.some((status) => ["approved", "pending_purchase", "in_purchase_order"].includes(status))) return "Compra"
   if (statuses.some((status) => ["purchased", "partially_office_received", "office_received", "partially_received", "received"].includes(status))) return "Recepción"
   if (statuses.some((status) => ["partially_delivered", "delivered"].includes(status))) return "Entrega"
