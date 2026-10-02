@@ -1,213 +1,227 @@
-import { test, expect, type Page } from "@playwright/test"
-import { expectPageTitle, login, pickCurrentMonthDate } from "./helpers"
+import { test, expect } from "@playwright/test"
+import { expectPageTitle, login } from "./helpers"
+import {
+  agregarMedida, campo, crearTarea, elegir, escribir, guardado, irAPaso, nivel, numeroDelRiesgo, volverALaTarea,
+} from "./miper-helpers"
 
 /**
- * E2E MIPER F1 — lo que el recorrido de navegación declaró no recorrido
- * (`qa/reports/2026-09-30-miper-f1.md` §3): el teclado de la grilla, las
- * acciones «duplicar» y «agregar debajo» del renglón, y el guardián de dos
- * pestañas editando la misma fila.
+ * E2E MIPER — las interacciones del espacio de trabajo por niveles (spec
+ * 2026-10-02 §3–§5) que reemplazaron a la grilla tipo planilla: navegar
+ * matriz › tarea › riesgo con «atrás» conservando los filtros, «Agregar peligro»
+ * heredando la tarea y «Duplicar riesgo» copiando sus medidas, el guardado
+ * automático (y Escape descartando una edición en curso), el guardián de dos
+ * pestañas editando el mismo riesgo y «Siguiente pendiente». Es la continuación
+ * de lo que el recorrido de la F1 declaró no recorrido
+ * (`qa/reports/2026-09-30-miper-f1.md` §3) sobre la grilla.
  *
  * Las matrices de estos escenarios se siembran en `e2e/setup-db.ts`
  * (`riskmatrix-teclado-e2e`, `riskmatrix-estructura-e2e` y
- * `riskmatrix-concurrencia-e2e`, las tres en «Faena Restringida E2E»): cada
- * prueba arranca de una matriz **vacía** que ningún otro spec toca, que es lo
- * que hace determinista una aserción sobre «la fila 2». El actor es el admin
- * porque es el único sembrado con alcance global y `prevention:risk:edit` sobre
- * cualquier faena.
+ * `riskmatrix-concurrencia-e2e`, las tres en «Faena Restringida E2E»): llegan
+ * **vacías** a cada corrida —el sembrado reconstruye la base cada vez que
+ * arranca el servidor E2E— y ningún otro spec las toca. Dentro de este archivo
+ * «teclado» y «estructura» las usan dos pruebas cada una, así que ninguna
+ * aserción supone un N° absoluto: el N° se lee del editor (`crearTarea` lo
+ * devuelve) y «Siguiente pendiente» se prueba dentro de un filtro. El actor es
+ * el admin porque es el único sembrado con alcance global y
+ * `prevention:risk:edit` sobre cualquier faena.
  */
-const MATRIZ_TECLADO = "/prevencion/miper/riskmatrix-teclado-e2e?tab=matriz"
-const MATRIZ_ESTRUCTURA = "/prevencion/miper/riskmatrix-estructura-e2e?tab=matriz"
-const MATRIZ_CONCURRENCIA = "/prevencion/miper/riskmatrix-concurrencia-e2e?tab=matriz"
+const MATRIZ_TECLADO = "/prevencion/miper/riskmatrix-teclado-e2e"
+const MATRIZ_ESTRUCTURA = "/prevencion/miper/riskmatrix-estructura-e2e"
+const MATRIZ_CONCURRENCIA = "/prevencion/miper/riskmatrix-concurrencia-e2e"
 
-/**
- * Una celda de la grilla por su `aria-label` real (`matrix-grid.tsx`:
- * `` `${COLUMNS[colIndex].label} riesgo ${entry.rowNumber}` ``).
- *
- * Los dos casos son `combobox`: las columnas de texto son `<input list="…">` —y
- * ese `list` les da el rol ARIA de combobox, igual que a un `<select>`—, y las
- * demás son `<select>` nativos. El `exact` es obligatorio: sin él «Riesgo» es
- * subcadena de «Factor de riesgo».
- *
- * `row` es el **número visible** de la fila (el del RE-04), no el índice del DOM.
- */
-const cell = (page: Page, column: string, row = 1) =>
-  page.getByRole("combobox", { name: `${column} riesgo ${row}`, exact: true })
-
-/** Escribe una celda y la guarda: la grilla persiste al perder el foco. */
-async function escribir(page: Page, column: string, row: number, value: string) {
-  const celda = cell(page, column, row)
-  await celda.fill(value)
-  await celda.press("Tab")
-}
-
-/**
- * Confirma contra el servidor que una celda quedó guardada.
- *
- * El guardado viaja en una Server Action posterior al `blur`, así que una
- * recarga inmediata corre contra la escritura y a veces lee el valor viejo: se
- * reintenta el par recarga + aserción, que es el mismo patrón con el que el spec
- * del flujo evita esa carrera.
- */
-async function expectPersistido(page: Page, column: string, row: number, value: string) {
-  await expect(async () => {
-    await page.reload()
-    await expect(cell(page, column, row)).toHaveValue(value, { timeout: 5_000 })
-  }).toPass({ timeout: 60_000 })
-}
-
-/**
- * Agrega una fila con el botón de la barra de filtros, que es el único «Agregar
- * fila» sin ambigüedad: el del estado vacío se llama «Agregar la primera fila» y
- * el de cada renglón «Agregar fila debajo del riesgo N».
- */
-async function agregarFila(page: Page, row: number) {
-  await page.getByRole("button", { name: "Agregar fila", exact: true }).click()
-  await expect(cell(page, "Peligro", row)).toBeVisible()
-}
-
-test("flechas, Enter y Escape mueven el foco a la misma columna y revierten la edición en curso", async ({ page }) => {
+test("navegación por niveles: tarea → riesgo y «atrás» vuelve a la matriz con su búsqueda", async ({ page }) => {
   await login(page)
   await page.goto(MATRIZ_TECLADO)
   await expectPageTitle(page, "MIPER Faena Restringida E2E 2037")
 
-  await agregarFila(page, 1)
-  await agregarFila(page, 2)
+  const numero = await crearTarea(page, { actividad: "Transporte de lodo", tarea: "Carga en planta", puesto: "Conductor", peligro: "Camión en movimiento" })
+  // Del riesgo a su tarea y de la tarea a la matriz, sin ida al servidor.
+  await volverALaTarea(page)
+  await expect(page.getByRole("heading", { level: 2, name: "Carga en planta" })).toBeVisible()
+  await page.getByRole("link", { name: /Volver a la matriz/ }).click()
+  await expect(page).not.toHaveURL(/tarea=/)
+  await expect(page.getByRole("heading", { level: 2, name: /Transporte de lodo/ })).toBeVisible()
 
-  // Las columnas fijas calzan con su columna: con `min-width` en vez de `width`,
-  // `table-fixed` caía al reparto por contenido y «Tarea» (fija)
-  // se montaba sobre «Peligro».
-  const borde = (name: string) => page.getByRole("columnheader", { name, exact: true }).evaluate((th) => th.getBoundingClientRect())
-  const [tarea, peligro] = await Promise.all([borde("Tarea"), borde("Peligro")])
-  expect(Math.abs(tarea.right - peligro.left)).toBeLessThan(1)
-
-  // Flechas: a la MISMA columna de la fila vecina, no a la celda siguiente.
-  const peligro1 = cell(page, "Peligro", 1)
-  const peligro2 = cell(page, "Peligro", 2)
-  await peligro1.focus()
-  await peligro1.press("ArrowDown")
-  await expect(peligro2).toBeFocused()
-  await peligro2.press("ArrowUp")
-  await expect(peligro1).toBeFocused()
-  // Enter baja y Shift+Enter sube, igual que las flechas.
-  await peligro1.press("Enter")
-  await expect(peligro2).toBeFocused()
-  await peligro2.press("Shift+Enter")
-  await expect(peligro1).toBeFocused()
-
-  // Salir de una celda con una flecha no pierde la edición: la que perdió el
-  // foco guarda, y la que lo recibe queda vacía.
-  const actividad1 = cell(page, "Actividad", 1)
-  await actividad1.fill("Transporte de lodo")
-  await actividad1.press("ArrowDown")
-  await expect(cell(page, "Actividad", 2)).toBeFocused()
-  await expectPersistido(page, "Actividad", 1, "Transporte de lodo")
-  await expect(cell(page, "Actividad", 2)).toHaveValue("")
-
-  // Escape revierte la edición en curso: la celda vuelve a su valor de fila.
-  const riesgo1 = cell(page, "Riesgo", 1)
-  await riesgo1.fill("Edición que Escape debe descartar")
-  await expect(riesgo1).toHaveValue("Edición que Escape debe descartar")
-  await riesgo1.press("Escape")
-  await expect(riesgo1).toHaveValue("")
-  // …y no se guardó: la recarga relee el servidor.
-  await page.reload()
-  await expect(cell(page, "Riesgo", 1)).toHaveValue("")
+  // La búsqueda viaja en la URL; con ella la matriz lista los riesgos que calzan.
+  await page.getByLabel("Buscar en la matriz", { exact: true }).fill("camión")
+  await expect(page).toHaveURL(/buscar=cami/)
+  await page.getByRole("link", { name: `Riesgo #${numero}: Camión en movimiento`, exact: true }).click()
+  await expect(page).toHaveURL(/fila=/)
+  await expect(page.getByRole("heading", { level: 2, name: "Camión en movimiento" })).toBeVisible()
+  // El riesgo se abrió con push: «atrás» devuelve la matriz con la búsqueda intacta.
+  await page.goBack()
+  await expect(page).not.toHaveURL(/fila=/)
+  await expect(page).toHaveURL(/buscar=cami/)
+  await expect(page.getByLabel("Buscar en la matriz", { exact: true })).toHaveValue("camión")
+  await expect(page.getByRole("link", { name: `Riesgo #${numero}: Camión en movimiento`, exact: true })).toBeVisible()
 })
 
-test("«+» agrega una fila debajo heredando actividad, tarea, puesto y lugar, y «duplicar» copia la fila con sus medidas", async ({ page }) => {
+test("«Agregar peligro» hereda puesto y lugar de la tarea, y «Duplicar riesgo» copia el riesgo con sus medidas debajo del original", async ({ page }) => {
   await login(page)
   await page.goto(MATRIZ_ESTRUCTURA)
   await expectPageTitle(page, "MIPER Faena Restringida E2E 2038")
 
-  await agregarFila(page, 1)
-  await agregarFila(page, 2)
-  await escribir(page, "Actividad", 1, "Transporte de lodo")
-  await escribir(page, "Tarea", 1, "Descarga en predio")
-  await escribir(page, "Puesto de trabajo", 1, "Conductor profesional")
-  await escribir(page, "Lugar específico", 1, "Patio de descarga")
-  await escribir(page, "Actividad", 2, "Mantención de la correa")
+  const original = await crearTarea(page, { actividad: "Mantención", tarea: "Cambio de neumáticos", puesto: "Mecánico", lugar: "Taller de neumáticos", peligro: "Neumático presurizado" })
+  // Una medida en el original: es lo que tiene que viajar con el duplicado.
+  await agregarMedida(page, { tipo: "III. Controles de ingeniería", descripcion: "Jaula de inflado para neumáticos", responsable: "Supervisor de turno" })
 
-  // Una medida en la fila 1: es lo que tiene que viajar con el duplicado.
-  await page.getByRole("button", { name: "Medidas de control del riesgo 1 (0)" }).click()
-  const ficha = page.getByRole("dialog", { name: "Riesgo #1" })
-  await ficha.getByRole("button", { name: "Agregar medida" }).click()
-  await ficha.getByLabel("Tipo de control", { exact: true }).selectOption("engineering")
-  await ficha.getByLabel("Descripción de la medida").fill("Guardas fijas en la correa")
-  await ficha.getByLabel("Nombre o cargo responsable").fill("Supervisor de turno")
-  await pickCurrentMonthDate(page, /Plazo de la medida/)
-  await ficha.getByRole("button", { name: "Agregar medida" }).click()
-  await expect(ficha.getByText("Guardas fijas en la correa")).toBeVisible()
-  // La ficha vive en `?fila=<id>` y el cliente limpia el parámetro con un
-  // `router.replace` asíncrono: recargar sin esperar a que cierre la reabre.
-  await page.keyboard.press("Escape")
-  await expect(page.getByRole("dialog", { name: "Riesgo #1" })).toBeHidden()
-  await expect(page).not.toHaveURL(/fila=/)
+  // «Agregar peligro»: un riesgo nuevo en la misma tarea, justo después del último.
+  await volverALaTarea(page)
+  await expect(page.getByRole("heading", { level: 2, name: "Cambio de neumáticos" })).toBeVisible()
+  await page.getByRole("button", { name: "Agregar peligro", exact: true }).click()
+  await expect(page).toHaveURL(/paso=identificacion/)
+  await expect(page.getByRole("heading", { level: 2, name: "Peligro sin describir" })).toBeVisible()
+  expect(await numeroDelRiesgo(page)).toBe(original + 1)
+  // Hereda lo que es del puesto…
+  await expect(campo(page, "Puesto de trabajo")).toHaveValue("Mecánico")
+  await expect(campo(page, "Lugar específico")).toHaveValue("Taller de neumáticos")
+  // …y no lo que es de la situación: ni el peligro ni las medidas.
+  await expect(campo(page, "Peligro")).toHaveValue("")
+  await expect(page.getByRole("tab", { name: /Medidas de control \(0\)/ })).toBeVisible()
+  await escribir(page, "Peligro", "Gata hidráulica")
+  await expect(page.getByRole("heading", { level: 2, name: "Gata hidráulica" })).toBeVisible()
+  await guardado(page)
 
-  // «+»: inserta debajo y hereda actividad, tarea, puesto y lugar.
-  await page.getByRole("button", { name: "Agregar fila debajo del riesgo 1" }).click()
-  await expect(cell(page, "Actividad", 2)).toHaveValue("Transporte de lodo")
-  await expect(cell(page, "Tarea", 2)).toHaveValue("Descarga en predio")
-  await expect(cell(page, "Puesto de trabajo", 2)).toHaveValue("Conductor profesional")
-  await expect(cell(page, "Lugar específico", 2)).toHaveValue("Patio de descarga")
-  // No hereda lo que es de la situación y no del puesto: peligro ni medidas.
-  await expect(cell(page, "Riesgo", 2)).toHaveValue("")
-  await expect(page.getByRole("button", { name: "Medidas de control del riesgo 2 (0)" })).toBeVisible()
-  // Renumeración: la que era la fila 2 pasó a la 3, con sus datos.
-  await expect(cell(page, "Actividad", 3)).toHaveValue("Mantención de la correa")
-  await expect(page.getByRole("button", { name: "Medidas de control del riesgo 3 (0)" })).toBeVisible()
+  // «Duplicar riesgo» sobre el original: la copia va inmediatamente debajo y el
+  // que estaba después se corre un N°.
+  await page.getByRole("link", { name: /Anterior/ }).click()
+  await expect(page.getByRole("heading", { level: 2, name: "Neumático presurizado" })).toBeVisible()
+  const urlOriginal = page.url()
+  await page.getByRole("button", { name: `Más acciones del riesgo ${original}`, exact: true }).click()
+  await page.getByRole("menuitem", { name: "Duplicar riesgo", exact: true }).click()
+  await expect(page).not.toHaveURL(urlOriginal)
+  await expect(page.getByText(`Riesgo #${original + 1} · Cambio de neumáticos · Mecánico`, { exact: true })).toBeVisible()
+  await expect(page.getByRole("heading", { level: 2, name: "Neumático presurizado" })).toBeVisible()
+  // La copia se lleva la medida.
+  await expect(page.getByRole("tab", { name: /Medidas de control \(1\)/ })).toBeVisible()
+  await irAPaso(page, "Medidas de control")
+  await expect(page.getByRole("article", { name: "Medida: Jaula de inflado para neumáticos" })).toBeVisible()
 
-  // Marca distintiva en la fila intercalada, para poder seguirla al renumerar.
-  await escribir(page, "Riesgo", 2, "Fila intercalada")
-  await expectPersistido(page, "Riesgo", 2, "Fila intercalada")
-
-  // «Duplicar»: copia la fila completa —medidas incluidas— debajo de la original.
-  await page.getByRole("button", { name: "Duplicar riesgo 1" }).click()
-  await expect(page.getByRole("button", { name: "Medidas de control del riesgo 2 (1)" })).toBeVisible()
-  await expect(cell(page, "Actividad", 2)).toHaveValue("Transporte de lodo")
-  await expect(cell(page, "Tarea", 2)).toHaveValue("Descarga en predio")
-  await expect(cell(page, "Lugar específico", 2)).toHaveValue("Patio de descarga")
-  // La copia no se lleva el peligro de la original, y las otras dos filas
-  // volvieron a correrse una posición sin perder su contenido.
-  await expect(cell(page, "Riesgo", 2)).toHaveValue("")
-  await expect(cell(page, "Riesgo", 3)).toHaveValue("Fila intercalada")
-  await expect(cell(page, "Actividad", 4)).toHaveValue("Mantención de la correa")
+  // La tarea queda con los tres riesgos en orden: original, copia y el intercalado corrido.
+  await volverALaTarea(page)
+  await expect(page.getByRole("heading", { level: 3, name: "Peligros identificados (3)" })).toBeVisible()
+  await expect(page.getByRole("link", { name: `Riesgo #${original}: Neumático presurizado`, exact: true })).toContainText("1 medida")
+  await expect(page.getByRole("link", { name: `Riesgo #${original + 1}: Neumático presurizado`, exact: true })).toContainText("1 medida")
+  await expect(page.getByRole("link", { name: `Riesgo #${original + 2}: Gata hidráulica`, exact: true })).toContainText("0 medidas")
 })
 
-test("dos pestañas sobre la fila: la segunda edición recibe «La fila cambió mientras la editabas» y no pisa el cambio de la otra", async ({ browser }) => {
+test("el guardado automático persiste tras recargar, Escape descarta la edición en curso y un Intolerable se anuncia", async ({ page }) => {
+  await login(page)
+  await page.goto(MATRIZ_TECLADO)
+  await expectPageTitle(page, "MIPER Faena Restringida E2E 2037")
+  await crearTarea(page, { actividad: "Bodega", tarea: "Apilado", puesto: "Bodeguero", peligro: "Carga suspendida" })
+
+  await escribir(page, "Riesgo", "Golpeado por carga")
+  // Escape revierte lo que se está escribiendo: el campo vuelve a su valor y
+  // salir de él después no guarda nada.
+  const dano = campo(page, "Daño probable")
+  await dano.click()
+  await dano.fill("Edición que Escape debe descartar")
+  await dano.press("Escape")
+  await expect(dano).toHaveValue("")
+  await dano.blur()
+  await expect(dano).toHaveValue("")
+
+  await irAPaso(page, "Evaluación")
+  await elegir(page, "Probabilidad", /^4 · Alta/)
+  await elegir(page, "Consecuencia", /^4 · Alta/)
+  // El badge del RE-04 pega rótulo y magnitud sin espacio entre nodos
+  // ("Intolerable· MR 16"): el `\s*` no es laxitud, es el DOM real.
+  await expect(nivel(page, /Intolerable\s*·\s*MR 16/)).toBeVisible()
+  await guardado(page)
+
+  // La recarga relee el servidor: el riesgo, la evaluación y la ausencia del
+  // texto descartado vienen de la base, no del estado optimista del cliente.
+  // Cada vuelta fija el paso: el anterior dejó `paso=identificacion` en la URL.
+  await expect(async () => {
+    await page.reload()
+    await irAPaso(page, "Evaluación")
+    await expect(nivel(page, /Intolerable\s*·\s*MR 16/)).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByRole("alert").filter({ hasText: "Intolerable" })).toBeVisible({ timeout: 5_000 })
+    await irAPaso(page, "Identificación")
+    await expect(campo(page, "Riesgo")).toHaveValue("Golpeado por carga", { timeout: 5_000 })
+    await expect(campo(page, "Daño probable")).toHaveValue("", { timeout: 5_000 })
+  }).toPass({ timeout: 60_000 })
+})
+
+test("dos pestañas sobre el mismo riesgo: la segunda ve el conflicto en el campo, el valor vuelve atrás y «Recargar riesgo» la pone al día", async ({ browser }) => {
   // Dos pestañas de la MISMA persona (mismo `context`, la misma cookie): es el
-  // escenario real —la matriz abierta en dos ventanas— y el único que hace
+  // escenario real —la MIPER abierta en dos ventanas— y el único que hace
   // chocar el candado optimista de la fila contra sí mismo.
   const context = await browser.newContext()
-  const a = await context.newPage()
   try {
-    await login(a, "admin@e2e.chome.cl")
-    await a.goto(MATRIZ_CONCURRENCIA)
-    await expectPageTitle(a, "MIPER Faena Restringida E2E 2039")
-    await agregarFila(a, 1)
-    await escribir(a, "Actividad", 1, "Transporte de lodo")
+    const first = await context.newPage()
+    await login(first)
+    await first.goto(MATRIZ_CONCURRENCIA)
+    await expectPageTitle(first, "MIPER Faena Restringida E2E 2039")
+    await crearTarea(first, { actividad: "Taller", tarea: "Soldadura", puesto: "Soldador", peligro: "Arco eléctrico" })
 
-    // La segunda pestaña se abre DESPUÉS: conoce la fila en su versión actual.
-    const b = await context.newPage()
-    await b.goto(MATRIZ_CONCURRENCIA)
-    await expect(cell(b, "Actividad", 1)).toHaveValue("Transporte de lodo")
+    // La segunda pestaña se abre DESPUÉS: conoce el riesgo en su versión actual.
+    const second = await context.newPage()
+    await second.goto(first.url())
+    await expect(campo(second, "Peligro")).toHaveValue("Arco eléctrico")
 
-    // La primera edita y confirma contra el servidor: la recarga prueba que
-    // quedó persistido —no sólo en el estado optimista del cliente— y fija el
-    // orden de la prueba antes de que la segunda escriba.
-    await escribir(a, "Tarea", 1, "Descarga en predio A")
-    await expectPersistido(a, "Tarea", 1, "Descarga en predio A")
+    // La primera edita y el servidor lo confirma antes de que la segunda escriba.
+    await escribir(first, "Riesgo", "Quemadura por proyección")
+    await guardado(first)
 
-    // La segunda, con la versión vieja, escribe la MISMA columna de la MISMA fila.
-    await escribir(b, "Tarea", 1, "Descarga en predio B")
-    await expect(b.locator("[data-sonner-toast]").filter({ hasText: "La fila cambió mientras la editabas" })).toBeVisible()
-    // La celda queda marcada como inválida en vez de mentir sobre lo guardado…
-    await expect(cell(b, "Tarea", 1)).toHaveAttribute("aria-invalid", "true")
-    // …y el valor de la base sigue siendo el de la otra pestaña.
-    await b.reload()
-    await expect(cell(b, "Tarea", 1)).toHaveValue("Descarga en predio A")
-    await a.reload()
-    await expect(cell(a, "Tarea", 1)).toHaveValue("Descarga en predio A")
+    // La segunda, con la versión vieja, escribe el MISMO campo del MISMO riesgo.
+    const input = campo(second, "Riesgo")
+    await input.click()
+    await input.fill("Radiación UV")
+    await input.press("Tab")
+    // El motivo aparece en el estado de guardado y bajo el campo (role=alert)…
+    await expect(second.getByRole("status").filter({ hasText: /^No se guardó: La fila cambió mientras la editabas/ })).toBeVisible()
+    await expect(second.getByRole("alert").filter({ hasText: /La fila cambió mientras la editabas/ })).toBeVisible()
+    // …y el campo no miente sobre lo guardado: vuelve al último valor que conocía.
+    await expect(input).toHaveValue("")
+
+    // «Recargar riesgo» trae lo que la otra pestaña guardó, y desde ahí se puede seguir.
+    // El conflicto queda resuelto: el campo pierde el aviso y el guardado
+    // siguiente se anuncia como guardado, no como «No se guardó».
+    await second.getByRole("button", { name: "Recargar riesgo", exact: true }).click()
+    await expect(input).toHaveValue("Quemadura por proyección")
+    await expect(second.getByRole("alert").filter({ hasText: /La fila cambió mientras la editabas/ })).toHaveCount(0)
+    await escribir(second, "Daño probable", "Quemadura de segundo grado")
+    await guardado(second)
+
+    // La base tiene el valor de la primera pestaña y el cambio posterior de la segunda.
+    await first.reload()
+    await expect(campo(first, "Riesgo")).toHaveValue("Quemadura por proyección")
+    await expect(campo(first, "Daño probable")).toHaveValue("Quemadura de segundo grado")
   } finally {
     await context.close()
   }
+})
+
+test("«Siguiente pendiente» lleva al próximo riesgo con datos faltantes y, con un filtro, no sale de él", async ({ page }) => {
+  await login(page)
+  await page.goto(MATRIZ_ESTRUCTURA)
+  await expectPageTitle(page, "MIPER Faena Restringida E2E 2038")
+  await crearTarea(page, { actividad: "Oficina", tarea: "Digitación", puesto: "Administrativo", peligro: "Postura prolongada" })
+  await volverALaTarea(page)
+  await page.getByRole("button", { name: "Agregar peligro", exact: true }).click()
+  await expect(page.getByRole("heading", { level: 2, name: "Peligro sin describir" })).toBeVisible()
+  await escribir(page, "Peligro", "Pantalla con reflejo")
+  await guardado(page)
+
+  // Por N°: del primero de la tarea al siguiente con pendientes.
+  await page.getByRole("link", { name: /Anterior/ }).click()
+  await expect(page.getByRole("heading", { level: 2, name: "Postura prolongada" })).toBeVisible()
+  await page.getByRole("link", { name: "Siguiente pendiente", exact: true }).click()
+  await expect(page.getByRole("heading", { level: 2, name: "Pantalla con reflejo" })).toBeVisible()
+
+  // Con la matriz filtrada por la tarea, desde el último pendiente del filtro
+  // «Siguiente pendiente» da la vuelta DENTRO del filtro: no salta a los
+  // riesgos pendientes de otras tareas de la misma matriz.
+  await volverALaTarea(page)
+  await page.getByRole("link", { name: /Volver a la matriz/ }).click()
+  await page.getByLabel("Buscar en la matriz", { exact: true }).fill("Digitación")
+  await expect(page).toHaveURL(/buscar=Digitaci/)
+  await page.getByRole("link", { name: /^Riesgo #\d+: Pantalla con reflejo$/ }).click()
+  await expect(page.getByRole("heading", { level: 2, name: "Pantalla con reflejo" })).toBeVisible()
+  await page.getByRole("link", { name: "Siguiente pendiente", exact: true }).click()
+  await expect(page.getByRole("heading", { level: 2, name: "Postura prolongada" })).toBeVisible()
+
+  await agregarMedida(page, { tipo: "IV. Controles administrativos", descripcion: "Pausas activas cada dos horas", responsable: "Supervisor" })
 })
