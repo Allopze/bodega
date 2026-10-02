@@ -1,0 +1,4 @@
+DROP INDEX IF EXISTS "dispatch_guide_items_guide_product_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "dispatch_guide_items_guide_po_item_unique" ON "dispatch_guide_items" USING btree ("guide_id","purchase_order_item_id") WHERE "dispatch_guide_items"."purchase_order_item_id" IS NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "dispatch_guide_items_guide_receipt_item_unique" ON "dispatch_guide_items" USING btree ("guide_id","receipt_item_id") WHERE "dispatch_guide_items"."receipt_item_id" IS NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "dispatch_guide_items_guide_product_manual_unique" ON "dispatch_guide_items" USING btree ("guide_id","product_id") WHERE "dispatch_guide_items"."purchase_order_item_id" IS NULL;

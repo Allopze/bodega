@@ -32,6 +32,12 @@ export const dispatchGuideItemInputSchema = z.object({
   quantity:      z.coerce.number().positive("La cantidad debe ser mayor a 0"),
   unitOfMeasure: unitOfMeasureSchema.default("unidad"),
   notes:         optionalText(300),
+  /**
+   * Sólo en guías de adquisiciones: el renglón del borrador del que sale esta
+   * fila. Una OC puede traer el mismo producto en dos líneas, y el producto
+   * por sí solo no dice a cuál pertenece la cantidad editada.
+   */
+  sourceGuideItemId: optionalId,
 })
 
 export const dispatchGuideInputSchema = z.object({
@@ -46,8 +52,19 @@ export const dispatchGuideInputSchema = z.object({
     .min(1, "Agrega al menos un elemento a la guía")
     .max(200, "Una guía admite hasta 200 líneas")
     .refine(
-      (items) => new Set(items.map((item) => item.productId)).size === items.length,
+      (items) => {
+        // Sin línea de origen (guía manual) el producto no se repite: se suma.
+        const manual = items.filter((item) => !item.sourceGuideItemId)
+        return new Set(manual.map((item) => item.productId)).size === manual.length
+      },
       "Hay un producto repetido: súmalo en una sola línea",
+    )
+    .refine(
+      (items) => {
+        const sources = items.flatMap((item) => (item.sourceGuideItemId ? [item.sourceGuideItemId] : []))
+        return new Set(sources).size === sources.length
+      },
+      "Una línea de la recepción de origen aparece dos veces",
     ),
 })
 

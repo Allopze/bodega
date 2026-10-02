@@ -41,6 +41,24 @@ export function redactString(value: string): string {
     .replace(RUT_RE, "[rut]")
 }
 
+/**
+ * Lo diagnosticable de la causa de un error de base de datos: Drizzle envuelve
+ * el error del driver y deja el motivo en `cause` (código SQLSTATE y nombre de
+ * la restricción; postgres.js lo llama `constraint_name`, PGlite `constraint`).
+ * El `detail` queda fuera a propósito: repite los valores de la fila.
+ */
+function describeCause(error: Error): { code?: string; constraint?: string } | undefined {
+  const cause = (error as { cause?: unknown }).cause
+  if (cause === null || typeof cause !== "object") return undefined
+  const candidate = cause as { code?: unknown; constraint_name?: unknown; constraint?: unknown }
+  const code = typeof candidate.code === "string" ? candidate.code : undefined
+  const constraint = typeof candidate.constraint_name === "string"
+    ? candidate.constraint_name
+    : typeof candidate.constraint === "string" ? candidate.constraint : undefined
+  if (!code && !constraint) return undefined
+  return { ...(code ? { code } : {}), ...(constraint ? { constraint } : {}) }
+}
+
 function redact(value: unknown, depth = 0, seen = new WeakSet<object>()): unknown {
   if (depth > 4) return "[depth-limit]"
   if (typeof value === "string") return redactString(value)
@@ -52,10 +70,12 @@ function redact(value: unknown, depth = 0, seen = new WeakSet<object>()): unknow
   // junto a un contexto (`logger.error("[accion]", error)`) sale como `{}` y el
   // fallo queda sin diagnóstico.
   if (value instanceof Error) {
+    const cause = describeCause(value)
     return {
       name: value.name,
       message: redactString(value.message),
       stack: redactString(value.stack ?? value.message),
+      ...(cause ? { cause } : {}),
     }
   }
 
@@ -126,6 +146,7 @@ interface LogEntry {
   data?: unknown
   correlationId?: string
   error?: string
+  cause?: { code?: string; constraint?: string }
 }
 
 
@@ -178,6 +199,7 @@ function writeLog(level: "debug" | "info" | "warn" | "error", args: unknown[]): 
     const [err, context, ...tail] = rest as [Error, Record<string, unknown>, ...unknown[]]
     entry.message = redactString(err.message)
     entry.error = redactString(err.stack ?? err.message)
+    entry.cause = describeCause(err)
     entry.data = redact(tail.length > 0 ? [context, ...tail] : context)
     emit(level, entry)
     return
@@ -190,6 +212,7 @@ function writeLog(level: "debug" | "info" | "warn" | "error", args: unknown[]): 
     if (arg instanceof Error) {
       entry.message = redactString(arg.message)
       entry.error = redactString(arg.stack ?? arg.message)
+      entry.cause = describeCause(arg)
     } else if (typeof arg === "string") {
       entry.message = redactString(arg)
     } else if (arg !== null && typeof arg === "object") {

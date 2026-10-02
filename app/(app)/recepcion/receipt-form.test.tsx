@@ -464,6 +464,67 @@ describe("ReceiptForm", () => {
     })
   })
 
+  describe("líneas del mismo producto", () => {
+    /**
+     * Una OC puede traer el mismo producto en varias líneas (OC-2026-0032: dos
+     * líneas de 50 de EPP-027). Con el mismo rótulo, un lector de pantalla las
+     * anunciaba iguales y ni "Pedido: N" las distinguía a la vista.
+     */
+    const twoLines = [
+      makeItem({ id: "oci-1", quantity: 50 }),
+      makeItem({ id: "oci-2", quantity: 50 }),
+    ]
+
+    function renderTwoLines() {
+      render(
+        <ReceiptForm
+          purchaseOrderId="po-1"
+          orderCode="OC-001"
+          orderWorksiteName="Faena Norte"
+          officeName="Administración"
+          items={twoLines}
+          canOffice={true}
+          canFaena={false}
+        />,
+      )
+    }
+
+    it("da a cada campo un nombre accesible distinto", () => {
+      renderTwoLines()
+      expect(screen.getAllByLabelText("Cantidad a recibir de Casco Seguridad, línea 1 de 2")).toHaveLength(1)
+      expect(screen.getAllByLabelText("Cantidad a recibir de Casco Seguridad, línea 2 de 2")).toHaveLength(1)
+      expect(screen.getAllByLabelText("Cantidad rechazada de Casco Seguridad, línea 2 de 2")).toHaveLength(2)
+      expect(screen.getAllByLabelText("Cantidad dañada de Casco Seguridad, línea 1 de 2")).toHaveLength(2)
+      expect(screen.getAllByLabelText("Cantidad recibida de Casco Seguridad, línea 2 de 2")).toHaveLength(1)
+      expect(screen.queryAllByLabelText("Cantidad a recibir de Casco Seguridad")).toHaveLength(0)
+    })
+
+    it("muestra a la vista qué línea es cada una", () => {
+      renderTwoLines()
+      // Dos árboles (tabla de escritorio y tarjetas móviles): dos por línea.
+      expect(screen.getAllByText("Línea 1 de 2 de este producto")).toHaveLength(2)
+      expect(screen.getAllByText("Línea 2 de 2 de este producto")).toHaveLength(2)
+    })
+
+    it("no cambia el rótulo de un producto que aparece una sola vez", () => {
+      render(
+        <ReceiptForm
+          purchaseOrderId="po-1"
+          orderCode="OC-001"
+          orderWorksiteName="Faena Norte"
+          officeName="Administración"
+          items={[...twoLines, makeItem({ id: "oci-3", productName: "Botas", productSku: "EPP-009" })]}
+          canOffice={true}
+          canFaena={false}
+        />,
+      )
+      expect(screen.getAllByLabelText("Cantidad a recibir de Botas")).toHaveLength(1)
+      expect(screen.queryAllByLabelText(/Botas, línea/)).toHaveLength(0)
+      // Sólo las dos líneas repetidas llevan la marca, en los dos árboles.
+      expect(screen.getAllByText(/^Línea \d de \d de este producto$/)).toHaveLength(4)
+    })
+  })
+
   describe("multiple items", () => {
     it("renders all items in the list", () => {
       render(

@@ -23,6 +23,36 @@ describe("logger PII redaction and formatting", () => {
     expect(out).toContain("Juan")
   })
 
+  it("conserva código y restricción de la causa de Postgres, sin su detalle", () => {
+    // Forma real de un fallo de Drizzle: el motivo de Postgres va en `cause`.
+    // Sin esto el log de OC-2026-0032 mostró la consulta, pero no qué índice la
+    // rechazó (2026-10-01).
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    const pgError = Object.assign(new Error("duplicate key value violates unique constraint"), {
+      code: "23505",
+      constraint_name: "dispatch_guide_items_guide_product_unique",
+      detail: "Key (guide_id, product_id)=(g1, juan@chome.cl) already exists.",
+    })
+    const drizzleError = Object.assign(new Error("Failed query: insert into \"dispatch_guide_items\""), { cause: pgError })
+    logger.error("[registerReceiptAction]", drizzleError)
+    const out = lastConsoleOutput("error")
+    expect(out).toContain("23505")
+    expect(out).toContain("dispatch_guide_items_guide_product_unique")
+    expect(out).not.toContain("juan@chome.cl")
+    expect(out).not.toContain("already exists")
+  })
+
+  it("lee también el nombre de restricción de PGlite (`constraint`) y el Error suelto", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    const drizzleError = Object.assign(new Error("Failed query"), {
+      cause: Object.assign(new Error("x"), { code: "23503", constraint: "fk_algo" }),
+    })
+    logger.error(drizzleError)
+    const out = lastConsoleOutput("error")
+    expect(out).toContain("23503")
+    expect(out).toContain("fk_algo")
+  })
+
   it("masks email and RUT patterns inside free strings", () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
     logger.error("login fallido para juan@chome.cl rut 12.345.678-5")

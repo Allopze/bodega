@@ -70,6 +70,24 @@ export default async function EditDispatchGuidePage({ params }: { params: Promis
       available:     0,
     }))
 
+  // Una GDI de adquisiciones puede traer el mismo producto en varias líneas de
+  // OC. Cada fila viaja con su renglón de origen y, si el producto se repite,
+  // con una etiqueta que permita distinguirlas en pantalla.
+  const requestCodeByPoItem = new Map(
+    (guide.purchaseOrder?.items ?? []).map((poItem) => [poItem.id, poItem.requestItem?.request?.code ?? null]),
+  )
+  const linesPerProduct = new Map<string, number>()
+  for (const item of guide.items) linesPerProduct.set(item.productId, (linesPerProduct.get(item.productId) ?? 0) + 1)
+  const seenPerProduct = new Map<string, number>()
+  function sourceLabelFor(item: (typeof guide.items)[number]): string | undefined {
+    const total = linesPerProduct.get(item.productId) ?? 1
+    if (!item.purchaseOrderItemId || total < 2) return undefined
+    const position = (seenPerProduct.get(item.productId) ?? 0) + 1
+    seenPerProduct.set(item.productId, position)
+    const requestCode = requestCodeByPoItem.get(item.purchaseOrderItemId)
+    return [requestCode, `línea ${position} de ${total} de este producto en la OC`].filter(Boolean).join(" · ")
+  }
+
   return (
     <PageContainer width="workbench">
       <PageHeader
@@ -98,6 +116,7 @@ export default async function EditDispatchGuidePage({ params }: { params: Promis
             quantity: String(item.quantity),
             unitOfMeasure: item.unitOfMeasure,
             notes: item.notes ?? "",
+            ...(guide.purchaseOrderId ? { sourceGuideItemId: item.id, sourceLabel: sourceLabelFor(item) } : {}),
           })),
         }}
       />

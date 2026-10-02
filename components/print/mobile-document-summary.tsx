@@ -27,8 +27,10 @@ export function MobileDocumentSummary({ title, code, description, sections }: Mo
         <section key={section.title} className="mobile-document-summary-section" aria-labelledby={`mobile-document-${section.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`}>
           <h2 id={`mobile-document-${section.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`}>{section.title}</h2>
           <dl>
-            {section.fields.map((field) => (
-              <div key={field.label}>
+            {/* El rótulo puede repetirse (una guía con el mismo producto en dos
+                líneas de OC): la posición desempata la clave. */}
+            {section.fields.map((field, index) => (
+              <div key={`${index}-${field.label}`}>
                 <dt>{field.label}</dt>
                 <dd>{field.value || "—"}</dd>
               </div>

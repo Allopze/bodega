@@ -108,6 +108,46 @@ test.describe("Guías de despacho internas", () => {
     await expect(page).toHaveURL(/\/recepcion(?:\?|$)/)
   })
 
+  test("una OC con el mismo producto en dos líneas se recibe, se edita por línea y se despacha", async ({ page }) => {
+    await login(page)
+    await page.setViewportSize({ width: 1440, height: 950 })
+
+    // Antes del fix la llegada a oficina fallaba entera con "Error al registrar
+    // recepción": la GDI exigía un producto por guía (OC-2026-0032, 2026-10-01).
+    await page.goto("/recepcion/nueva?oc=oc-gdi-dup-e2e")
+    await receiptStageCard(page, "Oficina").click()
+    // Cada línea tiene su propio nombre accesible: con el mismo rótulo, un
+    // lector de pantalla no distinguía cuál era cuál.
+    await page.getByRole("spinbutton", { name: "Cantidad a recibir de Guante E2E, línea 1 de 2", exact: true }).fill("4")
+    await page.getByRole("spinbutton", { name: "Cantidad a recibir de Guante E2E, línea 2 de 2", exact: true }).fill("2")
+    await page.getByRole("button", { name: receiptSubmitName("Oficina") }).click()
+    await expect(page.getByRole("heading", { name: /^REC-/ })).toBeVisible({ timeout: 30_000 })
+
+    const guideLink = page.getByRole("link", { name: /^GDI-\d{6}$/ }).first()
+    await expect(guideLink).toBeVisible()
+    const guideCode = (await guideLink.textContent())?.trim() ?? ""
+    await guideLink.click()
+    await expect(page.getByRole("heading", { name: `Guía ${guideCode}` })).toBeVisible()
+    const guideId = new URL(page.url()).pathname.split("/").pop()!
+
+    // El borrador trae una fila por línea de OC, cada una identificada.
+    await page.goto(`/bodega/guias/${guideId}/editar`)
+    await expect(page.getByText(/línea \d de 2 de este producto en la OC/)).toHaveCount(2)
+    const rows = page.getByRole("spinbutton", { name: "Cantidad" })
+    await expect(rows).toHaveCount(2)
+    await rows.nth(0).fill("1")
+    await page.getByRole("button", { name: "Guardar cambios" }).click()
+    await expect(page).toHaveURL(new RegExp(`/bodega/guias/${guideId}(\\?|$)`), { timeout: 20_000 })
+
+    await waitForToastsToClear(page)
+    await page.getByRole("button", { name: /^Despachar$/ }).click()
+    await page.getByRole("dialog").getByRole("button", { name: /^Despachar$/ }).click()
+    await expect(page.getByText("Despachada").first()).toBeVisible({ timeout: 15_000 })
+    // Dos líneas: dos salidas de oficina y dos ingresos a faena.
+    await expect(page.getByRole("cell", { name: "Salida por guía" })).toHaveCount(2)
+    await expect(page.getByRole("cell", { name: "Ingreso por guía" })).toHaveCount(2)
+  })
+
   test("un usuario sin el permiso no entra al histórico de guías", async ({ page }) => {
     await login(page, "scoped@e2e.chome.cl", "scoped2026")
     await page.goto("/bodega/guias")
