@@ -33,25 +33,44 @@ export function useEntryAutosave({ matrixId, entryVersions, setRows, riskFactors
   useEffect(() => { sync(JSON.parse(versionsKey) as Record<string, number>) }, [versionsKey, sync])
   const [status, setStatus] = useState<SaveStatus>({ state: "idle", savedAt: null, message: null })
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const errorsRef = useRef<Record<string, string>>({})
   const inFlight = useRef(0)
+  // Último valor que el servidor confirmó por fila (se siembra con la primera
+  // fila vista) y contador de commits por campo: una reversión sólo toca los
+  // campos que nadie volvió a editar desde entonces.
+  const lastSaved = useRef<Record<string, MiperEntrySnapshot>>({})
+  const sequence = useRef<Record<string, number>>({})
+  const writeErrors = (next: Record<string, string>) => { errorsRef.current = next; setErrors(next) }
 
   const commit = useCallback(async (entry: MiperEntrySnapshot, values: MiperEntryValues) => {
     const fields = Object.keys(values)
     if (fields.length === 0) return true
+    lastSaved.current[entry.id] ??= entry
+    const keys = fields.map((field) => `${entry.id}.${field}`)
+    const mine = Object.fromEntries(keys.map((key) => [key, (sequence.current[key] ?? 0) + 1]))
+    for (const key of keys) sequence.current[key] = mine[key]!
     setRows((rows) => rows.map((row) => (row.id === entry.id ? applyEntryValues(row, values, riskFactors) : row)))
     inFlight.current += 1
     setStatus((current) => ({ ...current, state: "saving", message: null }))
     const result = await save(entry.id, values)
     inFlight.current -= 1
-    const keys = fields.map((field) => `${entry.id}.${field}`)
+    const current = fields.filter((field) => sequence.current[`${entry.id}.${field}`] === mine[`${entry.id}.${field}`])
     if (!result.ok) {
-      setRows((rows) => rows.map((row) => (row.id === entry.id ? revertEntryFields(row, entry, fields) : row)))
-      setErrors((current) => ({ ...current, ...Object.fromEntries(keys.map((key) => [key, result.message])) }))
-      setStatus({ state: "error", savedAt: null, message: result.message })
+      const saved = lastSaved.current[entry.id]!
+      if (current.length > 0) {
+        setRows((rows) => rows.map((row) => (row.id === entry.id ? revertEntryFields(row, saved, current) : row)))
+        const message = result.message
+        writeErrors({ ...errorsRef.current, ...Object.fromEntries(current.map((field) => [`${entry.id}.${field}`, message])) })
+        setStatus({ state: "error", savedAt: null, message })
+      }
       return false
     }
-    setErrors((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !keys.includes(key))))
-    if (inFlight.current === 0) setStatus({ state: "saved", savedAt: Date.now(), message: null })
+    lastSaved.current[entry.id] = applyEntryValues(lastSaved.current[entry.id]!, values, riskFactors)
+    writeErrors(Object.fromEntries(Object.entries(errorsRef.current).filter(([key]) => !keys.includes(key))))
+    if (inFlight.current === 0) {
+      const remaining = Object.values(errorsRef.current)[0]
+      setStatus(remaining ? { state: "error", savedAt: null, message: remaining } : { state: "saved", savedAt: Date.now(), message: null })
+    }
     return true
   }, [riskFactors, save, setRows])
 

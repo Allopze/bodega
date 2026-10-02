@@ -39,4 +39,42 @@ describe("useEntryAutosave", () => {
     expect(hook.result.current.fieldError("e1", "probability")).toMatch(/cambió mientras la editabas/)
     expect(hook.result.current.status).toMatchObject({ state: "error" })
   })
+
+  it("dos guardados superpuestos que fallan dejan el último valor guardado", async () => {
+    saveMiperEntryAction.mockResolvedValue({ ok: false, message: "rechazado" })
+    const { hook, rows } = setup()
+    await act(async () => {
+      const a = hook.result.current.commit(entry, { probability: 4 })
+      const b = hook.result.current.commit({ ...entry, probability: 4, magnitude: 8, classification: "important" }, { probability: 1 })
+      await Promise.all([a, b])
+    })
+    expect(rows()[0]).toMatchObject({ probability: 2 })
+    expect(hook.result.current.status.state).toBe("error")
+  })
+
+  it("si A falla y B guarda, queda el valor de B y ningún error en ese campo", async () => {
+    saveMiperEntryAction
+      .mockResolvedValueOnce({ ok: false, message: "rechazado" })
+      .mockResolvedValueOnce({ ok: true, data: { version: 2, magnitude: 4, classification: "moderate" } })
+    const { hook, rows } = setup()
+    await act(async () => {
+      const a = hook.result.current.commit(entry, { probability: 4 })
+      const b = hook.result.current.commit({ ...entry, probability: 4 }, { probability: 1 })
+      await Promise.all([a, b])
+    })
+    expect(rows()[0]).toMatchObject({ probability: 1 })
+    expect(hook.result.current.fieldError("e1", "probability")).toBeUndefined()
+    expect(hook.result.current.status.state).toBe("saved")
+  })
+
+  it("sigue en error mientras otro campo conserve su error", async () => {
+    saveMiperEntryAction
+      .mockResolvedValueOnce({ ok: false, message: "rechazado" })
+      .mockResolvedValueOnce({ ok: true, data: { version: 2, magnitude: 4, classification: "moderate" } })
+    const { hook } = setup()
+    await act(async () => { await hook.result.current.commit(entry, { probability: 4 }) })
+    await act(async () => { await hook.result.current.commit(entry, { consequence: 4 }) })
+    expect(hook.result.current.fieldError("e1", "probability")).toBe("rechazado")
+    expect(hook.result.current.status.state).toBe("error")
+  })
 })

@@ -50,7 +50,11 @@ export function useRowSaver(matrixId: string, initialVersions: Record<string, nu
 
   /** Reancla las versiones cuando la página trae filas nuevas del servidor. */
   const sync = useCallback((next: Record<string, number>) => {
-    versions.current = { ...versions.current, ...next }
+    // Nunca baja una versión: un snapshot atrasado no debe provocar un
+    // conflicto falso; una versión más nueva del servidor sí gana.
+    const merged = { ...versions.current }
+    for (const [id, version] of Object.entries(next)) merged[id] = Math.max(merged[id] ?? 0, version)
+    versions.current = merged
   }, [])
 
   /** Versión conocida de una fila: la que debe viajar al borrarla después de editarla. */

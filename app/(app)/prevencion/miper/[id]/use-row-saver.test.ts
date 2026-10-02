@@ -51,4 +51,13 @@ describe("useRowSaver", () => {
     pending.forEach((resolve) => resolve())
     await expect(Promise.all([first, second])).resolves.toEqual([expect.objectContaining({ ok: true }), expect.objectContaining({ ok: true })])
   })
+
+  it("sync nunca baja una versión pero acepta una más nueva", async () => {
+    saveMiperEntryAction.mockResolvedValue({ ok: true, data: { version: 3, magnitude: null, classification: null } })
+    const { result } = renderHook(() => useRowSaver("m1", { a: 2, b: 1 }))
+    result.current.sync({ a: 1, b: 5 })
+    await result.current.save("a", { hazard: "x" })
+    await result.current.save("b", { hazard: "y" })
+    expect(saveMiperEntryAction.mock.calls.map(([input]) => input.expectedVersion)).toEqual([2, 5])
+  })
 })
