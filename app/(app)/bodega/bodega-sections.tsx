@@ -45,10 +45,12 @@ export function StockSection({
   // En "bajo el mínimo" también entran las líneas agotadas (cantidad 0) con
   // umbral definido: son exactamente las que cuenta el KPI del encabezado y sin
   // ellas el KPI mostraba N y la vista "nada bajo el mínimo".
+  // Sin filtro, lo que está en 0 también se ve si tiene algo por recibir: si
+  // no, lo pedido para una faena desaparecía justo mientras se esperaba.
   const isVisibleItem = (item: WorksiteStockWithProduct) => {
     if (stockState === "low") return isLowStock(item)
     if (stockState === "warn") return isWarnStock(item)
-    return item.quantity > 0
+    return item.quantity > 0 || item.incoming > 0
   }
 
   const sortedWorksites = [...worksites].sort((a, b) => {

@@ -126,12 +126,18 @@ describe("buildOcProgress", () => {
     expect(buildOcProgress("cancelled", [item(0)])).toBeNull()
   })
 
-  it("maps purchase-phase statuses to Compra with Solicitado+Aprobación done", () => {
-    for (const status of ["draft", "sent"]) {
-      const progress = buildOcProgress(status, [item(0)])
-      expect(progress?.currentStage).toBe("Compra")
-      expect(progress?.completedStages).toEqual(["Solicitado", "Aprobación"])
-    }
+  it("keeps a draft order in Compra with Solicitado+Aprobación done", () => {
+    const progress = buildOcProgress("draft", [item(0)])
+    expect(progress?.currentStage).toBe("Compra")
+    expect(progress?.completedStages).toEqual(["Solicitado", "Aprobación"])
+  })
+
+  it("marks purchase complete and reception current once the OC is sent", () => {
+    const progress = buildOcProgress("sent", [item(0)])
+
+    expect(progress?.currentStage).toBe("Recepción")
+    expect(progress?.completedStages).toEqual(["Solicitado", "Aprobación", "Compra"])
+    expect(progress?.nextAction).toContain("Registra la recepción")
   })
 
   it("maps reception statuses to Recepción", () => {
@@ -201,6 +207,16 @@ describe("buildRequestProgress", () => {
     ])
     expect(result.currentStage).toBe("Aprobación")
     expect(result.completedStages).toContain("Solicitado")
+  })
+
+  it("marks purchase complete and reception current while purchased items await receipt", () => {
+    const result = buildRequestProgress("approved", [
+      { id: "1", productName: "Casco", status: "purchased", quantity: 5, unitOfMeasure: "unidad" },
+    ])
+
+    expect(result.currentStage).toBe("Recepción")
+    expect(result.completedStages).toEqual(["Solicitado", "Aprobación", "Compra"])
+    expect(result.nextAction).toContain("Esperando recepción")
   })
 
   it("returns Entrega stage for closed request", () => {

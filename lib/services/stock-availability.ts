@@ -1,12 +1,9 @@
 import type { Session } from "next-auth"
-import { and, eq, inArray, isNull, notInArray, sql } from "drizzle-orm"
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
-  deliveries,
-  deliveryItems,
   products,
   purchaseOrderItems,
-  purchaseOrders,
   purchaseRequestItems,
   purchaseRequests,
   worksites,
@@ -14,22 +11,21 @@ import {
 } from "@/db/schema"
 import { TERMINAL_REQUEST_STATUSES } from "@/lib/approvals-queue"
 import { worksiteScopeSql } from "@/lib/auth/scope"
-import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue"
+import { textSearchSql } from "@/lib/adquisiciones/list-query"
 
 export interface StockAvailabilityRow {
   worksiteId: string
   productId: string
-  onHand: number
-  pendingDemand: number
+  /** Lo aprobado en solicitudes que todavía no llega a la faena. */
   incoming: number
-  projectedBalance: number
 }
 
-export interface StockAvailabilityInput {
-  onHand: number
-  approvedDemand: number
-  delivered: number
-  ordered: number
+export interface PendingRequestItem {
+  worksiteId: string
+  productId: string
+  quantity: number
+  /** Recibido en la faena por las líneas de OC del ítem. Lo recibido en
+   *  oficina no cuenta: todavía no está en la bodega de destino. */
   receivedAtFaena: number
 }
 
@@ -37,7 +33,20 @@ export interface StockAvailabilityFilters {
   worksiteId?: string
 }
 
-const ACTIVE_DEMAND_ITEM_STATUSES = [
+/** Lo por recibir de un producto que la faena todavía no tiene en bodega. */
+export interface IncomingWithoutStockRow extends StockAvailabilityRow {
+  productName: string
+  productSku: string | null
+  unitOfMeasure: string
+}
+
+/**
+ * Ítems de una solicitud aprobada que todavía pueden tener saldo sin llegar a
+ * la faena. `received` y `delivered` ya llegaron; `partially_delivered` sí
+ * entra porque se puede entregar parte de lo recibido antes de que llegue el
+ * resto, y su saldo lo dice el contador de la OC, no el estado.
+ */
+const NOT_YET_AT_FAENA_ITEM_STATUSES = [
   "approved",
   "pending_purchase",
   "in_purchase_order",
@@ -45,174 +54,109 @@ const ACTIVE_DEMAND_ITEM_STATUSES = [
   "partially_office_received",
   "office_received",
   "partially_received",
-  "received",
   "partially_delivered",
 ] as const
-
-export function computeStockAvailability({
-  onHand,
-  approvedDemand,
-  delivered,
-  ordered,
-  receivedAtFaena,
-}: StockAvailabilityInput): Pick<
-  StockAvailabilityRow,
-  "onHand" | "pendingDemand" | "incoming" | "projectedBalance"
-> {
-  const pendingDemand = Math.max(0, approvedDemand - delivered)
-  const incoming = Math.max(0, ordered - receivedAtFaena)
-
-  return {
-    onHand,
-    pendingDemand,
-    incoming,
-    projectedBalance: onHand - pendingDemand + incoming,
-  }
-}
-
-interface AvailabilityAggregateRow {
-  worksiteId: string
-  productId: string
-  quantity: number
-}
-
-interface IncomingAggregateRow {
-  worksiteId: string
-  productId: string | null
-  ordered: number
-  receivedAtFaena: number
-}
 
 function availabilityKey(worksiteId: string, productId: string): string {
   return `${worksiteId}\u0000${productId}`
 }
 
-function toQuantityMap(rows: AvailabilityAggregateRow[]): Map<string, number> {
-  return new Map(rows.map((row) => [
-    availabilityKey(row.worksiteId, row.productId),
-    Number(row.quantity ?? 0),
-  ]))
+/**
+ * Suma, por faena y producto, lo que a cada ítem le falta por llegar. El tope
+ * en cero es por ítem: un ítem con recepción de más no puede esconder lo que
+ * a otro todavía le falta.
+ */
+export function sumIncomingByStock(items: PendingRequestItem[]): StockAvailabilityRow[] {
+  const byKey = new Map<string, StockAvailabilityRow>()
+  for (const item of items) {
+    const key = availabilityKey(item.worksiteId, item.productId)
+    const row = byKey.get(key) ?? { worksiteId: item.worksiteId, productId: item.productId, incoming: 0 }
+    row.incoming += Math.max(0, item.quantity - item.receivedAtFaena)
+    byKey.set(key, row)
+  }
+  return [...byKey.values()].sort((left, right) => left.worksiteId.localeCompare(right.worksiteId)
+    || left.productId.localeCompare(right.productId))
 }
 
 /**
- * Read-only stock projection by final worksite and concrete catalog product.
- * It informs replenishment decisions; mutations must keep enforcing their own
- * transactional stock and lifecycle guards.
+ * Lo que está por recibir en cada faena, a partir de las solicitudes
+ * aprobadas. Es de sólo lectura: los movimientos siguen aplicando sus propias
+ * guardas de stock y de ciclo de vida.
  */
 export async function getStockAvailability(
   session: Session | null,
   filters: StockAvailabilityFilters = {},
 ): Promise<StockAvailabilityRow[]> {
-  const stockScope = worksiteScopeSql(session, worksiteStock.worksiteId, filters.worksiteId)
   const requestScope = worksiteScopeSql(session, purchaseRequests.worksiteId, filters.worksiteId)
-  const orderScope = worksiteScopeSql(session, purchaseOrders.worksiteId, filters.worksiteId)
 
-  const [stockRows, demandRows, deliveredRows, incomingRows] = await Promise.all([
-    db
-      .select({
-        worksiteId: worksiteStock.worksiteId,
-        productId: worksiteStock.productId,
-        quantity: sql<number>`coalesce(sum(${worksiteStock.quantity}), 0)`,
-      })
-      .from(worksiteStock)
-      .innerJoin(worksites, eq(worksites.id, worksiteStock.worksiteId))
-      .innerJoin(products, eq(products.id, worksiteStock.productId))
-      .where(and(stockScope, eq(worksites.isActive, true), eq(products.isService, false)))
-      .groupBy(worksiteStock.worksiteId, worksiteStock.productId),
-    db
-      .select({
-        worksiteId: purchaseRequests.worksiteId,
-        productId: purchaseRequestItems.productId,
-        quantity: sql<number>`coalesce(sum(${purchaseRequestItems.quantity}), 0)`,
-      })
-      .from(purchaseRequestItems)
-      .innerJoin(purchaseRequests, eq(purchaseRequests.id, purchaseRequestItems.requestId))
-      .innerJoin(worksites, eq(worksites.id, purchaseRequests.worksiteId))
-      .innerJoin(products, eq(products.id, purchaseRequestItems.productId))
-      .where(and(
-        requestScope,
-        eq(worksites.isActive, true),
-        eq(products.isService, false),
-        notInArray(purchaseRequests.status, [...TERMINAL_REQUEST_STATUSES]),
-        inArray(purchaseRequestItems.status, [...ACTIVE_DEMAND_ITEM_STATUSES]),
-      ))
-      .groupBy(purchaseRequests.worksiteId, purchaseRequestItems.productId),
-    db
-      .select({
-        worksiteId: purchaseRequests.worksiteId,
-        productId: purchaseRequestItems.productId,
-        quantity: sql<number>`coalesce(sum(${deliveryItems.quantity}), 0)`,
-      })
-      .from(deliveryItems)
-      .innerJoin(deliveries, eq(deliveries.id, deliveryItems.deliveryId))
-      .innerJoin(purchaseRequestItems, eq(purchaseRequestItems.id, deliveryItems.requestItemId))
-      .innerJoin(purchaseRequests, eq(purchaseRequests.id, purchaseRequestItems.requestId))
-      .innerJoin(worksites, eq(worksites.id, purchaseRequests.worksiteId))
-      .innerJoin(products, eq(products.id, purchaseRequestItems.productId))
-      .where(and(
-        requestScope,
-        eq(worksites.isActive, true),
-        eq(products.isService, false),
-        isNull(deliveries.voidedAt),
-        notInArray(purchaseRequests.status, [...TERMINAL_REQUEST_STATUSES]),
-        inArray(purchaseRequestItems.status, [...ACTIVE_DEMAND_ITEM_STATUSES]),
-      ))
-      .groupBy(purchaseRequests.worksiteId, purchaseRequestItems.productId),
-    db
-      .select({
-        worksiteId: purchaseOrders.worksiteId,
-        productId: purchaseOrderItems.productId,
-        ordered: sql<number>`coalesce(sum(${purchaseOrderItems.quantity}), 0)`,
-        receivedAtFaena: sql<number>`coalesce(sum(${purchaseOrderItems.quantityReceived}), 0)`,
-      })
-      .from(purchaseOrderItems)
-      .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderItems.purchaseOrderId))
-      .innerJoin(worksites, eq(worksites.id, purchaseOrders.worksiteId))
-      .innerJoin(products, eq(products.id, purchaseOrderItems.productId))
-      .where(and(
-        orderScope,
-        eq(worksites.isActive, true),
-        eq(products.isService, false),
-        eq(purchaseOrderItems.status, "issued"),
-        inArray(purchaseOrders.status, RECEIVABLE_ORDER_STATUSES),
-      ))
-      .groupBy(purchaseOrders.worksiteId, purchaseOrderItems.productId),
-  ])
-
-  const stockByKey = toQuantityMap(stockRows)
-  const demandByKey = toQuantityMap(demandRows as AvailabilityAggregateRow[])
-  const deliveredByKey = toQuantityMap(deliveredRows as AvailabilityAggregateRow[])
-  const incomingByKey = new Map(
-    (incomingRows as IncomingAggregateRow[]).flatMap((row) => row.productId ? [[
-      availabilityKey(row.worksiteId, row.productId),
-      {
-        ordered: Number(row.ordered ?? 0),
-        receivedAtFaena: Number(row.receivedAtFaena ?? 0),
-      },
-    ] as const] : []),
-  )
-  const keys = new Set([
-    ...stockByKey.keys(),
-    ...demandByKey.keys(),
-    ...deliveredByKey.keys(),
-    ...incomingByKey.keys(),
-  ])
-
-  return [...keys]
-    .map((key) => {
-      const [worksiteId, productId] = key.split("\u0000") as [string, string]
-      return {
-        worksiteId,
-        productId,
-        ...computeStockAvailability({
-          onHand: stockByKey.get(key) ?? 0,
-          approvedDemand: demandByKey.get(key) ?? 0,
-          delivered: deliveredByKey.get(key) ?? 0,
-          ordered: incomingByKey.get(key)?.ordered ?? 0,
-          receivedAtFaena: incomingByKey.get(key)?.receivedAtFaena ?? 0,
-        }),
-      }
+  // Misma forma que el rollup de solicitudes: lo recibido se agrega desde las
+  // líneas de OC del ítem, una fila por ítem para poder topar cada uno.
+  const rows = await db
+    .select({
+      worksiteId: purchaseRequests.worksiteId,
+      productId: purchaseRequestItems.productId,
+      quantity: purchaseRequestItems.quantity,
+      receivedAtFaena: sql<number>`coalesce(sum(${purchaseOrderItems.quantityReceived}), 0)`,
     })
-    .sort((left, right) => left.worksiteId.localeCompare(right.worksiteId)
-      || left.productId.localeCompare(right.productId))
+    .from(purchaseRequestItems)
+    .innerJoin(purchaseRequests, eq(purchaseRequests.id, purchaseRequestItems.requestId))
+    .innerJoin(worksites, eq(worksites.id, purchaseRequests.worksiteId))
+    .innerJoin(products, eq(products.id, purchaseRequestItems.productId))
+    .leftJoin(purchaseOrderItems, eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id))
+    .where(and(
+      requestScope,
+      eq(worksites.isActive, true),
+      eq(products.isService, false),
+      notInArray(purchaseRequests.status, [...TERMINAL_REQUEST_STATUSES]),
+      inArray(purchaseRequestItems.status, [...NOT_YET_AT_FAENA_ITEM_STATUSES]),
+    ))
+    .groupBy(purchaseRequestItems.id, purchaseRequests.worksiteId, purchaseRequestItems.productId, purchaseRequestItems.quantity)
+
+  return sumIncomingByStock(rows.flatMap((row) => row.productId ? [{
+    worksiteId: row.worksiteId,
+    productId: row.productId,
+    quantity: Number(row.quantity),
+    receivedAtFaena: Number(row.receivedAtFaena ?? 0),
+  }] : []))
+}
+
+/**
+ * Lo por recibir de productos que nunca entraron a su faena. La tabla de stock
+ * lista registros de `worksite_stock`, que nacen con el primer ingreso; sin
+ * esto, lo pedido para una faena que nunca tuvo el producto no aparecía en
+ * ninguna parte. Se pregunta a la base y no a la lista ya cargada: esa se
+ * recorta, y un registro fuera del recorte se pintaría como "En bodega 0".
+ */
+export async function getIncomingWithoutStock(
+  rows: StockAvailabilityRow[],
+  options: { q?: string } = {},
+): Promise<IncomingWithoutStockRow[]> {
+  const pending = rows.filter((row) => row.incoming > 0)
+  if (pending.length === 0) return []
+
+  const worksiteIds = [...new Set(pending.map((row) => row.worksiteId))]
+  const productIds = [...new Set(pending.map((row) => row.productId))]
+  const [records, productRows] = await Promise.all([
+    db
+      .select({ worksiteId: worksiteStock.worksiteId, productId: worksiteStock.productId })
+      .from(worksiteStock)
+      .where(and(inArray(worksiteStock.worksiteId, worksiteIds), inArray(worksiteStock.productId, productIds))),
+    db
+      .select({ id: products.id, name: products.name, sku: products.sku, unitOfMeasure: products.unitOfMeasure })
+      .from(products)
+      .where(and(inArray(products.id, productIds), textSearchSql(options.q ?? "", [products.name, products.sku]))),
+  ])
+
+  const withRecord = new Set(records.map((record) => availabilityKey(record.worksiteId, record.productId)))
+  const productById = new Map(productRows.map((product) => [product.id, product]))
+  return pending.flatMap((row) => {
+    const product = productById.get(row.productId)
+    if (!product || withRecord.has(availabilityKey(row.worksiteId, row.productId))) return []
+    return [{
+      ...row,
+      productName: product.name,
+      productSku: product.sku,
+      unitOfMeasure: product.unitOfMeasure,
+    }]
+  })
 }

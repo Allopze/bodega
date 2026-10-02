@@ -15,7 +15,7 @@ vi.mock("@/db", () => ({
   get db() { return testGlobal.__db },
 }))
 
-import { getStockAvailability } from "@/lib/services/stock-availability"
+import { getIncomingWithoutStock, getStockAvailability } from "@/lib/services/stock-availability"
 
 const NOW = "2026-09-09T12:00:00.000Z"
 const USER_ID = "availability-user"
@@ -25,6 +25,8 @@ const SUPPLIER_ID = "availability-supplier"
 const CATEGORY_ID = "availability-category"
 const PRODUCT_SMALL = "availability-glove-s"
 const PRODUCT_LARGE = "availability-glove-l"
+const PRODUCT_MEDIUM = "availability-glove-m"
+const PRODUCT_XL = "availability-glove-xl"
 const SERVICE = "availability-service"
 
 function scopedSession(worksiteIds: string[]) {
@@ -76,11 +78,15 @@ beforeAll(async () => {
   await inMemoryDb.insert(schema.products).values([
     { id: PRODUCT_SMALL, sku: "GUANTE-S", name: "Guante", categoryId: CATEGORY_ID, unitOfMeasure: "par", isActive: true, createdAt: NOW, updatedAt: NOW },
     { id: PRODUCT_LARGE, sku: "GUANTE-L", name: "Guante", categoryId: CATEGORY_ID, unitOfMeasure: "par", isActive: true, createdAt: NOW, updatedAt: NOW },
+    { id: PRODUCT_MEDIUM, sku: "GUANTE-M", name: "Guante", categoryId: CATEGORY_ID, unitOfMeasure: "par", isActive: true, createdAt: NOW, updatedAt: NOW },
+    { id: PRODUCT_XL, sku: "GUANTE-XL", name: "Guante", categoryId: CATEGORY_ID, unitOfMeasure: "par", isActive: true, createdAt: NOW, updatedAt: NOW },
     { id: SERVICE, sku: "SERV-01", name: "Calibración", categoryId: CATEGORY_ID, unitOfMeasure: "servicio", isService: true, isActive: true, createdAt: NOW, updatedAt: NOW },
   ])
   await inMemoryDb.insert(schema.worksiteStock).values([
     { id: "stock-alpha-s", worksiteId: WS_ALPHA, productId: PRODUCT_SMALL, quantity: 3, minStock: 0, updatedAt: NOW },
     { id: "stock-alpha-l", worksiteId: WS_ALPHA, productId: PRODUCT_LARGE, quantity: 1, minStock: 0, updatedAt: NOW },
+    // Ya entró alguna vez y hoy está en 0: tiene registro.
+    { id: "stock-alpha-xl", worksiteId: WS_ALPHA, productId: PRODUCT_XL, quantity: 0, minStock: 0, updatedAt: NOW },
     { id: "stock-beta-s", worksiteId: WS_BETA, productId: PRODUCT_SMALL, quantity: 99, minStock: 0, updatedAt: NOW },
   ])
 
@@ -93,8 +99,15 @@ beforeAll(async () => {
     { id: "request-item-s", requestId: "request-alpha", productId: PRODUCT_SMALL, quantity: 10, status: "partially_delivered", createdAt: NOW, updatedAt: NOW },
     { id: "request-item-l", requestId: "request-alpha", productId: PRODUCT_LARGE, quantity: 6, status: "partially_received", createdAt: NOW, updatedAt: NOW },
     { id: "request-item-service", requestId: "request-alpha", productId: SERVICE, quantity: 50, status: "partially_received", createdAt: NOW, updatedAt: NOW },
-    // Un producto físico `received` espera su entrega posterior. El padre sigue
-    // activo por sus hermanos pendientes, así que esta cantidad aún es demanda.
+    // Aprobado y todavía sin OC: también está por recibir, entero.
+    { id: "request-item-approved", requestId: "request-alpha", productId: PRODUCT_LARGE, quantity: 2, status: "approved", createdAt: NOW, updatedAt: NOW },
+    // Nunca entró a Alfa: no tiene registro de stock, sólo lo por recibir.
+    { id: "request-item-m", requestId: "request-alpha", productId: PRODUCT_MEDIUM, quantity: 3, status: "pending_purchase", createdAt: NOW, updatedAt: NOW },
+    { id: "request-item-xl", requestId: "request-alpha", productId: PRODUCT_XL, quantity: 4, status: "approved", createdAt: NOW, updatedAt: NOW },
+    // Sin aprobar no es un compromiso de compra: no cuenta.
+    { id: "request-item-requested", requestId: "request-alpha", productId: PRODUCT_SMALL, quantity: 30, status: "requested", createdAt: NOW, updatedAt: NOW },
+    // `received` ya llegó a la faena: aunque el padre siga activo por sus
+    // hermanos, no queda nada por recibir.
     { id: "request-item-received", requestId: "request-alpha", productId: PRODUCT_SMALL, quantity: 40, status: "received", createdAt: NOW, updatedAt: NOW },
     // El mismo estado no revive una solicitud cuyo padre ya es terminal.
     { id: "request-item-closed-parent", requestId: "request-terminal", productId: PRODUCT_SMALL, quantity: 100, status: "received", createdAt: NOW, updatedAt: NOW },
@@ -133,26 +146,17 @@ beforeAll(async () => {
 afterAll(async () => pg.close())
 
 describe("getStockAvailability", () => {
-  it("keeps received but undelivered physical items as demand while their request parent remains active", async () => {
+  it("counts approved request quantities that have not reached the final worksite", async () => {
     const rows = await getStockAvailability(scopedSession([WS_ALPHA]))
 
     expect(rows).toEqual([
-      {
-        worksiteId: WS_ALPHA,
-        productId: PRODUCT_LARGE,
-        onHand: 1,
-        pendingDemand: 5,
-        incoming: 4,
-        projectedBalance: 0,
-      },
-      {
-        worksiteId: WS_ALPHA,
-        productId: PRODUCT_SMALL,
-        onHand: 3,
-        pendingDemand: 48,
-        incoming: 6,
-        projectedBalance: -39,
-      },
+      // 6 pedidos con 1 recibido en faena (la OC sólo cubre 5) + 2 aprobados sin OC.
+      { worksiteId: WS_ALPHA, productId: PRODUCT_LARGE, incoming: 7 },
+      { worksiteId: WS_ALPHA, productId: PRODUCT_MEDIUM, incoming: 3 },
+      // 10 pedidos con 4 en faena: los 6 que llegaron a oficina siguen por
+      // recibir, y la entrega de 2 no descuenta nada.
+      { worksiteId: WS_ALPHA, productId: PRODUCT_SMALL, incoming: 6 },
+      { worksiteId: WS_ALPHA, productId: PRODUCT_XL, incoming: 4 },
     ])
   })
 
@@ -160,5 +164,30 @@ describe("getStockAvailability", () => {
     const rows = await getStockAvailability(scopedSession([WS_ALPHA]), { worksiteId: WS_BETA })
 
     expect(rows).toEqual([])
+  })
+})
+
+describe("getIncomingWithoutStock", () => {
+  it("returns what is still to be received for products the worksite has never stocked", async () => {
+    const rows = await getStockAvailability(scopedSession([WS_ALPHA]))
+
+    // XL está en 0 pero tiene registro: lo muestra su propia fila de stock.
+    expect(await getIncomingWithoutStock(rows)).toEqual([
+      {
+        worksiteId: WS_ALPHA,
+        productId: PRODUCT_MEDIUM,
+        incoming: 3,
+        productName: "Guante",
+        productSku: "GUANTE-M",
+        unitOfMeasure: "par",
+      },
+    ])
+  })
+
+  it("applies the same product search as the stock table", async () => {
+    const rows = await getStockAvailability(scopedSession([WS_ALPHA]))
+
+    expect(await getIncomingWithoutStock(rows, { q: "guante-m" })).toHaveLength(1)
+    expect(await getIncomingWithoutStock(rows, { q: "GUANTE-L" })).toEqual([])
   })
 })

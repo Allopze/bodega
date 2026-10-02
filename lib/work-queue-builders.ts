@@ -92,21 +92,16 @@ export function buildOcProgress(
 }
 
 /**
- * La etapa mira también las cantidades, no sólo el estado de la OC.
- *
- * `receiving.ts` avanza el estado al registrar una recepción, así que en la ruta
- * normal ambos concuerdan. Pero derivar la etapa **sólo** del estado deja al
- * stepper a merced de cualquier fila escrita fuera del servicio (seeds, cargas,
- * arreglos manuales): con `sent` y 6 de 12 unidades ya recibidas, marcaba
- * "Recepción" apagada mientras la propia página mostraba la recepción parcial
- * (auditoría UI/UX 2026-07-29, A-10). Con los datos a la vista, el stepper no
- * puede contradecir a la tabla que tiene al lado.
+ * La etapa mira también las cantidades, no sólo el estado. `sent` pasa a
+ * Recepción porque la OC ya salió al proveedor y espera la llegada. Si una
+ * escritura externa deja cantidades recibidas aunque el estado siga en una
+ * etapa anterior, la tabla ya muestra la recepción y el stepper debe coincidir.
  */
 function ocCurrentStage(orderStatus: string, items: OcProgressItem[]): string {
-  if (["partially_office_received", "office_received", "partially_received"].includes(orderStatus)) return "Recepción"
+  if (["sent", "partially_office_received", "office_received", "partially_received"].includes(orderStatus)) return "Recepción"
   if (["received", "closed"].includes(orderStatus)) return "Recepción"
   if (items.some((item) => item.quantityReceived > 0)) return "Recepción"
-  // draft / issued / sent
+  // draft / issued: la OC aún no se ha enviado al proveedor.
   return "Compra"
 }
 

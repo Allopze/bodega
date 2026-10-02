@@ -14,7 +14,7 @@ import { MOVEMENT_TYPE_LABELS } from "@/lib/movement-labels"
 import type { Session } from "next-auth"
 import { todayInChile } from "@/lib/utils"
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
-import { getStockAvailability } from "@/lib/services/stock-availability"
+import { getIncomingWithoutStock, getStockAvailability } from "@/lib/services/stock-availability"
 
 export interface StockExportFilters {
   worksiteId?: string
@@ -65,16 +65,41 @@ export async function getStockExport(
 
   const truncated = rows.length > maxRows
   const limited = truncated ? rows.slice(0, maxRows) : rows
+  const availabilityRows = await getStockAvailability(session, { worksiteId: filters.worksiteId })
+  // Lo pedido para una faena que nunca tuvo el producto: la pantalla lo
+  // muestra en 0, y la planilla tiene que decir lo mismo.
+  const incomingOnly = await getIncomingWithoutStock(availabilityRows)
   // La talla va en columna propia y no pegada al nombre: así la planilla se
   // puede filtrar y dinamizar por talla, que es para lo que se exporta. Sin
   // ella todas las variantes de una familia salían con el mismo texto.
-  const [sizeById, availabilityRows] = await Promise.all([
-    getProductAttributesByIds(limited.map((r) => r.productId)),
-    getStockAvailability(session, { worksiteId: filters.worksiteId }),
+  const [sizeById, incomingWorksites] = await Promise.all([
+    getProductAttributesByIds([...limited, ...incomingOnly].map((r) => r.productId)),
+    incomingOnly.length > 0
+      ? db
+          .select({ id: worksites.id, name: worksites.name })
+          .from(worksites)
+          .where(inArray(worksites.id, [...new Set(incomingOnly.map((r) => r.worksiteId))]))
+      : Promise.resolve([]),
   ])
   const availabilityByKey = new Map(
     availabilityRows.map((row) => [`${row.worksiteId}\u0000${row.productId}`, row]),
   )
+  const worksiteNameById = new Map(incomingWorksites.map((w) => [w.id, w.name]))
+  const exportRows = [
+    ...limited,
+    ...incomingOnly.map((r) => ({
+      worksiteId: r.worksiteId,
+      worksiteName: worksiteNameById.get(r.worksiteId) ?? "",
+      productId: r.productId,
+      productName: r.productName,
+      productSku: r.productSku,
+      unitOfMeasure: r.unitOfMeasure,
+      quantity: 0,
+      minStock: 0,
+      lastMovementAt: null,
+    })),
+  ].sort((a, b) => a.worksiteName.localeCompare(b.worksiteName, "es")
+    || a.productName.localeCompare(b.productName, "es"))
 
   const report: ReportData = {
     filenameBase: "stock-por-faena",
@@ -85,14 +110,12 @@ export async function getStockExport(
       "Talla",
       "SKU",
       "U/M",
-      "Físico",
-      "Demanda pendiente",
-      "Entrada esperada",
-      "Saldo proyectado",
+      "En bodega",
+      "Por recibir",
       "Stock mínimo",
       "Último movimiento",
     ],
-    rows: limited.map((r) => {
+    rows: exportRows.map((r) => {
       const availability = availabilityByKey.get(`${r.worksiteId}\u0000${r.productId}`)
       return [
         r.worksiteName,
@@ -101,9 +124,7 @@ export async function getStockExport(
         r.productSku ?? "",
         r.unitOfMeasure,
         r.quantity,
-        availability?.pendingDemand ?? 0,
         availability?.incoming ?? 0,
-        availability?.projectedBalance ?? r.quantity,
         r.minStock,
         r.lastMovementAt ?? "",
       ]

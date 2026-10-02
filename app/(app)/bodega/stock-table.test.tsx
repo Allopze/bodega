@@ -23,9 +23,8 @@ function line(overrides: Partial<WorksiteStockWithProduct> & { id: string }): Wo
     updatedAt: "2026-08-10T00:00:00.000Z",
     product: { name: "Buzo Dupont Tyvek", sku: "EPP-TRECK-008", unitOfMeasure: "unidad" },
     worksite: null,
-    pendingDemand: 0,
     incoming: 0,
-    projectedBalance: 0,
+    hasStockRecord: true,
     ...overrides,
   }
 }
@@ -57,27 +56,49 @@ describe("StockTable", () => {
   it("etiqueta todas las columnas: sin <thead> nadie sabe qué es la fecha ni el mínimo", () => {
     const table = renderTable()
 
-    for (const label of ["Producto", "Estado", "Físico", "Demanda pendiente", "Entrada esperada", "Saldo proyectado", "Mínimo", "Último movimiento"]) {
+    for (const label of ["Producto", "Estado", "En bodega", "Por recibir", "Mínimo", "Último movimiento"]) {
       expect(table.getByRole("columnheader", { name: label })).toBeTruthy()
     }
   })
 
-  it("explica las magnitudes proyectadas desde sus encabezados", () => {
+  it("se queda con lo que hay y lo que viene: sin demanda, entrada esperada ni saldo proyectado", () => {
     const table = renderTable()
 
-    expect(table.getByRole("button", { name: "Qué significa Demanda pendiente" })).toBeTruthy()
-    expect(table.getByRole("button", { name: "Qué significa Entrada esperada" })).toBeTruthy()
-    expect(table.getByRole("button", { name: "Qué significa Saldo proyectado" })).toBeTruthy()
+    for (const label of ["Físico", "Demanda pendiente", "Entrada esperada", "Saldo proyectado"]) {
+      expect(table.queryByRole("columnheader", { name: label })).toBeNull()
+    }
   })
 
-  it("expone las mismas definiciones en cada tarjeta móvil", () => {
+  it("explica Por recibir desde su encabezado", () => {
+    const table = renderTable()
+
+    expect(table.getByRole("button", { name: "Qué significa Por recibir" })).toBeTruthy()
+  })
+
+  it("expone la misma definición en cada tarjeta móvil", () => {
     renderTable()
 
     for (const card of screen.getAllByRole("article")) {
-      const mobileCard = within(card)
-      expect(mobileCard.getByRole("button", { name: "Qué significa Demanda pendiente" })).toBeTruthy()
-      expect(mobileCard.getByRole("button", { name: "Qué significa Entrada esperada" })).toBeTruthy()
-      expect(mobileCard.getByRole("button", { name: "Qué significa Saldo proyectado" })).toBeTruthy()
+      expect(within(card).getByRole("button", { name: "Qué significa Por recibir" })).toBeTruthy()
+    }
+  })
+
+  it("muestra lo por recibir de cada línea en su propia columna", () => {
+    const table = renderTable([
+      { id: "ws-1", name: "Biodiversa", items: [line({ id: "s-1", quantity: 73, incoming: 300 })] },
+      { id: "ws-2", name: "Masisa", items: [line({ id: "s-2", worksiteId: "ws-2", quantity: 4 })] },
+    ])
+
+    expect(cells(table, 2)).toEqual(["73", "4"])
+    expect(cells(table, 3)).toEqual(["300", "0"])
+  })
+
+  it("rotula los encabezados ordenables en mayúsculas como el resto: un <button> no hereda text-transform", () => {
+    const table = renderTable()
+
+    for (const label of ["Producto", "En bodega", "Mínimo", "Último movimiento"]) {
+      const header = table.getByRole("columnheader", { name: label })
+      expect(within(header).getByRole("button")).toHaveClass("uppercase")
     }
   })
 
@@ -86,9 +107,9 @@ describe("StockTable", () => {
     const table = screen.getByRole("table")
     const columns = table.querySelectorAll("colgroup col")
 
-    expect(table).toHaveClass("min-w-[1280px]", "table-fixed")
-    expect(columns).toHaveLength(8)
-    expect(columns[0]).toHaveClass("w-60")
+    expect(table).toHaveClass("min-w-[1024px]", "table-fixed")
+    expect(columns).toHaveLength(6)
+    expect(columns[0]).toHaveClass("w-80")
     expect(table.closest('[role="region"]')).toHaveClass("overflow-x-auto")
   })
 
@@ -143,6 +164,49 @@ describe("StockTable", () => {
     expect(href).toContain("cantidad=4")
   })
 
+  /** Un producto pedido para una faena a la que nunca entró. */
+  function renderSinRegistro() {
+    return renderTable([
+      {
+        id: "ws-1",
+        name: "Biodiversa",
+        items: [line({ id: "sin-registro", productId: "p-9", quantity: 0, incoming: 100, hasStockRecord: false })],
+      },
+    ])
+  }
+
+  it("no ofrece definir el mínimo de lo que nunca llegó, y dice por qué", () => {
+    const table = renderSinRegistro()
+
+    expect(table.queryByRole("button", { name: /definir stock mínimo/i })).toBeNull()
+    expect(table.getByText("Se define al llegar")).toBeTruthy()
+  })
+
+  it("no enlaza a un kardex vacío lo que nunca tuvo movimientos", () => {
+    const table = renderSinRegistro()
+
+    expect(table.getByText("Buzo Dupont Tyvek")).toBeTruthy()
+    expect(table.queryByRole("link")).toBeNull()
+  })
+
+  it("resume en productos, sin la jerga de 'líneas de stock'", () => {
+    render(
+      <StockTable
+        worksites={[{
+          id: "ws-1",
+          name: "Biodiversa",
+          items: [
+            line({ id: "s-1", quantity: 3 }),
+            line({ id: "s-2", productId: "p-2", quantity: 0, incoming: 5, hasStockRecord: false }),
+          ],
+        }]}
+      />,
+    )
+
+    expect(screen.getByText("2 productos en 1 faena · 1 sólo por recibir")).toBeTruthy()
+    expect(screen.queryByText(/líneas? de stock/)).toBeNull()
+  })
+
   it("lleva del producto a su propio kardex", () => {
     const table = renderTable()
 
@@ -154,7 +218,7 @@ describe("StockTable", () => {
   it("acompaña la fecha del último movimiento con su distancia en días", () => {
     const table = renderTable()
 
-    expect(cells(table, 7)).toEqual([`${formatDate(WORKSITES[0]!.items[0]!.lastMovementAt!)}hoy`, "—"])
+    expect(cells(table, 5)).toEqual([`${formatDate(WORKSITES[0]!.items[0]!.lastMovementAt!)}hoy`, "—"])
   })
 
   it("agrupa por producto con el total sumado, que es lo que no se podía leer por faena", () => {
@@ -168,49 +232,15 @@ describe("StockTable", () => {
     expect(table.queryByRole("rowheader", { name: /Biodiversa/ })).toBeNull()
   })
 
-  it("destaca sólo los saldos proyectados negativos con warning-ink", () => {
-    const table = renderTable([
-      {
-        id: "ws-1",
-        name: "Biodiversa",
-        items: [line({
-          id: "s-1",
-          quantity: 3,
-          pendingDemand: 9,
-          incoming: 2,
-          projectedBalance: -4,
-        })],
-      },
-      {
-        id: "ws-2",
-        name: "Masisa",
-        items: [line({
-          id: "s-2",
-          worksiteId: "ws-2",
-          quantity: 4,
-          pendingDemand: 1,
-          incoming: 0,
-          projectedBalance: 3,
-        })],
-      },
-    ])
-
-    const projectedCells = (table.getAllByRole("row") as HTMLElement[])
-      .filter((row) => within(row).queryAllByRole("cell").length > 0)
-      .map((row) => within(row).getAllByRole("cell")[5]!)
-    expect(projectedCells[0]?.firstElementChild).toHaveClass("text-[var(--color-warning-ink)]")
-    expect(projectedCells[1]?.firstElementChild).not.toHaveClass("text-[var(--color-warning-ink)]")
-  })
-
-  it("mantiene el total físico del grupo de producto sin sumar saldos proyectados entre faenas", () => {
+  it("suma en el grupo de producto lo que hay en bodega, no lo que está por recibir", () => {
     renderTable([
-      { id: "ws-1", name: "Biodiversa", items: [line({ id: "s-1", quantity: 3, projectedBalance: -7 })] },
-      { id: "ws-2", name: "Masisa", items: [line({ id: "s-2", worksiteId: "ws-2", quantity: 4, projectedBalance: 20 })] },
+      { id: "ws-1", name: "Biodiversa", items: [line({ id: "s-1", quantity: 3, incoming: 20 })] },
+      { id: "ws-2", name: "Masisa", items: [line({ id: "s-2", worksiteId: "ws-2", quantity: 4, incoming: 6 })] },
     ])
     fireEvent.click(screen.getByRole("button", { name: "Por producto" }))
 
     expect(screen.getByRole("rowheader", { name: /7 unidades en 2 faenas/ })).toBeTruthy()
-    expect(screen.queryByRole("rowheader", { name: /13 unidades/ })).toBeNull()
+    expect(screen.queryByRole("rowheader", { name: /33 unidades/ })).toBeNull()
   })
 
   it("conserva la agrupación elegida entre montajes: recargar o volver a Bodega monta la tabla de nuevo", () => {

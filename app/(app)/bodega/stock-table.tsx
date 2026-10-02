@@ -121,14 +121,13 @@ function sortRows(rows: StockGroup["rows"], key: SortKey, dir: SortDir): StockGr
   })
 }
 
+const NO_RECORD_MIN_STOCK = "Se define al llegar"
+
 const GROUP_BY_STORAGE_KEY = "bodega:stock-group-by"
 const COLLAPSED_STORAGE_KEY = "bodega:stock-collapsed"
 const GROUP_BY_LABEL: Record<GroupBy, string> = { faena: "Por faena", producto: "Por producto" }
-const AVAILABILITY_DEFINITIONS = {
-  pendingDemand: "Cantidad aprobada aún pendiente de entrega, descontando entregas vigentes.",
-  incoming: "Cantidad de una OC vigente aún no recibida en la faena. La recepción en oficina no la descuenta.",
-  projectedBalance: "Físico menos demanda pendiente más entrada esperada. Es informativo y no autoriza movimientos.",
-} as const
+const INCOMING_DEFINITION =
+  "Lo aprobado en solicitudes que todavía no llega a esta faena. Si ya está en la oficina, sigue contando hasta que llegue."
 
 /**
  * `sessionStorage` y no la URL: agrupar es preferencia de vista y se aplica en
@@ -188,7 +187,15 @@ function useCollapsedGroups(): [Set<string>, (id: string) => void] {
   return [collapsed, toggle]
 }
 
-function MinStockCell({ stockId, currentMin, disabled = false }: { stockId: string; currentMin: number; disabled?: boolean }) {
+function MinStockCell({
+  stockId, currentMin, disabled = false, disabledReason,
+}: {
+  stockId: string
+  currentMin: number
+  disabled?: boolean
+  /** Se dice cuando no es cuestión de permisos sino de que todavía no se puede. */
+  disabledReason?: string
+}) {
   const [editing, setEditing] = React.useState(false)
   const [value, setValue] = React.useState(String(currentMin))
   const formRef = React.useRef<HTMLFormElement>(null)
@@ -213,6 +220,9 @@ function MinStockCell({ stockId, currentMin, disabled = false }: { stockId: stri
   }, [state])
 
   if (!editing) {
+    if (disabledReason) {
+      return <span className="text-[11px] text-[var(--color-text-faint)]">{disabledReason}</span>
+    }
     if (disabled) {
       return currentMin > 0
         ? <span className="font-mono text-xs tabular-nums text-[var(--color-text-subtle)]">{formatQty(currentMin, "")}</span>
@@ -227,7 +237,9 @@ function MinStockCell({ stockId, currentMin, disabled = false }: { stockId: stri
           setValue(String(currentMin))
           setEditing(true)
         }}
-        className="inline-flex min-h-11 min-w-11 items-center justify-end gap-1 text-xs text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)] sm:min-h-6 sm:min-w-6"
+        // Mismo `-my-3` que el botón de definición: 44 px táctiles sin bajar
+        // "Definir" respecto de la fecha que tiene al lado en la tarjeta.
+        className="-my-3 inline-flex min-h-11 min-w-11 items-center justify-end gap-1 text-xs text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)] sm:my-0 sm:min-h-6 sm:min-w-6"
         title={currentMin > 0 ? "Editar stock mínimo" : "Definir stock mínimo"}
         aria-label={currentMin > 0 ? "Editar stock mínimo" : "Definir stock mínimo"}
       >
@@ -306,7 +318,9 @@ function SortableHeader({
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className="inline-flex min-h-6 min-w-6 items-center gap-1 py-1 transition-colors hover:text-[var(--color-text)]"
+        // `uppercase` explícito: el navegador no le hereda `text-transform` a un
+        // <button>, y sin él estas columnas salían en minúscula junto a las demás.
+        className="inline-flex min-h-6 min-w-6 items-center gap-1 py-1 uppercase transition-colors hover:text-[var(--color-text)]"
       >
         {label}
         <span aria-hidden className={active ? "opacity-100" : "opacity-0"}>
@@ -333,7 +347,9 @@ function AvailabilityDefinition({
         <button
           type="button"
           aria-label={`Qué significa ${label}`}
-          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)] focus-visible:text-[var(--color-text)] md:min-h-6 md:min-w-6"
+          // `-my-3`: el área táctil de 44 px se queda, pero sin agrandar el
+          // rótulo; si no, en la tarjeta el valor caía más abajo que su vecino.
+          className="-my-3 inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)] focus-visible:text-[var(--color-text)] md:my-0 md:min-h-6 md:min-w-6"
         >
           <Info size={13} aria-hidden />
         </button>
@@ -352,6 +368,8 @@ function AvailabilityHeader({ label, definition }: { label: string; definition: 
 
 export function StockTable({ worksites, canExport, canSetMinStock = true }: StockTableProps) {
   const allItems = worksites.flatMap((ws) => ws.items)
+  const productCount = new Set(allItems.map((item) => item.productId)).size
+  const incomingOnlyCount = allItems.filter((item) => item.quantity <= 0 && item.incoming > 0).length
   const lowStockCount = allItems.filter((item) => item.minStock > 0 && item.quantity <= item.minStock).length
   const noThresholds = allItems.every((item) => item.minStock === 0)
   const [groupBy, setGroupBy] = useGroupBy()
@@ -374,10 +392,12 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] px-5 py-4">
         <div>
           <h2 className="text-h2 text-[var(--color-text)]">Stock {groupBy === "faena" ? "por faena" : "por producto"}</h2>
-          {/* "líneas de stock", no "productos": la métrica del encabezado cuenta
-              productos distintos y un mismo producto aparece en varias faenas. */}
+          {/* Productos distintos, no filas: un mismo producto aparece en varias
+              faenas. Lo que sólo está por recibir se cuenta aparte, porque el
+              KPI "Productos con stock" del encabezado no lo incluye. */}
           <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-            {allItems.length} {allItems.length === 1 ? "línea de stock" : "líneas de stock"} en {worksites.length} {worksites.length === 1 ? "faena" : "faenas"}
+            {productCount} {productCount === 1 ? "producto" : "productos"} en {worksites.length} {worksites.length === 1 ? "faena" : "faenas"}
+            {incomingOnlyCount > 0 && ` · ${incomingOnlyCount} sólo por recibir`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -453,12 +473,16 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <Link
-                            href={`/bodega?vista=kardex&producto=${s.productId}&faena=${worksiteId}`}
-                            className="text-sm font-medium text-[var(--color-text)] underline-offset-2 hover:underline"
-                          >
-                            {title}
-                          </Link>
+                          {s.hasStockRecord ? (
+                            <Link
+                              href={`/bodega?vista=kardex&producto=${s.productId}&faena=${worksiteId}`}
+                              className="text-sm font-medium text-[var(--color-text)] underline-offset-2 hover:underline"
+                            >
+                              {title}
+                            </Link>
+                          ) : (
+                            <span className="text-sm font-medium text-[var(--color-text)]">{title}</span>
+                          )}
                           {subtitle && (
                             <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{subtitle}</p>
                           )}
@@ -467,7 +491,7 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                       </div>
                       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                         <div>
-                          <dt className="text-[var(--color-text-subtle)]">Físico</dt>
+                          <dt className="text-[var(--color-text-subtle)]">En bodega</dt>
                           <dd className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-[var(--color-text)]">
                             {formatQty(s.quantity, unit)}
                           </dd>
@@ -475,50 +499,32 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                         <div className="text-right">
                           <dt className="text-[var(--color-text-subtle)]">
                             <AvailabilityDefinition
-                              label="Demanda pendiente"
-                              definition={AVAILABILITY_DEFINITIONS.pendingDemand}
+                              label="Por recibir"
+                              definition={INCOMING_DEFINITION}
                               className="w-full justify-end"
-                            />
-                          </dt>
-                          <dd className="mt-0.5 font-mono text-sm tabular-nums text-[var(--color-text)]">
-                            {formatQty(s.pendingDemand, unit)}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-[var(--color-text-subtle)]">
-                            <AvailabilityDefinition
-                              label="Entrada esperada"
-                              definition={AVAILABILITY_DEFINITIONS.incoming}
                             />
                           </dt>
                           <dd className="mt-0.5 font-mono text-sm tabular-nums text-[var(--color-text)]">
                             {formatQty(s.incoming, unit)}
                           </dd>
                         </div>
-                        <div className="text-right">
-                          <dt className="text-[var(--color-text-subtle)]">
-                            <AvailabilityDefinition
-                              label="Saldo proyectado"
-                              definition={AVAILABILITY_DEFINITIONS.projectedBalance}
-                              className="w-full justify-end"
-                            />
-                          </dt>
-                          <dd className={`mt-0.5 font-mono text-sm font-semibold tabular-nums ${s.projectedBalance < 0 ? "text-[var(--color-warning-ink)]" : "text-[var(--color-text)]"}`}>
-                            {formatQty(s.projectedBalance, unit)}
-                          </dd>
-                        </div>
-                        <div className="text-right">
-                          <dt className="text-[var(--color-text-subtle)]">Mínimo</dt>
-                          <dd className="mt-0.5 flex justify-end">
-                            <MinStockCell stockId={s.id} currentMin={s.minStock} disabled={!canSetMinStock} />
-                          </dd>
-                        </div>
-                        <div className="col-span-2">
+                        <div>
                           <dt className="text-[var(--color-text-subtle)]">Último movimiento</dt>
                           <dd className="mt-0.5 tabular-nums text-[var(--color-text-muted)]">
                             {s.lastMovementAt
                               ? `${formatDate(s.lastMovementAt)} · ${formatDateRelative(s.lastMovementAt)}`
                               : "—"}
+                          </dd>
+                        </div>
+                        <div className="text-right">
+                          <dt className="text-[var(--color-text-subtle)]">Mínimo</dt>
+                          <dd className="mt-0.5 flex justify-end">
+                            <MinStockCell
+                              stockId={s.id}
+                              currentMin={s.minStock}
+                              disabled={!canSetMinStock}
+                              disabledReason={s.hasStockRecord ? undefined : NO_RECORD_MIN_STOCK}
+                            />
                           </dd>
                         </div>
                       </dl>
@@ -534,17 +540,15 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
               desalineadas entre grupos. Los anchos viven en el <colgroup>. */}
           <div className="hidden md:block">
             <TableRoot className="rounded-none border-0">
-            <Table className="min-w-[1280px] table-fixed text-sm">
+            <Table className="min-w-[1024px] table-fixed text-sm">
               <caption className="sr-only">
                 Stock por producto, agrupado por {groupBy === "faena" ? "faena" : "producto"}
               </caption>
               <colgroup>
-                <col className="w-60" />
+                <col className="w-80" />
+                <col className="w-32" />
                 <col className="w-32" />
                 <col className="w-36" />
-                <col className="w-40" />
-                <col className="w-36" />
-                <col className="w-40" />
                 <col className="w-32" />
                 <col className="w-44" />
               </colgroup>
@@ -557,22 +561,11 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                   />
                   <TableHead className="text-left font-semibold">Estado</TableHead>
                   <SortableHeader
-                    label="Físico"
+                    label="En bodega"
                     sortKey="quantity" active={sort.key === "quantity"} dir={sort.dir} onSort={handleSort}
                     className="px-5 py-2.5 text-right font-semibold"
                   />
-                  <AvailabilityHeader
-                    label="Demanda pendiente"
-                    definition={AVAILABILITY_DEFINITIONS.pendingDemand}
-                  />
-                  <AvailabilityHeader
-                    label="Entrada esperada"
-                    definition={AVAILABILITY_DEFINITIONS.incoming}
-                  />
-                  <AvailabilityHeader
-                    label="Saldo proyectado"
-                    definition={AVAILABILITY_DEFINITIONS.projectedBalance}
-                  />
+                  <AvailabilityHeader label="Por recibir" definition={INCOMING_DEFINITION} />
                   <SortableHeader
                     label="Mínimo"
                     sortKey="minStock" active={sort.key === "minStock"} dir={sort.dir} onSort={handleSort}
@@ -595,7 +588,7 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                     <TableRow>
                       <TableHead
                         scope="rowgroup"
-                        colSpan={8}
+                        colSpan={6}
                         className="bg-[var(--color-surface-2)] px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
                       >
                         {/* Un <button> y no <details>: `details` no es válido
@@ -620,13 +613,18 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                         <TableRow key={s.id} hidden={isCollapsed} className="hover:bg-[var(--color-surface-2)] transition-colors">
                           <TableCell>
                             {/* La fila lleva a su propio kardex: antes hacer clic
-                                en un producto no hacía nada. */}
-                            <Link
-                              href={`/bodega?vista=kardex&producto=${s.productId}&faena=${worksiteId}`}
-                              className="font-medium text-[var(--color-text)] underline-offset-2 hover:underline"
-                            >
-                              {title}
-                            </Link>
+                                en un producto no hacía nada. Lo que nunca entró
+                                a la faena no tiene movimientos que mostrar. */}
+                            {s.hasStockRecord ? (
+                              <Link
+                                href={`/bodega?vista=kardex&producto=${s.productId}&faena=${worksiteId}`}
+                                className="font-medium text-[var(--color-text)] underline-offset-2 hover:underline"
+                              >
+                                {title}
+                              </Link>
+                            ) : (
+                              <span className="font-medium text-[var(--color-text)]">{title}</span>
+                            )}
                             {subtitle && (
                               <p className="mt-0.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{subtitle}</p>
                             )}
@@ -655,18 +653,15 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                             </span>
                           </TableCell>
                           <TableCell className="text-right font-mono text-sm tabular-nums">
-                            {formatQty(s.pendingDemand)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-sm tabular-nums">
                             {formatQty(s.incoming)}
                           </TableCell>
                           <TableCell className="text-right">
-                            <span className={`font-mono text-sm font-semibold tabular-nums ${s.projectedBalance < 0 ? "text-[var(--color-warning-ink)]" : "text-[var(--color-text)]"}`}>
-                              {formatQty(s.projectedBalance)}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <MinStockCell stockId={s.id} currentMin={s.minStock} disabled={!canSetMinStock} />
+                            <MinStockCell
+                              stockId={s.id}
+                              currentMin={s.minStock}
+                              disabled={!canSetMinStock}
+                              disabledReason={s.hasStockRecord ? undefined : NO_RECORD_MIN_STOCK}
+                            />
                           </TableCell>
                           <TableCell className="text-right text-xs text-[var(--color-text-subtle)]">
                             {s.lastMovementAt ? (

@@ -62,14 +62,13 @@ test("rechaza repartir 6 + 5 sobre una línea que factura 10", async ({ page }) 
   await expect(dialog.getByRole("button", { name: "Guardar reparto" })).toBeDisabled()
 })
 
-test("la disponibilidad proyectada distingue entrega directa de vía oficina", async ({ page }) => {
+test("el stock distingue lo que hay de lo que está por recibir, en faena directa y vía oficina", async ({ page }) => {
   await login(page)
   await page.goto("/bodega?faena=ws-e2e")
 
-  // Las tres columnas de la proyección: lo comprometido, lo que viene en
-  // camino y el saldo resultante.
-  for (const columna of ["Demanda pendiente", "Entrada esperada", "Saldo proyectado"]) {
-    await expect(page.getByRole("columnheader", { name: columna }).first()).toBeVisible({ timeout: 15_000 })
+  // Lo que hay en la bodega y lo aprobado que todavía no llega a la faena.
+  for (const columna of ["En bodega", "Por recibir"]) {
+    await expect(page.getByRole("columnheader", { name: columna, exact: true })).toBeVisible({ timeout: 15_000 })
   }
 
   // Y la vista no rompe al cambiar de faena, que es donde se cruzan los dos

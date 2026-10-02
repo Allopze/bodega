@@ -172,13 +172,13 @@ describe("getStockExport", () => {
     expect(ws).toBeDefined()
 
     expect((ws?.getRow(1).values as unknown[]).slice(1)).toEqual([
-      "Faena", "Producto", "Talla", "SKU", "U/M", "Físico", "Demanda pendiente",
-      "Entrada esperada", "Saldo proyectado", "Stock mínimo", "Último movimiento",
+      "Faena", "Producto", "Talla", "SKU", "U/M", "En bodega", "Por recibir",
+      "Stock mínimo", "Último movimiento",
     ])
     expect(ws?.actualRowCount).toBe(3) // header + 2 data rows
   })
 
-  it("exports the per-worksite availability projection without treating office receipt as final", async () => {
+  it("exports what is still to be received at each worksite without treating office receipt as final", async () => {
     await inMemoryDb.insert(schema.worksiteStock).values({
       id: "stk-projected", worksiteId: WS_1, productId: PROD_1,
       quantity: 2, minStock: 0, lastMovementAt: now, updatedAt: now,
@@ -208,10 +208,45 @@ describe("getStockExport", () => {
       await workbook.xlsx.load(Buffer.from(res.buffer) as never)
       const ws = workbook.getWorksheet("Stock")
 
-      expect((ws?.getRow(2).values as unknown[]).slice(6, 10)).toEqual([2, 5, 3, 0])
+      // 5 pedidos, 3 en oficina y 1 en faena: quedan 4 por recibir.
+      expect((ws?.getRow(2).values as unknown[]).slice(6, 8)).toEqual([2, 4])
     } finally {
       await inMemoryDb.delete(schema.purchaseOrderItems)
       await inMemoryDb.delete(schema.purchaseOrders)
+      await inMemoryDb.delete(schema.purchaseRequestItems)
+      await inMemoryDb.delete(schema.purchaseRequests)
+    }
+  })
+
+  it("exports what is still to be received for products the worksite has never stocked", async () => {
+    // Igual que la pantalla: sin esta fila, lo pedido para una faena que nunca
+    // tuvo el producto no aparecía en ningún lado.
+    await inMemoryDb.insert(schema.worksiteStock).values({
+      id: "stk-with-record", worksiteId: WS_1, productId: PROD_1,
+      quantity: 5, minStock: 0, lastMovementAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: "req-no-record", code: "SOL-EXPORT-NOREC", worksiteId: WS_1,
+      requesterId: userId, status: "approved", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: "req-item-no-record", requestId: "req-no-record", productId: PROD_2,
+      quantity: 6, status: "approved", createdAt: now, updatedAt: now,
+    })
+
+    try {
+      const res = await getStockExport(globalSession(), { worksiteId: WS_1 })
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(Buffer.from(res.buffer) as never)
+      const ws = workbook.getWorksheet("Stock")
+
+      expect(ws?.actualRowCount).toBe(3) // header + Bota (sin registro) + Guantes
+      // Orden por faena y producto, igual que las filas con registro.
+      expect((ws?.getRow(2).values as unknown[]).slice(1)).toEqual([
+        "Faena Alfa", "Bota Seguridad", "", "EPP-002", "par", 0, 6, 0, "",
+      ])
+      expect((ws?.getRow(3).values as unknown[]).slice(1, 3)).toEqual(["Faena Alfa", "Guantes Nitrilo"])
+    } finally {
       await inMemoryDb.delete(schema.purchaseRequestItems)
       await inMemoryDb.delete(schema.purchaseRequests)
     }
