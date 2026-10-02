@@ -2,7 +2,8 @@
 
 import type { SaveStatus } from "../use-entry-autosave"
 
-const TIME = new Intl.DateTimeFormat("es-CL", { hour: "2-digit", minute: "2-digit", timeZone: "America/Santiago" })
+// `hourCycle: "h23"` como `formatDateTime` (lib/utils): sin él, es-CL rinde «06:49 p. m.».
+const TIME = new Intl.DateTimeFormat("es-CL", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "America/Santiago" })
 
 export function SaveStatusIndicator({ status, editable }: { status: SaveStatus; editable: boolean }) {
   const text = !editable ? "Solo lectura"
