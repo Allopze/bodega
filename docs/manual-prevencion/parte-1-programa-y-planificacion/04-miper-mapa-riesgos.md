@@ -136,29 +136,62 @@ La **Magnitud del Riesgo (MR)** es el resultado de multiplicar Probabilidad × C
 | 16 | **Intolerable** | "No debe comenzar ni continuar el trabajo hasta que se reduzca el riesgo. Si no es posible reducirlo, incluso con recursos ilimitados, se debe prohibir el trabajo." | Medida con responsable y plazo; advertencia crítica permanente. |
 
 > [!IMPORTANT]
-> **MR Y CLASIFICACIÓN NO SE ESCRIBEN A MANO:** eliges Probabilidad y Consecuencia, y la plataforma calcula MR y clasificación. Por eso no pueden quedar incoherentes con lo evaluado, ni en la grilla ni en el libro Excel. Los criterios completos del RE-04 viajan en la hoja *Criterios de Evaluación IPER* del libro descargable.
+> **MR Y CLASIFICACIÓN NO SE ESCRIBEN A MANO:** eliges Probabilidad y Consecuencia, y la plataforma calcula MR y clasificación. Por eso no pueden quedar incoherentes con lo evaluado, ni en la matriz ni en el libro Excel. Los criterios completos del RE-04 viajan en la hoja *Criterios de Evaluación IPER* del libro descargable.
 
 ---
 
-## 5. La Grilla de la Matriz: Columnas, Autocompletado y Guardado
+## 5. La matriz: actividades, tareas y el editor del riesgo
 
-La pestaña **Matriz** es una grilla editable, pensada para computador. Las columnas siguen el orden del RE-04:
+La pestaña **Matriz** ya no es una planilla de 19 columnas: se recorre por niveles y funciona igual en computador y en celular.
 
-| Bloque | Columnas |
+### Cómo se organiza
+
+La matriz tiene tres niveles: **actividad › tarea › riesgo**.
+
+1.  **Estructura.** Es la vista de entrada: una tarjeta por actividad (con su número de tareas, de riesgos y el conteo por clasificación) y, debajo, una fila por tarea con sus puestos, su número de riesgos y cuántos están completos (por ejemplo, "3/5 completos"). Actividades y tareas siguen el orden del documento original.
+2.  **Tarea.** Al hacer clic en una tarea se abre la lista de sus riesgos: peligro, riesgo y daño, la clasificación con su MR, si está controlado, cuántas medidas tiene y si está "Completo" o con "N pendientes". "Volver a la matriz" te devuelve con tus filtros intactos.
+3.  **Editor del riesgo.** Al hacer clic en un riesgo se abre a pantalla completa para editarlo (ver más abajo).
+
+Sobre la lista, una franja resume el centro de trabajo, la dotación, las tareas, los riesgos y cuántos están completos; los conteos por clasificación funcionan como filtros.
+
+### Buscar y filtrar
+
+*   El buscador **"Buscar en la matriz"** mira actividad, tarea, puesto, lugar, peligro, riesgo, daño y medidas.
+*   El cajón **"Filtros (N)"** reúne clasificación, completitud, "¿Está controlado?", factor de riesgo y marcas (observados, modificados). El número entre paréntesis es la cantidad de filtros activos.
+*   Los filtros viven en la dirección de la página: sobreviven a recargar, y puedes copiar el enlace para compartir la vista. Bajo la barra aparecen como **chips** que se quitan de a uno, o todos con **"Quitar filtros"**.
+*   Con algún filtro activo, las tarjetas se expanden y bajo cada tarea aparecen solo los riesgos que coinciden; los conteos pasan a "x de y".
+*   **"Contraer todo" / "Expandir todo"** pliega o despliega las actividades.
+
+### Agregar una tarea o un peligro
+
+*   **"Nueva tarea"** (en el encabezado de la página) pide actividad y tarea, y crea el primer riesgo ya dentro de ellas; el editor se abre de inmediato en el paso Identificación.
+*   **"Agregar peligro"** (en la vista de una tarea) crea un riesgo nuevo que hereda actividad, tarea, puesto, lugar y si es rutinaria.
+*   Desde el editor, el menú **"Más"** permite **duplicar** o **eliminar** el riesgo (la eliminación pide confirmación). Si eliminas el único riesgo de una tarea, vuelves a la matriz.
+
+### Editar un riesgo
+
+El editor tiene **cuatro pasos**, que se eligen arriba y se recuerdan en la dirección de la página. Cada paso indica una marca de listo o "N pendientes", y al abrir el riesgo entras al primer paso con pendientes.
+
+| Paso | Qué se completa |
 |---|---|
-| **Identificación** | N° · Actividad · Tarea · Puesto de trabajo · Lugar específico |
-| **Expuestos** | Expuestos F · Expuestos M · Expuestos otro · Rutinaria / No rutinaria |
-| **Peligro y riesgo** | Factor de riesgo · Peligro · Riesgo · Daño probable |
-| **Evaluación** | Probabilidad · Consecuencia · MR · Clasificación |
-| **Control** | ¿Está controlado? · Medidas de control |
+| **1. Identificación** | Factor de riesgo, si es rutinaria o no, peligro, riesgo, daño probable, puesto, lugar específico y personas expuestas (F, M, otro). Un desplegable permite mover el riesgo a otra actividad o tarea. |
+| **2. Evaluación** | Eliges una de tres tarjetas de **Probabilidad** y una de tres de **Consecuencia**; la plataforma muestra el MR y la clasificación con su criterio. |
+| **3. Medidas de control** | "¿Está controlado?" y las medidas (tipo I–V, descripción, responsable, plazo), con "Agregar medida". Si la medida está vinculada al programa, se indica la actividad. |
+| **4. Seguimiento** | Actividades del programa vinculadas, observaciones del riesgo, cambios contra la versión anterior y el enlace a verificar la eficacia del control. |
 
-Reglas de trabajo de la grilla:
+A un costado (o debajo, en pantallas chicas) está el **chequeo del riesgo**: un ítem por bloque con una marca de listo, o con el mensaje de lo que falta y un enlace al paso donde se corrige. También muestra el contexto del riesgo y su clasificación.
 
-*   **Autocompletado desde los diccionarios de la faena.** Actividad, Tarea, Puesto de trabajo y Lugar específico se escriben con sugerencias tomadas de lo que ya existe en esa faena (y de los valores que ya usaste para Peligro, Riesgo, Daño y Medidas). El **Factor de riesgo** se elige del catálogo de la plataforma. Siempre puedes escribir un valor nuevo: quedará disponible para las próximas filas.
-*   **Guardado por fila.** Los cambios se guardan solos (no hay un botón "Guardar" de la grilla). Si la fila cambió en el servidor mientras la editabas, el guardado avisa en la propia celda: recarga la MIPER y vuelve a intentar; la plataforma no pisa lo que escribió otra persona.
-*   **Agregar debajo, duplicar y eliminar.** "Agregar debajo" crea una fila heredando Actividad, Tarea, Puesto y Lugar de la anterior; "duplicar" copia la fila completa; "eliminar" pide confirmación.
-*   **Intolerables e incompletas a la vista.** Cada fila muestra sus pendientes (falta el factor, falta el plazo de una medida, etc.) y la grilla las marca para que no se pierdan entre cientos de filas.
-*   **En el celular** la matriz se ve como tarjetas de solo lectura: la edición es de escritorio.
+**Guardado automático.** No hay botón "Guardar": los textos se guardan al salir del campo y las selecciones, al elegirlas. Arriba del editor, un estado indica **Guardando…**, **Guardado** (con la hora) o el error. Si un guardado falla, el mensaje aparece bajo el campo y el campo vuelve a su último valor guardado. Si el riesgo cambió en el servidor mientras lo editabas, el aviso trae un botón **"Recargar riesgo"**; la plataforma no pisa lo que escribió otra persona.
+
+### Recorrer los pendientes
+
+En el pie del editor, **"‹ Anterior"** y **"Siguiente ›"** recorren los riesgos de la tarea, y **"Siguiente pendiente"** salta al próximo riesgo con datos faltantes (dando la vuelta al final). Si hay filtros activos, recorre solo los riesgos filtrados. La tarjeta **"Siguiente paso"**, bajo el encabezado de la página, te lleva al primer pendiente más grave.
+
+### En el celular
+
+La matriz **se puede editar desde el celular**: la estructura, la tarea y el editor usan una sola columna, sin desplazamiento lateral, y el chequeo del riesgo baja bajo el contenido. Los pasos y la navegación del pie funcionan igual que en el computador.
+
+> **EL ORDEN DEL RE-04 VIVE EN EL EXCEL:** la pantalla se organiza por niveles; las columnas en el orden del formato RE-04 solo existen en el libro Excel descargable.
 
 ### ¿Qué significa "¿Está controlado?"
 
@@ -170,9 +203,9 @@ Es la evaluación de si las medidas registradas alcanzan para el riesgo tal como
 | **Parcialmente** | Hay medidas, pero no alcanzan a cubrir el riesgo: queda trabajo por hacer. | Exige al menos una medida registrada. |
 | **No** | El riesgo no está controlado (no hay medidas suficientes). | Un riesgo Importante exige medida con responsable y plazo; un Intolerable siempre. |
 
-### El detalle de una fila
+### El detalle de un riesgo
 
-Al abrir una fila se despliega un panel lateral con todas sus medidas, sus observaciones y la comparación contra lo que ya estaba (nueva, modificada o eliminada). Es el mismo panel que usa la Jefatura para observar un riesgo concreto y el que enlaza a la verificación de un control.
+El paso **Seguimiento** del editor y su panel lateral reúnen las medidas, las observaciones y la comparación contra lo que ya estaba (nueva, modificada o eliminada). Es el mismo panel que usa la Jefatura para observar un riesgo concreto y el que enlaza a la verificación de un control.
 
 ---
 
@@ -201,7 +234,7 @@ Siempre se prefiere la jerarquía más alta posible: eliminar o sustituir antes 
 | Toda medida | Descripción, tipo (I–V) y plazo. El responsable es obligatorio salvo en riesgos Tolerables. |
 
 > [!TIP]
-> **CONSEJO DE TERRENO:** estas reglas bloquean el **envío a revisión**, no el guardado de una celda. Una fila se completa de a poco: la grilla te va indicando qué falta, y el botón "Enviar a revisión" lista los bloqueos por riesgo (#N°) para corregirlos de una pasada.
+> **CONSEJO DE TERRENO:** estas reglas bloquean el **envío a revisión**, no el guardado de una celda. Una fila se completa de a poco: la matriz te va indicando qué falta, y el botón "Enviar a revisión" lista los bloqueos por riesgo (#N°) para corregirlos de una pasada.
 
 La ficha de la fila también permite registrar la **verificación segregada de un control** en `/prevencion/miper/controles/[id]` (MIPER-08), cuando la MIPER está vigente: se anota el resultado (eficaz, parcialmente eficaz o ineficaz) con evidencia, y no puede verificar la misma persona que creó la versión ni quien responde por el control, salvo una excepción fundamentada.
 
@@ -245,7 +278,7 @@ graph LR
 
 *   **Quién lo hace:** la Jefatura del Departamento de Prevención (rol `prevencionista`).
 *   **En la plataforma:** abre la MIPER desde su bandeja. Verás una franja de resumen con faena, quién envió, versión, dotación, total de riesgos, distribución por clasificación, no controlados, medidas sin responsable, medidas sin plazo, Importantes e Intolerables.
-*   **Observar:** escribe una **observación por fila** (sobre el riesgo que corresponde) o una observación general en la pestaña **Revisión**. Las filas observadas quedan marcadas en la grilla.
+*   **Observar:** escribe una **observación por fila** (sobre el riesgo que corresponde) o una observación general en la pestaña **Revisión**. Las filas observadas quedan marcadas en la matriz.
 *   **Decidir:** **"Devolver con observaciones"** (vuelve a la prevencionista) o **"Aprobar revisión técnica"** (pasa a Legal y RRHH). También distingue lo nuevo, lo modificado y lo eliminado respecto de la ronda anterior.
 
 ### Paso 3: Responder y reenviar

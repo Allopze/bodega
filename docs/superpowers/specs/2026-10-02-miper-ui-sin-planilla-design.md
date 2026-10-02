@@ -115,6 +115,13 @@ notificaciones (`?fila=`, `?tab=revision`, `?tab=programa`) siguen funcionando.
 Prioridad de render: `fila` > `tarea` > `tab`. Con `fila`, la vista de la tarea a la que se
 vuelve es la de ese riesgo.
 
+**Navegación dentro del espacio de trabajo.** Tarea, riesgo, paso, ficha, pestañas y filtros
+cambian la URL con `window.history.pushState` / `replaceState` (Next.js lo integra con
+`useSearchParams`; ver "Native History API" en la documentación), no con `<Link>` ni
+`router.push`. Motivo, medido en la verificación: cada cambio por el router costaba un viaje RSC
+de 195–257 ms y reiniciaba el estado de las filas del cliente. Con la API nativa el cambio es
+inmediato, no hay petición `_rsc` y "atrás" sigue funcionando porque cada `push` deja su entrada.
+
 ---
 
 ## 4. Espacio de trabajo (`/prevencion/miper/[id]`)
@@ -281,6 +288,15 @@ target } | null }`. Las reglas, en orden:
    propia (la decisión está en la cabecera).
 7. **Vigente con cambios pendientes:** "Hay cambios sin revisar desde vN", sin acción.
 8. En otro caso, `null` (no se muestra tarjeta).
+
+Reglas añadidas durante la implementación:
+
+- **Matriz vacía:** no muestra tarjeta. Ahí el `EmptyState` de la matriz ya trae la acción.
+- **"La matriz no tiene registros" no bloquea la ficha.** El diálogo de bloqueos lo muestra como
+  texto, sin botón, porque no se arregla en la ficha.
+- **El motivo de sólo lectura se muestra en todas las vistas** (estructura, tarea y editor). Los
+  demás pasos se muestran sólo en la raíz de la matriz, y la acción "Ir a Revisión" se oculta
+  cuando ya se está en esa pestaña.
 
 ### 5.7 Ficha del documento (`?ficha=1`)
 
