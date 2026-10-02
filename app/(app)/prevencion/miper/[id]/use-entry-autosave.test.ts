@@ -79,6 +79,20 @@ describe("useEntryAutosave", () => {
     expect(hook.result.current.status.state).toBe("error")
   })
 
+  it("«Recargar riesgo» descarta el conflicto: el campo pierde el mensaje y el guardado siguiente anuncia «guardado»", async () => {
+    saveMiperEntryAction
+      .mockResolvedValueOnce({ ok: false, message: "La fila cambió mientras la editabas. Recarga la matriz." })
+      .mockResolvedValueOnce({ ok: true, data: { version: 3, magnitude: 4, classification: "moderate" } })
+    const { hook } = setup()
+    await act(async () => { await hook.result.current.commit(entry, { probability: 4 }) })
+    expect(hook.result.current.status.state).toBe("error")
+    act(() => { hook.result.current.clearErrors("e1") })
+    expect(hook.result.current.fieldError("e1", "probability")).toBeUndefined()
+    expect(hook.result.current.status.state).toBe("idle")
+    await act(async () => { await hook.result.current.commit(entry, { consequence: 4 }) })
+    expect(hook.result.current.status.state).toBe("saved")
+  })
+
   it("tras un refresh del servidor, revierte al valor del servidor y no al guardado antes", async () => {
     saveMiperEntryAction
       .mockResolvedValueOnce({ ok: true, data: { version: 2, magnitude: 6, classification: "moderate" } })

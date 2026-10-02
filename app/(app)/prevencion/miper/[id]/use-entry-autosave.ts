@@ -12,6 +12,8 @@ export type EntryAutosave = {
   status: SaveStatus
   fieldError: (entryId: string, field: string) => string | undefined
   versionOf: (entryId: string) => number | undefined
+  /** Descarta los rechazos de un riesgo («Recargar riesgo»): sus campos ya muestran lo del servidor. */
+  clearErrors: (entryId: string) => void
 }
 
 /**
@@ -80,5 +82,14 @@ export function useEntryAutosave({ matrixId, entryVersions, serverRows, setRows,
   }, [riskFactors, save, setRows])
 
   const fieldError = useCallback((entryId: string, field: string) => errors[`${entryId}.${field}`], [errors])
-  return { commit, status, fieldError, versionOf }
+  // Sin esto, tras recargar el riesgo el conflicto seguía en el campo y cada
+  // guardado posterior, aunque el servidor lo aceptara, volvía a anunciar «No se guardó».
+  const clearErrors = useCallback((entryId: string) => {
+    const next = Object.fromEntries(Object.entries(errorsRef.current).filter(([key]) => !key.startsWith(`${entryId}.`)))
+    errorsRef.current = next
+    setErrors(next)
+    const remaining = Object.values(next)[0]
+    setStatus((current) => (remaining ? { state: "error", savedAt: null, message: remaining } : current.state === "error" ? { state: "idle", savedAt: null, message: null } : current))
+  }, [])
+  return { commit, status, fieldError, versionOf, clearErrors }
 }

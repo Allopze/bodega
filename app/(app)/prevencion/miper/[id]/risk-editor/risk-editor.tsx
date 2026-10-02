@@ -73,7 +73,7 @@ export function RiskEditor(props: RiskEditorProps) {
         <WorkspaceLink href={taskHref} className="text-sm font-medium text-[var(--color-primary-ink)] hover:underline">‹ Volver a la tarea</WorkspaceLink>
         <div className="flex items-center gap-2">
           <SaveStatusIndicator status={autosave.status} editable={editable} />
-          {editable && autosave.status.state === "error" && <Button size="sm" variant="secondary" onClick={() => router.refresh()}>Recargar riesgo</Button>}
+          {editable && autosave.status.state === "error" && <Button size="sm" variant="secondary" onClick={() => { autosave.clearErrors(entry.id); router.refresh() }}>Recargar riesgo</Button>}
         </div>
       </div>
       <div className="flex flex-wrap items-start justify-between gap-3">

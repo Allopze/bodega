@@ -20,13 +20,14 @@ const entry = (id: string, rowNumber: number, overrides: Partial<MiperEntrySnaps
 }) as MiperEntrySnapshot
 const mode = { canEdit: true, canReviewTechnical: false, canApproveLegal: false, canObserve: false, canRespond: false, isSubmitter: false, canExecuteProgram: false, readOnlyReason: null } as WorkspaceMode
 const commit = vi.fn(async () => true)
+const clearErrors = vi.fn()
 const props = (overrides: Partial<RiskEditorProps> = {}): RiskEditorProps => ({
   data: { matrixId: "m1", published: false, riskFactors: [{ id: "f1", name: "Mecánico", isActive: true }], dictionaries: { activities: [], tasks: [], positions: [], locations: [], hazards: [], risks: [], damages: [], measures: [] }, responsibleOptions: [], controlVersions: {}, controlActionLinks: [], observations: [] },
   rows: [entry("e1", 1), entry("e2", 2), entry("e3", 3, { task: "Otra" })],
   entryId: "e1", step: null,
   issuesByEntry: new Map([["e1", [{ scope: "entry", entryId: "e1", field: "controls", message: "Un riesgo Importante o Intolerable exige al menos una medida de control.", severity: "error" }]]]),
   incomplete: new Set(["e1", "e3"]), matching: null, editable: true, mode, change: null, baselineEntry: null,
-  autosave: { commit, status: { state: "idle", savedAt: null, message: null }, fieldError: () => undefined, versionOf: () => 1 },
+  autosave: { commit, status: { state: "idle", savedAt: null, message: null }, fieldError: () => undefined, versionOf: () => 1, clearErrors },
   ...overrides,
 })
 
@@ -113,12 +114,14 @@ describe("RiskEditor", () => {
     expect(router.replace).not.toHaveBeenCalled()
     replaceState.mockRestore()
   })
-  it("tras un error de guardado ofrece «Recargar riesgo»", () => {
+  it("tras un error de guardado ofrece «Recargar riesgo», que trae el riesgo del servidor y descarta el conflicto", () => {
     router.refresh.mockClear()
+    clearErrors.mockClear()
     const autosave = { ...props().autosave, status: { state: "error" as const, savedAt: null, message: "Versión desactualizada" } }
     render(<RiskEditor {...props({ autosave })} />)
     fireEvent.click(screen.getByRole("button", { name: "Recargar riesgo" }))
     expect(router.refresh).toHaveBeenCalledTimes(1)
+    expect(clearErrors).toHaveBeenCalledWith("e1")
   })
 
   it("borrar el único riesgo de una tarea vuelve a la matriz; si quedan otros, a la tarea", async () => {
