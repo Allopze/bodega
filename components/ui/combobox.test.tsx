@@ -48,4 +48,26 @@ describe("Combobox", () => {
     fireEvent.blur(input())
     expect(onChange).toHaveBeenCalledWith("")
   })
+
+  it("Enter recién enfocado, sin escribir, conserva el valor; con flecha elige la fila", () => {
+    const onChange = vi.fn()
+    render(<Combobox aria-label="Peligro" options={OPTIONS} value="Polvo" onChange={onChange} allowCustomValue />)
+    fireEvent.focus(input())
+    fireEvent.keyDown(input(), { key: "Enter" })
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.focus(input())
+    fireEvent.keyDown(input(), { key: "ArrowDown" })
+    fireEvent.keyDown(input(), { key: "Enter" })
+    expect(onChange).toHaveBeenCalledWith("Ruido de motor")
+  })
+
+  it("al salir con el texto de una opción existente confirma su value, no el texto", () => {
+    const onChange = vi.fn()
+    const options = [{ value: "id-1", label: "Camión en pendiente" }]
+    render(<Combobox aria-label="Peligro" options={options} value="" onChange={onChange} allowCustomValue />)
+    fireEvent.focus(input())
+    fireEvent.change(input(), { target: { value: "camion en pendiente" } })
+    fireEvent.blur(input())
+    expect(onChange).toHaveBeenCalledWith("id-1")
+  })
 })

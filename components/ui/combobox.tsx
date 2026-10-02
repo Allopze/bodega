@@ -56,6 +56,8 @@ export function Combobox({
   const [query, setQuery] = React.useState("")
   const inputRef = React.useRef<HTMLInputElement>(null)
   const listboxRef = React.useRef<HTMLUListElement>(null)
+  // Recién enfocado, sin escribir ni navegar: Enter no debe elegir la primera fila.
+  const pristineRef = React.useRef(false)
 
   const currentText = selected?.label ?? (allowCustomValue ? value : "")
   // Sin escribir, la lista no se filtra por el valor actual: se ve completa.
@@ -90,6 +92,7 @@ export function Combobox({
     listboxRef,
     disabled,
     onSelect: (index) => {
+      if (pristineRef.current) { setQuery(""); listbox.close(); return }
       const row = rows[index]
       if (row) commit(row.value)
     },
@@ -121,24 +124,31 @@ export function Combobox({
           // etiqueta elegida; al abrirlo pasa a ser el campo de búsqueda.
           value={listbox.open ? query : currentText}
           onChange={(event) => {
+            pristineRef.current = false
             setQuery(event.target.value)
             listbox.setOpen(true)
             listbox.setActiveIndex(0)
           }}
           onFocus={() => {
             if (disabled) return
-            if (allowCustomValue) setQuery(currentText)
+            if (allowCustomValue) { setQuery(currentText); pristineRef.current = true }
             listbox.setOpen(true)
           }}
           onBlur={(event) => {
             if (!listbox.focusLeft(event)) return
             // Sólo con el popup abierto `query` es lo que el usuario escribió:
             // tras elegir una fila (o Escape) ya no hay nada pendiente que confirmar.
-            if (allowCustomValue && listbox.open && query.trim() !== currentText) onChange(query.trim())
+            if (allowCustomValue && listbox.open && query.trim() !== currentText) {
+              const match = options.find((option) => normalize(option.label) === normalize(query.trim()))
+              onChange(match ? match.value : query.trim())
+            }
             setQuery("")
             listbox.close()
           }}
-          onKeyDown={listbox.handleKeyDown}
+          onKeyDown={(event) => {
+            if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) pristineRef.current = false
+            listbox.handleKeyDown(event)
+          }}
         />
         {!disabled && selected && clearLabel && (
           <button
