@@ -1,6 +1,7 @@
 "use client"
 
 import { forwardRef, type AnchorHTMLAttributes } from "react"
+import { currentViewUrl, rememberScroll, shellScroll } from "./workspace-memory"
 
 /**
  * Navegación dentro del espacio de trabajo de la MIPER sin ida al servidor:
@@ -15,9 +16,13 @@ export function navigateWorkspace(href: string, mode: "push" | "replace" = "push
     window.history.replaceState(null, "", href)
     return
   }
-  window.history.pushState(null, "", href)
   // La página scrollea dentro del pozo del shell, no en `window` (STYLING.md).
-  document.querySelector<HTMLElement>("[data-shell-scroll]")?.scrollTo({ top: 0 })
+  const well = shellScroll()
+  // Lo que se deja queda recordado por su URL: al volver, la matriz o la tarea
+  // retoman ese scroll (`useRestoreWorkspaceScroll`) en vez de llegar arriba.
+  if (well) rememberScroll(currentViewUrl(), well.scrollTop)
+  window.history.pushState(null, "", href)
+  well?.scrollTo({ top: 0 })
 }
 
 type WorkspaceLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & { href: string; replace?: boolean }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { buildMatrixTree, taskKeyOf } from "@/lib/prevention/miper/matrix-tree"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 
@@ -11,7 +11,12 @@ import { MatrixView } from "./matrix-view"
 const e = (id: string, rowNumber: number, activity: string, task: string) => ({ id, rowNumber, activity, task, position: "P", location: null, exposedFemale: 0, exposedMale: 1, exposedOther: 0, riskFactorId: null, riskFactor: null, isRoutine: true, hazard: `Peligro ${id}`, risk: "R", probableDamage: "D", probability: 1, consequence: 1, magnitude: 1, classification: "tolerable", controlledStatus: "yes", controls: [] }) as MiperEntrySnapshot
 const rows = [e("a", 1, "Transporte", "Carga"), e("b", 2, "Transporte", "Descarga"), e("c", 3, "Oficina", "Archivo")]
 const ctx = { incomplete: new Set(["a"]), observed: new Set<string>(), modified: new Set<string>() }
-const base = { editable: true, incomplete: ctx.incomplete, observed: ctx.observed, changes: new Map(), issuesByEntry: new Map(), onNewTask: vi.fn() }
+const base = { matrixId: "m1", editable: true, incomplete: ctx.incomplete, observed: ctx.observed, changes: new Map(), issuesByEntry: new Map(), onNewTask: vi.fn(), onClearFilters: vi.fn() }
+
+afterEach(() => {
+  sessionStorage.clear()
+  document.querySelectorAll("[data-shell-scroll]").forEach((node) => node.remove())
+})
 
 describe("MatrixView", () => {
   it("muestra cada actividad con sus tareas como enlaces y el avance por tarea", () => {
@@ -37,6 +42,42 @@ describe("MatrixView", () => {
     render(<MatrixView {...base} tree={[]} filtered={false} />)
     fireEvent.click(screen.getByRole("button", { name: "Nueva tarea" }))
     expect(base.onNewTask).toHaveBeenCalled()
+  })
+  it("con filtros y sin coincidencias explica qué pasa y ofrece «Limpiar filtros» (A4)", () => {
+    render(<MatrixView {...base} tree={[]} filtered />)
+    expect(screen.getByText("Ningún riesgo coincide con los filtros")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Nueva tarea" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Limpiar filtros" }))
+    expect(base.onClearFilters).toHaveBeenCalledTimes(1)
+  })
+  it("las actividades plegadas se recuerdan al volver a la matriz (abrir una tarea la desmonta)", () => {
+    const tree = buildMatrixTree(rows, { ...ctx, matching: null })
+    const first = render(<MatrixView {...base} tree={tree} filtered={false} />)
+    fireEvent.click(screen.getByRole("button", { name: /Transporte/ }))
+    first.unmount()
+    render(<MatrixView {...base} tree={tree} filtered={false} />)
+    expect(screen.getByRole("button", { name: /Transporte/ }).getAttribute("aria-expanded")).toBe("false")
+    expect(screen.getByRole("button", { name: /Oficina/ }).getAttribute("aria-expanded")).toBe("true")
+    expect(screen.queryByRole("link", { name: /Carga/ })).toBeNull()
+  })
+  it("las plegadas de otra matriz no se aplican", () => {
+    const tree = buildMatrixTree(rows, { ...ctx, matching: null })
+    const first = render(<MatrixView {...base} tree={tree} filtered={false} />)
+    fireEvent.click(screen.getByRole("button", { name: /Transporte/ }))
+    first.unmount()
+    render(<MatrixView {...base} matrixId="m2" tree={tree} filtered={false} />)
+    expect(screen.getByRole("button", { name: /Transporte/ }).getAttribute("aria-expanded")).toBe("true")
+  })
+  it("al montarse retoma el scroll que tenía su URL al salir", async () => {
+    window.history.replaceState(null, "", "/prevencion/miper/m1?buscar=cami")
+    sessionStorage.setItem("miper:scroll:/prevencion/miper/m1?buscar=cami", "640")
+    const well = document.createElement("div")
+    well.setAttribute("data-shell-scroll", "")
+    const scrollTo = vi.fn()
+    well.scrollTo = scrollTo
+    document.body.appendChild(well)
+    render(<MatrixView {...base} tree={buildMatrixTree(rows, { ...ctx, matching: null })} filtered={false} />)
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 640 }))
   })
   it("el título de una actividad con espacios y tildes nombra su región", () => {
     const accented = [e("z", 1, "Lavado de camión", "Enjuague")]

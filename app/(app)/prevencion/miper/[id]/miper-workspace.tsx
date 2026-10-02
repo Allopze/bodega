@@ -10,7 +10,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { checkMiperCompleteness, issuesByEntry } from "@/lib/prevention/miper/completeness"
 import { filterRows } from "@/lib/prevention/miper/grid-view"
-import { hasEntryFilters, parseMatrixFilters } from "@/lib/prevention/miper/matrix-filters"
+import { hasEntryFilters, MATRIX_FILTER_KEYS, parseMatrixFilters } from "@/lib/prevention/miper/matrix-filters"
 import { buildMatrixTree, findTask } from "@/lib/prevention/miper/matrix-tree"
 import { CLASSIFICATION_CRITERIA } from "@/lib/prevention/miper/methodology"
 import { nextStepFor, nextStepInView, type NextStepAction } from "@/lib/prevention/miper/next-step"
@@ -93,7 +93,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
     return parsed.factorId !== "all" && !workspace.riskFactors.some((factor) => factor.id === parsed.factorId) ? { ...parsed, factorId: "all" } : parsed
   }, [searchParams, workspace.riskFactors])
   const filtered = hasEntryFilters(filters)
-  const { setFilter } = useMatrixFilterNavigation()
+  const { setFilter, setFilters } = useMatrixFilterNavigation()
   // `serverRows` con identidad estable entre fotos: `source.entries`, nunca un `.map` armado aquí.
   const autosave = useEntryAutosave({ matrixId: workspace.matrix.id, entryVersions: workspace.entryVersions, setRows, riskFactors: workspace.riskFactors, serverRows: source.entries })
   useEffect(() => { knownVersionOf.current = autosave.versionOf }, [autosave.versionOf])
@@ -171,8 +171,9 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
                   onToggleClassification={(cls) => setFilter("clasificacion", (filters.classifications.includes(cls) ? filters.classifications.filter((item) => item !== cls) : [...filters.classifications, cls]).join(",") || null)}
                   onTogglePending={() => setFilter("completitud", filters.onlyIncomplete ? null : "pendientes")}
                   onToggleUncontrolled={() => setFilter("controlado", filters.controlled === "no" ? null : "no")} />
-                <MatrixView tree={tree} filtered={filtered} editable={editable} incomplete={incomplete} observed={observedEntryIds} changes={changes} issuesByEntry={entryIssues}
+                <MatrixView matrixId={workspace.matrix.id} tree={tree} filtered={filtered} editable={editable} incomplete={incomplete} observed={observedEntryIds} changes={changes} issuesByEntry={entryIssues}
                   onNewTask={() => setNewTaskOpen(true)}
+                  onClearFilters={() => setFilters(Object.fromEntries(MATRIX_FILTER_KEYS.map((key) => [key, null])))}
                   toolbar={({ collapsedAll, toggleAll, filtered: isFiltered }) => (
                     <MatrixFiltersBar filters={filters} riskFactors={workspace.riskFactors} hasBaseline={baseline !== null} collapsedAll={collapsedAll} onToggleAll={toggleAll} filtered={isFiltered} />
                   )} />

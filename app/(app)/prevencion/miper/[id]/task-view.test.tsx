@@ -24,6 +24,22 @@ const task = buildMatrixTree(rows, { incomplete: new Set(["a"]), observed: new S
 const base = { matrixId: "m1", task, incomplete: new Set(["a"]), observed: new Set<string>(), changes: new Map(), issuesByEntry: new Map([["a", [{ scope: "entry" as const, entryId: "a", field: "controls", message: "m", severity: "error" as const }]]]) }
 
 describe("TaskView", () => {
+  it("al volver del editor retoma el scroll que tenía la tarea", async () => {
+    window.history.replaceState(null, "", "/prevencion/miper/m1?tarea=k")
+    sessionStorage.setItem("miper:scroll:/prevencion/miper/m1?tarea=k", "320")
+    const well = document.createElement("div")
+    well.setAttribute("data-shell-scroll", "")
+    const scrollTo = vi.fn()
+    well.scrollTo = scrollTo
+    document.body.appendChild(well)
+    try {
+      render(<TaskView {...base} editable />)
+      await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 320 }))
+    } finally {
+      well.remove()
+      sessionStorage.clear()
+    }
+  })
   it("lista los riesgos como enlaces al editor, con estado y puesto cuando hay más de uno", () => {
     render(<TaskView {...base} editable />)
     const link = screen.getByRole("link", { name: /Riesgo #4: Peligro 4/ })

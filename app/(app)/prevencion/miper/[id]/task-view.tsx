@@ -11,6 +11,7 @@ import { hrefToEntry, hrefToMatrix } from "@/lib/prevention/miper/workspace-url"
 import { toast } from "@/lib/toast"
 import { saveMiperEntryAction } from "../actions"
 import { RiskRow } from "./risk-row"
+import { useRestoreWorkspaceScroll } from "./workspace-memory"
 import { WorkspaceLink } from "./workspace-nav"
 
 export function TaskView({ matrixId, task, editable, incomplete, observed, changes, issuesByEntry }: {
@@ -27,6 +28,8 @@ export function TaskView({ matrixId, task, editable, incomplete, observed, chang
   const params = useSearchParams()
   const [adding, setAdding] = useState(false)
   const addingRef = useRef(false)
+  // Al volver del editor, la tarea retoma su scroll (lo guarda `navigateWorkspace` al salir).
+  useRestoreWorkspaceScroll()
 
   async function addHazard() {
     if (addingRef.current) return

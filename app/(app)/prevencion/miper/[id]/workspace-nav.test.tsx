@@ -9,6 +9,7 @@ const HREF = "/prevencion/miper/m1?tarea=k"
 afterEach(() => {
   vi.restoreAllMocks()
   document.body.innerHTML = ""
+  sessionStorage.clear()
 })
 
 describe("WorkspaceLink", () => {
@@ -58,6 +59,30 @@ describe("WorkspaceLink", () => {
     document.body.appendChild(well)
     render(<WorkspaceLink href={HREF}>Carga</WorkspaceLink>)
     fireEvent.click(screen.getByRole("link", { name: "Carga" }))
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0 })
+  })
+
+  it("antes del push guarda el scroll de la vista que se deja, por su URL; replace no guarda nada", () => {
+    window.history.replaceState(null, "", "/prevencion/miper/m1?buscar=cami")
+    // El push cambia la URL de verdad y subir el pozo pone el scroll en 0: así
+    // la prueba distingue guardar ANTES de guardar después.
+    const realReplace = window.history.replaceState.bind(window.history)
+    const push = vi.spyOn(window.history, "pushState").mockImplementation((_state, _unused, url) => realReplace(null, "", url))
+    vi.spyOn(window.history, "replaceState").mockImplementation(() => {})
+    const well = document.createElement("div")
+    well.setAttribute("data-shell-scroll", "")
+    well.scrollTop = 480
+    const scrollTo = vi.fn(() => { well.scrollTop = 0 })
+    well.scrollTo = scrollTo as unknown as typeof well.scrollTo
+    document.body.appendChild(well)
+    render(<><WorkspaceLink href={HREF}>Carga</WorkspaceLink><WorkspaceLink href="/prevencion/miper/m1?paso=x" replace>Paso</WorkspaceLink></>)
+    fireEvent.click(screen.getByRole("link", { name: "Paso" }))
+    expect(sessionStorage.length).toBe(0)
+    fireEvent.click(screen.getByRole("link", { name: "Carga" }))
+    // Se guarda ANTES de cambiar de URL y de subir el pozo.
+    expect(sessionStorage.getItem("miper:scroll:/prevencion/miper/m1?buscar=cami")).toBe("480")
+    expect(sessionStorage.getItem(`miper:scroll:${HREF}`)).toBeNull()
+    expect(push).toHaveBeenCalledWith(null, "", HREF)
     expect(scrollTo).toHaveBeenCalledWith({ top: 0 })
   })
 
