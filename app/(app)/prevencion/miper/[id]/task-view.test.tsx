@@ -1,0 +1,44 @@
+// @vitest-environment jsdom
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { describe, expect, it, vi } from "vitest"
+import { buildMatrixTree } from "@/lib/prevention/miper/matrix-tree"
+import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
+
+const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }))
+vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/prevencion/miper/m1", useSearchParams: () => new URLSearchParams("tarea=k&clasificacion=important") }))
+const saveMiperEntryAction = vi.hoisted(() => vi.fn())
+vi.mock("../actions", () => ({ saveMiperEntryAction }))
+
+import { TaskView } from "./task-view"
+
+const e = (id: string, rowNumber: number, overrides: Partial<MiperEntrySnapshot> = {}) => ({
+  id, rowNumber, activity: "Transporte", task: "Carga", position: "Conductor", location: "Planta", exposedFemale: 0, exposedMale: 2, exposedOther: 0,
+  riskFactorId: null, riskFactor: null, isRoutine: true, hazard: `Peligro ${rowNumber}`, risk: "Choque", probableDamage: "Fracturas",
+  probability: 2, consequence: 4, magnitude: 8, classification: "important", controlledStatus: "no", controls: [], ...overrides,
+}) as MiperEntrySnapshot
+const rows = [e("a", 4), e("b", 7, { position: "Peoneta" })]
+const task = buildMatrixTree(rows, { incomplete: new Set(["a"]), observed: new Set(), modified: new Set(), matching: null })[0]!.tasks[0]!
+const base = { matrixId: "m1", task, incomplete: new Set(["a"]), observed: new Set<string>(), changes: new Map(), issuesByEntry: new Map([["a", [{ scope: "entry" as const, entryId: "a", field: "controls", message: "m", severity: "error" as const }]]]) }
+
+describe("TaskView", () => {
+  it("lista los riesgos como enlaces al editor, con estado y puesto cuando hay más de uno", () => {
+    render(<TaskView {...base} editable />)
+    const link = screen.getByRole("link", { name: /Riesgo #4: Peligro 4/ })
+    expect(link.getAttribute("href")).toBe("/prevencion/miper/m1?clasificacion=important&fila=a")
+    expect(screen.getByText("1 pendiente")).toBeTruthy()
+    expect(screen.getByText("Completo")).toBeTruthy()
+    expect(screen.getByText("Peoneta")).toBeTruthy()
+    expect(screen.getByText("1 de 2 completos")).toBeTruthy()
+  })
+  it("«Agregar peligro» hereda el contexto, se inserta tras el último N° de la tarea y abre el editor", async () => {
+    saveMiperEntryAction.mockResolvedValueOnce({ ok: true, data: { id: "nuevo", version: 1 } })
+    render(<TaskView {...base} editable />)
+    fireEvent.click(screen.getByRole("button", { name: "Agregar peligro" }))
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/prevencion/miper/m1?clasificacion=important&fila=nuevo&paso=identificacion"))
+    expect(saveMiperEntryAction).toHaveBeenCalledWith({ matrixId: "m1", insertAfterRowNumber: 7, values: { activity: "Transporte", task: "Carga", position: "Conductor", location: "Planta", isRoutine: true } })
+  })
+  it("sin edición no ofrece agregar", () => {
+    render(<TaskView {...base} editable={false} />)
+    expect(screen.queryByRole("button", { name: "Agregar peligro" })).toBeNull()
+  })
+})
