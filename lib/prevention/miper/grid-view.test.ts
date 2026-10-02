@@ -26,6 +26,11 @@ describe("vista de la grilla", () => {
     expect(filterRows(rows, { ...EMPTY_FILTERS, onlyModified: true }, ctx).map((r) => r.id)).toEqual(["b"])
     expect(filterRows(rows, { ...EMPTY_FILTERS, onlyIncomplete: true }, ctx).map((r) => r.id)).toEqual(["a", "c"])
   })
+  it("onlyComplete deja sólo los riesgos sin errores", () => {
+    const rows = [row("a", { id: "a" }), row("b", { id: "b" })]
+    const visible = filterRows(rows, { ...EMPTY_FILTERS, onlyComplete: true }, { observed: new Set(), modified: new Set(), incomplete: new Set(["a"]) })
+    expect(visible.map((row) => row.id)).toEqual(["b"])
+  })
   it("agrupa por actividad, puesto o clasificación (de mayor a menor gravedad)", () => {
     expect(groupRows(rows, "activity").map((g) => [g.label, g.rows.length])).toEqual([["Oficina", 1], ["Transporte", 2]])
     expect(groupRows(rows, "classification").map((g) => g.label)).toEqual(["Intolerable", "Importante", "Tolerable"])
