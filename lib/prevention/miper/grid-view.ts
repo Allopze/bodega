@@ -1,4 +1,4 @@
-import { CLASSIFICATION_LABEL, RISK_CLASSIFICATIONS, type RiskClassification } from "./methodology"
+import type { RiskClassification } from "./methodology"
 import { normalizeMiperName } from "./names"
 import type { ControlledStatus, MiperEntrySnapshot } from "./snapshot"
 
@@ -15,7 +15,6 @@ export type GridFilters = {
   onlyComplete: boolean
 }
 export const EMPTY_FILTERS: GridFilters = { search: "", classifications: [], controlled: "all", factorId: "all", onlyObserved: false, onlyModified: false, onlyIncomplete: false, onlyComplete: false }
-export type GroupBy = "none" | "activity" | "position" | "classification"
 
 export function activeFilterCount(filters: GridFilters) {
   return (filters.search ? 1 : 0) + (filters.classifications.length ? 1 : 0) + (filters.controlled !== "all" ? 1 : 0)
@@ -38,21 +37,4 @@ export function filterRows(rows: MiperEntrySnapshot[], filters: GridFilters, ctx
     if (filters.onlyComplete && ctx.incomplete?.has(row.id)) return false
     return true
   })
-}
-
-export function groupRows(rows: MiperEntrySnapshot[], by: GroupBy) {
-  if (by === "none") return [{ key: "all", label: "", rows }]
-  const groups = new Map<string, MiperEntrySnapshot[]>()
-  for (const row of rows) {
-    const key = by === "activity" ? row.activity ?? "" : by === "position" ? row.position ?? "" : row.classification ?? ""
-    groups.set(key, [...(groups.get(key) ?? []), row])
-  }
-  const entries = [...groups.entries()]
-  if (by === "classification") {
-    const order = [...RISK_CLASSIFICATIONS].reverse() as string[]
-    entries.sort(([a], [b]) => (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b)))
-    return entries.map(([key, groupRows]) => ({ key: key || "none", label: key ? CLASSIFICATION_LABEL[key as RiskClassification] : "Sin evaluar", rows: groupRows }))
-  }
-  entries.sort(([a], [b]) => (a || "\uFFFF").localeCompare(b || "\uFFFF", "es"))
-  return entries.map(([key, groupRows]) => ({ key: key || "none", label: key || (by === "activity" ? "Sin actividad" : "Sin puesto"), rows: groupRows }))
 }

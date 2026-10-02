@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { EMPTY_FILTERS, filterRows, groupRows } from "./grid-view"
+import { EMPTY_FILTERS, filterRows } from "./grid-view"
 import type { MiperEntrySnapshot } from "./snapshot"
 
 const row = (id: string, over: Partial<MiperEntrySnapshot>): MiperEntrySnapshot => ({
@@ -30,10 +30,5 @@ describe("vista de la grilla", () => {
     const rows = [row("a", { id: "a" }), row("b", { id: "b" })]
     const visible = filterRows(rows, { ...EMPTY_FILTERS, onlyComplete: true }, { observed: new Set(), modified: new Set(), incomplete: new Set(["a"]) })
     expect(visible.map((row) => row.id)).toEqual(["b"])
-  })
-  it("agrupa por actividad, puesto o clasificación (de mayor a menor gravedad)", () => {
-    expect(groupRows(rows, "activity").map((g) => [g.label, g.rows.length])).toEqual([["Oficina", 1], ["Transporte", 2]])
-    expect(groupRows(rows, "classification").map((g) => g.label)).toEqual(["Intolerable", "Importante", "Tolerable"])
-    expect(groupRows(rows, "none")).toEqual([{ key: "all", label: "", rows }])
   })
 })
