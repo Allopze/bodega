@@ -1,5 +1,8 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test"
-import { expectPageTitle, login, pickCurrentMonthDate, textoVisible } from "./helpers"
+import { expectPageTitle, login, textoVisible } from "./helpers"
+import {
+  abrirRiesgo, agregarMedida, cabecera, crearTarea, elegir, elegirOpcion, escribir, guardado, irAPaso, nivel, volverALaTarea,
+} from "./miper-helpers"
 
 /**
  * E2E MIPER F1 — pasos 1–5, 7–10, 16 y 17 del §12 del spec 2026-09-30.
@@ -29,17 +32,6 @@ async function as(browser: Browser, email: string): Promise<Page> {
 test.afterEach(async () => {
   await Promise.all(contexts.splice(0).map((context) => context.close()))
 })
-
-/**
- * Una celda de la grilla por su `aria-label` real (`matrix-grid.tsx`).
- *
- * Los dos casos son `combobox`: las columnas de texto son `<input list="…">` —y
- * ese `list` les da el rol ARIA de combobox, igual que a un `<select>`—, y las
- * demás son `<select>` nativos. El `exact` es obligatorio: sin él "Riesgo" es
- * subcadena de "Factor de riesgo" y "¿Controlado?" lo es de nada, pero "Actividad"
- * lo es de ninguna otra sólo por suerte.
- */
-const cell = (page: Page, column: string, row = 1) => page.getByRole("combobox", { name: `${column} riesgo ${row}`, exact: true })
 
 /**
  * El rótulo de estado del espacio de trabajo (`miperStatusLabel`), leído de la
@@ -72,73 +64,57 @@ test("la prevencionista crea la MIPER, la completa y la envía a revisión", asy
   await dialog.getByRole("radio", { name: "Matriz vacía" }).check()
   await dialog.getByLabel("Motivo").fill("Elaboración inicial del período para la prueba E2E.")
   await dialog.getByRole("button", { name: "Crear borrador" }).click()
-  await expect(page).toHaveURL(/\/prevencion\/miper\/riskmatrix-[^?]+\?tab=antecedentes/)
+  // La MIPER nueva abre con la «Ficha del documento» (los antecedentes RE-04).
+  await expect(page).toHaveURL(/\/prevencion\/miper\/riskmatrix-[^?]+\?ficha=1/)
   miperUrl = page.url().split("?")[0]!
+  const ficha = page.getByRole("dialog", { name: "Ficha del documento" })
+  await expect(ficha).toBeVisible()
 
   // Antecedentes (paso 2): representante en faena y dotación coherente.
-  await page.getByLabel("Representante de la empresa en la faena (Administrador de contrato)").fill("Administrador E2E")
-  await page.getByLabel("N° total de trabajadores").fill("3")
-  await page.getByLabel("Trabajadores hombres").fill("2")
-  await page.getByLabel("Trabajadoras mujeres").fill("1")
-  await page.getByLabel("Trabajadores otro").fill("0")
-  await page.getByRole("button", { name: "Guardar antecedentes" }).click()
+  await ficha.getByLabel("Representante de la empresa en la faena (Administrador de contrato)").fill("Administrador E2E")
+  await ficha.getByLabel("N° total de trabajadores").fill("3")
+  await ficha.getByLabel("Trabajadores hombres").fill("2")
+  await ficha.getByLabel("Trabajadoras mujeres").fill("1")
+  await ficha.getByLabel("Trabajadores otro").fill("0")
+  await ficha.getByRole("button", { name: "Guardar antecedentes" }).click()
   // `updateMiperHeaderAction` anuncia lo que hizo, no el "Cambio registrado"
-  // genérico del hook.
+  // genérico del hook; guardar cierra la ficha.
   await expect(textoVisible(page, "Antecedentes guardados")).toBeVisible()
+  await expect(ficha).toBeHidden()
+  await expect(page).not.toHaveURL(/ficha=1/)
 
-  // Matriz (pasos 3–5): fila con P×C y clasificación automática.
-  await page.getByRole("tab", { name: /Matriz/ }).click()
-  await page.getByRole("button", { name: "Agregar la primera fila" }).click()
-  await expect(cell(page, "Actividad")).toBeVisible()
-  const fill = async (column: string, value: string) => {
-    await cell(page, column).fill(value)
-    // La celda guarda al perder el foco: sin el Tab no hay mutación.
-    await cell(page, column).press("Tab")
-  }
-  await fill("Actividad", "Transporte de lodo")
-  await fill("Tarea", "Descarga en predio")
-  await fill("Puesto de trabajo", "Conductor profesional")
-  await fill("Peligro", "Camión en pendiente")
-  await fill("Riesgo", "Volcamiento")
-  await fill("Daño probable", "Politraumatismo")
-  await cell(page, "Factor de riesgo").selectOption({ label: "Mecánico" })
-  await cell(page, "Rutinaria").selectOption("yes")
-  await cell(page, "Probabilidad").selectOption("4")
-  await cell(page, "Consecuencia").selectOption("4")
+  // Matriz (pasos 3–5): una tarea con su primer riesgo, P×C y clasificación automática.
+  await crearTarea(page, { actividad: "Transporte de lodo", tarea: "Descarga en predio", puesto: "Conductor profesional", peligro: "Camión en pendiente" })
+  await escribir(page, "Riesgo", "Volcamiento")
+  await escribir(page, "Daño probable", "Politraumatismo")
+  await elegirOpcion(page, "Factor de riesgo", "Mecánico")
+  await elegir(page, "¿Es una tarea rutinaria?", "Rutinaria")
+  await irAPaso(page, "Evaluación")
+  await elegir(page, "Probabilidad", /^4 · Alta/)
+  await elegir(page, "Consecuencia", /^4 · Alta/)
   // El badge del RE-04 pega rótulo y magnitud sin espacio entre nodos
   // ("Intolerable· MR 16"): el `\s*` no es laxitud, es el DOM real.
-  await expect(textoVisible(page, /Intolerable\s*·\s*MR 16/)).toBeVisible()
+  await expect(nivel(page, /Intolerable\s*·\s*MR 16/)).toBeVisible()
   await expect(page.getByRole("alert").filter({ hasText: "Intolerable" })).toBeVisible()
-  await cell(page, "¿Controlado?").selectOption("partial")
+  await irAPaso(page, "Medidas de control")
+  await elegir(page, "¿Está controlado el riesgo?", "Parcialmente")
+  await guardado(page)
 
   // Medida con jerarquía, responsable y plazo.
-  await page.getByRole("button", { name: /Medidas de control del riesgo 1/ }).click()
-  const sheet = page.getByRole("dialog", { name: "Riesgo #1" })
-  await sheet.getByRole("button", { name: "Agregar medida" }).click()
-  await sheet.getByLabel("Tipo de control", { exact: true }).selectOption("engineering")
-  await sheet.getByLabel("Descripción de la medida").fill("Topes de descarga y señalero en pendiente")
-  await sheet.getByLabel("Nombre o cargo responsable").fill("Supervisor de turno")
-  await pickCurrentMonthDate(page, /Plazo de la medida/)
-  // Con el editor abierto el botón del alta deja de existir: sólo queda el del
-  // pie del editor, así que no hay ambigüedad de nombre.
-  await sheet.getByRole("button", { name: "Agregar medida" }).click()
-  await expect(sheet.getByText("Topes de descarga y señalero en pendiente")).toBeVisible()
-  // La ficha se identifica por `?fila=<id>` en la URL: Escape la cierra y el
-  // cliente limpia el parámetro con `router.replace`, que es asíncrono. Sin
-  // esperar a que cierre, la recarga volvía a abrir la ficha —la URL seguía
-  // apuntándole— y quedaban dos badges "Intolerable · MR 16" en pantalla.
-  await page.keyboard.press("Escape")
-  await expect(page.getByRole("dialog", { name: "Riesgo #1" })).toBeHidden()
-  await expect(page).not.toHaveURL(/fila=/)
+  await agregarMedida(page, { tipo: "III. Controles de ingeniería", descripcion: "Topes de descarga y señalero en pendiente", responsable: "Supervisor de turno" })
+  await volverALaTarea(page)
 
   // Envío (paso 7). La recarga relee el servidor: además de tirar el estado
-  // optimista, comprueba que la fila y su medida quedaron persistidas antes de
-  // enviar —el guardado por celda es asíncrono y un envío a medio guardar
+  // optimista, comprueba que el riesgo y su medida quedaron persistidos antes de
+  // enviar —el guardado automático es asíncrono y un envío a medio guardar
   // enviaría una foto incompleta—.
-  await page.reload()
-  await expect(cell(page, "Peligro")).toHaveValue("Camión en pendiente")
-  await expect(textoVisible(page, /Intolerable\s*·\s*MR 16/)).toBeVisible()
-  await expect(page.getByRole("button", { name: /Medidas de control del riesgo 1 \(1\)/ })).toBeVisible()
+  await expect(async () => {
+    await page.reload()
+    const riesgo = page.getByRole("link", { name: "Riesgo #1: Camión en pendiente", exact: true })
+    await expect(riesgo).toContainText(/Intolerable\s*·\s*MR 16/, { timeout: 5_000 })
+    await expect(riesgo).toContainText("1 medida", { timeout: 5_000 })
+    await expect(riesgo).toContainText("Controlado: Parcialmente", { timeout: 5_000 })
+  }).toPass({ timeout: 60_000 })
 
   // La F2 activó la regla del §5.1: un riesgo Intolerable no se envía sin una
   // medida vinculada a una actividad del Programa de Trabajo, así que el flujo
@@ -155,7 +131,7 @@ test("la prevencionista crea la MIPER, la completa y la envía a revisión", asy
   await generador.getByRole("button", { name: /Aplicar decisiones/ }).click()
   await expect(generador).toBeHidden()
 
-  await page.getByRole("button", { name: /^Enviar a revisión$/ }).click()
+  await cabecera(page).getByRole("button", { name: "Enviar a revisión", exact: true }).click()
   await expect(estado(page, "Enviado a revisión")).toBeVisible()
 })
 
@@ -176,14 +152,15 @@ test("la Jefa observa el riesgo y la prevencionista corrige y reenvía", async (
     await jefa.reload()
     await expect(estado(jefa, "En revisión por Prevención")).toBeVisible({ timeout: 5_000 })
   }).toPass({ timeout: 60_000 })
-  await jefa.getByRole("button", { name: "Observar riesgo 1", exact: true }).click()
-  const sheet = jefa.getByRole("dialog", { name: "Riesgo #1" })
-  await sheet.getByLabel("Nueva observación").fill("Revisar consecuencia. De acuerdo con el daño probable indicado debería evaluarse nuevamente la probabilidad.")
-  await sheet.getByRole("button", { name: "Registrar observación" }).click()
-  await expect(sheet.getByText("Abierta")).toBeVisible()
-  await jefa.keyboard.press("Escape")
-  await expect(jefa.getByRole("dialog", { name: "Riesgo #1" })).toBeHidden()
-  await jefa.getByRole("button", { name: "Devolver con observaciones" }).click()
+  // La Jefa abre el riesgo desde la matriz y lo observa desde el panel lateral,
+  // que la deja en el paso «Seguimiento».
+  await abrirRiesgo(jefa, 1, "Camión en pendiente")
+  await jefa.getByRole("button", { name: "Observar este riesgo", exact: true }).click()
+  await expect(jefa.getByRole("tab", { name: /Seguimiento/, selected: true })).toBeVisible()
+  await jefa.getByLabel("Nueva observación").fill("Revisar consecuencia. De acuerdo con el daño probable indicado debería evaluarse nuevamente la probabilidad.")
+  await jefa.getByRole("button", { name: "Registrar observación", exact: true }).click()
+  await expect(jefa.getByRole("region", { name: "Observaciones del riesgo" }).getByText("Abierta", { exact: true })).toBeVisible()
+  await cabecera(jefa).getByRole("button", { name: "Devolver con observaciones", exact: true }).click()
   const confirm = jefa.getByRole("dialog", { name: "Devolver con observaciones" })
   await confirm.getByRole("textbox").fill("Revisar la evaluación del riesgo #1.")
   await confirm.getByRole("button", { name: "Devolver" }).click()
@@ -194,18 +171,25 @@ test("la Jefa observa el riesgo y la prevencionista corrige y reenvía", async (
   await prev.getByLabel("Tu respuesta").fill("Se reevaluó la probabilidad: el tránsito en pendiente es ocasional.")
   await prev.getByRole("button", { name: "Responder" }).click()
   await prev.getByRole("tab", { name: /Matriz/ }).click()
-  await cell(prev, "Probabilidad").selectOption("2")
-  await expect(textoVisible(prev, /Importante\s*·\s*MR 8/)).toBeVisible()
-  await prev.reload()
+  await abrirRiesgo(prev, 1, "Camión en pendiente")
+  await irAPaso(prev, "Evaluación")
+  await elegir(prev, "Probabilidad", /^2 · Media/)
+  await expect(nivel(prev, /Importante\s*·\s*MR 8/)).toBeVisible()
+  await guardado(prev)
   // La reevaluación tiene que estar en la base antes de reenviar: si no, la
   // ronda llevaría la evaluación anterior y la Jefa no vería ninguna modificación.
-  await expect(textoVisible(prev, /Importante\s*·\s*MR 8/)).toBeVisible()
-  await prev.getByRole("button", { name: "Reenviar a revisión" }).click()
+  await expect(async () => {
+    await prev.reload()
+    await expect(nivel(prev, /Importante\s*·\s*MR 8/)).toBeVisible({ timeout: 5_000 })
+  }).toPass({ timeout: 60_000 })
+  await cabecera(prev).getByRole("button", { name: "Reenviar a revisión", exact: true }).click()
   await expect(estado(prev, /Enviado a revisión|En revisión por Prevención/)).toBeVisible()
 
+  // La Jefa ve el riesgo «Modificada» en la tarea y aprueba técnicamente.
   await jefa.reload()
-  await expect(textoVisible(jefa, "Modificada")).toBeVisible()
-  await jefa.getByRole("button", { name: "Aprobar revisión técnica" }).click()
+  await volverALaTarea(jefa)
+  await expect(jefa.getByRole("link", { name: "Riesgo #1: Camión en pendiente", exact: true })).toContainText("Modificada")
+  await cabecera(jefa).getByRole("button", { name: "Aprobar revisión técnica", exact: true }).click()
   await jefa.getByRole("dialog", { name: "Aprobar revisión técnica" }).getByRole("button", { name: "Aprobar revisión técnica" }).click()
   await expect(estado(jefa, /Pendiente de aprobación Legal y RRHH/)).toBeVisible()
 })
@@ -213,24 +197,23 @@ test("la Jefa observa el riesgo y la prevencionista corrige y reenvía", async (
 test("Legal y RRHH aprueba: queda vigente v1 y un cambio posterior queda pendiente", async ({ browser }) => {
   const legal = await as(browser, "legal.rrhh@e2e.chome.cl")
   await legal.goto(miperUrl)
-  await legal.getByRole("button", { name: "Aprobar (Legal y RRHH)" }).click()
+  await cabecera(legal).getByRole("button", { name: "Aprobar (Legal y RRHH)", exact: true }).click()
   await legal.getByLabel("Resumen de cambios (hoja Modificaciones)").fill("Emisión inicial del documento.")
   await legal.getByRole("button", { name: "Aprobar y sellar" }).click()
   await expect(estado(legal, "Vigente · v1")).toBeVisible()
+  // La descarga de la versión sellada vive en «Más» de la cabecera.
+  await cabecera(legal).getByRole("button", { name: "Más acciones de la MIPER", exact: true }).click()
   const download = legal.waitForEvent("download")
-  await legal.getByRole("link", { name: "Descargar v1 (Excel)" }).click()
+  await legal.getByRole("menuitem", { name: "Descargar v1 (Excel)", exact: true }).click()
   expect((await download).suggestedFilename()).toMatch(/^RE-04-MIPER-E2E-001-2030-v1\.xlsx$/)
 
   // Paso 16: el vigente es mutable; el cambio queda pendiente de revisión.
   const prev = await as(browser, "prev.faena@e2e.chome.cl")
   await prev.goto(miperUrl)
-  await prev.getByRole("button", { name: "Agregar fila", exact: true }).click()
-  await expect(cell(prev, "Actividad", 2)).toBeVisible()
-  await cell(prev, "Peligro", 2).fill("Superficie resbaladiza")
-  await cell(prev, "Peligro", 2).press("Tab")
+  await crearTarea(prev, { actividad: "Transporte de lodo", tarea: "Limpieza de la tolva", puesto: "Conductor profesional", peligro: "Superficie resbaladiza" })
   // Igual que arriba: la etiqueta depende de `updated_at > published_at`, que la
   // escribe la mutación, así que se reintenta la recarga en vez de correr una
-  // carrera contra el guardado de la celda.
+  // carrera contra el guardado.
   await expect(async () => {
     await prev.reload()
     await expect(estado(prev, "Vigente v1 · cambios pendientes de revisión")).toBeVisible({ timeout: 5_000 })
