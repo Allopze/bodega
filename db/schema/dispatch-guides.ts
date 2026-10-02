@@ -95,9 +95,16 @@ export const dispatchGuides = pgTable("dispatch_guides", {
  *
  * Sólo productos del catálogo: la guía no crea copias de productos ni acepta
  * texto libre, porque cada línea tiene que poder descontarse del stock de la
- * oficina. El índice único por (guía, producto) evita que la misma guía
- * descuente el mismo producto en dos líneas y con eso vuelva ambigua la
- * validación de stock.
+ * oficina.
+ *
+ * Unicidad según el origen de la línea:
+ * - Guía de adquisiciones (con `purchase_order_item_id`): una fila por línea de
+ *   OC y por línea de recepción. Una OC puede traer el mismo producto en dos
+ *   líneas —la reposición EPP crea una por trabajador— y cada una se coteja y
+ *   acumula por separado. Exigir un producto por guía hacía fallar la recepción
+ *   entera (OC-2026-0032, 2026-10-01).
+ * - Guía manual (sin línea de OC): un producto una sola vez; si se repite, se
+ *   suma en una línea. El chequeo de stock suma por producto en ambos casos.
  */
 export const dispatchGuideItems = pgTable("dispatch_guide_items", {
   id:            text("id").primaryKey(),
@@ -113,7 +120,15 @@ export const dispatchGuideItems = pgTable("dispatch_guide_items", {
   sortOrder:     integer("sort_order").notNull().default(0),
 }, (table) => [
   check("dispatch_guide_items_quantity_positive", sql`${table.quantity} > 0`),
-  uniqueIndex("dispatch_guide_items_guide_product_unique").on(table.guideId, table.productId),
+  uniqueIndex("dispatch_guide_items_guide_po_item_unique")
+    .on(table.guideId, table.purchaseOrderItemId)
+    .where(sql`${table.purchaseOrderItemId} IS NOT NULL`),
+  uniqueIndex("dispatch_guide_items_guide_receipt_item_unique")
+    .on(table.guideId, table.receiptItemId)
+    .where(sql`${table.receiptItemId} IS NOT NULL`),
+  uniqueIndex("dispatch_guide_items_guide_product_manual_unique")
+    .on(table.guideId, table.productId)
+    .where(sql`${table.purchaseOrderItemId} IS NULL`),
   index("dispatch_guide_items_guide_idx").on(table.guideId),
   index("dispatch_guide_items_po_item_idx").on(table.purchaseOrderItemId),
   index("dispatch_guide_items_receipt_item_idx").on(table.receiptItemId),

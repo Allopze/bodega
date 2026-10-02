@@ -20,6 +20,31 @@ import { remainingForStage } from "./receipt-remaining"
 
 export type { ReceiptOcItem } from "./receipt-form.types"
 
+/**
+ * Una OC puede traer el mismo producto en varias líneas (la reposición EPP crea
+ * una por trabajador; OC-2026-0032 traía dos líneas de 50 de EPP-027). Con el
+ * nombre solo, sus campos tenían el mismo nombre accesible y ni "Pedido: N" las
+ * distinguía a la vista. Al nombre repetido se le agrega su posición; un
+ * producto que aparece una vez conserva el rótulo de siempre.
+ */
+type LineDescription = { label: string; position: string | null }
+
+function describeLines(items: ReceiptOcItem[]): Map<string, LineDescription> {
+  const totals = new Map<string, number>()
+  for (const item of items) totals.set(item.productName, (totals.get(item.productName) ?? 0) + 1)
+  const seen = new Map<string, number>()
+  return new Map(items.map((item): [string, LineDescription] => {
+    const total = totals.get(item.productName) ?? 1
+    if (total < 2) return [item.id, { label: item.productName, position: null }]
+    const index = (seen.get(item.productName) ?? 0) + 1
+    seen.set(item.productName, index)
+    return [item.id, {
+      label: `${item.productName}, línea ${index} de ${total}`,
+      position: `Línea ${index} de ${total} de este producto`,
+    }]
+  }))
+}
+
 /* ── Receipt form ─────────────────────────────────────────────────────────────── */
 
 export function ReceiptForm({
@@ -106,6 +131,9 @@ export function ReceiptForm({
     }))
   )
   const progress = describeStageProgress(items, deliveryMode)
+  const lines = describeLines(items)
+  const lineLabel = (item: ReceiptOcItem) => lines.get(item.id)?.label ?? item.productName
+  const linePosition = (item: ReceiptOcItem) => lines.get(item.id)?.position ?? null
   const submitLabel = stage === "office" ? "Registrar llegada a oficina" : "Registrar recepción en faena"
   const pendingLineCount = items.filter((item) => getRemaining(item, stage) > 0).length
   const receivingLineCount = items.filter(
@@ -250,6 +278,9 @@ export function ReceiptForm({
                     )}
                     <span className="text-sm text-[var(--color-text)]">{item.productName}</span>
                   </div>
+                  {linePosition(item) && (
+                    <div className="text-xs font-medium text-[var(--color-text-muted)] mt-0.5">{linePosition(item)}</div>
+                  )}
                   <div className="text-xs text-[var(--color-text-subtle)] mt-0.5">
                     Pedido: {formatQty(item.quantity, item.unitOfMeasure)}
                     {item.quantityOfficeReceived > 0 && ` · En oficina: ${formatQty(item.quantityOfficeReceived, item.unitOfMeasure)}`}
@@ -273,7 +304,7 @@ export function ReceiptForm({
                   className="h-7 text-sm tabular-nums text-right"
                   disabled={!pending}
                   error={overBooked}
-                  aria-label={`Cantidad a recibir de ${item.productName}`}
+                  aria-label={`Cantidad a recibir de ${lineLabel(item)}`}
                 />
 
                 <Input
@@ -286,7 +317,7 @@ export function ReceiptForm({
                   className="h-7 text-sm tabular-nums text-right"
                   disabled={!pending}
                   error={overBooked}
-                  aria-label={`Cantidad rechazada de ${item.productName}`}
+                  aria-label={`Cantidad rechazada de ${lineLabel(item)}`}
                 />
 
                 <Input
@@ -299,7 +330,7 @@ export function ReceiptForm({
                   className="h-7 text-sm tabular-nums text-right"
                   disabled={!pending}
                   error={overBooked}
-                  aria-label={`Cantidad dañada de ${item.productName}`}
+                  aria-label={`Cantidad dañada de ${lineLabel(item)}`}
                 />
               </div>
             )
@@ -312,10 +343,13 @@ export function ReceiptForm({
             const overBooked = overBookedItemIdSet.has(item.id)
             return (
               <fieldset key={item.id} disabled={!pending} className={`rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 ${!pending ? "opacity-60" : ""}`}>
-                <legend className="sr-only">Recepción de {item.productName}</legend>
+                <legend className="sr-only">Recepción de {lineLabel(item)}</legend>
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-[var(--color-text)]">{item.productName}</p>
+                    {linePosition(item) && (
+                      <p className="mt-0.5 text-xs font-medium text-[var(--color-text-muted)]">{linePosition(item)}</p>
+                    )}
                     <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
                       Pedido: {formatQty(item.quantity, item.unitOfMeasure)} · pendiente: {formatQty(remaining, item.unitOfMeasure)}
                     </p>
@@ -324,13 +358,13 @@ export function ReceiptForm({
                 </div>
                 <div className="mt-3 grid grid-cols-3 gap-2">
                   <Field label="Recibido">
-                    <Input type="number" inputMode="decimal" step="0.01" min="0" max={remaining} value={qtys[item.id] ?? remaining} onChange={(event) => setQtys((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad recibida de ${item.productName}`} />
+                    <Input type="number" inputMode="decimal" step="0.01" min="0" max={remaining} value={qtys[item.id] ?? remaining} onChange={(event) => setQtys((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad recibida de ${lineLabel(item)}`} />
                   </Field>
                   <Field label="Rechazado">
-                    <Input type="number" inputMode="decimal" step="0.01" min="0" max={remaining} value={rejs[item.id] ?? 0} onChange={(event) => setRejs((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad rechazada de ${item.productName}`} />
+                    <Input type="number" inputMode="decimal" step="0.01" min="0" max={remaining} value={rejs[item.id] ?? 0} onChange={(event) => setRejs((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad rechazada de ${lineLabel(item)}`} />
                   </Field>
                   <Field label="Dañado">
-                    <Input type="number" inputMode="decimal" step="0.01" min="0" max={remaining} value={dmgs[item.id] ?? 0} onChange={(event) => setDmgs((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad dañada de ${item.productName}`} />
+                    <Input type="number" inputMode="decimal" step="0.01" min="0" max={remaining} value={dmgs[item.id] ?? 0} onChange={(event) => setDmgs((current) => ({ ...current, [item.id]: parseFloat(event.target.value) || 0 }))} error={overBooked} aria-label={`Cantidad dañada de ${lineLabel(item)}`} />
                   </Field>
                 </div>
                 {overBooked && <p className="mt-2 text-xs text-[var(--color-danger)]">La suma supera el saldo pendiente de {formatQty(remaining, item.unitOfMeasure)}.</p>}
@@ -354,13 +388,13 @@ export function ReceiptForm({
               {items.filter((item) => item.isEmergencyService && getRemaining(item, stage) > 0).map((item) => (
                 <fieldset key={item.id} className="grid gap-3 rounded-[var(--radius)] border border-[var(--color-border)] p-3 md:grid-cols-3">
                   <legend className="px-1 text-sm font-medium text-[var(--color-text)]">
-                    {item.emergencyResourceLabel ?? item.productName}
+                    {item.emergencyResourceLabel ?? lineLabel(item)}
                   </legend>
                   <Field label="Fecha de mantención" required>
                     <DatePicker
                       value={maintenanceDates[item.id] ?? ""}
                       onChange={(value) => setMaintenanceDates((current) => ({ ...current, [item.id]: value }))}
-                      ariaLabel={`Fecha de mantención de ${item.emergencyResourceLabel ?? item.productName}`}
+                      ariaLabel={`Fecha de mantención de ${item.emergencyResourceLabel ?? lineLabel(item)}`}
                     />
                   </Field>
                   <Field label="Próximo vencimiento" required>
@@ -368,7 +402,7 @@ export function ReceiptForm({
                       value={expiryDates[item.id] ?? ""}
                       onChange={(value) => setExpiryDates((current) => ({ ...current, [item.id]: value }))}
                       min={maintenanceDates[item.id] || undefined}
-                      ariaLabel={`Próximo vencimiento de ${item.emergencyResourceLabel ?? item.productName}`}
+                      ariaLabel={`Próximo vencimiento de ${item.emergencyResourceLabel ?? lineLabel(item)}`}
                     />
                   </Field>
                   <Field label="Certificado" hint="Opcional. PDF o imagen.">
@@ -376,7 +410,7 @@ export function ReceiptForm({
                       type="file"
                       name={`certificate-${item.id}`}
                       accept="application/pdf,image/png,image/jpeg"
-                      aria-label={`Certificado de ${item.emergencyResourceLabel ?? item.productName}`}
+                      aria-label={`Certificado de ${item.emergencyResourceLabel ?? lineLabel(item)}`}
                     />
                   </Field>
                 </fieldset>

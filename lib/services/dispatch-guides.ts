@@ -605,6 +605,38 @@ export async function createDispatchGuide(
   })
 }
 
+/**
+ * Empareja cada fila editada de una GDI de adquisiciones con el renglón del
+ * borrador del que sale, para conservar sus vínculos a la OC y a la recepción.
+ *
+ * Se identifica por `sourceGuideItemId`. Si falta —un cliente anterior a este
+ * campo—, se acepta sólo cuando el producto tiene un único renglón de origen:
+ * con dos líneas del mismo producto no hay forma de saber a cuál va la cantidad.
+ */
+function resolveLinkedEditSources<T extends { id: string; productId: string }>(
+  existing: T[],
+  items: Array<{ productId: string; sourceGuideItemId?: string | null }>,
+): T[] {
+  const byId = new Map(existing.map((item) => [item.id, item]))
+  return items.map((item) => {
+    if (item.sourceGuideItemId) {
+      const source = byId.get(item.sourceGuideItemId)
+      if (!source || source.productId !== item.productId) {
+        throw new Error("Una GDI de adquisiciones sólo puede usar bienes de su recepción de origen")
+      }
+      return source
+    }
+    const candidates = existing.filter((source) => source.productId === item.productId)
+    if (candidates.length === 0) {
+      throw new Error("Una GDI de adquisiciones sólo puede usar bienes de su recepción de origen")
+    }
+    if (candidates.length > 1) {
+      throw new Error("Este producto viene en más de una línea de la OC: indica la línea de origen de cada cantidad")
+    }
+    return candidates[0]!
+  })
+}
+
 /** Edita un borrador: reemplaza cabecera y líneas. Fuera de `draft` falla. */
 export async function updateDispatchGuide(
   guideId: string,
@@ -651,13 +683,10 @@ export async function updateDispatchGuide(
         })
         .from(dispatchGuideItems)
         .where(eq(dispatchGuideItems.guideId, guideId))
-      const existingByProduct = new Map(existingItems.map((item) => [item.productId, item]))
-      if (input.items.some((item) => !existingByProduct.has(item.productId))) {
-        throw new Error("Una GDI de adquisiciones sólo puede usar bienes de su recepción de origen")
-      }
+      const sources = resolveLinkedEditSources(existingItems, input.items)
       await tx.delete(dispatchGuideItems).where(eq(dispatchGuideItems.guideId, guideId))
       await tx.insert(dispatchGuideItems).values(input.items.map((item, index) => {
-        const source = existingByProduct.get(item.productId)!
+        const source = sources[index]!
         return {
           id: nanoid(),
           guideId,
@@ -684,6 +713,11 @@ export async function updateDispatchGuide(
       return
     }
 
+    // Una línea de origen sólo existe en guías de adquisiciones. En una manual
+    // permitiría repetir el producto saltándose la regla del schema.
+    if (input.items.some((item) => item.sourceGuideItemId)) {
+      throw new Error("Una guía manual no tiene líneas de recepción de origen")
+    }
     await tx.delete(dispatchGuideItems).where(eq(dispatchGuideItems.guideId, guideId))
     await tx.insert(dispatchGuideItems).values(itemRows(guideId, input.items))
 
@@ -840,9 +874,17 @@ async function assertEnoughStock(
     ))
   const available = new Map(stockRows.map((row) => [row.productId, row.quantity]))
 
-  const shortages = items
-    .filter((item) => (available.get(item.productId) ?? 0) < item.quantity)
-    .map((item) => `${item.name} (disponible ${available.get(item.productId) ?? 0}, requerido ${item.quantity})`)
+  // Una guía de adquisiciones puede traer el mismo producto en varias líneas
+  // (una por línea de OC): el saldo se compara contra la suma, no línea a línea.
+  const required = new Map<string, { name: string; quantity: number }>()
+  for (const item of items) {
+    const current = required.get(item.productId)
+    required.set(item.productId, { name: item.name, quantity: (current?.quantity ?? 0) + item.quantity })
+  }
+
+  const shortages = [...required.entries()]
+    .filter(([productId, need]) => (available.get(productId) ?? 0) < need.quantity)
+    .map(([productId, need]) => `${need.name} (disponible ${available.get(productId) ?? 0}, requerido ${need.quantity})`)
 
   if (shortages.length > 0) throw new Error(buildMessage(shortages))
 }
@@ -1515,7 +1557,7 @@ export async function getDispatchGuideDetail(guideId: string) {
         columns: { id: true, code: true, status: true, deliveryMode: true },
         with: {
           items: {
-            columns: { requestItemId: true },
+            columns: { id: true, requestItemId: true },
             with: { requestItem: { columns: { requestId: true }, with: { request: { columns: { id: true, code: true } } } } },
           },
         },

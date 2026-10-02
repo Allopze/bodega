@@ -1183,6 +1183,75 @@ async function main() {
     notes: null,
   })
 
+  // OC vía oficina con el MISMO producto en dos líneas: la reposición EPP crea
+  // una línea por trabajador. Hasta 2026-10-01 la GDI exigía un producto por
+  // guía y la llegada a oficina de una OC así fallaba entera (OC-2026-0032).
+  await db.insert(schema.purchaseRequests).values({
+    id: "req-gdi-dup-e2e",
+    code: "SOL-GDI-DUP-E2E",
+    worksiteId: "ws-e2e",
+    requesterId: "user-admin-e2e",
+    requestType: "epp",
+    urgency: "normal",
+    requiredDate: "2026-07-20",
+    status: "in_purchasing",
+    submittedAt: now,
+    notes: "Fixture E2E: GDI con dos líneas del mismo producto",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseRequestItems).values([4, 2].map((quantity, index) => ({
+    id: `req-item-gdi-dup-e2e-${index + 1}`,
+    requestId: "req-gdi-dup-e2e",
+    productId: "prod-e2e",
+    productNameFree: null,
+    quantity,
+    unitOfMeasure: "unidad",
+    status: "purchased" as const,
+    urgency: "normal" as const,
+    requiredDate: "2026-07-20",
+    workerId: null,
+    suggestedSupplierId: "sup-e2e",
+    sortOrder: index + 1,
+    notes: null,
+    createdAt: now,
+    updatedAt: now,
+  })))
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-gdi-dup-e2e",
+    code: "OC-2026-0095",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "sent",
+    deliveryMode: "via_oficina",
+    issuedAt: now,
+    sentAt: now,
+    estimatedDelivery: "2026-07-22",
+    deliveryAddress: "Oficina CHOME",
+    netAmount: 6000,
+    taxAmount: 1140,
+    totalAmount: 7140,
+    notes: "Fixture E2E: GDI con dos líneas del mismo producto",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values([4, 2].map((quantity, index) => ({
+    id: `oc-item-gdi-dup-e2e-${index + 1}`,
+    purchaseOrderId: "oc-gdi-dup-e2e",
+    requestItemId: `req-item-gdi-dup-e2e-${index + 1}`,
+    productId: "prod-e2e",
+    productNameFree: null,
+    quantity,
+    unitOfMeasure: "unidad",
+    unitPrice: 1000,
+    discount: 0,
+    subtotal: quantity * 1000,
+    status: "issued" as const,
+    sortOrder: index + 1,
+    notes: null,
+  })))
+
   // OC de despacho DIRECTO A FAENA para el camino alternativo completo
   // (directo-faena-flow.spec.ts): sin checkpoint de oficina, `sent` pasa
   // directo a `partially_received` y luego a `received`/`closed`. Ese camino

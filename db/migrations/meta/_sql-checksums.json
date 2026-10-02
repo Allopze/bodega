@@ -346,5 +346,6 @@
   "0344_miper_f1_modelo": "ae1245acc9a0a1f156b4de9b33f28597c24ae9a4a9e03e622082b5d215b7d814",
   "0345_miper_f1_estados": "6aa8e1ccfe924622047bf420dc7b1b3523f0b106b1b9b21ef0e47de6d945047f",
   "0346_miper_f2_programa": "9cad77db348f8ab0544a5417b02c781da214df9a579e81101e61f25a47437188",
-  "0347_prevention_evidence_domain_miper": "3f51949c8dc0bdc49b36179c8323d53c5371a9190ce5b5974d69a6be8b468e70"
+  "0347_prevention_evidence_domain_miper": "3f51949c8dc0bdc49b36179c8323d53c5371a9190ce5b5974d69a6be8b468e70",
+  "0348_dispatch_guide_items_line_unique": "f4ce959ae738527906b6cd47347f39a6b81734084d80a3c90b51ff3826eb3b93"
 }

@@ -35,16 +35,20 @@ interface GuideFormProps {
 }
 
 /**
- * Una guía no admite el mismo producto en dos líneas (índice único en la tabla
- * y `refine` en el schema), así que `productId` es una clave de fila estable.
- * La primera versión usaba un contador de módulo: el servidor y el cliente
- * arrancaban en números distintos y los `id` de los campos no coincidían —
- * error de hidratación con el formulario ya en pantalla.
+ * Clave de fila estable entre servidor y cliente: el renglón de origen en una
+ * guía de adquisiciones —que puede traer el mismo producto en dos líneas de
+ * OC— y el producto en una manual, donde no se repite (índice parcial y
+ * `refine` del schema). La primera versión usaba un contador de módulo: el
+ * servidor y el cliente arrancaban en números distintos y los `id` de los
+ * campos no coincidían — error de hidratación con el formulario ya en pantalla.
  */
 interface ItemRow {
+  key: string
   productId: string
   quantity: string
   notes: string
+  sourceGuideItemId?: string
+  sourceLabel?: string
 }
 
 /**
@@ -74,9 +78,12 @@ export function GuideForm({
   const [driverWorkerId, setDriverWorkerId] = React.useState(initial?.driverWorkerId ?? "")
   const [items, setItems] = React.useState<ItemRow[]>(() =>
     (initial?.items ?? []).map((item) => ({
+      key: item.sourceGuideItemId ?? item.productId,
       productId: item.productId,
       quantity: item.quantity,
       notes: item.notes,
+      sourceGuideItemId: item.sourceGuideItemId,
+      sourceLabel: item.sourceLabel,
     })),
   )
   const [pickerValue, setPickerValue] = React.useState("")
@@ -111,16 +118,16 @@ export function GuideForm({
 
   function addItem(productId: string) {
     if (!productId || items.some((item) => item.productId === productId)) return
-    setItems((current) => [...current, { productId, quantity: "1", notes: "" }])
+    setItems((current) => [...current, { key: productId, productId, quantity: "1", notes: "" }])
     setPickerValue("")
   }
 
-  function updateItem(productId: string, patch: Partial<ItemRow>) {
-    setItems((current) => current.map((item) => (item.productId === productId ? { ...item, ...patch } : item)))
+  function updateItem(key: string, patch: Partial<ItemRow>) {
+    setItems((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)))
   }
 
-  function removeItem(productId: string) {
-    setItems((current) => current.filter((item) => item.productId !== productId))
+  function removeItem(key: string) {
+    setItems((current) => current.filter((item) => item.key !== key))
   }
 
   const itemsPayload = items.map((item) => ({
@@ -128,12 +135,17 @@ export function GuideForm({
     quantity: item.quantity,
     unitOfMeasure: productById.get(item.productId)?.unitOfMeasure ?? "unidad",
     notes: item.notes,
+    ...(item.sourceGuideItemId ? { sourceGuideItemId: item.sourceGuideItemId } : {}),
   }))
 
-  const overStock = items.filter((item) => {
-    const available = productById.get(item.productId)?.available ?? 0
-    return Number(item.quantity) > available
-  })
+  // El saldo es por producto: dos líneas del mismo producto lo consumen juntas.
+  const requestedByProduct = new Map<string, number>()
+  for (const item of items) {
+    requestedByProduct.set(item.productId, (requestedByProduct.get(item.productId) ?? 0) + (Number(item.quantity) || 0))
+  }
+  const exceedsStock = (productId: string) =>
+    (requestedByProduct.get(productId) ?? 0) > (productById.get(productId)?.available ?? 0)
+  const overStock = items.filter((item) => exceedsStock(item.productId))
   const invalidQuantity = items.some((item) => !(Number(item.quantity) > 0))
   const canSubmit = !!destinationWorksiteId && items.length > 0 && !invalidQuantity
 
@@ -226,10 +238,10 @@ export function GuideForm({
               const product = productById.get(item.productId)
               const available = product?.available ?? 0
               const quantity = Number(item.quantity)
-              const exceeds = quantity > available
+              const exceeds = exceedsStock(item.productId)
               return (
                 <li
-                  key={item.productId}
+                  key={item.key}
                   className="grid gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] p-3 md:grid-cols-[minmax(0,1fr)_7rem_minmax(0,1fr)_auto] md:items-start"
                 >
                   <div className="min-w-0">
@@ -237,26 +249,29 @@ export function GuideForm({
                     <p className="font-mono text-[11px] text-[var(--color-text-subtle)]">
                       {product?.sku} · {formatQty(available, product?.unitOfMeasure)} en oficina
                     </p>
+                    {item.sourceLabel && (
+                      <p className="text-[11px] text-[var(--color-text-muted)]">{item.sourceLabel}</p>
+                    )}
                   </div>
-                  <Field label="Cantidad" htmlFor={`gdi-qty-${item.productId}`} required error={exceeds ? "Sobre el stock" : undefined}>
+                  <Field label="Cantidad" htmlFor={`gdi-qty-${item.key}`} required error={exceeds ? "Sobre el stock" : undefined}>
                     <Input
-                      id={`gdi-qty-${item.productId}`}
+                      id={`gdi-qty-${item.key}`}
                       type="number"
                       inputMode="decimal"
                       min="0.01"
                       step="0.01"
                       value={item.quantity}
                       error={exceeds || !(quantity > 0)}
-                      onChange={(event) => updateItem(item.productId, { quantity: event.target.value })}
+                      onChange={(event) => updateItem(item.key, { quantity: event.target.value })}
                     />
                   </Field>
-                  <Field label="Observación" htmlFor={`gdi-note-${item.productId}`}>
+                  <Field label="Observación" htmlFor={`gdi-note-${item.key}`}>
                     <Input
-                      id={`gdi-note-${item.productId}`}
+                      id={`gdi-note-${item.key}`}
                       value={item.notes}
                       maxLength={300}
                       placeholder="Opcional"
-                      onChange={(event) => updateItem(item.productId, { notes: event.target.value })}
+                      onChange={(event) => updateItem(item.key, { notes: event.target.value })}
                     />
                   </Field>
                   <Button
@@ -264,7 +279,7 @@ export function GuideForm({
                     variant="ghost"
                     size="sm"
                     className="md:mt-5"
-                    onClick={() => removeItem(item.productId)}
+                    onClick={() => removeItem(item.key)}
                     aria-label={`Quitar ${product?.name ?? `línea ${index + 1}`}`}
                   >
                     <Trash size={14} aria-hidden />

@@ -117,6 +117,41 @@ async function makeAcquisitionOrder(quantity: number, productId = "p-gdi") {
   return { requestId, requestItemId, orderId, orderItemId }
 }
 
+/**
+ * Una OC con varias líneas del MISMO producto: pasa con la reposición de EPP
+ * (una línea por trabajador) o con dos líneas iguales de una solicitud. Así
+ * llegó OC-2026-0032 a producción (2026-10-01), con EPP-027 y EPP-029 dos veces.
+ */
+async function makeAcquisitionOrderWithLines(quantities: number[], productId = "p-gdi") {
+  const suffix = ++acquisitionCounter
+  const requestId = `req-gdi-${suffix}`
+  const orderId = `oc-gdi-${suffix}`
+  await inMemoryDb.insert(schema.purchaseRequests).values({
+    id: requestId, code: `SOL-GDI-${suffix}`, worksiteId: FAENA, requesterId: ISSUER.userId,
+    requestType: "epp", urgency: "normal", status: "in_purchasing", createdAt: now, updatedAt: now,
+  })
+  await inMemoryDb.insert(schema.purchaseOrders).values({
+    id: orderId, code: `OC-GDI-${suffix}`, worksiteId: FAENA, supplierId: "sup-gdi", createdBy: ISSUER.userId,
+    status: "sent", deliveryMode: "via_oficina", createdAt: now, updatedAt: now,
+  })
+  const lines = quantities.map((quantity, index) => ({
+    requestItemId: `reqi-gdi-${suffix}-${index}`,
+    orderItemId: `oci-gdi-${suffix}-${index}`,
+    quantity,
+  }))
+  for (const line of lines) {
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: line.requestItemId, requestId, productId, quantity: line.quantity, unitOfMeasure: "unidad",
+      status: "purchased", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({
+      id: line.orderItemId, purchaseOrderId: orderId, requestItemId: line.requestItemId, productId,
+      quantity: line.quantity, unitOfMeasure: "unidad", status: "issued",
+    })
+  }
+  return { requestId, orderId, lines }
+}
+
 describe("Guías de Despacho Internas", () => {
   beforeAll(async () => {
     await migratePGlite(pg, migrationsFolder)
@@ -673,6 +708,175 @@ describe("Guías de Despacho Internas", () => {
     })
     expect(await inMemoryDb.select().from(schema.dispatchGuides)
       .where(eq(schema.dispatchGuides.receiptId, receiptId))).toHaveLength(0)
+  })
+
+  /* ── OC con líneas del mismo producto (OC-2026-0032, 2026-10-01) ─────── */
+
+  function linkedEdit(items: Array<{ sourceGuideItemId?: string | null; quantity: number }>) {
+    return {
+      destinationWorksiteId: FAENA,
+      dispatcherWorkerId: null,
+      receiverWorkerId: null,
+      vehicleId: null,
+      driverWorkerId: null,
+      notes: null,
+      items: items.map((item) => ({
+        productId: "p-gdi", quantity: item.quantity, unitOfMeasure: "unidad", notes: null,
+        sourceGuideItemId: item.sourceGuideItemId ?? null,
+      })),
+    }
+  }
+
+  async function receiveAtOffice(orderId: string, lines: Array<{ orderItemId: string; quantity: number }>) {
+    const receiptId = await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: ISSUER.userId, stage: "office",
+      items: lines.map((line) => ({ purchaseOrderItemId: line.orderItemId, quantityReceived: line.quantity })),
+    })
+    const [guide] = await inMemoryDb.select().from(schema.dispatchGuides)
+      .where(eq(schema.dispatchGuides.receiptId, receiptId))
+    return { receiptId, guide: guide! }
+  }
+
+  it("recibe en oficina una OC con dos líneas del mismo producto: una fila de GDI por línea", async () => {
+    const { orderId, lines } = await makeAcquisitionOrderWithLines([5, 3])
+    await setOfficeStock("p-gdi", 0)
+
+    const { guide } = await receiveAtOffice(orderId, lines)
+
+    expect(guide.status).toBe("draft")
+    const guideItems = await inMemoryDb.select().from(schema.dispatchGuideItems)
+      .where(eq(schema.dispatchGuideItems.guideId, guide.id))
+    expect(guideItems).toHaveLength(2)
+    const byPoItem = new Map(guideItems.map((item) => [item.purchaseOrderItemId, item]))
+    expect(byPoItem.get(lines[0]!.orderItemId)?.quantity).toBe(5)
+    expect(byPoItem.get(lines[1]!.orderItemId)?.quantity).toBe(3)
+    expect(new Set(guideItems.map((item) => item.receiptItemId)).size).toBe(2)
+    expect(await stockAt(OFFICE, "p-gdi")).toBe(8)
+  })
+
+  it("despacha y coteja esa GDI dejando a cada línea de la OC con lo suyo", async () => {
+    const { orderId, lines } = await makeAcquisitionOrderWithLines([5, 3])
+    await setOfficeStock("p-gdi", 0)
+    const { guide } = await receiveAtOffice(orderId, lines)
+
+    await dispatchDispatchGuide(guide.id, ISSUER)
+    expect(await stockAt(OFFICE, "p-gdi")).toBe(0)
+    expect(await stockAt(FAENA, "p-gdi")).toBe(8)
+
+    const detail = await getDispatchGuideDetail(guide.id)
+    await confirmDispatchGuideReceipt(guide.id, {
+      receivedByWorkerId: "w-recibe",
+      items: detail!.guide.items.map((item) => ({ guideItemId: item.id, quantityReceived: item.quantity })),
+    }, FAENA_ACTOR)
+
+    const poItems = await inMemoryDb.select().from(schema.purchaseOrderItems)
+      .where(inArray(schema.purchaseOrderItems.id, lines.map((line) => line.orderItemId)))
+    const receivedByLine = new Map(poItems.map((item) => [item.id, item.quantityReceived]))
+    expect(receivedByLine.get(lines[0]!.orderItemId)).toBe(5)
+    expect(receivedByLine.get(lines[1]!.orderItemId)).toBe(3)
+    const [order] = await inMemoryDb.select().from(schema.purchaseOrders)
+      .where(eq(schema.purchaseOrders.id, orderId))
+    expect(order?.status).toBe("closed")
+    expect((await getDispatchGuideDetail(guide.id))!.guide.status).toBe("received")
+  })
+
+  it("edita el borrador por línea de origen, no por producto", async () => {
+    const { orderId, lines } = await makeAcquisitionOrderWithLines([5, 3])
+    await setOfficeStock("p-gdi", 0)
+    const { guide } = await receiveAtOffice(orderId, lines)
+    const original = await inMemoryDb.select().from(schema.dispatchGuideItems)
+      .where(eq(schema.dispatchGuideItems.guideId, guide.id))
+    const lineOf = (orderItemId: string) => original.find((item) => item.purchaseOrderItemId === orderItemId)!
+
+    // Baja sólo la segunda línea (3 → 1) y conserva la primera.
+    await updateDispatchGuide(guide.id, linkedEdit([
+      { sourceGuideItemId: lineOf(lines[0]!.orderItemId).id, quantity: 5 },
+      { sourceGuideItemId: lineOf(lines[1]!.orderItemId).id, quantity: 1 },
+    ]), ISSUER)
+
+    const edited = await inMemoryDb.select().from(schema.dispatchGuideItems)
+      .where(eq(schema.dispatchGuideItems.guideId, guide.id))
+    const editedByPoItem = new Map(edited.map((item) => [item.purchaseOrderItemId, item]))
+    expect(editedByPoItem.get(lines[0]!.orderItemId)?.quantity).toBe(5)
+    expect(editedByPoItem.get(lines[0]!.orderItemId)?.receiptItemId).toBe(lineOf(lines[0]!.orderItemId).receiptItemId)
+    expect(editedByPoItem.get(lines[1]!.orderItemId)?.quantity).toBe(1)
+    expect(editedByPoItem.get(lines[1]!.orderItemId)?.receiptItemId).toBe(lineOf(lines[1]!.orderItemId).receiptItemId)
+
+    // Sin identificar la línea, con dos del mismo producto, es ambiguo.
+    await expect(updateDispatchGuide(guide.id, linkedEdit([{ quantity: 2 }]), ISSUER))
+      .rejects.toThrow(/indica la línea de origen/i)
+    // Una línea que no es de esta guía, tampoco.
+    await expect(updateDispatchGuide(guide.id, linkedEdit([{ sourceGuideItemId: "no-existe", quantity: 2 }]), ISSUER))
+      .rejects.toThrow(/recepción de origen/i)
+  })
+
+  it("rechaza en el schema la misma línea de origen dos veces, y deja repetir producto si cada fila trae la suya", () => {
+    const base = linkedEdit([])
+    const twiceSameSource = dispatchGuideInputSchema.safeParse({
+      ...base,
+      items: [
+        { productId: "p-gdi", quantity: 1, sourceGuideItemId: "gi-1" },
+        { productId: "p-gdi", quantity: 1, sourceGuideItemId: "gi-1" },
+      ],
+    })
+    expect(twiceSameSource.success).toBe(false)
+    const twoSources = dispatchGuideInputSchema.safeParse({
+      ...base,
+      items: [
+        { productId: "p-gdi", quantity: 1, sourceGuideItemId: "gi-1" },
+        { productId: "p-gdi", quantity: 1, sourceGuideItemId: "gi-2" },
+      ],
+    })
+    expect(twoSources.success).toBe(true)
+  })
+
+  it("una guía manual no acepta líneas de origen (no se salta la regla de producto único)", async () => {
+    await setOfficeStock("p-casco", 20)
+    const { id } = await createDispatchGuide(guideInput(), ISSUER)
+    await expect(updateDispatchGuide(id, guideInput({
+      items: [
+        { productId: "p-casco", quantity: 1, unitOfMeasure: "unidad", notes: null, sourceGuideItemId: "x-1" },
+        { productId: "p-casco", quantity: 1, unitOfMeasure: "unidad", notes: null, sourceGuideItemId: "x-2" },
+      ],
+    } as never), ISSUER)).rejects.toThrow(/manual/i)
+  })
+
+  it("el índice parcial sigue impidiendo el mismo producto dos veces en una guía manual", async () => {
+    await setOfficeStock("p-casco", 20)
+    const { id } = await createDispatchGuide(guideInput(), ISSUER)
+    await expect(inMemoryDb.insert(schema.dispatchGuideItems).values({
+      id: `dup-${id}`, guideId: id, productId: "p-casco", quantity: 1, unitOfMeasure: "unidad", sortOrder: 9,
+    })).rejects.toThrow()
+  })
+
+  it("suma las líneas del mismo producto al validar el stock de despacho", async () => {
+    const { orderId, lines } = await makeAcquisitionOrderWithLines([5, 5])
+    await setOfficeStock("p-gdi", 0)
+    const { guide } = await receiveAtOffice(orderId, lines)
+    await setOfficeStock("p-gdi", 8)
+
+    await expect(dispatchDispatchGuide(guide.id, ISSUER))
+      .rejects.toThrow(/Lentes de seguridad \(disponible 8, requerido 10\)/)
+    expect(await stockAt(OFFICE, "p-gdi")).toBe(8)
+  })
+
+  it("prepara la GDI adicional con el saldo de cada línea repetida", async () => {
+    const { orderId, lines } = await makeAcquisitionOrderWithLines([4, 6])
+    await setOfficeStock("p-gdi", 0)
+    const { receiptId, guide } = await receiveAtOffice(orderId, lines)
+    const first = await inMemoryDb.select().from(schema.dispatchGuideItems)
+      .where(eq(schema.dispatchGuideItems.guideId, guide.id))
+    await updateDispatchGuide(guide.id, linkedEdit(first.map((item) => ({
+      sourceGuideItemId: item.id, quantity: item.quantity / 2,
+    }))), ISSUER)
+    await dispatchDispatchGuide(guide.id, ISSUER)
+
+    const second = await prepareAdditionalDispatchGuideForOfficeReceipt(receiptId, ISSUER)
+    const secondItems = await inMemoryDb.select().from(schema.dispatchGuideItems)
+      .where(eq(schema.dispatchGuideItems.guideId, second.id))
+    const byPoItem = new Map(secondItems.map((item) => [item.purchaseOrderItemId, item.quantity]))
+    expect(byPoItem.get(lines[0]!.orderItemId)).toBe(2)
+    expect(byPoItem.get(lines[1]!.orderItemId)).toBe(3)
   })
 
   /* ── Consulta histórica ───────────────────────────────────────────────── */

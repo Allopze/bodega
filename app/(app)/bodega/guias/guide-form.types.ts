@@ -34,6 +34,10 @@ export interface GuideFormItem {
   quantity: string
   unitOfMeasure: string
   notes: string
+  /** Guía de adquisiciones: renglón del borrador del que sale la fila. */
+  sourceGuideItemId?: string
+  /** Distingue líneas del mismo producto (p. ej. "SOL-0022 · línea 1 de 2"). */
+  sourceLabel?: string
 }
 
 export interface GuideFormInitialValues {
