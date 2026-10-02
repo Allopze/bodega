@@ -117,3 +117,87 @@ Ninguno confirmado. No se modificó código de la aplicación.
 4. Unificar «Recargar riesgo» con el texto del mensaje de conflicto.
 5. Antes de la Fase E, repetir el recorrido de revisión/solo lectura sobre una MIPER enviada del
    seed E2E.
+
+---
+
+## Ronda final de correcciones (revisión de la rama, 2026-10-02)
+
+Corrige los hallazgos de la revisión final de la rama: C1, I1, I2 y seis menores. Commits
+`9cdbeacc..6244bd3b` y este informe. Igual que arriba, el recorrido es **acotado** a la matriz.
+
+### PASS (verificado)
+
+| Comprobación | Evidencia |
+|---|---|
+| **C1** «atrás» tras «Agregar peligro» (sonda en `:3001`, borrador «Oficina Central 2099», tarea «GESTION DOCUMENTAL › TRABAJO ADMINISTRATIVO») | Se guardó «Expuestos (otro)» del riesgo #1 (0 → 1), «Agregar peligro» y luego Atrás. La tarea muestra **5** riesgos (antes 4) y el riesgo #1 muestra **1**. «Atrás» pidió la foto nueva al servidor: 3 GET RSC. Antes del cambio la tarea quedaba en 4 y el riesgo #1 en 0. |
+| C1 en E2E | `interacciones` «atrás después de Agregar peligro…» pasa. Sobre el código previo (worktree con `app/(app)/prevencion/miper` de `5cf18c63`) **falla**: la tarea queda en «Peligros identificados (1)» y el riesgo muestra «Sin riesgo ni daño». |
+| **I2** volver a la matriz (sonda en `:3001`, 222 riesgos) | Se plegó «GESTION DOCUMENTAL», el pozo quedó en scrollTop 1400, se abrió una tarea y luego Atrás. Vuelve con scrollTop **1400** y la actividad sigue plegada. La E2E equivalente pasa y, sobre el código previo, falla porque la actividad vuelve desplegada. |
+| Recuento en BD (solo lectura) | `prevention_risk_entries` de la matriz: 222 → 222. `exposed_other` del riesgo #1 volvió a 0 y los riesgos de prueba se eliminaron con «Eliminar riesgo». Quedan como auditoría tres pares de eventos crear/eliminar en el historial y la versión del riesgo #1 subió de 3 a 9 (dos guardados por corrida). `prevention_risk_controls` de la matriz: 0. |
+| Consola | 0 `console.error` en las sondas. |
+
+### Las `net::ERR_ABORTED` del escenario (investigadas)
+
+Se instrumentó una copia de `prevencion-miper-escenario.spec.ts`. Fue una copia temporal en el
+worktree desechable, sin versionar. Registró método, `next-action`, `RSC`, `Next-Router-Prefetch`,
+la respuesta recibida y las navegaciones de la página, y se corrió dos veces con `--trace on`.
+En la última corrida hubo **196** peticiones abortadas:
+
+- **156 GET de prefetch** (`Next-Router-Prefetch: 1`) del menú y de los enlaces de la página,
+  descartados al navegar.
+- **30 GET RSC de navegación** que Next reemplazó por otra, por ejemplo el `router.push` posterior
+  a crear un riesgo, que compite con la foto que trae la acción.
+- **1 GET de documento**: la descarga del Excel, que el navegador convierte en descarga.
+- **9 POST de server actions**: `saveMiperControlAction`, `saveMiperEntryAction` (sólo al
+  **crear**), `applyProgramGenerationAction`, `submitMiperAction`, `addMiperObservationAction`,
+  `returnMiperAction`, `approveMiperTechnicalAction`, `approveMiperFinalAction` y
+  `openMiperRoundAction`.
+  - **Todos** recibieron `200` antes de abortarse. Los 8 que revalidan traían
+    `x-action-revalidated: 1`, un encabezado que el servidor sólo emite después de ejecutar la
+    acción (y `guarded()` revalida después de la escritura).
+  - Lo que se corta es la cola del cuerpo: el re-render RSC que acompaña a la respuesta. En cada
+    caso, entre 4 y 23 ms después hubo una navegación de Next a la misma URL, que confirma el
+    estado nuevo y descarta el resto del cuerpo.
+  - **Ningún guardado de campo** (`saveMiperEntryAction` con `entryId`, que no revalida) se abortó.
+  - Las aserciones posteriores del escenario confirman cada dato persistido.
+
+**Clasificación: AUTOMATION WARNING, no PRODUCT BUG.** Son cancelaciones internas del router
+de Next, no guardados perdidos por una navegación. No hizo falta vaciar los guardados pendientes
+antes de navegar.
+
+### AUTOMATION WARNING
+
+- En la primera corrida de la sonda, el paso de reversión no vio «Guardado a las HH:MM» en 20 s.
+  Aun así el valor quedó guardado en la BD (`exposed_other` = 0). No se reprodujo en otras dos
+  corridas, una de ellas con muestreo del rótulo cada 100–250 ms. En ambas el rótulo pasó de
+  «Guardando…» a «Guardado a las 20:4x» en 155–256 ms. Es probablemente una recompilación de
+  `next dev`: fue la primera visita después de los commits. No se clasifica como defecto.
+
+### Cambios de comportamiento a tener en cuenta
+
+- Crear un riesgo ahora revalida: la acción devuelve también la foto de la página actual, y
+  después el `router.push` trae la del editor. Es el «RSC extra por creación» que se aceptó en la
+  decisión de C1.
+- Guardar o borrar una medida ya **no** llama a `router.refresh()`: la foto nueva llega con la
+  respuesta de la acción. Reemplaza la línea «la del `router.refresh()` al guardar una medida» de
+  la tabla de arriba.
+- El estado de guardado es por riesgo (I1), y el vacío filtrado ofrece «Limpiar filtros» (A4).
+
+### COVERAGE GAP
+
+- I1 (estado por riesgo) se verificó con pruebas unitarias y con la E2E de dos pestañas. No hubo
+  sonda de navegador que fuerce un rechazo en A y un guardado en B.
+- Modo revisión y solo lectura: igual que arriba, sólo E2E.
+
+### Compuertas de esta ronda
+
+- `npm run typecheck` y `npm run lint`: verdes.
+- `npm run test:fast` sobre `lib/prevention/miper`, `app/(app)/prevencion/miper`,
+  `components/prevention`, `combobox`, `choice-card-group` y `top-bar-own-search`: 43 archivos,
+  226 pruebas, todas pasan.
+- E2E en un worktree desechable, de a un spec:
+  - `interacciones` 7/7;
+  - `flujo` 3/3;
+  - `escenario` 10/10;
+  - `programa` 7/7;
+  - `matriz` 2/2;
+  - `controles` 5/5.
