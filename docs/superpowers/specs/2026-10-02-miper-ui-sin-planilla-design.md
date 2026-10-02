@@ -1,6 +1,6 @@
 # Rediseño UI/UX de la MIPER: de planilla a espacio de trabajo guiado
 
-Fecha: 2026-10-02 · Estado: **diseño propuesto, pendiente de revisión**
+Fecha: 2026-10-02 · Estado: **Fase A implementada**
 Alcance: todo el submódulo `app/(app)/prevencion/miper` (portada, espacio de trabajo, matriz,
 ficha del riesgo, programa, revisión, historial, importación) y lo mínimo del backend que el
 rediseño necesita.
@@ -105,12 +105,12 @@ notificaciones (`?fila=`, `?tab=revision`, `?tab=programa`) siguen funcionando.
 
 | Parámetro | Valores | Navegación |
 |---|---|---|
-| `tab` | `resumen` (Fase B) · `matriz` (por defecto; no se escribe) · `programa` · `revision` · `historial`. `antecedentes` es un alias heredado que abre la ficha. | `router.replace(…, { scroll: false })` |
-| `buscar`, `clasificacion` (lista separada por coma), `completitud` (`pendientes`\|`completos`), `controlado` (`yes`\|`partial`\|`no`), `factor` (id), `marca` (`observados`,`modificados`) | Filtros de la matriz. Viven en la URL y sobreviven a una recarga. No chocan con `q` / `estado` / `frecuencia` del programa. | `useUrlFilters` (replace, sin scroll) |
-| `tarea` | Clave estable de (actividad, tarea): FNV-1a de los nombres normalizados (§5.2) | `<Link>` (push): "atrás" vuelve a la matriz con sus filtros |
-| `fila` | id del riesgo: abre el editor | `<Link>` / `router.push` |
-| `paso` | `identificacion` · `evaluacion` · `medidas` · `seguimiento` | replace |
-| `ficha` | `1`: abre la "Ficha del documento" | replace |
+| `tab` | `resumen` (Fase B) · `matriz` (por defecto; no se escribe) · `programa` · `revision` · `historial`. `antecedentes` es un alias heredado que abre la ficha. | `replaceState` (`navigateWorkspace(…, "replace")`) |
+| `buscar`, `clasificacion` (lista separada por coma), `completitud` (`pendientes`\|`completos`), `controlado` (`yes`\|`partial`\|`no`), `factor` (id), `marca` (`observados`,`modificados`) | Filtros de la matriz. Viven en la URL y sobreviven a una recarga. No chocan con `q` / `estado` / `frecuencia` del programa. | `replaceState` (`useMatrixFilterNavigation`, sin scroll) |
+| `tarea` | Clave estable de (actividad, tarea): FNV-1a de los nombres normalizados (§5.2) | `pushState` (`WorkspaceLink`): "atrás" vuelve a la matriz con sus filtros |
+| `fila` | id del riesgo: abre el editor | `pushState` (`WorkspaceLink`); `router.push` sólo tras crear o duplicar un riesgo, que necesita la foto nueva del servidor |
+| `paso` | `identificacion` · `evaluacion` · `medidas` · `seguimiento` | `replaceState` |
+| `ficha` | `1`: abre la "Ficha del documento" | `replaceState` |
 
 Prioridad de render: `fila` > `tarea` > `tab`. Con `fila`, la vista de la tarea a la que se
 vuelve es la de ese riesgo.
@@ -121,6 +121,18 @@ cambian la URL con `window.history.pushState` / `replaceState` (Next.js lo integ
 `router.push`. Motivo, medido en la verificación: cada cambio por el router costaba un viaje RSC
 de 195–257 ms y reiniciaba el estado de las filas del cliente. Con la API nativa el cambio es
 inmediato, no hay petición `_rsc` y "atrás" sigue funcionando porque cada `push` deja su entrada.
+
+Dos consecuencias de esa navegación, resueltas en la Fase A:
+
+- **La foto que restaura "atrás".** Una entrada `pushState` hereda la foto del último render del
+  servidor, y Next la reusa al volver salvo que una acción revalide. Por eso crear un riesgo
+  (`saveMiperEntryAction` sin `entryId`), duplicarlo y borrarlo revalidan; guardar un campo no.
+  Además, `useRowsFromSource` no deja que una foto atrasada pise una fila que el cliente ya guardó
+  en una versión mayor.
+- **Lo que se recuerda al volver.** Abrir una tarea desmonta la matriz. Las actividades plegadas
+  se guardan en `sessionStorage` (`miper:<matrixId>:collapsed`) y el scroll del pozo del shell se
+  guarda por URL (`miper:scroll:<ruta+query>`) justo antes de cada `push`. La matriz y la tarea lo
+  retoman al montarse. No se usa `history.state`, que es de Next.
 
 ---
 
@@ -158,6 +170,9 @@ inmediato, no hay petición `_rsc` y "atrás" sigue funcionando porque cada `pus
   - Cajón "Más filtros (N)": clasificación (4 casillas), completitud, ¿controlado?, factor y marcas
     (observados, modificados).
   - Bajo la barra, chips removibles y "Limpiar filtros".
+  - La clasificación, "con pendientes" y "no controlados" se activan también desde la franja: es
+    un doble control deliberado, por excepción a A5 (la franja es la lectura rápida y el cajón, el
+    filtro completo).
 - **Tarjeta por actividad** (`<section aria-labelledby>`):
   - Botón con `aria-expanded`, nombre, "N tareas · M riesgos" y conteo por clasificación con
     `RiskClassificationBadge` en tamaño `sm`.
@@ -172,6 +187,8 @@ inmediato, no hay petición `_rsc` y "atrás" sigue funcionando porque cada `pus
   - Las tareas y actividades sin coincidencias se ocultan.
   - Los conteos pasan a "x de y".
 - **Matriz vacía:** `EmptyState` "Esta MIPER todavía no tiene riesgos", con CTA "Nueva tarea".
+- **Filtros sin coincidencias:** `EmptyState` "Ningún riesgo coincide con los filtros", con CTA
+  "Limpiar filtros" (A4), que quita las seis claves de filtro de la URL.
 - **Responsive:** un solo árbol que se reacomoda (grid/flex). **No hay doble árbol**
   `md:hidden` / `hidden md:block`, así que los localizadores de E2E no necesitan `textoVisible()`
   para esta vista.
@@ -234,11 +251,11 @@ inmediato, no hay petición `_rsc` y "atrás" sigue funcionando porque cada `pus
        #N" si está vinculada.
      - "Agregar medida" abre en línea el formulario de la medida (§6.2).
      - Eliminar una medida pide confirmación.
+     - En una MIPER vigente, cada tarjeta de medida lleva el enlace "Verificar eficacia del control".
   4. **Seguimiento**:
      - Actividades del programa vinculadas, con enlace a `?tab=programa`.
      - Observaciones del riesgo: responder o, si es revisor, observar.
      - Cambios contra la foto de comparación (diff campo por campo, el que hoy está en `EntrySheet`).
-     - Enlace "Verificar eficacia del control" en una MIPER vigente.
 - **Panel lateral** (sticky a partir de `xl`; debajo del contenido en pantallas menores):
   - **Contexto:** actividad, tarea, puesto, lugar, expuestos.
   - **Chequeo del riesgo:**
@@ -252,6 +269,8 @@ inmediato, no hay petición `_rsc` y "atrás" sigue funcionando porque cada `pus
     al final. Si hay filtros activos, recorre sólo el conjunto filtrado.
 - **Modo lectura** (sin `canEdit`, o revisor viendo la foto de la ronda): los mismos pasos, con
   los valores como texto (`DetailItem`). El revisor tiene "Observar este riesgo" en el panel.
+  - Decisión de la Fase A: en Evaluación y Medidas se conservan las tarjetas, deshabilitadas, en
+    vez de `DetailItem`; muestran los mismos valores y además el criterio del RE-04.
 - **Riesgo recién creado que aún no llegó:** si el `fila` no está en `rows`, se muestra un
   esqueleto y se llama una vez a `router.refresh()`. Si después sigue sin aparecer: "Este riesgo
   ya no existe" y un enlace a la matriz.
@@ -264,7 +283,10 @@ inmediato, no hay petición `_rsc` y "atrás" sigue funcionando porque cada `pus
   2. Guarda con la cola por fila existente.
   3. Si falla, **revierte esos campos** a su último valor guardado y deja el mensaje en
      `fieldErrors[campo]`, que el `Field` muestra bajo el control.
-- **Estado de guardado:** `saving | saved | error`, con la hora del último guardado.
+- **Estado de guardado:** `saving | saved | error`, con la hora del último guardado. Es **por
+  riesgo** (`statusOf(entryId)`): el editor muestra el del riesgo abierto, y el rechazo de otro
+  riesgo no se anuncia ni ofrece "Recargar riesgo" ahí. Cuando llega una foto del servidor en la
+  que un riesgo cambió, sus rechazos anteriores se descartan.
 - **Conflicto de versión:** muestra el mensaje del servicio ("La fila cambió mientras la
   editabas…") con un botón "Recargar riesgo" (`router.refresh()`).
 - **Cuándo guarda cada control:** los textos, al perder el foco; las selecciones (tarjetas,

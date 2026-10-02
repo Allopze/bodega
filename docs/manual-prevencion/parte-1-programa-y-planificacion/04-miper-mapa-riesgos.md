@@ -149,7 +149,7 @@ La pestaña **Matriz** ya no es una planilla de 19 columnas: se recorre por nive
 La matriz tiene tres niveles: **actividad › tarea › riesgo**.
 
 1.  **Estructura.** Es la vista de entrada: una tarjeta por actividad (con su número de tareas, de riesgos y el conteo por clasificación) y, debajo, una fila por tarea con sus puestos, su número de riesgos y cuántos están completos (por ejemplo, "3/5 completos"). Actividades y tareas siguen el orden del documento original.
-2.  **Tarea.** Al hacer clic en una tarea se abre la lista de sus riesgos: peligro, riesgo y daño, la clasificación con su MR, si está controlado, cuántas medidas tiene y si está "Completo" o con "N pendientes". "Volver a la matriz" te devuelve con tus filtros intactos.
+2.  **Tarea.** Al hacer clic en una tarea se abre la lista de sus riesgos: peligro, riesgo y daño, la clasificación con su MR, si está controlado, cuántas medidas tiene y si está "Completo" o con "N pendientes". "Volver a la matriz" (o el botón Atrás del navegador) te devuelve con tus filtros intactos, a la misma altura de la página y con las actividades que habías plegado.
 3.  **Editor del riesgo.** Al hacer clic en un riesgo se abre a pantalla completa para editarlo (ver más abajo).
 
 Sobre la lista, una franja resume el centro de trabajo, la dotación, las tareas, los riesgos y cuántos están completos; los conteos por clasificación funcionan como filtros.
@@ -159,7 +159,7 @@ Sobre la lista, una franja resume el centro de trabajo, la dotación, las tareas
 *   El buscador **"Buscar en la matriz"** mira actividad, tarea, puesto, lugar, peligro, riesgo, daño y medidas.
 *   El botón **"Más filtros"** (con el número de filtros activos) abre el cajón **"Filtros avanzados"**, que reúne clasificación, completitud, "¿Está controlado?", factor de riesgo y marcas (observados, modificados).
 *   Los filtros viven en la dirección de la página: sobreviven a recargar, y puedes copiar el enlace para compartir la vista. Bajo la barra aparecen como **chips** que se quitan de a uno, o todos con **"Limpiar filtros"**.
-*   Con algún filtro activo, las tarjetas se expanden y bajo cada tarea aparecen solo los riesgos que coinciden; los conteos pasan a "x de y".
+*   Con algún filtro activo, las tarjetas se expanden y bajo cada tarea aparecen solo los riesgos que coinciden; los conteos pasan a "x de y". Si ningún riesgo coincide, la matriz lo dice y ofrece **"Limpiar filtros"**.
 *   **"Contraer todo" / "Expandir todo"** pliega o despliega las actividades.
 
 ### Agregar una tarea o un peligro
@@ -176,12 +176,12 @@ El editor tiene **cuatro pasos**, que se eligen arriba y se recuerdan en la dire
 |---|---|
 | **1. Identificación** | Factor de riesgo, si es rutinaria o no, peligro, riesgo, daño probable, puesto, lugar específico y personas expuestas (F, M, otro). Un desplegable permite mover el riesgo a otra actividad o tarea. |
 | **2. Evaluación** | Eliges una de tres tarjetas de **Probabilidad** y una de tres de **Consecuencia**; la plataforma muestra el MR y la clasificación con su criterio. |
-| **3. Medidas de control** | "¿Está controlado?" y las medidas (tipo I–V, descripción, responsable, plazo), con "Agregar medida". Si la medida está vinculada al programa, se indica la actividad. |
-| **4. Seguimiento** | Actividades del programa vinculadas, observaciones del riesgo, cambios contra la versión anterior y el enlace a verificar la eficacia del control. |
+| **3. Medidas de control** | "¿Está controlado?" y las medidas (tipo I–V, descripción, responsable, plazo), con "Agregar medida". Si la medida está vinculada al programa, se indica la actividad. En una MIPER vigente, cada medida tiene el enlace **"Verificar eficacia del control"**. |
+| **4. Seguimiento** | Actividades del programa vinculadas, observaciones del riesgo y cambios contra la versión anterior. |
 
 A un costado (o debajo, en pantallas chicas) está el **chequeo del riesgo**: un ítem por bloque con una marca de listo, o con el mensaje de lo que falta y un enlace al paso donde se corrige. También muestra el contexto del riesgo y su clasificación.
 
-**Guardado automático.** No hay botón "Guardar": los textos se guardan al salir del campo y las selecciones, al elegirlas. Arriba del editor, un estado indica **Guardando…**, **Guardado** (con la hora) o el error. Si un guardado falla, el mensaje aparece bajo el campo y el campo vuelve a su último valor guardado. Si el riesgo cambió en el servidor mientras lo editabas, el aviso trae un botón **"Recargar riesgo"**; la plataforma no pisa lo que escribió otra persona.
+**Guardado automático.** No hay botón "Guardar": los textos se guardan al salir del campo y las selecciones, al elegirlas. Arriba del editor, un estado indica **Guardando…**, **Guardado** (con la hora) o el error del riesgo que tienes abierto. Si un guardado falla, el mensaje aparece bajo el campo y el campo vuelve a su último valor guardado. Si el riesgo cambió en el servidor mientras lo editabas, el aviso trae un botón **"Recargar riesgo"**; la plataforma no pisa lo que escribió otra persona.
 
 ### Recorrer los pendientes
 
@@ -271,20 +271,20 @@ graph LR
 ### Paso 1: Enviar a revisión
 
 *   **Quién lo hace:** el Prevencionista de Faena o el Administrador de Contrato de la faena.
-*   **En la plataforma:** en el espacio de trabajo, presiona **"Enviar a revisión"**. Si falta algo, el botón muestra cuántos bloqueos hay y la lista de qué corregir.
+*   **En la plataforma:** en el espacio de trabajo, presiona **"Enviar a revisión"**. Si falta algo, se abre **"Faltan N datos para enviar"** con la lista de qué corregir; cada bloqueo te lleva a donde se corrige.
 *   **Qué pasa después:** se congela una **foto** de lo enviado. A partir de ahí, lo que se revisa es esa foto: si sigues editando, tus cambios quedan para la ronda siguiente.
 
 ### Paso 2: Revisión técnica de la Jefatura
 
 *   **Quién lo hace:** la Jefatura del Departamento de Prevención (rol `prevencionista`).
 *   **En la plataforma:** abre la MIPER desde su bandeja. Verás una franja de resumen con faena, quién envió, versión, dotación, total de riesgos, distribución por clasificación, no controlados, medidas sin responsable, medidas sin plazo, Importantes e Intolerables.
-*   **Observar:** escribe una **observación por riesgo** (sobre el riesgo que corresponde) o una observación general en la pestaña **Revisión**. Los riesgos observados quedan marcadas en la matriz.
+*   **Observar:** escribe una **observación por riesgo** (sobre el riesgo que corresponde) o una observación general en la pestaña **Revisión**. Los riesgos observados quedan marcados en la matriz.
 *   **Decidir:** **"Devolver con observaciones"** (vuelve a la prevencionista) o **"Aprobar revisión técnica"** (pasa a Legal y RRHH). También distingue lo nuevo, lo modificado y lo eliminado respecto de la ronda anterior.
 
 ### Paso 3: Responder y reenviar
 
 *   **Quién lo hace:** quien elaboró la MIPER.
-*   **En la plataforma:** la pestaña **Revisión** es tu bandeja: cada observación muestra el riesgo enlazado y su respuesta. Al responder, la observación pasa a **respondida**. El botón **"Reenviar a revisión"** indica cuántas observaciones faltan por responder: no se puede reenviar con observaciones abiertas.
+*   **En la plataforma:** la pestaña **Revisión** es tu bandeja: cada observación muestra el riesgo enlazado y su respuesta. Al responder, la observación pasa a **respondida**. No se puede reenviar con observaciones abiertas: si queda alguna sin responder, **"Reenviar a revisión"** no envía y el aviso dice cuántas faltan.
 
 ### Paso 4: Aprobación de Legal y RRHH y sellado
 
@@ -309,7 +309,7 @@ Al aprobarse la primera versión del período, la MIPER queda **Vigente**, el pe
 
 El flujo avisa por sí solo en la **campana** de notificaciones, con el **destinatario derivado del permiso y la faena** —nunca a todo el mundo— y **una sola vez por hecho**: volver a pasar por el mismo estado no duplica el aviso.
 
-*   **Por riesgo:** cuando un riesgo queda clasificada como **Intolerable**, avisa a quien edita la faena y a la Jefatura. El aviso enlaza directo a ese riesgo en la matriz.
+*   **Por riesgo:** cuando un riesgo queda clasificado como **Intolerable**, avisa a quien edita la faena y a la Jefatura. El aviso enlaza directo a ese riesgo en la matriz.
 *   **Por paso del flujo:** *"MIPER enviada a revisión"* al siguiente responsable (la Jefatura en la revisión técnica, Legal y RRHH en la firma) y *"MIPER devuelta con observaciones"* a quien la elaboró. Cada **ronda** que vuelve a pasar es un paso nuevo y trae su propio aviso.
 *   **Por el calendario (barrido diario):** *"Actividad del Programa de Trabajo vencida"* (a la ocurrencia pendiente cuya fecha ya pasó) y *"Actividad del Programa registrada como «No se hizo»"* (a la Jefatura). Estos dos no nacen al guardar, sino del barrido diario del programa, porque dependen del calendario.
 
