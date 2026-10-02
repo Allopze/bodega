@@ -79,7 +79,7 @@ export const workers = pgTable("workers", {
 }, (table) => [
   index("workers_position_idx").on(table.positionId),
   index("workers_worksite_position_active_idx").on(table.worksiteId, table.positionId, table.isActive),
-  check("workers_sex_valid", sql`${table.sex} IS NULL OR ${table.sex} IN ('female', 'male', 'intersex', 'unspecified')`),
+  check("workers_sex_valid", sql`${table.sex} IS NULL OR ${table.sex} IN ('male', 'female', 'other')`),
 ])
 
 /** Excepciones individuales a las capacidades heredadas desde el cargo. */

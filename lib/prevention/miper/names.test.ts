@@ -17,7 +17,7 @@ describe("dotación por sexo", () => {
   it("hombres, mujeres y el resto como Otro; sin registrar se informa aparte", () => {
     const result = headcountFromSexCounts([
       { sex: "male", count: 14 }, { sex: "female", count: 2 },
-      { sex: "intersex", count: 1 }, { sex: "unspecified", count: 1 }, { sex: null, count: 3 },
+      { sex: "other", count: 2 }, { sex: null, count: 3 },
     ])
     expect(result).toEqual({ total: 21, male: 14, female: 2, other: 5, unrecorded: 3 })
   })

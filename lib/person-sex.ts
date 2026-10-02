@@ -7,18 +7,18 @@
  * un trabajador. Un valor distinto en cada lado haría que esa copia fallara o
  * inventara una equivalencia.
  *
- * `null` y `unspecified` no son lo mismo: `null` es que nadie lo registró;
- * `unspecified` es que se preguntó y la persona no lo informa.
+ * `null` es que nadie lo registró. Hasta la migración 0349 existían además
+ * `intersex` (pasó a `other`) y `unspecified` —«No informa»—, que pasó a
+ * `null`: llevarlo a `other` habría afirmado un sexo que la persona no declaró.
  */
-export const PERSON_SEX_VALUES = ["female", "male", "intersex", "unspecified"] as const
+export const PERSON_SEX_VALUES = ["male", "female", "other"] as const
 
 export type PersonSex = (typeof PERSON_SEX_VALUES)[number]
 
 export const PERSON_SEX_LABELS: Record<PersonSex, string> = {
-  female: "Mujer",
   male: "Hombre",
-  intersex: "Intersexual",
-  unspecified: "No informa",
+  female: "Mujer",
+  other: "Otro",
 }
 
 export function isPersonSex(value: unknown): value is PersonSex {

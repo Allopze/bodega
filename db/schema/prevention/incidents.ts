@@ -97,7 +97,7 @@ export const preventionIncidentPeople = pgTable("prevention_incident_people", {
 }, (table) => [
   index("prevention_incident_people_incident_idx").on(table.incidentId),
   index("prevention_incident_people_worker_idx").on(table.workerId),
-  check("prevention_incident_person_sex_valid", sql`${table.sex} IS NULL OR ${table.sex} IN ('female', 'male', 'intersex', 'unspecified')`),
+  check("prevention_incident_person_sex_valid", sql`${table.sex} IS NULL OR ${table.sex} IN ('male', 'female', 'other')`),
   check("prevention_incident_person_relationship_valid", sql`${table.relationshipType} IN ('employee', 'contractor', 'subcontractor', 'visitor', 'third_party')`),
   check("prevention_incident_person_days_nonnegative", sql`${table.absenceDays} >= 0 AND ${table.chargeDays} >= 0`),
   check("prevention_incident_person_indicator_status_valid", sql`${table.indicatorInclusionStatus} IN ('pending', 'included', 'excluded')`),

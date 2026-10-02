@@ -98,7 +98,7 @@ describe("CanonicalIndicatorsDashboard", () => {
 
     expect(screen.getAllByText("No calculable").length).toBeGreaterThan(0)
     expect(screen.getByText("Oculto por grupo pequeño (<5)")).toBeDefined()
-    // Etiquetas en español; `unspecified` agrupa también lo no registrado.
+    // Etiquetas en español; la clave `unspecified` agrupa lo no registrado.
     expect(screen.getByText("Mujer:")).toBeDefined()
     expect(screen.getByText("Sin dato:")).toBeDefined()
     expect(screen.getByRole("link", { name: /Frecuencia · Enero/i })).toHaveAttribute(

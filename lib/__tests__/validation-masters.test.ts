@@ -436,7 +436,11 @@ describe("workerSchema", () => {
     const base = { firstName: "Carlos", lastName: "Muñoz", worksiteId: "ws-1" }
     expect(workerSchema.safeParse({ ...base, sex: "" }).success).toBe(true)
     expect(workerSchema.safeParse({ ...base, sex: "male" }).success).toBe(true)
-    expect(workerSchema.safeParse({ ...base, sex: "intersex" }).success).toBe(true)
+    expect(workerSchema.safeParse({ ...base, sex: "female" }).success).toBe(true)
+    expect(workerSchema.safeParse({ ...base, sex: "other" }).success).toBe(true)
+    // Retirados en la migración 0349.
+    expect(workerSchema.safeParse({ ...base, sex: "intersex" }).success).toBe(false)
+    expect(workerSchema.safeParse({ ...base, sex: "unspecified" }).success).toBe(false)
     expect(workerSchema.safeParse({ ...base, sex: "otro" }).success).toBe(false)
   })
 

@@ -176,9 +176,9 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
 }
 
 /**
- * El cálculo agrupa bajo `unspecified` tanto a quien no informa como a quien
- * nadie registró (`safety-indicators-calc.ts`), así que aquí esa fila no puede
- * decir «No informa»: sería afirmar que se preguntó.
+ * El cálculo agrupa bajo la clave `unspecified` a quien nadie registró
+ * (`safety-indicators-calc.ts`). Ya no es un valor del catálogo —«No informa»
+ * se retiró en la migración 0349—, así que esta fila se rotula aparte.
  */
 function sexBreakdownLabel(sex: string): string {
   return sex === "unspecified" ? "Sin dato" : personSexLabel(sex)

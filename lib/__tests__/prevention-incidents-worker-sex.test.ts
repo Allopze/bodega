@@ -64,7 +64,7 @@ beforeEach(async () => {
   ])
 })
 
-async function reportWith(people: Array<{ workerId: string | null; sex?: "female" | "male" | "intersex" | "unspecified" | null }>, submission: string) {
+async function reportWith(people: Array<{ workerId: string | null; sex?: "male" | "female" | "other" | null }>, submission: string) {
   const { reportPreventionIncident } = await import("@/lib/services/prevention-incidents")
   const res = await reportPreventionIncident({
     access,
@@ -99,8 +99,8 @@ describe("sexo del trabajador en el incidente", () => {
   })
 
   it("lo que declara el reporte prevalece sobre el padrón", async () => {
-    const [person] = await reportWith([{ workerId: "wrk-mujer", sex: "unspecified" }], "sub-sex-declarado")
-    expect(person?.sex).toBe("unspecified")
+    const [person] = await reportWith([{ workerId: "wrk-mujer", sex: "other" }], "sub-sex-declarado")
+    expect(person?.sex).toBe("other")
   })
 
   it("un trabajador sin sexo registrado y una persona sin vínculo quedan sin dato", async () => {

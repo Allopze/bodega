@@ -10,10 +10,10 @@ export function cleanMiperName(value: string | null | undefined): string | null 
 }
 
 /**
- * `workers.sex` admite female | male | intersex | unspecified, y null significa
- * "no registrado" (migración 0343). El RE-04 pide F / M / Otro: intersex,
- * unspecified y null van a Otro para que la suma cuadre con el total, y
- * `unrecorded` avisa cuántos de ellos son en realidad falta de dato.
+ * `workers.sex` admite male | female | other, y null significa "no
+ * registrado" (`lib/person-sex.ts`). El RE-04 pide F / M / Otro: null también
+ * va a Otro para que la suma cuadre con el total, y `unrecorded` avisa cuántos
+ * de ellos son en realidad falta de dato.
  */
 export function headcountFromSexCounts(rows: Array<{ sex: string | null; count: number }>) {
   let male = 0, female = 0, other = 0, unrecorded = 0
