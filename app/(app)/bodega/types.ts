@@ -3,9 +3,12 @@ export interface WorksiteStockWithProduct {
   worksiteId: string
   productId: string
   quantity: number
-  pendingDemand: number
+  /** Lo aprobado en solicitudes que todavía no llega a esta faena. */
   incoming: number
-  projectedBalance: number
+  /** `false`: el producto nunca entró a esta faena y la fila existe sólo por
+   *  lo que está por recibir. Sin registro de stock no hay mínimo que fijar
+   *  ni kardex que mirar. */
+  hasStockRecord: boolean
   minStock: number
   lastMovementAt: string | null
   updatedAt: string

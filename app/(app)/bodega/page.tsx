@@ -23,7 +23,7 @@ import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from ".
 import { KARDEX_PAGE_SIZE } from "@/lib/constants"
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
-import { getStockAvailability } from "@/lib/services/stock-availability"
+import { getIncomingWithoutStock, getStockAvailability } from "@/lib/services/stock-availability"
 
 export const metadata: Metadata = { title: "Bodega" }
 
@@ -123,7 +123,7 @@ export default async function BodegaPage({
     ]),
   )
 
-  const [stockSummaryRows, stockTotalRow, movementTotalRow, recentMovementRow] = await Promise.all([
+  const [stockSummaryRows, movementTotalRow, recentMovementRow] = await Promise.all([
     // Una sola pasada para todos los KPI del encabezado: antes salían de traer
     // el stock completo a memoria, lo que obligaba a consultarlo incluso en la
     // vista del kardex.
@@ -138,12 +138,6 @@ export default async function BodegaPage({
       .from(worksiteStock)
       .innerJoin(worksites, eq(worksiteStock.worksiteId, worksites.id))
       .where(and(eq(worksites.isActive, true), stockScope, eqFilter(worksiteStock.worksiteId, faena))),
-    db
-      .select({ total: count() })
-      .from(worksiteStock)
-      .innerJoin(products, eq(worksiteStock.productId, products.id))
-      .innerJoin(worksites, eq(worksiteStock.worksiteId, worksites.id))
-      .where(and(stockWhere, sql`${worksiteStock.quantity} > 0`)),
     db
       .select({ total: count() })
       .from(inventoryMovements)
@@ -180,7 +174,6 @@ export default async function BodegaPage({
 
   const summary = stockSummaryRows[0]
   const kardexTotal = Number(movementTotalRow[0]?.total ?? 0)
-  const stockTotal = Number(stockTotalRow[0]?.total ?? 0)
 
   const kardexPagination = resolvePagination({
     pageParam: sp.kardex_page,
@@ -215,6 +208,11 @@ export default async function BodegaPage({
 
   const availabilityRows = view === "stock"
     ? await getStockAvailability(session, { worksiteId: faena || undefined })
+    : []
+  // Lo pedido para productos que la faena nunca tuvo: no tienen registro de
+  // stock, así que sin esto no aparecían en la tabla.
+  const incomingOnlyRows = view === "stock"
+    ? await getIncomingWithoutStock(availabilityRows, { q: filters.q })
     : []
 
   const movements = view === "kardex"
@@ -272,6 +270,7 @@ export default async function BodegaPage({
   // desechos, stock mínimo e inventario físico.
   const attributesById = await getProductAttributesByIds([
     ...stockRows.map((row) => row.productId),
+    ...incomingOnlyRows.map((row) => row.productId),
     ...movements.map((row) => row.productId),
     ...kardexProducts.map((row) => row.id),
   ])
@@ -289,16 +288,32 @@ export default async function BodegaPage({
       worksiteId: row.worksiteId,
       productId: row.productId,
       quantity: row.quantity,
-      pendingDemand: availability?.pendingDemand ?? 0,
       incoming: availability?.incoming ?? 0,
-      projectedBalance: availability?.projectedBalance ?? row.quantity,
       minStock: row.minStock,
       lastMovementAt: row.lastMovementAt,
       updatedAt: row.updatedAt,
+      hasStockRecord: true,
       product: { name: sizedName(row.productId, row.productName), sku: row.productSku, unitOfMeasure: row.unitOfMeasure },
       worksite: { name: row.worksiteName },
     }
     ;(stockByWorksite[row.worksiteId] ??= []).push(item)
+  }
+  const worksiteNameById = new Map(worksiteOptions.map((w) => [w.id, w.name]))
+  for (const row of incomingOnlyRows) {
+    ;(stockByWorksite[row.worksiteId] ??= []).push({
+      // Sin registro no hay id de stock: éste sólo identifica la fila.
+      id: `por-recibir:${row.worksiteId}:${row.productId}`,
+      worksiteId: row.worksiteId,
+      productId: row.productId,
+      quantity: 0,
+      incoming: row.incoming,
+      minStock: 0,
+      lastMovementAt: null,
+      updatedAt: "",
+      hasStockRecord: false,
+      product: { name: sizedName(row.productId, row.productName), sku: row.productSku, unitOfMeasure: row.unitOfMeasure },
+      worksite: { name: worksiteNameById.get(row.worksiteId) ?? "" },
+    })
   }
 
   const kardexMovements: InventoryMovementWithRelations[] = movements.map((row) => ({
@@ -362,7 +377,10 @@ export default async function BodegaPage({
       <BodegaViewTabs
         current={view}
         tabs={[
-          { value: "stock", label: "Stock", count: stockTotal },
+          // Sin contador: repetía "Productos con stock" del encabezado, y desde que
+          // la tabla muestra también lo que sólo está por recibir ya no coincide
+          // con sus filas. Contarlas exigiría calcular lo por recibir en el kardex.
+          { value: "stock", label: "Stock" },
           { value: "kardex", label: "Kardex", count: kardexTotal },
           { value: "documentos", label: "Documentos", href: "/bodega/documentos" },
         ]}
