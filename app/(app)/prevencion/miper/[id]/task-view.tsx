@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -26,24 +26,33 @@ export function TaskView({ matrixId, task, editable, incomplete, observed, chang
   const pathname = usePathname()
   const params = useSearchParams()
   const [adding, setAdding] = useState(false)
+  const addingRef = useRef(false)
 
   async function addHazard() {
+    if (addingRef.current) return
+    addingRef.current = true
     setAdding(true)
-    const state = await saveMiperEntryAction({
-      matrixId,
-      insertAfterRowNumber: task.lastRowNumber,
-      values: {
-        activity: task.activity, task: task.task,
-        position: mostFrequent(task.entries.map((entry) => entry.position)),
-        location: mostFrequent(task.entries.map((entry) => entry.location)),
-        isRoutine: mostFrequent(task.entries.map((entry) => entry.isRoutine)),
-      },
-    })
-    setAdding(false)
-    const id = (state.data as { id?: unknown } | undefined)?.id
-    if (!state.ok || typeof id !== "string") { toast.error(state.message ?? "No se pudo agregar el peligro."); return }
-    // El riesgo nuevo tiene que venir del servidor: aquí sí corresponde router.push.
-    router.push(hrefToEntry(pathname, params, id, "identificacion"))
+    try {
+      const state = await saveMiperEntryAction({
+        matrixId,
+        insertAfterRowNumber: task.lastRowNumber,
+        values: {
+          activity: task.activity, task: task.task,
+          position: mostFrequent(task.entries.map((entry) => entry.position)),
+          location: mostFrequent(task.entries.map((entry) => entry.location)),
+          isRoutine: mostFrequent(task.entries.map((entry) => entry.isRoutine)),
+        },
+      })
+      const id = (state.data as { id?: unknown } | undefined)?.id
+      if (!state.ok || typeof id !== "string") { toast.error(state.message ?? "No se pudo agregar el peligro."); return }
+      // El riesgo nuevo tiene que venir del servidor: aquí sí corresponde router.push.
+      router.push(hrefToEntry(pathname, params, id, "identificacion"))
+    } catch {
+      toast.error("No se pudo agregar el peligro.")
+    } finally {
+      addingRef.current = false
+      setAdding(false)
+    }
   }
 
   const errorCount = (entryId: string) => (issuesByEntry.get(entryId) ?? []).filter((issue) => issue.severity === "error").length
@@ -74,7 +83,7 @@ export function TaskView({ matrixId, task, editable, incomplete, observed, chang
       <section aria-labelledby="miper-task-risks" className="space-y-2">
         <h3 id="miper-task-risks" className="text-sm font-semibold">Peligros identificados ({task.entries.length})</h3>
         {task.entries.length === 0
-          ? <EmptyState compact title="Esta tarea no tiene riesgos" description="Agrega el primer peligro de la tarea para evaluarlo." action={editable ? <Button onClick={() => { void addHazard() }}>Agregar peligro</Button> : undefined} />
+          ? <EmptyState compact title="Esta tarea no tiene riesgos" description="Agrega el primer peligro de la tarea para evaluarlo." action={editable ? <Button onClick={() => { void addHazard() }} loading={adding}>Agregar peligro</Button> : undefined} />
           : (
             <ul className="space-y-2">
               {task.entries.map((entry) => (

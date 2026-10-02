@@ -23,14 +23,17 @@ export function navigateWorkspace(href: string, mode: "push" | "replace" = "push
 type WorkspaceLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & { href: string; replace?: boolean }
 
 /** `<a href>` real (clic medio y «abrir en pestaña nueva» siguen funcionando) que navega sin servidor en el clic normal. */
-export const WorkspaceLink = forwardRef<HTMLAnchorElement, WorkspaceLinkProps>(function WorkspaceLink({ href, replace = false, onClick, ...props }, ref) {
+export const WorkspaceLink = forwardRef<HTMLAnchorElement, WorkspaceLinkProps>(function WorkspaceLink({ href, replace = false, onClick, target, download, ...props }, ref) {
   return (
     <a
       ref={ref}
       href={href}
+      target={target}
+      download={download}
       onClick={(event) => {
         onClick?.(event)
         if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        if ((target && target !== "_self") || download !== undefined) return
         event.preventDefault()
         navigateWorkspace(href, replace ? "replace" : "push")
       }}

@@ -9,6 +9,9 @@ vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => 
 const saveMiperEntryAction = vi.hoisted(() => vi.fn())
 vi.mock("../actions", () => ({ saveMiperEntryAction }))
 
+const toastError = vi.hoisted(() => vi.fn())
+vi.mock("@/lib/toast", () => ({ toast: { error: toastError, success: vi.fn() } }))
+
 import { TaskView } from "./task-view"
 
 const e = (id: string, rowNumber: number, overrides: Partial<MiperEntrySnapshot> = {}) => ({
@@ -36,6 +39,25 @@ describe("TaskView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Agregar peligro" }))
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/prevencion/miper/m1?clasificacion=important&fila=nuevo&paso=identificacion"))
     expect(saveMiperEntryAction).toHaveBeenCalledWith({ matrixId: "m1", insertAfterRowNumber: 7, values: { activity: "Transporte", task: "Carga", position: "Conductor", location: "Planta", isRoutine: true } })
+  })
+  it("dos clics rápidos llaman a la acción una sola vez", async () => {
+    saveMiperEntryAction.mockClear()
+    let resolve!: (v: unknown) => void
+    saveMiperEntryAction.mockReturnValueOnce(new Promise((r) => { resolve = r }))
+    render(<TaskView {...base} editable />)
+    const button = screen.getByRole("button", { name: "Agregar peligro" })
+    fireEvent.click(button)
+    fireEvent.click(button)
+    expect(saveMiperEntryAction).toHaveBeenCalledTimes(1)
+    resolve({ ok: false, message: "x" })
+    await waitFor(() => expect(screen.getByRole("button", { name: "Agregar peligro" }).hasAttribute("disabled")).toBe(false))
+  })
+  it("si la acción lanza, el botón se libera y avisa", async () => {
+    saveMiperEntryAction.mockRejectedValueOnce(new Error("boom"))
+    render(<TaskView {...base} editable />)
+    fireEvent.click(screen.getByRole("button", { name: "Agregar peligro" }))
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("No se pudo agregar el peligro."))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Agregar peligro" }).hasAttribute("disabled")).toBe(false))
   })
   it("sin edición no ofrece agregar", () => {
     render(<TaskView {...base} editable={false} />)

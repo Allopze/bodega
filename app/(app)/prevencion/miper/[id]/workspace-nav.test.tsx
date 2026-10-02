@@ -29,6 +29,17 @@ describe("WorkspaceLink", () => {
     expect(push).not.toHaveBeenCalled()
   })
 
+  it("no intercepta target distinto de _self ni download", () => {
+    const push = vi.spyOn(window.history, "pushState").mockImplementation(() => {})
+    render(<><WorkspaceLink href={HREF} target="_blank">Nueva</WorkspaceLink><WorkspaceLink href={HREF} download>Bajar</WorkspaceLink></>)
+    for (const name of ["Nueva", "Bajar"]) {
+      const link = screen.getByRole("link", { name })
+      link.addEventListener("click", (event) => event.preventDefault())
+      fireEvent.click(link)
+    }
+    expect(push).not.toHaveBeenCalled()
+  })
+
   it("con replace usa replaceState", () => {
     const push = vi.spyOn(window.history, "pushState").mockImplementation(() => {})
     const replace = vi.spyOn(window.history, "replaceState").mockImplementation(() => {})
