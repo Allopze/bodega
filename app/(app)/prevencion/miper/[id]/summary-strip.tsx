@@ -12,11 +12,16 @@ import { cn, formatDate } from "@/lib/utils"
  * filtro de la matriz (A1: una cifra accionable; A5: la clasificación no tiene
  * otro control). Igual «No controlados» con `onToggleUncontrolled`.
  */
-export function SummaryStrip({ snapshot, authorName, submittedAt, versionLabel, activeClassifications = [], uncontrolledActive = false, onToggleClassification, onToggleUncontrolled }: {
+export function SummaryStrip({ snapshot, authorName, submittedAt, versionLabel, taskCount, completeCount, pendingActive = false, onTogglePending, activeClassifications = [], uncontrolledActive = false, onToggleClassification, onToggleUncontrolled }: {
   snapshot: MiperSnapshot
   authorName: string | null
   submittedAt: string | null
   versionLabel: string
+  /** Opcionales hasta que el espacio de trabajo los entregue (Task 11); sin ellos no se pinta ese ítem. */
+  taskCount?: number
+  completeCount?: number
+  pendingActive?: boolean
+  onTogglePending?: () => void
   activeClassifications?: readonly RiskClassification[]
   uncontrolledActive?: boolean
   onToggleClassification?: (classification: RiskClassification) => void
@@ -25,9 +30,6 @@ export function SummaryStrip({ snapshot, authorName, submittedAt, versionLabel, 
   const entries = snapshot.entries
   const count = (cls: string) => entries.filter((entry) => entry.classification === cls).length
   const uncontrolled = entries.filter((entry) => entry.controlledStatus === "no").length
-  const controls = entries.flatMap((entry) => entry.controls.map((control) => ({ control, entry })))
-  const noResponsible = controls.filter(({ control, entry }) => entry.classification !== "tolerable" && !control.responsibleUserId && !control.responsibleName).length
-  const noDeadline = controls.filter(({ control }) => !control.dueDate).length
   const h = snapshot.header
   return (
     <dl className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y py-3 text-sm">
@@ -36,6 +38,20 @@ export function SummaryStrip({ snapshot, authorName, submittedAt, versionLabel, 
       {authorName && <div><dt className="inline text-[var(--color-text-subtle)]">Elaboró </dt><dd className="inline">{authorName}{submittedAt ? ` · enviada ${formatDate(submittedAt)}` : ""}</dd></div>}
       <div><dt className="inline text-[var(--color-text-subtle)]">Dotación </dt><dd className="inline tabular-nums">{h.headcountTotal ?? "—"}</dd></div>
       <div><dt className="inline text-[var(--color-text-subtle)]">Riesgos </dt><dd className="inline tabular-nums">{entries.length}</dd></div>
+      {taskCount !== undefined && <div><dt className="inline text-[var(--color-text-subtle)]">Tareas </dt><dd className="inline tabular-nums">{taskCount}</dd></div>}
+      {completeCount !== undefined && (
+        <div>
+          <dt className="sr-only">Riesgos completos</dt>
+          <dd>
+            {onTogglePending ? (
+              <button type="button" aria-pressed={pendingActive} onClick={onTogglePending} className={cn(toggleClass, pendingActive && activeClass)}
+                aria-label={`Filtrar la matriz: con pendientes (${entries.length - completeCount})`}>
+                <span className="text-[var(--color-text-subtle)]">Completos</span> <span className="tabular-nums">{completeCount} de {entries.length}</span>
+              </button>
+            ) : <><span className="text-[var(--color-text-subtle)]">Completos</span> <span className="tabular-nums">{completeCount} de {entries.length}</span></>}
+          </dd>
+        </div>
+      )}
       <div className="flex flex-wrap gap-1.5">
         <dt className="sr-only">Distribución por clasificación</dt>
         {[...RISK_CLASSIFICATIONS].reverse().map((cls) => {
@@ -63,11 +79,9 @@ export function SummaryStrip({ snapshot, authorName, submittedAt, versionLabel, 
           ) : <><span className="text-[var(--color-text-subtle)]">No controlados</span> <span className="tabular-nums">{uncontrolled}</span></>}
         </dd>
       </div>
-      <div><dt className="inline text-[var(--color-text-subtle)]">Medidas sin responsable </dt><dd className="inline tabular-nums">{noResponsible}</dd></div>
-      <div><dt className="inline text-[var(--color-text-subtle)]">Medidas sin plazo </dt><dd className="inline tabular-nums">{noDeadline}</dd></div>
     </dl>
   )
 }
 
 const toggleClass = "inline-flex items-center gap-1 rounded-lg border border-transparent px-1 py-0.5 hover:border-[var(--color-border)] hover:bg-[var(--color-surface-2)]"
-const activeClass = "border-[var(--color-signal-ink)] bg-[var(--color-signal-tint)] hover:border-[var(--color-signal-ink)] hover:bg-[var(--color-signal-tint)]"
+const activeClass = "border-[var(--color-primary)] bg-[var(--color-primary-tint)] text-[var(--color-primary-ink)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-tint)]"
