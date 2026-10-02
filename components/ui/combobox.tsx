@@ -25,6 +25,14 @@ interface ComboboxProps {
   maxVisible?:  number
   className?:   string
   "aria-describedby"?: string
+  /**
+   * Acepta un texto que no está en `options`: los diccionarios de la MIPER se
+   * alimentan de lo que se escribe (spec MIPER 2026-10-02 §6.1). Muestra «Usar
+   * «texto»» y, al salir del campo, confirma lo escrito. Al enfocarlo, el campo
+   * conserva el valor actual para corregirlo en vez de vaciarse.
+   */
+  allowCustomValue?: boolean
+  "aria-label"?: string
 }
 
 function normalize(value: string): string {
@@ -42,25 +50,34 @@ function normalize(value: string): string {
  */
 export function Combobox({
   id, options, value, onChange, placeholder = "Buscar...", clearLabel,
-  disabled = false, maxVisible = 50, className, ...rest
+  disabled = false, maxVisible = 50, className, allowCustomValue = false, ...rest
 }: ComboboxProps) {
   const selected = options.find((option) => option.value === value)
   const [query, setQuery] = React.useState("")
   const inputRef = React.useRef<HTMLInputElement>(null)
   const listboxRef = React.useRef<HTMLUListElement>(null)
 
+  const currentText = selected?.label ?? (allowCustomValue ? value : "")
+  // Sin escribir, la lista no se filtra por el valor actual: se ve completa.
+  const filterText = allowCustomValue && query === currentText ? "" : query
+
   const visible = React.useMemo(() => {
-    const needle = normalize(query.trim())
+    const needle = normalize(filterText.trim())
     if (!needle) return options.slice(0, maxVisible)
     return options
       .filter((option) => normalize(`${option.label} ${option.hint ?? ""}`).includes(needle))
       .slice(0, maxVisible)
-  }, [options, query, maxVisible])
+  }, [options, filterText, maxVisible])
 
+  const typed = query.trim()
+  const customRow: ComboboxOption[] = allowCustomValue && typed && typed !== currentText
+    && !options.some((option) => normalize(option.label) === normalize(typed))
+    ? [{ value: typed, label: `Usar «${typed}»` }]
+    : []
   // La opción de limpiar sólo aparece sin búsqueda: escribiendo, estorba.
   const rows: ComboboxOption[] = clearLabel && !query.trim()
     ? [{ value: "", label: clearLabel }, ...visible]
-    : visible
+    : [...customRow, ...visible]
 
   function commit(next: string) {
     onChange(next)
@@ -77,10 +94,6 @@ export function Combobox({
       if (row) commit(row.value)
     },
   })
-
-  // Con una selección hecha y el popup cerrado, el input muestra la etiqueta
-  // elegida; al abrirlo pasa a ser el campo de búsqueda.
-  const inputValue = listbox.open ? query : (selected?.label ?? "")
 
   return (
     <div className={cn("relative", className)}>
@@ -103,15 +116,25 @@ export function Combobox({
             "transition-[border-color,box-shadow] duration-(--duration-fast)",
           )}
           placeholder={placeholder}
-          value={inputValue}
+          aria-label={rest["aria-label"]}
+          // Con una selección hecha y el popup cerrado, el input muestra la
+          // etiqueta elegida; al abrirlo pasa a ser el campo de búsqueda.
+          value={listbox.open ? query : currentText}
           onChange={(event) => {
             setQuery(event.target.value)
             listbox.setOpen(true)
             listbox.setActiveIndex(0)
           }}
-          onFocus={() => { if (!disabled) listbox.setOpen(true) }}
+          onFocus={() => {
+            if (disabled) return
+            if (allowCustomValue) setQuery(currentText)
+            listbox.setOpen(true)
+          }}
           onBlur={(event) => {
             if (!listbox.focusLeft(event)) return
+            // Sólo con el popup abierto `query` es lo que el usuario escribió:
+            // tras elegir una fila (o Escape) ya no hay nada pendiente que confirmar.
+            if (allowCustomValue && listbox.open && query.trim() !== currentText) onChange(query.trim())
             setQuery("")
             listbox.close()
           }}
@@ -144,7 +167,7 @@ export function Combobox({
         >
           {rows.map((row, index) => (
             <li
-              key={row.value || "__clear__"}
+              key={customRow.length && index === 0 ? "__custom__" : row.value || "__clear__"}
               id={listbox.optionId(index)}
               role="option"
               aria-selected={row.value === value}
