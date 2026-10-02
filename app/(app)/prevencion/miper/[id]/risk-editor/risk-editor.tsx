@@ -61,6 +61,8 @@ export function RiskEditor(props: RiskEditorProps) {
   const siblings = siblingsInTask(rows, entry.id)
   const nextPending = nextPendingId(rows, entry.id, incomplete, matching)
   const taskHref = hrefToTask(pathname, params, taskKeyOf(entry))
+  // Borrar el único riesgo de la tarea deja la tarea vacía: se vuelve a la matriz, no a «Esta tarea ya no existe».
+  const afterDeleteHref = siblings?.total === 1 ? hrefToMatrix(pathname, params) : taskHref
   // Cambiar de paso es estado de la vista: replace y sin ida al servidor (las filas ya están aquí).
   const goToStep = (next: string) => navigateWorkspace(hrefToEntry(pathname, params, entry.id, next as EditorStep), "replace")
   const stepProps = { entry, data, editable, autosave, issues }
@@ -79,7 +81,7 @@ export function RiskEditor(props: RiskEditorProps) {
           <h2 className="text-xl font-semibold">{entry.hazard ?? "Peligro sin describir"}</h2>
           <p className="text-sm text-[var(--color-text-subtle)]">Riesgo #{entry.rowNumber} · {entry.task ?? "Sin tarea"}{entry.position ? ` · ${entry.position}` : ""}</p>
         </div>
-        {editable && <EntryMenu matrixId={data.matrixId} entry={entry} version={autosave.versionOf(entry.id)} taskHref={taskHref} entryHref={(id) => hrefToEntry(pathname, params, id)} />}
+        {editable && <EntryMenu matrixId={data.matrixId} entry={entry} version={autosave.versionOf(entry.id)} afterDeleteHref={afterDeleteHref} entryHref={(id) => hrefToEntry(pathname, params, id)} />}
       </div>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_17rem]">
         <Tabs value={current} onValueChange={goToStep} className="min-w-0">
@@ -114,7 +116,7 @@ export function RiskEditor(props: RiskEditorProps) {
   )
 }
 
-function EntryMenu({ matrixId, entry, version, taskHref, entryHref }: { matrixId: string; entry: MiperEntrySnapshot; version: number | undefined; taskHref: string; entryHref: (id: string) => string }) {
+function EntryMenu({ matrixId, entry, version, afterDeleteHref, entryHref }: { matrixId: string; entry: MiperEntrySnapshot; version: number | undefined; afterDeleteHref: string; entryHref: (id: string) => string }) {
   const router = useRouter()
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -134,7 +136,8 @@ function EntryMenu({ matrixId, entry, version, taskHref, entryHref }: { matrixId
     try { state = await deleteMiperEntryAction({ matrixId, entryId: entry.id, expectedVersion: version }) } catch { toast.error("No se pudo eliminar el riesgo."); return } finally { setBusy(false); setConfirming(false) }
     if (!state.ok) { toast.error(state.message ?? "No se pudo eliminar el riesgo."); return }
     toast.success(`Riesgo #${entry.rowNumber} eliminado.`)
-    router.replace(taskHref)
+    // Con ida al servidor: la matriz o la tarea tienen que llegar sin el riesgo borrado.
+    router.replace(afterDeleteHref)
   }
   return (
     <>

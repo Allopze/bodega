@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { taskKeyOf } from "@/lib/prevention/miper/matrix-tree"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
@@ -7,7 +7,9 @@ import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }))
 vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/prevencion/miper/m1", useSearchParams: () => new URLSearchParams("fila=e1") }))
-vi.mock("../../actions", () => ({ duplicateMiperEntryAction: vi.fn(), deleteMiperEntryAction: vi.fn(), deleteMiperControlAction: vi.fn(), addMiperObservationAction: vi.fn(), saveMiperControlAction: vi.fn(), respondMiperObservationAction: vi.fn(), resolveMiperObservationAction: vi.fn(), reopenMiperObservationAction: vi.fn() }))
+const deleteMiperEntryAction = vi.hoisted(() => vi.fn(async () => ({ ok: true, message: "Eliminado" })))
+vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }))
+vi.mock("../../actions", () => ({ duplicateMiperEntryAction: vi.fn(), deleteMiperEntryAction, deleteMiperControlAction: vi.fn(), addMiperObservationAction: vi.fn(), saveMiperControlAction: vi.fn(), respondMiperObservationAction: vi.fn(), resolveMiperObservationAction: vi.fn(), reopenMiperObservationAction: vi.fn() }))
 
 import { RiskEditor, type RiskEditorProps } from "./risk-editor"
 
@@ -117,5 +119,23 @@ describe("RiskEditor", () => {
     render(<RiskEditor {...props({ autosave })} />)
     fireEvent.click(screen.getByRole("button", { name: "Recargar riesgo" }))
     expect(router.refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it("borrar el único riesgo de una tarea vuelve a la matriz; si quedan otros, a la tarea", async () => {
+    const remove = async (entryId: string, rowNumber: number) => {
+      router.replace.mockClear()
+      const { unmount } = render(<RiskEditor {...props({ entryId })} />)
+      fireEvent.keyDown(screen.getByRole("button", { name: `Más acciones del riesgo ${rowNumber}` }), { key: "Enter" })
+      fireEvent.click(screen.getByRole("menuitem", { name: "Eliminar riesgo" }))
+      fireEvent.click(await screen.findByRole("button", { name: "Eliminar riesgo" }))
+      await waitFor(() => expect(router.replace).toHaveBeenCalledTimes(1))
+      unmount()
+      return router.replace.mock.calls[0]![0]
+    }
+    // e3 es el único de «Otra»: la tarea quedaría vacía.
+    expect(await remove("e3", 3)).toBe("/prevencion/miper/m1")
+    expect(deleteMiperEntryAction).toHaveBeenLastCalledWith(expect.objectContaining({ matrixId: "m1", entryId: "e3" }))
+    // e1 comparte «Carga» con e2: se vuelve a esa tarea.
+    expect(await remove("e1", 1)).toBe(`/prevencion/miper/m1?tarea=${taskKeyOf({ activity: "Transporte", task: "Carga" })}`)
   })
 })

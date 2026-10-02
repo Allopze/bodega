@@ -13,8 +13,8 @@ import { filterRows } from "@/lib/prevention/miper/grid-view"
 import { hasEntryFilters, parseMatrixFilters } from "@/lib/prevention/miper/matrix-filters"
 import { buildMatrixTree, findTask } from "@/lib/prevention/miper/matrix-tree"
 import { CLASSIFICATION_CRITERIA } from "@/lib/prevention/miper/methodology"
-import { nextStepFor, type NextStepAction } from "@/lib/prevention/miper/next-step"
-import { changesByEntry, type EntryChange, type MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
+import { nextStepFor, nextStepInView, type NextStepAction } from "@/lib/prevention/miper/next-step"
+import { changesByEntry, type EntryChange } from "@/lib/prevention/miper/snapshot"
 import { hrefToEntry, hrefToFicha, hrefToMatrixWith, hrefToTab, readWorkspaceView, type WorkspaceTab } from "@/lib/prevention/miper/workspace-url"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
 import type { MiperHistoryEvent, MiperWorkspace } from "@/lib/services/miper/queries"
@@ -31,6 +31,7 @@ import { RiskEditor } from "./risk-editor/risk-editor"
 import { SummaryStrip } from "./summary-strip"
 import { TaskView } from "./task-view"
 import { useEntryAutosave } from "./use-entry-autosave"
+import { useRowsFromSource } from "./use-rows-from-source"
 import { WorkflowBar } from "./workflow-bar"
 import { navigateWorkspace, WorkspaceLink } from "./workspace-nav"
 
@@ -48,8 +49,8 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
   // En revisión se muestra la FOTO enviada (lo que se decide); si no, lo vivo.
   const reviewing = mode.canReviewTechnical || mode.canApproveLegal
   const source = reviewing && workspace.openRound ? workspace.openRound.snapshot : workspace.snapshot
-  const [rows, setRows] = useState<MiperEntrySnapshot[]>(source.entries)
-  useEffect(() => { setRows(source.entries) }, [source])
+  // Se resincroniza en el mismo render en que llega una foto nueva (no en un efecto): así la fila recién creada ya está cuando el editor se monta.
+  const [rows, setRows] = useRowsFromSource(source)
   const liveSnapshot = useMemo(() => ({ header: source.header, entries: rows }), [source.header, rows])
   /**
    * El mismo conjunto que el servicio entrega al validador al enviar
@@ -100,7 +101,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
   const task = view.taskKey ? findTask(fullTree, view.taskKey) : null
 
   const versionLabel = workspace.versions[0] ? `v${workspace.versions[0].versionNumber}` : "sin versión aprobada"
-  const step = nextStepFor({
+  const nextStep = nextStepFor({
     mode, status: workspace.matrix.status, reviewState: workspace.matrix.reviewState, hasOpenRound: Boolean(workspace.openRound),
     hasPendingChanges: workspace.pendingDiff.hasChanges, versionLabel, issues, openObservations, rows,
   })
@@ -114,6 +115,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
   const openEntry = (entryId: string) => navigateWorkspace(hrefToEntry(pathname, searchParams, entryId), "push")
   const baseline = reviewing ? workspace.reviewBaselineSnapshot : workspace.lastVersionSnapshot
   const atRoot = !view.taskKey && !view.entryId
+  const step = nextStepInView(nextStep, { atRoot, tab: view.tab, readOnly: Boolean(mode.readOnlyReason) })
   const worksiteLabel = [workspace.matrix.worksiteName, workspace.matrix.period].filter(Boolean).join(" ")
 
   return (
@@ -130,7 +132,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
         )}
       />
       <div className="space-y-3">
-        {atRoot && <NextStepCard step={step} hrefFor={hrefFor} />}
+        <NextStepCard step={step} hrefFor={hrefFor} />
         {reviewing && <Callout tone="info" title="Estás revisando la versión enviada">Los cambios que la prevencionista haga después del envío quedan para la ronda siguiente.</Callout>}
         {intolerable > 0 && (
           <Callout tone="danger" role="alert" title={`${intolerable} riesgo(s) Intolerable(s)`}>

@@ -46,7 +46,8 @@ export function nextStepFor(input: NextStepInput): NextStep | null {
     // «La matriz no tiene registros» es de cabecera, pero no se corrige en la ficha: se agrega una tarea.
     const header = errors.filter((issue) => issue.scope === "header" && issue.field !== "entries")
     if (header.length > 0) return step("warning", `Completa la ficha del documento (${header.length} dato(s))`, header[0]!.message, { kind: "ficha" })
-    if (rows.length === 0) return step("info", "Empieza por la primera tarea", "La matriz todavía no tiene riesgos: usa «Nueva tarea» en la cabecera.")
+    // Sin riesgos no hay tarjeta: el estado vacío de la matriz ya trae «Nueva tarea» justo debajo.
+    if (rows.length === 0) return null
     const pending = new Set(errors.flatMap((issue) => (issue.entryId ? [issue.entryId] : [])))
     if (pending.size > 0) {
       const first = firstPendingBySeverity(rows, pending)
@@ -56,4 +57,17 @@ export function nextStepFor(input: NextStepInput): NextStep | null {
   }
   if (input.status === "published" && input.hasPendingChanges) return step("info", `Hay cambios sin revisar desde ${input.versionLabel}`, "Envíalos a revisión cuando estén listos.")
   return null
+}
+
+/**
+ * Dónde se ve la tarjeta (spec §4). El motivo de sólo lectura se muestra en
+ * todas las vistas —también en la tarea y en el editor, que es donde se intenta
+ * editar—; el resto de los pasos, sólo en la raíz. Ya en Revisión no se ofrece
+ * «Ir a Revisión».
+ */
+export function nextStepInView(step: NextStep | null, view: { atRoot: boolean; tab: string; readOnly: boolean }): NextStep | null {
+  if (!step || (!view.atRoot && !view.readOnly)) return null
+  if (view.tab !== "revision") return step
+  const drop = (action: NextStepAction | null) => (action?.kind === "tab" && action.tab === "revision" ? null : action)
+  return { ...step, action: drop(step.action), secondary: drop(step.secondary) }
 }
