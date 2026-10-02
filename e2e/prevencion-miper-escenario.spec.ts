@@ -167,8 +167,7 @@ test("pasos 1–7: la prevencionista crea la MIPER, la completa, genera el progr
   await expect(nivel(page, /Intolerable\s*·\s*MR 16/)).toBeVisible()
   await expect(page.getByRole("alert").filter({ hasText: "Intolerable" })).toBeVisible()
   await irAPaso(page, "Medidas de control")
-  await elegir(page, "¿Está controlado el riesgo?", "Parcialmente")
-  await guardado(page)
+  await guardado(page, () => elegir(page, "¿Está controlado el riesgo?", "Parcialmente"))
   await agregarMedida(page, { tipo: "III. Controles de ingeniería", descripcion: MEASURE_1, responsable: "Supervisor de turno" })
 
   await crearTarea(page, { actividad: "Mantención del sistema de descarga", tarea: "Mantención preventiva", puesto: "Técnico mecánico", peligro: "Partes móviles" })
@@ -181,8 +180,7 @@ test("pasos 1–7: la prevencionista crea la MIPER, la completa, genera el progr
   await elegir(page, "Consecuencia", /^2 · Media/)
   await expect(nivel(page, /Tolerable\s*·\s*MR 2/)).toBeVisible()
   await irAPaso(page, "Medidas de control")
-  await elegir(page, "¿Está controlado el riesgo?", "Parcialmente")
-  await guardado(page)
+  await guardado(page, () => elegir(page, "¿Está controlado el riesgo?", "Parcialmente"))
   await agregarMedida(page, { tipo: "IV. Controles administrativos", descripcion: MEASURE_2, responsable: "Supervisor de turno" })
   await volverALaTarea(page)
 
@@ -219,8 +217,10 @@ test("pasos 1–7: la prevencionista crea la MIPER, la completa, genera el progr
   // lo dice— y el envío pasa sin abrir el detalle de pendientes.
   await expect(textoVisible(page, "Lista para enviar a revisión")).toBeVisible()
   await cabecera(page).getByRole("button", { name: "Enviar a revisión", exact: true }).click()
-  await expect(page.getByRole("dialog", { name: /^Faltan \d+ datos para enviar$/ })).toHaveCount(0)
+  // Primero el estado nuevo (el envío ya resolvió) y recién entonces la
+  // ausencia del diálogo: antes de eso el «0» pasaba aunque el diálogo fuera a abrirse.
   await expect(estado(page, "Enviado a revisión")).toBeVisible()
+  await expect(page.getByRole("dialog", { name: /^Faltan \d+ datos para enviar$/ })).toHaveCount(0)
 })
 
 test("pasos 8–9: la Jefa observa, la prevencionista corrige y reenvía, la Jefa ve «Modificada»", async ({ browser }) => {
@@ -275,9 +275,8 @@ test("pasos 8–9: la Jefa observa, la prevencionista corrige y reenvía, la Jef
   await prev.getByRole("tab", { name: /Matriz/ }).click()
   await abrirRiesgo(prev, 1, "Correa en movimiento")
   await irAPaso(prev, "Evaluación")
-  await elegir(prev, "Probabilidad", /^2 · Media/)
+  await guardado(prev, () => elegir(prev, "Probabilidad", /^2 · Media/))
   await expect(nivel(prev, /Importante\s*·\s*MR 8/)).toBeVisible()
-  await guardado(prev)
   // La reevaluación tiene que estar en la base antes de reenviar.
   await expect(async () => {
     await prev.reload()
@@ -450,8 +449,7 @@ test("paso 16: un riesgo nuevo al vigente aplica al instante, se envía, se revi
   await elegir(prev, "Consecuencia", /^2 · Media/)
   await expect(nivel(prev, /Tolerable\s*·\s*MR 2/)).toBeVisible()
   await irAPaso(prev, "Medidas de control")
-  await elegir(prev, "¿Está controlado el riesgo?", "No")
-  await guardado(prev)
+  await guardado(prev, () => elegir(prev, "¿Está controlado el riesgo?", "No"))
   // La etiqueta «cambios pendientes» ya podía existir antes de este riesgo, así
   // que esperar sólo eso no prueba que su último dato se guardó: se espera
   // además el «Siguiente paso» que sólo aparece **sin ningún bloqueo** en el

@@ -35,7 +35,8 @@ export const campo = (page: Page | Locator, label: string) => page.getByRole("co
  * Se sale con `blur()` y no con Tab a propósito: Tab enfoca el combobox
  * siguiente, que abre su lista de sugerencias (`absolute`, bajo el campo) sobre
  * los campos de abajo, y el clic siguiente de la prueba caía en esa lista. Que
- * el valor quede guardado lo afirma quien llama, con `guardado()` o recargando.
+ * el valor quede guardado lo afirma quien llama, envolviendo la escritura en
+ * `guardado()` o recargando.
  *
  * El valor se compara sin distinguir mayúsculas: si el diccionario de la faena
  * ya tiene la misma palabra escrita de otra forma, el campo adopta la grafía del
@@ -86,11 +87,38 @@ export async function irAPaso(page: Page, paso: PasoDelRiesgo) {
 export const nivel = (page: Page, texto: RegExp) => page.getByRole("status").filter({ hasText: texto })
 
 /**
- * Espera a que el editor confirme lo último que se cambió: «Guardado a las HH:MM»
- * sólo aparece cuando ya no queda ningún guardado en curso.
+ * Hace `accion` y espera a que el editor confirme ESE guardado.
+ *
+ * Mirar sólo «Guardado a las HH:MM» no alcanza: el rótulo de un guardado
+ * anterior ya dice eso (y en el mismo minuto, con la misma hora), y un campo de
+ * texto guarda recién al salir de él, así que la aserción podía pasar antes de
+ * que el guardado nuevo empezara. Por eso se exige ver «Guardando…» DESPUÉS de
+ * empezar la acción (un `MutationObserver` lo registra aunque dure un cuadro) y
+ * recién entonces «Guardado a las HH:MM», que el editor muestra cuando el riesgo
+ * abierto ya no tiene guardados en curso. Si `accion` hace varios cambios, la
+ * espera cubre al último: cada cambio pinta «Guardando…» en el mismo render que
+ * lo muestra en pantalla.
  */
-export async function guardado(page: Page) {
+export async function guardado(page: Page, accion: () => Promise<unknown>) {
+  await page.evaluate(() => {
+    const scope = window as unknown as { __miperGuardando?: boolean; __miperGuardandoObserver?: MutationObserver }
+    scope.__miperGuardandoObserver?.disconnect()
+    scope.__miperGuardando = false
+    const check = () => {
+      if (Array.from(document.querySelectorAll('[role="status"]')).some((node) => node.textContent === "Guardando…")) scope.__miperGuardando = true
+    }
+    const observer = new MutationObserver(check)
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true })
+    scope.__miperGuardandoObserver = observer
+    // Si ya hay un guardado en curso, el de la acción se suma a esa cola: el
+    // rótulo no vuelve a cambiar a «Guardando…» y «Guardado a las» sólo
+    // aparece cuando terminan todos.
+    check()
+  })
+  await accion()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __miperGuardando?: boolean }).__miperGuardando), { message: "el cambio no inició un guardado («Guardando…»)" }).toBe(true)
   await expect(page.getByRole("status").filter({ hasText: /^Guardado a las \d{2}:\d{2}$/ })).toBeVisible()
+  await page.evaluate(() => (window as unknown as { __miperGuardandoObserver?: MutationObserver }).__miperGuardandoObserver?.disconnect())
 }
 
 /** El N° visible del riesgo abierto en el editor, leído de su subtítulo («Riesgo #3 · Tarea · Puesto»). */
@@ -157,6 +185,15 @@ export async function abrirRiesgo(page: Page, numero: number, peligro: string) {
 
 /** «‹ Volver a la tarea» desde el editor: sale del riesgo (la URL deja de tener `fila=`). */
 export async function volverALaTarea(page: Page) {
-  await page.getByRole("link", { name: /Volver a la tarea/ }).click()
+  await page.getByRole("link", { name: "‹ Volver a la tarea", exact: true }).click()
   await expect(page).not.toHaveURL(/fila=/)
 }
+
+/** «‹ Volver a la matriz» desde la vista de la tarea. */
+export async function volverALaMatriz(page: Page) {
+  await page.getByRole("link", { name: "‹ Volver a la matriz", exact: true }).click()
+  await expect(page).not.toHaveURL(/tarea=/)
+}
+
+/** «‹ Anterior» del pie del editor: el riesgo previo de la tarea. */
+export const anterior = (page: Page) => page.getByRole("link", { name: "‹ Anterior", exact: true })

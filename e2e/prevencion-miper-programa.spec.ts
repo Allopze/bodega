@@ -101,8 +101,7 @@ test("la prevencionista arma la matriz, el envío se bloquea sin medida vinculad
   await elegir(page, "Consecuencia", /^4 · Alta/)
   await expect(nivel(page, /Intolerable\s*·\s*MR 16/)).toBeVisible()
   await irAPaso(page, "Medidas de control")
-  await elegir(page, "¿Está controlado el riesgo?", "Parcialmente")
-  await guardado(page)
+  await guardado(page, () => elegir(page, "¿Está controlado el riesgo?", "Parcialmente"))
   await agregarMedida(page, { tipo: "III. Controles de ingeniería", descripcion: MEASURE_1, responsable: "Supervisor de turno" })
 
   // Riesgo #2: Tolerable (P×C 1×2), con una medida que se parece a la del #1.
@@ -116,8 +115,7 @@ test("la prevencionista arma la matriz, el envío se bloquea sin medida vinculad
   await elegir(page, "Consecuencia", /^2 · Media/)
   await expect(nivel(page, /Tolerable\s*·\s*MR 2/)).toBeVisible()
   await irAPaso(page, "Medidas de control")
-  await elegir(page, "¿Está controlado el riesgo?", "Parcialmente")
-  await guardado(page)
+  await guardado(page, () => elegir(page, "¿Está controlado el riesgo?", "Parcialmente"))
   await agregarMedida(page, { tipo: "IV. Controles administrativos", descripcion: MEASURE_2, responsable: "Supervisor de turno" })
   await volverALaTarea(page)
 
@@ -180,8 +178,10 @@ test("la prevencionista arma la matriz, el envío se bloquea sin medida vinculad
   // lista y el envío pasa sin abrir el detalle de pendientes.
   await expect(textoVisible(page, "Lista para enviar a revisión")).toBeVisible()
   await cabecera(page).getByRole("button", { name: "Enviar a revisión", exact: true }).click()
-  await expect(page.getByRole("dialog", { name: /^Faltan \d+ datos para enviar$/ })).toHaveCount(0)
+  // Primero el estado nuevo (el envío ya resolvió) y recién entonces la
+  // ausencia del diálogo: antes de eso el «0» pasaba aunque el diálogo fuera a abrirse.
   await expect(estado(page, "Enviado a revisión")).toBeVisible()
+  await expect(page.getByRole("dialog", { name: /^Faltan \d+ datos para enviar$/ })).toHaveCount(0)
 })
 
 test("la Jefa aprueba la revisión técnica y la MIPER pasa a Legal y RRHH", async ({ browser }) => {

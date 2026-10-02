@@ -97,8 +97,7 @@ test("la prevencionista crea la MIPER, la completa y la envía a revisión", asy
   await expect(nivel(page, /Intolerable\s*·\s*MR 16/)).toBeVisible()
   await expect(page.getByRole("alert").filter({ hasText: "Intolerable" })).toBeVisible()
   await irAPaso(page, "Medidas de control")
-  await elegir(page, "¿Está controlado el riesgo?", "Parcialmente")
-  await guardado(page)
+  await guardado(page, () => elegir(page, "¿Está controlado el riesgo?", "Parcialmente"))
 
   // Medida con jerarquía, responsable y plazo.
   await agregarMedida(page, { tipo: "III. Controles de ingeniería", descripcion: "Topes de descarga y señalero en pendiente", responsable: "Supervisor de turno" })
@@ -173,9 +172,8 @@ test("la Jefa observa el riesgo y la prevencionista corrige y reenvía", async (
   await prev.getByRole("tab", { name: /Matriz/ }).click()
   await abrirRiesgo(prev, 1, "Camión en pendiente")
   await irAPaso(prev, "Evaluación")
-  await elegir(prev, "Probabilidad", /^2 · Media/)
+  await guardado(prev, () => elegir(prev, "Probabilidad", /^2 · Media/))
   await expect(nivel(prev, /Importante\s*·\s*MR 8/)).toBeVisible()
-  await guardado(prev)
   // La reevaluación tiene que estar en la base antes de reenviar: si no, la
   // ronda llevaría la evaluación anterior y la Jefa no vería ninguna modificación.
   await expect(async () => {
