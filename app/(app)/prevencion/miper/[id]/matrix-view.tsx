@@ -11,10 +11,9 @@ import { ActivitySection } from "./activity-section"
 export function MatrixView({ tree, filtered, editable, incomplete, observed, changes, issuesByEntry, onNewTask, toolbar }: {
   tree: ActivityNode[]; filtered: boolean; editable: boolean
   incomplete: ReadonlySet<string>; observed: ReadonlySet<string>; changes: Map<string, EntryChange>; issuesByEntry: Map<string, CompletenessIssue[]>
-  riskFactors: ReadonlyArray<{ id: string; name: string }>; hasBaseline: boolean
   onNewTask: () => void
   /** La barra de filtros la arma el workspace (necesita la URL); queda como ranura para probar la vista sin ella. */
-  toolbar?: (state: { collapsedAll: boolean; toggleAll: () => void }) => ReactNode
+  toolbar?: (state: { collapsedAll: boolean; toggleAll: () => void; filtered: boolean }) => ReactNode
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const collapsedAll = tree.length > 0 && tree.every((activity) => collapsed.has(activity.key))
@@ -22,7 +21,7 @@ export function MatrixView({ tree, filtered, editable, incomplete, observed, cha
   const toggle = (key: string) => setCollapsed((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next })
   return (
     <div className="space-y-3">
-      {toolbar?.({ collapsedAll, toggleAll })}
+      {toolbar?.({ collapsedAll, toggleAll, filtered })}
       {tree.length === 0 ? (
         filtered
           ? <EmptyState title="Ningún riesgo coincide con los filtros" description="Quita algún filtro o cambia la búsqueda." />

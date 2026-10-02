@@ -11,7 +11,7 @@ import { MatrixView } from "./matrix-view"
 const e = (id: string, rowNumber: number, activity: string, task: string) => ({ id, rowNumber, activity, task, position: "P", location: null, exposedFemale: 0, exposedMale: 1, exposedOther: 0, riskFactorId: null, riskFactor: null, isRoutine: true, hazard: `Peligro ${id}`, risk: "R", probableDamage: "D", probability: 1, consequence: 1, magnitude: 1, classification: "tolerable", controlledStatus: "yes", controls: [] }) as MiperEntrySnapshot
 const rows = [e("a", 1, "Transporte", "Carga"), e("b", 2, "Transporte", "Descarga"), e("c", 3, "Oficina", "Archivo")]
 const ctx = { incomplete: new Set(["a"]), observed: new Set<string>(), modified: new Set<string>() }
-const base = { editable: true, incomplete: ctx.incomplete, observed: ctx.observed, changes: new Map(), issuesByEntry: new Map(), riskFactors: [], hasBaseline: false, onNewTask: vi.fn() }
+const base = { editable: true, incomplete: ctx.incomplete, observed: ctx.observed, changes: new Map(), issuesByEntry: new Map(), onNewTask: vi.fn() }
 
 describe("MatrixView", () => {
   it("muestra cada actividad con sus tareas como enlaces y el avance por tarea", () => {
@@ -37,5 +37,10 @@ describe("MatrixView", () => {
     render(<MatrixView {...base} tree={[]} filtered={false} />)
     fireEvent.click(screen.getByRole("button", { name: "Nueva tarea" }))
     expect(base.onNewTask).toHaveBeenCalled()
+  })
+  it("el título de una actividad con espacios y tildes nombra su región", () => {
+    const accented = [e("z", 1, "Lavado de camión", "Enjuague")]
+    render(<MatrixView {...base} tree={buildMatrixTree(accented, { ...ctx, matching: null })} filtered={false} />)
+    expect(screen.getByRole("region", { name: /Lavado de camión/ })).toBeTruthy()
   })
 })

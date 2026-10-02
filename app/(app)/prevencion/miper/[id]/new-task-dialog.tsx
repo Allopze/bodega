@@ -35,6 +35,12 @@ export function NewTaskDialog({ open, onOpenChange, matrixId, rows, dictionaries
       <Combobox id={`miper-new-task-${key}`} allowCustomValue options={dictionaries[list].map((value) => ({ value, label: value }))} value={values[key]} onChange={set(key)} placeholder="Escribe o elige…" />
     </Field>
   )
+  const emptyValues = { activity: "", task: "", position: "", location: "", hazard: "" }
+  const handleOpenChange = (next: boolean) => {
+    if (!next && busy) return
+    if (!next) setValues(emptyValues)
+    onOpenChange(next)
+  }
   async function create() {
     if (creatingRef.current) return
     creatingRef.current = true
@@ -59,7 +65,7 @@ export function NewTaskDialog({ open, onOpenChange, matrixId, rows, dictionaries
     }
   }
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Nueva tarea</DialogTitle>
@@ -73,7 +79,7 @@ export function NewTaskDialog({ open, onOpenChange, matrixId, rows, dictionaries
           <div className="md:col-span-2">{field("hazard", "Primer peligro", "hazards", false)}</div>
         </div>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>Cancelar</Button>
+          <Button variant="secondary" onClick={() => handleOpenChange(false)} disabled={busy}>Cancelar</Button>
           <Button onClick={() => { void create() }} disabled={!ready} loading={busy}>Crear tarea</Button>
         </DialogFooter>
       </DialogContent>

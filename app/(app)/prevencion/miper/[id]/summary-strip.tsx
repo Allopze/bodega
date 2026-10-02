@@ -45,7 +45,7 @@ export function SummaryStrip({ snapshot, authorName, submittedAt, versionLabel, 
           <dd>
             {onTogglePending ? (
               <button type="button" aria-pressed={pendingActive} onClick={onTogglePending} className={cn(toggleClass, pendingActive && activeClass)}
-                aria-label={`Filtrar la matriz: con pendientes (${entries.length - completeCount})`}>
+                aria-label={`Completos ${completeCount} de ${entries.length}: filtrar los riesgos con pendientes`}>
                 <span className="text-[var(--color-text-subtle)]">Completos</span> <span className="tabular-nums">{completeCount} de {entries.length}</span>
               </button>
             ) : <><span className="text-[var(--color-text-subtle)]">Completos</span> <span className="tabular-nums">{completeCount} de {entries.length}</span></>}
