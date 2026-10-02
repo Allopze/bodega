@@ -56,9 +56,7 @@ Ninguno confirmado. No se modificó código de la aplicación.
 
 ### INCONSISTENCY
 
-1. Spec §5.1 nombra el cajón «Filtros (N)» y la acción «Quitar filtros»; la pantalla muestra
-   «Más filtros» y «Limpiar filtros» (el nombre «Más filtros» sigue la regla A2). Decidir cuál
-   manda y alinear el spec o la pantalla.
+1. Spec §5.1 y manual nombraban el cajón «Filtros (N)» y la acción «Quitar filtros»; la pantalla (`FilterToolbar`) muestra «Más filtros» con contador, el cajón «Filtros avanzados» y «Limpiar filtros». **Resuelto** alineando el manual y el spec a la pantalla.
 2. Rótulos de «Siguiente pendiente»: es botón-enlace en el pie del editor y texto de la tarjeta
    «Siguiente paso» («Empezar por el más grave»); misma acción, dos nombres.
 
@@ -112,7 +110,7 @@ Ninguno confirmado. No se modificó código de la aplicación.
 
 ## Recomendaciones priorizadas
 
-1. Decidir los rótulos de filtros (spec vs pantalla) y de «Siguiente pendiente».
+1. Decidir el rótulo único de «Siguiente pendiente» (los rótulos de filtros ya se alinearon a la pantalla).
 2. Ocultar «Nueva»/«modificado» cuando no hay línea base de comparación.
 3. En 390 px, mostrar sólo el paso activo («Paso 3 de 4») o hacer que la tira se centre en el
    paso activo sin dejar el 1 recortado.

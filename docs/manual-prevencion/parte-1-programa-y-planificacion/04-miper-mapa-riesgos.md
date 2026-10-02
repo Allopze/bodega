@@ -26,7 +26,7 @@ La MIPER ya no se piensa como una planilla que se sube una vez al año, sino com
 
 ## 2. La MIPER es un Documento Vivo por Faena y Período
 
-Cada faena tiene **una MIPER por período**, entendiendo por período el año (2026, 2027, …). Al abrir una MIPER encontrarás su espacio de trabajo con cinco pestañas: **Antecedentes · Matriz · Programa · Revisión · Historial**.
+Cada faena tiene **una MIPER por período**, entendiendo por período el año (2026, 2027, …). Al abrir una MIPER encontrarás su espacio de trabajo con cuatro pestañas: **Matriz · Programa · Revisión · Historial**, y la acción **"Ficha del documento"** en el encabezado, donde se completan los antecedentes.
 
 ### Cómo crear la MIPER de un período nuevo
 
@@ -56,7 +56,7 @@ Si el archivo usa **factores de riesgo que el catálogo no tiene**, la vista pre
 
 ### Antecedentes: los datos que se completan solos
 
-En la pestaña **Antecedentes** se completa el encabezado del formato RE-04. Todo valor prellenado se muestra con su origen ("Desde perfil de empresa: …", "Desde trabajadores activos de la faena: …") y se puede volver a traer con **"Restaurar valor prellenado"**:
+En la **"Ficha del documento"** (botón del encabezado, que abre un panel lateral) se completa el encabezado del formato RE-04. Todo valor prellenado se muestra con su origen ("Desde perfil de empresa: …", "Desde trabajadores activos de la faena: …") y se puede volver a traer con **"Restaurar valor prellenado"**:
 
 *   **Identificación:** Código IPER, Período (fijo al crear), Fecha de elaboración, Fecha de actualización, Razón social, RUT empleador, Dirección, Comuna, Actividad económica principal, N° de adherente y Centro de trabajo.
 *   **Dotación:** N° total de trabajadores y desglose en **hombres, mujeres y otro**. Hombres + mujeres + otro debe sumar el total declarado; al costado se muestra el conteo real de trabajadores activos como referencia.
@@ -84,11 +84,11 @@ La pestaña **Resumen** mira todo el MIPER de tu alcance de una vez. Arriba hay 
 | Tile | Qué cuenta | Al hacer clic |
 |---|---|---|
 | **Por hacer** | Lo que espera tu revisión, tu firma o tu respuesta | abre tu bandeja «Por hacer» |
-| **Intolerables e Importantes** | Las filas en las dos bandas más graves | filtra «Todas» por esas dos bandas |
+| **Intolerables e Importantes** | Los riesgos en las dos bandas más graves | filtra «Todas» por esas dos bandas |
 | **Sin controlar** | Los riesgos no tolerables sin control declarado | filtra «Todas» por «Sin controlar» |
 | **Avance del programa** | Las ocurrencias realizadas del programa | abre «Todas» con la columna **Avance** |
 
-La **franja** informa *MIPER vigentes*, *Con observaciones*, *Tolerables*, *Moderados*, *Medidas pendientes* y *Actividades vencidas*. Debajo, la tabla por faena muestra el estado, la versión, la distribución por clasificación, los riesgos **sin controlar**, el **avance** y cuántas **alertas** (filas Intolerables/Importantes y ocurrencias vencidas o «No se hizo») tiene.
+La **franja** informa *MIPER vigentes*, *Con observaciones*, *Tolerables*, *Moderados*, *Medidas pendientes* y *Actividades vencidas*. Debajo, la tabla por faena muestra el estado, la versión, la distribución por clasificación, los riesgos **sin controlar**, el **avance** y cuántas **alertas** (riesgos Intolerables/Importantes y ocurrencias vencidas o «No se hizo») tiene.
 
 > [!NOTE]
 > El avance del tablero es el **mismo** que deriva el Programa de Trabajo de las ocurrencias (ver "El avance", sección 9). Nunca se ingresa a mano.
@@ -112,7 +112,7 @@ El inicio de Prevención (`/prevencion`) lista los mismos hechos del MIPER —lo
 | **Intolerable** | Rojo sólido, texto blanco, ícono de alerta | No debe comenzar ni continuar el trabajo hasta que se reduzca; si no es posible, se prohíbe. |
 
 > [!WARNING]
-> **RIESGO INTOLERABLE A LA VISTA:** mientras existan filas Intolerables, la matriz y la revisión muestran una alerta crítica con el texto del criterio y el conteo. No es una advertencia que se apague sola: la banda cambia cuando vuelves a evaluar la fila con otra Probabilidad o Consecuencia.
+> **RIESGO INTOLERABLE A LA VISTA:** mientras existan riesgos Intolerables, la matriz y la revisión muestran una alerta crítica con el texto del criterio y el conteo. No es una advertencia que se apague sola: la banda cambia cuando vuelves a evaluar el riesgo con otra Probabilidad o Consecuencia.
 
 ---
 
@@ -157,8 +157,8 @@ Sobre la lista, una franja resume el centro de trabajo, la dotación, las tareas
 ### Buscar y filtrar
 
 *   El buscador **"Buscar en la matriz"** mira actividad, tarea, puesto, lugar, peligro, riesgo, daño y medidas.
-*   El cajón **"Filtros (N)"** reúne clasificación, completitud, "¿Está controlado?", factor de riesgo y marcas (observados, modificados). El número entre paréntesis es la cantidad de filtros activos.
-*   Los filtros viven en la dirección de la página: sobreviven a recargar, y puedes copiar el enlace para compartir la vista. Bajo la barra aparecen como **chips** que se quitan de a uno, o todos con **"Quitar filtros"**.
+*   El botón **"Más filtros"** (con el número de filtros activos) abre el cajón **"Filtros avanzados"**, que reúne clasificación, completitud, "¿Está controlado?", factor de riesgo y marcas (observados, modificados).
+*   Los filtros viven en la dirección de la página: sobreviven a recargar, y puedes copiar el enlace para compartir la vista. Bajo la barra aparecen como **chips** que se quitan de a uno, o todos con **"Limpiar filtros"**.
 *   Con algún filtro activo, las tarjetas se expanden y bajo cada tarea aparecen solo los riesgos que coinciden; los conteos pasan a "x de y".
 *   **"Contraer todo" / "Expandir todo"** pliega o despliega las actividades.
 
@@ -227,16 +227,16 @@ Siempre se prefiere la jerarquía más alta posible: eliminar o sustituir antes 
 
 | Condición | Regla |
 |---|---|
-| Toda fila | Actividad, Tarea, Puesto, Factor de riesgo, Peligro, Riesgo, Daño probable, Probabilidad, Consecuencia y "¿Está controlado?" completos. |
+| Todo riesgo | Actividad, Tarea, Puesto, Factor de riesgo, Peligro, Riesgo, Daño probable, Probabilidad, Consecuencia y "¿Está controlado?" completos. |
 | **Sí** o **Parcialmente** controlado | Al menos una medida registrada. |
 | **Importante** | Al menos una medida; si no está controlado, una medida **con responsable y plazo**. |
 | **Intolerable** | Al menos una medida con responsable y plazo, y advertencia crítica permanente mientras siga en esa banda. |
 | Toda medida | Descripción, tipo (I–V) y plazo. El responsable es obligatorio salvo en riesgos Tolerables. |
 
 > [!TIP]
-> **CONSEJO DE TERRENO:** estas reglas bloquean el **envío a revisión**, no el guardado de una celda. Una fila se completa de a poco: la matriz te va indicando qué falta, y el botón "Enviar a revisión" lista los bloqueos por riesgo (#N°) para corregirlos de una pasada.
+> **CONSEJO DE TERRENO:** estas reglas bloquean el **envío a revisión**, no el guardado de un campo. Un riesgo se completa de a poco: la matriz te va indicando qué falta, y el botón "Enviar a revisión" lista los bloqueos por riesgo (#N°) para corregirlos de una pasada.
 
-La ficha de la fila también permite registrar la **verificación segregada de un control** en `/prevencion/miper/controles/[id]` (MIPER-08), cuando la MIPER está vigente: se anota el resultado (eficaz, parcialmente eficaz o ineficaz) con evidencia, y no puede verificar la misma persona que creó la versión ni quien responde por el control, salvo una excepción fundamentada.
+El editor del riesgo también permite registrar la **verificación segregada de un control** en `/prevencion/miper/controles/[id]` (MIPER-08), cuando la MIPER está vigente: se anota el resultado (eficaz, parcialmente eficaz o ineficaz) con evidencia, y no puede verificar la misma persona que creó la versión ni quien responde por el control, salvo una excepción fundamentada.
 
 ---
 
@@ -278,13 +278,13 @@ graph LR
 
 *   **Quién lo hace:** la Jefatura del Departamento de Prevención (rol `prevencionista`).
 *   **En la plataforma:** abre la MIPER desde su bandeja. Verás una franja de resumen con faena, quién envió, versión, dotación, total de riesgos, distribución por clasificación, no controlados, medidas sin responsable, medidas sin plazo, Importantes e Intolerables.
-*   **Observar:** escribe una **observación por fila** (sobre el riesgo que corresponde) o una observación general en la pestaña **Revisión**. Las filas observadas quedan marcadas en la matriz.
+*   **Observar:** escribe una **observación por riesgo** (sobre el riesgo que corresponde) o una observación general en la pestaña **Revisión**. Los riesgos observados quedan marcadas en la matriz.
 *   **Decidir:** **"Devolver con observaciones"** (vuelve a la prevencionista) o **"Aprobar revisión técnica"** (pasa a Legal y RRHH). También distingue lo nuevo, lo modificado y lo eliminado respecto de la ronda anterior.
 
 ### Paso 3: Responder y reenviar
 
 *   **Quién lo hace:** quien elaboró la MIPER.
-*   **En la plataforma:** la pestaña **Revisión** es tu bandeja: cada observación muestra la fila enlazada y su respuesta. Al responder, la observación pasa a **respondida**. El botón **"Reenviar a revisión"** indica cuántas observaciones faltan por responder: no se puede reenviar con observaciones abiertas.
+*   **En la plataforma:** la pestaña **Revisión** es tu bandeja: cada observación muestra el riesgo enlazado y su respuesta. Al responder, la observación pasa a **respondida**. El botón **"Reenviar a revisión"** indica cuántas observaciones faltan por responder: no se puede reenviar con observaciones abiertas.
 
 ### Paso 4: Aprobación de Legal y RRHH y sellado
 
@@ -309,7 +309,7 @@ Al aprobarse la primera versión del período, la MIPER queda **Vigente**, el pe
 
 El flujo avisa por sí solo en la **campana** de notificaciones, con el **destinatario derivado del permiso y la faena** —nunca a todo el mundo— y **una sola vez por hecho**: volver a pasar por el mismo estado no duplica el aviso.
 
-*   **Por fila:** cuando una fila queda clasificada como **Intolerable**, avisa a quien edita la faena y a la Jefatura. El aviso enlaza directo a esa fila de la matriz.
+*   **Por riesgo:** cuando un riesgo queda clasificada como **Intolerable**, avisa a quien edita la faena y a la Jefatura. El aviso enlaza directo a ese riesgo en la matriz.
 *   **Por paso del flujo:** *"MIPER enviada a revisión"* al siguiente responsable (la Jefatura en la revisión técnica, Legal y RRHH en la firma) y *"MIPER devuelta con observaciones"* a quien la elaboró. Cada **ronda** que vuelve a pasar es un paso nuevo y trae su propio aviso.
 *   **Por el calendario (barrido diario):** *"Actividad del Programa de Trabajo vencida"* (a la ocurrencia pendiente cuya fecha ya pasó) y *"Actividad del Programa registrada como «No se hizo»"* (a la Jefatura). Estos dos no nacen al guardar, sino del barrido diario del programa, porque dependen del calendario.
 
@@ -319,7 +319,7 @@ El aviso queda en la campana; además, si la persona tiene activadas las **notif
 
 ## 8. Versiones Selladas, Cambios Pendientes e Historial
 
-*   **Cada aprobación sella una versión inmutable.** La versión guarda la foto exacta que se revisó (encabezado, filas y medidas), su firma técnica, la de Legal y RRHH, la fecha y el resumen de cambios. No se puede editar ni borrar: es la constancia de lo que estaba aprobado ese día.
+*   **Cada aprobación sella una versión inmutable.** La versión guarda la foto exacta que se revisó (encabezado, riesgos y medidas), su firma técnica, la de Legal y RRHH, la fecha y el resumen de cambios. No se puede editar ni borrar: es la constancia de lo que estaba aprobado ese día.
 *   **La lista de versiones es la hoja *Modificaciones*.** En la pestaña **Historial** están la cadena de MIPER de la faena por período, las versiones selladas de cada una (con enlace y descarga) y la línea de tiempo de los eventos con actor, rol, fecha y hora.
 *   **El MIPER vigente es mutable.** Puedes corregirlo o agregar riesgos sin esperar al año siguiente: el cambio **aplica de inmediato** y queda rotulado como *cambio pendiente de revisión* hasta el próximo sellado. Cuando lo envías, se revisa y se aprueba, se sella la versión siguiente (vN+1) y la anterior sigue consultable.
 *   **Descargar la versión aprobada.** El botón **"Descargar vN (Excel)"** genera el libro RE-04 desde la foto sellada —no desde los datos vivos— con las hojas *RE-04 IPER*, *Programa de Trabajo*, *Modificaciones* y *Criterios de Evaluación IPER*. El mismo libro es el que queda archivado al aprobar.
@@ -345,7 +345,7 @@ La relación con el PDTP es **sólo de cobertura y acreditación**: una medida d
 
 ### La pestaña «Programa» y sus permisos
 
-El programa vive en la pestaña **Programa** del espacio de trabajo de la MIPER, junto a Antecedentes, Matriz, Revisión e Historial. Allí se ve el **encabezado RE-04.1** (título, período, datos de empresa, representante, N° de centros de trabajo —calculado—, fecha de la última revisión sellada y encargado del programa) y la **tabla de actividades** con su avance.
+El programa vive en la pestaña **Programa** del espacio de trabajo de la MIPER, junto a Matriz, Revisión e Historial. Allí se ve el **encabezado RE-04.1** (título, período, datos de empresa, representante, N° de centros de trabajo —calculado—, fecha de la última revisión sellada y encargado del programa) y la **tabla de actividades** con su avance.
 
 | Acción | Quién puede | Permiso |
 |---|---|---|
@@ -388,7 +388,7 @@ graph TD
 El vínculo entre medidas y actividades es **N:M**: una actividad puede nacer de varias medidas, y varias medidas pueden colgar de una misma actividad, sin duplicar el vínculo. Desde una actividad se llega a los riesgos que la originaron, y desde un riesgo a sus medidas, actividades, ocurrencias y evidencias.
 
 > [!WARNING]
-> **INTOLERABLE E IMPORTANTE NO QUEDAN SIN PROGRAMA:** «dejar sin actividad» **no se ofrece** para una medida de un riesgo **Intolerable** o **Importante**: ambos exigen una medida con responsable y plazo, y la plataforma rechaza la decisión nombrando la fila. Además, un riesgo **Intolerable** exige que **al menos una de sus medidas esté vinculada a una actividad del programa** para que la MIPER pueda **enviarse a revisión**.
+> **INTOLERABLE E IMPORTANTE NO QUEDAN SIN PROGRAMA:** «dejar sin actividad» **no se ofrece** para una medida de un riesgo **Intolerable** o **Importante**: ambos exigen una medida con responsable y plazo, y la plataforma rechaza la decisión nombrando el riesgo. Además, un riesgo **Intolerable** exige que **al menos una de sus medidas esté vinculada a una actividad del programa** para que la MIPER pueda **enviarse a revisión**.
 
 ### Las ocurrencias: la agenda de cada actividad
 

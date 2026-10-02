@@ -155,9 +155,9 @@ inmediato, no hay petición `_rsc` y "atrás" sigue funcionando porque cada `pus
 - `FilterToolbar`:
   - Barra visible: el buscador "Buscar en la matriz" (texto de actividad, tarea, puesto, lugar,
     peligro, riesgo, daño y medidas) y "Contraer todo / Expandir todo".
-  - Cajón "Filtros (N)": clasificación (4 casillas), completitud, ¿controlado?, factor y marcas
+  - Cajón "Más filtros (N)": clasificación (4 casillas), completitud, ¿controlado?, factor y marcas
     (observados, modificados).
-  - Bajo la barra, chips removibles y "Quitar filtros".
+  - Bajo la barra, chips removibles y "Limpiar filtros".
 - **Tarjeta por actividad** (`<section aria-labelledby>`):
   - Botón con `aria-expanded`, nombre, "N tareas · M riesgos" y conteo por clasificación con
     `RiskClassificationBadge` en tamaño `sm`.
