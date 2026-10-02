@@ -74,6 +74,20 @@ describe("acciones MIPER: frontera de autorización", () => {
     expect(revalidatePath).not.toHaveBeenCalled()
   })
 
+  it("crear un riesgo (sin entryId) sí revalida: sin eso, «atrás» restaura la página de antes de crearlo", async () => {
+    guardPermission.mockResolvedValue({ session, error: null })
+    saveMiperEntry.mockResolvedValue({ id: "e-new", version: 1, rowNumber: 5, magnitude: null, classification: null })
+    await expect(saveMiperEntryAction({ matrixId: "m1", insertAfterRowNumber: 4, values: { activity: "A", task: "T" } })).resolves.toEqual({ ok: true, data: { id: "e-new", version: 1, rowNumber: 5, magnitude: null, classification: null } })
+    expect(revalidatePath).toHaveBeenCalledWith("/prevencion/miper/m1")
+  })
+
+  it("un guardado rechazado no revalida, ni al crear", async () => {
+    guardPermission.mockResolvedValue({ session, error: null })
+    saveMiperEntry.mockRejectedValueOnce(new RiskLegalDomainError("La MIPER no se puede editar."))
+    await expect(saveMiperEntryAction({ matrixId: "m1", values: { activity: "A" } })).resolves.toEqual({ ok: false, message: "La MIPER no se puede editar." })
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
   it("los rechazos de dominio llegan con su motivo; lo inesperado queda genérico", async () => {
     guardPermission.mockResolvedValue({ session, error: null })
     submitMiperForReview.mockRejectedValueOnce(new RiskLegalDomainError("Responde todas las observaciones antes de reenviar (2 sin responder)."))

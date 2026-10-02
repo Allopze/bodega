@@ -44,4 +44,35 @@ describe("useRowsFromSource", () => {
     act(() => { hook.result.current[1]((rows) => rows.filter((row) => row.id !== "e1")) })
     expect(hook.result.current[0].map((row) => row.id)).toEqual(["e2"])
   })
+
+  it("una foto atrasada (la que Next restaura al volver «atrás») no pisa una fila que el cliente ya guardó en una versión más nueva", () => {
+    // El cliente guardó e1 dos veces (versión 3); la foto que llega es la de antes de esos guardados.
+    const known: Record<string, number> = { e1: 3, e2: 1 }
+    const versionOf = (id: string) => known[id]
+    const first = { entries: [entry("e1", 1), entry("e2", 2)] }
+    const hook = renderHook(({ source, serverVersions }) => useRowsFromSource(source, { serverVersions, versionOf }), {
+      initialProps: { source: first, serverVersions: { e1: 1, e2: 1 } as Record<string, number> },
+    })
+    act(() => { hook.result.current[1]((rows) => rows.map((row) => (row.id === "e1" ? { ...row, hazard: "Guardado en v3" } : row))) })
+
+    const stale = { entries: [entry("e1", 1), { ...entry("e2", 2), hazard: "Cambiado por otra persona" }, entry("e3", 3)] }
+    hook.rerender({ source: stale, serverVersions: { e1: 1, e2: 2, e3: 1 } })
+    // e1: el cliente conoce la v3 y la foto trae la v1 → queda la fila del cliente.
+    expect(hook.result.current[0].find((row) => row.id === "e1")!.hazard).toBe("Guardado en v3")
+    // e2: el servidor trae una versión más nueva que la del cliente → manda la foto.
+    expect(hook.result.current[0].find((row) => row.id === "e2")!.hazard).toBe("Cambiado por otra persona")
+    // Lo demás sale de la foto: aparece e3 y se respeta su orden.
+    expect(hook.result.current[0].map((row) => row.id)).toEqual(["e1", "e2", "e3"])
+  })
+
+  it("con versiones iguales manda la foto del servidor, y sin nada que conservar se devuelve la foto tal cual", () => {
+    const versionOf = (id: string) => ({ e1: 2 } as Record<string, number>)[id]
+    const hook = renderHook(({ source, serverVersions }) => useRowsFromSource(source, { serverVersions, versionOf }), {
+      initialProps: { source: { entries: [entry("e1", 1)] }, serverVersions: { e1: 1 } as Record<string, number> },
+    })
+    act(() => { hook.result.current[1]((rows) => rows.map((row) => ({ ...row, hazard: "Optimista" }))) })
+    const fresh = { entries: [{ ...entry("e1", 1), hazard: "Del servidor" }] }
+    hook.rerender({ source: fresh, serverVersions: { e1: 2 } })
+    expect(hook.result.current[0]).toBe(fresh.entries)
+  })
 })

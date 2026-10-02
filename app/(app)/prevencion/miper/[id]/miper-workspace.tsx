@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
@@ -49,8 +49,14 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
   // En revisión se muestra la FOTO enviada (lo que se decide); si no, lo vivo.
   const reviewing = mode.canReviewTechnical || mode.canApproveLegal
   const source = reviewing && workspace.openRound ? workspace.openRound.snapshot : workspace.snapshot
+  /* La versión que el cliente conoce de cada fila la lleva el guardado
+   * (`useEntryAutosave`), que se arma más abajo porque necesita `setRows`. Este
+   * puente la deja leer a `useRowsFromSource` cuando llega una foto: una foto
+   * atrasada (la que Next restaura al volver «atrás») no pisa lo ya guardado. */
+  const knownVersionOf = useRef<(entryId: string) => number | undefined>(() => undefined)
+  const versionOf = useCallback((entryId: string) => knownVersionOf.current(entryId), [])
   // Se resincroniza en el mismo render en que llega una foto nueva (no en un efecto): así la fila recién creada ya está cuando el editor se monta.
-  const [rows, setRows] = useRowsFromSource(source)
+  const [rows, setRows] = useRowsFromSource(source, { serverVersions: workspace.entryVersions, versionOf })
   const liveSnapshot = useMemo(() => ({ header: source.header, entries: rows }), [source.header, rows])
   /**
    * El mismo conjunto que el servicio entrega al validador al enviar
@@ -90,6 +96,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
   const { setFilter } = useMatrixFilterNavigation()
   // `serverRows` con identidad estable entre fotos: `source.entries`, nunca un `.map` armado aquí.
   const autosave = useEntryAutosave({ matrixId: workspace.matrix.id, entryVersions: workspace.entryVersions, setRows, riskFactors: workspace.riskFactors, serverRows: source.entries })
+  useEffect(() => { knownVersionOf.current = autosave.versionOf }, [autosave.versionOf])
   const editable = mode.canEdit && !reviewing
   const [newTaskOpen, setNewTaskOpen] = useState(false)
 

@@ -88,10 +88,18 @@ export async function discardMiperDraftAction(input: unknown) {
   return guarded("prevention:risk:edit", input, (access) => discardMiperDraft(input, access), { success: "Borrador descartado" })
 }
 
-// ── Filas y medidas. Guardar una celda no revalida: la grilla conserva su
-//    estado y sólo necesita la versión nueva. Los cambios de estructura sí. ──
+// ── Filas y medidas. Guardar un campo no revalida: el editor conserva su
+//    estado y sólo necesita la versión nueva. Los cambios de estructura sí:
+//    crear (sin `entryId`), duplicar y borrar un riesgo. ──
 export async function saveMiperEntryAction(input: unknown) {
-  return guarded("prevention:risk:edit", input, (access) => saveMiperEntry(input, access), { revalidate: false, data: (result) => ({ ...result }) })
+  /* Crear revalida aunque el cliente navegue después con `router.push`: la
+   * navegación nativa del espacio de trabajo (`workspace-nav.tsx`) deja entradas
+   * de historial que heredan la foto del último render del servidor, y Next
+   * reusa esa foto al volver «atrás» salvo que una acción revalide (eso vacía su
+   * caché de atrás/adelante). Sin esto, «atrás» tras «Agregar peligro» mostraba
+   * la tarea sin el riesgo nuevo y con los guardados anteriores revertidos. */
+  const creating = stringFieldOf(input, "entryId") === null
+  return guarded("prevention:risk:edit", input, (access) => saveMiperEntry(input, access), { revalidate: creating, data: (result) => ({ ...result }) })
 }
 export async function duplicateMiperEntryAction(input: unknown) {
   return guarded("prevention:risk:edit", input, (access) => duplicateMiperEntry(input, access), { data: (result) => ({ ...result }), success: "Riesgo duplicado" })
