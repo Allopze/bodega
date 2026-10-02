@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ChoiceCardGroup } from "@/components/ui/choice-card-group"
 import { useOperation } from "@/lib/hooks/use-operation"
@@ -14,10 +13,12 @@ import type { StepProps } from "./types"
 const CONTROLLED = (["yes", "partial", "no"] as const).map((value) => ({ value, title: CONTROLLED_STATUS_LABEL[value] }))
 
 export function MeasuresStep({ entry, data, editable, autosave, issues }: StepProps) {
-  const router = useRouter()
   const [editing, setEditing] = useState<string | "new" | null>(null)
-  const deletion = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
-  const done = () => { setEditing(null); router.refresh() }
+  // Guardar y borrar una medida ya revalidan la página desde la acción
+  // (`saveMiperControlAction`, `deleteMiperControlAction`): la foto nueva llega
+  // con su respuesta. Un `router.refresh()` encima era un segundo viaje RSC.
+  const deletion = useOperation({ feedback: "toast" })
+  const done = () => setEditing(null)
   const controlMessages = issues.filter((issue) => issue.severity === "error" && ["controlledStatus", "controls", "dueDate", "responsible", "description"].includes(issue.field))
   return (
     <div className="space-y-5">

@@ -54,7 +54,8 @@ export function ControlForm({ matrixId, entryId, control, controlVersion, respon
       <Field label="Plazo" required helper="Fecha en que la medida debe estar implementada.">
         <DatePicker ariaLabel="Plazo de la medida" value={dueDate || undefined} onChange={setDueDate} />
       </Field>
-      <Field label="Medida de control" required className="md:col-span-2">
+      {/* El rótulo visible es el nombre accesible (WCAG 2.5.3, «label in name»). */}
+      <Field label="Descripción de la medida" required className="md:col-span-2">
         <Textarea aria-label="Descripción de la medida" value={description} onChange={(event) => setDescription(event.target.value)} rows={3} maxLength={3000} />
       </Field>
       {measureSuggestions.length > 0 && (

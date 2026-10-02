@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { taskKeyOf } from "@/lib/prevention/miper/matrix-tree"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
@@ -9,7 +9,9 @@ const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.
 vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/prevencion/miper/m1", useSearchParams: () => new URLSearchParams("fila=e1") }))
 const deleteMiperEntryAction = vi.hoisted(() => vi.fn(async () => ({ ok: true, message: "Eliminado" })))
 vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }))
-vi.mock("../../actions", () => ({ duplicateMiperEntryAction: vi.fn(), deleteMiperEntryAction, deleteMiperControlAction: vi.fn(), addMiperObservationAction: vi.fn(), saveMiperControlAction: vi.fn(), respondMiperObservationAction: vi.fn(), resolveMiperObservationAction: vi.fn(), reopenMiperObservationAction: vi.fn() }))
+const deleteMiperControlAction = vi.hoisted(() => vi.fn(async () => ({ ok: true, message: "Medida eliminada" })))
+const saveMiperControlAction = vi.hoisted(() => vi.fn(async () => ({ ok: true, message: "Medida guardada", data: { id: "c2", version: 1 } })))
+vi.mock("../../actions", () => ({ duplicateMiperEntryAction: vi.fn(), deleteMiperEntryAction, deleteMiperControlAction, addMiperObservationAction: vi.fn(), saveMiperControlAction, respondMiperObservationAction: vi.fn(), resolveMiperObservationAction: vi.fn(), reopenMiperObservationAction: vi.fn() }))
 
 import { RiskEditor, type RiskEditorProps } from "./risk-editor"
 
@@ -27,7 +29,7 @@ const props = (overrides: Partial<RiskEditorProps> = {}): RiskEditorProps => ({
   entryId: "e1", step: null,
   issuesByEntry: new Map([["e1", [{ scope: "entry", entryId: "e1", field: "controls", message: "Un riesgo Importante o Intolerable exige al menos una medida de control.", severity: "error" }]]]),
   incomplete: new Set(["e1", "e3"]), matching: null, editable: true, mode, change: null, baselineEntry: null,
-  autosave: { commit, status: { state: "idle", savedAt: null, message: null }, fieldError: () => undefined, versionOf: () => 1, clearErrors },
+  autosave: { commit, statusOf: () => ({ state: "idle", savedAt: null, message: null }), fieldError: () => undefined, versionOf: () => 1, clearErrors },
   ...overrides,
 })
 
@@ -117,11 +119,48 @@ describe("RiskEditor", () => {
   it("tras un error de guardado ofrece «Recargar riesgo», que trae el riesgo del servidor y descarta el conflicto", () => {
     router.refresh.mockClear()
     clearErrors.mockClear()
-    const autosave = { ...props().autosave, status: { state: "error" as const, savedAt: null, message: "Versión desactualizada" } }
+    const autosave = { ...props().autosave, statusOf: (id: string) => (id === "e1" ? { state: "error" as const, savedAt: null, message: "Versión desactualizada" } : { state: "idle" as const, savedAt: null, message: null }) }
     render(<RiskEditor {...props({ autosave })} />)
     fireEvent.click(screen.getByRole("button", { name: "Recargar riesgo" }))
     expect(router.refresh).toHaveBeenCalledTimes(1)
     expect(clearErrors).toHaveBeenCalledWith("e1")
+  })
+
+  it("el estado de guardado es el del riesgo abierto: el rechazo de otro riesgo no aparece ni ofrece «Recargar riesgo»", () => {
+    const statuses: Record<string, { state: "error" | "saved"; savedAt: number | null; message: string | null }> = {
+      e1: { state: "saved", savedAt: Date.UTC(2026, 9, 2, 15, 30), message: null },
+      e2: { state: "error", savedAt: null, message: "La fila cambió mientras la editabas." },
+    }
+    const autosave = { ...props().autosave, statusOf: (id: string) => statuses[id] ?? { state: "idle" as const, savedAt: null, message: null } }
+    render(<RiskEditor {...props({ autosave })} />)
+    expect(screen.getByText(/^Guardado a las \d{2}:\d{2}$/).getAttribute("role")).toBe("status")
+    expect(screen.queryByText(/No se guardó/)).toBeNull()
+    expect(screen.queryByRole("button", { name: "Recargar riesgo" })).toBeNull()
+  })
+
+  it("guardar o borrar una medida no pide un router.refresh(): la acción ya revalida la página", async () => {
+    const control = { id: "c1", hierarchy: "administrative" as const, description: "Pausas activas", responsibleUserId: null, responsibleName: "Supervisor", dueDate: "2026-10-30", status: "proposed" }
+    router.refresh.mockClear()
+    render(<RiskEditor {...props({ step: "medidas", rows: [entry("e1", 1, { controls: [control] })], data: { ...props().data, controlVersions: { c1: 1 } } })} />)
+    // Borrar.
+    fireEvent.click(screen.getByRole("button", { name: "Eliminar la medida: Pausas activas" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Eliminar medida" }))
+    await waitFor(() => expect(deleteMiperControlAction).toHaveBeenCalledWith({ matrixId: "m1", controlId: "c1", expectedVersion: 1 }))
+    // Editar y guardar: el formulario se cierra (vuelve la tarjeta).
+    fireEvent.click(screen.getByRole("button", { name: "Editar la medida: Pausas activas" }))
+    fireEvent.click(screen.getByRole("button", { name: "Guardar medida" }))
+    await waitFor(() => expect(saveMiperControlAction).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Editar la medida: Pausas activas" })).toBeTruthy())
+    expect(router.refresh).not.toHaveBeenCalled()
+  })
+
+  it("el rótulo visible de la descripción de la medida es su nombre accesible (WCAG 2.5.3)", () => {
+    render(<RiskEditor {...props({ step: "medidas" })} />)
+    fireEvent.click(screen.getByRole("button", { name: "Agregar medida" }))
+    const group = screen.getByRole("group", { name: "Nueva medida de control" })
+    expect(within(group).getByRole("textbox", { name: "Descripción de la medida" })).toBeTruthy()
+    expect(within(group).getByText("Descripción de la medida")).toBeTruthy()
+    expect(within(group).queryByText("Medida de control")).toBeNull()
   })
 
   it("borrar el único riesgo de una tarea vuelve a la matriz; si quedan otros, a la tarea", async () => {

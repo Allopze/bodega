@@ -66,14 +66,16 @@ export function RiskEditor(props: RiskEditorProps) {
   // Cambiar de paso es estado de la vista: replace y sin ida al servidor (las filas ya están aquí).
   const goToStep = (next: string) => navigateWorkspace(hrefToEntry(pathname, params, entry.id, next as EditorStep), "replace")
   const stepProps = { entry, data, editable, autosave, issues }
+  // El de ESTE riesgo: un rechazo en otro riesgo no se anuncia aquí.
+  const saveStatus = autosave.statusOf(entry.id)
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <WorkspaceLink href={taskHref} className="text-sm font-medium text-[var(--color-primary-ink)] hover:underline">‹ Volver a la tarea</WorkspaceLink>
         <div className="flex items-center gap-2">
-          <SaveStatusIndicator status={autosave.status} editable={editable} />
-          {editable && autosave.status.state === "error" && <Button size="sm" variant="secondary" onClick={() => { autosave.clearErrors(entry.id); router.refresh() }}>Recargar riesgo</Button>}
+          <SaveStatusIndicator status={saveStatus} editable={editable} />
+          {editable && saveStatus.state === "error" && <Button size="sm" variant="secondary" onClick={() => { autosave.clearErrors(entry.id); router.refresh() }}>Recargar riesgo</Button>}
         </div>
       </div>
       <div className="flex flex-wrap items-start justify-between gap-3">
