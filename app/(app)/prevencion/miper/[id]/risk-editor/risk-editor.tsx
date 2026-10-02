@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -15,6 +14,7 @@ import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 import { hrefToEntry, hrefToMatrix, hrefToTask } from "@/lib/prevention/miper/workspace-url"
 import { toast } from "@/lib/toast"
 import { deleteMiperEntryAction, duplicateMiperEntryAction } from "../../actions"
+import { navigateWorkspace, WorkspaceLink } from "../workspace-nav"
 import { EvaluationStep } from "./evaluation-step"
 import { FollowUpStep } from "./follow-up-step"
 import { IdentificationStep } from "./identification-step"
@@ -52,7 +52,7 @@ export function RiskEditor(props: RiskEditorProps) {
 
   if (!entry) {
     if (!missing) return <div aria-busy="true" className="space-y-3"><Skeleton className="h-8 w-1/2" /><Skeleton className="h-48 w-full" /></div>
-    return <EmptyState title="Este riesgo ya no existe" description="Puede haberse eliminado o ser de otra versión de la MIPER." action={<Button asChild><Link href={hrefToMatrix(pathname, params)}>Volver a la matriz</Link></Button>} />
+    return <EmptyState title="Este riesgo ya no existe" description="Puede haberse eliminado o ser de otra versión de la MIPER." action={<Button asChild><WorkspaceLink href={hrefToMatrix(pathname, params)}>Volver a la matriz</WorkspaceLink></Button>} />
   }
 
   const issues = issuesByEntry.get(entry.id) ?? []
@@ -61,13 +61,14 @@ export function RiskEditor(props: RiskEditorProps) {
   const siblings = siblingsInTask(rows, entry.id)
   const nextPending = nextPendingId(rows, entry.id, incomplete, matching)
   const taskHref = hrefToTask(pathname, params, taskKeyOf(entry))
-  const goToStep = (next: string) => router.replace(hrefToEntry(pathname, params, entry.id, next as EditorStep), { scroll: false })
+  // Cambiar de paso es estado de la vista: replace y sin ida al servidor (las filas ya están aquí).
+  const goToStep = (next: string) => navigateWorkspace(hrefToEntry(pathname, params, entry.id, next as EditorStep), "replace")
   const stepProps = { entry, data, editable, autosave, issues }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link href={taskHref} className="text-sm font-medium text-[var(--color-primary-ink)] hover:underline">‹ Volver a la tarea</Link>
+        <WorkspaceLink href={taskHref} className="text-sm font-medium text-[var(--color-primary-ink)] hover:underline">‹ Volver a la tarea</WorkspaceLink>
         <div className="flex items-center gap-2">
           <SaveStatusIndicator status={autosave.status} editable={editable} />
           {editable && autosave.status.state === "error" && <Button size="sm" variant="secondary" onClick={() => router.refresh()}>Recargar riesgo</Button>}
@@ -101,12 +102,12 @@ export function RiskEditor(props: RiskEditorProps) {
       </div>
       <nav aria-label="Recorrer riesgos" className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)] py-3">
         <div className="flex items-center gap-2">
-          {siblings?.previousId ? <Button asChild size="sm" variant="secondary"><Link href={hrefToEntry(pathname, params, siblings.previousId)}>‹ Anterior</Link></Button> : <Button size="sm" variant="secondary" disabled>‹ Anterior</Button>}
+          {siblings?.previousId ? <Button asChild size="sm" variant="secondary"><WorkspaceLink href={hrefToEntry(pathname, params, siblings.previousId)}>‹ Anterior</WorkspaceLink></Button> : <Button size="sm" variant="secondary" disabled>‹ Anterior</Button>}
           <span className="text-xs tabular-nums text-[var(--color-text-subtle)]">{siblings?.position} de {siblings?.total} en la tarea</span>
-          {siblings?.nextId ? <Button asChild size="sm" variant="secondary"><Link href={hrefToEntry(pathname, params, siblings.nextId)}>Siguiente ›</Link></Button> : <Button size="sm" variant="secondary" disabled>Siguiente ›</Button>}
+          {siblings?.nextId ? <Button asChild size="sm" variant="secondary"><WorkspaceLink href={hrefToEntry(pathname, params, siblings.nextId)}>Siguiente ›</WorkspaceLink></Button> : <Button size="sm" variant="secondary" disabled>Siguiente ›</Button>}
         </div>
         {nextPending
-          ? <Button asChild size="sm"><Link href={hrefToEntry(pathname, params, nextPending)}>Siguiente pendiente</Link></Button>
+          ? <Button asChild size="sm"><WorkspaceLink href={hrefToEntry(pathname, params, nextPending)}>Siguiente pendiente</WorkspaceLink></Button>
           : <p className="text-sm text-[var(--color-success-ink)]">No quedan otros riesgos pendientes{matching ? " en este filtro" : ""}.</p>}
       </nav>
     </div>

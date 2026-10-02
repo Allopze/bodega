@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -12,6 +11,7 @@ import { CLASSIFICATION_LABEL, type RiskClassification } from "@/lib/prevention/
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
 import { addMiperObservationAction } from "../../actions"
 import { ObservationItem } from "../observation-item"
+import { WorkspaceLink } from "../workspace-nav"
 import type { RiskEditorData } from "./types"
 
 function display(value: unknown, field?: string) {
@@ -36,7 +36,7 @@ export function FollowUpStep({ entry, data, mode, change, baselineEntry, issues 
         <h3 className="text-sm font-semibold">Programa de Trabajo ({activities.length})</h3>
         {programMessage && <p className="rounded-lg bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">{programMessage}</p>}
         {activities.length === 0
-          ? <p className="text-sm text-[var(--color-text-subtle)]">Ninguna medida de este riesgo está programada todavía. <Link className="underline" href={`/prevencion/miper/${data.matrixId}?tab=programa`}>Ir al programa</Link></p>
+          ? <p className="text-sm text-[var(--color-text-subtle)]">Ninguna medida de este riesgo está programada todavía. <WorkspaceLink className="underline" href={`/prevencion/miper/${data.matrixId}?tab=programa`}>Ir al programa</WorkspaceLink></p>
           : <ul className="space-y-1 text-sm">{activities.map((activity) => <li key={activity.actionId}><span className="font-medium">Actividad #{activity.actionNumber}</span>: {activity.description}</li>)}</ul>}
       </section>
       <section aria-label="Observaciones del riesgo" className="space-y-2">

@@ -54,7 +54,7 @@ export function ActivitySection({ activity, expanded, onToggle, filtered, incomp
                 </span>
                 <span className="col-start-1 md:col-start-auto"><Counts counts={task.counts} /></span>
                 <span className="col-start-1 text-xs tabular-nums text-[var(--color-text-subtle)] md:col-start-auto">{task.complete} de {task.entries.length} completos{task.observed ? ` · ${task.observed} observado(s)` : ""}{task.modified ? ` · ${task.modified} modificado(s)` : ""}</span>
-                <CaretRight aria-hidden className="col-start-2 row-start-1 size-4 text-[var(--color-text-subtle)] md:col-start-auto" />
+                <CaretRight aria-hidden className="col-start-2 row-start-1 size-4 text-[var(--color-text-subtle)] md:col-start-auto md:row-start-auto" />
               </WorkspaceLink>
               {filtered && (
                 <ul className="space-y-2 pl-3">

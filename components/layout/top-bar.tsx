@@ -37,9 +37,9 @@ const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/r
  *  segmentos consume `useSafeShellHeader` ni renderiza un `DataTable`. */
 const FORM_ROUTE = /\/(editar|nuevo|crear)(\/|$)/
 
-/** El espacio de trabajo de una MIPER tiene dos tablas (matriz y programa)
- *  con buscadores propios rotulados: la regla de búsqueda pide ocultar el de
- *  la shell. La portada, el catálogo y la ficha de control lo conservan. */
+/** En el espacio de trabajo de una MIPER la matriz y el programa tienen
+ *  buscadores propios y rotulados: la regla de búsqueda pide ocultar el de la
+ *  shell. La portada, el catálogo y la ficha de control lo conservan. */
 const OWN_SEARCH_PATTERNS = [/^\/prevencion\/miper\/(?!factores(?:\/|$)|controles(?:\/|$))[^/]+$/]
 
 export function hidesShellSearch(pathname: string) {

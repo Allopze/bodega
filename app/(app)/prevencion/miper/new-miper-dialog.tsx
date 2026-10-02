@@ -39,7 +39,7 @@ export function NewMiperDialog({ worksites, currentYear }: { worksites: Creation
     }), (result) => {
       setOpen(false)
       const id = result.data?.id
-      if (typeof id === "string") router.push(`/prevencion/miper/${id}?tab=antecedentes`)
+      if (typeof id === "string") router.push(`/prevencion/miper/${id}?ficha=1`)
     })
   }
 

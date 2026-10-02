@@ -102,9 +102,14 @@ describe("RiskEditor", () => {
     const { unmount } = render(<RiskEditor {...props()} />)
     expect(screen.queryByRole("button", { name: "Observar este riesgo" })).toBeNull()
     unmount()
+    router.replace.mockClear()
+    const replaceState = vi.spyOn(window.history, "replaceState").mockImplementation(() => {})
     render(<RiskEditor {...props({ mode: { ...mode, canObserve: true } })} />)
     fireEvent.click(screen.getByRole("button", { name: "Observar este riesgo" }))
-    expect(router.replace).toHaveBeenCalledWith(expect.stringContaining("paso=seguimiento"), { scroll: false })
+    // Sin ida al servidor: el paso cambia con el historial nativo, no con router.replace.
+    expect(replaceState).toHaveBeenCalledWith(null, "", expect.stringContaining("paso=seguimiento"))
+    expect(router.replace).not.toHaveBeenCalled()
+    replaceState.mockRestore()
   })
   it("tras un error de guardado ofrece «Recargar riesgo»", () => {
     router.refresh.mockClear()
