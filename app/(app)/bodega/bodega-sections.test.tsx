@@ -35,7 +35,6 @@ function line(overrides: Partial<WorksiteStockWithProduct> & { id: string }): Wo
     worksiteId: "ws-1",
     productId: "p-1",
     quantity: 0,
-    minStock: 0,
     lastMovementAt: null,
     updatedAt: "2026-08-10T00:00:00.000Z",
     product: { name: "Buzo Dupont Tyvek", sku: "EPP-TRECK-008", unitOfMeasure: "unidad" },
@@ -48,42 +47,7 @@ function line(overrides: Partial<WorksiteStockWithProduct> & { id: string }): Wo
 
 afterEach(cleanup)
 
-describe("StockSection · modo bajo mínimo", () => {
-  it("lista la línea agotada con mínimo definido: es la que cuenta el KPI del encabezado", () => {
-    render(
-      <StockSection
-        worksites={[{ id: "ws-1", name: "Biodiversa" }]}
-        stockByWorksite={{ "ws-1": [line({ id: "s-agotada", quantity: 0, minStock: 5 })] }}
-        stockState="low"
-      />,
-    )
-
-    // Antes el filtro exigía `quantity > 0` y esta fila era invisible, así que
-    // el KPI decía "1 bajo mínimo" y la vista "Nada bajo el mínimo".
-    expect(screen.getByTestId("grupo-ws-1").textContent).toContain("s-agotada")
-  })
-
-  it("no rotula 'Sin stock' a una faena llena que sólo no tiene nada bajo el mínimo", () => {
-    render(
-      <StockSection
-        worksites={[
-          { id: "ws-1", name: "Biodiversa" },
-          { id: "ws-2", name: "Masisa" },
-        ]}
-        stockByWorksite={{
-          "ws-1": [line({ id: "s-1", quantity: 1, minStock: 5 })],
-          "ws-2": [line({ id: "s-2", worksiteId: "ws-2", quantity: 200 })],
-        }}
-        stockState="low"
-      />,
-    )
-
-    expect(screen.queryByText(/Sin stock:/)).toBeNull()
-    expect(screen.queryByText(/Masisa/)).toBeNull()
-  })
-})
-
-describe("StockSection · modo normal", () => {
+describe("StockSection", () => {
   it("el pie 'Sin stock' nombra sólo las faenas realmente vacías", () => {
     render(
       <StockSection
@@ -121,11 +85,11 @@ describe("StockSection · modo normal", () => {
     expect(grupo).not.toContain("s-cero")
   })
 
-  it("oculta las líneas en cero cuando no se pide el filtro de mínimo", () => {
+  it("oculta las líneas en cero sin nada por recibir", () => {
     render(
       <StockSection
         worksites={[{ id: "ws-1", name: "Biodiversa" }]}
-        stockByWorksite={{ "ws-1": [line({ id: "s-cero", quantity: 0, minStock: 5 })] }}
+        stockByWorksite={{ "ws-1": [line({ id: "s-cero", quantity: 0 })] }}
       />,
     )
 

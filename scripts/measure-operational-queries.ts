@@ -493,7 +493,6 @@ async function seedMediumDataset(db: ReturnType<typeof drizzle<typeof schema>>) 
       worksiteId,
       productId,
       quantity: (index % 20) + 1,
-      minStock: index % 9 === 0 ? 8 : 0,
       updatedAt: now,
     })),
   )

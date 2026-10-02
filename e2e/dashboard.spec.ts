@@ -421,17 +421,15 @@ test.describe("Dashboard con rol restringido", () => {
   })
 
   /*
-   * Con las ranuras, este rol ve **Stock crítico**: tiene `warehouse:view_stock`
-   * y la ranura de riesgo cae en stock al no tener incidentes ni CAPA.
-   *
-   * Con el corte anterior quedaba fuera —la propia auditoría 2026-07-30 lo dejó
-   * anotado como "detalle que se presta a error"— y su sparkline, construido y
-   * probado en esa misma pasada, era código inalcanzable.
+   * Hasta 2026-10-02 la ranura de riesgo de este rol caía en **Stock crítico**
+   * (tiene `warehouse:view_stock` y no tiene incidentes ni CAPA). El stock
+   * mínimo se retiró, así que ahora esa ranura se cede.
    */
-  test("la ranura de riesgo le entrega Stock crítico, que antes quedaba cortado", async ({ page }) => {
+  test("ya no muestra Stock crítico: sin incidentes ni CAPA la ranura de riesgo se cede", async ({ page }) => {
     const strip = page.getByRole("region", { name: "Indicadores Operacionales" })
 
-    await expect(strip.getByText("Stock crítico", { exact: true })).toBeVisible()
+    await expect(strip.getByText("Stock crítico", { exact: true })).toHaveCount(0)
+    await expect(page.getByText("productos con stock crítico")).toHaveCount(0)
     // Cumplimiento cae en "Por recibir" al no tener PDTP.
     await expect(strip.getByText("Por recibir", { exact: true })).toBeVisible()
   })

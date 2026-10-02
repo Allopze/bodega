@@ -60,7 +60,7 @@ describe("getOperationalSnapshotHistory", () => {
     const history = await getOperationalSnapshotHistory(session)
 
     expect(history.backlog_requests).toEqual([])
-    expect(history.stock_alerts).toEqual([])
+    expect(history.backlog_pdtp).toEqual([])
   })
 
   it("sums every visible worksite per day, in chronological order", async () => {
@@ -98,14 +98,25 @@ describe("getOperationalSnapshotHistory", () => {
     selectResults.push({ data: [{ id: "ws-1" }] })
     selectResults.push({ data: [
       snap("backlog_orders", "ws-1", "2026-07-28", 7),
-      snap("stock_alerts", "ws-1", "2026-07-28", 2),
-      snap("stock_alerts", "ws-1", "2026-07-29", 5),
+      snap("backlog_requests", "ws-1", "2026-07-28", 2),
+      snap("backlog_requests", "ws-1", "2026-07-29", 5),
     ]})
 
     const history = await getOperationalSnapshotHistory(session)
 
     expect(history.backlog_orders).toEqual([7])
-    expect(history.stock_alerts).toEqual([2, 5])
+    expect(history.backlog_requests).toEqual([2, 5])
     expect(history.backlog_pdtp).toEqual([])
+  })
+
+  // `stock_alerts` se retiró con el stock mínimo, pero sus filas siguen en la
+  // tabla: ninguna serie puede volver a dibujarlas.
+  it("ignores leftover stock_alerts rows", async () => {
+    selectResults.push({ data: [{ id: "ws-1" }] })
+    selectResults.push({ data: [snap("stock_alerts", "ws-1", "2026-07-28", 2)] })
+
+    const history = await getOperationalSnapshotHistory(session)
+
+    expect(Object.keys(history).sort()).toEqual(["backlog_capa", "backlog_orders", "backlog_pdtp", "backlog_requests"])
   })
 })

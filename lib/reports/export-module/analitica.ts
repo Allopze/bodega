@@ -29,7 +29,6 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
     ["KPI", "Gasto período anterior", `${data.kpis.spendVariationPct ?? "sin base"}% variación`, data.kpis.previousTotalSpend],
     ["KPI", "Órdenes de compra", "Cantidad del período", data.kpis.purchaseOrderCount],
     ["KPI", "Aprobaciones pendientes", "Ítems solicitados pendientes", data.kpis.pendingApprovals],
-    ["KPI", "Stock crítico", "Productos bajo mínimo", data.kpis.criticalStockCount],
     ...(canViewFuel ? [["KPI", "Combustible", `${data.kpis.fuelLoadCount} cargas`, data.kpis.fuelLiters] as ReportCell[]] : []),
     ...data.spendByMonth.map((row) => [
       "Tendencia mensual",
@@ -63,12 +62,6 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
       `${row.type} · ${row.totalLiters} L · ${row.loadCount} cargas`,
       canViewMaintenanceCosts ? row.totalOperationalCost : row.totalFuelAmount,
     ]) : []),
-    ...data.stockRisks.map((row) => [
-      "Stock crítico",
-      row.productName,
-      `${row.worksiteName} · stock ${row.currentQty} / mínimo ${row.minStock}`,
-      row.currentQty,
-    ]),
     ...data.eppDeliveries.map((row) => [
       "EPP",
       row.productName,
@@ -98,7 +91,6 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
         ["Gasto período anterior", `${data.kpis.spendVariationPct ?? "sin base"}% variación`, data.kpis.previousTotalSpend],
         ["Órdenes de compra", "Cantidad del período", data.kpis.purchaseOrderCount],
         ["Aprobaciones pendientes", "Ítems solicitados pendientes", data.kpis.pendingApprovals],
-        ["Stock crítico", "Productos bajo mínimo", data.kpis.criticalStockCount],
         ...(canViewFuel ? [["Litros combustible", `${data.kpis.fuelLoadCount} cargas`, data.kpis.fuelLiters] as ReportCell[]] : []),
         ["Promedio OC", "Monto promedio de OC", data.kpis.averageOrderAmount],
       ],
@@ -129,11 +121,6 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
         ? [row.plate, row.type, row.totalFuelAmount, row.totalServiceAmount, row.totalOperationalCost, row.totalLiters, row.loadCount, row.lastOdometerReading, row.lastHourMeterReading]
         : [row.plate, row.type, row.totalFuelAmount, row.totalLiters, row.loadCount, row.lastOdometerReading, row.lastHourMeterReading]),
     } satisfies ReportSheet] : []),
-    {
-      worksheetName: "Stock",
-      headers: ["Producto", "SKU", "Faena", "Stock", "Mínimo"],
-      rows: data.stockRisks.map((row) => [row.productName, row.sku, row.worksiteName, row.currentQty, row.minStock]),
-    },
     {
       worksheetName: "EPP",
       headers: ["Producto", "Trabajador", "Faena", "Cantidad", "Entregas"],

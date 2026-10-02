@@ -1,5 +1,5 @@
 /**
- * Unit tests for bodega actions — setMinStock, adjustStock and returnStock.
+ * Unit tests for bodega actions — adjustStock and returnStock.
  *
  * Covers:
  *  1. Permission denied for each action
@@ -16,7 +16,6 @@ const mockAuthFn = vi.hoisted(() => vi.fn())
 const mockRegisterStockAdjustment = vi.hoisted(() => vi.fn())
 const mockRegisterStockReturn = vi.hoisted(() => vi.fn())
 const mockClosePhysicalInventoryCount = vi.hoisted(() => vi.fn())
-const mockRecordAudit = vi.hoisted(() => vi.fn())
 
 // El guard de módulo consulta `system_settings` en cada verificación de permiso
 // (CO-007). Estas pruebas mockean sólo las tablas de su caso, así que se
@@ -38,13 +37,9 @@ vi.mock("@/lib/services/stock", () => ({
 vi.mock("@/lib/services/physical-inventory", () => ({
   closePhysicalInventoryCount: mockClosePhysicalInventoryCount,
 }))
-vi.mock("@/lib/audit", () => ({ recordAudit: mockRecordAudit }))
 
 const mockDb = {
-  query: { worksiteStock: { findFirst: vi.fn() } },
   select: vi.fn(),
-  update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })) })),
-  transaction: vi.fn(),
 }
 
 vi.mock("@/db", () => ({ db: mockDb }))
@@ -70,18 +65,6 @@ describe("bodega actions", () => {
     mockRegisterStockAdjustment.mockResolvedValue({ id: "adjustment-1", code: "AJU-2026-0001" })
     mockRegisterStockReturn.mockResolvedValue({ id: "return-1", code: "DEV-2026-0001" })
     mockClosePhysicalInventoryCount.mockResolvedValue({ id: "count-1", code: "CON-2026-0001", adjustmentCount: 2 })
-    mockDb.query.worksiteStock.findFirst.mockResolvedValue(null)
-    mockDb.transaction.mockImplementation(async (fn) => fn({
-      select: vi.fn(() => ({
-        from: vi.fn(() => ({
-          where: vi.fn(() => ({
-            for: vi.fn().mockResolvedValue([{ id: "stock-1", worksiteId: "ws-1", minStock: 2 }]),
-          })),
-        })),
-      })),
-      update: mockDb.update,
-    }))
-
     // Default select chain for returnStock prior movements
     const selectChain = {
       from: vi.fn().mockReturnThis(),
@@ -90,62 +73,6 @@ describe("bodega actions", () => {
       then: (resolve: (v: unknown[]) => void) => Promise.resolve([]).then(resolve),
     }
     mockDb.select.mockReturnValue(selectChain)
-  })
-
-  // ── setMinStockAction ───────────────────────────────────────────────────
-
-  describe("setMinStockAction", () => {
-    it("denies without warehouse:register_movement", async () => {
-      mockAuthFn.mockResolvedValue(makeSession("other:perm"))
-      const { setMinStockAction } = await import("@/app/(app)/bodega/actions")
-      const fd = new FormData()
-      fd.set("stockId", "stock-1")
-      fd.set("minStock", "10")
-      const result = await setMinStockAction({ ok: false }, fd)
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain("Sin permisos")
-    })
-
-    it("returns error when stock not found", async () => {
-      mockAuthFn.mockResolvedValue(makeSession("warehouse:register_movement"))
-      mockDb.query.worksiteStock.findFirst.mockResolvedValue(null)
-      const { setMinStockAction } = await import("@/app/(app)/bodega/actions")
-      const fd = new FormData()
-      fd.set("stockId", "nonexistent")
-      fd.set("minStock", "10")
-      const result = await setMinStockAction({ ok: false }, fd)
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain("Stock no encontrado")
-    })
-
-    it("denies access to stock in different worksite", async () => {
-      mockAuthFn.mockResolvedValue(makeSession("warehouse:register_movement", ["ws-1"]))
-      mockDb.query.worksiteStock.findFirst.mockResolvedValue({ id: "stock-1", worksiteId: "ws-other" })
-      const { setMinStockAction } = await import("@/app/(app)/bodega/actions")
-      const fd = new FormData()
-      fd.set("stockId", "stock-1")
-      fd.set("minStock", "10")
-      const result = await setMinStockAction({ ok: false }, fd)
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain("No tienes acceso")
-    })
-
-    it("updates min stock on happy path", async () => {
-      mockAuthFn.mockResolvedValue(makeSession("warehouse:register_movement", ["ws-1"]))
-      mockDb.query.worksiteStock.findFirst.mockResolvedValue({ id: "stock-1", worksiteId: "ws-1" })
-      const { setMinStockAction } = await import("@/app/(app)/bodega/actions")
-      const fd = new FormData()
-      fd.set("stockId", "stock-1")
-      fd.set("minStock", "10")
-      const result = await setMinStockAction({ ok: false }, fd)
-      expect(result.ok).toBe(true)
-      expect(result.message).toContain("Stock mínimo actualizado")
-      expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
-        entityType: "worksite_stock",
-        oldState: { minStock: 2 },
-        newState: { minStock: 10 },
-      }), expect.anything())
-    })
   })
 
   // ── adjustStockAction ───────────────────────────────────────────────────

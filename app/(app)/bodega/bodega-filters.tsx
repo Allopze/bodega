@@ -21,7 +21,6 @@ export interface BodegaFiltersProps {
     q?: string
     /** Faena efectiva ya resuelta: `""` significa todas las visibles. */
     faena?: string
-    stock?: string
     tipo?: string
     producto?: string
     desde?: string
@@ -29,17 +28,12 @@ export interface BodegaFiltersProps {
   }
 }
 
-const STOCK_STATE_OPTIONS = [
-  { value: "low", label: "Bajo el mínimo" },
-  { value: "warn", label: "Por agotarse" },
-]
-
 const TYPE_OPTIONS = Object.entries(MOVEMENT_TYPE_LABELS).map(([value, label]) => ({ value, label }))
 
 /** Parámetros que sólo tienen sentido en una vista: "Limpiar" y el cambio de
  *  vista los borran para que ninguna pantalla quede filtrada por un control que
  *  no está en ella. */
-const VIEW_PARAMS = ["stock", "tipo", "producto", "desde", "hasta", "page", "kardex_page"]
+const VIEW_PARAMS = ["tipo", "producto", "desde", "hasta", "page", "kardex_page"]
 
 /**
  * Filtros de Bodega, sincronizados con la URL y aplicados en el servidor.
@@ -84,10 +78,6 @@ export function BodegaFilters({ view, worksites, products = [], ownWorksiteId = 
     else if (!faena && ownWorksiteId) {
       chips.push({ key: "faena", label: "Faena", value: ALL_WORKSITES, displayValue: "Todas las faenas" })
     }
-  }
-  if (view === "stock" && current.stock) {
-    const option = STOCK_STATE_OPTIONS.find((item) => item.value === current.stock)
-    if (option) chips.push({ key: "stock", label: "Estado", value: current.stock, displayValue: option.label })
   }
   if (view === "kardex") {
     if (current.tipo) {
@@ -139,17 +129,6 @@ export function BodegaFilters({ view, worksites, products = [], ownWorksiteId = 
         // parámetro devolvería a la bodega propia y no habría cómo ver el resto.
         onValueChange={(value) => setFilter("faena", value || (ownWorksiteId ? ALL_WORKSITES : ""))}
       />
-
-      {view === "stock" && (
-        <OptionSelect
-          aria-label="Filtrar por estado de stock"
-          className="h-11 w-full text-xs sm:h-8 sm:w-44"
-          emptyLabel="Todo el stock"
-          options={STOCK_STATE_OPTIONS}
-          value={current.stock ?? ""}
-          onValueChange={(value) => setFilter("stock", value)}
-        />
-      )}
 
       {view === "kardex" && (
         <>

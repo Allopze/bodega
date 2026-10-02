@@ -73,7 +73,7 @@ describe("el Resumen no vuelve a caerse entero por un bloque", () => {
       "loadPdtpComplianceSummary", "getActivePdtpProgram", "listPdtpPrograms",
       "getCapaDashboardCounts", "getIncidentDashboardCounts",
       "getOperationalTrendHistory", "getOperationalSnapshotHistory",
-      "getOperationalBacklogComparisons", "getCriticalStockAlertCount",
+      "getOperationalBacklogComparisons",
     ]) {
       const llamada = new RegExp(`optionalBlock\\([^)]*?${fuente}|optionalBlock\\("[^"]+", ${fuente}`)
       expect(llamada.test(source), `${fuente} se carga sin degradación`).toBe(true)

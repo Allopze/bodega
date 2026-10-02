@@ -8,10 +8,6 @@ export interface WorksiteProductOption {
   /** Saldo actual en la faena. Viaja siempre: corregir un número que no ves es
    *  como se registran los ajustes equivocados. */
   quantity:      number
-  minStock:      number
-  /** `null` cuando el producto nunca tuvo movimiento en la faena y por tanto no
-   *  existe fila en `worksite_stock`: no se le puede fijar mínimo todavía. */
-  stockId:       string | null
 }
 
 export interface WorksiteReturnOption {

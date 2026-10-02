@@ -2,19 +2,15 @@
 
 import { safeActionMessage } from "@/lib/action-error"
 
-import { db } from "@/db"
-import { worksiteStock } from "@/db/schema"
-import { eq, inArray } from "drizzle-orm"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { closePhysicalInventoryCount, savePhysicalInventoryDraft } from "@/lib/services/physical-inventory"
 import { registerStockAdjustment, registerStockDiscard, registerStockReturn } from "@/lib/services/stock"
 import {
-  setMinStockSchema, setMinStockBulkSchema, returnStockSchema, adjustStockSchema,
+  returnStockSchema, adjustStockSchema,
   discardStockSchema, type ActionState,
 }  from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
-import { recordAudit } from "@/lib/audit"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 const REVALIDATE = "/bodega"
@@ -43,66 +39,6 @@ function readCountedItems(formData: FormData) {
       }
     })
     .filter((item) => item.productId && Number.isFinite(item.countedQuantity))
-}
-
-// ── Set minStock threshold ───────────────────────────────────────────────────
-
-export async function setMinStockAction(
-  _prev: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  let session
-  try { session = await requirePermission("warehouse:register_movement") }
-  catch { return { ok: false, message: "Sin permisos" } }
-
-  const parsed = setMinStockSchema.safeParse({
-    stockId:  formData.get("stockId"),
-    minStock: formData.get("minStock"),
-  })
-
-  if (!parsed.success) {
-    return { ok: false, message: "Valor inválido" }
-  }
-
-  const { stockId, minStock } = parsed.data
-
-  try {
-    const stockRow = await db.query.worksiteStock.findFirst({ where: eq(worksiteStock.id, stockId) })
-    if (!stockRow) return { ok: false, message: "Stock no encontrado" }
-    if (!canAccessWorksite(session, stockRow.worksiteId)) {
-      return { ok: false, message: "No tienes acceso a esta faena" }
-    }
-
-    await db.transaction(async (tx) => {
-      const [lockedStock] = await tx
-        .select()
-        .from(worksiteStock)
-        .where(eq(worksiteStock.id, stockId))
-        .for("update")
-      if (!lockedStock) throw new Error("Stock no encontrado")
-      if (!canAccessWorksite(session, lockedStock.worksiteId)) {
-        throw new Error("No tienes acceso a esta faena")
-      }
-
-      await tx.update(worksiteStock)
-        .set({ minStock, updatedAt: new Date().toISOString() })
-        .where(eq(worksiteStock.id, stockId))
-      await recordAudit({
-        userId: session.user.id,
-        userEmail: session.user.email ?? undefined,
-        action: "update",
-        entityType: "worksite_stock",
-        entityId: lockedStock.id,
-        oldState: { minStock: lockedStock.minStock },
-        newState: { minStock },
-      }, tx)
-    })
-    revalidateOperationalViews([REVALIDATE])
-    return { ok: true, message: `Stock mínimo actualizado a ${minStock}` }
-  } catch (e) {
-    logger.error("[setMinStockAction]", e)
-    return { ok: false, message: "Error al actualizar stock mínimo" }
-  }
 }
 
 // ── Adjust stock (manual correction) ────────────────────────────────────────
@@ -246,89 +182,6 @@ export async function closePhysicalInventoryCountAction(
   } catch (e) {
     logger.error("[closePhysicalInventoryCountAction]", e)
     return { ok: false, message: safeActionMessage(e, "Error al cerrar conteo fisico") }
-  }
-}
-
-// ── Set minStock in bulk (una faena completa) ───────────────────────────────
-
-export async function setMinStockBulkAction(
-  _prev: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  let session
-  // Mismo permiso que la edición fila a fila: es la misma operación, en lote.
-  try { session = await requirePermission("warehouse:register_movement") }
-  catch { return { ok: false, message: "Sin permisos" } }
-
-  const worksiteId = String(formData.get("worksiteId") ?? "")
-  const stockIds = formValues(formData, "minStockId")
-  const rawValues = formValues(formData, "minStockValue")
-
-  // Una celda en blanco significa "no tocar". Sin este filtro `Number("")` es 0
-  // y guardar el formulario pondría el umbral en cero a toda la faena.
-  const items = stockIds
-    .map((stockId, index) => ({ stockId, raw: rawValues[index]?.trim() ?? "" }))
-    .filter((row) => row.stockId && row.raw !== "")
-    .map((row) => ({ stockId: row.stockId, minStock: Number(row.raw) }))
-
-  const parsed = setMinStockBulkSchema.safeParse({ worksiteId, items })
-  if (!parsed.success) {
-    return { ok: false, message: items.length === 0 ? "Escribe al menos un mínimo" : "Revisa los valores ingresados" }
-  }
-
-  if (!canAccessWorksite(session, parsed.data.worksiteId)) {
-    return { ok: false, message: "No tienes acceso a esta faena" }
-  }
-
-  try {
-    let changed = 0
-    await db.transaction(async (tx) => {
-      const ids = parsed.data.items.map((item) => item.stockId)
-      const locked = await tx
-        .select()
-        .from(worksiteStock)
-        .where(inArray(worksiteStock.id, ids))
-        .for("update")
-      const byId = new Map(locked.map((row) => [row.id, row]))
-
-      for (const item of parsed.data.items) {
-        const row = byId.get(item.stockId)
-        if (!row) throw new Error("Alguna línea de stock ya no existe")
-        // Alcance verificado fila a fila y no sólo sobre la faena del formulario:
-        // los ids viajan en el cliente y podrían apuntar a otra parte.
-        if (row.worksiteId !== parsed.data.worksiteId || !canAccessWorksite(session, row.worksiteId)) {
-          throw new Error("No tienes acceso a esta faena")
-        }
-        if (row.minStock === item.minStock) continue
-        changed += 1
-        await tx.update(worksiteStock)
-          .set({ minStock: item.minStock, updatedAt: new Date().toISOString() })
-          .where(eq(worksiteStock.id, item.stockId))
-        await recordAudit({
-          userId: session.user.id,
-          userEmail: session.user.email ?? undefined,
-          action: "update",
-          entityType: "worksite_stock",
-          entityId: row.id,
-          oldState: { minStock: row.minStock },
-          newState: { minStock: item.minStock },
-        }, tx)
-      }
-    })
-
-    // Sólo en éxito: un error revierte la transacción y no hay nada que
-    // revalidar. (Hasta 2026-09-24, además, revalidar volvía a montar la
-    // plataforma entera y el usuario perdía lo tecleado en el formulario.)
-    revalidateOperationalViews([REVALIDATE])
-    return {
-      ok: true,
-      message: changed === 0
-        ? "Sin cambios: los mínimos ya tenían esos valores"
-        : `${changed} ${changed === 1 ? "mínimo actualizado" : "mínimos actualizados"}`,
-    }
-  } catch (e) {
-    logger.error("[setMinStockBulkAction]", e)
-    return { ok: false, message: safeActionMessage(e, "Error al guardar los mínimos") }
   }
 }
 

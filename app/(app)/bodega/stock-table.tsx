@@ -2,18 +2,10 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useActionState } from "react"
-import { toast } from "@/lib/toast"
-import { CaretDown, CaretRight, Check, Info, PencilSimple, X } from "@phosphor-icons/react"
+import { CaretDown, CaretRight, Info } from "@phosphor-icons/react"
 import type { WorksiteStockWithProduct } from "./types"
-import { MetaBadge } from "@/components/states/state-badge"
-import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Input } from "@/components/ui/input"
 import { formatQty, formatDate, formatDateRelative } from "@/lib/utils"
-import { setMinStockAction } from "./actions"
-import { INITIAL_STATE } from "@/lib/form-state"
-import type { ActionState } from "@/lib/validation/operations"
 import { StockExportButton } from "./stock-export-button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -25,11 +17,10 @@ export interface StockTableProps {
     items: WorksiteStockWithProduct[]
   }>
   canExport?: boolean
-  canSetMinStock?: boolean
 }
 
 type GroupBy = "faena" | "producto"
-type SortKey = "name" | "quantity" | "minStock" | "lastMovementAt"
+type SortKey = "name" | "quantity" | "lastMovementAt"
 type SortDir = "asc" | "desc"
 
 /** Una banda de la tabla: el encabezado del grupo y sus filas ya rotuladas. */
@@ -103,8 +94,6 @@ function sortRows(rows: StockGroup["rows"], key: SortKey, dir: SortDir): StockGr
     switch (key) {
       case "quantity":
         return (a.item.quantity - b.item.quantity) * factor
-      case "minStock":
-        return (a.item.minStock - b.item.minStock) * factor
       case "lastMovementAt": {
         // Sin movimiento va siempre al final, mire hacia donde mire el orden:
         // un "—" no es ni el más viejo ni el más nuevo.
@@ -121,8 +110,6 @@ function sortRows(rows: StockGroup["rows"], key: SortKey, dir: SortDir): StockGr
   })
 }
 
-const NO_RECORD_MIN_STOCK = "Se define al llegar"
-
 const GROUP_BY_STORAGE_KEY = "bodega:stock-group-by"
 const COLLAPSED_STORAGE_KEY = "bodega:stock-collapsed"
 const GROUP_BY_LABEL: Record<GroupBy, string> = { faena: "Por faena", producto: "Por producto" }
@@ -133,8 +120,8 @@ const INCOMING_DEFINITION =
  * `sessionStorage` y no la URL: agrupar es preferencia de vista y se aplica en
  * cliente sobre filas ya cargadas. En la URL obligaría a un viaje al servidor, y
  * en estado de React sola se perdería al recargar o al volver a Bodega desde
- * otra pantalla (hasta 2026-09-24 la borraba también cada revalidación —guardar
- * un mínimo, por ejemplo—, que volvía a montar la plataforma entera).
+ * otra pantalla (hasta 2026-09-24 la borraba también cada revalidación, que
+ * volvía a montar la plataforma entera).
  */
 function useGroupBy(): [GroupBy, (value: GroupBy) => void] {
   const [groupBy, setGroupBy] = React.useState<GroupBy>("faena")
@@ -185,116 +172,6 @@ function useCollapsedGroups(): [Set<string>, (id: string) => void] {
   }, [])
 
   return [collapsed, toggle]
-}
-
-function MinStockCell({
-  stockId, currentMin, disabled = false, disabledReason,
-}: {
-  stockId: string
-  currentMin: number
-  disabled?: boolean
-  /** Se dice cuando no es cuestión de permisos sino de que todavía no se puede. */
-  disabledReason?: string
-}) {
-  const [editing, setEditing] = React.useState(false)
-  const [value, setValue] = React.useState(String(currentMin))
-  const formRef = React.useRef<HTMLFormElement>(null)
-
-  const [state, action] = useActionState<ActionState, FormData>(setMinStockAction, INITIAL_STATE)
-
-  const cancel = React.useCallback(() => {
-    setEditing(false)
-    setValue(String(currentMin))
-  }, [currentMin])
-
-  React.useEffect(() => {
-    if (state.ok && state.message) {
-      toast.success(state.message)
-      setEditing(false)
-    } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
-      // Sin esta rama, "Sin permisos" / "No tienes acceso a esta faena" /
-      // "Error al actualizar" no se veían: la celda se quedaba abierta como si
-      // el clic no hubiera ocurrido.
-      toast.error(state.message)
-    }
-  }, [state])
-
-  if (!editing) {
-    if (disabledReason) {
-      return <span className="text-[11px] text-[var(--color-text-faint)]">{disabledReason}</span>
-    }
-    if (disabled) {
-      return currentMin > 0
-        ? <span className="font-mono text-xs tabular-nums text-[var(--color-text-subtle)]">{formatQty(currentMin, "")}</span>
-        : <span className="text-[11px] text-[var(--color-text-faint)]">—</span>
-    }
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          // El mínimo puede haber cambiado con la celda montada (la hoja de
-          // stock mínimo edita la faena entera): se parte del valor actual.
-          setValue(String(currentMin))
-          setEditing(true)
-        }}
-        // Mismo `-my-3` que el botón de definición: 44 px táctiles sin bajar
-        // "Definir" respecto de la fecha que tiene al lado en la tarjeta.
-        className="-my-3 inline-flex min-h-11 min-w-11 items-center justify-end gap-1 text-xs text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)] sm:my-0 sm:min-h-6 sm:min-w-6"
-        title={currentMin > 0 ? "Editar stock mínimo" : "Definir stock mínimo"}
-        aria-label={currentMin > 0 ? "Editar stock mínimo" : "Definir stock mínimo"}
-      >
-        {currentMin > 0 ? (
-          <span className="font-mono tabular-nums">{formatQty(currentMin, "")}</span>
-        ) : (
-          <span>Definir</span>
-        )}
-        <PencilSimple size={11} />
-      </button>
-    )
-  }
-
-  return (
-    <form
-      ref={formRef}
-      action={action}
-      className="flex items-center justify-end gap-1"
-      // Escape sale sin guardar. Sin esto, un clic accidental en el lápiz dejaba
-      // la fila trabada en modo edición: la única salida era enviar o recargar.
-      onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); cancel() } }}
-    >
-      <input type="hidden" name="stockId" value={stockId} />
-      <Input
-        name="minStock"
-        type="number"
-        min="0"
-        step="1"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        className="w-20 h-7 text-xs tabular-nums"
-        autoFocus
-        aria-label="Stock mínimo"
-      />
-      <Button
-        type="submit"
-        variant="ghost"
-        size="icon-mobile-sm"
-        aria-label="Guardar stock mínimo"
-        className="text-[var(--color-success)]"
-      >
-        <Check size={14} />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-mobile-sm"
-        aria-label="Cancelar edición del stock mínimo"
-        onClick={cancel}
-        className="text-[var(--color-text-subtle)]"
-      >
-        <X size={14} />
-      </Button>
-    </form>
-  )
 }
 
 /** Encabezado ordenable. `aria-sort` acompaña al indicador visual para que el
@@ -366,12 +243,10 @@ function AvailabilityHeader({ label, definition }: { label: string; definition: 
   )
 }
 
-export function StockTable({ worksites, canExport, canSetMinStock = true }: StockTableProps) {
+export function StockTable({ worksites, canExport }: StockTableProps) {
   const allItems = worksites.flatMap((ws) => ws.items)
   const productCount = new Set(allItems.map((item) => item.productId)).size
   const incomingOnlyCount = allItems.filter((item) => item.quantity <= 0 && item.incoming > 0).length
-  const lowStockCount = allItems.filter((item) => item.minStock > 0 && item.quantity <= item.minStock).length
-  const noThresholds = allItems.every((item) => item.minStock === 0)
   const [groupBy, setGroupBy] = useGroupBy()
   const [collapsed, toggleCollapsed] = useCollapsedGroups()
   const [sort, setSort] = React.useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" })
@@ -420,29 +295,12 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
               </button>
             ))}
           </div>
-          {lowStockCount > 0 && (
-            <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-full)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-2.5 py-1 text-xs font-semibold text-[var(--color-signal-ink)]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-signal)]" />
-              {lowStockCount} bajo mínimo
-            </span>
-          )}
           <StockExportButton
             worksites={worksites.map((ws) => ({ id: ws.id, name: ws.name }))}
             canExport={canExport ?? false}
           />
         </div>
       </div>
-
-      {/* Un aviso una vez, en vez de N celdas repitiendo "Sin mínimo": sin
-          umbrales, el KPI, el badge del menú y las alertas están apagados. */}
-      {noThresholds && allItems.length > 0 && canSetMinStock && (
-        <p className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-2.5 text-xs text-[var(--color-text-muted)]">
-          Ningún producto tiene stock mínimo definido, así que las alertas de quiebre están apagadas.{" "}
-          <span className="font-medium text-[var(--color-text)]">
-            Usa &quot;Registrar movimiento → Definir stock mínimo&quot; para fijarlos por faena de una vez.
-          </span>
-        </p>
-      )}
 
       {allItems.length === 0 ? (
         <EmptyState
@@ -461,33 +319,26 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                 </h3>
                 {group.rows.map(({ item: s, title, subtitle, worksiteId }) => {
                   const unit = s.product?.unitOfMeasure ?? "u"
-                  const lowStock = s.minStock > 0 && s.quantity <= s.minStock
 
                   return (
                     <article
                       key={s.id}
-                      className={[
-                        "rounded-[var(--radius-lg)] border bg-[var(--color-surface)] p-4",
-                        lowStock ? "border-[var(--color-signal-line)]" : "border-[var(--color-border)]",
-                      ].join(" ")}
+                      className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          {s.hasStockRecord ? (
-                            <Link
-                              href={`/bodega?vista=kardex&producto=${s.productId}&faena=${worksiteId}`}
-                              className="text-sm font-medium text-[var(--color-text)] underline-offset-2 hover:underline"
-                            >
-                              {title}
-                            </Link>
-                          ) : (
-                            <span className="text-sm font-medium text-[var(--color-text)]">{title}</span>
-                          )}
-                          {subtitle && (
-                            <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{subtitle}</p>
-                          )}
-                        </div>
-                        {lowStock && <MetaBadge meta={{ label: "Bajo mínimo", variant: "signal" }} dot className="shrink-0" />}
+                      <div className="min-w-0">
+                        {s.hasStockRecord ? (
+                          <Link
+                            href={`/bodega?vista=kardex&producto=${s.productId}&faena=${worksiteId}`}
+                            className="text-sm font-medium text-[var(--color-text)] underline-offset-2 hover:underline"
+                          >
+                            {title}
+                          </Link>
+                        ) : (
+                          <span className="text-sm font-medium text-[var(--color-text)]">{title}</span>
+                        )}
+                        {subtitle && (
+                          <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{subtitle}</p>
+                        )}
                       </div>
                       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                         <div>
@@ -516,17 +367,6 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                               : "—"}
                           </dd>
                         </div>
-                        <div className="text-right">
-                          <dt className="text-[var(--color-text-subtle)]">Mínimo</dt>
-                          <dd className="mt-0.5 flex justify-end">
-                            <MinStockCell
-                              stockId={s.id}
-                              currentMin={s.minStock}
-                              disabled={!canSetMinStock}
-                              disabledReason={s.hasStockRecord ? undefined : NO_RECORD_MIN_STOCK}
-                            />
-                          </dd>
-                        </div>
                       </dl>
                     </article>
                   )
@@ -540,16 +380,14 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
               desalineadas entre grupos. Los anchos viven en el <colgroup>. */}
           <div className="hidden md:block">
             <TableRoot className="rounded-none border-0">
-            <Table className="min-w-[1024px] table-fixed text-sm">
+            <Table className="min-w-[768px] table-fixed text-sm">
               <caption className="sr-only">
                 Stock por producto, agrupado por {groupBy === "faena" ? "faena" : "producto"}
               </caption>
               <colgroup>
                 <col className="w-80" />
                 <col className="w-32" />
-                <col className="w-32" />
                 <col className="w-36" />
-                <col className="w-32" />
                 <col className="w-44" />
               </colgroup>
               <TableHeader>
@@ -559,18 +397,12 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                     sortKey="name" active={sort.key === "name"} dir={sort.dir} onSort={handleSort}
                     className="px-5 py-2.5 text-left font-semibold"
                   />
-                  <TableHead className="text-left font-semibold">Estado</TableHead>
                   <SortableHeader
                     label="En bodega"
                     sortKey="quantity" active={sort.key === "quantity"} dir={sort.dir} onSort={handleSort}
                     className="px-5 py-2.5 text-right font-semibold"
                   />
                   <AvailabilityHeader label="Por recibir" definition={INCOMING_DEFINITION} />
-                  <SortableHeader
-                    label="Mínimo"
-                    sortKey="minStock" active={sort.key === "minStock"} dir={sort.dir} onSort={handleSort}
-                    className="px-5 py-2.5 text-right font-semibold"
-                  />
                   <SortableHeader
                     label="Último movimiento"
                     sortKey="lastMovementAt" active={sort.key === "lastMovementAt"} dir={sort.dir} onSort={handleSort}
@@ -588,7 +420,7 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                     <TableRow>
                       <TableHead
                         scope="rowgroup"
-                        colSpan={6}
+                        colSpan={4}
                         className="bg-[var(--color-surface-2)] px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
                       >
                         {/* Un <button> y no <details>: `details` no es válido
@@ -606,76 +438,46 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                         </button>
                       </TableHead>
                     </TableRow>
-                    {group.rows.map(({ item: s, title, subtitle, worksiteId }) => {
-                      const lowStock = s.minStock > 0 && s.quantity <= s.minStock
-
-                      return (
-                        <TableRow key={s.id} hidden={isCollapsed} className="hover:bg-[var(--color-surface-2)] transition-colors">
-                          <TableCell>
-                            {/* La fila lleva a su propio kardex: antes hacer clic
-                                en un producto no hacía nada. Lo que nunca entró
-                                a la faena no tiene movimientos que mostrar. */}
-                            {s.hasStockRecord ? (
-                              <Link
-                                href={`/bodega?vista=kardex&producto=${s.productId}&faena=${worksiteId}`}
-                                className="font-medium text-[var(--color-text)] underline-offset-2 hover:underline"
-                              >
-                                {title}
-                              </Link>
-                            ) : (
-                              <span className="font-medium text-[var(--color-text)]">{title}</span>
-                            )}
-                            {subtitle && (
-                              <p className="mt-0.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{subtitle}</p>
-                            )}
-                          </TableCell>
-                          {/* Sólo se rotula lo que tiene algo que decir: una
-                              columna entera repitiendo "Sin mínimo" era ruido. */}
-                          <TableCell>
-                            {lowStock && (
-                              <div className="flex flex-col items-start gap-1">
-                                <MetaBadge meta={{ label: "Bajo mínimo", variant: "signal" }} dot />
-                                {/* Detectar el quiebre y no poder pedirlo era el
-                                    ciclo que quedaba abierto: el enlace abre el
-                                    creador con faena, producto y déficit. */}
-                                <Link
-                                  href={`/solicitudes/nueva?faena=${worksiteId}&producto=${s.productId}&cantidad=${Math.max(1, Math.ceil(s.minStock - s.quantity))}`}
-                                  className="text-[11px] font-medium text-[var(--color-signal-ink)] underline-offset-2 hover:underline"
-                                >
-                                  Reponer
-                                </Link>
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span className="font-mono text-sm font-semibold tabular-nums text-[var(--color-text)]">
-                              {formatQty(s.quantity)}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-sm tabular-nums">
-                            {formatQty(s.incoming)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <MinStockCell
-                              stockId={s.id}
-                              currentMin={s.minStock}
-                              disabled={!canSetMinStock}
-                              disabledReason={s.hasStockRecord ? undefined : NO_RECORD_MIN_STOCK}
-                            />
-                          </TableCell>
-                          <TableCell className="text-right text-xs text-[var(--color-text-subtle)]">
-                            {s.lastMovementAt ? (
-                              <>
-                                <span className="tabular-nums">{formatDate(s.lastMovementAt)}</span>
-                                <span className="mt-0.5 block text-[11px] text-[var(--color-text-faint)]">
-                                  {formatDateRelative(s.lastMovementAt)}
-                                </span>
-                              </>
-                            ) : "—"}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
+                    {group.rows.map(({ item: s, title, subtitle, worksiteId }) => (
+                      <TableRow key={s.id} hidden={isCollapsed} className="hover:bg-[var(--color-surface-2)] transition-colors">
+                        <TableCell>
+                          {/* La fila lleva a su propio kardex: antes hacer clic
+                              en un producto no hacía nada. Lo que nunca entró
+                              a la faena no tiene movimientos que mostrar. */}
+                          {s.hasStockRecord ? (
+                            <Link
+                              href={`/bodega?vista=kardex&producto=${s.productId}&faena=${worksiteId}`}
+                              className="font-medium text-[var(--color-text)] underline-offset-2 hover:underline"
+                            >
+                              {title}
+                            </Link>
+                          ) : (
+                            <span className="font-medium text-[var(--color-text)]">{title}</span>
+                          )}
+                          {subtitle && (
+                            <p className="mt-0.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{subtitle}</p>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span className="font-mono text-sm font-semibold tabular-nums text-[var(--color-text)]">
+                            {formatQty(s.quantity)}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm tabular-nums">
+                          {formatQty(s.incoming)}
+                        </TableCell>
+                        <TableCell className="text-right text-xs text-[var(--color-text-subtle)]">
+                          {s.lastMovementAt ? (
+                            <>
+                              <span className="tabular-nums">{formatDate(s.lastMovementAt)}</span>
+                              <span className="mt-0.5 block text-[11px] text-[var(--color-text-faint)]">
+                                {formatDateRelative(s.lastMovementAt)}
+                              </span>
+                            </>
+                          ) : "—"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 )
               })}

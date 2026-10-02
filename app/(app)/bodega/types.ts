@@ -6,10 +6,8 @@ export interface WorksiteStockWithProduct {
   /** Lo aprobado en solicitudes que todavía no llega a esta faena. */
   incoming: number
   /** `false`: el producto nunca entró a esta faena y la fila existe sólo por
-   *  lo que está por recibir. Sin registro de stock no hay mínimo que fijar
-   *  ni kardex que mirar. */
+   *  lo que está por recibir. Sin registro de stock no hay kardex que mirar. */
   hasStockRecord: boolean
-  minStock: number
   lastMovementAt: string | null
   updatedAt: string
   product: { name: string; sku: string | null; unitOfMeasure: string } | null

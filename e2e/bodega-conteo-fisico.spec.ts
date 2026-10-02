@@ -131,26 +131,19 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await expect(page.getByText("Dañado en e2e").first()).toBeVisible()
   })
 
-  test("define stock mínimo para toda una faena de una vez", async ({ page }) => {
+  // El stock mínimo y la columna Estado se retiraron el 2026-10-02.
+  test("ya no ofrece stock mínimo ni estado", async ({ page }) => {
     await page.goto("/bodega")
+
+    await expect(page.getByRole("columnheader", { name: "En bodega" })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("columnheader", { name: "Estado", exact: true })).toHaveCount(0)
+    await expect(page.getByRole("columnheader", { name: "Mínimo", exact: true })).toHaveCount(0)
+    await expect(page.getByRole("combobox", { name: "Filtrar por estado de stock" })).toHaveCount(0)
+    await expect(page.getByText(/stock mínimo/i)).toHaveCount(0)
+
     await page.getByRole("button", { name: "Registrar movimiento" }).click()
-    await page.getByRole("button", { name: /Definir stock mínimo/ }).click()
-    await page.getByRole("combobox", { name: "Faena", exact: true }).click()
-    // La comprobación posterior carga la faena primaria del usuario. Elegir la
-    // primera opción hacía que el resultado dependiera del orden del catálogo.
-    await page.getByRole("option", { name: "Faena E2E", exact: true }).click()
-
-    const firstMin = page.locator('input[name="minStockValue"]').first()
-    await expect(firstMin).toBeVisible({ timeout: 15_000 })
-    await firstMin.fill("3")
-    await page.getByRole("button", { name: "Guardar mínimos" }).click()
-    await expect(page.getByRole("dialog")).toHaveCount(0, { timeout: 20_000 })
-
-    // Con un mínimo definido, la bodega deja de anunciar que las alertas de
-    // quiebre están apagadas: eso es lo que el usuario ve al recargar.
-    await page.goto("/bodega")
-    await expect(page.getByText(/Ningún producto tiene stock mínimo definido/))
-      .toHaveCount(0, { timeout: 15_000 })
+    await expect(page.getByRole("button", { name: /Conteo físico/ })).toBeVisible()
+    await expect(page.getByRole("button", { name: /Definir stock mínimo/ })).toHaveCount(0)
   })
 
   test("las guías de despacho tienen entrada en el menú", async ({ page }) => {

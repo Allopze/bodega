@@ -127,7 +127,7 @@ describe("getAnalyticsDashboard", () => {
       toDate: "2026-06-30",
     })
 
-    expect(selectCallCount).toBe(12)
+    expect(selectCallCount).toBe(10)
     expect(data.kpis).toMatchObject({ fuelLiters: 0, fuelLoadCount: 0 })
     expect(data.spendByModule.some((row) => row.module === "Combustible")).toBe(false)
     expect(data.vehicleCosts).toEqual([])
@@ -140,7 +140,6 @@ describe("getAnalyticsDashboard", () => {
       { data: [{ totalAmount: 420_000, loadCount: 7, totalLiters: 350 }] },
       { data: [{ totalAmount: 300_000 }] },
       { data: [{ pendingApprovals: 2 }] },
-      { data: [{ criticalStockCount: 3 }] },
       { data: [
         { month: "2026-06", module: "Compras", totalAmount: 1_200_000 },
       ] },
@@ -162,9 +161,6 @@ describe("getAnalyticsDashboard", () => {
       { data: [{ id: "ws-1", name: "Faena Norte", module: "Combustible", totalAmount: 420_000 }] },
       { data: [{ id: "veh-1", plate: "AA-BB-11", type: "camioneta", totalFuelAmount: 420_000, totalLiters: 350, loadCount: 7 }] },
       { data: [] },
-      { data: [
-        { productId: "prod-1", productName: "Guante cabritilla", sku: "EPP-001", worksiteName: "Faena Norte", currentQty: 2, minStock: 10 },
-      ] },
       { data: [
         { productId: "prod-2", productName: "Casco", sku: "EPP-002", totalOut: 18, movementCount: 6 },
       ] },
@@ -198,16 +194,14 @@ describe("getAnalyticsDashboard", () => {
     expect(data.vehicleCosts[0]).toMatchObject({ plate: "AA-BB-11", totalOperationalCost: 420_000 })
     expect(data.alerts).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        type: "stock_bajo",
-        severity: "critical",
-        entityLabel: "Guante cabritilla",
-      }),
-      expect.objectContaining({
         type: "proveedor_concentrado",
         severity: "medium",
         module: "Proveedores",
       }),
     ]))
+    // El stock mínimo se retiró: Analítica ya no consulta ni alerta quiebres.
+    expect(data.alerts.some((alert) => alert.type === "stock_bajo")).toBe(false)
+    expect(data).not.toHaveProperty("stockRisks")
   })
 
   it("adds maintenance costs and meter readings to vehicle operational analytics", async () => {
@@ -217,7 +211,6 @@ describe("getAnalyticsDashboard", () => {
       { data: [{ totalAmount: 100_000, loadCount: 2, totalLiters: 80 }] },
       { data: [{ totalAmount: 0 }] },
       { data: [{ pendingApprovals: 0 }] },
-      { data: [{ criticalStockCount: 0 }] },
       { data: [] },
       { data: [{ month: "2026-06", module: "Combustible", totalAmount: 100_000 }] },
       { data: [] },
@@ -239,7 +232,6 @@ describe("getAnalyticsDashboard", () => {
       { data: [
         { vehicleId: "veh-1", odometerReading: 12_500, hourMeterReading: 440 },
       ] },
-      { data: [] },
       { data: [] },
       { data: [] },
       { data: [] },
@@ -270,7 +262,7 @@ describe("getAnalyticsDashboard", () => {
     mockIsGlobalRole.mockReturnValue(false)
     mockVisibleWorksiteIds.mockReturnValue([])
 
-    for (let i = 0; i < 19; i++) selectResults.push({ data: [] })
+    for (let i = 0; i < 17; i++) selectResults.push({ data: [] })
 
     const data = await getAnalyticsDashboard(makeSession({ roles: ["solicitante_faena"], worksiteIds: [] }), {
       fromDate: "2026-06-01",

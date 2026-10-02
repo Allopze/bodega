@@ -30,8 +30,8 @@ vi.mock("@/lib/auth/scope", () => ({ resolveWorksiteScope: vi.fn() }))
 
 import { getOperationalSnapshotHealth } from "@/lib/services/operational-metric-snapshots"
 
-/** 5 métricas × N faenas es lo que debe tener un día completo. */
-const METRICS = 5
+/** 4 métricas × N faenas es lo que debe tener un día completo. */
+const METRICS = 4
 const NOW = new Date("2026-07-31T15:00:00.000Z")
 
 /** Primero se consultan las faenas activas, después las filas por día. */
@@ -55,7 +55,7 @@ describe("getOperationalSnapshotHealth", () => {
 
     const health = await getOperationalSnapshotHealth(NOW)
 
-    expect(health.expectedRowsPerDay).toBe(15)
+    expect(health.expectedRowsPerDay).toBe(12)
     expect(health.lastDayComplete).toBe(true)
     expect(health.ageDays).toBe(0)
     expect(health.completeDaysLast30).toBe(2)
@@ -71,8 +71,8 @@ describe("getOperationalSnapshotHealth", () => {
 
     const health = await getOperationalSnapshotHealth(NOW)
 
-    expect(health.expectedRowsPerDay).toBe(20)
-    expect(health.lastDayRows).toBe(15)
+    expect(health.expectedRowsPerDay).toBe(16)
+    expect(health.lastDayRows).toBe(12)
     expect(health.lastDayComplete).toBe(false)
     expect(health.completeDaysLast30).toBe(0)
   })

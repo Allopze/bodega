@@ -37,7 +37,6 @@ export default async function AnaliticaPage({
   const canViewFuelCosts = canViewFuel && can(session, "combustibles:view_costs")
   const canViewMaintenanceCosts = canViewFuelCosts && can(session, "mantenciones:view")
   const canViewPurchasing = can(session, "purchasing:view")
-  const canViewWarehouse = can(session, "warehouse:view_stock")
   const canViewDeliveries = can(session, "deliveries:view")
   const canViewReports = can(session, "reports:view")
 
@@ -141,10 +140,10 @@ export default async function AnaliticaPage({
             icon={<ShieldWarning size={18} />}
             label="Alertas"
             value={formatQty(data.alerts.length)}
-            detail={`${data.kpis.criticalStockCount} productos bajo mínimo`}
+            detail="Detectadas en el período"
             tone={data.alerts.some((alert) => alert.severity === "critical") ? "signal" : "neutral"}
             href="/dashboard"
-            glossary="Alertas accionables detectadas por el sistema: documentos vencidos (flota), mantenciones vencidas, productos bajo stock mínimo, y órdenes pendientes sin avance."
+            glossary="Alertas accionables detectadas por el sistema: gasto anómalo por vehículo, concentración de gasto en un proveedor y entregas recurrentes de EPP a un mismo trabajador."
           />
         </section>
 
@@ -234,36 +233,21 @@ export default async function AnaliticaPage({
           </Card>
         </section>
 
-        <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-          <RankingTable
-            title="Top proveedores"
-            headers={["Proveedor", "Módulo", "Eventos", "Monto"]}
-            rows={data.topSuppliers.map((row) => {
-              const href = row.module === "Combustible"
-                ? canViewFuel ? `/combustibles?proveedor=${row.id}` : null
-                : canViewPurchasing ? `/compras?proveedor=${row.id}` : null
-              return [
-              href ? <Link key={row.id} href={href} className="font-medium text-[var(--color-primary)] hover:underline">{row.name}</Link> : row.name,
-              row.module ?? "Compras",
-              formatQty(row.count),
-              formatCLP(row.totalAmount),
-            ]})}
-            empty="Sin proveedores con gasto para el período."
-          />
-          <RankingTable
-            title="Stock crítico"
-            headers={["Producto", "Faena", "Stock", "Mínimo"]}
-            rows={data.stockRisks.map((row) => [
-              row.productName,
-              canViewWarehouse
-                ? <Link key={`${row.productId}-${row.worksiteName}`} href={`/bodega?producto=${row.productId}`} className="text-[var(--color-primary)] hover:underline">{row.worksiteName}</Link>
-                : row.worksiteName,
-              formatQty(row.currentQty),
-              formatQty(row.minStock),
-            ])}
-            empty="No hay productos bajo stock mínimo."
-          />
-        </section>
+        <RankingTable
+          title="Top proveedores"
+          headers={["Proveedor", "Módulo", "Eventos", "Monto"]}
+          rows={data.topSuppliers.map((row) => {
+            const href = row.module === "Combustible"
+              ? canViewFuel ? `/combustibles?proveedor=${row.id}` : null
+              : canViewPurchasing ? `/compras?proveedor=${row.id}` : null
+            return [
+            href ? <Link key={row.id} href={href} className="font-medium text-[var(--color-primary)] hover:underline">{row.name}</Link> : row.name,
+            row.module ?? "Compras",
+            formatQty(row.count),
+            formatCLP(row.totalAmount),
+          ]})}
+          empty="Sin proveedores con gasto para el período."
+        />
 
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           <RankingTable
