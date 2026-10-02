@@ -13,7 +13,8 @@ const entry = { id: "e1", rowNumber: 1, probability: 2, consequence: 2, magnitud
 function setup() {
   let rows: MiperEntrySnapshot[] = [entry]
   const setRows = (updater: (current: MiperEntrySnapshot[]) => MiperEntrySnapshot[]) => { rows = updater(rows) }
-  const hook = renderHook(() => useEntryAutosave({ matrixId: "m1", entryVersions: { e1: 1 }, setRows, riskFactors: [] }))
+  const initial = [entry]
+  const hook = renderHook(({ serverRows }: { serverRows: MiperEntrySnapshot[] }) => useEntryAutosave({ matrixId: "m1", entryVersions: { e1: 1 }, serverRows, setRows, riskFactors: [] }), { initialProps: { serverRows: initial } })
   return { hook, rows: () => rows }
 }
 
@@ -76,5 +77,16 @@ describe("useEntryAutosave", () => {
     await act(async () => { await hook.result.current.commit(entry, { consequence: 4 }) })
     expect(hook.result.current.fieldError("e1", "probability")).toBe("rechazado")
     expect(hook.result.current.status.state).toBe("error")
+  })
+
+  it("tras un refresh del servidor, revierte al valor del servidor y no al guardado antes", async () => {
+    saveMiperEntryAction
+      .mockResolvedValueOnce({ ok: true, data: { version: 2, magnitude: 6, classification: "moderate" } })
+      .mockResolvedValueOnce({ ok: false, message: "rechazado" })
+    const { hook, rows } = setup()
+    await act(async () => { await hook.result.current.commit(entry, { probability: 4 }) })
+    hook.rerender({ serverRows: [{ ...entry, probability: 1, magnitude: 2, classification: "tolerable" } as MiperEntrySnapshot] })
+    await act(async () => { await hook.result.current.commit({ ...entry, probability: 1 }, { probability: 2 }) })
+    expect(rows()[0]).toMatchObject({ probability: 1 })
   })
 })

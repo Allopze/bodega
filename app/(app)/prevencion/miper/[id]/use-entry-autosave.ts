@@ -20,8 +20,10 @@ export type EntryAutosave = {
  * rechaza, REVIERTE esos campos y deja el motivo en el campo. La grilla dejaba
  * en pantalla el valor no guardado (H5 del diagnóstico).
  */
-export function useEntryAutosave({ matrixId, entryVersions, setRows, riskFactors }: {
+export function useEntryAutosave({ matrixId, entryVersions, serverRows, setRows, riskFactors }: {
   matrixId: string
+  /** Filas autoritativas del servidor: al cambiar de identidad (refresh) reanclan el último valor guardado. */
+  serverRows: readonly MiperEntrySnapshot[]
   entryVersions: Record<string, number>
   setRows: (updater: (rows: MiperEntrySnapshot[]) => MiperEntrySnapshot[]) => void
   riskFactors: ReadonlyArray<{ id: string; name: string }>
@@ -40,6 +42,9 @@ export function useEntryAutosave({ matrixId, entryVersions, setRows, riskFactors
   // campos que nadie volvió a editar desde entonces.
   const lastSaved = useRef<Record<string, MiperEntrySnapshot>>({})
   const sequence = useRef<Record<string, number>>({})
+  useEffect(() => {
+    for (const row of serverRows) lastSaved.current[row.id] = row
+  }, [serverRows])
   const writeErrors = (next: Record<string, string>) => { errorsRef.current = next; setErrors(next) }
 
   const commit = useCallback(async (entry: MiperEntrySnapshot, values: MiperEntryValues) => {
