@@ -99,15 +99,23 @@ function prefixOf(line: string): { hierarchy: ControlHierarchy; rest: string } |
   return bare ? { hierarchy: ROMAN[bare[1]!]!, rest: line.slice(bare[0].length) } : null
 }
 
-/** Corta por `separator` fuera de paréntesis o corchetes: «EPP (CASCO, GUANTES)» queda entero. */
+const DIGIT = /^\p{Nd}$/u
+
+/**
+ * Corta por `separator` fuera de paréntesis o corchetes: «EPP (CASCO, GUANTES)»
+ * queda entero. Una coma entre dos dígitos es decimal y tampoco corta: «DISTANCIA
+ * MÍNIMA DE 1,5 METROS» es una medida, no «…DE 1» y «5 METROS».
+ */
 function splitTopLevel(text: string, separator: string): string[] {
   const parts: string[] = []
+  const chars = Array.from(text)
   let depth = 0
   let current = ""
-  for (const char of text) {
+  for (const [index, char] of chars.entries()) {
     if (char === "(" || char === "[") depth += 1
     else if ((char === ")" || char === "]") && depth > 0) depth -= 1
-    if (depth === 0 && char === separator) {
+    const decimal = char === "," && DIGIT.test(chars[index - 1] ?? "") && DIGIT.test(chars[index + 1] ?? "")
+    if (depth === 0 && char === separator && !decimal) {
       parts.push(current)
       current = ""
       continue
@@ -124,7 +132,7 @@ function splitTopLevel(text: string, separator: string): string[] {
  * - una línea con «I.–V.» (libro exportado) es UNA medida y trae su tipo;
  * - en las demás, «;» si la línea tiene alguno —sus comas enumeran dentro de una
  *   medida: «VERIFICAR CARGA MÁXIMA, DISTRIBUCIÓN, HERMETICIDAD; …»— y si no,
- *   las comas de primer nivel;
+ *   las comas de primer nivel que no son decimales («1,5 METROS»);
  * - después, el «.X» pegado.
  * Se descartan los restos de menos de 3 caracteres y la misma frase repetida en
  * la celda (queda la primera, con su línea).

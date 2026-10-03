@@ -17,6 +17,13 @@ describe("splitMeasures: las medidas de una celda del RE-04 real", () => {
     expect(texts("USO DE EPP (CASCO, GUANTES, CALZADO DE SEGURIDAD), ORDEN Y LIMPIEZA, SEÑALIZACIÓN DE ÁREAS, CAPACITACIÓN EN TRABAJO SEGURO."))
       .toEqual(["USO DE EPP (CASCO, GUANTES, CALZADO DE SEGURIDAD)", "ORDEN Y LIMPIEZA", "SEÑALIZACIÓN DE ÁREAS", "CAPACITACIÓN EN TRABAJO SEGURO"])
   })
+  it("la coma decimal (un dígito a cada lado) no corta una medida; la coma que enumera sí", () => {
+    expect(texts("MANTENER DISTANCIA MÍNIMA DE 1,5 METROS, USO DE CASCO")).toEqual(["MANTENER DISTANCIA MÍNIMA DE 1,5 METROS", "USO DE CASCO"])
+    expect(texts("BARANDA DE 0,9 m, CHARLA DE INICIO")).toEqual(["BARANDA DE 0,9 m", "CHARLA DE INICIO"])
+    // Con un dígito sólo a un lado, o con espacio, la coma sigue separando.
+    expect(texts("PISO NIVEL 3, CASCO, CHARLA, 2 PAUSAS")).toEqual(["PISO NIVEL 3", "CASCO", "CHARLA", "2 PAUSAS"])
+    expect(texts("GUANTES,CASCO")).toEqual(["GUANTES", "CASCO"])
+  })
   it("con «;» en la línea, separa por «;» y las comas enumeran dentro de una medida", () => {
     expect(texts("APLICAR TRES PUNTOS DE APOYO; PROHIBIDO SALTAR DESDE CABINA O CONTENEDOR; MANTENER PELDAÑOS, PASAMANOS Y CALZADO LIMPIOS; VERIFICAR ILUMINACIÓN Y ESTADO DE ACCESOS; PROHIBIDO SUBIR AL BORDE DEL CONTENEDOR SIN PROTECCIÓN."))
       .toEqual([
