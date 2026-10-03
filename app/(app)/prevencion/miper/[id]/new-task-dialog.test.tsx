@@ -69,4 +69,18 @@ describe("NewTaskDialog", () => {
       sessionStorage.clear()
     }
   })
+
+  it("mientras crea, el diálogo no se cierra: ni Escape ni «Cancelar»", () => {
+    saveMiperEntryAction.mockReturnValueOnce(new Promise(() => {}))
+    const onOpenChange = vi.fn()
+    render(<NewTaskDialog open onOpenChange={onOpenChange} matrixId="m1" rows={rows} dictionaries={dictionaries} />)
+    type("Actividad", "Oficina")
+    type("Tarea", "Archivo")
+    type("Puesto de trabajo", "Asistente")
+    fireEvent.click(screen.getByRole("button", { name: "Crear tarea" }))
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Nueva tarea" }), { key: "Escape" })
+    expect((screen.getByRole("button", { name: "Cancelar" }) as HTMLButtonElement).disabled).toBe(true)
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+    expect(screen.getByRole("dialog", { name: "Nueva tarea" })).toBeTruthy()
+  })
 })

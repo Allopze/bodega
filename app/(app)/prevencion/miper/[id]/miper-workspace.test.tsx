@@ -81,3 +81,98 @@ describe("MiperWorkspaceView — marcas de cambio (A2, fila 3)", () => {
     expect(screen.getByText("Nueva", { exact: true })).toBeTruthy()
   })
 })
+
+describe("MiperWorkspaceView — render completo (A2, fila 16)", () => {
+  it("en la raíz: título, tarjeta «Siguiente paso», pestañas, buscador y estructura", () => {
+    show("")
+    expect(screen.getByRole("heading", { level: 1, name: "MIPER Planta 2026" })).toBeTruthy()
+    expect(screen.getByText("Faltan datos en 1 riesgo")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Siguiente pendiente" }).getAttribute("href")).toBe("/prevencion/miper/m1?fila=e1")
+    expect(screen.getByRole("tab", { name: "Matriz (1)", selected: true })).toBeTruthy()
+    expect(screen.getByLabelText("Buscar en la matriz")).toBeTruthy()
+    expect(screen.getByRole("heading", { level: 2, name: /Transporte/ })).toBeTruthy()
+  })
+
+  it("con ?tarea= muestra la tarea y la tarjeta no (va sólo en la raíz)", () => {
+    show(TASK)
+    expect(screen.getByRole("heading", { level: 2, name: "Carga" })).toBeTruthy()
+    expect(screen.getByRole("heading", { level: 3, name: "Peligros identificados (1)" })).toBeTruthy()
+    expect(screen.queryByText("Faltan datos en 1 riesgo")).toBeNull()
+  })
+
+  it("con ?fila=&paso= abre el editor del riesgo en ese paso", () => {
+    show("fila=e1&paso=evaluacion")
+    expect(screen.getByRole("heading", { level: 2, name: "Peligro 1" })).toBeTruthy()
+    expect(screen.getByRole("tab", { name: /Evaluación/, selected: true })).toBeTruthy()
+  })
+
+  it("una tarea que ya no existe lo dice y ofrece volver a la matriz", () => {
+    show("tarea=zzz")
+    expect(screen.getByText("Esta tarea ya no existe")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Volver a la matriz" }).getAttribute("href")).toBe("/prevencion/miper/m1")
+  })
+
+  it("con ?ficha=1 abre la «Ficha del documento»", () => {
+    show("ficha=1")
+    expect(screen.getByRole("dialog", { name: "Ficha del documento" })).toBeTruthy()
+  })
+
+  it("el motivo de solo lectura acompaña también al editor (alcance «everywhere»)", () => {
+    const reason = "Esta MIPER fue reemplazada por la de otro período: se conserva como historia."
+    show("fila=e1", workspaceOf(), { ...editMode, canEdit: false, readOnlyReason: reason })
+    expect(screen.getByText(reason)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Más acciones/ })).toBeNull()
+  })
+})
+
+describe("MiperWorkspaceView — marcas del revisor y de lo publicado (A2, Task 3)", () => {
+  const reviewerMode: WorkspaceMode = { ...editMode, canEdit: false, canReviewTechnical: true }
+  const round = { id: "r1", stage: "technical", roundNumber: 1, openedAt: null, submittedByUserId: "u2", submittedAt: "2026-10-01T10:00:00Z", snapshot: { header, entries: [entry()] } }
+  const changed = entry({ hazard: "Peligro cambiado" })
+  const modifiedDiff: SnapshotDiff = { headerFields: [], entries: [{ kind: "modified", entryId: "e1", rowNumber: 1, fields: [] }], hasChanges: true }
+  const reviewing = (overrides: Partial<MiperWorkspace> = {}) => workspaceOf({
+    matrix: { id: "m1", version: 2, status: "in_review", reviewState: "technical", isLegacy: false, worksiteId: "ws1", worksiteName: "Planta", period: 2026 },
+    snapshot: { header, entries: [changed] }, openRound: round, reviewDiff: modifiedDiff, ...overrides,
+  } as unknown as Partial<MiperWorkspace>)
+
+  it("el revisor, con la foto de la ronda anterior como línea base, ve «Modificada» en el riesgo cambiado", () => {
+    show(TASK, reviewing({ reviewBaselineSnapshot: { header, entries: [entry()] } }), reviewerMode)
+    expect(screen.getByText("Modificada", { exact: true })).toBeTruthy()
+  })
+
+  it("el revisor sin línea base no ve «Nueva» ni «Modificada»", () => {
+    show(TASK, reviewing({ reviewBaselineSnapshot: null }), reviewerMode)
+    expect(screen.queryByText("Nueva", { exact: true })).toBeNull()
+    expect(screen.queryByText("Modificada", { exact: true })).toBeNull()
+  })
+
+  it("una MIPER publicada con versión sellada y cambios pendientes marca «Modificada»", () => {
+    show(TASK, workspaceOf({
+      matrix: { id: "m1", version: 3, status: "published", reviewState: "none", isLegacy: false, worksiteId: "ws1", worksiteName: "Planta", period: 2026 },
+      snapshot: { header, entries: [changed] }, lastVersionSnapshot: { header, entries: [entry()] }, pendingDiff: modifiedDiff,
+    } as unknown as Partial<MiperWorkspace>))
+    expect(screen.getByText("Modificada", { exact: true })).toBeTruthy()
+  })
+})
+
+describe("MiperWorkspaceView — plurales del aviso Intolerable", () => {
+  const intolerable = (id: string, n: number) => entry({ id, rowNumber: n, classification: "intolerable" })
+  it("uno: singular", () => {
+    show("", workspaceOf({ snapshot: { header, entries: [intolerable("e1", 1)] } } as unknown as Partial<MiperWorkspace>))
+    expect(screen.getByRole("alert").textContent).toContain("1 riesgo Intolerable")
+    expect(screen.getByRole("alert").textContent).not.toContain("(s)")
+  })
+  it("varios: plural", () => {
+    show("", workspaceOf({ snapshot: { header, entries: [intolerable("e1", 1), intolerable("e2", 2)] } } as unknown as Partial<MiperWorkspace>))
+    expect(screen.getByRole("alert").textContent).toContain("2 riesgos Intolerables")
+  })
+})
+
+describe("MiperWorkspaceView — plural de observaciones por responder", () => {
+  const obs = (id: string) => ({ id, entryId: null, status: "open", body: "Revisar", authorName: "Rev", responderName: null, createdAt: "2026-10-01T10:00:00Z", respondedAt: null, response: null }) as unknown as MiperWorkspace["observations"][number]
+  const responder: WorkspaceMode = { ...editMode, canRespond: true }
+  it.each([[1, "Tienes 1 observación por responder"], [2, "Tienes 2 observaciones por responder"]])("%i abiertas", (n, text) => {
+    show("tab=revision", workspaceOf({ observations: Array.from({ length: n }, (_, i) => obs(`o${i}`)) }), responder)
+    expect(screen.getByText(text)).toBeTruthy()
+  })
+})

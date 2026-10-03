@@ -48,4 +48,9 @@ describe("recorrido", () => {
     expect(firstPendingBySeverity(graded, new Set(["a", "c", "d"]))).toBe("c")
     expect(firstPendingBySeverity(graded, new Set())).toBeNull()
   })
+  it("sin riesgo actual (desde la matriz) empieza por el primer pendiente por N°, respetando el filtro", () => {
+    expect(nextPendingId(rows, null, new Set(["c", "b"]), null)).toBe("b")
+    expect(nextPendingId(rows, null, new Set(["c", "b"]), new Set(["c"]))).toBe("c")
+    expect(nextPendingId(rows, null, new Set(), null)).toBeNull()
+  })
 })

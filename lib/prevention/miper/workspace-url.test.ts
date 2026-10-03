@@ -26,4 +26,8 @@ describe("vistas del espacio de trabajo", () => {
     expect(hrefToFicha(P, params("tab=antecedentes&ficha=1"), false)).toBe(P)
     expect(hrefToMatrixWith(P, params("tab=revision&buscar=x"), { completitud: "pendientes" })).toBe(`${P}?buscar=x&completitud=pendientes`)
   })
+
+  it("hrefToEntry sin paso quita el `paso` anterior: el editor abre en el primer paso con errores", () => {
+    expect(hrefToEntry(P, params("fila=e1&paso=medidas&buscar=lodo"), "e2")).toBe(`${P}?fila=e2&buscar=lodo`)
+  })
 })

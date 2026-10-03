@@ -243,4 +243,29 @@ describe("RiskEditor", () => {
     render(<RiskEditor {...props({ step: "seguimiento", mode: { ...mode, canObserve: true } })} />)
     expect(screen.getByRole("textbox", { name: "Nueva observación" })).toHaveAccessibleDescription("Mínimo 5 caracteres.")
   })
+
+  it("sin otros pendientes el pie lo dice y, con filtro, aclara «en este filtro»", () => {
+    const { unmount } = render(<RiskEditor {...props({ incomplete: new Set(["e1"]) })} />)
+    expect(screen.getByText("No quedan otros riesgos pendientes.")).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "Siguiente pendiente" })).toBeNull()
+    unmount()
+    render(<RiskEditor {...props({ incomplete: new Set(["e1"]), matching: new Set(["e1"]) })} />)
+    expect(screen.getByText("No quedan otros riesgos pendientes en este filtro.")).toBeTruthy()
+  })
+
+  it("en los extremos de la tarea, «‹ Anterior» y «Siguiente ›» quedan como botones deshabilitados", () => {
+    const { unmount } = render(<RiskEditor {...props()} />)
+    expect(screen.getByRole("button", { name: "‹ Anterior" })).toBeDisabled()
+    expect(screen.getByRole("link", { name: "Siguiente ›" })).toBeTruthy()
+    unmount()
+    render(<RiskEditor {...props({ entryId: "e2" })} />)
+    expect(screen.getByRole("button", { name: "Siguiente ›" })).toBeDisabled()
+    expect(screen.getByText("2 de 2 en la tarea")).toBeTruthy()
+  })
+
+  it("en modo lectura, un riesgo sin medidas lo dice en el paso Medidas", () => {
+    render(<RiskEditor {...props({ editable: false, step: "medidas" })} />)
+    expect(screen.getByText("Sin medidas de control.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Agregar medida" })).toBeNull()
+  })
 })
