@@ -69,6 +69,8 @@ const EDIT = "prevention:risk:edit"
 /** Marcador de origen: no hay storage, el archivo se leyó en memoria. */
 const ORIGIN_PREFIX = "inline:"
 
+const FILE_ALREADY_LOADED = "Este archivo ya se cargó en una MIPER. Vuelve a exportarlo desde el RE-04 o cambia una fila para importarlo de nuevo."
+
 export type RiskImportTarget = "draft" | "live"
 
 export type RiskImportRowView = {
@@ -297,15 +299,21 @@ export async function previewRiskImport(
   const batchId = await db.transaction(async (tx) => {
     /* Mismo archivo y misma faena: el índice único es (worksite_id, checksum).
      * Un lote todavía no cargado se reemplaza —volver a revisar el mismo archivo
-     * no puede fallar—; uno ya cargado se rechaza con su motivo. */
+     * no puede fallar—; uno ya cargado se rechaza con su motivo. El DELETE pide
+     * además `staged`: con una carga de ese lote en curso, espera su candado y,
+     * cuando la carga confirma, ya no calza. Sin eso borraba el lote cargado (y
+     * sus filas, en cascada) y el mismo archivo se podía volver a cargar. */
     const [existing] = await tx.select({ id: preventionRiskImportBatches.id, status: preventionRiskImportBatches.status })
       .from(preventionRiskImportBatches)
       .where(and(eq(preventionRiskImportBatches.worksiteId, data.worksiteId), eq(preventionRiskImportBatches.sourceChecksumSha256, checksum)))
       .limit(1)
-    if (existing?.status === "activated") {
-      throw new RiskLegalDomainError("Este archivo ya se cargó en una MIPER. Vuelve a exportarlo desde el RE-04 o cambia una fila para importarlo de nuevo.")
+    if (existing?.status === "activated") throw new RiskLegalDomainError(FILE_ALREADY_LOADED)
+    if (existing) {
+      const removed = await tx.delete(preventionRiskImportBatches)
+        .where(and(eq(preventionRiskImportBatches.id, existing.id), eq(preventionRiskImportBatches.status, "staged")))
+        .returning({ id: preventionRiskImportBatches.id })
+      if (removed.length === 0) throw new RiskLegalDomainError(FILE_ALREADY_LOADED)
     }
-    if (existing) await tx.delete(preventionRiskImportBatches).where(eq(preventionRiskImportBatches.id, existing.id))
 
     const id = `riskimport-${nanoid()}`
     await tx.insert(preventionRiskImportBatches).values({

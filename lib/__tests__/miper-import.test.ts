@@ -45,6 +45,8 @@ const spy = vi.hoisted(() => ({
   /** Transacciones abiertas desde el último reinicio: una carga rechazada por el esquema no abre ninguna. */
   transactionsStarted: 0,
   recipientLookups: [] as Array<{ permission: string; worksiteId: string; openTransactions: number }>,
+  /** La próxima lectura de un lote dentro de una transacción lo ve `staged` (ver `withStaleBatchRead`). */
+  staleBatchRead: false,
 }))
 
 vi.mock("@/lib/services/notification-targeting", async (importOriginal) => {
@@ -62,14 +64,58 @@ const pg = new PGlite()
 const testDb = drizzle(pg, { schema }) as unknown as DB
 const g = globalThis as typeof globalThis & { __db?: DB }
 
-/* El Proxy sólo envuelve `transaction` para saber cuántas hay abiertas. */
+/** El resultado de una consulta con cada fila `staged`, a cualquier profundidad de la cadena (`.where().limit()`). */
+function readAsStaged<T extends object>(query: T): T {
+  return new Proxy(query, {
+    get(target, property, receiver) {
+      if (property === "then") {
+        const rows = target as unknown as PromiseLike<Array<Record<string, unknown>>>
+        return (onFulfilled?: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) =>
+          rows.then((result) => result.map((row) => ({ ...row, status: "staged" }))).then(onFulfilled, onRejected)
+      }
+      const value: unknown = Reflect.get(target, property, receiver)
+      return typeof value === "function" ? (...args: unknown[]) => readAsStaged((value as (...a: unknown[]) => object).apply(target, args)) : value
+    },
+  })
+}
+
+/**
+ * La carrera que PGlite (una sola conexión) no produce solo: la vista previa lee
+ * el lote ANTES de que una carga confirme —lo ve `staged`— y su DELETE corre
+ * DESPUÉS, contra el lote ya `activated` (en Postgres, el DELETE espera el
+ * candado de la carga y vuelve a evaluar su WHERE sobre la fila confirmada). La
+ * carga corre de verdad antes; esto sólo devuelve la lectura vieja del lote.
+ */
+function withStaleBatchRead(tx: DB): DB {
+  return new Proxy(tx, {
+    get(target, property, receiver) {
+      if (property !== "select" || !spy.staleBatchRead) return Reflect.get(target, property, receiver)
+      return (...args: unknown[]) => {
+        const builder = (target.select as (...a: unknown[]) => { from: (table: unknown) => object })(...args)
+        return new Proxy(builder, {
+          get(query, key, queryReceiver) {
+            if (key !== "from") return Reflect.get(query, key, queryReceiver)
+            return (table: unknown) => {
+              if (table !== schema.preventionRiskImportBatches) return query.from(table)
+              spy.staleBatchRead = false
+              return readAsStaged(query.from(table))
+            }
+          },
+        })
+      }
+    },
+  })
+}
+
+/* El Proxy envuelve `transaction` para saber cuántas hay abiertas y, cuando una
+ * prueba lo pide, para servir la lectura vieja de un lote (`withStaleBatchRead`). */
 g.__db = new Proxy(testDb as unknown as Record<PropertyKey, unknown>, {
   get(target, property, receiver) {
     if (property === "transaction") {
-      return async (run: (tx: unknown) => Promise<unknown>) => {
+      return async (run: (tx: DB) => Promise<unknown>) => {
         spy.openTransactions += 1
         spy.transactionsStarted += 1
-        try { return await (target as unknown as DB).transaction(run as never) }
+        try { return await (target as unknown as DB).transaction(((tx: DB) => run(spy.staleBatchRead ? withStaleBatchRead(tx) : tx)) as never) }
         finally { spy.openTransactions -= 1 }
       }
     }
@@ -251,6 +297,7 @@ beforeEach(() => {
   spy.recipientLookups = []
   spy.openTransactions = 0
   spy.transactionsStarted = 0
+  spy.staleBatchRead = false
 })
 
 beforeAll(async () => {
@@ -779,5 +826,36 @@ describe("carga concurrente del mismo lote", () => {
     // Y una tercera, ya en serie, también se rechaza.
     await expect(commitRiskImport(input, editor)).rejects.toThrow("ya se cargó")
     expect(await entriesOf(live.id)).toHaveLength(3)
+  }, 60_000)
+
+  it("volver a revisar el mismo archivo mientras se carga al vigente no borra el lote ya cargado: se rechaza con «ya se cargó»", async () => {
+    const WS_RACE = "ws-carrera"
+    const racer = { ...editor, scope: { mode: "some" as const, ids: [WS_RACE] } }
+    await testDb.insert(schema.worksites).values({ id: WS_RACE, name: "Faena carrera", code: "CAR" })
+    const live = await createMiper({ worksiteId: WS_RACE, period: 2026, revisionReason: "MIPER vigente para probar la carrera." }, racer)
+    const publishedAt = "2020-01-01T00:00:00.000Z"
+    await testDb.update(schema.preventionRiskMatrices)
+      .set({ status: "published", reviewState: "none", publishedAt, updatedAt: publishedAt, reviewedByUserId: "u-jefa", approvedByUserId: "u-legal" })
+      .where(eq(schema.preventionRiskMatrices.id, live.id))
+    const bytes = await workbookOf(MEASURES_FIXTURE, "Carrera vista previa y carga")
+    const preview = await previewRiskImport(bytes, { worksiteId: WS_RACE, target: "live" }, racer)
+    await commitRiskImport({ batchId: preview.batchId, worksiteId: WS_RACE, target: "live", ...suggestedMappings(preview.measureAnalysis) }, racer)
+    const loadedRows = await batchRowsOf(preview.batchId)
+    expect(loadedRows.filter((row) => row.riskEntryId !== null)).toHaveLength(3)
+
+    // La segunda vista previa leyó el lote antes de que la carga confirmara.
+    spy.staleBatchRead = true
+    await expect(previewRiskImport(bytes, { worksiteId: WS_RACE, target: "live" }, racer)).rejects.toThrow(
+      "Este archivo ya se cargó en una MIPER. Vuelve a exportarlo desde el RE-04 o cambia una fila para importarlo de nuevo.",
+    )
+    expect(spy.staleBatchRead).toBe(false)
+
+    // El lote cargado sigue ahí, con sus filas y su traza a los riesgos; no apareció otro.
+    expect((await batchOf(preview.batchId)).status).toBe("activated")
+    expect(await batchRowsOf(preview.batchId)).toEqual(loadedRows)
+    const checksum = createHash("sha256").update(bytes).digest("hex")
+    const batches = await testDb.select({ id: schema.preventionRiskImportBatches.id }).from(schema.preventionRiskImportBatches)
+      .where(eq(schema.preventionRiskImportBatches.sourceChecksumSha256, checksum))
+    expect(batches).toEqual([{ id: preview.batchId }])
   }, 60_000)
 })
