@@ -19,11 +19,12 @@ import { cabecera, irAPaso, type PasoDelRiesgo } from "./miper-helpers"
  */
 const targets = accessibilityTargets()
 
-async function auditar(page: Page) {
-  const results = await new AxeBuilder({ page })
+/** `incluir` acota la auditoría a una región (un selector CSS de axe, no un localizador de Playwright). */
+async function auditar(page: Page, incluir?: string) {
+  const builder = new AxeBuilder({ page })
     .withTags([...AXE_TAGS])
     .disableRules([...AXE_DISABLED_RULES])
-    .analyze()
+  const results = await (incluir ? builder.include(incluir) : builder).analyze()
 
   expect(results.violations).toEqual([])
 }
@@ -104,6 +105,12 @@ test.describe("Accessibility audit — MIPER: vistas del espacio de trabajo", ()
     await expect(page.getByRole("menuitem", { name: "Ver todas las faenas", exact: true })).toBeVisible()
     await expect(page.getByRole("menuitem", { name: /^Faena / })).not.toHaveCount(0)
     await sinAnimaciones(page)
-    await auditar(page)
+    // Se audita el menú, no la página de fondo, que ya se auditó arriba con el menú cerrado.
+    // El `DropdownMenu` de Radix es modal: al abrirse pone `aria-hidden` en todo lo demás
+    // (`hideOthers`), atrapa el foco y anula Tab, así que nada oculto puede recibir foco. Axe
+    // no lo sabe: sólo lo exime con un diálogo abierto (`isModalOpen` busca `role=dialog`; por
+    // eso la «Ficha del documento» pasa entera) y marca `aria-hidden-focus` en la raíz del
+    // shell. Le pasa a todo menú desplegable modal de la plataforma, no sólo a éste.
+    await auditar(page, '[role="menu"]')
   })
 })
