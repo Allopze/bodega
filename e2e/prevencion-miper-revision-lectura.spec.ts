@@ -75,6 +75,11 @@ async function sinControlesDeEdicion(page: Page) {
 }
 
 async function auditar(page: Page) {
+  // Como en `accessibility.spec.ts`: axe mide el contraste del color pintado, y a
+  // mitad de un fundido de entrada el texto todavía está aclarado.
+  await page.evaluate(() => Promise.all(document.getAnimations()
+    .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+    .map((animation) => animation.finished.catch(() => undefined))))
   const results = await new AxeBuilder({ page }).withTags([...AXE_TAGS]).disableRules([...AXE_DISABLED_RULES]).analyze()
   expect(results.violations).toEqual([])
 }
