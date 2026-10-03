@@ -88,4 +88,22 @@ test.describe("Accessibility audit — MIPER: vistas del espacio de trabajo", ()
     await sinAnimaciones(page)
     await auditar(page)
   })
+
+  test("la pestaña Resumen y el menú «Cambiar de faena» (Fase B)", async ({ page }) => {
+    await login(page)
+    await page.goto(MIPER_VIGENTE)
+    await page.waitForLoadState("networkidle")
+
+    await page.getByRole("tab", { name: "Resumen", exact: true }).click()
+    await expect(page.getByRole("link", { name: /^Riesgos completos/ })).toBeVisible()
+    await sinAnimaciones(page)
+    await auditar(page)
+
+    // La lista se pide al abrir el menú: se espera a que llegue antes de auditar.
+    await cabecera(page).getByRole("button", { name: "Cambiar de faena", exact: true }).click()
+    await expect(page.getByRole("menuitem", { name: "Ver todas las faenas", exact: true })).toBeVisible()
+    await expect(page.getByRole("menuitem", { name: /^Faena / })).not.toHaveCount(0)
+    await sinAnimaciones(page)
+    await auditar(page)
+  })
 })

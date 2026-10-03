@@ -34,6 +34,8 @@ const PANTALLAS = [
   { path: "/prevencion/permisos", name: "Permisos" },
   { path: "/prevencion/higiene", name: "Higiene" },
   { path: "/prevencion/emergencias", name: "Emergencias" },
+  // Fase B: la portada MIPER por faena tiene franja (SummaryBar, no tarjetas) y dos filtros a la vista.
+  { path: "/prevencion/miper", name: "MIPER" },
 ]
 
 /**
@@ -161,7 +163,7 @@ test.describe("Densidad — todo KPI de subconjunto llega a su subconjunto", () 
   const KPIS_DE_SUBCONJUNTO = [
     { vista: "prevencion", label: "Incidentes abiertos", destino: "/prevencion/incidentes?quick=open" },
     { vista: "prevencion", label: "CAPA vencidas", destino: "/prevencion/capa?vista=overdue" },
-    { vista: "prevencion", label: "Riesgos críticos sin control", destino: "/prevencion/miper?tab=todas" },
+    { vista: "prevencion", label: "Riesgos críticos sin control", destino: "/prevencion/miper?sincontrol=1" },
     { vista: "terreno", label: "Hallazgos críticos abiertos", destino: "/prevencion/inspecciones?vista=critical" },
     { vista: "terreno", label: "Simulacros por mejorar", destino: "/prevencion/emergencias?tab=drills&vista=needs_improvement" },
     { vista: "terreno", label: "Mediciones sobre el límite", destino: "/prevencion/higiene?tab=groups&vista=above_limit" },
@@ -208,5 +210,10 @@ test.describe("Densidad — todo KPI de subconjunto llega a su subconjunto", () 
     await page.goto("/prevencion/inspecciones?vista=critical")
     await page.waitForLoadState("networkidle").catch(() => undefined)
     await expect(page.locator("[aria-pressed='true']").first()).toBeVisible()
+
+    // Fase B: la portada MIPER reconoce «sin control» con un chip que se puede quitar.
+    await page.goto("/prevencion/miper?sincontrol=1")
+    await page.waitForLoadState("networkidle").catch(() => undefined)
+    await expect(page.getByRole("button", { name: "Eliminar filtro Riesgos críticos", exact: true })).toBeVisible()
   })
 })

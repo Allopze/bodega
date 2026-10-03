@@ -1,5 +1,5 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test"
-import { expectPageTitle, login, pickCurrentMonthDate, textoVisible, MINIMAL_PNG } from "./helpers"
+import { expectPageTitle, listRecord, login, pickCurrentMonthDate, textoVisible, MINIMAL_PNG } from "./helpers"
 import {
   abrirRiesgo, agregarMedida, cabecera, crearTarea, elegir, elegirOpcion, escribir, guardado, irAPaso, nivel, volverALaTarea,
 } from "./miper-helpers"
@@ -27,7 +27,7 @@ import {
  * | 11 vigente v1 y ocurrencias | 3 | `prevencion-miper-programa.spec.ts` |
  * | 12 «Se hizo» + evidencia + avance | 4 | idem |
  * | 13 «No se hizo» → Incumplida | 5 | idem |
- * | 14 avance general (Resumen + programa) | 6 | F3: `dashboard-panel.tsx` |
+ * | 14 avance general (Resumen de la MIPER + portada + programa) | 6 | Fase B: pestaña «Resumen» y fila de la portada |
  * | 15 trazabilidad en ambos sentidos | 7 | `prevencion-miper-programa.spec.ts` |
  * | 16 riesgo nuevo → v2 y v1 consultable | 8 | F1 + el ciclo de sellado |
  * | 17 historial con actor, rol, fecha y hora | 9 | `prevencion-miper-flujo.spec.ts` |
@@ -122,10 +122,10 @@ test("pasos 1–7: la prevencionista crea la MIPER, la completa, genera el progr
   const page = await as(browser, "prev.faena@e2e.chome.cl")
   await page.goto("/prevencion/miper")
   await expectPageTitle(page, "Matriz IPER (MIPER)")
-  // Dos "Nueva MIPER" en pantalla —el CTA del header y el del estado vacío—, el
-  // mismo alta ofrecida en dos sitios; no es la copia móvil/escritorio de un
-  // `DataTable`, y el CTA del header va primero en el DOM.
-  await page.getByRole("button", { name: "Nueva MIPER" }).first().click()
+  // «Nueva MIPER» vive en la cabecera. La portada por faena (Fase B) ya no
+  // repite el alta en un estado vacío, y la fila de una faena sin MIPER ofrece
+  // «Crear MIPER de <faena>», que es otro nombre.
+  await cabecera(page).getByRole("button", { name: "Nueva MIPER", exact: true }).click()
   const dialog = page.getByRole("dialog", { name: "Nueva MIPER" })
   // El único combobox del diálogo es la faena: el período es un número y el
   // punto de partida, radios.
@@ -227,9 +227,11 @@ test("pasos 8–9: la Jefa observa, la prevencionista corrige y reenvía, la Jef
   const id = miperUrl.split("/").pop()!
   const jefa = await as(browser, "jefa.prevencion@e2e.chome.cl")
   await jefa.goto("/prevencion/miper")
-  // La tarjeta de la bandeja se identifica por el enlace a ESTA MIPER y no por el
-  // rótulo suelto (que podría repetirse con otra ronda pendiente).
-  await expect(jefa.locator(`a[href="/prevencion/miper/${id}"]`)).toContainText("Pendiente de tu revisión")
+  // Fase B: la portada por faena da un enlace por cada MIPER que espera algo de
+  // ti, «<motivo> · MIPER <período>». Se busca el de ESTE período y se comprueba
+  // que lleva a ESTA MIPER. La fila y la tarjeta móvil lo repiten; `getByRole`
+  // sólo ve la visible.
+  await expect(jefa.getByRole("link", { name: `Pendiente de tu revisión · MIPER ${PERIOD}`, exact: true })).toHaveAttribute("href", `/prevencion/miper/${id}`)
 
   // F3 — la «atención de Prevención» (§9.1) trae el hecho «esperando revisión
   // técnica», con enlace al paso de revisión de esta MIPER. Es la contraparte en
@@ -378,31 +380,38 @@ test("paso 13: la otra ocurrencia se marca «No se hizo», queda Incumplida y no
   await expect(sheet.getByText("1 pendiente(s) · 1 incumplida(s)")).toBeVisible()
 })
 
-test("paso 14: la Jefa consulta el avance general en la pestaña «Resumen» y en el programa", async ({ browser }) => {
+test("paso 14: la Jefa consulta el avance en el «Resumen» de la MIPER, en la portada y en el programa", async ({ browser }) => {
   const jefa = await as(browser, "jefa.prevencion@e2e.chome.cl")
-  await jefa.goto("/prevencion/miper?tab=resumen")
-  await expectPageTitle(jefa, "Matriz IPER (MIPER)")
+  await jefa.goto(`${miperUrl}?tab=resumen`)
+  await expectPageTitle(jefa, /^MIPER Faena E2E/)
+  await expect(jefa.getByRole("tab", { name: "Resumen", selected: true })).toBeVisible()
 
-  // Los CUATRO tiles accionables (regla A1): cada uno enlaza a su subconjunto.
-  for (const label of [/Por hacer/, /Intolerables e Importantes/, /Sin controlar/, /Avance del programa/]) {
-    await expect(jefa.getByRole("link", { name: label })).toBeVisible()
+  // Las cifras del Resumen que enlazan (A1). «No controlados» está en 0 (los dos riesgos quedaron
+  // «Parcialmente»), así que no enlaza: se ve, pero no lleva a una lista vacía.
+  for (const rotulo of [/^Riesgos completos/, /^Importantes e Intolerables/, /^Avance del programa/]) {
+    await expect(jefa.getByRole("link", { name: rotulo })).toBeVisible()
   }
-  // La franja secundaria en texto, con las cifras que no son KPI de tarjeta.
-  // `exact: true` es obligatorio: «Tolerables» es subcadena de «Intolerables e
-  // Importantes» y de «Riesgos no tolerables sin control declarado» (los tiles),
-  // y sin exacto la aserción resolvía a tres nodos.
-  for (const figure of ["MIPER vigentes", "Con observaciones", "Tolerables", "Moderados", "Medidas pendientes", "Actividades vencidas"]) {
-    await expect(jefa.getByText(figure, { exact: true })).toBeVisible()
-  }
-  // El avance del tablero es el derivado por `programProgress` sobre las
-  // ocurrencias: 1 de 3, el mismo que muestra la pestaña del programa.
-  await expect(textoVisible(jefa, "1 de 3 actividades realizadas")).toBeVisible()
-  await expect(textoVisible(jefa, "33% · 1/3")).toBeVisible()
+  // El avance es el que deriva `programProgress` de las ocurrencias: 1 de 3.
+  const avance = jefa.getByRole("link", { name: /^Avance del programa/ })
+  await expect(avance).toContainText("33%")
+  await expect(avance).toContainText("1/3 realizadas")
+  // La completitud por actividad, en el orden del RE-04.
+  await expect(jefa.getByRole("progressbar", { name: /^Operación de la correa transportadora: / })).toBeVisible()
 
-  await jefa.goto(`${miperUrl}?tab=programa`)
+  // La fila de la faena en la portada muestra el mismo avance (el programa de la vigente).
+  await jefa.goto("/prevencion/miper")
+  await expect(listRecord(jefa, "Faena E2E")).toContainText("33% · 1/3")
+
+  // «Elaboró» en la franja de la matriz: sin ronda abierta, quien elaboró la v1.
+  await jefa.goto(miperUrl)
+  await expect(jefa.getByRole("definition").filter({ hasText: "Prevencionista Faena E2E" })).toBeVisible()
+
+  // La cifra del programa lleva a la pestaña Programa, que dice lo mismo.
+  await jefa.goto(`${miperUrl}?tab=resumen`)
+  await jefa.getByRole("link", { name: /^Avance del programa/ }).click()
+  await expect(jefa).toHaveURL(/tab=programa/)
   await expect(jefa.getByRole("heading", { name: "Programa de Trabajo Preventivo RE-04.1" })).toBeVisible()
   await expect(jefa.getByText("1/3 realizadas")).toBeVisible()
-  await expect(textoVisible(jefa, "Avance del programa")).toBeVisible()
 })
 
 test("paso 15: trazabilidad de la actividad al riesgo y del riesgo a sus medidas, actividades y evidencias", async ({ browser }) => {

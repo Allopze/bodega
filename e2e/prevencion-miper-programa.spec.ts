@@ -67,7 +67,7 @@ test("la prevencionista arma la matriz, el envío se bloquea sin medida vinculad
   const page = await as(browser, "prev.faena@e2e.chome.cl")
   await page.goto("/prevencion/miper")
   await expectPageTitle(page, "Matriz IPER (MIPER)")
-  await page.getByRole("button", { name: "Nueva MIPER" }).first().click()
+  await cabecera(page).getByRole("button", { name: "Nueva MIPER", exact: true }).click()
   const dialog = page.getByRole("dialog", { name: "Nueva MIPER" })
   await dialog.getByRole("combobox").click()
   await page.getByRole("option", { name: "Faena E2E", exact: true }).click()

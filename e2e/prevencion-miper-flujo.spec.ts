@@ -51,10 +51,10 @@ test("la prevencionista crea la MIPER, la completa y la envía a revisión", asy
   const page = await as(browser, "prev.faena@e2e.chome.cl")
   await page.goto("/prevencion/miper")
   await expectPageTitle(page, "Matriz IPER (MIPER)")
-  // Dos "Nueva MIPER" en pantalla —el CTA del header y el del estado vacío—, el
-  // mismo alta ofrecida en dos sitios; no es la copia móvil/escritorio de un
-  // `DataTable`, y el CTA del header va primero en el DOM.
-  await page.getByRole("button", { name: "Nueva MIPER" }).first().click()
+  // «Nueva MIPER» vive en la cabecera. La portada por faena (Fase B) ya no
+  // repite el alta en un estado vacío, y la fila de una faena sin MIPER ofrece
+  // «Crear MIPER de <faena>», que es otro nombre.
+  await cabecera(page).getByRole("button", { name: "Nueva MIPER", exact: true }).click()
   const dialog = page.getByRole("dialog", { name: "Nueva MIPER" })
   // El único combobox del diálogo es la faena: el período es un número y el
   // punto de partida, radios.
@@ -137,12 +137,12 @@ test("la prevencionista crea la MIPER, la completa y la envía a revisión", asy
 test("la Jefa observa el riesgo y la prevencionista corrige y reenvía", async ({ browser }) => {
   const jefa = await as(browser, "jefa.prevencion@e2e.chome.cl")
   await jefa.goto("/prevencion/miper")
-  // La bandeja de la Jefatura puede traer más de una ronda pendiente —la base
-  // E2E es compartida y cualquier otra prueba que envíe una MIPER deja la suya—,
-  // así que la tarjeta esperada se identifica por el enlace a ESTA MIPER y no
-  // por el rótulo suelto (que pasaría a resolver dos nodos).
+  // La base E2E es compartida: otra prueba puede dejar su propia ronda pendiente
+  // en la misma faena. La portada por faena (Fase B) da un enlace por cada MIPER
+  // que espera algo de ti, «<motivo> · MIPER <período>»: se busca el de ESTE
+  // período y se comprueba que lleva a ESTA MIPER.
   const id = miperUrl.split("/").pop()!
-  await expect(jefa.locator(`a[href="/prevencion/miper/${id}"]`)).toContainText("Pendiente de tu revisión")
+  await expect(jefa.getByRole("link", { name: `Pendiente de tu revisión · MIPER ${PERIOD}`, exact: true })).toHaveAttribute("href", `/prevencion/miper/${id}`)
   await jefa.goto(miperUrl)
   // La apertura de la ronda la registra el cliente al entrar y no revalida, así
   // que la etiqueta sólo cambia cuando la página vuelve a leer el servidor: se
