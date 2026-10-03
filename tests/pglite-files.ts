@@ -20,6 +20,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/miper-matrices.test.ts",
   // MIPER F1: filas y medidas con concurrencia optimista, inserción y borrado.
   "lib/__tests__/miper-entries.test.ts",
+  // MIPER Fase D: acciones masivas atómicas (versión vieja, alcance, legacy, tope, D5 e historial).
+  "lib/__tests__/miper-bulk.test.ts",
   // MIPER F1: foto viva del documento con nombres de diccionario y medidas.
   "lib/__tests__/miper-snapshot-service.test.ts",
   // MIPER Fase B: fotos en lote y prueba dorada de que la foto de una sola no cambió (snapshotSha).

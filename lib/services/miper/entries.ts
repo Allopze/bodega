@@ -3,7 +3,7 @@ import { z } from "zod"
 import { db } from "@/db"
 import { preventionPdtpSourceLinks, preventionRiskControls, preventionRiskEntries, preventionRiskFactors, preventionRiskMapMarkers, preventionRiskMatrices } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { controlColumns } from "@/lib/prevention/miper/control-values"
+import { controlColumns, type ControlResponsible } from "@/lib/prevention/miper/control-values"
 import { cleanMiperName } from "@/lib/prevention/miper/names"
 import { miperControlRefSchema, miperControlSaveSchema, miperEntryRefSchema, miperEntrySaveSchema, type MiperEntryValues } from "@/lib/validation/prevention-module/miper"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
@@ -22,7 +22,8 @@ function saved(row: typeof preventionRiskEntries.$inferSelect): SavedEntry {
   return { id: row.id, version: row.version, rowNumber: row.rowNumber ?? 0, magnitude: row.magnitude, classification: row.classification }
 }
 
-async function touchMatrix(client: Client, matrixId: string, now: string) {
+/** Exportada para las acciones masivas (`bulk.ts`, Fase D): la misma marca que el guardado de a uno. */
+export async function touchMatrix(client: Client, matrixId: string, now: string) {
   // Sin tocar `version`: ese es el candado del encabezado y del flujo. Sí
   // `updated_at`, que la bandeja usa para detectar "cambios sin enviar".
   await client.update(preventionRiskMatrices).set({ updatedAt: now }).where(eq(preventionRiskMatrices.id, matrixId))
@@ -35,7 +36,13 @@ async function activePdtpLink(client: Client, controlIds: string[]) {
   return Boolean(link)
 }
 
-async function toColumns(client: Client, worksiteId: string, values: MiperEntryValues): Promise<Partial<typeof preventionRiskEntries.$inferInsert>> {
+/**
+ * Los valores de un riesgo como columnas: los nombres pasan por el diccionario de
+ * la faena (se reutiliza el que ya existe por nombre normalizado) y el factor
+ * tiene que estar activo. Exportada para `bulkPatchMiperEntries` (Fase D): un
+ * cambio en lote resuelve igual que el editor.
+ */
+export async function toColumns(client: Client, worksiteId: string, values: MiperEntryValues): Promise<Partial<typeof preventionRiskEntries.$inferInsert>> {
   const out: Partial<typeof preventionRiskEntries.$inferInsert> = {}
   if ("activity" in values) out.processId = await resolveDictionaryId(client, "activity", worksiteId, values.activity)
   if ("task" in values) out.taskId = await resolveDictionaryId(client, "task", worksiteId, values.task)
@@ -173,6 +180,17 @@ export async function deleteMiperEntry(input: unknown, access: MiperAccess) {
   })
 }
 
+/**
+ * El responsable de una medida: una persona ACTIVA (con su nombre como foto) o un
+ * nombre o cargo escrito. Lo usan el editor de la medida y las acciones masivas.
+ */
+export async function controlResponsible(client: Client, values: { responsibleUserId?: string | null; responsibleName?: string | null }): Promise<ControlResponsible> {
+  const responsibleUserId = values.responsibleUserId ?? null
+  await assertActiveUsers(client, [responsibleUserId])
+  const responsibleSnapshot = responsibleUserId ? (await userNames(client, [responsibleUserId])).get(responsibleUserId) ?? null : cleanMiperName(values.responsibleName)
+  return { responsibleUserId, responsibleSnapshot }
+}
+
 export async function saveMiperControl(input: unknown, access: MiperAccess) {
   const data = miperControlSaveSchema.parse(input)
   return db.transaction(async (tx) => {
@@ -181,10 +199,7 @@ export async function saveMiperControl(input: unknown, access: MiperAccess) {
     assertEditable(matrix)
     const [entry] = await tx.select({ id: preventionRiskEntries.id }).from(preventionRiskEntries).where(and(eq(preventionRiskEntries.id, data.entryId), eq(preventionRiskEntries.matrixId, matrix.id))).limit(1)
     if (!entry) throw new RiskLegalDomainError("La fila no existe en esta MIPER; recarga la matriz.")
-    const responsibleUserId = data.values.responsibleUserId ?? null
-    await assertActiveUsers(tx, [responsibleUserId])
-    const responsibleSnapshot = responsibleUserId ? (await userNames(tx, [responsibleUserId])).get(responsibleUserId) ?? null : cleanMiperName(data.values.responsibleName)
-    const responsible = { responsibleUserId, responsibleSnapshot }
+    const responsible = await controlResponsible(tx, data.values)
     const now = nowIso()
     if (!data.controlId) {
       const values = controlColumns(data.values, responsible, null)
