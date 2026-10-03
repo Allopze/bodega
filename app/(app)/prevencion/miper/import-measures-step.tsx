@@ -10,7 +10,7 @@ import { OptionSelect } from "@/components/ui/option-select"
 import { Pagination } from "@/components/ui/pagination"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { acceptSuggestions, choosePhraseType, unconfirmedCount, type ImportDecisions, type PhraseDecision } from "@/lib/prevention/miper/import-decisions"
-import { FREQUENCY_MAX_LENGTH, type DeadlineDecision, type MeasureAnalysis, type PhraseGroup, type ResponsibleDecision, type ValueGroup } from "@/lib/prevention/miper/re04-measures"
+import { FREQUENCY_MAX_LENGTH, RESPONSIBLE_MAX_LENGTH, type DeadlineDecision, type MeasureAnalysis, type PhraseGroup, type ResponsibleDecision, type ValueGroup } from "@/lib/prevention/miper/re04-measures"
 import { CONTROL_HIERARCHY_LABEL, type ControlHierarchy } from "@/lib/prevention/miper/snapshot"
 import { countOf, todayInChile } from "@/lib/utils"
 
@@ -221,13 +221,15 @@ export function ImportMeasuresStep({ analysis, responsibleOptions, decisions, on
                   { value: NOBODY, label: "Sin responsable" },
                 ]
                 const value = decision.kind === "user" ? decision.userId : decision.kind === "text" ? AS_WRITTEN : NOBODY
+                // Al largo que acepta el servidor, como la sugerencia: un RESPONSABLE más largo no puede rechazar la carga.
+                const asWritten = { kind: "text" as const, name: (group.text ?? "").slice(0, RESPONSIBLE_MAX_LENGTH) }
                 return (
                   <TableRow key={group.key}>
                     <TableCell className="min-w-48 whitespace-normal">{valueLabel(group)}</TableCell>
                     <TableCell className="text-right tabular-nums">{group.count}</TableCell>
                     <TableCell className="min-w-64">
                       <OptionSelect aria-label={`Responsable para «${short(valueLabel(group))}»`} options={options} value={value}
-                        onValueChange={(next) => setResponsible(group.key, next === AS_WRITTEN ? { kind: "text", name: group.text ?? "" } : next === NOBODY ? { kind: "none" } : { kind: "user", userId: next })} />
+                        onValueChange={(next) => setResponsible(group.key, next === AS_WRITTEN ? asWritten : next === NOBODY ? { kind: "none" } : { kind: "user", userId: next })} />
                     </TableCell>
                   </TableRow>
                 )

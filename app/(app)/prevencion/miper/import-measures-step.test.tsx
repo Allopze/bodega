@@ -3,7 +3,7 @@ import { useState } from "react"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { initialDecisions, type ImportDecisions } from "@/lib/prevention/miper/import-decisions"
-import type { MeasureAnalysis } from "@/lib/prevention/miper/re04-measures"
+import { RESPONSIBLE_MAX_LENGTH, type MeasureAnalysis } from "@/lib/prevention/miper/re04-measures"
 import { addDaysToPlainDate, formatDate, todayInChile } from "@/lib/utils"
 import { ImportMeasuresStep } from "./import-measures-step"
 
@@ -69,6 +69,25 @@ describe("ImportMeasuresStep (Fase C)", () => {
     fireEvent.click(within(responsables).getByRole("combobox", { name: "Responsable para «SUPERVISOR/PREVENCION»" }))
     fireEvent.click(screen.getByRole("option", { name: "Jefe de faena" }))
     expect(onChange.mock.lastCall![0].responsibles["supervisor/prevencion"]).toEqual({ kind: "user", userId: "u-1" })
+  })
+
+  it("«Tal como dice el Excel» envía el responsable recortado al largo que acepta el servidor (300)", () => {
+    const onChange = vi.fn()
+    const long = `SUPERVISOR DE TURNO ${"Y PREVENCIONISTA DE FAENA ".repeat(14)}`.trim()
+    expect(long.length).toBeGreaterThan(RESPONSIBLE_MAX_LENGTH)
+    const analysis: MeasureAnalysis = {
+      ...ANALYSIS,
+      responsibles: [{ key: "largo", text: long, count: 3, suggestion: { kind: "text", name: long.slice(0, RESPONSIBLE_MAX_LENGTH) } }],
+      measures: ANALYSIS.measures.map((measure) => ({ ...measure, responsibleKey: "largo" })),
+    }
+    render(<Harness onChange={onChange} analysis={analysis} />)
+    const responsables = screen.getByRole("region", { name: "Responsables del Excel" })
+    const select = () => within(responsables).getByRole("combobox", { name: /^Responsable para «SUPERVISOR DE TURNO/ })
+    fireEvent.click(select())
+    fireEvent.click(screen.getByRole("option", { name: "Jefe de faena" }))
+    fireEvent.click(select())
+    fireEvent.click(screen.getByRole("option", { name: /^Tal como dice el Excel/ }))
+    expect(onChange.mock.lastCall![0].responsibles.largo).toEqual({ kind: "text", name: long.slice(0, RESPONSIBLE_MAX_LENGTH) })
   })
 
   it("cada plazo del Excel se decide una vez: existente con su frecuencia o por implementar con fecha", () => {

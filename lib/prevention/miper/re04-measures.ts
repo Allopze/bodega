@@ -23,7 +23,8 @@ import { CONTROL_HIERARCHY_LABEL, type ControlHierarchy } from "./snapshot"
 export const MEASURE_MAX_LENGTH = 3000
 /** Largo máximo de una frecuencia de verificación: el de `deadlineDecisionSchema` y `verificationFrequency`. */
 export const FREQUENCY_MAX_LENGTH = 120
-const RESPONSIBLE_MAX_LENGTH = 300
+/** Largo máximo de un responsable escrito: el de `responsibleDecisionSchema` y `responsibleName`. */
+export const RESPONSIBLE_MAX_LENGTH = 300
 
 const MEASURE_COLUMN: Re04ColumnLabel = "MEDIDA DE CONTROL"
 const RESPONSIBLE_COLUMN: Re04ColumnLabel = "RESPONSABLE"
