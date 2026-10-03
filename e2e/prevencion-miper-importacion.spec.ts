@@ -3,7 +3,7 @@ import AxeBuilder from "@axe-core/playwright"
 import ExcelJS from "exceljs"
 import { RE04_COLUMNS, RE04_SHEET_NAME } from "../lib/prevention/miper/re04-import"
 import { AXE_DISABLED_RULES, AXE_TAGS } from "./accessibility-targets"
-import { login } from "./helpers"
+import { expectPageTitle, login } from "./helpers"
 import { abrirRiesgo, cabecera, irAPaso } from "./miper-helpers"
 
 /**
@@ -24,11 +24,11 @@ import { abrirRiesgo, cabecera, irAPaso } from "./miper-helpers"
  *     frase siguiente y no al comienzo del diálogo; el camino con teclado; y las
  *     páginas conservan lo decidido.
  *
- * Va a «Faena Restringida E2E», período 2046: ningún otro spec afirma esa fila
- * ni ese período.
+ * Va a «Faena Restringida E2E», período 2046 (2047 en el reintento de CI):
+ * ningún otro spec afirma esa fila ni esos períodos, y el sembrado sólo trae
+ * 2035–2039 en esa faena.
  */
 const FAENA = "Faena Restringida E2E"
-const PERIODO = "2046"
 
 type Fila = Partial<Record<(typeof RE04_COLUMNS)[number], string | number>>
 const FILAS: Fila[] = [
@@ -106,12 +106,16 @@ async function revisarArchivo(page: Page, buffer: Buffer, periodo?: string): Pro
   return dialogo
 }
 
-test("importar un RE-04 con medidas: tipo, responsable y plazo o frecuencia; el servidor rechaza un mapeo adulterado", async ({ page }) => {
+test("importar un RE-04 con medidas: tipo, responsable y plazo o frecuencia; el servidor rechaza un mapeo adulterado", async ({ page }, testInfo) => {
   test.setTimeout(180_000)
+  // Un reintento en CI encuentra el borrador que dejó la carga del intento anterior: con el mismo
+  // período, «Cargar en borrador» quedaría deshabilitado («Ya existe un MIPER del período…») y el
+  // timeout taparía la falla original.
+  const periodo = String(2046 + testInfo.retry)
   await login(page)
 
   // 1. Archivo
-  const dialogo = await revisarArchivo(page, await libro(), PERIODO)
+  const dialogo = await revisarArchivo(page, await libro(), periodo)
 
   // 2. Filas
   await expect(dialogo.getByText("3 filas en «RE-04 IPER»: 3 para cargar, 0 por revisar y 0 sin cargar.", { exact: true })).toBeVisible({ timeout: 30_000 })
@@ -142,25 +146,30 @@ test("importar un RE-04 con medidas: tipo, responsable y plazo o frecuencia; el 
   // El servidor recalcula las claves desde el lote, lo rechaza y no crea nada.
   let adulterado = false
   // Predicado y no glob: la Server Function va a la URL de la página, con o sin query string.
+  // Un cuerpo que no se puede adulterar (otra forma de serializar) se aborta: dejarlo pasar
+  // haría la carga de verdad y la prueba moriría esperando el rechazo, sin decir por qué.
   await page.route((url) => url.pathname === "/prevencion/miper", async (route) => {
     const request = route.request()
     if (adulterado || request.method() !== "POST" || !request.headers()["next-action"]) return route.fallback()
     let args: unknown
-    try { args = JSON.parse(request.postData() ?? "") } catch { return route.fallback() }
+    try { args = JSON.parse(request.postData() ?? "") } catch { return route.abort() }
     const payload = Array.isArray(args) ? (args[0] as { measureMapping?: Record<string, string> } | undefined) : undefined
-    if (!payload?.measureMapping) return route.fallback()
+    if (!payload?.measureMapping) return route.abort()
     delete payload.measureMapping[Object.keys(payload.measureMapping)[0]!]
     adulterado = true
     return route.continue({ postData: JSON.stringify(args) })
   })
   await dialogo.getByRole("button", { name: "Cargar en borrador", exact: true }).click()
+  await expect.poll(() => adulterado, {
+    message: "el cuerpo de la Server Function no se pudo leer como JSON con `measureMapping`: revisar cómo serializa Next los argumentos",
+  }).toBe(true)
   await expect(dialogo.getByRole("alert")).toContainText("falta decidir el tipo de 1 medida", { timeout: 30_000 })
-  expect(adulterado, "el cuerpo de la Server Function no se pudo leer como JSON: revisar cómo serializa Next los argumentos").toBe(true)
   await page.unrouteAll({ behavior: "wait" })
 
   // La carga de verdad.
   await dialogo.getByRole("button", { name: "Cargar en borrador", exact: true }).click()
   await page.waitForURL(/\/prevencion\/miper\/riskmatrix-[^/?]+$/, { timeout: 60_000 })
+  await expectPageTitle(page, `MIPER ${FAENA} ${periodo}`)
   const matriz = page.url()
 
   // Riesgo 1 (Importante): medidas por implementar con el responsable escrito y el plazo de hoy.
