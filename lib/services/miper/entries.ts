@@ -3,8 +3,9 @@ import { z } from "zod"
 import { db } from "@/db"
 import { preventionPdtpSourceLinks, preventionRiskControls, preventionRiskEntries, preventionRiskFactors, preventionRiskMapMarkers, preventionRiskMatrices } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { controlColumns } from "@/lib/prevention/miper/control-values"
 import { cleanMiperName } from "@/lib/prevention/miper/names"
-import { miperControlRefSchema, miperControlSaveSchema, miperEntryRefSchema, miperEntrySaveSchema, type MiperControlSaveInput, type MiperEntryValues } from "@/lib/validation/prevention-module/miper"
+import { miperControlRefSchema, miperControlSaveSchema, miperEntryRefSchema, miperEntrySaveSchema, type MiperEntryValues } from "@/lib/validation/prevention-module/miper"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { resolveDictionaryId } from "./dictionaries"
 import { notifyMiperRowIntolerable } from "./notifications"
@@ -170,31 +171,6 @@ export async function deleteMiperEntry(input: unknown, access: MiperAccess) {
     await touchMatrix(tx, matrix.id, now)
     await miperHistory(tx, { matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "entry", objectId: entry.id, changeType: "entry_deleted", before: { entry, controls }, actorUserId: access.userId, actingAs: EDIT })
   })
-}
-
-/**
- * D5 (Fase C): una medida EXISTENTE se verifica con una frecuencia y no lleva
- * plazo; una POR IMPLEMENTAR lleva plazo y no frecuencia. Lo que no aplica se
- * guarda vacío, para que un plazo viejo no quede escondido en una existente.
- * Si el pedido no trae `isExisting` o la frecuencia, se conservan los de la
- * medida (una nueva nace por implementar): un llamador anterior a la Fase C no
- * convierte una existente en pendiente al editarla.
- */
-function controlColumns(
-  values: MiperControlSaveInput["values"],
-  responsible: { responsibleUserId: string | null; responsibleSnapshot: string | null },
-  current: { isExisting: boolean; verificationFrequency: string | null } | null,
-) {
-  const isExisting = values.isExisting ?? current?.isExisting ?? false
-  const frequency = values.verificationFrequency === undefined ? current?.verificationFrequency ?? null : cleanMiperName(values.verificationFrequency)
-  return {
-    hierarchy: values.hierarchy,
-    description: values.description,
-    ...responsible,
-    isExisting,
-    verificationFrequency: isExisting ? frequency : null,
-    dueDate: isExisting ? null : values.dueDate ?? null,
-  }
 }
 
 export async function saveMiperControl(input: unknown, access: MiperAccess) {
