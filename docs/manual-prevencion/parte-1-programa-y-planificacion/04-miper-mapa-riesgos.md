@@ -64,6 +64,8 @@ En la **"Ficha del documento"** (botón del encabezado, que abre un panel latera
 *   **Participación:** resumen de participación y consulta, y referencia de su evidencia.
 *   **Elaboró / revisó / aprobó:** no se escriben. Se registran solos con el flujo de revisión y quedan congelados en cada versión sellada.
 
+Si sales de la ficha sin guardar —por ejemplo, con el botón Atrás del navegador—, lo escrito no se pierde: al volver a abrirla en la misma pestaña aparece **"Recuperar lo que no guardaste"** (o **"Descartar esos cambios"**). Mientras se guarda, los campos quedan bloqueados.
+
 Los cambios de un MIPER vigente se aplican de inmediato y quedan marcados como *cambios pendientes de revisión* hasta el próximo sellado (ver sección 8).
 
 ---
@@ -149,7 +151,7 @@ La pestaña **Matriz** ya no es una planilla de 19 columnas: se recorre por nive
 La matriz tiene tres niveles: **actividad › tarea › riesgo**.
 
 1.  **Estructura.** Es la vista de entrada: una tarjeta por actividad (con su número de tareas, de riesgos y el conteo por clasificación) y, debajo, una fila por tarea con sus puestos, su número de riesgos y cuántos están completos (por ejemplo, "3/5 completos"). Actividades y tareas siguen el orden del documento original.
-2.  **Tarea.** Al hacer clic en una tarea se abre la lista de sus riesgos: peligro, riesgo y daño, la clasificación con su MR, si está controlado, cuántas medidas tiene y si está "Completo" o con "N pendientes". "Volver a la matriz" (o el botón Atrás del navegador) te devuelve con tus filtros intactos, a la misma altura de la página y con las actividades que habías plegado.
+2.  **Tarea.** Al hacer clic en una tarea se abre la lista de sus riesgos: peligro, riesgo y daño, la clasificación con su MR, si está controlado, cuántas medidas tiene y si está "Completo" o con "N pendientes". "Volver a la matriz" (o el botón Atrás del navegador) te devuelve con tus filtros intactos, a la misma altura de la página y con las actividades que habías plegado. Cambiar de pestaña o volver a abrir una tarea, en cambio, te lleva arriba de la página.
 3.  **Editor del riesgo.** Al hacer clic en un riesgo se abre a pantalla completa para editarlo (ver más abajo).
 
 Sobre la lista, una franja resume el centro de trabajo, la dotación, las tareas, los riesgos y cuántos están completos; los conteos por clasificación funcionan como filtros.
@@ -158,8 +160,8 @@ Sobre la lista, una franja resume el centro de trabajo, la dotación, las tareas
 
 *   El buscador **"Buscar en la matriz"** mira actividad, tarea, puesto, lugar, peligro, riesgo, daño y medidas.
 *   El botón **"Más filtros"** (con el número de filtros activos) abre el cajón **"Filtros avanzados"**, que reúne clasificación, completitud, "¿Está controlado?", factor de riesgo y marcas (observados, modificados).
-*   Los filtros viven en la dirección de la página: sobreviven a recargar, y puedes copiar el enlace para compartir la vista. Bajo la barra aparecen como **chips** que se quitan de a uno, o todos con **"Limpiar filtros"**.
-*   Con algún filtro activo, las tarjetas se expanden y bajo cada tarea aparecen solo los riesgos que coinciden; los conteos pasan a "x de y". Si ningún riesgo coincide, la matriz lo dice y ofrece **"Limpiar filtros"**.
+*   Los filtros viven en la dirección de la página: sobreviven a recargar, y puedes copiar el enlace para compartir la vista. Bajo la barra aparecen como **chips** que se quitan de a uno, o todos con **"Limpiar filtros"**. La búsqueda no lleva chip: ya se ve en su campo.
+*   Con algún filtro activo, las tarjetas se expanden y bajo cada tarea aparecen solo los riesgos que coinciden; los conteos pasan a "x de y". Si ningún riesgo coincide, la matriz lo dice y ofrece **"Ver todos los riesgos"**, que quita la búsqueda y todos los filtros.
 *   **"Contraer todo" / "Expandir todo"** pliega o despliega las actividades.
 
 ### Agregar una tarea o un peligro
@@ -176,20 +178,20 @@ El editor tiene **cuatro pasos**, que se eligen arriba y se recuerdan en la dire
 |---|---|
 | **1. Identificación** | Factor de riesgo, si es rutinaria o no, peligro, riesgo, daño probable, puesto, lugar específico y personas expuestas (F, M, otro). Un desplegable permite mover el riesgo a otra actividad o tarea. |
 | **2. Evaluación** | Eliges una de tres tarjetas de **Probabilidad** y una de tres de **Consecuencia**; la plataforma muestra el MR y la clasificación con su criterio. |
-| **3. Medidas de control** | "¿Está controlado?" y las medidas (tipo I–V, descripción, responsable, plazo), con "Agregar medida". Si la medida está vinculada al programa, se indica la actividad. En una MIPER vigente, cada medida tiene el enlace **"Verificar eficacia del control"**. |
+| **3. Medidas de control** | "¿Está controlado?" y las medidas (tipo I–V, descripción, responsable, plazo), con "Agregar medida". Se edita una medida a la vez. Si el servidor rechaza guardar o eliminar una medida, el motivo queda escrito en el formulario o en el diálogo. Si la medida está vinculada al programa, se indica la actividad. En una MIPER vigente, cada medida tiene el enlace **"Verificar eficacia del control"**. |
 | **4. Seguimiento** | Actividades del programa vinculadas, observaciones del riesgo y cambios contra la versión anterior. |
 
 A un costado (o debajo, en pantallas chicas) está el **chequeo del riesgo**: un ítem por bloque con una marca de listo, o con el mensaje de lo que falta y un enlace al paso donde se corrige. También muestra el contexto del riesgo y su clasificación.
 
-**Guardado automático.** No hay botón "Guardar": los textos se guardan al salir del campo y las selecciones, al elegirlas. Arriba del editor, un estado indica **Guardando…**, **Guardado** (con la hora) o el error del riesgo que tienes abierto. Si un guardado falla, el mensaje aparece bajo el campo y el campo vuelve a su último valor guardado. Si el riesgo cambió en el servidor mientras lo editabas, el aviso trae un botón **"Recargar riesgo"**; la plataforma no pisa lo que escribió otra persona.
+**Guardado automático.** No hay botón "Guardar": los textos se guardan al salir del campo y las selecciones, al elegirlas. Arriba del editor, un estado indica **Guardando…**, **Guardado** (con la hora) o el error del riesgo que tienes abierto. Si un guardado falla, el mensaje aparece bajo el campo y el campo vuelve a su último valor guardado. Si el riesgo cambió en el servidor mientras lo editabas, el aviso dice "Recarga el riesgo para ver el cambio de la otra persona" y trae el botón **"Recargar riesgo"**; la plataforma no pisa lo que escribió otra persona.
 
 ### Recorrer los pendientes
 
-En el pie del editor, **"‹ Anterior"** y **"Siguiente ›"** recorren los riesgos de la tarea, y **"Siguiente pendiente"** salta al próximo riesgo con datos faltantes (dando la vuelta al final). Si hay filtros activos, recorre solo los riesgos filtrados. La tarjeta **"Siguiente paso"**, bajo el encabezado de la página, te lleva al primer pendiente más grave.
+En el pie del editor, **"‹ Anterior"** y **"Siguiente ›"** recorren los riesgos de la tarea, y **"Siguiente pendiente"** salta al próximo riesgo con datos faltantes (dando la vuelta al final). Si hay filtros activos, recorre solo los riesgos filtrados. La tarjeta **"Siguiente paso"**, bajo el encabezado de la página, tiene el mismo botón **"Siguiente pendiente"** y parte por el pendiente más grave. A quien revisa le ofrece **"Empezar la revisión"**.
 
 ### En el celular
 
-La matriz **se puede editar desde el celular**: la estructura, la tarea y el editor usan una sola columna, sin desplazamiento lateral, y el chequeo del riesgo baja bajo el contenido. Los pasos y la navegación del pie funcionan igual que en el computador.
+La matriz **se puede editar desde el celular**: la estructura, la tarea y el editor usan una sola columna, sin desplazamiento lateral, y el chequeo del riesgo baja bajo el contenido. Los pasos y la navegación del pie funcionan igual que en el computador. En pantallas angostas, los pasos del editor muestran su número y el paso activo, su nombre.
 
 > **EL ORDEN DEL RE-04 VIVE EN EL EXCEL:** la pantalla se organiza por niveles; las columnas en el orden del formato RE-04 solo existen en el libro Excel descargable.
 

@@ -1,6 +1,6 @@
 # Rediseño UI/UX de la MIPER: de planilla a espacio de trabajo guiado
 
-Fecha: 2026-10-02 · Estado: **Fase A implementada**
+Fecha: 2026-10-02 · Estado: **Fase A implementada, con el pulido A2**
 Alcance: todo el submódulo `app/(app)/prevencion/miper` (portada, espacio de trabajo, matriz,
 ficha del riesgo, programa, revisión, historial, importación) y lo mínimo del backend que el
 rediseño necesita.
@@ -131,8 +131,15 @@ Dos consecuencias de esa navegación, resueltas en la Fase A:
   en una versión mayor.
 - **Lo que se recuerda al volver.** Abrir una tarea desmonta la matriz. Las actividades plegadas
   se guardan en `sessionStorage` (`miper:<matrixId>:collapsed`) y el scroll del pozo del shell se
-  guarda por URL (`miper:scroll:<ruta+query>`) justo antes de cada `push`. La matriz y la tarea lo
-  retoman al montarse. No se usa `history.state`, que es de Next.
+  guarda por URL (`miper:scroll:<ruta+query>`). Antes de **toda navegación hacia adelante**
+  (`navigateWorkspace` con push o replace, y los `router.push` de crear y duplicar) se guarda el
+  de la vista que se deja y se **borra el del destino** (`beforeForwardNavigation`). Así sólo
+  Atrás/Adelante y los enlaces que para la persona son un «volver» («‹ Volver a la matriz»,
+  «‹ Volver a la tarea», con `restoreScroll`, que no borra la clave del destino) encuentran algo
+  que restaurar: cambiar de pestaña o volver a abrir una tarea llega arriba. La matriz y la tarea
+  lo retoman al montarse. No se usa `history.state`, que es de Next, ni un flag de `popstate`.
+  Limitación aceptada: entrar desde fuera del espacio de trabajo con un `<Link>` de Next puede
+  restaurar una clave vieja de esa misma URL guardada en la pestaña.
 
 ---
 
@@ -169,7 +176,7 @@ Dos consecuencias de esa navegación, resueltas en la Fase A:
     peligro, riesgo, daño y medidas) y "Contraer todo / Expandir todo".
   - Cajón "Más filtros (N)": clasificación (4 casillas), completitud, ¿controlado?, factor y marcas
     (observados, modificados).
-  - Bajo la barra, chips removibles y "Limpiar filtros".
+  - Bajo la barra, chips removibles y "Limpiar filtros". La búsqueda no lleva chip: ya está a la vista en su campo.
   - La clasificación, "con pendientes" y "no controlados" se activan también desde la franja: es
     un doble control deliberado, por excepción a A5 (la franja es la lectura rápida y el cajón, el
     filtro completo).
@@ -188,7 +195,7 @@ Dos consecuencias de esa navegación, resueltas en la Fase A:
   - Los conteos pasan a "x de y".
 - **Matriz vacía:** `EmptyState` "Esta MIPER todavía no tiene riesgos", con CTA "Nueva tarea".
 - **Filtros sin coincidencias:** `EmptyState` "Ningún riesgo coincide con los filtros", con CTA
-  "Limpiar filtros" (A4), que quita las seis claves de filtro de la URL.
+  "Ver todos los riesgos" (A4), que quita las seis claves de filtro de la URL.
 - **Responsive:** un solo árbol que se reacomoda (grid/flex). **No hay doble árbol**
   `md:hidden` / `hidden md:block`, así que los localizadores de E2E no necesitan `textoVisible()`
   para esta vista.
@@ -232,7 +239,10 @@ Dos consecuencias de esa navegación, resueltas en la Fase A:
   - Menú "Más": "Duplicar riesgo" y "Eliminar riesgo" (`ConfirmDialog` destructivo).
 - **Pasos** (`Tabs` con apariencia de pasos numerados, en `?paso=`; cada paso indica ✓ o
   "N pendientes"). Al abrir el editor se entra **al primer paso con errores**; si no hay, a
-  "Identificación".
+  "Identificación". A `< sm`, cada paso muestra su número y el activo, su rótulo (el rótulo oculto
+  queda `sr-only`; la separación del número la da un margen, porque `inline-flex` recorta el
+  espacio de «N. »). El conteo accesible usa plural real («1 pendiente»). `TabsList` centra la
+  pestaña activa dentro de su tira cuando no cabe.
   1. **Identificación**:
      - Factor de riesgo (`OptionSelect`).
      - ¿Rutinaria? (dos `SelectableCard`).
@@ -272,8 +282,9 @@ Dos consecuencias de esa navegación, resueltas en la Fase A:
   - Decisión de la Fase A: en Evaluación y Medidas se conservan las tarjetas, deshabilitadas, en
     vez de `DetailItem`; muestran los mismos valores y además el criterio del RE-04.
 - **Riesgo recién creado que aún no llegó:** si el `fila` no está en `rows`, se muestra un
-  esqueleto y se llama una vez a `router.refresh()`. Si después sigue sin aparecer: "Este riesgo
-  ya no existe" y un enlace a la matriz.
+  esqueleto y se llama una vez a `router.refresh()`. La recarga corre en una transición
+  (`useTransition`). Si cuando termina sigue sin aparecer: "Este riesgo ya no existe" y un enlace
+  a la matriz. No hay un temporizador fijo.
 
 ### 5.5 Guardado del editor
 
@@ -288,7 +299,8 @@ Dos consecuencias de esa navegación, resueltas en la Fase A:
   riesgo no se anuncia ni ofrece "Recargar riesgo" ahí. Cuando llega una foto del servidor en la
   que un riesgo cambió, sus rechazos anteriores se descartan.
 - **Conflicto de versión:** muestra el mensaje del servicio ("La fila cambió mientras la
-  editabas…") con un botón "Recargar riesgo" (`router.refresh()`).
+  editabas. Recarga el riesgo para ver el cambio de la otra persona.") con un botón "Recargar
+  riesgo" (`router.refresh()`).
 - **Cuándo guarda cada control:** los textos, al perder el foco; las selecciones (tarjetas,
   selects, combobox), al elegir.
 
@@ -299,8 +311,8 @@ devuelve `{ tone, title, description, action: { kind: "ficha" | "riesgo" | "filt
 target } | null }`. Las reglas, en orden:
 
 1. **Solo lectura** (`readOnlyReason`): tono info y el motivo, sin acción.
-2. **Revisor con ronda abierta:** "Revisa la versión enviada: N riesgos, X Importantes e
-   Intolerables" → primer riesgo Intolerable o Importante, o el primero.
+2. **Revisor con ronda abierta** (sólo con `hasOpenRound`): "Revisa la versión enviada: N
+   riesgos, X Importantes e Intolerables" → primer riesgo Intolerable o Importante, o el primero.
 3. **`canRespond` con observaciones abiertas:** "Responde N observaciones" → `tab=revision`.
 4. **`canEdit` con errores de cabecera:** "Completa la ficha del documento (N datos)" → `ficha`.
 5. **`canEdit` con errores en riesgos:** "Faltan datos en N riesgos" → al primer pendiente, por
@@ -319,6 +331,11 @@ Reglas añadidas durante la implementación:
 - **El motivo de sólo lectura se muestra en todas las vistas** (estructura, tarea y editor). Los
   demás pasos se muestran sólo en la raíz de la matriz, y la acción "Ir a Revisión" se oculta
   cuando ya se está en esa pestaña.
+- **A2:** los títulos usan plural real (`countOf`).
+- Cada paso declara su `scope` (`everywhere` para el motivo de solo lectura, `root` para el
+  resto). `nextStepInView` ya no lee `readOnlyReason`.
+- La acción al riesgo se llama «Siguiente pendiente» (`purpose: "pending"`) o «Empezar la
+  revisión» (`purpose: "review"`).
 
 ### 5.7 Ficha del documento (`?ficha=1`)
 
@@ -326,6 +343,11 @@ Reglas añadidas durante la implementación:
 con un toast "Antecedentes guardados" (el texto que ya usa la acción). Si hay cambios sin guardar,
 cerrar pide confirmación. La ficha la abren los bloqueos de cabecera, la tarjeta "Siguiente paso"
 y la creación de una MIPER nueva (`new-miper-dialog.tsx` navega a `?ficha=1`).
+
+Lo escrito y no guardado se guarda en `sessionStorage` (`miper:ficha:<matrixId>:<version>`).
+Al reabrir la ficha se ofrece "Recuperar lo que no guardaste", porque un `popstate` no se
+puede cancelar. Se borra al guardar, al descartarlo y con "Cerrar sin guardar". Mientras
+guarda, los campos quedan deshabilitados. `beforeunload` se mantiene.
 
 ---
 
@@ -340,6 +362,8 @@ y la creación de una MIPER nueva (`new-miper-dialog.tsx` navega a `?ficha=1`).
   `onChange(texto)`.
 - Si el valor no coincide con ninguna opción, el input lo muestra igual.
 - Los consumidores actuales (8 archivos) no cambian.
+- Con `clearLabel`, un valor libre también muestra la ✕.
+- Pasar el mouse por una opción apaga el estado «recién enfocado», así que Enter la elige.
 
 Reemplaza al `<datalist>`, que en el editor no permite ver la lista ni filtrarla bien.
 
@@ -355,15 +379,22 @@ Sale de `entry-sheet.tsx` a `control-form.tsx`:
 - Se conservan los `aria-label` actuales ("Tipo de control", "Descripción de la medida",
   "Nombre o cargo responsable", "Plazo de la medida") para que no cambien los localizadores E2E
   que no tienen por qué cambiar.
+- Ayuda visible «Mínimo 3 caracteres.».
+- El error del servidor en `role="alert"` (`useOperation` en modo `message`).
+- El responsable actual que ya no está en `responsibleOptions` se agrega como opción.
+- Una medida a la vez: con una edición abierta, «Agregar medida» y los otros «Editar» se
+  deshabilitan.
+- El borrado espera la respuesta y muestra el error en el `ConfirmDialog` (`error`).
 
 ### 6.3 `PcChoice`
 
 `components/prevention/pc-choice.tsx`:
 
 - Dos `role="radiogroup"` ("Probabilidad", "Consecuencia") con tres `SelectableCard` cada uno.
-- Cada tarjeta lleva el rótulo y el valor ("Alta (4)") como título y el texto del RE-04 como
-  descripción.
-- Las flechas mueven la selección dentro del grupo (patrón radio).
+- Cada tarjeta se nombra por su título ("4 · Alta"); el texto del RE-04 va como descripción
+  accesible (`aria-describedby`).
+- Las flechas, Home y End mueven la selección dentro del grupo (patrón radio).
+- La leyenda de bandas sale de `RE04_METHODOLOGY`.
 - Reemplaza a `PcSelect` (`pc-select.tsx`), que existía por rendimiento en la grilla; al quedar
   sin consumidores se borra junto con su prueba.
 
@@ -489,6 +520,11 @@ Sale de `entry-sheet.tsx` a `control-form.tsx`:
   usa tokens `-ink`.
 - En móvil el editor es un formulario de una columna con el pie de navegación fijo. Ya se puede
   **editar**, cosa que la grilla no permitía.
+- El resumen lateral del editor es una `<section aria-labelledby>` y no un `<aside>`; sus
+  bloques no repiten el título en `aria-label`.
+- Los botones de la franja de resumen empiezan su nombre con su texto visible (WCAG 2.5.3).
+- axe recorre la estructura, la tarea, los cuatro pasos y la ficha
+  (`e2e/accessibility.spec.ts`).
 
 ## 13. Pruebas y verificación
 
