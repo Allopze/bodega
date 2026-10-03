@@ -122,7 +122,8 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, programPr
 
   const versionLabel = workspace.versions[0] ? `v${workspace.versions[0].versionNumber}` : "sin versión aprobada"
   // «Elaboró» (Fase B): quien envió la ronda abierta o, sin ronda, quien elaboró la última versión aprobada.
-  const authorName = workspace.openRound?.submittedByName ?? workspace.versions[0]?.elaboratedByName ?? null
+  // Con ronda abierta SÓLO su remitente, aunque falte el nombre: el de la versión anterior sería otra persona.
+  const authorName = workspace.openRound ? workspace.openRound.submittedByName : workspace.versions[0]?.elaboratedByName ?? null
   const nextStep = nextStepFor({
     mode, status: workspace.matrix.status, reviewState: workspace.matrix.reviewState, hasOpenRound: Boolean(workspace.openRound),
     hasPendingChanges: workspace.pendingDiff.hasChanges, versionLabel, issues, openObservations, rows,

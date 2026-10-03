@@ -214,6 +214,12 @@ describe("MiperWorkspaceView — «Elaboró» y «Cambiar de faena» (Fase B)", 
     expect(elaboro()).toContain("Ana Pérez")
   })
 
+  it("con una ronda abierta sin nombre de quien la envió, no cae en el autor de la versión anterior (sería otra persona)", () => {
+    show("", workspaceOf({ openRound: { ...round, submittedByName: null }, versions: [version] } as unknown as Partial<MiperWorkspace>))
+    expect(screen.queryByText((_, node) => node?.tagName === "DT" && node.textContent?.trim() === "Elaboró")).toBeNull()
+    expect(screen.queryByText(/Luis Soto/)).toBeNull()
+  })
+
   it("sin ronda abierta, quien elaboró la última versión aprobada", () => {
     show("", workspaceOf({ versions: [version] } as unknown as Partial<MiperWorkspace>))
     expect(elaboro()).toContain("Luis Soto")
