@@ -30,7 +30,12 @@ const DEADLINE_COLUMN: Re04ColumnLabel = "PLAZOS"
 
 export type HierarchySource = "prefix" | "keyword" | "default"
 export type HierarchySuggestion = { hierarchy: ControlHierarchy; source: HierarchySource }
-export type MeasurePiece = { text: string; key: string; prefix: ControlHierarchy | null }
+/**
+ * `line`: la línea de la celda de la que salió la pieza, contada sobre las líneas
+ * no vacías y ANTES de descartar repetidas y restos. Es la que alinea la medida
+ * con su RESPONSABLE y su PLAZOS en el libro exportado.
+ */
+export type MeasurePiece = { text: string; key: string; prefix: ControlHierarchy | null; line: number }
 export type ResponsibleDecision = { kind: "user"; userId: string } | { kind: "text"; name: string } | { kind: "none" }
 export type DeadlineDecision = { kind: "existing"; frequency: string | null } | { kind: "pending"; dueDate: string | null }
 export type DeadlineSource = "date" | "relative" | "immediate" | "frequency" | "default"
@@ -57,6 +62,16 @@ function cellText(value: unknown): string | null {
   if (typeof value === "string") return value
   if (typeof value === "number" && Number.isFinite(value)) return String(value)
   return null
+}
+
+/** Las líneas no vacías de una celda, limpias. Su índice es el `line` de cada medida. */
+function cellLines(cell: unknown): string[] {
+  const text = cellText(cell)
+  if (text === null) return []
+  return text.split(/\r?\n/).flatMap((raw) => {
+    const line = cleanMiperName(raw)
+    return line === null ? [] : [line]
+  })
 }
 
 /* ── Separar las medidas de una celda ───────────────────────────────────── */
@@ -108,32 +123,28 @@ function splitTopLevel(text: string, separator: string): string[] {
  *   las comas de primer nivel;
  * - después, el «.X» pegado.
  * Se descartan los restos de menos de 3 caracteres y la misma frase repetida en
- * la celda.
+ * la celda (queda la primera, con su línea).
  */
 export function splitMeasures(cell: unknown): MeasurePiece[] {
-  const text = cellText(cell)
-  if (text === null) return []
   const pieces: MeasurePiece[] = []
   const seen = new Set<string>()
-  const push = (raw: string, prefix: ControlHierarchy | null) => {
+  const push = (raw: string, prefix: ControlHierarchy | null, line: number) => {
     const cleaned = (cleanMiperName(raw) ?? "").replace(EDGE_PUNCTUATION, "").slice(0, MEASURE_MAX_LENGTH)
     const key = normalizeMeasure(cleaned)
     if (cleaned.length < 3 || key === "" || seen.has(key)) return
     seen.add(key)
-    pieces.push({ text: cleaned, key, prefix })
+    pieces.push({ text: cleaned, key, prefix, line })
   }
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = cleanMiperName(rawLine)
-    if (line === null) continue
+  cellLines(cell).forEach((line, index) => {
     const prefixed = prefixOf(line)
     if (prefixed) {
-      push(prefixed.rest, prefixed.hierarchy)
-      continue
+      push(prefixed.rest, prefixed.hierarchy, index)
+      return
     }
     const bySemicolon = splitTopLevel(line, ";")
     const parts = bySemicolon.length > 1 ? bySemicolon : splitTopLevel(line, ",")
-    for (const part of parts) for (const piece of part.split(GLUED_SENTENCE)) push(piece, null)
-  }
+    for (const part of parts) for (const piece of part.split(GLUED_SENTENCE)) push(piece, null, index)
+  })
   return pieces
 }
 
@@ -243,21 +254,25 @@ export function responsibleSuggestion(text: string | null, users: readonly Respo
 
 const EMPTY_MARK = /^[—–-]$/u
 
+const blankIfEmptyMark = (value: string) => (EMPTY_MARK.test(value) ? "" : value)
+
 /**
  * El valor de RESPONSABLE o PLAZOS de cada medida de la fila. El libro que
  * exporta la plataforma escribe UNA LÍNEA POR MEDIDA en las tres columnas (y cada
- * medida con su «I.–V.»): ahí cada línea es de su medida, y «—» es «vacío». En
- * cualquier otro caso, la celda entera vale para todas las medidas de la fila.
+ * medida con su «I.–V.»): ahí cada medida toma la línea de su `line`, y «—» es
+ * «vacío». Se cuentan las líneas de MEDIDA (`measureLineCount`), no las medidas:
+ * la frase repetida en la fila toma los valores de su primera línea y el resto
+ * de menos de 3 caracteres consume la suya, sin correr las demás. Si las cuentas
+ * no calzan (o la celda MEDIDA no trae «I.–V.»), la celda entera vale para todas
+ * las medidas de la fila.
  */
-function valuesPerMeasure(cell: unknown, pieces: readonly MeasurePiece[]): string[] {
-  const text = cellText(cell) ?? ""
-  const lines = text.split(/\r?\n/).map((line) => {
-    const cleaned = cleanMiperName(line) ?? ""
-    return EMPTY_MARK.test(cleaned) ? "" : cleaned
-  })
-  if (pieces.length > 1 && pieces.every((piece) => piece.prefix !== null) && lines.length === pieces.length) return lines
-  const whole = cleanMiperName(text) ?? ""
-  return pieces.map(() => (EMPTY_MARK.test(whole) ? "" : whole))
+function valuesPerMeasure(cell: unknown, pieces: readonly MeasurePiece[], measureLineCount: number): string[] {
+  const lines = cellLines(cell)
+  if (pieces.every((piece) => piece.prefix !== null) && lines.length === measureLineCount) {
+    return pieces.map((piece) => blankIfEmptyMark(lines[piece.line] ?? ""))
+  }
+  const whole = cleanMiperName(cellText(cell)) ?? ""
+  return pieces.map(() => blankIfEmptyMark(whole))
 }
 
 const byCountThenText = (a: { count: number; text: string | null }, b: { count: number; text: string | null }) =>
@@ -301,8 +316,9 @@ export function analyzeRe04Measures(rows: readonly ImportRowInput[], options: { 
     const original = (row.original ?? {}) as Partial<Record<Re04ColumnLabel, unknown>>
     const pieces = splitMeasures(original[MEASURE_COLUMN])
     if (pieces.length === 0) continue
-    const responsibles = valuesPerMeasure(original[RESPONSIBLE_COLUMN], pieces)
-    const deadlines = valuesPerMeasure(original[DEADLINE_COLUMN], pieces)
+    const measureLineCount = cellLines(original[MEASURE_COLUMN]).length
+    const responsibles = valuesPerMeasure(original[RESPONSIBLE_COLUMN], pieces, measureLineCount)
+    const deadlines = valuesPerMeasure(original[DEADLINE_COLUMN], pieces, measureLineCount)
     pieces.forEach((piece, index) => {
       const responsible = responsibles[index] ?? ""
       const deadline = deadlines[index] ?? ""

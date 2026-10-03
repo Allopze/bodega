@@ -41,6 +41,10 @@ describe("splitMeasures: las medidas de una celda del RE-04 real", () => {
       .map((piece) => [piece.text, piece.prefix]))
       .toEqual([["Topes de descarga", "engineering"], ["Charla de 5 minutos, registro firmado", "administrative"], ["Cambiar solvente por uno base agua", "substitution"]])
   })
+  it("cada pieza recuerda su línea, contada sobre las líneas no vacías antes de descartar repetidas y restos", () => {
+    expect(splitMeasures("GUANTES, CASCO\n\nOK\nguantes\nORDEN Y LIMPIEZA").map((piece) => [piece.text, piece.line]))
+      .toEqual([["GUANTES", 0], ["CASCO", 0], ["ORDEN Y LIMPIEZA", 3]])
+  })
   it("la misma medida dos veces en una celda cuenta una; sin texto no hay medidas", () => {
     expect(texts("ORDEN Y LIMPIEZA, orden y limpieza.")).toEqual(["ORDEN Y LIMPIEZA"])
     expect(texts("Y, DE.")).toEqual([])
@@ -154,6 +158,32 @@ describe("analyzeRe04Measures", () => {
     // Sin «I.–V.», la celda entera vale para todas las medidas de la fila.
     const plain = analyzeRe04Measures([row(14, { "MEDIDA DE CONTROL": "BARANDAS\nCHARLA DE INICIO", "RESPONSABLE": "SUPERVISOR\nPREVENCION", "PLAZOS": "TRIMESTRAL" })], { today: TODAY })
     expect(plain.measures.map((measure) => measure.responsibleKey)).toEqual(["supervisor prevencion", "supervisor prevencion"])
+    // Con «I.–V.» pero sin una línea por medida (alguien editó el libro a mano), también.
+    const collapsed = analyzeRe04Measures([row(14, {
+      "MEDIDA DE CONTROL": "III. Controles de ingeniería: Topes de descarga\nIV. Controles administrativos: Charla de inicio de turno",
+      "RESPONSABLE": "Supervisor de turno", "PLAZOS": "Trimestral",
+    })], { today: TODAY })
+    expect(collapsed.measures.map((measure) => [measure.responsibleKey, measure.deadlineKey])).toEqual([["supervisor de turno", "trimestral"], ["supervisor de turno", "trimestral"]])
+  })
+  it("libro exportado con una frase repetida en la fila: la frase toma los valores de su PRIMERA línea y las demás siguen alineadas", () => {
+    const exported = analyzeRe04Measures([row(14, {
+      "MEDIDA DE CONTROL": "III. Controles de ingeniería: Topes de descarga\nIV. Controles administrativos: Topes de descarga\nV. Elementos de protección personal: Casco",
+      "RESPONSABLE": "Supervisor de turno\nJefe de faena\n—", "PLAZOS": "30-06-2026\nTrimestral\nMensual",
+    })], { today: TODAY })
+    expect(exported.measures.map((measure) => [measure.text, measure.prefix, measure.responsibleKey, measure.deadlineKey])).toEqual([
+      ["Topes de descarga", "engineering", "supervisor de turno", "30-06-2026"],
+      ["Casco", "ppe", "", "mensual"],
+    ])
+  })
+  it("libro exportado con un resto de menos de 3 caracteres: el resto consume su línea y las demás siguen alineadas", () => {
+    const exported = analyzeRe04Measures([row(14, {
+      "MEDIDA DE CONTROL": "III. Controles de ingeniería: Topes de descarga\nIV. Controles administrativos: OK\nV. Elementos de protección personal: Casco",
+      "RESPONSABLE": "Supervisor de turno\nPrevención\nJefe de faena", "PLAZOS": "30-06-2026\nTrimestral\n—",
+    })], { today: TODAY })
+    expect(exported.measures.map((measure) => [measure.text, measure.responsibleKey, measure.deadlineKey])).toEqual([
+      ["Topes de descarga", "supervisor de turno", "30-06-2026"],
+      ["Casco", "jefe de faena", ""],
+    ])
   })
   it("distinctPhrases: si alguna aparición trae «I.–V.», la frase toma ese tipo", () => {
     expect(distinctPhrases([
