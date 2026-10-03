@@ -9,6 +9,7 @@ import {
   getMaterialEnvironmentalEvents,
 } from "@/lib/services/prevention-indicadores"
 import { getPdtpComplianceIndicatorsForScope } from "@/lib/services/pdtp/compliance"
+import { PORTFOLIO_SUMMARY_HREF } from "@/lib/prevention/miper/portfolio"
 import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { loadPdtpComplianceSummary, PdtpComplianceCard } from "../pdtp-compliance-card"
@@ -103,7 +104,7 @@ export async function PreventionSection({ session, worksiteScope, worksiteIds, c
             <KpiCard icon={<ShieldWarning size={16} />} label="Riesgos críticos sin control"
               value={String(risk.criticalBlockers.length)}
               detail={risk.criticalBlockers.length > 0 ? "Sin control verificado ni PDTP · ahora" : "Todos con control verificado"}
-              tone={risk.criticalBlockers.length > 0 ? "signal" : "neutral"} href="/prevencion/miper?tab=todas" />
+              tone={risk.criticalBlockers.length > 0 ? "signal" : "neutral"} href={PORTFOLIO_SUMMARY_HREF.critical} />
           )}
         </>
       }

@@ -2,49 +2,35 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { can, requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { listMiperCreationOptions, listMiperInbox, listMipers } from "@/lib/services/miper/queries"
-import { getMiperDashboard } from "@/lib/services/miper/dashboard"
+import { listMiperPortfolio } from "@/lib/services/miper/portfolio"
+import { listMiperCreationOptions } from "@/lib/services/miper/queries"
 import { codeYear } from "@/lib/utils"
 import { MiperHome } from "./miper-home"
 
 export const metadata: Metadata = { title: "Matriz IPER (MIPER)" }
 
-type SearchParams = { tab?: string; faena?: string; periodo?: string; estado?: string; responsable?: string }
-
 /**
- * Portada del RE-04: el Resumen (tablero del §8.6), la bandeja "Por hacer" (lo
- * que espera a esta persona según sus permisos) y la lista completa de la
- * faena/período. El filtrado vive en la URL —`faena`, `periodo`, `estado`,
- * `responsable`— y lo aplica el servicio, así que el navegador no recibe
- * matrices fuera de alcance. No lleva buscador propio: el de la shell filtra la
- * tabla en memoria (ver `hidesShellSearch`).
+ * Portada del RE-04 por faena (spec §7, Fase B): una fila por faena en alcance
+ * —con o sin MIPER— y la franja de cuatro cifras. Los filtros (`vista`,
+ * `estado`, `sincontrol`, `faena`) viven en la URL y se aplican en el cliente
+ * sobre las faenas del alcance, que son pocas. El alcance lo aplica el
+ * servicio: el navegador nunca recibe una faena ajena. No lleva buscador
+ * propio: el del TopBar filtra la tabla (`DataTable`).
  */
-export default async function MiperPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+export default async function MiperPage() {
   let session
   try { session = await requireAuth() } catch { redirect("/forbidden") }
   if (!can(session, "prevention:risk:view")) redirect("/forbidden")
   const access = { userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
-  const params = await searchParams
-  const period = params.periodo && /^\d{4}$/.test(params.periodo) ? Number(params.periodo) : undefined
   const canEdit = can(session, "prevention:risk:edit")
-  const [inbox, all, dashboard, creation] = await Promise.all([
-    listMiperInbox(access),
-    listMipers(access, { worksiteId: params.faena || undefined, period, state: params.estado || undefined }),
-    getMiperDashboard(access, {
-      worksiteId: params.faena || undefined,
-      period,
-      state: params.estado || undefined,
-      responsibleUserId: params.responsable || undefined,
-    }),
-    // El diálogo sólo se abre con `prevention:risk:edit`; sin ese permiso no se
-    // consultan faenas ni MIPER vigentes (el servicio las exigiría igual).
+  const [portfolio, creation] = await Promise.all([
+    listMiperPortfolio(access),
+    // El alta exige `prevention:risk:edit`; sin ese permiso no se consultan faenas ni vigentes.
     canEdit ? listMiperCreationOptions(access) : Promise.resolve({ worksites: [] }),
   ])
   return (
     <MiperHome
-      inbox={inbox}
-      all={all}
-      dashboard={dashboard}
+      rows={portfolio.rows}
       creationWorksites={creation.worksites}
       currentYear={codeYear()}
       permissions={{ canEdit, canManageCatalog: can(session, "prevention:risk:catalog:manage") }}

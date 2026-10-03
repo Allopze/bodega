@@ -1,94 +1,168 @@
 "use client"
 
 import Link from "next/link"
-import { useCallback, useState } from "react"
+import { useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { PageContainer } from "@/components/ui/page-container"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { EmptyState } from "@/components/ui/empty-state"
+import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/ui/data-table"
+import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
+import { OptionSelect } from "@/components/ui/option-select"
+import { PageContainer } from "@/components/ui/page-container"
+import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { Progress } from "@/components/ui/progress"
+import { SegmentedControl } from "@/components/ui/segmented-control"
+import { SummaryBar, type SummaryLinkProps } from "@/components/ui/summary-bar"
 import { TableCell, TableRow } from "@/components/ui/table"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { RiskClassificationBadge } from "@/components/prevention/risk-classification-badge"
-import { RISK_CLASSIFICATIONS } from "@/lib/prevention/miper/methodology"
-import { formatDate } from "@/lib/utils"
-import type { MiperListRow } from "@/lib/services/miper/queries"
-import type { MiperDashboard } from "@/lib/services/miper/dashboard"
-import { MiperDashboardPanel } from "./dashboard-panel"
+import {
+  filterPortfolioRows, hasPortfolioFilters, parsePortfolioParams, PORTFOLIO_STATUS_FILTER_OPTIONS, PORTFOLIO_STATUS_LABEL,
+  PORTFOLIO_SUMMARY_HREF, portfolioHref, portfolioSummary,
+  type MiperPortfolioAction, type MiperPortfolioMatrix, type MiperPortfolioRow, type MiperPortfolioStatus,
+} from "@/lib/prevention/miper/portfolio"
+import { countOf, formatDate } from "@/lib/utils"
 import { ImportMiperDialog } from "./import-dialog"
 import { NewMiperDialog, type CreationWorksite } from "./new-miper-dialog"
 
-// La pestaña vive en la URL. `porhacer` sigue siendo la de siempre por defecto
-// (no cambia la costumbre); `?tab=resumen` es enlace directo.
-const TABS = new Set(["resumen", "porhacer", "todas"])
+/** Estado de la faena → badge (A6: nunca el valor crudo; `MetaBadge`, no un mapa local de variantes). */
+const STATUS_META: Record<MiperPortfolioStatus, StateMetaInput> = {
+  sin_miper: { label: PORTFOLIO_STATUS_LABEL.sin_miper, variant: "neutral" },
+  borrador: { label: PORTFOLIO_STATUS_LABEL.borrador, variant: "outline" },
+  en_revision: { label: PORTFOLIO_STATUS_LABEL.en_revision, variant: "info" },
+  observada: { label: PORTFOLIO_STATUS_LABEL.observada, variant: "warning" },
+  vigente: { label: PORTFOLIO_STATUS_LABEL.vigente, variant: "success" },
+}
 
-/** Rótulos en español de `status` + `review_state` (nunca el enum crudo). */
-const STATE_OPTIONS = [
-  { value: "all", label: "Todos los estados" },
-  { value: "draft", label: "Borrador" },
-  { value: "in_review", label: "En revisión técnica" },
-  { value: "observed", label: "Con observaciones" },
-  { value: "pending_approval", label: "Pendiente Legal y RRHH" },
-  { value: "published", label: "Vigente" },
-  { value: "superseded", label: "Reemplazado" },
+const COLUMNS = [
+  { key: "worksiteName", label: "Faena", sortable: true },
+  { key: "status", label: "Estado" },
+  { key: "headcount", label: "Dotación", numeric: true, sortable: true },
+  { key: "completeness", label: "Completitud" },
+  { key: "graves", label: "Importantes e Intolerables", numeric: true },
+  { key: "programProgress", label: "Programa" },
+  { key: "updatedAt", label: "Actualizada", sortable: true },
 ]
 
-/** Conteo por banda —de la más grave a la más leve— sin decir el color solo. */
-function Distribution({ row }: { row: MiperListRow }) {
-  const present = [...RISK_CLASSIFICATIONS].reverse().filter((cls) => row.classificationCounts[cls] > 0)
-  if (present.length === 0) return <span className="text-xs text-[var(--color-text-subtle)]">Sin riesgos evaluados</span>
+const NO_CREATION_HINT = "No hay faenas activas a tu alcance"
+const NO_PROGRAM = "Sin programa"
+
+/**
+ * Las cifras FILTRAN esta misma lista: `replace` y sin mover el scroll (AGENTS,
+ * «Navigation and scroll preservation»). A nivel de módulo: `SummaryBar` es
+ * `memo` y un `renderLink` nuevo en cada render lo invalidaría.
+ */
+function ReplaceLink({ href, className, children, ...rest }: SummaryLinkProps) {
+  return <Link href={href} replace scroll={false} className={className} {...rest}>{children}</Link>
+}
+
+/** A1: una cifra en cero se ve, pero no enlaza a una lista vacía. */
+const linkUnlessZero = (count: number, href: string) => (count > 0 ? href : undefined)
+
+const matrixHref = (matrixId: string) => `/prevencion/miper/${matrixId}`
+const periodLabel = (period: number | null) => (period === null ? "sin período" : String(period))
+const actionLabel = (action: MiperPortfolioAction) => `${action.reason} · MIPER ${periodLabel(action.period)}`
+
+function vigenteLabel(matrix: MiperPortfolioMatrix) {
+  if (matrix.isLegacy) return `Vigente · metodología anterior (${periodLabel(matrix.period)})`
+  return `Vigente ${matrix.versionNumber ? `v${matrix.versionNumber} ` : ""}(${periodLabel(matrix.period)})`
+}
+
+/**
+ * Avance del programa de la vigente (o de la MIPER de la fila). `null` es una
+ * faena sin MIPER; sin nada planificado —sin programa o sin ocurrencias— se
+ * dice «Sin programa», nunca un 0 % que se leería como atraso.
+ */
+function programLabel(row: MiperPortfolioRow): string | null {
+  const progress = row.programProgress
+  if (!progress) return null
+  if (progress.planned === 0) return NO_PROGRAM
+  return `${Math.round((progress.ratio ?? 0) * 100)}% · ${progress.done}/${progress.planned}`
+}
+
+/** Faena, su MIPER, la vigente si es otra y lo que cada MIPER espera de ti (un enlace por acción). */
+function Worksite({ row }: { row: MiperPortfolioRow }) {
   return (
-    <span className="flex flex-wrap gap-1">
-      {present.map((cls) => (
-        <span key={cls} className="inline-flex items-center gap-1">
-          <RiskClassificationBadge classification={cls} size="sm" />
-          <span className="text-xs tabular-nums">{row.classificationCounts[cls]}</span>
-        </span>
+    <div className="min-w-0 space-y-0.5">
+      <p className="font-medium">
+        {row.matrix ? <Link href={matrixHref(row.matrix.id)} className="hover:underline">{row.worksiteName}</Link> : row.worksiteName}
+        {!row.worksiteActive && <span className="ml-2 text-xs font-normal text-[var(--color-text-subtle)]">Faena cerrada</span>}
+      </p>
+      {row.matrix && (
+        <p className="text-xs text-[var(--color-text-subtle)]">MIPER {periodLabel(row.matrix.period)}{row.matrix.versionNumber ? ` · v${row.matrix.versionNumber}` : ""}</p>
+      )}
+      {row.vigente && (
+        <p className="text-xs"><Link href={matrixHref(row.vigente.id)} className="text-[var(--color-text-muted)] hover:underline">{vigenteLabel(row.vigente)}</Link></p>
+      )}
+      {row.myActions.map((action) => (
+        <p key={action.matrixId} className="text-xs font-semibold">
+          <Link href={matrixHref(action.matrixId)} className="text-[var(--color-signal-ink)] hover:underline">{actionLabel(action)}</Link>
+        </p>
       ))}
+    </div>
+  )
+}
+
+function State({ row, onCreate }: { row: MiperPortfolioRow; onCreate: (() => void) | null }) {
+  const meta = metaFor(STATUS_META, row.status)
+  const detail = [row.matrix && row.stateLabel !== meta.label ? row.stateLabel : null, row.submittedByName ? `enviada por ${row.submittedByName}` : null].filter(Boolean).join(" · ")
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <MetaBadge meta={meta} />
+      {detail && <p className="text-xs text-[var(--color-text-subtle)]">{detail}</p>}
+      {/* El nombre empieza con el texto visible y nombra la faena (WCAG 2.5.3): cada fila tiene el suyo. */}
+      {onCreate && <Button size="sm" variant="secondary" onClick={onCreate} aria-label={`Crear MIPER de ${row.worksiteName}`}>Crear MIPER</Button>}
+    </div>
+  )
+}
+
+function Headcount({ row }: { row: MiperPortfolioRow }) {
+  return (
+    <span className="block">
+      <span className="tabular-nums">{row.headcount}</span>
+      <span className="block text-xs text-[var(--color-text-subtle)]">{row.headcountSource === "ficha" ? "según la ficha" : "trabajadores activos"}</span>
+    </span>
+  )
+}
+
+function Completeness({ row }: { row: MiperPortfolioRow }) {
+  if (row.matrix?.isLegacy) return <span className="text-xs text-[var(--color-text-subtle)]">Metodología anterior</span>
+  if (!row.completeness) return <span className="text-xs text-[var(--color-text-subtle)]">—</span>
+  const { complete, total } = row.completeness
+  if (total === 0) return <span className="text-xs text-[var(--color-text-subtle)]">Sin riesgos</span>
+  return (
+    <span className="flex min-w-32 items-center gap-2">
+      <Progress value={complete} max={total} size="sm" label={`${row.worksiteName}: ${complete} de ${total} completos`} className="flex-1" />
+      <span className="text-xs tabular-nums">{complete}/{total}</span>
+    </span>
+  )
+}
+
+function CriticalWithoutControl({ row }: { row: MiperPortfolioRow }) {
+  if (row.criticalWithoutControl === 0) return null
+  return (
+    <span className="block text-xs font-medium text-[var(--color-danger-ink)]">
+      {countOf(row.criticalWithoutControl, "crítico sin control", "críticos sin control")}{row.vigente ? " en la vigente" : ""}
+    </span>
+  )
+}
+
+function Graves({ row }: { row: MiperPortfolioRow }) {
+  return (
+    <span className="block">
+      <span className="tabular-nums">{row.importantCount + row.intolerableCount}</span>
+      <CriticalWithoutControl row={row} />
     </span>
   )
 }
 
 /**
- * Filtros primarios (§8.6): faena, período, estado y responsable. El responsable
- * es nuevo en la portada y sale de quién tiene trabajo asignado —actividad del
- * programa o medida—, no de quién firmó.
+ * Portada del RE-04 por faena (spec §7, Fase B): una fila por faena en alcance
+ * —con o sin MIPER—, la franja de cuatro cifras (A1), «Todas las faenas» /
+ * «Requieren mi acción» y el filtro de estado. La búsqueda la da el TopBar
+ * (D8), que alimenta a `DataTable`. Los filtros viven en la URL y se aplican
+ * aquí sobre las faenas que el servicio ya acotó al alcance.
  */
-function FilterBar({ values, worksiteOptions, periodOptions, responsibleOptions, onChange }: {
-  values: { faena: string; periodo: string; estado: string; responsable: string }
-  worksiteOptions: Array<[string, string]>
-  periodOptions: number[]
-  responsibleOptions: Array<{ id: string; name: string }>
-  onChange: (next: Record<string, string | null>) => void
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      <Select value={values.faena} onValueChange={(value) => onChange({ faena: value })}>
-        <SelectTrigger aria-label="Faena" className="w-56"><SelectValue placeholder="Todas las faenas" /></SelectTrigger>
-        <SelectContent><SelectItem value="all">Todas las faenas</SelectItem>{worksiteOptions.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent>
-      </Select>
-      <Select value={values.periodo} onValueChange={(value) => onChange({ periodo: value })}>
-        <SelectTrigger aria-label="Período" className="w-40"><SelectValue placeholder="Todos los períodos" /></SelectTrigger>
-        <SelectContent><SelectItem value="all">Todos los períodos</SelectItem>{periodOptions.map((period) => <SelectItem key={period} value={String(period)}>{period}</SelectItem>)}</SelectContent>
-      </Select>
-      <Select value={values.estado} onValueChange={(value) => onChange({ estado: value })}>
-        <SelectTrigger aria-label="Estado" className="w-56"><SelectValue /></SelectTrigger>
-        <SelectContent>{STATE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-      </Select>
-      <Select value={values.responsable} onValueChange={(value) => onChange({ responsable: value })}>
-        <SelectTrigger aria-label="Responsable" className="w-56"><SelectValue placeholder="Cualquier responsable" /></SelectTrigger>
-        <SelectContent><SelectItem value="all">Cualquier responsable</SelectItem>{responsibleOptions.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}</SelectContent>
-      </Select>
-    </div>
-  )
-}
-
-export function MiperHome({ inbox, all, dashboard, creationWorksites, currentYear, permissions }: {
-  inbox: MiperListRow[]
-  all: MiperListRow[]
-  dashboard: MiperDashboard
+export function MiperHome({ rows, creationWorksites, currentYear, permissions }: {
+  rows: MiperPortfolioRow[]
   creationWorksites: CreationWorksite[]
   currentYear: number
   permissions: { canEdit: boolean; canManageCatalog: boolean }
@@ -96,62 +170,33 @@ export function MiperHome({ inbox, all, dashboard, creationWorksites, currentYea
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const [creating, setCreating] = useState(false)
-  // La pestaña vive en la URL: un enlace a `?tab=todas` abre la lista completa.
-  const requestedTab = searchParams.get("tab") ?? ""
-  const tab = TABS.has(requestedTab) ? requestedTab : "porhacer"
+  const params = parsePortfolioParams(searchParams)
+  const visible = filterPortfolioRows(rows, params)
+  const summary = portfolioSummary(rows)
+  const filtered = hasPortfolioFilters(params)
+  // El alta vive aquí: la abren la cabecera («Nueva MIPER») y la fila de una faena sin MIPER («Crear MIPER»).
+  const [creating, setCreating] = useState<{ worksiteId: string | null } | null>(null)
+  const creatable = new Set(creationWorksites.map((worksite) => worksite.id))
+  const createFor = (row: MiperPortfolioRow) =>
+    permissions.canEdit && !row.matrix && creatable.has(row.worksiteId) ? () => setCreating({ worksiteId: row.worksiteId }) : null
 
-  // Los cambios se agrupan en UNA sola escritura: tres `replace` seguidos desde
-  // el mismo `searchParams` se pisaban entre sí y el último resucitaba los
-  // filtros que los otros acababan de quitar.
-  const update = useCallback((next: Record<string, string | null>) => {
-    const params = new URLSearchParams(searchParams.toString())
-    for (const [key, value] of Object.entries(next)) {
-      if (value && value !== "all" && !(key === "tab" && value === "porhacer")) params.set(key, value)
-      else params.delete(key)
-    }
-    const query = params.toString()
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
-  }, [router, pathname, searchParams])
+  /** Filtrar es estado de la vista: `replace` y sin scroll. `portfolioHref` borra además el `tab` heredado. */
+  const update = (patch: Record<string, string | null>) => router.replace(portfolioHref(searchParams, patch, pathname), { scroll: false })
+  const clearAll = () => update({ vista: null, estado: null, sincontrol: null, faena: null })
 
-  const clearFilters = useCallback(() => {
-    update({ faena: null, periodo: null, estado: null, responsable: null, clasificacion: null, control: null, vista: null })
-  }, [update])
+  // Chips sólo para los filtros que no tienen control a la vista (A2): la faena que llega del PDTP y «sin control».
+  const chips: ActiveFilterChip[] = []
+  if (params.faena) chips.push({ key: "faena", label: "Faena", value: params.faena, displayValue: rows.find((row) => row.worksiteId === params.faena)?.worksiteName ?? "no disponible" })
+  if (params.sinControl) chips.push({ key: "sincontrol", label: "Riesgos críticos", value: "1", displayValue: "sin control" })
 
-  // Las opciones de filtro salen de lo que ya se está listando: ofrecer una
-  // faena que la persona no puede ver llevaría a una lista vacía sin explicación.
-  const worksiteOptions = [...new Map(all.map((row) => [row.worksiteId, row.worksiteName])).entries()]
-  const periodOptions = [...new Set(all.map((row) => row.period).filter((period): period is number => period !== null))].sort((a, b) => b - a)
-  const filtersActive = ["faena", "periodo", "estado", "responsable"].some((key) => searchParams.get(key))
-  const filterValues = {
-    faena: searchParams.get("faena") ?? "all",
-    periodo: searchParams.get("periodo") ?? "all",
-    estado: searchParams.get("estado") ?? "all",
-    responsable: searchParams.get("responsable") ?? "all",
-  }
-
-  /* Los tiles del Resumen enlazan a esta lista con `clasificacion` o `control`.
-   * El subconjunto se acota con las MISMAS cifras que muestra el tablero —no con
-   * una regla paralela— y el responsable ya viene aplicado desde el servicio, así
-   * que basta con que la MIPER esté entre las filas del tablero. */
-  const tileFilters = [
-    searchParams.get("clasificacion") === "grave" ? "Intolerables e Importantes" : null,
-    searchParams.get("control") === "no" ? "Sin controlar" : null,
-    searchParams.get("vista") === "avance" ? "Con avance del programa" : null,
-  ].filter((label): label is string => label !== null)
-  const showAvance = searchParams.get("vista") === "avance"
-  const listRows = tileFilters.length === 0 ? all : all.filter((row) => {
-    const summary = dashboard.rows.find((candidate) => candidate.matrixId === row.id)
-    if (!summary) return false
-    if (searchParams.get("clasificacion") === "grave" && summary.classificationCounts.important + summary.classificationCounts.intolerable === 0) return false
-    if (searchParams.get("control") === "no" && summary.uncontrolledCount === 0) return false
-    return true
-  })
-  const avanceOf = (matrixId: string) => {
-    const progress = dashboard.rows.find((candidate) => candidate.matrixId === matrixId)?.progress
-    if (!progress || progress.ratio === null) return "—"
-    return `${Math.round(progress.ratio * 100)}% · ${progress.done}/${progress.planned}`
-  }
+  const withoutMiper = summary.total - summary.withMiper
+  const empty = params.vista === "mias" && params.estado === null && chips.length === 0
+    ? { title: "No tienes MIPER pendientes", description: "Cuando una MIPER espere tu revisión, tu firma o tu respuesta, aparecerá aquí." }
+    : filtered
+      ? { title: "Ninguna faena coincide con los filtros", description: "Quita algún filtro para ver las demás faenas." }
+      : rows.length === 0
+        ? { title: "No hay faenas a tu alcance", description: "Pide a Administración que te asigne una faena para ver o crear su MIPER." }
+        : { title: "Ninguna faena coincide con la búsqueda", description: "Prueba con otro nombre de faena o de estado." }
 
   return (
     <PageContainer width="wide">
@@ -162,81 +207,83 @@ export function MiperHome({ inbox, all, dashboard, creationWorksites, currentYea
         actions={<div className="flex gap-2">
           {permissions.canManageCatalog && <Button asChild variant="secondary"><Link href="/prevencion/miper/factores">Factores de riesgo</Link></Button>}
           {permissions.canEdit && <ImportMiperDialog worksites={creationWorksites} currentYear={currentYear} canManageCatalog={permissions.canManageCatalog} />}
-          {permissions.canEdit && <Button onClick={() => setCreating(true)} disabled={creationWorksites.length === 0}>Nueva MIPER</Button>}
+          {permissions.canEdit && (
+            <Button onClick={() => setCreating({ worksiteId: null })} disabled={creationWorksites.length === 0}
+              title={creationWorksites.length === 0 ? NO_CREATION_HINT : undefined}>
+              Nueva MIPER
+            </Button>
+          )}
         </div>}
       />
-      <Tabs value={tab} onValueChange={(value) => update({ tab: value })}>
-        <TabsList>
-          <TabsTrigger value="resumen">Resumen</TabsTrigger>
-          <TabsTrigger value="porhacer">Por hacer ({inbox.length})</TabsTrigger>
-          <TabsTrigger value="todas">Todas</TabsTrigger>
-        </TabsList>
-        <TabsContent value="resumen" className="space-y-3">
-          <FilterBar values={filterValues} worksiteOptions={worksiteOptions} periodOptions={periodOptions} responsibleOptions={dashboard.responsibleOptions} onChange={update} />
-          <MiperDashboardPanel dashboard={dashboard} filtersActive={filtersActive} onClearFilters={clearFilters} />
-        </TabsContent>
-        <TabsContent value="porhacer" className="space-y-2">
-          {inbox.length === 0 ? (
-            <EmptyState
-              title="No tienes MIPER pendientes"
-              description={permissions.canEdit ? "Cuando tengas un borrador, observaciones por responder o cambios sin enviar, aparecerán aquí. Para empezar, crea la MIPER de una faena." : "Cuando una MIPER espere tu revisión o tu firma, aparecerá aquí."}
-              action={permissions.canEdit ? <Button onClick={() => setCreating(true)} disabled={creationWorksites.length === 0}>Nueva MIPER</Button> : undefined}
-            />
-          ) : inbox.map((row) => (
-            <Link key={row.id} href={`/prevencion/miper/${row.id}`} className="block rounded-2xl border border-[var(--color-border)] bg-white p-4 transition-colors hover:border-[var(--color-border-strong)]">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-signal-ink)]">{row.inboxReason}</p>
-                  <p className="mt-1 font-semibold">{row.worksiteName} · {row.period ?? "sin período"}</p>
-                  <p className="text-sm text-[var(--color-text-subtle)]">{row.label}{row.submittedByName ? ` · enviada por ${row.submittedByName}${row.submittedAt ? ` el ${formatDate(row.submittedAt)}` : ""}` : ""} · {row.entryCount} riesgos · modificada {formatDate(row.updatedAt)}</p>
-                </div>
-                <Distribution row={row} />
-              </div>
-            </Link>
-          ))}
-        </TabsContent>
-        <TabsContent value="todas" className="space-y-3">
-          <FilterBar values={filterValues} worksiteOptions={worksiteOptions} periodOptions={periodOptions} responsibleOptions={dashboard.responsibleOptions} onChange={update} />
-          {tileFilters.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-[var(--color-text-subtle)]">Filtros del tablero:</span>
-              {tileFilters.map((label) => (
-                <span key={label} className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs">{label}</span>
-              ))}
-              <Button type="button" variant="ghost" size="sm" onClick={() => update({ clasificacion: null, control: null, vista: null })}>Quitar</Button>
-            </div>
+      <div className="space-y-4">
+        <SummaryBar renderLink={ReplaceLink} stats={[
+          {
+            key: "con-miper", label: "Faenas con MIPER", value: `${summary.withMiper}/${summary.total}`,
+            href: linkUnlessZero(summary.withMiper, PORTFOLIO_SUMMARY_HREF.withMiper),
+            secondary: withoutMiper > 0 ? `${countOf(withoutMiper, "faena")} sin MIPER` : "Todas tienen MIPER",
+          },
+          {
+            key: "en-revision", label: "En revisión", value: summary.inReview, secondary: "Técnica o de Legal y RRHH",
+            href: linkUnlessZero(summary.inReview, PORTFOLIO_SUMMARY_HREF.inReview),
+          },
+          {
+            key: "mias", label: "Requieren mi acción", value: summary.mine, tone: "signal", secondary: "Tu revisión, tu firma o tu respuesta",
+            href: linkUnlessZero(summary.mine, PORTFOLIO_SUMMARY_HREF.mine),
+          },
+          {
+            key: "sin-control", label: "Riesgos críticos sin control", value: summary.critical, tone: "signal",
+            href: linkUnlessZero(summary.critical, PORTFOLIO_SUMMARY_HREF.critical),
+            secondary: "Intolerables vigentes sin control verificado o sin PDTP",
+          },
+        ]} />
+        <FilterToolbar className="mb-0" activeChips={chips} onRemoveChip={(key) => update({ [key]: null })} onClearAll={clearAll} hasActiveFilters={filtered}>
+          {/* A5: la cifra «Requieren mi acción» vive sólo en la franja; el segmento cambia la vista sin repetirla. */}
+          <SegmentedControl ariaLabel="Qué faenas ver" variant="segmented" items={[
+            { key: "todas", label: "Todas las faenas", active: params.vista === "todas", onClick: () => update({ vista: null }) },
+            { key: "mias", label: "Requieren mi acción", active: params.vista === "mias", onClick: () => update({ vista: "mias" }) },
+          ]} />
+          <OptionSelect aria-label="Estado" emptyLabel="Todos los estados" className="w-56" value={params.estado ?? ""}
+            options={PORTFOLIO_STATUS_FILTER_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+            onValueChange={(value) => update({ estado: value || null })} />
+        </FilterToolbar>
+        <DataTable
+          caption="MIPER por faena"
+          columns={COLUMNS}
+          rows={visible}
+          searchKeys={["worksiteName", "stateLabel"]}
+          emptyTitle={empty.title}
+          emptyDescription={empty.description}
+          emptyAction={filtered ? <Button type="button" variant="secondary" size="sm" onClick={clearAll}>Ver todas las faenas</Button> : undefined}
+          renderRow={(row) => (
+            <TableRow key={row.id} data-worksite-id={row.worksiteId}>
+              <TableCell><Worksite row={row} /></TableCell>
+              <TableCell><State row={row} onCreate={createFor(row)} /></TableCell>
+              <TableCell className="text-right"><Headcount row={row} /></TableCell>
+              <TableCell><Completeness row={row} /></TableCell>
+              <TableCell className="text-right"><Graves row={row} /></TableCell>
+              <TableCell className="text-sm">{programLabel(row) ?? <span className="text-xs text-[var(--color-text-subtle)]">—</span>}</TableCell>
+              <TableCell>{row.updatedAt ? formatDate(row.updatedAt) : "—"}</TableCell>
+            </TableRow>
           )}
-          <DataTable
-            caption="MIPER por faena y período"
-            columns={[
-              { key: "worksiteName", label: "Faena", sortable: true },
-              { key: "period", label: "Período", sortable: true },
-              { key: "label", label: "Estado" },
-              { key: "entryCount", label: "Riesgos", numeric: true },
-              { key: "distribution", label: "Clasificación" },
-              ...(showAvance ? [{ key: "avance", label: "Avance", numeric: true }] : []),
-              { key: "updatedAt", label: "Modificada", sortable: true },
-            ]}
-            rows={listRows}
-            searchKeys={["worksiteName", "label"]}
-            emptyTitle="Sin MIPER para estos filtros"
-            emptyDescription={permissions.canEdit ? "Cambia los filtros o crea la MIPER de una faena." : "Cambia los filtros para ver otras faenas o períodos."}
-            emptyAction={filtersActive || tileFilters.length > 0 ? <Button type="button" variant="secondary" size="sm" onClick={clearFilters}>Limpiar filtros</Button> : undefined}
-            renderRow={(row) => (
-              <TableRow key={row.id} className="cursor-pointer" onClick={() => router.push(`/prevencion/miper/${row.id}`)}>
-                <TableCell><Link href={`/prevencion/miper/${row.id}`} className="font-medium hover:underline">{row.worksiteName}</Link></TableCell>
-                <TableCell>{row.period ?? "—"}</TableCell>
-                <TableCell>{row.label}</TableCell>
-                <TableCell className="tabular-nums">{row.entryCount}</TableCell>
-                <TableCell><Distribution row={row} /></TableCell>
-                {showAvance ? <TableCell className="tabular-nums">{avanceOf(row.id)}</TableCell> : null}
-                <TableCell>{formatDate(row.updatedAt)}</TableCell>
-              </TableRow>
-            )}
-          />
-        </TabsContent>
-      </Tabs>
-      <NewMiperDialog open={creating} onOpenChange={setCreating} worksites={creationWorksites} currentYear={currentYear} />
+          renderMobileCard={(row) => {
+            const program = programLabel(row)
+            return (
+              <article aria-label={row.worksiteName} className="space-y-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                <Worksite row={row} />
+                <State row={row} onCreate={createFor(row)} />
+                <Completeness row={row} />
+                <p className="text-xs text-[var(--color-text-subtle)]">
+                  Dotación {row.headcount} · Importantes e Intolerables {row.importantCount + row.intolerableCount}
+                  {program && ` · ${program === NO_PROGRAM ? program : `Programa ${program}`}`}
+                </p>
+                <CriticalWithoutControl row={row} />
+              </article>
+            )
+          }}
+        />
+      </div>
+      <NewMiperDialog open={creating !== null} onOpenChange={(open) => { if (!open) setCreating(null) }}
+        worksites={creationWorksites} currentYear={currentYear} initialWorksiteId={creating?.worksiteId ?? null} />
     </PageContainer>
   )
 }
