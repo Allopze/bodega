@@ -47,6 +47,8 @@ export type MiperVersionDetail = Awaited<ReturnType<typeof getMiperVersion>>
 
 const FILL: Record<string, string> = { tolerable: "FFD9EAD3", moderate: "FFFFF2CC", important: "FFF4CCCC", intolerable: "FFC00000" }
 const HEADER_FILL = "FF1F3864"
+/** Marca de dato faltante en las columnas de medidas: mantiene la línea N de las tres en la medida N. */
+const MISSING = "—"
 
 function headerStyle(row: ExcelJS.Row) {
   row.font = { bold: true, color: { argb: "FFFFFFFF" } }
@@ -303,9 +305,22 @@ export async function buildMiperWorkbook(detail: MiperVersionDetail, program?: P
   headerStyle(top); headerStyle(sub)
 
   for (const entry of snapshot.entries) {
-    const measures = entry.controls.map((control) => `${CONTROL_HIERARCHY_LABEL[control.hierarchy]}: ${control.description}`).join("\n")
-    const responsible = [...new Set(entry.controls.map((control) => control.responsibleName).filter(Boolean))].join("\n")
-    const deadlines = entry.controls.map((control) => (control.dueDate ? formatDate(control.dueDate) : "")).filter(Boolean).join("\n")
+    // Fase C: una línea por medida en MEDIDA, RESPONSABLE y PLAZOS, para que la
+    // línea N de las tres sea la misma medida. Antes RESPONSABLE se deduplicaba y
+    // PLAZOS descartaba las vacías, y las columnas se desalineaban. PLAZOS es la
+    // frecuencia de verificación de una medida existente o la fecha de una por
+    // implementar (D5). Una foto anterior a la Fase C no trae `isExisting`: por
+    // implementar, la regla de entonces.
+    const lines = entry.controls.map((control) => ({
+      measure: `${CONTROL_HIERARCHY_LABEL[control.hierarchy]}: ${control.description.replace(/\s*\n\s*/g, " ")}`,
+      responsible: control.responsibleName ?? MISSING,
+      deadline: (control.isExisting ?? false)
+        ? control.verificationFrequency ?? MISSING
+        : control.dueDate ? formatDate(control.dueDate) : MISSING,
+    }))
+    const measures = lines.map((line) => line.measure).join("\n")
+    const responsible = lines.map((line) => line.responsible).join("\n")
+    const deadlines = lines.map((line) => line.deadline).join("\n")
     const row = sheet.addRow([
       entry.rowNumber, safe(entry.activity ?? ""), safe(entry.task ?? ""), safe(entry.position ?? ""), safe(entry.location ?? ""),
       entry.exposedFemale, entry.exposedMale, entry.exposedOther, safe(entry.riskFactor ?? ""),
@@ -313,7 +328,7 @@ export async function buildMiperWorkbook(detail: MiperVersionDetail, program?: P
       safe(entry.hazard ?? ""), safe(entry.risk ?? ""), safe(entry.probableDamage ?? ""),
       entry.probability ?? "", entry.consequence ?? "", entry.magnitude ?? "",
       entry.classification ? CLASSIFICATION_LABEL[entry.classification].toUpperCase() : "",
-      safe(measures), entry.controlledStatus ? CONTROLLED_STATUS_LABEL[entry.controlledStatus] : "", safe(responsible), deadlines,
+      safe(measures), entry.controlledStatus ? CONTROLLED_STATUS_LABEL[entry.controlledStatus] : "", safe(responsible), safe(deadlines),
     ])
     row.alignment = { vertical: "top", wrapText: true }
     if (entry.classification) {

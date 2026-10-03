@@ -86,6 +86,24 @@ const program = {
   }],
 } as unknown as ProgramWorkspace
 
+/**
+ * Fase C: una fila con una medida por implementar, una existente con frecuencia
+ * y una existente sin frecuencia (con un plazo viejo que ya no aplica). La
+ * descripción de la segunda trae un salto de línea, como sale de un `Textarea`.
+ */
+const alignedSnapshot: MiperSnapshot = {
+  ...snapshot,
+  entries: [{
+    ...snapshot.entries[0]!,
+    controls: [
+      { id: "ctl-a", hierarchy: "engineering", description: "Topes de descarga", responsibleUserId: null, responsibleName: "Supervisor de patio", dueDate: "2026-06-30", status: "proposed", isExisting: false, verificationFrequency: null },
+      { id: "ctl-b", hierarchy: "administrative", description: "Charla de inicio\nde turno", responsibleUserId: null, responsibleName: null, dueDate: null, status: "proposed", isExisting: true, verificationFrequency: "Trimestral" },
+      { id: "ctl-c", hierarchy: "ppe", description: "Casco y barbiquejo", responsibleUserId: null, responsibleName: "Jefe de faena", dueDate: "2026-12-31", status: "proposed", isExisting: true, verificationFrequency: null },
+    ],
+  }],
+}
+const alignedDetail = { ...detail, version: { ...detail.version, snapshot: alignedSnapshot } } as MiperVersionDetail
+
 describe("libro RE-04 de una versión sellada de la MIPER", () => {
   it("arma las cuatro hojas y el encabezado de la versión aprobada", async () => {
     const workbook = await buildMiperWorkbook(detail, null)
@@ -111,8 +129,9 @@ describe("libro RE-04 de una versión sellada de la MIPER", () => {
     expect(sheet.getCell("Q14").value).toBe("MODERADO")
     expect(sheet.getCell("R14").value).toBe("III. Controles de ingeniería: Topes de descarga\nV. Elementos de protección personal: Casco y barbiquejo")
     expect(sheet.getCell("S14").value).toBe("Parcialmente")
-    expect(sheet.getCell("T14").value).toBe("Supervisor de patio")
-    expect(sheet.getCell("U14").value).toBe("30-06-2026")
+    // Una línea por medida en las tres columnas (Fase C): la segunda medida no tiene plazo y lo dice.
+    expect(sheet.getCell("T14").value).toBe("Supervisor de patio\nSupervisor de patio")
+    expect(sheet.getCell("U14").value).toBe("30-06-2026\n—")
   })
 
   it("lista las modificaciones y los criterios de evaluación", async () => {
@@ -203,5 +222,22 @@ describe("libro RE-04 de una versión sellada de la MIPER", () => {
     const workbook = await buildMiperWorkbook(detail, null)
     expect(workbook.getWorksheet("Programa de Trabajo")).toBeTruthy()
     expect(sheetText(workbook, "Programa de Trabajo")).toContain("no tiene actividades del Programa de Trabajo (RE-04.1) registradas")
+  })
+
+  it("una línea por medida en MEDIDA, RESPONSABLE y PLAZOS: frecuencia si es existente, fecha si es por implementar (Fase C)", async () => {
+    const workbook = await buildMiperWorkbook(alignedDetail, null)
+    const sheet = workbook.getWorksheet("RE-04 IPER")!
+    expect(sheet.getCell("R14").value).toBe(
+      "III. Controles de ingeniería: Topes de descarga\nIV. Controles administrativos: Charla de inicio de turno\nV. Elementos de protección personal: Casco y barbiquejo",
+    )
+    expect(sheet.getCell("T14").value).toBe("Supervisor de patio\n—\nJefe de faena")
+    expect(sheet.getCell("U14").value).toBe("30-06-2026\nTrimestral\n—")
+  })
+
+  it("una descripción con salto de línea no corre las líneas: las tres columnas tienen tantas líneas como medidas", async () => {
+    const workbook = await buildMiperWorkbook(alignedDetail, null)
+    const sheet = workbook.getWorksheet("RE-04 IPER")!
+    const lines = (cell: string) => String(sheet.getCell(cell).value).split("\n").length
+    expect([lines("R14"), lines("T14"), lines("U14")]).toEqual([3, 3, 3])
   })
 })
