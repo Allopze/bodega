@@ -40,7 +40,14 @@ export function ControlCard({ control, linkedActionNumbers, editable, verifyHref
       <div className="min-w-0 space-y-1 text-sm">
         <p className="font-medium">{CONTROL_HIERARCHY_LABEL[control.hierarchy]}</p>
         <p className="whitespace-pre-line">{control.description}</p>
-        <p className="text-xs text-[var(--color-text-subtle)]">Responsable: {control.responsibleName ?? "sin asignar"} · Plazo: {control.dueDate ? formatDate(control.dueDate) : "sin plazo"}</p>
+        {/* D5 (Fase C): la existente se verifica con una frecuencia; la por implementar lleva plazo.
+            Una foto anterior a la Fase C no trae `isExisting`: por implementar, la regla de entonces. */}
+        <p className="text-xs text-[var(--color-text-subtle)]">
+          {(control.isExisting ?? false)
+            ? `Existente · verificación ${control.verificationFrequency ?? "sin frecuencia"}`
+            : `Por implementar · plazo ${control.dueDate ? formatDate(control.dueDate) : "sin fecha"}`}
+        </p>
+        <p className="text-xs text-[var(--color-text-subtle)]">Responsable: {control.responsibleName ?? "sin asignar"}</p>
         {linkedActionNumbers.length > 0 && <p className="text-xs">En el programa: {linkedActionNumbers.map((number) => `Actividad #${number}`).join(", ")}</p>}
         {verifyHref && <Link className="text-xs underline" href={verifyHref}>Verificar eficacia del control</Link>}
       </div>

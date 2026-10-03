@@ -19,11 +19,21 @@ const openConfirm = () => {
 afterEach(() => { vi.clearAllMocks() })
 
 describe("ControlCard", () => {
-  it("muestra tipo, responsable, plazo y actividades del programa", () => {
+  it("muestra tipo, «Por implementar · plazo», responsable y actividades del programa", () => {
     render(<ControlCard control={control} linkedActionNumbers={[3]} editable verifyHref={null} onEdit={() => {}} onDelete={deleted()} />)
     expect(screen.getByText("V. Elementos de protección personal")).toBeTruthy()
-    expect(screen.getByText(/Responsable: Supervisor · Plazo: 30-10-2026/)).toBeTruthy()
+    // `control` no trae `isExisting` (foto anterior a la Fase C): se lee como por implementar.
+    expect(screen.getByText("Por implementar · plazo 30-10-2026")).toBeTruthy()
+    expect(screen.getByText("Responsable: Supervisor")).toBeTruthy()
     expect(screen.getByText("En el programa: Actividad #3")).toBeTruthy()
+  })
+
+  it("una medida existente muestra su frecuencia de verificación y no un plazo (D5)", () => {
+    render(<ControlCard control={{ ...control, isExisting: true, verificationFrequency: "Trimestral", dueDate: null }} linkedActionNumbers={[]} editable verifyHref={null} onEdit={() => {}} onDelete={deleted()} />)
+    expect(screen.getByText("Existente · verificación Trimestral")).toBeTruthy()
+    expect(screen.queryByText(/plazo/)).toBeNull()
+    render(<ControlCard control={{ ...control, id: "c2", isExisting: true, verificationFrequency: null, dueDate: null }} linkedActionNumbers={[]} editable verifyHref={null} onEdit={() => {}} onDelete={deleted()} />)
+    expect(screen.getByText("Existente · verificación sin frecuencia")).toBeTruthy()
   })
 
   it("con otra medida en edición no se edita ni se elimina esta", () => {

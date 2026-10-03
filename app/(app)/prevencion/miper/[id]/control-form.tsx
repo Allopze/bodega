@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { ChoiceCardGroup } from "@/components/ui/choice-card-group"
 import { Combobox } from "@/components/ui/combobox"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
@@ -15,12 +16,21 @@ import { saveMiperControlAction } from "../actions"
 
 const HIERARCHY_OPTIONS = (Object.entries(CONTROL_HIERARCHY_LABEL) as Array<[ControlHierarchy, string]>).map(([value, label]) => ({ value, label }))
 const OTHER = "__otra__"
+/** D5 (Fase C): una medida existente se verifica con una frecuencia; una por implementar lleva plazo. */
+const KIND_OPTIONS = [
+  { value: "existing", title: "Ya está implementada", description: "Se verifica cada cierto tiempo; no lleva plazo." },
+  { value: "pending", title: "Por implementar", description: "Lleva responsable y la fecha en que debe estar lista." },
+] as const
 
 /**
  * Alta y edición de una medida (spec §6.2). Sale de la ficha antigua
  * (`entry-sheet.tsx`) conservando los nombres accesibles que usan las E2E:
  * «Tipo de control», «Descripción de la medida», «Nombre o cargo
  * responsable», «Plazo de la medida».
+ *
+ * Fase C: «¿Ya está implementada?». Una medida nueva nace «Por implementar»
+ * (la regla de siempre). Una existente pide la frecuencia de verificación en vez
+ * del plazo, y el formulario envía `null` en lo que no aplica.
  */
 export function ControlForm({ matrixId, entryId, control, controlVersion, responsibleOptions, measureSuggestions, onDone, onCancel }: {
   matrixId: string
@@ -33,6 +43,8 @@ export function ControlForm({ matrixId, entryId, control, controlVersion, respon
   onCancel: () => void
 }) {
   const [hierarchy, setHierarchy] = useState<ControlHierarchy>(control?.hierarchy ?? "administrative")
+  const [isExisting, setIsExisting] = useState(control?.isExisting ?? false)
+  const [frequency, setFrequency] = useState(control?.verificationFrequency ?? "")
   const [description, setDescription] = useState(control?.description ?? "")
   const [responsibleUserId, setResponsibleUserId] = useState(control?.responsibleUserId ?? "")
   const [responsibleName, setResponsibleName] = useState(control?.responsibleUserId ? "" : control?.responsibleName ?? "")
@@ -48,7 +60,9 @@ export function ControlForm({ matrixId, entryId, control, controlVersion, respon
       hierarchy, description: description.trim(),
       responsibleUserId: responsibleUserId || null,
       responsibleName: responsibleUserId ? null : responsibleName.trim() || null,
-      dueDate: dueDate || null,
+      isExisting,
+      verificationFrequency: isExisting ? frequency.trim() || null : null,
+      dueDate: isExisting ? null : dueDate || null,
     },
   }), (result) => { toast.success(result.message ?? "Medida guardada"); onDone() })
   // El responsable actual puede ya no estar en la faena (`responsibleOptions`
@@ -59,12 +73,23 @@ export function ControlForm({ matrixId, entryId, control, controlVersion, respon
     : []
   return (
     <div role="group" aria-label={control ? "Editar medida de control" : "Nueva medida de control"} className="grid gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:grid-cols-2">
+      <div className="space-y-2 md:col-span-2">
+        <p className="text-sm font-medium text-[var(--color-text)]">¿Ya está implementada?</p>
+        <ChoiceCardGroup label="¿Ya está implementada?" className="sm:grid-cols-2" options={KIND_OPTIONS} value={isExisting ? "existing" : "pending"}
+          disabled={locked} onChange={(value) => setIsExisting(value === "existing")} />
+      </div>
       <Field label="Tipo de control (jerarquía)" required>
         <OptionSelect aria-label="Tipo de control" options={HIERARCHY_OPTIONS} value={hierarchy} disabled={locked} onValueChange={(value) => setHierarchy(value as ControlHierarchy)} />
       </Field>
-      <Field label="Plazo" required helper="Fecha en que la medida debe estar implementada.">
-        <DatePicker ariaLabel="Plazo de la medida" value={dueDate || undefined} disabled={locked} onChange={setDueDate} />
-      </Field>
+      {isExisting ? (
+        <Field label="Frecuencia de verificación" helper="Cada cuánto se comprueba que sigue funcionando (por ejemplo, trimestral).">
+          <Input aria-label="Frecuencia de verificación" value={frequency} disabled={locked} onChange={(event) => setFrequency(event.target.value)} placeholder="Trimestral" maxLength={120} />
+        </Field>
+      ) : (
+        <Field label="Plazo" required helper="Fecha en que la medida debe estar implementada.">
+          <DatePicker ariaLabel="Plazo de la medida" value={dueDate || undefined} disabled={locked} onChange={setDueDate} />
+        </Field>
+      )}
       {/* El rótulo visible es el nombre accesible (WCAG 2.5.3, «label in name»). */}
       <Field label="Descripción de la medida" required className="md:col-span-2" helper="Mínimo 3 caracteres.">
         <Textarea aria-label="Descripción de la medida" value={description} disabled={locked} onChange={(event) => setDescription(event.target.value)} rows={3} maxLength={3000} />
