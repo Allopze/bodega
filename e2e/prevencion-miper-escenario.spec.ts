@@ -101,10 +101,16 @@ test.afterEach(async () => {
  */
 const estado = (page: Page, label: string | RegExp) => page.getByRole("banner").getByText(label)
 
-/** Abre el detalle de la actividad N° 1 del panel del programa. */
+/**
+ * Abre el detalle de la actividad N° 1 del panel del programa. Desde la Fase E
+ * es una vista (`?actividad=`) y no un `Sheet`: un enlace que lleva a la
+ * `region` «Actividad N° 1».
+ */
 async function abrirActividad(page: Page) {
-  await page.getByRole("button", { name: "Abrir el detalle de la actividad N° 1" }).click()
-  return page.getByRole("dialog", { name: "Actividad N° 1" })
+  await page.getByRole("link", { name: "Abrir el detalle de la actividad N° 1", exact: true }).click()
+  const detalle = page.getByRole("region", { name: "Actividad N° 1", exact: true })
+  await expect(detalle).toBeVisible()
+  return detalle
 }
 
 /**
@@ -425,10 +431,10 @@ test("paso 15: trazabilidad de la actividad al riesgo y del riesgo a sus medidas
   await expect(textoVisible(page, EVIDENCE_NAME)).toBeVisible()
   // De la actividad al riesgo que la originó: «Ver la fila N en la MIPER».
   // El enlace abre el editor del riesgo (la matriz, sin `tab`) y deja atrás el detalle.
-  await sheet.getByRole("button", { name: "Ver la fila 1 en la MIPER" }).click()
+  await sheet.getByRole("link", { name: "Ver la fila 1 en la MIPER", exact: true }).click()
   await expect(page).toHaveURL(/fila=/)
   await expect(page).not.toHaveURL(/tab=/)
-  await expect(page.getByRole("dialog", { name: "Actividad N° 1" })).toBeHidden()
+  await expect(page.getByRole("region", { name: "Actividad N° 1", exact: true })).toHaveCount(0)
   await expect(page.getByRole("heading", { level: 2, name: "Correa en movimiento" })).toBeVisible()
   await expect(page.getByText(/^Riesgo #1 · /)).toBeVisible()
   // Del riesgo a sus medidas…

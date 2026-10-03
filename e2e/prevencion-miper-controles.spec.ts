@@ -35,7 +35,9 @@ test("la ficha carga la medida, su nivel efectivo y la versión sellada de la qu
   await expect(textoVisible(page, "Implementado")).toBeVisible()
   // El nivel efectivo sale de la clasificación RE-04 de la fila (P×C = 2×4 →
   // «Importante» → «Alto»), no de un campo libre.
-  await expect(textoVisible(page, "Peligro: Atrapamiento en correa transportadora E2E · riesgo Alto")).toBeVisible()
+  // (S6: el peligro y la clasificación van en dos nodos; las migas llevan «Riesgo #n».)
+  await expect(textoVisible(page, "Peligro: Atrapamiento en correa transportadora E2E")).toBeVisible()
+  await expect(textoVisible(page, "Importante · MR 8")).toBeVisible()
   // Trazabilidad: la versión sellada de la MIPER y la huella del contenido.
   await expect(textoVisible(page, "v4 · 3f1c0d5a7b9e24c6")).toBeVisible()
   await expect(textoVisible(page, "Sin verificar")).toBeVisible()

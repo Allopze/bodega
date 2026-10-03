@@ -73,6 +73,9 @@ export const ROUTE_URL_OVERRIDES: Record<string, string> = {
   // matriz. La tarea, el editor y la ficha los recorre `accessibility.spec.ts`
   // aparte, porque son estados de la URL de esta misma ruta (A2, fila 17).
   "/prevencion/miper/[id]": "/prevencion/miper/riskmatrix-controles-e2e",
+  // La ficha de una medida: el control sembrado en esa misma MIPER, el que usa
+  // `prevencion-miper-controles.spec.ts`.
+  "/prevencion/miper/controles/[id]": "/prevencion/miper/controles/riskcontrol-activo-e2e",
 }
 
 /**

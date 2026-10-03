@@ -157,6 +157,8 @@ async function main() {
     { id: "rol-prev-faena-e2e", name: "prevencionista_faena", label: "Prevencionista faena", isGlobal: false, permissions: ["p-prev-risk-view", "p-prev-risk-edit"] },
     { id: "rol-prev-jefa-e2e", name: "prevencionista", label: "Jefe del Departamento de Prevención de Riesgos", isGlobal: true, permissions: ["p-prev-risk-view", "p-prev-risk-review"] },
     { id: "rol-legal-e2e", name: "gerente_legal_rrhh", label: "Gerencia Legal y Recursos Humanos", isGlobal: true, permissions: ["p-prev-risk-view", "p-prev-risk-approve-legal"] },
+    // Sólo ver (V1): la persona que consulta la MIPER sin poder tocarla.
+    { id: "rol-miper-lectura-e2e", name: "miper_lectura", label: "MIPER — sólo lectura", isGlobal: true, permissions: ["p-prev-risk-view"] },
   ]
   for (const role of miperRoles) {
     await db.insert(schema.roles).values({ id: role.id, name: role.name, label: role.label, description: `${role.label} — E2E MIPER`, isGlobal: role.isGlobal })
@@ -168,6 +170,7 @@ async function main() {
     { id: "user-prev-faena-e2e", name: "Prevencionista Faena E2E", email: "prev.faena@e2e.chome.cl", roleId: "rol-prev-faena-e2e", scoped: true },
     { id: "user-jefa-prev-e2e", name: "Jefa Prevención E2E", email: "jefa.prevencion@e2e.chome.cl", roleId: "rol-prev-jefa-e2e", scoped: false },
     { id: "user-legal-e2e", name: "Legal y RRHH E2E", email: "legal.rrhh@e2e.chome.cl", roleId: "rol-legal-e2e", scoped: false },
+    { id: "user-miper-lectura-e2e", name: "MIPER Lectura E2E", email: "miper.lectura@e2e.chome.cl", roleId: "rol-miper-lectura-e2e", scoped: false },
   ]
   for (const user of miperUsers) {
     await db.insert(schema.users).values({ id: user.id, name: user.name, email: user.email, hashedPassword: password, avatarColor: "200", isActive: true, createdAt: now, updatedAt: now })
@@ -3233,6 +3236,124 @@ async function main() {
   }))
   await db.insert(schema.preventionRiskMatrices).values(miperDraftFixtures)
 
+  /* MIPER Fase D (acciones masivas): un borrador propio con una tarea de tres
+   * riesgos sembrados, para «Agregar medida a N» y «Cambiar ¿controlado?» de
+   * `e2e/prevencion-miper-masivas.spec.ts`. Ningún otro spec lo toca. Período
+   * 2040 y `matrixVersion` 6 en `ws-restricted-e2e`: 2035–2039 y 1–5 ya están
+   * tomados. Actividad, tarea y puesto van por el diccionario de la faena, como
+   * los escribe el editor (`resolveDictionaryId`). */
+  await db.insert(schema.preventionRiskMatrices).values({
+    id: "riskmatrix-masivas-e2e", worksiteId: "ws-restricted-e2e", matrixVersion: 6, period: 2040,
+    title: "MIPER Faena Restringida E2E 2040", status: "draft", reviewState: "none", isLegacy: false,
+    methodologyId: "riskmethod-e2e", methodologySnapshot: {},
+    revisionReason: "Fixture E2E de las acciones masivas de la MIPER.",
+    participationSummary: "Participación del comité de fixture E2E para las pruebas.",
+    consultationEvidenceReference: "Acta de consulta de fixture E2E",
+    createdByUserId: "user-admin-e2e", version: 1, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskProcesses).values({
+    id: "riskproc-masivas-e2e", worksiteId: "ws-restricted-e2e", code: "A-MASIVAS", name: "Bodega de químicos", normalizedName: "bodega de quimicos",
+    isActive: true, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskTasks).values({
+    id: "risktask-masivas-e2e", worksiteId: "ws-restricted-e2e", processId: null, code: "T-MASIVAS", name: "Trasvasije de solventes", normalizedName: "trasvasije de solventes",
+    isRoutine: true, isActive: true, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskPositions).values({
+    id: "riskpos-masivas-e2e", worksiteId: "ws-restricted-e2e", taskId: null, code: "P-MASIVAS", name: "Bodeguero", normalizedName: "bodeguero",
+    isActive: true, createdAt: now, updatedAt: now,
+  })
+  // Dos Moderados y un Tolerable: `?clasificacion=moderate` deja a la vista justo dos.
+  await db.insert(schema.preventionRiskEntries).values(([
+    ["Derrame de solvente", "Contacto con la piel", "Dermatitis", 2],
+    ["Vapores de solvente", "Inhalación", "Intoxicación", 2],
+    ["Tambor en altura", "Caída de objetos", "Contusiones", 1],
+  ] as const).map(([hazard, risk, probableDamage, probability], index) => ({
+    id: `riskentry-masivas-e2e-${index + 1}`, matrixId: "riskmatrix-masivas-e2e", rowNumber: index + 1, hazardCode: `HAZ-MASIVAS-${index + 1}`,
+    processId: "riskproc-masivas-e2e", taskId: "risktask-masivas-e2e", positionId: "riskpos-masivas-e2e",
+    hazard, risk, probableDamage, isRoutine: true, exposedFemale: 0, exposedMale: 2, exposedOther: 0,
+    probability, consequence: 2, controlledStatus: "no", version: 1, createdAt: now, updatedAt: now,
+  })))
+
+  /* MIPER lista para revisión (V1): `e2e/prevencion-miper-revision-lectura.spec.ts`
+   * la envía con «Enviar a revisión», así que nace completa según
+   * `checkMiperCompleteness`: encabezado con fecha, dotación coherente y
+   * representante; cada riesgo con actividad, tarea, puesto, factor, peligro,
+   * riesgo, daño, P×C y «¿controlado?»; las medidas con responsable. **Sin
+   * Intolerables**, para no exigir vínculo con el Programa de Trabajo. Período
+   * 2041 y `matrixVersion` 7 (2035–2040 y 1–6 ya están tomados). Un Importante
+   * controlado «Sí» (P×C = 2×4, medida existente con frecuencia) y un Moderado
+   * con una medida existente: el recorrido filtra «Importantes e Intolerables». */
+  await db.insert(schema.preventionRiskMatrices).values({
+    id: "riskmatrix-revision-e2e", worksiteId: "ws-restricted-e2e", matrixVersion: 7, period: 2041,
+    title: "MIPER Faena Restringida E2E 2041", status: "draft", reviewState: "none", isLegacy: false,
+    methodologyId: "riskmethod-e2e", methodologySnapshot: {},
+    revisionReason: "Fixture E2E del recorrido de revisión y sólo lectura.",
+    participationSummary: "Participación del comité de fixture E2E para las pruebas.",
+    consultationEvidenceReference: "Acta de consulta de fixture E2E",
+    iperCode: "IPER-REV-E2E", elaboratedOn: "2041-01-10", companyName: "Empresa Fixture E2E", worksiteName: "Faena Restringida E2E",
+    siteRepresentativeName: "Administrador E2E",
+    headcountTotal: 3, headcountMale: 2, headcountFemale: 1, headcountOther: 0,
+    createdByUserId: "user-admin-e2e", version: 1, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskProcesses).values({
+    id: "riskproc-revision-e2e", worksiteId: "ws-restricted-e2e", code: "A-REVISION", name: "Mantención de la planta", normalizedName: "mantencion de la planta",
+    isActive: true, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskTasks).values({
+    id: "risktask-revision-e2e", worksiteId: "ws-restricted-e2e", processId: null, code: "T-REVISION", name: "Cambio de rodamientos", normalizedName: "cambio de rodamientos",
+    isRoutine: true, isActive: true, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskPositions).values({
+    id: "riskpos-revision-e2e", worksiteId: "ws-restricted-e2e", taskId: null, code: "P-REVISION", name: "Mecánico de mantención", normalizedName: "mecanico de mantencion",
+    isActive: true, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskEntries).values(([
+    ["Rodamiento caliente", "Quemadura", "Quemadura de segundo grado", 2, 4, "riskfactor-fisico"],
+    ["Herramienta de impacto", "Golpe en la mano", "Contusión", 2, 2, "riskfactor-mecanico"],
+    // Un segundo Importante: «Siguiente del filtro» necesita dos en el alcance para avanzar y dar la vuelta.
+    ["Polea sin protección", "Atrapamiento", "Lesión de la mano", 2, 4, "riskfactor-mecanico"],
+  ] as const).map(([hazard, risk, probableDamage, probability, consequence, riskFactorId], index) => ({
+    id: `riskentry-revision-e2e-${index + 1}`, matrixId: "riskmatrix-revision-e2e", rowNumber: index + 1, hazardCode: `HAZ-REVISION-${index + 1}`,
+    processId: "riskproc-revision-e2e", taskId: "risktask-revision-e2e", positionId: "riskpos-revision-e2e", riskFactorId,
+    hazard, risk, probableDamage, isRoutine: true, exposedFemale: 0, exposedMale: 2, exposedOther: 0,
+    probability, consequence, controlledStatus: index === 1 ? "partial" : "yes", version: 1, createdAt: now, updatedAt: now,
+  })))
+  await db.insert(schema.preventionRiskControls).values([
+    {
+      id: "riskcontrol-revision-e2e-1", riskEntryId: "riskentry-revision-e2e-1", description: "Guantes aislantes y enfriamiento previo del rodamiento.",
+      hierarchy: "ppe", isExisting: true, isCritical: false, verificationFrequency: "Mensual",
+      responsibleSnapshot: "Supervisor de turno E2E", status: "implemented", effectivenessStatus: "not_assessed", version: 1, createdAt: now, updatedAt: now,
+    },
+    {
+      id: "riskcontrol-revision-e2e-2", riskEntryId: "riskentry-revision-e2e-2", description: "Martillo con protector de mano.",
+      hierarchy: "engineering", isExisting: true, isCritical: false, verificationFrequency: "Trimestral",
+      responsibleSnapshot: "Supervisor de turno E2E", status: "implemented", effectivenessStatus: "not_assessed", version: 1, createdAt: now, updatedAt: now,
+    },
+    {
+      id: "riskcontrol-revision-e2e-3", riskEntryId: "riskentry-revision-e2e-3", description: "Protección fija sobre la polea de la correa.",
+      hierarchy: "engineering", isExisting: true, isCritical: false, verificationFrequency: "Mensual",
+      responsibleSnapshot: "Supervisor de turno E2E", status: "implemented", effectivenessStatus: "not_assessed", version: 1, createdAt: now, updatedAt: now,
+    },
+  ])
+  // Un Programa de Trabajo con una actividad que ejecuta las medidas de las filas 1 y 2: es lo que
+  // la vista «detalle de una actividad» audita en el recorrido de revisión y sólo lectura.
+  await db.insert(schema.preventionRiskPrograms).values({
+    id: "riskprogram-revision-e2e", matrixId: "riskmatrix-revision-e2e", worksiteId: "ws-restricted-e2e", period: 2041,
+    worksiteName: "Faena Restringida E2E", siteRepresentativeName: "Administrador E2E",
+    headcountTotal: 3, headcountMale: 2, headcountFemale: 1, headcountOther: 0, elaboratedOn: "2041-01-10",
+    version: 1, createdByUserId: "user-admin-e2e", createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskProgramActions).values({
+    id: "riskaction-revision-e2e", programId: "riskprogram-revision-e2e", actionNumber: 1, processId: "riskproc-revision-e2e",
+    description: "Inspeccionar las protecciones de la planta", responsibleSnapshot: "Supervisor de turno E2E",
+    scheduleKind: "annual", startsOn: "2041-01-31", status: "active", version: 1,
+    createdByUserId: "user-admin-e2e", createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.preventionRiskProgramActionControls).values(["riskcontrol-revision-e2e-1", "riskcontrol-revision-e2e-2"].map((controlId, index) => ({
+    id: `riskactionctl-revision-e2e-${index + 1}`, actionId: "riskaction-revision-e2e", controlId, linkedByUserId: "user-admin-e2e", linkedAt: now,
+  })))
+
   /* Una MIPER **reemplazada** con su propia medida: es el tercer caso de la
    * regla `canVerify` —la medida se sigue leyendo, pero de una versión que ya no
    * rige—, y el único de los tres que depende del estado de la MIPER y no del
@@ -3387,6 +3508,23 @@ async function main() {
       updatedAt: now,
     },
   ])
+
+  /* Bitácora larga (V1): 60 eventos sobre la MIPER reemplazada, para que el
+   * Historial pinte 50, ofrezca «Cargar más» y termine con 60. La tabla es
+   * append-only: sólo `INSERT`. `createdAt` va escalonado de a un minuto, el más
+   * nuevo primero en pantalla, así el orden y el cursor son deterministas. */
+  const bitacoraBase = Date.parse("2035-03-01T12:00:00.000Z")
+  await db.insert(schema.auditLog).values(Array.from({ length: 60 }, (_, index) => ({
+    id: `audit-miper-bitacora-e2e-${String(index + 1).padStart(2, "0")}`,
+    userId: "user-admin-e2e",
+    userEmail: "admin@e2e.chome.cl",
+    action: "update" as const,
+    entityType: "risk_legal:risk:miper",
+    entityId: "riskmatrix-reemplazada-e2e",
+    worksiteId: "ws-restricted-e2e",
+    newState: JSON.stringify({ changeType: "entry_updated", object: "entry" }),
+    createdAt: new Date(bitacoraBase + index * 60_000).toISOString(),
+  })))
 
   await client.end()
 }

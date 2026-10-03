@@ -26,7 +26,7 @@ import { abrirRiesgo, cabecera, irAPaso } from "./miper-helpers"
  *
  * Va a «Faena Restringida E2E», período 2046 (2047 en el reintento de CI):
  * ningún otro spec afirma esa fila ni esos períodos, y el sembrado sólo trae
- * 2035–2039 en esa faena.
+ * 2035–2040 en esa faena.
  */
 const FAENA = "Faena Restringida E2E"
 
