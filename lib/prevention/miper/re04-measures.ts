@@ -64,14 +64,18 @@ function cellText(value: unknown): string | null {
   return null
 }
 
-/** Las líneas no vacías de una celda, limpias. Su índice es el `line` de cada medida. */
-function cellLines(cell: unknown): string[] {
+/** Las líneas de una celda, limpias y sin las blancas del final; una blanca en medio queda como "". */
+function rawCellLines(cell: unknown): string[] {
   const text = cellText(cell)
   if (text === null) return []
-  return text.split(/\r?\n/).flatMap((raw) => {
-    const line = cleanMiperName(raw)
-    return line === null ? [] : [line]
-  })
+  const lines = text.split(/\r?\n/).map((raw) => cleanMiperName(raw) ?? "")
+  while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop()
+  return lines
+}
+
+/** Las líneas no vacías de una celda, limpias. Su índice es el `line` de cada medida. */
+function cellLines(cell: unknown): string[] {
+  return rawCellLines(cell).filter((line) => line !== "")
 }
 
 /* ── Separar las medidas de una celda ───────────────────────────────────── */
@@ -256,20 +260,33 @@ const EMPTY_MARK = /^[—–-]$/u
 
 const blankIfEmptyMark = (value: string) => (EMPTY_MARK.test(value) ? "" : value)
 
+/** Las líneas de la celda MEDIDA: cuántas hay en crudo y en cuál de ellas está cada `line` (no vacía). */
+type MeasureLayout = { rawCount: number; rawIndexOf: readonly number[] }
+
+function measureLayout(cell: unknown): MeasureLayout {
+  const raw = rawCellLines(cell)
+  return { rawCount: raw.length, rawIndexOf: raw.flatMap((line, index) => (line === "" ? [] : [index])) }
+}
+
 /**
  * El valor de RESPONSABLE o PLAZOS de cada medida de la fila. El libro que
  * exporta la plataforma escribe UNA LÍNEA POR MEDIDA en las tres columnas (y cada
- * medida con su «I.–V.»): ahí cada medida toma la línea de su `line`, y «—» es
- * «vacío». Se cuentan las líneas de MEDIDA (`measureLineCount`), no las medidas:
+ * medida con su «I.–V.»): ahí cada medida toma la línea que le corresponde, y
+ * «—» o una línea en blanco es «vacío». Se cuentan líneas de MEDIDA, no medidas:
  * la frase repetida en la fila toma los valores de su primera línea y el resto
- * de menos de 3 caracteres consume la suya, sin correr las demás. Si las cuentas
- * no calzan (o la celda MEDIDA no trae «I.–V.»), la celda entera vale para todas
- * las medidas de la fila.
+ * de menos de 3 caracteres consume la suya, sin correr las demás. En orden:
+ * 1. tantas líneas crudas como MEDIDA (sin contar las blancas del final): se
+ *    alinea por línea cruda, y la blanca es «vacío»;
+ * 2. si no, tantas líneas no vacías como MEDIDA: se alinea por línea no vacía;
+ * 3. si no (o si la celda MEDIDA no trae «I.–V.»), la celda entera vale para
+ *    todas las medidas de la fila.
  */
-function valuesPerMeasure(cell: unknown, pieces: readonly MeasurePiece[], measureLineCount: number): string[] {
-  const lines = cellLines(cell)
-  if (pieces.every((piece) => piece.prefix !== null) && lines.length === measureLineCount) {
-    return pieces.map((piece) => blankIfEmptyMark(lines[piece.line] ?? ""))
+function valuesPerMeasure(cell: unknown, pieces: readonly MeasurePiece[], layout: MeasureLayout): string[] {
+  if (pieces.every((piece) => piece.prefix !== null)) {
+    const raw = rawCellLines(cell)
+    if (raw.length === layout.rawCount) return pieces.map((piece) => blankIfEmptyMark(raw[layout.rawIndexOf[piece.line] ?? -1] ?? ""))
+    const nonEmpty = raw.filter((line) => line !== "")
+    if (nonEmpty.length === layout.rawIndexOf.length) return pieces.map((piece) => blankIfEmptyMark(nonEmpty[piece.line] ?? ""))
   }
   const whole = cleanMiperName(cellText(cell)) ?? ""
   return pieces.map(() => blankIfEmptyMark(whole))
@@ -316,9 +333,9 @@ export function analyzeRe04Measures(rows: readonly ImportRowInput[], options: { 
     const original = (row.original ?? {}) as Partial<Record<Re04ColumnLabel, unknown>>
     const pieces = splitMeasures(original[MEASURE_COLUMN])
     if (pieces.length === 0) continue
-    const measureLineCount = cellLines(original[MEASURE_COLUMN]).length
-    const responsibles = valuesPerMeasure(original[RESPONSIBLE_COLUMN], pieces, measureLineCount)
-    const deadlines = valuesPerMeasure(original[DEADLINE_COLUMN], pieces, measureLineCount)
+    const layout = measureLayout(original[MEASURE_COLUMN])
+    const responsibles = valuesPerMeasure(original[RESPONSIBLE_COLUMN], pieces, layout)
+    const deadlines = valuesPerMeasure(original[DEADLINE_COLUMN], pieces, layout)
     pieces.forEach((piece, index) => {
       const responsible = responsibles[index] ?? ""
       const deadline = deadlines[index] ?? ""

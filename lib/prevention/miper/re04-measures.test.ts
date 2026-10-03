@@ -185,6 +185,22 @@ describe("analyzeRe04Measures", () => {
       ["Casco", "jefe de faena", ""],
     ])
   })
+  it("libro exportado con una línea en blanco en RESPONSABLE y PLAZOS: con tantas líneas crudas como MEDIDA, la blanca es «vacío» y no corre las demás", () => {
+    const exported = analyzeRe04Measures([row(14, {
+      "MEDIDA DE CONTROL": "III. Controles de ingeniería: Topes de descarga\nIV. Controles administrativos: Charla de inicio de turno",
+      "RESPONSABLE": "\nJefe de faena", "PLAZOS": "\nTrimestral",
+    })], { today: TODAY })
+    expect(exported.measures.map((measure) => [measure.text, measure.responsibleKey, measure.deadlineKey])).toEqual([
+      ["Topes de descarga", "", ""],
+      ["Charla de inicio de turno", "jefe de faena", "trimestral"],
+    ])
+    // Sin calce de líneas crudas (las blancas del final no cuentan), se alinean las no vacías.
+    const loose = analyzeRe04Measures([row(14, {
+      "MEDIDA DE CONTROL": "III. Controles de ingeniería: Topes de descarga\nIV. Controles administrativos: Charla de inicio de turno\n",
+      "RESPONSABLE": "Supervisor de turno\n\nJefe de faena\n\n", "PLAZOS": "30-06-2026\nTrimestral",
+    })], { today: TODAY })
+    expect(loose.measures.map((measure) => [measure.responsibleKey, measure.deadlineKey])).toEqual([["supervisor de turno", "30-06-2026"], ["jefe de faena", "trimestral"]])
+  })
   it("distinctPhrases: si alguna aparición trae «I.–V.», la frase toma ese tipo", () => {
     expect(distinctPhrases([
       { text: "Charla de inicio", phraseKey: "charla inicio", prefix: null },
