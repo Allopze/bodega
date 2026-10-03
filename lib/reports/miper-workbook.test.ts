@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { RE04_METHODOLOGY } from "@/lib/prevention/miper/methodology"
+import { analyzeRe04Measures } from "@/lib/prevention/miper/re04-measures"
 import type { MiperSnapshot } from "@/lib/prevention/miper/snapshot"
 import type { ProgramWorkspace } from "@/lib/services/miper/program-queries"
 import { buildMiperWorkbook, miperFilenameBase, type MiperVersionDetail } from "./miper-workbook"
@@ -239,5 +240,17 @@ describe("libro RE-04 de una versión sellada de la MIPER", () => {
     const sheet = workbook.getWorksheet("RE-04 IPER")!
     const lines = (cell: string) => String(sheet.getCell(cell).value).split("\n").length
     expect([lines("R14"), lines("T14"), lines("U14")]).toEqual([3, 3, 3])
+  })
+
+  it("el libro exportado se vuelve a importar: cada medida conserva su tipo, su responsable y su plazo (Fase C)", async () => {
+    const sheet = (await buildMiperWorkbook(alignedDetail, null)).getWorksheet("RE-04 IPER")!
+    const original = { "MEDIDA DE CONTROL": sheet.getCell("R14").value, "RESPONSABLE": sheet.getCell("T14").value, "PLAZOS": sheet.getCell("U14").value }
+    const { measures, phrases } = analyzeRe04Measures([{ rowNumber: 14, status: "ready", original }], { today: "2026-10-03" })
+    expect(measures.map((measure) => [measure.text, measure.prefix, measure.responsibleKey, measure.deadlineKey])).toEqual([
+      ["Topes de descarga", "engineering", "supervisor de patio", "30-06-2026"],
+      ["Charla de inicio de turno", "administrative", "", "trimestral"],
+      ["Casco y barbiquejo", "ppe", "jefe de faena", ""],
+    ])
+    expect(phrases.every((phrase) => phrase.suggestion.source === "prefix")).toBe(true)
   })
 })

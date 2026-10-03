@@ -66,6 +66,17 @@ describe("parser puro del RE-04 IPER", () => {
     expect(rows[4]!.rowNumber).toBe(19)
   })
 
+  it("«¿Está controlado?» se reconoce por prefijo: la cola del RE-04 real no lo vuelve «No»", () => {
+    const rows = parse([
+      sheetRow({ controlled: "PARCIALMENTE CONTROLADO - REQUIERE ACCIÓN INMEDIATA" }),
+      sheetRow({ controlled: "SÍ, CONTROLADO (VERIFICADO EN TERRENO)" }),
+      sheetRow({ controlled: "NO CONTROLADO - SIN MEDIDAS" }),
+      // «SIN …» empieza con «si» pero no es «Sí»: el prefijo es por palabras.
+      sheetRow({ controlled: "SIN INFORMACIÓN" }),
+    ])
+    expect(rows.map((row) => row.normalized.controlledStatus)).toEqual(["partial", "yes", "no", "no"])
+  })
+
   it("P y C fuera de {1, 2, 4} detienen la fila; el cálculo manda sobre el Excel", () => {
     const rows = parse([
       // El Excel trae MR 8, la plataforma calcula 16: se informa y manda el cálculo.

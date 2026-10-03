@@ -11,8 +11,8 @@
  *
  * Reglas del §9.3 (y del Review Focus 5 de la Parte IV):
  *
- * - Los textos del formato real se mapean: `"SÍ, CONTROLADO" → "yes"`,
- *   `"PARCIALMENTE CONTROLADO" → "partial"`, `"NO CONTROLADO"` o vacío `→ "no"`;
+ * - Los textos del formato real se mapean por prefijo: `"SÍ, CONTROLADO" → "yes"`,
+ *   `"PARCIALMENTE CONTROLADO…" → "partial"`, `"NO CONTROLADO"` o vacío `→ "no"`;
  *   `"RUTINARIA" → true`, `"NO RUTINARIA" → false`.
  * - P y C sólo valen `{1, 2, 4}`: cualquier otro valor (o su ausencia) produce
  *   `p_out_of_scale` / `c_out_of_scale` y la fila **no se carga**.
@@ -174,20 +174,28 @@ function intOf(value: unknown): number | null {
   return Number.isInteger(parsed) ? parsed : null
 }
 
-/** "SÍ, CONTROLADO" / "PARCIALMENTE CONTROLADO" / "NO CONTROLADO" / vacío → "no". */
-const CONTROLLED_TEXT: Record<string, Re04ControlledStatus> = {
-  "si controlado": "yes",
-  "si": "yes",
-  "controlado": "yes",
-  "parcialmente controlado": "partial",
-  "parcialmente": "partial",
-  "parcial": "partial",
-  "no controlado": "no",
-  "no": "no",
-}
+/**
+ * "SÍ, CONTROLADO" / "PARCIALMENTE CONTROLADO" / "NO CONTROLADO" / vacío → "no".
+ * Se reconoce por PREFIJO de palabras, del rótulo más largo al más corto: el
+ * RE-04 real escribe «PARCIALMENTE CONTROLADO - REQUIERE ACCIÓN INMEDIATA» en sus
+ * 46 Importantes, y con la búsqueda exacta caían en «no» (Fase C). «SIN …» no es
+ * «SÍ»: el prefijo termina en un espacio.
+ */
+const CONTROLLED_PREFIXES: ReadonlyArray<readonly [string, Re04ControlledStatus]> = [
+  ["parcialmente controlado", "partial"],
+  ["si controlado", "yes"],
+  ["no controlado", "no"],
+  ["parcialmente", "partial"],
+  ["controlado", "yes"],
+  ["parcial", "partial"],
+  ["si", "yes"],
+  ["no", "no"],
+]
 
 export function controlledStatusOf(value: unknown): Re04ControlledStatus {
-  return CONTROLLED_TEXT[keyOf(value)] ?? "no"
+  const key = keyOf(value)
+  const match = CONTROLLED_PREFIXES.find(([prefix]) => key === prefix || key.startsWith(`${prefix} `))
+  return match?.[1] ?? "no"
 }
 
 /** "RUTINARIA" → true, "NO RUTINARIA" → false, vacío → null. */
