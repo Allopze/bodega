@@ -212,7 +212,8 @@ export function inferHierarchy(piece: { text: string; prefix?: ControlHierarchy 
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 const LOCAL_DATE = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/
-const IN_DAYS = /\b(\d{1,3}) dias?\b/
+/** «EN 30 DÍAS» (sobre el texto ya sin tildes). Pide el «en»: «CADA 30 DÍAS» es una frecuencia, no un plazo. */
+const IN_DAYS = /\ben (\d{1,3}) dias?\b/
 const IMMEDIATE = /\binmediat/
 const FREQUENCY = /\b(diari[oa]s?|semanal(es)?|quincenal(es)?|mensual(es)?|bimestral(es)?|trimestral(es)?|cuatrimestral(es)?|semestral(es)?|anual(es)?|permanente|continu[oa]|periodic[oa]|cada|siempre)\b/
 
@@ -225,9 +226,10 @@ function calendarDate(year: number, month: number, day: number): string | null {
 /**
  * D6: lo que sugiere un valor de PLAZOS. Una fecha → por implementar con esa
  * fecha; «en N días» → hoy + N (antes que la frecuencia: «IMPLEMENTAR EN 30
- * DÍAS Y CONTROL DIARIO»); «inmediato» → por implementar hoy; una frecuencia
- * («TRIMESTRAL», «ANTES DE CADA OPERACIÓN») → existente, con ese texto como
- * frecuencia de verificación. Sin pista o vacío → por implementar, sin fecha.
+ * DÍAS Y CONTROL DIARIO»; «CADA 30 DÍAS» no lleva «en» y es frecuencia);
+ * «inmediato» → por implementar hoy; una frecuencia («TRIMESTRAL», «ANTES DE
+ * CADA OPERACIÓN», «CADA 30 DÍAS») → existente, con ese texto como frecuencia de
+ * verificación. Sin pista o vacío → por implementar, sin fecha.
  */
 export function deadlineSuggestion(text: string | null, today: string): { decision: DeadlineDecision; source: DeadlineSource } {
   const cleaned = cleanMiperName(text)
