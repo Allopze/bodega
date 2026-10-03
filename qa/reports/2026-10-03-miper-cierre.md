@@ -64,8 +64,31 @@ Desde worktrees desechables:
 
 ### E2E final sobre ff3ecd5c
 
-> **PENDIENTE: lo completa el controlador cuando termine la corrida completa en curso.**
-> (comando, worktree, specs y conteos)
+Corrida completa desde un worktree desechable en `/home/allopze/dev/chome/bodega-wt/e2e-ff3ecd5c`
+(nunca desde el checkout principal; `/tmp` no, porque es un tmpfs que se llenó en una corrida
+anterior), un spec por corrida: la primera construye y las demás usan `E2E_SKIP_BUILD=true`.
+
+| Spec | Resultado |
+|---|---|
+| `prevencion-miper-masivas` | 3 passed |
+| `prevencion-miper-revision-lectura` | 6 passed, 1 failed (ver abajo) → 7 passed ×2 sobre `95bb88d4` |
+| `prevencion-miper-programa` | 8 passed |
+| `prevencion-miper-escenario` | 10 passed |
+| `prevencion-miper-controles` | 5 passed |
+| `prevencion-miper-flujo` | 3 passed |
+| `prevencion-miper-matriz` | 4 passed |
+| `prevencion-miper-interacciones` | 8 passed |
+| `prevencion-miper-importacion` | 2 passed |
+| `accessibility` | 167 passed |
+| `densidad-kpi` | 16 passed |
+
+**AUTOMATION WARNING (corregido).** La auditoría axe de `revision-lectura` (768/1024/1280 px)
+falló una vez sobre `ff3ecd5c` por contraste 4,21:1 (`#7c7b7c`) en el texto `text-subtle` de una
+observación respondida, y había pasado 7/7 sobre `ef5ee119` con el mismo código de producto. El
+token (`oklch(0.500 0.002 0)`) pasa en el resto de la app: axe midió el texto a mitad del fundido de
+entrada del panel. No es un PRODUCT BUG. La spec nueva no esperaba a que terminaran las
+animaciones antes de axe, como sí lo hace `accessibility.spec.ts`; `95bb88d4` agrega esa espera y
+la spec pasó 7/7 en dos corridas seguidas sobre ese commit (que sólo toca esa spec).
 
 ## 5. PASS (verificado en navegador, `bodega_dev`)
 
