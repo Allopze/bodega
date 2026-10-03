@@ -5,16 +5,20 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Sheet, SheetBody, SheetCloseButton, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import type { MiperWorkspace } from "@/lib/services/miper/queries"
 import { AntecedentesForm } from "./antecedentes-form"
+import { clearFichaDraft } from "./workspace-memory"
 
 /**
  * «Ficha del documento» (spec §5.7): los antecedentes RE-04 dejan de ser una
  * pestaña. Al guardar se cierra (el toast lo da la acción); cerrar con cambios
- * sin guardar pide confirmación.
+ * sin guardar pide confirmación. Lo escrito queda como borrador recuperable si la
+ * ficha se cierra sin confirmar (Atrás).
  */
 export function FichaSheet({ open, onClose, workspace, editable }: { open: boolean; onClose: () => void; workspace: MiperWorkspace; editable: boolean }) {
   const [dirty, setDirty] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const close = () => { setDirty(false); setConfirming(false); onClose() }
+  // «Cerrar sin guardar» es descartar a sabiendas: el borrador no se vuelve a ofrecer.
+  const discard = () => { clearFichaDraft(workspace.matrix.id, workspace.matrix.version); close() }
   return (
     <>
       <Sheet open={open} onOpenChange={(next) => { if (next) return; if (dirty) setConfirming(true); else close() }}>
@@ -31,7 +35,7 @@ export function FichaSheet({ open, onClose, workspace, editable }: { open: boole
       </Sheet>
       <ConfirmDialog open={confirming} onOpenChange={setConfirming} title="¿Cerrar sin guardar?"
         description="Hay antecedentes sin guardar. Si cierras la ficha ahora, se pierden."
-        confirmLabel="Cerrar sin guardar" cancelLabel="Seguir editando" variant="warning" onConfirm={close} />
+        confirmLabel="Cerrar sin guardar" cancelLabel="Seguir editando" variant="warning" onConfirm={discard} />
     </>
   )
 }

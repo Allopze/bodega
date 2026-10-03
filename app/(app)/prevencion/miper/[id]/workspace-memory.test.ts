@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { beforeForwardNavigation, readCollapsedActivities, readSavedScroll, rememberScroll, writeCollapsedActivities } from "./workspace-memory"
+import { beforeForwardNavigation, clearFichaDraft, readCollapsedActivities, readFichaDraft, readSavedScroll, rememberScroll, writeCollapsedActivities, writeFichaDraft } from "./workspace-memory"
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -48,6 +48,26 @@ describe("memoria del espacio de trabajo (sessionStorage)", () => {
     expect(readCollapsedActivities("m1").size).toBe(0)
     expect(readSavedScroll("/x")).toBeNull()
     expect(() => beforeForwardNavigation("/x?tarea=k")).not.toThrow()
+    expect(() => writeFichaDraft("m1", 1, { a: 1 })).not.toThrow()
+    expect(() => clearFichaDraft("m1", 1)).not.toThrow()
+    expect(readFichaDraft("m1", 1)).toBeNull()
+  })
+
+  it("el borrador de la ficha se guarda por MIPER y versión, bajo miper:ficha:<matrixId>:<version>", () => {
+    writeFichaDraft("m1", 3, { iperCode: "RE-04-B" })
+    expect(sessionStorage.getItem("miper:ficha:m1:3")).toBe(JSON.stringify({ iperCode: "RE-04-B" }))
+    expect(readFichaDraft("m1", 3)).toEqual({ iperCode: "RE-04-B" })
+    // Otra versión (alguien guardó la ficha después) no lo ve.
+    expect(readFichaDraft("m1", 4)).toBeNull()
+    clearFichaDraft("m1", 3)
+    expect(readFichaDraft("m1", 3)).toBeNull()
+  })
+
+  it("un borrador ilegible o que no es un objeto no se ofrece", () => {
+    sessionStorage.setItem("miper:ficha:m1:1", "{roto")
+    expect(readFichaDraft("m1", 1)).toBeNull()
+    sessionStorage.setItem("miper:ficha:m1:1", JSON.stringify(["a"]))
+    expect(readFichaDraft("m1", 1)).toBeNull()
   })
 
   it("antes de navegar hacia adelante guarda el scroll de la vista que se deja y olvida el del destino", () => {

@@ -94,3 +94,30 @@ export function useRestoreWorkspaceScroll() {
     return () => cancelAnimationFrame(frame)
   }, [])
 }
+
+const fichaDraftKey = (matrixId: string, version: number) => `miper:ficha:${matrixId}:${version}`
+
+/**
+ * Borrador de la «Ficha del documento» (A2, fila 8): lo escrito y no guardado,
+ * por MIPER y versión. «Atrás» cierra la ficha sin pasar por «¿Cerrar sin
+ * guardar?» —un `popstate` no se cancela: Next ya navegó—, así que lo escrito
+ * se guarda aquí y la ficha lo ofrece al reabrirse. La versión va en la clave:
+ * si otra persona guardó la ficha, la versión cambió y el borrador viejo ya no
+ * se ofrece sobre datos que no conoce.
+ */
+export function readFichaDraft(matrixId: string, version: number): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(sessionStorage.getItem(fichaDraftKey(matrixId, version)) ?? "null")
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+export function writeFichaDraft(matrixId: string, version: number, draft: object) {
+  try { sessionStorage.setItem(fichaDraftKey(matrixId, version), JSON.stringify(draft)) } catch { /* sin almacenamiento: no se recuerda */ }
+}
+
+export function clearFichaDraft(matrixId: string, version: number) {
+  try { sessionStorage.removeItem(fichaDraftKey(matrixId, version)) } catch { /* sin almacenamiento: nada que borrar */ }
+}

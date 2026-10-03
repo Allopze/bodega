@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -11,6 +12,7 @@ import { useOperation } from "@/lib/hooks/use-operation"
 import { HEADER_FIELD_LABEL } from "@/lib/prevention/miper/snapshot"
 import type { MiperWorkspace } from "@/lib/services/miper/queries"
 import { updateMiperHeaderAction } from "../actions"
+import { clearFichaDraft, readFichaDraft, writeFichaDraft } from "./workspace-memory"
 
 type Header = MiperWorkspace["snapshot"]["header"]
 type HeadcountKey = "headcountTotal" | "headcountMale" | "headcountFemale" | "headcountOther"
@@ -49,6 +51,26 @@ function payloadOf(header: Header) {
   return payload
 }
 
+/** Los campos de texto que el tipo de la ficha no deja en `null`. */
+const NOT_NULL = new Set<keyof Header>(["participationSummary", "consultationEvidenceReference"])
+
+/**
+ * El borrador guardado, aplicado sobre lo último guardado. Sólo entran las
+ * claves de la ficha con un tipo que la ficha acepta: un valor ajeno o corrupto
+ * se ignora. Devuelve `null` si no hay borrador o si no cambia nada.
+ */
+function recoverableDraft(matrixId: string, version: number, saved: Header): Header | null {
+  const stored = readFichaDraft(matrixId, version)
+  if (!stored) return null
+  const draft: Record<string, unknown> = { ...saved }
+  for (const key of Object.keys(saved) as Array<keyof Header>) {
+    if (key === "period" || !(key in stored)) continue
+    const value = stored[key]
+    if (typeof value === "string" || typeof value === "number" || (value === null && !NOT_NULL.has(key))) draft[key] = value
+  }
+  return JSON.stringify(payloadOf(draft as Header)) === JSON.stringify(payloadOf(saved)) ? null : (draft as Header)
+}
+
 /**
  * Antecedentes RE-04 (identificación, dotación, responsables). Vive en la
  * «Ficha del documento» (spec §5.7): `onSaved` la cierra al guardar y
@@ -68,6 +90,14 @@ export function AntecedentesForm({ workspace, editable, onSaved, onDirtyChange }
   const [version, setVersion] = useState(matrix.version)
   const dirty = editable && JSON.stringify(payloadOf(header)) !== JSON.stringify(payloadOf(saved))
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
+  // Lo escrito viaja a `sessionStorage` mientras está sucio: «atrás» cierra la
+  // ficha sin confirmar y así no se pierde. `beforeunload` sigue cubriendo la recarga.
+  useEffect(() => {
+    if (dirty) writeFichaDraft(matrix.id, version, payloadOf(header))
+  }, [dirty, header, matrix.id, version])
+  // La ficha vive en el portal del `Sheet`, que sólo se pinta en el cliente:
+  // leer `sessionStorage` en el inicializador no desfasa la hidratación.
+  const [recoverable, setRecoverable] = useState<Header | null>(() => recoverableDraft(matrix.id, matrix.version, workspace.snapshot.header))
   useEffect(() => {
     if (!dirty) return
     const warn = (event: BeforeUnloadEvent) => event.preventDefault()
@@ -75,6 +105,8 @@ export function AntecedentesForm({ workspace, editable, onSaved, onDirtyChange }
     return () => window.removeEventListener("beforeunload", warn)
   }, [dirty])
   const operation = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
+  // Mientras guarda, nada se edita: lo enviado es lo que se ve (A2, fila 8).
+  const locked = !editable || operation.pending
   const set = <K extends keyof Header>(key: K, value: Header[K]) => setHeader((current) => ({ ...current, [key]: value }))
   const num = (value: string) => (value === "" ? null : Number(value))
 
@@ -106,20 +138,20 @@ export function AntecedentesForm({ workspace, editable, onSaved, onDirtyChange }
   }
   function restorable(key: keyof Header) {
     const source = sources[key]
-    if (!editable || !source || source.value === null || source.value === "") return false
+    if (locked || !source || source.value === null || source.value === "") return false
     return source.value !== header[key]
   }
   function textField(key: keyof Header, options: { required?: boolean } = {}) {
     return (
       <PrefilledField label={HEADER_FIELD_LABEL[key]} required={options.required} helper={sourceHint(key)} onRestore={restorable(key) ? () => restore(key) : undefined}>
-        <Input value={(header[key] as string | null) ?? ""} disabled={!editable} onChange={(event) => set(key, (event.target.value || null) as never)} />
+        <Input value={(header[key] as string | null) ?? ""} disabled={locked} onChange={(event) => set(key, (event.target.value || null) as never)} />
       </PrefilledField>
     )
   }
   function numberField(key: HeadcountKey) {
     return (
       <PrefilledField label={HEADER_FIELD_LABEL[key]} required helper={sourceHint(key)} onRestore={restorable(key) ? () => restore(key) : undefined}>
-        <Input type="number" min={0} value={header[key] ?? ""} disabled={!editable} onChange={(event) => set(key, num(event.target.value))} />
+        <Input type="number" min={0} value={header[key] ?? ""} disabled={locked} onChange={(event) => set(key, num(event.target.value))} />
       </PrefilledField>
     )
   }
@@ -130,6 +162,9 @@ export function AntecedentesForm({ workspace, editable, onSaved, onDirtyChange }
     event.preventDefault()
     const submitted = header
     operation.run(() => updateMiperHeaderAction({ matrixId: matrix.id, expectedVersion: version, ...payloadOf(submitted) }), (result) => {
+      // El borrador era de la versión que se acaba de guardar: deja de existir.
+      clearFichaDraft(matrix.id, version)
+      setRecoverable(null)
       if (typeof result.data?.version === "number") setVersion(result.data.version)
       setSaved(submitted)
       onSaved?.()
@@ -138,13 +173,22 @@ export function AntecedentesForm({ workspace, editable, onSaved, onDirtyChange }
 
   return (
     <form onSubmit={submit} className="space-y-6">
+      {editable && recoverable && (
+        <Callout tone="warning" title="Hay cambios de la ficha que no se guardaron">
+          <p>Quedaron de la última vez que la abriste en esta pestaña del navegador.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button type="button" size="sm" onClick={() => { setHeader(recoverable); setRecoverable(null) }}>Recuperar lo que no guardaste</Button>
+            <Button type="button" size="sm" variant="secondary" onClick={() => { clearFichaDraft(matrix.id, version); setRecoverable(null) }}>Descartar esos cambios</Button>
+          </div>
+        </Callout>
+      )}
       <section className="grid gap-4 md:grid-cols-3">
         <h3 className="md:col-span-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Identificación</h3>
         {textField("iperCode")}
         <Field label="Período"><Input value={header.period ?? ""} disabled /></Field>
-        <Field label={HEADER_FIELD_LABEL.elaboratedOn} required><DatePicker value={header.elaboratedOn ?? undefined} disabled={!editable} onChange={(iso) => set("elaboratedOn", iso)} /></Field>
+        <Field label={HEADER_FIELD_LABEL.elaboratedOn} required><DatePicker value={header.elaboratedOn ?? undefined} disabled={locked} onChange={(iso) => set("elaboratedOn", iso)} /></Field>
         <Field label={HEADER_FIELD_LABEL.updatedOn} error={header.updatedOn && header.elaboratedOn && header.updatedOn < header.elaboratedOn ? "No puede ser anterior a la fecha de elaboración." : undefined}>
-          <DatePicker value={header.updatedOn ?? undefined} min={header.elaboratedOn ?? undefined} disabled={!editable} onChange={(iso) => set("updatedOn", iso)} />
+          <DatePicker value={header.updatedOn ?? undefined} min={header.elaboratedOn ?? undefined} disabled={locked} onChange={(iso) => set("updatedOn", iso)} />
         </Field>
         {textField("companyName")}
         {textField("companyRut")}
@@ -169,8 +213,8 @@ export function AntecedentesForm({ workspace, editable, onSaved, onDirtyChange }
       </section>
       <section className="grid gap-4">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Participación</h3>
-        <Field label={HEADER_FIELD_LABEL.participationSummary}><Textarea value={header.participationSummary} disabled={!editable} onChange={(event) => set("participationSummary", event.target.value)} /></Field>
-        <Field label={HEADER_FIELD_LABEL.consultationEvidenceReference}><Input value={header.consultationEvidenceReference} disabled={!editable} onChange={(event) => set("consultationEvidenceReference", event.target.value)} /></Field>
+        <Field label={HEADER_FIELD_LABEL.participationSummary}><Textarea value={header.participationSummary} disabled={locked} onChange={(event) => set("participationSummary", event.target.value)} /></Field>
+        <Field label={HEADER_FIELD_LABEL.consultationEvidenceReference}><Input value={header.consultationEvidenceReference} disabled={locked} onChange={(event) => set("consultationEvidenceReference", event.target.value)} /></Field>
       </section>
       {editable && <div className="flex justify-end"><Button type="submit" disabled={operation.pending || sumMismatch}>Guardar antecedentes</Button></div>}
     </form>
