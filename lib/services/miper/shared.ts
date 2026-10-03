@@ -111,9 +111,13 @@ export async function userNames(client: Client, userIds: readonly (string | null
 
 /**
  * Responsables que se ofrecen en una faena: sus usuarios activos, por nombre, y
- * —si no está entre ellos— quien edita. Lo usan el editor de la medida
- * (`getMiperWorkspace`) y la importación (vista previa y carga, Fase C), para que
- * lo que se ofrece y lo que se acepta sean lo mismo.
+ * —si no está entre ellos— quien edita.
+ * - El editor de la medida los OFRECE (`getMiperWorkspace`), pero al guardar
+ *   `saveMiperControl` sólo exige que la persona esté activa, no que sea de la
+ *   faena.
+ * - La importación (Fase C) los ofrece en la vista previa y la carga ACEPTA sólo
+ *   a estas personas (`importResponsibleNames`): ahí lo que se ofrece y lo que se
+ *   acepta son lo mismo.
  */
 export async function worksiteResponsibleOptions(client: Client, worksiteId: string, selfUserId: string): Promise<Array<{ id: string; name: string }>> {
   const rows = await client.select({ id: users.id, name: users.name }).from(worksiteUsers).innerJoin(users, eq(users.id, worksiteUsers.userId))
