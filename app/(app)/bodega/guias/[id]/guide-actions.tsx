@@ -70,7 +70,6 @@ export function GuideActions({
   const [reason, setReason] = React.useState("")
   const [receivedQuantities, setReceivedQuantities] = React.useState<Record<string, string>>(() => pendingQuantities(reconciliationItems))
   const [differenceReasons, setDifferenceReasons] = React.useState<Record<string, string>>({})
-  const receiveContentRef = React.useRef<HTMLDivElement>(null)
 
   function handle(operation: () => Promise<{ ok: boolean; message?: string }>, onDone: () => void) {
     run(async () => {
@@ -161,18 +160,9 @@ export function GuideActions({
       />
 
       <Dialog open={receiveOpen} onOpenChange={setReceiveOpen}>
-        {/* El primer control del diálogo es un combobox que se despliega al
-            recibir el foco, y con el autofoco de Radix su lista de
-            colaboradores tapaba los botones del pie al abrir. El foco va al
-            contenedor (Radix le pone tabIndex=-1), que es además lo que hace
-            que el lector de pantalla anuncie el título. */}
-        <DialogContent
-          ref={receiveContentRef}
-          onOpenAutoFocus={(event) => {
-            event.preventDefault()
-            receiveContentRef.current?.focus()
-          }}
-        >
+        {/* El primer control es un combobox: `DialogContent` deja el foco en
+            el contenedor para que su lista no se despliegue sola al abrir. */}
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Confirmar recepción en faena</DialogTitle>
             <DialogDescription>

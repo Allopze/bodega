@@ -1,7 +1,7 @@
 /**
  * Acciones masivas de la MIPER (Fase D, spec §9):
- * - `bulkPatchMiperEntries`: el mismo cambio en N riesgos («Editar contexto» de
- *   una tarea, «Cambiar ¿controlado?»). Nunca P×C: el esquema lo rechaza.
+ * - `bulkPatchMiperEntries`: el mismo cambio en N riesgos («Editar tarea»,
+ *   «Cambiar ¿controlado?»). Nunca P×C: el esquema lo rechaza.
  * - `bulkAddMiperControl`: la misma medida en N riesgos.
  * - `bulkUpdateMiperControls`: responsable, plazo, «¿ya está implementada?» y
  *   frecuencia en N medidas.

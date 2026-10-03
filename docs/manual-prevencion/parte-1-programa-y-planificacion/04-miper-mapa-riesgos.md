@@ -280,7 +280,7 @@ Cuando hay que hacer el mismo cambio en muchos riesgos, no hace falta abrirlos u
 
 **«No había nada que cambiar».** Si los riesgos ya estaban como pedías, no se escribe nada y la plataforma lo informa con ese aviso, sin mostrarlo como un cambio hecho.
 
-**«Editar contexto» de una tarea.** En la vista de una tarea, el botón **«Editar contexto»** cambia de una vez la **actividad, la tarea, el puesto de trabajo y el lugar específico** de todos sus riesgos; la evaluación y las medidas no cambian.
+**«Editar tarea».** En la vista de una tarea, el botón **«Editar tarea»** cambia de una vez la **actividad, la tarea, el puesto de trabajo y el lugar específico** de todos sus riesgos; la evaluación y las medidas no cambian.
 
 *   Actividad y tarea son obligatorias. Puesto y lugar vacíos se dejan como estaban en cada riesgo (si hoy hay varios, el campo dice «Varios»).
 *   Si cambias el nombre de la tarea o de la actividad, la tarea pasa a llamarse con el nombre nuevo y la pantalla te lleva a ella.

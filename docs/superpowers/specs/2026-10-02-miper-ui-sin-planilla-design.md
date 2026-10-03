@@ -579,7 +579,9 @@ vive en `portfolio.ts` (plan maestro de 2026-10-02).
 > primero a qué medidas aplica (todas, sin responsable o por implementar sin plazo) y deja cada
 > campo en «No cambiar»; si no hay nada que cambiar el servicio no escribe y la acción responde
 > «No había nada que cambiar»; «Seleccionar» en la matriz sólo existe con filtros activos; el
-> «Editar contexto» de una tarea que cambia de nombre navega con `replace` a la clave nueva.
+> «Editar contexto» de una tarea que cambia de nombre navega con `replace` a la clave nueva. En
+> pantalla el botón se llama **«Editar tarea»** (par de «Nueva tarea»): «contexto» no decía qué se
+> editaba.
 > Código: `[id]/bulk-bar.tsx`, `bulk-dialogs.tsx`, `bulk-shared.tsx`, `task-context-dialog.tsx`.
 
 ## 10. Fase E: programa, revisión, historial y controles (implementada)

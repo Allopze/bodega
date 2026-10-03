@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CaretDown, MagnifyingGlass, X } from "@phosphor-icons/react"
+import { CaretDown, Check, MagnifyingGlass, X } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { useComboboxListbox } from "./use-combobox-listbox"
 
@@ -85,6 +85,17 @@ export function Combobox({
     ? [{ value: "", label: clearLabel }, ...visible]
     : [...customRow, ...visible]
 
+  /**
+   * Al abrir, la fila activa es la del valor actual, no la primera: resaltar
+   * otra fila hacía creer que esa era la elegida. Sin escribir, la lista no
+   * está filtrada, así que el índice sale de `options` (más la fila de limpiar).
+   */
+  function selectedRowOnOpen(nextQuery: string): number {
+    const index = options.slice(0, maxVisible).findIndex((option) => option.value === value)
+    if (!hasValue || index < 0) return 0
+    return index + (clearLabel && !nextQuery.trim() ? 1 : 0)
+  }
+
   function commit(next: string) {
     onChange(next)
     setQuery("")
@@ -101,6 +112,17 @@ export function Combobox({
       if (row) commit(row.value)
     },
   })
+
+  // La fila activa (la elegida al abrir, o la que marcan las flechas) siempre a
+  // la vista. Se mueve sólo el scroll del listbox: `scrollIntoView` también
+  // desplazaría el diálogo que lo contiene.
+  React.useEffect(() => {
+    const list = listboxRef.current
+    const row = list?.children[listbox.activeIndex] as HTMLElement | undefined
+    if (!list || !row) return
+    if (row.offsetTop < list.scrollTop) list.scrollTop = row.offsetTop
+    else if (row.offsetTop + row.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = row.offsetTop + row.offsetHeight - list.clientHeight
+  }, [listbox.open, listbox.activeIndex])
 
   return (
     <div className={cn("relative", className)}>
@@ -137,6 +159,7 @@ export function Combobox({
             if (disabled) return
             if (allowCustomValue) { setQuery(currentText); pristineRef.current = true }
             listbox.setOpen(true)
+            listbox.setActiveIndex(selectedRowOnOpen(allowCustomValue ? currentText : ""))
           }}
           onBlur={(event) => {
             if (!listbox.focusLeft(event)) return
@@ -201,6 +224,9 @@ export function Combobox({
             >
               <span className="text-sm truncate">{row.label}</span>
               {row.hint && <span className="ml-auto shrink-0 text-[11px] text-(--color-text-subtle)">{row.hint}</span>}
+              {hasValue && row.value === value && (
+                <Check aria-hidden="true" weight="bold" className={cn("size-3.5 shrink-0 text-(--color-primary)", !row.hint && "ml-auto")} />
+              )}
             </li>
           ))}
         </ul>

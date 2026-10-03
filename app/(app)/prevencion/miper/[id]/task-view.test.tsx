@@ -136,9 +136,9 @@ describe("TaskView", () => {
     expect(screen.queryByRole("button", { name: "Seleccionar" })).toBeNull()
   })
 
-  it("«Editar contexto» abre el diálogo con la tarea de la vista (Fase D)", () => {
+  it("«Editar tarea» abre el diálogo con la tarea de la vista (Fase D)", () => {
     render(<TaskView {...base} editable bulk={bulk()} />)
-    fireEvent.click(screen.getByRole("button", { name: "Editar contexto" }))
-    expect(screen.getByRole("dialog", { name: "Editar contexto de la tarea" })).toHaveTextContent("2 riesgos de «Carga»")
+    fireEvent.click(screen.getByRole("button", { name: "Editar tarea" }))
+    expect(screen.getByRole("dialog", { name: "Editar tarea" })).toHaveTextContent("Cambia el nombre o la actividad de «Carga», o el puesto y el lugar de sus 2 riesgos.")
   })
 })

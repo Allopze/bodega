@@ -11,7 +11,7 @@ import { crearTarea, escribir, irAPaso, volverALaTarea } from "./miper-helpers"
  *     dice con el motivo «Edición masiva».
  *   • En la matriz filtrada, «Seleccionar los N resultados» y «Cambiar
  *     ¿controlado?»; repetir el mismo valor avisa que no había nada que cambiar.
- *   • «Editar contexto» renombra la tarea de todos sus riesgos y la URL pasa a la
+ *   • «Editar tarea» renombra la tarea de todos sus riesgos y la URL pasa a la
  *     tarea nueva con replace: «atrás» no vuelve a la clave vieja.
  *   • axe sobre la barra de selección y el diálogo de la medida.
  *
@@ -120,7 +120,7 @@ test("en la matriz filtrada, «Seleccionar los N resultados» y «Cambiar ¿cont
   await expect(riesgo(page, 1, "Derrame de solvente")).toContainText(mostrado)
 })
 
-test("«Editar contexto» renombra la tarea de todos sus riesgos; la URL pasa a la tarea nueva sin dejar la vieja en el historial", async ({ page }, testInfo) => {
+test("«Editar tarea» renombra la tarea de todos sus riesgos; la URL pasa a la tarea nueva sin dejar la vieja en el historial", async ({ page }, testInfo) => {
   const actividad = `Mantención de grúa ${testInfo.retry + 1}`
   // La tarea también lleva el reintento: renombrar a un nombre que ya existe junta las tareas.
   const tarea = `Cambio de cable ${testInfo.retry + 1}`
@@ -135,11 +135,11 @@ test("«Editar contexto» renombra la tarea de todos sus riesgos; la URL pasa a 
   await expect(page.getByRole("heading", { level: 2, name: tarea })).toBeVisible()
   const antes = new URL(page.url()).searchParams.get("tarea")
 
-  await page.getByRole("button", { name: "Editar contexto", exact: true }).click()
-  const dialogo = page.getByRole("dialog", { name: "Editar contexto de la tarea" })
-  await expect(dialogo).toContainText(`2 riesgos de «${tarea}»`)
+  await page.getByRole("button", { name: "Editar tarea", exact: true }).click()
+  const dialogo = page.getByRole("dialog", { name: "Editar tarea", exact: true })
+  await expect(dialogo).toContainText(`de «${tarea}», o el puesto y el lugar de sus 2 riesgos`)
   await escribir(dialogo, "Tarea", renombrada)
-  await dialogo.getByRole("button", { name: "Guardar contexto", exact: true }).click()
+  await dialogo.getByRole("button", { name: "Guardar cambios", exact: true }).click()
   await expect(dialogo).toBeHidden({ timeout: 30_000 })
   await expect(page.getByRole("heading", { level: 2, name: renombrada })).toBeVisible()
   const despues = new URL(page.url()).searchParams.get("tarea")

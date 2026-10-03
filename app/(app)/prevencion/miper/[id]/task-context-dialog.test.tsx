@@ -56,9 +56,10 @@ describe("TaskContextDialog (Fase D)", () => {
     expect(screen.getByRole("combobox", { name: "Actividad" })).toHaveValue("Transporte")
     expect(screen.getByRole("combobox", { name: "Tarea" })).toHaveValue("Carga")
     expect(screen.getByRole("combobox", { name: "Puesto de trabajo" })).toHaveValue("")
-    expect(screen.getByRole("combobox", { name: "Puesto de trabajo" })).toHaveAccessibleDescription("Hoy hay varios: vacío, cada riesgo conserva el suyo.")
+    expect(screen.getByRole("combobox", { name: "Puesto de trabajo" })).toHaveAccessibleDescription("Hoy los riesgos tienen distintos puestos. Si lo dejas vacío, cada uno conserva el suyo.")
+    expect(screen.getByRole("combobox", { name: "Lugar específico" })).toHaveAccessibleDescription("Si lo dejas vacío, cada riesgo conserva su lugar actual.")
     expect(screen.getByRole("combobox", { name: "Lugar específico" })).toHaveValue("Planta")
-    expect(screen.getByRole("button", { name: "Guardar contexto" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Guardar cambios" })).toBeDisabled()
   })
 
   it("renombrar la tarea: envía la versión de cada riesgo, actualiza las filas y navega con replace a la clave nueva", async () => {
@@ -70,7 +71,7 @@ describe("TaskContextDialog (Fase D)", () => {
     bulkPatchMiperEntriesAction.mockResolvedValueOnce({ ok: true, message: "2 riesgos actualizados", data: { entries: [{ id: "a", version: 4 }, { id: "b", version: 2 }] } })
     render(<TaskContextDialog task={taskOf([e("a", 4), e("b", 7)])} context={ctx} onOpenChange={onOpenChange} />)
     type("Tarea", "Carga de lodo")
-    fireEvent.click(screen.getByRole("button", { name: "Guardar contexto" }))
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
     expect(ctx.sync.whenIdle).toHaveBeenCalledWith(["a", "b"])
     expect(bulkPatchMiperEntriesAction).toHaveBeenCalledWith({ matrixId: "m1", items: [{ entryId: "a", expectedVersion: 3 }, { entryId: "b", expectedVersion: 1 }], values: { task: "Carga de lodo" } })
@@ -82,7 +83,7 @@ describe("TaskContextDialog (Fase D)", () => {
     expect(`${window.location.pathname}${window.location.search}`).toBe(`/prevencion/miper/m1?tarea=${key}&clasificacion=moderate`)
     // Replace, no push: «atrás» no vuelve a la clave vieja, que ya no existe.
     expect(window.history.length).toBe(length)
-    expect(toast.success).toHaveBeenCalledWith("Contexto actualizado en 2 riesgos")
+    expect(toast.success).toHaveBeenCalledWith("Tarea actualizada (2 riesgos)")
   })
 
   it("renombrar a una tarea que ya existe (otra grafía) la junta con ella: navega a la clave de esa tarea", async () => {
@@ -90,7 +91,7 @@ describe("TaskContextDialog (Fase D)", () => {
     bulkPatchMiperEntriesAction.mockResolvedValueOnce({ ok: true, data: { entries: [{ id: "a", version: 4 }] } })
     render(<TaskContextDialog task={taskOf([e("a", 4)])} context={context()} onOpenChange={onOpenChange} />)
     type("Tarea", "DESCARGA ")
-    fireEvent.click(screen.getByRole("button", { name: "Guardar contexto" }))
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
     expect(window.location.search).toBe(`?tarea=${taskKeyOf({ activity: "Transporte", task: "Descarga" })}`)
   })
@@ -101,7 +102,7 @@ describe("TaskContextDialog (Fase D)", () => {
     bulkPatchMiperEntriesAction.mockResolvedValueOnce({ ok: true, data: { entries: [{ id: "a", version: 4 }] } })
     render(<TaskContextDialog task={taskOf([e("a", 4)])} context={context()} onOpenChange={onOpenChange} />)
     type("Puesto de trabajo", "Operador de grúa")
-    fireEvent.click(screen.getByRole("button", { name: "Guardar contexto" }))
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
     expect(bulkPatchMiperEntriesAction.mock.calls[0]![0].values).toEqual({ position: "Operador de grúa" })
     expect(window.location.search).toBe("?tarea=k")
@@ -112,6 +113,6 @@ describe("TaskContextDialog (Fase D)", () => {
     render(<TaskContextDialog task={taskOf(many)} context={context()} onOpenChange={vi.fn()} />)
     type("Tarea", "Carga de lodo")
     expect(screen.getByRole("status")).toHaveTextContent("Esta tarea tiene 301 riesgos")
-    expect(screen.getByRole("button", { name: "Guardar contexto" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Guardar cambios" })).toBeDisabled()
   })
 })

@@ -91,4 +91,18 @@ describe("Combobox", () => {
     fireEvent.keyDown(input(), { key: "Enter" })
     expect(onChange).toHaveBeenCalledWith("Ruido de motor")
   })
+
+  it("al abrir, la fila activa y marcada es la del valor actual, no la primera", () => {
+    const options = ["Corte de metales", "Gestión administrativa", "Gestión documental"].map((value) => ({ value, label: value }))
+    render(<Combobox aria-label="Peligro" options={options} value="Gestión documental" onChange={vi.fn()} allowCustomValue />)
+    fireEvent.focus(input())
+    const current = screen.getByRole("option", { name: "Gestión documental" })
+    expect(input()).toHaveAttribute("aria-activedescendant", current.id)
+    expect(current).toHaveAttribute("aria-selected", "true")
+    expect(current.querySelector("svg")).not.toBeNull()
+    expect(screen.getByRole("option", { name: "Corte de metales" }).querySelector("svg")).toBeNull()
+    // Desde el valor actual, la flecha sigue con la fila de abajo.
+    fireEvent.keyDown(input(), { key: "ArrowUp" })
+    expect(input()).toHaveAttribute("aria-activedescendant", screen.getByRole("option", { name: "Gestión administrativa" }).id)
+  })
 })

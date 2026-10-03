@@ -26,7 +26,7 @@ export function TaskView({ matrixId, task, editable, incomplete, observed, chang
   observed: ReadonlySet<string>
   changes: Map<string, EntryChange>
   issuesByEntry: Map<string, CompletenessIssue[]>
-  /** Acciones masivas (Fase D): sólo con edición. Sin esto no hay «Seleccionar» ni «Editar contexto». */
+  /** Acciones masivas (Fase D): sólo con edición. Sin esto no hay «Seleccionar» ni «Editar tarea». */
   bulk?: BulkContext
 }) {
   const router = useRouter()
@@ -84,7 +84,7 @@ export function TaskView({ matrixId, task, editable, incomplete, observed, chang
           <p className="text-sm text-[var(--color-text-subtle)]">{task.activity ?? "Sin actividad"}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {bulk && task.entries.length > 0 && <Button variant="secondary" onClick={() => setEditingContext(true)}>Editar contexto</Button>}
+          {bulk && task.entries.length > 0 && <Button variant="secondary" onClick={() => setEditingContext(true)}>Editar tarea</Button>}
           {bulk && task.entries.length > 0 && (
             <Button variant="secondary" onClick={selection.selecting ? selection.stop : selection.start}>{selection.selecting ? "Terminar selección" : "Seleccionar"}</Button>
           )}
