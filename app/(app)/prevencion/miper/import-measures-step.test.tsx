@@ -125,6 +125,26 @@ describe("ImportMeasuresStep (Fase C)", () => {
     expect(document.activeElement).toBe(screen.getByRole("checkbox", { name: "Sólo sugeridas" }))
   })
 
+  it("«Aceptar sugerencias» dice cuántas de las que confirma son «sin pista», aunque estén en otras páginas", () => {
+    render(<Harness analysis={archivoGrande(60, [30, 45, 60])} />)
+    // Las tres «sin pista» quedan fuera de la primera página: el aviso junto al botón las cuenta igual.
+    expect(within(tipos()).queryByText("Sugerida · sin pista")).toBeNull()
+    expect(screen.getByText("Falta confirmar el tipo de 60 frases (3 sin pista: se sugiere IV. Controles administrativos): elígelo en cada fila, usa «Confirmar» o «Aceptar sugerencias».")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Página siguiente" }))
+    fireEvent.click(within(tipos()).getByRole("button", { name: "Confirmar el tipo de «MEDIDA 30»" }))
+    expect(screen.getByText(/^Falta confirmar el tipo de 59 frases \(2 sin pista: se sugiere IV\. Controles administrativos\)/)).toBeTruthy()
+  })
+
+  it("con «Sólo sugeridas», las «sin pista» van primero: quedan en la primera página", () => {
+    render(<Harness analysis={archivoGrande(60, [30, 45, 60])} />)
+    fireEvent.click(screen.getByRole("checkbox", { name: "Sólo sugeridas" }))
+    const filas = within(tipos()).getAllByRole("row").slice(1)
+    expect(filas.slice(0, 3).map((fila) => within(fila).getAllByRole("cell")[0]!.textContent)).toEqual(["MEDIDA 30", "MEDIDA 45", "MEDIDA 60"])
+    for (const fila of filas.slice(0, 3)) expect(within(fila).getByText("Sugerida · sin pista")).toBeTruthy()
+    // Después, las demás en su orden (por frecuencia, como las entrega el análisis).
+    expect(within(filas[3]!).getAllByRole("cell")[0]!.textContent).toBe("MEDIDA 1")
+  })
+
   it("con «Sólo sugeridas», la frase confirmada sale de la lista y el foco pasa a la que sigue por confirmar", async () => {
     render(<Harness />)
     fireEvent.click(screen.getByRole("checkbox", { name: "Sólo sugeridas" }))
@@ -151,10 +171,14 @@ function conPlazoInmediato(dueDate: string): MeasureAnalysis {
   }
 }
 
-/** Un RE-04 grande (el de Biodiversa trae unas 222 frases distintas): `n` frases sugeridas, una por fila. */
-function archivoGrande(n: number): MeasureAnalysis {
+/**
+ * Un RE-04 grande (el de Biodiversa trae unas 222 frases distintas): `n` frases sugeridas, una por fila.
+ * Las de `sinPista` (números de frase) no calzaron ninguna palabra clave: se sugieren IV por descarte.
+ */
+function archivoGrande(n: number, sinPista: readonly number[] = []): MeasureAnalysis {
   const phrases = Array.from({ length: n }, (_, index) => ({
-    key: `medida ${index + 1}`, text: `MEDIDA ${index + 1}`, count: 1, suggestion: { hierarchy: "administrative" as const, source: "keyword" as const },
+    key: `medida ${index + 1}`, text: `MEDIDA ${index + 1}`, count: 1,
+    suggestion: { hierarchy: "administrative" as const, source: sinPista.includes(index + 1) ? "default" as const : "keyword" as const },
   }))
   return {
     measures: phrases.map((phrase, index) => ({ rowNumber: 14 + index, text: phrase.text, phraseKey: phrase.key, prefix: null, responsibleKey: "", deadlineKey: "trimestral" })),

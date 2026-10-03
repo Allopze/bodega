@@ -68,7 +68,12 @@ export function ImportMeasuresStep({ analysis, responsibleOptions, decisions, on
   const pendingFocus = useRef<number | "filter" | null>(null)
   const today = todayInChile()
   const pending = unconfirmedCount(decisions)
-  const phrases = onlySuggested ? analysis.phrases.filter((phrase) => !decisions.phrases[phrase.key]?.confirmed) : analysis.phrases
+  const unconfirmed = analysis.phrases.filter((phrase) => !decisions.phrases[phrase.key]?.confirmed)
+  /* Las «sin pista» (ninguna palabra clave calzó: el tipo es un descarte) son las
+   * que «Aceptar sugerencias» confirma a ciegas. Con páginas, sus rótulos pueden
+   * quedar fuera de la vista: se cuentan junto al botón y el filtro las pone primero. */
+  const noHint = unconfirmed.filter((phrase) => phrase.suggestion.source === "default")
+  const phrases = onlySuggested ? [...noHint, ...unconfirmed.filter((phrase) => phrase.suggestion.source !== "default")] : analysis.phrases
   // Confirmar con «Sólo sugeridas» achica la lista: la página se acota a la última que queda.
   const currentPage = Math.min(page, Math.max(1, Math.ceil(phrases.length / PHRASES_PER_PAGE)))
   const pagePhrases = phrases.slice((currentPage - 1) * PHRASES_PER_PAGE, currentPage * PHRASES_PER_PAGE)
@@ -118,7 +123,9 @@ export function ImportMeasuresStep({ analysis, responsibleOptions, decisions, on
         </div>
         {pending > 0 && (
           <p className="text-sm text-[var(--color-warning-ink)]">
-            Falta confirmar el tipo de {countOf(pending, "frase")}: elígelo en cada fila, usa «Confirmar» o «Aceptar sugerencias».
+            Falta confirmar el tipo de {countOf(pending, "frase")}
+            {noHint.length > 0 && ` (${countOf(noHint.length, "sin pista", "sin pista")}: se sugiere ${CONTROL_HIERARCHY_LABEL[noHint[0]!.suggestion.hierarchy]})`}
+            : elígelo en cada fila, usa «Confirmar» o «Aceptar sugerencias».
           </p>
         )}
         <div>
