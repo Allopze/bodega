@@ -255,6 +255,41 @@ Es la evaluación de si las medidas registradas alcanzan para el riesgo tal como
 
 El paso **Seguimiento** del editor y su panel lateral reúnen las medidas, las observaciones y la comparación contra lo que ya estaba (nueva, modificada o eliminada). Es el mismo panel que usa la Jefatura para observar un riesgo concreto y el que enlaza a la verificación de un control.
 
+### Cambios en lote
+
+Cuando hay que hacer el mismo cambio en muchos riesgos, no hace falta abrirlos uno por uno. Los cambios en lote están disponibles sólo para quien puede editar la MIPER (los mismos permisos y la misma faena que el editor), y sólo mientras la MIPER se puede editar.
+
+**Cómo se activan.** Con el botón **«Seleccionar»**:
+
+*   **En una tarea:** junto a "Agregar peligro" aparece **«Seleccionar»**. Al activarlo, cada riesgo muestra una casilla; **«Seleccionar los N riesgos»** marca todos los de la tarea. El mismo botón pasa a decir **«Terminar selección»**.
+*   **En la matriz filtrada:** la estructura no lista riesgos, así que **«Seleccionar»** aparece sólo cuando hay algún filtro o búsqueda activos. Ahí puedes marcar riesgos de distintas tareas y usar **«Seleccionar los N resultados»**. Si quitas los filtros, la selección termina.
+
+**La barra de acciones.** Con al menos un riesgo marcado aparece, al pie de la pantalla, una barra que dice cuántos riesgos hay seleccionados. Tiene **«Quitar selección»** y tres acciones, cada una con su diálogo:
+
+| Acción | Qué hace |
+|---|---|
+| **«Agregar medida a N»** | Agrega **la misma medida** a cada riesgo seleccionado, con los mismos campos del editor (descripción, tipo, responsable, plazo o frecuencia). Cada medida nace «Propuesta», como toda medida nueva. |
+| **«Cambiar ¿controlado?»** | Pone la misma respuesta (Sí, Parcialmente o No) en todos los riesgos seleccionados. Reemplaza la que tenían. |
+| **«Asignar responsable / plazo»** | Cambia las medidas de los riesgos seleccionados: eliges **a cuáles** (todas, sólo las sin responsable o las por implementar sin plazo; cada opción muestra su cantidad) y **qué cambia**: responsable, si ya está implementada, plazo (sólo medidas por implementar) y frecuencia de verificación (sólo medidas ya implementadas). Lo que dejas en «No cambiar» o vacío se conserva en cada medida. |
+
+**El efecto se ve antes de aplicar.** Si el cambio dejaría riesgos con datos pendientes (por ejemplo, un riesgo que pasaría a necesitar una medida por implementar), el diálogo lo avisa en **«Antes de aplicar»**. El aviso no impide aplicar —puedes completar los datos después—, pero el envío a revisión los va a pedir.
+
+**El tope es de 300.** Un cambio en lote alcanza hasta 300 riesgos (o 300 medidas, en «Asignar responsable / plazo») a la vez. Si pasas, la barra o el diálogo dicen cuántos quitar y no dejan aplicar.
+
+**Todo o nada.** El cambio se aplica a todos los elementos o a ninguno. Si otra persona modificó alguno de esos riesgos mientras tú preparabas el cambio, **no se aplica nada**: el diálogo dice cuántos cambiaron y ofrece **«Recargar la matriz»**. Tras recargar, vuelve a seleccionar y a aplicar. Cada riesgo cambiado queda en el **Historial** con el motivo «Edición masiva».
+
+**«No había nada que cambiar».** Si los riesgos ya estaban como pedías, no se escribe nada y la plataforma lo informa con ese aviso, sin mostrarlo como un cambio hecho.
+
+**«Editar contexto» de una tarea.** En la vista de una tarea, el botón **«Editar contexto»** cambia de una vez la **actividad, la tarea, el puesto de trabajo y el lugar específico** de todos sus riesgos; la evaluación y las medidas no cambian.
+
+*   Actividad y tarea son obligatorias. Puesto y lugar vacíos se dejan como estaban en cada riesgo (si hoy hay varios, el campo dice «Varios»).
+*   Si cambias el nombre de la tarea o de la actividad, la tarea pasa a llamarse con el nombre nuevo y la pantalla te lleva a ella.
+*   Una tarea de más de 300 riesgos no se puede cambiar de una vez: hay que moverlos por partes desde la matriz filtrada.
+
+### La ficha de un control
+
+El enlace **"Verificar eficacia del control"** (y los vínculos desde el programa) llevan a la ficha del control, en `/prevencion/miper/controles/[id]`. La ficha muestra la **clasificación RE-04 del riesgo** (Tolerable, Moderado, Importante o Intolerable, con su MR) como la insignia de color que ya conoces de la matriz. Sólo un riesgo antiguo, sin evaluación P×C, muestra su nivel residual en texto. Arriba lleva **migas de pan** completas: Prevención › MIPER › la faena y su período › el riesgo (enlace al riesgo en la matriz) › la medida.
+
 ---
 
 ## 6. Medidas de Control: Jerarquía I–V, Responsable y Plazo
@@ -340,6 +375,14 @@ graph LR
 *   **Observar:** escribe una **observación por riesgo** (sobre el riesgo que corresponde) o una observación general en la pestaña **Revisión**. Los riesgos observados quedan marcados en la matriz.
 *   **Decidir:** **"Devolver con observaciones"** (vuelve a la prevencionista) o **"Aprobar revisión técnica"** (pasa a Legal y RRHH). También distingue lo nuevo, lo modificado y lo eliminado respecto de la ronda anterior.
 
+#### Recorrer la MIPER en la pestaña Revisión
+
+En la parte de arriba de la pestaña **Revisión**, la sección **«Recorrer la MIPER»** ofrece atajos para quien revisa (y para cualquiera que vea la pestaña): **«Importantes e Intolerables»**, **«Modificados»** (sólo si hay una versión anterior con la que comparar) y **«Observados»**, cada uno con su cantidad. Al elegir uno, se abre el primer riesgo de ese grupo y la lista queda filtrada.
+
+*   Quien sólo lee (por ejemplo, la revisora) ve en el pie del riesgo el botón **«Siguiente del filtro»**, que avanza al próximo riesgo del mismo grupo; al terminar, avisa "No hay otros riesgos en este filtro".
+*   Para observar el riesgo que estás viendo, usa **«Observar este riesgo»**, en el panel lateral: te lleva al paso **Seguimiento**, donde se escribe la observación.
+*   En la bandeja de observaciones de la pestaña, el nombre de cada riesgo observado es un **enlace al paso Seguimiento de ese riesgo**, donde se ve la observación y su respuesta.
+
 ### Paso 3: Responder y reenviar
 
 *   **Quién lo hace:** quien elaboró la MIPER.
@@ -379,7 +422,7 @@ El aviso queda en la campana; además, si la persona tiene activadas las **notif
 ## 8. Versiones Selladas, Cambios Pendientes e Historial
 
 *   **Cada aprobación sella una versión inmutable.** La versión guarda la foto exacta que se revisó (encabezado, riesgos y medidas), su firma técnica, la de Legal y RRHH, la fecha y el resumen de cambios. No se puede editar ni borrar: es la constancia de lo que estaba aprobado ese día.
-*   **La lista de versiones es la hoja *Modificaciones*.** En la pestaña **Historial** están la cadena de MIPER de la faena por período, las versiones selladas de cada una (con enlace y descarga) y la línea de tiempo de los eventos con actor, rol, fecha y hora.
+*   **La lista de versiones es la hoja *Modificaciones*.** En la pestaña **Historial** están la cadena de MIPER de la faena por período, las versiones selladas de cada una (con enlace y descarga) y la **Bitácora** de eventos con actor, rol, fecha y hora. La bitácora muestra los **50 eventos más recientes**; si hay más, el botón **«Cargar más»** trae los 50 siguientes, y debajo se indica cuántos eventos se están mostrando.
 *   **El MIPER vigente es mutable.** Puedes corregirlo o agregar riesgos sin esperar al año siguiente: el cambio **aplica de inmediato** y queda rotulado como *cambio pendiente de revisión* hasta el próximo sellado. Cuando lo envías, se revisa y se aprueba, se sella la versión siguiente (vN+1) y la anterior sigue consultable.
 *   **Descargar la versión aprobada.** El botón **"Descargar vN (Excel)"** genera el libro RE-04 desde la foto sellada —no desde los datos vivos— con las hojas *RE-04 IPER*, *Programa de Trabajo*, *Modificaciones* y *Criterios de Evaluación IPER*. El mismo libro es el que queda archivado al aprobar.
 *   **Exportar el estado vivo.** El mismo libro tiene un modo **"estado vivo"**: la matriz sale del estado **actual** (con los cambios aplicados aún no sellados) y cada hoja lleva bien visible la leyenda **"Incluye cambios no aprobados"**, con el sufijo `-vivo` en el nombre del archivo para no confundirlo con la copia sellada. El **modo por defecto sigue siendo el sellado** —es lo que se archiva al aprobar—; el modo vivo se activa con el parámetro `estado=vivo` de la misma descarga.
@@ -404,7 +447,7 @@ La relación con el PDTP es **sólo de cobertura y acreditación**: una medida d
 
 ### La pestaña «Programa» y sus permisos
 
-El programa vive en la pestaña **Programa** del espacio de trabajo de la MIPER, junto a Resumen, Matriz, Revisión e Historial. Allí se ve el **encabezado RE-04.1** (título, período, datos de empresa, representante, N° de centros de trabajo —calculado—, fecha de la última revisión sellada y encargado del programa) y la **tabla de actividades** con su avance.
+El programa vive en la pestaña **Programa** del espacio de trabajo de la MIPER, junto a Resumen, Matriz, Revisión e Historial. Allí se ve el **encabezado RE-04.1** y las **actividades** como tarjetas, con su avance. El programa se carga junto con la página: al guardar algo no hace falta recargar.
 
 | Acción | Quién puede | Permiso |
 |---|---|---|
@@ -415,9 +458,33 @@ El programa vive en la pestaña **Programa** del espacio de trabajo de la MIPER,
 > [!NOTE]
 > **EL RESPONSABLE REGISTRA SIN EL PERMISO DE EJECUCIÓN:** quien figura como **responsable nominal** de una actividad puede registrar sus ocurrencias con solo ver la faena (`prevention:risk:view`), aunque no tenga `prevention:risk:program:execute`. Cualquier otra persona recibe el mismo aviso de "fuera de alcance" que ante un registro ajeno.
 
+### El encabezado del programa
+
+El encabezado muestra el título, la empresa y el centro de trabajo, el período y el avance del programa. Los **datos de la empresa** (RUT, dirección, comuna y representante) **no se editan aquí: se leen de la ficha del documento**. Para cambiarlos, usa **«Editar en la ficha»**, así hay un solo lugar donde corregirlos.
+
+El botón **«Editar antecedentes»** (o **«Completar antecedentes»**, si el programa aún no existe) abre un diálogo donde sólo se fijan dos cosas: la **fecha de elaboración** del programa y el **encargado del programa**. Los demás datos del encabezado se calculan: el N° de centros de trabajo, la fecha de la última revisión sellada y el avance.
+
+### Las tarjetas de actividades
+
+Cada actividad aparece como una tarjeta que dice, de un vistazo: su **N° de actividad**, el proceso, la descripción, el responsable, la frecuencia, las filas de la MIPER que ejecuta, la **próxima ocurrencia** (su fecha y su estado, por ejemplo vencida) y su **avance**. Las actividades retiradas llevan la insignia **«Retirada»** y el motivo del retiro.
+
+Sobre las tarjetas hay un buscador **«Buscar actividad del programa»** (por actividad, proceso o responsable) y dos filtros: por **estado** (todas, sólo activas, sólo retiradas, con ocurrencias vencidas, con ocurrencias incumplidas) y por **frecuencia**. Cuando hay filtros activos aparece **«Limpiar filtros»**; si ninguna actividad coincide, **«Ver todas las actividades»** los quita.
+
+Cada tarjeta ofrece **«Registrar la ocurrencia del [fecha]»** (para registrar la próxima pendiente, si tienes permiso), **«Abrir el detalle»** y, para quien administra el programa, **«Editar»** y **«Retirar»**.
+
+### El detalle de una actividad
+
+**«Abrir el detalle»** muestra la actividad completa en la misma pestaña (el botón Atrás del navegador te devuelve al listado):
+
+*   **Ficha:** proceso, responsable, centro de trabajo, frecuencia, fecha de inicio y, si está retirada, su motivo.
+*   **Medidas del MIPER que ejecuta:** cada medida con su fila y un enlace **«Ver en la MIPER»**. **«Vincular medidas»** (para quien administra el programa, en una actividad activa) abre un diálogo con las medidas de todos los riesgos: marca las que la actividad ejecuta, **desmarca** las que quieres desvincular y presiona **«Guardar vínculos»**. Desvincular no borra la medida del MIPER.
+*   **Ocurrencias:** cada fecha de vencimiento con su estado, su fecha efectiva (si la hay) y sus registros. Desde aquí se **registra** la ocurrencia (**«Registrar»**, ver «Las ocurrencias»), se **anula** un registro con motivo (**«Anular»**) y se revisa su **evidencia** (**«Evidencia»**). Un registro anulado queda a la vista con la marca **«Anulado»** y el motivo de la anulación.
+
+La evidencia de una ocurrencia se abre en un diálogo: cada archivo muestra quién lo subió y cuándo, y se puede **«Abrir»** (PDF e imágenes, en una pestaña nueva) o **«Descargar»**; los archivos Word y Excel sólo se descargan. La evidencia retirada se sigue pudiendo abrir o descargar: queda marcada **«Retirada»**, con su fecha y motivo, y la vigente lleva la insignia «Vigente».
+
 ### Las actividades del programa
 
-Cada actividad del RE-04.1 se registra con estas columnas:
+Cada actividad del RE-04.1 se registra con estos datos:
 
 | Columna | Contenido |
 |---|---|

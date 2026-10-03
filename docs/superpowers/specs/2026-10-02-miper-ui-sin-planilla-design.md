@@ -1,6 +1,6 @@
 # Rediseño UI/UX de la MIPER: de planilla a espacio de trabajo guiado
 
-Fecha: 2026-10-02 · Estado: **Fases A (con el pulido A2), B y C implementadas**
+Fecha: 2026-10-02 · Estado: **Fases A (con el pulido A2), B, C, D y E implementadas**
 Alcance: todo el submódulo `app/(app)/prevencion/miper` (portada, espacio de trabajo, matriz,
 ficha del riesgo, programa, revisión, historial, importación) y lo mínimo del backend que el
 rediseño necesita.
@@ -553,7 +553,7 @@ vive en `portfolio.ts` (plan maestro de 2026-10-02).
 - **Verificación con el RE-04 real:** `qa/reports/2026-10-03-miper-c.md`, en la base E2E
   desechable y no en `bodega_dev` (revertir ahí exigía borrar filas de `audit_log`).
 
-## 9. Fase D: acciones masivas
+## 9. Fase D: acciones masivas (implementada)
 
 - **Servicio** (`lib/services/miper/bulk.ts`). Cada operación corre en **una transacción**, con
   `expectedVersion` por elemento, hasta **300 elementos**, y una entrada de historial por
@@ -572,11 +572,22 @@ vive en `portfolio.ts` (plan maestro de 2026-10-02).
   - "Editar contexto" de la tarea (mockup) = `bulkPatchMiperEntries` sobre todos sus riesgos, con
     un diálogo de actividad, tarea, puesto y lugar.
 
-## 10. Fase E: programa, revisión, historial y controles
+> **Implementada.** Desviaciones respecto de lo escrito arriba: el límite de 300 vive en
+> `MIPER_BULK_LIMIT` (`lib/validation/prevention-module/miper.ts`); el diálogo de lote muestra el
+> efecto en la completitud antes de aplicar (`bulk-impact`) sin impedir aplicar; «Cambiar
+> ¿controlado?» es un diálogo propio, aparte de «Asignar responsable / plazo»; esta última elige
+> primero a qué medidas aplica (todas, sin responsable o por implementar sin plazo) y deja cada
+> campo en «No cambiar»; si no hay nada que cambiar el servicio no escribe y la acción responde
+> «No había nada que cambiar»; «Seleccionar» en la matriz sólo existe con filtros activos; el
+> «Editar contexto» de una tarea que cambia de nombre navega con `replace` a la clave nueva.
+> Código: `[id]/bulk-bar.tsx`, `bulk-dialogs.tsx`, `bulk-shared.tsx`, `task-context-dialog.tsx`.
+
+## 10. Fase E: programa, revisión, historial y controles (implementada)
 
 - **Programa:**
-  - Se carga en el servidor cuando `tab=programa`, en vez del `loadProgramWorkspaceAction` al
-    montar.
+  - **Enmendado:** el programa se carga **siempre con la página** (`page.tsx`, en paralelo con la
+    matriz) y se lee **desde props**, no desde un estado copiado: cada acción revalida la ruta y
+    llega un `program` nuevo. `loadProgramWorkspaceAction` desaparece.
   - Las actividades pasan a ser **tarjetas con estado y siguiente acción**, siguiendo el patrón
     `pdtp-obligations-workbench.tsx`: N°, descripción, responsable, frecuencia, próxima ocurrencia
     y su vencimiento, barra de avance y CTA "Registrar".
@@ -590,13 +601,29 @@ vive en `portfolio.ts` (plan maestro de 2026-10-02).
   - El revisor recorre el mismo editor en modo lectura, con "Observar este riesgo" y filtros
     rápidos (Importantes / Intolerables / Modificados) que alimentan "Siguiente pendiente".
   - La pestaña Revisión queda como bandeja de observaciones con enlaces al editor.
-- **Historial:** versiones selladas + `EntityTimeline` paginado.
+- **Historial:** versiones selladas + bitácora **propia del MIPER**, paginada de a 50 con
+  «Cargar más» (`history-panel.tsx`, `loadMiperHistoryPageAction`). **`EntityTimeline` se descarta**:
+  dibuja transiciones de estado y la mayoría de los eventos del MIPER no lo son.
+- **Desviaciones menores:** los filtros rápidos de la revisión son «Importantes e Intolerables»,
+  «Modificados» (sólo con versión anterior) y «Observados»; «Siguiente del filtro» aparece en
+  modo lectura; cada observación enlaza al paso Seguimiento del riesgo.
 - **`controles/[id]`:** usa la clasificación RE-04 en vez de `riskLevelLabel(… ?? "medium")` y
   completa las migas.
 
 ---
 
 ## 11. Lo que no cambia
+
+Excepciones de la Fase E a esta regla:
+
+- `programHeaderSchema` se **limita a la fecha de elaboración y al encargado del programa**
+  (`elaboratedOn`, `programManagerUserId`); los datos de la empresa salen de la ficha.
+- Funciones de servidor nuevas: `getProgramActionDetail` (`lib/services/miper/program-queries.ts`,
+  detalle de una actividad con ocurrencias, registros y evidencia en una llamada),
+  `loadProgramActionDetailAction` (`[id]/program-actions.ts`, lectura que no revalida),
+  `loadMiperHistoryPageAction` (`[id]/history-actions.ts`) y la ruta de descarga de evidencia
+  `GET /api/prevencion/miper/evidence/[name]` (permiso `prevention:risk:view`, alcance por faena;
+  PDF e imágenes se abren, el resto sale como `attachment`; la retirada o anulada se sirve igual).
 
 - Tablas, migraciones, metodología, máquina de estados, permisos, segregación y avisos.
 - Las acciones de servidor existentes y sus esquemas. Las únicas excepciones son
