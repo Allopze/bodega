@@ -427,8 +427,14 @@ test("paso 15: trazabilidad de la actividad al riesgo y del riesgo a sus medidas
   // De la actividad a las medidas del MIPER que ejecuta.
   await expect(sheet.getByText(MEASURE_1)).toBeVisible()
   await expect(sheet.getByText(MEASURE_2)).toBeVisible()
-  // …y a la evidencia que registró la ejecución de su ocurrencia.
-  await expect(textoVisible(page, EVIDENCE_NAME)).toBeVisible()
+  // …y a la evidencia que registró la ejecución de su ocurrencia. Desde la Fase E
+  // vive en el diálogo «Evidencia de la ocurrencia» (C7), no en la lista de registros.
+  await sheet.getByRole("listitem").filter({ has: page.getByText("Realizada", { exact: true }) })
+    .getByRole("button", { name: /^Ver la evidencia de la ocurrencia del / }).click()
+  const evidencia = page.getByRole("dialog", { name: "Evidencia de la ocurrencia" })
+  await expect(evidencia.getByText(EVIDENCE_NAME)).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(evidencia).toBeHidden()
   // De la actividad al riesgo que la originó: «Ver la fila N en la MIPER».
   // El enlace abre el editor del riesgo (la matriz, sin `tab`) y deja atrás el detalle.
   await sheet.getByRole("link", { name: "Ver la fila 1 en la MIPER", exact: true }).click()
