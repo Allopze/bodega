@@ -54,11 +54,14 @@ describe("WorksiteSwitcher", () => {
     expect(beforeForwardNavigation.mock.invocationCallOrder[1]).toBeLessThan(router.push.mock.invocationCallOrder[1]!)
   })
 
-  it("la faena actual queda marcada y no se puede elegir; las demás, sí", async () => {
+  it("la faena actual queda marcada, sin período, y no se puede elegir; las demás, sí", async () => {
     listMiperWorksiteTargetsAction.mockResolvedValue({ ok: true, data: { targets: TARGETS } })
     render(<WorksiteSwitcher currentWorksiteId="ws-a" />)
     abrir()
-    expect(await screen.findByRole("menuitem", { name: "Faena A · 2026 (actual)" })).toHaveAttribute("aria-disabled", "true")
+    // La lista trae la MIPER principal de cada faena: estando en la vigente 2025 con un borrador 2026,
+    // «Faena A · 2026 (actual)» decía un período que no es el que se mira.
+    expect(await screen.findByRole("menuitem", { name: "Faena A (actual)" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.queryByRole("menuitem", { name: /2026 \(actual\)/ })).toBeNull()
     expect(screen.getByRole("menuitem", { name: "Faena B · 2027" })).not.toHaveAttribute("aria-disabled")
   })
 

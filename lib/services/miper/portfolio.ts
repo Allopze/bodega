@@ -43,7 +43,7 @@ async function loadPortfolioBase(access: MiperAccess) {
       .innerJoin(worksites, eq(worksites.id, preventionRiskMatrices.worksiteId))
       .where(and(scopeCondition(access.scope, preventionRiskMatrices.worksiteId), ne(preventionRiskMatrices.status, "superseded"))),
   ])
-  // Una faena cerrada sigue en la portada mientras tenga una MIPER no reemplazada (lo que `listMipers` ya mostraba).
+  // Una faena cerrada sigue en la portada mientras tenga una MIPER no reemplazada (lo que ya mostraba la lista de antes de la Fase B).
   const withMiper = new Set(matrixRows.map((row) => row.matrix.worksiteId))
   return { sites: sites.filter((site) => site.isActive || withMiper.has(site.id)), matrixRows }
 }

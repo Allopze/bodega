@@ -151,4 +151,18 @@ describe("fotos del MIPER en lote (Fase B)", () => {
     expect((await buildMiperSnapshots(testDb, ["riskmatrix-no-existe"])).size).toBe(0)
     await expect(buildMiperSnapshot(testDb, "riskmatrix-no-existe")).rejects.toThrow("MIPER no encontrada o fuera de alcance.")
   })
+
+  it("medidas con el mismo created_at salen por id: el orden no queda al azar (arrastre de la Fase B)", async () => {
+    const tie = (await createMiper({ worksiteId: "ws-g2", period: 2027, revisionReason: "MIPER para el desempate de medidas." }, author)).id
+    const entry = await saveMiperEntry({ matrixId: tie, values: { hazard: "Empate de medidas", probability: 1, consequence: 2 } }, author)
+    const same = new Date(Date.now() + 60_000).toISOString()
+    // Al revés del orden por id: sin desempate, Postgres las devuelve en el orden que le acomode.
+    await testDb.insert(schema.preventionRiskControls).values(["riskcontrol-tie-c", "riskcontrol-tie-b", "riskcontrol-tie-a"].map((id) => ({
+      id, riskEntryId: entry.id, hierarchy: "administrative", description: `Medida ${id.slice(-1)}`, createdAt: same, updatedAt: same,
+    })))
+    const ids = (await buildMiperSnapshot(testDb, tie)).entries[0]!.controls.map((control) => control.id)
+    expect(ids).toEqual(["riskcontrol-tie-a", "riskcontrol-tie-b", "riskcontrol-tie-c"])
+    // El lote dice lo mismo que la foto suelta.
+    expect((await buildMiperSnapshots(testDb, [tie])).get(tie)!.entries[0]!.controls.map((control) => control.id)).toEqual(ids)
+  })
 })

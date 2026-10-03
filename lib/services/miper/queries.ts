@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   auditLog, preventionRiskControls, preventionRiskEntries, preventionRiskFactors, preventionRiskMatrices, preventionRiskMatrixVersions,
@@ -6,7 +6,6 @@ import {
   preventionRiskReviewRounds, users, worksites, worksiteUsers,
 } from "@/db/schema"
 import { checkMiperCompleteness, type CompletenessIssue } from "@/lib/prevention/miper/completeness"
-import { miperInboxReason } from "@/lib/prevention/miper/inbox"
 import { RISK_CLASSIFICATIONS, type RiskClassification } from "@/lib/prevention/miper/methodology"
 import { diffSnapshots, type MiperSnapshot, type SnapshotDiff } from "@/lib/prevention/miper/snapshot"
 import { miperStatusLabel } from "@/lib/prevention/miper/states"
@@ -197,50 +196,6 @@ export async function buildRows(matrixRows: Array<{ matrix: typeof preventionRis
       submittedByUserId: round?.submittedByUserId ?? null,
       entryCount, classificationCounts, hasUnsentChanges: unsent,
     }
-  })
-}
-
-export async function listMipers(access: MiperAccess, filters: { worksiteId?: string; period?: number; state?: string } = {}) {
-  requireAccess(access, VIEW)
-  const stateCondition = !filters.state ? undefined
-    : ["draft", "published", "superseded"].includes(filters.state) ? eq(preventionRiskMatrices.status, filters.state)
-    : eq(preventionRiskMatrices.reviewState, filters.state)
-  const rows = await db.select({ matrix: preventionRiskMatrices, worksiteName: worksites.name }).from(preventionRiskMatrices)
-    .innerJoin(worksites, eq(worksites.id, preventionRiskMatrices.worksiteId))
-    .where(and(
-      scopeCondition(access.scope, preventionRiskMatrices.worksiteId),
-      filters.worksiteId ? eq(preventionRiskMatrices.worksiteId, filters.worksiteId) : undefined,
-      filters.period ? eq(preventionRiskMatrices.period, filters.period) : undefined,
-      stateCondition,
-    ))
-    .orderBy(asc(worksites.name), desc(preventionRiskMatrices.period), desc(preventionRiskMatrices.createdAt))
-  return buildRows(rows)
-}
-
-export async function listMiperInbox(access: MiperAccess) {
-  requireAccess(access, VIEW)
-  const can = (permission: string) => access.permissions.includes(permission)
-  const conditions = []
-  if (can("prevention:risk:edit")) {
-    conditions.push(and(eq(preventionRiskMatrices.isLegacy, false), or(
-      and(eq(preventionRiskMatrices.status, "draft"), inArray(preventionRiskMatrices.reviewState, ["none", "observed"])),
-      and(eq(preventionRiskMatrices.status, "published"), eq(preventionRiskMatrices.reviewState, "observed")),
-      and(eq(preventionRiskMatrices.status, "published"), eq(preventionRiskMatrices.reviewState, "none"), gt(preventionRiskMatrices.updatedAt, preventionRiskMatrices.publishedAt)),
-    )))
-  }
-  if (can("prevention:risk:review")) conditions.push(eq(preventionRiskMatrices.reviewState, "in_review"))
-  if (can("prevention:risk:approve_legal")) conditions.push(eq(preventionRiskMatrices.reviewState, "pending_approval"))
-  if (conditions.length === 0) return []
-  const rows = await db.select({ matrix: preventionRiskMatrices, worksiteName: worksites.name }).from(preventionRiskMatrices)
-    .innerJoin(worksites, eq(worksites.id, preventionRiskMatrices.worksiteId))
-    .where(and(scopeCondition(access.scope, preventionRiskMatrices.worksiteId), ne(preventionRiskMatrices.status, "superseded"), or(...conditions)))
-    .orderBy(asc(preventionRiskMatrices.updatedAt))
-  const built = await buildRows(rows)
-  // El motivo de cada fila es la regla compartida con «Requieren mi acción» de la portada (Fase B):
-  // quien envió la ronda ya no la ve como pendiente de su revisión ni de su firma.
-  return built.flatMap((item) => {
-    const inboxReason = miperInboxReason(item, access)
-    return inboxReason ? [{ ...item, inboxReason }] : []
   })
 }
 

@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import type { MiperAccess } from "@/lib/services/miper/shared"
 
 const pg = new PGlite()
 const testDb = drizzle(pg, { schema }) as unknown as DB
@@ -16,6 +17,7 @@ vi.mock("@/db", () => ({ get db() { return g.__db } }))
 const { createMiper } = await import("@/lib/services/miper/matrices")
 const { saveMiperEntry } = await import("@/lib/services/miper/entries")
 const q = await import("@/lib/services/miper/queries")
+const { listMiperPortfolio } = await import("@/lib/services/miper/portfolio")
 
 const author = { userId: "u-q", scope: { mode: "some" as const, ids: ["ws-q"] }, permissions: ["prevention:risk:view", "prevention:risk:edit"] }
 const jefa = { userId: "u-j", scope: { mode: "all" as const, ids: [] as [] }, permissions: ["prevention:risk:view", "prevention:risk:review"] }
@@ -50,29 +52,30 @@ describe("consultas MIPER", () => {
   it("fuera de alcance no se lee", async () => {
     await expect(q.getMiperWorkspace(matrixId, outsider)).rejects.toThrow(/fuera de alcance/)
   })
-  it("la lista cuenta filas por clasificación y respeta el alcance", async () => {
-    const rows = await q.listMipers(author)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]!.classificationCounts).toMatchObject({ tolerable: 1, intolerable: 1, moderate: 0, important: 0 })
-    expect(await q.listMipers(outsider)).toHaveLength(0)
+  it("la portada cuenta los graves de la faena y respeta el alcance", async () => {
+    const { rows } = await listMiperPortfolio(author)
+    expect(rows.map((row) => row.worksiteId)).toEqual(["ws-q"])
+    expect(rows[0]).toMatchObject({ matrix: { id: matrixId }, intolerableCount: 1, importantCount: 0, completeness: { total: 2 } })
+    // Quien no tiene la faena en su alcance ve sólo la suya, sin MIPER.
+    expect((await listMiperPortfolio(outsider)).rows.map((row) => [row.worksiteId, row.matrix])).toEqual([["ws-other", null]])
   })
-  it("la bandeja muestra a la prevencionista su borrador y a la Jefa lo enviado", async () => {
-    expect((await q.listMiperInbox(author)).map((r) => r.inboxReason)).toEqual(["Borrador"])
-    expect(await q.listMiperInbox(jefa)).toHaveLength(0)
-    // Forzar el estado sin pasar por la completitud: la bandeja sólo mira `review_state`.
+  it("«Requieren mi acción»: a la prevencionista, su borrador; a la Jefa, lo enviado", async () => {
+    const acciones = async (access: MiperAccess) => (await listMiperPortfolio(access)).rows.find((row) => row.worksiteId === "ws-q")!.myActions
+    expect((await acciones(author)).map((action) => action.reason)).toEqual(["Borrador"])
+    expect(await acciones(jefa)).toEqual([])
+    // Forzar el estado sin pasar por la completitud: la regla sólo mira `review_state` y la ronda.
     await testDb.update(schema.preventionRiskMatrices).set({ reviewState: "in_review" }).where(eq(schema.preventionRiskMatrices.id, matrixId))
     await testDb.insert(schema.preventionRiskReviewRounds).values({ id: "rq", matrixId, roundNumber: 1, stage: "technical", snapshot: { header: {}, entries: [] }, snapshotSha256: "c".repeat(64), submittedByUserId: "u-q" })
-    const inbox = await q.listMiperInbox(jefa)
-    expect(inbox.map((r) => [r.id, r.inboxReason, r.submittedByName])).toEqual([[matrixId, "Pendiente de tu revisión", "Prevencionista Q"]])
-    expect(inbox[0]!.submittedByUserId).toBe("u-q")
+    expect(await acciones(jefa)).toEqual([{ matrixId, period: 2026, reason: "Pendiente de tu revisión" }])
+    expect((await listMiperPortfolio(jefa)).rows.find((row) => row.worksiteId === "ws-q")!.submittedByName).toBe("Prevencionista Q")
     // «Elaboró» del espacio de trabajo (Fase B): el nombre de quien envió la ronda abierta.
     expect((await q.getMiperWorkspace(matrixId, jefa)).openRound?.submittedByName).toBe("Prevencionista Q")
   })
   it("quien envió la ronda no la ve como «Pendiente de tu revisión» aunque tenga el permiso de revisar", async () => {
-    // La ronda «rq» del test anterior la envió u-q. Con el permiso de revisar sumado, la bandeja
-    // sigue sin ofrecérsela: no puede revisar lo que ella misma envió (assertNotSubmitter).
+    // La ronda «rq» del test anterior la envió u-q. Con el permiso de revisar sumado, «Requieren mi
+    // acción» sigue sin ofrecérsela: no puede revisar lo que ella misma envió (assertNotSubmitter).
     const autoraQueRevisa = { ...author, permissions: [...author.permissions, "prevention:risk:review"] }
-    expect((await q.listMiperInbox(autoraQueRevisa)).map((row) => row.inboxReason)).toEqual([])
+    expect((await listMiperPortfolio(autoraQueRevisa)).rows.find((row) => row.worksiteId === "ws-q")!.myActions).toEqual([])
   })
   it("el historial lista eventos con actor y capacidad", async () => {
     const events = await q.getMiperHistory(matrixId, author)

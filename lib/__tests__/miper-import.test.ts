@@ -15,7 +15,8 @@
  *    (`source_row_number`, `source_original`, `source_normalized`) en la fila.
  * 4. El borrador queda dueño del lote (`source_import_batch_id`); al agregar al
  *    vigente el lote queda **sin dueño** (lo impide el índice único) y la matriz
- *    aparece en la bandeja como «Cambios sin enviar».
+ *    aparece en «Requieren mi acción» de la portada como «Cambios sin
+ *    enviar».
  * 5. El aviso de fila Intolerable sale **después del COMMIT**: ninguna resolución
  *    de destinatarios ocurre con una transacción abierta.
  */
@@ -69,7 +70,7 @@ vi.mock("@/db", () => ({ get db() { return g.__db } }))
 
 const { previewRiskImport, commitRiskImport } = await import("@/lib/services/miper/import")
 const { createMiper } = await import("@/lib/services/miper/matrices")
-const { listMiperInbox } = await import("@/lib/services/miper/queries")
+const { listMiperPortfolio } = await import("@/lib/services/miper/portfolio")
 
 const WS = "ws-imp"
 const WS_LIVE = "ws-live"
@@ -175,6 +176,11 @@ async function matrixOf(matrixId: string) {
 
 async function drainPostCommit(ticks = 50) {
   for (let tick = 0; tick < ticks; tick += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+/** «Requieren mi acción» de la portada para la autora, en una faena. */
+async function myActionsIn(worksiteId: string) {
+  return (await listMiperPortfolio(author)).rows.find((row) => row.worksiteId === worksiteId)?.myActions ?? []
 }
 
 beforeEach(() => {
@@ -328,8 +334,8 @@ describe("agregado al MIPER vigente", () => {
     await testDb.update(schema.preventionRiskMatrices)
       .set({ status: "published", reviewState: "none", publishedAt, updatedAt: publishedAt, reviewedByUserId: "u-jefa", approvedByUserId: "u-legal" })
       .where(eq(schema.preventionRiskMatrices.id, live.id))
-    // Antes de importar, la bandeja no la tiene: no hay cambios sin enviar.
-    expect((await listMiperInbox(author)).some((row) => row.id === live.id)).toBe(false)
+    // Antes de importar, «Requieren mi acción» no la tiene: no hay cambios sin enviar.
+    expect((await myActionsIn(WS_LIVE)).some((action) => action.matrixId === live.id)).toBe(false)
 
     const preview = await previewRiskImport(fixture, { worksiteId: WS_LIVE, target: "live", fileName: "RE-04 Biodiversa.xlsx" }, author)
     expect(preview.live.matrixId).toBe(live.id)
@@ -353,8 +359,7 @@ describe("agregado al MIPER vigente", () => {
     expect(rows[0]!.riskEntryId).toBe(entries[0]!.id)
 
     await drainPostCommit()
-    const inbox = await listMiperInbox(author)
-    expect(inbox.find((row) => row.id === live.id)?.inboxReason).toBe("Cambios sin enviar")
+    expect((await myActionsIn(WS_LIVE)).find((action) => action.matrixId === live.id)?.reason).toBe("Cambios sin enviar")
   }, 60_000)
 })
 

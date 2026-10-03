@@ -244,7 +244,9 @@ describe("MiperWorkspaceView — «Elaboró» y «Cambiar de faena» (Fase B)", 
     ] } })
     show("", workspaceOf({ matrix: { id: "m1", version: 3, status: "published", reviewState: "none", isLegacy: false, worksiteId: "ws1", worksiteName: "Planta", period: 2026 } } as unknown as Partial<MiperWorkspace>))
     fireEvent.keyDown(screen.getByRole("button", { name: "Cambiar de faena" }), { key: "Enter" })
-    expect(await screen.findByRole("menuitem", { name: "Planta · 2027 (actual)" })).toHaveAttribute("aria-disabled", "true")
+    // Sin período: «Planta · 2027 (actual)» nombraba el borrador 2027 estando en la vigente 2026.
+    expect(await screen.findByRole("menuitem", { name: "Planta (actual)" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.queryByRole("menuitem", { name: /2027 \(actual\)/ })).toBeNull()
     expect(screen.getByRole("menuitem", { name: "Mina · 2026" })).not.toHaveAttribute("aria-disabled")
   })
 })

@@ -50,10 +50,12 @@ export async function buildMiperSnapshots(client: Client, matrixIds: readonly st
     .where(inArray(preventionRiskEntries.matrixId, found))
     .orderBy(asc(preventionRiskEntries.rowNumber), asc(preventionRiskEntries.createdAt))
   // Las medidas por JOIN a sus filas: el mismo conjunto que `riskEntryId IN (…)`, sin una lista de miles de ids.
+  // Desempate por id: las medidas de un riesgo duplicado o importado nacen en la misma transacción
+  // (mismo `created_at`) y Postgres no garantiza su orden, que entra al `snapshotSha` de la ronda.
   const controls = rows.length === 0 ? [] : await client.select({ control: preventionRiskControls }).from(preventionRiskControls)
     .innerJoin(preventionRiskEntries, eq(preventionRiskEntries.id, preventionRiskControls.riskEntryId))
     .where(inArray(preventionRiskEntries.matrixId, found))
-    .orderBy(asc(preventionRiskControls.createdAt))
+    .orderBy(asc(preventionRiskControls.createdAt), asc(preventionRiskControls.id))
   const controlsByEntry = new Map<string, ControlRow[]>()
   for (const { control } of controls) {
     const list = controlsByEntry.get(control.riskEntryId)

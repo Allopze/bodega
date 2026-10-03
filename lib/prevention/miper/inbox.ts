@@ -1,11 +1,12 @@
 /**
- * Qué espera una MIPER de una persona: la regla de la bandeja de antes
- * (`listMiperInbox`) y de «Requieren mi acción» en la portada por faena (Fase
- * B). Una sola regla para las dos pantallas.
+ * Qué espera una MIPER de una persona: la regla de «Requieren mi acción» en la
+ * portada por faena (Fase B, `listMiperPortfolio`). La cola «Mi trabajo» aplica
+ * la misma regla en SQL (`operational-work-queue.ts`).
  *
  * Quien envió la ronda no la ve como pendiente de su revisión ni de su firma:
  * es lo que ya aplican `workspace-mode.ts` (`isSubmitter`) y el servicio
- * (`assertNotSubmitter`). La bandeja de antes no lo hacía.
+ * (`assertNotSubmitter`). La bandeja de antes, retirada en la Fase
+ * C, no lo hacía.
  */
 export type MiperInboxCandidate = { status: string; reviewState: string; isLegacy: boolean; hasUnsentChanges: boolean; submittedByUserId: string | null }
 export type MiperInboxViewer = { userId: string; permissions: readonly string[] }

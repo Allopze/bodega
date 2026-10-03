@@ -24,9 +24,10 @@ function labelOf(target: MiperWorksiteTarget) {
  *   va con `router.push`, precedido de `beforeForwardNavigation` como toda
  *   navegación hacia adelante del espacio de trabajo (spec §3).
  * - Una faena sin MIPER lleva a la portada acotada a ella, donde está «Crear MIPER».
- * - «(actual)» se decide por FAENA, no por MIPER: la lista trae la MIPER
- *   principal de cada faena, que no es la que se mira si se está en la vigente
- *   2026 con un borrador 2027.
+ * - «(actual)» se decide por FAENA, no por MIPER, y se muestra SIN período: la
+ *   lista trae la MIPER principal de cada faena, que no es la que se mira si se
+ *   está en la vigente 2026 con un borrador 2027 («Planta · 2027 (actual)»
+ *   nombraba un período que no era el de la pantalla).
  */
 export function WorksiteSwitcher({ currentWorksiteId }: { currentWorksiteId: string }) {
   const router = useRouter()
@@ -49,7 +50,7 @@ export function WorksiteSwitcher({ currentWorksiteId }: { currentWorksiteId: str
           <DropdownMenuItem onSelect={(event) => { event.preventDefault(); load() }}>{operation.message} Reintentar</DropdownMenuItem>
         )}
         {targets?.map((target) => (target.worksiteId === currentWorksiteId ? (
-          <DropdownMenuItem key={target.worksiteId} disabled>{labelOf(target)} (actual)</DropdownMenuItem>
+          <DropdownMenuItem key={target.worksiteId} disabled>{target.worksiteName} (actual)</DropdownMenuItem>
         ) : (
           <DropdownMenuItem key={target.worksiteId}
             onSelect={() => go(target.matrixId ? `/prevencion/miper/${target.matrixId}` : `/prevencion/miper?faena=${encodeURIComponent(target.worksiteId)}`)}>
