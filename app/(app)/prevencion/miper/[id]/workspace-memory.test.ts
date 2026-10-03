@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { beforeForwardNavigation, clearFichaDraft, readCollapsedActivities, readFichaDraft, readSavedScroll, rememberScroll, writeCollapsedActivities, writeFichaDraft } from "./workspace-memory"
+import { beforeForwardNavigation, clearFichaDraft, readCollapsedActivities, readFichaDraft, readSavedScroll, rememberScroll, revealActivity, writeCollapsedActivities, writeFichaDraft } from "./workspace-memory"
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -14,6 +14,15 @@ describe("memoria del espacio de trabajo (sessionStorage)", () => {
     expect([...readCollapsedActivities("m1")]).toEqual(["a", "b"])
     // Otra matriz no hereda nada.
     expect(readCollapsedActivities("m2").size).toBe(0)
+  })
+
+  it("revealActivity despliega sólo esa actividad y no escribe si ya estaba abierta (Resumen, Fase B)", () => {
+    writeCollapsedActivities("m1", ["a", "b"])
+    revealActivity("m1", "a")
+    expect([...readCollapsedActivities("m1")]).toEqual(["b"])
+    const setItem = vi.spyOn(Storage.prototype, "setItem")
+    revealActivity("m1", "zzz")
+    expect(setItem).not.toHaveBeenCalled()
   })
 
   it("un valor ilegible o de otra forma se ignora: ninguna actividad plegada", () => {

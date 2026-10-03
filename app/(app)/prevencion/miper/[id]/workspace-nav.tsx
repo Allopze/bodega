@@ -25,6 +25,26 @@ export function navigateWorkspace(href: string, mode: "push" | "replace" = "push
   shellScroll()?.scrollTo({ top: 0 })
 }
 
+/**
+ * Lleva el pozo hasta `id` cuando la vista que lo contiene ya se pintó: cambiar
+ * de pestaña con `replaceState` re-renderiza después, así que el destino
+ * aparece uno o dos cuadros más tarde. Deja el foco en su primer botón (el de
+ * la tarjeta de la actividad), sin volver a desplazar. Si en `frames` cuadros
+ * no aparece, se rinde sin error.
+ */
+export function scrollToWhenReady(id: string, frames = 30) {
+  const tick = (left: number) => {
+    const target = document.getElementById(id)
+    if (target) {
+      target.scrollIntoView({ block: "start" })
+      target.querySelector<HTMLElement>("button")?.focus({ preventScroll: true })
+      return
+    }
+    if (left > 0) requestAnimationFrame(() => tick(left - 1))
+  }
+  requestAnimationFrame(() => tick(frames))
+}
+
 type WorkspaceLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & { href: string; replace?: boolean; restoreScroll?: boolean }
 
 /** `<a href>` real (clic medio y «abrir en pestaña nueva» siguen funcionando) que navega sin servidor en el clic normal. */

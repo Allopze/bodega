@@ -31,6 +31,13 @@ export function writeCollapsedActivities(matrixId: string, keys: Iterable<string
   try { sessionStorage.setItem(collapsedKey(matrixId), JSON.stringify([...keys])) } catch { /* sin almacenamiento: no se recuerda */ }
 }
 
+/** Despliega una actividad plegada antes de llevar a ella (los enlaces del Resumen, Fase B). Si ya estaba abierta, no escribe. */
+export function revealActivity(matrixId: string, activityKey: string) {
+  const collapsed = readCollapsedActivities(matrixId)
+  if (!collapsed.delete(activityKey)) return
+  writeCollapsedActivities(matrixId, collapsed)
+}
+
 export function rememberScroll(url: string, top: number) {
   try { sessionStorage.setItem(scrollKey(url), String(Math.round(top))) } catch { /* sin almacenamiento: no se recuerda */ }
 }

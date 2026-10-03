@@ -40,6 +40,7 @@ const entry = (overrides: Partial<MiperEntrySnapshot> = {}): MiperEntrySnapshot 
 const editMode: WorkspaceMode = { canEdit: true, canReviewTechnical: false, canApproveLegal: false, canObserve: false, canRespond: false, isSubmitter: false, canExecuteProgram: false, readOnlyReason: null }
 /** Lo que `getMiperWorkspace` entrega para un borrador nunca aprobado: todo «agregado» contra nada. */
 const allAdded: SnapshotDiff = { headerFields: [], entries: [{ kind: "added", entryId: "e1", rowNumber: 1, fields: [] }], hasChanges: true }
+const NO_PROGRAM = { done: 0, late: 0, pending: 0, overdue: 0, failed: 0, planned: 0, ratio: null }
 
 function workspaceOf(overrides: Partial<MiperWorkspace> = {}): MiperWorkspace {
   return {
@@ -57,7 +58,7 @@ function workspaceOf(overrides: Partial<MiperWorkspace> = {}): MiperWorkspace {
 
 function show(query: string, workspace = workspaceOf(), mode = editMode) {
   nav.query = query
-  return render(<ShellHeaderProvider><MiperWorkspaceView workspace={workspace} history={[]} mode={mode} userId="u1" /></ShellHeaderProvider>)
+  return render(<ShellHeaderProvider><MiperWorkspaceView workspace={workspace} history={[]} mode={mode} userId="u1" programProgress={NO_PROGRAM} /></ShellHeaderProvider>)
 }
 
 const TASK = `tarea=${taskKeyOf({ activity: "Transporte", task: "Carga" })}`
@@ -175,5 +176,21 @@ describe("MiperWorkspaceView — plural de observaciones por responder", () => {
   it.each([[1, "Tienes 1 observación por responder"], [2, "Tienes 2 observaciones por responder"]])("%i abiertas", (n, text) => {
     show("tab=revision", workspaceOf({ observations: Array.from({ length: n }, (_, i) => obs(`o${i}`)) }), responder)
     expect(screen.getByText(text)).toBeTruthy()
+  })
+})
+
+describe("MiperWorkspaceView — pestaña Resumen (Fase B)", () => {
+  it("la matriz sigue siendo la pestaña por defecto; Resumen va primero en la tira", () => {
+    show("")
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Resumen", "Matriz (1)", "Programa", "Revisión", "Historial"])
+    expect(screen.getByRole("tab", { name: "Resumen", selected: false })).toBeTruthy()
+    expect(screen.getByRole("tab", { name: "Matriz (1)", selected: true })).toBeTruthy()
+  })
+
+  it("con ?tab=resumen muestra las cuatro cifras y la completitud por actividad", () => {
+    show("tab=resumen")
+    expect(screen.getByRole("tab", { name: "Resumen", selected: true })).toBeTruthy()
+    expect(screen.getByRole("link", { name: /^Riesgos completos/ })).toBeTruthy()
+    expect(screen.getByRole("progressbar", { name: /^Transporte: / })).toBeTruthy()
   })
 })

@@ -14,6 +14,7 @@ import { hasEntryFilters, MATRIX_FILTER_KEYS, parseMatrixFilters } from "@/lib/p
 import { buildMatrixTree, findTask } from "@/lib/prevention/miper/matrix-tree"
 import { CLASSIFICATION_CRITERIA } from "@/lib/prevention/miper/methodology"
 import { nextStepFor, nextStepInView, type NextStepAction } from "@/lib/prevention/miper/next-step"
+import type { ProgramProgress } from "@/lib/prevention/miper/progress"
 import { changesByEntry, type EntryChange } from "@/lib/prevention/miper/snapshot"
 import { hrefToEntry, hrefToFicha, hrefToMatrixWith, hrefToTab, readWorkspaceView, type WorkspaceTab } from "@/lib/prevention/miper/workspace-url"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
@@ -28,6 +29,7 @@ import { NewTaskDialog } from "./new-task-dialog"
 import { NextStepCard } from "./next-step-card"
 import { ProgramPanel } from "./program-panel"
 import { ReviewPanel } from "./review-panel"
+import { ResumenPanel } from "./resumen-panel"
 import { RiskEditor } from "./risk-editor/risk-editor"
 import { SummaryStrip } from "./summary-strip"
 import { TaskView } from "./task-view"
@@ -43,7 +45,11 @@ import { navigateWorkspace, WorkspaceLink } from "./workspace-nav"
  * (`workspace-nav.tsx`): las filas ya están aquí y un fetch RSC por clic las
  * reiniciaba. Sólo crear, duplicar o borrar riesgos pide datos nuevos.
  */
-export function MiperWorkspaceView({ workspace, history, mode, userId }: { workspace: MiperWorkspace; history: MiperHistoryEvent[]; mode: WorkspaceMode; userId: string }) {
+export function MiperWorkspaceView({ workspace, history, mode, userId, programProgress }: {
+  workspace: MiperWorkspace; history: MiperHistoryEvent[]; mode: WorkspaceMode; userId: string
+  /** Avance del Programa de Trabajo para la pestaña Resumen (lo carga `page.tsx`). */
+  programProgress: ProgramProgress
+}) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const view = readWorkspaceView(searchParams)
@@ -153,11 +159,16 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
         )}
         <Tabs value={view.tab} onValueChange={(value) => navigateWorkspace(hrefToTab(pathname, searchParams, value as WorkspaceTab), "replace")}>
           <TabsList>
+            <TabsTrigger value="resumen">Resumen</TabsTrigger>
             <TabsTrigger value="matriz">Matriz ({rows.length})</TabsTrigger>
             <TabsTrigger value="programa">Programa</TabsTrigger>
             <TabsTrigger value="revision">Revisión{openObservations > 0 ? ` (${openObservations})` : ""}</TabsTrigger>
             <TabsTrigger value="historial">Historial</TabsTrigger>
           </TabsList>
+          <TabsContent value="resumen">
+            <ResumenPanel matrixId={workspace.matrix.id} rows={rows} tree={fullTree} incomplete={incomplete} programProgress={programProgress}
+              editable={editable} onNewTask={() => setNewTaskOpen(true)} />
+          </TabsContent>
           <TabsContent value="matriz" className="space-y-3">
             {view.entryId ? (
               <RiskEditor key={view.entryId} entryId={view.entryId} step={view.step} rows={rows} issuesByEntry={entryIssues} incomplete={incomplete} matching={matching}

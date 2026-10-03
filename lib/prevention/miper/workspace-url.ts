@@ -3,8 +3,10 @@
  * > `tab`. Los enlaces conservan los filtros y limpian la vista anterior.
  */
 import { isEditorStep, type EditorStep } from "./entry-navigation"
+import { MATRIX_FILTER_KEYS, type MatrixFilterKey } from "./matrix-filters"
 
-export const WORKSPACE_TABS = ["matriz", "programa", "revision", "historial"] as const
+/** «resumen» (Fase B) va primero en la tira, pero la pestaña por defecto sigue siendo la matriz (spec §3). */
+export const WORKSPACE_TABS = ["resumen", "matriz", "programa", "revision", "historial"] as const
 export type WorkspaceTab = typeof WORKSPACE_TABS[number]
 export type WorkspaceView = { tab: WorkspaceTab; taskKey: string | null; entryId: string | null; step: EditorStep | null; ficha: boolean }
 
@@ -41,3 +43,19 @@ export const hrefToFicha = (pathname: string, params: Params, open: boolean) =>
 /** La matriz (estructura) con filtros extra: lo usa la acción «Ver los pendientes» del siguiente paso. */
 export const hrefToMatrixWith = (pathname: string, params: Params, patch: Record<string, string | null>) =>
   href(pathname, params, { ...CLEAR_VIEW, ...patch })
+
+const NOT_MATRIX_ONLY = [...Object.keys(CLEAR_VIEW), "ficha", ...MATRIX_FILTER_KEYS]
+
+/**
+ * La matriz con SÓLO estos filtros (pestaña Resumen, Fase B). Quita la vista,
+ * la ficha y los seis filtros de la matriz antes de aplicar `patch`: si no,
+ * la cifra del Resumen y lo que se ve al llegar no coinciden. Los parámetros
+ * del programa (`q`, `estado`, `frecuencia`) no son de la matriz y se quedan.
+ * Son dos pasos y no un solo `href`: `set` sobre una clave que ya estaba la
+ * deja en su lugar, y el filtro nuevo no quedaría después de lo que se conserva.
+ */
+export function hrefToMatrixOnly(pathname: string, params: Params, patch: Partial<Record<MatrixFilterKey, string>> = {}): string {
+  const cleared = new URLSearchParams(params.toString())
+  for (const key of NOT_MATRIX_ONLY) cleared.delete(key)
+  return href(pathname, cleared, patch)
+}

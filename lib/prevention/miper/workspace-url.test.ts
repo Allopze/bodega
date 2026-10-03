@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { hrefToEntry, hrefToFicha, hrefToMatrix, hrefToMatrixWith, hrefToTab, hrefToTask, readWorkspaceView } from "./workspace-url"
+import { hrefToEntry, hrefToFicha, hrefToMatrix, hrefToMatrixOnly, hrefToMatrixWith, hrefToTab, hrefToTask, readWorkspaceView } from "./workspace-url"
 
 const P = "/prevencion/miper/m1"
 const params = (query: string) => new URLSearchParams(query)
@@ -29,5 +29,18 @@ describe("vistas del espacio de trabajo", () => {
 
   it("hrefToEntry sin paso quita el `paso` anterior: el editor abre en el primer paso con errores", () => {
     expect(hrefToEntry(P, params("fila=e1&paso=medidas&buscar=lodo"), "e2")).toBe(`${P}?fila=e2&buscar=lodo`)
+  })
+
+  it("Resumen (Fase B): `tab=resumen` es una pestaña; la fila y la tarea siguen mandando sobre ella", () => {
+    expect(readWorkspaceView(params("tab=resumen"))).toMatchObject({ tab: "resumen", taskKey: null, entryId: null })
+    expect(readWorkspaceView(params("tab=resumen&tarea=k1"))).toMatchObject({ tab: "matriz", taskKey: "k1" })
+    expect(hrefToTab(P, params("buscar=x"), "resumen")).toBe(`${P}?buscar=x&tab=resumen`)
+  })
+
+  it("hrefToMatrixOnly quita los seis filtros de la matriz, la vista y la ficha antes de aplicar el suyo", () => {
+    const current = params("buscar=lodo&clasificacion=moderate&completitud=completos&controlado=yes&factor=f1&marca=observados&tab=resumen&ficha=1&q=prog")
+    // `q` es del programa: no es un filtro de la matriz y se conserva.
+    expect(hrefToMatrixOnly(P, current, { clasificacion: "important,intolerable" })).toBe(`${P}?q=prog&clasificacion=important%2Cintolerable`)
+    expect(hrefToMatrixOnly(P, current)).toBe(`${P}?q=prog`)
   })
 })

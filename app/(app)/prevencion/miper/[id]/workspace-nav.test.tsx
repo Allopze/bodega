@@ -2,7 +2,7 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { Button } from "@/components/ui/button"
-import { WorkspaceLink } from "./workspace-nav"
+import { scrollToWhenReady, WorkspaceLink } from "./workspace-nav"
 
 const HREF = "/prevencion/miper/m1?tarea=k"
 
@@ -115,5 +115,35 @@ describe("WorkspaceLink", () => {
     expect(container.querySelectorAll("a")).toHaveLength(1)
     expect(container.querySelector("button")).toBeNull()
     expect(container.querySelector("a")!.className.length).toBeGreaterThan(0)
+  })
+})
+
+describe("scrollToWhenReady", () => {
+  it("espera a que la vista pinte el destino, lo lleva a la vista y le pasa el foco a su botón", () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length })
+    try {
+      scrollToWhenReady("destino")
+      frames.shift()!(0) // primer cuadro: el destino todavía no existe
+      const target = document.createElement("h2")
+      target.id = "destino"
+      target.innerHTML = "<button type=\"button\">Actividad</button>"
+      target.scrollIntoView = vi.fn()
+      document.body.appendChild(target)
+      frames.shift()!(0) // segundo cuadro: ya está
+      expect(target.scrollIntoView).toHaveBeenCalledWith({ block: "start" })
+      expect(document.activeElement).toBe(target.querySelector("button"))
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it("si el destino nunca aparece, se rinde sin error", () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { callback(0); return 0 })
+    try {
+      expect(() => scrollToWhenReady("no-existe", 3)).not.toThrow()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
