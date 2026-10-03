@@ -69,4 +69,9 @@ describe("diffSnapshots", () => {
     expect(diffSnapshots(pending, existing).entries).toEqual([{ kind: "modified", entryId: "e1", rowNumber: 1, fields: ["controls"] }])
     expect(diffSnapshots(existing, monthly).entries).toEqual([{ kind: "modified", entryId: "e1", rowNumber: 1, fields: ["controls"] }])
   })
+
+  it("pasar una medida a existente es un cambio aunque no haya plazo ni frecuencia que cambien con ella", () => {
+    const withControls = (isExisting: boolean): MiperSnapshot => ({ header, entries: [entry("e1", { controls: entry("e1").controls.map((control) => ({ ...control, dueDate: null, isExisting, verificationFrequency: null })) })] })
+    expect(diffSnapshots(withControls(false), withControls(true)).entries).toEqual([{ kind: "modified", entryId: "e1", rowNumber: 1, fields: ["controls"] }])
+  })
 })

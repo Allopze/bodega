@@ -100,6 +100,9 @@ describe("filas de la matriz", () => {
       hierarchy: "administrative", description: "Charla de inicio de turno firmada", responsibleName: "Supervisor de turno",
     } }, author)
     expect(await stored()).toMatchObject({ isExisting: true, verificationFrequency: "Trimestral", dueDate: null, version: 2 })
+    // La foto viva copia los valores reales de la medida existente, no los de por defecto.
+    const existingControl = (await buildMiperSnapshot(testDb, matrixId)).entries.find((item) => item.id === entry.id)!.controls[0]!
+    expect(existingControl).toMatchObject({ isExisting: true, verificationFrequency: "Trimestral", dueDate: null })
 
     // Pasarla a «por implementar»: lleva plazo y pierde la frecuencia.
     await svc.saveMiperControl({ matrixId, entryId: entry.id, controlId: created.id, expectedVersion: 2, values: {
