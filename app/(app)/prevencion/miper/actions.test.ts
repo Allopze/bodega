@@ -8,6 +8,7 @@ const submitMiperForReview = vi.hoisted(() => vi.fn())
 const approveMiperTechnicalReview = vi.hoisted(() => vi.fn())
 const approveMiperFinal = vi.hoisted(() => vi.fn())
 const listMiperWorksiteTargets = vi.hoisted(() => vi.fn())
+const commitRiskImport = vi.hoisted(() => vi.fn())
 const revalidatePath = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({ guardPermission }))
@@ -21,9 +22,10 @@ vi.mock("@/lib/services/miper/observations", () => ({ addMiperObservation: vi.fn
 vi.mock("@/lib/services/miper/workflow", () => ({ submitMiperForReview, openMiperReviewRound: vi.fn(), returnMiperWithObservations: vi.fn(), approveMiperTechnicalReview, requestMiperCorrections: vi.fn(), approveMiperFinal }))
 vi.mock("@/lib/services/miper/risk-factors", () => ({ saveRiskFactor: vi.fn(), setRiskFactorActive: vi.fn() }))
 vi.mock("@/lib/services/miper/portfolio", () => ({ listMiperWorksiteTargets }))
+vi.mock("@/lib/services/miper/import", () => ({ previewRiskImport: vi.fn(), commitRiskImport }))
 
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
-import { approveMiperFinalAction, approveMiperTechnicalAction, createMiperAction, listMiperWorksiteTargetsAction, saveMiperEntryAction, submitMiperAction } from "./actions"
+import { approveMiperFinalAction, approveMiperTechnicalAction, commitRiskImportAction, createMiperAction, listMiperWorksiteTargetsAction, saveMiperEntryAction, submitMiperAction } from "./actions"
 
 const denied = { session: null, error: { ok: false, message: "No tienes permisos para realizar esta acción" } }
 const session = { user: { id: "trusted-user", permissions: ["prevention:risk:edit"] } }
@@ -112,5 +114,17 @@ describe("acciones MIPER: frontera de autorización", () => {
     await expect(listMiperWorksiteTargetsAction({ userId: "spoofed" })).resolves.toEqual({ ok: true, data: { targets } })
     expect(listMiperWorksiteTargets).toHaveBeenCalledWith({ userId: "trusted-user", scope: { mode: "some", ids: ["ws-own"] }, permissions: ["prevention:risk:edit"] })
     expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it("la carga del RE-04 dice cuántos riesgos y medidas creó, y que las medidas quedan propuestas (Fase C)", async () => {
+    guardPermission.mockResolvedValue({ session, error: null })
+    commitRiskImport.mockResolvedValue({ batchId: "b1", matrixId: "m-imp", target: "draft", created: 3, skipped: 1, notified: 0, measures: { total: 10, existing: 6, pending: 4 } })
+    await expect(commitRiskImportAction({ batchId: "b1" })).resolves.toEqual({
+      ok: true,
+      message: "3 riesgos cargados con 10 medidas propuestas (6 existentes y 4 por implementar); 1 fila detenida",
+      data: { matrixId: "m-imp", created: 3, skipped: 1, measures: { total: 10, existing: 6, pending: 4 } },
+    })
+    commitRiskImport.mockResolvedValue({ batchId: "b2", matrixId: "m-imp", target: "live", created: 1, skipped: 0, notified: 0, measures: { total: 0, existing: 0, pending: 0 } })
+    await expect(commitRiskImportAction({ batchId: "b2" })).resolves.toMatchObject({ ok: true, message: "1 riesgo cargado" })
   })
 })

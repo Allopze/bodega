@@ -257,6 +257,26 @@ export const riskImportPreviewSchema = z.object({
   fileName: z.string().trim().min(1).max(300).optional(),
 })
 
+const controlHierarchySchema = z.enum(["elimination", "substitution", "engineering", "administrative", "ppe"], { message: "Selecciona el tipo de control (I a V)." })
+
+const responsibleDecisionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("user"), userId: id }),
+  z.object({ kind: z.literal("text"), name: z.string().trim().min(1, "Escribe el responsable.").max(300) }),
+  z.object({ kind: z.literal("none") }),
+])
+
+const deadlineDecisionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("existing"), frequency: z.string().trim().max(120, "La frecuencia admite hasta 120 caracteres.").nullable() }),
+  z.object({ kind: z.literal("pending"), dueDate: isoDate.nullable() }),
+])
+
+/** Una decisión por clave (frase, responsable o plazo distinto), con tope de tamaño. Vacío por defecto. */
+function decisionMap<T extends z.ZodType>(value: T, max: number, label: string) {
+  return z.record(z.string().max(3000), value)
+    .refine((record) => Object.keys(record).length <= max, { message: `Demasiados ${label} en una sola importación (máximo ${max}).` })
+    .default({})
+}
+
 export const riskImportCommitSchema = z.object({
   batchId: id,
   worksiteId: id,
@@ -264,6 +284,12 @@ export const riskImportCommitSchema = z.object({
   period: riskImportPeriodSchema,
   /* Sólo para `draft`: es el motivo del alta y queda en la bitácora. */
   revisionReason: z.string().trim().max(3000).optional(),
+  /* Fase C (spec §8, D6): una decisión por frase, por responsable y por plazo
+   * distintos. El servidor recalcula las claves desde el lote y rechaza las que
+   * falten o sobren (`mappingProblems`). Un RE-04 sin medidas no pide nada. */
+  measureMapping: decisionMap(controlHierarchySchema, IMPORT_LIMITS.phrases, "tipos de medida"),
+  responsibleMapping: decisionMap(responsibleDecisionSchema, IMPORT_LIMITS.values, "responsables"),
+  deadlineMapping: decisionMap(deadlineDecisionSchema, IMPORT_LIMITS.values, "plazos"),
 }).superRefine((value, ctx) => {
   if (value.target !== "draft") return
   const reason = value.revisionReason ?? ""

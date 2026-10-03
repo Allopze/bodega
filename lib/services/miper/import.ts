@@ -41,7 +41,7 @@ import ExcelJS from "exceljs"
 import { and, asc, eq, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
-  preventionRiskEntries, preventionRiskFactors, preventionRiskImportBatches, preventionRiskImportRows, preventionRiskMatrices,
+  preventionRiskControls, preventionRiskEntries, preventionRiskFactors, preventionRiskImportBatches, preventionRiskImportRows, preventionRiskMatrices,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { cleanMiperName, normalizeMiperName } from "@/lib/prevention/miper/names"
@@ -50,14 +50,19 @@ import {
   type Re04Normalized, type RiskImportIssue, type RiskImportRowStatus,
 } from "@/lib/prevention/miper/re04-import"
 import { isScaleValue, type RiskClassification } from "@/lib/prevention/miper/methodology"
-import { analyzeRe04Measures, type MeasureAnalysis } from "@/lib/prevention/miper/re04-measures"
+import {
+  analyzeRe04Measures, mappingProblems, type ImportMappings, type ImportMeasure, type MeasureAnalysis, type ResponsibleDecision,
+} from "@/lib/prevention/miper/re04-measures"
 import { IMPORT_LIMITS, riskImportCommitSchema, riskImportPreviewSchema } from "@/lib/validation/prevention-module/miper"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { codeYear, countOf, todayInChile } from "@/lib/utils"
 import { resolveDictionaryId } from "./dictionaries"
-import { createMiper } from "./matrices"
+import { createMiperWithClient } from "./matrices"
 import { notifyMiperRowIntolerable } from "./notifications"
-import { assertEditable, type Client, lockMatrix, type MiperAccess, miperHistory, nowIso, OUT_OF_SCOPE, requireAccess, worksiteResponsibleOptions } from "./shared"
+import {
+  assertActiveUsers, assertEditable, type Client, lockMatrix, type MiperAccess, miperHistory, nowIso, OUT_OF_SCOPE, requireAccess,
+  userNames, worksiteResponsibleOptions,
+} from "./shared"
 
 const EDIT = "prevention:risk:edit"
 
@@ -109,6 +114,8 @@ export type RiskImportCommitResult = {
   skipped: number
   /** Filas Intolerables avisadas después del COMMIT. */
   notified: number
+  /** Fase C: medidas creadas, todas «propuesta»: existentes y por implementar. */
+  measures: { total: number; existing: number; pending: number }
 }
 
 function toBuffer(file: Uint8Array | ArrayBuffer | Buffer): Buffer {
@@ -358,38 +365,45 @@ async function loadBatch(client: Client, batchId: string, worksiteId: string) {
  * período y el motivo de cualquier alta) y escribe las filas ahí. Destino
  * `live`: agrega las filas al MIPER vigente, que queda con «Cambios sin enviar».
  *
- * Toda la escritura de filas —y la lectura que la decide— va por el **cliente de
- * la transacción**: la conexión global `db` no se toca dentro del callback.
+ * Fase C: UNA transacción para todo —el borrador, las filas, sus medidas y la
+ * traza—, con el cliente de la transacción (la conexión global `db` no se toca
+ * dentro del callback). Antes el borrador se creaba en su propia transacción y
+ * un fallo a mitad dejaba un borrador vacío. Las decisiones de la vista previa
+ * se validan contra las claves que el servidor vuelve a calcular desde el lote.
  */
 export async function commitRiskImport(input: unknown, access: MiperAccess): Promise<RiskImportCommitResult> {
   const data = riskImportCommitSchema.parse(input)
   requireAccess(access, EDIT, data.worksiteId)
 
-  /* El lote se comprueba antes de crear el borrador: si ya se cargó, el error
+  /* El lote se comprueba antes de abrir la transacción: si ya se cargó, el error
    * tiene que decir eso y no «ya existe un MIPER del período» (que es lo que
    * respondería el alta al chocar con la matriz que la primera carga creó). */
   await loadBatch(db, data.batchId, data.worksiteId)
-
-  /* El borrador se crea con el alta de siempre —`createMiper` valida faena,
-   * período y unicidad, y prellena los antecedentes— en su propia transacción:
-   * anidarla dentro de la de las filas sería usar dos conexiones a la vez. */
-  const revisionReason = data.revisionReason?.trim() || "Importación RE-04 desde Excel"
-  const draftId = data.target === "draft"
-    ? (await createMiper({ worksiteId: data.worksiteId, period: data.period ?? codeYear(), revisionReason }, access)).id
-    : null
+  const today = todayInChile()
 
   const result = await db.transaction(async (tx) => {
-    // Relectura autoritativa dentro de la transacción (el estado puede haber
-    // cambiado entre la comprobación de arriba y este punto).
+    // Relectura autoritativa dentro de la transacción.
     const batch = await loadBatch(tx, data.batchId, data.worksiteId)
+    const batchRows = await tx.select().from(preventionRiskImportRows)
+      .where(eq(preventionRiskImportRows.batchId, batch.id)).orderBy(asc(preventionRiskImportRows.rowNumber))
 
+    /* Las claves de las decisiones se recalculan desde el lote, nunca se toman
+     * del cliente: una que falte o que sobre (otra vista previa, un cliente
+     * adulterado) rechaza la carga antes de escribir nada. */
+    const analysis = analyzeRe04Measures(batchRows, { today })
+    const problems = mappingProblems(analysis, data)
+    if (problems.length > 0) throw new RiskLegalDomainError(problems.join(" "))
+    const responsibleNames = await importResponsibleNames(tx, data.worksiteId, data.responsibleMapping, access)
+
+    const revisionReason = data.revisionReason?.trim() || "Importación RE-04 desde Excel"
+    const draftId = data.target === "draft"
+      ? (await createMiperWithClient(tx, { worksiteId: data.worksiteId, period: data.period ?? codeYear(), revisionReason }, access)).id
+      : null
     const matrix = draftId !== null
       ? await lockMatrix(tx, draftId)
       : await lockMatrix(tx, (await liveMatrix(tx, data.worksiteId)).id)
     assertEditable(matrix)
 
-    const batchRows = await tx.select().from(preventionRiskImportRows)
-      .where(eq(preventionRiskImportRows.batchId, batch.id)).orderBy(asc(preventionRiskImportRows.rowNumber))
     // El catálogo se relee acá: entre la vista previa y la carga la persona pudo
     // crear el factor que faltaba, y eso es exactamente lo que la fila esperaba.
     const factors = await activeFactors(tx)
@@ -399,6 +413,9 @@ export async function commitRiskImport(input: unknown, access: MiperAccess): Pro
     const now = nowIso()
     const resolution = data.target === "draft" ? "creada_en_borrador" : "agregada_al_vivo"
     const intolerable: Array<{ entryId: string; rowNumber: number }> = []
+    const measuresByRow = new Map<number, ImportMeasure[]>()
+    for (const measure of analysis.measures) measuresByRow.set(measure.rowNumber, [...(measuresByRow.get(measure.rowNumber) ?? []), measure])
+    const measures = { total: 0, existing: 0, pending: 0 }
     let created = 0
     let skipped = 0
     let nextRow = (max?.maxRow ?? 0) + 1
@@ -440,12 +457,23 @@ export async function commitRiskImport(input: unknown, access: MiperAccess): Pro
       nextRow += 1
       created += 1
 
+      const rowMeasures = measuresByRow.get(row.rowNumber) ?? []
+      if (rowMeasures.length > 0) {
+        const controls = rowMeasures.map((measure, index) => importedControl(measure, index, entry!.id, now, data, responsibleNames))
+        await tx.insert(preventionRiskControls).values(controls)
+        for (const control of controls) {
+          measures.total += 1
+          if (control.isExisting) measures.existing += 1
+          else measures.pending += 1
+        }
+      }
+
       await tx.update(preventionRiskImportRows).set({
         status: "activated", resolution, riskEntryId: entry!.id, resolvedByUserId: access.userId, resolvedAt: now,
       }).where(eq(preventionRiskImportRows.id, row.id))
       await miperHistory(tx, {
         matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "entry", objectId: entry!.id, changeType: "import_applied",
-        after: { batchId: batch.id, sourceRowNumber: row.rowNumber, riskEntryId: entry!.id, resolution, rowNumber: entry!.rowNumber },
+        after: { batchId: batch.id, sourceRowNumber: row.rowNumber, riskEntryId: entry!.id, resolution, rowNumber: entry!.rowNumber, measures: rowMeasures.length },
         actorUserId: access.userId, actingAs: EDIT,
       })
       if (entry!.classification === "intolerable") {
@@ -453,8 +481,8 @@ export async function commitRiskImport(input: unknown, access: MiperAccess): Pro
       }
     }
 
-    /* `updated_at` es lo que la bandeja lee como «cambios sin enviar»: sin esto
-     * las filas agregadas al vigente no aparecerían en «Por hacer». */
+    /* `updated_at` es lo que «Requieren mi acción» lee como «cambios sin enviar»:
+     * sin esto las filas agregadas al vigente no aparecerían. */
     await tx.update(preventionRiskMatrices).set({
       updatedAt: now,
       // El lote sólo es dueño de la matriz que él mismo crea (índice único).
@@ -474,11 +502,12 @@ export async function commitRiskImport(input: unknown, access: MiperAccess): Pro
       after: {
         batchId: batch.id, target: data.target, sourceFileName: batch.sourceFileName,
         sourceImportBatchId: draftId !== null ? batch.id : null, created, skipped,
+        measures: measures.total, existing: measures.existing, pending: measures.pending,
       },
       actorUserId: access.userId, actingAs: EDIT,
     })
 
-    return { matrixId: matrix.id, matrixTitle: matrix.title, worksiteId: matrix.worksiteId, created, skipped, intolerable }
+    return { matrixId: matrix.id, matrixTitle: matrix.title, worksiteId: matrix.worksiteId, created, skipped, intolerable, measures }
   })
 
   /* Post-COMMIT y una vez por fila: la deduplicación por fila
@@ -497,6 +526,50 @@ export async function commitRiskImport(input: unknown, access: MiperAccess): Pro
     created: result.created,
     skipped: result.skipped,
     notified: result.intolerable.length,
+    measures: result.measures,
+  }
+}
+
+/**
+ * Responsables elegidos como persona: activos y de la faena (o quien importa),
+ * lo mismo que ofreció la vista previa (`worksiteResponsibleOptions`). Un id que
+ * no está ahí viene de un cliente adulterado o de una baja entre la vista previa
+ * y la carga: se rechaza, no se carga a medias.
+ */
+async function importResponsibleNames(client: Client, worksiteId: string, mapping: Readonly<Record<string, ResponsibleDecision>>, access: MiperAccess) {
+  const ids = [...new Set(Object.values(mapping).flatMap((decision) => (decision.kind === "user" ? [decision.userId] : [])))]
+  if (ids.length === 0) return new Map<string, string>()
+  await assertActiveUsers(client, ids)
+  const allowed = new Set((await worksiteResponsibleOptions(client, worksiteId, access.userId)).map((option) => option.id))
+  if (ids.some((id) => !allowed.has(id))) throw new RiskLegalDomainError("La persona responsable no es de la faena o está inactiva.")
+  return userNames(client, ids)
+}
+
+/**
+ * La medida importada (Fase C). Siempre «propuesta» —existente o por
+ * implementar— hasta que alguien la verifique: así no baja «Riesgos críticos sin
+ * control» sin evidencia (decisión del usuario). D5: la existente lleva su
+ * frecuencia y no plazo; la por implementar, su plazo.
+ */
+function importedControl(measure: ImportMeasure, index: number, riskEntryId: string, now: string, mappings: ImportMappings, names: ReadonlyMap<string, string>) {
+  const responsible = mappings.responsibleMapping[measure.responsibleKey]!
+  const deadline = mappings.deadlineMapping[measure.deadlineKey]!
+  return {
+    id: `riskcontrol-${nanoid()}`,
+    riskEntryId,
+    hierarchy: mappings.measureMapping[measure.phraseKey]!,
+    description: measure.text,
+    isExisting: deadline.kind === "existing",
+    verificationFrequency: deadline.kind === "existing" ? cleanMiperName(deadline.frequency) : null,
+    dueDate: deadline.kind === "pending" ? deadline.dueDate : null,
+    responsibleUserId: responsible.kind === "user" ? responsible.userId : null,
+    responsibleSnapshot: responsible.kind === "user" ? names.get(responsible.userId) ?? null
+      : responsible.kind === "text" ? cleanMiperName(responsible.name) : null,
+    status: "proposed",
+    /* Todas nacen en la misma transacción: un milisegundo más por medida conserva
+     * el orden del Excel (la foto ordena por `created_at` y desempata por id). */
+    createdAt: new Date(Date.parse(now) + index).toISOString(),
+    updatedAt: now,
   }
 }
 

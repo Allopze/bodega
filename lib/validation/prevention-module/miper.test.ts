@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { createMiperSchema, miperApproveFinalSchema, miperControlSaveSchema, miperEntrySaveSchema, miperHeaderSchema, miperObservationSchema } from "./miper"
+import { createMiperSchema, IMPORT_LIMITS, miperApproveFinalSchema, miperControlSaveSchema, miperEntrySaveSchema, miperHeaderSchema, miperObservationSchema, riskImportCommitSchema } from "./miper"
 
 const header = {
   matrixId: "m1", expectedVersion: 1, iperCode: "RE-04", elaboratedOn: "2026-04-30", updatedOn: "2026-05-02",
@@ -40,5 +40,23 @@ describe("schemas MIPER", () => {
     expect(miperControlSaveSchema.safeParse({ ...base, values: { ...base.values, isExisting: false, verificationFrequency: null } }).success).toBe(true)
     expect(miperControlSaveSchema.safeParse({ ...base, values: { ...base.values, verificationFrequency: "x".repeat(121) } }).success).toBe(false)
     expect(miperControlSaveSchema.safeParse({ ...base, values: { ...base.values, isExisting: "sí" } }).success).toBe(false)
+  })
+
+  it("carga del RE-04: los mapeos son opcionales (archivo sin medidas), con tipos del enum y topes de tamaño (Fase C)", () => {
+    const base = { batchId: "b1", worksiteId: "ws", target: "draft" }
+    expect(riskImportCommitSchema.parse(base)).toMatchObject({ measureMapping: {}, responsibleMapping: {}, deadlineMapping: {} })
+    expect(riskImportCommitSchema.safeParse({
+      ...base,
+      measureMapping: { casco: "ppe" },
+      responsibleMapping: { "": { kind: "none" }, prevencion: { kind: "text", name: "PREVENCION" }, jefa: { kind: "user", userId: "u-1" } },
+      deadlineMapping: { trimestral: { kind: "existing", frequency: "TRIMESTRAL" }, inmediato: { kind: "pending", dueDate: null }, fecha: { kind: "pending", dueDate: "2026-06-30" } },
+    }).success).toBe(true)
+    expect(riskImportCommitSchema.safeParse({ ...base, measureMapping: { casco: "helmet" } }).success).toBe(false)
+    expect(riskImportCommitSchema.safeParse({ ...base, deadlineMapping: { fecha: { kind: "pending", dueDate: "30-06-2026" } } }).success).toBe(false)
+    expect(riskImportCommitSchema.safeParse({ ...base, deadlineMapping: { x: { kind: "existing", frequency: "x".repeat(121) } } }).success).toBe(false)
+    expect(riskImportCommitSchema.safeParse({ ...base, responsibleMapping: { x: { kind: "text", name: "  " } } }).success).toBe(false)
+    expect(riskImportCommitSchema.safeParse({ ...base, responsibleMapping: { x: { kind: "persona", userId: "u-1" } } }).success).toBe(false)
+    const tooMany = Object.fromEntries(Array.from({ length: IMPORT_LIMITS.phrases + 1 }, (_, index) => [`medida ${index}`, "administrative"]))
+    expect(riskImportCommitSchema.safeParse({ ...base, measureMapping: tooMany }).success).toBe(false)
   })
 })

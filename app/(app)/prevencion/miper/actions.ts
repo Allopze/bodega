@@ -19,7 +19,7 @@ import { PreventionEvidenceError, storePreventionEvidence } from "@/lib/services
 import { resolveRiskReviewTrigger, verifyRiskControl } from "@/lib/services/prevention-risk-legal"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { deleteMiperControl, deleteMiperEntry, duplicateMiperEntry, saveMiperControl, saveMiperEntry } from "@/lib/services/miper/entries"
-import { commitRiskImport, previewRiskImport } from "@/lib/services/miper/import"
+import { commitRiskImport, previewRiskImport, type RiskImportCommitResult } from "@/lib/services/miper/import"
 import { listMiperWorksiteTargets } from "@/lib/services/miper/portfolio"
 import { createMiper, discardMiperDraft, updateMiperHeader } from "@/lib/services/miper/matrices"
 import { addMiperObservation, reopenMiperObservation, resolveMiperObservation, respondMiperObservation } from "@/lib/services/miper/observations"
@@ -29,6 +29,7 @@ import { getProgramWorkspace, type ProgramWorkspace } from "@/lib/services/miper
 import { saveRiskFactor, setRiskFactorActive } from "@/lib/services/miper/risk-factors"
 import { OUT_OF_SCOPE, scopeAllows, type MiperAccess, userNames } from "@/lib/services/miper/shared"
 import { approveMiperFinal, approveMiperTechnicalReview, openMiperReviewRound, requestMiperCorrections, returnMiperWithObservations, submitMiperForReview } from "@/lib/services/miper/workflow"
+import { countOf } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/prevention"
 
 const BASE = "/prevencion/miper"
@@ -433,9 +434,16 @@ export async function previewRiskImportAction(form: FormData): Promise<ActionSta
 
 export async function commitRiskImportAction(input: unknown) {
   return guarded("prevention:risk:edit", input, (access) => commitRiskImport(input, access), {
-    data: (result) => ({ matrixId: result.matrixId, created: result.created, skipped: result.skipped }),
-    success: (result) => result.created === 0
-      ? "No se cargó ninguna fila: revisa los problemas por fila."
-      : `${result.created} fila(s) cargada(s)${result.skipped > 0 ? ` y ${result.skipped} detenida(s)` : ""}`,
+    data: (result) => ({ matrixId: result.matrixId, created: result.created, skipped: result.skipped, measures: result.measures }),
+    success: importResultMessage,
   })
+}
+
+/** «3 riesgos cargados con 10 medidas propuestas (6 existentes y 4 por implementar); 1 fila detenida». */
+function importResultMessage(result: RiskImportCommitResult): string {
+  if (result.created === 0) return "No se cargó ninguna fila: revisa los problemas por fila."
+  const measures = result.measures.total === 0 ? ""
+    : ` con ${countOf(result.measures.total, "medida propuesta", "medidas propuestas")} (${countOf(result.measures.existing, "existente")} y ${result.measures.pending} por implementar)`
+  const skipped = result.skipped > 0 ? `; ${countOf(result.skipped, "fila detenida", "filas detenidas")}` : ""
+  return `${countOf(result.created, "riesgo cargado", "riesgos cargados")}${measures}${skipped}`
 }

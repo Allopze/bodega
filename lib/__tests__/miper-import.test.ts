@@ -25,12 +25,14 @@ import path from "node:path"
 import ExcelJS from "exceljs"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { and, asc, eq } from "drizzle-orm"
+import { and, asc, eq, inArray } from "drizzle-orm"
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
-import { analyzeRe04Measures } from "@/lib/prevention/miper/re04-measures"
+import { normalizeMeasure } from "@/lib/prevention/miper/dedup"
+import { normalizeMiperName } from "@/lib/prevention/miper/names"
+import { analyzeRe04Measures, suggestedMappings, type ImportMappings } from "@/lib/prevention/miper/re04-measures"
 import { RE04_COLUMNS, RE04_SHEET_NAME } from "@/lib/prevention/miper/re04-import"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { todayInChile } from "@/lib/utils"
@@ -75,6 +77,8 @@ vi.mock("@/db", () => ({ get db() { return g.__db } }))
 const { previewRiskImport, commitRiskImport } = await import("@/lib/services/miper/import")
 const { createMiper } = await import("@/lib/services/miper/matrices")
 const { listMiperPortfolio } = await import("@/lib/services/miper/portfolio")
+const { getMiperWorkspace } = await import("@/lib/services/miper/queries")
+const { buildMiperSnapshot } = await import("@/lib/services/miper/snapshots")
 
 const WS = "ws-imp"
 const WS_LIVE = "ws-live"
@@ -219,6 +223,23 @@ async function drainPostCommit(ticks = 50) {
 /** «Requieren mi acción» de la portada para la autora, en una faena. */
 async function myActionsIn(worksiteId: string) {
   return (await listMiperPortfolio(author)).rows.find((row) => row.worksiteId === worksiteId)?.myActions ?? []
+}
+
+async function matricesOf(worksiteId: string, period: number) {
+  return testDb.select({ id: schema.preventionRiskMatrices.id }).from(schema.preventionRiskMatrices)
+    .where(and(eq(schema.preventionRiskMatrices.worksiteId, worksiteId), eq(schema.preventionRiskMatrices.period, period)))
+}
+
+async function batchOf(batchId: string) {
+  const [batch] = await testDb.select().from(schema.preventionRiskImportBatches).where(eq(schema.preventionRiskImportBatches.id, batchId))
+  return batch!
+}
+
+/** Los `import_applied` de una MIPER (`newState` del log). */
+async function appliedOf(matrixId: string) {
+  const log = await testDb.select().from(schema.auditLog)
+    .where(and(eq(schema.auditLog.entityType, "risk_legal:risk:miper"), eq(schema.auditLog.entityId, matrixId)))
+  return log.map((row) => JSON.parse(row.newState ?? "{}") as Record<string, unknown>).filter((state) => state.changeType === "import_applied")
 }
 
 beforeEach(() => {
@@ -426,8 +447,15 @@ describe("carga en un borrador", () => {
 
     const committed = await commitRiskImport({
       batchId: preview.batchId, worksiteId: WS, target: "draft", period: 2026, revisionReason: "Importación del RE-04 2026 de prueba.",
+      ...suggestedMappings(preview.measureAnalysis),
     }, author)
     expect(committed).toMatchObject({ created: 3, skipped: 1, notified: 1, target: "draft" })
+    // Fase C: la medida de la fila 14 («IV. Controles administrativos: …», «Supervisor», «30-06-2026»).
+    expect(committed.measures).toEqual({ total: 1, existing: 0, pending: 1 })
+    expect((await buildMiperSnapshot(testDb, committed.matrixId)).entries[0]!.controls).toEqual([expect.objectContaining({
+      hierarchy: "administrative", description: "procedimiento de descarga", responsibleName: "Supervisor",
+      dueDate: "2026-06-30", isExisting: false, verificationFrequency: null, status: "proposed",
+    })])
 
     const entries = await entriesOf(committed.matrixId)
     expect(entries.map((entry) => entry.rowNumber)).toEqual([1, 2, 3])
@@ -465,6 +493,8 @@ describe("carga en un borrador", () => {
     // Una por fila cargada + una de la matriz; ninguna `entry_created` (la fila
     // entró por el importador, no por la grilla).
     expect(changes.filter((change) => change === "import_applied")).toHaveLength(4)
+    // Un `import_applied` por riesgo, con su cuenta de medidas (sólo la fila 14 trae una).
+    expect((await appliedOf(committed.matrixId)).filter((state) => state.object === "entry").map((state) => state.measures).sort()).toEqual([0, 0, 1])
     expect(changes).not.toContain("entry_created")
 
     await drainPostCommit()
@@ -496,7 +526,7 @@ describe("agregado al MIPER vigente", () => {
     expect(preview.live.matrixId).toBe(live.id)
     expect(preview.live.blockedReason).toBeNull()
 
-    const committed = await commitRiskImport({ batchId: preview.batchId, worksiteId: WS_LIVE, target: "live" }, author)
+    const committed = await commitRiskImport({ batchId: preview.batchId, worksiteId: WS_LIVE, target: "live", ...suggestedMappings(preview.measureAnalysis) }, author)
     expect(committed).toMatchObject({ created: 3, skipped: 1, target: "live" })
 
     const entries = await entriesOf(committed.matrixId)
@@ -563,5 +593,120 @@ describe("factor de riesgo que el catálogo no tiene", () => {
     // Y el mismo archivo tampoco se puede volver a preparar para esa faena.
     await expect(previewRiskImport(bytes, { worksiteId: WS, target: "draft", period: 2032 }, author))
       .rejects.toThrow(/ya se cargó/)
+  }, 60_000)
+})
+
+/* ── Carga con medidas (Fase C) ─────────────────────────────────────────── */
+
+describe("carga con medidas (Fase C)", () => {
+  it("crea las medidas de cada riesgo con su tipo, responsable y plazo o frecuencia, todas «propuesta» y en el orden del Excel; los pendientes bajan a los reales", async () => {
+    const preview = await previewRiskImport(await workbookOf(MEASURES_FIXTURE, "Carga con medidas"), { worksiteId: WS, target: "draft", period: 2035 }, author)
+    const mappings = suggestedMappings(preview.measureAnalysis)
+    // La persona cambia una decisión: «PREVENCION» es la prevencionista de la faena.
+    mappings.responsibleMapping[normalizeMiperName("PREVENCION")] = { kind: "user", userId: "u-prev" }
+    const committed = await commitRiskImport({
+      batchId: preview.batchId, worksiteId: WS, target: "draft", period: 2035, revisionReason: "Importación con medidas de prueba.", ...mappings,
+    }, author)
+    expect(committed).toMatchObject({ created: 3, skipped: 1, measures: { total: 10, existing: 6, pending: 4 } })
+
+    const entries = await entriesOf(committed.matrixId)
+    const controls = await testDb.select().from(schema.preventionRiskControls).where(inArray(schema.preventionRiskControls.riskEntryId, entries.map((entry) => entry.id)))
+    expect(controls).toHaveLength(10)
+    // Existentes o por implementar, todas quedan propuestas hasta que alguien las verifique.
+    expect(controls.every((control) => control.status === "proposed")).toBe(true)
+
+    const [first, second, third] = (await buildMiperSnapshot(testDb, committed.matrixId)).entries
+    // Orden del Excel dentro de cada riesgo, aunque todas nacen en la misma transacción.
+    expect(first!.controls.map((control) => control.description)).toEqual([
+      "USO DE EPP (CASCO, GUANTES, CALZADO DE SEGURIDAD)", "ORDEN Y LIMPIEZA", "SEÑALIZACIÓN DE ÁREAS", "CAPACITACIÓN EN TRABAJO SEGURO",
+    ])
+    expect(first!.controls[0]).toMatchObject({
+      hierarchy: "ppe", responsibleUserId: null, responsibleName: "SUPERVISOR/PREVENCION", isExisting: false, verificationFrequency: null, dueDate: todayInChile(),
+    })
+    expect(first!.controlledStatus).toBe("partial")
+    expect(second!.controls.map((control) => [control.description, control.hierarchy])).toEqual([
+      ["INSTALAR RESGUARDOS EN MAQUINAS", "engineering"], ["GUANTES", "ppe"], ["CASCO", "ppe"], ["CALZADO DE SEGURIDAD", "ppe"],
+    ])
+    expect(second!.controls[0]).toMatchObject({ isExisting: true, verificationFrequency: "TRIMESTRAL", dueDate: null })
+    expect(third!.controls.map((control) => [control.description, control.responsibleUserId, control.responsibleName])).toEqual([
+      ["ORDEN Y LIMPIEZA", "u-prev", "Prevencionista de faena"], ["INSPECCIÓN DE HERRAMIENTAS", "u-prev", "Prevencionista de faena"],
+    ])
+
+    // Un `import_applied` por riesgo con su cuenta, y el de la matriz con el total.
+    const applied = await appliedOf(committed.matrixId)
+    expect(applied.filter((state) => state.object === "entry").map((state) => state.measures).sort()).toEqual([2, 4, 4])
+    expect(applied.find((state) => state.object === "matrix")).toMatchObject({ created: 3, skipped: 1, measures: 10, existing: 6, pending: 4 })
+
+    // Los pendientes bajan a los reales: ningún riesgo queda con errores. El Importante tiene medidas
+    // por implementar con responsable y plazo, y las existentes no piden plazo.
+    const { completeness } = await getMiperWorkspace(committed.matrixId, author)
+    expect(completeness.filter((issue) => issue.severity === "error" && issue.entryId)).toEqual([])
+  }, 60_000)
+
+  it("rechaza en el servidor un mapeo incompleto, uno con claves que el lote no tiene y uno armado para otro archivo; no crea nada", async () => {
+    const preview = await previewRiskImport(await workbookOf(MEASURES_FIXTURE, "Rechazos"), { worksiteId: WS, target: "draft", period: 2036 }, author)
+    const full = suggestedMappings(preview.measureAnalysis)
+    const commit = (mappings: Partial<ImportMappings>) => commitRiskImport({
+      batchId: preview.batchId, worksiteId: WS, target: "draft", period: 2036, revisionReason: "Intento de carga que se rechaza.", ...full, ...mappings,
+    }, author)
+
+    const { [normalizeMeasure("CASCO")]: _casco, ...withoutCasco } = full.measureMapping
+    await expect(commit({ measureMapping: withoutCasco })).rejects.toThrow("falta decidir el tipo de 1 medida")
+    await expect(commit({ responsibleMapping: {} })).rejects.toThrow("falta decidir el responsable de 2 valores")
+    await expect(commit({ deadlineMapping: { ...full.deadlineMapping, semestral: { kind: "existing", frequency: "SEMESTRAL" } } }))
+      .rejects.toThrow("trae decisiones para 1 valor que el archivo no tiene")
+    // Review Focus 1: las decisiones de OTRO archivo (otra vista previa) no sirven para este lote.
+    const other = await previewRiskImport(await workbookOf([MEASURES_FIXTURE[2]!], "Otro archivo"), { worksiteId: WS, target: "draft", period: 2036 }, author)
+    await expect(commit(suggestedMappings(other.measureAnalysis))).rejects.toThrow("Vuelve a revisar el archivo.")
+    // Un tipo fuera del enum lo rechaza el esquema.
+    await expect(commit({ measureMapping: { ...full.measureMapping, [normalizeMeasure("CASCO")]: "helmet" as never } })).rejects.toThrow()
+
+    // Nada se creó: ni el borrador ni medidas, y el lote sigue preparado.
+    expect(await matricesOf(WS, 2036)).toHaveLength(0)
+    expect((await batchOf(preview.batchId)).status).toBe("staged")
+  }, 60_000)
+
+  it("un responsable que ya no está activo o que no es de la faena se rechaza, aunque la vista previa lo ofreciera (Review Focus 2)", async () => {
+    await testDb.insert(schema.users).values({ id: "u-otra-faena", name: "Supervisor de otra faena", email: "otra-faena@imp.cl", hashedPassword: "x", isActive: true, emailNotifications: false })
+    const preview = await previewRiskImport(await workbookOf(MEASURES_FIXTURE, "Responsables"), { worksiteId: WS, target: "draft", period: 2037 }, author)
+    const mappings = suggestedMappings(preview.measureAnalysis)
+    const commit = (userId: string) => commitRiskImport({
+      batchId: preview.batchId, worksiteId: WS, target: "draft", period: 2037, revisionReason: "Carga con un responsable inválido.", ...mappings,
+      responsibleMapping: { ...mappings.responsibleMapping, [normalizeMiperName("PREVENCION")]: { kind: "user", userId } },
+    }, author)
+
+    await expect(commit("u-otra-faena")).rejects.toThrow("La persona responsable no es de la faena o está inactiva.")
+    // u-legal es de la faena, pero se da de baja entre la vista previa y la carga.
+    await testDb.update(schema.users).set({ isActive: false }).where(eq(schema.users.id, "u-legal"))
+    try {
+      await expect(commit("u-legal")).rejects.toThrow(/inactiva/)
+    } finally {
+      await testDb.update(schema.users).set({ isActive: true }).where(eq(schema.users.id, "u-legal"))
+    }
+    expect(await matricesOf(WS, 2037)).toHaveLength(0)
+  }, 60_000)
+
+  it("si algo falla a mitad de la carga no queda nada: ni el borrador, ni riesgos, ni medidas (una sola transacción)", async () => {
+    // Falla la última medida de la última fila: para entonces ya se escribieron el borrador, dos
+    // riesgos y sus medidas. Antes de la Fase C el borrador se creaba en otra transacción y quedaba.
+    await pg.exec(`
+      CREATE FUNCTION qa_falla_medida() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.description = 'INSPECCIÓN DE HERRAMIENTAS' THEN RAISE EXCEPTION 'falla forzada de la prueba'; END IF;
+        RETURN NEW;
+      END $$;
+      CREATE TRIGGER qa_falla_medida BEFORE INSERT ON prevention_risk_controls FOR EACH ROW EXECUTE FUNCTION qa_falla_medida();
+    `)
+    try {
+      const preview = await previewRiskImport(await workbookOf(MEASURES_FIXTURE, "Rollback"), { worksiteId: WS, target: "draft", period: 2038 }, author)
+      await expect(commitRiskImport({
+        batchId: preview.batchId, worksiteId: WS, target: "draft", period: 2038, revisionReason: "Carga que falla a mitad.", ...suggestedMappings(preview.measureAnalysis),
+      }, author)).rejects.toThrow()
+      expect(await matricesOf(WS, 2038)).toHaveLength(0)
+      expect((await batchOf(preview.batchId)).status).toBe("staged")
+      expect((await batchRowsOf(preview.batchId)).every((row) => row.riskEntryId === null)).toBe(true)
+    } finally {
+      await pg.exec("DROP TRIGGER qa_falla_medida ON prevention_risk_controls; DROP FUNCTION qa_falla_medida();")
+    }
   }, 60_000)
 })
