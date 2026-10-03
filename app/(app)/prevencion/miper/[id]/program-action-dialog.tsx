@@ -48,8 +48,6 @@ export function ProgramActionDialog({
   processes,
   users,
   action,
-  /** `actionId → processId`: la vista del programa no trae el id, y sin él la edición lo borraría. */
-  actionProcessIds,
   defaultLocationLabel,
   trigger,
   onSaved,
@@ -59,11 +57,11 @@ export function ProgramActionDialog({
   users: Array<{ id: string; name: string }>
   /** Presente al editar; ausente al crear. */
   action?: ProgramActionView
-  actionProcessIds: Record<string, string>
   /** Centro de trabajo con que se prellena una actividad nueva. */
   defaultLocationLabel: string | null
   trigger: React.ReactNode
-  onSaved: () => void
+  /** Opcional: la acción revalida la ruta y llega un `program` nuevo por props. */
+  onSaved?: () => void
 }) {
   const [open, setOpen] = React.useState(false)
   const [processId, setProcessId] = React.useState("")
@@ -76,7 +74,7 @@ export function ProgramActionDialog({
   // montado entre ediciones y heredaría el estado de la anterior.
   function handleOpenChange(value: boolean) {
     if (value && action) {
-      setProcessId(actionProcessIds[action.id] ?? "")
+      setProcessId(action.processId ?? "")
       setResponsibleUserId(action.responsibleUserId ?? "")
       setScheduleKind(action.scheduleKind)
       setStartsOn(action.startsOn)
@@ -104,7 +102,7 @@ export function ProgramActionDialog({
       locationLabel: text(form.get("locationLabel")),
       scheduleKind,
       startsOn,
-    }), () => { setOpen(false); onSaved() })
+    }), () => { setOpen(false); onSaved?.() })
   }
 
   return (
@@ -182,15 +180,17 @@ export function ProgramActionDialog({
  * N° de la actividad en su nombre accesible, así que no se duplica acá.
  */
 export function RetireActionDialog({
+  matrixId,
   action,
   open,
   onOpenChange,
   onRetired,
 }: {
+  matrixId: string
   action: ProgramActionView
   open: boolean
   onOpenChange: (open: boolean) => void
-  onRetired: () => void
+  onRetired?: () => void
 }) {
   const operation = useOperation({ feedback: "toast" })
   return (
@@ -205,8 +205,8 @@ export function RetireActionDialog({
       reasonLabel="Motivo del retiro"
       reasonPlaceholder="Por qué se retira la actividad (al menos 10 caracteres)"
       onConfirm={(reason) => operation.run(
-        () => retireProgramActionAction({ actionId: action.id, expectedVersion: action.version, reason }),
-        () => { onOpenChange(false); onRetired() },
+        () => retireProgramActionAction({ matrixId, actionId: action.id, expectedVersion: action.version, reason }),
+        () => { onOpenChange(false); onRetired?.() },
       )}
     />
   )

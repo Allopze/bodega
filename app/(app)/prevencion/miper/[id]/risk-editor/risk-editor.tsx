@@ -8,7 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { EmptyState } from "@/components/ui/empty-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { EDITOR_STEPS, EDITOR_STEP_LABEL, errorCountByStep, firstStepWithErrors, isEditorStep, nextPendingId, siblingsInTask, type EditorStep } from "@/lib/prevention/miper/entry-navigation"
+import { EDITOR_STEPS, EDITOR_STEP_LABEL, errorCountByStep, firstStepWithErrors, isEditorStep, nextInScopeId, nextPendingId, siblingsInTask, type EditorStep } from "@/lib/prevention/miper/entry-navigation"
 import { taskKeyOf } from "@/lib/prevention/miper/matrix-tree"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 import { hrefToEntry, hrefToMatrix, hrefToTask } from "@/lib/prevention/miper/workspace-url"
@@ -62,6 +62,8 @@ export function RiskEditor(props: RiskEditorProps) {
   const counts = errorCountByStep(issues)
   const siblings = siblingsInTask(rows, entry.id)
   const nextPending = nextPendingId(rows, entry.id, incomplete, matching)
+  // Quien sólo lee recorre el filtro de la URL (no hay «pendientes» que corregir); quien edita sigue con «Siguiente pendiente».
+  const nextInFilter = !editable && matching ? nextInScopeId(rows, entry.id, matching) : null
   const taskHref = hrefToTask(pathname, params, taskKeyOf(entry))
   // Borrar el único riesgo de la tarea deja la tarea vacía: se vuelve a la matriz, no a «Esta tarea ya no existe».
   const afterDeleteHref = siblings?.total === 1 ? hrefToMatrix(pathname, params) : taskHref
@@ -115,9 +117,13 @@ export function RiskEditor(props: RiskEditorProps) {
           <span className="text-xs tabular-nums text-[var(--color-text-subtle)]">{siblings?.position} de {siblings?.total} en la tarea</span>
           {siblings?.nextId ? <Button asChild size="sm" variant="secondary"><WorkspaceLink href={hrefToEntry(pathname, params, siblings.nextId)}>Siguiente ›</WorkspaceLink></Button> : <Button size="sm" variant="secondary" disabled>Siguiente ›</Button>}
         </div>
-        {nextPending
-          ? <Button asChild size="sm"><WorkspaceLink href={hrefToEntry(pathname, params, nextPending)}>Siguiente pendiente</WorkspaceLink></Button>
-          : <p className="text-sm text-[var(--color-success-ink)]">No quedan otros riesgos pendientes{matching ? " en este filtro" : ""}.</p>}
+        {!editable && matching
+          ? (nextInFilter
+            ? <Button asChild size="sm"><WorkspaceLink href={hrefToEntry(pathname, params, nextInFilter, current)}>Siguiente del filtro</WorkspaceLink></Button>
+            : <p className="text-sm text-[var(--color-text-subtle)]">No hay otros riesgos en este filtro.</p>)
+          : nextPending
+            ? <Button asChild size="sm"><WorkspaceLink href={hrefToEntry(pathname, params, nextPending)}>Siguiente pendiente</WorkspaceLink></Button>
+            : <p className="text-sm text-[var(--color-success-ink)]">No quedan otros riesgos pendientes{matching ? " en este filtro" : ""}.</p>}
       </nav>
     </div>
   )

@@ -1,6 +1,6 @@
 /**
- * Contrato de URL del espacio de trabajo (spec §3). Prioridad: `fila` > `tarea`
- * > `tab`. Los enlaces conservan los filtros y limpian la vista anterior.
+ * Contrato de URL del espacio de trabajo (spec §3). Prioridad: `fila` >
+ * `actividad` > `tarea` > `tab`. Los enlaces conservan los filtros y limpian la vista anterior.
  */
 import { isEditorStep, type EditorStep } from "./entry-navigation"
 import { MATRIX_FILTER_KEYS, type MatrixFilterKey } from "./matrix-filters"
@@ -8,17 +8,18 @@ import { MATRIX_FILTER_KEYS, type MatrixFilterKey } from "./matrix-filters"
 /** «resumen» (Fase B) va primero en la tira, pero la pestaña por defecto sigue siendo la matriz (spec §3). */
 export const WORKSPACE_TABS = ["resumen", "matriz", "programa", "revision", "historial"] as const
 export type WorkspaceTab = typeof WORKSPACE_TABS[number]
-export type WorkspaceView = { tab: WorkspaceTab; taskKey: string | null; entryId: string | null; step: EditorStep | null; ficha: boolean }
+export type WorkspaceView = { tab: WorkspaceTab; taskKey: string | null; entryId: string | null; activityId: string | null; step: EditorStep | null; ficha: boolean }
 
 type Params = { get(key: string): string | null; toString(): string }
 
 export function readWorkspaceView(params: Params): WorkspaceView {
   const rawTab = params.get("tab")
   const entryId = params.get("fila") || null
-  const taskKey = entryId ? null : params.get("tarea") || null
-  const tab: WorkspaceTab = entryId || taskKey ? "matriz" : (WORKSPACE_TABS as readonly string[]).includes(rawTab ?? "") ? (rawTab as WorkspaceTab) : "matriz"
+  const activityId = entryId ? null : params.get("actividad") || null
+  const taskKey = entryId || activityId ? null : params.get("tarea") || null
+  const tab: WorkspaceTab = entryId || taskKey ? "matriz" : activityId ? "programa" : (WORKSPACE_TABS as readonly string[]).includes(rawTab ?? "") ? (rawTab as WorkspaceTab) : "matriz"
   const step = params.get("paso")
-  return { tab, taskKey, entryId, step: entryId && isEditorStep(step) ? step : null, ficha: params.get("ficha") === "1" || rawTab === "antecedentes" }
+  return { tab, taskKey, entryId, activityId, step: entryId && isEditorStep(step) ? step : null, ficha: params.get("ficha") === "1" || rawTab === "antecedentes" }
 }
 
 function href(pathname: string, params: Params, patch: Record<string, string | null>): string {
@@ -31,12 +32,15 @@ function href(pathname: string, params: Params, patch: Record<string, string | n
   return query ? `${pathname}?${query}` : pathname
 }
 
-const CLEAR_VIEW = { tab: null, tarea: null, fila: null, paso: null } as const
+const CLEAR_VIEW = { tab: null, tarea: null, fila: null, paso: null, actividad: null } as const
 
 export const hrefToMatrix = (pathname: string, params: Params) => href(pathname, params, { ...CLEAR_VIEW, ficha: null })
 export const hrefToTask = (pathname: string, params: Params, taskKey: string) => href(pathname, params, { ...CLEAR_VIEW, tarea: taskKey })
 export const hrefToEntry = (pathname: string, params: Params, entryId: string, step?: EditorStep) => href(pathname, params, { ...CLEAR_VIEW, fila: entryId, paso: step ?? null })
 export const hrefToTab = (pathname: string, params: Params, tab: WorkspaceTab) => href(pathname, params, { ...CLEAR_VIEW, tab: tab === "matriz" ? null : tab })
+/** El detalle de una actividad del programa: limpia fila, tarea y paso y conserva los filtros. */
+export const hrefToActivity = (pathname: string, params: Params, actionId: string) =>
+  href(pathname, params, { ...CLEAR_VIEW, tab: "programa", actividad: actionId })
 /** Abre o cierra la ficha sin tocar la vista; borra el alias heredado `tab=antecedentes`. */
 export const hrefToFicha = (pathname: string, params: Params, open: boolean) =>
   href(pathname, params, { ficha: open ? "1" : null, ...(params.get("tab") === "antecedentes" ? { tab: null } : {}) })

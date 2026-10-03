@@ -1,11 +1,17 @@
+"use client"
+
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ROLE_CONTEXT_TEXT, historyLabel } from "@/lib/prevention/miper/history-labels"
-import type { MiperHistoryEvent, MiperWorkspace } from "@/lib/services/miper/queries"
-import { formatDate, formatDateTime, toDateTimeAttr } from "@/lib/utils"
+import { useOperation } from "@/lib/hooks/use-operation"
+import type { MiperHistoryEvent, MiperHistoryPage, MiperWorkspace } from "@/lib/services/miper/queries"
+import { countOf, formatDate, formatDateTime, toDateTimeAttr } from "@/lib/utils"
+import { loadMiperHistoryPageAction } from "./history-actions"
 
 export type HistoryPanelProps = {
   workspace: MiperWorkspace
-  history: MiperHistoryEvent[]
+  history: MiperHistoryPage
 }
 
 /**
@@ -15,6 +21,28 @@ export type HistoryPanelProps = {
  * son cambios de estado (filas, medidas, observaciones).
  */
 export function HistoryPanel({ workspace, history }: HistoryPanelProps) {
+  /* Las páginas que se agregan con «Cargar más» cuelgan de la `history` que
+   * extienden: si llega otra por props (la matriz se revalidó), el cursor y lo
+   * agregado ya no corresponden a ella y se descartan. Es el ajuste de estado
+   * durante el render de React (guardar lo previo y comparar), no un efecto. */
+  const [loaded, setLoaded] = useState<{ base: MiperHistoryPage; events: MiperHistoryEvent[]; nextCursor: string | null }>({ base: history, events: [], nextCursor: history.nextCursor })
+  let current = loaded
+  if (loaded.base !== history) {
+    current = { base: history, events: [], nextCursor: history.nextCursor }
+    setLoaded(current)
+  }
+  const operation = useOperation()
+  const events = [...history.events, ...current.events]
+  const loadMore = () => {
+    const cursor = current.nextCursor
+    if (!cursor) return
+    operation.run(() => loadMiperHistoryPageAction({ matrixId: workspace.matrix.id, cursor }), (result) => {
+      const page = result.data as Partial<MiperHistoryPage> | undefined
+      if (!page || !Array.isArray(page.events)) return
+      const next = page.events
+      setLoaded((previous) => previous.base === history ? { ...previous, events: [...previous.events, ...next], nextCursor: page.nextCursor ?? null } : previous)
+    })
+  }
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <section className="space-y-2">
@@ -56,7 +84,7 @@ export function HistoryPanel({ workspace, history }: HistoryPanelProps) {
       <section className="space-y-2 lg:col-span-2">
         <h2 className="text-sm font-semibold">Bitácora</h2>
         <ol className="space-y-1 text-sm">
-          {history.map((event) => (
+          {events.map((event) => (
             <li key={event.id} className="flex flex-wrap gap-x-2 border-b border-[var(--color-border)] py-1.5">
               <time className="tabular-nums text-[var(--color-text-subtle)]" dateTime={toDateTimeAttr(event.at)}>{formatDateTime(event.at)}</time>
               <span className="font-medium">{historyLabel(event.changeType)}</span>
@@ -65,6 +93,9 @@ export function HistoryPanel({ workspace, history }: HistoryPanelProps) {
             </li>
           ))}
         </ol>
+        <p aria-live="polite" className="text-xs text-[var(--color-text-subtle)]">Mostrando {countOf(events.length, "evento", "eventos")}</p>
+        {operation.message && <p role="alert" className="text-sm text-[var(--color-danger)]">{operation.message}</p>}
+        {current.nextCursor && <Button size="sm" variant="secondary" disabled={operation.pending} onClick={loadMore}>Cargar más</Button>}
       </section>
     </div>
   )

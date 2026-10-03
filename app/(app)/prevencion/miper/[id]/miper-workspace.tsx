@@ -14,15 +14,15 @@ import { hasEntryFilters, MATRIX_FILTER_KEYS, parseMatrixFilters } from "@/lib/p
 import { buildMatrixTree, findTask } from "@/lib/prevention/miper/matrix-tree"
 import { CLASSIFICATION_CRITERIA } from "@/lib/prevention/miper/methodology"
 import { nextStepFor, nextStepInView, type NextStepAction } from "@/lib/prevention/miper/next-step"
-import type { ProgramProgress } from "@/lib/prevention/miper/progress"
 import { changesByEntry, type EntryChange } from "@/lib/prevention/miper/snapshot"
 import { hrefToEntry, hrefToFicha, hrefToMatrixWith, hrefToTab, readWorkspaceView, type WorkspaceTab } from "@/lib/prevention/miper/workspace-url"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
-import type { MiperHistoryEvent, MiperWorkspace } from "@/lib/services/miper/queries"
+import type { ProgramWorkspace } from "@/lib/services/miper/program-queries"
+import type { MiperWorkspace } from "@/lib/services/miper/queries"
 import { countOf } from "@/lib/utils"
 import { openMiperRoundAction } from "../actions"
 import { FichaSheet } from "./ficha-sheet"
-import { HistoryPanel } from "./history-panel"
+import { HistoryPanel, type HistoryPanelProps } from "./history-panel"
 import { MatrixFiltersBar, useMatrixFilterNavigation } from "./matrix-filters-bar"
 import { MatrixView } from "./matrix-view"
 import { NewTaskDialog } from "./new-task-dialog"
@@ -35,6 +35,7 @@ import { SummaryStrip } from "./summary-strip"
 import { TaskView } from "./task-view"
 import { useEntryAutosave } from "./use-entry-autosave"
 import { useRowsFromSource } from "./use-rows-from-source"
+import type { BulkContext } from "./bulk-shared"
 import { WorkflowBar } from "./workflow-bar"
 import { WorksiteSwitcher } from "./worksite-switcher"
 import { navigateWorkspace, WorkspaceLink } from "./workspace-nav"
@@ -42,14 +43,18 @@ import { navigateWorkspace, WorkspaceLink } from "./workspace-nav"
 /**
  * Espacio de trabajo de la MIPER (spec 2026-10-02 §3–§5): matriz por actividad
  * y tarea → vista de la tarea → editor del riesgo, todo en la URL
- * (`fila` > `tarea` > `tab`). Navegar entre esas vistas no va al servidor
+ * (`fila` > `actividad` > `tarea` > `tab`). Navegar entre esas vistas no va al servidor
  * (`workspace-nav.tsx`): las filas ya están aquí y un fetch RSC por clic las
  * reiniciaba. Sólo crear, duplicar o borrar riesgos pide datos nuevos.
  */
-export function MiperWorkspaceView({ workspace, history, mode, userId, programProgress }: {
-  workspace: MiperWorkspace; history: MiperHistoryEvent[]; mode: WorkspaceMode; userId: string
-  /** Avance del Programa de Trabajo para la pestaña Resumen (lo carga `page.tsx`). */
-  programProgress: ProgramProgress
+export function MiperWorkspaceView({ workspace, history, mode, userId, program }: {
+  workspace: MiperWorkspace; history: HistoryPanelProps["history"]; mode: WorkspaceMode; userId: string
+  /**
+   * El Programa de Trabajo, cargado por `page.tsx` junto con la matriz. Se lee
+   * SIEMPRE de props, nunca se copia a un `useState`: Atrás restaura payloads
+   * de renders anteriores y una copia quedaría vieja.
+   */
+  program: ProgramWorkspace
 }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -112,6 +117,10 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, programPr
   useEffect(() => { knownVersionOf.current = autosave.versionOf }, [autosave.versionOf])
   const editable = mode.canEdit && !reviewing
   const [newTaskOpen, setNewTaskOpen] = useState(false)
+  // Acciones masivas (Fase D): sólo quien edita; sin esto no hay «Seleccionar».
+  const bulk: BulkContext | undefined = editable
+    ? { matrixId: workspace.matrix.id, sync: autosave, setRows, riskFactors: workspace.riskFactors, responsibleOptions: workspace.responsibleOptions, measureSuggestions: workspace.dictionaries.measures, dictionaries: workspace.dictionaries, controlVersions: workspace.controlVersions }
+    : undefined
 
   const incomplete = useMemo(() => new Set([...entryIssues].filter(([, list]) => list.some((issue) => issue.severity === "error")).map(([entryId]) => entryId)), [entryIssues])
   const modified = useMemo(() => new Set([...changes.values()].filter((change) => change.kind !== "removed").map((change) => change.entryId)), [changes])
@@ -171,7 +180,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, programPr
             <TabsTrigger value="historial">Historial</TabsTrigger>
           </TabsList>
           <TabsContent value="resumen">
-            <ResumenPanel matrixId={workspace.matrix.id} rows={rows} tree={fullTree} incomplete={incomplete} programProgress={programProgress}
+            <ResumenPanel matrixId={workspace.matrix.id} rows={rows} tree={fullTree} incomplete={incomplete} programProgress={program.progress}
               editable={editable} onNewTask={() => setNewTaskOpen(true)} />
           </TabsContent>
           <TabsContent value="matriz" className="space-y-3">
@@ -182,7 +191,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, programPr
                 data={{ matrixId: workspace.matrix.id, published: workspace.matrix.status === "published", riskFactors: workspace.riskFactors, dictionaries: workspace.dictionaries, responsibleOptions: workspace.responsibleOptions, controlVersions: workspace.controlVersions, controlActionLinks: workspace.controlActionLinks, observations: workspace.observations }} />
             ) : view.taskKey ? (
               task
-                ? <TaskView matrixId={workspace.matrix.id} task={task} editable={editable} incomplete={incomplete} observed={observedEntryIds} changes={changes} issuesByEntry={entryIssues} />
+                ? <TaskView key={task.key} matrixId={workspace.matrix.id} task={task} editable={editable} incomplete={incomplete} observed={observedEntryIds} changes={changes} issuesByEntry={entryIssues} bulk={bulk} />
                 : <EmptyState title="Esta tarea ya no existe" description="Puede que sus riesgos se hayan movido o eliminado." action={<Button asChild><WorkspaceLink href={hrefToTab(pathname, searchParams, "matriz")} restoreScroll>Volver a la matriz</WorkspaceLink></Button>} />
             ) : (
               <>
@@ -192,7 +201,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, programPr
                   onToggleClassification={(cls) => setFilter("clasificacion", (filters.classifications.includes(cls) ? filters.classifications.filter((item) => item !== cls) : [...filters.classifications, cls]).join(",") || null)}
                   onTogglePending={() => setFilter("completitud", filters.onlyIncomplete ? null : "pendientes")}
                   onToggleUncontrolled={() => setFilter("controlado", filters.controlled === "no" ? null : "no")} />
-                <MatrixView matrixId={workspace.matrix.id} tree={tree} filtered={filtered} editable={editable} incomplete={incomplete} observed={observedEntryIds} changes={changes} issuesByEntry={entryIssues}
+                <MatrixView matrixId={workspace.matrix.id} tree={tree} filtered={filtered} editable={editable} incomplete={incomplete} observed={observedEntryIds} changes={changes} issuesByEntry={entryIssues} bulk={bulk}
                   onNewTask={() => setNewTaskOpen(true)}
                   onClearFilters={() => setFilters(Object.fromEntries(MATRIX_FILTER_KEYS.map((key) => [key, null])))}
                   toolbar={({ collapsedAll, toggleAll, filtered: isFiltered }) => (
@@ -201,8 +210,8 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, programPr
               </>
             )}
           </TabsContent>
-          <TabsContent value="programa"><ProgramPanel matrixId={workspace.matrix.id} mode={mode} userId={userId} users={workspace.responsibleOptions} onOpenRiskEntry={openEntry} /></TabsContent>
-          <TabsContent value="revision"><ReviewPanel workspace={workspace} mode={mode} onOpenEntry={openEntry} /></TabsContent>
+          <TabsContent value="programa"><ProgramPanel matrixId={workspace.matrix.id} mode={mode} userId={userId} users={workspace.responsibleOptions} program={program} rows={rows} header={source.header} activityId={view.activityId} /></TabsContent>
+          <TabsContent value="revision"><ReviewPanel workspace={workspace} mode={mode} onOpenEntry={openEntry} rows={rows} observed={observedEntryIds} modified={modified} hasBaseline={baseline !== null} /></TabsContent>
           <TabsContent value="historial"><HistoryPanel workspace={workspace} history={history} /></TabsContent>
         </Tabs>
       </div>

@@ -2,8 +2,7 @@ import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   auditLog, preventionRiskControls, preventionRiskEntries, preventionRiskFactors, preventionRiskMatrices, preventionRiskMatrixVersions,
-  preventionRiskObservations, preventionRiskProgramActionControls, preventionRiskProgramActions, preventionRiskPrograms,
-  preventionRiskReviewRounds, users, worksites,
+  preventionRiskObservations, preventionRiskReviewRounds, users, worksites,
 } from "@/db/schema"
 import { checkMiperCompleteness, type CompletenessIssue } from "@/lib/prevention/miper/completeness"
 import { RISK_CLASSIFICATIONS, type RiskClassification } from "@/lib/prevention/miper/methodology"
@@ -11,6 +10,7 @@ import { diffSnapshots, type MiperSnapshot, type SnapshotDiff } from "@/lib/prev
 import { miperStatusLabel } from "@/lib/prevention/miper/states"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { listDictionaryNames, listFreeTextSuggestions } from "./dictionaries"
+import { activeProgramControlLinks } from "./program-links"
 import { buildMiperHeaderPrefill, type MiperHeaderPrefill } from "./prefill"
 import { getProgramHeader, type ProgramHeaderView } from "./program-queries"
 import { buildMiperSnapshot, openRound as findOpenRound } from "./snapshots"
@@ -95,20 +95,9 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
 
   /* §7.3: qué actividad del programa ejecuta cada medida, para que desde la ficha
    * de un riesgo se llegue a sus actividades (el otro sentido ya vive en el panel
-   * del programa). */
-  const controlActionLinks = await db.select({
-    controlId: preventionRiskProgramActionControls.controlId,
-    actionId: preventionRiskProgramActions.id,
-    actionNumber: preventionRiskProgramActions.actionNumber,
-    description: preventionRiskProgramActions.description,
-  }).from(preventionRiskProgramActionControls)
-    .innerJoin(preventionRiskProgramActions, eq(preventionRiskProgramActions.id, preventionRiskProgramActionControls.actionId))
-    .innerJoin(preventionRiskPrograms, eq(preventionRiskPrograms.id, preventionRiskProgramActions.programId))
-    /* Sólo actividades vivas: es el mismo criterio que `programLinkedControlIds`
-     * aplica al validar el envío, para que la UI no anuncie un pendiente que el
-     * servidor ya no aplica (ni al revés). */
-    .where(and(eq(preventionRiskPrograms.matrixId, matrix.id), eq(preventionRiskProgramActions.status, "active")))
-    .orderBy(asc(preventionRiskProgramActions.actionNumber))
+   * del programa). Sólo actividades vivas: el mismo criterio que usa el envío. */
+  const controlActionLinks = (await activeProgramControlLinks(db, [matrix.id]))
+    .map(({ controlId, actionId, actionNumber, description }) => ({ controlId, actionId, actionNumber, description }))
 
   // §8.5: la cadena de MIPER de la faena por período. Se reusa `buildRows` para
   // que el rótulo sea el mismo que ve la portada (incluye cambios sin enviar).
@@ -193,21 +182,51 @@ export async function buildRows(matrixRows: Array<{ matrix: typeof preventionRis
 }
 
 export type MiperHistoryEvent = { id: string; at: string; actorName: string | null; actingAs: string | null; changeType: string; object: string | null; reason: string | null }
+export type MiperHistoryPage = { events: MiperHistoryEvent[]; nextCursor: string | null }
+export const MIPER_HISTORY_PAGE_SIZE = 50
 
-export async function getMiperHistory(matrixId: string, access: MiperAccess): Promise<MiperHistoryEvent[]> {
+const UNREADABLE_CURSOR = "No se pudo leer la página siguiente del historial; recarga la MIPER."
+
+const encodeCursor = (at: string, id: string) => Buffer.from(JSON.stringify([at, id])).toString("base64url")
+
+function decodeCursor(cursor: string): { at: string; id: string } {
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"))
+    if (Array.isArray(parsed) && parsed.length === 2 && typeof parsed[0] === "string" && typeof parsed[1] === "string" && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(parsed[0])) {
+      return { at: parsed[0], id: parsed[1] }
+    }
+  } catch { /* cae al error de dominio */ }
+  throw new RiskLegalDomainError(UNREADABLE_CURSOR)
+}
+
+/**
+ * La bitácora de la MIPER, de la más nueva a la más vieja y por cursor
+ * `(createdAt, id)`: con eventos del mismo instante, el `id` desempata y ninguna
+ * página repite ni se salta uno. Trae uno de más para saber si hay otra página.
+ */
+export async function getMiperHistory(matrixId: string, access: MiperAccess, options: { cursor?: string | null } = {}): Promise<MiperHistoryPage> {
   requireAccess(access, VIEW)
   const [matrix] = await db.select({ worksiteId: preventionRiskMatrices.worksiteId }).from(preventionRiskMatrices).where(eq(preventionRiskMatrices.id, matrixId)).limit(1)
   if (!matrix || !scopeAllows(access.scope, matrix.worksiteId)) throw new RiskLegalDomainError("MIPER no encontrada o fuera de alcance.")
+  const after = options.cursor ? decodeCursor(options.cursor) : null
   const rows = await db.select({ log: auditLog, actorName: users.name }).from(auditLog).leftJoin(users, eq(users.id, auditLog.userId))
-    .where(and(inArray(auditLog.entityType, ["risk_legal:risk:miper", "risk_legal:risk:matrix"]), eq(auditLog.entityId, matrixId)))
-    .orderBy(desc(auditLog.createdAt)).limit(500)
-  return rows.map(({ log, actorName }) => {
+    .where(and(
+      inArray(auditLog.entityType, ["risk_legal:risk:miper", "risk_legal:risk:matrix"]),
+      eq(auditLog.entityId, matrixId),
+      after ? sql`(${auditLog.createdAt}, ${auditLog.id}) < (${after.at}::timestamptz, ${after.id})` : undefined,
+    ))
+    .orderBy(desc(auditLog.createdAt), desc(auditLog.id)).limit(MIPER_HISTORY_PAGE_SIZE + 1)
+  const hasMore = rows.length > MIPER_HISTORY_PAGE_SIZE
+  const page = hasMore ? rows.slice(0, MIPER_HISTORY_PAGE_SIZE) : rows
+  const events = page.map(({ log, actorName }) => {
     let state: Record<string, unknown> = {}
     try { state = JSON.parse(log.newState ?? "{}") as Record<string, unknown> } catch { state = {} }
     // La clave persistida es `roleContext` (§4.9). La vista la expone como
     // `actingAs` para no forzar cambios en la UI que ya la consume.
     return { id: log.id, at: log.createdAt, actorName, actingAs: typeof state.roleContext === "string" ? state.roleContext : null, changeType: String(state.changeType ?? log.action), object: typeof state.object === "string" ? state.object : null, reason: log.reason }
   })
+  const last = page[page.length - 1]
+  return { events, nextCursor: hasMore && last ? encodeCursor(last.log.createdAt, last.log.id) : null }
 }
 
 export async function getMiperVersion(versionId: string, access: MiperAccess) {

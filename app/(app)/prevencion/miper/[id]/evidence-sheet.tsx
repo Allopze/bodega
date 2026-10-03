@@ -8,26 +8,18 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Field } from "@/components/ui/field"
 import { FileInput } from "@/components/ui/file-input"
 import { Input } from "@/components/ui/input"
-import { Sheet, SheetBody, SheetCloseButton, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { miperEvidenceHref } from "@/lib/prevention/miper/evidence-url"
+import type { ProgramEvidenceView } from "@/lib/services/miper/program-queries"
 import { formatDateTime } from "@/lib/utils"
 import { addOccurrenceEvidenceAction, uploadProgramEvidenceAction, withdrawOccurrenceEvidenceAction } from "../actions"
 
 /** Tipos que admite la evidencia del programa (§7.6): PDF, JPEG, PNG, Word y Excel. */
 export const PROGRAM_EVIDENCE_ACCEPT = ".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
 
-export type OccurrenceEvidenceView = {
-  id: string
-  evidenceUploadId: string
-  /** Nombre **interno** de almacenamiento: nanoid + la extensión del MIME real. */
-  fileName: string
-  /** Nombre con el que la persona subió el archivo —el que ella reconoce—, o su nota. */
-  description: string | null
-  uploadedAt: string
-  uploadedByName: string | null
-  withdrawnAt: string | null
-  withdrawReason: string | null
-}
+/** La evidencia de un registro, tal como la lee el servidor (C3). */
+export type OccurrenceEvidenceView = ProgramEvidenceView
 
 /**
  * El rótulo con el que se nombra una evidencia: el nombre **original** —el que la
@@ -127,6 +119,7 @@ export function EvidenceSheet({
   occurrenceLabel,
   canExecute,
   onChanged,
+  matrixId,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -136,6 +129,8 @@ export function EvidenceSheet({
   occurrenceLabel: string
   canExecute: boolean
   onChanged: () => void
+  /** La MIPER: las acciones revalidan su página leyéndolo del input crudo. */
+  matrixId?: string
 }) {
   const [withdrawTarget, setWithdrawTarget] = React.useState<OccurrenceEvidenceView | null>(null)
   const [path, setPath] = React.useState("")
@@ -145,6 +140,7 @@ export function EvidenceSheet({
    * —el único campo donde puede viajar es `description`—. */
   const [originalName, setOriginalName] = React.useState("")
   const operation = useOperation()
+  const withdrawOperation = useOperation({ feedback: "toast" })
 
   function handleOpenChange(value: boolean) {
     if (value) {
@@ -158,27 +154,28 @@ export function EvidenceSheet({
 
   const evidence = record?.evidence ?? []
   const canAdd = canExecute && Boolean(record) && !record?.voidedAt
+  const matrixInput = matrixId ? { matrixId } : {}
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent className="sm:max-w-xl">
-        <SheetHeader>
-          <div>
-            <SheetTitle>Evidencia de la ocurrencia</SheetTitle>
-            <SheetDescription>
-              {occurrenceLabel}
-              {record ? ` · registro ${record.outcome === "done" ? "«Se hizo»" : "«No se hizo»"}` : " · sin registro"}
-            </SheetDescription>
-          </div>
-          <SheetCloseButton />
-        </SheetHeader>
-        <SheetBody className="space-y-5">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-h-[min(90dvh,60rem)] max-w-xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Evidencia de la ocurrencia</DialogTitle>
+          <DialogDescription>
+            {occurrenceLabel}
+            {record ? ` · registro ${record.outcome === "done" ? "«Se hizo»" : "«No se hizo»"}` : " · sin registro"}
+            {record?.voidedAt ? " · anulado" : ""}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-5">
           {evidence.length === 0 ? (
             <p className="text-sm text-[var(--color-text-subtle)]">Este registro todavía no tiene evidencia adjunta.</p>
           ) : (
             <ul className="space-y-2">
               {evidence.map((item) => {
                 const label = evidenceLabel(item)
+                const openHref = item.inlineSafe ? miperEvidenceHref(item.evidenceUploadId) : null
+                const downloadHref = miperEvidenceHref(item.evidenceUploadId, { download: true })
                 return (
                   <li key={item.id} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] p-3">
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -200,8 +197,28 @@ export function EvidenceSheet({
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <MetaBadge meta={item.withdrawnAt ? { label: "Retirada", variant: "outline" } : { label: "Vigente", variant: "success" }} />
+                        {openHref && (
+                          <a
+                            href={openHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={`Abrir ${label}`}
+                            className="text-sm font-medium text-[var(--color-primary)] underline-offset-2 hover:underline"
+                          >
+                            Abrir
+                          </a>
+                        )}
+                        {downloadHref && (
+                          <a
+                            href={downloadHref}
+                            aria-label={`Descargar ${label}`}
+                            className="text-sm font-medium text-[var(--color-primary)] underline-offset-2 hover:underline"
+                          >
+                            Descargar
+                          </a>
+                        )}
                         {canExecute && !item.withdrawnAt && (
                           <Button
                             type="button"
@@ -243,6 +260,7 @@ export function EvidenceSheet({
                   // Sin descripción escrita, el rótulo es el nombre original del
                   // archivo: es el mismo contrato que el diálogo de registro.
                   () => addOccurrenceEvidenceAction({
+                    ...matrixInput,
                     recordId: record!.id,
                     evidenceUploadId: path,
                     description: description.trim() || originalName.trim() || null,
@@ -258,8 +276,8 @@ export function EvidenceSheet({
           <p className="text-xs text-[var(--color-text-subtle)]">
             Retirar una evidencia no borra el archivo: queda guardado y marcado con el motivo, porque de él puede depender una fiscalización.
           </p>
-        </SheetBody>
-      </SheetContent>
+        </div>
+      </DialogContent>
 
       <ConfirmDialog
         open={withdrawTarget !== null}
@@ -268,13 +286,14 @@ export function EvidenceSheet({
         description={withdrawTarget ? `${evidenceLabel(withdrawTarget)} deja de respaldar este registro. El archivo no se borra.` : ""}
         confirmLabel="Retirar evidencia"
         variant="warning"
+        loading={withdrawOperation.pending}
         reasonLabel="Motivo del retiro"
         reasonPlaceholder="Por qué se retira la evidencia (al menos 10 caracteres)"
-        onConfirm={(reason) => operation.run(
-          () => withdrawOccurrenceEvidenceAction({ evidenceId: withdrawTarget!.id, reason }),
+        onConfirm={(reason) => withdrawOperation.run(
+          () => withdrawOccurrenceEvidenceAction({ ...matrixInput, evidenceId: withdrawTarget!.id, reason }),
           () => { setWithdrawTarget(null); onChanged() },
         )}
       />
-    </Sheet>
+    </Dialog>
   )
 }

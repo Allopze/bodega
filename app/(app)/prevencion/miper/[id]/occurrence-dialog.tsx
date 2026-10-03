@@ -34,6 +34,7 @@ export function OccurrenceDialog({
   occurrence,
   alreadyRecorded,
   onRecorded,
+  matrixId,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -42,6 +43,8 @@ export function OccurrenceDialog({
   /** Si ya tiene un registro vigente, se avisa que esto agrega uno nuevo. */
   alreadyRecorded: boolean
   onRecorded: () => void
+  /** La MIPER: la acción revalida su página leyéndolo del input crudo. */
+  matrixId?: string
 }) {
   const [outcome, setOutcome] = React.useState<string>("done")
   const [effectiveOn, setEffectiveOn] = React.useState("")
@@ -81,6 +84,7 @@ export function OccurrenceDialog({
     const notes = String(form.get("notes") ?? "").trim()
     const done = outcome === "done"
     operation.run(() => recordOccurrenceAction({
+      ...(matrixId ? { matrixId } : {}),
       occurrenceId: occurrence.id,
       outcome,
       effectiveOn: done ? effectiveOn : null,

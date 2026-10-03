@@ -5,6 +5,7 @@ import { ShellHeaderProvider } from "@/components/layout/header-context"
 import { taskKeyOf } from "@/lib/prevention/miper/matrix-tree"
 import type { MiperEntrySnapshot, MiperHeaderSnapshot, SnapshotDiff } from "@/lib/prevention/miper/snapshot"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
+import type { ProgramWorkspace } from "@/lib/services/miper/program-queries"
 import type { MiperWorkspace } from "@/lib/services/miper/queries"
 
 const nav = vi.hoisted(() => ({ query: "" }))
@@ -15,9 +16,10 @@ vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn(), info:
 const listMiperWorksiteTargetsAction = vi.hoisted(() => vi.fn())
 vi.mock("../actions", () => ({
   addMiperObservationAction: vi.fn(), addOccurrenceEvidenceAction: vi.fn(), applyProgramGenerationAction: vi.fn(),
+  bulkAddMiperControlAction: vi.fn(), bulkPatchMiperEntriesAction: vi.fn(), bulkUpdateMiperControlsAction: vi.fn(),
   approveMiperFinalAction: vi.fn(), approveMiperTechnicalAction: vi.fn(), deleteMiperControlAction: vi.fn(),
   deleteMiperEntryAction: vi.fn(), discardMiperDraftAction: vi.fn(), duplicateMiperEntryAction: vi.fn(),
-  listMiperWorksiteTargetsAction, loadOccurrenceDetailAction: vi.fn(), loadProgramWorkspaceAction: vi.fn(), openMiperRoundAction: vi.fn(),
+  listMiperWorksiteTargetsAction, openMiperRoundAction: vi.fn(),
   proposeProgramActionsAction: vi.fn(), recordOccurrenceAction: vi.fn(), reopenMiperObservationAction: vi.fn(),
   requestMiperCorrectionsAction: vi.fn(), resolveMiperObservationAction: vi.fn(), respondMiperObservationAction: vi.fn(),
   retireProgramActionAction: vi.fn(), returnMiperAction: vi.fn(), saveMiperControlAction: vi.fn(),
@@ -25,6 +27,11 @@ vi.mock("../actions", () => ({
   submitMiperAction: vi.fn(), updateMiperHeaderAction: vi.fn(), uploadProgramEvidenceAction: vi.fn(),
   voidOccurrenceRecordAction: vi.fn(), withdrawOccurrenceEvidenceAction: vi.fn(),
 }))
+
+// El detalle de la actividad y sus acciones son de otro módulo: aquí sólo importa que el árbol los monte.
+vi.mock("./program-activity-view", () => ({ ProgramActivityView: ({ action }: { action: { id: string } }) => <p>detalle {action.id}</p> }))
+vi.mock("./program-actions", () => ({ loadProgramActionDetailAction: vi.fn() }))
+vi.mock("./history-actions", () => ({ loadMiperHistoryPageAction: vi.fn() }))
 
 import { MiperWorkspaceView } from "./miper-workspace"
 
@@ -41,7 +48,9 @@ const entry = (overrides: Partial<MiperEntrySnapshot> = {}): MiperEntrySnapshot 
 const editMode: WorkspaceMode = { canEdit: true, canReviewTechnical: false, canApproveLegal: false, canObserve: false, canRespond: false, isSubmitter: false, canExecuteProgram: false, readOnlyReason: null }
 /** Lo que `getMiperWorkspace` entrega para un borrador nunca aprobado: todo «agregado» contra nada. */
 const allAdded: SnapshotDiff = { headerFields: [], entries: [{ kind: "added", entryId: "e1", rowNumber: 1, fields: [] }], hasChanges: true }
-const NO_PROGRAM = { done: 0, late: 0, pending: 0, overdue: 0, failed: 0, planned: 0, ratio: null }
+const NO_PROGRESS = { done: 0, late: 0, pending: 0, overdue: 0, failed: 0, planned: 0, ratio: null }
+/** Un `ProgramWorkspace` mínimo: sin programa creado, sin actividades. */
+const programOf = (overrides: Partial<ProgramWorkspace> = {}): ProgramWorkspace => ({ program: null, actions: [], proposals: null, progress: NO_PROGRESS, processes: [], ...overrides })
 
 function workspaceOf(overrides: Partial<MiperWorkspace> = {}): MiperWorkspace {
   return {
@@ -57,9 +66,9 @@ function workspaceOf(overrides: Partial<MiperWorkspace> = {}): MiperWorkspace {
   } as unknown as MiperWorkspace
 }
 
-function show(query: string, workspace = workspaceOf(), mode = editMode) {
+function show(query: string, workspace = workspaceOf(), mode = editMode, program = programOf()) {
   nav.query = query
-  return render(<ShellHeaderProvider><MiperWorkspaceView workspace={workspace} history={[]} mode={mode} userId="u1" programProgress={NO_PROGRAM} /></ShellHeaderProvider>)
+  return render(<ShellHeaderProvider><MiperWorkspaceView workspace={workspace} history={{ events: [], nextCursor: null }} mode={mode} userId="u1" program={program} /></ShellHeaderProvider>)
 }
 
 const TASK = `tarea=${taskKeyOf({ activity: "Transporte", task: "Carga" })}`
@@ -201,6 +210,21 @@ describe("MiperWorkspaceView — pestaña Resumen (Fase B)", () => {
     expect(screen.getByRole("link", { name: "Siguiente pendiente" })).toBeTruthy()
     expect(screen.queryByRole("link", { name: "Ver los pendientes" })).toBeNull()
     expect(screen.getByRole("link", { name: /^Riesgos completos/ }).getAttribute("href")).toBe("/prevencion/miper/m1?completitud=pendientes")
+  })
+})
+
+describe("MiperWorkspaceView — programa por props (Fase E)", () => {
+  it("el Resumen muestra el avance de program.progress", () => {
+    show("tab=resumen", workspaceOf(), editMode, programOf({ progress: { done: 1, late: 0, pending: 1, overdue: 0, failed: 0, planned: 2, ratio: 0.5 } }))
+    expect(screen.getByRole("link", { name: /^Avance del programa/ })).toHaveTextContent("50%")
+  })
+
+  it("con ?actividad= la pestaña activa es Programa", () => {
+    const action = { id: "a1", actionNumber: 1, status: "active", occurrences: [], controls: [], progress: NO_PROGRESS } as unknown as ProgramWorkspace["actions"][number]
+    const programHeader = { id: "p1", version: 1 } as unknown as NonNullable<ProgramWorkspace["program"]>
+    show("actividad=a1", workspaceOf(), editMode, programOf({ program: programHeader, actions: [action] }))
+    expect(screen.getByRole("tab", { name: "Programa", selected: true })).toBeTruthy()
+    expect(screen.getByText("detalle a1")).toBeTruthy()
   })
 })
 

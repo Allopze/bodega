@@ -1,10 +1,9 @@
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
-import { db } from "@/db"
 import { can, requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { resolveWorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
-import { getProgramProgress } from "@/lib/services/miper/program-execution"
+import { getProgramWorkspace, type ProgramWorkspace } from "@/lib/services/miper/program-queries"
 import { getMiperHistory, getMiperWorkspace } from "@/lib/services/miper/queries"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { scopeAllows } from "@/lib/services/miper/shared"
@@ -20,8 +19,12 @@ export default async function MiperWorkspacePage({ params }: { params: Promise<{
   const access = { userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
   let workspace: Awaited<ReturnType<typeof getMiperWorkspace>>
   let history: Awaited<ReturnType<typeof getMiperHistory>>
+  let program: ProgramWorkspace
+  // Las tres autorizan solas (`requireAccess` + `scopeAllows`), por eso van en paralelo.
   try {
-    ;[workspace, history] = await Promise.all([getMiperWorkspace(id, access), getMiperHistory(id, access)])
+    ;[workspace, history, program] = await Promise.all([
+      getMiperWorkspace(id, access), getMiperHistory(id, access), getProgramWorkspace(id, access),
+    ])
   } catch (error) {
     if (error instanceof RiskLegalDomainError) notFound()
     throw error
@@ -31,10 +34,5 @@ export default async function MiperWorkspacePage({ params }: { params: Promise<{
     openRoundStage: workspace.openRound?.stage ?? null, submittedByUserId: workspace.openRound?.submittedByUserId ?? null,
     userId: session.user.id, permissions: session.user.permissions, inScope: scopeAllows(access.scope, workspace.matrix.worksiteId),
   })
-  /* Avance del programa para la pestaña Resumen (Fase B). Va DESPUÉS de
-   * autorizar (`getMiperWorkspace`), porque `getProgramProgress` no controla
-   * acceso. La Fase E lo reemplaza por `getProgramWorkspace().progress`, cuando
-   * el programa se cargue en esta página. */
-  const { program: programProgress } = await getProgramProgress(db, workspace.matrix.id)
-  return <MiperWorkspaceView workspace={workspace} history={history} mode={mode} userId={session.user.id} programProgress={programProgress} />
+  return <MiperWorkspaceView workspace={workspace} history={history} mode={mode} userId={session.user.id} program={program} />
 }

@@ -67,3 +67,11 @@ export function firstPendingBySeverity(rows: readonly MiperEntrySnapshot[], inco
   pending.sort((a, b) => (SEVERITY[a.classification ?? ""] ?? 4) - (SEVERITY[b.classification ?? ""] ?? 4) || a.rowNumber - b.rowNumber)
   return pending[0]?.id ?? null
 }
+
+/** El siguiente riesgo dentro de `scope`, por N° y dando la vuelta; nunca el actual. `null` si no hay otro. */
+export function nextInScopeId(rows: readonly MiperEntrySnapshot[], currentId: string, scope: ReadonlySet<string>): string | null {
+  const candidates = [...rows].sort(byRow).filter((row) => scope.has(row.id) && row.id !== currentId)
+  if (candidates.length === 0) return null
+  const currentRow = rows.find((row) => row.id === currentId)?.rowNumber ?? 0
+  return (candidates.find((row) => row.rowNumber > currentRow) ?? candidates[0]!).id
+}

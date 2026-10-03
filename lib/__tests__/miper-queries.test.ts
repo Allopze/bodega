@@ -78,9 +78,46 @@ describe("consultas MIPER", () => {
     expect((await listMiperPortfolio(autoraQueRevisa)).rows.find((row) => row.worksiteId === "ws-q")!.myActions).toEqual([])
   })
   it("el historial lista eventos con actor y capacidad", async () => {
-    const events = await q.getMiperHistory(matrixId, author)
+    const { events } = await q.getMiperHistory(matrixId, author)
     expect(events.map((e) => e.changeType)).toEqual(expect.arrayContaining(["created", "entry_created"]))
     expect(events.find((e) => e.changeType === "created")).toMatchObject({ actorName: "Prevencionista Q", actingAs: "prevention:risk:edit" })
+  })
+  it("pagina de a 50 sin repetir ni saltar, también con eventos del mismo instante", async () => {
+    // Una MIPER propia para no alterar los eventos de las demás pruebas.
+    const own = await createMiper({ worksiteId: "ws-q", period: 2031, revisionReason: "Período para paginar la bitácora." }, author)
+    // Lo que `createMiper` ya registró (más viejo que lo sembrado) cierra la última página.
+    const own0 = (await q.getMiperHistory(own.id, author)).events.length
+    const base = Date.UTC(2031, 0, 1, 12, 0, 0)
+    // 120 eventos: 40 comparten el mismo instante (a la mitad del orden).
+    const events = Array.from({ length: 120 }, (_, index) => {
+      const slot = index < 40 ? index : index < 80 ? 40 : index - 39
+      return { id: `hist-${String(index).padStart(3, "0")}`, action: "update", entityType: "risk_legal:risk:miper", entityId: own.id, newState: JSON.stringify({ changeType: "entry_updated" }), createdAt: new Date(base + slot * 1000).toISOString() }
+    })
+    await testDb.insert(schema.auditLog).values(events)
+    const first = await q.getMiperHistory(own.id, author)
+    expect(first.events).toHaveLength(q.MIPER_HISTORY_PAGE_SIZE)
+    expect(first.nextCursor).not.toBeNull()
+    const second = await q.getMiperHistory(own.id, author, { cursor: first.nextCursor })
+    expect(second.events).toHaveLength(50)
+    expect(second.nextCursor).not.toBeNull()
+    const third = await q.getMiperHistory(own.id, author, { cursor: second.nextCursor })
+    expect(third.events).toHaveLength(20 + own0)
+    expect(third.nextCursor).toBeNull()
+    const ids = [...first.events, ...second.events, ...third.events].map((event) => event.id)
+    expect(new Set(ids).size).toBe(120 + own0)
+    // Orden estable: del más nuevo al más viejo, con el id desempatando.
+    expect(ids.slice(0, 120)).toEqual([...events].sort((a, b) => (a.createdAt === b.createdAt ? b.id.localeCompare(a.id) : b.createdAt.localeCompare(a.createdAt))).map((event) => event.id))
+    expect(own0).toBeLessThanOrEqual(30)
+  })
+  it("un cursor ilegible se rechaza", async () => {
+    await expect(q.getMiperHistory(matrixId, author, { cursor: "no-es-un-cursor" })).rejects.toThrow(/No se pudo leer la página siguiente/)
+    const wrongShape = Buffer.from(JSON.stringify([1, 2])).toString("base64url")
+    await expect(q.getMiperHistory(matrixId, author, { cursor: wrongShape })).rejects.toThrow(/No se pudo leer la página siguiente/)
+  })
+  it("el historial fuera de alcance rechaza antes de leer", async () => {
+    await expect(q.getMiperHistory(matrixId, outsider)).rejects.toThrow(/fuera de alcance/)
+    // Ni siquiera un cursor ilegible llega a decodificarse: manda el alcance.
+    await expect(q.getMiperHistory(matrixId, outsider, { cursor: "basura" })).rejects.toThrow(/fuera de alcance/)
   })
   it("la cadena de períodos de la faena trae los otros MIPER y excluye el propio", async () => {
     // Una segunda MIPER de la misma faena, en otro período (§8.5). Se crea acá y
@@ -92,7 +129,9 @@ describe("consultas MIPER", () => {
     expect(ids).not.toContain(matrixId)
     const other = ws.siblingMatrices.find((item) => item.id === sibling.id)!
     expect(other).toMatchObject({ period: 2027, label: "Borrador" })
-    // Ordenadas por período descendente: el período nuevo va primero.
-    expect(ws.siblingMatrices[0]!.id).toBe(sibling.id)
+    // Ordenadas por período descendente (otras pruebas del archivo pueden haber
+    // creado MIPER de la misma faena: se afirma el orden, no la posición).
+    const periods = ws.siblingMatrices.map((item) => item.period ?? 0)
+    expect(periods).toEqual([...periods].sort((a, b) => b - a))
   })
 })

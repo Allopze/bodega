@@ -1,0 +1,60 @@
+// @vitest-environment jsdom
+import { cleanup, render, screen, within } from "@testing-library/react"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
+import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
+import type { MiperObservationView, MiperWorkspace } from "@/lib/services/miper/queries"
+
+const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }))
+vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/prevencion/miper/m1", useSearchParams: () => new URLSearchParams("tab=revision") }))
+vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }))
+vi.mock("../actions", () => ({
+  addMiperObservationAction: vi.fn(), reopenMiperObservationAction: vi.fn(), resolveMiperObservationAction: vi.fn(), respondMiperObservationAction: vi.fn(),
+}))
+
+import { ReviewPanel } from "./review-panel"
+
+const row = (id: string, rowNumber: number, classification: MiperEntrySnapshot["classification"]) => ({
+  id, rowNumber, activity: "A", task: "T", position: null, location: null, exposedFemale: 0, exposedMale: 0, exposedOther: 0,
+  riskFactorId: null, riskFactor: null, isRoutine: null, hazard: `Peligro ${rowNumber}`, risk: null, probableDamage: null, probability: null,
+  consequence: null, magnitude: null, classification, controlledStatus: null, controls: [],
+}) as MiperEntrySnapshot
+const rows = [row("e1", 1, "tolerable"), row("e2", 2, "important"), row("e3", 3, "intolerable")]
+const mode = { canEdit: false, canReviewTechnical: false, canApproveLegal: false, canObserve: false, canRespond: false, isSubmitter: false, canExecuteProgram: false, readOnlyReason: null } as WorkspaceMode
+const observation = { id: "o1", matrixId: "m1", entryId: "e2", entryLabel: "#2 Peligro 2", status: "open", stage: "technical", body: "Falta la medida", response: null, createdAt: "2026-10-01T12:00:00.000Z", authorName: "Revisora", responderName: null } as unknown as MiperObservationView
+const workspace = (observations: MiperObservationView[] = []) => ({ openRound: null, observations, matrix: { id: "m1" } }) as unknown as MiperWorkspace
+
+afterEach(cleanup)
+
+describe("ReviewPanel: recorrer la MIPER", () => {
+  it("tres enlaces con conteo; en cero, texto", () => {
+    const { unmount } = render(<ReviewPanel workspace={workspace()} mode={mode} onOpenEntry={vi.fn()} rows={rows} observed={new Set(["e3"])} modified={new Set(["e1"])} hasBaseline />)
+    const region = screen.getByRole("region", { name: "Recorrer la MIPER" })
+    const critical = within(region).getByRole("link", { name: "Importantes e Intolerables (2)" })
+    expect(within(region).getByRole("link", { name: "Modificados (1)" })).toBeTruthy()
+    expect(within(region).getByRole("link", { name: "Observados (1)" })).toBeTruthy()
+    // Abre el editor en el primero del filtro, con el filtro en la URL.
+    const params = new URLSearchParams(critical.getAttribute("href")!.split("?")[1])
+    expect(params.get("fila")).toBe("e2")
+    expect(params.get("clasificacion")).toBe("important,intolerable")
+    unmount()
+    render(<ReviewPanel workspace={workspace()} mode={mode} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline />)
+    const empty = screen.getByRole("region", { name: "Recorrer la MIPER" })
+    expect(within(empty).queryByRole("link", { name: /Observados/ })).toBeNull()
+    expect(within(empty).getByText("Sin observados")).toBeTruthy()
+    expect(within(empty).getByText("Sin modificados")).toBeTruthy()
+  })
+
+  it("sin línea base no hay «Modificados»", () => {
+    render(<ReviewPanel workspace={workspace()} mode={mode} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set(["e1"])} hasBaseline={false} />)
+    expect(screen.queryByText(/Modificados/)).toBeNull()
+  })
+
+  it("la observación de un riesgo enlaza a su paso de seguimiento", () => {
+    render(<ReviewPanel workspace={workspace([observation])} mode={mode} onOpenEntry={vi.fn()} rows={rows} observed={new Set(["e2"])} modified={new Set()} hasBaseline={false} />)
+    const link = screen.getByRole("link", { name: "#2 Peligro 2" })
+    const params = new URLSearchParams(link.getAttribute("href")!.split("?")[1])
+    expect(params.get("fila")).toBe("e2")
+    expect(params.get("paso")).toBe("seguimiento")
+  })
+})

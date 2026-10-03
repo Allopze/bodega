@@ -86,7 +86,8 @@ export function GenerateActionsDialog({
   /** Actividades activas del programa, para asociar medidas a una existente. */
   actions: ProgramActionView[]
   trigger: React.ReactNode
-  onApplied: () => void
+  /** Opcional: la acción revalida la ruta y llega un `program` nuevo por props. */
+  onApplied?: () => void
 }) {
   const [open, setOpen] = React.useState(false)
   const [loading, setLoading] = React.useState(false)
@@ -155,7 +156,7 @@ export function GenerateActionsDialog({
       operation.setMessage("Indica qué hacer con al menos una medida, o asóciala a una actividad existente.")
       return
     }
-    operation.run(() => applyProgramGenerationAction({ matrixId, decisions }), () => { setOpen(false); onApplied() })
+    operation.run(() => applyProgramGenerationAction({ matrixId, decisions }), () => { setOpen(false); onApplied?.() })
   }
 
   return (

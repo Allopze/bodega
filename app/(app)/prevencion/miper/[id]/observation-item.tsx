@@ -1,14 +1,17 @@
 "use client"
 
 import { useState } from "react"
+import { usePathname, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { STAGE_LABEL } from "@/lib/prevention/miper/states"
+import { hrefToEntry } from "@/lib/prevention/miper/workspace-url"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
 import type { MiperObservationView } from "@/lib/services/miper/queries"
 import { formatDateTime } from "@/lib/utils"
 import { reopenMiperObservationAction, resolveMiperObservationAction, respondMiperObservationAction } from "../actions"
+import { WorkspaceLink } from "./workspace-nav"
 
 const STATUS_TEXT: Record<string, { label: string; className: string }> = {
   open: { label: "Abierta", className: "bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)]" },
@@ -16,7 +19,9 @@ const STATUS_TEXT: Record<string, { label: string; className: string }> = {
   resolved: { label: "Resuelta", className: "bg-[var(--color-success-tint)] text-[var(--color-success-ink)]" },
 }
 
-export function ObservationItem({ observation, mode, onOpenEntry, onChanged }: { observation: MiperObservationView; mode: WorkspaceMode; onOpenEntry?: (entryId: string) => void; onChanged: () => void }) {
+export function ObservationItem({ observation, mode, onChanged }: { observation: MiperObservationView; mode: WorkspaceMode; /** Ya no se usa: el riesgo se abre con un enlace. Se acepta para no romper a quien aún lo pasa. */ onOpenEntry?: (entryId: string) => void; onChanged: () => void }) {
+  const pathname = usePathname()
+  const params = useSearchParams()
   const [response, setResponse] = useState("")
   const operation = useOperation({ feedback: "toast", onSuccess: onChanged })
   const status = STATUS_TEXT[observation.status] ?? STATUS_TEXT.open!
@@ -26,8 +31,8 @@ export function ObservationItem({ observation, mode, onOpenEntry, onChanged }: {
     <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm" aria-label={`Observación ${observation.entryLabel ?? "general"}`}>
       <header className="flex flex-wrap items-center gap-2">
         <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${status.className}`}>{status.label}</span>
-        {entryId && onOpenEntry
-          ? <button type="button" className="font-medium underline-offset-2 hover:underline" onClick={() => onOpenEntry(entryId)}>{observation.entryLabel}</button>
+        {entryId
+          ? <WorkspaceLink href={hrefToEntry(pathname, params, entryId, "seguimiento")} className="font-medium underline-offset-2 hover:underline">{observation.entryLabel}</WorkspaceLink>
           : <span className="font-medium">{observation.entryLabel ?? "Observación general"}</span>}
         <span className="text-xs text-[var(--color-text-subtle)]">{STAGE_LABEL[observation.stage as keyof typeof STAGE_LABEL]} · {observation.authorName} · {formatDateTime(observation.createdAt)}</span>
       </header>

@@ -1,7 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
-import { usePathname } from "next/navigation"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field } from "@/components/ui/field"
@@ -9,31 +8,12 @@ import { FilterToolbar } from "@/components/ui/filter-toolbar"
 import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { activeFilterCount, type GridFilters } from "@/lib/prevention/miper/grid-view"
-import { matrixFilterChips, matrixFilterPatch } from "@/lib/prevention/miper/matrix-filters"
+import { MATRIX_FILTER_KEYS, matrixFilterChips, matrixFilterPatch, type MatrixFilterKey } from "@/lib/prevention/miper/matrix-filters"
 import { CLASSIFICATION_LABEL, RISK_CLASSIFICATIONS } from "@/lib/prevention/miper/methodology"
-import { navigateWorkspace } from "./workspace-nav"
+import { useWorkspaceFilterNavigation } from "./use-workspace-filter-navigation"
 
-/**
- * Cambia los filtros de la URL sin ida al servidor (`router.replace` costaba un
- * fetch RSC por cambio o por tecla): arma la URL aquí y la aplica con
- * `navigateWorkspace(..., "replace")`. Parte de la URL **vigente**
- * (`window.location.search`), no de la del último render: dos cambios seguidos
- * —la búsqueda con su espera de 300 ms y un chip— no se pisan (A2, fila 15).
- */
-export function useMatrixFilterNavigation() {
-  const pathname = usePathname()
-  const setFilters = useCallback((patch: Record<string, string | null>) => {
-    const next = new URLSearchParams(window.location.search)
-    for (const [key, value] of Object.entries(patch)) {
-      if (value === null) next.delete(key)
-      else next.set(key, value)
-    }
-    const query = next.toString()
-    navigateWorkspace(query ? `${pathname}?${query}` : pathname, "replace")
-  }, [pathname])
-  const setFilter = useCallback((key: string, value: string | null) => setFilters({ [key]: value }), [setFilters])
-  return { setFilters, setFilter }
-}
+/** Los filtros de la matriz en la URL (la mecánica vive en `useWorkspaceFilterNavigation`). */
+export const useMatrixFilterNavigation = () => useWorkspaceFilterNavigation(MATRIX_FILTER_KEYS)
 
 /**
  * Barra de la matriz (spec §5.1, regla A2): búsqueda propia y «Contraer todo»
@@ -62,7 +42,7 @@ export function MatrixFiltersBar({ filters: parsed, riskFactors, hasBaseline, co
       // Sin chip de búsqueda, una búsqueda sola no dejaría «Limpiar filtros» a mano (A2, fila 7).
       hasActiveFilters={filtered}
       activeCount={activeFilterCount(filters) - (filters.search ? 1 : 0)}
-      onRemoveChip={(key) => setFilter(key, null)}
+      onRemoveChip={(key) => setFilter(key as MatrixFilterKey, null)}
       onClearAll={() => { setSearch(""); setFilters(matrixFilterPatch({ ...filters, search: "", classifications: [], controlled: "all", factorId: "all", onlyObserved: false, onlyModified: false, onlyIncomplete: false, onlyComplete: false })) }}
       actions={<Button variant="secondary" size="sm" onClick={onToggleAll} disabled={filtered}>{collapsedAll ? "Expandir todo" : "Contraer todo"}</Button>}
       overflowFilters={(

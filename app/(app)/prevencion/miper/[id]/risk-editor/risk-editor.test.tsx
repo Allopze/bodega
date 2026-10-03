@@ -268,6 +268,21 @@ describe("RiskEditor", () => {
     expect(screen.getByText("No quedan otros riesgos pendientes en este filtro.")).toBeTruthy()
   })
 
+  it("el revisor con filtro ve Siguiente del filtro y quien edita ve Siguiente pendiente", () => {
+    const scope = new Set(["e1", "e3"])
+    const { unmount } = render(<RiskEditor {...props({ editable: false, matching: scope, step: "seguimiento" })} />)
+    // Conserva el paso en el que va el revisor.
+    expect(screen.getByRole("link", { name: "Siguiente del filtro" }).getAttribute("href")).toBe("/prevencion/miper/m1?fila=e3&paso=seguimiento")
+    expect(screen.queryByRole("link", { name: "Siguiente pendiente" })).toBeNull()
+    unmount()
+    const solo = render(<RiskEditor {...props({ editable: false, matching: new Set(["e1"]) })} />)
+    expect(screen.queryByRole("link", { name: "Siguiente del filtro" })).toBeNull()
+    expect(screen.getByText("No hay otros riesgos en este filtro.")).toBeTruthy()
+    solo.unmount()
+    render(<RiskEditor {...props({ editable: true, matching: scope })} />)
+    expect(screen.getByRole("link", { name: "Siguiente pendiente" })).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "Siguiente del filtro" })).toBeNull()
+  })
   it("en los extremos de la tarea, «‹ Anterior» y «Siguiente ›» quedan como botones deshabilitados", () => {
     const { unmount } = render(<RiskEditor {...props()} />)
     expect(screen.getByRole("button", { name: "‹ Anterior" })).toBeDisabled()

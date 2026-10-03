@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { hrefToEntry, hrefToFicha, hrefToMatrix, hrefToMatrixOnly, hrefToMatrixWith, hrefToProgramOnly, hrefToTab, hrefToTask, PROGRAM_FILTER_KEYS, readWorkspaceView } from "./workspace-url"
+import { hrefToActivity, hrefToEntry, hrefToFicha, hrefToMatrix, hrefToMatrixOnly, hrefToMatrixWith, hrefToProgramOnly, hrefToTab, hrefToTask, PROGRAM_FILTER_KEYS, readWorkspaceView } from "./workspace-url"
 
 const P = "/prevencion/miper/m1"
 const params = (query: string) => new URLSearchParams(query)
 
 describe("vistas del espacio de trabajo", () => {
   it("fila > tarea > pestaña; la matriz es la pestaña por defecto", () => {
-    expect(readWorkspaceView(params("tab=programa&fila=e1&paso=medidas"))).toEqual({ tab: "matriz", taskKey: null, entryId: "e1", step: "medidas", ficha: false })
+    expect(readWorkspaceView(params("tab=programa&fila=e1&paso=medidas"))).toEqual({ tab: "matriz", taskKey: null, entryId: "e1", activityId: null, step: "medidas", ficha: false })
     expect(readWorkspaceView(params("tarea=k1"))).toMatchObject({ tab: "matriz", taskKey: "k1", entryId: null })
     expect(readWorkspaceView(params("tab=nada"))).toMatchObject({ tab: "matriz" })
     expect(readWorkspaceView(params("paso=x&fila=e1")).step).toBeNull()
@@ -49,5 +49,25 @@ describe("vistas del espacio de trabajo", () => {
     const current = params("estado=vencidas&q=bomba&tab=resumen&buscar=lodo&frecuencia=monthly&tarea=k1")
     expect(hrefToProgramOnly(P, current)).toBe(`${P}?buscar=lodo&tab=programa`)
     expect(hrefToProgramOnly(P, params(""))).toBe(`${P}?tab=programa`)
+  })
+})
+
+describe("actividad del programa (?actividad=)", () => {
+  it("fila gana sobre actividad y actividad sobre tarea", () => {
+    expect(readWorkspaceView(params("fila=e1&actividad=a1&tarea=k1"))).toMatchObject({ entryId: "e1", activityId: null, taskKey: null, tab: "matriz" })
+    expect(readWorkspaceView(params("actividad=a1&tarea=k1"))).toMatchObject({ entryId: null, activityId: "a1", taskKey: null })
+  })
+  it("con actividad la pestaña es programa aunque diga otra", () => {
+    expect(readWorkspaceView(params("tab=revision&actividad=a1"))).toMatchObject({ tab: "programa", activityId: "a1" })
+  })
+  it("hrefToActivity limpia fila, tarea y paso y conserva los filtros", () => {
+    expect(hrefToActivity(P, params("fila=e1&paso=medidas&tarea=k1&estado=activas&q=lodo"), "a9")).toBe(`${P}?estado=activas&q=lodo&tab=programa&actividad=a9`)
+  })
+  it("hrefToTab, hrefToEntry y hrefToProgramOnly limpian actividad", () => {
+    const current = params("tab=programa&actividad=a1&estado=activas")
+    // `set` deja `tab` en su lugar: el orden de la query no cambia el significado.
+    expect(hrefToTab(P, current, "programa")).toBe(`${P}?tab=programa&estado=activas`)
+    expect(hrefToEntry(P, current, "e1")).toBe(`${P}?estado=activas&fila=e1`)
+    expect(hrefToProgramOnly(P, current)).toBe(`${P}?tab=programa`)
   })
 })

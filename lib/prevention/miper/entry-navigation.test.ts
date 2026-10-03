@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { CompletenessIssue } from "./completeness"
-import { errorCountByStep, firstPendingBySeverity, firstStepWithErrors, isEditorStep, nextPendingId, siblingsInTask, stepOfField } from "./entry-navigation"
+import { errorCountByStep, firstPendingBySeverity, firstStepWithErrors, isEditorStep, nextInScopeId, nextPendingId, siblingsInTask, stepOfField } from "./entry-navigation"
 import type { MiperEntrySnapshot } from "./snapshot"
 
 const row = (id: string, rowNumber: number, overrides: Partial<MiperEntrySnapshot> = {}) => ({
@@ -52,5 +52,21 @@ describe("recorrido", () => {
     expect(nextPendingId(rows, null, new Set(["c", "b"]), null)).toBe("b")
     expect(nextPendingId(rows, null, new Set(["c", "b"]), new Set(["c"]))).toBe("c")
     expect(nextPendingId(rows, null, new Set(), null)).toBeNull()
+  })
+})
+
+describe("nextInScopeId", () => {
+  const rows = [row("a", 1), row("b", 2), row("c", 3), row("d", 4)]
+  it("nextInScopeId sigue el orden, da la vuelta y no devuelve el actual", () => {
+    const scope = new Set(["a", "c", "d"])
+    expect(nextInScopeId(rows, "a", scope)).toBe("c")
+    expect(nextInScopeId(rows, "c", scope)).toBe("d")
+    // Da la vuelta al final.
+    expect(nextInScopeId(rows, "d", scope)).toBe("a")
+    // Desde un riesgo que no está en el filtro: el siguiente en el orden que sí lo está.
+    expect(nextInScopeId(rows, "b", scope)).toBe("c")
+    // Nunca el actual: si es el único del filtro, no hay otro.
+    expect(nextInScopeId(rows, "a", new Set(["a"]))).toBeNull()
+    expect(nextInScopeId(rows, "a", new Set())).toBeNull()
   })
 })
