@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react"
+import { render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ShellHeaderProvider } from "@/components/layout/header-context"
 import { taskKeyOf } from "@/lib/prevention/miper/matrix-tree"
@@ -159,12 +159,13 @@ describe("MiperWorkspaceView — plurales del aviso Intolerable", () => {
   const intolerable = (id: string, n: number) => entry({ id, rowNumber: n, classification: "intolerable" })
   it("uno: singular", () => {
     show("", workspaceOf({ snapshot: { header, entries: [intolerable("e1", 1)] } } as unknown as Partial<MiperWorkspace>))
-    expect(screen.getByRole("alert").textContent).toContain("1 riesgo Intolerable")
+    // Título exacto: `toContain("1 riesgo Intolerable")` también aceptaría «1 riesgo Intolerables».
+    expect(within(screen.getByRole("alert")).getByText("1 riesgo Intolerable", { exact: true })).toBeTruthy()
     expect(screen.getByRole("alert").textContent).not.toContain("(s)")
   })
   it("varios: plural", () => {
     show("", workspaceOf({ snapshot: { header, entries: [intolerable("e1", 1), intolerable("e2", 2)] } } as unknown as Partial<MiperWorkspace>))
-    expect(screen.getByRole("alert").textContent).toContain("2 riesgos Intolerables")
+    expect(within(screen.getByRole("alert")).getByText("2 riesgos Intolerables", { exact: true })).toBeTruthy()
   })
 })
 
