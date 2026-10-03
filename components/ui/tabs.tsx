@@ -15,13 +15,24 @@ const TabsList = React.forwardRef<
   React.useImperativeHandle(forwardedRef, () => listRef.current as React.ElementRef<typeof TabsPrimitive.List>, [])
 
   const revealActiveTab = React.useCallback(() => {
-    const active = listRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+    const list = listRef.current
+    const active = list?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+    if (!list || !active) return
     // jsdom no implementa scrollIntoView, así que sin la guardia cualquier
     // prueba de componente que monte pestañas revienta al primer render con
     // "scrollIntoView is not a function" — y la pestaña sólo se revela para
     // hacerla alcanzable, nunca es un requisito de corrección.
-    if (typeof active?.scrollIntoView === "function") {
+    if (typeof active.scrollIntoView === "function") {
       active.scrollIntoView({ block: "nearest", inline: "nearest" })
+    }
+    // Si la tira no cabe (pasos del editor MIPER, pestañas a 390 px), la activa
+    // queda al centro y no pegada a un borde: se ven sus vecinas y el primer
+    // paso no queda recortado (QA MIPER Fase A, UX 1). Se mueve sólo la tira:
+    // `inline: "center"` desplazaría también los ancestros, pozo incluido.
+    if (list.scrollWidth > list.clientWidth) {
+      const listBox = list.getBoundingClientRect()
+      const activeBox = active.getBoundingClientRect()
+      list.scrollLeft += activeBox.left + activeBox.width / 2 - (listBox.left + listBox.width / 2)
     }
   }, [])
 

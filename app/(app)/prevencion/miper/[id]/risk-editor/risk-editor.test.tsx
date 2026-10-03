@@ -202,4 +202,14 @@ describe("RiskEditor", () => {
       sessionStorage.clear()
     }
   })
+
+  it("a < sm sólo el paso activo muestra su rótulo; los demás lo conservan para el lector de pantalla", () => {
+    render(<RiskEditor {...props({ step: "evaluacion" })} />)
+    const active = screen.getByRole("tab", { name: /Evaluación/, selected: true })
+    const inactive = screen.getByRole("tab", { name: /Identificación/ })
+    expect(within(active).getByText("Evaluación").className).not.toMatch(/max-sm:sr-only/)
+    expect(within(inactive).getByText("Identificación").className).toMatch(/max-sm:sr-only/)
+    // El nombre accesible del inactivo sigue completo: «1. Identificación…».
+    expect(inactive.textContent).toMatch(/^1\.\s*Identificación/)
+  })
 })

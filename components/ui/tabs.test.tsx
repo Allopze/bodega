@@ -42,4 +42,21 @@ describe("TabsList", () => {
       expect(scrollIntoView.mock.calls.length).toBeGreaterThan(callsBeforeSelection)
     })
   })
+
+  it("si la tira no cabe, centra la pestaña activa moviendo sólo la tira", async () => {
+    render(<ExampleTabs />)
+    const list = screen.getByRole("tablist", { name: "Secciones del ejemplo" })
+    // jsdom no tiene layout: se declara una tira de 300 px con 600 px de contenido.
+    Object.defineProperty(list, "scrollWidth", { configurable: true, value: 600 })
+    Object.defineProperty(list, "clientWidth", { configurable: true, value: 300 })
+    list.getBoundingClientRect = () => ({ left: 0, width: 300 }) as DOMRect
+    const third = screen.getByRole("tab", { name: "Tercera" })
+    third.getBoundingClientRect = () => ({ left: 400, width: 100 }) as DOMRect
+
+    // Radix activa la pestaña con mousedown (botón principal).
+    fireEvent.mouseDown(third)
+
+    // Centro de la activa (450) menos centro de la tira (150).
+    await vi.waitFor(() => expect(list.scrollLeft).toBe(300))
+  })
 })

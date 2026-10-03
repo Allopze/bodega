@@ -90,8 +90,10 @@ export function RiskEditor(props: RiskEditorProps) {
         <Tabs value={current} onValueChange={goToStep} className="min-w-0">
           <TabsList aria-label="Pasos del riesgo">
             {EDITOR_STEPS.map((value, index) => (
-              <TabsTrigger key={value} value={value}>
-                {index + 1}. {EDITOR_STEP_LABEL[value]}{value === "medidas" ? ` (${entry.controls.length})` : ""}
+              <TabsTrigger key={value} value={value} className="max-sm:px-2.5">
+                {index + 1}.{" "}
+                {/* A < sm los cuatro pasos no caben: el activo muestra su rótulo y los demás, sólo su número. El rótulo oculto queda `sr-only`: el nombre accesible no cambia (QA Fase A, UX 1). */}
+                <span className={value === current ? undefined : "max-sm:sr-only"}>{EDITOR_STEP_LABEL[value]}{value === "medidas" ? ` (${entry.controls.length})` : ""}</span>
                 {counts[value] > 0
                   ? <><span className="sr-only"> · </span><span className="ml-1.5 rounded-full bg-[var(--color-warning-tint)] px-1.5 tabular-nums text-[var(--color-warning-ink)]">{counts[value]}<span className="sr-only"> pendientes</span></span></>
                   : <span className="ml-1.5 text-[var(--color-success-ink)]"><span aria-hidden>✓</span><span className="sr-only"> · completo</span></span>}
