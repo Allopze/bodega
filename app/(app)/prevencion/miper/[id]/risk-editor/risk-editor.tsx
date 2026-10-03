@@ -13,6 +13,7 @@ import { taskKeyOf } from "@/lib/prevention/miper/matrix-tree"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 import { hrefToEntry, hrefToMatrix, hrefToTask } from "@/lib/prevention/miper/workspace-url"
 import { toast } from "@/lib/toast"
+import { cn, pluralize } from "@/lib/utils"
 import { deleteMiperEntryAction, duplicateMiperEntryAction } from "../../actions"
 import { beforeForwardNavigation } from "../workspace-memory"
 import { navigateWorkspace, WorkspaceLink } from "../workspace-nav"
@@ -93,9 +94,10 @@ export function RiskEditor(props: RiskEditorProps) {
               <TabsTrigger key={value} value={value} className="max-sm:px-2.5">
                 {index + 1}.{" "}
                 {/* A < sm los cuatro pasos no caben: el activo muestra su rótulo y los demás, sólo su número. El rótulo oculto queda `sr-only`: el nombre accesible no cambia (QA Fase A, UX 1). */}
-                <span className={value === current ? undefined : "max-sm:sr-only"}>{EDITOR_STEP_LABEL[value]}{value === "medidas" ? ` (${entry.controls.length})` : ""}</span>
+                {/* `ml-1` y no el espacio de «N. »: el paso es `inline-flex` y el navegador recorta ese espacio al final de su ítem anónimo («3.Medidas»). */}
+                <span className={cn("ml-1", value !== current && "max-sm:sr-only")}>{EDITOR_STEP_LABEL[value]}{value === "medidas" ? ` (${entry.controls.length})` : ""}</span>
                 {counts[value] > 0
-                  ? <><span className="sr-only"> · </span><span className="ml-1.5 rounded-full bg-[var(--color-warning-tint)] px-1.5 tabular-nums text-[var(--color-warning-ink)]">{counts[value]}<span className="sr-only"> pendientes</span></span></>
+                  ? <><span className="sr-only"> · </span><span className="ml-1.5 rounded-full bg-[var(--color-warning-tint)] px-1.5 tabular-nums text-[var(--color-warning-ink)]">{counts[value]}<span className="sr-only"> {pluralize(counts[value], "pendiente")}</span></span></>
                   : <span className="ml-1.5 text-[var(--color-success-ink)]"><span aria-hidden>✓</span><span className="sr-only"> · completo</span></span>}
               </TabsTrigger>
             ))}

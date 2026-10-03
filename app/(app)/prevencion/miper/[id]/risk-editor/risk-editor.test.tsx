@@ -217,6 +217,21 @@ describe("RiskEditor", () => {
     expect(within(inactive).getByText("Identificación").className).toMatch(/max-sm:sr-only/)
     // El nombre accesible del inactivo sigue completo: «1. Identificación…».
     expect(inactive.textContent).toMatch(/^1\.\s*Identificación/)
+    // El paso es `inline-flex`: el espacio de «2. » queda al final de su ítem anónimo y el
+    // navegador lo recorta («2.Evaluación», QA A2). La separación la da el margen del rótulo.
+    expect(within(active).getByText("Evaluación").className).toMatch(/(^|\s)ml-1(\s|$)/)
+  })
+
+  it("el conteo de pendientes del paso usa plural real en el nombre accesible", () => {
+    render(<RiskEditor {...props()} />)
+    // jsdom no inserta los espacios entre los `sr-only` como lo hace el navegador («· 1 pendiente»): `\s*`.
+    expect(screen.getByRole("tab", { name: /^3\. Medidas de control \(0\)\s*·\s*1\s*pendiente$/, selected: true })).toBeTruthy()
+    const two = new Map([["e1", [
+      { scope: "entry", entryId: "e1", field: "controls", message: "Un riesgo Importante o Intolerable exige al menos una medida de control.", severity: "error" },
+      { scope: "entry", entryId: "e1", field: "controlledStatus", message: "Falta indicar si el riesgo está controlado.", severity: "error" },
+    ]]]) as RiskEditorProps["issuesByEntry"]
+    render(<RiskEditor {...props({ issuesByEntry: two })} />)
+    expect(screen.getByRole("tab", { name: /^3\. Medidas de control \(0\)\s*·\s*2\s*pendientes$/, selected: true })).toBeTruthy()
   })
 
   it("un peligro en blanco se titula «Peligro sin describir», no queda un título vacío", () => {
