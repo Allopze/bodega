@@ -22,6 +22,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/miper-entries.test.ts",
   // MIPER F1: foto viva del documento con nombres de diccionario y medidas.
   "lib/__tests__/miper-snapshot-service.test.ts",
+  // MIPER Fase B: fotos en lote y prueba dorada de que la foto de una sola no cambió (snapshotSha).
+  "lib/__tests__/miper-snapshot-batch.test.ts",
   // MIPER F1: flujo completo (envío, observaciones, aprobación técnica y Legal y RRHH).
   "lib/__tests__/miper-workflow.test.ts",
   // MIPER F3 (§9.1): alertas del flujo (fila Intolerable, pasos de revisión) y
