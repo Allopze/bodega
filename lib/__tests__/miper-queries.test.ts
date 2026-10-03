@@ -64,6 +64,13 @@ describe("consultas MIPER", () => {
     await testDb.insert(schema.preventionRiskReviewRounds).values({ id: "rq", matrixId, roundNumber: 1, stage: "technical", snapshot: { header: {}, entries: [] }, snapshotSha256: "c".repeat(64), submittedByUserId: "u-q" })
     const inbox = await q.listMiperInbox(jefa)
     expect(inbox.map((r) => [r.id, r.inboxReason, r.submittedByName])).toEqual([[matrixId, "Pendiente de tu revisión", "Prevencionista Q"]])
+    expect(inbox[0]!.submittedByUserId).toBe("u-q")
+  })
+  it("quien envió la ronda no la ve como «Pendiente de tu revisión» aunque tenga el permiso de revisar", async () => {
+    // La ronda «rq» del test anterior la envió u-q. Con el permiso de revisar sumado, la bandeja
+    // sigue sin ofrecérsela: no puede revisar lo que ella misma envió (assertNotSubmitter).
+    const autoraQueRevisa = { ...author, permissions: [...author.permissions, "prevention:risk:review"] }
+    expect((await q.listMiperInbox(autoraQueRevisa)).map((row) => row.inboxReason)).toEqual([])
   })
   it("el historial lista eventos con actor y capacidad", async () => {
     const events = await q.getMiperHistory(matrixId, author)

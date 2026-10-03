@@ -31,6 +31,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/miper-notifications.test.ts",
   // MIPER F1: espacio de trabajo, bandeja por rol, lista e historial.
   "lib/__tests__/miper-queries.test.ts",
+  // MIPER Fase B: portada por faena (alcance, faenas sin MIPER, «requiere mi acción», «sin control»).
+  "lib/__tests__/miper-portfolio.test.ts",
   // MIPER F3: tablero del Resumen (tiles accionables, franja y tabla por faena).
   "lib/__tests__/miper-dashboard.test.ts",
   // MIPER F3: importación del RE-04 (vista previa por fila, carga a borrador y

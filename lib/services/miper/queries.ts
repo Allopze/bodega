@@ -6,6 +6,7 @@ import {
   preventionRiskReviewRounds, users, worksites, worksiteUsers,
 } from "@/db/schema"
 import { checkMiperCompleteness, type CompletenessIssue } from "@/lib/prevention/miper/completeness"
+import { miperInboxReason } from "@/lib/prevention/miper/inbox"
 import { RISK_CLASSIFICATIONS, type RiskClassification } from "@/lib/prevention/miper/methodology"
 import { diffSnapshots, type MiperSnapshot, type SnapshotDiff } from "@/lib/prevention/miper/snapshot"
 import { miperStatusLabel } from "@/lib/prevention/miper/states"
@@ -22,6 +23,8 @@ const emptyCounts = (): Record<RiskClassification, number> => ({ tolerable: 0, m
 export type MiperListRow = {
   id: string; worksiteId: string; worksiteName: string; period: number | null; status: string; reviewState: string; isLegacy: boolean
   versionNumber: number | null; label: string; updatedAt: string; submittedAt: string | null; submittedByName: string | null
+  /** Quién envió la ronda abierta: «Requieren mi acción» lo excluye de revisar lo suyo (`miperInboxReason`). */
+  submittedByUserId: string | null
   entryCount: number; classificationCounts: Record<RiskClassification, number>; hasUnsentChanges: boolean; inboxReason?: string
 }
 export type MiperObservationView = typeof preventionRiskObservations.$inferSelect & { authorName: string; responderName: string | null }
@@ -161,7 +164,8 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
   }
 }
 
-async function buildRows(matrixRows: Array<{ matrix: typeof preventionRiskMatrices.$inferSelect; worksiteName: string }>): Promise<MiperListRow[]> {
+/** Fila de lista de una MIPER (rótulo, versión, ronda abierta, conteos). La reusan la cadena de la faena y la portada por faena. */
+export async function buildRows(matrixRows: Array<{ matrix: typeof preventionRiskMatrices.$inferSelect; worksiteName: string }>): Promise<MiperListRow[]> {
   if (matrixRows.length === 0) return []
   const ids = matrixRows.map((row) => row.matrix.id)
   const [counts, versions, rounds] = await Promise.all([
@@ -189,6 +193,7 @@ async function buildRows(matrixRows: Array<{ matrix: typeof preventionRiskMatric
       versionNumber,
       label: miperStatusLabel({ status: matrix.status, reviewState: matrix.reviewState, versionNumber, hasUnsentChanges: unsent, roundOpened: Boolean(round?.openedAt), isLegacy: matrix.isLegacy }),
       updatedAt: matrix.updatedAt, submittedAt: round?.submittedAt ?? null, submittedByName: round ? submitters.get(round.submittedByUserId) ?? null : null,
+      submittedByUserId: round?.submittedByUserId ?? null,
       entryCount, classificationCounts, hasUnsentChanges: unsent,
     }
   })
@@ -230,13 +235,10 @@ export async function listMiperInbox(access: MiperAccess) {
     .where(and(scopeCondition(access.scope, preventionRiskMatrices.worksiteId), ne(preventionRiskMatrices.status, "superseded"), or(...conditions)))
     .orderBy(asc(preventionRiskMatrices.updatedAt))
   const built = await buildRows(rows)
+  // El motivo de cada fila es la regla compartida con «Requieren mi acción» de la portada (Fase B):
+  // quien envió la ronda ya no la ve como pendiente de su revisión ni de su firma.
   return built.flatMap((item) => {
-    let inboxReason: string | undefined
-    if (item.reviewState === "in_review" && can("prevention:risk:review")) inboxReason = "Pendiente de tu revisión"
-    else if (item.reviewState === "pending_approval" && can("prevention:risk:approve_legal")) inboxReason = "Pendiente de tu firma"
-    else if (can("prevention:risk:edit") && !item.isLegacy) {
-      inboxReason = item.reviewState === "observed" ? "Con observaciones" : item.hasUnsentChanges ? "Cambios sin enviar" : item.status === "draft" && item.reviewState === "none" ? "Borrador" : undefined
-    }
+    const inboxReason = miperInboxReason(item, access)
     return inboxReason ? [{ ...item, inboxReason }] : []
   })
 }
