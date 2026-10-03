@@ -3,7 +3,7 @@
 import { RiskClassificationBadge } from "@/components/prevention/risk-classification-badge"
 import { ChoiceCardGroup } from "@/components/ui/choice-card-group"
 import {
-  CLASSIFICATION_CRITERIA, CONSEQUENCE_LEVELS, PROBABILITY_LEVELS, classify, isScaleValue, magnitudeOf,
+  CLASSIFICATION_CRITERIA, CONSEQUENCE_LEVELS, PROBABILITY_LEVELS, RE04_METHODOLOGY, classify, isScaleValue, magnitudeOf,
   type MiperScaleValue, type RiskClassification,
 } from "@/lib/prevention/miper/methodology"
 import { cn } from "@/lib/utils"
@@ -16,6 +16,9 @@ const TONE: Record<RiskClassification, string> = {
 }
 const probabilityOptions = PROBABILITY_LEVELS.map((level) => ({ value: level.value, title: `${level.value} · ${level.label}`, description: level.description }))
 const consequenceOptions = CONSEQUENCE_LEVELS.map((level) => ({ value: level.value, title: `${level.value} · ${level.label}`, description: level.description }))
+
+/** La leyenda sale de la misma fuente que congela cada MIPER (`methodology_snapshot`), no de un texto escrito a mano. */
+const BANDS = RE04_METHODOLOGY.configuration.bands.map((band) => `${band.magnitudes.join("–")} ${band.label}`).join(" · ")
 
 /**
  * Evaluación P×C del RE-04 (spec MIPER 2026-10-02 §6.3). Reemplaza al
@@ -53,7 +56,7 @@ export function PcChoice({ probability, consequence, onChange, disabled = false 
         </div>
         <p className="mt-2 text-sm">{classification ? CLASSIFICATION_CRITERIA[classification] : "Elige probabilidad y consecuencia para calcular la magnitud del riesgo."}</p>
       </div>
-      <p className="text-xs text-[var(--color-text-subtle)]">Bandas del RE-04: 1–2 Tolerable · 4 Moderado · 8 Importante · 16 Intolerable</p>
+      <p className="text-xs text-[var(--color-text-subtle)]">Bandas del RE-04: {BANDS}</p>
     </div>
   )
 }

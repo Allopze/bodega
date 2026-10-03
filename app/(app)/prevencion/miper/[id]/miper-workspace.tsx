@@ -126,7 +126,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
   const closeFicha = () => navigateWorkspace(hrefToFicha(pathname, searchParams, false), "replace")
   const openEntry = (entryId: string) => navigateWorkspace(hrefToEntry(pathname, searchParams, entryId), "push")
   const atRoot = !view.taskKey && !view.entryId
-  const step = nextStepInView(nextStep, { atRoot, tab: view.tab, readOnly: Boolean(mode.readOnlyReason) })
+  const step = nextStepInView(nextStep, { atRoot, tab: view.tab })
   const worksiteLabel = [workspace.matrix.worksiteName, workspace.matrix.period].filter(Boolean).join(" ")
 
   return (

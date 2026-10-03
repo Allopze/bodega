@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
+import { RE04_METHODOLOGY } from "@/lib/prevention/miper/methodology"
 import { PcChoice } from "./pc-choice"
 
 describe("PcChoice", () => {
@@ -22,5 +23,11 @@ describe("PcChoice", () => {
     expect(status.textContent).toMatch(/16/)
     expect(status.textContent).toMatch(/Intolerable/)
     expect(status.textContent).toMatch(/se debe prohibir el trabajo/)
+  })
+  it("la leyenda de bandas sale de RE04_METHODOLOGY (la misma fuente que congela cada MIPER)", () => {
+    render(<PcChoice probability={null} consequence={null} onChange={() => {}} />)
+    const bands = RE04_METHODOLOGY.configuration.bands.map((band) => `${band.magnitudes.join("–")} ${band.label}`).join(" · ")
+    expect(bands).toBe("1–2 Tolerable · 4 Moderado · 8 Importante · 16 Intolerable")
+    expect(screen.getByText(`Bandas del RE-04: ${bands}`)).toBeTruthy()
   })
 })

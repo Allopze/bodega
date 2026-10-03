@@ -454,7 +454,7 @@ test("paso 16: un riesgo nuevo al vigente aplica al instante, se envía, se revi
   // que esperar sólo eso no prueba que su último dato se guardó: se espera
   // además el «Siguiente paso» que sólo aparece **sin ningún bloqueo** en el
   // servidor («Hay cambios sin revisar desde v1»; con un dato faltante diría
-  // «Faltan datos en N riesgo(s)»). Sin esto, la recarga puede ganarle a la
+  // «Faltan datos en N riesgos»). Sin esto, la recarga puede ganarle a la
   // escritura y el envío abre el diálogo de bloqueos.
   await expect(async () => {
     await prev.goto(miperUrl)

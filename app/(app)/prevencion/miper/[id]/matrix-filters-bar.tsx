@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { usePathname, useSearchParams } from "next/navigation"
+import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field } from "@/components/ui/field"
@@ -16,20 +16,21 @@ import { navigateWorkspace } from "./workspace-nav"
 /**
  * Cambia los filtros de la URL sin ida al servidor (`router.replace` costaba un
  * fetch RSC por cambio o por tecla): arma la URL aquí y la aplica con
- * `navigateWorkspace(..., "replace")`.
+ * `navigateWorkspace(..., "replace")`. Parte de la URL **vigente**
+ * (`window.location.search`), no de la del último render: dos cambios seguidos
+ * —la búsqueda con su espera de 300 ms y un chip— no se pisan (A2, fila 15).
  */
 export function useMatrixFilterNavigation() {
   const pathname = usePathname()
-  const params = useSearchParams()
   const setFilters = useCallback((patch: Record<string, string | null>) => {
-    const next = new URLSearchParams(params.toString())
+    const next = new URLSearchParams(window.location.search)
     for (const [key, value] of Object.entries(patch)) {
       if (value === null) next.delete(key)
       else next.set(key, value)
     }
     const query = next.toString()
     navigateWorkspace(query ? `${pathname}?${query}` : pathname, "replace")
-  }, [pathname, params])
+  }, [pathname])
   const setFilter = useCallback((key: string, value: string | null) => setFilters({ [key]: value }), [setFilters])
   return { setFilters, setFilter }
 }
