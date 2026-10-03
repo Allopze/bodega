@@ -12,11 +12,12 @@ const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.
 vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/prevencion/miper/m1", useSearchParams: () => new URLSearchParams(nav.query) }))
 vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }))
 // Todas las acciones que importa el árbol del espacio de trabajo (grep de `../actions` y `../../actions` en `[id]/`).
+const listMiperWorksiteTargetsAction = vi.hoisted(() => vi.fn())
 vi.mock("../actions", () => ({
   addMiperObservationAction: vi.fn(), addOccurrenceEvidenceAction: vi.fn(), applyProgramGenerationAction: vi.fn(),
   approveMiperFinalAction: vi.fn(), approveMiperTechnicalAction: vi.fn(), deleteMiperControlAction: vi.fn(),
   deleteMiperEntryAction: vi.fn(), discardMiperDraftAction: vi.fn(), duplicateMiperEntryAction: vi.fn(),
-  listMiperWorksiteTargetsAction: vi.fn(), loadOccurrenceDetailAction: vi.fn(), loadProgramWorkspaceAction: vi.fn(), openMiperRoundAction: vi.fn(),
+  listMiperWorksiteTargetsAction, loadOccurrenceDetailAction: vi.fn(), loadProgramWorkspaceAction: vi.fn(), openMiperRoundAction: vi.fn(),
   proposeProgramActionsAction: vi.fn(), recordOccurrenceAction: vi.fn(), reopenMiperObservationAction: vi.fn(),
   requestMiperCorrectionsAction: vi.fn(), resolveMiperObservationAction: vi.fn(), respondMiperObservationAction: vi.fn(),
   retireProgramActionAction: vi.fn(), returnMiperAction: vi.fn(), saveMiperControlAction: vi.fn(),
@@ -218,5 +219,6 @@ describe("MiperWorkspaceView — «Elaboró» y «Cambiar de faena» (Fase B)", 
   it("la cabecera ofrece «Cambiar de faena» sin pedir la lista al pintarse", () => {
     show("")
     expect(screen.getByRole("button", { name: "Cambiar de faena" })).toBeTruthy()
+    expect(listMiperWorksiteTargetsAction).not.toHaveBeenCalled()
   })
 })

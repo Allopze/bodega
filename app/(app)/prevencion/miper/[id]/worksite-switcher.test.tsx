@@ -8,6 +8,9 @@ vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn(), info:
 const listMiperWorksiteTargetsAction = vi.hoisted(() => vi.fn())
 vi.mock("../actions", () => ({ listMiperWorksiteTargetsAction }))
 
+const beforeForwardNavigation = vi.hoisted(() => vi.fn())
+vi.mock("./workspace-memory", () => ({ beforeForwardNavigation }))
+
 import { WorksiteSwitcher } from "./worksite-switcher"
 
 const TARGETS = [
@@ -42,9 +45,13 @@ describe("WorksiteSwitcher", () => {
     abrir()
     fireEvent.click(await screen.findByRole("menuitem", { name: "Faena B · 2027" }))
     expect(router.push).toHaveBeenCalledWith("/prevencion/miper/m2")
+    expect(beforeForwardNavigation).toHaveBeenCalledWith("/prevencion/miper/m2")
+    expect(beforeForwardNavigation.mock.invocationCallOrder[0]).toBeLessThan(router.push.mock.invocationCallOrder[0]!)
     abrir()
     fireEvent.click(await screen.findByRole("menuitem", { name: "Faena C · sin MIPER" }))
     expect(router.push).toHaveBeenCalledWith("/prevencion/miper?faena=ws-c")
+    expect(beforeForwardNavigation).toHaveBeenLastCalledWith("/prevencion/miper?faena=ws-c")
+    expect(beforeForwardNavigation.mock.invocationCallOrder[1]).toBeLessThan(router.push.mock.invocationCallOrder[1]!)
   })
 
   it("la MIPER actual queda marcada y no se puede elegir", async () => {
