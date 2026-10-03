@@ -34,15 +34,21 @@ async function valorDe(link: Locator, rotulo: string): Promise<number> {
  * la página en el destino.
  *
  * - Con valor mayor que cero, la cifra es un enlace: se lee, se sigue y la
- *   lista muestra exactamente esas filas.
+ *   lista muestra su subconjunto.
  * - En cero no enlaza (A1: no lleva a una lista vacía). Se comprueba que la
  *   franja la muestra en 0 y que su destino, abierto a mano, está vacío.
+ *
+ * `cuenta` dice qué suma la cifra:
+ * - `faenas` (por defecto): una por fila, así que llegan exactamente esas filas.
+ * - `riesgos`: «Riesgos críticos sin control» suma riesgos de todas las filas
+ *   (`portfolioSummary.critical`), y una faena puede tener varios. Llegan entre 1
+ *   y `valor` faenas. La suma exacta por fila la comprueba quien llama.
  *
  * Cuál de las dos ramas corre depende de la base. Recién sembrada, «En
  * revisión» y «Riesgos críticos sin control» están en cero; en CI, las demás
  * pruebas MIPER del shard pueden dejarlas en más.
  */
-async function seguirCifra(page: Page, rotulo: string, destino: string): Promise<number> {
+async function seguirCifra(page: Page, rotulo: string, destino: string, { cuenta = "faenas" }: { cuenta?: "faenas" | "riesgos" } = {}): Promise<number> {
   await page.goto(PORTADA)
   // La portada se pinta en el servidor: con la tabla a la vista, la franja ya está completa.
   await expect(page.getByRole("table", { name: "MIPER por faena" })).toBeVisible()
@@ -57,7 +63,12 @@ async function seguirCifra(page: Page, rotulo: string, destino: string): Promise
   expect(esperado, `«${rotulo}» en cero no debería enlazar`).toBeGreaterThan(0)
   await link.click()
   await expect(page).toHaveURL(new RegExp(`\\?${destino}$`))
-  await expect(filas(page)).toHaveCount(esperado)
+  if (cuenta === "faenas") {
+    await expect(filas(page)).toHaveCount(esperado)
+  } else {
+    await expect.poll(() => filas(page).count(), { message: `«${rotulo}» llega a alguna faena` }).toBeGreaterThanOrEqual(1)
+    await expect.poll(() => filas(page).count(), { message: `«${rotulo}» no llega a más faenas que riesgos` }).toBeLessThanOrEqual(esperado)
+  }
   return esperado
 }
 
@@ -91,7 +102,8 @@ test.describe("Prevención — portada MIPER por faena", () => {
     }
 
     // «Riesgos críticos sin control» suma riesgos: llega a las faenas que los tienen y la suma por fila coincide.
-    const total = await seguirCifra(page, "Riesgos críticos sin control", "sincontrol=1")
+    const total = await seguirCifra(page, "Riesgos críticos sin control", "sincontrol=1", { cuenta: "riesgos" })
+    // El chip sale del mismo render que filtra la lista: visible el chip, las filas ya son las acotadas.
     await expect(page.getByRole("button", { name: "Eliminar filtro Riesgos críticos", exact: true })).toBeVisible()
     const porFila = await filas(page).evaluateAll((rows) => rows.map((row) => Number(row.textContent?.match(/(\d+) críticos? sin control/)?.[1] ?? 0)))
     expect(porFila.every((n) => n > 0)).toBe(true)
