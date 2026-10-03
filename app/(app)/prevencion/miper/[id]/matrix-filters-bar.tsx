@@ -58,6 +58,8 @@ export function MatrixFiltersBar({ filters: parsed, riskFactors, hasBaseline, co
   return (
     <FilterToolbar
       activeChips={chips}
+      // Sin chip de búsqueda, una búsqueda sola no dejaría «Limpiar filtros» a mano (A2, fila 7).
+      hasActiveFilters={filtered}
       activeCount={activeFilterCount(filters) - (filters.search ? 1 : 0)}
       onRemoveChip={(key) => setFilter(key, null)}
       onClearAll={() => { setSearch(""); setFilters(matrixFilterPatch({ ...filters, search: "", classifications: [], controlled: "all", factorId: "all", onlyObserved: false, onlyModified: false, onlyIncomplete: false, onlyComplete: false })) }}

@@ -22,4 +22,9 @@ describe("filtros de la matriz en la URL", () => {
     expect(hasEntryFilters(EMPTY_FILTERS)).toBe(false)
     expect(hasEntryFilters({ ...EMPTY_FILTERS, search: "x" })).toBe(true)
   })
+
+  it("la búsqueda no genera chip: ya está a la vista en su campo", () => {
+    const chips = matrixFilterChips({ ...EMPTY_FILTERS, search: "lodo", classifications: ["important"] }, [])
+    expect(chips.map((chip) => chip.key)).toEqual(["clasificacion"])
+  })
 })

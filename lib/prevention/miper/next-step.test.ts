@@ -22,7 +22,7 @@ describe("nextStepFor", () => {
   })
   it("3. el revisor parte por el riesgo más grave", () => {
     const step = nextStepFor(input({ mode: { ...mode, canEdit: false, canReviewTechnical: true }, hasOpenRound: true }))
-    expect(step).toMatchObject({ title: "Revisa la versión enviada", action: { kind: "riesgo", entryId: "b" } })
+    expect(step).toMatchObject({ title: "Revisa la versión enviada", action: { kind: "riesgo", entryId: "b", purpose: "review" } })
     expect(step?.description).toBe("2 riesgos · 1 Importantes o Intolerables")
   })
   it("4. con observaciones por responder lleva a Revisión", () => {
@@ -41,7 +41,7 @@ describe("nextStepFor", () => {
   })
   it("6. faltan datos: al pendiente más grave, con el filtro como alternativa", () => {
     const step = nextStepFor(input({ issues: [entryIssue("a"), entryIssue("b"), entryIssue("b")] }))
-    expect(step).toMatchObject({ tone: "warning", title: "Faltan datos en 2 riesgo(s)", action: { kind: "riesgo", entryId: "b" }, secondary: { kind: "filtro" } })
+    expect(step).toMatchObject({ tone: "warning", title: "Faltan datos en 2 riesgo(s)", action: { kind: "riesgo", entryId: "b", purpose: "pending" }, secondary: { kind: "filtro" } })
   })
   it("7. sin errores en borrador: lista para enviar", () => {
     expect(nextStepFor(input())).toMatchObject({ tone: "success", title: "Lista para enviar a revisión", action: null })
@@ -57,7 +57,7 @@ describe("nextStepFor", () => {
 describe("nextStepInView", () => {
   const readOnly: NextStep = { tone: "info", title: "Reemplazada por 2027", description: "", action: null, secondary: null }
   const respond: NextStep = { tone: "warning", title: "Responde 3 observación(es)", description: "d", action: { kind: "tab", tab: "revision" }, secondary: null }
-  const pending: NextStep = { tone: "warning", title: "Faltan datos en 2 riesgo(s)", description: "d", action: { kind: "riesgo", entryId: "b" }, secondary: { kind: "filtro", completitud: "pendientes" } }
+  const pending: NextStep = { tone: "warning", title: "Faltan datos en 2 riesgo(s)", description: "d", action: { kind: "riesgo", entryId: "b", purpose: "pending" }, secondary: { kind: "filtro", completitud: "pendientes" } }
 
   it("el motivo de sólo lectura se ve también en la tarea y en el editor", () => {
     expect(nextStepInView(readOnly, { atRoot: false, tab: "matriz", readOnly: true })).toBe(readOnly)

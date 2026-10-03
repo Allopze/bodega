@@ -34,7 +34,8 @@ export function MatrixView({ matrixId, tree, filtered, editable, incomplete, obs
       {toolbar?.({ collapsedAll, toggleAll, filtered })}
       {tree.length === 0 ? (
         filtered
-          ? <EmptyState title="Ningún riesgo coincide con los filtros" description="Quita algún filtro o cambia la búsqueda." action={<Button variant="secondary" onClick={onClearFilters}>Limpiar filtros</Button>} />
+          // La barra ya ofrece «Limpiar filtros»: el CTA del vacío dice lo que logra, no repite el nombre (QA A2, fila 6).
+          ? <EmptyState title="Ningún riesgo coincide con los filtros" description="Quita algún filtro o cambia la búsqueda." action={<Button variant="secondary" onClick={onClearFilters}>Ver todos los riesgos</Button>} />
           : <EmptyState title="Esta MIPER todavía no tiene riesgos" description="Empieza por una tarea: indica la actividad, la tarea y el puesto, y después sus peligros." action={editable ? <Button onClick={onNewTask}>Nueva tarea</Button> : undefined} />
       ) : tree.map((activity) => (
         <ActivitySection key={activity.key} activity={activity} expanded={filtered || !collapsed.has(activity.key)} onToggle={() => toggle(activity.key)}

@@ -47,9 +47,9 @@ export function hasEntryFilters(filters: GridFilters): boolean {
   return activeFilterCount(filters) > 0
 }
 
+/** Chips de los filtros activos. La búsqueda no lleva chip: ya está a la vista en su propio campo (QA A2, fila 7). */
 export function matrixFilterChips(filters: GridFilters, factors: ReadonlyArray<{ id: string; name: string }>): MatrixFilterChip[] {
   const chips: MatrixFilterChip[] = []
-  if (filters.search.trim()) chips.push({ key: "buscar", label: "Búsqueda", value: filters.search, displayValue: `«${filters.search.trim()}»` })
   if (filters.classifications.length) chips.push({ key: "clasificacion", label: "Clasificación", value: filters.classifications.join(","), displayValue: filters.classifications.map((c) => CLASSIFICATION_LABEL[c]).join(", ") })
   if (filters.onlyIncomplete || filters.onlyComplete) chips.push({ key: "completitud", label: "Estado", value: filters.onlyIncomplete ? "pendientes" : "completos", displayValue: filters.onlyIncomplete ? "Con pendientes" : "Completos" })
   if (filters.controlled !== "all") chips.push({ key: "controlado", label: "¿Controlado?", value: filters.controlled, displayValue: CONTROLLED_STATUS_LABEL[filters.controlled] })

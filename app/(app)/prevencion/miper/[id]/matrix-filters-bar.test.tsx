@@ -10,6 +10,11 @@ import { MatrixFiltersBar } from "./matrix-filters-bar"
 const props = { riskFactors: [{ id: "f1", name: "Caídas" }], hasBaseline: false, collapsedAll: false, onToggleAll: vi.fn() }
 
 describe("MatrixFiltersBar", () => {
+  it("con sólo la búsqueda no hay chip, pero «Limpiar filtros» sigue a mano", () => {
+    render(<MatrixFiltersBar {...props} filters={{ ...EMPTY_FILTERS, search: "lodo" }} filtered />)
+    expect(screen.queryByRole("button", { name: "Eliminar filtro Búsqueda" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Limpiar filtros" })).toBeTruthy()
+  })
   it("un factor de la URL que no es de la matriz no genera chip", () => {
     render(<MatrixFiltersBar {...props} filters={{ ...EMPTY_FILTERS, factorId: "basura" }} />)
     expect(screen.queryByText("Factor:")).toBeNull()

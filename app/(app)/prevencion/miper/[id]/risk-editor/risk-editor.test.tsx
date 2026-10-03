@@ -212,4 +212,9 @@ describe("RiskEditor", () => {
     // El nombre accesible del inactivo sigue completo: «1. Identificación…».
     expect(inactive.textContent).toMatch(/^1\.\s*Identificación/)
   })
+
+  it("un peligro en blanco se titula «Peligro sin describir», no queda un título vacío", () => {
+    render(<RiskEditor {...props({ rows: [entry("e1", 1, { hazard: "   " })], step: "identificacion" })} />)
+    expect(screen.getByRole("heading", { level: 2, name: "Peligro sin describir" })).toBeTruthy()
+  })
 })

@@ -102,4 +102,11 @@ describe("TaskView", () => {
       sessionStorage.clear()
     }
   })
+
+  it("un riesgo con el peligro en blanco se lista como «Peligro sin describir»", () => {
+    const blank = buildMatrixTree([e("z", 9, { hazard: "  " })], { incomplete: new Set(), observed: new Set(), modified: new Set(), matching: null })[0]!.tasks[0]!
+    render(<TaskView {...base} task={blank} editable />)
+    expect(screen.getByRole("link", { name: "Riesgo #9: peligro sin describir" })).toBeTruthy()
+    expect(screen.getByText("Peligro sin describir")).toBeTruthy()
+  })
 })

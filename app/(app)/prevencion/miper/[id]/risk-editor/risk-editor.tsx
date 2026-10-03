@@ -81,7 +81,7 @@ export function RiskEditor(props: RiskEditorProps) {
       </div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-xl font-semibold">{entry.hazard ?? "Peligro sin describir"}</h2>
+          <h2 className="text-xl font-semibold">{entry.hazard?.trim() || "Peligro sin describir"}</h2>
           <p className="text-sm text-[var(--color-text-subtle)]">Riesgo #{entry.rowNumber} · {entry.task ?? "Sin tarea"}{entry.position ? ` · ${entry.position}` : ""}</p>
         </div>
         {editable && <EntryMenu matrixId={data.matrixId} entry={entry} version={autosave.versionOf(entry.id)} afterDeleteHref={afterDeleteHref} entryHref={(id) => hrefToEntry(pathname, params, id)} />}

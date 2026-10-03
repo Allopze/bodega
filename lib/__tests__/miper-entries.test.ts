@@ -41,7 +41,7 @@ describe("filas de la matriz", () => {
 
   it("rechaza una edición con versión vieja (dos pestañas sobre la misma fila)", async () => {
     const [first] = await rows()
-    await expect(svc.saveMiperEntry({ matrixId, entryId: first!.id, expectedVersion: 1, values: { risk: "Otro" } }, author)).rejects.toThrow(/La fila cambió mientras la editabas/)
+    await expect(svc.saveMiperEntry({ matrixId, entryId: first!.id, expectedVersion: 1, values: { risk: "Otro" } }, author)).rejects.toThrow("La fila cambió mientras la editabas. Recarga el riesgo para ver el cambio de la otra persona.")
   })
 
   it("insertar debajo renumera las siguientes; duplicar copia fila y medidas; eliminar compacta", async () => {
@@ -71,6 +71,9 @@ describe("filas de la matriz", () => {
     expect(row!.responsibleSnapshot).toBe("Autora")
     const edited = await svc.saveMiperControl({ matrixId, entryId: first!.id, controlId: control.id, expectedVersion: 1, values: { hierarchy: "ppe", description: "Casco y barbiquejo", responsibleUserId: "u-a", dueDate: "2026-11-30" } }, author)
     expect(edited.version).toBe(2)
+    // Una edición con la versión vieja: el mensaje nombra el gesto del editor, «Recargar riesgo» (A2, fila 4).
+    await expect(svc.saveMiperControl({ matrixId, entryId: first!.id, controlId: control.id, expectedVersion: 1, values: { hierarchy: "ppe", description: "Casco", responsibleUserId: "u-a", dueDate: "2026-11-30" } }, author))
+      .rejects.toThrow("La medida cambió mientras la editabas. Recarga el riesgo para ver el cambio de la otra persona.")
     await svc.deleteMiperControl({ matrixId, controlId: control.id, expectedVersion: 2 }, author)
     expect(await testDb.select().from(schema.preventionRiskControls).where(eq(schema.preventionRiskControls.id, control.id))).toHaveLength(0)
   })

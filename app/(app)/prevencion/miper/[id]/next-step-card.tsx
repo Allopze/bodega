@@ -6,7 +6,14 @@ import type { NextStep, NextStepAction } from "@/lib/prevention/miper/next-step"
 import { WorkspaceLink } from "./workspace-nav"
 
 const TONE = { info: "info", warning: "warning", success: "success" } as const
-const LABEL: Record<NextStepAction["kind"], string> = { ficha: "Abrir la ficha", riesgo: "Ir al riesgo", tab: "Ir a Revisión", filtro: "Ver los pendientes" }
+/**
+ * Un nombre por acción (QA Fase A, INCONSISTENCY 2): ir al riesgo pendiente se
+ * llama igual que el botón del pie del editor, «Siguiente pendiente»; quien
+ * revisa no recorre pendientes, empieza la revisión.
+ */
+const RISK_LABEL = { pending: "Siguiente pendiente", review: "Empezar la revisión" } as const
+const LABEL = { ficha: "Abrir la ficha", tab: "Ir a Revisión", filtro: "Ver los pendientes" } as const
+const labelOf = (action: NextStepAction) => (action.kind === "riesgo" ? RISK_LABEL[action.purpose] : LABEL[action.kind])
 
 /**
  * «Siguiente paso» (spec §4 y §5.6): una sola recomendación bajo la cabecera.
@@ -24,13 +31,13 @@ export function NextStepCard({ step, hrefFor }: { step: NextStep | null; hrefFor
           {step.action && (
             <Button asChild size="sm">
               <WorkspaceLink href={hrefFor(step.action)} replace={step.action.kind !== "riesgo"}>
-                {step.action.kind === "riesgo" ? "Empezar por el más grave" : LABEL[step.action.kind]}
+                {labelOf(step.action)}
               </WorkspaceLink>
             </Button>
           )}
           {step.secondary && (
             <Button asChild size="sm" variant="secondary">
-              <WorkspaceLink href={hrefFor(step.secondary)} replace={step.secondary.kind !== "riesgo"}>{LABEL[step.secondary.kind]}</WorkspaceLink>
+              <WorkspaceLink href={hrefFor(step.secondary)} replace={step.secondary.kind !== "riesgo"}>{labelOf(step.secondary)}</WorkspaceLink>
             </Button>
           )}
         </div>

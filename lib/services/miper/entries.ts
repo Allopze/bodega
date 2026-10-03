@@ -10,8 +10,9 @@ import { resolveDictionaryId } from "./dictionaries"
 import { notifyMiperRowIntolerable } from "./notifications"
 import { assertActiveUsers, assertEditable, type Client, lockMatrix, type MiperAccess, miperHistory, nowIso, requireAccess, userNames } from "./shared"
 
-const STALE_ENTRY = "La fila cambió mientras la editabas. Recarga la matriz para ver el cambio de la otra persona."
-const STALE_CONTROL = "La medida cambió mientras la editabas. Recarga la matriz."
+// El editor ofrece «Recargar riesgo»: el mensaje nombra ese mismo gesto (QA Fase A, UX 3). El prefijo se conserva: lo afirman las E2E.
+const STALE_ENTRY = "La fila cambió mientras la editabas. Recarga el riesgo para ver el cambio de la otra persona."
+const STALE_CONTROL = "La medida cambió mientras la editabas. Recarga el riesgo para ver el cambio de la otra persona."
 const EDIT = "prevention:risk:edit"
 
 export type SavedEntry = { id: string; version: number; rowNumber: number; magnitude: number | null; classification: string | null }

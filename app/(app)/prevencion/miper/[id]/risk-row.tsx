@@ -9,11 +9,13 @@ const chip = "rounded-full px-2 py-0.5 text-xs font-medium"
 export function RiskRow({ entry, href, issueCount, observed, change, showPosition }: {
   entry: MiperEntrySnapshot; href: string; issueCount: number; observed: boolean; change: EntryChange | null; showPosition: boolean
 }) {
+  // Un peligro en blanco («   ») es un peligro vacío: ni título vacío ni nombre accesible cortado.
+  const hazard = entry.hazard?.trim() || null
   return (
-    <WorkspaceLink href={href} aria-label={`Riesgo #${entry.rowNumber}: ${entry.hazard ?? "peligro sin describir"}`}
+    <WorkspaceLink href={href} aria-label={`Riesgo #${entry.rowNumber}: ${hazard ?? "peligro sin describir"}`}
       className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)] md:grid-cols-[minmax(0,1.6fr)_auto_auto_auto_auto]">
       <div className="min-w-0">
-        <p className="text-sm font-semibold"><span className="mr-1.5 tabular-nums text-[var(--color-text-subtle)]">#{entry.rowNumber}</span>{entry.hazard ?? "Peligro sin describir"}</p>
+        <p className="text-sm font-semibold"><span className="mr-1.5 tabular-nums text-[var(--color-text-subtle)]">#{entry.rowNumber}</span>{hazard ?? "Peligro sin describir"}</p>
         <p className="text-xs text-[var(--color-text-subtle)]">{[entry.risk, entry.probableDamage].filter(Boolean).join(" · ") || "Sin riesgo ni daño"}{showPosition && entry.position ? <> · <span>{entry.position}</span></> : null}</p>
       </div>
       <div className="col-start-1 flex flex-wrap items-center gap-1.5 md:col-start-auto">

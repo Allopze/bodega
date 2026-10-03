@@ -43,11 +43,12 @@ describe("MatrixView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Nueva tarea" }))
     expect(base.onNewTask).toHaveBeenCalled()
   })
-  it("con filtros y sin coincidencias explica qué pasa y ofrece «Limpiar filtros» (A4)", () => {
+  it("con filtros y sin coincidencias explica qué pasa y ofrece «Ver todos los riesgos» (A4), no un segundo «Limpiar filtros»", () => {
     render(<MatrixView {...base} tree={[]} filtered />)
     expect(screen.getByText("Ningún riesgo coincide con los filtros")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Nueva tarea" })).toBeNull()
-    fireEvent.click(screen.getByRole("button", { name: "Limpiar filtros" }))
+    expect(screen.queryByRole("button", { name: "Limpiar filtros" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Ver todos los riesgos" }))
     expect(base.onClearFilters).toHaveBeenCalledTimes(1)
   })
   it("las actividades plegadas se recuerdan al volver a la matriz (abrir una tarea la desmonta)", () => {

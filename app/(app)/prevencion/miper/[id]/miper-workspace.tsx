@@ -75,8 +75,13 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
     () => checkMiperCompleteness(liveSnapshot, { linkedControlIds, requireProgramLink: true }),
     [liveSnapshot, linkedControlIds],
   )
+  // Contra qué se compara: la foto de la ronda anterior (en revisión) o la última versión sellada.
+  const baseline = reviewing ? workspace.reviewBaselineSnapshot : workspace.lastVersionSnapshot
   const diff = reviewing ? workspace.reviewDiff : workspace.pendingDiff
-  const changes = useMemo<Map<string, EntryChange>>(() => (diff ? changesByEntry(diff) : new Map()), [diff])
+  // Sin línea base (un borrador que nunca se aprobó) todo sería «Nueva» y cada
+  // actividad diría «N modificado(s)»: la marca no informa y compite con
+  // «N pendientes» (QA Fase A, UX 2). Sin con qué comparar, no hay marcas.
+  const changes = useMemo<Map<string, EntryChange>>(() => (baseline && diff ? changesByEntry(diff) : new Map()), [baseline, diff])
   const openObservations = workspace.observations.filter((observation) => observation.status === "open").length
   const observedEntryIds = useMemo(() => new Set(workspace.observations.flatMap((observation) => (observation.entryId && observation.status !== "resolved" ? [observation.entryId] : []))), [workspace.observations])
   const intolerable = rows.filter((row) => row.classification === "intolerable").length
@@ -120,7 +125,6 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
   const openFicha = () => navigateWorkspace(hrefToFicha(pathname, searchParams, true), "replace")
   const closeFicha = () => navigateWorkspace(hrefToFicha(pathname, searchParams, false), "replace")
   const openEntry = (entryId: string) => navigateWorkspace(hrefToEntry(pathname, searchParams, entryId), "push")
-  const baseline = reviewing ? workspace.reviewBaselineSnapshot : workspace.lastVersionSnapshot
   const atRoot = !view.taskKey && !view.entryId
   const step = nextStepInView(nextStep, { atRoot, tab: view.tab, readOnly: Boolean(mode.readOnlyReason) })
   const worksiteLabel = [workspace.matrix.worksiteName, workspace.matrix.period].filter(Boolean).join(" ")

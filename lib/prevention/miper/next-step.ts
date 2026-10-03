@@ -9,7 +9,8 @@ import type { WorkspaceMode } from "./workspace-mode"
 
 export type NextStepAction =
   | { kind: "ficha" }
-  | { kind: "riesgo"; entryId: string }
+  /** `purpose` da el rótulo: «Siguiente pendiente» para quien completa, «Empezar la revisión» para quien revisa. */
+  | { kind: "riesgo"; entryId: string; purpose: "pending" | "review" }
   | { kind: "tab"; tab: "revision" }
   | { kind: "filtro"; completitud: "pendientes" }
 
@@ -36,7 +37,7 @@ export function nextStepFor(input: NextStepInput): NextStep | null {
   if (mode.canReviewTechnical || mode.canApproveLegal) {
     const critical = rows.filter((row) => row.classification === "important" || row.classification === "intolerable")
     const target = firstPendingBySeverity(rows, new Set(critical.map((row) => row.id))) ?? [...rows].sort((a, b) => a.rowNumber - b.rowNumber)[0]?.id ?? null
-    return step("warning", "Revisa la versión enviada", `${rows.length} riesgos · ${critical.length} Importantes o Intolerables`, target ? { kind: "riesgo", entryId: target } : null)
+    return step("warning", "Revisa la versión enviada", `${rows.length} riesgos · ${critical.length} Importantes o Intolerables`, target ? { kind: "riesgo", entryId: target, purpose: "review" } : null)
   }
   if (mode.canRespond && input.openObservations > 0) {
     return step("warning", `Responde ${input.openObservations} observación(es)`, "Cada respuesta queda junto a la observación; después reenvía a revisión.", { kind: "tab", tab: "revision" })
@@ -51,7 +52,7 @@ export function nextStepFor(input: NextStepInput): NextStep | null {
     const pending = new Set(errors.flatMap((issue) => (issue.entryId ? [issue.entryId] : [])))
     if (pending.size > 0) {
       const first = firstPendingBySeverity(rows, pending)
-      return step("warning", `Faltan datos en ${pending.size} riesgo(s)`, "Empieza por los más graves; «Siguiente pendiente» te lleva al próximo.", first ? { kind: "riesgo", entryId: first } : null, { kind: "filtro", completitud: "pendientes" })
+      return step("warning", `Faltan datos en ${pending.size} riesgo(s)`, "Empieza por los más graves; «Siguiente pendiente» te lleva al próximo.", first ? { kind: "riesgo", entryId: first, purpose: "pending" } : null, { kind: "filtro", completitud: "pendientes" })
     }
     if (input.status === "draft" || input.reviewState === "observed") return step("success", "Lista para enviar a revisión", "Usa «Enviar a revisión» en la cabecera.")
   }
