@@ -19,6 +19,7 @@ import { EvidenceSheet } from "./evidence-sheet"
 import { LinkMeasuresDialog } from "./link-measures-dialog"
 import { OccurrenceDialog } from "./occurrence-dialog"
 import { occurrenceBadge, recordBadge } from "./program-badges"
+import { ActionProgress } from "./program-action-card"
 import { SCHEDULE_KIND_LABEL } from "./program-action-dialog"
 import { loadProgramActionDetailAction } from "./program-actions"
 import { WorkspaceLink } from "./workspace-nav"
@@ -123,6 +124,8 @@ export function ProgramActivityView({
           <Fact label="Inicio" value={formatDate(action.startsOn)} />
           {!active && <Fact label="Estado" value={`Retirada: ${action.retiredReason ?? ""}`} />}
         </dl>
+        {/* El avance viene de las props: cada registro revalida la página y llega nuevo. */}
+        <ActionProgress progress={action.progress} />
       </section>
 
       <section className="space-y-2">

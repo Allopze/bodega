@@ -89,6 +89,23 @@ describe("ProgramActivityView", () => {
     expect(screen.getByRole("region", { name: "Actividad N° 3" })).toBeTruthy()
   })
 
+  // Regresión: el `Sheet` que esta vista reemplaza mostraba el avance en la ficha
+  // y el porte lo perdió; tras «Registrar» la persona no veía el avance cambiar.
+  it("la ficha muestra el avance de la actividad y lo relee de las props", () => {
+    const view = renderView({ action: { ...action, occurrences: [], progress: { ...progress, pending: 0, planned: 0, ratio: null } } })
+    const region = () => screen.getByRole("region", { name: "Actividad N° 3" })
+    expect(region().textContent).toContain("0/0 · Sin ocurrencias planificadas")
+    view.rerender(
+      <ProgramActivityView
+        matrixId="m1" programId="p1" action={{ ...action, progress: { ...progress, done: 1, pending: 2, ratio: 1 / 3 } }} mode={mode()} userId="u1"
+        users={[]} rows={rows} processes={[]}
+      />,
+    )
+    expect(region().textContent).toContain("1/3 · 33% realizado")
+    expect(region().textContent).toContain("2 pendiente(s) · 0 incumplida(s) · 0 vencida(s)")
+    expect(screen.getByRole("progressbar", { name: "Avance: 1 de 3 ocurrencias realizadas" })).toBeTruthy()
+  })
+
   it("Volver al programa apunta a tab=programa sin actividad", () => {
     renderView()
     const href = screen.getByRole("link", { name: "Volver al programa" }).getAttribute("href") ?? ""
