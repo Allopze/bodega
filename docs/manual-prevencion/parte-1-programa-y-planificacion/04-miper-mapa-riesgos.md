@@ -91,7 +91,7 @@ La última cifra es **la misma** que el indicador "Riesgos críticos sin control
 
 ### Todas las faenas o sólo las tuyas
 
-*   **"Todas las faenas"** (por defecto) y **"Requieren mi acción"** cambian la lista; cuántas faenas son lo dice la cifra de la franja. Una MIPER requiere tu acción si es tu borrador, tiene observaciones por responder o cambios sin enviar (si editas), espera tu revisión técnica (Jefatura) o tu firma (Legal y RRHH). **Quien envió una ronda no la ve como pendiente de su propia revisión.**
+*   **"Todas las faenas"** (por defecto) y **"Requieren mi acción"** cambian la lista; cuántas faenas son lo dice la cifra de la franja. Una MIPER requiere tu acción si espera tu revisión técnica (Jefatura) o tu firma (Legal y RRHH) o, si puedes editar MIPER, si es un borrador, tiene observaciones por responder o tiene cambios sin enviar. Esto último no depende de quién la creó: cuenta cualquier MIPER de una faena de tu alcance, salvo las de la metodología anterior. **Quien envió una ronda no la ve como pendiente de su propia revisión ni de su firma.**
 *   El filtro **Estado** acota a *Con MIPER*, *Sin MIPER*, *Borrador*, *En revisión*, *Con observaciones* o *Vigente*.
 *   Para buscar una faena se usa el buscador de la barra superior ("Filtrar en esta página…"). Si la búsqueda deja la lista vacía, **"Limpiar búsqueda"** la borra.
 *   Los filtros que no tienen un control a la vista —la faena que llega desde el PDTP y "Riesgos críticos sin control"— aparecen como **chips** que se quitan de a uno. **"Limpiar filtros"** quita todo.
@@ -103,7 +103,7 @@ La última cifra es **la misma** que el indicador "Riesgos críticos sin control
 *   **Dotación:** la de la ficha de la MIPER o, si no la tiene, los trabajadores activos de la faena.
 *   **Completitud:** riesgos sin datos pendientes sobre el total, la misma cuenta que "Completos x de y" dentro de la MIPER. Una MIPER de la metodología anterior dice *"Metodología anterior"*, sin cifra.
 *   **Importantes e Intolerables**, y cuántos **críticos sin control** tiene la vigente.
-*   **Programa:** el avance del Programa de Trabajo de la vigente (ver "El avance", sección 9).
+*   **Programa:** el avance del Programa de Trabajo de la vigente (ver "El avance", sección 9). Si la vigente es otra MIPER, la celda lo dice: *"50% · 1/2 en la vigente"*.
 *   **Actualizada:** la última modificación.
 
 > [!NOTE]
