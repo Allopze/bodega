@@ -1,6 +1,6 @@
 # Rediseño UI/UX de la MIPER: de planilla a espacio de trabajo guiado
 
-Fecha: 2026-10-02 · Estado: **Fase A (con el pulido A2) y Fase B implementadas**
+Fecha: 2026-10-02 · Estado: **Fases A (con el pulido A2), B y C implementadas**
 Alcance: todo el submódulo `app/(app)/prevencion/miper` (portada, espacio de trabajo, matriz,
 ficha del riesgo, programa, revisión, historial, importación) y lo mínimo del backend que el
 rediseño necesita.
@@ -512,6 +512,41 @@ vive en `portfolio.ts` (plan maestro de 2026-10-02).
 - **Confirmación:** `commitRiskImport` recibe `measureMapping`, `responsibleMapping` y
   `deadlineMapping` y crea las medidas en la misma transacción que las filas. El Excel no trae
   tipo de control: siempre lo confirma una persona en la vista previa.
+
+**Implementado (Fase C, plan `docs/superpowers/plans/2026-10-03-miper-c-importacion.md`):**
+
+- **D5 y D6, confirmadas por el usuario el 2026-10-02.** Además, dos decisiones suyas:
+  - **Estado `proposed`:** las medidas importadas —existentes y por implementar— quedan
+    **propuestas** hasta que alguien las verifique; no bajan «Riesgos críticos sin control» sin
+    evidencia.
+  - **Regla crítica:** un **Importante no controlado** y un **Intolerable** exigen al menos **una
+    medida por implementar** con responsable y plazo; las existentes no la reemplazan
+    (`checkMiperCompleteness`). «Atención requerida» aplica la misma regla.
+- **Separadores.** Se separan los saltos de línea. Dentro de una línea, «;» si la hay y, si no,
+  las comas de primer nivel; después, el «.X» pegado. Una línea con «I.–V.» (libro exportado) es
+  una medida con su tipo. Las frases se agrupan con `normalizeMeasure`
+  (`distinctPhrases`), no con `normalizeMiperName`.
+- **Tipo.** Gana la palabra clave que aparece primero; sin ninguna, IV marcada «sin pista».
+  Todo tipo inferido nace «Sugerida» y lo confirma una persona: eligiéndolo, con «Confirmar» o
+  con «Aceptar sugerencias».
+- **Plazos** (`deadlineSuggestion`, una vez por valor). Una fecha escrita → por implementar con esa
+  fecha; «en N días» → hoy + N; «al ocurrir» → existente con frecuencia «Al ocurrir» (contingencia
+  que ya existe); «inmediato» → por implementar, hoy, y el paso dice cuántas medidas vencen hoy;
+  una frecuencia («TRIMESTRAL», «ANTES DE CADA OPERACIÓN», «cada N días») → existente con ese texto.
+  Sin pista → por implementar sin fecha. «PARCIALMENTE CONTROLADO - REQUIERE ACCIÓN INMEDIATA» se lee
+  como parcial (`controlledStatusOf`, por prefijo).
+- **Diálogo.** Cuatro pasos (Archivo → Filas → Medidas detectadas → Confirmar). Frases en páginas
+  de 25; «Aceptar sugerencias (N)» cuenta también las «sin pista», y «Sólo sugeridas» las pone
+  primero. Responsables y plazos se deciden una vez por valor; las personas elegibles son las
+  activas de la faena y quien importa.
+- **Servidor.** La carga recalcula las claves desde el lote, rechaza las que faltan o sobran,
+  exige personas activas y de la faena, y crea borrador, riesgos, medidas y traza en una sola
+  transacción (`createMiperWithClient`). Relee el lote con `FOR UPDATE`: dos cargas a la vez del
+  mismo lote no duplican riesgos ni medidas.
+- **Excel.** MEDIDA, RESPONSABLE y PLAZOS llevan una línea por medida; PLAZOS es la frecuencia
+  (existente) o la fecha (por implementar).
+- **Verificación con el RE-04 real:** `qa/reports/2026-10-03-miper-c.md`, en la base E2E
+  desechable y no en `bodega_dev` (revertir ahí exigía borrar filas de `audit_log`).
 
 ## 9. Fase D: acciones masivas
 

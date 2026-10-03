@@ -44,13 +44,25 @@ Un borrador que nunca se envió a revisión se puede **descartar** desde su espa
 
 ### Importar el RE-04 desde el Excel real
 
-Desde el mismo encabezado de la portada, **"Importar"** lee la hoja **«RE-04 IPER»** de un Excel del formato real y carga sus riesgos en el MIPER. Son **dos pasos explícitos**:
+Desde el encabezado de la portada, **"Importar"** lee la hoja **«RE-04 IPER»** de un Excel del formato real y carga sus riesgos **y sus medidas de control**. Son cuatro pasos:
 
-1. **Revisar el archivo.** Se elige la **Faena**, el **Período del borrador** y el archivo `.xlsx`. La vista previa muestra **una fila por riesgo** con la fila del Excel, la actividad, el peligro/riesgo, la **evaluación que calcula la plataforma** y, si hay algo que mirar, el **problema por fila**: por ejemplo una Probabilidad o Consecuencia **fuera de la escala** (sólo valen **1, 2 y 4**) o un **factor de riesgo que el catálogo todavía no tiene**.
-2. **Cargar.** Con el lote ya revisado se elige el destino: **"Cargar en borrador"** (un borrador nuevo del período) o **"Agregar al vigente"**. Cada fila con un problema que impide cargar dice por qué y ese destino queda bloqueado; las que sólo avisan de un MR distinto **sí se cargan**.
+1. **Archivo.** Se elige la **Faena**, el **Período del borrador** y el archivo `.xlsx`, y se aprieta **"Revisar el archivo"**.
+2. **Filas.** Una fila por riesgo con la fila del Excel, la actividad, el peligro/riesgo, la **evaluación que calcula la plataforma** y, si hay algo que mirar, el **problema por fila**: una Probabilidad o Consecuencia **fuera de la escala** (sólo valen **1, 2 y 4**) o un **factor de riesgo que el catálogo todavía no tiene**. Las filas que sólo avisan de un MR o una clasificación distintos a los del Excel **sí se cargan**.
+3. **Medidas detectadas.** La plataforma separa las medidas de la columna **MEDIDA DE CONTROL** (por saltos de línea; dentro de una línea, por «;» y, si no hay «;», por las comas que no están entre paréntesis) y agrupa lo que se repite: cada **frase distinta**, cada **responsable distinto** y cada **plazo distinto** se deciden **una sola vez**, no fila por fila.
+   - **Tipo (I–V).** El Excel no lo trae. La plataforma lo **sugiere** por palabras clave (EPP, guantes, casco → V; capacitación, procedimiento, señalización, inspección → IV; barandas, bloqueo, resguardos, mantención → III) y lo marca **"Sugerida"** hasta que lo confirmas: eligiéndolo, con **"Confirmar"** en la fila o con **"Aceptar sugerencias (N)"**, que dice cuántas frases faltan. Las frases van en páginas de 25. **"Sólo sugeridas"** deja a la vista lo que falta, con las "sin pista" primero. Una frase sin ninguna pista se sugiere IV y dice **"Sugerida · sin pista"**: mírala antes de aceptar. Si el Excel es uno exportado por la plataforma, el «IV. Controles administrativos: …» de cada medida ya trae su tipo.
+   - **Responsables.** Cada valor de la columna RESPONSABLE queda **tal como está escrito**, se asigna a una **persona de la faena** (las personas activas de la faena y quien importa) o queda **sin responsable**.
+   - **Plazos.** Cada valor de la columna PLAZOS decide si sus medidas **ya están implementadas** o están **por implementar**:
+     - **Ya implementadas:** se cargan como **existentes**, con ese texto como **frecuencia de verificación** («TRIMESTRAL», «ANTES DE CADA OPERACIÓN», «CADA 30 DÍAS»). «AL OCURRIR» («INMEDIATO AL OCURRIR») es una medida de contingencia que ya existe: se sugiere existente, con frecuencia «Al ocurrir».
+     - **Por implementar,** con una **fecha**: «INMEDIATO…» propone el día de la importación, y el paso avisa cuántas medidas **vencen hoy**; «EN 30 DÍAS…» propone hoy + 30, y una fecha escrita se toma tal cual. Un valor que la plataforma no reconoce queda por implementar y sin fecha.
+4. **Confirmar.** Un resumen dice cuántos riesgos se cargan y cuántas medidas (existentes y por implementar), y se elige el destino: **"Cargar en borrador"** (un borrador nuevo del período) o **"Agregar al vigente"**.
+
+> [!IMPORTANT]
+> **LAS MEDIDAS IMPORTADAS QUEDAN «PROPUESTA».** Existentes o por implementar, todas entran en estado **Propuesta** hasta que alguien las verifique: importar un Excel **no baja** "Riesgos críticos sin control" sin evidencia.
 
 > [!IMPORTANT]
 > **MANDA LA PLATAFORMA, NO EL EXCEL.** La matriz y la clasificación que trae el archivo se **informan**, pero el valor que se guarda es el que calcula la plataforma (`P × C`). Una fila cuya Probabilidad o Consecuencia no esté en 1, 2 ó 4 **no se carga**, aunque se apriete el botón: la escritura vuelve a validarse en el servidor.
+
+La carga es **una sola operación**: si algo falla, no queda ni el borrador, ni riesgos, ni medidas. El servidor vuelve a calcular las frases, los responsables y los plazos desde el archivo revisado y **rechaza** una carga a la que le falte una decisión o que traiga decisiones de otro archivo ("Vuelve a revisar el archivo"). Cambiar la faena, el período o el archivo descarta lo revisado.
 
 Si el archivo usa **factores de riesgo que el catálogo no tiene**, la vista previa los lista y ofrece crearlos para poder cargar esas filas; quien no administra el catálogo lee el aviso de pedirlo.
 
@@ -136,7 +148,7 @@ Además de la portada del MIPER, tus pendientes aparecen en la **cola "Mi trabaj
 *   **Revisar la MIPER {período}** (Jefatura de Prevención) mientras una MIPER espera la revisión técnica, y **Firmar la MIPER {período}** (Legal y RRHH) mientras espera la firma. Quien envió la ronda no la recibe en su cola: no puede revisar ni firmar lo que envió.
 *   **Registrar ejecución** de una ocurrencia del programa **vencida** o marcada **«No se hizo»**, para quien tiene el permiso de ejecución del programa o es su responsable nominal.
 
-El inicio de Prevención (`/prevencion`) lista los mismos hechos del MIPER —lo que espera firma, la ocurrencia vencida y la banda sin medida con responsable y plazo— bajo **"Atención requerida"**, en la primera sección de la pantalla.
+El inicio de Prevención (`/prevencion`) lista los mismos hechos del MIPER —lo que espera firma, la ocurrencia vencida y la banda sin medida por implementar con responsable y plazo— bajo **"Atención requerida"**, en la primera sección de la pantalla.
 
 ### Cómo se leen las bandas en pantalla
 
@@ -168,8 +180,8 @@ La **Magnitud del Riesgo (MR)** es el resultado de multiplicar Probabilidad × C
 |---|---|---|---|
 | 1–2 | **Tolerable** | "No se necesita mejorar la acción preventiva. Sin embargo, se deben considerar soluciones más rentables o mejoras que no supongan una carga económica importante. Se requieren comprobaciones periódicas para asegurar que se mantiene la eficacia de las medidas de control." | Mantener las medidas y comprobar su eficacia. |
 | 4 | **Moderado** | "Se deben hacer esfuerzos para reducir el riesgo, determinando las inversiones precisas. Las medidas para reducir el riesgo se deben implementar en un período determinado…" | Reducir el riesgo en un plazo determinado. |
-| 8 | **Importante** | "No se debe comenzar ni continuar el trabajo hasta que se haya reducido el riesgo… se debe remediar el problema en un tiempo inferior al de los riesgos moderados." | Medida de control y, si no está controlado, responsable y plazo. |
-| 16 | **Intolerable** | "No debe comenzar ni continuar el trabajo hasta que se reduzca el riesgo. Si no es posible reducirlo, incluso con recursos ilimitados, se debe prohibir el trabajo." | Medida con responsable y plazo; advertencia crítica permanente. |
+| 8 | **Importante** | "No se debe comenzar ni continuar el trabajo hasta que se haya reducido el riesgo… se debe remediar el problema en un tiempo inferior al de los riesgos moderados." | Medida de control y, si no está «Sí» controlado, una medida por implementar con responsable y plazo. |
+| 16 | **Intolerable** | "No debe comenzar ni continuar el trabajo hasta que se reduzca el riesgo. Si no es posible reducirlo, incluso con recursos ilimitados, se debe prohibir el trabajo." | Medida por implementar con responsable y plazo; advertencia crítica permanente. |
 
 > [!IMPORTANT]
 > **MR Y CLASIFICACIÓN NO SE ESCRIBEN A MANO:** eliges Probabilidad y Consecuencia, y la plataforma calcula MR y clasificación. Por eso no pueden quedar incoherentes con lo evaluado, ni en la matriz ni en el libro Excel. Los criterios completos del RE-04 viajan en la hoja *Criterios de Evaluación IPER* del libro descargable.
@@ -212,7 +224,7 @@ El editor tiene **cuatro pasos**, que se eligen arriba y se recuerdan en la dire
 |---|---|
 | **1. Identificación** | Factor de riesgo, si es rutinaria o no, peligro, riesgo, daño probable, puesto, lugar específico y personas expuestas (F, M, otro). Un desplegable permite mover el riesgo a otra actividad o tarea. |
 | **2. Evaluación** | Eliges una de tres tarjetas de **Probabilidad** y una de tres de **Consecuencia**; la plataforma muestra el MR y la clasificación con su criterio. |
-| **3. Medidas de control** | "¿Está controlado?" y las medidas (tipo I–V, descripción, responsable, plazo), con "Agregar medida". Se edita una medida a la vez. Si el servidor rechaza guardar o eliminar una medida, el motivo queda escrito en el formulario o en el diálogo. Si la medida está vinculada al programa, se indica la actividad. En una MIPER vigente, cada medida tiene el enlace **"Verificar eficacia del control"**. |
+| **3. Medidas de control** | "¿Está controlado?" y las medidas (si ya está implementada, tipo I–V, descripción, responsable, y plazo o frecuencia de verificación), con "Agregar medida". Se edita una medida a la vez. Si el servidor rechaza guardar o eliminar una medida, el motivo queda escrito en el formulario o en el diálogo. Si la medida está vinculada al programa, se indica la actividad. En una MIPER vigente, cada medida tiene el enlace **"Verificar eficacia del control"**. |
 | **4. Seguimiento** | Actividades del programa vinculadas, observaciones del riesgo y cambios contra la versión anterior. |
 
 A un costado (o debajo, en pantallas chicas) está el **chequeo del riesgo**: un ítem por bloque con una marca de listo, o con el mensaje de lo que falta y un enlace al paso donde se corrige. También muestra el contexto del riesgo y su clasificación.
@@ -236,8 +248,8 @@ Es la evaluación de si las medidas registradas alcanzan para el riesgo tal como
 | Valor | Cuándo se usa | Efecto en la plataforma |
 |---|---|---|
 | **Sí** | El riesgo está controlado con las medidas vigentes. | Exige al menos una medida registrada. |
-| **Parcialmente** | Hay medidas, pero no alcanzan a cubrir el riesgo: queda trabajo por hacer. | Exige al menos una medida registrada. |
-| **No** | El riesgo no está controlado (no hay medidas suficientes). | Un riesgo Importante exige medida con responsable y plazo; un Intolerable siempre. |
+| **Parcialmente** | Hay medidas, pero no alcanzan a cubrir el riesgo: queda trabajo por hacer. | Exige al menos una medida registrada. Si es Importante, además una medida **por implementar** con responsable y plazo. |
+| **No** | El riesgo no está controlado (no hay medidas suficientes). | Un riesgo Importante exige una medida **por implementar** con responsable y plazo; un Intolerable, siempre. |
 
 ### El detalle de un riesgo
 
@@ -247,7 +259,7 @@ El paso **Seguimiento** del editor y su panel lateral reúnen las medidas, las o
 
 ## 6. Medidas de Control: Jerarquía I–V, Responsable y Plazo
 
-Cada riesgo puede tener **varias medidas**. Cada medida se registra con su **descripción**, su **jerarquía** y, según la banda, su **responsable** y su **plazo**:
+Cada riesgo puede tener **varias medidas**. Cada medida se registra con su **descripción**, su **jerarquía**, si **ya está implementada** y, según la banda, su **responsable**; la que está por implementar lleva además su **plazo**:
 
 | Jerarquía | Tipo de medida | Ejemplo |
 |---|---|---|
@@ -259,15 +271,26 @@ Cada riesgo puede tener **varias medidas**. Cada medida se registra con su **des
 
 Siempre se prefiere la jerarquía más alta posible: eliminar o sustituir antes que administrar, y la protección personal es la última barrera, no la primera.
 
+### Medida existente o por implementar
+
+Cada medida dice si **ya está implementada** o está **por implementar** («¿Ya está implementada?» en el formulario de la medida; una medida nueva parte en «Por implementar»):
+
+| | Qué pide | Cómo se ve en la tarjeta |
+|---|---|---|
+| **Ya está implementada** (existente) | Tipo, descripción y responsable (salvo en Tolerables). En vez de plazo, una **frecuencia de verificación**, opcional (por ejemplo, trimestral). | «Existente · verificación Trimestral» |
+| **Por implementar** | Tipo, descripción, responsable (salvo en Tolerables) y **plazo**. | «Por implementar · plazo 31-12-2026» |
+
+En el Excel exportado, la columna **PLAZOS** lleva la frecuencia de una medida existente y la fecha de una por implementar, **una línea por medida**, alineada con MEDIDA DE CONTROL y RESPONSABLE; «—» marca el dato que falta.
+
 ### Reglas que la plataforma exige antes de dejar enviar a revisión
 
 | Condición | Regla |
 |---|---|
 | Todo riesgo | Actividad, Tarea, Puesto, Factor de riesgo, Peligro, Riesgo, Daño probable, Probabilidad, Consecuencia y "¿Está controlado?" completos. |
 | **Sí** o **Parcialmente** controlado | Al menos una medida registrada. |
-| **Importante** | Al menos una medida; si no está controlado, una medida **con responsable y plazo**. |
-| **Intolerable** | Al menos una medida con responsable y plazo, y advertencia crítica permanente mientras siga en esa banda. |
-| Toda medida | Descripción, tipo (I–V) y plazo. El responsable es obligatorio salvo en riesgos Tolerables. |
+| **Importante** | Al menos una medida; si no está «Sí» controlado, una medida **por implementar con responsable y plazo** (una existente no la reemplaza). |
+| **Intolerable** | Al menos una medida **por implementar** con responsable y plazo, y advertencia crítica permanente mientras siga en esa banda. |
+| Toda medida | Descripción y tipo (I–V); **plazo sólo si está por implementar**. El responsable es obligatorio salvo en riesgos Tolerables. |
 
 > [!TIP]
 > **CONSEJO DE TERRENO:** estas reglas bloquean el **envío a revisión**, no el guardado de un campo. Un riesgo se completa de a poco: la matriz te va indicando qué falta, y el botón "Enviar a revisión" lista los bloqueos por riesgo (#N°) para corregirlos de una pasada.
