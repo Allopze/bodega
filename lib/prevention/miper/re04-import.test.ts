@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { parseRe04Matrix, riskImportStatus, type Re04CellMatrix } from "./re04-import"
+import { controlledStatusOf, parseRe04Matrix, riskImportStatus, type Re04CellMatrix } from "./re04-import"
 
 /**
  * Fila del RE-04 del formato real. Los datos empiezan en la fila 14: las 12-13
@@ -75,6 +75,15 @@ describe("parser puro del RE-04 IPER", () => {
       sheetRow({ controlled: "SIN INFORMACIÓN" }),
     ])
     expect(rows.map((row) => row.normalized.controlledStatus)).toEqual(["partial", "yes", "no", "no"])
+  })
+
+  it("«¿Está controlado?» que dice «PARCIAL» en cualquier parte es parcial, antes de probar el prefijo «SÍ»", () => {
+    expect(controlledStatusOf("SÍ, PARCIALMENTE CONTROLADO")).toBe("partial")
+    expect(controlledStatusOf("CONTROLADO PARCIALMENTE")).toBe("partial")
+    expect(controlledStatusOf("Sí, parcial")).toBe("partial")
+    // Los rótulos exactos del formato no cambian.
+    expect(["SÍ, CONTROLADO", "PARCIALMENTE CONTROLADO", "NO CONTROLADO", "SÍ", "NO", "CONTROLADO", "PARCIAL", "", null].map(controlledStatusOf))
+      .toEqual(["yes", "partial", "no", "yes", "no", "yes", "partial", "no", "no"])
   })
 
   it("P y C fuera de {1, 2, 4} detienen la fila; el cálculo manda sobre el Excel", () => {

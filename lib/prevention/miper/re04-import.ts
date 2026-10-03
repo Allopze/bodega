@@ -179,21 +179,22 @@ function intOf(value: unknown): number | null {
  * Se reconoce por PREFIJO de palabras, del rótulo más largo al más corto: el
  * RE-04 real escribe «PARCIALMENTE CONTROLADO - REQUIERE ACCIÓN INMEDIATA» en sus
  * 46 Importantes, y con la búsqueda exacta caían en «no» (Fase C). «SIN …» no es
- * «SÍ»: el prefijo termina en un espacio.
+ * «SÍ»: el prefijo termina en un espacio. Antes que los prefijos, un rótulo que
+ * dice «PARCIAL…» en cualquier parte es parcial: «SÍ, PARCIALMENTE CONTROLADO» o
+ * «CONTROLADO PARCIALMENTE» no son «Sí».
  */
+const PARTIAL_WORD = /(?:^| )parcial/
 const CONTROLLED_PREFIXES: ReadonlyArray<readonly [string, Re04ControlledStatus]> = [
-  ["parcialmente controlado", "partial"],
   ["si controlado", "yes"],
   ["no controlado", "no"],
-  ["parcialmente", "partial"],
   ["controlado", "yes"],
-  ["parcial", "partial"],
   ["si", "yes"],
   ["no", "no"],
 ]
 
 export function controlledStatusOf(value: unknown): Re04ControlledStatus {
   const key = keyOf(value)
+  if (PARTIAL_WORD.test(key)) return "partial"
   const match = CONTROLLED_PREFIXES.find(([prefix]) => key === prefix || key.startsWith(`${prefix} `))
   return match?.[1] ?? "no"
 }
