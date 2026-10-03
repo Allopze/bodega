@@ -7,11 +7,12 @@ import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }))
 vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/prevencion/miper/m1", useSearchParams: () => new URLSearchParams("tarea=k&clasificacion=important") }))
 const saveMiperEntryAction = vi.hoisted(() => vi.fn())
-vi.mock("../actions", () => ({ saveMiperEntryAction }))
+vi.mock("../actions", () => ({ saveMiperEntryAction, bulkAddMiperControlAction: vi.fn(), bulkPatchMiperEntriesAction: vi.fn(), bulkUpdateMiperControlsAction: vi.fn() }))
 
 const toastError = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/toast", () => ({ toast: { error: toastError, success: vi.fn() } }))
 
+import type { BulkContext } from "./bulk-shared"
 import { TaskView } from "./task-view"
 
 const e = (id: string, rowNumber: number, overrides: Partial<MiperEntrySnapshot> = {}) => ({
@@ -21,6 +22,10 @@ const e = (id: string, rowNumber: number, overrides: Partial<MiperEntrySnapshot>
 }) as MiperEntrySnapshot
 const rows = [e("a", 4), e("b", 7, { position: "Peoneta" })]
 const task = buildMatrixTree(rows, { incomplete: new Set(["a"]), observed: new Set(), modified: new Set(), matching: null })[0]!.tasks[0]!
+const bulk = (): BulkContext => ({
+  matrixId: "m1", sync: { versionOf: () => 1, whenIdle: async () => {}, acknowledge: vi.fn() }, setRows: vi.fn(), riskFactors: [], responsibleOptions: [],
+  measureSuggestions: [], dictionaries: { activities: [], tasks: [], positions: [], locations: [] }, controlVersions: {},
+})
 const base = { matrixId: "m1", task, incomplete: new Set(["a"]), observed: new Set<string>(), changes: new Map(), issuesByEntry: new Map([["a", [{ scope: "entry" as const, entryId: "a", field: "controls", message: "m", severity: "error" as const }]]]) }
 
 describe("TaskView", () => {
@@ -108,5 +113,32 @@ describe("TaskView", () => {
     render(<TaskView {...base} task={blank} editable />)
     expect(screen.getByRole("link", { name: "Riesgo #9: peligro sin describir" })).toBeTruthy()
     expect(screen.getByText("Peligro sin describir")).toBeTruthy()
+  })
+
+  it("«Seleccionar» pone una casilla al lado de cada riesgo, fuera de su enlace; sin el modo no hay casillas (Fase D)", () => {
+    render(<TaskView {...base} editable bulk={bulk()} />)
+    expect(screen.queryByRole("checkbox")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Seleccionar" }))
+    const box = screen.getByRole("checkbox", { name: "Seleccionar el riesgo #4: Peligro 4" })
+    // Fuera del `<a>`: un clic en la casilla no abre el editor.
+    expect(box.closest("a")).toBeNull()
+    fireEvent.click(box)
+    expect(screen.getByRole("region", { name: "Acciones sobre la selección" })).toHaveTextContent("1 riesgo seleccionado")
+    fireEvent.click(screen.getByRole("button", { name: "Seleccionar los 2 riesgos" }))
+    expect(screen.getByRole("region", { name: "Acciones sobre la selección" })).toHaveTextContent("2 riesgos seleccionados")
+    fireEvent.click(screen.getByRole("button", { name: "Terminar selección" }))
+    expect(screen.queryByRole("checkbox")).toBeNull()
+    expect(screen.queryByRole("region", { name: "Acciones sobre la selección" })).toBeNull()
+  })
+
+  it("sin acciones masivas (sólo lectura) no ofrece «Seleccionar»", () => {
+    render(<TaskView {...base} editable={false} />)
+    expect(screen.queryByRole("button", { name: "Seleccionar" })).toBeNull()
+  })
+
+  it("«Editar contexto» abre el diálogo con la tarea de la vista (Fase D)", () => {
+    render(<TaskView {...base} editable bulk={bulk()} />)
+    fireEvent.click(screen.getByRole("button", { name: "Editar contexto" }))
+    expect(screen.getByRole("dialog", { name: "Editar contexto de la tarea" })).toHaveTextContent("2 riesgos de «Carga»")
   })
 })

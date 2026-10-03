@@ -4,8 +4,11 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { buildMatrixTree, taskKeyOf } from "@/lib/prevention/miper/matrix-tree"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }), usePathname: () => "/prevencion/miper/m1", useSearchParams: () => new URLSearchParams("") }))
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }), usePathname: () => "/prevencion/miper/m1", useSearchParams: () => new URLSearchParams("") }))
+vi.mock("../actions", () => ({ bulkAddMiperControlAction: vi.fn(), bulkPatchMiperEntriesAction: vi.fn(), bulkUpdateMiperControlsAction: vi.fn() }))
+vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
+import type { BulkContext } from "./bulk-shared"
 import { MatrixView } from "./matrix-view"
 
 const e = (id: string, rowNumber: number, activity: string, task: string) => ({ id, rowNumber, activity, task, position: "P", location: null, exposedFemale: 0, exposedMale: 1, exposedOther: 0, riskFactorId: null, riskFactor: null, isRoutine: true, hazard: `Peligro ${id}`, risk: "R", probableDamage: "D", probability: 1, consequence: 1, magnitude: 1, classification: "tolerable", controlledStatus: "yes", controls: [] }) as MiperEntrySnapshot
@@ -84,5 +87,27 @@ describe("MatrixView", () => {
     const accented = [e("z", 1, "Lavado de camión", "Enjuague")]
     render(<MatrixView {...base} tree={buildMatrixTree(accented, { ...ctx, matching: null })} filtered={false} />)
     expect(screen.getByRole("region", { name: /Lavado de camión/ })).toBeTruthy()
+  })
+
+  it("con filtros ofrece «Seleccionar» y «Seleccionar los N resultados»; quitar los filtros termina la selección (Fase D)", () => {
+    const bulk: BulkContext = {
+      matrixId: "m1", sync: { versionOf: () => 1, whenIdle: async () => {}, acknowledge: vi.fn() }, setRows: vi.fn(), riskFactors: [], responsibleOptions: [],
+      measureSuggestions: [], dictionaries: { activities: [], tasks: [], positions: [], locations: [] }, controlVersions: {},
+    }
+    const structure = buildMatrixTree(rows, { ...ctx, matching: null })
+    const filteredTree = buildMatrixTree(rows, { ...ctx, matching: new Set(["a", "b"]) })
+    const { rerender } = render(<MatrixView {...base} bulk={bulk} tree={structure} filtered={false} />)
+    // Sin filtros la matriz lista tareas, no riesgos: no hay qué seleccionar.
+    expect(screen.queryByRole("button", { name: "Seleccionar" })).toBeNull()
+    rerender(<MatrixView {...base} bulk={bulk} tree={filteredTree} filtered />)
+    expect(screen.queryByRole("checkbox")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Seleccionar" }))
+    expect(screen.getByRole("checkbox", { name: "Seleccionar el riesgo #2: Peligro b" }).closest("a")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Seleccionar los 2 resultados" }))
+    expect(screen.getByRole("region", { name: "Acciones sobre la selección" })).toHaveTextContent("2 riesgos seleccionados")
+    rerender(<MatrixView {...base} bulk={bulk} tree={structure} filtered={false} />)
+    expect(screen.queryByRole("region", { name: "Acciones sobre la selección" })).toBeNull()
+    rerender(<MatrixView {...base} bulk={bulk} tree={filteredTree} filtered />)
+    expect(screen.queryByRole("checkbox")).toBeNull()
   })
 })

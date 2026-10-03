@@ -162,4 +162,29 @@ describe("useEntryAutosave", () => {
     await act(async () => { await hook.result.current.commit({ ...entry, probability: 4 }, { probability: 1 }) })
     expect(rows()[0]).toMatchObject({ probability: 4 })
   })
+
+  it("tras una acción masiva, el siguiente guardado parte de la versión que devolvió; una foto atrasada no la baja (Fase D)", async () => {
+    saveMiperEntryAction.mockResolvedValueOnce({ ok: true, data: { version: 6, magnitude: 4, classification: "moderate" } })
+    const { hook } = setup()
+    act(() => { hook.result.current.acknowledge({ e1: 5 }) })
+    expect(hook.result.current.versionOf("e1")).toBe(5)
+    await act(async () => { await hook.result.current.commit(entry, { hazard: "Solvente" }) })
+    expect(saveMiperEntryAction.mock.calls[0]![0]).toMatchObject({ entryId: "e1", expectedVersion: 5 })
+    act(() => { hook.result.current.acknowledge({ e1: 2 }) })
+    expect(hook.result.current.versionOf("e1")).toBe(6)
+  })
+
+  it("whenIdle espera el guardado en curso del riesgo antes de que una acción masiva lea su versión (Fase D)", async () => {
+    let release!: () => void
+    saveMiperEntryAction.mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve({ ok: true, data: { version: 2, magnitude: 4, classification: "moderate" } }) }))
+    const { hook } = setup()
+    let commit!: Promise<boolean>
+    act(() => { commit = hook.result.current.commit(entry, { hazard: "Solvente" }) })
+    let idle = false
+    const waiting = hook.result.current.whenIdle(["e1"]).then(() => { idle = true })
+    await waitFor(() => expect(saveMiperEntryAction).toHaveBeenCalledTimes(1))
+    expect(idle).toBe(false)
+    await act(async () => { release(); await commit; await waiting })
+    expect(hook.result.current.versionOf("e1")).toBe(2)
+  })
 })

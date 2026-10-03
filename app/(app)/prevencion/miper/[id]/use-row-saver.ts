@@ -60,5 +60,19 @@ export function useRowSaver(matrixId: string, initialVersions: Record<string, nu
   /** Versión conocida de una fila: la que debe viajar al borrarla después de editarla. */
   const versionOf = useCallback((entryId: string) => versions.current[entryId], [])
 
-  return { save, sync, versionOf }
+  /**
+   * Espera a que terminen los guardados en curso de esas filas (Fase D): una
+   * acción masiva lee después sus versiones, y con un guardado a medio camino
+   * mandaría una vieja y chocaría consigo misma. Si mientras espera entra otro
+   * guardado a la cola de una de ellas, también lo espera.
+   */
+  const whenIdle = useCallback(async (entryIds: readonly string[]) => {
+    for (;;) {
+      const pending = entryIds.map((entryId) => queues.current[entryId])
+      await Promise.all(pending.map((run) => run?.catch(() => undefined)))
+      if (entryIds.every((entryId, index) => queues.current[entryId] === pending[index])) return
+    }
+  }, [])
+
+  return { save, sync, versionOf, whenIdle }
 }

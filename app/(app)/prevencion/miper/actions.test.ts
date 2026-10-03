@@ -10,6 +10,9 @@ const approveMiperFinal = vi.hoisted(() => vi.fn())
 const listMiperWorksiteTargets = vi.hoisted(() => vi.fn())
 const commitRiskImport = vi.hoisted(() => vi.fn())
 const revalidatePath = vi.hoisted(() => vi.fn())
+const bulkPatchMiperEntries = vi.hoisted(() => vi.fn())
+const bulkAddMiperControl = vi.hoisted(() => vi.fn())
+const bulkUpdateMiperControls = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({ guardPermission }))
 vi.mock("@/lib/auth/scope", () => ({ resolveWorksiteScope }))
@@ -23,9 +26,13 @@ vi.mock("@/lib/services/miper/workflow", () => ({ submitMiperForReview, openMipe
 vi.mock("@/lib/services/miper/risk-factors", () => ({ saveRiskFactor: vi.fn(), setRiskFactorActive: vi.fn() }))
 vi.mock("@/lib/services/miper/portfolio", () => ({ listMiperWorksiteTargets }))
 vi.mock("@/lib/services/miper/import", () => ({ previewRiskImport: vi.fn(), commitRiskImport }))
+vi.mock("@/lib/services/miper/bulk", () => ({ bulkPatchMiperEntries, bulkAddMiperControl, bulkUpdateMiperControls }))
 
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
-import { approveMiperFinalAction, approveMiperTechnicalAction, commitRiskImportAction, createMiperAction, listMiperWorksiteTargetsAction, saveMiperEntryAction, submitMiperAction } from "./actions"
+import {
+  approveMiperFinalAction, approveMiperTechnicalAction, bulkAddMiperControlAction, bulkPatchMiperEntriesAction, bulkUpdateMiperControlsAction,
+  commitRiskImportAction, createMiperAction, listMiperWorksiteTargetsAction, saveMiperEntryAction, submitMiperAction,
+} from "./actions"
 
 const denied = { session: null, error: { ok: false, message: "No tienes permisos para realizar esta acción" } }
 const session = { user: { id: "trusted-user", permissions: ["prevention:risk:edit"] } }
@@ -126,5 +133,55 @@ describe("acciones MIPER: frontera de autorización", () => {
     })
     commitRiskImport.mockResolvedValue({ batchId: "b2", matrixId: "m-imp", target: "live", created: 1, skipped: 0, notified: 0, measures: { total: 0, existing: 0, pending: 0 } })
     await expect(commitRiskImportAction({ batchId: "b2" })).resolves.toMatchObject({ ok: true, message: "1 riesgo cargado" })
+  })
+
+  const bulkActions = [
+    ["bulkPatchMiperEntriesAction", bulkPatchMiperEntriesAction, bulkPatchMiperEntries],
+    ["bulkAddMiperControlAction", bulkAddMiperControlAction, bulkAddMiperControl],
+    ["bulkUpdateMiperControlsAction", bulkUpdateMiperControlsAction, bulkUpdateMiperControls],
+  ] as const
+
+  it.each(bulkActions)("%s: sin permiso de editar no llega al servicio (Fase D)", async (_name, action, service) => {
+    guardPermission.mockResolvedValue(denied)
+    await expect(action({ matrixId: "m1", items: [] })).resolves.toEqual(denied.error)
+    expect(guardPermission).toHaveBeenCalledWith("prevention:risk:edit")
+    expect(service).not.toHaveBeenCalled()
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it.each(bulkActions)("%s: fuera de la faena, el rechazo del servicio llega tal cual y no revalida (Fase D)", async (_name, action, service) => {
+    guardPermission.mockResolvedValue({ session, error: null })
+    service.mockRejectedValueOnce(new RiskLegalDomainError("Registro preventivo no encontrado o fuera de alcance."))
+    await expect(action({ matrixId: "m-ajena", items: [{ entryId: "e1", expectedVersion: 1 }] })).resolves.toEqual({ ok: false, message: "Registro preventivo no encontrado o fuera de alcance." })
+    // El alcance y el actor salen de la sesión: el servicio decide con ellos, no con el input.
+    expect(service).toHaveBeenCalledWith(expect.anything(), { userId: "trusted-user", scope: { mode: "some", ids: ["ws-own"] }, permissions: ["prevention:risk:edit"] })
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it("las acciones masivas revalidan la MIPER y dicen cuántos riesgos o medidas cambiaron (Fase D)", async () => {
+    guardPermission.mockResolvedValue({ session, error: null })
+    bulkPatchMiperEntries.mockResolvedValueOnce({ entries: [{ id: "e1", version: 3 }, { id: "e2", version: 5 }] })
+    await expect(bulkPatchMiperEntriesAction({ matrixId: "m1", items: [], values: { controlledStatus: "yes" } }))
+      .resolves.toEqual({ ok: true, message: "2 riesgos actualizados", data: { entries: [{ id: "e1", version: 3 }, { id: "e2", version: 5 }] } })
+    expect(revalidatePath).toHaveBeenCalledWith("/prevencion/miper/m1")
+    bulkAddMiperControl.mockResolvedValueOnce({ controls: [{ id: "c1", entryId: "e1" }] })
+    await expect(bulkAddMiperControlAction({ matrixId: "m1" })).resolves.toEqual({ ok: true, message: "Medida agregada a 1 riesgo", data: { created: 1 } })
+    bulkUpdateMiperControls.mockResolvedValueOnce({ controls: [{ id: "c1", version: 2 }, { id: "c2", version: 2 }, { id: "c3", version: 4 }] })
+    await expect(bulkUpdateMiperControlsAction({ matrixId: "m1" })).resolves.toEqual({ ok: true, message: "3 medidas actualizadas", data: { updated: 3 } })
+    expect(revalidatePath).toHaveBeenCalledTimes(6)
+  })
+
+  it("el lote de riesgos sin nada que cambiar avisa en vez de decir 0", async () => {
+    guardPermission.mockResolvedValue({ session, error: null })
+    bulkPatchMiperEntries.mockResolvedValueOnce({ entries: [] })
+    await expect(bulkPatchMiperEntriesAction({ matrixId: "m1", items: [], values: { controlledStatus: "yes" } }))
+      .resolves.toEqual({ ok: true, message: "No había nada que cambiar en los riesgos seleccionados.", data: { entries: [] } })
+  })
+
+  it("el lote de medidas sin nada que cambiar avisa en vez de decir 0", async () => {
+    guardPermission.mockResolvedValue({ session, error: null })
+    bulkUpdateMiperControls.mockResolvedValueOnce({ controls: [] })
+    await expect(bulkUpdateMiperControlsAction({ matrixId: "m1" }))
+      .resolves.toEqual({ ok: true, message: "No había nada que cambiar en las medidas elegidas.", data: { updated: 0 } })
   })
 })

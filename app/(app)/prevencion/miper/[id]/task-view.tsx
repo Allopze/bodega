@@ -10,11 +10,15 @@ import type { EntryChange } from "@/lib/prevention/miper/snapshot"
 import { hrefToEntry, hrefToMatrix } from "@/lib/prevention/miper/workspace-url"
 import { toast } from "@/lib/toast"
 import { saveMiperEntryAction } from "../actions"
-import { RiskRow } from "./risk-row"
+import { BulkBar } from "./bulk-bar"
+import type { BulkContext } from "./bulk-shared"
+import { SelectableRiskRow } from "./risk-row"
+import { TaskContextDialog } from "./task-context-dialog"
+import { useRiskSelection } from "./use-risk-selection"
 import { beforeForwardNavigation, useRestoreWorkspaceScroll } from "./workspace-memory"
 import { WorkspaceLink } from "./workspace-nav"
 
-export function TaskView({ matrixId, task, editable, incomplete, observed, changes, issuesByEntry }: {
+export function TaskView({ matrixId, task, editable, incomplete, observed, changes, issuesByEntry, bulk }: {
   matrixId: string
   task: TaskNode
   editable: boolean
@@ -22,12 +26,16 @@ export function TaskView({ matrixId, task, editable, incomplete, observed, chang
   observed: ReadonlySet<string>
   changes: Map<string, EntryChange>
   issuesByEntry: Map<string, CompletenessIssue[]>
+  /** Acciones masivas (Fase D): sólo con edición. Sin esto no hay «Seleccionar» ni «Editar contexto». */
+  bulk?: BulkContext
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
   const [adding, setAdding] = useState(false)
   const addingRef = useRef(false)
+  const selection = useRiskSelection(task.entries)
+  const [editingContext, setEditingContext] = useState(false)
   // Al volver del editor, la tarea retoma su scroll (lo guarda `navigateWorkspace` al salir).
   useRestoreWorkspaceScroll()
 
@@ -75,7 +83,13 @@ export function TaskView({ matrixId, task, editable, incomplete, observed, chang
           <h2 className="text-xl font-semibold">{task.label}</h2>
           <p className="text-sm text-[var(--color-text-subtle)]">{task.activity ?? "Sin actividad"}</p>
         </div>
-        {editable && <Button onClick={() => { void addHazard() }} loading={adding}>Agregar peligro</Button>}
+        <div className="flex flex-wrap gap-2">
+          {bulk && task.entries.length > 0 && <Button variant="secondary" onClick={() => setEditingContext(true)}>Editar contexto</Button>}
+          {bulk && task.entries.length > 0 && (
+            <Button variant="secondary" onClick={selection.selecting ? selection.stop : selection.start}>{selection.selecting ? "Terminar selección" : "Seleccionar"}</Button>
+          )}
+          {editable && <Button onClick={() => { void addHazard() }} loading={adding}>Agregar peligro</Button>}
+        </div>
       </div>
       <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-border)] md:grid-cols-4">
         {facts.map(([label, value]) => (
@@ -86,20 +100,26 @@ export function TaskView({ matrixId, task, editable, incomplete, observed, chang
         ))}
       </dl>
       <section aria-labelledby="miper-task-risks" className="space-y-2">
-        <h3 id="miper-task-risks" className="text-sm font-semibold">Peligros identificados ({task.entries.length})</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 id="miper-task-risks" className="text-sm font-semibold">Peligros identificados ({task.entries.length})</h3>
+          {selection.selecting && <Button size="sm" variant="ghost" onClick={selection.selectAll}>Seleccionar los {task.entries.length} riesgos</Button>}
+        </div>
         {task.entries.length === 0
           ? <EmptyState compact title="Esta tarea no tiene riesgos" description="Agrega el primer peligro de la tarea para evaluarlo." action={editable ? <Button onClick={() => { void addHazard() }} loading={adding}>Agregar peligro</Button> : undefined} />
           : (
             <ul className="space-y-2">
               {task.entries.map((entry) => (
                 <li key={entry.id}>
-                  <RiskRow entry={entry} href={hrefToEntry(pathname, params, entry.id)} issueCount={incomplete.has(entry.id) ? errorCount(entry.id) : 0}
-                    observed={observed.has(entry.id)} change={changes.get(entry.id) ?? null} showPosition={task.positions.length > 1} />
+                  <SelectableRiskRow entry={entry} href={hrefToEntry(pathname, params, entry.id)} issueCount={incomplete.has(entry.id) ? errorCount(entry.id) : 0}
+                    observed={observed.has(entry.id)} change={changes.get(entry.id) ?? null} showPosition={task.positions.length > 1}
+                    selection={selection.selecting ? { checked: selection.isSelected(entry.id), onToggle: () => selection.toggle(entry.id) } : null} />
                 </li>
               ))}
             </ul>
           )}
       </section>
+      {bulk && selection.selecting && <BulkBar selected={selection.selected} context={bulk} onClear={selection.clear} />}
+      {bulk && editingContext && <TaskContextDialog task={task} context={bulk} onOpenChange={setEditingContext} />}
     </div>
   )
 }

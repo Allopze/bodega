@@ -1,5 +1,6 @@
 import { CaretRight } from "@phosphor-icons/react/dist/ssr"
 import { RiskClassificationBadge } from "@/components/prevention/risk-classification-badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import { CONTROLLED_STATUS_LABEL, type EntryChange, type MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 import { WorkspaceLink } from "./workspace-nav"
 
@@ -32,5 +33,22 @@ export function RiskRow({ entry, href, issueCount, observed, change, showPositio
       </div>
       <CaretRight aria-hidden className="row-span-1 row-start-1 col-start-2 size-4 text-[var(--color-text-subtle)] md:col-start-auto md:row-start-auto" />
     </WorkspaceLink>
+  )
+}
+
+/**
+ * Una fila de riesgo con su casilla de selección (Fase D). La casilla va AL LADO
+ * del enlace, nunca dentro: un control dentro de un `<a>` es HTML inválido y su
+ * clic abriría el editor. Sin `selection` (fuera del modo «Seleccionar») es la
+ * fila de siempre.
+ */
+export function SelectableRiskRow({ selection, ...row }: Parameters<typeof RiskRow>[0] & { selection: { checked: boolean; onToggle: () => void } | null }) {
+  if (!selection) return <RiskRow {...row} />
+  const hazard = row.entry.hazard?.trim() || "peligro sin describir"
+  return (
+    <div className="flex items-center gap-2">
+      <Checkbox label={`Seleccionar el riesgo #${row.entry.rowNumber}: ${hazard}`} labelHidden checked={selection.checked} onChange={selection.onToggle} />
+      <div className="min-w-0 flex-1"><RiskRow {...row} /></div>
+    </div>
   )
 }

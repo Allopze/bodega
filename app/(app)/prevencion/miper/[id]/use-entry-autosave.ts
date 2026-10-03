@@ -17,6 +17,15 @@ export type EntryAutosave = {
   clearErrors: (entryId: string) => void
 }
 
+/** Lo que una acción masiva necesita del guardado automático (Fase D). */
+export type AutosaveSync = {
+  versionOf: (entryId: string) => number | undefined
+  /** Espera los guardados en curso de esos riesgos: después, sus versiones son las del servidor. */
+  whenIdle: (entryIds: readonly string[]) => Promise<void>
+  /** Anota las versiones que devolvió una acción masiva: el siguiente guardado de cada riesgo parte de ahí. Nunca baja una. */
+  acknowledge: (versions: Readonly<Record<string, number>>) => void
+}
+
 const IDLE: SaveStatus = { state: "idle", savedAt: null, message: null }
 const ownedBy = (entryId: string) => (key: string) => key.startsWith(`${entryId}.`)
 const withoutEntries = (errors: Record<string, string>, entryIds: readonly string[]) =>
@@ -39,8 +48,8 @@ export function useEntryAutosave({ matrixId, entryVersions, serverRows, setRows,
   entryVersions: Record<string, number>
   setRows: (updater: (rows: MiperEntrySnapshot[]) => MiperEntrySnapshot[]) => void
   riskFactors: ReadonlyArray<{ id: string; name: string }>
-}): EntryAutosave {
-  const { save, sync, versionOf } = useRowSaver(matrixId, entryVersions)
+}): EntryAutosave & AutosaveSync {
+  const { save, sync, versionOf, whenIdle } = useRowSaver(matrixId, entryVersions)
   // Se reancla por contenido, no por identidad: un objeto nuevo con las mismas
   // versiones en cada render pisaría la versión que devolvió el servidor.
   const versionsKey = JSON.stringify(entryVersions)
@@ -139,7 +148,8 @@ export function useEntryAutosave({ matrixId, entryVersions, serverRows, setRows,
   const clearErrors = useCallback((entryId: string) => {
     writeErrors(withoutEntries(errorsRef.current, [entryId]))
   }, [])
-  return { commit, statusOf, fieldError, versionOf, clearErrors }
+  const acknowledge = useCallback((versions: Readonly<Record<string, number>>) => { sync({ ...versions }) }, [sync])
+  return { commit, statusOf, fieldError, versionOf, clearErrors, whenIdle, acknowledge }
 }
 
 function withoutKeys(errors: Record<string, string>, keys: readonly string[]) {

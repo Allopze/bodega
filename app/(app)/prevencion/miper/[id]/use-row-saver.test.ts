@@ -60,4 +60,27 @@ describe("useRowSaver", () => {
     await result.current.save("b", { hazard: "y" })
     expect(saveMiperEntryAction.mock.calls.map(([input]) => input.expectedVersion)).toEqual([2, 5])
   })
+
+  it("whenIdle espera los guardados en curso de esas filas, también el que entra mientras espera (Fase D)", async () => {
+    const releases: Array<() => void> = []
+    saveMiperEntryAction.mockImplementation(() => new Promise((resolve) => {
+      const version = releases.length + 2
+      releases.push(() => resolve({ ok: true, data: { version, magnitude: null, classification: null } }))
+    }))
+    const { result } = renderHook(() => useRowSaver("m1", { e1: 1, e2: 1 }))
+    // Sin guardados en curso no espera nada.
+    await expect(result.current.whenIdle(["e1", "e2"])).resolves.toBeUndefined()
+    void result.current.save("e1", { hazard: "A" })
+    let idle = false
+    const waiting = result.current.whenIdle(["e1", "e2"]).then(() => { idle = true })
+    // Un segundo guardado de la misma fila entra a la cola mientras se espera.
+    void result.current.save("e1", { risk: "B" })
+    await vi.waitFor(() => expect(saveMiperEntryAction).toHaveBeenCalledTimes(1))
+    releases[0]!()
+    await vi.waitFor(() => expect(saveMiperEntryAction).toHaveBeenCalledTimes(2))
+    expect(idle).toBe(false)
+    releases[1]!()
+    await waiting
+    expect(result.current.versionOf("e1")).toBe(3)
+  })
 })

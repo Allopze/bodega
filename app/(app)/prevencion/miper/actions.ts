@@ -1,18 +1,11 @@
 "use server"
 
-import { and, asc, desc, eq, inArray } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
-import { db } from "@/db"
-import {
-  preventionRiskControls, preventionRiskEntries, preventionRiskOccurrenceEvidence, preventionRiskProcesses,
-  preventionRiskProgramActions, preventionRiskProgramOccurrenceRecords,
-  preventionRiskProgramOccurrences, preventionRiskPrograms,
-} from "@/db/schema"
 import { guardPermission } from "@/lib/auth/can"
 import { scheduleGeneratedDocumentDrain } from "@/lib/services/generated-documents/schedule"
 import { storePreventionEvidence } from "@/lib/services/prevention-evidence-upload"
 import { resolveRiskReviewTrigger, verifyRiskControl } from "@/lib/services/prevention-risk-legal"
-import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
+import { bulkAddMiperControl, bulkPatchMiperEntries, bulkUpdateMiperControls } from "@/lib/services/miper/bulk"
 import { deleteMiperControl, deleteMiperEntry, duplicateMiperEntry, saveMiperControl, saveMiperEntry } from "@/lib/services/miper/entries"
 import { commitRiskImport, previewRiskImport, type RiskImportCommitResult } from "@/lib/services/miper/import"
 import { listMiperWorksiteTargets } from "@/lib/services/miper/portfolio"
@@ -20,9 +13,7 @@ import { createMiper, discardMiperDraft, updateMiperHeader } from "@/lib/service
 import { addMiperObservation, reopenMiperObservation, resolveMiperObservation, respondMiperObservation } from "@/lib/services/miper/observations"
 import { applyProgramGeneration, linkActionControls, proposeProgramActions, retireProgramAction, saveProgramAction, unlinkActionControl, updateProgramHeader } from "@/lib/services/miper/program"
 import { addOccurrenceEvidence, recordOccurrence, voidOccurrenceRecord, withdrawOccurrenceEvidence } from "@/lib/services/miper/program-execution"
-import { getProgramWorkspace, type ProgramWorkspace } from "@/lib/services/miper/program-queries"
 import { saveRiskFactor, setRiskFactorActive } from "@/lib/services/miper/risk-factors"
-import { OUT_OF_SCOPE, scopeAllows, userNames } from "@/lib/services/miper/shared"
 import { approveMiperFinal, approveMiperTechnicalReview, openMiperReviewRound, requestMiperCorrections, returnMiperWithObservations, submitMiperForReview } from "@/lib/services/miper/workflow"
 import { countOf } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/prevention"
@@ -72,6 +63,34 @@ export async function saveMiperControlAction(input: unknown) {
 }
 export async function deleteMiperControlAction(input: unknown) {
   return guarded("prevention:risk:edit", input, (access) => deleteMiperControl(input, access), { success: "Medida eliminada" })
+}
+
+// ── Acciones masivas (Fase D, spec §9). Revalidan: cambian muchos riesgos a la
+//    vez y la foto nueva es la que se muestra después. `data` devuelve lo que el
+//    cliente necesita sin esperar esa foto: las versiones nuevas de los riesgos
+//    (para que el guardado automático no choque) o cuántas medidas cambiaron.
+//    El servicio salta lo que ya estaba como se pide: con 0 escritos se avisa. ──
+export async function bulkPatchMiperEntriesAction(input: unknown) {
+  return guarded("prevention:risk:edit", input, (access) => bulkPatchMiperEntries(input, access), {
+    data: (result) => ({ entries: result.entries }),
+    success: (result) => result.entries.length === 0
+      ? "No había nada que cambiar en los riesgos seleccionados."
+      : countOf(result.entries.length, "riesgo actualizado", "riesgos actualizados"),
+  })
+}
+export async function bulkAddMiperControlAction(input: unknown) {
+  return guarded("prevention:risk:edit", input, (access) => bulkAddMiperControl(input, access), {
+    data: (result) => ({ created: result.controls.length }),
+    success: (result) => `Medida agregada a ${countOf(result.controls.length, "riesgo", "riesgos")}`,
+  })
+}
+export async function bulkUpdateMiperControlsAction(input: unknown) {
+  return guarded("prevention:risk:edit", input, (access) => bulkUpdateMiperControls(input, access), {
+    data: (result) => ({ updated: result.controls.length }),
+    success: (result) => result.controls.length === 0
+      ? "No había nada que cambiar en las medidas elegidas."
+      : countOf(result.controls.length, "medida actualizada", "medidas actualizadas"),
+  })
 }
 
 // ── Flujo ──
@@ -143,106 +162,6 @@ export async function verifyRiskControlAction(input: unknown) {
  * anuncia como capaz. La lectura se guarda con `prevention:risk:view`, el mismo
  * permiso que exige `getProgramWorkspace`.
  */
-
-/** El panel lee todo junto: actividades, medidas por fila, avance y procesos. */
-type ProgramLoad = {
-  workspace: ProgramWorkspace
-  /** Procesos activos de la faena (`Proceso` del RE-04.1 se elige de acá). */
-  processes: Array<{ id: string; name: string }>
-  /** `controlId → entryId`: el vínculo a la fila del MIPER que la vista no trae. */
-  controlEntryIds: Record<string, string>
-  /** `actionId → processId`: sin él, editar una actividad borraría su proceso. */
-  actionProcessIds: Record<string, string>
-}
-
-export async function loadProgramWorkspaceAction(input: unknown) {
-  return guarded<ProgramLoad>("prevention:risk:view", input, async (access) => {
-    const matrixId = matrixIdOf(input)
-    if (!matrixId) throw new RiskLegalDomainError("MIPER no encontrada o fuera de alcance.")
-    const workspace = await getProgramWorkspace(matrixId, access)
-    const worksiteId = workspace.program?.worksiteId
-    if (!workspace.program || !worksiteId) return { workspace, processes: [], controlEntryIds: {}, actionProcessIds: {} }
-    if (!scopeAllows(access.scope, worksiteId)) throw new RiskLegalDomainError("MIPER no encontrada o fuera de alcance.")
-    const controlIds = workspace.actions.flatMap((action) => action.controls.map((control) => control.id))
-    const [processes, controlRows, actionRows] = await Promise.all([
-      db.select({ id: preventionRiskProcesses.id, name: preventionRiskProcesses.name }).from(preventionRiskProcesses)
-        .where(and(eq(preventionRiskProcesses.worksiteId, worksiteId), eq(preventionRiskProcesses.isActive, true)))
-        .orderBy(asc(preventionRiskProcesses.name)),
-      controlIds.length === 0
-        ? Promise.resolve([] as Array<{ controlId: string; entryId: string }>)
-        : db.select({ controlId: preventionRiskControls.id, entryId: preventionRiskEntries.id }).from(preventionRiskControls)
-          .innerJoin(preventionRiskEntries, eq(preventionRiskEntries.id, preventionRiskControls.riskEntryId))
-          .where(inArray(preventionRiskControls.id, controlIds)),
-      db.select({ id: preventionRiskProgramActions.id, processId: preventionRiskProgramActions.processId })
-        .from(preventionRiskProgramActions).where(eq(preventionRiskProgramActions.programId, workspace.program.id)),
-    ])
-    const controlEntryIds: Record<string, string> = {}
-    for (const row of controlRows) controlEntryIds[row.controlId] = row.entryId
-    const actionProcessIds: Record<string, string> = {}
-    for (const row of actionRows) if (row.processId) actionProcessIds[row.id] = row.processId
-    return { workspace, processes, controlEntryIds, actionProcessIds }
-  }, { revalidate: false, data: (result) => ({ ...result }) })
-}
-
-/**
- * Registros y evidencia de **una** ocurrencia: ningún contrato de consulta los
- * expone —la vista del panel trae el resultado vigente y cuánta evidencia hay,
- * no los identificadores— y anular un registro o retirar un archivo exige el
- * suyo. Se lee acá, con el alcance de faena del programa.
- */
-export async function loadOccurrenceDetailAction(input: unknown) {
-  return guarded("prevention:risk:view", input, async (access) => {
-    const occurrenceId = stringFieldOf(input, "occurrenceId")
-    if (!occurrenceId) throw new RiskLegalDomainError(OUT_OF_SCOPE)
-    const [context] = await db.select({
-      occurrence: preventionRiskProgramOccurrences,
-      program: preventionRiskPrograms,
-    }).from(preventionRiskProgramOccurrences)
-      .innerJoin(preventionRiskProgramActions, eq(preventionRiskProgramActions.id, preventionRiskProgramOccurrences.actionId))
-      .innerJoin(preventionRiskPrograms, eq(preventionRiskPrograms.id, preventionRiskProgramActions.programId))
-      .where(eq(preventionRiskProgramOccurrences.id, occurrenceId))
-      .limit(1)
-    if (!context || !scopeAllows(access.scope, context.program.worksiteId)) throw new RiskLegalDomainError(OUT_OF_SCOPE)
-
-    const records = await db.select().from(preventionRiskProgramOccurrenceRecords)
-      .where(eq(preventionRiskProgramOccurrenceRecords.occurrenceId, occurrenceId))
-      .orderBy(desc(preventionRiskProgramOccurrenceRecords.recordedAt))
-    const evidence = records.length === 0 ? [] : await db.select().from(preventionRiskOccurrenceEvidence)
-      .where(inArray(preventionRiskOccurrenceEvidence.recordId, records.map((record) => record.id)))
-      .orderBy(asc(preventionRiskOccurrenceEvidence.uploadedAt))
-    const names = await userNames(db, [
-      ...records.flatMap((record) => [record.recordedByUserId, record.voidedByUserId]),
-      ...evidence.flatMap((row) => [row.uploadedByUserId, row.withdrawnByUserId]),
-    ])
-    return {
-      occurrenceId,
-      currentRecordId: context.occurrence.currentRecordId,
-      records: records.map((record) => ({
-        id: record.id,
-        outcome: record.outcome,
-        effectiveOn: record.effectiveOn,
-        late: record.late,
-        reason: record.reason,
-        notes: record.notes,
-        recordedAt: record.recordedAt,
-        recordedByName: names.get(record.recordedByUserId) ?? null,
-        voidedAt: record.voidedAt,
-        voidReason: record.voidReason,
-        voidedByName: record.voidedByUserId ? names.get(record.voidedByUserId) ?? null : null,
-        evidence: evidence.filter((row) => row.recordId === record.id).map((row) => ({
-          id: row.id,
-          evidenceUploadId: row.evidenceUploadId,
-          fileName: row.evidenceUploadId.split("/").pop() ?? row.evidenceUploadId,
-          description: row.description,
-          uploadedAt: row.uploadedAt,
-          uploadedByName: row.uploadedByUserId ? names.get(row.uploadedByUserId) ?? null : null,
-          withdrawnAt: row.withdrawnAt,
-          withdrawReason: row.withdrawReason,
-        })),
-      })),
-    }
-  }, { revalidate: false, data: (result) => ({ ...result }) })
-}
 
 /** Encabezado RE-04.1: mismo contrato de versión que los antecedentes de la matriz. */
 export async function saveProgramHeaderAction(input: unknown) {

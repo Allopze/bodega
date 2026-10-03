@@ -8,7 +8,8 @@ import type { ActivityNode, ClassificationCounts } from "@/lib/prevention/miper/
 import { RISK_CLASSIFICATIONS } from "@/lib/prevention/miper/methodology"
 import type { EntryChange } from "@/lib/prevention/miper/snapshot"
 import { hrefToEntry, hrefToTask } from "@/lib/prevention/miper/workspace-url"
-import { RiskRow } from "./risk-row"
+import { SelectableRiskRow } from "./risk-row"
+import type { RiskSelection } from "./use-risk-selection"
 import { WorkspaceLink } from "./workspace-nav"
 
 function Counts({ counts }: { counts: ClassificationCounts }) {
@@ -21,9 +22,11 @@ function Counts({ counts }: { counts: ClassificationCounts }) {
   )
 }
 
-export function ActivitySection({ activity, expanded, onToggle, filtered, incomplete, observed, changes, issuesByEntry }: {
+export function ActivitySection({ activity, expanded, onToggle, filtered, incomplete, observed, changes, issuesByEntry, selection = null }: {
   activity: ActivityNode; expanded: boolean; onToggle: () => void; filtered: boolean
   incomplete: ReadonlySet<string>; observed: ReadonlySet<string>; changes: Map<string, EntryChange>; issuesByEntry: Map<string, CompletenessIssue[]>
+  /** Modo «Seleccionar» de la vista filtrada (Fase D): una casilla al lado de cada riesgo. */
+  selection?: RiskSelection | null
 }) {
   const pathname = usePathname()
   const params = useSearchParams()
@@ -60,8 +63,9 @@ export function ActivitySection({ activity, expanded, onToggle, filtered, incomp
                 <ul className="space-y-2 pl-3">
                   {task.matching.map((entry) => (
                     <li key={entry.id}>
-                      <RiskRow entry={entry} href={hrefToEntry(pathname, params, entry.id)} observed={observed.has(entry.id)} change={changes.get(entry.id) ?? null} showPosition={task.positions.length > 1}
-                        issueCount={incomplete.has(entry.id) ? (issuesByEntry.get(entry.id) ?? []).filter((issue) => issue.severity === "error").length : 0} />
+                      <SelectableRiskRow entry={entry} href={hrefToEntry(pathname, params, entry.id)} observed={observed.has(entry.id)} change={changes.get(entry.id) ?? null} showPosition={task.positions.length > 1}
+                        issueCount={incomplete.has(entry.id) ? (issuesByEntry.get(entry.id) ?? []).filter((issue) => issue.severity === "error").length : 0}
+                        selection={selection ? { checked: selection.isSelected(entry.id), onToggle: () => selection.toggle(entry.id) } : null} />
                     </li>
                   ))}
                 </ul>
