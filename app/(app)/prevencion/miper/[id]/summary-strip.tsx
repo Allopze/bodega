@@ -1,5 +1,5 @@
 import { RiskClassificationBadge } from "@/components/prevention/risk-classification-badge"
-import { CLASSIFICATION_LABEL, RISK_CLASSIFICATIONS, type RiskClassification } from "@/lib/prevention/miper/methodology"
+import { RISK_CLASSIFICATIONS, type RiskClassification } from "@/lib/prevention/miper/methodology"
 import type { MiperSnapshot } from "@/lib/prevention/miper/snapshot"
 import { cn, formatDate } from "@/lib/utils"
 
@@ -44,9 +44,9 @@ export function SummaryStrip({ snapshot, authorName, submittedAt, versionLabel, 
           <dt className="sr-only">Riesgos completos</dt>
           <dd>
             {onTogglePending ? (
-              <button type="button" aria-pressed={pendingActive} onClick={onTogglePending} className={cn(toggleClass, pendingActive && activeClass)}
-                aria-label={`Completos ${completeCount} de ${entries.length}: filtrar los riesgos con pendientes`}>
+              <button type="button" aria-pressed={pendingActive} onClick={onTogglePending} className={cn(toggleClass, pendingActive && activeClass)}>
                 <span className="text-[var(--color-text-subtle)]">Completos</span> <span className="tabular-nums">{completeCount} de {entries.length}</span>
+                <span className="sr-only">: filtrar los riesgos con pendientes</span>
               </button>
             ) : <><span className="text-[var(--color-text-subtle)]">Completos</span> <span className="tabular-nums">{completeCount} de {entries.length}</span></>}
           </dd>
@@ -55,15 +55,15 @@ export function SummaryStrip({ snapshot, authorName, submittedAt, versionLabel, 
       <div className="flex flex-wrap gap-1.5">
         <dt className="sr-only">Distribución por clasificación</dt>
         {[...RISK_CLASSIFICATIONS].reverse().map((cls) => {
-          const content = <><RiskClassificationBadge classification={cls} size="sm" /><span className="tabular-nums">{count(cls)}</span></>
+          const content = <><RiskClassificationBadge classification={cls} size="sm" /> <span className="tabular-nums">{count(cls)}</span></>
           if (!onToggleClassification) return <dd key={cls} className="inline-flex items-center gap-1">{content}</dd>
           const active = activeClassifications.includes(cls)
           return (
             <dd key={cls}>
-              <button type="button" aria-pressed={active} onClick={() => onToggleClassification(cls)}
-                aria-label={`Filtrar la matriz: ${CLASSIFICATION_LABEL[cls]} (${count(cls)})`}
-                className={cn(toggleClass, active && activeClass)}>
+              {/* El nombre empieza con lo que se ve («Importante 3») y sigue con lo que hace (WCAG 2.5.3, A2 fila 14). */}
+              <button type="button" aria-pressed={active} onClick={() => onToggleClassification(cls)} className={cn(toggleClass, active && activeClass)}>
                 {content}
+                <span className="sr-only">: filtrar la matriz</span>
               </button>
             </dd>
           )
@@ -75,6 +75,7 @@ export function SummaryStrip({ snapshot, authorName, submittedAt, versionLabel, 
           {onToggleUncontrolled ? (
             <button type="button" aria-pressed={uncontrolledActive} onClick={onToggleUncontrolled} className={cn(toggleClass, uncontrolledActive && activeClass)}>
               <span className="text-[var(--color-text-subtle)]">No controlados</span> <span className="tabular-nums">{uncontrolled}</span>
+              <span className="sr-only">: filtrar la matriz</span>
             </button>
           ) : <><span className="text-[var(--color-text-subtle)]">No controlados</span> <span className="tabular-nums">{uncontrolled}</span></>}
         </dd>

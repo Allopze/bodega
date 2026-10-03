@@ -12,10 +12,15 @@ import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 const card = "rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
 
 export function RiskAside({ entry, issues, onGoToStep, canObserve }: { entry: MiperEntrySnapshot; issues: CompletenessIssue[]; onGoToStep: (step: EditorStep) => void; canObserve: boolean }) {
+  const titleId = `${entry.id}-resumen`
+  // `section` con título y no `aside`: dentro de `<main>`, un `complementary`
+  // anidado no es un hito de primer nivel. Los bloques internos se nombran por
+  // su título visible: un `aria-label` igual al título sólo lo repetía (A2, fila 14).
   return (
-    <aside aria-label="Resumen del riesgo" className="space-y-3 xl:sticky xl:top-4 xl:self-start">
-      <section className={card} aria-label="Contexto">
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Contexto</h3>
+    <section aria-labelledby={titleId} className="space-y-3 xl:sticky xl:top-4 xl:self-start">
+      <h3 id={titleId} className="sr-only">Resumen del riesgo</h3>
+      <section className={card}>
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Contexto</h4>
         <dl className="space-y-1.5 text-sm">
           <DetailItem label="Actividad" value={entry.activity ?? "—"} />
           <DetailItem label="Tarea" value={entry.task ?? "—"} />
@@ -24,8 +29,8 @@ export function RiskAside({ entry, issues, onGoToStep, canObserve }: { entry: Mi
           <DetailItem label="Expuestos" value={String(entry.exposedFemale + entry.exposedMale + entry.exposedOther)} mono />
         </dl>
       </section>
-      <section className={card} aria-label="Chequeo del riesgo">
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Chequeo del riesgo</h3>
+      <section className={card}>
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Chequeo del riesgo</h4>
         <ul className="space-y-2 text-sm">
           {riskChecks(entry, issues).map((check) => (
             <li key={check.key} className="flex items-start gap-2">
@@ -40,8 +45,8 @@ export function RiskAside({ entry, issues, onGoToStep, canObserve }: { entry: Mi
           ))}
         </ul>
       </section>
-      <section className={card} aria-label="Nivel de riesgo">
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Nivel de riesgo</h3>
+      <section className={card}>
+        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Nivel de riesgo</h4>
         {/* Sin magnitud a propósito: «Clasificación · MR n» vive una sola vez en pantalla (paso Evaluación). */}
         <div className="flex flex-wrap items-center gap-2">
           <RiskClassificationBadge classification={entry.classification} />
@@ -49,6 +54,6 @@ export function RiskAside({ entry, issues, onGoToStep, canObserve }: { entry: Mi
         </div>
       </section>
       {canObserve && <Button size="sm" variant="secondary" className="w-full" onClick={() => onGoToStep("seguimiento")}>Observar este riesgo</Button>}
-    </aside>
+    </section>
   )
 }

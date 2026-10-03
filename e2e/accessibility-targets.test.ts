@@ -186,6 +186,8 @@ describe("UX-002 — el alcance de la auditoría no puede volver a ser una lista
     expect(byPattern.get("/recepcion/nueva")).toBe("/recepcion/nueva?oc=po-audit-1")
     expect(byPattern.get("/compras/[id]/print")).toBe("/compras/oc-e2e/print")
     expect(byPattern.get("/entregas/[id]/print")).toBe("/entregas/del-e2e/print")
+    // A2, fila 17: la estructura de la matriz, sobre la MIPER vigente sembrada (`e2e/setup-db.ts`).
+    expect(byPattern.get("/prevencion/miper/[id]")).toBe("/prevencion/miper/riskmatrix-controles-e2e")
   })
 
   it("no conserva exclusiones ni fixtures de rutas que ya no existen", () => {

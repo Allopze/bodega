@@ -54,7 +54,9 @@ export async function escribir(page: Page | Locator, label: string, value: strin
  * Una tarjeta de un grupo de radio: P, C, «¿Está controlado el riesgo?» y
  * «¿Es una tarea rutinaria?». Con texto, el nombre es exacto: «Rutinaria» es
  * subcadena de «No rutinaria». Con regex, el llamador ancla lo que haga falta
- * (`/^4 · Alta/`), porque el nombre de P y C incluye el criterio completo.
+ * (`/^4 · Alta/`): el nombre de P y C es sólo el título («4 · Alta», o «4 · Alta
+ * (extremadamente dañino)» en Consecuencia) y el criterio del RE-04 va como
+ * descripción accesible (A2, fila 14).
  */
 export async function elegir(page: Page, grupo: string, opcion: string | RegExp) {
   const radio = page.getByRole("radiogroup", { name: grupo, exact: true })

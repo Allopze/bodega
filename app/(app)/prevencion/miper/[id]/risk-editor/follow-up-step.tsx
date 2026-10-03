@@ -54,8 +54,8 @@ export function FollowUpStep({ entry, data, mode, change, baselineEntry, issues 
         )}
       </section>
       {change && change.kind !== "removed" && (
-        <section aria-label="Cambios respecto de la revisión anterior" className="space-y-2">
-          <h3 className="text-sm font-semibold">{change.kind === "added" ? "Riesgo nuevo en esta ronda" : "Cambios respecto de la revisión anterior"}</h3>
+        <section aria-labelledby={`${entry.id}-h-cambios`} className="space-y-2">
+          <h3 id={`${entry.id}-h-cambios`} className="text-sm font-semibold">{change.kind === "added" ? "Riesgo nuevo en esta ronda" : "Cambios respecto de la revisión anterior"}</h3>
           {change.kind === "modified" && (
             <ul className="space-y-1 text-sm">
               {change.fields.filter((field) => field !== "controls").map((field) => (

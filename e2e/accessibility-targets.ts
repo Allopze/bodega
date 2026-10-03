@@ -69,6 +69,10 @@ export const ROUTE_URL_OVERRIDES: Record<string, string> = {
   "/entregas/[id]/print": "/entregas/del-e2e/print",
   "/sst/[id]/print": "/sst/sst-eval-e2e/print",
   "/prevencion/pdtp/[programId]/habilitacion": "/prevencion/pdtp/pdtp-prog-e2e/habilitacion",
+  // MIPER vigente sembrada con un riesgo y dos medidas: la estructura de la
+  // matriz. La tarea, el editor y la ficha los recorre `accessibility.spec.ts`
+  // aparte, porque son estados de la URL de esta misma ruta (A2, fila 17).
+  "/prevencion/miper/[id]": "/prevencion/miper/riskmatrix-controles-e2e",
 }
 
 /**

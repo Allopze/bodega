@@ -233,6 +233,12 @@ describe("RiskEditor", () => {
     expect(screen.getByRole("button", { name: "Editar la medida: Rotación de puestos" })).toBeDisabled()
   })
 
+  it("el resumen lateral es una región con título, no un complementary anidado, y sus bloques no repiten el título en aria-label", () => {
+    const { container } = render(<RiskEditor {...props()} />)
+    expect(screen.queryByRole("complementary")).toBeNull()
+    expect(screen.getByRole("region", { name: "Resumen del riesgo" })).toBeTruthy()
+    expect(container.querySelector('section[aria-label="Contexto"], section[aria-label="Chequeo del riesgo"], section[aria-label="Nivel de riesgo"]')).toBeNull()
+  })
   it("la observación nueva dice a la vista que pide al menos 5 caracteres", () => {
     render(<RiskEditor {...props({ step: "seguimiento", mode: { ...mode, canObserve: true } })} />)
     expect(screen.getByRole("textbox", { name: "Nueva observación" })).toHaveAccessibleDescription("Mínimo 5 caracteres.")

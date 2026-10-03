@@ -1,7 +1,8 @@
-import { test, expect } from "@playwright/test"
+import { test, expect, type Page } from "@playwright/test"
 import AxeBuilder from "@axe-core/playwright"
 import { login } from "./helpers"
 import { accessibilityTargets, AXE_DISABLED_RULES, AXE_TAGS } from "./accessibility-targets"
+import { cabecera, irAPaso, type PasoDelRiesgo } from "./miper-helpers"
 
 /*
  * UX-001 y UX-002 (auditoría 2026-09-14).
@@ -18,6 +19,15 @@ import { accessibilityTargets, AXE_DISABLED_RULES, AXE_TAGS } from "./accessibil
  */
 const targets = accessibilityTargets()
 
+async function auditar(page: Page) {
+  const results = await new AxeBuilder({ page })
+    .withTags([...AXE_TAGS])
+    .disableRules([...AXE_DISABLED_RULES])
+    .analyze()
+
+  expect(results.violations).toEqual([])
+}
+
 test.describe("Accessibility audit", () => {
   for (const { path, name, auth } of targets) {
     test(`${name} (${path})`, async ({ page }) => {
@@ -26,12 +36,56 @@ test.describe("Accessibility audit", () => {
 
       await page.waitForLoadState("networkidle")
 
-      const results = await new AxeBuilder({ page })
-        .withTags([...AXE_TAGS])
-        .disableRules([...AXE_DISABLED_RULES])
-        .analyze()
-
-      expect(results.violations).toEqual([])
+      await auditar(page)
     })
   }
+})
+
+/*
+ * MIPER (A2, fila 17). El espacio de trabajo es una sola ruta dinámica con
+ * cuatro vistas que viven en la URL: estructura, tarea (`?tarea=`), editor
+ * (`?fila=&paso=`) y ficha (`?ficha=1`). El recorrido de arriba sólo visita la
+ * estructura (`ROUTE_URL_OVERRIDES`); aquí se llega a las demás por la UI,
+ * como una persona, sobre la MIPER vigente sembrada (`e2e/setup-db.ts`).
+ */
+const MIPER_VIGENTE = "/prevencion/miper/riskmatrix-controles-e2e"
+const PELIGRO_SEMBRADO = "Atrapamiento en correa transportadora E2E"
+const PASOS: PasoDelRiesgo[] = ["Identificación", "Evaluación", "Medidas de control", "Seguimiento"]
+
+/**
+ * Espera a que terminen las animaciones finitas (entrada del `Sheet`, fundido
+ * del panel de la pestaña): axe mediría el contraste a medio fundido. Las
+ * infinitas (spinners, esqueletos) se ignoran.
+ */
+async function sinAnimaciones(page: Page) {
+  await page.evaluate(() => Promise.all(document.getAnimations()
+    .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+    .map((animation) => animation.finished.catch(() => undefined))))
+}
+
+test.describe("Accessibility audit — MIPER: vistas del espacio de trabajo", () => {
+  test("tarea, los cuatro pasos del editor y la ficha del documento", async ({ page }) => {
+    await login(page)
+    await page.goto(MIPER_VIGENTE)
+    await page.waitForLoadState("networkidle")
+
+    // El riesgo sembrado no trae actividad ni tarea: vive en «Sin actividad › Sin tarea».
+    await page.getByRole("link", { name: /^Sin tarea/ }).click()
+    await expect(page.getByRole("heading", { level: 2, name: "Sin tarea" })).toBeVisible()
+    await sinAnimaciones(page)
+    await auditar(page)
+
+    await page.getByRole("link", { name: `Riesgo #1: ${PELIGRO_SEMBRADO}`, exact: true }).click()
+    await expect(page.getByRole("heading", { level: 2, name: PELIGRO_SEMBRADO })).toBeVisible()
+    for (const paso of PASOS) {
+      await irAPaso(page, paso)
+      await sinAnimaciones(page)
+      await auditar(page)
+    }
+
+    await cabecera(page).getByRole("button", { name: "Ficha del documento", exact: true }).click()
+    await expect(page.getByRole("dialog", { name: "Ficha del documento" })).toBeVisible()
+    await sinAnimaciones(page)
+    await auditar(page)
+  })
 })
