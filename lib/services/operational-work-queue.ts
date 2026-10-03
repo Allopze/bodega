@@ -34,6 +34,7 @@ import {
   preventionRiskProgramActions,
   preventionRiskProgramOccurrences,
   preventionRiskPrograms,
+  preventionRiskReviewRounds,
   products,
   purchaseOrderInvoiceItems,
   purchaseOrderInvoices,
@@ -1354,7 +1355,8 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   if (canReviewMiper || canApproveMiper) {
     /* Las dos etapas de firma no son el mismo acto: la revisión técnica es de la
      * Jefatura del Depto. de Prevención y la aprobación final de Legal y RRHH.
-     * Cada estado entra sólo si el usuario puede actuar sobre él (A-06). */
+     * Cada estado entra sólo si el usuario puede actuar sobre él (A-06). Tampoco
+     * a quien envió la ronda abierta. */
     const reviewStates: string[] = []
     if (canReviewMiper) reviewStates.push("in_review")
     if (canApproveMiper) reviewStates.push("pending_approval")
@@ -1379,6 +1381,15 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       INNER JOIN ${worksites} ON ${worksites.id} = ${preventionRiskMatrices.worksiteId}
       WHERE ${inScope(preventionRiskMatrices.worksiteId)}
         AND ${inArray(preventionRiskMatrices.reviewState, reviewStates)}
+        -- Quien envió la ronda abierta no la revisa ni la firma (assertNotSubmitter): la misma
+        -- regla que miperInboxReason y workspace-mode.ts. Sin esto, la cola le ofrecía una acción
+        -- que el servicio rechaza. La ronda de Legal y RRHH conserva a quien envió.
+        AND NOT EXISTS (
+          SELECT 1 FROM ${preventionRiskReviewRounds}
+          WHERE ${preventionRiskReviewRounds.matrixId} = ${preventionRiskMatrices.id}
+            AND ${preventionRiskReviewRounds.decision} IS NULL
+            AND ${preventionRiskReviewRounds.submittedByUserId} = ${session.user.id}
+        )
     `)
   }
 

@@ -244,4 +244,29 @@ describe("cola «Mi trabajo» — ramas MIPER", () => {
   it("el filtro de módulo acepta «miper»", () => {
     expect(parseOperationalQueueFilters({ module: "miper" }).module).toBe("miper")
   })
+
+  it("quien envió la ronda no la recibe para revisar ni firmar aunque tenga el permiso (como miperInboxReason)", async () => {
+    // Una MIPER enviada por quien además revisa y firma: el servicio se la rechazaría (assertNotSubmitter).
+    // Se siembra aquí, al final, para no cambiar lo que ven las pruebas anteriores.
+    await testDb.insert(schema.users).values({ id: "u-dual", name: "Edita, revisa y firma", email: "dual@miper.cl", hashedPassword: "x", isActive: true })
+    await testDb.insert(schema.preventionRiskMatrices).values({
+      id: "mx-own", worksiteId: WS_IN, matrixVersion: 4, title: "MIPER 2028", period: 2028, status: "draft", reviewState: "in_review",
+      methodologyId: "m-miper", methodologySnapshot: {}, revisionReason: "Elaboración inicial.",
+      participationSummary: "", consultationEvidenceReference: "", createdByUserId: "u-dual",
+    })
+    await testDb.insert(schema.preventionRiskReviewRounds).values({
+      id: "round-own", matrixId: "mx-own", roundNumber: 1, stage: "technical",
+      snapshot: { header: {}, entries: [] }, snapshotSha256: "d".repeat(64), submittedByUserId: "u-dual",
+    })
+
+    const dual = makeSession("u-dual", ["prevention:risk:view", "prevention:risk:edit", "prevention:risk:review", "prevention:risk:approve_legal"])
+    const own = await getOperationalWorkQueue(dual, { module: "miper" })
+    expect(own.items.map((item) => item.sourceId).sort()).toEqual(["mx-legal", "mx-review"])
+    // El contador del badge dice lo mismo que la cola.
+    expect(await getOperationalWorkCount(dual)).toBe(own.items.length)
+
+    // Quien no la envió sí la recibe.
+    const review = await getOperationalWorkQueue(reviewer(), { module: "miper" })
+    expect(review.items.map((item) => item.sourceId).sort()).toEqual(["mx-own", "mx-review"])
+  })
 })
