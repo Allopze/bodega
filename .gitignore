@@ -170,3 +170,4 @@ docs/generado/index.md
 
 # Caché del detector de UI (la config sí se versiona; el caché no)
 .impeccable/hook.cache.json
+miper-web-mockup-3.html
