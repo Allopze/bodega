@@ -232,8 +232,11 @@ export function inferHierarchy(piece: { text: string; prefix?: ControlHierarchy 
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 const LOCAL_DATE = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/
-/** «EN 30 DÍAS» (sobre el texto ya sin tildes). Pide el «en»: «CADA 30 DÍAS» es una frecuencia, no un plazo. */
-const IN_DAYS = /\ben (\d{1,3}) dias?\b/
+/**
+ * «EN 30 DÍAS» o «PLAZO DE 15 DÍAS» (sobre el texto ya sin tildes). Pide el «en»
+ * o el «de»: «CADA 30 DÍAS» es una frecuencia, no un plazo.
+ */
+const IN_DAYS = /\b(?:en|de) (\d{1,3}) dias?\b/
 /**
  * «AL OCURRIR» / «INMEDIATO AL OCURRIR»: una medida de contingencia que ya existe
  * (un kit de derrames) y se aplica cuando pasa el evento. Va antes de «inmediato».
@@ -251,8 +254,9 @@ function calendarDate(year: number, month: number, day: number): string | null {
 
 /**
  * D6: lo que sugiere un valor de PLAZOS. Una fecha → por implementar con esa
- * fecha; «en N días» → hoy + N (antes que la frecuencia: «IMPLEMENTAR EN 30
- * DÍAS Y CONTROL DIARIO»; «CADA 30 DÍAS» no lleva «en» y es frecuencia);
+ * fecha; «en N días» o «de N días» → hoy + N (antes que la frecuencia:
+ * «IMPLEMENTAR EN 30 DÍAS Y CONTROL DIARIO», «PLAZO DE 15 DÍAS»; «CADA 30 DÍAS»
+ * no lleva «en» ni «de» y es frecuencia);
  * «al ocurrir» → existente, con frecuencia «Al ocurrir» (antes que «inmediato»:
  * «INMEDIATO AL OCURRIR» es una contingencia que ya existe); «inmediato» → por
  * implementar hoy («INMEDIATO / ANTES DE CONTINUAR LA TAREA»); una frecuencia

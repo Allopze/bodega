@@ -99,6 +99,8 @@ describe("deadlineSuggestion: los PLAZOS del RE-04 real", () => {
     ["AL OCURRIR", { kind: "existing", frequency: "Al ocurrir" }, "frequency"],
     // «en N días» manda sobre «diario»: es una medida nueva con su plazo.
     ["IMPLEMENTAR EN 30 DÍAS Y CONTROL DIARIO", { kind: "pending", dueDate: "2026-11-02" }, "relative"],
+    // «de N días» también es un plazo: hoy + N.
+    ["PLAZO DE 15 DÍAS", { kind: "pending", dueDate: "2026-10-18" }, "relative"],
     // «cada N días» no es un plazo: es la frecuencia con que se verifica una medida existente.
     ["CADA 30 DÍAS", { kind: "existing", frequency: "CADA 30 DÍAS" }, "frequency"],
     ["30-06-2026", { kind: "pending", dueDate: "2026-06-30" }, "date"],
