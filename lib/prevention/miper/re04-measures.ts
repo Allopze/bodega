@@ -28,20 +28,28 @@ const MEASURE_COLUMN: Re04ColumnLabel = "MEDIDA DE CONTROL"
 const RESPONSIBLE_COLUMN: Re04ColumnLabel = "RESPONSABLE"
 const DEADLINE_COLUMN: Re04ColumnLabel = "PLAZOS"
 
-export type HierarchySource = "prefix" | "keyword" | "default"
+/**
+ * `prefix`: el «IV. Controles administrativos:» ROTULADO que escribe el libro que
+ * exporta la plataforma; ese tipo viene confirmado. `numeral`: un romano suelto
+ * («I. USAR CASCO»), que alguien pudo escribir a mano: se sugiere ese tipo y lo
+ * confirma una persona, como el de una palabra clave (spec §8).
+ */
+export type HierarchySource = "prefix" | "numeral" | "keyword" | "default"
 export type HierarchySuggestion = { hierarchy: ControlHierarchy; source: HierarchySource }
 /**
  * `line`: la línea de la celda de la que salió la pieza, contada sobre las líneas
  * no vacías y ANTES de descartar repetidas y restos. Es la que alinea la medida
  * con su RESPONSABLE y su PLAZOS en el libro exportado.
+ * `prefix`: el tipo del «I.–V.» de la línea; `labeled`, si venía rotulado
+ * («IV. Controles administrativos:») y no como un romano suelto («IV.»).
  */
-export type MeasurePiece = { text: string; key: string; prefix: ControlHierarchy | null; line: number }
+export type MeasurePiece = { text: string; key: string; prefix: ControlHierarchy | null; labeled: boolean; line: number }
 export type ResponsibleDecision = { kind: "user"; userId: string } | { kind: "text"; name: string } | { kind: "none" }
 export type DeadlineDecision = { kind: "existing"; frequency: string | null } | { kind: "pending"; dueDate: string | null }
 export type DeadlineSource = "date" | "relative" | "immediate" | "frequency" | "default"
 export type ImportRowInput = { rowNumber: number; status: string; original: unknown }
 export type ResponsibleUser = { id: string; name: string }
-export type ImportMeasure = { rowNumber: number; text: string; phraseKey: string; prefix: ControlHierarchy | null; responsibleKey: string; deadlineKey: string }
+export type ImportMeasure = { rowNumber: number; text: string; phraseKey: string; prefix: ControlHierarchy | null; labeled: boolean; responsibleKey: string; deadlineKey: string }
 export type PhraseGroup = { key: string; text: string; count: number; suggestion: HierarchySuggestion }
 export type ValueGroup<D> = { key: string; text: string | null; count: number; suggestion: D }
 export type MeasureAnalysis = {
@@ -90,13 +98,13 @@ const GLUED_SENTENCE = /(?<=\p{L}{3})\.(?=\p{Lu}\p{L}{2})/u
 /** Viñetas y puntuación sobrantes en los bordes de una medida. */
 const EDGE_PUNCTUATION = /^[\s.,;:\-–—•*]+|[\s.,;:\-–—•*]+$/gu
 
-function prefixOf(line: string): { hierarchy: ControlHierarchy; rest: string } | null {
+function prefixOf(line: string): { hierarchy: ControlHierarchy; labeled: boolean; rest: string } | null {
   const lower = line.toLocaleLowerCase("es-CL")
   for (const { hierarchy, prefix } of LABELED_PREFIXES) {
-    if (lower.startsWith(prefix)) return { hierarchy, rest: line.slice(prefix.length) }
+    if (lower.startsWith(prefix)) return { hierarchy, labeled: true, rest: line.slice(prefix.length) }
   }
   const bare = BARE_PREFIX.exec(line)
-  return bare ? { hierarchy: ROMAN[bare[1]!]!, rest: line.slice(bare[0].length) } : null
+  return bare ? { hierarchy: ROMAN[bare[1]!]!, labeled: false, rest: line.slice(bare[0].length) } : null
 }
 
 const DIGIT = /^\p{Nd}$/u
@@ -140,22 +148,22 @@ function splitTopLevel(text: string, separator: string): string[] {
 export function splitMeasures(cell: unknown): MeasurePiece[] {
   const pieces: MeasurePiece[] = []
   const seen = new Set<string>()
-  const push = (raw: string, prefix: ControlHierarchy | null, line: number) => {
+  const push = (raw: string, prefix: ControlHierarchy | null, labeled: boolean, line: number) => {
     const cleaned = (cleanMiperName(raw) ?? "").replace(EDGE_PUNCTUATION, "").slice(0, MEASURE_MAX_LENGTH)
     const key = normalizeMeasure(cleaned)
     if (cleaned.length < 3 || key === "" || seen.has(key)) return
     seen.add(key)
-    pieces.push({ text: cleaned, key, prefix, line })
+    pieces.push({ text: cleaned, key, prefix, labeled, line })
   }
   cellLines(cell).forEach((line, index) => {
     const prefixed = prefixOf(line)
     if (prefixed) {
-      push(prefixed.rest, prefixed.hierarchy, index)
+      push(prefixed.rest, prefixed.hierarchy, prefixed.labeled, index)
       return
     }
     const bySemicolon = splitTopLevel(line, ";")
     const parts = bySemicolon.length > 1 ? bySemicolon : splitTopLevel(line, ",")
-    for (const part of parts) for (const piece of part.split(GLUED_SENTENCE)) push(piece, null, index)
+    for (const part of parts) for (const piece of part.split(GLUED_SENTENCE)) push(piece, null, false, index)
   })
   return pieces
 }
@@ -200,9 +208,13 @@ const KEYWORD_RULES = KEYWORDS.map(([hierarchy, words]) => ({
 /** «USO DE …» sin otra pista es EPP (spec §8). */
 const USE_OF = /^uso(?: \p{L}+)? de\b/u
 
-/** El tipo que se sugiere. Sin pista: IV, marcado `default` para que la persona lo mire. */
-export function inferHierarchy(piece: { text: string; prefix?: ControlHierarchy | null }): HierarchySuggestion {
-  if (piece.prefix) return { hierarchy: piece.prefix, source: "prefix" }
+/**
+ * El tipo que se sugiere. El «I.–V.» manda: rotulado, viene confirmado (`prefix`);
+ * suelto, es sólo una sugerencia (`numeral`). Sin pista: IV, marcado `default`
+ * para que la persona lo mire.
+ */
+export function inferHierarchy(piece: { text: string; prefix?: ControlHierarchy | null; labeled?: boolean }): HierarchySuggestion {
+  if (piece.prefix) return { hierarchy: piece.prefix, source: piece.labeled ? "prefix" : "numeral" }
   const text = normalizeMiperName(piece.text)
   let best: { hierarchy: ControlHierarchy; position: number } | null = null
   for (const rule of KEYWORD_RULES) {
@@ -315,17 +327,24 @@ function valuesPerMeasure(cell: unknown, pieces: readonly MeasurePiece[], layout
 const byCountThenText = (a: { count: number; text: string | null }, b: { count: number; text: string | null }) =>
   b.count - a.count || (a.text ?? "").localeCompare(b.text ?? "", "es")
 
-/** Las frases distintas, por frecuencia. Si alguna aparición trae «I.–V.», la frase toma ese tipo. */
-export function distinctPhrases(measures: ReadonlyArray<Pick<ImportMeasure, "text" | "phraseKey" | "prefix">>): PhraseGroup[] {
-  const groups = new Map<string, { text: string; count: number; prefix: ControlHierarchy | null }>()
+/**
+ * Las frases distintas, por frecuencia. Si alguna aparición trae «I.–V.», la
+ * frase toma ese tipo: el de la primera rotulada y, si ninguna lo está, el del
+ * primer romano suelto.
+ */
+export function distinctPhrases(measures: ReadonlyArray<Pick<ImportMeasure, "text" | "phraseKey" | "prefix" | "labeled">>): PhraseGroup[] {
+  const groups = new Map<string, { text: string; count: number; prefix: ControlHierarchy | null; labeled: boolean }>()
   for (const measure of measures) {
     const group = groups.get(measure.phraseKey)
-    if (group) {
-      group.count += 1
-      group.prefix ??= measure.prefix
+    if (!group) {
+      groups.set(measure.phraseKey, { text: measure.text, count: 1, prefix: measure.prefix, labeled: measure.labeled })
       continue
     }
-    groups.set(measure.phraseKey, { text: measure.text, count: 1, prefix: measure.prefix })
+    group.count += 1
+    if (measure.prefix && (group.prefix === null || (measure.labeled && !group.labeled))) {
+      group.prefix = measure.prefix
+      group.labeled = measure.labeled
+    }
   }
   return [...groups].map(([key, group]) => ({ key, text: group.text, count: group.count, suggestion: inferHierarchy(group) })).sort(byCountThenText)
 }
@@ -363,7 +382,7 @@ export function analyzeRe04Measures(rows: readonly ImportRowInput[], options: { 
       const deadlineKey = normalizeMiperName(deadline)
       if (!responsibleTexts.has(responsibleKey)) responsibleTexts.set(responsibleKey, responsible || null)
       if (!deadlineTexts.has(deadlineKey)) deadlineTexts.set(deadlineKey, deadline || null)
-      measures.push({ rowNumber: row.rowNumber, text: piece.text, phraseKey: piece.key, prefix: piece.prefix, responsibleKey, deadlineKey })
+      measures.push({ rowNumber: row.rowNumber, text: piece.text, phraseKey: piece.key, prefix: piece.prefix, labeled: piece.labeled, responsibleKey, deadlineKey })
     })
   }
   return {

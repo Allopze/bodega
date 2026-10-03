@@ -9,9 +9,9 @@ import { ImportMeasuresStep } from "./import-measures-step"
 
 const ANALYSIS: MeasureAnalysis = {
   measures: [
-    { rowNumber: 14, text: "USO DE EPP (CASCO, GUANTES, CALZADO DE SEGURIDAD)", phraseKey: "uso epp casco guantes calzado seguridad", prefix: null, responsibleKey: "supervisor/prevencion", deadlineKey: "inmediato / antes de continuar la tarea" },
-    { rowNumber: 14, text: "ORDEN Y LIMPIEZA", phraseKey: "orden limpieza", prefix: null, responsibleKey: "supervisor/prevencion", deadlineKey: "inmediato / antes de continuar la tarea" },
-    { rowNumber: 15, text: "Topes de descarga", phraseKey: "topes descarga", prefix: "engineering", responsibleKey: "", deadlineKey: "trimestral" },
+    { rowNumber: 14, text: "USO DE EPP (CASCO, GUANTES, CALZADO DE SEGURIDAD)", phraseKey: "uso epp casco guantes calzado seguridad", prefix: null, labeled: false, responsibleKey: "supervisor/prevencion", deadlineKey: "inmediato / antes de continuar la tarea" },
+    { rowNumber: 14, text: "ORDEN Y LIMPIEZA", phraseKey: "orden limpieza", prefix: null, labeled: false, responsibleKey: "supervisor/prevencion", deadlineKey: "inmediato / antes de continuar la tarea" },
+    { rowNumber: 15, text: "Topes de descarga", phraseKey: "topes descarga", prefix: "engineering", labeled: true, responsibleKey: "", deadlineKey: "trimestral" },
   ],
   phrases: [
     { key: "orden limpieza", text: "ORDEN Y LIMPIEZA", count: 1, suggestion: { hierarchy: "administrative", source: "keyword" } },
@@ -206,7 +206,7 @@ function archivoGrande(n: number, sinPista: readonly number[] = []): MeasureAnal
     suggestion: { hierarchy: "administrative" as const, source: sinPista.includes(index + 1) ? "default" as const : "keyword" as const },
   }))
   return {
-    measures: phrases.map((phrase, index) => ({ rowNumber: 14 + index, text: phrase.text, phraseKey: phrase.key, prefix: null, responsibleKey: "", deadlineKey: "trimestral" })),
+    measures: phrases.map((phrase, index) => ({ rowNumber: 14 + index, text: phrase.text, phraseKey: phrase.key, prefix: null, labeled: false, responsibleKey: "", deadlineKey: "trimestral" })),
     phrases,
     responsibles: [{ key: "", text: null, count: n, suggestion: { kind: "none" } }],
     deadlines: [{ key: "trimestral", text: "TRIMESTRAL", count: n, suggestion: { kind: "existing", frequency: "TRIMESTRAL" } }],

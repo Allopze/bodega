@@ -3,7 +3,9 @@
  * (Fase C, spec §8). Puro, sin React: lo usa el diálogo y lo prueba `vitest`.
  *
  * - El tipo de cada frase nace SUGERIDO (`confirmed: false`), salvo que el Excel
- *   lo traiga («IV. …» del libro exportado). El Excel del RE-04 no trae tipo:
+ *   lo traiga ROTULADO («IV. Controles administrativos: …», como lo escribe el
+ *   libro exportado; `source: "prefix"`). Un romano suelto («I. USAR CASCO»,
+ *   `source: "numeral"`) es sólo una sugerencia. El Excel del RE-04 no trae tipo:
  *   siempre lo confirma una persona, eligiéndolo, con «Confirmar» o con «Aceptar
  *   sugerencias».
  * - Responsables y plazos nacen en su sugerencia y se pueden cambiar; no piden

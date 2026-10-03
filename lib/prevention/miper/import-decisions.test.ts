@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest"
+import { normalizeMeasure } from "./dedup"
 import { acceptSuggestions, choosePhraseType, decisionsToMappings, importSummary, initialDecisions, unconfirmedCount } from "./import-decisions"
-import type { MeasureAnalysis } from "./re04-measures"
+import { analyzeRe04Measures, type MeasureAnalysis } from "./re04-measures"
 
 /** Dos filas del Excel (14 y 15): una con plazo «INMEDIATO…» y otra «TRIMESTRAL»; una frase trae su «III.». */
 const ANALYSIS: MeasureAnalysis = {
   measures: [
-    { rowNumber: 14, text: "USO DE EPP (CASCO, GUANTES, CALZADO DE SEGURIDAD)", phraseKey: "uso epp casco guantes calzado seguridad", prefix: null, responsibleKey: "supervisor/prevencion", deadlineKey: "inmediato / antes de continuar la tarea" },
-    { rowNumber: 14, text: "ORDEN Y LIMPIEZA", phraseKey: "orden limpieza", prefix: null, responsibleKey: "supervisor/prevencion", deadlineKey: "inmediato / antes de continuar la tarea" },
-    { rowNumber: 15, text: "Topes de descarga", phraseKey: "topes descarga", prefix: "engineering", responsibleKey: "supervisor/prevencion", deadlineKey: "trimestral" },
-    { rowNumber: 15, text: "ORDEN Y LIMPIEZA", phraseKey: "orden limpieza", prefix: null, responsibleKey: "supervisor/prevencion", deadlineKey: "trimestral" },
+    { rowNumber: 14, text: "USO DE EPP (CASCO, GUANTES, CALZADO DE SEGURIDAD)", phraseKey: "uso epp casco guantes calzado seguridad", prefix: null, labeled: false, responsibleKey: "supervisor/prevencion", deadlineKey: "inmediato / antes de continuar la tarea" },
+    { rowNumber: 14, text: "ORDEN Y LIMPIEZA", phraseKey: "orden limpieza", prefix: null, labeled: false, responsibleKey: "supervisor/prevencion", deadlineKey: "inmediato / antes de continuar la tarea" },
+    { rowNumber: 15, text: "Topes de descarga", phraseKey: "topes descarga", prefix: "engineering", labeled: true, responsibleKey: "supervisor/prevencion", deadlineKey: "trimestral" },
+    { rowNumber: 15, text: "ORDEN Y LIMPIEZA", phraseKey: "orden limpieza", prefix: null, labeled: false, responsibleKey: "supervisor/prevencion", deadlineKey: "trimestral" },
   ],
   phrases: [
     { key: "orden limpieza", text: "ORDEN Y LIMPIEZA", count: 2, suggestion: { hierarchy: "administrative", source: "keyword" } },
@@ -33,6 +34,17 @@ describe("decisiones de la vista previa (Fase C)", () => {
     expect(unconfirmedCount(decisions)).toBe(2)
     expect(decisions.responsibles["supervisor/prevencion"]).toEqual({ kind: "text", name: "SUPERVISOR/PREVENCION" })
     expect(decisions.deadlines.trimestral).toEqual({ kind: "existing", frequency: "TRIMESTRAL" })
+  })
+
+  it("sólo el «I.–V.» ROTULADO del libro exportado nace confirmado; un romano suelto («I. USAR CASCO») nace sugerido con ese tipo", () => {
+    const analysis = analyzeRe04Measures([{
+      rowNumber: 14, status: "ready",
+      original: { "MEDIDA DE CONTROL": "I. USAR CASCO\nIII. Controles de ingeniería: Topes de descarga" },
+    }], { today: "2026-10-03" })
+    expect(initialDecisions(analysis).phrases).toEqual({
+      [normalizeMeasure("USAR CASCO")]: { hierarchy: "elimination", confirmed: false },
+      [normalizeMeasure("Topes de descarga")]: { hierarchy: "engineering", confirmed: true },
+    })
   })
 
   it("«Aceptar sugerencias» confirma todo sin cambiar los tipos; elegir un tipo confirma esa frase; nada se modifica en el lugar", () => {

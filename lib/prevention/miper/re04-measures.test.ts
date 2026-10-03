@@ -43,10 +43,10 @@ describe("splitMeasures: las medidas de una celda del RE-04 real", () => {
     expect(texts("SISTEMAS DE VENTILACION\nCAPACITACIÓN EN MANEJO DE SUSTANCIAS CONOCER SUS RIESGOS IDENTIFICADOS EN HDS \n MANTENER VENTILACION ADECUADA, ALMACENAR PRODUCTOS EN LUGARES AUTORIZADOS Y EVITAR FUENTES DE IGNICION"))
       .toEqual(["SISTEMAS DE VENTILACION", "CAPACITACIÓN EN MANEJO DE SUSTANCIAS CONOCER SUS RIESGOS IDENTIFICADOS EN HDS", "MANTENER VENTILACION ADECUADA", "ALMACENAR PRODUCTOS EN LUGARES AUTORIZADOS Y EVITAR FUENTES DE IGNICION"])
   })
-  it("el «I.–V.» del libro exportado da el tipo y la línea es una sola medida, con comas o sin rótulo", () => {
+  it("el «I.–V.» del libro exportado da el tipo y la línea es una sola medida, con comas o sin rótulo (el romano suelto no es rotulado)", () => {
     expect(splitMeasures("III. Controles de ingeniería: Topes de descarga\nIV. Controles administrativos: Charla de 5 minutos, registro firmado\nII. Cambiar solvente por uno base agua")
-      .map((piece) => [piece.text, piece.prefix]))
-      .toEqual([["Topes de descarga", "engineering"], ["Charla de 5 minutos, registro firmado", "administrative"], ["Cambiar solvente por uno base agua", "substitution"]])
+      .map((piece) => [piece.text, piece.prefix, piece.labeled]))
+      .toEqual([["Topes de descarga", "engineering", true], ["Charla de 5 minutos, registro firmado", "administrative", true], ["Cambiar solvente por uno base agua", "substitution", false]])
   })
   it("cada pieza recuerda su línea, contada sobre las líneas no vacías antes de descartar repetidas y restos", () => {
     expect(splitMeasures("GUANTES, CASCO\n\nOK\nguantes\nORDEN Y LIMPIEZA").map((piece) => [piece.text, piece.line]))
@@ -83,8 +83,9 @@ describe("inferHierarchy: el tipo sugerido", () => {
     expect(inferHierarchy({ text: "USO DE CINTA ANTIDESLIZANTE" })).toEqual({ hierarchy: "ppe", source: "keyword" })
     expect(inferHierarchy({ text: "ORGANIZAR LAS TAREAS" })).toEqual({ hierarchy: "administrative", source: "default" })
   })
-  it("el «I.–V.» del Excel manda sobre las palabras clave", () => {
-    expect(inferHierarchy({ text: "Uso de casco", prefix: "administrative" })).toEqual({ hierarchy: "administrative", source: "prefix" })
+  it("el «I.–V.» del Excel manda sobre las palabras clave; sólo el rotulado viene confirmado, el romano suelto es una sugerencia", () => {
+    expect(inferHierarchy({ text: "Uso de casco", prefix: "administrative", labeled: true })).toEqual({ hierarchy: "administrative", source: "prefix" })
+    expect(inferHierarchy({ text: "Uso de casco", prefix: "administrative", labeled: false })).toEqual({ hierarchy: "administrative", source: "numeral" })
   })
 })
 
@@ -212,11 +213,17 @@ describe("analyzeRe04Measures", () => {
     })], { today: TODAY })
     expect(loose.measures.map((measure) => [measure.responsibleKey, measure.deadlineKey])).toEqual([["supervisor de turno", "30-06-2026"], ["jefe de faena", "trimestral"]])
   })
-  it("distinctPhrases: si alguna aparición trae «I.–V.», la frase toma ese tipo", () => {
+  it("distinctPhrases: si alguna aparición trae «I.–V.», la frase toma ese tipo; el rotulado manda sobre el romano suelto", () => {
     expect(distinctPhrases([
-      { text: "Charla de inicio", phraseKey: "charla inicio", prefix: null },
-      { text: "Charla de inicio", phraseKey: "charla inicio", prefix: "administrative" },
+      { text: "Charla de inicio", phraseKey: "charla inicio", prefix: null, labeled: false },
+      { text: "Charla de inicio", phraseKey: "charla inicio", prefix: "administrative", labeled: true },
     ])).toEqual([{ key: "charla inicio", text: "Charla de inicio", count: 2, suggestion: { hierarchy: "administrative", source: "prefix" } }])
+    expect(distinctPhrases([
+      { text: "Usar casco", phraseKey: "usar casco", prefix: "elimination", labeled: false },
+      { text: "Usar casco", phraseKey: "usar casco", prefix: "ppe", labeled: true },
+    ])[0]!.suggestion).toEqual({ hierarchy: "ppe", source: "prefix" })
+    expect(distinctPhrases([{ text: "Usar casco", phraseKey: "usar casco", prefix: "elimination", labeled: false }])[0]!.suggestion)
+      .toEqual({ hierarchy: "elimination", source: "numeral" })
   })
 })
 
