@@ -447,7 +447,7 @@ graph TD
 El vínculo entre medidas y actividades es **N:M**: una actividad puede nacer de varias medidas, y varias medidas pueden colgar de una misma actividad, sin duplicar el vínculo. Desde una actividad se llega a los riesgos que la originaron, y desde un riesgo a sus medidas, actividades, ocurrencias y evidencias.
 
 > [!WARNING]
-> **INTOLERABLE E IMPORTANTE NO QUEDAN SIN PROGRAMA:** «dejar sin actividad» **no se ofrece** para una medida de un riesgo **Intolerable** o **Importante**: ambos exigen una medida por implementar con responsable y plazo, y la plataforma rechaza la decisión nombrando el riesgo. Además, un riesgo **Intolerable** exige que **al menos una de sus medidas esté vinculada a una actividad del programa** para que la MIPER pueda **enviarse a revisión**.
+> **INTOLERABLE E IMPORTANTE NO QUEDAN SIN PROGRAMA:** «dejar sin actividad» **no se ofrece** para una medida de un riesgo **Intolerable** o **Importante**, aunque esté «Sí» controlado, y la plataforma rechaza la decisión nombrando el riesgo. Un Intolerable, y un Importante que no está «Sí» controlado, exigen además una medida por implementar con responsable y plazo. Un riesgo **Intolerable** exige también que **al menos una de sus medidas esté vinculada a una actividad del programa** para que la MIPER pueda **enviarse a revisión**.
 
 ### Las ocurrencias: la agenda de cada actividad
 
