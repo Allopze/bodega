@@ -3,7 +3,7 @@ import { z } from "zod"
 import { db } from "@/db"
 import { preventionPdtpSourceLinks, preventionRiskControls, preventionRiskEntries, preventionRiskFactors, preventionRiskMapMarkers, preventionRiskMatrices } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { controlColumns, type ControlResponsible } from "@/lib/prevention/miper/control-values"
+import { type ControlColumns, controlColumns, type ControlResponsible } from "@/lib/prevention/miper/control-values"
 import { cleanMiperName } from "@/lib/prevention/miper/names"
 import { miperControlRefSchema, miperControlSaveSchema, miperEntryRefSchema, miperEntrySaveSchema, type MiperEntryValues } from "@/lib/validation/prevention-module/miper"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
@@ -68,6 +68,15 @@ export async function toColumns(client: Client, worksiteId: string, values: Mipe
   return out
 }
 
+/**
+ * El «antes» de un riesgo en el historial: lo que tenía en las columnas que el
+ * guardado cambia. Lo comparten el editor y el cambio en lote (`bulk.ts`), que
+ * además lo usa para saltarse el riesgo que ya está como lo pide el lote.
+ */
+export function entryHistoryBefore(current: typeof preventionRiskEntries.$inferSelect, columns: Partial<typeof preventionRiskEntries.$inferInsert>): Record<string, unknown> {
+  return Object.fromEntries(Object.keys(columns).map((key) => [key, current[key as keyof typeof current]]))
+}
+
 export async function saveMiperEntry(input: unknown, access: MiperAccess): Promise<SavedEntry> {
   const data = miperEntrySaveSchema.parse(input)
   /* Enganche de «fila pasa a Intolerable» (§9.1). La clasificación es una
@@ -108,7 +117,7 @@ export async function saveMiperEntry(input: unknown, access: MiperAccess): Promi
     await touchMatrix(tx, matrix.id, now)
     await miperHistory(tx, {
       matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "entry", objectId: current.id, changeType: "entry_updated",
-      before: Object.fromEntries(Object.keys(columns).map((key) => [key, current[key as keyof typeof current]])), after: columns,
+      before: entryHistoryBefore(current, columns), after: columns,
       actorUserId: access.userId, actingAs: EDIT,
     })
     return { entry: saved(updated), notified: crossed(current.classification, updated.classification), worksiteId: matrix.worksiteId, matrixTitle: matrix.title }
@@ -191,6 +200,36 @@ export async function controlResponsible(client: Client, values: { responsibleUs
   return { responsibleUserId, responsibleSnapshot }
 }
 
+/** Una medida nueva, en el editor y en «Agregar medida a N»: nace «propuesta». */
+export function newControlRow(entryId: string, columns: ControlColumns, now: string) {
+  return { id: `riskcontrol-${nanoid()}`, riskEntryId: entryId, ...columns, status: "proposed", createdAt: now, updatedAt: now } satisfies typeof preventionRiskControls.$inferInsert
+}
+
+/**
+ * El «antes» de una medida en el historial: sus valores editables, con las
+ * mismas claves que `ControlColumns`. El lote lo usa además para saltarse la
+ * medida que ya queda como estaba.
+ */
+export function controlHistoryBefore(current: typeof preventionRiskControls.$inferSelect): ControlColumns {
+  return {
+    hierarchy: current.hierarchy as ControlColumns["hierarchy"], description: current.description, responsibleUserId: current.responsibleUserId, responsibleSnapshot: current.responsibleSnapshot,
+    isExisting: current.isExisting, verificationFrequency: current.verificationFrequency, dueDate: current.dueDate,
+  }
+}
+
+/**
+ * Guarda una medida sólo si sigue en la versión leída y la sube en uno. Si otra
+ * escritura llegó antes, lanza `stale`: cada llamador nombra el conflicto a su
+ * manera (el editor, «la medida»; el lote, «1 medida»).
+ */
+export async function updateControlAtVersion(client: Client, current: { id: string; version: number }, values: ControlColumns, now: string, stale: string): Promise<{ id: string; version: number }> {
+  const [updated] = await client.update(preventionRiskControls).set({ ...values, version: current.version + 1, updatedAt: now })
+    .where(and(eq(preventionRiskControls.id, current.id), eq(preventionRiskControls.version, current.version)))
+    .returning({ id: preventionRiskControls.id, version: preventionRiskControls.version })
+  if (!updated) throw new RiskLegalDomainError(stale)
+  return updated
+}
+
 export async function saveMiperControl(input: unknown, access: MiperAccess) {
   const data = miperControlSaveSchema.parse(input)
   return db.transaction(async (tx) => {
@@ -203,7 +242,7 @@ export async function saveMiperControl(input: unknown, access: MiperAccess) {
     const now = nowIso()
     if (!data.controlId) {
       const values = controlColumns(data.values, responsible, null)
-      const [created] = await tx.insert(preventionRiskControls).values({ id: `riskcontrol-${nanoid()}`, riskEntryId: entry.id, ...values, status: "proposed", createdAt: now, updatedAt: now })
+      const [created] = await tx.insert(preventionRiskControls).values(newControlRow(entry.id, values, now))
         .returning({ id: preventionRiskControls.id, version: preventionRiskControls.version })
       await touchMatrix(tx, matrix.id, now)
       await miperHistory(tx, { matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "control", objectId: created!.id, changeType: "control_created", after: { entryId: entry.id, ...values }, actorUserId: access.userId, actingAs: EDIT })
@@ -213,18 +252,11 @@ export async function saveMiperControl(input: unknown, access: MiperAccess) {
     if (!current) throw new RiskLegalDomainError("La medida no existe en esta fila; recarga la matriz.")
     if (current.version !== data.expectedVersion) throw new RiskLegalDomainError(STALE_CONTROL)
     const values = controlColumns(data.values, responsible, current)
-    const [updated] = await tx.update(preventionRiskControls).set({ ...values, version: current.version + 1, updatedAt: now })
-      .where(and(eq(preventionRiskControls.id, current.id), eq(preventionRiskControls.version, current.version)))
-      .returning({ id: preventionRiskControls.id, version: preventionRiskControls.version })
-    if (!updated) throw new RiskLegalDomainError(STALE_CONTROL)
+    const updated = await updateControlAtVersion(tx, current, values, now, STALE_CONTROL)
     await touchMatrix(tx, matrix.id, now)
     await miperHistory(tx, {
       matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "control", objectId: current.id, changeType: "control_updated",
-      before: {
-        hierarchy: current.hierarchy, description: current.description, responsibleUserId: current.responsibleUserId, responsibleSnapshot: current.responsibleSnapshot,
-        isExisting: current.isExisting, verificationFrequency: current.verificationFrequency, dueDate: current.dueDate,
-      },
-      after: values, actorUserId: access.userId, actingAs: EDIT,
+      before: controlHistoryBefore(current), after: values, actorUserId: access.userId, actingAs: EDIT,
     })
     return updated
   })

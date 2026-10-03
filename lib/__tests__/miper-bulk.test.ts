@@ -53,7 +53,9 @@ async function seedEntries(prefix: string, count: number, matrix = matrixId) {
   await testDb.insert(schema.preventionRiskEntries).values(rows)
   return rows.map((row) => ({ entryId: row.id, expectedVersion: 1 }))
 }
-const auditCount = async () => (await testDb.select({ id: schema.auditLog.id }).from(schema.auditLog).where(eq(schema.auditLog.entityId, matrixId))).length
+const auditCount = async (matrix = matrixId) => (await testDb.select({ id: schema.auditLog.id }).from(schema.auditLog).where(eq(schema.auditLog.entityId, matrix))).length
+/** La marca `updated_at` de la matriz, que la bandeja usa para «cambios sin enviar». */
+const matrixUpdatedAt = async () => (await testDb.select({ updatedAt: schema.preventionRiskMatrices.updatedAt }).from(schema.preventionRiskMatrices).where(eq(schema.preventionRiskMatrices.id, matrixId)))[0]!.updatedAt
 const controlsOf = (entryIds: string[]) => testDb.select().from(schema.preventionRiskControls).where(inArray(schema.preventionRiskControls.riskEntryId, entryIds)).orderBy(asc(schema.preventionRiskControls.id))
 const entriesOf = (entryIds: string[]) => testDb.select().from(schema.preventionRiskEntries).where(inArray(schema.preventionRiskEntries.id, entryIds)).orderBy(asc(schema.preventionRiskEntries.rowNumber))
 const MEASURE = { hierarchy: "administrative" as const, description: "Charla de trasvasije seguro", responsibleUserId: "u-a", isExisting: false, dueDate: "2026-12-31" }
@@ -62,10 +64,15 @@ describe("acciones masivas de la MIPER (Fase D)", () => {
   it("criterio D: una medida se aplica a 40 riesgos en una sola operación; nace propuesta, con su historial por riesgo", async () => {
     const items = await seedEntries("cuarenta", 40)
     const before = await auditCount()
+    const touched = await matrixUpdatedAt()
     const result = await bulk.bulkAddMiperControl({ matrixId, items, values: MEASURE }, author)
     expect(result.controls).toHaveLength(40)
     const created = await controlsOf(items.map((item) => item.entryId))
     expect(created).toHaveLength(40)
+    // Una sola marca en la matriz, con la hora de las escrituras del lote.
+    expect(new Set(created.map((control) => control.updatedAt)).size).toBe(1)
+    expect(await matrixUpdatedAt()).toBe(created[0]!.updatedAt)
+    expect(created[0]!.updatedAt).not.toBe(touched)
     expect(new Set(created.map((control) => control.riskEntryId)).size).toBe(40)
     for (const control of created) {
       expect(control).toMatchObject({ description: "Charla de trasvasije seguro", hierarchy: "administrative", responsibleUserId: "u-a", responsibleSnapshot: "Autora", isExisting: false, dueDate: "2026-12-31", verificationFrequency: null, status: "proposed", version: 1 })
@@ -83,6 +90,7 @@ describe("acciones masivas de la MIPER (Fase D)", () => {
     // Otra pestaña guardó el riesgo 17 después de que la persona lo vio.
     await entries.saveMiperEntry({ matrixId, entryId: "vieja-17", expectedVersion: 1, values: { risk: "Inhalación de vapores" } }, author)
     const before = await auditCount()
+    const touched = await matrixUpdatedAt()
     await expect(bulk.bulkAddMiperControl({ matrixId, items, values: MEASURE }, author))
       .rejects.toThrow("1 riesgo cambió mientras editabas; recarga la matriz para ver los cambios de la otra persona.")
     await expect(bulk.bulkPatchMiperEntries({ matrixId, items, values: { controlledStatus: "yes", position: "Bodeguero" } }, author))
@@ -91,20 +99,39 @@ describe("acciones masivas de la MIPER (Fase D)", () => {
     const rows = await entriesOf(items.map((item) => item.entryId))
     expect(rows.filter((row) => row.controlledStatus === "yes" || row.positionId !== null)).toEqual([])
     expect(rows.find((row) => row.id === "vieja-17")!.version).toBe(2)
+    // Los otros 39 siguen en la versión que vio la persona.
+    expect(rows.filter((row) => row.version !== 1).map((row) => row.id)).toEqual(["vieja-17"])
     expect(await auditCount()).toBe(before)
+    expect(await matrixUpdatedAt()).toBe(touched)
   })
 
-  it("alcance: otra faena, sólo lectura y un riesgo de otra MIPER se rechazan sin escribir nada", async () => {
+  it("alcance: otra faena, sólo lectura y un riesgo o una medida de otra MIPER se rechazan sin escribir nada", async () => {
     const items = await seedEntries("alcance", 2)
     const other = (await createMiper({ worksiteId: "ws-b", period: 2027, revisionReason: "Otra MIPER de la misma faena." }, author)).id
     const [foreign] = await seedEntries("ajena", 1, other)
+    const spillTray = { hierarchy: "engineering" as const, description: "Bandeja antiderrames", responsibleName: "Bodeguero", dueDate: "2026-11-30" }
+    const own = await entries.saveMiperControl({ matrixId, entryId: items[0]!.entryId, values: spillTray }, author)
+    const alien = await entries.saveMiperControl({ matrixId: other, entryId: foreign!.entryId, values: spillTray }, author)
+    const ownItems = [{ controlId: own.id, expectedVersion: 1 }]
+    const patch = { dueDate: "2027-06-30" }
     const before = await auditCount()
+    const otherBefore = await auditCount(other)
     await expect(bulk.bulkPatchMiperEntries({ matrixId, items, values: { controlledStatus: "yes" } }, outsider)).rejects.toThrow(OUT_OF_SCOPE)
     await expect(bulk.bulkAddMiperControl({ matrixId, items, values: MEASURE }, viewer)).rejects.toThrow(OUT_OF_SCOPE)
+    await expect(bulk.bulkUpdateMiperControls({ matrixId, items: ownItems, patch }, outsider)).rejects.toThrow(OUT_OF_SCOPE)
+    await expect(bulk.bulkUpdateMiperControls({ matrixId, items: ownItems, patch }, viewer)).rejects.toThrow(OUT_OF_SCOPE)
     await expect(bulk.bulkPatchMiperEntries({ matrixId, items: [...items, foreign!], values: { controlledStatus: "yes" } }, author))
       .rejects.toThrow("1 riesgo no existe en esta MIPER; recarga la matriz.")
-    expect((await entriesOf([...items, foreign!].map((item) => item.entryId))).map((row) => row.controlledStatus)).toEqual(["no", "no", "no"])
+    await expect(bulk.bulkAddMiperControl({ matrixId, items: [...items, foreign!], values: MEASURE }, author))
+      .rejects.toThrow("1 riesgo no existe en esta MIPER; recarga la matriz.")
+    await expect(bulk.bulkUpdateMiperControls({ matrixId, items: [...ownItems, { controlId: alien.id, expectedVersion: 1 }], patch }, author))
+      .rejects.toThrow("1 medida no existe en esta MIPER; recarga la matriz.")
+    expect((await entriesOf([...items, foreign!].map((item) => item.entryId))).map((row) => [row.controlledStatus, row.version])).toEqual([["no", 1], ["no", 1], ["no", 1]])
+    // Sólo las dos medidas de la preparación, intactas: ninguna nueva y ningún plazo cambiado.
+    expect(Object.fromEntries((await controlsOf([...items, foreign!].map((item) => item.entryId))).map((row) => [row.id, [row.dueDate, row.version]])))
+      .toEqual({ [own.id]: ["2026-11-30", 1], [alien.id]: ["2026-11-30", 1] })
     expect(await auditCount()).toBe(before)
+    expect(await auditCount(other)).toBe(otherBefore)
   })
 
   it("una MIPER de la metodología anterior o reemplazada no admite cambios en lote", async () => {
@@ -115,11 +142,19 @@ describe("acciones masivas de la MIPER (Fase D)", () => {
     await testDb.update(schema.preventionRiskMatrices).set({ status: "superseded", reviewedByUserId: "u-a", approvedByUserId: "u-x" }).where(eq(schema.preventionRiskMatrices.id, superseded))
     const legacyItems = await seedEntries("legacy", 1, legacy)
     const supersededItems = await seedEntries("reemplazada", 1, superseded)
+    // Sembradas directo: el editor ya no deja agregar medidas a estas MIPER.
+    await testDb.insert(schema.preventionRiskControls).values([
+      { id: "legacy-control", riskEntryId: legacyItems[0]!.entryId, hierarchy: "administrative", description: "Procedimiento escrito", dueDate: "2026-11-30" },
+      { id: "reemplazada-control", riskEntryId: supersededItems[0]!.entryId, hierarchy: "administrative", description: "Procedimiento escrito", dueDate: "2026-11-30" },
+    ])
     await expect(bulk.bulkPatchMiperEntries({ matrixId: legacy, items: legacyItems, values: { controlledStatus: "yes" } }, author)).rejects.toThrow(/solo lectura/)
     await expect(bulk.bulkAddMiperControl({ matrixId: legacy, items: legacyItems, values: MEASURE }, author)).rejects.toThrow(/solo lectura/)
     await expect(bulk.bulkPatchMiperEntries({ matrixId: superseded, items: supersededItems, values: { controlledStatus: "yes" } }, author)).rejects.toThrow(/reemplazada/)
     await expect(bulk.bulkAddMiperControl({ matrixId: superseded, items: supersededItems, values: MEASURE }, author)).rejects.toThrow(/reemplazada/)
-    expect(await controlsOf([...legacyItems, ...supersededItems].map((item) => item.entryId))).toEqual([])
+    await expect(bulk.bulkUpdateMiperControls({ matrixId: legacy, items: [{ controlId: "legacy-control", expectedVersion: 1 }], patch: { dueDate: "2027-06-30" } }, author)).rejects.toThrow(/solo lectura/)
+    await expect(bulk.bulkUpdateMiperControls({ matrixId: superseded, items: [{ controlId: "reemplazada-control", expectedVersion: 1 }], patch: { dueDate: "2027-06-30" } }, author)).rejects.toThrow(/reemplazada/)
+    expect((await controlsOf([...legacyItems, ...supersededItems].map((item) => item.entryId))).map((row) => [row.id, row.dueDate, row.version]))
+      .toEqual([["legacy-control", "2026-11-30", 1], ["reemplazada-control", "2026-11-30", 1]])
     expect((await entriesOf([...legacyItems, ...supersededItems].map((item) => item.entryId))).map((row) => row.controlledStatus)).toEqual(["no", "no"])
   })
 
@@ -134,7 +169,8 @@ describe("acciones masivas de la MIPER (Fase D)", () => {
     const items = await seedEntries("contexto", 3)
     // La faena ya tiene la actividad escrita de otra forma: se reutiliza, como en el editor.
     await entries.saveMiperEntry({ matrixId, values: { activity: "Bodega de químicos", task: "Recepción" } }, author)
-    await expect(bulk.bulkPatchMiperEntries({ matrixId, items, values: { probability: 4 } }, author)).rejects.toThrow()
+    await expect(bulk.bulkPatchMiperEntries({ matrixId, items, values: { probability: 4 } }, author))
+      .rejects.toMatchObject({ issues: [{ code: "unrecognized_keys", keys: ["probability"], path: ["values"] }] })
     const result = await bulk.bulkPatchMiperEntries({ matrixId, items, values: { activity: "BODEGA DE QUIMICOS", task: "Trasvasije de solventes", position: "Bodeguero" } }, author)
     expect(result.entries).toEqual(items.map((item) => ({ id: item.entryId, version: 2 })))
     const snapshot = (await buildMiperSnapshot(testDb, matrixId)).entries.filter((entry) => entry.id.startsWith("contexto-"))
@@ -158,13 +194,16 @@ describe("acciones masivas de la MIPER (Fase D)", () => {
     const stored = async () => Object.fromEntries((await testDb.select().from(schema.preventionRiskControls).where(inArray(schema.preventionRiskControls.id, [pending.id, existing.id])))
       .map((row) => [row.id === pending.id ? "pending" : "existing", row]))
 
-    await bulk.bulkUpdateMiperControls({ matrixId, items, patch: { dueDate: "2027-01-15" } }, author)
+    // A la existente D5 le vacía el plazo y no le queda nada que cambiar: no se escribe, no sube de
+    // versión (no hace chocar a quien la edita) y no viene en el resultado.
+    const first = await bulk.bulkUpdateMiperControls({ matrixId, items, patch: { dueDate: "2027-01-15" } }, author)
+    expect(first.controls).toEqual([{ id: pending.id, version: 2 }])
     let rows = await stored()
     expect(rows.pending).toMatchObject({ dueDate: "2027-01-15", isExisting: false, responsibleSnapshot: "Supervisor de turno", version: 2 })
-    expect(rows.existing).toMatchObject({ dueDate: null, isExisting: true, verificationFrequency: "Trimestral", responsibleSnapshot: "Bodeguero", version: 2 })
+    expect(rows.existing).toMatchObject({ dueDate: null, isExisting: true, verificationFrequency: "Trimestral", responsibleSnapshot: "Bodeguero", version: 1 })
 
     await bulk.bulkUpdateMiperControls({ matrixId, items: [{ controlId: pending.id, expectedVersion: 2 }], patch: { isExisting: true, verificationFrequency: " Semestral " } }, author)
-    await bulk.bulkUpdateMiperControls({ matrixId, items: [{ controlId: existing.id, expectedVersion: 2 }], patch: { isExisting: false, dueDate: "2027-02-28" } }, author)
+    await bulk.bulkUpdateMiperControls({ matrixId, items: [{ controlId: existing.id, expectedVersion: 1 }], patch: { isExisting: false, dueDate: "2027-02-28" } }, author)
     rows = await stored()
     expect(rows.pending).toMatchObject({ isExisting: true, verificationFrequency: "Semestral", dueDate: null })
     expect(rows.existing).toMatchObject({ isExisting: false, verificationFrequency: null, dueDate: "2027-02-28" })
@@ -179,6 +218,8 @@ describe("acciones masivas de la MIPER (Fase D)", () => {
       .find(({ after }) => after.objectId === pending.id && after.isExisting === true)!
     expect(toExisting.before).toMatchObject({ isExisting: false, dueDate: "2027-01-15", verificationFrequency: null })
     expect(toExisting.after).toMatchObject({ changeType: "control_updated", isExisting: true, dueDate: null, verificationFrequency: "Semestral" })
+    // La existente sólo tiene la entrada de cuando pasó a «por implementar».
+    expect(log.map((row) => JSON.parse(row.newState ?? "{}") as Record<string, unknown>).filter((after) => after.objectId === existing.id)).toHaveLength(1)
   })
 
   it("fechas de calendario, personas activas y versiones de medidas también abortan todo el lote", async () => {
@@ -187,7 +228,8 @@ describe("acciones masivas de la MIPER (Fase D)", () => {
     const second = await entries.saveMiperControl({ matrixId, entryId: b!.entryId, values: { hierarchy: "administrative", description: "Hoja de seguridad a la vista", responsibleName: "Bodeguero", dueDate: "2026-11-30" } }, author)
     const items = [{ controlId: first.id, expectedVersion: 1 }, { controlId: second.id, expectedVersion: 1 }]
     const before = await auditCount()
-    await expect(bulk.bulkUpdateMiperControls({ matrixId, items, patch: { dueDate: "2026-02-31" } }, author)).rejects.toThrow()
+    await expect(bulk.bulkUpdateMiperControls({ matrixId, items, patch: { dueDate: "2026-02-31" } }, author))
+      .rejects.toMatchObject({ issues: [{ path: ["patch", "dueDate"], message: "Fecha inválida" }] })
     await expect(bulk.bulkUpdateMiperControls({ matrixId, items, patch: { responsible: { kind: "user", userId: "u-off" } } }, author)).rejects.toThrow("La persona responsable no existe o está inactiva.")
     await expect(bulk.bulkAddMiperControl({ matrixId, items: [a!, b!], values: { ...MEASURE, responsibleUserId: "u-off" } }, author)).rejects.toThrow("La persona responsable no existe o está inactiva.")
     await entries.saveMiperControl({ matrixId, entryId: b!.entryId, controlId: second.id, expectedVersion: 1, values: { hierarchy: "administrative", description: "Hoja de seguridad plastificada", responsibleName: "Bodeguero", dueDate: "2026-11-30" } }, author)
@@ -230,5 +272,100 @@ describe("acciones masivas de la MIPER (Fase D)", () => {
       expect(after).toMatchObject({ changeType: "entry_updated", controlledStatus: "yes" })
       expect(after).not.toHaveProperty("processId")
     }
+  })
+
+  it("lo que el lote ya escribió se deshace si algo falla después: ni la actividad nueva en el diccionario, ni cambios, ni marca", async () => {
+    await testDb.insert(schema.preventionRiskFactors).values({ id: "factor-baja", code: "factor_baja", name: "Factor dado de baja", isActive: false })
+    const items = await seedEntries("deshacer", 2)
+    const before = await auditCount()
+    const touched = await matrixUpdatedAt()
+    // `toColumns` resuelve primero la actividad (la inserta en el diccionario) y recién después rechaza el factor inactivo.
+    await expect(bulk.bulkPatchMiperEntries({ matrixId, items, values: { activity: "Limpieza de derrames", riskFactorId: "factor-baja" } }, author))
+      .rejects.toThrow("El factor de riesgo no existe o está desactivado en el catálogo.")
+    expect(await testDb.select().from(schema.preventionRiskProcesses).where(eq(schema.preventionRiskProcesses.name, "Limpieza de derrames"))).toEqual([])
+    expect((await entriesOf(items.map((item) => item.entryId))).map((row) => [row.version, row.processId, row.riskFactorId])).toEqual([[1, null, null], [1, null, null]])
+    expect(await auditCount()).toBe(before)
+    expect(await matrixUpdatedAt()).toBe(touched)
+  })
+
+  it("un elemento que ya está como lo pide el lote no se escribe: ni versión, ni historial, ni marca en la matriz", async () => {
+    const [already, other] = await seedEntries("igual", 2)
+    // El riesgo 1 ya está «Sí» controlado (escrito directo, sin subir la versión).
+    await testDb.update(schema.preventionRiskEntries).set({ controlledStatus: "yes" }).where(eq(schema.preventionRiskEntries.id, already!.entryId))
+    const existing = await entries.saveMiperControl({ matrixId, entryId: other!.entryId, values: { hierarchy: "ppe", description: "Guantes de nitrilo", responsibleName: "Bodeguero", isExisting: true, verificationFrequency: "Mensual" } }, author)
+    const before = await auditCount()
+    const touched = await matrixUpdatedAt()
+
+    // Nada cambia: «Sí» a un riesgo que ya lo es; un plazo a una existente (D5 lo vacía) con el responsable que ya tiene.
+    expect(await bulk.bulkPatchMiperEntries({ matrixId, items: [already!], values: { controlledStatus: "yes" } }, author)).toEqual({ entries: [] })
+    expect(await bulk.bulkUpdateMiperControls({ matrixId, items: [{ controlId: existing.id, expectedVersion: 1 }], patch: { dueDate: "2027-03-31", responsible: { kind: "text", name: "Bodeguero" } } }, author))
+      .toEqual({ controls: [] })
+    expect((await entriesOf([already!.entryId]))[0]!.version).toBe(1)
+    expect((await controlsOf([other!.entryId]))[0]).toMatchObject({ version: 1, dueDate: null, responsibleSnapshot: "Bodeguero" })
+    expect(await auditCount()).toBe(before)
+    expect(await matrixUpdatedAt()).toBe(touched)
+
+    // Mezclado: se escribe y se devuelve sólo el que cambia; el otro conserva su versión y no deja historial.
+    const mixed = await bulk.bulkPatchMiperEntries({ matrixId, items: [already!, other!], values: { controlledStatus: "yes" } }, author)
+    expect(mixed.entries).toEqual([{ id: other!.entryId, version: 2 }])
+    expect((await entriesOf([already!.entryId, other!.entryId])).map((row) => [row.version, row.controlledStatus])).toEqual([[1, "yes"], [2, "yes"]])
+    expect(await auditCount()).toBe(before + 1)
+    expect(await matrixUpdatedAt()).not.toBe(touched)
+  })
+
+  it("los riesgos del lote quedan bloqueados desde que se leen: verificar un control sube su versión sin bloquear la matriz", async () => {
+    // `verifyRiskControl` sube la versión del riesgo SIN `lockMatrix`: bloquear la matriz no alcanza.
+    // La sonda corre al empezar la primera escritura del lote (el puesto nuevo en el diccionario; la
+    // medida nueva) y anota si ESTA transacción ya tiene bloqueados (`FOR UPDATE`) los riesgos del
+    // lote: un riesgo bloqueado lleva en `xmax` el id de la transacción que lo bloqueó.
+    await pg.exec(`
+      CREATE TABLE bulk_lock_probe (locked boolean);
+      CREATE FUNCTION bulk_lock_probe_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+        INSERT INTO bulk_lock_probe SELECT bool_and(xmax::text::bigint = txid_current() % 4294967296) FROM prevention_risk_entries WHERE id LIKE 'cerrojo-%';
+        RETURN NULL;
+      END $$;
+      CREATE TRIGGER bulk_lock_probe BEFORE INSERT ON prevention_risk_positions FOR EACH STATEMENT EXECUTE FUNCTION bulk_lock_probe_fn();
+      CREATE TRIGGER bulk_lock_probe BEFORE INSERT ON prevention_risk_controls FOR EACH STATEMENT EXECUTE FUNCTION bulk_lock_probe_fn();
+    `)
+    try {
+      const items = await seedEntries("cerrojo", 3)
+      await bulk.bulkPatchMiperEntries({ matrixId, items, values: { position: "Operador de trasvasije" } }, author)
+      await bulk.bulkAddMiperControl({ matrixId, items: items.map((item) => ({ ...item, expectedVersion: 2 })), values: MEASURE }, author)
+      expect((await pg.query<{ locked: boolean }>("SELECT locked FROM bulk_lock_probe")).rows.map((row) => row.locked)).toEqual([true, true])
+    } finally {
+      await pg.exec(`
+        DROP TRIGGER bulk_lock_probe ON prevention_risk_positions;
+        DROP TRIGGER bulk_lock_probe ON prevention_risk_controls;
+        DROP FUNCTION bulk_lock_probe_fn();
+        DROP TABLE bulk_lock_probe;
+      `)
+    }
+  })
+
+  it("una medida que cambia a mitad del lote lo aborta entero, también lo ya escrito: el guardado exige su versión", async () => {
+    // `verifyRiskControl` sube la versión de una medida sin bloquear la matriz. Acá lo hace un trigger
+    // en cuanto el lote escribe su primera entrada de historial: la medida 1 ya quedó guardada y la 2
+    // cambió después de que el lote la leyó.
+    const [a, b] = await seedEntries("carrera", 2)
+    await testDb.insert(schema.preventionRiskControls).values([a!, b!].map((item, index) => ({
+      id: `carrera-control-${index + 1}`, riskEntryId: item.entryId, hierarchy: "administrative", description: "Ducha de emergencia operativa", responsibleSnapshot: "Bodeguero", dueDate: "2026-11-30",
+    })))
+    const before = await auditCount()
+    await pg.exec(`
+      CREATE FUNCTION bulk_race_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+        UPDATE prevention_risk_controls SET version = version + 1 WHERE id = 'carrera-control-2';
+        RETURN NULL;
+      END $$;
+      CREATE TRIGGER bulk_race AFTER INSERT ON audit_log FOR EACH ROW WHEN (NEW.reason = 'Edición masiva') EXECUTE FUNCTION bulk_race_fn();
+    `)
+    try {
+      await expect(bulk.bulkUpdateMiperControls({ matrixId, items: [{ controlId: "carrera-control-1", expectedVersion: 1 }, { controlId: "carrera-control-2", expectedVersion: 1 }], patch: { dueDate: "2027-04-30" } }, author))
+        .rejects.toThrow("1 medida cambió mientras editabas; recarga la matriz para ver los cambios de la otra persona.")
+    } finally {
+      await pg.exec(`DROP TRIGGER bulk_race ON audit_log; DROP FUNCTION bulk_race_fn();`)
+    }
+    expect((await controlsOf([a!.entryId, b!.entryId])).map((row) => [row.id, row.dueDate, row.version]))
+      .toEqual([["carrera-control-1", "2026-11-30", 1], ["carrera-control-2", "2026-11-30", 1]])
+    expect(await auditCount()).toBe(before)
   })
 })

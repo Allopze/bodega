@@ -11,23 +11,24 @@
  * igual que el guardado de a uno. Cada elemento trae la versión que vio la
  * persona: con una sola vieja, o un elemento que no es de esta MIPER, no se
  * escribe nada. Hasta `MIPER_BULK_LIMIT` elementos. El historial lleva una
- * entrada por elemento, con el `changeType` del guardado de a uno y el motivo
- * «Edición masiva».
+ * entrada por elemento escrito, con el `changeType` del guardado de a uno y el
+ * motivo «Edición masiva». Un elemento que ya está como lo pide el lote no se
+ * escribe (ver `BulkSaved`).
  *
  * Las reglas son las del guardado de a uno, no copias: `toColumns` (diccionario
- * y factor activo), `controlColumns` (D5), `controlResponsible` (persona activa)
- * y el estado «propuesta» de toda medida nueva.
+ * y factor activo), `controlColumns` (D5), `controlResponsible` (persona activa),
+ * `newControlRow` (toda medida nueva nace «propuesta»), `updateControlAtVersion`
+ * y el «antes» del historial (`entryHistoryBefore`, `controlHistoryBefore`).
  */
 import { and, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { preventionRiskControls, preventionRiskEntries } from "@/db/schema"
-import { nanoid } from "@/lib/id"
 import { controlColumns, patchedControlValues } from "@/lib/prevention/miper/control-values"
 import type { ControlHierarchy } from "@/lib/prevention/miper/snapshot"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { countOf } from "@/lib/utils"
 import { miperBulkAddControlSchema, miperBulkPatchEntriesSchema, miperBulkUpdateControlsSchema } from "@/lib/validation/prevention-module/miper"
-import { controlResponsible, toColumns, touchMatrix } from "./entries"
+import { controlHistoryBefore, controlResponsible, entryHistoryBefore, newControlRow, toColumns, touchMatrix, updateControlAtVersion } from "./entries"
 import { assertEditable, lockMatrix, type MiperAccess, miperHistory, nowIso, requireAccess } from "./shared"
 
 const EDIT = "prevention:risk:edit"
@@ -54,9 +55,16 @@ function effectiveChanges<T extends object>(values: T, message: string): Partial
   return defined
 }
 
+/** `after` no cambia nada de `before`: cada una de sus claves ya tiene ese valor. */
+function sameValues(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>) {
+  return Object.entries(after).every(([key, value]) => before[key] === value)
+}
+
 /**
  * Lo que vio la persona contra lo que hay. Un elemento que no es de esta MIPER o
- * una versión vieja abortan TODO, con su cuenta: nada se escribe a medias.
+ * una versión vieja abortan TODO, con su cuenta: nada se escribe a medias. Rige
+ * también para el elemento que después resulta no tener nada que cambiar: la
+ * persona decidió sobre lo que vio.
  */
 function assertCurrent<T extends { id: string; version: number }>(found: readonly T[], items: ReadonlyArray<{ id: string; expectedVersion: number }>, nouns: Nouns): Map<string, T> {
   const byId = new Map(found.map((row) => [row.id, row]))
@@ -67,6 +75,16 @@ function assertCurrent<T extends { id: string; version: number }>(found: readonl
   return byId
 }
 
+/**
+ * Un elemento que el lote ESCRIBIÓ, con su versión nueva. Los resultados de
+ * `bulkPatchMiperEntries` y `bulkUpdateMiperControls` traen sólo esos, en el
+ * orden de `items`: el que ya estaba como lo pedía el lote (el mismo valor, o
+ * una medida a la que D5 no le deja nada que cambiar) no se escribe, no sube de
+ * versión ni deja historial, y no viene en el resultado. Conserva la versión con
+ * que llegó, que el cliente ya tiene. Subírsela sin cambiarlo haría chocar
+ * («cambió mientras editabas») a quien lo tenga abierto. Una lista vacía es un
+ * lote que no tenía nada que cambiar, no un error.
+ */
 export type BulkSaved = { id: string; version: number }
 
 export async function bulkPatchMiperEntries(input: unknown, access: MiperAccess): Promise<{ entries: BulkSaved[] }> {
@@ -77,33 +95,37 @@ export async function bulkPatchMiperEntries(input: unknown, access: MiperAccess)
     requireAccess(access, EDIT, matrix.worksiteId)
     assertEditable(matrix)
     const ids = data.items.map((item) => item.entryId)
-    const found = await tx.select().from(preventionRiskEntries).where(and(eq(preventionRiskEntries.matrixId, matrix.id), inArray(preventionRiskEntries.id, ids)))
+    // Los riesgos quedan bloqueados (`FOR UPDATE`) desde la lectura hasta el COMMIT. La matriz
+    // bloqueada no alcanza: `verifyRiskControl` sube la versión del riesgo sin `lockMatrix`, y
+    // sin este bloqueo el UPDATE de abajo se tragaría ese cambio.
+    const found = await tx.select().from(preventionRiskEntries).where(and(eq(preventionRiskEntries.matrixId, matrix.id), inArray(preventionRiskEntries.id, ids))).for("update")
     const byId = assertCurrent(found, data.items.map((item) => ({ id: item.entryId, expectedVersion: item.expectedVersion })), ENTRIES)
     // El mismo cambio para todos: el diccionario y el factor se resuelven una sola vez.
     const columns = await toColumns(tx, matrix.worksiteId, values)
+    const changed = data.items.map((item) => byId.get(item.entryId)!).filter((current) => !sameValues(entryHistoryBefore(current, columns), columns))
+    if (changed.length === 0) return { entries: [] }
     const now = nowIso()
-    // La matriz está bloqueada (`FOR UPDATE`): ningún guardado de a uno cambia una versión entre la lectura y esto.
+    // Ninguna versión cambió desde la lectura: los riesgos están bloqueados.
     const updated = await tx.update(preventionRiskEntries).set({ ...columns, version: sql`${preventionRiskEntries.version} + 1`, updatedAt: now })
-      .where(and(eq(preventionRiskEntries.matrixId, matrix.id), inArray(preventionRiskEntries.id, ids)))
+      .where(and(eq(preventionRiskEntries.matrixId, matrix.id), inArray(preventionRiskEntries.id, changed.map((current) => current.id))))
       .returning({ id: preventionRiskEntries.id, version: preventionRiskEntries.version })
-    for (const item of data.items) {
-      const current = byId.get(item.entryId)!
+    for (const current of changed) {
       await miperHistory(tx, {
         matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "entry", objectId: current.id, changeType: "entry_updated", reason: BULK_REASON,
-        before: Object.fromEntries(Object.keys(columns).map((key) => [key, current[key as keyof typeof current]])), after: columns,
-        actorUserId: access.userId, actingAs: EDIT,
+        before: entryHistoryBefore(current, columns), after: columns, actorUserId: access.userId, actingAs: EDIT,
       })
     }
     await touchMatrix(tx, matrix.id, now)
     const versionOf = new Map(updated.map((row) => [row.id, row.version]))
-    return { entries: data.items.map((item) => ({ id: item.entryId, version: versionOf.get(item.entryId)! })) }
+    return { entries: changed.map((current) => ({ id: current.id, version: versionOf.get(current.id)! })) }
   })
 }
 
 /**
- * La misma medida en N riesgos. Como en el editor, agregar una medida no cambia
- * la versión del riesgo; la que trae cada elemento sólo confirma que la persona
- * decidió sobre el riesgo que hay ahora.
+ * La misma medida en N riesgos: cada riesgo recibe una medida nueva, así que
+ * todos se escriben. Como en el editor, agregar una medida no cambia la versión
+ * del riesgo; la que trae cada elemento sólo confirma que la persona decidió
+ * sobre el riesgo que hay ahora.
  */
 export async function bulkAddMiperControl(input: unknown, access: MiperAccess): Promise<{ controls: Array<{ id: string; entryId: string }> }> {
   const data = miperBulkAddControlSchema.parse(input)
@@ -112,13 +134,13 @@ export async function bulkAddMiperControl(input: unknown, access: MiperAccess): 
     requireAccess(access, EDIT, matrix.worksiteId)
     assertEditable(matrix)
     const ids = data.items.map((item) => item.entryId)
+    // Bloqueados hasta el COMMIT, como en `bulkPatchMiperEntries`: la versión comprobada sigue siendo la vigente.
     const found = await tx.select({ id: preventionRiskEntries.id, version: preventionRiskEntries.version }).from(preventionRiskEntries)
-      .where(and(eq(preventionRiskEntries.matrixId, matrix.id), inArray(preventionRiskEntries.id, ids)))
+      .where(and(eq(preventionRiskEntries.matrixId, matrix.id), inArray(preventionRiskEntries.id, ids))).for("update")
     assertCurrent(found, data.items.map((item) => ({ id: item.entryId, expectedVersion: item.expectedVersion })), ENTRIES)
     const columns = controlColumns(data.values, await controlResponsible(tx, data.values), null)
     const now = nowIso()
-    const created = await tx.insert(preventionRiskControls)
-      .values(data.items.map((item) => ({ id: `riskcontrol-${nanoid()}`, riskEntryId: item.entryId, ...columns, status: "proposed", createdAt: now, updatedAt: now })))
+    const created = await tx.insert(preventionRiskControls).values(data.items.map((item) => newControlRow(item.entryId, columns, now)))
       .returning({ id: preventionRiskControls.id, entryId: preventionRiskControls.riskEntryId })
     for (const control of created) {
       await miperHistory(tx, {
@@ -143,6 +165,10 @@ export async function bulkUpdateMiperControls(input: unknown, access: MiperAcces
       .innerJoin(preventionRiskEntries, eq(preventionRiskEntries.id, preventionRiskControls.riskEntryId))
       .where(and(eq(preventionRiskEntries.matrixId, matrix.id), inArray(preventionRiskControls.id, ids)))).map((row) => row.control)
     const byId = assertCurrent(found, data.items.map((item) => ({ id: item.controlId, expectedVersion: item.expectedVersion })), CONTROLS)
+    /* Sin `responsible` en el lote, cada medida conserva su responsable AUNQUE esa
+     * persona ya esté inactiva: el lote no lo vuelve a validar. El editor de la
+     * medida, en cambio, reenvía el responsable al guardar y `controlResponsible`
+     * lo rechaza si está inactivo, así que ahí obliga a reasignarlo. */
     const assigned = patch.responsible
     const responsible = !assigned ? null
       : await controlResponsible(tx, assigned.kind === "user" ? { responsibleUserId: assigned.userId } : { responsibleName: assigned.name })
@@ -156,21 +182,16 @@ export async function bulkUpdateMiperControls(input: unknown, access: MiperAcces
         responsible ?? { responsibleUserId: current.responsibleUserId, responsibleSnapshot: current.responsibleSnapshot },
         current,
       )
-      const [updated] = await tx.update(preventionRiskControls).set({ ...values, version: current.version + 1, updatedAt: now })
-        .where(and(eq(preventionRiskControls.id, current.id), eq(preventionRiskControls.version, current.version)))
-        .returning({ id: preventionRiskControls.id, version: preventionRiskControls.version })
-      if (!updated) throw new RiskLegalDomainError(`${countOf(1, ...CONTROLS.stale)} mientras editabas; recarga la matriz para ver los cambios de la otra persona.`)
+      const before = controlHistoryBefore(current)
+      if (sameValues(before, values)) continue
+      // Sin bloqueo de fila: `verifyRiskControl` sí puede subir la versión de la medida, y entonces esto aborta el lote.
+      saved.push(await updateControlAtVersion(tx, current, values, now, `${countOf(1, ...CONTROLS.stale)} mientras editabas; recarga la matriz para ver los cambios de la otra persona.`))
       await miperHistory(tx, {
         matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "control", objectId: current.id, changeType: "control_updated", reason: BULK_REASON,
-        before: {
-          hierarchy: current.hierarchy, description: current.description, responsibleUserId: current.responsibleUserId, responsibleSnapshot: current.responsibleSnapshot,
-          isExisting: current.isExisting, verificationFrequency: current.verificationFrequency, dueDate: current.dueDate,
-        },
-        after: values, actorUserId: access.userId, actingAs: EDIT,
+        before, after: values, actorUserId: access.userId, actingAs: EDIT,
       })
-      saved.push(updated)
     }
-    await touchMatrix(tx, matrix.id, now)
+    if (saved.length > 0) await touchMatrix(tx, matrix.id, now)
     return { controls: saved }
   })
 }
