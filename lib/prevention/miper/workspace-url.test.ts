@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { hrefToEntry, hrefToFicha, hrefToMatrix, hrefToMatrixOnly, hrefToMatrixWith, hrefToTab, hrefToTask, readWorkspaceView } from "./workspace-url"
+import { hrefToEntry, hrefToFicha, hrefToMatrix, hrefToMatrixOnly, hrefToMatrixWith, hrefToProgramOnly, hrefToTab, hrefToTask, PROGRAM_FILTER_KEYS, readWorkspaceView } from "./workspace-url"
 
 const P = "/prevencion/miper/m1"
 const params = (query: string) => new URLSearchParams(query)
@@ -42,5 +42,12 @@ describe("vistas del espacio de trabajo", () => {
     // `q` es del programa: no es un filtro de la matriz y se conserva.
     expect(hrefToMatrixOnly(P, current, { clasificacion: "important,intolerable" })).toBe(`${P}?q=prog&clasificacion=important%2Cintolerable`)
     expect(hrefToMatrixOnly(P, current)).toBe(`${P}?q=prog`)
+  })
+
+  it("hrefToProgramOnly abre el programa entero: quita sus filtros (q, estado, frecuencia) y la vista; los de la matriz no lo afectan", () => {
+    expect(PROGRAM_FILTER_KEYS).toEqual(["q", "estado", "frecuencia"])
+    const current = params("estado=vencidas&q=bomba&tab=resumen&buscar=lodo&frecuencia=monthly&tarea=k1")
+    expect(hrefToProgramOnly(P, current)).toBe(`${P}?buscar=lodo&tab=programa`)
+    expect(hrefToProgramOnly(P, params(""))).toBe(`${P}?tab=programa`)
   })
 })

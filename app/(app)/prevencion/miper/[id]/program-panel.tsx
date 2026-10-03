@@ -23,6 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useOperation } from "@/lib/hooks/use-operation"
 import type { ProgramProgress } from "@/lib/prevention/miper/progress"
 import { canExecuteProgramAction, type WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
+import { PROGRAM_FILTER_KEYS } from "@/lib/prevention/miper/workspace-url"
 import type { ProgramActionView, ProgramHeaderView, ProgramOccurrenceView, ProgramWorkspace } from "@/lib/services/miper/program-queries"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { loadOccurrenceDetailAction, loadProgramWorkspaceAction, saveProgramHeaderAction, voidOccurrenceRecordAction } from "../actions"
@@ -244,7 +245,7 @@ export function ProgramPanel({
           {anyFilter && (
             <Button type="button" variant="ghost" size="sm" onClick={() => {
               const params = new URLSearchParams(searchParams.toString())
-              params.delete("q"); params.delete("estado"); params.delete("frecuencia")
+              for (const key of PROGRAM_FILTER_KEYS) params.delete(key)
               router.replace(`?${params.toString()}`, { scroll: false })
             }}>
               Limpiar filtros
@@ -280,7 +281,7 @@ export function ProgramPanel({
           description={filtersActive ? "Prueba con otro estado, otra frecuencia o sin buscador." : "El programa no tiene actividades con estos criterios."}
           action={<Button size="sm" variant="secondary" onClick={() => {
             const params = new URLSearchParams(searchParams.toString())
-            params.delete("q"); params.delete("estado"); params.delete("frecuencia")
+            for (const key of PROGRAM_FILTER_KEYS) params.delete(key)
             router.replace(`?${params.toString()}`, { scroll: false })
           }}>Ver todas las actividades</Button>}
         />

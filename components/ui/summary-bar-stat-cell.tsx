@@ -17,7 +17,7 @@ export function SummaryBarStatCell({ stat, renderLink }: { stat: SummaryStat; re
           signalActive ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text-faint)]",
           stat.href && "group-hover:text-[var(--color-primary)]",
         )}>{stat.icon}</span>}
-        <span className={cn("text-eyebrow truncate transition-colors duration-[var(--duration-fast)]", stat.href && "group-hover:text-[var(--color-primary)]")}>{stat.label}</span>
+        <span className={cn("text-eyebrow line-clamp-2 break-words transition-colors duration-[var(--duration-fast)]", stat.href && "group-hover:text-[var(--color-primary)]")}>{stat.label}</span>
       </div>
       <div className="mt-2 flex items-end gap-2">
         <span className={cn(

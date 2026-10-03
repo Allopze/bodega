@@ -25,4 +25,11 @@ describe("SummaryBar", () => {
     render(<SummaryBar stats={[{ key: "a", label: "Vencidas", value: 3, href: "/y" }]} />)
     expect(screen.getByRole("link", { name: /^Vencidas/ })).toHaveAttribute("href", "/y")
   })
+
+  it("el rótulo de la cifra parte en hasta dos líneas en vez de recortarse con «…» (390 px, A6: no se abrevia)", () => {
+    render(<SummaryBar stats={[{ key: "a", label: "Importantes e Intolerables", value: 42 }]} />)
+    const label = screen.getByText("Importantes e Intolerables")
+    expect(label).toHaveClass("line-clamp-2")
+    expect(label).not.toHaveClass("truncate")
+  })
 })

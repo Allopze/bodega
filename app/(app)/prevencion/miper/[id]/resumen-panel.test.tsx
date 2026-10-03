@@ -55,6 +55,12 @@ describe("ResumenPanel — cuatro cifras que llevan a su subconjunto (A1)", () =
     expect(programa).toHaveTextContent("1/3 realizadas")
   })
 
+  it("«Avance del programa» lleva al programa entero: quita los filtros del programa que hubiera (A1)", () => {
+    // El avance de la cifra es el de todo el programa; llegar a la lista filtrada por `estado` no coincidiría.
+    show("estado=vencidas&q=bomba&frecuencia=monthly&tab=resumen")
+    expect(screen.getByRole("link", { name: /^Avance del programa/ })).toHaveAttribute("href", `${P}?tab=programa`)
+  })
+
   it("una cifra en cero no lleva a una lista vacía; sin pendientes, «Riesgos completos» lleva a los completos", () => {
     const tolerable = [ROWS[1]!]
     show("", tolerable, new Set())
@@ -78,6 +84,13 @@ describe("ResumenPanel — completitud por actividad", () => {
     show("")
     expect(screen.getByRole("progressbar", { name: "Transporte: 0 de 1 completos" })).toBeInTheDocument()
     expect(screen.getByRole("progressbar", { name: "Mantención: 1 de 2 completos" })).toBeInTheDocument()
+  })
+
+  it("el nombre de la actividad se lee entero: parte en líneas en vez de recortarse con «…»", () => {
+    show("")
+    const name = screen.getByRole("link", { name: "Mantención" })
+    expect(name).not.toHaveClass("truncate")
+    expect(name).toHaveClass("break-words")
   })
 
   it("el enlace a una actividad plegada la despliega, quita los filtros y la deja a la vista con el foco", () => {

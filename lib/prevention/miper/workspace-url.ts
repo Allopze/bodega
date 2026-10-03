@@ -44,18 +44,36 @@ export const hrefToFicha = (pathname: string, params: Params, open: boolean) =>
 export const hrefToMatrixWith = (pathname: string, params: Params, patch: Record<string, string | null>) =>
   href(pathname, params, { ...CLEAR_VIEW, ...patch })
 
+/** Filtros de la lista del Programa de Trabajo (`program-panel.tsx`), que comparte la URL con la matriz. */
+export const PROGRAM_FILTER_KEYS = ["q", "estado", "frecuencia"] as const
+
+/**
+ * Quita `drop` y DESPUÉS aplica `patch`. Son dos pasos y no un solo `href`:
+ * `set` sobre una clave que ya estaba la deja en su lugar, y lo aplicado no
+ * quedaría después de lo que se conserva.
+ */
+function hrefReplacing(pathname: string, params: Params, drop: readonly string[], patch: Record<string, string>): string {
+  const cleared = new URLSearchParams(params.toString())
+  for (const key of drop) cleared.delete(key)
+  return href(pathname, cleared, patch)
+}
+
 const NOT_MATRIX_ONLY = [...Object.keys(CLEAR_VIEW), "ficha", ...MATRIX_FILTER_KEYS]
+const NOT_PROGRAM_ONLY = [...Object.keys(CLEAR_VIEW), ...PROGRAM_FILTER_KEYS]
 
 /**
  * La matriz con SÓLO estos filtros (pestaña Resumen, Fase B). Quita la vista,
  * la ficha y los seis filtros de la matriz antes de aplicar `patch`: si no,
  * la cifra del Resumen y lo que se ve al llegar no coinciden. Los parámetros
  * del programa (`q`, `estado`, `frecuencia`) no son de la matriz y se quedan.
- * Son dos pasos y no un solo `href`: `set` sobre una clave que ya estaba la
- * deja en su lugar, y el filtro nuevo no quedaría después de lo que se conserva.
  */
-export function hrefToMatrixOnly(pathname: string, params: Params, patch: Partial<Record<MatrixFilterKey, string>> = {}): string {
-  const cleared = new URLSearchParams(params.toString())
-  for (const key of NOT_MATRIX_ONLY) cleared.delete(key)
-  return href(pathname, cleared, patch)
-}
+export const hrefToMatrixOnly = (pathname: string, params: Params, patch: Partial<Record<MatrixFilterKey, string>> = {}) =>
+  hrefReplacing(pathname, params, NOT_MATRIX_ONLY, patch)
+
+/**
+ * El programa entero (la cifra «Avance del programa» del Resumen, Fase B):
+ * quita los filtros de su lista, porque el avance que muestra la cifra es el de
+ * todo el programa. Los filtros de la matriz no afectan al programa y se quedan.
+ */
+export const hrefToProgramOnly = (pathname: string, params: Params) =>
+  hrefReplacing(pathname, params, NOT_PROGRAM_ONLY, { tab: "programa" })

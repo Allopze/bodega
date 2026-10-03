@@ -8,7 +8,7 @@ import { SummaryBar, type SummaryLinkProps, type SummaryStat } from "@/component
 import type { ActivityNode } from "@/lib/prevention/miper/matrix-tree"
 import type { ProgramProgress } from "@/lib/prevention/miper/progress"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
-import { hrefToMatrixOnly, hrefToTab } from "@/lib/prevention/miper/workspace-url"
+import { hrefToMatrixOnly, hrefToProgramOnly, hrefToTab } from "@/lib/prevention/miper/workspace-url"
 import { countOf } from "@/lib/utils"
 import { revealActivity } from "./workspace-memory"
 import { scrollToWhenReady, WorkspaceLink } from "./workspace-nav"
@@ -75,7 +75,7 @@ export function ResumenPanel({ matrixId, rows, tree, incomplete, programProgress
     {
       key: "programa", label: "Avance del programa", value: planned === 0 ? "Sin ocurrencias" : `${Math.round((ratio ?? 0) * 100)}%`,
       secondary: planned === 0 ? "Genera las actividades desde las medidas" : `${done}/${planned} realizadas${overdue > 0 ? ` · ${countOf(overdue, "vencida")}` : ""}`,
-      href: hrefToTab(pathname, params, "programa"),
+      href: hrefToProgramOnly(pathname, params),
     },
   ]
   return (
@@ -89,7 +89,7 @@ export function ResumenPanel({ matrixId, rows, tree, incomplete, programProgress
             const target = `miper-activity-${activity.key}`
             return (
               <li key={activity.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 md:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_auto]">
-                <WorkspaceLink href={`${hrefToMatrixOnly(pathname, params)}#${target}`} replace className="truncate text-sm font-medium hover:underline"
+                <WorkspaceLink href={`${hrefToMatrixOnly(pathname, params)}#${target}`} replace className="min-w-0 break-words text-sm font-medium hover:underline"
                   onClick={() => { revealActivity(matrixId, activity.key); scrollToWhenReady(target) }}>
                   {activity.label}
                 </WorkspaceLink>
