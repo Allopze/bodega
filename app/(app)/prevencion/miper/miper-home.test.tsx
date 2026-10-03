@@ -212,6 +212,22 @@ describe("MiperHome — filas", () => {
     expect(fila("Faena C").queryByText("Sin programa")).toBeNull()
   })
 
+  it("con la vigente aparte, el avance del programa (que es el de la vigente) lo dice: «en la vigente», en la tabla y en la tarjeta", () => {
+    const vigente = { id: "m-v", period: 2025, versionNumber: 3, label: "Vigente · v3", isLegacy: false }
+    show("", [
+      row({ vigente }),
+      row({ id: "ws-e", worksiteId: "ws-e", worksiteName: "Faena E", vigente, programProgress: { done: 0, late: 0, pending: 0, overdue: 0, failed: 0, planned: 0, ratio: null } }),
+      row({ id: "ws-f", worksiteId: "ws-f", worksiteName: "Faena F" }),
+    ])
+    const fila = (faena: string) => within(tabla().getByText(faena).closest("tr")!)
+    expect(fila("Faena A").getByText("50% · 1/2 en la vigente")).toBeInTheDocument()
+    expect(fila("Faena E").getByText("Sin programa en la vigente")).toBeInTheDocument()
+    // Sin vigente aparte la fila ES la vigente (o la única MIPER): no hay nada que aclarar.
+    expect(fila("Faena F").getByText("50% · 1/2")).toBeInTheDocument()
+    expect(within(screen.getByRole("article", { name: "Faena A" })).getByText(/· Programa 50% · 1\/2 en la vigente$/)).toBeInTheDocument()
+    expect(within(screen.getByRole("article", { name: "Faena E" })).getByText(/· Sin programa en la vigente$/)).toBeInTheDocument()
+  })
+
   it("la faena sin MIPER ofrece «Crear MIPER», que abre el diálogo con esa faena ya elegida", () => {
     show("")
     fireEvent.click(tabla().getByRole("button", { name: "Crear MIPER de Faena C" }))

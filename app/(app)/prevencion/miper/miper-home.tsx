@@ -70,13 +70,16 @@ function vigenteLabel(matrix: MiperPortfolioMatrix) {
 /**
  * Avance del programa de la vigente (o de la MIPER de la fila). `null` es una
  * faena sin MIPER; sin nada planificado —sin programa o sin ocurrencias— se
- * dice «Sin programa», nunca un 0 % que se leería como atraso.
+ * dice «Sin programa», nunca un 0 % que se leería como atraso. Si la vigente no
+ * es la MIPER de la fila, la celda lo aclara con «en la vigente», como «sin
+ * control» (Decisión 3 del plan).
  */
 function programLabel(row: MiperPortfolioRow): string | null {
   const progress = row.programProgress
   if (!progress) return null
-  if (progress.planned === 0) return NO_PROGRAM
-  return `${Math.round((progress.ratio ?? 0) * 100)}% · ${progress.done}/${progress.planned}`
+  const where = row.vigente ? " en la vigente" : ""
+  if (progress.planned === 0) return `${NO_PROGRAM}${where}`
+  return `${Math.round((progress.ratio ?? 0) * 100)}% · ${progress.done}/${progress.planned}${where}`
 }
 
 /** Faena, su MIPER, la vigente si es otra y lo que cada MIPER espera de ti (un enlace por acción). */
@@ -284,7 +287,7 @@ export function MiperHome({ rows, creationWorksites, currentYear, permissions }:
                 <Completeness row={row} />
                 <p className="text-xs text-[var(--color-text-subtle)]">
                   Dotación {row.headcount} · Importantes e Intolerables {row.importantCount + row.intolerableCount}
-                  {program && ` · ${program === NO_PROGRAM ? program : `Programa ${program}`}`}
+                  {program && ` · ${row.programProgress?.planned === 0 ? program : `Programa ${program}`}`}
                 </p>
                 <CriticalWithoutControl row={row} />
               </article>
