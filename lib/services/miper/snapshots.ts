@@ -110,9 +110,12 @@ function snapshotOf(matrix: MatrixRow, rows: readonly EntryRow[], controlsByEntr
       probability: entry.probability, consequence: entry.consequence, magnitude: entry.magnitude,
       classification: entry.classification as RiskClassification | null,
       controlledStatus: entry.controlledStatus as ControlledStatus | null,
+      // Fase C: `isExisting` y la frecuencia van AL FINAL, después de `status`. Así
+      // todo lo anterior sigue en el mismo orden de claves que hashea `snapshotSha`.
       controls: (controlsByEntry.get(entry.id) ?? []).map((control) => ({
         id: control.id, hierarchy: control.hierarchy as ControlHierarchy, description: control.description,
         responsibleUserId: control.responsibleUserId, responsibleName: control.responsibleSnapshot, dueDate: control.dueDate, status: control.status,
+        isExisting: control.isExisting, verificationFrequency: control.verificationFrequency,
       })),
     })),
   }

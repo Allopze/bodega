@@ -15,6 +15,7 @@ vi.mock("@/db", () => ({ get db() { return g.__db } }))
 
 const { createMiper } = await import("@/lib/services/miper/matrices")
 const svc = await import("@/lib/services/miper/entries")
+const { buildMiperSnapshot } = await import("@/lib/services/miper/snapshots")
 
 const author = { userId: "u-a", scope: { mode: "some" as const, ids: ["ws-e"] }, permissions: ["prevention:risk:view", "prevention:risk:edit"] }
 let matrixId = ""
@@ -82,5 +83,43 @@ describe("filas de la matriz", () => {
     await testDb.update(schema.preventionRiskMatrices).set({ isLegacy: true }).where(eq(schema.preventionRiskMatrices.id, matrixId))
     await expect(svc.saveMiperEntry({ matrixId, values: { hazard: "x" } }, author)).rejects.toThrow(/solo lectura/)
     await testDb.update(schema.preventionRiskMatrices).set({ isLegacy: false }).where(eq(schema.preventionRiskMatrices.id, matrixId))
+  })
+
+  it("medida existente (D5): guarda la frecuencia y no el plazo; editarla sin decirlo la conserva; el historial lleva antes y después", async () => {
+    const entry = await svc.saveMiperEntry({ matrixId, values: { hazard: "Caída al mismo nivel", probability: 2, consequence: 2 } }, author)
+    const created = await svc.saveMiperControl({ matrixId, entryId: entry.id, values: {
+      hierarchy: "administrative", description: "Charla de inicio de turno", responsibleName: "Supervisor de turno",
+      isExisting: true, verificationFrequency: " Trimestral ", dueDate: "2026-12-31",
+    } }, author)
+    const stored = async () => (await testDb.select().from(schema.preventionRiskControls).where(eq(schema.preventionRiskControls.id, created.id)))[0]!
+    // Una existente no lleva plazo aunque el pedido lo traiga: se verifica con su frecuencia.
+    expect(await stored()).toMatchObject({ isExisting: true, verificationFrequency: "Trimestral", dueDate: null, status: "proposed" })
+
+    // Un llamador que no manda «¿ya está implementada?» ni la frecuencia no la convierte en pendiente.
+    await svc.saveMiperControl({ matrixId, entryId: entry.id, controlId: created.id, expectedVersion: 1, values: {
+      hierarchy: "administrative", description: "Charla de inicio de turno firmada", responsibleName: "Supervisor de turno",
+    } }, author)
+    expect(await stored()).toMatchObject({ isExisting: true, verificationFrequency: "Trimestral", dueDate: null, version: 2 })
+
+    // Pasarla a «por implementar»: lleva plazo y pierde la frecuencia.
+    await svc.saveMiperControl({ matrixId, entryId: entry.id, controlId: created.id, expectedVersion: 2, values: {
+      hierarchy: "administrative", description: "Charla de inicio de turno firmada", responsibleName: "Supervisor de turno",
+      isExisting: false, verificationFrequency: "Trimestral", dueDate: "2026-11-30",
+    } }, author)
+    expect(await stored()).toMatchObject({ isExisting: false, verificationFrequency: null, dueDate: "2026-11-30", version: 3 })
+
+    const log = await testDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, matrixId))
+    const states = log
+      .map((row) => ({ before: JSON.parse(row.oldState ?? "{}") as Record<string, unknown>, after: JSON.parse(row.newState ?? "{}") as Record<string, unknown> }))
+      .filter(({ after }) => after.objectId === created.id)
+    expect(states.find(({ after }) => after.changeType === "control_created")!.after).toMatchObject({ isExisting: true, verificationFrequency: "Trimestral", dueDate: null })
+    const toPending = states.find(({ after }) => after.changeType === "control_updated" && after.isExisting === false)!
+    expect(toPending.before).toMatchObject({ isExisting: true, verificationFrequency: "Trimestral", dueDate: null })
+    expect(toPending.after).toMatchObject({ isExisting: false, verificationFrequency: null, dueDate: "2026-11-30" })
+
+    // La foto viva lleva las dos claves, al final de la medida.
+    const control = (await buildMiperSnapshot(testDb, matrixId)).entries.find((item) => item.id === entry.id)!.controls[0]!
+    expect(control).toMatchObject({ isExisting: false, verificationFrequency: null, dueDate: "2026-11-30" })
+    expect(Object.keys(control).slice(-2)).toEqual(["isExisting", "verificationFrequency"])
   })
 })

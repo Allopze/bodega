@@ -54,4 +54,19 @@ describe("diffSnapshots", () => {
     controlEdited.controls = [{ ...controlEdited.controls[0]!, dueDate: "2026-12-31" }]
     expect(changesByEntry(diffSnapshots(before, { header, entries: [controlEdited] })).get("e1")?.fields).toEqual(["controls"])
   })
+
+  it("una foto sellada antes de la Fase C, sin isExisting ni frecuencia, no marca cambios contra la viva equivalente", () => {
+    // `entry()` arma la medida sin las dos claves: es la forma de una foto sellada antes de la Fase C.
+    const sealed: MiperSnapshot = { header, entries: [entry("e1")] }
+    const live: MiperSnapshot = { header, entries: [entry("e1", { controls: entry("e1").controls.map((control) => ({ ...control, isExisting: false, verificationFrequency: null })) })] }
+    expect(diffSnapshots(sealed, live)).toEqual({ headerFields: [], entries: [], hasChanges: false })
+  })
+
+  it("marcar una medida como existente, o cambiar su frecuencia, es un cambio de «Medidas de control»", () => {
+    const pending: MiperSnapshot = { header, entries: [entry("e1", { controls: entry("e1").controls.map((control) => ({ ...control, isExisting: false, verificationFrequency: null })) })] }
+    const existing: MiperSnapshot = { header, entries: [entry("e1", { controls: entry("e1").controls.map((control) => ({ ...control, isExisting: true, verificationFrequency: "Trimestral" })) })] }
+    const monthly: MiperSnapshot = { header, entries: [entry("e1", { controls: entry("e1").controls.map((control) => ({ ...control, isExisting: true, verificationFrequency: "Mensual" })) })] }
+    expect(diffSnapshots(pending, existing).entries).toEqual([{ kind: "modified", entryId: "e1", rowNumber: 1, fields: ["controls"] }])
+    expect(diffSnapshots(existing, monthly).entries).toEqual([{ kind: "modified", entryId: "e1", rowNumber: 1, fields: ["controls"] }])
+  })
 })

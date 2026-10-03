@@ -84,6 +84,10 @@ export const miperControlSaveSchema = z.object({
     responsibleUserId: id.nullable().optional(),
     responsibleName: z.string().trim().max(300).nullable().optional(),
     dueDate: isoDate.nullable().optional(),
+    /* D5 (Fase C): una medida ya implementada se verifica con una frecuencia y no
+     * lleva plazo. Opcionales: sin ellos se conserva lo que la medida ya tenía. */
+    isExisting: z.boolean().optional(),
+    verificationFrequency: z.string().trim().max(120, "La frecuencia admite hasta 120 caracteres.").nullable().optional(),
   }),
 }).refine((value) => !value.controlId || value.expectedVersion !== undefined, { path: ["expectedVersion"], message: "Falta la versión de la medida; recarga la matriz." })
 

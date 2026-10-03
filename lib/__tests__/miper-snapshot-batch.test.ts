@@ -5,6 +5,11 @@
  * ahora tienen que ser idénticas byte a byte: mismas filas, mismo orden de filas
  * y de medidas, mismo orden de CLAVES (`toEqual` no lo mira; por eso se compara
  * el JSON).
+ *
+ * Fase C (D5): la foto suma `isExisting` y `verificationFrequency` AL FINAL de
+ * cada medida. La prueba dorada sigue comparando byte a byte con la copia
+ * literal de antes, quitando sólo esas dos claves (`sinClavesFaseC`), y afirma
+ * aparte que son las dos últimas: así se sabe que nada más cambió de lugar.
  */
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
@@ -89,6 +94,17 @@ async function legacyBuildMiperSnapshot(client: Client, matrixId: string): Promi
   }
 }
 
+/** La foto sin las dos claves que la Fase C agrega al final de cada medida. Quitar claves no mueve las demás. */
+function sinClavesFaseC(snapshot: MiperSnapshot): MiperSnapshot {
+  return {
+    ...snapshot,
+    entries: snapshot.entries.map((entry) => ({
+      ...entry,
+      controls: entry.controls.map(({ isExisting: _existing, verificationFrequency: _frequency, ...control }) => control),
+    })),
+  }
+}
+
 const author = { userId: "u-g", scope: { mode: "all" as const, ids: [] as [] }, permissions: ["prevention:risk:edit"] }
 let a = ""
 let b = ""
@@ -122,12 +138,15 @@ beforeAll(async () => {
 }, 60_000)
 
 describe("fotos del MIPER en lote (Fase B)", () => {
-  it("PRUEBA DORADA: buildMiperSnapshot da la misma foto que antes, byte a byte (JSON y SHA)", async () => {
+  it("PRUEBA DORADA: buildMiperSnapshot da la misma foto que antes, byte a byte (JSON y SHA), salvo las dos claves de la Fase C al final de cada medida", async () => {
     for (const id of [a, b, empty]) {
       const before = await legacyBuildMiperSnapshot(testDb, id)
       const after = await buildMiperSnapshot(testDb, id)
-      expect(JSON.stringify(after)).toBe(JSON.stringify(before))
-      expect(snapshotSha(after)).toBe(snapshotSha(before))
+      expect(JSON.stringify(sinClavesFaseC(after))).toBe(JSON.stringify(before))
+      expect(snapshotSha(sinClavesFaseC(after))).toBe(snapshotSha(before))
+      for (const control of after.entries.flatMap((entry) => entry.controls)) {
+        expect(Object.keys(control).slice(-2)).toEqual(["isExisting", "verificationFrequency"])
+      }
     }
   })
 
@@ -135,7 +154,7 @@ describe("fotos del MIPER en lote (Fase B)", () => {
     const batch = await buildMiperSnapshots(testDb, [empty, b, a, b])
     expect([...batch.keys()].sort()).toEqual([a, b, empty].sort())
     for (const id of [a, b, empty]) {
-      expect(JSON.stringify(batch.get(id))).toBe(JSON.stringify(await legacyBuildMiperSnapshot(testDb, id)))
+      expect(JSON.stringify(sinClavesFaseC(batch.get(id)!))).toBe(JSON.stringify(await legacyBuildMiperSnapshot(testDb, id)))
     }
   })
 

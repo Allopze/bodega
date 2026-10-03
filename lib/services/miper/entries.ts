@@ -4,7 +4,7 @@ import { db } from "@/db"
 import { preventionPdtpSourceLinks, preventionRiskControls, preventionRiskEntries, preventionRiskFactors, preventionRiskMapMarkers, preventionRiskMatrices } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { cleanMiperName } from "@/lib/prevention/miper/names"
-import { miperControlRefSchema, miperControlSaveSchema, miperEntryRefSchema, miperEntrySaveSchema, type MiperEntryValues } from "@/lib/validation/prevention-module/miper"
+import { miperControlRefSchema, miperControlSaveSchema, miperEntryRefSchema, miperEntrySaveSchema, type MiperControlSaveInput, type MiperEntryValues } from "@/lib/validation/prevention-module/miper"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { resolveDictionaryId } from "./dictionaries"
 import { notifyMiperRowIntolerable } from "./notifications"
@@ -168,6 +168,31 @@ export async function deleteMiperEntry(input: unknown, access: MiperAccess) {
   })
 }
 
+/**
+ * D5 (Fase C): una medida EXISTENTE se verifica con una frecuencia y no lleva
+ * plazo; una POR IMPLEMENTAR lleva plazo y no frecuencia. Lo que no aplica se
+ * guarda vacío, para que un plazo viejo no quede escondido en una existente.
+ * Si el pedido no trae `isExisting` o la frecuencia, se conservan los de la
+ * medida (una nueva nace por implementar): un llamador anterior a la Fase C no
+ * convierte una existente en pendiente al editarla.
+ */
+function controlColumns(
+  values: MiperControlSaveInput["values"],
+  responsible: { responsibleUserId: string | null; responsibleSnapshot: string | null },
+  current: { isExisting: boolean; verificationFrequency: string | null } | null,
+) {
+  const isExisting = values.isExisting ?? current?.isExisting ?? false
+  const frequency = values.verificationFrequency === undefined ? current?.verificationFrequency ?? null : cleanMiperName(values.verificationFrequency)
+  return {
+    hierarchy: values.hierarchy,
+    description: values.description,
+    ...responsible,
+    isExisting,
+    verificationFrequency: isExisting ? frequency : null,
+    dueDate: isExisting ? null : values.dueDate ?? null,
+  }
+}
+
 export async function saveMiperControl(input: unknown, access: MiperAccess) {
   const data = miperControlSaveSchema.parse(input)
   return db.transaction(async (tx) => {
@@ -179,9 +204,10 @@ export async function saveMiperControl(input: unknown, access: MiperAccess) {
     const responsibleUserId = data.values.responsibleUserId ?? null
     await assertActiveUsers(tx, [responsibleUserId])
     const responsibleSnapshot = responsibleUserId ? (await userNames(tx, [responsibleUserId])).get(responsibleUserId) ?? null : cleanMiperName(data.values.responsibleName)
-    const values = { hierarchy: data.values.hierarchy, description: data.values.description, responsibleUserId, responsibleSnapshot, dueDate: data.values.dueDate ?? null }
+    const responsible = { responsibleUserId, responsibleSnapshot }
     const now = nowIso()
     if (!data.controlId) {
+      const values = controlColumns(data.values, responsible, null)
       const [created] = await tx.insert(preventionRiskControls).values({ id: `riskcontrol-${nanoid()}`, riskEntryId: entry.id, ...values, status: "proposed", createdAt: now, updatedAt: now })
         .returning({ id: preventionRiskControls.id, version: preventionRiskControls.version })
       await touchMatrix(tx, matrix.id, now)
@@ -191,6 +217,7 @@ export async function saveMiperControl(input: unknown, access: MiperAccess) {
     const [current] = await tx.select().from(preventionRiskControls).where(and(eq(preventionRiskControls.id, data.controlId), eq(preventionRiskControls.riskEntryId, entry.id))).limit(1)
     if (!current) throw new RiskLegalDomainError("La medida no existe en esta fila; recarga la matriz.")
     if (current.version !== data.expectedVersion) throw new RiskLegalDomainError(STALE_CONTROL)
+    const values = controlColumns(data.values, responsible, current)
     const [updated] = await tx.update(preventionRiskControls).set({ ...values, version: current.version + 1, updatedAt: now })
       .where(and(eq(preventionRiskControls.id, current.id), eq(preventionRiskControls.version, current.version)))
       .returning({ id: preventionRiskControls.id, version: preventionRiskControls.version })
@@ -198,7 +225,10 @@ export async function saveMiperControl(input: unknown, access: MiperAccess) {
     await touchMatrix(tx, matrix.id, now)
     await miperHistory(tx, {
       matrixId: matrix.id, worksiteId: matrix.worksiteId, object: "control", objectId: current.id, changeType: "control_updated",
-      before: { hierarchy: current.hierarchy, description: current.description, responsibleUserId: current.responsibleUserId, responsibleSnapshot: current.responsibleSnapshot, dueDate: current.dueDate },
+      before: {
+        hierarchy: current.hierarchy, description: current.description, responsibleUserId: current.responsibleUserId, responsibleSnapshot: current.responsibleSnapshot,
+        isExisting: current.isExisting, verificationFrequency: current.verificationFrequency, dueDate: current.dueDate,
+      },
       after: values, actorUserId: access.userId, actingAs: EDIT,
     })
     return updated

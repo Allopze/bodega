@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { createMiperSchema, miperApproveFinalSchema, miperEntrySaveSchema, miperHeaderSchema, miperObservationSchema } from "./miper"
+import { createMiperSchema, miperApproveFinalSchema, miperControlSaveSchema, miperEntrySaveSchema, miperHeaderSchema, miperObservationSchema } from "./miper"
 
 const header = {
   matrixId: "m1", expectedVersion: 1, iperCode: "RE-04", elaboratedOn: "2026-04-30", updatedOn: "2026-05-02",
@@ -31,5 +31,14 @@ describe("schemas MIPER", () => {
     expect(miperObservationSchema.safeParse({ matrixId: "m1", entryId: "e1", body: "Revisar consecuencia" }).success).toBe(true)
     expect(miperObservationSchema.safeParse({ matrixId: "m1", body: "ok" }).success).toBe(false)
     expect(miperApproveFinalSchema.safeParse({ matrixId: "m1", expectedVersion: 3, changeSummary: "corto" }).success).toBe(false)
+  })
+
+  it("medida: «¿ya está implementada?» y su frecuencia son opcionales y acotados (Fase C)", () => {
+    const base = { matrixId: "m1", entryId: "e1", values: { hierarchy: "ppe", description: "Uso de casco" } }
+    expect(miperControlSaveSchema.safeParse(base).success).toBe(true)
+    expect(miperControlSaveSchema.safeParse({ ...base, values: { ...base.values, isExisting: true, verificationFrequency: "Trimestral" } }).success).toBe(true)
+    expect(miperControlSaveSchema.safeParse({ ...base, values: { ...base.values, isExisting: false, verificationFrequency: null } }).success).toBe(true)
+    expect(miperControlSaveSchema.safeParse({ ...base, values: { ...base.values, verificationFrequency: "x".repeat(121) } }).success).toBe(false)
+    expect(miperControlSaveSchema.safeParse({ ...base, values: { ...base.values, isExisting: "sí" } }).success).toBe(false)
   })
 })

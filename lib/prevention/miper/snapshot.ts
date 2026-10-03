@@ -13,6 +13,14 @@ export type ControlledStatus = "yes" | "partial" | "no"
 export type MiperControlSnapshot = {
   id: string; hierarchy: ControlHierarchy; description: string
   responsibleUserId: string | null; responsibleName: string | null; dueDate: string | null; status: string
+  /**
+   * D5 (Fase C). Opcionales porque una foto sellada antes de la Fase C no los
+   * trae, y una foto sellada no se recalcula. Ausente = por implementar y sin
+   * frecuencia, la regla de entonces: así los leen `controlsKey`, la
+   * completitud y el Excel. Las fotos nuevas los llevan siempre, al final.
+   */
+  isExisting?: boolean
+  verificationFrequency?: string | null
 }
 
 export type MiperEntrySnapshot = {
@@ -74,8 +82,12 @@ export const HEADER_FIELD_LABEL: Record<keyof MiperHeaderSnapshot, string> = {
   headcountOther: "Trabajadores otro", participationSummary: "Participación y consulta", consultationEvidenceReference: "Evidencia de la consulta",
 }
 
+/** Una foto sellada antes de la Fase C no trae `isExisting` ni la frecuencia: se normalizan para que no parezcan cambios. */
 function controlsKey(controls: MiperControlSnapshot[]): string {
-  return JSON.stringify([...controls].sort((a, b) => a.id.localeCompare(b.id)).map((c) => [c.id, c.hierarchy, c.description, c.responsibleUserId, c.responsibleName, c.dueDate, c.status]))
+  return JSON.stringify([...controls].sort((a, b) => a.id.localeCompare(b.id)).map((c) => [
+    c.id, c.hierarchy, c.description, c.responsibleUserId, c.responsibleName, c.dueDate, c.status,
+    c.isExisting ?? false, c.verificationFrequency ?? null,
+  ]))
 }
 
 export function diffSnapshots(before: MiperSnapshot | null, after: MiperSnapshot): SnapshotDiff {
