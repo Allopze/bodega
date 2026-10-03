@@ -29,6 +29,12 @@ interface ConfirmDialogProps {
    */
   reasonLabel?: string
   reasonPlaceholder?: string
+  /**
+   * Motivo por el que la acción falló. Se muestra dentro del diálogo, que
+   * sigue abierto, como `role="alert"`: el resultado no se pierde en un toast
+   * que desaparece mientras la persona decide qué hacer.
+   */
+  error?: string
 }
 
 const variantConfig = {
@@ -63,6 +69,7 @@ const ConfirmDialogInner = React.memo(function ConfirmDialogInner({
   loading = false,
   reasonLabel,
   reasonPlaceholder,
+  error,
 }: ConfirmDialogProps) {
   const config = variantConfig[variant]
   const [reason, setReason] = React.useState("")
@@ -104,6 +111,7 @@ const ConfirmDialogInner = React.memo(function ConfirmDialogInner({
             )}
           </div>
         )}
+        {error && <p role="alert" className="px-1 pb-2 text-sm text-[var(--color-danger-ink)]">{error}</p>}
         <DialogFooter>
           <Button
             variant="secondary"

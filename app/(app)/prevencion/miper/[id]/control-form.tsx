@@ -10,6 +10,7 @@ import { OptionSelect } from "@/components/ui/option-select"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { CONTROL_HIERARCHY_LABEL, type ControlHierarchy, type MiperControlSnapshot } from "@/lib/prevention/miper/snapshot"
+import { toast } from "@/lib/toast"
 import { saveMiperControlAction } from "../actions"
 
 const HIERARCHY_OPTIONS = (Object.entries(CONTROL_HIERARCHY_LABEL) as Array<[ControlHierarchy, string]>).map(([value, label]) => ({ value, label }))
@@ -36,7 +37,9 @@ export function ControlForm({ matrixId, entryId, control, controlVersion, respon
   const [responsibleUserId, setResponsibleUserId] = useState(control?.responsibleUserId ?? "")
   const [responsibleName, setResponsibleName] = useState(control?.responsibleUserId ? "" : control?.responsibleName ?? "")
   const [dueDate, setDueDate] = useState(control?.dueDate ?? "")
-  const operation = useOperation({ feedback: "toast", onSuccess: onDone })
+  // Modo «message»: el rechazo del servidor queda escrito en el formulario
+  // (role=alert) en vez de un toast que se va; el éxito sigue avisando y cierra.
+  const operation = useOperation()
   const save = () => operation.run(() => saveMiperControlAction({
     matrixId, entryId, controlId: control?.id, expectedVersion: control ? controlVersion : undefined,
     values: {
@@ -45,7 +48,13 @@ export function ControlForm({ matrixId, entryId, control, controlVersion, respon
       responsibleName: responsibleUserId ? null : responsibleName.trim() || null,
       dueDate: dueDate || null,
     },
-  }))
+  }), (result) => { toast.success(result.message ?? "Medida guardada"); onDone() })
+  // El responsable actual puede ya no estar en la faena (`responsibleOptions`
+  // son sus usuarios activos): sin esta opción el select mostraba «Selecciona…»
+  // y parecía sin responsable.
+  const currentResponsible = control?.responsibleUserId && !responsibleOptions.some((option) => option.id === control.responsibleUserId)
+    ? [{ value: control.responsibleUserId, label: control.responsibleName ?? "Responsable actual" }]
+    : []
   return (
     <div role="group" aria-label={control ? "Editar medida de control" : "Nueva medida de control"} className="grid gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:grid-cols-2">
       <Field label="Tipo de control (jerarquía)" required>
@@ -55,7 +64,7 @@ export function ControlForm({ matrixId, entryId, control, controlVersion, respon
         <DatePicker ariaLabel="Plazo de la medida" value={dueDate || undefined} onChange={setDueDate} />
       </Field>
       {/* El rótulo visible es el nombre accesible (WCAG 2.5.3, «label in name»). */}
-      <Field label="Descripción de la medida" required className="md:col-span-2">
+      <Field label="Descripción de la medida" required className="md:col-span-2" helper="Mínimo 3 caracteres.">
         <Textarea aria-label="Descripción de la medida" value={description} onChange={(event) => setDescription(event.target.value)} rows={3} maxLength={3000} />
       </Field>
       {measureSuggestions.length > 0 && (
@@ -66,7 +75,7 @@ export function ControlForm({ matrixId, entryId, control, controlVersion, respon
       <Field label="Responsable">
         <OptionSelect
           aria-label="Responsable de la medida"
-          options={[...responsibleOptions.map((option) => ({ value: option.id, label: option.name })), { value: OTHER, label: "Otra persona o cargo…" }]}
+          options={[...responsibleOptions.map((option) => ({ value: option.id, label: option.name })), ...currentResponsible, { value: OTHER, label: "Otra persona o cargo…" }]}
           value={responsibleUserId || OTHER}
           onValueChange={(value) => setResponsibleUserId(value === OTHER ? "" : value)}
         />
@@ -76,6 +85,7 @@ export function ControlForm({ matrixId, entryId, control, controlVersion, respon
           <Input aria-label="Nombre o cargo responsable" value={responsibleName} onChange={(event) => setResponsibleName(event.target.value)} placeholder="Supervisor de turno" maxLength={300} />
         </Field>
       )}
+      {operation.message && <p role="alert" className="text-sm text-[var(--color-danger-ink)] md:col-span-2">{operation.message}</p>}
       <div className="flex gap-2 md:col-span-2">
         <Button size="sm" loading={operation.pending} disabled={description.trim().length < 3} onClick={save}>{control ? "Guardar medida" : "Agregar medida"}</Button>
         <Button size="sm" variant="secondary" disabled={operation.pending} onClick={onCancel}>Cancelar</Button>

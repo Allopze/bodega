@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { Field } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { CONTROLLED_STATUS_LABEL, ENTRY_FIELD_LABEL, type EntryChange, type MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
@@ -44,7 +45,10 @@ export function FollowUpStep({ entry, data, mode, change, baselineEntry, issues 
         {observations.map((item) => <ObservationItem key={item.id} observation={item} mode={mode} onChanged={() => router.refresh()} />)}
         {mode.canObserve && (
           <div className="space-y-2">
-            <Textarea aria-label="Nueva observación" value={observation} onChange={(event) => setObservation(event.target.value)} placeholder="Ej.: Revisar consecuencia. De acuerdo con el daño probable debería evaluarse nuevamente la severidad." />
+            {/* El mínimo que exige el botón, a la vista (A2, fila 10). El rótulo visible es el nombre accesible. */}
+            <Field label="Nueva observación" htmlFor={`${entry.id}-observacion`} helper="Mínimo 5 caracteres.">
+              <Textarea id={`${entry.id}-observacion`} value={observation} onChange={(event) => setObservation(event.target.value)} placeholder="Ej.: Revisar consecuencia. De acuerdo con el daño probable debería evaluarse nuevamente la severidad." />
+            </Field>
             <Button size="sm" disabled={operation.pending || observation.trim().length < 5} onClick={() => operation.run(() => addMiperObservationAction({ matrixId: data.matrixId, entryId: entry.id, body: observation }), () => setObservation(""))}>Registrar observación</Button>
           </div>
         )}

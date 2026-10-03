@@ -217,4 +217,18 @@ describe("RiskEditor", () => {
     render(<RiskEditor {...props({ rows: [entry("e1", 1, { hazard: "   " })], step: "identificacion" })} />)
     expect(screen.getByRole("heading", { level: 2, name: "Peligro sin describir" })).toBeTruthy()
   })
+
+  it("con una medida en edición, «Agregar medida» y el «Editar» de las otras quedan deshabilitados", () => {
+    const a = { id: "c1", hierarchy: "administrative" as const, description: "Pausas activas", responsibleUserId: null, responsibleName: "Supervisor", dueDate: "2026-10-30", status: "proposed" }
+    const b = { ...a, id: "c2", description: "Rotación de puestos" }
+    render(<RiskEditor {...props({ step: "medidas", rows: [entry("e1", 1, { controls: [a, b] })], data: { ...props().data, controlVersions: { c1: 1, c2: 1 } } })} />)
+    fireEvent.click(screen.getByRole("button", { name: "Editar la medida: Pausas activas" }))
+    expect(screen.getByRole("button", { name: "Agregar medida" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Editar la medida: Rotación de puestos" })).toBeDisabled()
+  })
+
+  it("la observación nueva dice a la vista que pide al menos 5 caracteres", () => {
+    render(<RiskEditor {...props({ step: "seguimiento", mode: { ...mode, canObserve: true } })} />)
+    expect(screen.getByRole("textbox", { name: "Nueva observación" })).toHaveAccessibleDescription("Mínimo 5 caracteres.")
+  })
 })

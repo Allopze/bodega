@@ -3,7 +3,6 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { ChoiceCardGroup } from "@/components/ui/choice-card-group"
-import { useOperation } from "@/lib/hooks/use-operation"
 import { CONTROLLED_STATUS_LABEL, type ControlledStatus } from "@/lib/prevention/miper/snapshot"
 import { deleteMiperControlAction } from "../../actions"
 import { ControlCard } from "../control-card"
@@ -14,10 +13,11 @@ const CONTROLLED = (["yes", "partial", "no"] as const).map((value) => ({ value, 
 
 export function MeasuresStep({ entry, data, editable, autosave, issues }: StepProps) {
   const [editing, setEditing] = useState<string | "new" | null>(null)
+  // Una medida a la vez (A2, fila 9): abrir otra desmontaba el formulario abierto y perdía lo escrito sin avisar.
+  const editingAny = editing !== null
   // Guardar y borrar una medida ya revalidan la página desde la acción
   // (`saveMiperControlAction`, `deleteMiperControlAction`): la foto nueva llega
   // con su respuesta. Un `router.refresh()` encima era un segundo viaje RSC.
-  const deletion = useOperation({ feedback: "toast" })
   const done = () => setEditing(null)
   const controlMessages = issues.filter((issue) => issue.severity === "error" && ["controlledStatus", "controls", "dueDate", "responsible", "description"].includes(issue.field))
   return (
@@ -38,15 +38,15 @@ export function MeasuresStep({ entry, data, editable, autosave, issues }: StepPr
         {entry.controls.map((control) => editing === control.id ? (
           <ControlForm key={control.id} matrixId={data.matrixId} entryId={entry.id} control={control} controlVersion={data.controlVersions[control.id]} responsibleOptions={data.responsibleOptions} measureSuggestions={data.dictionaries.measures} onDone={done} onCancel={() => setEditing(null)} />
         ) : (
-          <ControlCard key={control.id} control={control} editable={editable} deleting={deletion.pending}
+          <ControlCard key={control.id} control={control} editable={editable} editDisabled={editingAny}
             linkedActionNumbers={data.controlActionLinks.filter((link) => link.controlId === control.id).map((link) => link.actionNumber)}
             verifyHref={data.published ? `/prevencion/miper/controles/${control.id}` : null}
             onEdit={() => setEditing(control.id)}
-            onDelete={() => deletion.run(() => deleteMiperControlAction({ matrixId: data.matrixId, controlId: control.id, expectedVersion: data.controlVersions[control.id]! }))} />
+            onDelete={() => deleteMiperControlAction({ matrixId: data.matrixId, controlId: control.id, expectedVersion: data.controlVersions[control.id]! })} />
         ))}
         {editable && (editing === "new"
           ? <ControlForm matrixId={data.matrixId} entryId={entry.id} control={null} controlVersion={undefined} responsibleOptions={data.responsibleOptions} measureSuggestions={data.dictionaries.measures} onDone={done} onCancel={() => setEditing(null)} />
-          : <Button size="sm" variant="secondary" onClick={() => setEditing("new")}>Agregar medida</Button>)}
+          : <Button size="sm" variant="secondary" disabled={editingAny} onClick={() => setEditing("new")}>Agregar medida</Button>)}
         {!editable && entry.controls.length === 0 && <p className="text-sm text-[var(--color-text-subtle)]">Sin medidas de control.</p>}
       </section>
     </div>
