@@ -20,6 +20,8 @@ g.__db = testDb
 vi.mock("@/db", () => ({ get db() { return g.__db } }))
 
 const execution = await import("@/lib/services/miper/program-execution")
+const { getProgramWorkspace } = await import("@/lib/services/miper/program-queries")
+const evidenceAccess = await import("@/lib/services/miper/evidence-access")
 
 const WS = "ws-exec"
 const MATRIX = "mx-exec"
@@ -108,10 +110,10 @@ describe("ejecución del programa", () => {
   })
 
   it("el avance excluye las superseded y cuenta las vencidas aparte", async () => {
-    const progress = await execution.getProgramProgress(testDb, MATRIX)
-    expect(progress.program).toMatchObject({ done: 1, late: 1, pending: 2, overdue: 1, failed: 0, planned: 3 })
-    expect(progress.program.ratio).toBeCloseTo(1 / 3)
-    expect(progress.byAction).toEqual([{ actionId: ACTION, progress: progress.program }])
+    const workspace = await getProgramWorkspace(MATRIX, execAccess)
+    expect(workspace.progress).toMatchObject({ done: 1, late: 1, pending: 2, overdue: 1, failed: 0, planned: 3 })
+    expect(workspace.progress.ratio).toBeCloseTo(1 / 3)
+    expect(workspace.actions.map((action) => ({ actionId: action.id, progress: action.progress }))).toEqual([{ actionId: ACTION, progress: workspace.progress }])
   })
 
   it("anular el registro vigente devuelve la ocurrencia al anterior y luego a Pendiente", async () => {
@@ -175,5 +177,84 @@ describe("ejecución del programa", () => {
   it("no se registra sobre una ocurrencia reemplazada", async () => {
     await expect(execution.recordOccurrence({ occurrenceId: "occ-super", outcome: "not_done", reason: "Intento sobre lo reemplazado." }, execAccess))
       .rejects.toThrow(/reemplazada por el período siguiente/)
+  })
+})
+
+describe("descarga de la evidencia del programa", () => {
+  const WS2 = "ws-exec-otra"
+  const inScope = { mode: "some" as const, ids: [WS] }
+  const upload = (path: string, mimeType: string, worksiteId: string | null = WS) => ({
+    path, domain: "miper", worksiteId, sha256: "c".repeat(64), sizeBytes: 10, mimeType,
+    createdAt: new Date().toISOString(), claimedAt: worksiteId ? new Date().toISOString() : null,
+  })
+
+  beforeAll(async () => {
+    await testDb.insert(schema.worksites).values({ id: WS2, name: "Otra faena", code: "EXEC2" })
+    await testDb.insert(schema.preventionRiskMatrices).values({
+      id: "mx-exec-otra", worksiteId: WS2, matrixVersion: 1, title: "MIPER otra faena 2026", period: 2026, status: "published",
+      reviewedByUserId: "u-exec", approvedByUserId: "u-exec", publishedByUserId: "u-exec", publishedAt: new Date().toISOString(),
+      methodologyId: "m-exec", methodologySnapshot: {}, revisionReason: "Elaboración inicial.", participationSummary: "", consultationEvidenceReference: "", createdByUserId: "u-exec",
+    })
+    await testDb.insert(schema.preventionRiskPrograms).values({ id: "prog-exec-otra", matrixId: "mx-exec-otra", worksiteId: WS2, period: 2026, createdByUserId: "u-exec" })
+    await testDb.insert(schema.preventionRiskProgramActions).values({
+      id: "act-exec-otra", programId: "prog-exec-otra", actionNumber: 1, description: "Actividad de otra faena", scheduleKind: "once", startsOn: "2026-01-01", createdByUserId: "u-exec",
+    })
+    await testDb.insert(schema.preventionRiskProgramOccurrences).values({ id: "occ-otra", actionId: "act-exec-otra", dueOn: "2026-01-31", outcome: "pending" })
+
+    await testDb.insert(schema.preventionEvidenceUploads).values([
+      upload("storage/miper-evidence/dl-ok.pdf", "application/pdf"),
+      upload("storage/miper-evidence/dl-retirada.pdf", "application/pdf"),
+      upload("storage/miper-evidence/dl-anulada.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+      upload("storage/miper-evidence/dl-huerfana.pdf", "application/pdf"),
+      upload("storage/miper-evidence/dl-otra.pdf", "application/pdf", WS2),
+    ])
+    await testDb.insert(schema.preventionRiskProgramOccurrenceRecords).values([
+      { id: "rec-dl-vivo", occurrenceId: "occ-future", outcome: "done", effectiveOn: "2020-01-31", recordedByUserId: "u-exec" },
+      {
+        id: "rec-dl-anulado", occurrenceId: "occ-future", outcome: "done", effectiveOn: "2020-01-30", recordedByUserId: "u-exec",
+        voidedAt: new Date().toISOString(), voidedByUserId: "u-exec", voidReason: "Se registró por error esta fecha.",
+      },
+      { id: "rec-dl-otra", occurrenceId: "occ-otra", outcome: "done", effectiveOn: "2026-01-30", recordedByUserId: "u-exec" },
+    ])
+    await testDb.insert(schema.preventionRiskOccurrenceEvidence).values([
+      { id: "ev-dl-ok", recordId: "rec-dl-vivo", evidenceUploadId: "storage/miper-evidence/dl-ok.pdf", uploadedByUserId: "u-exec" },
+      {
+        id: "ev-dl-retirada", recordId: "rec-dl-vivo", evidenceUploadId: "storage/miper-evidence/dl-retirada.pdf", uploadedByUserId: "u-exec",
+        withdrawnAt: new Date().toISOString(), withdrawnByUserId: "u-exec", withdrawReason: "Archivo equivocado, se sube otro.",
+      },
+      { id: "ev-dl-anulada", recordId: "rec-dl-anulado", evidenceUploadId: "storage/miper-evidence/dl-anulada.docx", uploadedByUserId: "u-exec" },
+      { id: "ev-dl-otra", recordId: "rec-dl-otra", evidenceUploadId: "storage/miper-evidence/dl-otra.pdf", uploadedByUserId: "u-exec" },
+    ])
+  }, 60_000)
+
+  it("findMiperEvidenceForDownload: en alcance devuelve el MIME de la subida", async () => {
+    await expect(evidenceAccess.findMiperEvidenceForDownload(testDb, "storage/miper-evidence/dl-ok.pdf", inScope)).resolves.toEqual({
+      storedPath: "storage/miper-evidence/dl-ok.pdf", mimeType: "application/pdf", withdrawnAt: null, recordVoidedAt: null,
+    })
+    // El alcance global también la ve.
+    await expect(evidenceAccess.findMiperEvidenceForDownload(testDb, "storage/miper-evidence/dl-ok.pdf", { mode: "all", ids: [] })).resolves.toMatchObject({ mimeType: "application/pdf" })
+  })
+
+  it("findMiperEvidenceForDownload: de otra faena → null", async () => {
+    await expect(evidenceAccess.findMiperEvidenceForDownload(testDb, "storage/miper-evidence/dl-otra.pdf", inScope)).resolves.toBeNull()
+    await expect(evidenceAccess.findMiperEvidenceForDownload(testDb, "storage/miper-evidence/dl-otra.pdf", { mode: "some", ids: [WS2] })).resolves.toMatchObject({ mimeType: "application/pdf" })
+  })
+
+  it("findMiperEvidenceForDownload: una subida sin fila de evidencia → null", async () => {
+    await expect(evidenceAccess.findMiperEvidenceForDownload(testDb, "storage/miper-evidence/dl-huerfana.pdf", { mode: "all", ids: [] })).resolves.toBeNull()
+    await expect(evidenceAccess.findMiperEvidenceForDownload(testDb, "storage/miper-evidence/no-existe.pdf", { mode: "all", ids: [] })).resolves.toBeNull()
+  })
+
+  it("findMiperEvidenceForDownload: retirada y de registro anulado se sirven (withdrawnAt / recordVoidedAt)", async () => {
+    const withdrawn = await evidenceAccess.findMiperEvidenceForDownload(testDb, "storage/miper-evidence/dl-retirada.pdf", inScope)
+    expect(withdrawn).toMatchObject({ mimeType: "application/pdf", recordVoidedAt: null })
+    expect(withdrawn!.withdrawnAt).not.toBeNull()
+    const voided = await evidenceAccess.findMiperEvidenceForDownload(testDb, "storage/miper-evidence/dl-anulada.docx", inScope)
+    expect(voided).toMatchObject({ withdrawnAt: null })
+    expect(voided!.recordVoidedAt).not.toBeNull()
+  })
+
+  it("findMiperEvidenceForDownload: alcance none → null", async () => {
+    await expect(evidenceAccess.findMiperEvidenceForDownload(testDb, "storage/miper-evidence/dl-ok.pdf", { mode: "none", ids: [] })).resolves.toBeNull()
   })
 })

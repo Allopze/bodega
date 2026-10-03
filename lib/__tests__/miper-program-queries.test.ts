@@ -23,6 +23,7 @@ const outsider = { userId: "u-o", scope: { mode: "some" as const, ids: ["ws-othe
 
 let matrixId = ""
 let emptyMatrixId = ""
+let detailMatrixId = ""
 let firstEntryRowNumber = 0
 
 beforeAll(async () => {
@@ -69,9 +70,15 @@ beforeAll(async () => {
     id: "prog-1", matrixId, worksiteId: "ws-p", period: 2026,
     companyName: "CHOME", programManagerUserId: "u-p", elaboratedOn: "2026-01-10", createdByUserId: "u-p",
   })
+  await testDb.insert(schema.preventionRiskProcesses).values([
+    { id: "proc-b", worksiteId: "ws-p", code: "B", name: "Despacho", normalizedName: "despacho" },
+    { id: "proc-a", worksiteId: "ws-p", code: "A", name: "Acopio", normalizedName: "acopio" },
+    { id: "proc-x", worksiteId: "ws-p", code: "X", name: "Proceso cerrado", normalizedName: "proceso cerrado", isActive: false },
+    { id: "proc-o", worksiteId: "ws-other", code: "O", name: "De otra faena", normalizedName: "de otra faena" },
+  ])
   await testDb.insert(schema.preventionRiskProgramActions).values([
     {
-      id: "act-1", programId: "prog-1", actionNumber: 1, description: "Ejecutar el control de ruido", responsibleUserId: "u-r",
+      id: "act-1", programId: "prog-1", processId: "proc-b", actionNumber: 1, description: "Ejecutar el control de ruido", responsibleUserId: "u-r",
       responsibleSnapshot: "Responsable R — Encargado", locationLabel: "Faena Programa", scheduleKind: "monthly", startsOn: "2026-01-01", createdByUserId: "u-p",
     },
     {
@@ -114,6 +121,40 @@ beforeAll(async () => {
       withdrawnAt: "2026-01-05T00:00:00.000Z", withdrawnByUserId: "u-r", withdrawReason: "Archivo equivocado",
     },
   ])
+
+  // Una MIPER aparte para el detalle de una actividad: 3 ocurrencias, una con un
+  // registro anulado (y su reemplazo) y evidencia retirada, y un Word sin vista previa.
+  detailMatrixId = (await createMiper({ worksiteId: "ws-p", period: 2028, revisionReason: "Período para el detalle de actividad." }, author)).id
+  await testDb.insert(schema.preventionRiskPrograms).values({ id: "prog-d", matrixId: detailMatrixId, worksiteId: "ws-p", period: 2028, createdByUserId: "u-p" })
+  await testDb.insert(schema.preventionRiskProgramActions).values({
+    id: "act-d", programId: "prog-d", actionNumber: 1, description: "Revisión de extintores", scheduleKind: "monthly", startsOn: "2028-01-01", createdByUserId: "u-p",
+  })
+  await testDb.insert(schema.preventionRiskProgramOccurrences).values([
+    { id: "od-3", actionId: "act-d", dueOn: "2028-03-31", outcome: "pending" },
+    { id: "od-1", actionId: "act-d", dueOn: "2028-01-31", outcome: "pending" },
+    { id: "od-2", actionId: "act-d", dueOn: "2028-02-29", outcome: "pending" },
+  ])
+  await testDb.insert(schema.preventionRiskProgramOccurrenceRecords).values([
+    {
+      id: "rec-d1", occurrenceId: "od-1", outcome: "done", effectiveOn: "2028-01-30", recordedByUserId: "u-r", recordedAt: "2028-02-01T10:00:00.000Z",
+      voidedAt: "2028-02-02T10:00:00.000Z", voidedByUserId: "u-p", voidReason: "La fecha efectiva estaba equivocada.",
+    },
+    { id: "rec-d2", occurrenceId: "od-1", outcome: "done", effectiveOn: "2028-01-29", late: false, recordedByUserId: "u-r", recordedAt: "2028-02-03T10:00:00.000Z" },
+    { id: "rec-d3", occurrenceId: "od-3", outcome: "not_done", reason: "No se pudo por falta de acceso.", recordedByUserId: "u-r", recordedAt: "2028-04-02T10:00:00.000Z" },
+  ])
+  await testDb.update(schema.preventionRiskProgramOccurrences).set({ outcome: "done", currentRecordId: "rec-d2" }).where(eq(schema.preventionRiskProgramOccurrences.id, "od-1"))
+  await testDb.insert(schema.preventionEvidenceUploads).values([
+    { path: "storage/miper-evidence/acta-d.pdf", domain: "miper", sha256: "e".repeat(64), sizeBytes: 100, mimeType: "application/pdf", createdAt: "2028-02-01T00:00:00.000Z" },
+    { path: "storage/miper-evidence/registro-d.docx", domain: "miper", sha256: "f".repeat(64), sizeBytes: 100, createdAt: "2028-02-03T00:00:00.000Z",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+  ])
+  await testDb.insert(schema.preventionRiskOccurrenceEvidence).values([
+    {
+      id: "ev-d1", recordId: "rec-d1", evidenceUploadId: "storage/miper-evidence/acta-d.pdf", uploadedByUserId: "u-r", uploadedAt: "2028-02-01T10:05:00.000Z",
+      withdrawnAt: "2028-02-02T09:00:00.000Z", withdrawnByUserId: "u-p", withdrawReason: "Archivo equivocado, se sube otro.",
+    },
+    { id: "ev-d2", recordId: "rec-d2", evidenceUploadId: "storage/miper-evidence/registro-d.docx", description: "Registro firmado", uploadedByUserId: "u-r", uploadedAt: "2028-02-03T10:05:00.000Z" },
+  ])
 }, 60_000)
 
 describe("consulta del Programa de Trabajo", () => {
@@ -131,7 +172,7 @@ describe("consulta del Programa de Trabajo", () => {
     expect(ws.actions.map((a) => [a.actionNumber, a.status])).toEqual([[1, "active"], [2, "retired"]])
     const action = ws.actions[0]!
     expect(action).toMatchObject({
-      processName: null, description: "Ejecutar el control de ruido", responsibleUserId: "u-r",
+      processId: "proc-b", processName: "Despacho", description: "Ejecutar el control de ruido", responsibleUserId: "u-r",
       responsibleName: "Responsable R — Encargado", locationLabel: "Faena Programa", scheduleKind: "monthly", startsOn: "2026-01-01",
     })
     expect(ws.actions[1]!.retiredReason).toBe("Reemplazada por otra actividad.")
@@ -168,6 +209,55 @@ describe("consulta del Programa de Trabajo", () => {
     expect(workspace.program?.lastReviewedOn).toMatch(/^2026-02-15/)
     // Una MIPER sin programa lo declara nulo, no lo inventa.
     expect((await q.getMiperWorkspace(emptyMatrixId, author)).program).toBeNull()
+  })
+
+  it("getProgramWorkspace trae processes y processId", async () => {
+    const ws = await pq.getProgramWorkspace(matrixId, author)
+    // Sólo los procesos activos de la faena de la MIPER, por nombre.
+    expect(ws.processes).toEqual([{ id: "proc-a", name: "Acopio" }, { id: "proc-b", name: "Despacho" }])
+    expect(ws.actions[0]!.processId).toBe("proc-b")
+    expect(ws.actions[1]!.processId).toBeNull()
+    // Sin programa también se devuelven.
+    expect((await pq.getProgramWorkspace(emptyMatrixId, author)).processes).toEqual(ws.processes)
+  })
+
+  it("getProgramActionDetail trae todas las ocurrencias con sus registros y evidencia en una lectura", async () => {
+    const detail = await pq.getProgramActionDetail("act-d", author)
+    expect(detail.actionId).toBe("act-d")
+    expect(detail.occurrences.map((o) => o.occurrenceId)).toEqual(["od-1", "od-2", "od-3"])
+
+    const [first, second, third] = detail.occurrences
+    expect(first!.currentRecordId).toBe("rec-d2")
+    // Más reciente primero; el anulado se devuelve marcado, con quién y por qué.
+    expect(first!.records.map((r) => r.id)).toEqual(["rec-d2", "rec-d1"])
+    const [replacement, voided] = first!.records
+    expect(replacement).toMatchObject({ outcome: "done", effectiveOn: "2028-01-29", voidedAt: null, recordedByName: "Responsable R" })
+    expect(voided).toMatchObject({ voidedByName: "Prevencionista P", voidReason: "La fecha efectiva estaba equivocada." })
+    expect(voided!.voidedAt).not.toBeNull()
+
+    // La evidencia retirada se devuelve marcada; el PDF se abre inline, el Word no.
+    expect(voided!.evidence).toHaveLength(1)
+    expect(voided!.evidence[0]).toMatchObject({
+      id: "ev-d1", fileName: "acta-d.pdf", mimeType: "application/pdf", inlineSafe: true,
+      withdrawReason: "Archivo equivocado, se sube otro.", uploadedByName: "Responsable R",
+    })
+    expect(voided!.evidence[0]!.withdrawnAt).not.toBeNull()
+    expect(replacement!.evidence[0]).toMatchObject({ fileName: "registro-d.docx", description: "Registro firmado", inlineSafe: false, withdrawnAt: null })
+
+    expect(second).toMatchObject({ currentRecordId: null, records: [] })
+    expect(third!.records).toMatchObject([{ id: "rec-d3", outcome: "not_done", reason: "No se pudo por falta de acceso.", evidence: [] }])
+  })
+
+  it("getProgramActionDetail: fuera de alcance y actividad inexistente dan el mismo error", async () => {
+    const outOfScope = await pq.getProgramActionDetail("act-d", outsider).catch((error: unknown) => error as Error)
+    const missing = await pq.getProgramActionDetail("act-no-existe", author).catch((error: unknown) => error as Error)
+    expect(outOfScope).toBeInstanceOf(Error)
+    expect(missing).toBeInstanceOf(Error)
+    expect((outOfScope as Error).message).toBe((missing as Error).message)
+  })
+
+  it("getProgramActionDetail: sin prevention:risk:view, rechaza", async () => {
+    await expect(pq.getProgramActionDetail("act-d", { ...author, permissions: ["prevention:risk:edit"] })).rejects.toThrow()
   })
 
   it("fuera de alcance no se lee", async () => {

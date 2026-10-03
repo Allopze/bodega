@@ -1,16 +1,17 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
-  preventionRiskControls, preventionRiskEntries, preventionRiskMatrices, preventionRiskMatrixVersions, preventionRiskOccurrenceEvidence,
+  preventionEvidenceUploads, preventionRiskControls, preventionRiskEntries, preventionRiskMatrices, preventionRiskMatrixVersions, preventionRiskOccurrenceEvidence,
   preventionRiskProgramActionControls, preventionRiskProgramActions, preventionRiskProgramOccurrenceRecords,
   preventionRiskProgramOccurrences, preventionRiskPrograms, preventionRiskProcesses, worksites,
 } from "@/db/schema"
 import type { RiskClassification } from "@/lib/prevention/miper/methodology"
 import { programProgress, type OccurrenceOutcome, type ProgramProgress } from "@/lib/prevention/miper/progress"
 import type { ProgramScheduleKind } from "@/lib/prevention/miper/schedule"
+import { isInlineSafeMime } from "@/lib/security/file-response"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { todayInChile } from "@/lib/utils"
-import { requireAccess, scopeAllows, userNames, type MiperAccess } from "./shared"
+import { OUT_OF_SCOPE, requireAccess, scopeAllows, userNames, type MiperAccess } from "./shared"
 
 const VIEW = "prevention:risk:view"
 
@@ -48,6 +49,8 @@ export type ProgramOccurrenceView = {
 export type ProgramActionView = {
   id: string
   actionNumber: number
+  /** Proceso de la actividad (`null` = sin proceso asignado). */
+  processId: string | null
   processName: string | null
   description: string
   responsibleUserId: string | null
@@ -83,7 +86,28 @@ export type ProgramWorkspace = {
   actions: ProgramActionView[]
   proposals: ProgramProposalView | null
   progress: ProgramProgress
+  /** Procesos **activos** de la faena de la MIPER, por nombre; también cuando aún no hay programa. */
+  processes: Array<{ id: string; name: string }>
 }
+
+/** Un archivo de evidencia de un registro. La retirada se devuelve marcada, no se oculta. */
+export type ProgramEvidenceView = {
+  id: string; evidenceUploadId: string; fileName: string; description: string | null
+  uploadedAt: string; uploadedByName: string | null
+  withdrawnAt: string | null; withdrawReason: string | null
+  mimeType: string | null; inlineSafe: boolean
+}
+
+/** Un registro «Se hizo / No se hizo» con su evidencia. El anulado se devuelve marcado. */
+export type ProgramRecordView = {
+  id: string; outcome: "done" | "not_done"; effectiveOn: string | null; late: boolean
+  reason: string | null; notes: string | null; recordedAt: string; recordedByName: string | null
+  voidedAt: string | null; voidReason: string | null; voidedByName: string | null
+  evidence: ProgramEvidenceView[]
+}
+
+export type ProgramOccurrenceDetail = { occurrenceId: string; currentRecordId: string | null; records: ProgramRecordView[] }
+export type ProgramActionDetail = { actionId: string; occurrences: ProgramOccurrenceDetail[] }
 
 /**
  * Encabezado del programa de una MIPER, con los dos campos derivados. Devuelve
@@ -120,8 +144,13 @@ export async function getProgramWorkspace(matrixId: string, access: MiperAccess)
   if (!matrix || !scopeAllows(access.scope, matrix.worksiteId)) throw new RiskLegalDomainError("MIPER no encontrada o fuera de alcance.")
 
   const today = todayInChile()
-  const program = await getProgramHeader(matrixId)
-  if (!program) return { program: null, actions: [], proposals: null, progress: programProgress([], today) }
+  const [program, processes] = await Promise.all([
+    getProgramHeader(matrixId),
+    db.select({ id: preventionRiskProcesses.id, name: preventionRiskProcesses.name }).from(preventionRiskProcesses)
+      .where(and(eq(preventionRiskProcesses.worksiteId, matrix.worksiteId), eq(preventionRiskProcesses.isActive, true)))
+      .orderBy(asc(preventionRiskProcesses.name)),
+  ])
+  if (!program) return { program: null, actions: [], proposals: null, progress: programProgress([], today), processes }
 
   const actionRows = await db.select({ action: preventionRiskProgramActions, processName: preventionRiskProcesses.name })
     .from(preventionRiskProgramActions)
@@ -198,6 +227,7 @@ export async function getProgramWorkspace(matrixId: string, access: MiperAccess)
     return {
       id: action.id,
       actionNumber: action.actionNumber,
+      processId: action.processId,
       processName: processName ?? null,
       description: action.description,
       responsibleUserId: action.responsibleUserId,
@@ -216,5 +246,80 @@ export async function getProgramWorkspace(matrixId: string, access: MiperAccess)
     }
   })
 
-  return { program, actions, proposals: null, progress: programProgress(actions.flatMap((action) => action.occurrences), today) }
+  return { program, actions, proposals: null, progress: programProgress(actions.flatMap((action) => action.occurrences), today), processes }
+}
+
+/**
+ * Detalle de una actividad en **una** llamada: todas sus ocurrencias con todos
+ * sus registros (el vigente, los anteriores y los anulados) y la evidencia de
+ * cada registro (también la retirada), para que la UI los marque. Son cuatro
+ * lecturas —ocurrencias, registros, evidencia y nombres—, ninguna por ocurrencia.
+ * «No existe» y «fuera de alcance» dan el mismo error, como el resto de lecturas.
+ */
+export async function getProgramActionDetail(actionId: string, access: MiperAccess): Promise<ProgramActionDetail> {
+  requireAccess(access, VIEW)
+  const [context] = await db.select({ worksiteId: preventionRiskPrograms.worksiteId }).from(preventionRiskProgramActions)
+    .innerJoin(preventionRiskPrograms, eq(preventionRiskPrograms.id, preventionRiskProgramActions.programId))
+    .where(eq(preventionRiskProgramActions.id, actionId)).limit(1)
+  if (!context || !scopeAllows(access.scope, context.worksiteId)) throw new RiskLegalDomainError(OUT_OF_SCOPE)
+
+  const occurrences = await db.select({
+    id: preventionRiskProgramOccurrences.id, currentRecordId: preventionRiskProgramOccurrences.currentRecordId,
+  }).from(preventionRiskProgramOccurrences)
+    .where(eq(preventionRiskProgramOccurrences.actionId, actionId))
+    .orderBy(asc(preventionRiskProgramOccurrences.dueOn))
+  const occurrenceIds = occurrences.map((occurrence) => occurrence.id)
+
+  const records = occurrenceIds.length === 0 ? [] : await db.select().from(preventionRiskProgramOccurrenceRecords)
+    .where(inArray(preventionRiskProgramOccurrenceRecords.occurrenceId, occurrenceIds))
+    .orderBy(desc(preventionRiskProgramOccurrenceRecords.recordedAt))
+  const recordIds = records.map((record) => record.id)
+
+  const evidence = recordIds.length === 0 ? [] : await db.select({
+    row: preventionRiskOccurrenceEvidence, mimeType: preventionEvidenceUploads.mimeType,
+  }).from(preventionRiskOccurrenceEvidence)
+    .leftJoin(preventionEvidenceUploads, and(
+      eq(preventionEvidenceUploads.path, preventionRiskOccurrenceEvidence.evidenceUploadId),
+      eq(preventionEvidenceUploads.domain, "miper"),
+    ))
+    .where(inArray(preventionRiskOccurrenceEvidence.recordId, recordIds))
+    .orderBy(asc(preventionRiskOccurrenceEvidence.uploadedAt))
+
+  const names = await userNames(db, [
+    ...records.flatMap((record) => [record.recordedByUserId, record.voidedByUserId]),
+    ...evidence.map(({ row }) => row.uploadedByUserId),
+  ])
+  const nameOf = (userId: string | null) => (userId ? names.get(userId) ?? null : null)
+
+  const evidenceByRecord = new Map<string, ProgramEvidenceView[]>()
+  for (const { row, mimeType } of evidence) {
+    const list = evidenceByRecord.get(row.recordId) ?? []
+    list.push({
+      id: row.id, evidenceUploadId: row.evidenceUploadId,
+      fileName: row.evidenceUploadId.split("/").pop() ?? row.evidenceUploadId,
+      description: row.description, uploadedAt: row.uploadedAt, uploadedByName: nameOf(row.uploadedByUserId),
+      withdrawnAt: row.withdrawnAt, withdrawReason: row.withdrawReason,
+      mimeType: mimeType ?? null, inlineSafe: isInlineSafeMime(mimeType),
+    })
+    evidenceByRecord.set(row.recordId, list)
+  }
+
+  const recordsByOccurrence = new Map<string, ProgramRecordView[]>()
+  for (const record of records) {
+    const list = recordsByOccurrence.get(record.occurrenceId) ?? []
+    list.push({
+      id: record.id, outcome: record.outcome as "done" | "not_done", effectiveOn: record.effectiveOn, late: record.late,
+      reason: record.reason, notes: record.notes, recordedAt: record.recordedAt, recordedByName: nameOf(record.recordedByUserId),
+      voidedAt: record.voidedAt, voidReason: record.voidReason, voidedByName: nameOf(record.voidedByUserId),
+      evidence: evidenceByRecord.get(record.id) ?? [],
+    })
+    recordsByOccurrence.set(record.occurrenceId, list)
+  }
+
+  return {
+    actionId,
+    occurrences: occurrences.map((occurrence) => ({
+      occurrenceId: occurrence.id, currentRecordId: occurrence.currentRecordId, records: recordsByOccurrence.get(occurrence.id) ?? [],
+    })),
+  }
 }

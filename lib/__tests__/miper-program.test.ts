@@ -33,12 +33,8 @@ const actionRows = (programId: string) => testDb.select().from(schema.prevention
 const occurrenceRows = (actionId: string) => testDb.select().from(schema.preventionRiskProgramOccurrences).where(eq(schema.preventionRiskProgramOccurrences.actionId, actionId))
 const linksOf = (actionId: string) => testDb.select().from(schema.preventionRiskProgramActionControls).where(eq(schema.preventionRiskProgramActionControls.actionId, actionId))
 
-const headerInput = (expectedVersion: number) => ({
-  matrixId, expectedVersion, elaboratedOn: "2030-01-15",
-  companyName: "Chome S.A.", companyRut: "76.111.111-1", companyAddress: "Lagart 175", companyCommune: "Cabrero",
-  economicActivity: "Transporte", adherentNumber: null, worksiteName: "Faena Programa",
-  siteRepresentativeUserId: null, siteRepresentativeName: "Juan Pérez", programManagerUserId: null,
-  headcountTotal: 0, headcountMale: 0, headcountFemale: 0, headcountOther: 0,
+const headerInput = (expectedVersion: number, target = matrixId) => ({
+  matrixId: target, expectedVersion, elaboratedOn: "2030-01-15", programManagerUserId: "u-edit",
 })
 
 beforeAll(async () => {
@@ -67,8 +63,36 @@ describe("servicio del Programa de Trabajo", () => {
     const { version } = await program.updateProgramHeader(headerInput(current!.version), editor)
     expect(version).toBe(current!.version + 1)
     const [updated] = await programRows()
-    expect(updated).toMatchObject({ companyName: "Chome S.A.", siteRepresentativeName: "Juan Pérez" })
+    expect(updated).toMatchObject({ elaboratedOn: "2030-01-15", programManagerUserId: "u-edit" })
     await expect(program.updateProgramHeader(headerInput(1), editor)).rejects.toThrow(/Recarga antes de continuar/)
+  })
+
+  it("sin programa, guardar el encabezado con expectedVersion 1 lo crea y guarda fecha y encargado", async () => {
+    const bare = (await createMiper({ worksiteId: WS, period: 2031, revisionReason: "Período sin programa todavía." }, editor)).id
+    const programOf = (id: string) => testDb.select().from(schema.preventionRiskPrograms).where(eq(schema.preventionRiskPrograms.matrixId, id))
+    expect(await programOf(bare)).toHaveLength(0)
+
+    const { version } = await program.updateProgramHeader(headerInput(1, bare), editor)
+    expect(version).toBe(2)
+    const [created] = await programOf(bare)
+    expect(created).toMatchObject({ version: 2, programManagerUserId: "u-edit", elaboratedOn: "2030-01-15" })
+    const log = await testDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, bare))
+    // `newState` se guarda como JSON en texto.
+    expect(log.filter((row) => (JSON.parse(row.newState ?? "{}") as { changeType?: string }).changeType === "program_header_updated")).toHaveLength(1)
+  })
+
+  it("el encabezado no cambia los datos de empresa del programa aunque el input los traiga", async () => {
+    const [before] = await programRows()
+    const { version } = await program.updateProgramHeader({
+      ...headerInput(before!.version), companyName: "Empresa inventada", companyRut: "1-9", companyAddress: "Otra calle",
+      siteRepresentativeName: "Alguien Más", headcountTotal: 500,
+    }, editor)
+    const [after] = await programRows()
+    expect(after!.version).toBe(version)
+    expect(after).toMatchObject({
+      companyName: before!.companyName, companyRut: before!.companyRut, companyAddress: before!.companyAddress,
+      siteRepresentativeName: before!.siteRepresentativeName, headcountTotal: before!.headcountTotal,
+    })
   })
 
   it("una actividad exige fecha programada y el correlativo no se repite ni al retirar", async () => {

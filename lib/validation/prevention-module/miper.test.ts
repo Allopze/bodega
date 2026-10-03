@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { FREQUENCY_MAX_LENGTH, MEASURE_MAX_LENGTH, RESPONSIBLE_MAX_LENGTH } from "@/lib/prevention/miper/re04-measures"
 import {
   createMiperSchema, IMPORT_LIMITS, MIPER_BULK_LIMIT, miperApproveFinalSchema, miperBulkAddControlSchema, miperBulkPatchEntriesSchema, miperBulkUpdateControlsSchema,
-  miperControlSaveSchema, miperEntrySaveSchema, miperHeaderSchema, miperObservationSchema, programActionSchema, riskImportCommitSchema,
+  miperControlSaveSchema, miperEntrySaveSchema, miperHeaderSchema, miperObservationSchema, programActionSchema, programHeaderSchema, riskImportCommitSchema,
 } from "./miper"
 
 const header = {
@@ -24,6 +24,17 @@ describe("schemas MIPER", () => {
     expect(miperHeaderSchema.safeParse({ ...header, updatedOn: "2026-01-01" }).success).toBe(false)
     expect(miperHeaderSchema.safeParse({ ...header, headcountMale: 10 }).success).toBe(false)
   })
+  it("el encabezado del programa sólo acepta fecha y encargado", () => {
+    const parsed = programHeaderSchema.parse({
+      matrixId: "m1", expectedVersion: 1, elaboratedOn: "2026-01-10", programManagerUserId: "u-1",
+      companyName: "Otra empresa", companyRut: "1-9", siteRepresentativeName: "Alguien", headcountTotal: 99, headcountMale: 1, worksiteName: "Otra faena",
+    })
+    expect(Object.keys(parsed).sort()).toEqual(["elaboratedOn", "expectedVersion", "matrixId", "programManagerUserId"])
+    expect(programHeaderSchema.safeParse({ matrixId: "m1", expectedVersion: 1, elaboratedOn: null, programManagerUserId: null }).success).toBe(true)
+    // La fecha sigue siendo de calendario.
+    expect(programHeaderSchema.safeParse({ matrixId: "m1", expectedVersion: 1, elaboratedOn: "2026-02-31", programManagerUserId: null }).success).toBe(false)
+  })
+
   it("fila: P y C sólo 1, 2 o 4; admite fila incompleta; rechaza campos desconocidos", () => {
     expect(miperEntrySaveSchema.safeParse({ matrixId: "m1", values: { probability: 4, consequence: 2 } }).success).toBe(true)
     expect(miperEntrySaveSchema.safeParse({ matrixId: "m1", values: { probability: 3 } }).success).toBe(false)

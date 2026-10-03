@@ -213,6 +213,36 @@ describe("libro RE-04 de una versión sellada de la MIPER", () => {
     expect(sheet.getCell("F14").value).toBe("Mensual (desde 31-03-2026)")
   })
 
+  it("en sellado, la hoja RE-04.1 toma la empresa de la foto sellada aunque el programa diga otra", async () => {
+    const stale = {
+      ...program,
+      program: {
+        ...program.program, companyName: "Empresa del programa", companyRut: "11.111.111-1", companyAddress: "Calle del programa",
+        companyCommune: "Comuna del programa", siteRepresentativeName: "Representante del programa",
+      },
+    } as unknown as ProgramWorkspace
+    const sheet = (await buildMiperWorkbook(detail, stale)).getWorksheet("Programa de Trabajo")!
+    expect(sheet.getCell("D4").value).toBe("Biodiversa SpA")
+    expect(sheet.getCell("D5").value).toBe("76.123.456-7")
+    expect(sheet.getCell("D6").value).toBe("Av. del Mar 100, Santiago")
+    expect(sheet.getCell("D7").value).toBe("Ana Representante")
+    // La fecha de elaboración y el encargado siguen siendo del programa.
+    expect(sheet.getCell("D8").value).toBe("05-03-2026")
+    expect(sheet.getCell("D11").value).toBe("Elena Encargada")
+  })
+
+  it("en vivo, la toma del encabezado vivo", async () => {
+    const liveSnapshot: MiperSnapshot = {
+      ...snapshot,
+      header: { ...snapshot.header, companyName: "Empresa viva", companyRut: "22.222.222-2", companyAddress: "Calle viva", companyCommune: "Cabrero", siteRepresentativeName: "Representante vivo" },
+    }
+    const sheet = (await buildMiperWorkbook(detail, program, { liveState: true, liveSnapshot })).getWorksheet("Programa de Trabajo")!
+    expect(sheet.getCell("D4").value).toBe("Empresa viva")
+    expect(sheet.getCell("D5").value).toBe("22.222.222-2")
+    expect(sheet.getCell("D6").value).toBe("Calle viva, Cabrero")
+    expect(sheet.getCell("D7").value).toBe("Representante vivo")
+  })
+
   it("muestra la fecha efectiva y el avance (con las fuera de plazo marcadas)", async () => {
     const workbook = await buildMiperWorkbook(detail, program)
     const sheet = workbook.getWorksheet("Programa de Trabajo")!

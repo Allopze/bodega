@@ -107,7 +107,7 @@ export async function updateProgramHeader(input: unknown, access: MiperAccess): 
     assertEditable(matrix)
     const program = await ensureProgram(tx, matrix)
     if (program.version !== data.expectedVersion) throw new RiskLegalDomainError(STALE_PROGRAM)
-    await assertActiveUsers(tx, [data.siteRepresentativeUserId, data.programManagerUserId])
+    await assertActiveUsers(tx, [data.programManagerUserId])
     const { matrixId: _matrixId, expectedVersion: _expectedVersion, ...fields } = data
     const changed = Object.fromEntries(Object.entries(fields).filter(([key, value]) => program[key as keyof Program] !== value))
     const [updated] = await tx.update(preventionRiskPrograms)

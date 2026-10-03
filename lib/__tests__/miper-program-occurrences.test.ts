@@ -26,6 +26,7 @@ const entries = await import("@/lib/services/miper/entries")
 const wf = await import("@/lib/services/miper/workflow")
 const program = await import("@/lib/services/miper/program")
 const execution = await import("@/lib/services/miper/program-execution")
+const { getProgramWorkspace } = await import("@/lib/services/miper/program-queries")
 
 const WS = "ws-occ"
 const scope = { mode: "some" as const, ids: [WS] }
@@ -146,12 +147,12 @@ describe("ocurrencias del programa ligadas al ciclo de vida del MIPER", () => {
     expect(occurrences.find((row) => row.id === overdue!.id)?.outcome).toBe("not_done")
 
     // El avance del programa reemplazado sólo cuenta lo registrado.
-    const progress = await execution.getProgramProgress(testDb, matrix2026)
-    expect(progress.program).toMatchObject({ done: 0, failed: 1, pending: 0, planned: 1 })
-    expect(progress.program.ratio).toBe(0)
-    expect(progress.byAction).toHaveLength(1)
+    const workspace = await getProgramWorkspace(matrix2026, author)
+    expect(workspace.progress).toMatchObject({ done: 0, failed: 1, pending: 0, planned: 1 })
+    expect(workspace.progress.ratio).toBe(0)
+    expect(workspace.actions).toHaveLength(1)
     // El período nuevo no hereda nada.
-    expect((await execution.getProgramProgress(testDb, matrix2027)).program.planned).toBe(0)
+    expect((await getProgramWorkspace(matrix2027, author)).progress.planned).toBe(0)
   })
 
   it("una ocurrencia reemplazada ya no se registra", async () => {

@@ -18,11 +18,10 @@ import { and, desc, eq, inArray, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import {
   preventionRiskMatrices, preventionRiskMatrixVersions, preventionRiskOccurrenceEvidence,
-  preventionRiskProgramActionControls, preventionRiskProgramActions, preventionRiskProgramOccurrenceRecords,
+  preventionRiskProgramActions, preventionRiskProgramOccurrenceRecords,
   preventionRiskProgramOccurrences, preventionRiskPrograms,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { programProgress, type OccurrenceOutcome, type ProgramProgress } from "@/lib/prevention/miper/progress"
 import { occurrenceDates, type ProgramScheduleKind } from "@/lib/prevention/miper/schedule"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { claimPreventionEvidenceUpload } from "@/lib/services/prevention-evidence-upload"
@@ -30,6 +29,7 @@ import {
   occurrenceEvidenceRefSchema, occurrenceEvidenceSchema, occurrenceRecordRefSchema, occurrenceRecordSchema,
 } from "@/lib/validation/prevention-module/miper"
 import { todayInChile } from "@/lib/utils"
+import { activeProgramControlLinks } from "./program-links"
 import { type Client, type MiperAccess, miperHistory, nowIso, OUT_OF_SCOPE, scopeAllows } from "./shared"
 
 const EXECUTE = "prevention:risk:program:execute"
@@ -342,56 +342,15 @@ export async function withdrawOccurrenceEvidence(input: unknown, access: MiperAc
   })
 }
 
-/* ── Avance derivado (§7.5) ─────────────────────────────────────────────── */
-
-/**
- * Avance del programa y por actividad, derivado de las ocurrencias. No lee
- * ninguna columna de avance —no existe—: las `superseded` quedan fuera del
- * denominador, las «fuera de plazo» cuentan como hechas y se marcan, y las
- * pendientes vencidas se informan aparte.
- */
-export async function getProgramProgress(
-  client: Client,
-  matrixId: string,
-): Promise<{ program: ProgramProgress; byAction: Array<{ actionId: string; progress: ProgramProgress }> }> {
-  const today = todayInChile()
-  const program = await loadProgramByMatrix(client, matrixId)
-  if (!program) return { program: programProgress([], today), byAction: [] }
-
-  const rows = await client.select({
-    actionId: preventionRiskProgramOccurrences.actionId,
-    outcome: preventionRiskProgramOccurrences.outcome,
-    dueOn: preventionRiskProgramOccurrences.dueOn,
-    late: preventionRiskProgramOccurrenceRecords.late,
-  }).from(preventionRiskProgramOccurrences)
-    .innerJoin(preventionRiskProgramActions, eq(preventionRiskProgramActions.id, preventionRiskProgramOccurrences.actionId))
-    .leftJoin(preventionRiskProgramOccurrenceRecords, eq(preventionRiskProgramOccurrenceRecords.id, preventionRiskProgramOccurrences.currentRecordId))
-    .where(eq(preventionRiskProgramActions.programId, program.id))
-
-  const items = rows.map((row) => ({ outcome: row.outcome as OccurrenceOutcome, dueOn: row.dueOn, late: row.late ?? undefined }))
-  const byAction = new Map<string, typeof items>()
-  for (let index = 0; index < rows.length; index++) {
-    const actionId = rows[index]!.actionId
-    byAction.set(actionId, [...(byAction.get(actionId) ?? []), items[index]!])
-  }
-  return {
-    program: programProgress(items, today),
-    byAction: [...byAction.entries()].map(([actionId, actionItems]) => ({ actionId, progress: programProgress(actionItems, today) })),
-  }
-}
+/* ── Vínculos con el programa ─────────────────────────────────────────────── */
 
 /**
  * Los controles del MIPER que ya tienen una actividad vinculada. Es lo que hace
  * posible la regla del Intolerable (§6.2) al enviar a revisión: un riesgo
- * Intolerable exige al menos una de sus medidas dentro del programa.
+ * Intolerable exige al menos una de sus medidas dentro del programa. El criterio
+ * (sólo actividades vivas) vive en `activeProgramControlLinks`.
  */
 export async function programLinkedControlIds(client: Client, matrixId: string): Promise<Set<string>> {
-  const rows = await client.select({ controlId: preventionRiskProgramActionControls.controlId })
-    .from(preventionRiskProgramActionControls)
-    .innerJoin(preventionRiskProgramActions, eq(preventionRiskProgramActions.id, preventionRiskProgramActionControls.actionId))
-    .innerJoin(preventionRiskPrograms, eq(preventionRiskPrograms.id, preventionRiskProgramActions.programId))
-    /* Sólo las actividades vivas: el vínculo de una actividad retirada ya no
-     * programa nada, así que no puede ser lo que deja enviar un Intolerable. */
-    .where(and(eq(preventionRiskPrograms.matrixId, matrixId), eq(preventionRiskProgramActions.status, "active")))
-  return new Set(rows.map((row) => row.controlId))
+  const links = await activeProgramControlLinks(client, [matrixId])
+  return new Set(links.map((link) => link.controlId))
 }

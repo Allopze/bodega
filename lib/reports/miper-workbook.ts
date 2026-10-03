@@ -202,12 +202,14 @@ function addProgramSheet(workbook: ExcelJS.Workbook, detail: MiperVersionDetail,
   const elaboratedOn = program?.elaboratedOn ?? h.elaboratedOn
   const fields: Array<[string, ExcelJS.CellValue]> = [
     ["PERÍODO", program ? program.period : (h.period ?? "")],
-    ["RAZÓN SOCIAL", safe(program?.companyName ?? h.companyName ?? "")],
-    ["RUT EMPLEADOR", safe(program?.companyRut ?? h.companyRut ?? "")],
-    ["DIRECCIÓN / COMUNA", safe([program?.companyAddress ?? h.companyAddress, program?.companyCommune ?? h.companyCommune].filter(Boolean).join(", "))],
+    // Los datos de empresa son los del encabezado de la foto que se exporta
+    // (la viva en modo vivo, la sellada en sellado): el programa ya no los guarda.
+    ["RAZÓN SOCIAL", safe(h.companyName ?? "")],
+    ["RUT EMPLEADOR", safe(h.companyRut ?? "")],
+    ["DIRECCIÓN / COMUNA", safe([h.companyAddress, h.companyCommune].filter(Boolean).join(", "))],
     // Nunca "representante legal": quien responde por la faena es el administrador
     // de contrato (§4.8), también en el RE-04.1 (mismo rótulo que la hoja RE-04).
-    ["REPRESENTANTE DE LA EMPRESA EN LA FAENA (ADMINISTRADOR DE CONTRATO)", safe(program?.siteRepresentativeName ?? h.siteRepresentativeName ?? "")],
+    ["REPRESENTANTE DE LA EMPRESA EN LA FAENA (ADMINISTRADOR DE CONTRATO)", safe(h.siteRepresentativeName ?? "")],
     ["FECHA DE ELABORACIÓN", elaboratedOn ? formatDate(elaboratedOn) : ""],
     ["N° DE CENTROS DE TRABAJO", program ? program.worksiteCount : ""],
     ["FECHA DE ÚLTIMA REVISIÓN", program?.lastReviewedOn ? formatDate(program.lastReviewedOn) : ""],
@@ -239,7 +241,7 @@ function addProgramSheet(workbook: ExcelJS.Workbook, detail: MiperVersionDetail,
       safe(action.processName ?? ""),
       safe(action.description),
       safe(action.responsibleName ?? ""),
-      safe(action.locationLabel ?? program?.worksiteName ?? detail.worksiteName),
+      safe(action.locationLabel ?? h.worksiteName ?? detail.worksiteName),
       safe(programScheduleLabel(action)),
       safe(programEffectiveDates(action)),
       safe(programProgressLabel(action.progress)),

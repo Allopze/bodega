@@ -182,30 +182,17 @@ export const riskFactorSaveSchema = z.object({
 const scheduleKind = z.enum(["once", "monthly", "quarterly", "semiannual", "annual"], { message: "Selecciona la frecuencia de la actividad." })
 const isoDateRequired = civilDate("Indica la fecha programada de la actividad.")
 
-/** Encabezado RE-04.1 (§7.1). Mismo contrato de versión que `updateMiperHeader`. */
+/**
+ * Encabezado RE-04.1 (§7.1). Mismo contrato de versión que `updateMiperHeader`.
+ * Sólo la fecha de elaboración y el encargado son del programa: la empresa, el
+ * representante y la dotación son los del encabezado del MIPER y no se guardan
+ * dos veces (el input que las traiga se descarta, no se rechaza).
+ */
 export const programHeaderSchema = z.object({
   matrixId: id,
   expectedVersion: version,
   elaboratedOn: isoDate.nullable(),
-  companyName: z.string().trim().max(300).nullable(),
-  companyRut: z.string().trim().max(30).nullable(),
-  companyAddress: z.string().trim().max(300).nullable(),
-  companyCommune: z.string().trim().max(120).nullable(),
-  economicActivity: z.string().trim().max(300).nullable(),
-  adherentNumber: z.string().trim().max(60).nullable(),
-  worksiteName: z.string().trim().max(300).nullable(),
-  siteRepresentativeUserId: id.nullable(),
-  siteRepresentativeName: z.string().trim().max(300).nullable(),
   programManagerUserId: id.nullable(),
-  headcountTotal: headcount,
-  headcountMale: headcount,
-  headcountFemale: headcount,
-  headcountOther: headcount,
-}).superRefine((value, ctx) => {
-  const parts = [value.headcountMale, value.headcountFemale, value.headcountOther]
-  if (value.headcountTotal !== null && parts.every((part) => part !== null) && parts.reduce<number>((sum, part) => sum + (part ?? 0), 0) !== value.headcountTotal) {
-    ctx.addIssue({ code: "custom", path: ["headcountTotal"], message: "Hombres + mujeres + otro debe sumar el total de trabajadores." })
-  }
 })
 
 /** Actividad del programa: alta (sin `actionId`) y edición (con `expectedVersion`). */

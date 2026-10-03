@@ -13,7 +13,7 @@ import { and, asc, eq, inArray, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   preventionPdtpSourceLinks, preventionRiskControls, preventionRiskEntries, preventionRiskMatrices,
-  preventionRiskProgramActionControls, preventionRiskProgramActions, preventionRiskProgramOccurrenceRecords,
+  preventionRiskProgramActions, preventionRiskProgramOccurrenceRecords,
   preventionRiskProgramOccurrences, preventionRiskPrograms, workers, worksites,
 } from "@/db/schema"
 import { checkMiperCompleteness } from "@/lib/prevention/miper/completeness"
@@ -26,6 +26,7 @@ import {
 import { programProgress, type OccurrenceOutcome } from "@/lib/prevention/miper/progress"
 import type { MiperSnapshot } from "@/lib/prevention/miper/snapshot"
 import { todayInChile } from "@/lib/utils"
+import { activeProgramControlLinks } from "./program-links"
 import { buildRows, type MiperListRow } from "./queries"
 import { buildMiperSnapshots } from "./snapshots"
 import { type MiperAccess, requireAccess, scopeCondition } from "./shared"
@@ -133,19 +134,13 @@ function completenessOf(snapshot: MiperSnapshot, linkedControlIds: ReadonlySet<s
   return { complete: snapshot.entries.length - incomplete.size, total: snapshot.entries.length }
 }
 
-/** Medidas vinculadas a una actividad viva del programa, por MIPER: el criterio de `programLinkedControlIds`. */
+/** Medidas vinculadas a una actividad viva del programa, por MIPER: el criterio compartido de `activeProgramControlLinks`. */
 async function programLinkedControlIdsByMatrix(matrixIds: string[]): Promise<Map<string, Set<string>>> {
   const byMatrix = new Map<string, Set<string>>()
-  if (matrixIds.length === 0) return byMatrix
-  const rows = await db.select({ matrixId: preventionRiskPrograms.matrixId, controlId: preventionRiskProgramActionControls.controlId })
-    .from(preventionRiskProgramActionControls)
-    .innerJoin(preventionRiskProgramActions, eq(preventionRiskProgramActions.id, preventionRiskProgramActionControls.actionId))
-    .innerJoin(preventionRiskPrograms, eq(preventionRiskPrograms.id, preventionRiskProgramActions.programId))
-    .where(and(inArray(preventionRiskPrograms.matrixId, matrixIds), eq(preventionRiskProgramActions.status, "active")))
-  for (const row of rows) {
-    const set = byMatrix.get(row.matrixId) ?? new Set<string>()
-    set.add(row.controlId)
-    byMatrix.set(row.matrixId, set)
+  for (const link of await activeProgramControlLinks(db, matrixIds)) {
+    const set = byMatrix.get(link.matrixId) ?? new Set<string>()
+    set.add(link.controlId)
+    byMatrix.set(link.matrixId, set)
   }
   return byMatrix
 }
