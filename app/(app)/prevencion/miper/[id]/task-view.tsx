@@ -11,7 +11,7 @@ import { hrefToEntry, hrefToMatrix } from "@/lib/prevention/miper/workspace-url"
 import { toast } from "@/lib/toast"
 import { saveMiperEntryAction } from "../actions"
 import { RiskRow } from "./risk-row"
-import { useRestoreWorkspaceScroll } from "./workspace-memory"
+import { beforeForwardNavigation, useRestoreWorkspaceScroll } from "./workspace-memory"
 import { WorkspaceLink } from "./workspace-nav"
 
 export function TaskView({ matrixId, task, editable, incomplete, observed, changes, issuesByEntry }: {
@@ -49,7 +49,9 @@ export function TaskView({ matrixId, task, editable, incomplete, observed, chang
       const id = (state.data as { id?: unknown } | undefined)?.id
       if (!state.ok || typeof id !== "string") { toast.error(state.message ?? "No se pudo agregar el peligro."); return }
       // El riesgo nuevo tiene que venir del servidor: aquí sí corresponde router.push.
-      router.push(hrefToEntry(pathname, params, id, "identificacion"))
+      const href = hrefToEntry(pathname, params, id, "identificacion")
+      beforeForwardNavigation(href)
+      router.push(href)
     } catch {
       toast.error("No se pudo agregar el peligro.")
     } finally {
@@ -67,7 +69,7 @@ export function TaskView({ matrixId, task, editable, incomplete, observed, chang
   ]
   return (
     <div className="space-y-4">
-      <WorkspaceLink href={hrefToMatrix(pathname, params)} className="text-sm font-medium text-[var(--color-primary-ink)] hover:underline">‹ Volver a la matriz</WorkspaceLink>
+      <WorkspaceLink href={hrefToMatrix(pathname, params)} restoreScroll className="text-sm font-medium text-[var(--color-primary-ink)] hover:underline">‹ Volver a la matriz</WorkspaceLink>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-xl font-semibold">{task.label}</h2>

@@ -162,7 +162,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
             ) : view.taskKey ? (
               task
                 ? <TaskView matrixId={workspace.matrix.id} task={task} editable={editable} incomplete={incomplete} observed={observedEntryIds} changes={changes} issuesByEntry={entryIssues} />
-                : <EmptyState title="Esta tarea ya no existe" description="Puede que sus riesgos se hayan movido o eliminado." action={<Button asChild><WorkspaceLink href={hrefToTab(pathname, searchParams, "matriz")}>Volver a la matriz</WorkspaceLink></Button>} />
+                : <EmptyState title="Esta tarea ya no existe" description="Puede que sus riesgos se hayan movido o eliminado." action={<Button asChild><WorkspaceLink href={hrefToTab(pathname, searchParams, "matriz")} restoreScroll>Volver a la matriz</WorkspaceLink></Button>} />
             ) : (
               <>
                 <SummaryStrip snapshot={liveSnapshot} authorName={null} submittedAt={workspace.openRound?.submittedAt ?? null} versionLabel={versionLabel}

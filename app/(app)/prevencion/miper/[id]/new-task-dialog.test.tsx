@@ -44,4 +44,29 @@ describe("NewTaskDialog", () => {
     fireEvent.click(create)
     expect(saveMiperEntryAction).toHaveBeenCalledTimes(1)
   })
+
+  it("antes de abrir el editor del riesgo creado guarda el scroll actual y olvida el del destino", async () => {
+    window.history.replaceState(null, "", "/prevencion/miper/m1")
+    const destino = "/prevencion/miper/m1?fila=nuevo&paso=identificacion"
+    sessionStorage.setItem(`miper:scroll:${destino}`, "500")
+    const well = document.createElement("div")
+    well.setAttribute("data-shell-scroll", "")
+    well.scrollTop = 360
+    document.body.appendChild(well)
+    router.push.mockClear()
+    try {
+      saveMiperEntryAction.mockResolvedValueOnce({ ok: true, data: { id: "nuevo", version: 1 } })
+      render(<NewTaskDialog open onOpenChange={() => {}} matrixId="m1" rows={rows} dictionaries={dictionaries} />)
+      type("Actividad", "Oficina")
+      type("Tarea", "Archivo")
+      type("Puesto de trabajo", "Asistente")
+      fireEvent.click(screen.getByRole("button", { name: "Crear tarea" }))
+      await waitFor(() => expect(router.push).toHaveBeenCalledWith(destino))
+      expect(sessionStorage.getItem(`miper:scroll:${destino}`)).toBeNull()
+      expect(sessionStorage.getItem("miper:scroll:/prevencion/miper/m1")).toBe("360")
+    } finally {
+      well.remove()
+      sessionStorage.clear()
+    }
+  })
 })

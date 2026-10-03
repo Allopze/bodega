@@ -11,7 +11,8 @@ const deleteMiperEntryAction = vi.hoisted(() => vi.fn(async () => ({ ok: true, m
 vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }))
 const deleteMiperControlAction = vi.hoisted(() => vi.fn(async () => ({ ok: true, message: "Medida eliminada" })))
 const saveMiperControlAction = vi.hoisted(() => vi.fn(async () => ({ ok: true, message: "Medida guardada", data: { id: "c2", version: 1 } })))
-vi.mock("../../actions", () => ({ duplicateMiperEntryAction: vi.fn(), deleteMiperEntryAction, deleteMiperControlAction, addMiperObservationAction: vi.fn(), saveMiperControlAction, respondMiperObservationAction: vi.fn(), resolveMiperObservationAction: vi.fn(), reopenMiperObservationAction: vi.fn() }))
+const duplicateMiperEntryAction = vi.hoisted(() => vi.fn(async () => ({ ok: true, message: "Duplicado", data: { id: "e9", version: 1 } })))
+vi.mock("../../actions", () => ({ duplicateMiperEntryAction, deleteMiperEntryAction, deleteMiperControlAction, addMiperObservationAction: vi.fn(), saveMiperControlAction, respondMiperObservationAction: vi.fn(), resolveMiperObservationAction: vi.fn(), reopenMiperObservationAction: vi.fn() }))
 
 import { RiskEditor, type RiskEditorProps } from "./risk-editor"
 
@@ -179,5 +180,26 @@ describe("RiskEditor", () => {
     expect(deleteMiperEntryAction).toHaveBeenLastCalledWith(expect.objectContaining({ matrixId: "m1", entryId: "e3" }))
     // e1 comparte «Carga» con e2: se vuelve a esa tarea.
     expect(await remove("e1", 1)).toBe(`/prevencion/miper/m1?tarea=${taskKeyOf({ activity: "Transporte", task: "Carga" })}`)
+  })
+
+  it("«Duplicar riesgo» guarda el scroll del riesgo y olvida el de la copia antes del router.push", async () => {
+    window.history.replaceState(null, "", "/prevencion/miper/m1?fila=e1")
+    sessionStorage.setItem("miper:scroll:/prevencion/miper/m1?fila=e9", "300")
+    const well = document.createElement("div")
+    well.setAttribute("data-shell-scroll", "")
+    well.scrollTop = 120
+    document.body.appendChild(well)
+    router.push.mockClear()
+    try {
+      render(<RiskEditor {...props()} />)
+      fireEvent.keyDown(screen.getByRole("button", { name: "Más acciones del riesgo 1" }), { key: "Enter" })
+      fireEvent.click(screen.getByRole("menuitem", { name: "Duplicar riesgo" }))
+      await waitFor(() => expect(router.push).toHaveBeenCalledWith("/prevencion/miper/m1?fila=e9"))
+      expect(sessionStorage.getItem("miper:scroll:/prevencion/miper/m1?fila=e9")).toBeNull()
+      expect(sessionStorage.getItem("miper:scroll:/prevencion/miper/m1?fila=e1")).toBe("120")
+    } finally {
+      well.remove()
+      sessionStorage.clear()
+    }
   })
 })

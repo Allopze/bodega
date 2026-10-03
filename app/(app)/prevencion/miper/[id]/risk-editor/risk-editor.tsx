@@ -14,6 +14,7 @@ import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 import { hrefToEntry, hrefToMatrix, hrefToTask } from "@/lib/prevention/miper/workspace-url"
 import { toast } from "@/lib/toast"
 import { deleteMiperEntryAction, duplicateMiperEntryAction } from "../../actions"
+import { beforeForwardNavigation } from "../workspace-memory"
 import { navigateWorkspace, WorkspaceLink } from "../workspace-nav"
 import { EvaluationStep } from "./evaluation-step"
 import { FollowUpStep } from "./follow-up-step"
@@ -52,7 +53,7 @@ export function RiskEditor(props: RiskEditorProps) {
 
   if (!entry) {
     if (!missing) return <div aria-busy="true" className="space-y-3"><Skeleton className="h-8 w-1/2" /><Skeleton className="h-48 w-full" /></div>
-    return <EmptyState title="Este riesgo ya no existe" description="Puede haberse eliminado o ser de otra versión de la MIPER." action={<Button asChild><WorkspaceLink href={hrefToMatrix(pathname, params)}>Volver a la matriz</WorkspaceLink></Button>} />
+    return <EmptyState title="Este riesgo ya no existe" description="Puede haberse eliminado o ser de otra versión de la MIPER." action={<Button asChild><WorkspaceLink href={hrefToMatrix(pathname, params)} restoreScroll>Volver a la matriz</WorkspaceLink></Button>} />
   }
 
   const issues = issuesByEntry.get(entry.id) ?? []
@@ -72,7 +73,7 @@ export function RiskEditor(props: RiskEditorProps) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <WorkspaceLink href={taskHref} className="text-sm font-medium text-[var(--color-primary-ink)] hover:underline">‹ Volver a la tarea</WorkspaceLink>
+        <WorkspaceLink href={taskHref} restoreScroll className="text-sm font-medium text-[var(--color-primary-ink)] hover:underline">‹ Volver a la tarea</WorkspaceLink>
         <div className="flex items-center gap-2">
           <SaveStatusIndicator status={saveStatus} editable={editable} />
           {editable && saveStatus.state === "error" && <Button size="sm" variant="secondary" onClick={() => { autosave.clearErrors(entry.id); router.refresh() }}>Recargar riesgo</Button>}
@@ -129,8 +130,12 @@ function EntryMenu({ matrixId, entry, version, afterDeleteHref, entryHref }: { m
     if (!state.ok) { toast.error(state.message ?? "No se pudo duplicar el riesgo."); return }
     toast.success(`Riesgo #${entry.rowNumber} duplicado.`)
     const id = (state.data as { id?: unknown } | undefined)?.id
-    if (typeof id === "string") router.push(entryHref(id))
-    else router.refresh()
+    if (typeof id === "string") {
+      const href = entryHref(id)
+      // Hacia adelante con ida al servidor: igual que `navigateWorkspace`, el destino no hereda un scroll viejo.
+      beforeForwardNavigation(href)
+      router.push(href)
+    } else router.refresh()
   }
   async function remove() {
     setBusy(true)

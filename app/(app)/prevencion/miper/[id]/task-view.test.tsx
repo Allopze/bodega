@@ -79,4 +79,27 @@ describe("TaskView", () => {
     render(<TaskView {...base} editable={false} />)
     expect(screen.queryByRole("button", { name: "Agregar peligro" })).toBeNull()
   })
+
+  it("«Agregar peligro» guarda el scroll de la tarea y olvida el del riesgo nuevo antes del router.push", async () => {
+    window.history.replaceState(null, "", "/prevencion/miper/m1?tarea=k&clasificacion=important")
+    const destino = "/prevencion/miper/m1?clasificacion=important&fila=nuevo&paso=identificacion"
+    sessionStorage.setItem(`miper:scroll:${destino}`, "500")
+    const well = document.createElement("div")
+    well.setAttribute("data-shell-scroll", "")
+    well.scrollTop = 240
+    well.scrollTo = vi.fn()
+    document.body.appendChild(well)
+    router.push.mockClear()
+    try {
+      saveMiperEntryAction.mockResolvedValueOnce({ ok: true, data: { id: "nuevo", version: 1 } })
+      render(<TaskView {...base} editable />)
+      fireEvent.click(screen.getByRole("button", { name: "Agregar peligro" }))
+      await waitFor(() => expect(router.push).toHaveBeenCalledWith(destino))
+      expect(sessionStorage.getItem(`miper:scroll:${destino}`)).toBeNull()
+      expect(sessionStorage.getItem("miper:scroll:/prevencion/miper/m1?tarea=k&clasificacion=important")).toBe("240")
+    } finally {
+      well.remove()
+      sessionStorage.clear()
+    }
+  })
 })

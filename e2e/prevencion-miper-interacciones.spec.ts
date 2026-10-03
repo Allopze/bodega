@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect, type Page } from "@playwright/test"
 import { expectPageTitle, login } from "./helpers"
 import {
   agregarMedida, anterior, campo, crearTarea, elegir, escribir, guardado, irAPaso, nivel, numeroDelRiesgo, volverALaMatriz, volverALaTarea,
@@ -279,4 +279,66 @@ test("volver de una tarea a la matriz conserva el scroll y las actividades plega
   await expect(page).not.toHaveURL(/tarea=/)
   await expect(plegar).toHaveAttribute("aria-expanded", "false")
   await expect.poll(async () => Math.abs((await pozo.evaluate((element) => element.scrollTop)) - scrollAntes)).toBeLessThanOrEqual(4)
+})
+
+/**
+ * Dos cuadros de animación: el del montaje de la vista y el de
+ * `useRestoreWorkspaceScroll`, que restaura dentro de un `requestAnimationFrame`.
+ * Pasados los dos, un scroll que no se restauró ya no se va a restaurar.
+ */
+const dosCuadros = (page: Page) => page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+
+test("el scroll vuelve con Atrás y con «‹ Volver a la matriz»; cambiar de pestaña o reabrir una tarea llega arriba", async ({ page }) => {
+  // A2, fila 1: la memoria de scroll restauraba también tras una navegación
+  // hacia adelante (cambiar de pestaña, reabrir una tarea), porque la clave de
+  // la matriz quedaba guardada desde que se abrió una tarea. «‹ Volver a la
+  // matriz» es un «volver» para la persona y sigue restaurando (regresión I2).
+  await page.setViewportSize({ width: 1280, height: 520 })
+  await login(page)
+  await page.goto(MATRIZ_CONCURRENCIA)
+  await expectPageTitle(page, "MIPER Faena Restringida E2E 2039")
+  await crearTarea(page, { actividad: "Casino", tarea: "Lavado de loza", puesto: "Auxiliar de casino" })
+  await crearTarea(page, { actividad: "Portería", tarea: "Control de acceso", puesto: "Guardia" })
+  await volverALaTarea(page)
+  await volverALaMatriz(page)
+
+  const pozo = page.locator("[data-shell-scroll]")
+  const scrollDelPozo = () => pozo.evaluate((element) => element.scrollTop)
+  const alFondo = async () => {
+    await pozo.evaluate((element) => element.scrollTo({ top: element.scrollHeight }))
+    expect(await scrollDelPozo()).toBeGreaterThan(50)
+  }
+  const tarea = page.getByRole("link", { name: /^Control de acceso/ })
+  const tituloTarea = page.getByRole("heading", { level: 2, name: "Control de acceso" })
+
+  // (a) «‹ Volver a la matriz» restaura el scroll con el que se dejó la matriz.
+  await alFondo()
+  const scrollAntes = await scrollDelPozo()
+  await tarea.click()
+  await expect(tituloTarea).toBeVisible()
+  await volverALaMatriz(page)
+  await expect(tarea).toBeAttached()
+  await expect.poll(async () => Math.abs((await scrollDelPozo()) - scrollAntes)).toBeLessThanOrEqual(4)
+
+  // (b) Atrás del navegador también restaura.
+  await tarea.click()
+  await expect(tituloTarea).toBeVisible()
+  await page.goBack()
+  await expect(page).not.toHaveURL(/tarea=/)
+  await expect.poll(async () => Math.abs((await scrollDelPozo()) - scrollAntes)).toBeLessThanOrEqual(4)
+
+  // (c) Matriz → Programa → Matriz (dos replace) no restaura, aunque la clave de la matriz existía.
+  await page.getByRole("tab", { name: "Programa", exact: true }).click()
+  await expect(page.getByRole("tab", { name: "Programa", exact: true })).toHaveAttribute("aria-selected", "true")
+  await pozo.evaluate((element) => element.scrollTo({ top: 0 }))
+  await page.getByRole("tab", { name: /^Matriz \(/ }).click()
+  await expect(tarea).toBeAttached()
+  await dosCuadros(page)
+  expect(await scrollDelPozo()).toBeLessThanOrEqual(4)
+
+  // (d) Reabrir una tarea ya visitada, desde la matriz, llega arriba.
+  await tarea.click()
+  await expect(tituloTarea).toBeVisible()
+  await dosCuadros(page)
+  expect(await scrollDelPozo()).toBeLessThanOrEqual(4)
 })

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { readCollapsedActivities, readSavedScroll, rememberScroll, writeCollapsedActivities } from "./workspace-memory"
+import { beforeForwardNavigation, readCollapsedActivities, readSavedScroll, rememberScroll, writeCollapsedActivities } from "./workspace-memory"
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -42,9 +42,41 @@ describe("memoria del espacio de trabajo (sessionStorage)", () => {
   it("sin sessionStorage (modo privado, bloqueado) nada falla: se lee vacío y escribir no lanza", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("SecurityError") })
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("QuotaExceededError") })
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => { throw new Error("SecurityError") })
     expect(() => writeCollapsedActivities("m1", ["a"])).not.toThrow()
     expect(() => rememberScroll("/x", 10)).not.toThrow()
     expect(readCollapsedActivities("m1").size).toBe(0)
     expect(readSavedScroll("/x")).toBeNull()
+    expect(() => beforeForwardNavigation("/x?tarea=k")).not.toThrow()
+  })
+
+  it("antes de navegar hacia adelante guarda el scroll de la vista que se deja y olvida el del destino", () => {
+    window.history.replaceState(null, "", "/prevencion/miper/m1?buscar=cami")
+    sessionStorage.setItem("miper:scroll:/prevencion/miper/m1?tarea=k", "300")
+    const well = document.createElement("div")
+    well.setAttribute("data-shell-scroll", "")
+    well.scrollTop = 480
+    document.body.appendChild(well)
+    try {
+      beforeForwardNavigation("/prevencion/miper/m1?tarea=k")
+      expect(sessionStorage.getItem("miper:scroll:/prevencion/miper/m1?buscar=cami")).toBe("480")
+      expect(sessionStorage.getItem("miper:scroll:/prevencion/miper/m1?tarea=k")).toBeNull()
+    } finally {
+      well.remove()
+    }
+  })
+
+  it("el destino se reconoce aunque venga absoluto: la clave es ruta + query, como currentViewUrl()", () => {
+    sessionStorage.setItem("miper:scroll:/prevencion/miper/m1?tarea=k", "300")
+    beforeForwardNavigation(`${window.location.origin}/prevencion/miper/m1?tarea=k`)
+    expect(sessionStorage.getItem("miper:scroll:/prevencion/miper/m1?tarea=k")).toBeNull()
+  })
+
+  it("fuera del shell (sin pozo) sólo olvida el destino", () => {
+    window.history.replaceState(null, "", "/prevencion/miper/m1")
+    sessionStorage.setItem("miper:scroll:/prevencion/miper/m1?tarea=k", "300")
+    beforeForwardNavigation("/prevencion/miper/m1?tarea=k")
+    expect(sessionStorage.getItem("miper:scroll:/prevencion/miper/m1?tarea=k")).toBeNull()
+    expect(sessionStorage.getItem("miper:scroll:/prevencion/miper/m1")).toBeNull()
   })
 })

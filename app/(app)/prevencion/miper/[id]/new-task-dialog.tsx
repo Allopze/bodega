@@ -12,6 +12,7 @@ import { hrefToEntry } from "@/lib/prevention/miper/workspace-url"
 import type { MiperWorkspace } from "@/lib/services/miper/queries"
 import { toast } from "@/lib/toast"
 import { saveMiperEntryAction } from "../actions"
+import { beforeForwardNavigation } from "./workspace-memory"
 
 /**
  * «Nueva tarea» (spec §2.3): en el RE-04 una tarea sin riesgos no existe, así
@@ -56,7 +57,9 @@ export function NewTaskDialog({ open, onOpenChange, matrixId, rows, dictionaries
       if (!state.ok || typeof id !== "string") { toast.error(state.message ?? "No se pudo crear la tarea."); return }
       onOpenChange(false)
       setValues({ activity: "", task: "", position: "", location: "", hazard: "" })
-      router.push(hrefToEntry(pathname, params, id, "identificacion"))
+      const href = hrefToEntry(pathname, params, id, "identificacion")
+      beforeForwardNavigation(href)
+      router.push(href)
     } catch {
       toast.error("No se pudo crear la tarea.")
     } finally {

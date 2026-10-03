@@ -51,10 +51,40 @@ export const shellScroll = () => document.querySelector<HTMLElement>("[data-shel
 /** La URL de la vista: ruta y query, que es lo que distingue una matriz filtrada de otra. */
 export const currentViewUrl = () => `${window.location.pathname}${window.location.search}`
 
+export function forgetScroll(url: string) {
+  try { sessionStorage.removeItem(scrollKey(url)) } catch { /* sin almacenamiento: nada que olvidar */ }
+}
+
+/** La clave de un destino (`href` relativo o absoluto) con la misma forma que `currentViewUrl()`: ruta + query, sin origen. */
+export function viewUrlOf(href: string): string {
+  const url = new URL(href, window.location.href)
+  return `${url.pathname}${url.search}`
+}
+
+/**
+ * Antes de TODA navegación hacia adelante —`navigateWorkspace` (push y replace)
+ * y los `router.push` de crear y duplicar un riesgo—: recuerda el scroll de la
+ * vista que se deja y olvida el que tuviera el destino. Así sólo Atrás y
+ * Adelante, que no pasan por aquí, encuentran algo que restaurar: cambiar de
+ * pestaña o volver a abrir una tarea llega arriba, como cualquier navegación
+ * (A2, fila 1). No depende del `popstate` de Next.
+ *
+ * `restoreScroll` es para los enlaces que para la persona SON «volver»
+ * («‹ Volver a la matriz»): se guarda la vista que se deja pero no se olvida la
+ * del destino, que la restaura al montarse.
+ */
+export function beforeForwardNavigation(href: string, options: { restoreScroll?: boolean } = {}) {
+  const well = shellScroll()
+  if (well) rememberScroll(currentViewUrl(), well.scrollTop)
+  if (!options.restoreScroll) forgetScroll(viewUrlOf(href))
+}
+
 /**
  * Al montar la vista (matriz o tarea) vuelve al scroll que tenía esa URL la
- * última vez que se salió de ella con un `push`. Espera un cuadro para que el
- * contenido (y las actividades plegadas) ya tenga su alto.
+ * última vez que se salió de ella. Como toda navegación hacia adelante borra la
+ * clave de su destino (`beforeForwardNavigation`), sólo la encuentran Atrás y
+ * Adelante, y los enlaces que son un «volver» (`restoreScroll`). Espera un cuadro
+ * para que el contenido (y las actividades plegadas) ya tenga su alto.
  */
 export function useRestoreWorkspaceScroll() {
   useEffect(() => {
