@@ -86,7 +86,9 @@ describe("deadlineSuggestion: los PLAZOS del RE-04 real", () => {
     ["TRIMESTRAL", { kind: "existing", frequency: "TRIMESTRAL" }, "frequency"],
     ["ANTES DE CADA OPERACIÓN", { kind: "existing", frequency: "ANTES DE CADA OPERACIÓN" }, "frequency"],
     ["INMEDIATO / ANTES DE CONTINUAR LA TAREA", { kind: "pending", dueDate: TODAY }, "immediate"],
-    ["INMEDIATO AL OCURRIR", { kind: "pending", dueDate: TODAY }, "immediate"],
+    // «al ocurrir» es una medida de contingencia que ya existe (kit de derrames): se aplica cuando pasa el evento.
+    ["INMEDIATO AL OCURRIR", { kind: "existing", frequency: "Al ocurrir" }, "frequency"],
+    ["AL OCURRIR", { kind: "existing", frequency: "Al ocurrir" }, "frequency"],
     // «en N días» manda sobre «diario»: es una medida nueva con su plazo.
     ["IMPLEMENTAR EN 30 DÍAS Y CONTROL DIARIO", { kind: "pending", dueDate: "2026-11-02" }, "relative"],
     // «cada N días» no es un plazo: es la frecuencia con que se verifica una medida existente.

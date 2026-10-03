@@ -214,6 +214,12 @@ const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 const LOCAL_DATE = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/
 /** «EN 30 DÍAS» (sobre el texto ya sin tildes). Pide el «en»: «CADA 30 DÍAS» es una frecuencia, no un plazo. */
 const IN_DAYS = /\ben (\d{1,3}) dias?\b/
+/**
+ * «AL OCURRIR» / «INMEDIATO AL OCURRIR»: una medida de contingencia que ya existe
+ * (un kit de derrames) y se aplica cuando pasa el evento. Va antes de «inmediato».
+ */
+const ON_OCCURRENCE = /\bal ocurrir\b/
+const ON_OCCURRENCE_FREQUENCY = "Al ocurrir"
 const IMMEDIATE = /\binmediat/
 const FREQUENCY = /\b(diari[oa]s?|semanal(es)?|quincenal(es)?|mensual(es)?|bimestral(es)?|trimestral(es)?|cuatrimestral(es)?|semestral(es)?|anual(es)?|permanente|continu[oa]|periodic[oa]|cada|siempre)\b/
 
@@ -227,9 +233,12 @@ function calendarDate(year: number, month: number, day: number): string | null {
  * D6: lo que sugiere un valor de PLAZOS. Una fecha → por implementar con esa
  * fecha; «en N días» → hoy + N (antes que la frecuencia: «IMPLEMENTAR EN 30
  * DÍAS Y CONTROL DIARIO»; «CADA 30 DÍAS» no lleva «en» y es frecuencia);
- * «inmediato» → por implementar hoy; una frecuencia («TRIMESTRAL», «ANTES DE
- * CADA OPERACIÓN», «CADA 30 DÍAS») → existente, con ese texto como frecuencia de
- * verificación. Sin pista o vacío → por implementar, sin fecha.
+ * «al ocurrir» → existente, con frecuencia «Al ocurrir» (antes que «inmediato»:
+ * «INMEDIATO AL OCURRIR» es una contingencia que ya existe); «inmediato» → por
+ * implementar hoy («INMEDIATO / ANTES DE CONTINUAR LA TAREA»); una frecuencia
+ * («TRIMESTRAL», «ANTES DE CADA OPERACIÓN», «CADA 30 DÍAS») → existente, con ese
+ * texto como frecuencia de verificación. Sin pista o vacío → por implementar,
+ * sin fecha.
  */
 export function deadlineSuggestion(text: string | null, today: string): { decision: DeadlineDecision; source: DeadlineSource } {
   const cleaned = cleanMiperName(text)
@@ -242,6 +251,7 @@ export function deadlineSuggestion(text: string | null, today: string): { decisi
   const key = normalizeMiperName(cleaned)
   const days = IN_DAYS.exec(key)
   if (days) return { decision: { kind: "pending", dueDate: addDaysToPlainDate(today, Number(days[1])) }, source: "relative" }
+  if (ON_OCCURRENCE.test(key)) return { decision: { kind: "existing", frequency: ON_OCCURRENCE_FREQUENCY }, source: "frequency" }
   if (IMMEDIATE.test(key)) return { decision: { kind: "pending", dueDate: today }, source: "immediate" }
   if (FREQUENCY.test(key)) return { decision: { kind: "existing", frequency: cleaned.slice(0, FREQUENCY_MAX_LENGTH) }, source: "frequency" }
   return { decision: { kind: "pending", dueDate: null }, source: "default" }
