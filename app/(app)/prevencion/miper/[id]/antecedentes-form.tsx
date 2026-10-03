@@ -90,14 +90,17 @@ export function AntecedentesForm({ workspace, editable, onSaved, onDirtyChange }
   const [version, setVersion] = useState(matrix.version)
   const dirty = editable && JSON.stringify(payloadOf(header)) !== JSON.stringify(payloadOf(saved))
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
-  // Lo escrito viaja a `sessionStorage` mientras está sucio: «atrás» cierra la
-  // ficha sin confirmar y así no se pierde. `beforeunload` sigue cubriendo la recarga.
-  useEffect(() => {
-    if (dirty) writeFichaDraft(matrix.id, version, payloadOf(header))
-  }, [dirty, header, matrix.id, version])
   // La ficha vive en el portal del `Sheet`, que sólo se pinta en el cliente:
   // leer `sessionStorage` en el inicializador no desfasa la hidratación.
   const [recoverable, setRecoverable] = useState<Header | null>(() => recoverableDraft(matrix.id, matrix.version, workspace.snapshot.header))
+  // Lo escrito viaja a `sessionStorage` mientras está sucio: «atrás» cierra la
+  // ficha sin confirmar y así no se pierde. `beforeunload` sigue cubriendo la recarga.
+  // Si se deshace hasta lo guardado, el borrador sobra y se borra; el que aún se
+  // ofrece para recuperar se conserva hasta que la persona decida.
+  useEffect(() => {
+    if (dirty) writeFichaDraft(matrix.id, version, payloadOf(header))
+    else if (!recoverable) clearFichaDraft(matrix.id, version)
+  }, [dirty, header, matrix.id, version, recoverable])
   useEffect(() => {
     if (!dirty) return
     const warn = (event: BeforeUnloadEvent) => event.preventDefault()
@@ -107,7 +110,8 @@ export function AntecedentesForm({ workspace, editable, onSaved, onDirtyChange }
   const operation = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
   // Mientras guarda, nada se edita: lo enviado es lo que se ve (A2, fila 8).
   const locked = !editable || operation.pending
-  const set = <K extends keyof Header>(key: K, value: Header[K]) => setHeader((current) => ({ ...current, [key]: value }))
+  // Escribir es decidir no recuperar: el aviso se va y no puede pisar lo nuevo.
+  const set = <K extends keyof Header>(key: K, value: Header[K]) => { setRecoverable(null); setHeader((current) => ({ ...current, [key]: value })) }
   const num = (value: string) => (value === "" ? null : Number(value))
 
   /** Valor prellenado desde su fuente: se muestra y se puede restaurar. */

@@ -23,7 +23,7 @@ export function ControlCard({ control, linkedActionNumbers, editable, verifyHref
   onEdit: () => void
   /** Borra la medida. El diálogo espera la respuesta: cierra si salió bien y, si no, muestra el motivo. */
   onDelete: () => Promise<OperationResult>
-  /** Hay otra medida abierta en edición: no se abre una segunda. */
+  /** Hay otra medida abierta en edición: no se abre una segunda ni se borra otra a la vez. */
   editDisabled?: boolean
 }) {
   const [confirming, setConfirming] = useState(false)
@@ -47,7 +47,7 @@ export function ControlCard({ control, linkedActionNumbers, editable, verifyHref
       {editable && (
         <div className="flex shrink-0 gap-2">
           <Button size="sm" variant="secondary" aria-label={`Editar la medida: ${short}`} disabled={editDisabled} onClick={onEdit}>Editar</Button>
-          <Button size="sm" variant="ghost" aria-label={`Eliminar la medida: ${short}`} onClick={() => setConfirming(true)}>Eliminar</Button>
+          <Button size="sm" variant="ghost" aria-label={`Eliminar la medida: ${short}`} disabled={editDisabled} onClick={() => setConfirming(true)}>Eliminar</Button>
         </div>
       )}
       <ConfirmDialog

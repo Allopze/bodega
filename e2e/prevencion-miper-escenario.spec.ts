@@ -188,7 +188,7 @@ test("pasos 1–7: la prevencionista crea la MIPER, la completa, genera el progr
   // UI anticipa el bloqueo del servidor y el clic abre el detalle de lo que
   // falta —el hallazgo H2-01— en vez de dejar llegar el rechazo a la acción.
   await cabecera(page).getByRole("button", { name: "Enviar a revisión", exact: true }).click()
-  const bloqueo = page.getByRole("dialog", { name: "Faltan 1 dato para enviar" })
+  const bloqueo = page.getByRole("dialog", { name: "Falta 1 dato para enviar" })
   await expect(bloqueo).toContainText("Un riesgo Intolerable exige una medida vinculada a una actividad del Programa de Trabajo.")
   await page.keyboard.press("Escape")
   await expect(bloqueo).toBeHidden()

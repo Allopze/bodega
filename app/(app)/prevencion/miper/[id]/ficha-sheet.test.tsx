@@ -103,6 +103,31 @@ describe("FichaSheet", () => {
     expect(sessionStorage.getItem("miper:ficha:m1:1")).toBeNull()
   })
 
+  it("escribir antes de recuperar quita el aviso: «Recuperar» ya no puede pisar lo nuevo", () => {
+    sessionStorage.setItem("miper:ficha:m1:1", JSON.stringify({ iperCode: "RE-04-B" }))
+    render(<FichaSheet open onClose={vi.fn()} workspace={workspace} editable />)
+    expect(screen.getByRole("button", { name: "Recuperar lo que no guardaste" })).toBeTruthy()
+    fireEvent.change(screen.getByDisplayValue("Chome"), { target: { value: "Chome SpA" } })
+    expect(screen.queryByRole("button", { name: "Recuperar lo que no guardaste" })).toBeNull()
+    expect(screen.getByDisplayValue("Chome SpA")).toBeTruthy()
+    expect(JSON.parse(sessionStorage.getItem("miper:ficha:m1:1")!)).toMatchObject({ iperCode: "RE-04", companyName: "Chome SpA" })
+  })
+
+  it("deshacer hasta lo guardado borra el borrador; uno sin decidir se conserva", () => {
+    sessionStorage.setItem("miper:ficha:m1:1", JSON.stringify({ iperCode: "RE-04-B" }))
+    const pending = render(<FichaSheet open onClose={vi.fn()} workspace={workspace} editable />)
+    // Abrir la ficha sin tocar el aviso no lo pierde.
+    expect(sessionStorage.getItem("miper:ficha:m1:1")).not.toBeNull()
+    pending.unmount()
+    sessionStorage.clear()
+
+    render(<FichaSheet open onClose={vi.fn()} workspace={workspace} editable />)
+    fireEvent.change(screen.getByDisplayValue("RE-04"), { target: { value: "RE-04-B" } })
+    expect(sessionStorage.getItem("miper:ficha:m1:1")).not.toBeNull()
+    fireEvent.change(screen.getByDisplayValue("RE-04-B"), { target: { value: "RE-04" } })
+    expect(sessionStorage.getItem("miper:ficha:m1:1")).toBeNull()
+  })
+
   it("con cambios sin guardar, cerrar o recargar la pestaña lo advierte (beforeunload)", () => {
     render(<FichaSheet open onClose={vi.fn()} workspace={workspace} editable />)
     const before = new Event("beforeunload", { cancelable: true })

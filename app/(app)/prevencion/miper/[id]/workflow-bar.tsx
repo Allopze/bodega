@@ -68,7 +68,7 @@ export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenE
       <Dialog open={dialog === "blocking"} onOpenChange={(open) => { if (!open) close() }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Faltan {countOf(blocking.length, "dato")} para enviar</DialogTitle>
+            <DialogTitle>{blocking.length === 1 ? "Falta" : "Faltan"} {countOf(blocking.length, "dato")} para enviar</DialogTitle>
             <DialogDescription>Corrige lo siguiente en los riesgos o en la ficha del documento. Cada bloqueo te lleva a donde se corrige.</DialogDescription>
           </DialogHeader>
           <ul className="max-h-80 space-y-1 overflow-y-auto pl-5 text-sm">

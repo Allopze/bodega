@@ -60,7 +60,7 @@ describe("WorkflowBar", () => {
     const empty: CompletenessIssue[] = [{ scope: "header", field: "entries", message: "La matriz no tiene registros de evaluación.", severity: "error" }]
     render(<WorkflowBar workspace={workspace} mode={mode} issues={empty} openObservations={0} onOpenFicha={onOpenFicha} onOpenEntry={vi.fn()} />)
     fireEvent.click(screen.getByRole("button", { name: "Enviar a revisión" }))
-    const dialog = screen.getByRole("dialog", { name: "Faltan 1 dato para enviar" })
+    const dialog = screen.getByRole("dialog", { name: "Falta 1 dato para enviar" })
     expect(dialog.textContent).toContain("Matriz: La matriz no tiene registros de evaluación.")
     expect(screen.queryByRole("button", { name: /no tiene registros/ })).toBeNull()
     expect(onOpenFicha).not.toHaveBeenCalled()

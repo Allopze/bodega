@@ -26,6 +26,12 @@ describe("ControlCard", () => {
     expect(screen.getByText("En el programa: Actividad #3")).toBeTruthy()
   })
 
+  it("con otra medida en edición no se edita ni se elimina esta", () => {
+    render(<ControlCard control={control} linkedActionNumbers={[]} editable verifyHref={null} onEdit={() => {}} onDelete={deleted()} editDisabled />)
+    expect(screen.getByRole("button", { name: /^Editar la medida/ })).toBeDisabled()
+    expect(screen.getByRole("button", { name: /^Eliminar la medida/ })).toBeDisabled()
+  })
+
   it("eliminar pide confirmación; si sale bien, el diálogo se cierra y avisa", async () => {
     const onDelete = deleted()
     render(<ControlCard control={control} linkedActionNumbers={[]} editable verifyHref={null} onEdit={() => {}} onDelete={onDelete} />)

@@ -40,6 +40,8 @@ export function ControlForm({ matrixId, entryId, control, controlVersion, respon
   // Modo «message»: el rechazo del servidor queda escrito en el formulario
   // (role=alert) en vez de un toast que se va; el éxito sigue avisando y cierra.
   const operation = useOperation()
+  // Mientras guarda, nada se edita: lo enviado es lo que se ve.
+  const locked = operation.pending
   const save = () => operation.run(() => saveMiperControlAction({
     matrixId, entryId, controlId: control?.id, expectedVersion: control ? controlVersion : undefined,
     values: {
@@ -58,18 +60,18 @@ export function ControlForm({ matrixId, entryId, control, controlVersion, respon
   return (
     <div role="group" aria-label={control ? "Editar medida de control" : "Nueva medida de control"} className="grid gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:grid-cols-2">
       <Field label="Tipo de control (jerarquía)" required>
-        <OptionSelect aria-label="Tipo de control" options={HIERARCHY_OPTIONS} value={hierarchy} onValueChange={(value) => setHierarchy(value as ControlHierarchy)} />
+        <OptionSelect aria-label="Tipo de control" options={HIERARCHY_OPTIONS} value={hierarchy} disabled={locked} onValueChange={(value) => setHierarchy(value as ControlHierarchy)} />
       </Field>
       <Field label="Plazo" required helper="Fecha en que la medida debe estar implementada.">
-        <DatePicker ariaLabel="Plazo de la medida" value={dueDate || undefined} onChange={setDueDate} />
+        <DatePicker ariaLabel="Plazo de la medida" value={dueDate || undefined} disabled={locked} onChange={setDueDate} />
       </Field>
       {/* El rótulo visible es el nombre accesible (WCAG 2.5.3, «label in name»). */}
       <Field label="Descripción de la medida" required className="md:col-span-2" helper="Mínimo 3 caracteres.">
-        <Textarea aria-label="Descripción de la medida" value={description} onChange={(event) => setDescription(event.target.value)} rows={3} maxLength={3000} />
+        <Textarea aria-label="Descripción de la medida" value={description} disabled={locked} onChange={(event) => setDescription(event.target.value)} rows={3} maxLength={3000} />
       </Field>
       {measureSuggestions.length > 0 && (
         <Field label="Usar una medida ya escrita en esta MIPER" className="md:col-span-2">
-          <Combobox aria-label="Usar una medida ya escrita" options={measureSuggestions.map((value) => ({ value, label: value }))} value="" onChange={(value) => { if (value) setDescription(value) }} placeholder="Buscar medida…" />
+          <Combobox aria-label="Usar una medida ya escrita" options={measureSuggestions.map((value) => ({ value, label: value }))} value="" disabled={locked} onChange={(value) => { if (value) setDescription(value) }} placeholder="Buscar medida…" />
         </Field>
       )}
       <Field label="Responsable">
@@ -77,12 +79,13 @@ export function ControlForm({ matrixId, entryId, control, controlVersion, respon
           aria-label="Responsable de la medida"
           options={[...responsibleOptions.map((option) => ({ value: option.id, label: option.name })), ...currentResponsible, { value: OTHER, label: "Otra persona o cargo…" }]}
           value={responsibleUserId || OTHER}
+          disabled={locked}
           onValueChange={(value) => setResponsibleUserId(value === OTHER ? "" : value)}
         />
       </Field>
       {!responsibleUserId && (
         <Field label="Nombre o cargo responsable">
-          <Input aria-label="Nombre o cargo responsable" value={responsibleName} onChange={(event) => setResponsibleName(event.target.value)} placeholder="Supervisor de turno" maxLength={300} />
+          <Input aria-label="Nombre o cargo responsable" value={responsibleName} disabled={locked} onChange={(event) => setResponsibleName(event.target.value)} placeholder="Supervisor de turno" maxLength={300} />
         </Field>
       )}
       {operation.message && <p role="alert" className="text-sm text-[var(--color-danger-ink)] md:col-span-2">{operation.message}</p>}

@@ -46,6 +46,16 @@ describe("ControlForm", () => {
     expect(toast.error).not.toHaveBeenCalled()
   })
 
+  it("mientras guarda, los campos quedan deshabilitados", async () => {
+    saveMiperControlAction.mockReturnValueOnce(new Promise<never>(() => {}))
+    render(<ControlForm {...base} control={control} controlVersion={3} onDone={vi.fn()} onCancel={vi.fn()} />)
+    fireEvent.click(screen.getByRole("button", { name: "Guardar medida" }))
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Descripción de la medida" })).toBeDisabled())
+    expect(screen.getByRole("combobox", { name: "Tipo de control" })).toBeDisabled()
+    expect(screen.getByRole("combobox", { name: "Responsable de la medida" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Cancelar" })).toBeDisabled()
+  })
+
   it("el responsable actual que ya no está en la faena sigue siendo la opción elegida", () => {
     render(<ControlForm {...base} control={control} controlVersion={3} onDone={vi.fn()} onCancel={vi.fn()} />)
     expect(screen.getByRole("combobox", { name: "Responsable de la medida" })).toHaveTextContent("Pedro Soto")
