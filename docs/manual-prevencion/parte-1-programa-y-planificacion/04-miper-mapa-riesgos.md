@@ -26,11 +26,11 @@ La MIPER ya no se piensa como una planilla que se sube una vez al año, sino com
 
 ## 2. La MIPER es un Documento Vivo por Faena y Período
 
-Cada faena tiene **una MIPER por período**, entendiendo por período el año (2026, 2027, …). Al abrir una MIPER encontrarás su espacio de trabajo con cuatro pestañas: **Matriz · Programa · Revisión · Historial**, y la acción **"Ficha del documento"** en el encabezado, donde se completan los antecedentes.
+Cada faena tiene **una MIPER por período**, entendiendo por período el año (2026, 2027, …). Al abrir una MIPER encontrarás su espacio de trabajo con cinco pestañas: **Resumen · Matriz · Programa · Revisión · Historial**. Abre en la **Matriz**. En el encabezado están **"Cambiar de faena"**, que lleva a la MIPER de otra faena de tu alcance, y **"Ficha del documento"**, donde se completan los antecedentes.
 
 ### Cómo crear la MIPER de un período nuevo
 
-1. Entra a `/prevencion/miper` y presiona **"Nueva MIPER"**.
+1. Entra a `/prevencion/miper` y presiona **"Nueva MIPER"**. Si la faena todavía no tiene MIPER, su fila ofrece **"Crear MIPER"**, que abre el mismo diálogo con la faena ya elegida.
 2. Elige la **Faena** (solo las que están dentro de tu alcance) y el **Período**.
 3. Elige el **punto de partida**:
    *   **Copiar la MIPER vigente:** se traen sus filas, medidas y antecedentes. Es lo normal al renovar el año.
@@ -72,34 +72,68 @@ Los cambios de un MIPER vigente se aplican de inmediato y quedan marcados como *
 
 ## 3. Cómo Consultar la MIPER de tu Faena
 
-1. Ingresa a `/prevencion/miper`.
-2. La pestaña **"Por hacer"** (por defecto) te muestra lo que te corresponde según tu rol: tus borradores, las MIPER con observaciones por responder y las vigentes con cambios sin enviar; a la Jefatura, su bandeja de revisión; a Legal y RRHH, las que esperan su firma.
-3. La pestaña **"Resumen"** reúne el tablero del MIPER para tu alcance (ver abajo).
-4. La pestaña **"Todas"** lista las MIPER con filtros por **Faena**, **Período**, **Estado** y **Responsable** (quién tiene trabajo asignado: una actividad del programa o una medida).
-5. La tabla muestra **Faena · Período · Estado · N° de riesgos · Distribución por clasificación · Última modificación** (y **Avance** cuando llegas desde el tile del tablero). Al hacer clic en una fila entras a su espacio de trabajo.
-6. Dentro de la MIPER, la pestaña **Matriz** se filtra por clasificación, factor de riesgo, "¿está controlado?", **observadas** y **modificadas**, y se puede agrupar por actividad, puesto o clasificación.
+`/prevencion/miper` es la **portada por faena**: una fila por cada faena de tu alcance, tenga o no MIPER. Las faenas cerradas siguen apareciendo mientras conserven una MIPER no reemplazada.
 
-### La pestaña «Resumen»: el tablero del MIPER
+### La franja de cuatro cifras
 
-La pestaña **Resumen** mira todo el MIPER de tu alcance de una vez. Arriba hay **cuatro tiles** —cada uno es un enlace al subconjunto que resume, nunca una cifra suelta— y bajo ellos una **franja** con las cifras secundarias en texto:
+Arriba hay cuatro cifras. Cada una es un enlace que deja la lista **exactamente** en lo que cuenta, sin arrastrar otros filtros:
 
-| Tile | Qué cuenta | Al hacer clic |
+| Cifra | Qué cuenta | Al hacer clic |
 |---|---|---|
-| **Por hacer** | Lo que espera tu revisión, tu firma o tu respuesta | abre tu bandeja «Por hacer» |
-| **Intolerables e Importantes** | Los riesgos en las dos bandas más graves | filtra «Todas» por esas dos bandas |
-| **Sin controlar** | Los riesgos no tolerables sin control declarado | filtra «Todas» por «Sin controlar» |
-| **Avance del programa** | Las ocurrencias realizadas del programa | abre «Todas» con la columna **Avance** |
+| **Faenas con MIPER** | Cuántas faenas de tu alcance tienen MIPER, sobre el total (x/y) | la lista de las faenas con MIPER |
+| **En revisión** | Faenas cuya MIPER está en revisión técnica o esperando a Legal y RRHH | esas faenas |
+| **Requieren mi acción** | Faenas con una MIPER que espera algo de ti | la vista "Requieren mi acción" |
+| **Riesgos críticos sin control** | Riesgos Intolerables de las MIPER vigentes (o críticos de la metodología anterior) a los que les falta una medida implementada o verificada, o una medida vinculada al PDTP | las faenas que los tienen; cada fila dice cuántos |
 
-La **franja** informa *MIPER vigentes*, *Con observaciones*, *Tolerables*, *Moderados*, *Medidas pendientes* y *Actividades vencidas*. Debajo, la tabla por faena muestra el estado, la versión, la distribución por clasificación, los riesgos **sin controlar**, el **avance** y cuántas **alertas** (riesgos Intolerables/Importantes y ocurrencias vencidas o «No se hizo») tiene.
+Una cifra en cero no lleva a ninguna parte: no hay nada que mostrar.
+
+La última cifra es **la misma** que el indicador "Riesgos críticos sin control" del tablero de inicio: las dos pantallas usan una sola definición.
+
+### Todas las faenas o sólo las tuyas
+
+*   **"Todas las faenas"** (por defecto) y **"Requieren mi acción"** cambian la lista; cuántas faenas son lo dice la cifra de la franja. Una MIPER requiere tu acción si es tu borrador, tiene observaciones por responder o cambios sin enviar (si editas), espera tu revisión técnica (Jefatura) o tu firma (Legal y RRHH). **Quien envió una ronda no la ve como pendiente de su propia revisión.**
+*   El filtro **Estado** acota a *Con MIPER*, *Sin MIPER*, *Borrador*, *En revisión*, *Con observaciones* o *Vigente*.
+*   Para buscar una faena se usa el buscador de la barra superior ("Filtrar en esta página…"). Si la búsqueda deja la lista vacía, **"Limpiar búsqueda"** la borra.
+*   Los filtros que no tienen un control a la vista —la faena que llega desde el PDTP y "Riesgos críticos sin control"— aparecen como **chips** que se quitan de a uno. **"Limpiar filtros"** quita todo.
+
+### Qué muestra cada fila
+
+*   **Faena:** su nombre (enlace a la MIPER), el período y la versión. Si la vigente es otra MIPER —por ejemplo, porque ya empezaste la del año siguiente—, aparece debajo como **"Vigente vN (AAAA)"**, también como enlace. Lo que espera de ti cada MIPER de la faena aparece como enlace, por ejemplo **"Pendiente de tu revisión · MIPER 2027"**.
+*   **Estado**, con quién envió la ronda en curso. Una faena sin MIPER dice **"Sin MIPER"** y, si puedes editar, ofrece **"Crear MIPER"**.
+*   **Dotación:** la de la ficha de la MIPER o, si no la tiene, los trabajadores activos de la faena.
+*   **Completitud:** riesgos sin datos pendientes sobre el total, la misma cuenta que "Completos x de y" dentro de la MIPER. Una MIPER de la metodología anterior dice *"Metodología anterior"*, sin cifra.
+*   **Importantes e Intolerables**, y cuántos **críticos sin control** tiene la vigente.
+*   **Programa:** el avance del Programa de Trabajo de la vigente (ver "El avance", sección 9).
+*   **Actualizada:** la última modificación.
 
 > [!NOTE]
-> El avance del tablero es el **mismo** que deriva el Programa de Trabajo de las ocurrencias (ver "El avance", sección 9). Nunca se ingresa a mano.
+> Los enlaces antiguos siguen funcionando: `?tab=porhacer` abre "Requieren mi acción", y `?tab=todas` o `?tab=resumen`, la lista completa.
+
+### La pestaña «Resumen» de cada MIPER
+
+Dentro de una MIPER, la pestaña **Resumen** lee el documento de una vez. Tiene cuatro cifras, y las tres primeras llevan a la matriz ya filtrada **después de quitar cualquier búsqueda o filtro que tuvieras**, para que lo que ves al llegar sea lo que la cifra contó:
+
+| Cifra | Qué cuenta | Al hacer clic |
+|---|---|---|
+| **Riesgos completos** | Riesgos sin datos pendientes, sobre el total | la matriz con los riesgos **con pendientes** (o con los completos, si no queda ninguno pendiente) |
+| **Importantes e Intolerables** | Riesgos en las dos bandas más graves | la matriz filtrada por esas bandas |
+| **No controlados** | Riesgos con "¿Está controlado?" en *No* | la matriz filtrada por *No controlados* |
+| **Avance del programa** | Ocurrencias realizadas del Programa de Trabajo | la pestaña **Programa** completa, sin los filtros que tuviera su lista |
+
+Una cifra en cero no lleva a ninguna parte: no hay nada que mostrar.
+
+Debajo, **"Completitud por actividad"** muestra una barra por actividad, en el orden del RE-04. Su nombre lleva a la tarjeta de esa actividad en la matriz, y la despliega si la habías plegado.
+
+> [!NOTE]
+> El avance es el **mismo** que deriva el Programa de Trabajo de las ocurrencias (ver "El avance", sección 9). Nunca se ingresa a mano.
+
+En la franja de la matriz, **"Elaboró"** dice quién envió la ronda en curso o, si no hay ninguna, quién elaboró la última versión aprobada.
 
 ### La cola «Mi trabajo»
 
 Además de la portada del MIPER, tus pendientes aparecen en la **cola "Mi trabajo"** (`/dashboard?vista=trabajo` y `/pendientes`), junto a Solicitudes, Compras, PDTP y los demás módulos:
 
-*   **Revisar la MIPER {período}** (Jefatura de Prevención) mientras una MIPER espera la revisión técnica, y **Firmar la MIPER {período}** (Legal y RRHH) mientras espera la firma.
+*   **Revisar la MIPER {período}** (Jefatura de Prevención) mientras una MIPER espera la revisión técnica, y **Firmar la MIPER {período}** (Legal y RRHH) mientras espera la firma. Quien envió la ronda no la recibe en su cola: no puede revisar ni firmar lo que envió.
 *   **Registrar ejecución** de una ocurrencia del programa **vencida** o marcada **«No se hizo»**, para quien tiene el permiso de ejecución del programa o es su responsable nominal.
 
 El inicio de Prevención (`/prevencion`) lista los mismos hechos del MIPER —lo que espera firma, la ocurrencia vencida y la banda sin medida con responsable y plazo— bajo **"Atención requerida"**, en la primera sección de la pantalla.
@@ -347,7 +381,7 @@ La relación con el PDTP es **sólo de cobertura y acreditación**: una medida d
 
 ### La pestaña «Programa» y sus permisos
 
-El programa vive en la pestaña **Programa** del espacio de trabajo de la MIPER, junto a Matriz, Revisión e Historial. Allí se ve el **encabezado RE-04.1** (título, período, datos de empresa, representante, N° de centros de trabajo —calculado—, fecha de la última revisión sellada y encargado del programa) y la **tabla de actividades** con su avance.
+El programa vive en la pestaña **Programa** del espacio de trabajo de la MIPER, junto a Resumen, Matriz, Revisión e Historial. Allí se ve el **encabezado RE-04.1** (título, período, datos de empresa, representante, N° de centros de trabajo —calculado—, fecha de la última revisión sellada y encargado del programa) y la **tabla de actividades** con su avance.
 
 | Acción | Quién puede | Permiso |
 |---|---|---|

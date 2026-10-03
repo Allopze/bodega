@@ -1,6 +1,6 @@
 # Rediseño UI/UX de la MIPER: de planilla a espacio de trabajo guiado
 
-Fecha: 2026-10-02 · Estado: **Fase A implementada, con el pulido A2**
+Fecha: 2026-10-02 · Estado: **Fase A (con el pulido A2) y Fase B implementadas**
 Alcance: todo el submódulo `app/(app)/prevencion/miper` (portada, espacio de trabajo, matriz,
 ficha del riesgo, programa, revisión, historial, importación) y lo mínimo del backend que el
 rediseño necesita.
@@ -83,9 +83,9 @@ importados del RE-04 de Biodiversa, viewport de 1440×900, sin errores de consol
 
 | Mockup | Implementación |
 |---|---|
-| Portada "MIPER por faena": filas por faena (incluidas las que no tienen MIPER) con estado, dotación, actualización y avance | Fase B, con `DataTable` (`renderRow` + `renderMobileCard`). Avance = riesgos sin pendientes ÷ riesgos. La pestaña "Por hacer" pasa a un segmento "Requieren mi acción (n)". |
+| Portada "MIPER por faena": filas por faena (incluidas las que no tienen MIPER) con estado, dotación, actualización y avance | Fase B, con `DataTable` (`renderRow` + `renderMobileCard`). Avance = riesgos sin pendientes ÷ riesgos. La pestaña "Por hacer" pasa a un segmento "Requieren mi acción", sin cifra: la lleva la franja (A5, §7). |
 | Franja de 4 cifras en la portada | `SummaryBar`. Cada cifra filtra la lista (regla A1). |
-| Barra de contexto (volver, cambio de faena, versión, responsable, estado) | Migas + cabecera. El selector de faena se agrega en la Fase B. |
+| Barra de contexto (volver, cambio de faena, versión, responsable, estado) | Migas + cabecera. «Cambiar de faena» va en las acciones de la cabecera (Fase B): las migas sólo se ven desde 1280 px. |
 | Pestañas Resumen · Matriz · Historial | Resumen (Fase B) · **Matriz** · Programa · Revisión · Historial. El Programa se queda: es el RE-04.1 propio de esta MIPER (decisión F1). |
 | Franja del documento (centro, trabajadores, tareas, peligros, actualización) | `SummaryStrip` en texto (A1), con otro alcance (§5.3). |
 | Búsqueda + "Filtros (2)" en un cajón + "Contraer todo" + "Añadir tarea" | Buscador propio, `FilterToolbar` (cajón con contador y chips) y "Contraer todo". "Nueva tarea" va en `PageHeader.actions` (regla 5). |
@@ -402,27 +402,87 @@ Sale de `entry-sheet.tsx` a `control-form.tsx`:
 
 ## 7. Fase B: portada y Resumen
 
-- **`listMiperPortfolio(access)`** (`lib/services/miper/queries.ts`):
-  - Devuelve una fila por faena en alcance, con su MIPER no reemplazada (si existe): estado,
-    versión, dotación, `updatedAt`, completitud (riesgos sin errores ÷ riesgos), Importantes e
-    Intolerables y si `requiresMyAction`.
-  - Las faenas sin MIPER también vienen, con `matrixId: null`.
+Implementada. Plan: `docs/superpowers/plans/2026-10-03-miper-b-portada.md`. Respecto de la versión
+anterior de esta sección: la cuarta cifra pasó a ser «Riesgos críticos sin control» y el servicio
+vive en `portfolio.ts` (plan maestro de 2026-10-02).
+
+- **`listMiperPortfolio(access)`** (`lib/services/miper/portfolio.ts`, `prevention:risk:view`):
+  - Una fila por faena en alcance (`scopeCondition`): las activas y las cerradas que todavía
+    tienen una MIPER no reemplazada. Las faenas sin MIPER vienen con `matrix: null`.
+  - La fila es la MIPER no reemplazada de **mayor período**. Si la vigente es otra, va aparte
+    («Vigente vN (AAAA)»). Las reglas puras están en `lib/prevention/miper/portfolio.ts`.
+  - Campos:
+    - estado: `sin_miper` · `borrador` · `en_revision` · `observada` · `vigente`;
+    - versión y `updatedAt`;
+    - dotación: la de la ficha o, sin ella, los trabajadores activos;
+    - completitud: riesgos sin errores ÷ riesgos, con la regla de «Completos x de y» del espacio
+      de trabajo; sin cifra en la metodología anterior;
+    - Importantes e Intolerables;
+    - «riesgos críticos sin control» y avance del programa, los dos **de la vigente**;
+    - quién envió la ronda abierta;
+    - `myActions`.
+  - `myActions` / `requiresMyAction`: la regla de la bandeja (`miperInboxReason`,
+    `lib/prevention/miper/inbox.ts`) aplicada a **todas** las MIPER no reemplazadas de la faena, no
+    sólo a la de la fila. Excluye a quien envió la ronda, como `workspace-mode.ts`.
+  - Sin N+1: las fotos salen en lote (`buildMiperSnapshots`). `buildMiperSnapshot` es su caso de
+    una, con prueba dorada de que su salida (y por lo tanto `snapshotSha`) no cambió.
+- **«Riesgos críticos sin control»:** una sola definición (`lib/prevention/miper/critical-control.ts`)
+  para el KPI del tablero y la portada. Es el Intolerable vigente (o `isCritical` en una fila legacy
+  sin clasificación) al que le falta una medida implementada o verificada, o una medida con vínculo
+  PDTP activo.
 - **Portada:**
-  - `SummaryBar` con cuatro cifras accionables: faenas con MIPER x/y · en revisión · requieren
-    mi acción · riesgos Importantes + Intolerables.
-  - `SegmentedControl` "Todas las faenas" / "Requieren mi acción (n)".
-  - Filtro de estado.
-  - `DataTable` con fila y tarjeta móvil. Las faenas sin MIPER muestran "Crear MIPER", que abre
-    `NewMiperDialog` con la faena ya elegida.
-  - Desaparecen las pestañas Resumen / Por hacer / Todas.
-  - Se retira el filtro "Responsable", que no filtraba.
-  - La búsqueda la da el TopBar (D8).
-- **Pestaña Resumen del espacio de trabajo:**
-  - Cuatro tiles accionables (A1): riesgos completos x/y → `completitud=pendientes`; Importantes
-    e Intolerables → filtro; no controlados → filtro; avance del programa → `tab=programa`.
-  - Debajo, la completitud por actividad en barras (`Progress`), cada una enlazada a su tarjeta.
-- **Arreglos:** el título de `loading.tsx` ("MIPER y controles") y el `dashboard.ts`, que reemplaza
-  la query entera al enlazar.
+  - `SummaryBar` con cuatro cifras, cada una a su subconjunto y sólo a él:
+    - faenas con MIPER x/y (`?estado=con_miper`);
+    - en revisión (`?estado=en_revision`);
+    - requieren mi acción (`?vista=mias`);
+    - riesgos críticos sin control (`?sincontrol=1`).
+
+    Filtran con `replace` y sin mover el scroll (`SummaryBar.renderLink`). Una cifra en cero no
+    enlaza (A1).
+  - `SegmentedControl` «Todas las faenas» / «Requieren mi acción» y filtro de estado. La cifra de
+    «Requieren mi acción» vive sólo en la franja (A5); el segmento no la repite. Que «En revisión»
+    escriba la misma clave `estado` que el filtro no es una segunda representación: es la cifra
+    que filtra, como pide A1.
+  - `DataTable` con fila y tarjeta móvil (`id` = faena). La búsqueda la da el TopBar (D8). Si es la
+    búsqueda la que vacía la lista, el vacío lo dice («Ninguna faena coincide con la búsqueda») y
+    ofrece «Limpiar búsqueda» (A4).
+  - «Crear MIPER» en la fila de una faena sin MIPER abre `NewMiperDialog` (ahora controlado) con
+    la faena ya elegida.
+  - Se retiraron las pestañas Resumen / Por hacer / Todas, el filtro «Responsable»,
+    `dashboard-panel.tsx` y `getMiperDashboard` (`dashboard.ts`).
+  - Enlaces viejos:
+    - `?tab=porhacer` → `vista=mias`;
+    - `?tab=todas|resumen` → la vista por defecto;
+    - `?faena=` (PDTP) acota a la faena con un chip;
+    - el KPI del tablero apunta a `?sincontrol=1`.
+- **Pestaña Resumen del espacio de trabajo** (`?tab=resumen`; la matriz sigue siendo la pestaña
+  por defecto, §3):
+  - Cuatro cifras:
+    - riesgos completos x/y → `completitud=pendientes` (o `completos`, si no queda ninguno);
+    - Importantes e Intolerables → `clasificacion=important,intolerable`;
+    - no controlados → `controlado=no`;
+    - avance del programa → `tab=programa`, sin los filtros de la lista del programa (`q`,
+      `estado`, `frecuencia`: `hrefToProgramOnly`).
+
+    Las tres primeras **quitan los seis filtros de la matriz** antes de aplicar el suyo
+    (`hrefToMatrixOnly`). Una cifra en cero no enlaza.
+  - La completitud por actividad, en barras (`Progress`). Cada una lleva a su tarjeta
+    (`#miper-activity-<clave>`) y la despliega si estaba plegada.
+  - El avance sale de `getProgramProgress`, en `[id]/page.tsx`. La Fase E lo reemplaza por
+    `getProgramWorkspace().progress`.
+- **Contexto del espacio de trabajo:**
+  - «Elaboró» es quien envió la ronda abierta o, sin ronda, quien elaboró la última versión
+    aprobada.
+  - «Cambiar de faena» (cabecera) pide la lista al abrirse (`listMiperWorksiteTargetsAction`) y
+    navega con `router.push`.
+- **«Mi trabajo»:** la rama de revisión MIPER de la cola (`operational-work-queue.ts`) excluye la
+  ronda que envió la misma persona, con la regla de `miperInboxReason`. Antes le ofrecía «Revisar» o
+  «Firmar» y el servicio lo rechazaba (`assertNotSubmitter`).
+- **Primitiva compartida:** el rótulo de `SummaryBarStatCell` pasó de `truncate` a dos líneas
+  (`line-clamp-2`). Un rótulo largo hace crecer la celda en vez de cortarse; vale para todos los
+  consumidores de `SummaryBar`.
+- **Arreglos:** el título de `loading.tsx` ya se había corregido en la Fase A. `dashboard.ts`, que
+  reemplazaba la query entera al enlazar, se retiró.
 
 ## 8. Fase C: importación con medidas
 
