@@ -39,6 +39,12 @@ describe("newlyIncomplete: lo que una acción masiva deja con pendientes nuevos"
     expect(withControlPatch(both, new Set(["otra"]), { dueDate: "2026-12-31" }, nameOf)).toBe(both)
   })
 
+  it("una segunda medida por implementar sin plazo es un pendiente nuevo aunque el riesgo ya tuviera el mismo mensaje en otra medida", () => {
+    const before = entry("f", 6, { controls: [{ ...pending, dueDate: null }] })
+    const after = withAddedControl(before, { hierarchy: "administrative", description: "Charla de trasvasije", responsibleName: "Supervisor", isExisting: false }, nameOf)
+    expect(newlyIncomplete([before], [after]).map((item) => item.id)).toEqual(["f"])
+  })
+
   it("«Sí, controlado» sin medidas es un pendiente nuevo; ya pendiente por lo mismo, no se cuenta dos veces", () => {
     const sinMedidas = entry("d", 4)
     expect(newlyIncomplete([sinMedidas], [applyEntryValues(sinMedidas, { controlledStatus: "yes" }, [])]).map((item) => item.id)).toEqual(["d"])

@@ -21,11 +21,15 @@ const NO_HEADER: MiperHeaderSnapshot = {
   headcountTotal: null, headcountMale: null, headcountFemale: null, headcountOther: null, participationSummary: "", consultationEvidenceReference: "",
 }
 
-/** Los pendientes de un riesgo por campo y mensaje: una medida nueva todavía no tiene id. */
+/**
+ * Los pendientes de un riesgo, cada uno por medida (`controlId`), campo y mensaje:
+ * dos medidas con el mismo error son dos pendientes, y una medida nueva ya trae un
+ * id provisorio (`withAddedControl`).
+ */
 function problemsOf(entry: MiperEntrySnapshot): Set<string> {
   return new Set(checkMiperCompleteness({ header: NO_HEADER, entries: [entry] })
     .filter((issue) => issue.entryId === entry.id && issue.severity === "error")
-    .map((issue) => `${issue.field}\u001f${issue.message}`))
+    .map((issue) => `${issue.controlId ?? ""}\u001f${issue.field}\u001f${issue.message}`))
 }
 
 /** Los riesgos de `after` que ganan un pendiente que no tenían en `before` (se cruzan por id). */
