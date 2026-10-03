@@ -38,6 +38,8 @@ import {
   getOperationalWorkCount, getOperationalWorkQueue, parseOperationalQueueFilters,
 } from "@/lib/services/operational-work-queue"
 import { getPreventionAttention } from "@/lib/services/prevention-attention"
+import { buildMiperSnapshots } from "@/lib/services/miper/snapshots"
+import { checkMiperCompleteness } from "@/lib/prevention/miper/completeness"
 
 const WS_IN = "ws-miper-in"
 const WS_OUT = "ws-miper-out"
@@ -187,9 +189,15 @@ describe("atención de Prevención — tipo MIPER", () => {
       { id: "entry-imp-texto", matrixId: "mx-in", rowNumber: 5, hazardCode: "QUI-02", risk: "Inhalación de polvo", probability: 4, consequence: 2, controlledStatus: "no" },
       // Importante «Sí, controlado» con una medida existente: la completitud no le pide más → no aparece.
       { id: "entry-imp-controlado", matrixId: "mx-in", rowNumber: 6, hazardCode: "ERG-01", risk: "Sobreesfuerzo", probability: 4, consequence: 2, controlledStatus: "yes" },
+      // Intolerable «Sí, controlado» con sólo medidas existentes: la parte `important` del OR no lo excusa → aparece.
+      { id: "entry-intol-yes", matrixId: "mx-in", rowNumber: 7, hazardCode: "FIS-04", risk: "Atropello", probability: 4, consequence: 4, controlledStatus: "yes" },
+      // Intolerable cuya única medida por implementar fue retirada → no cuenta → aparece.
+      { id: "entry-intol-retirada", matrixId: "mx-in", rowNumber: 8, hazardCode: "FIS-05", risk: "Golpe por vehículo", probability: 4, consequence: 4, controlledStatus: "partial" },
     ])
     await testDb.insert(schema.preventionRiskControls).values([
-      { id: "ctl-existente", riskEntryId: "entry-intol-existente", description: "Barandas en la batea", hierarchy: "engineering", isExisting: true, verificationFrequency: "Trimestral", responsibleSnapshot: "Supervisor de turno" },
+      { id: "ctl-existente", riskEntryId: "entry-intol-existente", description: "Barandas en la batea", hierarchy: "engineering", isExisting: true, verificationFrequency: "Trimestral", responsibleSnapshot: "Supervisor de turno", dueDate: "2026-12-31" },
+      { id: "ctl-intol-yes", riskEntryId: "entry-intol-yes", description: "Enclavamiento de la batea", hierarchy: "engineering", isExisting: true, verificationFrequency: "Mensual", responsibleSnapshot: "Supervisor de turno", dueDate: "2026-12-31" },
+      { id: "ctl-retirada", riskEntryId: "entry-intol-retirada", description: "Cierre perimetral", hierarchy: "engineering", status: "retired", responsibleSnapshot: "Jefe de faena", dueDate: "2026-12-31" },
       { id: "ctl-texto", riskEntryId: "entry-imp-texto", description: "Humectación del área", hierarchy: "engineering", responsibleSnapshot: "Jefe de faena", dueDate: "2026-12-31" },
       { id: "ctl-controlado", riskEntryId: "entry-imp-controlado", description: "Pausas activas", hierarchy: "administrative", isExisting: true, verificationFrequency: "Mensual", responsibleSnapshot: "Supervisor de turno" },
     ])
@@ -198,11 +206,29 @@ describe("atención de Prevención — tipo MIPER", () => {
     })
     const ids = items.filter((item) => item.kind === "miper").map((item) => item.id)
     expect(ids).toContain("miper_entry:entry-intol-existente")
+    expect(ids).toContain("miper_entry:entry-intol-yes")
+    expect(ids).toContain("miper_entry:entry-intol-retirada")
     expect(ids).not.toContain("miper_entry:entry-imp-texto")
     expect(ids).not.toContain("miper_entry:entry-imp-controlado")
     expect(items.find((item) => item.id === "miper_entry:entry-intol-existente")!.title).toBe("Riesgo Intolerable sin medida por implementar con responsable y plazo")
     // Lo de antes no cambia: el Intolerable sin medidas y el Importante cuya medida no tiene plazo siguen.
     expect(ids).toEqual(expect.arrayContaining(["miper_entry:entry-intol", "miper_entry:entry-important"]))
+  })
+
+  it("paridad: «Atención requerida» lista exactamente las filas graves que la completitud rechaza por la regla crítica", async () => {
+    const snapshot = (await buildMiperSnapshots(testDb, ["mx-in"])).get("mx-in")!
+    const graves = new Set(snapshot.entries.filter((e) => e.classification === "important" || e.classification === "intolerable").map((e) => e.id))
+    // La regla crítica emite `dueDate` (hay medidas pero ninguna por implementar con responsable y plazo)
+    // o `controls` (no hay ninguna medida), siempre a nivel de fila.
+    const rejected = new Set(checkMiperCompleteness(snapshot)
+      .filter((i) => i.severity === "error" && i.scope === "entry" && i.entryId && graves.has(i.entryId) && (i.field === "dueDate" || i.field === "controls"))
+      .map((i) => i.entryId!))
+    const items = await getPreventionAttention({
+      worksiteIds: [WS_IN], includeActions: false, includeEvaluations: false, includePpa: false, includeMiper: true, limit: 50,
+    })
+    const listed = new Set(items.filter((item) => item.id.startsWith("miper_entry:")).map((item) => item.id.slice("miper_entry:".length)))
+    expect(rejected.size).toBeGreaterThan(0)
+    expect([...listed].sort()).toEqual([...rejected].sort())
   })
 })
 

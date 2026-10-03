@@ -100,4 +100,18 @@ describe("completitud RE-04 (§5.1)", () => {
     expect(errors({ header, entries: [intolerable] }).map((i) => i.message)).toEqual(["Un riesgo Intolerable exige una medida por implementar con responsable y plazo."])
     expect(errors({ header, entries: [{ ...intolerable, controls: [existing, toImplement] }] })).toEqual([])
   })
+  it("una medida existente NO cuenta como la crítica aunque traiga plazo y responsable", () => {
+    const existingWithDue = { ...control, id: "c-ex", dueDate: "2026-12-31", isExisting: true, verificationFrequency: "Trimestral" }
+    const intolerable = row({ probability: 4, consequence: 4, magnitude: 16, classification: "intolerable", controlledStatus: "partial", controls: [existingWithDue] })
+    expect(errors({ header, entries: [intolerable] }).map((i) => [i.field, i.message]))
+      .toEqual([["dueDate", "Un riesgo Intolerable exige una medida por implementar con responsable y plazo."]])
+    const important = row({ probability: 2, consequence: 4, magnitude: 8, classification: "important", controlledStatus: "partial", controls: [existingWithDue] })
+    expect(errors({ header, entries: [important] }).map((i) => i.field)).toEqual(["dueDate"])
+  })
+  it("una medida retirada no cuenta como la crítica", () => {
+    const retired = { ...control, id: "c-ret", dueDate: "2026-12-31", isExisting: false, status: "retired" }
+    const intolerable = row({ probability: 4, consequence: 4, magnitude: 16, classification: "intolerable", controlledStatus: "partial", controls: [retired] })
+    expect(errors({ header, entries: [intolerable] }).map((i) => i.field)).toEqual(["dueDate"])
+    expect(errors({ header, entries: [{ ...intolerable, controls: [retired, { ...retired, id: "c-live", status: "proposed" }] }] })).toEqual([])
+  })
 })

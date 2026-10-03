@@ -58,7 +58,8 @@ export function checkMiperCompleteness(
     // Regla crítica (decisión del usuario, 2026-10-02): Importante no controlado e
     // Intolerable exigen al menos una medida POR IMPLEMENTAR con responsable y
     // plazo; las existentes no la reemplazan.
-    const assigned = entry.controls.filter((control) => !(control.isExisting ?? false) && control.dueDate && (control.responsibleUserId || control.responsibleName))
+    // Una medida retirada ya no ejecuta nada: no cuenta (igual que «Atención requerida»).
+    const assigned = entry.controls.filter((control) => control.status !== "retired" && !(control.isExisting ?? false) && control.dueDate && (control.responsibleUserId || control.responsibleName))
     if (cls === "important" && entry.controlledStatus !== "yes" && entry.controls.length > 0 && assigned.length === 0) {
       err("dueDate", "Un riesgo Importante no controlado exige una medida por implementar con responsable y plazo.")
     }
