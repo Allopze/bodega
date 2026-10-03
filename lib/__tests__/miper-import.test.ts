@@ -30,6 +30,7 @@ import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { RE04_COLUMNS, RE04_SHEET_NAME } from "@/lib/prevention/miper/re04-import"
+import { todayInChile } from "@/lib/utils"
 
 /** Evidencia de que ningún aviso se resolvió dentro de una transacción. */
 const spy = vi.hoisted(() => ({
@@ -120,11 +121,15 @@ function rowCells(input: ExcelRow): unknown[] {
   ]
 }
 
-/** Libro mínimo con la forma del RE-04 real: membrete, encabezado doble y datos. */
-async function workbookOf(rows: ExcelRow[]): Promise<Buffer> {
+/**
+ * Libro mínimo con la forma del RE-04 real: membrete, encabezado doble y datos.
+ * `marker` va en el membrete: dos libros con las mismas filas y distinta marca
+ * tienen distinto checksum, así que son lotes distintos para la misma faena.
+ */
+async function workbookOf(rows: ExcelRow[], marker = "Matriz de Identificación de Peligros y Evaluación de Riesgos (IPER)"): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet(RE04_SHEET_NAME)
-  sheet.getCell("A1").value = "Matriz de Identificación de Peligros y Evaluación de Riesgos (IPER)"
+  sheet.getCell("A1").value = marker
   RE04_COLUMNS.forEach((label, index) => { sheet.getRow(HEADER_ROW).getCell(index + 1).value = label })
   for (const [column, label] of [[14, "PROBABILIDAD"], [15, "CONSECUENCIA"], [16, "MR"], [17, "CLASIFICACIÓN DEL RIESGO"]] as Array<[number, string]>) {
     sheet.getRow(SUB_HEADER_ROW).getCell(column).value = label
@@ -153,6 +158,36 @@ const FIXTURE: ExcelRow[] = [
   { number: 3, activity: "Mantenimiento", factor: "Físico", hazard: "Ruido de equipo", probability: 2, consequence: 2, mr: 4, classification: "MODERADO", controlled: "SÍ, CONTROLADO" },
   // 17: «NO RUTINARIA» → isRoutine = false.
   { number: 4, activity: "Mantenimiento", factor: "Químico", hazard: "Contacto con solvente", probability: 2, consequence: 4, mr: 8, classification: "IMPORTANTE", routine: "NO RUTINARIA", controlled: "PARCIALMENTE CONTROLADO" },
+]
+
+/**
+ * Fase C: medidas con las formas del RE-04 de Biodiversa (frases reales,
+ * responsables que son cargos, PLAZOS reales). Filas del Excel 14 a 17.
+ * - 14: Importante, «PARCIALMENTE CONTROLADO - REQUIERE ACCIÓN INMEDIATA»,
+ *   cuatro medidas por comas (una con paréntesis), plazo «INMEDIATO…».
+ * - 15: Moderado, tres líneas (ingeniería y la lista de EPP), «TRIMESTRAL ».
+ * - 16: Tolerable, dos medidas por «;»; una se repite con la fila 14.
+ * - 17: P fuera de la escala: no se carga y sus medidas no piden decisión.
+ */
+const MEASURES_FIXTURE: ExcelRow[] = [
+  {
+    number: 1, activity: "Traslado de lodo", task: "Descarga", position: "Conductor", factor: "Mecánico", hazard: "Camión en pendiente",
+    risk: "Volcamiento", damage: "Politraumatismo", probability: 2, consequence: 4, mr: 8, classification: "IMPORTANTE",
+    measures: "USO DE EPP (CASCO, GUANTES, CALZADO DE SEGURIDAD), ORDEN Y LIMPIEZA, SEÑALIZACIÓN DE ÁREAS, CAPACITACIÓN EN TRABAJO SEGURO.",
+    controlled: "PARCIALMENTE CONTROLADO - REQUIERE ACCIÓN INMEDIATA", responsible: "SUPERVISOR/PREVENCION", deadlines: "INMEDIATO / ANTES DE CONTINUAR LA TAREA",
+  },
+  {
+    number: 2, activity: "Mantención", task: "Cambio de neumático", position: "Mecánico", factor: "Mecánico", hazard: "Herramientas manuales",
+    risk: "Golpes", damage: "Contusiones", probability: 2, consequence: 2, mr: 4, classification: "MODERADO",
+    measures: "INSTALAR RESGUARDOS EN MAQUINAS\nGUANTES, CASCO, CALZADO DE SEGURIDAD",
+    controlled: "PARCIALMENTE CONTROLADO", responsible: "SUPERVISOR/PREVENCION", deadlines: "TRIMESTRAL ",
+  },
+  {
+    number: 3, activity: "Mantención", task: "Orden de taller", position: "Mecánico", factor: "Físico", hazard: "Piso resbaladizo",
+    risk: "Caída al mismo nivel", damage: "Esguince", probability: 1, consequence: 2, mr: 2, classification: "TOLERABLE",
+    measures: "ORDEN Y LIMPIEZA; INSPECCIÓN DE HERRAMIENTAS", controlled: "SÍ, CONTROLADO", responsible: "PREVENCION", deadlines: "TRIMESTRAL",
+  },
+  { number: 4, activity: "Mantención", factor: "Físico", hazard: "Ruido", probability: 3, consequence: 2, measures: "PROTECTORES AUDITIVOS", responsible: "PREVENCION", deadlines: "MENSUAL" },
 ]
 
 let fixture: Buffer = Buffer.alloc(0)
@@ -259,6 +294,46 @@ describe("vista previa del RE-04", () => {
     const rows = await batchRowsOf(preview.batchId)
     expect(rows.map((row) => row.status)).toEqual(["ready", "rejected", "ready", "ready"])
     expect(rows[1]!.issues).toContainEqual(expect.objectContaining({ code: "p_out_of_scale" }))
+  })
+})
+
+/* ── Medidas detectadas en la vista previa (Fase C) ─────────────────────── */
+
+describe("vista previa: medidas detectadas (Fase C)", () => {
+  it("separa las medidas de la celda original, agrupa frases, responsables y plazos, sugiere tipo y plazo, y trae las personas de la faena", async () => {
+    const preview = await previewRiskImport(await workbookOf(MEASURES_FIXTURE, "Vista previa con medidas"), { worksiteId: WS, target: "draft", period: 2034, fileName: "RE-04 medidas.xlsx" }, author)
+    const analysis = preview.measureAnalysis
+
+    // 4 + 4 + 2 medidas. La fila 17 (P = 3) no se carga nunca: no aporta.
+    expect(analysis.measures).toHaveLength(10)
+    expect(analysis.measures.some((measure) => measure.rowNumber === 17)).toBe(false)
+    // El salto de línea de la fila 15 sobrevivió a ExcelJS y al `jsonb` del lote.
+    expect(analysis.measures.filter((measure) => measure.rowNumber === 15).map((measure) => measure.text))
+      .toEqual(["INSTALAR RESGUARDOS EN MAQUINAS", "GUANTES", "CASCO", "CALZADO DE SEGURIDAD"])
+
+    expect(analysis.phrases).toHaveLength(9)
+    expect(analysis.phrases[0]).toMatchObject({ text: "ORDEN Y LIMPIEZA", count: 2, suggestion: { hierarchy: "administrative", source: "keyword" } })
+    expect(analysis.phrases.find((phrase) => phrase.text.startsWith("USO DE EPP"))!.suggestion.hierarchy).toBe("ppe")
+    expect(analysis.phrases.find((phrase) => phrase.text === "INSTALAR RESGUARDOS EN MAQUINAS")!.suggestion.hierarchy).toBe("engineering")
+
+    expect(analysis.responsibles.map((group) => [group.text, group.count, group.suggestion])).toEqual([
+      ["SUPERVISOR/PREVENCION", 8, { kind: "text", name: "SUPERVISOR/PREVENCION" }],
+      ["PREVENCION", 2, { kind: "text", name: "PREVENCION" }],
+    ])
+    expect(analysis.deadlines.map((group) => [group.text, group.count, group.suggestion])).toEqual([
+      ["TRIMESTRAL", 6, { kind: "existing", frequency: "TRIMESTRAL" }],
+      ["INMEDIATO / ANTES DE CONTINUAR LA TAREA", 4, { kind: "pending", dueDate: todayInChile() }],
+    ])
+
+    // Los usuarios activos de la faena, para elegir responsable.
+    expect(preview.responsibleOptions.map((option) => option.id).sort()).toEqual(["u-autora", "u-jefa", "u-legal", "u-prev"])
+    // «PARCIALMENTE CONTROLADO - REQUIERE ACCIÓN INMEDIATA» es parcial (antes caía en «no»).
+    expect(preview.rows[0]!.normalized.controlledStatus).toBe("partial")
+  })
+
+  it("un RE-04 sin medidas no pide decisiones", async () => {
+    const preview = await previewRiskImport(await workbookOf([FIXTURE[2]!], "Sin medidas"), { worksiteId: WS, target: "draft", period: 2034 }, author)
+    expect(preview.measureAnalysis).toEqual({ measures: [], phrases: [], responsibles: [], deadlines: [] })
   })
 })
 

@@ -236,6 +236,13 @@ export const occurrenceEvidenceRefSchema = z.object({
  * borrador (`draft`, con período y motivo como cualquier alta) o al vigente
  * (`live`, que no crea nada). Nada de esto toca la base. */
 
+/**
+ * Topes de una importación (Fase C): lo que una persona puede decidir en una
+ * vista previa y lo que el cuerpo de una Server Function tiene que cargar. El
+ * RE-04 de Biodiversa trae 222 frases distintas y 5 plazos.
+ */
+export const IMPORT_LIMITS = { phrases: 5000, values: 1000 } as const
+
 export const riskImportTargetSchema = z.enum(["draft", "live"], {
   message: "Indica si la importación crea un borrador o agrega las filas al MIPER vigente.",
 })

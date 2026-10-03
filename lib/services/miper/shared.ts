@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto"
-import { and, eq, inArray, sql, type SQL } from "drizzle-orm"
+import { and, asc, eq, inArray, sql, type SQL } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import type { DB, Tx } from "@/db"
-import { preventionRiskMatrices, users } from "@/db/schema"
+import { preventionRiskMatrices, users, worksiteUsers } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { recordModuleHistory } from "@/lib/audit"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
@@ -107,4 +107,18 @@ export async function userNames(client: Client, userIds: readonly (string | null
   if (ids.length === 0) return new Map<string, string>()
   const rows = await client.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ids))
   return new Map(rows.map((row) => [row.id, row.name]))
+}
+
+/**
+ * Responsables que se ofrecen en una faena: sus usuarios activos, por nombre, y
+ * —si no está entre ellos— quien edita. Lo usan el editor de la medida
+ * (`getMiperWorkspace`) y la importación (vista previa y carga, Fase C), para que
+ * lo que se ofrece y lo que se acepta sean lo mismo.
+ */
+export async function worksiteResponsibleOptions(client: Client, worksiteId: string, selfUserId: string): Promise<Array<{ id: string; name: string }>> {
+  const rows = await client.select({ id: users.id, name: users.name }).from(worksiteUsers).innerJoin(users, eq(users.id, worksiteUsers.userId))
+    .where(and(eq(worksiteUsers.worksiteId, worksiteId), eq(users.isActive, true))).orderBy(asc(users.name))
+  if (rows.some((row) => row.id === selfUserId)) return rows
+  const [self] = await client.select({ id: users.id, name: users.name }).from(users).where(and(eq(users.id, selfUserId), eq(users.isActive, true))).limit(1)
+  return self ? [...rows, self] : rows
 }

@@ -26,6 +26,9 @@
  *    `mr_mismatch` / `classification_mismatch` y lo que se guarda es
  *    `p × c` + `classify(p, c)`, que además son columnas generadas: la
  *    plataforma no puede escribir una incoherencia aunque quisiera.
+ * 4. **Medidas (Fase C).** La vista previa devuelve `measureAnalysis` (frases,
+ *    responsables y plazos distintos, con su sugerencia) y la carga lo vuelve a
+ *    calcular desde las filas del lote: nunca confía en las claves del cliente.
  *
  * El aviso de «fila Intolerable» sale **después del COMMIT** —`entries.ts` hace
  * lo mismo desde `saveMiperEntry`— porque los destinatarios se resuelven con la
@@ -47,13 +50,14 @@ import {
   type Re04Normalized, type RiskImportIssue, type RiskImportRowStatus,
 } from "@/lib/prevention/miper/re04-import"
 import { isScaleValue, type RiskClassification } from "@/lib/prevention/miper/methodology"
-import { riskImportCommitSchema, riskImportPreviewSchema } from "@/lib/validation/prevention-module/miper"
+import { analyzeRe04Measures, type MeasureAnalysis } from "@/lib/prevention/miper/re04-measures"
+import { IMPORT_LIMITS, riskImportCommitSchema, riskImportPreviewSchema } from "@/lib/validation/prevention-module/miper"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
-import { codeYear } from "@/lib/utils"
+import { codeYear, countOf, todayInChile } from "@/lib/utils"
 import { resolveDictionaryId } from "./dictionaries"
 import { createMiper } from "./matrices"
 import { notifyMiperRowIntolerable } from "./notifications"
-import { assertEditable, type Client, lockMatrix, type MiperAccess, miperHistory, nowIso, OUT_OF_SCOPE, requireAccess } from "./shared"
+import { assertEditable, type Client, lockMatrix, type MiperAccess, miperHistory, nowIso, OUT_OF_SCOPE, requireAccess, worksiteResponsibleOptions } from "./shared"
 
 const EDIT = "prevention:risk:edit"
 
@@ -86,6 +90,13 @@ export type RiskImportPreview = {
   draft: { period: number; blockedReason: string | null }
   /** Destino «al vigente»: a qué matriz se agregaría. */
   live: { matrixId: string | null; title: string | null; blockedReason: string | null }
+  /**
+   * Fase C: las medidas del archivo y lo que hay que decidir una vez por valor
+   * distinto (tipo de cada frase, responsables, plazos), con su sugerencia.
+   */
+  measureAnalysis: MeasureAnalysis
+  /** Personas que se pueden elegir como responsable: las activas de la faena y quien importa. */
+  responsibleOptions: Array<{ id: string; name: string }>
 }
 
 export type RiskImportCommitResult = {
@@ -192,6 +203,16 @@ function rowBlocked(issues: readonly RiskImportIssue[], normalized: Re04Normaliz
   return issues.some((issue) => issue.code === "unknown_factor") && riskFactorId === null
 }
 
+/** Fase C: lo que cabe en una importación (`IMPORT_LIMITS`). Más que eso se divide en partes. */
+function assertWithinImportLimits(analysis: MeasureAnalysis) {
+  if (analysis.phrases.length > IMPORT_LIMITS.phrases) {
+    throw new RiskLegalDomainError(`El archivo trae ${countOf(analysis.phrases.length, "medida distinta", "medidas distintas")}: el máximo por importación es ${IMPORT_LIMITS.phrases}. Divide el RE-04 en partes.`)
+  }
+  if (Math.max(analysis.responsibles.length, analysis.deadlines.length) > IMPORT_LIMITS.values) {
+    throw new RiskLegalDomainError(`El archivo trae más de ${IMPORT_LIMITS.values} responsables o plazos distintos. Divide el RE-04 en partes.`)
+  }
+}
+
 /**
  * Vista previa: lee el archivo, mapea textos y factores contra el catálogo,
  * congela el lote y devuelve los problemas **por fila** con la fila del Excel,
@@ -227,6 +248,13 @@ export async function previewRiskImport(
       fingerprintSha256: row.fingerprintSha256,
     }
   })
+
+  /* Fase C: las medidas se leen de la celda original (con sus saltos de línea),
+   * no de `normalized.measures`, y cada frase, responsable y plazo distinto se
+   * decide una vez (D6). Los topes se aplican antes de guardar el lote. */
+  const responsibleOptions = await worksiteResponsibleOptions(db, data.worksiteId, access.userId)
+  const measureAnalysis = analyzeRe04Measures(rows, { today: todayInChile(), users: responsibleOptions })
+  assertWithinImportLimits(measureAnalysis)
 
   /* Los dos destinos se comprueban acá para que la vista previa pueda decir por
    * qué no se puede cargar en vez de fallar al apretar el botón. */
@@ -311,6 +339,8 @@ export async function previewRiskImport(
           ? "La MIPER vigente usa la metodología anterior y es de solo lectura."
           : null,
     },
+    measureAnalysis,
+    responsibleOptions,
   }
 }
 

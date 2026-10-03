@@ -3,7 +3,7 @@ import { db } from "@/db"
 import {
   auditLog, preventionRiskControls, preventionRiskEntries, preventionRiskFactors, preventionRiskMatrices, preventionRiskMatrixVersions,
   preventionRiskObservations, preventionRiskProgramActionControls, preventionRiskProgramActions, preventionRiskPrograms,
-  preventionRiskReviewRounds, users, worksites, worksiteUsers,
+  preventionRiskReviewRounds, users, worksites,
 } from "@/db/schema"
 import { checkMiperCompleteness, type CompletenessIssue } from "@/lib/prevention/miper/completeness"
 import { RISK_CLASSIFICATIONS, type RiskClassification } from "@/lib/prevention/miper/methodology"
@@ -14,7 +14,7 @@ import { listDictionaryNames, listFreeTextSuggestions } from "./dictionaries"
 import { buildMiperHeaderPrefill, type MiperHeaderPrefill } from "./prefill"
 import { getProgramHeader, type ProgramHeaderView } from "./program-queries"
 import { buildMiperSnapshot, openRound as findOpenRound } from "./snapshots"
-import { type MiperAccess, requireAccess, scopeAllows, scopeCondition, userNames } from "./shared"
+import { type MiperAccess, requireAccess, scopeAllows, scopeCondition, userNames, worksiteResponsibleOptions } from "./shared"
 
 const VIEW = "prevention:risk:view"
 const emptyCounts = (): Record<RiskClassification, number> => ({ tolerable: 0, moderate: 0, important: 0, intolerable: 0 })
@@ -76,7 +76,7 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
   if (!row || !scopeAllows(access.scope, row.matrix.worksiteId)) throw new RiskLegalDomainError("MIPER no encontrada o fuera de alcance.")
   const matrix = row.matrix
 
-  const [snapshot, versionRows, round, observationRows, prefill, factorRows, dictionaryNames, suggestions, responsibleRows, entryVersionRows, allRounds, program] = await Promise.all([
+  const [snapshot, versionRows, round, observationRows, prefill, factorRows, dictionaryNames, suggestions, responsibleOptions, entryVersionRows, allRounds, program] = await Promise.all([
     buildMiperSnapshot(db, matrix.id),
     db.select().from(preventionRiskMatrixVersions).where(eq(preventionRiskMatrixVersions.matrixId, matrix.id)).orderBy(desc(preventionRiskMatrixVersions.versionNumber)),
     findOpenRound(db, matrix.id),
@@ -85,8 +85,7 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
     db.select({ id: preventionRiskFactors.id, name: preventionRiskFactors.name, isActive: preventionRiskFactors.isActive }).from(preventionRiskFactors).orderBy(asc(preventionRiskFactors.sortOrder), asc(preventionRiskFactors.name)),
     listDictionaryNames(db, matrix.worksiteId),
     listFreeTextSuggestions(db, matrix.worksiteId),
-    db.select({ id: users.id, name: users.name }).from(worksiteUsers).innerJoin(users, eq(users.id, worksiteUsers.userId))
-      .where(and(eq(worksiteUsers.worksiteId, matrix.worksiteId), eq(users.isActive, true))).orderBy(asc(users.name)),
+    worksiteResponsibleOptions(db, matrix.worksiteId, access.userId),
     db.select({ id: preventionRiskEntries.id, version: preventionRiskEntries.version }).from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, matrix.id)),
     db.select().from(preventionRiskReviewRounds).where(eq(preventionRiskReviewRounds.matrixId, matrix.id)).orderBy(desc(preventionRiskReviewRounds.roundNumber)),
     getProgramHeader(matrix.id),
@@ -133,12 +132,6 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
     reviewBaselineSnapshot = baseline
   }
   const names = await userNames(db, [...observationRows.flatMap((observation) => [observation.authorUserId, observation.respondedByUserId]), round?.submittedByUserId])
-  const responsibleOptions = [...responsibleRows]
-  if (!responsibleOptions.some((option) => option.id === access.userId)) {
-    const self = await userNames(db, [access.userId])
-    const selfName = self.get(access.userId)
-    if (selfName) responsibleOptions.push({ id: access.userId, name: selfName })
-  }
 
   return {
     matrix: { ...matrix, worksiteName: row.worksiteName },
