@@ -37,6 +37,7 @@ import { analyzeRe04Measures, suggestedMappings, type ImportMappings } from "@/l
 import { RE04_COLUMNS, RE04_SHEET_NAME } from "@/lib/prevention/miper/re04-import"
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { todayInChile } from "@/lib/utils"
+import { IMPORT_LIMITS } from "@/lib/validation/prevention-module/miper"
 
 /** Evidencia de que ningún aviso se resolvió dentro de una transacción. */
 const spy = vi.hoisted(() => ({
@@ -440,6 +441,23 @@ describe("vista previa: topes de la importación (Fase C)", () => {
     const batches = await testDb.select({ id: schema.preventionRiskImportBatches.id }).from(schema.preventionRiskImportBatches)
       .where(eq(schema.preventionRiskImportBatches.sourceChecksumSha256, checksum))
     expect(batches).toEqual([])
+  }, 60_000)
+
+  it("rechaza un RESPONSABLE o un PLAZOS más largo que el tope de una clave (IMPORT_LIMITS.keyLength) antes de guardar el lote, diciendo la fila y la columna", async () => {
+    const long = "SUPERVISOR DE TURNO Y PREVENCIÓN DE RIESGOS ".repeat(80).trim()
+    expect(long.length).toBeGreaterThan(IMPORT_LIMITS.keyLength)
+    const base: ExcelRow = { number: 1, activity: "Mantención", factor: "Físico", hazard: "Ruido", probability: 1, consequence: 2, measures: "CHARLA DE SEGURIDAD" }
+    for (const [row, column] of [[{ ...base, responsible: long }, "RESPONSABLE"], [{ ...base, deadlines: long }, "PLAZOS"]] as const) {
+      const bytes = await workbookOf([base, row], `Clave larga en ${column}`)
+      const error = await previewRiskImport(bytes, { worksiteId: WS, target: "draft", period: 2036 }, author).catch((caught: unknown) => caught)
+      expect(error).toBeInstanceOf(RiskLegalDomainError)
+      expect((error as Error).message).toBe(`La fila 15 trae en ${column} un texto de más de 3.000 caracteres: acórtalo en el Excel y vuelve a revisar el archivo.`)
+
+      const checksum = createHash("sha256").update(bytes).digest("hex")
+      const batches = await testDb.select({ id: schema.preventionRiskImportBatches.id }).from(schema.preventionRiskImportBatches)
+        .where(eq(schema.preventionRiskImportBatches.sourceChecksumSha256, checksum))
+      expect(batches).toEqual([])
+    }
   }, 60_000)
 })
 

@@ -47,7 +47,7 @@ import { nanoid } from "@/lib/id"
 import { cleanMiperName, normalizeMiperName } from "@/lib/prevention/miper/names"
 import {
   isEmptyRe04Row, parseRe04Matrix, RE04_COLUMNS, RE04_SHEET_NAME, riskImportStatus,
-  type Re04Normalized, type RiskImportIssue, type RiskImportRowStatus,
+  type Re04ColumnLabel, type Re04Normalized, type RiskImportIssue, type RiskImportRowStatus,
 } from "@/lib/prevention/miper/re04-import"
 import { isScaleValue, type RiskClassification } from "@/lib/prevention/miper/methodology"
 import {
@@ -210,13 +210,27 @@ function rowBlocked(issues: readonly RiskImportIssue[], normalized: Re04Normaliz
   return issues.some((issue) => issue.code === "unknown_factor") && riskFactorId === null
 }
 
-/** Fase C: lo que cabe en una importación (`IMPORT_LIMITS`). Más que eso se divide en partes. */
+/**
+ * Fase C: lo que cabe en una importación (`IMPORT_LIMITS`). Más que eso se divide
+ * en partes. Una clave más larga que la que acepta la carga (un RESPONSABLE o un
+ * PLAZOS de miles de caracteres) se rechaza acá, con su fila y su columna: si
+ * pasara, el lote quedaría guardado y la carga fallaría con un error de esquema.
+ */
 function assertWithinImportLimits(analysis: MeasureAnalysis) {
   if (analysis.phrases.length > IMPORT_LIMITS.phrases) {
     throw new RiskLegalDomainError(`El archivo trae ${countOf(analysis.phrases.length, "medida distinta", "medidas distintas")}: el máximo por importación es ${IMPORT_LIMITS.phrases}. Divide el RE-04 en partes.`)
   }
   if (Math.max(analysis.responsibles.length, analysis.deadlines.length) > IMPORT_LIMITS.values) {
     throw new RiskLegalDomainError(`El archivo trae más de ${IMPORT_LIMITS.values} responsables o plazos distintos. Divide el RE-04 en partes.`)
+  }
+  const tooLong = (key: string) => key.length > IMPORT_LIMITS.keyLength
+  for (const measure of analysis.measures) {
+    const column: Re04ColumnLabel | null = tooLong(measure.phraseKey) ? "MEDIDA DE CONTROL"
+      : tooLong(measure.responsibleKey) ? "RESPONSABLE"
+        : tooLong(measure.deadlineKey) ? "PLAZOS" : null
+    if (column) {
+      throw new RiskLegalDomainError(`La fila ${measure.rowNumber} trae en ${column} un texto de más de ${countOf(IMPORT_LIMITS.keyLength, "carácter", "caracteres")}: acórtalo en el Excel y vuelve a revisar el archivo.`)
+    }
   }
 }
 

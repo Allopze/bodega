@@ -242,9 +242,11 @@ export const occurrenceEvidenceRefSchema = z.object({
 /**
  * Topes de una importación (Fase C): lo que una persona puede decidir en una
  * vista previa y lo que el cuerpo de una Server Function tiene que cargar. El
- * RE-04 de Biodiversa trae 222 frases distintas y 5 plazos.
+ * RE-04 de Biodiversa trae 222 frases distintas y 5 plazos. `keyLength` es el
+ * largo máximo de una clave de decisión (frase, responsable o plazo
+ * normalizados): la vista previa lo aplica antes de guardar el lote.
  */
-export const IMPORT_LIMITS = { phrases: 5000, values: 1000 } as const
+export const IMPORT_LIMITS = { phrases: 5000, values: 1000, keyLength: 3000 } as const
 
 export const riskImportTargetSchema = z.enum(["draft", "live"], {
   message: "Indica si la importación crea un borrador o agrega las filas al MIPER vigente.",
@@ -275,7 +277,7 @@ const deadlineDecisionSchema = z.discriminatedUnion("kind", [
 
 /** Una decisión por clave (frase, responsable o plazo distinto), con tope de tamaño. Vacío por defecto. */
 function decisionMap<T extends z.ZodType>(value: T, max: number, label: string) {
-  return z.record(z.string().max(3000), value)
+  return z.record(z.string().max(IMPORT_LIMITS.keyLength), value)
     .refine((record) => Object.keys(record).length <= max, { message: `Demasiados ${label} en una sola importación (máximo ${max}).` })
     .default({})
 }
