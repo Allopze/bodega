@@ -1,8 +1,11 @@
 import { z } from "zod"
+import { civilDate } from "@/lib/validation/dates"
 
 const id = z.string().min(1)
 const version = z.coerce.number().int().positive()
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida")
+/* Fecha de calendario `AAAA-MM-DD`: la regex sola dejaba pasar «2026-02-31», que
+ * `due_date` (texto) guardaba y la completitud contaba como plazo válido. */
+const isoDate = civilDate("Fecha inválida")
 const scale = z.union([z.literal(1), z.literal(2), z.literal(4)], { message: "Usa Baja (1), Media (2) o Alta (4)." })
 const optText = (max: number) => z.string().max(max).nullable().optional()
 const headcount = z.coerce.number().int().min(0).max(100_000).nullable()
@@ -116,7 +119,7 @@ export const riskFactorSaveSchema = z.object({
  * antes de abrir la transacción. */
 
 const scheduleKind = z.enum(["once", "monthly", "quarterly", "semiannual", "annual"], { message: "Selecciona la frecuencia de la actividad." })
-const isoDateRequired = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Indica la fecha programada de la actividad.")
+const isoDateRequired = civilDate("Indica la fecha programada de la actividad.")
 
 /** Encabezado RE-04.1 (§7.1). Mismo contrato de versión que `updateMiperHeader`. */
 export const programHeaderSchema = z.object({

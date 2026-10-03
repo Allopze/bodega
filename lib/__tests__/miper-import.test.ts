@@ -27,6 +27,7 @@ import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { and, asc, eq, inArray } from "drizzle-orm"
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
+import { ZodError } from "zod"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -40,6 +41,8 @@ import { todayInChile } from "@/lib/utils"
 /** Evidencia de que ningún aviso se resolvió dentro de una transacción. */
 const spy = vi.hoisted(() => ({
   openTransactions: 0,
+  /** Transacciones abiertas desde el último reinicio: una carga rechazada por el esquema no abre ninguna. */
+  transactionsStarted: 0,
   recipientLookups: [] as Array<{ permission: string; worksiteId: string; openTransactions: number }>,
 }))
 
@@ -64,6 +67,7 @@ g.__db = new Proxy(testDb as unknown as Record<PropertyKey, unknown>, {
     if (property === "transaction") {
       return async (run: (tx: unknown) => Promise<unknown>) => {
         spy.openTransactions += 1
+        spy.transactionsStarted += 1
         try { return await (target as unknown as DB).transaction(run as never) }
         finally { spy.openTransactions -= 1 }
       }
@@ -245,6 +249,7 @@ async function appliedOf(matrixId: string) {
 beforeEach(() => {
   spy.recipientLookups = []
   spy.openTransactions = 0
+  spy.transactionsStarted = 0
 })
 
 beforeAll(async () => {
@@ -658,8 +663,14 @@ describe("carga con medidas (Fase C)", () => {
     // Review Focus 1: las decisiones de OTRO archivo (otra vista previa) no sirven para este lote.
     const other = await previewRiskImport(await workbookOf([MEASURES_FIXTURE[2]!], "Otro archivo"), { worksiteId: WS, target: "draft", period: 2036 }, author)
     await expect(commit(suggestedMappings(other.measureAnalysis))).rejects.toThrow("Vuelve a revisar el archivo.")
-    // Un tipo fuera del enum lo rechaza el esquema.
-    await expect(commit({ measureMapping: { ...full.measureMapping, [normalizeMeasure("CASCO")]: "helmet" as never } })).rejects.toThrow()
+    // Un tipo fuera del enum o una fecha que no existe en el calendario los rechaza el ESQUEMA,
+    // antes de abrir la transacción. Una fecha así contaría como plazo válido en la completitud y
+    // en «Atención requerida»; un tipo así sólo lo frenaría el CHECK de la base, ya adentro.
+    spy.transactionsStarted = 0
+    await expect(commit({ measureMapping: { ...full.measureMapping, [normalizeMeasure("CASCO")]: "helmet" as never } })).rejects.toBeInstanceOf(ZodError)
+    const immediate = normalizeMiperName("INMEDIATO / ANTES DE CONTINUAR LA TAREA")
+    await expect(commit({ deadlineMapping: { ...full.deadlineMapping, [immediate]: { kind: "pending", dueDate: "2026-02-31" } } })).rejects.toBeInstanceOf(ZodError)
+    expect(spy.transactionsStarted).toBe(0)
 
     // Nada se creó: ni el borrador ni medidas, y el lote sigue preparado.
     expect(await matricesOf(WS, 2036)).toHaveLength(0)
@@ -701,12 +712,54 @@ describe("carga con medidas (Fase C)", () => {
       const preview = await previewRiskImport(await workbookOf(MEASURES_FIXTURE, "Rollback"), { worksiteId: WS, target: "draft", period: 2038 }, author)
       await expect(commitRiskImport({
         batchId: preview.batchId, worksiteId: WS, target: "draft", period: 2038, revisionReason: "Carga que falla a mitad.", ...suggestedMappings(preview.measureAnalysis),
-      }, author)).rejects.toThrow()
+      }, author)).rejects.toMatchObject({
+        // La causa es el trigger, no un rechazo anterior: un rechazo antes de escribir no probaría el rollback.
+        cause: expect.objectContaining({ message: expect.stringContaining("falla forzada de la prueba") }),
+      })
       expect(await matricesOf(WS, 2038)).toHaveLength(0)
       expect((await batchOf(preview.batchId)).status).toBe("staged")
       expect((await batchRowsOf(preview.batchId)).every((row) => row.riskEntryId === null)).toBe(true)
     } finally {
       await pg.exec("DROP TRIGGER qa_falla_medida ON prevention_risk_controls; DROP FUNCTION qa_falla_medida();")
     }
+  }, 60_000)
+})
+
+/* ── Carga concurrente del mismo lote ───────────────────────────────────── */
+
+describe("carga concurrente del mismo lote", () => {
+  const WS_DOUBLE = "ws-doble"
+  const editor = { userId: "u-autora", scope: { mode: "some" as const, ids: [WS_DOUBLE] }, permissions: ["prevention:risk:view", "prevention:risk:edit"] }
+
+  /* PGlite tiene UNA conexión y serializa las transacciones: acá la segunda carga
+   * siempre empieza después del COMMIT de la primera, así que esta prueba fija el
+   * resultado pero no puede reproducir la carrera. La que se da en Postgres
+   * —las dos releen el lote `staged` antes de que la primera confirme y, al
+   * vigente, la segunda vuelve a insertar todo— la cierra el `FOR UPDATE` de la
+   * relectura del lote (`loadBatch(tx, …, { lock: true })`). */
+  it("dos cargas a la vez del mismo lote (doble clic, dos pestañas): una carga y la otra se rechaza; nada se duplica en el vigente", async () => {
+    await testDb.insert(schema.worksites).values({ id: WS_DOUBLE, name: "Faena doble clic", code: "DBL" })
+    const live = await createMiper({ worksiteId: WS_DOUBLE, period: 2026, revisionReason: "MIPER vigente para probar el doble clic." }, editor)
+    const publishedAt = "2020-01-01T00:00:00.000Z"
+    await testDb.update(schema.preventionRiskMatrices)
+      .set({ status: "published", reviewState: "none", publishedAt, updatedAt: publishedAt, reviewedByUserId: "u-jefa", approvedByUserId: "u-legal" })
+      .where(eq(schema.preventionRiskMatrices.id, live.id))
+    const preview = await previewRiskImport(await workbookOf(MEASURES_FIXTURE, "Doble clic"), { worksiteId: WS_DOUBLE, target: "live" }, editor)
+    const input = { batchId: preview.batchId, worksiteId: WS_DOUBLE, target: "live", ...suggestedMappings(preview.measureAnalysis) }
+
+    const results = await Promise.allSettled([commitRiskImport(input, editor), commitRiskImport(input, editor)])
+    expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"])
+    expect(results.find((result): result is PromiseRejectedResult => result.status === "rejected")!.reason)
+      .toMatchObject({ message: "Este lote de importación ya se cargó en una MIPER." })
+
+    // Los 3 riesgos y las 10 medidas, una sola vez.
+    const entries = await entriesOf(live.id)
+    expect(entries).toHaveLength(3)
+    const controls = await testDb.select({ id: schema.preventionRiskControls.id }).from(schema.preventionRiskControls)
+      .where(inArray(schema.preventionRiskControls.riskEntryId, entries.map((entry) => entry.id)))
+    expect(controls).toHaveLength(10)
+    // Y una tercera, ya en serie, también se rechaza.
+    await expect(commitRiskImport(input, editor)).rejects.toThrow("ya se cargó")
+    expect(await entriesOf(live.id)).toHaveLength(3)
   }, 60_000)
 })

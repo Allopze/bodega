@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { createMiperSchema, IMPORT_LIMITS, miperApproveFinalSchema, miperControlSaveSchema, miperEntrySaveSchema, miperHeaderSchema, miperObservationSchema, riskImportCommitSchema } from "./miper"
+import { createMiperSchema, IMPORT_LIMITS, miperApproveFinalSchema, miperControlSaveSchema, miperEntrySaveSchema, miperHeaderSchema, miperObservationSchema, programActionSchema, riskImportCommitSchema } from "./miper"
 
 const header = {
   matrixId: "m1", expectedVersion: 1, iperCode: "RE-04", elaboratedOn: "2026-04-30", updatedOn: "2026-05-02",
@@ -58,5 +58,19 @@ describe("schemas MIPER", () => {
     expect(riskImportCommitSchema.safeParse({ ...base, responsibleMapping: { x: { kind: "persona", userId: "u-1" } } }).success).toBe(false)
     const tooMany = Object.fromEntries(Array.from({ length: IMPORT_LIMITS.phrases + 1 }, (_, index) => [`medida ${index}`, "administrative"]))
     expect(riskImportCommitSchema.safeParse({ ...base, measureMapping: tooMany }).success).toBe(false)
+  })
+
+  it("las fechas son de calendario: «2026-02-31» y «2026-13-45» no existen y el 29 de febrero sólo en año bisiesto", () => {
+    const accepts: Record<string, (date: string) => boolean> = {
+      medida: (dueDate) => miperControlSaveSchema.safeParse({ matrixId: "m1", entryId: "e1", values: { hierarchy: "ppe", description: "Uso de casco", dueDate } }).success,
+      carga: (dueDate) => riskImportCommitSchema.safeParse({ batchId: "b1", worksiteId: "ws", target: "draft", deadlineMapping: { fecha: { kind: "pending", dueDate } } }).success,
+      programa: (startsOn) => programActionSchema.safeParse({ matrixId: "m1", description: "Inspección de extintores", scheduleKind: "monthly", startsOn }).success,
+    }
+    for (const [schema, accept] of Object.entries(accepts)) {
+      expect([schema, accept("2026-02-31")]).toEqual([schema, false])
+      expect([schema, accept("2026-13-45")]).toEqual([schema, false])
+      expect([schema, accept("2027-02-29")]).toEqual([schema, false])
+      expect([schema, accept("2028-02-29")]).toEqual([schema, true])
+    }
   })
 })

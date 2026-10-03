@@ -351,10 +351,18 @@ export async function previewRiskImport(
   }
 }
 
-/** El lote preparado, con su estado: es lo primero que hay que saber. */
-async function loadBatch(client: Client, batchId: string, worksiteId: string) {
-  const [batch] = await client.select().from(preventionRiskImportBatches)
-    .where(and(eq(preventionRiskImportBatches.id, batchId), eq(preventionRiskImportBatches.worksiteId, worksiteId))).limit(1)
+/**
+ * El lote preparado, con su estado: es lo primero que hay que saber. La carga lo
+ * relee dentro de su transacción con `lock` (FOR UPDATE): dos cargas del mismo
+ * lote a la vez (doble clic, dos pestañas) pasan las dos la comprobación previa,
+ * pero la segunda espera aquí el COMMIT de la primera, lo lee `activated` y se
+ * rechaza. Sin el bloqueo, al vigente volvía a insertar todas las filas y medidas.
+ */
+async function loadBatch(client: Client, batchId: string, worksiteId: string, options: { lock?: boolean } = {}) {
+  const where = and(eq(preventionRiskImportBatches.id, batchId), eq(preventionRiskImportBatches.worksiteId, worksiteId))
+  const [batch] = options.lock
+    ? await client.select().from(preventionRiskImportBatches).where(where).for("update").limit(1)
+    : await client.select().from(preventionRiskImportBatches).where(where).limit(1)
   if (!batch) throw new RiskLegalDomainError(OUT_OF_SCOPE)
   if (batch.status === "activated") throw new RiskLegalDomainError("Este lote de importación ya se cargó en una MIPER.")
   return batch
@@ -382,8 +390,8 @@ export async function commitRiskImport(input: unknown, access: MiperAccess): Pro
   const today = todayInChile()
 
   const result = await db.transaction(async (tx) => {
-    // Relectura autoritativa dentro de la transacción.
-    const batch = await loadBatch(tx, data.batchId, data.worksiteId)
+    // Relectura autoritativa y bloqueada: una segunda carga del mismo lote espera acá.
+    const batch = await loadBatch(tx, data.batchId, data.worksiteId, { lock: true })
     const batchRows = await tx.select().from(preventionRiskImportRows)
       .where(eq(preventionRiskImportRows.batchId, batch.id)).orderBy(asc(preventionRiskImportRows.rowNumber))
 
