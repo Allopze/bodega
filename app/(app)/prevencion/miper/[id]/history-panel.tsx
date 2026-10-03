@@ -93,7 +93,8 @@ export function HistoryPanel({ workspace, history }: HistoryPanelProps) {
             </li>
           ))}
         </ol>
-        <p aria-live="polite" className="text-xs text-[var(--color-text-subtle)]">Mostrando {countOf(events.length, "evento", "eventos")}</p>
+        {/* `status` (C7): es polite y atómico, así que se anuncia la frase entera y no sólo «60 eventos». */}
+        <p role="status" aria-live="polite" className="text-xs text-[var(--color-text-subtle)]">Mostrando {countOf(events.length, "evento", "eventos")}</p>
         {operation.message && <p role="alert" className="text-sm text-[var(--color-danger)]">{operation.message}</p>}
         {current.nextCursor && <Button size="sm" variant="secondary" disabled={operation.pending} onClick={loadMore}>Cargar más</Button>}
       </section>

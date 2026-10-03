@@ -28,6 +28,13 @@ describe("HistoryPanel: bitácora paginada", () => {
     expect(screen.queryByRole("button", { name: "Cargar más" })).toBeNull()
   })
 
+  // C7: el conteo es un estado. Con `role="status"` (atómico) se anuncia la frase
+  // entera, no sólo el nodo de texto que cambió («4 eventos»).
+  it("el conteo es un status que se anuncia entero", () => {
+    render(<HistoryPanel workspace={workspace} history={page(["e1", "e2"], "cursor-1")} />)
+    expect(screen.getByRole("status").textContent).toBe("Mostrando 2 eventos")
+  })
+
   it("sin nextCursor no hay botón", () => {
     render(<HistoryPanel workspace={workspace} history={page(["e1"], null)} />)
     expect(screen.queryByRole("button", { name: "Cargar más" })).toBeNull()
