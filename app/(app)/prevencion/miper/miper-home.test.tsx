@@ -90,6 +90,18 @@ describe("MiperHome — franja (A1: cada cifra lleva exactamente a su subconjunt
     expect(screen.getByText("Riesgos críticos sin control")).toBeInTheDocument()
     expect(screen.getByText("0/1")).toBeInTheDocument()
   })
+
+  it("sin faenas a su alcance (0/0) no dice «Todas tienen MIPER»: el estado vacío de la lista ya explica la situación", () => {
+    show("", [])
+    expect(screen.getByText("0/0")).toBeInTheDocument()
+    expect(screen.queryByText("Todas tienen MIPER")).toBeNull()
+    expect(screen.getAllByText("No hay faenas a tu alcance").length).toBeGreaterThan(0)
+  })
+
+  it("con todas las faenas con MIPER, sí lo dice", () => {
+    show("", [ROWS[0]!])
+    expect(screen.getByText("Todas tienen MIPER")).toBeInTheDocument()
+  })
 })
 
 describe("MiperHome — vista, estado y enlaces viejos", () => {

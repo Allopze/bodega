@@ -230,7 +230,8 @@ export function MiperHome({ rows, creationWorksites, currentYear, permissions }:
           {
             key: "con-miper", label: "Faenas con MIPER", value: `${summary.withMiper}/${summary.total}`,
             href: linkUnlessZero(summary.withMiper, PORTFOLIO_SUMMARY_HREF.withMiper),
-            secondary: withoutMiper > 0 ? `${countOf(withoutMiper, "faena")} sin MIPER` : "Todas tienen MIPER",
+            // Con 0/0 no hay «todas»: el estado vacío de la lista ya dice que no hay faenas a tu alcance.
+            secondary: withoutMiper > 0 ? `${countOf(withoutMiper, "faena")} sin MIPER` : summary.total > 0 ? "Todas tienen MIPER" : undefined,
           },
           {
             key: "en-revision", label: "En revisión", value: summary.inReview, secondary: "Técnica o de Legal y RRHH",
