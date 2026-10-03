@@ -523,12 +523,13 @@ vive en `portfolio.ts` (plan maestro de 2026-10-02).
     medida por implementar** con responsable y plazo; las existentes no la reemplazan
     (`checkMiperCompleteness`). «Atención requerida» aplica la misma regla.
 - **Separadores.** Se separan los saltos de línea. Dentro de una línea, «;» si la hay y, si no,
-  las comas de primer nivel; después, el «.X» pegado. Una línea con «I.–V.» (libro exportado) es
-  una medida con su tipo. Las frases se agrupan con `normalizeMeasure`
-  (`distinctPhrases`), no con `normalizeMiperName`.
+  las comas de primer nivel que no son decimales («1,5 METROS» no se parte); después, el «.X»
+  pegado. Una línea con «I.–V.» es una medida con su tipo. Las frases se agrupan con
+  `normalizeMeasure` (`distinctPhrases`), no con `normalizeMiperName`.
 - **Tipo.** Gana la palabra clave que aparece primero; sin ninguna, IV marcada «sin pista».
   Todo tipo inferido nace «Sugerida» y lo confirma una persona: eligiéndolo, con «Confirmar» o
-  con «Aceptar sugerencias».
+  con «Aceptar sugerencias». Sólo el «I.–V.» rotulado del libro exportado («IV. Controles
+  administrativos: …») nace confirmado; un romano suelto («I. USAR CASCO») es una sugerencia más.
 - **Plazos** (`deadlineSuggestion`, una vez por valor). Primero, «Existente · frecuencia» o
   «Existente» (como escribe PLAZOS el libro exportado) → existente con lo que sigue como
   frecuencia, o sin ella. Una fecha escrita → por implementar con esa fecha; «en N días» o «de N
@@ -536,7 +537,8 @@ vive en `portfolio.ts` (plan maestro de 2026-10-02).
   existe); «inmediato» → por implementar, hoy, y el paso dice cuántas medidas vencen hoy; una
   frecuencia («TRIMESTRAL», «ANTES DE CADA OPERACIÓN», «cada N días») → existente con ese texto.
   Sin pista → por implementar sin fecha. «PARCIALMENTE CONTROLADO - REQUIERE ACCIÓN INMEDIATA» se lee
-  como parcial (`controlledStatusOf`, por prefijo).
+  como parcial (`controlledStatusOf`, por prefijo), y también cualquier rótulo que diga «PARCIAL…»
+  («SÍ, PARCIALMENTE CONTROLADO»).
 - **Diálogo.** Cuatro pasos (Archivo → Filas → Medidas detectadas → Confirmar). Frases en páginas
   de 25; «Aceptar sugerencias (N)» cuenta también las «sin pista», y «Sólo sugeridas» las pone
   primero. Responsables y plazos se deciden una vez por valor; las personas elegibles son las
