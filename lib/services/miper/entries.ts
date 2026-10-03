@@ -131,11 +131,15 @@ export async function duplicateMiperEntry(input: unknown, access: MiperAccess): 
     const now = nowIso()
     const { magnitude: _m, classification: _c, ...copy } = source
     const [created] = await tx.insert(preventionRiskEntries).values({ ...copy, id: `riskentry-${nanoid()}`, rowNumber: after + 1, hazardCode: `R-${nanoid(8)}`, version: 1, createdAt: now, updatedAt: now }).returning()
-    const controls = await tx.select().from(preventionRiskControls).where(eq(preventionRiskControls.riskEntryId, source.id)).orderBy(asc(preventionRiskControls.createdAt))
+    // En el orden de la foto (`created_at, id`) y un milisegundo más por copia, como la copia al
+    // período siguiente: con el mismo `created_at` para todas, el desempate por los ids nuevos
+    // (al azar) las desordenaba (arrastre de la Fase C).
+    const controls = await tx.select().from(preventionRiskControls).where(eq(preventionRiskControls.riskEntryId, source.id))
+      .orderBy(asc(preventionRiskControls.createdAt), asc(preventionRiskControls.id))
     if (controls.length > 0) {
-      await tx.insert(preventionRiskControls).values(controls.map((control) => ({
+      await tx.insert(preventionRiskControls).values(controls.map((control, index) => ({
         ...control, id: `riskcontrol-${nanoid()}`, riskEntryId: created!.id, status: "proposed", effectivenessStatus: "not_assessed",
-        lastVerifiedAt: null, lastVerifiedByUserId: null, version: 1, createdAt: now, updatedAt: now,
+        lastVerifiedAt: null, lastVerifiedByUserId: null, version: 1, createdAt: new Date(Date.parse(now) + index).toISOString(), updatedAt: now,
       })))
     }
     await touchMatrix(tx, matrix.id, now)

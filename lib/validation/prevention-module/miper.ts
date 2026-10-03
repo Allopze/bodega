@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { FREQUENCY_MAX_LENGTH, MEASURE_MAX_LENGTH, RESPONSIBLE_MAX_LENGTH } from "@/lib/prevention/miper/re04-measures"
 import { civilDate } from "@/lib/validation/dates"
 
 const id = z.string().min(1)
@@ -83,14 +84,14 @@ export const miperControlSaveSchema = z.object({
   expectedVersion: version.optional(),
   values: z.object({
     hierarchy: z.enum(["elimination", "substitution", "engineering", "administrative", "ppe"], { message: "Selecciona el tipo de control (I a V)." }),
-    description: z.string().trim().min(3, "Describe la medida.").max(3000),
+    description: z.string().trim().min(3, "Describe la medida.").max(MEASURE_MAX_LENGTH),
     responsibleUserId: id.nullable().optional(),
-    responsibleName: z.string().trim().max(300).nullable().optional(),
+    responsibleName: z.string().trim().max(RESPONSIBLE_MAX_LENGTH).nullable().optional(),
     dueDate: isoDate.nullable().optional(),
     /* D5 (Fase C): una medida ya implementada se verifica con una frecuencia y no
      * lleva plazo. Opcionales: sin ellos se conserva lo que la medida ya tenía. */
     isExisting: z.boolean().optional(),
-    verificationFrequency: z.string().trim().max(120, "La frecuencia admite hasta 120 caracteres.").nullable().optional(),
+    verificationFrequency: z.string().trim().max(FREQUENCY_MAX_LENGTH, `La frecuencia admite hasta ${FREQUENCY_MAX_LENGTH} caracteres.`).nullable().optional(),
   }),
 }).refine((value) => !value.controlId || value.expectedVersion !== undefined, { path: ["expectedVersion"], message: "Falta la versión de la medida; recarga la matriz." })
 
@@ -266,12 +267,12 @@ const controlHierarchySchema = z.enum(["elimination", "substitution", "engineeri
 
 const responsibleDecisionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("user"), userId: id }),
-  z.object({ kind: z.literal("text"), name: z.string().trim().min(1, "Escribe el responsable.").max(300) }),
+  z.object({ kind: z.literal("text"), name: z.string().trim().min(1, "Escribe el responsable.").max(RESPONSIBLE_MAX_LENGTH) }),
   z.object({ kind: z.literal("none") }),
 ])
 
 const deadlineDecisionSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("existing"), frequency: z.string().trim().max(120, "La frecuencia admite hasta 120 caracteres.").nullable() }),
+  z.object({ kind: z.literal("existing"), frequency: z.string().trim().max(FREQUENCY_MAX_LENGTH, `La frecuencia admite hasta ${FREQUENCY_MAX_LENGTH} caracteres.`).nullable() }),
   z.object({ kind: z.literal("pending"), dueDate: isoDate.nullable() }),
 ])
 

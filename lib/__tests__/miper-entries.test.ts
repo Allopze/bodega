@@ -125,4 +125,20 @@ describe("filas de la matriz", () => {
     expect(control).toMatchObject({ isExisting: false, verificationFrequency: null, dueDate: "2026-11-30" })
     expect(Object.keys(control).slice(-2)).toEqual(["isExisting", "verificationFrequency"])
   })
+
+  it("duplicar un riesgo conserva el orden de sus medidas (arrastre de la Fase C)", async () => {
+    const entry = await svc.saveMiperEntry({ matrixId, values: { hazard: "Ruido de chancado", probability: 2, consequence: 2 } }, author)
+    // El orden de la foto es `created_at, id`. Los ids van al revés de ese orden y se insertan
+    // desordenados: ni el id ni el orden físico de las filas lo reproducen por casualidad.
+    const order = ["Encierro acústico", "Mantención del silenciador", "Rotación de turnos", "Pausas de recuperación", "Audiometría anual", "Protector auditivo"]
+    const controls = order.map((description, index) => ({
+      id: `dup-c${order.length - index}`, riskEntryId: entry.id, description, hierarchy: "administrative" as const,
+      createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(), updatedAt: "2026-01-01T00:00:00.000Z",
+    }))
+    await testDb.insert(schema.preventionRiskControls).values([3, 0, 5, 1, 4, 2].map((index) => controls[index]!))
+    const descriptionsOf = async (entryId: string) => (await buildMiperSnapshot(testDb, matrixId)).entries.find((item) => item.id === entryId)!.controls.map((control) => control.description)
+    expect(await descriptionsOf(entry.id)).toEqual(order)
+    const dup = await svc.duplicateMiperEntry({ matrixId, entryId: entry.id }, author)
+    expect(await descriptionsOf(dup.id)).toEqual(order)
+  })
 })

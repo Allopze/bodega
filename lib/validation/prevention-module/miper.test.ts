@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { FREQUENCY_MAX_LENGTH, MEASURE_MAX_LENGTH, RESPONSIBLE_MAX_LENGTH } from "@/lib/prevention/miper/re04-measures"
 import { createMiperSchema, IMPORT_LIMITS, miperApproveFinalSchema, miperControlSaveSchema, miperEntrySaveSchema, miperHeaderSchema, miperObservationSchema, programActionSchema, riskImportCommitSchema } from "./miper"
 
 const header = {
@@ -58,6 +59,21 @@ describe("schemas MIPER", () => {
     expect(riskImportCommitSchema.safeParse({ ...base, responsibleMapping: { x: { kind: "persona", userId: "u-1" } } }).success).toBe(false)
     const tooMany = Object.fromEntries(Array.from({ length: IMPORT_LIMITS.phrases + 1 }, (_, index) => [`medida ${index}`, "administrative"]))
     expect(riskImportCommitSchema.safeParse({ ...base, measureMapping: tooMany }).success).toBe(false)
+  })
+
+  it("los topes de la medida son las constantes de la importación: el editor y la carga aceptan lo mismo (arrastre de la Fase C)", () => {
+    const medida = (values: Record<string, unknown>) => miperControlSaveSchema.safeParse({ matrixId: "m1", entryId: "e1", values: { hierarchy: "ppe", description: "Uso de casco", ...values } }).success
+    const carga = (decisions: Record<string, unknown>) => riskImportCommitSchema.safeParse({ batchId: "b1", worksiteId: "ws", target: "draft", ...decisions }).success
+    expect(medida({ description: "x".repeat(MEASURE_MAX_LENGTH) })).toBe(true)
+    expect(medida({ description: "x".repeat(MEASURE_MAX_LENGTH + 1) })).toBe(false)
+    expect(medida({ responsibleName: "x".repeat(RESPONSIBLE_MAX_LENGTH) })).toBe(true)
+    expect(medida({ responsibleName: "x".repeat(RESPONSIBLE_MAX_LENGTH + 1) })).toBe(false)
+    expect(medida({ verificationFrequency: "x".repeat(FREQUENCY_MAX_LENGTH) })).toBe(true)
+    expect(medida({ verificationFrequency: "x".repeat(FREQUENCY_MAX_LENGTH + 1) })).toBe(false)
+    expect(carga({ responsibleMapping: { x: { kind: "text", name: "x".repeat(RESPONSIBLE_MAX_LENGTH) } } })).toBe(true)
+    expect(carga({ responsibleMapping: { x: { kind: "text", name: "x".repeat(RESPONSIBLE_MAX_LENGTH + 1) } } })).toBe(false)
+    expect(carga({ deadlineMapping: { x: { kind: "existing", frequency: "x".repeat(FREQUENCY_MAX_LENGTH) } } })).toBe(true)
+    expect(carga({ deadlineMapping: { x: { kind: "existing", frequency: "x".repeat(FREQUENCY_MAX_LENGTH + 1) } } })).toBe(false)
   })
 
   it("las fechas son de calendario: «2026-02-31» y «2026-13-45» no existen y el 29 de febrero sólo en año bisiesto", () => {

@@ -103,6 +103,12 @@ describe("deadlineSuggestion: los PLAZOS del RE-04 real", () => {
     ["PLAZO DE 15 DÍAS", { kind: "pending", dueDate: "2026-10-18" }, "relative"],
     // «cada N días» no es un plazo: es la frecuencia con que se verifica una medida existente.
     ["CADA 30 DÍAS", { kind: "existing", frequency: "CADA 30 DÍAS" }, "frequency"],
+    // «de N días» tras «cada», «frecuencia» o «periodicidad» dice cada cuánto se verifica, no un plazo (arrastre de la Fase C).
+    ["CADA PERÍODO DE 30 DÍAS", { kind: "existing", frequency: "CADA PERÍODO DE 30 DÍAS" }, "frequency"],
+    ["FRECUENCIA DE 30 DÍAS", { kind: "existing", frequency: "FRECUENCIA DE 30 DÍAS" }, "frequency"],
+    ["PERIODICIDAD DE 15 DÍAS", { kind: "existing", frequency: "PERIODICIDAD DE 15 DÍAS" }, "frequency"],
+    // «en N días» sigue siendo un plazo aunque después diga cada cuánto se controla.
+    ["IMPLEMENTAR EN 30 DÍAS Y LUEGO CADA MES", { kind: "pending", dueDate: "2026-11-02" }, "relative"],
     // El libro exportado describe la medida existente en PLAZOS: «Existente · frecuencia» o «Existente».
     // Se reconoce antes que todo lo demás: lo que sigue es la frecuencia, aunque parezca un plazo.
     ["Existente · Trimestral", { kind: "existing", frequency: "Trimestral" }, "existing"],

@@ -19,11 +19,16 @@ import { cleanMiperName, normalizeMiperName } from "./names"
 import type { Re04ColumnLabel } from "./re04-import"
 import { CONTROL_HIERARCHY_LABEL, type ControlHierarchy } from "./snapshot"
 
-/** Largo máximo de una medida: el de `miperControlSaveSchema.values.description`. */
+/*
+ * Topes de una medida. Son la fuente: los esquemas MIPER
+ * (`lib/validation/prevention-module/miper.ts`) los importan, así el editor de la
+ * medida, las acciones masivas y la carga del RE-04 aceptan exactamente lo mismo.
+ */
+/** Largo máximo de una medida (`description`). */
 export const MEASURE_MAX_LENGTH = 3000
-/** Largo máximo de una frecuencia de verificación: el de `deadlineDecisionSchema` y `verificationFrequency`. */
+/** Largo máximo de una frecuencia de verificación (`verificationFrequency`, `deadlineDecisionSchema`). */
 export const FREQUENCY_MAX_LENGTH = 120
-/** Largo máximo de un responsable escrito: el de `responsibleDecisionSchema` y `responsibleName`. */
+/** Largo máximo de un responsable escrito (`responsibleName`, `responsibleDecisionSchema`). */
 export const RESPONSIBLE_MAX_LENGTH = 300
 
 const MEASURE_COLUMN: Re04ColumnLabel = "MEDIDA DE CONTROL"
@@ -254,10 +259,17 @@ export function existingDeadlineText(frequency: string | null | undefined): stri
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 const LOCAL_DATE = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/
 /**
- * «EN 30 DÍAS» o «PLAZO DE 15 DÍAS» (sobre el texto ya sin tildes). Pide el «en»
- * o el «de»: «CADA 30 DÍAS» es una frecuencia, no un plazo.
+ * «EN 30 DÍAS» (sobre el texto ya sin tildes): siempre un plazo, aunque después
+ * diga cada cuánto se controla. Pide el «en»: «CADA 30 DÍAS» es una frecuencia.
  */
-const IN_DAYS = /\b(?:en|de) (\d{1,3}) dias?\b/
+const IN_DAYS = /\ben (\d{1,3}) dias?\b/
+/**
+ * «PLAZO DE 15 DÍAS» también es un plazo, salvo que el texto diga cada cuánto se
+ * repite: «CADA PERÍODO DE 30 DÍAS», «FRECUENCIA DE 30 DÍAS» y «PERIODICIDAD DE
+ * 15 DÍAS» son frecuencias (arrastre de la Fase C).
+ */
+const OF_DAYS = /\bde (\d{1,3}) dias?\b/
+const RECURRING = /\b(?:cada|frecuencia|periodicidad)\b/
 /**
  * «AL OCURRIR» / «INMEDIATO AL OCURRIR»: una medida de contingencia que ya existe
  * (un kit de derrames) y se aplica cuando pasa el evento. Va antes de «inmediato».
@@ -265,7 +277,7 @@ const IN_DAYS = /\b(?:en|de) (\d{1,3}) dias?\b/
 const ON_OCCURRENCE = /\bal ocurrir\b/
 const ON_OCCURRENCE_FREQUENCY = "Al ocurrir"
 const IMMEDIATE = /\binmediat/
-const FREQUENCY = /\b(diari[oa]s?|semanal(es)?|quincenal(es)?|mensual(es)?|bimestral(es)?|trimestral(es)?|cuatrimestral(es)?|semestral(es)?|anual(es)?|permanente|continu[oa]|periodic[oa]|cada|siempre)\b/
+const FREQUENCY = /\b(diari[oa]s?|semanal(es)?|quincenal(es)?|mensual(es)?|bimestral(es)?|trimestral(es)?|cuatrimestral(es)?|semestral(es)?|anual(es)?|permanente|continu[oa]|periodic[oa]|periodicidad|frecuencia|cada|siempre)\b/
 
 function calendarDate(year: number, month: number, day: number): string | null {
   const date = new Date(Date.UTC(year, month - 1, day))
@@ -277,9 +289,11 @@ function calendarDate(year: number, month: number, day: number): string | null {
  * D6: lo que sugiere un valor de PLAZOS. Primero, lo que escribe el libro
  * exportado: «Existente · frecuencia» o «Existente» → existente, con lo que sigue
  * como frecuencia (o sin ella), aunque parezca un plazo. Una fecha → por
- * implementar con esa fecha; «en N días» o «de N días» → hoy + N (antes que la frecuencia:
- * «IMPLEMENTAR EN 30 DÍAS Y CONTROL DIARIO», «PLAZO DE 15 DÍAS»; «CADA 30 DÍAS»
- * no lleva «en» ni «de» y es frecuencia);
+ * implementar con esa fecha; «en N días» → hoy + N (antes que la frecuencia:
+ * «IMPLEMENTAR EN 30 DÍAS Y CONTROL DIARIO»); «de N días» → hoy + N salvo que el
+ * texto diga «cada», «frecuencia» o «periodicidad» («PLAZO DE 15 DÍAS» es un
+ * plazo; «CADA PERÍODO DE 30 DÍAS», una frecuencia; «CADA 30 DÍAS» no lleva «en»
+ * ni «de» y también es frecuencia);
  * «al ocurrir» → existente, con frecuencia «Al ocurrir» (antes que «inmediato»:
  * «INMEDIATO AL OCURRIR» es una contingencia que ya existe); «inmediato» → por
  * implementar hoy («INMEDIATO / ANTES DE CONTINUAR LA TAREA»); una frecuencia
@@ -300,7 +314,7 @@ export function deadlineSuggestion(text: string | null, today: string): { decisi
   const date = iso ? calendarDate(Number(iso[1]), Number(iso[2]), Number(iso[3]))
     : local ? calendarDate(Number(local[3]), Number(local[2]), Number(local[1])) : null
   if (date) return { decision: { kind: "pending", dueDate: date }, source: "date" }
-  const days = IN_DAYS.exec(key)
+  const days = IN_DAYS.exec(key) ?? (RECURRING.test(key) ? null : OF_DAYS.exec(key))
   if (days) return { decision: { kind: "pending", dueDate: addDaysToPlainDate(today, Number(days[1])) }, source: "relative" }
   if (ON_OCCURRENCE.test(key)) return { decision: { kind: "existing", frequency: ON_OCCURRENCE_FREQUENCY }, source: "frequency" }
   if (IMMEDIATE.test(key)) return { decision: { kind: "pending", dueDate: today }, source: "immediate" }
