@@ -10,7 +10,7 @@ import { useOperation } from "@/lib/hooks/use-operation"
 import { STAGE_LABEL } from "@/lib/prevention/miper/states"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
 import type { MiperWorkspace } from "@/lib/services/miper/queries"
-import { formatDateTime } from "@/lib/utils"
+import { countOf, formatDateTime } from "@/lib/utils"
 import { addMiperObservationAction } from "../actions"
 import { ObservationItem } from "./observation-item"
 
@@ -38,7 +38,7 @@ export function ReviewPanel({ workspace, mode, onOpenEntry }: ReviewPanelProps) 
         </p>
       )}
       {mode.canRespond && (
-        <Callout tone="warning" title={openCount > 0 ? `Tienes ${openCount} observación(es) por responder` : "Todas las observaciones están respondidas"}>
+        <Callout tone="warning" title={openCount > 0 ? `Tienes ${countOf(openCount, "observación", "observaciones")} por responder` : "Todas las observaciones están respondidas"}>
           Corrige la matriz donde corresponda, responde cada observación y luego usa «Reenviar a revisión».
         </Callout>
       )}

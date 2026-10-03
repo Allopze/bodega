@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Field } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
+import { countOf } from "@/lib/utils"
 import { useOperation } from "@/lib/hooks/use-operation"
 import type { CompletenessIssue } from "@/lib/prevention/miper/completeness"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
@@ -99,7 +100,7 @@ export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenE
       </Dialog>
 
       <ConfirmDialog open={dialog === "return"} onOpenChange={(open) => { if (!open) close() }} title="Devolver con observaciones"
-        description={`La MIPER vuelve a la prevencionista con ${openObservations} observación(es) abierta(s).`} confirmLabel="Devolver" variant="warning"
+        description={`La MIPER vuelve a la prevencionista con ${countOf(openObservations, "observación abierta", "observaciones abiertas")}.`} confirmLabel="Devolver" variant="warning"
         reasonLabel="Comentario para la prevencionista" loading={operation.pending}
         onConfirm={(reason) => operation.run(() => returnMiperAction({ ...base, comment: reason }), close)} />
       <ConfirmDialog open={dialog === "approveTechnical"} onOpenChange={(open) => { if (!open) close() }} title="Aprobar revisión técnica"

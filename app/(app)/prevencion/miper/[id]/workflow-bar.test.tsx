@@ -65,4 +65,16 @@ describe("WorkflowBar", () => {
     expect(screen.queryByRole("button", { name: /no tiene registros/ })).toBeNull()
     expect(onOpenFicha).not.toHaveBeenCalled()
   })
+
+  it("«Devolver con observaciones» cuenta las abiertas en singular y plural", () => {
+    const reviewer = { ...mode, canEdit: false, canReviewTechnical: true } as WorkspaceMode
+    const reviewing = { ...workspace, matrix: { ...workspace.matrix, status: "in_review", reviewState: "technical" }, openRound: { id: "r1", stage: "technical", roundNumber: 1 } } as unknown as MiperWorkspace
+    const { unmount } = render(<WorkflowBar workspace={reviewing} mode={reviewer} issues={[]} openObservations={1} onOpenFicha={vi.fn()} onOpenEntry={vi.fn()} />)
+    fireEvent.click(screen.getByRole("button", { name: "Devolver con observaciones" }))
+    expect(screen.getByText("La MIPER vuelve a la prevencionista con 1 observación abierta.")).toBeTruthy()
+    unmount()
+    render(<WorkflowBar workspace={reviewing} mode={reviewer} issues={[]} openObservations={3} onOpenFicha={vi.fn()} onOpenEntry={vi.fn()} />)
+    fireEvent.click(screen.getByRole("button", { name: "Devolver con observaciones" }))
+    expect(screen.getByText("La MIPER vuelve a la prevencionista con 3 observaciones abiertas.")).toBeTruthy()
+  })
 })

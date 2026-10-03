@@ -18,6 +18,7 @@ import { changesByEntry, type EntryChange } from "@/lib/prevention/miper/snapsho
 import { hrefToEntry, hrefToFicha, hrefToMatrixWith, hrefToTab, readWorkspaceView, type WorkspaceTab } from "@/lib/prevention/miper/workspace-url"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
 import type { MiperHistoryEvent, MiperWorkspace } from "@/lib/services/miper/queries"
+import { countOf } from "@/lib/utils"
 import { openMiperRoundAction } from "../actions"
 import { FichaSheet } from "./ficha-sheet"
 import { HistoryPanel } from "./history-panel"
@@ -146,7 +147,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId }: { works
         <NextStepCard step={step} hrefFor={hrefFor} />
         {reviewing && <Callout tone="info" title="Estás revisando la versión enviada">Los cambios que la prevencionista haga después del envío quedan para la ronda siguiente.</Callout>}
         {intolerable > 0 && (
-          <Callout tone="danger" role="alert" title={`${intolerable} riesgo(s) Intolerable(s)`}>
+          <Callout tone="danger" role="alert" title={countOf(intolerable, "riesgo Intolerable", "riesgos Intolerables")}>
             {CLASSIFICATION_CRITERIA.intolerable}
           </Callout>
         )}
