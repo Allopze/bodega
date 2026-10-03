@@ -28,7 +28,7 @@ afterEach(() => {
 describe("WorksiteSwitcher", () => {
   it("no pide la lista al pintarse: la pide al abrir el menú, una sola vez", async () => {
     listMiperWorksiteTargetsAction.mockResolvedValue({ ok: true, data: { targets: TARGETS } })
-    render(<WorksiteSwitcher currentMatrixId="m1" />)
+    render(<WorksiteSwitcher currentWorksiteId="ws-a" />)
     expect(listMiperWorksiteTargetsAction).not.toHaveBeenCalled()
     abrir()
     expect(await screen.findByRole("menuitem", { name: "Faena B · 2027" })).toBeTruthy()
@@ -41,7 +41,7 @@ describe("WorksiteSwitcher", () => {
 
   it("otra faena navega con router.push a su MIPER; una faena sin MIPER, a la portada acotada a ella", async () => {
     listMiperWorksiteTargetsAction.mockResolvedValue({ ok: true, data: { targets: TARGETS } })
-    render(<WorksiteSwitcher currentMatrixId="m1" />)
+    render(<WorksiteSwitcher currentWorksiteId="ws-a" />)
     abrir()
     fireEvent.click(await screen.findByRole("menuitem", { name: "Faena B · 2027" }))
     expect(router.push).toHaveBeenCalledWith("/prevencion/miper/m2")
@@ -54,17 +54,18 @@ describe("WorksiteSwitcher", () => {
     expect(beforeForwardNavigation.mock.invocationCallOrder[1]).toBeLessThan(router.push.mock.invocationCallOrder[1]!)
   })
 
-  it("la MIPER actual queda marcada y no se puede elegir", async () => {
+  it("la faena actual queda marcada y no se puede elegir; las demás, sí", async () => {
     listMiperWorksiteTargetsAction.mockResolvedValue({ ok: true, data: { targets: TARGETS } })
-    render(<WorksiteSwitcher currentMatrixId="m1" />)
+    render(<WorksiteSwitcher currentWorksiteId="ws-a" />)
     abrir()
     expect(await screen.findByRole("menuitem", { name: "Faena A · 2026 (actual)" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("menuitem", { name: "Faena B · 2027" })).not.toHaveAttribute("aria-disabled")
   })
 
   it("si la lectura falla lo dice y deja reintentar", async () => {
     listMiperWorksiteTargetsAction.mockResolvedValueOnce({ ok: false, message: "No tienes permisos para realizar esta acción" })
     listMiperWorksiteTargetsAction.mockResolvedValueOnce({ ok: true, data: { targets: TARGETS } })
-    render(<WorksiteSwitcher currentMatrixId="m1" />)
+    render(<WorksiteSwitcher currentWorksiteId="ws-a" />)
     abrir()
     fireEvent.click(await screen.findByRole("menuitem", { name: /Reintentar/ }))
     expect(await screen.findByRole("menuitem", { name: "Faena B · 2027" })).toBeTruthy()

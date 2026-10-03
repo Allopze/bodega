@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ShellHeaderProvider } from "@/components/layout/header-context"
 import { taskKeyOf } from "@/lib/prevention/miper/matrix-tree"
@@ -228,5 +228,17 @@ describe("MiperWorkspaceView — «Elaboró» y «Cambiar de faena» (Fase B)", 
     show("")
     expect(screen.getByRole("button", { name: "Cambiar de faena" })).toBeTruthy()
     expect(listMiperWorksiteTargetsAction).not.toHaveBeenCalled()
+  })
+
+  it("«Cambiar de faena» marca «(actual)» la faena de ESTA MIPER aunque la principal de la faena sea otra (la vigente 2026 con un borrador 2027)", async () => {
+    // La lista trae la MIPER principal de cada faena: la de Planta es el borrador 2027 (m2), no la que se mira (m1).
+    listMiperWorksiteTargetsAction.mockResolvedValue({ ok: true, data: { targets: [
+      { worksiteId: "ws1", worksiteName: "Planta", matrixId: "m2", period: 2027 },
+      { worksiteId: "ws2", worksiteName: "Mina", matrixId: "m3", period: 2026 },
+    ] } })
+    show("", workspaceOf({ matrix: { id: "m1", version: 3, status: "published", reviewState: "none", isLegacy: false, worksiteId: "ws1", worksiteName: "Planta", period: 2026 } } as unknown as Partial<MiperWorkspace>))
+    fireEvent.keyDown(screen.getByRole("button", { name: "Cambiar de faena" }), { key: "Enter" })
+    expect(await screen.findByRole("menuitem", { name: "Planta · 2027 (actual)" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("menuitem", { name: "Mina · 2026" })).not.toHaveAttribute("aria-disabled")
   })
 })

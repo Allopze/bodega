@@ -147,7 +147,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, programPr
         breadcrumb={<Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "MIPER", href: "/prevencion/miper" }, { label: worksiteLabel }]} />}
         actions={(
           <div className="flex flex-wrap items-center gap-2">
-            <WorksiteSwitcher currentMatrixId={workspace.matrix.id} />
+            <WorksiteSwitcher currentWorksiteId={workspace.matrix.worksiteId} />
             {editable && <Button variant="secondary" onClick={() => setNewTaskOpen(true)}>Nueva tarea</Button>}
             <WorkflowBar workspace={workspace} mode={mode} issues={issues} openObservations={openObservations} onOpenEntry={openEntry} onOpenFicha={openFicha} />
           </div>
