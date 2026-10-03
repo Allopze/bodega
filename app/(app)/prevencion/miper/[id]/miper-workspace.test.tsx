@@ -194,6 +194,14 @@ describe("MiperWorkspaceView — pestaña Resumen (Fase B)", () => {
     expect(screen.getByRole("link", { name: /^Riesgos completos/ })).toBeTruthy()
     expect(screen.getByRole("progressbar", { name: /^Transporte: / })).toBeTruthy()
   })
+
+  it("con ?tab=resumen&buscar=x la tarjeta no ofrece «Ver los pendientes»: la cifra «Riesgos completos» lleva ahí limpiando los filtros", () => {
+    show("tab=resumen&buscar=x")
+    expect(screen.getByText("Faltan datos en 1 riesgo")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Siguiente pendiente" })).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "Ver los pendientes" })).toBeNull()
+    expect(screen.getByRole("link", { name: /^Riesgos completos/ }).getAttribute("href")).toBe("/prevencion/miper/m1?completitud=pendientes")
+  })
 })
 
 describe("MiperWorkspaceView — «Elaboró» y «Cambiar de faena» (Fase B)", () => {

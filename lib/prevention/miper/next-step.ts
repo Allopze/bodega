@@ -69,11 +69,15 @@ export function nextStepFor(input: NextStepInput): NextStep | null {
 
 /**
  * Dónde se ve la tarjeta (spec §4): lo decide `step.scope`. Ya en Revisión no
- * se ofrece «Ir a Revisión».
+ * se ofrece «Ir a Revisión». En Resumen no se ofrece «Ver los pendientes»: la
+ * cifra «Riesgos completos» ya lleva a ese subconjunto limpiando los filtros, y
+ * el filtro del paso los conserva (`hrefToMatrixWith`), así que llegaría a otra
+ * lista (A1/A5: una cifra, una representación).
  */
 export function nextStepInView(step: NextStep | null, view: { atRoot: boolean; tab: string }): NextStep | null {
   if (!step || (!view.atRoot && step.scope !== "everywhere")) return null
-  if (view.tab !== "revision") return step
-  const drop = (action: NextStepAction | null) => (action?.kind === "tab" && action.tab === "revision" ? null : action)
+  if (view.tab !== "revision" && view.tab !== "resumen") return step
+  const drop = (action: NextStepAction | null) =>
+    ((view.tab === "revision" && action?.kind === "tab" && action.tab === "revision") || (view.tab === "resumen" && action?.kind === "filtro") ? null : action)
   return { ...step, action: drop(step.action), secondary: drop(step.secondary) }
 }

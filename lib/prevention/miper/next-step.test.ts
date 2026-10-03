@@ -77,4 +77,9 @@ describe("nextStepInView", () => {
     expect(nextStepInView(respond, { atRoot: true, tab: "programa" })?.action).toEqual({ kind: "tab", tab: "revision" })
     expect(nextStepInView(pending, { atRoot: true, tab: "revision" })).toEqual(pending)
   })
+  it("en Resumen no ofrece «Ver los pendientes»: la cifra «Riesgos completos» es su única representación (A1/A5)", () => {
+    // El filtro del paso conserva `buscar`/`clasificacion`/…; la cifra del Resumen los limpia. Dos caminos al mismo subconjunto que llegan a listas distintas.
+    expect(nextStepInView(pending, { atRoot: true, tab: "resumen" })).toMatchObject({ title: "Faltan datos en 2 riesgos", action: { kind: "riesgo", entryId: "b", purpose: "pending" }, secondary: null })
+    expect(nextStepInView(pending, { atRoot: true, tab: "matriz" })?.secondary).toEqual({ kind: "filtro", completitud: "pendientes" })
+  })
 })
