@@ -36,6 +36,7 @@ import { TaskView } from "./task-view"
 import { useEntryAutosave } from "./use-entry-autosave"
 import { useRowsFromSource } from "./use-rows-from-source"
 import { WorkflowBar } from "./workflow-bar"
+import { WorksiteSwitcher } from "./worksite-switcher"
 import { navigateWorkspace, WorkspaceLink } from "./workspace-nav"
 
 /**
@@ -120,6 +121,8 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, programPr
   const task = view.taskKey ? findTask(fullTree, view.taskKey) : null
 
   const versionLabel = workspace.versions[0] ? `v${workspace.versions[0].versionNumber}` : "sin versión aprobada"
+  // «Elaboró» (Fase B): quien envió la ronda abierta o, sin ronda, quien elaboró la última versión aprobada.
+  const authorName = workspace.openRound?.submittedByName ?? workspace.versions[0]?.elaboratedByName ?? null
   const nextStep = nextStepFor({
     mode, status: workspace.matrix.status, reviewState: workspace.matrix.reviewState, hasOpenRound: Boolean(workspace.openRound),
     hasPendingChanges: workspace.pendingDiff.hasChanges, versionLabel, issues, openObservations, rows,
@@ -144,6 +147,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, programPr
         breadcrumb={<Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "MIPER", href: "/prevencion/miper" }, { label: worksiteLabel }]} />}
         actions={(
           <div className="flex flex-wrap items-center gap-2">
+            <WorksiteSwitcher currentMatrixId={workspace.matrix.id} />
             {editable && <Button variant="secondary" onClick={() => setNewTaskOpen(true)}>Nueva tarea</Button>}
             <WorkflowBar workspace={workspace} mode={mode} issues={issues} openObservations={openObservations} onOpenEntry={openEntry} onOpenFicha={openFicha} />
           </div>
@@ -181,7 +185,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, programPr
                 : <EmptyState title="Esta tarea ya no existe" description="Puede que sus riesgos se hayan movido o eliminado." action={<Button asChild><WorkspaceLink href={hrefToTab(pathname, searchParams, "matriz")} restoreScroll>Volver a la matriz</WorkspaceLink></Button>} />
             ) : (
               <>
-                <SummaryStrip snapshot={liveSnapshot} authorName={null} submittedAt={workspace.openRound?.submittedAt ?? null} versionLabel={versionLabel}
+                <SummaryStrip snapshot={liveSnapshot} authorName={authorName} submittedAt={workspace.openRound?.submittedAt ?? null} versionLabel={versionLabel}
                   taskCount={fullTree.reduce((sum, activity) => sum + activity.tasks.length, 0)} completeCount={rows.length - incomplete.size}
                   activeClassifications={filters.classifications} pendingActive={filters.onlyIncomplete} uncontrolledActive={filters.controlled === "no"}
                   onToggleClassification={(cls) => setFilter("clasificacion", (filters.classifications.includes(cls) ? filters.classifications.filter((item) => item !== cls) : [...filters.classifications, cls]).join(",") || null)}

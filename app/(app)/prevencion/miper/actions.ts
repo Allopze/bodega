@@ -20,6 +20,7 @@ import { resolveRiskReviewTrigger, verifyRiskControl } from "@/lib/services/prev
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { deleteMiperControl, deleteMiperEntry, duplicateMiperEntry, saveMiperControl, saveMiperEntry } from "@/lib/services/miper/entries"
 import { commitRiskImport, previewRiskImport } from "@/lib/services/miper/import"
+import { listMiperWorksiteTargets } from "@/lib/services/miper/portfolio"
 import { createMiper, discardMiperDraft, updateMiperHeader } from "@/lib/services/miper/matrices"
 import { addMiperObservation, reopenMiperObservation, resolveMiperObservation, respondMiperObservation } from "@/lib/services/miper/observations"
 import { applyProgramGeneration, linkActionControls, proposeProgramActions, retireProgramAction, saveProgramAction, unlinkActionControl, updateProgramHeader } from "@/lib/services/miper/program"
@@ -86,6 +87,15 @@ export async function updateMiperHeaderAction(input: unknown) {
 }
 export async function discardMiperDraftAction(input: unknown) {
   return guarded("prevention:risk:edit", input, (access) => discardMiperDraft(input, access), { success: "Borrador descartado" })
+}
+
+/**
+ * Lista del selector «Cambiar de faena» (Fase B). Es una lectura bajo demanda:
+ * el selector la pide al ABRIR el menú, nunca en cada render del espacio de
+ * trabajo. El alcance sale de la sesión, nunca del input. No revalida.
+ */
+export async function listMiperWorksiteTargetsAction(input: unknown = {}) {
+  return guarded("prevention:risk:view", input, (access) => listMiperWorksiteTargets(access), { revalidate: false, data: (targets) => ({ targets }) })
 }
 
 // ── Filas y medidas. Guardar un campo no revalida: el editor conserva su

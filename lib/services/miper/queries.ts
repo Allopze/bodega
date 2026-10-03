@@ -37,7 +37,8 @@ export type MiperWorkspace = {
   controlVersions: Record<string, number>
   versions: Array<{ id: string; versionNumber: number; approvedAt: string; changeSummary: string; approverName: string; technicalReviewerName: string; elaboratedByName: string }>
   lastVersionSnapshot: MiperSnapshot | null
-  openRound: { id: string; stage: "technical" | "legal_rrhh"; roundNumber: number; openedAt: string | null; submittedByUserId: string; submittedAt: string; snapshot: MiperSnapshot } | null
+  /** `submittedByName`: «Elaboró» del espacio de trabajo (Fase B). */
+  openRound: { id: string; stage: "technical" | "legal_rrhh"; roundNumber: number; openedAt: string | null; submittedByUserId: string; submittedByName: string | null; submittedAt: string; snapshot: MiperSnapshot } | null
   reviewDiff: SnapshotDiff | null
   /** Contra qué foto se calculó `reviewDiff`: da los valores "antes" del diff campo por campo. */
   reviewBaselineSnapshot: MiperSnapshot | null
@@ -132,7 +133,7 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
     reviewDiff = diffSnapshots(baseline, round.snapshot as MiperSnapshot)
     reviewBaselineSnapshot = baseline
   }
-  const names = await userNames(db, observationRows.flatMap((observation) => [observation.authorUserId, observation.respondedByUserId]))
+  const names = await userNames(db, [...observationRows.flatMap((observation) => [observation.authorUserId, observation.respondedByUserId]), round?.submittedByUserId])
   const responsibleOptions = [...responsibleRows]
   if (!responsibleOptions.some((option) => option.id === access.userId)) {
     const self = await userNames(db, [access.userId])
@@ -148,7 +149,7 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
     controlVersions: Object.fromEntries(controlVersionRows.map((control) => [control.id, control.version])),
     versions: versionRows.map((version) => ({ id: version.id, versionNumber: version.versionNumber, approvedAt: version.approvedAt, changeSummary: version.changeSummary, approverName: version.approverName, technicalReviewerName: version.technicalReviewerName, elaboratedByName: version.elaboratedByName })),
     lastVersionSnapshot,
-    openRound: round ? { id: round.id, stage: round.stage as "technical" | "legal_rrhh", roundNumber: round.roundNumber, openedAt: round.openedAt, submittedByUserId: round.submittedByUserId, submittedAt: round.submittedAt, snapshot: round.snapshot as MiperSnapshot } : null,
+    openRound: round ? { id: round.id, stage: round.stage as "technical" | "legal_rrhh", roundNumber: round.roundNumber, openedAt: round.openedAt, submittedByUserId: round.submittedByUserId, submittedByName: names.get(round.submittedByUserId) ?? null, submittedAt: round.submittedAt, snapshot: round.snapshot as MiperSnapshot } : null,
     reviewDiff,
     reviewBaselineSnapshot,
     pendingDiff: diffSnapshots(lastVersionSnapshot, snapshot),

@@ -16,7 +16,7 @@ vi.mock("../actions", () => ({
   addMiperObservationAction: vi.fn(), addOccurrenceEvidenceAction: vi.fn(), applyProgramGenerationAction: vi.fn(),
   approveMiperFinalAction: vi.fn(), approveMiperTechnicalAction: vi.fn(), deleteMiperControlAction: vi.fn(),
   deleteMiperEntryAction: vi.fn(), discardMiperDraftAction: vi.fn(), duplicateMiperEntryAction: vi.fn(),
-  loadOccurrenceDetailAction: vi.fn(), loadProgramWorkspaceAction: vi.fn(), openMiperRoundAction: vi.fn(),
+  listMiperWorksiteTargetsAction: vi.fn(), loadOccurrenceDetailAction: vi.fn(), loadProgramWorkspaceAction: vi.fn(), openMiperRoundAction: vi.fn(),
   proposeProgramActionsAction: vi.fn(), recordOccurrenceAction: vi.fn(), reopenMiperObservationAction: vi.fn(),
   requestMiperCorrectionsAction: vi.fn(), resolveMiperObservationAction: vi.fn(), respondMiperObservationAction: vi.fn(),
   retireProgramActionAction: vi.fn(), returnMiperAction: vi.fn(), saveMiperControlAction: vi.fn(),
@@ -192,5 +192,31 @@ describe("MiperWorkspaceView — pestaña Resumen (Fase B)", () => {
     expect(screen.getByRole("tab", { name: "Resumen", selected: true })).toBeTruthy()
     expect(screen.getByRole("link", { name: /^Riesgos completos/ })).toBeTruthy()
     expect(screen.getByRole("progressbar", { name: /^Transporte: / })).toBeTruthy()
+  })
+})
+
+describe("MiperWorkspaceView — «Elaboró» y «Cambiar de faena» (Fase B)", () => {
+  const elaboro = () => screen.getByText((_, node) => node?.tagName === "DT" && node.textContent?.trim() === "Elaboró").nextElementSibling?.textContent
+  const round = { id: "r1", stage: "technical", roundNumber: 1, openedAt: null, submittedByUserId: "u2", submittedByName: "Ana Pérez", submittedAt: "2026-10-01T15:00:00.000Z", snapshot: { header, entries: [entry()] } }
+  const version = { id: "v1", versionNumber: 1, approvedAt: "2026-09-01T00:00:00.000Z", changeSummary: "Emisión", approverName: "Legal", technicalReviewerName: "Jefa", elaboratedByName: "Luis Soto" }
+
+  it("con una ronda abierta, «Elaboró» es quien la envió", () => {
+    show("", workspaceOf({ openRound: round, versions: [version] } as unknown as Partial<MiperWorkspace>))
+    expect(elaboro()).toContain("Ana Pérez")
+  })
+
+  it("sin ronda abierta, quien elaboró la última versión aprobada", () => {
+    show("", workspaceOf({ versions: [version] } as unknown as Partial<MiperWorkspace>))
+    expect(elaboro()).toContain("Luis Soto")
+  })
+
+  it("sin ronda ni versión aprobada no hay «Elaboró»", () => {
+    show("")
+    expect(screen.queryByText((_, node) => node?.tagName === "DT" && node.textContent?.trim() === "Elaboró")).toBeNull()
+  })
+
+  it("la cabecera ofrece «Cambiar de faena» sin pedir la lista al pintarse", () => {
+    show("")
+    expect(screen.getByRole("button", { name: "Cambiar de faena" })).toBeTruthy()
   })
 })

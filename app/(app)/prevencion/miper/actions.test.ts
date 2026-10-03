@@ -7,6 +7,7 @@ const saveMiperEntry = vi.hoisted(() => vi.fn())
 const submitMiperForReview = vi.hoisted(() => vi.fn())
 const approveMiperTechnicalReview = vi.hoisted(() => vi.fn())
 const approveMiperFinal = vi.hoisted(() => vi.fn())
+const listMiperWorksiteTargets = vi.hoisted(() => vi.fn())
 const revalidatePath = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({ guardPermission }))
@@ -19,9 +20,10 @@ vi.mock("@/lib/services/miper/entries", () => ({ saveMiperEntry, duplicateMiperE
 vi.mock("@/lib/services/miper/observations", () => ({ addMiperObservation: vi.fn(), respondMiperObservation: vi.fn(), resolveMiperObservation: vi.fn(), reopenMiperObservation: vi.fn() }))
 vi.mock("@/lib/services/miper/workflow", () => ({ submitMiperForReview, openMiperReviewRound: vi.fn(), returnMiperWithObservations: vi.fn(), approveMiperTechnicalReview, requestMiperCorrections: vi.fn(), approveMiperFinal }))
 vi.mock("@/lib/services/miper/risk-factors", () => ({ saveRiskFactor: vi.fn(), setRiskFactorActive: vi.fn() }))
+vi.mock("@/lib/services/miper/portfolio", () => ({ listMiperWorksiteTargets }))
 
 import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
-import { approveMiperFinalAction, approveMiperTechnicalAction, createMiperAction, saveMiperEntryAction, submitMiperAction } from "./actions"
+import { approveMiperFinalAction, approveMiperTechnicalAction, createMiperAction, listMiperWorksiteTargetsAction, saveMiperEntryAction, submitMiperAction } from "./actions"
 
 const denied = { session: null, error: { ok: false, message: "No tienes permisos para realizar esta acción" } }
 const session = { user: { id: "trusted-user", permissions: ["prevention:risk:edit"] } }
@@ -96,5 +98,19 @@ describe("acciones MIPER: frontera de autorización", () => {
     const state = await submitMiperAction({ matrixId: "m1", expectedVersion: 4 })
     expect(state.ok).toBe(false)
     expect(state.message).not.toMatch(/relation/)
+  })
+
+  it("la lista del selector de faena exige ver MIPER, sale del alcance de la sesión y no revalida", async () => {
+    guardPermission.mockResolvedValue(denied)
+    await expect(listMiperWorksiteTargetsAction({})).resolves.toEqual(denied.error)
+    expect(guardPermission).toHaveBeenCalledWith("prevention:risk:view")
+    expect(listMiperWorksiteTargets).not.toHaveBeenCalled()
+
+    const targets = [{ worksiteId: "ws-own", worksiteName: "Faena propia", matrixId: "m1", period: 2026 }]
+    guardPermission.mockResolvedValue({ session, error: null })
+    listMiperWorksiteTargets.mockResolvedValue(targets)
+    await expect(listMiperWorksiteTargetsAction({ userId: "spoofed" })).resolves.toEqual({ ok: true, data: { targets } })
+    expect(listMiperWorksiteTargets).toHaveBeenCalledWith({ userId: "trusted-user", scope: { mode: "some", ids: ["ws-own"] }, permissions: ["prevention:risk:edit"] })
+    expect(revalidatePath).not.toHaveBeenCalled()
   })
 })

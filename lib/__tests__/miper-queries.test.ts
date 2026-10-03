@@ -65,6 +65,8 @@ describe("consultas MIPER", () => {
     const inbox = await q.listMiperInbox(jefa)
     expect(inbox.map((r) => [r.id, r.inboxReason, r.submittedByName])).toEqual([[matrixId, "Pendiente de tu revisión", "Prevencionista Q"]])
     expect(inbox[0]!.submittedByUserId).toBe("u-q")
+    // «Elaboró» del espacio de trabajo (Fase B): el nombre de quien envió la ronda abierta.
+    expect((await q.getMiperWorkspace(matrixId, jefa)).openRound?.submittedByName).toBe("Prevencionista Q")
   })
   it("quien envió la ronda no la ve como «Pendiente de tu revisión» aunque tenga el permiso de revisar", async () => {
     // La ronda «rq» del test anterior la envió u-q. Con el permiso de revisar sumado, la bandeja
