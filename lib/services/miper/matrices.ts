@@ -103,9 +103,14 @@ export async function createMiperWithClient(tx: Client, input: unknown, access: 
       await tx.insert(preventionRiskEntries).values(sourceEntries.map(({ magnitude: _m, classification: _c, ...entry }) => ({
         ...entry, id: newIdBySource.get(entry.id)!, matrixId: id, version: 1, createdAt: now, updatedAt: now,
       })))
-      const sourceControls = await tx.select().from(preventionRiskControls).where(inArray(preventionRiskControls.riskEntryId, sourceEntries.map((entry) => entry.id)))
+      // En el orden de la foto (`created_at, id`): las copias nacen en la misma transacción, y un
+      // milisegundo más por copia lo conserva, como en la importación. Con el mismo `created_at`
+      // para todas, el desempate por un id nuevo al azar las desordenaba.
+      const sourceControls = await tx.select().from(preventionRiskControls)
+        .where(inArray(preventionRiskControls.riskEntryId, sourceEntries.map((entry) => entry.id)))
+        .orderBy(asc(preventionRiskControls.createdAt), asc(preventionRiskControls.id))
       if (sourceControls.length > 0) {
-        await tx.insert(preventionRiskControls).values(sourceControls.map((control) => ({
+        await tx.insert(preventionRiskControls).values(sourceControls.map((control, index) => ({
           ...control,
           id: `riskcontrol-${nanoid()}`,
           riskEntryId: newIdBySource.get(control.riskEntryId)!,
@@ -115,7 +120,7 @@ export async function createMiperWithClient(tx: Client, input: unknown, access: 
           lastVerifiedByUserId: null,
           lastVerifiedAt: null,
           version: 1,
-          createdAt: now,
+          createdAt: new Date(Date.parse(now) + index).toISOString(),
           updatedAt: now,
         })))
       }

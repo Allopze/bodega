@@ -14,6 +14,7 @@ g.__db = testDb
 vi.mock("@/db", () => ({ get db() { return g.__db } }))
 
 const matrices = await import("@/lib/services/miper/matrices")
+const { buildMiperSnapshot } = await import("@/lib/services/miper/snapshots")
 
 const scopeA = { mode: "some" as const, ids: ["ws-a"] }
 const author = { userId: "u-author", scope: scopeA, permissions: ["prevention:risk:view", "prevention:risk:edit"] }
@@ -52,6 +53,26 @@ describe("crear MIPER", () => {
     expect(copied[0]).toMatchObject({ probability: 2, consequence: 4, classification: "important", rowNumber: 1 })
     const controls = await testDb.select().from(schema.preventionRiskControls).where(eq(schema.preventionRiskControls.riskEntryId, copied[0]!.id))
     expect(controls).toEqual([expect.objectContaining({ description: "Procedimiento de carga", status: "implemented", effectivenessStatus: "not_assessed" })])
+  })
+  it("la copia al período siguiente conserva el orden de las medidas de cada riesgo", async () => {
+    // Faena propia: la vigente de «ws-a» ya la publicó la prueba anterior.
+    await testDb.insert(schema.worksites).values({ id: "ws-orden", name: "Faena Orden", code: "ORD" })
+    const editor = { ...author, scope: { mode: "some" as const, ids: ["ws-orden"] } }
+    const { id: source } = await matrices.createMiper({ worksiteId: "ws-orden", period: 2026, revisionReason: "Período con medidas en orden." }, editor)
+    await testDb.insert(schema.preventionRiskEntries).values({ id: "ord-e1", matrixId: source, rowNumber: 1, hazardCode: "R-ord", hazard: "Ruido", probability: 2, consequence: 2 })
+    // El orden de la foto es `created_at, id`. Los ids van al revés de ese orden y se insertan
+    // desordenados: ni el id ni el orden físico de las filas lo reproducen por casualidad.
+    const order = ["Encierro acústico", "Mantención del silenciador", "Rotación de turnos", "Pausas de recuperación", "Audiometría anual", "Protector auditivo"]
+    const sourceControls = order.map((description, index) => ({
+      id: `ord-c${order.length - index}`, riskEntryId: "ord-e1", description, hierarchy: "administrative" as const,
+      createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(), updatedAt: "2026-01-01T00:00:00.000Z",
+    }))
+    await testDb.insert(schema.preventionRiskControls).values([3, 0, 5, 1, 4, 2].map((index) => sourceControls[index]!))
+    expect((await buildMiperSnapshot(testDb, source)).entries[0]!.controls.map((control) => control.description)).toEqual(order)
+    await testDb.update(schema.preventionRiskMatrices).set({ status: "published", reviewedByUserId: "u-author", approvedByUserId: "u-out" }).where(eq(schema.preventionRiskMatrices.id, source))
+
+    const { id: copy } = await matrices.createMiper({ worksiteId: "ws-orden", period: 2027, sourceMatrixId: source, revisionReason: "Renovación que copia las medidas." }, editor)
+    expect((await buildMiperSnapshot(testDb, copy)).entries[0]!.controls.map((control) => control.description)).toEqual(order)
   })
 })
 
