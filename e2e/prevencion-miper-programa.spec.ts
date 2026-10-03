@@ -125,7 +125,7 @@ test("la prevencionista arma la matriz, el envío se bloquea sin medida vinculad
   // rechazo— a la acción. El mismo conteo lo aplica el servidor al enviar, con
   // `requireProgramLink`.
   await cabecera(page).getByRole("button", { name: "Enviar a revisión", exact: true }).click()
-  const bloqueo = page.getByRole("dialog", { name: "Faltan 1 datos para enviar" })
+  const bloqueo = page.getByRole("dialog", { name: "Faltan 1 dato para enviar" })
   await expect(bloqueo).toContainText("Un riesgo Intolerable exige una medida vinculada a una actividad del Programa de Trabajo.")
   await page.keyboard.press("Escape")
   await expect(bloqueo).toBeHidden()
@@ -181,7 +181,7 @@ test("la prevencionista arma la matriz, el envío se bloquea sin medida vinculad
   // Primero el estado nuevo (el envío ya resolvió) y recién entonces la
   // ausencia del diálogo: antes de eso el «0» pasaba aunque el diálogo fuera a abrirse.
   await expect(estado(page, "Enviado a revisión")).toBeVisible()
-  await expect(page.getByRole("dialog", { name: /^Faltan \d+ datos para enviar$/ })).toHaveCount(0)
+  await expect(page.getByRole("dialog", { name: /^Faltan \d+ datos? para enviar$/ })).toHaveCount(0)
 })
 
 test("la Jefa aprueba la revisión técnica y la MIPER pasa a Legal y RRHH", async ({ browser }) => {
