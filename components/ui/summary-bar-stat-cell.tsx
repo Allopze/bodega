@@ -2,9 +2,9 @@ import * as React from "react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { Progress } from "./progress"
-import type { SummaryStat } from "./summary-bar"
+import type { SummaryLinkProps, SummaryStat } from "./summary-bar"
 
-export function SummaryBarStatCell({ stat }: { stat: SummaryStat }) {
+export function SummaryBarStatCell({ stat, renderLink }: { stat: SummaryStat; renderLink?: (props: SummaryLinkProps) => React.ReactNode }) {
   const numeric = typeof stat.value === "number" ? stat.value : Number.parseFloat(String(stat.value)) || 0
   const isZero = typeof stat.value === "number" && stat.value === 0
   const signalActive = stat.tone === "signal" && numeric > 0
@@ -37,7 +37,8 @@ export function SummaryBarStatCell({ stat }: { stat: SummaryStat }) {
   )
 
   const cellClass = "group flex-1 min-w-[8.5rem] border-l border-t border-[var(--color-border)]"
-  return stat.href
-    ? <Link href={stat.href} data-pressable className={cn(cellClass, "block hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]")}>{body}</Link>
-    : <div className={cellClass}>{body}</div>
+  if (!stat.href) return <div className={cellClass}>{body}</div>
+  const linkClass = cn(cellClass, "block hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]")
+  if (renderLink) return <>{renderLink({ href: stat.href, className: linkClass, children: body, "data-pressable": "" })}</>
+  return <Link href={stat.href} data-pressable className={linkClass}>{body}</Link>
 }

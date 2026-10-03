@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useCallback } from "react"
+import { useCallback, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -96,6 +96,7 @@ export function MiperHome({ inbox, all, dashboard, creationWorksites, currentYea
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const [creating, setCreating] = useState(false)
   // La pestaña vive en la URL: un enlace a `?tab=todas` abre la lista completa.
   const requestedTab = searchParams.get("tab") ?? ""
   const tab = TABS.has(requestedTab) ? requestedTab : "porhacer"
@@ -161,7 +162,7 @@ export function MiperHome({ inbox, all, dashboard, creationWorksites, currentYea
         actions={<div className="flex gap-2">
           {permissions.canManageCatalog && <Button asChild variant="secondary"><Link href="/prevencion/miper/factores">Factores de riesgo</Link></Button>}
           {permissions.canEdit && <ImportMiperDialog worksites={creationWorksites} currentYear={currentYear} canManageCatalog={permissions.canManageCatalog} />}
-          {permissions.canEdit && <NewMiperDialog worksites={creationWorksites} currentYear={currentYear} />}
+          {permissions.canEdit && <Button onClick={() => setCreating(true)} disabled={creationWorksites.length === 0}>Nueva MIPER</Button>}
         </div>}
       />
       <Tabs value={tab} onValueChange={(value) => update({ tab: value })}>
@@ -179,7 +180,7 @@ export function MiperHome({ inbox, all, dashboard, creationWorksites, currentYea
             <EmptyState
               title="No tienes MIPER pendientes"
               description={permissions.canEdit ? "Cuando tengas un borrador, observaciones por responder o cambios sin enviar, aparecerán aquí. Para empezar, crea la MIPER de una faena." : "Cuando una MIPER espere tu revisión o tu firma, aparecerá aquí."}
-              action={permissions.canEdit ? <NewMiperDialog worksites={creationWorksites} currentYear={currentYear} /> : undefined}
+              action={permissions.canEdit ? <Button onClick={() => setCreating(true)} disabled={creationWorksites.length === 0}>Nueva MIPER</Button> : undefined}
             />
           ) : inbox.map((row) => (
             <Link key={row.id} href={`/prevencion/miper/${row.id}`} className="block rounded-2xl border border-[var(--color-border)] bg-white p-4 transition-colors hover:border-[var(--color-border-strong)]">
@@ -235,6 +236,7 @@ export function MiperHome({ inbox, all, dashboard, creationWorksites, currentYea
           />
         </TabsContent>
       </Tabs>
+      <NewMiperDialog open={creating} onOpenChange={setCreating} worksites={creationWorksites} currentYear={currentYear} />
     </PageContainer>
   )
 }
