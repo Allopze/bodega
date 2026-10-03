@@ -42,6 +42,7 @@ import { CAPA_STATUS_LABELS } from "@/lib/prevention/capa"
 import { capaPriorityForCriticality } from "@/lib/prevention/inspections"
 import { MINSAL_PROTOCOL_LABELS } from "@/lib/prevention/minsal-protocols"
 import { effectiveRiskLevel } from "@/lib/prevention/risk-levels"
+import { isCriticalWithoutControl } from "@/lib/prevention/miper/critical-control"
 import { createCapaActionWithClient, type CapaStatus } from "@/lib/services/prevention-capa"
 import { addDaysToPlainDate, formatDate, todayInChile } from "@/lib/utils"
 import {
@@ -1066,17 +1067,11 @@ export async function getRiskDashboard(access: RiskLegalAccess) {
   for (const matrix of matrices) {
     if (matrix.status === "published") publishedIds.add(matrix.id)
   }
-  // Bloqueo crítico: fila vigente Intolerable (o crítica legacy) sin una medida
-  // implementada/verificada o sin cobertura PDTP. Mismo criterio que antes, con
-  // la clasificación RE-04 como fuente del nivel.
-  const criticalBlockers = entries.filter(({ entry }) => {
-    if (!publishedIds.has(entry.matrixId)) return false
-    const critical = entry.classification === "intolerable" || (entry.classification === null && entry.isCritical)
-    if (!critical) return false
-    const entryControls = controlByEntry.get(entry.id) ?? []
-    return !entryControls.some((control) => ["implemented", "verified"].includes(control.status))
-      || !entryControls.some((control) => linkedControlIds.has(control.id))
-  })
+  // «Riesgos críticos sin control»: fila VIGENTE Intolerable (o crítica legacy)
+  // sin una medida implementada/verificada o sin cobertura PDTP. La definición es
+  // una sola y la comparte la portada MIPER (`critical-control.ts`).
+  const criticalBlockers = entries.filter(({ entry }) =>
+    publishedIds.has(entry.matrixId) && isCriticalWithoutControl(entry, controlByEntry.get(entry.id) ?? [], linkedControlIds))
   const activePositions = await db.select({ id: preventionRiskPositions.id }).from(preventionRiskPositions)
     .where(and(eq(preventionRiskPositions.isActive, true), scopeCondition(access.scope, preventionRiskPositions.worksiteId)))
   const publishedEntries = entries.filter((item) => publishedIds.has(item.entry.matrixId))
