@@ -340,9 +340,13 @@ test("el scroll vuelve con Atrás y con «‹ Volver a la matriz»; cambiar de p
   // vieja de la tarea: sin el olvido del destino, esa clave la restauraría y el test fallaría.
   const hrefTarea = await tarea.getAttribute("href")
   expect(hrefTarea).toContain("tarea=")
-  await page.evaluate((url) => sessionStorage.setItem(`miper:scroll:${url}`, "300"), hrefTarea)
+  const claveTarea = `miper:scroll:${hrefTarea}`
+  await page.evaluate((clave) => sessionStorage.setItem(clave, "300"), claveTarea)
   await tarea.click()
   await expect(tituloTarea).toBeVisible()
   await dosCuadros(page)
   expect(await scrollDelPozo()).toBeLessThanOrEqual(4)
+  // Independiente del alto de la página (un scroll de 300 podría quedar acotado a 0):
+  // la navegación hacia adelante tiene que haber olvidado la clave sembrada.
+  expect(await page.evaluate((clave) => sessionStorage.getItem(clave), claveTarea)).toBeNull()
 })
