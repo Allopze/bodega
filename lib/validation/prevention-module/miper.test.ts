@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { FREQUENCY_MAX_LENGTH, MEASURE_MAX_LENGTH, RESPONSIBLE_MAX_LENGTH } from "@/lib/prevention/miper/re04-measures"
-import { createMiperSchema, IMPORT_LIMITS, miperApproveFinalSchema, miperControlSaveSchema, miperEntrySaveSchema, miperHeaderSchema, miperObservationSchema, programActionSchema, riskImportCommitSchema } from "./miper"
+import {
+  createMiperSchema, IMPORT_LIMITS, MIPER_BULK_LIMIT, miperApproveFinalSchema, miperBulkAddControlSchema, miperBulkPatchEntriesSchema, miperBulkUpdateControlsSchema,
+  miperControlSaveSchema, miperEntrySaveSchema, miperHeaderSchema, miperObservationSchema, programActionSchema, riskImportCommitSchema,
+} from "./miper"
 
 const header = {
   matrixId: "m1", expectedVersion: 1, iperCode: "RE-04", elaboratedOn: "2026-04-30", updatedOn: "2026-05-02",
@@ -88,5 +91,48 @@ describe("schemas MIPER", () => {
       expect([schema, accept("2027-02-29")]).toEqual([schema, false])
       expect([schema, accept("2028-02-29")]).toEqual([schema, true])
     }
+  })
+
+  it("acciones masivas: de 1 a 300 elementos, sin repetidos, cada uno con su versión (Fase D)", () => {
+    const items = (count: number) => Array.from({ length: count }, (_, index) => ({ entryId: `e${index}`, expectedVersion: 1 }))
+    const patch = (list: unknown) => miperBulkPatchEntriesSchema.safeParse({ matrixId: "m1", items: list, values: { controlledStatus: "yes" } })
+    expect(patch(items(1)).success).toBe(true)
+    expect(patch(items(MIPER_BULK_LIMIT)).success).toBe(true)
+    const over = patch(items(MIPER_BULK_LIMIT + 1))
+    expect(over.success).toBe(false)
+    expect(over.error?.issues[0]?.message).toBe("Se pueden cambiar hasta 300 riesgos a la vez; divide la selección.")
+    expect(patch([]).success).toBe(false)
+    expect(patch([{ entryId: "e1", expectedVersion: 1 }, { entryId: "e1", expectedVersion: 2 }]).error?.issues[0]?.message).toBe("Hay riesgos repetidos en la selección; recarga la matriz.")
+    expect(patch([{ entryId: "e1" }]).success).toBe(false)
+    const controls = (list: unknown) => miperBulkUpdateControlsSchema.safeParse({ matrixId: "m1", items: list, patch: { dueDate: "2026-12-31" } })
+    expect(controls([{ controlId: "c1", expectedVersion: 3 }]).success).toBe(true)
+    expect(controls(Array.from({ length: MIPER_BULK_LIMIT + 1 }, (_, index) => ({ controlId: `c${index}`, expectedVersion: 1 }))).success).toBe(false)
+  })
+
+  it("cambio de riesgos en lote: contexto, «¿controlado?», factor y rutinaria; nunca P×C ni los textos del peligro (Fase D)", () => {
+    const values = (value: Record<string, unknown>) => miperBulkPatchEntriesSchema.safeParse({ matrixId: "m1", items: [{ entryId: "e1", expectedVersion: 1 }], values: value }).success
+    expect(values({ activity: "Bodega", task: "Trasvasije", position: "Bodeguero", location: null })).toBe(true)
+    expect(values({ controlledStatus: "partial", riskFactorId: "rf-1", isRoutine: false })).toBe(true)
+    expect(values({ probability: 4 })).toBe(false)
+    expect(values({ consequence: 2, controlledStatus: "yes" })).toBe(false)
+    expect(values({ hazard: "Otro peligro" })).toBe(false)
+    expect(values({})).toBe(false)
+  })
+
+  it("medida en lote: los valores del editor (D5 y fechas de calendario) y un cambio de medidas acotado (Fase D)", () => {
+    const add = (value: Record<string, unknown>) => miperBulkAddControlSchema.safeParse({ matrixId: "m1", items: [{ entryId: "e1", expectedVersion: 1 }], values: { hierarchy: "administrative", description: "Charla de trasvasije", ...value } }).success
+    expect(add({ isExisting: true, verificationFrequency: "Mensual" })).toBe(true)
+    expect(add({ dueDate: "2026-02-31" })).toBe(false)
+    expect(add({ description: "ok" })).toBe(false)
+    const update = (value: Record<string, unknown>) => miperBulkUpdateControlsSchema.safeParse({ matrixId: "m1", items: [{ controlId: "c1", expectedVersion: 1 }], patch: value }).success
+    expect(update({ responsible: { kind: "user", userId: "u-1" } })).toBe(true)
+    expect(update({ responsible: { kind: "text", name: "Supervisor de turno" }, isExisting: false, dueDate: "2026-12-31" })).toBe(true)
+    expect(update({ isExisting: true, verificationFrequency: "Trimestral" })).toBe(true)
+    expect(update({})).toBe(false)
+    expect(update({ responsible: { kind: "text", name: "  " } })).toBe(false)
+    expect(update({ responsible: { kind: "none" } })).toBe(false)
+    expect(update({ dueDate: "2026-02-31" })).toBe(false)
+    expect(update({ verificationFrequency: "x".repeat(121) })).toBe(false)
+    expect(update({ description: "Otra medida" })).toBe(false)
   })
 })

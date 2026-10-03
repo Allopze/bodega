@@ -77,25 +77,85 @@ export const miperEntrySaveSchema = z.object({
 
 export const miperEntryRefSchema = z.object({ matrixId: id, entryId: id, expectedVersion: version.optional() })
 
+const frequencyText = z.string().trim().max(FREQUENCY_MAX_LENGTH, `La frecuencia admite hasta ${FREQUENCY_MAX_LENGTH} caracteres.`)
+
+/** Los valores de una medida: los del editor (`saveMiperControl`) y los de «Agregar medida a N» (Fase D). */
+export const miperControlValuesSchema = z.object({
+  hierarchy: z.enum(["elimination", "substitution", "engineering", "administrative", "ppe"], { message: "Selecciona el tipo de control (I a V)." }),
+  description: z.string().trim().min(3, "Describe la medida.").max(MEASURE_MAX_LENGTH),
+  responsibleUserId: id.nullable().optional(),
+  responsibleName: z.string().trim().max(RESPONSIBLE_MAX_LENGTH).nullable().optional(),
+  dueDate: isoDate.nullable().optional(),
+  /* D5 (Fase C): una medida ya implementada se verifica con una frecuencia y no
+   * lleva plazo. Opcionales: sin ellos se conserva lo que la medida ya tenía. */
+  isExisting: z.boolean().optional(),
+  verificationFrequency: frequencyText.nullable().optional(),
+})
+
 export const miperControlSaveSchema = z.object({
   matrixId: id,
   entryId: id,
   controlId: id.optional(),
   expectedVersion: version.optional(),
-  values: z.object({
-    hierarchy: z.enum(["elimination", "substitution", "engineering", "administrative", "ppe"], { message: "Selecciona el tipo de control (I a V)." }),
-    description: z.string().trim().min(3, "Describe la medida.").max(MEASURE_MAX_LENGTH),
-    responsibleUserId: id.nullable().optional(),
-    responsibleName: z.string().trim().max(RESPONSIBLE_MAX_LENGTH).nullable().optional(),
-    dueDate: isoDate.nullable().optional(),
-    /* D5 (Fase C): una medida ya implementada se verifica con una frecuencia y no
-     * lleva plazo. Opcionales: sin ellos se conserva lo que la medida ya tenía. */
-    isExisting: z.boolean().optional(),
-    verificationFrequency: z.string().trim().max(FREQUENCY_MAX_LENGTH, `La frecuencia admite hasta ${FREQUENCY_MAX_LENGTH} caracteres.`).nullable().optional(),
-  }),
+  values: miperControlValuesSchema,
 }).refine((value) => !value.controlId || value.expectedVersion !== undefined, { path: ["expectedVersion"], message: "Falta la versión de la medida; recarga la matriz." })
 
 export const miperControlRefSchema = z.object({ matrixId: id, controlId: id, expectedVersion: version })
+
+/* ── Acciones masivas (Fase D, spec §9) ───────────────────────────────────
+ * Hasta `MIPER_BULK_LIMIT` elementos por operación, cada uno con la versión que
+ * vio la persona: una sola versión vieja aborta todo. El tope acota la
+ * transacción (todo o nada, con la matriz bloqueada) y el cuerpo de la Server
+ * Function. Un elemento repetido se rechaza: escribiría dos veces su historial. */
+
+export const MIPER_BULK_LIMIT = 300
+
+const distinct = (ids: readonly string[]) => new Set(ids).size === ids.length
+
+const bulkEntryItems = z.array(z.object({ entryId: id, expectedVersion: version }))
+  .min(1, "Selecciona al menos un riesgo.")
+  .max(MIPER_BULK_LIMIT, `Se pueden cambiar hasta ${MIPER_BULK_LIMIT} riesgos a la vez; divide la selección.`)
+  .refine((items) => distinct(items.map((item) => item.entryId)), { message: "Hay riesgos repetidos en la selección; recarga la matriz." })
+
+const bulkControlItems = z.array(z.object({ controlId: id, expectedVersion: version }))
+  .min(1, "Selecciona al menos una medida.")
+  .max(MIPER_BULK_LIMIT, `Se pueden cambiar hasta ${MIPER_BULK_LIMIT} medidas a la vez; divide la selección.`)
+  .refine((items) => distinct(items.map((item) => item.controlId)), { message: "Hay medidas repetidas en la selección; recarga la matriz." })
+
+const hasSomeKey = (value: object) => Object.keys(value).length > 0
+
+/**
+ * Lo que un cambio de riesgos en lote puede tocar (spec §9): «¿controlado?»,
+ * factor, puesto, lugar, actividad, tarea y rutinaria. Nunca P×C ni los textos
+ * del peligro: eso se decide riesgo por riesgo en el editor. Estricto: una clave
+ * más se rechaza.
+ */
+export const miperBulkEntryValuesSchema = miperEntryValuesSchema
+  .pick({ activity: true, task: true, position: true, location: true, riskFactorId: true, isRoutine: true, controlledStatus: true })
+  .refine(hasSomeKey, { message: "No hay cambios que aplicar." })
+
+export const miperBulkPatchEntriesSchema = z.object({ matrixId: id, items: bulkEntryItems, values: miperBulkEntryValuesSchema })
+
+/** La misma medida en N riesgos: sus valores son los del editor de la medida. */
+export const miperBulkAddControlSchema = z.object({ matrixId: id, items: bulkEntryItems, values: miperControlValuesSchema })
+
+const responsibleUser = z.object({ kind: z.literal("user"), userId: id })
+const responsibleText = z.object({ kind: z.literal("text"), name: z.string().trim().min(1, "Escribe el responsable.").max(RESPONSIBLE_MAX_LENGTH) })
+
+/**
+ * «Asignar responsable / plazo»: cada clave presente se aplica a todas las
+ * medidas del lote y cada clave ausente se conserva en cada una. D5 rige como en
+ * el editor (`controlColumns`): el plazo no entra a una existente ni la
+ * frecuencia a una por implementar.
+ */
+export const miperBulkControlPatchSchema = z.strictObject({
+  responsible: z.discriminatedUnion("kind", [responsibleUser, responsibleText]).optional(),
+  isExisting: z.boolean().optional(),
+  dueDate: isoDate.nullable().optional(),
+  verificationFrequency: frequencyText.nullable().optional(),
+}).refine(hasSomeKey, { message: "Elige qué cambiar: el responsable, el plazo o si ya está implementada." })
+
+export const miperBulkUpdateControlsSchema = z.object({ matrixId: id, items: bulkControlItems, patch: miperBulkControlPatchSchema })
 
 export const miperWorkflowSchema = z.object({ matrixId: id, expectedVersion: version, comment: z.string().trim().max(3000).optional() })
 export const miperCommentedDecisionSchema = miperWorkflowSchema.extend({ comment: z.string().trim().min(10, "Explica la decisión en al menos 10 caracteres.").max(3000) })
@@ -266,13 +326,13 @@ export const riskImportPreviewSchema = z.object({
 const controlHierarchySchema = z.enum(["elimination", "substitution", "engineering", "administrative", "ppe"], { message: "Selecciona el tipo de control (I a V)." })
 
 const responsibleDecisionSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("user"), userId: id }),
-  z.object({ kind: z.literal("text"), name: z.string().trim().min(1, "Escribe el responsable.").max(RESPONSIBLE_MAX_LENGTH) }),
+  responsibleUser,
+  responsibleText,
   z.object({ kind: z.literal("none") }),
 ])
 
 const deadlineDecisionSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("existing"), frequency: z.string().trim().max(FREQUENCY_MAX_LENGTH, `La frecuencia admite hasta ${FREQUENCY_MAX_LENGTH} caracteres.`).nullable() }),
+  z.object({ kind: z.literal("existing"), frequency: frequencyText.nullable() }),
   z.object({ kind: z.literal("pending"), dueDate: isoDate.nullable() }),
 ])
 
@@ -318,3 +378,6 @@ export type MiperHeaderInput = z.infer<typeof miperHeaderSchema>
 export type MiperEntryValues = z.infer<typeof miperEntryValuesSchema>
 export type MiperEntrySaveInput = z.infer<typeof miperEntrySaveSchema>
 export type MiperControlSaveInput = z.infer<typeof miperControlSaveSchema>
+export type MiperBulkPatchEntriesInput = z.infer<typeof miperBulkPatchEntriesSchema>
+export type MiperBulkAddControlInput = z.infer<typeof miperBulkAddControlSchema>
+export type MiperBulkUpdateControlsInput = z.infer<typeof miperBulkUpdateControlsSchema>
