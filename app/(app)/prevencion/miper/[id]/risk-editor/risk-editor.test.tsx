@@ -61,13 +61,14 @@ describe("RiskEditor", () => {
     expect(screen.queryByRole("combobox")).toBeNull()
     expect(screen.getByText("Peligro 1", { selector: "h2" })).toBeTruthy()
   })
-  it("un riesgo que no existe pide recargar y después avisa", async () => {
+  it("un riesgo que no existe pide la foto nueva una vez y avisa cuando esa recarga termina, sin temporizador", async () => {
     router.refresh.mockClear()
-    vi.useFakeTimers()
-    render(<RiskEditor {...props({ entryId: "zzz" })} />)
+    const { rerender } = render(<RiskEditor {...props({ entryId: "zzz" })} />)
     expect(router.refresh).toHaveBeenCalledTimes(1)
-    await act(async () => { await vi.advanceTimersByTimeAsync(2600) })
-    expect(screen.getByText("Este riesgo ya no existe")).toBeTruthy()
+    // Sin reloj falso: el aviso no espera 2,5 s, sale al terminar la transición.
+    expect(await screen.findByText("Este riesgo ya no existe")).toBeTruthy()
+    rerender(<RiskEditor {...props({ entryId: "zzz", rows: [entry("e1", 1)] })} />)
+    expect(router.refresh).toHaveBeenCalledTimes(1)
   })
   it("RF3: un guardado rechazado de «¿controlado?» muestra el mensaje y la selección refleja el valor del riesgo", () => {
     const autosave = { ...props().autosave, fieldError: (_id: string, field: string) => (field === "controlledStatus" ? "No se pudo guardar el estado" : undefined) }
@@ -83,10 +84,15 @@ describe("RiskEditor", () => {
   })
   it("RF4: «Volver a la matriz» conserva la ruta de la matriz", async () => {
     router.refresh.mockClear()
-    vi.useFakeTimers()
     render(<RiskEditor {...props({ entryId: "zzz" })} />)
-    await act(async () => { await vi.advanceTimersByTimeAsync(2600) })
-    expect(screen.getByRole("link", { name: "Volver a la matriz" }).getAttribute("href")).toBe("/prevencion/miper/m1")
+    expect((await screen.findByRole("link", { name: "Volver a la matriz" })).getAttribute("href")).toBe("/prevencion/miper/m1")
+  })
+  it("si el riesgo llega con la foto nueva, se abre el editor y no el aviso", async () => {
+    router.refresh.mockClear()
+    const { rerender } = render(<RiskEditor {...props({ entryId: "e9", rows: [entry("e1", 1)] })} />)
+    rerender(<RiskEditor {...props({ entryId: "e9", rows: [entry("e1", 1), entry("e9", 2, { hazard: "Recién creado" })] })} />)
+    expect(await screen.findByRole("heading", { level: 2, name: "Recién creado" })).toBeTruthy()
+    expect(screen.queryByText("Este riesgo ya no existe")).toBeNull()
   })
   it("en modo lectura no hay campos, menú ni guardado desde las tarjetas", () => {
     commit.mockClear()

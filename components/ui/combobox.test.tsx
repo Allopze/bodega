@@ -70,4 +70,25 @@ describe("Combobox", () => {
     fireEvent.blur(input())
     expect(onChange).toHaveBeenCalledWith("id-1")
   })
+
+  it("con clearLabel, un valor libre también se puede limpiar con ✕", () => {
+    const onChange = vi.fn()
+    render(<Combobox aria-label="Peligro" options={OPTIONS} value="Polvo" onChange={onChange} allowCustomValue clearLabel="Quitar el peligro" />)
+    fireEvent.mouseDown(screen.getByRole("button", { name: "Quitar el peligro" }))
+    expect(onChange).toHaveBeenCalledWith("")
+  })
+
+  it("sin clearLabel, el valor libre no ofrece ✕", () => {
+    render(<Combobox aria-label="Peligro" options={OPTIONS} value="Polvo" onChange={vi.fn()} allowCustomValue />)
+    expect(screen.queryByRole("button")).toBeNull()
+  })
+
+  it("pasar el mouse por una opción recién enfocado deja elegirla con Enter", () => {
+    const onChange = vi.fn()
+    render(<Combobox aria-label="Peligro" options={OPTIONS} value="Polvo" onChange={onChange} allowCustomValue />)
+    fireEvent.focus(input())
+    fireEvent.mouseEnter(screen.getByRole("option", { name: "Ruido de motor" }))
+    fireEvent.keyDown(input(), { key: "Enter" })
+    expect(onChange).toHaveBeenCalledWith("Ruido de motor")
+  })
 })

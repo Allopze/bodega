@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -26,9 +26,6 @@ import type { RiskEditorProps } from "./types"
 
 export type { RiskEditorData, RiskEditorProps } from "./types"
 
-/** Si el `fila` no está, se recarga una vez y, pasado este tiempo, se avisa. */
-const MISSING_AFTER_MS = 2500
-
 /**
  * Editor del riesgo a página completa (spec §5.4). El workspace lo monta con
  * `key={entryId}`: así el paso inicial —el primero con errores— se calcula una
@@ -41,18 +38,21 @@ export function RiskEditor(props: RiskEditorProps) {
   const params = useSearchParams()
   const entry = rows.find((row) => row.id === entryId) ?? null
   const [fallbackStep] = useState<EditorStep>(() => firstStepWithErrors(issuesByEntry.get(entryId) ?? []))
-  const [missing, setMissing] = useState(false)
-  const refreshed = useRef(false)
+  // Un `fila` que no está: se pide la foto nueva UNA vez, en una transición, y
+  // el aviso sale cuando esa transición termina y el riesgo sigue sin venir. El
+  // temporizador fijo de 2,5 s podía avisar con la foto todavía en camino, o
+  // hacer esperar de más cuando ya había llegado (A2, fila 13).
+  const [refreshing, startRefresh] = useTransition()
+  const [refreshRequested, setRefreshRequested] = useState(false)
 
   useEffect(() => {
-    if (entry) return
-    if (!refreshed.current) { refreshed.current = true; router.refresh() }
-    const timer = setTimeout(() => setMissing(true), MISSING_AFTER_MS)
-    return () => clearTimeout(timer)
-  }, [entry, router])
+    if (entry || refreshRequested) return
+    setRefreshRequested(true)
+    startRefresh(() => { router.refresh() })
+  }, [entry, refreshRequested, router])
 
   if (!entry) {
-    if (!missing) return <div aria-busy="true" className="space-y-3"><Skeleton className="h-8 w-1/2" /><Skeleton className="h-48 w-full" /></div>
+    if (!refreshRequested || refreshing) return <div aria-busy="true" className="space-y-3"><Skeleton className="h-8 w-1/2" /><Skeleton className="h-48 w-full" /></div>
     return <EmptyState title="Este riesgo ya no existe" description="Puede haberse eliminado o ser de otra versión de la MIPER." action={<Button asChild><WorkspaceLink href={hrefToMatrix(pathname, params)} restoreScroll>Volver a la matriz</WorkspaceLink></Button>} />
   }
 

@@ -60,6 +60,10 @@ export function Combobox({
   const pristineRef = React.useRef(false)
 
   const currentText = selected?.label ?? (allowCustomValue ? value : "")
+  // Un valor libre (`allowCustomValue`) también es un valor: con `clearLabel`
+  // se limpia igual que una opción elegida (A2, fila 11).
+  const hasValue = Boolean(selected) || (allowCustomValue && value !== "")
+  const showClear = !disabled && hasValue && Boolean(clearLabel)
   // Sin escribir, la lista no se filtra por el valor actual: se ve completa.
   const filterText = allowCustomValue && query === currentText ? "" : query
 
@@ -150,7 +154,7 @@ export function Combobox({
             listbox.handleKeyDown(event)
           }}
         />
-        {!disabled && selected && clearLabel && (
+        {showClear && (
           <button
             type="button"
             aria-label={clearLabel}
@@ -160,7 +164,7 @@ export function Combobox({
             <X size={12} weight="bold" />
           </button>
         )}
-        {!selected && (
+        {!selected && !showClear && (
           <CaretDown
             size={12} weight="bold" aria-hidden="true"
             className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-(--color-text-subtle)"
@@ -183,7 +187,11 @@ export function Combobox({
               aria-selected={row.value === value}
               tabIndex={-1}
               onMouseDown={(event) => { event.preventDefault(); commit(row.value) }}
-              onMouseEnter={() => listbox.setActiveIndex(index)}
+              onMouseEnter={() => {
+                // Pasar el mouse por una fila ya es elegirla como activa: Enter la toma aunque el campo esté «recién enfocado».
+                pristineRef.current = false
+                listbox.setActiveIndex(index)
+              }}
               className={cn(
                 "flex items-center gap-2 px-3 py-2 cursor-pointer text-left transition-colors duration-(--duration-fast)",
                 index === listbox.activeIndex
