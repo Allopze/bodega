@@ -3,9 +3,16 @@
  * de faena (`listMiperWorksiteTargets`).
  *
  * Faenas sembradas:
- * - A (activa): vigente 2026 con observaciones, dos Intolerables sin control y
- *   un programa (1 de 2 ocurrencias hechas), más el borrador 2027.
- * - B (activa): borrador en revisión, enviado por quien también puede revisar.
+ * - A (activa):
+ *   - vigente 2026 con observaciones y un programa (1 de 2 ocurrencias hechas).
+ *     Cuatro Intolerables: tres «sin control» (sin medida; implementada sin
+ *     vínculo PDTP; implementada con su único vínculo `risk_control` inactivo) y
+ *     uno cubierto (verificada y con vínculo PDTP activo), que NO cuenta;
+ *   - borrador 2027: un Importante incompleto y dos Intolerables completos, uno
+ *     con su medida en una actividad viva del programa y otro sólo en una
+ *     retirada. Completos: 1 de 3.
+ * - B (activa): borrador en revisión, enviado por quien también puede revisar,
+ *   con un Intolerable sin medida que no cuenta (no es vigente).
  * - C (activa): sin MIPER, con 3 trabajadores activos y 1 inactivo.
  * - D (cerrada): MIPER vigente de la metodología anterior con un riesgo crítico legacy.
  * - E (cerrada): sin MIPER. No aparece.
@@ -66,6 +73,18 @@ beforeAll(async () => {
     { id: "w-c3", firstName: "Tres", lastName: "C", worksiteId: "ws-c" },
     { id: "w-c4", firstName: "Cuatro", lastName: "C", worksiteId: "ws-c", isActive: false },
   ])
+  const now = new Date().toISOString()
+  // Una actividad del PDTP a la que se vinculan (o no) las medidas de los riesgos críticos.
+  await testDb.insert(schema.pdtpPrograms).values({
+    id: "pdtp-2026", year: 2026, version: 1, title: "PDTP 2026 portada", status: "active", appliesToAllWorksites: true,
+    periodStart: "2026-01-01", periodEnd: "2026-12-31", elaboratedByName: "Prevencionista A", elaboratedByTitle: "Prevención",
+    createdAt: now, updatedAt: now,
+  })
+  await testDb.insert(schema.pdtpActivities).values({
+    id: "pdtp-act-1", programId: "pdtp-2026", n: 1, displayOrder: 1, status: "active",
+    activity: "Control de riesgos críticos", program: "Riesgos críticos", responsibleSlugs: ["prf"], responsibleDisplay: "Prevencionista",
+    scheduleMode: "scheduled", mechanism: "constancia", sourceSheetRow: 1, createdAt: now, updatedAt: now,
+  })
 
   // ── Faena A: vigente 2026 con observaciones y su programa, y el borrador 2027 ──
   vigenteA = (await createMiper({ worksiteId: "ws-a", period: 2026, revisionReason: "Período vigente de la portada." }, prevencion)).id
@@ -75,6 +94,23 @@ beforeAll(async () => {
   // Implementada pero sin vínculo PDTP: sigue «sin control» (le falta una de las dos cosas).
   await testDb.update(schema.preventionRiskControls).set({ status: "implemented" }).where(eq(schema.preventionRiskControls.id, medida.id))
   await saveMiperEntry({ matrixId: vigenteA, values: { hazard: "Ruido", probability: 1, consequence: 2 } }, prevencion)
+  // Cubierto: medida verificada Y con vínculo PDTP `risk_control` activo. Es el único que NO cuenta «sin control».
+  const cubierto = await saveMiperEntry({ matrixId: vigenteA, values: { hazard: "Contacto eléctrico", probability: 4, consequence: 4 } }, prevencion)
+  const medidaCubierta = await saveMiperControl({ matrixId: vigenteA, entryId: cubierto.id, values: { hierarchy: "engineering", description: "Bloqueo y etiquetado", responsibleUserId: "u-prev", dueDate: "2026-12-31" } }, prevencion)
+  // Implementada, pero su único vínculo `risk_control` está inactivo: SÍ cuenta «sin control».
+  const vinculoInactivo = await saveMiperEntry({ matrixId: vigenteA, values: { hazard: "Proyección de partículas", probability: 4, consequence: 4 } }, prevencion)
+  const medidaVinculoInactivo = await saveMiperControl({ matrixId: vigenteA, entryId: vinculoInactivo.id, values: { hierarchy: "engineering", description: "Pantalla protectora", responsibleUserId: "u-prev", dueDate: "2026-12-31" } }, prevencion)
+  await testDb.update(schema.preventionRiskControls).set({ status: "verified" }).where(eq(schema.preventionRiskControls.id, medidaCubierta.id))
+  await testDb.update(schema.preventionRiskControls).set({ status: "implemented" }).where(eq(schema.preventionRiskControls.id, medidaVinculoInactivo.id))
+  const pdtpLink = { activityId: "pdtp-act-1", worksiteId: "ws-a", sourceVersionSnapshot: "1", justification: "Medida de un riesgo crítico en el PDTP.", createdByUserId: "u-prev" }
+  await testDb.insert(schema.preventionPdtpSourceLinks).values([
+    { ...pdtpLink, id: "pdtp-link-activo", sourceType: "risk_control", sourceId: medidaCubierta.id },
+    { ...pdtpLink, id: "pdtp-link-inactivo", sourceType: "risk_control", sourceId: medidaVinculoInactivo.id, isActive: false, retiredByUserId: "u-prev", retiredAt: now, retirementReason: "Actividad reemplazada en el PDTP." },
+    // Activos, pero de otro tipo: que el id coincida con el de una medida implementada no la cubre. Son
+    // dos (y el cubierto, uno) para que filtrar por el tipo equivocado no dé la misma cifra por compensación.
+    { ...pdtpLink, id: "pdtp-link-otro-tipo-1", sourceType: "legal_requirement", sourceId: medidaVinculoInactivo.id },
+    { ...pdtpLink, id: "pdtp-link-otro-tipo-2", sourceType: "legal_requirement", sourceId: medida.id },
+  ])
   await testDb.update(schema.preventionRiskMatrices)
     .set({ status: "published", reviewState: "observed", publishedAt: new Date().toISOString(), reviewedByUserId: "u-jefa", approvedByUserId: "u-jefa" })
     .where(eq(schema.preventionRiskMatrices.id, vigenteA))
@@ -86,10 +122,31 @@ beforeAll(async () => {
   ])
   borradorA = (await createMiper({ worksiteId: "ws-a", period: 2027, revisionReason: "Período siguiente de la portada." }, prevencion)).id
   await saveMiperEntry({ matrixId: borradorA, values: { hazard: "Volcamiento", probability: 2, consequence: 4 } }, prevencion)
+  // Dos Intolerables completos en todo menos, quizá, el vínculo al programa: cuenta como completo sólo
+  // el que tiene su medida en una actividad VIVA (`status = 'active'`), no el que la tiene en una retirada.
+  const completo = {
+    activity: "Mantención", task: "Cambio de neumático", position: "Mecánico", riskFactorId: "riskfactor-mecanico",
+    risk: "Aplastamiento", probableDamage: "Amputación", controlledStatus: "partial", isRoutine: true, probability: 4, consequence: 4,
+  } as const
+  const enActividadViva = await saveMiperEntry({ matrixId: borradorA, values: { ...completo, hazard: "Neumático presurizado" } }, prevencion)
+  const medidaViva = await saveMiperControl({ matrixId: borradorA, entryId: enActividadViva.id, values: { hierarchy: "engineering", description: "Jaula de inflado", responsibleUserId: "u-prev", dueDate: "2027-06-30" } }, prevencion)
+  const enActividadRetirada = await saveMiperEntry({ matrixId: borradorA, values: { ...completo, hazard: "Gata hidráulica" } }, prevencion)
+  const medidaRetirada = await saveMiperControl({ matrixId: borradorA, entryId: enActividadRetirada.id, values: { hierarchy: "engineering", description: "Soportes fijos", responsibleUserId: "u-prev", dueDate: "2027-06-30" } }, prevencion)
+  await testDb.insert(schema.preventionRiskPrograms).values({ id: "prog-a27", matrixId: borradorA, worksiteId: "ws-a", period: 2027, createdByUserId: "u-prev" })
+  await testDb.insert(schema.preventionRiskProgramActions).values([
+    { id: "act-a27-viva", programId: "prog-a27", actionNumber: 1, description: "Inflado en jaula", scheduleKind: "monthly", startsOn: "2027-01-01", createdByUserId: "u-prev" },
+    { id: "act-a27-retirada", programId: "prog-a27", actionNumber: 2, description: "Revisión de soportes", scheduleKind: "monthly", startsOn: "2027-01-01", status: "retired", retiredAt: now, retiredReason: "Actividad fusionada con otra del programa.", createdByUserId: "u-prev" },
+  ])
+  await testDb.insert(schema.preventionRiskProgramActionControls).values([
+    { id: "pac-a27-viva", actionId: "act-a27-viva", controlId: medidaViva.id, linkedByUserId: "u-prev" },
+    { id: "pac-a27-retirada", actionId: "act-a27-retirada", controlId: medidaRetirada.id, linkedByUserId: "u-prev" },
+  ])
 
   // ── Faena B: borrador en revisión, enviado por quien también revisa ──
   revisionB = (await createMiper({ worksiteId: "ws-b", period: 2026, revisionReason: "Período en revisión de la portada." }, prevencion)).id
   await saveMiperEntry({ matrixId: revisionB, values: { hazard: "Polvo", probability: 2, consequence: 2 } }, prevencion)
+  // Intolerable sin medida en una MIPER que no es vigente: no cuenta «sin control» (ni acá ni en el tablero).
+  await saveMiperEntry({ matrixId: revisionB, values: { hazard: "Atropello", probability: 4, consequence: 4 } }, prevencion)
   await testDb.update(schema.preventionRiskMatrices).set({ reviewState: "in_review" }).where(eq(schema.preventionRiskMatrices.id, revisionB))
   await testDb.insert(schema.preventionRiskReviewRounds).values({ id: "round-b", matrixId: revisionB, roundNumber: 1, stage: "technical", snapshot: { header: {}, entries: [] }, snapshotSha256: "b".repeat(64), submittedByUserId: "u-doble" })
 
@@ -121,12 +178,12 @@ describe("portada de la MIPER por faena (listMiperPortfolio)", () => {
     const a = await rowOf(prevencion, "ws-a")
     expect(a.matrix).toMatchObject({ id: borradorA, period: 2027, isLegacy: false })
     expect(a.vigente).toMatchObject({ id: vigenteA, period: 2026, isLegacy: false })
-    expect(a).toMatchObject({ status: "borrador", stateLabel: "Borrador", importantCount: 1, intolerableCount: 0, headcountSource: "ficha" })
+    expect(a).toMatchObject({ status: "borrador", stateLabel: "Borrador", importantCount: 1, intolerableCount: 2, headcountSource: "ficha" })
   })
 
   it("«sin control» y el avance del programa son de la vigente", async () => {
     const a = await rowOf(prevencion, "ws-a")
-    expect(a.criticalWithoutControl).toBe(2)
+    expect(a.criticalWithoutControl).toBe(3)
     expect(a.programProgress).toMatchObject({ done: 1, planned: 2, ratio: 0.5 })
   })
 
@@ -136,8 +193,11 @@ describe("portada de la MIPER por faena (listMiperPortfolio)", () => {
     const linked = new Set(ws.controlActionLinks.map((link) => link.controlId))
     const incomplete = new Set(checkMiperCompleteness(ws.snapshot, { linkedControlIds: linked, requireProgramLink: true })
       .flatMap((issue) => (issue.severity === "error" && issue.entryId ? [issue.entryId] : [])))
+    // El espacio de trabajo sólo trae los vínculos a actividades vivas: la del programa retirada no está.
+    expect(linked.size).toBe(1)
     expect(a.completeness).toEqual({ complete: ws.snapshot.entries.length - incomplete.size, total: ws.snapshot.entries.length })
-    expect(a.completeness).toEqual({ complete: 0, total: 1 })
+    // Completo sólo el Intolerable con su medida en la actividad viva; el de la retirada y el Importante, no.
+    expect(a.completeness).toEqual({ complete: 1, total: 3 })
   })
 
   it("la MIPER de la metodología anterior no tiene cifra de completitud y su crítico legacy cuenta «sin control»", async () => {
@@ -150,7 +210,13 @@ describe("portada de la MIPER por faena (listMiperPortfolio)", () => {
     const { rows } = await listMiperPortfolio(prevencion)
     const dashboard = await getRiskDashboard(prevencion)
     expect(rows.reduce((total, row) => total + row.criticalWithoutControl, 0)).toBe(dashboard.criticalBlockers.length)
-    expect(dashboard.criticalBlockers.length).toBe(3)
+    expect(dashboard.criticalBlockers.length).toBe(4)
+    // Y faena por faena, no sólo en el total: B (Intolerable sin medida, pero en revisión) es 0 en las dos.
+    const worksiteOf = new Map(dashboard.matrices.map((matrix) => [matrix.id, matrix.worksiteId]))
+    const dashboardByWorksite = Object.fromEntries(rows.map((row) => [row.worksiteId,
+      dashboard.criticalBlockers.filter(({ entry }) => worksiteOf.get(entry.matrixId) === row.worksiteId).length]))
+    expect(Object.fromEntries(rows.map((row) => [row.worksiteId, row.criticalWithoutControl]))).toEqual(dashboardByWorksite)
+    expect(dashboardByWorksite).toEqual({ "ws-a": 3, "ws-b": 0, "ws-c": 0, "ws-d": 1 })
   })
 
   it("«requiere mi acción» mira todas las MIPER no reemplazadas de la faena, no sólo la de la fila", async () => {
