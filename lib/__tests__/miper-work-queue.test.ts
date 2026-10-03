@@ -179,6 +179,31 @@ describe("atención de Prevención — tipo MIPER", () => {
     })
     expect(items.some((item) => item.kind === "miper")).toBe(false)
   })
+  it("la banda sin medida usa la regla de la completitud: cuenta un responsable escrito y no cuenta una medida existente (Fase C)", async () => {
+    await testDb.insert(schema.preventionRiskEntries).values([
+      // Intolerable cuya única medida YA EXISTE: no hay nada por implementar con responsable y plazo → aparece.
+      { id: "entry-intol-existente", matrixId: "mx-in", rowNumber: 4, hazardCode: "FIS-03", risk: "Caída desde la batea", probability: 4, consequence: 4, controlledStatus: "partial" },
+      // Importante no controlado con una medida por implementar de responsable ESCRITO y plazo → no aparece.
+      { id: "entry-imp-texto", matrixId: "mx-in", rowNumber: 5, hazardCode: "QUI-02", risk: "Inhalación de polvo", probability: 4, consequence: 2, controlledStatus: "no" },
+      // Importante «Sí, controlado» con una medida existente: la completitud no le pide más → no aparece.
+      { id: "entry-imp-controlado", matrixId: "mx-in", rowNumber: 6, hazardCode: "ERG-01", risk: "Sobreesfuerzo", probability: 4, consequence: 2, controlledStatus: "yes" },
+    ])
+    await testDb.insert(schema.preventionRiskControls).values([
+      { id: "ctl-existente", riskEntryId: "entry-intol-existente", description: "Barandas en la batea", hierarchy: "engineering", isExisting: true, verificationFrequency: "Trimestral", responsibleSnapshot: "Supervisor de turno" },
+      { id: "ctl-texto", riskEntryId: "entry-imp-texto", description: "Humectación del área", hierarchy: "engineering", responsibleSnapshot: "Jefe de faena", dueDate: "2026-12-31" },
+      { id: "ctl-controlado", riskEntryId: "entry-imp-controlado", description: "Pausas activas", hierarchy: "administrative", isExisting: true, verificationFrequency: "Mensual", responsibleSnapshot: "Supervisor de turno" },
+    ])
+    const items = await getPreventionAttention({
+      worksiteIds: [WS_IN], includeActions: false, includeEvaluations: false, includePpa: false, includeMiper: true, limit: 50,
+    })
+    const ids = items.filter((item) => item.kind === "miper").map((item) => item.id)
+    expect(ids).toContain("miper_entry:entry-intol-existente")
+    expect(ids).not.toContain("miper_entry:entry-imp-texto")
+    expect(ids).not.toContain("miper_entry:entry-imp-controlado")
+    expect(items.find((item) => item.id === "miper_entry:entry-intol-existente")!.title).toBe("Riesgo Intolerable sin medida por implementar con responsable y plazo")
+    // Lo de antes no cambia: el Intolerable sin medidas y el Importante cuya medida no tiene plazo siguen.
+    expect(ids).toEqual(expect.arrayContaining(["miper_entry:entry-intol", "miper_entry:entry-important"]))
+  })
 })
 
 describe("cola «Mi trabajo» — ramas MIPER", () => {

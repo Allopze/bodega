@@ -2,7 +2,8 @@
  * Reglas del §5.1 del spec, una sola vez: la grilla las pinta en vivo y el
  * servicio las aplica al enviar a revisión. Los errores bloquean el envío; las
  * advertencias sólo se muestran (el Intolerable siempre lleva su advertencia
- * crítica, aunque esté completo).
+ * crítica, aunque esté completo). Fase C: una medida existente (D5) no lleva
+ * plazo, y la regla crítica pide una medida por implementar.
  */
 import { isScaleValue } from "./methodology"
 import type { MiperSnapshot } from "./snapshot"
@@ -51,12 +52,18 @@ export function checkMiperCompleteness(
     if ((cls === "important" || cls === "intolerable") && entry.controls.length === 0) {
       err("controls", "Un riesgo Importante o Intolerable exige al menos una medida de control.")
     }
-    const assigned = entry.controls.filter((control) => control.dueDate && (control.responsibleUserId || control.responsibleName))
+    // D5 (Fase C): sólo una medida POR IMPLEMENTAR lleva plazo; una existente se
+    // verifica con su frecuencia. Una foto anterior a la Fase C no trae
+    // `isExisting`: se lee como por implementar, que era la regla de entonces.
+    // Regla crítica (decisión del usuario, 2026-10-02): Importante no controlado e
+    // Intolerable exigen al menos una medida POR IMPLEMENTAR con responsable y
+    // plazo; las existentes no la reemplazan.
+    const assigned = entry.controls.filter((control) => !(control.isExisting ?? false) && control.dueDate && (control.responsibleUserId || control.responsibleName))
     if (cls === "important" && entry.controlledStatus !== "yes" && entry.controls.length > 0 && assigned.length === 0) {
-      err("dueDate", "Un riesgo Importante no controlado exige una medida con responsable y plazo.")
+      err("dueDate", "Un riesgo Importante no controlado exige una medida por implementar con responsable y plazo.")
     }
     if (cls === "intolerable") {
-      if (entry.controls.length > 0 && assigned.length === 0) err("dueDate", "Un riesgo Intolerable exige una medida con responsable y plazo.")
+      if (entry.controls.length > 0 && assigned.length === 0) err("dueDate", "Un riesgo Intolerable exige una medida por implementar con responsable y plazo.")
       if (options.requireProgramLink && !entry.controls.some((control) => options.linkedControlIds?.has(control.id))) {
         err("programLink", "Un riesgo Intolerable exige una medida vinculada a una actividad del Programa de Trabajo.")
       }
@@ -64,7 +71,7 @@ export function checkMiperCompleteness(
     }
     for (const control of entry.controls) {
       if (control.description.trim().length < 3) err("description", "La medida necesita una descripción.", control.id)
-      if (!control.dueDate) err("dueDate", "La medida necesita un plazo.", control.id)
+      if (!(control.isExisting ?? false) && !control.dueDate) err("dueDate", "La medida por implementar necesita un plazo.", control.id)
       if (cls !== "tolerable" && !control.responsibleUserId && !control.responsibleName) err("responsible", "La medida necesita un responsable.", control.id)
     }
   }

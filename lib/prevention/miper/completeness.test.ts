@@ -67,4 +67,37 @@ describe("completitud RE-04 (§5.1)", () => {
     const issues = checkMiperCompleteness({ header, entries: [row({ hazard: null })] })
     expect(issuesByEntry(issues).get("e1")?.length).toBeGreaterThan(0)
   })
+  it("D5: una medida existente no pide plazo; una por implementar, sí (y una foto vieja se lee como por implementar)", () => {
+    const moderate = row({ probability: 2, consequence: 2, magnitude: 4, classification: "moderate", controlledStatus: "partial" })
+    const existing = { ...control, dueDate: null, isExisting: true, verificationFrequency: "Trimestral" }
+    expect(errors({ header, entries: [{ ...moderate, controls: [existing] }] })).toEqual([])
+    // Sin frecuencia también vale: D5 pide tipo, descripción y responsable.
+    expect(errors({ header, entries: [{ ...moderate, controls: [{ ...existing, verificationFrequency: null }] }] })).toEqual([])
+    expect(errors({ header, entries: [{ ...moderate, controls: [{ ...control, dueDate: null, isExisting: false }] }] }).map((i) => [i.field, i.message]))
+      .toEqual([["dueDate", "La medida por implementar necesita un plazo."]])
+    // `control` no trae `isExisting`: es la forma de una foto sellada antes de la Fase C.
+    expect(errors({ header, entries: [{ ...moderate, controls: [{ ...control, dueDate: null }] }] }).map((i) => i.field)).toEqual(["dueDate"])
+  })
+  it("una medida existente sigue pidiendo responsable, salvo en un Tolerable", () => {
+    const moderate = row({ probability: 2, consequence: 2, magnitude: 4, classification: "moderate", controlledStatus: "partial" })
+    const existing = { ...control, dueDate: null, isExisting: true, responsibleName: null }
+    expect(errors({ header, entries: [{ ...moderate, controls: [existing] }] }).map((i) => i.field)).toEqual(["responsible"])
+    expect(errors({ header, entries: [row({ controlledStatus: "yes", controls: [existing] })] })).toEqual([])
+  })
+  it("regla crítica: un Importante no controlado y un Intolerable exigen una medida POR IMPLEMENTAR con responsable y plazo", () => {
+    const important = row({ probability: 2, consequence: 4, magnitude: 8, classification: "important", controlledStatus: "partial" })
+    const existing = { ...control, id: "c-ex", dueDate: null, isExisting: true, verificationFrequency: "Trimestral" }
+    const toImplement = { ...control, id: "c-new", dueDate: "2026-12-31", isExisting: false }
+    expect(errors({ header, entries: [{ ...important, controls: [existing] }] }).map((i) => [i.field, i.message]))
+      .toEqual([["dueDate", "Un riesgo Importante no controlado exige una medida por implementar con responsable y plazo."]])
+    expect(errors({ header, entries: [{ ...important, controls: [existing, toImplement] }] })).toEqual([])
+    // Por implementar pero sin responsable: no cuenta, y además la medida pide su responsable.
+    expect(errors({ header, entries: [{ ...important, controls: [existing, { ...toImplement, responsibleName: null }] }] }).map((i) => i.field))
+      .toEqual(["dueDate", "responsible"])
+    // Un Importante «Sí, controlado» con medidas existentes ya cumple.
+    expect(errors({ header, entries: [{ ...important, controlledStatus: "yes", controls: [existing] }] })).toEqual([])
+    const intolerable = row({ probability: 4, consequence: 4, magnitude: 16, classification: "intolerable", controlledStatus: "yes", controls: [existing] })
+    expect(errors({ header, entries: [intolerable] }).map((i) => i.message)).toEqual(["Un riesgo Intolerable exige una medida por implementar con responsable y plazo."])
+    expect(errors({ header, entries: [{ ...intolerable, controls: [existing, toImplement] }] })).toEqual([])
+  })
 })

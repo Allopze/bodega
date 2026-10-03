@@ -98,8 +98,8 @@ export async function getPreventionAttention(args: {
   /**
    * MIPER (§9.1): matrices esperando la firma de la Jefatura del Depto. de
    * Prevención o de Legal y RRHH, ocurrencias del Programa de Trabajo vencidas y
-   * bandas Intolerables o Importantes sin ninguna medida con responsable y
-   * plazo. Mismo interruptor que las demás fuentes: lo enciende quien tiene
+   * bandas Intolerables o Importantes sin ninguna medida por implementar con
+   * responsable y plazo. Mismo interruptor que las demás fuentes: lo enciende quien tiene
    * `prevention:risk:view` y el módulo está habilitado.
    */
   includeMiper?: boolean
@@ -292,8 +292,9 @@ async function cphsAttentionItems(
  *    estar hecho. El avance del programa se **deriva** de estas filas y nunca se
  *    guarda (`programProgress`, lib/prevention/miper/progress.ts), así que la
  *    única forma de detectarlo es leer `due_on` contra el día civil chileno.
- *  · Una fila Intolerable o Importante sin ninguna medida con responsable y
- *    plazo es exactamente el defecto que deja la matriz sin programa.
+ *  · Una fila Intolerable o Importante sin ninguna medida POR IMPLEMENTAR con
+ *    responsable y plazo (la regla de la completitud, Fase C) es exactamente el
+ *    defecto que deja la matriz sin programa.
  *
  * Ninguna de las tres es una notificación: el aviso a la persona concreta vive
  * en el barrido diario. Acá se emite el pendiente para la portada.
@@ -357,15 +358,20 @@ async function miperAttentionItems(
         // Las dos bandas que no pueden quedar sin programa (§6.2). La columna es
         // generada desde P×C, así que no hay forma de guardar una incoherente.
         inArray(preventionRiskEntries.classification, ["important", "intolerable"]),
-        // «Importante sin medida» y «medida sin responsable o plazo» son el
-        // mismo predicado: no tener NINGUNA medida completa. Una actividad
-        // retirada ya no ejecuta nada, así que no cuenta como medida.
+        // El mismo criterio que la completitud (`completeness.ts`, Fase C): le
+        // falta una medida POR IMPLEMENTAR con responsable —usuario o escrito— y
+        // plazo. Un Importante «Sí, controlado» con alguna medida ya cumple. Una
+        // medida retirada ya no ejecuta nada, así que no cuenta.
         sql`NOT EXISTS (
           SELECT 1 FROM ${preventionRiskControls}
           WHERE ${preventionRiskControls.riskEntryId} = ${preventionRiskEntries.id}
             AND ${preventionRiskControls.status} <> 'retired'
-            AND ${preventionRiskControls.responsibleUserId} IS NOT NULL
-            AND ${preventionRiskControls.dueDate} IS NOT NULL
+            AND (
+              (${preventionRiskControls.isExisting} = false
+                AND ${preventionRiskControls.dueDate} IS NOT NULL
+                AND (${preventionRiskControls.responsibleUserId} IS NOT NULL OR btrim(coalesce(${preventionRiskControls.responsibleSnapshot}, '')) <> ''))
+              OR (${preventionRiskEntries.classification} = 'important' AND ${preventionRiskEntries.controlledStatus} = 'yes')
+            )
         )`,
       ))
       .orderBy(asc(preventionRiskEntries.matrixId), asc(preventionRiskEntries.rowNumber)).limit(limit),
@@ -405,8 +411,8 @@ async function miperAttentionItems(
     items.push({
       id: `miper_entry:${row.id}`, kind: "miper",
       title: intolerable
-        ? "Riesgo Intolerable sin medida con responsable y plazo"
-        : "Riesgo Importante sin medida con responsable y plazo",
+        ? "Riesgo Intolerable sin medida por implementar con responsable y plazo"
+        : "Riesgo Importante sin medida por implementar con responsable y plazo",
       detail: (row.risk ?? row.hazard ?? row.hazardCode).slice(0, 120),
       worksiteName: row.worksiteName, dueDate: null,
       href: `/prevencion/miper/${row.matrixId}?fila=${row.id}`,
