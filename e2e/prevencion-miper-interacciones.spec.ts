@@ -336,7 +336,11 @@ test("el scroll vuelve con Atrás y con «‹ Volver a la matriz»; cambiar de p
   await dosCuadros(page)
   expect(await scrollDelPozo()).toBeLessThanOrEqual(4)
 
-  // (d) Reabrir una tarea ya visitada, desde la matriz, llega arriba.
+  // (d) Reabrir una tarea ya visitada, desde la matriz, llega arriba. Se siembra una clave
+  // vieja de la tarea: sin el olvido del destino, esa clave la restauraría y el test fallaría.
+  const hrefTarea = await tarea.getAttribute("href")
+  expect(hrefTarea).toContain("tarea=")
+  await page.evaluate((url) => sessionStorage.setItem(`miper:scroll:${url}`, "300"), hrefTarea)
   await tarea.click()
   await expect(tituloTarea).toBeVisible()
   await dosCuadros(page)

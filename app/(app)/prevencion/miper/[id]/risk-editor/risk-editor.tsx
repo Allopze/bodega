@@ -144,6 +144,8 @@ function EntryMenu({ matrixId, entry, version, afterDeleteHref, entryHref }: { m
     if (!state.ok) { toast.error(state.message ?? "No se pudo eliminar el riesgo."); return }
     toast.success(`Riesgo #${entry.rowNumber} eliminado.`)
     // Con ida al servidor: la matriz o la tarea tienen que llegar sin el riesgo borrado.
+    // Deliberadamente SIN `beforeForwardNavigation`: volver a la lista tras borrar es un «volver»
+    // (como «‹ Volver a la tarea»), así que el destino conserva su scroll y retoma donde estaba la persona.
     router.replace(afterDeleteHref)
   }
   return (
