@@ -20,6 +20,7 @@
  * 5. El aviso de fila Intolerable sale **después del COMMIT**: ninguna resolución
  *    de destinatarios ocurre con una transacción abierta.
  */
+import { createHash } from "node:crypto"
 import path from "node:path"
 import ExcelJS from "exceljs"
 import { PGlite } from "@electric-sql/pglite"
@@ -29,7 +30,9 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { analyzeRe04Measures } from "@/lib/prevention/miper/re04-measures"
 import { RE04_COLUMNS, RE04_SHEET_NAME } from "@/lib/prevention/miper/re04-import"
+import { RiskLegalDomainError } from "@/lib/services/prevention-risk-legal-errors"
 import { todayInChile } from "@/lib/utils"
 
 /** Evidencia de que ningún aviso se resolvió dentro de una transacción. */
@@ -310,6 +313,10 @@ describe("vista previa: medidas detectadas (Fase C)", () => {
     // El salto de línea de la fila 15 sobrevivió a ExcelJS y al `jsonb` del lote.
     expect(analysis.measures.filter((measure) => measure.rowNumber === 15).map((measure) => measure.text))
       .toEqual(["INSTALAR RESGUARDOS EN MAQUINAS", "GUANTES", "CASCO", "CALZADO DE SEGURIDAD"])
+    // Las filas guardadas en el lote dan el mismo análisis: es lo que la carga
+    // vuelve a calcular (Task 8), así que el `jsonb` no pierde nada.
+    const stored = await batchRowsOf(preview.batchId)
+    expect(analyzeRe04Measures(stored, { today: todayInChile(), users: preview.responsibleOptions })).toEqual(analysis)
 
     expect(analysis.phrases).toHaveLength(9)
     expect(analysis.phrases[0]).toMatchObject({ text: "ORDEN Y LIMPIEZA", count: 2, suggestion: { hierarchy: "administrative", source: "keyword" } })
@@ -335,6 +342,79 @@ describe("vista previa: medidas detectadas (Fase C)", () => {
     const preview = await previewRiskImport(await workbookOf([FIXTURE[2]!], "Sin medidas"), { worksiteId: WS, target: "draft", period: 2034 }, author)
     expect(preview.measureAnalysis).toEqual({ measures: [], phrases: [], responsibles: [], deadlines: [] })
   })
+})
+
+/* ── Responsables que se ofrecen (Fase C) ───────────────────────────────── */
+
+describe("vista previa: personas que se ofrecen como responsables (Fase C)", () => {
+  const WS_OTHER = "ws-otra"
+  const allScope = (userId: string) => ({ userId, scope: { mode: "all" as const, ids: [] as [] }, permissions: ["prevention:risk:view", "prevention:risk:edit"] })
+  /* Una fila por RESPONSABLE: el nombre de una persona de la faena, el de una
+   * inactiva de la faena y el de una de otra faena. Son cargos, no personas. */
+  const RESPONSIBLES_FIXTURE: ExcelRow[] = [
+    { number: 1, activity: "Mantención", factor: "Físico", hazard: "Ruido", probability: 1, consequence: 2, measures: "CHARLA DE SEGURIDAD", responsible: "PREVENCIONISTA DE FAENA", deadlines: "MENSUAL" },
+    { number: 2, activity: "Mantención", factor: "Físico", hazard: "Ruido", probability: 1, consequence: 2, measures: "INSPECCIÓN DE EXTINTORES", responsible: "SUPERVISORA INACTIVA", deadlines: "MENSUAL" },
+    { number: 3, activity: "Mantención", factor: "Físico", hazard: "Ruido", probability: 1, consequence: 2, measures: "PERMISO DE TRABAJO", responsible: "JEFE DE OTRA FAENA", deadlines: "MENSUAL" },
+  ]
+
+  /* Sin permisos en la base: no cambian los avisos ni la portada de las demás pruebas. */
+  beforeAll(async () => {
+    await testDb.insert(schema.worksites).values({ id: WS_OTHER, name: "Otra faena", code: "OTR" })
+    await testDb.insert(schema.users).values([
+      { id: "u-inactiva", name: "Supervisora inactiva", email: "inactiva@imp.cl", hashedPassword: "x", isActive: false, emailNotifications: false },
+      { id: "u-otra", name: "Jefe de otra faena", email: "otra@imp.cl", hashedPassword: "x", isActive: true, emailNotifications: false },
+      { id: "u-gerencia", name: "Gerencia de operaciones", email: "gerencia@imp.cl", hashedPassword: "x", isActive: true, emailNotifications: false },
+      { id: "u-ex", name: "Ex gerencia", email: "ex@imp.cl", hashedPassword: "x", isActive: false, emailNotifications: false },
+    ])
+    await testDb.insert(schema.worksiteUsers).values([
+      { userId: "u-inactiva", worksiteId: WS },
+      { userId: "u-otra", worksiteId: WS_OTHER },
+    ])
+  })
+
+  it("ofrece sólo a las personas activas de la faena y sugiere a la que el Excel nombra", async () => {
+    const preview = await previewRiskImport(await workbookOf(RESPONSIBLES_FIXTURE, "Responsables de la faena"), { worksiteId: WS, target: "draft", period: 2035 }, author)
+
+    // Por nombre; ni la inactiva de la faena ni la de otra faena.
+    expect(preview.responsibleOptions.map((option) => option.id)).toEqual(["u-autora", "u-legal", "u-jefa", "u-prev"])
+    expect(Object.fromEntries(preview.measureAnalysis.responsibles.map((group) => [group.text, group.suggestion]))).toEqual({
+      "PREVENCIONISTA DE FAENA": { kind: "user", userId: "u-prev" },
+      "SUPERVISORA INACTIVA": { kind: "text", name: "SUPERVISORA INACTIVA" },
+      "JEFE DE OTRA FAENA": { kind: "text", name: "JEFE DE OTRA FAENA" },
+    })
+  })
+
+  it("quien importa sin ser de la faena se ofrece al final, sólo si está activo", async () => {
+    const bytes = await workbookOf(RESPONSIBLES_FIXTURE, "Responsables: quien importa")
+
+    const active = await previewRiskImport(bytes, { worksiteId: WS, target: "draft", period: 2035 }, allScope("u-gerencia"))
+    expect(active.responsibleOptions.map((option) => option.id)).toEqual(["u-autora", "u-legal", "u-jefa", "u-prev", "u-gerencia"])
+
+    const inactive = await previewRiskImport(bytes, { worksiteId: WS, target: "draft", period: 2035 }, allScope("u-ex"))
+    expect(inactive.responsibleOptions.map((option) => option.id)).toEqual(["u-autora", "u-legal", "u-jefa", "u-prev"])
+  })
+})
+
+/* ── Topes de la importación (Fase C) ───────────────────────────────────── */
+
+describe("vista previa: topes de la importación (Fase C)", () => {
+  it("rechaza más de IMPORT_LIMITS.values responsables distintos antes de guardar el lote", async () => {
+    // 1.001 filas con la misma medida y un cargo distinto cada una.
+    const rows: ExcelRow[] = Array.from({ length: 1001 }, (_, index) => ({
+      number: index + 1, activity: "Mantención", factor: "Físico", hazard: "Ruido", probability: 1, consequence: 2,
+      measures: "CHARLA DE SEGURIDAD", responsible: `Cargo ${String(index + 1).padStart(4, "0")}`,
+    }))
+    const bytes = await workbookOf(rows, "Sobre el tope de responsables")
+
+    const error = await previewRiskImport(bytes, { worksiteId: WS, target: "draft", period: 2036 }, author).catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(RiskLegalDomainError)
+    expect((error as Error).message).toBe("El archivo trae más de 1000 responsables o plazos distintos. Divide el RE-04 en partes.")
+
+    const checksum = createHash("sha256").update(bytes).digest("hex")
+    const batches = await testDb.select({ id: schema.preventionRiskImportBatches.id }).from(schema.preventionRiskImportBatches)
+      .where(eq(schema.preventionRiskImportBatches.sourceChecksumSha256, checksum))
+    expect(batches).toEqual([])
+  }, 60_000)
 })
 
 /* ── Carga en un borrador nuevo ─────────────────────────────────────────── */
