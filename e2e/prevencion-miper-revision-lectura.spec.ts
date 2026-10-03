@@ -9,7 +9,8 @@ import { cabecera, irAPaso, type PasoDelRiesgo } from "./miper-helpers"
  *   • una MIPER lista (`riskmatrix-revision-e2e`, 2041) pasa por la revisión
  *     técnica con la Jefa: «Recorrer la MIPER», el filtro en la URL,
  *     «Siguiente del filtro» (avanza y da la vuelta) y el enlace de la observación;
- *   • Legal y RRHH ve el editor sin campos editables y recorre el mismo filtro;
+ *   • Legal y RRHH ve el editor sin campos editables —salvo «Nueva observación»
+ *     en Seguimiento: revisa su etapa— y recorre el mismo filtro;
  *   • `miper.lectura@` (sólo `prevention:risk:view`) no ve ningún control de
  *     edición, ni en la MIPER en revisión ni en la reemplazada, y la bitácora de
  *     la reemplazada (60 eventos sembrados) pagina de 50 en 50;
@@ -54,6 +55,18 @@ const estado = (page: Page, label: string | RegExp) => page.getByRole("banner").
 const editables = (page: Page): Locator =>
   page.locator("main").locator('input:not([type="hidden"]), textarea, select, [role="combobox"], [role="radio"], [role="checkbox"], [contenteditable="true"]')
     .and(page.locator(':not([disabled]):not([readonly]):not([aria-disabled="true"]):not([aria-readonly="true"])'))
+
+/**
+ * Quien revisa la etapa abierta no edita el riesgo, pero sí lo observa (§5.4:
+ * «si es revisor, observar»; `addMiperObservation` lo acepta también en la
+ * etapa de Legal y RRHH). Lo único que puede escribir es «Nueva observación»,
+ * y sólo en Seguimiento: las dos cuentas juntas prueban que es ése y no otro.
+ */
+async function soloObserva(page: Page, paso: PasoDelRiesgo) {
+  const esperados = paso === "Seguimiento" ? 1 : 0
+  await expect(editables(page)).toHaveCount(esperados)
+  await expect(editables(page).and(page.getByRole("textbox", { name: "Nueva observación", exact: true }))).toHaveCount(esperados)
+}
 
 async function sinControlesDeEdicion(page: Page) {
   for (const nombre of ["Nueva tarea", "Seleccionar", "Editar contexto", "Vincular medidas", "Editar antecedentes", "Completar antecedentes"]) {
@@ -172,10 +185,12 @@ test("Legal y RRHH ve el editor sin campos editables y recorre el mismo filtro; 
   await expect(legal.getByRole("heading", { level: 2, name: PELIGRO_1 })).toBeVisible()
   for (const paso of PASOS) {
     await irAPaso(legal, paso)
-    await expect(editables(legal)).toHaveCount(0)
+    await soloObserva(legal, paso)
   }
   await siguienteDelFiltro(legal, PELIGRO_3)
-  await expect(editables(legal)).toHaveCount(0)
+  // «Siguiente del filtro» conserva el paso: sigue en Seguimiento, donde sólo observa.
+  await expect(legal.getByRole("tab", { name: /Seguimiento/, selected: true })).toBeVisible()
+  await soloObserva(legal, "Seguimiento")
   // No se aprueba ni se sella: la MIPER sigue esperando a Legal y RRHH.
   await legal.goto(REV)
   await expect(estado(legal, /Pendiente de aprobación Legal y RRHH/)).toBeVisible()
