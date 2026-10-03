@@ -70,6 +70,19 @@ describe("ResumenPanel — cuatro cifras que llevan a su subconjunto (A1)", () =
     expect(screen.getByRole("link", { name: /^Avance del programa/ })).toHaveTextContent("Sin ocurrencias")
   })
 
+  it("«Avance del programa» redondea hacia abajo: 199 de 200 no es 100% (y 29 de 100 es 29%, sin el error de coma flotante)", () => {
+    const at = (done: number, planned: number) => {
+      nav.query = ""
+      return render(<ResumenPanel matrixId="m1" rows={ROWS} tree={treeOf(ROWS, INCOMPLETE)} incomplete={INCOMPLETE} editable onNewTask={vi.fn()}
+        programProgress={{ done, late: 0, pending: planned - done, overdue: 0, failed: 0, planned, ratio: done / planned }} />)
+    }
+    const first = at(199, 200)
+    expect(screen.getByRole("link", { name: /^Avance del programa/ })).toHaveTextContent(/^Avance del programa99%/)
+    first.unmount()
+    at(29, 100)
+    expect(screen.getByRole("link", { name: /^Avance del programa/ })).toHaveTextContent(/^Avance del programa29%/)
+  })
+
   it("sin riesgos, el estado vacío explica y ofrece «Nueva tarea» (A4)", () => {
     const onNewTask = vi.fn()
     show("", [], new Set(), onNewTask)

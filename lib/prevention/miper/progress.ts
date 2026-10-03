@@ -57,3 +57,13 @@ export function programProgress(
   const planned = done + pending + failed
   return { done, late, pending, overdue, failed, planned, ratio: planned === 0 ? null : done / planned }
 }
+
+/**
+ * El avance como porcentaje entero para mostrar, o `null` sin nada planificado.
+ * Hacia abajo: `Math.round` diría 100% con 199/200, con una ocurrencia aún
+ * pendiente. En enteros: `Math.floor(ratio * 100)` diría 28% con 29/100
+ * (0.29 * 100 = 28,99… en coma flotante).
+ */
+export function progressPercent(progress: Pick<ProgramProgress, "done" | "planned">): number | null {
+  return progress.planned === 0 ? null : Math.floor((progress.done * 100) / progress.planned)
+}

@@ -212,6 +212,14 @@ describe("MiperHome — filas", () => {
     expect(fila("Faena C").queryByText("Sin programa")).toBeNull()
   })
 
+  it("el avance redondea hacia abajo: 199 de 200 no es 100% (y 29 de 100 es 29%, sin el error de coma flotante)", () => {
+    const at = (done: number, planned: number) => ({ done, late: 0, pending: planned - done, overdue: 0, failed: 0, planned, ratio: done / planned })
+    show("", [row({ programProgress: at(199, 200) }), row({ id: "ws-g", worksiteId: "ws-g", worksiteName: "Faena G", programProgress: at(29, 100) })])
+    const fila = (faena: string) => within(tabla().getByText(faena).closest("tr")!)
+    expect(fila("Faena A").getByText("99% · 199/200")).toBeInTheDocument()
+    expect(fila("Faena G").getByText("29% · 29/100")).toBeInTheDocument()
+  })
+
   it("con la vigente aparte, el avance del programa (que es el de la vigente) lo dice: «en la vigente», en la tabla y en la tarjeta", () => {
     const vigente = { id: "m-v", period: 2025, versionNumber: 3, label: "Vigente · v3", isLegacy: false }
     show("", [

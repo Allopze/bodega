@@ -21,7 +21,7 @@ import { Sheet, SheetBody, SheetCloseButton, SheetContent, SheetDescription, She
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useOperation } from "@/lib/hooks/use-operation"
-import type { ProgramProgress } from "@/lib/prevention/miper/progress"
+import { progressPercent, type ProgramProgress } from "@/lib/prevention/miper/progress"
 import { canExecuteProgramAction, type WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
 import { PROGRAM_FILTER_KEYS } from "@/lib/prevention/miper/workspace-url"
 import type { ProgramActionView, ProgramHeaderView, ProgramOccurrenceView, ProgramWorkspace } from "@/lib/services/miper/program-queries"
@@ -86,7 +86,7 @@ function recordBadge(record: { outcome: string; voidedAt: string | null }): Stat
 }
 
 const ratioLabel = (progress: ProgramProgress) =>
-  progress.ratio === null ? "Sin ocurrencias planificadas" : `${Math.round(progress.ratio * 100)}% realizado`
+  progress.ratio === null ? "Sin ocurrencias planificadas" : `${progressPercent(progress)}% realizado`
 
 /**
  * Pestaña «Programa» del espacio de trabajo MIPER: el Programa de Trabajo

@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Progress } from "@/components/ui/progress"
 import { SummaryBar, type SummaryLinkProps, type SummaryStat } from "@/components/ui/summary-bar"
 import type { ActivityNode } from "@/lib/prevention/miper/matrix-tree"
-import type { ProgramProgress } from "@/lib/prevention/miper/progress"
+import { progressPercent, type ProgramProgress } from "@/lib/prevention/miper/progress"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 import { hrefToMatrixOnly, hrefToProgramOnly, hrefToTab } from "@/lib/prevention/miper/workspace-url"
 import { countOf } from "@/lib/utils"
@@ -55,7 +55,7 @@ export function ResumenPanel({ matrixId, rows, tree, incomplete, programProgress
   const pending = rows.filter((row) => incomplete.has(row.id)).length
   const graves = rows.filter((row) => row.classification === "important" || row.classification === "intolerable").length
   const uncontrolled = rows.filter((row) => row.controlledStatus === "no").length
-  const { done, planned, overdue, ratio } = programProgress
+  const { done, planned, overdue } = programProgress
   const stats: SummaryStat[] = [
     {
       key: "completos", label: "Riesgos completos", value: `${rows.length - pending}/${rows.length}`,
@@ -73,7 +73,7 @@ export function ResumenPanel({ matrixId, rows, tree, incomplete, programProgress
       href: uncontrolled > 0 ? hrefToMatrixOnly(pathname, params, { controlado: "no" }) : undefined,
     },
     {
-      key: "programa", label: "Avance del programa", value: planned === 0 ? "Sin ocurrencias" : `${Math.round((ratio ?? 0) * 100)}%`,
+      key: "programa", label: "Avance del programa", value: planned === 0 ? "Sin ocurrencias" : `${progressPercent(programProgress)}%`,
       secondary: planned === 0 ? "Genera las actividades desde las medidas" : `${done}/${planned} realizadas${overdue > 0 ? ` · ${countOf(overdue, "vencida")}` : ""}`,
       href: hrefToProgramOnly(pathname, params),
     },

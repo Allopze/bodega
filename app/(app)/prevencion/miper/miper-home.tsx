@@ -20,6 +20,7 @@ import {
   PORTFOLIO_SUMMARY_HREF, portfolioHref, portfolioSummary,
   type MiperPortfolioAction, type MiperPortfolioMatrix, type MiperPortfolioRow, type MiperPortfolioStatus,
 } from "@/lib/prevention/miper/portfolio"
+import { progressPercent } from "@/lib/prevention/miper/progress"
 import { countOf, formatDate } from "@/lib/utils"
 import { ImportMiperDialog } from "./import-dialog"
 import { NewMiperDialog, type CreationWorksite } from "./new-miper-dialog"
@@ -79,7 +80,7 @@ function programLabel(row: MiperPortfolioRow): string | null {
   if (!progress) return null
   const where = row.vigente ? " en la vigente" : ""
   if (progress.planned === 0) return `${NO_PROGRAM}${where}`
-  return `${Math.round((progress.ratio ?? 0) * 100)}% · ${progress.done}/${progress.planned}${where}`
+  return `${progressPercent(progress)}% · ${progress.done}/${progress.planned}${where}`
 }
 
 /** Faena, su MIPER, la vigente si es otra y lo que cada MIPER espera de ti (un enlace por acción). */

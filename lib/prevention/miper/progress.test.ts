@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { programProgress } from "./progress"
+import { programProgress, progressPercent } from "./progress"
 
 describe("avance del programa", () => {
   it("cuenta realizadas (con fuera de plazo), pendientes, vencidas e incumplidas", () => {
@@ -57,5 +57,20 @@ describe("avance del programa", () => {
     const onlySuperseded = programProgress([{ outcome: "superseded", dueOn: "2026-01-31" }], "2026-12-31")
     expect(onlySuperseded.planned).toBe(0)
     expect(onlySuperseded.ratio).toBeNull()
+  })
+})
+
+describe("progressPercent", () => {
+  it("redondea hacia abajo: 199 de 200 es 99%, nunca 100% con algo pendiente", () => {
+    expect(progressPercent({ done: 199, planned: 200 })).toBe(99)
+    expect(progressPercent({ done: 200, planned: 200 })).toBe(100)
+    expect(progressPercent({ done: 1, planned: 3 })).toBe(33)
+  })
+  it("en enteros: 29 de 100 es 29% (`Math.floor(0.29 * 100)` daría 28)", () => {
+    expect(progressPercent({ done: 29, planned: 100 })).toBe(29)
+    expect(progressPercent({ done: 57, planned: 100 })).toBe(57)
+  })
+  it("sin nada planificado no hay porcentaje", () => {
+    expect(progressPercent({ done: 0, planned: 0 })).toBeNull()
   })
 })
