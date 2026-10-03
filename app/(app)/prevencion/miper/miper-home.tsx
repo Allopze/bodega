@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useSafeShellHeader } from "@/components/layout/header-context"
 import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/ui/data-table"
@@ -174,6 +175,8 @@ export function MiperHome({ rows, creationWorksites, currentYear, permissions }:
   const visible = filterPortfolioRows(rows, params)
   const summary = portfolioSummary(rows)
   const filtered = hasPortfolioFilters(params)
+  // La búsqueda del TopBar la aplica `DataTable` sobre `visible`; aquí sólo importa para explicar una lista vacía.
+  const { searchQuery, setSearchQuery } = useSafeShellHeader()
   // El alta vive aquí: la abren la cabecera («Nueva MIPER») y la fila de una faena sin MIPER («Crear MIPER»).
   const [creating, setCreating] = useState<{ worksiteId: string | null } | null>(null)
   const creatable = new Set(creationWorksites.map((worksite) => worksite.id))
@@ -190,13 +193,16 @@ export function MiperHome({ rows, creationWorksites, currentYear, permissions }:
   if (params.sinControl) chips.push({ key: "sincontrol", label: "Riesgos críticos", value: "1", displayValue: "sin control" })
 
   const withoutMiper = summary.total - summary.withMiper
-  const empty = params.vista === "mias" && params.estado === null && chips.length === 0
-    ? { title: "No tienes MIPER pendientes", description: "Cuando una MIPER espere tu revisión, tu firma o tu respuesta, aparecerá aquí." }
-    : filtered
-      ? { title: "Ninguna faena coincide con los filtros", description: "Quita algún filtro para ver las demás faenas." }
-      : rows.length === 0
-        ? { title: "No hay faenas a tu alcance", description: "Pide a Administración que te asigne una faena para ver o crear su MIPER." }
-        : { title: "Ninguna faena coincide con la búsqueda", description: "Prueba con otro nombre de faena o de estado." }
+  // A4: el vacío dice qué lo causó. Si los filtros dejan faenas y es la búsqueda la que las quita, se ofrece
+  // borrarla; si los filtros ya vaciaron la lista, borrar la búsqueda no traería nada y mandan sus mensajes.
+  const searchEmptied = searchQuery.trim() !== "" && visible.length > 0
+  const empty = searchEmptied
+    ? { title: "Ninguna faena coincide con la búsqueda", description: "Prueba con otro nombre de faena o de estado.", action: "search" as const }
+    : params.vista === "mias" && params.estado === null && chips.length === 0
+      ? { title: "No tienes MIPER pendientes", description: "Cuando una MIPER espere tu revisión, tu firma o tu respuesta, aparecerá aquí.", action: "filters" as const }
+      : filtered
+        ? { title: "Ninguna faena coincide con los filtros", description: "Quita algún filtro para ver las demás faenas.", action: "filters" as const }
+        : { title: "No hay faenas a tu alcance", description: "Pide a Administración que te asigne una faena para ver o crear su MIPER.", action: null }
 
   return (
     <PageContainer width="wide">
@@ -253,7 +259,11 @@ export function MiperHome({ rows, creationWorksites, currentYear, permissions }:
           searchKeys={["worksiteName", "stateLabel"]}
           emptyTitle={empty.title}
           emptyDescription={empty.description}
-          emptyAction={filtered ? <Button type="button" variant="secondary" size="sm" onClick={clearAll}>Ver todas las faenas</Button> : undefined}
+          emptyAction={empty.action === "search"
+            ? <Button type="button" variant="secondary" size="sm" onClick={() => setSearchQuery("")}>Limpiar búsqueda</Button>
+            : empty.action === "filters"
+              ? <Button type="button" variant="secondary" size="sm" onClick={clearAll}>Ver todas las faenas</Button>
+              : undefined}
           renderRow={(row) => (
             <TableRow key={row.id} data-worksite-id={row.worksiteId}>
               <TableCell><Worksite row={row} /></TableCell>

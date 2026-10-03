@@ -2,7 +2,7 @@
 import type { ReactNode } from "react"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ShellHeaderProvider } from "@/components/layout/header-context"
+import { ShellHeaderProvider, useSafeShellHeader } from "@/components/layout/header-context"
 import type { MiperPortfolioRow } from "@/lib/prevention/miper/portfolio"
 
 const nav = vi.hoisted(() => ({ query: "" }))
@@ -44,14 +44,22 @@ const ROWS = [
 ]
 const CREATION = [{ id: "ws-c", name: "Faena C", vigenteId: null, vigentePeriod: null, vigenteIsLegacy: false, vigenteHasUnsentChanges: false }]
 
+/** El buscador del TopBar, reducido a lo que importa aquí: escribe en el `searchQuery` de la shell. */
+function TopBarSearch() {
+  const { searchQuery, setSearchQuery } = useSafeShellHeader()
+  return <input aria-label="Filtrar en esta página" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
+}
+
 function show(query = "", rows: MiperPortfolioRow[] = ROWS, canEdit = true, creation = canEdit ? CREATION : []) {
   nav.query = query
   return render(
     <ShellHeaderProvider>
+      <TopBarSearch />
       <MiperHome rows={rows} creationWorksites={creation} currentYear={2026} permissions={{ canEdit, canManageCatalog: false }} />
     </ShellHeaderProvider>,
   )
 }
+const search = (text: string) => fireEvent.change(screen.getByRole("textbox", { name: "Filtrar en esta página" }), { target: { value: text } })
 const tabla = () => within(screen.getByRole("table", { name: "MIPER por faena" }))
 
 afterEach(() => {
@@ -140,6 +148,36 @@ describe("MiperHome — vista, estado y enlaces viejos", () => {
     expect(screen.getAllByText("No tienes MIPER pendientes").length).toBeGreaterThan(0)
     fireEvent.click(screen.getAllByRole("button", { name: "Ver todas las faenas" })[0]!)
     expect(router.replace).toHaveBeenCalledWith("/prevencion/miper", { scroll: false })
+  })
+})
+
+describe("MiperHome — estado vacío y búsqueda del TopBar (A4)", () => {
+  it("una búsqueda sin resultados lo dice y ofrece «Limpiar búsqueda», que la borra", () => {
+    show("estado=vigente")
+    search("zzz")
+    expect(screen.getAllByText("Ninguna faena coincide con la búsqueda").length).toBeGreaterThan(0)
+    expect(screen.queryByText("Ninguna faena coincide con los filtros")).toBeNull()
+    fireEvent.click(screen.getAllByRole("button", { name: "Limpiar búsqueda" })[0]!)
+    expect(screen.getByRole("textbox", { name: "Filtrar en esta página" })).toHaveValue("")
+    expect(tabla().getByText("Faena A")).toBeInTheDocument()
+    // Limpiar la búsqueda no toca los filtros de la URL.
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+
+  it("en «Requieren mi acción» con MIPER pendientes, una búsqueda que vacía la lista NO dice «No tienes MIPER pendientes»", () => {
+    show("vista=mias")
+    search("zzz")
+    expect(screen.queryByText("No tienes MIPER pendientes")).toBeNull()
+    expect(screen.getAllByText("Ninguna faena coincide con la búsqueda").length).toBeGreaterThan(0)
+    expect(screen.getAllByRole("button", { name: "Limpiar búsqueda" }).length).toBeGreaterThan(0)
+  })
+
+  it("si los filtros ya vacían la lista, manda el mensaje de los filtros aunque haya búsqueda", () => {
+    show("estado=observada")
+    search("Faena")
+    expect(screen.getAllByText("Ninguna faena coincide con los filtros").length).toBeGreaterThan(0)
+    expect(screen.queryByRole("button", { name: "Limpiar búsqueda" })).toBeNull()
+    expect(screen.getAllByRole("button", { name: "Ver todas las faenas" }).length).toBeGreaterThan(0)
   })
 })
 
