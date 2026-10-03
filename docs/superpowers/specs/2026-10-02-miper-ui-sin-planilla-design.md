@@ -529,10 +529,12 @@ vive en `portfolio.ts` (plan maestro de 2026-10-02).
 - **Tipo.** Gana la palabra clave que aparece primero; sin ninguna, IV marcada «sin pista».
   Todo tipo inferido nace «Sugerida» y lo confirma una persona: eligiéndolo, con «Confirmar» o
   con «Aceptar sugerencias».
-- **Plazos** (`deadlineSuggestion`, una vez por valor). Una fecha escrita → por implementar con esa
-  fecha; «en N días» → hoy + N; «al ocurrir» → existente con frecuencia «Al ocurrir» (contingencia
-  que ya existe); «inmediato» → por implementar, hoy, y el paso dice cuántas medidas vencen hoy;
-  una frecuencia («TRIMESTRAL», «ANTES DE CADA OPERACIÓN», «cada N días») → existente con ese texto.
+- **Plazos** (`deadlineSuggestion`, una vez por valor). Primero, «Existente · frecuencia» o
+  «Existente» (como escribe PLAZOS el libro exportado) → existente con lo que sigue como
+  frecuencia, o sin ella. Una fecha escrita → por implementar con esa fecha; «en N días» o «de N
+  días» → hoy + N; «al ocurrir» → existente con frecuencia «Al ocurrir» (contingencia que ya
+  existe); «inmediato» → por implementar, hoy, y el paso dice cuántas medidas vencen hoy; una
+  frecuencia («TRIMESTRAL», «ANTES DE CADA OPERACIÓN», «cada N días») → existente con ese texto.
   Sin pista → por implementar sin fecha. «PARCIALMENTE CONTROLADO - REQUIERE ACCIÓN INMEDIATA» se lee
   como parcial (`controlledStatusOf`, por prefijo).
 - **Diálogo.** Cuatro pasos (Archivo → Filas → Medidas detectadas → Confirmar). Frases en páginas
@@ -543,8 +545,9 @@ vive en `portfolio.ts` (plan maestro de 2026-10-02).
   exige personas activas y de la faena, y crea borrador, riesgos, medidas y traza en una sola
   transacción (`createMiperWithClient`). Relee el lote con `FOR UPDATE`: dos cargas a la vez del
   mismo lote no duplican riesgos ni medidas.
-- **Excel.** MEDIDA, RESPONSABLE y PLAZOS llevan una línea por medida; PLAZOS es la frecuencia
-  (existente) o la fecha (por implementar).
+- **Excel.** MEDIDA, RESPONSABLE y PLAZOS llevan una línea por medida; PLAZOS dice «Existente ·
+  frecuencia» (o «Existente») en una existente y la fecha en una por implementar, y la importación
+  lo lee de vuelta: el libro exportado se reimporta sin perder cuál es cuál.
 - **Verificación con el RE-04 real:** `qa/reports/2026-10-03-miper-c.md`, en la base E2E
   desechable y no en `bodega_dev` (revertir ahí exigía borrar filas de `audit_log`).
 

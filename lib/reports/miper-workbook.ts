@@ -36,6 +36,7 @@ import ExcelJS from "exceljs"
 import { sanitizeCell as safe } from "@/lib/reports/export-module/excel-builder"
 import { CLASSIFICATION_CRITERIA, CLASSIFICATION_LABEL, CONSEQUENCE_LEVELS, PROBABILITY_LEVELS, RISK_CLASSIFICATIONS } from "@/lib/prevention/miper/methodology"
 import type { ProgramProgress } from "@/lib/prevention/miper/progress"
+import { existingDeadlineText } from "@/lib/prevention/miper/re04-measures"
 import type { ProgramScheduleKind } from "@/lib/prevention/miper/schedule"
 import { CONTROL_HIERARCHY_LABEL, CONTROLLED_STATUS_LABEL, type MiperSnapshot } from "@/lib/prevention/miper/snapshot"
 import { getProgramWorkspace, type ProgramActionView, type ProgramWorkspace } from "@/lib/services/miper/program-queries"
@@ -307,15 +308,16 @@ export async function buildMiperWorkbook(detail: MiperVersionDetail, program?: P
   for (const entry of snapshot.entries) {
     // Fase C: una línea por medida en MEDIDA, RESPONSABLE y PLAZOS, para que la
     // línea N de las tres sea la misma medida. Antes RESPONSABLE se deduplicaba y
-    // PLAZOS descartaba las vacías, y las columnas se desalineaban. PLAZOS es la
-    // frecuencia de verificación de una medida existente o la fecha de una por
-    // implementar (D5). Una foto anterior a la Fase C no trae `isExisting`: por
-    // implementar, la regla de entonces.
+    // PLAZOS descartaba las vacías, y las columnas se desalineaban. PLAZOS dice
+    // «Existente · frecuencia» (o «Existente») en una medida existente y la fecha
+    // en una por implementar (D5): así el libro, al volver a importarse, conserva
+    // cuál es cuál (`deadlineSuggestion`). Una foto anterior a la Fase C no trae
+    // `isExisting`: por implementar, la regla de entonces.
     const lines = entry.controls.map((control) => ({
       measure: `${CONTROL_HIERARCHY_LABEL[control.hierarchy]}: ${control.description.replace(/\s*\n\s*/g, " ")}`,
       responsible: control.responsibleName ?? MISSING,
       deadline: (control.isExisting ?? false)
-        ? control.verificationFrequency ?? MISSING
+        ? existingDeadlineText(control.verificationFrequency)
         : control.dueDate ? formatDate(control.dueDate) : MISSING,
     }))
     const measures = lines.map((line) => line.measure).join("\n")

@@ -10,7 +10,7 @@ import { OptionSelect } from "@/components/ui/option-select"
 import { Pagination } from "@/components/ui/pagination"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { acceptSuggestions, choosePhraseType, unconfirmedCount, type ImportDecisions, type PhraseDecision } from "@/lib/prevention/miper/import-decisions"
-import type { DeadlineDecision, MeasureAnalysis, PhraseGroup, ResponsibleDecision } from "@/lib/prevention/miper/re04-measures"
+import { FREQUENCY_MAX_LENGTH, type DeadlineDecision, type MeasureAnalysis, type PhraseGroup, type ResponsibleDecision, type ValueGroup } from "@/lib/prevention/miper/re04-measures"
 import { CONTROL_HIERARCHY_LABEL, type ControlHierarchy } from "@/lib/prevention/miper/snapshot"
 import { countOf, todayInChile } from "@/lib/utils"
 
@@ -30,6 +30,16 @@ const PHRASES_PER_PAGE = 25
 /** Nombre corto de una frase o un valor para los nombres accesibles. */
 const short = (text: string) => (text.length > 60 ? `${text.slice(0, 60)}…` : text)
 const valueLabel = (group: { text: string | null }) => group.text ?? "(vacío)"
+
+/**
+ * La frecuencia con que nace una medida que se pasa a «Ya implementadas»: la
+ * sugerida si el valor ya era existente (en un libro exportado, «Existente ·
+ * Trimestral» sugiere «Trimestral»), y si no, el texto de PLAZOS.
+ */
+function existingFrequency(group: ValueGroup<DeadlineDecision>): string | null {
+  if (group.suggestion.kind === "existing") return group.suggestion.frequency
+  return group.text?.slice(0, FREQUENCY_MAX_LENGTH) ?? null
+}
 
 /**
  * El aviso de un plazo por implementar que vence el día de la importación o
@@ -258,12 +268,12 @@ export function ImportMeasuresStep({ analysis, responsibleOptions, decisions, on
                     <TableCell className="min-w-56">
                       <OptionSelect aria-label={`Cómo se cargan las medidas con «${label}»`} options={KIND_OPTIONS} value={decision.kind}
                         onValueChange={(kind) => setDeadline(group.key, kind === "existing"
-                          ? { kind: "existing", frequency: group.text?.slice(0, 120) ?? null }
+                          ? { kind: "existing", frequency: existingFrequency(group) }
                           : { kind: "pending", dueDate: todayInChile() })} />
                     </TableCell>
                     <TableCell className="min-w-48">
                       {decision.kind === "existing" ? (
-                        <Input aria-label={`Frecuencia de verificación para «${label}»`} value={decision.frequency ?? ""} maxLength={120} placeholder="Trimestral"
+                        <Input aria-label={`Frecuencia de verificación para «${label}»`} value={decision.frequency ?? ""} maxLength={FREQUENCY_MAX_LENGTH} placeholder="Trimestral"
                           onChange={(event) => setDeadline(group.key, { kind: "existing", frequency: event.target.value || null })} />
                       ) : (
                         <div className="space-y-1">

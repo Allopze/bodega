@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { RE04_METHODOLOGY } from "@/lib/prevention/miper/methodology"
-import { analyzeRe04Measures } from "@/lib/prevention/miper/re04-measures"
+import { analyzeRe04Measures, suggestedMappings } from "@/lib/prevention/miper/re04-measures"
 import type { MiperSnapshot } from "@/lib/prevention/miper/snapshot"
 import type { ProgramWorkspace } from "@/lib/services/miper/program-queries"
 import { buildMiperWorkbook, miperFilenameBase, type MiperVersionDetail } from "./miper-workbook"
@@ -88,8 +88,9 @@ const program = {
 } as unknown as ProgramWorkspace
 
 /**
- * Fase C: una fila con una medida por implementar, una existente con frecuencia
- * y una existente sin frecuencia (con un plazo viejo que ya no aplica). La
+ * Fase C: una fila con una medida por implementar, una existente con frecuencia,
+ * una existente sin frecuencia (con un plazo viejo que ya no aplica) y una
+ * existente con una frecuencia que la importación no reconoce como tal. La
  * descripción de la segunda trae un salto de línea, como sale de un `Textarea`.
  */
 const alignedSnapshot: MiperSnapshot = {
@@ -100,6 +101,7 @@ const alignedSnapshot: MiperSnapshot = {
       { id: "ctl-a", hierarchy: "engineering", description: "Topes de descarga", responsibleUserId: null, responsibleName: "Supervisor de patio", dueDate: "2026-06-30", status: "proposed", isExisting: false, verificationFrequency: null },
       { id: "ctl-b", hierarchy: "administrative", description: "Charla de inicio\nde turno", responsibleUserId: null, responsibleName: null, dueDate: null, status: "proposed", isExisting: true, verificationFrequency: "Trimestral" },
       { id: "ctl-c", hierarchy: "ppe", description: "Casco y barbiquejo", responsibleUserId: null, responsibleName: "Jefe de faena", dueDate: "2026-12-31", status: "proposed", isExisting: true, verificationFrequency: null },
+      { id: "ctl-d", hierarchy: "administrative", description: "Revisión de extintores", responsibleUserId: null, responsibleName: "Jefe de faena", dueDate: null, status: "proposed", isExisting: true, verificationFrequency: "Al inicio del turno" },
     ],
   }],
 }
@@ -225,32 +227,42 @@ describe("libro RE-04 de una versión sellada de la MIPER", () => {
     expect(sheetText(workbook, "Programa de Trabajo")).toContain("no tiene actividades del Programa de Trabajo (RE-04.1) registradas")
   })
 
-  it("una línea por medida en MEDIDA, RESPONSABLE y PLAZOS: frecuencia si es existente, fecha si es por implementar (Fase C)", async () => {
+  it("una línea por medida en MEDIDA, RESPONSABLE y PLAZOS: «Existente · frecuencia» si es existente, fecha si es por implementar (Fase C)", async () => {
     const workbook = await buildMiperWorkbook(alignedDetail, null)
     const sheet = workbook.getWorksheet("RE-04 IPER")!
     expect(sheet.getCell("R14").value).toBe(
-      "III. Controles de ingeniería: Topes de descarga\nIV. Controles administrativos: Charla de inicio de turno\nV. Elementos de protección personal: Casco y barbiquejo",
+      "III. Controles de ingeniería: Topes de descarga\nIV. Controles administrativos: Charla de inicio de turno\nV. Elementos de protección personal: Casco y barbiquejo\nIV. Controles administrativos: Revisión de extintores",
     )
-    expect(sheet.getCell("T14").value).toBe("Supervisor de patio\n—\nJefe de faena")
-    expect(sheet.getCell("U14").value).toBe("30-06-2026\nTrimestral\n—")
+    expect(sheet.getCell("T14").value).toBe("Supervisor de patio\n—\nJefe de faena\nJefe de faena")
+    // PLAZOS se describe solo: la existente lo dice aunque no tenga frecuencia; «—» queda para la por implementar sin fecha.
+    expect(sheet.getCell("U14").value).toBe("30-06-2026\nExistente · Trimestral\nExistente\nExistente · Al inicio del turno")
   })
 
   it("una descripción con salto de línea no corre las líneas: las tres columnas tienen tantas líneas como medidas", async () => {
     const workbook = await buildMiperWorkbook(alignedDetail, null)
     const sheet = workbook.getWorksheet("RE-04 IPER")!
     const lines = (cell: string) => String(sheet.getCell(cell).value).split("\n").length
-    expect([lines("R14"), lines("T14"), lines("U14")]).toEqual([3, 3, 3])
+    expect([lines("R14"), lines("T14"), lines("U14")]).toEqual([4, 4, 4])
   })
 
-  it("el libro exportado se vuelve a importar: cada medida conserva su tipo, su responsable y su plazo (Fase C)", async () => {
+  it("el libro exportado se vuelve a importar: cada medida conserva su tipo, su responsable y si es existente (con su frecuencia) o por implementar (con su plazo) (Fase C)", async () => {
     const sheet = (await buildMiperWorkbook(alignedDetail, null)).getWorksheet("RE-04 IPER")!
     const original = { "MEDIDA DE CONTROL": sheet.getCell("R14").value, "RESPONSABLE": sheet.getCell("T14").value, "PLAZOS": sheet.getCell("U14").value }
-    const { measures, phrases } = analyzeRe04Measures([{ rowNumber: 14, status: "ready", original }], { today: "2026-10-03" })
-    expect(measures.map((measure) => [measure.text, measure.prefix, measure.responsibleKey, measure.deadlineKey])).toEqual([
-      ["Topes de descarga", "engineering", "supervisor de patio", "30-06-2026"],
-      ["Charla de inicio de turno", "administrative", "", "trimestral"],
-      ["Casco y barbiquejo", "ppe", "jefe de faena", ""],
+    const analysis = analyzeRe04Measures([{ rowNumber: 14, status: "ready", original }], { today: "2026-10-03" })
+    const { measures, phrases } = analysis
+    expect(measures.map((measure) => [measure.text, measure.prefix, measure.responsibleKey])).toEqual([
+      ["Topes de descarga", "engineering", "supervisor de patio"],
+      ["Charla de inicio de turno", "administrative", ""],
+      ["Casco y barbiquejo", "ppe", "jefe de faena"],
+      ["Revisión de extintores", "administrative", "jefe de faena"],
     ])
     expect(phrases.every((phrase) => phrase.suggestion.source === "prefix")).toBe(true)
+    // Lo que carga «Aceptar sugerencias» es, medida por medida, lo que la MIPER tenía: incluida
+    // la existente sin frecuencia (ctl-c) y la de una frecuencia que no es palabra clave (ctl-d).
+    const { deadlineMapping } = suggestedMappings(analysis)
+    const controls = alignedSnapshot.entries[0]!.controls
+    expect(measures.map((measure) => deadlineMapping[measure.deadlineKey])).toEqual(controls.map((control) => (control.isExisting
+      ? { kind: "existing", frequency: control.verificationFrequency }
+      : { kind: "pending", dueDate: control.dueDate })))
   })
 })

@@ -83,6 +83,23 @@ describe("ImportMeasuresStep (Fase C)", () => {
     expect(within(plazos).queryByRole("textbox", { name: "Frecuencia de verificación para «TRIMESTRAL»" })).toBeNull()
   })
 
+  it("en un libro exportado, volver a «Ya implementadas» repone la frecuencia sugerida, no el «Existente · …» de PLAZOS", () => {
+    const onChange = vi.fn()
+    const exported: MeasureAnalysis = {
+      ...ANALYSIS,
+      deadlines: [{ key: "existente · trimestral", text: "Existente · Trimestral", count: 3, suggestion: { kind: "existing", frequency: "Trimestral" } }],
+      measures: ANALYSIS.measures.map((measure) => ({ ...measure, deadlineKey: "existente · trimestral" })),
+    }
+    render(<Harness onChange={onChange} analysis={exported} />)
+    const plazos = screen.getByRole("region", { name: "Plazos del Excel" })
+    const kind = () => within(plazos).getByRole("combobox", { name: "Cómo se cargan las medidas con «Existente · Trimestral»" })
+    fireEvent.click(kind())
+    fireEvent.click(screen.getByRole("option", { name: "Por implementar: llevan plazo" }))
+    fireEvent.click(kind())
+    fireEvent.click(screen.getByRole("option", { name: "Ya implementadas: se verifican" }))
+    expect(onChange.mock.lastCall![0].deadlines["existente · trimestral"]).toEqual({ kind: "existing", frequency: "Trimestral" })
+  })
+
   it("un plazo por implementar que vence hoy lo dice junto a la decisión, con cuántas medidas afecta", () => {
     const hoy = todayInChile()
     render(<Harness analysis={conPlazoInmediato(hoy)} />)

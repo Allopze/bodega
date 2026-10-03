@@ -21,7 +21,8 @@ import { CONTROL_HIERARCHY_LABEL, type ControlHierarchy } from "./snapshot"
 
 /** Largo máximo de una medida: el de `miperControlSaveSchema.values.description`. */
 export const MEASURE_MAX_LENGTH = 3000
-const FREQUENCY_MAX_LENGTH = 120
+/** Largo máximo de una frecuencia de verificación: el de `deadlineDecisionSchema` y `verificationFrequency`. */
+export const FREQUENCY_MAX_LENGTH = 120
 const RESPONSIBLE_MAX_LENGTH = 300
 
 const MEASURE_COLUMN: Re04ColumnLabel = "MEDIDA DE CONTROL"
@@ -46,7 +47,7 @@ export type HierarchySuggestion = { hierarchy: ControlHierarchy; source: Hierarc
 export type MeasurePiece = { text: string; key: string; prefix: ControlHierarchy | null; labeled: boolean; line: number }
 export type ResponsibleDecision = { kind: "user"; userId: string } | { kind: "text"; name: string } | { kind: "none" }
 export type DeadlineDecision = { kind: "existing"; frequency: string | null } | { kind: "pending"; dueDate: string | null }
-export type DeadlineSource = "date" | "relative" | "immediate" | "frequency" | "default"
+export type DeadlineSource = "existing" | "date" | "relative" | "immediate" | "frequency" | "default"
 export type ImportRowInput = { rowNumber: number; status: string; original: unknown }
 export type ResponsibleUser = { id: string; name: string }
 export type ImportMeasure = { rowNumber: number; text: string; phraseKey: string; prefix: ControlHierarchy | null; labeled: boolean; responsibleKey: string; deadlineKey: string }
@@ -230,6 +231,25 @@ export function inferHierarchy(piece: { text: string; prefix?: ControlHierarchy 
 
 /* ── Plazo y responsable sugeridos ──────────────────────────────────────── */
 
+/**
+ * Cómo escribe el libro exportado una medida existente en PLAZOS: «Existente ·
+ * Trimestral», o «Existente» si no tiene frecuencia. Sin la palabra, una
+ * existente sin frecuencia salía «—» y una frecuencia como «Al inicio del turno»
+ * no se distinguía de un plazo: al volver a importar el libro, las dos quedaban
+ * por implementar y sin fecha.
+ */
+const EXISTING_LABEL = "Existente"
+/** «existente» al comienzo, como palabra entera (sobre el texto ya normalizado): «EXISTENTES EN BODEGA» no lo es. */
+const EXISTING_DEADLINE = /^existente(?![\p{L}\p{N}])/u
+const LEADING_WORD = /^[\p{L}\p{M}]+/u
+const LEADING_SEPARATOR = /^[\s·:\-–—]+/u
+
+/** El texto de PLAZOS de una medida existente en el libro exportado (`deadlineSuggestion` lo lee de vuelta). */
+export function existingDeadlineText(frequency: string | null | undefined): string {
+  const cleaned = cleanMiperName(frequency)
+  return cleaned ? `${EXISTING_LABEL} · ${cleaned}` : EXISTING_LABEL
+}
+
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 const LOCAL_DATE = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/
 /**
@@ -253,8 +273,10 @@ function calendarDate(year: number, month: number, day: number): string | null {
 }
 
 /**
- * D6: lo que sugiere un valor de PLAZOS. Una fecha → por implementar con esa
- * fecha; «en N días» o «de N días» → hoy + N (antes que la frecuencia:
+ * D6: lo que sugiere un valor de PLAZOS. Primero, lo que escribe el libro
+ * exportado: «Existente · frecuencia» o «Existente» → existente, con lo que sigue
+ * como frecuencia (o sin ella), aunque parezca un plazo. Una fecha → por
+ * implementar con esa fecha; «en N días» o «de N días» → hoy + N (antes que la frecuencia:
  * «IMPLEMENTAR EN 30 DÍAS Y CONTROL DIARIO», «PLAZO DE 15 DÍAS»; «CADA 30 DÍAS»
  * no lleva «en» ni «de» y es frecuencia);
  * «al ocurrir» → existente, con frecuencia «Al ocurrir» (antes que «inmediato»:
@@ -267,12 +289,16 @@ function calendarDate(year: number, month: number, day: number): string | null {
 export function deadlineSuggestion(text: string | null, today: string): { decision: DeadlineDecision; source: DeadlineSource } {
   const cleaned = cleanMiperName(text)
   if (cleaned === null) return { decision: { kind: "pending", dueDate: null }, source: "default" }
+  const key = normalizeMiperName(cleaned)
+  if (EXISTING_DEADLINE.test(key)) {
+    const frequency = cleanMiperName(cleaned.replace(LEADING_WORD, "").replace(LEADING_SEPARATOR, ""))
+    return { decision: { kind: "existing", frequency: frequency?.slice(0, FREQUENCY_MAX_LENGTH) ?? null }, source: "existing" }
+  }
   const iso = ISO_DATE.exec(cleaned)
   const local = LOCAL_DATE.exec(cleaned)
   const date = iso ? calendarDate(Number(iso[1]), Number(iso[2]), Number(iso[3]))
     : local ? calendarDate(Number(local[3]), Number(local[2]), Number(local[1])) : null
   if (date) return { decision: { kind: "pending", dueDate: date }, source: "date" }
-  const key = normalizeMiperName(cleaned)
   const days = IN_DAYS.exec(key)
   if (days) return { decision: { kind: "pending", dueDate: addDaysToPlainDate(today, Number(days[1])) }, source: "relative" }
   if (ON_OCCURRENCE.test(key)) return { decision: { kind: "existing", frequency: ON_OCCURRENCE_FREQUENCY }, source: "frequency" }

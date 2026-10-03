@@ -103,6 +103,13 @@ describe("deadlineSuggestion: los PLAZOS del RE-04 real", () => {
     ["PLAZO DE 15 DÍAS", { kind: "pending", dueDate: "2026-10-18" }, "relative"],
     // «cada N días» no es un plazo: es la frecuencia con que se verifica una medida existente.
     ["CADA 30 DÍAS", { kind: "existing", frequency: "CADA 30 DÍAS" }, "frequency"],
+    // El libro exportado describe la medida existente en PLAZOS: «Existente · frecuencia» o «Existente».
+    // Se reconoce antes que todo lo demás: lo que sigue es la frecuencia, aunque parezca un plazo.
+    ["Existente · Trimestral", { kind: "existing", frequency: "Trimestral" }, "existing"],
+    ["Existente", { kind: "existing", frequency: null }, "existing"],
+    ["Existente · Al inicio del turno", { kind: "existing", frequency: "Al inicio del turno" }, "existing"],
+    ["EXISTENTE TRIMESTRAL", { kind: "existing", frequency: "TRIMESTRAL" }, "existing"],
+    ["existente ·  en 30 días", { kind: "existing", frequency: "en 30 días" }, "existing"],
     ["30-06-2026", { kind: "pending", dueDate: "2026-06-30" }, "date"],
     ["2026-06-30", { kind: "pending", dueDate: "2026-06-30" }, "date"],
     ["31/12/2026", { kind: "pending", dueDate: "2026-12-31" }, "date"],
@@ -110,7 +117,7 @@ describe("deadlineSuggestion: los PLAZOS del RE-04 real", () => {
     expect(deadlineSuggestion(text, TODAY)).toEqual({ decision, source })
   })
   it("una fecha imposible, un texto sin pista o una celda vacía quedan por implementar y sin fecha", () => {
-    for (const text of ["31-02-2026", "SEGÚN PROGRAMA", "", null]) {
+    for (const text of ["31-02-2026", "SEGÚN PROGRAMA", "EXISTENTES EN BODEGA", "—", "", null]) {
       expect(deadlineSuggestion(text, TODAY)).toEqual({ decision: { kind: "pending", dueDate: null }, source: "default" })
     }
   })
