@@ -161,6 +161,31 @@ describe("ImportMeasuresStep (Fase C)", () => {
     // No queda ninguna: el foco vuelve al filtro en vez de perderse.
     expect(document.activeElement).toBe(screen.getByRole("checkbox", { name: "Sólo sugeridas" }))
   })
+
+  /* Enter con el teclado sobre una opción (Task 10, visto en Chromium). Si el `keydown` no se
+   * cancela, el navegador además «hace clic» con Enter (la activación del `keypress`) sobre lo
+   * que tenga el foco en ese momento. jsdom no sintetiza esa activación: la prueba la hace a
+   * mano, en el mismo orden que Chromium. */
+  function enterComoElNavegador(opcion: HTMLElement) {
+    opcion.focus()
+    const noCancelado = fireEvent.keyDown(opcion, { key: "Enter" })
+    if (noCancelado && document.activeElement instanceof HTMLElement) fireEvent.click(document.activeElement)
+  }
+
+  it.each([
+    { caso: "sin filtro: el foco queda en el selector de esa fila", filtro: false, foco: "Tipo de control de «ORDEN Y LIMPIEZA»" },
+    { caso: "con «Sólo sugeridas»: el foco pasa al selector de la frase que sigue", filtro: true, foco: /^Tipo de control de «USO DE EPP/ },
+  ])("Enter sobre una opción confirma la frase y no abre ningún selector — $caso", ({ filtro, foco }) => {
+    const onChange = vi.fn()
+    render(<Harness onChange={onChange} />)
+    if (filtro) fireEvent.click(screen.getByRole("checkbox", { name: "Sólo sugeridas" }))
+    fireEvent.click(within(tipos()).getByRole("combobox", { name: "Tipo de control de «ORDEN Y LIMPIEZA»" }))
+    enterComoElNavegador(screen.getByRole("option", { name: "IV. Controles administrativos" }))
+    expect(onChange.mock.lastCall![0].phrases["orden limpieza"]).toEqual({ hierarchy: "administrative", confirmed: true })
+    // Antes, el clic de Enter caía en el selector que acababa de recibir el foco y lo abría.
+    expect(screen.queryByRole("listbox")).toBeNull()
+    expect(document.activeElement).toBe(within(tipos()).getByRole("combobox", { name: foco }))
+  })
 })
 
 /** El mismo archivo con el plazo «INMEDIATO…» sugerido para `dueDate`. */

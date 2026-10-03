@@ -1,6 +1,6 @@
 "use client"
 
-import { useId, useLayoutEffect, useRef, useState } from "react"
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -42,6 +42,21 @@ function dueNotice(decision: DeadlineDecision, count: number, today: string): st
   return decision.dueDate === today
     ? `${countOf(count, "medida vence", "medidas vencen")} hoy, el día de la importación.`
     : `${countOf(count, "medida nace vencida", "medidas nacen vencidas")}: la fecha ya pasó.`
+}
+
+/**
+ * Enter sobre una opción del selector de tipo. Radix elige la opción en el
+ * `keydown` y no lo cancela, así que el navegador además «hace clic» con Enter
+ * (la activación del `keypress`) sobre lo que tenga el foco en ese instante.
+ * Confirmar mueve el foco de inmediato al selector que queda en esa posición, y
+ * ese clic lo abría: sin «Sólo sugeridas» se reabría el mismo selector, con el
+ * filtro, el de la frase siguiente. Cancelar el `keydown` quita sólo ese clic,
+ * porque Radix ya eligió. Espacio no lo necesita: Radix ya lo cancela.
+ * Las opciones viven en un portal, pero los eventos de React suben por el árbol
+ * de componentes y llegan a la celda.
+ */
+function cancelEnterClick(event: KeyboardEvent<HTMLElement>) {
+  if (event.key === "Enter" && event.target instanceof Element && event.target.closest('[role="option"]')) event.preventDefault()
 }
 
 /**
@@ -151,7 +166,7 @@ export function ImportMeasuresStep({ analysis, responsibleOptions, decisions, on
                     <TableRow key={phrase.key}>
                       <TableCell className="min-w-64 whitespace-normal">{phrase.text}</TableCell>
                       <TableCell className="text-right tabular-nums">{phrase.count}</TableCell>
-                      <TableCell className="min-w-56">
+                      <TableCell className="min-w-56" onKeyDown={cancelEnterClick}>
                         {/* La sugerida se muestra como marcador y no como valor: así elegir ESE mismo
                           * tipo también la confirma (el selector no avisa cuando el valor no cambia). */}
                         <OptionSelect aria-label={`Tipo de control de «${short(phrase.text)}»`} options={HIERARCHY_OPTIONS}

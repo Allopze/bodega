@@ -219,6 +219,24 @@ test("«Medidas detectadas» en Chromium: el sugerido es el marcador, el foco si
     await tipo(frase).click()
     await page.getByRole("option", { name: opcion, exact: true }).click()
   }
+  /**
+   * Con el teclado: Enter abre el selector (el foco cae en «Buscar en opciones»), End va a «V.»,
+   * ↑ al sugerido «IV.» y `tecla` lo elige. Radix mueve el foco de End y ↑ con un `setTimeout`:
+   * cada tecla espera el foco de la anterior. Después, ningún selector puede quedar abierto: antes
+   * de la corrección de la Task 10, el clic que el navegador sintetiza con Enter caía en el selector
+   * que acababa de recibir el foco y lo abría.
+   */
+  const elegirSugeridoConTeclado = async (frase: string, tecla: "Enter" | " ") => {
+    await tipo(frase).focus()
+    await page.keyboard.press("Enter")
+    await expect(page.getByRole("textbox", { name: "Buscar en opciones", exact: true })).toBeFocused()
+    await page.keyboard.press("End")
+    await expect(page.getByRole("option", { name: "V. Elementos de protección personal", exact: true })).toBeFocused()
+    await page.keyboard.press("ArrowUp")
+    await expect(page.getByRole("option", { name: "IV. Controles administrativos", exact: true })).toBeFocused()
+    await page.keyboard.press(tecla)
+    await expect(page.getByRole("listbox")).toHaveCount(0)
+  }
 
   // El sugerido es el marcador del selector, no su valor, y la línea de aviso cuenta la «sin pista».
   await expect(tipo(charla(1))).toHaveText("IV. Controles administrativos")
@@ -241,17 +259,23 @@ test("«Medidas detectadas» en Chromium: el sugerido es el marcador, el foco si
   await elegirTipo(charla(2), "IV. Controles administrativos")
   await expect(fila(charla(2))).toContainText("Confirmada")
   await expect(aceptar(29)).toBeVisible()
+  // Con teclado y Enter, sin filtro: la fila se queda, confirmada, y su selector conserva el foco.
+  await elegirSugeridoConTeclado(charla(10), "Enter")
+  await expect(fila(charla(10))).toContainText("Confirmada")
+  await expect(tipo(charla(10))).toBeFocused()
+  await expect(aceptar(28)).toBeVisible()
 
   // Las páginas conservan lo decidido: se decide en la 2, se vuelve a la 1 y otra vez a la 2.
   await dialogo.getByRole("button", { name: "Página siguiente", exact: true }).click()
   await expect(tipo(charla(1))).toHaveCount(0)
   await expect(fila(SIN_PISTA)).toContainText("Sugerida · sin pista")
   await elegirTipo(charla(26), "II. Sustitución")
-  await expect(aceptar(28)).toBeVisible()
+  await expect(aceptar(27)).toBeVisible()
   await dialogo.getByRole("button", { name: "Página anterior", exact: true }).click()
   await expect(tipo(charla(1))).toHaveText("III. Controles de ingeniería")
   await expect(fila(charla(1))).toContainText("Confirmada")
   await expect(fila(charla(2))).toContainText("Confirmada")
+  await expect(fila(charla(10))).toContainText("Confirmada")
   await dialogo.getByRole("button", { name: "Página siguiente", exact: true }).click()
   await expect(tipo(charla(26))).toHaveText("II. Sustitución")
   await expect(fila(charla(26))).toContainText("Confirmada")
@@ -270,33 +294,28 @@ test("«Medidas detectadas» en Chromium: el sugerido es el marcador, el foco si
   await page.keyboard.press("Enter")
   await expect(tipo(SIN_PISTA)).toHaveCount(0)
   await expect(tipo(charla(3))).toBeFocused()
-  await expect(aceptar(27)).toBeVisible()
+  await expect(aceptar(26)).toBeVisible()
 
-  // Con teclado en el selector: Enter lo abre (el foco cae en «Buscar en opciones»), End va a
-  // «V.», ↑ al sugerido «IV.» y Espacio lo elige. Radix mueve el foco con un `setTimeout`, así
-  // que cada tecla espera el foco de la anterior. Espacio y no Enter: con Enter, el clic que el
-  // navegador sintetiza cae en el selector que acaba de recibir el foco y lo abre (informe de
-  // la Task 10).
-  await page.keyboard.press("Enter")
-  await expect(page.getByRole("textbox", { name: "Buscar en opciones", exact: true })).toBeFocused()
-  await page.keyboard.press("End")
-  await expect(page.getByRole("option", { name: "V. Elementos de protección personal", exact: true })).toBeFocused()
-  await page.keyboard.press("ArrowUp")
-  await expect(page.getByRole("option", { name: "IV. Controles administrativos", exact: true })).toBeFocused()
-  await page.keyboard.press(" ")
-  await expect(page.getByRole("listbox")).toHaveCount(0)
+  // Con teclado y Enter, con el filtro: la fila sale de la lista y el foco pasa a la frase siguiente.
+  await elegirSugeridoConTeclado(charla(3), "Enter")
   await expect(tipo(charla(3))).toHaveCount(0)
   await expect(tipo(charla(4))).toBeFocused()
-  await expect(aceptar(26)).toBeVisible()
+  await expect(aceptar(25)).toBeVisible()
 
   // Con el ratón y el filtro: elegir el sugerido saca la fila y el foco no vuelve al comienzo del diálogo.
   await elegirTipo(charla(4), "IV. Controles administrativos")
   await expect(tipo(charla(4))).toHaveCount(0)
   await expect(tipo(charla(5))).toBeFocused()
-  await expect(aceptar(25)).toBeVisible()
+  await expect(aceptar(24)).toBeVisible()
+
+  // Con teclado y Espacio, con el filtro: igual que Enter.
+  await elegirSugeridoConTeclado(charla(5), " ")
+  await expect(tipo(charla(5))).toHaveCount(0)
+  await expect(tipo(charla(6))).toBeFocused()
+  await expect(aceptar(23)).toBeVisible()
 
   // «Aceptar sugerencias» confirma las que quedan, también las de la otra página; el foco queda en el filtro.
-  await aceptar(25).click()
+  await aceptar(23).click()
   await expect(dialogo.getByText("No quedan tipos por confirmar.", { exact: true })).toBeVisible()
   await expect(dialogo.getByRole("checkbox", { name: "Sólo sugeridas", exact: true })).toBeFocused()
   await expect(dialogo.getByRole("button", { name: "Siguiente", exact: true })).toBeEnabled()
