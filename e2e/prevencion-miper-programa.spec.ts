@@ -83,7 +83,7 @@ test("la prevencionista arma la matriz, el envío se bloquea sin medida vinculad
   await dialog.getByLabel("Motivo").fill("Elaboración inicial del programa 2027 para la prueba E2E de F2.")
   await dialog.getByRole("button", { name: "Crear borrador" }).click()
   // La MIPER nueva abre con la «Ficha del documento» (los antecedentes RE-04).
-  await expect(page).toHaveURL(/\/prevencion\/miper\/riskmatrix-[^?]+\?ficha=1/)
+  await expect(page).toHaveURL(/\/prevencion\/miper\/riskmatrix-[^?]+\?tab=resumen&ficha=1/)
   miperUrl = page.url().split("?")[0]!
   const ficha = page.getByRole("dialog", { name: "Ficha del documento" })
   await expect(ficha).toBeVisible()

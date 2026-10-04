@@ -29,7 +29,10 @@ export function FollowUpStep({ entry, data, mode, change, baselineEntry, issues 
   const pathname = usePathname()
   const params = useSearchParams()
   const [observation, setObservation] = useState("")
-  const operation = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
+  // La acción revalida la página de la matriz (`guarded` con `matrixId`). Un `router.refresh()`
+  // encima era un segundo viaje RSC y, con la URL ya cambiada por `navigateWorkspace`, dos
+  // desajustes de árbol seguidos hacen que Next recargue el documento entero (se perdía el aviso).
+  const operation = useOperation({ feedback: "toast" })
   const controlIds = new Set(entry.controls.map((control) => control.id))
   const activities = data.controlActionLinks.filter((link) => controlIds.has(link.controlId)).filter((link, index, all) => all.findIndex((other) => other.actionId === link.actionId) === index)
   const programMessage = issues.find((issue) => issue.severity === "error" && issue.field === "programLink")?.message

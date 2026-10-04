@@ -157,7 +157,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, program }
     <PageContainer width="workbench">
       <PageHeader
         title={`Matriz de riesgos · ${worksiteLabel}`}
-        description={`${workspace.label} · ${view.entryId ? "Completa el riesgo y revisa sus datos" : view.tab === "programa" ? "Plan de medidas · Programa de Trabajo RE-04.1" : view.tab === "revision" ? "Revisa los pendientes y las decisiones del documento" : view.tab === "historial" ? "Versiones y cambios del documento" : "MIPER · RE-04"}`}
+        description={view.entryId ? workspace.label : `${workspace.label} · ${view.tab === "programa" ? "Plan de medidas · Programa de Trabajo RE-04.1" : view.tab === "revision" ? "Revisa los pendientes y las decisiones del documento" : view.tab === "historial" ? "Versiones y cambios del documento" : "MIPER · RE-04"}`}
         breadcrumb={<Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "MIPER", href: "/prevencion/miper" }, { label: worksiteLabel }]} />}
         actions={view.entryId ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -175,7 +175,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, program }
       />
       <div className="space-y-3">
         {(!view.entryId || step?.scope === "everywhere") && <NextStepCard step={step} hrefFor={hrefFor} />}
-        {reviewing && !view.entryId && <Callout tone="info" title="Estás revisando la versión enviada">Los cambios que la prevencionista haga después del envío quedan para la ronda siguiente.</Callout>}
+        {reviewing && !view.entryId && view.tab !== "revision" && <Callout tone="info" title="Estás revisando la versión enviada">Los cambios que la prevencionista haga después del envío quedan para la ronda siguiente.</Callout>}
         {showIntolerable && (
           <Callout tone="danger" role="alert" title={activeIntolerable ? "Riesgo Intolerable" : countOf(intolerable, "riesgo Intolerable", "riesgos Intolerables")}>
             {CLASSIFICATION_CRITERIA.intolerable}

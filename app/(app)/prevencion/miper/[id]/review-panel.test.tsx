@@ -57,7 +57,8 @@ describe("ReviewPanel: recorrer la MIPER", () => {
     unmount()
     render(<ReviewPanel workspace={data} mode={{ ...mode, canEdit: true, isSubmitter: true }} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline />)
     expect(screen.getByText(/trabajo editable para otra ronda/)).toBeTruthy()
-    expect(screen.getByText(/la decisión corresponde a otra persona autorizada/)).toBeTruthy()
+    // «Enviaste esta ronda» ya lo dice la tarjeta «Siguiente paso»: el panel no lo repite.
+    expect(screen.queryByText(/la decisión corresponde a otra persona autorizada/)).toBeNull()
     expect(screen.queryByText(/Estás revisando la versión enviada/)).toBeNull()
   })
   it("prioriza observaciones por responder y confirmar antes de las resueltas y de crear otra", () => {

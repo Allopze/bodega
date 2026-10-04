@@ -129,7 +129,7 @@ test.describe("Prevención — portada MIPER por faena", () => {
     await dialog.getByLabel("Motivo").fill("Elaboración inicial de la faena, creada desde su fila en la portada.")
     await dialog.getByRole("button", { name: "Crear borrador" }).click()
     // Abre con la «Ficha del documento», igual que «Nueva MIPER».
-    await expect(page).toHaveURL(/\/prevencion\/miper\/riskmatrix-[^?]+\?ficha=1/)
+    await expect(page).toHaveURL(/\/prevencion\/miper\/riskmatrix-[^?]+\?tab=resumen&ficha=1/)
     await expect(page.getByRole("dialog", { name: "Ficha del documento" })).toBeVisible()
 
     await page.goto(PORTADA)

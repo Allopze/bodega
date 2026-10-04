@@ -205,6 +205,23 @@ describe("MiperHome — filas", () => {
     expect(tabla().getByText("1 crítico sin control en la vigente")).toBeInTheDocument()
   })
 
+  it("con varias MIPER pendientes en la faena, cada botón dice su período además de llevarlo en el nombre", () => {
+    show("", [row({
+      requiresMyAction: true,
+      myActions: [
+        { matrixId: "m-27", period: 2027, reason: "Borrador", kind: "continue" },
+        { matrixId: "m-26", period: 2026, reason: "Cambios sin enviar", kind: "continue" },
+      ],
+    })])
+    expect(tabla().getByRole("link", { name: "Continuar · Faena A · 2027" })).toHaveTextContent(/^Continuar 2027$/)
+    expect(tabla().getByRole("link", { name: "Continuar · Faena A · 2026" })).toHaveTextContent(/^Continuar 2026$/)
+  })
+
+  it("con una sola MIPER pendiente el botón no repite el período", () => {
+    show("", [row({ requiresMyAction: true, myActions: [{ matrixId: "m-a", period: 2026, reason: "Borrador", kind: "continue" }] })])
+    expect(tabla().getByRole("link", { name: "Continuar · Faena A · 2026" })).toHaveTextContent(/^Continuar$/)
+  })
+
   it("muestra la completitud con su barra, y la metodología anterior sin cifra", () => {
     show("", [row({}), row({ id: "ws-d", worksiteId: "ws-d", worksiteName: "Faena D", completeness: null, matrix: { id: "m-d", period: null, versionNumber: null, label: "Vigente · metodología anterior", isLegacy: true } })])
     expect(tabla().getByRole("progressbar", { name: "Faena A: 3 de 4 completos" })).toBeInTheDocument()

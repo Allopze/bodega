@@ -52,6 +52,9 @@ describe("FichaSheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "Guardar antecedentes" }))
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
     expect(updateMiperHeaderAction).toHaveBeenCalledWith(expect.objectContaining({ matrixId: "m1", expectedVersion: 1, iperCode: "RE-04-B" }))
+    // La acción ya revalida la página: un `router.refresh()` encima, con la URL cambiada al
+    // cerrar la ficha, hacía que Next recargara el documento y se perdiera el aviso.
+    expect(router.refresh).not.toHaveBeenCalled()
     expect(screen.queryByRole("dialog", { name: "¿Cerrar sin guardar?" })).toBeNull()
   })
 

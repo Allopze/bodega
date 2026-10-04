@@ -27,7 +27,7 @@ describe("NewMiperDialog (controlado)", () => {
     fireEvent.change(screen.getByLabelText(/Motivo/), { target: { value: "Renovación anual del período." } })
     fireEvent.click(screen.getByRole("button", { name: "Crear borrador" }))
     await waitFor(() => expect(createMiperAction).toHaveBeenCalledWith({ worksiteId: "ws-b", period: 2026, revisionReason: "Renovación anual del período.", sourceMatrixId: "m-b" }))
-    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/prevencion/miper/m-new?ficha=1"))
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/prevencion/miper/m-new?tab=resumen&ficha=1"))
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 

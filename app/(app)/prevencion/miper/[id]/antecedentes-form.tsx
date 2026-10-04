@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState, type FormEvent, type ReactNode } from "react"
-import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -82,7 +81,6 @@ export function AntecedentesForm({ workspace, editable, onSaved, onDirtyChange }
   onSaved?: () => void
   onDirtyChange?: (dirty: boolean) => void
 }) {
-  const router = useRouter()
   const { prefill, matrix } = workspace
   const [header, setHeader] = useState<Header>(workspace.snapshot.header)
   // Lo último que el servidor confirmó: contra esto se mide «sin guardar».
@@ -107,7 +105,10 @@ export function AntecedentesForm({ workspace, editable, onSaved, onDirtyChange }
     window.addEventListener("beforeunload", warn)
     return () => window.removeEventListener("beforeunload", warn)
   }, [dirty])
-  const operation = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
+  // La acción revalida la página de la matriz (`guarded` con `matrixId`). Un `router.refresh()`
+  // encima era un segundo viaje RSC y, con la URL ya cambiada por `navigateWorkspace`, dos
+  // desajustes de árbol seguidos hacen que Next recargue el documento entero (se perdía el aviso).
+  const operation = useOperation({ feedback: "toast" })
   // Mientras guarda, nada se edita: lo enviado es lo que se ve (A2, fila 8).
   const locked = !editable || operation.pending
   // Escribir es decidir no recuperar: el aviso se va y no puede pisar lo nuevo.

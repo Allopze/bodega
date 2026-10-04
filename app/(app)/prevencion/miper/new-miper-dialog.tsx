@@ -64,7 +64,7 @@ function NewMiperForm({ worksites, currentYear, initialWorksiteId, onCreated }: 
     }), (result) => {
       onCreated()
       const id = result.data?.id
-      if (typeof id === "string") router.push(`/prevencion/miper/${id}?ficha=1`)
+      if (typeof id === "string") router.push(`/prevencion/miper/${id}?tab=resumen&ficha=1`)
     })
   }
 

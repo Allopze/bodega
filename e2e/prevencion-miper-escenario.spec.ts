@@ -140,7 +140,7 @@ test("pasos 1–7: la prevencionista crea la MIPER, la completa, genera el progr
   await dialog.getByLabel("Motivo").fill("Escenario completo del §12 para la prueba E2E de la F3.")
   await dialog.getByRole("button", { name: "Crear borrador" }).click()
   // La MIPER nueva abre con la «Ficha del documento» (los antecedentes RE-04).
-  await expect(page).toHaveURL(/\/prevencion\/miper\/riskmatrix-[^?]+\?ficha=1/)
+  await expect(page).toHaveURL(/\/prevencion\/miper\/riskmatrix-[^?]+\?tab=resumen&ficha=1/)
   miperUrl = page.url().split("?")[0]!
   const ficha = page.getByRole("dialog", { name: "Ficha del documento" })
   await expect(ficha).toBeVisible()
