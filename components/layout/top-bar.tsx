@@ -143,7 +143,7 @@ const TopBarInner = React.memo(function TopBarInner({
                   sigue en el árbol de accesibilidad con su <h1> y su
                   descripción. Sin `aria-hidden` el lector anuncia el título y
                   la descripción de la página dos veces en escritorio. */}
-              <div aria-hidden="true" className="flex min-w-0 items-baseline gap-2">
+              <div aria-hidden="true" className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                 {/* Heading destacado al inicio de la vista. `shrink-0`: el
                     título no cede espacio ante la descripción — sin esto, una
                     descripción larga lo truncaba a "Pendientes de f…" incluso

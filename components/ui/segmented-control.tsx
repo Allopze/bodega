@@ -93,12 +93,14 @@ export function SegmentedControl({
   eyebrow,
   className,
 }: SegmentedControlProps) {
+  const navigation = items.every((item) => item.href !== undefined)
+  const Group = navigation ? "nav" : "div"
   return (
     <div className={cn("space-y-1", className)}>
       {eyebrow && (
         <p className="text-eyebrow pl-0.5 text-[var(--color-text-faint)]">{eyebrow}</p>
       )}
-      <nav aria-label={ariaLabel} role="group">
+      <Group aria-label={ariaLabel} role={navigation ? undefined : "group"}>
         <div className={variant === "segmented"
           ? "inline-flex rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]"
           : "flex flex-wrap gap-2"}
@@ -110,7 +112,7 @@ export function SegmentedControl({
               : <SegmentedControlButton key={item.key} item={item} className={itemClass} />
           })}
         </div>
-      </nav>
+      </Group>
     </div>
   )
 }
