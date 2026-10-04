@@ -22,15 +22,25 @@ El Decreto Supremo 44 exige que toda faena cuente con dos instrumentos distintos
 
 La MIPER ya no se piensa como una planilla que se sube una vez al año, sino como un **documento vivo**: se mantiene durante todo el período, se revisa, se aprueba y cada aprobación deja una versión sellada.
 
+### Qué significa cada dato al identificar un riesgo
+
+| Dato | Pregunta práctica | Ejemplo ilustrativo |
+|---|---|---|
+| **Peligro** | ¿Qué condición o fuente puede causar daño? | Piso mojado. |
+| **Riesgo** | ¿Qué podría ocurrir al exponerse al peligro? | Resbalar al pasar por ese lugar. |
+| **Daño probable** | ¿Qué lesión o consecuencia podría resultar? | Lesión por una caída. |
+
+Una **medida de control** describe cómo se previene o reduce ese riesgo. Si requiere trabajo futuro, puede vincularse a una **actividad del programa**; cada fecha de esa actividad es una **ejecución programada**. Registrar que la actividad se hizo documenta su ejecución. **Verificar un control** documenta una comprobación de su eficacia. Son registros distintos: completar los datos de la matriz o realizar una actividad no acredita por sí solo que el control sea eficaz.
+
 ---
 
 ## 2. La MIPER es un Documento Vivo por Faena y Período
 
-Cada faena tiene **una MIPER por período**, entendiendo por período el año (2026, 2027, …). Al abrir una MIPER encontrarás su espacio de trabajo con cinco pestañas: **Resumen · Matriz · Programa · Revisión · Historial**. Abre en la **Matriz**. En el encabezado están **"Cambiar de faena"**, que lleva a la MIPER de otra faena de tu alcance, y **"Ficha del documento"**, donde se completan los antecedentes.
+Cada faena tiene **una MIPER por período**, entendiendo por período el año (2026, 2027, …). Su espacio de trabajo tiene cinco áreas: **Inicio · Riesgos · Plan de medidas · Revisión · Historial**. Desde la portada se abre **Inicio**, que muestra el estado y el siguiente trabajo. Los enlaces directos antiguos al documento conservan la vista de riesgos, y los enlaces a una tarea o riesgo llevan a ese lugar. En el encabezado están **"Cambiar de faena"**, que lleva a la MIPER de otra faena de tu alcance, **"Ficha del documento"**, donde se completan los antecedentes, y las acciones del flujo (**"Enviar a revisión"**, **"Más"**, etc.), disponibles en todas las áreas. Al editar un riesgo, el encabezado se reduce a **"Volver al documento"** y **"Ficha del documento"** para no competir con el formulario.
 
 ### Cómo crear la MIPER de un período nuevo
 
-1. Entra a `/prevencion/miper` y presiona **"Nueva MIPER"**. Si la faena todavía no tiene MIPER, su fila ofrece **"Crear MIPER"**, que abre el mismo diálogo con la faena ya elegida.
+1. Entra a `/prevencion/miper` y presiona **"Crear matriz"** → **"Completar en la plataforma"**. Si la faena todavía no tiene MIPER, su fila ofrece crearla con la faena ya elegida.
 2. Elige la **Faena** (solo las que están dentro de tu alcance) y el **Período**.
 3. Elige el **punto de partida**:
    *   **Copiar la MIPER vigente:** se traen sus filas, medidas y antecedentes. Es lo normal al renovar el año.
@@ -44,17 +54,17 @@ Un borrador que nunca se envió a revisión se puede **descartar** desde su espa
 
 ### Importar el RE-04 desde el Excel real
 
-Desde el encabezado de la portada, **"Importar"** lee la hoja **«RE-04 IPER»** de un Excel del formato real y carga sus riesgos **y sus medidas de control**. Son cuatro pasos:
+Desde **"Crear matriz"** → **"Importar desde Excel"**, se lee la hoja **«RE-04 IPER»** de un Excel del formato real y se cargan sus riesgos **y sus medidas de control**. Son cuatro pasos:
 
 1. **Archivo.** Se elige la **Faena**, el **Período del borrador** y el archivo `.xlsx`, y se aprieta **"Revisar el archivo"**.
-2. **Filas.** Una fila por riesgo con la fila del Excel, la actividad, el peligro/riesgo, la **evaluación que calcula la plataforma** y, si hay algo que mirar, el **problema por fila**: una Probabilidad o Consecuencia **fuera de la escala** (sólo valen **1, 2 y 4**) o un **factor de riesgo que el catálogo no reconoce**. Las filas que sólo avisan de un MR o una clasificación distintos a los del Excel **sí se cargan**. Las filas vacías de la plantilla, que sólo traen el «REVISAR» de la fórmula de CLASIFICACIÓN, no se cuentan.
-3. **Medidas detectadas.** La plataforma separa las medidas de la columna **MEDIDA DE CONTROL** (por saltos de línea; dentro de una línea, por «;»; si la línea es **texto corrido** —varias oraciones— por oración, sin cortar en las comas; y si es una **lista** de una sola oración, por las comas que no están entre paréntesis ni entre dos dígitos: «DISTANCIA MÍNIMA DE 1,5 METROS» es una sola medida) y agrupa lo que se repite: cada **frase distinta**, cada **responsable distinto** y cada **plazo distinto** se deciden **una sola vez**, no fila por fila.
+2. **Revisar riesgos.** Una fila por riesgo con la fila del Excel, la actividad, el peligro/riesgo, la **evaluación que calcula la plataforma** y, si hay algo que mirar, el **problema por fila**: una Probabilidad o Consecuencia **fuera de la escala** (sólo valen **1, 2 y 4**) o un **factor de riesgo que el catálogo no reconoce**. Las filas que sólo avisan de un MR o una clasificación distintos a los del Excel **sí se cargan**. Las filas vacías de la plantilla, que sólo traen el «REVISAR» de la fórmula de CLASIFICACIÓN, no se cuentan.
+3. **Revisar medidas.** La plataforma separa las medidas de la columna **MEDIDA DE CONTROL** (por saltos de línea; dentro de una línea, por «;»; si la línea es **texto corrido** —varias oraciones— por oración, sin cortar en las comas; y si es una **lista** de una sola oración, por las comas que no están entre paréntesis ni entre dos dígitos: «DISTANCIA MÍNIMA DE 1,5 METROS» es una sola medida) y agrupa lo que se repite: cada **frase distinta**, cada **responsable distinto** y cada **plazo distinto** se deciden **una sola vez**, no fila por fila.
    - **Tipo (I–V).** El Excel no lo trae. La plataforma lo **sugiere** por palabras clave (EPP, guantes, casco → V; capacitación, procedimiento, señalización, inspección → IV; barandas, bloqueo, resguardos, mantención → III) y lo carga así: **revisarlo no es obligatorio** para seguir. Corrige el que quieras eligiendo otro tipo en la fila (queda **"Elegida"**); también se puede cambiar después en cada medida, que de todos modos nace «Propuesta». Las frases van en páginas de 25. Una frase sin ninguna pista se carga como IV, dice **"Sin pista"** y va **primero**; **"Sólo sin pista"** deja a la vista sólo esas. Si el Excel es uno exportado por la plataforma, el «IV. Controles administrativos: …» de cada medida ya trae su tipo (**"Del Excel"**). Un número romano suelto, escrito a mano («I. USAR CASCO»), sólo sugiere el tipo.
    - **Responsables.** Cada valor de la columna RESPONSABLE queda **tal como está escrito**, se asigna a una **persona de la faena** (las personas activas de la faena y quien importa) o queda **sin responsable**.
    - **Plazos.** Cada valor de la columna PLAZOS decide si sus medidas **ya están implementadas** o están **por implementar**:
      - **Ya implementadas:** se cargan como **existentes**, con ese texto como **frecuencia de verificación** («TRIMESTRAL», «ANTES DE CADA OPERACIÓN», «CADA 30 DÍAS»). «AL OCURRIR» («INMEDIATO AL OCURRIR») es una medida de contingencia que ya existe: se sugiere existente, con frecuencia «Al ocurrir». En un Excel exportado por la plataforma, «Existente · Trimestral» se sugiere existente con frecuencia «Trimestral», y «Existente» solo, existente sin frecuencia.
      - **Por implementar,** con una **fecha**: «INMEDIATO…» propone el día de la importación, y el paso avisa cuántas medidas **vencen hoy**; «EN 30 DÍAS…» o «PLAZO DE 15 DÍAS» proponen hoy + 30 y hoy + 15, y una fecha escrita se toma tal cual. Un valor que la plataforma no reconoce queda por implementar y sin fecha.
-4. **Confirmar.** Un resumen dice cuántos riesgos se cargan y cuántas medidas (existentes y por implementar), y se elige el destino: **"Cargar en borrador"** (un borrador nuevo del período) o **"Agregar al vigente"**.
+4. **Confirmar destino.** Un resumen identifica faena, período, documento de destino y estado; también dice cuántos riesgos se cargan y cuántas medidas (existentes y por implementar). Se elige **"Cargar en borrador"** (un borrador nuevo del período) o **"Agregar al vigente"**. Agregar al vigente no aprueba una nueva versión.
 
 > [!IMPORTANT]
 > **LAS MEDIDAS IMPORTADAS QUEDAN «PROPUESTA».** Existentes o por implementar, todas entran en estado **Propuesta** hasta que alguien las verifique: importar un Excel **no baja** "Riesgos críticos sin control" sin evidencia.
@@ -110,27 +120,28 @@ La última cifra es **la misma** que el indicador "Riesgos críticos sin control
 
 ### Qué muestra cada fila
 
-*   **Faena:** su nombre (enlace a la MIPER), el período y la versión. Si la vigente es otra MIPER —por ejemplo, porque ya empezaste la del año siguiente—, aparece debajo como **"Vigente vN (AAAA)"**, también como enlace. Lo que espera de ti cada MIPER de la faena aparece como enlace, por ejemplo **"Pendiente de tu revisión · MIPER 2027"**.
-*   **Estado**, con quién envió la ronda en curso. Una faena sin MIPER dice **"Sin MIPER"** y, si puedes editar, ofrece **"Crear MIPER"**.
-*   **Dotación:** la de la ficha de la MIPER o, si no la tiene, los trabajadores activos de la faena.
-*   **Completitud:** riesgos sin datos pendientes sobre el total, la misma cuenta que "Completos x de y" dentro de la MIPER. Una MIPER de la metodología anterior dice *"Metodología anterior"*, sin cifra.
-*   **Importantes e Intolerables**, y cuántos **críticos sin control** tiene la vigente.
-*   **Programa:** el avance del Programa de Trabajo de la vigente (ver "El avance", sección 9). Si la vigente es otra MIPER, la celda lo dice: *"50% · 1/2 en la vigente"*.
-*   **Actualizada:** la última modificación.
+La tabla prioriza cuatro columnas para decidir por dónde empezar:
+
+*   **Faena:** nombre, período y versión; si la vigente es otra MIPER, queda enlazada como contexto.
+*   **Estado:** fase actual del documento, incluida la situación **«Sin MIPER»**.
+*   **Trabajo pendiente:** la tarea que requiere atención, como completar datos o revisar una ronda.
+*   **Acción:** **«Continuar»**, **«Revisar»** o **«Consultar»**, según la situación y el permiso. En una faena sin MIPER permite iniciar la creación cuando está autorizado.
+
+Las cifras de dotación, clasificación, programa y actualización permanecen consultables como detalle secundario.
 
 > [!NOTE]
 > Los enlaces antiguos siguen funcionando: `?tab=porhacer` abre "Requieren mi acción", y `?tab=todas` o `?tab=resumen`, la lista completa.
 
-### La pestaña «Resumen» de cada MIPER
+### El área «Inicio» de cada MIPER
 
-Dentro de una MIPER, la pestaña **Resumen** lee el documento de una vez. Tiene cuatro cifras, y las tres primeras llevan a la matriz ya filtrada **después de quitar cualquier búsqueda o filtro que tuvieras**, para que lo que ves al llegar sea lo que la cifra contó:
+Dentro de una MIPER, **Inicio** muestra el estado, el siguiente trabajo y un acceso **«Continuar completando»** cuando hay datos por completar. **«Ver riesgos con datos pendientes»** lleva al conjunto pendiente después de quitar cualquier búsqueda o filtro anterior, para que lo que ves al llegar sea lo que se contó. Sus cifras llevan al subconjunto que nombra cada una; **«Riesgos completos»** abre sólo riesgos completos y, si no hay ninguno, no lleva a una lista vacía.
 
 | Cifra | Qué cuenta | Al hacer clic |
 |---|---|---|
-| **Riesgos completos** | Riesgos sin datos pendientes, sobre el total | la matriz con los riesgos **con pendientes** (o con los completos, si no queda ninguno pendiente) |
+| **Riesgos completos** | Riesgos sin datos pendientes, sobre el total | los riesgos **completos**; en cero se muestra como dato sin enlace |
 | **Importantes e Intolerables** | Riesgos en las dos bandas más graves | la matriz filtrada por esas bandas |
 | **No controlados** | Riesgos con "¿Está controlado?" en *No* | la matriz filtrada por *No controlados* |
-| **Avance del programa** | Ocurrencias realizadas del Programa de Trabajo | la pestaña **Programa** completa, sin los filtros que tuviera su lista |
+| **Avance del programa** | Ejecuciones realizadas del Programa de Trabajo | **Plan de medidas**, sin los filtros que tuviera su lista |
 
 Una cifra en cero no lleva a ninguna parte: no hay nada que mostrar.
 
@@ -190,11 +201,11 @@ La **Magnitud del Riesgo (MR)** es el resultado de multiplicar Probabilidad × C
 
 ## 5. La matriz: actividades, tareas y el editor del riesgo
 
-La pestaña **Matriz** ya no es una planilla de 19 columnas: se recorre por niveles y funciona igual en computador y en celular.
+El área **Riesgos** ya no es una planilla de 19 columnas: se recorre por niveles y funciona igual en computador y en celular.
 
 ### Cómo se organiza
 
-La matriz tiene tres niveles: **actividad › tarea › riesgo**.
+La matriz tiene tres niveles: **actividad › tarea › riesgo**. Puedes elegir **"Por actividades y tareas"** para explorar el documento o **"Resultados de riesgos"** para ver directamente los riesgos. El modo elegido queda en la dirección de la página y se conserva al volver desde una tarea o un riesgo.
 
 1.  **Estructura.** Es la vista de entrada: una tarjeta por actividad (con su número de tareas, de riesgos y el conteo por clasificación) y, debajo, una fila por tarea con sus puestos, su número de riesgos y cuántos están completos (por ejemplo, "3/5 completos"). Actividades y tareas siguen el orden del documento original.
 2.  **Tarea.** Al hacer clic en una tarea se abre la lista de sus riesgos: peligro, riesgo y daño, la clasificación con su MR, si está controlado, cuántas medidas tiene y si está "Completo" o con "N pendientes". "Volver a la matriz" (o el botón Atrás del navegador) te devuelve con tus filtros intactos, a la misma altura de la página y con las actividades que habías plegado. Cambiar de pestaña o volver a abrir una tarea, en cambio, te lleva arriba de la página.
@@ -207,7 +218,8 @@ Sobre la lista, una franja resume el centro de trabajo, la dotación, las tareas
 *   El buscador **"Buscar en la matriz"** mira actividad, tarea, puesto, lugar, peligro, riesgo, daño y medidas.
 *   El botón **"Más filtros"** (con el número de filtros activos) abre el cajón **"Filtros avanzados"**, que reúne clasificación, completitud, "¿Está controlado?", factor de riesgo y marcas (observados, modificados).
 *   Los filtros viven en la dirección de la página: sobreviven a recargar, y puedes copiar el enlace para compartir la vista. Bajo la barra aparecen como **chips** que se quitan de a uno, o todos con **"Limpiar filtros"**. La búsqueda no lleva chip: ya se ve en su campo.
-*   Con algún filtro activo, las tarjetas se expanden y bajo cada tarea aparecen solo los riesgos que coinciden; los conteos pasan a "x de y". Si ningún riesgo coincide, la matriz lo dice y ofrece **"Ver todos los riesgos"**, que quita la búsqueda y todos los filtros.
+*   Los filtros acotan los riesgos en ambos modos. En **"Por actividades y tareas"** se muestran las tareas coincidentes con sus conteos; **"Resultados de riesgos"** presenta cada coincidencia directamente. Si ningún riesgo coincide, la matriz lo dice y ofrece **"Ver todos los riesgos"**, que quita la búsqueda y todos los filtros.
+*   **"Seleccionar riesgos"** abre los resultados seleccionables aunque todavía no hayas aplicado filtros. La acción por lote indica si seleccionas los riesgos visibles o todos los resultados del conjunto filtrado.
 *   **"Contraer todo" / "Expandir todo"** pliega o despliega las actividades.
 
 ### Agregar una tarea o un peligro
@@ -233,7 +245,7 @@ A un costado (o debajo, en pantallas chicas) está el **chequeo del riesgo**: un
 
 ### Recorrer los pendientes
 
-En el pie del editor, **"‹ Anterior"** y **"Siguiente ›"** recorren los riesgos de la tarea, y **"Siguiente pendiente"** salta al próximo riesgo con datos faltantes (dando la vuelta al final). Si hay filtros activos, recorre solo los riesgos filtrados. La tarjeta **"Siguiente paso"**, bajo el encabezado de la página, tiene el mismo botón **"Siguiente pendiente"** y parte por el pendiente más grave. A quien revisa le ofrece **"Empezar la revisión"**.
+En el editor, **«Continuar a Evaluación / Medidas / Seguimiento»** avanza entre los cuatro pasos del riesgo actual. **"‹ Riesgo anterior"** y **"Riesgo siguiente ›"** recorren los riesgos de la tarea, y **"Siguiente pendiente"** salta al próximo riesgo con datos faltantes (dando la vuelta al final). Si hay filtros activos, recorre solo los riesgos filtrados. La tarjeta **"Siguiente paso"**, bajo el encabezado de la página, parte por el pendiente más grave. A quien revisa le ofrece **"Empezar la revisión"**.
 
 ### En el celular
 
@@ -365,7 +377,7 @@ graph LR
 ### Paso 1: Enviar a revisión
 
 *   **Quién lo hace:** el Prevencionista de Faena o el Administrador de Contrato de la faena.
-*   **En la plataforma:** en el espacio de trabajo, presiona **"Enviar a revisión"**. Si falta algo, se abre **"Faltan N datos para enviar"** con la lista de qué corregir; cada bloqueo te lleva a donde se corrige.
+*   **En la plataforma:** en el área **Revisión**, la sección **"Preparación para enviar"** agrupa lo que falta (ficha, identificación y evaluación, medidas y vínculos al programa) y cada punto abre el lugar donde se corrige. Después, en el espacio de trabajo, presiona **"Enviar a revisión"**. Si falta algo, se abre **"Faltan N datos para enviar"** con la lista de qué corregir; cada bloqueo te lleva a donde se corrige.
 *   **Qué pasa después:** se congela una **foto** de lo enviado. A partir de ahí, lo que se revisa es esa foto: si sigues editando, tus cambios quedan para la ronda siguiente.
 
 ### Paso 2: Revisión técnica de la Jefatura
@@ -434,7 +446,7 @@ El aviso queda en la campana; además, si la persona tiene activadas las **notif
 
 > **Marco Normativo:** Decreto Supremo 44 (DS 44), Artículo 8 (Programa de Trabajo Preventivo).  
 > **Rutas en Plataforma:**  
-> *   Pestaña **Programa** del espacio de trabajo de una MIPER: `/prevencion/miper/[id]`  
+> *   Área **Plan de medidas** del espacio de trabajo de una MIPER: `/prevencion/miper/[id]?tab=programa`
 > **Permisos del Sistema:** `prevention:risk:edit` (administrar el programa) y `prevention:risk:program:execute` (registrar la ejecución).  
 > **Actividad PDTP Asociada:** N° 35 ("Mantener y actualizar inventario de riesgos MIPER").
 
@@ -445,9 +457,9 @@ La relación con el PDTP es **sólo de cobertura y acreditación**: una medida d
 > [!IMPORTANT]
 > **QUÉ DISPARA EL SELLADO:** al aprobarse una versión de la MIPER (Legal y RRHH) (1) se **acredita la actividad N° 35** del PDTP —"Mantener y actualizar inventario de riesgos MIPER"— y (2) se **abre el plazo de 30 días** para actualizar el inventario. Ese mismo sellado es lo que **pone en marcha el programa**: un borrador tiene actividades, pero **no genera ocurrencias ejecutables** hasta la primera aprobación.
 
-### La pestaña «Programa» y sus permisos
+### El área «Plan de medidas» y sus permisos
 
-El programa vive en la pestaña **Programa** del espacio de trabajo de la MIPER, junto a Resumen, Matriz, Revisión e Historial. Allí se ve el **encabezado RE-04.1** y las **actividades** como tarjetas, con su avance. El programa se carga junto con la página: al guardar algo no hace falta recargar.
+El programa vive en **Plan de medidas**, junto a Inicio, Riesgos, Revisión e Historial. Conserva el nombre formal **Programa de Trabajo Preventivo RE-04.1**. Las actividades pendientes y su próxima ejecución aparecen antes de los antecedentes extensos; **Datos del programa** permite consultar el encabezado completo. El programa se carga junto con la página: al guardar algo no hace falta recargar.
 
 | Acción | Quién puede | Permiso |
 |---|---|---|
@@ -460,17 +472,17 @@ El programa vive en la pestaña **Programa** del espacio de trabajo de la MIPER,
 
 ### El encabezado del programa
 
-El encabezado muestra el título, la empresa y el centro de trabajo, el período y el avance del programa. Los **datos de la empresa** (RUT, dirección, comuna y representante) **no se editan aquí: se leen de la ficha del documento**. Para cambiarlos, usa **«Editar en la ficha»**, así hay un solo lugar donde corregirlos.
+La parte visible muestra período, encargado y avance. **Datos del programa** reúne el encabezado formal, la empresa y el centro de trabajo. Los **Datos de empresa** (RUT, dirección, comuna y representante) **se leen de la ficha del documento**. Para cambiarlos, usa la edición de esa ficha, así hay un solo lugar donde corregirlos.
 
-El botón **«Editar antecedentes»** (o **«Completar antecedentes»**, si el programa aún no existe) abre un diálogo donde sólo se fijan dos cosas: la **fecha de elaboración** del programa y el **encargado del programa**. Los demás datos del encabezado se calculan: el N° de centros de trabajo, la fecha de la última revisión sellada y el avance.
+**Responsable y fecha del programa** abre un diálogo donde sólo se fijan dos cosas: la **fecha de elaboración** y el **encargado del programa**. Los demás datos del encabezado se calculan: el N° de centros de trabajo, la fecha de la última revisión sellada y el avance.
 
 ### Las tarjetas de actividades
 
-Cada actividad aparece como una tarjeta que dice, de un vistazo: su **N° de actividad**, el proceso, la descripción, el responsable, la frecuencia, las filas de la MIPER que ejecuta, la **próxima ocurrencia** (su fecha y su estado, por ejemplo vencida) y su **avance**. Las actividades retiradas llevan la insignia **«Retirada»** y el motivo del retiro.
+Cada actividad aparece como una tarjeta con descripción, responsable, frecuencia, filas de la MIPER que ejecuta, **próxima ejecución** (fecha y estado, por ejemplo vencida) y avance. El **N° de actividad** queda como referencia formal secundaria. Las actividades retiradas llevan la insignia **«Retirada»** y el motivo del retiro.
 
 Sobre las tarjetas hay un buscador **«Buscar actividad del programa»** (por actividad, proceso o responsable) y dos filtros: por **estado** (todas, sólo activas, sólo retiradas, con ocurrencias vencidas, con ocurrencias incumplidas) y por **frecuencia**. Cuando hay filtros activos aparece **«Limpiar filtros»**; si ninguna actividad coincide, **«Ver todas las actividades»** los quita.
 
-Cada tarjeta ofrece **«Registrar la ocurrencia del [fecha]»** (para registrar la próxima pendiente, si tienes permiso), **«Abrir el detalle»** y, para quien administra el programa, **«Editar»** y **«Retirar»**.
+Cada tarjeta ofrece **«Registrar la ejecución del [fecha]»** (para registrar la próxima pendiente, si tienes permiso), **«Abrir el detalle»** y, para quien administra el programa, **«Editar»** y **«Retirar»**.
 
 ### El detalle de una actividad
 
@@ -478,7 +490,7 @@ Cada tarjeta ofrece **«Registrar la ocurrencia del [fecha]»** (para registrar 
 
 *   **Ficha:** proceso, responsable, centro de trabajo, frecuencia, fecha de inicio y, si está retirada, su motivo.
 *   **Medidas del MIPER que ejecuta:** cada medida con su fila y un enlace **«Ver en la MIPER»**. **«Vincular medidas»** (para quien administra el programa, en una actividad activa) abre un diálogo con las medidas de todos los riesgos: marca las que la actividad ejecuta, **desmarca** las que quieres desvincular y presiona **«Guardar vínculos»**. Desvincular no borra la medida del MIPER.
-*   **Ocurrencias:** cada fecha de vencimiento con su estado, su fecha efectiva (si la hay) y sus registros. Desde aquí se **registra** la ocurrencia (**«Registrar»**, ver «Las ocurrencias»), se **anula** un registro con motivo (**«Anular»**) y se revisa su **evidencia** (**«Evidencia»**). Un registro anulado queda a la vista con la marca **«Anulado»** y el motivo de la anulación.
+*   **Ejecuciones programadas:** primero las próximas o vencidas; **Historial de ejecuciones** conserva cada fecha pasada con su estado, fecha efectiva (si la hay) y registros. Desde aquí se **registra** la ejecución (**«Registrar»**, ver «Las ocurrencias»), se **anula** un registro con motivo (**«Anular»**) y se revisa su **evidencia** (**«Evidencia»**). Un registro anulado queda a la vista con la marca **«Anulado»** y el motivo de la anulación.
 
 La evidencia de una ocurrencia se abre en un diálogo: cada archivo muestra quién lo subió y cuándo, y se puede **«Abrir»** (PDF e imágenes, en una pestaña nueva) o **«Descargar»**; los archivos Word y Excel sólo se descargan. La evidencia retirada se sigue pudiendo abrir o descargar: queda marcada **«Retirada»**, con su fecha y motivo, y la vigente lleva la insignia «Vigente».
 

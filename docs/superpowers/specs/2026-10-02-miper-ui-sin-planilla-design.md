@@ -9,6 +9,8 @@ Antecedente: `PLAN_REDISENO_MIPER_2026-09-30.md` (F1–F3). Su modelo de datos, 
 permisos y metodología RE-04 **se conservan**. Este documento reemplaza sólo su §8 (Experiencia
 de usuario), y en especial el §8.2, que pedía una "grilla editable".
 
+> **Actualización de navegación desktop (2026-10-04).** El [plan de claridad UI/UX](../../../PLAN_MEJORA_UIUX_MIPER_2026-10-03.md) y su implementación actualizan la entrada y las etiquetas de esta especificación histórica. La portada abre cada MIPER en `?tab=resumen` (**Inicio**); la URL directa antigua sin `tab` conserva **Riesgos** para no cambiar el destino de enlaces guardados. Los identificadores `resumen`, `matriz`, `programa`, `revision` e `historial` siguen iguales, con etiquetas **Inicio · Riesgos · Plan de medidas · Revisión · Historial**. En Riesgos, `vista=estructura|resultados` hace explícita **Por actividades y tareas** o **Resultados de riesgos** sin depender de que haya filtros activos. **Crear matriz** ofrece **Completar en la plataforma** e **Importar desde Excel**. El resto de este documento describe el diseño inicial de octubre y se lee con esta actualización para los puntos que cambian.
+
 ---
 
 ## 1. Por qué
@@ -699,3 +701,5 @@ integrar la fase anterior, como se hizo con F1→F2→F3.
   ninguna fase se integra con E2E MIPER en rojo.
 - **El cambio de regla D5 afecta a MIPER ya enviadas.** Las fotos antiguas no traen `isExisting`,
   así que se leen como "por implementar", que es la regla de hoy. No se reabre nada.
+
+> **Decisiones del 2026-10-04.** El editor de un riesgo conserva un acceso mínimo en el encabezado («Volver al documento» y «Ficha del documento»), sin pestañas. Las acciones del flujo (enviar, devolver, aprobar, descargar, descartar) se muestran en todas las áreas del documento, no sólo en Inicio y Revisión. Revisión incorpora «Preparación para enviar», que presenta los bloqueos del validador del servidor agrupados. `MiperPortfolioAction.kind` (`review`/`respond`/`continue`) decide el destino y el rótulo de la acción de la portada.
