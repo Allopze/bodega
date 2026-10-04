@@ -26,6 +26,7 @@
     "check:mistyped-requests": "tsx scripts/check-mistyped-requests.ts",
     "db:diagnose-delivery-quantities": "tsx --env-file-if-exists=.env.local scripts/diagnose-delivery-quantities.ts",
     "db:verify-migrations": "node scripts/verify-migration-chain.mjs",
+    "miper:importar": "tsx --env-file-if-exists=.env.local scripts/importar-miper-re04.ts",
     "perf:queries": "tsx scripts/measure-operational-queries.ts",
     "prepare": "husky",
     "db:generate": "drizzle-kit generate",

@@ -47,3 +47,5 @@ storage/
 /docs
 auditoria/
 docs/generado
+# Excels del RE-04 para scripts/importar-miper-*: datos de faena, no van en la imagen.
+importar-miper

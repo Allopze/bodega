@@ -171,3 +171,6 @@ docs/generado/index.md
 # Caché del detector de UI (la config sí se versiona; el caché no)
 .impeccable/hook.cache.json
 miper-web-mockup-3.html
+
+# Excels del RE-04 que se cargan con scripts/importar-miper-* (datos de faena: no se versionan).
+/importar-miper/
