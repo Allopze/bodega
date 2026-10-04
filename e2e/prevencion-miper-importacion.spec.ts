@@ -310,3 +310,33 @@ test("«Medidas detectadas» en Chromium: nada bloquea, la «sin pista» va prim
   await expect(dialogo.getByRole("checkbox", { name: "Sólo sin pista", exact: true })).toBeFocused()
   await expect(dialogo.getByRole("button", { name: "Siguiente", exact: true })).toBeEnabled()
 })
+
+/* Una fila con PROBABILIDAD 3 (fuera de 1, 2 y 4) no se carga. Sólo vista previa: nada llega
+ * a la base. Cubre en navegador los grupos del paso «Revisar riesgos» y el aviso al cerrar con
+ * decisiones revisadas, que antes sólo probaban las unitarias. */
+const FILA_TOLERABLE: Fila = FILAS[2]!
+const FILA_FUERA_DE_ESCALA: Fila = { ...FILA_TOLERABLE, "N°": 2, "TAREA": "Lavado de piso", "PROBABILIDAD": 3, "MR": 6 }
+
+test("una fila fuera de escala queda en «No se cargarán» y cerrar con la revisión hecha pide confirmación", async ({ page }) => {
+  test.setTimeout(120_000)
+  await login(page)
+  const dialogo = await revisarArchivo(page, await libro([FILA_TOLERABLE, FILA_FUERA_DE_ESCALA]))
+  await expect(dialogo.getByText("2 filas en «RE-04 IPER»: 1 para cargar, 0 por revisar y 1 sin cargar.", { exact: true })).toBeVisible({ timeout: 30_000 })
+  const grupos = dialogo.getByRole("list", { name: "Resultado de la revisión del archivo", exact: true })
+  await expect(grupos).toContainText("Listos · 1")
+  await expect(grupos).toContainText("Requieren tu revisión · 0")
+  await expect(grupos).toContainText("No se cargarán · 1")
+
+  // Cerrar con la vista previa hecha no descarta en silencio.
+  const cerrar = () => dialogo.getByRole("button", { name: /^Cerrar/ }).click()
+  const confirmar = page.getByRole("dialog", { name: "¿Descartar la importación?", exact: true })
+  await cerrar()
+  await expect(confirmar).toBeVisible()
+  await confirmar.getByRole("button", { name: "Continuar importación", exact: true }).click()
+  await expect(dialogo).toBeVisible()
+  await expect(pasoActual(dialogo)).toHaveText("2. Revisar riesgos")
+
+  await cerrar()
+  await confirmar.getByRole("button", { name: "Descartar", exact: true }).click()
+  await expect(dialogo).toBeHidden()
+})

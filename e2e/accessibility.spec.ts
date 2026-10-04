@@ -90,13 +90,15 @@ test.describe("Accessibility audit — MIPER: vistas del espacio de trabajo", ()
     await auditar(page)
   })
 
-  test("la pestaña Resumen y el menú «Cambiar de faena» (Fase B)", async ({ page }) => {
+  test("el área Inicio y el menú «Cambiar de faena» (Fase B)", async ({ page }) => {
     await login(page)
     await page.goto(MIPER_VIGENTE)
     await page.waitForLoadState("networkidle")
 
-    await page.getByRole("tab", { name: "Resumen", exact: true }).click()
-    await expect(page.getByRole("link", { name: /^Riesgos completos/ })).toBeVisible()
+    // «Resumen» pasó a llamarse «Inicio». «Riesgos completos» sólo es enlace si hay completos,
+    // así que se espera el encabezado del área, que siempre está.
+    await page.getByRole("tab", { name: "Inicio", exact: true }).click()
+    await expect(page.getByRole("heading", { name: "Estado del trabajo" })).toBeVisible()
     await sinAnimaciones(page)
     await auditar(page)
 

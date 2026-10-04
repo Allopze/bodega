@@ -22,7 +22,7 @@ const viewports = [
 ] as const
 
 test("evidencia visual y accesibilidad desktop de MIPER", async ({ browser }) => {
-  test.setTimeout(240_000)
+  test.setTimeout(480_000)
   fs.mkdirSync(output, { recursive: true })
   const evidence: Array<Record<string, unknown>> = []
 
@@ -50,12 +50,10 @@ test("evidencia visual y accesibilidad desktop de MIPER", async ({ browser }) =>
         documentOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
         shellOverflow: (() => { const shell = document.querySelector<HTMLElement>("[data-shell-scroll]"); return shell ? Math.max(0, shell.scrollWidth - shell.clientWidth) : null })(),
       }))
-      const axe = viewport.name === "1440x900"
-        ? await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze()
-        : null
+      const axe = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze()
       evidence.push({ viewport: viewport.name, route: route.name, status: response?.status() ?? null, screenshot: file, metrics,
         consoleErrors: consoleErrors.slice(before.console), pageErrors: pageErrors.slice(before.page), failedResponses: failedResponses.slice(before.http),
-        axe: axe?.violations.map((item) => ({ id: item.id, impact: item.impact, nodes: item.nodes.map((node) => node.target) })) ?? [] })
+        axe: axe.violations.map((item) => ({ id: item.id, impact: item.impact, nodes: item.nodes.map((node) => node.target) })) })
     }
 
     if (viewport.name === "1440x900") {
@@ -73,13 +71,26 @@ test("evidencia visual y accesibilidad desktop de MIPER", async ({ browser }) =>
       await page.screenshot({ path: path.join(output, "1440x900-actividad.png"), fullPage: false })
       evidence.push({ viewport: viewport.name, route: "actividad", screenshot: "1440x900-actividad.png" })
 
-      await page.goto(`${matrix}?fila=riskentry-revision-e2e-1`)
-      await page.evaluate(() => { document.body.style.zoom = "200%" })
-      await page.screenshot({ path: path.join(output, "1440x900-editor-css-zoom-200.png"), fullPage: false })
-      evidence.push({ viewport: viewport.name, route: "editor-css-zoom-200", screenshot: "1440x900-editor-css-zoom-200.png",
-        overflow: await page.evaluate(() => Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth)) })
     }
 
+    await context.close()
+  }
+
+  {
+    const context = await browser.newContext({ viewport: { width: 640, height: 400 }, deviceScaleFactor: 2, locale: "es-CL", reducedMotion: "reduce" })
+    const page = await context.newPage()
+    await login(page)
+    for (const route of routes) {
+      await page.goto(route.url, { waitUntil: "domcontentloaded" })
+      await page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => undefined)
+      const file = `zoom200-1280x800-${route.name}.png`
+      await page.screenshot({ path: path.join(output, file), fullPage: false })
+      evidence.push({ viewport: "1280x800 al 200 % (640x400 CSS, DPR 2)", route: route.name, screenshot: file,
+        metrics: await page.evaluate(() => ({
+          documentOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
+          shellOverflow: (() => { const shell = document.querySelector<HTMLElement>("[data-shell-scroll]"); return shell ? Math.max(0, shell.scrollWidth - shell.clientWidth) : null })(),
+        })) })
+    }
     await context.close()
   }
 
