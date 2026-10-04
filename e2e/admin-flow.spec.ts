@@ -177,11 +177,16 @@ test("admin: asistente de variantes crea un producto por cada talla", async ({ p
   await selectRadixById(page, "p-cat", /Categoría E2E/)
   await dialog.getByRole("button", { name: /Siguiente/ }).click()
 
-  // Paso 2 — atributos y generación de variantes
-  await dialog.getByRole("button", { name: /^\+ Talla$/ }).click()
-  await dialog.getByRole("button", { name: /^✓? ?M$/ }).first().click()
-  await dialog.getByRole("button", { name: /^✓? ?L$/ }).first().click()
-  await dialog.getByRole("button", { name: /Generar variantes \(2 combinaciones\)/ }).click()
+  // Paso 2 — tallas. Desde 76368e40 se elige una escala del catálogo y se marcan
+  // sus tallas; la vista previa se arma sola (ya no hay «+ Talla» ni «Generar
+  // variantes»). «Casco …» sugiere la escala de casco (talla única): se cambia a
+  // Ropa, se limpian las típicas y se marcan M y L.
+  await dialog.getByRole("radiogroup", { name: "Escala de tallas" }).getByRole("radio", { name: /^Ropa/ }).click()
+  await dialog.getByRole("button", { name: "Ninguna", exact: true }).click()
+  await dialog.getByRole("button", { name: /^✓? ?M$/ }).click()
+  await dialog.getByRole("button", { name: /^✓? ?L$/ }).click()
+  await expect(dialog.getByRole("button", { name: "✓ M", exact: true })).toHaveAttribute("aria-pressed", "true")
+  await expect(dialog.getByRole("button", { name: "✓ L", exact: true })).toHaveAttribute("aria-pressed", "true")
 
   // La vista previa confirma las dos variantes antes de crear.
   await expect(dialog.getByText(`${familyName} M`)).toBeVisible()
