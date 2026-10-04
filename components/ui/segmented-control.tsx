@@ -93,14 +93,15 @@ export function SegmentedControl({
   eyebrow,
   className,
 }: SegmentedControlProps) {
-  const navigation = items.every((item) => item.href !== undefined)
-  const Group = navigation ? "nav" : "div"
   return (
     <div className={cn("space-y-1", className)}>
       {eyebrow && (
         <p className="text-eyebrow pl-0.5 text-[var(--color-text-faint)]">{eyebrow}</p>
       )}
-      <Group aria-label={ariaLabel} role={navigation ? undefined : "group"}>
+      {/* `group` y no `nav`: es un selector de vista o de filtro, no navegación del
+          sitio. Antes era `<nav role="group">`, que axe marca (aria-allowed-role);
+          un `nav` sin el rol creaba un landmark por cada selector. */}
+      <div aria-label={ariaLabel} role="group">
         <div className={variant === "segmented"
           ? "inline-flex rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]"
           : "flex flex-wrap gap-2"}
@@ -112,7 +113,7 @@ export function SegmentedControl({
               : <SegmentedControlButton key={item.key} item={item} className={itemClass} />
           })}
         </div>
-      </Group>
+      </div>
     </div>
   )
 }
