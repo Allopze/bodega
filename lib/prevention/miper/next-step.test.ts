@@ -48,7 +48,7 @@ describe("nextStepFor", () => {
     expect(nextStepFor(input({ issues: [entryIssue("a")] }))?.title).toBe("Faltan datos en 1 riesgo")
   })
   it("7. sin errores en borrador: lista para enviar", () => {
-    expect(nextStepFor(input())).toMatchObject({ tone: "success", title: "Lista para enviar a revisión", action: null })
+    expect(nextStepFor(input())).toMatchObject({ tone: "success", title: "Lista para enviar a revisión", action: { kind: "tab", tab: "revision" } })
   })
   it("8. vigente con cambios sin revisar", () => {
     expect(nextStepFor(input({ status: "published", hasPendingChanges: true, versionLabel: "v1", mode: { ...mode, canEdit: false } }))?.title).toBe("Hay cambios sin revisar desde v1")
@@ -74,12 +74,12 @@ describe("nextStepInView", () => {
   })
   it("en Revisión no ofrece «Ir a Revisión», pero conserva el texto y las otras acciones", () => {
     expect(nextStepInView(respond, { atRoot: true, tab: "revision" })).toMatchObject({ title: "Responde 3 observaciones", action: null, secondary: null })
-    expect(nextStepInView(respond, { atRoot: true, tab: "programa" })?.action).toEqual({ kind: "tab", tab: "revision" })
+    expect(nextStepInView(respond, { atRoot: true, tab: "programa" })).toBeNull()
     expect(nextStepInView(pending, { atRoot: true, tab: "revision" })).toEqual(pending)
   })
-  it("en Resumen no ofrece «Ver los pendientes»: la cifra «Riesgos completos» es su única representación (A1/A5)", () => {
+  it("en Inicio ofrece pendientes y completos como subconjuntos distintos", () => {
     // El filtro del paso conserva `buscar`/`clasificacion`/…; la cifra del Resumen los limpia. Dos caminos al mismo subconjunto que llegan a listas distintas.
-    expect(nextStepInView(pending, { atRoot: true, tab: "resumen" })).toMatchObject({ title: "Faltan datos en 2 riesgos", action: { kind: "riesgo", entryId: "b", purpose: "pending" }, secondary: null })
+    expect(nextStepInView(pending, { atRoot: true, tab: "resumen" })).toMatchObject({ title: "Faltan datos en 2 riesgos", action: { kind: "riesgo", entryId: "b", purpose: "pending" }, secondary: { kind: "filtro", completitud: "pendientes" } })
     expect(nextStepInView(pending, { atRoot: true, tab: "matriz" })?.secondary).toEqual({ kind: "filtro", completitud: "pendientes" })
   })
 })

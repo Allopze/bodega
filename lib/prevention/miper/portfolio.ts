@@ -28,7 +28,7 @@ export const PORTFOLIO_STATUS_FILTER_OPTIONS: ReadonlyArray<{ value: PortfolioSt
 ]
 
 export type MiperPortfolioMatrix = { id: string; period: number | null; versionNumber: number | null; label: string; isLegacy: boolean }
-export type MiperPortfolioAction = { matrixId: string; period: number | null; reason: string }
+export type MiperPortfolioAction = { matrixId: string; period: number | null; reason: string; kind: "review" | "respond" | "continue" }
 
 export type MiperPortfolioRow = {
   /** = `worksiteId`: `DataTable` usa `row.id` como clave de fila. */

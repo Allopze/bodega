@@ -66,7 +66,7 @@ describe("consultas MIPER", () => {
     // Forzar el estado sin pasar por la completitud: la regla sólo mira `review_state` y la ronda.
     await testDb.update(schema.preventionRiskMatrices).set({ reviewState: "in_review" }).where(eq(schema.preventionRiskMatrices.id, matrixId))
     await testDb.insert(schema.preventionRiskReviewRounds).values({ id: "rq", matrixId, roundNumber: 1, stage: "technical", snapshot: { header: {}, entries: [] }, snapshotSha256: "c".repeat(64), submittedByUserId: "u-q" })
-    expect(await acciones(jefa)).toEqual([{ matrixId, period: 2026, reason: "Pendiente de tu revisión" }])
+    expect(await acciones(jefa)).toEqual([{ matrixId, period: 2026, reason: "Pendiente de tu revisión", kind: "review" }])
     expect((await listMiperPortfolio(jefa)).rows.find((row) => row.worksiteId === "ws-q")!.submittedByName).toBe("Prevencionista Q")
     // «Elaboró» del espacio de trabajo (Fase B): el nombre de quien envió la ronda abierta.
     expect((await q.getMiperWorkspace(matrixId, jefa)).openRound?.submittedByName).toBe("Prevencionista Q")

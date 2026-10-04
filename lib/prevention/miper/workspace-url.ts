@@ -62,7 +62,7 @@ function hrefReplacing(pathname: string, params: Params, drop: readonly string[]
   return href(pathname, cleared, patch)
 }
 
-const NOT_MATRIX_ONLY = [...Object.keys(CLEAR_VIEW), "ficha", ...MATRIX_FILTER_KEYS]
+const NOT_MATRIX_ONLY = [...Object.keys(CLEAR_VIEW), "ficha", "vista", ...MATRIX_FILTER_KEYS]
 const NOT_PROGRAM_ONLY = [...Object.keys(CLEAR_VIEW), ...PROGRAM_FILTER_KEYS]
 
 /**
@@ -81,3 +81,7 @@ export const hrefToMatrixOnly = (pathname: string, params: Params, patch: Partia
  */
 export const hrefToProgramOnly = (pathname: string, params: Params) =>
   hrefReplacing(pathname, params, NOT_PROGRAM_ONLY, { tab: "programa" })
+
+/** Presentación independiente de filtros. Se conserva al abrir y volver de un riesgo. */
+export const hrefToMatrixPresentation = (pathname: string, params: Params, presentation: "estructura" | "resultados") =>
+  href(pathname, params, { ...CLEAR_VIEW, vista: presentation })

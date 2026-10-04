@@ -223,15 +223,15 @@ describe("portada de la MIPER por faena (listMiperPortfolio)", () => {
     const a = await rowOf(prevencion, "ws-a")
     expect(a.requiresMyAction).toBe(true)
     expect(a.myActions).toEqual([
-      { matrixId: borradorA, period: 2027, reason: "Borrador" },
-      { matrixId: vigenteA, period: 2026, reason: "Con observaciones" },
+      { matrixId: borradorA, period: 2027, reason: "Borrador", kind: "continue" },
+      { matrixId: vigenteA, period: 2026, reason: "Con observaciones", kind: "respond" },
     ])
   })
 
   it("quien envió la ronda no tiene «Pendiente de tu revisión» aunque pueda revisar; la Jefa sí", async () => {
     const deLaJefa = await rowOf(jefa, "ws-b")
     expect(deLaJefa).toMatchObject({ status: "en_revision", requiresMyAction: true, submittedByName: "Doble Rol" })
-    expect(deLaJefa.myActions).toEqual([{ matrixId: revisionB, period: 2026, reason: "Pendiente de tu revisión" }])
+    expect(deLaJefa.myActions).toEqual([{ matrixId: revisionB, period: 2026, reason: "Pendiente de tu revisión", kind: "review" }])
     const deQuienEnvio = await rowOf(doble, "ws-b")
     expect(deQuienEnvio.myActions).toEqual([])
     expect(deQuienEnvio.requiresMyAction).toBe(false)

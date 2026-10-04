@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { hrefToActivity, hrefToEntry, hrefToFicha, hrefToMatrix, hrefToMatrixOnly, hrefToMatrixWith, hrefToProgramOnly, hrefToTab, hrefToTask, PROGRAM_FILTER_KEYS, readWorkspaceView } from "./workspace-url"
+import { hrefToMatrixPresentation, hrefToActivity, hrefToEntry, hrefToFicha, hrefToMatrix, hrefToMatrixOnly, hrefToMatrixWith, hrefToProgramOnly, hrefToTab, hrefToTask, PROGRAM_FILTER_KEYS, readWorkspaceView } from "./workspace-url"
 
 const P = "/prevencion/miper/m1"
 const params = (query: string) => new URLSearchParams(query)
@@ -71,3 +71,12 @@ describe("actividad del programa (?actividad=)", () => {
     expect(hrefToProgramOnly(P, current)).toBe(`${P}?tab=programa`)
   })
 })
+
+ it("resultados es una presentación: conserva filtros al entrar y volver a una tarea", () => {
+   const target = hrefToMatrixPresentation(P, params("tab=resumen&buscar=lodo"), "resultados")
+   expect(target).toBe(`${P}?buscar=lodo&vista=resultados`)
+   expect(hrefToEntry(P, params("vista=resultados"), "e1")).toBe(`${P}?vista=resultados&fila=e1`)
+   expect(hrefToMatrix(P, params("vista=resultados&fila=e1"))).toBe(`${P}?vista=resultados`)
+   expect(hrefToMatrixPresentation(P, params("vista=resultados&buscar=lodo"), "estructura")).toBe(`${P}?vista=estructura&buscar=lodo`)
+   expect(hrefToMatrixOnly(P, params("vista=resultados&buscar=lodo"))).toBe(P)
+ })

@@ -1324,7 +1324,12 @@ export async function getRiskControlDetail(controlId: string, access: RiskLegalA
     .where(and(eq(preventionRiskControls.id, controlId), inArray(preventionRiskMatrices.status, ["published", "superseded"]))).limit(1)
   if (!row || !scopeAllows(access.scope, row.matrix.worksiteId)) throw new RiskLegalDomainError("Control MIPER no encontrado o fuera de alcance.")
   const links = await db.select().from(preventionPdtpSourceLinks).where(and(eq(preventionPdtpSourceLinks.sourceType, "risk_control"), eq(preventionPdtpSourceLinks.sourceId, controlId), eq(preventionPdtpSourceLinks.isActive, true)))
-  return { ...row, links }
+  // Nombres de las actividades del programa preventivo que cubren la medida (sólo lectura).
+  const activityIds = [...new Set(links.map((link) => link.activityId))]
+  const linkedActivities = activityIds.length
+    ? await db.select({ id: pdtpActivities.id, n: pdtpActivities.n, activity: pdtpActivities.activity, programId: pdtpActivities.programId }).from(pdtpActivities).where(inArray(pdtpActivities.id, activityIds)).orderBy(asc(pdtpActivities.n))
+    : []
+  return { ...row, links, linkedActivities }
 }
 
 export async function getLegalRequirementDetail(requirementId: string, access: RiskLegalAccess) {

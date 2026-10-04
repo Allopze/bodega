@@ -59,25 +59,19 @@ export function nextStepFor(input: NextStepInput): NextStep | null {
     const pending = new Set(errors.flatMap((issue) => (issue.entryId ? [issue.entryId] : [])))
     if (pending.size > 0) {
       const first = firstPendingBySeverity(rows, pending)
-      return step("warning", `Faltan datos en ${countOf(pending.size, "riesgo")}`, "Empieza por los más graves; «Siguiente pendiente» te lleva al próximo.", first ? { kind: "riesgo", entryId: first, purpose: "pending" } : null, { kind: "filtro", completitud: "pendientes" })
+      return step("warning", `Faltan datos en ${countOf(pending.size, "riesgo")}`, "Continúa completando los datos. Empezarás por el riesgo pendiente de mayor gravedad.", first ? { kind: "riesgo", entryId: first, purpose: "pending" } : null, { kind: "filtro", completitud: "pendientes" })
     }
-    if (input.status === "draft" || input.reviewState === "observed") return step("success", "Lista para enviar a revisión", "Usa «Enviar a revisión» en la cabecera.")
+    if (input.status === "draft" || input.reviewState === "observed") return step("success", "Lista para enviar a revisión", "Revisa la preparación del documento y envíalo cuando esté listo.", { kind: "tab", tab: "revision" })
   }
   if (input.status === "published" && input.hasPendingChanges) return step("info", `Hay cambios sin revisar desde ${input.versionLabel}`, "Envíalos a revisión cuando estén listos.")
   return null
 }
 
-/**
- * Dónde se ve la tarjeta (spec §4): lo decide `step.scope`. Ya en Revisión no
- * se ofrece «Ir a Revisión». En Resumen no se ofrece «Ver los pendientes»: la
- * cifra «Riesgos completos» ya lleva a ese subconjunto limpiando los filtros, y
- * el filtro del paso los conserva (`hrefToMatrixWith`), así que llegaría a otra
- * lista (A1/A5: una cifra, una representación).
- */
+/** La recomendación de datos vive en Inicio/Riesgos, sin competir con la ejecución del plan. */
 export function nextStepInView(step: NextStep | null, view: { atRoot: boolean; tab: string }): NextStep | null {
   if (!step || (!view.atRoot && step.scope !== "everywhere")) return null
-  if (view.tab !== "revision" && view.tab !== "resumen") return step
-  const drop = (action: NextStepAction | null) =>
-    ((view.tab === "revision" && action?.kind === "tab" && action.tab === "revision") || (view.tab === "resumen" && action?.kind === "filtro") ? null : action)
+  if (step.scope !== "everywhere" && (view.tab === "programa" || view.tab === "historial")) return null
+  if (view.tab !== "revision") return step
+  const drop = (action: NextStepAction | null) => action?.kind === "tab" && action.tab === "revision" ? null : action
   return { ...step, action: drop(step.action), secondary: drop(step.secondary) }
 }

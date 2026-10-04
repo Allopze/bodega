@@ -18,7 +18,7 @@ import {
 } from "@/db/schema"
 import { checkMiperCompleteness } from "@/lib/prevention/miper/completeness"
 import { isCriticalRisk, isCriticalWithoutControl } from "@/lib/prevention/miper/critical-control"
-import { miperInboxReason } from "@/lib/prevention/miper/inbox"
+import { miperInboxAction } from "@/lib/prevention/miper/inbox"
 import {
   pickCurrentMatrices, portfolioActionOrder, PORTFOLIO_STATUS_LABEL, portfolioStatusOf,
   type MiperPortfolioAction, type MiperPortfolioMatrix, type MiperPortfolioRow, type MiperWorksiteTarget,
@@ -87,8 +87,8 @@ export async function listMiperPortfolio(access: MiperAccess): Promise<{ rows: M
     const snapshot = snapshots.get(primary.id)
     const vigente = pick.published && pick.published.id !== primary.id ? pick.published : null
     const myActions = portfolioActionOrder(pick).flatMap((candidate): MiperPortfolioAction[] => {
-      const reason = miperInboxReason(candidate, access)
-      return reason ? [{ matrixId: candidate.id, period: candidate.period, reason }] : []
+      const action = miperInboxAction(candidate, access)
+      return action ? [{ matrixId: candidate.id, period: candidate.period, ...action }] : []
     })
     return {
       id: site.id, worksiteId: site.id, worksiteName: site.name, worksiteActive: site.isActive,
