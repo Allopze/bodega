@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -34,7 +34,6 @@ export type ReviewPanelProps = {
 }
 
 export function ReviewPanel({ workspace, mode, onOpenEntry, issues, onOpenFicha, rows, observed, modified, hasBaseline }: ReviewPanelProps) {
-  const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
   const quickFilters = reviewQuickFilters(rows, { observed, modified, hasBaseline })
@@ -83,7 +82,7 @@ export function ReviewPanel({ workspace, mode, onOpenEntry, issues, onOpenFicha,
         return (
           <details key={group.key} open={group.key !== "resolved"} className="space-y-2">
             <summary className="cursor-pointer text-sm font-semibold">{group.title} ({items.length})</summary>
-            <div className="mt-2 space-y-2">{items.map((item) => <ObservationItem key={item.id} observation={item} mode={mode} onOpenEntry={onOpenEntry} onChanged={() => router.refresh()} />)}</div>
+            <div className="mt-2 space-y-2">{items.map((item) => <ObservationItem key={item.id} observation={item} mode={mode} onOpenEntry={onOpenEntry} />)}</div>
           </details>
         )
       })}

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
@@ -25,7 +25,6 @@ function display(value: unknown, field?: string) {
 }
 
 export function FollowUpStep({ entry, data, mode, change, baselineEntry, issues }: { issues: CompletenessIssue[]; entry: MiperEntrySnapshot; data: RiskEditorData; mode: WorkspaceMode; change: EntryChange | null; baselineEntry: MiperEntrySnapshot | null }) {
-  const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
   const [observation, setObservation] = useState("")
@@ -50,7 +49,7 @@ export function FollowUpStep({ entry, data, mode, change, baselineEntry, issues 
       <section aria-label="Observaciones del riesgo" className="space-y-2">
         <h3 className="text-sm font-semibold">Observaciones de revisión ({observations.length})</h3>
         <p className="text-sm text-[var(--color-text-subtle)]">Aquí se registran y responden las correcciones solicitadas durante la revisión del documento.</p>
-        {observations.map((item) => <ObservationItem key={item.id} observation={item} mode={mode} onChanged={() => router.refresh()} />)}
+        {observations.map((item) => <ObservationItem key={item.id} observation={item} mode={mode} />)}
         {mode.canObserve && (
           <div className="space-y-2">
             {/* El mínimo que exige el botón, a la vista (A2, fila 10). El rótulo visible es el nombre accesible. */}

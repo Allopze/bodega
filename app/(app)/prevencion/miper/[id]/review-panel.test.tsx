@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
@@ -8,8 +8,12 @@ import type { MiperObservationView, MiperWorkspace } from "@/lib/services/miper/
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }))
 vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/prevencion/miper/m1", useSearchParams: () => new URLSearchParams("tab=revision") }))
 vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }))
+const actions = vi.hoisted(() => ({
+  addMiperObservationAction: vi.fn(), reopenMiperObservationAction: vi.fn(), resolveMiperObservationAction: vi.fn(),
+  respondMiperObservationAction: vi.fn(async () => ({ ok: true, message: "Respuesta guardada" })),
+}))
 vi.mock("../actions", () => ({
-  addMiperObservationAction: vi.fn(), reopenMiperObservationAction: vi.fn(), resolveMiperObservationAction: vi.fn(), respondMiperObservationAction: vi.fn(),
+  ...actions,
 }))
 
 import { ReviewPanel } from "./review-panel"
@@ -127,5 +131,15 @@ describe("ReviewPanel: preparación para enviar", () => {
     expect(screen.getByText(/Sin pendientes: no queda/)).toBeTruthy()
     rerender(<ReviewPanel workspace={workspace()} mode={mode} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline={false} issues={[]} />)
     expect(screen.queryByRole("region", { name: "Preparación para enviar" })).toBeNull()
+  })
+})
+
+describe("ReviewPanel: sin refresco doble", () => {
+  it("responder una observación no pide un router.refresh(): la acción ya revalida y Next refresca la página", async () => {
+    render(<ReviewPanel workspace={workspace([observation])} mode={{ ...mode, canRespond: true }} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline={false} />)
+    fireEvent.change(screen.getByRole("textbox", { name: "Tu respuesta" }), { target: { value: "Se agregó la medida pedida." } })
+    fireEvent.click(screen.getByRole("button", { name: "Responder" }))
+    await waitFor(() => expect(actions.respondMiperObservationAction).toHaveBeenCalledWith({ observationId: "o1", response: "Se agregó la medida pedida." }))
+    expect(router.refresh).not.toHaveBeenCalled()
   })
 })

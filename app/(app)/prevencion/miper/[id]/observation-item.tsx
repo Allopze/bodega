@@ -19,7 +19,7 @@ const STATUS_TEXT: Record<string, { label: string; className: string }> = {
   resolved: { label: "Resuelta", className: "bg-[var(--color-success-tint)] text-[var(--color-success-ink)]" },
 }
 
-export function ObservationItem({ observation, mode, onChanged }: { observation: MiperObservationView; mode: WorkspaceMode; /** Ya no se usa: el riesgo se abre con un enlace. Se acepta para no romper a quien aún lo pasa. */ onOpenEntry?: (entryId: string) => void; onChanged: () => void }) {
+export function ObservationItem({ observation, mode, onChanged }: { observation: MiperObservationView; mode: WorkspaceMode; /** Ya no se usa: el riesgo se abre con un enlace. Se acepta para no romper a quien aún lo pasa. */ onOpenEntry?: (entryId: string) => void; /** Tras responder, resolver o reabrir. La acción ya revalida y Next refresca la página: no pasar un `router.refresh()`. */ onChanged?: () => void }) {
   const pathname = usePathname()
   const params = useSearchParams()
   const [response, setResponse] = useState("")

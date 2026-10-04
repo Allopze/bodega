@@ -160,7 +160,8 @@ function EntryMenu({ matrixId, entry, version, afterDeleteHref, entryHref }: { m
       // Hacia adelante con ida al servidor: igual que `navigateWorkspace`, el destino no hereda un scroll viejo.
       beforeForwardNavigation(href)
       router.push(href)
-    } else router.refresh()
+    }
+    // Sin id no hay a dónde ir: la acción ya revalidó y Next refresca la página sola.
   }
   async function remove() {
     setBusy(true)
