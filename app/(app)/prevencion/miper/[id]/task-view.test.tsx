@@ -52,7 +52,7 @@ describe("TaskView", () => {
     expect(screen.getByText("1 pendiente")).toBeTruthy()
     expect(screen.getByText("Completo")).toBeTruthy()
     expect(screen.getByText("Peoneta")).toBeTruthy()
-    expect(screen.getByText("1 de 2 completos")).toBeTruthy()
+    expect(screen.getByText("1 de 2 con datos completos")).toBeTruthy()
   })
   it("«Agregar peligro» hereda el contexto, se inserta tras el último N° de la tarea y abre el editor", async () => {
     saveMiperEntryAction.mockResolvedValueOnce({ ok: true, data: { id: "nuevo", version: 1 } })
@@ -118,7 +118,7 @@ describe("TaskView", () => {
   it("«Seleccionar» pone una casilla al lado de cada riesgo, fuera de su enlace; sin el modo no hay casillas (Fase D)", () => {
     render(<TaskView {...base} editable bulk={bulk()} />)
     expect(screen.queryByRole("checkbox")).toBeNull()
-    fireEvent.click(screen.getByRole("button", { name: "Seleccionar" }))
+    fireEvent.click(screen.getByRole("button", { name: "Seleccionar riesgos" }))
     const box = screen.getByRole("checkbox", { name: "Seleccionar el riesgo #4: Peligro 4" })
     // Fuera del `<a>`: un clic en la casilla no abre el editor.
     expect(box.closest("a")).toBeNull()
@@ -133,12 +133,12 @@ describe("TaskView", () => {
 
   it("sin acciones masivas (sólo lectura) no ofrece «Seleccionar»", () => {
     render(<TaskView {...base} editable={false} />)
-    expect(screen.queryByRole("button", { name: "Seleccionar" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Seleccionar riesgos" })).toBeNull()
   })
 
   it("«Editar tarea» abre el diálogo con la tarea de la vista (Fase D)", () => {
     render(<TaskView {...base} editable bulk={bulk()} />)
-    fireEvent.click(screen.getByRole("button", { name: "Editar tarea" }))
+    fireEvent.click(screen.getByRole("button", { name: "Editar contexto de la tarea" }))
     expect(screen.getByRole("dialog", { name: "Editar tarea" })).toHaveTextContent("Cambia el nombre o la actividad de «Carga», o el puesto y el lugar de sus 2 riesgos.")
   })
 })

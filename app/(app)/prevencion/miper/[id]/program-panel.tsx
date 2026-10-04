@@ -3,7 +3,6 @@
 import * as React from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { ClipboardText, Plus } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -17,13 +16,13 @@ import { useOperation } from "@/lib/hooks/use-operation"
 import type { ProgramProgress } from "@/lib/prevention/miper/progress"
 import type { MiperEntrySnapshot, MiperSnapshot } from "@/lib/prevention/miper/snapshot"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
-import { hrefToActivity, hrefToFicha, hrefToTab, PROGRAM_FILTER_KEYS } from "@/lib/prevention/miper/workspace-url"
+import { hrefToActivity, hrefToFicha, hrefToMatrix, hrefToTab, PROGRAM_FILTER_KEYS } from "@/lib/prevention/miper/workspace-url"
 import type { ProgramHeaderView, ProgramOccurrenceView, ProgramWorkspace } from "@/lib/services/miper/program-queries"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { saveProgramHeaderAction } from "../actions"
 import { GenerateActionsDialog } from "./generate-actions-dialog"
 import { OccurrenceDialog } from "./occurrence-dialog"
-import { ProgramActionCard, ratioLabel } from "./program-action-card"
+import { ProgramActionCard, nextPendingOccurrence, ratioLabel } from "./program-action-card"
 import { PROGRAM_SCHEDULE_OPTIONS, ProgramActionDialog, RetireActionDialog } from "./program-action-dialog"
 import { ProgramActivityView } from "./program-activity-view"
 import { useWorkspaceFilterNavigation } from "./use-workspace-filter-navigation"
@@ -35,8 +34,8 @@ const ESTADO_OPTIONS = [
   { value: "todas", label: "Todas las actividades" },
   { value: "activas", label: "Sólo activas" },
   { value: "retiradas", label: "Sólo retiradas" },
-  { value: "vencidas", label: "Con ocurrencias vencidas" },
-  { value: "incumplidas", label: "Con ocurrencias incumplidas" },
+  { value: "vencidas", label: "Con ejecuciones vencidas" },
+  { value: "incumplidas", label: "Con ejecuciones incumplidas" },
 ]
 
 const FRECUENCIA_OPTIONS = [{ value: "todas", label: "Todas las frecuencias" }, ...PROGRAM_SCHEDULE_OPTIONS]
@@ -53,6 +52,25 @@ const FRECUENCIA_OPTIONS = [{ value: "todas", label: "Todas las frecuencias" }, 
  * (`useWorkspaceFilterNavigation`); `?actividad=` abre el detalle de una
  * actividad (`ProgramActivityView`).
  */
+/** Acciones de lista: el workspace las coloca en PageHeader. */
+export function ProgramPageActions({ matrixId, mode, users, program }: {
+  matrixId: string
+  mode: WorkspaceMode
+  users: Array<{ id: string; name: string }>
+  program: ProgramWorkspace
+}) {
+  if (!mode.canEdit) return null
+  return (
+    <>
+      <GenerateActionsDialog matrixId={matrixId} users={users} actions={program.actions.filter((action) => action.status === "active")}
+        trigger={<Button size="sm" variant="secondary">Generar actividades</Button>} />
+      <ProgramActionDialog matrixId={matrixId} processes={program.processes} users={users}
+        defaultLocationLabel={program.program?.worksiteName ?? null}
+        trigger={<Button size="sm"><Plus size={14} className="mr-1.5" />Nueva actividad</Button>} />
+    </>
+  )
+}
+
 export function ProgramPanel({
   matrixId,
   mode,
@@ -134,10 +152,16 @@ export function ProgramPanel({
       `actividad ${action.actionNumber}`, String(action.actionNumber),
       ...action.controls.map((control) => `fila ${control.rowNumber} ${control.description}`),
     ].filter(Boolean).join(" ").toLowerCase().includes(query)
+  }).sort((a, b) => {
+    const aNext = a.status === "active" ? nextPendingOccurrence(a) : null
+    const bNext = b.status === "active" ? nextPendingOccurrence(b) : null
+    if (aNext && bNext) return aNext.dueOn.localeCompare(bNext.dueOn) || a.actionNumber - b.actionNumber
+    if (aNext) return -1
+    if (bNext) return 1
+    return a.actionNumber - b.actionNumber
   })
   const anyFilter = Boolean(query) || estado !== "todas" || frecuencia !== "todas"
   const retireTarget = actions.find((action) => action.id === retireTargetId) ?? null
-  const activeActions = actions.filter((action) => action.status === "active")
   const resetFilters = () => { setSearch(""); clearFilters() }
 
   return (
@@ -159,15 +183,7 @@ export function ProgramPanel({
           icon={<ClipboardText size={24} />}
           title="Esta MIPER todavía no tiene Programa de Trabajo"
           description="El Programa de Trabajo toma las medidas del MIPER y las convierte en actividades con responsable y fecha. Se crea al generar las actividades o al agregar la primera."
-          action={mode.canEdit ? (
-            <GenerateActionsDialog
-              matrixId={matrixId}
-              users={users}
-              actions={activeActions}
-              trigger={<Button size="sm">Generar actividades</Button>}
-            />
-          ) : undefined}
-          secondaryAction={mode.canEdit ? <Button size="sm" variant="secondary" onClick={() => setHeaderOpen(true)}>Completar antecedentes</Button> : undefined}
+          action={mode.canEdit ? <Button size="sm" variant="secondary" onClick={() => setHeaderOpen(true)}>Completar antecedentes</Button> : undefined}
         />
       )}
 
@@ -192,23 +208,7 @@ export function ProgramPanel({
           </Select>
           {anyFilter && <Button type="button" variant="ghost" size="sm" onClick={resetFilters}>Limpiar filtros</Button>}
         </div>
-        {mode.canEdit && programHeader && (
-          <div className="flex flex-wrap items-center gap-2">
-            <GenerateActionsDialog
-              matrixId={matrixId}
-              users={users}
-              actions={activeActions}
-              trigger={<Button size="sm" variant="secondary">Generar actividades</Button>}
-            />
-            <ProgramActionDialog
-              matrixId={matrixId}
-              processes={program.processes}
-              users={users}
-              defaultLocationLabel={programHeader.worksiteName}
-              trigger={<Button size="sm"><Plus size={14} className="mr-1.5" />Nueva actividad</Button>}
-            />
-          </div>
-        )}
+
       </div>
 
       {actions.length === 0 ? (
@@ -217,14 +217,7 @@ export function ProgramPanel({
             compact
             title="Este programa todavía no tiene actividades"
             description="Genera las actividades a partir de las medidas del MIPER o agrega la primera a mano."
-            action={mode.canEdit ? (
-              <GenerateActionsDialog
-                matrixId={matrixId}
-                users={users}
-                actions={activeActions}
-                trigger={<Button size="sm">Generar actividades</Button>}
-              />
-            ) : undefined}
+            action={mode.canEdit ? <Button asChild size="sm" variant="secondary"><WorkspaceLink href={hrefToMatrix(pathname, searchParams)}>Revisar medidas de la matriz</WorkspaceLink></Button> : undefined}
           />
         )
       ) : filtered.length === 0 ? (
@@ -285,7 +278,7 @@ export function ProgramPanel({
 function Detail({ label, value }: { label: string; value: string | null }) {
   return (
     <div>
-      <dt className="text-eyebrow">{label}</dt>
+      <dt className="text-xs text-[var(--color-text-muted)]">{label}</dt>
       <dd className="text-sm">{value ?? <span className="text-[var(--color-text-subtle)]">Sin dato</span>}</dd>
     </div>
   )
@@ -307,35 +300,36 @@ function ProgramHeader({ program, header, progress, canEdit, fichaHref, onEdit }
   onEdit: () => void
 }) {
   return (
-    <section className="space-y-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h2 className="text-h3">Programa de Trabajo Preventivo RE-04.1</h2>
-          <p className="text-sm text-[var(--color-text-subtle)]">
-            {header.companyName ?? "Empresa sin nombre"} · {header.worksiteName ?? program.worksiteName ?? "Centro sin nombre"} · período {program.period}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{`${progress.done}/${progress.planned} realizadas`}</Badge>
-          {canEdit && (
-            <Button asChild size="sm" variant="ghost">
-              <WorkspaceLink href={fichaHref} replace>Editar en la ficha</WorkspaceLink>
-            </Button>
-          )}
-          {canEdit && <Button type="button" size="sm" variant="secondary" onClick={onEdit}>Editar antecedentes</Button>}
-        </div>
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-h3">Programa de Trabajo Preventivo RE-04.1</h2>
+        <p className="mt-1 text-sm text-[var(--color-text-muted)]">Organiza las medidas en actividades y registra cada ejecución con su evidencia.</p>
       </div>
-      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Detail label="RUT" value={header.companyRut} />
-        <Detail label="Dirección" value={header.companyAddress} />
-        <Detail label="Comuna" value={header.companyCommune} />
-        <Detail label="Representante de la empresa" value={header.siteRepresentativeName} />
-        <Detail label="Fecha de elaboración" value={program.elaboratedOn ? formatDate(program.elaboratedOn) : null} />
+      <dl className="flex flex-wrap gap-x-8 gap-y-3 rounded-xl bg-[var(--color-surface-2)] p-4">
+        <Detail label="Período" value={String(program.period)} />
         <Detail label="Encargado del programa" value={program.programManagerName} />
-        <Detail label="N° de centros de trabajo" value={String(program.worksiteCount)} />
-        <Detail label="Fecha última revisión" value={program.lastReviewedOn ? formatDate(program.lastReviewedOn) : "Sin versión sellada"} />
-        <Detail label="Avance del programa" value={`${progress.done}/${progress.planned} · ${ratioLabel(progress)}`} />
+        <Detail label="Avance del programa" value={progress.planned === 0 ? "Sin ejecuciones programadas" : `${progress.done}/${progress.planned} · ${ratioLabel(progress)}`} />
       </dl>
+      <details className="rounded-xl border border-[var(--color-border)] p-3">
+        <summary className="cursor-pointer text-sm font-medium">Datos del programa</summary>
+        <div className="mt-3 space-y-4">
+          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Detail label="Empresa" value={header.companyName} />
+            <Detail label="Faena" value={header.worksiteName ?? program.worksiteName} />
+            <Detail label="RUT" value={header.companyRut} />
+            <Detail label="Dirección" value={header.companyAddress} />
+            <Detail label="Comuna" value={header.companyCommune} />
+            <Detail label="Representante de la empresa" value={header.siteRepresentativeName} />
+            <Detail label="Fecha de elaboración" value={program.elaboratedOn ? formatDate(program.elaboratedOn) : null} />
+            <Detail label="N° de centros de trabajo" value={String(program.worksiteCount)} />
+            <Detail label="Fecha última revisión" value={program.lastReviewedOn ? formatDate(program.lastReviewedOn) : "Sin versión aprobada"} />
+          </dl>
+          {canEdit && <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm" variant="secondary"><WorkspaceLink href={fichaHref} replace>Datos de empresa</WorkspaceLink></Button>
+            <Button type="button" size="sm" variant="secondary" onClick={onEdit}>Responsable y fecha del programa</Button>
+          </div>}
+        </div>
+      </details>
     </section>
   )
 }
@@ -380,7 +374,7 @@ function ProgramHeaderDialog({ open, onOpenChange, matrixId, program, users }: {
       <DialogContent className="max-w-lg">
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
-            <DialogTitle>Antecedentes del Programa de Trabajo</DialogTitle>
+            <DialogTitle>Responsable y fecha del programa</DialogTitle>
             <DialogDescription>
               Los datos de la empresa y el representante se toman de la ficha del documento. Aquí sólo se fijan la fecha de elaboración y el encargado.
             </DialogDescription>

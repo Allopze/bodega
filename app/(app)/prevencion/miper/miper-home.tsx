@@ -1,11 +1,11 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
+import { CreateChoiceButton } from "@/components/ui/create-choice-button"
 import { DataTable } from "@/components/ui/data-table"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { OptionSelect } from "@/components/ui/option-select"
@@ -37,11 +37,8 @@ const STATUS_META: Record<MiperPortfolioStatus, StateMetaInput> = {
 const COLUMNS = [
   { key: "worksiteName", label: "Faena", sortable: true },
   { key: "status", label: "Estado" },
-  { key: "headcount", label: "Dotación", numeric: true, sortable: true },
-  { key: "completeness", label: "Completitud" },
-  { key: "graves", label: "Importantes e Intolerables", numeric: true },
-  { key: "programProgress", label: "Programa" },
-  { key: "updatedAt", label: "Actualizada", sortable: true },
+  { key: "pending", label: "Trabajo pendiente" },
+  { key: "action", label: "Acción" },
 ]
 
 const NO_CREATION_HINT = "No hay faenas activas a tu alcance"
@@ -59,7 +56,7 @@ function ReplaceLink({ href, className, children, ...rest }: SummaryLinkProps) {
 /** A1: una cifra en cero se ve, pero no enlaza a una lista vacía. */
 const linkUnlessZero = (count: number, href: string) => (count > 0 ? href : undefined)
 
-const matrixHref = (matrixId: string) => `/prevencion/miper/${matrixId}`
+const matrixHref = (matrixId: string) => `/prevencion/miper/${matrixId}?tab=resumen`
 const periodLabel = (period: number | null) => (period === null ? "sin período" : String(period))
 const actionLabel = (action: MiperPortfolioAction) => `${action.reason} · MIPER ${periodLabel(action.period)}`
 
@@ -97,34 +94,20 @@ function Worksite({ row }: { row: MiperPortfolioRow }) {
       {row.vigente && (
         <p className="text-xs"><Link href={matrixHref(row.vigente.id)} className="text-[var(--color-text-muted)] hover:underline">{vigenteLabel(row.vigente)}</Link></p>
       )}
-      {row.myActions.map((action) => (
-        <p key={action.matrixId} className="text-xs font-semibold">
-          <Link href={matrixHref(action.matrixId)} className="text-[var(--color-signal-ink)] hover:underline">{actionLabel(action)}</Link>
-        </p>
-      ))}
+
     </div>
   )
 }
 
-function State({ row, onCreate }: { row: MiperPortfolioRow; onCreate: (() => void) | null }) {
+function State({ row }: { row: MiperPortfolioRow }) {
   const meta = metaFor(STATUS_META, row.status)
   const detail = [row.matrix && row.stateLabel !== meta.label ? row.stateLabel : null, row.submittedByName ? `enviada por ${row.submittedByName}` : null].filter(Boolean).join(" · ")
   return (
     <div className="flex flex-col items-start gap-1">
       <MetaBadge meta={meta} />
       {detail && <p className="text-xs text-[var(--color-text-subtle)]">{detail}</p>}
-      {/* El nombre empieza con el texto visible y nombra la faena (WCAG 2.5.3): cada fila tiene el suyo. */}
-      {onCreate && <Button size="sm" variant="secondary" onClick={onCreate} aria-label={`Crear MIPER de ${row.worksiteName}`}>Crear MIPER</Button>}
-    </div>
-  )
-}
 
-function Headcount({ row }: { row: MiperPortfolioRow }) {
-  return (
-    <span className="block">
-      <span className="tabular-nums">{row.headcount}</span>
-      <span className="block text-xs text-[var(--color-text-subtle)]">{row.headcountSource === "ficha" ? "según la ficha" : "trabajadores activos"}</span>
-    </span>
+    </div>
   )
 }
 
@@ -150,13 +133,34 @@ function CriticalWithoutControl({ row }: { row: MiperPortfolioRow }) {
   )
 }
 
-function Graves({ row }: { row: MiperPortfolioRow }) {
-  return (
-    <span className="block">
-      <span className="tabular-nums">{row.importantCount + row.intolerableCount}</span>
-      <CriticalWithoutControl row={row} />
-    </span>
-  )
+function CreateMatrixChoice({ worksites, currentYear, canManageCatalog, initialWorksiteId = null }: {
+  worksites: CreationWorksite[]; currentYear: number; canManageCatalog: boolean; initialWorksiteId?: string | null
+}) {
+  const worksiteName = worksites.find((item) => item.id === initialWorksiteId)?.name
+  return <CreateChoiceButton label="Crear matriz" title="Crear matriz de riesgos"
+    description={worksiteName ? `Faena: ${worksiteName}. Elige cómo comenzar.` : "Elige cómo comenzar. En el siguiente paso indicarás la faena y el período."}
+    choices={[
+      { key: "manual", label: "Completar en la plataforma", description: "Crea las actividades y tareas, o copia una matriz vigente.", soloLabel: "Crear matriz",
+        render: (props) => <NewMiperDialog {...props} worksites={worksites} currentYear={currentYear} initialWorksiteId={initialWorksiteId} /> },
+      { key: "excel", label: "Importar desde Excel", description: "Revisa los riesgos y las medidas del archivo antes de incorporarlos.", soloLabel: "Importar desde Excel",
+        render: (props) => <ImportMiperDialog {...props} hideTrigger worksites={worksites} currentYear={currentYear} initialWorksiteId={initialWorksiteId} canManageCatalog={canManageCatalog} /> },
+    ]} />
+}
+
+function PendingWork({ row }: { row: MiperPortfolioRow }) {
+  const pending = row.completeness ? row.completeness.total - row.completeness.complete : null
+  return <div className="space-y-1 text-sm">
+    {row.myActions.map((action) => <p key={action.matrixId} className="font-medium text-[var(--color-signal-ink)]">{actionLabel(action)}</p>)}
+    <p>{!row.matrix ? "Crear la primera matriz" : row.matrix.isLegacy ? "Metodología anterior" : row.completeness?.total === 0 ? "Identificar las primeras tareas y riesgos" : pending === null ? "Consultar el documento" : pending > 0 ? `${countOf(pending, "riesgo")} con datos pendientes` : "Datos de riesgos completos"}</p>
+    <CriticalWithoutControl row={row} />
+    {row.matrix && !row.matrix.isLegacy && <details className="text-xs text-[var(--color-text-subtle)]">
+      <summary className="cursor-pointer">Ver avance y datos</summary>
+      <div className="mt-2 space-y-1"><Completeness row={row} />
+        <p>{programLabel(row)}</p>
+        <p>Dotación {row.headcount} · Actualizada {row.updatedAt ? formatDate(row.updatedAt) : "sin fecha"}</p>
+      </div>
+    </details>}
+  </div>
 }
 
 /**
@@ -181,11 +185,17 @@ export function MiperHome({ rows, creationWorksites, currentYear, permissions }:
   const filtered = hasPortfolioFilters(params)
   // La búsqueda del TopBar la aplica `DataTable` sobre `visible`; aquí sólo importa para explicar una lista vacía.
   const { searchQuery, setSearchQuery } = useSafeShellHeader()
-  // El alta vive aquí: la abren la cabecera («Nueva MIPER») y la fila de una faena sin MIPER («Crear MIPER»).
-  const [creating, setCreating] = useState<{ worksiteId: string | null } | null>(null)
   const creatable = new Set(creationWorksites.map((worksite) => worksite.id))
-  const createFor = (row: MiperPortfolioRow) =>
-    permissions.canEdit && !row.matrix && creatable.has(row.worksiteId) ? () => setCreating({ worksiteId: row.worksiteId }) : null
+  const actionsFor = (row: MiperPortfolioRow) => {
+    if (!row.matrix) return permissions.canEdit && creatable.has(row.worksiteId)
+      ? <CreateMatrixChoice worksites={creationWorksites} currentYear={currentYear} canManageCatalog={permissions.canManageCatalog} initialWorksiteId={row.worksiteId} /> : null
+    const actions = row.myActions.length ? row.myActions : [{ matrixId: row.matrix.id, period: row.matrix.period, reason: "", kind: "continue" as const }]
+    return <div className="flex flex-col items-start gap-2">{actions.map((action) => {
+      const inReview = action.kind !== "continue"
+      const label = action.kind === "review" ? "Revisar" : action.kind === "respond" ? "Responder" : permissions.canEdit ? "Continuar" : "Consultar"
+      return <Button asChild size="sm" variant="secondary" key={action.matrixId}><Link href={inReview ? `/prevencion/miper/${action.matrixId}?tab=revision` : matrixHref(action.matrixId)} aria-label={`${label} · ${row.worksiteName} · ${periodLabel(action.period)}`}>{actions.length > 1 ? `${label} ${periodLabel(action.period)}` : label}</Link></Button>
+    })}</div>
+  }
 
   /** Filtrar es estado de la vista: `replace` y sin scroll. `portfolioHref` borra además el `tab` heredado. */
   const update = (patch: Record<string, string | null>) => router.replace(portfolioHref(searchParams, patch, pathname), { scroll: false })
@@ -211,21 +221,21 @@ export function MiperHome({ rows, creationWorksites, currentYear, permissions }:
   return (
     <PageContainer width="wide">
       <PageHeader
-        title="Matriz IPER (MIPER)"
-        description="Identificación de peligros y evaluación de riesgos por faena y período, con revisión técnica y aprobación Legal y RRHH."
+        title="Matriz de riesgos"
+        description="MIPER · RE-04. Identifica los peligros de cada tarea, define medidas y revisa su cumplimiento."
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "MIPER" }]} />}
         actions={<div className="flex gap-2">
-          {permissions.canManageCatalog && <Button asChild variant="secondary"><Link href="/prevencion/miper/factores">Factores de riesgo</Link></Button>}
-          {permissions.canEdit && <ImportMiperDialog worksites={creationWorksites} currentYear={currentYear} canManageCatalog={permissions.canManageCatalog} />}
-          {permissions.canEdit && (
-            <Button onClick={() => setCreating({ worksiteId: null })} disabled={creationWorksites.length === 0}
-              title={creationWorksites.length === 0 ? NO_CREATION_HINT : undefined}>
-              Nueva MIPER
-            </Button>
-          )}
+          {permissions.canManageCatalog && <Button asChild variant="ghost"><Link href="/prevencion/miper/factores">Administrar factores de riesgo</Link></Button>}
+          {permissions.canEdit && (creationWorksites.length > 0
+            ? <CreateMatrixChoice worksites={creationWorksites} currentYear={currentYear} canManageCatalog={permissions.canManageCatalog} />
+            : <Button disabled title={NO_CREATION_HINT}>Crear matriz</Button>)}
         </div>}
       />
       <div className="space-y-4">
+        <details className="text-sm text-[var(--color-text-muted)]">
+          <summary className="w-fit cursor-pointer font-medium">Cómo se trabaja aquí</summary>
+          <p className="mt-2 max-w-prose">Identificar peligros → Evaluar riesgos → Definir medidas → Revisar y dar seguimiento. Elige una faena y continúa donde quedó el trabajo; puedes empezar en la plataforma o importar un archivo Excel.</p>
+        </details>
         <SummaryBar renderLink={ReplaceLink} stats={[
           {
             key: "con-miper", label: "Faenas con MIPER", value: `${summary.withMiper}/${summary.total}`,
@@ -272,12 +282,9 @@ export function MiperHome({ rows, creationWorksites, currentYear, permissions }:
           renderRow={(row) => (
             <TableRow key={row.id} data-worksite-id={row.worksiteId}>
               <TableCell><Worksite row={row} /></TableCell>
-              <TableCell><State row={row} onCreate={createFor(row)} /></TableCell>
-              <TableCell className="text-right"><Headcount row={row} /></TableCell>
-              <TableCell><Completeness row={row} /></TableCell>
-              <TableCell className="text-right"><Graves row={row} /></TableCell>
-              <TableCell className="text-sm">{programLabel(row) ?? <span className="text-xs text-[var(--color-text-subtle)]">—</span>}</TableCell>
-              <TableCell>{row.updatedAt ? formatDate(row.updatedAt) : "—"}</TableCell>
+              <TableCell><State row={row} /></TableCell>
+              <TableCell><PendingWork row={row} /></TableCell>
+              <TableCell>{actionsFor(row)}</TableCell>
             </TableRow>
           )}
           renderMobileCard={(row) => {
@@ -285,7 +292,8 @@ export function MiperHome({ rows, creationWorksites, currentYear, permissions }:
             return (
               <article aria-label={row.worksiteName} className="space-y-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
                 <Worksite row={row} />
-                <State row={row} onCreate={createFor(row)} />
+                <State row={row} />
+                {actionsFor(row)}
                 <Completeness row={row} />
                 <p className="text-xs text-[var(--color-text-subtle)]">
                   Dotación {row.headcount} · Importantes e Intolerables {row.importantCount + row.intolerableCount}
@@ -297,8 +305,7 @@ export function MiperHome({ rows, creationWorksites, currentYear, permissions }:
           }}
         />
       </div>
-      <NewMiperDialog open={creating !== null} onOpenChange={(open) => { if (!open) setCreating(null) }}
-        worksites={creationWorksites} currentYear={currentYear} initialWorksiteId={creating?.worksiteId ?? null} />
+
     </PageContainer>
   )
 }

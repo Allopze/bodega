@@ -8,6 +8,7 @@ import type { EntryAutosave } from "../use-entry-autosave"
 /** Lo que el editor necesita del espacio de trabajo: un subconjunto, para poder probarlo sin un `MiperWorkspace` completo. */
 export type RiskEditorData = {
   matrixId: string
+  worksiteName?: string
   published: boolean
   riskFactors: MiperWorkspace["riskFactors"]
   dictionaries: MiperWorkspace["dictionaries"]

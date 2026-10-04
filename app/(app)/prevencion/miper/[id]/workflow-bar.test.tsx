@@ -45,9 +45,30 @@ describe("WorkflowBar", () => {
     expect(onOpenFicha).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole("button", { name: "Enviar a revisión" }))
     fireEvent.click(screen.getByRole("button", { name: /Riesgo #3: Falta el peligro/ }))
-    expect(onOpenEntry).toHaveBeenCalledWith("e1")
+    expect(onOpenEntry).toHaveBeenCalledWith("e1", "identificacion")
   })
 
+  it("agrupa todos los bloqueos, incluso después del 40, y lleva al paso correcto", () => {
+    const many: CompletenessIssue[] = [
+      ...issues,
+      ...Array.from({ length: 42 }, (_, index) => ({ scope: "control" as const, entryId: "e1", field: "dueDate", message: `Medida ${index + 1}: falta plazo.`, severity: "error" as const })),
+      { scope: "entry", entryId: "e1", field: "programLink", message: "Falta vincular al programa.", severity: "error" },
+      { scope: "entry", entryId: "e1", field: "classification", message: "Advertencia que no bloquea", severity: "warning" },
+    ]
+    const onOpenEntry = vi.fn()
+    render(<WorkflowBar workspace={workspace} mode={mode} issues={many} openObservations={0} onOpenFicha={vi.fn()} onOpenEntry={onOpenEntry} />)
+    fireEvent.click(screen.getByRole("button", { name: "Enviar a revisión" }))
+    expect(screen.getByRole("heading", { name: "Ficha del documento (1)" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Identificación y evaluación (1)" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Medidas de control (42)" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Vínculos al Programa de Trabajo (1)" })).toBeTruthy()
+    expect(screen.queryByText("Advertencia que no bloquea")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Riesgo #3: Medida 42: falta plazo." }))
+    expect(onOpenEntry).toHaveBeenLastCalledWith("e1", "medidas")
+    fireEvent.click(screen.getByRole("button", { name: "Enviar a revisión" }))
+    fireEvent.click(screen.getByRole("button", { name: "Riesgo #3: Falta vincular al programa." }))
+    expect(onOpenEntry).toHaveBeenLastCalledWith("e1", "seguimiento")
+  })
   it("descargar y descartar viven en «Más»", () => {
     render(<WorkflowBar workspace={workspace} mode={mode} issues={[]} openObservations={0} onOpenFicha={vi.fn()} />)
     expect(screen.queryByRole("button", { name: "Descartar borrador" })).toBeNull()
@@ -55,14 +76,14 @@ describe("WorkflowBar", () => {
     expect(screen.getByRole("menuitem", { name: "Descartar borrador" })).toBeTruthy()
   })
 
-  it("«La matriz no tiene registros» no abre la ficha (no se corrige ahí): queda como texto «Matriz: …»", () => {
+  it("«La matriz no tiene registros» abre Riesgos para crear la primera tarea", () => {
     const onOpenFicha = vi.fn()
     const empty: CompletenessIssue[] = [{ scope: "header", field: "entries", message: "La matriz no tiene registros de evaluación.", severity: "error" }]
     render(<WorkflowBar workspace={workspace} mode={mode} issues={empty} openObservations={0} onOpenFicha={onOpenFicha} onOpenEntry={vi.fn()} />)
     fireEvent.click(screen.getByRole("button", { name: "Enviar a revisión" }))
     const dialog = screen.getByRole("dialog", { name: "Falta 1 dato para enviar" })
-    expect(dialog.textContent).toContain("Matriz: La matriz no tiene registros de evaluación.")
-    expect(screen.queryByRole("button", { name: /no tiene registros/ })).toBeNull()
+    expect(dialog.textContent).toContain("Riesgos: La matriz no tiene registros de evaluación.")
+    expect(screen.getByRole("link", { name: /no tiene registros/ }).getAttribute("href")).toBe("/prevencion/miper/m1")
     expect(onOpenFicha).not.toHaveBeenCalled()
   })
 

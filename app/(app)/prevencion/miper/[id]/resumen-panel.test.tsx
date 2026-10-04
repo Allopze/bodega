@@ -43,7 +43,7 @@ describe("ResumenPanel — cuatro cifras que llevan a su subconjunto (A1)", () =
     // La URL tal como la deja el espacio de trabajo: filtrar la matriz y después abrir «Resumen» agrega `tab` al final.
     show("buscar=lodo&factor=f1&clasificacion=moderate&tab=resumen")
     const completos = screen.getByRole("link", { name: /^Riesgos completos/ })
-    expect(completos).toHaveAttribute("href", `${P}?completitud=pendientes`)
+    expect(completos).toHaveAttribute("href", `${P}?completitud=completos`)
     expect(completos).toHaveTextContent("1/3")
     expect(completos).toHaveTextContent("2 riesgos con pendientes")
     expect(screen.getByRole("link", { name: /^Importantes e Intolerables/ })).toHaveAttribute("href", `${P}?clasificacion=important%2Cintolerable`)
@@ -67,7 +67,7 @@ describe("ResumenPanel — cuatro cifras que llevan a su subconjunto (A1)", () =
     expect(screen.queryByRole("link", { name: /^No controlados/ })).toBeNull()
     expect(screen.queryByRole("link", { name: /^Importantes e Intolerables/ })).toBeNull()
     expect(screen.getByRole("link", { name: /^Riesgos completos/ })).toHaveAttribute("href", `${P}?completitud=completos`)
-    expect(screen.getByRole("link", { name: /^Avance del programa/ })).toHaveTextContent("Sin ocurrencias")
+    expect(screen.getByRole("link", { name: /^Avance del programa/ })).toHaveTextContent("Sin actividades programadas")
   })
 
   it("«Avance del programa» redondea hacia abajo: 199 de 200 no es 100% (y 29 de 100 es 29%, sin el error de coma flotante)", () => {

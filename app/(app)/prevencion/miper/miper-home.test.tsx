@@ -35,7 +35,7 @@ const ROWS = [
   row({
     id: "ws-b", worksiteId: "ws-b", worksiteName: "Faena B", status: "en_revision", stateLabel: "En revisión por Prevención",
     matrix: { id: "m-b", period: 2026, versionNumber: null, label: "En revisión por Prevención", isLegacy: false },
-    criticalWithoutControl: 0, requiresMyAction: true, myActions: [{ matrixId: "m-b", period: 2026, reason: "Pendiente de tu revisión" }], submittedByName: "Ana",
+    criticalWithoutControl: 0, requiresMyAction: true, myActions: [{ matrixId: "m-b", period: 2026, reason: "Pendiente de tu revisión", kind: "review" }], submittedByName: "Ana",
   }),
   row({
     id: "ws-c", worksiteId: "ws-c", worksiteName: "Faena C", matrix: null, status: "sin_miper", stateLabel: "Sin MIPER", headcount: 3,
@@ -197,18 +197,18 @@ describe("MiperHome — filas", () => {
   it("cada acción pendiente enlaza a ESA MIPER y la vigente va aparte", () => {
     show("", [row({
       vigente: { id: "m-v", period: 2025, versionNumber: 3, label: "Vigente · v3", isLegacy: false },
-      requiresMyAction: true, myActions: [{ matrixId: "m-v", period: 2025, reason: "Con observaciones" }],
+      requiresMyAction: true, myActions: [{ matrixId: "m-v", period: 2025, reason: "Con observaciones", kind: "respond" }],
     })])
-    expect(tabla().getByRole("link", { name: "Con observaciones · MIPER 2025" })).toHaveAttribute("href", "/prevencion/miper/m-v")
-    expect(tabla().getByRole("link", { name: "Vigente v3 (2025)" })).toHaveAttribute("href", "/prevencion/miper/m-v")
-    expect(tabla().getByRole("link", { name: "Faena A" })).toHaveAttribute("href", "/prevencion/miper/m-a")
+    expect(tabla().getByRole("link", { name: "Responder · Faena A · 2025" })).toHaveAttribute("href", "/prevencion/miper/m-v?tab=revision")
+    expect(tabla().getByRole("link", { name: "Vigente v3 (2025)" })).toHaveAttribute("href", "/prevencion/miper/m-v?tab=resumen")
+    expect(tabla().getByRole("link", { name: "Faena A" })).toHaveAttribute("href", "/prevencion/miper/m-a?tab=resumen")
     expect(tabla().getByText("1 crítico sin control en la vigente")).toBeInTheDocument()
   })
 
   it("muestra la completitud con su barra, y la metodología anterior sin cifra", () => {
     show("", [row({}), row({ id: "ws-d", worksiteId: "ws-d", worksiteName: "Faena D", completeness: null, matrix: { id: "m-d", period: null, versionNumber: null, label: "Vigente · metodología anterior", isLegacy: true } })])
     expect(tabla().getByRole("progressbar", { name: "Faena A: 3 de 4 completos" })).toBeInTheDocument()
-    expect(tabla().getByText("Metodología anterior")).toBeInTheDocument()
+    expect(tabla().getAllByText("Metodología anterior").length).toBeGreaterThan(0)
   })
 
   it("el programa: avance con cifra, «Sin programa» sin ocurrencias planificadas (nunca 0 %) y nada sin MIPER", () => {
@@ -250,22 +250,39 @@ describe("MiperHome — filas", () => {
 
   it("la faena sin MIPER ofrece «Crear MIPER», que abre el diálogo con esa faena ya elegida", () => {
     show("")
-    fireEvent.click(tabla().getByRole("button", { name: "Crear MIPER de Faena C" }))
+    fireEvent.click(tabla().getByRole("button", { name: "Crear matriz" }))
+    expect(screen.getByRole("dialog", { name: "Crear matriz de riesgos" })).toHaveTextContent("Faena: Faena C")
+    fireEvent.click(screen.getByRole("button", { name: /^Completar en la plataforma/ }))
     const dialog = screen.getByRole("dialog", { name: "Nueva MIPER" })
     expect(within(dialog).getByRole("combobox")).toHaveTextContent("Faena C")
   })
 
   it("sin permiso de edición no hay «Crear MIPER» ni «Nueva MIPER»", () => {
     show("", ROWS, false)
-    expect(screen.queryByRole("button", { name: /^Crear MIPER/ })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Nueva MIPER" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /^Crear matriz/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Crear matriz" })).toBeNull()
   })
 
   it("sin faenas activas a su alcance, «Nueva MIPER» queda deshabilitada y dice por qué", () => {
     show("", ROWS, true, [])
-    const nueva = screen.getAllByRole("button", { name: "Nueva MIPER" })[0]!
+    const nueva = screen.getAllByRole("button", { name: "Crear matriz" })[0]!
     expect(nueva).toBeDisabled()
     expect(nueva).toHaveAccessibleDescription("No hay faenas activas a tu alcance")
-    expect(tabla().queryByRole("button", { name: /^Crear MIPER/ })).toBeNull()
+    expect(tabla().queryByRole("button", { name: /^Crear matriz/ })).toBeNull()
   })
+})
+
+
+it("la portada desktop prioriza cuatro columnas y abrir una faena lleva a Inicio", () => {
+  show()
+  expect(tabla().getAllByRole("columnheader").map((cell) => cell.textContent?.trim())).toEqual(["Faena", "Estado", "Trabajo pendiente", "Acción"])
+  expect(tabla().getByRole("link", { name: "Faena A" })).toHaveAttribute("href", "/prevencion/miper/m-a?tab=resumen")
+  expect(tabla().getByRole("link", { name: "Revisar · Faena B · 2026" })).toHaveAttribute("href", "/prevencion/miper/m-b?tab=revision")
+})
+
+it("la creación por Excel conserva la faena elegida en la portada", () => {
+  show()
+  fireEvent.click(tabla().getByRole("button", { name: "Crear matriz" }))
+  fireEvent.click(screen.getByRole("button", { name: /^Importar desde Excel/ }))
+  expect(screen.getByRole("combobox", { name: "Faena" })).toHaveTextContent("Faena C")
 })

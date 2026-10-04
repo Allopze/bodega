@@ -19,10 +19,11 @@ export const useMatrixFilterNavigation = () => useWorkspaceFilterNavigation(MATR
  * Barra de la matriz (spec §5.1, regla A2): búsqueda propia y «Contraer todo»
  * a la vista; el resto, en el cajón «Filtros (N)» de `FilterToolbar`, con chips.
  */
-export function MatrixFiltersBar({ filters: parsed, riskFactors, hasBaseline, collapsedAll, onToggleAll, filtered = false }: {
+export function MatrixFiltersBar({ filters: parsed, riskFactors, hasBaseline, collapsedAll, onToggleAll, filtered = false, results = filtered }: {
   filters: GridFilters; riskFactors: ReadonlyArray<{ id: string; name: string }>; hasBaseline: boolean; collapsedAll: boolean; onToggleAll: () => void
   /** Con filtros las actividades van siempre abiertas: plegar no hace nada. */
   filtered?: boolean
+  results?: boolean
 }) {
   // Un `?factor=` que no es de esta matriz se trata como «Todos»: ni chip ni selección.
   const filters = parsed.factorId !== "all" && !riskFactors.some((factor) => factor.id === parsed.factorId) ? { ...parsed, factorId: "all" } : parsed
@@ -44,7 +45,7 @@ export function MatrixFiltersBar({ filters: parsed, riskFactors, hasBaseline, co
       activeCount={activeFilterCount(filters) - (filters.search ? 1 : 0)}
       onRemoveChip={(key) => setFilter(key as MatrixFilterKey, null)}
       onClearAll={() => { setSearch(""); setFilters(matrixFilterPatch({ ...filters, search: "", classifications: [], controlled: "all", factorId: "all", onlyObserved: false, onlyModified: false, onlyIncomplete: false, onlyComplete: false })) }}
-      actions={<Button variant="secondary" size="sm" onClick={onToggleAll} disabled={filtered}>{collapsedAll ? "Expandir todo" : "Contraer todo"}</Button>}
+      actions={<Button variant="secondary" size="sm" onClick={onToggleAll} disabled={results}>{collapsedAll ? "Expandir todo" : "Contraer todo"}</Button>}
       overflowFilters={(
         <div className="space-y-4">
           <fieldset className="space-y-1.5">
@@ -54,9 +55,9 @@ export function MatrixFiltersBar({ filters: parsed, riskFactors, hasBaseline, co
                 onChange={(event) => apply({ ...filters, classifications: event.target.checked ? [...filters.classifications, cls] : filters.classifications.filter((item) => item !== cls) })} />
             ))}
           </fieldset>
-          <Field label="Estado del riesgo">
-            <OptionSelect aria-label="Estado del riesgo" emptyLabel="Todos" value={filters.onlyIncomplete ? "pendientes" : filters.onlyComplete ? "completos" : ""}
-              options={[{ value: "pendientes", label: "Con pendientes" }, { value: "completos", label: "Completos" }]}
+          <Field label="Datos del riesgo">
+            <OptionSelect aria-label="Datos del riesgo" emptyLabel="Todos" value={filters.onlyIncomplete ? "pendientes" : filters.onlyComplete ? "completos" : ""}
+              options={[{ value: "pendientes", label: "Con datos pendientes" }, { value: "completos", label: "Completos" }]}
               onValueChange={(value) => apply({ ...filters, onlyIncomplete: value === "pendientes", onlyComplete: value === "completos" })} />
           </Field>
           <Field label="¿Está controlado?">

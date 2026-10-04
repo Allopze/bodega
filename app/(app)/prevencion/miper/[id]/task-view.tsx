@@ -73,7 +73,7 @@ export function TaskView({ matrixId, task, editable, incomplete, observed, chang
     ["Puestos", task.positions.join(", ") || "—"],
     ["Lugares", task.locations.join(", ") || "—"],
     ["Personas expuestas", task.maxExposed > 0 ? `hasta ${task.maxExposed}` : "—"],
-    ["Estado", `${task.complete} de ${task.entries.length} completos`],
+    ["Estado", `${task.complete} de ${task.entries.length} con datos completos`],
   ]
   return (
     <div className="space-y-4">
@@ -84,9 +84,9 @@ export function TaskView({ matrixId, task, editable, incomplete, observed, chang
           <p className="text-sm text-[var(--color-text-subtle)]">{task.activity ?? "Sin actividad"}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {bulk && task.entries.length > 0 && <Button variant="secondary" onClick={() => setEditingContext(true)}>Editar tarea</Button>}
+          {bulk && task.entries.length > 0 && <Button variant="secondary" onClick={() => setEditingContext(true)}>Editar contexto de la tarea</Button>}
           {bulk && task.entries.length > 0 && (
-            <Button variant="secondary" onClick={selection.selecting ? selection.stop : selection.start}>{selection.selecting ? "Terminar selección" : "Seleccionar"}</Button>
+            <Button variant="secondary" onClick={selection.selecting ? selection.stop : selection.start}>{selection.selecting ? "Terminar selección" : "Seleccionar riesgos"}</Button>
           )}
           {editable && <Button onClick={() => { void addHazard() }} loading={adding}>Agregar peligro</Button>}
         </div>

@@ -10,6 +10,7 @@ import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { DataTable } from "@/components/ui/data-table"
 import { TableCell, TableRow } from "@/components/ui/table"
+import { countOf } from "@/lib/utils"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { saveRiskFactorAction, setRiskFactorActiveAction } from "../actions"
 
@@ -40,7 +41,7 @@ export function RiskFactorsAdmin({ factors }: { factors: Factor[] }) {
     <PageContainer width="form">
       <PageHeader
         title="Factores de riesgo"
-        description="Clasificación controlada del RE-04. Un factor en uso se desactiva, no se borra."
+        description="Administra las categorías con que se identifican los peligros. Desactivar una categoría conserva los riesgos que ya la utilizan."
         breadcrumb={<Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "MIPER", href: "/prevencion/miper" }, { label: "Factores de riesgo" }]} />}
         actions={<Button onClick={() => setEditing("new")}>Nuevo factor</Button>}
       />
@@ -66,17 +67,20 @@ export function RiskFactorsAdmin({ factors }: { factors: Factor[] }) {
             <TableCell className="font-mono text-xs">{factor.code}</TableCell>
             <TableCell className="tabular-nums">{factor.usageCount}</TableCell>
             <TableCell>{factor.isActive ? "Activo" : "Desactivado"}</TableCell>
-            <TableCell className="space-x-2 text-right">
+            <TableCell className="text-right">
+              <div className="flex justify-end gap-2">
               <Button size="sm" variant="secondary" onClick={() => setEditing(factor)}>Editar</Button>
               <Button
                 size="sm"
                 variant="secondary"
                 disabled={operation.pending}
-                title={factor.usageCount > 0 && factor.isActive ? `Sigue clasificando ${factor.usageCount} fila${factor.usageCount === 1 ? "" : "s"} del RE-04` : undefined}
+                aria-describedby={factor.usageCount > 0 && factor.isActive ? `factor-use-${factor.id}` : undefined}
                 onClick={() => operation.run(() => setRiskFactorActiveAction({ id: factor.id, isActive: !factor.isActive }))}
               >
                 {factor.isActive ? "Desactivar" : "Reactivar"}
               </Button>
+              </div>
+              {factor.usageCount > 0 && factor.isActive && <p id={`factor-use-${factor.id}`} className="mt-2 max-w-xs text-left text-xs text-[var(--color-text-muted)]">En uso en {countOf(factor.usageCount, "riesgo")}. Desactivar impide elegirlo en nuevos registros; los existentes se conservan.</p>}
             </TableCell>
           </TableRow>
         )}

@@ -8,7 +8,7 @@ import { PageContainer } from "@/components/ui/page-container"
 export default function Loading() {
   return (
     <PageContainer>
-      <PageHeader title="Matriz IPER (MIPER)" />
+      <PageHeader title="Matriz de riesgos" />
       <SkeletonPage rows={6} />
     </PageContainer>
   )

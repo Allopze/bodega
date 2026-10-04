@@ -96,10 +96,10 @@ describe("MiperWorkspaceView — marcas de cambio (A2, fila 3)", () => {
 describe("MiperWorkspaceView — render completo (A2, fila 16)", () => {
   it("en la raíz: título, tarjeta «Siguiente paso», pestañas, buscador y estructura", () => {
     show("")
-    expect(screen.getByRole("heading", { level: 1, name: "MIPER Planta 2026" })).toBeTruthy()
+    expect(screen.getByRole("heading", { level: 1, name: "Matriz de riesgos · Planta 2026" })).toBeTruthy()
     expect(screen.getByText("Faltan datos en 1 riesgo")).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Siguiente pendiente" }).getAttribute("href")).toBe("/prevencion/miper/m1?fila=e1")
-    expect(screen.getByRole("tab", { name: "Matriz (1)", selected: true })).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Continuar completando" }).getAttribute("href")).toBe("/prevencion/miper/m1?fila=e1")
+    expect(screen.getByRole("tab", { name: "Riesgos", selected: true })).toBeTruthy()
     expect(screen.getByLabelText("Buscar en la matriz")).toBeTruthy()
     expect(screen.getByRole("heading", { level: 2, name: /Transporte/ })).toBeTruthy()
   })
@@ -169,14 +169,22 @@ describe("MiperWorkspaceView — marcas del revisor y de lo publicado (A2, Task 
 describe("MiperWorkspaceView — plurales del aviso Intolerable", () => {
   const intolerable = (id: string, n: number) => entry({ id, rowNumber: n, classification: "intolerable" })
   it("uno: singular", () => {
-    show("", workspaceOf({ snapshot: { header, entries: [intolerable("e1", 1)] } } as unknown as Partial<MiperWorkspace>))
+    show("tab=resumen", workspaceOf({ snapshot: { header, entries: [intolerable("e1", 1)] } } as unknown as Partial<MiperWorkspace>))
     // Título exacto: `toContain("1 riesgo Intolerable")` también aceptaría «1 riesgo Intolerables».
     expect(within(screen.getByRole("alert")).getByText("1 riesgo Intolerable", { exact: true })).toBeTruthy()
     expect(screen.getByRole("alert").textContent).not.toContain("(s)")
   })
   it("varios: plural", () => {
-    show("", workspaceOf({ snapshot: { header, entries: [intolerable("e1", 1), intolerable("e2", 2)] } } as unknown as Partial<MiperWorkspace>))
+    show("tab=resumen", workspaceOf({ snapshot: { header, entries: [intolerable("e1", 1), intolerable("e2", 2)] } } as unknown as Partial<MiperWorkspace>))
     expect(within(screen.getByRole("alert")).getByText("2 riesgos Intolerables", { exact: true })).toBeTruthy()
+  })
+  it("conserva la advertencia al editar el riesgo Intolerable y no la repite en uno distinto", () => {
+    const data = workspaceOf({ snapshot: { header, entries: [intolerable("e1", 1), entry({ id: "e2", rowNumber: 2, classification: "moderate" })] } } as unknown as Partial<MiperWorkspace>)
+    const current = show("tab=matriz&fila=e1&paso=evaluacion", data)
+    expect(within(screen.getByRole("alert")).getByText("Riesgo Intolerable", { exact: true })).toBeTruthy()
+    current.unmount()
+    show("tab=matriz&fila=e2&paso=evaluacion", data)
+    expect(screen.queryByRole("alert")).toBeNull()
   })
 })
 
@@ -192,24 +200,24 @@ describe("MiperWorkspaceView — plural de observaciones por responder", () => {
 describe("MiperWorkspaceView — pestaña Resumen (Fase B)", () => {
   it("la matriz sigue siendo la pestaña por defecto; Resumen va primero en la tira", () => {
     show("")
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Resumen", "Matriz (1)", "Programa", "Revisión", "Historial"])
-    expect(screen.getByRole("tab", { name: "Resumen", selected: false })).toBeTruthy()
-    expect(screen.getByRole("tab", { name: "Matriz (1)", selected: true })).toBeTruthy()
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Inicio", "Riesgos", "Plan de medidas", "Revisión", "Historial"])
+    expect(screen.getByRole("tab", { name: "Inicio", selected: false })).toBeTruthy()
+    expect(screen.getByRole("tab", { name: "Riesgos", selected: true })).toBeTruthy()
   })
 
   it("con ?tab=resumen muestra las cuatro cifras y la completitud por actividad", () => {
     show("tab=resumen")
-    expect(screen.getByRole("tab", { name: "Resumen", selected: true })).toBeTruthy()
-    expect(screen.getByRole("link", { name: /^Riesgos completos/ })).toBeTruthy()
+    expect(screen.getByRole("tab", { name: "Inicio", selected: true })).toBeTruthy()
+    expect(screen.getByText("Riesgos completos")).toBeTruthy()
     expect(screen.getByRole("progressbar", { name: /^Transporte: / })).toBeTruthy()
   })
 
-  it("con ?tab=resumen&buscar=x la tarjeta no ofrece «Ver los pendientes»: la cifra «Riesgos completos» lleva ahí limpiando los filtros", () => {
+  it("Inicio: el acceso a datos pendientes limpia filtros y no se confunde con completos", () => {
     show("tab=resumen&buscar=x")
     expect(screen.getByText("Faltan datos en 1 riesgo")).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Siguiente pendiente" })).toBeTruthy()
-    expect(screen.queryByRole("link", { name: "Ver los pendientes" })).toBeNull()
-    expect(screen.getByRole("link", { name: /^Riesgos completos/ }).getAttribute("href")).toBe("/prevencion/miper/m1?completitud=pendientes")
+    expect(screen.getByRole("link", { name: "Continuar completando" })).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Ver riesgos con datos pendientes" })).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Ver riesgos con datos pendientes" }).getAttribute("href")).toBe("/prevencion/miper/m1?completitud=pendientes")
   })
 })
 
@@ -223,13 +231,13 @@ describe("MiperWorkspaceView — programa por props (Fase E)", () => {
     const action = { id: "a1", actionNumber: 1, status: "active", occurrences: [], controls: [], progress: NO_PROGRESS } as unknown as ProgramWorkspace["actions"][number]
     const programHeader = { id: "p1", version: 1 } as unknown as NonNullable<ProgramWorkspace["program"]>
     show("actividad=a1", workspaceOf(), editMode, programOf({ program: programHeader, actions: [action] }))
-    expect(screen.getByRole("tab", { name: "Programa", selected: true })).toBeTruthy()
+    expect(screen.getByRole("tab", { name: "Plan de medidas", selected: true })).toBeTruthy()
     expect(screen.getByText("detalle a1")).toBeTruthy()
   })
 })
 
 describe("MiperWorkspaceView — «Elaboró» y «Cambiar de faena» (Fase B)", () => {
-  const elaboro = () => screen.getByText((_, node) => node?.tagName === "DT" && node.textContent?.trim() === "Elaboró").nextElementSibling?.textContent
+  const elaboro = () => screen.getByText(/^Elaboró /).textContent
   const round = { id: "r1", stage: "technical", roundNumber: 1, openedAt: null, submittedByUserId: "u2", submittedByName: "Ana Pérez", submittedAt: "2026-10-01T15:00:00.000Z", snapshot: { header, entries: [entry()] } }
   const version = { id: "v1", versionNumber: 1, approvedAt: "2026-09-01T00:00:00.000Z", changeSummary: "Emisión", approverName: "Legal", technicalReviewerName: "Jefa", elaboratedByName: "Luis Soto" }
 
@@ -272,5 +280,22 @@ describe("MiperWorkspaceView — «Elaboró» y «Cambiar de faena» (Fase B)", 
     expect(await screen.findByRole("menuitem", { name: "Planta (actual)" })).toHaveAttribute("aria-disabled", "true")
     expect(screen.queryByRole("menuitem", { name: /2027 \(actual\)/ })).toBeNull()
     expect(screen.getByRole("menuitem", { name: "Mina · 2026" })).not.toHaveAttribute("aria-disabled")
+  })
+})
+
+
+describe("MiperWorkspaceView — presentación explícita", () => {
+  it("vista=resultados lista todos los riesgos sin fingir un filtro", () => {
+    show("vista=resultados")
+    expect(screen.getByText("Resultados de riesgos")).toBeTruthy()
+    expect(screen.getByText("1 riesgo en toda la matriz")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Seleccionar riesgos" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Limpiar filtros" })).toBeNull()
+  })
+  it("el editor conserva contexto y retira las acciones y pestañas del documento", () => {
+    show("fila=e1")
+    expect(screen.queryByRole("tab", { name: "Inicio" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Nueva tarea" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Cambiar de faena" })).toBeNull()
   })
 })

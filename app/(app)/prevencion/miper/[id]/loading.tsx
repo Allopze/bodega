@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 export default function Loading() {
   return (
     <PageContainer width="workbench">
-      <PageHeader title="Matriz IPER (MIPER)" />
+      <PageHeader title="Matriz de riesgos" />
       <div aria-busy="true" className="space-y-3">
         <Skeleton className="h-16 w-full" />
         <Skeleton className="h-10 w-80" />

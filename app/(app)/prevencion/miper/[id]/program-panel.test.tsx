@@ -26,7 +26,7 @@ vi.mock("../actions", () => actionsMock)
 vi.mock("./program-actions", () => ({ loadProgramActionDetailAction: vi.fn() }))
 vi.mock("./program-activity-view", () => ({ ProgramActivityView: ({ action }: { action: { id: string } }) => <p>detalle {action.id}</p> }))
 
-import { ProgramPanel } from "./program-panel"
+import { ProgramPanel, ProgramPageActions } from "./program-panel"
 
 const HEADER: MiperHeaderSnapshot = {
   period: 2026, iperCode: "RE-04", elaboratedOn: null, updatedOn: null, companyName: "Empresa Ficha", companyRut: "11.111.111-1",
@@ -76,11 +76,11 @@ describe("ProgramPanel", () => {
 
   it("cada actividad es un article con h2 Actividad N° n y el enlace al detalle apunta a ?actividad=", () => {
     show()
-    const article = screen.getByRole("article", { name: "Actividad N° 1" })
-    expect(within(article).getByRole("heading", { level: 2, name: "Actividad N° 1" })).toBeTruthy()
+    const article = screen.getByRole("article", { name: "Revisar extintores" })
+    expect(within(article).getByRole("heading", { level: 2, name: "Revisar extintores" })).toBeTruthy()
     expect(within(article).getByRole("link", { name: "Abrir el detalle de la actividad N° 1" }).getAttribute("href")).toBe("/prevencion/miper/m1?tab=programa&actividad=a1")
     // La próxima ocurrencia pendiente es la de menor vencimiento.
-    expect(within(article).getByRole("button", { name: /^Registrar la ocurrencia del 10-11-2026$/ })).toBeTruthy()
+    expect(within(article).getByRole("button", { name: /^Registrar la ejecución del 10-11-2026$/ })).toBeTruthy()
     expect(within(article).getByRole("button", { name: "Editar la actividad N° 1" })).toBeTruthy()
     expect(within(article).getByRole("button", { name: "Retirar la actividad N° 1" })).toBeTruthy()
   })
@@ -120,12 +120,13 @@ describe("ProgramPanel", () => {
 
   it("el encabezado muestra la empresa de la ficha y el diálogo sólo pide fecha y encargado", () => {
     show()
+    fireEvent.click(screen.getByText("Datos del programa"))
     expect(screen.getByText(/Empresa Ficha/)).toBeTruthy()
     expect(screen.queryByText(/Empresa Programa/)).toBeNull()
     expect(screen.getByText("Representante Ficha")).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Editar en la ficha" }).getAttribute("href")).toBe("/prevencion/miper/m1?ficha=1")
-    fireEvent.click(screen.getByRole("button", { name: "Editar antecedentes" }))
-    const dialog = screen.getByRole("dialog", { name: "Antecedentes del Programa de Trabajo" })
+    expect(screen.getByRole("link", { name: "Datos de empresa" }).getAttribute("href")).toBe("/prevencion/miper/m1?ficha=1")
+    fireEvent.click(screen.getByRole("button", { name: "Responsable y fecha del programa" }))
+    const dialog = screen.getByRole("dialog", { name: "Responsable y fecha del programa" })
     expect(within(dialog).getAllByLabelText("Fecha de elaboración del programa").length).toBeGreaterThan(0)
     expect(within(dialog).getByRole("combobox", { name: "Encargado del programa" })).toBeTruthy()
     expect(within(dialog).queryByLabelText("Empresa")).toBeNull()
@@ -142,4 +143,26 @@ describe("ProgramPanel", () => {
     await waitFor(() => expect(actionsMock.saveProgramHeaderAction).toHaveBeenCalledTimes(1))
     expect(actionsMock.saveProgramHeaderAction).toHaveBeenCalledWith(expect.objectContaining({ matrixId: "m1", expectedVersion: 1, programManagerUserId: null }))
   })
+  it("mantiene los datos administrativos plegados y muestra un solo avance del programa", () => {
+    show()
+    const details = screen.getByText("Datos del programa").closest("details")
+    expect(details).not.toHaveAttribute("open")
+    expect(screen.getAllByText("Avance del programa")).toHaveLength(1)
+    expect(screen.queryByRole("button", { name: "Nueva actividad" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Generar actividades" })).toBeNull()
+  })
+
+  it("prioriza las actividades con ejecuciones próximas antes de las que no tienen pendientes", () => {
+    show(programOf({ actions: [actionOf({ id: "closed", description: "Actividad cerrada", occurrences: [] }), actionOf({ id: "late", description: "Actividad vencida", occurrences: [{ id: "o9", dueOn: "2025-01-01", outcome: "pending", late: false, effectiveOn: null, reason: null, evidenceCount: 0 }] }), actionOf()] }))
+    expect(screen.getAllByRole("article").map((article) => article.getAttribute("aria-labelledby"))).toEqual(["programa-actividad-late", "programa-actividad-a1", "programa-actividad-closed"])
+  })
+
+  it("exporta las acciones para la cabecera y respeta el permiso de edición", () => {
+    const view = render(<ProgramPageActions matrixId="m1" mode={mode} users={users} program={programOf()} />)
+    expect(screen.getByRole("button", { name: "Nueva actividad" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Generar actividades" })).toBeTruthy()
+    view.rerender(<ProgramPageActions matrixId="m1" mode={{ ...mode, canEdit: false }} users={users} program={programOf()} />)
+    expect(screen.queryByRole("button")).toBeNull()
+  })
+
 })

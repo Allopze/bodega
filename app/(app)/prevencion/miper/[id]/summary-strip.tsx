@@ -1,88 +1,32 @@
-import { RiskClassificationBadge } from "@/components/prevention/risk-classification-badge"
-import { RISK_CLASSIFICATIONS, type RiskClassification } from "@/lib/prevention/miper/methodology"
 import type { MiperSnapshot } from "@/lib/prevention/miper/snapshot"
 import { cn, formatDate } from "@/lib/utils"
 
-/**
- * Franja de resumen en TEXTO (regla A1: nada de tarjetas de KPI sobre la
- * matriz). Es la cabecera de la vista de revisión del §8.4 y sirve igual a la
- * prevencionista.
- *
- * Con `onToggleClassification`, cada conteo por clasificación es además el
- * filtro de la matriz (A1: una cifra accionable; A5: la clasificación no tiene
- * otro control). Igual «No controlados» con `onToggleUncontrolled`.
- */
-export function SummaryStrip({ snapshot, authorName, submittedAt, versionLabel, taskCount, completeCount, pendingActive = false, onTogglePending, activeClassifications = [], uncontrolledActive = false, onToggleClassification, onToggleUncontrolled }: {
+/** Contexto compacto. La clasificación y el estado de control se consultan en filtros. */
+export function SummaryStrip({ snapshot, authorName, submittedAt, versionLabel, taskCount, completeCount, pendingActive = false, onTogglePending }: {
   snapshot: MiperSnapshot
   authorName: string | null
   submittedAt: string | null
   versionLabel: string
-  /** Opcionales hasta que el espacio de trabajo los entregue (Task 11); sin ellos no se pinta ese ítem. */
   taskCount?: number
   completeCount?: number
   pendingActive?: boolean
   onTogglePending?: () => void
-  activeClassifications?: readonly RiskClassification[]
-  uncontrolledActive?: boolean
-  onToggleClassification?: (classification: RiskClassification) => void
-  onToggleUncontrolled?: () => void
 }) {
-  const entries = snapshot.entries
-  const count = (cls: string) => entries.filter((entry) => entry.classification === cls).length
-  const uncontrolled = entries.filter((entry) => entry.controlledStatus === "no").length
-  const h = snapshot.header
+  const pending = completeCount === undefined ? undefined : snapshot.entries.length - completeCount
   return (
-    <dl className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y py-3 text-sm">
-      <div><dt className="sr-only">Faena</dt><dd className="font-semibold">{h.worksiteName} · {h.period}</dd></div>
-      <div><dt className="inline text-[var(--color-text-subtle)]">Versión </dt><dd className="inline">{versionLabel}</dd></div>
-      {authorName && <div><dt className="inline text-[var(--color-text-subtle)]">Elaboró </dt><dd className="inline">{authorName}{submittedAt ? ` · enviada ${formatDate(submittedAt)}` : ""}</dd></div>}
-      <div><dt className="inline text-[var(--color-text-subtle)]">Dotación </dt><dd className="inline tabular-nums">{h.headcountTotal ?? "—"}</dd></div>
-      <div><dt className="inline text-[var(--color-text-subtle)]">Riesgos </dt><dd className="inline tabular-nums">{entries.length}</dd></div>
-      {taskCount !== undefined && <div><dt className="inline text-[var(--color-text-subtle)]">Tareas </dt><dd className="inline tabular-nums">{taskCount}</dd></div>}
-      {completeCount !== undefined && (
-        <div>
-          <dt className="sr-only">Riesgos completos</dt>
-          <dd>
-            {onTogglePending ? (
-              <button type="button" aria-pressed={pendingActive} onClick={onTogglePending} className={cn(toggleClass, pendingActive && activeClass)}>
-                <span className="text-[var(--color-text-subtle)]">Completos</span> <span className="tabular-nums">{completeCount} de {entries.length}</span>
-                <span className="sr-only">: filtrar los riesgos con pendientes</span>
-              </button>
-            ) : <><span className="text-[var(--color-text-subtle)]">Completos</span> <span className="tabular-nums">{completeCount} de {entries.length}</span></>}
-          </dd>
-        </div>
-      )}
-      <div className="flex flex-wrap gap-1.5">
-        <dt className="sr-only">Distribución por clasificación</dt>
-        {[...RISK_CLASSIFICATIONS].reverse().map((cls) => {
-          const content = <><RiskClassificationBadge classification={cls} size="sm" /> <span className="tabular-nums">{count(cls)}</span></>
-          if (!onToggleClassification) return <dd key={cls} className="inline-flex items-center gap-1">{content}</dd>
-          const active = activeClassifications.includes(cls)
-          return (
-            <dd key={cls}>
-              {/* El nombre empieza con lo que se ve («Importante 3») y sigue con lo que hace (WCAG 2.5.3, A2 fila 14). */}
-              <button type="button" aria-pressed={active} onClick={() => onToggleClassification(cls)} className={cn(toggleClass, active && activeClass)}>
-                {content}
-                <span className="sr-only">: filtrar la matriz</span>
-              </button>
-            </dd>
-          )
-        })}
-      </div>
-      <div>
-        <dt className="sr-only">No controlados</dt>
-        <dd>
-          {onToggleUncontrolled ? (
-            <button type="button" aria-pressed={uncontrolledActive} onClick={onToggleUncontrolled} className={cn(toggleClass, uncontrolledActive && activeClass)}>
-              <span className="text-[var(--color-text-subtle)]">No controlados</span> <span className="tabular-nums">{uncontrolled}</span>
-              <span className="sr-only">: filtrar la matriz</span>
-            </button>
-          ) : <><span className="text-[var(--color-text-subtle)]">No controlados</span> <span className="tabular-nums">{uncontrolled}</span></>}
-        </dd>
-      </div>
-    </dl>
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3 text-sm">
+      <p className="text-[var(--color-text-muted)]">{snapshot.entries.length} riesgos{taskCount !== undefined ? ` en ${taskCount} ${taskCount === 1 ? "tarea" : "tareas"}` : ""}</p>
+      {pending !== undefined && (pending > 0 && onTogglePending ? (
+        <button type="button" aria-pressed={pendingActive} onClick={onTogglePending}
+          className={cn("rounded-lg px-2 py-1 text-[var(--color-signal-ink)] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2", pendingActive && "bg-[var(--color-signal-tint)]")}>
+          {pending} {pending === 1 ? "riesgo con datos pendientes" : "riesgos con datos pendientes"}
+        </button>
+      ) : <p className="text-[var(--color-text-muted)]">{pending === 0 ? "Todos los riesgos tienen los datos requeridos" : `${pending} riesgos con datos pendientes`}</p>)}
+      <details className="text-xs text-[var(--color-text-muted)]">
+        <summary className="cursor-pointer">Datos del documento</summary>
+        <p className="mt-2">{snapshot.header.worksiteName} · {snapshot.header.period} · {versionLabel} · Dotación {snapshot.header.headcountTotal ?? "sin informar"}</p>
+        {authorName && <p>Elaboró {authorName}{submittedAt ? ` · enviada ${formatDate(submittedAt)}` : ""}</p>}
+      </details>
+    </div>
   )
 }
-
-const toggleClass = "inline-flex items-center gap-1 rounded-lg border border-transparent px-1 py-0.5 hover:border-[var(--color-border)] hover:bg-[var(--color-surface-2)]"
-const activeClass = "border-[var(--color-primary)] bg-[var(--color-primary-tint)] text-[var(--color-primary-ink)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-tint)]"

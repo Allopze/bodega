@@ -9,13 +9,14 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { checkMiperCompleteness, issuesByEntry } from "@/lib/prevention/miper/completeness"
+import type { EditorStep } from "@/lib/prevention/miper/entry-navigation"
 import { filterRows } from "@/lib/prevention/miper/grid-view"
 import { hasEntryFilters, MATRIX_FILTER_KEYS, parseMatrixFilters } from "@/lib/prevention/miper/matrix-filters"
 import { buildMatrixTree, findTask } from "@/lib/prevention/miper/matrix-tree"
 import { CLASSIFICATION_CRITERIA } from "@/lib/prevention/miper/methodology"
 import { nextStepFor, nextStepInView, type NextStepAction } from "@/lib/prevention/miper/next-step"
 import { changesByEntry, type EntryChange } from "@/lib/prevention/miper/snapshot"
-import { hrefToEntry, hrefToFicha, hrefToMatrixWith, hrefToTab, readWorkspaceView, type WorkspaceTab } from "@/lib/prevention/miper/workspace-url"
+import { hrefToEntry, hrefToMatrixPresentation, hrefToFicha, hrefToMatrixOnly, hrefToTab, readWorkspaceView, type WorkspaceTab } from "@/lib/prevention/miper/workspace-url"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
 import type { ProgramWorkspace } from "@/lib/services/miper/program-queries"
 import type { MiperWorkspace } from "@/lib/services/miper/queries"
@@ -27,7 +28,7 @@ import { MatrixFiltersBar, useMatrixFilterNavigation } from "./matrix-filters-ba
 import { MatrixView } from "./matrix-view"
 import { NewTaskDialog } from "./new-task-dialog"
 import { NextStepCard } from "./next-step-card"
-import { ProgramPanel } from "./program-panel"
+import { ProgramPageActions, ProgramPanel } from "./program-panel"
 import { ReviewPanel } from "./review-panel"
 import { ResumenPanel } from "./resumen-panel"
 import { RiskEditor } from "./risk-editor/risk-editor"
@@ -111,6 +112,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, program }
     return parsed.factorId !== "all" && !workspace.riskFactors.some((factor) => factor.id === parsed.factorId) ? { ...parsed, factorId: "all" } : parsed
   }, [searchParams, workspace.riskFactors])
   const filtered = hasEntryFilters(filters)
+  const presentation = searchParams.get("vista") === "estructura" ? "estructura" : searchParams.get("vista") === "resultados" || filtered ? "resultados" : "estructura"
   const { setFilter, setFilters } = useMatrixFilterNavigation()
   // `serverRows` con identidad estable entre fotos: `source.entries`, nunca un `.map` armado aquí.
   const autosave = useEntryAutosave({ matrixId: workspace.matrix.id, entryVersions: workspace.entryVersions, setRows, riskFactors: workspace.riskFactors, serverRows: source.entries })
@@ -141,44 +143,52 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, program }
     action.kind === "ficha" ? hrefToFicha(pathname, searchParams, true)
       : action.kind === "riesgo" ? hrefToEntry(pathname, searchParams, action.entryId)
       : action.kind === "tab" ? hrefToTab(pathname, searchParams, action.tab)
-      : hrefToMatrixWith(pathname, searchParams, { completitud: action.completitud })
+      : hrefToMatrixOnly(pathname, searchParams, { completitud: action.completitud })
   const openFicha = () => navigateWorkspace(hrefToFicha(pathname, searchParams, true), "replace")
   const closeFicha = () => navigateWorkspace(hrefToFicha(pathname, searchParams, false), "replace")
-  const openEntry = (entryId: string) => navigateWorkspace(hrefToEntry(pathname, searchParams, entryId), "push")
+  const openEntry = (entryId: string, step?: EditorStep) => navigateWorkspace(hrefToEntry(pathname, searchParams, entryId, step), "push")
   const atRoot = !view.taskKey && !view.entryId
+  const activeIntolerable = view.entryId !== null && rows.some((row) => row.id === view.entryId && row.classification === "intolerable")
+  const showIntolerable = intolerable > 0 && (activeIntolerable || (atRoot && ["resumen", "matriz", "revision"].includes(view.tab)))
   const step = nextStepInView(nextStep, { atRoot, tab: view.tab })
   const worksiteLabel = [workspace.matrix.worksiteName, workspace.matrix.period].filter(Boolean).join(" ")
 
   return (
     <PageContainer width="workbench">
       <PageHeader
-        title={`MIPER ${worksiteLabel}`}
-        description={workspace.label}
+        title={`Matriz de riesgos · ${worksiteLabel}`}
+        description={`${workspace.label} · ${view.entryId ? "Completa el riesgo y revisa sus datos" : view.tab === "programa" ? "Plan de medidas · Programa de Trabajo RE-04.1" : view.tab === "revision" ? "Revisa los pendientes y las decisiones del documento" : view.tab === "historial" ? "Versiones y cambios del documento" : "MIPER · RE-04"}`}
         breadcrumb={<Breadcrumbs items={[{ label: "Prevención", href: "/prevencion" }, { label: "MIPER", href: "/prevencion/miper" }, { label: worksiteLabel }]} />}
-        actions={(
+        actions={view.entryId ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="secondary"><WorkspaceLink href={hrefToTab(pathname, searchParams, "matriz")} restoreScroll>Volver al documento</WorkspaceLink></Button>
+            <Button variant="secondary" onClick={openFicha}>Ficha del documento</Button>
+          </div>
+        ) : (
           <div className="flex flex-wrap items-center gap-2">
             <WorksiteSwitcher currentWorksiteId={workspace.matrix.worksiteId} />
-            {editable && <Button variant="secondary" onClick={() => setNewTaskOpen(true)}>Nueva tarea</Button>}
+            {view.tab === "programa" && !view.activityId && <ProgramPageActions matrixId={workspace.matrix.id} mode={mode} users={workspace.responsibleOptions} program={program} />}
+            {editable && atRoot && (view.tab === "matriz" || view.tab === "resumen") && <Button variant="secondary" onClick={() => setNewTaskOpen(true)}>Nueva tarea</Button>}
             <WorkflowBar workspace={workspace} mode={mode} issues={issues} openObservations={openObservations} onOpenEntry={openEntry} onOpenFicha={openFicha} />
           </div>
         )}
       />
       <div className="space-y-3">
-        <NextStepCard step={step} hrefFor={hrefFor} />
-        {reviewing && <Callout tone="info" title="Estás revisando la versión enviada">Los cambios que la prevencionista haga después del envío quedan para la ronda siguiente.</Callout>}
-        {intolerable > 0 && (
-          <Callout tone="danger" role="alert" title={countOf(intolerable, "riesgo Intolerable", "riesgos Intolerables")}>
+        {(!view.entryId || step?.scope === "everywhere") && <NextStepCard step={step} hrefFor={hrefFor} />}
+        {reviewing && !view.entryId && <Callout tone="info" title="Estás revisando la versión enviada">Los cambios que la prevencionista haga después del envío quedan para la ronda siguiente.</Callout>}
+        {showIntolerable && (
+          <Callout tone="danger" role="alert" title={activeIntolerable ? "Riesgo Intolerable" : countOf(intolerable, "riesgo Intolerable", "riesgos Intolerables")}>
             {CLASSIFICATION_CRITERIA.intolerable}
           </Callout>
         )}
         <Tabs value={view.tab} onValueChange={(value) => navigateWorkspace(hrefToTab(pathname, searchParams, value as WorkspaceTab), "replace")}>
-          <TabsList>
-            <TabsTrigger value="resumen">Resumen</TabsTrigger>
-            <TabsTrigger value="matriz">Matriz ({rows.length})</TabsTrigger>
-            <TabsTrigger value="programa">Programa</TabsTrigger>
+          {!view.entryId && <TabsList>
+            <TabsTrigger value="resumen">Inicio</TabsTrigger>
+            <TabsTrigger value="matriz">Riesgos</TabsTrigger>
+            <TabsTrigger value="programa">Plan de medidas</TabsTrigger>
             <TabsTrigger value="revision">Revisión{openObservations > 0 ? ` (${openObservations})` : ""}</TabsTrigger>
             <TabsTrigger value="historial">Historial</TabsTrigger>
-          </TabsList>
+          </TabsList>}
           <TabsContent value="resumen">
             <ResumenPanel matrixId={workspace.matrix.id} rows={rows} tree={fullTree} incomplete={incomplete} programProgress={program.progress}
               editable={editable} onNewTask={() => setNewTaskOpen(true)} />
@@ -188,7 +198,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, program }
               <RiskEditor key={view.entryId} entryId={view.entryId} step={view.step} rows={rows} issuesByEntry={entryIssues} incomplete={incomplete} matching={matching}
                 editable={editable} mode={mode} autosave={autosave} change={changes.get(view.entryId) ?? null}
                 baselineEntry={baseline?.entries.find((entry) => entry.id === view.entryId) ?? null}
-                data={{ matrixId: workspace.matrix.id, published: workspace.matrix.status === "published", riskFactors: workspace.riskFactors, dictionaries: workspace.dictionaries, responsibleOptions: workspace.responsibleOptions, controlVersions: workspace.controlVersions, controlActionLinks: workspace.controlActionLinks, observations: workspace.observations }} />
+                data={{ worksiteName: workspace.matrix.worksiteName, matrixId: workspace.matrix.id, published: workspace.matrix.status === "published", riskFactors: workspace.riskFactors, dictionaries: workspace.dictionaries, responsibleOptions: workspace.responsibleOptions, controlVersions: workspace.controlVersions, controlActionLinks: workspace.controlActionLinks, observations: workspace.observations }} />
             ) : view.taskKey ? (
               task
                 ? <TaskView key={task.key} matrixId={workspace.matrix.id} task={task} editable={editable} incomplete={incomplete} observed={observedEntryIds} changes={changes} issuesByEntry={entryIssues} bulk={bulk} />
@@ -197,21 +207,19 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, program }
               <>
                 <SummaryStrip snapshot={liveSnapshot} authorName={authorName} submittedAt={workspace.openRound?.submittedAt ?? null} versionLabel={versionLabel}
                   taskCount={fullTree.reduce((sum, activity) => sum + activity.tasks.length, 0)} completeCount={rows.length - incomplete.size}
-                  activeClassifications={filters.classifications} pendingActive={filters.onlyIncomplete} uncontrolledActive={filters.controlled === "no"}
-                  onToggleClassification={(cls) => setFilter("clasificacion", (filters.classifications.includes(cls) ? filters.classifications.filter((item) => item !== cls) : [...filters.classifications, cls]).join(",") || null)}
-                  onTogglePending={() => setFilter("completitud", filters.onlyIncomplete ? null : "pendientes")}
-                  onToggleUncontrolled={() => setFilter("controlado", filters.controlled === "no" ? null : "no")} />
-                <MatrixView matrixId={workspace.matrix.id} tree={tree} filtered={filtered} editable={editable} incomplete={incomplete} observed={observedEntryIds} changes={changes} issuesByEntry={entryIssues} bulk={bulk}
+                  pendingActive={filters.onlyIncomplete}
+                  onTogglePending={() => setFilter("completitud", filters.onlyIncomplete ? null : "pendientes")} />
+                <MatrixView presentation={presentation} onPresentationChange={(next) => navigateWorkspace(hrefToMatrixPresentation(pathname, searchParams, next), "replace")} matrixId={workspace.matrix.id} tree={tree} filtered={filtered} editable={editable} incomplete={incomplete} observed={observedEntryIds} changes={changes} issuesByEntry={entryIssues} bulk={bulk}
                   onNewTask={() => setNewTaskOpen(true)}
                   onClearFilters={() => setFilters(Object.fromEntries(MATRIX_FILTER_KEYS.map((key) => [key, null])))}
                   toolbar={({ collapsedAll, toggleAll, filtered: isFiltered }) => (
-                    <MatrixFiltersBar filters={filters} riskFactors={workspace.riskFactors} hasBaseline={baseline !== null} collapsedAll={collapsedAll} onToggleAll={toggleAll} filtered={isFiltered} />
+                    <MatrixFiltersBar filters={filters} riskFactors={workspace.riskFactors} hasBaseline={baseline !== null} collapsedAll={collapsedAll} onToggleAll={toggleAll} filtered={isFiltered} results={presentation === "resultados"} />
                   )} />
               </>
             )}
           </TabsContent>
           <TabsContent value="programa"><ProgramPanel matrixId={workspace.matrix.id} mode={mode} userId={userId} users={workspace.responsibleOptions} program={program} rows={rows} header={source.header} activityId={view.activityId} /></TabsContent>
-          <TabsContent value="revision"><ReviewPanel workspace={workspace} mode={mode} onOpenEntry={openEntry} rows={rows} observed={observedEntryIds} modified={modified} hasBaseline={baseline !== null} /></TabsContent>
+          <TabsContent value="revision"><ReviewPanel workspace={workspace} mode={mode} onOpenEntry={openEntry} issues={issues} onOpenFicha={openFicha} rows={rows} observed={observedEntryIds} modified={modified} hasBaseline={baseline !== null} /></TabsContent>
           <TabsContent value="historial"><HistoryPanel workspace={workspace} history={history} /></TabsContent>
         </Tabs>
       </div>

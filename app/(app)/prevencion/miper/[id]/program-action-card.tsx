@@ -8,13 +8,13 @@ import { Progress } from "@/components/ui/progress"
 import { progressPercent, type ProgramProgress } from "@/lib/prevention/miper/progress"
 import { canExecuteProgramAction, type WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
 import type { ProgramActionView, ProgramOccurrenceView } from "@/lib/services/miper/program-queries"
-import { formatDate } from "@/lib/utils"
+import { countOf, formatDate } from "@/lib/utils"
 import { occurrenceBadge } from "./program-badges"
 import { ProgramActionDialog, SCHEDULE_KIND_LABEL } from "./program-action-dialog"
 import { WorkspaceLink } from "./workspace-nav"
 
 export const ratioLabel = (progress: ProgramProgress) =>
-  progress.ratio === null ? "Sin ocurrencias planificadas" : `${progressPercent(progress)}% realizado`
+  progress.ratio === null ? "Sin ejecuciones programadas" : `${progressPercent(progress)}% realizado`
 
 /** Avance derivado: realizadas, pendientes, incumplidas, vencidas y el cociente. Nada editable. */
 export function ActionProgress({ progress }: { progress: ProgramProgress }) {
@@ -24,13 +24,13 @@ export function ActionProgress({ progress }: { progress: ProgramProgress }) {
         value={progress.done}
         max={progress.planned === 0 ? 1 : progress.planned}
         size="sm"
-        label={`Avance: ${progress.done} de ${progress.planned} ocurrencias realizadas`}
+        label={`Avance: ${progress.done} de ${progress.planned} ejecuciones realizadas`}
       />
       <p className="text-xs tabular-nums">
         {progress.done}/{progress.planned} · {ratioLabel(progress)}
       </p>
       <p className="text-xs text-[var(--color-text-subtle)]">
-        {progress.pending} pendiente(s) · {progress.failed} incumplida(s) · {progress.overdue} vencida(s)
+        {countOf(progress.pending, "pendiente")} · {countOf(progress.failed, "incumplida")} · {countOf(progress.overdue, "vencida")}
       </p>
     </div>
   )
@@ -79,32 +79,32 @@ export function ProgramActionCard({
           {retired && <Badge variant="outline">Retirada</Badge>}
           {action.processName && <span className="text-xs text-[var(--color-text-subtle)]">{action.processName}</span>}
         </div>
-        <h2 id={headingId} className="mt-1 text-sm font-semibold text-[var(--color-text)]">Actividad N° {action.actionNumber}</h2>
-        <p className="mt-1 text-sm text-[var(--color-text)]">{action.description}</p>
+        <h2 id={headingId} className="mt-1 text-sm font-semibold text-[var(--color-text)]">{action.description}</h2>
+        <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Actividad N° {action.actionNumber}</p>
         <p className="mt-1 text-xs text-[var(--color-text-muted)]">
           {action.responsibleName ?? "Sin responsable"} · {SCHEDULE_KIND_LABEL[action.scheduleKind]}
-          {action.controls.length > 0 ? ` · Filas ${action.controls.map((control) => control.rowNumber).join(", ")} del MIPER` : " · Sin medidas del MIPER vinculadas"}
+          {action.controls.length > 0 ? ` · Riesgos ${action.controls.map((control) => control.rowNumber).join(", ")} del MIPER` : " · Sin medidas del MIPER vinculadas"}
         </p>
         {retired && <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Motivo del retiro: {action.retiredReason}</p>}
       </div>
       <div className="space-y-2">
         {retired ? null : next ? (
           <div>
-            <p className="text-eyebrow">Próxima ocurrencia</p>
+            <p className="text-xs text-[var(--color-text-muted)]">Próxima ejecución</p>
             <p className="mt-1 flex flex-wrap items-center gap-2 text-sm">
               <span>{formatDate(next.dueOn)}</span>
               <MetaBadge meta={occurrenceBadge(next, today)} />
             </p>
           </div>
         ) : (
-          <p className="text-xs text-[var(--color-text-subtle)]">Sin ocurrencias pendientes</p>
+          <p className="text-xs text-[var(--color-text-subtle)]">Sin ejecuciones pendientes</p>
         )}
         <ActionProgress progress={action.progress} />
       </div>
       <div className="flex flex-wrap justify-end gap-2">
         {!retired && canRegister && next && (
           <Button type="button" size="sm" onClick={() => onRegister(next)}>
-            Registrar la ocurrencia del {formatDate(next.dueOn)}
+            Registrar la ejecución del {formatDate(next.dueOn)}
           </Button>
         )}
         <Button asChild size="sm" variant="secondary">

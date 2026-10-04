@@ -41,6 +41,51 @@ describe("RiskEditor", () => {
     expect(screen.getByRole("tab", { name: /Medidas de control/, selected: true })).toBeTruthy()
     expect(screen.getAllByText(/exige al menos una medida/).length).toBeGreaterThan(0)
   })
+  it.each([
+    ["identificacion", "Continuar a Evaluación", "evaluacion"],
+    ["evaluacion", "Continuar a Medidas", "medidas"],
+    ["medidas", "Continuar a Seguimiento", "seguimiento"],
+  ] as const)("avanza desde %s al siguiente paso sin cambiar de riesgo ni recargar", (step, label, next) => {
+    const replaceState = vi.spyOn(window.history, "replaceState").mockImplementation(() => {})
+    router.push.mockClear()
+    router.replace.mockClear()
+    render(<RiskEditor {...props({ step })} />)
+    fireEvent.click(screen.getByRole("button", { name: label }))
+    expect(replaceState).toHaveBeenCalledWith(null, "", `/prevencion/miper/m1?fila=e1&paso=${next}`)
+    expect(router.push).not.toHaveBeenCalled()
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(commit).not.toHaveBeenCalled()
+    replaceState.mockRestore()
+  })
+  it("muestra el contexto y ejemplos accesibles sin marcar como rechazado un dato aún pendiente", () => {
+    const issuesByEntry = new Map([["e1", [{ scope: "entry" as const, entryId: "e1", field: "hazard", message: "Falta el peligro.", severity: "error" as const }]]])
+    render(<RiskEditor {...props({ step: "identificacion", issuesByEntry, data: { ...props().data, worksiteName: "Faena Norte" } })} />)
+    expect(screen.getByText(/Faena Norte → Transporte → Carga/)).toBeTruthy()
+    const hazard = screen.getByRole("combobox", { name: "Peligro" })
+    expect(hazard).toHaveAccessibleDescription("Falta el peligro. Fuente o situación que puede causar daño. Ejemplo: piso mojado.")
+    expect(hazard).not.toHaveAttribute("aria-invalid", "true")
+    expect(screen.getByRole("combobox", { name: "Riesgo" })).toHaveAccessibleDescription("Lo que podría ocurrir. Ejemplo: resbalar.")
+    expect(screen.getByRole("combobox", { name: "Daño probable" })).toHaveAccessibleDescription("La lesión o efecto posible. Ejemplo: lesión por caída.")
+    expect(screen.getAllByText(/Falta el peligro/)).toHaveLength(1)
+  })
+  it("Seguimiento distingue observaciones de revisión y abre la actividad que ejecuta la medida", () => {
+    const data = props().data
+    const row = entry("e1", 1, { controls: [{ id: "c1", hierarchy: "administrative", description: "Capacitación", responsibleUserId: null, responsibleName: "Supervisor", dueDate: "2026-10-30", status: "proposed" }] })
+    render(<RiskEditor {...props({ step: "seguimiento", rows: [row], data: { ...data, controlActionLinks: [{ controlId: "c1", actionId: "a1", actionNumber: 1, description: "Capacitar al equipo" }] } })} />)
+    expect(screen.getByRole("heading", { name: "Actividades del plan de medidas (1)" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Observaciones de revisión (0)" })).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Actividad #1: Capacitar al equipo" }).getAttribute("href")).toBe("/prevencion/miper/m1?tab=programa&actividad=a1")
+  })
+  it("el chequeo abre el paso pendiente y Seguimiento termina el recorrido de pasos", () => {
+    const replaceState = vi.spyOn(window.history, "replaceState").mockImplementation(() => {})
+    render(<RiskEditor {...props({ step: "seguimiento" })} />)
+    expect(screen.queryByRole("button", { name: /^Continuar a/ })).toBeNull()
+    fireEvent.click(screen.getByText("Ver pasos con pendientes"))
+    fireEvent.click(screen.getByRole("button", { name: "Medidas de control (1)" }))
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/prevencion/miper/m1?fila=e1&paso=medidas")
+    expect(screen.getByRole("navigation", { name: "Recorrer riesgos" }).className).not.toContain("sticky")
+    replaceState.mockRestore()
+  })
   it("respeta el paso de la URL", () => {
     render(<RiskEditor {...props({ step: "evaluacion" })} />)
     expect(screen.getByRole("tab", { name: /Evaluación/, selected: true })).toBeTruthy()
@@ -48,7 +93,7 @@ describe("RiskEditor", () => {
   it("«Siguiente pendiente» salta al próximo riesgo con errores aunque sea de otra tarea", () => {
     render(<RiskEditor {...props()} />)
     expect(screen.getByRole("link", { name: "Siguiente pendiente" }).getAttribute("href")).toBe("/prevencion/miper/m1?fila=e3")
-    expect(screen.getByRole("link", { name: "Siguiente ›" }).getAttribute("href")).toBe("/prevencion/miper/m1?fila=e2")
+    expect(screen.getByRole("link", { name: "Riesgo siguiente ›" }).getAttribute("href")).toBe("/prevencion/miper/m1?fila=e2")
   })
   it("«Volver a la tarea» usa la tarea actual del riesgo (también después de moverlo)", () => {
     const { rerender } = render(<RiskEditor {...props()} />)
@@ -251,7 +296,7 @@ describe("RiskEditor", () => {
   it("el resumen lateral es una región con título, no un complementary anidado, y sus bloques no repiten el título en aria-label", () => {
     const { container } = render(<RiskEditor {...props()} />)
     expect(screen.queryByRole("complementary")).toBeNull()
-    expect(screen.getByRole("region", { name: "Resumen del riesgo" })).toBeTruthy()
+    expect(screen.getByRole("region", { name: "Chequeo del riesgo" })).toBeTruthy()
     expect(container.querySelector('section[aria-label="Contexto"], section[aria-label="Chequeo del riesgo"], section[aria-label="Nivel de riesgo"]')).toBeNull()
   })
   it("la observación nueva dice a la vista que pide al menos 5 caracteres", () => {
@@ -285,11 +330,11 @@ describe("RiskEditor", () => {
   })
   it("en los extremos de la tarea, «‹ Anterior» y «Siguiente ›» quedan como botones deshabilitados", () => {
     const { unmount } = render(<RiskEditor {...props()} />)
-    expect(screen.getByRole("button", { name: "‹ Anterior" })).toBeDisabled()
-    expect(screen.getByRole("link", { name: "Siguiente ›" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "‹ Riesgo anterior" })).toBeDisabled()
+    expect(screen.getByRole("link", { name: "Riesgo siguiente ›" })).toBeTruthy()
     unmount()
     render(<RiskEditor {...props({ entryId: "e2" })} />)
-    expect(screen.getByRole("button", { name: "Siguiente ›" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Riesgo siguiente ›" })).toBeDisabled()
     expect(screen.getByText("2 de 2 en la tarea")).toBeTruthy()
   })
 

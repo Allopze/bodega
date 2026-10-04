@@ -27,6 +27,16 @@ import type { RiskEditorProps } from "./types"
 
 export type { RiskEditorData, RiskEditorProps } from "./types"
 
+const STEP_QUESTION: Record<EditorStep, string> = {
+  identificacion: "¿Qué puede causar daño?",
+  evaluacion: "¿Qué probabilidad y consecuencia tiene?",
+  medidas: "¿Cómo se controla y quién responde?",
+  seguimiento: "¿Qué debe ejecutarse o revisarse?",
+}
+const CONTINUE_LABEL: Partial<Record<EditorStep, string>> = {
+  evaluacion: "Continuar a Evaluación", medidas: "Continuar a Medidas", seguimiento: "Continuar a Seguimiento",
+}
+
 /**
  * Editor del riesgo a página completa (spec §5.4). El workspace lo monta con
  * `key={entryId}`: así el paso inicial —el primero con errores— se calcula una
@@ -59,6 +69,7 @@ export function RiskEditor(props: RiskEditorProps) {
 
   const issues = issuesByEntry.get(entry.id) ?? []
   const current: EditorStep = isEditorStep(step) ? step : fallbackStep
+  const nextStep = EDITOR_STEPS[EDITOR_STEPS.indexOf(current) + 1]
   const counts = errorCountByStep(issues)
   const siblings = siblingsInTask(rows, entry.id)
   const nextPending = nextPendingId(rows, entry.id, incomplete, matching)
@@ -85,11 +96,11 @@ export function RiskEditor(props: RiskEditorProps) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-xl font-semibold">{entry.hazard?.trim() || "Peligro sin describir"}</h2>
-          <p className="text-sm text-[var(--color-text-subtle)]">Riesgo #{entry.rowNumber} · {entry.task ?? "Sin tarea"}{entry.position ? ` · ${entry.position}` : ""}</p>
+          <p className="text-sm text-[var(--color-text-subtle)]">Riesgo #{entry.rowNumber} · {[data.worksiteName, entry.activity ?? "Sin actividad", entry.task ?? "Sin tarea"].filter(Boolean).join(" → ")}</p>
         </div>
         {editable && <EntryMenu matrixId={data.matrixId} entry={entry} version={autosave.versionOf(entry.id)} afterDeleteHref={afterDeleteHref} entryHref={(id) => hrefToEntry(pathname, params, id)} />}
       </div>
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_17rem]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_15rem]">
         <Tabs value={current} onValueChange={goToStep} className="min-w-0">
           <TabsList aria-label="Pasos del riesgo">
             {EDITOR_STEPS.map((value, index) => (
@@ -104,25 +115,29 @@ export function RiskEditor(props: RiskEditorProps) {
               </TabsTrigger>
             ))}
           </TabsList>
+          <div className="flex flex-wrap items-center justify-between gap-3 py-4">
+            <h3 className="text-lg font-semibold">{STEP_QUESTION[current]}</h3>
+            {nextStep && <Button variant="primary" onClick={() => goToStep(nextStep)}>{CONTINUE_LABEL[nextStep]}</Button>}
+          </div>
           <TabsContent value="identificacion"><IdentificationStep {...stepProps} /></TabsContent>
           <TabsContent value="evaluacion"><EvaluationStep {...stepProps} /></TabsContent>
           <TabsContent value="medidas"><MeasuresStep {...stepProps} /></TabsContent>
           <TabsContent value="seguimiento"><FollowUpStep issues={issues} entry={entry} data={data} mode={mode} change={change} baselineEntry={baselineEntry} /></TabsContent>
         </Tabs>
-        <RiskAside entry={entry} issues={issues} onGoToStep={goToStep} canObserve={mode.canObserve} />
+        <RiskAside entry={entry} issues={issues} onGoToStep={goToStep} canObserve={mode.canObserve} currentStep={current} />
       </div>
-      <nav aria-label="Recorrer riesgos" className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)] py-3">
+      <nav aria-label="Recorrer riesgos" className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)] py-3">
         <div className="flex items-center gap-2">
-          {siblings?.previousId ? <Button asChild size="sm" variant="secondary"><WorkspaceLink href={hrefToEntry(pathname, params, siblings.previousId)}>‹ Anterior</WorkspaceLink></Button> : <Button size="sm" variant="secondary" disabled>‹ Anterior</Button>}
+          {siblings?.previousId ? <Button asChild size="sm" variant="secondary"><WorkspaceLink href={hrefToEntry(pathname, params, siblings.previousId)}>‹ Riesgo anterior</WorkspaceLink></Button> : <Button size="sm" variant="secondary" disabled>‹ Riesgo anterior</Button>}
           <span className="text-xs tabular-nums text-[var(--color-text-subtle)]">{siblings?.position} de {siblings?.total} en la tarea</span>
-          {siblings?.nextId ? <Button asChild size="sm" variant="secondary"><WorkspaceLink href={hrefToEntry(pathname, params, siblings.nextId)}>Siguiente ›</WorkspaceLink></Button> : <Button size="sm" variant="secondary" disabled>Siguiente ›</Button>}
+          {siblings?.nextId ? <Button asChild size="sm" variant="secondary"><WorkspaceLink href={hrefToEntry(pathname, params, siblings.nextId)}>Riesgo siguiente ›</WorkspaceLink></Button> : <Button size="sm" variant="secondary" disabled>Riesgo siguiente ›</Button>}
         </div>
         {!editable && matching
           ? (nextInFilter
             ? <Button asChild size="sm"><WorkspaceLink href={hrefToEntry(pathname, params, nextInFilter, current)}>Siguiente del filtro</WorkspaceLink></Button>
             : <p className="text-sm text-[var(--color-text-subtle)]">No hay otros riesgos en este filtro.</p>)
           : nextPending
-            ? <Button asChild size="sm"><WorkspaceLink href={hrefToEntry(pathname, params, nextPending)}>Siguiente pendiente</WorkspaceLink></Button>
+            ? <div className="space-y-1 text-right"><Button asChild size="sm" variant="secondary"><WorkspaceLink href={hrefToEntry(pathname, params, nextPending)}>Siguiente pendiente</WorkspaceLink></Button><p className="text-xs text-[var(--color-text-subtle)]">Con datos pendientes{matching ? " en este filtro" : " en toda la matriz"}.</p></div>
             : <p className="text-sm text-[var(--color-success-ink)]">No quedan otros riesgos pendientes{matching ? " en este filtro" : ""}.</p>}
       </nav>
     </div>

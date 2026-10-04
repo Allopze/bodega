@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
@@ -84,17 +84,17 @@ describe("ProgramActivityView", () => {
 
   it("Ver la fila n enlaza a ?fila= de su riesgo", () => {
     renderView()
-    const link = screen.getByRole("link", { name: "Ver la fila 7 en la MIPER" })
+    const link = screen.getByRole("link", { name: "Ver el riesgo 7 en la MIPER" })
     expect(link.getAttribute("href")).toContain("fila=e7")
-    expect(screen.getByRole("region", { name: "Actividad N° 3" })).toBeTruthy()
+    expect(screen.getByRole("region", { name: "Revisar arneses" })).toBeTruthy()
   })
 
   // Regresión: el `Sheet` que esta vista reemplaza mostraba el avance en la ficha
   // y el porte lo perdió; tras «Registrar» la persona no veía el avance cambiar.
   it("la ficha muestra el avance de la actividad y lo relee de las props", () => {
     const view = renderView({ action: { ...action, occurrences: [], progress: { ...progress, pending: 0, planned: 0, ratio: null } } })
-    const region = () => screen.getByRole("region", { name: "Actividad N° 3" })
-    expect(region().textContent).toContain("0/0 · Sin ocurrencias planificadas")
+    const region = () => screen.getByRole("region", { name: "Revisar arneses" })
+    expect(region().textContent).toContain("0/0 · Sin ejecuciones programadas")
     view.rerender(
       <ProgramActivityView
         matrixId="m1" programId="p1" action={{ ...action, progress: { ...progress, done: 1, pending: 2, ratio: 1 / 3 } }} mode={mode()} userId="u1"
@@ -102,8 +102,8 @@ describe("ProgramActivityView", () => {
       />,
     )
     expect(region().textContent).toContain("1/3 · 33% realizado")
-    expect(region().textContent).toContain("2 pendiente(s) · 0 incumplida(s) · 0 vencida(s)")
-    expect(screen.getByRole("progressbar", { name: "Avance: 1 de 3 ocurrencias realizadas" })).toBeTruthy()
+    expect(region().textContent).toContain("2 pendientes · 0 incumplidas · 0 vencidas")
+    expect(screen.getByRole("progressbar", { name: "Avance: 1 de 3 ejecuciones realizadas" })).toBeTruthy()
   })
 
   it("Volver al programa apunta a tab=programa sin actividad", () => {
@@ -123,11 +123,11 @@ describe("ProgramActivityView", () => {
     mocks.record.mockResolvedValue({ ok: true, message: "Ocurrencia registrada: no se hizo" })
     renderView()
     await waitFor(() => expect(mocks.load).toHaveBeenCalledTimes(1))
-    fireEvent.click(screen.getByRole("button", { name: "Registrar la ocurrencia del 05-02-2026" }))
-    fireEvent.click(screen.getByRole("combobox", { name: "Resultado de la ocurrencia" }))
+    fireEvent.click(screen.getByRole("button", { name: "Registrar la ejecución del 05-02-2026" }))
+    fireEvent.click(screen.getByRole("combobox", { name: "Resultado de la ejecución" }))
     fireEvent.click(screen.getByRole("option", { name: "No se hizo" }))
     fireEvent.change(screen.getByRole("textbox", { name: /^Motivo/ }), { target: { value: "No hubo personal disponible" } })
-    fireEvent.click(screen.getByRole("button", { name: "Registrar ocurrencia" }))
+    fireEvent.click(screen.getByRole("button", { name: "Registrar ejecución" }))
     await waitFor(() => expect(mocks.load).toHaveBeenCalledTimes(2))
     expect(mocks.record).toHaveBeenCalledWith(expect.objectContaining({ matrixId: "m1", occurrenceId: "o1", outcome: "not_done" }))
   })
@@ -140,6 +140,21 @@ describe("ProgramActivityView", () => {
     expect(screen.queryByText("Anulado")).toBeNull()
     expect(screen.queryByText(/Motivo de la anulación/)).toBeNull()
   })
+  it("separa pendientes del historial sin perder resultados, evidencia ni registros anulados", async () => {
+    const completed = { ...occurrence("o1", "2026-02-05"), outcome: "done" as const }
+    const replaced = { ...occurrence("o4", "2026-01-05"), outcome: "superseded" as const }
+    renderView({ action: { ...action, occurrences: [completed, occurrence("o3", "2026-04-05"), replaced, occurrence("o2", "2026-03-05")] } })
+    const pending = screen.getByRole("region", { name: "Ejecuciones programadas" })
+    expect(within(pending).getAllByRole("button", { name: /Registrar la ejecución/ }).map((button) => button.getAttribute("aria-label"))).toEqual(["Registrar la ejecución del 05-03-2026", "Registrar la ejecución del 05-04-2026"])
+    const history = screen.getByText("Historial de ejecuciones (2)").closest("details")!
+    expect(history).not.toHaveAttribute("open")
+    fireEvent.click(within(history).getByText("Historial de ejecuciones (2)"))
+    expect(await within(history).findByText("Motivo de la anulación: Registro duplicado · Ana")).toBeTruthy()
+    expect(within(history).getByText("Vence el 05-01-2026")).toBeTruthy()
+    expect(within(history).getByRole("button", { name: "Registrar la ejecución del 05-02-2026" })).toBeTruthy()
+    expect(within(history).queryByRole("button", { name: "Registrar la ejecución del 05-01-2026" })).toBeNull()
+  })
+
 })
 
 function cleanupAndRenderEditable() {

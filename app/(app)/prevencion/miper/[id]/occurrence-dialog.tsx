@@ -103,17 +103,17 @@ export function OccurrenceDialog({
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
-            <DialogTitle>Registrar la ocurrencia del {formatDate(occurrence.dueOn)}</DialogTitle>
+            <DialogTitle>Registrar la ejecución del {formatDate(occurrence.dueOn)}</DialogTitle>
             <DialogDescription>
               {alreadyRecorded
-                ? "Esta ocurrencia ya tiene un registro vigente. Volver a registrar agrega uno nuevo: el anterior queda en el historial."
-                : "El registro es la constancia de que la actividad se hizo —o de por qué no—. Queda en el historial del programa y alimenta el avance."}
+                ? "Esta ejecución ya tiene un registro vigente. Volver a registrar agrega uno nuevo: el anterior queda en el historial."
+                : "El registro es la constancia de que la actividad se hizo —o de por qué no—. Queda en el historial del programa y alimenta el avance. Esta evidencia acredita la ejecución de la actividad; verificar la eficacia de una medida es una comprobación distinta."}
             </DialogDescription>
           </DialogHeader>
 
-          <Field label="Resultado" hint="Qué pasó con la actividad en esta ocurrencia.">
+          <Field label="Resultado" hint="Qué pasó con la actividad en esta fecha programada.">
             <OptionSelect
-              aria-label="Resultado de la ocurrencia"
+              aria-label="Resultado de la ejecución"
               value={outcome}
               onValueChange={setOutcome}
               options={OUTCOME_OPTIONS}
@@ -152,7 +152,7 @@ export function OccurrenceDialog({
           {operation.message && <p role="status" className="text-sm text-[var(--color-text-muted)]">{operation.message}</p>}
           <DialogFooter>
             <Button type="submit" disabled={operation.pending || (done && (!effectiveOn || !evidencePath))}>
-              Registrar ocurrencia
+              Registrar ejecución
             </Button>
           </DialogFooter>
         </form>

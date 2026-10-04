@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from "react"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { buildMatrixTree, taskKeyOf } from "@/lib/prevention/miper/matrix-tree"
@@ -98,10 +99,10 @@ describe("MatrixView", () => {
     const filteredTree = buildMatrixTree(rows, { ...ctx, matching: new Set(["a", "b"]) })
     const { rerender } = render(<MatrixView {...base} bulk={bulk} tree={structure} filtered={false} />)
     // Sin filtros la matriz lista tareas, no riesgos: no hay qué seleccionar.
-    expect(screen.queryByRole("button", { name: "Seleccionar" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Seleccionar riesgos" })).toBeNull()
     rerender(<MatrixView {...base} bulk={bulk} tree={filteredTree} filtered />)
     expect(screen.queryByRole("checkbox")).toBeNull()
-    fireEvent.click(screen.getByRole("button", { name: "Seleccionar" }))
+    fireEvent.click(screen.getByRole("button", { name: "Seleccionar riesgos" }))
     expect(screen.getByRole("checkbox", { name: "Seleccionar el riesgo #2: Peligro b" }).closest("a")).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "Seleccionar los 2 resultados" }))
     expect(screen.getByRole("region", { name: "Acciones sobre la selección" })).toHaveTextContent("2 riesgos seleccionados")
@@ -110,4 +111,26 @@ describe("MatrixView", () => {
     rerender(<MatrixView {...base} bulk={bulk} tree={filteredTree} filtered />)
     expect(screen.queryByRole("checkbox")).toBeNull()
   })
+})
+
+
+it("Seleccionar riesgos abre resultados completos sin filtros y volver a estructura termina la selección", () => {
+  const bulk: BulkContext = {
+    matrixId: "m1", sync: { versionOf: () => 1, whenIdle: async () => {}, acknowledge: vi.fn() }, setRows: vi.fn(), riskFactors: [], responsibleOptions: [],
+    measureSuggestions: [], dictionaries: { activities: [], tasks: [], positions: [], locations: [] }, controlVersions: {},
+  }
+  function Example() {
+    const [presentation, setPresentation] = useState<"estructura" | "resultados">("estructura")
+    return <MatrixView {...base} bulk={bulk} tree={buildMatrixTree(rows, { ...ctx, matching: null })} filtered={false} presentation={presentation} onPresentationChange={setPresentation} />
+  }
+  render(<Example />)
+  expect(screen.queryByRole("checkbox")).toBeNull()
+  fireEvent.click(screen.getByRole("button", { name: "Seleccionar riesgos" }))
+  expect(screen.getByText("3 riesgos en toda la matriz")).toBeTruthy()
+  expect(screen.getAllByRole("checkbox")).toHaveLength(3)
+  fireEvent.click(screen.getByRole("button", { name: "Seleccionar los 3 resultados" }))
+  expect(screen.getByRole("region", { name: "Acciones sobre la selección" })).toHaveTextContent("3 riesgos seleccionados")
+  fireEvent.click(screen.getByRole("button", { name: "Ver por actividades y tareas" }))
+  expect(screen.queryByRole("checkbox")).toBeNull()
+  expect(screen.queryByRole("region", { name: "Acciones sobre la selección" })).toBeNull()
 })

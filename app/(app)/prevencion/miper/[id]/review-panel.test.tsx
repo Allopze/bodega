@@ -22,11 +22,58 @@ const row = (id: string, rowNumber: number, classification: MiperEntrySnapshot["
 const rows = [row("e1", 1, "tolerable"), row("e2", 2, "important"), row("e3", 3, "intolerable")]
 const mode = { canEdit: false, canReviewTechnical: false, canApproveLegal: false, canObserve: false, canRespond: false, isSubmitter: false, canExecuteProgram: false, readOnlyReason: null } as WorkspaceMode
 const observation = { id: "o1", matrixId: "m1", entryId: "e2", entryLabel: "#2 Peligro 2", status: "open", stage: "technical", body: "Falta la medida", response: null, createdAt: "2026-10-01T12:00:00.000Z", authorName: "Revisora", responderName: null } as unknown as MiperObservationView
-const workspace = (observations: MiperObservationView[] = []) => ({ openRound: null, observations, matrix: { id: "m1" } }) as unknown as MiperWorkspace
+const workspace = (observations: MiperObservationView[] = []) => ({ openRound: null, observations, matrix: { id: "m1", status: "draft", reviewState: "none" }, versions: [], pendingDiff: { hasChanges: false } }) as unknown as MiperWorkspace
 
 afterEach(cleanup)
 
 describe("ReviewPanel: recorrer la MIPER", () => {
+  it.each([
+    ["none", "draft", false, "Elaboración"],
+    ["observed", "published", false, "Elaboración"],
+    ["in_review", "published", true, "Revisión técnica"],
+    ["pending_approval", "draft", false, "Aprobación Legal/RRHH"],
+    ["none", "published", false, "Vigente"],
+    ["none", "published", true, "Elaboración"],
+  ])("representa %s / %s / cambios %s sin alterar permisos", (reviewState, status, hasChanges, label) => {
+    const data = workspace()
+    data.matrix = { ...data.matrix, reviewState, status }
+    data.pendingDiff = { ...data.pendingDiff, hasChanges }
+    render(<ReviewPanel workspace={data} mode={mode} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline={false} />)
+    const progress = screen.getByRole("list", { name: "Etapas de revisión" })
+    expect(progress.querySelector('[aria-current="step"]')).toHaveTextContent(label)
+    expect(screen.queryByRole("button", { name: /Aprobar/ })).toBeNull()
+  })
+  it("distingue versión vigente, ronda enviada y responsable sin atribuir un revisor inexistente", () => {
+    const data = workspace()
+    data.matrix = { ...data.matrix, status: "published", reviewState: "in_review" }
+    data.versions = [{ versionNumber: 2, approvedAt: "2026-10-01T12:00:00.000Z" }] as MiperWorkspace["versions"]
+    data.openRound = { stage: "technical", roundNumber: 4, submittedAt: "2026-10-03T12:00:00.000Z", submittedByName: "Elena", openedAt: null } as MiperWorkspace["openRound"]
+    const { unmount } = render(<ReviewPanel workspace={data} mode={{ ...mode, canReviewTechnical: true }} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline />)
+    expect(screen.getByText("Versión vigente: v2")).toBeTruthy()
+    expect(screen.getByText(/Sigue vigente mientras se revisan los cambios/)).toBeTruthy()
+    expect(screen.getByText(/Estás revisando la versión enviada en esta ronda/)).toBeTruthy()
+    expect(screen.getByText(/A cargo de: Revisión técnica/)).toBeTruthy()
+    expect(screen.getByText(/por Elena/)).toBeTruthy()
+    unmount()
+    render(<ReviewPanel workspace={data} mode={{ ...mode, canEdit: true, isSubmitter: true }} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline />)
+    expect(screen.getByText(/trabajo editable para otra ronda/)).toBeTruthy()
+    expect(screen.getByText(/la decisión corresponde a otra persona autorizada/)).toBeTruthy()
+    expect(screen.queryByText(/Estás revisando la versión enviada/)).toBeNull()
+  })
+  it("prioriza observaciones por responder y confirmar antes de las resueltas y de crear otra", () => {
+    const data = workspace([
+      { ...observation, id: "resolved", status: "resolved" },
+      { ...observation, id: "answered", status: "answered" },
+      observation,
+    ])
+    const { container } = render(<ReviewPanel workspace={data} mode={{ ...mode, canObserve: true }} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline={false} />)
+    expect(Array.from(container.querySelectorAll("details > summary"), (node) => node.textContent)).toEqual(["Por responder (1)", "Por confirmar (1)", "Resueltas (1)"])
+    const resolved = screen.getByText("Resueltas (1)").closest("details")
+    expect(resolved).not.toHaveAttribute("open")
+    const pending = screen.getByText("Por responder (1)")
+    const add = screen.getByRole("button", { name: "Registrar observación general" })
+    expect(pending.compareDocumentPosition(add) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
   it("tres enlaces con conteo; en cero, texto", () => {
     const { unmount } = render(<ReviewPanel workspace={workspace()} mode={mode} onOpenEntry={vi.fn()} rows={rows} observed={new Set(["e3"])} modified={new Set(["e1"])} hasBaseline />)
     const region = screen.getByRole("region", { name: "Recorrer la MIPER" })
@@ -56,5 +103,28 @@ describe("ReviewPanel: recorrer la MIPER", () => {
     const params = new URLSearchParams(link.getAttribute("href")!.split("?")[1])
     expect(params.get("fila")).toBe("e2")
     expect(params.get("paso")).toBe("seguimiento")
+  })
+})
+
+describe("ReviewPanel: preparación para enviar", () => {
+  const editor = { ...mode, canEdit: true } as WorkspaceMode
+  const issue = (field: string, entryId: string | null, scope: "header" | "entry" = "entry") => ({ severity: "error", scope, field, entryId, message: `Falta ${field}` }) as never
+
+  it("agrupa los bloqueos del validador y cada uno lleva al paso donde se corrige", () => {
+    const onOpenEntry = vi.fn()
+    render(<ReviewPanel workspace={workspace()} mode={editor} onOpenEntry={onOpenEntry} rows={rows} observed={new Set()} modified={new Set()} hasBaseline={false}
+      issues={[issue("hazard", "e1"), issue("controls", "e2")]} />)
+    const section = screen.getByRole("region", { name: "Preparación para enviar" })
+    expect(within(section).getByRole("region", { name: "Identificación y evaluación (1)" })).toBeTruthy()
+    expect(within(section).getByRole("region", { name: "Medidas de control (1)" })).toBeTruthy()
+    within(section).getByRole("button", { name: /Riesgo #1/ }).click()
+    expect(onOpenEntry).toHaveBeenCalledWith("e1", expect.any(String))
+  })
+
+  it("sin bloqueos dice que está lista y a quien no edita no se la muestra", () => {
+    const { rerender } = render(<ReviewPanel workspace={workspace()} mode={editor} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline={false} issues={[]} />)
+    expect(screen.getByText(/Sin pendientes: no queda/)).toBeTruthy()
+    rerender(<ReviewPanel workspace={workspace()} mode={mode} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline={false} issues={[]} />)
+    expect(screen.queryByRole("region", { name: "Preparación para enviar" })).toBeNull()
   })
 })

@@ -14,15 +14,15 @@ describe("NextStepCard", () => {
     expect(container.innerHTML).toBe("")
   })
 
-  it("ir al pendiente se llama «Siguiente pendiente», como el pie del editor, y es push; «Ver los pendientes» es replace", () => {
+  it("ir al pendiente se llama «Continuar completando», como el pie del editor, y es push; «Ver riesgos con datos pendientes» es replace", () => {
     const push = vi.spyOn(window.history, "pushState").mockImplementation(() => {})
     const replace = vi.spyOn(window.history, "replaceState").mockImplementation(() => {})
     render(<NextStepCard hrefFor={hrefFor} step={{ tone: "warning", title: "Faltan datos en 2 riesgos", description: "Empieza por los más graves.", action: { kind: "riesgo", entryId: "b", purpose: "pending" }, secondary: { kind: "filtro", completitud: "pendientes" }, scope: "root" }} />)
     expect(screen.getByText("Faltan datos en 2 riesgos")).toBeTruthy()
     expect(screen.queryByRole("link", { name: "Empezar por el más grave" })).toBeNull()
-    fireEvent.click(screen.getByRole("link", { name: "Siguiente pendiente" }))
+    fireEvent.click(screen.getByRole("link", { name: "Continuar completando" }))
     expect(push).toHaveBeenCalledWith(null, "", "/prevencion/miper/m1?accion=riesgo")
-    fireEvent.click(screen.getByRole("link", { name: "Ver los pendientes" }))
+    fireEvent.click(screen.getByRole("link", { name: "Ver riesgos con datos pendientes" }))
     expect(replace).toHaveBeenCalledWith(null, "", "/prevencion/miper/m1?accion=filtro")
   })
 
@@ -30,7 +30,7 @@ describe("NextStepCard", () => {
     vi.spyOn(window.history, "pushState").mockImplementation(() => {})
     render(<NextStepCard hrefFor={hrefFor} step={{ tone: "warning", title: "Revisa la versión enviada", description: "2 riesgos", action: { kind: "riesgo", entryId: "b", purpose: "review" }, secondary: null, scope: "root" }} />)
     expect(screen.getByRole("link", { name: "Empezar la revisión" })).toBeTruthy()
-    expect(screen.queryByRole("link", { name: "Siguiente pendiente" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Continuar completando" })).toBeNull()
   })
 
   it("abrir la ficha reemplaza la entrada del historial", () => {

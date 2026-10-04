@@ -1,8 +1,9 @@
 "use client"
 
-import { startTransition, useMemo, useState } from "react"
+import { startTransition, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { DataTable } from "@/components/ui/data-table"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -38,9 +39,9 @@ import type { CreationWorksite } from "./new-miper-dialog"
 type Step = "archivo" | "filas" | "medidas" | "confirmar"
 const STEPS: ReadonlyArray<{ value: Step; label: string }> = [
   { value: "archivo", label: "Archivo" },
-  { value: "filas", label: "Filas" },
-  { value: "medidas", label: "Medidas detectadas" },
-  { value: "confirmar", label: "Confirmar" },
+  { value: "filas", label: "Revisar riesgos" },
+  { value: "medidas", label: "Revisar medidas" },
+  { value: "confirmar", label: "Confirmar destino" },
 ]
 
 const STATUS_LABEL: Record<RiskImportRowView["status"], string> = {
@@ -82,15 +83,21 @@ function factorCodeOf(name: string) {
   return code.length >= 2 ? code : `factor_${code}`.slice(0, 60).padEnd(2, "_")
 }
 
-export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: {
+export function ImportMiperDialog({ worksites, currentYear, canManageCatalog, open: controlledOpen, onOpenChange, hideTrigger = false, initialWorksiteId }: {
   worksites: CreationWorksite[]
   currentYear: number
   canManageCatalog: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
+  initialWorksiteId?: string | null
 }) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = controlledOpen ?? internalOpen
+  const [discardOpen, setDiscardOpen] = useState(false)
   const [step, setStep] = useState<Step>("archivo")
-  const [worksiteId, setWorksiteId] = useState(worksites[0]?.id ?? "")
+  const [worksiteId, setWorksiteId] = useState(initialWorksiteId ?? worksites[0]?.id ?? "")
   const [period, setPeriod] = useState(String(currentYear))
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<RiskImportPreview | null>(null)
@@ -124,8 +131,13 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
     setFactorMapping({})
   }
 
-  function handleOpen(next: boolean) {
-    setOpen(next)
+  useEffect(() => {
+    if (open && initialWorksiteId && worksites.some((worksite) => worksite.id === initialWorksiteId)) setWorksiteId(initialWorksiteId)
+  }, [open, initialWorksiteId, worksites])
+
+  function finishOpen(next: boolean) {
+    setInternalOpen(next)
+    onOpenChange?.(next)
     if (!next) {
       discardPreview()
       setFile(null)
@@ -135,8 +147,16 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
     }
   }
 
+  function handleOpen(next: boolean) {
+    if (operation.pending) return
+    if (!next && preview) { setDiscardOpen(true); return }
+    finishOpen(next)
+  }
+
   function runPreview() {
     if (!file || !worksiteId) return
+    // Retroceder no invalida un lote revisado; sólo cambiar archivo/faena/período lo hace.
+    if (preview) { setStep("filas"); return }
     const form = new FormData()
     form.set("file", file)
     form.set("worksiteId", worksiteId)
@@ -174,7 +194,7 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
       ...decisionsToMappings(decisions),
       factorMapping,
     }), (result) => {
-      handleOpen(false)
+      finishOpen(false)
       toast.success(result.message ?? "RE-04 importado")
       const matrixId = result.data?.matrixId
       if (typeof matrixId === "string") router.push(`/prevencion/miper/${matrixId}`)
@@ -190,10 +210,13 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
 
   const draft = preview?.draft
   const live = preview?.live
+  const worksite = worksites.find((candidate) => candidate.id === worksiteId)
+  const worksiteName = worksite?.name ?? "Faena no disponible"
 
   return (
+    <>
     <Sheet open={open} onOpenChange={handleOpen}>
-      <SheetTrigger asChild>
+      {!hideTrigger && <SheetTrigger asChild>
         <Button
           variant="secondary"
           disabled={worksites.length === 0}
@@ -201,14 +224,13 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
         >
           Importar
         </Button>
-      </SheetTrigger>
+      </SheetTrigger>}
       <SheetContent className="sm:max-w-5xl">
         <SheetHeader>
           <div>
             <SheetTitle>Importar el RE-04</SheetTitle>
             <SheetDescription>
-              Lee la hoja «RE-04 IPER» del Excel real con sus medidas de control. La matriz y la clasificación del archivo se informan, pero
-              manda el cálculo de la plataforma (P × C): una fila con probabilidad o consecuencia fuera de 1, 2, 4 no se carga.
+              Trae los riesgos y las medidas de tu Excel. Primero revisas lo que se cargará y después eliges el documento de destino.
             </SheetDescription>
           </div>
           <SheetCloseButton />
@@ -227,6 +249,7 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
           {/* Montado siempre y oculto fuera de su paso: al volver a «Archivo» el campo
             * conserva el archivo elegido (un `<input type="file">` nuevo nace vacío). */}
           <div hidden={step !== "archivo"}>
+            <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Faena" required>
                 <OptionSelect aria-label="Faena" placeholder="Selecciona la faena" value={worksiteId}
@@ -245,6 +268,11 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
                 />
               </Field>
             </div>
+            <details className="rounded-xl border border-[var(--color-border)] p-3">
+              <summary className="cursor-pointer text-sm font-medium">Formato del archivo y evaluación</summary>
+              <p className="mt-2 text-sm text-[var(--color-text-muted)]">Usa un Excel .xlsx con la hoja «RE-04 IPER». Se leen sus riesgos y medidas. La plataforma calcula la clasificación con probabilidad × consecuencia; sólo admite los valores 1, 2 y 4. Las filas fuera de esa escala no se cargan y se muestran en la revisión.</p>
+            </details>
+            </div>
           </div>
 
           {step === "filas" && preview && (
@@ -253,6 +281,11 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
                 {countOf(preview.totals.total, "fila")} en «{preview.sheetName}»: {preview.totals.ready} para cargar, {preview.totals.needsReview} por
                 revisar y {preview.totals.rejected} sin cargar.
               </p>
+              <ul aria-label="Resultado de la revisión del archivo" className="grid gap-2 text-sm sm:grid-cols-3">
+                <li className="rounded-lg bg-[var(--color-success-tint)] p-3"><strong className="text-[var(--color-success-ink)]">Listos · {preview.totals.ready}</strong><span className="block text-[var(--color-text-muted)]">Se cargan tal como vienen.</span></li>
+                <li className="rounded-lg bg-[var(--color-warning-tint)] p-3"><strong className="text-[var(--color-warning-ink)]">Requieren tu revisión · {preview.totals.needsReview}</strong><span className="block text-[var(--color-text-muted)]">Un factor de riesgo no reconocido: asígnalo abajo o la fila no se carga.</span></li>
+                <li className="rounded-lg bg-[var(--color-danger-tint)] p-3"><strong className="text-[var(--color-danger-ink)]">No se cargarán · {preview.totals.rejected}</strong><span className="block text-[var(--color-text-muted)]">Probabilidad o consecuencia fuera de 1, 2 y 4. La causa está en la tabla.</span></li>
+              </ul>
               {unknownFactors.length > 0 && (
                 <section aria-labelledby="importar-factores" className="space-y-2 rounded-lg border border-[var(--color-border)] p-3 text-sm">
                   <h3 id="importar-factores" className="font-medium">Factores de riesgo que el catálogo no reconoce</h3>
@@ -319,6 +352,15 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
 
           {step === "confirmar" && preview && summary && (
             <div className="space-y-4">
+              <section aria-labelledby="importar-destino" className="space-y-3 rounded-xl bg-[var(--color-surface-2)] p-4">
+                <h3 id="importar-destino" className="text-sm font-semibold">Elige dónde cargar en {worksiteName}</h3>
+                <dl className="grid gap-4 sm:grid-cols-2">
+                  <div><dt className="text-sm font-medium">Borrador nuevo · período {draft?.period ?? period}</dt>
+                    <dd className="mt-1 text-sm text-[var(--color-text-muted)]">Queda en elaboración para completar los datos y enviarlo a revisión. No reemplaza una versión vigente.</dd></div>
+                  <div><dt className="text-sm font-medium">{live?.matrixId ? `${live.title ?? "Matriz vigente"} · vigente` : "Sin matriz vigente disponible"}</dt>
+                    <dd className="mt-1 text-sm text-[var(--color-text-muted)]">Agregar riesgos al vigente incorpora cambios pendientes de revisión. No aprueba una nueva versión.</dd></div>
+                </dl>
+              </section>
               <section aria-labelledby="importar-resumen" className="space-y-2 rounded-xl border border-[var(--color-border)] p-4">
                 <h3 id="importar-resumen" className="text-sm font-semibold">Qué se va a cargar</h3>
                 <ul className="space-y-1 text-sm">
@@ -382,5 +424,11 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
         </SheetFooter>
       </SheetContent>
     </Sheet>
+    <ConfirmDialog open={discardOpen} onOpenChange={setDiscardOpen}
+      title="¿Descartar la importación?"
+      description="Ya revisaste el archivo. Si descartas, se perderán la vista previa y las decisiones de esta importación. Todavía no se ha cargado ningún riesgo."
+      cancelLabel="Continuar importación" confirmLabel="Descartar" variant="destructive"
+      onConfirm={() => { setDiscardOpen(false); finishOpen(false) }} />
+    </>
   )
 }

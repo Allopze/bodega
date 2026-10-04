@@ -19,8 +19,8 @@ function ReplaceWorkspaceLink({ href, className, children, ...rest }: SummaryLin
 }
 
 /**
- * Pestaña «Resumen» del espacio de trabajo (spec §7, Fase B). No es la vista por
- * defecto: la matriz lo sigue siendo (§3, D9).
+ * Inicio del documento (URL heredada `tab=resumen`), destino de la portada.
+ * Las URLs sin pestaña conservan la matriz para no alterar enlaces previos.
  *
  * - Cuatro cifras que llevan a su subconjunto (A1). Las tres de la matriz QUITAN
  *   los seis filtros antes de aplicar el suyo (`hrefToMatrixOnly`); si no, la
@@ -45,10 +45,10 @@ export function ResumenPanel({ matrixId, rows, tree, incomplete, programProgress
     return (
       <EmptyState
         title="Esta MIPER todavía no tiene riesgos"
-        description="El resumen se arma con los riesgos de la matriz: empieza por una tarea con su actividad, su puesto y sus peligros."
+        description="Empieza por una actividad y su tarea. Después identifica los peligros, evalúa los riesgos y define las medidas."
         action={editable
           ? <Button onClick={onNewTask}>Nueva tarea</Button>
-          : <Button asChild variant="secondary"><WorkspaceLink href={hrefToTab(pathname, params, "matriz")} replace>Ver la matriz</WorkspaceLink></Button>}
+          : <Button asChild variant="secondary"><WorkspaceLink href={hrefToTab(pathname, params, "matriz")} replace>Ver actividades y tareas</WorkspaceLink></Button>}
       />
     )
   }
@@ -59,8 +59,8 @@ export function ResumenPanel({ matrixId, rows, tree, incomplete, programProgress
   const stats: SummaryStat[] = [
     {
       key: "completos", label: "Riesgos completos", value: `${rows.length - pending}/${rows.length}`,
-      secondary: pending > 0 ? `${countOf(pending, "riesgo")} con pendientes` : "Ninguno con pendientes",
-      href: hrefToMatrixOnly(pathname, params, { completitud: pending > 0 ? "pendientes" : "completos" }),
+      secondary: pending > 0 ? `${countOf(pending, "riesgo")} con pendientes` : "Todos tienen los datos requeridos",
+      href: rows.length > pending ? hrefToMatrixOnly(pathname, params, { completitud: "completos" }) : undefined,
     },
     {
       key: "graves", label: "Importantes e Intolerables", value: graves, tone: "signal",
@@ -73,16 +73,20 @@ export function ResumenPanel({ matrixId, rows, tree, incomplete, programProgress
       href: uncontrolled > 0 ? hrefToMatrixOnly(pathname, params, { controlado: "no" }) : undefined,
     },
     {
-      key: "programa", label: "Avance del programa", value: planned === 0 ? "Sin ocurrencias" : `${progressPercent(programProgress)}%`,
+      key: "programa", label: "Avance del programa", value: planned === 0 ? "Sin actividades programadas" : `${progressPercent(programProgress)}%`,
       secondary: planned === 0 ? "Genera las actividades desde las medidas" : `${done}/${planned} realizadas${overdue > 0 ? ` · ${countOf(overdue, "vencida")}` : ""}`,
       href: hrefToProgramOnly(pathname, params),
     },
   ]
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-base font-semibold">Estado del trabajo</h2>
+        <Button asChild size="sm" variant="secondary"><WorkspaceLink href={hrefToMatrixOnly(pathname, params)} replace>Ver actividades y tareas</WorkspaceLink></Button>
+      </div>
       <SummaryBar stats={stats} renderLink={ReplaceWorkspaceLink} />
       <section aria-labelledby="miper-resumen-actividades" className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-        <h2 id="miper-resumen-actividades" className="text-sm font-semibold">Completitud por actividad</h2>
+        <h2 id="miper-resumen-actividades" className="text-sm font-semibold">Datos completos por actividad</h2>
         <ul className="mt-3 space-y-3">
           {tree.map((activity) => {
             const complete = activity.tasks.reduce((total, task) => total + task.complete, 0)

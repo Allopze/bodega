@@ -13,6 +13,11 @@ type TextField = "activity" | "task" | "position" | "location" | "hazard" | "ris
 const LIST: Record<TextField, keyof RiskEditorData["dictionaries"]> = {
   activity: "activities", task: "tasks", position: "positions", location: "locations", hazard: "hazards", risk: "risks", probableDamage: "damages",
 }
+const EXAMPLE: Partial<Record<TextField, string>> = {
+  hazard: "Fuente o situación que puede causar daño. Ejemplo: piso mojado.",
+  risk: "Lo que podría ocurrir. Ejemplo: resbalar.",
+  probableDamage: "La lesión o efecto posible. Ejemplo: lesión por caída.",
+}
 const ROUTINE = [{ value: "yes", title: "Rutinaria" }, { value: "no", title: "No rutinaria" }] as const
 
 export function IdentificationStep({ entry, data, editable, autosave, issues }: StepProps) {
@@ -31,7 +36,7 @@ export function IdentificationStep({ entry, data, editable, autosave, issues }: 
   }
 
   const text = (field: TextField, label: string, required = true) => (
-    <Field label={label} htmlFor={id(field)} required={required} error={autosave.fieldError(entry.id, field)} helper={missing(field)}>
+    <Field label={label} htmlFor={id(field)} required={required} error={autosave.fieldError(entry.id, field)} helper={[missing(field), EXAMPLE[field]].filter(Boolean).join(" ") || undefined}>
       <Combobox id={id(field)} allowCustomValue options={data.dictionaries[LIST[field]].map((value) => ({ value, label: value }))} value={entry[field] ?? ""} placeholder="Escribe o elige…" onChange={(value) => commit({ [field]: value || null } as MiperEntryValues)} />
     </Field>
   )
@@ -52,7 +57,7 @@ export function IdentificationStep({ entry, data, editable, autosave, issues }: 
     <div className="space-y-6">
       <section aria-labelledby={id("h-peligro")} className="space-y-3">
         <h3 id={id("h-peligro")} className="text-sm font-semibold">Peligro y riesgo</h3>
-        <p className="text-sm text-[var(--color-text-subtle)]">Describe la fuente o situación observable y el daño que podría producir.</p>
+        <p className="text-sm text-[var(--color-text-subtle)]">Describe tu situación real. Los ejemplos junto a los campos son ilustrativos.</p>
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Factor de riesgo" required error={autosave.fieldError(entry.id, "riskFactorId")} helper={missing("riskFactorId")}>
             <OptionSelect aria-label="Factor de riesgo" emptyLabel="Sin factor" options={factors.map((factor) => ({ value: factor.id, label: factor.name }))} value={entry.riskFactorId ?? ""} onValueChange={(value) => commit({ riskFactorId: value || null })} />

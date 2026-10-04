@@ -7,7 +7,7 @@ import { listMiperCreationOptions } from "@/lib/services/miper/queries"
 import { codeYear } from "@/lib/utils"
 import { MiperHome } from "./miper-home"
 
-export const metadata: Metadata = { title: "Matriz IPER (MIPER)" }
+export const metadata: Metadata = { title: "Matriz de riesgos (MIPER)" }
 
 /**
  * Portada del RE-04 por faena (spec §7, Fase B): una fila por faena en alcance

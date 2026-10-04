@@ -6,13 +6,9 @@ import type { NextStep, NextStepAction } from "@/lib/prevention/miper/next-step"
 import { WorkspaceLink } from "./workspace-nav"
 
 const TONE = { info: "info", warning: "warning", success: "success" } as const
-/**
- * Un nombre por acción (QA Fase A, INCONSISTENCY 2): ir al riesgo pendiente se
- * llama igual que el botón del pie del editor, «Siguiente pendiente»; quien
- * revisa no recorre pendientes, empieza la revisión.
- */
-const RISK_LABEL = { pending: "Siguiente pendiente", review: "Empezar la revisión" } as const
-const LABEL = { ficha: "Abrir la ficha", tab: "Ir a Revisión", filtro: "Ver los pendientes" } as const
+/** La acción principal describe continuar el trabajo; la secundaria muestra su alcance. */
+const RISK_LABEL = { pending: "Continuar completando", review: "Empezar la revisión" } as const
+const LABEL = { ficha: "Abrir la ficha", tab: "Ir a Revisión", filtro: "Ver riesgos con datos pendientes" } as const
 const labelOf = (action: NextStepAction) => (action.kind === "riesgo" ? RISK_LABEL[action.purpose] : LABEL[action.kind])
 
 /**

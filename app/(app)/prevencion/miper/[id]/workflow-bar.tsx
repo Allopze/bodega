@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { usePathname, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -10,6 +11,10 @@ import { Field } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { countOf } from "@/lib/utils"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { PREPARATION_GROUPS, preparationGroupOf } from "@/lib/prevention/miper/preparation"
+import { stepOfField, type EditorStep } from "@/lib/prevention/miper/entry-navigation"
+import { hrefToEntry, hrefToFicha, hrefToMatrix } from "@/lib/prevention/miper/workspace-url"
+import { WorkspaceLink } from "./workspace-nav"
 import type { CompletenessIssue } from "@/lib/prevention/miper/completeness"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
 import type { MiperWorkspace } from "@/lib/services/miper/queries"
@@ -24,9 +29,11 @@ type Dialogs = "return" | "approveTechnical" | "requestCorrections" | "approveFi
  */
 export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenEntry, onOpenFicha }: {
   workspace: MiperWorkspace; mode: WorkspaceMode; issues: CompletenessIssue[]; openObservations: number
-  onOpenEntry?: (entryId: string) => void
+  onOpenEntry?: (entryId: string, step?: EditorStep) => void
   onOpenFicha?: () => void
 }) {
+  const pathname = usePathname()
+  const params = useSearchParams()
   const [dialog, setDialog] = useState<Dialogs>(null)
   const [changeSummary, setChangeSummary] = useState("")
   const operation = useOperation({ feedback: "toast" })
@@ -69,33 +76,32 @@ export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenE
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{blocking.length === 1 ? "Falta" : "Faltan"} {countOf(blocking.length, "dato")} para enviar</DialogTitle>
-            <DialogDescription>Corrige lo siguiente en los riesgos o en la ficha del documento. Cada bloqueo te lleva a donde se corrige.</DialogDescription>
+            <DialogDescription>Los cambios se guardan automáticamente. Completa estos datos antes de enviar; cada pendiente abre el lugar donde se corrige.</DialogDescription>
           </DialogHeader>
-          <ul className="max-h-80 space-y-1 overflow-y-auto pl-5 text-sm">
-            {blocking.slice(0, 40).map((issue, index) => {
-              // «La matriz no tiene registros» es de cabecera, pero no se corrige en la ficha: se agrega una tarea.
-              if (issue.scope === "header" && issue.field !== "entries" && onOpenFicha) {
-                return (
-                  <li key={index} className="list-disc">
-                    <button type="button" className="text-left underline-offset-2 hover:underline" onClick={() => { close(); onOpenFicha() }}>
-                      <span className="font-medium">Ficha del documento</span>: {issue.message}
-                    </button>
-                  </li>
-                )
-              }
-              const entry = issue.entryId ? workspace.snapshot.entries.find((item) => item.id === issue.entryId) : undefined
-              if (!entry || !onOpenEntry) {
-                return <li key={index} className="list-disc">{entry ? `Riesgo #${entry.rowNumber}: ` : issue.field === "entries" ? "Matriz: " : "Ficha del documento: "}{issue.message}</li>
-              }
-              return (
-                <li key={index} className="list-disc">
-                  <button type="button" className="text-left underline-offset-2 hover:underline" onClick={() => { close(); onOpenEntry(entry.id) }}>
-                    <span className="font-medium">Riesgo #{entry.rowNumber}</span>: {issue.message}
-                  </button>
-                </li>
-              )
+          <div className="max-h-[60vh] space-y-4 overflow-y-auto text-sm">
+            {PREPARATION_GROUPS.map((group) => {
+              const items = blocking.filter((issue) => preparationGroupOf(issue) === group.key)
+              if (!items.length) return null
+              return <section key={group.key} aria-labelledby={`preparation-${group.key}`} className="space-y-2">
+                <h3 id={`preparation-${group.key}`} className="font-semibold">{group.title} ({items.length})</h3>
+                <ul className="space-y-2">
+                  {items.map((issue, index) => {
+                    const entry = issue.entryId ? workspace.snapshot.entries.find((item) => item.id === issue.entryId) : undefined
+                    const label = <><span className="font-medium">{entry ? `Riesgo #${entry.rowNumber}` : issue.field === "entries" ? "Riesgos" : "Ficha del documento"}</span>: {issue.message}</>
+                    const className = "text-left text-[var(--color-primary-ink)] underline underline-offset-2"
+                    if (issue.scope === "header" && issue.field !== "entries" && onOpenFicha) {
+                      return <li key={index}><button type="button" className={className} onClick={() => { close(); onOpenFicha() }}>{label}</button></li>
+                    }
+                    if (entry && onOpenEntry) {
+                      return <li key={index}><button type="button" className={className} onClick={() => { close(); onOpenEntry(entry.id, stepOfField(issue.field)) }}>{label}</button></li>
+                    }
+                    return <li key={index}><WorkspaceLink className={className} onClick={close} href={entry ? hrefToEntry(pathname, params, entry.id, stepOfField(issue.field)) : issue.field === "entries" ? hrefToMatrix(pathname, params) : hrefToFicha(pathname, params, true)}>{label}</WorkspaceLink></li>
+                  })}
+                </ul>
+              </section>
             })}
-          </ul>
+          </div>
+          <DialogFooter><Button variant="secondary" onClick={close}>Cerrar y seguir completando</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

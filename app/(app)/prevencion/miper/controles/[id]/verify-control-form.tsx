@@ -55,7 +55,7 @@ export function VerifyControlForm({ controlId, expectedVersion, conflicted, canO
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
             <DialogTitle>Verificar control</DialogTitle>
-            <DialogDescription>Exige evidencia y la hace una persona distinta de quien creó la versión o responde por el control.</DialogDescription>
+            <DialogDescription>Comprueba si la medida funciona según su estándar. La realiza una persona distinta de quien creó la versión o responde por el control, salvo una excepción autorizada y fundamentada.</DialogDescription>
           </DialogHeader>
           <Field label="Resultado" htmlFor="control-effectiveness">
             <OptionSelect
@@ -68,9 +68,10 @@ export function VerifyControlForm({ controlId, expectedVersion, conflicted, canO
               ]}
             />
           </Field>
-          <Field label="Evidencia" htmlFor="control-evidence" hint="Referencia del registro que respalda la verificación (acta, foto, checklist).">
+          <Field label="Referencia de evidencia" htmlFor="control-evidence" hint="Indica cómo localizar el acta, foto o checklist que respalda esta comprobación (nombre, fecha y ubicación). Aquí se registra la referencia, no se adjunta un archivo.">
             <Input id="control-evidence" name="evidenceReference" required minLength={5} maxLength={3000} />
           </Field>
+          <p className="text-sm text-[var(--color-text-muted)]">Esta verificación comprueba la eficacia de la medida. Registrar que una actividad del programa se hizo no reemplaza esta comprobación.</p>
           <Field label="Qué se verificó" htmlFor="control-note">
             <Textarea id="control-note" name="verificationNote" required minLength={5} maxLength={3000} />
           </Field>

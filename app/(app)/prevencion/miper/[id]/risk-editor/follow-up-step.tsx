@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
@@ -9,6 +9,7 @@ import { useOperation } from "@/lib/hooks/use-operation"
 import { CONTROLLED_STATUS_LABEL, ENTRY_FIELD_LABEL, type EntryChange, type MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 import type { CompletenessIssue } from "@/lib/prevention/miper/completeness"
 import { CLASSIFICATION_LABEL, type RiskClassification } from "@/lib/prevention/miper/methodology"
+import { hrefToActivity } from "@/lib/prevention/miper/workspace-url"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
 import { addMiperObservationAction } from "../../actions"
 import { ObservationItem } from "../observation-item"
@@ -25,6 +26,8 @@ function display(value: unknown, field?: string) {
 
 export function FollowUpStep({ entry, data, mode, change, baselineEntry, issues }: { issues: CompletenessIssue[]; entry: MiperEntrySnapshot; data: RiskEditorData; mode: WorkspaceMode; change: EntryChange | null; baselineEntry: MiperEntrySnapshot | null }) {
   const router = useRouter()
+  const pathname = usePathname()
+  const params = useSearchParams()
   const [observation, setObservation] = useState("")
   const operation = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
   const controlIds = new Set(entry.controls.map((control) => control.id))
@@ -34,14 +37,16 @@ export function FollowUpStep({ entry, data, mode, change, baselineEntry, issues 
   return (
     <div className="space-y-6">
       <section aria-label="Programa de Trabajo del riesgo" className="space-y-2">
-        <h3 className="text-sm font-semibold">Programa de Trabajo ({activities.length})</h3>
+        <h3 className="text-sm font-semibold">Actividades del plan de medidas ({activities.length})</h3>
+        <p className="text-sm text-[var(--color-text-subtle)]">Abre una actividad para consultar sus ejecuciones programadas y registrar lo realizado.</p>
         {programMessage && <p className="rounded-lg bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">{programMessage}</p>}
         {activities.length === 0
-          ? <p className="text-sm text-[var(--color-text-subtle)]">Ninguna medida de este riesgo está programada todavía. <WorkspaceLink className="underline" href={`/prevencion/miper/${data.matrixId}?tab=programa`}>Ir al programa</WorkspaceLink></p>
-          : <ul className="space-y-1 text-sm">{activities.map((activity) => <li key={activity.actionId}><span className="font-medium">Actividad #{activity.actionNumber}</span>: {activity.description}</li>)}</ul>}
+          ? <p className="text-sm text-[var(--color-text-subtle)]">Ninguna medida de este riesgo está programada todavía. <WorkspaceLink className="underline" href={`/prevencion/miper/${data.matrixId}?tab=programa`}>Ir al plan de medidas</WorkspaceLink></p>
+          : <ul className="space-y-1 text-sm">{activities.map((activity) => <li key={activity.actionId}><WorkspaceLink className="text-[var(--color-primary-ink)] underline" href={hrefToActivity(pathname, params, activity.actionId)}>Actividad #{activity.actionNumber}: {activity.description}</WorkspaceLink></li>)}</ul>}
       </section>
       <section aria-label="Observaciones del riesgo" className="space-y-2">
-        <h3 className="text-sm font-semibold">Observaciones ({observations.length})</h3>
+        <h3 className="text-sm font-semibold">Observaciones de revisión ({observations.length})</h3>
+        <p className="text-sm text-[var(--color-text-subtle)]">Aquí se registran y responden las correcciones solicitadas durante la revisión del documento.</p>
         {observations.map((item) => <ObservationItem key={item.id} observation={item} mode={mode} onChanged={() => router.refresh()} />)}
         {mode.canObserve && (
           <div className="space-y-2">
