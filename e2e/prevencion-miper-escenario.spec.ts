@@ -108,7 +108,7 @@ const estado = (page: Page, label: string | RegExp) => page.getByRole("banner").
  */
 async function abrirActividad(page: Page) {
   await page.getByRole("link", { name: "Abrir el detalle de la actividad N° 1", exact: true }).click()
-  const detalle = page.getByRole("region", { name: "Actividad N° 1", exact: true })
+  const detalle = page.getByRole("region", { name: ACTIVITY_DESC, exact: true })
   await expect(detalle).toBeVisible()
   return detalle
 }
@@ -122,16 +122,14 @@ async function abrirActividad(page: Page) {
  * vencimiento y las demás siguen. Se usan índices para no recalcular fechas
  * fuera de la plataforma.
  */
-const ocurrenciasDe = (page: Page) => page.getByRole("button", { name: /^Registrar la ocurrencia del / })
+const ocurrenciasDe = (page: Page) => page.getByRole("button", { name: /^Registrar la ejecución del / })
 
 test("pasos 1–7: la prevencionista crea la MIPER, la completa, genera el programa y la envía", async ({ browser }) => {
   const page = await as(browser, "prev.faena@e2e.chome.cl")
   await page.goto("/prevencion/miper")
-  await expectPageTitle(page, "Matriz IPER (MIPER)")
-  // «Nueva MIPER» vive en la cabecera. La portada por faena (Fase B) ya no
-  // repite el alta en un estado vacío, y la fila de una faena sin MIPER ofrece
-  // «Crear MIPER de <faena>», que es otro nombre.
-  await cabecera(page).getByRole("button", { name: "Nueva MIPER", exact: true }).click()
+  await expectPageTitle(page, "Matriz de riesgos")
+  await cabecera(page).getByRole("button", { name: "Crear matriz", exact: true }).click()
+  await page.getByRole("dialog", { name: "Crear matriz de riesgos" }).getByRole("button", { name: /^Completar en la plataforma/ }).click()
   const dialog = page.getByRole("dialog", { name: "Nueva MIPER" })
   // El único combobox del diálogo es la faena: el período es un número y el
   // punto de partida, radios.
@@ -193,6 +191,7 @@ test("pasos 1–7: la prevencionista crea la MIPER, la completa, genera el progr
   // Paso 7, la regla dura: sin medida vinculada, el Intolerable no se envía. La
   // UI anticipa el bloqueo del servidor y el clic abre el detalle de lo que
   // falta —el hallazgo H2-01— en vez de dejar llegar el rechazo a la acción.
+  await page.getByRole("tab", { name: "Revisión" }).click()
   await cabecera(page).getByRole("button", { name: "Enviar a revisión", exact: true }).click()
   const bloqueo = page.getByRole("dialog", { name: "Falta 1 dato para enviar" })
   await expect(bloqueo).toContainText("Un riesgo Intolerable exige una medida vinculada a una actividad del Programa de Trabajo.")
@@ -201,9 +200,9 @@ test("pasos 1–7: la prevencionista crea la MIPER, la completa, genera el progr
   await expect(estado(page, /Borrador/)).toBeVisible()
 
   // Paso 6: generar el programa reutilizando UNA actividad para las dos medidas.
-  await page.getByRole("tab", { name: "Programa" }).click()
+  await page.getByRole("tab", { name: "Plan de medidas" }).click()
   await expect(textoVisible(page, "Esta MIPER todavía no tiene Programa de Trabajo")).toBeVisible()
-  await page.getByRole("button", { name: "Generar actividades" }).click()
+  await cabecera(page).getByRole("button", { name: "Generar actividades" }).click()
   const gen = page.getByRole("dialog", { name: "Generar actividades desde el MIPER" })
   // La deduplicación propone UNA agrupación con las dos medidas parecidas.
   await expect(gen.getByText("Medidas de la fila 1, 2")).toBeVisible()
@@ -217,10 +216,11 @@ test("pasos 1–7: la prevencionista crea la MIPER, la completa, genera el progr
   await gen.getByRole("button", { name: /Aplicar decisiones/ }).click()
   await expect(gen).toBeHidden()
   await expect(textoVisible(page, ACTIVITY_DESC)).toBeVisible()
-  await expect(textoVisible(page, "Filas 1, 2 del MIPER")).toBeVisible()
+  await expect(textoVisible(page, "Riesgos 1, 2 del MIPER")).toBeVisible()
 
   // Paso 7: con el vínculo hecho no queda ningún bloqueo —el «Siguiente paso»
   // lo dice— y el envío pasa sin abrir el detalle de pendientes.
+  await page.getByRole("tab", { name: "Revisión" }).click()
   await expect(textoVisible(page, "Lista para enviar a revisión")).toBeVisible()
   await cabecera(page).getByRole("button", { name: "Enviar a revisión", exact: true }).click()
   // Primero el estado nuevo (el envío ya resolvió) y recién entonces la
@@ -237,7 +237,7 @@ test("pasos 8–9: la Jefa observa, la prevencionista corrige y reenvía, la Jef
   // ti, «<motivo> · MIPER <período>». Se busca el de ESTE período y se comprueba
   // que lleva a ESTA MIPER. La fila y la tarjeta móvil lo repiten; `getByRole`
   // sólo ve la visible.
-  await expect(jefa.getByRole("link", { name: `Pendiente de tu revisión · MIPER ${PERIOD}`, exact: true })).toHaveAttribute("href", `/prevencion/miper/${id}`)
+  await expect(jefa.getByRole("link", { name: `Revisar · Faena E2E · ${PERIOD}`, exact: true })).toHaveAttribute("href", `/prevencion/miper/${id}?tab=revision`)
 
   // F3 — la «atención de Prevención» (§9.1) trae el hecho «esperando revisión
   // técnica», con enlace al paso de revisión de esta MIPER. Es la contraparte en
@@ -269,6 +269,7 @@ test("pasos 8–9: la Jefa observa, la prevencionista corrige y reenvía, la Jef
   await jefa.getByLabel("Nueva observación").fill("Revisar consecuencia. De acuerdo con el daño probable indicado debería evaluarse nuevamente la probabilidad.")
   await jefa.getByRole("button", { name: "Registrar observación", exact: true }).click()
   await expect(jefa.getByRole("region", { name: "Observaciones del riesgo" }).getByText("Abierta", { exact: true })).toBeVisible()
+  await jefa.goto(`${miperUrl}?tab=revision`)
   await cabecera(jefa).getByRole("button", { name: "Devolver con observaciones", exact: true }).click()
   const confirm = jefa.getByRole("dialog", { name: "Devolver con observaciones" })
   await confirm.getByRole("textbox").fill("Revisar la evaluación del riesgo #1.")
@@ -280,7 +281,7 @@ test("pasos 8–9: la Jefa observa, la prevencionista corrige y reenvía, la Jef
   await prev.goto(`${miperUrl}?tab=revision`)
   await prev.getByLabel("Tu respuesta").fill("Se reevaluó la probabilidad: el tránsito en la correa es ocasional.")
   await prev.getByRole("button", { name: "Responder" }).click()
-  await prev.getByRole("tab", { name: /Matriz/ }).click()
+  await prev.getByRole("tab", { name: /Riesgos/ }).click()
   await abrirRiesgo(prev, 1, "Correa en movimiento")
   await irAPaso(prev, "Evaluación")
   await guardado(prev, () => elegir(prev, "Probabilidad", /^2 · Media/))
@@ -290,13 +291,17 @@ test("pasos 8–9: la Jefa observa, la prevencionista corrige y reenvía, la Jef
     await prev.reload()
     await expect(nivel(prev, /Importante\s*·\s*MR 8/)).toBeVisible({ timeout: 5_000 })
   }).toPass({ timeout: 60_000 })
+  await prev.goto(`${miperUrl}?tab=revision`)
   await cabecera(prev).getByRole("button", { name: "Reenviar a revisión", exact: true }).click()
   await expect(estado(prev, /Enviado a revisión|En revisión por Prevención/)).toBeVisible()
 
   // La Jefa ve el riesgo como «Modificada» en su tarea y aprueba técnicamente.
   await jefa.reload()
+  await jefa.goto(miperUrl)
+  await abrirRiesgo(jefa, 1, "Correa en movimiento")
   await volverALaTarea(jefa)
   await expect(jefa.getByRole("link", { name: "Riesgo #1: Correa en movimiento", exact: true })).toContainText("Modificada")
+  await jefa.goto(`${miperUrl}?tab=revision`)
   await cabecera(jefa).getByRole("button", { name: "Aprobar revisión técnica", exact: true }).click()
   await jefa.getByRole("dialog", { name: "Aprobar revisión técnica" }).getByRole("button", { name: "Aprobar revisión técnica" }).click()
   await expect(estado(jefa, /Pendiente de aprobación Legal y RRHH/)).toBeVisible()
@@ -304,7 +309,7 @@ test("pasos 8–9: la Jefa observa, la prevencionista corrige y reenvía, la Jef
 
 test("pasos 10–11: Legal y RRHH sella la v1, las ocurrencias nacen y el libro se descarga sellado y vivo", async ({ browser }) => {
   const legal = await as(browser, "legal.rrhh@e2e.chome.cl")
-  await legal.goto(miperUrl)
+  await legal.goto(`${miperUrl}?tab=revision`)
   // Paso 10: aprobación de Legal y RRHH → v1 vigente.
   await cabecera(legal).getByRole("button", { name: "Aprobar (Legal y RRHH)", exact: true }).click()
   await legal.getByLabel("Resumen de cambios (hoja Modificaciones)").fill("Emisión inicial del MIPER 2028 con su Programa de Trabajo.")
@@ -333,7 +338,7 @@ test("pasos 10–11: Legal y RRHH sella la v1, las ocurrencias nacen y el libro 
   await legal.goto(`${miperUrl}?tab=programa`)
   await expect(legal.getByRole("heading", { name: "Programa de Trabajo Preventivo RE-04.1" })).toBeVisible()
   const sheet = await abrirActividad(legal)
-  await expect(sheet.getByText("Sin ocurrencias planificadas")).toHaveCount(0)
+  await expect(sheet.getByText("Las ejecuciones se generan al aprobar la versión de la matriz.")).toHaveCount(0)
   // El período 2028 con una definición anual genera tres ocurrencias. Legal y
   // RRHH no ejecuta el programa (no es el responsable ni tiene el permiso de
   // ejecución), así que las ve con su vencimiento pero sin el botón «Registrar»:
@@ -346,10 +351,10 @@ test("paso 12: el responsable marca «Se hizo» con fecha efectiva y evidencia, 
   await page.goto(`${miperUrl}?tab=programa`)
   await expect(page.getByRole("heading", { name: "Programa de Trabajo Preventivo RE-04.1" })).toBeVisible()
   // Avance inicial: nada registrado y las tres ocurrencias del período planificadas.
-  await expect(page.getByText("0/3 realizadas")).toBeVisible()
+  await expect(page.getByText("0/3 · 0% realizado").first()).toBeVisible()
   const sheet = await abrirActividad(page)
   await ocurrenciasDe(page).nth(0).click()
-  const record = page.getByRole("dialog", { name: /Registrar la ocurrencia del / })
+  const record = page.getByRole("dialog", { name: /Registrar la ejecución del / })
   // La fecha efectiva NO viene prellenada aunque el diálogo declare ese default
   // (`OccurrenceDialog.handleOpenChange`): sin elegirla en el `DatePicker` el
   // submit nunca se habilita (hallazgo F2-03).
@@ -361,36 +366,38 @@ test("paso 12: el responsable marca «Se hizo» con fecha efectiva y evidencia, 
     buffer: MINIMAL_PNG,
   })
   await expect(record.getByText(/Archivo subido/)).toBeVisible()
-  await record.getByRole("button", { name: "Registrar ocurrencia" }).click()
+  await record.getByRole("button", { name: "Registrar ejecución" }).click()
   await expect(record).toBeHidden()
   // El avance derivado se actualiza: 1 de 3, 33 %.
+  await sheet.getByText(/Historial de ejecuciones/).click()
   await expect(sheet.getByText("Realizada")).toBeVisible()
   await expect(sheet.getByText("1/3 · 33% realizado")).toBeVisible()
-  await expect(sheet.getByText("2 pendiente(s) · 0 incumplida(s)")).toBeVisible()
+  await expect(sheet.getByText(/^2 pendientes · 0 incumplidas/)).toBeVisible()
 })
 
 test("paso 13: la otra ocurrencia se marca «No se hizo», queda Incumplida y no suma al avance", async ({ browser }) => {
   const page = await as(browser, "prev.faena@e2e.chome.cl")
   await page.goto(`${miperUrl}?tab=programa`)
   const sheet = await abrirActividad(page)
-  await ocurrenciasDe(page).nth(1).click()
-  const record = page.getByRole("dialog", { name: /Registrar la ocurrencia del / })
-  await record.getByRole("combobox", { name: "Resultado de la ocurrencia" }).click()
+  await page.getByRole("button", { name: "Registrar la ejecución del 31-10-2027" }).click()
+  const record = page.getByRole("dialog", { name: /Registrar la ejecución del / })
+  await record.getByRole("combobox", { name: "Resultado de la ejecución" }).click()
   await page.getByRole("option", { name: "No se hizo", exact: true }).click()
   await record.getByLabel("Motivo", { exact: true }).fill("No se ejecutó por indisponibilidad de la guarda en bodega.")
-  await record.getByRole("button", { name: "Registrar ocurrencia" }).click()
+  await record.getByRole("button", { name: "Registrar ejecución" }).click()
   await expect(record).toBeHidden()
   // Incumplida: no suma al avance (sigue 1 de 3) y queda contada aparte.
+  await sheet.getByText(/Historial de ejecuciones/).click()
   await expect(sheet.getByText("No realizada")).toBeVisible()
   await expect(sheet.getByText("1/3 · 33% realizado")).toBeVisible()
-  await expect(sheet.getByText("1 pendiente(s) · 1 incumplida(s)")).toBeVisible()
+  await expect(sheet.getByText(/^1 pendiente · 1 incumplida /)).toBeVisible()
 })
 
 test("paso 14: la Jefa consulta el avance en el «Resumen» de la MIPER, en la portada y en el programa", async ({ browser }) => {
   const jefa = await as(browser, "jefa.prevencion@e2e.chome.cl")
   await jefa.goto(`${miperUrl}?tab=resumen`)
-  await expectPageTitle(jefa, /^MIPER Faena E2E/)
-  await expect(jefa.getByRole("tab", { name: "Resumen", selected: true })).toBeVisible()
+  await expectPageTitle(jefa, /^Matriz de riesgos · Faena E2E/)
+  await expect(jefa.getByRole("tab", { name: "Inicio", selected: true })).toBeVisible()
 
   // Las cifras del Resumen que enlazan (A1). «No controlados» está en 0 (los dos riesgos quedaron
   // «Parcialmente»), así que no enlaza: se ve, pero no lleva a una lista vacía.
@@ -410,14 +417,15 @@ test("paso 14: la Jefa consulta el avance en el «Resumen» de la MIPER, en la p
 
   // «Elaboró» en la franja de la matriz: sin ronda abierta, quien elaboró la v1.
   await jefa.goto(miperUrl)
-  await expect(jefa.getByRole("definition").filter({ hasText: "Prevencionista Faena E2E" })).toBeVisible()
+  await jefa.getByText("Datos del documento", { exact: true }).click()
+  await expect(jefa.getByText("Elaboró Prevencionista Faena E2E")).toBeVisible()
 
   // La cifra del programa lleva a la pestaña Programa, que dice lo mismo.
   await jefa.goto(`${miperUrl}?tab=resumen`)
   await jefa.getByRole("link", { name: /^Avance del programa/ }).click()
   await expect(jefa).toHaveURL(/tab=programa/)
   await expect(jefa.getByRole("heading", { name: "Programa de Trabajo Preventivo RE-04.1" })).toBeVisible()
-  await expect(jefa.getByText("1/3 realizadas")).toBeVisible()
+  await expect(jefa.getByText("1/3 · 33% realizado").first()).toBeVisible()
 })
 
 test("paso 15: trazabilidad de la actividad al riesgo y del riesgo a sus medidas, actividades y evidencias", async ({ browser }) => {
@@ -429,18 +437,19 @@ test("paso 15: trazabilidad de la actividad al riesgo y del riesgo a sus medidas
   await expect(sheet.getByText(MEASURE_2)).toBeVisible()
   // …y a la evidencia que registró la ejecución de su ocurrencia. Desde la Fase E
   // vive en el diálogo «Evidencia de la ocurrencia» (C7), no en la lista de registros.
+  await sheet.getByText(/Historial de ejecuciones/).click()
   await sheet.getByRole("listitem").filter({ has: page.getByText("Realizada", { exact: true }) })
-    .getByRole("button", { name: /^Ver la evidencia de la ocurrencia del / }).click()
+    .getByRole("button", { name: /^Ver la evidencia de la ejecución del / }).click()
   const evidencia = page.getByRole("dialog", { name: "Evidencia de la ocurrencia" })
   await expect(evidencia.getByText(EVIDENCE_NAME)).toBeVisible()
   await page.keyboard.press("Escape")
   await expect(evidencia).toBeHidden()
   // De la actividad al riesgo que la originó: «Ver la fila N en la MIPER».
   // El enlace abre el editor del riesgo (la matriz, sin `tab`) y deja atrás el detalle.
-  await sheet.getByRole("link", { name: "Ver la fila 1 en la MIPER", exact: true }).click()
+  await sheet.getByRole("link", { name: "Ver el riesgo 1 en la MIPER", exact: true }).click()
   await expect(page).toHaveURL(/fila=/)
   await expect(page).not.toHaveURL(/tab=/)
-  await expect(page.getByRole("region", { name: "Actividad N° 1", exact: true })).toHaveCount(0)
+  await expect(page.getByRole("region", { name: ACTIVITY_DESC, exact: true })).toHaveCount(0)
   await expect(page.getByRole("heading", { level: 2, name: "Correa en movimiento" })).toBeVisible()
   await expect(page.getByText(/^Riesgo #1 · /)).toBeVisible()
   // Del riesgo a sus medidas…
@@ -450,8 +459,8 @@ test("paso 15: trazabilidad de la actividad al riesgo y del riesgo a sus medidas
   // …y del riesgo a la actividad del programa que la ejecuta (§7.3, los dos sentidos).
   await irAPaso(page, "Seguimiento")
   const programa = page.getByRole("region", { name: "Programa de Trabajo del riesgo" })
-  await expect(programa.getByRole("heading", { name: "Programa de Trabajo (1)" })).toBeVisible()
-  await expect(programa.getByText("Actividad #1", { exact: true })).toBeVisible()
+  await expect(programa.getByRole("heading", { name: "Actividades del plan de medidas (1)" })).toBeVisible()
+  await expect(programa.getByRole("link", { name: /^Actividad #1: / })).toBeVisible()
 })
 
 test("paso 16: un riesgo nuevo al vigente aplica al instante, se envía, se revisa y se sella la v2", async ({ browser }) => {
@@ -484,11 +493,12 @@ test("paso 16: un riesgo nuevo al vigente aplica al instante, se envía, se revi
   }).toPass({ timeout: 60_000 })
 
   // El cambio pendiente se envía y vuelve a recorrer el flujo hasta sellar la v2.
+  await prev.goto(`${miperUrl}?tab=revision`)
   await cabecera(prev).getByRole("button", { name: "Enviar a revisión", exact: true }).click()
   await expect(estado(prev, /enviado a revisión|en revisión por Prevención/)).toBeVisible()
 
   const jefa = await as(browser, "jefa.prevencion@e2e.chome.cl")
-  await jefa.goto(miperUrl)
+  await jefa.goto(`${miperUrl}?tab=revision`)
   await expect(async () => {
     await jefa.reload()
     await expect(estado(jefa, /en revisión por Prevención/)).toBeVisible({ timeout: 5_000 })
@@ -498,7 +508,7 @@ test("paso 16: un riesgo nuevo al vigente aplica al instante, se envía, se revi
   await expect(estado(jefa, /pendiente de aprobación Legal y RRHH/)).toBeVisible()
 
   const legal = await as(browser, "legal.rrhh@e2e.chome.cl")
-  await legal.goto(miperUrl)
+  await legal.goto(`${miperUrl}?tab=revision`)
   await cabecera(legal).getByRole("button", { name: "Aprobar (Legal y RRHH)", exact: true }).click()
   await legal.getByLabel("Resumen de cambios (hoja Modificaciones)").fill("Se agrega el riesgo de caída al mismo nivel en pasarelas.")
   await legal.getByRole("button", { name: "Aprobar y sellar" }).click()

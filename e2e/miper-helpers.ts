@@ -136,7 +136,14 @@ export async function numeroDelRiesgo(page: Page): Promise<number> {
  * las pruebas que comparten una matriz sembrada no supongan el #1.
  */
 export async function crearTarea(page: Page, valores: { actividad: string; tarea: string; puesto: string; lugar?: string; peligro?: string }): Promise<number> {
-  await cabecera(page).getByRole("button", { name: "Nueva tarea", exact: true }).click()
+  const newTask = cabecera(page).getByRole("button", { name: "Nueva tarea", exact: true })
+  if (!(await newTask.isVisible())) {
+    // En el editor las acciones generales se ocultan para dar prioridad al
+    // riesgo actual. Regresa a la lista antes de iniciar otra tarea.
+    const url = new URL(page.url())
+    await page.goto(`${url.origin}${url.pathname}?tab=matriz`)
+  }
+  await newTask.click()
   const dialog = page.getByRole("dialog", { name: "Nueva tarea" })
   const campos: Array<[string, string | undefined]> = [
     ["Actividad", valores.actividad],
@@ -198,4 +205,4 @@ export async function volverALaMatriz(page: Page) {
 }
 
 /** «‹ Anterior» del pie del editor: el riesgo previo de la tarea. */
-export const anterior = (page: Page) => page.getByRole("link", { name: "‹ Anterior", exact: true })
+export const anterior = (page: Page) => page.getByRole("link", { name: "‹ Riesgo anterior", exact: true })

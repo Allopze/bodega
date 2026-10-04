@@ -80,13 +80,13 @@ test.describe("Prevención — portada MIPER por faena", () => {
   test("lista todas las faenas del alcance, con y sin MIPER, sin pestañas ni filtro «Responsable»", async ({ page }) => {
     await page.goto(PORTADA)
     await expect(page).toHaveURL(/\/prevencion\/miper/)
-    await expectPageTitle(page, "Matriz IPER (MIPER)")
+    await expectPageTitle(page, "Matriz de riesgos")
     await expect(page.getByRole("table", { name: "MIPER por faena" })).toBeVisible()
     // Una faena con MIPER: su nombre enlaza a ella.
     await expect(listRecord(page, "Faena E2E").getByRole("link", { name: "Faena E2E", exact: true })).toBeVisible()
-    // Una faena activa sin MIPER también viene, con su «Crear MIPER».
+    // Una faena activa sin MIPER también viene, con su acción de creación.
     await expect(listRecord(page, "Faena Sin CPHS E2E")).toContainText("Sin MIPER")
-    await expect(page.getByRole("button", { name: "Crear MIPER de Faena Sin CPHS E2E", exact: true })).toBeVisible()
+    await expect(listRecord(page, "Faena Sin CPHS E2E").getByRole("button", { name: "Crear matriz", exact: true })).toBeVisible()
     // Lo retirado no vuelve.
     await expect(page.getByRole("tab", { name: "Por hacer" })).toHaveCount(0)
     await expect(page.getByRole("combobox", { name: "Responsable" })).toHaveCount(0)
@@ -116,10 +116,11 @@ test.describe("Prevención — portada MIPER por faena", () => {
     expect(Number(((await kpi.textContent()) ?? "").match(/Riesgos críticos sin control\s*(\d+)/)?.[1])).toBe(total)
   })
 
-  test("Crear MIPER desde una faena sin MIPER", async ({ page }) => {
+  test("Crear matriz desde una faena sin MIPER", async ({ page }) => {
     await page.goto(PORTADA)
     await expect(listRecord(page, "Oficina Central E2E")).toContainText("Sin MIPER")
-    await page.getByRole("button", { name: "Crear MIPER de Oficina Central E2E", exact: true }).click()
+    await listRecord(page, "Oficina Central E2E").getByRole("button", { name: "Crear matriz", exact: true }).click()
+    await page.getByRole("dialog", { name: "Crear matriz de riesgos" }).getByRole("button", { name: /^Completar en la plataforma/ }).click()
     const dialog = page.getByRole("dialog", { name: "Nueva MIPER" })
     // La faena llega elegida desde la fila.
     await expect(dialog.getByRole("combobox")).toContainText("Oficina Central E2E")
@@ -133,7 +134,7 @@ test.describe("Prevención — portada MIPER por faena", () => {
 
     await page.goto(PORTADA)
     await expect(listRecord(page, "Oficina Central E2E")).toContainText("Borrador")
-    await expect(page.getByRole("button", { name: "Crear MIPER de Oficina Central E2E", exact: true })).toHaveCount(0)
+    await expect(listRecord(page, "Oficina Central E2E").getByRole("button", { name: "Crear matriz", exact: true })).toHaveCount(0)
   })
 })
 

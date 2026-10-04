@@ -50,11 +50,9 @@ const estado = (page: Page, label: string | RegExp) => page.getByRole("banner").
 test("la prevencionista crea la MIPER, la completa y la envía a revisión", async ({ browser }) => {
   const page = await as(browser, "prev.faena@e2e.chome.cl")
   await page.goto("/prevencion/miper")
-  await expectPageTitle(page, "Matriz IPER (MIPER)")
-  // «Nueva MIPER» vive en la cabecera. La portada por faena (Fase B) ya no
-  // repite el alta en un estado vacío, y la fila de una faena sin MIPER ofrece
-  // «Crear MIPER de <faena>», que es otro nombre.
-  await cabecera(page).getByRole("button", { name: "Nueva MIPER", exact: true }).click()
+  await expectPageTitle(page, "Matriz de riesgos")
+  await cabecera(page).getByRole("button", { name: "Crear matriz", exact: true }).click()
+  await page.getByRole("dialog", { name: "Crear matriz de riesgos" }).getByRole("button", { name: /^Completar en la plataforma/ }).click()
   const dialog = page.getByRole("dialog", { name: "Nueva MIPER" })
   // El único combobox del diálogo es la faena: el período es un número y el
   // punto de partida, radios.
@@ -119,8 +117,8 @@ test("la prevencionista crea la MIPER, la completa y la envía a revisión", asy
   // medida vinculada a una actividad del Programa de Trabajo, así que el flujo
   // incluye ese paso (el detalle de la ejecución se prueba en
   // `prevencion-miper-programa.spec.ts`).
-  await page.getByRole("tab", { name: "Programa" }).click()
-  await page.getByRole("button", { name: "Generar actividades" }).click()
+  await page.getByRole("tab", { name: "Plan de medidas" }).click()
+  await cabecera(page).getByRole("button", { name: "Generar actividades" }).click()
   const generador = page.getByRole("dialog", { name: "Generar actividades desde el MIPER" })
   await generador.getByLabel("Actividad", { exact: true }).fill("Inspección de la pendiente de descarga")
   await generador.getByRole("combobox", { name: "Responsable de la actividad de la fila 1" }).click()
@@ -130,6 +128,7 @@ test("la prevencionista crea la MIPER, la completa y la envía a revisión", asy
   await generador.getByRole("button", { name: /Aplicar decisiones/ }).click()
   await expect(generador).toBeHidden()
 
+  await page.getByRole("tab", { name: "Revisión" }).click()
   await cabecera(page).getByRole("button", { name: "Enviar a revisión", exact: true }).click()
   await expect(estado(page, "Enviado a revisión")).toBeVisible()
 })
@@ -142,7 +141,7 @@ test("la Jefa observa el riesgo y la prevencionista corrige y reenvía", async (
   // que espera algo de ti, «<motivo> · MIPER <período>»: se busca el de ESTE
   // período y se comprueba que lleva a ESTA MIPER.
   const id = miperUrl.split("/").pop()!
-  await expect(jefa.getByRole("link", { name: `Pendiente de tu revisión · MIPER ${PERIOD}`, exact: true })).toHaveAttribute("href", `/prevencion/miper/${id}`)
+  await expect(jefa.getByRole("link", { name: `Revisar · Faena E2E · ${PERIOD}`, exact: true })).toHaveAttribute("href", `/prevencion/miper/${id}?tab=revision`)
   await jefa.goto(miperUrl)
   // La apertura de la ronda la registra el cliente al entrar y no revalida, así
   // que la etiqueta sólo cambia cuando la página vuelve a leer el servidor: se
@@ -159,6 +158,7 @@ test("la Jefa observa el riesgo y la prevencionista corrige y reenvía", async (
   await jefa.getByLabel("Nueva observación").fill("Revisar consecuencia. De acuerdo con el daño probable indicado debería evaluarse nuevamente la probabilidad.")
   await jefa.getByRole("button", { name: "Registrar observación", exact: true }).click()
   await expect(jefa.getByRole("region", { name: "Observaciones del riesgo" }).getByText("Abierta", { exact: true })).toBeVisible()
+  await jefa.goto(`${miperUrl}?tab=revision`)
   await cabecera(jefa).getByRole("button", { name: "Devolver con observaciones", exact: true }).click()
   const confirm = jefa.getByRole("dialog", { name: "Devolver con observaciones" })
   await confirm.getByRole("textbox").fill("Revisar la evaluación del riesgo #1.")
@@ -169,7 +169,7 @@ test("la Jefa observa el riesgo y la prevencionista corrige y reenvía", async (
   await prev.goto(`${miperUrl}?tab=revision`)
   await prev.getByLabel("Tu respuesta").fill("Se reevaluó la probabilidad: el tránsito en pendiente es ocasional.")
   await prev.getByRole("button", { name: "Responder" }).click()
-  await prev.getByRole("tab", { name: /Matriz/ }).click()
+  await prev.getByRole("tab", { name: /Riesgos/ }).click()
   await abrirRiesgo(prev, 1, "Camión en pendiente")
   await irAPaso(prev, "Evaluación")
   await guardado(prev, () => elegir(prev, "Probabilidad", /^2 · Media/))
@@ -180,13 +180,17 @@ test("la Jefa observa el riesgo y la prevencionista corrige y reenvía", async (
     await prev.reload()
     await expect(nivel(prev, /Importante\s*·\s*MR 8/)).toBeVisible({ timeout: 5_000 })
   }).toPass({ timeout: 60_000 })
+  await prev.goto(`${miperUrl}?tab=revision`)
   await cabecera(prev).getByRole("button", { name: "Reenviar a revisión", exact: true }).click()
   await expect(estado(prev, /Enviado a revisión|En revisión por Prevención/)).toBeVisible()
 
   // La Jefa ve el riesgo «Modificada» en la tarea y aprueba técnicamente.
   await jefa.reload()
+  await jefa.goto(miperUrl)
+  await abrirRiesgo(jefa, 1, "Camión en pendiente")
   await volverALaTarea(jefa)
   await expect(jefa.getByRole("link", { name: "Riesgo #1: Camión en pendiente", exact: true })).toContainText("Modificada")
+  await jefa.goto(`${miperUrl}?tab=revision`)
   await cabecera(jefa).getByRole("button", { name: "Aprobar revisión técnica", exact: true }).click()
   await jefa.getByRole("dialog", { name: "Aprobar revisión técnica" }).getByRole("button", { name: "Aprobar revisión técnica" }).click()
   await expect(estado(jefa, /Pendiente de aprobación Legal y RRHH/)).toBeVisible()
@@ -194,7 +198,7 @@ test("la Jefa observa el riesgo y la prevencionista corrige y reenvía", async (
 
 test("Legal y RRHH aprueba: queda vigente v1 y un cambio posterior queda pendiente", async ({ browser }) => {
   const legal = await as(browser, "legal.rrhh@e2e.chome.cl")
-  await legal.goto(miperUrl)
+  await legal.goto(`${miperUrl}?tab=revision`)
   await cabecera(legal).getByRole("button", { name: "Aprobar (Legal y RRHH)", exact: true }).click()
   await legal.getByLabel("Resumen de cambios (hoja Modificaciones)").fill("Emisión inicial del documento.")
   await legal.getByRole("button", { name: "Aprobar y sellar" }).click()
@@ -218,6 +222,8 @@ test("Legal y RRHH aprueba: queda vigente v1 y un cambio posterior queda pendien
   }).toPass({ timeout: 60_000 })
 
   // Paso 17: historial con actor y rol.
+  // Tras crear la tarea el editor sigue abierto: «Volver al documento» devuelve a las áreas.
+  await prev.getByRole("link", { name: "Volver al documento" }).click()
   await prev.getByRole("tab", { name: "Historial" }).click()
   await expect(textoVisible(prev, "Aprobada y sellada por Legal y RRHH")).toBeVisible()
   await expect(textoVisible(prev, "Devuelta con observaciones")).toBeVisible()

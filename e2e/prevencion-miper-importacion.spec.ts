@@ -97,11 +97,12 @@ function hoyEnChile(): string {
   return `${part("day")}-${part("month")}-${part("year")}`
 }
 
-/** Abre «Importar», llena el paso «Archivo» y pide la vista previa. Devuelve el diálogo. */
+/** Elige «Importar desde Excel», llena «Archivo» y pide la vista previa. */
 async function revisarArchivo(page: Page, buffer: Buffer, periodo?: string): Promise<Locator> {
   await page.goto("/prevencion/miper")
   // Las acciones del PageHeader se pintan en el TopBar (banner) y en una copia `lg:sr-only`.
-  await cabecera(page).getByRole("button", { name: "Importar", exact: true }).click()
+  await cabecera(page).getByRole("button", { name: "Crear matriz", exact: true }).click()
+  await page.getByRole("dialog", { name: "Crear matriz de riesgos" }).getByRole("button", { name: /^Importar desde Excel/ }).click()
   const dialogo = page.getByRole("dialog", { name: "Importar el RE-04" })
   await expect(dialogo).toBeVisible()
   await dialogo.getByRole("combobox", { name: "Faena", exact: true }).click()
@@ -125,17 +126,17 @@ test("importar un RE-04 con medidas: tipo, responsable y plazo o frecuencia; el 
   // 1. Archivo
   const dialogo = await revisarArchivo(page, await libro(), periodo)
 
-  // 2. Filas
+  // 2. Revisar riesgos
   await expect(dialogo.getByText("4 filas en «RE-04 IPER»: 3 para cargar, 1 por revisar y 0 sin cargar.", { exact: true })).toBeVisible({ timeout: 30_000 })
-  await expect(pasoActual(dialogo)).toHaveText("2. Filas")
+  await expect(pasoActual(dialogo)).toHaveText("2. Revisar riesgos")
   const factores = dialogo.getByRole("region", { name: "Factores de riesgo que el catálogo no reconoce", exact: true })
   await expect(factores.getByRole("combobox", { name: "Factor del catálogo para «MCANICO»", exact: true })).toHaveText("Mecánico")
   await expect(dialogo.getByRole("cell", { name: "Lista · factor asignado", exact: true })).toBeVisible()
   await dialogo.getByRole("button", { name: "Siguiente", exact: true }).click()
 
-  // 3. Medidas detectadas: 8 frases, todas con palabra clave; PLAZOS ya sugerido. Revisar los
+  // 3. Revisar medidas: 8 frases, todas con palabra clave; PLAZOS ya sugerido. Revisar los
   // tipos no es obligatorio: «Siguiente» está habilitado desde el comienzo.
-  await expect(pasoActual(dialogo)).toHaveText("3. Medidas detectadas")
+  await expect(pasoActual(dialogo)).toHaveText("3. Revisar medidas")
   const siguiente = dialogo.getByRole("button", { name: "Siguiente", exact: true })
   await expect(siguiente).toBeEnabled()
   await expect(dialogo.getByRole("textbox", { name: "Frecuencia de verificación para «TRIMESTRAL»", exact: true })).toHaveValue("TRIMESTRAL")
@@ -148,8 +149,8 @@ test("importar un RE-04 con medidas: tipo, responsable y plazo o frecuencia; el 
   await auditarDialogo(page)
   await siguiente.click()
 
-  // 4. Confirmar
-  await expect(pasoActual(dialogo)).toHaveText("4. Confirmar")
+  // 4. Confirmar destino
+  await expect(pasoActual(dialogo)).toHaveText("4. Confirmar destino")
   await expect(dialogo.getByRole("region", { name: "Qué se va a cargar" })).toContainText("4 riesgos listos para cargar.")
   await expect(dialogo.getByRole("region", { name: "Qué se va a cargar" })).toContainText("8 medidas: 5 existentes y 3 por implementar.")
 
@@ -180,7 +181,7 @@ test("importar un RE-04 con medidas: tipo, responsable y plazo o frecuencia; el 
   // La carga de verdad.
   await dialogo.getByRole("button", { name: "Cargar en borrador", exact: true }).click()
   await page.waitForURL(/\/prevencion\/miper\/riskmatrix-[^/?]+$/, { timeout: 60_000 })
-  await expectPageTitle(page, `MIPER ${FAENA} ${periodo}`)
+  await expectPageTitle(page, `Matriz de riesgos · ${FAENA} ${periodo}`)
   const matriz = page.url()
 
   // Riesgo 1 (Importante): medidas por implementar con el responsable escrito y el plazo de hoy.
@@ -234,7 +235,7 @@ test("«Medidas detectadas» en Chromium: nada bloquea, la «sin pista» va prim
   const dialogo = await revisarArchivo(page, await libro([FILA_GRANDE]))
   await expect(dialogo.getByText("1 fila en «RE-04 IPER»: 1 para cargar, 0 por revisar y 0 sin cargar.", { exact: true })).toBeVisible({ timeout: 30_000 })
   await dialogo.getByRole("button", { name: "Siguiente", exact: true }).click()
-  await expect(pasoActual(dialogo)).toHaveText("3. Medidas detectadas")
+  await expect(pasoActual(dialogo)).toHaveText("3. Revisar medidas")
   // Revisar los tipos no es obligatorio (decisión del usuario, 2026-10-03).
   await expect(dialogo.getByRole("button", { name: "Siguiente", exact: true })).toBeEnabled()
 

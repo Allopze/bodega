@@ -26,11 +26,12 @@ const VERIFICAR = "Verificar control"
 test("la ficha carga la medida, su nivel efectivo y la versión sellada de la que viene", async ({ page }) => {
   await login(page)
   await page.goto(CONTROL_ACTIVO)
-  await expectPageTitle(page, "Control MIPER")
+  await expectPageTitle(page, "Verificación de una medida")
 
   // Qué es y de dónde sale: la medida, su jerarquía y su estado, traducidos (no
   // las claves crudas de la tabla).
   await expect(page.getByRole("heading", { level: 2, name: DESCRIPCION_ACTIVA })).toBeVisible()
+  await page.getByText("Trazabilidad y datos técnicos").click()
   await expect(textoVisible(page, "Control de ingeniería")).toBeVisible()
   await expect(textoVisible(page, "Implementado")).toBeVisible()
   // El nivel efectivo sale de la clasificación RE-04 de la fila (P×C = 2×4 →
@@ -39,7 +40,8 @@ test("la ficha carga la medida, su nivel efectivo y la versión sellada de la qu
   await expect(textoVisible(page, "Peligro: Atrapamiento en correa transportadora E2E")).toBeVisible()
   await expect(textoVisible(page, "Importante · MR 8")).toBeVisible()
   // Trazabilidad: la versión sellada de la MIPER y la huella del contenido.
-  await expect(textoVisible(page, "v4 · 3f1c0d5a7b9e24c6")).toBeVisible()
+  await expect(textoVisible(page, "v4")).toBeVisible()
+  await expect(textoVisible(page, /^3f1c0d5a7b9e24c6/)).toBeVisible()
   await expect(textoVisible(page, "Sin verificar")).toBeVisible()
 
   // El actor tiene `prevention:risk:edit` y no creó la versión ni responde por
@@ -48,7 +50,7 @@ test("la ficha carga la medida, su nivel efectivo y la versión sellada de la qu
   await expect(verificar).toBeVisible()
   await verificar.click()
   const dialogo = page.getByRole("dialog", { name: VERIFICAR })
-  await dialogo.getByLabel("Evidencia", { exact: true }).fill("Acta de verificación E2E-CTRL-001")
+  await dialogo.getByLabel("Referencia de evidencia", { exact: true }).fill("Acta de verificación E2E-CTRL-001")
   await dialogo.getByLabel("Qué se verificó", { exact: true }).fill("Se comprobó en terreno el anclaje y la fijación de las guardas.")
   await dialogo.getByRole("button", { name: "Registrar verificación" }).click()
   await expect(dialogo).toBeHidden()
@@ -66,7 +68,7 @@ test("sin permiso de edición la ficha muestra la medida pero no ofrece verifica
   // no ofrece un botón que el servidor rechazaría.
   await login(page, "jefa.prevencion@e2e.chome.cl")
   await page.goto(CONTROL_ACTIVO)
-  await expectPageTitle(page, "Control MIPER")
+  await expectPageTitle(page, "Verificación de una medida")
   await expect(page.getByRole("heading", { level: 2, name: DESCRIPCION_ACTIVA })).toBeVisible()
   await expect(page.getByRole("button", { name: VERIFICAR })).toHaveCount(0)
 })
@@ -74,7 +76,7 @@ test("sin permiso de edición la ficha muestra la medida pero no ofrece verifica
 test("un control retirado no se ofrece verificar ni con permiso de edición", async ({ page }) => {
   await login(page)
   await page.goto(CONTROL_RETIRADO)
-  await expectPageTitle(page, "Control MIPER")
+  await expectPageTitle(page, "Verificación de una medida")
   await expect(page.getByRole("heading", { level: 2, name: DESCRIPCION_RETIRADA })).toBeVisible()
   await expect(textoVisible(page, "Retirado")).toBeVisible()
   // El admin edita la MIPER de esa faena, pero «retirado» queda fuera de
@@ -85,7 +87,7 @@ test("un control retirado no se ofrece verificar ni con permiso de edición", as
 test("la medida de una MIPER reemplazada se sigue leyendo, pero ya no se ofrece verificar", async ({ page }) => {
   await login(page)
   await page.goto(CONTROL_REEMPLAZADO)
-  await expectPageTitle(page, "Control MIPER")
+  await expectPageTitle(page, "Verificación de una medida")
   await expect(page.getByRole("heading", { level: 2, name: DESCRIPCION_REEMPLAZADA })).toBeVisible()
   await expect(textoVisible(page, "Implementado")).toBeVisible()
   // El admin edita esa faena, pero `canVerify` exige que la MIPER esté
@@ -121,7 +123,7 @@ test("una MIPER de otra faena no existe para quien no la tiene en su alcance, y 
   expect(respuestaControl?.status()).toBe(200)
   await expect(textoVisible(page, "Error 404")).toBeVisible()
   await expect(page).not.toHaveURL(/forbidden/)
-  await expect(page.getByRole("heading", { level: 1, name: "Control MIPER" })).toHaveCount(0)
+  await expect(page.getByRole("heading", { level: 1, name: "Verificación de una medida" })).toHaveCount(0)
   await expect(page.getByText(DESCRIPCION_ACTIVA)).toHaveCount(0)
   await expect(page.getByRole("button", { name: VERIFICAR })).toHaveCount(0)
 })

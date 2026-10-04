@@ -33,7 +33,7 @@ const MATRIZ_CONCURRENCIA = "/prevencion/miper/riskmatrix-concurrencia-e2e"
 test("navegación por niveles: tarea → riesgo y «atrás» vuelve a la matriz con su búsqueda", async ({ page }) => {
   await login(page)
   await page.goto(MATRIZ_TECLADO)
-  await expectPageTitle(page, "MIPER Faena Restringida E2E 2037")
+  await expectPageTitle(page, "Matriz de riesgos · Faena Restringida E2E 2037")
 
   const numero = await crearTarea(page, { actividad: "Transporte de lodo", tarea: "Carga en planta", puesto: "Conductor", peligro: "Camión en movimiento" })
   // Del riesgo a su tarea y de la tarea a la matriz, sin ida al servidor.
@@ -59,7 +59,7 @@ test("navegación por niveles: tarea → riesgo y «atrás» vuelve a la matriz 
 test("«Agregar peligro» hereda puesto y lugar de la tarea, y «Duplicar riesgo» copia el riesgo con sus medidas debajo del original", async ({ page }) => {
   await login(page)
   await page.goto(MATRIZ_ESTRUCTURA)
-  await expectPageTitle(page, "MIPER Faena Restringida E2E 2038")
+  await expectPageTitle(page, "Matriz de riesgos · Faena Restringida E2E 2038")
 
   const original = await crearTarea(page, { actividad: "Mantención", tarea: "Cambio de neumáticos", puesto: "Mecánico", lugar: "Taller de neumáticos", peligro: "Neumático presurizado" })
   // Una medida en el original: es lo que tiene que viajar con el duplicado.
@@ -89,7 +89,7 @@ test("«Agregar peligro» hereda puesto y lugar de la tarea, y «Duplicar riesgo
   await page.getByRole("button", { name: `Más acciones del riesgo ${original}`, exact: true }).click()
   await page.getByRole("menuitem", { name: "Duplicar riesgo", exact: true }).click()
   await expect(page).not.toHaveURL(urlOriginal)
-  await expect(page.getByText(`Riesgo #${original + 1} · Cambio de neumáticos · Mecánico`, { exact: true })).toBeVisible()
+  await expect(page.getByText(new RegExp(`Riesgo #${original + 1} · .*Cambio de neumáticos`))).toBeVisible()
   await expect(page.getByRole("heading", { level: 2, name: "Neumático presurizado" })).toBeVisible()
   // La copia se lleva la medida.
   await expect(page.getByRole("tab", { name: /Medidas de control \(1\)/ })).toBeVisible()
@@ -107,7 +107,7 @@ test("«Agregar peligro» hereda puesto y lugar de la tarea, y «Duplicar riesgo
 test("el guardado automático persiste tras recargar, Escape descarta la edición en curso y un Intolerable se anuncia", async ({ page }) => {
   await login(page)
   await page.goto(MATRIZ_TECLADO)
-  await expectPageTitle(page, "MIPER Faena Restringida E2E 2037")
+  await expectPageTitle(page, "Matriz de riesgos · Faena Restringida E2E 2037")
   await crearTarea(page, { actividad: "Bodega", tarea: "Apilado", puesto: "Bodeguero", peligro: "Carga suspendida" })
 
   await escribir(page, "Riesgo", "Golpeado por carga")
@@ -151,7 +151,7 @@ test("dos pestañas sobre el mismo riesgo: la segunda ve el conflicto en el camp
     const first = await context.newPage()
     await login(first)
     await first.goto(MATRIZ_CONCURRENCIA)
-    await expectPageTitle(first, "MIPER Faena Restringida E2E 2039")
+    await expectPageTitle(first, "Matriz de riesgos · Faena Restringida E2E 2039")
     await crearTarea(first, { actividad: "Taller", tarea: "Soldadura", puesto: "Soldador", peligro: "Arco eléctrico" })
 
     // La segunda pestaña se abre DESPUÉS: conoce el riesgo en su versión actual.
@@ -193,7 +193,7 @@ test("dos pestañas sobre el mismo riesgo: la segunda ve el conflicto en el camp
 test("«Siguiente pendiente» lleva al próximo riesgo con datos faltantes y, con un filtro, no sale de él", async ({ page }) => {
   await login(page)
   await page.goto(MATRIZ_ESTRUCTURA)
-  await expectPageTitle(page, "MIPER Faena Restringida E2E 2038")
+  await expectPageTitle(page, "Matriz de riesgos · Faena Restringida E2E 2038")
   await crearTarea(page, { actividad: "Oficina", tarea: "Digitación", puesto: "Administrativo", peligro: "Postura prolongada" })
   await volverALaTarea(page)
   await page.getByRole("button", { name: "Agregar peligro", exact: true }).click()
@@ -229,7 +229,7 @@ test("«atrás» después de «Agregar peligro» muestra el riesgo nuevo y lo ya
   // hasta recargar. Crear un riesgo ahora revalida y vacía esa caché.
   await login(page)
   await page.goto(MATRIZ_CONCURRENCIA)
-  await expectPageTitle(page, "MIPER Faena Restringida E2E 2039")
+  await expectPageTitle(page, "Matriz de riesgos · Faena Restringida E2E 2039")
   const original = await crearTarea(page, { actividad: "Lavado de equipos", tarea: "Lavado de tolva", puesto: "Operador de lavado", peligro: "Piso mojado" })
   await guardado(page, () => escribir(page, "Riesgo", "Caída al mismo nivel"))
 
@@ -255,7 +255,7 @@ test("volver de una tarea a la matriz conserva el scroll y las actividades plega
   await page.setViewportSize({ width: 1280, height: 520 })
   await login(page)
   await page.goto(MATRIZ_CONCURRENCIA)
-  await expectPageTitle(page, "MIPER Faena Restringida E2E 2039")
+  await expectPageTitle(page, "Matriz de riesgos · Faena Restringida E2E 2039")
   await crearTarea(page, { actividad: "Bodega de repuestos", tarea: "Recepción de repuestos", puesto: "Bodeguero" })
   await crearTarea(page, { actividad: "Patio de maniobras", tarea: "Estacionamiento de camiones", puesto: "Conductor" })
   await volverALaTarea(page)
@@ -296,7 +296,7 @@ test("el scroll vuelve con Atrás y con «‹ Volver a la matriz»; cambiar de p
   await page.setViewportSize({ width: 1280, height: 520 })
   await login(page)
   await page.goto(MATRIZ_CONCURRENCIA)
-  await expectPageTitle(page, "MIPER Faena Restringida E2E 2039")
+  await expectPageTitle(page, "Matriz de riesgos · Faena Restringida E2E 2039")
   await crearTarea(page, { actividad: "Casino", tarea: "Lavado de loza", puesto: "Auxiliar de casino" })
   await crearTarea(page, { actividad: "Portería", tarea: "Control de acceso", puesto: "Guardia" })
   await volverALaTarea(page)
@@ -328,10 +328,10 @@ test("el scroll vuelve con Atrás y con «‹ Volver a la matriz»; cambiar de p
   await expect.poll(async () => Math.abs((await scrollDelPozo()) - scrollAntes)).toBeLessThanOrEqual(4)
 
   // (c) Matriz → Programa → Matriz (dos replace) no restaura, aunque la clave de la matriz existía.
-  await page.getByRole("tab", { name: "Programa", exact: true }).click()
-  await expect(page.getByRole("tab", { name: "Programa", exact: true })).toHaveAttribute("aria-selected", "true")
+  await page.getByRole("tab", { name: "Plan de medidas", exact: true }).click()
+  await expect(page.getByRole("tab", { name: "Plan de medidas", exact: true })).toHaveAttribute("aria-selected", "true")
   await pozo.evaluate((element) => element.scrollTo({ top: 0 }))
-  await page.getByRole("tab", { name: /^Matriz \(/ }).click()
+  await page.getByRole("tab", { name: "Riesgos", exact: true }).click()
   await expect(tarea).toBeAttached()
   await dosCuadros(page)
   expect(await scrollDelPozo()).toBeLessThanOrEqual(4)

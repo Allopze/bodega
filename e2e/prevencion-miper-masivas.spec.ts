@@ -32,7 +32,7 @@ async function auditar(page: Page, selector: string) {
 
 async function abrirTarea(page: Page) {
   await page.goto(MATRIZ)
-  await expectPageTitle(page, "MIPER Faena Restringida E2E 2040")
+  await expectPageTitle(page, "Matriz de riesgos · Faena Restringida E2E 2040")
   await page.getByRole("link", { name: new RegExp(`^${TAREA}`) }).click()
   await expect(page.getByRole("heading", { level: 2, name: TAREA })).toBeVisible()
 }
@@ -42,7 +42,7 @@ async function abrirControlado(page: Page) {
   await page.goto(`${MATRIZ}?clasificacion=moderate`)
   await expect(riesgo(page, 1, "Derrame de solvente")).toBeVisible()
   await expect(riesgo(page, 3, "Tambor en altura")).toHaveCount(0)
-  await page.getByRole("button", { name: "Seleccionar", exact: true }).click()
+  await page.getByRole("button", { name: "Seleccionar riesgos", exact: true }).click()
   await page.getByRole("button", { name: "Seleccionar los 2 resultados", exact: true }).click()
   const barra = page.getByRole("region", { name: "Acciones sobre la selección" })
   await expect(barra).toContainText("2 riesgos seleccionados")
@@ -56,7 +56,7 @@ test("«Agregar medida a 2»: la medida queda en los dos riesgos elegidos, no en
   await abrirTarea(page)
   // Sin el modo, ninguna casilla: la vista queda liviana.
   await expect(page.getByRole("checkbox")).toHaveCount(0)
-  await page.getByRole("button", { name: "Seleccionar", exact: true }).click()
+  await page.getByRole("button", { name: "Seleccionar riesgos", exact: true }).click()
   await page.getByRole("checkbox", { name: "Seleccionar el riesgo #1: Derrame de solvente", exact: true }).check()
   await page.getByRole("checkbox", { name: "Seleccionar el riesgo #2: Vapores de solvente", exact: true }).check()
   const barra = page.getByRole("region", { name: "Acciones sobre la selección" })
@@ -135,7 +135,7 @@ test("«Editar tarea» renombra la tarea de todos sus riesgos; la URL pasa a la 
   await expect(page.getByRole("heading", { level: 2, name: tarea })).toBeVisible()
   const antes = new URL(page.url()).searchParams.get("tarea")
 
-  await page.getByRole("button", { name: "Editar tarea", exact: true }).click()
+  await page.getByRole("button", { name: "Editar contexto de la tarea", exact: true }).click()
   const dialogo = page.getByRole("dialog", { name: "Editar tarea", exact: true })
   await expect(dialogo).toContainText(`de «${tarea}», o el puesto y el lugar de sus 2 riesgos`)
   await escribir(dialogo, "Tarea", renombrada)

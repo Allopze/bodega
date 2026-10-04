@@ -69,7 +69,7 @@ async function soloObserva(page: Page, paso: PasoDelRiesgo) {
 }
 
 async function sinControlesDeEdicion(page: Page) {
-  for (const nombre of ["Nueva tarea", "Seleccionar", "Editar tarea", "Vincular medidas", "Editar antecedentes", "Completar antecedentes"]) {
+  for (const nombre of ["Nueva tarea", "Seleccionar riesgos", "Editar contexto de la tarea", "Vincular medidas", "Editar antecedentes", "Completar antecedentes", "Crear matriz"]) {
     await expect(page.getByRole("button", { name: nombre, exact: true })).toHaveCount(0)
   }
 }
@@ -118,8 +118,8 @@ async function siguienteDelFiltro(page: Page, peligro: string) {
 
 test("el admin envía la MIPER lista a revisión y queda la ronda abierta", async ({ browser }) => {
   const page = await as(browser)
-  await page.goto(REV)
-  await expectPageTitle(page, "MIPER Faena Restringida E2E 2041")
+  await page.goto(`${REV}?tab=revision`)
+  await expectPageTitle(page, "Matriz de riesgos · Faena Restringida E2E 2041")
   // Un reintento de CI no vuelve a sembrar: si ya se envió, el botón no está.
   const enviar = cabecera(page).getByRole("button", { name: "Enviar a revisión", exact: true })
   if (await enviar.count()) {
@@ -158,6 +158,7 @@ test("la Jefa recorre los Importantes con «Siguiente del filtro», observa un r
   await expect(jefa.getByRole("heading", { level: 2, name: PELIGRO_1 })).toBeVisible()
 
   // Una observación abierta impide aprobar: se devuelve (la aprobación es dos pruebas más abajo).
+  await jefa.goto(`${REV}?tab=revision`)
   await cabecera(jefa).getByRole("button", { name: "Devolver con observaciones", exact: true }).click()
   const confirmar = jefa.getByRole("dialog", { name: "Devolver con observaciones" })
   await confirmar.getByRole("textbox").fill("Revisar la observación del riesgo #1.")
@@ -174,7 +175,7 @@ test("el admin responde la observación y reenvía; la Jefa aprueba la revisión
   await expect(estado(admin, /Enviado a revisión|En revisión por Prevención/)).toBeVisible()
 
   const jefa = await as(browser, "jefa.prevencion@e2e.chome.cl")
-  await jefa.goto(REV)
+  await jefa.goto(`${REV}?tab=revision`)
   await expect(async () => {
     await jefa.reload()
     await expect(cabecera(jefa).getByRole("button", { name: "Aprobar revisión técnica", exact: true })).toBeVisible({ timeout: 5_000 })
@@ -204,7 +205,7 @@ test("Legal y RRHH ve el editor sin campos editables y recorre el mismo filtro; 
 test("quien sólo puede ver: la portada lista las faenas y ninguna MIPER ofrece editar", async ({ browser }) => {
   const page = await as(browser, "miper.lectura@e2e.chome.cl")
   await page.goto("/prevencion/miper")
-  await expectPageTitle(page, "Matriz IPER (MIPER)")
+  await expectPageTitle(page, "Matriz de riesgos")
   await expect(textoVisible(page, "Faena Restringida E2E")).toBeVisible()
 
   // La MIPER en revisión: matriz, tarea, editor y programa sin controles de edición.
@@ -310,7 +311,7 @@ test("axe y sin scroll horizontal a 768, 1024 y 1280 px en matriz, tarea, editor
     await revisar("el Programa")
 
     await page.getByRole("link", { name: "Abrir el detalle de la actividad N° 1", exact: true }).click()
-    await expect(page.getByRole("region", { name: "Actividad N° 1", exact: true })).toBeVisible()
+    await expect(page.getByRole("region").filter({ has: page.getByText("Actividad N° 1", { exact: true }) })).toBeVisible()
     await revisar("el detalle de la actividad")
   }
 })
