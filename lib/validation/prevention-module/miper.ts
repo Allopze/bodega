@@ -343,6 +343,10 @@ export const riskImportCommitSchema = z.object({
   measureMapping: decisionMap(controlHierarchySchema, IMPORT_LIMITS.phrases, "tipos de medida"),
   responsibleMapping: decisionMap(responsibleDecisionSchema, IMPORT_LIMITS.values, "responsables"),
   deadlineMapping: decisionMap(deadlineDecisionSchema, IMPORT_LIMITS.values, "plazos"),
+  /* Un FACTORES DE RIESGO que el catálogo no reconoce, asignado a un factor que
+   * sí está (clave: `riskFactorKey` del nombre del Excel → id del factor). Sin
+   * asignar, esas filas esperan que el factor exista al confirmar. */
+  factorMapping: decisionMap(id, IMPORT_LIMITS.values, "factores de riesgo"),
 }).superRefine((value, ctx) => {
   if (value.target !== "draft") return
   const reason = value.revisionReason ?? ""

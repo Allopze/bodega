@@ -145,9 +145,27 @@ export function riskImportStatus(issues: readonly RiskImportIssue[]): RiskImport
   return "ready"
 }
 
-/** Una fila sin ningún valor no es un riesgo: es un resto de formato. */
+/**
+ * Columnas que la plantilla del RE-04 llena sola: el N° correlativo, y MR y
+ * CLASIFICACIÓN por fórmula. En una fila vacía la fórmula escribe «REVISAR», y
+ * esas filas llegaban a la vista previa como riesgos con P y C inválidos: 24
+ * «no se carga» en el RE-04 de Biodiversa, que no eran nada.
+ */
+const TEMPLATE_COLUMNS: ReadonlySet<number> = new Set([0, 15, 16])
+
+/**
+ * ¿Es el encabezado del control de cambios del pie de la hoja («Revisión |
+ * Fecha | Modificaciones»)? Ahí terminan los riesgos: sus filas («1 | 2024-12-01 |
+ * Edición inicial.») llegaban a la vista previa como riesgos sin P ni C.
+ */
+export function isRevisionTableHeader(cells: readonly unknown[]): boolean {
+  const keys = new Set(cells.map(keyOf))
+  return keys.has("revision") && keys.has("modificaciones")
+}
+
+/** Una fila sin ningún valor propio (fuera de lo que la plantilla calcula) no es un riesgo: es un resto de formato. */
 export function isEmptyRe04Row(cells: readonly unknown[]): boolean {
-  return cells.every((cell) => textOf(cell) === null)
+  return cells.every((cell, index) => TEMPLATE_COLUMNS.has(index) || textOf(cell) === null)
 }
 
 function textOf(value: unknown): string | null {
@@ -199,10 +217,16 @@ export function controlledStatusOf(value: unknown): Re04ControlledStatus {
   return match?.[1] ?? "no"
 }
 
-/** "RUTINARIA" → true, "NO RUTINARIA" → false, vacío → null. */
+/**
+ * "RUTINARIA" → true, "NO RUTINARIA" → false, vacío → null. También «R» y «NR»:
+ * así lo abrevia el RE-04 de Cholguán en sus 210 filas, que sin esto se cargaban
+ * sin el dato.
+ */
 export function isRoutineOf(value: unknown): boolean | null {
   const key = keyOf(value)
   if (key === "") return null
+  if (key === "r") return true
+  if (key === "nr") return false
   if (key.startsWith("no ") || key === "no" || key.startsWith("no rutinaria")) return false
   if (key.includes("rutinaria")) return true
   return null
@@ -236,10 +260,11 @@ export type Re04ParseOptions = {
 export function parseRe04Matrix(matrix: Re04CellMatrix, options: Re04ParseOptions = {}): { rows: ParsedRe04Row[] } {
   const knownFactors = options.knownFactors ?? new Set<string>()
   const rows: ParsedRe04Row[] = []
-  matrix.rows.forEach((cells, index) => {
-    if (isEmptyRe04Row(cells)) return
+  for (const [index, cells] of matrix.rows.entries()) {
+    if (isRevisionTableHeader(cells)) break
+    if (isEmptyRe04Row(cells)) continue
     rows.push(parseRe04Row(cells, matrix.startRow + index, knownFactors))
-  })
+  }
   return { rows }
 }
 

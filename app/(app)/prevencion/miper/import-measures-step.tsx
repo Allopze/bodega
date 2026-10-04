@@ -2,14 +2,13 @@
 
 import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { Pagination } from "@/components/ui/pagination"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
-import { acceptSuggestions, choosePhraseType, unconfirmedCount, type ImportDecisions, type PhraseDecision } from "@/lib/prevention/miper/import-decisions"
+import { choosePhraseType, type ImportDecisions, type PhraseDecision } from "@/lib/prevention/miper/import-decisions"
 import { FREQUENCY_MAX_LENGTH, RESPONSIBLE_MAX_LENGTH, type DeadlineDecision, type MeasureAnalysis, type PhraseGroup, type ResponsibleDecision, type ValueGroup } from "@/lib/prevention/miper/re04-measures"
 import { CONTROL_HIERARCHY_LABEL, type ControlHierarchy } from "@/lib/prevention/miper/snapshot"
 import { countOf, todayInChile } from "@/lib/utils"
@@ -69,10 +68,17 @@ function cancelEnterClick(event: KeyboardEvent<HTMLElement>) {
   if (event.key === "Enter" && event.target instanceof Element && event.target.closest('[role="option"]')) event.preventDefault()
 }
 
+/** Una frase cuyo tipo nadie eligió y que ninguna palabra clave sugiere: el tipo es un descarte. */
+const isNoHint = (phrase: PhraseGroup, decision: PhraseDecision | undefined) => phrase.suggestion.source === "default" && !decision?.confirmed
+
 /**
  * Paso «Medidas detectadas» de la importación (Fase C, spec §8). La persona
  * decide UNA VEZ por valor distinto (D6), no fila por fila:
- * - el tipo I–V de cada frase (el Excel no lo trae: se sugiere y se confirma);
+ * - el tipo I–V de cada frase: el Excel no lo trae y la plataforma lo sugiere.
+ *   Revisarlo NO es obligatorio (decisión del usuario, 2026-10-03): un RE-04
+ *   real trae 176 a 239 frases, y exigir confirmarlas todas convertía la
+ *   importación en «corregir más de 100 cosas». La medida nace «Propuesta» y su
+ *   tipo se cambia después en el riesgo. Las «sin pista» van primero;
  * - quién responde por cada valor de RESPONSABLE;
  * - si cada valor de PLAZOS es una medida existente (con su frecuencia de
  *   verificación) o por implementar (con su fecha).
@@ -92,13 +98,15 @@ export function ImportMeasuresStep({ analysis, responsibleOptions, decisions, on
   /** A dónde va el foco después de confirmar: el selector de esa fila de la página, o el filtro. */
   const pendingFocus = useRef<number | "filter" | null>(null)
   const today = todayInChile()
-  const pending = unconfirmedCount(decisions)
-  const unconfirmed = analysis.phrases.filter((phrase) => !decisions.phrases[phrase.key]?.confirmed)
-  /* Las «sin pista» (ninguna palabra clave calzó: el tipo es un descarte) son las
-   * que «Aceptar sugerencias» confirma a ciegas. Con páginas, sus rótulos pueden
-   * quedar fuera de la vista: se cuentan junto al botón y el filtro las pone primero. */
-  const noHint = unconfirmed.filter((phrase) => phrase.suggestion.source === "default")
-  const phrases = onlySuggested ? [...noHint, ...unconfirmed.filter((phrase) => phrase.suggestion.source !== "default")] : analysis.phrases
+  /* Las «sin pista» van primero, siempre en el mismo orden: el orden sale de la
+   * sugerencia (que no cambia) y no de lo elegido, para que una fila no salte de
+   * lugar al elegirle un tipo. El filtro deja sólo las que siguen sin elegir. */
+  const ordered = [
+    ...analysis.phrases.filter((phrase) => phrase.suggestion.source === "default"),
+    ...analysis.phrases.filter((phrase) => phrase.suggestion.source !== "default"),
+  ]
+  const noHint = ordered.filter((phrase) => isNoHint(phrase, decisions.phrases[phrase.key]))
+  const phrases = onlySuggested ? noHint : ordered
   // Confirmar con «Sólo sugeridas» achica la lista: la página se acota a la última que queda.
   const currentPage = Math.min(page, Math.max(1, Math.ceil(phrases.length / PHRASES_PER_PAGE)))
   const pagePhrases = phrases.slice((currentPage - 1) * PHRASES_PER_PAGE, currentPage * PHRASES_PER_PAGE)
@@ -120,14 +128,9 @@ export function ImportMeasuresStep({ analysis, responsibleOptions, decisions, on
     target?.focus()
   })
 
-  function confirmPhrase(index: number, key: string, hierarchy: ControlHierarchy) {
+  function choosePhrase(index: number, key: string, hierarchy: ControlHierarchy) {
     pendingFocus.current = index
     onChange(choosePhraseType(decisions, key, hierarchy))
-  }
-
-  function acceptAll() {
-    pendingFocus.current = "filter"
-    onChange(acceptSuggestions(decisions))
   }
 
   return (
@@ -137,21 +140,22 @@ export function ImportMeasuresStep({ analysis, responsibleOptions, decisions, on
           <h3 id="importar-tipos" className="text-sm font-semibold">Tipo de cada medida</h3>
           <p className="text-sm text-[var(--color-text-muted)]">
             {countOf(analysis.measures.length, "medida")} en {countOf(analysis.phrases.length, "frase distinta", "frases distintas")}. El Excel no trae
-            el tipo (I a V): la plataforma lo sugiere y tú lo confirmas una vez por frase.
+            el tipo (I a V): la plataforma lo sugiere por las palabras de cada frase. Corrige el que quieras; no hace falta revisarlos para
+            seguir, y el tipo se puede cambiar después en cada medida.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button type="button" size="sm" variant="secondary" disabled={pending === 0} onClick={acceptAll}>
-            Aceptar sugerencias ({pending})
-          </Button>
-          <Checkbox ref={filterRef} label="Sólo sugeridas" checked={onlySuggested} onChange={(event) => { setOnlySuggested(event.target.checked); setPage(1) }} />
-        </div>
-        {pending > 0 && (
-          <p className="text-sm text-[var(--color-warning-ink)]">
-            Falta confirmar el tipo de {countOf(pending, "frase")}
-            {noHint.length > 0 && ` (${countOf(noHint.length, "sin pista", "sin pista")}: se sugiere ${CONTROL_HIERARCHY_LABEL[noHint[0]!.suggestion.hierarchy]})`}
-            : elígelo en cada fila, usa «Confirmar» o «Aceptar sugerencias».
-          </p>
+        {/* Un solo bloque para el filtro: al elegir la última «sin pista» el aviso se va,
+          * pero el checkbox sigue en el mismo lugar y conserva el foco. */}
+        {(noHint.length > 0 || onlySuggested) && (
+          <div className="flex flex-wrap items-center gap-3">
+            {noHint.length > 0 && (
+              <p className="text-sm">
+                {countOf(noHint.length, "frase sin pista", "frases sin pista")}: ninguna palabra clave calzó y {noHint.length === 1 ? "se carga" : "se cargan"} como{" "}
+                {CONTROL_HIERARCHY_LABEL[noHint[0]!.suggestion.hierarchy]} si no eliges otro tipo. Van primero.
+              </p>
+            )}
+            <Checkbox ref={filterRef} label="Sólo sin pista" checked={onlySuggested} onChange={(event) => { setOnlySuggested(event.target.checked); setPage(1) }} />
+          </div>
         )}
         <div>
           <TableRoot ref={phraseTableRef} aria-label="Tipo de cada medida detectada">
@@ -161,13 +165,13 @@ export function ImportMeasuresStep({ analysis, responsibleOptions, decisions, on
                   <TableHead>Medida</TableHead>
                   <TableHead className="text-right">Veces</TableHead>
                   <TableHead>Tipo de control</TableHead>
-                  <TableHead>Estado</TableHead>
+                  <TableHead>Origen</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {pagePhrases.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-[var(--color-text-muted)]">No quedan tipos por confirmar.</TableCell>
+                    <TableCell colSpan={4} className="text-center text-[var(--color-text-muted)]">No quedan frases sin pista.</TableCell>
                   </TableRow>
                 )}
                 {pagePhrases.map((phrase, index) => {
@@ -177,14 +181,16 @@ export function ImportMeasuresStep({ analysis, responsibleOptions, decisions, on
                       <TableCell className="min-w-64 whitespace-normal">{phrase.text}</TableCell>
                       <TableCell className="text-right tabular-nums">{phrase.count}</TableCell>
                       <TableCell className="min-w-56" onKeyDown={cancelEnterClick}>
-                        {/* La sugerida se muestra como marcador y no como valor: así elegir ESE mismo
-                          * tipo también la confirma (el selector no avisa cuando el valor no cambia). */}
+                        {/* En una «sin pista» el tipo es un descarte: se muestra como marcador y no
+                          * como valor, y así elegir ESE mismo tipo también cuenta como elegido (el
+                          * selector no avisa cuando el valor no cambia). La sugerida por palabra
+                          * clave se muestra como valor: ya es lo que se carga. */}
                         <OptionSelect aria-label={`Tipo de control de «${short(phrase.text)}»`} options={HIERARCHY_OPTIONS}
-                          value={decision.confirmed ? decision.hierarchy : ""} placeholder={CONTROL_HIERARCHY_LABEL[decision.hierarchy]}
-                          onValueChange={(value) => confirmPhrase(index, phrase.key, value as ControlHierarchy)} />
+                          value={isNoHint(phrase, decision) ? "" : decision.hierarchy} placeholder={CONTROL_HIERARCHY_LABEL[decision.hierarchy]}
+                          onValueChange={(value) => choosePhrase(index, phrase.key, value as ControlHierarchy)} />
                       </TableCell>
                       <TableCell>
-                        <PhraseState phrase={phrase} decision={decision} onConfirm={() => confirmPhrase(index, phrase.key, decision.hierarchy)} />
+                        <PhraseOrigin phrase={phrase} decision={decision} />
                       </TableCell>
                     </TableRow>
                   )
@@ -297,18 +303,10 @@ export function ImportMeasuresStep({ analysis, responsibleOptions, decisions, on
   )
 }
 
-/** «Sugerida» (y «sin pista» si ninguna palabra clave calzó) hasta que alguien la confirma. */
-function PhraseState({ phrase, decision, onConfirm }: { phrase: PhraseGroup; decision: PhraseDecision; onConfirm: () => void }) {
-  if (decision.confirmed) {
-    const fromExcel = phrase.suggestion.source === "prefix" && decision.hierarchy === phrase.suggestion.hierarchy
-    return <span className="text-xs text-[var(--color-text-subtle)]">{fromExcel ? "Del Excel" : "Confirmada"}</span>
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      {phrase.suggestion.source === "default"
-        ? <Badge variant="warning" size="sm">Sugerida · sin pista</Badge>
-        : <Badge variant="warning" size="sm">Sugerida</Badge>}
-      <Button type="button" size="sm" variant="ghost" aria-label={`Confirmar el tipo de «${short(phrase.text)}»`} onClick={onConfirm}>Confirmar</Button>
-    </div>
-  )
+/** De dónde sale el tipo: el Excel, una persona, una palabra clave o un descarte («sin pista»). */
+function PhraseOrigin({ phrase, decision }: { phrase: PhraseGroup; decision: PhraseDecision }) {
+  if (isNoHint(phrase, decision)) return <Badge variant="warning" size="sm">Sin pista</Badge>
+  const fromExcel = phrase.suggestion.source === "prefix" && decision.hierarchy === phrase.suggestion.hierarchy
+  const label = fromExcel ? "Del Excel" : decision.confirmed ? "Elegida" : "Sugerida"
+  return <span className="text-xs text-[var(--color-text-subtle)]">{label}</span>
 }

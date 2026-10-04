@@ -51,7 +51,18 @@ const preview = (batchId: string) => ({
   live: { matrixId: null, title: null, blockedReason: "La faena no tiene una MIPER vigente a la que agregar las filas: cárgalas en un borrador." },
   measureAnalysis: ANALYSIS,
   responsibleOptions: [{ id: "u-1", name: "Jefe de faena" }],
+  factorOptions: [{ id: "riskfactor-mecanico", name: "Mecánico" }, { id: "riskfactor-fisico", name: "Físico" }],
 }) as unknown as RiskImportPreview
+
+/** Una vista previa con una fila cuyo factor el catálogo no reconoce: «MCANICO», una errata de Mecánico. */
+const previewConErrata = (batchId: string) => {
+  const base = preview(batchId) as unknown as { rows: Array<Record<string, unknown>> }
+  const errata = {
+    ...previewRow(17, "ready"), status: "needs_review", riskFactorId: null, riskFactorName: "MCANICO",
+    issues: [{ code: "unknown_factor", message: "El factor de riesgo «MCANICO» no está en el catálogo: mapéalo o créalo.", excel: "MCANICO" }],
+  }
+  return { ...base, rows: [...base.rows, errata], totals: { total: 4, ready: 2, needsReview: 1, rejected: 1 } } as unknown as RiskImportPreview
+}
 
 const WORKSITES = [{ id: "ws-1", name: "Faena Norte", vigenteId: null, vigentePeriod: null, vigenteIsLegacy: false, vigenteHasUnsentChanges: false }]
 const pasoActual = (dialog: HTMLElement) => dialog.querySelector('[aria-current="step"]')
@@ -79,9 +90,7 @@ describe("ImportMiperDialog (Fase C)", () => {
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Siguiente" }))
     expect(pasoActual(dialog)).toHaveTextContent("3. Medidas detectadas")
-    // No se avanza con tipos sin confirmar: el Excel no los trae y siempre los confirma una persona.
-    expect(within(dialog).getByRole("button", { name: "Siguiente" })).toBeDisabled()
-    fireEvent.click(within(dialog).getByRole("button", { name: "Aceptar sugerencias (2)" }))
+    // Revisar los tipos no es obligatorio: lo sugerido se carga tal cual (decisión del usuario, 2026-10-03).
     fireEvent.click(within(dialog).getByRole("button", { name: "Siguiente" }))
 
     expect(pasoActual(dialog)).toHaveTextContent("4. Confirmar")
@@ -97,6 +106,7 @@ describe("ImportMiperDialog (Fase C)", () => {
       measureMapping: { "orden limpieza": "administrative", "topes descarga": "engineering", "uso epp casco guantes calzado seguridad": "ppe" },
       responsibleMapping: { "supervisor/prevencion": { kind: "text", name: "SUPERVISOR/PREVENCION" } },
       deadlineMapping: { "inmediato / antes de continuar la tarea": { kind: "pending", dueDate: "2026-10-03" }, trimestral: { kind: "existing", frequency: "TRIMESTRAL" } },
+      factorMapping: {},
     })
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/prevencion/miper/m-nueva"), LENTO)
     expect(toast.success).toHaveBeenCalledWith("2 riesgos cargados con 4 medidas propuestas (2 existentes y 2 por implementar); 1 fila detenida")
@@ -107,7 +117,9 @@ describe("ImportMiperDialog (Fase C)", () => {
     actions.previewRiskImportAction.mockResolvedValueOnce({ ok: true, data: { preview: preview("riskimport-2") } })
     const dialog = await abrirYRevisar()
     fireEvent.click(within(dialog).getByRole("button", { name: "Siguiente" }))
-    fireEvent.click(within(dialog).getByRole("button", { name: "Aceptar sugerencias (2)" }))
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "Tipo de control de «ORDEN Y LIMPIEZA»" }))
+    fireEvent.click(screen.getByRole("option", { name: "III. Controles de ingeniería" }))
+    expect(within(dialog).getByRole("combobox", { name: "Tipo de control de «ORDEN Y LIMPIEZA»" })).toHaveTextContent("III. Controles de ingeniería")
     fireEvent.click(within(dialog).getByRole("button", { name: "Atrás" }))
     fireEvent.click(within(dialog).getByRole("button", { name: "Atrás" }))
     expect(pasoActual(dialog)).toHaveTextContent("1. Archivo")
@@ -115,9 +127,8 @@ describe("ImportMiperDialog (Fase C)", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Revisar el archivo" }))
     await within(dialog).findByText("3 filas en «RE-04 IPER»: 2 para cargar, 0 por revisar y 1 sin cargar.", {}, LENTO)
     fireEvent.click(within(dialog).getByRole("button", { name: "Siguiente" }))
-    // Las sugerencias aceptadas eran del lote 1: en el lote 2 vuelven a estar por confirmar.
-    expect(within(dialog).getByRole("button", { name: "Aceptar sugerencias (2)" })).toBeEnabled()
-    expect(within(dialog).getByRole("button", { name: "Siguiente" })).toBeDisabled()
+    // El tipo elegido era del lote 1: en el lote 2 vuelve el sugerido.
+    expect(within(dialog).getByRole("combobox", { name: "Tipo de control de «ORDEN Y LIMPIEZA»" })).toHaveTextContent("IV. Controles administrativos")
   })
 
   it("un rechazo del servidor queda a la vista y el diálogo no se cierra", async () => {
@@ -125,12 +136,49 @@ describe("ImportMiperDialog (Fase C)", () => {
     actions.commitRiskImportAction.mockResolvedValue({ ok: false, message: "La importación no coincide con la vista previa: falta decidir el tipo de 1 medida. Vuelve a revisar el archivo." })
     const dialog = await abrirYRevisar()
     fireEvent.click(within(dialog).getByRole("button", { name: "Siguiente" }))
-    fireEvent.click(within(dialog).getByRole("button", { name: "Aceptar sugerencias (2)" }))
     fireEvent.click(within(dialog).getByRole("button", { name: "Siguiente" }))
     fireEvent.click(within(dialog).getByRole("button", { name: "Cargar en borrador" }))
     expect(await within(dialog).findByRole("alert", {}, LENTO)).toHaveTextContent("falta decidir el tipo de 1 medida")
     expect(router.push).not.toHaveBeenCalled()
     expect(pasoActual(dialog)).toHaveTextContent("4. Confirmar")
+  })
+
+  it("un factor con errata viene asignado al parecido y esa fila se carga; sin asignar, espera su factor", async () => {
+    actions.previewRiskImportAction.mockResolvedValue({ ok: true, data: { preview: previewConErrata("riskimport-1") } })
+    actions.commitRiskImportAction.mockResolvedValue({ ok: true, message: "3 riesgos cargados", data: { matrixId: "m-nueva" } })
+    render(<ImportMiperDialog worksites={WORKSITES} currentYear={2026} canManageCatalog={false} />)
+    fireEvent.click(screen.getByRole("button", { name: "Importar" }))
+    const dialog = await screen.findByRole("dialog", { name: "Importar el RE-04" }, LENTO)
+    fireEvent.change(within(dialog).getByLabelText("Archivo del RE-04"), { target: { files: [new File(["x"], "RE-04 Biodiversa.xlsx")] } })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revisar el archivo" }))
+    const factores = await within(dialog).findByRole("region", { name: "Factores de riesgo que el catálogo no reconoce" }, LENTO)
+    const selector = within(factores).getByRole("combobox", { name: "Factor del catálogo para «MCANICO»" })
+    expect(selector).toHaveTextContent("Mecánico")
+    expect(within(dialog).getByRole("cell", { name: "Lista · factor asignado" })).toBeTruthy()
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Siguiente" }))
+    fireEvent.click(within(dialog).getByRole("button", { name: "Siguiente" }))
+    expect(within(dialog).getByRole("region", { name: "Qué se va a cargar" })).toHaveTextContent("3 riesgos listos para cargar.")
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cargar en borrador" }))
+    await waitFor(() => expect(actions.commitRiskImportAction).toHaveBeenCalledWith(expect.objectContaining({ factorMapping: { mcanico: "riskfactor-mecanico" } })), LENTO)
+  })
+
+  it("dejar un factor «Sin asignar» lo saca de la carga y el resumen lo dice", async () => {
+    actions.previewRiskImportAction.mockResolvedValue({ ok: true, data: { preview: previewConErrata("riskimport-1") } })
+    render(<ImportMiperDialog worksites={WORKSITES} currentYear={2026} canManageCatalog={false} />)
+    fireEvent.click(screen.getByRole("button", { name: "Importar" }))
+    const dialog = await screen.findByRole("dialog", { name: "Importar el RE-04" }, LENTO)
+    fireEvent.change(within(dialog).getByLabelText("Archivo del RE-04"), { target: { files: [new File(["x"], "RE-04 Biodiversa.xlsx")] } })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revisar el archivo" }))
+    const factores = await within(dialog).findByRole("region", { name: "Factores de riesgo que el catálogo no reconoce" }, LENTO)
+    fireEvent.click(within(factores).getByRole("combobox", { name: "Factor del catálogo para «MCANICO»" }))
+    fireEvent.click(screen.getByRole("option", { name: "Sin asignar: no se cargan" }))
+    expect(within(dialog).getByRole("cell", { name: "Requiere revisión" })).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole("button", { name: "Siguiente" }))
+    fireEvent.click(within(dialog).getByRole("button", { name: "Siguiente" }))
+    const resumen = within(dialog).getByRole("region", { name: "Qué se va a cargar" })
+    expect(resumen).toHaveTextContent("2 riesgos listos para cargar.")
+    expect(resumen).toHaveTextContent("1 fila espera su factor de riesgo")
   })
 
   it("un archivo sin medidas salta «Medidas detectadas»", async () => {
@@ -155,7 +203,6 @@ describe("ImportMiperDialog (Fase C)", () => {
     actions.commitRiskImportAction.mockReturnValue(new Promise((resolve) => { terminar = resolve }))
     const dialog = await abrirYRevisar()
     fireEvent.click(within(dialog).getByRole("button", { name: "Siguiente" }))
-    fireEvent.click(within(dialog).getByRole("button", { name: "Aceptar sugerencias (2)" }))
     fireEvent.click(within(dialog).getByRole("button", { name: "Siguiente" }))
     fireEvent.click(within(dialog).getByRole("button", { name: "Agregar al vigente" }))
     await waitFor(() => expect(within(dialog).getByRole("button", { name: "Agregar al vigente" })).toHaveAttribute("aria-busy", "true"), LENTO)

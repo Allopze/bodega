@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { normalizeMeasure } from "./dedup"
-import { acceptSuggestions, choosePhraseType, decisionsToMappings, importSummary, initialDecisions, unconfirmedCount } from "./import-decisions"
+import { choosePhraseType, decisionsToMappings, importSummary, initialDecisions } from "./import-decisions"
 import { analyzeRe04Measures, type MeasureAnalysis } from "./re04-measures"
 
 /** Dos filas del Excel (14 y 15): una con plazo «INMEDIATO…» y otra «TRIMESTRAL»; una frase trae su «III.». */
@@ -31,7 +31,6 @@ describe("decisiones de la vista previa (Fase C)", () => {
       "topes descarga": { hierarchy: "engineering", confirmed: true },
       "uso epp casco guantes calzado seguridad": { hierarchy: "ppe", confirmed: false },
     })
-    expect(unconfirmedCount(decisions)).toBe(2)
     expect(decisions.responsibles["supervisor/prevencion"]).toEqual({ kind: "text", name: "SUPERVISOR/PREVENCION" })
     expect(decisions.deadlines.trimestral).toEqual({ kind: "existing", frequency: "TRIMESTRAL" })
   })
@@ -47,19 +46,16 @@ describe("decisiones de la vista previa (Fase C)", () => {
     })
   })
 
-  it("«Aceptar sugerencias» confirma todo sin cambiar los tipos; elegir un tipo confirma esa frase; nada se modifica en el lugar", () => {
+  it("elegir un tipo marca esa frase como elegida; nada se modifica en el lugar", () => {
     const decisions = initialDecisions(ANALYSIS)
-    const accepted = acceptSuggestions(decisions)
-    expect(unconfirmedCount(accepted)).toBe(0)
-    expect(accepted.phrases["orden limpieza"]).toEqual({ hierarchy: "administrative", confirmed: true })
     const chosen = choosePhraseType(decisions, "orden limpieza", "engineering")
     expect(chosen.phrases["orden limpieza"]).toEqual({ hierarchy: "engineering", confirmed: true })
-    expect(unconfirmedCount(chosen)).toBe(1)
+    expect(chosen.phrases["uso epp casco guantes calzado seguridad"]).toEqual({ hierarchy: "ppe", confirmed: false })
     expect(decisions.phrases["orden limpieza"]!.confirmed).toBe(false)
   })
 
-  it("los mapeos para el servidor son las decisiones, sin el estado de confirmación", () => {
-    expect(decisionsToMappings(acceptSuggestions(initialDecisions(ANALYSIS)))).toEqual({
+  it("sin elegir nada, los mapeos para el servidor ya llevan el tipo sugerido de cada frase (no hace falta confirmar)", () => {
+    expect(decisionsToMappings(initialDecisions(ANALYSIS))).toEqual({
       measureMapping: { "orden limpieza": "administrative", "topes descarga": "engineering", "uso epp casco guantes calzado seguridad": "ppe" },
       responsibleMapping: { "supervisor/prevencion": { kind: "text", name: "SUPERVISOR/PREVENCION" } },
       deadlineMapping: { "inmediato / antes de continuar la tarea": { kind: "pending", dueDate: "2026-10-03" }, trimestral: { kind: "existing", frequency: "TRIMESTRAL" } },

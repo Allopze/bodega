@@ -66,6 +66,17 @@ describe("parser puro del RE-04 IPER", () => {
     expect(rows[4]!.rowNumber).toBe(19)
   })
 
+  it("RUTINARIA / NO RUTINARIA también abreviadas «R» y «NR», como las escribe el RE-04 de Cholguán", () => {
+    const rows = parse([
+      sheetRow({ hazard: "Ruido", routine: "R", probability: 1, consequence: 1 }),
+      sheetRow({ hazard: "Polvo", routine: " nr ", probability: 1, consequence: 1 }),
+      sheetRow({ hazard: "Calor", routine: "No rutinaria", probability: 1, consequence: 1 }),
+      sheetRow({ hazard: "Frío", routine: "RUTINARIA", probability: 1, consequence: 1 }),
+      sheetRow({ hazard: "Lluvia", routine: "RN", probability: 1, consequence: 1 }),
+    ])
+    expect(rows.map((row) => row.normalized.isRoutine)).toEqual([true, false, false, true, null])
+  })
+
   it("«¿Está controlado?» se reconoce por prefijo: la cola del RE-04 real no lo vuelve «No»", () => {
     const rows = parse([
       sheetRow({ controlled: "PARCIALMENTE CONTROLADO - REQUIERE ACCIÓN INMEDIATA" }),
@@ -139,5 +150,31 @@ describe("parser puro del RE-04 IPER", () => {
     // El original guarda la fila cruda con sus rótulos: es la traza del Excel.
     expect(rows[0]!.original["PELIGRO"]).toBe("Ruido")
     expect(rows[0]!.normalized.hazard).toBe("Ruido")
+  })
+
+  it("los riesgos terminan en el control de cambios del pie de la hoja: sus filas no son riesgos", () => {
+    // Así venían 4 «no se carga» en los RE-04 de Biodiversa 2026 y Cholguán: la tabla Revisión | Fecha | Modificaciones.
+    const control = (revision: unknown, fecha: unknown, cambio: unknown) => { const cells = sheetRow({}); cells[4] = revision; cells[5] = fecha; cells[6] = cambio; return cells }
+    const rows = parse([
+      sheetRow({ hazard: "Ruido", probability: 1, consequence: 1 }),
+      control("Revisión", "Fecha", "Modificaciones"),
+      control(1, "2024-12-01", "Edición inicial."),
+      control(2, "2025-01-31", "Actualización del documento de acuerdo con el D.S. 44."),
+    ])
+    expect(rows.map((row) => row.rowNumber)).toEqual([14])
+  })
+
+  it("salta los restos de la plantilla: una fila que sólo trae N°, MR o «REVISAR» de la fórmula de CLASIFICACIÓN no es un riesgo", () => {
+    // Así venían 24 «no se carga» en el RE-04 de Biodiversa: filas vacías con la fórmula escrita.
+    const rows = parse([
+      sheetRow({ hazard: "Ruido", probability: 1, consequence: 1 }),
+      sheetRow({ classification: "REVISAR" }),
+      sheetRow({ number: 3, mr: 0, classification: "REVISAR" }),
+    ])
+    expect(rows.map((row) => row.rowNumber)).toEqual([14])
+    // Con cualquier dato propio, sí es una fila: P y C vacíos la detienen y lo dice.
+    const real = parse([sheetRow({ hazard: "Caída", classification: "REVISAR" })])
+    expect(real).toHaveLength(1)
+    expect(riskImportStatus(real[0]!.issues)).toBe("rejected")
   })
 })

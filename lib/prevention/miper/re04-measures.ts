@@ -142,12 +142,50 @@ function splitTopLevel(text: string, separator: string): string[] {
 }
 
 /**
+ * La palabra antes del punto termina una oración si tiene tres caracteres o más
+ * y ningún punto propio: «PR-SGC-24. Antes» sí, «E.P.P. Y CASCO» o «D.S. N° 594» no.
+ */
+const SENTENCE_WORD_END = /(?:^|\s)[^\s.]{3,}$/u
+
+/**
+ * Las oraciones de una línea: corta en un punto seguido de espacio y mayúscula,
+ * fuera de paréntesis, si la palabra anterior puede terminar una oración.
+ */
+function splitSentences(text: string): string[] {
+  const parts: string[] = []
+  const chars = Array.from(text)
+  let depth = 0
+  let current = ""
+  for (const [index, char] of chars.entries()) {
+    if (char === "(" || char === "[") depth += 1
+    else if ((char === ")" || char === "]") && depth > 0) depth -= 1
+    current += char
+    if (depth > 0 || char !== "." || !/\s/u.test(chars[index + 1] ?? "")) continue
+    if (!SENTENCE_WORD_END.test(current.slice(0, -1))) continue
+    let next = index + 1
+    while (next < chars.length && /\s/u.test(chars[next]!)) next += 1
+    if (/\p{Lu}/u.test(chars[next] ?? "")) {
+      parts.push(current)
+      current = ""
+    }
+  }
+  parts.push(current)
+  return parts
+}
+
+/**
  * Las medidas de una celda «MEDIDA DE CONTROL»:
  * - cada salto de línea separa;
  * - una línea con «I.–V.» (libro exportado) es UNA medida y trae su tipo;
  * - en las demás, «;» si la línea tiene alguno —sus comas enumeran dentro de una
- *   medida: «VERIFICAR CARGA MÁXIMA, DISTRIBUCIÓN, HERMETICIDAD; …»— y si no,
- *   las comas de primer nivel que no son decimales («1,5 METROS»);
+ *   medida: «VERIFICAR CARGA MÁXIMA, DISTRIBUCIÓN, HERMETICIDAD; …»—, y cada
+ *   parte, por oraciones;
+ * - sin «;», una línea de texto corrido (varias oraciones) se separa por
+ *   oración y NO por coma: en prosa la coma no enumera medidas. Cortarla por
+ *   coma sacaba «lengua», «hinchazón de garganta» o «en caso de dudas» como
+ *   medidas del RE-04 de Cholguán (decisión del usuario, 2026-10-03);
+ * - una línea de una sola oración es una lista: sus comas de primer nivel que no
+ *   son decimales («1,5 METROS») separan, como «USO DE EPP, ORDEN Y LIMPIEZA»;
  * - después, el «.X» pegado.
  * Se descartan los restos de menos de 3 caracteres y la misma frase repetida en
  * la celda (queda la primera, con su línea).
@@ -169,7 +207,10 @@ export function splitMeasures(cell: unknown): MeasurePiece[] {
       return
     }
     const bySemicolon = splitTopLevel(line, ";")
-    const parts = bySemicolon.length > 1 ? bySemicolon : splitTopLevel(line, ",")
+    const sentences = splitSentences(line)
+    const parts = bySemicolon.length > 1 ? bySemicolon.flatMap(splitSentences)
+      : sentences.length > 1 ? sentences
+        : splitTopLevel(line, ",")
     for (const part of parts) for (const piece of part.split(GLUED_SENTENCE)) push(piece, null, false, index)
   })
   return pieces

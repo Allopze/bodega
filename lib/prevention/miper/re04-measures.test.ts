@@ -52,6 +52,35 @@ describe("splitMeasures: las medidas de una celda del RE-04 real", () => {
     expect(splitMeasures("GUANTES, CASCO\n\nOK\nguantes\nORDEN Y LIMPIEZA").map((piece) => [piece.text, piece.line]))
       .toEqual([["GUANTES", 0], ["CASCO", 0], ["ORDEN Y LIMPIEZA", 3]])
   })
+  it("texto corrido (varias oraciones): separa por oración y no por coma — en prosa la coma no enumera medidas (RE-04 de Cholguán)", () => {
+    expect(texts("Frente a la presencia de insectos como abejas, mantener la calma no provocar a los insectos. En caso de picadura de abeja retirar aguijón con el borde de una tarjeta o uña, si presenta dificultad respiratoria, hinchazón de garganta, lengua, mareos trasladar al centro asistencial más cercano."))
+      .toEqual([
+        "Frente a la presencia de insectos como abejas, mantener la calma no provocar a los insectos",
+        "En caso de picadura de abeja retirar aguijón con el borde de una tarjeta o uña, si presenta dificultad respiratoria, hinchazón de garganta, lengua, mareos trasladar al centro asistencial más cercano",
+      ])
+    expect(texts("Aplicación Protocolo Psicosocial, establecer metas realistas, priorizar tareas, definir claramente roles. Respetar los tiempos de descanso y la vida personal del trabajador. Implementar breves descansos durante la jornada."))
+      .toEqual([
+        "Aplicación Protocolo Psicosocial, establecer metas realistas, priorizar tareas, definir claramente roles",
+        "Respetar los tiempos de descanso y la vida personal del trabajador",
+        "Implementar breves descansos durante la jornada",
+      ])
+  })
+  it("una sola oración sigue siendo una lista: el punto final no la vuelve texto corrido, ni una sigla o un punto dentro de paréntesis", () => {
+    expect(texts("USO DE EPP, ORDEN Y LIMPIEZA.")).toEqual(["USO DE EPP", "ORDEN Y LIMPIEZA"])
+    // «E.P.P. Y» y «D.S. N°» no terminan una oración: la palabra antes del punto tiene menos de tres letras.
+    expect(texts("USO DE E.P.P. Y CASCO, CUMPLIR D.S. N° 594")).toEqual(["USO DE E.P.P. Y CASCO", "CUMPLIR D.S. N° 594"])
+    expect(texts("CHARLA (VER PROCEDIMIENTO. ANEXO 2), CASCO")).toEqual(["CHARLA (VER PROCEDIMIENTO. ANEXO 2)", "CASCO"])
+  })
+  it("un código antes del punto también termina la oración: «PR-SGC-24. Antes…» no deja «grietas» ni «abultamientos» sueltos (RE-04 de Cholguán)", () => {
+    expect(texts("Procedimiento operación camión ampliroll PR-SGC-24. Antes de iniciar el turno, debe inspeccionar y revisar visualmente estado de neumaticos, banda de rodadura, los flancos y la presión para detectar cortes, grietas, abultamientos, objetos incrustados o desgaste irregular."))
+      .toEqual([
+        "Procedimiento operación camión ampliroll PR-SGC-24",
+        "Antes de iniciar el turno, debe inspeccionar y revisar visualmente estado de neumaticos, banda de rodadura, los flancos y la presión para detectar cortes, grietas, abultamientos, objetos incrustados o desgaste irregular",
+      ])
+  })
+  it("con «;», cada parte además se separa por oración", () => {
+    expect(texts("USAR ARNÉS. REVISAR ANCLAJE; CHARLA DIARIA")).toEqual(["USAR ARNÉS", "REVISAR ANCLAJE", "CHARLA DIARIA"])
+  })
   it("la misma medida dos veces en una celda cuenta una; sin texto no hay medidas", () => {
     expect(texts("ORDEN Y LIMPIEZA, orden y limpieza.")).toEqual(["ORDEN Y LIMPIEZA"])
     expect(texts("Y, DE.")).toEqual([])

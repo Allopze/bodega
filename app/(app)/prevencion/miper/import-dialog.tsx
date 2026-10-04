@@ -11,7 +11,8 @@ import { Sheet, SheetBody, SheetCloseButton, SheetContent, SheetDescription, She
 import { TableCell, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
-import { decisionsToMappings, importSummary, initialDecisions, unconfirmedCount, type ImportDecisions } from "@/lib/prevention/miper/import-decisions"
+import { suggestedFactorMapping, unknownFactorsOf, waitsForFactor } from "@/lib/prevention/miper/factor-suggestion"
+import { decisionsToMappings, importSummary, initialDecisions, type ImportDecisions } from "@/lib/prevention/miper/import-decisions"
 import type { RiskImportPreview, RiskImportRowView } from "@/lib/services/miper/import"
 import { toast } from "@/lib/toast"
 import { cn, countOf } from "@/lib/utils"
@@ -59,7 +60,7 @@ type PreviewTableRow = {
   status: string
 }
 
-function previewRow(row: RiskImportRowView): PreviewTableRow {
+function previewRow(row: RiskImportRowView, mapping: Readonly<Record<string, string>>): PreviewTableRow {
   const evaluation = row.magnitude === null
     ? "Sin evaluar"
     : `P ${row.normalized.probability} × C ${row.normalized.consequence} = MR ${row.magnitude}`
@@ -70,7 +71,7 @@ function previewRow(row: RiskImportRowView): PreviewTableRow {
     hazard: row.normalized.hazard ?? row.normalized.risk ?? "—",
     evaluation,
     problems: row.issues.length === 0 ? "Sin problemas" : row.issues.map((issue) => issue.message).join(" · "),
-    status: STATUS_LABEL[row.status],
+    status: row.status === "needs_review" && !waitsForFactor(row, mapping) ? "Lista · factor asignado" : STATUS_LABEL[row.status],
   }
 }
 
@@ -94,34 +95,33 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<RiskImportPreview | null>(null)
   const [decisions, setDecisions] = useState<ImportDecisions | null>(null)
+  /** FACTORES DE RIESGO que el catálogo no reconoce → factor del catálogo elegido para ellos. */
+  const [factorMapping, setFactorMapping] = useState<Record<string, string>>({})
   const [revisionReason, setRevisionReason] = useState("")
   /** Destino de la carga en curso: el botón que se apretó es el que muestra que está cargando. */
   const [committing, setCommitting] = useState<"draft" | "live" | null>(null)
   const operation = useOperation()
 
-  const tableRows = useMemo(() => (preview?.rows ?? []).map(previewRow), [preview])
-  // Los factores que el catálogo todavía no tiene: la vista previa ofrece crearlos.
-  const unknownFactors = useMemo(() => {
-    const names = new Set<string>()
-    for (const row of preview?.rows ?? []) {
-      const issue = row.issues.find((candidate) => candidate.code === "unknown_factor")
-      if (issue && typeof issue.excel === "string") names.add(issue.excel)
-    }
-    return [...names]
-  }, [preview])
+  const tableRows = useMemo(() => (preview?.rows ?? []).map((row) => previewRow(row, factorMapping)), [preview, factorMapping])
+  // Los factores que el catálogo no reconoce: se asignan a uno que existe o se crean.
+  const unknownFactors = useMemo(() => unknownFactorsOf(preview?.rows ?? []), [preview])
   const hasMeasures = (preview?.measureAnalysis.measures.length ?? 0) > 0
-  const pendingTypes = decisions ? unconfirmedCount(decisions) : 0
-  // Sólo las filas «listas» se cargan seguro; las que esperan su factor, si existe al confirmar.
+  // Se cargan las «listas» y las que esperaban su factor y ya lo tienen asignado.
+  const loadableRows = useMemo(
+    () => (preview?.rows ?? []).filter((row) => row.status === "ready" || (row.status === "needs_review" && !waitsForFactor(row, factorMapping))),
+    [preview, factorMapping],
+  )
+  const waitingRows = (preview?.totals.needsReview ?? 0) - loadableRows.filter((row) => row.status === "needs_review").length
   const summary = useMemo(() => {
     if (!preview || !decisions) return null
-    const loadable = new Set(preview.rows.filter((row) => row.status === "ready").map((row) => row.rowNumber))
-    return importSummary(preview.measureAnalysis, loadable, decisions.deadlines)
-  }, [preview, decisions])
+    return importSummary(preview.measureAnalysis, new Set(loadableRows.map((row) => row.rowNumber)), decisions.deadlines)
+  }, [preview, decisions, loadableRows])
 
   /** Cambiar faena, período o archivo invalida lo revisado: hay que volver a revisar. */
   function discardPreview() {
     setPreview(null)
     setDecisions(null)
+    setFactorMapping({})
   }
 
   function handleOpen(next: boolean) {
@@ -150,6 +150,7 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
         setPreview(next)
         // Un lote nuevo trae su propio análisis: las decisiones de antes no valen para él.
         setDecisions(next ? initialDecisions(next.measureAnalysis) : null)
+        setFactorMapping(next ? suggestedFactorMapping(next.rows, next.factorOptions) : {})
         // El motivo del alta sólo se propone; quien importa lo puede cambiar.
         setRevisionReason((current) => current.length > 0 ? current : `Importación RE-04 desde ${file.name}`)
         setStep("filas")
@@ -171,6 +172,7 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
       period: Number(period),
       revisionReason,
       ...decisionsToMappings(decisions),
+      factorMapping,
     }), (result) => {
       handleOpen(false)
       toast.success(result.message ?? "RE-04 importado")
@@ -252,20 +254,32 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
                 revisar y {preview.totals.rejected} sin cargar.
               </p>
               {unknownFactors.length > 0 && (
-                <div className="rounded-lg bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">
-                  <p className="font-medium">Factores de riesgo fuera del catálogo</p>
-                  <p>El RE-04 usa factores que el catálogo todavía no tiene. Créalos para poder cargar esas filas.</p>
-                  <ul className="mt-2 space-y-1">
-                    {unknownFactors.map((name) => (
-                      <li key={name} className="flex flex-wrap items-center gap-2">
-                        <span>«{name}»</span>
-                        {canManageCatalog
-                          ? <Button type="button" size="sm" variant="secondary" disabled={operation.pending} onClick={() => createFactor(name)}>Crear factor</Button>
-                          : <span>Pídele a quien administra el catálogo que lo cree.</span>}
+                <section aria-labelledby="importar-factores" className="space-y-2 rounded-lg border border-[var(--color-border)] p-3 text-sm">
+                  <h3 id="importar-factores" className="font-medium">Factores de riesgo que el catálogo no reconoce</h3>
+                  <p className="text-[var(--color-text-subtle)]">
+                    Asigna cada uno a un factor del catálogo; cuando el parecido es claro («MCANICO» → Mecánico) ya viene elegido.
+                    {canManageCatalog ? " Si es un factor nuevo, créalo." : ""} Sin asignar, esas filas no se cargan.
+                  </p>
+                  <ul className="space-y-2">
+                    {unknownFactors.map((factor) => (
+                      <li key={factor.key} className="flex flex-wrap items-center gap-2">
+                        <span className="min-w-0 sm:w-72 sm:shrink-0">«{factor.name}» <span className="text-[var(--color-text-subtle)]">· {countOf(factor.rows, "fila")}</span></span>
+                        <OptionSelect className="w-60" aria-label={`Factor del catálogo para «${factor.name}»`}
+                          options={preview.factorOptions.map((option) => ({ value: option.id, label: option.name }))}
+                          emptyLabel="Sin asignar: no se cargan" placeholder="Sin asignar: no se cargan" value={factorMapping[factor.key] ?? ""}
+                          onValueChange={(value) => setFactorMapping((current) => {
+                            const next = { ...current }
+                            if (value) next[factor.key] = value
+                            else delete next[factor.key]
+                            return next
+                          })} />
+                        {canManageCatalog && (
+                          <Button type="button" size="sm" variant="ghost" disabled={operation.pending} onClick={() => createFactor(factor.name)}>Crear «{factor.name}»</Button>
+                        )}
                       </li>
                     ))}
                   </ul>
-                </div>
+                </section>
               )}
               <DataTable
                 caption="Problemas por fila del RE-04"
@@ -308,9 +322,9 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
               <section aria-labelledby="importar-resumen" className="space-y-2 rounded-xl border border-[var(--color-border)] p-4">
                 <h3 id="importar-resumen" className="text-sm font-semibold">Qué se va a cargar</h3>
                 <ul className="space-y-1 text-sm">
-                  <li>{countOf(preview.totals.ready, "riesgo listo", "riesgos listos")} para cargar.</li>
-                  {preview.totals.needsReview > 0 && (
-                    <li>{countOf(preview.totals.needsReview, "fila espera", "filas esperan")} su factor de riesgo: se carga sólo si el factor existe al confirmar.</li>
+                  <li>{countOf(loadableRows.length, "riesgo listo", "riesgos listos")} para cargar.</li>
+                  {waitingRows > 0 && (
+                    <li>{countOf(waitingRows, "fila espera", "filas esperan")} su factor de riesgo: no tiene uno asignado y se carga sólo si el factor existe al confirmar.</li>
                   )}
                   {preview.totals.rejected > 0 && (
                     <li>{countOf(preview.totals.rejected, "fila no se carga", "filas no se cargan")}: probabilidad o consecuencia fuera de 1, 2 y 4.</li>
@@ -361,7 +375,7 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog }: 
                   </Button>
                 </>
               ) : (
-                <Button type="button" disabled={operation.pending || (step === "medidas" && pendingTypes > 0)} onClick={goNext}>Siguiente</Button>
+                <Button type="button" disabled={operation.pending} onClick={goNext}>Siguiente</Button>
               )}
             </>
           )}

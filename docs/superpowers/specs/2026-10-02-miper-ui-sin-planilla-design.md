@@ -553,6 +553,16 @@ vive en `portfolio.ts` (plan maestro de 2026-10-02).
 - **Verificación con el RE-04 real:** `qa/reports/2026-10-03-miper-c.md`, en la base E2E
   desechable y no en `bodega_dev` (revertir ahí exigía borrar filas de `audit_log`).
 
+> **Ajuste del 2026-10-03, tras importar los RE-04 reales.** Confirmar el tipo de cada frase
+> pedía revisar entre 176 y 239 frases por archivo antes de poder seguir. Decisión del usuario:
+> **el tipo ya no se confirma**. Lo sugerido se carga tal cual (la medida nace «Propuesta» y su
+> tipo se cambia después); las «sin pista» van primero y «Sólo sin pista» las aísla. Además: una
+> línea de **texto corrido** (varias oraciones) se separa por oración y no por coma —en prosa la
+> coma no enumera medidas y salían «lengua» o «en caso de dudas» como medidas—; las filas que
+> sólo traen lo que calcula la plantilla (N°, MR y el «REVISAR» de CLASIFICACIÓN) no son riesgos;
+> y un factor que el catálogo no reconoce se **asigna** a uno existente (`factorMapping`), con la
+> errata o el compuesto ya sugeridos, en vez de sólo poder crearlo.
+
 ## 9. Fase D: acciones masivas (implementada)
 
 - **Servicio** (`lib/services/miper/bulk.ts`). Cada operación corre en **una transacción**, con

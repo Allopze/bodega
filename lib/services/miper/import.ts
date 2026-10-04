@@ -44,6 +44,7 @@ import {
   preventionRiskControls, preventionRiskEntries, preventionRiskFactors, preventionRiskImportBatches, preventionRiskImportRows, preventionRiskMatrices,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { riskFactorKey } from "@/lib/prevention/miper/factor-suggestion"
 import { cleanMiperName, normalizeMiperName } from "@/lib/prevention/miper/names"
 import {
   isEmptyRe04Row, parseRe04Matrix, RE04_COLUMNS, RE04_SHEET_NAME, riskImportStatus,
@@ -104,6 +105,8 @@ export type RiskImportPreview = {
   measureAnalysis: MeasureAnalysis
   /** Personas que se pueden elegir como responsable: las activas de la faena y quien importa. */
   responsibleOptions: Array<{ id: string; name: string }>
+  /** Factores activos del catálogo, para asignar un FACTORES DE RIESGO que no calza por nombre. */
+  factorOptions: Array<{ id: string; name: string }>
 }
 
 export type RiskImportCommitResult = {
@@ -194,15 +197,17 @@ async function readRe04Sheet(bytes: Buffer) {
 async function activeFactors(client: Client) {
   const rows = await client.select({ id: preventionRiskFactors.id, name: preventionRiskFactors.name })
     .from(preventionRiskFactors).where(eq(preventionRiskFactors.isActive, true))
+    .orderBy(asc(preventionRiskFactors.sortOrder), asc(preventionRiskFactors.name))
   return {
+    list: rows,
+    ids: new Set(rows.map((factor) => factor.id)),
     byKey: new Map(rows.map((factor) => [normalizeMiperName(factor.name), factor.id])),
     keys: new Set(rows.map((factor) => normalizeMiperName(factor.name))),
   }
 }
 
 function factorKeyOf(normalized: Re04Normalized) {
-  const name = cleanMiperName(normalized.riskFactor)
-  return name === null ? null : normalizeMiperName(name)
+  return riskFactorKey(normalized.riskFactor)
 }
 
 /** ¿La fila se detiene? P/C fuera de escala, o un factor que el catálogo no tiene. */
@@ -370,6 +375,7 @@ export async function previewRiskImport(
     },
     measureAnalysis,
     responsibleOptions,
+    factorOptions: factors.list,
   }
 }
 
@@ -423,6 +429,14 @@ export async function commitRiskImport(input: unknown, access: MiperAccess): Pro
     const analysis = analyzeRe04Measures(batchRows, { today })
     const problems = mappingProblems(analysis, data)
     if (problems.length > 0) throw new RiskLegalDomainError(problems.join(" "))
+    // El catálogo se relee acá: entre la vista previa y la carga la persona pudo
+    // crear el factor que faltaba, y eso es exactamente lo que la fila esperaba.
+    // Un factor asignado tiene que seguir activo: si no, la carga se rechaza
+    // entera en vez de dejar esas filas fuera sin decirlo.
+    const factors = await activeFactors(tx)
+    if (Object.values(data.factorMapping).some((factorId) => !factors.ids.has(factorId))) {
+      throw new RiskLegalDomainError("Un factor de riesgo asignado ya no está activo en el catálogo: vuelve a revisar el archivo.")
+    }
     const responsibleNames = await importResponsibleNames(tx, data.worksiteId, data.responsibleMapping, access)
 
     const revisionReason = data.revisionReason?.trim() || "Importación RE-04 desde Excel"
@@ -434,9 +448,6 @@ export async function commitRiskImport(input: unknown, access: MiperAccess): Pro
       : await lockMatrix(tx, (await liveMatrix(tx, data.worksiteId)).id)
     assertEditable(matrix)
 
-    // El catálogo se relee acá: entre la vista previa y la carga la persona pudo
-    // crear el factor que faltaba, y eso es exactamente lo que la fila esperaba.
-    const factors = await activeFactors(tx)
     const [max] = await tx.select({ maxRow: sql<number>`coalesce(max(${preventionRiskEntries.rowNumber}), 0)::int` })
       .from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, matrix.id))
 
@@ -454,7 +465,8 @@ export async function commitRiskImport(input: unknown, access: MiperAccess): Pro
       const issues = (row.issues ?? []) as RiskImportIssue[]
       const normalized = row.normalized as Re04Normalized
       const key = factorKeyOf(normalized)
-      const riskFactorId = key === null ? null : factors.byKey.get(key) ?? null
+      // Por nombre si el catálogo ya lo tiene; si no, el factor que la persona le asignó.
+      const riskFactorId = key === null ? null : factors.byKey.get(key) ?? data.factorMapping[key] ?? null
 
       if (rowBlocked(issues, normalized, riskFactorId)) {
         skipped += 1

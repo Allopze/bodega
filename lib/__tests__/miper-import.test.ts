@@ -651,6 +651,30 @@ describe("factor de riesgo que el catálogo no tiene", () => {
     expect(rows.map((row) => row.status)).toEqual(["activated"])
   }, 60_000)
 
+  it("asignar el factor del Excel a uno del catálogo carga la fila con ese factor; asignarlo a uno que no está activo rechaza la carga entera", async () => {
+    const bytes = await workbookOf([
+      { number: 1, activity: "Taller", factor: "MCANICO", hazard: "Atrapamiento", probability: 2, consequence: 2, mr: 4, classification: "MODERADO" },
+      { number: 2, activity: "Taller", factor: "Físico", hazard: "Ruido", probability: 1, consequence: 1, mr: 1, classification: "TOLERABLE" },
+    ])
+    const preview = await previewRiskImport(bytes, { worksiteId: WS, target: "draft", period: 2033, fileName: "RE-04 errata.xlsx" }, author)
+    expect(preview.rows.map((row) => row.status)).toEqual(["needs_review", "ready"])
+    // La vista previa trae el catálogo para elegir: el diálogo sugiere desde acá.
+    expect(preview.factorOptions).toContainEqual({ id: "riskfactor-mecanico", name: "Mecánico" })
+
+    await expect(commitRiskImport({
+      batchId: preview.batchId, worksiteId: WS, target: "draft", period: 2033, revisionReason: "Importación con errata.",
+      factorMapping: { mcanico: "riskfactor-que-no-existe" },
+    }, author)).rejects.toThrow(/ya no está activo/)
+
+    const committed = await commitRiskImport({
+      batchId: preview.batchId, worksiteId: WS, target: "draft", period: 2033, revisionReason: "Importación con errata.",
+      factorMapping: { mcanico: "riskfactor-mecanico" },
+    }, author)
+    expect(committed).toMatchObject({ created: 2, skipped: 0 })
+    const entries = await entriesOf(committed.matrixId)
+    expect(entries.map((entry) => entry.riskFactorId)).toEqual(["riskfactor-mecanico", expect.any(String)])
+  }, 60_000)
+
   it("un lote ya cargado no se vuelve a cargar", async () => {
     const bytes = await workbookOf([
       { number: 1, activity: "Único", factor: "Físico", hazard: "Ruido", probability: 1, consequence: 1, mr: 1, classification: "TOLERABLE" },

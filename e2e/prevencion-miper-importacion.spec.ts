@@ -12,15 +12,17 @@ import { abrirRiesgo, cabecera, irAPaso } from "./miper-helpers"
  * Cubre:
  *   • Archivo → Filas → Medidas detectadas → Confirmar, con un `.xlsx` hecho con
  *     ExcelJS (frases y plazos del RE-04 real; responsables que son cargos).
- *   • «Siguiente» no avanza con tipos sin confirmar; «Aceptar sugerencias» los confirma.
+ *   • Revisar los tipos no es obligatorio: «Siguiente» avanza con lo sugerido.
+ *   • Un FACTORES DE RIESGO con errata («MCANICO») viene asignado a Mecánico y la
+ *     fila se carga con ese factor.
  *   • Un responsable del Excel se asigna a una persona; los plazos se mapean una
  *     vez por valor (TRIMESTRAL → existente; INMEDIATO → por implementar hoy).
  *   • El servidor rechaza un mapeo adulterado (falta una frase) y no crea nada.
  *   • Las medidas quedan en cada riesgo con «Existente · verificación …» o «Por
  *     implementar · plazo …», y «…REQUIERE ACCIÓN INMEDIATA» es «Parcialmente».
  *   • axe sobre el paso «Medidas detectadas».
- *   • En Chromium, lo que jsdom no puede probar del paso (Task 9): el tipo
- *     sugerido es el marcador del selector y elegirlo confirma; el foco pasa a la
+ *   • En Chromium, lo que jsdom no puede probar del paso (Task 9): la «sin pista»
+ *     va primero con su tipo como marcador, y elegirlo cuenta; el foco pasa a la
  *     frase siguiente y no al comienzo del diálogo; el camino con teclado; y las
  *     páginas conservan lo decidido.
  *
@@ -52,6 +54,12 @@ const FILAS: Fila[] = [
     "PELIGRO": "Piso resbaladizo", "RIESGO": "Caída al mismo nivel", "DAÑO PROBABLE": "Esguince", "PROBABILIDAD": 1, "CONSECUENCIA": 2, "MR": 2,
     "CLASIFICACIÓN DEL RIESGO": "TOLERABLE",
     "MEDIDA DE CONTROL": "MANTENER ORDEN Y LIMPIEZA", "¿ESTÁ CONTROLADO EL RIESGO?": "SÍ, CONTROLADO", "RESPONSABLE": "PREVENCION", "PLAZOS": "TRIMESTRAL",
+  },
+  {
+    // Errata del RE-04 real de Biodiversa: el catálogo no la reconoce por nombre y la vista previa la asigna a Mecánico.
+    "N°": 4, "ACTIVIDAD": "Mantención", "TAREA": "Ajuste de frenos", "PUESTO DE TRABAJO": "Mecánico", "FACTORES DE RIESGO": "MCANICO",
+    "PELIGRO": "Partes en movimiento", "RIESGO": "Atrapamiento", "DAÑO PROBABLE": "Fracturas", "PROBABILIDAD": 1, "CONSECUENCIA": 2, "MR": 2,
+    "CLASIFICACIÓN DEL RIESGO": "TOLERABLE",
   },
 ]
 
@@ -118,14 +126,18 @@ test("importar un RE-04 con medidas: tipo, responsable y plazo o frecuencia; el 
   const dialogo = await revisarArchivo(page, await libro(), periodo)
 
   // 2. Filas
-  await expect(dialogo.getByText("3 filas en «RE-04 IPER»: 3 para cargar, 0 por revisar y 0 sin cargar.", { exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(dialogo.getByText("4 filas en «RE-04 IPER»: 3 para cargar, 1 por revisar y 0 sin cargar.", { exact: true })).toBeVisible({ timeout: 30_000 })
   await expect(pasoActual(dialogo)).toHaveText("2. Filas")
+  const factores = dialogo.getByRole("region", { name: "Factores de riesgo que el catálogo no reconoce", exact: true })
+  await expect(factores.getByRole("combobox", { name: "Factor del catálogo para «MCANICO»", exact: true })).toHaveText("Mecánico")
+  await expect(dialogo.getByRole("cell", { name: "Lista · factor asignado", exact: true })).toBeVisible()
   await dialogo.getByRole("button", { name: "Siguiente", exact: true }).click()
 
-  // 3. Medidas detectadas: 8 frases, todas con palabra clave; PLAZOS ya sugerido.
+  // 3. Medidas detectadas: 8 frases, todas con palabra clave; PLAZOS ya sugerido. Revisar los
+  // tipos no es obligatorio: «Siguiente» está habilitado desde el comienzo.
   await expect(pasoActual(dialogo)).toHaveText("3. Medidas detectadas")
   const siguiente = dialogo.getByRole("button", { name: "Siguiente", exact: true })
-  await expect(siguiente).toBeDisabled()
+  await expect(siguiente).toBeEnabled()
   await expect(dialogo.getByRole("textbox", { name: "Frecuencia de verificación para «TRIMESTRAL»", exact: true })).toHaveValue("TRIMESTRAL")
   await expect(dialogo.getByRole("combobox", { name: "Cómo se cargan las medidas con «INMEDIATO / ANTES DE CONTINUAR LA TAREA»", exact: true }))
     .toContainText("Por implementar")
@@ -134,12 +146,11 @@ test("importar un RE-04 con medidas: tipo, responsable y plazo o frecuencia; el 
   await dialogo.getByRole("combobox", { name: "Responsable para «PREVENCION»", exact: true }).click()
   await page.getByRole("option", { name: "Admin E2E", exact: true }).click()
   await auditarDialogo(page)
-  await dialogo.getByRole("button", { name: "Aceptar sugerencias (8)", exact: true }).click()
-  await expect(siguiente).toBeEnabled()
   await siguiente.click()
 
   // 4. Confirmar
   await expect(pasoActual(dialogo)).toHaveText("4. Confirmar")
+  await expect(dialogo.getByRole("region", { name: "Qué se va a cargar" })).toContainText("4 riesgos listos para cargar.")
   await expect(dialogo.getByRole("region", { name: "Qué se va a cargar" })).toContainText("8 medidas: 5 existentes y 3 por implementar.")
 
   // Un cliente adulterado: el cuerpo de la Server Function pierde una frase del mapeo de tipos.
@@ -195,11 +206,17 @@ test("importar un RE-04 con medidas: tipo, responsable y plazo o frecuencia; el 
   await abrirRiesgo(page, 3, "Piso resbaladizo")
   await irAPaso(page, "Medidas de control")
   await expect(page.getByRole("article", { name: "Medida: MANTENER ORDEN Y LIMPIEZA", exact: true })).toContainText("Responsable: Admin E2E")
+
+  // Riesgo 4: la errata «MCANICO» quedó cargada con el factor Mecánico del catálogo.
+  await page.goto(matriz)
+  await abrirRiesgo(page, 4, "Partes en movimiento")
+  await irAPaso(page, "Identificación")
+  await expect(page.getByRole("combobox", { name: "Factor de riesgo", exact: true })).toHaveText("Mecánico")
 })
 
 /* Un RE-04 de 31 frases distintas en una fila: 30 con palabra clave («CHARLA» es
- * IV) y una «sin pista», que sólo calza el descarte. Ordenadas por texto, la
- * página 1 lleva CHARLA 01–25 y la 2, CHARLA 26–30 y la «sin pista». */
+ * IV) y una «sin pista», que sólo calza el descarte. La «sin pista» va primero:
+ * la página 1 lleva la «sin pista» y CHARLA 01–24, y la 2, CHARLA 25–30. */
 const charla = (numero: number) => `CHARLA DE SEGURIDAD ${String(numero).padStart(2, "0")}`
 const SIN_PISTA = "MATERIAL ABSORBENTE DISPONIBLE"
 const FILA_GRANDE: Fila = {
@@ -210,7 +227,7 @@ const FILA_GRANDE: Fila = {
   "¿ESTÁ CONTROLADO EL RIESGO?": "SÍ, CONTROLADO", "RESPONSABLE": "JEFE DE FAENA", "PLAZOS": "TRIMESTRAL",
 }
 
-test("«Medidas detectadas» en Chromium: el sugerido es el marcador, el foco sigue a la frase siguiente, el teclado confirma y las páginas conservan lo decidido", async ({ page }) => {
+test("«Medidas detectadas» en Chromium: nada bloquea, la «sin pista» va primero, el foco sigue a la frase y las páginas conservan lo elegido", async ({ page }) => {
   test.setTimeout(120_000)
   await login(page)
   // Sólo la vista previa: no se carga nada, así que el período queda el de la portada.
@@ -218,114 +235,77 @@ test("«Medidas detectadas» en Chromium: el sugerido es el marcador, el foco si
   await expect(dialogo.getByText("1 fila en «RE-04 IPER»: 1 para cargar, 0 por revisar y 0 sin cargar.", { exact: true })).toBeVisible({ timeout: 30_000 })
   await dialogo.getByRole("button", { name: "Siguiente", exact: true }).click()
   await expect(pasoActual(dialogo)).toHaveText("3. Medidas detectadas")
+  // Revisar los tipos no es obligatorio (decisión del usuario, 2026-10-03).
+  await expect(dialogo.getByRole("button", { name: "Siguiente", exact: true })).toBeEnabled()
 
   const nombreTipo = (frase: string) => ({ name: `Tipo de control de «${frase}»`, exact: true })
   const tipo = (frase: string) => dialogo.getByRole("combobox", nombreTipo(frase))
   // `has` se busca DENTRO de la fila: el localizador interno parte de `page`, no del diálogo.
   const fila = (frase: string) => dialogo.getByRole("row").filter({ has: page.getByRole("combobox", nombreTipo(frase)) })
-  const aceptar = (pendientes: number) => dialogo.getByRole("button", { name: `Aceptar sugerencias (${pendientes})`, exact: true })
+  const selectores = dialogo.getByRole("region", { name: "Tipo de cada medida detectada", exact: true }).getByRole("combobox")
   const elegirTipo = async (frase: string, opcion: string) => {
     await tipo(frase).click()
     await page.getByRole("option", { name: opcion, exact: true }).click()
   }
   /**
    * Con el teclado: Enter abre el selector (el foco cae en «Buscar en opciones»), End va a «V.»,
-   * ↑ al sugerido «IV.» y `tecla` lo elige. Radix mueve el foco de End y ↑ con un `setTimeout`:
-   * cada tecla espera el foco de la anterior. Después, ningún selector puede quedar abierto: antes
-   * de la corrección de la Task 10, el clic que el navegador sintetiza con Enter caía en el selector
-   * que acababa de recibir el foco y lo abría.
+   * con `subir` ↑ va a «IV.», y `tecla` lo elige. Radix mueve el foco de End y ↑ con un
+   * `setTimeout`: cada tecla espera el foco de la anterior. Después, ningún selector puede quedar
+   * abierto: antes de la corrección de la Task 10, el clic que el navegador sintetiza con Enter
+   * caía en el selector que acababa de recibir el foco y lo abría.
    */
-  const elegirSugeridoConTeclado = async (frase: string, tecla: "Enter" | " ") => {
+  const elegirConTeclado = async (frase: string, tecla: "Enter" | " ", subir = false) => {
     await tipo(frase).focus()
     await page.keyboard.press("Enter")
     await expect(page.getByRole("textbox", { name: "Buscar en opciones", exact: true })).toBeFocused()
     await page.keyboard.press("End")
     await expect(page.getByRole("option", { name: "V. Elementos de protección personal", exact: true })).toBeFocused()
-    await page.keyboard.press("ArrowUp")
-    await expect(page.getByRole("option", { name: "IV. Controles administrativos", exact: true })).toBeFocused()
+    if (subir) {
+      await page.keyboard.press("ArrowUp")
+      await expect(page.getByRole("option", { name: "IV. Controles administrativos", exact: true })).toBeFocused()
+    }
     await page.keyboard.press(tecla)
     await expect(page.getByRole("listbox")).toHaveCount(0)
   }
 
-  // El sugerido es el marcador del selector, no su valor, y la línea de aviso cuenta la «sin pista».
+  // La «sin pista» va primero y su tipo es un marcador; la sugerida por palabra clave ya es el valor.
+  await expect(selectores.nth(0)).toHaveAccessibleName(`Tipo de control de «${SIN_PISTA}»`)
+  await expect(tipo(SIN_PISTA)).toHaveAttribute("data-placeholder", "")
+  await expect(fila(SIN_PISTA)).toContainText("Sin pista")
   await expect(tipo(charla(1))).toHaveText("IV. Controles administrativos")
-  await expect(tipo(charla(1))).toHaveAttribute("data-placeholder", "")
+  await expect(tipo(charla(1))).not.toHaveAttribute("data-placeholder")
   await expect(fila(charla(1))).toContainText("Sugerida")
-  await expect(aceptar(31)).toBeEnabled()
   await expect(dialogo.getByText(
-    "Falta confirmar el tipo de 31 frases (1 sin pista: se sugiere IV. Controles administrativos): elígelo en cada fila, usa «Confirmar» o «Aceptar sugerencias».",
+    "1 frase sin pista: ninguna palabra clave calzó y se carga como IV. Controles administrativos si no eliges otro tipo. Van primero.",
     { exact: true },
   )).toBeVisible()
 
-  // Elegir otro tipo lo confirma; el foco se queda en la fila, no vuelve al comienzo del diálogo.
+  // Elegir otro tipo la marca «Elegida»; el foco se queda en la fila, no vuelve al comienzo del diálogo.
   await elegirTipo(charla(1), "III. Controles de ingeniería")
   await expect(tipo(charla(1))).toHaveText("III. Controles de ingeniería")
-  await expect(tipo(charla(1))).not.toHaveAttribute("data-placeholder")
-  await expect(fila(charla(1))).toContainText("Confirmada")
+  await expect(fila(charla(1))).toContainText("Elegida")
   await expect(tipo(charla(1))).toBeFocused()
-  await expect(aceptar(30)).toBeVisible()
-  // Elegir el MISMO tipo que el marcador también confirma (Radix no avisa si el valor no cambia).
-  await elegirTipo(charla(2), "IV. Controles administrativos")
-  await expect(fila(charla(2))).toContainText("Confirmada")
-  await expect(aceptar(29)).toBeVisible()
-  // Con teclado y Enter, sin filtro: la fila se queda, confirmada, y su selector conserva el foco.
-  await elegirSugeridoConTeclado(charla(10), "Enter")
-  await expect(fila(charla(10))).toContainText("Confirmada")
+  // Con teclado y Enter, sin filtro: la fila se queda, elegida, y su selector conserva el foco.
+  await elegirConTeclado(charla(10), "Enter")
+  await expect(fila(charla(10))).toContainText("Elegida")
   await expect(tipo(charla(10))).toBeFocused()
-  await expect(aceptar(28)).toBeVisible()
 
-  // Las páginas conservan lo decidido: se decide en la 2, se vuelve a la 1 y otra vez a la 2.
+  // Las páginas conservan lo elegido: se elige en la 2, se vuelve a la 1 y otra vez a la 2.
   await dialogo.getByRole("button", { name: "Página siguiente", exact: true }).click()
   await expect(tipo(charla(1))).toHaveCount(0)
-  await expect(fila(SIN_PISTA)).toContainText("Sugerida · sin pista")
   await elegirTipo(charla(26), "II. Sustitución")
-  await expect(aceptar(27)).toBeVisible()
   await dialogo.getByRole("button", { name: "Página anterior", exact: true }).click()
   await expect(tipo(charla(1))).toHaveText("III. Controles de ingeniería")
-  await expect(fila(charla(1))).toContainText("Confirmada")
-  await expect(fila(charla(2))).toContainText("Confirmada")
-  await expect(fila(charla(10))).toContainText("Confirmada")
+  await expect(fila(charla(10))).toContainText("Elegida")
   await dialogo.getByRole("button", { name: "Página siguiente", exact: true }).click()
   await expect(tipo(charla(26))).toHaveText("II. Sustitución")
-  await expect(fila(charla(26))).toContainText("Confirmada")
 
-  // «Sólo sugeridas» vuelve a la página 1 y pone primero la «sin pista».
-  await dialogo.getByRole("checkbox", { name: "Sólo sugeridas", exact: true }).check()
-  const selectores = dialogo.getByRole("region", { name: "Tipo de cada medida detectada", exact: true }).getByRole("combobox")
-  await expect(selectores.nth(0)).toHaveAccessibleName(`Tipo de control de «${SIN_PISTA}»`)
-  await expect(selectores.nth(1)).toHaveAccessibleName(`Tipo de control de «${charla(3)}»`)
-
-  // Con teclado: Tab del selector a su «Confirmar» y Enter. La fila sale de la lista
-  // y el foco pasa al selector de la frase siguiente.
-  await tipo(SIN_PISTA).focus()
-  await page.keyboard.press("Tab")
-  await expect(dialogo.getByRole("button", { name: `Confirmar el tipo de «${SIN_PISTA}»`, exact: true })).toBeFocused()
-  await page.keyboard.press("Enter")
-  await expect(tipo(SIN_PISTA)).toHaveCount(0)
-  await expect(tipo(charla(3))).toBeFocused()
-  await expect(aceptar(26)).toBeVisible()
-
-  // Con teclado y Enter, con el filtro: la fila sale de la lista y el foco pasa a la frase siguiente.
-  await elegirSugeridoConTeclado(charla(3), "Enter")
-  await expect(tipo(charla(3))).toHaveCount(0)
-  await expect(tipo(charla(4))).toBeFocused()
-  await expect(aceptar(25)).toBeVisible()
-
-  // Con el ratón y el filtro: elegir el sugerido saca la fila y el foco no vuelve al comienzo del diálogo.
-  await elegirTipo(charla(4), "IV. Controles administrativos")
-  await expect(tipo(charla(4))).toHaveCount(0)
-  await expect(tipo(charla(5))).toBeFocused()
-  await expect(aceptar(24)).toBeVisible()
-
-  // Con teclado y Espacio, con el filtro: igual que Enter.
-  await elegirSugeridoConTeclado(charla(5), " ")
-  await expect(tipo(charla(5))).toHaveCount(0)
-  await expect(tipo(charla(6))).toBeFocused()
-  await expect(aceptar(23)).toBeVisible()
-
-  // «Aceptar sugerencias» confirma las que quedan, también las de la otra página; el foco queda en el filtro.
-  await aceptar(23).click()
-  await expect(dialogo.getByText("No quedan tipos por confirmar.", { exact: true })).toBeVisible()
-  await expect(dialogo.getByRole("checkbox", { name: "Sólo sugeridas", exact: true })).toBeFocused()
+  // «Sólo sin pista» vuelve a la página 1 con la única que queda. Elegir con Espacio el MISMO tipo
+  // que el marcador también cuenta: la fila sale y el foco pasa al filtro, que sigue en su lugar.
+  await dialogo.getByRole("checkbox", { name: "Sólo sin pista", exact: true }).check()
+  await expect(selectores).toHaveCount(1)
+  await elegirConTeclado(SIN_PISTA, " ", true)
+  await expect(dialogo.getByText("No quedan frases sin pista.", { exact: true })).toBeVisible()
+  await expect(dialogo.getByRole("checkbox", { name: "Sólo sin pista", exact: true })).toBeFocused()
   await expect(dialogo.getByRole("button", { name: "Siguiente", exact: true })).toBeEnabled()
 })

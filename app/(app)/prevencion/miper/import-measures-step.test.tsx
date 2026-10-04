@@ -37,27 +37,32 @@ function Harness({ onChange, analysis = ANALYSIS }: { onChange?: (decisions: Imp
 const tipos = () => screen.getByRole("region", { name: "Tipo de cada medida detectada" })
 
 describe("ImportMeasuresStep (Fase C)", () => {
-  it("las frases sin tipo del Excel nacen sugeridas (la sin pista lo dice); «Aceptar sugerencias» las confirma todas", () => {
+  it("nada pide confirmación: lo sugerido viene como valor, la «sin pista» va primero, como marcador, y el aviso la cuenta", () => {
     render(<Harness />)
-    expect(within(tipos()).getByText("Sugerida")).toBeTruthy()
-    expect(within(tipos()).getByText("Sugerida · sin pista")).toBeTruthy()
-    expect(within(tipos()).getByText("Del Excel")).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: "Aceptar sugerencias (2)" }))
-    expect(within(tipos()).queryByText(/^Sugerida/)).toBeNull()
-    expect(screen.getByRole("button", { name: "Aceptar sugerencias (0)" })).toBeDisabled()
+    const filas = within(tipos()).getAllByRole("row").slice(1)
+    expect(filas.map((fila) => within(fila).getAllByRole("cell")[0]!.textContent)).toEqual(["USO DE EPP (CASCO, GUANTES, CALZADO DE SEGURIDAD)", "ORDEN Y LIMPIEZA", "Topes de descarga"])
+    expect(within(filas[0]!).getByText("Sin pista")).toBeTruthy()
+    expect(within(filas[1]!).getByText("Sugerida")).toBeTruthy()
+    expect(within(filas[2]!).getByText("Del Excel")).toBeTruthy()
+    expect(within(tipos()).getByRole("combobox", { name: "Tipo de control de «ORDEN Y LIMPIEZA»" })).not.toHaveAttribute("data-placeholder")
+    expect(within(tipos()).getByRole("combobox", { name: /^Tipo de control de «USO DE EPP/ })).toHaveAttribute("data-placeholder")
+    expect(screen.getByText("1 frase sin pista: ninguna palabra clave calzó y se carga como V. Elementos de protección personal si no eliges otro tipo. Van primero.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Aceptar sugerencias|^Confirmar/ })).toBeNull()
   })
 
-  it("«Sólo sugeridas» deja a la vista lo que falta; elegir un tipo o «Confirmar» confirma esa frase", () => {
+  it("elegir un tipo marca la frase «Elegida»; en una «sin pista», elegir el mismo tipo sugerido también cuenta", () => {
     const onChange = vi.fn()
     render(<Harness onChange={onChange} />)
-    fireEvent.click(screen.getByRole("checkbox", { name: "Sólo sugeridas" }))
-    expect(within(tipos()).queryByText("Topes de descarga")).toBeNull()
     fireEvent.click(within(tipos()).getByRole("combobox", { name: "Tipo de control de «ORDEN Y LIMPIEZA»" }))
     fireEvent.click(screen.getByRole("option", { name: "III. Controles de ingeniería" }))
     expect(onChange.mock.lastCall![0].phrases["orden limpieza"]).toEqual({ hierarchy: "engineering", confirmed: true })
-    expect(within(tipos()).queryByText("ORDEN Y LIMPIEZA")).toBeNull()
-    fireEvent.click(within(tipos()).getByRole("button", { name: /^Confirmar el tipo de «USO DE EPP/ }))
+    fireEvent.click(within(tipos()).getByRole("combobox", { name: /^Tipo de control de «USO DE EPP/ }))
+    fireEvent.click(screen.getByRole("option", { name: "V. Elementos de protección personal" }))
     expect(onChange.mock.lastCall![0].phrases["uso epp casco guantes calzado seguridad"]).toEqual({ hierarchy: "ppe", confirmed: true })
+    expect(within(tipos()).queryByText("Sin pista")).toBeNull()
+    expect(within(tipos()).getAllByText("Elegida")).toHaveLength(2)
+    // Sin «sin pista» que revisar, el aviso y el filtro se van.
+    expect(screen.queryByRole("checkbox", { name: "Sólo sin pista" })).toBeNull()
   })
 
   it("cada responsable del Excel se decide una vez: como está escrito, una persona de la faena o sin responsable", () => {
@@ -145,57 +150,36 @@ describe("ImportMeasuresStep (Fase C)", () => {
     expect(within(screen.getByRole("region", { name: "Plazos del Excel" })).getByText("2 medidas nacen vencidas: la fecha ya pasó.")).toBeTruthy()
   })
 
-  it("un archivo grande se revisa por páginas y «Aceptar sugerencias» confirma también las de las otras páginas", () => {
-    render(<Harness analysis={archivoGrande(60)} />)
+  it("un archivo grande se revisa por páginas, con las «sin pista» en la primera aunque el análisis las traiga al final", () => {
+    render(<Harness analysis={archivoGrande(60, [30, 45, 60])} />)
     expect(within(tipos()).getAllByRole("combobox")).toHaveLength(25)
-    expect(within(tipos()).queryByText("MEDIDA 26")).toBeNull()
-    fireEvent.click(screen.getByRole("button", { name: "Página siguiente" }))
-    expect(within(tipos()).getByText("MEDIDA 26")).toBeTruthy()
-    // Filtrar vuelve a la primera página.
-    fireEvent.click(screen.getByRole("checkbox", { name: "Sólo sugeridas" }))
-    expect(within(tipos()).getByText("MEDIDA 1")).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: "Aceptar sugerencias (60)" }))
-    expect(screen.getByRole("button", { name: "Aceptar sugerencias (0)" })).toBeDisabled()
-    expect(within(tipos()).getByText("No quedan tipos por confirmar.")).toBeTruthy()
-    // El botón queda deshabilitado: el foco pasa al filtro, que lo sigue en el orden de tabulación.
-    expect(document.activeElement).toBe(screen.getByRole("checkbox", { name: "Sólo sugeridas" }))
-  })
-
-  it("«Aceptar sugerencias» dice cuántas de las que confirma son «sin pista», aunque estén en otras páginas", () => {
-    render(<Harness analysis={archivoGrande(60, [30, 45, 60])} />)
-    // Las tres «sin pista» quedan fuera de la primera página: el aviso junto al botón las cuenta igual.
-    expect(within(tipos()).queryByText("Sugerida · sin pista")).toBeNull()
-    expect(screen.getByText("Falta confirmar el tipo de 60 frases (3 sin pista: se sugiere IV. Controles administrativos): elígelo en cada fila, usa «Confirmar» o «Aceptar sugerencias».")).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: "Página siguiente" }))
-    fireEvent.click(within(tipos()).getByRole("button", { name: "Confirmar el tipo de «MEDIDA 30»" }))
-    expect(screen.getByText(/^Falta confirmar el tipo de 59 frases \(2 sin pista: se sugiere IV\. Controles administrativos\)/)).toBeTruthy()
-  })
-
-  it("con «Sólo sugeridas», las «sin pista» van primero: quedan en la primera página", () => {
-    render(<Harness analysis={archivoGrande(60, [30, 45, 60])} />)
-    fireEvent.click(screen.getByRole("checkbox", { name: "Sólo sugeridas" }))
     const filas = within(tipos()).getAllByRole("row").slice(1)
-    expect(filas.slice(0, 3).map((fila) => within(fila).getAllByRole("cell")[0]!.textContent)).toEqual(["MEDIDA 30", "MEDIDA 45", "MEDIDA 60"])
-    for (const fila of filas.slice(0, 3)) expect(within(fila).getByText("Sugerida · sin pista")).toBeTruthy()
-    // Después, las demás en su orden (por frecuencia, como las entrega el análisis).
-    expect(within(filas[3]!).getAllByRole("cell")[0]!.textContent).toBe("MEDIDA 1")
+    expect(filas.slice(0, 4).map((fila) => within(fila).getAllByRole("cell")[0]!.textContent)).toEqual(["MEDIDA 30", "MEDIDA 45", "MEDIDA 60", "MEDIDA 1"])
+    expect(screen.getByText("3 frases sin pista: ninguna palabra clave calzó y se cargan como IV. Controles administrativos si no eliges otro tipo. Van primero.")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Página siguiente" }))
+    expect(within(tipos()).getByText("MEDIDA 23")).toBeTruthy()
+    // Filtrar vuelve a la primera página y deja sólo las «sin pista».
+    fireEvent.click(screen.getByRole("checkbox", { name: "Sólo sin pista" }))
+    expect(within(tipos()).getAllByRole("combobox")).toHaveLength(3)
   })
 
-  it("con «Sólo sugeridas», la frase confirmada sale de la lista y el foco pasa a la que sigue por confirmar", async () => {
-    render(<Harness />)
-    fireEvent.click(screen.getByRole("checkbox", { name: "Sólo sugeridas" }))
-    // Elegir el MISMO tipo sugerido (IV) también confirma: la fila se va con su selector y el foco no vuelve al comienzo del diálogo.
-    fireEvent.click(within(tipos()).getByRole("combobox", { name: "Tipo de control de «ORDEN Y LIMPIEZA»" }))
+  it("con «Sólo sin pista», la frase elegida sale de la lista y el foco pasa a la que sigue; sin ninguna, al filtro", async () => {
+    render(<Harness analysis={archivoGrande(6, [2, 4])} />)
+    fireEvent.click(screen.getByRole("checkbox", { name: "Sólo sin pista" }))
+    // Elegir el MISMO tipo sugerido (IV) también cuenta: la fila se va con su selector y el foco no vuelve al comienzo del diálogo.
+    fireEvent.click(within(tipos()).getByRole("combobox", { name: "Tipo de control de «MEDIDA 2»" }))
     fireEvent.click(screen.getByRole("option", { name: "IV. Controles administrativos" }))
-    expect(within(tipos()).queryByText("ORDEN Y LIMPIEZA")).toBeNull()
-    const siguiente = within(tipos()).getByRole("combobox", { name: /^Tipo de control de «USO DE EPP/ })
+    expect(within(tipos()).queryByText("MEDIDA 2")).toBeNull()
+    const siguiente = within(tipos()).getByRole("combobox", { name: "Tipo de control de «MEDIDA 4»" })
     expect(document.activeElement).toBe(siguiente)
     // El selector que se cerró devuelve el foco en un `setTimeout`: no tiene que pisar el traspaso.
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(document.activeElement).toBe(siguiente)
-    fireEvent.click(within(tipos()).getByRole("button", { name: /^Confirmar el tipo de «USO DE EPP/ }))
-    // No queda ninguna: el foco vuelve al filtro en vez de perderse.
-    expect(document.activeElement).toBe(screen.getByRole("checkbox", { name: "Sólo sugeridas" }))
+    fireEvent.click(siguiente)
+    fireEvent.click(screen.getByRole("option", { name: "II. Sustitución" }))
+    // No queda ninguna: el foco vuelve al filtro, que sigue en su lugar, en vez de perderse.
+    expect(within(tipos()).getByText("No quedan frases sin pista.")).toBeTruthy()
+    expect(document.activeElement).toBe(screen.getByRole("checkbox", { name: "Sólo sin pista" }))
   })
 
   /* Enter con el teclado sobre una opción (Task 10, visto en Chromium). Si el `keydown` no se
@@ -209,15 +193,15 @@ describe("ImportMeasuresStep (Fase C)", () => {
   }
 
   it.each([
-    { caso: "sin filtro: el foco queda en el selector de esa fila", filtro: false, foco: "Tipo de control de «ORDEN Y LIMPIEZA»" },
-    { caso: "con «Sólo sugeridas»: el foco pasa al selector de la frase que sigue", filtro: true, foco: /^Tipo de control de «USO DE EPP/ },
-  ])("Enter sobre una opción confirma la frase y no abre ningún selector — $caso", ({ filtro, foco }) => {
+    { caso: "sin filtro: el foco queda en el selector de esa fila", filtro: false, frase: "MEDIDA 1", foco: "Tipo de control de «MEDIDA 1»" },
+    { caso: "con «Sólo sin pista»: el foco pasa al selector de la frase que sigue", filtro: true, frase: "MEDIDA 2", foco: "Tipo de control de «MEDIDA 3»" },
+  ])("Enter sobre una opción elige el tipo y no abre ningún selector — $caso", ({ filtro, frase, foco }) => {
     const onChange = vi.fn()
-    render(<Harness onChange={onChange} />)
-    if (filtro) fireEvent.click(screen.getByRole("checkbox", { name: "Sólo sugeridas" }))
-    fireEvent.click(within(tipos()).getByRole("combobox", { name: "Tipo de control de «ORDEN Y LIMPIEZA»" }))
-    enterComoElNavegador(screen.getByRole("option", { name: "IV. Controles administrativos" }))
-    expect(onChange.mock.lastCall![0].phrases["orden limpieza"]).toEqual({ hierarchy: "administrative", confirmed: true })
+    render(<Harness onChange={onChange} analysis={archivoGrande(4, [2, 3])} />)
+    if (filtro) fireEvent.click(screen.getByRole("checkbox", { name: "Sólo sin pista" }))
+    fireEvent.click(within(tipos()).getByRole("combobox", { name: `Tipo de control de «${frase}»` }))
+    enterComoElNavegador(screen.getByRole("option", { name: "III. Controles de ingeniería" }))
+    expect(onChange.mock.lastCall![0].phrases[frase.toLowerCase()]).toEqual({ hierarchy: "engineering", confirmed: true })
     // Antes, el clic de Enter caía en el selector que acababa de recibir el foco y lo abría.
     expect(screen.queryByRole("listbox")).toBeNull()
     expect(document.activeElement).toBe(within(tipos()).getByRole("combobox", { name: foco }))

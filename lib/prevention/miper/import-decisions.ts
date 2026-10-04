@@ -5,9 +5,9 @@
  * - El tipo de cada frase nace SUGERIDO (`confirmed: false`), salvo que el Excel
  *   lo traiga ROTULADO («IV. Controles administrativos: …», como lo escribe el
  *   libro exportado; `source: "prefix"`). Un romano suelto («I. USAR CASCO»,
- *   `source: "numeral"`) es sólo una sugerencia. El Excel del RE-04 no trae tipo:
- *   siempre lo confirma una persona, eligiéndolo, con «Confirmar» o con «Aceptar
- *   sugerencias».
+ *   `source: "numeral"`) es sólo una sugerencia. `confirmed` dice si una persona
+ *   lo eligió; no es obligatorio para cargar (decisión del usuario, 2026-10-03):
+ *   lo sugerido se carga tal cual y se cambia después en el riesgo.
  * - Responsables y plazos nacen en su sugerencia y se pueden cambiar; no piden
  *   una confirmación aparte.
  * - Todas las funciones devuelven un objeto nuevo: nada se modifica en el lugar.
@@ -31,19 +31,7 @@ export function initialDecisions(analysis: MeasureAnalysis): ImportDecisions {
   }
 }
 
-export function unconfirmedCount(decisions: ImportDecisions): number {
-  return Object.values(decisions.phrases).filter((decision) => !decision.confirmed).length
-}
-
-/** «Aceptar sugerencias»: confirma todas las frases con el tipo que ya tienen. */
-export function acceptSuggestions(decisions: ImportDecisions): ImportDecisions {
-  return {
-    ...decisions,
-    phrases: Object.fromEntries(Object.entries(decisions.phrases).map(([key, decision]) => [key, { ...decision, confirmed: true }])),
-  }
-}
-
-/** Elegir un tipo (o confirmar el sugerido) confirma esa frase. */
+/** Elegir un tipo (también el sugerido) marca la frase como elegida por una persona. */
 export function choosePhraseType(decisions: ImportDecisions, key: string, hierarchy: ControlHierarchy): ImportDecisions {
   return { ...decisions, phrases: { ...decisions.phrases, [key]: { hierarchy, confirmed: true } } }
 }
