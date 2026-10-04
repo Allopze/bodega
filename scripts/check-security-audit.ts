@@ -15,9 +15,9 @@ import { pathToFileURL } from "node:url"
  * - Si su justificación depende de una condición del repo (no usar una API, no
  *   tener cierto archivo), la entrada trae su propio guardrail en `main()`.
  *
- * Vacío desde el 2026-09-27: `npm audit` no reporta hallazgos. Las cuatro
- * entradas anteriores (brace-expansion GHSA-mh99-v99m-4gvg y GHSA-rgw5-rvv9-x895,
- * sharp GHSA-f88m-g3jw-g9cj, js-yaml GHSA-5p4m-2wfm-xmqj) y sus guardrails
+ * Vacío entre el 2026-09-27 y el 2026-10-04. Las cuatro entradas anteriores
+ * (brace-expansion GHSA-mh99-v99m-4gvg y GHSA-rgw5-rvv9-x895, sharp
+ * GHSA-f88m-g3jw-g9cj, js-yaml GHSA-5p4m-2wfm-xmqj) y sus guardrails
  * (WorkbookWriter de ExcelJS, `.eslintrc.y(a)ml`, `images.remotePatterns`) siguen
  * en el historial de este archivo por si alguno reaparece.
  */
@@ -27,7 +27,19 @@ export type AuditAllowlistEntry = {
   reviewBy: string
 }
 
-export const AUDIT_ALLOWLIST: readonly AuditAllowlistEntry[] = []
+export const AUDIT_ALLOWLIST: readonly AuditAllowlistEntry[] = [
+  {
+    ghsaId: "GHSA-vfj7-8cjw-p6xm", // braces <=3.0.3: agotamiento de pila con patrones muy anidados
+    reason:
+      "No existe versión corregida de braces (3.0.3 es la última). La única ruta es " +
+      "eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch → braces: " +
+      "dependencia de desarrollo que sólo corre al hacer lint, con patrones que salen de la " +
+      "configuración del repo, no de datos de usuarios. No llega al servidor de producción " +
+      "(guardrail: braces no puede aparecer en el árbol sin dependencias de desarrollo). " +
+      "El arreglo que propone npm es bajar eslint-config-next a la 14, incompatible con Next 16.",
+    reviewBy: "2026-11-04",
+  },
+]
 
 type AuditVulnerability = {
   severity: string
@@ -102,6 +114,33 @@ export function findUncoveredFindings(report: AuditReport, allowlist: readonly A
   return problems
 }
 
+type NpmLsNode = { dependencies?: Record<string, NpmLsNode> }
+
+/**
+ * Rutas por las que `name` aparece en un árbol de `npm ls --json`. Guardrail de
+ * GHSA-vfj7-8cjw-p6xm: con `--omit=dev`, braces no debe aparecer nunca.
+ */
+export function findPackagePaths(tree: NpmLsNode, name: string, trail: string[] = []): string[] {
+  const paths: string[] = []
+  for (const [dependency, node] of Object.entries(tree.dependencies ?? {})) {
+    const next = [...trail, dependency]
+    if (dependency === name) paths.push(next.join(" → "))
+    paths.push(...findPackagePaths(node, name, next))
+  }
+  return paths
+}
+
+function runNpmLsProduction(name: string): NpmLsNode {
+  try {
+    return JSON.parse(execFileSync("npm", ["ls", name, "--omit=dev", "--all", "--json"], { encoding: "utf8" }))
+  } catch (error) {
+    // `npm ls` sale con 1 cuando el paquete no está: el JSON sigue en stdout.
+    const stdout = (error as { stdout?: string }).stdout
+    if (stdout) return JSON.parse(stdout)
+    throw error
+  }
+}
+
 function runNpmAudit(): AuditReport {
   try {
     const out = execFileSync("npm", ["audit", "--audit-level=high", "--json"], { encoding: "utf8" })
@@ -122,6 +161,15 @@ function main() {
     for (const entry of expired) console.error(`- ${entry.ghsaId} (reviewBy ${entry.reviewBy})`)
     console.error("Reevalúa la alcanzabilidad y actualiza scripts/check-security-audit.ts.")
     process.exit(1)
+  }
+
+  if (AUDIT_ALLOWLIST.some((entry) => entry.ghsaId === "GHSA-vfj7-8cjw-p6xm")) {
+    const productionPaths = findPackagePaths(runNpmLsProduction("braces"), "braces")
+    if (productionPaths.length > 0) {
+      console.error("braces quedó en el árbol de producción; invalida el allowlist de GHSA-vfj7-8cjw-p6xm:")
+      for (const route of productionPaths) console.error(`- ${route}`)
+      process.exit(1)
+    }
   }
 
   const report = runNpmAudit()
