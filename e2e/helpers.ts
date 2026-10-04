@@ -587,7 +587,14 @@ export function textoVisible(page: Page, text: string | RegExp) {
  */
 export async function enviarAsistenteDeProducto(page: Page, panel: Locator) {
   await panel.getByRole("button", { name: /Siguiente/ }).click()
-  // Paso 2 (atributos): sin ninguno, se crea un solo producto sin variantes.
+  // Paso 2 (atributos): desde 76368e40 el asistente sugiere una escala de tallas
+  // por el nombre y la deja marcada («Guante …» marca las de guantes y el pie pasa
+  // a «Crear 4 productos»). Este helper crea un solo producto sin variantes, así
+  // que elige «Sin tallas» cuando hubo sugerencia.
+  const sinTallas = panel.getByRole("radiogroup", { name: "Escala de tallas" }).getByRole("radio", { name: "Sin tallas", exact: true })
+  await expect(sinTallas).toBeVisible()
+  if (await sinTallas.getAttribute("aria-checked") !== "true") await sinTallas.click()
+  await expect(sinTallas).toHaveAttribute("aria-checked", "true")
   await panel.getByRole("button", { name: /Siguiente/ }).click()
   // `nextStep` regenera las variantes en un `setTimeout(0)`, así que el pie se
   // vuelve a montar justo después de cambiar de paso: se espera al botón final
