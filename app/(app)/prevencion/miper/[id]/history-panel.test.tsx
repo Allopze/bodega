@@ -35,6 +35,33 @@ describe("HistoryPanel: bitácora paginada", () => {
     expect(screen.getByRole("status").textContent).toBe("Mostrando 2 eventos")
   })
 
+  it("agrupa las filas importadas en una línea y la cuenta sigue siendo de eventos crudos", () => {
+    const imported = (id: string): MiperHistoryEvent => ({ ...event(id), changeType: "import_applied", object: "entry", reason: null })
+    render(<HistoryPanel workspace={workspace} history={{ events: [imported("i1"), imported("i2"), imported("i3"), event("e1")], nextCursor: null }} />)
+    expect(screen.getByText("3 filas importadas desde el RE-04")).toBeTruthy()
+    expect(screen.getAllByRole("listitem")).toHaveLength(2)
+    expect(screen.getByRole("status").textContent).toBe("Mostrando 4 eventos")
+  })
+
+  // La página trae 50 eventos: con más por cargar, el último grupo puede seguir en la siguiente.
+  it("el grupo que toca el final de la página cargada dice «o más»; los de antes no", () => {
+    const imported = (id: string): MiperHistoryEvent => ({ ...event(id), changeType: "import_applied", object: "entry", reason: null })
+    render(<HistoryPanel workspace={workspace} history={{ events: [event("e1"), event("e2"), imported("i1"), imported("i2")], nextCursor: "c1" }} />)
+    expect(screen.getByText("2 o más filas importadas desde el RE-04")).toBeTruthy()
+    expect(screen.queryByText(/o más/, { selector: "span" })?.textContent).toBe("2 o más filas importadas desde el RE-04")
+  })
+
+  it("una sola fila importada usa el singular", () => {
+    render(<HistoryPanel workspace={workspace} history={{ events: [{ ...event("i1"), changeType: "import_applied", object: "entry", reason: null }], nextCursor: null }} />)
+    expect(screen.getByText("Fila importada desde el RE-04")).toBeTruthy()
+  })
+
+  it("los vacíos son párrafos compactos, no encabezados", () => {
+    render(<HistoryPanel workspace={workspace} history={page(["e1"], null)} />)
+    expect(screen.getByText("Aún sin versiones").tagName).toBe("P")
+    expect(screen.getByText("Esta es la única MIPER registrada para la faena.")).toBeTruthy()
+  })
+
   it("sin nextCursor no hay botón", () => {
     render(<HistoryPanel workspace={workspace} history={page(["e1"], null)} />)
     expect(screen.queryByRole("button", { name: "Cargar más" })).toBeNull()

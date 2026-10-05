@@ -11,6 +11,7 @@ vi.mock("../actions", () => ({ listMiperWorksiteTargetsAction }))
 const beforeForwardNavigation = vi.hoisted(() => vi.fn())
 vi.mock("./workspace-memory", () => ({ beforeForwardNavigation }))
 
+import { ShellHeaderProvider, useHasWorksiteFilter } from "@/components/layout/header-context"
 import { WorksiteSwitcher } from "./worksite-switcher"
 
 const TARGETS = [
@@ -73,5 +74,14 @@ describe("WorksiteSwitcher", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: /Reintentar/ }))
     expect(await screen.findByRole("menuitem", { name: "Faena B · 2027" })).toBeTruthy()
     expect(listMiperWorksiteTargetsAction).toHaveBeenCalledTimes(2)
+  })
+  // El selector ya dice qué faena se mira: el chip «Tu faena» del TopBar, al lado,
+  // se leía como la faena de la pantalla (auditoría UI 2026-10-04, n.º 1).
+  it("declara un selector de faena a la vista, así el TopBar oculta «Tu faena»", () => {
+    function Chip() { return <p>{useHasWorksiteFilter() ? "chip oculto" : "chip visible"}</p> }
+    const view = render(<ShellHeaderProvider><Chip /><WorksiteSwitcher currentWorksiteId="ws-a" /></ShellHeaderProvider>)
+    expect(screen.getByText("chip oculto")).toBeTruthy()
+    view.rerender(<ShellHeaderProvider><Chip /></ShellHeaderProvider>)
+    expect(screen.getByText("chip visible")).toBeTruthy()
   })
 })

@@ -6,6 +6,8 @@
  * (lib/services/miper/*) y el panel de historial del cliente. No existe un
  * `ROLE_CONTEXT_LABEL` en lib/services/miper/shared.ts que reemplazar.
  */
+import { formatQty } from "@/lib/utils"
+
 const LABELS: Record<string, string> = {
   created: "MIPER creada",
   header_updated: "Antecedentes modificados",
@@ -41,11 +43,44 @@ const LABELS: Record<string, string> = {
   evidence_added: "Evidencia agregada a una ocurrencia",
   evidence_withdrawn: "Evidencia retirada de una ocurrencia",
   // Importación del RE-04 (F3): la traza de lo que entró desde el Excel real.
-  import_applied: "Filas importadas desde el RE-04",
+  import_applied: "Fila importada desde el RE-04",
 }
 
-export function historyLabel(changeType: string) {
-  return LABELS[changeType] ?? "Cambio registrado"
+/** Plural cuando un grupo junta varios eventos iguales: se antepone el conteo. */
+const PLURALS: Record<string, string> = {
+  entry_created: "riesgos agregados",
+  entry_updated: "riesgos modificados",
+  entry_deleted: "riesgos eliminados",
+  entry_duplicated: "riesgos duplicados",
+  control_created: "medidas agregadas",
+  control_updated: "medidas modificadas",
+  control_deleted: "medidas eliminadas",
+  observation_created: "observaciones registradas",
+  observation_answered: "observaciones respondidas",
+  observation_resolved: "observaciones resueltas",
+  action_created: "actividades agregadas al programa",
+  action_updated: "actividades del programa modificadas",
+  controls_linked: "medidas vinculadas a actividades del programa",
+  evidence_added: "evidencias agregadas a ocurrencias",
+}
+
+/**
+ * Rótulo de un evento o de un grupo de `count` eventos iguales. `object` distingue la
+ * importación de una fila («entry») de la de la matriz entera («matrix»).
+ */
+export function historyLabel(changeType: string, options?: { object?: string | null; count?: number; atLeast?: boolean }) {
+  const count = options?.count ?? 1
+  /* `atLeast`: el grupo toca el borde de la página cargada y puede seguir en la
+   * siguiente; decir «230» cuando sólo se cargaron 50 sería un número falso. */
+  const n = options?.atLeast ? `${formatQty(count)} o más` : formatQty(count)
+  if (changeType === "import_applied") {
+    if (options?.object === "matrix") return "Importación del RE-04 aplicada"
+    return count > 1 ? `${n} filas importadas desde el RE-04` : "Fila importada desde el RE-04"
+  }
+  const singular = LABELS[changeType] ?? "Cambio registrado"
+  if (count <= 1) return singular
+  const plural = PLURALS[changeType]
+  return plural ? `${n} ${plural}` : `${singular} (${n} veces)`
 }
 
 /** Nombre del rol con que se actuó, para la columna de actor de la bitácora. */

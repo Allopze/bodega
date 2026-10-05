@@ -7,6 +7,12 @@ export interface SummaryStat {
   key: string
   label: string
   value: string | number
+  /**
+   * "text" pinta el valor como frase en la sans del cuerpo (`text-base`), sin mono ni
+   * tabular-nums ni atenuación de ceros. Una frase en el hueco del numeral mono de 22 px
+   * partía en 2–3 líneas; un tile vacío dice qué hacer (regla A1). Por defecto "number".
+   */
+  valueKind?: "number" | "text"
   icon?: React.ReactNode
   /** Si se setea, la celda es un link (p.ej. vista pre-filtrada). */
   href?: string

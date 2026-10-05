@@ -83,7 +83,7 @@ export function ProgramActionCard({
         <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Actividad N° {action.actionNumber}</p>
         <p className="mt-1 text-xs text-[var(--color-text-muted)]">
           {action.responsibleName ?? "Sin responsable"} · {SCHEDULE_KIND_LABEL[action.scheduleKind]}
-          {action.controls.length > 0 ? ` · Riesgos ${action.controls.map((control) => control.rowNumber).join(", ")} del MIPER` : " · Sin medidas del MIPER vinculadas"}
+          {action.controls.length > 0 ? ` · Riesgos ${action.controls.map((control) => control.rowNumber).join(", ")} de la MIPER` : " · Sin medidas de la MIPER vinculadas"}
         </p>
         {retired && <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Motivo del retiro: {action.retiredReason}</p>}
       </div>

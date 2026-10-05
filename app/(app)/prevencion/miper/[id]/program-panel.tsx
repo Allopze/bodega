@@ -2,11 +2,12 @@
 
 import * as React from "react"
 import { usePathname, useSearchParams } from "next/navigation"
-import { ClipboardText, Plus } from "@phosphor-icons/react"
+import { CaretDown, CaretRight, ClipboardText } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -59,14 +60,29 @@ export function ProgramPageActions({ matrixId, mode, users, program }: {
   users: Array<{ id: string; name: string }>
   program: ProgramWorkspace
 }) {
+  const [dialog, setDialog] = React.useState<"generate" | "create" | null>(null)
+  const triggerRef = React.useRef<HTMLButtonElement>(null)
   if (!mode.canEdit) return null
+  const activeActions = program.actions.filter((action) => action.status === "active")
+  /* Regla A3: varios flujos de alta → un solo botón que pregunta cuál. Y una sola
+   * acción primaria por vista (la del encabezado es «Enviar a revisión»): antes
+   * había dos botones rellenos de 30 px compitiendo con los de 34 px de al lado. */
   return (
     <>
-      <GenerateActionsDialog matrixId={matrixId} users={users} actions={program.actions.filter((action) => action.status === "active")}
-        trigger={<Button size="sm" variant="secondary">Generar actividades</Button>} />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button ref={triggerRef} variant="secondary" aria-label="Agregar actividades"><span>Agregar<span className="hidden xl:inline"> actividades</span></span><CaretDown aria-hidden className="ml-1 size-3.5" /></Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => setDialog("generate")}>Generar desde las medidas…</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setDialog("create")}>Agregar una a mano…</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <GenerateActionsDialog matrixId={matrixId} users={users} actions={activeActions}
+        open={dialog === "generate"} onOpenChange={(open) => setDialog(open ? "generate" : null)} returnFocusRef={triggerRef} />
       <ProgramActionDialog matrixId={matrixId} processes={program.processes} users={users}
         defaultLocationLabel={program.program?.worksiteName ?? null}
-        trigger={<Button size="sm"><Plus size={14} className="mr-1.5" />Nueva actividad</Button>} />
+        open={dialog === "create"} onOpenChange={(open) => setDialog(open ? "create" : null)} returnFocusRef={triggerRef} />
     </>
   )
 }
@@ -98,6 +114,7 @@ export function ProgramPanel({
   const [registerTarget, setRegisterTarget] = React.useState<{ occurrence: ProgramOccurrenceView } | null>(null)
   const [retireTargetId, setRetireTargetId] = React.useState<string | null>(null)
   const [headerOpen, setHeaderOpen] = React.useState(false)
+  const [generateOpen, setGenerateOpen] = React.useState(false)
   const today = todayInChile()
 
   const urlSearch = searchParams.get("q") ?? ""
@@ -181,42 +198,46 @@ export function ProgramPanel({
         <EmptyState
           compact
           icon={<ClipboardText size={24} />}
-          title="Esta MIPER todavía no tiene Programa de Trabajo"
-          description="El Programa de Trabajo toma las medidas del MIPER y las convierte en actividades con responsable y fecha. Se crea al generar las actividades o al agregar la primera."
-          action={mode.canEdit ? <Button size="sm" variant="secondary" onClick={() => setHeaderOpen(true)}>Completar antecedentes</Button> : undefined}
+          title="Esta MIPER todavía no tiene plan de medidas"
+          // `\u2011`: guion que no parte línea; en la columna de 40ch el código quedaba «RE-» / «04.1».
+          description={"El plan de medidas (Programa de Trabajo RE\u201104.1) convierte las medidas de la matriz en actividades con responsable y fecha. Se crea al empezar a generar las actividades o al agregar la primera."}
+          action={mode.canEdit ? <Button size="sm" variant="secondary" onClick={() => setGenerateOpen(true)}>Generar actividades desde las medidas</Button> : undefined}
+          secondaryAction={mode.canEdit ? <Button size="sm" variant="ghost" onClick={() => setHeaderOpen(true)}>Completar antecedentes</Button> : undefined}
         />
       )}
 
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap items-end gap-2">
-          <Field label="Buscar actividad del programa" htmlFor="miper-program-search" className="w-full sm:w-72">
-            <Input
-              id="miper-program-search"
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Actividad, proceso o responsable…"
-            />
-          </Field>
-          <Select value={estado} onValueChange={(value) => setFilter("estado", value === "todas" ? null : value)}>
-            <SelectTrigger aria-label="Filtrar por estado de la actividad" className="w-56"><SelectValue /></SelectTrigger>
-            <SelectContent>{ESTADO_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-          </Select>
-          <Select value={frecuencia} onValueChange={(value) => setFilter("frecuencia", value === "todas" ? null : value)}>
-            <SelectTrigger aria-label="Filtrar por frecuencia de la actividad" className="w-52"><SelectValue /></SelectTrigger>
-            <SelectContent>{FRECUENCIA_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-          </Select>
-          {anyFilter && <Button type="button" variant="ghost" size="sm" onClick={resetFilters}>Limpiar filtros</Button>}
-        </div>
+      {actions.length > 0 && (
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-end gap-2">
+            <Field label="Buscar actividad del programa" htmlFor="miper-program-search" className="w-full sm:w-72">
+              <Input
+                id="miper-program-search"
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Actividad, proceso o responsable…"
+              />
+            </Field>
+            <Select value={estado} onValueChange={(value) => setFilter("estado", value === "todas" ? null : value)}>
+              <SelectTrigger aria-label="Filtrar por estado de la actividad" className="w-56"><SelectValue /></SelectTrigger>
+              <SelectContent>{ESTADO_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={frecuencia} onValueChange={(value) => setFilter("frecuencia", value === "todas" ? null : value)}>
+              <SelectTrigger aria-label="Filtrar por frecuencia de la actividad" className="w-52"><SelectValue /></SelectTrigger>
+              <SelectContent>{FRECUENCIA_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+            </Select>
+            {anyFilter && <Button type="button" variant="ghost" size="sm" onClick={resetFilters}>Limpiar filtros</Button>}
+          </div>
 
-      </div>
+        </div>
+      )}
 
       {actions.length === 0 ? (
         programHeader && (
           <EmptyState
             compact
-            title="Este programa todavía no tiene actividades"
-            description="Genera las actividades a partir de las medidas del MIPER o agrega la primera a mano."
+            title="Este plan todavía no tiene actividades"
+            description="Genera las actividades a partir de las medidas de la matriz o agrega la primera a mano."
             action={mode.canEdit ? <Button asChild size="sm" variant="secondary"><WorkspaceLink href={hrefToMatrix(pathname, searchParams)}>Revisar medidas de la matriz</WorkspaceLink></Button> : undefined}
           />
         )
@@ -270,6 +291,12 @@ export function ProgramPanel({
         />
       )}
 
+      {/* Montado aunque ya exista el programa: abrirlo lo crea (`ensureProgram`) y, si
+       * dependiera de `!programHeader`, una revalidación lo desmontaría abierto. */}
+      {mode.canEdit && (
+        <GenerateActionsDialog matrixId={matrixId} users={users} actions={actions.filter((action) => action.status === "active")}
+          open={generateOpen} onOpenChange={setGenerateOpen} />
+      )}
       <ProgramHeaderDialog open={headerOpen} onOpenChange={setHeaderOpen} matrixId={matrixId} program={programHeader} users={users} />
     </div>
   )
@@ -308,10 +335,10 @@ function ProgramHeader({ program, header, progress, canEdit, fichaHref, onEdit }
       <dl className="flex flex-wrap gap-x-8 gap-y-3 rounded-xl bg-[var(--color-surface-2)] p-4">
         <Detail label="Período" value={String(program.period)} />
         <Detail label="Encargado del programa" value={program.programManagerName} />
-        <Detail label="Avance del programa" value={progress.planned === 0 ? "Sin ejecuciones programadas" : `${progress.done}/${progress.planned} · ${ratioLabel(progress)}`} />
+        <Detail label="Avance del plan" value={progress.planned === 0 ? "Sin ejecuciones programadas" : `${progress.done}/${progress.planned} · ${ratioLabel(progress)}`} />
       </dl>
-      <details className="rounded-xl border border-[var(--color-border)] p-3">
-        <summary className="cursor-pointer text-sm font-medium">Datos del programa</summary>
+      <details className="group rounded-xl border border-[var(--color-border)] p-3">
+        <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 text-sm font-medium sm:min-h-0 [&::-webkit-details-marker]:hidden"><CaretRight aria-hidden className="size-3.5 group-open:rotate-90 motion-safe:transition-transform duration-[var(--duration-fast)]" />Datos del programa</summary>
         <div className="mt-3 space-y-4">
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Detail label="Empresa" value={header.companyName} />

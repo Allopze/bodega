@@ -75,7 +75,7 @@ export const hrefToMatrixOnly = (pathname: string, params: Params, patch: Partia
   hrefReplacing(pathname, params, NOT_MATRIX_ONLY, patch)
 
 /**
- * El programa entero (la cifra «Avance del programa» del Resumen, Fase B):
+ * El programa entero (la cifra «Avance del plan» de Inicio, Fase B):
  * quita los filtros de su lista, porque el avance que muestra la cifra es el de
  * todo el programa. Los filtros de la matriz no afectan al programa y se quedan.
  */

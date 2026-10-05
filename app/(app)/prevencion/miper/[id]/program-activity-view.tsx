@@ -247,13 +247,13 @@ export function ProgramActivityView({
 
       <section className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold">Medidas del MIPER que ejecuta</h3>
+          <h3 className="text-sm font-semibold">Medidas de la MIPER que ejecuta</h3>
           {mode.canEdit && active && (
             <Button type="button" size="sm" variant="secondary" onClick={() => setLinkOpen(true)}>Vincular medidas</Button>
           )}
         </div>
         {action.controls.length === 0 ? (
-          <p className="text-sm text-[var(--color-text-subtle)]">Esta actividad no está vinculada a ninguna medida del MIPER.</p>
+          <p className="text-sm text-[var(--color-text-subtle)]">Esta actividad no está vinculada a ninguna medida de la MIPER.</p>
         ) : (
           <ul className="space-y-1">
             {action.controls.map((control) => {

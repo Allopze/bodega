@@ -25,4 +25,8 @@ describe("SummaryStrip", () => {
     expect(container.querySelector("details")).not.toHaveAttribute("open")
     expect(screen.getByText("Elaboró Ana")).toBeInTheDocument()
   })
+  it("la tira marca los datos documentales con un único disclosure de texto exacto", () => {
+    render(<SummaryStrip snapshot={snapshot} authorName={null} submittedAt={null} versionLabel="v1" completeCount={2} />)
+    expect(screen.getByText("Datos del documento")).toBeInTheDocument()
+  })
 })

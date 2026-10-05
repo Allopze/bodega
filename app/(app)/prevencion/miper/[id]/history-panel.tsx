@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
+import { groupHistoryEvents } from "@/lib/prevention/miper/history-groups"
 import { ROLE_CONTEXT_TEXT, historyLabel } from "@/lib/prevention/miper/history-labels"
 import { useOperation } from "@/lib/hooks/use-operation"
 import type { MiperHistoryEvent, MiperHistoryPage, MiperWorkspace } from "@/lib/services/miper/queries"
@@ -33,6 +34,8 @@ export function HistoryPanel({ workspace, history }: HistoryPanelProps) {
   }
   const operation = useOperation()
   const events = [...history.events, ...current.events]
+  // Una fila por racha de eventos iguales (el importador escribe uno por fila importada).
+  const groups = groupHistoryEvents(events)
   const loadMore = () => {
     const cursor = current.nextCursor
     if (!cursor) return
@@ -47,7 +50,7 @@ export function HistoryPanel({ workspace, history }: HistoryPanelProps) {
     <div className="grid gap-6 lg:grid-cols-2">
       <section className="space-y-2">
         <h2 className="text-sm font-semibold">Versiones aprobadas</h2>
-        {workspace.versions.length === 0 ? <EmptyState title="Aún sin versiones" description="La primera versión se sella cuando Legal y RRHH aprueba la MIPER." /> : (
+        {workspace.versions.length === 0 ? <EmptyState compact as="p" title="Aún sin versiones" description="La primera versión se sella cuando Legal y RRHH aprueba la MIPER." /> : (
           <ol className="space-y-2">
             {workspace.versions.map((version) => (
               <li key={version.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm">
@@ -66,7 +69,7 @@ export function HistoryPanel({ workspace, history }: HistoryPanelProps) {
        * versiones vigentes y anteriores sin volver a la portada. */}
       <section className="space-y-2">
         <h2 className="text-sm font-semibold">Otros períodos de la faena</h2>
-        {workspace.siblingMatrices.length === 0 ? <EmptyState title="Sin otros períodos" description="Ésta es la única MIPER registrada para la faena." /> : (
+        {workspace.siblingMatrices.length === 0 ? <EmptyState compact as="p" title="Sin otros períodos" description="Esta es la única MIPER registrada para la faena." /> : (
           <ol className="space-y-2">
             {workspace.siblingMatrices.map((sibling) => (
               <li key={sibling.id} className="flex items-center justify-between gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm">
@@ -84,12 +87,12 @@ export function HistoryPanel({ workspace, history }: HistoryPanelProps) {
       <section className="space-y-2 lg:col-span-2">
         <h2 className="text-sm font-semibold">Bitácora</h2>
         <ol className="space-y-1 text-sm">
-          {events.map((event) => (
-            <li key={event.id} className="flex flex-wrap gap-x-2 border-b border-[var(--color-border)] py-1.5">
+          {groups.map(({ first: event, count }, index) => (
+            <li key={event.id} className="flex flex-wrap gap-x-2 border-b border-[var(--color-border)] py-1.5 sm:grid sm:grid-cols-[8.5rem_minmax(0,1fr)_minmax(0,18rem)] sm:gap-x-3">
               <time className="tabular-nums text-[var(--color-text-subtle)]" dateTime={toDateTimeAttr(event.at)}>{formatDateTime(event.at)}</time>
-              <span className="font-medium">{historyLabel(event.changeType)}</span>
+              <span className="font-medium">{historyLabel(event.changeType, { object: event.object, count, atLeast: index === groups.length - 1 && Boolean(current.nextCursor) })}</span>
               <span>{event.actorName ?? "Sistema"}{event.actingAs ? ` (${ROLE_CONTEXT_TEXT[event.actingAs] ?? "otro rol"})` : ""}</span>
-              {event.reason && <span className="w-full text-[var(--color-text-subtle)]">{event.reason}</span>}
+              {event.reason && <span className="w-full text-[var(--color-text-subtle)] sm:col-span-3">{event.reason}</span>}
             </li>
           ))}
         </ol>

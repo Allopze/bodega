@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import type { CompletenessIssue } from "@/lib/prevention/miper/completeness"
 import type { WorkspaceMode } from "@/lib/prevention/miper/workspace-mode"
@@ -74,6 +74,17 @@ describe("WorkflowBar", () => {
     expect(screen.queryByRole("button", { name: "Descartar borrador" })).toBeNull()
     fireEvent.keyDown(screen.getByRole("button", { name: "Más acciones de la MIPER" }), { key: "Enter" })
     expect(screen.getByRole("menuitem", { name: "Descartar borrador" })).toBeTruthy()
+  })
+
+  // Abierto desde un ítem de menú, el foco caía al `body` al cancelar.
+  it("cancelar «Descartar borrador» devuelve el foco a «Más»", async () => {
+    render(<WorkflowBar workspace={workspace} mode={mode} issues={[]} openObservations={0} onOpenFicha={vi.fn()} />)
+    const more = screen.getByRole("button", { name: "Más acciones de la MIPER" })
+    fireEvent.keyDown(more, { key: "Enter" })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Descartar borrador" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(more))
   })
 
   it("«La matriz no tiene registros» abre Riesgos para crear la primera tarea", () => {

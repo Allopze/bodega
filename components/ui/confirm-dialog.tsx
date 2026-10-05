@@ -35,6 +35,12 @@ interface ConfirmDialogProps {
    * que desaparece mientras la persona decide qué hacer.
    */
   error?: string
+  /**
+   * A dónde vuelve el foco al cerrar. Abierto desde un ítem de menú, Radix lo
+   * devolvía al ítem —que ya no existe— y caía al `body`; el disparador del
+   * menú es el lugar natural.
+   */
+  returnFocusRef?: React.RefObject<HTMLElement | null>
 }
 
 const variantConfig = {
@@ -70,6 +76,7 @@ const ConfirmDialogInner = React.memo(function ConfirmDialogInner({
   reasonLabel,
   reasonPlaceholder,
   error,
+  returnFocusRef,
 }: ConfirmDialogProps) {
   const config = variantConfig[variant]
   const [reason, setReason] = React.useState("")
@@ -83,7 +90,7 @@ const ConfirmDialogInner = React.memo(function ConfirmDialogInner({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent onCloseAutoFocus={returnFocusRef ? (event) => { event.preventDefault(); returnFocusRef.current?.focus() } : undefined}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && (

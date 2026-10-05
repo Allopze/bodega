@@ -1,7 +1,7 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test"
 import { expectPageTitle, login, textoVisible } from "./helpers"
 import {
-  abrirRiesgo, agregarMedida, cabecera, crearTarea, elegir, elegirOpcion, escribir, guardado, irAPaso, nivel, volverALaTarea,
+  abrirGenerador, abrirRiesgo, agregarMedida, cabecera, crearTarea, elegir, elegirOpcion, escribir, guardado, irAPaso, nivel, volverALaTarea,
 } from "./miper-helpers"
 
 /**
@@ -118,8 +118,7 @@ test("la prevencionista crea la MIPER, la completa y la envía a revisión", asy
   // incluye ese paso (el detalle de la ejecución se prueba en
   // `prevencion-miper-programa.spec.ts`).
   await page.getByRole("tab", { name: "Plan de medidas" }).click()
-  await cabecera(page).getByRole("button", { name: "Generar actividades" }).click()
-  const generador = page.getByRole("dialog", { name: "Generar actividades desde el MIPER" })
+  const generador = await abrirGenerador(page)
   await generador.getByLabel("Actividad", { exact: true }).fill("Inspección de la pendiente de descarga")
   await generador.getByRole("combobox", { name: "Responsable de la actividad de la fila 1" }).click()
   await page.getByRole("option", { name: "Prevencionista Faena E2E", exact: true }).click()

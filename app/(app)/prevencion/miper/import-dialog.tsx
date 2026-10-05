@@ -383,7 +383,7 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog, op
                   </p>
                 )}
               </section>
-              <Field label="Motivo del borrador" helper="Queda en la bitácora del MIPER si se carga en un borrador nuevo.">
+              <Field label="Motivo del borrador" helper="Queda en la bitácora de la MIPER si se carga en un borrador nuevo.">
                 <Textarea aria-label="Motivo del borrador" value={revisionReason} onChange={(event) => setRevisionReason(event.target.value)} minLength={10} />
               </Field>
               {(draft?.blockedReason || live?.blockedReason) && (

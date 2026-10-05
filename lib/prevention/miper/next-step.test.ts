@@ -48,7 +48,8 @@ describe("nextStepFor", () => {
     expect(nextStepFor(input({ issues: [entryIssue("a")] }))?.title).toBe("Faltan datos en 1 riesgo")
   })
   it("7. sin errores en borrador: lista para enviar", () => {
-    expect(nextStepFor(input())).toMatchObject({ tone: "success", title: "Lista para enviar a revisión", action: { kind: "tab", tab: "revision" } })
+    // Sin «Ir a Revisión»: repetía la pestaña y el envío de la cabecera (auditoría UI 2026-10-04, n.º 7).
+    expect(nextStepFor(input())).toMatchObject({ tone: "success", title: "Lista para enviar a revisión", description: "No queda ningún dato obligatorio por completar.", action: null, secondary: null })
   })
   it("8. vigente con cambios sin revisar", () => {
     expect(nextStepFor(input({ status: "published", hasPendingChanges: true, versionLabel: "v1", mode: { ...mode, canEdit: false } }))?.title).toBe("Hay cambios sin revisar desde v1")
@@ -76,6 +77,11 @@ describe("nextStepInView", () => {
     expect(nextStepInView(respond, { atRoot: true, tab: "revision" })).toMatchObject({ title: "Responde 3 observaciones", action: null, secondary: null })
     expect(nextStepInView(respond, { atRoot: true, tab: "programa" })).toBeNull()
     expect(nextStepInView(pending, { atRoot: true, tab: "revision" })).toEqual(pending)
+  })
+  it("«Lista para enviar» no se repite en Revisión, que ya muestra la preparación sin pendientes", () => {
+    const ready: NextStep = { tone: "success", title: "Lista para enviar a revisión", description: "d", action: null, secondary: null, scope: "root" }
+    expect(nextStepInView(ready, { atRoot: true, tab: "revision" })).toBeNull()
+    expect(nextStepInView(ready, { atRoot: true, tab: "resumen" })).toBe(ready)
   })
   it("en Inicio ofrece pendientes y completos como subconjuntos distintos", () => {
     // El filtro del paso conserva `buscar`/`clasificacion`/…; la cifra del Resumen los limpia. Dos caminos al mismo subconjunto que llegan a listas distintas.

@@ -93,7 +93,7 @@ export function LinkMeasuresDialog({
         <DialogHeader>
           <DialogTitle>Medidas de la actividad N° {action.actionNumber}</DialogTitle>
           <DialogDescription>
-            Marca las medidas del MIPER que esta actividad ejecuta. Quitar una medida no la borra del MIPER.
+            Marca las medidas de la MIPER que esta actividad ejecuta. Quitar una medida no la borra de la MIPER.
           </DialogDescription>
         </DialogHeader>
 

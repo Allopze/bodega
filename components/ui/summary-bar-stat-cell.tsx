@@ -5,9 +5,10 @@ import { Progress } from "./progress"
 import type { SummaryLinkProps, SummaryStat } from "./summary-bar"
 
 export function SummaryBarStatCell({ stat, renderLink }: { stat: SummaryStat; renderLink?: (props: SummaryLinkProps) => React.ReactNode }) {
+  const isText = stat.valueKind === "text"
   const numeric = typeof stat.value === "number" ? stat.value : Number.parseFloat(String(stat.value)) || 0
-  const isZero = typeof stat.value === "number" && stat.value === 0
-  const signalActive = stat.tone === "signal" && numeric > 0
+  const isZero = !isText && typeof stat.value === "number" && stat.value === 0
+  const signalActive = !isText && stat.tone === "signal" && numeric > 0
 
   const body = (
     <div className="px-4 py-3">
@@ -21,7 +22,7 @@ export function SummaryBarStatCell({ stat, renderLink }: { stat: SummaryStat; re
       </div>
       <div className="mt-2 flex items-end gap-2">
         <span className={cn(
-          "font-mono text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight",
+          isText ? "text-base font-semibold leading-snug" : "font-mono text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight",
           signalActive ? "text-[var(--color-signal-ink)]" : isZero ? "text-[var(--color-text-faint)]" : "text-[var(--color-text)]",
         )}>{stat.value}</span>
         {stat.hint && <span className={cn(

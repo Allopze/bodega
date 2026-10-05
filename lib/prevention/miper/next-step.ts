@@ -61,7 +61,9 @@ export function nextStepFor(input: NextStepInput): NextStep | null {
       const first = firstPendingBySeverity(rows, pending)
       return step("warning", `Faltan datos en ${countOf(pending.size, "riesgo")}`, "Continúa completando los datos. Empezarás por el riesgo pendiente de mayor gravedad.", first ? { kind: "riesgo", entryId: first, purpose: "pending" } : null, { kind: "filtro", completitud: "pendientes" })
     }
-    if (input.status === "draft" || input.reviewState === "observed") return step("success", "Lista para enviar a revisión", "Revisa la preparación del documento y envíalo cuando esté listo.", { kind: "tab", tab: "revision" })
+    // Estado, no atajo: «Ir a Revisión» repetía la pestaña y el «Enviar a revisión»
+    // de la cabecera, y el texto se contradecía («Lista…» / «cuando esté listo»).
+    if (input.status === "draft" || input.reviewState === "observed") return step("success", "Lista para enviar a revisión", "No queda ningún dato obligatorio por completar.")
   }
   if (input.status === "published" && input.hasPendingChanges) return step("info", `Hay cambios sin revisar desde ${input.versionLabel}`, "Envíalos a revisión cuando estén listos.")
   return null
@@ -72,6 +74,8 @@ export function nextStepInView(step: NextStep | null, view: { atRoot: boolean; t
   if (!step || (!view.atRoot && step.scope !== "everywhere")) return null
   if (step.scope !== "everywhere" && (view.tab === "programa" || view.tab === "historial")) return null
   if (view.tab !== "revision") return step
+  // Revisión ya lo dice en «Preparación para enviar: sin pendientes».
+  if (step.tone === "success") return null
   const drop = (action: NextStepAction | null) => action?.kind === "tab" && action.tab === "revision" ? null : action
   return { ...step, action: drop(step.action), secondary: drop(step.secondary) }
 }
