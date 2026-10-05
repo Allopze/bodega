@@ -209,11 +209,40 @@ describe("módulo TI — activos", () => {
     expect(asset?.status).toBe("en_reparacion")
     const history = await getAssetHistory(id)
     const entry = history.find((h) => h.action === "status_changed")
-    expect(entry?.detail).toContain("en_reparacion")
+    expect(entry?.detail).toContain("En reparación")
 
     const changes = await testDb.select().from(schema.statusHistory)
       .where(eq(schema.statusHistory.entityId, id))
     expect(changes.some((c) => c.fromStatus === "disponible" && c.toStatus === "en_reparacion")).toBe(true)
+  })
+
+  it("TIUX-01: el cambio manual no resucita un activo dado de baja", async () => {
+    const id = await createAsset({ code: "TI-BAJA-0001", assetTypeId: typeId }, actor)
+    await retireAsset({
+      assetId: id, date: "2026-09-03", reason: "venta",
+      responsibleUserId: actor.userId, authorizedByUserId: "user-ti-gestor",
+    }, actor)
+
+    await expect(changeAssetStatus({ assetId: id, status: "disponible", reason: "Reactivado a mano" }, actor))
+      .rejects.toThrow(/dado de baja.*Bajas/)
+    expect((await getAssetById(id))?.status).toBe("dado_de_baja")
+  })
+
+  it("TIUX-01: perdido/robado con baja vigente se revierten desde Bajas; sin baja se pueden recuperar", async () => {
+    const conBaja = await createAsset({ code: "TI-BAJA-0002", assetTypeId: typeId }, actor)
+    await retireAsset({
+      assetId: conBaja, date: "2026-09-03", reason: "perdida",
+      responsibleUserId: actor.userId, authorizedByUserId: "user-ti-gestor",
+    }, actor)
+    await expect(changeAssetStatus({ assetId: conBaja, status: "disponible", reason: "Apareció" }, actor))
+      .rejects.toThrow(/baja registrada/)
+    expect((await getAssetById(conBaja))?.status).toBe("perdido")
+
+    // Fijado a mano, sin registro de baja: el equipo apareció.
+    const manual = await createAsset({ code: "TI-BAJA-0003", assetTypeId: typeId }, actor)
+    await changeAssetStatus({ assetId: manual, status: "perdido", reason: "No se encuentra" }, actor)
+    await changeAssetStatus({ assetId: manual, status: "disponible", reason: "Encontrado en bodega" }, actor)
+    expect((await getAssetById(manual))?.status).toBe("disponible")
   })
 
   it("no borra (baja lógica) un activo con asignación abierta y sí lo hace sin ella", async () => {

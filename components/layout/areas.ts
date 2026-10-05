@@ -39,6 +39,11 @@ export const NAV_GROUP_ORDER: string[] = [
   "Cumplimiento del programa",
   "En terreno",
   "Seguimiento",
+  // TI — "Seguimiento" (Resumen, Reportes TI) abre el área; después el ciclo de
+  // vida de los equipos y los servicios a personas. Diez ítems planos se leían
+  // como una sola lista (auditoría UI/UX TI 2026-10-05, TIUX-45).
+  "Equipos",
+  "Servicios",
 ]
 
 export const AREAS: AreaDef[] = [

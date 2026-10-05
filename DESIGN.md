@@ -219,6 +219,7 @@ habilitados.
 | Bodega | `Warehouse` | 20 |
 | Reportes | `ChartBar` | 30 |
 | Prevención | `ShieldCheck` | 40 |
+| TI | `Desktop` | 45 |
 | Soporte | `Lifebuoy` | 50 |
 
 Cada área es un icono del rail; al activarla despliega un panel con sus ítems

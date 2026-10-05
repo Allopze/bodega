@@ -12,6 +12,17 @@ export const SelectSearchableContext = React.createContext<{
   open:    boolean
 } | null>(null)
 
+// SelectA11yContext: `Field` clona su hijo único con aria-labelledby,
+// aria-describedby y aria-invalid, pero el hijo es la raíz de Radix, que no
+// renderiza DOM: esos props se perdían y el error del campo nunca llegaba al
+// trigger (TIUX-25). La raíz los toma y los entrega aquí a `SelectTrigger`.
+export interface SelectA11y {
+  "aria-labelledby"?: string
+  "aria-describedby"?: string
+  "aria-invalid"?: React.AriaAttributes["aria-invalid"]
+}
+export const SelectA11yContext = React.createContext<SelectA11y | null>(null)
+
 // SelectFilterContext: always provided by SelectContent so that
 // SelectItem can filter itself.  When searchable, the value comes from
 // the Trigger's input; otherwise from the Content's own search bar.

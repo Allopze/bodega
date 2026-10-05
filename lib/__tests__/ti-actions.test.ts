@@ -16,6 +16,9 @@ const mockCreateAsset = vi.hoisted(() => vi.fn())
 const mockUpdateAsset = vi.hoisted(() => vi.fn())
 const mockCreateTicket = vi.hoisted(() => vi.fn())
 const mockTransitionTicket = vi.hoisted(() => vi.fn())
+const mockAssignTicket = vi.hoisted(() => vi.fn())
+const mockAddTicketComment = vi.hoisted(() => vi.fn())
+const mockGetUserIdsWithPermission = vi.hoisted(() => vi.fn())
 const mockGetUserIdsWithPermissionForWorksite = vi.hoisted(() => vi.fn())
 const mockNotifyManyUser = vi.hoisted(() => vi.fn())
 // Ejecuta el thunk de inmediato: sin esto las notificaciones (diferidas a
@@ -39,7 +42,11 @@ vi.mock("@/lib/services/ti/assets", () => ({
 vi.mock("@/lib/services/ti/tickets", () => ({
   createTicket: mockCreateTicket,
   transitionTicket: mockTransitionTicket,
-  addTicketComment: vi.fn(async () => {}),
+  assignTicket: mockAssignTicket,
+  addTicketComment: mockAddTicketComment,
+}))
+vi.mock("@/lib/services/notification-targeting", () => ({
+  getUserIdsWithPermission: mockGetUserIdsWithPermission,
 }))
 const mockVoidMaintenance = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/services/ti/maintenance", () => ({
@@ -54,7 +61,9 @@ vi.mock("@/lib/services/notifications", () => ({
 }))
 
 import { createAssetAction, updateAssetAction } from "@/app/(app)/ti/activos/actions"
-import { createTicketAction, transitionTicketAction } from "@/app/(app)/ti/tickets/actions"
+import {
+  createTicketAction, transitionTicketAction, assignTicketAction, commentTicketAction,
+} from "@/app/(app)/ti/tickets/actions"
 import { voidMaintenanceAction } from "@/app/(app)/ti/mantenciones/actions"
 
 function makeSession(
@@ -186,7 +195,7 @@ describe("ti:createTicketAction", () => {
     mockAuthFn.mockResolvedValue(makeSession(["ti:view"]))
     const result = await createTicketAction(
       { ok: false, message: "" },
-      formOf({ subject: "Problema serio", description: "Descripción larga del problema detectado", worksiteId: "ws-ti-norte" }),
+      formOf({ subject: "Problema serio", description: "Descripción larga del problema detectado", category: "hardware", worksiteId: "ws-ti-norte" }),
     )
     expect(result.ok).toBe(false)
     expect(mockCreateTicket).not.toHaveBeenCalled()
@@ -196,7 +205,7 @@ describe("ti:createTicketAction", () => {
     mockAuthFn.mockResolvedValue(makeSession(["ti:create_ticket"], ["ws-ti-norte"], ["admin_contrato"]))
     const result = await createTicketAction(
       { ok: false, message: "" },
-      formOf({ subject: "Problema serio", description: "Descripción larga del problema detectado", worksiteId: "ws-ti-norte" }),
+      formOf({ subject: "Problema serio", description: "Descripción larga del problema detectado", category: "hardware", worksiteId: "ws-ti-norte" }),
     )
     expect(result.ok).toBe(true)
     expect(mockCreateTicket).toHaveBeenCalledWith(
@@ -210,11 +219,44 @@ describe("ti:createTicketAction", () => {
     mockAuthFn.mockResolvedValue(makeSession(["ti:create_ticket"]))
     const result = await createTicketAction(
       { ok: false, message: "" },
-      formOf({ subject: "Problema", description: "corto", worksiteId: "ws-ti-norte" }),
+      formOf({ subject: "Problema", description: "corto", category: "hardware", worksiteId: "ws-ti-norte" }),
     )
     expect(result.ok).toBe(false)
     expect(result.fieldErrors).toBeTruthy()
     expect(mockCreateTicket).not.toHaveBeenCalled()
+  })
+
+  it("exige elegir una categoría y la reporta bajo su propio campo", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:create_ticket"]))
+    const result = await createTicketAction(
+      { ok: false, message: "" },
+      formOf({ subject: "Problema serio", description: "Descripción larga del problema detectado", worksiteId: "ws-ti-norte" }),
+    )
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.category?.[0]).toBe("Selecciona una categoría")
+    expect(mockCreateTicket).not.toHaveBeenCalled()
+  })
+
+  it("TIUX-05: tras un envío fallido devuelve lo escrito para no vaciar el formulario", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:create_ticket"]))
+    const result = await createTicketAction(
+      { ok: false, message: "" },
+      formOf({ subject: "Problema", description: "corto", category: "software", worksiteId: "ws-ti-norte" }),
+    )
+    expect(result.ok).toBe(false)
+    expect(result.data?.values).toEqual(expect.objectContaining({
+      subject: "Problema", description: "corto", category: "software", worksiteId: "ws-ti-norte",
+    }))
+  })
+
+  it("devuelve el código y la prioridad para el aviso de creación", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:create_ticket"], ["ws-ti-norte"], ["admin_contrato"]))
+    const result = await createTicketAction(
+      { ok: false, message: "" },
+      formOf({ subject: "Problema serio", description: "Descripción larga del problema detectado", category: "hardware", worksiteId: "ws-ti-norte" }),
+    )
+    expect(result.message).toBe("INC-2026-0001 creado")
+    expect(result.data).toEqual({ ticketId: "ticket-1", code: "INC-2026-0001", priority: "normal" })
   })
 
   it("notifica a ti:manage_tickets de la faena, sin autonotificar al creador", async () => {
@@ -225,7 +267,7 @@ describe("ti:createTicketAction", () => {
 
     const result = await createTicketAction(
       { ok: false, message: "" },
-      formOf({ subject: "Problema serio", description: "Descripción larga del problema detectado", worksiteId: "ws-ti-norte" }),
+      formOf({ subject: "Problema serio", description: "Descripción larga del problema detectado", category: "hardware", worksiteId: "ws-ti-norte" }),
     )
 
     expect(result.ok).toBe(true)
@@ -356,16 +398,192 @@ describe("ti:transitionTicketAction", () => {
 
     mockNotifyManyUser.mockClear()
     mockTransitionTicket.mockResolvedValue({
-      ...baseTransitionResult, toStatus: "resuelto", requesterUserId: "user-ti-1", resolution: "Listo",
+      ...baseTransitionResult, toStatus: "resuelto", requesterUserId: "user-ti-1", resolution: "Se reemplazó el cargador",
     })
     await transitionTicketAction(
       { ok: false, message: "" },
-      formOf({ ticketId: "t1", status: "resuelto", reason: "Listo", resolution: "Listo" }),
+      formOf({ ticketId: "t1", status: "resuelto", reason: "Listo", resolution: "Se reemplazó el cargador" }),
     )
+    expect(mockTransitionTicket).toHaveBeenCalledTimes(2)
     expect(mockNotifyManyUser).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ type: "ti_ticket_resolved" }),
     )
+  })
+  it("TIUX-04: la resolución mínima del cliente es la del servidor (10 caracteres) y el error va en su campo", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"]))
+    const result = await transitionTicketAction(
+      { ok: false, message: "" },
+      formOf({ ticketId: "t1", status: "resuelto", reason: "Listo", resolution: "Arreglado" }),
+    )
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.resolution?.[0]).toMatch(/al menos 10 caracteres/)
+    expect(result.fieldErrors?.reason).toBeUndefined()
+    expect(mockTransitionTicket).not.toHaveBeenCalled()
+  })
+
+  it("TIUX-04: cerrar sin resolución previa devuelve el error del servicio bajo Resolución", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"]))
+    mockTransitionTicket.mockRejectedValue(new Error("Explica cómo se resolvió el ticket en al menos 10 caracteres"))
+    const result = await transitionTicketAction(
+      { ok: false, message: "" },
+      formOf({ ticketId: "t1", status: "cerrado", reason: "Sin respuesta del usuario" }),
+    )
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.resolution?.[0]).toMatch(/cómo se resolvió/)
+    // Y conserva lo escrito.
+    expect(result.data?.values).toEqual(expect.objectContaining({ reason: "Sin respuesta del usuario", status: "cerrado" }))
+  })
+
+  it("elegir un estado es obligatorio y el mensaje no muestra el enum", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"]))
+    const result = await transitionTicketAction(
+      { ok: false, message: "" },
+      formOf({ ticketId: "t1", status: "", reason: "Motivo suficiente" }),
+    )
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.status?.[0]).toBe("Elige el siguiente estado")
+  })
+
+  it("TIUX-31: avisa al solicitante cuando el ticket queda esperando al usuario, no si él mismo lo cambia", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"], ["ws-ti-norte"], ["admin_contrato"]))
+    mockTransitionTicket.mockResolvedValue({ ...baseTransitionResult, toStatus: "esperando_usuario", requesterUserId: "user-requester" })
+    await transitionTicketAction(
+      { ok: false, message: "" },
+      formOf({ ticketId: "t1", status: "esperando_usuario", reason: "Falta el número de serie" }),
+    )
+    expect(mockNotifyManyUser).toHaveBeenCalledTimes(1)
+    expect(mockNotifyManyUser).toHaveBeenCalledWith(
+      ["user-requester"],
+      expect.objectContaining({ type: "ti_ticket_waiting_user", entityId: "t1" }),
+    )
+    // El motivo es una nota de TI: no viaja en el aviso.
+    expect(JSON.stringify(mockNotifyManyUser.mock.calls[0])).not.toContain("número de serie")
+
+    mockNotifyManyUser.mockClear()
+    mockTransitionTicket.mockResolvedValue({ ...baseTransitionResult, toStatus: "esperando_usuario", requesterUserId: "user-ti-1" })
+    await transitionTicketAction(
+      { ok: false, message: "" },
+      formOf({ ticketId: "t1", status: "esperando_usuario", reason: "Falta el número de serie" }),
+    )
+    expect(mockNotifyManyUser).not.toHaveBeenCalled()
+  })
+})
+
+describe("ti:assignTicketAction", () => {
+  beforeEach(() => {
+    mockAuthFn.mockReset()
+    mockAssignTicket.mockReset()
+    mockNotifyManyUser.mockReset()
+    mockNotifyAfterCommit.mockClear()
+    mockGetUserIdsWithPermission.mockReset()
+    mockGetUserIdsWithPermission.mockResolvedValue(["user-ti-1", "user-ti-2"])
+    mockAssignTicket.mockResolvedValue({
+      ...baseTransitionResult, fromStatus: "nuevo", toStatus: "asignado", assigneeChanged: true, assigneeUserId: "user-ti-2",
+    })
+  })
+
+  it("niega sin ti:manage_tickets", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:create_ticket"]))
+    const result = await assignTicketAction({ ok: false, message: "" }, formOf({ ticketId: "t1", assigneeUserId: "user-ti-2" }))
+    expect(result.ok).toBe(false)
+    expect(mockAssignTicket).not.toHaveBeenCalled()
+  })
+
+  it("asigna y avisa al técnico asignado", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"], ["ws-ti-norte"], ["admin_contrato"]))
+    const result = await assignTicketAction({ ok: false, message: "" }, formOf({ ticketId: "t1", assigneeUserId: "user-ti-2" }))
+    expect(result.ok).toBe(true)
+    expect(mockAssignTicket).toHaveBeenCalledWith(
+      expect.objectContaining({ ticketId: "t1", assigneeUserId: "user-ti-2" }),
+      expect.objectContaining({ userId: "user-ti-1" }),
+      ["ws-ti-norte"],
+    )
+    expect(mockNotifyManyUser).toHaveBeenCalledWith(["user-ti-2"], expect.objectContaining({ type: "ti_ticket_assigned" }))
+  })
+
+  it("«Asignarme» toma el responsable de la sesión, no del formulario, y no se autonotifica", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"], ["ws-ti-norte"], ["admin_contrato"]))
+    mockAssignTicket.mockResolvedValue({
+      ...baseTransitionResult, toStatus: "asignado", assigneeChanged: true, assigneeUserId: "user-ti-1",
+    })
+    const result = await assignTicketAction(
+      { ok: false, message: "" },
+      formOf({ ticketId: "t1", self: "1", assigneeUserId: "user-ti-2" }),
+    )
+    expect(result.ok).toBe(true)
+    expect(mockAssignTicket).toHaveBeenCalledWith(
+      expect.objectContaining({ assigneeUserId: "user-ti-1" }),
+      expect.anything(),
+      expect.anything(),
+    )
+    expect(mockNotifyManyUser).not.toHaveBeenCalled()
+  })
+
+  it("no asigna a quien no gestiona tickets", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"]))
+    const result = await assignTicketAction({ ok: false, message: "" }, formOf({ ticketId: "t1", assigneeUserId: "user-cualquiera" }))
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.assigneeUserId?.[0]).toMatch(/no gestiona tickets/)
+    expect(mockAssignTicket).not.toHaveBeenCalled()
+  })
+
+  it("el motivo exigido al cambiar de responsable aparece bajo su campo y conserva lo escrito", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"]))
+    mockAssignTicket.mockRejectedValue(new Error("Indica el motivo del cambio de responsable (mínimo 3 caracteres)"))
+    const result = await assignTicketAction({ ok: false, message: "" }, formOf({ ticketId: "t1", assigneeUserId: "user-ti-2" }))
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.reason?.[0]).toMatch(/motivo del cambio de responsable/)
+    expect(result.data?.values).toEqual(expect.objectContaining({ assigneeUserId: "user-ti-2" }))
+  })
+})
+
+describe("ti:commentTicketAction", () => {
+  const comment = { id: "c1", ticketId: "t1", code: "INC-2026-0001", subject: "Problema serio", requesterUserId: "user-requester" }
+  beforeEach(() => {
+    mockAuthFn.mockReset()
+    mockAddTicketComment.mockReset()
+    mockNotifyManyUser.mockReset()
+    mockNotifyAfterCommit.mockClear()
+    mockAddTicketComment.mockResolvedValue(comment)
+  })
+
+  it("TIUX-31: un comentario público de TI avisa al solicitante, una vez y con clave de deduplicación", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"], ["ws-ti-norte"], ["admin_contrato"]))
+    const result = await commentTicketAction({ ok: false, message: "" }, formOf({ ticketId: "t1", body: "¿Puedes reiniciar el equipo?" }))
+    expect(result.ok).toBe(true)
+    expect(mockNotifyManyUser).toHaveBeenCalledTimes(1)
+    expect(mockNotifyManyUser).toHaveBeenCalledWith(
+      ["user-requester"],
+      expect.objectContaining({ type: "ti_ticket_comment", dedupeKey: "ti_ticket_comment:c1" }),
+    )
+  })
+
+  it("una nota interna no avisa a nadie", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets", "ti:comment_internal"], ["ws-ti-norte"], ["admin_contrato"]))
+    await commentTicketAction({ ok: false, message: "" }, formOf({ ticketId: "t1", body: "Ojo con este usuario", isInternal: "on" }))
+    expect(mockNotifyManyUser).not.toHaveBeenCalled()
+  })
+
+  it("quien comenta no se avisa a sí mismo", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"], ["ws-ti-norte"], ["admin_contrato"]))
+    mockAddTicketComment.mockResolvedValue({ ...comment, requesterUserId: "user-ti-1" })
+    await commentTicketAction({ ok: false, message: "" }, formOf({ ticketId: "t1", body: "Comentario propio" }))
+    expect(mockNotifyManyUser).not.toHaveBeenCalled()
+  })
+
+  it("el solicitante que responde no dispara el aviso de TI (solo ti:manage_tickets)", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:create_ticket"], ["ws-ti-norte"], ["admin_contrato"]))
+    await commentTicketAction({ ok: false, message: "" }, formOf({ ticketId: "t1", body: "Ya reinicié el equipo" }))
+    expect(mockNotifyManyUser).not.toHaveBeenCalled()
+  })
+
+  it("un comentario vacío conserva lo escrito y reporta el error en su campo", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets", "ti:comment_internal"]))
+    const result = await commentTicketAction({ ok: false, message: "" }, formOf({ ticketId: "t1", body: "   ", isInternal: "on" }))
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.body?.[0]).toBe("Escribe un comentario")
+    expect(result.data?.values).toEqual(expect.objectContaining({ isInternal: "on" }))
   })
 })
 

@@ -16,6 +16,7 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { OptionSelect } from "@/components/ui/option-select"
+import Link from "next/link"
 import { PencilSimple, Plus } from "@phosphor-icons/react"
 import { createAssetAction, updateAssetAction } from "./actions"
 import { IT_ASSET_STATUS_META } from "@/lib/services/ti/constants"
@@ -26,13 +27,15 @@ interface AssetFormSheetProps {
   assetTypes: { id: string; name: string; category: string; hasSpecs: boolean; isActive?: boolean }[]
   suppliers: { id: string; name: string }[]
   worksites: { id: string; name: string }[]
+  /** El usuario administra el catálogo de tipos: el alta sin tipos le enlaza ahí. */
+  canManageTypes?: boolean
   /** Modo edición: activo existente. */
   editAsset?: ItAssetFormData & { id: string }
 }
 
 const EMPTY_FORM: Record<string, string> = {}
 
-export function AssetFormSheet({ trigger, assetTypes, suppliers, worksites, editAsset }: AssetFormSheetProps) {
+export function AssetFormSheet({ trigger, assetTypes, suppliers, worksites, editAsset, canManageTypes = false }: AssetFormSheetProps) {
   const [open, setOpen] = React.useState(false)
   const [typeId, setTypeId] = React.useState(editAsset?.assetTypeId ?? "")
   const action = editAsset ? updateAssetAction : createAssetAction
@@ -47,6 +50,7 @@ export function AssetFormSheet({ trigger, assetTypes, suppliers, worksites, edit
     return result
   }, INITIAL_STATE)
 
+  const activeTypes = assetTypes.filter((t) => t.isActive !== false || t.id === editAsset?.assetTypeId)
   const selectedType = assetTypes.find((t) => t.id === typeId)
   const showSpecs = Boolean(selectedType?.hasSpecs)
 
@@ -77,19 +81,29 @@ export function AssetFormSheet({ trigger, assetTypes, suppliers, worksites, edit
                   <Input name="code" defaultValue={editAsset?.code ?? EMPTY_FORM["code"]} placeholder="TI-NB-0042" maxLength={40} />
                 </Field>
                 <Field label="Tipo de activo" required error={state.fieldErrors?.assetTypeId?.[0]}>
-                  <Select
-                    value={typeId}
-                    onValueChange={setTypeId}
-                  >
-                    <SelectTrigger aria-label="Tipo de activo">
-                      <SelectValue placeholder="Selecciona el tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {assetTypes.filter((t) => t.isActive !== false).map((t) => (
-                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {activeTypes.length === 0 && !editAsset ? (
+                    // Un select vacío no dice qué falta ni cómo resolverlo (TIUX-50).
+                    <p className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]" role="status">
+                      No hay tipos de activo activos, y sin tipo no se puede registrar un equipo.{" "}
+                      {canManageTypes
+                        ? <Link href="/admin/tipos-activo" className="font-semibold underline">Crear un tipo de activo</Link>
+                        : "Pide a quien administra el catálogo que cree uno."}
+                    </p>
+                  ) : (
+                    <Select
+                      value={typeId}
+                      onValueChange={setTypeId}
+                    >
+                      <SelectTrigger aria-label="Tipo de activo">
+                        <SelectValue placeholder="Selecciona el tipo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activeTypes.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <input type="hidden" name="assetTypeId" value={typeId} />
                 </Field>
               </div>
@@ -202,6 +216,7 @@ export function NewAssetCta({
   assetTypes,
   suppliers,
   worksites,
+  canManageTypes,
 }: Omit<AssetFormSheetProps, "trigger" | "editAsset">) {
   return (
     <AssetFormSheet
@@ -209,6 +224,7 @@ export function NewAssetCta({
       assetTypes={assetTypes}
       suppliers={suppliers}
       worksites={worksites}
+      canManageTypes={canManageTypes}
     />
   )
 }

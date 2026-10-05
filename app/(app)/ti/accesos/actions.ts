@@ -7,7 +7,7 @@ import { safeActionMessage } from "@/lib/action-error"
 import { parseZ } from "@/lib/actions/parse-z"
 import { logger } from "@/lib/logger"
 import {
-  createAccessSystem, toggleAccessSystem, upsertSystemAccess,
+  createAccessSystem, toggleAccessSystem, upsertSystemAccess, getSystemAccess,
   createChecklist, toggleChecklistTask,
 } from "@/lib/services/ti/access"
 import {
@@ -75,7 +75,11 @@ export async function upsertSystemAccessAction(_prev: ActionState, formData: For
     workerId: formData.get("workerId"),
     status: formData.get("status") || undefined,
     responsibleUserId: session.user.id,
-    notes: String(formData.get("notes") ?? "").trim() || undefined,
+    // TIUX-02: antes `|| undefined` volvía "sin cambio" la nota vaciada, así
+    // que borrar el texto nunca la borraba. Ahora la cadena vacía llega al
+    // servicio y SÍ la limpia; solo un formulario sin el campo (`null`, p. ej.
+    // "Revocar" desde un egreso) conserva la nota existente.
+    notes: formData.get("notes"),
   }, "Revisa los datos del acceso")
   if (!parsed.ok) return parsed
 
@@ -92,16 +96,65 @@ export async function upsertSystemAccessAction(_prev: ActionState, formData: For
   }
 }
 
+/**
+ * Revoca un acceso (estado "baja") sin tocar sus notas. Es la acción en línea
+ * del detalle de un egreso y de la revisión de inactivos (TIUX-19): pasa por
+ * `upsertSystemAccess`, o sea las mismas guardas de faena que la hoja normal.
+ */
+export async function revokeSystemAccessAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requireTiAccess() }
+  catch { return { ok: false, message: "Sin permisos para gestionar accesos" } }
+
+  const systemId = String(formData.get("systemId") ?? "")
+  const workerId = String(formData.get("workerId") ?? "")
+  if (!systemId || !workerId) return { ok: false, message: "Acceso no especificado" }
+
+  try {
+    await upsertSystemAccess({ systemId, workerId, status: "baja" }, {
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+    }, serviceWorksiteScope(session))
+    revalidatePath("/ti/accesos")
+    revalidatePath("/ti")
+    return { ok: true, message: "Acceso revocado" }
+  } catch (error) {
+    logger.error("[ti:revokeSystemAccess]", error)
+    return { ok: false, message: safeActionMessage(error, "Error al revocar el acceso") }
+  }
+}
+
+/**
+ * Lectura del registro actual de un par (trabajador, sistema) para precargar
+ * la hoja "Registrar acceso" con el estado y las notas reales (TIUX-02).
+ */
+export async function lookupSystemAccessAction(
+  workerId: string,
+  systemId: string,
+): Promise<{ ok: boolean; access: { status: string; notes: string | null } | null }> {
+  let session
+  try { session = await requireTiAccess() }
+  catch { return { ok: false, access: null } }
+  if (!workerId || !systemId) return { ok: true, access: null }
+  try {
+    const row = await getSystemAccess(workerId, systemId, serviceWorksiteScope(session))
+    return { ok: true, access: row ? { status: row.status, notes: row.notes } : null }
+  } catch (error) {
+    logger.error("[ti:lookupSystemAccess]", error)
+    return { ok: false, access: null }
+  }
+}
+
 export async function createChecklistAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
   try { session = await requireTiAccess() }
-  catch { return { ok: false, message: "Sin permisos para crear checklists" } }
+  catch { return { ok: false, message: "Sin permisos para registrar ingresos y egresos" } }
 
   const parsed = parseZ(itChecklistSchema, {
     workerId: formData.get("workerId"),
     kind: formData.get("kind"),
     notes: formData.get("notes"),
-  }, "Revisa los datos del checklist")
+  }, "Revisa los datos del ingreso o egreso")
   if (!parsed.ok) return parsed
 
   try {
@@ -110,10 +163,11 @@ export async function createChecklistAction(_prev: ActionState, formData: FormDa
       userEmail: session.user.email ?? undefined,
     }, serviceWorksiteScope(session))
     revalidatePath("/ti/accesos")
-    return { ok: true, message: "Checklist creado" }
+    revalidatePath("/ti")
+    return { ok: true, message: "Registro creado" }
   } catch (error) {
     logger.error("[ti:createChecklist]", error)
-    return { ok: false, message: safeActionMessage(error, "Error al crear el checklist") }
+    return { ok: false, message: safeActionMessage(error, "Error al registrar el ingreso o egreso") }
   }
 }
 
@@ -138,6 +192,7 @@ export async function toggleChecklistTaskAction(_prev: ActionState, formData: Fo
       userEmail: session.user.email ?? undefined,
     }, serviceWorksiteScope(session))
     revalidatePath("/ti/accesos")
+    revalidatePath("/ti")
     return { ok: true, message: parsed.data.done ? "Tarea completada" : "Tarea reabierta" }
   } catch (error) {
     logger.error("[ti:toggleChecklistTask]", error)

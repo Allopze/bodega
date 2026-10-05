@@ -5,6 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { escapeClosesComboboxFirst, focusContainerBeforeCombobox } from "./dialog-combobox"
+import { useReturnFocus } from "./dialog-focus"
 
 const Dialog = DialogPrimitive.Root
 const DialogTrigger = DialogPrimitive.Trigger
@@ -33,7 +34,9 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, onOpenAutoFocus, onEscapeKeyDown, ...props }, ref) => (
+>(({ className, children, onOpenAutoFocus, onCloseAutoFocus, onEscapeKeyDown, ...props }, ref) => {
+  const returnFocus = useReturnFocus(onOpenAutoFocus, onCloseAutoFocus)
+  return (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
@@ -52,9 +55,10 @@ const DialogContent = React.forwardRef<
       )}
       {...props}
       onOpenAutoFocus={(event) => {
-        onOpenAutoFocus?.(event)
+        returnFocus.onOpenAutoFocus(event)
         if (!event.defaultPrevented) focusContainerBeforeCombobox(event)
       }}
+      onCloseAutoFocus={returnFocus.onCloseAutoFocus}
       onEscapeKeyDown={(event) => {
         if (!escapeClosesComboboxFirst(event)) onEscapeKeyDown?.(event)
       }}
@@ -63,7 +67,8 @@ const DialogContent = React.forwardRef<
       <DialogPrimitive.Close
         className={cn(
           "absolute right-4 top-4 rounded-[var(--radius-md)]",
-          "h-7 w-7 flex items-center justify-center",
+          // 44 px en móvil (WCAG 2.5.8); el 28 px de escritorio se conserva.
+          "flex min-h-11 min-w-11 items-center justify-center sm:h-7 sm:w-7 sm:min-h-0 sm:min-w-0",
           "text-[var(--color-text-subtle)] hover:text-[var(--color-text)]",
           "hover:bg-[var(--color-surface-2)]",
           "transition-[color,background-color,transform] duration-[var(--duration-fast)]",
@@ -76,7 +81,8 @@ const DialogContent = React.forwardRef<
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>
-))
+  )
+})
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { todayInChile } from "@/lib/utils"
 import { isCivilDate } from "./dates"
+import { REASON_MIN_LENGTH, reasonRequiredMessage } from "./reason-thresholds"
 
 /* ── Fechas y dinero ───────────────────────────────────────────────────────── */
 
@@ -101,7 +102,18 @@ export const itAssignmentCreateSchema = z.object({
   deliveredAt: z.string()
     .refine((v) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v), "Fecha de entrega inválida")
     .refine((v) => v <= `${todayInChile()}T23:59`, "La entrega no puede tener fecha futura"),
-  physicalState: z.enum(IT_PHYSICAL_STATES, { message: "Estado físico no reconocido" }).default("bueno"),
+  /**
+   * TIUX-14: «Devolver a más tardar». Obligatoria solo en un préstamo (ver el
+   * `superRefine`); en los demás tipos se ignora y el servicio la guarda nula.
+   * Cadena vacía = sin fecha, que es lo que manda un campo de formulario vacío.
+   */
+  expectedReturnDate: z.string()
+    .refine((v) => v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v), "Fecha de devolución inválida")
+    .optional()
+    .transform((v) => v || undefined),
+  // TIUX-09: sin valor por defecto. Un «bueno» silencioso en un acta que
+  // respalda la responsabilidad sobre el equipo es una afirmación que nadie hizo.
+  physicalState: z.enum(IT_PHYSICAL_STATES, { message: "Selecciona el estado físico del equipo" }),
   observations: text(500),
   // TIA-001: aquí vivía `accepted: z.coerce.boolean().default(true)`, la
   // casilla con la que el técnico declaraba aceptada su propia entrega. El
@@ -110,6 +122,17 @@ export const itAssignmentCreateSchema = z.object({
   accessoryNames: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
   /** IDs de fotos ya persistidas por el upload previo (stage delivery). */
   photoIds: z.array(z.string().min(1)).max(40).default([]),
+}).superRefine((v, ctx) => {
+  if (v.kind !== "loan") return
+  if (!v.expectedReturnDate) {
+    ctx.addIssue({ code: "custom", path: ["expectedReturnDate"], message: "Indica hasta cuándo se presta el equipo" })
+    return
+  }
+  // Se compara la fecha civil de la entrega (los 10 primeros caracteres de
+  // `YYYY-MM-DDTHH:MM`): devolver el mismo día de la entrega es válido.
+  if (v.expectedReturnDate < v.deliveredAt.slice(0, 10)) {
+    ctx.addIssue({ code: "custom", path: ["expectedReturnDate"], message: "La devolución no puede ser anterior a la entrega" })
+  }
 })
 
 /**
@@ -118,7 +141,7 @@ export const itAssignmentCreateSchema = z.object({
  */
 export const itAssignmentAcceptanceSchema = z.object({
   assignmentId: z.string().min(1),
-  outcome: z.enum(["aceptada", "sin_acuse"], { message: "Resultado del acuse no reconocido" }),
+  outcome: z.enum(["aceptada", "sin_acuse"], { message: "Elige cómo se acusó recibo" }),
   note: text(500),
 }).refine((v) => v.outcome !== "sin_acuse" || (v.note ?? "").trim().length >= 5, {
   message: "Explica por qué el acta queda sin acuse",
@@ -130,11 +153,16 @@ export const itAssignmentReturnSchema = z.object({
   returnedAt: z.string()
     .refine((v) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v), "Fecha de devolución inválida")
     .refine((v) => v <= `${todayInChile()}T23:59`, "La devolución no puede tener fecha futura"),
-  returnPhysicalState: z.enum(IT_RETURN_PHYSICAL_STATES, { message: "Estado físico no reconocido" }).default("bueno"),
+  // TIUX-09: sin «bueno» por defecto; quien recibe el equipo lo evalúa.
+  returnPhysicalState: z.enum(IT_RETURN_PHYSICAL_STATES, { message: "Selecciona el estado físico al devolver" }),
   returnObservations: text(500),
   returnedAccessoryNames: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
-  /** Estado al que vuelve el activo: disponible (por defecto) o en_bodega. */
-  nextStatus: z.enum(["disponible", "en_bodega"]).default("disponible"),
+  /**
+   * Estado al que vuelve el activo: disponible (por defecto), en_bodega o
+   * en_reparacion (TIUX-48: un equipo que vuelve dañado no debe pasar por
+   * «Disponible» solo para que alguien lo mande a reparar después).
+   */
+  nextStatus: z.enum(["disponible", "en_bodega", "en_reparacion"]).default("disponible"),
   photoIds: z.array(z.string().min(1)).max(40).default([]),
 })
 
@@ -202,8 +230,8 @@ export const IT_TICKET_OPEN_STATUSES = ["nuevo", "asignado", "en_diagnostico", "
 export const itTicketCreateSchema = z.object({
   subject: z.string().trim().min(4, "Asunto requerido (mínimo 4 caracteres)").max(120),
   description: z.string().trim().min(10, "Describe el problema (mínimo 10 caracteres)").max(2000),
-  category: z.enum(IT_TICKET_CATEGORIES, { message: "Categoría no reconocida" }).default("hardware"),
-  priority: z.enum(IT_TICKET_PRIORITIES, { message: "Prioridad no reconocida" }).default("normal"),
+  category: z.enum(IT_TICKET_CATEGORIES, { message: "Selecciona una categoría" }).default("hardware"),
+  priority: z.enum(IT_TICKET_PRIORITIES, { message: "Selecciona una prioridad" }).default("normal"),
   workerId: z.string().nullable().optional().or(z.literal("")),
   worksiteId: z.string().min(1, "Selecciona una faena"),
   assetId: z.string().nullable().optional().or(z.literal("")),
@@ -230,9 +258,16 @@ export function itTicketNextStatuses(current: string): readonly string[] {
   return IT_TICKET_TRANSITIONS[current] ?? []
 }
 
+/**
+ * La solución al resolver: el mismo mínimo que aplica el servicio (`isValidReason`,
+ * `REASON_MIN_LENGTH`). Antes el cliente pedía 3 y el servidor 10, así que una
+ * resolución de 5 letras pasaba la validación y fallaba después con otro texto.
+ */
+export const IT_TICKET_RESOLUTION_HELP = `Qué se hizo para resolver el problema (mínimo ${REASON_MIN_LENGTH} caracteres).`
+
 export const itTicketTransitionSchema = z.object({
   ticketId: z.string().min(1),
-  status: z.enum(IT_TICKET_STATUSES, { message: "Estado no reconocido" }),
+  status: z.enum(IT_TICKET_STATUSES, { message: "Elige el siguiente estado" }),
   reason: z.string().trim().min(3, "Indica el motivo (mínimo 3 caracteres)").max(300),
   resolution: text(1000),
   /**
@@ -242,12 +277,22 @@ export const itTicketTransitionSchema = z.object({
    */
   assigneeUserId: z.string().nullable().optional().or(z.literal("")),
 }).refine(
-  (data) => data.status !== "resuelto" || Boolean(data.resolution && data.resolution.trim().length >= 3),
-  { message: "Describe la resolución para cerrar el caso (mínimo 3 caracteres)", path: ["resolution"] },
+  (data) => data.status !== "resuelto" || (data.resolution ?? "").trim().length >= REASON_MIN_LENGTH,
+  { message: reasonRequiredMessage("cómo se resolvió el ticket"), path: ["resolution"] },
 )
 
 /** Centinela del selector de asignación para vaciar el técnico responsable. */
 export const IT_TICKET_UNASSIGN = "__none__"
+
+/**
+ * Asignar o reasignar sin tocar el estado. `assigneeUserId` es obligatorio y
+ * explícito (un id o el centinela que desasigna): nunca se infiere del actor.
+ */
+export const itTicketAssignSchema = z.object({
+  ticketId: z.string().min(1),
+  assigneeUserId: z.string().min(1, "Elige el técnico responsable"),
+  reason: text(300),
+})
 
 export const itTicketCommentSchema = z.object({
   ticketId: z.string().min(1),
@@ -283,7 +328,7 @@ export const itLicenseAssignmentSchema = z.object({
   notes: text(300),
 }).refine(
   (data) => Boolean(data.workerId || data.assetId || data.area || data.worksiteId),
-  { message: "Asigna la licencia a un trabajador, equipo, área o faena", path: ["workerId"] },
+  { message: "Indica a quién se asigna: un trabajador, un equipo, un área o una faena", path: ["workerId"] },
 )
 
 /* ── Accesos y checklists ──────────────────────────────────────────────────── */
@@ -300,7 +345,7 @@ export const itAccessSystemSchema = z.object({
 export const itSystemAccessSchema = z.object({
   systemId: z.string().min(1, "Selecciona un sistema"),
   workerId: z.string().min(1, "Selecciona un trabajador"),
-  status: z.enum(IT_ACCESS_STATUSES, { message: "Estado no reconocido" }).default("activo"),
+  status: z.enum(IT_ACCESS_STATUSES, { message: "Selecciona el estado del acceso" }).default("activo"),
   responsibleUserId: z.string().nullable().optional().or(z.literal("")),
   notes: text(300),
 })
@@ -309,7 +354,7 @@ export const IT_CHECKLIST_KINDS = ["onboarding", "offboarding"] as const
 
 export const itChecklistSchema = z.object({
   workerId: z.string().min(1, "Selecciona un trabajador"),
-  kind: z.enum(IT_CHECKLIST_KINDS, { message: "Tipo de checklist no reconocido" }),
+  kind: z.enum(IT_CHECKLIST_KINDS, { message: "Selecciona si es un ingreso o un egreso" }),
   notes: text(500),
 })
 

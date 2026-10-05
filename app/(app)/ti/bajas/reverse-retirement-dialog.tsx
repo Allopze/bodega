@@ -14,6 +14,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog"
 import type { ActionState } from "@/lib/validation/masters"
+import { cn } from "@/lib/utils"
 import { reverseRetirementAction } from "./actions"
 
 /**
@@ -29,6 +30,7 @@ export function ReverseRetirementDialog({
   reasonLabel,
   restoresToLabel,
   reopensAssignment,
+  triggerClassName,
 }: {
   retirementId: string
   assetCode: string
@@ -36,6 +38,8 @@ export function ReverseRetirementDialog({
   reasonLabel: string
   restoresToLabel: string
   reopensAssignment: boolean
+  /** Clases extra del disparador (p. ej. objetivo táctil de 44 px en móvil). */
+  triggerClassName?: string
 }) {
   const router = useRouter()
   const [open, setOpen] = React.useState(false)
@@ -56,7 +60,7 @@ export function ReverseRetirementDialog({
       <Button
         variant="ghost"
         size="sm"
-        className="gap-1"
+        className={cn("gap-1", triggerClassName)}
         onClick={() => setOpen(true)}
         aria-label={`Revertir baja de ${assetCode}`}
       >

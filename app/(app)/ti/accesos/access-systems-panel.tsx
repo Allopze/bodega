@@ -28,7 +28,12 @@ interface SystemRow {
   accessCount: number
 }
 
-export function AccessSystemsPanel({ systems, canManage }: { systems: SystemRow[]; canManage: boolean }) {
+/**
+ * Acción de página "Nuevo sistema" (`PageHeader.actions`, pestaña Sistemas).
+ * Antes el botón vivía dentro del panel, junto a un título que repetía el de la
+ * pestaña; las acciones que operan sobre toda la lista van en el encabezado.
+ */
+export function NewSystemCta() {
   const [open, setOpen] = React.useState(false)
   const [state, formAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
     const result = await createAccessSystemAction(prev, formData)
@@ -38,101 +43,12 @@ export function AccessSystemsPanel({ systems, canManage }: { systems: SystemRow[
     } else if (result.message && !result.fieldErrors) toast.error(result.message)
     return result
   }, INITIAL_STATE)
-  const [toggleState, toggleAction] = useActionState(toggleAccessSystemAction, INITIAL_STATE)
-
-  // Desactivar un sistema lo saca de la matriz sin revocar los accesos
-  // vigentes: se confirma explícitamente diciendo cuántos quedan activos.
-  const [pendingDeactivation, setPendingDeactivation] = React.useState<SystemRow | null>(null)
-  const deactivate = useOperation({ feedback: "toast" })
-
-  React.useEffect(() => {
-    if (toggleState.message) {
-      if (toggleState.ok) toast.success(toggleState.message)
-      else toast.error(toggleState.message)
-    }
-  }, [toggleState])
 
   return (
-    <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-h2">Sistemas</h2>
-          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-            Catálogo configurable de sistemas a los que CHOME da acceso: correo, VPN, Ariba, Chipax, SIDREP…
-          </p>
-        </div>
-        {canManage && (
-          <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-            <Plus size={14} className="mr-1.5" /> Nuevo sistema
-          </Button>
-        )}
-      </div>
-
-      <ul className="mt-4 flex flex-wrap gap-2">
-        {systems.map((system) => (
-          <li key={system.id} className="flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5">
-            <span className={`text-sm ${system.isActive ? "text-[var(--color-text)]" : "text-[var(--color-text-subtle)] line-through"}`}>{system.name}</span>
-            <MetaBadge meta={{ label: `${system.accessCount} activos`, variant: "outline" }} />
-            {canManage && (
-              system.isActive ? (
-                <button
-                  type="button"
-                  onClick={() => setPendingDeactivation(system)}
-                  className="text-xs font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                  title="Desactivar sistema"
-                >
-                  Desactivar
-                </button>
-              ) : (
-                <form action={toggleAction} className="flex items-center">
-                  <input type="hidden" name="systemId" value={system.id} />
-                  <input type="hidden" name="isActive" value="on" />
-                  <button type="submit" className="text-xs font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)]" title="Activar sistema">
-                    Activar
-                  </button>
-                </form>
-              )
-            )}
-          </li>
-        ))}
-        {systems.length === 0 && (
-          <li className="w-full">
-            <EmptyState
-              compact
-              align="start"
-              title="Sin sistemas configurados"
-              description={canManage ? "Crea el primer sistema para registrar los accesos de los trabajadores." : "El catálogo de sistemas aparecerá aquí cuando se configure."}
-            />
-          </li>
-        )}
-      </ul>
-
-      <ConfirmDialog
-        open={pendingDeactivation !== null}
-        onOpenChange={(v) => { if (!v) setPendingDeactivation(null) }}
-        title={`¿Desactivar ${pendingDeactivation?.name ?? "el sistema"}?`}
-        description={
-          pendingDeactivation && pendingDeactivation.accessCount > 0
-            ? `${pendingDeactivation.accessCount} trabajador(es) mantienen su acceso activo a este sistema. Desactivarlo lo saca del catálogo y de la matriz, pero NO revoca esos accesos: revócalos primero si el sistema se dio de baja de verdad.`
-            : "El sistema saldrá del catálogo y ya no podrá otorgarse a nuevos trabajadores. Podrás reactivarlo cuando quieras."
-        }
-        confirmLabel="Desactivar"
-        variant={pendingDeactivation && pendingDeactivation.accessCount > 0 ? "destructive" : "warning"}
-        loading={deactivate.pending}
-        onConfirm={() => {
-          const target = pendingDeactivation
-          if (!target) return
-          setPendingDeactivation(null)
-          void deactivate.run(async () => {
-            const formData = new FormData()
-            formData.set("systemId", target.id)
-            formData.set("isActive", "")
-            // `feedback: "toast"` deja el aviso en manos del hook.
-            return toggleAccessSystemAction(INITIAL_STATE, formData)
-          })
-        }}
-      />
-
+    <>
+      <Button onClick={() => setOpen(true)}>
+        <Plus size={14} className="mr-1.5" /> Nuevo sistema
+      </Button>
       <Sheet open={open} onOpenChange={(v) => { if (!v) setOpen(false) }}>
         <SheetContent className="sm:max-w-md">
           <form action={formAction} className="flex flex-col flex-1 min-h-0">
@@ -163,6 +79,101 @@ export function AccessSystemsPanel({ systems, canManage }: { systems: SystemRow[
           </form>
         </SheetContent>
       </Sheet>
+    </>
+  )
+}
+
+export function AccessSystemsPanel({ systems, canManage }: { systems: SystemRow[]; canManage: boolean }) {
+  const [toggleState, toggleAction] = useActionState(toggleAccessSystemAction, INITIAL_STATE)
+
+  // Desactivar un sistema lo saca de la matriz sin revocar los accesos
+  // vigentes: se confirma explícitamente diciendo cuántos quedan activos.
+  const [pendingDeactivation, setPendingDeactivation] = React.useState<SystemRow | null>(null)
+  const deactivate = useOperation({ feedback: "toast" })
+
+  React.useEffect(() => {
+    if (toggleState.message) {
+      if (toggleState.ok) toast.success(toggleState.message)
+      else toast.error(toggleState.message)
+    }
+  }, [toggleState])
+
+  return (
+    <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-h2">Sistemas</h2>
+          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+            Catálogo configurable de sistemas a los que CHOME da acceso: correo, VPN, Ariba, Chipax, SIDREP…
+          </p>
+        </div>
+      </div>
+
+      <ul className="mt-4 flex flex-wrap gap-2">
+        {systems.map((system) => (
+          <li key={system.id} className="flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5">
+            <span className={`text-sm ${system.isActive ? "text-[var(--color-text)]" : "text-[var(--color-text-subtle)] line-through"}`}>{system.name}</span>
+            <MetaBadge meta={{ label: `${system.accessCount} con acceso activo`, variant: "outline" }} />
+            {canManage && (
+              system.isActive ? (
+                <button
+                  type="button"
+                  onClick={() => setPendingDeactivation(system)}
+                  className="-my-1 inline-flex min-h-11 items-center px-2 text-xs font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] sm:min-h-0 sm:px-0"
+                  title="Desactivar sistema"
+                >
+                  Desactivar
+                </button>
+              ) : (
+                <form action={toggleAction} className="flex items-center">
+                  <input type="hidden" name="systemId" value={system.id} />
+                  <input type="hidden" name="isActive" value="on" />
+                  <button type="submit" className="-my-1 inline-flex min-h-11 items-center px-2 text-xs font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] sm:min-h-0 sm:px-0" title="Activar sistema">
+                    Activar
+                  </button>
+                </form>
+              )
+            )}
+          </li>
+        ))}
+        {systems.length === 0 && (
+          <li className="w-full">
+            <EmptyState
+              compact
+              align="start"
+              title="Sin sistemas configurados"
+              description={canManage ? "Crea el primer sistema para registrar los accesos de los trabajadores." : "El catálogo de sistemas aparecerá aquí cuando se configure."}
+              action={canManage ? <NewSystemCta /> : undefined}
+            />
+          </li>
+        )}
+      </ul>
+
+      <ConfirmDialog
+        open={pendingDeactivation !== null}
+        onOpenChange={(v) => { if (!v) setPendingDeactivation(null) }}
+        title={`¿Desactivar ${pendingDeactivation?.name ?? "el sistema"}?`}
+        description={
+          pendingDeactivation && pendingDeactivation.accessCount > 0
+            ? `${pendingDeactivation.accessCount} trabajador(es) mantienen su acceso activo a este sistema. Desactivarlo lo saca del catálogo y de la matriz, pero NO revoca esos accesos: revócalos primero si el sistema se dio de baja de verdad.`
+            : "El sistema saldrá del catálogo y ya no podrá otorgarse a nuevos trabajadores. Podrás reactivarlo cuando quieras."
+        }
+        confirmLabel="Desactivar"
+        variant={pendingDeactivation && pendingDeactivation.accessCount > 0 ? "destructive" : "warning"}
+        loading={deactivate.pending}
+        onConfirm={() => {
+          const target = pendingDeactivation
+          if (!target) return
+          setPendingDeactivation(null)
+          void deactivate.run(async () => {
+            const formData = new FormData()
+            formData.set("systemId", target.id)
+            formData.set("isActive", "")
+            // `feedback: "toast"` deja el aviso en manos del hook.
+            return toggleAccessSystemAction(INITIAL_STATE, formData)
+          })
+        }}
+      />
     </section>
   )
 }

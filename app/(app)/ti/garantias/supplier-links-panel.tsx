@@ -11,6 +11,7 @@ import {
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createSupplierLinkAction } from "./actions"
@@ -62,7 +63,7 @@ export function SupplierLinksPanel({ links, canManage, suppliers }: SupplierLink
             Reutiliza el catálogo de proveedores de CHOME; acá se identifica qué categorías TI atiende cada uno.
           </p>
         </div>
-        {canManage && (
+        {canManage && links.length > 0 && (
           <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
             <Plus size={14} className="mr-1.5" /> Vincular proveedor
           </Button>
@@ -70,9 +71,21 @@ export function SupplierLinksPanel({ links, canManage, suppliers }: SupplierLink
       </div>
 
       {links.length === 0 ? (
-        <p className="mt-4 text-sm text-[var(--color-text-subtle)] italic">
-          Aún no hay proveedores identificados como TI. Vínculalos desde el catálogo existente.
-        </p>
+        // Qué significa + cómo llenarlo + CTA real (A4). Sin permiso no hay
+        // acción posible: la descripción lo dice en vez de mostrar un botón muerto.
+        <EmptyState
+          compact
+          align="start"
+          title="Aún no hay proveedores identificados como TI"
+          description={canManage
+            ? "Vincúlalos desde el catálogo de proveedores para ver cuántos equipos, reparaciones y licencias atiende cada uno."
+            : "Quien gestiona activos TI puede vincular proveedores del catálogo para ver sus equipos, reparaciones y licencias."}
+          action={canManage ? (
+            <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+              <Plus size={14} className="mr-1.5" /> Vincular proveedor
+            </Button>
+          ) : undefined}
+        />
       ) : (
         <ul className="mt-4 grid gap-3 md:grid-cols-2">
           {links.map((link) => (
@@ -87,10 +100,10 @@ export function SupplierLinksPanel({ links, canManage, suppliers }: SupplierLink
                 </div>
               </div>
               <dl className="mt-3 grid grid-cols-2 gap-2 text-xs text-[var(--color-text-muted)] sm:grid-cols-4">
-                <div><dt>Activos</dt><dd className="font-semibold text-[var(--color-text)]">{link.assetCount}</dd></div>
-                <div><dt>Reparaciones</dt><dd className="font-semibold text-[var(--color-text)]">{link.maintenanceCount}</dd></div>
-                <div><dt>Costo reparaciones</dt><dd className="font-semibold text-[var(--color-text)]">{formatCLP(link.maintenanceCost)}</dd></div>
-                <div><dt>Licencias</dt><dd className="font-semibold text-[var(--color-text)]">{link.licenseCount}</dd></div>
+                <div><dt>Activos</dt><dd className="font-mono font-semibold tabular-nums text-[var(--color-text)]">{link.assetCount}</dd></div>
+                <div><dt>Reparaciones</dt><dd className="font-mono font-semibold tabular-nums text-[var(--color-text)]">{link.maintenanceCount}</dd></div>
+                <div><dt>Costo reparaciones</dt><dd className="font-mono font-semibold tabular-nums text-[var(--color-text)]">{formatCLP(link.maintenanceCost)}</dd></div>
+                <div><dt>Licencias</dt><dd className="font-mono font-semibold tabular-nums text-[var(--color-text)]">{link.licenseCount}</dd></div>
               </dl>
               {(link.supplierEmail || link.supplierPhone) && (
                 <p className="mt-2 text-xs text-[var(--color-text-muted)]">

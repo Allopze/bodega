@@ -1,11 +1,12 @@
 import { eq, and, isNull, isNotNull, desc, inArray, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
-import { itAssetRetirements, itAssets, itAssetAssignments, itAssetHistory, users } from "@/db/schema"
+import { itAssetRetirements, itAssets, itAssetAssignments, itAssetHistory, users, worksites } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { appendAssetHistory } from "./history"
 import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
-import { retirementTargetStatus, retirementReverseBlocker, itStatusLabel, isRetiredStatus } from "./constants"
+import { retirementTargetStatus, retirementReverseBlocker, itStatusLabel, isRetiredStatus, IT_RETIREMENT_REASON_META } from "./constants"
+import { formatDate } from "@/lib/utils"
 
 export { retirementTargetStatus }
 
@@ -67,7 +68,7 @@ export async function retireAsset(
 
     const targetStatus = retirementTargetStatus(input.reason)
     const now = new Date().toISOString()
-    const reasonLabel = input.reason === "perdida" ? "pérdida" : input.reason
+    const reasonLabel = (IT_RETIREMENT_REASON_META[input.reason] ?? input.reason).toLowerCase()
     // Misma condición que decide si se cierra la asignación, extraída para
     // que el insert de abajo (que guarda cuál se cerró) no se desincronice.
     const closedNow = openAssignments.length > 0 && ["perdida", "robo"].includes(input.reason)
@@ -111,7 +112,7 @@ export async function retireAsset(
     await appendAssetHistory({
       assetId: input.assetId,
       action: "retired",
-      detail: `Baja de activo (${input.reason}). Fecha: ${input.date}.`,
+      detail: `Baja de activo (${IT_RETIREMENT_REASON_META[input.reason]?.toLowerCase() ?? input.reason}). Fecha: ${formatDate(input.date)}.`,
       changes: { retirementId: id, reason: input.reason, targetStatus },
       actorUserId: actor.userId,
     }, tx)
@@ -138,8 +139,9 @@ export async function retireAsset(
   return id
 }
 
-export async function listRetirements(filters: { scope?: SQL; assetId?: string }) {
+export async function listRetirements(filters: { scope?: SQL; assetId?: string; reason?: string }) {
   const conditions: SQL[] = []
+  if (filters.reason) conditions.push(eq(itAssetRetirements.reason, filters.reason))
   if (filters.scope) conditions.push(filters.scope)
   if (filters.assetId) conditions.push(eq(itAssetRetirements.assetId, filters.assetId))
   const rows = await db
@@ -149,11 +151,14 @@ export async function listRetirements(filters: { scope?: SQL; assetId?: string }
       assetCode: itAssets.code,
       brand: itAssets.brand,
       model: itAssets.model,
+      worksiteName: worksites.name,
       date: itAssetRetirements.date,
       reason: itAssetRetirements.reason,
       destination: itAssetRetirements.destination,
       observations: itAssetRetirements.observations,
       responsibleName: sql<string>`${users.name}`,
+      // Doble control: quien autoriza debe ser visible en la lista, no solo en la ficha.
+      authorizedByName: sql<string | null>`(SELECT u3.name FROM ${users} u3 WHERE u3.id = ${itAssetRetirements.authorizedByUserId})`,
       previousStatus: itAssetRetirements.previousStatus,
       closedAssignmentId: itAssetRetirements.closedAssignmentId,
       reversedAt: itAssetRetirements.reversedAt,
@@ -182,6 +187,7 @@ export async function listRetirements(filters: { scope?: SQL; assetId?: string }
     .from(itAssetRetirements)
     .innerJoin(itAssets, eq(itAssetRetirements.assetId, itAssets.id))
     .innerJoin(users, eq(itAssetRetirements.responsibleUserId, users.id))
+    .leftJoin(worksites, eq(itAssets.worksiteId, worksites.id))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(itAssetRetirements.date))
 
@@ -318,7 +324,7 @@ export async function reverseRetirement(
     await appendAssetHistory({
       assetId: asset.id,
       action: "retirement_reversed",
-      detail: `Reversión de baja (${retirement.reason}) del ${retirement.date}. Estado restaurado: ${itStatusLabel(asset.status)} → ${itStatusLabel(retirement.previousStatus!)}.`,
+      detail: `Reversión de baja (${(IT_RETIREMENT_REASON_META[retirement.reason] ?? retirement.reason).toLowerCase()}) del ${formatDate(retirement.date)}. Estado restaurado: ${itStatusLabel(asset.status)} → ${itStatusLabel(retirement.previousStatus!)}.`,
       changes: {
         retirementId, reverseReason: trimmed, from: asset.status, to: retirement.previousStatus,
         restoredWorkerId, reopenedAssignmentId: retirement.closedAssignmentId, reopenedAssignmentCode,

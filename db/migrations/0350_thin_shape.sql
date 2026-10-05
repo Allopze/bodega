@@ -1,0 +1,1 @@
+ALTER TABLE "it_asset_assignments" ADD COLUMN "expected_return_date" date;

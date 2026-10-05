@@ -35,7 +35,8 @@ export async function createAssignmentAction(_prev: ActionState, formData: FormD
     worksiteId: formData.get("worksiteId"),
     kind: formData.get("kind") || undefined,
     deliveredAt: formData.get("deliveredAt"),
-    physicalState: formData.get("physicalState"),
+    expectedReturnDate: formData.get("expectedReturnDate") || undefined,
+    physicalState: formData.get("physicalState") || undefined,
     observations: formData.get("observations"),
     accessoryNames: parseList(formData.get("accessoriesJson")),
     photoIds: parseList(formData.get("photoIdsJson")),
@@ -66,7 +67,7 @@ export async function returnAssignmentAction(_prev: ActionState, formData: FormD
   const parsed = parseZ(itAssignmentReturnSchema, {
     assignmentId: formData.get("assignmentId"),
     returnedAt: formData.get("returnedAt"),
-    returnPhysicalState: formData.get("returnPhysicalState"),
+    returnPhysicalState: formData.get("returnPhysicalState") || undefined,
     returnObservations: formData.get("returnObservations"),
     returnedAccessoryNames: parseList(formData.get("returnedAccessoriesJson")),
     nextStatus: formData.get("nextStatus") || undefined,
@@ -98,12 +99,12 @@ export async function transferAssignmentAction(_prev: ActionState, formData: For
   const parsed = parseZ(itAssignmentReturnSchema, {
     assignmentId: formData.get("assignmentId"),
     returnedAt: formData.get("returnedAt"),
-    returnPhysicalState: formData.get("returnPhysicalState"),
+    returnPhysicalState: formData.get("returnPhysicalState") || undefined,
     returnObservations: formData.get("returnObservations"),
     returnedAccessoryNames: [],
     nextStatus: "disponible",
     photoIds: [],
-  }, "Revisa los datos de la devolución")
+  }, "Revisa los datos de la transferencia")
   if (!parsed.ok) return parsed
 
   const newAssignment = parseZ(itAssignmentCreateSchema, {
@@ -112,7 +113,7 @@ export async function transferAssignmentAction(_prev: ActionState, formData: For
     worksiteId: formData.get("newWorksiteId"),
     kind: "transfer",
     deliveredAt: formData.get("newDeliveredAt"),
-    physicalState: formData.get("newPhysicalState"),
+    physicalState: formData.get("newPhysicalState") || undefined,
     observations: formData.get("newObservations"),
     accessoryNames: parseList(formData.get("newAccessoriesJson")),
     photoIds: parseList(formData.get("photoIdsJson")),
@@ -159,7 +160,7 @@ export async function recordAssignmentAcceptanceAction(_prev: ActionState, formD
 
   const parsed = parseZ(itAssignmentAcceptanceSchema, {
     assignmentId: formData.get("assignmentId"),
-    outcome: formData.get("outcome"),
+    outcome: formData.get("outcome") || undefined,
     note: formData.get("note"),
   }, "Revisa los datos del acuse")
   if (!parsed.ok) return parsed

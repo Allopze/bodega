@@ -5,8 +5,9 @@ import { DataTable } from "@/components/ui/data-table"
 import { MetaBadge } from "@/components/states/state-badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDateTime } from "@/lib/utils"
+import { DEFAULT_PAGE_SIZE } from "@/lib/constants"
 import { IT_TICKET_STATUS_META, IT_TICKET_PRIORITY_META, IT_TICKET_CATEGORY_META } from "@/lib/services/ti/constants"
-import { ticketSlaStage } from "@/lib/services/ti/ticket-sla"
+import { ticketDueInfo } from "@/lib/services/ti/ticket-sla"
 
 interface Row {
   id: string
@@ -32,29 +33,56 @@ interface Row {
 }
 
 /**
- * TIT-001: la prioridad no gobernaba ningún plazo, así que la lista tampoco
- * podía mostrar ninguno. Ahora el compromiso se ve donde se decide qué atender.
+ * Sin `sortable`: la lista pagina en el servidor y `DataTable` solo ordenaría la
+ * página cargada, mostrando un orden que no es el de la lista completa. El
+ * orden vive en `?orden=` (selector de la barra de filtros).
  */
-function slaMeta(row: Row): { label: string; variant: "danger" | "warning" | "default" } | null {
-  if (row.status === "resuelto" || row.status === "cerrado") return null
-  const stage = ticketSlaStage(row.dueAt)
-  if (stage === "overdue") return { label: "Vencido", variant: "danger" }
-  if (stage === "due_soon") return { label: "Por vencer", variant: "warning" }
-  return null
-}
-
 const COLUMNS = [
   { key: "code", label: "Código", width: "w-32" },
-  { key: "subject", label: "Asunto", sortable: true },
+  { key: "subject", label: "Asunto" },
   { key: "status", label: "Estado", width: "w-36" },
   { key: "priority", label: "Prioridad", width: "w-24" },
-  { key: "category", label: "Categoría", width: "w-32" },
-  { key: "worker", label: "Trabajador", sortable: true },
-  { key: "worksite", label: "Faena", sortable: true },
+  { key: "worksite", label: "Faena" },
   { key: "assignee", label: "Técnico", width: "w-36" },
-  { key: "sla", label: "SLA", width: "w-28" },
-  { key: "updated", label: "Actualizado", sortable: true, width: "w-32" },
+  { key: "due", label: "Vence", width: "w-40" },
+  { key: "updated", label: "Actualizado", width: "w-32" },
 ]
+
+function statusMeta(status: string) {
+  return { label: IT_TICKET_STATUS_META[status]?.label ?? status, variant: IT_TICKET_STATUS_META[status]?.variant ?? "default" as const }
+}
+
+function priorityMeta(priority: string) {
+  return { label: IT_TICKET_PRIORITY_META[priority]?.label ?? priority, variant: IT_TICKET_PRIORITY_META[priority]?.variant ?? "default" as const }
+}
+
+/**
+ * El compromiso, donde se decide qué atender. Un ticket abierto muestra su
+ * tramo (vencido / por vencer) y la fecha; uno resuelto, si cumplió el plazo.
+ * Nunca un vencimiento vigente en un ticket que ya no corre contra el reloj.
+ */
+function DueCell({ row }: { row: Row }) {
+  const info = ticketDueInfo(row)
+  if (!info) return <span className="text-xs text-[var(--color-text-muted)]">—</span>
+  if (info.kind === "met") return <span className="text-xs text-[var(--color-text-muted)]">Dentro de plazo</span>
+  if (info.kind === "missed") return <span className="text-xs text-[var(--color-text-muted)]">Fuera de plazo</span>
+  return (
+    <div className="flex flex-col items-start gap-1">
+      {info.kind === "overdue" && <MetaBadge meta={{ label: `Atrasado ${info.span}`, variant: "danger" }} />}
+      {info.kind === "due_soon" && <MetaBadge meta={{ label: `Vence en ${info.span}`, variant: "warning" }} />}
+      <span className="whitespace-nowrap text-xs text-[var(--color-text-muted)]">{formatDateTime(row.dueAt as string)}</span>
+    </div>
+  )
+}
+
+/** Trabajador, categoría y equipo en una línea secundaria bajo el asunto. */
+function subline(row: Row): string {
+  return [
+    row.workerName?.trim() || null,
+    IT_TICKET_CATEGORY_META[row.category] ?? row.category,
+    row.assetCode,
+  ].filter(Boolean).join(" · ")
+}
 
 export function TicketsTable({ rows }: { rows: Row[]; canManage: boolean }) {
   return (
@@ -62,57 +90,59 @@ export function TicketsTable({ rows }: { rows: Row[]; canManage: boolean }) {
       caption="Tickets de mesa de ayuda TI"
       columns={COLUMNS}
       rows={rows as unknown as Record<string, unknown>[]}
-      searchKeys={["code", "subject", "workerName", "worksiteName", "assigneeName", "requesterName", "assetCode"]}
+      searchKeys={["code"]}
+      // La búsqueda ya se resolvió en el servidor (`?q=`): filtrar otra vez
+      // en memoria solo dejaría fuera lo que la consulta devolvió.
+      disableInternalSearch
       renderRow={(raw) => {
         const row = raw as unknown as Row
         return (
           <TableRow key={row.id}>
             <TableCell className="w-32">
-              <Link href={`/ti/tickets/${row.id}`} className="font-mono text-xs font-semibold text-[var(--color-primary)] hover:underline">
+              <Link href={`/ti/tickets/${row.id}`} className="whitespace-nowrap font-mono text-xs font-semibold text-[var(--color-primary)] hover:underline">
                 {row.code}
               </Link>
             </TableCell>
             <TableCell>
-              <span className="font-medium text-[var(--color-text)]">{row.subject}</span>
-              {row.assetCode && <span className="ml-2 text-xs text-[var(--color-text-subtle)]">· {row.assetCode}</span>}
+              <Link href={`/ti/tickets/${row.id}`} className="font-medium text-[var(--color-text)] hover:underline">{row.subject}</Link>
+              <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{subline(row)}</p>
             </TableCell>
             <TableCell className="w-36">
-              <MetaBadge meta={{ label: `${IT_TICKET_STATUS_META[row.status]?.label ?? row.status}`, variant: IT_TICKET_STATUS_META[row.status]?.variant ?? "default" }} dot />
+              <MetaBadge meta={statusMeta(row.status)} dot />
             </TableCell>
             <TableCell className="w-24">
-              <MetaBadge meta={{ label: `${IT_TICKET_PRIORITY_META[row.priority]?.label ?? row.priority}`, variant: IT_TICKET_PRIORITY_META[row.priority]?.variant ?? "default" }} />
+              <MetaBadge meta={priorityMeta(row.priority)} />
             </TableCell>
-            <TableCell className="w-32">{IT_TICKET_CATEGORY_META[row.category] ?? row.category}</TableCell>
-            <TableCell>{row.workerName ?? "—"}</TableCell>
             <TableCell>{row.worksiteName}</TableCell>
             <TableCell className="w-36">{row.assigneeName ?? "—"}</TableCell>
-            <TableCell className="w-28">
-              {slaMeta(row)
-                ? <MetaBadge meta={slaMeta(row)!} />
-                : <span className="text-xs text-[var(--color-text-muted)]">{row.dueAt ? formatDateTime(row.dueAt) : "—"}</span>}
-            </TableCell>
-            <TableCell className="w-32">{formatDateTime(row.updatedAt)}</TableCell>
+            <TableCell className="w-40"><DueCell row={row} /></TableCell>
+            <TableCell className="w-32 whitespace-nowrap">{formatDateTime(row.updatedAt)}</TableCell>
           </TableRow>
         )
       }}
       renderMobileCard={(raw) => {
         const row = raw as unknown as Row
         return (
-          <Link key={row.id} href={`/ti/tickets/${row.id}`} className="flex items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-            <div>
-              <div className="font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</div>
-              <div className="text-sm text-[var(--color-text)]">{row.subject}</div>
-              <div className="mt-1 flex items-center gap-2">
-                <MetaBadge meta={{ label: `${IT_TICKET_STATUS_META[row.status]?.label ?? row.status}`, variant: IT_TICKET_STATUS_META[row.status]?.variant ?? "default" }} />
-                <span className="text-xs text-[var(--color-text-muted)]">{row.worksiteName}</span>
-              </div>
+          <Link key={row.id} href={`/ti/tickets/${row.id}`} className="block rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+            <div className="flex items-start justify-between gap-2">
+              <span className="whitespace-nowrap font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</span>
+              <MetaBadge meta={priorityMeta(row.priority)} />
             </div>
+            <div className="mt-1 text-sm font-medium text-[var(--color-text)]">{row.subject}</div>
+            <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{subline(row)}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <MetaBadge meta={statusMeta(row.status)} dot />
+              <DueCell row={row} />
+            </div>
+            <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+              {row.worksiteName} · Técnico: {row.assigneeName ?? "sin asignar"}
+            </p>
           </Link>
         )
       }}
       emptyTitle="Sin tickets"
       emptyDescription="No hay tickets que coincidan con los filtros."
-      pageSize={25}
+      pageSize={DEFAULT_PAGE_SIZE}
       viewKey="ti-tickets"
       enableColumnToggle
     />

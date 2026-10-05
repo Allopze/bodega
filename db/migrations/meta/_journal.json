@@ -2451,6 +2451,13 @@
       "when": 1790948785075,
       "tag": "0349_worker_sex_otro",
       "breakpoints": true
+    },
+    {
+      "idx": 350,
+      "version": "7",
+      "when": 1791235225055,
+      "tag": "0350_thin_shape",
+      "breakpoints": true
     }
   ]
 }

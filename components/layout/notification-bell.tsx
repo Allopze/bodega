@@ -36,10 +36,13 @@ export function NotificationBell() {
           <Bell size={16} />
           {hasUnread && data && (
             <>
-              <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-primary)] text-[9px] font-bold text-white animate-in fade-in zoom-in-95 duration-[var(--duration-fast)]">
+              {/* El pulso va ANTES del contador: pintado después, su 50 % de
+                  opacidad tapaba la cifra. Sólo con `motion-safe`: corría infinito
+                  incluso con `prefers-reduced-motion: reduce` (TIUX-54). */}
+              <span aria-hidden className="absolute -top-0.5 -right-0.5 hidden h-4 min-w-4 rounded-full bg-[var(--color-primary)] opacity-50 motion-safe:block motion-safe:animate-ping" />
+              <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-primary)] px-1 text-[11px] font-bold leading-none text-white animate-in fade-in zoom-in-95 duration-[var(--duration-fast)]">
                 {data.unreadCount > 9 ? "9+" : data.unreadCount}
               </span>
-              <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-[var(--color-primary)] animate-ping opacity-50" />
             </>
           )}
         </button>
@@ -72,7 +75,7 @@ export function NotificationBell() {
       aria-label={`Notificaciones${hasUnread ? ` (${data?.unreadCount} sin leer)` : ""}`}
     >
       <Bell size={18} />
-      {hasUnread && data && <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-primary)] px-1 text-[9px] font-bold text-white">{data.unreadCount > 9 ? "9+" : data.unreadCount}</span>}
+      {hasUnread && data && <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-primary)] px-1 text-[11px] font-bold leading-none text-white">{data.unreadCount > 9 ? "9+" : data.unreadCount}</span>}
     </button>
 
     <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>

@@ -1,59 +1,76 @@
 "use client"
 
 import * as React from "react"
+import { Button } from "@/components/ui/button"
 import { ExportButton } from "@/components/ui/export-button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Combobox } from "@/components/ui/combobox"
 import { FileXls } from "@phosphor-icons/react"
+import type { WorksiteOption } from "@/components/ui/worksite-select"
 import { exportTiReport, type TiReportType } from "./actions"
+import { TiExportDialog } from "./ti-export-dialog"
 
 interface ReportCardProps {
   type: TiReportType
   title: string
   description: string
-  needsAsset: boolean
-  assets: { id: string; code: string }[]
+  needsAsset?: boolean
+  assets?: { id: string; code: string }[]
   enabled: boolean
+  /** Filtros del reporte; sin ellos se exporta directo. */
+  filters?: { period?: boolean; worksite?: boolean; system?: boolean }
+  worksites?: WorksiteOption[]
+  systems?: { id: string; name: string }[]
 }
 
-/** Centinela del placeholder: `Select` de Radix no admite un item con valor "". */
-const NONE = "_none"
-
-export function ReportCard({ type, title, description, needsAsset, assets, enabled }: ReportCardProps) {
+export function ReportCard({
+  type, title, description, needsAsset = false, assets = [], enabled, filters, worksites = [], systems = [],
+}: ReportCardProps) {
   const [assetId, setAssetId] = React.useState("")
+  const uid = React.useId()
+  const options = React.useMemo(() => assets.map((a) => ({ value: a.id, label: a.code })), [assets])
 
   return (
-    <section className="flex flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
+    <article className="flex flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
       <div className="flex items-center gap-2">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--color-primary-tint)] text-[var(--color-primary-ink)]">
+        <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary-tint)] text-[var(--color-primary-ink)]">
           <FileXls size={16} />
         </span>
-        <h2 className="text-sm font-semibold text-[var(--color-text)]">{title}</h2>
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">{title}</h3>
       </div>
       <p className="mt-2 flex-1 text-xs text-[var(--color-text-muted)]">{description}</p>
 
       {needsAsset && (
         <div className="mt-3">
-          {/* El centinela vuelve a "" al seleccionarlo: guardarlo tal cual
-              habilitaba el botón y exportaba con un id inexistente. */}
-          <Select value={assetId || NONE} onValueChange={(v) => setAssetId(v === NONE ? "" : v)}>
-            <SelectTrigger aria-label="Activo para historial" className="h-9 w-full text-xs">
-              <SelectValue placeholder="Selecciona un activo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>Selecciona un activo</SelectItem>
-              {assets.map((a) => <SelectItem key={a.id} value={a.id}>{a.code}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          {/* Con búsqueda: el inventario puede tener cientos de códigos. */}
+          <Combobox
+            id={`${uid}-activo`}
+            aria-label="Activo del historial"
+            options={options}
+            value={assetId}
+            onChange={setAssetId}
+            placeholder="Buscar un activo por código…"
+            clearLabel="Quitar selección"
+          />
         </div>
       )}
 
       <div className="mt-4">
         {!enabled ? (
-          <p className="text-center text-xs text-[var(--color-text-subtle)]">Sin permiso de exportación</p>
+          <p className="text-center text-xs text-[var(--color-text-muted)]">Sin permiso de exportación</p>
+        ) : filters ? (
+          <TiExportDialog
+            type={type}
+            title={title}
+            withPeriod={filters.period}
+            worksites={filters.worksite ? worksites : []}
+            systems={filters.system ? systems : undefined}
+          />
         ) : needsAsset && !assetId ? (
-          <span className="flex h-8 w-full cursor-not-allowed items-center justify-center gap-1.5 rounded-lg bg-[var(--color-surface-2)] text-xs font-semibold text-[var(--color-text-subtle)]">
-            <FileXls className="h-4 w-4" /> Selecciona un activo
-          </span>
+          // Sin activo no hay nada que exportar: botón realmente deshabilitado
+          // (antes era un <span> que imitaba uno y repetía el texto del campo).
+          <Button variant="secondary" size="sm" className="w-full" disabled>
+            <FileXls className="mr-1 h-4 w-4" /> Exportar Excel
+          </Button>
         ) : (
           <ExportButton
             action={() => exportTiReport(type, needsAsset ? assetId : undefined)}
@@ -62,6 +79,6 @@ export function ReportCard({ type, title, description, needsAsset, assets, enabl
           />
         )}
       </div>
-    </section>
+    </article>
   )
 }

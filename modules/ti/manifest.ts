@@ -34,17 +34,19 @@ export const tiModule = {
   nav: [
     {
       areaId: "ti",
+      // Mismo texto que el título de cada página (TIUX-45). El panel dibuja un
+      // encabezado cuando cambia `group`, así que cada grupo va contiguo.
       items: [
-        { label: "Dashboard TI",        href: "/ti",             iconName: "Desktop",       permissions: ["ti:view"] },
-        { label: "Inventario",          href: "/ti/activos",     iconName: "Laptop",        permissions: ["ti:view"] },
-        { label: "Asignaciones",        href: "/ti/asignaciones", iconName: "UserCirclePlus", permissions: ["ti:view"] },
-        { label: "Mantenciones",        href: "/ti/mantenciones", iconName: "Wrench",        permissions: ["ti:view"] },
-        { label: "Tickets",             href: "/ti/tickets",     iconName: "Ticket",        permissions: ["ti:view", "ti:create_ticket", "ti:manage_tickets"] },
-        { label: "Licencias",           href: "/ti/licencias",   iconName: "Key",           permissions: ["ti:view"] },
-        { label: "Accesos",             href: "/ti/accesos",     iconName: "LockKeyOpen",   permissions: ["ti:view"] },
-        { label: "Garantías y proveedores", href: "/ti/garantias", iconName: "ShieldCheck", permissions: ["ti:view"] },
-        { label: "Bajas",               href: "/ti/bajas",       iconName: "Archive",       permissions: ["ti:view"] },
-        { label: "Reportes",            href: "/ti/reportes",    iconName: "ChartBar",      permissions: ["ti:view", "ti:export"] },
+        { label: "Resumen",             href: "/ti",             iconName: "Desktop",       permissions: ["ti:view"], group: "Seguimiento" },
+        { label: "Reportes TI",         href: "/ti/reportes",    iconName: "ChartBar",      permissions: ["ti:view", "ti:export"], group: "Seguimiento" },
+        { label: "Inventario",          href: "/ti/activos",     iconName: "Laptop",        permissions: ["ti:view"], group: "Equipos" },
+        { label: "Entregas",            href: "/ti/asignaciones", iconName: "UserCirclePlus", permissions: ["ti:view"], group: "Equipos" },
+        { label: "Mantenciones",        href: "/ti/mantenciones", iconName: "Wrench",        permissions: ["ti:view"], group: "Equipos" },
+        { label: "Garantías y proveedores", href: "/ti/garantias", iconName: "ShieldCheck", permissions: ["ti:view"], group: "Equipos" },
+        { label: "Bajas",               href: "/ti/bajas",       iconName: "Archive",       permissions: ["ti:view"], group: "Equipos" },
+        { label: "Mesa de ayuda",       href: "/ti/tickets",     iconName: "Ticket",        permissions: ["ti:view", "ti:create_ticket", "ti:manage_tickets"], group: "Servicios" },
+        { label: "Accesos",             href: "/ti/accesos",     iconName: "LockKeyOpen",   permissions: ["ti:view"], group: "Servicios" },
+        { label: "Licencias",           href: "/ti/licencias",   iconName: "Key",           permissions: ["ti:view"], group: "Servicios" },
       ],
     },
   ],

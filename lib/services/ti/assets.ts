@@ -1,9 +1,10 @@
-import { eq, and, isNull, asc, sql, notInArray, type SQL } from "drizzle-orm"
-import { IT_RETIRED_STATUSES } from "./constants"
+import { alias } from "drizzle-orm/pg-core"
+import { eq, and, isNull, desc, asc, sql, notInArray, inArray, type SQL } from "drizzle-orm"
+import { IT_RETIRED_STATUSES, itStatusLabel, isRetiredStatus } from "./constants"
 import { db } from "@/db"
 import {
   itAssets, itAssetTypes, itMaintenances, itTickets,
-  itAssetAssignments, workers, worksites,
+  itAssetAssignments, itAssetRetirements, users, workers, worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
@@ -280,6 +281,28 @@ export async function changeAssetStatus(
     if (!existing) throw new Error("Activo no encontrado")
     assertTiWorksiteAccess(worksiteIds, existing.worksiteId)
 
+    // Estados terminales (TIUX-01). La baja es un acto con doble control
+    // (responsable + autorizante) y su propio permiso de reversión
+    // (`ti:reverse_retirement`): si este cambio manual pudiera sacar al activo de
+    // 'dado_de_baja', la baja seguiría vigente en `it_asset_retirements` y se
+    // saltaría ese control. Regla:
+    //  - 'dado_de_baja' solo nace de `retireAsset` y solo se deshace con
+    //    `reverseRetirement`: nunca se corrige a mano.
+    //  - 'perdido'/'robado' con baja vigente: igual, se revierten desde Bajas.
+    //  - 'perdido'/'robado' fijados a mano (sin registro de baja) sí se pueden
+    //    corregir, p. ej. el equipo apareció.
+    if (existing.status === "dado_de_baja") {
+      throw new Error("Este activo está dado de baja: la baja se revierte desde Bajas, con su permiso.")
+    }
+    if (isRetiredStatus(existing.status)) {
+      const [activeRetirement] = await tx.select({ id: itAssetRetirements.id }).from(itAssetRetirements)
+        .where(and(eq(itAssetRetirements.assetId, input.assetId), isNull(itAssetRetirements.reversedAt)))
+        .limit(1)
+      if (activeRetirement) {
+        throw new Error(`Este activo figura como ${itStatusLabel(existing.status).toLowerCase()} por una baja registrada: la baja se revierte desde Bajas, con su permiso.`)
+      }
+    }
+
     // 'en_prestamo' nace y muere con su acta de entrega (kind: "loan"), igual
     // que 'asignado': no es fijable a mano sin una asignación abierta que lo
     // respalde.
@@ -314,7 +337,7 @@ export async function changeAssetStatus(
     await appendAssetHistory({
       assetId: input.assetId,
       action: "status_changed",
-      detail: `Cambio de estado: ${existing.status} → ${input.status}.`,
+      detail: `Cambio de estado: ${itStatusLabel(existing.status)} → ${itStatusLabel(input.status)}.`,
       changes: { from: existing.status, to: input.status, reason: input.reason },
       actorUserId: actor.userId,
     }, tx)
@@ -404,7 +427,7 @@ export async function listAssets(filters: AssetListFilters) {
       assetTypeId: itAssets.assetTypeId,
       createdAt: itAssets.createdAt,
       typeName: itAssetTypes.name,
-      workerName: sql<string>`trim(concat(${workers.firstName}, ' ', ${workers.lastName}))`,
+      workerName: sql<string | null>`nullif(trim(concat(${workers.firstName}, ' ', ${workers.lastName})), '')`,
       worksiteName: worksites.name,
       maintenanceCount: sql<number>`(SELECT count(*)::int FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id} AND ${itMaintenances.voidedAt} IS NULL)`,
       maintenanceCost: sql<number>`(SELECT coalesce(sum(${itMaintenances.cost}), 0)::float8 FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id} AND ${itMaintenances.voidedAt} IS NULL)`,
@@ -416,6 +439,46 @@ export async function listAssets(filters: AssetListFilters) {
     .leftJoin(worksites, eq(itAssets.worksiteId, worksites.id))
     .where(and(...conditions))
     .orderBy(asc(itAssets.code))
+}
+
+/**
+ * Cuántos activos terminales (baja, pérdida, robo) oculta el inventario por
+ * defecto. La página lo usa para avisar que existen y cómo verlos.
+ */
+export async function countRetiredAssets(scope?: SQL): Promise<number> {
+  const conditions: SQL[] = [isNull(itAssets.deletedAt), inArray(itAssets.status, [...IT_RETIRED_STATUSES])]
+  if (scope) conditions.push(scope)
+  const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(itAssets).where(and(...conditions))
+  return row?.n ?? 0
+}
+
+/**
+ * Bajas de un activo con los nombres de quienes intervinieron, para la ficha:
+ * el banner de «dado de baja» necesita responsable Y autorizante, y
+ * `listRetirements` solo trae el primero. Solo lectura; el llamador ya resolvió
+ * el alcance de faena del activo (`getAssetById(id, scope)`).
+ */
+export async function listAssetRetirements(assetId: string) {
+  const authorizer = alias(users, "authorizer")
+  const reverser = alias(users, "reverser")
+  return db
+    .select({
+      id: itAssetRetirements.id,
+      date: itAssetRetirements.date,
+      reason: itAssetRetirements.reason,
+      destination: itAssetRetirements.destination,
+      observations: itAssetRetirements.observations,
+      responsibleName: users.name,
+      authorizedByName: authorizer.name,
+      reversedAt: itAssetRetirements.reversedAt,
+      reversedByName: reverser.name,
+    })
+    .from(itAssetRetirements)
+    .innerJoin(users, eq(itAssetRetirements.responsibleUserId, users.id))
+    .innerJoin(authorizer, eq(itAssetRetirements.authorizedByUserId, authorizer.id))
+    .leftJoin(reverser, eq(itAssetRetirements.reversedByUserId, reverser.id))
+    .where(eq(itAssetRetirements.assetId, assetId))
+    .orderBy(desc(itAssetRetirements.createdAt), desc(itAssetRetirements.id))
 }
 
 export async function getAssetById(id: string, scope?: SQL) {
@@ -449,7 +512,7 @@ export async function getAssetById(id: string, scope?: SQL) {
       typeName: itAssetTypes.name,
       typeCategory: itAssetTypes.category,
       typeHasSpecs: itAssetTypes.hasSpecs,
-      workerName: sql<string>`trim(concat(${workers.firstName}, ' ', ${workers.lastName}))`,
+      workerName: sql<string | null>`nullif(trim(concat(${workers.firstName}, ' ', ${workers.lastName})), '')`,
       worksiteName: worksites.name,
       maintenanceCount: sql<number>`(SELECT count(*)::int FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id} AND ${itMaintenances.voidedAt} IS NULL)`,
       maintenanceCost: sql<number>`(SELECT coalesce(sum(${itMaintenances.cost}), 0)::float8 FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id} AND ${itMaintenances.voidedAt} IS NULL)`,

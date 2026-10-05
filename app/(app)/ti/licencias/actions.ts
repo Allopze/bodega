@@ -125,6 +125,8 @@ export async function revokeLicenseAction(_prev: ActionState, formData: FormData
     }, serviceWorksiteScope(session))
     revalidatePath("/ti")
     revalidatePath("/ti/licencias")
+    // También se revoca desde el detalle de un egreso (TIUX-19).
+    revalidatePath("/ti/accesos")
     return { ok: true, message: "Asignación revocada" }
   } catch (error) {
     logger.error("[ti:revokeLicense]", error)

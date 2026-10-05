@@ -4,6 +4,15 @@ export interface ColumnDef {
   key:            string
   label:          string
   sortable?:      boolean
+  /**
+   * Valor por el que se ordena la columna. Sin él se ordena por `row[key]`, y
+   * esa clave tiene que existir en la fila: en TI 15 de 19 columnas ordenables
+   * usaban una clave de presentación (`worker`, `type`) que la fila no traía
+   * (`workerName`, `typeName`). El comparador recibía `undefined`, devolvía un
+   * orden arbitrario y `aria-sort` anunciaba "ascendente" igual.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- la columna no conoce el tipo de fila del llamador
+  sortValue?:     (row: any) => string | number | null | undefined
   /** If true, renders with TableCellNum styles (mono, right-aligned) */
   numeric?:       boolean
   /** Width hint (Tailwind class, e.g. "w-32") */

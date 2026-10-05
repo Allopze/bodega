@@ -7,7 +7,7 @@ import { PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
 // Lo detectó `accessibility.spec.ts` como `target-size` en productos; las
 // demás listas de catálogo se salvaban sólo por tener dos botones.
 const BUTTON_CLASS =
-  "h-8 w-8 shrink-0 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]"
+  "h-11 w-11 sm:h-8 sm:w-8 shrink-0 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]"
 
 interface CatalogRowActionsProps {
   id: string

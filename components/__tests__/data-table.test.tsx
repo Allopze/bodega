@@ -206,6 +206,34 @@ describe("DataTable", () => {
     expect(sortButtons.length).toBeGreaterThanOrEqual(2)
   })
 
+  it("sorts by the column's sortValue when the column key is a presentation key absent from the row", () => {
+    const rows = [
+      { id: "1", typeName: "Notebook" },
+      { id: "2", typeName: "Celular" },
+      { id: "3", typeName: "Monitor" },
+    ]
+    render(
+      withProvider(
+        <DataTable
+          caption="Activos de prueba"
+          columns={[{ key: "type", label: "Tipo", sortable: true, sortValue: (row: { typeName: string }) => row.typeName }]}
+          rows={rows}
+          searchKeys={["typeName"]}
+          renderRow={(row) => (
+            <TableRow key={row.id}>
+              <TableCell>{row.typeName}</TableCell>
+            </TableRow>
+          )}
+        />,
+      ),
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /Tipo/ }))
+    const cells = screen.getAllByRole("cell").map((cell) => cell.textContent)
+    expect(cells).toEqual(["Celular", "Monitor", "Notebook"])
+    expect(screen.getByRole("columnheader", { name: /Tipo/ })).toHaveAttribute("aria-sort", "ascending")
+  })
+
   it("lets dense catalog tables opt into a fixed layout that uses the available width", () => {
     const { container } = render(
       withProvider(

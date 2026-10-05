@@ -63,3 +63,55 @@ describe("Select", () => {
     expect(trigger).not.toHaveTextContent("Matriz de probabilidad")
   })
 })
+
+describe("Select dentro de Field (TIUX-25)", () => {
+  afterEach(cleanup)
+
+  it("entrega nombre, descripción e invalidez del Field al trigger", async () => {
+    const { Field } = await import("@/components/ui/field")
+    render(
+      <Field label="Faena" error="Selecciona una faena">
+        <Select>
+          <SelectTrigger>
+            <SelectValue placeholder="Elegir" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="a">A</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>,
+    )
+    const trigger = screen.getByRole("combobox", { name: "Faena" })
+    expect(trigger).toHaveAttribute("aria-invalid", "true")
+    const describedBy = trigger.getAttribute("aria-describedby")
+    expect(describedBy).toBeTruthy()
+    expect(document.getElementById(describedBy!)).toHaveTextContent("Selecciona una faena")
+  })
+
+  it("el aria-label propio del trigger no se pisa", () => {
+    render(
+      <Select aria-describedby="x">
+        <SelectTrigger aria-label="Propio">
+          <SelectValue />
+        </SelectTrigger>
+      </Select>,
+    )
+    expect(screen.getByRole("combobox", { name: "Propio" })).toHaveAttribute("aria-describedby", "x")
+  })
+
+  it("dentro de un Field con ayuda, el aria-label propio sigue siendo el nombre", async () => {
+    const { Field } = await import("@/components/ui/field")
+    render(
+      <Field label="Objetivo" helper="Filtra las actividades">
+        <Select>
+          <SelectTrigger aria-label="Seleccionar objetivo">
+            <SelectValue />
+          </SelectTrigger>
+        </Select>
+      </Field>,
+    )
+    const trigger = screen.getByRole("combobox", { name: "Seleccionar objetivo" })
+    expect(trigger).not.toHaveAttribute("aria-labelledby")
+    expect(trigger.getAttribute("aria-describedby")).toBeTruthy()
+  })
+})

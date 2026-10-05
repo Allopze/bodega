@@ -3,6 +3,9 @@ import {
   TICKET_SLA_HOURS,
   computeTicketDueAt,
   ticketSlaStage,
+  ticketDueInfo,
+  ticketPriorityRank,
+  formatTicketSpan,
 } from "@/lib/services/ti/ticket-sla"
 
 /**
@@ -39,5 +42,34 @@ describe("SLA de tickets TI (TIT-001)", () => {
     // Ticket anterior a la migración: no tiene compromiso, y decirlo es más
     // honesto que fabricarle uno.
     expect(ticketSlaStage(null, ahora)).toBeNull()
+  })
+
+  it("ordena por urgencia: crítica antes que alta, normal y baja", () => {
+    expect(["baja", "critica", "normal", "alta"].sort((a, b) => ticketPriorityRank(a) - ticketPriorityRank(b)))
+      .toEqual(["critica", "alta", "normal", "baja"])
+    expect(ticketPriorityRank("inventada")).toBe(ticketPriorityRank("normal"))
+  })
+
+  it("expresa las duraciones en lenguaje de persona", () => {
+    expect(formatTicketSpan(10_000)).toBe("1 min")
+    expect(formatTicketSpan(40 * 60_000)).toBe("40 min")
+    expect(formatTicketSpan(5 * 3_600_000)).toBe("5 h")
+    expect(formatTicketSpan(47 * 3_600_000)).toBe("47 h")
+    expect(formatTicketSpan(24 * 3_600_000 * 2)).toBe("2 días")
+  })
+
+  it("un ticket abierto cuenta contra el reloj; uno resuelto, nunca muestra un vencimiento vigente", () => {
+    const ahora = new Date("2026-09-14T12:00:00.000Z")
+    expect(ticketDueInfo({ status: "en_progreso", dueAt: "2026-09-16T12:00:00.000Z" }, ahora))
+      .toEqual({ kind: "on_track", span: "2 días" })
+    expect(ticketDueInfo({ status: "nuevo", dueAt: "2026-09-14T07:00:00.000Z" }, ahora))
+      .toEqual({ kind: "overdue", span: "5 h" })
+    expect(ticketDueInfo({ status: "resuelto", dueAt: "2026-09-14T07:00:00.000Z", resolvedAt: "2026-09-14T06:00:00.000Z" }, ahora))
+      .toEqual({ kind: "met", span: null })
+    expect(ticketDueInfo({ status: "cerrado", dueAt: "2026-09-14T07:00:00.000Z", resolvedAt: "2026-09-14T09:00:00.000Z" }, ahora))
+      .toEqual({ kind: "missed", span: null })
+    // Resuelto sin fecha guardada o sin plazo: no se adivina.
+    expect(ticketDueInfo({ status: "cerrado", dueAt: "2026-09-14T07:00:00.000Z", resolvedAt: null }, ahora)).toBeNull()
+    expect(ticketDueInfo({ status: "nuevo", dueAt: null }, ahora)).toBeNull()
   })
 })

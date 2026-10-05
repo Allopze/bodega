@@ -1,6 +1,6 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { eq } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import path from "node:path"
 import * as schema from "@/db/schema"
@@ -19,12 +19,13 @@ vi.mock("@/db", () => ({
 }))
 
 import {
-  createLicense, updateLicense, assignLicense, revokeLicenseAssignment, listLicenses, getLicenseAssignments,
+  createLicense, updateLicense, assignLicense, revokeLicenseAssignment, listLicenses, getLicenseAssignments, getLicensesAssignments,
 } from "@/lib/services/ti/licenses"
 import {
   createAccessSystem, toggleAccessSystem, listAccessSystems,
   upsertSystemAccess, listWorkerAccess,
   createChecklist, toggleChecklistTask, listChecklists, getChecklistTasks,
+  listWorkersWithAccess, getSystemAccess, listInactiveWorkersWithAccess, getEgressContexts,
 } from "@/lib/services/ti/access"
 import { ONBOARDING_CHECKLIST_TEMPLATE } from "@/lib/services/ti/constants"
 
@@ -322,7 +323,159 @@ describe("módulo TI — licencias, accesos y checklists", () => {
       await createChecklist({ workerId: "wk-ti-maria", kind: "offboarding" }, actor)
 
       await expect(createChecklist({ workerId: "wk-ti-maria", kind: "offboarding" }, actor))
-        .rejects.toThrow(/ya tiene un checklist de baja en curso/i)
+        .rejects.toThrow(/ya tiene un egreso en curso/i)
+    })
+  })
+  /**
+   * TIUX-02 / TIUX-18 / TIUX-19. La matriz de accesos filtraba los registros
+   * por sistema pero pintaba todas las columnas: un acceso real en otro sistema
+   * aparecía como "—" y al abrirlo la hoja precargaba "Activo", reactivando un
+   * acceso suspendido. Acá se fija lo que el servicio entrega.
+   */
+  describe("matriz de accesos (L6)", () => {
+    const juan = { workerId: "wk-ti-juan" }
+
+    it("con un sistema filtrado devuelve solo a quien tiene registro en ese sistema y solo ese acceso", async () => {
+      const sysA = await createAccessSystem({ name: "Matriz A" }, actor)
+      const sysB = await createAccessSystem({ name: "Matriz B" }, actor)
+      await upsertSystemAccess({ systemId: sysA, ...juan, status: "suspendido", notes: "Licencia médica" }, actor)
+      await upsertSystemAccess({ systemId: sysB, workerId: "wk-ti-maria", status: "activo" }, actor)
+
+      const onlyA = await listWorkersWithAccess({ systemId: sysA, scope: undefined })
+      expect(onlyA.map((w) => w.id)).toEqual(["wk-ti-juan"])
+      // Solo el acceso de ESE sistema, con el estado y las notas reales.
+      expect(onlyA[0]?.accesses).toHaveLength(1)
+      expect(onlyA[0]?.accesses[0]).toMatchObject({ systemId: sysA, status: "suspendido", notes: "Licencia médica" })
+
+      // Sin filtro, el acceso de Juan a B no existe y el de A sigue siendo "suspendido".
+      const all = await listWorkersWithAccess({ scope: undefined })
+      const juanRow = all.find((w) => w.id === "wk-ti-juan")
+      expect(juanRow?.accesses.find((a) => a.systemId === sysA)?.status).toBe("suspendido")
+      expect(juanRow?.accesses.some((a) => a.systemId === sysB)).toBe(false)
+    })
+
+    it("por defecto solo lista a quien tiene algún registro; includeWithoutAccess trae a todos", async () => {
+      await testDb.insert(schema.workers).values({
+        id: "wk-ti-sin-acceso", rut: "44444444-4", firstName: "Zoe", lastName: "Sin Acceso",
+        worksiteId: "ws-ti-norte", isActive: true,
+      })
+      const withRecords = await listWorkersWithAccess({ scope: undefined })
+      expect(withRecords.some((w) => w.id === "wk-ti-sin-acceso")).toBe(false)
+
+      const everyone = await listWorkersWithAccess({ includeWithoutAccess: true, scope: undefined })
+      expect(everyone.find((w) => w.id === "wk-ti-sin-acceso")?.accesses).toEqual([])
+    })
+
+    it("busca y filtra por faena en SQL, y trata % y _ como texto", async () => {
+      const bySearch = await listWorkersWithAccess({ includeWithoutAccess: true, search: "pérez", scope: undefined })
+      expect(bySearch.map((w) => w.id)).toEqual(["wk-ti-juan"])
+
+      // Un % suelto no debe comportarse como comodín.
+      expect(await listWorkersWithAccess({ includeWithoutAccess: true, search: "%", scope: undefined })).toEqual([])
+      expect(await listWorkersWithAccess({ includeWithoutAccess: true, search: "_", scope: undefined })).toEqual([])
+
+      const bySite = await listWorkersWithAccess({ includeWithoutAccess: true, worksiteId: "ws-ti-sur", scope: undefined })
+      expect(bySite.map((w) => w.id)).toEqual(["wk-ti-maria"])
+
+      // El alcance de faena sigue mandando.
+      const scoped = await listWorkersWithAccess({
+        includeWithoutAccess: true,
+        scope: inArray(schema.workers.worksiteId, ["ws-ti-sur"]),
+      })
+      expect(scoped.every((w) => w.worksiteId === "ws-ti-sur")).toBe(true)
+    })
+
+    it("getSystemAccess entrega el estado y las notas reales y respeta la faena", async () => {
+      const sys = await createAccessSystem({ name: "Matriz Lectura" }, actor)
+      await upsertSystemAccess({ systemId: sys, ...juan, status: "suspendido", notes: "Ticket 123" }, actor)
+
+      expect(await getSystemAccess("wk-ti-juan", sys, "all")).toMatchObject({ status: "suspendido", notes: "Ticket 123" })
+      expect(await getSystemAccess("wk-ti-maria", sys, "all")).toBeNull()
+      // Una sesión de otra faena no ve el registro.
+      expect(await getSystemAccess("wk-ti-juan", sys, ["ws-ti-sur"])).toBeNull()
+    })
+
+    it("guardar sin notas las conserva y una cadena vacía las borra", async () => {
+      const sys = await createAccessSystem({ name: "Matriz Notas" }, actor)
+      await upsertSystemAccess({ systemId: sys, ...juan, status: "activo", notes: "Ticket 999" }, actor)
+
+      // `null` = el formulario no trae el campo (p. ej. "Revocar" desde un egreso).
+      await upsertSystemAccess({ systemId: sys, ...juan, status: "baja", notes: null }, actor)
+      expect((await getSystemAccess("wk-ti-juan", sys, "all"))?.notes).toBe("Ticket 999")
+
+      await upsertSystemAccess({ systemId: sys, ...juan, status: "baja", notes: "" }, actor)
+      expect((await getSystemAccess("wk-ti-juan", sys, "all"))?.notes).toBeNull()
+    })
+  })
+
+  describe("egresos conectados (L6)", () => {
+    it("lista a los inactivos que conservan accesos vigentes y deja de hacerlo al revocar", async () => {
+      await testDb.insert(schema.workers).values({
+        id: "wk-ti-inactivo", rut: "55555555-5", firstName: "Iván", lastName: "Inactivo",
+        worksiteId: "ws-ti-norte", isActive: false,
+      })
+      const sys = await createAccessSystem({ name: "Inactivos Correo" }, actor)
+      await upsertSystemAccess({ systemId: sys, workerId: "wk-ti-inactivo", status: "activo" }, actor)
+
+      const before = await listInactiveWorkersWithAccess(undefined)
+      const row = before.find((w) => w.id === "wk-ti-inactivo")
+      expect(row?.accesses.map((a) => a.systemName)).toEqual(["Inactivos Correo"])
+      // Los activos no entran a la revisión.
+      expect(before.some((w) => w.id === "wk-ti-juan")).toBe(false)
+
+      // Un alcance de otra faena no los ve.
+      expect((await listInactiveWorkersWithAccess(inArray(schema.workers.worksiteId, ["ws-ti-sur"])))
+        .some((w) => w.id === "wk-ti-inactivo")).toBe(false)
+
+      await upsertSystemAccess({ systemId: sys, workerId: "wk-ti-inactivo", status: "baja" }, actor)
+      expect((await listInactiveWorkersWithAccess(undefined)).some((w) => w.id === "wk-ti-inactivo")).toBe(false)
+    })
+
+    it("reúne accesos y licencias vigentes de la persona, sin los revocados", async () => {
+      await testDb.insert(schema.workers).values({
+        id: "wk-ti-egreso", rut: "66666666-6", firstName: "Eva", lastName: "Egreso",
+        worksiteId: "ws-ti-norte", isActive: true,
+      })
+      const sysVigente = await createAccessSystem({ name: "Egreso VPN" }, actor)
+      const sysRevocado = await createAccessSystem({ name: "Egreso Chipax" }, actor)
+      await upsertSystemAccess({ systemId: sysVigente, workerId: "wk-ti-egreso", status: "activo" }, actor)
+      await upsertSystemAccess({ systemId: sysRevocado, workerId: "wk-ti-egreso", status: "baja" }, actor)
+
+      const licenseId = await createLicense({ name: "Egreso Office", purchasedQuantity: 3, periodicity: "anual" }, actor)
+      const keep = await assignLicense({ licenseId, workerId: "wk-ti-egreso" }, actor)
+      const otherLicense = await createLicense({ name: "Egreso Slack", purchasedQuantity: 3, periodicity: "anual" }, actor)
+      const gone = await assignLicense({ licenseId: otherLicense, workerId: "wk-ti-egreso" }, actor)
+      await revokeLicenseAssignment(gone, actor)
+
+      const map = await getEgressContexts(["wk-ti-egreso"], undefined)
+      const context = map.get("wk-ti-egreso")
+      expect(context?.accesses.map((a) => a.systemName)).toEqual(["Egreso VPN"])
+      expect(context?.licenses.map((l) => l.assignmentId)).toEqual([keep])
+      expect(context?.assets).toEqual([])
+
+      // Con el alcance de otra faena no se ve nada de esta persona.
+      const scoped = await getEgressContexts(["wk-ti-egreso"], inArray(schema.workers.worksiteId, ["ws-ti-sur"]))
+      expect(scoped.get("wk-ti-egreso")).toBeUndefined()
+    })
+  })
+
+  describe("asignaciones de licencias en lote (L6)", () => {
+    it("devuelve lo mismo que la consulta individual, agrupado por licencia, y respeta la faena", async () => {
+      const a = await createLicense({ name: "Lote A", purchasedQuantity: 3, periodicity: "anual" }, actor)
+      const b = await createLicense({ name: "Lote B", purchasedQuantity: 3, periodicity: "anual" }, actor)
+      await assignLicense({ licenseId: a, workerId: "wk-ti-juan" }, actor)
+      await assignLicense({ licenseId: a, workerId: "wk-ti-maria" }, actor)
+      await assignLicense({ licenseId: b, workerId: "wk-ti-maria" }, actor)
+
+      const batch = await getLicensesAssignments([a, b], "all")
+      expect((await getLicenseAssignments(a)).map((x) => x.id).sort()).toEqual(batch.get(a)!.map((x) => x.id).sort())
+      expect((await getLicenseAssignments(b)).map((x) => x.id).sort()).toEqual(batch.get(b)!.map((x) => x.id).sort())
+
+      const scoped = await getLicensesAssignments([a, b], ["ws-ti-norte"])
+      expect(scoped.get(a)?.map((x) => x.workerId)).toEqual(["wk-ti-juan"])
+      expect(scoped.get(b)).toBeUndefined()
+
+      expect((await getLicensesAssignments([], "all")).size).toBe(0)
     })
   })
 })

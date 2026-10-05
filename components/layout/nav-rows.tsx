@@ -10,7 +10,7 @@ import { isHrefActive, type AreaNode, type NavItem } from "./nav-items"
 
 function CountBadge({ count }: { count: number }) {
   return (
-    <span className="ml-auto shrink-0 rounded-full bg-signal-tint px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-signal-ink">
+    <span className="ml-auto shrink-0 rounded-full bg-signal-tint px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-signal-ink">
       {count > 99 ? "99+" : count}
     </span>
   )

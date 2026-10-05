@@ -155,6 +155,21 @@ const DataTableInner = <T extends Record<string, unknown>>({
     }
   }, [caption, columns.length, enableColumnToggle, rows])
 
+  // Misma idea para el orden: una columna ordenable sin `sortValue` cuya clave
+  // no existe en la fila ordena por `undefined` y anuncia un orden falso.
+  React.useEffect(() => {
+    const sample = rows[0]
+    if (process.env.NODE_ENV === "production" || !sample) return
+    for (const col of columns) {
+      if (col.sortable && !col.sortValue && !(col.key in sample)) {
+        console.warn(
+          `[DataTable] "${caption}": la columna ordenable "${col.key}" no existe en la fila. ` +
+          "Declara `sortValue` o usa como `key` el campo real: si no, el orden es arbitrario y `aria-sort` miente.",
+        )
+      }
+    }
+  }, [caption, columns, rows])
+
   function toggleColumn(key: string) {
     setVisibleKeys((prev) => {
       const next = new Set(prev)
@@ -209,9 +224,11 @@ const DataTableInner = <T extends Record<string, unknown>>({
   // ── Sort ────────────────────────────────────────────────────────────────────
   const sorted = React.useMemo(() => {
     if (!sortKey || !sortDir) return filtered
+    const sortValue = columns.find((col) => col.key === sortKey)?.sortValue
+    const valueOf = (row: T) => (sortValue ? sortValue(row) : row[sortKey])
     return [...filtered].sort((a, b) => {
-      const av = a[sortKey]
-      const bv = b[sortKey]
+      const av = valueOf(a)
+      const bv = valueOf(b)
       const cmp =
         av == null ? -1 :
         bv == null ?  1 :
@@ -220,7 +237,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
           : String(av).localeCompare(String(bv), "es-CL", { sensitivity: "base" })
       return sortDir === "asc" ? cmp : -cmp
     })
-  }, [filtered, sortKey, sortDir])
+  }, [filtered, sortKey, sortDir, columns])
 
   // ── Paginate ─────────────────────────────────────────────────────────────────
   const totalFiltered = sorted.length

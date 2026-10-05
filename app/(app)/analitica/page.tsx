@@ -141,7 +141,9 @@ export default async function AnaliticaPage({
             label="Alertas"
             value={formatQty(data.alerts.length)}
             detail="Detectadas en el período"
-            tone={data.alerts.some((alert) => alert.severity === "critical") ? "signal" : "neutral"}
+            // Una alerta crítica es un problema, no un pendiente: el naranja
+            // signal está reservado a pendientes (DESIGN.md).
+            tone={data.alerts.some((alert) => alert.severity === "critical") ? "danger" : "neutral"}
             href="/dashboard"
             glossary="Alertas accionables detectadas por el sistema: gasto anómalo por vehículo, concentración de gasto en un proveedor y entregas recurrentes de EPP a un mismo trabajador."
           />
