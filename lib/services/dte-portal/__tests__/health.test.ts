@@ -167,6 +167,74 @@ describe("DTE cron health evaluator", () => {
     expect(expired.domains[0]).toMatchObject({ status: "critical", code: "DTE_HEALTH_BATCH_MISSING" })
   })
 
+  // El sondeo */5 cae en el mismo minuto en que arranca la sincronización: a las
+  // 07:00:00 todavía no hay fila. Sin margen eso salía como "no corrió el horario
+  // programado" y, dos minutos después, "recuperada": dos correos por horario a
+  // cada administrador DTE, cinco horarios al día (visto en producción 2026-10).
+  it("does not page a slot whose batch has not had time to register its first run", () => {
+    const base = {
+      dteEnabled: true,
+      dteConfigured: true,
+      salesEnabled: false,
+      salesConfigured: false,
+      salesRuns: [],
+    }
+
+    const atOpen = evaluateDteSyncHealth({ ...base, now: new Date("2026-08-11T11:00:00.000Z"), dteRuns: [] }) // 07:00:00 Chile
+    expect(atOpen.domains[0]).toMatchObject({ status: "waiting", code: "DTE_HEALTH_AWAITING_RUN" })
+    expect(decideDteHealthAlert(atOpen, { fingerprint: "healthy:previous-slot", status: "healthy" })).toBeNull()
+
+    const nextProbe = evaluateDteSyncHealth({ ...base, now: new Date("2026-08-11T11:05:00.000Z"), dteRuns: [] }) // 07:05 Chile
+    expect(nextProbe.domains[0]).toMatchObject({ status: "waiting", code: "DTE_HEALTH_AWAITING_RUN" })
+
+    // A batch whose first period already finished while the second has not
+    // registered yet is the same race, one step later.
+    const betweenPeriods = evaluateDteSyncHealth({
+      ...base,
+      now: new Date("2026-08-11T11:01:00.000Z"), // 07:01 Chile
+      dteRuns: [run(expectedPeriods[0]!, "success", "batch-1", "2026-08-11T11:00:01.000Z")],
+    })
+    expect(betweenPeriods.domains[0]).toMatchObject({ status: "waiting", code: "DTE_HEALTH_AWAITING_RUN" })
+
+    const done = evaluateDteSyncHealth({
+      ...base,
+      now: new Date("2026-08-11T11:05:00.000Z"),
+      dteRuns: expectedPeriods.map((period) => run(period!, "success", "batch-1", "2026-08-11T11:00:01.000Z")),
+    })
+    expect(done.domains[0]).toMatchObject({ status: "healthy" })
+    // No alert went out, so there is nothing to "recover" from either.
+    expect(decideDteHealthAlert(done, { fingerprint: "healthy:previous-slot", status: "healthy" })).toBeNull()
+  })
+
+  it("still pages a slot that registered nothing once the start grace is over", () => {
+    const missed = evaluateDteSyncHealth({
+      now: new Date("2026-08-11T11:10:00.000Z"), // 07:10 Chile
+      dteEnabled: true,
+      dteConfigured: true,
+      salesEnabled: false,
+      salesConfigured: false,
+      dteRuns: [],
+      salesRuns: [],
+    })
+    expect(missed.domains[0]).toMatchObject({ status: "critical", code: "DTE_HEALTH_BATCH_MISSING" })
+    expect(decideDteHealthAlert(missed, null)?.kind).toBe("alert")
+  })
+
+  it("does not wait out the start grace for a run that already failed or came back partial", () => {
+    const base = {
+      now: new Date("2026-08-11T11:02:00.000Z"), // 07:02 Chile
+      dteEnabled: true,
+      dteConfigured: true,
+      salesEnabled: false,
+      salesConfigured: false,
+      salesRuns: [],
+    }
+    const failed = evaluateDteSyncHealth({ ...base, dteRuns: [run(expectedPeriods[0]!, "failed", "batch-1", "2026-08-11T11:00:01.000Z")] })
+    const partial = evaluateDteSyncHealth({ ...base, dteRuns: [run(expectedPeriods[0]!, "partial", "batch-1", "2026-08-11T11:00:01.000Z")] })
+    expect(failed.domains[0]).toMatchObject({ status: "critical", code: "DTE_HEALTH_RUN_FAILED" })
+    expect(partial.domains[0]).toMatchObject({ status: "degraded", code: "DTE_HEALTH_INGEST_PARTIAL" })
+  })
+
   it("does not alert during the overnight gap and treats both flags off as disabled", () => {
     const result = evaluateDteSyncHealth({
       now: new Date("2026-08-11T05:00:00.000Z"), // 01:00 Chile
