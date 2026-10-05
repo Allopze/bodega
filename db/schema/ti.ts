@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, numeric, check, index, uniqueIndex } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, boolean, timestamp, date, numeric, check, index, uniqueIndex } from "drizzle-orm/pg-core"
 import { relations, sql } from "drizzle-orm"
 import { users } from "./users"
 import { worksites, workers, suppliers } from "./worksites"
@@ -72,6 +72,12 @@ export const itAssetAssignments = pgTable("it_asset_assignments", {
   deliveredByUserId: text("delivered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   physicalState: text("physical_state").notNull().default("bueno"),
   observations: text("observations"),
+  /**
+   * TIUX-14: fecha civil (sin hora) en que debe volver un préstamo. Nula para
+   * entregas y transferencias, que no vencen; el servicio la exige cuando
+   * `kind = 'loan'`. Un préstamo vencido es uno abierto con esta fecha < hoy.
+   */
+  expectedReturnDate: date("expected_return_date", { mode: "string" }),
   /**
    * TIA-002 (auditoría 2026-09-14, patrón P7): dos columnas nulables no
    * distinguían «el trabajador aceptó» de «nadie acusó recibo». El acuse tiene
