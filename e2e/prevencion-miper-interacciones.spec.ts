@@ -40,7 +40,8 @@ test("navegación por niveles: tarea → riesgo y «atrás» vuelve a la matriz 
   await volverALaTarea(page)
   await expect(page.getByRole("heading", { level: 2, name: "Carga en planta" })).toBeVisible()
   await volverALaMatriz(page)
-  await expect(page.getByRole("heading", { level: 2, name: /Transporte de lodo/ })).toBeVisible()
+  // La actividad es h3 bajo «Por actividades y tareas» (h2) desde 6d4c3c63.
+  await expect(page.getByRole("heading", { level: 3, name: /Transporte de lodo/ })).toBeVisible()
 
   // La búsqueda viaja en la URL; con ella la matriz lista los riesgos que calzan.
   await page.getByLabel("Buscar en la matriz", { exact: true }).fill("camión")
