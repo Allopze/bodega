@@ -10,7 +10,7 @@ import { cancelEmergencyResourceServiceCaseTx } from "@/lib/services/emergency-r
 import { canTransition, type ItemStatus } from "./types"
 import { lockRequestsForRollupTx, rollupRequestStatus } from "./rollup"
 import {
-  collectBulkApprovalNoticesTx,
+  collectReviewSummaryNoticesTx,
   flushRequesterApprovalNotifications,
   type PendingRequesterNotification,
 } from "@/lib/services/requester-approval-notify"
@@ -33,11 +33,11 @@ export async function bulkApproveItems(
   }
 
   /*
-   * APR-002 (auditoría 2026-09-14): la aprobación individual avisaba al
-   * solicitante y ésta no, así que el mismo hecho de negocio notificaba o no
-   * según el gesto del aprobador. Los avisos se resuelven dentro de la
-   * transacción (es donde se lee el solicitante) y se emiten después del
-   * commit: un rollback no debe dejar avisado a nadie.
+   * APR-002 (auditoría 2026-09-14): todo gesto de aprobación avisa igual al
+   * solicitante — un aviso cuando su solicitud se queda sin ítems por revisar
+   * (`requester-approval-notify.ts`). Se resuelve dentro de la transacción (es
+   * donde se lee el solicitante) y se emite después del commit: un rollback no
+   * debe dejar avisado a nadie.
    */
   let pendingNotices: PendingRequesterNotification[] = []
 
@@ -111,8 +111,8 @@ export async function bulkApproveItems(
       await rollupRequestStatus(requestId, tx, userId)
     }
 
-    pendingNotices = await collectBulkApprovalNoticesTx(tx, stableItemIds, {
-      approverName: opts?.approverName,
+    pendingNotices = await collectReviewSummaryNoticesTx(tx, lockedItems.map((item) => item.requestId), {
+      reviewerName: opts?.approverName,
     })
   })
 
@@ -125,8 +125,9 @@ export async function bulkApproveItems(
 export async function approveItem(
   itemId: string,
   userId: string,
-  opts?: { modifiedQty?: number; reason?: string; userEmail?: string; roleContext?: string },
+  opts?: { modifiedQty?: number; reason?: string; userEmail?: string; roleContext?: string; approverName?: string },
 ): Promise<void> {
+  let pendingNotices: PendingRequesterNotification[] = []
   await db.transaction(async (tx) => {
     const [locked] = await tx
       .select({
@@ -212,7 +213,9 @@ export async function approveItem(
       newState:   { status: "approved", modifiedQty: opts?.modifiedQty },
     }, tx)
     await rollupRequestStatus(locked.requestId, tx, userId)
+    pendingNotices = await collectReviewSummaryNoticesTx(tx, [locked.requestId], { reviewerName: opts?.approverName })
   })
+  flushRequesterApprovalNotifications(pendingNotices)
 }
 
 /**
@@ -223,10 +226,11 @@ export async function rejectItem(
   itemId: string,
   userId: string,
   reason: string,
-  opts?: { userEmail?: string; roleContext?: string },
+  opts?: { userEmail?: string; roleContext?: string; approverName?: string },
 ): Promise<void> {
   if (!reason?.trim()) throw new Error("Reason is required to reject an item")
 
+  let pendingNotices: PendingRequesterNotification[] = []
   await db.transaction(async (tx) => {
     const [item] = await tx
       .select({ id: purchaseRequestItems.id, status: purchaseRequestItems.status, requestId: purchaseRequestItems.requestId })
@@ -279,5 +283,7 @@ export async function rejectItem(
     await resolveReplenishmentLinksTx(tx, [itemId])
     await cancelEmergencyResourceServiceCaseTx(tx, { requestItemId: itemId, actorUserId: userId, reason })
     await rollupRequestStatus(item.requestId, tx, userId)
+    pendingNotices = await collectReviewSummaryNoticesTx(tx, [item.requestId], { reviewerName: opts?.approverName })
   })
+  flushRequesterApprovalNotifications(pendingNotices)
 }

@@ -17,7 +17,7 @@ import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import path from "node:path"
-import { and, eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -53,7 +53,7 @@ vi.mock("@/lib/services/notifications", async (importOriginal) => {
   }
 })
 
-import { bulkApproveItems } from "@/lib/services/item-state"
+import { approveItem, bulkApproveItems, rejectItem } from "@/lib/services/item-state"
 
 const now = new Date().toISOString()
 const WORKSITE = "ws-apr002"
@@ -67,7 +67,7 @@ async function approvalNotificationsFor(userId: string) {
   return inMemoryDb.query.notifications.findMany({
     where: and(
       eq(schema.notifications.userId, userId),
-      eq(schema.notifications.type, "request_approved"),
+      inArray(schema.notifications.type, ["request_approved", "request_rejected"]),
     ),
   })
 }
@@ -88,30 +88,31 @@ async function makeRequest(requesterId: string, itemCount: number, itemStatus: "
   return { requestId, itemIds }
 }
 
-describe("APR-002 — la aprobación masiva notifica al solicitante", () => {
-  beforeAll(async () => {
-    await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
-    await inMemoryDb.insert(schema.worksites).values({
-      id: WORKSITE, name: "Faena APR-002", code: "APR002", isActive: true, createdAt: now, updatedAt: now,
-    })
-    await inMemoryDb.insert(schema.users).values([
-      { id: APPROVER, name: "Jefa Aprobadora", email: "aprobador-apr002@chome.cl", hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now },
-      { id: REQUESTER_A, name: "Solicitante A", email: "sol-a-apr002@chome.cl", hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now },
-      { id: REQUESTER_B, name: "Solicitante B", email: "sol-b-apr002@chome.cl", hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now },
-    ])
+beforeAll(async () => {
+  await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
+  await inMemoryDb.insert(schema.worksites).values({
+    id: WORKSITE, name: "Faena APR-002", code: "APR002", isActive: true, createdAt: now, updatedAt: now,
   })
+  await inMemoryDb.insert(schema.users).values([
+    { id: APPROVER, name: "Jefa Aprobadora", email: "aprobador-apr002@chome.cl", hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now },
+    { id: REQUESTER_A, name: "Solicitante A", email: "sol-a-apr002@chome.cl", hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now },
+    { id: REQUESTER_B, name: "Solicitante B", email: "sol-b-apr002@chome.cl", hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now },
+  ])
+})
 
-  afterAll(async () => { await pg.close() })
+afterAll(async () => { await pg.close() })
 
-  it("un lote de varias líneas de la misma solicitud produce UN aviso al solicitante", async () => {
+describe("APR-002 — la aprobación masiva notifica al solicitante", () => {
+  it("un lote que cierra la revisión produce UN aviso al solicitante", async () => {
     const { requestId, itemIds } = await makeRequest(REQUESTER_A, 3)
 
     await bulkApproveItems(itemIds, APPROVER, { approverName: "Jefa Aprobadora" })
 
-    const notices = await approvalNotificationsFor(REQUESTER_A)
+    const notices = (await approvalNotificationsFor(REQUESTER_A)).filter((n) => n.entityId === requestId)
     expect(notices).toHaveLength(1)
-    expect(notices[0]!.title).toContain("3 ítems aprobados")
-    expect(notices[0]!.entityId).toBe(requestId)
+    expect(notices[0]!.type).toBe("request_approved")
+    expect(notices[0]!.title).toMatch(/^Solicitud SOL-APR002-\d+ aprobada$/)
+    expect(notices[0]!.body).toContain("Se aprobaron los 3 ítems")
     expect(notices[0]!.entityHref).toBe(`/solicitudes/${requestId}`)
     expect(notices[0]!.body).toContain("Jefa Aprobadora")
   })
@@ -126,9 +127,8 @@ describe("APR-002 — la aprobación masiva notifica al solicitante", () => {
     const toB = await approvalNotificationsFor(REQUESTER_B)
     expect(toA.filter((n) => n.entityId === first.requestId)).toHaveLength(1)
     expect(toA.some((n) => n.entityId === second.requestId)).toBe(false)
-    expect(toB).toHaveLength(1)
-    expect(toB[0]!.entityId).toBe(second.requestId)
-    expect(toB[0]!.title).toContain("2 ítems aprobados")
+    expect(toB.filter((n) => n.entityId === second.requestId)).toHaveLength(1)
+    expect(toB.find((n) => n.entityId === second.requestId)!.body).toContain("Se aprobaron los 2 ítems")
   })
 
   it("si el lote revierte no se avisa nada: el aviso vive tras el commit", async () => {
@@ -142,5 +142,72 @@ describe("APR-002 — la aprobación masiva notifica al solicitante", () => {
 
     const notices = await approvalNotificationsFor(REQUESTER_B)
     expect(notices.some((n) => n.entityId === valid.requestId)).toBe(false)
+  })
+})
+
+/**
+ * Producción, 2026-10-05: SOL-0048 se aprobó con 20 clics individuales en ocho
+ * minutos y el solicitante recibió 20 correos "Ítem aprobado en SOL-0048". El
+ * aviso es ahora UNO, cuando la solicitud se queda sin ítems por revisar, y
+ * resume lo aprobado, lo modificado y lo rechazado con su motivo.
+ */
+describe("aviso de revisión de la solicitud", () => {
+  async function noticesFor(requestId: string) {
+    return (await approvalNotificationsFor(REQUESTER_A)).filter((n) => n.entityId === requestId)
+  }
+
+  it("no avisa mientras queden ítems por revisar y avisa una vez al decidir el último", async () => {
+    const { requestId, itemIds } = await makeRequest(REQUESTER_A, 4)
+
+    await approveItem(itemIds[0]!, APPROVER, { approverName: "Jefa Aprobadora" })
+    await approveItem(itemIds[1]!, APPROVER, { approverName: "Jefa Aprobadora", modifiedQty: 1, reason: "stock suficiente" })
+    await bulkApproveItems([itemIds[2]!], APPROVER, { approverName: "Jefa Aprobadora" })
+    expect(await noticesFor(requestId)).toHaveLength(0)
+
+    await approveItem(itemIds[3]!, APPROVER, { approverName: "Jefa Aprobadora" })
+
+    const notices = await noticesFor(requestId)
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.type).toBe("request_approved")
+    expect(notices[0]!.body).toContain("Se aprobaron los 4 ítems (1 con cantidad modificada)")
+  })
+
+  it("incluye los rechazados con su motivo en el mismo aviso", async () => {
+    const { requestId, itemIds } = await makeRequest(REQUESTER_A, 3)
+
+    await rejectItem(itemIds[0]!, APPROVER, "Duplicado con SOL-0047", { approverName: "Jefa Aprobadora" })
+    expect(await noticesFor(requestId)).toHaveLength(0)
+    await bulkApproveItems(itemIds.slice(1), APPROVER, { approverName: "Jefa Aprobadora" })
+
+    const notices = await noticesFor(requestId)
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.title).toMatch(/revisada$/)
+    expect(notices[0]!.body).toContain("2 ítems aprobados")
+    expect(notices[0]!.body).toContain("1 rechazado")
+    expect(notices[0]!.body).toContain(`Ítem ${itemIds[0]} — Duplicado con SOL-0047`)
+  })
+
+  it("una solicitud rechazada completa avisa como rechazo", async () => {
+    const { requestId, itemIds } = await makeRequest(REQUESTER_A, 1)
+
+    await rejectItem(itemIds[0]!, APPROVER, "Sin presupuesto", { approverName: "Jefa Aprobadora" })
+
+    const notices = await noticesFor(requestId)
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.type).toBe("request_rejected")
+    expect(notices[0]!.title).toMatch(/rechazada$/)
+    expect(notices[0]!.body).toContain("Sin presupuesto")
+  })
+
+  it("un rechazo posterior al cierre vuelve a avisar con el resumen actualizado", async () => {
+    const { requestId, itemIds } = await makeRequest(REQUESTER_A, 2)
+    await bulkApproveItems(itemIds, APPROVER, { approverName: "Jefa Aprobadora" })
+    expect(await noticesFor(requestId)).toHaveLength(1)
+
+    await rejectItem(itemIds[1]!, APPROVER, "Proveedor sin stock", { approverName: "Jefa Aprobadora" })
+
+    const notices = await noticesFor(requestId)
+    expect(notices).toHaveLength(2)
+    expect(notices.some((n) => n.body?.includes("Proveedor sin stock"))).toBe(true)
   })
 })

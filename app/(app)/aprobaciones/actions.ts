@@ -6,7 +6,6 @@ import { purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { approveItem, bulkApproveItems, rejectItem } from "@/lib/services/item-state"
-import { notifySafe, notifyAfterCommit } from "@/lib/services/notifications"
 import { logger } from "@/lib/logger"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import type { ActionState } from "@/lib/validation/operations"
@@ -67,32 +66,16 @@ export async function approveItemAction(
       return { ok: false, message: `La cantidad modificada no puede superar la cantidad solicitada (${itemBefore.quantity})` }
     }
 
+    // El aviso al solicitante sale del servicio, uno por solicitud y sólo
+    // cuando ya no le quedan ítems por revisar (requester-approval-notify.ts).
     await approveItem(itemId, session.user.id, {
       modifiedQty,
       reason,
-      userEmail:   session.user.email ?? undefined,
-      roleContext: getRoleContext(session.user.roles),
+      userEmail:    session.user.email ?? undefined,
+      roleContext:  getRoleContext(session.user.roles),
+      approverName: session.user.name ?? session.user.email ?? undefined,
     })
     revalidateOperationalViews([REVALIDATE, `/solicitudes/${itemBefore.request.id}`])
-
-    // S-05: notify only after the approveItem transaction has committed.
-    if (itemBefore?.request?.requesterId) {
-      const requesterId = itemBefore.request.requesterId
-      const requestId   = itemBefore.request.id
-      const requestCode = itemBefore.request.code
-      const approver    = session.user.name ?? session.user.email ?? ""
-      notifyAfterCommit(() => notifySafe({
-        userId:     requesterId,
-        type:       "request_approved",
-        title:      `Ítem aprobado en ${requestCode}`,
-        body:       modifiedQty
-          ? `Aprobado con cantidad modificada a ${modifiedQty}`
-          : `Aprobado por ${approver}`,
-        entityType: "purchase_request",
-        entityId:   requestId,
-        entityHref: `/solicitudes/${requestId}`,
-      }))
-    }
 
     return { ok: true, message: "Ítem aprobado" }
   } catch (e) {
@@ -133,27 +116,13 @@ export async function rejectItemAction(
       return { ok: false, message: "Los ítems de repuestos y servicios se gestionan seleccionando la cotización ganadora, no ítem a ítem" }
     }
 
+    // El rechazo y su motivo van en el aviso de revisión de la solicitud.
     await rejectItem(itemId, session.user.id, reason, {
-      userEmail:   session.user.email ?? undefined,
-      roleContext: getRoleContext(session.user.roles),
+      userEmail:    session.user.email ?? undefined,
+      roleContext:  getRoleContext(session.user.roles),
+      approverName: session.user.name ?? session.user.email ?? undefined,
     })
     revalidateOperationalViews([REVALIDATE, `/solicitudes/${itemBefore.request.id}`])
-
-    // S-05: notify only after the rejectItem transaction has committed.
-    if (itemBefore?.request?.requesterId) {
-      const requesterId = itemBefore.request.requesterId
-      const requestId   = itemBefore.request.id
-      const requestCode = itemBefore.request.code
-      notifyAfterCommit(() => notifySafe({
-        userId:     requesterId,
-        type:       "request_rejected",
-        title:      `Ítem rechazado en ${requestCode}`,
-        body:       reason,
-        entityType: "purchase_request",
-        entityId:   requestId,
-        entityHref: `/solicitudes/${requestId}`,
-      }))
-    }
 
     return { ok: true, message: "Ítem rechazado" }
   } catch (e) {
