@@ -600,6 +600,69 @@ describe("receipt notifications", () => {
     expect(notifyManyUser).not.toHaveBeenCalled()
     expect(await status(orderId)).toBe("sent")
   })
+
+  // Producción, 2026-10-05: una recepción de 12 líneas mandó 12 correos
+  // idénticos al mismo solicitante. Una recepción es un solo hecho por
+  // solicitud, igual que la aprobación masiva (`requester-approval-notify.ts`).
+  async function requestWithItems(count: number): Promise<{ code: string; itemIds: string[] }> {
+    const now = new Date().toISOString()
+    const id = `req-group-${++ocCounter}`
+    const code = `SOL-GROUP-${ocCounter}`
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id, code, worksiteId: WS_ID, requesterId: USER_ID,
+      requestType: "epp", urgency: "normal", status: "in_purchasing", createdAt: now, updatedAt: now,
+    })
+    const itemIds: string[] = []
+    for (let i = 0; i < count; i++) {
+      const itemId = nanoid()
+      itemIds.push(itemId)
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: itemId, requestId: id, productNameFree: `Ítem ${i}`, quantity: 1,
+        unitOfMeasure: "unidad", status: "purchased", createdAt: now, updatedAt: now,
+      })
+    }
+    return { code, itemIds }
+  }
+
+  async function orderFor(requestItemIds: string[], deliveryMode: "via_oficina" | "directo_faena") {
+    const order = await makeOrder(requestItemIds.map(() => 1), deliveryMode)
+    for (const [index, requestItemId] of requestItemIds.entries()) {
+      await inMemoryDb.update(schema.purchaseOrderItems)
+        .set({ requestItemId })
+        .where(eq(schema.purchaseOrderItems.id, order.itemIds[index]!))
+    }
+    return order
+  }
+
+  function noticesFor(code: string) {
+    return vi.mocked(notifyManyUser).mock.calls
+      .map(([, input]) => input)
+      .filter((input) => input.body?.includes(code))
+  }
+
+  it.each([
+    ["office", "via_oficina", /Pedido recibido en/, /2 ítems de tu solicitud/] as const,
+    ["faena", "directo_faena", /Tu pedido llegó a faena/, /2 ítems de tu solicitud/] as const,
+  ])("avisa una vez por solicitud y no una por línea (etapa %s)", async (stage, deliveryMode, title, groupedBody) => {
+    vi.mocked(notifyManyUser).mockClear()
+    const a = await requestWithItems(2)
+    const b = await requestWithItems(1)
+    const { orderId, itemIds } = await orderFor([...a.itemIds, ...b.itemIds], deliveryMode)
+
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage,
+      ...(stage === "faena" ? { worksiteId: WS_ID } : {}),
+      items: itemIds.map((purchaseOrderItemId) => ({ purchaseOrderItemId, quantityReceived: 1 })),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(notifyManyUser).toHaveBeenCalledTimes(2)
+    const [noticeA] = noticesFor(a.code)
+    const [noticeB] = noticesFor(b.code)
+    expect(noticesFor(a.code)).toHaveLength(1)
+    expect(noticeA).toMatchObject({ type: "receipt_done", title: expect.stringMatching(title), body: expect.stringMatching(groupedBody) })
+    expect(noticeB?.body).toMatch(/^El ítem de tu solicitud/)
+  })
 })
 
 describe("avance de la OC (getOcReconciliation)", () => {
