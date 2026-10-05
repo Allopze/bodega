@@ -4,7 +4,7 @@ import * as React from "react"
 import * as SelectPrimitive from "@radix-ui/react-select"
 import { CaretDown, Check, MagnifyingGlass } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
-import { SelectSearchableContext, SelectFilterContext, getNodeText } from "./select-context"
+import { SelectSearchableContext, SelectFilterContext, SelectA11yContext, getNodeText, type SelectA11y } from "./select-context"
 import { SelectScrollDownButton, SelectScrollUpButton } from "./select-parts"
 
 export {
@@ -21,22 +21,34 @@ function Select({
   searchable,
   onOpenChange,
   children,
+  "aria-labelledby": ariaLabelledBy,
+  "aria-describedby": ariaDescribedBy,
+  "aria-invalid": ariaInvalid,
   ...props
-}: React.ComponentPropsWithoutRef<typeof SelectPrimitive.Root> & {
+}: React.ComponentPropsWithoutRef<typeof SelectPrimitive.Root> & SelectA11y & {
   searchable?: boolean
 }) {
   const [query, setQuery] = React.useState("")
   const [open, setOpen] = React.useState(false)
+  const a11y = React.useMemo<SelectA11y | null>(
+    () => (ariaLabelledBy || ariaDescribedBy || ariaInvalid
+      ? { "aria-labelledby": ariaLabelledBy, "aria-describedby": ariaDescribedBy, "aria-invalid": ariaInvalid }
+      : null),
+    [ariaLabelledBy, ariaDescribedBy, ariaInvalid],
+  )
 
   if (!searchable) {
     return (
-      <SelectPrimitive.Root onOpenChange={onOpenChange} {...props}>
-        {children}
-      </SelectPrimitive.Root>
+      <SelectA11yContext.Provider value={a11y}>
+        <SelectPrimitive.Root onOpenChange={onOpenChange} {...props}>
+          {children}
+        </SelectPrimitive.Root>
+      </SelectA11yContext.Provider>
     )
   }
 
   return (
+    <SelectA11yContext.Provider value={a11y}>
     <SelectSearchableContext.Provider value={{ query, setQuery, open }}>
       <SelectPrimitive.Root
         onOpenChange={(nextOpen) => {
@@ -49,6 +61,7 @@ function Select({
         {children}
       </SelectPrimitive.Root>
     </SelectSearchableContext.Provider>
+    </SelectA11yContext.Provider>
   )
 }
 
@@ -58,6 +71,12 @@ const SelectTrigger = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & { error?: boolean }
 >(({ className, error, children, ...props }, ref) => {
   const searchCtx = React.useContext(SelectSearchableContext)
+  const a11y = React.useContext(SelectA11yContext)
+  // Los props propios del trigger mandan para el nombre; la descripción se
+  // concatena; aria-invalid del Field también activa el estilo de error.
+  const ariaDescribedBy = [a11y?.["aria-describedby"], props["aria-describedby"]].filter(Boolean).join(" ") || undefined
+  const ariaInvalid = props["aria-invalid"] ?? a11y?.["aria-invalid"]
+  const invalid = Boolean(error) || (ariaInvalid !== undefined && ariaInvalid !== false && ariaInvalid !== "false")
   const inputRef  = React.useRef<HTMLInputElement>(null)
 
   React.useEffect(() => {
@@ -102,10 +121,17 @@ const SelectTrigger = React.forwardRef<
         "disabled:cursor-not-allowed disabled:opacity-50",
         "data-[placeholder]:text-[var(--color-text-subtle)]",
         "",
-        error && "border-[var(--color-danger)] focus:border-[var(--color-danger)] focus:ring-[var(--color-danger-line)]",
+        invalid && "border-[var(--color-danger)] focus:border-[var(--color-danger)] focus:ring-[var(--color-danger-line)]",
         className,
       )}
+      // Un `aria-label` propio también es nombre: `aria-labelledby` le gana en el
+      // cálculo del nombre accesible, así que reenviar el del Field renombraba el
+      // trigger ("Seleccionar objetivo" pasaba a llamarse como la etiqueta del
+      // campo y lo detectó `e2e/pdtp-objetivos.spec.ts`).
+      aria-labelledby={props["aria-labelledby"] ?? (props["aria-label"] ? undefined : a11y?.["aria-labelledby"])}
       {...props}
+      aria-describedby={ariaDescribedBy}
+      aria-invalid={invalid ? true : ariaInvalid}
     >
       {searchCtx && searchCtx.open ? (
         <input

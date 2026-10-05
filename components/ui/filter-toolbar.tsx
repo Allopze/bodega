@@ -66,6 +66,9 @@ export function FilterToolbar({
                 size="sm"
                 onClick={() => setSheetOpen(true)}
                 className="relative"
+                // Visible: "Más filtros" + insignia. Sin esto el nombre
+                // accesible se leía "Más filtros1" (TIUX-57).
+                aria-label={activeCount > 0 ? `Más filtros (${activeCount} ${activeCount === 1 ? "activo" : "activos"})` : undefined}
               >
                 <Funnel size={14} className="mr-1.5" />
                 Más filtros

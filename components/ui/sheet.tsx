@@ -5,6 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { escapeClosesComboboxFirst, focusContainerBeforeCombobox } from "./dialog-combobox"
+import { useReturnFocus } from "./dialog-focus"
 
 // ── Re-export Dialog root primitives unchanged ────────────────────────────────
 const Sheet      = DialogPrimitive.Root
@@ -47,7 +48,9 @@ SheetOverlay.displayName = "SheetOverlay"
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, onOpenAutoFocus, onEscapeKeyDown, ...props }, ref) => (
+>(({ className, children, onOpenAutoFocus, onCloseAutoFocus, onEscapeKeyDown, ...props }, ref) => {
+  const returnFocus = useReturnFocus(onOpenAutoFocus, onCloseAutoFocus)
+  return (
   <DialogPrimitive.Portal>
     <SheetOverlay />
     <DialogPrimitive.Content
@@ -76,9 +79,10 @@ const SheetContent = React.forwardRef<
       )}
       {...props}
       onOpenAutoFocus={(event) => {
-        onOpenAutoFocus?.(event)
+        returnFocus.onOpenAutoFocus(event)
         if (!event.defaultPrevented) focusContainerBeforeCombobox(event)
       }}
+      onCloseAutoFocus={returnFocus.onCloseAutoFocus}
       onEscapeKeyDown={(event) => {
         if (!escapeClosesComboboxFirst(event)) onEscapeKeyDown?.(event)
       }}
@@ -86,7 +90,8 @@ const SheetContent = React.forwardRef<
       {children}
     </DialogPrimitive.Content>
   </DialogPrimitive.Portal>
-))
+  )
+})
 SheetContent.displayName = "SheetContent"
 
 // ── Header ────────────────────────────────────────────────────────────────────

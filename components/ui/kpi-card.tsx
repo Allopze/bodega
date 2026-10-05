@@ -79,8 +79,11 @@ export function KpiCard({
         </div>
 
         <p className={cn(
+          // Anillo y cifra comparten tono (TIUX-15): `signal` pintaba el anillo
+          // naranja y la cifra verde primario, dos señales contradictorias.
+          // Texto con `-ink` (AGENTS.md regla 8): el naranja base no pasa AA.
           "mt-2 font-mono text-2xl font-bold tabular-nums tracking-tight",
-          tone === "danger" ? "text-[var(--color-danger-ink)]" : tone === "signal" ? "text-[var(--color-primary)]" : "text-[var(--color-text)]",
+          tone === "danger" ? "text-[var(--color-danger-ink)]" : tone === "signal" ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]",
         )}>{value}</p>
 
         {(typeof trend === "number" || detail) && (

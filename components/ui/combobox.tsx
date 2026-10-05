@@ -138,7 +138,9 @@ export function Combobox({
           {...listbox.inputAriaProps}
           aria-describedby={rest["aria-describedby"]}
           className={cn(
-            "h-8 w-full rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) pl-7 pr-7 text-sm",
+            // 44px en móvil y compacto desde `sm`, igual que Input/Select: a 32px era el
+            // único control de formulario bajo el objetivo táctil de PRODUCT.md.
+            "h-11 sm:h-8 w-full rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) pl-7 pr-7 text-base sm:text-sm",
             "text-(--color-text) placeholder:text-(--color-text-subtle)",
             "focus:outline-none focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-line)",
             "disabled:cursor-default disabled:opacity-100",
