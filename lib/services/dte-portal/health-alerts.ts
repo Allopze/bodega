@@ -80,16 +80,36 @@ export function decideDteHealthAlert(
     }
   }
 
-  const measuredSuccess = activeDomains.some((domain) => domain.status === "healthy")
-  if (evaluation.status === "healthy" && measuredSuccess && (previous?.status === "critical" || previous?.status === "degraded")) {
-    return {
-      kind: "recovery",
-      fingerprint,
-      title: "Sincronización DTE recuperada",
-      body: "La última verificación automática completó los períodos actual y anterior.",
-    }
+  if (evaluation.status !== "healthy" || (previous?.status !== "critical" && previous?.status !== "degraded")) {
+    return null
   }
-  return null
+  // Recupera sólo quien avisó. Cada dominio se mide en su propia ventana
+  // (ventas a las 07:30, Chipax a las 09:00), así que el éxito de otro dominio
+  // no dice nada del que falló: antes, una ingesta parcial de ventas recibía
+  // "recuperada" a las 09:00 por el éxito de Chipax, todos los días.
+  const alerted = alertedDomains(previous.fingerprint)
+  const recovered = activeDomains.filter((domain) => domain.status === "healthy" && alerted.has(domain.name))
+  if (recovered.length === 0) return null
+  return {
+    kind: "recovery",
+    fingerprint,
+    title: "Sincronización DTE recuperada",
+    body: `Se normalizó ${recovered.map((domain) => DOMAIN_LABEL[domain.name]).join(", ")}: la última verificación automática completó los períodos actual y anterior.`,
+  }
+}
+
+/**
+ * Dominios con problema según la huella de un aviso. Lee el formato que arma
+ * `decideDteHealthAlert` —`estado:dominio:estado:código:slot|…`— para no
+ * cambiar el estado ya persistido en `system_settings`.
+ */
+function alertedDomains(fingerprint: string): Set<string> {
+  const names = new Set<string>()
+  for (const entry of fingerprint.slice(fingerprint.indexOf(":") + 1).split("|")) {
+    const [name, status] = entry.split(":")
+    if (name && (status === "critical" || status === "degraded")) names.add(name)
+  }
+  return names
 }
 
 /**

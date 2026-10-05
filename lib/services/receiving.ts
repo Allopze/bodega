@@ -79,6 +79,30 @@ function isRealIsoDate(value: string | null | undefined): value is string {
 
 /* ── Register receipt ────────────────────────────────────────────────────────── */
 
+type Arrival = { requesterId: string; requestId: string; code: string; requestItemIds: Set<string> }
+
+/** Aviso al solicitante de que sus ítems de una solicitud llegaron a la etapa. */
+function arrivalNotice(stage: RegisterReceiptInput["stage"], place: string, arrival: Arrival) {
+  const count = arrival.requestItemIds.size
+  const subject = count === 1
+    ? `El ítem de tu solicitud ${arrival.code}`
+    : `${count} ítems de tu solicitud ${arrival.code}`
+  return {
+    type: "receipt_done" as const,
+    title: stage === "office" ? `Pedido recibido en ${place}` : "Tu pedido llegó a faena",
+    body: stage === "office"
+      ? count === 1
+        ? `${subject} llegó al checkpoint de ${place} y se prepara su traslado a faena.`
+        : `${subject} llegaron al checkpoint de ${place} y se preparan para su traslado a faena.`
+      : count === 1
+        ? `${subject} fue recepcionado en faena y está disponible para entrega.`
+        : `${subject} fueron recepcionados en faena y están disponibles para entrega.`,
+    entityType: "purchase_request",
+    entityId: arrival.requestId,
+    entityHref: `/solicitudes/${arrival.requestId}`,
+  }
+}
+
 export async function registerReceipt(
   input: RegisterReceiptInput,
   worksiteIds: string[] | 'all' = 'all',
@@ -97,14 +121,26 @@ export async function registerReceipt(
 
   // notifyAfterCommit sólo difiere al microtask: dentro del tx se drenaría en el
   // siguiente await, antes del COMMIT. Se acumulan y se disparan al salir.
-  const pendingNotifications: Array<() => unknown> = []
+  //
+  // Un aviso de llegada por solicitud, no por línea: una recepción de 12 líneas
+  // mandaba 12 correos idénticos al mismo solicitante (producción, 2026-10-05).
+  // Mismo criterio que la aprobación masiva (`requester-approval-notify.ts`).
+  const arrivals = new Map<string, Arrival>()
+  let arrivalPlace = OFFICE_ORIGIN_LABEL
+  const countArrival = (requestItemId: string, request: { id: string; code: string; requesterId: string | null }) => {
+    if (!request.requesterId) return
+    const arrival = arrivals.get(request.id)
+      ?? { requesterId: request.requesterId, requestId: request.id, code: request.code, requestItemIds: new Set<string>() }
+    arrival.requestItemIds.add(requestItemId)
+    arrivals.set(request.id, arrival)
+  }
   // `E2E-001`: avisos de saldo recortado. Van por separado porque se resuelven
   // al final de la transacción (necesitan el código de la recepción y hay que
   // deduplicarlos contra los que devuelve el cierre automático de la OC).
   let shortfallNotices: PendingRequesterNotification[] = []
 
   const code = await db.transaction(async (tx) => {
-    pendingNotifications.length = 0
+    arrivals.clear()
     shortfallNotices = []
     const shortfalls: RequesterShortfall[] = []
     // Read order INSIDE the transaction to avoid stale status checks.
@@ -143,6 +179,7 @@ export async function registerReceipt(
       throw new Error("La faena de recepción debe coincidir con la OC")
     }
     const office = input.stage === "office" ? await resolveOfficeWorksite(tx) : null
+    arrivalPlace = office?.name ?? OFFICE_ORIGIN_LABEL
     const receiptWorksiteId = office?.id ?? worksiteId
 
     /**
@@ -312,18 +349,7 @@ export async function registerReceipt(
             where: eq(purchaseRequestItems.id, lockedOcItem.requestItemId),
             with: { request: { columns: { requesterId: true, code: true, id: true } } },
           })
-          const request = reqItem?.request
-          const requesterId = request?.requesterId
-          if (requesterId) {
-            pendingNotifications.push(() => notifyManyUser([requesterId], {
-              type: "receipt_done",
-              title: `Pedido recibido en ${office?.name ?? OFFICE_ORIGIN_LABEL}`,
-              body: `El ítem de tu solicitud ${request?.code ?? ""} llegó al checkpoint de ${office?.name ?? OFFICE_ORIGIN_LABEL} y se prepara su traslado a faena.`,
-              entityType: "purchase_request",
-              entityId: request?.id ?? "",
-              entityHref: `/solicitudes/${request?.id ?? ""}`,
-            }))
-          }
+          if (reqItem?.request) countArrival(reqItem.id, reqItem.request)
         }
 
         if (input.stage === "office" && lockedOcItem.requestItemId) {
@@ -346,31 +372,19 @@ export async function registerReceipt(
               where: eq(purchaseRequestItems.id, lockedOcItem.requestItemId),
               with: { request: { columns: { requesterId: true, code: true, id: true } } },
             })
-            const requesterId = reqItem?.request?.requesterId
-            if (requesterId) {
-              pendingNotifications.push(() => notifyManyUser([requesterId], {
-                type: "receipt_done",
-                title: `Tu pedido llegó a faena`,
-                body: `El ítem de tu solicitud ${reqItem?.request?.code ?? ""} fue recepcionado en faena y está disponible para entrega.`,
-                entityType: "purchase_request",
-                entityId: reqItem?.request?.id ?? "",
-                entityHref: `/solicitudes/${reqItem?.request?.id ?? ""}`,
-              }))
+            if (reqItem?.request) countArrival(reqItem.id, reqItem.request)
+
+            if (isEmergencyService && fullReceived && qtyRej === 0 && qtyDmg === 0) {
+              await completeEmergencyResourceServiceCaseTx(tx, {
+                requestItemId: lockedOcItem.requestItemId,
+                receiptItemId,
+                actorUserId: input.receivedBy,
+                maintenanceDate: ri.maintenanceDate!,
+                nextExpiryDate: ri.nextExpiryDate!,
+                certificate: ri.certificate,
+              })
+            }
           }
-
-
-          if (isEmergencyService && fullReceived && qtyRej === 0 && qtyDmg === 0) {
-            await completeEmergencyResourceServiceCaseTx(tx, {
-              requestItemId: lockedOcItem.requestItemId,
-              receiptItemId,
-              actorUserId: input.receivedBy,
-              maintenanceDate: ri.maintenanceDate!,
-              nextExpiryDate: ri.nextExpiryDate!,
-              certificate: ri.certificate,
-            })
-          }
-        }
-
         }
 
         const stockWorksiteId = input.stage === "office" ? office?.id : faenaStockWorksiteId
@@ -451,7 +465,9 @@ export async function registerReceipt(
 
   void code // used only for audit above; receiptId is returned
 
-  for (const notify of pendingNotifications) notifyAfterCommit(notify)
+  for (const arrival of arrivals.values()) {
+    notifyAfterCommit(() => notifyManyUser([arrival.requesterId], arrivalNotice(input.stage, arrivalPlace, arrival)))
+  }
   flushRequesterShortfallNotifications(shortfallNotices)
 
   return receiptId

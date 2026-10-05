@@ -3,6 +3,15 @@ import { chilePeriod, dueCronSlot, previousChilePeriod, type CronSlot } from "./
 export const DTE_HEALTH_WINDOW_MINUTES = 20
 /** A live cron row gets time to finish before freshness becomes an incident. */
 export const DTE_RUNNING_GRACE_MINUTES = 10
+/**
+ * Time a slot gets, from the moment it opens, to register its batch before
+ * "no run" becomes an incident. The health probe runs every 5 minutes on the
+ * same `:00`/`:30` marks as the syncs, so its first probe of every slot lands
+ * before the sync has written a row; without this window each slot produced a
+ * "no corrió" alert and, minutes later, a "recuperada" one. Probes at +0 and
+ * +5 wait; +10 judges, well inside the 20-minute window.
+ */
+export const DTE_START_GRACE_MINUTES = 10
 export const DTE_CRON_SLOTS: readonly CronSlot[] = [
   { label: "07:00", minutesSinceMidnight: 7 * 60 },
   { label: "13:00", minutesSinceMidnight: 13 * 60 },
@@ -209,6 +218,9 @@ function evaluateDomain(input: {
     if (latestRuns.some((run) => run.status === "running") && input.now.getTime() - latestStartedAt <= graceMs) {
       return domain(input.name, "waiting", "DTE_HEALTH_RUN_IN_PROGRESS", input.slot.id, input.expectedPeriods)
     }
+    if (withinStartGrace(input.slot)) {
+      return domain(input.name, "waiting", "DTE_HEALTH_AWAITING_RUN", input.slot.id, input.expectedPeriods)
+    }
     return domain(input.name, "critical", "DTE_HEALTH_BATCH_MISSING", input.slot.id, input.expectedPeriods)
   }
 
@@ -232,7 +244,14 @@ function evaluateDomain(input: {
     // a row that outlives the bounded grace becomes batch-missing below.
     return domain(input.name, "waiting", "DTE_HEALTH_RUN_IN_PROGRESS", input.slot.id, input.expectedPeriods)
   }
+  if (withinStartGrace(input.slot)) {
+    return domain(input.name, "waiting", "DTE_HEALTH_AWAITING_RUN", input.slot.id, input.expectedPeriods)
+  }
   return domain(input.name, "critical", "DTE_HEALTH_BATCH_MISSING", input.slot.id, input.expectedPeriods)
+}
+
+function withinStartGrace(slot: NonNullable<ReturnType<typeof dueCronSlot>>): boolean {
+  return slot.elapsedMs < DTE_START_GRACE_MINUTES * 60_000
 }
 
 function latestBatchTime(batch: Map<string, CronRunEvidence>): number {

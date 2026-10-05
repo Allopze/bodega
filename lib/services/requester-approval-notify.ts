@@ -1,30 +1,31 @@
 /**
- * `APR-002` (auditoría 2026-09-14): avisar al solicitante también cuando la
- * aprobación fue masiva.
+ * Aviso al solicitante cuando se termina de revisar su solicitud.
  *
- * La aprobación individual (`approveItemAction`) leía el solicitante antes de
- * mutar y, tras el commit, le mandaba una notificación `request_approved`. La
- * acción masiva —«Aprobar todos» y la barra «Aprobar N», que es justamente lo
- * que la interfaz recomienda para un grupo completo— validaba, aprobaba y
- * terminaba en revalidación: ni cargaba solicitantes ni emitía nada. El mismo
- * hecho de negocio avisaba o no según el gesto del aprobador, y quien pidió el
- * material seguía haciendo seguimiento a mano.
+ * `APR-002` (auditoría 2026-09-14) hizo que la aprobación masiva avisara igual
+ * que la individual. Pero la individual avisaba **por ítem**: en producción
+ * (2026-10-05) SOL-0048 se aprobó con 20 clics en ocho minutos y su solicitante
+ * recibió 20 correos "Ítem aprobado en SOL-0048"; cada rechazo mandaba otro.
  *
- * FORMA. Es la misma de `requester-shortfall-notify.ts`: el destinatario y el
- * texto se resuelven **dentro** de la transacción —es ahí donde se puede leer
- * `purchase_requests.requester_id` bajo el mismo lock que la aprobación— y se
- * emiten **después del commit**, para que un ROLLBACK no deje avisado a nadie
- * de una aprobación que no ocurrió.
+ * CUÁNDO. Un solo aviso cuando una decisión (aprobar, modificar o rechazar,
+ * individual o masiva) deja la solicitud sin ítems por revisar. Mientras quede
+ * alguno pendiente no se avisa: lo ya decidido se ve en la ficha. Un ítem
+ * aprobado todavía puede rechazarse; ese rechazo tardío vuelve a avisar con el
+ * resumen actualizado (la llave de deduplicación es el estado resumido).
  *
- * AGRUPACIÓN. Un aviso por solicitud, no por ítem: un lote de ocho líneas de la
- * misma solicitud es un solo hecho para quien la pidió. Y un lote que cruza
- * solicitudes produce un aviso por cada una, a su propio solicitante: nunca se
- * mezclan destinatarios.
+ * QUÉ. Cuántos ítems se aprobaron, cuántos con la cantidad modificada, y cada
+ * rechazado con su motivo: el rechazo es lo accionable para quien pidió.
+ *
+ * FORMA. Igual que `requester-shortfall-notify.ts`: el destinatario y el texto
+ * se resuelven **dentro** de la transacción —bajo el mismo lock que la
+ * decisión— y se emiten **después del commit**, para que un ROLLBACK no deje
+ * avisado a nadie. Un lote que cruza solicitudes produce un aviso por cada
+ * una, a su propio solicitante: nunca se mezclan destinatarios.
  */
 
-import { eq, inArray } from "drizzle-orm"
+import { createHash } from "node:crypto"
+import { asc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseRequestItems, purchaseRequests } from "@/db/schema"
+import { approvalDecisions, products, purchaseRequestItems, purchaseRequests } from "@/db/schema"
 import { notifyAfterCommit, notifyManyUser } from "./notifications"
 import type { PendingRequesterNotification } from "./requester-shortfall-notify"
 
@@ -32,67 +33,114 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 export type { PendingRequesterNotification }
 
+/** Estados en los que un ítem todavía espera decisión del aprobador. */
+const UNDER_REVIEW = new Set(["draft", "requested"])
+/** Rechazados que se nombran en el cuerpo; el resto se cuenta. */
+const MAX_LISTED_REJECTIONS = 5
+
 /**
- * Resuelve los avisos de aprobación de una tanda de ítems ya aprobados.
+ * Resuelve los avisos de las solicitudes cuya revisión quedó cerrada.
  *
  * Devuelve las notificaciones listas para emitir; no las emite. El caller las
  * suelta con `flushRequesterApprovalNotifications` una vez commiteada la
  * transacción de negocio.
  */
-export async function collectBulkApprovalNoticesTx(
+export async function collectReviewSummaryNoticesTx(
   tx: Tx,
-  itemIds: string[],
-  opts?: { approverName?: string },
+  requestIds: string[],
+  opts?: { reviewerName?: string },
 ): Promise<PendingRequesterNotification[]> {
-  const uniqueItemIds = [...new Set(itemIds)].filter(Boolean)
-  if (uniqueItemIds.length === 0) return []
+  const ids = [...new Set(requestIds)].filter(Boolean)
+  if (ids.length === 0) return []
 
-  const rows = await tx
+  const requests = await tx
+    .select({ id: purchaseRequests.id, code: purchaseRequests.code, requesterId: purchaseRequests.requesterId })
+    .from(purchaseRequests)
+    .where(inArray(purchaseRequests.id, ids))
+  const items = await tx
     .select({
-      itemId: purchaseRequestItems.id,
-      requestId: purchaseRequests.id,
-      requestCode: purchaseRequests.code,
-      requesterId: purchaseRequests.requesterId,
+      id: purchaseRequestItems.id,
+      requestId: purchaseRequestItems.requestId,
+      status: purchaseRequestItems.status,
+      name: products.name,
+      nameFree: purchaseRequestItems.productNameFree,
     })
     .from(purchaseRequestItems)
-    .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-    .where(inArray(purchaseRequestItems.id, uniqueItemIds))
+    .leftJoin(products, eq(products.id, purchaseRequestItems.productId))
+    .where(inArray(purchaseRequestItems.requestId, ids))
+  const decisions = await tx
+    .select({
+      requestItemId: approvalDecisions.requestItemId,
+      type: approvalDecisions.type,
+      reason: approvalDecisions.reason,
+    })
+    .from(approvalDecisions)
+    .where(inArray(approvalDecisions.requestId, ids))
+    .orderBy(asc(approvalDecisions.decidedAt))
 
-  // Agrupación por solicitud: el aviso habla de la solicitud, no de la línea.
-  const byRequest = new Map<string, { code: string; requesterId: string; itemIds: string[] }>()
-  for (const row of rows) {
-    if (!row.requesterId) continue
-    const group = byRequest.get(row.requestId)
-    if (group) group.itemIds.push(row.itemId)
-    else byRequest.set(row.requestId, { code: row.requestCode, requesterId: row.requesterId, itemIds: [row.itemId] })
+  // La última decisión de cada ítem: un rechazo tardío pisa la aprobación.
+  const lastDecision = new Map<string, { type: string; reason: string | null }>()
+  for (const decision of decisions) {
+    if (decision.requestItemId) lastDecision.set(decision.requestItemId, decision)
   }
 
-  const approver = opts?.approverName?.trim()
+  const reviewer = opts?.reviewerName?.trim()
   const notices: PendingRequesterNotification[] = []
-  for (const [requestId, group] of byRequest) {
-    const count = group.itemIds.length
+  for (const request of requests) {
+    const requestItems = items.filter((item) => item.requestId === request.id)
+    if (!request.requesterId || requestItems.length === 0) continue
+    if (requestItems.some((item) => UNDER_REVIEW.has(item.status))) continue
+
+    const rejected = requestItems.filter((item) => item.status === "rejected")
+    const approved = requestItems.filter((item) => item.status !== "rejected")
+    const modified = approved.filter((item) => lastDecision.get(item.id)?.type === "modify")
+
+    const sentences: string[] = []
+    if (approved.length > 0) {
+      const modifiedNote = modified.length > 0 ? ` (${modified.length} con cantidad modificada)` : ""
+      sentences.push(rejected.length === 0
+        ? approved.length === 1
+          ? `Se aprobó el ítem${modifiedNote}`
+          : `Se aprobaron los ${approved.length} ítems${modifiedNote}`
+        : `${approved.length} ${approved.length === 1 ? "ítem aprobado" : "ítems aprobados"}${modifiedNote}`)
+    }
+    if (rejected.length > 0) {
+      const listed = rejected.slice(0, MAX_LISTED_REJECTIONS).map((item) => {
+        const reason = lastDecision.get(item.id)?.reason?.trim()
+        return reason ? `${itemName(item)} — ${reason}` : itemName(item)
+      })
+      const more = rejected.length > MAX_LISTED_REJECTIONS ? `; y ${rejected.length - MAX_LISTED_REJECTIONS} más` : ""
+      sentences.push(`${rejected.length} ${rejected.length === 1 ? "rechazado" : "rechazados"}: ${listed.join("; ")}${more}`)
+    }
+    if (approved.length > 0) sentences.push("Lo aprobado ya está disponible para Compras")
+    if (reviewer) sentences.push(`Revisión cerrada por ${reviewer}`)
+
+    const outcome = rejected.length === 0 ? "aprobada" : approved.length === 0 ? "rechazada" : "revisada"
+    // El estado resumido es la llave: reintentar la misma decisión no vuelve a
+    // avisar; un rechazo tardío de un ítem aprobado sí, con el resumen nuevo.
+    const state = requestItems
+      .map((item) => `${item.id}:${item.status === "rejected" ? "rejected" : lastDecision.get(item.id)?.type ?? "approve"}`)
+      .sort()
+      .join(",")
     notices.push({
-      userIds: [group.requesterId],
+      userIds: [request.requesterId],
       input: {
-        type: "request_approved",
-        title: count === 1
-          ? `Ítem aprobado en ${group.code}`
-          : `${count} ítems aprobados en ${group.code}`,
-        body: approver
-          ? `Aprobado por ${approver}. Ya está disponible para Compras.`
-          : "Aprobado. Ya está disponible para Compras.",
+        type: approved.length === 0 ? "request_rejected" : "request_approved",
+        title: `Solicitud ${request.code} ${outcome}`,
+        body: `${sentences.join(". ")}.`,
         entityType: "purchase_request",
-        entityId: requestId,
-        entityHref: `/solicitudes/${requestId}`,
-        // La llave es el conjunto de ítems aprobados: un reintento del MISMO
-        // lote no vuelve a avisar, y una aprobación posterior de otras líneas
-        // de la misma solicitud sí produce su propio aviso.
-        dedupeKey: `aprobacion-lote:${requestId}:${[...group.itemIds].sort().join(",")}`,
+        entityId: request.id,
+        entityHref: `/solicitudes/${request.id}`,
+        dedupeKey: `revision-solicitud:${request.id}:${createHash("sha256").update(state).digest("hex").slice(0, 16)}`,
       },
     })
   }
 
   return notices
+}
+
+function itemName(item: { name: string | null; nameFree: string | null }): string {
+  return item.name?.trim() || item.nameFree?.trim() || "Ítem sin nombre"
 }
 
 /**

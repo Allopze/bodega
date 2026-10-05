@@ -44,6 +44,23 @@ function evaluation(
   }
 }
 
+type DomainName = DteSyncHealthEvaluation["domains"][number]["name"]
+type DomainSpec = [status: "healthy" | "degraded" | "critical", code: string, slot: string]
+
+/** Evaluación con los dominios dados medidos y el resto fuera de su ventana. */
+function multiDomain(measured: Partial<Record<DomainName, DomainSpec>>): DteSyncHealthEvaluation {
+  const names: DomainName[] = ["purchases", "chipax_sales", "chipax_bank", "sales"]
+  const domains = names.map((name) => {
+    const spec = measured[name]
+    return spec
+      ? { name, status: spec[0], code: spec[1], slot: spec[2], expectedPeriods: ["2026-10", "2026-09"] }
+      : { name, status: "not_due" as const, code: "DTE_HEALTH_NOT_DUE", slot: null, expectedPeriods: ["2026-10", "2026-09"] }
+  })
+  const statuses = domains.map((domain) => domain.status)
+  const status = statuses.includes("critical") ? "critical" : statuses.includes("degraded") ? "degraded" : "healthy"
+  return { status, code: "DTE_HEALTH_TEST", checkedAt: "2026-10-02T13:00:00.000Z", domains }
+}
+
 describe("DTE health alert delivery", () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -104,6 +121,43 @@ describe("DTE health alert delivery", () => {
     expect(ingesta.title).toMatch(/faltan documentos/i)
     expect(ingesta.body).toMatch(/compras: faltan documentos del período/i)
     expect(conciliacion.body).toMatch(/compras: quedan conciliaciones pendientes/i)
+  })
+
+  // Producción, 2026-10: ventas avisaba "faltan documentos" a las 07:30 y, a las
+  // 09:00, el éxito de Chipax —otro dominio, otra ventana— despachaba
+  // "Sincronización DTE recuperada" aunque ventas seguía igual. Un correo falso
+  // por día a cada titular de admin:dte_sync.
+  it("no da por recuperado un dominio que nadie volvió a medir", () => {
+    const ventasParcial = multiDomain({ sales: ["degraded", "DTE_HEALTH_INGEST_PARTIAL", "2026-10-02T07:30"] })
+    const alert = decideDteHealthAlert(ventasParcial, null)!
+    expect(alert.kind).toBe("alert")
+    const previous = { fingerprint: alert.fingerprint, status: "degraded" as const }
+
+    const chipaxSano = multiDomain({
+      chipax_sales: ["healthy", "DTE_HEALTH_SUCCESS", "2026-10-02T09:00"],
+      chipax_bank: ["healthy", "DTE_HEALTH_SUCCESS", "2026-10-02T09:00"],
+    })
+    expect(decideDteHealthAlert(chipaxSano, previous)).toBeNull()
+
+    const ventasSana = multiDomain({ sales: ["healthy", "DTE_HEALTH_SUCCESS", "2026-10-03T07:30"] })
+    const recovery = decideDteHealthAlert(ventasSana, previous)!
+    expect(recovery.kind).toBe("recovery")
+    expect(recovery.body).toMatch(/ventas/)
+  })
+
+  it("no envía recuperación mientras alguno de los dominios que avisaron siga con problema", () => {
+    const chipaxCaido = multiDomain({
+      chipax_sales: ["critical", "DTE_HEALTH_RUN_FAILED", "2026-10-05T09:00"],
+      chipax_bank: ["critical", "DTE_HEALTH_RUN_FAILED", "2026-10-05T09:00"],
+    })
+    const alert = decideDteHealthAlert(chipaxCaido, null)!
+    const previous = { fingerprint: alert.fingerprint, status: "critical" as const }
+
+    const soloCartolas = multiDomain({
+      chipax_sales: ["degraded", "DTE_HEALTH_INGEST_PARTIAL", "2026-10-06T09:00"],
+      chipax_bank: ["healthy", "DTE_HEALTH_SUCCESS", "2026-10-06T09:00"],
+    })
+    expect(decideDteHealthAlert(soloCartolas, previous)?.kind).toBe("alert")
   })
 
   it("no deduplica una ingesta parcial contra un aviso previo de conciliación pendiente", async () => {
