@@ -79,17 +79,31 @@ export function GenerateActionsDialog({
   users,
   actions,
   trigger,
+  open: openProp,
+  onOpenChange,
+  returnFocusRef,
   onApplied,
 }: {
   matrixId: string
   users: Array<{ id: string; name: string }>
   /** Actividades activas del programa, para asociar medidas a una existente. */
   actions: ProgramActionView[]
-  trigger: React.ReactNode
+  /** Sin `trigger` el diálogo se abre desde fuera (modo controlado, `open`). */
+  trigger?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /**
+   * A dónde vuelve el foco al cerrar. Abierto desde un menú, el foco quedaba en
+   * el ítem que ya no existe y caía al `body`; el disparador es el lugar natural.
+   */
+  returnFocusRef?: React.RefObject<HTMLElement | null>
   /** Opcional: la acción revalida la ruta y llega un `program` nuevo por props. */
   onApplied?: () => void
 }) {
-  const [open, setOpen] = React.useState(false)
+  const [openState, setOpenState] = React.useState(false)
+  // Controlado cuando el padre pasa `open`; si no, el estado vive aquí.
+  const open = openProp ?? openState
+  const setOpen = React.useCallback((value: boolean) => { setOpenState(value); onOpenChange?.(value) }, [onOpenChange])
   const [loading, setLoading] = React.useState(false)
   const [proposals, setProposals] = React.useState<{ measures: ProposedMeasure[]; groups: Array<{ key: string; description: string }> } | null>(null)
   const [drafts, setDrafts] = React.useState<Record<string, Draft>>({})
@@ -161,12 +175,12 @@ export function GenerateActionsDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-h-[min(90dvh,60rem)] max-w-3xl">
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
+      <DialogContent className="max-h-[min(90dvh,60rem)] max-w-3xl" onCloseAutoFocus={returnFocusRef ? (event) => { event.preventDefault(); returnFocusRef.current?.focus() } : undefined}>
         <DialogHeader>
-          <DialogTitle>Generar actividades desde el MIPER</DialogTitle>
+          <DialogTitle>Generar actividades desde las medidas</DialogTitle>
           <DialogDescription>
-            Estas son las medidas del MIPER que todavía no tienen una actividad que las ejecute. Elige, grupo por grupo, si se crea una actividad nueva, se asocian a una existente o quedan fuera del programa.
+            Estas son las medidas de la MIPER que todavía no tienen una actividad que las ejecute. Elige, grupo por grupo, si se crea una actividad nueva, se asocian a una existente o quedan fuera del programa.
           </DialogDescription>
         </DialogHeader>
 
@@ -177,7 +191,7 @@ export function GenerateActionsDialog({
         ) : cards.length === 0 ? (
           <EmptyState
             compact
-            title="Todas las medidas del MIPER ya tienen actividad"
+            title="Todas las medidas de la MIPER ya tienen actividad"
             description="Cada medida de control está cubierta por una actividad del Programa de Trabajo. No hay nada que generar."
             action={<Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cerrar</Button>}
           />

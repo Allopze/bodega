@@ -1,7 +1,7 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test"
 import { expectPageTitle, listRecord, login, pickCurrentMonthDate, textoVisible, MINIMAL_PNG } from "./helpers"
 import {
-  abrirRiesgo, agregarMedida, cabecera, crearTarea, elegir, elegirOpcion, escribir, guardado, irAPaso, nivel, volverALaTarea,
+  abrirGenerador, abrirRiesgo, agregarMedida, cabecera, crearTarea, elegir, elegirOpcion, escribir, guardado, irAPaso, nivel, volverALaTarea,
 } from "./miper-helpers"
 
 /**
@@ -201,9 +201,8 @@ test("pasos 1–7: la prevencionista crea la MIPER, la completa, genera el progr
 
   // Paso 6: generar el programa reutilizando UNA actividad para las dos medidas.
   await page.getByRole("tab", { name: "Plan de medidas" }).click()
-  await expect(textoVisible(page, "Esta MIPER todavía no tiene Programa de Trabajo")).toBeVisible()
-  await cabecera(page).getByRole("button", { name: "Generar actividades" }).click()
-  const gen = page.getByRole("dialog", { name: "Generar actividades desde el MIPER" })
+  await expect(textoVisible(page, "Esta MIPER todavía no tiene plan de medidas")).toBeVisible()
+  const gen = await abrirGenerador(page)
   // La deduplicación propone UNA agrupación con las dos medidas parecidas.
   await expect(gen.getByText("Medidas de la fila 1, 2")).toBeVisible()
   await gen.getByLabel("Actividad", { exact: true }).fill(ACTIVITY_DESC)
@@ -216,12 +215,15 @@ test("pasos 1–7: la prevencionista crea la MIPER, la completa, genera el progr
   await gen.getByRole("button", { name: /Aplicar decisiones/ }).click()
   await expect(gen).toBeHidden()
   await expect(textoVisible(page, ACTIVITY_DESC)).toBeVisible()
-  await expect(textoVisible(page, "Riesgos 1, 2 del MIPER")).toBeVisible()
+  await expect(textoVisible(page, "Riesgos 1, 2 de la MIPER")).toBeVisible()
 
   // Paso 7: con el vínculo hecho no queda ningún bloqueo —el «Siguiente paso»
   // lo dice— y el envío pasa sin abrir el detalle de pendientes.
   await page.getByRole("tab", { name: "Revisión" }).click()
-  await expect(textoVisible(page, "Lista para enviar a revisión")).toBeVisible()
+  // En Revisión el estado lo dice «Preparación para enviar»; el aviso «Lista para
+  // enviar» ya no se repite en esta pestaña (auditoría UI 2026-10-04, n.º 7).
+  await expect(textoVisible(page, "Sin pendientes: no queda ningún dato obligatorio por completar.")).toBeVisible()
+  await expect(textoVisible(page, "Lista para enviar a revisión")).toHaveCount(0)
   await cabecera(page).getByRole("button", { name: "Enviar a revisión", exact: true }).click()
   // Primero el estado nuevo (el envío ya resolvió) y recién entonces la
   // ausencia del diálogo: antes de eso el «0» pasaba aunque el diálogo fuera a abrirse.
@@ -401,15 +403,18 @@ test("paso 14: la Jefa consulta el avance en el «Resumen» de la MIPER, en la p
 
   // Las cifras del Resumen que enlazan (A1). «No controlados» está en 0 (los dos riesgos quedaron
   // «Parcialmente»), así que no enlaza: se ve, pero no lleva a una lista vacía.
-  for (const rotulo of [/^Riesgos completos/, /^Importantes e Intolerables/, /^Avance del programa/]) {
+  for (const rotulo of [/^Riesgos completos/, /^Importantes e Intolerables/, /^Avance del plan/]) {
     await expect(jefa.getByRole("link", { name: rotulo })).toBeVisible()
   }
   // El avance es el que deriva `programProgress` de las ocurrencias: 1 de 3.
-  const avance = jefa.getByRole("link", { name: /^Avance del programa/ })
+  const avance = jefa.getByRole("link", { name: /^Avance del plan/ })
   await expect(avance).toContainText("33%")
   await expect(avance).toContainText("1/3 realizadas")
-  // La completitud por actividad, en el orden del RE-04.
-  await expect(jefa.getByRole("progressbar", { name: /^Operación de la correa transportadora: / })).toBeVisible()
+  // La completitud por actividad: con todo completo es una línea, no barras llenas que no
+  // informan nada (auditoría UI 2026-10-04, n.º 10). Con pendientes vuelve la lista.
+  const completitud = jefa.getByRole("region", { name: "Datos completos por actividad" })
+  await expect(completitud).toContainText(/tienen? todos sus datos\./)
+  await expect(completitud.getByRole("progressbar")).toHaveCount(0)
 
   // La fila de la faena en la portada muestra el mismo avance (el programa de la vigente).
   await jefa.goto("/prevencion/miper")
@@ -422,7 +427,7 @@ test("paso 14: la Jefa consulta el avance en el «Resumen» de la MIPER, en la p
 
   // La cifra del programa lleva a la pestaña Programa, que dice lo mismo.
   await jefa.goto(`${miperUrl}?tab=resumen`)
-  await jefa.getByRole("link", { name: /^Avance del programa/ }).click()
+  await jefa.getByRole("link", { name: /^Avance del plan/ }).click()
   await expect(jefa).toHaveURL(/tab=programa/)
   await expect(jefa.getByRole("heading", { name: "Programa de Trabajo Preventivo RE-04.1" })).toBeVisible()
   await expect(jefa.getByText("1/3 · 33% realizado").first()).toBeVisible()

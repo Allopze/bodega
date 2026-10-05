@@ -50,6 +50,9 @@ export function ProgramActionDialog({
   action,
   defaultLocationLabel,
   trigger,
+  open: openProp,
+  onOpenChange,
+  returnFocusRef,
   onSaved,
 }: {
   matrixId: string
@@ -59,33 +62,46 @@ export function ProgramActionDialog({
   action?: ProgramActionView
   /** Centro de trabajo con que se prellena una actividad nueva. */
   defaultLocationLabel: string | null
-  trigger: React.ReactNode
+  /** Sin `trigger` el diálogo se abre desde fuera (modo controlado, `open`). */
+  trigger?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /**
+   * A dónde vuelve el foco al cerrar. Abierto desde un menú, el foco quedaba en
+   * el ítem que ya no existe y caía al `body`; el disparador es el lugar natural.
+   */
+  returnFocusRef?: React.RefObject<HTMLElement | null>
   /** Opcional: la acción revalida la ruta y llega un `program` nuevo por props. */
   onSaved?: () => void
 }) {
-  const [open, setOpen] = React.useState(false)
+  const [openState, setOpenState] = React.useState(false)
+  const open = openProp ?? openState
   const [processId, setProcessId] = React.useState("")
   const [responsibleUserId, setResponsibleUserId] = React.useState("")
   const [scheduleKind, setScheduleKind] = React.useState<string>("monthly")
   const [startsOn, setStartsOn] = React.useState(todayInChile())
   const operation = useOperation()
 
-  // Al reabrir, el formulario vuelve a la actividad de la fila: el diálogo queda
-  // montado entre ediciones y heredaría el estado de la anterior.
-  function handleOpenChange(value: boolean) {
-    if (value && action) {
-      setProcessId(action.processId ?? "")
-      setResponsibleUserId(action.responsibleUserId ?? "")
-      setScheduleKind(action.scheduleKind)
-      setStartsOn(action.startsOn)
-    } else if (value) {
-      setProcessId("")
-      setResponsibleUserId("")
-      setScheduleKind("monthly")
-      setStartsOn(todayInChile())
+  // Al abrir, el formulario vuelve a la actividad de la fila: el diálogo queda
+  // montado entre ediciones y heredaría el estado de la anterior. Se ajusta
+  // durante el render al cambiar `open` (no en un efecto, que pintaba un cuadro
+  // con los valores viejos, ni en el handler, que una apertura controlada desde
+  // fuera nunca llama).
+  const [prevOpen, setPrevOpen] = React.useState(false)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
+    if (open) {
+      setProcessId(action?.processId ?? "")
+      setResponsibleUserId(action?.responsibleUserId ?? "")
+      setScheduleKind(action?.scheduleKind ?? "monthly")
+      setStartsOn(action?.startsOn ?? todayInChile())
+      operation.setMessage("")
     }
-    operation.setMessage("")
-    setOpen(value)
+  }
+
+  function setOpen(value: boolean) {
+    setOpenState(value)
+    onOpenChange?.(value)
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -106,9 +122,9 @@ export function ProgramActionDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={setOpen}>
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
+      <DialogContent onCloseAutoFocus={returnFocusRef ? (event) => { event.preventDefault(); returnFocusRef.current?.focus() } : undefined}>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
             <DialogTitle>{action ? `Actividad N° ${action.actionNumber}` : "Nueva actividad del programa"}</DialogTitle>

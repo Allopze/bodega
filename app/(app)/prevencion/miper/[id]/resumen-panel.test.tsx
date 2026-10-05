@@ -26,9 +26,9 @@ const treeOf = (rows: MiperEntrySnapshot[], incomplete: ReadonlySet<string>) => 
 const PROGRESS = { done: 1, late: 0, pending: 1, overdue: 0, failed: 1, planned: 3, ratio: 1 / 3 }
 const NO_PROGRAM = { done: 0, late: 0, pending: 0, overdue: 0, failed: 0, planned: 0, ratio: null }
 
-function show(query = "", rows = ROWS, incomplete: ReadonlySet<string> = INCOMPLETE, onNewTask = vi.fn()) {
+function show(query = "", rows = ROWS, incomplete: ReadonlySet<string> = INCOMPLETE, onNewTask = vi.fn(), linked: ReadonlySet<string> = new Set()) {
   nav.query = query
-  return render(<ResumenPanel matrixId="m1" rows={rows} tree={treeOf(rows, incomplete)} incomplete={incomplete} programProgress={rows === ROWS ? PROGRESS : NO_PROGRAM} editable onNewTask={onNewTask} />)
+  return render(<ResumenPanel matrixId="m1" rows={rows} tree={treeOf(rows, incomplete)} incomplete={incomplete} linkedControlIds={linked} programProgress={rows === ROWS ? PROGRESS : NO_PROGRAM} editable onNewTask={onNewTask} />)
 }
 
 afterEach(() => {
@@ -49,16 +49,16 @@ describe("ResumenPanel — cuatro cifras que llevan a su subconjunto (A1)", () =
     expect(screen.getByRole("link", { name: /^Importantes e Intolerables/ })).toHaveAttribute("href", `${P}?clasificacion=important%2Cintolerable`)
     expect(screen.getByRole("link", { name: /^No controlados/ })).toHaveAttribute("href", `${P}?controlado=no`)
     // El programa no lee los filtros de la matriz: se conservan.
-    const programa = screen.getByRole("link", { name: /^Avance del programa/ })
+    const programa = screen.getByRole("link", { name: /^Avance del plan/ })
     expect(programa).toHaveAttribute("href", `${P}?buscar=lodo&factor=f1&clasificacion=moderate&tab=programa`)
     expect(programa).toHaveTextContent("33%")
     expect(programa).toHaveTextContent("1/3 realizadas")
   })
 
-  it("«Avance del programa» lleva al programa entero: quita los filtros del programa que hubiera (A1)", () => {
+  it("«Avance del plan» lleva al programa entero: quita los filtros del programa que hubiera (A1)", () => {
     // El avance de la cifra es el de todo el programa; llegar a la lista filtrada por `estado` no coincidiría.
     show("estado=vencidas&q=bomba&frecuencia=monthly&tab=resumen")
-    expect(screen.getByRole("link", { name: /^Avance del programa/ })).toHaveAttribute("href", `${P}?tab=programa`)
+    expect(screen.getByRole("link", { name: /^Avance del plan/ })).toHaveAttribute("href", `${P}?tab=programa`)
   })
 
   it("una cifra en cero no lleva a una lista vacía; sin pendientes, «Riesgos completos» lleva a los completos", () => {
@@ -67,20 +67,20 @@ describe("ResumenPanel — cuatro cifras que llevan a su subconjunto (A1)", () =
     expect(screen.queryByRole("link", { name: /^No controlados/ })).toBeNull()
     expect(screen.queryByRole("link", { name: /^Importantes e Intolerables/ })).toBeNull()
     expect(screen.getByRole("link", { name: /^Riesgos completos/ })).toHaveAttribute("href", `${P}?completitud=completos`)
-    expect(screen.getByRole("link", { name: /^Avance del programa/ })).toHaveTextContent("Sin actividades programadas")
+    expect(screen.getByRole("link", { name: /^Avance del plan/ })).toHaveTextContent("Aún sin actividades")
   })
 
-  it("«Avance del programa» redondea hacia abajo: 199 de 200 no es 100% (y 29 de 100 es 29%, sin el error de coma flotante)", () => {
+  it("«Avance del plan» redondea hacia abajo: 199 de 200 no es 100% (y 29 de 100 es 29%, sin el error de coma flotante)", () => {
     const at = (done: number, planned: number) => {
       nav.query = ""
-      return render(<ResumenPanel matrixId="m1" rows={ROWS} tree={treeOf(ROWS, INCOMPLETE)} incomplete={INCOMPLETE} editable onNewTask={vi.fn()}
+      return render(<ResumenPanel matrixId="m1" rows={ROWS} tree={treeOf(ROWS, INCOMPLETE)} incomplete={INCOMPLETE} linkedControlIds={new Set()} editable onNewTask={vi.fn()}
         programProgress={{ done, late: 0, pending: planned - done, overdue: 0, failed: 0, planned, ratio: done / planned }} />)
     }
     const first = at(199, 200)
-    expect(screen.getByRole("link", { name: /^Avance del programa/ })).toHaveTextContent(/^Avance del programa99%/)
+    expect(screen.getByRole("link", { name: /^Avance del plan/ })).toHaveTextContent(/^Avance del plan99%/)
     first.unmount()
     at(29, 100)
-    expect(screen.getByRole("link", { name: /^Avance del programa/ })).toHaveTextContent(/^Avance del programa29%/)
+    expect(screen.getByRole("link", { name: /^Avance del plan/ })).toHaveTextContent(/^Avance del plan29%/)
   })
 
   it("sin riesgos, el estado vacío explica y ofrece «Nueva tarea» (A4)", () => {
@@ -92,7 +92,45 @@ describe("ResumenPanel — cuatro cifras que llevan a su subconjunto (A1)", () =
   })
 })
 
+describe("ResumenPanel — textos y seguimiento", () => {
+  const control = (id: string) => ({ id, description: "Medida", type: "administrative" }) as unknown as MiperEntrySnapshot["controls"][number]
+  it("cuenta cuántos importantes e intolerables ya tienen actividad en el plan", () => {
+    const rows = [entry({ controls: [control("c1")] }), ROWS[1]!, ROWS[2]!]
+    show("", rows, INCOMPLETE, vi.fn(), new Set(["c1"]))
+    expect(screen.getByRole("link", { name: /^Importantes e Intolerables/ })).toHaveTextContent("Exigen seguimiento · 1 con actividad en el plan")
+  })
+
+  it("si todos los graves tienen actividad lo dice, y sin graves no promete seguimiento", () => {
+    const all = [entry({ controls: [control("c1")] })]
+    const first = show("", all, INCOMPLETE, vi.fn(), new Set(["c1"]))
+    expect(screen.getByRole("link", { name: /^Importantes e Intolerables/ })).toHaveTextContent("Exigen seguimiento · todos con actividad en el plan")
+    first.unmount()
+    show("", [ROWS[1]!], new Set())
+    expect(screen.getByText("Ninguno en esta MIPER")).toBeInTheDocument()
+    expect(screen.getByText("Ninguno marcado como no controlado")).toBeInTheDocument()
+  })
+
+  it("«Ver riesgos» abre la pestaña de riesgos; el avance vacío dice qué hacer", () => {
+    show("", [ROWS[1]!], new Set())
+    expect(screen.getByRole("link", { name: "Ver riesgos" })).toHaveAttribute("href", P)
+    expect(screen.getByRole("link", { name: /^Avance del plan/ })).toHaveTextContent("Genéralas desde las medidas")
+  })
+})
+
 describe("ResumenPanel — completitud por actividad", () => {
+  it("si todas las actividades están completas, una sola línea en vez de la lista de barras", () => {
+    show("", [ROWS[1]!], new Set())
+    expect(screen.getByText("La única actividad tiene todos sus datos.")).toBeInTheDocument()
+    expect(screen.queryAllByRole("progressbar")).toHaveLength(0)
+    expect(screen.getByRole("heading", { name: "Datos completos por actividad" })).toBeInTheDocument()
+  })
+
+  it("con varias actividades completas, cuenta cuántas", () => {
+    const rows = [ROWS[1]!, entry({ id: "e4", activity: "Bodega", task: "Orden", classification: "tolerable", controlledStatus: "yes" })]
+    show("", rows, new Set())
+    expect(screen.getByText("Las 2 actividades tienen todos sus datos.")).toBeInTheDocument()
+  })
+
   it("una barra por actividad, en el orden del RE-04, con su cuenta", () => {
     show("")
     expect(screen.getByRole("progressbar", { name: "Transporte: 0 de 1 completos" })).toBeInTheDocument()

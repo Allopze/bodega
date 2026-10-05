@@ -69,7 +69,7 @@ async function soloObserva(page: Page, paso: PasoDelRiesgo) {
 }
 
 async function sinControlesDeEdicion(page: Page) {
-  for (const nombre of ["Nueva tarea", "Seleccionar riesgos", "Editar contexto de la tarea", "Vincular medidas", "Editar antecedentes", "Completar antecedentes", "Crear matriz"]) {
+  for (const nombre of ["Nueva tarea", "Seleccionar riesgos", "Editar contexto de la tarea", "Vincular medidas", "Editar antecedentes", "Completar antecedentes", "Agregar actividades", "Crear matriz"]) {
     await expect(page.getByRole("button", { name: nombre, exact: true })).toHaveCount(0)
   }
 }

@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { Fragment, useState } from "react"
+import { CheckCircle, Circle } from "@phosphor-icons/react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
@@ -59,12 +60,14 @@ export function ReviewPanel({ workspace, mode, onOpenEntry, issues, onOpenFicha,
       {/* Lectura: la ven todos los que ven la pestaña. Cada atajo abre el editor en el primer riesgo del filtro, con el filtro en la URL. */}
       <section aria-labelledby="review-walk-title" className="space-y-2">
         <h2 id="review-walk-title" className="text-sm font-semibold">Recorrer la MIPER</h2>
+        <p className="text-xs text-[var(--color-text-muted)]">Cada grupo abre el editor en su primer riesgo.</p>
         <ul className="flex flex-wrap gap-2 text-sm">
           {quickFilters.map((filter) => (
             <li key={filter.key}>
               {filter.firstEntryId
-                ? <WorkspaceLink href={hrefToReviewWalk(pathname, params, filter.patch, filter.firstEntryId)} className="inline-flex rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 font-medium text-[var(--color-primary-ink)] hover:underline">{filter.label} ({filter.count})</WorkspaceLink>
-                : <span className="inline-flex px-3 py-1 text-[var(--color-text-subtle)]">Sin {filter.label.toLowerCase()}</span>}
+                ? <WorkspaceLink href={hrefToReviewWalk(pathname, params, filter.patch, filter.firstEntryId)} className="inline-flex min-h-11 items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 font-medium text-[var(--color-primary-ink)] hover:underline sm:min-h-0">{filter.label} ({filter.count})</WorkspaceLink>
+                // Mismo molde que el enlace, pero apagado: «(0)» dice que el grupo existe y está vacío.
+                : <span aria-disabled="true" className="inline-flex items-center rounded-full border border-dashed border-[var(--color-border)] px-3 py-1 text-[var(--color-text-subtle)]">{filter.label} ({filter.count})</span>}
             </li>
           ))}
         </ul>
@@ -74,18 +77,21 @@ export function ReviewPanel({ workspace, mode, onOpenEntry, issues, onOpenFicha,
           Corrige la matriz donde corresponda, responde cada observación y luego usa «Reenviar a revisión».
         </Callout>
       )}
-      {workspace.observations.length === 0 ? (
-        <EmptyState title="Sin observaciones" description={mode.canObserve ? "Observa una fila desde la matriz (botón «Observar») o registra una observación general." : "Cuando la revisión registre observaciones, aparecerán aquí con su respuesta."} />
-      ) : groups.map((group) => {
-        const items = workspace.observations.filter((item) => item.status === group.key)
-        if (items.length === 0) return null
-        return (
-          <details key={group.key} open={group.key !== "resolved"} className="space-y-2">
-            <summary className="cursor-pointer text-sm font-semibold">{group.title} ({items.length})</summary>
-            <div className="mt-2 space-y-2">{items.map((item) => <ObservationItem key={item.id} observation={item} mode={mode} onOpenEntry={onOpenEntry} />)}</div>
-          </details>
-        )
-      })}
+      <section aria-labelledby="review-observations-title" className="space-y-2">
+        <h2 id="review-observations-title" className="text-sm font-semibold">Observaciones</h2>
+        {workspace.observations.length === 0 ? (
+          <EmptyState compact as="p" title="Sin observaciones" description={mode.canObserve ? "Observa una fila desde la matriz (botón «Observar») o registra una observación general." : "Cuando la revisión registre observaciones, aparecerán aquí con su respuesta."} />
+        ) : groups.map((group) => {
+          const items = workspace.observations.filter((item) => item.status === group.key)
+          if (items.length === 0) return null
+          return (
+            <details key={group.key} open={group.key !== "resolved"} className="space-y-2">
+              <summary className="cursor-pointer text-sm font-semibold">{group.title} ({items.length})</summary>
+              <div className="mt-2 space-y-2">{items.map((item) => <ObservationItem key={item.id} observation={item} mode={mode} onOpenEntry={onOpenEntry} />)}</div>
+            </details>
+          )
+        })}
+      </section>
       {mode.canObserve && (
         <div className="space-y-2 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <p className="text-sm font-medium">Observación general</p>
@@ -121,7 +127,7 @@ function PreparationSection({ blocking, rows, onOpenEntry, onOpenFicha }: {
                     const entry = issue.entryId ? rows.find((row) => row.id === issue.entryId) : undefined
                     const label = `${entry ? `Riesgo #${entry.rowNumber}` : group.title}: ${issue.message}`
                     const go = entry ? () => onOpenEntry(entry.id, stepOfField(issue.field)) : onOpenFicha
-                    return <li key={`${issue.entryId ?? "documento"}:${issue.field}:${issue.message}`}>{go ? <button type="button" className="text-left text-[var(--color-primary-ink)] underline underline-offset-2" onClick={go}>{label}</button> : label}</li>
+                    return <li key={`${issue.entryId ?? "documento"}:${issue.field}:${issue.message}`}>{go ? <button type="button" className="min-h-11 text-left text-[var(--color-primary-ink)] underline underline-offset-2 sm:min-h-0" onClick={go}>{label}</button> : label}</li>
                   })}
                   {items.length > 5 && <li className="text-[var(--color-text-subtle)]">y {items.length - 5} más; «Enviar a revisión» muestra la lista completa.</li>}
                 </ul>
@@ -158,8 +164,23 @@ function ReviewStateSection({ workspace, mode, currentStage }: { workspace: Mipe
   return (
     <section aria-labelledby="review-state-title" className="space-y-3 border-b border-[var(--color-border)] pb-4">
       <h2 id="review-state-title" className="text-base font-semibold">Estado de revisión</h2>
-      <ol aria-label="Etapas de revisión" className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-        {steps.map((label, index) => <li key={label} aria-current={currentStage === index ? "step" : undefined} className={currentStage === index ? "font-semibold text-[var(--color-primary-ink)]" : "text-[var(--color-text-subtle)]"}>{index + 1}. {label}{currentStage === index && <span className="sr-only"> · etapa actual</span>}</li>)}
+      {/* Cada etapa dice su estado con ícono y texto para lectores, no sólo con color y peso. */}
+      <ol aria-label="Etapas de revisión" className="flex flex-wrap items-center gap-x-2 gap-y-2 text-sm">
+        {steps.map((label, index) => {
+          const done = currentStage !== null && index < currentStage
+          const current = currentStage === index
+          return (
+            <Fragment key={label}>
+              {index > 0 && <li aria-hidden="true" className="hidden h-px w-6 bg-[var(--color-border-strong)] sm:block" />}
+              <li aria-current={current ? "step" : undefined} className={`inline-flex items-center gap-1.5 ${current ? "font-semibold text-[var(--color-primary-ink)]" : "text-[var(--color-text-subtle)]"}`}>
+                {done ? <CheckCircle weight="fill" className="size-4 text-[var(--color-success-ink)]" aria-hidden="true" />
+                  : current ? <Circle weight="fill" className="size-4 text-[var(--color-primary)]" aria-hidden="true" />
+                  : <Circle className="size-4 text-[var(--color-text-subtle)]" aria-hidden="true" />}
+                <span>{index + 1}. {label}{done && <span className="sr-only"> · completada</span>}{current && <span className="sr-only"> · etapa actual</span>}</span>
+              </li>
+            </Fragment>
+          )
+        })}
       </ol>
       {historical ? <p className="text-sm text-[var(--color-text-subtle)]">{mode.readOnlyReason}</p> : <p className="text-sm">{responsibility ? `A cargo de: ${responsibility}.` : "Revisión finalizada."} {matrix.reviewState === "observed" && "Hay observaciones que deben corregirse antes de reenviar."}</p>}
       {matrix.status === "published" && latest && <p className="text-sm"><strong>Versión vigente: v{latest.versionNumber}</strong>, aprobada el {formatDateTime(latest.approvedAt)}.{currentStage !== 3 && " Sigue vigente mientras se revisan los cambios."}</p>}
@@ -168,9 +189,9 @@ function ReviewStateSection({ workspace, mode, currentStage }: { workspace: Mipe
         <p>{reviewing ? "Estás revisando la versión enviada en esta ronda. Los cambios posteriores se revisan en otra ronda." : mode.canEdit ? "La ronda conserva la versión enviada. Los cambios que hagas ahora quedan en el trabajo editable para otra ronda." : "La decisión se toma sobre la versión enviada. El trabajo editable puede incluir cambios posteriores."}</p>
         {!openRound.openedAt && <p>Aún no abierta por la persona revisora.</p>}
       </div>}
-      {mode.canEdit && matrix.reviewState === "none" && currentStage === 0 && <p className="text-sm">Completa la ficha, los riesgos y sus medidas. Después usa «Enviar a revisión» en la cabecera.</p>}
-      {mode.canReviewTechnical && <p className="text-sm">Revisa los riesgos y las respuestas. Luego aprueba la revisión técnica o devuelve con observaciones desde la cabecera.</p>}
-      {mode.canApproveLegal && <p className="text-sm">Decide sobre la versión revisada técnicamente: aprobar y sellar o solicitar correcciones desde la cabecera.</p>}
+      {mode.canEdit && matrix.reviewState === "none" && currentStage === 0 && <p className="text-sm">Completa la ficha, los riesgos y sus medidas. Cuando no queden pendientes, envíala con «Enviar a revisión».</p>}
+      {mode.canReviewTechnical && <p className="text-sm">Revisa los riesgos y las respuestas. Después aprueba la revisión técnica o devuélvela con observaciones.</p>}
+      {mode.canApproveLegal && <p className="text-sm">Decide sobre la versión revisada técnicamente: apruébala y séllala, o solicita correcciones.</p>}
     </section>
   )
 }

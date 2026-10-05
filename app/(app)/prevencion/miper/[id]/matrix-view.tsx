@@ -3,6 +3,7 @@
 import { useLayoutEffect, useMemo, useState, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import type { CompletenessIssue } from "@/lib/prevention/miper/completeness"
 import type { ActivityNode } from "@/lib/prevention/miper/matrix-tree"
 import { countOf } from "@/lib/utils"
@@ -23,7 +24,7 @@ export function MatrixView({ matrixId, tree, filtered, editable, incomplete, obs
   /** Quita todos los filtros de la matriz (la CTA del estado vacío filtrado, regla A4). */
   onClearFilters: () => void
   /** La barra de filtros la arma el workspace (necesita la URL); queda como ranura para probar la vista sin ella. */
-  toolbar?: (state: { collapsedAll: boolean; toggleAll: () => void; filtered: boolean }) => ReactNode
+  toolbar?: (state: { filtered: boolean }) => ReactNode
   /** Acciones masivas (Fase D): sólo con edición y en resultados, con o sin filtros. */
   bulk?: BulkContext
 }) {
@@ -50,14 +51,18 @@ export function MatrixView({ matrixId, tree, filtered, editable, incomplete, obs
   const selecting = Boolean(bulk) && results && selection.selecting
   return (
     <div className="space-y-3">
-      {toolbar?.({ collapsedAll, toggleAll, filtered })}
+      {toolbar?.({ filtered })}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold">{results ? "Resultados de riesgos" : "Por actividades y tareas"}</h2>
+          <h2 className="text-sm font-semibold">{results ? "Lista de riesgos" : "Por actividades y tareas"}</h2>
           <p className="text-xs text-[var(--color-text-muted)]">{results ? `${countOf(matching.length, "riesgo")}${filtered ? " con los filtros actuales" : " en toda la matriz"}` : filtered ? "Actividades y tareas con riesgos que coinciden con los filtros." : "Abre una tarea para consultar y completar sus riesgos."}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {onPresentationChange && <Button size="sm" variant="ghost" onClick={() => onPresentationChange(results ? "estructura" : "resultados")}>{results ? "Ver por actividades y tareas" : "Ver resultados de riesgos"}</Button>}
+          {onPresentationChange && <SegmentedControl variant="segmented" ariaLabel="Presentación de la matriz" items={[
+            { key: "estructura", label: "Por actividad", active: !results, onClick: () => onPresentationChange("estructura") },
+            { key: "resultados", label: "Lista de riesgos", active: results, onClick: () => onPresentationChange("resultados") },
+          ]} />}
+          {!results && tree.length > 0 && <Button size="sm" variant="secondary" onClick={toggleAll}>{collapsedAll ? "Expandir todo" : "Contraer todo"}</Button>}
           {bulk && tree.length > 0 && (results || onPresentationChange) && <Button size="sm" variant="secondary" onClick={() => {
             if (selecting) selection.stop()
             else { onPresentationChange?.("resultados"); selection.start() }

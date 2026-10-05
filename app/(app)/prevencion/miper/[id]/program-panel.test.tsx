@@ -147,7 +147,7 @@ describe("ProgramPanel", () => {
     show()
     const details = screen.getByText("Datos del programa").closest("details")
     expect(details).not.toHaveAttribute("open")
-    expect(screen.getAllByText("Avance del programa")).toHaveLength(1)
+    expect(screen.getAllByText("Avance del plan")).toHaveLength(1)
     expect(screen.queryByRole("button", { name: "Nueva actividad" })).toBeNull()
     expect(screen.queryByRole("button", { name: "Generar actividades" })).toBeNull()
   })
@@ -157,12 +157,39 @@ describe("ProgramPanel", () => {
     expect(screen.getAllByRole("article").map((article) => article.getAttribute("aria-labelledby"))).toEqual(["programa-actividad-late", "programa-actividad-a1", "programa-actividad-closed"])
   })
 
-  it("exporta las acciones para la cabecera y respeta el permiso de edición", () => {
-    const view = render(<ProgramPageActions matrixId="m1" mode={mode} users={users} program={programOf()} />)
-    expect(screen.getByRole("button", { name: "Nueva actividad" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Generar actividades" })).toBeTruthy()
-    view.rerender(<ProgramPageActions matrixId="m1" mode={{ ...mode, canEdit: false }} users={users} program={programOf()} />)
+  it("la cabecera ofrece un solo menú «Agregar actividades» cuyos ítems abren cada diálogo", async () => {
+    actionsMock.proposeProgramActionsAction.mockResolvedValue({ ok: true, data: { measures: [], groups: [] } })
+    render(<ProgramPageActions matrixId="m1" mode={mode} users={users} program={programOf()} />)
+    expect(screen.getAllByRole("button")).toHaveLength(1)
+    const openMenu = () => fireEvent.keyDown(screen.getByRole("button", { name: "Agregar actividades" }), { key: "Enter" })
+    openMenu()
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Generar desde las medidas…" }))
+    expect(await screen.findByRole("dialog", { name: "Generar actividades desde las medidas" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    // Abierto desde un ítem que ya no existe, el foco caía al `body`: vuelve al disparador.
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Agregar actividades" })))
+    openMenu()
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Agregar una a mano…" }))
+    expect(await screen.findByRole("dialog", { name: "Nueva actividad del programa" })).toBeTruthy()
+  })
+
+  it("en sólo lectura la cabecera no pinta ningún botón", () => {
+    render(<ProgramPageActions matrixId="m1" mode={{ ...mode, canEdit: false }} users={users} program={programOf()} />)
     expect(screen.queryByRole("button")).toBeNull()
   })
 
+  it("sin programa, el vacío ofrece generar las actividades y los filtros no se pintan", async () => {
+    actionsMock.proposeProgramActionsAction.mockResolvedValue({ ok: true, data: { measures: [], groups: [] } })
+    show(programOf({ program: null, actions: [] }))
+    expect(screen.getByText("Esta MIPER todavía no tiene plan de medidas")).toBeTruthy()
+    expect(screen.queryByLabelText("Buscar actividad del programa")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Generar actividades desde las medidas" }))
+    expect(await screen.findByRole("dialog", { name: "Generar actividades desde las medidas" })).toBeTruthy()
+  })
+
+  it("con actividades pinta los filtros", () => {
+    show()
+    expect(screen.getByLabelText("Buscar actividad del programa")).toBeTruthy()
+  })
 })

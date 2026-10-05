@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field } from "@/components/ui/field"
 import { FilterToolbar } from "@/components/ui/filter-toolbar"
@@ -16,14 +15,12 @@ import { useWorkspaceFilterNavigation } from "./use-workspace-filter-navigation"
 export const useMatrixFilterNavigation = () => useWorkspaceFilterNavigation(MATRIX_FILTER_KEYS)
 
 /**
- * Barra de la matriz (spec §5.1, regla A2): búsqueda propia y «Contraer todo»
- * a la vista; el resto, en el cajón «Filtros (N)» de `FilterToolbar`, con chips.
+ * Barra de la matriz (spec §5.1, regla A2): búsqueda propia a la vista; el resto, en el cajón «Filtros (N)» de `FilterToolbar`, con chips.
  */
-export function MatrixFiltersBar({ filters: parsed, riskFactors, hasBaseline, collapsedAll, onToggleAll, filtered = false, results = filtered }: {
-  filters: GridFilters; riskFactors: ReadonlyArray<{ id: string; name: string }>; hasBaseline: boolean; collapsedAll: boolean; onToggleAll: () => void
-  /** Con filtros las actividades van siempre abiertas: plegar no hace nada. */
+export function MatrixFiltersBar({ filters: parsed, riskFactors, hasBaseline, filtered = false }: {
+  filters: GridFilters; riskFactors: ReadonlyArray<{ id: string; name: string }>; hasBaseline: boolean
+  /** Hay filtros activos (incluida una búsqueda sola): habilita «Limpiar filtros». */
   filtered?: boolean
-  results?: boolean
 }) {
   // Un `?factor=` que no es de esta matriz se trata como «Todos»: ni chip ni selección.
   const filters = parsed.factorId !== "all" && !riskFactors.some((factor) => factor.id === parsed.factorId) ? { ...parsed, factorId: "all" } : parsed
@@ -45,7 +42,6 @@ export function MatrixFiltersBar({ filters: parsed, riskFactors, hasBaseline, co
       activeCount={activeFilterCount(filters) - (filters.search ? 1 : 0)}
       onRemoveChip={(key) => setFilter(key as MatrixFilterKey, null)}
       onClearAll={() => { setSearch(""); setFilters(matrixFilterPatch({ ...filters, search: "", classifications: [], controlled: "all", factorId: "all", onlyObserved: false, onlyModified: false, onlyIncomplete: false, onlyComplete: false })) }}
-      actions={<Button variant="secondary" size="sm" onClick={onToggleAll} disabled={results}>{collapsedAll ? "Expandir todo" : "Contraer todo"}</Button>}
       overflowFilters={(
         <div className="space-y-4">
           <fieldset className="space-y-1.5">

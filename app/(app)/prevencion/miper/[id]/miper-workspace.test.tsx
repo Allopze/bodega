@@ -101,7 +101,8 @@ describe("MiperWorkspaceView — render completo (A2, fila 16)", () => {
     expect(screen.getByRole("link", { name: "Continuar completando" }).getAttribute("href")).toBe("/prevencion/miper/m1?fila=e1")
     expect(screen.getByRole("tab", { name: "Riesgos", selected: true })).toBeTruthy()
     expect(screen.getByLabelText("Buscar en la matriz")).toBeTruthy()
-    expect(screen.getByRole("heading", { level: 2, name: /Transporte/ })).toBeTruthy()
+    // La actividad es h3 bajo «Por actividades y tareas» (h2), y su nombre es sólo el rótulo.
+    expect(screen.getByRole("heading", { level: 3, name: "Transporte" })).toBeTruthy()
   })
 
   it("con ?tarea= muestra la tarea y la tarjeta no (va sólo en la raíz)", () => {
@@ -224,7 +225,7 @@ describe("MiperWorkspaceView — pestaña Resumen (Fase B)", () => {
 describe("MiperWorkspaceView — programa por props (Fase E)", () => {
   it("el Resumen muestra el avance de program.progress", () => {
     show("tab=resumen", workspaceOf(), editMode, programOf({ progress: { done: 1, late: 0, pending: 1, overdue: 0, failed: 0, planned: 2, ratio: 0.5 } }))
-    expect(screen.getByRole("link", { name: /^Avance del programa/ })).toHaveTextContent("50%")
+    expect(screen.getByRole("link", { name: /^Avance del plan/ })).toHaveTextContent("50%")
   })
 
   it("con ?actividad= la pestaña activa es Programa", () => {
@@ -287,7 +288,8 @@ describe("MiperWorkspaceView — «Elaboró» y «Cambiar de faena» (Fase B)", 
 describe("MiperWorkspaceView — presentación explícita", () => {
   it("vista=resultados lista todos los riesgos sin fingir un filtro", () => {
     show("vista=resultados")
-    expect(screen.getByText("Resultados de riesgos")).toBeTruthy()
+    expect(screen.getByRole("heading", { level: 2, name: "Lista de riesgos" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Lista de riesgos", pressed: true })).toBeTruthy()
     expect(screen.getByText("1 riesgo en toda la matriz")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Seleccionar riesgos" })).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Limpiar filtros" })).toBeNull()

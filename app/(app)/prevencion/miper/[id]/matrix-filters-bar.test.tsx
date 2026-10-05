@@ -7,7 +7,7 @@ vi.mock("next/navigation", () => ({ usePathname: () => "/prevencion/miper/m1", u
 
 import { MatrixFiltersBar } from "./matrix-filters-bar"
 
-const props = { riskFactors: [{ id: "f1", name: "Caídas" }], hasBaseline: false, collapsedAll: false, onToggleAll: vi.fn() }
+const props = { riskFactors: [{ id: "f1", name: "Caídas" }], hasBaseline: false }
 
 describe("MatrixFiltersBar", () => {
   it("con sólo la búsqueda no hay chip, pero «Limpiar filtros» sigue a mano", () => {
@@ -89,8 +89,8 @@ describe("MatrixFiltersBar: navegación de filtros", () => {
     spy.mockRestore()
     vi.useRealTimers()
   })
-  it("Contraer todo queda deshabilitado con filtros", () => {
-    render(<MatrixFiltersBar {...props} filters={f} filtered />)
-    expect((screen.getByRole("button", { name: "Contraer todo" }) as HTMLButtonElement).disabled).toBe(true)
+  it("ya no ofrece Contraer todo: vive en la cabecera de la matriz", () => {
+    render(<MatrixFiltersBar {...props} filters={f} />)
+    expect(screen.queryByRole("button", { name: /Contraer todo|Expandir todo/ })).toBeNull()
   })
 })

@@ -1,7 +1,7 @@
 import { test, expect, request, type Browser, type BrowserContext, type Page } from "@playwright/test"
 import { expectPageTitle, login, pickCurrentMonthDate, textoVisible, MINIMAL_PNG } from "./helpers"
 import {
-  agregarMedida, cabecera, crearTarea, elegir, elegirOpcion, escribir, guardado, irAPaso, nivel, volverALaTarea,
+  abrirGenerador, agregarMedida, cabecera, crearTarea, elegir, elegirOpcion, escribir, guardado, irAPaso, nivel, volverALaTarea,
 } from "./miper-helpers"
 
 /**
@@ -142,9 +142,8 @@ test("la prevencionista arma la matriz, el envío se bloquea sin medida vinculad
 
   // Paso 6 del §12: generar las actividades del programa reutilizando una para varias medidas.
   await page.getByRole("tab", { name: "Plan de medidas" }).click()
-  await expect(textoVisible(page, "Esta MIPER todavía no tiene Programa de Trabajo")).toBeVisible()
-  await cabecera(page).getByRole("button", { name: "Generar actividades" }).click()
-  const gen = page.getByRole("dialog", { name: "Generar actividades desde el MIPER" })
+  await expect(textoVisible(page, "Esta MIPER todavía no tiene plan de medidas")).toBeVisible()
+  const gen = await abrirGenerador(page)
   // La deduplicación propone UNA agrupación con las dos medidas parecidas, y la
   // persona decide qué hacer con ella.
   await expect(gen.getByText("Medidas de la fila 1, 2")).toBeVisible()
@@ -167,7 +166,7 @@ test("la prevencionista arma la matriz, el envío se bloquea sin medida vinculad
 
   // La actividad quedó vinculada a las DOS medidas (la fila 1 y la fila 2).
   await expect(textoVisible(page, ACTIVITY_DESC)).toBeVisible()
-  await expect(textoVisible(page, "Riesgos 1, 2 del MIPER")).toBeVisible()
+  await expect(textoVisible(page, "Riesgos 1, 2 de la MIPER")).toBeVisible()
   await expect(textoVisible(page, "Anual")).toBeVisible()
 
   const sheet = await abrirActividad(page)
@@ -201,7 +200,10 @@ test("la prevencionista arma la matriz, el envío se bloquea sin medida vinculad
   // H2-01, el otro lado de la regresión): el «Siguiente paso» dice que está
   // lista y el envío pasa sin abrir el detalle de pendientes.
   await page.getByRole("tab", { name: "Revisión" }).click()
-  await expect(textoVisible(page, "Lista para enviar a revisión")).toBeVisible()
+  // En Revisión el estado lo dice «Preparación para enviar»; el aviso «Lista para
+  // enviar» ya no se repite en esta pestaña (auditoría UI 2026-10-04, n.º 7).
+  await expect(textoVisible(page, "Sin pendientes: no queda ningún dato obligatorio por completar.")).toBeVisible()
+  await expect(textoVisible(page, "Lista para enviar a revisión")).toHaveCount(0)
   await cabecera(page).getByRole("button", { name: "Enviar a revisión", exact: true }).click()
   // Primero el estado nuevo (el envío ya resolvió) y recién entonces la
   // ausencia del diálogo: antes de eso el «0» pasaba aunque el diálogo fuera a abrirse.
@@ -343,9 +345,9 @@ test("la Jefa consulta el avance general del programa", async ({ browser }) => {
   const jefa = await as(browser, "jefa.prevencion@e2e.chome.cl")
   await jefa.goto(`${miperUrl}?tab=programa`)
   await expect(jefa.getByRole("heading", { name: "Programa de Trabajo Preventivo RE-04.1" })).toBeVisible()
-  // Avance del programa en el encabezado RE-04.1 y por actividad en la fila.
+  // Avance del plan en el encabezado RE-04.1 y por actividad en la fila.
   await expect(jefa.getByText("1/2 · 50% realizado").first()).toBeVisible()
-  await expect(jefa.getByText("Avance del programa")).toBeVisible()
+  await expect(jefa.getByText("Avance del plan")).toBeVisible()
   const fila = jefa.getByRole("article").filter({ hasText: ACTIVITY_DESC })
   await expect(fila.getByText("1/2 · 50% realizado")).toBeVisible()
   // El filtro por estado deja a la vista la actividad con la ocurrencia incumplida.

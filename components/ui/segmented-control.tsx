@@ -40,10 +40,13 @@ interface SegmentedControlProps {
   className?: string
 }
 
+/** `min-h-11` sólo en móvil: el objetivo táctil de 44 px sin cambiar la densidad de escritorio. */
+const TOUCH_TARGET = "inline-flex min-h-11 items-center sm:min-h-0"
+
 function itemClassName(item: SegmentedControlItem, variant: "pills" | "segmented", i: number, total: number) {
   if (variant === "segmented") {
     return cn(
-      "px-4 py-1.5 text-sm transition-colors",
+      TOUCH_TARGET, "px-4 py-1.5 text-sm transition-colors",
       i === 0 && "rounded-l-md",
       i > 0 && "border-l border-[var(--color-border)]",
       i === total - 1 && "rounded-r-md",
@@ -53,7 +56,7 @@ function itemClassName(item: SegmentedControlItem, variant: "pills" | "segmented
     )
   }
   return cn(
-    "rounded-md border px-3 py-1.5 text-sm transition-colors",
+    TOUCH_TARGET, "rounded-md border px-3 py-1.5 text-sm transition-colors",
     item.active
       ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] text-[var(--color-text)]"
       : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]",

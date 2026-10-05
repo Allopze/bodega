@@ -93,8 +93,42 @@ describe("ReviewPanel: recorrer la MIPER", () => {
     render(<ReviewPanel workspace={workspace()} mode={mode} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline />)
     const empty = screen.getByRole("region", { name: "Recorrer la MIPER" })
     expect(within(empty).queryByRole("link", { name: /Observados/ })).toBeNull()
-    expect(within(empty).getByText("Sin observados")).toBeTruthy()
-    expect(within(empty).getByText("Sin modificados")).toBeTruthy()
+    // Mismo molde que un enlace, pero apagado y con «(0)»: no es un botón gris suelto.
+    expect(within(empty).getByText("Observados (0)")).toHaveAttribute("aria-disabled", "true")
+    expect(within(empty).getByText("Modificados (0)")).toHaveAttribute("aria-disabled", "true")
+    expect(within(empty).getByText("Cada grupo abre el editor en su primer riesgo.")).toBeTruthy()
+  })
+
+  it("«Sin observaciones» vive bajo su propio encabezado, no bajo «Recorrer la MIPER»", () => {
+    render(<ReviewPanel workspace={workspace()} mode={mode} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline />)
+    const section = screen.getByRole("region", { name: "Observaciones" })
+    expect(within(section).getByText("Sin observaciones")).toBeTruthy()
+    expect(within(screen.getByRole("region", { name: "Recorrer la MIPER" })).queryByText("Sin observaciones")).toBeNull()
+  })
+
+  it("el recorrido de etapas marca hechas, actual y pendientes con texto accesible", () => {
+    const data = workspace()
+    data.matrix = { ...data.matrix, reviewState: "pending_approval", status: "draft" }
+    render(<ReviewPanel workspace={data} mode={mode} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline={false} />)
+    const items = within(screen.getByRole("list", { name: "Etapas de revisión" })).getAllByRole("listitem")
+    const steps = items.filter((item) => /^\d\./.test(item.textContent ?? ""))
+    expect(steps.map((item) => item.textContent)).toEqual(["1. Elaboración · completada", "2. Revisión técnica · completada", "3. Aprobación Legal/RRHH · etapa actual", "4. Vigente"])
+  })
+
+  it("un documento histórico no marca ninguna etapa", () => {
+    const data = workspace()
+    data.matrix = { ...data.matrix, status: "superseded" }
+    const { container } = render(<ReviewPanel workspace={data} mode={mode} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline={false} />)
+    expect(container.querySelector('[aria-current="step"]')).toBeNull()
+    expect(screen.queryByText(/completada/)).toBeNull()
+  })
+
+  it("el texto guía ya no manda «a la cabecera»", () => {
+    render(<ReviewPanel workspace={workspace()} mode={{ ...mode, canEdit: true, canReviewTechnical: true, canApproveLegal: true }} onOpenEntry={vi.fn()} rows={rows} observed={new Set()} modified={new Set()} hasBaseline={false} />)
+    expect(screen.getByText("Completa la ficha, los riesgos y sus medidas. Cuando no queden pendientes, envíala con «Enviar a revisión».")).toBeTruthy()
+    expect(screen.getByText("Revisa los riesgos y las respuestas. Después aprueba la revisión técnica o devuélvela con observaciones.")).toBeTruthy()
+    expect(screen.getByText("Decide sobre la versión revisada técnicamente: apruébala y séllala, o solicita correcciones.")).toBeTruthy()
+    expect(screen.queryByText(/cabecera/)).toBeNull()
   })
 
   it("sin línea base no hay «Modificados»", () => {

@@ -25,15 +25,15 @@ afterEach(() => {
 describe("MatrixView", () => {
   it("muestra cada actividad con sus tareas como enlaces y el avance por tarea", () => {
     render(<MatrixView {...base} tree={buildMatrixTree(rows, { ...ctx, matching: null })} filtered={false} />)
-    expect(screen.getByRole("heading", { level: 2, name: /Transporte/ })).toBeTruthy()
+    expect(screen.getByRole("heading", { level: 3, name: /Transporte/ })).toBeTruthy()
     const carga = screen.getByRole("link", { name: /Carga/ })
     expect(carga.getAttribute("href")).toBe(`/prevencion/miper/m1?tarea=${taskKeyOf({ activity: "Transporte", task: "Carga" })}`)
-    expect(screen.getByText("0 de 1 completos")).toBeTruthy()
+    expect(screen.getByText("1 de 1 con datos pendientes")).toBeTruthy()
   })
   it("con filtro muestra los riesgos que coinciden bajo su tarea", () => {
     render(<MatrixView {...base} tree={buildMatrixTree(rows, { ...ctx, matching: new Set(["b"]) })} filtered />)
     expect(screen.getByRole("link", { name: "Riesgo #2: Peligro b" })).toBeTruthy()
-    expect(screen.queryByRole("heading", { level: 2, name: /Oficina/ })).toBeNull()
+    expect(screen.queryByRole("heading", { level: 3, name: /Oficina/ })).toBeNull()
   })
   it("plegar una actividad oculta sus tareas", () => {
     render(<MatrixView {...base} tree={buildMatrixTree(rows, { ...ctx, matching: null })} filtered={false} />)
@@ -84,6 +84,18 @@ describe("MatrixView", () => {
     render(<MatrixView {...base} tree={buildMatrixTree(rows, { ...ctx, matching: null })} filtered={false} />)
     await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 640 }))
   })
+  it("el nombre accesible del encabezado de actividad es sólo su etiqueta", () => {
+    render(<MatrixView {...base} tree={buildMatrixTree(rows, { ...ctx, matching: null })} filtered={false} />)
+    expect(screen.getByRole("heading", { level: 3, name: "Transporte" })).toBeTruthy()
+    expect(screen.getByRole("region", { name: "Transporte" })).toBeTruthy()
+  })
+  it("Contraer todo plega y Expandir todo reabre las actividades", () => {
+    render(<MatrixView {...base} tree={buildMatrixTree(rows, { ...ctx, matching: null })} filtered={false} />)
+    fireEvent.click(screen.getByRole("button", { name: "Contraer todo" }))
+    expect(screen.queryByRole("link", { name: /Carga/ })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Expandir todo" }))
+    expect(screen.getByRole("link", { name: /Carga/ })).toBeTruthy()
+  })
   it("el título de una actividad con espacios y tildes nombra su región", () => {
     const accented = [e("z", 1, "Lavado de camión", "Enjuague")]
     render(<MatrixView {...base} tree={buildMatrixTree(accented, { ...ctx, matching: null })} filtered={false} />)
@@ -125,12 +137,17 @@ it("Seleccionar riesgos abre resultados completos sin filtros y volver a estruct
   }
   render(<Example />)
   expect(screen.queryByRole("checkbox")).toBeNull()
+  expect(screen.getByRole("button", { name: "Por actividad" }).getAttribute("aria-pressed")).toBe("true")
+  expect(screen.getByRole("button", { name: "Contraer todo" })).toBeTruthy()
   fireEvent.click(screen.getByRole("button", { name: "Seleccionar riesgos" }))
+  expect(screen.getByRole("heading", { name: "Lista de riesgos" })).toBeTruthy()
+  expect(screen.getByRole("button", { name: "Lista de riesgos" }).getAttribute("aria-pressed")).toBe("true")
+  expect(screen.queryByRole("button", { name: "Contraer todo" })).toBeNull()
   expect(screen.getByText("3 riesgos en toda la matriz")).toBeTruthy()
   expect(screen.getAllByRole("checkbox")).toHaveLength(3)
   fireEvent.click(screen.getByRole("button", { name: "Seleccionar los 3 resultados" }))
   expect(screen.getByRole("region", { name: "Acciones sobre la selección" })).toHaveTextContent("3 riesgos seleccionados")
-  fireEvent.click(screen.getByRole("button", { name: "Ver por actividades y tareas" }))
+  fireEvent.click(screen.getByRole("button", { name: "Por actividad" }))
   expect(screen.queryByRole("checkbox")).toBeNull()
   expect(screen.queryByRole("region", { name: "Acciones sobre la selección" })).toBeNull()
 })

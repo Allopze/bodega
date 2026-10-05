@@ -23,6 +23,17 @@ const escapar = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 export const cabecera = (page: Page) => page.getByRole("banner")
 
 /**
+ * «Generar actividades» desde la cabecera de «Plan de medidas»: las dos altas
+ * (generar desde las medidas, agregar una a mano) van en un solo botón que
+ * pregunta cuál (regla A3; auditoría UI 2026-10-04).
+ */
+export async function abrirGenerador(page: Page) {
+  await cabecera(page).getByRole("button", { name: "Agregar actividades", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Generar desde las medidas…" }).click()
+  return page.getByRole("dialog", { name: "Generar actividades desde las medidas" })
+}
+
+/**
  * Un campo de texto con sugerencias (`Combobox` con `allowCustomValue`) por su
  * rótulo. `exact` es obligatorio: «Riesgo» es subcadena de «Factor de riesgo».
  */

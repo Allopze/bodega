@@ -32,4 +32,13 @@ describe("SummaryBar", () => {
     expect(label).toHaveClass("line-clamp-2")
     expect(label).not.toHaveClass("truncate")
   })
+
+  it("un valor de texto va en la sans del cuerpo: sin mono ni tabular-nums", () => {
+    render(<SummaryBar stats={[{ key: "a", label: "Avance del plan", value: "Aún sin actividades", valueKind: "text", tone: "signal" }, { key: "b", label: "Otra", value: 7 }]} />)
+    const text = screen.getByText("Aún sin actividades")
+    expect(text).toHaveClass("text-base", "font-semibold")
+    expect(text).not.toHaveClass("font-mono")
+    expect(text).not.toHaveClass("tabular-nums")
+    expect(screen.getByText("7")).toHaveClass("font-mono")
+  })
 })

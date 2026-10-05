@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -36,6 +36,7 @@ export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenE
   const params = useSearchParams()
   const [dialog, setDialog] = useState<Dialogs>(null)
   const [changeSummary, setChangeSummary] = useState("")
+  const moreRef = useRef<HTMLButtonElement>(null)
   const operation = useOperation({ feedback: "toast" })
   const { matrix } = workspace
   const blocking = issues.filter((issue) => issue.severity === "error")
@@ -48,7 +49,9 @@ export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenE
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {onOpenFicha && <Button variant="secondary" onClick={onOpenFicha}>Ficha del documento</Button>}
+      {/* Bajo xl el rótulo visible se acorta («Ficha»): con el título y cinco botones, a
+       * 1024 px la cabecera truncaba el nombre del documento. El nombre accesible no cambia. */}
+      {onOpenFicha && <Button variant="secondary" aria-label="Ficha del documento" onClick={onOpenFicha}><span>Ficha<span className="hidden xl:inline"> del documento</span></span></Button>}
       {canSubmit && (
         <Button onClick={() => blocking.length > 0 ? setDialog("blocking") : operation.run(() => submitMiperAction(base))} disabled={operation.pending}>
           {matrix.reviewState === "observed" ? "Reenviar a revisión" : "Enviar a revisión"}
@@ -64,7 +67,7 @@ export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenE
       </>}
       {(latest || canDiscard) && (
         <DropdownMenu>
-          <DropdownMenuTrigger asChild><Button variant="secondary" aria-label="Más acciones de la MIPER">Más</Button></DropdownMenuTrigger>
+          <DropdownMenuTrigger asChild><Button ref={moreRef} variant="secondary" aria-label="Más acciones de la MIPER">Más</Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {latest && <DropdownMenuItem asChild><a href={`/api/prevencion/miper/${latest.id}/export`}>Descargar v{latest.versionNumber} (Excel)</a></DropdownMenuItem>}
             {canDiscard && <DropdownMenuItem onSelect={() => setDialog("discard")}>Descartar borrador</DropdownMenuItem>}
@@ -117,7 +120,7 @@ export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenE
         reasonLabel="Qué debe corregirse" loading={operation.pending}
         onConfirm={(reason) => operation.run(() => requestMiperCorrectionsAction({ ...base, comment: reason }), close)} />
       <ConfirmDialog open={dialog === "discard"} onOpenChange={(open) => { if (!open) close() }} title="Descartar borrador"
-        description="El borrador se elimina. Queda registrado en la auditoría." confirmLabel="Descartar" variant="destructive" reasonLabel="Motivo" loading={operation.pending}
+        description="El borrador se elimina. Queda registrado en la auditoría." confirmLabel="Descartar" variant="destructive" reasonLabel="Motivo" loading={operation.pending} returnFocusRef={moreRef}
         onConfirm={(reason) => operation.run(() => discardMiperDraftAction({ ...base, reason }), () => { window.location.assign("/prevencion/miper") })} />
 
       <Dialog open={dialog === "approveFinal"} onOpenChange={(open) => { if (!open) close() }}>
@@ -136,7 +139,9 @@ export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenE
         </DialogContent>
       </Dialog>
 
-      <Link href="/prevencion/miper" className="sr-only">Volver a la lista</Link>
+      {/* Oculto hasta recibir foco (patrón de skip link): con `sr-only` a secas el teclado
+       * caía en un paso invisible después de «Más» (WCAG 2.4.7). */}
+      <Link href="/prevencion/miper" className="sr-only text-sm text-[var(--color-primary-ink)] underline underline-offset-2 focus-visible:not-sr-only">Volver a la lista</Link>
     </div>
   )
 }
