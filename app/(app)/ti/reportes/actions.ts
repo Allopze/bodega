@@ -7,7 +7,7 @@ import {
 } from "@/db/schema"
 import { eq, asc, and, isNull, sql, type SQL } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
-import { worksiteScopeSql } from "@/lib/auth/scope"
+import { serviceWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { buildXlsxBuffer } from "@/lib/reports/export-module/excel-builder"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
@@ -15,6 +15,7 @@ import { todayInChile } from "@/lib/utils"
 import type { ExportActionResult } from "@/components/ui/export-button"
 import { IT_ASSET_STATUS_META } from "@/lib/services/ti/constants"
 import { civilDaysUntil } from "@/lib/services/ti/civil-dates"
+import { accessSheet, checklistSheet, licenseSheets, ticketsSheet } from "@/lib/services/ti/reports"
 
 export type TiReportType =
   | "inventario_general"
@@ -26,6 +27,15 @@ export type TiReportType =
   | "costo_reparacion"
   | "antiguedad"
   | "garantias"
+  | "tickets"
+  | "licencias"
+  | "accesos"
+  | "ingresos_egresos"
+
+/** Filtros opcionales de los reportes de mesa de ayuda, licencias y accesos. */
+export type TiReportFilters = { worksiteId?: string; from?: string; to?: string; systemId?: string }
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 const TYPE_LABELS: Record<TiReportType, string> = {
   inventario_general: "inventario-general",
@@ -37,6 +47,10 @@ const TYPE_LABELS: Record<TiReportType, string> = {
   costo_reparacion: "costo-reparacion",
   antiguedad: "antiguedad",
   garantias: "garantias",
+  tickets: "tickets",
+  licencias: "licencias",
+  accesos: "accesos",
+  ingresos_egresos: "ingresos-egresos",
 }
 
 function assetName(brand: string | null, model: string | null): string {
@@ -94,12 +108,21 @@ function assetSheet(rows: Awaited<ReturnType<typeof baseAssetRows>>, sheetName: 
   }
 }
 
-export async function exportTiReport(type: TiReportType, assetId?: string): Promise<ExportActionResult> {
+export async function exportTiReport(type: TiReportType, assetId?: string, rawFilters?: TiReportFilters): Promise<ExportActionResult> {
   let session
   try { session = await requirePermission("ti:export") }
   catch { return { ok: false, message: "Sin permisos para exportar reportes TI" } }
 
   const scope = worksiteScopeSql(session, itAssets.worksiteId)
+  // El alcance de faena del rol se resuelve en el servidor y los filtros del
+  // formulario solo lo acotan más (nunca lo amplían).
+  const serviceScope = serviceWorksiteScope(session)
+  const filters: TiReportFilters = {
+    worksiteId: rawFilters?.worksiteId || undefined,
+    systemId: rawFilters?.systemId || undefined,
+    from: rawFilters?.from && DATE_RE.test(rawFilters.from) ? rawFilters.from : undefined,
+    to: rawFilters?.to && DATE_RE.test(rawFilters.to) ? rawFilters.to : undefined,
+  }
 
   try {
     let sheets: ReturnType<typeof assetSheet>[] = []
@@ -238,6 +261,18 @@ export async function exportTiReport(type: TiReportType, assetId?: string): Prom
         }]
         break
       }
+      case "tickets":
+        sheets = [await ticketsSheet(serviceScope, filters)]
+        break
+      case "licencias":
+        sheets = await licenseSheets(serviceScope)
+        break
+      case "accesos":
+        sheets = [await accessSheet(serviceScope, filters)]
+        break
+      case "ingresos_egresos":
+        sheets = [await checklistSheet(serviceScope, filters)]
+        break
     }
 
     if (sheets.length === 0) return { ok: false, message: "Sin datos para exportar" }
@@ -257,7 +292,7 @@ export async function exportTiReport(type: TiReportType, assetId?: string): Prom
       action: "export",
       entityType: "ti_report",
       entityId: type,
-      newState: { type, assetId: assetId ?? null },
+      newState: { type, assetId: assetId ?? null, filters },
     })
 
     return {

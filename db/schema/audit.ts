@@ -117,6 +117,10 @@ export type NotificationType =
   | "ti_ticket_created"
   | "ti_ticket_assigned"
   | "ti_ticket_resolved"
+  // TIUX-31: el solicitante se entera cuando TI le devuelve la pelota (espera
+  // su respuesta) o le escribe un comentario público.
+  | "ti_ticket_waiting_user"
+  | "ti_ticket_comment"
   // Cierre mensual del Programa de Trabajo Preventivo por faena (Fase 4, G7):
   // la foto congelada del mes se distribuye a jefatura y responsables por
   // notificación y correo, con enlace al detalle del cierre y su descarga.

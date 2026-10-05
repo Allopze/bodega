@@ -14,6 +14,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog"
 import type { ActionState } from "@/lib/validation/masters"
+import { cn, formatCLP } from "@/lib/utils"
 import { voidMaintenanceAction } from "./actions"
 
 /**
@@ -30,14 +31,35 @@ export function VoidMaintenanceDialog({
   assetCode,
   date,
   cost,
+  triggerClassName,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   maintenanceId: string
   assetCode: string
   date: string
   cost: number
+  /** Clases extra del disparador (p. ej. objetivo táctil de 44 px en móvil). */
+  triggerClassName?: string
+  /**
+   * Modo controlado: la fila abre el diálogo desde un menú "Más" y no pinta su
+   * propio botón. Sin estas props, el componente trae su disparador.
+   */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   const router = useRouter()
-  const [open, setOpen] = React.useState(false)
+  const [internalOpen, setInternalOpen] = React.useState(false)
+  const controlled = controlledOpen !== undefined
+  const open = controlled ? controlledOpen : internalOpen
+  // Ref: el efecto de abajo no debe re-ejecutarse (y repetir toast + refresh)
+  // porque el padre pase un `onOpenChange` con otra identidad.
+  const onOpenChangeRef = React.useRef(onOpenChange)
+  React.useEffect(() => { onOpenChangeRef.current = onOpenChange })
+  const setOpen = React.useCallback((v: boolean) => {
+    if (!controlled) setInternalOpen(v)
+    onOpenChangeRef.current?.(v)
+  }, [controlled])
   const [state, action] = useActionState<ActionState, FormData>(voidMaintenanceAction, INITIAL_STATE)
 
   React.useEffect(() => {
@@ -48,20 +70,20 @@ export function VoidMaintenanceDialog({
     } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
       toast.error(state.message)
     }
-  }, [router, state])
+  }, [router, state, setOpen])
 
   return (
     <>
-      <Button
+      {!controlled && <Button
         variant="ghost"
         size="sm"
-        className="gap-1 text-[var(--color-danger)] hover:text-[var(--color-danger)]"
+        className={cn("gap-1 text-[var(--color-danger-ink)] hover:text-[var(--color-danger-ink)]", triggerClassName)}
         onClick={() => setOpen(true)}
         aria-label={`Anular mantención de ${assetCode}`}
       >
         <Prohibit size={12} aria-hidden />
         Anular
-      </Button>
+      </Button>}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
@@ -78,7 +100,7 @@ export function VoidMaintenanceDialog({
             <input type="hidden" name="id" value={maintenanceId} />
 
             <p className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
-              Registrada el <span className="font-medium text-[var(--color-text)]">{date}</span>, costo {cost.toLocaleString("es-CL")}
+              Registrada el <span className="font-medium text-[var(--color-text)]">{date}</span>, costo <span className="font-mono tabular-nums font-medium text-[var(--color-text)]">{formatCLP(cost)}</span>
             </p>
 
             <Field

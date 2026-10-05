@@ -3,20 +3,25 @@
 import * as React from "react"
 import Link from "next/link"
 import { useActionState } from "react"
+import { Clock } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
-import { formatDateTime, formatDate } from "@/lib/utils"
+import { formatDateTime } from "@/lib/utils"
 import { MetaBadge } from "@/components/states/state-badge"
-import { EmptyState } from "@/components/ui/empty-state"
+import { Callout } from "@/components/ui/callout"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Field } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { SubmitButton } from "@/components/ui/submit-button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
-import { transitionTicketAction, commentTicketAction } from "../actions"
+import { commentTicketAction } from "../actions"
+import { useFocusFirstInvalid } from "../use-focus-first-invalid"
 import {
   IT_TICKET_STATUS_META, IT_TICKET_PRIORITY_META, IT_TICKET_CATEGORY_META,
 } from "@/lib/services/ti/constants"
-import { IT_TICKET_UNASSIGN, itTicketNextStatuses } from "@/lib/validation/ti"
+import type { TicketDueInfo } from "@/lib/services/ti/ticket-sla"
+import type { TicketTimelineItem } from "@/lib/services/ti/tickets"
+import { TicketTimeline } from "./ticket-timeline"
+import { TicketAssignment, TicketStatusChange } from "./ticket-management"
 
 interface TicketDetailProps {
   ticket: {
@@ -38,120 +43,113 @@ interface TicketDetailProps {
     requesterUserId: string
     requesterName: string | null
     resolution: string | null
+    dueAt: string | null
     createdAt: string
     updatedAt: string
     resolvedAt: string | null
   }
-  comments: {
-    id: string
-    body: string
-    isInternal: boolean
-    authorName: string
-    createdAt: string
-  }[]
+  timeline: TicketTimelineItem[]
+  due: TicketDueInfo | null
+  currentUserId: string
   technicians: { id: string; name: string }[]
   canManage: boolean
   canInternal: boolean
   canComment: boolean
 }
 
-export function TicketDetail({ ticket, comments, technicians, canManage, canInternal, canComment }: TicketDetailProps) {
-  const nextStatuses = itTicketNextStatuses(ticket.status)
-  const [status, setStatus] = React.useState(nextStatuses[0] ?? ticket.status)
-  const [assignee, setAssignee] = React.useState(ticket.assigneeUserId ?? IT_TICKET_UNASSIGN)
+const SECTION = "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs"
+const HEADING = "text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]"
 
-  // El servidor es la fuente de verdad: cuando la fila cambia (por esta misma
-  // transición o porque otro técnico la movió) hay que resincronizar los dos
-  // selectores. Se hace durante el render, no en un `useEffect`, que es el
-  // patrón que el repo ya documenta en `components/ui/filter-search-input.tsx`.
-  //
-  // Sin esto el grafo de transiciones no tiene auto-transiciones, así que el
-  // `status` elegido deja de existir en `nextStatuses` tras aplicar el cambio:
-  // el trigger queda en blanco y —porque el <select> oculto de Radix solo
-  // contiene las opciones renderizadas— el envío siguiente no manda `status`.
-  // Y un `assignee` obsoleto es peor: viaja en cada envío, así que una
-  // transición de solo-estado reasignaría el ticket al técnico anterior.
-  const [serverState, setServerState] = React.useState({ status: ticket.status, assignee: ticket.assigneeUserId })
-  if (serverState.status !== ticket.status || serverState.assignee !== ticket.assigneeUserId) {
-    setServerState({ status: ticket.status, assignee: ticket.assigneeUserId })
-    setStatus(nextStatuses[0] ?? ticket.status)
-    setAssignee(ticket.assigneeUserId ?? IT_TICKET_UNASSIGN)
+/**
+ * Cuándo vence, donde se decide (TIUX-16). Un ticket abierto cuenta contra el
+ * reloj; uno resuelto o cerrado dice si cumplió el plazo y nunca muestra un
+ * vencimiento vigente. Texto con tokens `-ink`: el color solo refuerza.
+ */
+function DueLine({ due, dueAt }: { due: TicketDueInfo | null; dueAt: string | null }) {
+  if (!due || !dueAt) return null
+  const date = formatDateTime(dueAt)
+  let text: string
+  let tone = "text-[var(--color-text-muted)]"
+  switch (due.kind) {
+    case "overdue": text = `Atrasado ${due.span} · venció el ${date}`; tone = "text-[var(--color-danger-ink)]"; break
+    case "due_soon": text = `Vence el ${date} · en ${due.span}`; tone = "text-[var(--color-warning-ink)]"; break
+    case "on_track": text = `Vence el ${date} · en ${due.span}`; break
+    case "met": text = "Resuelto dentro de plazo"; break
+    default: text = "Resuelto fuera de plazo"; tone = "text-[var(--color-warning-ink)]"
   }
-  const [transitionState, transitionAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
-    const result = await transitionTicketAction(prev, formData)
-    if (result.ok) toast.success(result.message ?? "Ticket actualizado")
-    else if (result.message && !result.fieldErrors) toast.error(result.message)
-    return result
-  }, INITIAL_STATE)
+  return (
+    <p className={`mt-3 flex items-center gap-1.5 text-sm font-medium ${tone}`}>
+      <Clock size={14} aria-hidden className="shrink-0" />
+      <span>{text}</span>
+    </p>
+  )
+}
 
+export function TicketDetail({
+  ticket, timeline, due, currentUserId, technicians, canManage, canInternal, canComment,
+}: TicketDetailProps) {
+  const formRef = React.useRef<HTMLFormElement>(null)
   const [commentState, commentAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
     const result = await commentTicketAction(prev, formData)
     if (result.ok) toast.success(result.message ?? "Comentario agregado")
-    else if (result.message && !result.fieldErrors) toast.error(result.message)
     return result
   }, INITIAL_STATE)
+  useFocusFirstInvalid(formRef, commentState)
+  const kept = (commentState.ok ? {} : (commentState.data?.values ?? {})) as Record<string, string>
+
+  const statusMeta = IT_TICKET_STATUS_META[ticket.status]
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-      <div className="space-y-4">
-        <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs font-semibold text-[var(--color-primary)]">{ticket.code}</span>
-              <MetaBadge meta={{ label: `${IT_TICKET_STATUS_META[ticket.status]?.label ?? ticket.status}`, variant: IT_TICKET_STATUS_META[ticket.status]?.variant ?? "default" }} dot />
-              <MetaBadge meta={{ label: `${IT_TICKET_PRIORITY_META[ticket.priority]?.label ?? ticket.priority}`, variant: IT_TICKET_PRIORITY_META[ticket.priority]?.variant ?? "default" }} />
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22.5rem)]">
+      <div className="min-w-0 space-y-4">
+        <section className={SECTION}>
+          {/* El código y el asunto ya están en el encabezado de la página: aquí
+              no se repiten. */}
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <MetaBadge meta={{ label: statusMeta?.label ?? ticket.status, variant: statusMeta?.variant ?? "default" }} dot />
+              <MetaBadge meta={{ label: IT_TICKET_PRIORITY_META[ticket.priority]?.label ?? ticket.priority, variant: IT_TICKET_PRIORITY_META[ticket.priority]?.variant ?? "default" }} />
               <MetaBadge meta={{ label: IT_TICKET_CATEGORY_META[ticket.category] ?? ticket.category, variant: "outline" }} />
             </div>
             <span className="text-xs text-[var(--color-text-muted)]">Actualizado {formatDateTime(ticket.updatedAt)}</span>
           </div>
 
-          <h2 className="mt-4 text-base font-semibold text-[var(--color-text)]">{ticket.subject}</h2>
-          <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--color-text)]">{ticket.description}</p>
+          <DueLine due={due} dueAt={ticket.dueAt} />
+
+          <p className="mt-3 whitespace-pre-wrap break-words text-sm text-[var(--color-text)]">{ticket.description}</p>
 
           {ticket.resolution && (
-            <div className="mt-4 rounded-xl border-l-2 border-[var(--color-success)] bg-[var(--color-success-tint)] p-3">
-              <p className="text-xs font-semibold text-[var(--color-success-ink)]">Resolución</p>
-              <p className="mt-1 text-sm text-[var(--color-text)]">{ticket.resolution}</p>
-            </div>
+            <Callout tone="success" title="Resolución" className="mt-4">
+              <p className="whitespace-pre-wrap break-words text-[var(--color-text)]">{ticket.resolution}</p>
+              {ticket.resolvedAt && (
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">{formatDateTime(ticket.resolvedAt)}</p>
+              )}
+            </Callout>
           )}
         </section>
 
-        <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
-            Comentarios ({comments.length})
-          </h3>
-          {comments.length === 0 ? (
-            <EmptyState compact align="start" title="Sin comentarios todavía" description="Las actualizaciones del caso aparecerán aquí." />
-          ) : (
-            <ul className="mt-3 space-y-3">
-              {comments.map((comment) => (
-                <li key={comment.id} className={`rounded-xl p-3 ${comment.isInternal ? "border border-dashed border-[var(--color-signal-line)] bg-[var(--color-signal-tint)]" : "bg-[var(--color-surface-2)]"}`}>
-                  {comment.isInternal && (
-                    <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-[var(--color-signal-ink)]">Nota interna</p>
-                  )}
-                  <p className="whitespace-pre-wrap text-sm text-[var(--color-text)]">{comment.body}</p>
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                    {comment.authorName} · {formatDateTime(comment.createdAt)}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
+        <section className={SECTION}>
+          <h3 className={HEADING}>Historial</h3>
+          <TicketTimeline items={timeline} created={{ at: ticket.createdAt, authorName: ticket.requesterName }} />
 
           {canComment && (
-            <form action={commentAction} className="mt-4 space-y-3">
+            <form ref={formRef} action={commentAction} className="mt-4 space-y-3">
               <input type="hidden" name="ticketId" value={ticket.id} />
               <Field label="Nuevo comentario" error={commentState.fieldErrors?.body?.[0]}>
-                <Textarea name="body" maxLength={2000} rows={3} placeholder="Escribe una actualización…" />
+                <Textarea name="body" maxLength={2000} rows={3} defaultValue={kept.body} placeholder="Escribe una actualización…" />
               </Field>
               {canInternal && (
-                <label className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
-                  <input type="checkbox" name="isInternal" className="h-3.5 w-3.5 rounded" />
-                  Nota interna (solo visible para TI)
-                </label>
+                // La casilla del sistema, con objetivo de 44 px en móvil.
+                <div className="[&_label]:min-h-11 sm:[&_label]:min-h-6">
+                  <Checkbox
+                    name="isInternal"
+                    label="Nota interna (solo visible para TI)"
+                    defaultChecked={kept.isInternal === "on"}
+                  />
+                </div>
               )}
               {commentState.message && !commentState.ok && !commentState.fieldErrors && (
-                <p className="text-sm text-[var(--color-danger)]" role="alert">{commentState.message}</p>
+                <p role="alert" tabIndex={-1} data-form-alert className="text-sm text-[var(--color-danger-ink)]">{commentState.message}</p>
               )}
               <SubmitButton label="Comentar" loadingLabel="Enviando..." size="sm" variant="secondary" />
             </form>
@@ -159,83 +157,31 @@ export function TicketDetail({ ticket, comments, technicians, canManage, canInte
         </section>
       </div>
 
-      <aside className="space-y-4">
-        <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Detalle</h3>
+      <aside className="min-w-0 space-y-4">
+        <section className={SECTION}>
+          <h3 className={HEADING}>Detalle</h3>
           <dl className="mt-3 space-y-2 text-sm">
-            <div className="flex justify-between gap-3"><dt className="text-xs text-[var(--color-text-muted)]">Solicitante</dt><dd className="font-medium text-[var(--color-text)]">{ticket.requesterName ?? "—"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-xs text-[var(--color-text-muted)]">Trabajador</dt><dd className="font-medium text-[var(--color-text)]">{ticket.workerName ?? "—"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-xs text-[var(--color-text-muted)]">Faena</dt><dd className="font-medium text-[var(--color-text)]">{ticket.worksiteName}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-xs text-[var(--color-text-muted)]">Activo</dt><dd className="font-medium text-[var(--color-text)]">
+            <div className="flex flex-wrap justify-between gap-x-3 gap-y-0.5"><dt className="text-xs text-[var(--color-text-muted)]">Solicitante</dt><dd className="min-w-0 break-words font-medium text-[var(--color-text)]">{ticket.requesterName ?? "—"}</dd></div>
+            <div className="flex flex-wrap justify-between gap-x-3 gap-y-0.5"><dt className="text-xs text-[var(--color-text-muted)]">Trabajador</dt><dd className="min-w-0 break-words font-medium text-[var(--color-text)]">{ticket.workerName?.trim() || "—"}</dd></div>
+            <div className="flex flex-wrap justify-between gap-x-3 gap-y-0.5"><dt className="text-xs text-[var(--color-text-muted)]">Faena</dt><dd className="min-w-0 break-words font-medium text-[var(--color-text)]">{ticket.worksiteName}</dd></div>
+            <div className="flex flex-wrap justify-between gap-x-3 gap-y-0.5"><dt className="text-xs text-[var(--color-text-muted)]">Activo</dt><dd className="min-w-0 break-words font-medium text-[var(--color-text)]">
               {ticket.assetId
-                ? <Link href={`/ti/activos/${ticket.assetId}`} className="text-[var(--color-primary)] hover:underline">{ticket.assetCode}</Link>
+                ? <Link href={`/ti/activos/${ticket.assetId}`} className="inline-flex min-h-11 items-center whitespace-nowrap text-[var(--color-primary)] hover:underline sm:min-h-0">{ticket.assetCode}</Link>
                 : "—"}
             </dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-xs text-[var(--color-text-muted)]">Técnico</dt><dd className="font-medium text-[var(--color-text)]">{ticket.assigneeName ?? "—"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-xs text-[var(--color-text-muted)]">Creado</dt><dd className="font-medium text-[var(--color-text)]">{formatDateTime(ticket.createdAt)}</dd></div>
-            {ticket.resolvedAt && (
-              <div className="flex justify-between gap-3"><dt className="text-xs text-[var(--color-text-muted)]">Resuelto</dt><dd className="font-medium text-[var(--color-text)]">{formatDate(ticket.resolvedAt)}</dd></div>
+            {/* Quien gestiona ve y cambia el responsable en su propio bloque. */}
+            {!canManage && (
+              <div className="flex flex-wrap justify-between gap-x-3 gap-y-0.5"><dt className="text-xs text-[var(--color-text-muted)]">Técnico</dt><dd className="min-w-0 break-words font-medium text-[var(--color-text)]">{ticket.assigneeName ?? "Sin asignar"}</dd></div>
             )}
+            <div className="flex flex-wrap justify-between gap-x-3 gap-y-0.5"><dt className="text-xs text-[var(--color-text-muted)]">Creado</dt><dd className="font-medium text-[var(--color-text)]">{formatDateTime(ticket.createdAt)}</dd></div>
           </dl>
         </section>
 
         {canManage && (
-          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Gestionar ticket</h3>
-            {nextStatuses.length === 0 ? (
-              <p className="mt-3 text-sm text-[var(--color-text-muted)]">
-                Este ticket no admite más transiciones de estado.
-              </p>
-            ) : (
-              <form action={transitionAction} className="mt-3 space-y-3">
-                <input type="hidden" name="ticketId" value={ticket.id} />
-                {/* Solo los estados alcanzables desde el actual: el servidor
-                    aplica el mismo grafo y rechazaría cualquier otro. */}
-                <Field label="Nuevo estado" error={transitionState.fieldErrors?.status?.[0]}>
-                  <Select name="status" value={status} onValueChange={setStatus}>
-                    <SelectTrigger aria-label="Nuevo estado">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {nextStatuses.map((s) => (
-                        <SelectItem key={s} value={s}>{IT_TICKET_STATUS_META[s]?.label ?? s}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field
-                  label="Técnico responsable"
-                  required={status === "asignado"}
-                  helper={status === "asignado" ? "Obligatorio para dejar el ticket asignado." : undefined}
-                  error={transitionState.fieldErrors?.assigneeUserId?.[0]}
-                >
-                  <Select name="assigneeUserId" value={assignee} onValueChange={setAssignee}>
-                    <SelectTrigger aria-label="Técnico responsable">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={IT_TICKET_UNASSIGN}>Sin asignar</SelectItem>
-                      {technicians.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label="Motivo" required error={transitionState.fieldErrors?.reason?.[0]}>
-                  <Textarea name="reason" maxLength={300} rows={2} />
-                </Field>
-                {status === "resuelto" && (
-                  <Field label="Resolución" required helper="Qué se hizo para resolver el problema." error={transitionState.fieldErrors?.resolution?.[0]}>
-                    <Textarea name="resolution" maxLength={1000} rows={4} />
-                  </Field>
-                )}
-                {transitionState.message && !transitionState.ok && !transitionState.fieldErrors && (
-                  <p className="text-sm text-[var(--color-danger)]" role="alert">{transitionState.message}</p>
-                )}
-                <SubmitButton label="Aplicar cambio" loadingLabel="Aplicando..." size="sm" variant="secondary" />
-              </form>
-            )}
-          </section>
+          <>
+            <TicketAssignment ticket={ticket} technicians={technicians} currentUserId={currentUserId} />
+            <TicketStatusChange ticket={ticket} />
+          </>
         )}
       </aside>
     </div>

@@ -2,6 +2,7 @@ import { eq, and, desc, asc, inArray, isNull, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   itAccessSystems, itSystemAccess, itWorkerChecklists, itChecklistTasks,
+  itLicenseAssignments, itLicenses, itAssetAssignments, itAssets,
   workers, worksites, users,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -194,6 +195,14 @@ export async function listWorkerAccess(workerId: string, worksiteIds: TiWorksite
 }
 
 /**
+ * Escapa `%`, `_` y `\` para usar el texto del usuario dentro de un `LIKE`.
+ * Sin esto, buscar "100%" o "_" devolvía a todo el mundo.
+ */
+function likePattern(term: string): string {
+  return `%${term.toLowerCase().replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`
+}
+
+/**
  * HALLAZGO SEC-002 (S3/P2): `scope` era una propiedad opcional de un objeto
  * `filters` que a su vez era opcional, de modo que `listWorkersWithAccess()`
  * compilaba y listaba a los trabajadores de todas las faenas. Ahora `filters`
@@ -201,8 +210,31 @@ export async function listWorkerAccess(workerId: string, worksiteIds: TiWorksite
  * ése es el valor que `worksiteScopeSql` devuelve para un rol global —"sin
  * cláusula"—, pero el llamador tiene que escribirlo: es una decisión, no un
  * olvido.
+ *
+ * TIUX-02 / TIUX-52: la búsqueda, la faena y el sistema se filtran en SQL, no
+ * en JS después de traer toda la nómina. Con `systemId` solo salen los
+ * trabajadores que tienen registro en ESE sistema (y sus accesos son solo de
+ * ese sistema: la matriz pinta una única columna). Sin `systemId`, por defecto
+ * solo salen quienes tienen al menos un registro; `includeWithoutAccess` trae
+ * a todos para poder otorgar el primer acceso.
  */
-export async function listWorkersWithAccess(filters: { systemId?: string; worksiteId?: string; search?: string; scope: SQL | undefined }) {
+export async function listWorkersWithAccess(filters: {
+  systemId?: string
+  worksiteId?: string
+  search?: string
+  includeWithoutAccess?: boolean
+  scope: SQL | undefined
+}) {
+  const term = filters.search?.trim()
+  const hasRecord = filters.systemId
+    ? sql`EXISTS (
+        SELECT 1 FROM "it_system_access" "sa"
+        WHERE "sa"."worker_id" = ${workers.id} AND "sa"."system_id" = ${filters.systemId}
+      )`
+    : filters.includeWithoutAccess
+      ? undefined
+      : sql`EXISTS (SELECT 1 FROM "it_system_access" "sa" WHERE "sa"."worker_id" = ${workers.id})`
+
   const workersList = await db
     .select({
       id: workers.id,
@@ -215,6 +247,8 @@ export async function listWorkersWithAccess(filters: { systemId?: string; worksi
     .where(and(
       eq(workers.isActive, true),
       filters.worksiteId ? eq(workers.worksiteId, filters.worksiteId) : undefined,
+      term ? sql`lower(concat(${workers.firstName}, ' ', ${workers.lastName})) LIKE ${likePattern(term)}` : undefined,
+      hasRecord,
       filters.scope,
     ))
     .orderBy(asc(workers.firstName), asc(workers.lastName))
@@ -223,6 +257,7 @@ export async function listWorkersWithAccess(filters: { systemId?: string; worksi
 
   const accesses = await db
     .select({
+      id: itSystemAccess.id,
       workerId: itSystemAccess.workerId,
       systemId: itSystemAccess.systemId,
       systemName: itAccessSystems.name,
@@ -231,25 +266,174 @@ export async function listWorkersWithAccess(filters: { systemId?: string; worksi
     })
     .from(itSystemAccess)
     .innerJoin(itAccessSystems, eq(itSystemAccess.systemId, itAccessSystems.id))
-    .innerJoin(workers, eq(itSystemAccess.workerId, workers.id))
     .where(and(
-      filters?.systemId ? eq(itSystemAccess.systemId, filters.systemId) : undefined,
-      filters?.scope,
+      inArray(itSystemAccess.workerId, workersList.map((w) => w.id)),
+      filters.systemId ? eq(itSystemAccess.systemId, filters.systemId) : undefined,
     ))
 
-  const accessByWorker = new Map<string, { systemId: string; systemName: string; status: string; notes: string | null }[]>()
+  const accessByWorker = new Map<string, { id: string; systemId: string; systemName: string; status: string; notes: string | null }[]>()
   for (const access of accesses) {
     const list = accessByWorker.get(access.workerId) ?? []
-    list.push({ systemId: access.systemId, systemName: access.systemName, status: access.status, notes: access.notes })
+    list.push({ id: access.id, systemId: access.systemId, systemName: access.systemName, status: access.status, notes: access.notes })
     accessByWorker.set(access.workerId, list)
   }
 
-  return workersList
-    .map((worker) => ({ ...worker, accesses: accessByWorker.get(worker.id) ?? [] }))
-    .filter((worker) => !filters?.search || worker.name.toLowerCase().includes(filters.search.toLowerCase()))
+  return workersList.map((worker) => ({ ...worker, accesses: accessByWorker.get(worker.id) ?? [] }))
 }
 
-/* ── Checklists de alta/baja ─────────────────────────────────────────────── */
+/**
+ * Registro (vigente o histórico) de un trabajador en un sistema, para que la
+ * hoja "Registrar acceso" muestre el estado y las notas REALES antes de
+ * guardar: sin esto, abrirla sobre un par ya existente precargaba "Activo" y
+ * reactivaba en silencio un acceso suspendido (TIUX-02).
+ */
+export async function getSystemAccess(workerId: string, systemId: string, worksiteIds: TiWorksiteScope) {
+  const conditions: SQL[] = [eq(itSystemAccess.workerId, workerId), eq(itSystemAccess.systemId, systemId)]
+  if (worksiteIds !== "all") conditions.push(worksiteIds.length ? inArray(workers.worksiteId, worksiteIds) : sql`false`)
+  const [row] = await db
+    .select({ id: itSystemAccess.id, status: itSystemAccess.status, notes: itSystemAccess.notes })
+    .from(itSystemAccess)
+    .innerJoin(workers, eq(itSystemAccess.workerId, workers.id))
+    .where(and(...conditions))
+    .limit(1)
+  return row ?? null
+}
+
+/**
+ * TIUX-19: trabajadores INACTIVOS que conservan accesos vigentes. La matriz
+ * solo lista activos, así que una cuenta viva de alguien que ya no trabaja
+ * quedaba invisible. Solo lectura; revocar usa la misma `upsertSystemAccess`
+ * y sus mismas guardas de faena.
+ */
+export async function listInactiveWorkersWithAccess(scope: SQL | undefined) {
+  const rows = await db
+    .select({
+      workerId: workers.id,
+      name: sql<string>`trim(concat(${workers.firstName}, ' ', ${workers.lastName}))`,
+      worksiteName: worksites.name,
+      systemId: itSystemAccess.systemId,
+      systemName: itAccessSystems.name,
+      status: itSystemAccess.status,
+    })
+    .from(itSystemAccess)
+    .innerJoin(workers, eq(itSystemAccess.workerId, workers.id))
+    .innerJoin(worksites, eq(workers.worksiteId, worksites.id))
+    .innerJoin(itAccessSystems, eq(itSystemAccess.systemId, itAccessSystems.id))
+    .where(and(
+      eq(workers.isActive, false),
+      isNull(itSystemAccess.revokedAt),
+      sql`${itSystemAccess.status} <> 'baja'`,
+      scope,
+    ))
+    .orderBy(asc(workers.firstName), asc(workers.lastName), asc(itAccessSystems.name))
+
+  const byWorker = new Map<string, {
+    id: string; name: string; worksiteName: string
+    accesses: { systemId: string; systemName: string; status: string }[]
+  }>()
+  for (const row of rows) {
+    const entry = byWorker.get(row.workerId)
+      ?? { id: row.workerId, name: row.name, worksiteName: row.worksiteName, accesses: [] }
+    entry.accesses.push({ systemId: row.systemId, systemName: row.systemName, status: row.status })
+    byWorker.set(row.workerId, entry)
+  }
+  return [...byWorker.values()]
+}
+
+export interface EgressContext {
+  accesses: { systemId: string; systemName: string; status: string }[]
+  licenses: { assignmentId: string; licenseName: string; worksiteName: string | null }[]
+  assets: { assignmentId: string; assetId: string; code: string; label: string }[]
+}
+
+/**
+ * TIUX-19: lo que una persona todavía tiene de TI —accesos, licencias y
+ * equipos en custodia—, en tres consultas para todos los egresos abiertos de
+ * la pantalla (sin N+1). El checklist de egreso solo tenía casillas sueltas;
+ * esto es lo que esas casillas deberían estar mirando. `scope` es el mismo
+ * predicado de faena con que se listaron los checklists.
+ */
+export async function getEgressContexts(
+  workerIds: string[],
+  scope: SQL | undefined,
+): Promise<Map<string, EgressContext>> {
+  const map = new Map<string, EgressContext>()
+  if (workerIds.length === 0) return map
+  const entry = (id: string) => {
+    let value = map.get(id)
+    if (!value) { value = { accesses: [], licenses: [], assets: [] }; map.set(id, value) }
+    return value
+  }
+
+  const [accessRows, licenseRows, assetRows] = await Promise.all([
+    db.select({
+      workerId: itSystemAccess.workerId,
+      systemId: itSystemAccess.systemId,
+      systemName: itAccessSystems.name,
+      status: itSystemAccess.status,
+    })
+      .from(itSystemAccess)
+      .innerJoin(itAccessSystems, eq(itSystemAccess.systemId, itAccessSystems.id))
+      .innerJoin(workers, eq(itSystemAccess.workerId, workers.id))
+      .where(and(
+        inArray(itSystemAccess.workerId, workerIds),
+        isNull(itSystemAccess.revokedAt),
+        sql`${itSystemAccess.status} <> 'baja'`,
+        scope,
+      ))
+      .orderBy(asc(itAccessSystems.name)),
+    db.select({
+      workerId: itLicenseAssignments.workerId,
+      assignmentId: itLicenseAssignments.id,
+      licenseName: itLicenses.name,
+      worksiteName: worksites.name,
+    })
+      .from(itLicenseAssignments)
+      .innerJoin(itLicenses, eq(itLicenseAssignments.licenseId, itLicenses.id))
+      .innerJoin(workers, eq(itLicenseAssignments.workerId, workers.id))
+      .leftJoin(worksites, eq(itLicenseAssignments.worksiteId, worksites.id))
+      .where(and(
+        inArray(itLicenseAssignments.workerId, workerIds),
+        isNull(itLicenseAssignments.revokedAt),
+        scope,
+      ))
+      .orderBy(asc(itLicenses.name)),
+    db.select({
+      workerId: itAssetAssignments.workerId,
+      assignmentId: itAssetAssignments.id,
+      assetId: itAssets.id,
+      code: itAssets.code,
+      brand: itAssets.brand,
+      model: itAssets.model,
+    })
+      .from(itAssetAssignments)
+      .innerJoin(itAssets, eq(itAssetAssignments.assetId, itAssets.id))
+      .innerJoin(workers, eq(itAssetAssignments.workerId, workers.id))
+      .where(and(
+        inArray(itAssetAssignments.workerId, workerIds),
+        isNull(itAssetAssignments.returnedAt),
+        scope,
+      ))
+      .orderBy(asc(itAssets.code)),
+  ])
+
+  for (const row of accessRows) entry(row.workerId).accesses.push({ systemId: row.systemId, systemName: row.systemName, status: row.status })
+  for (const row of licenseRows) {
+    if (!row.workerId) continue
+    entry(row.workerId).licenses.push({ assignmentId: row.assignmentId, licenseName: row.licenseName, worksiteName: row.worksiteName })
+  }
+  for (const row of assetRows) {
+    entry(row.workerId).assets.push({
+      assignmentId: row.assignmentId,
+      assetId: row.assetId,
+      code: row.code,
+      label: [row.brand, row.model].filter(Boolean).join(" ") || row.code,
+    })
+  }
+  return map
+}
+
+/* ── Checklists de ingreso/egreso ─────────────────────────────────────────────── */
 
 export async function createChecklist(
   input: { workerId: string; kind: "onboarding" | "offboarding"; notes?: string | null },
@@ -279,8 +463,8 @@ export async function createChecklist(
       .limit(1)
     if (openChecklist) {
       throw new Error(input.kind === "onboarding"
-        ? "Este trabajador ya tiene un checklist de alta en curso"
-        : "Este trabajador ya tiene un checklist de baja en curso")
+        ? "Este trabajador ya tiene un ingreso en curso"
+        : "Este trabajador ya tiene un egreso en curso")
     }
 
     await tx.insert(itWorkerChecklists).values({

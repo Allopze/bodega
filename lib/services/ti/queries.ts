@@ -1,9 +1,10 @@
 import { eq, and, isNull, sql, type SQL } from "drizzle-orm"
+import { worksiteScopeSqlFor } from "@/lib/auth/scope"
 import { IT_RETIRED_STATUSES } from "./constants"
 import { db } from "@/db"
 import {
   itAssets, itAssetTypes, itMaintenances, itTickets, itLicenses,
-  itAssetAssignments, worksites,
+  itAssetAssignments, worksites, itSystemAccess, itWorkerChecklists, itChecklistTasks, workers,
 } from "@/db/schema"
 import { todayInChile } from "@/lib/utils"
 import { licenseScopeCondition } from "./licenses"
@@ -231,4 +232,177 @@ export async function getTicketsByMonth(scope?: SQL) {
     .where(scope ?? undefined)
     .groupBy(sql`date_trunc('month', ${itTickets.createdAt})`)
     .orderBy(sql`date_trunc('month', ${itTickets.createdAt})`)
+}
+
+
+/* ── Atención hoy (tablero Resumen) ──────────────────────────────────────── */
+
+export interface TiAttentionWorksiteCount { name: string; total: number }
+export interface TiAttentionItem {
+  key: string
+  label: string
+  /** Qué hay que hacer, en una frase. */
+  hint: string
+  total: number
+  byWorksite: TiAttentionWorksiteCount[]
+  /** Listado ya filtrado donde se actúa (contrato con L3–L6). */
+  href: string
+}
+
+type RawBreakdown = { name: string | null; total: number }[]
+
+function toItem(meta: Omit<TiAttentionItem, "total" | "byWorksite">, rows: RawBreakdown): TiAttentionItem {
+  const byWorksite = rows
+    .filter((row) => row.total > 0)
+    .map((row) => ({ name: row.name ?? "Sin faena", total: row.total }))
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, "es"))
+  return { ...meta, total: byWorksite.reduce((sum, row) => sum + row.total, 0), byWorksite }
+}
+
+const OPEN_TICKET_STATUSES = sql`('nuevo', 'asignado', 'en_diagnostico', 'en_progreso', 'esperando_usuario', 'esperando_proveedor')`
+/** Mismos 24 h de aviso que `ticketSlaStage` (TICKET_SLA_WARNING_HOURS). */
+const TICKET_WARNING_INTERVAL = sql`interval '24 hours'`
+
+/**
+ * Pendientes reales del módulo, cada uno con su desglose por faena y el
+ * listado filtrado donde se resuelven. El alcance se aplica por la columna de
+ * faena propia de cada entidad (`worksiteScopeSqlFor`): un rol acotado nunca ve
+ * un conteo de una faena ajena. Solo devuelve filas con conteo > 0.
+ */
+export async function getTiAttentionItems(
+  scope: TiWorksiteScope,
+  now: Date = new Date(),
+): Promise<TiAttentionItem[]> {
+  const today = todayInChile()
+  const nowIso = now.toISOString()
+
+  const assetScope = worksiteScopeSqlFor(scope, itAssets.worksiteId)
+  const assignmentScope = worksiteScopeSqlFor(scope, itAssetAssignments.worksiteId)
+  const ticketScope = worksiteScopeSqlFor(scope, itTickets.worksiteId)
+  const workerScope = worksiteScopeSqlFor(scope, workers.worksiteId)
+  const liveAsset = and(isNull(itAssets.deletedAt), assetScope)
+  const liveParkAsset = and(liveAsset, sql`${itAssets.status} NOT IN ${RETIRED_STATUSES}`)
+
+  const countBy = sql<number>`count(*)::int`
+
+  const assignmentBase = () => db
+    .select({ name: worksites.name, total: countBy })
+    .from(itAssetAssignments)
+    .innerJoin(itAssets, eq(itAssetAssignments.assetId, itAssets.id))
+    .innerJoin(worksites, eq(itAssetAssignments.worksiteId, worksites.id))
+
+  const ticketBase = () => db
+    .select({ name: worksites.name, total: countBy })
+    .from(itTickets)
+    .innerJoin(worksites, eq(itTickets.worksiteId, worksites.id))
+
+  const [
+    unsigned, overdueLoans, overdueTickets, dueSoonTickets, warranties,
+    licenses, inactiveAccess, offboardings, longRepairs,
+  ] = await Promise.all([
+    assignmentBase().where(and(
+      isNull(itAssetAssignments.returnedAt), isNull(itAssets.deletedAt), assignmentScope,
+      eq(itAssetAssignments.acceptanceStatus, "pendiente"),
+    )).groupBy(worksites.name),
+
+    assignmentBase().where(and(
+      isNull(itAssetAssignments.returnedAt), isNull(itAssets.deletedAt), assignmentScope,
+      eq(itAssetAssignments.kind, "loan"),
+      sql`${itAssetAssignments.expectedReturnDate} < ${today}::date`,
+    )).groupBy(worksites.name),
+
+    ticketBase().where(and(
+      sql`${itTickets.status} IN ${OPEN_TICKET_STATUSES}`, ticketScope,
+      sql`${itTickets.dueAt} < ${nowIso}::timestamptz`,
+    )).groupBy(worksites.name),
+
+    ticketBase().where(and(
+      sql`${itTickets.status} IN ${OPEN_TICKET_STATUSES}`, ticketScope,
+      sql`${itTickets.dueAt} >= ${nowIso}::timestamptz`,
+      sql`${itTickets.dueAt} <= ${nowIso}::timestamptz + ${TICKET_WARNING_INTERVAL}`,
+    )).groupBy(worksites.name),
+
+    db.select({ name: worksites.name, total: countBy })
+      .from(itAssets)
+      .leftJoin(worksites, eq(itAssets.worksiteId, worksites.id))
+      .where(and(
+        liveParkAsset,
+        sql`${itAssets.warrantyEndDate} >= ${today}`,
+        sql`${itAssets.warrantyEndDate} <= (${today}::date + 30)::text`,
+      )).groupBy(worksites.name),
+
+    // Las licencias no tienen faena propia: se acotan por las de sus
+    // asignaciones (`licenseScopeCondition`) y se cuentan sin desglose.
+    db.select({ name: sql<string | null>`null`, total: countBy })
+      .from(itLicenses)
+      .where(and(
+        licenseScopeCondition(scope),
+        eq(itLicenses.isActive, true),
+        sql`${itLicenses.renewalDate} >= ${today}`,
+        sql`${itLicenses.renewalDate} <= (${today}::date + 14)::text`,
+      )),
+
+    db.select({ name: worksites.name, total: sql<number>`count(distinct ${workers.id})::int` })
+      .from(itSystemAccess)
+      .innerJoin(workers, eq(itSystemAccess.workerId, workers.id))
+      .innerJoin(worksites, eq(workers.worksiteId, worksites.id))
+      .where(and(eq(workers.isActive, false), eq(itSystemAccess.status, "activo"), workerScope))
+      .groupBy(worksites.name),
+
+    db.select({ name: worksites.name, total: countBy })
+      .from(itWorkerChecklists)
+      .innerJoin(workers, eq(itWorkerChecklists.workerId, workers.id))
+      .innerJoin(worksites, eq(workers.worksiteId, worksites.id))
+      .where(and(
+        eq(itWorkerChecklists.kind, "offboarding"),
+        isNull(itWorkerChecklists.completedAt),
+        workerScope,
+        sql`EXISTS (SELECT 1 FROM ${itChecklistTasks} t WHERE t.checklist_id = ${itWorkerChecklists.id} AND t.done = false)`,
+      )).groupBy(worksites.name),
+
+    // Días en reparación = desde el último movimiento de estado del historial;
+    // sin historial se usa la última edición del activo.
+    db.select({ name: worksites.name, total: countBy })
+      .from(itAssets)
+      .leftJoin(worksites, eq(itAssets.worksiteId, worksites.id))
+      .where(and(
+        liveAsset,
+        eq(itAssets.status, "en_reparacion"),
+        sql`coalesce(
+          (SELECT max(h.created_at) FROM it_asset_history h
+            WHERE h.asset_id = ${itAssets.id} AND h.action IN ('status_changed', 'assigned', 'returned')),
+          ${itAssets.updatedAt}
+        ) < ${nowIso}::timestamptz - interval '14 days'`,
+      )).groupBy(worksites.name),
+  ])
+
+  const items = [
+    toItem({ key: "acuse", label: "Actas sin acuse de recibo", hint: "Registra el acuse o declara que no hubo", href: "/ti/asignaciones?acuse=pendiente" }, unsigned),
+    toItem({ key: "prestamos", label: "Préstamos vencidos", hint: "Pide la devolución o renueva el plazo", href: "/ti/asignaciones?prestamo=vencido" }, overdueLoans),
+    toItem({ key: "tickets-vencidos", label: "Tickets fuera de plazo", hint: "Ya pasó el plazo de atención", href: "/ti/tickets?vencimiento=vencido" }, overdueTickets),
+    toItem({ key: "tickets-por-vencer", label: "Tickets que vencen en 24 horas", hint: "Atiéndelos antes de que se atrasen", href: "/ti/tickets?vencimiento=por_vencer" }, dueSoonTickets),
+    toItem({ key: "garantias", label: "Garantías que vencen en 30 días", hint: "Reclama o cotiza reemplazo a tiempo", href: "/ti/garantias?ventana=expiring_30" }, warranties),
+    toItem({ key: "licencias", label: "Licencias por renovar en 14 días", hint: "Confirma la renovación con el responsable", href: "/ti/licencias?renovacion=proxima" }, licenses),
+    toItem({ key: "accesos-inactivos", label: "Ex trabajadores con accesos activos", hint: "Revoca los accesos que siguen abiertos", href: "/ti/accesos?revision=inactivos" }, inactiveAccess),
+    toItem({ key: "egresos", label: "Egresos con tareas pendientes", hint: "Completa la lista de egreso", href: "/ti/accesos?vista=ingreso-egreso" }, offboardings),
+    toItem({ key: "reparaciones", label: "Equipos en reparación hace más de 14 días", hint: "Pregunta al proveedor o da de baja", href: "/ti/activos?estado=en_reparacion" }, longRepairs),
+  ]
+  return items.filter((item) => item.total > 0)
+}
+
+/** Equipos del parque vigente por faena, partidos en 4 grupos de estado. */
+export async function getAssetsByWorksiteGroup(scope?: SQL) {
+  return db
+    .select({
+      worksiteName: sql<string>`coalesce(${worksites.name}, 'Sin faena')`,
+      inUse: sql<number>`count(*) filter (where ${itAssets.status} IN ('asignado', 'en_prestamo'))::int`,
+      available: sql<number>`count(*) filter (where ${itAssets.status} = 'disponible')::int`,
+      inRepair: sql<number>`count(*) filter (where ${itAssets.status} = 'en_reparacion')::int`,
+      other: sql<number>`count(*) filter (where ${itAssets.status} NOT IN ('asignado', 'en_prestamo', 'disponible', 'en_reparacion'))::int`,
+    })
+    .from(itAssets)
+    .leftJoin(worksites, eq(itAssets.worksiteId, worksites.id))
+    .where(activeParkWhere(scope))
+    .groupBy(worksites.name)
+    .orderBy(sql`count(*) DESC`)
 }

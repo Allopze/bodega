@@ -12,7 +12,9 @@ export type TiLabelMeta = StateMetaInput
 export const IT_ASSET_STATUS_META: Record<string, TiLabelMeta> = {
   disponible:    { label: "Disponible",     variant: "success" },
   asignado:      { label: "Asignado",       variant: "info" },
-  en_prestamo:   { label: "En préstamo",    variant: "primary" },
+  // Rutina, no alerta: "primary" es el mismo verde que "Disponible" y los
+  // dos estados se leían iguales en la columna Estado.
+  en_prestamo:   { label: "En préstamo",    variant: "info" },
   en_reparacion: { label: "En reparación",  variant: "warning" },
   en_bodega:     { label: "En bodega",      variant: "neutral" },
   dado_de_baja:  { label: "Dado de baja",   variant: "default" },
@@ -32,6 +34,35 @@ export const IT_ASSIGNMENT_KIND_META: Record<string, string> = {
   loan:        "Préstamo",
   transfer:    "Transferencia",
   repair_exit: "Salida a reparación",
+}
+
+/**
+ * TIUX-14: estado del acuse del acta. «Sin acuse aún» es un pendiente que
+ * alguien debe cerrar, por eso es signal (acción esperada) y no warning; «Sin
+ * acuse» ya es una constancia cerrada con motivo.
+ */
+export const IT_ACCEPTANCE_META: Record<string, TiLabelMeta> = {
+  aceptada:  { label: "Con acuse",     variant: "success" },
+  pendiente: { label: "Sin acuse aún", variant: "signal" },
+  sin_acuse: { label: "Sin acuse",     variant: "danger" },
+}
+
+/** TIUX-14: distintivo de un préstamo abierto cuya fecha de devolución ya pasó. */
+export const IT_LOAN_OVERDUE_META: TiLabelMeta = { label: "Préstamo vencido", variant: "danger" }
+
+/**
+ * Préstamo vencido = abierto, de tipo préstamo y con la fecha comprometida
+ * anterior a `today` (`todayInChile()`). Las dos fechas son civiles
+ * `YYYY-MM-DD`, así que la comparación de cadenas es la de fechas.
+ */
+export function isLoanOverdue(
+  assignment: { kind: string; returnedAt: string | null; expectedReturnDate?: string | null },
+  today: string,
+): boolean {
+  return assignment.kind === "loan"
+    && !assignment.returnedAt
+    && Boolean(assignment.expectedReturnDate)
+    && (assignment.expectedReturnDate as string) < today
 }
 
 export const IT_MAINTENANCE_TYPE_META: Record<string, string> = {
@@ -92,7 +123,7 @@ export const IT_LICENSE_PERIODICITY_META: Record<string, string> = {
 export const IT_ACCESS_STATUS_META: Record<string, TiLabelMeta> = {
   activo:     { label: "Activo",     variant: "success" },
   suspendido: { label: "Suspendido", variant: "warning" },
-  baja:       { label: "Baja",       variant: "default" },
+  baja:       { label: "Revocado",   variant: "default" },
 }
 
 export const IT_SUPPLIER_CATEGORY_META: Record<string, string> = {
@@ -115,12 +146,15 @@ export const IT_ASSET_CATEGORY_META: Record<string, string> = {
   otro:           "Otros",
 }
 
+/* "Baja" ya nombraba el estado "Dado de baja" del activo y la revocación de un
+ * acceso: el checklist de salida de una persona se llamaba igual que las otras
+ * dos cosas. Ingreso/Egreso es el vocabulario de personas de la faena. */
 export const IT_CHECKLIST_KIND_META: Record<string, string> = {
-  onboarding:  "Alta",
-  offboarding: "Baja",
+  onboarding:  "Ingreso",
+  offboarding: "Egreso",
 }
 
-/** Plantilla de checklist de alta: se instancia (copia el nombre) al crear. */
+/** Plantilla de checklist de ingreso: se instancia (copia el nombre) al crear. */
 export const ONBOARDING_CHECKLIST_TEMPLATE = [
   "Crear correo corporativo",
   "Crear accesos correspondientes",
@@ -131,7 +165,7 @@ export const ONBOARDING_CHECKLIST_TEMPLATE = [
   "Entregar accesorios",
 ] as const
 
-/** Plantilla de checklist de baja. */
+/** Plantilla de checklist de egreso. */
 export const OFFBOARDING_CHECKLIST_TEMPLATE = [
   "Bloquear correo corporativo",
   "Revocar accesos",

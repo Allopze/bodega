@@ -60,9 +60,28 @@ describe("validación zod del módulo TI", () => {
   })
 
   it("valida devolución con nextStatus restringido", () => {
-    const base = { assignmentId: "asg1", returnedAt: "2026-01-10T17:00" } // fecha pasada válida
+    const base = { assignmentId: "asg1", returnedAt: "2026-01-10T17:00", returnPhysicalState: "bueno" } // fecha pasada válida
     expect(itAssignmentReturnSchema.safeParse({ ...base, nextStatus: "en_bodega" }).success).toBe(true)
+    expect(itAssignmentReturnSchema.safeParse({ ...base, nextStatus: "en_reparacion" }).success).toBe(true)
     expect(itAssignmentReturnSchema.safeParse({ ...base, nextStatus: "perdido" }).success).toBe(false)
+    // TIUX-09: el estado físico ya no se asume «bueno».
+    expect(itAssignmentReturnSchema.safeParse({ assignmentId: "asg1", returnedAt: "2026-01-10T17:00" }).success).toBe(false)
+  })
+
+  it("TIUX-14: un préstamo exige «devolver a más tardar», no anterior a la entrega", () => {
+    const base = {
+      assetId: "a1", workerId: "w1", worksiteId: "ws1",
+      deliveredAt: "2026-09-01T10:00", physicalState: "bueno", kind: "loan",
+    }
+    expect(itAssignmentCreateSchema.safeParse(base).success).toBe(false)
+    expect(itAssignmentCreateSchema.safeParse({ ...base, expectedReturnDate: "" }).success).toBe(false)
+    expect(itAssignmentCreateSchema.safeParse({ ...base, expectedReturnDate: "2026-08-31" }).success).toBe(false)
+    expect(itAssignmentCreateSchema.safeParse({ ...base, expectedReturnDate: "2026-09-01" }).success).toBe(true)
+    expect(itAssignmentCreateSchema.safeParse({ ...base, expectedReturnDate: "2026-09-15" }).success).toBe(true)
+    // Una entrega común no vence: la fecha es opcional y no se exige.
+    expect(itAssignmentCreateSchema.safeParse({ ...base, kind: "delivery" }).success).toBe(true)
+    // Sin estado físico elegido no hay acta.
+    expect(itAssignmentCreateSchema.safeParse({ ...base, kind: "delivery", physicalState: undefined }).success).toBe(false)
   })
 
   it("valida mantención con trabajo descrito", () => {

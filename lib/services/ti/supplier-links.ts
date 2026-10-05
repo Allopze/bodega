@@ -2,7 +2,7 @@ import { eq, and, asc, isNull, sql, notInArray, type SQL } from "drizzle-orm"
 import { IT_RETIRED_STATUSES } from "./constants"
 import { db } from "@/db"
 import {
-  itSupplierLinks, suppliers, itAssets, itMaintenances, itLicenses, workers,
+  itSupplierLinks, suppliers, itAssets, itMaintenances, itLicenses, workers, worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
@@ -140,8 +140,11 @@ export async function listAssetsByWarranty(filters: {
       purchaseDate: itAssets.purchaseDate,
       supplierName: suppliers.name,
       workerName: sql<string>`trim(concat(${workers.firstName}, ' ', ${workers.lastName}))`,
+      worksiteId: itAssets.worksiteId,
+      worksiteName: worksites.name,
     })
     .from(itAssets)
+    .leftJoin(worksites, eq(itAssets.worksiteId, worksites.id))
     .leftJoin(suppliers, eq(itAssets.supplierId, suppliers.id))
     .leftJoin(workers, eq(itAssets.workerId, workers.id))
     .where(and(...conditions))

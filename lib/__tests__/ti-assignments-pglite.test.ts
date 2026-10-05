@@ -20,7 +20,7 @@ vi.mock("@/db", () => ({
 
 import {
   createAssignment, recordAssignmentAcceptance, returnAssignment, transferAssignment,
-  listAssignments, getAssignmentById, getAssignmentAccessories, getAssignmentPhotos,
+  listAssignments, countAssignmentAlerts, getAssignmentById, getAssignmentAccessories, getAssignmentPhotos,
 } from "@/lib/services/ti/assignments"
 import { createAsset } from "@/lib/services/ti/assets"
 import { getAssetHistory } from "@/lib/services/ti/history"
@@ -504,6 +504,7 @@ describe("módulo TI — asignaciones (custodia)", () => {
       worksiteId: "ws-ti-norte",
       kind: "loan",
       deliveredAt: "2026-09-01T10:00",
+      expectedReturnDate: "2026-09-10",
       physicalState: "bueno",
       accessoryNames: [],
       photoIds: [],
@@ -614,6 +615,7 @@ describe("módulo TI — asignaciones (custodia)", () => {
       newWorksiteId: "ws-ti-sur",
       newKind: "loan",
       newDeliveredAt: "2026-09-03T10:00",
+      newExpectedReturnDate: "2026-09-20",
       newPhysicalState: "bueno",
       newAccessoryNames: [],
       photoIds: [],
@@ -626,6 +628,76 @@ describe("módulo TI — asignaciones (custodia)", () => {
     const [nueva] = await testDb.select().from(schema.itAssetAssignments)
       .where(and(eq(schema.itAssetAssignments.assetId, assetId), isNull(schema.itAssetAssignments.returnedAt)))
     expect(nueva?.kind).toBe("loan")
+  })
+
+  /* ── TIUX-14 · préstamos con vencimiento ────────────────────────────────── */
+  describe("préstamos con vencimiento (TIUX-14)", () => {
+    const loanBase = {
+      workerId: "wk-ti-juan", worksiteId: "ws-ti-norte", kind: "loan",
+      deliveredAt: "2026-09-01T10:00", physicalState: "bueno", accessoryNames: [], photoIds: [],
+    }
+
+    it("rechaza un préstamo sin fecha de devolución o con una anterior a la entrega", async () => {
+      const assetId = await makeAsset("TI-A-LOAN-SIN-FECHA")
+      await expect(createAssignment({ ...loanBase, assetId }, actor)).rejects.toThrow(/hasta cuándo/)
+      await expect(createAssignment({ ...loanBase, assetId, expectedReturnDate: "2026-08-31" }, actor))
+        .rejects.toThrow(/anterior a la entrega/)
+      const [asset] = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
+      expect(asset?.status).toBe("disponible")
+    })
+
+    it("una entrega común no guarda fecha de devolución aunque llegue una", async () => {
+      const assetId = await makeAsset("TI-A-ENTREGA-FECHA")
+      const id = await createAssignment({
+        ...loanBase, assetId, kind: "delivery", expectedReturnDate: "2026-12-31",
+      }, actor)
+      const acta = await getAssignmentById(id)
+      expect(acta?.expectedReturnDate).toBeNull()
+    })
+
+    it("lista como vencido solo el préstamo abierto con fecha pasada y filtra por acuse y vencimiento", async () => {
+      const vencido = await createAssignment({
+        ...loanBase, assetId: await makeAsset("TI-A-LOAN-VENCIDO"), expectedReturnDate: "2026-09-10",
+      }, actor)
+      const vigente = await createAssignment({
+        ...loanBase, assetId: await makeAsset("TI-A-LOAN-VIGENTE"), expectedReturnDate: "2999-01-01",
+      }, actor)
+
+      const todas = await listAssignments({})
+      expect(todas.find((a) => a.id === vencido)?.loanOverdue).toBe(true)
+      expect(todas.find((a) => a.id === vigente)?.loanOverdue).toBe(false)
+
+      const soloVencidos = await listAssignments({ overdueLoans: true })
+      expect(soloVencidos.map((a) => a.id)).toContain(vencido)
+      expect(soloVencidos.map((a) => a.id)).not.toContain(vigente)
+
+      // Devuelto deja de estar vencido.
+      await returnAssignment({
+        assignmentId: vencido, returnedAt: "2026-09-12T09:00", returnPhysicalState: "bueno",
+        returnedAccessoryNames: [], nextStatus: "disponible", photoIds: [],
+      }, actor)
+      expect((await listAssignments({ overdueLoans: true })).map((a) => a.id)).not.toContain(vencido)
+
+      // Todas nacen con el acuse pendiente.
+      expect((await listAssignments({ pendingAcceptance: true })).map((a) => a.id)).toContain(vigente)
+
+      // Los contadores de los filtros salen de las mismas condiciones.
+      const alertas = await countAssignmentAlerts()
+      expect(alertas.overdueLoans).toBe((await listAssignments({ overdueLoans: true })).length)
+      expect(alertas.pendingAcceptance).toBe((await listAssignments({ pendingAcceptance: true })).length)
+    })
+
+    it("la devolución puede dejar el activo 'en_reparacion' (TIUX-48)", async () => {
+      const assetId = await makeAsset("TI-A-DEVUELVE-REPARACION")
+      const id = await createAssignment({ ...loanBase, kind: "delivery", assetId }, actor)
+      await returnAssignment({
+        assignmentId: id, returnedAt: "2026-09-02T09:00", returnPhysicalState: "malo",
+        returnedAccessoryNames: [], nextStatus: "en_reparacion", photoIds: [],
+      }, actor)
+      const [asset] = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
+      expect(asset?.status).toBe("en_reparacion")
+      expect(asset?.workerId).toBeNull()
+    })
   })
 
   /* ── TIA-001 y TIA-002 · el acuse del acta de entrega ───────────────────── */

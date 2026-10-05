@@ -23,7 +23,7 @@ import { getMaintenanceCostByMonth } from "@/lib/services/ti/queries"
 import { getAssetHistory } from "@/lib/services/ti/history"
 import { retireAsset, reverseRetirement, retirementTargetStatus, listRetirements } from "@/lib/services/ti/retirements"
 import { createSupplierLink, deleteSupplierLink, listSupplierLinks, listAssetsByWarranty } from "@/lib/services/ti/supplier-links"
-import { createAsset, softDeleteAsset, changeAssetStatus } from "@/lib/services/ti/assets"
+import { createAsset, softDeleteAsset } from "@/lib/services/ti/assets"
 import { createAssignment } from "@/lib/services/ti/assignments"
 
 describe("módulo TI — mantenciones, bajas, proveedores y garantías", () => {
@@ -68,6 +68,33 @@ describe("módulo TI — mantenciones, bajas, proveedores y garantías", () => {
       const row = ranking.find((r) => r.assetId === assetId)
       expect(row?.totalCost).toBe(150_000)
       expect(row?.count).toBe(1)
+    })
+
+    it("filtra por tipo y período, trae la faena y escribe el historial con etiquetas", async () => {
+      const assetId = await makeAsset("TI-M-0090", "ws-ti-sur")
+      await createMaintenance({ assetId, type: "reparacion", date: "2026-03-10", workDone: "Cambio de bisagra", cost: 20_000 }, actor)
+      await createMaintenance({ assetId, type: "preventiva", date: "2026-05-10", workDone: "Limpieza", cost: 5_000 }, actor)
+
+      const soloReparacion = await listMaintenances({ assetId, type: "reparacion" })
+      expect(soloReparacion).toHaveLength(1)
+      expect(soloReparacion[0]?.worksiteName).toBeTruthy()
+
+      expect(await listMaintenances({ assetId, from: "2026-04-01" })).toHaveLength(1)
+      expect(await listMaintenances({ assetId, from: "2026-03-10", to: "2026-03-10" })).toHaveLength(1)
+      expect(await listMaintenances({ assetId, from: "2026-06-01" })).toHaveLength(0)
+
+      // Historial: etiqueta en español y fecha de usuario, nunca el enum ni el ISO.
+      const detail = (await getAssetHistory(assetId)).map((h) => h.detail).join(" | ")
+      expect(detail).toContain("Mantención reparación registrada (10-03-2026)")
+      expect(detail).not.toContain("reparacion")
+    })
+
+    it("el ranking trae el costo de compra del equipo para comparar el gasto", async () => {
+      const assetId = await makeAsset("TI-M-0091")
+      await createMaintenance({ assetId, type: "correctiva", date: "2026-07-01", workDone: "Placa", cost: 250_000 }, actor)
+      const row = (await maintenanceCostByAsset()).find((r) => r.assetId === assetId)
+      expect(row?.assetCost).toBe(500_000)
+      expect(row?.totalCost).toBe(250_000)
     })
 
     it("actualiza el costo de una mantención", async () => {
@@ -245,6 +272,23 @@ describe("módulo TI — mantenciones, bajas, proveedores y garantías", () => {
       expect(retirementRow?.closedAssignmentId).toBeNull()
     })
 
+    it("la lista de bajas trae faena y autorizante, filtra por motivo y escribe el historial con etiquetas", async () => {
+      const assetId = await makeAsset("TI-R-0090")
+      const retirementId = await retireAsset({
+        assetId, date: "2026-09-01", reason: "destruccion",
+        responsibleUserId: actor.userId, authorizedByUserId: AUTHORIZER,
+      }, actor)
+
+      const row = (await listRetirements({ assetId })).find((r) => r.id === retirementId)
+      expect(row?.authorizedByName).toBeTruthy()
+      expect(row?.worksiteName).toBeTruthy()
+      expect(await listRetirements({ assetId, reason: "destruccion" })).toHaveLength(1)
+      expect(await listRetirements({ assetId, reason: "venta" })).toHaveLength(0)
+
+      const detail = (await getAssetHistory(assetId)).map((h) => h.detail).join(" | ")
+      expect(detail).toContain("Baja de activo (destrucción). Fecha: 01-09-2026.")
+    })
+
     it("no permite dar de baja dos veces el mismo activo", async () => {
       const assetId = await makeAsset("TI-R-0003")
       await retireAsset({
@@ -388,9 +432,10 @@ describe("módulo TI — mantenciones, bajas, proveedores y garantías", () => {
         responsibleUserId: actor.userId, authorizedByUserId: AUTHORIZER,
       }, actor)
 
-      // Hueco real y documentado del módulo: `changeAssetStatus` permite
-      // "resucitar" un activo dado de baja sin pasar por `reverseRetirement`.
-      await changeAssetStatus({ assetId, status: "disponible", reason: "Reactivado a mano" }, actor)
+      // `changeAssetStatus` ya no deja "resucitar" un activo dado de baja
+      // (TIUX-01), pero datos anteriores a esa regla pueden tenerlo así: se
+      // simula con una escritura directa para seguir cubriendo el bloqueo.
+      await testDb.update(schema.itAssets).set({ status: "disponible" }).where(eq(schema.itAssets.id, assetId))
 
       await expect(reverseRetirement(retirementId, "Intento de revertir sobre un estado ya cambiado", actor))
         .rejects.toThrow(/ya fue sobrescrito/)
@@ -402,7 +447,7 @@ describe("módulo TI — mantenciones, bajas, proveedores y garantías", () => {
         assetId, date: "2026-09-01", reason: "venta",
         responsibleUserId: actor.userId, authorizedByUserId: AUTHORIZER,
       }, actor)
-      await changeAssetStatus({ assetId, status: "disponible", reason: "Reactivado a mano" }, actor)
+      await testDb.update(schema.itAssets).set({ status: "disponible" }).where(eq(schema.itAssets.id, assetId))
       await retireAsset({
         assetId, date: "2026-09-05", reason: "venta",
         responsibleUserId: actor.userId, authorizedByUserId: AUTHORIZER,

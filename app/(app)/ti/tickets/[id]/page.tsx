@@ -7,11 +7,12 @@ import { db } from "@/db"
 import { itTickets, users } from "@/db/schema"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { getTicketById, getTicketComments } from "@/lib/services/ti/tickets"
+import { getTicketById, getTicketTimeline } from "@/lib/services/ti/tickets"
+import { ticketDueInfo } from "@/lib/services/ti/ticket-sla"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { TicketDetail } from "./ticket-detail"
 
-export const metadata: Metadata = { title: "Ticket TI" }
+export const metadata: Metadata = { title: "Ticket de mesa de ayuda" }
 
 export default async function TicketDetailPage({
   params,
@@ -37,8 +38,8 @@ export default async function TicketDetailPage({
 
   // Técnicos asignables: quienes pueden gestionar tickets TI. Solo se consulta
   // cuando el panel de gestión va a renderizarse.
-  const [comments, technicians] = await Promise.all([
-    getTicketComments(id, canInternal),
+  const [timeline, technicians] = await Promise.all([
+    getTicketTimeline(id, canInternal),
     canManage ? assignableTechnicians() : Promise.resolve([]),
   ])
 
@@ -49,14 +50,18 @@ export default async function TicketDetailPage({
         description={ticket.subject}
         breadcrumb={<Breadcrumbs items={[
           { label: "TI", href: "/ti" },
-          { label: "Tickets", href: "/ti/tickets" },
+          { label: "Mesa de ayuda", href: "/ti/tickets" },
           { label: ticket.code },
         ]} />}
       />
 
       <TicketDetail
         ticket={ticket}
-        comments={comments}
+        timeline={timeline}
+        // Calculado aquí y no en el cliente: «en 2 días» depende de la hora y
+        // distinta entre servidor y navegador rompería la hidratación.
+        due={ticketDueInfo(ticket)}
+        currentUserId={session.user.id}
         technicians={technicians}
         canManage={canManage}
         canInternal={canInternal}

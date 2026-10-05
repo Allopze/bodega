@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import Image from "next/image"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
@@ -14,26 +13,27 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { DateTimePicker } from "@/components/ui/date-time-picker"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toLocalInputValue } from "@/lib/utils"
-import { X, Plus, Camera } from "@phosphor-icons/react"
+import { X, Plus } from "@phosphor-icons/react"
 import { createAssignmentAction } from "./actions"
+import { EvidencePhotos, useEvidencePhotos } from "./evidence-photos"
+import { PhysicalStateChoice } from "./physical-state-choice"
 import { IT_ASSIGNMENT_KINDS, IT_PHYSICAL_STATES } from "@/lib/validation/ti"
-import { IT_ASSIGNMENT_KIND_META, IT_PHYSICAL_STATE_META, ACCESSORY_SUGGESTIONS } from "@/lib/services/ti/constants"
+import { IT_ASSIGNMENT_KIND_META, ACCESSORY_SUGGESTIONS } from "@/lib/services/ti/constants"
 
 interface AssignmentSheetProps {
-  trigger: React.ReactNode
+  /** Opcional: la hoja puede abrirse desde fuera con `open`/`onOpenChange`. */
+  trigger?: React.ReactNode
+  /** Control externo del estado abierto (opcional; sin él la hoja se abre sola con `trigger`). */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   assetId?: string
   workers: { id: string; name: string; lastName: string }[]
   worksites: { id: string; name: string }[]
   assets?: { id: string; code: string; status: string; typeName: string }[]
-}
-
-interface UploadedPhoto {
-  id: string
-  previewUrl: string
-  caption: string
 }
 
 const ALL = "_all"
@@ -46,7 +46,7 @@ export function AssignmentCta({
   workers,
   worksites,
   assets = [],
-}: Omit<AssignmentSheetProps, "trigger" | "assetId">) {
+}: Omit<AssignmentSheetProps, "trigger" | "assetId" | "open" | "onOpenChange">) {
   return (
     <AssignmentSheet
       trigger={<Button><Plus size={14} className="mr-1.5" /> Nueva entrega</Button>}
@@ -57,71 +57,41 @@ export function AssignmentCta({
   )
 }
 
-export function AssignmentSheet({ trigger, assetId, workers, worksites, assets = [] }: AssignmentSheetProps) {
-  const [open, setOpen] = React.useState(false)
+export function AssignmentSheet({ trigger, open: openProp, onOpenChange, assetId, workers, worksites, assets = [] }: AssignmentSheetProps) {
+  const [openState, setOpenState] = React.useState(false)
+  const open = openProp ?? openState
+  const setOpen = (value: boolean) => {
+    if (openProp === undefined) setOpenState(value)
+    onOpenChange?.(value)
+  }
   const [selectedAsset, setSelectedAsset] = React.useState(assetId ?? "")
   const [kind, setKind] = React.useState("delivery")
   const [deliveredAt, setDeliveredAt] = React.useState(toLocalInputValue(new Date()))
-  const [physicalState, setPhysicalState] = React.useState("bueno")
+  const [expectedReturnDate, setExpectedReturnDate] = React.useState("")
+  // TIUX-09: sin estado preseleccionado; quien entrega el equipo lo declara.
+  const [physicalState, setPhysicalState] = React.useState<string | null>(null)
   const [accessories, setAccessories] = React.useState<string[]>([])
   const [accessoryDraft, setAccessoryDraft] = React.useState("")
-  const [photos, setPhotos] = React.useState<UploadedPhoto[]>([])
-  const [uploading, setUploading] = React.useState(false)
-  const fileInputRef = React.useRef<HTMLInputElement>(null)
-  const pendingPhotoIdsRef = React.useRef<string[]>([])
-
-  React.useEffect(() => {
-    pendingPhotoIdsRef.current = photos.map((photo) => photo.id)
-  }, [photos])
-
-  const previewUrlsRef = React.useRef<string[]>([])
-  React.useEffect(() => {
-    previewUrlsRef.current = photos.map((photo) => photo.previewUrl)
-  }, [photos])
-  React.useEffect(() => () => {
-    previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
-  }, [])
-
-  async function discardPendingPhotos(ids = pendingPhotoIdsRef.current) {
-    await Promise.all(ids.map(async (id) => {
-      await fetch(`/api/ti/photos/${id}`, { method: "DELETE" }).catch(() => undefined)
-    }))
-  }
+  const evidence = useEvidencePhotos({ stage: "delivery" })
 
   function closeSheet() {
-    const pendingIds = pendingPhotoIdsRef.current
-    pendingPhotoIdsRef.current = []
-    setPhotos((current) => {
-      current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl))
-      return []
-    })
+    evidence.discardAll()
     setOpen(false)
-    if (pendingIds.length > 0) void discardPendingPhotos(pendingIds)
-  }
-
-  function removePhoto(photo: UploadedPhoto) {
-    URL.revokeObjectURL(photo.previewUrl)
-    pendingPhotoIdsRef.current = pendingPhotoIdsRef.current.filter((id) => id !== photo.id)
-    setPhotos((current) => current.filter((item) => item.id !== photo.id))
-    void discardPendingPhotos([photo.id])
   }
 
   const [state, formAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
     const result = await createAssignmentAction(prev, formData)
     if (result.ok) {
       toast.success(result.message ?? "Entrega registrada")
-      pendingPhotoIdsRef.current = []
+      evidence.releaseAfterSubmit()
       setOpen(false)
-      setPhotos((current) => {
-        current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl))
-        return []
-      })
       setAccessories([])
       // La hoja sigue montada: el activo recién entregado ya no está disponible
       // y la próxima entrega debe partir del formulario en blanco.
       setSelectedAsset(assetId ?? "")
       setKind("delivery")
-      setPhysicalState("bueno")
+      setExpectedReturnDate("")
+      setPhysicalState(null)
       setAccessoryDraft("")
     } else if (result.message && !result.fieldErrors) {
       toast.error(result.message)
@@ -137,36 +107,6 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
 
   const availableAssets = assetId ? assets : assets.filter((a) => ["disponible", "en_bodega"].includes(a.status))
 
-  async function uploadPhoto(file: File, caption: string) {
-    setUploading(true)
-    try {
-      const form = new FormData()
-      form.append("file", file)
-      form.append("stage", "delivery")
-      form.append("caption", caption)
-      const response = await fetch("/api/ti/photos", { method: "POST", body: form })
-      let payload: { id?: unknown; error?: string } = {}
-      try {
-        payload = await response.json() as { id?: unknown; error?: string }
-      } catch {
-        // A proxy/runtime error can return an empty or non-JSON body.
-      }
-      if (!response.ok) {
-        toast.error(payload.error ?? "No se pudo subir la fotografía")
-        return
-      }
-      if (typeof payload.id !== "string" || !payload.id) {
-        toast.error("La fotografía se subió sin un identificador válido")
-        return
-      }
-      setPhotos((prev) => [...prev, { id: payload.id as string, previewUrl: URL.createObjectURL(file), caption }])
-    } catch {
-      toast.error("No se pudo subir la fotografía")
-    } finally {
-      setUploading(false)
-    }
-  }
-
   function addAccessory() {
     const name = accessoryDraft.trim()
     if (!name) return
@@ -177,11 +117,10 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) closeSheet(); else openSheet() }}>
-      <SheetTrigger asChild>{trigger}</SheetTrigger>
+      {trigger && <SheetTrigger asChild>{trigger}</SheetTrigger>}
       <SheetContent className="sm:max-w-xl">
         <form action={formAction} className="flex flex-col flex-1 min-h-0">
           <input type="hidden" name="accessoriesJson" value={JSON.stringify(accessories)} />
-          <input type="hidden" name="photoIdsJson" value={JSON.stringify(photos.map((p) => p.id))} />
           <input type="hidden" name="assetId" value={selectedAsset} />
 
           <SheetHeader>
@@ -241,8 +180,8 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
                 </Field>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Field label="Tipo" required>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Tipo" required error={state.fieldErrors?.kind?.[0]}>
                   <Select name="kind" value={kind} onValueChange={setKind}>
                     <SelectTrigger aria-label="Tipo de entrega">
                       <SelectValue />
@@ -254,22 +193,39 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Fecha y hora de entrega" required error={state.fieldErrors?.deliveredAt?.[0]}>
-                  <DateTimePicker name="deliveredAt" value={deliveredAt} onChange={setDeliveredAt} />
-                </Field>
-                <Field label="Estado físico" required helper="Cómo se entrega el equipo.">
-                  <Select name="physicalState" value={physicalState} onValueChange={setPhysicalState}>
-                    <SelectTrigger aria-label="Estado físico">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {IT_PHYSICAL_STATES.map((s) => (
-                        <SelectItem key={s} value={s}>{IT_PHYSICAL_STATE_META[s]?.label ?? s}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
+                {/* TIUX-14: solo un préstamo vence; la fecha de vuelta es lo que permite reclamarlo. */}
+                {kind === "loan" && (
+                  <Field
+                    label="Devolver a más tardar"
+                    required
+                    error={state.fieldErrors?.expectedReturnDate?.[0]}
+                    helper="Pasada esta fecha el préstamo aparece como vencido."
+                  >
+                    <DatePicker
+                      name="expectedReturnDate"
+                      value={expectedReturnDate}
+                      onChange={setExpectedReturnDate}
+                      min={deliveredAt.slice(0, 10)}
+                      ariaLabel="Devolver a más tardar"
+                    />
+                  </Field>
+                )}
               </div>
+
+              {/* TIUX-23: fila propia. En un tercio de columna el selector quedaba en ~30 px, solo con el ícono. */}
+              <Field label="Fecha y hora de entrega" required error={state.fieldErrors?.deliveredAt?.[0]}>
+                <DateTimePicker name="deliveredAt" value={deliveredAt} onChange={setDeliveredAt} />
+              </Field>
+
+              <PhysicalStateChoice
+                name="physicalState"
+                label="Estado físico al entregar"
+                states={IT_PHYSICAL_STATES}
+                value={physicalState}
+                onChange={setPhysicalState}
+                error={state.fieldErrors?.physicalState?.[0]}
+                helper="Cómo recibe el equipo el trabajador."
+              />
 
               {/*
                 TIA-001 (auditoría 2026-09-14): aquí había una casilla
@@ -280,7 +236,7 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
               */}
               <Field label="Aceptación del trabajador" helper="El acta nace pendiente de acuse: lo registra después alguien distinto de quien entrega.">
                 <p className="text-sm text-[var(--color-text-subtle)]">
-                  Pendiente de acuse hasta que se registre desde el acta.
+                  Pendiente de acuse hasta que se registre desde la lista de entregas.
                 </p>
               </Field>
 
@@ -294,7 +250,7 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
                       placeholder="Escribe un accesorio y presiona Enter"
                       list="ti-accessory-suggestions"
                     />
-                    <Button type="button" variant="secondary" size="sm" onClick={addAccessory}>
+                    <Button type="button" variant="secondary" size="sm" onClick={addAccessory} aria-label="Agregar accesorio">
                       <Plus size={14} />
                     </Button>
                     <datalist id="ti-accessory-suggestions">
@@ -320,47 +276,7 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
                 label="Evidencia fotográfica"
                 helper="Fotos del estado físico al entregar: pantalla, tapa, teclado, costados, cargador y accesorios. Quedan asociadas a esta entrega para siempre."
               >
-                <div className="space-y-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png"
-                    multiple
-                    className="sr-only"
-                    onChange={async (e) => {
-                      const files = Array.from(e.target.files ?? [])
-                      for (const file of files) await uploadPhoto(file, "")
-                      e.target.value = ""
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={uploading}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Camera size={14} className="mr-1.5" />
-                    {uploading ? "Subiendo..." : "Subir fotografías"}
-                  </Button>
-                  {photos.length > 0 && (
-                    <div className="grid grid-cols-3 gap-2">
-                      {photos.map((photo) => (
-                        <div key={photo.id} className="group relative overflow-hidden rounded-lg border border-[var(--color-border)]">
-                          <Image src={photo.previewUrl} alt="Evidencia de entrega" width={200} height={150} className="aspect-[4/3] w-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => removePhoto(photo)}
-                            aria-label="Quitar fotografía"
-                            className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                          >
-                            <X size={11} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <EvidencePhotos controller={evidence} alt="Evidencia de entrega" />
               </Field>
 
               <Field label="Observaciones">

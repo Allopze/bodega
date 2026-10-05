@@ -16,15 +16,37 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { todayInChile } from "@/lib/utils"
-import { Archive } from "@phosphor-icons/react"
+import { Callout } from "@/components/ui/callout"
+import { Archive, Info } from "@phosphor-icons/react"
 import { retireAssetAction } from "./actions"
 import { IT_RETIREMENT_REASONS } from "@/lib/validation/ti"
 import { IT_RETIREMENT_REASON_META } from "@/lib/services/ti/constants"
 
+/** Activo que se puede dar de baja. Los campos de contexto son opcionales: quien no los tiene sigue funcionando. */
+export interface RetirementAssetOption {
+  id: string
+  code: string
+  typeName: string
+  brand?: string | null
+  model?: string | null
+  /** Custodio vigente, si lo hay. */
+  workerName?: string | null
+  worksiteName?: string | null
+}
+
 interface RetirementSheetProps {
   trigger: React.ReactNode
-  assets: { id: string; code: string; typeName: string }[]
+  assets: RetirementAssetOption[]
   users: { id: string; name: string }[]
+  /** Preselecciona y bloquea el activo (la ficha ya sabe cuál es). */
+  assetId?: string
+}
+
+const assetModelLabel = (a: RetirementAssetOption) => [a.brand, a.model].filter(Boolean).join(" ")
+
+/** "TI-NB-0042 · Dell Latitude · Ana Pérez": con qué equipo y de quién se trata, no solo el código. */
+function assetOptionLabel(a: RetirementAssetOption) {
+  return [a.code, assetModelLabel(a) || a.typeName, a.workerName].filter(Boolean).join(" · ")
 }
 
 /**
@@ -41,9 +63,13 @@ export function RetirementCta({ assets, users }: Omit<RetirementSheetProps, "tri
   )
 }
 
-export function RetirementSheet({ trigger, assets, users }: RetirementSheetProps) {
+export function RetirementSheet({ trigger, assets, users, assetId }: RetirementSheetProps) {
   const [open, setOpen] = React.useState(false)
-  const [reason, setReason] = React.useState("venta")
+  const [selectedAssetId, setSelectedAssetId] = React.useState(assetId ?? "")
+  // Sin motivo por defecto: "Venta" preseleccionado hacía que una baja por
+  // pérdida o robo —que además cierra la custodia— se registrara con el
+  // motivo equivocado si el usuario no miraba el campo.
+  const [reason, setReason] = React.useState("")
   const [date, setDate] = React.useState(todayInChile())
 
   const [state, formAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
@@ -51,11 +77,17 @@ export function RetirementSheet({ trigger, assets, users }: RetirementSheetProps
     if (result.ok) {
       toast.success(result.message ?? "Baja registrada")
       setOpen(false)
+      setReason("")
+      if (!assetId) setSelectedAssetId("")
     } else if (result.message && !result.fieldErrors) {
       toast.error(result.message)
     }
     return result
   }, INITIAL_STATE)
+
+  const selectedAsset = assets.find((a) => a.id === selectedAssetId)
+  const locked = Boolean(assetId)
+  const closesCustody = reason === "perdida" || reason === "robo"
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -78,18 +110,45 @@ export function RetirementSheet({ trigger, assets, users }: RetirementSheetProps
             )}
 
             <FieldGroup>
+              {locked && <input type="hidden" name="assetId" value={assetId} />}
               <Field label="Activo" required error={state.fieldErrors?.assetId?.[0]}>
-                <Select name="assetId">
-                  <SelectTrigger aria-label="Activo">
-                    <SelectValue placeholder="Selecciona un activo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {assets.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>{a.code} · {a.typeName}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {locked ? (
+                  <p className="flex min-h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm text-[var(--color-text)]">
+                    {selectedAsset ? assetOptionLabel(selectedAsset) : "Activo seleccionado"}
+                  </p>
+                ) : (
+                  <Select name="assetId" value={selectedAssetId} onValueChange={setSelectedAssetId}>
+                    <SelectTrigger aria-label="Activo">
+                      <SelectValue placeholder="Selecciona un activo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {assets.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>{assetOptionLabel(a)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </Field>
+
+              {selectedAsset && (
+                <Callout tone="info" icon={<Info size={16} />} title="Qué se va a dar de baja">
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
+                    <dt className="text-[var(--color-text-muted)]">Equipo</dt>
+                    <dd>{assetModelLabel(selectedAsset) || selectedAsset.typeName}</dd>
+                    <dt className="text-[var(--color-text-muted)]">Faena</dt>
+                    <dd>{selectedAsset.worksiteName ?? "—"}</dd>
+                    <dt className="text-[var(--color-text-muted)]">Custodio</dt>
+                    <dd>{selectedAsset.workerName ?? "Sin custodio vigente"}</dd>
+                  </dl>
+                  {selectedAsset.workerName && (
+                    <p className="mt-2 text-sm">
+                      {closesCustody
+                        ? `Por ${reason === "robo" ? "robo" : "pérdida"}, la baja cierra la custodia vigente de ${selectedAsset.workerName}.`
+                        : `Tiene custodia vigente de ${selectedAsset.workerName}: con este motivo hay que registrar su devolución antes de la baja. Solo la pérdida y el robo cierran la custodia al dar de baja.`}
+                    </p>
+                  )}
+                </Callout>
+              )}
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Fecha de baja" required error={state.fieldErrors?.date?.[0]}>
@@ -98,7 +157,7 @@ export function RetirementSheet({ trigger, assets, users }: RetirementSheetProps
                 <Field label="Motivo" required error={state.fieldErrors?.reason?.[0]}>
                   <Select name="reason" value={reason} onValueChange={setReason}>
                     <SelectTrigger aria-label="Motivo de baja">
-                      <SelectValue />
+                      <SelectValue placeholder="Selecciona un motivo" />
                     </SelectTrigger>
                     <SelectContent>
                       {IT_RETIREMENT_REASONS.map((r) => (
@@ -143,7 +202,7 @@ export function RetirementSheet({ trigger, assets, users }: RetirementSheetProps
 
           <SheetFooter>
             <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancelar</Button>
-            <SubmitButton label="Confirmar baja" loadingLabel="Registrando..." />
+            <SubmitButton label="Confirmar baja" loadingLabel="Registrando..." variant="destructive" />
           </SheetFooter>
         </form>
       </SheetContent>

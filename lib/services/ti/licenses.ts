@@ -276,16 +276,18 @@ export async function listLicenses(scope?: SQL, worksiteIds: TiWorksiteScope = "
     .orderBy(asc(itLicenses.name))
 }
 
-export async function getLicenseAssignments(licenseId: string, worksiteIds: TiWorksiteScope = "all") {
-  const conditions: SQL[] = [eq(itLicenseAssignments.licenseId, licenseId)]
-  if (worksiteIds !== "all") {
-    if (worksiteIds.length === 0) conditions.push(sql`false`)
-    else conditions.push(or(
-      inArray(itLicenseAssignments.worksiteId, worksiteIds),
-      inArray(workers.worksiteId, worksiteIds),
-      inArray(itAssets.worksiteId, worksiteIds),
-    )!)
-  }
+/** Predicado de faena de las asignaciones de licencia (directa, del trabajador o del activo). */
+function assignmentScopeCondition(worksiteIds: TiWorksiteScope): SQL | undefined {
+  if (worksiteIds === "all") return undefined
+  if (worksiteIds.length === 0) return sql`false`
+  return or(
+    inArray(itLicenseAssignments.worksiteId, worksiteIds),
+    inArray(workers.worksiteId, worksiteIds),
+    inArray(itAssets.worksiteId, worksiteIds),
+  )
+}
+
+function selectAssignments(where: SQL | undefined) {
   return db
     .select({
       id: itLicenseAssignments.id,
@@ -305,8 +307,30 @@ export async function getLicenseAssignments(licenseId: string, worksiteIds: TiWo
     .leftJoin(workers, eq(itLicenseAssignments.workerId, workers.id))
     .leftJoin(itAssets, eq(itLicenseAssignments.assetId, itAssets.id))
     .leftJoin(worksites, eq(itLicenseAssignments.worksiteId, worksites.id))
-    .where(and(...conditions))
+    .where(where)
     .orderBy(desc(itLicenseAssignments.assignedAt))
+}
+
+export async function getLicenseAssignments(licenseId: string, worksiteIds: TiWorksiteScope = "all") {
+  return selectAssignments(and(eq(itLicenseAssignments.licenseId, licenseId), assignmentScopeCondition(worksiteIds)))
+}
+
+/**
+ * Asignaciones de VARIAS licencias en una sola consulta (TIUX-52): la página
+ * llamaba a `getLicenseAssignments` una vez por licencia, en un `Promise.all`
+ * de N consultas. Devuelve un mapa por licencia, cada lista con el mismo orden
+ * (más reciente primero) y el mismo filtro de faena que la versión individual.
+ */
+export async function getLicensesAssignments(licenseIds: string[], worksiteIds: TiWorksiteScope = "all") {
+  const map = new Map<string, Awaited<ReturnType<typeof getLicenseAssignments>>>()
+  if (licenseIds.length === 0) return map
+  const rows = await selectAssignments(and(inArray(itLicenseAssignments.licenseId, licenseIds), assignmentScopeCondition(worksiteIds)))
+  for (const row of rows) {
+    const list = map.get(row.licenseId) ?? []
+    list.push(row)
+    map.set(row.licenseId, list)
+  }
+  return map
 }
 
 type TiTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]

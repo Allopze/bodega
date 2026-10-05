@@ -76,3 +76,72 @@ export function ticketSlaStage(
   if (due <= now.getTime() + TICKET_SLA_WARNING_HOURS * HOUR_MS) return "due_soon"
   return "on_track"
 }
+
+/** Prioridades en orden de urgencia (la más urgente primero). */
+export const TICKET_PRIORITY_RANK: Record<TiTicketPriority, number> = {
+  critica: 0,
+  alta: 1,
+  normal: 2,
+  baja: 3,
+}
+
+/** Rango para ordenar; una prioridad desconocida va con 'normal', como en el plazo. */
+export function ticketPriorityRank(priority: string | null | undefined): number {
+  return TICKET_PRIORITY_RANK[normalizePriority(priority)]
+}
+
+/**
+ * Una duración en lenguaje de persona: «40 min», «5 h», «2 días». Redondea
+ * hacia abajo salvo por debajo del minuto, donde dice «1 min»: «Atrasado 0 min»
+ * contradice el «Atrasado» que lo precede.
+ */
+export function formatTicketSpan(ms: number): string {
+  const abs = Math.abs(ms)
+  const minutes = Math.max(1, Math.floor(abs / 60_000))
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(abs / HOUR_MS)
+  if (hours < 48) return `${hours} h`
+  const days = Math.floor(abs / (24 * HOUR_MS))
+  return days === 1 ? "1 día" : `${days} días`
+}
+
+export type TicketDueKind = "on_track" | "due_soon" | "overdue" | "met" | "missed"
+
+export interface TicketDueInfo {
+  kind: TicketDueKind
+  /** Cuánto falta (abiertos al día o por vencer) o cuánto se pasó (atrasados). */
+  span: string | null
+}
+
+/**
+ * Lo que la ficha debe decir del compromiso de un ticket.
+ *
+ * Un ticket abierto cuenta contra el reloj: «vence en 2 días» o «atrasado 5 h».
+ * Uno resuelto o cerrado ya no tiene un vencimiento vigente —mostrarlo sería
+ * decir que algo sigue corriendo cuando el trabajo terminó—, así que se
+ * contrasta cuándo se resolvió con lo comprometido: dentro o fuera de plazo.
+ * Sin fecha de resolución (cerrado antes de que se guardara) no se adivina.
+ */
+export function ticketDueInfo(
+  ticket: { status: string; dueAt: string | null | undefined; resolvedAt?: string | null },
+  now: Date = new Date(),
+): TicketDueInfo | null {
+  if (!ticket.dueAt) return null
+  const due = new Date(ticket.dueAt).getTime()
+  if (ticket.status === "resuelto" || ticket.status === "cerrado") {
+    if (!ticket.resolvedAt) return null
+    return { kind: new Date(ticket.resolvedAt).getTime() <= due ? "met" : "missed", span: null }
+  }
+  const stage = ticketSlaStage(ticket.dueAt, now)
+  if (!stage) return null
+  return { kind: stage, span: formatTicketSpan(due - now.getTime()) }
+}
+
+/** Cómo se ordena la lista de tickets. `urgencia` es el orden de quien gestiona. */
+export const TICKET_ORDERS = ["urgencia", "vence", "prioridad", "actualizado", "creado"] as const
+export type TicketOrder = typeof TICKET_ORDERS[number]
+export const DEFAULT_TICKET_ORDER: TicketOrder = "urgencia"
+
+export function parseTicketOrder(value: unknown): TicketOrder {
+  return (TICKET_ORDERS as readonly string[]).includes(value as string) ? (value as TicketOrder) : DEFAULT_TICKET_ORDER
+}

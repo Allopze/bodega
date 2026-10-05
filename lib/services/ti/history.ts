@@ -1,6 +1,6 @@
 import { eq, desc } from "drizzle-orm"
 import { db, type DB } from "@/db"
-import { itAssetHistory } from "@/db/schema"
+import { itAssetHistory, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0]
@@ -37,6 +37,9 @@ export async function appendAssetHistory(input: AppendHistoryInput, client: Tx |
   return id
 }
 
+/** Tope de eventos que la ficha carga; la UI avisa cuando se alcanza. */
+export const ASSET_HISTORY_LIMIT = 200
+
 export async function getAssetHistory(assetId: string) {
   return db
     .select({
@@ -45,9 +48,12 @@ export async function getAssetHistory(assetId: string) {
       detail: itAssetHistory.detail,
       changes: itAssetHistory.changes,
       actorUserId: itAssetHistory.actorUserId,
+      actorName: users.name,
       createdAt: itAssetHistory.createdAt,
     })
     .from(itAssetHistory)
+    .leftJoin(users, eq(itAssetHistory.actorUserId, users.id))
     .where(eq(itAssetHistory.assetId, assetId))
     .orderBy(desc(itAssetHistory.createdAt), desc(itAssetHistory.id))
+    .limit(ASSET_HISTORY_LIMIT)
 }

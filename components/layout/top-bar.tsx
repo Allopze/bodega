@@ -30,7 +30,7 @@ interface TopBarProps {
 // con un "Buscar categorías..." local y el usuario no tenía cómo saber a cuál
 // de las dos apuntaba cada caja. Cada tabla trae ahora su propio buscador
 // rotulado.
-const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/bodega", "/flota", "/mantenciones", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/pdtp/obligaciones", "/facturacion/facturas", "/trazabilidad/documento", "/ti/accesos", "/admin/taxonomia-sst"]
+const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/bodega", "/flota", "/mantenciones", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/pdtp/obligaciones", "/facturacion/facturas", "/trazabilidad/documento", "/ti/accesos", "/ti/tickets", "/admin/taxonomia-sst"]
 
 /** Formularios de alta/edición: no hay lista que filtrar, así que el input de
  *  la shell prometería un filtrado inexistente. Ninguna ruta bajo estos
@@ -40,7 +40,16 @@ const FORM_ROUTE = /\/(editar|nuevo|crear)(\/|$)/
 /** En el espacio de trabajo de una MIPER la matriz y el programa tienen
  *  buscadores propios y rotulados: la regla de búsqueda pide ocultar el de la
  *  shell. La portada, el catálogo y la ficha de control lo conservan. */
-const OWN_SEARCH_PATTERNS = [/^\/prevencion\/miper\/(?!factores(?:\/|$)|controles(?:\/|$))[^/]+$/]
+const OWN_SEARCH_PATTERNS = [
+  /^\/prevencion\/miper\/(?!factores(?:\/|$)|controles(?:\/|$))[^/]+$/,
+  // TI (TIUX-35): el resumen, los reportes y la ficha de un activo no tienen
+  // lista que filtrar; el input de la shell prometía un filtrado que no existe.
+  // Las listas `/ti/activos` y `/ti/licencias` lo conservan. `/ti/tickets` (y su
+  // ficha) está en ROUTES_WITH_OWN_SEARCH: la mesa de ayuda busca en servidor.
+  /^\/ti$/,
+  /^\/ti\/reportes$/,
+  /^\/ti\/activos\/[^/]+$/,
+]
 
 export function hidesShellSearch(pathname: string) {
   return ROUTES_WITH_OWN_SEARCH.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))

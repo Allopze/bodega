@@ -78,17 +78,17 @@ export function AssetMaintenance({ assetId, rows, canManage, suppliers }: AssetM
         />
       ) : (
         rows.map((row) => (
-          <article key={row.id} className={`rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs ${row.voidedAt ? "opacity-70" : ""}`}>
+          <article key={row.id} className={`rounded-2xl border border-[var(--color-border)] p-5 shadow-xs ${row.voidedAt ? "bg-[var(--color-surface-2)]" : "bg-[var(--color-surface)]"}`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <MetaBadge meta={{ label: IT_MAINTENANCE_TYPE_META[row.type] ?? row.type, variant: "warning" }} />
-                <span className="text-xs text-[var(--color-text-muted)]">{formatDate(row.date)}</span>
+                <span className={`text-xs ${row.voidedAt ? "text-[var(--color-text-subtle)]" : "text-[var(--color-text-muted)]"}`}>{formatDate(row.date)}</span>
                 {row.voidedAt && (
                   <MetaBadge meta={{ label: "Anulada", variant: "danger" }} />
                 )}
               </div>
               <div className="flex items-center gap-3">
-                <span className={`font-mono text-sm font-semibold text-[var(--color-text)] ${row.voidedAt ? "line-through" : ""}`}>{formatCLP(Number(row.cost ?? 0))}</span>
+                <span className={`font-mono text-sm font-semibold ${row.voidedAt ? "text-[var(--color-text-subtle)] line-through" : "text-[var(--color-text)]"}`}>{formatCLP(Number(row.cost ?? 0))}</span>
                 {!row.voidedAt && canManage && (
                   <>
                     <MaintenanceSheet
@@ -122,7 +122,7 @@ export function AssetMaintenance({ assetId, rows, canManage, suppliers }: AssetM
               )}
               <div>
                 <dt className="text-xs font-semibold text-[var(--color-text-muted)]">Trabajo realizado</dt>
-                <dd className="text-[var(--color-text)]">{row.workDone}</dd>
+                <dd className={row.voidedAt ? "text-[var(--color-text-subtle)] line-through" : "text-[var(--color-text)]"}>{row.workDone}</dd>
               </div>
               {row.partsUsed && (
                 <div>

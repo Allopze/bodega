@@ -51,9 +51,10 @@ export function AssetDetailTabs({ summary, assignments, maintenance, tickets, do
         <OptionSelect
           value={tab}
           onValueChange={handleChange}
+          aria-label="Sección de la ficha"
           options={[
             { value: "resumen", label: "Resumen" },
-            { value: "asignaciones", label: `Asignaciones (${counts.assignments})` },
+            { value: "asignaciones", label: `Entregas (${counts.assignments})` },
             { value: "mantenciones", label: `Mantenciones (${counts.maintenance})` },
             { value: "tickets", label: `Tickets (${counts.tickets})` },
             { value: "documentos", label: `Documentos (${counts.documents})` },
@@ -63,7 +64,7 @@ export function AssetDetailTabs({ summary, assignments, maintenance, tickets, do
       </div>
       <TabsList className="hidden flex-nowrap md:inline-flex">
         <TabsTrigger value="resumen">Resumen</TabsTrigger>
-        <TabsTrigger value="asignaciones">Asignaciones <Count>{counts.assignments}</Count></TabsTrigger>
+        <TabsTrigger value="asignaciones">Entregas <Count>{counts.assignments}</Count></TabsTrigger>
         <TabsTrigger value="mantenciones">Mantenciones <Count>{counts.maintenance}</Count></TabsTrigger>
         <TabsTrigger value="tickets">Tickets <Count>{counts.tickets}</Count></TabsTrigger>
         <TabsTrigger value="documentos">Documentos <Count>{counts.documents}</Count></TabsTrigger>

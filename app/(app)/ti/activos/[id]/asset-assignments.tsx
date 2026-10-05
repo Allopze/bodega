@@ -7,11 +7,9 @@ import { formatDate, formatDateTime } from "@/lib/utils"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import { X } from "@phosphor-icons/react"
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { IT_ASSIGNMENT_KIND_META, IT_PHYSICAL_STATE_META } from "@/lib/services/ti/constants"
 import { AssignmentSheet } from "../../asignaciones/assignment-sheet"
-import { ReturnSheet } from "../../asignaciones/return-sheet"
-import { TransferSheet } from "../../asignaciones/transfer-sheet"
 
 interface PhotoRecord {
   id: string
@@ -67,24 +65,16 @@ function PhotoThumb({ photo, label }: { photo: PhotoRecord; label: string }) {
           <span className="mt-0.5 block text-[11px] text-[var(--color-text-muted)]">{formatDate(photo.uploadedAt)} · {photo.uploadedByName ?? "Sistema"}</span>
         </span>
       </button>
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setOpen(false)} role="dialog" aria-modal="true" aria-label={photo.caption || "Fotografía de evidencia"}>
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            aria-label="Cerrar fotografía"
-            className="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 sm:h-8 sm:w-8"
-          >
-            <X size={18} />
-          </button>
-          <div className="relative max-h-[90vh] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
-            <Image unoptimized src={`/api/ti/photos/${photo.id}`} alt={photo.caption || "Evidencia"} width={1400} height={900} className="max-h-[85vh] w-auto rounded object-contain" />
-            <p className="mt-2 text-center text-xs text-white/60">
-              {photo.caption || photo.fileName} · subida {formatDateTime(photo.uploadedAt)} por {photo.uploadedByName ?? "Sistema"}
-            </p>
-          </div>
-        </div>
-      )}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-4xl p-3 sm:p-4">
+          <DialogTitle className="sr-only">{photo.caption || "Fotografía de evidencia"}</DialogTitle>
+          <DialogDescription className="sr-only">Evidencia fotográfica de la entrega o devolución del equipo.</DialogDescription>
+          <Image unoptimized src={`/api/ti/photos/${photo.id}`} alt={photo.caption || "Evidencia"} width={1400} height={900} className="max-h-[75dvh] w-auto max-w-full rounded object-contain" />
+          <p className="mt-2 text-center text-xs text-[var(--color-text-muted)]">
+            {photo.caption || photo.fileName} · subida {formatDateTime(photo.uploadedAt)} por {photo.uploadedByName ?? "Sistema"}
+          </p>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
@@ -128,42 +118,20 @@ function PhotoCompare({ row }: { row: AssignmentRow }) {
 interface AssetAssignmentsProps {
   assetId: string
   rows: AssignmentRow[]
-  activeAssignment: AssignmentRow | null
-  canManage: boolean
+  /** Se puede entregar (activo disponible/en bodega y permiso): habilita el CTA del vacío. */
+  canDeliver: boolean
   workers: { id: string; name: string; lastName: string }[]
   worksites: { id: string; name: string }[]
-  suppliers: { id: string; name: string }[]
 }
 
-export function AssetAssignments({ assetId, rows, activeAssignment, canManage, workers, worksites }: AssetAssignmentsProps) {
+export function AssetAssignments({ assetId, rows, canDeliver, workers, worksites }: AssetAssignmentsProps) {
   return (
     <div className="space-y-4">
-      {canManage && activeAssignment && (
-        <div className="flex items-center justify-between rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xs">
-          <div>
-            <p className="text-sm font-semibold text-[var(--color-text)]">Custodia vigente — acta {activeAssignment.code}</p>
-            <p className="text-xs text-[var(--color-text-muted)]">{activeAssignment.workerName} · {activeAssignment.worksiteName}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <TransferSheet
-              trigger={<Button type="button" variant="secondary" size="sm">Transferir</Button>}
-              assignment={activeAssignment}
-              workers={workers}
-              worksites={worksites}
-            />
-            <ReturnSheet
-              trigger={<Button type="button" variant="secondary" size="sm">Registrar devolución</Button>}
-              assignment={activeAssignment}
-            />
-          </div>
-        </div>
-      )}
-
       {rows.length === 0 ? (
         <EmptyState
           title="Sin asignaciones"
           description="Este activo aún no tiene entregas registradas."
-          action={canManage ? (
+          action={canDeliver ? (
             <AssignmentSheet
               trigger={<Button type="button" variant="link" size="sm">Registrar entrega</Button>}
               assetId={assetId}
@@ -178,11 +146,11 @@ export function AssetAssignments({ assetId, rows, activeAssignment, canManage, w
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</span>
-                <MetaBadge meta={{ label: `${row.returnedAt ? "Devuelto" : "Vigente"}`, variant: row.returnedAt ? "default" : "info" }} />
+                <MetaBadge meta={{ label: row.returnedAt ? "Devuelto" : "Vigente", variant: row.returnedAt ? "default" : "info" }} />
                 <span className="text-xs text-[var(--color-text-muted)]">{IT_ASSIGNMENT_KIND_META[row.kind] ?? row.kind}</span>
               </div>
               <div className="flex items-center gap-3">
-                <Link href={`/ti/actas/${row.id}/print`} className="text-xs font-semibold text-[var(--color-primary)] hover:underline">
+                <Link href={`/ti/actas/${row.id}/print`} className="inline-flex min-h-11 items-center text-xs font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-0">
                   Ver acta
                 </Link>
               </div>
@@ -210,14 +178,14 @@ export function AssetAssignments({ assetId, rows, activeAssignment, canManage, w
             </dl>
 
             {row.accessories.length > 0 && (
-              <div className="mt-3">
+              <dl className="mt-3">
                 <dt className="text-xs text-[var(--color-text-muted)]">Accesorios</dt>
                 <dd className="mt-1 flex flex-wrap gap-1.5">
                   {row.accessories.map((acc) => (
                     <MetaBadge key={acc.id} meta={{ label: `${acc.name}${acc.returnedAt ? " (devuelto)" : ""}`, variant: acc.returnedAt ? "default" : "outline" }} />
                   ))}
                 </dd>
-              </div>
+              </dl>
             )}
 
             <PhotoCompare row={row} />

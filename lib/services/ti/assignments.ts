@@ -7,7 +7,7 @@ import {
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
-import { chileLocalDateTimeToUtc, codeYear } from "@/lib/utils"
+import { chileLocalDateTimeToUtc, codeYear, todayInChile } from "@/lib/utils"
 import { appendAssetHistory } from "./history"
 import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
 import { requireDifferentActor } from "@/lib/auth/segregation"
@@ -20,6 +20,8 @@ export interface CreateAssignmentInput {
   worksiteId: string
   kind?: string
   deliveredAt: string // ISO local datetime
+  /** TIUX-14: fecha civil `YYYY-MM-DD`. Obligatoria si `kind = 'loan'`; se ignora en los demás tipos. */
+  expectedReturnDate?: string | null
   physicalState: string
   observations?: string | null
   accessoryNames: string[]
@@ -34,6 +36,16 @@ export async function createAssignment(
   worksiteIds: TiWorksiteScope = "all",
 ): Promise<string> {
   const id = nanoid()
+  // TIUX-14: un préstamo sin fecha de vuelta no puede vencer, y entonces nadie
+  // lo reclama. La validación del formulario ya lo exige; esto cubre a quien
+  // llame al servicio directo (importaciones, otras acciones).
+  const expectedReturnDate = input.kind === "loan" ? (input.expectedReturnDate || null) : null
+  if (input.kind === "loan") {
+    if (!expectedReturnDate) throw new Error("Indica hasta cuándo se presta el equipo")
+    if (expectedReturnDate < input.deliveredAt.slice(0, 10)) {
+      throw new Error("La devolución no puede ser anterior a la entrega")
+    }
+  }
   await db.transaction(async (tx) => {
     if (worksiteIds !== "all" && !worksiteIds.includes(input.worksiteId)) {
       throw new Error("No tienes acceso a esta faena")
@@ -75,6 +87,7 @@ export async function createAssignment(
       deliveredByUserId: actor.userId,
       physicalState: input.physicalState,
       observations: input.observations ?? null,
+      expectedReturnDate,
       /*
        * TIA-001 y TIA-002 (auditoría 2026-09-14).
        *
@@ -150,7 +163,7 @@ export interface ReturnAssignmentInput {
   returnPhysicalState: string
   returnObservations?: string | null
   returnedAccessoryNames: string[]
-  nextStatus: "disponible" | "en_bodega"
+  nextStatus: "disponible" | "en_bodega" | "en_reparacion"
   photoIds: string[]
 }
 
@@ -345,6 +358,8 @@ export async function transferAssignment(
     newWorksiteId: string
     newKind?: string
     newDeliveredAt: string
+    /** TIUX-14: obligatoria si `newKind = 'loan'`, igual que en una entrega. */
+    newExpectedReturnDate?: string | null
     newPhysicalState: string
     newObservations?: string | null
     newAccessoryNames: string[]
@@ -354,6 +369,13 @@ export async function transferAssignment(
   worksiteIds: string[] | "all" = "all",
 ): Promise<string> {
   const newAssignmentId = nanoid()
+  const newExpectedReturnDate = input.newKind === "loan" ? (input.newExpectedReturnDate || null) : null
+  if (input.newKind === "loan") {
+    if (!newExpectedReturnDate) throw new Error("Indica hasta cuándo se presta el equipo")
+    if (newExpectedReturnDate < input.newDeliveredAt.slice(0, 10)) {
+      throw new Error("La devolución no puede ser anterior a la entrega")
+    }
+  }
   await db.transaction(async (tx) => {
     if (worksiteIds !== "all" && !worksiteIds.includes(input.newWorksiteId)) {
       throw new Error("No tienes acceso a esta faena")
@@ -411,6 +433,7 @@ export async function transferAssignment(
       deliveredByUserId: actor.userId,
       physicalState: input.newPhysicalState,
       observations: input.newObservations ?? null,
+      expectedReturnDate: newExpectedReturnDate,
       // TIA-001: la transferencia era todavía peor que la entrega —marcaba el
       // acta nueva como aceptada por el técnico sin ofrecer siquiera la opción
       // de dejarla sin aceptar—. El acuse del nuevo custodio se registra
@@ -477,7 +500,22 @@ export interface AssignmentListFilters {
   workerId?: string
   worksiteId?: string
   status?: "active" | "returned"
+  /** TIUX-14: solo actas con el acuse todavía pendiente. */
+  pendingAcceptance?: boolean
+  /** TIUX-14: solo préstamos abiertos cuya fecha de devolución ya pasó. */
+  overdueLoans?: boolean
   scope?: SQL
+}
+
+/**
+ * Condición SQL de «préstamo vencido»: abierto, de tipo préstamo y con la fecha
+ * de devolución anterior a hoy en Chile (no en UTC: entre las 20:00 y la
+ * medianoche un préstamo que vence hoy aparecería vencido un día antes).
+ */
+function overdueLoanSql(today: string): SQL {
+  return sql`(${itAssetAssignments.kind} = 'loan' AND ${itAssetAssignments.returnedAt} IS NULL
+    AND ${itAssetAssignments.expectedReturnDate} IS NOT NULL
+    AND ${itAssetAssignments.expectedReturnDate} < ${today}::date)`
 }
 
 export async function listAssignments(filters: AssignmentListFilters) {
@@ -487,6 +525,9 @@ export async function listAssignments(filters: AssignmentListFilters) {
   if (filters.worksiteId) conditions.push(eq(itAssetAssignments.worksiteId, filters.worksiteId))
   if (filters.status === "active") conditions.push(isNull(itAssetAssignments.returnedAt))
   if (filters.status === "returned") conditions.push(sql`${itAssetAssignments.returnedAt} IS NOT NULL`)
+  if (filters.pendingAcceptance) conditions.push(eq(itAssetAssignments.acceptanceStatus, "pendiente"))
+  const today = todayInChile()
+  if (filters.overdueLoans) conditions.push(overdueLoanSql(today))
   if (filters.scope) conditions.push(filters.scope)
 
   return db
@@ -504,6 +545,8 @@ export async function listAssignments(filters: AssignmentListFilters) {
       kind: itAssetAssignments.kind,
       deliveredAt: itAssetAssignments.deliveredAt,
       physicalState: itAssetAssignments.physicalState,
+      expectedReturnDate: itAssetAssignments.expectedReturnDate,
+      loanOverdue: sql<boolean>`${overdueLoanSql(today)}`,
       returnedAt: itAssetAssignments.returnedAt,
       returnPhysicalState: itAssetAssignments.returnPhysicalState,
       acceptanceStatus: itAssetAssignments.acceptanceStatus,
@@ -516,6 +559,25 @@ export async function listAssignments(filters: AssignmentListFilters) {
     .leftJoin(users, eq(itAssetAssignments.deliveredByUserId, users.id))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(itAssetAssignments.deliveredAt))
+}
+
+/**
+ * TIUX-14: cuántas actas piden algo hoy, para rotular los filtros «Sin acuse» y
+ * «Préstamos vencidos» con su contador. Respeta el mismo alcance de faena que el
+ * listado: un contador que cuenta lo que el usuario no puede ver filtra datos.
+ */
+export async function countAssignmentAlerts(filters: { worksiteId?: string; scope?: SQL } = {}) {
+  const conditions: SQL[] = []
+  if (filters.worksiteId) conditions.push(eq(itAssetAssignments.worksiteId, filters.worksiteId))
+  if (filters.scope) conditions.push(filters.scope)
+  const [row] = await db
+    .select({
+      pendingAcceptance: sql<number>`count(*) filter (where ${itAssetAssignments.acceptanceStatus} = 'pendiente')::int`,
+      overdueLoans: sql<number>`count(*) filter (where ${overdueLoanSql(todayInChile())})::int`,
+    })
+    .from(itAssetAssignments)
+    .where(conditions.length ? and(...conditions) : undefined)
+  return { pendingAcceptance: row?.pendingAcceptance ?? 0, overdueLoans: row?.overdueLoans ?? 0 }
 }
 
 export async function getAssignmentById(id: string, scope?: SQL) {
@@ -542,6 +604,7 @@ export async function getAssignmentById(id: string, scope?: SQL) {
       deliveredByName: users.name,
       physicalState: itAssetAssignments.physicalState,
       observations: itAssetAssignments.observations,
+      expectedReturnDate: itAssetAssignments.expectedReturnDate,
       acceptanceStatus: itAssetAssignments.acceptanceStatus,
       acceptanceNote: itAssetAssignments.acceptanceNote,
       acceptedAt: itAssetAssignments.acceptedAt,

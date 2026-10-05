@@ -1,18 +1,19 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { redirect } from "next/navigation"
 import { can, requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { db } from "@/db"
-import { itAssets, suppliers } from "@/db/schema"
-import { eq, asc } from "drizzle-orm"
+import { itAssets, suppliers, worksites } from "@/db/schema"
+import { eq, asc, and } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { listAssetsByWarranty, listSupplierLinks, type WarrantyWindow } from "@/lib/services/ti/supplier-links"
+import { listAssetsByWarranty, listSupplierLinks } from "@/lib/services/ti/supplier-links"
 import { WarrantyTable } from "./warranty-table"
 import { SupplierLinksPanel } from "./supplier-links-panel"
+import { WarrantyFilters } from "./warranty-filters"
+import { countWarrantyBands, matchesWarrantyView, parseWarrantyView } from "./warranty-windows"
 
-export const metadata: Metadata = { title: "Garantías y proveedores TI" }
+export const metadata: Metadata = { title: "Garantías y proveedores" }
 
 export default async function GarantiasPage({
   searchParams,
@@ -25,51 +26,39 @@ export default async function GarantiasPage({
 
   const canManage = can(session, "ti:manage_assets")
   const sp = await searchParams
-  // `window` sombrearía el global del navegador: nombre explícito.
-  const activeWindow = typeof sp.ventana === "string" ? (sp.ventana as WarrantyWindow) : undefined
-  const scope = worksiteScopeSql(session, itAssets.worksiteId)
+  // `?ventana=` conserva sus valores históricos (expiring_30, expired…): el
+  // resumen del módulo enlaza con ellos. Ver `warranty-windows.ts`.
+  const view = parseWarrantyView(sp.ventana)
+  const faena = typeof sp.faena === "string" ? sp.faena : ""
+  // Con `faena` el alcance sigue acotado a las faenas del usuario: pedir una
+  // ajena devuelve vacío, no datos.
+  const scope = worksiteScopeSql(session, itAssets.worksiteId, faena || undefined)
+  const worksiteScope = worksiteScopeSql(session, worksites.id)
 
-  const [warrantyRows, supplierLinks, suppliersList] = await Promise.all([
-    listAssetsByWarranty({ window: activeWindow, scope }),
+  const [allRows, supplierLinks, suppliersList, worksitesList] = await Promise.all([
+    // Sin ventana: los conteos de las pastillas se calculan sobre todo el
+    // universo (acotado por faena) y la banda se aplica después, con la misma
+    // regla que el badge de cada fila.
+    listAssetsByWarranty({ scope }),
     listSupplierLinks(),
     db.select({ id: suppliers.id, name: suppliers.name })
       .from(suppliers).where(eq(suppliers.isActive, true)).orderBy(asc(suppliers.name)),
+    db.select({ id: worksites.id, name: worksites.name })
+      .from(worksites).where(and(eq(worksites.isActive, true), worksiteScope)).orderBy(asc(worksites.name)),
   ])
 
-  const windows: { value: WarrantyWindow | ""; label: string }[] = [
-    { value: "", label: "Todas con garantía" },
-    { value: "active", label: "Vigentes" },
-    { value: "expiring_30", label: "Vencen en 30 días" },
-    { value: "expiring_60", label: "Vencen en 60 días" },
-    { value: "expiring_90", label: "Vencen en 90 días" },
-    { value: "expired", label: "Vencidas" },
-  ]
+  const counts = countWarrantyBands(allRows.map((r) => r.warrantyEndDate))
+  const warrantyRows = allRows.filter((r) => matchesWarrantyView(r.warrantyEndDate, view))
 
   return (
     <PageContainer>
       <PageHeader
-        title="Garantías y proveedores TI"
+        title="Garantías y proveedores"
         description="Vigencia de garantías por activo y proveedores identificados para TI."
         breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Garantías y proveedores" }]} />}
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        {windows.map((w) => (
-          <Link
-            key={w.value}
-            href={w.value ? `/ti/garantias?ventana=${w.value}` : "/ti/garantias"}
-            scroll={false}
-            aria-current={(activeWindow ?? "") === w.value ? "page" : undefined}
-            className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-              (activeWindow ?? "") === w.value
-                ? "bg-[var(--color-primary)] text-white"
-                : "bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-            }`}
-          >
-            {w.label}
-          </Link>
-        ))}
-      </div>
+      <WarrantyFilters view={view} faena={faena} counts={counts} worksites={worksitesList} />
 
       <WarrantyTable rows={warrantyRows} />
 

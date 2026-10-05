@@ -8,16 +8,18 @@ import { itAssets, workers, worksites, suppliers } from "@/db/schema"
 import { and, eq, asc } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { Callout } from "@/components/ui/callout"
+import { Package, Tag } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import { listAssets, type AssetListFilters } from "@/lib/services/ti/assets"
+import { listAssets, countRetiredAssets, type AssetListFilters } from "@/lib/services/ti/assets"
 import { isRetiredStatus } from "@/lib/services/ti/constants"
 import { listAssetTypes } from "@/lib/services/ti/asset-types"
 import { AssetTable } from "./asset-table"
 import { AssetFilters } from "./asset-filters"
 import { NewAssetCta } from "./asset-form-sheet"
 
-export const metadata: Metadata = { title: "Inventario TI" }
+export const metadata: Metadata = { title: "Inventario" }
 
 export default async function InventarioPage({
   searchParams,
@@ -29,6 +31,7 @@ export default async function InventarioPage({
   catch { redirect("/forbidden") }
 
   const canManage = can(session, "ti:manage_assets")
+  const canAdminTypes = can(session, "admin:it_asset_types")
   const sp = await searchParams
   const status = typeof sp.estado === "string" ? sp.estado : undefined
 
@@ -57,8 +60,10 @@ export default async function InventarioPage({
     scope,
   }
 
-  const [assets, types, activeWorkers, activeWorksites, activeSuppliers] = await Promise.all([
+  const [assets, retiredHidden, types, activeWorkers, activeWorksites, activeSuppliers] = await Promise.all([
     listAssets(filters),
+    // Solo se pregunta cuando la lista las oculta: con un estado terminal elegido ya se ven.
+    filters.includeRetired ? Promise.resolve(0) : countRetiredAssets(scope),
     listAssetTypes({ includeInactive: true }),
     db.select({ id: workers.id, name: workers.firstName, lastName: workers.lastName })
       .from(workers).where(and(eq(workers.isActive, true), workerScope)).orderBy(asc(workers.firstName), asc(workers.lastName)),
@@ -68,35 +73,77 @@ export default async function InventarioPage({
       .from(suppliers).where(eq(suppliers.isActive, true)).orderBy(asc(suppliers.name)),
   ])
 
+  const FILTER_KEYS = ["tipo", "estado", "trabajador", "faena", "proveedor", "garantia", "antiguedad", "antiguedad_min"] as const
+  const hasFilters = FILTER_KEYS.some((key) => typeof sp[key] === "string" && sp[key])
+  const isEmpty = assets.length === 0
+
   return (
     <PageContainer>
       <PageHeader
-        title="Inventario TI"
+        title="Inventario"
         description="Activos tecnológicos de CHOME: qué hay, dónde está y quién lo tiene."
         breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Inventario" }]} />}
-        actions={canManage ? (
-          <NewAssetCta assetTypes={types} suppliers={activeSuppliers} worksites={activeWorksites} />
+        actions={(canManage || canAdminTypes) ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {canAdminTypes && (
+              <Button asChild variant="ghost">
+                <Link href="/admin/tipos-activo"><Tag size={14} className="mr-1.5" aria-hidden /> Tipos de activo</Link>
+              </Button>
+            )}
+            {canManage && (
+              <NewAssetCta assetTypes={types} suppliers={activeSuppliers} worksites={activeWorksites} canManageTypes={canAdminTypes} />
+            )}
+          </div>
         ) : undefined}
       />
 
-      <AssetFilters
-        types={types}
-        workers={activeWorkers}
-        worksites={activeWorksites}
-        suppliers={activeSuppliers}
-        current={sp}
-      />
-
-      <AssetTable rows={assets as AssetRow[]} canManage={canManage} />
-
-      {assets.length === 0 && (
-        <EmptyState
-          className="mt-4"
-          compact
-          title="No hay activos con estos filtros"
-          description={canManage ? "Limpia los filtros o registra un activo para comenzar." : "Prueba con otros filtros o términos de búsqueda."}
-          action={canManage ? <Link href="/ti/activos"><Button variant="secondary" size="sm">Limpiar filtros</Button></Link> : undefined}
+      {/* Sin activos y sin filtros no hay nada que filtrar: se omite la barra. */}
+      {(hasFilters || !isEmpty) && (
+        <AssetFilters
+          types={types}
+          workers={activeWorkers}
+          worksites={activeWorksites}
+          suppliers={activeSuppliers}
+          current={sp}
         />
+      )}
+
+      {isEmpty ? (
+        // Un solo estado vacío (antes se apilaban este y el de la tabla).
+        hasFilters ? (
+          <EmptyState
+            compact
+            icon={<Package size={22} aria-hidden />}
+            title="No hay activos con estos filtros"
+            description="Ningún activo cumple todos los filtros aplicados. Quita alguno para ver más resultados."
+            action={<Button asChild variant="secondary" size="sm"><Link href="/ti/activos" scroll={false}>Limpiar filtros</Link></Button>}
+          />
+        ) : (
+          <EmptyState
+            icon={<Package size={22} aria-hidden />}
+            title="Aún no hay activos"
+            description={canManage
+              ? "Registra el primer equipo para llevar su custodia, mantenciones y garantía en un solo lugar."
+              : "Cuando TI registre equipos aparecerán aquí. Si esperabas verlos, consulta con quien administra el inventario."}
+            action={canManage ? <NewAssetCta assetTypes={types} suppliers={activeSuppliers} worksites={activeWorksites} canManageTypes={canAdminTypes} /> : undefined}
+          />
+        )
+      ) : (
+        <>
+          <p className="mb-2 text-sm text-[var(--color-text-muted)]" aria-live="polite">
+            <span className="font-semibold text-[var(--color-text)]">{assets.length}</span>{" "}
+            {assets.length === 1 ? "activo" : "activos"}{hasFilters ? " con los filtros aplicados" : ""}
+          </p>
+          <AssetTable rows={assets as AssetRow[]} />
+        </>
+      )}
+
+      {retiredHidden > 0 && (
+        <Callout tone="info" className="mt-4">
+          {retiredHidden === 1 ? "1 activo dado de baja, perdido o robado no aparece" : `${retiredHidden} activos dados de baja, perdidos o robados no aparecen`} en esta lista.{" "}
+          <Link href="/ti/activos?estado=dado_de_baja" className="font-semibold underline">Ver dados de baja</Link>
+          {" "}o elige «Perdido» o «Robado» en el filtro de estado.
+        </Callout>
       )}
     </PageContainer>
   )

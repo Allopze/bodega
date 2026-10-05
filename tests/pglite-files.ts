@@ -109,6 +109,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/miper-work-queue.test.ts",
   "lib/__tests__/combustibles-scope.test.ts",
   "lib/__tests__/ti-dashboard-assets-by-age.test.ts",
+  // TI L7: «Atención hoy» del Resumen y hojas de reportes (forma de filas y alcance de faena).
+  "lib/__tests__/ti-attention-and-reports.test.ts",
   "lib/__tests__/compras-export-invoice-filter.test.ts",
   // Faltaba desde que se escribió: instancia PGlite y migra, así que corriendo
   // en el proyecto paralelo competía por CPU con los demás.

@@ -1,11 +1,15 @@
 import { eq, and, isNull, desc, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
-import { itMaintenances, itAssets, suppliers, users } from "@/db/schema"
+import { itMaintenances, itAssets, suppliers, users, worksites } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { appendAssetHistory } from "./history"
 import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
-import { escapeLikePattern } from "@/lib/utils"
+import { escapeLikePattern, formatDate, formatCLP } from "@/lib/utils"
+import { IT_MAINTENANCE_TYPE_META } from "./constants"
+
+/** Etiqueta en español del tipo para el historial: nunca el enum crudo. */
+const typeLabel = (type: string) => (IT_MAINTENANCE_TYPE_META[type] ?? type).toLowerCase()
 
 
 export interface CreateMaintenanceInput {
@@ -60,7 +64,7 @@ export async function createMaintenance(
     await appendAssetHistory({
       assetId: input.assetId,
       action: "maintenance",
-      detail: `Mantención ${input.type} registrada (${input.date}).`,
+      detail: `Mantención ${typeLabel(input.type)} registrada (${formatDate(input.date)}).`,
       changes: { maintenanceId: id, cost: input.cost ?? 0 },
       actorUserId: actor.userId,
     }, tx)
@@ -111,7 +115,7 @@ export async function updateMaintenance(
     await appendAssetHistory({
       assetId: existing.assetId,
       action: "maintenance",
-      detail: `Mantención ${input.type} actualizada (${input.date}).`,
+      detail: `Mantención ${typeLabel(input.type)} actualizada (${formatDate(input.date)}).`,
       changes: { maintenanceId: input.id, cost: input.cost ?? 0 },
       actorUserId: actor.userId,
     }, tx)
@@ -166,7 +170,7 @@ export async function voidMaintenance(
     await appendAssetHistory({
       assetId: existing.assetId,
       action: "maintenance_voided",
-      detail: `Mantención ${existing.type} del ${existing.date} anulada (costo revertido: ${existing.cost}).`,
+      detail: `Mantención ${typeLabel(existing.type)} del ${formatDate(existing.date)} anulada (costo descontado: ${formatCLP(existing.cost)}).`,
       changes: { maintenanceId: id, voidReason: trimmed, cost: existing.cost, type: existing.type, date: existing.date },
       actorUserId: actor.userId,
     }, tx)
@@ -185,7 +189,16 @@ export async function voidMaintenance(
   })
 }
 
-export async function listMaintenances(filters: { assetId?: string; scope?: SQL; search?: string }) {
+export async function listMaintenances(filters: {
+  assetId?: string
+  scope?: SQL
+  search?: string
+  /** Tipo de mantención (enum). */
+  type?: string
+  /** Rango civil inclusivo, `YYYY-MM-DD`. */
+  from?: string
+  to?: string
+}) {
   const conditions: SQL[] = [isNull(itAssets.deletedAt)]
   if (filters.assetId) conditions.push(eq(itMaintenances.assetId, filters.assetId))
   if (filters.scope) conditions.push(filters.scope)
@@ -193,10 +206,14 @@ export async function listMaintenances(filters: { assetId?: string; scope?: SQL;
     const like = `%${escapeLikePattern(filters.search.trim())}%`
     conditions.push(sql`(${itMaintenances.workDone} ILIKE ${like} OR ${itMaintenances.reportedIssue} ILIKE ${like})`)
   }
+  if (filters.type) conditions.push(eq(itMaintenances.type, filters.type))
+  if (filters.from) conditions.push(sql`${itMaintenances.date} >= ${filters.from}`)
+  if (filters.to) conditions.push(sql`${itMaintenances.date} <= ${filters.to}`)
   return db
     .select({
       id: itMaintenances.id,
       assetId: itMaintenances.assetId,
+      worksiteName: worksites.name,
       assetCode: itAssets.code,
       assetBrand: itAssets.brand,
       assetModel: itAssets.model,
@@ -219,6 +236,7 @@ export async function listMaintenances(filters: { assetId?: string; scope?: SQL;
     })
     .from(itMaintenances)
     .innerJoin(itAssets, eq(itMaintenances.assetId, itAssets.id))
+    .leftJoin(worksites, eq(itAssets.worksiteId, worksites.id))
     .leftJoin(suppliers, eq(itMaintenances.supplierId, suppliers.id))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(itMaintenances.date))
@@ -235,12 +253,14 @@ export async function maintenanceCostByAsset(scope?: SQL) {
       brand: itAssets.brand,
       model: itAssets.model,
       totalCost: sql<number>`coalesce(sum(${itMaintenances.cost}), 0)::float8`,
+      /** Costo de adquisición del equipo: el ranking compara el gasto contra lo que vale. */
+      assetCost: sql<number | null>`${itAssets.cost}::float8`,
       count: sql<number>`count(*)::int`,
       lastDate: sql<string | null>`max(${itMaintenances.date})`,
     })
     .from(itMaintenances)
     .innerJoin(itAssets, eq(itMaintenances.assetId, itAssets.id))
     .where(conditions.length ? and(...conditions) : undefined)
-    .groupBy(itMaintenances.assetId, itAssets.code, itAssets.brand, itAssets.model)
+    .groupBy(itMaintenances.assetId, itAssets.code, itAssets.brand, itAssets.model, itAssets.cost)
     .orderBy(desc(sql`coalesce(sum(${itMaintenances.cost}), 0)`))
 }

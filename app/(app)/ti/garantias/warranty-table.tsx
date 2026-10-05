@@ -2,10 +2,10 @@
 
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
-import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { TableRow, TableCell } from "@/components/ui/table"
-import { formatDate, todayInChile } from "@/lib/utils"
-import { civilDaysUntil } from "@/lib/services/ti/civil-dates"
+import { formatDate } from "@/lib/utils"
+import { warrantyStatus } from "@/lib/services/ti/warranty"
 
 interface Row {
   id: string
@@ -17,23 +17,16 @@ interface Row {
   purchaseDate: string | null
   supplierName: string | null
   workerName: string | null
-}
-
-function warrantyStatus(date: string): StateMetaInput {
-  const days = civilDaysUntil(date, todayInChile())
-  if (days < 0) return { label: "Vencida", variant: "danger" }
-  if (days <= 30) return { label: `Vence en ${days} d`, variant: "danger" }
-  if (days <= 60) return { label: `Vence en ${days} d`, variant: "warning" }
-  if (days <= 90) return { label: `Vence en ${days} d`, variant: "warning" }
-  return { label: "Vigente", variant: "success" }
+  worksiteName: string | null
 }
 
 const COLUMNS = [
-  { key: "code", label: "Código", width: "w-28" },
-  { key: "asset", label: "Activo", sortable: true },
-  { key: "warranty", label: "Vencimiento", sortable: true, width: "w-32" },
+  { key: "code", label: "Código", width: "w-28", sortable: true, sortValue: (r: Row) => r.code },
+  { key: "asset", label: "Activo", sortable: true, sortValue: (r: Row) => [r.brand, r.model].filter(Boolean).join(" ") },
+  { key: "warranty", label: "Vencimiento", sortable: true, width: "w-32", sortValue: (r: Row) => r.warrantyEndDate },
   { key: "status", label: "Garantía", width: "w-32" },
-  { key: "supplier", label: "Proveedor", sortable: true },
+  { key: "supplier", label: "Proveedor", sortable: true, sortValue: (r: Row) => r.supplierName },
+  { key: "worksite", label: "Faena", sortable: true, sortValue: (r: Row) => r.worksiteName },
   { key: "worker", label: "Asignado a" },
 ]
 
@@ -63,7 +56,8 @@ export function WarrantyTable({ rows }: { rows: Row[] }) {
               {status ? <MetaBadge meta={status} dot /> : <MetaBadge meta={{ label: "Sin garantía", variant: "default" }} />}
             </TableCell>
             <TableCell>{row.supplierName ?? "—"}</TableCell>
-            <TableCell>{row.workerName ?? "—"}</TableCell>
+            <TableCell>{row.worksiteName ?? "—"}</TableCell>
+            <TableCell>{row.workerName || "—"}</TableCell>
           </TableRow>
         )
       }}
@@ -75,6 +69,9 @@ export function WarrantyTable({ rows }: { rows: Row[] }) {
             <div>
               <div className="font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</div>
               <div className="text-sm text-[var(--color-text)]">{[row.brand, row.model].filter(Boolean).join(" ") || "—"}</div>
+              <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                {[row.worksiteName, row.warrantyEndDate ? `hasta ${formatDate(row.warrantyEndDate)}` : null].filter(Boolean).join(" · ") || "—"}
+              </div>
             </div>
             {status && <MetaBadge meta={status} dot />}
           </Link>

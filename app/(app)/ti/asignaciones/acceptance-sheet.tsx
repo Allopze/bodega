@@ -22,17 +22,28 @@ import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ChoiceCardGroup } from "@/components/ui/choice-card-group"
 import { recordAssignmentAcceptanceAction } from "./actions"
 
 interface AcceptanceSheetProps {
-  trigger: React.ReactNode
+  /** Opcional: la hoja puede abrirse desde fuera con `open`/`onOpenChange` (menú «Más» de la tabla). */
+  trigger?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   assignment: { id: string; code: string; assetCode: string; workerName: string }
 }
 
-export function AcceptanceSheet({ trigger, assignment }: AcceptanceSheetProps) {
-  const [open, setOpen] = React.useState(false)
-  const [outcome, setOutcome] = React.useState<"aceptada" | "sin_acuse">("aceptada")
+export function AcceptanceSheet({ trigger, open: openProp, onOpenChange, assignment }: AcceptanceSheetProps) {
+  const [openState, setOpenState] = React.useState(false)
+  const open = openProp ?? openState
+  const setOpen = (value: boolean) => {
+    if (openProp === undefined) setOpenState(value)
+    onOpenChange?.(value)
+  }
+  // TIUX-09: sin resultado preseleccionado. Con «El trabajador acusó recibo»
+  // ya marcado, el camino corto era dar por recibida un acta que nadie
+  // confirmó; el técnico elige, y elegir «No hubo acuse» exige motivo.
+  const [outcome, setOutcome] = React.useState<"aceptada" | "sin_acuse" | null>(null)
 
   const [state, formAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
     const result = await recordAssignmentAcceptanceAction(prev, formData)
@@ -45,7 +56,7 @@ export function AcceptanceSheet({ trigger, assignment }: AcceptanceSheetProps) {
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>{trigger}</SheetTrigger>
+      {trigger && <SheetTrigger asChild>{trigger}</SheetTrigger>}
       <SheetContent className="sm:max-w-lg">
         <form action={formAction} className="flex flex-col flex-1 min-h-0">
           <input type="hidden" name="assignmentId" value={assignment.id} />
@@ -67,19 +78,19 @@ export function AcceptanceSheet({ trigger, assignment }: AcceptanceSheetProps) {
 
             <FieldGroup>
               <Field label="Resultado" required error={state.fieldErrors?.outcome?.[0]}>
-                <Select
-                  name="outcome"
-                  value={outcome}
-                  onValueChange={(v) => setOutcome(v as "aceptada" | "sin_acuse")}
-                >
-                  <SelectTrigger aria-label="Resultado del acuse">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="aceptada">El trabajador acusó recibo</SelectItem>
-                    <SelectItem value="sin_acuse">No hubo acuse</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div>
+                  <input type="hidden" name="outcome" value={outcome ?? ""} />
+                  <ChoiceCardGroup
+                    label="Resultado del acuse"
+                    value={outcome}
+                    onChange={setOutcome}
+                    className="sm:grid-cols-2"
+                    options={[
+                      { value: "aceptada", title: "El trabajador acusó recibo" },
+                      { value: "sin_acuse", title: "No hubo acuse" },
+                    ]}
+                  />
+                </div>
               </Field>
 
               <Field
@@ -88,7 +99,7 @@ export function AcceptanceSheet({ trigger, assignment }: AcceptanceSheetProps) {
                 error={state.fieldErrors?.note?.[0]}
                 helper={outcome === "sin_acuse"
                   ? "Por qué el acta queda sin acuse: quedará impreso en el acta."
-                  : "Cómo se acusó recibo (firma en papel, correo, presencial)."}
+                  : "Cómo acusó recibo: firma del acta, correo, verbal…"}
               >
                 <Textarea name="note" maxLength={500} rows={3} />
               </Field>
