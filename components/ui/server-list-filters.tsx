@@ -183,4 +183,12 @@ const ServerListFiltersInner = React.memo(function ServerListFiltersInner({
   )
 })
 
-export const ServerListFilters = ServerListFiltersInner
+/**
+ * Función y no el `memo` tal cual: un Server Component (p. ej. `/compras`, que
+ * desde el 2026-10-05 pone estos filtros sobre sus dos secciones) que renderiza
+ * un `memo` exportado lo remonta en cada `router.refresh()` y Server Action
+ * (ver `lib/__tests__/client-memo-boundary.test.ts`).
+ */
+export function ServerListFilters(props: ServerListFiltersProps) {
+  return <ServerListFiltersInner {...props} />
+}

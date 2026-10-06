@@ -10,7 +10,7 @@
  * implementa la segunda: se prefija sólo lo determinable.
  */
 import { describe, expect, it } from "vitest"
-import { applySuggestedPrices, awardedUnitPrice, priceHint, suggestedPrice } from "./oc-form.helpers"
+import { applySuggestedPrices, awardedUnitPrice, ocSubmitLabel, priceHint, suggestedPrice } from "./oc-form.helpers"
 import type { PendingItemOption } from "./oc-form.types"
 
 function item(overrides: Partial<PendingItemOption> = {}): PendingItemOption {
@@ -107,5 +107,17 @@ describe("priceHint", () => {
   it("sin adjudicación sigue diciendo el precio de catálogo", () => {
     expect(priceHint(item({ supplierPrices: { "sup-1": 20_000 } }), "sup-1")).toContain("Precio catálogo")
     expect(priceHint(item(), "sup-1")).toBeNull()
+  })
+})
+
+describe("ocSubmitLabel", () => {
+  it("con una sola OC conserva «Crear OC (N ítems)»", () => {
+    expect(ocSubmitLabel(1, 1)).toBe("Crear OC (1 ítem)")
+    expect(ocSubmitLabel(5, 1)).toBe("Crear OC (5 ítems)")
+    expect(ocSubmitLabel(3, 0)).toBe("Crear OC (3 ítems)")
+  })
+
+  it("con varios proveedores dice cuántas OC nacen y cuántos ítems llevan", () => {
+    expect(ocSubmitLabel(5, 2)).toBe("Crear 2 OC · 5 ítems")
   })
 })

@@ -9,6 +9,7 @@ import { useEnterAdvancesFields } from "@/lib/hooks/use-enter-advances-fields"
 import { INITIAL_STATE } from "@/lib/form-state"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
 import { FileInput } from "@/components/ui/file-input"
@@ -23,6 +24,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { MetaBadge } from "@/components/states/state-badge"
 import { formatQty, quantityStep } from "@/lib/utils"
+import { buildWorkerSearchText } from "./worker-search"
 import { buildDeliveryStockGroups, requiresSizeChoice } from "./delivery-size-options"
 import { earliestDeliveryDate, MAX_DELIVERY_BACKDATING_DAYS, type ActionState } from "@/lib/validation/operations"
 import { registerWorkerDeliveryAction } from "./actions"
@@ -47,6 +49,8 @@ export type {
  */
 type DeliveryLine = {
   productId: string
+  /** Ítem de solicitud recibido que esta línea entrega (trazabilidad OC → entrega). */
+  requestItemId?: string | null
   quantity: number
   notes: string | null
   returnProductId: string | null
@@ -59,6 +63,14 @@ type DeliveryLine = {
 /** Los cuatro motivos que documenta la columna `return_reason`. */
 const RETURN_REASONS = ["desgastado", "dañado", "vencido", "otro"] as const
 
+/** El valor que viaja al servidor es el de la columna; la etiqueta es para la persona. */
+const RETURN_REASON_LABELS: Record<(typeof RETURN_REASONS)[number], string> = {
+  desgastado: "Desgastado",
+  dañado: "Dañado",
+  vencido: "Vencido",
+  otro: "Otro",
+}
+
 /** Valor centinela del selector: el EPP retirado no está en el catálogo. */
 const FREE_RETURN_PRODUCT = "__free"
 
@@ -69,6 +81,8 @@ export function DeliveryForm({
   today,
   initialSourceWorksiteId,
   initialProductId,
+  initialRequestItemId,
+  initialQuantity,
   onSuccess,
 }: {
   worksites: DeliveryWorksiteOption[]
@@ -78,6 +92,10 @@ export function DeliveryForm({
   today: string
   initialSourceWorksiteId?: string
   initialProductId?: string
+  /** "Entregar" desde EPP por entregar: la línea que se agregue lleva este vínculo. */
+  initialRequestItemId?: string
+  /** Saldo sugerido para la línea precargada (ya acotado al stock). */
+  initialQuantity?: number
   onSuccess?: () => void
 }) {
   const router = useRouter()
@@ -97,7 +115,9 @@ export function DeliveryForm({
   const [workerId, setWorkerId] = React.useState("")
   const [deliveredAt, setDeliveredAt] = React.useState(today)
   const [pendingProductId, setPendingProductId] = React.useState(initialProductId ?? "")
-  const [pendingQuantity, setPendingQuantity] = React.useState("")
+  const [pendingQuantity, setPendingQuantity] = React.useState(
+    initialProductId && initialQuantity && initialQuantity > 0 ? String(initialQuantity) : "",
+  )
   // La familia del producto que se está agregando. La línea sigue guardando el
   // `productId` de la variante: esto es sólo el primer paso de la elección.
   const [pendingGroupKey, setPendingGroupKey] = React.useState(() => {
@@ -137,13 +157,18 @@ export function DeliveryForm({
     () => stockProducts.filter((product) => product.sourceWorksiteId === sourceWorksiteId && product.stockQuantity > 0),
     [sourceWorksiteId, stockProducts],
   )
-  const availableWorkers = React.useMemo(
-    () => workers.filter((worker) => worker.worksiteId === sourceWorksiteId),
+  // Primero va "¿a quién le entrego?": se busca en todo el padrón visible, con
+  // los de la bodega abierta arriba. Elegir al trabajador decide la bodega.
+  const orderedWorkers = React.useMemo(
+    () => [
+      ...workers.filter((worker) => worker.worksiteId === sourceWorksiteId),
+      ...workers.filter((worker) => worker.worksiteId !== sourceWorksiteId),
+    ],
     [sourceWorksiteId, workers],
   )
   const selectedWorker = React.useMemo(
-    () => availableWorkers.find((worker) => worker.id === workerId),
-    [availableWorkers, workerId],
+    () => workers.find((worker) => worker.id === workerId),
+    [workers, workerId],
   )
   // Familia → talla: el bodeguero elige primero qué entrega y después cuál de
   // las tallas que hay en la bodega. Sin este paso el selector repetía el mismo
@@ -168,13 +193,20 @@ export function DeliveryForm({
   const selectedPendingProduct = availableStock.find((product) => product.productId === pendingProductId)
   const pendingStep = quantityStep(selectedPendingProduct?.unitOfMeasure)
 
-  function changeSource(nextSourceWorksiteId: string) {
-    setSourceWorksiteId(nextSourceWorksiteId)
-    setWorkerId("")
+  function resetSelection() {
     setLines([])
     setPendingGroupKey("")
     setPendingProductId("")
     setPendingQuantity("")
+  }
+
+  function changeSource(nextSourceWorksiteId: string) {
+    if (nextSourceWorksiteId === sourceWorksiteId) return
+    setSourceWorksiteId(nextSourceWorksiteId)
+    // Sólo se entrega desde el stock de la faena del propio trabajador: si la
+    // bodega elegida no es la suya, el trabajador deja de ser válido.
+    if (selectedWorker && selectedWorker.worksiteId !== nextSourceWorksiteId) setWorkerId("")
+    resetSelection()
   }
 
   /**
@@ -193,6 +225,12 @@ export function DeliveryForm({
 
   function changeWorker(nextWorkerId: string) {
     setWorkerId(nextWorkerId)
+    const worker = workers.find((candidate) => candidate.id === nextWorkerId)
+    // La bodega se deduce de la faena del trabajador; sigue siendo editable.
+    if (worker && worker.worksiteId !== sourceWorksiteId) {
+      setSourceWorksiteId(worker.worksiteId)
+      resetSelection()
+    }
   }
 
   function addLine() {
@@ -206,10 +244,16 @@ export function DeliveryForm({
       toast.error(`Stock disponible: ${formatQty(selectedPendingProduct.stockQuantity, selectedPendingProduct.unitOfMeasure)}`)
       return
     }
+    const linkedRequestItemId = initialRequestItemId
+      && selectedPendingProduct.productId === initialProductId
+      && !lines.some((line) => line.requestItemId === initialRequestItemId)
+      ? initialRequestItemId
+      : null
     setLines((current) => [
       ...current,
       {
         productId: selectedPendingProduct.productId,
+        requestItemId: linkedRequestItemId,
         quantity,
         notes: null,
         returnProductId: null,
@@ -272,7 +316,40 @@ export function DeliveryForm({
       <input type="hidden" name="itemsJson" value={JSON.stringify(lines)} />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Field label="Bodega de origen" htmlFor="deliverySourceWorksite" required error={state.fieldErrors?.sourceWorksiteId?.[0]}>
+        <Field label="Trabajador" htmlFor="deliveryWorker" required error={state.fieldErrors?.workerId?.[0]}>
+          <Select searchable value={workerId} onValueChange={changeWorker}>
+            <SelectTrigger id="deliveryWorker" error={!!state.fieldErrors?.workerId}>
+              <SelectValue placeholder="Busca por nombre, RUT, cargo o faena" />
+            </SelectTrigger>
+            <SelectContent>
+              {orderedWorkers.map((worker) => (
+                <SelectItem
+                  key={worker.id}
+                  value={worker.id}
+                  textValue={buildWorkerSearchText(worker)}
+                >
+                  {worker.name}{worker.rut ? ` · ${worker.rut}` : ""} · {worker.worksiteName}{worker.position ? ` · ${worker.position}` : ""}
+                </SelectItem>
+              ))}
+              {orderedWorkers.length === 0 && (
+                <SelectItem value="__no-active-workers" disabled>No hay trabajadores activos</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+          <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
+            Se busca por nombre o RUT, con o sin puntos y guion.
+          </p>
+        </Field>
+
+        <Field
+          label="Bodega de origen"
+          htmlFor="deliverySourceWorksite"
+          required
+          error={state.fieldErrors?.sourceWorksiteId?.[0]}
+          helper={selectedWorker
+            ? `Sugerida por la faena del trabajador. Sólo se entrega desde el stock de su propia faena.`
+            : "Se sugiere según la faena del trabajador que elijas."}
+        >
           <Select value={sourceWorksiteId} onValueChange={changeSource}>
             <SelectTrigger id="deliverySourceWorksite" error={!!state.fieldErrors?.sourceWorksiteId}>
               <SelectValue placeholder="Selecciona bodega" />
@@ -283,33 +360,6 @@ export function DeliveryForm({
               ))}
             </SelectContent>
           </Select>
-        </Field>
-
-        <Field label="Trabajador" htmlFor="deliveryWorker" required error={state.fieldErrors?.workerId?.[0]}>
-          <Select searchable value={workerId} onValueChange={changeWorker}>
-            <SelectTrigger id="deliveryWorker" error={!!state.fieldErrors?.workerId}>
-              <SelectValue placeholder="Busca por nombre, cargo o faena" />
-            </SelectTrigger>
-            <SelectContent>
-              {availableWorkers.map((worker) => (
-                <SelectItem
-                  key={worker.id}
-                  value={worker.id}
-                  textValue={`${worker.name} ${worker.position ?? ""} ${worker.worksiteName}`}
-                >
-                  {worker.name} · {worker.worksiteName}{worker.position ? ` · ${worker.position}` : ""}
-                </SelectItem>
-              ))}
-              {availableWorkers.length === 0 && (
-                <SelectItem value="__no-active-workers" disabled>Esta bodega no tiene trabajadores activos</SelectItem>
-              )}
-            </SelectContent>
-          </Select>
-          <p className="mt-1.5 text-xs text-[var(--color-text-subtle)]">
-            {availableWorkers.length === 0
-              ? "La bodega de origen elegida no tiene dotación activa. Cámbiala por la faena del trabajador: sólo se entrega desde el stock de su propia faena."
-              : "Sólo se muestran trabajadores activos de la bodega de origen seleccionada."}
-          </p>
         </Field>
 
         <Field
@@ -485,15 +535,15 @@ export function DeliveryForm({
                       mayoría de las entregas no lo tienen, y abrirlo siempre
                       convertiría el formulario en un cuestionario. */}
                   <div className="mt-2 border-t border-dashed border-[var(--color-border)] pt-2">
-                    <label className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
-                      <input
-                        type="checkbox"
+                    {/* Objetivo táctil de 44 px en móvil: la casilla sola mide 16. */}
+                    <div className="[&_label]:w-full max-sm:[&_label]:min-h-11 [&_input]:h-5 [&_input]:w-5 [&_span]:text-sm">
+                      <Checkbox
                         checked={line.returnQuantity !== null}
                         onChange={(event) => toggleReturn(line, event.target.checked)}
+                        label="Retiro EPP usado a cambio"
                         aria-label={`Retirar EPP usado al entregar ${product?.displayName ?? product?.productName ?? line.productId}`}
                       />
-                      Retiro EPP usado a cambio
-                    </label>
+                    </div>
 
                     {line.returnQuantity !== null && (
                       <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_10rem]">
@@ -542,7 +592,7 @@ export function DeliveryForm({
                             </SelectTrigger>
                             <SelectContent>
                               {RETURN_REASONS.map((reason) => (
-                                <SelectItem key={reason} value={reason}>{reason}</SelectItem>
+                                <SelectItem key={reason} value={reason}>{RETURN_REASON_LABELS[reason]}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -587,11 +637,18 @@ export function DeliveryForm({
         <p className="flex items-center gap-1.5 text-sm text-[var(--color-danger)]"><Warning size={15} /> {state.message}</p>
       )}
 
-      <div className="flex justify-end border-t border-[var(--color-border)] pt-4">
+      {/* Barra pegada al pie del panel: en móvil el formulario mide más de una
+          pantalla y el envío quedaba al final del scroll. Sangra el padding de
+          `SheetBody` (px-6 py-5) para llegar de borde a borde. */}
+      <div className="sticky bottom-0 z-10 -mx-6 -mb-5 flex items-center justify-between gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <p className="text-sm text-[var(--color-text-muted)] tabular-nums" aria-live="polite">
+          {lines.length} {lines.length === 1 ? "producto" : "productos"}
+        </p>
         <SubmitButton
           label="Registrar entrega"
           loadingLabel="Guardando…"
           variant="primary"
+          className="max-sm:min-h-11 max-sm:flex-1"
           disabled={!sourceWorksiteId || !workerId || lines.length === 0 || lines.some((line) => {
             const product = availableStock.find((candidate) => candidate.productId === line.productId)
             // ENT-002: una devolución declarada a medias —cantidad sin

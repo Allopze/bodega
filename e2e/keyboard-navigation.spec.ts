@@ -22,7 +22,7 @@ const CRITICAL_ROUTES = [
   { path: "/recepcion",        name: "Recepción" },
   { path: "/bodega",           name: "Bodega" },
   { path: "/entregas",         name: "Entregas" },
-  { path: "/trazabilidad",     name: "Trazabilidad" },
+  { path: "/seguimiento",     name: "Seguimiento de solicitudes" },
   { path: "/combustibles",     name: "Combustibles" },
   { path: "/combustibles/reportes", name: "Reportes de combustibles" },
   { path: "/prevencion/pdtp",  name: "PDTP" },

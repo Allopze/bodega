@@ -21,6 +21,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { StateBadge } from "@/components/states/state-badge"
 import { RequestProgressPanel } from "@/components/states/request-progress-panel"
 import { buildOcProgress, INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue"
+import type { OcActiveGuideStatus } from "@/lib/work-queue-builders"
 import { OcActions } from "./oc-actions"
 import { InvoicesSection } from "./invoices-section"
 import { OcDetailTabs } from "./oc-detail-tabs"
@@ -497,7 +498,12 @@ export default async function OcDetailPage({
     canViewPurchasing ? "compras" : "recepcion",
     // `closeWarnings` sólo se llena en estados que ya admiten facturación, así
     // que basta con que tenga contenido.
-    { invoicePending: closeWarnings.length > 0 },
+    // `activeGuideStatus` (ADQ-04): sin él el siguiente paso seguía diciendo
+    // "Despacha los ítems a faena" con la guía ya despachada.
+    {
+      invoicePending: closeWarnings.length > 0,
+      activeGuideStatus: activeDispatchGuide?.status as OcActiveGuideStatus | undefined,
+    },
   )
 
   // Filas de la tabla de avance (pedido / recibido / facturado por ítem)
@@ -559,6 +565,14 @@ export default async function OcDetailPage({
     || (invoiceReconciliation?.status === "no_invoices" && INVOICE_DUE_ORDER_STATUSES.includes(order.status))
     || (invoiceReconciliation?.status === "partially_invoiced" && hasReceivedUninvoicedQuantity)
 
+  // El historial guarda el resumen de la emisión (`issueAndSendOrder`):
+  // «… Constancia: <texto>» sólo cuando quien emitió la declaró.
+  const issueEvidence = (() => {
+    const row = timelineEvents.find((event) => event.fromStatus === "draft" && event.toStatus === "sent")
+    const at = row?.reason?.indexOf("Constancia: ") ?? -1
+    return row?.reason && at >= 0 ? row.reason.slice(at + "Constancia: ".length).trim() || null : null
+  })()
+
   return (
     <PageContainer width="workbench">
       <PageHeader
@@ -577,14 +591,20 @@ export default async function OcDetailPage({
         }
       />
 
-      {/* UX-6: "Emitir y enviar" es la acción principal del módulo y antes
-          no confirmaba nada — el redirect llevaba este parámetro, pero
-          ningún componente lo consumía. */}
-      {(actualizada === "enviada" || actualizada === "creada") && (
-        <div className="mb-6 flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-success-tint)] border border-[var(--color-success-line)]">
+      {/* UX-6 + ADQ-01: el banner afirmaba "emitida y enviada al proveedor", y
+          la plataforma no envía nada (OC-002). Dice sólo lo que consta. */}
+      {actualizada === "creada" && (
+        <div role="status" className="mb-6 flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-success-tint)] border border-[var(--color-success-line)]">
+          <CheckCircle size={16} className="text-[var(--color-success-ink)] shrink-0" />
+          <p className="text-sm text-[var(--color-success-ink)]">Orden de compra creada en borrador.</p>
+        </div>
+      )}
+      {actualizada === "enviada" && (
+        <div role="status" className="mb-6 flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] bg-[var(--color-success-tint)] border border-[var(--color-success-line)]">
           <CheckCircle size={16} className="text-[var(--color-success-ink)] shrink-0" />
           <p className="text-sm text-[var(--color-success-ink)]">
-            {actualizada === "creada" ? "Orden de compra creada en borrador." : "Orden emitida y enviada al proveedor."}
+            OC emitida; pasa a Recepción.{issueEvidence ? <> Constancia registrada: {issueEvidence}.</> : null}{" "}
+            <a href={`/compras/${order.id}/print/pdf`} className="font-medium underline underline-offset-2">Descargar PDF</a>
           </p>
         </div>
       )}

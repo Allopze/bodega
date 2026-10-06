@@ -28,14 +28,19 @@ import type { WorksiteProductOption } from "./movement-options"
 export function DiscardPanel({
   worksiteId,
   products,
+  initialProductId,
   onDone,
 }: {
   worksiteId: string
   products: WorksiteProductOption[]
+  /** Producto preseleccionado cuando se llega desde la fila de Stock. */
+  initialProductId?: string
   /** Se llama cuando el movimiento queda registrado, para cerrar la hoja. */
   onDone?: () => void
 }) {
-  const [productId, setProductId] = React.useState<string>("")
+  const [productId, setProductId] = React.useState<string>(
+    () => (initialProductId && products.some((p) => p.productId === initialProductId && p.quantity > 0) ? initialProductId : ""),
+  )
   const formRef = React.useRef<HTMLFormElement>(null)
 
   // El aviso y el cierre salen dentro de la acción: la hoja queda montada
@@ -62,10 +67,10 @@ export function DiscardPanel({
       <div className="border-b border-(--color-border) px-5 py-4">
         <h2 className="text-h2 flex items-center gap-2 text-(--color-text)">
           <Trash size={16} className="text-(--color-text-muted)" />
-          Baja por desecho
+          Baja o merma
         </h2>
         <p className="mt-0.5 text-xs text-(--color-text-muted)">
-          Retiro definitivo de EPP dañado, vencido o inservible. Emite folio propio.
+          Se dañó, venció o se perdió: se retira del stock con folio propio.
         </p>
       </div>
 

@@ -83,6 +83,9 @@ export const pgliteTestFiles = [
   "lib/__tests__/epp-stock-availability.test.ts",
   "lib/__tests__/deliveries-size-stock-pglite.test.ts",
   "lib/__tests__/epp-delivery-scale-reconciliation.test.ts",
+  // BOD (auditoría 2026-10-05): EPP recibido y aún por entregar, compartido por
+  // /entregas y el aviso de /bodega.
+  "lib/__tests__/epp-pending-delivery.test.ts",
   "lib/__tests__/epp-import-family-type.test.ts",
   "lib/__tests__/epp-import-size-family.test.ts",
   "lib/__tests__/epp-clothing-sizes.test.ts",

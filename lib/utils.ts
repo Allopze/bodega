@@ -169,9 +169,12 @@ export function formatCompactCLP(value: number): string {
   if (!Number.isFinite(value)) return VALUE_MISSING
   const abs = Math.abs(value)
   const sign = value < 0 ? "-" : ""
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`
-  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(0)}K`
-  return `${sign}$${abs.toFixed(0)}`
+  // `toFixed` escribía "$1600.0M": punto decimal inglés y sin separador de
+  // miles sobre los mil millones (auditoría 2026-10-05). es-CL da "$1.600M" y
+  // "$1,2M", que es lo que este docstring prometía.
+  if (abs >= 1_000_000) return `${sign}$${qtyFormat(1).format(abs / 1_000_000)}M`
+  if (abs >= 1_000) return `${sign}$${qtyFormat(0).format(abs / 1_000)}K`
+  return `${sign}$${qtyFormat(0).format(abs)}`
 }
 
 /** Cantidad compacta para ejes: `1,2K`, `45K`, `300`. Misma motivación que
@@ -180,8 +183,8 @@ export function formatCompactQty(value: number): string {
   if (!Number.isFinite(value)) return VALUE_MISSING
   const abs = Math.abs(value)
   const sign = value < 0 ? "-" : ""
-  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(1)}K`
-  return `${sign}${abs.toFixed(0)}`
+  if (abs >= 1_000) return `${sign}${qtyFormat(1).format(abs / 1_000)}K`
+  return `${sign}${qtyFormat(0).format(abs)}`
 }
 
 /**

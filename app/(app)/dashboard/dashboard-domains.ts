@@ -1,12 +1,38 @@
 import type { Permission } from "@/modules/permissions"
 
 /**
- * Los cinco dominios en los que se agrupa el tablero bajo el Centro de Control.
+ * Los siete dominios ("Por área") en los que se agrupa el tablero.
  *
- * Cada uno es una sección anclada con su fila de KPIs, sus gráficos y su enlace
- * al módulo que los explica. Sustituyen a los tres grupos de
+ * Cada uno es una sección con su fila de KPIs, sus gráficos y su enlace al
+ * módulo que los explica. Sustituyen a los tres grupos de
  * `DashboardAnalyticsSection` ("Operación", "Prevención y SST", "Flota"), que
  * cubrían 6 de ~19 dominios y cuyos gráficos no llevaban a ninguna parte (G-03).
+ *
+ * ── Nombres: qué se llama igual que el sidebar y qué no (INI-09) ─────────────
+ * El slug (`?vista=`) es estable —los enlaces guardados siguen resolviendo— y
+ * lo único que cambia es el rótulo. Los nombres salen de `components/layout/
+ * areas.ts` y de los grupos de `modules/prevention/manifest.ts`:
+ *
+ *   slug           | rótulo en Inicio           | dónde vive en el sidebar
+ *   ---------------|----------------------------|-----------------------------------
+ *   finanzas       | Finanzas                   | NO es un área: cruza Facturación
+ *                  |                            | (venta y cobranza), Compras (gasto
+ *                  |                            | en OC) y Combustibles (costo).
+ *                  |                            | Nombre descriptivo propio.
+ *   adquisiciones  | Adquisiciones              | Adquisiciones (mismo nombre)
+ *   flota          | Control operacional        | Control operacional: Flota,
+ *                  |                            | Combustibles y Mantenciones
+ *   bodega         | Bodega                     | Bodega (incluye Entregas)
+ *   prevencion     | Prevención                 | Prevención (PDTP, incidentes, CAPA,
+ *                  |                            | indicadores, requisitos legales)
+ *   terreno        | Prevención en terreno      | Prevención: inspecciones, permisos,
+ *                  |                            | emergencias, higiene y comités
+ *   gobernanza     | Documentación y            | Prevención: Registro documental,
+ *                  | capacitación               | Campañas y Capacitación, PPA y
+ *                  |                            | Evaluaciones SST
+ *
+ * "Flota", "Terreno" y "Gobernanza" no existen en ningún menú; eran nombres del
+ * código que el usuario no tenía delante en ningún otro sitio.
  */
 
 export const DASHBOARD_DOMAIN_KEYS = [
@@ -25,11 +51,13 @@ export interface DashboardDomain {
   key: DashboardDomainKey
   title: string
   /**
-   * Rótulo de la pestaña. `title` no sirve: "Control preventivo en terreno" y
-   * "Cumplimiento y gobernanza" empujaban la barra a scroll horizontal ya en el
-   * primer render a 1366.
+   * Rótulo del selector "Por área" ("Por área: Bodega"). Hoy coincide con
+   * `title`: los nombres largos ya no viven en una barra de pestañas con scroll
+   * sino en un desplegable, pero se conserva el campo por si vuelven a divergir.
    */
   shortTitle: string
+  /** Una línea para el menú "Por área": qué cifras trae. */
+  description: string
   /** `id` de la `<section>` y destino de los enlaces profundos al dominio. */
   anchor: string
   /**
@@ -44,6 +72,7 @@ export const DASHBOARD_DOMAINS: Record<DashboardDomainKey, DashboardDomain> = {
     key: "finanzas",
     title: "Finanzas",
     shortTitle: "Finanzas",
+    description: "Facturación de venta, cobranza, gasto en OC y costo de combustible.",
     anchor: "dominio-finanzas",
     /*
      * Cubre las dos direcciones del dinero: `billing:view` la venta
@@ -57,41 +86,47 @@ export const DASHBOARD_DOMAINS: Record<DashboardDomainKey, DashboardDomain> = {
     key: "adquisiciones",
     title: "Adquisiciones",
     shortTitle: "Adquisiciones",
+    description: "Solicitudes, aprobaciones, órdenes de compra y recepciones.",
     anchor: "dominio-adquisiciones",
     permissions: ["requests:view_own", "requests:view_all", "purchasing:view", "approvals:approve", "receiving:view"],
   },
   bodega: {
     key: "bodega",
-    title: "Bodega y entregas",
+    title: "Bodega",
     shortTitle: "Bodega",
+    description: "Stock, movimientos, entregas a trabajadores y cobertura de EPP.",
     anchor: "dominio-bodega",
     permissions: ["warehouse:view_stock", "deliveries:view", "deliveries:create", "prevention:epp:view"],
   },
   prevencion: {
     key: "prevencion",
-    title: "Prevención y SST",
+    title: "Prevención",
     shortTitle: "Prevención",
+    description: "Programa de trabajo, incidentes, acciones correctivas e indicadores.",
     anchor: "dominio-prevencion",
     permissions: ["prevention:pdtp:view", "prevention:incidents:view", "prevention:capa:view", "prevention:indicadores:view", "prevention:legal:view"],
   },
   flota: {
     key: "flota",
-    title: "Flota y combustible",
-    shortTitle: "Flota",
+    title: "Control operacional",
+    shortTitle: "Control operacional",
+    description: "Flota, combustible y mantenciones.",
     anchor: "dominio-flota",
     permissions: ["combustibles:view", "flota:view", "mantenciones:view"],
   },
   terreno: {
     key: "terreno",
-    title: "Control preventivo en terreno",
-    shortTitle: "Terreno",
+    title: "Prevención en terreno",
+    shortTitle: "Prevención en terreno",
+    description: "Inspecciones, permisos, simulacros, higiene y comité paritario.",
     anchor: "dominio-terreno",
     permissions: ["prevention:inspections:view", "prevention:permits:view", "prevention:emergency:view", "prevention:hygiene:view", "prevention:cphs:view"],
   },
   gobernanza: {
     key: "gobernanza",
-    title: "Cumplimiento y gobernanza",
-    shortTitle: "Gobernanza",
+    title: "Documentación y capacitación",
+    shortTitle: "Documentación y capacitación",
+    description: "Documentos vigentes, capacitación, acuses y PPA.",
     anchor: "dominio-gobernanza",
     permissions: ["prevention:docs:view", "prevention:training:view", "ppa:view", "sst:view"],
   },
@@ -105,8 +140,15 @@ export const DASHBOARD_DOMAINS: Record<DashboardDomainKey, DashboardDomain> = {
  */
 const MONEY_PERMISSIONS: readonly Permission[] = ["purchasing:view", "billing:view"]
 
-const MONEY_FIRST: readonly DashboardDomainKey[] = ["finanzas", "adquisiciones", "flota", "prevencion", "bodega", "terreno", "gobernanza"]
-const PREVENTION_FIRST: readonly DashboardDomainKey[] = ["prevencion", "terreno", "gobernanza", "bodega", "adquisiciones", "flota", "finanzas"]
+/*
+ * Fuera del dominio que abre cada perfil, el resto sigue el orden del sidebar
+ * (`areas.ts`: Adquisiciones, Control operacional, Bodega, … Prevención) y las
+ * tres vistas de Prevención quedan contiguas. Antes el orden era uno ad hoc
+ * (flota, prevención, bodega, terreno…) que no coincidía con ninguna otra
+ * superficie.
+ */
+const MONEY_FIRST: readonly DashboardDomainKey[] = ["finanzas", "adquisiciones", "flota", "bodega", "prevencion", "terreno", "gobernanza"]
+const PREVENTION_FIRST: readonly DashboardDomainKey[] = ["prevencion", "terreno", "gobernanza", "adquisiciones", "flota", "bodega", "finanzas"]
 
 function domainIsVisibleForPermissions(domain: DashboardDomain, permissions: ReadonlySet<string>) {
   if (domain.key === "finanzas") {

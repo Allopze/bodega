@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { login, receiptSubmitName, receiptStageCard } from "./helpers"
+import { login, receiptSubmitName, receiptStageCard, issueOrderFromDetail } from "./helpers"
 
 /**
  * Camino alternativo de despacho: **directo a faena**, sin checkpoint de
@@ -38,7 +38,7 @@ test.describe("Flujo OC directo a faena", () => {
     await login(page)
 
     await page.goto(`/compras/${OC_ID}`)
-    await page.getByRole("button", { name: "Emitir y enviar" }).click()
+    await issueOrderFromDetail(page)
     await expect(page.getByText(/Pendiente de recepción/).first()).toBeVisible({ timeout: 15_000 })
 
     // El siguiente paso es faena directamente: no se ofrece la llegada a oficina.

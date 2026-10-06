@@ -6,8 +6,8 @@ import {
   worksites, users as usersTable, products, suppliers,
 } from "@/db/schema"
 import { eq, and, inArray, asc, sql, count } from "drizzle-orm"
-import { requirePermission } from "@/lib/auth/can"
-import { approvalQueueFilter } from "@/lib/approvals-queue"
+import { can, requirePermission } from "@/lib/auth/can"
+import { approvalQueueFilter, quotationQueueFilter, type QuotationApprovalRequestType } from "@/lib/approvals-queue"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -17,7 +17,7 @@ import { parseListParams, textSearchSql, eqFilter, worksiteEqSql } from "@/lib/a
 import type { ServerListFilterOption } from "@/components/ui/server-list-filters"
 import { ApprovalPanel } from "./approval-panel"
 import { canApproveEpp, canSetDispatch } from "./roles"
-import type { ApprovalItem, ApprovalRequest } from "./types"
+import type { ApprovalItem, ApprovalRequest, QuotationPendingRequest } from "./types"
 
 export const metadata: Metadata = { title: "Aprobaciones" }
 
@@ -45,9 +45,25 @@ export default async function AprobacionesPage({
     eqFilter(purchaseRequests.urgency, listParams.urgencia),
   )
 
+  // ADQ-05: repuestos y servicios no entran a la cola ítem-a-ítem; se aprueban
+  // eligiendo una cotización en el detalle. Se listan aparte, sólo los tipos que
+  // este usuario puede aprobar, con los mismos filtros de URL que la cola.
+  const quotationTypes: QuotationApprovalRequestType[] = [
+    ...(can(session, "repuestos:approve") ? (["repuestos"] as const) : []),
+    ...(can(session, "servicios:approve") ? (["servicios"] as const) : []),
+  ]
+  const quotationFilter = and(
+    quotationQueueFilter({ isGlobal: isGlobalRole(session), worksiteIds: visibleWsIds }, quotationTypes),
+    selectedRequestId ? eq(purchaseRequests.id, selectedRequestId) : undefined,
+    textSearchSql(listParams.q, [purchaseRequests.code]),
+    worksiteEqSql(purchaseRequests.worksiteId, listParams.faena),
+    eqFilter(purchaseRequests.urgency, listParams.urgencia),
+  )
+  const QUOTATION_SECTION_LIMIT = 10
+
   // ARQ-10: ninguna depende de la otra — ambas cuelgan sólo del scope/filtro
   // ya resuelto arriba — así que van juntas en vez de en 2 round-trips.
-  const [[totalRequestsRow], worksiteOptionRows] = await Promise.all([
+  const [[totalRequestsRow], worksiteOptionRows, quotationRows, [quotationTotalRow]] = await Promise.all([
     db
       .select({ total: count() })
       .from(purchaseRequests)
@@ -63,7 +79,28 @@ export default async function AprobacionesPage({
           : visibleWsIds.length > 0 ? inArray(worksites.id, visibleWsIds) : sql`false`,
       ))
       .orderBy(worksites.name),
+    quotationTypes.length === 0
+      ? Promise.resolve([])
+      : db
+          .select({
+            id:          purchaseRequests.id,
+            code:        purchaseRequests.code,
+            requestType: purchaseRequests.requestType,
+            worksiteName: worksites.name,
+            itemCount:   sql<number>`(select count(*)::int from purchase_request_items qi where qi.request_id = ${purchaseRequests.id} and qi.status = 'requested')`,
+            ageDays:     sql<number | null>`case when ${purchaseRequests.submittedAt} is null then null else greatest(0, floor(extract(epoch from (now() - ${purchaseRequests.submittedAt}::timestamptz)) / 86400))::int end`,
+          })
+          .from(purchaseRequests)
+          .innerJoin(worksites, eq(worksites.id, purchaseRequests.worksiteId))
+          .where(quotationFilter)
+          .orderBy(asc(purchaseRequests.submittedAt))
+          .limit(QUOTATION_SECTION_LIMIT),
+    quotationTypes.length === 0
+      ? Promise.resolve([{ total: 0 }])
+      : db.select({ total: count() }).from(purchaseRequests).where(quotationFilter),
   ])
+  const quotationRequests: QuotationPendingRequest[] = quotationRows
+  const quotationTotal = quotationTotalRow?.total ?? 0
   const pagination = resolvePagination({
     pageParam: sp.page,
     totalItems: totalRequestsRow?.total ?? 0,
@@ -104,7 +141,14 @@ export default async function AprobacionesPage({
             ]} />
           }
         />
-        <ApprovalPanel requests={[]} canApproveEpp={false} canSetDispatch={false} worksiteOptions={worksiteOptions} />
+        <ApprovalPanel
+          requests={[]}
+          canApproveEpp={false}
+          canSetDispatch={false}
+          worksiteOptions={worksiteOptions}
+          quotationRequests={quotationRequests}
+          quotationTotal={quotationTotal}
+        />
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
@@ -276,6 +320,8 @@ export default async function AprobacionesPage({
         canApproveEpp={canApproveEpp(session.user.roles)}
         canSetDispatch={canSetDispatch(session.user.roles)}
         worksiteOptions={worksiteOptions}
+        quotationRequests={quotationRequests}
+        quotationTotal={quotationTotal}
       />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>

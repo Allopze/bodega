@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { login, selectRadixById, pickCurrentMonthDate, idFromUrl, receiptSubmitName, receiptStageCard, clearGuidesFromReceptionQueue } from "./helpers"
+import { login, selectRadixById, pickCurrentMonthDate, idFromUrl, receiptSubmitName, receiptStageCard, clearGuidesFromReceptionQueue, issueOrderFromDetail } from "./helpers"
 
 /**
  * El flujo completo dentro de los cuatro módulos que existen —Solicitudes,
@@ -182,22 +182,20 @@ test.describe("Solicitudes → Aprobaciones → Compras → Recepción", () => {
     // ── Recepción: la OC llega sola, sin ningún "Mover a Recepciones" ──────
     await page.goto(`/compras/${orderId}`)
     // No existe ninguna acción de traslado entre módulos: la única transición
-    // es la de negocio (emitir y enviar la OC al proveedor).
+    // es la de negocio (emitir la OC, con su confirmación).
     await expect(page.getByRole("button", { name: /Mover a Recepci/i })).toHaveCount(0)
     await expect(page.getByRole("link", { name: /Mover a Recepci/i })).toHaveCount(0)
-    const emitir = page.getByRole("button", { name: "Emitir y enviar" })
-    await expect(emitir).toBeVisible({ timeout: 30_000 })
-    await emitir.click()
+    await issueOrderFromDetail(page)
     await expect(page).toHaveURL(new RegExp(`/compras/${orderId}\\?actualizada=enviada$`), { timeout: 30_000 })
     await expect(page.getByText(/Pendiente de recepción/).first()).toBeVisible({ timeout: 30_000 })
 
     // Estar "en la cola" es tener acción pendiente, no sólo figurar: `/recepcion`
     // sin filtro lista también las completadas. Antes eso quedaba tapado porque
     // el localizador exigía el enlace `?oc=`, que sólo existe mientras la OC es
-    // recibible; en cuanto la GDI cambia la acción a "Completar guía" ese
+    // recibible; en cuanto la GDI cambia la acción a "Completar despacho" ese
     // localizador daba la OC por desaparecida de la cola.
     const filaRecepcion = page.locator("tbody tr").filter({ hasText: orderCode })
-    const accionPendiente = filaRecepcion.getByRole("link", { name: /Recibir|Completar guía|Cotejar/ })
+    const accionPendiente = filaRecepcion.getByRole("link", { name: /Recibir|Completar despacho|Confirmar llegada/ })
     await expect.poll(async () => {
       await page.goto("/recepcion")
       return accionPendiente.count()

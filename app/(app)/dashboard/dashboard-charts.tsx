@@ -28,7 +28,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
-import { formatCLP, formatCompactCLP } from "@/lib/utils"
+import { MONTH_LABELS, formatCLP, formatCompactCLP } from "@/lib/utils"
 import { CHART_COLORS, CHART_SERIES } from "@/lib/chart-palette"
 
 // ── Configuration for Charts ──────────────────────────────────────────────────
@@ -186,7 +186,7 @@ export function OperationalTrendChart({ data }: { data: Array<{ month: string; r
       </div>
 
       <ChartContainer config={trendChartConfig} className="h-48 w-full">
-        <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+        <AreaChart aria-label="Tendencia Operativa" data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <defs>
             <linearGradient id="fillRequests" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor={CHART_COLORS.blue} stopOpacity={0.35} />
@@ -240,7 +240,7 @@ export function ModuleWorkloadChart({ data, total }: { data: ModuleWorkloadPoint
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Distribución por Módulo</h3>
-          <p className="text-xs text-[var(--color-text-muted)]">Backlog pendiente al día de hoy</p>
+          <p className="text-xs text-[var(--color-text-muted)]">Pendiente al día de hoy</p>
         </div>
         <span className="font-mono text-xs font-semibold text-[var(--color-text-muted)]">
           {total} {total === 1 ? "tarea" : "tareas"}
@@ -249,6 +249,7 @@ export function ModuleWorkloadChart({ data, total }: { data: ModuleWorkloadPoint
 
       <ChartContainer config={workloadChartConfig} className="h-48 w-full">
         <BarChart
+          aria-label="Distribución por Módulo"
           data={counts}
           margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
           onMouseLeave={() => setActiveIndex(null)}
@@ -309,7 +310,7 @@ export function SstTrendChart({ data }: { data: SstMonthlyPoint[] }) {
       </div>
 
       <ChartContainer config={sstChartConfig} className="h-48 w-full">
-        <LineChart data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
+        <LineChart aria-label="Tasas de Siniestralidad SST" data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
           <YAxis yAxisId="tf" tickLine={false} axisLine={false} tickMargin={8} />
@@ -351,7 +352,7 @@ export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
       </div>
 
       <ChartContainer config={sstAccidentConfig} className="h-48 w-full">
-        <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+        <BarChart aria-label="Accidentes por estado de calificación" data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
           <YAxis tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
@@ -380,7 +381,7 @@ export function MaterialEnvironmentalChart({ data }: { data: MaterialEnvironment
       </div>
 
       <ChartContainer config={materialEnvConfig} className="h-48 w-full">
-        <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+        <BarChart aria-label="Impacto Material y Ambiental" data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
           <YAxis tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
@@ -429,6 +430,7 @@ export function WorksiteActivityChart({
 
       <ChartContainer config={worksiteChartConfig} className="h-56 w-full">
         <BarChart
+          aria-label="Inversión por Faena"
           data={data}
           layout="vertical"
           margin={{ top: 10, right: 15, left: 10, bottom: 0 }}
@@ -439,7 +441,7 @@ export function WorksiteActivityChart({
             type="number"
             tickLine={false}
             axisLine={false}
-            tickFormatter={(val) => `$${(val / 1000).toFixed(0)}k`}
+            tickFormatter={formatCompactCLP}
           />
           <YAxis
             type="category"
@@ -514,7 +516,7 @@ export function FuelConsumptionChart({ data, showCosts = true, periodLabel }: { 
       </div>
 
       <ChartContainer config={fuelChartConfig} className="h-48 w-full">
-        <ComposedChart data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
+        <ComposedChart aria-label="Consumo de Combustibles" data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
           <YAxis yAxisId="liters" tickLine={false} axisLine={false} tickMargin={8} />
@@ -557,7 +559,7 @@ export function MaintenanceTrendChart({ data, showCosts = true, periodLabel }: {
 
       {/* Era el único gráfico del tablero sin lectura equivalente (I-15). */}
       <ChartContainer config={maintenanceChartConfig} className="h-48 w-full">
-        <ComposedChart data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
+        <ComposedChart aria-label="Mantención de Flota" data={data} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
           <YAxis yAxisId="count" tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
@@ -644,7 +646,7 @@ export function CompositionDonutChart({ data, title, description, totalLabel, fo
         <div>
           <p className="flex items-baseline gap-2">
             <span className="font-mono text-2xl font-bold text-[var(--color-text)]">{formatted(total)}</span>
-            <span className="text-[11px] text-[var(--color-text-muted)]">{totalLabel}</span>
+            <span className="text-xs text-[var(--color-text-muted)]">{totalLabel}</span>
           </p>
           <div className="mt-2 flex h-3 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]" aria-hidden>
             {slices.map((slice, index) => (
@@ -662,7 +664,7 @@ export function CompositionDonutChart({ data, title, description, totalLabel, fo
         </div>
       ) : (
         <ChartContainer config={config} className="h-48 w-full">
-          <PieChart onMouseLeave={() => setActiveIndex(null)}>
+          <PieChart aria-label={title} onMouseLeave={() => setActiveIndex(null)}>
             <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => [formatted(Number(value)), String(name)]} />} />
             <Pie data={slices} dataKey="value" nameKey="label" innerRadius={52} outerRadius={78} strokeWidth={2} paddingAngle={2}>
               {slices.map((slice, index) => (
@@ -680,7 +682,7 @@ export function CompositionDonutChart({ data, title, description, totalLabel, fo
                 return (
                   <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
                     <tspan x={viewBox.cx} y={viewBox.cy} className="fill-[var(--color-text)] font-mono text-lg font-bold">{formatted(total)}</tspan>
-                    <tspan x={viewBox.cx} y={(viewBox.cy ?? 0) + 18} className="fill-[var(--color-text-muted)] text-[11px]">{totalLabel}</tspan>
+                    <tspan x={viewBox.cx} y={(viewBox.cy ?? 0) + 18} className="fill-[var(--color-text-muted)] text-xs">{totalLabel}</tspan>
                   </text>
                 )
               }} />
@@ -802,6 +804,7 @@ export function ThresholdRankingChart({
       ) : (
       <ChartContainer config={{ value: { label: title } }} className="h-56 w-full">
         <BarChart
+          aria-label={title}
           data={rows}
           layout="vertical"
           margin={{ top: 4, right: 16, left: 8, bottom: 0 }}
@@ -891,7 +894,7 @@ export function StatusShareBar({ data, title, description }: {
 
       <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
         {slices.map((slice, index) => (
-          <li key={slice.key} className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)]">
+          <li key={slice.key} className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
             <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: slice.color ?? CHART_SERIES[index % CHART_SERIES.length] }} aria-hidden />
             {slice.label}
             <span className="font-mono tabular-nums text-[var(--color-text)]">{slice.value}</span>
@@ -911,9 +914,21 @@ export function StatusShareBar({ data, title, description }: {
  * comparten eje (A5b sólo prohíbe mezclar unidades distintas). La brecha entre
  * ambas líneas **es** la lectura: lo emitido que todavía no entra en caja.
  */
-export function BillingFlowChart({ data }: {
+/**
+ * "2026-07" → "Jul 2026". El eje mostraba la clave cruda del período, mientras
+ * el resto de los gráficos del tablero rotula los meses en español (INI,
+ * auditoría 2026-10-05). Una clave que no calza se deja tal cual.
+ */
+export function billingPeriodLabel(period: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(period)
+  const label = match ? MONTH_LABELS[Number(match[2]) - 1] : undefined
+  return match && label ? `${label} ${match[1]}` : period
+}
+
+export function BillingFlowChart({ data: rawData }: {
   data: Array<{ period: string; invoiced: number; collected: number }>
 }) {
+  const data = rawData.map((row) => ({ ...row, period: billingPeriodLabel(row.period) }))
   // Todo-en-cero también se oculta: una rejilla vacía con conclusión absurda
   // ("el mayor facturado se registró en Mar: $0") es peor que nada (I-03).
   if (!data.some((row) => row.invoiced + row.collected > 0)) return null
@@ -926,7 +941,7 @@ export function BillingFlowChart({ data }: {
       </div>
 
       <ChartContainer config={billingFlowConfig} className="h-56 w-full">
-        <LineChart data={data} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
+        <LineChart aria-label="Facturado y cobrado" data={data} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
           <CartesianGrid vertical={false} strokeDasharray="3 3" />
           <XAxis dataKey="period" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
           <YAxis tickLine={false} axisLine={false} width={52} fontSize={11} tickFormatter={formatCompactCLP} />
@@ -974,7 +989,7 @@ export function RadialGaugeChart({ title, description, percent, targetPercent, f
       </div>
 
       <ChartContainer config={gaugeConfig} className="mx-auto aspect-[2/1] max-h-44 w-full">
-        <RadialBarChart data={[{ name: title, value }]} startAngle={200} endAngle={-20} innerRadius="72%" outerRadius="100%">
+        <RadialBarChart aria-label={title} data={[{ name: title, value }]} startAngle={200} endAngle={-20} innerRadius="72%" outerRadius="100%">
           {/* Sin el eje polar explícito recharts escala el arco al máximo del
               dato, así que un 41% dibujaba el círculo completo. */}
           <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />

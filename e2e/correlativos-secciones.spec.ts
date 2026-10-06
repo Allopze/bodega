@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
-import { login, selectRadixById, pickCurrentMonthDate, idFromUrl, receiptSubmitName, receiptStageCard, dispatchAndReceiveGuide, enviarAsistenteDeProducto } from "./helpers"
+import { login, selectRadixById, pickCurrentMonthDate, idFromUrl, receiptSubmitName, receiptStageCard, dispatchAndReceiveGuide, enviarAsistenteDeProducto, issueOrderFromDetail } from "./helpers"
 
 /**
  * El correlativo como identidad: SOL y OC a través de las secciones, y frente a
@@ -309,11 +309,10 @@ test.describe.serial("Correlativos entre secciones", () => {
     await page.goto(`/compras/${orderId}`)
 
     // ── El correlativo sobrevive cada transición ────────────────────────────
-    const sendButton = page.getByRole("button", { name: "Emitir y enviar" })
-    await expect(sendButton).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole("button", { name: "Emitir OC", exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole("heading", { level: 1, name: orderCode })).toBeVisible()
 
-    await sendButton.click()
+    await issueOrderFromDetail(page)
     await expect(page).toHaveURL(new RegExp(`/compras/${orderId}\\?actualizada=enviada$`), { timeout: 30_000 })
     await expect(page.getByText(/Pendiente de recepción/).first()).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole("heading", { level: 1, name: orderCode })).toBeVisible()
@@ -328,7 +327,7 @@ test.describe.serial("Correlativos entre secciones", () => {
 
     // ── Sección: bandeja de recepción ───────────────────────────────────────
     // La bandeja se renderiza en el servidor: si se pide antes de que el commit
-    // de "Emitir y enviar" sea visible llega vacía y ninguna espera de
+    // de "Emitir OC" sea visible llega vacía y ninguna espera de
     // Playwright la rellena. Hay que volver a pedirla.
     const receptionLink = page.getByRole("link", { name: `Ver OC ${orderCode}`, exact: true })
     await expect.poll(async () => {
@@ -361,7 +360,7 @@ test.describe.serial("Correlativos entre secciones", () => {
     // otros specs. `estado=received` no era ninguno de los `ComputedStatus`, de
     // modo que el filtro se ignoraba y no acotaba nada; `q` busca por
     // correlativo de la solicitud, que es justamente lo que identifica a esta.
-    await page.goto(`/bodega/trazabilidad?q=${encodeURIComponent(requestCode)}`)
+    await page.goto(`/seguimiento?q=${encodeURIComponent(requestCode)}`)
     const filaSolicitud = page.getByRole("row").filter({ hasText: requestCode })
     await expect(filaSolicitud).toHaveCount(1, { timeout: 15_000 })
 
@@ -371,7 +370,7 @@ test.describe.serial("Correlativos entre secciones", () => {
     // producto: ese titula el expediente del ítem, que es adonde lleva.
     await filaSolicitud.getByRole("button", { name: "Expandir detalle" }).click()
     await page.getByRole("link", { name: "Ver expediente completo" }).first().click()
-    await expect(page).toHaveURL(/\/trazabilidad\/[^/?]+$/, { timeout: 15_000 })
+    await expect(page).toHaveURL(/\/seguimiento\/[^/?]+$/, { timeout: 15_000 })
     await expect(page.getByRole("heading", { level: 1, name: EPP_NAME })).toBeVisible({ timeout: 15_000 })
     traceItemId = idFromUrl(page)
     expect(traceItemId).toBeTruthy()
@@ -413,7 +412,7 @@ test.describe.serial("Correlativos entre secciones", () => {
     await expect(page.getByRole("link", { name: `Ver OC ${orderCode}`, exact: true })).toHaveCount(1)
 
     // La trazabilidad del ítem, que es la vista histórica del recorrido.
-    await page.goto(`/trazabilidad/${traceItemId}`)
+    await page.goto(`/seguimiento/${traceItemId}`)
     await expectCode(page, orderCode)
 
     // ── Y la serie sigue hacia adelante, sin reusar lo ya emitido ───────────
@@ -538,7 +537,7 @@ test.describe.serial("Correlativos entre secciones", () => {
     // El hueco que cerró esta tanda: la pantalla que existe para responder "¿de
     // dónde viene esto?" mostraba el código de la OC pero no el de la solicitud,
     // y obligaba a volver a la matriz para leerlo.
-    await page.goto(`/trazabilidad/${traceItemId}`)
+    await page.goto(`/seguimiento/${traceItemId}`)
     await expectCode(page, requestCode)
     await expect(page.getByRole("link", { name: new RegExp(`Ver solicitud ${escapeRegExp(requestCode)}`) }))
       .toBeVisible({ timeout: 15_000 })

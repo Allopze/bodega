@@ -1,22 +1,18 @@
 import { describe, expect, it } from "vitest"
-import { buildOperationalAlerts, buildOperationalMetrics } from "./views/resumen-view"
+import { buildOperationalAlerts, buildOperationalMetrics, buildOperationalPeriodSummary } from "./views/resumen-view"
 import type { DashboardScope } from "./dashboard-scope"
 
 /**
- * La fila superior se arma por **ranura semántica** (dinero · cumplimiento ·
- * riesgo · trabajo), no por los 4 primeros de una lista de 8.
+ * El panorama se arma por **ranura semántica** (dinero · cumplimiento · riesgo),
+ * no por los 4 primeros de una lista de 8.
  *
- * Con el orden fijo anterior, Jefatura veía siempre "Tareas pendientes ·
- * críticas · vencidas · Por aprobar" —tres del mismo eje— y "Inversión del mes"
- * (candidato 8) y "Stock crítico" (7) quedaban **fuera para todos los roles**.
+ * La ranura de trabajo propio (vencidas · por aprobar · pendientes) se fue al
+ * bloque "Hoy": la misma cifra no puede estar en el panorama y en "Hoy" (A5).
  */
 
 const scope: DashboardScope = { worksiteId: "all", worksiteName: null, period: "mes", view: "resumen" }
 
 const numbers = {
-  tasks: 40,
-  overdueTasks: 3,
-  pendingApprovals: 6,
   ordersPendingReceipt: 4,
   activeOrders: 11,
   periodSpend: 12_400_000,
@@ -30,29 +26,29 @@ const numbers = {
 /** Jefatura: rol global con todos los permisos de lectura del tablero. */
 const jefatura = {
   scope, ...numbers,
-  canApprove: true, canReceive: true, canViewPurchasing: true,
+  canReceive: true, canViewPurchasing: true,
   canViewPdtp: true, canViewIncidents: true, canViewCapa: true,
 }
 
 /** Solicitante de faena: sin dinero ni prevención. */
 const solicitante = {
   scope, ...numbers,
-  canApprove: false, canReceive: false, canViewPurchasing: false,
+  canReceive: false, canViewPurchasing: false,
   canViewPdtp: false, canViewIncidents: false, canViewCapa: false,
 }
 
-/** Prevencionista de faena: prevención y recepción, sin dinero ni aprobaciones. */
+/** Prevencionista de faena: prevención y recepción, sin dinero. */
 const prevencionistaFaena = {
   scope, ...numbers,
-  canApprove: false, canReceive: true, canViewPurchasing: false,
+  canReceive: true, canViewPurchasing: false,
   canViewPdtp: true, canViewIncidents: true, canViewCapa: true,
 }
 
 describe("buildOperationalMetrics — ranuras", () => {
-  it("Jefatura ve una cifra por dominio, no cuatro de tareas", () => {
+  it("Jefatura ve una cifra por dominio", () => {
     const keys = buildOperationalMetrics(jefatura).map((metric) => metric.key)
 
-    expect(keys).toEqual(["spend", "receipts", "incidents", "overdue"])
+    expect(keys).toEqual(["spend", "receipts", "incidents"])
   })
 
   // El defecto que motivó la fase: la inversión era el candidato 8 de una lista
@@ -74,20 +70,22 @@ describe("buildOperationalMetrics — ranuras", () => {
     }
   })
 
+  // "Hoy" es dueño de la urgencia: ni vencidas, ni por aprobar, ni el total.
+  it("no hay contadores de la cola en el panorama: los carga el bloque Hoy", () => {
+    for (const perfil of [jefatura, solicitante, prevencionistaFaena]) {
+      const keys = buildOperationalMetrics(perfil).map((m) => m.key)
+      for (const taken of ["tasks", "overdue", "approvals"]) expect(keys).not.toContain(taken)
+    }
+  })
+
   it("no repite la misma dimensión en dos ranuras", () => {
     const keys = buildOperationalMetrics(jefatura).map((metric) => metric.key)
 
     expect(new Set(keys).size).toBe(keys.length)
-    // Sólo una de las cuatro puede ser un contador de la cola.
-    expect(keys.filter((key) => ["tasks", "overdue"].includes(key))).toHaveLength(1)
   })
 
-  it("cede la ranura en vez de rellenarla con otro contador de tareas", () => {
-    const keys = buildOperationalMetrics(solicitante).map((metric) => metric.key)
-
-    // Sin dinero, cumplimiento ni riesgo autorizados: sólo la ranura de trabajo.
-    expect(keys).toEqual(["overdue"])
-    expect(keys.length).toBeLessThan(4)
+  it("cede las ranuras sin permiso en vez de rellenarlas", () => {
+    expect(buildOperationalMetrics(solicitante)).toEqual([])
   })
 
   it("cada rol recibe el primer candidato que su permiso autoriza", () => {
@@ -95,23 +93,25 @@ describe("buildOperationalMetrics — ranuras", () => {
 
     // Sin `purchasing:view` la ranura de dinero se cede; cumplimiento cae en
     // recepciones y riesgo en incidentes.
-    expect(keys).toEqual(["receipts", "incidents", "overdue"])
+    expect(keys).toEqual(["receipts", "incidents"])
   })
 
   it("baja a la cascada cuando el primer candidato no aplica", () => {
     // Sin recepción autorizada la ranura de cumplimiento se cede entera.
     const sinRecepcion = buildOperationalMetrics({ ...jefatura, canReceive: false })
-    expect(sinRecepcion.map((m) => m.key)).toEqual(["spend", "incidents", "overdue"])
+    expect(sinRecepcion.map((m) => m.key)).toEqual(["spend", "incidents"])
 
     // Sin incidentes ni CAPA la ranura de riesgo se cede: el stock crítico que
     // la cerraba se retiró con el stock mínimo.
     const sinPrevencion = buildOperationalMetrics({ ...jefatura, canViewIncidents: false, canViewCapa: false })
-    expect(sinPrevencion.map((m) => m.key)).toEqual(["spend", "receipts", "overdue"])
+    expect(sinPrevencion.map((m) => m.key)).toEqual(["spend", "receipts"])
   })
 
-  it("sin tareas vencidas la ranura de trabajo cae en aprobaciones", () => {
-    const keys = buildOperationalMetrics({ ...jefatura, overdueTasks: 0 }).map((m) => m.key)
-    expect(keys).toEqual(["spend", "receipts", "incidents", "approvals"])
+  // Nombre canónico de la cadena de adquisición (ADQ-10): lo que espera al
+  // proveedor es "Pendiente de recepción"; "Por recibir" era uno de sus 7 nombres.
+  it("el tile de recepciones usa el nombre canónico", () => {
+    const receipts = buildOperationalMetrics(jefatura).find((m) => m.key === "receipts")
+    expect(receipts?.label).toBe("Pendiente de recepción")
   })
 
   it("una faena elegida viaja en los enlaces de drill-down", () => {
@@ -120,8 +120,8 @@ describe("buildOperationalMetrics — ranuras", () => {
       scope: { worksiteId: "ws-sur", worksiteName: "Faena Sur", period: "mes", view: "resumen" },
     })
 
-    expect(withWorksite.find((m) => m.key === "overdue")?.href)
-      .toBe("/pendientes?quick=overdue&worksiteId=ws-sur")
+    expect(withWorksite.find((m) => m.key === "receipts")?.href)
+      .toBe("/pendientes?module=recepciones&worksiteId=ws-sur")
   })
 
   // §3.3: cada cifra debe tener un destino que pueda acotar lo que cuenta. La
@@ -146,7 +146,7 @@ describe("buildOperationalMetrics — ranuras", () => {
   // El PDTP ya no participa de la fila, así que su ausencia no la reordena.
   it("un programa sin avance acreditado no cambia las ranuras", () => {
     const sinPrograma = buildOperationalMetrics({ ...jefatura, pdtpPercent: null })
-    expect(sinPrograma.map((m) => m.key)).toEqual(["spend", "receipts", "incidents", "overdue"])
+    expect(sinPrograma.map((m) => m.key)).toEqual(["spend", "receipts", "incidents"])
   })
 })
 
@@ -156,7 +156,6 @@ describe("buildOperationalAlerts — sin repetir tiles", () => {
     criticalTasks: 4,
     overdueTasks: 3,
     blockedTasks: 2,
-    unassignedTasks: 1,
     pendingApprovals: 6,
     ordersPendingReceipt: 4,
     deliveries: 2,
@@ -168,22 +167,44 @@ describe("buildOperationalAlerts — sin repetir tiles", () => {
 
   // A5: una cifra no puede ser tile y alerta a la vez. Antes "críticas",
   // "vencidas", "por aprobar", "stock" y "recepciones" salían en las dos partes.
-  it("salta las alertas que la fila superior ya muestra", () => {
+  it("salta las alertas que el panorama ya muestra como tile", () => {
     const shownAsTile = new Set(buildOperationalMetrics(jefatura).map((m) => m.key))
     const keys = buildOperationalAlerts({ ...alertInput, shownAsTile }).map((alert) => alert.key)
 
-    expect(shownAsTile.has("overdue")).toBe(true)
-    expect(keys).not.toContain("overdue")
+    expect(shownAsTile.has("receipts")).toBe(true)
+    expect(keys).not.toContain("receipts")
     expect(keys).not.toContain("incidents")
   })
 
+  // Sin tile de trabajo, la urgencia de la cola sólo vive como alerta de Hoy.
+  it("las vencidas, críticas y por aprobar son alertas de Hoy, no tiles", () => {
+    const shownAsTile = new Set(buildOperationalMetrics(jefatura).map((m) => m.key))
+    const keys = buildOperationalAlerts({ ...alertInput, shownAsTile }).map((a) => a.key)
+
+    expect(keys).toEqual(expect.arrayContaining(["overdue", "critical", "approvals"]))
+  })
+
   it("conserva las alertas que ningún tile ocupa", () => {
-    const keys = buildOperationalAlerts({ ...alertInput, shownAsTile: new Set(["overdue"]) }).map((a) => a.key)
+    const keys = buildOperationalAlerts({ ...alertInput, shownAsTile: new Set(["receipts"]) }).map((a) => a.key)
 
     expect(keys).toContain("critical")
     expect(keys).toContain("blocked")
-    expect(keys).toContain("unassigned")
     expect(keys).toContain("epp")
+  })
+
+  // Decisión de producto: el sistema de asignación se retira de la plataforma.
+  it("ya no emite la alerta de tareas sin responsable", () => {
+    const keys = buildOperationalAlerts({ ...alertInput, shownAsTile: new Set<string>() }).map((a) => a.key)
+
+    expect(keys).not.toContain("unassigned")
+    expect(Object.keys(alertInput)).not.toContain("unassignedTasks")
+  })
+
+  it("las descripciones no usan jerga interna", () => {
+    const text = buildOperationalAlerts({ ...alertInput, shownAsTile: new Set<string>() })
+      .map((a) => a.description).join(" ")
+
+    expect(text).not.toMatch(/nativa|complementario|desbloquea el siguiente paso de compra|gestión preventiva/i)
   })
 
   it("las alertas también conservan la faena en su enlace", () => {
@@ -199,5 +220,67 @@ describe("buildOperationalAlerts — sin repetir tiles", () => {
   it("ya no emite la alerta de stock crítico", () => {
     const keys = buildOperationalAlerts({ ...alertInput, shownAsTile: new Set<string>() }).map((a) => a.key)
     expect(keys).not.toContain("stock")
+  })
+})
+
+// INI-04: "1 tareas críticas", "1 ítems esperan aprobación".
+describe("buildOperationalAlerts — plurales", () => {
+  const base = {
+    scope, shownAsTile: new Set<string>(),
+    criticalTasks: 1, overdueTasks: 1, blockedTasks: 1,
+    pendingApprovals: 1, ordersPendingReceipt: 1, deliveries: 1, eppGaps: 1, overdueCapa: 1,
+    canApprove: true, canReceive: true, canDeliver: true, canViewEpp: true, canViewCapa: true,
+  }
+
+  it("con 1 el rótulo va en singular", () => {
+    const titles = Object.fromEntries(buildOperationalAlerts(base).map((alert) => [alert.key, alert.title]))
+
+    expect(titles.critical).toBe("tarea crítica")
+    expect(titles.approvals).toBe("ítem espera aprobación")
+    expect(titles.receipts).toBe("orden pendiente de recepción")
+  })
+
+  it("con más de 1 el rótulo va en plural", () => {
+    const titles = Object.fromEntries(
+      buildOperationalAlerts({ ...base, criticalTasks: 2, pendingApprovals: 3 }).map((alert) => [alert.key, alert.title]),
+    )
+
+    expect(titles.critical).toBe("tareas críticas")
+    expect(titles.approvals).toBe("ítems esperan aprobación")
+  })
+})
+
+// INI-01: una etiqueta, una definición. A5: el gasto en OC es tile, no fila del flujo.
+describe("buildOperationalPeriodSummary — rótulos", () => {
+  const metric = (current: number, previous: number | null) => ({ current, previous })
+  const periodMetrics = {
+    requests: metric(5, 4),
+    ordersIssued: metric(2, 2),
+    receipts: metric(1, 1),
+    deliveries: metric(1, 1),
+    spend: metric(1_000_000, 1_472_526),
+  }
+  const input = { periodMetrics, scope, canViewRequests: true, canViewPurchasing: true, canReceive: true, canDeliver: true }
+
+  it("no repite el gasto en OC, que ya es un tile del panorama", () => {
+    const keys = buildOperationalPeriodSummary(input).map((entry) => entry.key)
+
+    expect(keys).not.toContain("spend")
+    expect(buildOperationalMetrics(jefatura).map((m) => m.key)).toContain("spend")
+  })
+
+  it("las cantidades son enteros con su signo", () => {
+    const requests = buildOperationalPeriodSummary(input).find((entry) => entry.key === "requests")
+
+    expect(requests?.comparison).toBe("+1 vs. mes anterior")
+  })
+
+  // INI-01: el mismo nombre en Resumen y Finanzas para el mismo concepto.
+  it("cuenta \"OC emitidas\", igual que Finanzas, y no \"Inversión emitida\"", () => {
+    const labels = buildOperationalPeriodSummary(input).map((entry) => entry.label)
+
+    expect(labels).toContain("OC emitidas")
+    expect(labels).not.toContain("Inversión emitida")
+    expect(labels).not.toContain("Gasto en OC")
   })
 })

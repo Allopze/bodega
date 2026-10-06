@@ -29,7 +29,7 @@ describe("saveInvoiceLineAllocationsAction", () => {
     expect(mocks.permission).toHaveBeenCalledWith("purchasing:send_order")
     expect(mocks.replace).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ expectedFingerprint: payload.fingerprint, allocations: payload.allocations, actor: { userId: "operator", userEmail: "operator@example.test" }, worksiteScope: ["allowed-worksite"], source: "operator" }))
     expect(mocks.persist).toHaveBeenCalledWith(expect.anything(), "order")
-    expect(mocks.revalidate).toHaveBeenCalledWith(["/compras/order", "/compras", "/bodega/trazabilidad"])
+    expect(mocks.revalidate).toHaveBeenCalledWith(["/compras/order", "/compras", "/seguimiento"])
   })
   it("returns actionable stale feedback without leaking database errors", async () => {
     mocks.replace.mockRejectedValue(new InvoiceLineAllocationError("STALE_EVIDENCE"))

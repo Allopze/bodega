@@ -33,7 +33,11 @@ export function analyticsFilters(scope: DashboardScope) {
   const bounds = getOperationalCalendarBounds(new Date(), scope.period)
   return {
     fromDate: bounds.currentStart.slice(0, 10),
-    toDate: bounds.currentEnd.slice(0, 10),
+    // INI-01: `currentEnd` es EXCLUSIVO (primer día del período siguiente) y
+    // `fromDate/toDate` de analítica son un rango INCLUSIVO. Pasarlo tal cual
+    // sumaba al período el primer día del siguiente (p. ej. el 1 de enero en
+    // "Año"), otra de las causas de 28 contra 29.
+    toDate: addDaysToPlainDate(bounds.currentEnd.slice(0, 10), -1),
     ...(scopedWorksiteId(scope) ? { worksiteId: scopedWorksiteId(scope)! } : {}),
   }
 }

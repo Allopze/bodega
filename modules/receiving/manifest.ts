@@ -22,6 +22,8 @@ export const receivingModule = {
           href:        "/recepcion",
           iconName:    "Package",
           permissions: ["receiving:view", "receiving:register_office", "receiving:register_faena"],
+          // TRV-01 (auditoría 2026-10-05): el conteo ya se calculaba en el layout pero no se mostraba.
+          badge:       "count" as const,
         },
       ],
     },

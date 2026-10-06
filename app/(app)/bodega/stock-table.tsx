@@ -2,13 +2,14 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { CaretDown, CaretRight, Info } from "@phosphor-icons/react"
+import { CaretDown, CaretRight, ClockCounterClockwise, Info } from "@phosphor-icons/react"
 import type { WorksiteStockWithProduct } from "./types"
 import { EmptyState } from "@/components/ui/empty-state"
-import { formatQty, formatDate, formatDateRelative } from "@/lib/utils"
+import { cn, formatQty, formatDate, formatDateRelative } from "@/lib/utils"
 import { StockExportButton } from "./stock-export-button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { Tooltip } from "@/components/ui/tooltip"
+import { StockRowMenu, productMovementsHref } from "./stock-row-menu"
 
 export interface StockTableProps {
   worksites: Array<{
@@ -17,6 +18,9 @@ export interface StockTableProps {
     items: WorksiteStockWithProduct[]
   }>
   canExport?: boolean
+  /** Permisos que habilitan el menú de cada fila. Sin ninguno no hay columna. */
+  canDeliver?: boolean
+  canAdjust?: boolean
 }
 
 type GroupBy = "faena" | "producto"
@@ -235,6 +239,40 @@ function AvailabilityDefinition({
   )
 }
 
+/**
+ * Nombre del producto como enlace a sus movimientos. El subrayado sólo al pasar
+ * el cursor no se descubría ni con teclado ni en el celular: el ícono de reloj
+ * dice qué hay al otro lado.
+ */
+function ProductName({
+  item, title, worksiteId, muted, className,
+}: {
+  item: WorksiteStockWithProduct
+  title: string
+  worksiteId: string
+  muted: boolean
+  className?: string
+}) {
+  const tone = muted ? "text-[var(--color-text-muted)]" : "text-[var(--color-text)]"
+  if (!item.hasStockRecord) {
+    return <span className={cn("font-medium", tone, className)}>{title}</span>
+  }
+  return (
+    <Link
+      href={productMovementsHref(item.productId, worksiteId)}
+      title={`Ver movimientos de ${title}`}
+      className={cn("group/product inline-flex items-center gap-1.5 font-medium underline-offset-2 hover:underline", tone, className)}
+    >
+      {title}
+      <ClockCounterClockwise
+        size={12}
+        aria-hidden
+        className="shrink-0 text-[var(--color-text-faint)] transition-colors group-hover/product:text-[var(--color-text)]"
+      />
+    </Link>
+  )
+}
+
 function AvailabilityHeader({ label, definition }: { label: string; definition: string }) {
   return (
     <TableHead aria-label={label} className="text-right font-semibold">
@@ -243,7 +281,8 @@ function AvailabilityHeader({ label, definition }: { label: string; definition: 
   )
 }
 
-export function StockTable({ worksites, canExport }: StockTableProps) {
+export function StockTable({ worksites, canExport, canDeliver = false, canAdjust = false }: StockTableProps) {
+  const hasRowActions = canDeliver || canAdjust
   const allItems = worksites.flatMap((ws) => ws.items)
   const productCount = new Set(allItems.map((item) => item.productId)).size
   const incomingOnlyCount = allItems.filter((item) => item.quantity <= 0 && item.incoming > 0).length
@@ -310,40 +349,48 @@ export function StockTable({ worksites, canExport }: StockTableProps) {
         />
       ) : (
         <>
-          <div className="grid gap-3 p-5 md:hidden">
+          {/* Sin tarjetas con borde dentro de la sección: una tarjeta redondeada
+              dentro de otra redondeada y con borde leía como un marco doble.
+              Cada producto es una fila de lista separada por una línea. */}
+          <div className="md:hidden">
             {groups.map((group) => (
-              <div key={group.id} className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+              <div key={group.id}>
+                <h3 className="border-y border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)] first:border-t-0">
                   {group.heading}
                   <span className="ml-2 font-normal normal-case tracking-normal">{group.meta}</span>
                 </h3>
+                <div className="divide-y divide-[var(--color-border)]">
                 {group.rows.map(({ item: s, title, subtitle, worksiteId }) => {
                   const unit = s.product?.unitOfMeasure ?? "u"
+                  const empty = s.quantity <= 0
 
                   return (
-                    <article
-                      key={s.id}
-                      className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
-                    >
-                      <div className="min-w-0">
-                        {s.hasStockRecord ? (
-                          <Link
-                            href={`/bodega?vista=kardex&producto=${s.productId}&faena=${worksiteId}`}
-                            className="text-sm font-medium text-[var(--color-text)] underline-offset-2 hover:underline"
-                          >
-                            {title}
-                          </Link>
-                        ) : (
-                          <span className="text-sm font-medium text-[var(--color-text)]">{title}</span>
-                        )}
-                        {subtitle && (
-                          <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{subtitle}</p>
+                    <article key={s.id} className="px-5 py-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <ProductName item={s} title={title} worksiteId={worksiteId} muted={empty} className="text-sm" />
+                          {subtitle && (
+                            <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{subtitle}</p>
+                          )}
+                        </div>
+                        {hasRowActions && (
+                          <StockRowMenu
+                            productId={s.productId}
+                            productName={s.product?.name ?? title}
+                            worksiteId={worksiteId}
+                            hasStockRecord={s.hasStockRecord}
+                            canDeliver={canDeliver && !empty}
+                            canAdjust={canAdjust}
+                          />
                         )}
                       </div>
                       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                         <div>
                           <dt className="text-[var(--color-text-subtle)]">En bodega</dt>
-                          <dd className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-[var(--color-text)]">
+                          <dd className={cn(
+                            "mt-0.5 font-mono text-sm tabular-nums",
+                            empty ? "font-normal text-[var(--color-text-faint)]" : "font-semibold text-[var(--color-text)]",
+                          )}>
                             {formatQty(s.quantity, unit)}
                           </dd>
                         </div>
@@ -371,6 +418,7 @@ export function StockTable({ worksites, canExport }: StockTableProps) {
                     </article>
                   )
                 })}
+                </div>
               </div>
             ))}
           </div>
@@ -389,6 +437,7 @@ export function StockTable({ worksites, canExport }: StockTableProps) {
                 <col className="w-32" />
                 <col className="w-36" />
                 <col className="w-44" />
+                {hasRowActions && <col className="w-14" />}
               </colgroup>
               <TableHeader>
                 <TableRow className="border-b border-[var(--color-border)] text-xs uppercase tracking-wide text-[var(--color-text-subtle)]">
@@ -408,6 +457,11 @@ export function StockTable({ worksites, canExport }: StockTableProps) {
                     sortKey="lastMovementAt" active={sort.key === "lastMovementAt"} dir={sort.dir} onSort={handleSort}
                     className="px-5 py-2.5 text-right font-semibold"
                   />
+                  {hasRowActions && (
+                    <TableHead scope="col" className="px-2 py-2.5">
+                      <span className="sr-only">Acciones</span>
+                    </TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               {groups.map((group) => {
@@ -420,7 +474,7 @@ export function StockTable({ worksites, canExport }: StockTableProps) {
                     <TableRow>
                       <TableHead
                         scope="rowgroup"
-                        colSpan={4}
+                        colSpan={hasRowActions ? 5 : 4}
                         className="bg-[var(--color-surface-2)] px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
                       >
                         {/* Un <button> y no <details>: `details` no es válido
@@ -438,28 +492,26 @@ export function StockTable({ worksites, canExport }: StockTableProps) {
                         </button>
                       </TableHead>
                     </TableRow>
-                    {group.rows.map(({ item: s, title, subtitle, worksiteId }) => (
+                    {group.rows.map(({ item: s, title, subtitle, worksiteId }) => {
+                      // En cero (sólo por recibir o agotado): se lee como lo que
+                      // es, ausencia, y no compite con lo que sí hay.
+                      const empty = s.quantity <= 0
+                      return (
                       <TableRow key={s.id} hidden={isCollapsed} className="hover:bg-[var(--color-surface-2)] transition-colors">
                         <TableCell>
                           {/* La fila lleva a su propio kardex: antes hacer clic
                               en un producto no hacía nada. Lo que nunca entró
                               a la faena no tiene movimientos que mostrar. */}
-                          {s.hasStockRecord ? (
-                            <Link
-                              href={`/bodega?vista=kardex&producto=${s.productId}&faena=${worksiteId}`}
-                              className="font-medium text-[var(--color-text)] underline-offset-2 hover:underline"
-                            >
-                              {title}
-                            </Link>
-                          ) : (
-                            <span className="font-medium text-[var(--color-text)]">{title}</span>
-                          )}
+                          <ProductName item={s} title={title} worksiteId={worksiteId} muted={empty} />
                           {subtitle && (
                             <p className="mt-0.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{subtitle}</p>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          <span className="font-mono text-sm font-semibold tabular-nums text-[var(--color-text)]">
+                          <span className={cn(
+                            "font-mono text-sm tabular-nums",
+                            empty ? "font-normal text-[var(--color-text-faint)]" : "font-semibold text-[var(--color-text)]",
+                          )}>
                             {formatQty(s.quantity)}
                           </span>
                         </TableCell>
@@ -476,8 +528,21 @@ export function StockTable({ worksites, canExport }: StockTableProps) {
                             </>
                           ) : "—"}
                         </TableCell>
+                        {hasRowActions && (
+                          <TableCell className="px-2 text-right">
+                            <StockRowMenu
+                              productId={s.productId}
+                              productName={s.product?.name ?? title}
+                              worksiteId={worksiteId}
+                              hasStockRecord={s.hasStockRecord}
+                              canDeliver={canDeliver && !empty}
+                              canAdjust={canAdjust}
+                            />
+                          </TableCell>
+                        )}
                       </TableRow>
-                    ))}
+                      )
+                    })}
                   </TableBody>
                 )
               })}

@@ -25,6 +25,8 @@ export interface BodegaFiltersProps {
     producto?: string
     desde?: string
     hasta?: string
+    /** Stock: sólo lo agotado con pedidos por llegar (aviso "Sin stock con demanda"). */
+    demanda?: boolean
   }
 }
 
@@ -79,6 +81,9 @@ export function BodegaFilters({ view, worksites, products = [], ownWorksiteId = 
       chips.push({ key: "faena", label: "Faena", value: ALL_WORKSITES, displayValue: "Todas las faenas" })
     }
   }
+  if (view === "stock" && current.demanda) {
+    chips.push({ key: "demanda", label: "Mostrar", value: "1", displayValue: "Sin stock con demanda" })
+  }
   if (view === "kardex") {
     if (current.tipo) {
       chips.push({
@@ -105,9 +110,38 @@ export function BodegaFilters({ view, worksites, products = [], ownWorksiteId = 
     }
   }
 
+  // Período en "Más filtros" (A2): quedan 4 filtros a la vista en Movimientos
+  // (búsqueda, faena, tipo, producto) y el rango, con su contador, aparte.
+  const periodActive = view === "kardex" ? Number(Boolean(current.desde)) + Number(Boolean(current.hasta)) : 0
+
   return (
     <FilterToolbar
       activeChips={chips}
+      activeCount={periodActive}
+      overflowFilters={view === "kardex" ? (
+        <>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-[var(--color-text-muted)]">Movimientos desde</span>
+            <DatePicker
+              ariaLabel="Movimientos desde"
+              placeholder="Desde"
+              className="h-11 w-full text-sm"
+              value={current.desde ?? ""}
+              onChange={(iso) => setFilter("desde", iso)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-[var(--color-text-muted)]">Movimientos hasta</span>
+            <DatePicker
+              ariaLabel="Movimientos hasta"
+              placeholder="Hasta"
+              className="h-11 w-full text-sm"
+              value={current.hasta ?? ""}
+              onChange={(iso) => setFilter("hasta", iso)}
+            />
+          </div>
+        </>
+      ) : undefined}
       onRemoveChip={(key) => setFilter(key, "")}
       onClearAll={clearAll}
       hasActiveFilters={chips.length > 0}
@@ -150,20 +184,6 @@ export function BodegaFilters({ view, worksites, products = [], ownWorksiteId = 
               onValueChange={(value) => setFilter("producto", value)}
             />
           )}
-          <DatePicker
-            ariaLabel="Movimientos desde"
-            placeholder="Desde"
-            className="h-11 w-full text-xs sm:h-8 sm:w-36"
-            value={current.desde ?? ""}
-            onChange={(iso) => setFilter("desde", iso)}
-          />
-          <DatePicker
-            ariaLabel="Movimientos hasta"
-            placeholder="Hasta"
-            className="h-11 w-full text-xs sm:h-8 sm:w-36"
-            value={current.hasta ?? ""}
-            onChange={(iso) => setFilter("hasta", iso)}
-          />
         </>
       )}
     </FilterToolbar>

@@ -5,7 +5,7 @@ import { unstable_cache } from "next/cache"
 import { auth } from "@/lib/auth/auth"
 import { approvalQueueFilter } from "@/lib/approvals-queue"
 import { db } from "@/db"
-import { worksites, purchaseRequests, purchaseOrders } from "@/db/schema"
+import { worksites, purchaseRequests, purchaseOrders, dispatchGuides } from "@/db/schema"
 import { eq, inArray, count, and, sql } from "drizzle-orm"
 import { Suspense } from "react"
 import { headers } from "next/headers"
@@ -20,6 +20,8 @@ import { getNavigationToggleState, routeIsEnabled, type NavigationToggleState } 
 import { registry } from "@/modules/registry"
 import { getOperationalWorkCount } from "@/lib/services/operational-work-queue"
 import { badgeCountsTags } from "@/lib/services/operational-cache"
+import { countPendingPurchaseRequests } from "@/lib/services/purchasing-module/pending-purchase-queue"
+import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue-labels"
 import type { Session } from "next-auth"
 
 // P-01: Cache badge counts per user for 30s. Prevents repeated badge queries
@@ -40,7 +42,7 @@ const badgeCountsLoader = (tags: string[]) => unstable_cache(
     const approvalFilter = approvalQueueFilter({ isGlobal, worksiteIds: wsIds })
 
     // El badge de Compras cuenta las OC en borrador: son las que esperan un
-    // "Emitir y enviar" (antes contaba las emitidas, estado ya retirado).
+    // "Emitir OC" (antes contaba las emitidas, estado ya retirado).
     const purchaseFilter = isGlobal
       ? inArray(purchaseOrders.status, ["draft"])
       : and(
@@ -48,12 +50,29 @@ const badgeCountsLoader = (tags: string[]) => unstable_cache(
           wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`false`
         )
 
+    // TRV-01 (auditoría 2026-10-05): "te toca", no "todo lo abierto". Recepción
+    // cuenta las OC con una acción de recepción pendiente; los estados salen de
+    // la misma constante que la pestaña por defecto de /recepcion.
     const receivingFilter = isGlobal
-      ? inArray(purchaseOrders.status, ["sent", "partially_office_received", "office_received", "partially_received"])
+      ? inArray(purchaseOrders.status, [...RECEIVABLE_ORDER_STATUSES])
       : and(
-          inArray(purchaseOrders.status, ["sent", "partially_office_received", "office_received", "partially_received"]),
+          inArray(purchaseOrders.status, [...RECEIVABLE_ORDER_STATUSES]),
           wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`false`
         )
+
+    // TRV-01: guías despachadas que la faena destino aún no confirma. Se cuelga
+    // de "Guías de despacho" y no de "Bodega" (que nunca tuvo conteo).
+    const guideFilter = and(
+      eq(dispatchGuides.status, "dispatched"),
+      isGlobal
+        ? undefined
+        : wsIds.length > 0 ? inArray(dispatchGuides.destinationWorksiteId, wsIds) : sql`false`,
+    )
+
+    // Misma definición y mismo scope que la cola "Por comprar" de /compras.
+    const purchaseRequestScope = isGlobal
+      ? undefined
+      : wsIds.length > 0 ? inArray(purchaseRequests.worksiteId, wsIds) : sql`false`
 
     // Solicitudes que aún tienen un siguiente paso. Un usuario sin view_all
     // ve sólo las propias aun cuando comparta faena con otros solicitantes.
@@ -66,18 +85,22 @@ const badgeCountsLoader = (tags: string[]) => unstable_cache(
       canViewAllRequests ? undefined : eq(purchaseRequests.requesterId, userId),
     )
 
-    const [[approvalRow], [purchaseRow], [receivingRow], [requestRow]] = await Promise.all([
+    const [[approvalRow], [purchaseRow], [receivingRow], [requestRow], [guideRow], pendingPurchaseRequests] = await Promise.all([
       db.select({ n: count() }).from(purchaseRequests).where(approvalFilter),
       db.select({ n: count() }).from(purchaseOrders).where(purchaseFilter),
       db.select({ n: count() }).from(purchaseOrders).where(receivingFilter),
       db.select({ n: count() }).from(purchaseRequests).where(requestFilter),
+      db.select({ n: count() }).from(dispatchGuides).where(guideFilter),
+      countPendingPurchaseRequests(purchaseRequestScope),
     ])
 
     return {
       "/solicitudes":  requestRow?.n ?? 0,
       "/aprobaciones": approvalRow?.n ?? 0,
-      "/compras":      purchaseRow?.n ?? 0,
+      // TRV-01: solicitudes con ítems aprobados sin OC + OC en borrador por emitir.
+      "/compras":      (purchaseRow?.n ?? 0) + pendingPurchaseRequests,
       "/recepcion":    receivingRow?.n ?? 0,
+      "/bodega/guias": guideRow?.n ?? 0,
     }
   },
   ["badge-counts"],
@@ -125,6 +148,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const canApprove = can(session, "approvals:approve")
   const canViewPurchasing = can(session, "purchasing:view")
   const canViewReceiving = can(session, "receiving:view")
+  const canReceiveGuides = can(session, "warehouse:receive_guide")
   const canViewOperations = can(session, "operations:view_work")
   const badgeTags = badgeCountsTags({ isGlobal, worksiteIds: session.user.worksiteIds ?? [] })
 
@@ -144,6 +168,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     "/aprobaciones": canApprove ? rawBadgeCounts["/aprobaciones"] : 0,
     "/compras":      canViewPurchasing ? rawBadgeCounts["/compras"] : 0,
     "/recepcion":    canViewReceiving ? rawBadgeCounts["/recepcion"] : 0,
+    // Sólo quien puede confirmar la recepción de una guía ve que le toca hacerlo.
+    "/bodega/guias": canReceiveGuides ? rawBadgeCounts["/bodega/guias"] : 0,
     "/pendientes":   canViewOperations ? operationalWorkCount : 0,
   }
 

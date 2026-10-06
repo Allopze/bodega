@@ -84,7 +84,7 @@ export function buildOcProgress(
       id:            item.id,
       productName:   item.productName,
       quantityLabel: formatQuantity(item.quantity, item.unitOfMeasure),
-      statusLabel:   ocItemStatusLabel(item),
+      statusLabel:   ocItemStatusLabel(item, orderStatus),
       stageLabel:    currentStage,
       attributes:    item.attributes ?? [],
     })),
@@ -113,10 +113,33 @@ function ocCurrentStage(orderStatus: string, items: OcProgressItem[]): string {
  */
 export type OcProgressAudience = "compras" | "recepcion"
 
+/** Estado de la guía de despacho viva de la OC, si la hay (ADQ-04). */
+export type OcActiveGuideStatus = "draft" | "dispatched" | "partially_received"
+
 export interface OcProgressOptions {
+  /**
+   * Guía de despacho interna viva de la OC. El siguiente paso de una OC con
+   * mercadería en oficina depende de ella: sin guía hay que despachar, con la
+   * guía ya despachada lo que falta es confirmar la llegada a faena. Sin este
+   * dato el texto decía "Despacha los ítems a faena" cuando la GDI ya había
+   * salido y el botón de al lado pedía confirmar (ADQ-04). Quien llama —la
+   * pantalla— es el único que conoce las guías.
+   */
+  activeGuideStatus?: OcActiveGuideStatus | null
   /** La OC no tiene factura conciliada. Sólo lo sabe la pantalla de compras, que
    *  es también la única audiencia que puede resolverlo. */
   invoicePending?: boolean
+}
+
+/**
+ * Siguiente paso cuando ya hay mercadería en oficina por llevar a faena: depende
+ * de la guía viva. `null` si no hay guía y rige el texto genérico de la etapa.
+ */
+function guideNextAction(guideStatus: OcActiveGuideStatus | null | undefined): string | null {
+  if (guideStatus === "dispatched") return "La guía de despacho ya salió: falta confirmar la llegada a faena."
+  if (guideStatus === "draft") return "Completa el despacho de la guía hacia faena."
+  if (guideStatus === "partially_received") return "La faena registró diferencias en la guía: revísalas para cerrar la recepción."
+  return null
 }
 
 function ocNextAction(
@@ -125,13 +148,17 @@ function ocNextAction(
   items: OcProgressItem[],
   options: OcProgressOptions = {},
 ): string {
+  if (["partially_office_received", "office_received", "partially_received"].includes(orderStatus)) {
+    const byGuide = guideNextAction(options.activeGuideStatus)
+    if (byGuide) return byGuide
+  }
   if (audience === "recepcion") {
     switch (orderStatus) {
-      case "draft":              return "La orden aún no ha sido emitida ni enviada al proveedor."
+      case "draft":              return "Falta emitir la OC."
       case "sent":
         return items.some((item) => item.quantityReceived > 0)
           ? "Recepción parcial registrada. Queda saldo por recibir."
-          : "Pendiente de que lleguen los ítems."
+          : "Falta que lleguen los ítems del proveedor."
       case "partially_office_received":
       case "office_received":    return "Los ítems están en oficina. Falta despacharlos a faena."
       case "partially_received": return "Queda saldo pendiente por recibir en faena."
@@ -141,7 +168,8 @@ function ocNextAction(
     }
   }
   switch (orderStatus) {
-    case "draft":              return "Emite y envía la orden al proveedor."
+    // Chome no envía la OC (OC-002): el paso es emitirla.
+    case "draft":              return "Falta emitir la OC."
     case "sent":               return "Registra la recepción cuando lleguen los ítems."
     case "partially_office_received": return "Completa la llegada a oficina del saldo pendiente."
     case "office_received":    return "Despacha los ítems a faena para completar la recepción."
@@ -157,10 +185,18 @@ function ocNextAction(
   }
 }
 
-function ocItemStatusLabel(item: OcProgressItem): string {
-  if (item.quantityReceived <= 0) return "Pendiente recepción"
+/**
+ * ADQ-07: con la OC en Borrador (o emitida sin enviar) nada salió al proveedor,
+ * así que "Pendiente recepción" mentía: lo pendiente es emitirla. Y ADQ-10: el
+ * resto usa el vocabulario canónico —"Pendiente de recepción", "Recibido
+ * parcial"— que ya trae el badge del ítem.
+ */
+function ocItemStatusLabel(item: OcProgressItem, orderStatus: string): string {
+  if (item.quantityReceived <= 0) {
+    return ["draft", "issued"].includes(orderStatus) ? "OC por emitir" : "Pendiente de recepción"
+  }
   if (item.quantityReceived >= item.quantity) return "Recibido"
-  return "Recepción parcial"
+  return "Recibido parcial"
 }
 
 // ── Private helpers ──────────────────────────────────────────────────────────

@@ -24,6 +24,7 @@ import { cn, formatCLP, formatDateTime, formatQty, formatWorksiteLabel } from "@
 import { DetailItem as DetailItemShared } from "@/components/ui/detail-item"
 import { ArrowSquareOut } from "@phosphor-icons/react/dist/ssr"
 import { ReceiptGuideActions } from "./receipt-guide-actions"
+import { receiptGuideActionLabel } from "../recepcion-table.helpers"
 
 export const metadata: Metadata = { title: "Detalle de recepción" }
 
@@ -111,6 +112,10 @@ export default async function RecepcionDetallePage({
   const totalDamaged  = receipt.items.reduce((sum, item) => sum + (item.quantityDamaged ?? 0), 0)
   const lineCount = receipt.items.length
 
+  const sidebarGuides = acquisitionGuides.filter((guide) => guide.status !== "cancelled")
+  const liveGuide = acquisitionGuides.find((guide) => ["draft", "dispatched", "partially_received"].includes(guide.status))
+  const liveGuideStatus = liveGuide?.status as "draft" | "dispatched" | "partially_received" | undefined
+
   const progress = buildOcProgress(
     receipt.purchaseOrder.status,
     receipt.items.map((item) => {
@@ -131,6 +136,9 @@ export default async function RecepcionDetallePage({
     // A-10: el panel es compartido con /compras/[id]; sin declarar la audiencia
     // mostraba aquí instrucciones dirigidas a quien compra.
     "recepcion",
+    // ADQ-04: el siguiente paso depende de la guía viva (despachada → confirmar
+    // llegada, no "despacha").
+    { activeGuideStatus: liveGuideStatus },
   )
 
   return (
@@ -232,7 +240,7 @@ export default async function RecepcionDetallePage({
               <div>
                 <h2 className="text-h2 text-[var(--color-text)]">Despacho {officeLabel} → Faena</h2>
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                  La guía se prepara desde esta recepción y se coteja aquí mismo como segundo evento físico.
+                  La guía se prepara desde esta recepción y la llegada a faena se confirma aquí mismo, como segundo evento físico.
                 </p>
               </div>
               <span className="font-mono text-xs text-[var(--color-text-subtle)]">
@@ -257,7 +265,7 @@ export default async function RecepcionDetallePage({
                   const active = ["dispatched", "partially_received", "received"].includes(guide.status)
                   const progressLabel = guide.status === "draft"
                     ? `${formatQty(guide.totalQuantity)} disponibles para despachar`
-                    : `${formatQty(guide.totalQuantity)} despachadas · ${formatQty(guide.receivedQuantity)} cotejadas`
+                    : `${formatQty(guide.totalQuantity)} despachadas · ${formatQty(guide.receivedQuantity)} confirmadas en faena`
                   return (
                     <div key={guide.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-3">
                       <div className="min-w-0">
@@ -273,7 +281,7 @@ export default async function RecepcionDetallePage({
                         {(guide.status === "draft" || guide.status === "dispatched") && (
                           <Button asChild size="sm" variant="secondary">
                             <Link href={`/bodega/guias/${guide.id}`}>
-                              {guide.status === "draft" ? "Completar despacho" : "Cotejar en faena"}
+                              {receiptGuideActionLabel(guide.status)}
                               <ArrowSquareOut size={13} aria-hidden />
                             </Link>
                           </Button>
@@ -321,7 +329,27 @@ export default async function RecepcionDetallePage({
             </p>
             <dl className="mt-3 divide-y divide-[var(--color-border)]">
               <DetailItemShared label="Destino" value={destinationLabel} />
-              <DetailItemShared label="Guía" value={receipt.dispatchGuideNo ?? "Sin guía"} mono />
+              {/* ADQ-03: leía sólo `dispatchGuideNo`, que se llena al recibir en
+                  faena. Una recepción en oficina nunca lo trae, así que mostraba
+                  "Sin guía" junto a la GDI-000019 de la sección de al lado. La
+                  fuente de verdad son las guías ligadas a la recepción. */}
+              <DetailItemShared
+                label={sidebarGuides.length > 1 ? "Guías de despacho" : "Guía de despacho"}
+                mono={sidebarGuides.length === 0}
+                value={sidebarGuides.length > 0 ? (
+                  <span className="flex flex-col items-end gap-0.5">
+                    {sidebarGuides.map((guide) => (
+                      <Link
+                        key={guide.id}
+                        href={`/bodega/guias/${guide.id}`}
+                        className="font-mono tabular-nums hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
+                      >
+                        {guide.code}
+                      </Link>
+                    ))}
+                  </span>
+                ) : (receipt.dispatchGuideNo ?? "Sin guía")}
+              />
               <DetailItemShared label="Recibido por" value={receipt.receivedBy?.name ?? "Usuario"} />
               <DetailItemShared label="Fecha" value={formatDateTime(receipt.receivedAt)} mono />
             </dl>

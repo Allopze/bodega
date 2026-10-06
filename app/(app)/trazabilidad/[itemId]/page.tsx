@@ -6,5 +6,5 @@ export default async function TrazabilidadItemRedirectPage({
   params: Promise<{ itemId: string }>
 }) {
   const { itemId } = await params
-  redirect(`/bodega/trazabilidad/${itemId}`)
+  redirect(`/seguimiento/${itemId}`)
 }

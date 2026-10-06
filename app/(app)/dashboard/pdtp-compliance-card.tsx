@@ -7,6 +7,7 @@ import { listPendingPdtpExecutions } from "@/lib/services/prevention-pdtp"
 import { getPdtpComplianceIndicatorsForScope, getPdtpYearComplianceIndicators } from "@/lib/services/pdtp/compliance"
 import { currentPdtpPeriod, pdtpReferencePeriodForYear } from "@/lib/services/pdtp/period"
 import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
+import { DASHBOARD_GLOSSARY } from "./dashboard-glossary"
 
 type PdtpComplianceCardProps = {
   year: number
@@ -96,7 +97,7 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
         {/* El agregado global existe (mismo motor que la sección Prevención);
             antes esta tarjeta pedía "selecciona faena" mientras esa sección
             publicaba el porcentaje global cuatro pantallas más abajo (I-04). */}
-        <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]">
+        <span className="text-xs uppercase tracking-wider text-[var(--color-text-muted)]">
           {worksiteId ? "Por faena" : `Global · ${worksiteCount} faenas`}
         </span>
       </div>
@@ -116,7 +117,7 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
         </span>
         <span className="mb-0.5 text-xs text-[var(--color-text-subtle)]">avance real</span>
         {integralPercent !== null && (
-          <span className="mb-0.5 text-xs text-[var(--color-text-faint)]">· gestión {integralPercent}%</span>
+          <span className="mb-0.5 text-xs text-[var(--color-text-muted)]">· gestión {integralPercent}%</span>
         )}
       </div>
 
@@ -134,7 +135,7 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
         ]}
       />
 
-      <div className="mt-3 grid gap-x-3 gap-y-1 text-[11px] text-[var(--color-text-muted)] sm:grid-cols-2">
+      <div className="mt-3 grid gap-x-3 gap-y-1 text-xs text-[var(--color-text-muted)] sm:grid-cols-2">
         <span className="min-w-0">
           {pendingCount > 0 ? (
             <>
@@ -153,14 +154,14 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
             Esperado al período: <strong className="font-mono tabular-nums text-[var(--color-text)]">{expectedPct}%</strong>
             {variancePercent !== null && (
               <span className={cn("ml-1 font-mono tabular-nums", variancePercent < 0 ? "text-[var(--color-danger-ink)]" : "text-[var(--color-success-ink)]")}>
-                ({variancePercent > 0 ? "+" : ""}{variancePercent} pp)
+                ({variancePercent > 0 ? "+" : ""}{variancePercent} <abbr title={DASHBOARD_GLOSSARY.pp} className="no-underline">pp</abbr>)
               </span>
             )}
           </span>
         )}
-        <span className="font-mono tabular-nums">{monthLabel} · S{week} · meta {targetPct}%</span>
+        <span className="font-mono tabular-nums">{monthLabel} · <abbr title={DASHBOARD_GLOSSARY.S} className="no-underline">S</abbr>{week} · meta {targetPct}%</span>
         {versionLabels && versionLabels.length > 1 && (
-          <span className="sm:col-span-2">Consolidado {versionLabels.join(" + ")}</span>
+          <span className="sm:col-span-2">Incluye las versiones {versionLabels.join(" y ")} del programa</span>
         )}
         {lastExecutionUpdatedAt && (
           <span className="sm:col-span-2">Última ejecución validada: {formatDateTime(lastExecutionUpdatedAt)}</span>

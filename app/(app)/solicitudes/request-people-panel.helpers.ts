@@ -35,9 +35,19 @@ export function roleContextLabel(roleContext: string | null) {
     jefe_terreno: "Jefe de terreno",
     supervisor_terreno: "Supervisor de terreno",
     prevencionista_faena: "Prevencionista de faena",
+    // Roles que pueden figurar en decisiones históricas: sin entrada aquí el
+    // panel mostraba el identificador crudo (`supervisor_faena`).
+    supervisor_faena: "Supervisor de faena",
+    solicitante_faena: "Solicitante de faena",
+    conductor_lider: "Conductor líder",
+    gerente_legal_rrhh: "Gerencia Legal y RR. HH.",
+    subgerente_operaciones: "Subgerencia de operaciones",
+    tecnico_ti: "Técnico TI",
+    cphs: "Comité Paritario",
   }
   if (!roleContext) return "Rol no registrado"
-  return labels[roleContext] ?? roleContext
+  // Un rol desconocido nunca se muestra crudo: se legibiliza (snake_case → texto).
+  return labels[roleContext] ?? (roleContext.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase()))
 }
 
 export function summarizeRequestPeople({

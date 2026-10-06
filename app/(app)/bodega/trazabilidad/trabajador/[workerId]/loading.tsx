@@ -11,8 +11,7 @@ export default function Loading() {
           <Breadcrumbs
             items={[
               { label: "Inicio", href: "/dashboard" },
-              { label: "Bodega", href: "/bodega" },
-              { label: "Trazabilidad", href: "/bodega/trazabilidad" },
+              { label: "Entregas", href: "/entregas" },
               { label: "Trabajador" },
             ]}
           />

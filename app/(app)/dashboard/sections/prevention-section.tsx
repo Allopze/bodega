@@ -24,6 +24,7 @@ import {
 
 import type { DomainSectionsProps } from "./shared"
 import { pct } from "./shared"
+import { DASHBOARD_GLOSSARY } from "../dashboard-glossary"
 
 // ── Prevención y SST ─────────────────────────────────────────────────────────
 
@@ -92,13 +93,13 @@ export async function PreventionSection({ session, worksiteScope, worksiteIds, c
       ]}
       kpis={
         <>
-          <KpiCard icon={<Certificate size={16} />} label="Cumplimiento PDTP"
+          <KpiCard icon={<Certificate size={16} />} label="Cumplimiento PDTP" glossary={DASHBOARD_GLOSSARY.PDTP}
             value={pdtpPercent === null ? "—" : `${Math.round(pdtpPercent * 100)}%`}
             detail={pdtpPercent === null ? "Sin programa activo" : `Avance acreditado · año ${pdtpYear}`} href={`/prevencion/pdtp?anio=${pdtpYear}`} />
           <KpiCard icon={<Siren size={16} />} label="Incidentes abiertos" value={String(incidents.totalOpen)}
             detail={incidents.fatalOrSerious > 0 ? `${incidents.fatalOrSerious} fatal(es) o grave(s) · ahora` : "Ninguno fatal ni grave, ahora"}
             tone={incidents.fatalOrSerious > 0 ? "signal" : "neutral"} href="/prevencion/incidentes?quick=open" />
-          <KpiCard icon={<ShieldWarning size={16} />} label="CAPA vencidas" value={String(capa.overdue)}
+          <KpiCard icon={<ShieldWarning size={16} />} label="CAPA vencidas" glossary={DASHBOARD_GLOSSARY.CAPA} value={String(capa.overdue)}
             detail={`${capa.open} abierta${capa.open === 1 ? "" : "s"} en total · ahora`} tone={capa.overdue > 0 ? "signal" : "neutral"} href="/prevencion/capa?vista=overdue" />
           {risk && (
             <KpiCard icon={<ShieldWarning size={16} />} label="Riesgos críticos sin control"
@@ -127,7 +128,7 @@ export async function PreventionSection({ session, worksiteScope, worksiteIds, c
           {materialEnvPoints.length > 0 && <div className="xl:col-span-2"><MaterialEnvironmentalChart data={materialEnvPoints} /></div>}
           {risk && (risk.coverage.activeProcesses > 0 || risk.coverage.activePositions > 0) && (
             <ThresholdRankingChart
-              title="Cobertura MIPER" description="Procesos y cargos con matriz de riesgos publicada"
+              title="Cobertura de la matriz de riesgos" description="MIPER: procesos y cargos con matriz de identificación de peligros y evaluación de riesgos publicada"
               data={[
                 { name: "Procesos", value: pct(risk.coverage.coveredProcesses, risk.coverage.activeProcesses), detail: `${risk.coverage.coveredProcesses} de ${risk.coverage.activeProcesses}` },
                 { name: "Cargos", value: pct(risk.coverage.coveredPositions, risk.coverage.activePositions), detail: `${risk.coverage.coveredPositions} de ${risk.coverage.activePositions}` },
@@ -139,7 +140,7 @@ export async function PreventionSection({ session, worksiteScope, worksiteIds, c
                ranking de hasta 9 faenas gana con barras y rótulos más largos. */
             <div className="xl:col-span-2 2xl:col-span-3">
               <ThresholdRankingChart
-                title="Cumplimiento PDTP por faena" description="Comparativa entre las faenas del alcance"
+                title="Cumplimiento del Programa de Trabajo Preventivo por faena" description="PDTP: comparativa entre las faenas del alcance"
                 data={pdtpByWorksite.perWorksite
                   .filter((entry) => entry.indicators !== null)
                   .map((entry) => ({

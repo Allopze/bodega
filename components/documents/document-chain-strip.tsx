@@ -127,7 +127,7 @@ export async function DocumentChainStrip({ chain, current, currentCode, classNam
   // enlace sólo lleva a /forbidden, así que no se pinta. Se resuelve después de
   // los early-returns para no pagar `auth()` cuando la tira ni se muestra.
   const dossierHref = currentCode && can(await auth(), "warehouse:view_traceability")
-    ? `/bodega/trazabilidad?tab=documento&codigo=${encodeURIComponent(currentCode)}`
+    ? `/seguimiento?tab=documento&codigo=${encodeURIComponent(currentCode)}`
     : null
 
   return (

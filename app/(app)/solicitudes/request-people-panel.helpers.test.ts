@@ -37,5 +37,7 @@ describe("request people panel helpers", () => {
     expect(decisionTypeLabel("return")).toBe("Devolvió")
     expect(roleContextLabel("jefa_chome")).toBe("Jefatura")
     expect(roleContextLabel(null)).toBe("Rol no registrado")
+    expect(roleContextLabel("supervisor_faena")).toBe("Supervisor de faena")
+    expect(roleContextLabel("rol_nuevo_x")).toBe("Rol nuevo x")
   })
 })

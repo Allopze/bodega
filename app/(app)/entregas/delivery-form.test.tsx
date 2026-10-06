@@ -146,7 +146,7 @@ describe("DeliveryForm", () => {
       />,
     )
 
-    fireEvent.change(screen.getAllByTestId("select")[1]!, { target: { value: "worker-1" } })
+    fireEvent.change(screen.getAllByTestId("select")[0]!, { target: { value: "worker-1" } })
     fireEvent.change(screen.getAllByTestId("select")[2]!, { target: { value: "fam-helmet" } })
     fireEvent.change(screen.getByLabelText("Cantidad (máx. 4 unidades)"), { target: { value: "1" } })
     fireEvent.click(screen.getByRole("button", { name: "Agregar" }))
@@ -206,7 +206,7 @@ describe("DeliveryForm", () => {
       />,
     )
 
-    fireEvent.change(screen.getAllByTestId("select")[1]!, { target: { value: "worker-1" } })
+    fireEvent.change(screen.getAllByTestId("select")[0]!, { target: { value: "worker-1" } })
     fireEvent.change(screen.getAllByTestId("select")[2]!, { target: { value: "fam-helmet" } })
     fireEvent.change(screen.getByLabelText("Cantidad (máx. 4 unidades)"), { target: { value: "1" } })
     fireEvent.click(screen.getByRole("button", { name: "Agregar" }))
@@ -262,7 +262,7 @@ describe("DeliveryForm", () => {
     expect(screen.getByText(/días de retroactividad/)).toBeDefined()
   })
 
-  it("muestra sólo trabajadores de la faena seleccionada aunque no haya EPP pendiente", () => {
+  it("pregunta primero por el trabajador y deduce la bodega de su faena, sin dejar de ser editable", () => {
     render(
       <DeliveryForm
         today="2026-08-21"
@@ -315,15 +315,25 @@ describe("DeliveryForm", () => {
       />,
     )
 
-    expect(screen.getByText("Andrea Rojas · Faena Santa Fe · Operaria")).toBeDefined()
-    expect(screen.queryByText("Bruno Soto · Faena Arauco · Supervisor")).toBeNull()
-    expect(screen.getAllByTestId("select").some((select) => select.dataset.searchable === "true")).toBe(true)
+    // El trabajador va primero y se busca en todo el padrón, no sólo en la bodega abierta.
+    const [workerSelect, sourceSelect] = screen.getAllByTestId("select") as HTMLSelectElement[]
+    expect(workerSelect!.dataset.searchable).toBe("true")
+    expect(screen.getByText("Andrea Rojas · 12.345.678-9 · Faena Santa Fe · Operaria")).toBeDefined()
+    expect(screen.getByText("Bruno Soto · 11.111.111-1 · Faena Arauco · Supervisor")).toBeDefined()
     expect(screen.queryByText(/firma/i)).toBeNull()
+    expect(sourceSelect!.value).toBe("faena-1")
 
-    fireEvent.change(screen.getAllByTestId("select")[0]!, { target: { value: "faena-2" } })
+    // Elegir a alguien de otra faena propone su bodega.
+    fireEvent.change(workerSelect!, { target: { value: "worker-2" } })
+    expect(sourceSelect!.value).toBe("faena-2")
+    expect(workerSelect!.value).toBe("worker-2")
 
-    expect(screen.queryByText("Andrea Rojas · Faena Santa Fe · Operaria")).toBeNull()
-    expect(screen.getByText("Bruno Soto · Faena Arauco · Supervisor")).toBeDefined()
+    // Cambiar la bodega a mano suelta al trabajador que ya no corresponde. Se
+    // lee el campo que viaja en el envío: el <select> simulado no tiene opción
+    // vacía, así que con valor "" el DOM mostraría la primera opción.
+    fireEvent.change(sourceSelect!, { target: { value: "faena-1" } })
+    const submittedWorker = document.querySelector<HTMLInputElement>('input[type="hidden"][name="workerId"]')
+    expect(submittedWorker!.value).toBe("")
   })
 
   it("abre en una bodega con dotación, no en la bodega de oficina que sólo tiene stock", () => {
@@ -380,8 +390,8 @@ describe("DeliveryForm", () => {
 
     // Sin `initialSourceWorksiteId`, la oficina va primera en stock y en la
     // lista de bodegas, pero no tiene dotación: debe ganar la faena.
-    expect((screen.getAllByTestId("select")[0] as HTMLSelectElement).value).toBe("faena-1")
-    expect(screen.getByText("Andrea Rojas · Faena Santa Fe · Operaria")).toBeDefined()
+    expect((screen.getAllByTestId("select")[1] as HTMLSelectElement).value).toBe("faena-1")
+    expect(screen.getByText("Andrea Rojas · 12.345.678-9 · Faena Santa Fe · Operaria")).toBeDefined()
   })
   /* ── Talla ────────────────────────────────────────────────────────────────
    * El defecto original: el catálogo guarda una fila por talla y la talla vive
@@ -466,7 +476,7 @@ describe("DeliveryForm", () => {
 
   it("descuenta la variante elegida y no el producto genérico", () => {
     renderWithSizes()
-    fireEvent.change(screen.getAllByTestId("select")[1]!, { target: { value: "worker-1" } })
+    fireEvent.change(screen.getAllByTestId("select")[0]!, { target: { value: "worker-1" } })
     fireEvent.change(screen.getAllByTestId("select")[2]!, { target: { value: "fam-shoe" } })
     fireEvent.change(screen.getAllByTestId("select")[3]!, { target: { value: "shoe-42" } })
     fireEvent.change(screen.getByLabelText("Cantidad (máx. 3 unidades)"), { target: { value: "2" } })
@@ -568,7 +578,7 @@ describe("DeliveryForm", () => {
 
   it("marca la talla habitual del trabajador sin bloquear las demás", () => {
     renderWithSizes({ workerOverrides: { sizeShoe: "42" } })
-    fireEvent.change(screen.getAllByTestId("select")[1]!, { target: { value: "worker-1" } })
+    fireEvent.change(screen.getAllByTestId("select")[0]!, { target: { value: "worker-1" } })
     fireEvent.change(screen.getAllByTestId("select")[2]!, { target: { value: "fam-shoe" } })
 
     const options = [...screen.getAllByTestId("select")[3]!.querySelectorAll("option")]
@@ -581,7 +591,7 @@ describe("DeliveryForm", () => {
 
   it("avisa cuando la talla habitual no tiene stock en la bodega", () => {
     renderWithSizes({ workerOverrides: { sizeShoe: "45" } })
-    fireEvent.change(screen.getAllByTestId("select")[1]!, { target: { value: "worker-1" } })
+    fireEvent.change(screen.getAllByTestId("select")[0]!, { target: { value: "worker-1" } })
     fireEvent.change(screen.getAllByTestId("select")[2]!, { target: { value: "fam-shoe" } })
 
     expect(screen.getByText("Talla habitual 45: sin stock en esta bodega.")).toBeDefined()
@@ -589,7 +599,7 @@ describe("DeliveryForm", () => {
 
   it("no ofrece dos veces la misma talla ya agregada a la entrega", () => {
     renderWithSizes()
-    fireEvent.change(screen.getAllByTestId("select")[1]!, { target: { value: "worker-1" } })
+    fireEvent.change(screen.getAllByTestId("select")[0]!, { target: { value: "worker-1" } })
     fireEvent.change(screen.getAllByTestId("select")[2]!, { target: { value: "fam-shoe" } })
     fireEvent.change(screen.getAllByTestId("select")[3]!, { target: { value: "shoe-42" } })
     fireEvent.change(screen.getByLabelText("Cantidad (máx. 3 unidades)"), { target: { value: "1" } })
@@ -637,5 +647,64 @@ describe("DeliveryForm", () => {
     expect([...screen.getAllByTestId("select")[3]!.querySelectorAll("option")]
       .map((option) => option.getAttribute("value")))
       .toEqual(["shoe-40", "shoe-41", "shoe-42", "shoe-43"])
+  })
+
+  it("ofrece el motivo del canje en español y conserva el valor de la columna", () => {
+    const { container } = render(
+      <DeliveryForm
+        today="2026-08-31"
+        worksites={[{ id: "faena-1", name: "Faena Santa Fe" }]}
+        workers={[{
+          id: "worker-1", name: "Andrea Rojas", worksiteId: "faena-1", worksiteName: "Faena Santa Fe",
+          position: null, rut: "12.345.678-9",
+          sizeTop: null, sizeBottom: null, sizeShoe: null, sizeGloves: null, sizeHelmet: null,
+        }]}
+        stockProducts={[{
+          sourceWorksiteId: "faena-1", productId: "helmet", productName: "Casco dieléctrico", productSku: null,
+          isEpp: true, unitOfMeasure: "unidad", stockQuantity: 4, familyId: "fam-helmet", familyName: null,
+          sizeLabel: null, sizeAttributeName: null,
+        }]}
+        initialSourceWorksiteId="faena-1"
+      />,
+    )
+    fireEvent.change(screen.getAllByTestId("select")[2]!, { target: { value: "fam-helmet" } })
+    fireEvent.change(screen.getByLabelText("Cantidad (máx. 4 unidades)"), { target: { value: "1" } })
+    fireEvent.click(screen.getByRole("button", { name: "Agregar" }))
+    fireEvent.click(screen.getByLabelText("Retirar EPP usado al entregar Casco dieléctrico"))
+
+    const reasons = [...container.querySelectorAll("option")].filter((option) => ["desgastado", "dañado", "vencido", "otro"].includes(option.value))
+    expect(reasons.map((option) => [option.value, option.textContent])).toEqual([
+      ["desgastado", "Desgastado"],
+      ["dañado", "Dañado"],
+      ["vencido", "Vencido"],
+      ["otro", "Otro"],
+    ])
+  })
+
+  it("precarga la cantidad y vincula la línea al ítem recibido cuando se entrega desde EPP por entregar", () => {
+    const { container } = render(
+      <DeliveryForm
+        today="2026-08-31"
+        worksites={[{ id: "faena-1", name: "Faena Santa Fe" }]}
+        workers={[{
+          id: "worker-1", name: "Andrea Rojas", worksiteId: "faena-1", worksiteName: "Faena Santa Fe",
+          position: null, rut: "12.345.678-9",
+          sizeTop: null, sizeBottom: null, sizeShoe: null, sizeGloves: null, sizeHelmet: null,
+        }]}
+        stockProducts={[{
+          sourceWorksiteId: "faena-1", productId: "helmet", productName: "Casco dieléctrico", productSku: null,
+          isEpp: true, unitOfMeasure: "unidad", stockQuantity: 4, familyId: "fam-helmet", familyName: null,
+          sizeLabel: null, sizeAttributeName: null,
+        }]}
+        initialSourceWorksiteId="faena-1"
+        initialProductId="helmet"
+        initialRequestItemId="item-1"
+        initialQuantity={3}
+      />,
+    )
+    expect((screen.getByLabelText("Cantidad (máx. 4 unidades)") as HTMLInputElement).value).toBe("3")
+    fireEvent.click(screen.getByRole("button", { name: "Agregar" }))
+    const [line] = JSON.parse((container.querySelector("input[name='itemsJson']") as HTMLInputElement).value) as Array<Record<string, unknown>>
+    expect(line).toMatchObject({ productId: "helmet", quantity: 3, requestItemId: "item-1" })
   })
 })

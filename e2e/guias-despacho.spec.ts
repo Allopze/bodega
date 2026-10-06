@@ -95,7 +95,9 @@ test.describe("Guías de despacho internas", () => {
     await waitForToastsToClear(page)
     await page.getByRole("button", { name: /Confirmar recepción/i }).click()
     await page.getByRole("dialog").getByRole("button", { name: /Confirmar recepción/i }).click()
-    await expect(page.getByText("Recibida").first()).toBeVisible({ timeout: 15_000 })
+    // «Recibida» es también el encabezado de la columna de cantidades: la señal
+    // de que el servidor confirmó es que la acción ya no se ofrece.
+    await expect(page.getByRole("button", { name: /Confirmar recepción/i })).toHaveCount(0, { timeout: 15_000 })
     await expect(page.getByRole("cell", { name: "Salida por guía" })).toHaveCount(1)
 
     // 7. El historial queda disponible, pero no ofrece alta independiente.

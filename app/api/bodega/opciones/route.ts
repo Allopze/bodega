@@ -1,7 +1,7 @@
 /**
  * GET /api/bodega/opciones?faena=<id>
  *
- * Opciones de los formularios de movimiento (conteo, ajuste, baja, devolución)
+ * Opciones de los formularios de movimiento (conteo, ajuste, baja)
  * para UNA faena.
  *
  * Existe para sacarlas del render de `/bodega`: se calculaban en cada carga de
@@ -10,9 +10,9 @@
  * corrían antes de evaluar el permiso que las gatea.
  */
 import { type NextRequest, NextResponse } from "next/server"
-import { and, asc, eq, isNull, sql } from "drizzle-orm"
+import { and, asc, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { deliveries, deliveryItems, products, stockReturns, worksites, worksiteStock } from "@/db/schema"
+import { inventoryMovements, products, worksites, worksiteStock } from "@/db/schema"
 import { auth } from "@/lib/auth/auth"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { getOpenPhysicalInventoryCount } from "@/lib/services/physical-inventory"
@@ -27,8 +27,10 @@ export async function GET(req: NextRequest) {
   }
 
   const canAdjust = can(session, "warehouse:adjust_stock")
-  const canRegister = can(session, "warehouse:register_movement")
-  if (!canAdjust && !canRegister) {
+  // Las tres hojas que cargan opciones (conteo, ajuste, baja) son de ajuste de
+  // stock. La devolución, que era la única que pedía `register_movement`, ya no
+  // se ofrece: exigía entregas "a faena", que el código dejó de crear.
+  if (!canAdjust) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
@@ -63,6 +65,11 @@ export async function GET(req: NextRequest) {
             productSku: products.sku,
             unitOfMeasure: products.unitOfMeasure,
             quantity: sql<number>`coalesce(${worksiteStock.quantity}, 0)`,
+            hasMovements: sql<boolean>`exists (
+              select 1 from ${inventoryMovements}
+              where ${inventoryMovements.productId} = ${products.id}
+                and ${inventoryMovements.worksiteId} = ${worksiteId}
+            )`,
           })
           .from(products)
           .leftJoin(worksiteStock, and(
@@ -73,50 +80,14 @@ export async function GET(req: NextRequest) {
           .orderBy(asc(products.name))
       : []
 
-    const returnRows = canRegister
-      ? await db
-          .select({
-            deliveryItemId: deliveryItems.id,
-            deliveryCode: deliveries.code,
-            productId: deliveryItems.productId,
-            productName: products.name,
-            productSku: products.sku,
-            unitOfMeasure: products.unitOfMeasure,
-            remainingQuantity: sql<number>`(${deliveryItems.quantity} - coalesce(sum(${stockReturns.quantity}), 0))`,
-          })
-          .from(deliveryItems)
-          .innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id))
-          .innerJoin(products, eq(deliveryItems.productId, products.id))
-          .leftJoin(stockReturns, eq(stockReturns.deliveryItemId, deliveryItems.id))
-          .where(and(
-            eq(deliveries.destinationType, "faena"),
-            eq(deliveries.worksiteId, worksiteId),
-            // Su stock ya volvió por la anulación: ofrecerla para devolver lo
-            // duplicaría.
-            isNull(deliveries.voidedAt),
-          ))
-          .groupBy(
-            deliveryItems.id,
-            deliveryItems.quantity,
-            deliveryItems.productId,
-            deliveries.code,
-            products.name,
-            products.sku,
-            products.unitOfMeasure,
-          )
-          .having(sql`${deliveryItems.quantity} > coalesce(sum(${stockReturns.quantity}), 0)`)
-          .orderBy(asc(deliveries.code), asc(products.name))
-      : []
-
     // Borrador de conteo abierto: el panel lo retoma donde quedó en vez de
     // obligar a recontar la faena entera.
     const openCount = canAdjust ? await getOpenPhysicalInventoryCount(worksiteId) : null
 
-    // Ajustar, desechar o devolver una talla equivocada corrige el saldo de la
+    // Ajustar, desechar o contar una talla equivocada corrige el saldo de la
     // variante que no era. El nombre a secas no distingue las variantes.
     const attributesById = await getProductAttributesByIds([
       ...catalogRows.map((row) => row.productId),
-      ...returnRows.map((row) => row.productId).filter((id): id is string => Boolean(id)),
     ])
 
     return NextResponse.json({
@@ -127,14 +98,6 @@ export async function GET(req: NextRequest) {
         ...row,
         productName: formatVariantProductName(row.productName, attributesById.get(row.productId)),
         quantity: Number(row.quantity),
-      })),
-      returns: returnRows.map((row) => ({
-        ...row,
-        productName: formatVariantProductName(
-          row.productName,
-          row.productId ? attributesById.get(row.productId) : undefined,
-        ),
-        remainingQuantity: Number(row.remainingQuantity),
       })),
     })
   } catch (err) {

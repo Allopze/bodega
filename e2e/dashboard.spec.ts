@@ -10,7 +10,7 @@ import { login } from "./helpers"
  * 2026-07-31: alcance global en la URL y fila superior por ranura semántica.
  */
 
-/** Las cuatro ranuras de `buildOperationalMetrics`, con su cascada por permiso. */
+/** Contadores de la cola: viven en el bloque Hoy, nunca en el panorama. */
 const WORK_SLOT_LABELS = ["Tareas vencidas", "Por aprobar", "Tareas pendientes"]
 
 test.describe("Dashboard operacional", () => {
@@ -35,15 +35,6 @@ test.describe("Dashboard operacional", () => {
     return page.getByRole("combobox", { name: "Faena del tablero" })
   }
 
-  /*
-   * El saludo no declara **ninguna** cifra, y es el único título de la página.
-   *
-   * Antes enumeraba total + críticas + vencidas + entregas; luego sólo el total,
-   * que aun así lo repetía la insignia de "Mi trabajo" a cien píxeles (G-02/A5).
-   * Ahora la cifra vive una vez, en la insignia, que además navega hasta la cola.
-   * Y el saludo es el `h1`: convivía con un "Inicio" en la TopBar, dos
-   * identidades para la misma página.
-   */
   test("el saludo es el único título y no repite el total de la cola", async ({ page }) => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1)
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Hola, /)
@@ -52,61 +43,66 @@ test.describe("Dashboard operacional", () => {
     await expect(page.getByText(/No tienes acciones pendientes/)).toHaveCount(0)
   })
 
-  // D-01: los atajos anuncian el backlog completo y navegan a /pendientes; no
-  // filtran en cliente las filas visibles.
-  test("los atajos de la cola navegan a la cola completa", async ({ page }) => {
-    await page.goto("/dashboard?vista=trabajo")
-    const shortcuts = page.getByRole("navigation", { name: "Atajos a la cola completa" })
-    await expect(shortcuts).toBeVisible()
-
-    const all = shortcuts.getByRole("link", { name: /Todas/ })
-    await expect(all).toHaveAttribute("href", "/pendientes")
-    await all.click()
-    await expect(page).toHaveURL(/\/pendientes/)
-  })
-
-  // D-01: si la cola está truncada tiene que decirlo. Si no lo está, no debe
-  // inventar un aviso.
-  test("declara el truncamiento sólo cuando lo hay", async ({ page }) => {
-    await page.goto("/dashboard?vista=trabajo")
-    const queue = page.getByRole("region", { name: "Cola de trabajo" })
-    const notice = queue.getByText(/Mostrando las .* más urgentes de/)
-    const visibleCount = queue.getByText(/\d+ de \d+ visibles?/)
-    await expect(visibleCount).toBeVisible()
-
-    const counts = ((await visibleCount.textContent()) ?? "").match(/(\d+) de (\d+)/)
-    const loaded = Number(counts?.[2] ?? 0)
-    // El total vive en la insignia de "Mi trabajo" —su única representación en la
-    // cabecera desde que el saludo dejó de repetirlo—. Sin cola no hay insignia,
-    // y ahí `loaded` es el total.
-    const badge = ((await page.getByRole("navigation", { name: "Vistas del tablero" })
-      .getByRole("link", { name: /Mi trabajo/ }).textContent()) ?? "")
-    const total = Number(badge.match(/(\d+)$/)?.[1] ?? loaded)
-
-    if (total > loaded) await expect(notice).toBeVisible()
-    else await expect(notice).toHaveCount(0)
-  })
-
   /*
-   * G-01: la fila superior es una cifra **por dominio**, no cuatro de la misma.
-   *
-   * Antes `.slice(0, 4)` sobre una lista de orden fijo entregaba siempre
-   * "Tareas pendientes · críticas · vencidas · Por aprobar" —tres del mismo
-   * eje— y dejaba "Inversión" y "Stock crítico" inalcanzables para todo rol.
+   * "Hoy arriba, panorama abajo": el bloque Hoy abre el Resumen —primero en el
+   * DOM y en pantalla— y lleva UN enlace a Mis pendientes, el único nombre de
+   * la cola. La vista "Mi trabajo" ya no existe.
    */
-  test("la fila superior no repite la dimensión de tareas", async ({ page }) => {
+  test("Hoy abre el Resumen, antes que los indicadores, con un solo enlace a Mis pendientes", async ({ page }) => {
+    const hoy = page.getByRole("region", { name: "Hoy" })
+    await expect(hoy).toBeVisible()
+
+    const indicadores = page.getByRole("region", { name: "Indicadores Operacionales" })
+    const [hoyBox, indicadoresBox] = [await hoy.boundingBox(), await indicadores.boundingBox()]
+    expect(hoyBox!.y).toBeLessThan(indicadoresBox!.y)
+
+    // Un solo enlace, con el nombre de la cola tal como lo llama el sidebar.
+    const enlace = hoy.getByRole("link", { name: /^Ver (todos )?mis pendientes/ })
+    await expect(enlace).toHaveCount(1)
+    await expect(enlace).toHaveAttribute("href", /^\/pendientes/)
+    await expect(page.getByText(/Cola de trabajo|Mi trabajo|Tareas pendientes/)).toHaveCount(0)
+
+    // Hasta cinco filas de la cola, cada una con su vencimiento en palabras.
+    const filas = hoy.getByRole("list", { name: "Lo más urgente de tus pendientes" }).getByRole("listitem")
+    expect(await filas.count()).toBeLessThanOrEqual(5)
+    for (const texto of await filas.allTextContents()) {
+      expect(texto).toMatch(/Vencida hace|Vence|Sin fecha de vencimiento/)
+    }
+  })
+
+  test("en Hoy, cada alerta enlaza a su subconjunto y dice su severidad en texto", async ({ page }) => {
+    const alertas = page.getByRole("region", { name: "Hoy" }).getByRole("list", { name: /Requiere atención/ })
+    if ((await alertas.count()) === 0) test.skip(true, "Sin alertas activas para este usuario")
+
+    for (const alerta of await alertas.getByRole("link").all()) {
+      await expect(alerta).toHaveAttribute("href", /^\/(pendientes|prevencion)/)
+      await expect(alerta).toContainText(/Crítica|Atención|Pendiente/)
+    }
+    // Decisión de producto: el sistema de asignación se retira de Inicio.
+    await expect(page.getByText(/sin responsable/i)).toHaveCount(0)
+  })
+
+  test("?vista=trabajo redirige a /pendientes y conserva la faena", async ({ page }) => {
+    await page.goto("/dashboard?vista=trabajo")
+    await expect(page).toHaveURL(/\/pendientes$/)
+
+    await page.goto("/dashboard?vista=trabajo&faena=ws-que-no-existe")
+    await expect(page).toHaveURL(/\/pendientes\?worksiteId=ws-que-no-existe/)
+  })
+
+  test("Inicio no ofrece el filtro de la shell: ya no hay una lista que filtrar", async ({ page }) => {
+    await expect(page.getByRole("searchbox", { name: "Filtrar en esta página" })).toHaveCount(0)
+  })
+
+
+  test("el panorama no repite lo que ya dice Hoy", async ({ page }) => {
     const strip = page.getByRole("region", { name: "Indicadores Operacionales" })
     await expect(strip).toBeVisible()
 
+    // La ranura de trabajo propio se fue a Hoy: ningún contador de la cola.
     const stripText = (await strip.textContent()) ?? ""
-    const workLabelsPresent = WORK_SLOT_LABELS.filter((label) => stripText.includes(label))
-
-    // Una sola ranura de trabajo, no tres.
-    expect(workLabelsPresent).toHaveLength(1)
-    // Y "Tareas críticas" salió de la fila: vive en su alerta y en su atajo.
-    expect(stripText).not.toContain("Tareas críticas")
+    for (const label of [...WORK_SLOT_LABELS, "Tareas críticas"]) expect(stripText).not.toContain(label)
   })
-
   /*
    * G-01: el admin del seed tiene `purchasing:view`, así que la ranura de dinero
    * se llena. Con el corte anterior este tile era el candidato 8 y **nunca** se
@@ -114,43 +110,20 @@ test.describe("Dashboard operacional", () => {
    */
   test("la ranura de dinero se renderiza para quien la tiene autorizada", async ({ page }) => {
     const strip = page.getByRole("region", { name: "Indicadores Operacionales" })
-    await expect(strip.getByText("Inversión", { exact: true })).toBeVisible()
+    await expect(strip.getByText("Gasto en OC", { exact: true })).toBeVisible()
   })
 
-  // L-02: la cola es el widget principal; no puede exigir scroll horizontal en
-  // un portátil estándar.
-  test("la cola de trabajo no scrollea horizontalmente a 1440px", async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto("/dashboard?vista=trabajo")
-    const scroller = page.locator("#cola-de-trabajo div.overflow-x-auto").first()
-    if ((await scroller.count()) === 0) test.skip(true, "Sin tareas en la cola para este usuario")
-
-    const overflow = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth)
-    expect(overflow).toBeLessThanOrEqual(1)
-  })
 
   // L-01: PageHeader ya emite el <h1> de la página; el saludo no debe ser otro.
   test("la página tiene un solo h1", async ({ page }) => {
     await expect(page.locator("h1")).toHaveCount(1)
   })
 
-  /*
-   * G-05: el alcance global son los **únicos dos filtros** de la pantalla. Antes
-   * había tres controles y ninguno reencuadraba nada — el de faena filtraba en
-   * cliente las 12 filas de la cola mientras KPIs, alertas, tarjeta PDTP y los 8
-   * gráficos lo ignoraban.
-   */
-  test("la pantalla tiene dos controles de alcance y el de la cola es sólo el orden", async ({ page }) => {
+  test("la pantalla tiene dos controles de alcance y ningún orden de cola", async ({ page }) => {
     await expect(page.getByRole("group", { name: "Período del tablero" })).toBeVisible()
-
-    await page.goto("/dashboard?vista=trabajo")
-    const queue = page.getByRole("region", { name: "Cola de trabajo" })
-    await expect(queue.getByRole("combobox", { name: "Ordenar por" })).toBeVisible()
-    // La faena ya no se elige dos veces.
-    await expect(queue.getByRole("combobox", { name: "Faena" })).toHaveCount(0)
-    await expect(queue.getByText("Quitar filtro de faena")).toHaveCount(0)
+    await expect(page.getByRole("combobox", { name: "Ordenar por" })).toHaveCount(0)
+    await expect(page.getByText("Quitar filtro de faena")).toHaveCount(0)
   })
-
   test("el período viaja en la URL y reencuadra el rótulo del flujo", async ({ page }) => {
     await expect(page.getByRole("region", { name: "Flujo del mes" })).toBeVisible()
 
@@ -186,88 +159,45 @@ test.describe("Dashboard operacional", () => {
     await expect(page.getByText(worksiteName).first()).toBeVisible()
   })
 
-  test("los atajos arrastran la faena a la cola completa", async ({ page }) => {
-    const picker = await worksitePicker(page)
-    if ((await picker.count()) === 0) test.skip(true, "El usuario tiene una sola faena autorizada")
 
-    await picker.click()
-    await page.getByRole("option").filter({ hasNotText: "Todas las faenas" }).first().click()
-    await expect(page).toHaveURL(/faena=/)
-
-    // La faena viaja con el cambio de vista: es la mitad del contrato.
-    await page.getByRole("navigation", { name: "Vistas del tablero" })
-      .getByRole("link", { name: /Mi trabajo/ }).click()
-    await expect(page).toHaveURL(/faena=/)
-
-    // Sin esto, salir del dashboard con una faena elegida aterrizaba en
-    // /pendientes sin filtro: el conteo del atajo y la lista de destino
-    // hablaban de poblaciones distintas.
-    const all = page.getByRole("navigation", { name: "Atajos a la cola completa" }).getByRole("link", { name: /Todas/ })
-    await expect(all).toHaveAttribute("href", /\/pendientes\?worksiteId=/)
-  })
-
-  /*
-   * El selector de vistas: una a la vez. Sustituye al índice de anclas, que
-   * navegaba con scroll sobre una página con las seis secciones ya montadas.
-   */
-  /*
-   * Dos taxonomías, dos niveles: `Resumen` y `Mi trabajo` son modos de mirar,
-   * los dominios son lugares. Como nueve pestañas hermanas había que leerlas
-   * todas para descubrir que no eran comparables.
-   */
-  test("el admin ve dos modos como pestañas y sus dominios en el desplegable", async ({ page }) => {
+  test("el admin ve Resumen como pestaña y sus áreas en el desplegable, con su descripción", async ({ page }) => {
     const tabs = page.getByRole("navigation", { name: "Vistas del tablero" })
     await expect(tabs).toBeVisible()
 
-    // La insignia de "Mi trabajo" pega el conteo al rótulo; se recorta.
-    const modos = (await tabs.getByRole("link").allTextContents()).map((t) => t.replace(/\d+$/, "").trim())
-    expect(modos).toEqual(["Resumen", "Mi trabajo"])
+    const modos = (await tabs.getByRole("link").allTextContents()).map((t) => t.trim())
+    expect(modos).toEqual(["Resumen"])
 
-    await tabs.getByRole("button").click()
-    const dominios = await page.getByRole("menuitem").allTextContents()
-    // Finanzas al frente: es el dominio que abre para quien mira la plata.
-    expect(dominios.slice(0, 2)).toEqual(["Finanzas", "Adquisiciones"])
+    await tabs.getByRole("button", { name: "Por área" }).click()
+    // Cada ítem trae su título y una línea que dice qué cifras contiene.
+    const titulos = await page.getByRole("menuitem").evaluateAll((items) => items.map((item) => item.querySelector("span")?.textContent ?? ""))
+    // Finanzas al frente: es el área que abre para quien mira la plata.
+    expect(titulos.slice(0, 2)).toEqual(["Finanzas", "Adquisiciones"])
+    // Los nombres son los del sidebar, no los del código.
+    expect(titulos).toContain("Control operacional")
+    for (const antiguo of ["Flota", "Terreno", "Gobernanza"]) expect(titulos).not.toContain(antiguo)
+    for (const item of await page.getByRole("menuitem").all()) {
+      expect(((await item.textContent()) ?? "").length).toBeGreaterThan(20)
+    }
   })
-
   test("Inicio abre en Resumen y sólo esa vista está montada", async ({ page }) => {
     await expect(page.getByRole("region", { name: "Indicadores Operacionales" })).toBeVisible()
-    // La cola vive en su pestaña: montarla acá era lo que empujaba todo
-    // indicador bajo el pliegue.
+    // La cola ya no vive en Inicio: no hay tabla, sólo el resumen de Hoy.
     await expect(page.locator("#cola-de-trabajo")).toHaveCount(0)
     await expect(page.getByRole("region", { name: "Adquisiciones" })).toHaveCount(0)
   })
-
   test("elegir una vista la pinta y deja las otras fuera del DOM", async ({ page }) => {
     const tabs = page.getByRole("navigation", { name: "Vistas del tablero" })
     // El disparador es el único `button` de la barra: sin hidratar no abre nada,
     // así que la espera del `menuitem` es la que hace determinista el clic.
     await tabs.getByRole("button").click()
-    await page.getByRole("menuitem", { name: "Prevención" }).click()
+    await page.getByRole("menuitem", { name: /^Prevención Programa/ }).click()
 
     await expect(page).toHaveURL(/vista=prevencion/)
-    await expect(page.getByRole("region", { name: "Prevención y SST" })).toBeVisible()
+    await expect(page.getByRole("region", { name: "Prevención" })).toBeVisible()
     await expect(page.getByRole("region", { name: "Adquisiciones" })).toHaveCount(0)
-    // El desplegable se rotula con el dominio activo: la vista sigue siendo
-    // legible sin abrirlo, que es lo que una pestaña daba gratis.
-    await expect(tabs.getByRole("button")).toHaveText(/Prevención/)
-  })
-
-  test("Mi trabajo es la cola completa y su insignia cuadra con el atajo Todas", async ({ page }) => {
-    const tabs = page.getByRole("navigation", { name: "Vistas del tablero" })
-    const trabajo = tabs.getByRole("link", { name: /Mi trabajo/ })
-    // La insignia es ahora la **única** representación del total en la cabecera.
-    const total = ((await trabajo.textContent()) ?? "").match(/(\d+)$/)?.[1]
-
-    await trabajo.click()
-    await expect(page).toHaveURL(/vista=trabajo/)
-    await expect(page.getByRole("region", { name: "Cola de trabajo" })).toBeVisible()
-
-    // El atajo "Todas" es la otra representación legítima del mismo total
-    // (acceso, no estado). Si hay cola, tienen que coincidir.
-    if (total) {
-      const shortcuts = page.getByRole("navigation", { name: "Atajos a la cola completa" })
-      await expect(shortcuts.getByRole("link", { name: new RegExp(`Todas\\s*${total}$`) })).toBeVisible()
-    }
+    // El desplegable dice qué es y cuál está elegida, y lo marca como actual.
+    await expect(tabs.getByRole("button")).toHaveText("Por área: Prevención")
+    await expect(tabs.getByRole("button")).toHaveAttribute("aria-current", "page")
   })
 
   test("cambiar de vista no reinicia la faena", async ({ page }) => {
@@ -279,7 +209,7 @@ test.describe("Dashboard operacional", () => {
     await expect(page).toHaveURL(/faena=/)
 
     await page.getByRole("navigation", { name: "Vistas del tablero" }).getByRole("button").click()
-    await page.getByRole("menuitem", { name: "Flota" }).click()
+    await page.getByRole("menuitem", { name: /^Control operacional/ }).click()
 
     // Las tres dimensiones conviven en la URL: sin esto, elegir vista tras
     // elegir faena devolvía el tablero a "todas".
@@ -310,7 +240,7 @@ test.describe("Dashboard operacional", () => {
     await expect(adquisiciones.getByText("Gasto por módulo")).toHaveCount(0)
 
     await page.goto("/dashboard?vista=flota")
-    await expect(page.getByRole("region", { name: "Flota y combustible" })
+    await expect(page.getByRole("region", { name: "Control operacional" })
       .getByText("Deuda vencida", { exact: true })).toHaveCount(0)
   })
 
@@ -333,11 +263,11 @@ test.describe("Dashboard operacional", () => {
    */
   test("cada cifra declara su ventana y la sección no promete una global", async ({ page }) => {
     await page.goto("/dashboard?vista=prevencion")
-    const prevencion = page.getByRole("region", { name: "Prevención y SST" })
+    const prevencion = page.getByRole("region", { name: "Prevención", exact: true })
     // El PDTP es anual; los incidentes y las CAPA son estado actual. Conviven.
     await expect(prevencion.getByText(/Avance acreditado · año \d{4}/)).toBeVisible()
     await expect(prevencion.getByText(/abiertas en total · ahora/)).toBeVisible()
-    await expect(prevencion.getByRole("heading", { name: "Prevención y SST" })).toBeVisible()
+    await expect(prevencion.getByRole("heading", { name: "Prevención", exact: true })).toBeVisible()
   })
 
   // G-03: los gráficos dejaban de ser callejones sin salida.
@@ -357,7 +287,7 @@ test.describe("Dashboard operacional", () => {
    */
   test("el control preventivo en terreno agrupa los dominios que faltaban", async ({ page }) => {
     await page.goto("/dashboard?vista=terreno")
-    const seccion = page.getByRole("region", { name: "Control preventivo en terreno" })
+    const seccion = page.getByRole("region", { name: "Prevención en terreno" })
     await expect(seccion).toBeVisible()
 
     for (const kpi of [
@@ -410,7 +340,7 @@ test.describe("Dashboard con rol restringido", () => {
     // ahora depende del **permiso**: antes pasaba por el `.slice(0, 4)`, que
     // cortaba el tile para todos los roles, así que no podía fallar.
     await expect(strip.getByText("Por aprobar")).toHaveCount(0)
-    await expect(strip.getByText("Inversión", { exact: true })).toHaveCount(0)
+    await expect(strip.getByText("Gasto en OC", { exact: true })).toHaveCount(0)
     await expect(strip.getByText("OC activas")).toHaveCount(0)
     await expect(page.getByText("ítems esperan aprobación")).toHaveCount(0)
 
@@ -430,18 +360,17 @@ test.describe("Dashboard con rol restringido", () => {
 
     await expect(strip.getByText("Stock crítico", { exact: true })).toHaveCount(0)
     await expect(page.getByText("productos con stock crítico")).toHaveCount(0)
-    // Cumplimiento cae en "Por recibir" al no tener PDTP.
-    await expect(strip.getByText("Por recibir", { exact: true })).toBeVisible()
+    // Cumplimiento cae en "Pendiente de recepción" al no tener PDTP.
+    await expect(strip.getByText("Pendiente de recepción", { exact: true })).toBeVisible()
   })
 
   test("cede las ranuras que no autoriza en vez de rellenarlas con tareas", async ({ page }) => {
     const strip = page.getByRole("region", { name: "Indicadores Operacionales" })
     const stripText = (await strip.textContent()) ?? ""
 
-    // Sin dinero autorizado la ranura se cede: quedan 3 tiles, no 4 rellenados.
-    const workLabelsPresent = WORK_SLOT_LABELS.filter((label) => stripText.includes(label))
-    expect(workLabelsPresent).toHaveLength(1)
-    expect(stripText).not.toContain("Tareas críticas")
+    // Sin dinero autorizado la ranura se cede: quedan los tiles que el permiso
+    // autoriza, nunca rellenados con contadores de la cola (esos viven en Hoy).
+    for (const label of [...WORK_SLOT_LABELS, "Tareas críticas"]) expect(stripText).not.toContain(label)
   })
 
   /*
@@ -453,16 +382,16 @@ test.describe("Dashboard con rol restringido", () => {
   test("el rol restringido no ve los dominios que su permiso no autoriza", async ({ page }) => {
     const tabs = page.getByRole("navigation", { name: "Vistas del tablero" })
     await tabs.getByRole("button").click()
-    const titles = await page.getByRole("menuitem").allTextContents()
+    const titles = await page.getByRole("menuitem").evaluateAll((items) => items.map((item) => item.querySelector("span")?.textContent ?? ""))
 
     expect(titles).toContain("Adquisiciones")
     expect(titles).toContain("Bodega")
-    expect(titles).not.toContain("Flota")
+    expect(titles).not.toContain("Control operacional")
     expect(titles).not.toContain("Prevención")
 
     // Y escribir la vista a mano tampoco la abre: cae al Resumen.
     await page.goto("/dashboard?vista=flota")
-    await expect(page.getByRole("region", { name: "Flota y combustible" })).toHaveCount(0)
+    await expect(page.getByRole("region", { name: "Control operacional" })).toHaveCount(0)
     await expect(page.getByRole("region", { name: "Indicadores Operacionales" })).toBeVisible()
   })
 
@@ -473,6 +402,6 @@ test.describe("Dashboard con rol restringido", () => {
     await expect(flow.getByText("Solicitudes creadas", { exact: false })).toBeVisible()
     await expect(flow.getByText("Recepciones", { exact: false })).toBeVisible()
     await expect(flow.getByText("OC emitidas", { exact: false })).toHaveCount(0)
-    await expect(flow.getByText("Inversión emitida", { exact: false })).toHaveCount(0)
+    await expect(flow.getByText("Gasto en OC", { exact: false })).toHaveCount(0)
   })
 })

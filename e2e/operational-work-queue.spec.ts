@@ -16,7 +16,7 @@ test.describe("Centro de control operacional", () => {
     await page.goto("/pendientes")
 
     await expect(page.getByRole("heading", { name: "Mis pendientes" })).toBeVisible()
-    await expect(page.getByRole("heading", { name: "Cola de trabajo" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Lista de pendientes" })).toBeVisible()
     // `.first()`: la cola renderiza la tabla (desde `md`) y una lista de tarjetas
     // (bajo `md`) para el mismo dato, así que el código aparece dos veces en el
     // DOM. Sólo una rama es visible por viewport — la otra va con `display:none`,

@@ -7,12 +7,18 @@ const getPurchasingFinancialSummary = vi.hoisted(() => vi.fn())
 const getDashboardData = vi.hoisted(() => vi.fn())
 const getFuelMonthlyTrend = vi.hoisted(() => vi.fn())
 const getOverdueFuelDebt = vi.hoisted(() => vi.fn())
+const getOperationalPeriodMetrics = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/services/billing/queries", () => ({ getBillingSummary }))
 vi.mock("@/lib/services/analytics-module/dashboard", () => ({ getPurchasingFinancialSummary }))
 vi.mock("@/lib/services/dashboard", () => ({ getDashboardData }))
 vi.mock("@/lib/services/dashboard-fleet-maintenance", () => ({ getFuelMonthlyTrend }))
 vi.mock("@/lib/services/dashboard-domains-data", () => ({ getOverdueFuelDebt }))
+// `getOperationalCalendarBounds` es puro y la sección lo usa: se conserva el real.
+vi.mock("@/lib/services/operational-period-metrics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/operational-period-metrics")>()),
+  getOperationalPeriodMetrics,
+}))
 
 import { FinanceSection } from "./finance-section"
 import type { DomainSectionsProps } from "./shared"
@@ -44,6 +50,18 @@ function hrefs(node: ReactNode, result: string[] = []): string[] {
   return result
 }
 
+function cards(node: ReactNode, result: Array<Record<string, unknown>> = []): Array<Record<string, unknown>> {
+  if (Array.isArray(node)) {
+    node.forEach((child) => cards(child, result))
+    return result
+  }
+  if (!node || typeof node !== "object" || !("props" in node)) return result
+  const element = node as { props: Record<string, unknown> }
+  if (typeof element.props.label === "string" && "trendPolarity" in element.props) result.push(element.props)
+  cards(element.props.children as ReactNode, result)
+  return result
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   getBillingSummary.mockResolvedValue(null)
@@ -51,6 +69,14 @@ beforeEach(() => {
     kpis: { totalSpend: 0, previousTotalSpend: 0, spendVariationPct: null, purchaseOrderCount: 0, averageOrderAmount: 0 },
     spendByModule: [],
     topSuppliers: [],
+  })
+  // INI-01: conteo y monto de OC salen de la misma función que el Resumen.
+  getOperationalPeriodMetrics.mockResolvedValue({
+    requests: { current: 0, previous: null },
+    ordersIssued: { current: 3, previous: 2 },
+    receipts: { current: 0, previous: null },
+    deliveries: { current: 0, previous: null },
+    spend: { current: 900_000, previous: 1_000_000 },
   })
   getDashboardData.mockResolvedValue({ metrics: {}, worksitesBreakdown: [] })
   getFuelMonthlyTrend.mockResolvedValue([])
@@ -83,5 +109,19 @@ describe("FinanceSection capability matrix", () => {
 
     expect(links).toContain("/facturacion")
     expect(links).not.toContain("/facturacion/sincronizacion")
+  })
+
+  it("INI-01: el gasto en OC sale de la función compartida y una baja no se pinta como mala noticia", async () => {
+    const section = await FinanceSection(props(["purchasing:view"]))
+    const groups = (section.props as { kpiGroups: Array<{ content: ReactNode }> }).kpiGroups
+    const tiles = groups.flatMap((group) => cards(group.content))
+    const spend = tiles.find((tile) => tile.label === "Gasto en OC")
+
+    expect(getOperationalPeriodMetrics).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ period: "mes" }))
+    expect(spend?.value).toBe("$900.000")
+    expect(spend?.detail).toContain("3 OC emitidas")
+    // -10 % en gasto: `up-bad` hace que la baja sea la polaridad buena.
+    expect(spend?.trend).toBe(-10)
+    expect(spend?.trendPolarity).toBe("up-bad")
   })
 })

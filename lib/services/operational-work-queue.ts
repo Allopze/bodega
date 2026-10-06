@@ -344,7 +344,7 @@ export async function getOperationalDetailWorkItem(
   const invoicePending = hasPermission(session, "purchasing:send_order") && order.invoiceNeedsWork
 
   const stage = order.status === "draft" && hasPermission(session, "purchasing:send_order")
-    ? { actionKey: "issue" as const, module: "compras" as const, statusLabel: "OC en borrador", title: `Emitir y enviar ${order.code}`, ctaLabel: "Emitir y enviar", createdAt: order.createdAt }
+    ? { actionKey: "issue" as const, module: "compras" as const, statusLabel: "OC en borrador", title: `Emitir OC ${order.code}`, ctaLabel: "Emitir OC", createdAt: order.createdAt }
     : OFFICE_RECEIVABLE_STATUSES.has(order.status) && order.deliveryMode !== "directo_faena" && hasPermission(session, "receiving:register_office")
         // El href de las etapas de recepción es el formulario, no la OC: quien
         // recibe puede no tener `purchasing:view` (roles de faena), y la rama SQL
@@ -757,7 +757,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     ${href} AS href, ${ctaLabel}::text AS cta_label
   `
   if (hasPermission(session, "purchasing:send_order")) add("compras", sql`
-    SELECT ${orderFields('issue', 'compras', sql`CONCAT('Emitir y enviar ', ${purchaseOrders.code})`, 'OC en borrador', sql`CONCAT('/compras/', ${purchaseOrders.id})`, 'Emitir y enviar', sql`${purchaseOrders.createdAt}::text`)}
+    SELECT ${orderFields('issue', 'compras', sql`CONCAT('Emitir OC ', ${purchaseOrders.code})`, 'OC en borrador', sql`CONCAT('/compras/', ${purchaseOrders.id})`, 'Emitir OC', sql`${purchaseOrders.createdAt}::text`)}
     ${orderBase} AND ${purchaseOrders.status} = 'draft'
   `)
   if (hasPermission(session, "receiving:register_office")) add("recepciones", sql`
@@ -1769,7 +1769,9 @@ export function parseOperationalQueueFilters(input: Record<string, string | stri
   }
   const allowedModules: OperationalModule[] = ["solicitudes", "aprobaciones", "compras", "recepciones", "entregas", "pdtp", "capa", "inspecciones", "documentacion", "ppa", "sst", "cphs", "miper"]
   const allowedPriorities: WorkPriority[] = ["critical", "high", "normal", "low"]
-  const allowedQuick: OperationalQuickFilter[] = ["all", "critical", "overdue", "today", "blocked", "unassigned", "mine"]
+  // "unassigned" y "mine" ya no tienen chip en /pendientes (decisión de producto
+  // 2026-10-05): un ?quick= viejo cae en la vista por defecto, sin error.
+  const allowedQuick: OperationalQuickFilter[] = ["all", "critical", "overdue", "today", "blocked"]
   const allowedSort: OperationalSort[] = ["priority", "due", "oldest", "newest"]
   const moduleParam = take("module")
   const priority = take("priority")

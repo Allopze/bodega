@@ -4,11 +4,12 @@
  * Cada valor usa la fecha nativa del hecho (creación, emisión, recepción o
  * entrega). No se infiere una decisión histórica desde el estado actual.
  */
-import { and, count, eq, gte, isNotNull, isNull, lt, sql } from "drizzle-orm"
+import { and, count, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import { deliveries, purchaseOrders, purchaseRequests, receipts } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { ACTIVE_ORDER_STATUSES } from "./analytics-module/helpers"
 import { getOperationalCalendarBounds, type OperationalPeriodSpan } from "./operational-period-bounds"
 
 export { getOperationalCalendarBounds }
@@ -25,6 +26,26 @@ export type OperationalPeriodMetrics = Record<OperationalPeriodMetricKey, Operat
 
 function dateKey(iso: string) {
   return iso.slice(0, 10)
+}
+
+/**
+ * INI-01 (auditoría 2026-10-05): definición única de "OC emitida".
+ *
+ * Una OC está emitida cuando salió de borrador y no fue anulada; se fecha por
+ * `issuedAt` (el día en que se emitió, no el de creación) y una OC eliminada
+ * (soft-delete) no cuenta. Resumen, Adquisiciones, Finanzas y el gráfico de
+ * tendencia leen de acá: antes cada vista armaba su propio filtro (con o sin
+ * estado, por `createdAt` o por `issuedAt`) y el mismo rótulo daba 0, 2 y 2 con
+ * período Mes, y 28 contra 29 con período Año.
+ */
+export const ISSUED_ORDER_STATUSES = ACTIVE_ORDER_STATUSES
+
+export function issuedOrderPredicate() {
+  return and(
+    isNull(purchaseOrders.deletedAt),
+    isNotNull(purchaseOrders.issuedAt),
+    inArray(purchaseOrders.status, ISSUED_ORDER_STATUSES),
+  )
 }
 
 // El predicado de faena (alcance del rol ∩ faena elegida) vive en
@@ -72,9 +93,9 @@ export async function getOperationalPeriodMetrics(session: Session, options: Ope
     db.select({ value: count() }).from(purchaseRequests).where(and(requestScope, gte(purchaseRequests.createdAt, bounds.previousStart), lt(purchaseRequests.createdAt, bounds.previousEnd))),
     db.select({ value: count() }).from(purchaseRequests).where(and(requestScope, lt(purchaseRequests.createdAt, bounds.previousEnd))),
 
-    db.select({ value: count() }).from(purchaseOrders).where(and(orderScope, isNotNull(purchaseOrders.issuedAt), gte(purchaseOrders.issuedAt, currentIssuedStart), lt(purchaseOrders.issuedAt, currentIssuedEnd))),
-    db.select({ value: count() }).from(purchaseOrders).where(and(orderScope, isNotNull(purchaseOrders.issuedAt), gte(purchaseOrders.issuedAt, previousIssuedStart), lt(purchaseOrders.issuedAt, previousIssuedEnd))),
-    db.select({ value: count() }).from(purchaseOrders).where(and(orderScope, isNotNull(purchaseOrders.issuedAt), lt(purchaseOrders.issuedAt, previousIssuedEnd))),
+    db.select({ value: count() }).from(purchaseOrders).where(and(orderScope, issuedOrderPredicate(), gte(purchaseOrders.issuedAt, currentIssuedStart), lt(purchaseOrders.issuedAt, currentIssuedEnd))),
+    db.select({ value: count() }).from(purchaseOrders).where(and(orderScope, issuedOrderPredicate(), gte(purchaseOrders.issuedAt, previousIssuedStart), lt(purchaseOrders.issuedAt, previousIssuedEnd))),
+    db.select({ value: count() }).from(purchaseOrders).where(and(orderScope, issuedOrderPredicate(), lt(purchaseOrders.issuedAt, previousIssuedEnd))),
 
     db.select({ value: count() }).from(receipts).innerJoin(purchaseOrders, eq(receipts.purchaseOrderId, purchaseOrders.id)).where(and(orderScope, gte(receipts.receivedAt, bounds.currentStart), lt(receipts.receivedAt, bounds.currentEnd))),
     db.select({ value: count() }).from(receipts).innerJoin(purchaseOrders, eq(receipts.purchaseOrderId, purchaseOrders.id)).where(and(orderScope, gte(receipts.receivedAt, bounds.previousStart), lt(receipts.receivedAt, bounds.previousEnd))),
@@ -84,9 +105,9 @@ export async function getOperationalPeriodMetrics(session: Session, options: Ope
     db.select({ value: count() }).from(deliveries).where(and(deliveryScope, gte(deliveries.deliveredAt, bounds.previousStart), lt(deliveries.deliveredAt, bounds.previousEnd))),
     db.select({ value: count() }).from(deliveries).where(and(deliveryScope, lt(deliveries.deliveredAt, bounds.previousEnd))),
 
-    db.select({ value: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)` }).from(purchaseOrders).where(and(orderScope, isNotNull(purchaseOrders.issuedAt), gte(purchaseOrders.issuedAt, currentIssuedStart), lt(purchaseOrders.issuedAt, currentIssuedEnd))),
-    db.select({ value: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)` }).from(purchaseOrders).where(and(orderScope, isNotNull(purchaseOrders.issuedAt), gte(purchaseOrders.issuedAt, previousIssuedStart), lt(purchaseOrders.issuedAt, previousIssuedEnd))),
-    db.select({ value: count() }).from(purchaseOrders).where(and(orderScope, isNotNull(purchaseOrders.issuedAt), lt(purchaseOrders.issuedAt, previousIssuedEnd))),
+    db.select({ value: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)` }).from(purchaseOrders).where(and(orderScope, issuedOrderPredicate(), gte(purchaseOrders.issuedAt, currentIssuedStart), lt(purchaseOrders.issuedAt, currentIssuedEnd))),
+    db.select({ value: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)` }).from(purchaseOrders).where(and(orderScope, issuedOrderPredicate(), gte(purchaseOrders.issuedAt, previousIssuedStart), lt(purchaseOrders.issuedAt, previousIssuedEnd))),
+    db.select({ value: count() }).from(purchaseOrders).where(and(orderScope, issuedOrderPredicate(), lt(purchaseOrders.issuedAt, previousIssuedEnd))),
   ])
 
   return {

@@ -43,7 +43,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!verifyCronSecret(req.headers.get("authorization"), secret)) {
     return respond(integrityCronContractFor({ unauthorized: true }))
   }
-  if (!await isRouteOperational("/bodega/trazabilidad")) {
+  if (!await isRouteOperational("/seguimiento")) {
     return respond(integrityCronContractFor({ disabled: true }))
   }
 

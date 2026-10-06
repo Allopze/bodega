@@ -40,3 +40,24 @@ export function referenceTypeLabel(referenceType: string | null | undefined): st
   if (!referenceType) return null
   return REFERENCE_TYPE_LABELS[referenceType] ?? referenceType.replace(/_/g, " ")
 }
+
+/** Folios que el sistema escribe en el motivo o la nota de un movimiento. */
+const FOLIO_PATTERN = /\b(?:GDI|REC|ENT|OC|AJU|DES|DEV|CON)-[0-9]{4,}(?:-[0-9]+)?\b/
+
+/**
+ * Folio del documento de origen de un movimiento, para mostrarlo en la columna
+ * "Documento". Antes sólo estaba enterrado en "Observación", que se truncaba, y
+ * "Documento" decía el tipo ("Entrega") sin decir cuál.
+ */
+export function movementFolio(movement: {
+  documentFolio?: string | null
+  reason?: string | null
+  notes?: string | null
+}): string | null {
+  if (movement.documentFolio) return movement.documentFolio
+  for (const text of [movement.reason, movement.notes]) {
+    const match = text ? FOLIO_PATTERN.exec(text) : null
+    if (match) return match[0]
+  }
+  return null
+}

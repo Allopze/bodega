@@ -328,7 +328,7 @@ export async function waitForToastsToClear(page: Page) {
  *
  * Se entra desde la página que muestre el enlace `GDI-…`: el comprobante de la
  * recepción en oficina, o la fila de `/recepcion` con su botón "Completar
- * guía"/"Cotejar".
+ * guía"/"Cotejar" (hoy "Completar despacho"/"Confirmar llegada a faena").
  */
 export async function dispatchAndReceiveGuide(page: Page) {
   const guideLink = page.getByRole("link", { name: /^GDI-\d{6}$/ }).first()
@@ -348,7 +348,12 @@ export async function dispatchGuideAndConfirm(page: Page) {
   await waitForToastsToClear(page)
   await page.getByRole("button", { name: /Confirmar recepción/i }).click()
   await page.getByRole("dialog").getByRole("button", { name: /Confirmar recepción/i }).click()
-  await expect(page.getByText("Recibida").first()).toBeVisible({ timeout: 15_000 })
+  // La señal es que la acción ya no se ofrece, no el texto «Recibida»: desde el
+  // 2026-10-05 ese texto también es el encabezado de la columna de cantidades
+  // recibidas, así que aparecía antes de que el servidor confirmara y el test
+  // navegaba con la guía todavía despachada.
+  await expect(page.getByRole("dialog")).toHaveCount(0, { timeout: 15_000 })
+  await expect(page.getByRole("button", { name: /Confirmar recepción/i })).toHaveCount(0, { timeout: 15_000 })
 }
 
 /**
@@ -356,13 +361,13 @@ export async function dispatchGuideAndConfirm(page: Page) {
  *
  * Cada recepción en oficina prepara su propia GDI, así que una entrega parcial
  * más su saldo dejan dos, y la OC no abandona la cola hasta cerrarlas ambas.
- * Mientras haya guía activa la fila ofrece "Completar guía"/"Cotejar" en lugar
- * de "Recibir".
+ * Mientras haya guía activa la fila ofrece "Completar despacho" (borrador) o
+ * "Confirmar llegada a faena" (despachada) en lugar de "Recibir".
  */
 export async function clearGuidesFromReceptionQueue(page: Page, orderCode: string, guias: number) {
   for (let vuelta = 1; vuelta <= guias; vuelta++) {
     await page.goto(`/recepcion?q=${orderCode}`)
-    const accion = page.getByRole("link", { name: /Completar guía|Cotejar/ }).first()
+    const accion = page.getByRole("link", { name: /Completar despacho|Confirmar llegada/ }).first()
     // `toBeVisible` y no `count()`: la tabla la pinta un componente de cliente,
     // así que `page.goto` resuelve antes de que existan las filas. Un `count()`
     // ahí devuelve 0 y el bucle se saltaba las guías **en silencio**, dejándolas
@@ -373,6 +378,13 @@ export async function clearGuidesFromReceptionQueue(page: Page, orderCode: strin
     await expect(page).toHaveURL(/\/bodega\/guias\/[^/?]+$/, { timeout: 15_000 })
     await dispatchGuideAndConfirm(page)
   }
+}
+
+/** Emite la OC desde su detalle: «Emitir OC» es un clic, sin confirmación. */
+export async function issueOrderFromDetail(page: Page) {
+  const trigger = page.getByRole("button", { name: "Emitir OC", exact: true })
+  await expect(trigger).toBeVisible({ timeout: 30_000 })
+  await trigger.click()
 }
 
 /** PDF mínimo válido: `validateFileBuffer` valida por magic bytes, no por extensión. */

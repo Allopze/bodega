@@ -1,11 +1,9 @@
 // @vitest-environment jsdom
 /**
- * REC-005 (auditoría 2026-09-14): la tarjeta móvil de la bandeja de recepción
- * perdía las tres señales de la guía de despacho. La fila de escritorio pintaba
- * "Pendiente de despacho" / "En traslado" / "Diferencia en faena" (esta última
- * en `danger`), mientras que la tarjeta —la que se mira EN FAENA, que es la
- * razón por la que existe (comentario A-1)— sólo mostraba el recuento de
- * `gapMap`. Quien recibía en terreno no veía la diferencia ya detectada.
+ * REC-005 / ADQ-09: la tarjeta móvil y la fila de escritorio deben decir lo
+ * mismo. Desde ADQ-09 ambas pintan la etapa de la OC y «qué falta» (un solo
+ * componente, `StageProgressCompact`) en lugar de pastillas de guía y un
+ * recuento de pendientes aparte.
  */
 import { render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
@@ -17,7 +15,25 @@ vi.mock("next/navigation", () => ({
 }))
 
 import { RecepcionTable, type ReceiptGuideRow } from "./recepcion-table"
-import { receiptGuideSignal } from "./recepcion-table.helpers"
+import { receiptGuideActionLabel } from "./recepcion-table.helpers"
+
+// `StageProgressCompact` (línea J1) tiene su propia prueba: aquí sólo importa
+// que la bandeja lo pinte en las dos vistas con el progreso de cada OC.
+vi.mock("@/components/states/stage-progress-compact", () => ({
+  StageProgressCompact: ({ progress }: { progress: { currentStage: string; nextAction: string } }) => (
+    <div>
+      <span>{`etapa:${progress.currentStage}`}</span>
+      <span>{`falta:${progress.nextAction}`}</span>
+    </div>
+  ),
+}))
+
+const progress = {
+  currentStage: "Recepción",
+  completedStages: ["Solicitado", "Aprobación"],
+  nextAction: "diferencias",
+  items: [],
+}
 
 const order = {
   id: "oc-1",
@@ -30,13 +46,13 @@ const order = {
   createdAt: "2026-08-28",
 }
 
-function renderTable(guides: ReceiptGuideRow[], gap = 0) {
+function renderTable(guides: ReceiptGuideRow[]) {
   return render(
     <RecepcionTable
       orders={[order]}
       wsMap={{ "ws-1": "Faena Norte" }}
       supMap={{ "sup-1": "Ferretería Andes" }}
-      gapMap={{ "oc-1": gap }}
+      progressMap={{ "oc-1": progress }}
       guideMap={{ "oc-1": guides }}
       canOffice
       canFaena
@@ -54,43 +70,48 @@ function mobileCards(container: HTMLElement) {
   return container.querySelector<HTMLElement>("div.md\\:hidden")!
 }
 
-describe("bandeja de recepción — señales de guía en la tarjeta móvil (REC-005)", () => {
-  it.each([
-    ["draft", "Pendiente de despacho"],
-    ["dispatched", "En traslado"],
-    ["partially_received", "Diferencia en faena"],
-  ])("anuncia la guía %s también en el teléfono", (status, label) => {
-    const { container } = renderTable([guide(status)])
-
-    // Escritorio: la señal que ya existía antes del arreglo.
-    expect(screen.getByRole("table")).toHaveTextContent(label)
-    // Móvil: la que faltaba.
-    expect(within(mobileCards(container)).getByText(label)).toBeInTheDocument()
+describe("bandeja de recepción — etapa y «qué falta» (ADQ-09)", () => {
+  it("escritorio y teléfono muestran la etapa de la OC", () => {
+    const { container } = renderTable([guide("dispatched")])
+    expect(within(screen.getByRole("table")).getByText("etapa:Recepción")).toBeInTheDocument()
+    expect(within(mobileCards(container)).getByText("etapa:Recepción")).toBeInTheDocument()
   })
 
-  it("la diferencia de una guía parcial gana al recuento de gapMap en ambas vistas", () => {
-    const { container } = renderTable([guide("partially_received")], 3)
-    const cards = mobileCards(container)
-
-    expect(within(cards).getByText("Diferencia en faena")).toBeInTheDocument()
-    // Antes la tarjeta mostraba SÓLO esto y callaba la diferencia.
-    expect(within(cards).queryByText(/ítems pendientes de recepción en faena/)).toBeNull()
+  it("lleva el «qué falta» de la OC, sin pastillas de guía ni recuento aparte (A5)", () => {
+    const { container } = renderTable([guide("partially_received")])
+    expect(screen.getByRole("table")).toHaveTextContent("falta:diferencias")
+    expect(container.textContent).not.toMatch(/Pend\. de faena|por llegar a faena|Pendiente de despacho/)
   })
 
-  it("sin guía viva la tarjeta conserva el recuento de pendientes de faena", () => {
-    const { container } = renderTable([], 3)
-    const cards = mobileCards(container)
-    expect(within(cards).getByText(/ítems pendientes de recepción en faena/)).toBeInTheDocument()
+  it("una OC anulada (sin progreso) no pinta etapa", () => {
+    const { container } = render(
+      <RecepcionTable
+        orders={[order]}
+        wsMap={{ "ws-1": "Faena Norte" }}
+        supMap={{ "sup-1": "Ferretería Andes" }}
+        progressMap={{ "oc-1": null }}
+        guideMap={{}}
+        canOffice
+        canFaena
+        officeName="Oficina Central"
+      />,
+    )
+    expect(container.textContent).not.toMatch(/etapa:/)
   })
 })
 
-describe("receiptGuideSignal", () => {
-  it("mapea cada estado de guía a la misma variante que ya usaba el escritorio", () => {
-    expect(receiptGuideSignal("draft")).toEqual({ label: "Pendiente de despacho", variant: "warning" })
-    expect(receiptGuideSignal("dispatched")).toEqual({ label: "En traslado", variant: "info" })
-    expect(receiptGuideSignal("partially_received")).toEqual({ label: "Diferencia en faena", variant: "danger" })
-    // `received`/`cancelled` no son guías vivas: no hay señal que dar.
-    expect(receiptGuideSignal("received")).toBeNull()
-    expect(receiptGuideSignal(undefined)).toBeNull()
+// ADQ-11: un solo verbo para la guía viva, en escritorio y móvil.
+describe("acción sobre la guía viva (ADQ-11)", () => {
+  it("borrador → «Completar despacho»; despachada/parcial → «Confirmar llegada a faena»", () => {
+    expect(receiptGuideActionLabel("draft")).toBe("Completar despacho")
+    expect(receiptGuideActionLabel("dispatched")).toBe("Confirmar llegada a faena")
+    expect(receiptGuideActionLabel("partially_received")).toBe("Confirmar llegada a faena")
+  })
+
+  it("escritorio y móvil rotulan igual y no queda «Cotejar» ni «Completar guía»", () => {
+    const { container } = renderTable([guide("dispatched")])
+    expect(within(screen.getByRole("table")).getByRole("link", { name: "Confirmar llegada a faena" })).toBeInTheDocument()
+    expect(within(mobileCards(container)).getByRole("link", { name: "Confirmar llegada a faena" })).toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/Cotejar|Completar guía/)
   })
 })

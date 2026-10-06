@@ -30,7 +30,7 @@ export function HeroKpiCard({ icon, label, value, detail, trend, href }: {
       className={cn(
         "flex h-full flex-col justify-between rounded-[var(--radius-xl)] p-4",
         "bg-[var(--color-primary-deep)] text-white shadow-[var(--shadow-card)]",
-        "transition-all duration-(--duration-fast)",
+        "transition-[background-color,border-color,box-shadow,filter] duration-(--duration-fast)",
         href && "hover:brightness-125",
       )}
     >

@@ -19,16 +19,12 @@ import { Table, TableBody, TableHead, TableHeader, TableRoot, TableRow } from "@
 import { toast } from "@/lib/toast"
 import { startPdtpScheduledInstanceAction } from "@/app/(app)/prevencion/pdtp/actions/scheduled-instances"
 
+// Sin "Sin responsable" ni "Asignadas a mí" desde 2026-10-05 (decisión de
+// producto: sin responsables genéricos). Cinco vistas caben todas a la vista
+// (A2), así que no hay sección "Vistas adicionales".
 const QUICK_FILTERS = [
-  ["all", "Todas"], ["critical", "Críticas"], ["overdue", "Vencidas"], ["today", "Hoy"],
-  // "Mis tareas" dentro de una página titulada "Mis pendientes" se leía como
-  // una contradicción: todo lo de la cola ya es del usuario. Lo que este chip
-  // filtra es lo que tiene responsable asignado — y así lo dice.
-  ["blocked", "Bloqueadas"], ["unassigned", "Sin responsable"], ["mine", "Asignadas a mí"],
+  ["all", "Todas"], ["critical", "Críticas"], ["overdue", "Vencidas"], ["today", "Hoy"], ["blocked", "Bloqueadas"],
 ] as const
-
-const PRIMARY_QUICK_FILTERS = QUICK_FILTERS.filter(([value]) => ["all", "critical", "overdue", "mine"].includes(value))
-const SECONDARY_QUICK_FILTERS = QUICK_FILTERS.filter(([value]) => !["all", "critical", "overdue", "mine"].includes(value))
 
 const SORT_CAPTIONS: Record<string, string> = {
   priority: "ordenados por prioridad y luego por vencimiento",
@@ -157,7 +153,9 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
           misma clase de dato —metadatos de esta lista—, así que van juntos en
           una sola línea y el `<h2>` queda solo. */}
       <div className="flex flex-col gap-1 border-b border-[var(--color-border)] pb-3 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
-        <h2 id="cola-operacional" className="text-h2 text-[var(--color-text)]">Cola de trabajo</h2>
+        {/* El `<h1>` ya dice «Mis pendientes»: repetirlo en el `<h2>` daba dos
+            encabezados idénticos al lector de pantalla. */}
+        <h2 id="cola-operacional" className="text-h2 text-[var(--color-text)]">Lista de pendientes</h2>
         <p className="text-xs text-[var(--color-text-subtle)]">
           {result.total} {result.total === 1 ? "acción" : "acciones"} dentro de tus permisos y faenas
           {" · "}Actualizada <time dateTime={result.refreshedAt}>{formatDateTime(result.refreshedAt)}</time>
@@ -179,7 +177,7 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
       </form>
 
       <div className="flex flex-wrap gap-1 pb-1" aria-label="Vistas rápidas de pendientes">
-        {PRIMARY_QUICK_FILTERS.map(([value, label]) => {
+        {QUICK_FILTERS.map(([value, label]) => {
           const count = result.summary[value]
           // Un chip en 0 lleva a una lista vacía. Se probó deshabilitarlo, pero
           // sigue siendo un destino legítimo: pulsarlo es cómo el usuario
@@ -224,16 +222,6 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
         onClearAll={() => router.replace(pathname, { scroll: false })}
         overflowFilters={
           <>
-            <div className="space-y-2">
-              <p className="text-eyebrow">Vistas adicionales</p>
-              <div className="flex flex-wrap gap-1">
-                {SECONDARY_QUICK_FILTERS.map(([value, label]) => (
-                  <Button key={value} type="button" variant={activeQuick === value ? "primary" : "secondary"} size="sm" onClick={() => update({ quick: value })}>
-                    {label} <span className="font-mono tabular-nums">{result.summary[value]}</span>
-                  </Button>
-                ))}
-              </div>
-            </div>
             <Select value={searchParams.get("module") ?? "all"} onValueChange={(value) => update({ module: value })}>
               <SelectTrigger aria-label="Filtrar por módulo"><SelectValue placeholder="Módulo" /></SelectTrigger>
               <SelectContent><SelectItem value="all">Todos los módulos</SelectItem>{modules.map((item) => <SelectItem key={item} value={item}>{OPERATIONAL_MODULE_LABELS[item]}</SelectItem>)}</SelectContent>
@@ -361,10 +349,6 @@ function QueueCard({ item, today }: { item: OperationalWorkItem; today: string }
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <MetaBadge meta={{ label: `${item.blocked ? "Bloqueada · " : ""}${item.statusLabel}`, variant: item.blocked ? "danger" : "info" }} />
-        {/* Con dueño nominal, la fila no le aparece a nadie más de su cargo:
-            decirlo aquí es lo que distingue "me toca a mí" de "le toca a
-            cualquiera del equipo". */}
-        {item.assignee && <MetaBadge meta={{ label: `Asignada a ${item.assignee.name}`, variant: "outline" }} />}
         <span className={cn("text-[11px]", overdue ? overdueTone(daysLate) : "text-[var(--color-text-subtle)]")}>
           {item.sourceDueAt
             ? overdue
@@ -395,9 +379,6 @@ function QueueRow({ item, today }: { item: OperationalWorkItem; today: string })
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{item.worksiteName}</td>
       <td className="px-3 py-2.5">
         <MetaBadge meta={{ label: `${item.blocked ? "Bloqueada · " : ""}${item.statusLabel}`, variant: item.blocked ? "danger" : "info" }} />
-        {item.assignee && (
-          <MetaBadge meta={{ label: `Asignada a ${item.assignee.name}`, variant: "outline" }} className="mt-1" />
-        )}
       </td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
         {item.sourceDueAt

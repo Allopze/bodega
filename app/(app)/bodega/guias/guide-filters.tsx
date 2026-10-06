@@ -8,15 +8,32 @@ import { OptionSelect } from "@/components/ui/option-select"
 import { DatePicker } from "@/components/ui/date-picker"
 import { DISPATCH_GUIDE_STATE_META } from "@/components/states/state-badge"
 import { formatDate } from "@/lib/utils"
+import { ALL_WORKSITES } from "../faena-scope"
 
 interface GuideFiltersProps {
   worksites: Array<{ id: string; name: string }>
-  current: { estado?: string; faena?: string; desde?: string; hasta?: string; q?: string }
+  /** Bodega propia con guías: la faena en que arranca la pantalla. */
+  ownWorksiteId?: string
+  current: {
+    /** Estado efectivo (`""` = todos). */
+    estado?: string
+    /** El estado viene del valor por defecto ("Por confirmar"), no de un filtro puesto a mano. */
+    estadoByDefault?: boolean
+    faena?: string
+    desde?: string
+    hasta?: string
+    q?: string
+  }
 }
+
+/** Con `todos` en la URL la pantalla deja de partir en "Por confirmar". */
+const ALL_STATUSES = "todos"
 
 const STATUS_OPTIONS = Object.entries(DISPATCH_GUIDE_STATE_META).map(([value, meta]) => ({
   value,
-  label: meta.label,
+  // "Despachada" es el estado interno; para quien confirma en bodega es lo que
+  // le falta hacer.
+  label: value === "dispatched" ? "Por confirmar (despachadas)" : meta.label,
 }))
 
 /**
@@ -26,7 +43,7 @@ const STATUS_OPTIONS = Object.entries(DISPATCH_GUIDE_STATE_META).map(([value, me
  * `ROUTES_WITH_OWN_SEARCH` — que matchea por prefijo — esta subruta perdió el
  * input de la shell del que dependía. Ahora es server-side, como el resto.
  */
-export function GuideFilters({ worksites, current }: GuideFiltersProps) {
+export function GuideFilters({ worksites, ownWorksiteId = "", current }: GuideFiltersProps) {
   useWorksiteFilterPresence()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -44,7 +61,9 @@ export function GuideFilters({ worksites, current }: GuideFiltersProps) {
   if (current.q) {
     activeChips.push({ key: "q", label: "Búsqueda", value: current.q, displayValue: current.q })
   }
-  if (current.estado) {
+  // El estado por defecto no es un chip: no lo puso nadie y "Limpiar filtros"
+  // no lo quitaría. El selector ya dice cuál se está mirando.
+  if (current.estado && !current.estadoByDefault) {
     activeChips.push({
       key: "estado",
       label: "Estado",
@@ -52,9 +71,13 @@ export function GuideFilters({ worksites, current }: GuideFiltersProps) {
       displayValue: STATUS_OPTIONS.find((option) => option.value === current.estado)?.label ?? current.estado,
     })
   }
-  if (current.faena) {
-    const worksite = worksites.find((item) => item.id === current.faena)
+  const faena = current.faena ?? ""
+  if (faena !== ownWorksiteId) {
+    const worksite = worksites.find((item) => item.id === faena)
     if (worksite) activeChips.push({ key: "faena", label: "Faena", value: worksite.id, displayValue: worksite.name })
+    else if (!faena && ownWorksiteId) {
+      activeChips.push({ key: "faena", label: "Faena", value: ALL_WORKSITES, displayValue: "Todas las faenas" })
+    }
   }
   if (current.desde) {
     activeChips.push({ key: "desde", label: "Desde", value: current.desde, displayValue: formatDate(current.desde) })
@@ -66,7 +89,7 @@ export function GuideFilters({ worksites, current }: GuideFiltersProps) {
   return (
     <FilterToolbar
       activeChips={activeChips}
-      onRemoveChip={(key) => setFilter(key, "")}
+      onRemoveChip={(key) => setFilter(key, key === "estado" ? ALL_STATUSES : "")}
       onClearAll={() => router.replace("/bodega/guias", { scroll: false })}
       hasActiveFilters={activeChips.length > 0}
     >
@@ -78,31 +101,33 @@ export function GuideFilters({ worksites, current }: GuideFiltersProps) {
       />
       <OptionSelect
         aria-label="Filtrar por estado"
-        className="h-8 w-44 text-xs"
+        className="h-11 w-full text-xs sm:h-8 sm:w-52"
         emptyLabel="Todos los estados"
         options={STATUS_OPTIONS}
         value={current.estado ?? ""}
-        onValueChange={(value) => setFilter("estado", value)}
+        // "Todos" viaja explícito: sin el centinela, borrar el parámetro
+        // devolvería al valor por defecto y no habría cómo ver todo.
+        onValueChange={(value) => setFilter("estado", value || ALL_STATUSES)}
       />
       <OptionSelect
         aria-label="Filtrar por faena de destino"
-        className="h-8 w-52 text-xs"
+        className="h-11 w-full text-xs sm:h-8 sm:w-52"
         emptyLabel="Todas las faenas"
         options={worksites.map((worksite) => ({ value: worksite.id, label: worksite.name }))}
-        value={current.faena ?? ""}
-        onValueChange={(value) => setFilter("faena", value)}
+        value={faena}
+        onValueChange={(value) => setFilter("faena", value || ALL_WORKSITES)}
       />
       <DatePicker
         ariaLabel="Emitidas desde"
         placeholder="Desde"
-        className="h-8 w-36 text-xs"
+        className="h-11 w-full text-xs sm:h-8 sm:w-36"
         value={current.desde ?? ""}
         onChange={(iso) => setFilter("desde", iso)}
       />
       <DatePicker
         ariaLabel="Emitidas hasta"
         placeholder="Hasta"
-        className="h-8 w-36 text-xs"
+        className="h-11 w-full text-xs sm:h-8 sm:w-36"
         value={current.hasta ?? ""}
         onChange={(iso) => setFilter("hasta", iso)}
       />

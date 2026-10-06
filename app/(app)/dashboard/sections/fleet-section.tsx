@@ -144,14 +144,15 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
         summary={<SummaryBar stats={[
           ...(canViewFuel && canViewTae ? [{
             key: "tae-billed-gap",
-            label: "Brecha TAE vs. facturado",
+            // A6: sigla con su nombre en el rótulo (glosario en `dashboard-glossary.ts`).
+            label: "Brecha tarjeta TAE vs. facturado",
             value: fuelControl?.tae ? `${Math.abs(Math.round(fuelControl.tae.liters - fuelControl.billed.liters)).toLocaleString("es-CL")} L` : "—",
-            secondary: fuelControl?.tae ? `${fuelControl.tae.pendingReview} por revisar · ${periodo}` : "Sin control TAE",
+            secondary: fuelControl?.tae ? `${fuelControl.tae.pendingReview} por revisar · ${periodo}` : "Sin control de tarjeta TAE",
             href: "/combustibles/tae/conciliacion",
           }] : []),
           ...(pendingFuelCreditNotes !== null ? [{
             key: "dte-nc-pendientes",
-            label: "NC de combustible sin aplicar",
+            label: "Notas de crédito de combustible sin aplicar",
             value: pendingFuelCreditNotes,
             // Mes calendario ACTUAL, no `scope.period` (CO-038): las notas de
             // crédito tributan por período fiscal, no por el filtro del tablero.

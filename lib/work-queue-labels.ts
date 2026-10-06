@@ -99,20 +99,30 @@ export function requestNextAction(requestStatus: string, statuses: string[]): st
   if (statuses.every((status) => status === "delivered")) return "Pedido entregado en faena."
   if (statuses.every((status) => status === "rejected")) return "Solicitud cerrada sin ítems aprobados."
   if (statuses.every((status) => ["received", "delivered", "rejected"].includes(status))) {
+    // ADQ-08: una solicitud cerrada con todo recibido es una adquisición
+    // terminada, no una etapa "en curso": el texto lo dice y el panel pinta la
+    // etapa como completada. La entrega al trabajador es posterior y no es
+    // requisito para cerrar (ver `deriveRequestStatus`).
     return requestStatus === "closed"
-      ? "La solicitud ya no requiere acciones."
+      ? "Adquisición cerrada: todo llegó a faena."
       : "La adquisición ya fue recibida en faena."
   }
   if (requestStatus === "closed") return "La solicitud ya no requiere acciones."
   if (statuses.some((status) => status === "draft")) return "Adjunta las cotizaciones y envía la solicitud a aprobación."
-  if (statuses.some((status) => status === "requested")) return "Aprobación debe revisar los ítems pendientes."
-  // A-17: nombraban un módulo en lugar de un siguiente paso, y la pantalla no
-  // ofrecía cómo continuar. El CTA ya está al lado; el texto dice qué falta.
-  if (statuses.some((status) => ["approved", "pending_purchase"].includes(status))) return "Ítems aprobados y a la espera de una orden de compra."
-  if (statuses.some((status) => status === "in_purchase_order")) return "En una orden de compra, pendiente de emitir y enviar al proveedor."
-  if (statuses.some((status) => ["purchased", "partially_received"].includes(status))) return "Esperando recepción en oficina o bodega."
-  if (statuses.some((status) => ["partially_office_received", "office_received"].includes(status))) return "Preparar el despacho pendiente a faena."
-  if (statuses.some((status) => ["partially_received", "partially_delivered"].includes(status))) return "Registra la entrega al trabajador desde el stock disponible."
+  if (statuses.some((status) => status === "requested")) {
+    // Impersonal a propósito: la lista dice QUÉ falta, nunca quién ni qué rol lo hace.
+    const pending = statuses.filter((status) => status === "requested").length
+    return pending === 1 ? "Falta aprobar 1 ítem." : `Falta aprobar ${pending} ítems.`
+  }
+  // A-17: nombraban un módulo en lugar de un siguiente paso. Decisión de producto
+  // (2026-10-05): "etapa + qué falta", sin personas ni roles. La plataforma no
+  // envía las OC al proveedor: la acción es emitirla.
+  if (statuses.some((status) => ["approved", "pending_purchase"].includes(status))) return "Falta crear la orden de compra."
+  if (statuses.some((status) => status === "in_purchase_order")) return "Falta emitir la OC."
+  // ADQ-10: vocabulario canónico (ver state-badge.tsx): "Pendiente de recepción".
+  if (statuses.some((status) => ["purchased", "partially_received"].includes(status))) return "Falta que lleguen los ítems del proveedor."
+  if (statuses.some((status) => ["partially_office_received", "office_received"].includes(status))) return "Falta despachar los ítems a faena."
+  if (statuses.some((status) => ["partially_received", "partially_delivered"].includes(status))) return "Falta registrar la entrega al trabajador."
   return "Revisa el detalle para ver el siguiente paso."
 }
 

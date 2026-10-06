@@ -32,6 +32,7 @@ import {
   type LinkedMaps,
 } from "./trazabilidad-consolidated-builder"
 import { aggregateConsolidatedRows } from "./trazabilidad-consolidated-aggregate"
+import { TRACEABILITY_ALL_WORKSITES, resolveTraceabilityScope } from "./trazabilidad-consolidated-scope"
 
 // Re-exportar tipos y helpers para mantener retrocompatibilidad completa
 export * from "./trazabilidad-consolidated.types"
@@ -49,6 +50,7 @@ export type {
   ConsolidatedAggregateResult,
 } from "./trazabilidad-consolidated.types"
 export { TRACEABILITY_MAX_ITEM_ROWS } from "./trazabilidad-consolidated-queries"
+export { TRACEABILITY_ALL_WORKSITES, resolveTraceabilityScope } from "./trazabilidad-consolidated-scope"
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -269,17 +271,11 @@ export async function getConsolidatedTraceability(
   // 1. Resolver faenas visibles
   const { allWorksites, categoriesList, suppliersList } = await fetchTraceabilityAuxiliaryData(session)
 
-  const defaultFaenaId =
-    session.user.primaryWorksiteId && allWorksites.some((w) => w.id === session.user.primaryWorksiteId)
-      ? session.user.primaryWorksiteId
-      : allWorksites[0]?.id ?? ""
+  const scope = resolveTraceabilityScope(readParam(sp.faena), allWorksites.map((w) => w.id))
+  const isAllWorksites = scope === TRACEABILITY_ALL_WORKSITES
+  const filterFaenaId = scope
 
-  const requestedFaena = readParam(sp.faena)
-  const filterFaenaId = requestedFaena && allWorksites.some((w) => w.id === requestedFaena)
-    ? requestedFaena
-    : defaultFaenaId
-
-  const activeWorksite = allWorksites.find((w) => w.id === filterFaenaId) ?? null
+  const activeWorksite = isAllWorksites ? null : allWorksites.find((w) => w.id === filterFaenaId) ?? null
   const filters = normalizeConsolidatedFilters(sp)
   const currentPage = Math.max(1, Number.parseInt(readParam(sp.page), 10) || 1)
 
@@ -295,7 +291,7 @@ export async function getConsolidatedTraceability(
 
   const currentFilters = { faena: filterFaenaId, ...filters }
 
-  if (!activeWorksite) {
+  if (!activeWorksite && !isAllWorksites) {
     return {
       requests: [],
       rows: [],
@@ -313,10 +309,13 @@ export async function getConsolidatedTraceability(
     }
   }
 
-  // 2. Solicitantes de la faena activa + pipeline consolidado
+  // 2. Solicitantes + pipeline consolidado. En "todas las faenas" se corre el
+  // pipeline de cada faena visible y se unen los resultados: las claves de los
+  // mapas (ítem, línea de OC) son únicas por faena, así que no colisionan.
+  const targets = isAllWorksites ? allWorksites : [activeWorksite!]
   const [requestersList, collected] = await Promise.all([
-    fetchTraceabilityRequesters(activeWorksite.id),
-    collectConsolidatedRows(session, activeWorksite, filters),
+    fetchRequestersFor(targets),
+    collectForWorksites(session, targets, filters),
   ])
 
   /**
@@ -346,5 +345,67 @@ export async function getConsolidatedTraceability(
     suppliers: suppliersList,
     kpis,
     filters: currentFilters,
+  }
+}
+
+/** Faenas a recorrer a la vez en "todas": acota las ráfagas contra la base. */
+const ALL_WORKSITES_CONCURRENCY = 4
+
+async function fetchRequestersFor(worksitesToRead: Array<{ id: string }>) {
+  const lists = await Promise.all(worksitesToRead.map((w) => fetchTraceabilityRequesters(w.id)))
+  const byId = new Map<string, { id: string; name: string }>()
+  for (const list of lists) for (const requester of list) byId.set(requester.id, requester)
+  return [...byId.values()].sort((left, right) => left.name.localeCompare(right.name, "es"))
+}
+
+async function collectForWorksites(
+  session: Session,
+  worksitesToRead: Array<{ id: string; name: string }>,
+  filters: ConsolidatedFilterSet,
+): Promise<CollectedConsolidatedRows> {
+  if (worksitesToRead.length === 1) {
+    return collectConsolidatedRows(session, worksitesToRead[0]!, filters)
+  }
+
+  const parts: CollectedConsolidatedRows[] = []
+  for (let index = 0; index < worksitesToRead.length; index += ALL_WORKSITES_CONCURRENCY) {
+    const batch = worksitesToRead.slice(index, index + ALL_WORKSITES_CONCURRENCY)
+    parts.push(...await Promise.all(batch.map((worksite) => collectConsolidatedRows(session, worksite, filters))))
+  }
+
+  const maps: LinkedMaps = {
+    approvalsByItem: new Map(),
+    ocsByItem: new Map(),
+    deliveriesByItem: new Map(),
+    receiptsByOcItem: new Map(),
+    gdisByOcItem: new Map(),
+    stockByProduct: new Map(),
+  }
+  const orders = new Map<string, ConsolidatedOrder>()
+  const itemRows: ConsolidatedRow[] = []
+  const requests: ConsolidatedRequest[] = []
+  for (const part of parts) {
+    itemRows.push(...part.itemRows)
+    requests.push(...part.requests)
+    for (const order of part.orders) orders.set(order.orderId, order)
+    for (const [key, value] of part.maps.approvalsByItem) maps.approvalsByItem.set(key, value)
+    for (const [key, value] of part.maps.ocsByItem) maps.ocsByItem.set(key, value)
+    for (const [key, value] of part.maps.deliveriesByItem) maps.deliveriesByItem.set(key, value)
+    for (const [key, value] of part.maps.receiptsByOcItem) maps.receiptsByOcItem.set(key, value)
+    for (const [key, value] of part.maps.gdisByOcItem) maps.gdisByOcItem.set(key, value)
+    for (const [key, value] of part.maps.stockByProduct) maps.stockByProduct.set(key, value)
+  }
+
+  // Cada faena ya viene ordenada; al unirlas se reordena por fecha de la
+  // solicitud (la más reciente primero) para que la paginación sea coherente.
+  requests.sort((left, right) => right.requestDate.localeCompare(left.requestDate))
+
+  return {
+    itemRows,
+    rows: itemRows,
+    requests,
+    orders: [...orders.values()],
+    maps,
+    truncated: parts.some((part) => part.truncated),
   }
 }

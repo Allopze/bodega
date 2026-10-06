@@ -19,7 +19,7 @@ const DENSE_PAGES = [
   { path: "/compras",                      name: "Compras" },
   { path: "/recepcion",                    name: "Recepción" },
   { path: "/entregas",                     name: "Entregas" },
-  { path: "/trazabilidad",                 name: "Trazabilidad" },
+  { path: "/seguimiento",                 name: "Seguimiento de solicitudes" },
   { path: "/bodega",                       name: "Bodega" },
   { path: "/prevencion/indicadores",       name: "Indicadores SST" },
   { path: "/prevencion/pdtp",              name: "PDTP Programas" },
@@ -107,7 +107,7 @@ test.describe("Zoom 200% — controls are clickable", () => {
 // `ServerPagination` (enlaces) y una con `Pagination` de `DataTable` (botones).
 const PAGINATED_PAGES = [
   { path: "/solicitudes", name: "Solicitudes" },
-  { path: "/trazabilidad", name: "Trazabilidad" },
+  { path: "/seguimiento", name: "Seguimiento de solicitudes" },
   { path: "/compras", name: "Compras" },
   { path: "/admin/trabajadores", name: "Trabajadores" },
 ]

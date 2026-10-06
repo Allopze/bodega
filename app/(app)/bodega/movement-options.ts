@@ -8,15 +8,10 @@ export interface WorksiteProductOption {
   /** Saldo actual en la faena. Viaja siempre: corregir un número que no ves es
    *  como se registran los ajustes equivocados. */
   quantity:      number
-}
-
-export interface WorksiteReturnOption {
-  deliveryItemId:    string
-  deliveryCode:      string
-  productName:       string
-  productSku:        string | null
-  unitOfMeasure:     string
-  remainingQuantity: number
+  /** La faena tiene o tuvo movimientos de este producto. El conteo físico
+   *  ofrece por defecto lo que tiene saldo **o** movimientos: un producto en 0
+   *  que se movió es justo el que conviene recontar. */
+  hasMovements:  boolean
 }
 
 export interface OpenCountDraftPayload {
@@ -31,5 +26,4 @@ export interface BodegaOptions {
   worksiteId:   string
   worksiteName: string
   products:     WorksiteProductOption[]
-  returns:      WorksiteReturnOption[]
 }

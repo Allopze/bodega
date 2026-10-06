@@ -263,7 +263,7 @@ export default async function DispatchGuideDetailPage({ params }: { params: Prom
                   <TableHead className="w-32">Código</TableHead>
                   <TableHead>Descripción</TableHead>
                   <TableHead className="w-28 text-right">Despachada</TableHead>
-                  <TableHead className="w-28 text-right">Cotejada</TableHead>
+                  <TableHead className="w-28 text-right">Recibida</TableHead>
                   <TableHead className="w-28 text-right">Diferencia</TableHead>
                   <TableHead className="w-28">Unidad</TableHead>
                   <TableHead>Observación</TableHead>

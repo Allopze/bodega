@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import { useActionState } from "react"
-import { CaretDown } from "@phosphor-icons/react"
+import Link from "next/link"
+import { ArrowUpRight, CaretDown } from "@phosphor-icons/react"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
@@ -33,18 +34,27 @@ export function RequestGroup({
   const [collapsed, setCollapsed] = React.useState(false)
   const { bulkState, bulkAction, bulkPending } = useBulkApproveAction()
   const [modeState, modeAction] = useActionState(updateDeliveryModeAction, INITIAL_STATE)
-  const modeFormRef = React.useRef<HTMLFormElement>(null)
   // Controlled value: React 19 auto-resets *uncontrolled* form fields after a successful
   // action, which would snap an uncontrolled select back to its (stale) defaultValue.
   // Seeding local state keeps the picked value visible; revert to server truth on failure.
   const [mode, setMode] = React.useState(request.deliveryMode)
+  // Último valor confirmado por el servidor: el cambio ya no se envía al elegir
+  // (un toque accidental en móvil reencaminaba la compra), sino con "Guardar".
+  const [savedMode, setSavedMode] = React.useState(request.deliveryMode)
+  const modeDirty = mode !== savedMode
+  const handledMode = React.useRef(modeState)
 
   React.useEffect(() => {
-    if (modeState.message && !modeState.ok) {
+    if (modeState === handledMode.current || !modeState.message) return
+    handledMode.current = modeState
+    if (modeState.ok) {
+      setSavedMode(mode)
+      toast.success(modeState.message)
+    } else {
       toast.error(modeState.message)
-      setMode(request.deliveryMode)
+      setMode(savedMode)
     }
-  }, [modeState, request.deliveryMode])
+  }, [modeState, mode, savedMode])
 
   const pendingIds = request.pendingItems.map((i) => i.id).join(",")
   // E-3 · estado de la casilla maestra de este grupo
@@ -63,28 +73,37 @@ export function RequestGroup({
           controles bajan a su propia línea en móvil (auditoría UI/UX 2026-07-29,
           A-01). */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
-        <button
-          type="button"
-          onClick={() => setCollapsed((c) => !c)}
-          /* Sin alto propio el control medía 21px: sólo la altura de línea del
-             texto. `min-h-11 sm:min-h-9` es la misma escala táctil que usan los
-             demás controles del sistema. */
-          className="flex min-h-11 flex-1 basis-full items-center gap-2 text-left sm:min-h-9 sm:basis-auto min-w-0"
-          aria-expanded={!collapsed}
-        >
-          <CaretDown
-            size={14}
-            className={`text-[var(--color-text-subtle)] transition-transform duration-[var(--duration-fast)] ${collapsed ? "-rotate-90" : ""}`}
-          />
-          <span className="font-mono text-sm font-semibold text-[var(--color-text)]">
+        <div className="flex min-h-11 min-w-0 flex-1 basis-full items-center gap-1 sm:min-h-9 sm:basis-auto">
+          {/* El código lleva al detalle; plegar la tarjeta es un botón aparte
+              (antes el código sólo plegaba y nadie sabía que no era un enlace). */}
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface)] sm:size-9"
+            aria-expanded={!collapsed}
+            aria-label={`${collapsed ? "Expandir" : "Contraer"} ítems de ${request.code}`}
+          >
+            <CaretDown
+              size={14}
+              aria-hidden
+              className={`transition-transform duration-[var(--duration-fast)] ${collapsed ? "-rotate-90" : ""}`}
+            />
+          </button>
+          <Link
+            href={`/solicitudes/${request.id}`}
+            aria-label={`Ver solicitud ${request.code}`}
+            title="Ver solicitud"
+            className="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] font-mono text-sm font-semibold text-[var(--color-text)] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+          >
             {request.code}
-          </span>
+            <ArrowUpRight size={12} aria-hidden className="text-[var(--color-text-subtle)]" />
+          </Link>
           <MetaBadge meta={{ label: `${REQUEST_TYPE_LABELS[request.requestType] ?? request.requestType}`, variant: REQUEST_TYPE_VARIANTS[request.requestType] ?? "default" }} className="shrink-0" />
           <span className="text-sm text-[var(--color-text-muted)]">·</span>
           <span className="text-sm text-[var(--color-text-muted)] truncate">
             {request.worksiteName}
           </span>
-        </button>
+        </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-[var(--color-text-subtle)]">
@@ -100,20 +119,17 @@ export function RequestGroup({
           </span>
 
           {canSetDispatch ? (
-            <form ref={modeFormRef} action={modeAction} className="flex items-center gap-1">
+            <form action={modeAction} className="flex items-center gap-1">
               <input type="hidden" name="requestId" value={request.id} />
               <Select
                 name="mode"
                 value={mode}
-                onValueChange={(value) => {
-                  setMode(value as ApprovalRequest["deliveryMode"])
-                  modeFormRef.current?.requestSubmit()
-                }}
+                onValueChange={(value) => setMode(value as ApprovalRequest["deliveryMode"])}
               >
                 <SelectTrigger
                   id={`mode-${request.id}`}
                   aria-label="Modo de despacho"
-                  className="h-7 w-[9.5rem] px-2 text-xs"
+                  className="h-11 w-[9.5rem] px-2 text-xs sm:h-8"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -122,9 +138,25 @@ export function RequestGroup({
                   <SelectItem value="directo_faena">Directo a faena</SelectItem>
                 </SelectContent>
               </Select>
+              {modeDirty && (
+                <>
+                  <SubmitButton label="Guardar" loadingLabel="Guardando..." variant="secondary" size="sm" className="h-11 sm:h-8" />
+                  <button
+                    type="button"
+                    onClick={() => setMode(savedMode)}
+                    className="h-11 rounded-[var(--radius)] px-2 text-xs text-[var(--color-text-muted)] hover:underline sm:h-8"
+                  >
+                    Cancelar
+                  </button>
+                </>
+              )}
+              {/* El resultado se anuncia también a lectores de pantalla. */}
+              <span className="sr-only" role="status" aria-live="polite">
+                {modeState.message ?? ""}
+              </span>
             </form>
           ) : (
-            <MetaBadge meta={{ label: mode === "directo_faena" ? "Directo a faena" : "Vía oficina", variant: "outline" }} className="shrink-0 text-xs" />
+            <MetaBadge meta={{ label: savedMode === "directo_faena" ? "Directo a faena" : "Vía oficina", variant: "outline" }} className="shrink-0 text-xs" />
           )}
 
           {!allApproved && canApproveThisRequest && onToggleMany && (

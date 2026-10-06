@@ -215,7 +215,82 @@ describe("StockTable", () => {
   })
 })
 
+describe("StockTable — contexto por fila", () => {
+  it("atenúa lo que está en cero frente a lo que sí hay", () => {
+    const table = renderTable([
+      { id: "ws-1", name: "Biodiversa", items: [
+        line({ id: "s-1", quantity: 12 }),
+        line({ id: "s-2", productId: "p-2", quantity: 0, incoming: 5 }),
+      ] },
+    ])
+
+    const [stocked, empty] = (table.getAllByRole("row") as HTMLElement[])
+      .filter((row) => within(row).queryAllByRole("cell").length > 0)
+      .map((row) => within(row).getAllByRole("cell")[1]!.firstElementChild as HTMLElement)
+    expect(stocked).toHaveClass("font-semibold")
+    expect(empty).not.toHaveClass("font-semibold")
+    expect(empty?.className).toContain("text-faint")
+  })
+
+  it("el nombre del producto dice, con un título y un ícono, que lleva a sus movimientos", () => {
+    const table = renderTable()
+
+    const link = table.getAllByRole("link")[0]!
+    expect(link).toHaveAttribute("title", "Ver movimientos de Buzo Dupont Tyvek")
+    expect(link.querySelector("svg")).not.toBeNull()
+  })
+
+  it("sin permisos no hay columna de acciones ni menú", () => {
+    const table = renderTable()
+
+    expect(screen.getByRole("table").querySelectorAll("colgroup col")).toHaveLength(4)
+    expect(table.queryByRole("button", { name: /^Acciones para/ })).toBeNull()
+  })
+
+  it("con permiso de entregar o ajustar, cada fila trae su menú de acciones", () => {
+    render(<StockTable worksites={WORKSITES} canDeliver canAdjust />)
+    const table = within(screen.getByRole("table"))
+
+    expect(screen.getByRole("table").querySelectorAll("colgroup col")).toHaveLength(5)
+    expect(table.getAllByRole("button", { name: "Acciones para Buzo Dupont Tyvek" })).toHaveLength(2)
+    expect(table.getByRole("columnheader", { name: "Acciones" })).toBeTruthy()
+  })
+})
+
 describe("WarehouseHeaderMetrics", () => {
+  it("el KPI de movimientos lleva a Movimientos filtrado por la misma ventana de días", () => {
+    render(
+      <WarehouseHeaderMetrics
+        worksiteCount={1} worksitesWithStock={1} productsWithStock={6}
+        movementCount={13} movementWindowDays={30} movementSince="2026-09-05"
+      />,
+    )
+
+    const link = screen.getByRole("link", { name: /Movimientos · 30 d/ })
+    expect(link.getAttribute("href")).toBe("/bodega?vista=kardex&desde=2026-09-05")
+  })
+
+  it("conserva la faena a la vista al enlazar a Movimientos", () => {
+    render(
+      <WarehouseHeaderMetrics
+        scopeParam="faena=todas" worksiteCount={3} worksitesWithStock={2} productsWithStock={6}
+        movementCount={13} movementWindowDays={30} movementSince="2026-09-05"
+      />,
+    )
+
+    expect(screen.getByRole("link", { name: /Movimientos · 30 d/ }).getAttribute("href"))
+      .toBe("/bodega?faena=todas&vista=kardex&desde=2026-09-05")
+  })
+
+  it("'Productos con stock' no es un enlace a la misma pantalla: repetía el subtítulo de la tabla", () => {
+    render(<WarehouseHeaderMetrics worksiteCount={7} worksitesWithStock={5} productsWithStock={6} movementCount={13} movementWindowDays={30} />)
+
+    expect(screen.getByText("Productos con stock")).toBeTruthy()
+    expect(screen.queryByRole("link", { name: /Productos con stock/ })).toBeNull()
+    expect(screen.queryByRole("link", { name: /Faenas con stock/ })).toBeNull()
+  })
+
+
   it("no muestra el KPI de bajo mínimo", () => {
     render(<WarehouseHeaderMetrics worksiteCount={7} worksitesWithStock={5} productsWithStock={6} movementCount={13} movementWindowDays={30} />)
 

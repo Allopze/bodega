@@ -33,6 +33,21 @@ export const warehouseModule = {
   },
   nav: [
     {
+      // Seguimiento de solicitudes (antes "Trazabilidad", bajo Bodega): es el
+      // hilo solicitud → OC → recepción → entrega, o sea Adquisiciones. Sigue
+      // gobernado por `warehouse:view_traceability`; el permiso y el módulo no
+      // cambian, sólo dónde se muestra y su URL (`/seguimiento`).
+      areaId: "adquisiciones",
+      items: [
+        {
+          label:       "Seguimiento de solicitudes",
+          href:        "/seguimiento",
+          iconName:    "Path",
+          permissions: ["warehouse:view_traceability"],
+        },
+      ],
+    },
+    {
       areaId: "bodega",
       items: [
         {
@@ -40,29 +55,18 @@ export const warehouseModule = {
           href:        "/bodega",
           iconName:    "Warehouse",
           permissions: ["warehouse:view_stock"],
-          badge:       "count" as const,
-        },
-        {
-          label:       "Trazabilidad",
-          href:        "/bodega/trazabilidad",
-          iconName:    "Path",
-          permissions: ["warehouse:view_traceability"],
         },
         {
           // Las guías de despacho internas eran un módulo completo (lista,
           // detalle, despacho, PDF) sin puerta de entrada propia: sólo se
-          // llegaba desde Recepción o desde una OC. Mismo patrón con el que
-          // Trazabilidad cuelga "Buscar por código".
+          // llegaba desde Recepción o desde una OC.
           label:       "Guías de despacho",
           href:        "/bodega/guias",
           iconName:    "Truck",
           permissions: ["warehouse:view_guides"],
-        },
-        {
-          label:       "Documentos",
-          href:        "/bodega/documentos",
-          iconName:    "FolderOpen",
-          permissions: ["warehouse:view_stock"],
+          // TRV-01 (auditoría 2026-10-05): guías despachadas pendientes de
+          // confirmar en faena (ver `badgeCountsLoader` en app/(app)/layout.tsx).
+          badge:       "count" as const,
         },
       ],
     },

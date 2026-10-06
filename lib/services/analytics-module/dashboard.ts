@@ -16,6 +16,7 @@ import {
 } from "./helpers"
 import { buildAlerts } from "./alerts"
 import { can } from "@/lib/auth/can"
+import { issuedOrderPredicate } from "@/lib/services/operational-period-metrics"
 import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
 
 export interface PurchasingFinancialSummary {
@@ -44,19 +45,27 @@ export async function getPurchasingFinancialSummary(
   const filters = normalizeAnalyticsFilters(rawFilters)
   const previous = previousPeriod(filters.fromDate, filters.toDate)
   const orderScope = worksiteFilter(session, purchaseOrders.worksiteId)
+  // INI-01 (auditoría 2026-10-05): el gasto del tablero se fecha por emisión y
+  // usa la misma definición de "OC emitida" que el resto de las vistas
+  // (`issuedOrderPredicate`): fuera de borrador, sin anuladas ni eliminadas.
+  // Antes se fechaba por `createdAt` y los gráficos de Finanzas no cuadraban
+  // con los tiles. `issuedAt` es texto (día o ISO): se compara como fecha.
+  const issuedBetween = (from: string, to: string) => and(
+    sql`${purchaseOrders.issuedAt}::date >= ${from}::date`,
+    sql`${purchaseOrders.issuedAt}::date <= ${to}::date`,
+  )
   const orderWhere = and(
     orderScope,
-    inArray(purchaseOrders.status, ACTIVE_ORDER_STATUSES),
-    dateFilter(filters, purchaseOrders.createdAt),
+    issuedOrderPredicate(),
+    issuedBetween(filters.fromDate, filters.toDate),
     filters.worksiteId ? eq(purchaseOrders.worksiteId, filters.worksiteId) : undefined,
     filters.supplierId ? eq(purchaseOrders.supplierId, filters.supplierId) : undefined,
   )
   const previousOrderWhere = and(
     orderScope,
-    inArray(purchaseOrders.status, ACTIVE_ORDER_STATUSES),
-    // ANA-001: el período de comparación se corta con el mismo día civil
-    // chileno que el período consultado; antes usaba UTC y desplazaba el borde.
-    chileDayRange(purchaseOrders.createdAt, previous.fromDate, previous.toDate),
+    issuedOrderPredicate(),
+    // ANA-001: el período de comparación usa el mismo día civil que el consultado.
+    issuedBetween(previous.fromDate, previous.toDate),
     filters.worksiteId ? eq(purchaseOrders.worksiteId, filters.worksiteId) : undefined,
     filters.supplierId ? eq(purchaseOrders.supplierId, filters.supplierId) : undefined,
   )

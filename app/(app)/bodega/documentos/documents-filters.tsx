@@ -7,6 +7,7 @@ import { FilterSearchInput } from "@/components/ui/filter-search-input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { DatePicker } from "@/components/ui/date-picker"
 import { formatDate } from "@/lib/utils"
+import { ALL_WORKSITES } from "../faena-scope"
 
 const KIND_OPTIONS = [
   { value: "ajuste",     label: "Ajustes" },
@@ -17,9 +18,12 @@ const KIND_OPTIONS = [
 
 export function DocumentsFilters({
   worksites,
+  ownWorksiteId = "",
   current,
 }: {
   worksites: Array<{ id: string; name: string }>
+  /** Bodega propia: la faena en que arranca la pantalla (misma regla que Stock). */
+  ownWorksiteId?: string
   current: { q?: string; faena?: string; tipo?: string; desde?: string; hasta?: string }
 }) {
   useWorksiteFilterPresence()
@@ -43,9 +47,15 @@ export function DocumentsFilters({
     const option = KIND_OPTIONS.find((item) => item.value === current.tipo)
     if (option) chips.push({ key: "tipo", label: "Tipo", value: current.tipo, displayValue: option.label })
   }
-  if (current.faena) {
-    const worksite = worksites.find((item) => item.id === current.faena)
+  // Mismo criterio que en Bodega: el chip anuncia salirse de la bodega propia
+  // y quitarlo vuelve a ella; estando en ella no hay nada que anunciar.
+  const faena = current.faena ?? ""
+  if (faena !== ownWorksiteId) {
+    const worksite = worksites.find((item) => item.id === faena)
     if (worksite) chips.push({ key: "faena", label: "Faena", value: worksite.id, displayValue: worksite.name })
+    else if (!faena && ownWorksiteId) {
+      chips.push({ key: "faena", label: "Faena", value: ALL_WORKSITES, displayValue: "Todas las faenas" })
+    }
   }
   if (current.desde) chips.push({ key: "desde", label: "Desde", value: current.desde, displayValue: formatDate(current.desde) })
   if (current.hasta) chips.push({ key: "hasta", label: "Hasta", value: current.hasta, displayValue: formatDate(current.hasta) })
@@ -54,6 +64,7 @@ export function DocumentsFilters({
     <FilterToolbar
       activeChips={chips}
       onRemoveChip={(key) => setFilter(key, "")}
+      // Limpiar vuelve al alcance por defecto, no a "todas".
       onClearAll={() => router.replace("/bodega/documentos", { scroll: false })}
       hasActiveFilters={chips.length > 0}
     >
@@ -76,8 +87,8 @@ export function DocumentsFilters({
         className="h-11 w-full text-xs sm:h-8 sm:w-52"
         emptyLabel="Todas las faenas"
         options={worksites.map((worksite) => ({ value: worksite.id, label: worksite.name }))}
-        value={current.faena ?? ""}
-        onValueChange={(value) => setFilter("faena", value)}
+        value={faena}
+        onValueChange={(value) => setFilter("faena", value || (ownWorksiteId ? ALL_WORKSITES : ""))}
       />
       <DatePicker
         ariaLabel="Documentos desde"

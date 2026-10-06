@@ -77,7 +77,7 @@ export async function acceptInvoiceReconciliationAction(
       userEmail: session.user.email ?? undefined,
       worksiteScope: serviceWorksiteScope(session),
     })
-    revalidateOperationalViews([REVALIDATE, `/compras/${purchaseOrderId}`, "/trazabilidad"])
+    revalidateOperationalViews([REVALIDATE, `/compras/${purchaseOrderId}`, "/seguimiento"])
     return {
       ok: true,
       message: result.status === "matched"

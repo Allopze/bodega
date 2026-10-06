@@ -23,3 +23,25 @@ export function resolveFaena(raw: string, ownWorksiteId: string): string {
   if (raw === ALL_WORKSITES) return ""
   return raw || ownWorksiteId
 }
+
+/**
+ * Bodega propia del usuario, validada contra las faenas que ve (BOD-06).
+ *
+ * Es la misma regla en Stock, Movimientos, Documentos y Guías: la faena
+ * principal cuando la tiene y está a la vista, y si no, "Todas" (`""`). Antes
+ * cada pantalla decidía por su cuenta y "Limpiar filtros" aterrizaba en un
+ * alcance distinto según desde dónde se llegara.
+ */
+export function ownVisibleWorksiteId(
+  primaryWorksiteId: string | null | undefined,
+  visibleWorksites: ReadonlyArray<{ id: string }>,
+): string {
+  const primary = primaryWorksiteId ?? ""
+  return primary && visibleWorksites.some((worksite) => worksite.id === primary) ? primary : ""
+}
+
+/** Parámetro de URL que reproduce la faena en pantalla ("" = el valor por defecto). */
+export function faenaScopeParam(faena: string, ownWorksiteId: string): string {
+  if (faena === ownWorksiteId) return ""
+  return `faena=${faena || ALL_WORKSITES}`
+}

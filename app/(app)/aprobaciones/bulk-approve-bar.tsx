@@ -51,9 +51,16 @@ export function BulkApproveBar({
     }
   }, [state, onClear])
 
-  if (selectedIds.length === 0) return null
+  const count = selectedIds.length
+  const countLabel = `${count} ${pluralize(count, "ítem seleccionado", "ítems seleccionados")}`
 
   return (
+    <>
+    {/* La región con el conteo se desmonta al vaciar la selección, y un
+        `aria-live` recién montado no se anuncia: el aviso vive en un nodo que
+        permanece y sólo cambia de texto. */}
+    <p className="sr-only" role="status" aria-live="polite">{count > 0 ? countLabel : ""}</p>
+    {count > 0 && (
     <div
       role="region"
       aria-label="Acciones sobre la selección"
@@ -61,18 +68,20 @@ export function BulkApproveBar({
     >
       <div className="mx-auto flex max-w-440 flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-[var(--color-text)]">
-          <span className="font-mono font-semibold tabular-nums">{selectedIds.length}</span>
-          {" "}{pluralize(selectedIds.length, "ítem seleccionado", "ítems seleccionados")}
+          <span className="font-mono font-semibold tabular-nums">{count}</span>
+          {" "}{pluralize(count, "ítem seleccionado", "ítems seleccionados")}
         </p>
         <div className="flex items-center gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={onClear}>
             <X size={14} />
             Quitar selección
           </Button>
+          {/* Un clic aprueba la selección: el lote es la vía rápida de quien ya
+              revisó la bandeja (decisión de producto, 2026-10-06). */}
           <form action={action}>
             <input type="hidden" name="itemIds" value={selectedIds.join(",")} />
             <SubmitButton
-              label={`Aprobar ${selectedIds.length}`}
+              label={`Aprobar ${count}`}
               loadingLabel="Aprobando..."
               variant="primary"
               size="sm"
@@ -83,5 +92,7 @@ export function BulkApproveBar({
         </div>
       </div>
     </div>
+    )}
+    </>
   )
 }

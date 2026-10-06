@@ -32,7 +32,7 @@ function revalidateGuideViews(guideId?: string) {
     "/compras",
     "/solicitudes",
     "/bodega",
-    "/trazabilidad",
+    "/seguimiento",
   ])
 }
 

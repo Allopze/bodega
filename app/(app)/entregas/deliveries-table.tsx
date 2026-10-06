@@ -1,11 +1,13 @@
 "use client"
 
-import { FileText, User } from "@phosphor-icons/react"
+import * as React from "react"
+import { DotsThree, FileText, Prohibit, User } from "@phosphor-icons/react"
 import { DataTable } from "@/components/ui/data-table"
 import { HISTORY_PAGE_SIZE } from "@/lib/constants"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { MetaBadge } from "@/components/states/state-badge"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { formatDate } from "@/lib/utils"
 import { VoidDeliveryDialog } from "./void-delivery-dialog"
 
@@ -27,15 +29,63 @@ export type DeliveryRow = {
   attachmentId: string | null
 }
 
+// BOD-01: `sortable: false` en todas. El orden del DataTable sólo reordena las
+// filas de la página en pantalla, no el historial completo, y aparentaba ser un
+// orden global. El historial va siempre por fecha de entrega descendente
+// (servidor). Un orden por columna real requeriría `?orden=` en la consulta.
 const COLUMNS = [
-  { key: "code", label: "Entrega", sortable: true, width: "w-36" },
-  { key: "workerName", label: "Trabajador", sortable: true },
-  { key: "sourceWorksiteName", label: "Bodega origen", sortable: true },
-  { key: "worksiteName", label: "Faena", sortable: true },
-  { key: "itemSummary", label: "Productos", sortable: true },
-  { key: "deliveredAt", label: "Fecha", sortable: true, width: "w-36" },
+  { key: "code", label: "Entrega", sortable: false, width: "w-36" },
+  { key: "workerName", label: "Trabajador", sortable: false },
+  { key: "sourceWorksiteName", label: "Bodega origen", sortable: false },
+  { key: "worksiteName", label: "Faena", sortable: false },
+  { key: "itemSummary", label: "Productos", sortable: false },
+  { key: "deliveredAt", label: "Fecha", sortable: false, width: "w-36" },
   { key: "attachmentId", label: "Comprobante", sortable: false, width: "w-32" },
 ]
+
+/**
+ * Acciones secundarias de la fila. "Anular" mueve inventario y es rara: va en
+ * un menú, no como botón rojo en cada una de las filas de la página. Conserva el
+ * diálogo de confirmación con motivo obligatorio.
+ */
+function DeliveryRowActions({ delivery }: { delivery: DeliveryRow }) {
+  const [voidOpen, setVoidOpen] = React.useState(false)
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-mobile-sm"
+            aria-label={`Más acciones de la entrega ${delivery.code}`}
+          >
+            <DotsThree size={18} weight="bold" aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-[11rem]">
+          <DropdownMenuItem
+            onSelect={() => setVoidOpen(true)}
+            className="min-h-11 gap-2 text-[var(--color-danger)] focus:text-[var(--color-danger)] sm:min-h-0"
+          >
+            <Prohibit size={14} aria-hidden />
+            Anular entrega
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <VoidDeliveryDialog
+        deliveryId={delivery.id}
+        deliveryCode={delivery.code}
+        workerName={delivery.workerName}
+        open={voidOpen}
+        onOpenChange={setVoidOpen}
+      />
+    </>
+  )
+}
+
+/** Enlace a la ficha del trabajador con objetivo táctil adecuado (el texto solo medía 19 px). */
+const WORKER_LINK_CLASS =
+  "-my-1.5 inline-flex min-h-11 max-w-full items-center py-1.5 text-sm font-medium text-[var(--color-primary)] hover:underline sm:min-h-8"
 
 /**
  * `canViewTraceability` llega como prop porque la ficha del trabajador exige
@@ -49,11 +99,14 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false, canVo
       caption="Entregas"
       columns={COLUMNS}
       rows={deliveries}
+      // BOD-01: la página ya viene filtrada y paginada del servidor
+      // (`delivery-filters.tsx` + `history-search.ts`). Sin esto el input de la
+      // shell volvía a filtrar en memoria sólo estas filas.
       searchKeys={["code", "workerName", "sourceWorksiteName", "worksiteName", "itemSummary"]}
+      disableInternalSearch
       pageSize={HISTORY_PAGE_SIZE}
-
       emptyTitle="Sin entregas"
-      emptyDescription="No hay entregas que coincidan con la búsqueda."
+      emptyDescription="No hay entregas en el historial."
       renderMobileCard={(delivery) => {
         return (
           <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
@@ -67,8 +120,8 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false, canVo
                   </p>
                   {delivery.workerId && canViewTraceability ? (
                     <a
-                      href={`/trazabilidad/trabajador/${delivery.workerId}`}
-                      className="mt-0.5 block break-words text-sm font-medium text-[var(--color-primary)] hover:underline"
+                      href={`/bodega/trazabilidad/trabajador/${delivery.workerId}`}
+                      className={`${WORKER_LINK_CLASS} break-words`}
                     >
                       {delivery.workerName}
                     </a>
@@ -76,7 +129,7 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false, canVo
                     <p className="mt-0.5 break-words text-sm font-medium text-[var(--color-text)]">{delivery.workerName}</p>
                   )}
                   {delivery.receiverName && delivery.receiverName !== delivery.workerName && (
-                    <p className="text-[11px] text-[var(--color-text-subtle)]">Recibido por: {delivery.receiverName}</p>
+                    <p className="text-xs text-[var(--color-text-muted)]">Recibido por: {delivery.receiverName}</p>
                   )}
                   <p className="mt-0.5 break-words text-xs text-[var(--color-text-muted)]">{delivery.worksiteName}</p>
                 </div>
@@ -150,18 +203,18 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false, canVo
                 {delivery.workerId && canViewTraceability ? (
                   <a
                     href={`/bodega/trazabilidad/trabajador/${delivery.workerId}`}
-                    className="block truncate text-sm font-medium text-[var(--color-primary)] hover:underline"
+                    className={WORKER_LINK_CLASS}
                   >
-                    {delivery.workerName}
+                    <span className="truncate">{delivery.workerName}</span>
                   </a>
                 ) : (
                   <p title={delivery.workerName} className="truncate text-sm font-medium text-[var(--color-text)]">{delivery.workerName}</p>
                 )}
                 {delivery.receiverName && delivery.receiverName !== delivery.workerName && (
-                  <p className="text-[11px] text-[var(--color-text-subtle)]">Recibido por: {delivery.receiverName}</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">Recibido por: {delivery.receiverName}</p>
                 )}
                 {delivery.requestCode && (
-                  <p className="font-mono text-[11px] text-[var(--color-text-subtle)]">{delivery.requestCode}</p>
+                  <p className="font-mono text-xs text-[var(--color-text-muted)]">{delivery.requestCode}</p>
                 )}
               </div>
             </TableCell>
@@ -206,11 +259,7 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false, canVo
                   </Button>
                 )}
                 {canVoid && !delivery.voidedAt && (
-                  <VoidDeliveryDialog
-                    deliveryId={delivery.id}
-                    deliveryCode={delivery.code}
-                    workerName={delivery.workerName}
-                  />
+                  <DeliveryRowActions delivery={delivery} />
                 )}
               </div>
             </TableCell>

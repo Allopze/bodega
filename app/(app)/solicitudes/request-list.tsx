@@ -7,6 +7,8 @@ import { Plus, Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/ui/data-table"
 import { SOLICITUDES_PAGE_SIZE } from "@/lib/constants"
 import { MetaBadge, StateBadge } from "@/components/states/state-badge"
+import { StageProgressCompact } from "@/components/states/stage-progress-compact"
+import type { RequestProgress } from "@/lib/work-queue.types"
 import { hasServerListFilters, ServerListFilters, type ServerListFilterOption } from "@/components/ui/server-list-filters"
 import { StageTabs, type StageTab } from "@/components/ui/stage-tabs"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
@@ -36,6 +38,8 @@ export type RequestRow = {
   createdAt:     string
   requesterId:   string
   requesterName: string
+  /** Etapa + qué falta (sin lista de ítems), calculado en el servidor. */
+  progress:      RequestProgress
 }
 
 const COLUMNS = [
@@ -45,7 +49,9 @@ const COLUMNS = [
   { key: "requesterName", label: "Solicita",   sortable: true  },
   { key: "urgency",       label: "Urgencia",   sortable: true,  width: "w-28" },
   { key: "itemCount",     label: "Ítems",      sortable: true,  numeric: true, width: "w-20" },
-  { key: "status",        label: "Estado",     sortable: true,  width: "w-36" },
+  // A5: la etapa reemplaza a la columna de estado; el badge de estado sólo
+  // acompaña donde el stepper no informa (Borrador, Rechazada, Cancelada).
+  { key: "stage",         label: "Etapa",      sortable: false, width: "w-60" },
   { key: "createdAt",     label: "Fecha",      sortable: true,  width: "w-32" },
   { key: "_actions",      label: "",           sortable: false, width: "w-10" },
 ]
@@ -53,6 +59,20 @@ const COLUMNS = [
 
 function detailHref(r: RequestRow): string {
   return `/solicitudes/${r.id}`
+}
+
+/** Estados que el stepper no puede expresar: el badge sí aporta información. */
+const BADGE_STATUSES = new Set(["draft", "rejected", "cancelled"])
+/** Terminales sin camino por recorrer: el badge basta, sin stepper. */
+const NO_STEPPER_STATUSES = new Set(["rejected", "cancelled"])
+
+function RequestStage({ r }: { r: RequestRow }) {
+  return (
+    <div className="flex flex-col items-start gap-1.5">
+      {BADGE_STATUSES.has(r.status) && <StateBadge state={r.status} entity="request" size="sm" />}
+      {!NO_STEPPER_STATUSES.has(r.status) && <StageProgressCompact progress={r.progress} />}
+    </div>
+  )
 }
 
 function DeleteRequestButton({ requestId, code }: { requestId: string; code: string }) {
@@ -204,7 +224,7 @@ export function RequestList({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <StateBadge state={r.status} entity="request" size="sm" />
+                  {BADGE_STATUSES.has(r.status) && <StateBadge state={r.status} entity="request" size="sm" />}
                   {canDelete && (
                     <div onClick={(e) => e.stopPropagation()}>
                       <DeleteRequestButton requestId={r.id} code={r.code} />
@@ -231,6 +251,12 @@ export function RequestList({
                   <dd className="text-[var(--color-text-muted)]">{formatDate(r.submittedAt ?? r.createdAt)}</dd>
                 </div>
               </dl>
+
+              {!NO_STEPPER_STATUSES.has(r.status) && (
+                <div className="mt-3 border-t border-[var(--color-border)] pt-3">
+                  <StageProgressCompact progress={r.progress} className="max-w-none" />
+                </div>
+              )}
             </article>
           )
         }}
@@ -280,7 +306,7 @@ export function RequestList({
                 {r.itemCount}
               </TableCellNum>
               <TableCell>
-                <StateBadge state={r.status} entity="request" size="sm" />
+                <RequestStage r={r} />
               </TableCell>
               <TableCell className="text-xs text-[var(--color-text-subtle)]">
                 {formatDate(r.submittedAt ?? r.createdAt)}

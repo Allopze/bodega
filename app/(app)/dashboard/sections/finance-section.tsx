@@ -7,7 +7,8 @@ import { getPurchasingFinancialSummary } from "@/lib/services/analytics-module/d
 import { getDashboardData } from "@/lib/services/dashboard"
 import { getFuelMonthlyTrend } from "@/lib/services/dashboard-fleet-maintenance"
 import { getOverdueFuelDebt } from "@/lib/services/dashboard-domains-data"
-import { getOperationalCalendarBounds } from "@/lib/services/operational-period-metrics"
+import { getOperationalCalendarBounds, getOperationalPeriodMetrics } from "@/lib/services/operational-period-metrics"
+import { variationPct } from "@/lib/services/analytics-module/helpers"
 import { isGlobalRole } from "@/lib/auth/scope"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { DomainSection, type DomainKpiGroup } from "../dashboard-domain-shell"
@@ -18,7 +19,8 @@ import {
   ThresholdRankingChart,
   WorksiteActivityChart,
 } from "../dashboard-domain-charts"
-import type { DomainSectionsProps } from "./shared"
+import { ORDERS_ISSUED_METRIC, ORDERS_SPEND_METRIC, ORDERS_SPEND_TREND_POLARITY } from "../dashboard-metric-definitions"
+import { analyticsFilters, type DomainSectionsProps } from "./shared"
 
 /**
  * Finanzas: **toda la plata**, en las dos direcciones.
@@ -71,17 +73,17 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
   const canSeeFuelDebt = canSeeFuelCosts && isGlobalRole(session)
   const canSeePurchasing = has("purchasing:view")
 
-  const [billing, analytics, fuelTrend, debt, dashboardData] = await Promise.all([
+  const [billing, analytics, periodMetrics, fuelTrend, debt, dashboardData] = await Promise.all([
     has("billing:view")
       ? getBillingSummary(session, { period: billingPeriod, ...billingWindow, ...(worksiteId ? { worksiteId } : {}) }).catch(() => null)
       : Promise.resolve(null),
     canSeePurchasing
-      ? getPurchasingFinancialSummary(session, {
-          fromDate: bounds.currentStart.slice(0, 10),
-          toDate: bounds.currentEnd.slice(0, 10),
-          ...(worksiteId ? { worksiteId } : {}),
-        })
+      ? getPurchasingFinancialSummary(session, analyticsFilters(scope))
       : Promise.resolve(null),
+    // INI-01: el conteo y el monto de OC salen de la **misma** función que el
+    // Resumen y Adquisiciones (`getOperationalPeriodMetrics`); el resumen
+    // financiero queda para los desgloses (por módulo y por proveedor).
+    canSeePurchasing ? getOperationalPeriodMetrics(session, { period: scope.period, ...(worksiteId ? { worksiteId } : {}) }) : Promise.resolve(null),
     canSeeFuelCosts ? getFuelMonthlyTrend(session, 6, worksiteId) : Promise.resolve([]),
     canSeeFuelDebt ? getOverdueFuelDebt(bounds.currentEnd.slice(0, 10)) : Promise.resolve({ amount: 0, statements: 0 }),
     canSeePurchasing ? getDashboardData(session, worksiteId).catch(() => null) : Promise.resolve(null),
@@ -157,10 +159,14 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
       label: "Egresos (compra y consumo)",
       content: (
         <>
-          {analytics && (
-            <KpiCard icon={<ShoppingCart size={16} />} label="Gasto en OC" value={formatCLP(analytics.kpis.totalSpend)}
-              detail={`${analytics.kpis.purchaseOrderCount} OC emitidas · ${periodo}`}
-              trend={analytics.kpis.spendVariationPct} href="/compras" />
+          {periodMetrics && (
+            <KpiCard icon={<ShoppingCart size={16} />} label={ORDERS_SPEND_METRIC.label} value={formatCLP(periodMetrics.spend.current)}
+              detail={`${periodMetrics.ordersIssued.current} ${ORDERS_ISSUED_METRIC.label} · ${periodo}`}
+              glossary={ORDERS_SPEND_METRIC.glossary}
+              // Un gasto que baja es buena noticia: sin `up-bad` el tile pintaba
+              // la baja en rojo (INI-01, auditoría 2026-10-05).
+              trend={periodMetrics.spend.previous === null ? null : variationPct(periodMetrics.spend.current, periodMetrics.spend.previous)}
+              trendPolarity={ORDERS_SPEND_TREND_POLARITY} href="/compras" />
           )}
           {analytics && (
             <KpiCard icon={<Timer size={16} />} label="Ticket medio por OC" value={formatCLP(analytics.kpis.averageOrderAmount)}

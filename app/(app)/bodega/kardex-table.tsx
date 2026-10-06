@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { ArrowSquareOut, ClockCounterClockwise } from "@phosphor-icons/react/dist/ssr"
 import { KardexExportButton } from "./kardex-export-button"
 import { movementLabel, movementToneClass } from "./movement-labels"
-import { movementDocumentHref, referenceTypeLabel } from "./movement-href"
+import { movementDocumentHref, movementFolio, referenceTypeLabel } from "./movement-href"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 interface WorksiteOption {
@@ -35,15 +35,22 @@ function formatMoment(iso: string): { date: string; time: string } {
 function DocumentLink({ movement }: { movement: InventoryMovementWithRelations }) {
   const href = movementDocumentHref(movement.referenceType, movement.referenceId)
   const label = referenceTypeLabel(movement.referenceType)
+  const folio = movementFolio(movement)
   if (!label) return <span className="text-[var(--color-text-faint)]">—</span>
-  if (!href) return <span className="text-[var(--color-text-subtle)]">{label}</span>
+  const content = (
+    <>
+      <span>{label}</span>
+      {folio && <span className="block font-mono text-[11px] font-semibold text-[var(--color-text)]">{folio}</span>}
+    </>
+  )
+  if (!href) return <span className="text-[var(--color-text-subtle)]">{content}</span>
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-1 text-[var(--color-text-muted)] underline-offset-2 hover:text-[var(--color-text)] hover:underline"
+      className="group/doc inline-flex items-start gap-1 text-[var(--color-text-muted)] underline-offset-2 hover:text-[var(--color-text)] hover:underline"
     >
-      {label}
-      <ArrowSquareOut size={11} aria-hidden />
+      <span>{content}</span>
+      <ArrowSquareOut size={11} aria-hidden className="mt-0.5 shrink-0" />
     </Link>
   )
 }
@@ -58,7 +65,7 @@ export function KardexTable({ movements, worksites = [], canExport = false, sear
     <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
         <div>
-          <h2 className="text-h2 text-[var(--color-text)]">Kardex</h2>
+          <h2 className="text-h2 text-[var(--color-text)]">Movimientos</h2>
           <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
             {movements.length === 0
               ? "Sin movimientos que mostrar"
@@ -72,16 +79,16 @@ export function KardexTable({ movements, worksites = [], canExport = false, sear
         <EmptyState
           compact
           icon={<ClockCounterClockwise size={24} />}
-          title={term ? "Sin coincidencias en el kardex" : "Sin movimientos registrados"}
+          title={term ? "Sin coincidencias en los movimientos" : "Sin movimientos registrados"}
           description={term
             ? `Ningún movimiento coincide con "${term}".`
             : "Los ingresos, entregas y ajustes aparecerán aquí a medida que ocurran."}
         />
       ) : (
         <>
-          <div className="hidden md:block overflow-x-auto" tabIndex={0} role="region" aria-label="Kardex de movimientos">
+          <div className="hidden md:block overflow-x-auto" tabIndex={0} role="region" aria-label="Movimientos de inventario">
             <TableRoot className="rounded-none border-0">
-            <Table className="text-sm" aria-label="Kardex de movimientos de inventario">
+            <Table className="text-sm" aria-label="Movimientos de inventario">
               <caption className="sr-only">Movimientos de inventario registrados, del más reciente al más antiguo</caption>
               <TableHeader>
                 <TableRow>
@@ -132,9 +139,12 @@ export function KardexTable({ movements, worksites = [], canExport = false, sear
                       </TableCell>
                       <TableCell
                         title={observation || undefined}
-                        className="px-5 py-3 text-xs text-[var(--color-text-subtle)] truncate max-w-[240px]"
+                        className="px-5 py-3 text-xs text-[var(--color-text-subtle)] max-w-[260px]"
                       >
-                        {observation || "—"}
+                        {/* Dos líneas y el resto en el tooltip: truncar a una
+                            sola dejaba cortado justo el texto que explica el
+                            movimiento. */}
+                        <span className="line-clamp-2 break-words">{observation || "—"}</span>
                       </TableCell>
                     </TableRow>
                   )
@@ -144,13 +154,13 @@ export function KardexTable({ movements, worksites = [], canExport = false, sear
             </TableRoot>
           </div>
 
-          <div className="grid gap-3 p-5 md:hidden">
+          <div className="divide-y divide-[var(--color-border)] md:hidden">
             {movements.map((m) => {
               const moment = formatMoment(m.performedAt)
               return (
                 <article
                   key={m.id}
-                  className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+                  className="px-5 py-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">

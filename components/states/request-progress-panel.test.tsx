@@ -51,4 +51,33 @@ describe("RequestProgressPanel", () => {
 
     expect(screen.queryByLabelText("Atributos del producto")).not.toBeInTheDocument()
   })
+
+  // ADQ-08: SOL-0044 (Cerrada) mostraba "Recepción" con reloj, como si siguiera
+  // esperando algo, aunque la etapa ya estaba completa.
+  it("shows the current stage as completed (check, no clock) when it is done", () => {
+    const progress = {
+      currentStage: "Recepción",
+      completedStages: ["Solicitado", "Aprobación", "Compra", "Recepción"],
+      nextAction: "Adquisición cerrada: todo llegó a faena.",
+      items: [],
+    } as RequestProgress
+
+    render(<RequestProgressPanel progress={progress} />)
+
+    expect(screen.getByText("Recepción completada")).toBeInTheDocument()
+  })
+
+  it("keeps the plain stage chip while the stage is still open", () => {
+    const progress = {
+      currentStage: "Recepción",
+      completedStages: ["Solicitado", "Aprobación", "Compra"],
+      nextAction: "Pendiente de recepción: falta que lleguen los ítems del proveedor.",
+      items: [],
+    } as RequestProgress
+
+    render(<RequestProgressPanel progress={progress} />)
+
+    expect(screen.queryByText("Recepción completada")).not.toBeInTheDocument()
+    expect(screen.getAllByText("Recepción").length).toBeGreaterThan(0)
+  })
 })

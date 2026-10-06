@@ -27,7 +27,7 @@ test("escanea, filtra y navega la mesa de integridad conservando el alcance", as
   })
 
   await login(page)
-  await page.goto("/bodega/trazabilidad?tab=integridad&faena=ws-e2e")
+  await page.goto("/seguimiento?tab=integridad&faena=ws-e2e")
 
   await expect(page.getByRole("heading", { name: "Integridad operacional" })).toBeVisible({ timeout: 10_000 })
 
@@ -73,7 +73,7 @@ test("escanea, filtra y navega la mesa de integridad conservando el alcance", as
 
 test("reconocer exige motivo y verificar no cierra un caso que sigue presente", async ({ page }) => {
   await login(page)
-  await page.goto("/bodega/trazabilidad?tab=integridad&faena=ws-e2e")
+  await page.goto("/seguimiento?tab=integridad&faena=ws-e2e")
   await page.getByRole("button", { name: "Revisar integridad" }).click()
 
   const qaCase = page.getByRole("listitem").filter({ hasText: QA_CASE })

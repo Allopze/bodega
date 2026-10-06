@@ -9,6 +9,30 @@ import type { FeedbackEstado, FeedbackTipo } from "@/lib/validation/feedback"
 export type { FeedbackEstado, FeedbackTipo }
 export { FEEDBACK_TIPO_LABELS }
 
+/* ── Vocabulario canónico de la cadena de adquisición (ADQ-10) ───────────────
+ * solicitud → ítem → OC → recepción → guía. Antes "esperando al proveedor" tenía
+ * siete nombres (Pendiente de recepción / Por recibir / Pendiente recepción /
+ * Esperando recepción en oficina o bodega / En proceso / En curso / Comprado) y
+ * Recepción ponía dos de ellos como pestañas vecinas. Un concepto, un nombre.
+ * Los enums de BD no cambian; esto es sólo lo que se lee en pantalla.
+ *
+ *   Concepto                                 | Nombre canónico
+ *   -----------------------------------------|---------------------------------
+ *   OC enviada, el proveedor aún no entrega  | Pendiente de recepción
+ *     (ítem `purchased`, línea de OC sin recibir) | (mismo nombre en ítem, OC y panel)
+ *   OC preparada, sin emitir                 | Borrador (OC) · "OC por emitir" (ítem)
+ *   Mercadería ya en oficina, sin despachar  | Recibido en oficina
+ *   Guía armada, sin despachar               | Borrador (guía) · "Pendiente de despacho" (bandeja)
+ *   Guía salió de oficina, faena no confirmó | Despachada · acción: "Confirmar llegada a faena"
+ *   Llegó a faena (todo)                     | Recibido en faena (OC) · Recibido (ítem) · Recibida (guía)
+ *   Solicitud con la cadena en marcha        | En curso (paraguas; el detalle está por ítem)
+ *   Cola de Recepción (todas las abiertas)   | "Por atender" (pestaña) — nunca "Por recibir"
+ *
+ * Verbos: "Confirmar llegada a faena" (antes Cotejar / Cotejar en faena / Cotejar
+ * entrega en faena / Completar guía) y "Completar despacho" para la guía en
+ * borrador. "Cotejar" es jerga de bodega: queda sólo en comentarios y servicios.
+ */
+
 /* ── State families ──────────────────────────────────────────────────────── */
 /* Derivado de `badgeVariants` (badge.tsx): una sola fuente para la lista de
  * variantes — incluir "neutral"/"outline" aquí fue exactamente lo que una
@@ -48,23 +72,55 @@ export function describeState(description: string | undefined, officeName?: stri
  */
 type RetiredItemStatus = "postponed" | "returned"
 
+/*
+ * TRV-03 — qué variante lleva cada estado de la cadena de adquisición.
+ *
+ * El `Badge` rinde las severidades (signal/warning/danger/success…) en mono
+ * MAYÚSCULAS y las variantes de prosa (default/info) en caja normal. Antes el
+ * mapa le daba el grito a lo ya cerrado (APROBADA, RECIBIDA, ANULADA,
+ * COMPLETADA) y el susurro a lo que pide acción (Borrador de OC, Despachada,
+ * Pendiente de recepción). La regla, que aplica a ITEM, REQUEST, OC y GUÍA:
+ *
+ *   signal  = alguien de la organización debe actuar AHORA: quien aprueba debe
+ *             decidir; quien compra debe emitir la OC borrador o generar la OC
+ *             de una solicitud aprobada; quien recibe debe registrar la llegada
+ *             de una OC enviada; la oficina debe despachar lo que llegó; la
+ *             faena debe confirmar una guía despachada. (DESIGN.md: naranja
+ *             signal reservado a lo pendiente.)
+ *   warning = parcial o discrepancia que alguien debe revisar.
+ *   danger  = desenlace negativo NO rutinario que el usuario debe notar
+ *             (Rechazada/Rechazado). Anulada/Cancelada es rutina: no alarma.
+ *   default = (prosa calma) estados terminales (Completada, Recibido en faena,
+ *             Recibida, Cerrada, Entregado, Anulada, Cancelada) y borradores
+ *             privados que nadie más puede mover (borrador de solicitud).
+ *   info    = (prosa) en marcha esperando a un tercero, sin acción interna.
+ *
+ * `family` sigue a `variant` (se usa para el borde de los `signal`).
+ */
+
 /** Unified state vocabulary — every state in the system maps here. */
 const ITEM_STATE_META: Record<ItemStatus | RetiredItemStatus, StateMeta> = {
   draft:               { label: "Borrador",           variant: "default",  family: "neutral"  },
-  requested:           { label: "Solicitado",          variant: "default",  family: "neutral"  },
-  approved:            { label: "Aprobado",            variant: "success",  family: "success"  },
+  // Quien aprueba debe decidir.
+  requested:           { label: "Solicitado",          variant: "signal",   family: "signal"   },
+  // Aprobado y sin OC: quien compra debe generarla.
+  approved:            { label: "Aprobado",            variant: "signal",   family: "signal"   },
   rejected:            { label: "Rechazado",           variant: "danger",   family: "danger"   },
   returned:            { label: "Devuelto",            variant: "warning",  family: "warning"  },
   postponed:           { label: "Postergado",          variant: "default",  family: "neutral"  },
   pending_purchase:    { label: "Pendiente compra",    variant: "signal",   family: "signal"   },
-  in_purchase_order:   { label: "En OC",               variant: "info",     family: "info"     },
-  purchased:           { label: "Comprado",            variant: "info",     family: "info"     },
+  // ADQ-07: el ítem de una OC en Borrador no está "pendiente de recepción"
+  // —nada salió al proveedor—: lo que falta es emitirla.
+  in_purchase_order:   { label: "OC por emitir",       variant: "signal",   family: "signal"   },
+  // ADQ-10: "Comprado" era el 7º nombre de "esperando al proveedor".
+  purchased:           { label: "Pendiente de recepción", variant: "signal", family: "signal"  },
   partially_office_received: { label: "Recibido en oficina (parcial)", variant: "warning", family: "warning" },
-  office_received:     { label: "Recibido en oficina", variant: "info",     family: "info"     },
+  // La oficina debe despachar lo que llegó.
+  office_received:     { label: "Recibido en oficina", variant: "signal",   family: "signal"   },
   partially_received:  { label: "Recibido parcial",    variant: "warning",  family: "warning"  },
-  received:            { label: "Recibido",            variant: "success",  family: "success"  },
+  received:            { label: "Recibido",            variant: "default",  family: "neutral"  },
   partially_delivered: { label: "Entrega parcial",     variant: "warning",  family: "warning"  },
-  delivered:           { label: "Entregado",           variant: "success",  family: "success"  },
+  delivered:           { label: "Entregado",           variant: "default",  family: "neutral"  },
 }
 
 /* ── Request states ──────────────────────────────────────────────────────── */
@@ -75,15 +131,19 @@ export type RequestStatus =
 
 const REQUEST_STATE_META: Record<RequestStatus, StateMeta> = {
   draft:              { label: "Borrador",             variant: "default",  family: "neutral"  },
-  submitted:          { label: "Enviada",              variant: "info",     family: "info"     },
-  in_review:          { label: "En revisión",          variant: "info",     family: "info"     },
+  // Quien aprueba debe decidir (la solicitante ya no puede hacer nada).
+  submitted:          { label: "Enviada",              variant: "signal",   family: "signal"   },
+  in_review:          { label: "En revisión",          variant: "signal",   family: "signal"   },
   partially_approved: { label: "Aprob. parcial",       variant: "warning",  family: "warning"  },
-  approved:           { label: "Aprobada",             variant: "success",  family: "success"  },
+  // Aprobada y sin comprar: quien compra debe generar la OC.
+  approved:           { label: "Aprobada",             variant: "signal",   family: "signal"   },
   rejected:           { label: "Rechazada",            variant: "danger",   family: "danger"   },
   // Estado retirado (2026-08-07): derivado del ítem, y ningún ítem puede estar
   // ya en `returned` — se conserva sólo para renderizar historial antiguo.
   returned:           { label: "Devuelta",             variant: "warning",  family: "warning"  },
-  in_purchasing:      { label: "En proceso",           variant: "info",     family: "info"     },
+  // ADQ-10: "En proceso" y "En curso" eran dos nombres del mismo paraguas; la
+  // pestaña de Solicitudes ya dice "En curso".
+  in_purchasing:      { label: "En curso",             variant: "info",     family: "info"     },
   closed:             { label: "Cerrada",              variant: "default",  family: "neutral"  },
   cancelled:          { label: "Cancelada",            variant: "default",  family: "neutral"  },
 }
@@ -100,14 +160,15 @@ export type OcStatus =
  * matiz de la misma etapa, no como estados aparte.
  */
 const OC_STATE_META: Record<OcStatus, StateMeta> = {
-  draft:              { label: "Borrador",             variant: "default",  family: "neutral", description: "OC en preparación: se puede revisar e imprimir antes de emitirla y enviarla." },
-  sent:               { label: "Pendiente de recepción", variant: "info",   family: "info",    description: "OC emitida y enviada al proveedor; a la espera de que llegue la mercadería." },
+  // Quien compra debe emitirla.
+  draft:              { label: "Borrador",             variant: "signal",   family: "signal",  description: "OC en preparación: se puede revisar e imprimir antes de emitirla. Al emitirla pasa a Recepción." },
+  sent:               { label: "Pendiente de recepción", variant: "signal", family: "signal",  description: "OC emitida y enviada al proveedor; a la espera de que llegue la mercadería." },
   partially_office_received: { label: "Recibido en oficina (parcial)", variant: "warning", family: "warning", description: `Parte de los ítems llegó a ${OFFICE_TOKEN}; falta el saldo.` },
-  office_received:    { label: "Recibido en oficina",  variant: "info",     family: "info",    description: `Los ítems llegaron a ${OFFICE_TOKEN}, aún no despachados a faena.` },
+  office_received:    { label: "Recibido en oficina",  variant: "signal",   family: "signal",  description: `Los ítems llegaron a ${OFFICE_TOKEN}, aún no despachados a faena.` },
   partially_received: { label: "Recibido en faena (parcial)", variant: "warning", family: "warning", description: "Parte de los ítems se recibió en faena; falta el saldo." },
-  received:           { label: "Recibido en faena",    variant: "success",  family: "success", description: "Todos los ítems recibidos en faena." },
-  closed:             { label: "Completada",           variant: "success",  family: "success", description: "OC completada: recepción finalizada, sin acciones pendientes." },
-  cancelled:          { label: "Anulada",              variant: "danger",   family: "danger",  description: "OC anulada." },
+  received:           { label: "Recibido en faena",    variant: "default",  family: "neutral", description: "Todos los ítems recibidos en faena." },
+  closed:             { label: "Completada",           variant: "default",  family: "neutral", description: "OC completada: recepción finalizada, sin acciones pendientes." },
+  cancelled:          { label: "Anulada",              variant: "default",  family: "neutral", description: "OC anulada." },
   // Estados retirados del flujo: ninguna OC nueva los alcanza, pero el historial
   // conserva transiciones antiguas y debe seguir legible.
   issued:             { label: "Emitida",              variant: "info",     family: "info",    description: "OC emitida sin enviar todavía (estado retirado: hoy emitir y enviar es un solo paso)." },
@@ -151,11 +212,13 @@ const FUEL_STATE_META: Record<string, StateMeta> = {
 export type DispatchGuideStatus = "draft" | "dispatched" | "partially_received" | "received" | "cancelled"
 
 const DISPATCH_GUIDE_STATE_META: Record<DispatchGuideStatus, StateMeta> = {
-  draft:      { label: "Borrador",   variant: "default", family: "neutral", description: "Guía en preparación: se puede editar y todavía no descontó stock de la oficina." },
-  dispatched: { label: "Despachada", variant: "info",    family: "info",    description: "Los bienes salieron de la oficina hacia la faena; el stock ya se movió." },
-  partially_received: { label: "Recibida con diferencia", variant: "warning", family: "warning", description: "La faena cotejó la guía, pero una o más cantidades no coinciden con lo despachado." },
-  received:   { label: "Recibida",   variant: "success", family: "success", description: "La faena confirmó la recepción de los bienes. No vuelve a mover stock." },
-  cancelled:  { label: "Anulada",    variant: "danger",  family: "danger",  description: "Guía anulada con motivo registrado; si había salida de stock, se revirtió con movimientos nuevos." },
+  // La oficina debe completar el despacho.
+  draft:      { label: "Borrador",   variant: "signal",  family: "signal",  description: "Guía en preparación: se puede editar y todavía no descontó stock de la oficina." },
+  // TRV-03: "Despachada" usaba `info` (susurro) siendo lo que la faena debe confirmar.
+  dispatched: { label: "Despachada", variant: "signal",  family: "signal",  description: "Los bienes salieron de la oficina hacia la faena; falta que la faena confirme la llegada. El stock ya se movió." },
+  partially_received: { label: "Recibida con diferencia", variant: "warning", family: "warning", description: "La faena revisó la guía, pero una o más cantidades no coinciden con lo despachado." },
+  received:   { label: "Recibida",   variant: "default", family: "neutral", description: "La faena confirmó la recepción de los bienes. No vuelve a mover stock." },
+  cancelled:  { label: "Anulada",    variant: "default", family: "neutral", description: "Guía anulada con motivo registrado; si había salida de stock, se revirtió con movimientos nuevos." },
 }
 
 /* ── StateBadge component ────────────────────────────────────────────────── */

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { login, receiptSubmitName, receiptStageCard } from "./helpers"
+import { login, receiptSubmitName, receiptStageCard, issueOrderFromDetail } from "./helpers"
 
 /**
  * Camino completo de una OC por oficina, que es el flujo del negocio:
@@ -35,7 +35,9 @@ async function dispatchAndReceiveGuide(page: Page, guideHref: string) {
   await expect(page.getByText("Despachada").first()).toBeVisible({ timeout: 15_000 })
   await page.getByRole("button", { name: /Confirmar recepción/i }).click()
   await page.getByRole("dialog").getByRole("button", { name: /Confirmar recepción/i }).click()
-  await expect(page.getByText("Recibida").first()).toBeVisible({ timeout: 15_000 })
+  // «Recibida» es también el encabezado de la columna de cantidades: la señal
+  // de que el servidor confirmó es que la acción ya no se ofrece.
+  await expect(page.getByRole("button", { name: /Confirmar recepción/i })).toHaveCount(0, { timeout: 15_000 })
 }
 
 async function expectOcState(page: Page, state: RegExp) {
@@ -55,9 +57,9 @@ test.describe("Flujo OC por oficina", () => {
   test("avanza de enviada a cerrada pasando por oficina y faena", async ({ page }) => {
     await login(page)
 
-    // ── Borrador → enviada (emitir y enviar es un solo acto) ─────────────────
+    // ── Borrador → enviada (emitir es un solo acto, con confirmación) ─────────────────
     await page.goto(`/compras/${OC_ID}`)
-    await page.getByRole("button", { name: "Emitir y enviar" }).click()
+    await issueOrderFromDetail(page)
     await expect(page.getByText(/Pendiente de recepción/).first()).toBeVisible({ timeout: 15_000 })
 
     // El estado retirado no debe volver a ofrecerse.

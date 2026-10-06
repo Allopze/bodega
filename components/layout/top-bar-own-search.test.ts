@@ -18,4 +18,13 @@ describe("buscador de la shell", () => {
       expect(hidesShellSearch(path), path).toBe(false)
     }
   })
+  it("Entregas busca en servidor (BOD-01): sin input de la shell en la lista", () => {
+    expect(hidesShellSearch("/entregas")).toBe(true)
+  })
+  it("Seguimiento de solicitudes trae su propio buscador por código: sin input de la shell", () => {
+    expect(hidesShellSearch("/seguimiento")).toBe(true)
+  })
+  it("Inicio (TRV-04): sin lista que filtrar, la shell no ofrece input en ninguna vista", () => {
+    expect(hidesShellSearch("/dashboard")).toBe(true)
+  })
 })

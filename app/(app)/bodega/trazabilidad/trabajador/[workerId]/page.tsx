@@ -28,7 +28,7 @@ export default async function WorkerEppTraceabilityPage({
 }) {
   let session
   try { session = await requirePermission("warehouse:view_traceability") }
-  catch { redirect(`/forbidden?desde=${encodeURIComponent("/bodega/trazabilidad")}`) }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/seguimiento")}`) }
 
   const { workerId } = await params
 
@@ -110,8 +110,7 @@ export default async function WorkerEppTraceabilityPage({
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
-            { label: "Bodega", href: "/bodega" },
-            { label: "Trazabilidad", href: "/bodega/trazabilidad" },
+            { label: "Entregas", href: "/entregas" },
             { label: `${worker.firstName} ${worker.lastName}` },
           ]} />
         }
