@@ -10,7 +10,6 @@ import {
   deliveryItems,
   eppProductFamilies,
   products,
-  purchaseOrderItems,
   purchaseRequestItems,
   purchaseRequests,
   workers,
@@ -27,13 +26,15 @@ import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
 import { DownloadSimple, Package, User } from "@phosphor-icons/react/dist/ssr"
-import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm"
+import { and, asc, count, desc, eq, gt, inArray } from "drizzle-orm"
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
-import type { DeliverableEppOption, DeliveryStockProductOption } from "./delivery-form.types"
+import type { DeliveryStockProductOption } from "./delivery-form.types"
 import { DeliveryFormSheet } from "./delivery-form-sheet"
 import { DeliveryFilters } from "./delivery-filters"
+import { deliveryHistorySearchSql, readDeliverySearch } from "./history-search"
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
-import { getTraceableDeliveryBalance } from "@/lib/services/delivery-eligibility"
+import { getDeliverableEppItems } from "@/lib/services/epp-pending-delivery"
+import { PendingEppStrip } from "./pending-epp-strip"
 
 export const metadata: Metadata = { title: "Entregas" }
 
@@ -54,6 +55,13 @@ export default async function Page({
   const sp = await searchParams
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
   const requestedItemId = typeof sp.item === "string" ? sp.item : ""
+  // Enlaces desde Bodega y desde "EPP por entregar": `?nueva=1` abre el
+  // formulario y `?producto=` preselecciona la línea si hay stock.
+  const requestedProductId = typeof sp.producto === "string" ? sp.producto : ""
+  const openFormRequested = sp.nueva === "1" || sp.nueva === "true"
+  // BOD-01: la búsqueda de texto va en el servidor (`?q=`), no en el input de la
+  // shell, que sólo veía las 25 filas de la página en pantalla.
+  const q = readDeliverySearch(sp.q)
 
   // Las faenas visibles van antes que el historial: `?faena=` sólo filtra si
   // está dentro del alcance. Una faena ajena o cerrada se ignora en vez de
@@ -72,6 +80,7 @@ export default async function Page({
     eq(deliveries.destinationType, "worker"),
     worksiteScopeSql(session, deliveries.worksiteId),
     faena ? eq(deliveries.worksiteId, faena) : undefined,
+    deliveryHistorySearchSql(q),
   )
 
   // History pagination
@@ -88,7 +97,7 @@ export default async function Page({
 
   const pageHref = (page: number) => buildPaginationHref("/entregas", sp, page)
 
-  const [allWorkers, stockRows, receivedItems, historyRows] = await Promise.all([
+  const [allWorkers, stockRows, deliverableAll, historyRows] = await Promise.all([
     db
       .select({
         id: workers.id,
@@ -129,31 +138,7 @@ export default async function Page({
         eq(products.isActive, true),
         eq(products.isService, false),
       )),
-    db
-      .select({
-        id:              purchaseRequestItems.id,
-        productId:       purchaseRequestItems.productId,
-        productNameFree: purchaseRequestItems.productNameFree,
-        quantity:        purchaseRequestItems.quantity,
-        unitOfMeasure:   purchaseRequestItems.unitOfMeasure,
-        urgency:         purchaseRequestItems.urgency,
-        requiredDate:    purchaseRequestItems.requiredDate,
-        status:          purchaseRequestItems.status,
-        createdAt:       purchaseRequestItems.createdAt,
-        requestCode:     purchaseRequests.code,
-        requestWorksiteId: purchaseRequests.worksiteId,
-        productName:     products.name,
-        productSku:      products.sku,
-      })
-      .from(purchaseRequestItems)
-      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-      .innerJoin(products, eq(purchaseRequestItems.productId, products.id))
-      .where(and(
-        inArray(purchaseRequestItems.status, ["partially_received", "partially_delivered"]),
-        isNotNull(purchaseRequestItems.productId),
-        eq(products.isEpp, true),
-        worksiteScopeSql(session, purchaseRequests.worksiteId),
-      )),
+    getDeliverableEppItems({ worksiteIds: allWorksites.map((worksite) => worksite.id) }),
     db
       .select({
         id: deliveries.id,
@@ -191,11 +176,6 @@ export default async function Page({
       sizeHelmet: worker.sizeHelmet,
     }))
 
-  const stockByWorksiteProduct = new Map<string, number>()
-  for (const row of stockRows) {
-    stockByWorksiteProduct.set(`${row.worksiteId}:${row.productId}`, row.quantity)
-  }
-
   // La talla vive en `product_attributes` de la variante: una sola consulta por
   // el conjunto de productos con stock, no una por fila.
   const sizeById = await getProductAttributesByIds(stockRows.map((row) => row.productId))
@@ -220,78 +200,29 @@ export default async function Page({
     }
   })
 
-  const receivedItemIds = receivedItems.map((item) => item.id)
-  const [deliveredRows, faenaReceiptRows] = receivedItemIds.length > 0
-    ? await Promise.all([
-        db
-          .select({ requestItemId: deliveryItems.requestItemId, quantity: deliveryItems.quantity })
-          .from(deliveryItems)
-          // Una entrega anulada no consumió saldo: el ítem vuelve a estar
-          // disponible para entregar.
-          .innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id))
-          .where(and(
-            inArray(deliveryItems.requestItemId, receivedItemIds),
-            isNull(deliveries.voidedAt),
-          )),
-        db
-          .select({
-            requestItemId: purchaseOrderItems.requestItemId,
-            receivedAtFaena: sql<number>`coalesce(sum(${purchaseOrderItems.quantityReceived}), 0)`,
-          })
-          .from(purchaseOrderItems)
-          .where(inArray(purchaseOrderItems.requestItemId, receivedItemIds))
-          .groupBy(purchaseOrderItems.requestItemId),
-      ])
-    : [[], []]
-
-  const deliveredByItem = new Map<string, number>()
-  for (const row of deliveredRows) {
-    if (!row.requestItemId) continue
-    deliveredByItem.set(row.requestItemId, (deliveredByItem.get(row.requestItemId) ?? 0) + row.quantity)
-  }
-
-  const receivedAtFaenaByItem = new Map<string, number>()
-  for (const row of faenaReceiptRows) {
-    if (!row.requestItemId) continue
-    receivedAtFaenaByItem.set(row.requestItemId, Number(row.receivedAtFaena ?? 0))
-  }
-
-  const deliverableItems: DeliverableEppOption[] = receivedItems
-    .map((item) => {
-      const deliveredQuantity = deliveredByItem.get(item.id) ?? 0
-      const receivedAtFaena = receivedAtFaenaByItem.get(item.id) ?? 0
-      const remainingQuantity = getTraceableDeliveryBalance({
-        requestedQuantity: item.quantity,
-        receivedAtFaena,
-        deliveredQuantity,
-      })
-      const stockQuantity = stockByWorksiteProduct.get(`${item.requestWorksiteId}:${item.productId}`) ?? 0
-      return {
-        requestItemId: item.id,
-        requestCode: item.requestCode,
-        worksiteId: item.requestWorksiteId,
-        productId: item.productId!,
-        productName: item.productName ?? item.productNameFree ?? "EPP recibido",
-        productSku: item.productSku,
-        quantity: item.quantity,
-        deliveredQuantity,
-        receivedAtFaena,
-        remainingQuantity,
-        stockQuantity,
-        unitOfMeasure: item.unitOfMeasure,
-      }
-    })
-    .filter((item) => item.remainingQuantity > 0 && item.stockQuantity > 0)
+  // `?faena=` acota también la lista de EPP por entregar, igual que el historial.
+  const deliverableItems = faena
+    ? deliverableAll.filter((item) => item.worksiteId === faena)
+    : deliverableAll
 
   const initialDeliverable = requestedItemId
-    ? deliverableItems.find((item) => item.requestItemId === requestedItemId)
+    ? deliverableAll.find((item) => item.requestItemId === requestedItemId)
     : undefined
-  // Sólo la intención explícita del operador (item de solicitud o ?faena=).
-  // El fallback lo decide el formulario, que es quien conoce la dotación: caer
-  // en `stockProducts[0]` elegía una bodega arbitraria (la consulta de stock no
-  // lleva ORDER BY) y en la práctica abría en la bodega de oficina, que tiene
-  // stock pero no trabajadores de faena.
-  const initialWorksiteId = initialDeliverable?.worksiteId ?? (faena || undefined)
+  // `?producto=` sólo preselecciona si hay stock del producto: en la bodega de
+  // `?faena=` cuando viene, o en cualquiera del alcance si es la única.
+  const productStockRows = requestedProductId
+    ? stockProducts.filter((row) => row.productId === requestedProductId && (!faena || row.sourceWorksiteId === faena))
+    : []
+  const requestedProductWorksiteId = productStockRows.length === 1 ? productStockRows[0]?.sourceWorksiteId : undefined
+  // Sólo la intención explícita del operador (item de solicitud, ?faena= o
+  // ?producto=). El fallback lo decide el formulario, que es quien conoce la
+  // dotación: caer en `stockProducts[0]` elegía una bodega arbitraria (la
+  // consulta de stock no lleva ORDER BY) y en la práctica abría en la bodega de
+  // oficina, que tiene stock pero no trabajadores de faena.
+  const initialWorksiteId = initialDeliverable?.worksiteId ?? (faena || requestedProductWorksiteId || undefined)
+  const initialProductId = initialDeliverable?.productId
+    ?? (productStockRows.some((row) => row.sourceWorksiteId === initialWorksiteId) ? requestedProductId : undefined)
+  const worksiteNameForPending = (id: string) => worksiteNameById.get(id) ?? "Faena"
 
   const visibleHistory = historyRows
   const historyDeliveryIds = visibleHistory.map((delivery) => delivery.id)
@@ -400,12 +331,18 @@ export default async function Page({
           <div className="flex items-center gap-2">
             {canCreateDelivery && (
               <DeliveryFormSheet
+                // Un enlace "Entregar" cambia la URL pero no desmonta la página:
+                // la clave remonta el panel para que tome la nueva intención.
+                key={`${initialWorksiteId ?? ""}|${initialProductId ?? ""}|${initialDeliverable?.requestItemId ?? ""}|${openFormRequested ? 1 : 0}`}
                 worksites={worksiteOptions}
                 workers={workerOptions}
                 stockProducts={stockProducts}
                 today={todayInChile()}
                 initialSourceWorksiteId={initialWorksiteId}
-                initialProductId={initialDeliverable?.productId}
+                initialProductId={initialProductId}
+                initialRequestItemId={initialDeliverable?.requestItemId}
+                initialQuantity={initialDeliverable ? Math.min(initialDeliverable.remainingQuantity, initialDeliverable.stockQuantity) : undefined}
+                defaultOpen={openFormRequested || Boolean(initialDeliverable)}
               />
             )}
             <Button asChild variant="secondary" size="sm">
@@ -419,7 +356,7 @@ export default async function Page({
       />
       {/* Reemplaza a un "Alcance de faena: X" que sólo preseleccionaba la
           bodega del formulario mientras el historial seguía mostrando todas. */}
-      <DeliveryFilters worksites={worksiteOptions} faena={faena} />
+      <DeliveryFilters worksites={worksiteOptions} faena={faena} q={q} />
 
       <div className="flex flex-col gap-6">
         {/* La captura depende de stock físico, no de una solicitud EPP
@@ -447,12 +384,13 @@ export default async function Page({
             </div>
           </section>
         ) : (
-          <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-            <h2 className="text-base font-semibold text-[var(--color-text)]">Entrega desde stock real</h2>
-            <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
-              Selecciona “Registrar entrega” para entregar uno o más productos. El trabajador se busca en el padrón activo y su faena se muestra junto a su nombre.
-            </p>
-          </section>
+          <PendingEppStrip
+            items={deliverableItems.map((item) => ({
+              ...item,
+              worksiteName: worksiteNameForPending(item.worksiteId),
+            }))}
+            canCreate={canCreateDelivery}
+          />
         )}
 
         {/* ── Historial de entregas ── */}
@@ -466,7 +404,21 @@ export default async function Page({
 
           {deliveriesForTable.length === 0 ? (
             <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-              {faena ? (
+              {q ? (
+                // Distinto de "no hay entregas": hay historial, la búsqueda no
+                // coincide con nada (BOD-01).
+                <EmptyState
+                  icon={<User size={22} />}
+                  title={`Sin resultados para “${q}”`}
+                  description="Prueba con el nombre o RUT del trabajador, el código de la entrega o un producto."
+                  action={
+                    <Button asChild variant="secondary" size="sm">
+                      <Link href={buildPaginationHref("/entregas", { ...sp, q: undefined }, 1)} scroll={false}>Limpiar búsqueda</Link>
+                    </Button>
+                  }
+                  compact
+                />
+              ) : faena ? (
                 <EmptyState
                   icon={<User size={22} />}
                   title="Sin entregas en esta faena"

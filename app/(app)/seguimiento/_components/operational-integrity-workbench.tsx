@@ -76,7 +76,7 @@ function metricHref(filters: OperationalIntegrityFilterState, patch: Partial<Rec
     if (value) params.set(key, value)
     else params.delete(key)
   }
-  return `/bodega/trazabilidad?${params.toString()}`
+  return `/seguimiento?${params.toString()}`
 }
 
 export function OperationalIntegrityWorkbench({ cases, canReconcile, filters, worksites = [] }: Props) {

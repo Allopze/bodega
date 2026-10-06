@@ -16,7 +16,7 @@ import { REVALIDATE } from "./revalidate"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { pluralize } from "@/lib/utils"
 
-// ── Emitir y enviar (draft → sent) ────────────────────────────────────────────
+// ── Emitir OC (draft → sent) ────────────────────────────────────────────
 // Fusión 2026-08-07: antes eran `issueOrderAction` (draft → issued) y
 // `sendOrderAction` (issued → sent). El compromiso con el proveedor es lo que
 // exige `purchasing:send_order`, así que ese es el permiso de la acción fusionada.
@@ -29,7 +29,7 @@ export async function issueAndSendOrderAction(
   try {
     session = await requirePermission("purchasing:send_order")
   } catch {
-    return { ok: false, message: "Sin permisos para emitir y enviar órdenes" }
+    return { ok: false, message: "Sin permisos para emitir órdenes de compra" }
   }
 
   const orderId = formData.get("orderId") as string | null
@@ -69,7 +69,7 @@ export async function issueAndSendOrderAction(
     })
   } catch (e) {
     logger.error("[issueAndSendOrderAction]", e)
-    return { ok: false, message: dbErrMsg(e, "Error al emitir y enviar la orden") }
+    return { ok: false, message: dbErrMsg(e, "Error al emitir la orden de compra") }
   }
 
   // S-05: notify only after the status change has committed.
@@ -87,7 +87,7 @@ export async function issueAndSendOrderAction(
      * decisión de producto (ver `issueAndSendOrder`), no una corrección.
      */
     const dispatchTag = dispatch.hasDispatchEvidence
-      ? `${pluralize(itemCount, "enviado", "enviados")} al proveedor${supplierTag} · ${dispatch.evidence}`
+      ? `${pluralize(itemCount, "emitido", "emitidos")} para${supplierTag} · constancia de envío declarada: ${dispatch.evidence}`
       : dispatch.sentTo
         ? `${pluralize(itemCount, "emitido", "emitidos")} para${supplierTag} (${dispatch.sentTo}); envío manual sin constancia registrada`
         : `${pluralize(itemCount, "emitido", "emitidos")} sin constancia de envío${supplierTag ? ` a${supplierTag}` : ""}`

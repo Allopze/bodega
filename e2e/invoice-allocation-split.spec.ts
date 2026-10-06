@@ -80,7 +80,7 @@ test("el stock distingue lo que hay de lo que está por recibir, en faena direct
 test("un usuario acotado a su faena no ve la mesa de integridad de compras", async ({ page }) => {
   await login(page, "scoped@e2e.chome.cl", "scoped2026")
 
-  await page.goto("/bodega/trazabilidad?tab=integridad&faena=ws-e2e")
+  await page.goto("/seguimiento?tab=integridad&faena=ws-e2e")
 
   // `warehouse:view_traceability` no está entre sus permisos: la ruta redirige
   // en vez de mostrar una mesa vacía, que sería indistinguible de "todo bien".
@@ -90,7 +90,7 @@ test("un usuario acotado a su faena no ve la mesa de integridad de compras", asy
 test("la mesa conserva la identidad de variante y no desborda en móvil", async ({ page }) => {
   await login(page)
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto("/bodega/trazabilidad?tab=integridad&faena=ws-e2e")
+  await page.goto("/seguimiento?tab=integridad&faena=ws-e2e")
 
   await page.getByRole("button", { name: "Revisar integridad" }).click()
   const caso = page.getByRole("listitem").filter({ hasText: "Guante QA Integridad E2E" })

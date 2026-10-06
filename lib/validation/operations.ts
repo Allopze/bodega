@@ -354,8 +354,18 @@ export const workerStockDeliverySchema = z.object({
 export const adjustStockSchema = z.object({
   worksiteId: z.string().min(1, "Selecciona una faena"),
   productId:  z.string().min(1, "Selecciona un producto"),
-  quantity:   positiveQuantitySchema,
-  direction:  z.enum(["ingreso", "egreso"]),
+  /*
+   * BOD-04 (auditoría 2026-10-05): el ajuste ya no recibe un delta con
+   * dirección —un egreso de 99999 con 4 en bodega no mostraba nunca el saldo
+   * resultante—, sino la cantidad REAL contada. El delta lo calcula la acción
+   * contra el saldo bloqueado; nunca se confía en uno enviado por el cliente.
+   */
+  // En blanco NO es 0: `z.coerce.number()` convertiría "" en 0 y un campo
+  // vacío dejaría el producto en cero.
+  countedQuantity: z.preprocess(
+    (value) => (value == null || String(value).trim() === "" ? Number.NaN : value),
+    nonNegativeQuantitySchema,
+  ),
   /*
    * STK-002 (auditoría 2026-09-14), patrón P6: pedía un carácter. El ajuste de
    * inventario es la única operación que fija cualquier saldo sin documento de

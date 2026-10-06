@@ -1,18 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import {
-  CaretDown,
-  ChartBar,
-  ChartLine,
-  CheckSquare,
-  ClipboardText,
-  Package,
-  ShieldCheck,
-  ShoppingCart,
-  Truck,
-  Warehouse,
-} from "@phosphor-icons/react"
+import { CaretDown, ClipboardText, ShoppingCart } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -23,16 +12,10 @@ import {
 
 type Action = { key: string; label: string; href: string }
 
+/** Sólo altas reales; la navegación ya está en el sidebar. */
 const ACTION_ICONS = {
   "new-request": ClipboardText,
-  approvals: CheckSquare,
   "new-oc": ShoppingCart,
-  receiving: Truck,
-  delivery: Warehouse,
-  warehouse: Package,
-  reports: ChartBar,
-  analytics: ChartLine,
-  prevention: ShieldCheck,
 } as const
 
 /** Menú cliente aislado: recibe sólo destinos ya filtrados por permisos. */

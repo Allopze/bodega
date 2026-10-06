@@ -8,6 +8,8 @@ import { Warning } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { INITIAL_STATE } from "@/lib/form-state"
 import { issueAndSendOrderAction } from "../actions/order-status"
+import { Field } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
 import { cancelOrderAction, closeOrderAction, deleteOrderAction } from "../actions/order-cancel"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -245,28 +247,27 @@ export function OcActions({
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-end gap-2 flex-wrap">
         {/* ── Acción primaria ──────────────────────────────────────────────────
-            Emitir y enviar es un solo acto: el borrador existe para revisar e
-            imprimir, y al confirmarlo la OC queda enviada al proveedor y pasa a
-            recepción. */}
+            Emitir es un clic: el borrador ya es el paso de revisión (2026-10-06,
+            decisión de producto: sin diálogo de confirmación). La OC pasa a
+            Recepción. La constancia de envío es opcional y sólo se registra al
+            emitir (OC-002). */}
         {status === "draft" && canSend && (
           <form action={issueAction} className="w-full space-y-2">
             <input type="hidden" name="orderId" value={orderId} />
-            {/* OC-002 (auditoría 2026-09-14): la plataforma no despacha la OC —no
-                hay correo ni portal integrado—, así que al emitir sólo constaba
-                la fecha. Este campo es la única forma de que quede escrito cómo
-                salió realmente. Opcional: exigirlo es política de compras. */}
-            <label htmlFor="constancia-envio" className="block text-xs text-(--color-text-muted)">
-              Constancia de envío al proveedor (opcional)
-            </label>
-            <input
-              id="constancia-envio"
-              name="constanciaEnvio"
-              type="text"
-              maxLength={200}
-              placeholder="Correo enviado, acuse recibido, entrega en mano…"
-              className="w-full rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm"
-            />
-            <SubmitButton label="Emitir y enviar" loadingLabel="Enviando..." variant="primary" className="w-full" />
+            <Field
+              label="Constancia de envío al proveedor (opcional)"
+              htmlFor="constancia-envio"
+              helper="Sólo se registra al emitir."
+            >
+              <Input
+                id="constancia-envio"
+                name="constanciaEnvio"
+                type="text"
+                maxLength={200}
+                placeholder="Correo enviado, acuse recibido, entrega en mano…"
+              />
+            </Field>
+            <SubmitButton label="Emitir OC" loadingLabel="Emitiendo…" variant="primary" className="w-full" />
           </form>
         )}
 

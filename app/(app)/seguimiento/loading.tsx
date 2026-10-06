@@ -9,13 +9,12 @@ export default function Loading() {
     // el contenido saltaba al `max-w` real cuando llegaban los datos.
     <PageContainer width="wide">
       <PageHeader
-        title="Trazabilidad y Seguimiento por Faena"
+        title="Seguimiento de solicitudes"
         breadcrumb={
           <Breadcrumbs
             items={[
               { label: "Inicio", href: "/dashboard" },
-              { label: "Bodega", href: "/bodega" },
-              { label: "Trazabilidad" },
+              { label: "Seguimiento de solicitudes" },
             ]}
           />
         }

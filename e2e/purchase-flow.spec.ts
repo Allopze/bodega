@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { login, selectRadixById, pickCurrentMonthDate, idFromUrl, receiptSubmitName, receiptStageCard } from "./helpers"
+import { login, selectRadixById, pickCurrentMonthDate, idFromUrl, receiptSubmitName, receiptStageCard, issueOrderFromDetail } from "./helpers"
 
 
 test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ page }) => {
@@ -50,16 +50,15 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await page.emulateMedia({ media: "screen" })
   await page.goto(`/compras/${orderId}`)
 
-  // Emitir y enviar es un solo acto desde 2026-08-07.
-  const sendButton = page.getByRole("button", { name: "Emitir y enviar" })
-  await expect(sendButton).toBeVisible({ timeout: 30_000 })
-  await sendButton.click()
+  // Emitir es un solo acto desde 2026-08-07, y desde la ronda UI/UX del
+  // 2026-10-05 pide confirmación en un diálogo.
+  await issueOrderFromDetail(page)
   await expect(page).toHaveURL(new RegExp(`/compras/${orderId}\\?actualizada=enviada$`), { timeout: 30_000 })
   await expect(page.getByText(/Pendiente de recepción/).first()).toBeVisible({ timeout: 30_000 })
 
   // Stage 1 — arrival at Chome office from the receiving queue.
   // La bandeja se renderiza en el servidor, así que si se pide antes de que el
-  // commit de "Emitir y enviar" sea visible, llega vacía y ninguna espera de
+  // commit de "Emitir OC" sea visible, llega vacía y ninguna espera de
   // Playwright la rellena: hay que volver a pedirla. `expect.poll` recarga hasta
   // que la OC aparece, en vez de depender de que la revalidación haya ganado la
   // carrera (falla intermitente vista en las rondas 3 y 5).
@@ -95,7 +94,9 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   await expect(page.getByText("Despachada").first()).toBeVisible({ timeout: 15_000 })
   await page.getByRole("button", { name: /Confirmar recepción/i }).click()
   await page.getByRole("dialog").getByRole("button", { name: /Confirmar recepción/i }).click()
-  await expect(page.getByText("Recibida").first()).toBeVisible({ timeout: 15_000 })
+  // «Recibida» es también el encabezado de la columna de cantidades: la señal
+  // de que el servidor confirmó es que la acción ya no se ofrece.
+  await expect(page.getByRole("button", { name: /Confirmar recepción/i })).toHaveCount(0, { timeout: 15_000 })
   // Acotado a la tabla: el nombre del producto también aparece en el panel de
   // seguimiento de la misma página, así que un `getByText` suelto era ambiguo.
   await expect(page.getByRole("table").getByText("Guante E2E").first()).toBeVisible()
@@ -104,7 +105,7 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   // cantidades y su expediente viven en el detalle que se despliega. Y se acota
   // con `q` —que busca por correlativo— porque `estado=received` no es ninguno
   // de los `ComputedStatus` y el filtro se ignoraba por completo.
-  await page.goto(`/bodega/trazabilidad?q=${encodeURIComponent(requestCode)}`)
+  await page.goto(`/seguimiento?q=${encodeURIComponent(requestCode)}`)
   const filaTrazabilidad = page.getByRole("row").filter({ hasText: requestCode })
   await expect(filaTrazabilidad).toHaveCount(1, { timeout: 15_000 })
   await filaTrazabilidad.getByRole("button", { name: "Expandir detalle" }).click()
@@ -146,7 +147,7 @@ test("ítem rechazado no aparece como pendiente de compra", async ({ page }) => 
   // inventado se ignora en vez de filtrar, así que "rejected" traía la tabla
   // entera. Y la fila es la SOLICITUD, no la línea —el detalle por ítem vive
   // dentro, al expandirla—, de modo que se ancla por su correlativo.
-  await page.goto("/bodega/trazabilidad?estado=rechazado")
+  await page.goto("/seguimiento?estado=rechazado")
   const fila = page.getByRole("row").filter({ hasText: code })
   await expect(fila).toHaveCount(1, { timeout: 15_000 })
   await expect(fila.getByRole("cell", { name: "Rechazado" })).toBeVisible()

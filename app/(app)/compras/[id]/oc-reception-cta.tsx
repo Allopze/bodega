@@ -92,7 +92,8 @@ export function OcReceptionCta({
           </p>
           <Button asChild variant="primary" size="sm" className="mt-3 w-full">
             <Link href={`/bodega/guias/${activeDispatchGuide.id}`}>
-              {activeDispatchGuide.status === "draft" ? "Completar despacho" : "Cotejar entrega en faena"}
+              {/* ADQ-11: mismo verbo que la bandeja de Recepción. */}
+              {activeDispatchGuide.status === "draft" ? "Completar despacho" : "Confirmar llegada a faena"}
               <ArrowRight size={14} aria-hidden />
             </Link>
           </Button>

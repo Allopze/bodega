@@ -19,6 +19,10 @@ const RequestProgressPanelInner = React.memo(function RequestProgressPanelInner(
 }) {
   const currentIndex = Math.max(0, STAGES.indexOf(progress.currentStage))
   const completed = new Set(progress.completedStages)
+  // ADQ-08: el chip decía "Recepción" con reloj aunque la etapa ya estuviera
+  // completa (solicitud Cerrada, OC recibida): un reloj significa "en espera".
+  // Si la etapa actual figura completada, el chip lo dice y lleva el tilde.
+  const stageDone = completed.has(progress.currentStage)
 
   return (
     <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
@@ -29,9 +33,16 @@ const RequestProgressPanelInner = React.memo(function RequestProgressPanelInner(
             <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{progress.nextAction}</p>
           </div>
           <div className="flex w-fit items-center gap-2">
-            <span className="inline-flex w-fit items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-muted)]">
-              <Clock size={13} />
-              {progress.currentStage}
+            <span
+              className={cn(
+                "inline-flex w-fit items-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-1 text-xs font-medium",
+                stageDone
+                  ? "border-[var(--color-success-line)] bg-[var(--color-success-tint)] text-[var(--color-success-ink)]"
+                  : "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
+              )}
+            >
+              {stageDone ? <CheckCircle size={13} weight="fill" aria-hidden /> : <Clock size={13} aria-hidden />}
+              {stageDone ? `${progress.currentStage} completada` : progress.currentStage}
             </span>
             {action}
           </div>

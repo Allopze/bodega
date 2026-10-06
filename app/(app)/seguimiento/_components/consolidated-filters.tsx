@@ -23,6 +23,7 @@ import {
   TRACEABILITY_STATUS_GROUP_LABELS,
   type ComputedStatus,
 } from "@/lib/services/trazabilidad-consolidated.types"
+import { TRACEABILITY_ALL_WORKSITES } from "@/lib/services/trazabilidad-consolidated-scope"
 import { ConsolidatedFiltersAdvanced } from "./consolidated-filters-advanced"
 
 interface CurrentFilters {
@@ -64,7 +65,8 @@ function statusFilterLabel(value: string): string {
  */
 function buildExportUrl(current: CurrentFilters): string {
   const params = new URLSearchParams()
-  if (current.faena) params.set("faena", current.faena)
+  // Sin `faena` el export recorre todas las faenas visibles, que es lo que "todas" pide.
+  if (current.faena && current.faena !== TRACEABILITY_ALL_WORKSITES) params.set("faena", current.faena)
   if (hasNonDefaultStatusFilter(current.estado)) params.set("estado", current.estado)
   if (current.categoria) params.set("categoria", current.categoria)
   if (current.solicitante) params.set("solicitante", current.solicitante)
@@ -103,9 +105,9 @@ export function ConsolidatedFilters({
 
   /**
    * Chips de los filtros activos. La faena no lleva chip a propósito: su
-   * selector está al lado mostrando cuál es, y la X del chip no podía
-   * quitarla —la vista siempre necesita una faena y el servicio volvía a
-   * poner la de por defecto—, así que era un botón que no hacía nada.
+   * selector está arriba mostrando cuál es, y la X del chip no podía
+   * quitarla —la vista siempre necesita un alcance y el servicio volvía a
+   * poner el de por defecto—, así que era un botón que no hacía nada.
    */
   const chips: ActiveFilterChip[] = []
 
@@ -161,7 +163,7 @@ export function ConsolidatedFilters({
             <a
               href={buildExportUrl(current)}
               download
-              aria-label="Exportar a Excel la trazabilidad con los filtros aplicados"
+              aria-label="Exportar a Excel el seguimiento con los filtros aplicados"
             >
               <DownloadSimple size={14} weight="bold" />
               Exportar Excel
@@ -169,7 +171,8 @@ export function ConsolidatedFilters({
           </Button>
         }
       >
-        {/* Selector principal de Faena */}
+        {/* Selector de faena. Con más de una faena visible la primera opción
+            es "Todas las faenas", que es también el valor por defecto. */}
         <div className="flex items-center gap-1.5">
           <label htmlFor="filter-faena-select" className="text-xs font-semibold text-[var(--color-text)] whitespace-nowrap">
             Faena:
@@ -182,6 +185,9 @@ export function ConsolidatedFilters({
               <SelectValue placeholder="Seleccionar faena" />
             </SelectTrigger>
             <SelectContent>
+              {worksites.length > 1 && (
+                <SelectItem value={TRACEABILITY_ALL_WORKSITES}>Todas las faenas</SelectItem>
+              )}
               {worksites.map((w) => (
                 <SelectItem key={w.id} value={w.id}>
                   {w.name}
@@ -204,7 +210,7 @@ export function ConsolidatedFilters({
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
               className="pl-8 text-xs h-9"
-              aria-label="Buscar en trazabilidad"
+              aria-label="Buscar en el seguimiento de solicitudes"
             />
           </div>
           {searchValue !== current.q && (

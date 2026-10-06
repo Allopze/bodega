@@ -1,8 +1,7 @@
 import { Broom, ClipboardText, Package, Truck } from "@phosphor-icons/react/dist/ssr"
 import { KpiCard } from "@/components/ui/kpi-card"
-import { getCachedAnalyticsDashboard } from "@/lib/services/read-model-cache"
 import { getDashboardData } from "@/lib/services/dashboard"
-import { getOperationalCalendarBounds } from "@/lib/services/operational-period-metrics"
+import { getOperationalCalendarBounds, getOperationalPeriodMetrics } from "@/lib/services/operational-period-metrics"
 import { getReceptionQuality } from "@/lib/services/dashboard-domains-data"
 import { getOperationalTrendHistory } from "@/lib/services/operational-trend-history"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
@@ -11,7 +10,7 @@ import { periodScopeLabel, scopedWorksiteId } from "../dashboard-scope"
 import { ModuleWorkloadChart, OperationalTrendChart } from "../dashboard-domain-charts"
 
 import type { DomainSectionsProps } from "./shared"
-import { analyticsFilters } from "./shared"
+import { ORDERS_ISSUED_METRIC } from "../dashboard-metric-definitions"
 
 // ── Adquisiciones ────────────────────────────────────────────────────────────
 
@@ -38,8 +37,13 @@ export async function AcquisitionsSection({ session, scope, moduleWorkload, queu
    * "aprobaciones" a la vez (I-02)— y `orders_pending_receipt`. Con las vistas
    * conmutadas, dejarla en la página la cobraba a los ocho renders.
    */
-  const [analytics, quality, trend, dashboardData] = await Promise.all([
-    getCachedAnalyticsDashboard(session, analyticsFilters(scope)),
+  const [periodMetrics, quality, trend, dashboardData] = await Promise.all([
+    // INI-01 (auditoría 2026-10-05): "OC emitidas" sale de la misma función que
+    // el Resumen y Finanzas. Antes salía de analítica, que cuenta por fecha de
+    // creación y rotulaba "OC emitidas" lo que su detalle llamaba "Órdenes
+    // creadas"; de paso se evita el read model completo de analítica, que acá
+    // sólo aportaba ese número.
+    getOperationalPeriodMetrics(session, { period: scope.period, ...(scopedWorksiteId(scope) ? { worksiteId: scopedWorksiteId(scope)! } : {}) }),
     getReceptionQuality(session, { from: bounds.currentStart, to: bounds.currentEnd }, scopedWorksiteId(scope)),
     getOperationalTrendHistory(session, 6, new Date(), scopedWorksiteId(scope)),
     getDashboardData(session, scopedWorksiteId(scope)),
@@ -54,10 +58,10 @@ export async function AcquisitionsSection({ session, scope, moduleWorkload, queu
       links={[{ label: "Compras", href: "/compras" }, { label: "Analítica", href: "/analitica" }, { label: "Finanzas", href: "/dashboard?vista=finanzas" }]}
       kpis={
         <>
-          <KpiCard icon={<ClipboardText size={16} />} label="OC emitidas" value={String(analytics.kpis.purchaseOrderCount)}
-            detail={`Órdenes creadas · ${periodo}`} href="/compras" />
-          <KpiCard icon={<Truck size={16} />} label="Por recibir" value={String(dashboardData.metrics.orders_pending_receipt)}
-            detail="Órdenes con recepción pendiente · ahora"
+          <KpiCard icon={<ClipboardText size={16} />} label={ORDERS_ISSUED_METRIC.label} value={String(periodMetrics.ordersIssued.current)}
+            detail={`Salieron de borrador · ${periodo}`} glossary={ORDERS_ISSUED_METRIC.glossary} href="/compras" />
+          <KpiCard icon={<Truck size={16} />} label="Pendiente de recepción" value={String(dashboardData.metrics.orders_pending_receipt)}
+            detail="Órdenes enviadas que aún no llegan · ahora"
             tone={dashboardData.metrics.orders_pending_receipt > 0 ? "signal" : "neutral"} href="/recepcion" />
           <KpiCard icon={<Broom size={16} />} label="Rechazo en recepción" value={`${quality.rejectionRate}%`}
             detail={quality.rejected + quality.damaged > 0 ? `${quality.rejected} rechazadas · ${quality.damaged} dañadas · ${periodo}` : `Todo llegó conforme · ${periodo}`}

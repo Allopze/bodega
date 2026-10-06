@@ -27,7 +27,7 @@ const SOLICITANTE = ["requests:view_own"]
 describe("orderDashboardDomains", () => {
   it("a quien mira la plata le abre con gasto: Finanzas y Adquisiciones primero", () => {
     const keys = orderDashboardDomains(JEFATURA).map((domain) => domain.key)
-    expect(keys).toEqual(["finanzas", "adquisiciones", "flota", "prevencion", "bodega", "terreno", "gobernanza"])
+    expect(keys).toEqual(["finanzas", "adquisiciones", "flota", "bodega", "prevencion", "terreno", "gobernanza"])
   })
 
   it("sin permiso de compras abre por prevención", () => {
@@ -62,6 +62,38 @@ describe("orderDashboardDomains", () => {
     expect(sinPlata).not.toContain("finanzas")
     // Los mismos dominios salvo el que el permiso nuevo destrabó.
     expect([...conPlata].filter((key) => key !== "finanzas").sort()).toEqual([...sinPlata].sort())
+  })
+})
+
+/**
+ * INI-09: los rótulos de Inicio son los del sidebar donde el contenido mapea
+ * (ver el cuadro de `dashboard-domains.ts`); los slugs no cambian.
+ */
+describe("nombres de las vistas por área", () => {
+  it("usa el término del sidebar donde existe uno", () => {
+    expect(DASHBOARD_DOMAINS.flota.shortTitle).toBe("Control operacional")
+    expect(DASHBOARD_DOMAINS.bodega.shortTitle).toBe("Bodega")
+    expect(DASHBOARD_DOMAINS.prevencion.shortTitle).toBe("Prevención")
+    expect(DASHBOARD_DOMAINS.adquisiciones.shortTitle).toBe("Adquisiciones")
+  })
+
+  it("no quedan los nombres del código que ningún menú usa", () => {
+    const titles = Object.values(DASHBOARD_DOMAINS).flatMap((d) => [d.title, d.shortTitle])
+    for (const legacy of ["Flota", "Terreno", "Gobernanza", "Flota y combustible", "Prevención y SST"]) {
+      expect(titles, legacy).not.toContain(legacy)
+    }
+  })
+
+  it("cada vista trae una descripción de una línea para el menú", () => {
+    for (const domain of Object.values(DASHBOARD_DOMAINS)) {
+      expect(domain.description.length).toBeGreaterThan(10)
+      expect(domain.description).not.toContain("\n")
+    }
+  })
+
+  it("los rótulos no se repiten", () => {
+    const shorts = Object.values(DASHBOARD_DOMAINS).map((d) => d.shortTitle)
+    expect(new Set(shorts).size).toBe(shorts.length)
   })
 })
 

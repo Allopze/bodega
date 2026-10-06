@@ -50,7 +50,7 @@ export async function recordItemCostAction(
       worksiteScope:       serviceWorksiteScope(session),
     })
 
-    revalidateOperationalViews([REVALIDATE, `/compras/${result.orderId}`, "/trazabilidad"])
+    revalidateOperationalViews([REVALIDATE, `/compras/${result.orderId}`, "/seguimiento"])
     return {
       ok: true,
       message: result.pendingCostLines > 0

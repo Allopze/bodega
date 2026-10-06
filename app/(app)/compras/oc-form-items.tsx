@@ -154,8 +154,11 @@ export function OcFormItems({
                     {URGENCY_LABELS[item.urgency] && (
                       <MetaBadge meta={{ label: URGENCY_LABELS[item.urgency]!, variant: "warning" }} className="font-normal shrink-0" />
                     )}
+                    {/* `default` y no `warning`: es una pista, no una alerta —la misma
+                        que Aprobaciones pinta en quieto—. Con `warning` competía con
+                        la urgencia de al lado, que sí pide atención. */}
                     {supLabel && (
-                      <MetaBadge meta={{ label: `Sugerido: ${supLabel}`, variant: "warning" }} className="font-normal shrink-0" />
+                      <MetaBadge meta={{ label: `Sugerido: ${supLabel}`, variant: "default" }} className="font-normal shrink-0" />
                     )}
                     {item.isService && (
                       <MetaBadge meta={{ label: "Servicio", variant: "outline" }} className="font-normal shrink-0" />

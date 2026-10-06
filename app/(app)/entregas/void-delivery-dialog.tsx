@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { useRouter } from "next/navigation"
-import { Prohibit, Warning } from "@phosphor-icons/react"
+import { Warning } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/lib/form-state"
 import { Button } from "@/components/ui/button"
@@ -27,13 +27,21 @@ export function VoidDeliveryDialog({
   deliveryId,
   deliveryCode,
   workerName,
+  open,
+  onOpenChange: setOpen,
 }: {
   deliveryId: string
   deliveryCode: string
   workerName: string
+  /**
+   * El disparador vive en el menú de la fila (`DeliveryRowActions`): una acción
+   * destructiva no debe ser un botón rojo repetido en cada fila. El diálogo y
+   * su confirmación con motivo obligatorio no cambian.
+   */
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
   const router = useRouter()
-  const [open, setOpen] = React.useState(false)
   const [state, action] = useActionState<ActionState, FormData>(voidDeliveryAction, INITIAL_STATE)
 
   React.useEffect(() => {
@@ -44,21 +52,10 @@ export function VoidDeliveryDialog({
     } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
       toast.error(state.message)
     }
-  }, [router, state])
+  }, [router, setOpen, state])
 
   return (
     <>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="gap-1 text-[var(--color-danger)] hover:text-[var(--color-danger)]"
-        onClick={() => setOpen(true)}
-        aria-label={`Anular entrega ${deliveryCode}`}
-      >
-        <Prohibit size={12} aria-hidden />
-        Anular
-      </Button>
-
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>

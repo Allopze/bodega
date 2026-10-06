@@ -7,5 +7,5 @@ export default async function DocumentoRedirectPage({
 }) {
   const { codigo } = await searchParams
   const query = codigo ? `&codigo=${encodeURIComponent(codigo)}` : ""
-  redirect(`/bodega/trazabilidad?tab=documento${query}`)
+  redirect(`/seguimiento?tab=documento${query}`)
 }

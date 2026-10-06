@@ -9,11 +9,13 @@ import { hasServerListFilters, ServerListFilters, type ServerListFilterOption } 
 import { StageTabs, type StageTab } from "@/components/ui/stage-tabs"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { TableRow, TableCell } from "@/components/ui/table"
-import { MetaBadge, StateBadge } from "@/components/states/state-badge"
+import { StateBadge } from "@/components/states/state-badge"
+import { StageProgressCompact } from "@/components/states/stage-progress-compact"
+import type { RequestProgress } from "@/lib/work-queue"
 import { StateLegend } from "@/components/states/state-legend"
 import { Button } from "@/components/ui/button"
 import { formatDate } from "@/lib/utils"
-import { canRegisterReceiptForOrder, receiptGuideSignal } from "./recepcion-table.helpers"
+import { canRegisterReceiptForOrder, receiptGuideActionLabel } from "./recepcion-table.helpers"
 
 type OrderRow = {
   id:          string
@@ -38,7 +40,8 @@ interface RecepcionTableProps {
   orders:           OrderRow[]
   wsMap:            Record<string, string>
   supMap:           Record<string, string>
-  gapMap:           Record<string, number>
+  /** Etapa y «qué falta» por OC, calculados en el servidor para toda la página. */
+  progressMap:      Record<string, RequestProgress | null>
   guideMap:         Record<string, ReceiptGuideRow[]>
   canOffice:        boolean
   canFaena:         boolean
@@ -49,8 +52,10 @@ interface RecepcionTableProps {
 }
 
 // A-20: "Enviada" era a la vez un valor de la columna Estado y el nombre de una
-// columna de fecha, en la misma fila. Y "En tránsito" contenía "pend. faena",
-// vocabulario distinto del encabezado. Los nombres dicen ahora qué contienen.
+// columna de fecha, en la misma fila. Los nombres dicen ahora qué contienen.
+// ADQ-09: la columna «Pend. de faena» (un recuento y tres pastillas de guía) se
+// reemplazó por «Etapa»: el paso en que está la OC y qué falta, en una frase
+// impersonal. Las pastillas repetían lo que ya dice esa frase (A5).
 const COLUMNS = [
   { key: "code",         label: "OC",             sortable: true,  width: "w-36" },
   // Se ordena por el nombre resuelto, no por el id: la fila lleva el UUID y el
@@ -59,7 +64,7 @@ const COLUMNS = [
   { key: "worksiteName", label: "Faena",          sortable: true  },
   { key: "supplierName", label: "Proveedor",      sortable: true  },
   { key: "status",       label: "Estado",         sortable: true,  width: "w-40" },
-  { key: "transit",      label: "Pend. de faena", sortable: false, width: "w-32" },
+  { key: "stage",        label: "Etapa",          sortable: false, width: "w-64" },
   { key: "sentAt",       label: "Fecha de envío", sortable: true,  width: "w-32" },
   // A-35: "Recibir" estaba pegado al badge de estado y se leía como parte de él.
   // Las acciones van al final de la fila, que es donde se las busca.
@@ -68,7 +73,7 @@ const COLUMNS = [
 const EMPTY_FILTER_OPTIONS: ServerListFilterOption[] = []
 const EMPTY_STAGE_TABS: StageTab[] = []
 
-export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOffice, canFaena, officeName, worksiteOptions = EMPTY_FILTER_OPTIONS, supplierOptions = EMPTY_FILTER_OPTIONS, stageTabs = EMPTY_STAGE_TABS }: RecepcionTableProps) {
+export function RecepcionTable({ orders, wsMap, supMap, progressMap, guideMap, canOffice, canFaena, officeName, worksiteOptions = EMPTY_FILTER_OPTIONS, supplierOptions = EMPTY_FILTER_OPTIONS, stageTabs = EMPTY_STAGE_TABS }: RecepcionTableProps) {
   const router = useRouter()
 
   const searchParams = useSearchParams()
@@ -87,12 +92,6 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
 
   return (
     <div className="flex flex-col gap-4">
-    <OnboardingHint
-      storageKey="hint_recepcion_v1"
-      title="Recepción de órdenes de compra"
-        body={`Registra la llegada en dos pasos cuando la entrega es vía oficina: primero en ${officeName} (botón 'Recibir'), luego la recepción en faena. Las OC de despacho directo a faena se reciben en un solo paso. El indicador «Pendiente de recepción en faena» muestra ítems que ya llegaron a oficina pero aún no se despacharon.`}
-    />
-    <StateLegend officeName={officeName} />
     {stageTabs.length > 0 && <StageTabs tabs={stageTabs} ariaLabel="Etapa de la recepción" />}
     <ServerListFilters
       searchPlaceholder="Buscar por código o proveedor..."
@@ -120,7 +119,6 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
         const canRegisterOrder = canRegisterReceiptForOrder(o.deliveryMode, o.status, canOffice, canFaena)
         const guides = guideMap[o.id] ?? []
         const activeGuide = guides.find((guide) => ["draft", "dispatched", "partially_received"].includes(guide.status))
-        const guideSignal = receiptGuideSignal(activeGuide?.status)
         return (
           <TableRow
             key={o.id}
@@ -149,13 +147,9 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
               <StateBadge state={o.status} entity="oc" size="sm" />
             </TableCell>
             <TableCell>
-              {/* REC-005: el mapa estado→señal salió a `receiptGuideSignal` para
-                  que la tarjeta móvil pinte exactamente lo mismo. */}
-              {guideSignal
-                ? <MetaBadge meta={guideSignal} />
-                : (gapMap[o.id] ?? 0) > 0
-                  ? <MetaBadge meta={{ label: `${gapMap[o.id]}${gapMap[o.id] === 1 ? "ítem" : "ítems"}`, variant: "warning" }} />
-                  : <span className="text-xs text-[var(--color-text-subtle)]">—</span>}
+              {progressMap[o.id]
+                ? <StageProgressCompact progress={progressMap[o.id]!} />
+                : <span className="text-xs text-[var(--color-text-subtle)]">—</span>}
             </TableCell>
             <TableCell className="text-xs text-[var(--color-text-subtle)]">
               {o.sentAt ? formatDate(o.sentAt) : "—"}
@@ -164,7 +158,7 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
               {activeGuide ? (
                 <Button variant="secondary" size="sm" asChild>
                   <Link href={`/bodega/guias/${activeGuide.id}`}>
-                    {activeGuide.status === "draft" ? "Completar guía" : "Cotejar"}
+                    {receiptGuideActionLabel(activeGuide.status)}
                   </Link>
                 </Button>
               ) : canRegisterOrder && (
@@ -180,11 +174,9 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
          principal del módulo, que se usa en faena— quedaba fuera de pantalla. */
       renderMobileCard={(o) => {
         const href = `/compras/${o.id}`
-        const gap = gapMap[o.id] ?? 0
         const canRegisterOrder = canRegisterReceiptForOrder(o.deliveryMode, o.status, canOffice, canFaena)
         const guides = guideMap[o.id] ?? []
         const activeGuide = guides.find((guide) => ["draft", "dispatched", "partially_received"].includes(guide.status))
-        const guideSignal = receiptGuideSignal(activeGuide?.status)
         return (
           <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <div className="flex items-start justify-between gap-3">
@@ -202,27 +194,17 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
               <dt className="text-[var(--color-text-subtle)]">Enviada</dt>
               <dd className="text-right font-mono tabular-nums text-[var(--color-text)]">{o.sentAt ? formatDate(o.sentAt) : "—"}</dd>
             </dl>
-            {/* REC-005: la tarjeta mostraba SÓLO este recuento de `gapMap`, así
-                que los tres estados de la guía —incluida la diferencia ya
-                detectada, en `danger`— no llegaban al teléfono. Ahora la señal
-                de guía manda, igual que en la fila de escritorio, y el recuento
-                queda como respaldo cuando no hay guía viva. */}
-            {/* `whitespace-normal`: `Badge` no parte línea —es lo correcto en una
-                celda—, pero aquí lleva una frase y a 320 px se salía del pozo.
-                Faltaba además el espacio: se leía "1ítem pendiente…". */}
-            {guideSignal ? (
-              <div className="mt-2">
-                <MetaBadge meta={guideSignal} className="max-w-full whitespace-normal" />
+            {/* ADQ-09: etapa y «qué falta» en lugar de las pastillas de guía y el
+                recuento de pendientes, que decían lo mismo con otra voz. */}
+            {progressMap[o.id] && (
+              <div className="mt-3">
+                <StageProgressCompact progress={progressMap[o.id]!} />
               </div>
-            ) : gap > 0 ? (
-              <div className="mt-2">
-                <MetaBadge meta={{ label: `${gap} ${gap === 1 ? "ítem pendiente de recepción en faena" : "ítems pendientes de recepción en faena"}`, variant: "warning" }} className="max-w-full whitespace-normal" />
-              </div>
-            ) : null}
+            )}
             {activeGuide ? (
               <Button variant="primary" size="sm" asChild className="mt-3 w-full">
                 <Link href={`/bodega/guias/${activeGuide.id}`}>
-                  {activeGuide.status === "draft" ? "Completar despacho" : "Cotejar entrega en faena"}
+                  {receiptGuideActionLabel(activeGuide.status)}
                 </Link>
               </Button>
             ) : canRegisterOrder && (
@@ -234,6 +216,15 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
         )
       }}
     />
+    {/* Ayuda al pie: a 390 px el hint, la leyenda, las tabs y los filtros
+        empujaban la primera tarjeta ~590 px abajo. La ayuda se consulta una
+        vez; la lista, a diario. */}
+    <OnboardingHint
+      storageKey="hint_recepcion_v1"
+      title="Recepción de órdenes de compra"
+      body={`Registra la llegada en dos pasos cuando la entrega es vía oficina: primero en ${officeName} (botón 'Recibir'), luego la recepción en faena. Las OC de despacho directo a faena se reciben en un solo paso. La columna «Etapa» dice en qué paso está cada orden y qué falta para completarla.`}
+    />
+    <StateLegend officeName={officeName} />
     </div>
   )
 }

@@ -4,6 +4,7 @@ import * as React from "react"
 import { Warning } from "@phosphor-icons/react"
 import Link from "next/link"
 import { SubmitButton } from "@/components/ui/submit-button"
+import { ocSubmitLabel } from "./oc-form.helpers"
 import { Field } from "@/components/ui/field"
 import { INITIAL_STATE } from "@/lib/form-state"
 import { Input } from "@/components/ui/input"
@@ -156,7 +157,7 @@ export function OcForm({
             Cancelar
           </Link>
           <SubmitButton
-            label={`Crear OC (${f.includedItems.length} ítem${f.includedItems.length !== 1 ? "s" : ""})`}
+            label={ocSubmitLabel(f.includedItems.length, f.supplierGroupCount)}
             loadingLabel="Creando..."
             variant="primary"
             disabled={f.includedItems.length === 0 || !f.worksiteId}

@@ -14,5 +14,5 @@ export default async function TrazabilidadRedirectPage({
     }
   }
   const query = params.toString()
-  redirect(query ? `/bodega/trazabilidad?${query}` : "/bodega/trazabilidad")
+  redirect(query ? `/seguimiento?${query}` : "/seguimiento")
 }

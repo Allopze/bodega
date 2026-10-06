@@ -24,13 +24,18 @@ interface TopBarProps {
 // subrutas — estaba en esta lista sin que nada lo alimentara, así que sus
 // tablas basadas en DataTable (vehículos, proveedores) quedaban sin buscador.
 //
+// `/entregas` (BOD-01, auditoría 2026-10-05): el historial está paginado en el
+// servidor, así que el input de la shell sólo filtraba las 25 filas en pantalla
+// y un trabajador de la página 3 daba "Sin entregas". La búsqueda es `?q=` y se
+// resuelve en SQL (`entregas/delivery-filters.tsx`).
+//
 // `/admin/taxonomia-sst` está aquí por el otro motivo que documenta
 // `search-architecture`: la pantalla muestra **dos** tablas (categorías y
 // tipos). El input de la shell sólo puede alimentar a una, así que convivía
 // con un "Buscar categorías..." local y el usuario no tenía cómo saber a cuál
 // de las dos apuntaba cada caja. Cada tabla trae ahora su propio buscador
 // rotulado.
-const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/bodega", "/flota", "/mantenciones", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/pdtp/obligaciones", "/facturacion/facturas", "/trazabilidad/documento", "/ti/accesos", "/ti/tickets", "/admin/taxonomia-sst"]
+const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/entregas", "/bodega", "/flota", "/mantenciones", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/pdtp/obligaciones", "/facturacion/facturas", "/seguimiento", "/ti/accesos", "/ti/tickets", "/admin/taxonomia-sst"]
 
 /** Formularios de alta/edición: no hay lista que filtrar, así que el input de
  *  la shell prometería un filtrado inexistente. Ninguna ruta bajo estos
@@ -51,7 +56,15 @@ const OWN_SEARCH_PATTERNS = [
   /^\/ti\/activos\/[^/]+$/,
 ]
 
+/**
+ * Inicio (`/dashboard`) no tiene ninguna lista que el filtro de la shell pueda
+ * alimentar: la cola de trabajo se fue a `/pendientes` (que busca en servidor) y
+ * lo que queda son tiles, gráficos y enlaces. TRV-04 (auditoría 2026-10-05): el
+ * input aparecía en las 9 vistas y escribir no hacía nada. Se oculta en toda la
+ * ruta, sin sondear `?vista=`.
+ */
 export function hidesShellSearch(pathname: string) {
+  if (pathname === "/dashboard") return true
   return ROUTES_WITH_OWN_SEARCH.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
     || OWN_SEARCH_PATTERNS.some((pattern) => pattern.test(pathname))
     || FORM_ROUTE.test(pathname)
@@ -86,7 +99,7 @@ const TopBarInner = React.memo(function TopBarInner({
     return () => window.removeEventListener("keydown", onKey)
   }, [])
 
-  // Clear search on navigation
+  // Clear search on navigation.
   React.useEffect(() => {
     setSearchQuery("")
   }, [pathname, setSearchQuery])
@@ -97,6 +110,7 @@ const TopBarInner = React.memo(function TopBarInner({
   const hideSearch = hidesShellSearch(pathname)
 
   return (
+    <>
     <header className={cn(
       // 4.5rem en desktop y no 3.5: el pozo redondea 36px la esquina superior
       // izquierda, así que con 56px de alto el título se centraba a 28px —dentro
@@ -243,6 +257,7 @@ const TopBarInner = React.memo(function TopBarInner({
         <NotificationBell />
       </div>
     </header>
+    </>
   )
 })
 

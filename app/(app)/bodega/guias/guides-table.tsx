@@ -7,7 +7,7 @@ import { TableCell, TableRow } from "@/components/ui/table"
 import { StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants"
-import { formatDate, formatQty } from "@/lib/utils"
+import { formatDate, formatDateRelative, formatQty } from "@/lib/utils"
 import type { DispatchGuideListRow } from "@/lib/services/dispatch-guides"
 
 /** La fila de la tabla es exactamente lo que devuelve el servicio. */
@@ -28,10 +28,31 @@ const COLUMNS = [
  * número no necesita input propio. El resto de los filtros (estado, faena,
  * fechas) viven en la URL y los aplica el servidor.
  */
-export function DispatchGuidesTable({ guides }: { guides: DispatchGuideTableRow[] }) {
+/**
+ * Lo que lleva esperando una guía despachada: sin la fecha de salida el estado
+ * "Despachada" no distingue la de ayer de la de hace cinco semanas.
+ */
+function WaitingSince({ guide, dispatchedAtById }: { guide: DispatchGuideTableRow; dispatchedAtById: Record<string, string> }) {
+  if (guide.status !== "dispatched") return null
+  const since = dispatchedAtById[guide.id] ?? guide.issuedAt
+  return (
+    <span className="mt-0.5 block text-xs text-[var(--color-signal-ink)]">
+      Despachada {formatDateRelative(since)}
+    </span>
+  )
+}
+
+export function DispatchGuidesTable({
+  guides,
+  dispatchedAtById = {},
+}: {
+  guides: DispatchGuideTableRow[]
+  /** Cuándo salió cada guía por confirmar (id → ISO). Sin dato se usa la emisión. */
+  dispatchedAtById?: Record<string, string>
+}) {
   return (
     <DataTable
-      caption="Guías de despacho internas"
+      caption="Guías de despacho"
       columns={COLUMNS}
       rows={guides}
       searchKeys={["code", "destinationWorksiteName", "dispatcherName"]}
@@ -46,13 +67,16 @@ export function DispatchGuidesTable({ guides }: { guides: DispatchGuideTableRow[
               <p className="font-mono text-xs text-[var(--color-text-subtle)]">{guide.code}</p>
               <Link
                 href={`/bodega/guias/${guide.id}`}
-                className="mt-0.5 block break-words text-sm font-medium text-[var(--color-primary)] hover:underline"
+                className="-my-1 flex min-h-11 items-center break-words text-sm font-medium text-[var(--color-primary)] hover:underline"
               >
                 {guide.destinationWorksiteName}
               </Link>
               <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{guide.dispatcherName}</p>
             </div>
-            <StateBadge state={guide.status} entity="dispatch_guide" size="sm" />
+            <div className="shrink-0 text-right">
+              <StateBadge state={guide.status} entity="dispatch_guide" size="sm" />
+              <WaitingSince guide={guide} dispatchedAtById={dispatchedAtById} />
+            </div>
           </div>
           <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
             <div>
@@ -79,6 +103,7 @@ export function DispatchGuidesTable({ guides }: { guides: DispatchGuideTableRow[
           <TableCell className="text-sm text-[var(--color-text)]">{guide.destinationWorksiteName}</TableCell>
           <TableCell>
             <StateBadge state={guide.status} entity="dispatch_guide" size="sm" />
+            <WaitingSince guide={guide} dispatchedAtById={dispatchedAtById} />
           </TableCell>
           <TableCell className="text-sm text-[var(--color-text-muted)]">{guide.dispatcherName}</TableCell>
           <TableCell className="text-right font-mono text-xs text-[var(--color-text-muted)]">

@@ -40,13 +40,8 @@ export function DocumentsTable({ documents, detail, highlightId }: DocumentsTabl
 
   return (
     <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-      <div className="border-b border-[var(--color-border)] px-5 py-4">
-        <h2 className="text-h2 text-[var(--color-text)]">Documentos de bodega</h2>
-        <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-          Ajustes, bajas, devoluciones y conteos físicos, con su folio
-        </p>
-      </div>
-
+      {/* Sin encabezado propio: el título y la descripción ya están en la página,
+          y repetirlos en una tarjeta encima de la tabla los duplicaba. */}
       <div className="hidden md:block overflow-x-auto">
         <TableRoot className="rounded-none border-0">
         <Table className="text-sm">
@@ -170,11 +165,11 @@ export function DocumentsTable({ documents, detail, highlightId }: DocumentsTabl
         </TableRoot>
       </div>
 
-      <div className="grid gap-3 p-5 md:hidden">
+      <div className="divide-y divide-[var(--color-border)] md:hidden">
         {documents.map((doc) => {
           const meta = metaFor(KIND_META, doc.kind)
           return (
-            <article key={doc.id} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] p-4">
+            <article key={doc.id} className="px-5 py-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-mono text-xs font-semibold text-[var(--color-text)]">{doc.folio}</p>

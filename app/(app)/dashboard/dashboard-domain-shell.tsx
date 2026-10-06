@@ -59,12 +59,12 @@ export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links,
             dominios son el nivel de navegación de la mitad inferior y a la
             misma escala competían con sus propias tarjetas (§6.2). */}
         <h2 id={`${domain.anchor}-titulo`} className="text-h2 text-[var(--color-text)]">{domain.title}</h2>
-        <div className="flex flex-wrap items-center gap-x-3">
+        <div className="flex flex-wrap items-center gap-x-1">
           {links.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+              className="inline-flex min-h-8 items-center gap-1 rounded-md px-1.5 text-xs font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
             >
               {link.label}
               <ArrowRight size={12} weight="bold" aria-hidden />
@@ -73,7 +73,7 @@ export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links,
         </div>
       </div>
 
-      {note && <p className="mb-3 text-[11px] text-[var(--color-text-faint)]">{note}</p>}
+      {note && <p className="mb-3 text-xs text-[var(--color-text-muted)]">{note}</p>}
 
       {groups.map((group, index) => (
         <div key={group.key} className={index === 0 ? undefined : "mt-4"}>

@@ -4,23 +4,31 @@ import * as React from "react"
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
 import { CheckCircle, MagnifyingGlass } from "@phosphor-icons/react"
+import { EmptyState } from "@/components/ui/empty-state"
+import { Button } from "@/components/ui/button"
 import { hasServerListFilters, ServerListFilters, type ServerListFilterOption } from "@/components/ui/server-list-filters"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { RequestGroup } from "./request-group"
 import { BulkApproveBar } from "./bulk-approve-bar"
 import { URGENCY_OPTIONS } from "./types"
-import type { ApprovalRequest } from "./types"
+import { QuotationPendingSection } from "./quotation-pending-section"
+import type { ApprovalRequest, QuotationPendingRequest } from "./types"
 
 export function ApprovalPanel({
   requests,
   canApproveEpp,
   canSetDispatch,
   worksiteOptions = [],
+  quotationRequests = [],
+  quotationTotal = 0,
 }: {
   requests:        ApprovalRequest[]
   canApproveEpp:   boolean
   canSetDispatch:  boolean
   worksiteOptions?: ServerListFilterOption[]
+  /** ADQ-05 · repuestos/servicios que esperan que se elija una cotización. */
+  quotationRequests?: QuotationPendingRequest[]
+  quotationTotal?: number
 }) {
   // E-3: la selección vive aquí, no en cada grupo, para poder aprobar ítems de
   // varias solicitudes de una vez. La acción del servidor valida el alcance por
@@ -54,6 +62,8 @@ export function ApprovalPanel({
     })
   }, [visibleIds])
 
+  const hasQuotationWork = quotationRequests.length > 0
+
   return (
     <div className="flex flex-col gap-4">
       <OnboardingHint
@@ -68,32 +78,37 @@ export function ApprovalPanel({
       />
 
       {requests.length === 0 ? (
-        // A4: "Bien hecho" sólo es cierto sin filtros. Con la cola acotada
-        // (típicamente por `solicitud=` desde /pendientes) la pantalla afirmaba
-        // que no quedaba nada por revisar mientras el resto seguía esperando.
+        // A4: "Todo al día" sólo es cierto si no queda NADA por decidir: ni
+        // ítems en la cola ni solicitudes esperando una cotización. Con filtros
+        // activos la cola está acotada y el mensaje es otro (típicamente
+        // `solicitud=` desde /pendientes).
         hasActiveFilters ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <MagnifyingGlass size={36} weight="light" className="text-text-subtle mb-3" />
-            <p className="text-sm font-medium text-(--color-text)">Sin resultados para estos filtros</p>
-            <p className="text-sm text-(--color-text-muted) mt-1 max-w-xs">
-              Puede haber ítems esperando aprobación fuera de lo que estás filtrando.
-            </p>
-            <Link
-              href={pathname}
-              scroll={false}
-              className="mt-4 inline-flex h-8 items-center rounded-(--radius) border border-border px-3 text-xs font-medium text-(--color-text) transition-colors hover:bg-surface-2"
-            >
-              Ver toda la cola
-            </Link>
-          </div>
+          <EmptyState
+            icon={<MagnifyingGlass size={24} weight="light" />}
+            title="Sin resultados para estos filtros"
+            description="Puede haber ítems esperando aprobación fuera de lo que estás filtrando."
+            action={
+              <Button asChild size="sm" variant="secondary">
+                <Link href={pathname} scroll={false}>Ver toda la cola</Link>
+              </Button>
+            }
+          />
+        ) : hasQuotationWork ? (
+          <p className="text-sm text-[var(--color-text-muted)]">
+            No hay ítems esperando aprobación directa. Quedan solicitudes por elegir cotización:
+          </p>
         ) : (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <CheckCircle size={36} weight="light" className="text-[var(--color-success)] mb-3" />
-            <p className="text-sm font-medium text-[var(--color-text)]">Sin ítems pendientes</p>
-            <p className="text-sm text-[var(--color-text-muted)] mt-1 max-w-xs">
-              Todas las solicitudes enviadas han sido revisadas. Bien hecho.
-            </p>
-          </div>
+          <EmptyState
+            tone="success"
+            icon={<CheckCircle size={24} weight="light" />}
+            title="Sin ítems pendientes"
+            description="Todo lo enviado ya fue revisado. Cuando llegue una solicitud nueva aparecerá aquí."
+            action={
+              <Button asChild size="sm" variant="secondary">
+                <Link href="/solicitudes">Ver solicitudes</Link>
+              </Button>
+            }
+          />
         )
       ) : (
         requests.map((req) => (
@@ -108,6 +123,7 @@ export function ApprovalPanel({
           />
         ))
       )}
+      <QuotationPendingSection requests={quotationRequests} total={quotationTotal} />
       <BulkApproveBar selectedIds={selectedIds} onClear={clearSelection} />
     </div>
   )

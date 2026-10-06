@@ -1,7 +1,9 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { inventoryMovements, products, users, worksites, worksiteStock } from "@/db/schema"
+import {
+  inventoryMovements, physicalInventoryCounts, products, stockAdjustments, stockReturns, users, worksites, worksiteStock,
+} from "@/db/schema"
 import { and, eq, asc, desc, sql, count } from "drizzle-orm"
 import { requirePermission, can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
@@ -14,11 +16,15 @@ import { Button } from "@/components/ui/button"
 import { Warehouse } from "@phosphor-icons/react/dist/ssr"
 import { parseListParams, textSearchSql, eqFilter, periodSql } from "@/lib/adquisiciones/list-query"
 import { WarehouseHeaderMetrics } from "./bodega-header-metrics"
+import { BodegaAttentionStrip, buildAttentionItems } from "./bodega-attention-strip"
+import { getBodegaAttention } from "./attention"
 import { StockSection, KardexSection } from "./bodega-sections"
-import { BodegaMovementSheet } from "./movement-sheet"
+import { BodegaMovementSheet, BodegaMovementTrigger } from "./movement-sheet"
+import { parseMovementParam } from "./movement-events"
 import { BodegaViewTabs, type BodegaView } from "./bodega-view-tabs"
+import { buildBodegaTabs } from "./bodega-tabs"
 import { BodegaFilters } from "./bodega-filters"
-import { resolveFaena, ALL_WORKSITES } from "./faena-scope"
+import { resolveFaena, ownVisibleWorksiteId, faenaScopeParam } from "./faena-scope"
 import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from "./types"
 import { KARDEX_PAGE_SIZE } from "@/lib/constants"
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
@@ -70,11 +76,14 @@ export default async function BodegaPage({
   const tipo = firstStr(sp.tipo)
   const producto = firstStr(sp.producto)
 
-  const canRegisterMovements = can(session, "warehouse:register_movement")
   const canAdjustStock       = can(session, "warehouse:adjust_stock")
   const canCreateGuide       = can(session, "warehouse:create_guide")
+  const canViewGuides        = can(session, "warehouse:view_guides")
   const canViewReceiving     = can(session, "receiving:view")
   const canExportStock       = can(session, "warehouse:view_stock")
+  const canViewDeliveries    = can(session, "deliveries:view")
+  const canCreateDeliveries  = can(session, "deliveries:create")
+  const onlyDemand           = firstStr(sp.demanda) === "1"
 
   const worksiteScope = worksiteScopeSql(session, worksites.id)
   const stockScope    = worksiteScopeSql(session, worksiteStock.worksiteId)
@@ -89,8 +98,7 @@ export default async function BodegaPage({
     .where(and(eq(worksites.isActive, true), worksiteScope))
     .orderBy(asc(worksites.name))
 
-  const primaryWorksiteId = session.user.primaryWorksiteId ?? ""
-  const ownWorksiteId = allWorksites.some((w) => w.id === primaryWorksiteId) ? primaryWorksiteId : ""
+  const ownWorksiteId = ownVisibleWorksiteId(session.user.primaryWorksiteId, allWorksites)
   const faena = resolveFaena(filters.faena, ownWorksiteId)
 
   // Los filtros de texto y faena se aplican en el servidor: filtrarlos en
@@ -163,6 +171,32 @@ export default async function BodegaPage({
     )
   }
 
+  // Las guías se acotan sólo por una faena elegida a mano (ver `attention.ts`).
+  const chosenFaena = filters.faena && filters.faena !== "todas" ? faena : ""
+  const attention = await getBodegaAttention(session, faena, chosenFaena)
+  const scopeParam = faenaScopeParam(faena, ownWorksiteId)
+  const withScope = (...extra: string[]) => {
+    const qs = [scopeParam, ...extra].filter(Boolean).join("&")
+    return qs ? `/bodega?${qs}` : "/bodega"
+  }
+  const firstDraft = attention.countDrafts[0]
+  const attentionItems = buildAttentionItems(
+    attention,
+    {
+      guides: `/bodega/guias?estado=dispatched&faena=${chosenFaena || "todas"}`,
+      epp: faena ? `/entregas?faena=${encodeURIComponent(faena)}` : "/entregas",
+      stockouts: withScope("demanda=1"),
+      drafts: firstDraft
+        ? `/bodega?faena=${encodeURIComponent(firstDraft.worksiteId)}&nuevo=conteo`
+        : withScope(),
+    },
+    { canViewGuides, canDeliver: canViewDeliveries },
+  )
+  const requestedMode = parseMovementParam(firstStr(sp.nuevo))
+  const initialMovement = requestedMode && canAdjustStock
+    ? { mode: requestedMode, worksiteId: faena || undefined }
+    : undefined
+
   const summary = stockSummaryRows[0]
   const kardexTotal = Number(movementTotalRow[0]?.total ?? 0)
 
@@ -220,6 +254,9 @@ export default async function BodegaPage({
           notes:          inventoryMovements.notes,
           referenceType:  inventoryMovements.referenceType,
           referenceId:    inventoryMovements.referenceId,
+          // Los documentos de bodega llevan su folio en su propia tabla; el resto
+          // (entrega, recepción, guía) lo trae escrito en el motivo o la nota.
+          documentFolio:  sql<string | null>`coalesce(${stockAdjustments.code}, ${stockReturns.code}, ${physicalInventoryCounts.code})`,
           productName:    products.name,
           worksiteName:   worksites.name,
           performedByName: users.name,
@@ -228,6 +265,18 @@ export default async function BodegaPage({
         .innerJoin(products, eq(inventoryMovements.productId, products.id))
         .innerJoin(worksites, eq(inventoryMovements.worksiteId, worksites.id))
         .leftJoin(users, eq(inventoryMovements.performedBy, users.id))
+        .leftJoin(stockAdjustments, and(
+          eq(inventoryMovements.referenceType, "stock_adjustment"),
+          eq(stockAdjustments.id, inventoryMovements.referenceId),
+        ))
+        .leftJoin(stockReturns, and(
+          eq(inventoryMovements.referenceType, "delivery_return"),
+          eq(stockReturns.id, inventoryMovements.referenceId),
+        ))
+        .leftJoin(physicalInventoryCounts, and(
+          eq(inventoryMovements.referenceType, "physical_inventory_count"),
+          eq(physicalInventoryCounts.id, inventoryMovements.referenceId),
+        ))
         .where(movementWhere)
         .orderBy(desc(inventoryMovements.performedAt), desc(inventoryMovements.id))
         .limit(kardexPagination.limit)
@@ -304,6 +353,14 @@ export default async function BodegaPage({
     })
   }
 
+  // "Sin stock con demanda": lo agotado de lo que la faena pidió y aún no llega.
+  // Misma definición que el aviso (ver `attention.ts`).
+  if (onlyDemand) {
+    for (const [worksiteId, items] of Object.entries(stockByWorksite)) {
+      stockByWorksite[worksiteId] = items.filter((item) => item.quantity <= 0 && item.incoming > 0)
+    }
+  }
+
   const kardexMovements: InventoryMovementWithRelations[] = movements.map((row) => ({
     id: row.id,
     worksiteId: row.worksiteId,
@@ -317,6 +374,7 @@ export default async function BodegaPage({
     notes: row.notes,
     referenceType: row.referenceType,
     referenceId: row.referenceId,
+    documentFolio: row.documentFolio,
     performedByName: row.performedByName,
     product: { name: sizedName(row.productId, row.productName) },
     worksite: { name: row.worksiteName },
@@ -333,43 +391,31 @@ export default async function BodegaPage({
   }))
 
   const faenaFiltered = Boolean(faena) && faena !== ownWorksiteId
-  const hasFilters = Boolean(filters.q || faenaFiltered || tipo || producto || filters.desde || filters.hasta)
+  const hasFilters = Boolean(filters.q || faenaFiltered || onlyDemand || tipo || producto || filters.desde || filters.hasta)
+
+  const canUseMovementSheet = canAdjustStock || canCreateDeliveries || canViewGuides || canViewReceiving || canCreateGuide
 
   return (
     <PageContainer>
-      <PageHeader title="Bodega" description="Stock por producto y kardex de movimientos."
+      <PageHeader title="Bodega" description="Stock por producto y movimientos de inventario."
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Bodega" }]} />}
         headerActions={(
           <WarehouseHeaderMetrics
-            scopeParam={faena === ownWorksiteId ? "" : `faena=${faena || ALL_WORKSITES}`}
+            scopeParam={scopeParam}
             worksiteCount={visibleWorksites.length}
             worksitesWithStock={Number(summary?.worksitesWithStock ?? 0)}
             productsWithStock={Number(summary?.productsWithStock ?? 0)}
             movementCount={Number(recentMovementRow[0]?.total ?? 0)}
             movementWindowDays={MOVEMENT_WINDOW_DAYS}
+            movementSince={daysAgoIso(MOVEMENT_WINDOW_DAYS)}
           />
         )}
-        actions={
-          <BodegaMovementSheet
-            worksites={worksiteOptions}
-            canRegister={canRegisterMovements}
-            canAdjust={canAdjustStock}
-            canCreateGuide={canCreateGuide}
-          />
-        }
+        actions={canUseMovementSheet ? <BodegaMovementTrigger /> : undefined}
       />
 
-      <BodegaViewTabs
-        current={view}
-        tabs={[
-          // Sin contador: repetía "Productos con stock" del encabezado, y desde que
-          // la tabla muestra también lo que sólo está por recibir ya no coincide
-          // con sus filas. Contarlas exigiría calcular lo por recibir en el kardex.
-          { value: "stock", label: "Stock" },
-          { value: "kardex", label: "Kardex", count: kardexTotal },
-          { value: "documentos", label: "Documentos", href: "/bodega/documentos" },
-        ]}
-      />
+      <BodegaAttentionStrip items={attentionItems} />
+
+      <BodegaViewTabs current={view} tabs={buildBodegaTabs({ movements: kardexTotal })} />
 
       <BodegaFilters
         view={view}
@@ -383,6 +429,7 @@ export default async function BodegaPage({
           producto,
           desde: filters.desde,
           hasta: filters.hasta,
+          demanda: onlyDemand,
         }}
       />
 
@@ -392,6 +439,8 @@ export default async function BodegaPage({
           stockByWorksite={stockByWorksite}
           receivingHref={canViewReceiving ? "/recepcion" : undefined}
           canExportStock={canExportStock}
+          canDeliver={canCreateDeliveries}
+          canAdjust={canAdjustStock}
           hasFilters={hasFilters}
           truncated={stockRows.length >= STOCK_ROW_LIMIT}
         />
@@ -402,6 +451,20 @@ export default async function BodegaPage({
           canExport={canExportStock}
           pagination={kardexPagination}
           searchParams={sp}
+        />
+      )}
+
+      {canUseMovementSheet && (
+        <BodegaMovementSheet
+          worksites={worksiteOptions}
+          currentWorksiteId={faena}
+          canAdjust={canAdjustStock}
+          canDeliver={canCreateDeliveries}
+          canReceive={canViewReceiving}
+          canViewGuides={canViewGuides}
+          canCreateGuide={canCreateGuide}
+          pending={{ guidesToConfirm: attention.guides.count, ordersToReceive: attention.ordersToReceive }}
+          initialRequest={initialMovement}
         />
       )}
     </PageContainer>

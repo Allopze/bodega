@@ -9,9 +9,11 @@ import { ShellHeaderProvider, useWorksiteFilterPresence } from "./header-context
 import { TopBar } from "./top-bar"
 
 let pathname = "/dashboard"
+let search = ""
 
 vi.mock("next/navigation", () => ({
   usePathname: () => pathname,
+  useSearchParams: () => new URLSearchParams(search),
 }))
 
 vi.mock("next-auth/react", () => ({
@@ -45,6 +47,22 @@ function makeSession(permissions: string[] = []): Session {
 describe("TopBar", () => {
   afterEach(() => {
     pathname = "/dashboard"
+    search = ""
+  })
+
+  // TRV-04: el input sólo se ofrece donde algo lo consume. Inicio ya no tiene
+  // ninguna lista (la cola vive en /pendientes), así que ninguna vista lo lleva.
+  it("Inicio: oculta el filtro de la shell en todas las vistas", async () => {
+    for (const vista of ["resumen", "finanzas", "adquisiciones"]) {
+      search = `vista=${vista}`
+      const view = render(
+        <ShellHeaderProvider>
+          <TopBar session={makeSession()} onMenuToggle={vi.fn()} />
+        </ShellHeaderProvider>,
+      )
+      expect(screen.queryByRole("searchbox", { name: "Filtrar en esta página" }), vista).not.toBeInTheDocument()
+      view.unmount()
+    }
   })
 
   it("does not group dropdown menu items in an anonymous fragment", () => {

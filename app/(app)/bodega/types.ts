@@ -31,6 +31,9 @@ export interface InventoryMovementWithRelations {
    *  mostró, así que no había forma de saltar del movimiento a su OC o guía. */
   referenceType?: string | null
   referenceId?: string | null
+  /** Folio del documento de bodega (AJU, DES, DEV, CON) cuando el movimiento
+   *  nace de uno. Los demás orígenes lo llevan escrito en el motivo o la nota. */
+  documentFolio?: string | null
   /** Quién lo registró. Es lo primero que se pregunta cuando un saldo no cuadra. */
   performedByName?: string | null
   product: { name: string } | null

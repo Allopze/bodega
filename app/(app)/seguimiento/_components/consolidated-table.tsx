@@ -171,7 +171,7 @@ export function ConsolidatedTable({ requests }: Props) {
                   {/* Link al detalle del expediente */}
                   <TableCell className="text-right">
                     <Link
-                      href={`/bodega/trazabilidad?tab=documento&codigo=${encodeURIComponent(request.requestCode)}`}
+                      href={`/seguimiento?tab=documento&codigo=${encodeURIComponent(request.requestCode)}`}
                       onClick={(e) => e.stopPropagation()}
                       className="inline-flex p-1 text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-3)] rounded"
                       title="Buscar el expediente documental de la solicitud"

@@ -10,12 +10,15 @@ import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { ExportExcelButton } from "@/components/ui/export-excel-button"
 import { PageContainer } from "@/components/ui/page-container"
-import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, eqFilter, statusSql, worksiteEqSql } from "@/lib/adquisiciones/list-query"
 import type { StageTab } from "@/components/ui/stage-tabs"
-import { COMPLETED_RECEIPT_ORDER_STATUSES, RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue"
+import {
+  buildOcProgress, COMPLETED_RECEIPT_ORDER_STATUSES, RECEIVABLE_ORDER_STATUSES,
+  type RequestProgress,
+} from "@/lib/work-queue"
+import type { OcActiveGuideStatus } from "@/lib/work-queue-builders"
 import { officeWorksiteLabel } from "@/lib/services/dispatch-guides"
 import { RecepcionTable, type ReceiptGuideRow } from "./recepcion-table"
 
@@ -24,19 +27,25 @@ export const metadata: Metadata = { title: "Recepción" }
 import { RECEPCION_PAGE_SIZE } from "@/lib/constants"
 
 /**
- * Las tres etapas de recepción; los parciales acompañan a la suya. `Por recibir`
- * las agrupa y es la tab por defecto: Recepción es una cola de trabajo, y con
- * "Todas" por defecto las OC ya completadas diluían lo que sí falta recibir. El
- * historial no se esconde — vive en "Completadas" y en "Todas", que siguen
- * siendo un clic.
+ * Las tres etapas de recepción; los parciales acompañan a la suya. La tab sin
+ * valor agrupa toda la cola abierta y es la de por defecto: Recepción es una
+ * cola de trabajo, y con "Todas" por defecto las OC ya completadas diluían lo
+ * que sí falta recibir. El historial no se esconde — vive en "Completadas" y en
+ * "Todas", que siguen siendo un clic.
+ *
+ * ADQ-10: antes la tab por defecto se llamaba "Por recibir" y la de al lado
+ * "Pendiente de recepción": dos sinónimos a un clic de distancia, y la segunda
+ * era un subconjunto de la primera. Ahora cada rótulo dice una cosa distinta y
+ * los de etapa son los mismos nombres que lleva el badge de la fila (ver el
+ * vocabulario canónico en `components/states/state-badge.tsx`).
  */
 const ALL_STAGE_VALUE = [...RECEIVABLE_ORDER_STATUSES, ...COMPLETED_RECEIPT_ORDER_STATUSES].join(",")
 const STAGE_GROUPS = [
   /** La tab sin valor: el defecto de la pantalla, y es la cola activa. */
-  { value: "",                                          label: "Por recibir" },
+  { value: "",                                          label: "Por atender" },
   { value: "sent",                                      label: "Pendiente de recepción" },
-  { value: "partially_office_received,office_received", label: "Recibido en oficina" },
-  { value: "partially_received",                        label: "Recibido en faena (parcial)" },
+  { value: "partially_office_received,office_received", label: "En oficina o en traslado" },
+  { value: "partially_received",                        label: "Llegó parcial a faena" },
   { value: COMPLETED_RECEIPT_ORDER_STATUSES.join(","),  label: "Completadas" },
   { value: ALL_STAGE_VALUE,                             label: "Todas" },
 ] as const
@@ -97,7 +106,7 @@ export default async function RecepcionPage({
     db.select({ status: purchaseOrders.status, total: count() }).from(purchaseOrders).where(scopeWhere).groupBy(purchaseOrders.status),
   ])
   const countByStatus = Object.fromEntries(stageCountRows.map((row) => [row.status, row.total]))
-  // La tab sin valor ("Por recibir") cuenta la cola activa, no el total: es el
+  // La tab sin valor ("Por atender") cuenta la cola activa, no el total: es el
   // defecto de la pantalla, y anunciar el total ahí prometía filas que su propio
   // recorte no entrega.
   const countFor = (value: string) => (value || ALL_STAGE_VALUE)
@@ -166,9 +175,10 @@ export default async function RecepcionPage({
       : Promise.resolve([]),
     orderIds.length > 0
       ? db.select({
-          purchaseOrderId:        purchaseOrderItems.purchaseOrderId,
-          quantityOfficeReceived: purchaseOrderItems.quantityOfficeReceived,
-          quantityReceived:       purchaseOrderItems.quantityReceived,
+          id:               purchaseOrderItems.id,
+          purchaseOrderId:  purchaseOrderItems.purchaseOrderId,
+          quantity:         purchaseOrderItems.quantity,
+          quantityReceived: purchaseOrderItems.quantityReceived,
         }).from(purchaseOrderItems).where(inArray(purchaseOrderItems.purchaseOrderId, orderIds))
       : Promise.resolve([]),
     orderIds.length > 0
@@ -194,13 +204,6 @@ export default async function RecepcionPage({
   const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
   const supMap = Object.fromEntries(supplierRows.map((s) => [s.id, s.name]))
 
-  // Transit gap: how many items arrived at office but are still pending dispatch to faena.
-  const gapMap: Record<string, number> = {}
-  for (const it of itemRows) {
-    if ((it.quantityOfficeReceived ?? 0) - (it.quantityReceived ?? 0) > 0) {
-      gapMap[it.purchaseOrderId] = (gapMap[it.purchaseOrderId] ?? 0) + 1
-    }
-  }
   const guideMap: Record<string, ReceiptGuideRow[]> = {}
   for (const guide of guideRows) {
     if (!guide.purchaseOrderId) continue
@@ -214,18 +217,31 @@ export default async function RecepcionPage({
     guideMap[guide.purchaseOrderId] = [...(guideMap[guide.purchaseOrderId] ?? []), summary]
   }
 
+  // Etapa y «qué falta» de cada OC de la página: una sola consulta de ítems
+  // para todas (arriba), sin N+1. El texto es impersonal a propósito: nombra el
+  // paso pendiente, no a quién le toca.
+  const itemsByOrder: Record<string, { id: string; productName: string; quantity: number; unitOfMeasure: string; quantityReceived: number }[]> = {}
+  for (const it of itemRows) {
+    ;(itemsByOrder[it.purchaseOrderId] ??= []).push({
+      id: it.id,
+      productName: "",
+      quantity: Number(it.quantity ?? 0),
+      unitOfMeasure: "",
+      quantityReceived: Number(it.quantityReceived ?? 0),
+    })
+  }
+  const progressMap: Record<string, RequestProgress | null> = {}
+  for (const order of visible) {
+    const liveGuide = (guideMap[order.id] ?? []).find((guide) =>
+      ["draft", "dispatched", "partially_received"].includes(guide.status),
+    )
+    progressMap[order.id] = buildOcProgress(order.status, itemsByOrder[order.id] ?? [], "recepcion", {
+      activeGuideStatus: (liveGuide?.status as OcActiveGuideStatus | undefined) ?? null,
+    })
+  }
+
   const canOffice = can(session, "receiving:register_office")
   const canFaena = can(session, "receiving:register_faena")
-
-  const headerSignals: HeaderSignal[] = [
-    {
-      key: "to-receive",
-      label: "Por recibir",
-      value: stageCountRows
-        .filter((row) => RECEIVABLE_ORDER_STATUSES.includes(row.status))
-        .reduce((sum, row) => sum + row.total, 0),
-    },
-  ]
 
   return (
     <PageContainer>
@@ -238,7 +254,8 @@ export default async function RecepcionPage({
             { label: "Recepción" },
           ]} />
         }
-        headerActions={<HeaderSignals signals={headerSignals} />}
+        // ADQ-10 / A5: el chip «N Por recibir» repetía el contador de la tab «Por
+        // atender» (misma cifra, dos controles). El número vive sólo en la tab.
         // A-18: la exportación va en el top bar, igual que en compras y solicitudes.
         actions={<ExportExcelButton tipo="recepcion" />}
       />
@@ -250,7 +267,7 @@ export default async function RecepcionPage({
         orders={visible}
         wsMap={wsMap}
         supMap={supMap}
-        gapMap={gapMap}
+        progressMap={progressMap}
         guideMap={guideMap}
         canOffice={canOffice}
         canFaena={canFaena}

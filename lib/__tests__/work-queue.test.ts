@@ -78,7 +78,9 @@ describe("requestNextAction", () => {
   })
 
   it("has requested items (needs approval)", () => {
-    expect(requestNextAction("submitted", ["requested"])).toContain("Aprobación")
+    expect(requestNextAction("submitted", ["requested"])).toBe("Falta aprobar 1 ítem.")
+    expect(requestNextAction("submitted", ["requested", "requested", "approved"])).toBe("Falta aprobar 2 ítems.")
+    expect(requestNextAction("submitted", ["requested"])).not.toMatch(/debe|Compras|Aprobación/)
   })
 
   it("has approved items (needs purchase)", () => {
@@ -86,11 +88,11 @@ describe("requestNextAction", () => {
   })
 
   it("has in_purchase_order items", () => {
-    expect(requestNextAction("in_purchasing", ["in_purchase_order"])).toContain("emitir")
+    expect(requestNextAction("in_purchasing", ["in_purchase_order"])).toBe("Falta emitir la OC.")
   })
 
   it("has purchased items (needs receipt)", () => {
-    expect(requestNextAction("in_purchasing", ["purchased"])).toContain("recepción")
+    expect(requestNextAction("in_purchasing", ["purchased"])).toContain("Falta que lleguen")
   })
 
   it("does not require worker delivery to complete a fully received acquisition", () => {
@@ -98,7 +100,7 @@ describe("requestNextAction", () => {
   })
 
   it("closed request with received items has no pending action", () => {
-    expect(requestNextAction("closed", ["received"])).toBe("La solicitud ya no requiere acciones.")
+    expect(requestNextAction("closed", ["received"])).toContain("Adquisición cerrada")
   })
 
   it("closed request with all delivered items", () => {
@@ -156,9 +158,29 @@ describe("buildOcProgress", () => {
   })
 
   it("labels item status by received vs ordered quantity", () => {
-    expect(buildOcProgress("sent", [item(0)])?.items[0]?.statusLabel).toBe("Pendiente recepción")
-    expect(buildOcProgress("partially_received", [item(6)])?.items[0]?.statusLabel).toBe("Recepción parcial")
+    expect(buildOcProgress("sent", [item(0)])?.items[0]?.statusLabel).toBe("Pendiente de recepción")
+    expect(buildOcProgress("partially_received", [item(6)])?.items[0]?.statusLabel).toBe("Recibido parcial")
     expect(buildOcProgress("received", [item(12)])?.items[0]?.statusLabel).toBe("Recibido")
+  })
+
+  // ADQ-07: un ítem de una OC aún en Borrador decía "Pendiente recepción".
+  it("labels the items of an unsent order as pending emission, not pending receipt", () => {
+    expect(buildOcProgress("draft", [item(0)])?.items[0]?.statusLabel).toBe("OC por emitir")
+    expect(buildOcProgress("sent", [item(0)])?.items[0]?.statusLabel).toBe("Pendiente de recepción")
+  })
+
+  // ADQ-04: con la GDI ya despachada el texto seguía pidiendo despachar.
+  it("next step follows the live dispatch guide instead of asking to dispatch again", () => {
+    const sinGuia = buildOcProgress("office_received", [item(0)])
+    expect(sinGuia?.nextAction).toBe("Despacha los ítems a faena para completar la recepción.")
+
+    for (const audience of ["compras", "recepcion"] as const) {
+      const despachada = buildOcProgress("office_received", [item(0)], audience, { activeGuideStatus: "dispatched" })
+      expect(despachada?.nextAction).toContain("confirmar la llegada a faena")
+      expect(despachada?.nextAction).not.toMatch(/Despacha los ítems/)
+      const borrador = buildOcProgress("office_received", [item(0)], audience, { activeGuideStatus: "draft" })
+      expect(borrador?.nextAction).toContain("Completa el despacho")
+    }
   })
 
   it("preserves the selected product attributes in the shared progress item", () => {
@@ -216,7 +238,7 @@ describe("buildRequestProgress", () => {
 
     expect(result.currentStage).toBe("Recepción")
     expect(result.completedStages).toEqual(["Solicitado", "Aprobación", "Compra"])
-    expect(result.nextAction).toContain("Esperando recepción")
+    expect(result.nextAction).toBe("Falta que lleguen los ítems del proveedor.")
   })
 
   it("does not let a rejected item hold back another item waiting for receipt", () => {
@@ -227,7 +249,7 @@ describe("buildRequestProgress", () => {
 
     expect(result.currentStage).toBe("Recepción")
     expect(result.completedStages).toEqual(["Solicitado", "Aprobación", "Compra"])
-    expect(result.nextAction).toBe("Esperando recepción en oficina o bodega.")
+    expect(result.nextAction).toBe("Falta que lleguen los ítems del proveedor.")
   })
 
   it("keeps a closed request with only rejected items at the approval stage", () => {
@@ -247,7 +269,7 @@ describe("buildRequestProgress", () => {
 
     expect(result.currentStage).toBe("Recepción")
     expect(result.completedStages).toEqual(["Solicitado", "Aprobación", "Compra", "Recepción"])
-    expect(result.nextAction).toBe("La solicitud ya no requiere acciones.")
+    expect(result.nextAction).toContain("Adquisición cerrada")
   })
 
   it("returns Entrega stage for closed request", () => {
@@ -264,7 +286,7 @@ describe("buildRequestProgress", () => {
     ])
     expect(result.currentStage).toBe("Recepción")
     expect(result.completedStages).toContain("Recepción")
-    expect(result.nextAction).toBe("La solicitud ya no requiere acciones.")
+    expect(result.nextAction).toContain("Adquisición cerrada")
   })
 
   it("formats items with correct labels", () => {

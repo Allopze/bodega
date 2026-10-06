@@ -46,3 +46,39 @@ export function approvalQueueFilter(scope: {
         : sql`false`,
   )
 }
+
+/** Tipos que se aprueban eligiendo una cotización, no ítem a ítem (ADQ-05). */
+export const QUOTATION_APPROVAL_REQUEST_TYPES = ["repuestos", "servicios"] as const
+export type QuotationApprovalRequestType = (typeof QUOTATION_APPROVAL_REQUEST_TYPES)[number]
+
+/**
+ * Cola complementaria: solicitudes de repuestos/servicios que esperan que alguien
+ * ELIJA una cotización en su detalle (`selectQuotation` aprueba los ítems).
+ *
+ * Es el espejo de `approvalQueueFilter` —mismo estado, mismo "queda algún ítem por
+ * decidir", mismo alcance de faena— pero sobre los tipos que aquella excluye a
+ * propósito. Va aparte para no tocar el predicado de la cola ítem-a-ítem, que
+ * comparte con el badge del rail. `types` son los tipos que el usuario puede
+ * aprobar (`repuestos:approve` / `servicios:approve`); vacío = cola vacía.
+ */
+export function quotationQueueFilter(
+  scope: { isGlobal: boolean; worksiteIds: string[] },
+  types: readonly QuotationApprovalRequestType[],
+): SQL | undefined {
+  if (types.length === 0) return sql`false`
+  return and(
+    inArray(purchaseRequests.status, ["submitted", "in_review", "partially_approved"]),
+    inArray(purchaseRequests.requestType, [...types]),
+    sql`exists (
+      select 1
+      from purchase_request_items pending_items
+      where pending_items.request_id = ${purchaseRequests.id}
+        and pending_items.status = 'requested'
+    )`,
+    scope.isGlobal
+      ? undefined
+      : scope.worksiteIds.length > 0
+        ? inArray(purchaseRequests.worksiteId, scope.worksiteIds)
+        : sql`false`,
+  )
+}

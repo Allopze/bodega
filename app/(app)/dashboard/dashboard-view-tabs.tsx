@@ -20,16 +20,21 @@ import { isDomainView, type DashboardView } from "./dashboard-views"
  * Estas son `<Link>` a `?vista=`, así que cada una es un render de servidor con
  * sus propias consultas y ninguna otra.
  *
- * Dos taxonomías, dos niveles. `Resumen` y `Mi trabajo` son **modos de mirar**;
- * los dominios son **lugares**. Con los nueve como pestañas hermanas había que
- * leerlas todas para descubrir que no eran comparables, y ocupaban una banda
- * entera. Los dominios viven ahora en un desplegable que se rotula con el
- * activo, así que la vista actual sigue siendo legible sin abrirlo.
+ * Dos niveles. `Resumen` es el **modo de mirar** por defecto (el bloque "Hoy" y
+ * el panorama); las áreas son **lugares**. "Mi trabajo" ya no es una pestaña: la
+ * cola vive en `/pendientes` y su resumen en "Hoy". Las áreas viven en un
+ * desplegable que, con una activa, dice **qué es y cuál está elegida**
+ * ("Por área: Bodega") y lleva `aria-current`; antes decía sólo "Bodega" y no
+ * se leía como un selector. Cada ítem trae una línea que explica qué cifras
+ * contiene, porque los nombres solos no bastan para elegir.
  *
  * El desplegable dice "Por área" y no "Dominio": `dominio` es la palabra del
- * código (`dashboard-domains.ts`), no la del usuario — `components/layout/areas.ts`
- * ya llama **áreas** a estas mismas agrupaciones y son los iconos del rail, así
- * que es la palabra que el usuario tiene delante todo el día.
+ * código (`dashboard-domains.ts`), no la del usuario. Ojo: "área" aquí es sólo
+ * "agrupación por tema". Los rótulos de cada vista siguen al sidebar donde el
+ * contenido mapea (Control operacional, Bodega, Prevención…) y el cuadro de
+ * `dashboard-domains.ts` documenta cuáles son y cuáles no — el comentario
+ * anterior afirmaba que las vistas ya coincidían con `components/layout/
+ * areas.ts` y no era cierto (INI-09).
  *
  * No es `sticky`: era la segunda capa pegada del pozo y su fondo `--color-bg`
  * con `backdrop-blur` dejaba una franja gris sobre el blanco del `<main>`.
@@ -37,12 +42,9 @@ import { isDomainView, type DashboardView } from "./dashboard-views"
 export function DashboardViewTabs({
   views,
   scope,
-  workCount,
 }: {
   views: DashboardView[]
   scope: DashboardScope
-  /** Total de la cola, para la insignia de "Mi trabajo". `null` la omite. */
-  workCount: number | null
 }) {
   // Una sola vista no es un selector: es una etiqueta.
   if (views.length < 2) return null
@@ -56,28 +58,28 @@ export function DashboardViewTabs({
       {modes.map((view) => (
         <Tab key={view.key} href={dashboardScopeHref(scope, { view: view.key })} active={view.key === scope.view}>
           {view.title}
-          {view.key === "trabajo" && workCount !== null && workCount > 0 && (
-            <span className="ml-1.5 rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-[var(--color-text-muted)]">
-              {workCount}
-            </span>
-          )}
         </Tab>
       ))}
 
       {domains.length > 0 && (
         <DropdownMenu>
-          <DropdownMenuTrigger className={cn(tabClassName(Boolean(activeDomain)), "gap-1")}>
-            {activeDomain?.title ?? "Por área"}
+          <DropdownMenuTrigger
+            aria-current={activeDomain ? "page" : undefined}
+            className={cn(tabClassName(Boolean(activeDomain)), "gap-1")}
+          >
+            {activeDomain ? `Por área: ${activeDomain.title}` : "Por área"}
             <CaretDown size={13} weight="bold" aria-hidden />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
+          <DropdownMenuContent align="start" className="w-72">
             {domains.map((view) => (
               <DropdownMenuItem key={view.key} asChild>
                 <Link
                   href={dashboardScopeHref(scope, { view: view.key })}
                   aria-current={view.key === scope.view ? "page" : undefined}
+                  className="flex flex-col items-start gap-0.5 py-2"
                 >
-                  {view.title}
+                  <span className="text-sm font-semibold">{view.title}</span>
+                  <span className="text-xs font-normal leading-4 text-[var(--color-text-muted)]">{view.description}</span>
                 </Link>
               </DropdownMenuItem>
             ))}

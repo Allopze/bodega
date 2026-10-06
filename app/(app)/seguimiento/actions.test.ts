@@ -146,6 +146,6 @@ describe("acciones del ledger de integridad operacional", () => {
   it("revalida las vistas operacionales tras una mutación exitosa", async () => {
     await acknowledgeOperationalIntegrityCaseAction(INITIAL, form({ caseId: "case-0001", reason: "Revisado con bodega en terreno" }))
 
-    expect(mockRevalidateOperationalViews).toHaveBeenCalledWith(["/bodega/trazabilidad"])
+    expect(mockRevalidateOperationalViews).toHaveBeenCalledWith(["/seguimiento"])
   })
 })

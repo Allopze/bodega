@@ -153,11 +153,13 @@ test.describe.serial("PDTP — asignación nominal por faena", () => {
     await expect(row.getByText(`Asignada a: ${ASSIGNED_USER.name}`)).toBeVisible()
   })
 
-  test("con asignado, la ve él en /pendientes con su nombre y deja de verla el otro jefe de terreno", async ({ page }) => {
+  // /pendientes ya no rotula «Asignada a …» (2026-10-05: decisión de producto,
+  // sin responsables genéricos en la cola). Lo que se prueba es el alcance: la
+  // ve el asignado y deja de verla el otro jefe de terreno.
+  test("con asignado, la ve él en /pendientes y deja de verla el otro jefe de terreno", async ({ page }) => {
     await login(page, ASSIGNED_USER.email)
     await page.goto("/pendientes")
     await expect(page.getByText(ACTIVITY_NAME).first()).toBeVisible()
-    await expect(page.getByText(`Asignada a ${ASSIGNED_USER.name}`).first()).toBeVisible()
     await cerrarSesion(page)
 
     // El cambio delicado de la fase: el otro del mismo cargo deja de verla.

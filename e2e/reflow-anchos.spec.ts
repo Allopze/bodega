@@ -28,7 +28,7 @@ const PANTALLAS = [
   { path: "/compras", name: "Compras" },
   { path: "/recepcion", name: "Recepción" },
   { path: "/entregas", name: "Entregas" },
-  { path: "/trazabilidad", name: "Trazabilidad" },
+  { path: "/seguimiento", name: "Seguimiento de solicitudes" },
   { path: "/bodega", name: "Bodega" },
   { path: "/prevencion/capa", name: "CAPA" },
   { path: "/prevencion/pdtp", name: "PDTP Programas" },

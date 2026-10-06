@@ -149,7 +149,7 @@ describe("la vista viaja en la URL", () => {
   })
 
   it("toma el primer valor si `vista` viene repetida", () => {
-    expect(parseDashboardScope({ vista: ["trabajo", "flota"] }, WORKSITES, ALL_VIEWS).view).toBe("trabajo")
+    expect(parseDashboardScope({ vista: ["flota", "finanzas"] }, WORKSITES, ALL_VIEWS).view).toBe("flota")
   })
 })
 

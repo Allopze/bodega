@@ -39,4 +39,19 @@ describe("DeliveriesTable", () => {
 
     expect(screen.getAllByText(/Regularizada/i).length).toBeGreaterThanOrEqual(1)
   })
+
+  it("mueve Anular a un menú de la fila en vez de un botón rojo por entrega", () => {
+    render(<DeliveriesTable deliveries={[row]} canVoid />)
+
+    expect(screen.queryByRole("button", { name: /^Anular/ })).toBeNull()
+    expect(screen.getAllByRole("button", { name: "Más acciones de la entrega ENT-2026-0001" }).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it("no ofrece acciones de anulación sin permiso o con la entrega ya anulada", () => {
+    const { rerender } = render(<DeliveriesTable deliveries={[row]} />)
+    expect(screen.queryByRole("button", { name: /Más acciones/ })).toBeNull()
+
+    rerender(<DeliveriesTable deliveries={[{ ...row, voidedAt: "2026-06-30T12:00:00.000Z", voidReason: "Talla equivocada" }]} canVoid />)
+    expect(screen.queryByRole("button", { name: /Más acciones/ })).toBeNull()
+  })
 })

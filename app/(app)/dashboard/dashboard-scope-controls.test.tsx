@@ -89,4 +89,19 @@ describe("DashboardScopeControls — alcance global", () => {
     expect(screen.queryByRole("combobox", { name: "Faena del tablero" })).toBeNull()
     expect(screen.getByRole("link", { name: "Trimestre" })).toBeDefined()
   })
+
+  // INI-05: en las vistas donde nada responde al período, el selector es ruido.
+  it("sin cifras que respondan al período, un rótulo fijo ocupa el lugar del selector", () => {
+    renderHeader({ periodResponsive: false })
+
+    expect(screen.queryByRole("link", { name: "Trimestre" })).toBeNull()
+    expect(screen.getByText("Estado al día de hoy")).toBeDefined()
+  })
+
+  it("por defecto el selector de período se muestra", () => {
+    renderHeader()
+
+    expect(screen.getByRole("link", { name: "Trimestre" })).toBeDefined()
+    expect(screen.queryByText("Estado al día de hoy")).toBeNull()
+  })
 })

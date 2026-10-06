@@ -71,3 +71,13 @@ export function suggestedSupplierLabel(
     : null
   return suggestedSupplier ? suggestedSupplier.name : (item.supplierHint ?? null)
 }
+
+/**
+ * El envío dice cuántas OC nacen, no sólo cuántos ítems entran: con ítems de
+ * dos proveedores el botón anunciaba «Crear OC (5 ítems)» y el resumen de al
+ * lado decía «2 OC». Con una sola OC se conserva el rótulo de siempre.
+ */
+export function ocSubmitLabel(itemCount: number, orderCount: number): string {
+  const items = `${itemCount} ítem${itemCount !== 1 ? "s" : ""}`
+  return orderCount > 1 ? `Crear ${orderCount} OC · ${items}` : `Crear OC (${items})`
+}

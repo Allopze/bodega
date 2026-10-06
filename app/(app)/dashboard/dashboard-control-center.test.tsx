@@ -66,10 +66,63 @@ describe("DashboardResumenBody", () => {
     expect(screen.getByRole("region", { name: "Flujo del trimestre" })).toBeDefined()
   })
 
-  // El aside es lectura de apoyo: sin alertas dice que no hay, no desaparece.
-  it("sin alertas confirma el estado en vez de dejar el hueco", () => {
+  // "Hoy" va primero y, sin nada urgente, lo dice con un enlace real a la cola.
+  it("sin alertas ni pendientes dice que no hay nada urgente y ofrece la cola", () => {
     renderResumen()
 
-    expect(screen.getByText("No hay alertas operacionales activas")).toBeDefined()
+    expect(screen.getByText("Nada urgente hoy en tus faenas")).toBeDefined()
+    expect(screen.getByRole("link", { name: "Ver mis pendientes" })).toHaveAttribute("href", "/pendientes")
+  })
+
+  it("nombra la faena elegida en el estado vacío", () => {
+    renderResumen({ scope: { ...scope, worksiteId: "ws-1", worksiteName: "Faena Norte" }, pendientesHref: "/pendientes?worksiteId=ws-1" })
+
+    expect(screen.getByText("Nada urgente hoy en Faena Norte")).toBeDefined()
+    expect(screen.getByRole("link", { name: "Ver mis pendientes" })).toHaveAttribute("href", "/pendientes?worksiteId=ws-1")
+  })
+
+  it("Hoy es lo primero del DOM: va antes que los indicadores", () => {
+    const { container } = renderResumen({
+      metrics: [{ key: "spend", label: "Gasto en OC", value: "$0", description: "x", icon: "investment" }],
+    })
+
+    const hoy = container.querySelector("#hoy-titulo")!
+    const panorama = container.querySelector("#indicadores-operacionales")!
+    expect(hoy.compareDocumentPosition(panorama) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("las alertas son enlaces a su subconjunto y dicen su severidad en texto", () => {
+    renderResumen({
+      alerts: [{ key: "overdue", title: "tareas vencidas", description: "Ya pasó su fecha de vencimiento.", count: 215, severity: "critical", href: "/pendientes?quick=overdue" }],
+      pendingTotal: 331,
+    })
+
+    const alert = screen.getByRole("link", { name: /215.*tareas vencidas/ })
+    expect(alert).toHaveAttribute("href", "/pendientes?quick=overdue")
+    expect(alert).toHaveTextContent("Crítica")
+  })
+
+  it("muestra las filas urgentes y UN solo enlace a Mis pendientes con el total", () => {
+    renderResumen({
+      todayItems: [
+        { id: "a", title: "Recibir OC-2026-0001", context: "Recepciones · Faena Norte", href: "/compras/1", ctaLabel: "Recibir", dueLabel: "Vencida hace 74 días", due: "overdue", critical: false },
+        { id: "b", title: "Aprobar Cinta", context: "Aprobaciones · Faena Sur", href: "/aprobaciones", ctaLabel: "Aprobar", dueLabel: "Vence hoy", due: "today", critical: true },
+      ],
+      pendingTotal: 331,
+    })
+
+    expect(screen.getByText("Vencida hace 74 días")).toBeDefined()
+    expect(screen.getByText("Vence hoy")).toBeDefined()
+    const links = screen.getAllByRole("link", { name: "Ver todos mis pendientes (331)" })
+    expect(links).toHaveLength(1)
+    expect(links[0]).toHaveAttribute("href", "/pendientes")
+    // Ninguno de los nombres que la cola tuvo antes.
+    expect(screen.queryByText(/Cola de trabajo|Mi trabajo|Tareas pendientes/)).toBeNull()
+  })
+
+  it("sin permiso de cola no ofrece el enlace ni las filas", () => {
+    renderResumen({ queueVisible: false })
+
+    expect(screen.queryByRole("link", { name: /pendientes/i })).toBeNull()
   })
 })

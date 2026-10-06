@@ -48,3 +48,14 @@ export interface ApprovalRequest {
   pendingItems:    ApprovalItem[]
   pendingCount:    number
 }
+
+/** ADQ-05 · solicitud de repuestos/servicios que espera que se elija una cotización. */
+export interface QuotationPendingRequest {
+  id:            string
+  code:          string
+  requestType:   string
+  worksiteName:  string
+  itemCount:     number
+  /** Días desde que se envió; `null` si no hay fecha de envío. */
+  ageDays:       number | null
+}

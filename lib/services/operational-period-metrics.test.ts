@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildOperationalPeriodComparison, getOperationalCalendarBounds } from "./operational-period-metrics"
+import { buildOperationalPeriodComparison, getOperationalCalendarBounds, ISSUED_ORDER_STATUSES, issuedOrderPredicate } from "./operational-period-metrics"
 
 describe("operational period metrics", () => {
   it("uses the Chile calendar month at a UTC month boundary", () => {
@@ -60,5 +60,21 @@ describe("operational period metrics", () => {
       expect(implicit).toEqual(explicit)
       expect(implicit.currentStart).toBe("2026-05-01T00:00:00.000Z")
     })
+  })
+})
+
+// INI-01 (auditoría 2026-10-05): una sola definición de "OC emitida" para el
+// Resumen, Adquisiciones, Finanzas y el gráfico de tendencia.
+describe("definición única de OC emitida", () => {
+  it("cuenta lo que salió de borrador y excluye anuladas", () => {
+    expect(ISSUED_ORDER_STATUSES).toEqual(
+      expect.arrayContaining(["sent", "partially_office_received", "office_received", "partially_received", "received", "closed"]),
+    )
+    expect(ISSUED_ORDER_STATUSES).not.toContain("draft")
+    expect(ISSUED_ORDER_STATUSES).not.toContain("cancelled")
+  })
+
+  it("el predicado existe y es reutilizable en cualquier consulta de OC", () => {
+    expect(issuedOrderPredicate()).toBeDefined()
   })
 })

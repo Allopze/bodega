@@ -11,6 +11,7 @@ import {
   dashboardScopeHref,
   type DashboardScope,
 } from "./dashboard-scope"
+import { PERIOD_FIXED_LABEL } from "./dashboard-views"
 
 /**
  * Los dos únicos filtros del dashboard: faena y período. Reencuadran **todo** el
@@ -34,6 +35,7 @@ export function DashboardScopeControls({
   scope,
   worksites,
   allWorksitesLabel,
+  periodResponsive = true,
 }: {
   scope: DashboardScope
   /** Faenas activas autorizadas, no sólo las que tienen trabajo pendiente. */
@@ -45,6 +47,12 @@ export function DashboardScopeControls({
    * —un rol con faenas acotadas—, y eso es exactamente esta etiqueta.
    */
   allWorksitesLabel: string
+  /**
+   * INI-05: `false` cuando ninguna cifra de la vista activa cambia con el
+   * período. En su lugar va un rótulo fijo en el mismo sitio, para que la fila
+   * no salte al cambiar de pestaña.
+   */
+  periodResponsive?: boolean
 }) {
   useWorksiteFilterPresence(worksites.length > 1)
   const router = useRouter()
@@ -90,16 +98,22 @@ export function DashboardScopeControls({
         />
       )}
 
-      <SegmentedControl
-        variant="segmented"
-        ariaLabel="Período del tablero"
-        items={DASHBOARD_PERIODS.map((period) => ({
-          key: period.value,
-          label: period.label,
-          href: dashboardScopeHref(scope, { period: period.value }),
-          active: scope.period === period.value,
-        }))}
-      />
+      {periodResponsive ? (
+        <SegmentedControl
+          variant="segmented"
+          ariaLabel="Período del tablero"
+          items={DASHBOARD_PERIODS.map((period) => ({
+            key: period.value,
+            label: period.label,
+            href: dashboardScopeHref(scope, { period: period.value }),
+            active: scope.period === period.value,
+          }))}
+        />
+      ) : (
+        <span className="inline-flex h-11 items-center text-[13px] text-[var(--color-text-muted)] sm:h-9">
+          {PERIOD_FIXED_LABEL}
+        </span>
+      )}
     </div>
   )
 }

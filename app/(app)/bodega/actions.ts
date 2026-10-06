@@ -5,7 +5,11 @@ import { safeActionMessage } from "@/lib/action-error"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { closePhysicalInventoryCount, savePhysicalInventoryDraft } from "@/lib/services/physical-inventory"
-import { registerStockAdjustment, registerStockDiscard, registerStockReturn } from "@/lib/services/stock"
+import { registerStockDiscard, registerStockReturn } from "@/lib/services/stock"
+import { registerStockDocumentTx } from "@/lib/services/stock-movement"
+import { db } from "@/db"
+import { worksites, worksiteStock } from "@/db/schema"
+import { and, eq } from "drizzle-orm"
 import {
   returnStockSchema, adjustStockSchema,
   discardStockSchema, type ActionState,
@@ -54,8 +58,7 @@ export async function adjustStockAction(
   const parsed = adjustStockSchema.safeParse({
     worksiteId: formData.get("worksiteId"),
     productId:  formData.get("productId"),
-    quantity:   formData.get("quantity"),
-    direction:  formData.get("direction"),
+    countedQuantity: formData.get("countedQuantity"),
     reason:     formData.get("reason"),
     notes:      formData.get("notes"),
   })
@@ -68,29 +71,56 @@ export async function adjustStockAction(
     }
   }
 
-  const { worksiteId, productId, quantity, direction, reason, notes } = parsed.data
+  const { worksiteId, productId, countedQuantity, reason, notes } = parsed.data
 
   if (!canAccessWorksite(session, worksiteId)) {
     return { ok: false, message: "No tienes acceso a esta faena" }
   }
 
-  const delta = direction === "ingreso" ? quantity : -quantity
-
   try {
-    const adjustment = await registerStockAdjustment({
-      worksiteId,
-      productId,
-      type: "ajuste",
-      quantity: delta,
-      performedBy: session.user.id,
-      userEmail: session.user.email ?? undefined,
-      reason,
-      notes: notes || undefined,
+    // BOD-04 (auditoría 2026-10-05): el delta se calcula AQUÍ, dentro de la
+    // transacción, contra el saldo bloqueado (`FOR UPDATE`). Un delta calculado
+    // en el cliente sobre un saldo que otro movimiento ya cambió dejaba el
+    // stock en un número que nadie contó. El contrato del servicio de stock
+    // sigue siendo "cantidad con signo".
+    const outcome = await db.transaction(async (tx) => {
+      // Mismo orden de locks que `applyMovementTx` (faena y luego saldo): al
+      // revés, un cierre de faena concurrente podía dejar ambas a la espera.
+      await tx.select({ id: worksites.id }).from(worksites).where(eq(worksites.id, worksiteId)).for("share")
+      const [stock] = await tx
+        .select({ quantity: worksiteStock.quantity })
+        .from(worksiteStock)
+        .where(and(
+          eq(worksiteStock.worksiteId, worksiteId),
+          eq(worksiteStock.productId, productId),
+        ))
+        .for("update")
+      const before = stock?.quantity ?? 0
+      const delta = Math.round((countedQuantity - before) * 1000) / 1000
+      if (delta === 0) {
+        throw new Error(`El stock ya es ${before}: no hay nada que ajustar`)
+      }
+      const adjustment = await registerStockDocumentTx(tx, {
+        kind: "ajuste",
+        worksiteId,
+        productId,
+        type: "ajuste",
+        quantity: delta,
+        performedBy: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        reason,
+        notes: notes || undefined,
+      })
+      return { adjustment, before, delta }
     })
 
     revalidateOperationalViews([REVALIDATE])
-    const sign = direction === "ingreso" ? "+" : "-"
-    return { ok: true, message: `Ajuste ${adjustment.code} registrado: ${sign}${quantity} unidades` }
+    const { adjustment, before, delta } = outcome
+    const sign = delta > 0 ? "+" : "-"
+    return {
+      ok: true,
+      message: `Ajuste ${adjustment.code} registrado: stock ${before} → ${countedQuantity} (${sign}${Math.abs(delta)})`,
+    }
   } catch (e) {
     logger.error("[adjustStockAction]", e)
     return { ok: false, message: safeActionMessage(e, "Error al registrar ajuste") }
@@ -174,7 +204,7 @@ export async function closePhysicalInventoryCountAction(
       serviceWorksiteScope(session),
     )
 
-    revalidateOperationalViews([REVALIDATE, "/trazabilidad"])
+    revalidateOperationalViews([REVALIDATE, "/seguimiento"])
     return {
       ok: true,
       message: `Conteo ${result.code} cerrado con ${result.adjustmentCount} ajuste${result.adjustmentCount === 1 ? "" : "s"}`,

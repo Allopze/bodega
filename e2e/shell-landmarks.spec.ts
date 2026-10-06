@@ -41,7 +41,7 @@ const REGLAS_DE_LANDMARK = [
 ]
 
 const RUTAS = [
-  { path: "/dashboard", name: "Inicio (ruta canónica, con buscador de shell)" },
+  { path: "/dashboard", name: "Inicio (ruta canónica, sin lista que filtrar: sin buscador de shell)" },
   { path: "/prevencion/inspecciones", name: "Inspecciones (acciones en la TopBar, sin buscador de shell)" },
   // `FORM_ROUTE` en `top-bar.tsx`: la cabecera esconde el buscador, así que es
   // el caso en que el contenido del `banner` más cambia.
@@ -70,7 +70,9 @@ test.describe("Shell — landmarks", () => {
 
   test("el cromo global vive en el banner, no en el landmark del contenido", async ({ page }) => {
     await login(page)
-    await page.goto("/dashboard")
+    // Inicio ya no ofrece el buscador del shell (TRV-04: sin lista que filtrar),
+    // así que la prueba usa una lista que sí lo muestra.
+    await page.goto("/ti/activos")
     const banner = page.getByRole("banner")
     await expect(banner).toBeVisible({ timeout: 30_000 })
 

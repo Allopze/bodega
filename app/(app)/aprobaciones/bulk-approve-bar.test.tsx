@@ -18,6 +18,11 @@ afterEach(() => {
 })
 
 describe("BulkApproveBar", () => {
+  it("anuncia el conteo de la selección en una región en vivo", () => {
+    render(<BulkApproveBar selectedIds={["a", "b"]} onClear={vi.fn()} />)
+    expect(screen.getAllByRole("status").some((el) => el.textContent === "2 ítems seleccionados")).toBe(true)
+  })
+
   /*
    * La barra sigue montada entre aprobaciones. La guarda que evita repetir el
    * aviso comparaba el texto del mensaje, así que dos aprobaciones seguidas con

@@ -9,6 +9,7 @@ import {
   HardHat,
   Package,
 } from "@phosphor-icons/react"
+import { TRACEABILITY_ALL_WORKSITES } from "@/lib/services/trazabilidad-consolidated-scope"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import type { ConsolidatedFaenaKPIs } from "@/lib/services/trazabilidad-consolidated"
@@ -53,7 +54,8 @@ function hrefForModule(
   patch: Record<string, string> = {},
 ) {
   const params = new URLSearchParams()
-  if (filters?.faena) params.set("faena", filters.faena)
+  // "Todas las faenas" no es una faena: las otras bandejas la leerían como un id inexistente.
+  if (filters?.faena && filters.faena !== TRACEABILITY_ALL_WORKSITES) params.set("faena", filters.faena)
   for (const [k, v] of Object.entries(patch)) if (v) params.set(k, v)
   const query = params.toString()
   return query ? `${path}?${query}` : path
@@ -110,7 +112,7 @@ export function ConsolidatedKpis({ kpis, filters, filtered = false }: Props) {
       value: kpis.fullyDelivered,
       detail: "Solicitudes con la entrega completa",
       icon: <CheckCircle size={14} weight="bold" />,
-      href: hrefForModule("/bodega/trazabilidad", filters, { estado: "entregado" }),
+      href: hrefForModule("/seguimiento", filters, { estado: "entregado" }),
     },
   ]
 

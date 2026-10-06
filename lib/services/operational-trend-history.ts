@@ -10,11 +10,12 @@
  * alimentar gráficos de tendencia con 6+ puntos de datos.
  */
 
-import { and, count, eq, gte, isNotNull, lt, sql } from "drizzle-orm"
+import { and, count, eq, gte, lt, sql } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import { deliveries, purchaseOrders, purchaseRequests, receipts } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { issuedOrderPredicate } from "./operational-period-metrics"
 import { MONTH_LABELS } from "@/lib/utils"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -113,7 +114,8 @@ export async function getOperationalTrendHistory(
       .from(purchaseOrders)
       .where(and(
         orderScope,
-        isNotNull(purchaseOrders.issuedAt),
+        // INI-01: misma definición de "OC emitida" que el resto del tablero.
+        issuedOrderPredicate(),
         gte(purchaseOrders.issuedAt, dateKey(globalStart)),
         lt(purchaseOrders.issuedAt, dateKey(globalEnd)),
       ))
@@ -151,7 +153,8 @@ export async function getOperationalTrendHistory(
       .from(purchaseOrders)
       .where(and(
         orderScope,
-        isNotNull(purchaseOrders.issuedAt),
+        // INI-01: misma definición de "OC emitida" que el resto del tablero.
+        issuedOrderPredicate(),
         gte(purchaseOrders.issuedAt, dateKey(globalStart)),
         lt(purchaseOrders.issuedAt, dateKey(globalEnd)),
       ))

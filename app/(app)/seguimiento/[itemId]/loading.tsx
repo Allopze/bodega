@@ -5,13 +5,12 @@ export default function Loading() {
   return (
     <>
       <PageHeader
-        title="Detalle de ítem (Trazabilidad)"
+        title="Detalle de ítem"
         breadcrumb={
           <Breadcrumbs
             items={[
               { label: "Inicio", href: "/dashboard" },
-              { label: "Bodega", href: "/bodega" },
-              { label: "Trazabilidad", href: "/bodega/trazabilidad" },
+              { label: "Seguimiento de solicitudes", href: "/seguimiento" },
               { label: "Detalle" },
             ]}
           />

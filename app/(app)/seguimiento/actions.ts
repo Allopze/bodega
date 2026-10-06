@@ -44,7 +44,7 @@ export async function scanTraceabilityIntegrityAction(
 
   try {
     const { findings, recordedCount, reopenedCount } = await scanTraceabilityIntegrity(session)
-    revalidatePath("/bodega/trazabilidad")
+    revalidatePath("/seguimiento")
     // TRZ-002: una reapertura es noticia distinta de un caso nuevo — significa
     // que algo que se dio por regularizado sigue descuadrado.
     const reopenedNote = reopenedCount > 0
@@ -86,7 +86,7 @@ export async function resolveTraceabilityIntegrityCaseAction(
       userEmail: session.user.email,
       session,
     })
-    revalidatePath("/bodega/trazabilidad")
+    revalidatePath("/seguimiento")
     return { ok: true, message: "La excepción quedó regularizada con evidencia append-only" }
   } catch (error) {
     return { ok: false, message: safeActionMessage(error, "No fue posible regularizar la excepción") }
@@ -130,7 +130,7 @@ export async function scanOperationalIntegrityAction(
 
   try {
     const { found, recorded } = await scanOperationalIntegrity(session, [...parsed.data.domains])
-    revalidateOperationalViews(["/bodega/trazabilidad"])
+    revalidateOperationalViews(["/seguimiento"])
     // PER-T02: la cola de integridad tiene caché propia; la invalida su propia
     // acción para que el usuario vea el efecto sin esperar el TTL.
     revalidateOperationalIntegrityBoard()
@@ -163,7 +163,7 @@ export async function acknowledgeOperationalIntegrityCaseAction(
 
   try {
     await acknowledgeOperationalIntegrityCase(session, parsed.data.caseId, parsed.data.reason)
-    revalidateOperationalViews(["/bodega/trazabilidad"])
+    revalidateOperationalViews(["/seguimiento"])
     // PER-T02: la cola de integridad tiene caché propia; la invalida su propia
     // acción para que el usuario vea el efecto sin esperar el TTL.
     revalidateOperationalIntegrityBoard()
@@ -188,7 +188,7 @@ export async function verifyOperationalIntegrityCaseAction(
     // Cerrar es potestad del detector, no de quien aprieta el botón: si la
     // evidencia sigue ahí, la acción informa que el caso continúa abierto.
     const { resolved } = await verifyOperationalIntegrityCase(session, parsed.data)
-    revalidateOperationalViews(["/bodega/trazabilidad"])
+    revalidateOperationalViews(["/seguimiento"])
     // PER-T02: la cola de integridad tiene caché propia; la invalida su propia
     // acción para que el usuario vea el efecto sin esperar el TTL.
     revalidateOperationalIntegrityBoard()

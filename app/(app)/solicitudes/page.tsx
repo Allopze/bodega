@@ -12,7 +12,9 @@ import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { eqFilter, parseListParams, periodSql, statusSql } from "@/lib/adquisiciones/list-query"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { solicitudesSearchSql } from "@/lib/adquisiciones/solicitudes-filter"
-import type { StageTab } from "@/components/ui/stage-tabs"
+import { buildRequestProgress } from "@/lib/work-queue"
+import type { RequestProgress } from "@/lib/work-queue.types"
+import { buildStageTabs, exportStatusesFor, requestStageSql, splitStageFilter, stageFilterSql } from "./request-stage"
 import { buildUrgencySignal, CRITICAL_URGENCY } from "./urgency-signal"
 import { RequestList } from "./request-list"
 import { SolicitudesActions } from "./solicitudes-actions"
@@ -20,18 +22,6 @@ import { SolicitudesActions } from "./solicitudes-actions"
 export const metadata: Metadata = { title: "Solicitudes de compra" }
 
 import { SOLICITUDES_PAGE_SIZE } from "@/lib/constants"
-
-/**
- * Etapas visibles de una solicitud (A5: el estado se representa una sola vez).
- * "Borrador" sólo lo alcanzan repuestos y servicios, que adjuntan cotizaciones
- * antes de enviar; EPP y otros nacen en aprobación.
- */
-const STAGE_GROUPS = [
-  { value: "draft",                                          label: "Borrador" },
-  { value: "submitted,in_review",                            label: "En aprobación" },
-  { value: "approved,partially_approved,in_purchasing",      label: "En curso" },
-  { value: "closed,rejected,cancelled",                      label: "Cerradas" },
-] as const
 
 export default async function SolicitudesPage({
   searchParams,
@@ -98,7 +88,10 @@ export default async function SolicitudesPage({
    * recorte sin él: cada tab anuncia lo que entregaría al pulsarla.
    */
   const scopeWhere = and(contextWhere, eqFilter(purchaseRequests.urgency, listParams.urgencia))
-  const where = and(scopeWhere, statusSql(purchaseRequests.status, listParams.estados))
+  // `estado` admite claves de etapa (pestañas) y estados crudos de solicitud
+  // (enlaces del tablero); ver ./request-stage.
+  const { stages: stageFilter, statuses: statusFilter } = splitStageFilter(listParams.estados)
+  const where = and(scopeWhere, stageFilterSql(stageFilter), statusSql(purchaseRequests.status, statusFilter))
 
   // La urgencia crítica es la única señal del header: el estado ya se representa
   // una sola vez, en las tabs de etapa (regla A5). El chip "Borradores"
@@ -129,21 +122,13 @@ export default async function SolicitudesPage({
       .then((res) => res[0]),
 
     db
-      .select({ status: purchaseRequests.status, total: count() })
+      .select({ stage: sql<string>`${requestStageSql}`, total: count() })
       .from(purchaseRequests)
       .where(scopeWhere)
-      .groupBy(purchaseRequests.status),
+      .groupBy(sql`1`),
   ])
 
-  const countByStatus = Object.fromEntries(stageCountRows.map((row) => [row.status, row.total]))
-  const stageTabs: StageTab[] = [
-    { value: "", label: "Todas", count: stageCountRows.reduce((sum, row) => sum + row.total, 0) },
-    ...STAGE_GROUPS.map((group) => ({
-      value: group.value,
-      label: group.label,
-      count: group.value.split(",").reduce((sum, status) => sum + (countByStatus[status] ?? 0), 0),
-    })),
-  ]
+  const stageTabs = buildStageTabs(Object.fromEntries(stageCountRows.map((row) => [row.stage, row.total])))
 
   // REQ-004: el href era fijo y descartaba el contexto activo; ahora lo
   // conserva, y cuando el filtro ya está puesto el chip se marca activo y su
@@ -164,7 +149,7 @@ export default async function SolicitudesPage({
   if (listParams.q) exportParams.set("q", listParams.q)
   // `estados` es un arreglo: siempre truthy, así que el href llevaba `status=`
   // vacío incluso sin filtro de estado.
-  if (listParams.estados.length > 0) exportParams.set("status", listParams.estados.join(","))
+  if (listParams.estados.length > 0) exportParams.set("status", exportStatusesFor(listParams.estados).join(","))
   if (listParams.faena) exportParams.set("faena", listParams.faena)
   // REQ-003: el período se perdía en el camino a Excel, así que el archivo
   // traía todo el histórico aunque la pantalla mostrara un mes.
@@ -239,7 +224,7 @@ export default async function SolicitudesPage({
   const requesterIds = [...new Set(pageRequests.map((r) => r.requesterId))]
 
   // Batch load related data — only for the current page
-  const [wsRows, requesterRows, itemCounts] = await Promise.all([
+  const [wsRows, requesterRows, itemRows] = await Promise.all([
     db.select({ id: worksites.id, name: worksites.name })
       .from(worksites)
       .where(inArray(worksites.id, wsIds)),
@@ -248,15 +233,35 @@ export default async function SolicitudesPage({
       .from(users)
       .where(inArray(users.id, requesterIds)),
 
-    db.select({ requestId: purchaseRequestItems.requestId, total: count() })
+    // Un solo lote para toda la página: alimenta el conteo de ítems y la etapa
+    // de cada fila (`buildRequestProgress`) sin consultas por solicitud.
+    db.select({
+        id:        purchaseRequestItems.id,
+        requestId: purchaseRequestItems.requestId,
+        status:    purchaseRequestItems.status,
+      })
       .from(purchaseRequestItems)
-      .where(inArray(purchaseRequestItems.requestId, requestIds))
-      .groupBy(purchaseRequestItems.requestId),
+      .where(inArray(purchaseRequestItems.requestId, requestIds)),
   ])
 
   const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
   const userMap = Object.fromEntries(requesterRows.map((u) => [u.id, u.name ?? u.email ?? u.id]))
-  const cntMap = Object.fromEntries(itemCounts.map((c) => [c.requestId, c.total]))
+  const itemsByRequest = new Map<string, { id: string; status: string }[]>()
+  for (const item of itemRows) {
+    const list = itemsByRequest.get(item.requestId) ?? []
+    list.push(item)
+    itemsByRequest.set(item.requestId, list)
+  }
+  /** Etapa + qué falta; sin la lista de ítems, que la tabla no usa (menos payload al cliente). */
+  const progressFor = (requestId: string, status: string): RequestProgress => ({
+    ...buildRequestProgress(
+      status,
+      (itemsByRequest.get(requestId) ?? []).map((item) => ({
+        id: item.id, productName: "", status: item.status, quantity: 0, unitOfMeasure: "",
+      })),
+    ),
+    items: [],
+  })
 
   const rows = pageRequests.map((r) => ({
     id:             r.id,
@@ -265,7 +270,8 @@ export default async function SolicitudesPage({
     worksiteName:   wsMap[r.worksiteId] ?? r.worksiteId,
     urgency:        r.urgency,
     status:         r.status,
-    itemCount:      cntMap[r.id] ?? 0,
+    itemCount:      itemsByRequest.get(r.id)?.length ?? 0,
+    progress:       progressFor(r.id, r.status),
     submittedAt:    r.submittedAt,
     createdAt:      r.createdAt,
     requesterId:    r.requesterId,

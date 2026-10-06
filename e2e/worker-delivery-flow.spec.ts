@@ -29,8 +29,10 @@ async function abrirFormulario(page: Page) {
     await expect(sheet).toBeVisible({ timeout: 5_000 })
   }).toPass({ timeout: 60_000 })
 
-  await selectRadixById(page, "deliverySourceWorksite", FAENA)
-  await selectRadixById(page, "deliveryWorker", /Trabajador E2E/)
+  // Primero el trabajador ("¿a quién le entrego?"): la bodega de origen se
+  // deduce de su faena, así que ya no se elige a mano.
+  await selectRadixById(page, "deliveryWorker", new RegExp(`Trabajador E2E.*${FAENA}`))
+  await expect(page.locator("#deliverySourceWorksite")).toContainText(FAENA)
   return sheet
 }
 
@@ -44,6 +46,12 @@ async function agregarLinea(page: Page, cantidad: string) {
 function enviar(sheet: ReturnType<Page["getByRole"]>) {
   return sheet.getByRole("button", { name: "Registrar entrega" }).click()
 }
+
+test("entregas: ?nueva=1 abre el formulario de entrega", async ({ page }) => {
+  await login(page)
+  await page.goto("/entregas?nueva=1")
+  await expect(page.getByRole("dialog", { name: "Registrar entrega" })).toBeVisible({ timeout: 30_000 })
+})
 
 test("entregas: no deja agregar más de lo que hay en la bodega", async ({ page }) => {
   await abrirFormulario(page)

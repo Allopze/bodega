@@ -3,7 +3,9 @@ import {
   availableDashboardViews,
   DEFAULT_DASHBOARD_VIEW,
   isDomainView,
+  DASHBOARD_VIEW_KEYS,
   parseDashboardView,
+  viewRespondsToPeriod,
 } from "./dashboard-views"
 
 /**
@@ -28,22 +30,25 @@ describe("availableDashboardViews", () => {
     expect(keys).toEqual(["resumen"])
   })
 
-  it("Mi trabajo aparece sólo con `operations:view_work`", () => {
-    expect(availableDashboardViews(SOLICITANTE).map((v) => v.key)).not.toContain("trabajo")
+  // "Mi trabajo" se retiró: su lugar es el bloque "Hoy" del Resumen y la cola
+  // completa vive en /pendientes. Ni siquiera con el permiso reaparece.
+  it("ya no hay vista Mi trabajo, ni con `operations:view_work`", () => {
+    expect(DASHBOARD_VIEW_KEYS).not.toContain("trabajo")
     expect(availableDashboardViews([...SOLICITANTE, "operations:view_work"]).map((v) => v.key))
-      .toContain("trabajo")
+      .not.toContain("trabajo")
+    expect(parseDashboardView("trabajo", availableDashboardViews(JEFATURA))).toBe("resumen")
   })
 
   it("los dominios llegan en el orden que decide el perfil de permisos", () => {
     const keys = availableDashboardViews(JEFATURA).map((view) => view.key)
-    expect(keys.slice(0, 2)).toEqual(["resumen", "trabajo"])
+    expect(keys[0]).toBe("resumen")
     // `purchasing:view` manda la plata al frente.
-    expect(keys[2]).toBe("finanzas")
+    expect(keys[1]).toBe("finanzas")
   })
 
-  it("cada pestaña declara un rótulo corto: los títulos largos no caben en la barra", () => {
+  it("cada vista declara una descripción de una línea para el menú Por área", () => {
     for (const view of availableDashboardViews(JEFATURA)) {
-      expect(view.title.length).toBeLessThanOrEqual(16)
+      expect(view.description.length, view.key).toBeGreaterThan(10)
     }
   })
 })
@@ -70,9 +75,34 @@ describe("parseDashboardView", () => {
 })
 
 describe("isDomainView", () => {
-  it("separa las dos vistas propias de las de dominio", () => {
+  it("separa la vista propia de las de dominio", () => {
     expect(isDomainView("resumen")).toBe(false)
-    expect(isDomainView("trabajo")).toBe(false)
     expect(isDomainView("finanzas")).toBe(true)
+  })
+})
+
+// INI-05: el selector de período sólo se muestra donde alguna cifra responde.
+describe("viewRespondsToPeriod", () => {
+  it("decide todas las vistas: ninguna queda sin entrada en la tabla", () => {
+    for (const view of DASHBOARD_VIEW_KEYS) {
+      expect(typeof viewRespondsToPeriod(view, JEFATURA)).toBe("boolean")
+    }
+  })
+
+  it("Resumen y los dominios con consultas por período responden", () => {
+    for (const view of ["resumen", "finanzas", "adquisiciones", "bodega", "terreno"] as const) {
+      expect(viewRespondsToPeriod(view, JEFATURA)).toBe(true)
+    }
+  })
+
+  it("Prevención y Gobernanza son estado de hoy: el selector no aplica", () => {
+    for (const view of ["prevencion", "gobernanza"] as const) {
+      expect(viewRespondsToPeriod(view, JEFATURA)).toBe(false)
+    }
+  })
+
+  it("Flota responde sólo si el rol ve la tarjeta TAE, la única cifra que sigue al período", () => {
+    expect(viewRespondsToPeriod("flota", JEFATURA)).toBe(false)
+    expect(viewRespondsToPeriod("flota", [...JEFATURA, "combustibles:tae_view"])).toBe(true)
   })
 })

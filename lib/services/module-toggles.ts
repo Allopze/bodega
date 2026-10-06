@@ -131,13 +131,14 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "billing", submoduleHref: "/facturacion", prefix: "/api/facturacion" },
   { moduleId: "purchasing", submoduleHref: "/compras", prefix: "/api/purchase-orders" },
   { moduleId: "reports", submoduleHref: "/reportes", prefix: "/api/reportes" },
-  { moduleId: "warehouse", submoduleHref: "/bodega/trazabilidad", prefix: "/api/bodega/trazabilidad" },
-  { moduleId: "warehouse", submoduleHref: "/bodega/trazabilidad", prefix: "/api/trazabilidad" },
+  { moduleId: "warehouse", submoduleHref: "/seguimiento", prefix: "/api/bodega/trazabilidad" },
+  { moduleId: "warehouse", submoduleHref: "/seguimiento", prefix: "/api/trazabilidad" },
   // Trazabilidad se mudó bajo Bodega y `/trazabilidad/*` quedó como
-  // redirección. Las páginas legadas siguen siendo superficie del módulo: sin
+  // redirección; el 2026-10-05 pasó a Adquisiciones como `/seguimiento`
+  // (auditoría UI/UX), y el dueño de estos prefijos es ahora ese ítem. Las páginas legadas siguen siendo superficie del módulo: sin
   // esto quedaban fuera del inventario y el toggle no las alcanzaba. El prefijo
   // de la API ya estaba; faltaba el de las páginas.
-  { moduleId: "warehouse", submoduleHref: "/bodega/trazabilidad", prefix: "/trazabilidad" },
+  { moduleId: "warehouse", submoduleHref: "/seguimiento", prefix: "/trazabilidad" },
   { moduleId: "feedback", submoduleHref: "/soporte", prefix: "/api/soporte" },
   { moduleId: "repuestos", prefix: "/api/repuestos" },
   { moduleId: "servicios", prefix: "/api/servicios" },
@@ -209,10 +210,10 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   // MNT-001: materializar el plan preventivo es del mismo módulo que su
   // recordatorio, y el prefijo más largo gana, así que no se pisan.
   { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/cron/maintenance-plan-materialization" },
-  { moduleId: "warehouse", submoduleHref: "/bodega/trazabilidad", prefix: "/api/cron/operational-integrity-scan" },
+  { moduleId: "warehouse", submoduleHref: "/seguimiento", prefix: "/api/cron/operational-integrity-scan" },
   // TRZ-001: el segundo libro de integridad, el que cubre entregas contra
   // recepción en faena.
-  { moduleId: "warehouse", submoduleHref: "/bodega/trazabilidad", prefix: "/api/cron/traceability-integrity-scan" },
+  { moduleId: "warehouse", submoduleHref: "/seguimiento", prefix: "/api/cron/traceability-integrity-scan" },
   /*
    * FLO-002, MIP-001 y PRI-001 comparten una corrida porque son el mismo
    * trabajo sobre tres tablas. Eso deja una ruta que no pertenece a un solo

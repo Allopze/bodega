@@ -13,21 +13,27 @@ import {
 } from "@/components/ui/select"
 import { INITIAL_STATE } from "@/lib/form-state"
 import { adjustStockAction } from "./actions"
-import { formatQty } from "@/lib/utils"
+import { formatQty, quantityStep } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import type { WorksiteProductOption } from "./movement-options"
 
 export function AdjustPanel({
   worksiteId,
   products,
+  initialProductId,
   onDone,
 }: {
   worksiteId: string
   products: WorksiteProductOption[]
+  /** Producto preseleccionado cuando se llega desde la fila de Stock. */
+  initialProductId?: string
   /** Se llama cuando el movimiento queda registrado, para cerrar la hoja. */
   onDone?: () => void
 }) {
-  const [productId, setProductId] = React.useState<string>("")
+  const [productId, setProductId] = React.useState<string>(
+    () => (initialProductId && products.some((product) => product.productId === initialProductId) ? initialProductId : ""),
+  )
+  const [counted, setCounted] = React.useState("")
   const formRef = React.useRef<HTMLFormElement>(null)
 
   // El aviso y el cierre salen dentro de la acción: la hoja queda montada
@@ -39,6 +45,7 @@ export function AdjustPanel({
       if (result.message) toast.success(result.message)
       formRef.current?.reset()
       setProductId("")
+      setCounted("")
       onDone?.()
     } else if (result.message) {
       toast.error(result.message)
@@ -48,6 +55,17 @@ export function AdjustPanel({
 
   const selected = products.find((product) => product.productId === productId)
 
+  // BOD-04 (auditoría 2026-10-05): se captura la cantidad REAL y el delta sale
+  // de restarle el saldo. El servidor lo recalcula contra el saldo bloqueado;
+  // esto es sólo la vista previa para que nadie registre a ciegas.
+  const rawCounted = counted.trim()
+  const countedValue = rawCounted === "" ? null : Number(rawCounted)
+  const countedInvalid = countedValue !== null && (!Number.isFinite(countedValue) || countedValue < 0)
+  const delta = selected && countedValue !== null && !countedInvalid
+    ? Math.round((countedValue - selected.quantity) * 1000) / 1000
+    : null
+  const cannotSubmit = !selected || countedValue === null || countedInvalid || delta === 0
+
   return (
     <section className="rounded-[var(--radius-xl)] border border-(--color-border) bg-(--color-surface)">
       <div className="border-b border-(--color-border) px-5 py-4">
@@ -56,7 +74,7 @@ export function AdjustPanel({
           Ajuste de inventario
         </h2>
         <p className="mt-0.5 text-xs text-(--color-text-muted)">
-          Corrección manual de stock con motivo obligatorio
+          El número del sistema no cuadra con lo que hay en la estantería
         </p>
       </div>
 
@@ -82,49 +100,62 @@ export function AdjustPanel({
           </Select>
         </Field>
 
-        {/* El saldo actual del producto elegido. Sin esto se corregía a ciegas
-            un número que la pantalla no mostraba. */}
-        {selected && (
-          <p className="-mt-2 text-xs text-(--color-text-muted)">
-            Stock actual:{" "}
-            <span className="font-mono font-semibold tabular-nums text-(--color-text)">
-              {formatQty(selected.quantity, selected.unitOfMeasure)}
-            </span>
-          </p>
-        )}
-
-        <Field label="Dirección" htmlFor="adjustDirection" required error={state.fieldErrors?.direction?.[0]}>
-          <Select name="direction" defaultValue="egreso">
-            <SelectTrigger id="adjustDirection" error={!!state.fieldErrors?.direction}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="egreso">Egreso (- disminuir)</SelectItem>
-              <SelectItem value="ingreso">Ingreso (+ aumentar)</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Field label="Cantidad" htmlFor="adjustQuantity" required error={state.fieldErrors?.quantity?.[0]}>
+        <Field
+          label="Cantidad real en bodega"
+          htmlFor="adjustCountedQuantity"
+          required
+          error={state.fieldErrors?.countedQuantity?.[0] ?? (countedInvalid ? "Indica una cantidad de 0 o más" : undefined)}
+          hint="Lo que hay hoy en la estantería, no la diferencia."
+        >
           <Input
-            id="adjustQuantity"
+            id="adjustCountedQuantity"
             type="number"
-            name="quantity"
-            step="0.01"
-            min="0.01"
+            name="countedQuantity"
+            step={selected ? quantityStep(selected.unitOfMeasure) : 1}
+            min="0"
             placeholder="0"
+            value={counted}
+            onChange={(event) => setCounted(event.target.value)}
             disabled={!productId}
             required
-            error={!!state.fieldErrors?.quantity}
+            error={!!state.fieldErrors?.countedQuantity || countedInvalid}
             className="tabular-nums"
           />
         </Field>
 
-        <Field label="Motivo" htmlFor="adjustReason" required error={state.fieldErrors?.reason?.[0]}>
+        {/* El saldo actual y el resultado. Sin esto se corregía a ciegas un
+            número que la pantalla no mostraba (BOD-04). */}
+        {selected && (
+          <p aria-live="polite" className="-mt-2 text-sm text-(--color-text-muted)">
+            Stock actual{" "}
+            <span className="font-mono font-semibold tabular-nums text-(--color-text)">
+              {formatQty(selected.quantity)}
+            </span>
+            {delta !== null && delta !== 0 && (
+              <>
+                {" → "}
+                <span className="font-mono font-semibold tabular-nums text-(--color-text)">{formatQty(countedValue ?? 0)}</span>{" "}
+                <span className={delta > 0 ? "font-semibold text-(--color-success-ink)" : "font-semibold text-(--color-danger-ink)"}>
+                  ({delta > 0 ? "+" : "−"}{formatQty(Math.abs(delta))}) · se {delta > 0 ? "suman" : "restan"} {formatQty(Math.abs(delta))} {selected.unitOfMeasure}
+                </span>
+              </>
+            )}
+            {delta === 0 && <span> · ya coincide, no hay nada que ajustar</span>}
+            {delta === null && <span> {selected.unitOfMeasure}</span>}
+          </p>
+        )}
+
+        <Field
+          label="Motivo"
+          htmlFor="adjustReason"
+          required
+          error={state.fieldErrors?.reason?.[0]}
+          hint="Usa Ajuste cuando el número del sistema no cuadra con lo que hay. Para una pérdida o un daño, registra una Baja."
+        >
           <Input
             id="adjustReason"
             name="reason"
-            placeholder="Ej: conteo físico, merma, pérdida, error de registro..."
+            placeholder="Ej: conteo semanal, error de registro, ingreso sin documentar..."
             disabled={!productId}
             required
             error={!!state.fieldErrors?.reason}
@@ -153,7 +184,7 @@ export function AdjustPanel({
             label="Registrar ajuste"
             loadingLabel="Guardando..."
             variant="primary"
-            disabled={!worksiteId || !productId || pending}
+            disabled={!worksiteId || cannotSubmit || pending}
           />
         </div>
       </form>

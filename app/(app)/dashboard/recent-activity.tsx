@@ -39,7 +39,7 @@ export function RecentActivity({ entries }: { entries: OperationalActivityEntry[
                     {entry.worksiteName}{entry.actorName ? ` · ${entry.actorName}` : ""}
                   </p>
                 </div>
-                <time dateTime={entry.occurredAt} className="hidden text-right font-mono text-[11px] tabular-nums text-[var(--color-text-faint)] sm:block">
+                <time dateTime={entry.occurredAt} className="hidden text-right font-mono text-xs tabular-nums text-[var(--color-text-muted)] sm:block">
                   {formatDateTime(entry.occurredAt)}
                 </time>
               </>

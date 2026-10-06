@@ -6,15 +6,16 @@ import { getDashboardStats } from "@/lib/services/sst-module/dashboard"
 import { listTrainingOccurrences, resolveTrainingOccurrenceYear } from "@/lib/services/prevention-training-occurrences"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { DomainSection } from "../dashboard-domain-shell"
-import { periodScopeLabel } from "../dashboard-scope"
 import { CHART_COLORS } from "@/lib/chart-palette"
+import { SST_DOCUMENT_STATUS_LABELS } from "@/lib/prevention/privacy-inventory"
+import { DASHBOARD_GLOSSARY } from "../dashboard-glossary"
 import { CompositionDonutChart, StatusShareBar } from "../dashboard-domain-charts"
 
 import type { DomainSectionsProps } from "./shared"
 
 // ── Cumplimiento y gobernanza ────────────────────────────────────────────────
 
-export async function GovernanceSection({ session, scope, worksiteScope, worksiteIds }: DomainSectionsProps) {
+export async function GovernanceSection({ session, worksiteScope, worksiteIds }: DomainSectionsProps) {
   const permissions = session.user.permissions
   const has = (permission: string) => permissions.includes(permission)
 
@@ -40,7 +41,6 @@ export async function GovernanceSection({ session, scope, worksiteScope, worksit
    * denominador. Por eso se cuenta `=== "pending"` y no `!== "completed"`. */
   const pendingTraining = occurrences.filter((row) => row.status === "pending").length
   const notDoneTraining = occurrences.filter((row) => row.status === "not_completed").length
-  const periodo = periodScopeLabel(scope.period).toLocaleLowerCase("es-CL")
 
   return (
     <DomainSection
@@ -65,7 +65,10 @@ export async function GovernanceSection({ session, scope, worksiteScope, worksit
             tone={notDoneTraining > 0 ? "signal" : "neutral"} href="/prevencion/capacitacion" />
           <KpiCard icon={<Siren size={16} />} label="Desviaciones PPA"
             value={ppa ? `${Math.round(ppa.porcentajeDesviaciones)}%` : "—"}
-            detail={ppa ? `${ppa.detenidos} detenciones de ${ppa.total} · ${periodo}` : "Sin registros PPA"}
+            // Los PPA no se acotan por fecha (`getPpaStats` no recibe período): decir
+            // "· mes" era falso, y es la razón por la que el selector no aplica acá (INI-05).
+            detail={ppa ? `${ppa.detenidos} detenciones de ${ppa.total} · acumulado` : "Sin registros PPA"}
+            glossary={DASHBOARD_GLOSSARY.PPA}
             tone={ppa && ppa.detenidos > 0 ? "signal" : "neutral"} href="/prevencion/ppa" />
         </>
       }
@@ -76,7 +79,8 @@ export async function GovernanceSection({ session, scope, worksiteScope, worksit
               title="Documentos por estado" description="Cómo se reparte la biblioteca documental SST"
               totalLabel="documentos"
               data={Object.entries(docs.byStatus).map(([status, value]) => ({
-                key: status, label: status.replace(/_/g, " "), value,
+                // Antes salía el valor crudo del enum ("borrador: 99", "en revision").
+                key: status, label: SST_DOCUMENT_STATUS_LABELS[status] ?? status, value,
               }))}
             />
           )}

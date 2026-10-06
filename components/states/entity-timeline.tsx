@@ -113,11 +113,13 @@ const EntityTimelineInner = React.memo(function EntityTimelineInner({
                       <span className="font-semibold text-[var(--color-text)]">{labelTo}</span>
                     </div>
 
-                    {/* Reason */}
+                    {/* Motivo. Es una cita, no una alerta: el borde lateral en
+                        naranja de advertencia lo leía como aviso (detector,
+                        auditoría 2026-10-05); va como `blockquote` neutro. */}
                     {event.reason && (
-                      <div className="mt-1.5 p-2 rounded-[var(--radius)] bg-[var(--color-surface-2)] text-xs text-[var(--color-text-muted)] border-l-2 border-[var(--color-warning)] italic">
+                      <blockquote className="mt-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-xs italic text-[var(--color-text-muted)]">
                         &ldquo;{event.reason}&rdquo;
-                      </div>
+                      </blockquote>
                     )}
                   </div>
                 </div>

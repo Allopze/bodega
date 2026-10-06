@@ -142,7 +142,7 @@ export function ConsolidatedTableAccordion({ row }: Props) {
             Trazabilidad cronológica de movimientos
           </h4>
           <Link
-            href={`/bodega/trazabilidad/${row.itemId}`}
+            href={`/seguimiento/${row.itemId}`}
             className="text-xs text-[var(--color-primary)] font-semibold hover:underline inline-flex items-center gap-1"
           >
             Ver expediente completo

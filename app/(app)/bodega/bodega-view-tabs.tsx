@@ -1,9 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { ALL_WORKSITES } from "./faena-scope"
 
 export type BodegaView = "stock" | "kardex" | "documentos"
 
@@ -19,11 +18,14 @@ export interface BodegaViewTab {
 /** Filtros que sobreviven al cambio de vista: son los que significan lo mismo
  *  en todas. El resto (tipo, producto, rango, estado del stock) es propio de
  *  una vista y arrastrarlo dejaría la siguiente filtrada por algo que no tiene
- *  control en pantalla. */
+ *  control en pantalla. `faena=todas` también viaja: Documentos habla el mismo
+ *  vocabulario desde que la faena por defecto es la misma en todas las vistas. */
 const SHARED_PARAMS = ["q", "faena"]
 
 /**
- * Vistas de Bodega sincronizadas con `?vista=`.
+ * Vistas de Bodega: Stock, Movimientos y Documentos. Las dos primeras se
+ * sincronizan con `?vista=` (el valor de Movimientos sigue siendo `kardex` para
+ * no romper enlaces ya guardados); Documentos es una ruta propia.
  *
  * Son `<Link>` y no botones a propósito: navegan desde el primer pintado, sin
  * esperar hidratación. Y cada vista es un render de servidor con sus propias
@@ -31,7 +33,6 @@ const SHARED_PARAMS = ["q", "faena"]
  * que hacía la página cuando las dos secciones vivían apiladas en un scroll.
  */
 export function BodegaViewTabs({ tabs, current }: { tabs: BodegaViewTab[]; current: BodegaView }) {
-  const pathname = usePathname()
   const searchParams = useSearchParams()
 
   function hrefFor(tab: BodegaViewTab) {
@@ -39,9 +40,7 @@ export function BodegaViewTabs({ tabs, current }: { tabs: BodegaViewTab[]; curre
       const shared = new URLSearchParams()
       for (const key of SHARED_PARAMS) {
         const existing = searchParams.get(key)
-        // `faena=todas` es vocabulario de esta pantalla: en Documentos sería un
-        // id de faena inexistente y dejaría la lista vacía.
-        if (existing && !(key === "faena" && existing === ALL_WORKSITES)) shared.set(key, existing)
+        if (existing) shared.set(key, existing)
       }
       const sharedQs = shared.toString()
       return sharedQs ? `${tab.href}?${sharedQs}` : tab.href
@@ -54,7 +53,9 @@ export function BodegaViewTabs({ tabs, current }: { tabs: BodegaViewTab[]; curre
     }
     if (value !== "stock") params.set("vista", value)
     const qs = params.toString()
-    return qs ? `${pathname}?${qs}` : pathname
+    // Siempre `/bodega`: estas pestañas también se montan en Documentos, donde
+    // el `pathname` apuntaría a la propia pantalla de Documentos.
+    return qs ? `/bodega?${qs}` : "/bodega"
   }
 
   return (

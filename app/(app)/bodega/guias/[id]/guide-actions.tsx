@@ -187,7 +187,7 @@ export function GuideActions({
           {reconciliationItems.length > 0 && (
             <div className="space-y-3 border-t border-[var(--color-border)] pt-3">
               <div>
-                <p className="text-sm font-semibold text-[var(--color-text)]">Cotejo despachado vs. recibido</p>
+                <p className="text-sm font-semibold text-[var(--color-text)]">Despachado vs. recibido en faena</p>
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">
                   Ajusta sólo lo que efectivamente llegó a faena. Si hay diferencia, registra el motivo.
                 </p>
@@ -202,7 +202,7 @@ export function GuideActions({
                       <p className="text-sm font-medium text-[var(--color-text)]">{item.name}</p>
                       <p className="text-xs text-[var(--color-text-muted)]">
                         Despachado: {item.quantity} {item.unitOfMeasure}
-                        {(item.receivedQuantity ?? 0) > 0 && ` · ya cotejado: ${item.receivedQuantity} ${item.unitOfMeasure}`}
+                        {(item.receivedQuantity ?? 0) > 0 && ` · ya confirmado: ${item.receivedQuantity} ${item.unitOfMeasure}`}
                       </p>
                     </div>
                     <Field label="Recibido en faena" htmlFor={`gdi-recibido-${item.id}`}>

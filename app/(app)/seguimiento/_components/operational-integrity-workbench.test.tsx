@@ -13,7 +13,7 @@ vi.mock("../actions", () => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
-  usePathname: () => "/bodega/trazabilidad",
+  usePathname: () => "/seguimiento",
   useSearchParams: () => new URLSearchParams("tab=integridad&faena=ws-biodiversa"),
 }))
 

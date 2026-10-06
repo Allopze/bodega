@@ -209,7 +209,7 @@ export async function attachDteAsInvoice(
   revalidateOperationalViews([
     "/compras",
     `/compras/${input.purchaseOrderId}`,
-    "/bodega/trazabilidad",
+    "/seguimiento",
     ...(input.receiptIds && input.receiptIds.length > 0
       ? ["/recepcion", ...input.receiptIds.map((receiptId) => `/recepcion/${receiptId}`)]
       : []),

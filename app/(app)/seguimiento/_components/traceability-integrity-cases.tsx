@@ -117,7 +117,7 @@ export function TraceabilityIntegrityCases({
                     {/* El id suelto no le decía nada a nadie: abre el
                         expediente donde se ve qué pasó con ese ítem. */}
                     <Link
-                      href={`/bodega/trazabilidad/${caseRow.requestItemId}`}
+                      href={`/seguimiento/${caseRow.requestItemId}`}
                       className="font-mono text-(--color-primary) hover:underline underline-offset-2"
                     >
                       ver expediente del ítem

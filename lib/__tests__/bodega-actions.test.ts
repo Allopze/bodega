@@ -13,7 +13,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import type { Session } from "next-auth"
 
 const mockAuthFn = vi.hoisted(() => vi.fn())
-const mockRegisterStockAdjustment = vi.hoisted(() => vi.fn())
+const mockRegisterStockDocumentTx = vi.hoisted(() => vi.fn())
+const mockCurrentStock = vi.hoisted(() => ({ rows: [{ quantity: 4 }] as Array<{ quantity: number }> }))
 const mockRegisterStockReturn = vi.hoisted(() => vi.fn())
 const mockClosePhysicalInventoryCount = vi.hoisted(() => vi.fn())
 
@@ -30,8 +31,10 @@ vi.mock("@/lib/services/module-toggles", async (importOriginal) => ({
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
+vi.mock("@/lib/services/stock-movement", () => ({
+  registerStockDocumentTx: mockRegisterStockDocumentTx,
+}))
 vi.mock("@/lib/services/stock", () => ({
-  registerStockAdjustment: mockRegisterStockAdjustment,
   registerStockReturn: mockRegisterStockReturn,
 }))
 vi.mock("@/lib/services/physical-inventory", () => ({
@@ -40,6 +43,14 @@ vi.mock("@/lib/services/physical-inventory", () => ({
 
 const mockDb = {
   select: vi.fn(),
+  // BOD-04: el ajuste lee el saldo bajo lock dentro de una transacción.
+  transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback({
+    select: () => ({
+      from: () => ({
+        where: () => ({ for: () => Promise.resolve(mockCurrentStock.rows) }),
+      }),
+    }),
+  })),
 }
 
 vi.mock("@/db", () => ({ db: mockDb }))
@@ -62,7 +73,8 @@ function makeSession(perm: string, worksiteIds: string[] = ["ws-1"]): Session {
 describe("bodega actions", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockRegisterStockAdjustment.mockResolvedValue({ id: "adjustment-1", code: "AJU-2026-0001" })
+    mockCurrentStock.rows = [{ quantity: 4 }]
+    mockRegisterStockDocumentTx.mockResolvedValue({ id: "adjustment-1", code: "AJU-2026-0001" })
     mockRegisterStockReturn.mockResolvedValue({ id: "return-1", code: "DEV-2026-0001" })
     mockClosePhysicalInventoryCount.mockResolvedValue({ id: "count-1", code: "CON-2026-0001", adjustmentCount: 2 })
     // Default select chain for returnStock prior movements
@@ -84,8 +96,7 @@ describe("bodega actions", () => {
       const fd = new FormData()
       fd.set("worksiteId", "ws-1")
       fd.set("productId", "prod-1")
-      fd.set("quantity", "5")
-      fd.set("direction", "ingreso")
+      fd.set("countedQuantity", "9")
       fd.set("reason", "Corrección de conteo")
       const result = await adjustStockAction({ ok: false }, fd)
       expect(result.ok).toBe(false)
@@ -98,8 +109,7 @@ describe("bodega actions", () => {
       const fd = new FormData()
       fd.set("worksiteId", "ws-other")
       fd.set("productId", "prod-1")
-      fd.set("quantity", "5")
-      fd.set("direction", "ingreso")
+      fd.set("countedQuantity", "9")
       fd.set("reason", "Corrección de conteo")
       const result = await adjustStockAction({ ok: false }, fd)
       expect(result.ok).toBe(false)
@@ -120,62 +130,102 @@ describe("bodega actions", () => {
         const fd = new FormData()
         fd.set("worksiteId", "ws-1")
         fd.set("productId", "prod-1")
-        fd.set("quantity", "3")
-        fd.set("direction", "ingreso")
+        fd.set("countedQuantity", "7")
         fd.set("reason", reason)
         const result = await adjustStockAction({ ok: false }, fd)
         expect(result.ok, `motivo «${reason}»`).toBe(false)
       }
 
       // Y no llegó a tocar el inventario en ninguno de los tres intentos.
-      expect(mockRegisterStockAdjustment).not.toHaveBeenCalled()
+      expect(mockRegisterStockDocumentTx).not.toHaveBeenCalled()
     })
 
-    it("registers positive adjustment (ingreso)", async () => {
+    it("calcula el delta positivo contra el saldo bloqueado", async () => {
       mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
       const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
       const fd = new FormData()
       fd.set("worksiteId", "ws-1")
       fd.set("productId", "prod-1")
-      fd.set("quantity", "3")
-      fd.set("direction", "ingreso")
+      fd.set("countedQuantity", "7")
       fd.set("reason", "Sobrante detectado en conteo")
       const result = await adjustStockAction({ ok: false }, fd)
       expect(result.ok).toBe(true)
-      expect(result.message).toContain("+3")
-      expect(mockRegisterStockAdjustment).toHaveBeenCalledWith(expect.objectContaining({
+      expect(result.message).toContain("4 → 7 (+3)")
+      expect(mockRegisterStockDocumentTx).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        kind: "ajuste",
         type: "ajuste",
         quantity: 3,
       }))
     })
 
-    it("registers negative adjustment (egreso)", async () => {
+    it("calcula el delta negativo contra el saldo bloqueado", async () => {
       mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
       const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
       const fd = new FormData()
       fd.set("worksiteId", "ws-1")
       fd.set("productId", "prod-1")
-      fd.set("quantity", "2")
-      fd.set("direction", "egreso")
+      fd.set("countedQuantity", "2")
       fd.set("reason", "Faltante detectado en conteo")
       const result = await adjustStockAction({ ok: false }, fd)
       expect(result.ok).toBe(true)
-      expect(result.message).toContain("-2")
-      expect(mockRegisterStockAdjustment).toHaveBeenCalledWith(expect.objectContaining({
+      expect(result.message).toContain("4 → 2 (-2)")
+      expect(mockRegisterStockDocumentTx).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
         type: "ajuste",
         quantity: -2,
       }))
     })
 
-    it("propagates service error", async () => {
+    it("ignora cualquier delta que mande el cliente: manda la cantidad real", async () => {
       mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
-      mockRegisterStockAdjustment.mockRejectedValue(new Error("Stock insuficiente"))
       const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
       const fd = new FormData()
       fd.set("worksiteId", "ws-1")
       fd.set("productId", "prod-1")
-      fd.set("quantity", "999")
+      fd.set("quantity", "99999")
       fd.set("direction", "egreso")
+      fd.set("countedQuantity", "6")
+      fd.set("reason", "Diferencia de conteo semanal")
+      await adjustStockAction({ ok: false }, fd)
+      expect(mockRegisterStockDocumentTx).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ quantity: 2 }))
+    })
+
+    it("rechaza la cantidad real negativa o en blanco (en blanco no es 0)", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
+      const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
+      for (const value of ["-1", "", "abc"]) {
+        const fd = new FormData()
+        fd.set("worksiteId", "ws-1")
+        fd.set("productId", "prod-1")
+        fd.set("countedQuantity", value)
+        fd.set("reason", "Diferencia de conteo semanal")
+        const result = await adjustStockAction({ ok: false }, fd)
+        expect(result.ok, `valor «${value}»`).toBe(false)
+      }
+      expect(mockRegisterStockDocumentTx).not.toHaveBeenCalled()
+    })
+
+    it("no registra nada cuando la cantidad real iguala al saldo", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
+      const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      fd.set("productId", "prod-1")
+      fd.set("countedQuantity", "4")
+      fd.set("reason", "Diferencia de conteo semanal")
+      const result = await adjustStockAction({ ok: false }, fd)
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain("nada que ajustar")
+      expect(mockRegisterStockDocumentTx).not.toHaveBeenCalled()
+    })
+
+    it("propagates service error", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
+      mockRegisterStockDocumentTx.mockRejectedValue(new Error("Stock insuficiente"))
+      const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
+      const fd = new FormData()
+      fd.set("worksiteId", "ws-1")
+      fd.set("productId", "prod-1")
+      fd.set("countedQuantity", "999")
       fd.set("reason", "Motivo de prueba")
       const result = await adjustStockAction({ ok: false }, fd)
       expect(result.ok).toBe(false)

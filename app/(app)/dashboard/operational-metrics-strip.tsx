@@ -8,7 +8,6 @@ import {
   Warehouse,
 } from "@phosphor-icons/react/dist/ssr"
 import { KpiCard } from "@/components/ui/kpi-card"
-import { HeroKpiCard } from "@/components/ui/hero-kpi-card"
 import type { DashboardMetric } from "./dashboard-control-center"
 
 const METRIC_ICON = {
@@ -23,16 +22,18 @@ const METRIC_ICON = {
 } as const
 
 /**
- * Las cuatro ranuras semánticas del tope de la página.
+ * El panorama: una cifra por ranura semántica (dinero · cumplimiento · riesgo).
+ *
+ * Todos los tiles pesan lo mismo. Hasta la ronda UI/UX 2026-10-05 el primero
+ * iba relleno en verde profundo (`HeroKpiCard`) y, como la primera ranura es
+ * dinero, la página abría con "Inversión $0" como ancla visual (INI-06). La
+ * urgencia vive ahora en el bloque "Hoy", que va antes; acá no hay jerarquía
+ * que imponer entre tres cifras de ejes distintos.
  *
  * Usa `KpiCard`, el tile del design system. Tenía su propio `MetricCell` —la
  * tercera implementación de tarjeta de métrica del repo, junto a `KpiCard` y
  * `SummaryBar` (G-07)—; se absorbió pasándole a `KpiCard` lo único que le
  * faltaba: `sparkline` y el tono `danger`.
- *
- * El cambio se hizo al construir las cinco secciones por dominio: con seis filas
- * de KPI en la página, la que se veía distinta era ésta. Antes era la única y la
- * inconsistencia no se notaba.
  *
  * Deja de ser `"use client"`: no tiene estado ni handlers, sólo enlaces.
  */
@@ -48,28 +49,14 @@ export function OperationalMetricsStrip({ metrics }: { metrics: DashboardMetric[
             Indicadores Operacionales
           </h2>
         </div>
-        <span className="text-[11px] font-medium text-[var(--color-text-faint)]">Selecciona para ver el detalle</span>
+        <span className="text-xs font-medium text-[var(--color-text-muted)]">Selecciona para ver el detalle</span>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric, index) => {
+      {/* `auto-fit` y no `xl:grid-cols-4`: con tres tiles (o dos, según el
+          permiso) una rejilla de cuatro columnas dejaba un hueco a la derecha. */}
+      <div className="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(15rem,1fr))]">
+        {metrics.map((metric) => {
           const Icon = METRIC_ICON[metric.icon] ?? CheckCircle
-          // Sólo el primero va relleno: dos anclas macizas en una fila de cuatro
-          // compiten entre sí y ninguna ancla nada. La primera ranura es dinero
-          // para quien lo mira, y cumplimiento o riesgo para el resto — siempre
-          // la cifra de mayor jerarquía que el permiso autoriza.
-          if (index === 0) {
-            return (
-              <HeroKpiCard
-                key={metric.key}
-                icon={<Icon size={16} />}
-                label={metric.label}
-                value={String(metric.value)}
-                detail={metric.description}
-                href={metric.href}
-              />
-            )
-          }
           return (
             <KpiCard
               key={metric.key}
@@ -77,6 +64,7 @@ export function OperationalMetricsStrip({ metrics }: { metrics: DashboardMetric[
               label={metric.label}
               value={String(metric.value)}
               detail={metric.description}
+              glossary={metric.glossary}
               tone={metric.tone}
               href={metric.href}
               sparkline={metric.sparkline}

@@ -23,6 +23,8 @@ export function StockSection({
   stockByWorksite,
   receivingHref,
   canExportStock,
+  canDeliver = false,
+  canAdjust = false,
   hasFilters = false,
   truncated = false,
 }: {
@@ -30,6 +32,9 @@ export function StockSection({
   stockByWorksite: Record<string, WorksiteStockWithProduct[]>
   receivingHref?: string
   canExportStock?: boolean
+  /** Habilitan el menú de acciones de cada fila de la tabla. */
+  canDeliver?: boolean
+  canAdjust?: boolean
   hasFilters?: boolean
   /** El servidor recortó las filas: hay que avisarlo, no dejar creer que es todo. */
   truncated?: boolean
@@ -73,9 +78,9 @@ export function StockSection({
           <EmptyState
             icon={<Package size={24} />}
             title="Sin coincidencias"
-            description="Ningún producto en stock coincide con los filtros aplicados."
+            description="Ningún producto coincide con los filtros aplicados. Quita alguno para ver más."
             action={
-              <Link href="/bodega" className="inline-flex h-8 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 text-[13px] font-semibold text-white transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]">
+              <Link href="/bodega" className="inline-flex min-h-11 items-center sm:min-h-8 justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 text-[13px] font-semibold text-white transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-strong)]">
                 Limpiar filtros
               </Link>
             }
@@ -105,6 +110,8 @@ export function StockSection({
       <StockTable
         worksites={worksitesWithStock}
         canExport={canExportStock}
+        canDeliver={canDeliver}
+        canAdjust={canAdjust}
       />
 
       {truncated && (

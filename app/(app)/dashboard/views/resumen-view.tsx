@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { can } from "@/lib/auth/can"
 import type { WorksiteScope } from "@/lib/auth/scope"
-import { formatCLP, formatDate } from "@/lib/utils"
+import { formatCLP, formatDate, pluralize } from "@/lib/utils"
+import { ORDERS_ISSUED_METRIC, ORDERS_SPEND_METRIC } from "../dashboard-metric-definitions"
+import { DASHBOARD_GLOSSARY } from "../dashboard-glossary"
 import { getDashboardData } from "@/lib/services/dashboard"
 import { listOperationalActivity } from "@/lib/services/operational-activity"
 import {
@@ -22,7 +24,6 @@ import {
   type OperationalSnapshotMetric,
 } from "@/lib/services/operational-metric-snapshots"
 import type { OperationalQueueResult } from "@/lib/services/operational-work-queue"
-import { OPERATIONAL_MODULE_LABELS, type OperationalModule } from "@/lib/work-queue"
 import { listEppCoverageGaps } from "@/lib/services/prevention-epp"
 import { getCapaDashboardCounts } from "@/lib/services/prevention-capa"
 import { getIncidentDashboardCounts } from "@/lib/services/prevention-incidents"
@@ -47,7 +48,7 @@ import {
   scopedWorksiteId,
   type DashboardScope,
 } from "../dashboard-scope"
-import type { QueueShortcut } from "./trabajo-view"
+import { pendientesHref, type TodayItem } from "../dashboard-today"
 
 export interface ResumenViewProps {
   session: Session
@@ -58,16 +59,20 @@ export interface ResumenViewProps {
   currentYear: number
   /** Total de la cola, ya consultado por la página para la cabecera. */
   queueTotal: number
-  /** Resumen de la cola: alimenta la ranura de trabajo y las alertas. */
+  /** Resumen de la cola: alimenta las alertas del bloque "Hoy". */
   queueSummary: OperationalQueueResult["summary"]
+  /** Las filas más urgentes de la cola, ya elegidas por la página (`pickTodayItems`). */
+  todayItems: TodayItem[]
 }
 
 /**
- * Vista de entrada: lo transversal, no un dominio.
+ * Vista de entrada: lo transversal, no un dominio. **"Hoy" arriba, panorama
+ * abajo.**
  *
- * Cuatro KPIs por ranura semántica (dinero · cumplimiento · riesgo · trabajo),
- * las alertas que no son tile, el flujo del período y el backlog comparado. Los
- * dominios completos viven cada uno en su pestaña.
+ * Hoy: las alertas accionables y las filas más urgentes de la cola, con un
+ * enlace a `/pendientes`. Panorama: un KPI por ranura semántica (dinero ·
+ * cumplimiento · riesgo), los gráficos, el flujo del período y el backlog
+ * comparado. Los dominios completos viven cada uno en "Por área".
  */
 export async function ResumenView({
   session,
@@ -77,8 +82,10 @@ export async function ResumenView({
   currentYear,
   queueTotal,
   queueSummary,
+  todayItems,
 }: ResumenViewProps) {
   const canApprove = can(session, "approvals:approve")
+  const canViewWork = can(session, "operations:view_work")
   const canViewRequests = can(session, "requests:view_own") || can(session, "requests:view_all")
   const canViewPurchasing = can(session, "purchasing:view")
   const canReceive = can(session, "receiving:view")
@@ -152,9 +159,6 @@ export async function ResumenView({
 
   const metrics = buildOperationalMetrics({
     scope,
-    tasks: queueTotal,
-    overdueTasks: queueSummary.overdue,
-    pendingApprovals: data.metrics.pending_approvals,
     ordersPendingReceipt: data.metrics.orders_pending_receipt,
     activeOrders: backlogComparisons.find((entry) => entry.metric === "backlog_orders")?.current ?? 0,
     periodSpend: periodMetrics.spend.current,
@@ -163,14 +167,13 @@ export async function ResumenView({
     openIncidents: incidentCounts.totalOpen,
     fatalOrSeriousIncidents: incidentCounts.fatalOrSerious,
     overdueCapa: capaCounts.overdue,
-    canApprove,
     canReceive,
     canViewPurchasing,
     canViewPdtp,
     canViewIncidents,
     canViewCapa,
   })
-  // Lo que ya está arriba no se repite en el aside (A5).
+  // Lo que ya es tile del panorama no se repite como alerta de "Hoy" (A5).
   const shownAsTile = new Set(metrics.map((metric) => metric.key))
   const alerts = buildOperationalAlerts({
     scope,
@@ -178,7 +181,6 @@ export async function ResumenView({
     criticalTasks: queueSummary.critical,
     overdueTasks: queueSummary.overdue,
     blockedTasks: queueSummary.blocked,
-    unassignedTasks: queueSummary.unassigned,
     pendingApprovals: data.metrics.pending_approvals,
     ordersPendingReceipt: data.metrics.orders_pending_receipt,
     deliveries: queueSummary.moduleCounts.entregas ?? 0,
@@ -196,6 +198,10 @@ export async function ResumenView({
       scope={scope}
       metrics={metrics}
       alerts={alerts}
+      todayItems={canViewWork ? todayItems : []}
+      pendingTotal={queueTotal}
+      pendientesHref={pendientesHref(scope)}
+      queueVisible={canViewWork}
       periodSummary={buildOperationalPeriodSummary({ periodMetrics, scope, canViewRequests, canViewPurchasing, canReceive, canDeliver })}
       backlogSummary={buildOperationalBacklogSummary({ backlogComparisons, snapshotHistory, scope, canViewRequests, canViewPurchasing, canViewCapa, canViewPdtp })}
       mainSlot={
@@ -260,61 +266,6 @@ export async function ResumenView({
 }
 
 /**
- * Enlace a la cola completa que **conserva la faena** del alcance global.
- *
- * Sin esto, salir del dashboard con una faena elegida aterrizaba en
- * `/pendientes` sin filtro: el conteo del atajo y la lista de destino hablaban
- * de poblaciones distintas. `/pendientes` lee `worksiteId` de la URL
- * (`parseOperationalQueueFilters`), así que el filtro sobrevive al salto.
- */
-function pendientesHref(scope: DashboardScope, params: Record<string, string> = {}) {
-  const search = new URLSearchParams(params)
-  const worksiteId = scopedWorksiteId(scope)
-  if (worksiteId) search.set("worksiteId", worksiteId)
-  const query = search.toString()
-  return query ? `/pendientes?${query}` : "/pendientes"
-}
-
-/**
- * Atajos de la cola. Los conteos salen de `queue.summary` — población completa
- * del alcance vigente — y cada uno navega a `/pendientes` con el filtro
- * equivalente más la faena elegida.
- *
- * Antes eran chips que filtraban en cliente las 25 filas cargadas: mostraban
- * "Todas 25" bajo un saludo que decía "Tienes 200 tareas pendientes" (D-01).
- *
- * Vive acá aunque la consuma la vista Mi trabajo: comparte `pendientesHref` con
- * las métricas y las alertas, y sacarla a un módulo propio sería un archivo de
- * tres funciones para evitar un import.
- */
-export function buildQueueShortcuts(input: {
-  queue: Pick<OperationalQueueResult, "summary" | "total">
-  scope: DashboardScope
-  canApprove: boolean
-  canReceive: boolean
-  canDeliver: boolean
-}): QueueShortcut[] {
-  const { summary, total } = input.queue
-  const href = (params?: Record<string, string>) => pendientesHref(input.scope, params)
-  const moduleShortcut = (module: OperationalModule, allowed: boolean): QueueShortcut | null => {
-    const count = summary.moduleCounts[module] ?? 0
-    return allowed && count > 0
-      ? { key: module, label: OPERATIONAL_MODULE_LABELS[module], count, href: href({ module }) }
-      : null
-  }
-  const candidates: Array<QueueShortcut | null> = [
-    { key: "all", label: "Todas", count: total, href: href() },
-    summary.critical > 0 ? { key: "critical", label: "Críticas", count: summary.critical, href: href({ quick: "critical" }) } : null,
-    summary.overdue > 0 ? { key: "overdue", label: "Vencidas", count: summary.overdue, href: href({ quick: "overdue" }) } : null,
-    summary.unassigned > 0 ? { key: "unassigned", label: "Sin responsable", count: summary.unassigned, href: href({ quick: "unassigned" }) } : null,
-    moduleShortcut("aprobaciones", input.canApprove),
-    moduleShortcut("recepciones", input.canReceive),
-    moduleShortcut("entregas", input.canDeliver),
-  ]
-  return candidates.filter((shortcut): shortcut is QueueShortcut => shortcut !== null).slice(0, 6)
-}
-
-/**
  * El rótulo del comparativo sigue al período elegido. Estaba escrito a mano como
  * "vs. mes anterior", así que al elegir trimestre habría dicho mes.
  */
@@ -323,10 +274,10 @@ function periodComparison(metric: OperationalPeriodMetric, period: OperationalPe
   const label = periodComparisonLabel(period)
   const difference = metric.current - metric.previous
   if (difference === 0) return `Sin variación ${label}`
-  return `${difference > 0 ? "+" : ""}${difference} ${label}`
+  return `${difference > 0 ? "+" : ""}${Math.round(difference)} ${label}`
 }
 
-function buildOperationalPeriodSummary(input: {
+export function buildOperationalPeriodSummary(input: {
   periodMetrics: OperationalPeriodMetrics
   scope: DashboardScope
   canViewRequests: boolean
@@ -337,10 +288,11 @@ function buildOperationalPeriodSummary(input: {
   const compare = (metric: OperationalPeriodMetric) => periodComparison(metric, input.scope.period)
   const entries: Array<OperationalPeriodSummaryEntry | null> = [
     input.canViewRequests ? { key: "requests", label: "Solicitudes creadas", value: input.periodMetrics.requests.current, comparison: compare(input.periodMetrics.requests), href: periodWindowHref(input.scope, "/solicitudes") } : null,
-    input.canViewPurchasing ? { key: "orders", label: "OC emitidas", value: input.periodMetrics.ordersIssued.current, comparison: compare(input.periodMetrics.ordersIssued), href: periodWindowHref(input.scope, "/compras") } : null,
+    input.canViewPurchasing ? { key: "orders", label: ORDERS_ISSUED_METRIC.label, hint: ORDERS_ISSUED_METRIC.glossary, value: input.periodMetrics.ordersIssued.current, comparison: compare(input.periodMetrics.ordersIssued), href: periodWindowHref(input.scope, "/compras") } : null,
     input.canReceive ? { key: "receipts", label: "Recepciones", value: input.periodMetrics.receipts.current, comparison: compare(input.periodMetrics.receipts), href: "/recepcion" } : null,
     input.canDeliver ? { key: "deliveries", label: "Entregas", value: input.periodMetrics.deliveries.current, comparison: compare(input.periodMetrics.deliveries), href: "/entregas" } : null,
-    input.canViewPurchasing ? { key: "spend", label: "Inversión emitida", value: formatCLP(input.periodMetrics.spend.current), comparison: compare(input.periodMetrics.spend), href: periodWindowHref(input.scope, "/compras") } : null,
+    // El gasto en OC **no** va acá: ya es un tile del panorama (A5). Estaba en
+    // el tile del hero y otra vez en esta lista, la misma cifra dos veces.
   ]
   return entries.filter((entry): entry is OperationalPeriodSummaryEntry => entry !== null)
 }
@@ -366,25 +318,30 @@ function buildOperationalBacklogSummary(input: {
   canViewPdtp: boolean
 }): OperationalPeriodSummaryEntry[] {
   const byMetric = new Map(input.backlogComparisons.map((comparison) => [comparison.metric, comparison]))
-  const entry = (metric: OperationalBacklogComparison["metric"], label: string, href: string): OperationalPeriodSummaryEntry | null => {
+  const entry = (metric: OperationalBacklogComparison["metric"], label: string, href: string, hint?: string): OperationalPeriodSummaryEntry | null => {
     const comparison = byMetric.get(metric)
     return comparison
-      ? { key: metric, label, value: comparison.current, comparison: backlogComparison(comparison), href, sparkline: input.snapshotHistory[metric] }
+      ? { key: metric, label, value: comparison.current, comparison: backlogComparison(comparison), href, hint, sparkline: input.snapshotHistory[metric] }
       : null
   }
   const href = (module: string) => pendientesHref(input.scope, { module })
   const entries: Array<OperationalPeriodSummaryEntry | null> = [
     input.canViewRequests ? entry("backlog_requests", "Solicitudes activas", href("solicitudes")) : null,
     input.canViewPurchasing ? entry("backlog_orders", "OC activas", href("compras")) : null,
-    input.canViewCapa ? entry("backlog_capa", "CAPA abiertas", href("capa")) : null,
-    input.canViewPdtp ? entry("backlog_pdtp", "Obligaciones PDTP", href("pdtp")) : null,
+    input.canViewCapa ? entry("backlog_capa", "CAPA abiertas", href("capa"), DASHBOARD_GLOSSARY.CAPA) : null,
+    input.canViewPdtp ? entry("backlog_pdtp", "Obligaciones PDTP", href("pdtp"), DASHBOARD_GLOSSARY.PDTP) : null,
   ]
   return entries.filter((entry): entry is OperationalPeriodSummaryEntry => entry !== null)
 }
 
 /**
- * Cuatro tiles accionables, uno por **ranura semántica**: dinero, cumplimiento,
- * riesgo y trabajo propio.
+ * Los tiles accionables del panorama, uno por **ranura semántica**: dinero,
+ * cumplimiento y riesgo.
+ *
+ * La ranura de **trabajo propio** (tareas vencidas · por aprobar · tareas
+ * pendientes) se fue: esa urgencia es el bloque "Hoy" —que va antes en la
+ * página— y su alerta, su lista y su enlace a `/pendientes`. Dejarla acá
+ * repetía la misma cifra dos veces en una pantalla (A5).
  *
  * Antes era una lista de 8 candidatos en orden fijo cortada con `.slice(0, 4)`.
  * Para Jefatura eso entregaba **siempre** "Tareas pendientes · críticas ·
@@ -394,8 +351,8 @@ function buildOperationalBacklogSummary(input: {
  * incluido.
  *
  * Cada ranura es una cascada: se muestra el primer candidato que el permiso
- * autoriza. Si ninguno califica, la ranura se cede y la fila queda con menos de
- * cuatro tiles en vez de rellenarse con otro contador de tareas.
+ * autoriza. Si ninguno califica, la ranura se cede y la fila queda con menos
+ * tiles en vez de rellenarse con otro contador de tareas.
  *
  * Cada tile cambia su descripción en 0 (A1). La regla pide "la acción para dejar
  * de estarlo", pero estos contadores en cero son buenas noticias y no hay acción
@@ -404,9 +361,6 @@ function buildOperationalBacklogSummary(input: {
  */
 export function buildOperationalMetrics(input: {
   scope: DashboardScope
-  tasks: number
-  overdueTasks: number
-  pendingApprovals: number
   ordersPendingReceipt: number
   activeOrders: number
   periodSpend: number
@@ -415,7 +369,6 @@ export function buildOperationalMetrics(input: {
   openIncidents: number
   fatalOrSeriousIncidents: number
   overdueCapa: number
-  canApprove: boolean
   canReceive: boolean
   canViewPurchasing: boolean
   canViewPdtp: boolean
@@ -426,8 +379,8 @@ export function buildOperationalMetrics(input: {
   const href = (params?: Record<string, string>) => pendientesHref(input.scope, params)
 
   const money: Array<DashboardMetric | null> = [
-    input.canViewPurchasing ? { key: "spend", label: "Inversión", value: formatCLP(input.periodSpend),
-      description: `OC emitidas · ${periodLabel}`, icon: "investment", href: periodWindowHref(input.scope, "/compras"),
+    input.canViewPurchasing ? { key: "spend", label: ORDERS_SPEND_METRIC.label, glossary: ORDERS_SPEND_METRIC.glossary, value: formatCLP(input.periodSpend),
+      description: `${ORDERS_ISSUED_METRIC.label} · ${periodLabel}`, icon: "investment", href: periodWindowHref(input.scope, "/compras"),
     } : null,
     input.canViewPurchasing ? {
       key: "orders", label: "OC activas", value: input.activeOrders,
@@ -444,8 +397,11 @@ export function buildOperationalMetrics(input: {
    */
   const compliance: Array<DashboardMetric | null> = [
     input.canReceive ? {
-      key: "receipts", label: "Por recibir", value: input.ordersPendingReceipt,
-      description: input.ordersPendingReceipt > 0 ? "Órdenes con recepción pendiente" : "Sin recepciones pendientes",
+      // Nombre canónico (ADQ-10, `state-badge.tsx`): lo que espera al proveedor
+      // es "Pendiente de recepción". "Por recibir" era uno de sus siete nombres
+      // y "Por atender" es la cola de Recepción, otra cosa.
+      key: "receipts", label: "Pendiente de recepción", value: input.ordersPendingReceipt,
+      description: input.ordersPendingReceipt > 0 ? "Órdenes enviadas que aún no llegan" : "Ninguna orden a la espera",
       icon: "receipts", href: href({ module: "recepciones" }),
       tone: input.ordersPendingReceipt > 0 ? "signal" : "neutral",
     } : null,
@@ -461,45 +417,30 @@ export function buildOperationalMetrics(input: {
       tone: input.fatalOrSeriousIncidents > 0 ? "danger" : input.openIncidents > 0 ? "signal" : "neutral",
     } : null,
     input.canViewCapa ? {
-      key: "capa", label: "CAPA vencidas", value: input.overdueCapa,
+      key: "capa", label: "CAPA vencidas", glossary: DASHBOARD_GLOSSARY.CAPA, value: input.overdueCapa,
       description: input.overdueCapa > 0 ? "Acciones correctivas fuera de plazo" : "Ninguna fuera de plazo",
       icon: "critical", href: href({ module: "capa" }),
       tone: input.overdueCapa > 0 ? "danger" : "neutral",
     } : null,
   ]
 
-  const work: Array<DashboardMetric | null> = [
-    input.overdueTasks > 0 ? {
-      key: "overdue", label: "Tareas vencidas", value: input.overdueTasks,
-      description: "Plazo comprometido vencido", icon: "critical",
-      href: href({ quick: "overdue" }), tone: "danger",
-    } : null,
-    input.canApprove ? {
-      key: "approvals", label: "Por aprobar", value: input.pendingApprovals,
-      description: input.pendingApprovals > 0 ? "Ítems esperando una decisión" : "Nada esperando decisión",
-      icon: "approvals", href: href({ module: "aprobaciones" }),
-      tone: input.pendingApprovals > 0 ? "signal" : "neutral",
-    } : null,
-    {
-      key: "tasks", label: "Tareas pendientes", value: input.tasks,
-      description: input.tasks > 0 ? "Acciones disponibles para tu rol" : "Nada pendiente por ahora",
-      icon: "tasks", href: href(), tone: input.tasks > 0 ? "signal" : "neutral",
-    },
-  ]
-
-  return [money, compliance, risk, work]
+  return [money, compliance, risk]
     .map((cascade) => cascade.find((metric): metric is DashboardMetric => metric !== null))
     .filter((metric): metric is DashboardMetric => metric !== undefined)
 }
 
 /**
- * Alertas del aside: **lo que no es tile**.
+ * Alertas del bloque "Hoy" ("Requiere atención"): **lo que no es tile**.
  *
  * Regla A5: una cifra no puede ser tile y alerta a la vez. Antes "críticas",
  * "vencidas", "por aprobar", "stock" y "recepciones" aparecían en las dos partes
  * de la pantalla —y "críticas" además en el saludo y en su chip de atajo, cuatro
- * veces la misma cifra—. `shownAsTile` recibe las claves que la fila superior ya
+ * veces la misma cifra—. `shownAsTile` recibe las claves que el panorama ya
  * ocupó y las salta acá.
+ *
+ * Sin la alerta de "tareas asignables sin responsable": el sistema de
+ * asignación se retira de la plataforma y Inicio ya no depende de
+ * `summary.unassigned`.
  */
 export function buildOperationalAlerts(input: {
   scope: DashboardScope
@@ -507,7 +448,6 @@ export function buildOperationalAlerts(input: {
   criticalTasks: number
   overdueTasks: number
   blockedTasks: number
-  unassignedTasks: number
   pendingApprovals: number
   ordersPendingReceipt: number
   deliveries: number
@@ -521,15 +461,14 @@ export function buildOperationalAlerts(input: {
 }): DashboardAlert[] {
   const href = (params?: Record<string, string>) => pendientesHref(input.scope, params)
   const alerts: Array<DashboardAlert | null> = [
-    input.criticalTasks > 0 ? { key: "critical", title: "tareas críticas", description: "Hay acciones marcadas como críticas dentro de tu cola autorizada.", count: input.criticalTasks, severity: "critical", href: href({ quick: "critical" }) } : null,
-    input.overdueTasks > 0 ? { key: "overdue", title: "tareas vencidas", description: "Su fecha nativa o compromiso complementario ya venció.", count: input.overdueTasks, severity: "critical", href: href({ quick: "overdue" }) } : null,
-    input.blockedTasks > 0 ? { key: "blocked", title: "procesos bloqueados", description: "Requieren resolver una observación, detención o condición previa.", count: input.blockedTasks, severity: "warning", href: href({ quick: "blocked" }) } : null,
-    input.unassignedTasks > 0 ? { key: "unassigned", title: "tareas asignables sin responsable", description: "Revisiones y acciones que admiten una persona a cargo, pero no la tienen asignada.", count: input.unassignedTasks, severity: "warning", href: href({ quick: "unassigned" }) } : null,
-    input.canViewCapa && input.overdueCapa > 0 ? { key: "capa", title: "acciones correctivas vencidas", description: "Su plazo de cierre comprometido ya venció.", count: input.overdueCapa, severity: "critical", href: href({ module: "capa" }) } : null,
-    input.canApprove && input.pendingApprovals > 0 ? { key: "approvals", title: "ítems esperan aprobación", description: "Una decisión de aprobación desbloquea el siguiente paso de compra.", count: input.pendingApprovals, severity: "warning", href: href({ module: "aprobaciones" }) } : null,
-    input.canReceive && input.ordersPendingReceipt > 0 ? { key: "receipts", title: "órdenes pendientes de recepción", description: "Registra la llegada para que la operación pueda avanzar.", count: input.ordersPendingReceipt, severity: "warning", href: href({ module: "recepciones" }) } : null,
-    input.canDeliver && input.deliveries > 0 ? { key: "deliveries", title: "entregas por registrar", description: "Hay ítems disponibles para confirmar entrega a trabajadores desde stock físico.", count: input.deliveries, severity: "info", href: href({ module: "entregas" }) } : null,
-    input.canViewEpp && input.eppGaps > 0 ? { key: "epp", title: "brechas preventivas de EPP", description: "Existen brechas bloqueantes que requieren gestión preventiva.", count: input.eppGaps, severity: "warning", href: "/prevencion/epp-preventivo" } : null,
+    input.criticalTasks > 0 ? { key: "critical", title: pluralize(input.criticalTasks, "tarea crítica", "tareas críticas"), description: "Están marcadas como críticas en tus pendientes.", count: input.criticalTasks, severity: "critical", href: href({ quick: "critical" }) } : null,
+    input.overdueTasks > 0 ? { key: "overdue", title: pluralize(input.overdueTasks, "tarea vencida", "tareas vencidas"), description: "Ya pasó su fecha de vencimiento.", count: input.overdueTasks, severity: "critical", href: href({ quick: "overdue" }) } : null,
+    input.blockedTasks > 0 ? { key: "blocked", title: pluralize(input.blockedTasks, "proceso bloqueado", "procesos bloqueados"), description: "Hay una observación o detención que resolver antes de seguir.", count: input.blockedTasks, severity: "warning", href: href({ quick: "blocked" }) } : null,
+    input.canViewCapa && input.overdueCapa > 0 ? { key: "capa", title: pluralize(input.overdueCapa, "acción correctiva vencida", "acciones correctivas vencidas"), description: "Ya pasó el plazo de cierre comprometido.", count: input.overdueCapa, severity: "critical", href: href({ module: "capa" }) } : null,
+    input.canApprove && input.pendingApprovals > 0 ? { key: "approvals", title: pluralize(input.pendingApprovals, "ítem espera aprobación", "ítems esperan aprobación"), description: "Tu decisión desbloquea el siguiente paso de la compra.", count: input.pendingApprovals, severity: "warning", href: href({ module: "aprobaciones" }) } : null,
+    input.canReceive && input.ordersPendingReceipt > 0 ? { key: "receipts", title: pluralize(input.ordersPendingReceipt, "orden pendiente de recepción", "órdenes pendientes de recepción"), description: "Registra la llegada para que la compra pueda avanzar.", count: input.ordersPendingReceipt, severity: "warning", href: href({ module: "recepciones" }) } : null,
+    input.canDeliver && input.deliveries > 0 ? { key: "deliveries", title: pluralize(input.deliveries, "entrega por registrar", "entregas por registrar"), description: "Hay ítems en stock listos para entregar a trabajadores.", count: input.deliveries, severity: "info", href: href({ module: "entregas" }) } : null,
+    input.canViewEpp && input.eppGaps > 0 ? { key: "epp", title: pluralize(input.eppGaps, "brecha preventiva de EPP", "brechas preventivas de EPP"), description: "Hay trabajadores sin el EPP que su cargo exige.", count: input.eppGaps, severity: "warning", href: "/prevencion/epp-preventivo" } : null,
   ]
 
   return alerts.filter((alert): alert is DashboardAlert => alert !== null && !input.shownAsTile.has(alert.key))

@@ -5,7 +5,7 @@ import { getFieldControlSummary } from "@/lib/services/dashboard-domains-data"
 import { getOperationalCalendarBounds } from "@/lib/services/operational-period-metrics"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { DomainSection } from "../dashboard-domain-shell"
-import { scopedWorksiteId } from "../dashboard-scope"
+import { periodScopeLabel, scopedWorksiteId } from "../dashboard-scope"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { StatusShareBar } from "../dashboard-domain-charts"
 
@@ -34,6 +34,7 @@ export async function FieldControlSection({ session, scope }: DomainSectionsProp
     to: bounds.currentEnd,
   })
 
+  const periodo = periodScopeLabel(scope.period).toLocaleLowerCase("es-CL")
   const permitTotal = field.visible.permits ? field.permitsActive + field.permitsSuspended : 0
   const drillTotal = field.visible.drills ? field.drillsCompleted : 0
 
@@ -52,7 +53,8 @@ export async function FieldControlSection({ session, scope }: DomainSectionsProp
           {field.visible.inspections && (
           <KpiCard icon={<ClipboardText size={16} />} label="Cumplimiento de inspecciones"
             value={field.inspectionCompliance === null ? "—" : `${field.inspectionCompliance}%`}
-            detail={field.inspectionsReviewed > 0 ? `${field.inspectionsReviewed} revisadas · ahora` : "Sin inspecciones con resultado"}
+            // INI-05: es la única cifra de la vista que sigue al período, y decía "ahora".
+            detail={field.inspectionsReviewed > 0 ? `${field.inspectionsReviewed} revisadas · ${periodo}` : "Sin inspecciones con resultado"}
             href="/prevencion/inspecciones" />
           )}
           {field.visible.inspections && (
@@ -125,7 +127,7 @@ function fieldControlSummaryStats(field: Awaited<ReturnType<typeof getFieldContr
       key: "committee-agreements",
       label: "Acuerdos del comité abiertos",
       value: field.committeeAgreementsOpen,
-      secondary: "Con acción CAPA sin cerrar · ahora",
+      secondary: "Con acción correctiva (CAPA) sin cerrar · ahora",
       href: "/prevencion/cphs",
       tone: "signal",
     },

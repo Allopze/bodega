@@ -84,16 +84,20 @@ export function ConsolidatedRequestsSummary({ requests }: Props) {
                 // TR-O2: el avance de cantidades se expone como lista descriptiva
                 // (`<dl>`/`<dt>`/`<dd>`) para lectores de pantalla, no sólo como
                 // cajas coloreadas.
-                <dl
-                  key={sum.uom}
-                  aria-label={`Cantidades de la solicitud ${request.requestCode}${request.quantitiesByUom.length > 1 ? ` en ${sum.uom}` : ""}`}
-                >
+                // La grilla va en el propio `<dl>`: un `<div>` intermedio dejaba
+                // cada par `<dt>`/`<dd>` dos niveles adentro, que HTML no admite
+                // (axe `definition-list`/`dlitem`, 2026-10-05). La unidad, cuando
+                // hay más de una, es un rótulo del grupo y no un término más.
+                <div key={sum.uom}>
                   {request.quantitiesByUom.length > 1 && (
-                    <dt className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)] mb-1">
+                    <p className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)] mb-1">
                       {sum.uom}
-                    </dt>
+                    </p>
                   )}
-                  <div className="grid grid-cols-5 gap-1.5">
+                  <dl
+                    aria-label={`Cantidades de la solicitud ${request.requestCode}${request.quantitiesByUom.length > 1 ? ` en ${sum.uom}` : ""}`}
+                    className="grid grid-cols-5 gap-1.5"
+                  >
                     <FlowStat label="Solicitado" value={sum.requested} uom={sum.uom} />
                     <FlowStat label="En OC" value={sum.inOc} uom={sum.uom} />
                     <FlowStat label="Rec. faena" value={sum.receivedFaena} uom={sum.uom} />
@@ -128,8 +132,8 @@ export function ConsolidatedRequestsSummary({ requests }: Props) {
                         {formatQty(sum.pendingTotal, sum.uom)}
                       </dd>
                     </div>
-                  </div>
-                </dl>
+                  </dl>
+                </div>
               ))
             )}
           </div>

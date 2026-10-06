@@ -51,6 +51,6 @@ export async function saveInvoiceLineAllocationsAction(input: unknown): Promise<
     if (error instanceof InvoiceLineAllocationError) return { ok: false, code: error.code, message: INVOICE_ALLOCATION_ERRORS[error.code] }
     return { ok: false, code: "SAVE_FAILED", message: "No se pudo guardar el reparto. Tus cambios siguen aquí; vuelve a intentarlo." }
   }
-  revalidateOperationalViews([`/compras/${values.purchaseOrderId}`, "/compras", "/bodega/trazabilidad"])
+  revalidateOperationalViews([`/compras/${values.purchaseOrderId}`, "/compras", "/seguimiento"])
   return { ok: true, message: "Reparto guardado y conciliación actualizada." }
 }

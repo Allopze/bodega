@@ -150,7 +150,7 @@ describe("attachDteAsInvoice", () => {
     expect(mockRevalidateOperationalViews).toHaveBeenCalledWith([
       "/compras",
       "/compras/oc-1",
-      "/bodega/trazabilidad",
+      "/seguimiento",
       "/recepcion",
       "/recepcion/receipt-1",
     ])

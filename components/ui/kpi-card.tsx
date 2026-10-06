@@ -59,7 +59,7 @@ export function KpiCard({
     // evidencia: el criterio es "máximo cuatro tiles por pantalla" y sin un
     // selector fiable sólo podía comprobarse a ojo.
     <Card data-kpi-card="" className={cn(
-      "transition-all duration-(--duration-fast)",
+      "transition-[background-color,border-color,box-shadow] duration-(--duration-fast)",
       secondaryAction && "relative",
       tone === "signal" && "ring-1 ring-[var(--color-signal-line)]",
       tone === "danger" && "ring-1 ring-[var(--color-danger-line)]",

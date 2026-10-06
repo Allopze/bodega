@@ -48,7 +48,31 @@ describe("ConsolidatedKpis", () => {
     )
     expect(screen.getByRole("link", { name: /Cerrados \/ entregados/ })).toHaveAttribute(
       "href",
-      "/bodega/trazabilidad?faena=ws-biodiversa&estado=entregado",
+      "/seguimiento?faena=ws-biodiversa&estado=entregado",
+    )
+  })
+
+  it("en 'todas las faenas' no pasa un id de faena inexistente a las otras bandejas", () => {
+    render(
+      <ConsolidatedKpis
+        filters={{ ...FILTERS, faena: "todas" }}
+        kpis={{
+          openRequests: 1,
+          pendingPurchase: 1,
+          awaitingSupplier: 1,
+          inOffice: 0,
+          inFaena: 0,
+          partiallyDelivered: 0,
+          fullyDelivered: 1,
+        }}
+      />,
+    )
+
+    expect(screen.getByRole("link", { name: /Pendientes de compra/ })).toHaveAttribute("href", "/compras")
+    expect(screen.getByRole("link", { name: /Esperando proveedor/ })).toHaveAttribute("href", "/recepcion")
+    expect(screen.getByRole("link", { name: /Cerrados \/ entregados/ })).toHaveAttribute(
+      "href",
+      "/seguimiento?estado=entregado",
     )
   })
 })

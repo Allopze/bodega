@@ -27,7 +27,7 @@ function invoiceDue(row: OcRow) {
 
 function InvoiceCoverageLabel({ status }: { status: OcRow["invoiceReconciliationStatus"] }) {
   if (status === "needs_review") {
-    return <span className="inline-flex items-center rounded-full bg-warning-tint px-2 py-0.5 text-xs font-medium text-warning-ink">Revisar conciliación</span>
+    return <span className="inline-flex items-center rounded-full bg-warning-tint px-2 py-0.5 text-xs font-medium text-warning-ink">Factura pendiente de conciliar</span>
   }
   if (status === "partially_invoiced") {
     return <span className="inline-flex items-center rounded-full bg-[var(--color-info-tint)] px-2 py-0.5 text-xs font-medium text-[var(--color-info-ink)]">Facturación parcial</span>
@@ -112,8 +112,8 @@ export function OcTableRow({ row, canDelete = false, canSend = false }: { row: O
             <form action={issueAction}>
               <input type="hidden" name="orderId" value={row.id} />
               <SubmitButton
-                label="Emitir y enviar"
-                loadingLabel="Enviando…"
+                label="Emitir OC"
+                loadingLabel="Emitiendo…"
                 variant="secondary"
                 size="sm"
               />
@@ -251,7 +251,7 @@ export function OcMobileCard({
         <dd className="text-right font-mono tabular-nums text-[var(--color-text)]">{formatDate(ocDisplayDate(row))}</dd>
       </dl>
       {row.invoiceReconciliationStatus === "needs_review" ? (
-        <p className="mt-2 text-xs font-medium text-warning-ink">Revisar conciliación</p>
+        <p className="mt-2 text-xs font-medium text-warning-ink">Factura pendiente de conciliar</p>
       ) : row.invoiceReconciliationStatus === "partially_invoiced" ? (
         <p className="mt-2 text-xs font-medium text-[var(--color-info-ink)]">Facturación parcial</p>
       ) : row.invoiceReconciliationStatus === "awaiting_receipt" ? (
@@ -269,8 +269,8 @@ export function OcMobileCard({
             <form action={issueAction}>
               <input type="hidden" name="orderId" value={row.id} />
               <SubmitButton
-                label="Emitir y enviar"
-                loadingLabel="Enviando…"
+                label="Emitir OC"
+                loadingLabel="Emitiendo…"
                 variant="secondary"
                 size="sm"
               />

@@ -45,17 +45,6 @@ export interface DeliveryStockProductOption {
   sizeAttributeName: string | null
 }
 
-export interface DeliverableEppOption {
-  requestItemId: string
-  requestCode: string
-  worksiteId: string
-  productId: string
-  productName: string
-  productSku: string | null
-  quantity: number
-  deliveredQuantity: number
-  receivedAtFaena: number
-  remainingQuantity: number
-  stockQuantity: number
-  unitOfMeasure: string
-}
+// Definido junto al servicio para que la página, el servicio y otras pantallas
+// (Bodega) lo importen sin ciclos.
+export type { DeliverableEppOption } from "@/lib/services/epp-pending-delivery.types"

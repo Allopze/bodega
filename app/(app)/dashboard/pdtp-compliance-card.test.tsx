@@ -26,7 +26,9 @@ describe("PdtpComplianceCard", () => {
         versionLabels={["v1", "v2"]}
       />,
     )
-    expect(screen.getByText(/Consolidado v1 \+ v2/)).toBeDefined()
+    expect(screen.getByText(/Incluye las versiones v1 y v2 del programa/)).toBeDefined()
+    // A6: la sigla "pp" lleva su nombre completo.
+    expect(screen.getByText("pp").getAttribute("title")).toMatch(/puntos porcentuales/)
   })
 
   it("no rotula versiones con una sola", () => {
@@ -48,7 +50,7 @@ describe("PdtpComplianceCard", () => {
         versionLabels={["v1"]}
       />,
     )
-    expect(screen.queryByText(/Consolidado/)).toBeNull()
+    expect(screen.queryByText(/Incluye las versiones/)).toBeNull()
   })
 
   it("formats fractional compliance as a human percentage", () => {
