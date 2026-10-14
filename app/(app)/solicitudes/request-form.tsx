@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { ItemEditor } from "./item-editor"
+import { editPendingRequestItem } from "./actions"
 import { URGENCY_OPTS } from "./request-form.constants"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
 import { QUOTATION_TYPES } from "@/lib/request-types"
@@ -51,6 +52,7 @@ interface RequestFormProps {
   workers?: WorkerOption[]
   equipment?: EquipmentOption[]
   editRequest?: EditRequest
+  editableItemIds?: string[]
   maxFileSizeMb: number
   userRoles?: string[]
   userPermissions?: string[]
@@ -75,32 +77,44 @@ function RequestFormHeader({
   onWorksiteChange: (v: string) => void; onRequestTypeChange: (v: string) => void
   onUrgencyChange: (v: string) => void; onDeliveryModeChange: (v: string) => void; onRequiredDateChange: (v: string) => void; onNotesChange: (v: string) => void
 }) {
-  /**
-   * En modo consulta los controles van `disabled`, y `disabled:opacity-50` dejaba
-   * los **valores** de la solicitud en 3.53:1 — bajo el mínimo AA de 4.5:1 (medido,
-   * auditoría UI/UX 2026-07-29 §5.6). Un dato en una ficha de lectura es contenido,
-   * no un control inactivo: la exención de WCAG 1.4.3 no lo cubre. Sigue siendo
-   * no interactivo; sólo recupera la opacidad.
-   */
-  const readOnlyLook = readOnly ? "disabled:opacity-100 disabled:cursor-default" : undefined
+  if (readOnly) {
+    const deliveryModeLabel = deliveryMode === "directo_faena"
+      ? "Directo a faena (Urgencia/Directo)"
+      : "Vía oficina (Estándar)"
+
+    return (
+      <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)]">
+        <h2 className="text-h2 text-[var(--color-text)]">Datos de la solicitud</h2>
+        <dl className="mt-3 grid gap-x-6 gap-y-1 divide-y divide-[var(--color-border)] text-sm md:grid-cols-2 md:divide-y-0 lg:grid-cols-3">
+          <SummaryLine label="Faena" value={worksites.find((worksite) => worksite.id === worksiteId)?.name ?? "Sin faena"} />
+          <SummaryLine label="Tipo" value={requestTypeOpts.find((option) => option.value === requestType)?.label ?? requestType} />
+          <SummaryLine label="Urgencia" value={URGENCY_OPTS.find((option) => option.value === urgency)?.label ?? urgency} />
+          <SummaryLine label="Despacho sugerido" value={deliveryModeLabel} />
+          <SummaryLine label="Fecha requerida" value={requiredDate ? formatDate(requiredDate) : "Pendiente"} muted={!requiredDate} />
+        </dl>
+        {notes.trim() && (
+          <div className="mt-3 border-t border-[var(--color-border)] pt-3">
+            <h3 className="text-xs text-[var(--color-text-subtle)]">Notas generales</h3>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--color-text)]">{notes}</p>
+          </div>
+        )}
+      </section>
+    )
+  }
 
   return (
     <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5 space-y-4">
       <h2 className="text-h2 text-[var(--color-text)]">Datos de la solicitud</h2>
-      {/* A-22: en modo consulta los textos de ayuda son instrucciones para llenar
-          un formulario que ya no se llena ("La jefatura confirma al aprobar"), y
-          sumados a los selects deshabilitados hacían leer la ficha como un
-          formulario averiado. En lectura sólo quedan las etiquetas y los valores. */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Faena" required htmlFor="worksiteId">
           <Select value={worksiteId} onValueChange={onWorksiteChange} disabled={readOnly}>
-            <SelectTrigger id="worksiteId" className={readOnlyLook}><SelectValue placeholder="Selecciona una faena" /></SelectTrigger>
+            <SelectTrigger id="worksiteId"><SelectValue placeholder="Selecciona una faena" /></SelectTrigger>
             <SelectContent>{worksites.map((w) => (<SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>))}</SelectContent>
           </Select>
         </Field>
         <Field label="Tipo de solicitud" htmlFor="requestType" helper={readOnly ? undefined : "EPP: elementos de protección personal. El tipo clasifica la solicitud para su revisión y compra."}>
           <Select value={requestType} onValueChange={onRequestTypeChange} disabled={readOnly}>
-            <SelectTrigger id="requestType" className={readOnlyLook}><SelectValue /></SelectTrigger>
+            <SelectTrigger id="requestType"><SelectValue /></SelectTrigger>
             <SelectContent>{requestTypeOpts.map((o) => (<SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>))}</SelectContent>
           </Select>
         </Field>
@@ -109,13 +123,13 @@ function RequestFormHeader({
             en la cola operacional). El texto ahora dice cuál manda. */}
         <Field label="Urgencia" htmlFor="urgency" helper={readOnly ? undefined : "Valor por defecto de los ítems. Cada ítem puede fijar la suya y esa es la que prioriza en la cola."}>
           <Select value={urgency} onValueChange={onUrgencyChange} disabled={readOnly}>
-            <SelectTrigger id="urgency" className={readOnlyLook}><SelectValue /></SelectTrigger>
+            <SelectTrigger id="urgency"><SelectValue /></SelectTrigger>
             <SelectContent>{URGENCY_OPTS.map((o) => (<SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>))}</SelectContent>
           </Select>
         </Field>
         <Field label="Despacho sugerido" htmlFor="deliveryMode" helper={readOnly ? undefined : "Vía oficina (estándar) o Directo a faena (urgencia/volumen). La jefatura confirma al aprobar."}>
           <Select value={deliveryMode} onValueChange={onDeliveryModeChange} disabled={readOnly}>
-            <SelectTrigger id="deliveryMode" className={readOnlyLook}><SelectValue /></SelectTrigger>
+            <SelectTrigger id="deliveryMode"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="via_oficina">Vía oficina (Estándar)</SelectItem>
               <SelectItem value="directo_faena">Directo a faena (Urgencia/Directo)</SelectItem>
@@ -125,11 +139,11 @@ function RequestFormHeader({
         <Field label="Fecha requerida" required htmlFor="requiredDate"
           error={requiredDateError}
         >
-          <DatePicker id="requiredDate" name="requiredDate" value={requiredDate} onChange={onRequiredDateChange} disabled={readOnly} className={readOnlyLook} />
+          <DatePicker id="requiredDate" name="requiredDate" value={requiredDate} onChange={onRequiredDateChange} disabled={readOnly} />
         </Field>
       </div>
       <Field label="Notas generales" htmlFor="notes">
-        <Textarea id="notes" name="notes" placeholder="Observaciones, contexto de la solicitud..." rows={2} disabled={readOnly} className={readOnlyLook} value={notes} onChange={(e) => onNotesChange(e.target.value)} />
+        <Textarea id="notes" name="notes" placeholder="Observaciones, contexto de la solicitud..." rows={2} disabled={readOnly} value={notes} onChange={(e) => onNotesChange(e.target.value)} />
       </Field>
     </section>
   )
@@ -138,9 +152,11 @@ function RequestFormHeader({
 function ItemsSection({
   items, requestType, requestTypeLabel: _requestTypeLabel, readOnly, savedId, itemsError,
   products, suppliers, workers, equipment, maxFileSizeMb, units,
+  editableItemIds = [],
   onAdd, onRemove, onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
 }: {
   items: ItemRow[]; requestType: string; requestTypeLabel?: string; readOnly: boolean; savedId?: string
+  editableItemIds?: string[]
   itemsError?: string; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
   equipment?: EquipmentOption[]; maxFileSizeMb: number; units: string[]
   onAdd: () => void; onRemove: (key: string) => void; onUpdate: (key: string, patch: Partial<ItemRow>) => void
@@ -148,6 +164,78 @@ function ItemsSection({
   onClearProduct: (key: string) => void; onUpdateAttr: (itemKey: string, attrIdx: number, value: string) => void
   onUpdateWorker: (itemKey: string, workerId: string) => void
 }) {
+  const [editingItemKey, setEditingItemKey] = React.useState<string | null>(null)
+  const [originalItem, setOriginalItem] = React.useState<ItemRow | null>(null)
+  const [editError, setEditError] = React.useState<string | null>(null)
+  const [isSavingItem, startSavingItem] = React.useTransition()
+  const editableIds = new Set(editableItemIds)
+
+  const beginEditing = (item: ItemRow) => {
+    setOriginalItem({
+      ...item,
+      attributes: item.attributes.map((attribute) => ({ ...attribute })),
+      variantQuantities: { ...item.variantQuantities },
+    })
+    setEditingItemKey(item._key)
+    setEditError(null)
+  }
+
+  const cancelEditing = (itemKey: string) => {
+    if (originalItem) onUpdate(itemKey, originalItem)
+    setEditingItemKey(null)
+    setOriginalItem(null)
+    setEditError(null)
+  }
+
+  const saveEditing = (item: ItemRow) => {
+    if (!savedId || !item.id || !item.updatedAt) {
+      setEditError("No se pudo identificar el ítem. Actualiza la página e inténtalo nuevamente")
+      return
+    }
+
+    const itemInput = {
+      productId: item.productId,
+      productNameFree: item.productId ? null : item.productNameFree.trim(),
+      quantity: Number(item.quantity),
+      unitOfMeasure: item.unitOfMeasure.trim(),
+      urgency: item.urgency,
+      workerId: item.workerId || null,
+      suggestedSupplierId: item.suggestedSupplierId || null,
+      supplierHint: item.supplierHint.trim() || null,
+      notes: item.notes.trim() || null,
+      attributes: item.attributes.flatMap((attribute) => attribute.value.trim()
+        ? [{
+            attributeId: attribute.attributeId,
+            attributeName: attribute.attributeName,
+            value: attribute.value.trim(),
+          }]
+        : []),
+    }
+
+    setEditError(null)
+    startSavingItem(async () => {
+      try {
+        const result = await editPendingRequestItem(item.id!, item.updatedAt!, itemInput)
+        if (!result.ok) {
+          setEditError(result.message ?? "No se pudo actualizar el ítem")
+          return
+        }
+
+        const updatedAt = result.data?.updatedAt
+        const quantity = result.data?.quantity
+        onUpdate(item._key, {
+          ...(typeof updatedAt === "string" ? { updatedAt } : {}),
+          ...(typeof quantity === "number" ? { quantity: String(quantity) } : {}),
+        })
+        setEditingItemKey(null)
+        setOriginalItem(null)
+        toast.success(result.message ?? "Ítem actualizado")
+      } catch {
+        setEditError("No se pudo conectar para guardar el ítem. Inténtalo nuevamente")
+      }
+    })
+  }
+
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
@@ -157,6 +245,11 @@ function ItemsSection({
         </h2>
         {!readOnly && (<Button type="button" variant="ghost" size="sm" onClick={onAdd}><Plus weight="bold" size={13} /> Agregar ítem</Button>)}
       </div>
+      {readOnly && editableIds.size > 0 && (
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Puedes editar por separado los ítems que siguen pendientes. Al guardar, continúan pendientes de aprobación.
+        </p>
+      )}
       {itemsError && <p className="text-xs text-[var(--color-danger)]">{itemsError}</p>}
       {QUOTATION_TYPES.has(requestType) && !savedId && (
         <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--color-signal-ink)] rounded-[var(--radius)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-3 py-2.5">
@@ -167,22 +260,56 @@ function ItemsSection({
       {/* Un solo datalist para todos los ítems: estaba dentro de ItemEditor, así
           que con 2+ ítems el DOM quedaba con IDs repetidos (inválido, y axe lo
           marca como duplicate-id). Los inputs lo referencian por ese id. */}
-      <datalist id="unit-of-measure-options">
-        {units.map((unit) => <option key={unit} value={unit} />)}
-      </datalist>
+      {(!readOnly || editingItemKey !== null) && (
+        <datalist id="unit-of-measure-options">
+          {units.map((unit) => <option key={unit} value={unit} />)}
+        </datalist>
+      )}
       <div className="space-y-2">
-        {items.map((item, idx) => (
-          <ItemEditor key={item._key} item={item} idx={idx} products={products} suppliers={suppliers} workers={workers} equipment={equipment}
-            readOnly={readOnly} requestType={requestType} maxFileSizeMb={maxFileSizeMb}
-            onUpdate={(patch) => onUpdate(item._key, patch)}
-            onSelectProduct={(pid) => onSelectProduct(item._key, pid)}
-            onSelectFreeProduct={(name) => onSelectFreeProduct(item._key, name)}
-            onClearProduct={() => onClearProduct(item._key)}
-            onUpdateAttr={(i, v) => onUpdateAttr(item._key, i, v)}
-            onUpdateWorker={(workerId) => onUpdateWorker(item._key, workerId)}
-            onRemove={() => onRemove(item._key)} canRemove={items.length > 1}
-          />
-        ))}
+        {items.map((item, idx) => {
+          const isEditable = readOnly && item.id && editableIds.has(item.id)
+          const isEditing = editingItemKey === item._key
+          return (
+            <div key={item._key} className="space-y-2">
+              <ItemEditor item={item} idx={idx} products={products} suppliers={suppliers} workers={readOnly && !isEditing ? undefined : workers} equipment={equipment}
+                readOnly={(readOnly && !isEditing) || isSavingItem} requestType={requestType} maxFileSizeMb={maxFileSizeMb}
+                onUpdate={(patch) => onUpdate(item._key, patch)}
+                onSelectProduct={(pid) => onSelectProduct(item._key, pid)}
+                onSelectFreeProduct={(name) => onSelectFreeProduct(item._key, name)}
+                onClearProduct={() => onClearProduct(item._key)}
+                onUpdateAttr={(i, v) => onUpdateAttr(item._key, i, v)}
+                onUpdateWorker={(workerId) => onUpdateWorker(item._key, workerId)}
+                onRemove={() => onRemove(item._key)} canRemove={!readOnly && items.length > 1}
+              />
+              {isEditable && !isEditing && (
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={editingItemKey !== null || isSavingItem}
+                    onClick={() => beginEditing(item)}
+                  >
+                    Editar ítem
+                  </Button>
+                </div>
+              )}
+              {isEditing && (
+                <div className="space-y-2">
+                  {editError && <p role="alert" className="text-right text-xs text-[var(--color-danger)]">{editError}</p>}
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="ghost" size="sm" disabled={isSavingItem} onClick={() => cancelEditing(item._key)}>
+                      Cancelar
+                    </Button>
+                    <Button type="button" variant="primary" size="sm" loading={isSavingItem} disabled={isSavingItem} onClick={() => saveEditing(item)}>
+                      Guardar cambios
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </section>
   )
@@ -252,6 +379,7 @@ export function RequestForm({
   workers,
   equipment,
   editRequest,
+  editableItemIds,
   maxFileSizeMb,
   userPermissions = [],
   initialRequestType,
@@ -289,9 +417,49 @@ export function RequestForm({
   const [hydrated, setHydrated] = useState(false)
   useEffect(() => { setHydrated(true) }, [])
 
+  const requestDetails = (
+    <>
+      <RequestFormHeader
+        worksiteId={form.worksiteId} requestType={form.requestType} urgency={form.urgency}
+        deliveryMode={form.deliveryMode} requiredDate={form.requiredDate} notes={form.notes} readOnly={form.readOnly}
+        worksites={worksites} requestTypeOpts={form.requestTypeOpts}
+        onWorksiteChange={form.setWorksiteId} onRequestTypeChange={form.setRequestType}
+        onUrgencyChange={form.setUrgency} onDeliveryModeChange={form.setDeliveryMode} onRequiredDateChange={form.setRequiredDate}
+        onNotesChange={form.setNotes}
+        requiredDateError={form.requiredDateError}
+      />
+      {QUOTATION_TYPES.has(form.requestType) && !form.readOnly && (
+        <div className="flex items-start gap-2.5 rounded-[var(--radius)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-4 py-3">
+          <Info size={14} weight="fill" className="mt-0.5 shrink-0 text-[var(--color-signal-ink)]" />
+          <div>
+            <p className="text-xs font-medium text-[var(--color-signal-ink)]">Flujo para {form.requestTypeLabel}</p>
+            <p className="mt-0.5 text-xs text-[var(--color-signal-ink)] opacity-80">Agrega los ítems → Guarda el borrador → Adjunta cotización por ítem → Envía a revisión.</p>
+          </div>
+        </div>
+      )}
+      <ItemsSection
+        items={form.items} requestType={form.requestType} requestTypeLabel={form.requestTypeLabel}
+        readOnly={form.readOnly} savedId={form.savedId} itemsError={form.itemsError}
+        editableItemIds={editableItemIds}
+        products={products} suppliers={suppliers} workers={workers} equipment={equipment} maxFileSizeMb={maxFileSizeMb}
+        units={units}
+        onAdd={form.addItem} onRemove={form.removeItem} onUpdate={form.updateItem}
+        onSelectProduct={form.selectProduct} onSelectFreeProduct={form.selectFreeProduct}
+        onClearProduct={form.clearProduct} onUpdateAttr={form.updateAttr}
+        onUpdateWorker={form.updateItemWorker}
+      />
+    </>
+  )
+
   return (
-    <div className="grid gap-6 pb-16 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start" aria-busy={!hydrated}>
-      <div className="min-w-0 space-y-8">
+    <div
+      className={form.readOnly ? "space-y-4 pb-8" : "grid gap-6 pb-16 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start"}
+      aria-busy={!hydrated && !form.readOnly}
+    >
+      <div className={form.readOnly ? "min-w-0 space-y-4" : "min-w-0 space-y-8"}>
+        {form.readOnly ? (
+          <div className="space-y-4">{requestDetails}</div>
+        ) : (
         <form
           inert={!hydrated}
           onSubmit={(e) => {
@@ -325,34 +493,7 @@ export function RequestForm({
               <p className="text-xs text-[var(--color-info-ink)]">{prefillNotice}</p>
             </div>
           )}
-          <RequestFormHeader
-            worksiteId={form.worksiteId} requestType={form.requestType} urgency={form.urgency}
-            deliveryMode={form.deliveryMode} requiredDate={form.requiredDate} notes={form.notes} readOnly={form.readOnly}
-            worksites={worksites} requestTypeOpts={form.requestTypeOpts}
-            onWorksiteChange={form.setWorksiteId} onRequestTypeChange={form.setRequestType}
-            onUrgencyChange={form.setUrgency} onDeliveryModeChange={form.setDeliveryMode} onRequiredDateChange={form.setRequiredDate}
-            onNotesChange={form.setNotes}
-            requiredDateError={form.requiredDateError}
-          />
-          {QUOTATION_TYPES.has(form.requestType) && !form.readOnly && (
-            <div className="flex items-start gap-2.5 rounded-[var(--radius)] border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] px-4 py-3">
-              <Info size={14} weight="fill" className="mt-0.5 shrink-0 text-[var(--color-signal-ink)]" />
-              <div>
-                <p className="text-xs font-medium text-[var(--color-signal-ink)]">Flujo para {form.requestTypeLabel}</p>
-                <p className="mt-0.5 text-xs text-[var(--color-signal-ink)] opacity-80">Agrega los ítems → Guarda el borrador → Adjunta cotización por ítem → Envía a revisión.</p>
-              </div>
-            </div>
-          )}
-          <ItemsSection
-            items={form.items} requestType={form.requestType} requestTypeLabel={form.requestTypeLabel}
-            readOnly={form.readOnly} savedId={form.savedId} itemsError={form.itemsError}
-            products={products} suppliers={suppliers} workers={workers} equipment={equipment} maxFileSizeMb={maxFileSizeMb}
-            units={units}
-            onAdd={form.addItem} onRemove={form.removeItem} onUpdate={form.updateItem}
-            onSelectProduct={form.selectProduct} onSelectFreeProduct={form.selectFreeProduct}
-            onClearProduct={form.clearProduct} onUpdateAttr={form.updateAttr}
-            onUpdateWorker={form.updateItemWorker}
-          />
+          {requestDetails}
           {form.isDraft && (
             <div className="flex items-center justify-between gap-3 pt-2 border-t border-[var(--color-border)]">
               <Button type="button" variant="ghost" size="sm" onClick={() => {
@@ -388,6 +529,7 @@ export function RequestForm({
             </div>
           )}
         </form>
+        )}
 
         <Dialog
           open={stockWarning !== null}
@@ -580,12 +722,14 @@ export function RequestForm({
           />
         )}
       </div>
-      <SummarySidebar
-        isDraft={form.isDraft} readOnly={form.readOnly} isQuotation={form.isQuotation}
-        worksiteLabel={form.worksiteLabel} requestTypeLabel={form.requestTypeLabel}
-        urgencyLabel={form.urgencyLabel} requiredDate={form.requiredDate}
-        statusLabel={form.statusLabel} items={form.items} missingItems={form.missingItems}
-      />
+      {!form.readOnly && (
+        <SummarySidebar
+          isDraft={form.isDraft} readOnly={form.readOnly} isQuotation={form.isQuotation}
+          worksiteLabel={form.worksiteLabel} requestTypeLabel={form.requestTypeLabel}
+          urgencyLabel={form.urgencyLabel} requiredDate={form.requiredDate}
+          statusLabel={form.statusLabel} items={form.items} missingItems={form.missingItems}
+        />
+      )}
     </div>
   )
 }

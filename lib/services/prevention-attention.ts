@@ -408,12 +408,11 @@ async function miperAttentionItems(
 
   for (const row of entries) {
     const intolerable = row.classification === "intolerable"
+    const riskName = (row.risk ?? row.hazard ?? row.hazardCode).slice(0, 120)
     items.push({
       id: `miper_entry:${row.id}`, kind: "miper",
-      title: intolerable
-        ? "Riesgo Intolerable sin medida por implementar con responsable y plazo"
-        : "Riesgo Importante sin medida por implementar con responsable y plazo",
-      detail: (row.risk ?? row.hazard ?? row.hazardCode).slice(0, 120),
+      title: riskName,
+      detail: `${intolerable ? "Intolerable" : "Importante"} · falta una medida con responsable y plazo`,
       worksiteName: row.worksiteName, dueDate: null,
       href: `/prevencion/miper/${row.matrixId}?fila=${row.id}`,
       tone: intolerable ? "danger" : "warning",

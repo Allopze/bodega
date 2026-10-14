@@ -212,7 +212,11 @@ export default async function BillingSummaryPage({
                             {formatDateTime(run.finishedAt ?? run.startedAt)} · {run.recordsFetched} documentos leídos
                           </p>
                           {run.errorSummary && (
-                            <p className="mt-0.5 line-clamp-2 text-xs text-[var(--color-danger-ink)]">{run.errorSummary}</p>
+                            <p className="mt-0.5 text-xs text-[var(--color-danger-ink)]">
+                              La sincronización reportó errores. {can(session, "billing:manage_sync")
+                                ? "Revisa el detalle de sincronización."
+                                : "Solicita una revisión a quien administra las sincronizaciones."}
+                            </p>
                           )}
                         </div>
                         <MetaBadge meta={status} />
@@ -257,10 +261,13 @@ export default async function BillingSummaryPage({
               <p className="mt-1 text-xs text-[var(--color-warning-ink)]">
                 Se emitieron pero nadie las atribuyó a un cliente, contrato o faena, así que no aparecen en los reportes por faena.
               </p>
-              <ul className="mt-2 space-y-1 text-sm">
+              <ul className="mt-2 space-y-2 text-sm">
                 {unlinked.map((invoice) => (
                   <li key={invoice.id}>
-                    <Link href={`/facturacion/facturas/${invoice.id}`} className="text-[var(--color-warning-ink)] underline underline-offset-2">
+                    <Link
+                      href={`/facturacion/facturas/${invoice.id}`}
+                      className="flex min-h-8 items-center rounded px-2 py-1 text-[var(--color-warning-ink)] underline underline-offset-2 hover:bg-[var(--color-warning-tint)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+                    >
                       Folio {invoice.folio} · {invoice.receiverName} · {formatMoney(invoice.totalAmount, invoice.currency)}
                     </Link>
                   </li>

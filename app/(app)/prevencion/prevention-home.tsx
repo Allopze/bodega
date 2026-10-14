@@ -70,7 +70,10 @@ export async function PreventionHome() {
         <ul className="divide-y divide-(--color-border) border-t border-(--color-border)">
           {attention.map((item) => <li key={item.id}>
             <Link href={item.href} className="group flex items-center justify-between gap-4 py-3 text-sm hover:text-(--color-primary-ink)">
-              <span><span className="block font-medium text-(--color-text)">{item.title}</span><span className="block text-xs text-(--color-text-muted)">{item.worksiteName} · {item.detail}{item.dueDate ? ` · ${item.dueDate}` : ""}</span></span>
+              <span className="min-w-0">
+                <span className="block line-clamp-2 font-medium text-(--color-text)">{item.title}</span>
+                <span className="block text-xs text-(--color-text-muted)">{item.worksiteName} · {item.detail}{item.dueDate ? ` · ${item.dueDate}` : ""}</span>
+              </span>
               <CaretRight size={16} className={item.tone === "danger" ? "text-(--color-danger)" : "text-(--color-text-faint)"} />
             </Link>
           </li>)}

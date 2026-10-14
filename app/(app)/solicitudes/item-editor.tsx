@@ -22,7 +22,8 @@ import { ItemEditorAttributes } from "./item-editor-attributes"
 import { groupProductVariants, formatVariantProductName } from "@/lib/products/variant-grouping"
 import { URGENCY_OPTS } from "./request-form.constants"
 import { getWorkerEppStatusAction, type WorkerEppStatusResult } from "./actions"
-import { formatDate } from "@/lib/utils"
+import { formatDate, formatQty } from "@/lib/utils"
+import { getEditableItemAttributes } from "./item-editor-attributes.helpers"
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -83,7 +84,7 @@ export function ItemEditor({
   const showWorkerPicker = !isQuotationType && (
     workerRequired
     || (requestType === "epp" && !!workers?.length)
-    || (readOnly && !!item.workerId)
+    || (!!item.workerId && (readOnly || !!workers?.length))
   )
   const workerOptions = React.useMemo(
     () => (workers ?? []).map((worker) => ({
@@ -98,13 +99,95 @@ export function ItemEditor({
 
   React.useEffect(() => {
     let active = true
-    if (requestType === "epp" && item.workerId && item.productId) {
+    if (!readOnly && requestType === "epp" && item.workerId && item.productId) {
       getWorkerEppStatusAction(item.workerId, item.productId).then((res) => {
         if (active) setStatusInfo(res)
       })
     }
     return () => { active = false }
-  }, [requestType, item.workerId, item.productId])
+  }, [readOnly, requestType, item.workerId, item.productId])
+
+  if (readOnly) {
+    const variantAttributeName = sizeVariantPicker?.attributeName.toLocaleLowerCase("es-CL")
+    const attributeDetails = isQuotationType
+      ? [
+          { label: "N° de parte", value: item.partNumber },
+          { label: "Ubicación", value: item.location },
+          { label: "Equipo / máquina", value: item.equipmentName },
+          { label: "Patente / código interno", value: item.patent },
+          { label: "Marca", value: item.brand },
+          { label: "Modelo", value: item.model },
+        ].filter((detail) => detail.value.trim())
+      : getEditableItemAttributes(item.attributes)
+          .filter(({ attribute }) =>
+            attribute.value.trim()
+            && !attribute.drivesQuantity
+            && attribute.attributeName.toLocaleLowerCase("es-CL") !== variantAttributeName,
+          )
+          .map(({ attribute }) => ({ label: attribute.attributeName, value: attribute.value }))
+    const supplierName = item.suggestedSupplierId
+      ? suppliers.find((supplier) => supplier.id === item.suggestedSupplierId)?.name
+      : item.supplierHint
+    const facts = [
+      { label: "Cantidad", value: formatQty(Number(item.quantity)) },
+      { label: "Unidad", value: item.unitOfMeasure },
+      ...(!isQuotationType ? [{ label: "Urgencia", value: URGENCY_OPTS.find((option) => option.value === item.urgency)?.label ?? item.urgency }] : []),
+      ...(item.workerId ? [{ label: "Colaborador", value: item.workerName || "Sin asignar" }] : []),
+      ...(showEquipmentPicker && item.equipmentCode ? [{ label: "Código del equipo", value: item.equipmentLabel || item.equipmentCode }] : []),
+      ...(item.emergencyResourceId ? [{ label: "Activo de emergencia", value: item.emergencyResourceLabel || "Registrado en la solicitud" }] : []),
+      ...(!isQuotationType && supplierName ? [{ label: "Proveedor sugerido", value: supplierName }] : []),
+    ].filter((fact) => fact.value.trim())
+
+    return (
+      <article className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-xs font-mono text-[var(--color-text-muted)]">
+            {idx + 1}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                {item.productId ? formatVariantProductName(item.productName, [], item.attributes.map((attribute) => ({ name: attribute.attributeName, value: attribute.value }))) : item.productNameFree || "Ítem sin descripción"}
+              </h3>
+              {selectedProduct?.isService && (
+                <MetaBadge meta={{ label: `${COST_PENDING_LABEL}`, variant: "outline" }} title="El precio de este servicio se conoce al ejecutarlo o facturarlo; se registra sobre la orden de compra." />
+              )}
+              {selectedProduct?.isInactive && (
+                <span className="inline-flex items-center rounded-full border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-1.5 py-px text-[10px] font-medium text-[var(--color-warning-ink)]">
+                  Inactivo
+                </span>
+              )}
+            </div>
+            {facts.length > 0 && (
+              <dl className="mt-2 grid gap-x-5 gap-y-1.5 border-t border-[var(--color-border)] pt-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                {facts.map((fact) => (
+                  <div key={fact.label} className="flex min-w-0 gap-1.5">
+                    <dt className="shrink-0 text-[var(--color-text-subtle)]">{fact.label}:</dt>
+                    <dd className="min-w-0 break-words text-[var(--color-text)]">{fact.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            {attributeDetails.length > 0 && (
+              <dl aria-label="Detalles del ítem" className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                {attributeDetails.map((detail) => (
+                  <div key={detail.label} className="flex gap-1.5">
+                    <dt className="text-[var(--color-text-subtle)]">{detail.label}:</dt>
+                    <dd className="text-[var(--color-text)]">{detail.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            {item.notes.trim() && (
+              <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
+                <span className="font-medium text-[var(--color-text-subtle)]">Observación:</span> {item.notes}
+              </p>
+            )}
+          </div>
+        </div>
+      </article>
+    )
+  }
 
   return (
     <div className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-4 space-y-4">

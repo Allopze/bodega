@@ -265,7 +265,7 @@ export function useRequestForm({
         const prod = item.productId ? products.find((p) => p.id === item.productId) : null
         return {
           _key: item.id ?? `edit-${item.productId ?? item.productNameFree ?? "item"}`,
-          id: item.id, productId: item.productId, productNameFree: item.productNameFree ?? "",
+          id: item.id, updatedAt: item.updatedAt, productId: item.productId, productNameFree: item.productNameFree ?? "",
           quantity: String(item.quantity), unitOfMeasure: item.unitOfMeasure,
           urgency: item.urgency, suggestedSupplierId: item.suggestedSupplierId ?? "",
           supplierHint: item.supplierHint ?? "", notes: item.notes ?? "", status: item.status,

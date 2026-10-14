@@ -47,6 +47,11 @@ const FORM_ROUTE = /\/(editar|nuevo|crear)(\/|$)/
  *  shell. La portada, el catálogo y la ficha de control lo conservan. */
 const OWN_SEARCH_PATTERNS = [
   /^\/prevencion\/miper\/(?!factores(?:\/|$)|controles(?:\/|$))[^/]+$/,
+  // Portadas sin una colección filtrable: el índice de módulos, los indicadores
+  // de facturación y el resumen de combustibles son enlaces o métricas, no listas.
+  /^\/prevencion$/,
+  /^\/facturacion$/,
+  /^\/combustibles$/,
   // TI (TIUX-35): el resumen, los reportes y la ficha de un activo no tienen
   // lista que filtrar; el input de la shell prometía un filtrado que no existe.
   // Las listas `/ti/activos` y `/ti/licencias` lo conservan. `/ti/tickets` (y su

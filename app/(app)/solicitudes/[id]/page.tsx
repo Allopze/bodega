@@ -114,12 +114,17 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     .map((i) => i.productId)
     .filter((id): id is string => id != null)
 
-  // ARQ-8: el picker de productos sólo hace falta mientras se pueden agregar
-  // ítems (repuestos/servicios en borrador) — EPP/otro nace enviada y ya no
-  // se edita, y una vez fuera del borrador tampoco. Fuera de ese caso, sólo
-  // hacen falta los productos que los ítems ya referencian, no el catálogo
-  // activo completo.
+  // El catálogo completo se carga para los borradores que permiten agregar
+  // ítems y para las solicitudes EPP/otros del solicitante con líneas aún
+  // pendientes; el resto de las fichas solo necesita los productos referidos.
   const canEditItems = request.status === "draft"
+  const canLoadPendingItemEditOptions = isOwner
+    && can(session, "requests:create")
+    && canAccessWorksite(session, request.worksiteId)
+    && ["epp", "otro"].includes(request.requestType)
+    && ["submitted", "in_review", "partially_approved"].includes(request.status)
+    && request.items.some((item) => item.status === "requested")
+  const canLoadItemEditOptions = canEditItems || canLoadPendingItemEditOptions
 
   // Sólo los colaboradores que los ítems ya nombran: la ficha es de consulta y
   // no ofrece el padrón completo, pero sí tiene que decir para quién es cada ítem.
@@ -154,9 +159,9 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     referencedEquipment.map((equipment) => [equipment.id, equipment.code]),
   )
 
-  const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb, unitRows] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb, unitRows, editableWorkers] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
-    canEditItems
+    canLoadItemEditOptions
       ? db.select().from(products).where(
           referencedProductIds.length > 0
             ? or(eq(products.isActive, true), inArray(products.id, referencedProductIds))
@@ -165,12 +170,12 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       : referencedProductIds.length === 0
         ? Promise.resolve([])
         : db.select().from(products).where(inArray(products.id, referencedProductIds)).orderBy(asc(products.name)),
-    !canEditItems && referencedProductIds.length === 0
+    !canLoadItemEditOptions && referencedProductIds.length === 0
       ? Promise.resolve([])
       : db.select().from(productAttributes)
-          .where(canEditItems ? undefined : inArray(productAttributes.productId, referencedProductIds))
+          .where(canLoadItemEditOptions ? undefined : inArray(productAttributes.productId, referencedProductIds))
           .orderBy(asc(productAttributes.sortOrder)),
-    !canEditItems && referencedProductIds.length === 0
+    !canLoadItemEditOptions && referencedProductIds.length === 0
       ? Promise.resolve([])
       : db
           .select({
@@ -179,7 +184,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
             isPreferred: productSuppliers.isPreferred,
           })
           .from(productSuppliers)
-          .where(canEditItems ? undefined : inArray(productSuppliers.productId, referencedProductIds))
+          .where(canLoadItemEditOptions ? undefined : inArray(productSuppliers.productId, referencedProductIds))
           .orderBy(desc(productSuppliers.isPreferred)),
     db
       .select({
@@ -204,6 +209,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     db
       .select({
         id:             approvalDecisions.id,
+        requestItemId:  approvalDecisions.requestItemId,
         type:           approvalDecisions.type,
         decidedAt:      approvalDecisions.decidedAt,
         reason:         approvalDecisions.reason,
@@ -226,7 +232,29 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     db.select({ code: productUnits.code }).from(productUnits)
       .where(eq(productUnits.isActive, true))
       .orderBy(asc(productUnits.sortOrder), asc(productUnits.code)),
+    canLoadPendingItemEditOptions
+      ? db.select({
+          id: workers.id, firstName: workers.firstName, lastName: workers.lastName, rut: workers.rut,
+          sizeTop: workers.sizeTop, sizeBottom: workers.sizeBottom, sizeShoe: workers.sizeShoe,
+          sizeGloves: workers.sizeGloves, sizeHelmet: workers.sizeHelmet,
+        }).from(workers)
+          .where(and(
+            eq(workers.worksiteId, request.worksiteId),
+            or(
+              eq(workers.isActive, true),
+              referencedWorkerIds.length > 0 ? inArray(workers.id, referencedWorkerIds) : undefined,
+            ),
+          ))
+          .orderBy(asc(workers.lastName), asc(workers.firstName))
+      : Promise.resolve([]),
   ])
+
+  const decidedItemIds = new Set(approvalDecisionRows.flatMap((decision) => decision.requestItemId ? [decision.requestItemId] : []))
+  const editableRequestItemIds = canLoadPendingItemEditOptions
+    ? request.items
+        .filter((item) => item.status === "requested" && !decidedItemIds.has(item.id))
+        .map((item) => item.id)
+    : []
 
   const worksiteOptions = allWorksites
     .filter((w) => canAccessWorksite(session, w.id))
@@ -272,6 +300,18 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   const supplierOptions = allSuppliers.map((s) => ({
     id:   s.id,
     name: s.name,
+  }))
+
+  const editableWorkerOptions = editableWorkers.map((worker) => ({
+    id: worker.id,
+    firstName: worker.firstName,
+    lastName: worker.lastName,
+    rut: worker.rut,
+    sizeTop: worker.sizeTop,
+    sizeBottom: worker.sizeBottom,
+    sizeShoe: worker.sizeShoe,
+    sizeGloves: worker.sizeGloves,
+    sizeHelmet: worker.sizeHelmet,
   }))
 
   const documentChain = await getDocumentChain(session, { kind: "request", id: request.id })
@@ -373,6 +413,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     notes:        request.notes,
     items: request.items.map((item) => ({
       id:                  item.id,
+      updatedAt:           item.updatedAt,
       productId:           item.productId,
       productNameFree:     item.productNameFree,
       quantity:            item.quantity,
@@ -452,6 +493,8 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
           units={unitRows.map((u) => u.code)}
           products={productOptions}
           suppliers={supplierOptions}
+          workers={editableWorkerOptions}
+          editableItemIds={editableRequestItemIds}
           editRequest={editRequest}
           maxFileSizeMb={maxFileSizeMb}
           userRoles={session.user.roles}

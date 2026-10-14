@@ -71,6 +71,7 @@ export interface EditRequest {
 
 export interface EditItem {
   id:                  string
+  updatedAt?:          string
   productId:           string | null
   productNameFree:     string | null
   quantity:            number
@@ -96,6 +97,7 @@ export interface EditItem {
 export interface ItemRow {
   _key:                string
   id?:                 string
+  updatedAt?:          string
   status?:             string
   productId:           string | null
   productNameFree:     string
