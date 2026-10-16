@@ -86,7 +86,7 @@ sin logo, eso es una decisión nueva.
 
 Atributo de catálogo estándar en cada variante de una prenda elegible:
 
-```
+```text
 name = "Logo"   type = "select"   options = ["Con logo"]   isRequired = true
 ```
 
@@ -163,14 +163,17 @@ Sigue el patrón de `backfill-epp-size-ranges`: dry-run por omisión,
    vista (por ejemplo camisa H2600 «Con logo» frente a «H2600»), para
    unificarlas después con la herramienta existente. No se corrigen aquí.
 
-Correr en producción: primero el dry-run, que se revisa con el usuario, y
-después `--apply`. Ambos pasos requieren autorización explícita. Como los
-demás backfills, va empaquetado en la imagen (`Dockerfile`) y como servicio
-manual de `docker-compose.yml`, que no corre en el deploy:
+Producción: corre con `--apply` en cada deploy (`scripts/deploy-prod.sh`,
+después de los pasos de tallas), igual que `backfill-epp-clothing-sizes`. Se
+decidió así el 2026-10-15 en vez de revisar antes el dry-run: sólo agrega o
+renombra atributos, nunca borra, deja auditoría por producto, no toca ítems ya
+en OC y es idempotente. El resumen JSON, con los duplicados por talla, queda en
+el log del deploy. Va empaquetado en la imagen (`Dockerfile`) y como servicio de
+`docker-compose.yml`:
 
-```
-docker compose run --rm backfill-epp-logo                                            # informa
-docker compose run --rm backfill-epp-logo node scripts/backfill-epp-logo.mjs --apply  # escribe
+```bash
+docker compose run --rm backfill-epp-logo                                      # escribe
+docker compose run --rm backfill-epp-logo node scripts/backfill-epp-logo.mjs   # sólo informa
 ```
 
 ## 5. Costos aceptados
