@@ -27,6 +27,7 @@ set -euo pipefail
 # a Cloudreve -> normalize EPP -> estado de solicitudes -> catálogo de tallas
 # -> conciliar variantes
 # duplicadas por talla -> completar el rango de tallas de ropa EPP ->
+# marcar con logo las prendas EPP ->
 # backfill conciliación (si hace falta) ->
 # backfill referencias OC en DTE (si hace falta) -> backfill lecturas de medidor
 # -> catálogo de reglas de anomalía -> sync-rbac -> decisiones de catálogo PDTP
@@ -508,6 +509,14 @@ run_timed "Conciliando variantes duplicadas por talla" run_in_prod docker compos
 # para que las tallas nuevas nazcan con la numeración secuencial vigente.
 # Idempotente: familias completas o de otra familia de tallas no se tocan.
 run_timed "Completando el rango de tallas de ropa EPP" run_in_prod docker compose run --rm backfill-epp-clothing-sizes
+
+# Las prendas EPP llevan logo siempre: `Logo: Con logo` en cada variante de las
+# prendas y en sus ítems de solicitud que aún no tienen OC. Va después de las
+# tallas para que las variantes recién creadas ya existan (igual nacen con el
+# Logo: la clonación aplica la regla). Idempotente: desde el segundo deploy no
+# escribe nada. El resumen JSON queda en el log del deploy, con los duplicados
+# por talla que hay que unificar a mano.
+run_timed "Marcando con logo las prendas EPP" run_in_prod docker compose run --rm backfill-epp-logo
 
 # El backfill recalcula tanto OC nunca proyectadas como huellas de una versión
 # anterior. La versión 2 introduce estados parciales, así que conservar una

@@ -519,9 +519,9 @@ RUN ./node_modules/.bin/esbuild scripts/backfill-epp-size-ranges.ts \
     --outfile=/tmp/backfill-epp-size-ranges.mjs
 
 # Deja `Logo: Con logo` en las prendas EPP y en sus solicitudes aún sin OC
-# (docs/superpowers/specs/2026-10-15-epp-con-logo-design.md). No corre en el
-# deploy: el dry-run se revisa antes de aplicar. Mismo banner que el de tallas
-# por si algo del árbol de imports arrastra un módulo CJS.
+# (docs/superpowers/specs/2026-10-15-epp-con-logo-design.md). Corre en cada
+# deploy y es idempotente. Mismo banner que el de tallas por si algo del árbol
+# de imports arrastra un módulo CJS.
 RUN ./node_modules/.bin/esbuild scripts/backfill-epp-logo.ts \
     --bundle \
     --platform=node \
