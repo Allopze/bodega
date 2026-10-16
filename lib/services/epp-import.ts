@@ -15,6 +15,7 @@ import {
   suppliers,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { applyLogoRule } from "@/lib/products/epp-logo"
 import { toCode } from "@/lib/utils"
 import { lockCatalogProductsForUpdateTx } from "@/lib/services/catalog-product-locks"
 import { setProductSupplierPriceTx } from "@/lib/services/product-supplier-prices"
@@ -281,11 +282,17 @@ async function persistProductDetails(
   sourceId: string,
   userId: string,
 ) {
-  if (normalized.attributes.length) await tx.insert(productAttributes).values(normalized.attributes.map((attribute, index) => ({
+  const rows = normalized.attributes.map((attribute, index) => ({
     id: nanoid(), productId, categoryId: null, name: attribute.name, type: "select",
     isRequired: true, options: JSON.stringify(attribute.values ?? [attribute.value]),
     sizeFamily: attribute.sizeFamily ?? null, sortOrder: index,
-  })))
+  }))
+  // Toda fila de este importador es EPP. La regla va al persistir y no al
+  // normalizar: la vista previa del lote es del archivo, el Logo es del catálogo.
+  const withLogo = applyLogoRule({ name: normalized.name, isEpp: true }, rows, (seed) => ({
+    ...seed, id: nanoid(), productId, categoryId: null, sizeFamily: null,
+  }))
+  if (withLogo.length) await tx.insert(productAttributes).values(withLogo)
   if (supplierId) await setProductSupplierPriceTx(tx, {
     productId,
     supplierId,

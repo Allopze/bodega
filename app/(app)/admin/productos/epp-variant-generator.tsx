@@ -8,6 +8,7 @@ import { Tooltip } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { AttributeMultiValues, SizeFamilyOption } from "./product-form.types"
+import { isLogoAxis } from "./product-form.helpers"
 import { defaultScaleCodes, resolveSizeScale, sizeScaleLabel, suggestSizeScale } from "./size-scale.helpers"
 
 /**
@@ -60,6 +61,13 @@ export interface VariantGeneratorProps {
    * con «existe». Mismo formato que `existingValuesByAttr`.
    */
   blockedValuesByAttr?: Record<string, string[]>
+  /**
+   * La prenda lleva logo siempre: el eje `Logo` se muestra marcado y bloqueado
+   * (sin quitarlo ni agregarle valores). Lo decide el formulario con
+   * `requiresLogo`; si el producto ya traía un `Logo` pero la prenda no es
+   * elegible, esto va en `false` y se edita como cualquier eje.
+   */
+  logoLocked?: boolean
 }
 
 // ── Add a value not covered by the preset ─────────────────────────────────────
@@ -104,16 +112,22 @@ export function AddValueInput({ label, placeholder, onAdd, buttonLabel = "Agrega
 
 // ── Chips ─────────────────────────────────────────────────────────────────────
 
-export function ValueChip({ option, selected, exists = false, onToggle }: { option: string; selected: boolean; exists?: boolean; onToggle: () => void }) {
+export function ValueChip({ option, selected, exists = false, locked = false, describedBy, onToggle }: { option: string; selected: boolean; exists?: boolean; locked?: boolean; describedBy?: string; onToggle: () => void }) {
   return (
     <Tooltip content={exists ? "Ya existe una variante con este valor" : undefined} side="top" delayDuration={300}>
       <button
         aria-pressed={selected}
+        // Bloqueado = `aria-disabled` y no `disabled`: sigue en el orden de
+        // tabulación y el lector de pantalla lo lee junto a su ayuda.
+        aria-disabled={locked || undefined}
+        aria-describedby={locked ? describedBy : undefined}
         type="button"
         disabled={exists}
-        onClick={onToggle}
+        onClick={locked ? undefined : onToggle}
         className={`min-w-11 rounded-(--radius-sm) px-3 py-1.5 text-sm font-medium transition-colors ${
-          exists
+          locked
+            ? "cursor-not-allowed bg-[var(--color-primary)] text-white"
+            : exists
             ? "cursor-not-allowed border border-dashed border-[var(--color-border)] text-[var(--color-text-faint)]"
             : selected
               ? "bg-[var(--color-primary)] text-white"
@@ -149,6 +163,7 @@ export function VariantGenerator({
   onMarkDirty,
   existingValuesByAttr,
   blockedValuesByAttr,
+  logoLocked = false,
 }: VariantGeneratorProps) {
   const sizeAttr = wizAttrs.find((attr) => isSizeAttributeName(attr.name)) ?? null
   const otherAttrs = wizAttrs.filter((attr) => attr !== sizeAttr)
@@ -313,6 +328,20 @@ export function VariantGenerator({
           // trae sus opciones en `values`: sin este fallback se dibujaba una
           // caja sin chips y el paso quedaba muerto.
           const options = optionsFor(attr, isColor ? COLOR_PRESET.options : [])
+          if (logoLocked && isLogoAxis(attr)) {
+            const helpId = "wiz-logo-help"
+            return (
+              <div key={attr.name} className="rounded-(--radius) border border-[var(--color-border)] p-3">
+                <p className="mb-2 text-sm font-medium">{attr.name}</p>
+                <div className="flex flex-wrap gap-2">
+                  {attr.values.map((option) => (
+                    <ValueChip key={option} option={option} selected locked describedBy={helpId} onToggle={() => {}} />
+                  ))}
+                </div>
+                <p id={helpId} className="mt-2 text-xs text-[var(--color-text-muted)]">Las prendas llevan logo siempre.</p>
+              </div>
+            )
+          }
           return (
             <div key={attr.name} className="rounded-(--radius) border border-[var(--color-border)] p-3">
               <div className="mb-2 flex items-center justify-between gap-2">

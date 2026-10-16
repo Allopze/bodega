@@ -17,6 +17,7 @@ import {
   buildSingleVariantAttributes,
   variantComboKey,
   filterNewVariantCombos,
+  withLogoAxis,
 } from "./product-form.helpers"
 import type { SupplierRow, AttributeRow, AttributeMultiValues, WizardGeneralState, WizardCloseAction } from "./product-form.types"
 
@@ -498,5 +499,84 @@ describe("guardado de una variante", () => {
     ])
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ supplierId: "p2", unitPrice: 12, isPreferred: true })
+  })
+})
+
+describe("eje Logo del asistente", () => {
+  const polera = { name: "Polera piqué", isEpp: true }
+  const talla: AttributeMultiValues = { name: "Talla", type: "select", values: ["M", "L"] }
+
+  it("agrega Logo: Con logo al final cuando la prenda lleva logo", () => {
+    expect(withLogoAxis([talla], polera)).toEqual([talla, { name: "Logo", type: "select", values: ["Con logo"], sizeFamily: undefined }])
+  })
+
+  it("agrega el eje aunque no haya otros", () => {
+    expect(withLogoAxis([], polera).map((a) => a.name)).toEqual(["Logo"])
+  })
+
+  it("no lo agrega a un botín, a una prenda sin tipo ni a un producto no EPP", () => {
+    expect(withLogoAxis([talla], { name: "Botín de seguridad", isEpp: true })).toEqual([talla])
+    expect(withLogoAxis([talla], { name: "Cosa rara", isEpp: true })).toEqual([talla])
+    expect(withLogoAxis([talla], { name: "Polera piqué", isEpp: false })).toEqual([talla])
+  })
+
+  it("lo retira al dejar de ser elegible (el eje se deriva, no se guarda)", () => {
+    const state = [talla]
+    expect(withLogoAxis(state, polera)).toHaveLength(2)
+    expect(withLogoAxis(state, { name: "Botín de seguridad", isEpp: true })).toEqual(state)
+  })
+
+  it("un Logo que el producto ya tenía se conserva aunque la prenda no sea elegible", () => {
+    const saved: AttributeMultiValues = { name: "Logo", type: "select", values: ["Con logo"] }
+    expect(withLogoAxis([talla, saved], { name: "Botín de seguridad", isEpp: true })).toEqual([talla, saved])
+  })
+
+  it("normaliza un Logo con otros valores a un único «Con logo»", () => {
+    const out = withLogoAxis([{ name: "Logo", type: "select", values: ["Con logo", "Sin logo"] }], polera)
+    expect(out).toHaveLength(1)
+    expect(out[0]!.values).toEqual(["Con logo"])
+  })
+
+  it("convierte el Modelo «Con logo» heredado en el eje Logo, sin duplicar", () => {
+    const out = withLogoAxis([talla, { name: "Modelo", type: "select", values: ["Con logo Chome"] }], polera)
+    expect(out.map((a) => a.name)).toEqual(["Talla", "Logo"])
+    expect(out[1]!.values).toEqual(["Con logo"])
+  })
+
+  it("deja un Modelo real (varios valores) como Modelo y suma Logo", () => {
+    const modelo: AttributeMultiValues = { name: "Modelo", type: "select", values: ["Clásico", "Slim"] }
+    expect(withLogoAxis([modelo], polera).map((a) => a.name)).toEqual(["Modelo", "Logo"])
+  })
+
+  it("el nombre de las variantes no lleva «Con logo»", () => {
+    const combos = generateVariantCombos("Polera piqué", withLogoAxis([talla], polera))
+    expect(combos.map((c) => c.name)).toEqual(["Polera piqué M", "Polera piqué L"])
+    expect(combos[0]!.attributes).toContainEqual({ name: "Logo", value: "Con logo" })
+  })
+
+  it("añadir-variante: una talla existente sin Logo (pre-backfill) no se ofrece como nueva", () => {
+    const combos = generateVariantCombos("Polera piqué", withLogoAxis([{ name: "Talla", type: "select", values: ["M", "XL"] }], polera))
+    const existing = [JSON.stringify([["talla", "M"]])]
+    const { kept, removed } = filterNewVariantCombos(combos, existing)
+    expect(kept.map((c) => c.name)).toEqual(["Polera piqué XL"])
+    expect(removed).toHaveLength(1)
+  })
+
+  it("añadir-variante: tampoco la ofrece si la existente ya tiene Logo o el Modelo heredado", () => {
+    const combos = generateVariantCombos("Polera piqué", withLogoAxis([{ name: "Talla", type: "select", values: ["M", "XL"] }], polera))
+    for (const logoPair of [["logo", "Con logo"], ["modelo", "Con logo Chome"]]) {
+      const existing = [JSON.stringify([logoPair, ["talla", "M"]].sort())]
+      expect(filterNewVariantCombos(combos, existing).kept.map((c) => c.name)).toEqual(["Polera piqué XL"])
+    }
+  })
+
+  it("mergeEditAttributes conserva el id del Modelo heredado al guardarlo como Logo", () => {
+    const original: AttributeRow[] = [
+      { id: "a-modelo", name: "Modelo", type: "select", isRequired: true, options: JSON.stringify(["Con logo"]), sortOrder: 3 },
+    ]
+    const wiz = withLogoAxis([{ name: "Modelo", type: "select", values: ["Con logo"] }], polera)
+    const merged = mergeEditAttributes(original, wiz, [], polera)
+    expect(merged).toHaveLength(1)
+    expect(merged[0]).toMatchObject({ id: "a-modelo", name: "Logo", sortOrder: 3 })
   })
 })

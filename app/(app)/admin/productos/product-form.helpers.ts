@@ -1,10 +1,32 @@
 import { duplicateNormalizedNames, normalizeAttributeName } from "@/lib/products/attribute-names"
 import { isSizeAttributeName, normalizeSizeLabel } from "@/lib/products/product-size"
+import { applyLogoRule, LOGO_ATTRIBUTE_NAME, LOGO_VALUE, type LogoProduct } from "@/lib/products/epp-logo"
 import type { AttributeRow, SupplierRow, AttributeMultiValues, VariantCombo, WizardStep, WizardGeneralState, WizardCloseAction } from "./product-form.types"
 
 // ── Text helpers ─────────────────────────────────────────────────────────────
 
 export { normalizeAttributeName as normalizeProductAttributeName } from "@/lib/products/attribute-names"
+
+/** Un par que es el logo: `Logo` o el `Modelo: Con logo…` con que se anotaba antes. */
+function isLogoPair(name: string, value: string): boolean {
+  const normalized = normalizeAttributeName(name)
+  if (normalized === normalizeAttributeName(LOGO_ATTRIBUTE_NAME)) return true
+  return normalized === "modelo" && /^con logo\b/.test(normalizeAttributeName(value))
+}
+
+/**
+ * La misma firma sin el eje del logo, para claves ya calculadas (las de las
+ * variantes existentes llegan del servidor como texto).
+ */
+function stripLogoFromKey(key: string): string {
+  try {
+    const pairs: unknown = JSON.parse(key)
+    if (!Array.isArray(pairs)) return key
+    return JSON.stringify(pairs.filter((pair) => !(Array.isArray(pair) && isLogoPair(String(pair[0]), String(pair[1])))))
+  } catch {
+    return key
+  }
+}
 
 /** Firma canónica de una combinación de valores: pares nombre→valor ordenados.
  *  Es la misma forma que usa `createProductVariantBatch` para comparar contra
@@ -14,7 +36,7 @@ export function variantComboKey(attributes: Array<{ name: string; value: string 
   // La talla se compara canonizada: `T/L` histórica y `L` nueva son la misma
   // talla, y sin esto «Agregar tallas» ofrecía y creaba una segunda L.
   return JSON.stringify(
-    attributes.map((a) => [
+    attributes.filter((a) => !isLogoPair(a.name, a.value)).map((a) => [
       normalizeAttributeName(a.name),
       isSizeAttributeName(a.name) ? normalizeSizeLabel(a.value) : a.value.trim(),
     ]).sort(),
@@ -28,7 +50,10 @@ export function filterNewVariantCombos(
   combos: VariantCombo[],
   existingVariantKeys: readonly string[],
 ): { kept: VariantCombo[]; removed: VariantCombo[] } {
-  const existing = new Set(existingVariantKeys)
+  // El logo no distingue variantes: es igual en toda la familia. Se ignora de
+  // ambos lados porque las variantes anteriores al backfill no lo tienen y las
+  // nuevas sí; comparándolo, una talla ya existente se ofrecería como nueva.
+  const existing = new Set(existingVariantKeys.map(stripLogoFromKey))
   const kept: VariantCombo[] = []
   const removed: VariantCombo[] = []
   for (const combo of combos) {
@@ -113,13 +138,20 @@ export function mergeEditAttributes(
   original: AttributeRow[],
   wizAttrs: AttributeMultiValues[],
   advAttrs: AttributeRow[],
+  product?: LogoProduct,
 ): AttributeRow[] {
   // La mitad no-`select` sale del editor avanzado (estado vivo), no del
   // snapshot del servidor: si se leyera `original` como antes, cualquier
   // edición del editor avanzado se descartaría en silencio al guardar.
   const nonSelect = advAttrs.filter((a) => a.type !== "select" && a.name.trim())
+  // Si la prenda lleva logo, un `Modelo: Con logo` heredado se vuelve `Logo` en
+  // el eje del asistente: se casa contra la fila renombrada para conservar su id
+  // (la FK de las solicitudes apunta a ella).
+  const comparable = product
+    ? applyLogoRule<AttributeRow>(product, original, (seed) => seed)
+    : original
   const existingByName = new Map(
-    original.filter((a) => a.type === "select").map((a) => [normalizeAttributeName(a.name), a]),
+    comparable.filter((a) => a.type === "select").map((a) => [normalizeAttributeName(a.name), a]),
   )
   const selectAttrs = wizAttrs.map((attr, i) => {
     const existing = existingByName.get(normalizeAttributeName(attr.name))
@@ -159,7 +191,8 @@ export function generateVariantCombos(
     [[]],
   )
   return cartesian.map((attrs) => {
-    const suffix = attrs.map((a) => a.value).join(" ")
+    // El logo no va en el nombre: es igual en toda la familia y sólo lo alargaría.
+    const suffix = attrs.filter((a) => !isLogoPair(a.name, a.value)).map((a) => a.value).join(" ")
     return { sku: "", name: `${baseName} ${suffix}`.trim(), attributes: attrs }
   })
 }
@@ -268,4 +301,32 @@ export function buildSingleVariantAttributes(wizAttrs: AttributeMultiValues[], v
       : attr.values),
     sizeFamily: attr.sizeFamily, sortOrder: i,
   }))
+}
+
+// ── Eje del logo ─────────────────────────────────────────────────────────────
+
+/**
+ * Los ejes del asistente tal como los verá el usuario y como se guardarán.
+ *
+ * Si la prenda lleva logo, el eje `Logo` es siempre `Con logo`: se agrega, o se
+ * convierte el `Modelo: Con logo` heredado (lo decide `applyLogoRule`, la misma
+ * regla del servidor). Se **deriva** del estado en vez de guardarse en él: si el
+ * nombre cambia y la prenda deja de ser elegible, el eje simplemente desaparece
+ * sin que un efecto tenga que adivinar si lo puso el asistente o el producto ya
+ * lo tenía (en ese caso el estado lo conserva como cualquier eje).
+ */
+export function withLogoAxis(attrs: AttributeMultiValues[], product: LogoProduct): AttributeMultiValues[] {
+  const rows = attrs.map((a) => ({ ...a, options: JSON.stringify(a.values) }))
+  const result = applyLogoRule(product, rows, (seed) => ({ name: seed.name, type: seed.type, options: seed.options, values: [LOGO_VALUE] }))
+  return result.map((row) => ({
+    name: row.name,
+    type: "select" as const,
+    values: isLogoAxis(row) ? [LOGO_VALUE] : row.values,
+    sizeFamily: row.sizeFamily,
+  }))
+}
+
+/** El eje de logo no se edita en el asistente: es de la regla, no de quien captura. */
+export function isLogoAxis(attr: { name: string }): boolean {
+  return normalizeAttributeName(attr.name) === normalizeAttributeName(LOGO_ATTRIBUTE_NAME)
 }

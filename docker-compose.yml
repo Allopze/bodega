@@ -495,6 +495,29 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/backfill-epp-size-ranges.mjs"]
 
+  # One-shot manual: las prendas EPP llevan logo siempre. Deja `Logo: Con logo`
+  # en cada variante de chaleco/geólogo, polera, camisa, blusa, pantalón,
+  # chaqueta y primera capa (renombra en el lugar el `Modelo: Con logo` heredado)
+  # y en sus ítems de solicitud que aún no tienen OC. **No corre en el deploy**
+  # y por omisión sólo informa: el dry-run se revisa antes de escribir.
+  #
+  #   docker compose run --rm backfill-epp-logo                                          # informa
+  #   docker compose run --rm backfill-epp-logo node scripts/backfill-epp-logo.mjs --apply  # escribe
+  #
+  backfill-epp-logo:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/backfill-epp-logo.mjs"]
+
   # One-shot: recalcula el estado derivado de las solicitudes que quedaron con
   # el que calculó una regla de cierre anterior. `purchase_requests.status` es
   # un derivado de sus ítems y el rollup solo lo recalcula cuando un ítem

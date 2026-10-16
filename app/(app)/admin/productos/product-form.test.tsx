@@ -24,9 +24,14 @@ describe("editor del producto", () => {
     }} />)
     fireEvent.click(screen.getByRole("button", { name: "Talla y otros atributos" }))
     expect(screen.getByRole("button", { name: /4XL/, pressed: true })).toBeVisible()
+    expect(screen.getByRole("button", { name: /Con logo/ })).toHaveAttribute("aria-disabled", "true")
     fireEvent.click(screen.getByRole("button", { name: "Proveedor" }))
     expect(screen.getByText(/Asocia un proveedor preferido/)).toBeVisible()
     const payload = container.querySelector<HTMLInputElement>('input[name="attributesJson"]')
-    expect(JSON.parse(payload!.value)).toEqual([expect.objectContaining({ id: "t", options: '["4XL"]', sizeFamily: "ropa" })])
+    expect(JSON.parse(payload!.value)).toEqual([
+      expect.objectContaining({ id: "t", options: '["4XL"]', sizeFamily: "ropa" }),
+      // Una chaqueta EPP lleva logo siempre: el asistente lo suma y lo bloquea.
+      expect.objectContaining({ name: "Logo", options: '["Con logo"]' }),
+    ])
   })
 })

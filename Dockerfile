@@ -518,6 +518,20 @@ RUN ./node_modules/.bin/esbuild scripts/backfill-epp-size-ranges.ts \
     --banner:js='import{createRequire as __cr}from"module";import{fileURLToPath as __f}from"url";import{dirname as __d}from"path";const require=__cr(import.meta.url);const __filename=__f(import.meta.url);const __dirname=__d(__filename);' \
     --outfile=/tmp/backfill-epp-size-ranges.mjs
 
+# Deja `Logo: Con logo` en las prendas EPP y en sus solicitudes aún sin OC
+# (docs/superpowers/specs/2026-10-15-epp-con-logo-design.md). No corre en el
+# deploy: el dry-run se revisa antes de aplicar. Mismo banner que el de tallas
+# por si algo del árbol de imports arrastra un módulo CJS.
+RUN ./node_modules/.bin/esbuild scripts/backfill-epp-logo.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --banner:js='import{createRequire as __cr}from"module";import{fileURLToPath as __f}from"url";import{dirname as __d}from"path";const require=__cr(import.meta.url);const __filename=__f(import.meta.url);const __dirname=__d(__filename);' \
+    --outfile=/tmp/backfill-epp-logo.mjs
+
 
 # ── Production stage: standalone build, minimal runtime ──
 FROM node:22.13-alpine AS prod
@@ -622,6 +636,7 @@ COPY --from=build /tmp/backfill-cphs-mandatory-sessions.mjs ./scripts/backfill-c
 COPY --from=build /tmp/reconcile-epp-duplicate-sizes.mjs ./scripts/reconcile-epp-duplicate-sizes.mjs
 COPY --from=build /tmp/backfill-epp-clothing-sizes.mjs ./scripts/backfill-epp-clothing-sizes.mjs
 COPY --from=build /tmp/backfill-epp-size-ranges.mjs ./scripts/backfill-epp-size-ranges.mjs
+COPY --from=build /tmp/backfill-epp-logo.mjs ./scripts/backfill-epp-logo.mjs
 # Cron service uses this bounded internal HTTP runner instead of an inline
 # wget command. It is copied explicitly because Next standalone does not trace
 # scripts invoked only by Compose.
