@@ -17,10 +17,11 @@ import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { createProduct, updateProduct, createProductVariantBatch, type ProductVariantBatchInput } from "./actions"
 import { StepIndicator } from "./epp-wizard-steps"
 import { VariantGenerator } from "./epp-variant-generator"
+import { requiresLogo } from "@/lib/products/epp-logo"
 import { VariantPreview } from "./epp-variant-preview"
 import {
   parseOptionsText, buildSingleVariantAttributes, generateVariantCombos, canAdvanceWizard, shouldShowConfirmClose, getStepAnimationClass,
-  pickPrimarySupplier, otherSuppliers, buildSuppliersForSubmit, mergeEditAttributes, filterNewVariantCombos,
+  pickPrimarySupplier, otherSuppliers, buildSuppliersForSubmit, mergeEditAttributes, filterNewVariantCombos, withLogoAxis,
   ADVANCED_ATTRIBUTE_TYPES, blankAdvancedAttribute, setQuantityDriver, duplicateAttributeNames,
   normalizeProductAttributeName, variantComboKey, type AdvancedAttributeType,
 } from "./product-form.helpers"
@@ -120,7 +121,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     familyLifespanMonths: family?.lifespanMonths != null ? String(family.lifespanMonths) : "",
     familyLifespanNotApplicable: family?.lifespanNotApplicable ?? false,
   })
-  const [wizAttrs, setWizAttrs] = React.useState<AttributeMultiValues[]>(() => {
+  const [wizAttrsState, setWizAttrs] = React.useState<AttributeMultiValues[]>(() => {
     if (editProduct) {
       return editProduct.attributes
         .filter((a) => a.type === "select")
@@ -139,6 +140,14 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     }
     return []
   })
+  // Ejes tal como se ven y se guardan: al estado se le suma el eje `Logo` si la
+  // prenda lo lleva (ver `withLogoAxis`). Todo lo que lee ejes usa esto; los
+  // setters sólo tocan `wizAttrsState`, que nunca contiene el Logo agregado.
+  const wizAttrs = React.useMemo(
+    () => withLogoAxis(wizAttrsState, { name: general.name, isEpp: general.isEpp }),
+    [wizAttrsState, general.name, general.isEpp],
+  )
+  const logoLocked = requiresLogo({ name: general.name, isEpp: general.isEpp })
   // Atributos que NO son ejes de variante: `text`/`number`/`integer`, incluido
   // el que gobierna la cantidad. El paso 2 es dueño de los `select`; este
   // estado es dueño del resto, así que los dos editores nunca tocan la misma
@@ -789,6 +798,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
               onMarkDirty={markDirty}
               existingValuesByAttr={existingValuesByAttr}
               blockedValuesByAttr={blockedValuesByAttr}
+              logoLocked={logoLocked}
             />
             {/* En edición el preview no aplica (se guarda una sola variante); en
                 alta y en añadir-variante sí, para ver qué se va a crear. */}
@@ -935,7 +945,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
             conservando id y sortOrder de los que ya existían. */}
         <input type="hidden" name="attributesJson" value={JSON.stringify(
           isEdit
-            ? mergeEditAttributes(editProduct!.attributes, wizAttrs, advAttrs)
+            ? mergeEditAttributes(editProduct!.attributes, wizAttrs, advAttrs, { name: general.name, isEpp: general.isEpp })
             : [
               ...buildSingleVariantAttributes(wizAttrs, variants[0]),
               ...submittableAdvAttrs.map((a, i) => ({ ...a, sortOrder: wizAttrs.length + i })),

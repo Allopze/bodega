@@ -10,6 +10,7 @@ import { sql } from "drizzle-orm"
 import type { Tx } from "@/db"
 import { products, productAttributes, productSuppliers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { applyLogoRule } from "@/lib/products/epp-logo"
 
 /** Siguiente SKU secuencial `EPP-NNN` visto desde dentro de la transacción. */
 export async function nextEppSku(tx: Tx): Promise<string> {
@@ -72,23 +73,28 @@ export async function insertSizeVariantFromTemplate(
   })
 
   const otherAttrs = template.productAttributes.filter((attr) => attr.id !== templateSizeAttr.id)
-  if (otherAttrs.length > 0) {
-    await tx.insert(productAttributes).values(otherAttrs.map((attr) => ({
+  const rows = [
+    ...otherAttrs.map((attr) => ({
       id: nanoid(), productId, categoryId: null,
       name: attr.name, type: attr.type, isRequired: attr.isRequired,
       options: attr.options, sizeFamily: attr.sizeFamily,
       drivesQuantity: attr.drivesQuantity, sortOrder: attr.sortOrder,
-    })))
-  }
-
-  await tx.insert(productAttributes).values({
-    id: nanoid(), productId, categoryId: null,
-    name: templateSizeAttr.name, type: "select", isRequired: true,
-    options: JSON.stringify([size]),
-    sizeFamily,
-    drivesQuantity: false,
-    sortOrder: templateSizeAttr.sortOrder,
-  })
+    })),
+    {
+      id: nanoid(), productId, categoryId: null,
+      name: templateSizeAttr.name, type: "select", isRequired: true,
+      options: JSON.stringify([size]) as string | null,
+      sizeFamily,
+      drivesQuantity: false,
+      sortOrder: templateSizeAttr.sortOrder,
+    },
+  ]
+  // La plantilla puede ser anterior a la regla del logo (o traerlo como
+  // `Modelo: Con logo`): la talla clonada de una prenda nace con un único Logo.
+  const withLogo = applyLogoRule({ name: template.name, isEpp: template.isEpp }, rows, (seed) => ({
+    ...seed, id: nanoid(), productId, categoryId: null, sizeFamily: null, drivesQuantity: false,
+  }))
+  await tx.insert(productAttributes).values(withLogo)
 
   const preferredSupplier = template.productSuppliers.find((ps) => ps.isPreferred) ?? template.productSuppliers[0] ?? null
   if (preferredSupplier) {

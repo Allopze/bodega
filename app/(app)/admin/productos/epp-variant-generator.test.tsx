@@ -188,3 +188,25 @@ describe("agregar tallas a una familia con varios ejes", () => {
     expect(props.onUpdateAttrValues).toHaveBeenCalledWith("Talla", ["XS"])
   })
 })
+
+describe("eje Logo bloqueado", () => {
+  const logo: AttributeMultiValues = { name: "Logo", type: "select", values: ["Con logo"] }
+
+  it("muestra «Con logo» marcado y bloqueado, con su ayuda, sin quitar ni agregar valores", () => {
+    const props = renderGenerator([logo], { logoLocked: true })
+    const chip = screen.getByRole("button", { name: /Con logo/ })
+    expect(chip).toHaveAttribute("aria-pressed", "true")
+    expect(chip).toHaveAttribute("aria-disabled", "true")
+    expect(chip).toHaveAccessibleDescription("Las prendas llevan logo siempre.")
+    fireEvent.click(chip)
+    expect(props.onUpdateAttrValues).not.toHaveBeenCalled()
+    expect(screen.queryByRole("button", { name: /Quitar atributo Logo/ })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Agregar un valor a Logo/)).not.toBeInTheDocument()
+  })
+
+  it("sin bloqueo (producto que ya traía Logo pero no es elegible) se edita como cualquier eje", () => {
+    renderGenerator([logo])
+    expect(screen.getByRole("button", { name: /Quitar atributo Logo/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Con logo/ })).not.toHaveAttribute("aria-disabled")
+  })
+})

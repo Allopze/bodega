@@ -3,6 +3,7 @@ import { asc, eq, inArray, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { productAttributes, productCategories, products, productSuppliers, suppliers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { applyLogoRule } from "@/lib/products/epp-logo"
 import { toCode } from "@/lib/utils"
 import { loadActiveUnitCodes, normalizeUnitCode, unitNotInCatalogMessage } from "@/lib/services/product-unit-catalog"
 
@@ -244,18 +245,22 @@ export async function importProductsFromXlsx(buffer: Buffer): Promise<ProductImp
       }
 
       await tx.delete(productAttributes).where(eq(productAttributes.productId, productId))
-      if (item.attributes.length > 0) {
-        await tx.insert(productAttributes).values(item.attributes.map((attribute, index) => ({
-          id: nanoid(),
-          productId,
-          categoryId: null,
-          name: attribute.name,
-          type: "select",
-          isRequired: true,
-          options: JSON.stringify([attribute.value]),
-          sortOrder: index,
-        })))
-      }
+      const attributeRows = item.attributes.map((attribute, index) => ({
+        id: nanoid(),
+        productId,
+        categoryId: null,
+        name: attribute.name,
+        type: "select",
+        isRequired: true,
+        options: JSON.stringify([attribute.value]),
+        sortOrder: index,
+      }))
+      // Este importador marca todo producto como EPP (`isEpp: true` arriba): las
+      // prendas llevan logo aunque la planilla no lo diga.
+      const rowsWithLogo = applyLogoRule({ name: item.name, isEpp: true }, attributeRows, (seed) => ({
+        ...seed, id: nanoid(), productId, categoryId: null,
+      }))
+      if (rowsWithLogo.length > 0) await tx.insert(productAttributes).values(rowsWithLogo)
 
       if (supplier) {
         await tx.insert(productSuppliers).values({

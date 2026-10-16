@@ -89,6 +89,9 @@ export const pgliteTestFiles = [
   "lib/__tests__/epp-import-family-type.test.ts",
   "lib/__tests__/epp-import-size-family.test.ts",
   "lib/__tests__/epp-clothing-sizes.test.ts",
+  // EPP con logo: todo camino que escribe product_attributes aplica applyLogoRule.
+  "lib/__tests__/epp-logo-backfill.test.ts",
+  "lib/__tests__/epp-logo-catalog-writes.test.ts",
   "lib/__tests__/epp-size-ranges.test.ts",
   "lib/__tests__/size-catalog-sync.test.ts",
   "lib/__tests__/epp-sizes-constraints.test.ts",

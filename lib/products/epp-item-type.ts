@@ -80,17 +80,31 @@ export function sizeFamilyForEppType(eppType: string | null): string | null {
 const MOUNTED_ON_MENTION = /(?:\bp\/\s*|\bpara\s+|\bporta\s+)(?:casco|visor|respirador|mascarilla|arnes)\b/gi
 
 /**
+ * Nombres con que el catálogo llama a un ítem del vocabulario sin nombrarlo.
+ * «Geólogo Canvas Altavisibilidad / Sup. Gruas» es un chaleco (confirmado el
+ * 2026-10-15) y su nombre nunca dice «chaleco». Se consultan sólo cuando el
+ * vocabulario no encontró nada: «Chaleco geólogo» ya era `chaleco` por sí solo.
+ */
+const EPP_TYPE_ALIASES: ReadonlyArray<readonly [alias: string, type: (typeof EPP_TYPES)[number]]> = [
+  ["geologo", "chaleco"],
+]
+
+/**
  * Tipo de ítem que el nombre del producto declara, o `null` si no declara
  * ninguno — preferible a adivinar: `EPP_TYPE_TO_BODY_PART_CODE` traduce esto a
  * la zona corporal con que Prevención acredita al trabajador.
  */
 export function inferEppItemType(name: string): (typeof EPP_TYPES)[number] | null {
   const searchable = cleanText(name).replace(MOUNTED_ON_MENTION, " ")
-  return EPP_TYPES.find((type) => {
-    const normalizedType = cleanText(type)
-    // `s?` porque el catálogo nombra varios ítems en plural ("Guantes de cabritilla").
-    return normalizedType && new RegExp(`\\b${escapeRegex(normalizedType)}s?\\b`, "i").test(searchable)
-  }) ?? null
+  return EPP_TYPES.find((type) => mentions(searchable, type))
+    ?? EPP_TYPE_ALIASES.find(([alias]) => mentions(searchable, alias))?.[1]
+    ?? null
+}
+
+function mentions(searchable: string, word: string) {
+  const normalized = cleanText(word)
+  // `s?` porque el catálogo nombra varios ítems en plural ("Guantes de cabritilla").
+  return Boolean(normalized) && new RegExp(`\\b${escapeRegex(normalized)}s?\\b`, "i").test(searchable)
 }
 
 function cleanText(value: string | undefined) {

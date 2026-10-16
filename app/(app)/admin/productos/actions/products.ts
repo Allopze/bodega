@@ -25,6 +25,7 @@ import {
   resolveManualEppFamily, ensureEppFamilyTx, applyEppFamilyFichaTx, REVALIDATE,
 } from "./helpers"
 import { resolveVariantAttributes, variantGroupKey } from "@/lib/products/variant-grouping"
+import { applyLogoRule } from "@/lib/products/epp-logo"
 import { productVariantBatchSchema, type ProductVariantBatchInput } from "./product-variant-batch.schema"
 import type { AttributeRow } from "../product-form.types"
 // Sólo helpers de texto/tipos: no arrastra nada de cliente ni de `@/db`.
@@ -110,9 +111,15 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
       isActive: d.isActive,
     })
 
-    if (d.attributes.length > 0) {
+    // Las prendas EPP llevan logo siempre. La regla se aplica aquí y no sólo en
+    // el formulario: el asistente puede cambiar el nombre después de armar los
+    // atributos, y el importador y el lote no pasan por él.
+    const attributes = applyLogoRule({ name: d.name, isEpp: d.isEpp }, d.attributes, (seed) => ({
+      ...seed, drivesQuantity: false, sizeFamily: undefined,
+    }))
+    if (attributes.length > 0) {
       await tx.insert(productAttributes).values(
-        d.attributes.map((a) => ({
+        attributes.map((a) => ({
           id: nanoid(), productId: id, categoryId: null,
           name: a.name, type: a.type, isRequired: a.isRequired,
           options: a.type === "select" ? normalizeSelectOptions(a.options) : null,
@@ -208,8 +215,16 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
     const lockedProduct = await tx.query.products.findFirst({ where: eq(products.id, productId) })
     if (!lockedProduct) throw new Error("Producto no encontrado")
     const oldAttributes = await tx.select().from(productAttributes).where(eq(productAttributes.productId, productId))
+    // Con la regla del logo aplicada a ambos lados: convertir un `Modelo: Con
+    // logo` en `Logo` (o agregar el Logo que faltaba) normaliza la prenda y no
+    // es un cambio de variante, así que no debe toparse con la guarda de historial.
+    const withLogoRule = (attrs: ReadonlyArray<{ name: string; type: string; options?: string | null }>) => applyLogoRule(
+      { name: d.name, isEpp: d.isEpp },
+      attrs.map(({ name, type, options }) => ({ name, type, options })),
+      ({ name, type, options }) => ({ name, type, options }),
+    )
     const identity = (attrs: typeof d.attributes | typeof oldAttributes) => JSON.stringify(
-      resolveVariantAttributes(attrs).map((a) => [normalizeProductAttributeName(a.name), a.value]).sort(),
+      resolveVariantAttributes(withLogoRule(attrs)).map((a) => [normalizeProductAttributeName(a.name), a.value]).sort(),
     )
     /*
      * La sonda de historia se resuelve una sola vez y perezosamente: la usan
@@ -301,7 +316,13 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
     // rancio del cliente se trata como alta, no como toma de control de otra fila.
     // Se resuelve el id de cada atributo de una vez (el existente o uno nuevo)
     // para poder referirse a ellos por id más abajo en vez de por nombre.
-    const resolved = d.attributes.map((attr, i) => {
+    // La regla del logo va ANTES de resolver ids: un `Modelo: Con logo` que ya
+    // tiene id se renombra en el lugar (una solicitud puede apuntar a esa fila y
+    // la FK impide borrarla) y un Logo que faltaba entra como alta.
+    const attributes = applyLogoRule({ name: d.name, isEpp: d.isEpp }, d.attributes, (seed) => ({
+      ...seed, drivesQuantity: false, sizeFamily: undefined,
+    }))
+    const resolved = attributes.map((attr, i) => {
       const isExisting = !!attr.id && existingIds.has(attr.id)
       return { attr, id: isExisting ? attr.id! : nanoid(), isNew: !isExisting, sortOrder: attr.sortOrder ?? i }
     })
@@ -804,24 +825,26 @@ export async function createProductVariantBatch(input: ProductVariantBatchInput)
           )
         }
 
-        if (variant.attributes.length > 0) {
-          await tx.insert(productAttributes).values(
-            variant.attributes.map((attr, attrIndex) => {
-              const declared = declaredByName.get(normalizeProductAttributeName(attr.name))
-              return {
-                id: nanoid(), productId, categoryId: null,
-                name: attr.name, type: "select", isRequired: true,
-                options: JSON.stringify([attr.value]),
-                // `d.attributes` era carga muerta: se parseaba y nunca se leía,
-                // y es el único lugar por donde `sizeFamily` sobrevive el viaje
-                // desde el formulario. Sin esto toda variante EPP creada por
-                // lote nacía sin familia de tallas.
-                sizeFamily: declared?.sizeFamily ?? null,
-                sortOrder: declared?.sortOrder ?? attrIndex,
-              }
-            })
-          )
-        }
+        const variantRows = variant.attributes.map((attr, attrIndex) => {
+          const declared = declaredByName.get(normalizeProductAttributeName(attr.name))
+          return {
+            id: nanoid(), productId, categoryId: null,
+            name: attr.name, type: "select", isRequired: true,
+            options: JSON.stringify([attr.value]),
+            // `d.attributes` era carga muerta: se parseaba y nunca se leía,
+            // y es el único lugar por donde `sizeFamily` sobrevive el viaje
+            // desde el formulario. Sin esto toda variante EPP creada por
+            // lote nacía sin familia de tallas.
+            sizeFamily: declared?.sizeFamily ?? null,
+            sortOrder: declared?.sortOrder ?? attrIndex,
+          }
+        })
+        // Se aplica por variante y con el nombre de la variante: es el que
+        // decide si la prenda lleva logo, aunque el nombre de la familia no lo diga.
+        const logoRows = applyLogoRule({ name: variant.name, isEpp: d.isEpp }, variantRows, (seed) => ({
+          ...seed, id: nanoid(), productId, categoryId: null, sizeFamily: null,
+        }))
+        if (logoRows.length > 0) await tx.insert(productAttributes).values(logoRows)
       }
 
       // 4. Assign supplier to each product

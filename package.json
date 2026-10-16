@@ -77,6 +77,7 @@
     "db:normalize-epp-families": "tsx --env-file=.env.local scripts/normalize-epp-families.ts",
     "db:backfill-epp-clothing-sizes": "tsx --env-file-if-exists=.env.local scripts/backfill-epp-clothing-sizes.ts",
     "db:backfill-epp-size-ranges": "tsx --env-file-if-exists=.env.local scripts/backfill-epp-size-ranges.ts",
+    "db:backfill-epp-logo": "tsx --env-file-if-exists=.env.local scripts/backfill-epp-logo.ts",
     "db:normalize-fuel-suppliers": "tsx --env-file=.env.local scripts/normalize-fuel-suppliers.ts",
     "db:sync-rbac": "tsx --env-file=.env.local scripts/sync-rbac.ts",
     "forms:overlay-grid": "tsx scripts/overlay-form-grid.ts",

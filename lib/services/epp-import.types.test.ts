@@ -61,6 +61,13 @@ describe("inferEppItemType", () => {
     expect(bodyPart("Coleto Activex Soldador Cuero Tr.")).toBe("cuerpo")
   })
 
+  it("reads a 'geólogo' as the vest it is, even when the name never says 'chaleco'", () => {
+    expect(inferEppItemType("Geólogo Canvas Altavisibilidad / Sup. Gruas")).toBe("chaleco")
+    expect(inferEppItemType("Chaleco geólogo Activex gabardina terra bicolor")).toBe("chaleco")
+    expect(bodyPart("Geólogo Canvas Altavisibilidad / Sup. Gruas")).toBe("cuerpo")
+    expect(sizeFamilyForEppType(inferEppItemType("Geólogo Canvas Altavisibilidad / Sup. Gruas"))).toBe("ropa")
+  })
+
   it("classifies head and respiratory items the vocabulary was missing", () => {
     expect(bodyPart("Gorro Legionario Activex")).toBe("cabeza")
     expect(bodyPart("Barbiquejo Gancho Plastico C/Mentonera")).toBe("cabeza")
