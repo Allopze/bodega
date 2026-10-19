@@ -55,24 +55,36 @@ test.describe("Inspecciones — Ejecución avanzada y validaciones de campo", ()
   // "No aplica" donde el instrumento no lo tiene es justamente lo que
   // `validateAnswerRow` rechaza —sacaría del denominador un ítem que el papel obliga a
   // juzgar, inflando el cumplimiento—. La regla bajo prueba es la misma: un resultado
-  // `non_conforming` sin motivo bloquea el guardado, con el mismo mínimo que un
-  // "No aplica" o un "Regular".
-  test("bloqueo de guardado cuando un 'Malo' carece de justificación técnica", async ({ page }) => {
+  // `non_conforming` sin motivo no se envía, con el mismo mínimo que un "No aplica" o un
+  // "Regular".
+  //
+  // Lo que cambió (P1-1) es qué frena: la fila retenida ya no apaga «Guardar respuestas»;
+  // queda nombrada en «Respuestas que todavía no se guardan» y es el cierre el que se
+  // bloquea.
+  test("un 'Malo' sin justificación técnica queda retenido sin frenar el guardado", async ({ page }) => {
     await crearInspeccion(page)
 
     await responderItem(page, "Manguera", "Malo")
 
-    // Se afirma el problema puntual y el botón, no la visibilidad del panel: el panel
-    // agrupa los problemas de fila con los bloqueadores de cierre, y esos siguen ahí
-    // mientras queden ítems sin responder. Lo que la regla gobierna es el guardado, que
-    // `rowProblems` deshabilita por sí solo.
+    // Se afirma la fila retenida y el botón: el aviso de lo retenido es independiente del
+    // de «Para declarar ejecutada falta:», que sigue ahí mientras queden ítems sin responder.
     const motivoFaltante = page.getByRole("button", { name: /Manguera.*exige indicar el motivo/ })
+    await expect(textoVisible(page, "Respuestas que todavía no se guardan")).toBeVisible()
     await expect(motivoFaltante).toBeVisible()
-    await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeDisabled()
+    await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeEnabled()
+
+    // El cierre sí queda bloqueado, y lo dice dentro del propio diálogo.
+    await page.getByRole("button", { name: "Declarar ejecutada" }).click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog.getByText(/Manguera.*exige indicar el motivo/)).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Declarar ejecutada" })).toBeDisabled()
+    await page.keyboard.press("Escape")
+    await expect(page.getByRole("dialog")).toHaveCount(0)
 
     // Llenar la justificación requerida
     await campoInspeccion(page, "Comentario de Manguera").fill("Manguera cortada en dos puntos; extintor fuera de servicio.")
     await expect(motivoFaltante).toHaveCount(0)
+    await expect(textoVisible(page, "Respuestas que todavía no se guardan")).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeEnabled()
 
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
