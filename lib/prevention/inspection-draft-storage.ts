@@ -51,6 +51,12 @@ export interface InspectionDraftSnapshot {
   version: number
   savedAt: string
   drafts: Record<string, InspectionDraftRow>
+  /**
+   * Lo que el servidor tenía al construirse el borrador, por fila. Sin esto, un espejo que quedó
+   * sobre una versión anterior no se puede rebasar: no habría cómo distinguir lo que la persona
+   * cambió de lo que ya venía del servidor (`rebaseDrafts` lo necesita como `oldPersisted`).
+   */
+  base?: Record<string, InspectionDraftRow>
   /** Acta de cierre tecleada y aún no enviada. */
   closing?: {
     result: string
