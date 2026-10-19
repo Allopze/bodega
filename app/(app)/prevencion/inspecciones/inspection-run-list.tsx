@@ -84,13 +84,20 @@ interface Props {
   overdueProgramCount: number
   today: string
   canExecute: boolean
+  /**
+   * Con permiso de revisión el tile «Pendientes de revisión» cuenta lo que
+   * puede revisar quien mira (excluye lo que él ejecutó); sin él son las que
+   * esperan a Prevención. Sólo cambia el texto del tile: el conteo lo decide el
+   * servidor con el mismo predicado que la lista (`pendingReviewCondition`).
+   */
+  canReview: boolean
   templates: TemplateOption[]
   worksites: { id: string; name: string }[]
   assignees: InspectionAssigneeOption[]
   subjectsByWorksite: Record<string, InspectionSubjectOption[]>
 }
 
-export function InspectionRunList({ runs, summary, page, pageSize, overdueProgramCount, today, canExecute, templates, worksites, assignees, subjectsByWorksite }: Props) {
+export function InspectionRunList({ runs, summary, page, pageSize, overdueProgramCount, today, canExecute, canReview, templates, worksites, assignees, subjectsByWorksite }: Props) {
   // Filtros client-side en la URL (shareables + sobreviven refresh) vía useUrlFilters.
   const { getFilter, setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
   const status = getFilter("estado") || "all"
@@ -118,8 +125,9 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
 
   // Con el filtrado en el servidor, derivar las faenas de las filas visibles
   // dejaría el selector vacío en cuanto se filtrara por una: se usa el alcance
-  // del usuario, más la faena de las filas presentes para quien no puede
-  // ejecutar (a ese `worksites` le llega vacío).
+  // del usuario (que la pantalla carga para cualquiera con `view`, P1-10), más
+  // la faena de las filas presentes — una faena dada de baja ya no está en el
+  // alcance activo, pero sus ejecuciones siguen listadas.
   const runWorksites = React.useMemo(() => {
     const map = new Map<string, string>(worksites.map((item) => [item.id, item.name]))
     for (const item of runs) if (!map.has(item.worksiteId)) map.set(item.worksiteId, item.worksiteName)
@@ -130,6 +138,22 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
   // los KPIs vienen de `summary` — derivarlos de la página los volvía mentira
   // en cuanto había más de una.
   const filtered = runs
+
+  // C-09 movió el filtrado al SQL, así que `runs` ya llega filtrada y quedarse
+  // en cero dejó de distinguir "no hay inspecciones" de "no hay con estos
+  // filtros": el estado vacío afirmaba siempre lo primero y escondía la salida
+  // ("Ver todas"), de modo que buscar algo inexistente era un callejón. El
+  // buscador cuenta como filtro aunque viva en la cabecera del shell.
+  const search = urlSearch.trim()
+  const secondaryActiveCount = [responsable !== "all", Boolean(desde), Boolean(hasta)].filter(Boolean).length
+  const isFiltered = status !== "all" || kind !== "all" || worksite !== "all" || quickFilter !== "all" || search !== "" || secondaryActiveCount > 0
+  // P1-9: los KPI acotan el universo con estos filtros (tipo, faena, búsqueda,
+  // responsable y rango) y NO con el estado ni la vista, que eligen un
+  // subconjunto de él. Cuando alguno de estos está activo, un cero no significa
+  // "todo al día" sino "nada con estos filtros", y decirlo con el texto del
+  // estado bueno afirmaría algo que el tile no sabe.
+  const otherFiltersActive = kind !== "all" || worksite !== "all" || search !== "" || secondaryActiveCount > 0
+
   // A1: cuatro tiles, y los cuatro filtran esta misma lista. "Programaciones
   // vencidas" salió de la fila porque navegaba a otra ruta con la misma
   // apariencia de filtro; ahora es el aviso de abajo, visible sólo cuando hay
@@ -140,7 +164,11 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
   // afirma el estado bueno y deja de ser clicable (un clic sólo podía llevar a
   // una lista vacía).
   const metrics = [
-    { id: "pending-review", key: "pending_review" as const, label: "Pendientes de revisión", value: summary.pendingReview, detail: "Requieren a Prevención", emptyDetail: "Nada esperando revisión" },
+    {
+      id: "pending-review", key: "pending_review" as const, label: "Pendientes de revisión", value: summary.pendingReview,
+      detail: canReview ? "Puedes revisarlas tú" : "Esperan a Prevención",
+      emptyDetail: canReview ? "Nada esperando tu revisión" : "Nada esperando revisión",
+    },
     { id: "open-findings", key: "open_findings" as const, label: "Con hallazgos abiertos", value: summary.withOpenFindings, detail: "Requieren acción", emptyDetail: "Sin hallazgos abiertos" },
     { id: "critical", key: "critical" as const, label: "Con hallazgo grave", value: summary.withCriticalFindings, detail: "Alto o crítico", emptyDetail: "Ninguno alto ni crítico" },
     // I-31: vencido era el primer criterio de orden y no tenía acceso directo
@@ -151,18 +179,13 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
 
   const totalPages = Math.max(1, Math.ceil(summary.total / pageSize))
 
-  // C-09 movió el filtrado al SQL, así que `runs` ya llega filtrada y quedarse
-  // en cero dejó de distinguir "no hay inspecciones" de "no hay con estos
-  // filtros": el estado vacío afirmaba siempre lo primero y escondía la salida
-  // ("Ver todas"), de modo que buscar algo inexistente era un callejón. El
-  // buscador cuenta como filtro aunque viva en la cabecera del shell.
-  const search = urlSearch.trim()
-  const secondaryActiveCount = [responsable !== "all", Boolean(desde), Boolean(hasta)].filter(Boolean).length
-  const isFiltered = status !== "all" || kind !== "all" || worksite !== "all" || quickFilter !== "all" || search !== "" || secondaryActiveCount > 0
-
   const KIND_LABELS = INSPECTION_KIND_LABELS as Record<string, string>
   const activeChips: ActiveFilterChip[] = []
   if (status !== "all") activeChips.push({ key: "estado", label: "Estado", value: status, displayValue: inspectionTaskStatusLabel(status) })
+  // La vista rápida también es un filtro activo: sin chip, `?vista=critical`
+  // dejaba la lista acotada sin ningún rótulo que lo dijera ni cómo quitarlo.
+  const activeView = metrics.find((metric) => metric.key === quickFilter)
+  if (activeView) activeChips.push({ key: "vista", label: "Vista", value: quickFilter, displayValue: activeView.label })
   if (kind !== "all") activeChips.push({ key: "tipo", label: "Tipo", value: kind, displayValue: KIND_LABELS[kind] ?? kind })
   if (worksite !== "all") {
     const ws = runWorksites.find((w) => w.id === worksite)
@@ -178,7 +201,14 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
   if (desde) activeChips.push({ key: "desde", label: "Ejecutada desde", value: desde, displayValue: formatDate(desde) })
   if (hasta) activeChips.push({ key: "hasta", label: "Ejecutada hasta", value: hasta, displayValue: formatDate(hasta) })
   function handleRemoveChip(key: string) {
-    setFilters({ [key]: null })
+    // Quitar un filtro cambia el total: seguir en la página 3 de una lista que
+    // ahora tiene dos caería en una página vacía. Y el borrador del buscador se
+    // vacía a la vez que la URL, o el debounce lo volvería a escribir.
+    if (key === "q") setSearchDraft("")
+    // NO `useUrlFilters({ pageKey: "pagina" })`: `setFilters({ pagina: N })` de
+    // `Pagination` pondría la clave y el hook la borraría enseguida, dejando la
+    // lista sin poder avanzar de página. La página se reinicia explícita, aquí.
+    setFilters({ [key]: null, pagina: null })
   }
   function clearFilters() {
     setSearchDraft("")
@@ -197,20 +227,36 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
           // es el filtro activo: si no, el usuario quedaría encerrado en una
           // vista vacía sin poder apagarla desde el mismo control.
           const inert = metric.value === 0 && !active
+          // Tercera línea del tile. Activo: lo dice con palabras, porque el
+          // fondo tintado solo no lo distingue para quien no percibe el color
+          // (WCAG 1.4.1). En cero: "todo bien" sólo si no hay otros filtros;
+          // con ellos el cero es relativo a lo filtrado.
+          const caption = active
+            ? "Filtrando la lista"
+            : inert
+              ? (otherFiltersActive ? "Ninguna con estos filtros" : metric.emptyDetail)
+              : metric.detail
           return (
             <button
               key={metric.id}
               type="button"
               disabled={inert}
-              onClick={() => setFilters({ vista: active ? null : metric.key, pagina: null })}
+              // A5: una dimensión, un control. El tile elige la vista y suelta
+              // el estado (si no, `estado=planned&vista=pending_review` era una
+              // intersección siempre vacía) y la página (el total cambia).
+              onClick={() => setFilters({ vista: active ? null : metric.key, estado: null, pagina: null })}
               aria-pressed={active}
-              className="w-36 shrink-0 border-r border-[var(--color-border)] px-4 py-3 text-left enabled:hover:bg-[var(--color-surface-2)] disabled:cursor-default aria-pressed:bg-[var(--color-primary-tint)] lg:w-auto"
+              // Señal no cromática del activo: borde inferior de 2 px, dibujado
+              // como sombra interior para no sumar alto a la fila al activarse.
+              className="w-36 shrink-0 border-r border-[var(--color-border)] px-4 py-3 text-left enabled:hover:bg-[var(--color-surface-2)] disabled:cursor-default aria-pressed:bg-[var(--color-primary-tint)] aria-pressed:shadow-[inset_0_-2px_0_0_var(--color-primary)] lg:w-auto"
             >
               <span className="text-eyebrow">{metric.label}</span>
               <span className={inert
                 ? "mt-1 block font-mono text-xl font-semibold tabular-nums text-[var(--color-text-subtle)]"
                 : "mt-1 block font-mono text-xl font-semibold tabular-nums"}>{metric.value}</span>
-              <span className="text-xs text-[var(--color-text-subtle)]">{inert ? metric.emptyDetail : metric.detail}</span>
+              <span className={active
+                ? "text-xs font-medium text-[var(--color-primary-ink)]"
+                : "text-xs text-[var(--color-text-subtle)]"}>{caption}</span>
             </button>
           )
         })}

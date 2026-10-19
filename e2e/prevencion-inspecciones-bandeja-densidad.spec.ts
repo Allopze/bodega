@@ -97,6 +97,31 @@ test.describe("Inspecciones — la bandeja se entiende de una lectura", () => {
     await expect(vencidas).toBeDisabled()
     await expect(textoVisible(page, "Ninguna fuera de plazo")).toBeVisible()
   })
+
+  /**
+   * P1-9: un cero bajo un filtro de universo (faena, tipo, búsqueda…) no
+   * significa «todo al día» sino «nada con estos filtros»; el texto del estado
+   * bueno afirmaría algo que el tile no sabe.
+   */
+  test("con una faena activa, el cero de un tile no afirma el estado bueno", async ({ page }) => {
+    await page.goto("/prevencion/inspecciones?faena=ws-e2e")
+    const vencidas = page.getByRole("button", { name: /^Vencidas/ })
+    await expect(vencidas).toBeVisible({ timeout: 30_000 })
+    await expect(vencidas).toBeDisabled()
+    await expect(vencidas).toContainText("Ninguna con estos filtros")
+    await expect(textoVisible(page, "Ninguna fuera de plazo")).toHaveCount(0)
+  })
+
+  /**
+   * Señal no cromática del tile activo (WCAG 1.4.1): el fondo tintado solo no
+   * lo distingue. `aria-pressed` se conserva: `densidad-kpi.spec.ts` lo usa.
+   */
+  test("el tile activo lo dice con palabras", async ({ page }) => {
+    await page.goto("/prevencion/inspecciones?vista=critical")
+    const activo = page.getByRole("button", { name: /^Con hallazgo grave/ })
+    await expect(activo).toHaveAttribute("aria-pressed", "true", { timeout: 30_000 })
+    await expect(activo).toContainText("Filtrando la lista")
+  })
 })
 
 /**

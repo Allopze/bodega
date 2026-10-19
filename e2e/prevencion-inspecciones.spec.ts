@@ -86,6 +86,53 @@ test.describe("Inspecciones — bandeja de ejecuciones", () => {
     await page.goto("/prevencion/inspecciones?vista=pending_review")
     await expect(page.getByRole("row").filter({ hasText: "INSP-E2E-0003" })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole("row").filter({ hasText: "INSP-E2E-0001" })).toHaveCount(0)
+    // La vista y el tile cuentan lo mismo (P1-9): «pendientes de revisión» es
+    // «para mí». `INSP-E2E-0003` la ejecutó `user-ops-e2e` y el admin sí puede
+    // revisarla; `INSP-E2E-0002` la ejecutó el propio admin y no, así que la
+    // lista que abre el tile no la trae (antes sólo filtraba `completed`).
+    await expect(page.getByRole("row").filter({ hasText: "INSP-E2E-0002" })).toHaveCount(0)
+  })
+
+  /**
+   * P1-9: el resumen se calculaba con el estado de la lista, así que bajo
+   * `?estado=completed` —que muestra filas— el tile decía «0 · Nada esperando
+   * revisión». Los KPI acotan el universo y no el estado ni la vista.
+   */
+  test("bajo ?estado=completed el tile de pendientes sigue contando y no dice «Nada esperando»", async ({ page }) => {
+    await page.goto("/prevencion/inspecciones?estado=completed")
+    await expect(page.getByRole("row").filter({ hasText: "INSP-E2E-0003" })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole("button", { name: /^Pendientes de revisión/ })).toBeEnabled()
+    await expect(textoVisible(page, /Nada esperando/)).toHaveCount(0)
+  })
+
+  /**
+   * A5: una dimensión, un control. `estado=planned&vista=pending_review` era una
+   * intersección siempre vacía; el tile elige la vista y suelta el estado y la
+   * página (el total cambia, y seguir en la página 2 caía en una vacía).
+   */
+  test("el clic en un tile deja la URL sin estado ni página", async ({ page }) => {
+    await page.goto("/prevencion/inspecciones?estado=planned&pagina=2")
+    const tile = page.getByRole("button", { name: /^Pendientes de revisión/ })
+    await expect(tile).toBeEnabled({ timeout: 30_000 })
+    await tile.click()
+
+    await expect(page).toHaveURL(/vista=pending_review/, { timeout: 15_000 })
+    const params = new URL(page.url()).searchParams
+    expect(params.has("estado")).toBe(false)
+    expect(params.has("pagina")).toBe(false)
+    await expect(page.getByRole("row").filter({ hasText: "INSP-E2E-0003" })).toBeVisible({ timeout: 30_000 })
+    await expect(tile).toHaveAttribute("aria-pressed", "true")
+  })
+
+  test("la vista activa deja su chip y quitarlo también borra la página", async ({ page }) => {
+    await page.goto("/prevencion/inspecciones?vista=critical&pagina=2")
+    const quitar = page.getByRole("button", { name: "Eliminar filtro Vista" })
+    await expect(quitar).toBeVisible({ timeout: 30_000 })
+    await quitar.click()
+
+    await expect(page).not.toHaveURL(/vista=/, { timeout: 15_000 })
+    expect(new URL(page.url()).searchParams.has("pagina")).toBe(false)
+    await expect(page.getByRole("row").filter({ hasText: "INSP-E2E-0003" })).toBeVisible({ timeout: 30_000 })
   })
 
   test("el filtro por estado deja su chip y se puede limpiar", async ({ page }) => {

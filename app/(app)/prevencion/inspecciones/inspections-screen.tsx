@@ -46,6 +46,9 @@ export async function InspectionsScreen({ searchParams }: {
     permissions: session.user.permissions,
   }
   const canExecute = session.user.permissions.includes("prevention:inspections:execute")
+  // Decide el texto del tile «Pendientes de revisión»: «para mí» con permiso de
+  // revisión, «para Prevención» sin él (mismo criterio que `pendingReviewCondition`).
+  const canReview = session.user.permissions.includes("prevention:inspections:review")
 
   const queryValue = (value: string | string[] | undefined): string | undefined => {
     const candidate = Array.isArray(value) ? value[0] : value
@@ -77,7 +80,12 @@ export async function InspectionsScreen({ searchParams }: {
     summarizeInspectionRuns(access, filter),
     listInspectionPrograms(access, { kinds: filter.kinds }),
     canExecute ? listInspectionTemplates(access, { kinds: filter.kinds }) : Promise.resolve([]),
-    canExecute ? listInspectionWorksites(access) : Promise.resolve([]),
+    // P1-10: las faenas del alcance las pide cualquiera con `view` (el servicio
+    // no exige más). Condicionarlas a `execute` dejaba el filtro «Faena» casi
+    // vacío para jefatura, CPHS y mantención, que sólo veían las de las 50 filas
+    // de la página. Crear (`canCreate`) y el inventario de sujetos siguen
+    // siendo cosa de `canExecute`.
+    listInspectionWorksites(access),
     // I-10: el filtro de responsable es para cualquiera con `view` (la jefa
     // puede tener `review` sin `execute`), no sólo para quien ejecuta.
     listInspectionAssignees(access),
@@ -157,6 +165,7 @@ export async function InspectionsScreen({ searchParams }: {
         )).length}
         today={todayInChile()}
         canExecute={canExecute}
+        canReview={canReview}
         templates={approvedTemplates}
         worksites={worksites}
         assignees={assignees}
