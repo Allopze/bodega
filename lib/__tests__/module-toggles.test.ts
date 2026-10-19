@@ -40,7 +40,9 @@ import {
   resolveModuleRoute,
   assertPermissionModuleEnabled,
   setSubmoduleToggle,
+  ModuleDisabledError,
 } from "@/lib/services/module-toggles"
+import { assertInspectionOperationEnabled } from "@/lib/services/prevention-inspections/module-toggle"
 
 const NOW = new Date().toISOString()
 const ACTOR = { userId: "test-user", userEmail: "test@chome.cl" }
@@ -327,6 +329,9 @@ describe("module-toggles service", () => {
       expect(resolveModuleRoute("/api/cron/billing-sales-sync")).toEqual({ moduleId: "billing", submoduleHref: "/facturacion/sincronizacion" })
       expect(resolveModuleRoute("/api/facturacion/facturas/export")).toEqual({ moduleId: "billing", submoduleHref: "/facturacion/facturas" })
       expect(resolveModuleRoute("/api/prevencion/inspecciones/export")).toEqual({ moduleId: "prevention", submoduleHref: undefined })
+      // El Excel del Anexo 15 cuelga del mismo prefijo: la ruta lo resuelve a Prevención, y el
+      // interruptor del submódulo Inspecciones lo aplica `assertInspectionOperationEnabled` en el handler.
+      expect(resolveModuleRoute("/api/prevencion/inspecciones/seguimiento/export")).toEqual({ moduleId: "prevention", submoduleHref: undefined })
       expect(resolveModuleRoute("/api/prevencion/superficie-futura")).toBeNull()
     })
 
@@ -351,6 +356,16 @@ describe("module-toggles service", () => {
         "combustibles:review_anomalies",
         "/combustibles/bitacora",
       )).rejects.toThrow(/submódulo inactivo/i)
+    })
+
+    it("apagar Inspecciones cierra lo que consultan sus exports (P2-11)", async () => {
+      // Los dos Excel (inspecciones y Anexo 15) llaman a `assertInspectionOperationEnabled`; el
+      // de seguimiento no lo hacía y seguía descargando con el submódulo apagado.
+      await expect(assertInspectionOperationEnabled()).resolves.toBeUndefined()
+
+      await setSubmoduleToggle("prevention", "/prevencion/inspecciones", false, ACTOR)
+
+      await expect(assertInspectionOperationEnabled()).rejects.toBeInstanceOf(ModuleDisabledError)
     })
 
     it("mantiene inventariadas todas las páginas autenticadas y Route Handlers operativos", () => {
