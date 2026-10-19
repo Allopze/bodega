@@ -2,7 +2,7 @@ import ExcelJS from "exceljs"
 import type { Session } from "next-auth"
 import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import { EXCEL_DATETIME_FORMAT } from "@/lib/reports/excel-dates"
-import type { ReportData, ReportSheet } from "./types"
+import type { ReportCell, ReportData, ReportSheet } from "./types"
 
 /**
  * Contexto opcional de trazabilidad del archivo.
