@@ -2,8 +2,22 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { FileDoc, FileXls } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import type { RunDocumentInfo } from "./types"
+
+/** Igual que el límite de la ruta de carga: avisar antes de subir ahorra una espera inútil en terreno. */
+const MAX_UPLOAD_MB = 25
+
+/**
+ * Los formatos que el visor sabe pintar. Un `.docx` o una hoja de cálculo no son
+ * una imagen: dentro de un `<img>` salían como el ícono de imagen rota.
+ */
+const OFFICE_DOCUMENTS: Record<string, { label: string; Icon: typeof FileDoc }> = {
+  docx: { label: "Documento de Word", Icon: FileDoc },
+  xlsx: { label: "Planilla de Excel", Icon: FileXls },
+  xls: { label: "Planilla de Excel", Icon: FileXls },
+}
 
 /* ── La planilla física ───────────────────────────────────────────────────── */
 
@@ -25,12 +39,13 @@ export function SourceFormViewer({ documents }: { documents: RunDocumentInfo[] }
   if (!current) return null
   const src = `/api/prevencion/inspecciones/documento/${current.path.split("/").pop()}`
   const isPdf = current.path.toLowerCase().endsWith(".pdf")
+  const office = OFFICE_DOCUMENTS[current.path.toLowerCase().split(".").pop() ?? ""]
 
   return (
     <aside className="space-y-2 lg:sticky lg:top-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Planilla original</h2>
-        {!isPdf && <div className="flex items-center gap-1">
+        {!isPdf && !office && <div className="flex items-center gap-1">
           <Button type="button" size="sm" variant="ghost" aria-label="Reducir la planilla"
             onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}>−</Button>
           <span className="min-w-12 text-center text-xs tabular-nums text-[var(--color-text-subtle)]">
@@ -42,7 +57,20 @@ export function SourceFormViewer({ documents }: { documents: RunDocumentInfo[] }
         </div>}
       </div>
       <div className="max-h-[70vh] overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]">
-        {isPdf ? (
+        {office ? (
+          // No hay vista previa de un documento de Office en el navegador: se
+          // ofrece abrirlo, que es lo que la persona haría de todos modos.
+          <div className="flex flex-col items-start gap-3 p-4">
+            <office.Icon size={32} aria-hidden className="text-[var(--color-text-muted)]" />
+            <div>
+              <p className="text-sm font-medium">{office.label}</p>
+              <p className="mt-1 text-xs text-[var(--color-text-subtle)]">No se puede mostrar aquí junto a las respuestas; ábrelo para cotejarlo.</p>
+            </div>
+            <Button asChild size="sm" variant="secondary">
+              <a href={src} target="_blank" rel="noreferrer">Abrir documento</a>
+            </Button>
+          </div>
+        ) : isPdf ? (
           <object data={src} type="application/pdf" className="h-[60dvh] min-h-96 w-full" aria-label={current.caption ?? "Planilla PDF del reporte de equipos"}>
             <p className="p-4 text-sm">Este navegador no puede mostrar el PDF. <a className="underline" href={src} target="_blank" rel="noreferrer">Abrir documento</a>.</p>
           </object>
@@ -82,10 +110,17 @@ export function SourceFormUpload({ runId, hasDocuments }: { runId: string; hasDo
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [pending, setPending] = React.useState(false)
   const [message, setMessage] = React.useState("")
+  const [failed, setFailed] = React.useState(false)
 
   async function upload(file: File) {
-    setPending(true)
+    setFailed(false)
     setMessage("")
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      setFailed(true)
+      setMessage(`El archivo supera el máximo permitido de ${MAX_UPLOAD_MB} MB.`)
+      return
+    }
+    setPending(true)
     try {
       const body = new FormData()
       body.append("file", file)
@@ -103,6 +138,7 @@ export function SourceFormUpload({ runId, hasDocuments }: { runId: string; hasDo
       setMessage("Planilla cargada. Tu borrador de respuestas se conserva.")
       router.refresh()
     } catch (error) {
+      setFailed(true)
       setMessage(error instanceof Error ? error.message : "No se pudo subir la planilla.")
     } finally {
       setPending(false)
@@ -113,7 +149,7 @@ export function SourceFormUpload({ runId, hasDocuments }: { runId: string; hasDo
     <section className="space-y-2 rounded-lg border border-dashed border-[var(--color-border)] p-4">
       <h2 className="text-sm font-semibold">{hasDocuments ? "Agregar otra hoja" : "Subir la planilla física"}</h2>
       <p className="text-xs text-[var(--color-text-subtle)]">
-        Foto o escaneo del reporte firmado. Queda como evidencia del turno y sirve de referencia para responder los ítems.
+        Foto o escaneo del reporte firmado. Queda como evidencia del turno y sirve de referencia para responder los ítems. Máximo {MAX_UPLOAD_MB} MB.
       </p>
       <input
         ref={inputRef}
@@ -127,10 +163,12 @@ export function SourceFormUpload({ runId, hasDocuments }: { runId: string; hasDo
           event.target.value = ""
         }}
       />
-      <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => inputRef.current?.click()}>
+      <Button type="button" size="sm" variant="secondary" loading={pending} onClick={() => inputRef.current?.click()}>
         {pending ? "Subiendo…" : "Elegir archivo"}
       </Button>
-      {message && <p role="status" className="text-sm">{message}</p>}
+      {message && (failed
+        ? <p role="alert" className="text-sm text-[var(--color-danger-ink)]">{message}</p>
+        : <p role="status" className="text-sm">{message}</p>)}
     </section>
   )
 }

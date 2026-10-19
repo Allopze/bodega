@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import {
   Dialog,
   DialogContent,
@@ -16,6 +17,7 @@ import { assessRunReview } from "@/lib/prevention/inspections"
 import { reviewInspectionRunAction } from "../../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { toast } from "@/lib/toast"
 import type { RunInfo, FindingInfo } from "./types"
 import { CapaDialog } from "./finding-dialogs"
 
@@ -32,6 +34,10 @@ export function ReviewDialog({ run, findings, currentUserId, version, assignees,
   canExecute: boolean
 }) {
   const [open, setOpen] = React.useState(false)
+  // Hallazgo que se está derivando. Un solo `CapaDialog` para toda la lista de
+  // bloqueos, y fuera del `<form>`: anidado dentro, su `submit` se propagaba por
+  // el árbol de React hasta el formulario de revisión (P1-3).
+  const [capaFindingId, setCapaFindingId] = React.useState<string | null>(null)
   const operation = useOperation()
   const review = React.useMemo(() => assessRunReview({
     executedByUserId: run.executedByUserId,
@@ -40,9 +46,16 @@ export function ReviewDialog({ run, findings, currentUserId, version, assignees,
     // Sin esto la vista pedía una independencia que el servidor no exige (#47).
     executorOfRecord: run.executorOfRecord,
   }), [run.executedByUserId, run.executorOfRecord, currentUserId, findings])
+  const capaFinding = capaFindingId ? findings.find((item) => item.id === capaFindingId) : undefined
+
+  function changeOpen(next: boolean) {
+    operation.setMessage("")
+    if (!next) setCapaFindingId(null)
+    setOpen(next)
+  }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger asChild><Button size="sm" variant="secondary">Revisar y cerrar{!review.allowed ? ` · ${review.blockers.length} bloqueo${review.blockers.length === 1 ? "" : "s"}` : ""}</Button></DialogTrigger>
       <DialogContent>
         <form
@@ -53,7 +66,10 @@ export function ReviewDialog({ run, findings, currentUserId, version, assignees,
               runId: run.id,
               expectedVersion: version,
               reviewComment: form.get("reviewComment"),
-            }), () => setOpen(false))
+            }), () => {
+              toast.success("Inspección revisada y cerrada.")
+              changeOpen(false)
+            })
           }}
           className="space-y-4"
         >
@@ -67,15 +83,15 @@ export function ReviewDialog({ run, findings, currentUserId, version, assignees,
               <ul className="list-disc space-y-2 pl-4">
                 {review.blockers.map((item) => {
                   // I-07: el bloqueador trae el hallazgo que falta derivar — se
-                  // ofrece el mismo diálogo de CAPA ACÁ, anidado, sin cerrar
-                  // este (el comentario de revisión es un textarea no
-                  // controlado y se perdería si se desmontara el diálogo).
+                  // ofrece derivarlo ACÁ, sin cerrar este diálogo (el comentario
+                  // de revisión es un textarea no controlado y se perdería si se
+                  // desmontara). El diálogo de CAPA se monta una sola vez, abajo.
                   const finding = item.findingId ? findings.find((f) => f.id === item.findingId) : undefined
                   return (
                     <li key={item.detail} className="flex flex-wrap items-center gap-2">
                       <span>{item.detail}</span>
                       {finding && (canExecute
-                        ? <CapaDialog finding={finding} assignees={assignees} hasVehicle={!!run.subjectVehicleId} />
+                        ? <Button type="button" size="sm" variant="secondary" onClick={() => setCapaFindingId(finding.id)}>Derivar a CAPA</Button>
                         : <a href="#hallazgos" className="text-xs underline">Ver en Hallazgos</a>)}
                     </li>
                   )
@@ -83,12 +99,23 @@ export function ReviewDialog({ run, findings, currentUserId, version, assignees,
               </ul>
             </div>
           )}
-          <Field label="Comentario de revisión" hint="Mínimo 10 caracteres.">
+          <Field label="Comentario de revisión" hint="Mínimo 10 caracteres." error={operation.fieldError("reviewComment")}>
             <Textarea name="reviewComment" required minLength={10} maxLength={3000} />
           </Field>
-          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending || !review.allowed}>Revisar y cerrar</Button></DialogFooter>
+          {operation.messageTone === "error" && operation.message && <Callout tone="danger" role="alert">{operation.message}</Callout>}
+          <DialogFooter><Button type="submit" loading={operation.pending} disabled={!review.allowed}>Revisar y cerrar</Button></DialogFooter>
         </form>
+        {capaFinding && (
+          <CapaDialog
+            key={capaFinding.id}
+            finding={capaFinding}
+            assignees={assignees}
+            hasVehicle={!!run.subjectVehicleId}
+            open
+            onOpenChange={(next) => { if (!next) setCapaFindingId(null) }}
+            trigger={null}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )

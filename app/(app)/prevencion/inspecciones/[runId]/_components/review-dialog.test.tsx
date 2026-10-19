@@ -8,17 +8,41 @@
  * transcribió —la persona que ejecutó está nombrada en el formulario—, pero la
  * vista no conocía `executorOfRecord` y le mostraba el bloqueo de independencia.
  * #17: un hallazgo alto ya cerrado tampoco debe contar como bloqueo.
+ *
+ * P1-3: derivar un hallazgo a CAPA desde este diálogo también enviaba la
+ * revisión. El `CapaDialog` vive en un portal, pero React propaga el `submit` por
+ * el árbol de componentes y no por el DOM: al estar anidado dentro del `<form>`
+ * de la revisión, el formulario de CAPA lo disparaba también.
  */
-import { cleanup, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import type { FormEvent } from "react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { FindingInfo, RunInfo } from "./types"
 
+const reviewInspectionRunAction = vi.fn()
+const createFindingCapaAction = vi.fn()
+const stopVehicleForFindingAction = vi.fn()
+const toastSuccess = vi.fn()
+
 vi.mock("../../actions", () => ({
-  reviewInspectionRunAction: vi.fn(),
-  createFindingCapaAction: vi.fn(),
+  reviewInspectionRunAction,
+  createFindingCapaAction,
+  stopVehicleForFindingAction,
+}))
+
+vi.mock("@/lib/toast", () => ({
+  toast: { success: toastSuccess, error: vi.fn() },
 }))
 
 const { ReviewDialog } = await import("./review-dialog")
+const { CapaDialog, StopVehicleDialog } = await import("./finding-dialogs")
+
+beforeEach(() => {
+  reviewInspectionRunAction.mockReset()
+  createFindingCapaAction.mockReset()
+  stopVehicleForFindingAction.mockReset()
+  toastSuccess.mockReset()
+})
 
 afterEach(cleanup)
 
@@ -77,5 +101,161 @@ describe("ReviewDialog — bloqueos alineados con el servidor", () => {
       findings: [finding({ status: "closed" })],
     })
     expect(screen.getByRole("button", { name: "Revisar y cerrar" })).toBeInTheDocument()
+  })
+})
+
+/**
+ * Un revisor distinto de quien ejecutó: el único bloqueo posible es el hallazgo
+ * alto sin CAPA, que es justo el que ofrece «Derivar a CAPA» dentro del diálogo.
+ */
+const REVIEWER = "user-revisor"
+
+function renderAsReviewer(findings: FindingInfo[]) {
+  render(
+    <ReviewDialog
+      run={run()}
+      findings={findings}
+      currentUserId={REVIEWER}
+      version={3}
+      assignees={[{ id: "user-ana", name: "Ana Pérez" }]}
+      canExecute
+    />,
+  )
+}
+
+async function openReview() {
+  fireEvent.click(screen.getByRole("button", { name: /Revisar y cerrar/ }))
+  return screen.findByRole("dialog", { name: "Revisar y cerrar INS-1" })
+}
+
+describe("ReviewDialog — derivar a CAPA (P1-3)", () => {
+  it("el submit del formulario de CAPA crea la CAPA y no envía la revisión", async () => {
+    createFindingCapaAction.mockResolvedValue({ ok: true })
+    renderAsReviewer([finding()])
+
+    const review = await openReview()
+    fireEvent.change(within(review).getByLabelText("Comentario de revisión"), { target: { value: "Revisado en terreno con el jefe." } })
+    fireEvent.click(within(review).getByRole("button", { name: "Derivar a CAPA" }))
+
+    const capa = await screen.findByRole("dialog", { name: "Derivar hallazgo a CAPA" })
+    fireEvent.change(within(capa).getByLabelText("Acción correctiva"), { target: { value: "Reparar los frenos antes de volver a operar." } })
+    const form = capa.querySelector("form")
+    expect(form).not.toBeNull()
+    fireEvent.submit(form!)
+
+    await waitFor(() => expect(createFindingCapaAction).toHaveBeenCalledOnce())
+    expect(createFindingCapaAction).toHaveBeenCalledWith(expect.objectContaining({
+      findingId: "f-1",
+      actionDescription: "Reparar los frenos antes de volver a operar.",
+    }))
+    expect(reviewInspectionRunAction).not.toHaveBeenCalled()
+  })
+
+  it("al derivar, el diálogo de revisión sigue abierto con el comentario ya escrito", async () => {
+    createFindingCapaAction.mockResolvedValue({ ok: true })
+    renderAsReviewer([finding()])
+
+    const review = await openReview()
+    fireEvent.change(within(review).getByLabelText("Comentario de revisión"), { target: { value: "Revisado en terreno con el jefe." } })
+    fireEvent.click(within(review).getByRole("button", { name: "Derivar a CAPA" }))
+    const capa = await screen.findByRole("dialog", { name: "Derivar hallazgo a CAPA" })
+    fireEvent.change(within(capa).getByLabelText("Acción correctiva"), { target: { value: "Reparar los frenos antes de volver a operar." } })
+    fireEvent.submit(capa.querySelector("form")!)
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Derivar hallazgo a CAPA" })).toBeNull())
+    expect(toastSuccess).toHaveBeenCalledWith("Hallazgo derivado a CAPA.")
+    expect(screen.getByLabelText("Comentario de revisión")).toHaveValue("Revisado en terreno con el jefe.")
+  })
+
+  it("un rechazo de la CAPA se dice como alerta dentro de su diálogo", async () => {
+    createFindingCapaAction.mockResolvedValue({ ok: false, message: "El hallazgo ya tiene una CAPA." })
+    renderAsReviewer([finding()])
+
+    const review = await openReview()
+    fireEvent.click(within(review).getByRole("button", { name: "Derivar a CAPA" }))
+    const capa = await screen.findByRole("dialog", { name: "Derivar hallazgo a CAPA" })
+    fireEvent.change(within(capa).getByLabelText("Acción correctiva"), { target: { value: "Reparar los frenos antes de volver a operar." } })
+    fireEvent.submit(capa.querySelector("form")!)
+
+    expect(await within(capa).findByRole("alert")).toHaveTextContent("El hallazgo ya tiene una CAPA.")
+  })
+})
+
+describe("ReviewDialog — envío de la revisión", () => {
+  it("envía el comentario con la versión vigente y avisa por toast", async () => {
+    reviewInspectionRunAction.mockResolvedValue({ ok: true })
+    renderAsReviewer([])
+
+    const review = await openReview()
+    fireEvent.change(within(review).getByLabelText("Comentario de revisión"), { target: { value: "Todo conforme, se cierra." } })
+    fireEvent.submit(review.querySelector("form")!)
+
+    await waitFor(() => expect(reviewInspectionRunAction).toHaveBeenCalledWith({
+      runId: "run-1",
+      expectedVersion: 3,
+      reviewComment: "Todo conforme, se cierra.",
+    }))
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("Inspección revisada y cerrada."))
+  })
+
+  it("un rechazo se dice como alerta y el error de un campo queda en su campo", async () => {
+    reviewInspectionRunAction.mockResolvedValue({
+      ok: false,
+      message: "Revisa los campos marcados",
+      fieldErrors: { reviewComment: ["El comentario es demasiado corto."] },
+    })
+    renderAsReviewer([])
+
+    const review = await openReview()
+    fireEvent.change(within(review).getByLabelText("Comentario de revisión"), { target: { value: "Todo conforme, se cierra." } })
+    fireEvent.submit(review.querySelector("form")!)
+
+    await waitFor(() => expect(within(review).getAllByRole("alert").length).toBeGreaterThan(0))
+    expect(within(review).getByLabelText("Comentario de revisión")).toHaveAttribute("aria-invalid", "true")
+    expect(within(review).getByText("El comentario es demasiado corto.")).toBeInTheDocument()
+    expect(toastSuccess).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * Además de sacar el `CapaDialog` del formulario de revisión, el propio diálogo
+ * corta la propagación: cualquier otro formulario que algún día lo contenga
+ * tendría el mismo problema.
+ */
+describe("CapaDialog y StopVehicleDialog — el submit no sube al formulario que los contiene", () => {
+  it("CapaDialog", async () => {
+    createFindingCapaAction.mockResolvedValue({ ok: true })
+    const outerSubmit = vi.fn((event: FormEvent) => event.preventDefault())
+    render(
+      <form onSubmit={outerSubmit}>
+        <CapaDialog finding={finding()} assignees={[]} hasVehicle={false} />
+      </form>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Derivar a CAPA" }))
+    const capa = await screen.findByRole("dialog", { name: "Derivar hallazgo a CAPA" })
+    fireEvent.change(within(capa).getByLabelText("Acción correctiva"), { target: { value: "Reparar los frenos antes de volver a operar." } })
+    fireEvent.submit(capa.querySelector("form")!)
+
+    await waitFor(() => expect(createFindingCapaAction).toHaveBeenCalledOnce())
+    expect(outerSubmit).not.toHaveBeenCalled()
+  })
+
+  it("StopVehicleDialog", async () => {
+    stopVehicleForFindingAction.mockResolvedValue({ ok: true })
+    const outerSubmit = vi.fn((event: FormEvent) => event.preventDefault())
+    render(
+      <form onSubmit={outerSubmit}>
+        <StopVehicleDialog finding={finding()} subjectLabel="Camión KA122" />
+      </form>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Sacar de servicio" }))
+    const dialog = await screen.findByRole("dialog", { name: "Sacar el equipo de servicio" })
+    fireEvent.change(within(dialog).getByLabelText("Motivo"), { target: { value: "Frenos sin respuesta, no puede circular." } })
+    fireEvent.submit(dialog.querySelector("form")!)
+
+    await waitFor(() => expect(stopVehicleForFindingAction).toHaveBeenCalledOnce())
+    expect(outerSubmit).not.toHaveBeenCalled()
   })
 })
