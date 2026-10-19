@@ -22,6 +22,7 @@ export {
   importInspectionTemplate,
   setInspectionTemplatePdtpActivities,
   setInspectionTemplateParity,
+  linkInspectionTemplateSource,
   approveInspectionTemplate,
   rollbackInspectionTemplate,
   retireInspectionTemplate,

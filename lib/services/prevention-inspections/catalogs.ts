@@ -3,6 +3,9 @@ import { db } from "@/db"
 import {
   preventionInspectionPrograms,
   preventionInspectionTemplates,
+  preventionContainers,
+  preventionEmergencyResources,
+  fuelVehicles,
   pdtpActivities,
   pdtpPrograms,
   preventionRiskEntries,
@@ -18,11 +21,15 @@ import { requireAccess, scopeCondition, type InspectionAccess } from "@/lib/serv
 import { allowedDocumentConfidentialities } from "@/lib/services/prevention-documents/utils"
 import { getUserIdsWithPermission, getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
 import { assessEnrichmentCoverage } from "@/lib/prevention/inspections"
+import { containerLabel } from "@/lib/prevention/containers"
+import { defaultInspectionKindFor } from "@/lib/prevention/inspection-wiring"
 import { CHECKLIST_DEFINITIONS, isNonInspectionDefinition, isPersonEvaluationDefinition } from "@/lib/sst/definitions"
+import { officialInspectionSourceFor } from "@/lib/sst/official-inspection-sources"
 import type { ChecklistDefinition } from "@/lib/sst/types"
+import { vehicleLabel } from "@/lib/services/fleet"
 import { pdtpActivityCandidatesFor } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
 import { type InspectionKindFilter, kindCondition } from "./queries"
-import { itemsFromDefinition, contentHashOf } from "./templates"
+import { itemsFromDefinition, contentHashOf, inspectionDefinitionNeedsOfficialSource } from "./templates"
 
 export async function listInspectionTemplates(access: InspectionAccess, filter: InspectionKindFilter = {}) {
   requireAccess(access, "prevention:inspections:view")
@@ -90,7 +97,7 @@ export async function listInspectionDocumentSources(access: InspectionAccess) {
 
 export async function listInspectionPrograms(access: InspectionAccess, filter: InspectionKindFilter = {}) {
   requireAccess(access, "prevention:inspections:view")
-  return db.select({
+  const rows = await db.select({
     program: preventionInspectionPrograms,
     templateName: preventionInspectionTemplates.name,
     // I-04: sin esto un programa apuntando a una plantilla `superseded` se
@@ -104,14 +111,36 @@ export async function listInspectionPrograms(access: InspectionAccess, filter: I
     assigneeName: users.name,
     riskHazardCode: preventionRiskEntries.hazardCode,
     riskHazard: preventionRiskEntries.hazard,
+    // Piezas del sujeto concreto (recurso, equipo o contenedor). Se arman en
+    // `subjectLabel` abajo y no salen del servicio: la pantalla sólo necesita el
+    // nombre ya compuesto.
+    resourceName: preventionEmergencyResources.name,
+    vehiclePlate: fuelVehicles.plate,
+    vehicleCode: fuelVehicles.code,
+    containerCode: preventionContainers.code,
+    containerLocation: preventionContainers.location,
   })
     .from(preventionInspectionPrograms)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionPrograms.templateId, preventionInspectionTemplates.id))
     .innerJoin(worksites, eq(preventionInspectionPrograms.worksiteId, worksites.id))
     .leftJoin(users, eq(preventionInspectionPrograms.assignedToUserId, users.id))
     .leftJoin(preventionRiskEntries, eq(preventionInspectionPrograms.riskEntryId, preventionRiskEntries.id))
+    .leftJoin(preventionEmergencyResources, eq(preventionInspectionPrograms.subjectResourceId, preventionEmergencyResources.id))
+    .leftJoin(fuelVehicles, eq(preventionInspectionPrograms.subjectVehicleId, fuelVehicles.id))
+    .leftJoin(preventionContainers, eq(preventionInspectionPrograms.subjectContainerId, preventionContainers.id))
     .where(and(scopeCondition(access.scope, preventionInspectionPrograms.worksiteId), kindCondition(filter)))
     .orderBy(asc(preventionInspectionPrograms.nextDueOn))
+
+  // El programa guarda el id del sujeto, no su nombre: sin esto la pantalla
+  // mostraba «No especificado» aunque se hubiera elegido uno del inventario.
+  // Misma precedencia y mismo formato que `resolveSubject`, que es quien fija
+  // la etiqueta de las ejecuciones que este programa genera.
+  return rows.map(({ resourceName, vehiclePlate, vehicleCode, containerCode, containerLocation, ...row }) => ({
+    ...row,
+    subjectLabel: resourceName
+      ?? (vehiclePlate ? vehicleLabel({ plate: vehiclePlate, code: vehicleCode }) : null)
+      ?? (containerCode ? containerLabel({ code: containerCode, location: containerLocation }) : null),
+  }))
 }
 
 /** Faenas visibles para el alcance, para poblar la programación y la alta de ejecución. */
@@ -245,5 +274,13 @@ export function listImportableDefinitions() {
           // de incorporar: es lo único que distingue una plantilla que alimenta
           // el programa anual de una que no.
           pdtpActivities: pdtpActivityCandidatesFor(code),
+          // Tipo con que debe nacer (una auditoría ya no entra como inspección).
+          defaultKind: defaultInspectionKindFor(code),
+          // Si transcribe un anexo oficial, la fuente documental es obligatoria
+          // para poder aprobarla; el diálogo lo dice antes de incorporar.
+          needsOfficialSource: inspectionDefinitionNeedsOfficialSource(code),
+          // Checksum del archivo oficial, para preseleccionar en la Biblioteca
+          // la versión que coincide. `null` si el anexo no tiene uno conocido.
+          officialChecksumSha256: officialInspectionSourceFor(code)?.sha256 ?? null,
         }])
 }

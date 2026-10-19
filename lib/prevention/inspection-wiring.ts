@@ -115,6 +115,20 @@ export const PDTP_2026_INSPECTION_SPECS: readonly InspectionTemplateSpec[] = [
   { n: null, definitionCode: "auditoria_sgsst",         name: "Auditoría interna del Sistema de Gestión de SST",  kind: "audit" },
 ]
 
+/**
+ * Tipo de instrumento con que debe incorporarse una definición: el mismo que ya
+ * declara el catálogo del programa 2026. Sin esto todo entraba como
+ * «inspection» —una auditoría o una observación incorporadas a mano quedaban
+ * mal clasificadas hasta que alguien tocara «Tipo»—.
+ *
+ * Las definiciones que el catálogo no menciona caen en «inspection», que era el
+ * valor de siempre. Si una definición figura más de una vez (EPP: JT y PRF) los
+ * tipos coinciden, así que la primera basta.
+ */
+export function defaultInspectionKindFor(definitionCode: string): InspectionTemplateSpec["kind"] {
+  return PDTP_2026_INSPECTION_SPECS.find((spec) => spec.definitionCode === definitionCode)?.kind ?? "inspection"
+}
+
 /** `n` como lista, que es la forma en que la columna lo guarda. */
 export function completionNumbers(spec: InspectionTemplateSpec): number[] | null {
   if (spec.n === null) return null

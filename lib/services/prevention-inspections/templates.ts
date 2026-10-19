@@ -20,20 +20,27 @@ import {
 import { nanoid } from "@/lib/id"
 import { TRANSITION_REASON_MIN_LENGTH, type InspectionItemSpec } from "@/lib/prevention/inspections"
 import { CHECKLIST_DEFINITIONS, isNonInspectionDefinition, isPersonEvaluationDefinition } from "@/lib/sst/definitions"
-import { officialInspectionSourceFor } from "@/lib/sst/official-inspection-sources"
+import { officialInspectionSourceFor, type OfficialInspectionSource } from "@/lib/sst/official-inspection-sources"
 import type { ChecklistDefinition } from "@/lib/sst/types"
+import { defaultInspectionKindFor } from "@/lib/prevention/inspection-wiring"
 import { replacePdtpAccreditationBindings } from "@/lib/services/pdtp/accreditation-bindings"
 import {
   defaultPdtpActivityNumbers,
   defaultPdtpReviewActivityNumbers,
   inspectionTemplateCodeFor,
 } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
+import { loadPdtpActivityIdentityMap, resolvePdtpNumbersToCatalogIds } from "./pdtp-identity"
 
 /* ── Plantillas ───────────────────────────────────────────────────────────── */
 
 const importTemplateSchema = z.object({
   definitionCode: z.string().min(1),
-  kind: z.enum(["inspection", "observation", "audit"]).default("inspection"),
+  /**
+   * Omitirlo toma el tipo que el programa 2026 declara para la definición
+   * (`defaultInspectionKindFor`): una auditoría o una observación incorporadas
+   * sin tocar «Tipo» ya no quedan como inspección.
+   */
+  kind: z.enum(["inspection", "observation", "audit"]).optional(),
   versionLabel: z.string().trim().min(1).max(80).optional(),
   /**
    * Actividades del PDTP (campo `n`) que esta plantilla acredita al completar
@@ -119,6 +126,110 @@ async function supersedePreviousApproved(tx: Tx, args: { code: string; keepTempl
 }
 
 /**
+ * ¿La definición transcribe un anexo oficial del SGI? Si sí, la plantilla nace
+ * `official_document` y no puede habilitarse sin fuente documental vinculada y
+ * paridad declarada. `reporte_equipos` exige respaldo aunque no figure entre los
+ * anexos con checksum conocido. La comparten la incorporación y el catálogo
+ * importable (que avisa de la obligación antes de incorporar).
+ */
+export function inspectionDefinitionNeedsOfficialSource(definitionCode: string): boolean {
+  return Boolean(officialInspectionSourceFor(definitionCode)) || definitionCode === "reporte_equipos"
+}
+
+type TemplateRow = typeof preventionInspectionTemplates.$inferSelect
+type TemplateSourceSnapshot = NonNullable<TemplateRow["sourceSnapshot"]>
+
+/**
+ * Valida la versión documental elegida como fuente y arma su copia inmutable.
+ * La usan incorporar (fuente opcional al nacer) y vincular después: las dos
+ * puertas por las que una fuente entra a una plantilla deben exigir lo mismo.
+ */
+async function resolveTemplateSourceSnapshot(tx: Tx, args: {
+  sourceDocumentVersionId: string
+  sourceRevision?: string | null
+  officialSource: OfficialInspectionSource | null
+}): Promise<TemplateSourceSnapshot> {
+  const [source] = await tx.select({ version: sstDocumentVersions, document: sstDocuments })
+    .from(sstDocumentVersions)
+    .innerJoin(sstDocuments, eq(sstDocuments.id, sstDocumentVersions.documentId))
+    .where(eq(sstDocumentVersions.id, args.sourceDocumentVersionId)).limit(1)
+  if (!source || !["aprobado", "vigente"].includes(source.version.status)) {
+    throw new Error("La fuente documental debe existir y estar aprobada o vigente.")
+  }
+  if (args.officialSource && source.version.checksum !== args.officialSource.sha256) {
+    throw new Error("El archivo seleccionado no coincide con el checksum de la fuente oficial SGI.")
+  }
+  return {
+    documentId: source.document.id,
+    versionId: source.version.id,
+    fileName: source.version.fileName,
+    revision: args.sourceRevision ?? args.officialSource?.revision ?? null,
+    effectiveFrom: source.version.effectiveFrom ?? args.officialSource?.effectiveDate ?? null,
+    checksumSha256: source.version.checksum,
+  }
+}
+
+/**
+ * Una plantilla con fuente oficial sólo es utilizable si tiene la versión
+ * documental vinculada, su paridad declarada sin diferencias y el archivo sigue
+ * siendo el mismo (vigente y con el checksum que se contrastó). Lo exigen
+ * aprobar y revertir a una versión anterior: restaurar sin esta comprobación
+ * saltaría justo la verificación que aprobar impone.
+ */
+async function assertOfficialSourceIntact(tx: Tx, template: TemplateRow) {
+  if (template.provenanceKind !== "official_document") return
+  if (!template.sourceDocumentVersionId || !template.sourceSnapshot) {
+    throw new Error("La plantilla documental no puede aprobarse sin una versión oficial vinculada.")
+  }
+  const parity = template.parityReport as { status?: string; differences?: string[] } | null
+  if (parity?.status !== "passed" || (parity.differences?.length ?? 0) > 0) {
+    throw new Error("La plantilla no puede aprobarse hasta completar la paridad documental sin diferencias bloqueantes.")
+  }
+  const [source] = await tx.select({ status: sstDocumentVersions.status, checksum: sstDocumentVersions.checksum })
+    .from(sstDocumentVersions).where(eq(sstDocumentVersions.id, template.sourceDocumentVersionId)).limit(1)
+  const snapshot = template.sourceSnapshot as { checksumSha256?: string }
+  if (!source || !["aprobado", "vigente"].includes(source.status) || source.checksum !== snapshot.checksumSha256) {
+    throw new Error("La versión documental vinculada ya no está vigente o cambió su integridad.")
+  }
+}
+
+/**
+ * Enlaza al catálogo corporativo los números de actividad con que nace una
+ * plantilla, un eje a la vez, y devuelve los ejes enlazados.
+ *
+ * Un eje se enlaza **sólo si todos** sus números tienen identidad: un binding
+ * parcial gana sobre los números (`resolvePdtpAccreditationTarget`) y apagaría
+ * en silencio los que no resolvieron. Si falta alguno el eje queda con sus
+ * números, que es lo que acreditaba hasta ahora. Los números se conservan
+ * siempre: son la red cuando el binding no existe.
+ */
+async function bindDeclaredNumbers(tx: Tx, args: {
+  templateId: string
+  userId: string
+  execute: number[]
+  review: number[]
+}): Promise<Array<"ejecutar" | "revisar">> {
+  if (args.execute.length === 0 && args.review.length === 0) return []
+  const identities = await loadPdtpActivityIdentityMap(tx)
+  const linked: Array<"ejecutar" | "revisar"> = []
+  const axes = [
+    { eventType: "execute", label: "ejecutar", numbers: args.execute },
+    { eventType: "review", label: "revisar", numbers: args.review },
+  ] as const
+  for (const axis of axes) {
+    if (axis.numbers.length === 0) continue
+    const { catalogActivityIds, unmappedNumbers } = resolvePdtpNumbersToCatalogIds(axis.numbers, identities)
+    if (unmappedNumbers.length > 0) continue
+    await replacePdtpAccreditationBindings({
+      sourceType: "inspeccion", sourceId: args.templateId, eventType: axis.eventType,
+      catalogActivityIds, updatedByUserId: args.userId,
+    }, tx)
+    linked.push(axis.label)
+  }
+  return linked
+}
+
+/**
  * Incorpora una definición SST existente como plantilla del motor transversal.
  * Las evaluaciones de personas quedan fuera a propósito: la auditoría pide no
  * mezclar inspecciones de activos con evaluación de trabajadores.
@@ -169,38 +280,18 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
   const snapshot = definition as unknown as Record<string, unknown>
   const contentHash = contentHashOf(snapshot)
   const officialSource = officialInspectionSourceFor(data.definitionCode)
-  const needsOfficialSource = Boolean(officialSource) || data.definitionCode === "reporte_equipos"
+  const needsOfficialSource = inspectionDefinitionNeedsOfficialSource(data.definitionCode)
+  const kind = data.kind ?? defaultInspectionKindFor(data.definitionCode)
 
   try {
     return await db.transaction(async (tx) => {
-      let sourceSnapshot: {
-        documentId: string
-        versionId: string
-        fileName: string
-        revision: string | null
-        effectiveFrom: string | null
-        checksumSha256: string
-      } | null = null
-      if (data.sourceDocumentVersionId) {
-        const [source] = await tx.select({ version: sstDocumentVersions, document: sstDocuments })
-          .from(sstDocumentVersions)
-          .innerJoin(sstDocuments, eq(sstDocuments.id, sstDocumentVersions.documentId))
-          .where(eq(sstDocumentVersions.id, data.sourceDocumentVersionId)).limit(1)
-        if (!source || !["aprobado", "vigente"].includes(source.version.status)) {
-          throw new Error("La fuente documental debe existir y estar aprobada o vigente.")
-        }
-        if (officialSource && source.version.checksum !== officialSource.sha256) {
-          throw new Error("El archivo seleccionado no coincide con el checksum de la fuente oficial SGI.")
-        }
-        sourceSnapshot = {
-          documentId: source.document.id,
-          versionId: source.version.id,
-          fileName: source.version.fileName,
-          revision: data.sourceRevision ?? officialSource?.revision ?? null,
-          effectiveFrom: source.version.effectiveFrom ?? officialSource?.effectiveDate ?? null,
-          checksumSha256: source.version.checksum,
-        }
-      }
+      const sourceSnapshot = data.sourceDocumentVersionId
+        ? await resolveTemplateSourceSnapshot(tx, {
+            sourceDocumentVersionId: data.sourceDocumentVersionId,
+            sourceRevision: data.sourceRevision,
+            officialSource,
+          })
+        : null
       const parityReport = {
         status: data.parityReport?.status ?? (needsOfficialSource ? "pending" : "passed"),
         verifiedAt: data.parityReport?.status === "passed" ? nowIso() : null,
@@ -217,7 +308,7 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
         code: inspectionTemplateCodeFor(data.definitionCode, pdtpActivityNumbers),
         versionLabel,
         name: definition.title,
-        kind: data.kind,
+        kind,
         sourceDefinitionCode: data.definitionCode,
         provenanceKind: needsOfficialSource ? "official_document" : "platform_definition",
         sourceDocumentVersionId: data.sourceDocumentVersionId ?? null,
@@ -235,11 +326,26 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
       }).returning()
       if (!created) throw new Error("No se pudo incorporar la plantilla.")
 
+      // Los números quedan de respaldo; la acreditación "de verdad" es la
+      // identidad de catálogo, que es lo que lee y edita el diálogo de
+      // «Acreditación PDTP». Dejarla sólo en números hacía que guardar ese
+      // diálogo sin tocar nada apagara la acreditación en silencio.
+      const linkedAxes = await bindDeclaredNumbers(tx, {
+        templateId: created.id,
+        userId: access.userId,
+        execute: pdtpActivityNumbers,
+        review: pdtpReviewActivityNumbers,
+      })
+
       // El reemplazo de la versión vigente lo hace ahora `approveInspectionTemplate`,
       // no esto: desde que incorporar deja un borrador, jubilar acá a la que
       // está en uso la sacaría de circulación por un borrador que quizás nadie
       // apruebe, y la faena se quedaría sin instrumento.
-      await history(tx, { entityType: "template", entityId: created.id, changeType: "imported", reason: `Definición ${data.definitionCode} incorporada como borrador ${versionLabel}`, afterState: created, actorUserId: access.userId })
+      await history(tx, {
+        entityType: "template", entityId: created.id, changeType: "imported",
+        reason: `Definición ${data.definitionCode} incorporada como borrador ${versionLabel}${linkedAxes.length > 0 ? ` · Acreditación PDTP enlazada al catálogo (${linkedAxes.join(", ")})` : ""}`,
+        afterState: created, actorUserId: access.userId,
+      })
       return created
     })
   } catch (error) {
@@ -252,6 +358,12 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
   }
 }
 
+/** Qué quedó cableado en un eje: identidades si se declararon, o los números. */
+function describeWiring(label: string, catalogIds: string[] | undefined, numbers: number[] | null): string | null {
+  if (catalogIds) return catalogIds.length > 0 ? `${label}: ${catalogIds.join(", ")}` : null
+  return numbers ? `${label}: ${numbers.join(", ")}` : null
+}
+
 /**
  * Declara qué actividades del PDTP acredita la plantilla. Editable mientras la
  * plantilla esté vigente; una reemplazada ya no acredita nada.
@@ -260,19 +372,20 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
  * (`definitionSnapshot`), no el cableado al programa anual. Cambiar a qué
  * actividad acredita no altera la evidencia de lo que se preguntó, así que se
  * admite también sobre una plantilla ya vigente.
+ *
+ * Cada eje (ejecutar, revisar) se trata igual: un eje del que el llamador no
+ * dice nada —ni identidades de catálogo ni números— **se conserva tal cual**.
+ * Antes guardar sin tocar un eje lo vaciaba, y la plantilla dejaba de acreditar
+ * sin que nadie lo notara. Lo que sí apaga un eje es mandarlo vacío a propósito
+ * (`[]`).
  */
-/** Qué quedó cableado en un eje: identidades si se declararon, o los números. */
-function describeWiring(label: string, catalogIds: string[] | undefined, numbers: number[] | null): string | null {
-  if (catalogIds) return catalogIds.length > 0 ? `${label}: ${catalogIds.join(", ")}` : null
-  return numbers ? `${label}: ${numbers.join(", ")}` : null
-}
-
 export async function setInspectionTemplatePdtpActivities(input: unknown, access: InspectionAccess) {
   const data = z.object({
     templateId: z.string().min(1),
     expectedVersion: z.number().int().positive(),
-    pdtpActivityNumbers: z.array(z.number().int().positive()).max(20),
-    /** Omitirlo conserva las que ya declaraba: el diálogo puede mandar sólo un conjunto. */
+    /** Omitirlo —junto con `catalogActivityIds`— conserva el eje de ejecución. */
+    pdtpActivityNumbers: z.array(z.number().int().positive()).max(20).optional(),
+    /** Omitirlo —junto con `reviewCatalogActivityIds`— conserva el eje de revisión. */
     pdtpReviewActivityNumbers: z.array(z.number().int().positive()).max(20).optional(),
     catalogActivityIds: z.array(z.string().min(1)).max(20).optional(),
     reviewCatalogActivityIds: z.array(z.string().min(1)).max(20).optional(),
@@ -300,10 +413,18 @@ export async function setInspectionTemplatePdtpActivities(input: unknown, access
      */
     const declared = (catalogIds: string[] | undefined, current: unknown, values: number[] | undefined) =>
       catalogIds && catalogIds.length > 0 ? keep(current) : normalize(values)
-    const numbers = declared(data.catalogActivityIds, template.pdtpActivityNumbers, data.pdtpActivityNumbers)
-    const reviewNumbers = data.pdtpReviewActivityNumbers === undefined
-      ? keep(template.pdtpReviewActivityNumbers)
-      : declared(data.reviewCatalogActivityIds, template.pdtpReviewActivityNumbers, data.pdtpReviewActivityNumbers)
+    // Un eje está "tocado" si llega por cualquiera de sus dos representaciones.
+    // Es simétrico a propósito: antes el de revisión sólo miraba los números, y
+    // vaciar su catálogo dejaba vivos los números de revisión (que el fallback
+    // seguía acreditando).
+    const executeTouched = data.catalogActivityIds !== undefined || data.pdtpActivityNumbers !== undefined
+    const reviewTouched = data.reviewCatalogActivityIds !== undefined || data.pdtpReviewActivityNumbers !== undefined
+    const numbers = executeTouched
+      ? declared(data.catalogActivityIds, template.pdtpActivityNumbers, data.pdtpActivityNumbers)
+      : keep(template.pdtpActivityNumbers)
+    const reviewNumbers = reviewTouched
+      ? declared(data.reviewCatalogActivityIds, template.pdtpReviewActivityNumbers, data.pdtpReviewActivityNumbers)
+      : keep(template.pdtpReviewActivityNumbers)
     const [updated] = await tx.update(preventionInspectionTemplates).set({
       pdtpActivityNumbers: numbers,
       pdtpReviewActivityNumbers: reviewNumbers,
@@ -318,12 +439,13 @@ export async function setInspectionTemplatePdtpActivities(input: unknown, access
     if (data.reviewCatalogActivityIds) await replacePdtpAccreditationBindings({ sourceType: "inspeccion", sourceId: template.id, eventType: "review", catalogActivityIds: data.reviewCatalogActivityIds, updatedByUserId: access.userId }, tx)
     await history(tx, {
       entityType: "template", entityId: template.id, changeType: "pdtp_activities_set",
-      // El historial nombra lo que se cableó en este cambio. Repetir el
-      // snapshot numérico conservado haría creer que el número fue la decisión.
+      // El historial nombra lo que se cableó en este cambio y no repite el eje
+      // que se conservó: repetir el snapshot numérico haría creer que el número
+      // fue la decisión.
       reason: [
-        describeWiring("Acredita al ejecutar", data.catalogActivityIds, numbers) ?? "Sin acreditación al ejecutar",
-        describeWiring("al revisar", data.reviewCatalogActivityIds, reviewNumbers),
-      ].filter(Boolean).join(" · "),
+        executeTouched ? describeWiring("Acredita al ejecutar", data.catalogActivityIds, numbers) ?? "Sin acreditación al ejecutar" : null,
+        reviewTouched ? describeWiring(executeTouched ? "al revisar" : "Acredita al revisar", data.reviewCatalogActivityIds, reviewNumbers) ?? "Sin acreditación al revisar" : null,
+      ].filter(Boolean).join(" · ") || "Sin cambios en la acreditación",
       beforeState: template, afterState: updated, actorUserId: access.userId,
     })
     return updated
@@ -431,9 +553,89 @@ export async function setInspectionTemplateParity(input: unknown, access: Inspec
 }
 
 /**
- * Publica un borrador heredado. Desde que incorporar deja la plantilla vigente
- * ya no nacen borradores nuevos, pero los que quedaron de antes necesitan esta
- * puerta para poder usarse. Sigue exigiendo un aprobador distinto del autor.
+ * Vincula —o cambia— la planilla oficial de un borrador.
+ *
+ * Una plantilla `official_document` incorporada sin fuente no podía aprobarse
+ * jamás: aprobar exige fuente y paridad (`assertOfficialSourceIntact`), y
+ * ninguna acción permitía vincular la fuente después de nacer. El único remedio
+ * era retirarla y volver a incorporarla con otra etiqueta de versión.
+ *
+ * Con `manage`, como el resto de la administración del instrumento: elegir el
+ * archivo no es un juicio, contrastarlo con el papel sí, y eso sigue siendo
+ * `setInspectionTemplateParity`. Cambiar el archivo **reinicia la paridad a
+ * pendiente**: lo declarado contra una planilla no vale para otra.
+ *
+ * Sólo borradores: una vez vigente, la fuente quedó sellada con la aprobación.
+ */
+export async function linkInspectionTemplateSource(input: unknown, access: InspectionAccess) {
+  const data = z.object({
+    templateId: z.string().min(1),
+    expectedVersion: z.number().int().positive(),
+    sourceDocumentVersionId: z.string().min(1),
+    sourceRevision: z.string().trim().max(120).nullable().optional(),
+  }).parse(input)
+  requireAccess(access, "prevention:inspections:manage")
+
+  return db.transaction(async (tx) => {
+    const [template] = await tx.select().from(preventionInspectionTemplates)
+      .where(eq(preventionInspectionTemplates.id, data.templateId)).limit(1)
+    if (!template) throw new Error(NOT_FOUND)
+    if (template.version !== data.expectedVersion) throw new Error("La plantilla cambió mientras la editabas. Recarga y reintenta.")
+    if (template.status !== "draft") throw new Error("Sólo un borrador puede cambiar su fuente documental.")
+    if (template.provenanceKind !== "official_document") {
+      throw new Error("Esta plantilla no transcribe un anexo oficial: no necesita fuente.")
+    }
+
+    const sourceSnapshot = await resolveTemplateSourceSnapshot(tx, {
+      sourceDocumentVersionId: data.sourceDocumentVersionId,
+      sourceRevision: data.sourceRevision,
+      // El mismo cotejo de checksum que al incorporar: el archivo debe ser el
+      // anexo del SGI y no cualquier documento vigente de la Biblioteca.
+      officialSource: template.sourceDefinitionCode ? officialInspectionSourceFor(template.sourceDefinitionCode) : null,
+    })
+
+    const now = nowIso()
+    const [updated] = await tx.update(preventionInspectionTemplates).set({
+      sourceDocumentVersionId: sourceSnapshot.versionId,
+      sourceSnapshot,
+      parityReport: {
+        status: "pending",
+        verifiedAt: null,
+        verifiedByUserId: null,
+        expectedItems: null,
+        actualItems: null,
+        differences: [],
+      },
+      version: template.version + 1,
+      updatedAt: now,
+    }).where(and(
+      eq(preventionInspectionTemplates.id, template.id),
+      eq(preventionInspectionTemplates.version, data.expectedVersion),
+    )).returning()
+    if (!updated) throw new Error("La plantilla cambió mientras la editabas. Recarga y reintenta.")
+
+    await history(tx, {
+      entityType: "template", entityId: template.id, changeType: "source_linked",
+      reason: `Fuente documental vinculada: ${sourceSnapshot.fileName}${sourceSnapshot.revision ? ` (${sourceSnapshot.revision})` : ""}. La paridad queda pendiente.`,
+      beforeState: template, afterState: updated, actorUserId: access.userId,
+    })
+    return updated
+  })
+}
+
+/**
+ * Publica un borrador: lo deja vigente, retira a la versión vigente anterior del
+ * mismo código y le pasa sus programaciones y ejecuciones no iniciadas.
+ *
+ * Incorporar siempre deja un borrador (`importInspectionTemplate`), así que
+ * esta es la puerta por la que todo instrumento entra en uso, y por eso queda
+ * registrado quién lo hizo.
+ *
+ * **La aprobación no tiene segregación**: puede aprobarla quien incorporó la
+ * plantilla (ver el comentario más abajo). Lo que sí exige otra persona es
+ * declarar la paridad contra el papel (`setInspectionTemplateParity`), que es un
+ * juicio y no la copia literal de un catálogo. Un anexo oficial se aprueba sólo
+ * con fuente vinculada y paridad sin diferencias (`assertOfficialSourceIntact`).
  */
 export async function approveInspectionTemplate(input: unknown, access: InspectionAccess) {
   const data = z.object({ templateId: z.string().min(1), expectedVersion: z.number().int().positive(), reason: z.string().trim().min(10).max(2000) }).parse(input)
@@ -445,21 +647,7 @@ export async function approveInspectionTemplate(input: unknown, access: Inspecti
     if (!template) throw new Error(NOT_FOUND)
     if (template.version !== data.expectedVersion) throw new Error("La plantilla cambió mientras la revisabas. Recarga y reintenta.")
     if (template.status !== "draft") throw new Error("Sólo una plantilla en borrador puede aprobarse.")
-    if (template.provenanceKind === "official_document") {
-      if (!template.sourceDocumentVersionId || !template.sourceSnapshot) {
-        throw new Error("La plantilla documental no puede aprobarse sin una versión oficial vinculada.")
-      }
-      const parity = template.parityReport as { status?: string; differences?: string[] } | null
-      if (parity?.status !== "passed" || (parity.differences?.length ?? 0) > 0) {
-        throw new Error("La plantilla no puede aprobarse hasta completar la paridad documental sin diferencias bloqueantes.")
-      }
-      const [source] = await tx.select({ status: sstDocumentVersions.status, checksum: sstDocumentVersions.checksum })
-        .from(sstDocumentVersions).where(eq(sstDocumentVersions.id, template.sourceDocumentVersionId)).limit(1)
-      const snapshot = template.sourceSnapshot as { checksumSha256?: string }
-      if (!source || !["aprobado", "vigente"].includes(source.status) || source.checksum !== snapshot.checksumSha256) {
-        throw new Error("La versión documental vinculada ya no está vigente o cambió su integridad.")
-      }
-    }
+    await assertOfficialSourceIntact(tx, template)
     // Sin segregación en plantillas, a diferencia de las ejecuciones. El
     // contenido no lo redacta nadie acá: viene del catálogo versionado en el
     // repositorio, ya revisado, y quien "incorpora" sólo elige cuál instalar.
@@ -531,6 +719,16 @@ export async function rollbackInspectionTemplate(input: unknown, access: Inspect
     const previous = rows.find((row) => row.id === data.previousTemplateId)
     if (!current || !previous || current.code !== previous.code) throw new Error("Las versiones no pertenecen al mismo instrumento.")
     if (current.status !== "approved" || previous.status !== "superseded") throw new Error("La reversión exige una versión vigente y una anterior reemplazada.")
+    // `superseded` cubre dos cosas distintas: una versión que otra reemplazó al
+    // aprobarse (apunta a su reemplazo) y una retirada a propósito (no apunta a
+    // nada). Sólo la primera es restaurable; resucitar una retirada saltaría la
+    // decisión de sacarla de circulación.
+    if (previous.supersededByTemplateId !== current.id) {
+      throw new Error("Sólo se puede volver a la versión que esta reemplazó; una versión retirada no se restaura.")
+    }
+    // Volver a una versión es habilitarla de nuevo: pide lo mismo que aprobarla.
+    // Si su anexo oficial cambió o dejó de estar vigente desde entonces, no sirve.
+    await assertOfficialSourceIntact(tx, previous)
     const now = nowIso()
     await tx.update(preventionInspectionTemplates).set({
       status: "superseded", supersededAt: now, supersededByTemplateId: previous.id,
@@ -541,10 +739,19 @@ export async function rollbackInspectionTemplate(input: unknown, access: Inspect
       approvedByUserId: access.userId, approvedAt: now,
       version: previous.version + 1, updatedAt: now,
     }).where(eq(preventionInspectionTemplates.id, previous.id))
-    const programs = await tx.update(preventionInspectionPrograms).set({ templateId: previous.id, updatedAt: now })
-      .where(eq(preventionInspectionPrograms.templateId, current.id)).returning({ id: preventionInspectionPrograms.id })
-    const planned = await tx.update(preventionInspectionRuns).set({ templateId: previous.id, updatedAt: now })
-      .where(and(eq(preventionInspectionRuns.templateId, current.id), eq(preventionInspectionRuns.status, "planned")))
+    // `version` sube, como al aprobar: quien tiene abierto el programa o la
+    // ejecución con la plantilla anterior debe chocar con el bloqueo optimista
+    // en vez de guardar sobre una plantilla que ya no es la suya.
+    const programs = await tx.update(preventionInspectionPrograms).set({
+      templateId: previous.id,
+      version: sql`${preventionInspectionPrograms.version} + 1`,
+      updatedAt: now,
+    }).where(eq(preventionInspectionPrograms.templateId, current.id)).returning({ id: preventionInspectionPrograms.id })
+    const planned = await tx.update(preventionInspectionRuns).set({
+      templateId: previous.id,
+      version: sql`${preventionInspectionRuns.version} + 1`,
+      updatedAt: now,
+    }).where(and(eq(preventionInspectionRuns.templateId, current.id), eq(preventionInspectionRuns.status, "planned")))
       .returning({ id: preventionInspectionRuns.id })
     await history(tx, {
       entityType: "template", entityId: current.id, changeType: "version_rolled_back", reason: data.reason,
@@ -585,11 +792,19 @@ export async function retireInspectionTemplate(input: unknown, access: Inspectio
     const [runRow] = await tx.select({ total: sql<number>`count(*)::int` })
       .from(preventionInspectionRuns)
       .where(eq(preventionInspectionRuns.templateId, template.id))
-    const [programRow] = await tx.select({ total: sql<number>`count(*)::int` })
+    const [programRow] = await tx.select({
+      total: sql<number>`count(*)::int`,
+      active: sql<number>`(count(*) filter (where ${preventionInspectionPrograms.isActive}))::int`,
+    })
       .from(preventionInspectionPrograms)
       .where(eq(preventionInspectionPrograms.templateId, template.id))
     const runs = runRow?.total ?? 0
     const programs = programRow?.total ?? 0
+    // Las programaciones activas dejan de generar inspecciones al retirar la
+    // plantilla (el materializador salta las que apuntan a una no aprobada), y
+    // nada más lo avisa: la persona que retira necesita saberlo para ir a
+    // detenerlas o reasignarlas.
+    const activePrograms = programRow?.active ?? 0
 
     const now = nowIso()
     if (runs === 0 && programs === 0) {
@@ -599,7 +814,7 @@ export async function retireInspectionTemplate(input: unknown, access: Inspectio
       })
       await tx.delete(preventionInspectionTemplates)
         .where(eq(preventionInspectionTemplates.id, template.id))
-      return { outcome: "deleted" as const, runs, programs }
+      return { outcome: "deleted" as const, runs, programs, activePrograms }
     }
 
     const [updated] = await tx.update(preventionInspectionTemplates).set({
@@ -613,6 +828,6 @@ export async function retireInspectionTemplate(input: unknown, access: Inspectio
       entityType: "template", entityId: template.id, changeType: "superseded",
       reason: data.reason, beforeState: template, afterState: updated, actorUserId: access.userId,
     })
-    return { outcome: "superseded" as const, runs, programs }
+    return { outcome: "superseded" as const, runs, programs, activePrograms }
   })
 }

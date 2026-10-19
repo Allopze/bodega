@@ -17,6 +17,7 @@ import {
   deleteAnswerEvidence,
   importInspectionTemplate,
   inspectionErrorCodeOf,
+  linkInspectionTemplateSource,
   registerDeviation,
   registerInspectionPreventiveAction,
   remindInspectionReview,
@@ -159,6 +160,20 @@ export async function setInspectionTemplateParityAction(input: unknown): Promise
   return run(accessFromSession(guard.session), (access) => setInspectionTemplateParity(input, access))
 }
 
+/**
+ * Vincula la planilla oficial de un borrador que se incorporó sin ella.
+ *
+ * Con `inspections:manage` y no con `approve`, a diferencia de la paridad: elegir
+ * qué archivo respalda al instrumento es administrarlo; contrastarlo con el
+ * papel y habilitarlo es lo que pide el permiso de aprobación. Cambiar la fuente
+ * deja la paridad pendiente otra vez.
+ */
+export async function linkInspectionTemplateSourceAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => linkInspectionTemplateSource(input, access))
+}
+
 export async function approveInspectionTemplateAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:approve")
   if (guard.error) return guard.error
@@ -172,13 +187,40 @@ export async function approveInspectionTemplateAction(input: unknown): Promise<A
 export async function retireInspectionTemplateAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:approve")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => retireInspectionTemplate(input, access))
+  return run(
+    accessFromSession(guard.session),
+    (access) => retireInspectionTemplate(input, access),
+    // El resultado decide el mensaje: borrada sin uso, o retirada con sus
+    // ejecuciones conservadas y sus programaciones activas dejando de generar.
+    (result) => {
+      const info = result as { outcome?: unknown; runs?: unknown; programs?: unknown; activePrograms?: unknown } | null
+      const outcome = info?.outcome
+      return {
+        outcome: outcome === "deleted" || outcome === "superseded" ? outcome : undefined,
+        runs: typeof info?.runs === "number" ? info.runs : undefined,
+        programs: typeof info?.programs === "number" ? info.programs : undefined,
+        activePrograms: typeof info?.activePrograms === "number" ? info.activePrograms : undefined,
+      }
+    },
+  )
 }
 
 export async function rollbackInspectionTemplateAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:approve")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => rollbackInspectionTemplate(input, access))
+  return run(
+    accessFromSession(guard.session),
+    (access) => rollbackInspectionTemplate(input, access),
+    // Cuántas programaciones y ejecuciones planificadas pasaron a la versión restaurada.
+    (result) => {
+      const info = result as { restored?: unknown; programs?: unknown; plannedRuns?: unknown } | null
+      return {
+        restored: typeof info?.restored === "string" ? info.restored : undefined,
+        programs: typeof info?.programs === "number" ? info.programs : undefined,
+        plannedRuns: typeof info?.plannedRuns === "number" ? info.plannedRuns : undefined,
+      }
+    },
+  )
 }
 
 export async function createInspectionProgramAction(input: unknown): Promise<ActionState> {
