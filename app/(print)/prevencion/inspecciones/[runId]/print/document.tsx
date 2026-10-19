@@ -22,8 +22,13 @@ import {
   inspectionResultLabel,
   INSPECTION_RUN_STATUS_LABELS,
 } from "@/lib/prevention/inspections"
+import {
+  formatComplianceBasisPoints,
+  formatInspectionAnswerValue,
+  formatInspectionSubject,
+} from "@/lib/prevention/inspection-answer-format"
 import type { ChecklistDefinition } from "@/lib/sst/types"
-import { formatDateTime } from "@/lib/utils"
+import { formatDate, formatDateTime } from "@/lib/utils"
 
 export { ACTA_STYLES } from "../../../../sst/[id]/print/acta-styles"
 
@@ -46,10 +51,34 @@ export async function loadInspectionActaData(runId: string, session: Session) {
   }
 }
 
+/**
+ * Las dos cifras de cumplimiento con el mismo nombre que el detalle: «oficial»
+ * es la que declara el documento fuente y «normalizado» la métrica transversal
+ * de la plataforma. El acta decía «Cumplimiento» a secas, así que quien la
+ * cotejaba con la pantalla no sabía cuál de las dos estaba leyendo.
+ *
+ * Las filas anteriores a las columnas de puntos base solo traen
+ * `compliancePercent`; sin el respaldo, el acta de una inspección antigua
+ * diría «No calculable» sobre un resultado que sí se firmó.
+ */
+export function actaComplianceLabels(run: {
+  officialComplianceBasisPoints: number | null
+  normalizedComplianceBasisPoints: number | null
+  compliancePercent: number | null
+}) {
+  const normalized = run.normalizedComplianceBasisPoints
+    ?? (run.compliancePercent === null ? null : run.compliancePercent * 100)
+  return {
+    official: formatComplianceBasisPoints(run.officialComplianceBasisPoints, "Sin fórmula en el documento"),
+    normalized: formatComplianceBasisPoints(normalized, "No calculable"),
+  }
+}
+
 export function InspectionActaDocument({ data }: { data: InspectionActaData }) {
   const { detail, definition, closingAct } = data
   const run = detail.run
   const answerByItem = new Map(detail.answers.map((answer) => [`${answer.sectionId}::${answer.itemId}`, answer]))
+  const compliance = actaComplianceLabels(run)
 
   // `data-print-ready`: el render a PDF exige esta marca (lib/pdf/print-specs.ts).
   return (
@@ -76,15 +105,13 @@ export function InspectionActaDocument({ data }: { data: InspectionActaData }) {
       <section className="info-grid">
         <FieldRow label="Estado" value={INSPECTION_RUN_STATUS_LABELS[run.status] ?? run.status} />
         <FieldRow label="Origen" value={INSPECTION_ORIGIN_LABELS[run.origin] ?? run.origin} />
-        <FieldRow label="Programada" value={run.scheduledFor ?? "—"} />
+        <FieldRow label="Programada" value={run.scheduledFor ? formatDate(run.scheduledFor) : "—"} />
         <FieldRow label="Ejecutada" value={run.executedAt ? formatDateTime(run.executedAt) : "Sin ejecutar"} />
         <FieldRow label="Ejecutó" value={detail.executorName ?? "—"} />
         <FieldRow label="Revisó" value={detail.reviewerName ?? "—"} />
-        <FieldRow label="Sujeto" value={run.subjectType ?? "—"} />
-        <FieldRow
-          label="Cumplimiento"
-          value={run.compliancePercent === null ? "No calculable" : `${run.compliancePercent}%`}
-        />
+        <FieldRow label="Sujeto" value={formatInspectionSubject(run.subjectType, run.subjectLabel)} />
+        <FieldRow label="Resultado oficial" value={compliance.official} />
+        <FieldRow label="Resultado normalizado" value={compliance.normalized} />
         {/* INS-17: la ubicación se capturaba en terreno y no salía en el acta,
             que es donde sirve como respaldo de dónde se hizo la inspección. */}
         <FieldRow
@@ -118,12 +145,16 @@ export function InspectionActaDocument({ data }: { data: InspectionActaData }) {
                     <td>{item.label}</td>
                     <td>
                       {/* Un ítem que no puntúa responde con su contenido, no con
-                          un juicio de conformidad (B-08). */}
+                          un juicio de conformidad (B-08), y se imprime como lo
+                          lee la pantalla: la etiqueta de la opción elegida y la
+                          fecha en formato de la plataforma, no `pqs` ni ISO. */}
                       {!answer ? "—" : scorable
                         ? inspectionResultLabel(item.kind, answer.result)
-                        : (answer.value || "—")}
+                        : formatInspectionAnswerValue(item, answer.value)}
                     </td>
-                    <td>{scorable ? (answer?.comment ?? "") : ""}</td>
+                    {/* El comentario sale siempre que exista: en un ítem que no
+                        puntúa también es parte de lo que se registró. */}
+                    <td>{answer?.comment ?? ""}</td>
                     <td>{answer?.evidence?.length
                       ? `${answer.evidence.length} ${answer.evidence.length === 1 ? "foto" : "fotos"}`
                       : ""}</td>
@@ -139,7 +170,7 @@ export function InspectionActaDocument({ data }: { data: InspectionActaData }) {
         <h2 className="section-title">Resumen de cumplimiento</h2>
         <table>
           <thead>
-            <tr><th>Cumple</th><th>Regular</th><th>No cumple</th><th>No aplica</th><th>Cumplimiento</th></tr>
+            <tr><th>Cumple</th><th>Regular</th><th>No cumple</th><th>No aplica</th><th>Resultado normalizado</th></tr>
           </thead>
           <tbody>
             <tr>
@@ -147,7 +178,7 @@ export function InspectionActaDocument({ data }: { data: InspectionActaData }) {
               <td>{run.partialCount}</td>
               <td>{run.nonConformingCount}</td>
               <td>{run.notApplicableCount}</td>
-              <td>{run.compliancePercent === null ? "No calculable" : `${run.compliancePercent}%`}</td>
+              <td>{compliance.normalized}</td>
             </tr>
           </tbody>
         </table>

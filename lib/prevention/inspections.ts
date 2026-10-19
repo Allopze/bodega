@@ -425,18 +425,18 @@ export function validateAnswerRow(
       ? `"${item.label}" se responde ${admitido.join(", ")}.`
       : `"${item.label}" no admite esa respuesta.`
   }
-  if (answer.result === "not_applicable" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
-    return `"${item.label}": un "No aplica" exige indicar el motivo (mínimo ${ANSWER_COMMENT_MIN_LENGTH} caracteres).`
-  }
-  if (answer.result === "partial" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
-    return `"${item.label}": un "Regular" exige justificarse por escrito (mínimo ${ANSWER_COMMENT_MIN_LENGTH} caracteres).`
-  }
-  // El resultado más consecuente tenía el piso más bajo del formulario: un "No
-  // cumple" genera un hallazgo (deriveFindings) y dispara CAPA obligatoria en
-  // alto/crítico (CAPA_REQUIRED_CRITICALITIES), y hasta acá podía describirse
-  // sólo con la etiqueta del ítem. Mismo mínimo que "No aplica"/"Regular".
-  if (answer.result === "non_conforming" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
-    return `"${item.label}": un "No cumple" exige indicar el motivo (mínimo ${ANSWER_COMMENT_MIN_LENGTH} caracteres).`
+  // Una sola regla para los tres resultados que piden explicación: 'No aplica'
+  // saca el ítem del denominador, 'Regular' puntúa 0,5 y 'No cumple' genera el
+  // hallazgo (deriveFindings) y dispara CAPA obligatoria en alto/crítico
+  // (CAPA_REQUIRED_CRITICALITIES) — el resultado más consecuente tenía el piso
+  // más bajo del formulario hasta I-05. Mismo mínimo para los tres.
+  //
+  // El nombre del resultado es el de la ESCALA del ítem: en un B/R/M la persona
+  // eligió «Malo», y decirle que «un "No cumple" exige…» la obliga a traducir
+  // entre el botón que apretó y el aviso que lee (P1-13).
+  const needsReason = answer.result === "not_applicable" || answer.result === "partial" || answer.result === "non_conforming"
+  if (needsReason && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
+    return `"${item.label}": un "${inspectionResultLabel(item.kind, answer.result)}" exige indicar el motivo (mínimo ${ANSWER_COMMENT_MIN_LENGTH} caracteres).`
   }
   return null
 }
@@ -647,7 +647,8 @@ export function validateClosingAct(spec: ClosingActSpec, act: ClosingActInput | 
   const signed = new Set(act.signatures.filter((item) => item.name.trim().length > 0).map((item) => item.role))
   const missing = spec.signatureRoles.filter((role) => !signed.has(role))
   if (missing.length > 0) {
-    return `Faltan firmas del acta: ${missing.join(", ")}.`
+    // «Jefe area», no `jefe_area`: la clave cruda es del catálogo, no de quien firma.
+    return `Faltan firmas del acta: ${missing.map(formatSignatureRole).join(", ")}.`
   }
   return null
 }
