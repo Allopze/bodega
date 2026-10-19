@@ -78,13 +78,19 @@ export async function registerInspectionPreventiveAction(input: unknown, access:
     }, access.userId)
     await tx.update(preventionInspectionFindings).set({ capaActionId: capa.id, status: "capa_linked", updatedAt: nowIso() })
       .where(eq(preventionInspectionFindings.id, finding.id))
-    if (run.status === "planned") await tx.update(preventionInspectionRuns).set({ status: "in_progress", version: run.version + 1, updatedAt: nowIso() })
-      .where(and(eq(preventionInspectionRuns.id, run.id), eq(preventionInspectionRuns.version, run.version)))
+    // Misma regla que `registerDeviation`: la versión sólo se informa si esta llamada la subió.
+    let runVersion: number | undefined
+    if (run.status === "planned") {
+      const [bumped] = await tx.update(preventionInspectionRuns).set({ status: "in_progress", version: run.version + 1, updatedAt: nowIso() })
+        .where(and(eq(preventionInspectionRuns.id, run.id), eq(preventionInspectionRuns.version, run.version)))
+        .returning({ version: preventionInspectionRuns.version })
+      runVersion = bumped?.version
+    }
     await history(tx, {
       entityType: "run", entityId: run.id, worksiteId: run.worksiteId,
       changeType: "preventive_action_created", reason: data.actionDescription,
       afterState: { findingId: finding.id, capaActionId: capa.id, targetDate: data.targetDate }, actorUserId: access.userId,
     })
-    return { findingId: finding.id, capaActionId: capa.id }
+    return { findingId: finding.id, capaActionId: capa.id, runVersion }
   })
 }
