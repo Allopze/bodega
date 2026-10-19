@@ -269,4 +269,84 @@ describe("buildXlsxBuffer — trazabilidad del archivo", () => {
     const buffer = await buildXlsxBuffer(baseReport)
     expect(await sheetNames(buffer)).toEqual(["Datos"])
   })
+
+  describe("celdas de fecha", () => {
+    it("escribe un Date como fecha de Excel con el formato de la columna y lo relee igual", async () => {
+      const buffer = await buildXlsxBuffer({
+        filenameBase: "fechas",
+        worksheetName: "Fechas",
+        headers: ["Código", "Ejecutada", "Próxima"],
+        rows: [
+          ["A-1", new Date("2026-10-19T15:34:00.000Z"), new Date("2026-11-02T00:00:00.000Z")],
+          ["A-2", null, undefined],
+        ],
+        columnFormats: { 1: "dd-mm-yyyy hh:mm", 2: "dd-mm-yyyy" },
+      })
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(buffer)
+      const sheet = workbook.getWorksheet("Fechas")!
+
+      const executed = sheet.getCell("B2")
+      expect(executed.value).toBeInstanceOf(Date)
+      expect((executed.value as Date).toISOString()).toBe("2026-10-19T15:34:00.000Z")
+      expect(executed.numFmt).toBe("dd-mm-yyyy hh:mm")
+      expect(sheet.getCell("C2").numFmt).toBe("dd-mm-yyyy")
+      // Las celdas vacías siguen siendo texto vacío, no «Invalid Date».
+      expect(sheet.getCell("B3").value).toBe("")
+    })
+
+    it("un Date inválido queda vacío y no rompe el archivo", async () => {
+      const buffer = await buildXlsxBuffer({
+        filenameBase: "fechas",
+        worksheetName: "Fechas",
+        headers: ["Fecha"],
+        rows: [[new Date("no es una fecha")]],
+      })
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(buffer)
+      expect(workbook.getWorksheet("Fechas")!.getCell("A2").value).toBe("")
+    })
+
+    it("un Date sin formato declarado se muestra con fecha y hora", async () => {
+      const buffer = await buildXlsxBuffer({
+        filenameBase: "fechas",
+        worksheetName: "Fechas",
+        headers: ["Fecha"],
+        rows: [[new Date("2026-10-19T15:34:00.000Z")]],
+      })
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(buffer)
+      expect(workbook.getWorksheet("Fechas")!.getCell("A2").numFmt).toBe("dd-mm-yyyy hh:mm")
+    })
+
+    it("las hojas adicionales también aceptan formatos de columna", async () => {
+      const buffer = await buildXlsxBuffer({
+        filenameBase: "fechas",
+        worksheetName: "Resumen",
+        headers: ["Total"],
+        rows: [[1]],
+        sheets: [{
+          worksheetName: "Detalle",
+          headers: ["Día"],
+          rows: [[new Date("2026-10-19T00:00:00.000Z")]],
+          columnFormats: { 0: "dd-mm-yyyy" },
+        }],
+      })
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(buffer)
+      expect(workbook.getWorksheet("Detalle")!.getCell("A2").numFmt).toBe("dd-mm-yyyy")
+    })
+
+    it("el texto que parece fórmula se sigue neutralizando junto a las fechas", async () => {
+      const buffer = await buildXlsxBuffer({
+        filenameBase: "mezcla",
+        worksheetName: "Mezcla",
+        headers: ["Nota", "Fecha"],
+        rows: [["=SUM(A1:A2)", new Date("2026-10-19T00:00:00.000Z")]],
+      })
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(buffer)
+      expect(workbook.getWorksheet("Mezcla")!.getCell("A2").value).toBe("'=SUM(A1:A2)")
+    })
+  })
 })

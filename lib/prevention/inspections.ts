@@ -7,12 +7,49 @@ export const INSPECTION_KIND_LABELS: Record<string, string> = {
   audit: "Auditoría",
 }
 
+/**
+ * Estados de una ejecución, con el vocabulario de la bandeja y del detalle: lo
+ * que describe es el trabajo pendiente, no el verbo. Antes el acta impresa y el
+ * Excel decían «Planificada» y «Ejecutada» mientras la pantalla decía
+ * «Pendiente de ejecución» y «Pendiente de revisión»: quien filtraba una cosa y
+ * exportaba leía otra. Hay UN mapa; `inspectionTaskStatusLabel` lo reexpone.
+ */
 export const INSPECTION_RUN_STATUS_LABELS: Record<string, string> = {
-  planned: "Planificada",
+  planned: "Pendiente de ejecución",
   in_progress: "En ejecución",
-  completed: "Ejecutada",
+  completed: "Pendiente de revisión",
   reviewed: "Revisada y cerrada",
   cancelled: "Cancelada",
+}
+
+/** Estados de una versión de plantilla. «Retirada» es un `superseded` que nadie reemplazó. */
+export const INSPECTION_TEMPLATE_STATUS_LABELS: Record<string, string> = {
+  draft: "Borrador",
+  approved: "Aprobada",
+  superseded: "Reemplazada",
+}
+
+/**
+ * Una plantilla retirada queda en `superseded` sin `supersededByTemplateId`:
+ * «Reemplazada» afirma que existe una versión nueva y no existe.
+ */
+export function inspectionTemplateStatusLabel(status: string, supersededByTemplateId?: string | null): string {
+  if (status === "superseded" && !supersededByTemplateId) return "Retirada"
+  return INSPECTION_TEMPLATE_STATUS_LABELS[status] ?? status
+}
+
+/** De dónde viene el contenido de la plantilla. */
+export const INSPECTION_PROVENANCE_LABELS: Record<string, string> = {
+  platform_definition: "Definición de plataforma",
+  official_document: "Documento oficial",
+}
+
+/** Daño potencial declarado de un ítem o de una desviación. */
+export const DANO_POTENCIAL_LABELS: Record<string, string> = {
+  leve: "Leve",
+  moderado: "Moderado",
+  grave: "Grave",
+  fatal: "Fatal",
 }
 
 export const INSPECTION_RESULT_LABELS: Record<string, string> = {

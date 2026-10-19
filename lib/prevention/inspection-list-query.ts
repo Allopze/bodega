@@ -1,4 +1,5 @@
 import type { InspectionListFilters } from "@/lib/services/prevention-inspections"
+import { INSPECTION_RUN_STATUS_LABELS } from "@/lib/prevention/inspections"
 
 const KINDS = new Set(["inspection", "observation", "audit"])
 const STATUSES = new Set(["planned", "in_progress", "completed", "reviewed", "cancelled"])
@@ -62,16 +63,9 @@ export function buildInspectionExportQuery(filter: InspectionListFilters) {
   return query ? `?${query}` : ""
 }
 
-const TASK_STATUS_LABELS: Record<string, string> = {
-  planned: "Pendiente de ejecución",
-  in_progress: "En ejecución",
-  completed: "Pendiente de revisión",
-  reviewed: "Revisada y cerrada",
-  cancelled: "Cancelada",
-}
-
+/** Mismo mapa que usan el acta y el Excel: ver `INSPECTION_RUN_STATUS_LABELS`. */
 export function inspectionTaskStatusLabel(status: string) {
-  return TASK_STATUS_LABELS[status] ?? status
+  return INSPECTION_RUN_STATUS_LABELS[status] ?? status
 }
 
 const SUBJECT_TYPE_LABELS: Record<string, string> = {

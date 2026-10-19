@@ -145,7 +145,7 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
       />
 
       {error && (
-        <div className="p-3 text-sm text-[var(--color-danger-ink)] bg-[var(--color-danger-tint)] rounded-md border border-[var(--color-danger-border)]">
+        <div className="p-3 text-sm text-[var(--color-danger-ink)] bg-[var(--color-danger-tint)] rounded-md border border-[var(--color-danger-line)]">
           {error}
         </div>
       )}

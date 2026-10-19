@@ -182,7 +182,7 @@ export function RE20Panel({
         <div
           className={`p-3 text-xs rounded-md border ${
             message.isError
-              ? "bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)] border-[var(--color-danger-border)]"
+              ? "bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)] border-[var(--color-danger-line)]"
               : "bg-[var(--color-success-tint)] text-[var(--color-success-ink)] border-[var(--color-success-border)]"
           }`}
         >

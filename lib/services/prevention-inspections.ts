@@ -14,6 +14,8 @@
 
 export { type InspectionAccess, assertInspectionOperationEnabled } from "./prevention-inspections/module-toggle"
 
+export { InspectionRunError, inspectionErrorCodeOf } from "./prevention-inspections/errors"
+
 export {
   itemsFromDefinition,
   contentHashOf,
