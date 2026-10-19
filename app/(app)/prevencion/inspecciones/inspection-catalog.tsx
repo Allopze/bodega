@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation"
 import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Combobox } from "@/components/ui/combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -17,9 +18,23 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
+  DANO_POTENCIAL_LABELS,
   FREQUENCY_INTERVAL_DAYS, INSPECTION_FREQUENCY_LABELS, INSPECTION_KIND_LABELS,
-  inspectionProgramIsOverdue, nextDueAfter,
+  INSPECTION_PROVENANCE_LABELS, inspectionProgramIsOverdue, inspectionTemplateStatusLabel, nextDueAfter,
 } from "@/lib/prevention/inspections"
+import {
+  changedPdtpAxes,
+  filterPrograms,
+  normalizeProgramFilters,
+  numbersAccreditationNotice,
+  officialSourceGate,
+  pdtpSavePayload,
+  programSubjectLabel,
+  retireTemplateMessage,
+  rollbackTemplateMessage,
+  templateActionState,
+  unmappedPdtpWarning,
+} from "@/lib/prevention/inspection-catalog-logic"
 import {
   AssigneeSelectOptions,
   findWorksiteSuggestedAssignee,
@@ -30,6 +45,7 @@ import {
   retireInspectionTemplateAction,
   createInspectionProgramAction,
   importInspectionTemplateAction,
+  linkInspectionTemplateSourceAction,
   remindTemplateApprovalAction,
   rollbackInspectionTemplateAction,
   runProgramNowAction,
@@ -42,7 +58,9 @@ import {
 import { classifyPdtp2026InspectionWiring } from "@/lib/prevention/inspection-wiring"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { toast } from "@/lib/toast"
 import { formatDate, todayInChile } from "@/lib/utils"
+import { REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 import { InspectionTemplateSelect } from "./template-select"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
@@ -69,6 +87,8 @@ export interface TemplateItem {
   name: string
   kind: string
   status: string
+  /** Si es `superseded` y nadie la reemplazó, fue retirada a propósito: se llama «Retirada». */
+  supersededByTemplateId: string | null
   authorUserId: string
   version: number
   coverage: Coverage
@@ -76,12 +96,29 @@ export interface TemplateItem {
   pdtpActivityNumbers: number[] | null
   /** Actividades que acredita al REVISARSE (la firma, no la ejecución). */
   pdtpReviewActivityNumbers: number[] | null
-  pdtpCatalogActivityIds?: string[]
-  pdtpReviewCatalogActivityIds?: string[]
+  /**
+   * Lo que acredita hoy, ya resuelto con la regla del servidor (los vínculos del
+   * catálogo ganan sobre los números) y con las etiquetas armadas. La tabla y el
+   * diálogo leen de acá: antes cada uno leía una fuente distinta.
+   */
+  pdtpAccreditation: {
+    source: "catalog" | "numbers" | "none"
+    executeSource: "catalog" | "numbers" | "none"
+    reviewSource: "catalog" | "numbers" | "none"
+    execute: string[]
+    review: string[]
+  }
+  /** Identidades con que se precarga el diálogo de acreditación, por eje. */
+  pdtpPreloadExecuteIds: string[]
+  pdtpPreloadReviewIds: string[]
+  /** Números que acreditan por número y no tienen actividad en el catálogo corporativo. */
+  pdtpUnmappedNumbers: { execute: number[]; review: number[] }
   /** Desviaciones que este instrumento ofrece al registrar, con su gravedad. */
   deviations: DeviationEntry[]
   /** Desviaciones registradas como "Otra" que aún no están en el catálogo. */
   unclassifiedDeviations: { description: string; criticality: string; occurrences: number }[]
+  /** El instrumento registra desviaciones (el catálogo de desviaciones sólo tiene sentido ahí). */
+  recordsDeviations: boolean
   /** Definición de `lib/sst/definitions` de la que salió el snapshot. */
   sourceDefinitionCode: string | null
   /** Quién es el ejecutante de registro (D04). */
@@ -91,6 +128,10 @@ export interface TemplateItem {
   /** La definición de origen ya no existe en el catálogo en código. */
   definitionMissing: boolean
   provenanceKind: string
+  /** Transcribe un anexo oficial: no puede aprobarse sin su planilla vinculada. */
+  needsOfficialSource: boolean
+  /** Checksum del archivo oficial, para ofrecer sólo el que coincide. `null` si no se conoce. */
+  officialChecksumSha256: string | null
   sourceDocumentVersionId: string | null
   sourceSnapshot: { documentId: string; versionId: string; fileName: string; revision: string | null; effectiveFrom: string | null; checksumSha256: string } | null
   parityReport: { status: string; differences: string[] } | null
@@ -156,6 +197,8 @@ interface ProgramItem {
   riskEntryId: string | null
   riskLabel: string | null
   subjectType: string | null
+  /** Nombre del sujeto del inventario elegido (recurso, equipo o contenedor), si hay uno. */
+  subjectLabel: string | null
   /** Sujeto del inventario; excluyente con `subjectVehicleId` (INS-04). */
   subjectResourceId: string | null
   subjectVehicleId: string | null
@@ -177,16 +220,15 @@ export interface ImportableDefinition {
   coverage: Coverage
   /** Actividades del PDTP que acreditará al ejecutarse (cableado del programa). */
   pdtpActivities: { n: number; name: string }[]
+  /** Tipo con que debe nacer: una auditoría no entra como inspección. */
+  defaultKind: string
+  /** Transcribe un anexo oficial: la fuente documental es obligatoria para poder aprobarla. */
+  needsOfficialSource: boolean
+  /** Checksum del anexo oficial, para preseleccionar en la Biblioteca el archivo que coincide. */
+  officialChecksumSha256: string | null
 }
 
 export interface PdtpActivityOption { n: number; name: string; year: number }
-
-/**
- * I-20: acciones destructivas (Detener, Retirar) se veían como texto plano
- * idéntico a una acción neutra — "ghost" a secas. Rojo tenue: discreto
- * junto a la acción primaria, pero reconocible como riesgoso.
- */
-const GHOST_DANGER_CLASS = "text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger-ink)]"
 
 function templateStatusVariant(status: string): "default" | "success" | "outline" {
   if (status === "approved") return "success"
@@ -198,18 +240,85 @@ function coverageLabel(coverage: Coverage) {
   return `${coverage.withDanoPotencial}/${coverage.totalItems} con gravedad`
 }
 
+/* ── Piezas comunes de los diálogos ───────────────────────────────────────── */
+
+/**
+ * Estado de un diálogo con formulario: abierto, la operación en curso y un
+ * mensaje limpio cada vez que se abre. El error de un intento anterior no debe
+ * esperar a quien vuelve a abrir el diálogo, que sigue montado.
+ */
+function useFormDialog(onOpen?: () => void) {
+  const [open, setOpen] = React.useState(false)
+  const operation = useOperation()
+  const changeOpen = (next: boolean) => {
+    operation.setMessage("")
+    if (next) onOpen?.()
+    setOpen(next)
+  }
+  return { open, changeOpen, operation }
+}
+
+type OperationMessage = Pick<ReturnType<typeof useOperation>, "message" | "messageTone">
+
+/** El error de una operación, dentro del diálogo y anunciado como alerta. */
+function OperationError({ operation }: { operation: OperationMessage }) {
+  if (operation.messageTone !== "error" || !operation.message) return null
+  return <Callout tone="danger" role="alert">{operation.message}</Callout>
+}
+
+/** El error de una acción que no vive en un diálogo (un botón de la fila, una casilla). */
+function InlineError({ operation, className }: { operation: OperationMessage; className?: string }) {
+  if (operation.messageTone !== "error" || !operation.message) return null
+  return <p role="alert" className={`text-xs text-[var(--color-danger-ink)] ${className ?? ""}`}>{operation.message}</p>
+}
+
+/** «Cancelar» siempre en el pie, y el botón de confirmar con su estado de carga. */
+function FormDialogFooter({ submitLabel, pending, disabled, variant, onCancel, className }: {
+  submitLabel: string
+  pending: boolean
+  disabled?: boolean
+  variant?: "primary" | "destructive"
+  onCancel: () => void
+  className?: string
+}) {
+  return (
+    <DialogFooter className={className}>
+      <Button type="button" variant="secondary" onClick={onCancel} disabled={pending}>Cancelar</Button>
+      <Button type="submit" variant={variant} loading={pending} disabled={disabled}>{submitLabel}</Button>
+    </DialogFooter>
+  )
+}
+
+/**
+ * El motivo de un acto que queda en el historial: obligatorio y de al menos
+ * `REASON_MIN_LENGTH` caracteres, el mismo mínimo del servidor. La pista sólo
+ * suma el mínimo cuando lo escrito todavía no alcanza.
+ */
+function ReasonField({ label = "Motivo", maxLength = 2000, error }: { label?: string; maxLength?: number; error?: string }) {
+  const [length, setLength] = React.useState(0)
+  const tooShort = length > 0 && length < REASON_MIN_LENGTH
+  return (
+    <Field label={label} required hint={tooShort ? `Queda en el historial. Mínimo ${REASON_MIN_LENGTH} caracteres.` : "Queda en el historial."} error={error}>
+      <Textarea name="reason" required minLength={REASON_MIN_LENGTH} maxLength={maxLength} onChange={(event) => setLength(event.target.value.trim().length)} />
+    </Field>
+  )
+}
+
 /**
  * Catálogo de instrumentos. Antes convivía con la programación en una sola
  * pantalla de pestañas: son dos actos distintos —qué se pregunta y cuándo se
  * pregunta— con permisos y públicos distintos, y la pestaña obligaba a pasar
  * por uno para llegar al otro.
  */
-export function InspectionTemplatesPanel({ templates, pdtpOptions, catalogActivities = [], canManage, canApprove }: {
+export function InspectionTemplatesPanel({ templates, catalogActivities = [], documentSources = [], canManage, canApprove, currentUserId = null }: {
   templates: TemplateItem[]
-  pdtpOptions: PdtpActivityOption[]
-  catalogActivities?: import("@/components/prevention/pdtp-activity-picker").PdtpActivityPickerOption[]
+  catalogActivities?: PdtpActivityPickerOption[]
+  /** Versiones de la Biblioteca SST elegibles como fuente; sólo las trae quien administra. */
+  documentSources?: DocumentSourceOption[]
   canManage: boolean
   canApprove: boolean
+  /** Quien mira: la paridad la declara alguien distinto de quien incorporó la plantilla. */
+  currentUserId?: string | null
 }) {
   // I-16: filtros en la URL, mismo patrón que la bandeja — se perdían al refrescar.
   const { getFilter, setFilters } = useUrlFilters()
@@ -230,10 +339,6 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, catalogActivi
       && (kind === "all" || item.kind === kind)
       && (status === "all" || item.status === status)
   }), [templates, urlQuery, kind, status])
-  // I-22: en el diálogo de importación el PDTP se muestra por número y
-  // nombre; acá sólo salía el número — el dato ya está en `pdtpOptions`.
-  const pdtpNameByNumber = React.useMemo(() => new Map(pdtpOptions.map((option) => [option.n, option.name])), [pdtpOptions])
-  const pdtpLabel = (n: number) => `N° ${n}${pdtpNameByNumber.has(n) ? ` — ${pdtpNameByNumber.get(n)}` : ""}`
 
   /**
    * El estado del cableado, con la misma función que usa el preflight del
@@ -273,6 +378,8 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, catalogActivi
   const pendingApprovalCount = wiring.gaps.filter((gap) => gap.kind === "pending_approval").length
   const silentCount = silentlyUnwiredById.size + orphanApprovedById.size
 
+  const actionProps = { templates, catalogActivities, documentSources, canManage, canApprove, currentUserId }
+
   return (
     <div className="space-y-4">
       <div className="grid gap-2 sm:grid-cols-[minmax(14rem,1fr)_12rem_12rem]">
@@ -281,21 +388,21 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, catalogActivi
           <Input value={query} onChange={(event) => setQueryDraft(event.target.value)} placeholder="Buscar código o nombre" aria-label="Buscar plantillas" className="pl-9" />
         </div>
         <Select value={kind} onValueChange={(value) => setFilters({ tipo: value === "all" ? null : value })}><SelectTrigger aria-label="Filtrar plantillas por tipo"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los tipos</SelectItem>{Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
-        <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value })}><SelectTrigger aria-label="Filtrar plantillas por estado"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="draft">Borradores</SelectItem><SelectItem value="approved">Aprobadas</SelectItem><SelectItem value="superseded">Reemplazadas</SelectItem></SelectContent></Select>
+        <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value })}><SelectTrigger aria-label="Filtrar plantillas por estado"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="draft">Borradores</SelectItem><SelectItem value="approved">Aprobadas</SelectItem><SelectItem value="superseded">Reemplazadas o retiradas</SelectItem></SelectContent></Select>
       </div>
 
       {silentCount > 0 && (
-        <div className="rounded-lg border border-[var(--color-danger-border,var(--color-border))] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger-ink)]">
-          <p className="font-medium">
-            {silentCount === 1 ? "Un instrumento vigente no acredita" : `${silentCount} instrumentos vigentes no acreditan`} en el programa anual.
-          </p>
-          <p className="mt-0.5 text-xs">
+        <Callout
+          tone="danger"
+          title={`${silentCount === 1 ? "Un instrumento vigente no acredita" : `${silentCount} instrumentos vigentes no acreditan`} en el programa anual.`}
+        >
+          <span className="text-xs">
             Se pueden ejecutar y cerrar con normalidad, y el PDTP no se entera. Su borrador sí declara la actividad: aprobarlo lo corrige.
-          </p>
-        </div>
+          </span>
+        </Callout>
       )}
       {pendingApprovalCount > 0 && (
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">
+        <Callout tone="warning">
           <p>
             {pendingApprovalCount === 1
               ? "Un instrumento del programa 2026 está en borrador."
@@ -305,9 +412,9 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, catalogActivi
           <Button variant="ghost" size="sm" className="mt-1 h-7 px-2 text-xs" onClick={() => setFilters({ estado: "draft" })}>
             Ver borradores
           </Button>
-        </div>
+        </Callout>
       )}
-            {visibleTemplates.length === 0 ? (
+      {visibleTemplates.length === 0 ? (
         <EmptyState
           icon={<ClipboardText size={20} />}
           title={templates.length === 0 ? "No hay instrumentos incorporados" : "No hay plantillas con estos filtros"}
@@ -321,33 +428,23 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, catalogActivi
               <div className="flex items-start justify-between gap-3">
                 <div><span className="font-mono text-xs text-[var(--color-text-subtle)]">{item.code} · {item.versionLabel}</span><h2 className="mt-0.5 text-sm font-semibold">{item.name}</h2><p className="mt-1 text-xs text-[var(--color-text-subtle)]">{INSPECTION_KIND_LABELS[item.kind] ?? item.kind}</p></div>
                 <div className="flex flex-col items-end gap-1">
-                  <MetaBadge meta={{ label: `${item.status === "approved" ? "Aprobada" : item.status === "superseded" ? "Reemplazada" : "Borrador"}`, variant: templateStatusVariant(item.status) }} />
+                  <TemplateStatusBadge item={item} />
                   {/* I-28: la plantilla demo (y cualquier otra sin origen de catálogo) quedaba indistinguible de un instrumento real. */}
                   {!item.sourceDefinitionCode && <MetaBadge meta={{ label: "Sin origen en catálogo", variant: "outline" }} />}
                 </div>
               </div>
-              {item.definitionMissing && <p className="rounded-lg bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">La fuente fue retirada del catálogo, pero esta versión {item.status === "approved" ? "sigue ejecutable desde su checklist congelado hasta que la retires" : "se conserva sólo como historial"}.</p>}
+              {item.definitionMissing && <Callout tone="warning" className="text-xs">La fuente fue retirada del catálogo, pero esta versión {item.status === "approved" ? "sigue ejecutable desde su checklist congelado hasta que la retires" : "se conserva sólo como historial"}.</Callout>}
               <dl className="grid grid-cols-2 gap-3 text-xs">
                 {/* I-29: la fracción no se explicaba por sí sola. */}
                 <div><dt className="text-[var(--color-text-subtle)]" title="Ítems con gravedad asignada; el resto usa una gravedad por defecto al generar hallazgos.">Gravedad declarada</dt><dd className="mt-0.5 font-medium">{coverageLabel(item.coverage)}</dd></div>
-                <div><dt className="text-[var(--color-text-subtle)]">PDTP</dt><dd className="mt-0.5 font-medium">{
-                  item.pdtpActivityNumbers?.length
-                    ? item.status === "approved"
-                      ? `Ejecutar ${item.pdtpActivityNumbers.map(pdtpLabel).join(", ")}`
-                      : `Acreditará ${item.pdtpActivityNumbers.map(pdtpLabel).join(", ")} al aprobarse`
-                    : silentlyUnwiredById.has(item.id)
-                      ? `No acredita · el borrador v${silentlyUnwiredById.get(item.id)!.draftVersionLabel} sí declara`
-                      : orphanApprovedById.has(item.id)
-                        ? "No acredita · reemplazada por un código nuevo, retírala"
-                        : "No acredita"
-                }</dd></div>
+                <div><dt className="text-[var(--color-text-subtle)]">PDTP</dt><dd className="mt-0.5 font-medium"><PdtpAccreditationSummary item={item} silentlyUnwired={silentlyUnwiredById.get(item.id)} orphanReplacedBy={orphanApprovedById.get(item.id)} /></dd></div>
                 <div className="col-span-2"><dt className="text-[var(--color-text-subtle)]">Fuente y paridad</dt><dd className="mt-0.5 font-medium">{item.sourceSnapshot ? <><a className="underline" href={`/api/prevencion/documentacion/${item.sourceSnapshot.documentId}/version/${item.sourceSnapshot.versionId}`}>{item.sourceSnapshot.fileName}</a> · {item.sourceSnapshot.revision ?? "sin revisión"} · {parityStatusLabel(item.parityReport?.status)}{item.parityReport?.status === "failed" && (item.parityReport.differences?.length ?? 0) > 0 && (
                   <ul className="mt-0.5 list-disc pl-4 font-normal text-[var(--color-warning-ink)]">
                     {item.parityReport.differences.map((difference) => <li key={difference}>{difference}</li>)}
                   </ul>
-                )}</> : isOfficialProvenance(item.provenanceKind) ? "Documento oficial pendiente" : "Definición propia de plataforma"}</dd></div>
+                )}</> : isOfficialProvenance(item.provenanceKind) ? "Documento oficial pendiente" : INSPECTION_PROVENANCE_LABELS.platform_definition}</dd></div>
               </dl>
-              <TemplateActions item={item} templates={templates} catalogActivities={catalogActivities} canManage={canManage} canApprove={canApprove} />
+              <TemplateActions item={item} {...actionProps} />
             </article>
           ))}
         </div>
@@ -390,10 +487,10 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, catalogActivi
                       )}
                       <span className="block font-mono" title={item.sourceSnapshot.checksumSha256}>SHA-256 {item.sourceSnapshot.checksumSha256.slice(0, 12)}…</span>
                       <span className="block font-mono" title={item.contentHash}>JSON {item.contentHash.slice(0, 12)}…</span>
-                    </> : isOfficialProvenance(item.provenanceKind) ? <span className="text-[var(--color-warning-ink)]">Documento oficial pendiente</span> : "Definición de plataforma"}
+                    </> : isOfficialProvenance(item.provenanceKind) ? <span className="text-[var(--color-warning-ink)]">Documento oficial pendiente</span> : INSPECTION_PROVENANCE_LABELS.platform_definition}
                   </TableCell>
                   <TableCell>
-                    <MetaBadge meta={{ label: `${item.status === "approved" ? "Aprobada" : item.status === "superseded" ? "Reemplazada" : "Borrador"}`, variant: templateStatusVariant(item.status) }} />
+                    <TemplateStatusBadge item={item} />
                     {/* A-03: el snapshot está congelado a propósito, así que la
                         deriva no es un error — es la señal de que toca publicar
                         una versión nueva. Sólo interesa mientras la plantilla
@@ -414,53 +511,17 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, catalogActivi
                     {coverageLabel(item.coverage)}
                     {item.coverage.criticalityInert && <span className="ml-1 text-xs text-[var(--color-warning-ink)]">sin gravedad: toda falla saldrá de criticidad media</span>}
                   </TableCell>
-                  {/* Tres casos distintos que antes se pintaban igual:
-                      - un borrador imprimía sus números como si ya rigieran;
-                      - una vigente sin números por estar reemplazada se leía
-                        igual que la auditoría del SGSST, que legítimamente no
-                        acredita ninguna actividad del programa. */}
                   <TableCell className="text-sm">
-                    {item.pdtpActivityNumbers && item.pdtpActivityNumbers.length > 0 ? (
-                      <span className={item.status === "approved" ? "font-mono text-xs" : "text-xs text-[var(--color-text-subtle)]"}>
-                        {item.status === "approved"
-                          ? item.pdtpActivityNumbers.map(pdtpLabel).join(", ")
-                          : `Acreditará ${item.pdtpActivityNumbers.map(pdtpLabel).join(", ")} al aprobarse`}
-                      </span>
-                    ) : silentlyUnwiredById.has(item.id) ? (
-                      <span className="text-xs text-[var(--color-danger-ink)]">
-                        No acredita · el borrador v{silentlyUnwiredById.get(item.id)!.draftVersionLabel} declara{" "}
-                        {silentlyUnwiredById.get(item.id)!.declares.map((n) => `N° ${n}`).join(", ")}
-                      </span>
-                    ) : orphanApprovedById.has(item.id) ? (
-                      <span className="text-xs text-[var(--color-danger-ink)]">
-                        No acredita · reemplazada por {orphanApprovedById.get(item.id)!.join(" y ")}, retírala a mano
-                      </span>
-                    ) : (
-                      <span className="text-xs text-[var(--color-text-subtle)]">No acredita</span>
-                    )}
-                    {/* Al revisar es otra ocurrencia y otro responsable: la
-                        n=25 la ejecuta el operador, la n=26 la firma el Sup/JT. */}
-                    {item.pdtpReviewActivityNumbers && item.pdtpReviewActivityNumbers.length > 0 && (
-                      <span className="mt-1 block text-xs text-[var(--color-text-subtle)]">
-                        al revisar: <span className="font-mono">{item.pdtpReviewActivityNumbers.map(pdtpLabel).join(", ")}</span>
-                      </span>
-                    )}
+                    <PdtpAccreditationSummary item={item} silentlyUnwired={silentlyUnwiredById.get(item.id)} orphanReplacedBy={orphanApprovedById.get(item.id)} />
                   </TableCell>
                   {/* El catálogo de desviaciones sólo tiene sentido en los
                       instrumentos que no puntúan ítems: ahí la gravedad no la
                       declara ningún ítem y tiene que declararla el catálogo. */}
                   <TableCell className="text-sm">
-                    {item.deviations.some((entry) => entry.selected)
-                      ? `${item.deviations.filter((entry) => entry.selected).length} ofrecida(s)`
-                      : <span className="text-xs text-[var(--color-text-subtle)]">Ninguna ofrecida</span>}
-                    {item.unclassifiedDeviations.length > 0 && (
-                      <span className="mt-1 block text-xs text-[var(--color-warning-ink)]">
-                        {item.unclassifiedDeviations.length} por clasificar
-                      </span>
-                    )}
+                    <DeviationsCell item={item} canManage={canManage} />
                   </TableCell>
                   <TableCell className="text-right">
-                    <TemplateActions item={item} templates={templates} catalogActivities={catalogActivities} canManage={canManage} canApprove={canApprove} />
+                    <TemplateActions item={item} {...actionProps} />
                   </TableCell>
                 </TableRow>
               ))}
@@ -470,6 +531,96 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, catalogActivi
         </>
       )}
     </div>
+  )
+}
+
+/** «Retirada» es un `superseded` que nadie reemplazó: «Reemplazada» afirmaba una versión nueva que no existe. */
+function TemplateStatusBadge({ item }: { item: TemplateItem }) {
+  return <MetaBadge meta={{ label: inspectionTemplateStatusLabel(item.status, item.supersededByTemplateId), variant: templateStatusVariant(item.status) }} />
+}
+
+/**
+ * Qué acredita la plantilla en el programa anual, desde `pdtpAccreditation` (la
+ * misma lectura que edita el diálogo). Tres casos distintos que antes se pintaban
+ * igual:
+ * - un borrador imprimía sus actividades como si ya rigieran;
+ * - una vigente sin actividades por estar mal cableada se leía igual que la
+ *   auditoría del SGSST, que legítimamente no acredita ninguna;
+ * - una versión reemplazada o retirada ya no acredita.
+ */
+function PdtpAccreditationSummary({ item, silentlyUnwired, orphanReplacedBy }: {
+  item: TemplateItem
+  silentlyUnwired?: { declares: number[]; draftVersionLabel: string }
+  orphanReplacedBy?: string[]
+}) {
+  const { execute, review, executeSource } = item.pdtpAccreditation
+  const byNumber = executeSource === "numbers"
+    ? "Acredita por número de actividad; edita la acreditación para vincularla al catálogo."
+    : undefined
+  return (
+    <>
+      {execute.length > 0 ? (
+        <span
+          className={item.status === "approved" ? "font-mono text-xs" : "text-xs text-[var(--color-text-subtle)]"}
+          title={byNumber}
+        >
+          {item.status === "approved"
+            ? execute.join(", ")
+            : item.status === "draft"
+              ? `Acreditará ${execute.join(", ")} al aprobarse`
+              : `Acreditaba ${execute.join(", ")}`}
+        </span>
+      ) : silentlyUnwired ? (
+        <span className="text-xs text-[var(--color-danger-ink)]">
+          No acredita · el borrador v{silentlyUnwired.draftVersionLabel} declara{" "}
+          {silentlyUnwired.declares.map((n) => `N° ${n}`).join(", ")}
+        </span>
+      ) : orphanReplacedBy ? (
+        <span className="text-xs text-[var(--color-danger-ink)]">
+          No acredita · reemplazada por {orphanReplacedBy.join(" y ")}, retírala a mano
+        </span>
+      ) : (
+        <span className="text-xs text-[var(--color-text-subtle)]">No acredita</span>
+      )}
+      {/* Al revisar es otra ocurrencia y otro responsable: la
+          n=25 la ejecuta el operador, la n=26 la firma el Sup/JT. */}
+      {review.length > 0 && (
+        <span className="mt-1 block text-xs text-[var(--color-text-subtle)]">
+          al revisar: <span className="font-mono">{review.join(", ")}</span>
+        </span>
+      )}
+    </>
+  )
+}
+
+/**
+ * El catálogo de desviaciones sólo existe en los instrumentos que las registran
+ * y sólo lo administra quien puede gestionar plantillas. En el resto no hay
+ * nada que mostrar: «Ninguna ofrecida» sugería un catálogo vacío que arreglar.
+ */
+function DeviationsCell({ item, canManage }: { item: TemplateItem; canManage: boolean }) {
+  if (!item.recordsDeviations || !canManage) {
+    return (
+      <span
+        className="text-xs text-[var(--color-text-subtle)]"
+        title={item.recordsDeviations ? "Sólo quien administra las plantillas ve y ajusta las desviaciones." : "Este instrumento no registra desviaciones."}
+      >
+        No aplica
+      </span>
+    )
+  }
+  const offered = item.deviations.filter((entry) => entry.selected).length
+  return (
+    <>
+      {offered > 0
+        ? `${offered} ofrecida(s)`
+        : <span className="text-xs text-[var(--color-text-subtle)]">Ninguna ofrecida</span>}
+      {item.unclassifiedDeviations.length > 0 && (
+        <span className="mt-1 block text-xs text-[var(--color-warning-ink)]">
+          {item.unclassifiedDeviations.length} por clasificar
+        </span>
+      )}
+    </>
   )
 }
 
@@ -486,39 +637,50 @@ function RequestApprovalButton({ templateId }: { templateId: string }) {
         type="button"
         size="sm"
         variant="secondary"
-        disabled={operation.pending}
+        loading={operation.pending}
         onClick={() => operation.run(
           () => remindTemplateApprovalAction({ templateId }),
           (result) => {
             const names = result.data?.notified
-            if (Array.isArray(names) && names.length > 0) operation.setMessage(`Solicitud enviada a ${names.join(", ")}.`)
+            toast.success(Array.isArray(names) && names.length > 0 ? `Solicitud enviada a ${names.join(", ")}.` : "Solicitud de aprobación enviada.")
           },
         )}
       >
         {operation.pending ? "Enviando…" : "Solicitar aprobación"}
       </Button>
-      {operation.message && <p role="status" className="max-w-64 text-xs">{operation.message}</p>}
+      <InlineError operation={operation} className="max-w-64" />
     </div>
   )
 }
 
-function TemplateActions({ item, templates, catalogActivities, canManage, canApprove }: {
+function TemplateActions({ item, templates, catalogActivities, documentSources, canManage, canApprove, currentUserId }: {
   item: TemplateItem
   templates: TemplateItem[]
   catalogActivities: PdtpActivityPickerOption[]
+  documentSources: DocumentSourceOption[]
   canManage: boolean
   canApprove: boolean
+  currentUserId: string | null
 }) {
-  const previous = templates.find((candidate) => candidate.code === item.code && candidate.status === "superseded")
+  // La versión a la que se puede volver es la que ESTA reemplazó al aprobarse.
+  // Una versión retirada a propósito no apunta a nada y no se restaura.
+  const previous = templates.find((candidate) => candidate.supersededByTemplateId === item.id)
+  // Lo que el servidor rechazaría no se ofrece como botón: se dice por qué todavía
+  // no (patrón I-04; un botón deshabilitado no avisa por teclado ni en móvil).
+  const state = templateActionState(item, { canManage, canApprove, currentUserId })
   return (
-    <div className="flex flex-wrap justify-end gap-2">
-      {item.status !== "superseded" && canManage && <DeviationCatalogDialog templateCode={item.code} name={item.name} entries={item.deviations} unclassified={item.unclassifiedDeviations} />}
-      {item.status !== "superseded" && canManage && <PdtpActivitiesDialog templateId={item.id} name={item.name} expectedVersion={item.version} current={item.pdtpCatalogActivityIds ?? []} currentReview={item.pdtpReviewCatalogActivityIds ?? []} options={catalogActivities} />}
-      {item.status === "draft" && canApprove && isOfficialProvenance(item.provenanceKind) && item.sourceDocumentVersionId && <ParityDialog item={item} />}
-      {item.status === "draft" && canApprove && <ApproveDialog templateId={item.id} name={item.name} expectedVersion={item.version} />}
-      {item.status === "draft" && canManage && !canApprove && <RequestApprovalButton templateId={item.id} />}
-      {item.status !== "superseded" && canApprove && <RetireDialog templateId={item.id} name={item.name} />}
-      {item.status === "approved" && previous && canApprove && <RollbackTemplateDialog current={item} previous={previous} />}
+    <div className="flex flex-col items-end gap-2">
+      {state.notice && <p className="max-w-64 text-right text-xs text-[var(--color-warning-ink)]">{state.notice}</p>}
+      <div className="flex flex-wrap justify-end gap-2">
+        {state.deviations && <DeviationCatalogDialog templateCode={item.code} name={item.name} entries={item.deviations} unclassified={item.unclassifiedDeviations} />}
+        {state.pdtp && <PdtpActivitiesDialog item={item} options={catalogActivities} />}
+        {state.linkSource && <LinkSourceDialog item={item} documentSources={documentSources} label={state.linkSource} />}
+        {state.declareParity && <ParityDialog item={item} />}
+        {state.approve && <ApproveDialog templateId={item.id} name={item.name} expectedVersion={item.version} />}
+        {state.requestApproval && <RequestApprovalButton templateId={item.id} />}
+        {state.retire && <RetireDialog templateId={item.id} name={item.name} />}
+        {item.status === "approved" && previous && canApprove && <RollbackTemplateDialog current={item} previous={previous} />}
+      </div>
     </div>
   )
 }
@@ -533,16 +695,11 @@ function TemplateActions({ item, templates, catalogActivities, canManage, canApp
  * y queda la traza de quién lo hizo.
  */
 function ParityDialog({ item }: { item: TemplateItem }) {
-  const [open, setOpen] = React.useState(false)
-  const [status, setStatus] = React.useState<"passed" | "failed">(
-    item.parityReport?.status === "failed" ? "failed" : "passed",
-  )
-  const operation = useOperation()
+  const initialStatus = item.parityReport?.status === "failed" ? "failed" : "passed"
+  const [status, setStatus] = React.useState<"passed" | "failed">(initialStatus)
   // Al abrir se parte de la paridad guardada, no de una elección abandonada.
-  return <Dialog open={open} onOpenChange={(value) => {
-    if (value) setStatus(item.parityReport?.status === "failed" ? "failed" : "passed")
-    setOpen(value)
-  }}>
+  const { open, changeOpen, operation } = useFormDialog(() => setStatus(initialStatus))
+  return <Dialog open={open} onOpenChange={changeOpen}>
     <DialogTrigger asChild><Button size="sm" variant="secondary">Declarar paridad</Button></DialogTrigger>
     <DialogContent><form className="space-y-4" onSubmit={(event) => {
       event.preventDefault()
@@ -561,7 +718,10 @@ function ParityDialog({ item }: { item: TemplateItem }) {
         actualItems: toCount("actualItems"),
         differences: status === "failed" ? differences : [],
         reason: String(form.get("reason") ?? ""),
-      }), () => setOpen(false))
+      }), () => {
+        toast.success(status === "passed" ? "Paridad declarada: sin diferencias." : "Paridad declarada con diferencias.")
+        changeOpen(false)
+      })
     }}>
       <DialogHeader>
         <DialogTitle>Paridad de {item.name}</DialogTitle>
@@ -579,35 +739,110 @@ function ParityDialog({ item }: { item: TemplateItem }) {
         </Select>
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Ítems del anexo"><Input name="expectedItems" type="number" min={0} inputMode="numeric" /></Field>
-        <Field label="Ítems transcritos"><Input name="actualItems" type="number" min={0} inputMode="numeric" /></Field>
+        <Field label="Ítems del anexo" error={operation.fieldError("expectedItems")}><Input name="expectedItems" type="number" min={0} inputMode="numeric" /></Field>
+        <Field label="Ítems transcritos" error={operation.fieldError("actualItems")}><Input name="actualItems" type="number" min={0} inputMode="numeric" /></Field>
       </div>
       {status === "failed" && (
-        <Field label="Diferencias, una por línea" required>
+        <Field label="Diferencias, una por línea" required error={operation.fieldError("differences")}>
           <Textarea name="differences" required rows={4} placeholder={"Falta el ítem «Estado del cinturón»\nLa columna N/A no existe en el anexo"} />
         </Field>
       )}
-      <Field label="Motivo" required><Textarea name="reason" required minLength={10} maxLength={3000} /></Field>
-      {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-      <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar paridad</Button></DialogFooter>
+      <ReasonField maxLength={3000} error={operation.fieldError("reason")} />
+      <OperationError operation={operation} />
+      <FormDialogFooter submitLabel="Guardar paridad" pending={operation.pending} onCancel={() => changeOpen(false)} />
     </form></DialogContent>
   </Dialog>
 }
 
+/**
+ * Vincula —o cambia— la planilla oficial de un borrador.
+ *
+ * Sin esto un anexo oficial incorporado sin su archivo no podía aprobarse
+ * nunca: aprobar exige la fuente y la paridad, y lo único posible era retirarlo
+ * y volver a incorporarlo. Con el checksum conocido sólo se ofrece el archivo
+ * que coincide (el servidor rechaza los demás) y viene elegido.
+ */
+function LinkSourceDialog({ item, documentSources, label }: {
+  item: TemplateItem
+  documentSources: DocumentSourceOption[]
+  label: "Vincular fuente" | "Cambiar fuente"
+}) {
+  const base = officialSourceGate({ needsOfficialSource: true, officialChecksumSha256: item.officialChecksumSha256, sources: documentSources, selectedId: "" })
+  const initialSourceId = base.preselectedId || item.sourceDocumentVersionId || ""
+  const [sourceId, setSourceId] = React.useState(initialSourceId)
+  const { open, changeOpen, operation } = useFormDialog(() => setSourceId(initialSourceId))
+  const gate = officialSourceGate({ needsOfficialSource: true, officialChecksumSha256: item.officialChecksumSha256, sources: documentSources, selectedId: sourceId })
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const revision = String(new FormData(event.currentTarget).get("sourceRevision") ?? "").trim()
+    operation.run(() => linkInspectionTemplateSourceAction({
+      templateId: item.id,
+      expectedVersion: item.version,
+      sourceDocumentVersionId: sourceId,
+      sourceRevision: revision || undefined,
+    }), () => {
+      toast.success("Planilla oficial vinculada. La paridad quedó pendiente.")
+      changeOpen(false)
+    })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={changeOpen}>
+      <DialogTrigger asChild><Button size="sm" variant="secondary">{label}</Button></DialogTrigger>
+      <DialogContent>
+        <form onSubmit={submit} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Vincular planilla oficial · {item.name}</DialogTitle>
+            <DialogDescription>La paridad se declara contra este archivo. Cambiarlo deja la paridad pendiente otra vez.</DialogDescription>
+          </DialogHeader>
+          <Field label="Fuente documental de la Biblioteca SST" required error={operation.fieldError("sourceDocumentVersionId")}>
+            <Combobox
+              id={`link-source-${item.id}`}
+              options={gate.candidates.map((source) => ({
+                value: source.id,
+                label: source.documentCode ?? source.documentTitle,
+                hint: source.fileName,
+              }))}
+              value={sourceId}
+              onChange={setSourceId}
+              placeholder="Buscar por código o nombre de archivo…"
+              aria-label="Fuente documental de la Biblioteca SST"
+            />
+          </Field>
+          {gate.noMatch && (
+            <Callout tone="warning">
+              No hay en la Biblioteca SST una versión vigente con el checksum del anexo oficial. Súbela en{" "}
+              <Link href="/prevencion/documentacion" className="underline">Documentación</Link> y vuelve a vincularla.
+            </Callout>
+          )}
+          <Field label="Revisión impresa" hint="Opcional." error={operation.fieldError("sourceRevision")}>
+            <Input name="sourceRevision" placeholder="Ej. Rev. 02" maxLength={120} />
+          </Field>
+          <OperationError operation={operation} />
+          <FormDialogFooter submitLabel="Vincular" pending={operation.pending} disabled={sourceId === ""} onCancel={() => changeOpen(false)} />
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function RollbackTemplateDialog({ current, previous }: { current: TemplateItem; previous: TemplateItem }) {
-  const [open, setOpen] = React.useState(false)
-  const operation = useOperation()
-  return <Dialog open={open} onOpenChange={setOpen}>
+  const { open, changeOpen, operation } = useFormDialog()
+  return <Dialog open={open} onOpenChange={changeOpen}>
     <DialogTrigger asChild><Button size="sm" variant="secondary">Revertir versión</Button></DialogTrigger>
     <DialogContent><form className="space-y-4" onSubmit={(event) => {
       event.preventDefault()
       const reason = String(new FormData(event.currentTarget).get("reason") ?? "")
-      operation.run(() => rollbackInspectionTemplateAction({ currentTemplateId: current.id, previousTemplateId: previous.id, reason }), () => setOpen(false))
+      operation.run(() => rollbackInspectionTemplateAction({ currentTemplateId: current.id, previousTemplateId: previous.id, reason }), (result) => {
+        toast.success(rollbackTemplateMessage(previous.versionLabel, result.data))
+        changeOpen(false)
+      })
     }}>
       <DialogHeader><DialogTitle>Volver a {previous.versionLabel}</DialogTitle><DialogDescription>Programas y ejecuciones todavía planificadas volverán a la versión anterior. Las iniciadas o cerradas conservarán {current.versionLabel}.</DialogDescription></DialogHeader>
-      <Field label="Motivo de la reversión" required><Textarea name="reason" required minLength={10} maxLength={2000} /></Field>
-      {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-      <DialogFooter><Button type="submit" disabled={operation.pending}>Confirmar reversión</Button></DialogFooter>
+      <ReasonField label="Motivo de la reversión" error={operation.fieldError("reason")} />
+      <OperationError operation={operation} />
+      <FormDialogFooter submitLabel="Confirmar reversión" pending={operation.pending} onCancel={() => changeOpen(false)} />
     </form></DialogContent>
   </Dialog>
 }
@@ -616,19 +851,26 @@ function RollbackTemplateDialog({ current, previous }: { current: TemplateItem; 
  * Programación: qué instrumento se ejecuta, en qué faena y con qué frecuencia.
  * El cron diario materializa desde acá, y "Ejecutar ahora" usa el mismo camino.
  */
-export function InspectionProgramsPanel({ programs, assignees, subjectsByWorksite = {}, riskEntriesByWorksite = {}, canManage, initialView = "all" }: {
+export function InspectionProgramsPanel({
+  programs, assignees, subjectsByWorksite = {}, riskEntriesByWorksite = {}, canManage, emptyAction, emptyDescription,
+}: {
   programs: ProgramItem[]
   assignees: InspectionAssigneeOption[]
   /** Inventario por faena, para declarar QUÉ se inspecciona (INS-04). */
   subjectsByWorksite?: Record<string, InspectionSubjectOption[]>
   riskEntriesByWorksite?: Record<string, { id: string; hazardCode: string; hazard: string }[]>
   canManage: boolean
-  initialView?: "all" | "overdue"
+  /** La acción real del estado vacío (A4): crear la primera programación, o ir a donde se arregla lo que falta. */
+  emptyAction?: React.ReactNode
+  /** Reemplaza la explicación del estado vacío cuando lo que falta es otra cosa (p. ej. una plantilla aprobada). */
+  emptyDescription?: string
 }) {
   // I-16: filtros en la URL, mismo patrón que la bandeja — sólo `vista` sobrevivía al refresh.
-  const { getFilter, setFilter, setFilters } = useUrlFilters()
+  const { getFilter, setFilters } = useUrlFilters()
   const today = todayInChile()
-  const status = getFilter("estado") || "all"
+  // «Vencidas» es una vista, no un estado: un mismo concepto en dos controles
+  // dejaba combinaciones imposibles (`estado=paused&vista=vencidas`, siempre vacía).
+  const { status, overdueView } = normalizeProgramFilters({ estado: getFilter("estado"), vista: getFilter("vista") })
   const worksite = getFilter("faena") || "all"
   const urlQuery = getFilter("q")
   const [query, setQueryDraft] = React.useState(urlQuery)
@@ -642,15 +884,10 @@ export function InspectionProgramsPanel({ programs, assignees, subjectsByWorksit
   const worksites = React.useMemo(() => Array.from(
     new Map(programs.map((item) => [item.worksiteId, item.worksiteName])).entries(),
   ).map(([id, name]) => ({ id, name })), [programs])
-  const visiblePrograms = React.useMemo(() => programs.filter((item) => {
-    const normalized = urlQuery.trim().toLocaleLowerCase("es-CL")
-    const searchable = `${item.templateName} ${item.worksiteName} ${item.subjectType ?? ""} ${item.riskLabel ?? ""} ${item.assigneeName ?? ""}`.toLocaleLowerCase("es-CL")
-    const overdue = inspectionProgramIsOverdue(item, today)
-    return (!normalized || searchable.includes(normalized))
-      && (worksite === "all" || item.worksiteId === worksite)
-      && (status === "all" || (status === "active" ? item.isActive : status === "paused" ? !item.isActive : overdue))
-      && (initialView !== "overdue" || overdue)
-  }), [programs, urlQuery, status, worksite, initialView, today])
+  const visiblePrograms = React.useMemo(
+    () => filterPrograms(programs, { query: urlQuery, status, worksite, overdueView, today }),
+    [programs, urlQuery, status, worksite, overdueView, today],
+  )
 
   return (
     <div className="space-y-4">
@@ -659,16 +896,16 @@ export function InspectionProgramsPanel({ programs, assignees, subjectsByWorksit
           <MagnifyingGlass size={16} aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-subtle)]" />
           <Input value={query} onChange={(event) => setQueryDraft(event.target.value)} placeholder="Buscar plantilla, sujeto o riesgo" aria-label="Buscar programaciones" className="pl-9" />
         </div>
-        <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value })}><SelectTrigger aria-label="Filtrar programaciones por estado"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="active">Activas</SelectItem><SelectItem value="overdue">Vencidas</SelectItem><SelectItem value="paused">Detenidas</SelectItem></SelectContent></Select>
+        <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value, vista: null })}><SelectTrigger aria-label="Filtrar programaciones por estado"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="active">Activas</SelectItem><SelectItem value="paused">Detenidas</SelectItem></SelectContent></Select>
         <Select value={worksite} onValueChange={(value) => setFilters({ faena: value === "all" ? null : value })}><SelectTrigger aria-label="Filtrar programaciones por faena"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todas las faenas</SelectItem>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
         <Button
           type="button"
           size="sm"
-          variant={initialView === "overdue" ? "primary" : "secondary"}
-          aria-pressed={initialView === "overdue"}
-          onClick={() => setFilter("vista", initialView === "overdue" ? null : "vencidas")}
+          variant={overdueView ? "primary" : "secondary"}
+          aria-pressed={overdueView}
+          onClick={() => setFilters({ vista: overdueView ? null : "vencidas", estado: null })}
         >
-          {initialView === "overdue" ? "Ver todas" : "Sólo vencidas"}
+          {overdueView ? "Ver todas" : "Sólo vencidas"}
         </Button>
       </div>
       <p className="text-eyebrow">{visiblePrograms.length} {visiblePrograms.length === 1 ? "programación" : "programaciones"}</p>
@@ -676,9 +913,17 @@ export function InspectionProgramsPanel({ programs, assignees, subjectsByWorksit
       {visiblePrograms.length === 0 ? (
         <EmptyState
           icon={<ClipboardText size={20} />}
-          title={programs.length === 0 ? "Aún no hay programación" : initialView === "overdue" ? "No hay programaciones vencidas" : "No hay programaciones con estos filtros"}
-          description={programs.length === 0 ? "Crea la primera desde la acción «Nuevo programa» del encabezado." : initialView === "overdue" ? "Todas las programaciones activas tienen su próxima fecha al día." : "Ajusta la búsqueda, el estado o la faena."}
-          action={initialView === "overdue" ? <Button type="button" variant="secondary" onClick={() => setFilter("vista", null)}>Ver todas</Button> : undefined}
+          title={programs.length === 0 ? "Aún no hay programación" : overdueView ? "No hay programaciones vencidas" : "No hay programaciones con estos filtros"}
+          description={programs.length === 0
+            ? emptyDescription ?? (canManage
+              ? "Una programación crea sola la inspección de cada período, con el instrumento y la faena que elijas."
+              : "Todavía no se programó ninguna inspección. Quien administra las inspecciones puede crearlas.")
+            : overdueView ? "Todas las programaciones activas tienen su próxima fecha al día." : "Ajusta la búsqueda, el estado o la faena."}
+          action={programs.length === 0
+            ? emptyAction
+            : overdueView
+              ? <Button type="button" variant="secondary" onClick={() => setFilters({ vista: null, estado: null })}>Ver todas</Button>
+              : <Button type="button" variant="secondary" onClick={() => setFilters({ q: null, estado: null, faena: null, vista: null })}>Limpiar filtros</Button>}
         />
       ) : (
         <>
@@ -695,7 +940,7 @@ export function InspectionProgramsPanel({ programs, assignees, subjectsByWorksit
                   <div><dt className="text-[var(--color-text-subtle)]">Cadencia</dt><dd className="mt-0.5 font-medium">{INSPECTION_FREQUENCY_LABELS[item.frequency] ?? item.frequency} · {item.intervalDays} días</dd></div>
                   <div><dt className="text-[var(--color-text-subtle)]">Próxima</dt><dd className="mt-0.5 font-medium tabular-nums">{formatDate(item.nextDueOn)}</dd></div>
                   <div><dt className="text-[var(--color-text-subtle)]">Asignada a</dt><dd className="mt-0.5 font-medium">{item.assigneeName ?? "Sin asignar"}</dd></div>
-                  <div><dt className="text-[var(--color-text-subtle)]">Sujeto</dt><dd className="mt-0.5 font-medium">{item.subjectType ?? "No especificado"}</dd></div>
+                  <div><dt className="text-[var(--color-text-subtle)]">Sujeto</dt><dd className="mt-0.5 font-medium">{programSubjectLabel(item)}</dd></div>
                 </dl>
                 {item.riskLabel && <p className="rounded-lg bg-[var(--color-surface-2)] px-3 py-2 text-xs"><span className="text-[var(--color-text-subtle)]">Riesgo MIPER:</span> {item.riskLabel}</p>}
                 {canManage && <ProgramActions program={item} assignees={assignees} subjectsByWorksite={subjectsByWorksite} riskEntriesByWorksite={riskEntriesByWorksite} />}
@@ -734,7 +979,7 @@ export function InspectionProgramsPanel({ programs, assignees, subjectsByWorksit
                   </TableCell>
                   <TableCell className="text-sm">{item.assigneeName ?? "Sin asignar"}</TableCell>
                   <TableCell className="max-w-64 text-sm">
-                    <span>{item.subjectType ?? "—"}</span>
+                    <span>{programSubjectLabel(item)}</span>
                     {item.riskLabel && <span className="mt-1 block text-xs text-[var(--color-text-subtle)]">MIPER · {item.riskLabel}</span>}
                   </TableCell>
                   <TableCell className="text-sm">
@@ -908,52 +1153,57 @@ function DeviationRow({ templateCode, entry }: { templateCode: string; entry: De
   const retirada = !entry.isActive
 
   return (
-    <div className="flex items-center justify-between gap-2 rounded border border-[var(--color-border)] px-2 py-1.5 text-sm">
-      <Checkbox
-        className="min-w-0"
-        checked={entry.selected}
-        disabled={operation.pending || retirada}
-        onChange={(event) => operation.run(() => setTemplateDeviationAction({
-          templateCode,
-          entryId: entry.id,
-          selected: event.target.checked,
-          danoPotencialOverride: entry.danoPotencialOverride,
-        }))}
-        label={
-          <span className={retirada ? "text-[var(--color-text-subtle)] line-through" : undefined}>
-            {entry.label}
-          </span>
-        }
-      />
-      <span className="flex shrink-0 items-center gap-2">
-        {/* Recalibrar acá no reescribe los hallazgos ya levantados: su
-            criticidad es evidencia del plazo que tuvieron. */}
-        <Select
-          value={entry.effectiveDano}
-          disabled={!entry.selected}
-          onValueChange={(value) => operation.run(() => setTemplateDeviationAction({
+    <div className="rounded border border-[var(--color-border)] px-2 py-1.5 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <Checkbox
+          className="min-w-0"
+          checked={entry.selected}
+          disabled={operation.pending || retirada}
+          onChange={(event) => operation.run(() => setTemplateDeviationAction({
             templateCode,
             entryId: entry.id,
-            selected: true,
-            // Volver al valor del maestro borra el ajuste en vez de fijarlo:
-            // así la entrada sigue heredando futuras recalibraciones.
-            danoPotencialOverride: value === entry.danoPotencial ? null : value,
+            selected: event.target.checked,
+            danoPotencialOverride: entry.danoPotencialOverride,
           }))}
-        >
-          <SelectTrigger className="h-7 w-52 text-xs" aria-label={`Gravedad de ${entry.label}`}><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {/* La consecuencia va en la etiqueta: acá salía "grave" pelado,
-                para la misma decisión. */}
-            {Object.entries(DANO_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        {entry.danoPotencialOverride && (
-          <span className="text-xs text-[var(--color-warning-ink)]" title={`El maestro propone ${entry.danoPotencial}`}>
-            ajustada
-          </span>
-        )}
-        {retirada && <span className="text-xs text-[var(--color-text-subtle)]">retirada del maestro</span>}
-      </span>
+          label={
+            <span className={retirada ? "text-[var(--color-text-subtle)] line-through" : undefined}>
+              {entry.label}
+            </span>
+          }
+        />
+        <span className="flex shrink-0 items-center gap-2">
+          {/* Recalibrar acá no reescribe los hallazgos ya levantados: su
+              criticidad es evidencia del plazo que tuvieron. */}
+          <Select
+            value={entry.effectiveDano}
+            disabled={!entry.selected || operation.pending}
+            onValueChange={(value) => operation.run(() => setTemplateDeviationAction({
+              templateCode,
+              entryId: entry.id,
+              selected: true,
+              // Volver al valor del maestro borra el ajuste en vez de fijarlo:
+              // así la entrada sigue heredando futuras recalibraciones.
+              danoPotencialOverride: value === entry.danoPotencial ? null : value,
+            }))}
+          >
+            <SelectTrigger className="h-7 w-52 text-xs" aria-label={`Gravedad de ${entry.label}`}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {/* La consecuencia va en la etiqueta: acá salía "grave" pelado,
+                  para la misma decisión. */}
+              {Object.entries(DANO_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          {entry.danoPotencialOverride && (
+            <span className="text-xs text-[var(--color-warning-ink)]" title={`El maestro propone ${DANO_POTENCIAL_LABELS[entry.danoPotencial] ?? entry.danoPotencial}`}>
+              ajustada
+            </span>
+          )}
+          {retirada && <span className="text-xs text-[var(--color-text-subtle)]">retirada del maestro</span>}
+        </span>
+      </div>
+      {/* Si la acción falla la casilla vuelve a su estado: sin esto no había
+          forma de saber por qué. */}
+      <InlineError operation={operation} className="mt-1" />
     </div>
   )
 }
@@ -983,17 +1233,17 @@ function UnclassifiedRow({ templateCode, item }: {
           type="button"
           size="sm"
           variant="secondary"
-          disabled={operation.pending}
+          loading={operation.pending}
           onClick={() => operation.run(() => promoteUnclassifiedDeviationAction({
             templateCode,
             label: item.description,
             danoPotencial: dano,
-          }))}
+          }), () => toast.success("Desviación incorporada al maestro."))}
         >
           Incorporar
         </Button>
       </span>
-      {operation.message && <p role="status" className="w-full">{operation.message}</p>}
+      <InlineError operation={operation} className="w-full" />
     </li>
   )
 }
@@ -1019,19 +1269,38 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
     }
     return map
   }, [templates])
-  const [open, setOpen] = React.useState(false)
   const [code, setCode] = React.useState(importable[0]?.code ?? "")
-  const [kind, setKind] = React.useState("inspection")
+  /*
+   * Lo que la persona cambió a mano, atado a la definición para la que lo
+   * cambió. Cambiar de definición vuelve a los valores propios de la nueva —el
+   * tipo y la fuente preseleccionada salen de ella— sin un efecto que pise lo
+   * escrito cuando llegan props nuevas.
+   */
+  const [kindEdit, setKindEdit] = React.useState<{ code: string; value: string } | null>(null)
+  const [sourceEdit, setSourceEdit] = React.useState<{ code: string; id: string } | null>(null)
   /** Actividad elegida cuando la definición sirve a más de una. */
-  const [activity, setActivity] = React.useState(NO_ACTIVITY)
-  const [sourceVersionId, setSourceVersionId] = React.useState(NO_ACTIVITY)
-  const operation = useOperation()
+  const [activityEdit, setActivityEdit] = React.useState<{ code: string; value: string } | null>(null)
+  const { open, changeOpen, operation } = useFormDialog(() => {
+    setCode(importable[0]?.code ?? "")
+    setKindEdit(null)
+    setSourceEdit(null)
+    setActivityEdit(null)
+  })
   const definition = importable.find((item) => item.code === code)
   const existing = versionsByDefinition.get(code)
   const ambiguous = (definition?.pdtpActivities.length ?? 0) > 1
 
-  // Cambiar de definición invalida la actividad elegida para la anterior.
-  React.useEffect(() => { setActivity(NO_ACTIVITY); setSourceVersionId(NO_ACTIVITY) }, [code])
+  // Una auditoría o una observación no son «inspección»: el tipo sale de la definición.
+  const kind = kindEdit?.code === code ? kindEdit.value : definition?.defaultKind ?? "inspection"
+  const activity = activityEdit?.code === code ? activityEdit.value : NO_ACTIVITY
+  const gateInput = {
+    needsOfficialSource: definition?.needsOfficialSource ?? false,
+    officialChecksumSha256: definition?.officialChecksumSha256 ?? null,
+    sources: documentSources,
+  }
+  // Un anexo oficial llega con su planilla elegida si la Biblioteca la tiene.
+  const sourceVersionId = sourceEdit?.code === code ? sourceEdit.id : officialSourceGate({ ...gateInput, selectedId: "" }).preselectedId
+  const gate = officialSourceGate({ ...gateInput, selectedId: sourceVersionId })
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -1040,35 +1309,30 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
     const sourceRevision = String(form.get("sourceRevision") ?? "").trim()
     operation.run(() => importInspectionTemplateAction({
       definitionCode: code,
-      kind: form.get("kind"),
+      kind,
       versionLabel: versionLabel || undefined,
-      sourceDocumentVersionId: sourceVersionId === NO_ACTIVITY ? undefined : sourceVersionId,
+      sourceDocumentVersionId: sourceVersionId || undefined,
       sourceRevision: sourceRevision || undefined,
       // Sólo se manda cuando hay que desempatar. Omitirlo deja que el servicio
       // aplique el cableado por defecto, que es el caso de las nueve
       // definiciones con una sola actividad.
       ...(ambiguous && activity !== NO_ACTIVITY ? { pdtpActivityNumbers: [Number(activity)] } : {}),
-    }), () => setOpen(false))
+    }), () => {
+      toast.success("Plantilla incorporada como borrador.")
+      changeOpen(false)
+    })
   }
 
   // El diálogo sigue montado tras incorporar: parte de cero al abrir.
   return (
-    <Dialog open={open} onOpenChange={(value) => {
-      if (value) {
-        setCode(importable[0]?.code ?? "")
-        setKind("inspection")
-        setActivity(NO_ACTIVITY)
-        setSourceVersionId(NO_ACTIVITY)
-      }
-      setOpen(value)
-    }}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger asChild><Button size="sm">Incorporar borrador</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
             <DialogTitle>Incorporar nueva versión como borrador</DialogTitle>
             <DialogDescription>
-              Se crea como borrador y todavía no puede programarse ni ejecutarse. Otra persona con permiso de aprobación debe revisarla y habilitarla.
+              Se crea como borrador: todavía no puede programarse ni ejecutarse. Para habilitarla, alguien con permiso de aprobación —puedes ser tú— la revisa y la aprueba.
             </DialogDescription>
           </DialogHeader>
           <Field label="Definición del catálogo SST">
@@ -1078,21 +1342,34 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
               y en una lista desplegable sin buscar no se encuentra ninguna. El
               nombre del archivo viaja como `hint` para que también se pueda
               buscar por él, que suele ser lo que la persona recuerda. */}
-          <Field label="Fuente documental de la Biblioteca SST" hint="Obligatoria para aprobar anexos oficiales; puede vincularse al crear el borrador.">
+          <Field
+            label="Fuente documental de la Biblioteca SST"
+            required={gate.required}
+            hint={gate.required
+              ? "Obligatoria: este instrumento transcribe un anexo oficial."
+              : "Opcional: este instrumento no transcribe un anexo oficial."}
+            error={operation.fieldError("sourceDocumentVersionId")}
+          >
             <Combobox
               id="import-source-version"
-              options={documentSources.map((source) => ({
+              options={gate.candidates.map((source) => ({
                 value: source.id,
                 label: source.documentCode ?? source.documentTitle,
                 hint: source.fileName,
               }))}
-              value={sourceVersionId === NO_ACTIVITY ? "" : sourceVersionId}
-              onChange={(value) => setSourceVersionId(value === "" ? NO_ACTIVITY : value)}
+              value={sourceVersionId}
+              onChange={(value) => setSourceEdit({ code, id: value })}
               placeholder="Buscar por código o nombre de archivo…"
-              clearLabel="Sin fuente vinculada"
+              // Obligatoria no se puede dejar vacía: sin «limpiar», sólo se cambia de archivo.
+              clearLabel={gate.required ? undefined : "Sin fuente vinculada"}
             />
           </Field>
-          {sourceVersionId !== NO_ACTIVITY && <>
+          {gate.noMatch && (
+            <Callout tone="warning">
+              No hay en la Biblioteca SST una versión vigente con el checksum del anexo oficial. Súbela en Documentación; también puedes vincularla después con «Vincular fuente».
+            </Callout>
+          )}
+          {sourceVersionId !== "" && <>
             <Field label="Revisión impresa"><Input name="sourceRevision" placeholder="Ej. Rev. 02" maxLength={120} /></Field>
             <p className="text-xs text-[var(--color-text-muted)]">La paridad con el anexo se declara después, desde «Declarar paridad» en el catálogo. Hasta entonces la plantilla no puede habilitarse.</p>
           </>}
@@ -1117,7 +1394,7 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
               label="Actividad del PDTP que acredita"
               hint="Esta definición sirve a más de una; elige la del responsable que la va a ejecutar."
             >
-              <Select value={activity} onValueChange={setActivity}>
+              <Select value={activity} onValueChange={(value) => setActivityEdit({ code, value })}>
                 <SelectTrigger aria-label="Actividad del PDTP que acredita"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NO_ACTIVITY}>No acredita</SelectItem>
@@ -1133,26 +1410,27 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
             </p>
           ))}
           {existing?.approved && (
-            <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
+            <Callout tone="info" className="text-xs">
               Ya hay una versión vigente de esta definición: <span className="font-mono">{existing.approved.versionLabel}</span>.
               El nuevo borrador no reemplaza esta versión. El reemplazo ocurre recién cuando se aprueba, después de revisar su contenido.
-            </p>
+            </Callout>
           )}
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Tipo">
-              <Select value={kind} onValueChange={setKind}><SelectTrigger aria-label="Tipo de instrumento"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="kind" value={kind} />
+              <Select value={kind} onValueChange={(value) => setKindEdit({ code, value })}><SelectTrigger aria-label="Tipo de instrumento"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
             </Field>
             <Field
               label="Etiqueta de versión"
               hint={existing?.latest
                 ? `Ya existe ${existing.latest.versionLabel}; usa otra etiqueta.`
                 : `Vacío = ${definition?.version ?? "versión de la definición"}.`}
+              error={operation.fieldError("versionLabel")}
             >
               <Input name="versionLabel" maxLength={80} />
             </Field>
           </div>
-          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending}>Incorporar como borrador</Button></DialogFooter>
+          <OperationError operation={operation} />
+          <FormDialogFooter submitLabel="Incorporar como borrador" pending={operation.pending} disabled={gate.blocked} onCancel={() => changeOpen(false)} />
         </form>
       </DialogContent>
     </Dialog>
@@ -1165,22 +1443,21 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
  * Declara qué actividades del programa anual acredita la plantilla. Sin esto
  * el conector `onInspectionCompleted` no hace nada y la inspección jamás llega
  * al PDTP — que fue el estado de todas las plantillas hasta 2026-08-04.
+ *
+ * Abre con lo que la plantilla acredita hoy —los vínculos del catálogo o, si
+ * todavía acredita por número, las actividades equivalentes— y manda **sólo los
+ * ejes que la persona cambió**. Mandar siempre los dos vaciaba en silencio el
+ * eje que no se tocó, y la plantilla dejaba de acreditar sin que nadie lo notara.
  */
-function PdtpActivitiesDialog({ templateId, name, expectedVersion, current, currentReview, options }: {
-  templateId: string
-  name: string
-  expectedVersion: number
-  current: string[]
-  currentReview: string[]
-  options: PdtpActivityPickerOption[]
-}) {
-  const [open, setOpen] = React.useState(false)
-  const [execution, setExecution] = React.useState<string[]>(current)
-  const [review, setReview] = React.useState<string[]>(currentReview)
-  const operation = useOperation()
+function PdtpActivitiesDialog({ item, options }: { item: TemplateItem; options: PdtpActivityPickerOption[] }) {
+  const preload = { execute: item.pdtpPreloadExecuteIds, review: item.pdtpPreloadReviewIds }
+  const [execution, setExecution] = React.useState<string[]>(preload.execute)
+  const [review, setReview] = React.useState<string[]>(preload.review)
+  const { open, changeOpen, operation } = useFormDialog(() => { setExecution(preload.execute); setReview(preload.review) })
+  const changed = changedPdtpAxes({ execute: execution, review }, preload)
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (next) { setExecution(current); setReview(currentReview) } }}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger asChild><Button size="sm" variant="ghost">Acreditación PDTP</Button></DialogTrigger>
       <DialogContent>
         <form
@@ -1188,58 +1465,90 @@ function PdtpActivitiesDialog({ templateId, name, expectedVersion, current, curr
             event.preventDefault()
             operation.run(
               () => setInspectionTemplatePdtpActivitiesAction({
-                templateId,
-                expectedVersion,
-                pdtpActivityNumbers: [],
-                pdtpReviewActivityNumbers: [],
-                catalogActivityIds: execution,
-                reviewCatalogActivityIds: review,
+                templateId: item.id,
+                expectedVersion: item.version,
+                ...pdtpSavePayload({ execute: execution, review }, preload),
               }),
-              () => setOpen(false),
+              () => {
+                toast.success("Acreditación PDTP actualizada.")
+                changeOpen(false)
+              },
             )
           }}
           className="space-y-4"
         >
           <DialogHeader>
-            <DialogTitle>Acreditación PDTP · {name}</DialogTitle>
+            <DialogTitle>Acreditación PDTP · {item.name}</DialogTitle>
             <DialogDescription>
               Elige qué identidad corporativa acredita la ejecución y cuál acredita la revisión segregada.
             </DialogDescription>
           </DialogHeader>
           {options.length === 0 && (
-            <p className="rounded-lg bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">
+            <Callout tone="warning">
               No hay actividades publicadas en el catálogo corporativo.
-            </p>
+            </Callout>
           )}
           {options.length > 0 && (
             <div className="grid gap-4 md:grid-cols-2">
-              <PdtpActivityPicker multiple label="Al declarar ejecutada" options={options} value={execution} onChange={setExecution} />
-              <PdtpActivityPicker multiple label="Al revisar y cerrar" options={options} value={review} onChange={setReview} />
+              <div className="space-y-2">
+                <PdtpActivityPicker multiple label="Al declarar ejecutada" options={options} value={execution} onChange={setExecution} />
+                <AxisNotices
+                  fromNumbers={item.pdtpAccreditation.executeSource === "numbers"}
+                  numbers={item.pdtpActivityNumbers ?? []}
+                  unmapped={item.pdtpUnmappedNumbers.execute}
+                />
+              </div>
+              <div className="space-y-2">
+                <PdtpActivityPicker multiple label="Al revisar y cerrar" options={options} value={review} onChange={setReview} />
+                <AxisNotices
+                  fromNumbers={item.pdtpAccreditation.reviewSource === "numbers"}
+                  numbers={item.pdtpReviewActivityNumbers ?? []}
+                  unmapped={item.pdtpUnmappedNumbers.review}
+                />
+              </div>
             </div>
           )}
-          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending || options.length === 0}>Guardar</Button></DialogFooter>
+          <OperationError operation={operation} />
+          <FormDialogFooter submitLabel="Guardar" pending={operation.pending} disabled={options.length === 0 || !changed.any} onCancel={() => changeOpen(false)} />
         </form>
       </DialogContent>
     </Dialog>
   )
 }
 
+/**
+ * Los avisos de un eje que todavía acredita por número: que hoy es así, y qué
+ * pasa con los números que no tienen actividad equivalente en el catálogo.
+ */
+function AxisNotices({ fromNumbers, numbers, unmapped }: { fromNumbers: boolean; numbers: number[]; unmapped: number[] }) {
+  if (!fromNumbers) return null
+  return (
+    <div className="space-y-2">
+      <Callout tone="info" className="text-xs">{numbersAccreditationNotice(numbers.map((n) => `N° ${n}`))}</Callout>
+      {unmapped.map((n) => (
+        <Callout key={n} tone="warning" className="text-xs">{unmappedPdtpWarning(n)}</Callout>
+      ))}
+    </div>
+  )
+}
+
 /* ── Aprobar plantilla ─────────────────────────────────────────────────────── */
 
 function ApproveDialog({ templateId, name, expectedVersion }: { templateId: string; name: string; expectedVersion: number }) {
-  const [open, setOpen] = React.useState(false)
-  const operation = useOperation()
+  const { open, changeOpen, operation } = useFormDialog()
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger asChild><Button size="sm" variant="secondary">Aprobar</Button></DialogTrigger>
       <DialogContent>
         <form
           onSubmit={(event) => {
             event.preventDefault()
             const form = new FormData(event.currentTarget)
-            operation.run(() => approveInspectionTemplateAction({ templateId, expectedVersion, reason: form.get("reason") }), () => setOpen(false))
+            operation.run(() => approveInspectionTemplateAction({ templateId, expectedVersion, reason: form.get("reason") }), () => {
+              toast.success("Plantilla aprobada.")
+              changeOpen(false)
+            })
           }}
           className="space-y-4"
         >
@@ -1247,9 +1556,9 @@ function ApproveDialog({ templateId, name, expectedVersion }: { templateId: stri
             <DialogTitle>Aprobar {name}</DialogTitle>
             <DialogDescription>Congela el contenido y reemplaza la versión aprobada anterior del mismo código.</DialogDescription>
           </DialogHeader>
-          <Field label="Motivo" hint="Mínimo 10 caracteres."><Textarea name="reason" required minLength={10} maxLength={2000} /></Field>
-          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending}>Aprobar</Button></DialogFooter>
+          <ReasonField error={operation.fieldError("reason")} />
+          <OperationError operation={operation} />
+          <FormDialogFooter submitLabel="Aprobar" pending={operation.pending} onCancel={() => changeOpen(false)} />
         </form>
       </DialogContent>
     </Dialog>
@@ -1262,36 +1571,40 @@ function ApproveDialog({ templateId, name, expectedVersion }: { templateId: stri
  * Saca un instrumento de circulación.
  *
  * Borra la fila si nunca se usó; si tiene ejecuciones o programaciones, la
- * marca reemplazada. Esa asimetría la resuelve el servidor, no esta pantalla:
- * la plantilla guarda el cuestionario congelado con el que se firmaron sus
- * inspecciones, y borrarla las dejaría sin las preguntas que respondieron.
+ * marca retirada. Esa asimetría la resuelve el servidor, no esta pantalla: la
+ * plantilla guarda el cuestionario congelado con el que se firmaron sus
+ * inspecciones, y borrarla las dejaría sin las preguntas que respondieron. Lo
+ * que sí hace esta pantalla es decir cuál de las dos cosas pasó, y a cuántas
+ * programaciones activas dejó sin generar inspecciones.
  */
 function RetireDialog({ templateId, name }: { templateId: string; name: string }) {
-  const [open, setOpen] = React.useState(false)
-  const operation = useOperation()
+  const { open, changeOpen, operation } = useFormDialog()
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="ghost" className={GHOST_DANGER_CLASS}>Retirar</Button></DialogTrigger>
+    <Dialog open={open} onOpenChange={changeOpen}>
+      {/* I-20: una acción destructiva no se ve como una neutra. */}
+      <DialogTrigger asChild><Button size="sm" variant="ghost-danger">Retirar</Button></DialogTrigger>
       <DialogContent>
         <form
           onSubmit={(event) => {
             event.preventDefault()
             const form = new FormData(event.currentTarget)
-            operation.run(() => retireInspectionTemplateAction({ templateId, reason: form.get("reason") }), () => setOpen(false))
+            operation.run(() => retireInspectionTemplateAction({ templateId, reason: form.get("reason") }), (result) => {
+              toast.success(retireTemplateMessage(result.data))
+              changeOpen(false)
+            })
           }}
           className="space-y-4"
         >
           <DialogHeader>
             <DialogTitle>Retirar {name}</DialogTitle>
             <DialogDescription>
-              Deja de poder programarse y ejecutarse. Si nunca se usó, se elimina; si tiene
-              inspecciones hechas, se conserva como reemplazada — sus respuestas son evidencia.
+              Deja de poder programarse y ejecutarse. Si nunca se usó, se elimina. Si tiene inspecciones, queda como «Retirada» con sus respuestas intactas, y sus programaciones dejan de generar inspecciones.
             </DialogDescription>
           </DialogHeader>
-          <Field label="Motivo" hint="Mínimo 10 caracteres."><Textarea name="reason" required minLength={10} maxLength={2000} /></Field>
-          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending}>Retirar</Button></DialogFooter>
+          <ReasonField error={operation.fieldError("reason")} />
+          <OperationError operation={operation} />
+          <FormDialogFooter submitLabel="Retirar plantilla" variant="destructive" pending={operation.pending} onCancel={() => changeOpen(false)} />
         </form>
       </DialogContent>
     </Dialog>
@@ -1310,7 +1623,6 @@ function EditProgramDialog({ program, assignees, subjects, riskEntries }: {
   subjects: InspectionSubjectOption[]
   riskEntries: { id: string; hazardCode: string; hazard: string }[]
 }) {
-  const [open, setOpen] = React.useState(false)
   const [frequency, setFrequency] = React.useState(program.frequency)
   const [intervalDays, setIntervalDays] = React.useState(program.intervalDays)
   const [assignedToUserId, setAssignedToUserId] = React.useState(program.assignedToUserId ?? "_none")
@@ -1318,7 +1630,14 @@ function EditProgramDialog({ program, assignees, subjects, riskEntries }: {
   const [subjectRef, setSubjectRef] = React.useState(subjectRefFromIds(program))
   // INS-16: el servicio siempre aceptó cambiar el peligro y el formulario no lo ofrecía.
   const [riskEntryId, setRiskEntryId] = React.useState(program.riskEntryId ?? "_none")
-  const operation = useOperation()
+  const { open, changeOpen, operation } = useFormDialog(() => {
+    setFrequency(program.frequency)
+    setIntervalDays(program.intervalDays)
+    setAssignedToUserId(program.assignedToUserId ?? "_none")
+    setNextDueOn(program.nextDueOn)
+    setSubjectRef(subjectRefFromIds(program))
+    setRiskEntryId(program.riskEntryId ?? "_none")
+  })
 
   const requiresContainer = templateRequiresContainer(program.templateDefinitionCode)
   const subjectOptions = requiresContainer
@@ -1332,7 +1651,7 @@ function EditProgramDialog({ program, assignees, subjects, riskEntries }: {
     // Quitarle el contenedor a un programa de contenedores lo dejaría
     // generando inspecciones sin sujeto; el servicio también lo rechaza.
     if (requiresContainer && !subjectRef.startsWith("container:")) {
-      operation.setMessage("Selecciona un contenedor del catálogo de la faena.")
+      operation.setMessage("Selecciona un contenedor del catálogo de la faena.", "error")
       return
     }
     operation.run(() => updateInspectionProgramAction({
@@ -1345,21 +1664,14 @@ function EditProgramDialog({ program, assignees, subjects, riskEntries }: {
       subjectType: subjectType || null,
       riskEntryId: riskEntryId === "_none" ? null : riskEntryId,
       ...subjectIdsFromRef(subjectRef),
-    }), () => setOpen(false))
+    }), () => {
+      toast.success("Programación actualizada.")
+      changeOpen(false)
+    })
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => {
-      if (value) {
-        setFrequency(program.frequency)
-        setIntervalDays(program.intervalDays)
-        setAssignedToUserId(program.assignedToUserId ?? "_none")
-        setNextDueOn(program.nextDueOn)
-        setSubjectRef(subjectRefFromIds(program))
-        setRiskEntryId(program.riskEntryId ?? "_none")
-      }
-      setOpen(value)
-    }}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger asChild><Button size="sm" variant="ghost">Editar</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
@@ -1368,18 +1680,18 @@ function EditProgramDialog({ program, assignees, subjects, riskEntries }: {
             <DialogDescription>{program.templateName} · {program.worksiteName}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Frecuencia">
+            <Field label="Frecuencia" error={operation.fieldError("frequency")}>
               <Select value={frequency} onValueChange={(value) => { setFrequency(value); setIntervalDays(FREQUENCY_INTERVAL_DAYS[value] ?? 30) }}><SelectTrigger aria-label="Frecuencia"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
             </Field>
-            <Field label="Intervalo efectivo (días)" hint="Este número gobierna el calendario. Al cambiar la frecuencia se propone su intervalo estándar.">
+            <Field label="Intervalo efectivo (días)" hint="Este número gobierna el calendario. Al cambiar la frecuencia se propone su intervalo estándar." error={operation.fieldError("intervalDays")}>
               <Input name="intervalDays" type="number" min={1} max={3650} value={intervalDays} onChange={(event) => setIntervalDays(Number(event.target.value))} required />
             </Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Próxima ejecución">
+            <Field label="Próxima ejecución" error={operation.fieldError("nextDueOn")}>
               <DatePicker value={nextDueOn} onChange={setNextDueOn} />
             </Field>
-            <Field label="Asignada a" hint="Opcional.">
+            <Field label="Asignada a" hint="Opcional." error={operation.fieldError("assignedToUserId")}>
               <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><AssigneeSelectOptions assignees={assignees} worksiteId={program.worksiteId} noneLabel="Sin asignar" /></SelectContent></Select>
             </Field>
           </div>
@@ -1406,17 +1718,17 @@ function EditProgramDialog({ program, assignees, subjects, riskEntries }: {
                 </SelectContent>
               </Select>
               {requiresContainer && subjectOptions.length === 0 && (
-                <p role="status" className="mt-2 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">
+                <Callout tone="warning" className="mt-2 text-xs">
                   Esta faena todavía no tiene contenedores en el catálogo. Cárgalos en <Link href="/admin/contenedores" className="underline">Administración › Contenedores</Link>.
-                </p>
+                </Callout>
               )}
             </Field>
           )}
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor.">
+            <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor." error={operation.fieldError("subjectType")}>
               <Input name="subjectType" maxLength={120} defaultValue={program.subjectType ?? ""} />
             </Field>
-            <Field label="Peligro MIPER de origen" hint="Opcional. Los de esta faena.">
+            <Field label="Peligro MIPER de origen" hint="Opcional. Los de esta faena." error={operation.fieldError("riskEntryId")}>
               <Select value={riskEntryId} onValueChange={setRiskEntryId}>
                 <SelectTrigger aria-label="Peligro MIPER de origen"><SelectValue placeholder="Sin vincular" /></SelectTrigger>
                 <SelectContent>
@@ -1428,8 +1740,8 @@ function EditProgramDialog({ program, assignees, subjects, riskEntries }: {
               </Select>
             </Field>
           </div>
-          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar</Button></DialogFooter>
+          <OperationError operation={operation} />
+          <FormDialogFooter submitLabel="Guardar" pending={operation.pending} onCancel={() => changeOpen(false)} />
         </form>
       </DialogContent>
     </Dialog>
@@ -1438,13 +1750,12 @@ function EditProgramDialog({ program, assignees, subjects, riskEntries }: {
 
 /** Desactivar es el borrado: los runs ya creados conservan su origen. */
 function ToggleProgramButton({ program }: { program: ProgramItem }) {
-  const [open, setOpen] = React.useState(false)
-  const operation = useOperation()
+  const { open, changeOpen, operation } = useFormDialog()
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger asChild>
         {/* I-20: "Detener" es destructivo (frena la generación futura); "Reactivar" no. */}
-        <Button type="button" size="sm" variant="ghost" className={program.isActive ? GHOST_DANGER_CLASS : undefined}>{program.isActive ? "Detener" : "Reactivar"}</Button>
+        <Button type="button" size="sm" variant={program.isActive ? "ghost-danger" : "ghost"}>{program.isActive ? "Detener" : "Reactivar"}</Button>
       </DialogTrigger>
       <DialogContent>
         <form className="space-y-4" onSubmit={(event) => {
@@ -1455,7 +1766,10 @@ function ToggleProgramButton({ program }: { program: ProgramItem }) {
             expectedVersion: program.version,
             isActive: !program.isActive,
             reason,
-          }), () => setOpen(false))
+          }), () => {
+            toast.success(program.isActive ? "Programación detenida." : "Programación reactivada.")
+            changeOpen(false)
+          })
         }}>
           <DialogHeader>
             <DialogTitle>{program.isActive ? "¿Detener esta programación?" : "¿Reactivar esta programación?"}</DialogTitle>
@@ -1463,12 +1777,14 @@ function ToggleProgramButton({ program }: { program: ProgramItem }) {
               ? "No se crearán futuras inspecciones automáticas. Las ya creadas se conservan y pueden seguir ejecutándose."
               : "Volverán a generarse inspecciones desde la próxima fecha configurada."}</DialogDescription>
           </DialogHeader>
-          <Field label="Motivo" required hint="Quedará registrado en el historial. Mínimo 10 caracteres."><Textarea name="reason" required minLength={10} maxLength={2000} /></Field>
-          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button type="submit" disabled={operation.pending}>{program.isActive ? "Detener programación" : "Reactivar programación"}</Button>
-          </DialogFooter>
+          <ReasonField error={operation.fieldError("reason")} />
+          <OperationError operation={operation} />
+          <FormDialogFooter
+            submitLabel={program.isActive ? "Detener programación" : "Reactivar programación"}
+            variant={program.isActive ? "destructive" : "primary"}
+            pending={operation.pending}
+            onCancel={() => changeOpen(false)}
+          />
         </form>
       </DialogContent>
     </Dialog>
@@ -1508,7 +1824,7 @@ function RunProgramNowButton({ program }: { program: ProgramItem }) {
       >
         {operation.pending ? "Creando…" : "Crear y abrir inspección"}
       </Button>
-      {operation.message && <p role="status" className="max-w-64 text-xs">{operation.message}</p>}
+      <InlineError operation={operation} className="max-w-64" />
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
@@ -1534,7 +1850,6 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
   /** Inventario por faena: declarar QUÉ se inspecciona, no sólo con qué instrumento (INS-04). */
   subjectsByWorksite?: Record<string, InspectionSubjectOption[]>
 }) {
-  const [open, setOpen] = React.useState(false)
   const [startsOn, setStartsOn] = React.useState("")
   const [templateId, setTemplateId] = React.useState("")
   const [worksiteId, setWorksiteId] = React.useState("")
@@ -1543,7 +1858,16 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
   const [assignedToUserId, setAssignedToUserId] = React.useState("_none")
   const [riskEntryId, setRiskEntryId] = React.useState("_none")
   const [subjectRef, setSubjectRef] = React.useState(NO_SUBJECT)
-  const operation = useOperation()
+  const { open, changeOpen, operation } = useFormDialog(() => {
+    setTemplateId("")
+    setWorksiteId("")
+    setStartsOn(todayInChile())
+    setFrequency("monthly")
+    setIntervalDays(FREQUENCY_INTERVAL_DAYS.monthly)
+    setAssignedToUserId("_none")
+    setRiskEntryId("_none")
+    setSubjectRef(NO_SUBJECT)
+  })
 
   /* La programación de contenedores exige sujeto por el mismo motivo que la
    * ejecución: un programa sin contenedor produce runs sin sujeto. */
@@ -1561,11 +1885,11 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
     const subjectType = String(form.get("subjectType") ?? "").trim()
     const riskEntry = String(form.get("riskEntryId") ?? "").trim()
     if (!templateId || !worksiteId || !startsOn) {
-      operation.setMessage("Selecciona conscientemente la plantilla, la faena y la primera fecha.")
+      operation.setMessage("Selecciona la plantilla, la faena y la primera fecha.", "error")
       return
     }
     if (requiresContainer && !subjectRef.startsWith("container:")) {
-      operation.setMessage("Selecciona un contenedor del catálogo de la faena.")
+      operation.setMessage("Selecciona un contenedor del catálogo de la faena.", "error")
       return
     }
     operation.run(() => createInspectionProgramAction({
@@ -1579,24 +1903,14 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
       subjectType: subjectType || null,
       riskEntryId: riskEntry || null,
       ...subjectIdsFromRef(subjectRef),
-    }), () => setOpen(false))
+    }), () => {
+      toast.success("Programación creada.")
+      changeOpen(false)
+    })
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => {
-      if (value) {
-        setTemplateId("")
-        setWorksiteId("")
-        setStartsOn(todayInChile())
-        setFrequency("monthly")
-        setIntervalDays(FREQUENCY_INTERVAL_DAYS.monthly)
-        setAssignedToUserId("_none")
-        setRiskEntryId("_none")
-        setSubjectRef(NO_SUBJECT)
-        operation.setMessage("")
-      }
-      setOpen(value)
-    }}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger asChild><Button size="sm">Nuevo programa</Button></DialogTrigger>
       <DialogContent className="overflow-hidden p-0">
         <form onSubmit={submit} className="flex max-h-[min(90dvh,54rem)] flex-col">
@@ -1605,11 +1919,11 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
             <DialogDescription>Elige explícitamente el instrumento y la faena. Sólo las plantillas aprobadas pueden programarse.</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
-          <Field label="Plantilla">
+          <Field label="Plantilla" error={operation.fieldError("templateId")}>
             <InspectionTemplateSelect templates={templates} value={templateId} onValueChange={setTemplateId} /><input type="hidden" name="templateId" value={templateId} />
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Faena">
+            <Field label="Faena" error={operation.fieldError("worksiteId")}>
               <Select value={worksiteId} onValueChange={(value) => {
                 setWorksiteId(value)
                 setRiskEntryId("_none")
@@ -1617,18 +1931,18 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
                 setAssignedToUserId(findWorksiteSuggestedAssignee(assignees, value))
               }}><SelectTrigger aria-label="Faena del programa"><SelectValue placeholder="Selecciona la faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
             </Field>
-            <Field label="Frecuencia">
+            <Field label="Frecuencia" error={operation.fieldError("frequency")}>
               <Select value={frequency} onValueChange={(value) => { setFrequency(value); setIntervalDays(FREQUENCY_INTERVAL_DAYS[value] ?? 30) }}><SelectTrigger aria-label="Frecuencia"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="frequency" value={frequency} />
             </Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Primera fecha" required>
+            <Field label="Primera fecha" required error={operation.fieldError("startsOn")}>
               <DatePicker name="startsOn" value={startsOn} onChange={setStartsOn} />
             </Field>
-            <Field label="Intervalo efectivo (días)" hint="Este número gobierna el calendario. Al cambiar la frecuencia se propone su intervalo estándar.">
+            <Field label="Intervalo efectivo (días)" hint="Este número gobierna el calendario. Al cambiar la frecuencia se propone su intervalo estándar." error={operation.fieldError("intervalDays")}>
               <Input name="intervalDays" type="number" min={1} max={3650} value={intervalDays} onChange={(event) => setIntervalDays(Number(event.target.value))} required />
             </Field>
-            <Field label="Asignada a" hint="Opcional. El prevencionista de la faena se sugiere automáticamente al elegirla.">
+            <Field label="Asignada a" hint="Opcional. El prevencionista de la faena se sugiere automáticamente al elegirla." error={operation.fieldError("assignedToUserId")}>
               <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><AssigneeSelectOptions assignees={assignees} worksiteId={worksiteId} noneLabel="Sin asignar" /></SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
             </Field>
           </div>
@@ -1657,17 +1971,17 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
                 </SelectContent>
               </Select>
               {requiresContainer && subjectOptions.length === 0 && (
-                <p role="status" className="mt-2 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">
+                <Callout tone="warning" className="mt-2 text-xs">
                   Esta faena todavía no tiene contenedores en el catálogo. Cárgalos en <Link href="/admin/contenedores" className="underline">Administración › Contenedores</Link>.
-                </p>
+                </Callout>
               )}
             </Field>
           )}
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor."><Input name="subjectType" maxLength={120} /></Field>
+            <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor." error={operation.fieldError("subjectType")}><Input name="subjectType" maxLength={120} /></Field>
             {/* A-09: antes era un `<Input>` donde el usuario debía escribir el
                 UUID del peligro a mano, sin validar existencia ni faena. */}
-            <Field label="Peligro MIPER de origen" hint="Opcional. Los de la faena seleccionada.">
+            <Field label="Peligro MIPER de origen" hint="Opcional. Los de la faena seleccionada." error={operation.fieldError("riskEntryId")}>
               <Select value={riskEntryId} onValueChange={setRiskEntryId}>
                 <SelectTrigger aria-label="Peligro MIPER de origen"><SelectValue placeholder="Sin vincular" /></SelectTrigger>
                 <SelectContent>
@@ -1680,9 +1994,15 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
               <input type="hidden" name="riskEntryId" value={riskEntryId === "_none" ? "" : riskEntryId} />
             </Field>
           </div>
-          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <OperationError operation={operation} />
           </div>
-          <DialogFooter className="mt-0 shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-4"><Button type="submit" disabled={operation.pending || !templateId || !worksiteId || !startsOn}>{operation.pending ? "Programando…" : "Programar"}</Button></DialogFooter>
+          <FormDialogFooter
+            className="mt-0 shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-4"
+            submitLabel={operation.pending ? "Programando…" : "Programar"}
+            pending={operation.pending}
+            disabled={!templateId || !worksiteId || !startsOn}
+            onCancel={() => changeOpen(false)}
+          />
         </form>
       </DialogContent>
     </Dialog>

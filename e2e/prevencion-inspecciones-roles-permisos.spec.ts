@@ -26,6 +26,12 @@ test.describe("Inspecciones — Matriz de Roles y Permisos", () => {
     await expect(page.getByRole("button", { name: "Incorporar borrador" })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Aprobar" })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Retirar" })).toHaveCount(0)
+    // Quien sólo mira tampoco ve las acciones del anexo oficial ni los avisos que las reemplazan:
+    // «Falta vincular…» y «La paridad la declara…» les hablan a quien administra o aprueba.
+    await expect(page.getByRole("button", { name: "Vincular fuente" })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Declarar paridad" })).toHaveCount(0)
+    await expect(page.getByText("Falta vincular la planilla oficial.")).toHaveCount(0)
+    await expect(page.getByText("La paridad la declara otra persona con permiso de aprobación.")).toHaveCount(0)
 
     // 4. Acceder a una inspección ejecutada por otro usuario para revisar: el botón no debe estar disponible
     await page.goto("/prevencion/inspecciones/insp-e2e-bloqueada")

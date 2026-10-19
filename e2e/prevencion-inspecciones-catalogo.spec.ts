@@ -147,10 +147,14 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
    * La contracara del test anterior. Los anexos del SGI
    * (`OFFICIAL_INSPECTION_SOURCES`) nacen `provenanceKind: "official_document"`
    * y `approveInspectionTemplate` les exige una versión de la Biblioteca SST
-   * vinculada, con paridad declarada y el checksum del binario original. Sin
-   * eso el borrador no se habilita: la pantalla lo dice y el diálogo no cierra.
+   * vinculada, con paridad declarada y el checksum del binario original.
+   *
+   * La pantalla ya no ofrece «Aprobar» ni «Declarar paridad» cuando el servidor
+   * los va a rechazar (patrón I-04): dice qué falta y ofrece «Vincular fuente».
+   * Antes el botón estaba, el diálogo se llenaba, y sólo al confirmar aparecía
+   * «no puede aprobarse sin una versión oficial vinculada».
    */
-  test("un anexo oficial no se aprueba sin su fuente documental vinculada", async ({ page }) => {
+  test("un anexo oficial incompleto no ofrece Aprobar: dice que falta vincular la planilla", async ({ page }) => {
     const version = `E2E-${RUN}-E`
     await incorporar(page, version)
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
@@ -159,18 +163,32 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     const fila = filaPlantilla(page, version)
     await expect(fila.getByText("Borrador")).toBeVisible({ timeout: 15_000 })
 
-    await fila.getByRole("button", { name: "Aprobar" }).click()
-    const aprobar = page.getByRole("dialog", { name: `Aprobar ${DEFINICION}` })
-    await aprobar.locator('textarea[name="reason"]').fill("Intento de habilitar el anexo sin su respaldo documental.")
-    await aprobar.getByRole("button", { name: "Aprobar" }).click()
+    await expect(fila.getByText("Falta vincular la planilla oficial.")).toBeVisible()
+    await expect(fila.getByRole("button", { name: "Aprobar" })).toHaveCount(0)
+    await expect(fila.getByRole("button", { name: "Declarar paridad" })).toHaveCount(0)
+    // Lo que sí se puede hacer: vincular la planilla.
+    await expect(fila.getByRole("button", { name: "Vincular fuente" })).toBeVisible()
+  })
 
-    await expect(aprobar.getByRole("status"))
-      .toContainText("no puede aprobarse sin una versión oficial vinculada", { timeout: 30_000 })
-    await expect(aprobar).toBeVisible()
+  /**
+   * El diálogo de incorporar dice la verdad sobre la fuente: es obligatoria
+   * para un anexo oficial, y si la Biblioteca SST no tiene el archivo con el
+   * checksum del anexo lo avisa en vez de pedir lo imposible. La Biblioteca del
+   * entorno E2E no tiene ese archivo, así que acá se ve el aviso.
+   */
+  test("incorporar un anexo oficial avisa que la planilla es obligatoria y que la Biblioteca no la tiene", async ({ page }) => {
+    await page.getByRole("button", { name: "Incorporar borrador" }).click()
+    const dialog = page.getByRole("dialog", { name: "Incorporar nueva versión como borrador" })
+    await dialog.getByLabel("Definición del catálogo SST").click()
+    await page.getByRole("option", { name: DEFINICION, exact: true }).click()
 
-    await page.keyboard.press("Escape")
-    await page.reload()
-    await expect(fila.getByText("Borrador")).toBeVisible({ timeout: 15_000 })
+    await expect(dialog.getByText("Obligatoria: este instrumento transcribe un anexo oficial.")).toBeVisible()
+    await expect(dialog.getByText(/No hay en la Biblioteca SST una versión vigente con el checksum del anexo oficial/)).toBeVisible()
+    await expect(dialog.getByText(/alguien con permiso de aprobación —puedes ser tú—/)).toBeVisible()
+    // Sin el archivo no hay con qué cumplirla: el borrador se puede incorporar y la planilla se vincula después.
+    await expect(dialog.getByRole("button", { name: "Incorporar como borrador" })).toBeEnabled()
+    await dialog.getByRole("button", { name: "Cancelar" }).click()
+    await expect(page.locator('[role="dialog"]')).not.toBeVisible()
   })
 
   /**
@@ -183,8 +201,9 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     await incorporar(page, version)
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
+    // El rechazo es un aviso del propio diálogo (`role="alert"`), que sigue abierto.
     const dialog = await incorporar(page, version)
-    await expect(dialog.getByRole("status")).toContainText(`Ya existe la versión "${version}"`, { timeout: 30_000 })
+    await expect(dialog.getByRole("alert")).toContainText(`Ya existe la versión "${version}"`, { timeout: 30_000 })
     await expect(dialog).toBeVisible()
   })
 
@@ -215,6 +234,12 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
      * primero es "Al declarar ejecutada" y el segundo "Al revisar y cerrar". */
     await fila.getByRole("button", { name: "Acreditación PDTP" }).click()
     const dialog = page.getByRole("dialog")
+    // El fixture E2E no da identidad de catálogo a las actividades del programa:
+    // la plantilla acredita por número y el diálogo lo dice, y avisa que ese
+    // número no tiene equivalente. Sin cambios todavía, «Guardar» no se ofrece.
+    await expect(dialog.getByText(/Hoy acredita por número de actividad \(N° 29\)/)).toBeVisible()
+    await expect(dialog.getByText(/N° 29 no tiene actividad en el catálogo corporativo/)).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Guardar" })).toBeDisabled()
     const ejecucion = dialog.getByRole("button", { name: /actividades? seleccionadas?/ }).first()
     await ejecucion.click()
     await page.getByRole("option", { name: /Inspección de contenedores E2E/ }).click()
@@ -250,8 +275,11 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     await fila.getByRole("button", { name: "Retirar" }).click()
     const dialog = page.getByRole("dialog")
     await dialog.locator('textarea[name="reason"]').fill("Instrumento incorporado por error durante la prueba E2E.")
-    await dialog.getByRole("button", { name: "Retirar" }).click()
+    // El botón que confirma el acto destructivo se llama como el acto.
+    await dialog.getByRole("button", { name: "Retirar plantilla" }).click()
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+    // El mensaje de resultado («Plantilla eliminada: …») es un toast de 4 s: se afirma
+    // el efecto persistido, que es lo que no caduca.
 
     await page.reload()
     await expect(fila).toHaveCount(0, { timeout: 15_000 })
