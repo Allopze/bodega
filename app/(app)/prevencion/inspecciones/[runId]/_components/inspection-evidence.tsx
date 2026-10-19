@@ -168,6 +168,12 @@ export function AnswerEvidence({
 
   async function upload(files: FileList | null) {
     if (!files?.length || !canAttach) return
+    // Se copian ANTES de cualquier `await`: el `onChange` limpia el input con
+    // `value = ""` en cuanto llama a esta función, y la `FileList` de Chromium es
+    // viva —queda vacía—. Cuando la respuesta todavía no existe en el servidor,
+    // `ensureAnswerId` espera al guardado, y al volver el ciclo recorría una lista
+    // vacía: no subía nada y tampoco avisaba (la foto «no pasaba» sin un solo error).
+    const selected = Array.from(files)
     setBusy(true)
     setError("")
     try {
@@ -176,7 +182,7 @@ export function AnswerEvidence({
       let count = items.length
       // Secuencial y no en paralelo: en terreno la conexión es escasa y varias
       // subidas simultáneas se estorban entre sí.
-      for (const file of Array.from(files)) {
+      for (const file of selected) {
         const compressed = await compressPhoto(file)
         const body = new FormData()
         body.set("file", compressed)
