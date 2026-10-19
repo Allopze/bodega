@@ -265,6 +265,13 @@ export const pgliteTestFiles = [
   "lib/__tests__/emergency-resource-inventory-pglite.test.ts",
   "lib/__tests__/prevention-containers-pglite.test.ts",
   "lib/__tests__/prevention-inspection-container-subject-pglite.test.ts",
+  // Inspecciones, Ola 1: captura (códigos de error, filas idénticas, evidencia), bandeja (KPI y
+  // total bajo filtros), exports Excel (fechas de Chile, etiquetas, Anexo 15) y catálogo
+  // (versiones, fuente oficial, tipo por defecto, rollback).
+  "lib/__tests__/prevention-inspection-capture-pglite.test.ts",
+  "lib/__tests__/prevention-inspection-lists-pglite.test.ts",
+  "lib/__tests__/prevention-inspections-export-pglite.test.ts",
+  "lib/__tests__/prevention-inspection-catalog-pglite.test.ts",
   "lib/__tests__/prevention-inspection-epp-rows-pglite.test.ts",
   // Faltaba desde que se escribió (Grupo B): instancia PGlite y migra, así que
   // en el proyecto paralelo competía por CPU y corría con el timeout de 20 s,
