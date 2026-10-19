@@ -474,7 +474,8 @@ type RowState = {
   status: ReturnType<typeof useDebouncedAutosave>["status"]
   isDirty: boolean
   error: string | null
-  saveNow: () => Promise<void>
+  /** El hook devuelve el resultado del guardado; aquí solo importa que termine. */
+  saveNow: () => Promise<unknown>
   values: Record<string, number>
   /** La planificación cambió en otra sesión: guardar sobrescribiría lo que hizo
    *  la otra, así que hace falta recargar antes de continuar. */

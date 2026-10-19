@@ -4,7 +4,7 @@
  * lib/pwa/hooks.ts
  *
  * React hooks for PPA offline support:
- *  - useOnlineStatus: tracks browser connectivity
+ *  - useOnlineStatus: tracks browser connectivity (en `use-online-status.ts`, reexportado)
  *  - usePpaOfflineQueue: manages IndexedDB queue, auto-syncs on reconnect
  */
 
@@ -21,37 +21,12 @@ import {
 } from "./offline-queue"
 import { ppaSubmitSchema } from "@/lib/validation/ppa"
 import { showSyncNotification } from "./notifications"
+import { useOnlineStatus } from "./use-online-status"
 
 /* ── useOnlineStatus ─────────────────────────────────────────────────────── */
 
-function subscribeOnlineStatus(onStoreChange: () => void) {
-  window.addEventListener("online", onStoreChange)
-  window.addEventListener("offline", onStoreChange)
-  return () => {
-    window.removeEventListener("online", onStoreChange)
-    window.removeEventListener("offline", onStoreChange)
-  }
-}
-
-function getOnlineSnapshot(): boolean {
-  return navigator.onLine
-}
-
-/**
- * En el servidor no hay conectividad que medir. NO se puede preguntar por
- * `navigator`: desde Node 22 el runtime global expone un objeto `navigator` sin
- * `onLine`, así que un guard `typeof navigator !== "undefined"` daba por bueno
- * el entorno del servidor y leía `undefined` (falsy) — el servidor renderizaba
- * el aviso "Sin conexión" y el navegador, con `navigator.onLine === true`, el
- * formulario, dejando React #418 de hidratación en cada carga de /ppa.
- */
-function getServerOnlineSnapshot(): boolean {
-  return true
-}
-
-export function useOnlineStatus(): boolean {
-  return React.useSyncExternalStore(subscribeOnlineStatus, getOnlineSnapshot, getServerOnlineSnapshot)
-}
+// Vive en su propio módulo (ver `use-online-status.ts`); se reexporta aquí.
+export { useOnlineStatus }
 
 /* ── usePpaOfflineQueue ──────────────────────────────────────────────────── */
 
