@@ -15,7 +15,8 @@ import {
   listRiskEntriesForWorksite,
 } from "@/lib/services/prevention-inspections"
 import type { InspectionSubjectOption } from "@/lib/prevention/inspection-list-query"
-import { InspectionProgramsPanel, ProgramDialog } from "../inspection-catalog"
+import { ProgramDialog } from "./_components/program-dialogs"
+import { InspectionProgramsPanel } from "./_components/programs-panel"
 
 export const metadata: Metadata = { title: "Programación de inspecciones" }
 

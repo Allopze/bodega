@@ -4,13 +4,10 @@ import type { ComponentProps } from "react"
 import Link from "next/link"
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import {
-  ImportTemplateDialog,
-  InspectionProgramsPanel,
-  InspectionTemplatesPanel,
-  type ImportableDefinition,
-  type TemplateItem,
-} from "./inspection-catalog"
+import type { ImportableDefinition, TemplateItem } from "./_components/catalog-types"
+import { ImportTemplateDialog } from "./plantillas/_components/import-template-dialog"
+import { InspectionTemplatesPanel } from "./plantillas/_components/templates-panel"
+import { InspectionProgramsPanel } from "./programacion/_components/programs-panel"
 
 const nav = vi.hoisted(() => ({
   params: new URLSearchParams(),

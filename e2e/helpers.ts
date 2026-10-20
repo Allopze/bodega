@@ -534,13 +534,24 @@ export async function crearInspeccion(page: Page, opciones: {
 /**
  * Responde un ítem de la inspección abierta.
  *
- * Estaba copiado en cuatro specs con la misma omisión: `inspection-run-detail.tsx` pinta
- * **dos** veces cada ítem —tarjetas para móvil (`item-mobile-*`, línea 1292) y tabla para
- * escritorio (1381)— con idéntico `aria-label`, y esconde una de las dos por CSS según el
- * breakpoint. Ambas siguen en el DOM, así que `getByLabel` resolvía a dos elementos y
- * Playwright abortaba por strict mode. Se filtra por visibilidad en vez de tomar `.first()`:
- * el primero del DOM es la tarjeta móvil, que en escritorio está oculta y no se puede
- * clickear.
+ * Soporta las DOS implementaciones del control de resultado, porque la pantalla pasa del
+ * `Select` al grupo de radios (`ChoiceCardGroup variant="compact"`) y los specs no deben
+ * enterarse del cambio:
+ *
+ *   1. Grupo de radios: `radiogroup` «Resultado de {ítem}» y, dentro, el `radio` con el
+ *      nombre del resultado. Es lo que se prueba primero.
+ *   2. `Select` (la implementación anterior): se abre el combobox y se elige la `option`.
+ *
+ * Estaba copiado en cuatro specs con la misma omisión: la pantalla pintaba **dos** veces cada
+ * ítem —tarjetas para móvil (`item-mobile-*`) y tabla para escritorio (`item-desktop-*`)— con
+ * idéntico `aria-label`, y escondía una de las dos por CSS según el breakpoint. Ambas seguían
+ * en el DOM, así que `getByLabel` resolvía a dos elementos y Playwright abortaba por strict
+ * mode. Se filtra por visibilidad en vez de tomar `.first()`: el primero del DOM es la tarjeta
+ * móvil, que en escritorio está oculta y no se puede clickear. (`getByRole` ya ignora lo
+ * oculto, por eso el radiogroup no necesita el filtro.)
+ *
+ * El comentario vive plegado en un `details` «Agregar comentario o foto» (se abre solo cuando
+ * el resultado exige motivo): `abrirComentarioInspeccion` lo abre si hace falta.
  */
 export async function responderItemInspeccion(
   page: Page,
@@ -548,21 +559,67 @@ export async function responderItemInspeccion(
   resultado: string,
   comentario?: string,
 ) {
-  await campoInspeccion(page, `Resultado de ${item}`).click()
-  await page.getByRole("option", { name: resultado, exact: true }).click()
-  if (comentario !== undefined) {
-    await campoInspeccion(page, `Comentario de ${item}`).fill(comentario)
+  const nombre = `Resultado de ${item}`
+  const grupo = page.getByRole("radiogroup", { name: nombre })
+  const selector = campoInspeccion(page, nombre)
+  // Espera a que aparezca cualquiera de los dos: no se asume cuál implementación hay.
+  await grupo.or(selector).first().waitFor({ state: "visible" })
+  if ((await grupo.count()) > 0) {
+    await grupo.getByRole("radio", { name: resultado, exact: true }).click()
+  } else {
+    await selector.click()
+    await page.getByRole("option", { name: resultado, exact: true }).click()
   }
+  if (comentario !== undefined) {
+    await (await abrirComentarioInspeccion(page, item)).fill(comentario)
+  }
+}
+
+/**
+ * Deja visible el campo «Comentario de {ítem}» y lo devuelve.
+ *
+ * Con el diseño de un solo árbol el comentario vive dentro de un `details` plegado
+ * («Agregar comentario o foto»), y Playwright considera no visible lo que está en un
+ * `details` cerrado, así que `fill` esperaría hasta agotar el tiempo. Tres detalles:
+ *   - si el campo ya está pintado (diseño anterior, o el `details` se abrió solo porque el
+ *     resultado exige motivo) no se toca nada;
+ *   - se abre con un clic en el `summary`, igual que una persona;
+ *   - un clic sobre un `details` que justo se abrió solo lo cerraría, así que tras cada clic se
+ *     comprueba y se reintenta en vez de asumir.
+ */
+export async function abrirComentarioInspeccion(page: Page, item: string) {
+  const campo = campoInspeccion(page, `Comentario de ${item}`)
+  // El más interno de los `details` cerrados que contienen al campo.
+  const resumen = page
+    .locator("details:not([open])")
+    .filter({ has: page.getByLabel(`Comentario de ${item}`, { exact: false }) })
+    .last()
+    .locator(":scope > summary")
+  for (let intento = 0; intento < 3; intento++) {
+    if ((await campo.count()) > 0) return campo
+    if ((await resumen.count()) > 0) await resumen.click()
+    try {
+      await campo.waitFor({ state: "visible", timeout: 1_500 })
+      return campo
+    } catch {
+      // Se abrió y el clic lo cerró, o todavía no hidrata: se vuelve a mirar.
+    }
+  }
+  return campo
 }
 
 /**
  * El control de un ítem, sólo el que está realmente pintado.
  *
- * `inspection-run-detail.tsx` documenta en I-06 que el árbol móvil y el de escritorio
+ * La pantalla de ejecución documenta en I-06 que el árbol móvil y el de escritorio
  * coexisten en el DOM —uno oculto por `md:hidden`/`hidden md:*`— y trae su propio
  * `visibleItemElement` para distinguirlos. Los specs no lo hacían: `getByLabel` resolvía a
  * los dos y Playwright abortaba por strict mode. Se filtra por visibilidad en vez de tomar
  * `.first()` porque el primero del DOM es la tarjeta móvil, que en escritorio está oculta.
+ *
+ * Con el grupo de radios, `Resultado de {ítem}` nombra al `radiogroup`, no a un campo: para
+ * elegir un resultado usa `responderItemInspeccion`. Para el comentario plegado en su
+ * `details`, `abrirComentarioInspeccion` lo deja visible antes de escribir.
  */
 export function campoInspeccion(page: Page, label: string) {
   return page.getByLabel(label, { exact: false }).filter({ visible: true })

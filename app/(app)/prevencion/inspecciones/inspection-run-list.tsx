@@ -26,6 +26,7 @@ import {
 import { formatDate, formatDateTime } from "@/lib/utils"
 import { createInspectionRunAction } from "./actions"
 import { InspectionTemplateSelect } from "./template-select"
+import { SubjectSelectField } from "./_components/subject-select-field"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import {
@@ -37,7 +38,6 @@ import {
   inspectionTaskStatusLabel,
   safeNewInspectionDefaults,
   subjectIdsFromRef,
-  subjectRefOf,
   templateRequiresContainer,
   type InspectionSubjectOption,
 } from "@/lib/prevention/inspection-list-query"
@@ -556,9 +556,6 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
   const template = templates.find((item) => item.id === templateId)
   const requiresContainer = templateRequiresContainer(template?.sourceDefinitionCode)
   const worksiteSubjects = subjectsByWorksite[worksiteId] ?? []
-  const subjectOptions = requiresContainer
-    ? worksiteSubjects.filter((subject) => subject.source === "container")
-    : worksiteSubjects
 
   function handleTemplateChange(nextTemplateId: string) {
     setTemplateId(nextTemplateId)
@@ -625,37 +622,19 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
               desplazando el resto del formulario. Ahora ocupa su lugar siempre,
               con un estado explícito mientras no hay faena elegida o su
               inventario está vacío. */}
-          <Field
-            label={requiresContainer ? "Contenedor inspeccionado" : "Sujeto inspeccionado"}
-            required={requiresContainer}
+          <SubjectSelectField
+            worksiteId={worksiteId}
+            subjects={worksiteSubjects}
+            requiresContainer={requiresContainer}
+            value={subjectRef}
+            onValueChange={setSubjectRef}
+            noneLabel="Otro / texto libre"
             hint={!worksiteId
               ? "Selecciona una faena para ver su inventario."
               : requiresContainer
                 ? "Obligatorio: esta inspección se hace por contenedor del catálogo."
                 : "Opcional. Un recurso del inventario actualiza su última inspección al completar; un equipo habilita derivar la falla a mantención."}
-          >
-            <Select value={subjectRef} onValueChange={setSubjectRef} disabled={!worksiteId}>
-              <SelectTrigger aria-label={requiresContainer ? "Contenedor inspeccionado" : "Sujeto inspeccionado"}>
-                <SelectValue placeholder={!worksiteId
-                  ? "Selecciona una faena primero"
-                  : requiresContainer ? "Selecciona un contenedor" : "Otro / texto libre"} />
-              </SelectTrigger>
-              <SelectContent>
-                {!requiresContainer && <SelectItem value="_none">Otro / texto libre</SelectItem>}
-                {subjectOptions.map((subject) => (
-                  <SelectItem key={subjectRefOf(subject)} value={subjectRefOf(subject)}>
-                    {subject.source === "vehicle" ? "Equipo" : subject.source === "container" ? "Contenedor" : "Recurso"} · {subject.name}
-                    {subject.source !== "container" && subject.location ? ` · ${subject.location}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          {requiresContainer && worksiteId && subjectOptions.length === 0
-            ? <p role="status" className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">
-                Esta faena todavía no tiene contenedores en el catálogo. Cárgalos en <Link href="/admin/contenedores" className="underline">Administración › Contenedores</Link> para poder inspeccionarlos.
-              </p>
-            : null}
+          />
           {requiresContainer
             ? null
             : subjectRef === "_none" ? <div className="grid gap-3 md:grid-cols-2">
