@@ -16,11 +16,28 @@
  * mucho más superficie por un caso que en terreno se resuelve descargando la
  * inspección antes de salir.
  *
- * Mismo contrato que `offline-incident-queue.ts`: purga por edad O reintentos
- * (no AND), mutex de módulo contra doble flush, y `sender` que distingue el
- * rechazo permanente del fallo de red. Un elemento venenoso que gasta los 8
- * reintentos quedaría como zombi invisible durante 30 días.
+ * Mismo contrato que `offline-incident-queue.ts`: purga por edad, flush
+ * serializado a nivel de módulo, y `sender` que distingue el rechazo permanente
+ * del fallo de red.
+ *
+ * Qué hace el flush con la respuesta del `sender` (P1-5):
+ *   - `ok`                        → la entrada se borra.
+ *   - `ok:false` con código       → rechazo PERMANENTE: se quema de golpe con su
+ *     (`data.code` / `code`)        mensaje y su código. Reintentar un conflicto
+ *                                   de versión o una ejecución ya no editable
+ *                                   no lo arregla; sólo quien ejecutó puede
+ *                                   decidir qué hacer (recuperar el cierre o
+ *                                   descartarlo).
+ *   - `ok:false` sin código, o    → REINTENTABLE: suma un intento y la entrada
+ *     el `sender` lanza             sigue pendiente, acotada por `MAX_RETRIES`.
+ *
+ * El resultado del flush cuenta por separado las entradas que se quemaron en
+ * ESTA pasada (`rejected` + `rejectedRunIds`) y las que ya venían quemadas
+ * (`dead`): antes ambas se sumaban en `rejected` y un cierre ya descartado
+ * seguía diciendo «1 pendiente» en cada «Sincronizar».
  */
+
+import { saveErrorCodeOf, type InspectionErrorCode } from "@/lib/prevention/inspection-capture"
 
 export interface OfflineInspectionSubmission {
   runId: string
@@ -46,12 +63,60 @@ export interface OfflineInspectionSubmission {
   queuedAt?: string
 }
 
-interface QueueEntry {
+export interface QueuedInspectionSubmission {
   id: string
+  /**
+   * Quién encoló el cierre. El envío lo registra a nombre de la sesión vigente
+   * (`executedByUserId`, firmas): si la sesión de quien lo guardó terminó sin
+   * cerrar sesión y entra otra persona al mismo equipo, un cierre ajeno no puede
+   * salir con la identidad equivocada. Una entrada sin dueño (de antes de
+   * guardarlo) no se puede atribuir y se trata como ajena.
+   */
+  userId?: string
   payload: OfflineInspectionSubmission
   queuedAt: string
   attempts: number
   lastError?: string
+  /** Código del rechazo permanente que quemó la entrada; no existe si se agotaron los reintentos. */
+  lastCode?: InspectionErrorCode
+}
+
+type QueueEntry = QueuedInspectionSubmission
+
+/**
+ * Lo que el `sender` informa de un envío. Acepta el `ActionState` de la acción
+ * tal cual (el código viaja en `data.code`) o el código ya extraído en `code`.
+ */
+export interface InspectionSubmissionSendResult {
+  ok: boolean
+  message?: string
+  /** `false` fuerza el rechazo permanente aunque no traiga código (llamadores previos al código). */
+  retriable?: boolean
+  code?: string | null
+  data?: Record<string, unknown>
+}
+
+export type InspectionSubmissionSender = (payload: OfflineInspectionSubmission) => Promise<InspectionSubmissionSendResult>
+
+export interface InspectionQueueFlushResult {
+  /** Entradas entregadas y borradas. */
+  synchronized: number
+  /** Entradas que fallaron por red o sin código y siguen en la cola para otro intento. */
+  pending: number
+  /** Entradas que se quemaron en ESTA pasada (rechazo permanente o reintentos agotados). */
+  rejected: number
+  /** Entradas que ya venían quemadas de antes: no se reenvían ni se vuelven a contar como rechazo. */
+  dead: number
+  /** `runId` de las entradas contadas en `rejected`, para avisar una sola vez a quien las mira. */
+  rejectedRunIds: string[]
+}
+
+/** La cola está llena de inspecciones sin sincronizar: se distingue de un fallo de almacenamiento. */
+export class OfflineQueueFullError extends Error {
+  constructor(max: number) {
+    super(`La cola offline está llena (${max} inspecciones sin sincronizar). Conéctate y sincroniza antes de cerrar otra.`)
+    this.name = "OfflineQueueFullError"
+  }
 }
 
 const DB_NAME = "chome-prevention-offline"
@@ -65,7 +130,13 @@ const MAX_QUEUED = 5
 const MAX_AGE_DAYS = 30
 const MAX_RETRIES = 8
 
-let flushLock: Promise<unknown> | null = null
+/** Cadena de flushes: cada uno espera al anterior (un solo vuelo a la vez en esta pestaña). */
+let flushChain: Promise<unknown> = Promise.resolve()
+
+/** Una entrada quemada (rechazo permanente o reintentos agotados): ya no se reenvía. */
+export function isInspectionSubmissionRejected(entry: Pick<QueueEntry, "attempts">) {
+  return entry.attempts >= MAX_RETRIES
+}
 
 function openQueueDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -89,32 +160,47 @@ function transactionPromise<T>(request: IDBRequest<T>) {
   })
 }
 
-export async function queueInspectionSubmission(payload: OfflineInspectionSubmission) {
+/** ¿Es de otra persona, o ya pasó el tope de edad? Ninguna de las dos se envía ni se muestra. */
+function isDiscardable(entry: QueueEntry, userId: string, now = Date.now()) {
+  return entry.userId !== userId || new Date(entry.queuedAt).getTime() < now - MAX_AGE_DAYS * 86_400_000
+}
+
+export async function queueInspectionSubmission(payload: OfflineInspectionSubmission, userId: string) {
   const database = await openQueueDatabase()
   try {
     const store = database.transaction(STORE, "readwrite").objectStore(STORE)
     const all = await transactionPromise(store.getAll()) as QueueEntry[]
 
-    // Dos políticas SEPARADAS, no una con `&&`: entradas viejas que nunca se
-    // reintentaron (dispositivo apagado) tienen que purgarse igual, o llenan la
-    // cola y bloquean la siguiente inspección justo cuando se necesita.
-    const cutoff = new Date(Date.now() - MAX_AGE_DAYS * 86_400_000)
-    const isExpired = (entry: QueueEntry) => new Date(entry.queuedAt) < cutoff
-    const isDead = (entry: QueueEntry) => entry.attempts >= MAX_RETRIES
+    // La edad purga siempre: entradas viejas que nunca se reintentaron
+    // (dispositivo apagado) llenarían la cola y bloquearían la siguiente
+    // inspección justo cuando se necesita. Lo de otra persona se va con ellas:
+    // no se le va a enviar nunca y tampoco puede ocupar un lugar.
+    const now = Date.now()
     for (const entry of all) {
-      if (isExpired(entry) || isDead(entry)) await transactionPromise(store.delete(entry.id))
+      if (isDiscardable(entry, userId, now)) await transactionPromise(store.delete(entry.id))
     }
 
-    const remaining = all.filter((entry) => !isExpired(entry) && !isDead(entry))
+    let remaining = all.filter((entry) => !isDiscardable(entry, userId, now))
     // Reencolar la misma inspección reemplaza su entrada, no suma otra.
     if (remaining.length >= MAX_QUEUED && !remaining.some((entry) => entry.payload.runId === payload.runId)) {
-      throw new Error(`La cola offline está llena (${MAX_QUEUED} inspecciones sin sincronizar). Conéctate y sincroniza antes de cerrar otra.`)
+      // Una entrada quemada es el cierre que alguien todavía tiene que recuperar
+      // o descartar desde su pantalla: borrarla en silencio al encolar OTRA
+      // inspección dejaba a quien la ejecutó sin el cierre y sin aviso. Sólo se
+      // desaloja, de la más vieja a la más nueva, cuando hace falta el lugar.
+      const burned = remaining.filter(isInspectionSubmissionRejected).sort((a, b) => a.queuedAt.localeCompare(b.queuedAt))
+      for (const entry of burned) {
+        if (remaining.length < MAX_QUEUED) break
+        await transactionPromise(store.delete(entry.id))
+        remaining = remaining.filter((other) => other.id !== entry.id)
+      }
+      if (remaining.length >= MAX_QUEUED) throw new OfflineQueueFullError(MAX_QUEUED)
     }
 
     const queuedAt = new Date().toISOString()
     const entry: QueueEntry = {
       // Por `runId`: una inspección tiene una sola ejecución pendiente de envío.
       id: payload.runId,
+      userId,
       payload: { ...payload, queuedAt },
       queuedAt,
       attempts: 0,
@@ -136,62 +222,213 @@ export async function listQueuedInspectionSubmissions() {
   }
 }
 
-export async function flushInspectionSubmissionQueue(
-  sender: (payload: OfflineInspectionSubmission) => Promise<{ ok: boolean; message?: string; retriable?: boolean }>,
-) {
-  if (flushLock) await flushLock
-  let resolveLock: () => void
-  flushLock = new Promise<void>((resolve) => { resolveLock = resolve })
-
+/**
+ * La entrada pendiente de una inspección, o `null`. La clave de la cola ES el
+ * `runId`. La de otra persona (o sin dueño) no se devuelve y se borra: no es de
+ * quien mira la pantalla.
+ */
+export async function getQueuedInspectionSubmission(runId: string, userId: string): Promise<QueueEntry | null> {
+  if (typeof indexedDB === "undefined") return null
+  const database = await openQueueDatabase()
+  let entry: QueueEntry | undefined
   try {
-    const entries = await listQueuedInspectionSubmissions()
-    const result = { synchronized: 0, pending: 0, rejected: 0 }
-    for (const entry of entries) {
-      if (entry.attempts >= MAX_RETRIES) {
+    entry = await transactionPromise(database.transaction(STORE).objectStore(STORE).get(runId)) as QueueEntry | undefined
+  } finally {
+    database.close()
+  }
+  if (!entry) return null
+  if (entry.userId !== userId) {
+    await discardEntryIfUnchanged(entry)
+    return null
+  }
+  return entry
+}
+
+/** Borra la entrada sólo si sigue siendo la misma que se leyó: otra pestaña pudo reencolar una nueva. */
+async function discardEntryIfUnchanged(entry: QueueEntry) {
+  const database = await openQueueDatabase()
+  try {
+    const store = database.transaction(STORE, "readwrite").objectStore(STORE)
+    const current = await transactionPromise(store.get(entry.id)) as QueueEntry | undefined
+    if (current && current.queuedAt === entry.queuedAt && current.userId === entry.userId) {
+      await transactionPromise(store.delete(entry.id))
+    }
+  } finally {
+    database.close()
+  }
+}
+
+/**
+ * Vacía de la cola lo que no es de `userId` o ya pasó el tope de edad. Se llama
+ * al abrir una inspección: un cierre guardado por una sesión que terminó sin
+ * cerrar sesión no debe quedar a la espera de la siguiente persona del equipo.
+ * Devuelve cuántas borró.
+ */
+export async function purgeInspectionSubmissionsOfOthers(userId: string): Promise<number> {
+  if (typeof indexedDB === "undefined") return 0
+  const database = await openQueueDatabase()
+  try {
+    const store = database.transaction(STORE, "readwrite").objectStore(STORE)
+    const all = await transactionPromise(store.getAll()) as QueueEntry[]
+    const now = Date.now()
+    let removed = 0
+    for (const entry of all) {
+      if (!isDiscardable(entry, userId, now)) continue
+      await transactionPromise(store.delete(entry.id))
+      removed++
+    }
+    return removed
+  } finally {
+    database.close()
+  }
+}
+
+/**
+ * Borra la entrada de una inspección sin enviarla: la salida de quien prefiere
+ * rehacer el cierre antes que reintentar uno rechazado. `true` si existía.
+ */
+export async function discardQueuedInspectionSubmission(runId: string): Promise<boolean> {
+  if (typeof indexedDB === "undefined") return false
+  const database = await openQueueDatabase()
+  try {
+    const store = database.transaction(STORE, "readwrite").objectStore(STORE)
+    const existing = await transactionPromise(store.get(runId)) as QueueEntry | undefined
+    if (!existing) return false
+    await transactionPromise(store.delete(runId))
+    return true
+  } finally {
+    database.close()
+  }
+}
+
+/** Código con que el servidor rechazó el envío, venga en `code` o en `data.code` del `ActionState`. */
+function rejectionCodeOf(response: InspectionSubmissionSendResult): InspectionErrorCode | null {
+  return saveErrorCodeOf({
+    ok: false,
+    data: { ...response.data, ...(response.code ? { code: response.code } : {}) },
+  })
+}
+
+/**
+ * Texto de un envío que ni siquiera obtuvo respuesta. Un `TypeError` de red trae
+ * el mensaje del navegador en inglés («Failed to fetch»); se reemplaza para que
+ * lo que queda en `lastError` se pueda mostrar tal cual.
+ */
+function transportFailureMessage(error: unknown) {
+  const offline = typeof navigator !== "undefined" && navigator.onLine === false
+  if (offline || (error instanceof TypeError && /failed to fetch|fetch failed|network|load failed/i.test(error.message))) {
+    return "Sin conexión con el servidor"
+  }
+  return error instanceof Error && error.message ? error.message : "Sin conexión"
+}
+
+/**
+ * Anota un fallo sobre la entrada. Relee y reescribe en UNA transacción y sólo
+ * si sigue siendo la misma entrada que se envió: otra pestaña pudo entregarla
+ * mientras tanto (no se debe resucitar quemada) o quien ejecutó pudo reencolar
+ * un cierre nuevo (no se debe quemar con el error del anterior).
+ * Devuelve la entrada ya actualizada, o `null` si no se tocó.
+ */
+async function recordSendFailure(
+  entry: QueueEntry,
+  failure: { permanent: boolean; message: string; code: InspectionErrorCode | null },
+): Promise<QueueEntry | null> {
+  const database = await openQueueDatabase()
+  try {
+    const store = database.transaction(STORE, "readwrite").objectStore(STORE)
+    const current = await transactionPromise(store.get(entry.id)) as QueueEntry | undefined
+    if (!current || current.queuedAt !== entry.queuedAt) return null
+    const next: QueueEntry = {
+      ...current,
+      attempts: failure.permanent ? MAX_RETRIES : current.attempts + 1,
+      lastError: failure.message,
+      ...(failure.code ? { lastCode: failure.code } : {}),
+    }
+    await transactionPromise(store.put(next))
+    return next
+  } finally {
+    database.close()
+  }
+}
+
+async function deleteQueuedEntry(id: string) {
+  const database = await openQueueDatabase()
+  try {
+    await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).delete(id))
+  } finally {
+    database.close()
+  }
+}
+
+async function flushOnce(sender: InspectionSubmissionSender, userId: string): Promise<InspectionQueueFlushResult> {
+  const entries = await listQueuedInspectionSubmissions()
+  const result: InspectionQueueFlushResult = { synchronized: 0, pending: 0, rejected: 0, dead: 0, rejectedRunIds: [] }
+  for (const entry of entries) {
+    // El envío usa la sesión vigente: sólo sale lo que esa misma persona guardó.
+    // Lo ajeno o vencido se borra sin enviar y no cuenta como entrega ni rechazo.
+    if (isDiscardable(entry, userId)) {
+      await discardEntryIfUnchanged(entry)
+      continue
+    }
+    if (isInspectionSubmissionRejected(entry)) {
+      result.dead++
+      continue
+    }
+
+    let response: InspectionSubmissionSendResult
+    try {
+      response = await sender(entry.payload)
+    } catch (error) {
+      // Sin red o excepción del transporte: no hay veredicto del servidor, así
+      // que es reintentable. La acotan los `MAX_RETRIES`.
+      const failed = await recordSendFailure(entry, { permanent: false, message: transportFailureMessage(error), code: null })
+      if (!failed) continue
+      if (isInspectionSubmissionRejected(failed)) {
         result.rejected++
-        continue
-      }
-      try {
-        const response = await sender(entry.payload)
-        const database = await openQueueDatabase()
-        try {
-          if (response.ok) {
-            await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).delete(entry.id))
-            result.synchronized++
-          } else {
-            // Validación, permiso o "ya fue ejecutada": reintentarlo no lo
-            // arregla. Se quema de golpe y se avisa, nunca en silencio.
-            const permanent = response.retriable === false
-            await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).put({
-              ...entry,
-              attempts: permanent ? MAX_RETRIES : entry.attempts + 1,
-              lastError: response.message ?? "Sincronización rechazada",
-            }))
-            if (permanent) result.rejected++
-            else result.pending++
-          }
-        } finally {
-          database.close()
-        }
-      } catch (error) {
-        const database = await openQueueDatabase()
-        try {
-          await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).put({
-            ...entry,
-            attempts: entry.attempts + 1,
-            lastError: error instanceof Error ? error.message : "Sin conexión",
-          }))
-        } finally {
-          database.close()
-        }
+        result.rejectedRunIds.push(failed.payload.runId)
+      } else {
         result.pending++
       }
+      continue
     }
-    return result
-  } finally {
-    resolveLock!()
-    flushLock = null
+
+    if (response.ok) {
+      await deleteQueuedEntry(entry.id)
+      result.synchronized++
+      continue
+    }
+
+    // Con código (conflicto de versión, ya no editable, falta algo…) o con
+    // `retriable: false`, reintentarlo no lo arregla: se quema de golpe y se
+    // avisa, nunca en silencio. Sin código es un fallo que puede ceder.
+    const code = rejectionCodeOf(response)
+    const permanent = code !== null || response.retriable === false
+    const failed = await recordSendFailure(entry, {
+      permanent,
+      message: response.message ?? "Sincronización rechazada",
+      code,
+    })
+    if (!failed) continue
+    if (isInspectionSubmissionRejected(failed)) {
+      result.rejected++
+      result.rejectedRunIds.push(failed.payload.runId)
+    } else {
+      result.pending++
+    }
   }
+  return result
+}
+
+/**
+ * Envía lo pendiente, de a una entrada. Las llamadas se encadenan: dos
+ * `flush` simultáneos (montaje + evento `online`) no mandan la misma entrada a
+ * la vez. La espera anterior también se encadena, a diferencia de un candado
+ * que dos esperando liberaban juntos.
+ */
+export function flushInspectionSubmissionQueue(sender: InspectionSubmissionSender, userId: string): Promise<InspectionQueueFlushResult> {
+  const run = flushChain.then(() => flushOnce(sender, userId))
+  flushChain = run.catch(() => undefined)
+  return run
 }
 
 /**

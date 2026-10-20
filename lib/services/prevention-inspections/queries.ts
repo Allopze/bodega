@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm"
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
@@ -50,7 +50,10 @@ export interface InspectionListFilters extends InspectionKindFilter {
   worksiteId?: string
   /** Texto libre sobre código, plantilla, sujeto y faena. */
   search?: string
-  /** Vista rápida de la pantalla: pendientes de revisión, con hallazgos, graves. */
+  /**
+   * Vista rápida de la pantalla: pendientes de revisión, con hallazgos, graves.
+   * `pending_review` significa «para mí»: ver `pendingReviewCondition`.
+   */
   view?: "pending_review" | "open_findings" | "critical" | "overdue"
   /** I-10: "¿qué le debe cada prevencionista?" — sin esto la jefa no podía gestionar por responsable. */
   assignedToUserId?: string
@@ -68,25 +71,46 @@ export interface InspectionListFilters extends InspectionKindFilter {
 const OPEN_FINDINGS_SQL = sql<number>`(SELECT COUNT(*)::int FROM prevention_inspection_findings f WHERE f.run_id = ${preventionInspectionRuns.id} AND f.status <> 'closed')`
 const CRITICAL_FINDINGS_SQL = sql<number>`(SELECT COUNT(*)::int FROM prevention_inspection_findings f WHERE f.run_id = ${preventionInspectionRuns.id} AND f.criticality IN ('high','critical') AND f.status <> 'closed')`
 
-function listFilterConditions(access: InspectionAccess, filter: InspectionListFilters) {
+/**
+ * Pendientes de revisión, un solo predicado para el tile y para la lista.
+ *
+ * P1-9: el tile excluía lo que el propio usuario ejecutó (I-30) y la vista
+ * `pending_review` no, así que el tile decía 0 sobre una lista con una fila y
+ * al revés. Con un único fragmento, lo que el tile cuenta es exactamente lo
+ * que la lista abre.
+ *
+ * Con permiso `review` significa «pendientes para mí»: quien ejecutó no puede
+ * revisar (`assessRunReview`), salvo que la plantilla declare al ejecutante
+ * dentro del formulario (`declared_in_form`), caso en que `executedByUserId` es
+ * quien transcribió y no hay conflicto de independencia
+ * (`reviewerIsExecutorOfRecord`, D04). Sin permiso `review` no hay «para mí»:
+ * son las que esperan a Prevención, todas las completadas.
+ *
+ * Exige `templates` unida a la consulta (`executorOfRecord` vive ahí): las cinco
+ * consultas que pasan por `listFilterConditions` ya la unen.
+ */
+function pendingReviewCondition(access: InspectionAccess) {
+  const completed = sql`${preventionInspectionRuns.status} = 'completed'`
+  if (!access.permissions.includes("prevention:inspections:review")) return completed
+  return sql`(${completed} AND (${preventionInspectionRuns.executedByUserId} IS DISTINCT FROM ${access.userId}
+    OR ${preventionInspectionTemplates.executorOfRecord} = 'declared_in_form'))`
+}
+
+/**
+ * Lo que acota el UNIVERSO: alcance, tipo, faena, responsable, rango de
+ * ejecución y búsqueda. Los KPI de la bandeja se calculan sobre esto y nada
+ * más: si dependieran también del estado o de la vista, elegir un tile
+ * cambiaría las cifras de los otros tres (P1-9).
+ */
+function baseFilterConditions(access: InspectionAccess, filter: InspectionListFilters) {
   const conditions = [
     scopeCondition(access.scope, preventionInspectionRuns.worksiteId),
     kindCondition(filter),
   ]
-  if (filter.status) conditions.push(eq(preventionInspectionRuns.status, filter.status))
   if (filter.worksiteId) conditions.push(eq(preventionInspectionRuns.worksiteId, filter.worksiteId))
   if (filter.assignedToUserId) conditions.push(eq(preventionInspectionRuns.assignedToUserId, filter.assignedToUserId))
   if (filter.executedFrom) conditions.push(sql`(${preventionInspectionRuns.executedAt} AT TIME ZONE 'America/Santiago')::date >= ${filter.executedFrom}`)
   if (filter.executedTo) conditions.push(sql`(${preventionInspectionRuns.executedAt} AT TIME ZONE 'America/Santiago')::date <= ${filter.executedTo}`)
-  if (filter.view === "pending_review") conditions.push(eq(preventionInspectionRuns.status, "completed"))
-  if (filter.view === "open_findings") conditions.push(sql`${OPEN_FINDINGS_SQL} > 0`)
-  if (filter.view === "critical") conditions.push(sql`${CRITICAL_FINDINGS_SQL} > 0`)
-  // I-31: mismo predicado que ya usa el `ORDER BY` para priorizar vencidas.
-  if (filter.view === "overdue") {
-    conditions.push(sql`${preventionInspectionRuns.status} IN ('planned', 'in_progress')
-      AND ${preventionInspectionRuns.scheduledFor} IS NOT NULL
-      AND ${preventionInspectionRuns.scheduledFor} < ${todayInChile()}`)
-  }
   if (filter.search?.trim()) {
     // `unaccent` no está garantizado en la base; `ILIKE` cubre el caso real
     // (buscar por código o por nombre de plantilla) sin depender de extensiones.
@@ -98,7 +122,31 @@ function listFilterConditions(access: InspectionAccess, filter: InspectionListFi
       OR ${worksites.name} ILIKE ${pattern}
     )`)
   }
-  return and(...conditions)
+  return conditions
+}
+
+/**
+ * Lo que elige un SUBCONJUNTO del universo: el estado y la vista rápida. Es lo
+ * único que el listado aplica y los KPI ignoran (A5: una dimensión, un control).
+ */
+function stateFilterCondition(access: InspectionAccess, filter: InspectionListFilters) {
+  const conditions: SQL[] = []
+  if (filter.status) conditions.push(eq(preventionInspectionRuns.status, filter.status))
+  if (filter.view === "pending_review") conditions.push(pendingReviewCondition(access))
+  if (filter.view === "open_findings") conditions.push(sql`${OPEN_FINDINGS_SQL} > 0`)
+  if (filter.view === "critical") conditions.push(sql`${CRITICAL_FINDINGS_SQL} > 0`)
+  // I-31: mismo predicado que ya usa el `ORDER BY` para priorizar vencidas.
+  if (filter.view === "overdue") {
+    conditions.push(sql`${preventionInspectionRuns.status} IN ('planned', 'in_progress')
+      AND ${preventionInspectionRuns.scheduledFor} IS NOT NULL
+      AND ${preventionInspectionRuns.scheduledFor} < ${todayInChile()}`)
+  }
+  return conditions.length > 0 ? and(...conditions) : undefined
+}
+
+/** Universo y subconjunto juntos: lo que ven la lista, el export, el cierre oportuno y las tendencias. */
+function listFilterConditions(access: InspectionAccess, filter: InspectionListFilters) {
+  return and(...baseFilterConditions(access, filter), stateFilterCondition(access, filter))
 }
 
 /**
@@ -156,15 +204,27 @@ export async function listInspectionRuns(
     .offset(page.offset ?? 0)
 }
 
-/** KPIs sobre el universo completo, no sobre la página visible (C-09). */
+/**
+ * KPIs sobre el universo completo, no sobre la página visible (C-09).
+ *
+ * Una sola consulta con dos filtros distintos (P1-9):
+ *   - Los cuatro KPI salen de `baseFilterConditions`, así que IGNORAN el estado
+ *     y la vista: elegir «Pendientes de revisión» no apaga ni cambia las cifras
+ *     de los otros tiles, y `?estado=completed` no deja al tile en 0 sobre una
+ *     lista con filas. Siguen respetando alcance, tipo, faena, responsable,
+ *     rango y búsqueda.
+ *   - `total` es el único que lleva el filtro COMPLETO (`COUNT(*) FILTER`):
+ *     también alimenta `totalPages` y `Pagination`, así que si perdiera el
+ *     estado la paginación contaría páginas de filas que la lista no trae.
+ */
 export async function summarizeInspectionRuns(access: InspectionAccess, filter: InspectionListFilters = {}) {
   requireAccess(access, "prevention:inspections:view")
+  const state = stateFilterCondition(access, filter)
   const [row] = await db.select({
-    total: sql<number>`COUNT(*)::int`,
-    // I-30: sin la exclusión, contaba también lo que el propio usuario
-    // ejecutó — que no puede revisar (assessRunReview) — sobrestimando la
-    // cola accionable de quien también ejecuta.
-    pendingReview: sql<number>`COUNT(*) FILTER (WHERE ${preventionInspectionRuns.status} = 'completed' AND ${preventionInspectionRuns.executedByUserId} IS DISTINCT FROM ${access.userId})::int`,
+    total: sql<number>`COUNT(*) FILTER (WHERE ${state ?? sql`true`})::int`,
+    // I-30 / P1-9: el mismo fragmento que usa la vista `pending_review`, así
+    // que el tile y la lista que abre cuentan exactamente las mismas filas.
+    pendingReview: sql<number>`COUNT(*) FILTER (WHERE ${pendingReviewCondition(access)})::int`,
     withOpenFindings: sql<number>`COUNT(*) FILTER (WHERE ${OPEN_FINDINGS_SQL} > 0)::int`,
     withCriticalFindings: sql<number>`COUNT(*) FILTER (WHERE ${CRITICAL_FINDINGS_SQL} > 0)::int`,
     // I-31: mismo predicado que la vista rápida "Vencidas" y que el ORDER BY.
@@ -173,7 +233,7 @@ export async function summarizeInspectionRuns(access: InspectionAccess, filter: 
     .from(preventionInspectionRuns)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
     .innerJoin(worksites, eq(preventionInspectionRuns.worksiteId, worksites.id))
-    .where(listFilterConditions(access, filter))
+    .where(and(...baseFilterConditions(access, filter)))
   return row ?? { total: 0, pendingReview: 0, withOpenFindings: 0, withCriticalFindings: 0, overdueRuns: 0 }
 }
 
@@ -233,6 +293,8 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
   const assignee = alias(users, "inspection_assignee")
   const executor = alias(users, "inspection_executor")
   const reviewer = alias(users, "inspection_reviewer")
+  // R-02: quien canceló, para que el motivo que se obliga a escribir se lea con su autor.
+  const canceller = alias(users, "inspection_canceller")
   const [run] = await db.select({
     run: preventionInspectionRuns,
     templateName: preventionInspectionTemplates.name,
@@ -251,6 +313,7 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     assigneeName: assignee.name,
     executorName: executor.name,
     reviewerName: reviewer.name,
+    cancelledByName: canceller.name,
   })
     .from(preventionInspectionRuns)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
@@ -258,6 +321,7 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     .leftJoin(assignee, eq(preventionInspectionRuns.assignedToUserId, assignee.id))
     .leftJoin(executor, eq(preventionInspectionRuns.executedByUserId, executor.id))
     .leftJoin(reviewer, eq(preventionInspectionRuns.reviewedByUserId, reviewer.id))
+    .leftJoin(canceller, eq(preventionInspectionRuns.cancelledByUserId, canceller.id))
     .where(eq(preventionInspectionRuns.id, runId)).limit(1)
   if (!run || !scopeAllows(access.scope, run.run.worksiteId)) return null
 

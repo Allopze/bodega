@@ -40,6 +40,7 @@ import {
   validateAnswerRow,
   TRANSITION_REASON_MIN_LENGTH,
   type InspectionAnswerInput,
+  type InspectionItemSpec,
 } from "@/lib/prevention/inspections"
 import { setVehicleOperationalStatus } from "@/lib/services/fleet"
 import { createMaintenanceRecordWithClient } from "@/lib/services/maintenance"
@@ -53,6 +54,7 @@ import { resolveSubject, assertContainerSubject } from "./programs"
 import { itemsFromDefinition } from "./templates"
 import { resolveRunDefinition } from "./epp-rows"
 import { transitionInspectionRun } from "./transitions"
+import { InspectionRunError } from "./errors"
 
 /* ── Ejecución ────────────────────────────────────────────────────────────── */
 
@@ -185,6 +187,37 @@ const answersSchema = z.object({
 
 type AnswerRowInput = z.infer<typeof answerRowSchema>
 
+/** Texto tal como lo guarda el servidor al comparar: recortado y con vacío = ausente. */
+function normalizedAnswerText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? ""
+  return trimmed.length > 0 ? trimmed : null
+}
+
+/**
+ * ¿La fila que llega es la misma que ya está guardada?
+ *
+ * Se compara normalizada igual que el servidor al escribir (texto recortado,
+ * vacío ≡ ausente, ratificación sólo en los ítems que matan), de modo que un
+ * `comment: ""` y una columna `NULL` no cuenten como un cambio.
+ */
+function isUnchangedAnswer(
+  item: Pick<InspectionItemSpec, "danoPotencial">,
+  answer: AnswerRowInput,
+  stored: {
+    result: string
+    value: string | null
+    comment: string | null
+    evidenceReference: string | null
+    needsConfirmation: boolean
+  },
+): boolean {
+  return stored.result === answer.result
+    && normalizedAnswerText(stored.value) === normalizedAnswerText(answer.value)
+    && normalizedAnswerText(stored.comment) === normalizedAnswerText(answer.comment)
+    && normalizedAnswerText(stored.evidenceReference) === normalizedAnswerText(answer.evidenceReference)
+    && stored.needsConfirmation === ((answer.needsConfirmation ?? false) && requiresHumanConfirmation(item))
+}
+
 /**
  * Persiste el conjunto de respuestas dentro de una transacción existente y
  * devuelve la nueva versión del run.
@@ -202,6 +235,12 @@ async function saveAnswersWithClient(tx: Tx, args: {
   locationLatitude?: string | null
   locationLongitude?: string | null
   access: InspectionAccess
+  /**
+   * Revalida también las filas idénticas a la guardada. El guardado de terreno
+   * las deja pasar (ver abajo); declarar ejecutada no, porque ahí la inspección
+   * pasa a ser registro y una fila que ya no cumple las reglas debe frenarlo.
+   */
+  revalidateUnchanged?: boolean
 }) {
   const [run] = await tx.select().from(preventionInspectionRuns)
     .where(eq(preventionInspectionRuns.id, args.runId)).limit(1)
@@ -212,13 +251,13 @@ async function saveAnswersWithClient(tx: Tx, args: {
   // respuestas no los recalculaba y el servidor lo permitía aunque la UI no.
   // Corregirla es reabrirla, que deja traza.
   if (["completed", "reviewed", "cancelled"].includes(run.status)) {
-    throw new Error("No se pueden modificar respuestas de una inspección completada, cerrada o cancelada. Para corregirla, reábrela.")
+    throw new InspectionRunError("not_editable", "No se pueden modificar respuestas de una inspección completada, cerrada o cancelada. Para corregirla, reábrela.")
   }
   // C-02: antes no había control de concurrencia y dos inspectores con el
   // mismo run abierto se pisaban en silencio. El cliente recibe de vuelta la
   // versión nueva, que es lo que el comentario anterior temía perder.
   if (run.version !== args.expectedVersion) {
-    throw new Error("La inspección cambió en otra sesión. Recarga y reintenta.")
+    throw new InspectionRunError("version_conflict", "La inspección cambió en otra sesión. Recarga y reintenta.")
   }
 
   const [template] = await tx.select().from(preventionInspectionTemplates)
@@ -228,13 +267,36 @@ async function saveAnswersWithClient(tx: Tx, args: {
   const items = itemsFromDefinition(definition)
   const itemBySpec = new Map(items.map((item) => [`${item.sectionId}::${item.itemId}`, item]))
 
+  /* Lo ya guardado, para reconocer las filas que el cliente reenvía sin
+   * cambios. El payload es el conjunto completo, así que cada guardado vuelve a
+   * mandar también las respuestas que no se tocaron; si una de ellas quedó de
+   * antes de que existiera una regla (p. ej. un «No cumple» sin motivo previo a
+   * I-05), revalidarla rechazaba CADA guardado posterior por una fila que la
+   * persona ni abrió, y el resto de la jornada no se guardaba. */
+  const storedRows = await tx.select({
+    sectionId: preventionInspectionAnswers.sectionId,
+    itemId: preventionInspectionAnswers.itemId,
+    result: preventionInspectionAnswers.result,
+    value: preventionInspectionAnswers.value,
+    comment: preventionInspectionAnswers.comment,
+    evidenceReference: preventionInspectionAnswers.evidenceReference,
+    needsConfirmation: preventionInspectionAnswers.needsConfirmation,
+  }).from(preventionInspectionAnswers)
+    .where(eq(preventionInspectionAnswers.runId, run.id))
+  const storedByKey = new Map(storedRows.map((row) => [`${row.sectionId}::${row.itemId}`, row]))
+
   // B-03: validar TODO antes de escribir nada. El CHECK de Postgres queda como
   // red de seguridad del dato, no como mecanismo de UX.
   for (const answer of args.answers) {
-    const item = itemBySpec.get(`${answer.sectionId}::${answer.itemId}`)
-    if (!item) throw new Error("Una respuesta no corresponde a ningún ítem de la plantilla.")
+    const key = `${answer.sectionId}::${answer.itemId}`
+    // Toda fila debe seguir correspondiendo a un ítem, también la que no cambió.
+    const item = itemBySpec.get(key)
+    if (!item) throw new InspectionRunError("invalid_row", "Una respuesta no corresponde a ningún ítem de la plantilla.")
+    const stored = storedByKey.get(key)
+    // La fila que SÍ cambió se valida con el mismo rigor de siempre.
+    if (!args.revalidateUnchanged && stored && isUnchangedAnswer(item, answer, stored)) continue
     const problem = validateAnswerRow(item, answer)
-    if (problem) throw new Error(problem)
+    if (problem) throw new InspectionRunError("invalid_row", problem)
   }
 
   const now = nowIso()
@@ -271,7 +333,8 @@ async function saveAnswersWithClient(tx: Tx, args: {
     const detail = blocked
       .map((row) => `"${row.itemLabel}" (${row.photos} ${row.photos === 1 ? "fotografía" : "fotografías"})`)
       .join(", ")
-    throw new Error(
+    throw new InspectionRunError(
+      "evidence_guard",
       `No se puede dejar sin responder ${detail}: se perdería la evidencia adjunta. Quita las fotografías primero, o vuelve a responder el ítem.`,
     )
   }
@@ -333,7 +396,7 @@ async function saveAnswersWithClient(tx: Tx, args: {
     eq(preventionInspectionRuns.id, run.id),
     eq(preventionInspectionRuns.version, args.expectedVersion),
   )).returning()
-  if (!updated) throw new Error("La inspección cambió en otra sesión. Recarga y reintenta.")
+  if (!updated) throw new InspectionRunError("version_conflict", "La inspección cambió en otra sesión. Recarga y reintenta.")
 
   // La UI puede adjuntar una foto en el mismo gesto de responder: después del
   // autosave necesita el id persistido al que colgar la evidencia, sin recargar
@@ -345,7 +408,15 @@ async function saveAnswersWithClient(tx: Tx, args: {
   }).from(preventionInspectionAnswers)
     .where(eq(preventionInspectionAnswers.runId, run.id))
 
-  return { run: updated, saved: args.answers.length, removed: deleted.length, answerRefs }
+  return {
+    run: updated,
+    saved: args.answers.length,
+    removed: deleted.length,
+    answerRefs,
+    // Sólo el primer guardado cambia una etapa de trabajo (planificada → en
+    // curso): es lo único que el centro operacional necesita enterarse.
+    statusChanged: run.status === "planned",
+  }
 }
 
 export async function saveInspectionAnswers(input: unknown, access: InspectionAccess) {
@@ -364,7 +435,14 @@ export async function saveInspectionAnswers(input: unknown, access: InspectionAc
       afterState: { version: result.run.version, saved: result.saved, removed: result.removed },
       actorUserId: access.userId,
     })
-    return { saved: result.saved, removed: result.removed, version: result.run.version, answerRefs: result.answerRefs }
+    return {
+      saved: result.saved,
+      removed: result.removed,
+      version: result.run.version,
+      answerRefs: result.answerRefs,
+      statusChanged: result.statusChanged,
+      worksiteId: result.run.worksiteId,
+    }
   })
 }
 
@@ -450,6 +528,7 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
         locationLatitude: data.locationLatitude,
         locationLongitude: data.locationLongitude,
         access,
+        revalidateUnchanged: true,
       })
       expectedVersion = saved.run.version
     }
@@ -457,9 +536,9 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
     const [run] = await tx.select().from(preventionInspectionRuns)
       .where(eq(preventionInspectionRuns.id, data.runId)).limit(1)
     if (!run) throw new Error(NOT_FOUND)
-    if (run.version !== expectedVersion) throw new Error("La inspección cambió mientras la editabas. Recarga y reintenta.")
-    if (run.status === "completed" || run.status === "reviewed") throw new Error("La inspección ya fue ejecutada.")
-    if (run.status === "cancelled") throw new Error("Una inspección cancelada no puede ejecutarse.")
+    if (run.version !== expectedVersion) throw new InspectionRunError("version_conflict", "La inspección cambió mientras la editabas. Recarga y reintenta.")
+    if (run.status === "completed" || run.status === "reviewed") throw new InspectionRunError("not_editable", "La inspección ya fue ejecutada.")
+    if (run.status === "cancelled") throw new InspectionRunError("not_editable", "Una inspección cancelada no puede ejecutarse.")
 
     const [template] = await tx.select().from(preventionInspectionTemplates)
       .where(eq(preventionInspectionTemplates.id, run.templateId)).limit(1)
@@ -470,7 +549,7 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       const participants = await tx.select({ id: preventionInspectionRunParticipants.id })
         .from(preventionInspectionRunParticipants)
         .where(eq(preventionInspectionRunParticipants.runId, run.id))
-      if (participants.length === 0) throw new Error("El Anexo 08 exige registrar al menos una persona participante.")
+      if (participants.length === 0) throw new InspectionRunError("not_ready", "El Anexo 08 exige registrar al menos una persona participante.")
     }
 
     const stored = await tx.select().from(preventionInspectionAnswers)
@@ -509,7 +588,7 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
     const closingSpec = closingActFromDefinition(template.definitionSnapshot as unknown as ChecklistDefinition)
     const completion = assessRunCompletion(items, answers, { spec: closingSpec, act: data.closingAct })
     if (!completion.allowed) {
-      throw new Error(`No se puede declarar ejecutada: ${completion.blockers.map((item) => item.detail).join(", ")}`)
+      throw new InspectionRunError("not_ready", `No se puede declarar ejecutada: ${completion.blockers.map((item) => item.detail).join(", ")}`)
     }
 
     const summary = summarizeCompliance(items, answers, definition.scoringPolicy)
@@ -616,7 +695,7 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       version: run.version + 1,
       updatedAt: now,
     }).where(and(eq(preventionInspectionRuns.id, run.id), eq(preventionInspectionRuns.version, expectedVersion))).returning()
-    if (!updated) throw new Error("La inspección cambió mientras la editabas. Recarga y reintenta.")
+    if (!updated) throw new InspectionRunError("version_conflict", "La inspección cambió mientras la editabas. Recarga y reintenta.")
 
     // `nextDueOn` NO se toca aquí (D-3, auditoría 2026-08-18). Lo mueve sólo
     // el materializador (`lib/services/prevention-inspection-scheduler.ts`) al

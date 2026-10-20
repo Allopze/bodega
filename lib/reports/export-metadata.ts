@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs"
 import type { Session } from "next-auth"
+import { formatDateTime } from "@/lib/utils"
 
 /**
  * Añade la hoja de trazabilidad común a todas las exportaciones Excel.
@@ -13,7 +14,8 @@ export function addExportMetadataSheet(
   const ws = wb.addWorksheet("Metadatos")
   ws.columns = [{ key: "label", width: 22 }, { key: "value", width: 60 }]
   const entries: Array<[string, string]> = [
-    ["Generado", new Date().toLocaleString("es-CL")],
+    // Hora de Chile y no la del servidor: `toLocaleString` sin zona mostraba UTC en producción.
+    ["Generado", `${formatDateTime(new Date())} (hora de Chile)`],
     ["Generado por", session.user.email ?? session.user.name ?? session.user.id],
     ["Alcance de faena", session.user.isGlobal ? "Todas las faenas (usuario global)" : (session.user.worksiteIds ?? []).join(", ") || "Sin faenas asignadas"],
     ["Filas incluidas", String(context.rowCount)],

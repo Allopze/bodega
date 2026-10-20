@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { MINIMAL_PNG, campoInspeccion, confirmarDeclararEjecutada, crearInspeccion as crearInspeccionE2E, login, responderItemInspeccion, textoVisible } from "./helpers"
+import { MINIMAL_PNG, abrirComentarioInspeccion, campoInspeccion, confirmarDeclararEjecutada, crearInspeccion as crearInspeccionE2E, login, responderItemInspeccion, textoVisible } from "./helpers"
 
 /**
  * E2E Spec: Ejecución Avanzada de Inspecciones SST.
@@ -36,9 +36,11 @@ test.describe("Inspecciones — Ejecución avanzada y validaciones de campo", ()
     // Ubicación / Observaciones (Texto libre)
     await campoInspeccion(page, "Respuesta de Observaciones adicionales").fill("Ubicado en pasillo principal sector talleres.")
 
-    // Verificamos que los campos se computen en ítems respondidos pero no otorguen % de cumplimiento firmado
-    await expect(textoVisible(page, "0 de 5 obligatorios · 3 de 10 totales")).toBeVisible()
-    await expect(textoVisible(page, "Aún no calculable")).toBeVisible()
+    // Los campos descriptivos no mueven el avance de los obligatorios, y mientras se edita no hay
+    // cumplimiento que mostrar (sólo existe tras declarar ejecutada).
+    await expect(textoVisible(page, "0 de 5 obligatorios")).toBeVisible()
+    await expect(textoVisible(page, "Aún no calculable")).toHaveCount(0)
+    await expect(textoVisible(page, "Resultado normalizado")).toHaveCount(0)
 
     // Guardar respuestas parciales
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
@@ -55,24 +57,36 @@ test.describe("Inspecciones — Ejecución avanzada y validaciones de campo", ()
   // "No aplica" donde el instrumento no lo tiene es justamente lo que
   // `validateAnswerRow` rechaza —sacaría del denominador un ítem que el papel obliga a
   // juzgar, inflando el cumplimiento—. La regla bajo prueba es la misma: un resultado
-  // `non_conforming` sin motivo bloquea el guardado, con el mismo mínimo que un
-  // "No aplica" o un "Regular".
-  test("bloqueo de guardado cuando un 'Malo' carece de justificación técnica", async ({ page }) => {
+  // `non_conforming` sin motivo no se envía, con el mismo mínimo que un "No aplica" o un
+  // "Regular".
+  //
+  // Lo que cambió (P1-1) es qué frena: la fila retenida ya no apaga «Guardar respuestas»;
+  // queda nombrada en «Respuestas que todavía no se guardan» y es el cierre el que se
+  // bloquea.
+  test("un 'Malo' sin justificación técnica queda retenido sin frenar el guardado", async ({ page }) => {
     await crearInspeccion(page)
 
     await responderItem(page, "Manguera", "Malo")
 
-    // Se afirma el problema puntual y el botón, no la visibilidad del panel: el panel
-    // agrupa los problemas de fila con los bloqueadores de cierre, y esos siguen ahí
-    // mientras queden ítems sin responder. Lo que la regla gobierna es el guardado, que
-    // `rowProblems` deshabilita por sí solo.
+    // Se afirma la fila retenida y el botón: el aviso de lo retenido es independiente del
+    // de «Para declarar ejecutada falta:», que sigue ahí mientras queden ítems sin responder.
     const motivoFaltante = page.getByRole("button", { name: /Manguera.*exige indicar el motivo/ })
+    await expect(textoVisible(page, "Respuestas que todavía no se guardan")).toBeVisible()
     await expect(motivoFaltante).toBeVisible()
-    await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeDisabled()
+    await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeEnabled()
+
+    // El cierre sí queda bloqueado, y lo dice dentro del propio diálogo.
+    await page.getByRole("button", { name: "Declarar ejecutada" }).click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog.getByText(/Manguera.*exige indicar el motivo/)).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Declarar ejecutada" })).toBeDisabled()
+    await page.keyboard.press("Escape")
+    await expect(page.getByRole("dialog")).toHaveCount(0)
 
     // Llenar la justificación requerida
-    await campoInspeccion(page, "Comentario de Manguera").fill("Manguera cortada en dos puntos; extintor fuera de servicio.")
+    await (await abrirComentarioInspeccion(page, "Manguera")).fill("Manguera cortada en dos puntos; extintor fuera de servicio.")
     await expect(motivoFaltante).toHaveCount(0)
+    await expect(textoVisible(page, "Respuestas que todavía no se guardan")).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeEnabled()
 
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
@@ -110,9 +124,10 @@ test.describe("Inspecciones — Ejecución avanzada y validaciones de campo", ()
     await expect(textoVisible(page, "Pendiente de revisión").first()).toBeVisible({ timeout: 15_000 })
     // El acta cerrada se relee resolviendo el `value` contra el rótulo de la
     // plantilla, y la firma queda con la hora que estampó el servidor.
-    await expect(page.getByText(/Resultado:\s*No operativo \/ requiere recarga/)).toBeVisible()
-    await expect(textoVisible(page, /prevencionista:\s*Prevencionista E2E/i).first()).toBeVisible()
-    await expect(page.getByText(/supervisor:\s*Supervisor Turno E2E/i)).toBeVisible()
+    const acta = page.locator("section#acta-cierre")
+    await expect(acta.getByText("No operativo / requiere recarga", { exact: true })).toBeVisible()
+    await expect(acta.getByText(/^Prevencionista E2E · \d{2}-\d{2}-\d{4}/)).toBeVisible()
+    await expect(acta.getByText(/^Supervisor Turno E2E · \d{2}-\d{2}-\d{4}/)).toBeVisible()
   })
 
   test("subida y visualización de hoja de respaldo física", async ({ page }) => {

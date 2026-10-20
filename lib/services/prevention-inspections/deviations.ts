@@ -169,10 +169,13 @@ export async function registerDeviation(input: unknown, access: InspectionAccess
     /* La inspección pasa a `in_progress` igual que al guardar respuestas:
      * registrar una desviación ES trabajo de terreno, y dejarla en `planned`
      * la mantendría contada como no iniciada. */
+    let runVersion: number | undefined
     if (run.status === "planned") {
-      await tx.update(preventionInspectionRuns)
+      const [bumped] = await tx.update(preventionInspectionRuns)
         .set({ status: "in_progress", version: run.version + 1, updatedAt: now })
         .where(and(eq(preventionInspectionRuns.id, run.id), eq(preventionInspectionRuns.version, run.version)))
+        .returning({ version: preventionInspectionRuns.version })
+      runVersion = bumped?.version
     }
 
     await history(tx, {
@@ -181,7 +184,13 @@ export async function registerDeviation(input: unknown, access: InspectionAccess
       reason: `${description} (${danoPotencial}${catalogEntryId ? "" : " · fuera de catálogo"})`,
       afterState: created, actorUserId: access.userId,
     })
-    return created
+    /* `runVersion` sólo viaja cuando ESTA llamada subió la versión del run (el
+     * paso de planificada a en curso). Sin informarla, el cliente chocaba con su
+     * propio bloqueo optimista en el guardado siguiente. Cuando no la subió no se
+     * informa nada, a propósito: devolver la versión vigente le haría adoptar la
+     * de otra sesión que guardó mientras tanto y taparía el conflicto que el
+     * bloqueo existe para detectar. */
+    return { ...created, runVersion }
   })
 }
 

@@ -1,6 +1,8 @@
+import { cache } from "react"
+import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
-import { ACTA_STYLES, InspectionActaDocument, loadInspectionActaData } from "./document"
+import { ACTA_STYLES, InspectionActaDocument, actaComplianceLabels, loadInspectionActaData } from "./document"
 import { PrintTrigger } from "../../../../sst/[id]/print/print-trigger"
 import { MobileDocumentSummary } from "@/components/print/mobile-document-summary"
 import {
@@ -11,19 +13,45 @@ import { formatDateTime } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 
-export default async function InspectionPrintPage({ params }: { params: Promise<{ runId: string }> }) {
+interface PageProps { params: Promise<{ runId: string }> }
+
+/**
+ * `generateMetadata` y la página necesitan la misma ejecución, y cada una la
+ * pediría por su cuenta: dos lecturas completas (respuestas, hallazgos,
+ * evidencias, participantes) por cada apertura del acta. `cache` las colapsa en
+ * una por solicitud. Se memoiza por `runId` —un valor primitivo— y no por
+ * `(runId, session)`: dos llamadas a `auth()` no devuelven el mismo objeto y
+ * la clave nunca coincidiría.
+ *
+ * La sesión se resuelve dentro para que el título no se calcule para quien no
+ * puede ver la inspección: sin permiso devuelve `"sin-acceso"`, y la página lo
+ * convierte en la redirección de siempre.
+ */
+const loadActa = cache(async (runId: string) => {
   let session
   try {
     session = await requirePermission("prevention:inspections:view")
   } catch {
-    redirect("/login")
+    return "sin-acceso" as const
   }
+  return loadInspectionActaData(runId, session)
+})
 
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { runId } = await params
-  const data = await loadInspectionActaData(runId, session)
+  const data = await loadActa(runId)
+  if (!data || data === "sin-acceso") return { title: "Acta de inspección" }
+  return { title: `Acta ${data.detail.run.code} · ${data.detail.templateName}` }
+}
+
+export default async function InspectionPrintPage({ params }: PageProps) {
+  const { runId } = await params
+  const data = await loadActa(runId)
+  if (data === "sin-acceso") redirect("/login")
   if (!data) notFound()
 
   const run = data.detail.run
+  const compliance = actaComplianceLabels(run)
 
   return (
     <>
@@ -31,6 +59,7 @@ export default async function InspectionPrintPage({ params }: { params: Promise<
 
       <PrintTrigger
         backHref={`/prevencion/inspecciones/${runId}`}
+        backLabel="Volver a la inspección"
         pdfHref={`/prevencion/inspecciones/${runId}/print/pdf`}
         suggestedFilename={data.suggestedFilename}
       />
@@ -52,7 +81,8 @@ export default async function InspectionPrintPage({ params }: { params: Promise<
           {
             title: "Resultado",
             fields: [
-              { label: "Cumplimiento", value: run.compliancePercent === null ? "No calculable" : `${run.compliancePercent}%` },
+              { label: "Resultado oficial", value: compliance.official },
+              { label: "Resultado normalizado", value: compliance.normalized },
               { label: "No cumple", value: String(run.nonConformingCount) },
               { label: "Hallazgos", value: String(data.detail.findings.length) },
             ],

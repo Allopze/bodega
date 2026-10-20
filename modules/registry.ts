@@ -68,7 +68,6 @@ export const registry = [
   // ── TI ───────────────────────────────────────────────────────────────────
   tiModule,
   // incidentesModule,
-  // inspeccionesModule,
   // iperModule,
   // capacitacionesModule,
 ] as const satisfies readonly ModuleManifest[]

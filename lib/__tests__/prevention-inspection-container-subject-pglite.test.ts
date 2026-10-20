@@ -22,6 +22,7 @@ import { createContainer } from "@/lib/services/prevention-containers"
 import {
   createInspectionProgram,
   createInspectionRun,
+  listInspectionPrograms,
   listInspectionSubjects,
   resolveSubject,
   updateInspectionProgram,
@@ -269,5 +270,51 @@ describe("contenedor como sujeto de inspección", () => {
       frequency: "monthly",
       startsOn: "2026-02-01",
     }, access)).rejects.toThrow(/contenedor del catálogo/i)
+  })
+
+  /**
+   * P2-17 (auditoría UI/UX de Inspecciones, 2026-10-19): el programa guarda el
+   * id de su sujeto y la pantalla mostraba «No especificado» aunque se hubiera
+   * elegido uno del inventario. El listado debe nombrarlo igual que
+   * `resolveSubject`, que es quien congela la etiqueta de sus ejecuciones.
+   */
+  it("nombra el sujeto de cada programa: contenedor, equipo de flota y recurso de emergencia", async () => {
+    const now = new Date().toISOString()
+    const container = await createContainer({ worksiteId, code: "CS-050", location: "Acopio sur" }, adminAccess)
+    await testDb.insert(schema.fuelEquipmentTypes).values({
+      id: "csub-equipment-type", slug: "csub_truck", name: "Camión prueba sujeto",
+      category: "truck", defaultMeterType: "odometer",
+    })
+    await testDb.insert(schema.fuelVehicles).values({
+      id: "csub-vehicle", plate: "CSUB01", code: "CS-01", type: "camion",
+      equipmentTypeId: "csub-equipment-type", meterType: "odometer", worksiteId,
+    })
+    await testDb.insert(schema.preventionEmergencyResources).values({
+      id: "csub-resource", worksiteId, name: "Extintor PQS pasillo", kind: "Extintor",
+      location: "Pasillo central", status: "operational", createdAt: now, updatedAt: now,
+    })
+
+    const base = { worksiteId, frequency: "monthly" as const, startsOn: "2026-03-01" }
+    const porContenedor = await createInspectionProgram({ ...base, templateId: CONTAINER_TEMPLATE, subjectContainerId: container.id }, access)
+    const porEquipo = await createInspectionProgram({ ...base, templateId: OTHER_TEMPLATE, subjectVehicleId: "csub-vehicle" }, access)
+    const porRecurso = await createInspectionProgram({ ...base, templateId: OTHER_TEMPLATE, subjectResourceId: "csub-resource" }, access)
+    const sinSujeto = await createInspectionProgram({ ...base, templateId: OTHER_TEMPLATE }, access)
+
+    const rows = await listInspectionPrograms(access)
+    const labelOf = (programId: string) => {
+      const row = rows.find((item) => item.program.id === programId)
+      expect(row, `el programa ${programId} debe figurar en el listado`).toBeDefined()
+      return row!.subjectLabel
+    }
+
+    expect(labelOf(porContenedor.id)).toBe("CS-050 · Acopio sur")
+    expect(labelOf(porEquipo.id)).toBe("CS-01 · CSUB01")
+    expect(labelOf(porRecurso.id)).toBe("Extintor PQS pasillo")
+    expect(labelOf(sinSujeto.id)).toBeNull()
+
+    // Y es la misma etiqueta que congelará la ejecución que cada uno genera.
+    await expect(resolveSubject(testDb, { worksiteId, subjectContainerId: container.id })).resolves.toBe(labelOf(porContenedor.id))
+    await expect(resolveSubject(testDb, { worksiteId, subjectVehicleId: "csub-vehicle" })).resolves.toBe(labelOf(porEquipo.id))
+    await expect(resolveSubject(testDb, { worksiteId, subjectResourceId: "csub-resource" })).resolves.toBe(labelOf(porRecurso.id))
   })
 })

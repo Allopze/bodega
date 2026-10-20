@@ -77,7 +77,7 @@ export function EppGapList({ gaps, canEscalate }: Props) {
   return (
     <div className="space-y-4">
       {blockingCount > 0 && (
-        <div className="rounded-lg border border-[var(--color-danger-border,var(--color-border))] bg-[var(--color-surface-2)] p-4">
+        <div className="rounded-lg border border-[var(--color-danger-line)] bg-[var(--color-surface-2)] p-4">
           <h2 className="text-sm font-semibold">{blockingCount} brecha(s) bloqueante(s)</h2>
           <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
             Estas personas no deben ser asignadas a la tarea que exige el EPP hasta regularizar la entrega.

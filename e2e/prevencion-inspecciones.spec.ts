@@ -42,7 +42,11 @@ test.describe("Prevención — Inspecciones y auditorías", () => {
     await page.goto("/prevencion/inspecciones/plantillas")
     await expect(page).toHaveURL(/\/prevencion\/inspecciones\/plantillas/)
     await expectPageTitle(page, "Plantillas de inspección")
-    await expect(textoVisible(page, "AUD-E2E").first()).toBeVisible()
+    // La fila identifica el instrumento por su nombre («Auditoría interna del SGSST E2E · 01 · Auditoría»);
+    // el código interno sólo se usa para buscar, ya no se pinta.
+    await expect(page.getByRole("button", { name: "Auditoría interna del SGSST E2E", exact: true })).toBeVisible()
+    await page.getByRole("searchbox", { name: "Buscar plantillas" }).fill("AUD-E2E")
+    await expect(page.getByRole("button", { name: "Auditoría interna del SGSST E2E", exact: true })).toBeVisible()
   })
 })
 
@@ -66,9 +70,25 @@ test.describe("Inspecciones — bandeja de ejecuciones", () => {
     await expect(fila).toBeVisible({ timeout: 30_000 })
     await expect(fila.getByText("Pendiente de revisión")).toBeVisible()
     await expect(fila.getByText("Faena E2E")).toBeVisible()
-    // Hallazgos abiertos y, entre paréntesis, los graves.
-    await expect(fila.getByText("1 (1)")).toBeVisible()
+    // «Resultado» junta el cumplimiento y los hallazgos abiertos; entre paréntesis, los graves.
+    await expect(fila.getByText("1 abierto (1 grave)")).toBeVisible()
     await expect(fila.getByText("80%")).toBeVisible()
+  })
+
+  /**
+   * L5: la tabla es la región «Inspecciones» (un `TableRoot` con nombre, no un div sin él) y el
+   * tipo de instrumento ya no es una columna sino la sublínea de la primera.
+   */
+  test("la tabla es una región con nombre y el tipo es una sublínea, no una columna", async ({ page }) => {
+    const tabla = page.getByRole("region", { name: "Inspecciones" })
+    await expect(tabla).toBeVisible({ timeout: 30_000 })
+    await expect(tabla.getByRole("columnheader", { name: "Inspección", exact: true })).toBeVisible()
+    await expect(tabla.getByRole("columnheader", { name: "Resultado", exact: true })).toBeVisible()
+    await expect(tabla.getByRole("columnheader", { name: "Tipo", exact: true })).toHaveCount(0)
+    await expect(tabla.getByRole("columnheader", { name: "Cumplimiento", exact: true })).toHaveCount(0)
+    await expect(tabla.getByRole("columnheader", { name: "Hallazgos", exact: true })).toHaveCount(0)
+    const fila = tabla.getByRole("row").filter({ hasText: "INSP-E2E-0003" })
+    await expect(fila.getByText("Inspección", { exact: true })).toBeVisible()
   })
 
   /**
@@ -86,6 +106,53 @@ test.describe("Inspecciones — bandeja de ejecuciones", () => {
     await page.goto("/prevencion/inspecciones?vista=pending_review")
     await expect(page.getByRole("row").filter({ hasText: "INSP-E2E-0003" })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole("row").filter({ hasText: "INSP-E2E-0001" })).toHaveCount(0)
+    // La vista y el tile cuentan lo mismo (P1-9): «pendientes de revisión» es
+    // «para mí». `INSP-E2E-0003` la ejecutó `user-ops-e2e` y el admin sí puede
+    // revisarla; `INSP-E2E-0002` la ejecutó el propio admin y no, así que la
+    // lista que abre el tile no la trae (antes sólo filtraba `completed`).
+    await expect(page.getByRole("row").filter({ hasText: "INSP-E2E-0002" })).toHaveCount(0)
+  })
+
+  /**
+   * P1-9: el resumen se calculaba con el estado de la lista, así que bajo
+   * `?estado=completed` —que muestra filas— el tile decía «0 · Nada esperando
+   * revisión». Los KPI acotan el universo y no el estado ni la vista.
+   */
+  test("bajo ?estado=completed el tile de pendientes sigue contando y no dice «Nada esperando»", async ({ page }) => {
+    await page.goto("/prevencion/inspecciones?estado=completed")
+    await expect(page.getByRole("row").filter({ hasText: "INSP-E2E-0003" })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole("button", { name: /^Pendientes de revisión/ })).toBeEnabled()
+    await expect(textoVisible(page, /Nada esperando/)).toHaveCount(0)
+  })
+
+  /**
+   * A5: una dimensión, un control. `estado=planned&vista=pending_review` era una
+   * intersección siempre vacía; el tile elige la vista y suelta el estado y la
+   * página (el total cambia, y seguir en la página 2 caía en una vacía).
+   */
+  test("el clic en un tile deja la URL sin estado ni página", async ({ page }) => {
+    await page.goto("/prevencion/inspecciones?estado=planned&pagina=2")
+    const tile = page.getByRole("button", { name: /^Pendientes de revisión/ })
+    await expect(tile).toBeEnabled({ timeout: 30_000 })
+    await tile.click()
+
+    await expect(page).toHaveURL(/vista=pending_review/, { timeout: 15_000 })
+    const params = new URL(page.url()).searchParams
+    expect(params.has("estado")).toBe(false)
+    expect(params.has("pagina")).toBe(false)
+    await expect(page.getByRole("row").filter({ hasText: "INSP-E2E-0003" })).toBeVisible({ timeout: 30_000 })
+    await expect(tile).toHaveAttribute("aria-pressed", "true")
+  })
+
+  test("la vista activa deja su chip y quitarlo también borra la página", async ({ page }) => {
+    await page.goto("/prevencion/inspecciones?vista=critical&pagina=2")
+    const quitar = page.getByRole("button", { name: "Eliminar filtro Vista" })
+    await expect(quitar).toBeVisible({ timeout: 30_000 })
+    await quitar.click()
+
+    await expect(page).not.toHaveURL(/vista=/, { timeout: 15_000 })
+    expect(new URL(page.url()).searchParams.has("pagina")).toBe(false)
+    await expect(page.getByRole("row").filter({ hasText: "INSP-E2E-0003" })).toBeVisible({ timeout: 30_000 })
   })
 
   test("el filtro por estado deja su chip y se puede limpiar", async ({ page }) => {

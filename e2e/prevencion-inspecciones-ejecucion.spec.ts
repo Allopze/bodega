@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test"
-import { MINIMAL_PNG, campoInspeccion, confirmarDeclararEjecutada, crearInspeccion as crearInspeccionE2E, login, responderItemInspeccion, textoVisible } from "./helpers"
+import { MINIMAL_PNG, abrirComentarioInspeccion, confirmarDeclararEjecutada, crearInspeccion as crearInspeccionE2E, grupoDeResultado, login, responderItemInspeccion, textoVisible, campoInspeccion } from "./helpers"
+import { esperarGuardado } from "./inspecciones-captura-helpers"
 
 /**
  * E2E: ejecución de una inspección, de alta a acta firmada
@@ -61,6 +62,33 @@ async function firmarActa(page: Page, resultado = "Con observaciones") {
   await page.getByLabel("Firma de supervisor").fill("Comprador E2E")
 }
 
+/** La cabecera de trabajo: faena, sujeto, avance, estado de guardado y las acciones del teléfono. */
+const resumenDeLaInspeccion = (page: Page) => page.getByRole("region", { name: "Resumen de la inspección" })
+
+/**
+ * Lo que falta para declarar ejecutada, tal como lo pinta la pantalla (no el diálogo, que
+ * vive en un portal fuera de `<main>`): en vez de un muro, el avance resume «5 sin responder ·
+ * acta incompleta» y «Ver lista (n)» despliega una línea por ítem o por acta. Devuelve esas líneas.
+ *
+ * Es una cosa distinta de lo que «todavía no se guarda», que va en su propio aviso: guardar
+ * ya no se detiene por una fila mala, sólo el cierre.
+ */
+async function faltantesParaDeclarar(page: Page) {
+  const resumen = resumenDeLaInspeccion(page)
+  const ver = resumen.getByRole("button", { name: /^Ver lista \(\d+\)$/ })
+  await expect(ver).toBeVisible()
+  if ((await ver.getAttribute("aria-expanded")) !== "true") await ver.click()
+  return resumen.getByRole("listitem")
+}
+
+/** El origen, el tipo y el resto del contexto de la inspección viven plegados en «Ver más datos». */
+async function abrirMasDatos(page: Page) {
+  const resumen = resumenDeLaInspeccion(page)
+  const detalle = resumen.locator("details").filter({ has: page.getByText("Ver más datos", { exact: true }) })
+  if ((await detalle.getAttribute("open")) === null) await detalle.locator(":scope > summary").click()
+  return detalle
+}
+
 async function declararEjecutada(page: Page) {
   await page.getByRole("button", { name: "Declarar ejecutada" }).click()
   await confirmarDeclararEjecutada(page)
@@ -81,9 +109,11 @@ test.describe("Inspecciones — ejecución en terreno", () => {
     await nuevaInspeccion(page, { origen: "Comité Paritario", sujetoInventario: "Recurso · Extintor PQS Pañol E2E" })
 
     await expect(textoVisible(page, "Pendiente de ejecución").first()).toBeVisible()
-    await expect(textoVisible(page, "Comité Paritario").first()).toBeVisible()
     await expect(page.getByText("Extintor PQS Pañol E2E").first()).toBeVisible()
-    await expect(textoVisible(page, "0 de 5 obligatorios · 0 de 10 totales")).toBeVisible()
+    await expect(textoVisible(page, "0 de 5 obligatorios")).toBeVisible()
+    // El origen es un dato de contexto: está en «Ver más datos», no en la cabecera.
+    const masDatos = await abrirMasDatos(page)
+    await expect(masDatos.getByText("Comité Paritario")).toBeVisible()
   })
 
   /**
@@ -93,30 +123,46 @@ test.describe("Inspecciones — ejecución en terreno", () => {
   test("el gate nombra cada ítem sin responder y el acta que falta", async ({ page }) => {
     await nuevaInspeccion(page)
 
-    const aviso = page.locator("div").filter({ hasText: /^Corrige antes de guardar o declarar ejecutada:/ }).first()
-    await expect(aviso).toBeVisible()
+    // El resumen dice cuántos faltan y de qué clase, y cada parte salta al primer ítem.
+    const resumen = resumenDeLaInspeccion(page)
+    await expect(resumen.getByRole("button", { name: "5 sin responder" })).toBeVisible()
+    await expect(resumen.getByRole("button", { name: "acta incompleta" })).toBeVisible()
+    // «Ver lista» nombra cada ítem pendiente y el acta que falta.
+    const faltantes = await faltantesParaDeclarar(page)
     for (const item of PUNTUABLES) {
-      await expect(aviso.getByRole("listitem").filter({ hasText: item })).toHaveCount(1)
+      await expect(faltantes.filter({ hasText: item })).toHaveCount(1)
     }
     // El acta entra al gate por su resultado: `validateClosingAct` corta en el
-    // primer problema, y con el resultado sin declarar ése es el que aparece.
-    await expect(aviso.getByRole("listitem")
-      .filter({ hasText: "El resultado del acta no corresponde a las opciones de la plantilla." })).toHaveCount(1)
+    // primer problema, y con el resultado sin declarar ése es el que aparece. Dice que falta
+    // elegirlo (R-01); «no corresponde a las opciones» es de un resultado ajeno a la plantilla.
+    await expect(faltantes
+      .filter({ hasText: /Falta elegir el resultado del acta de cierre/ })).toHaveCount(1)
+    await expect(faltantes
+      .filter({ hasText: "no corresponde a las opciones de la plantilla" })).toHaveCount(0)
 
     await page.getByRole("button", { name: "Declarar ejecutada" }).click()
     const dialog = page.getByRole("dialog")
+    // El diálogo repite el resumen y bloquea su propio envío: el botón homónimo del
+    // disparador queda fuera del diálogo, así que se acota con `dialog`.
+    await expect(dialog.getByText("Para declarar ejecutada falta:")).toBeVisible()
     await expect(dialog.getByRole("button", { name: "Declarar ejecutada" })).toBeDisabled()
+    // El acta que falta lleva su propio atajo, como los chips «5 sin responder» (R-01).
+    await expect(dialog.getByRole("listitem").filter({ hasText: /Falta elegir el resultado del acta de cierre/ })).toHaveCount(1)
+    await dialog.getByRole("button", { name: "Ir al acta" }).click()
+    await expect(page.getByRole("dialog")).toHaveCount(0)
+    await expect(page.getByRole("combobox", { name: "Resultado del acta" })).toBeFocused()
   })
 
-  test("guardar respuestas deja la inspección en ejecución y proyecta el cumplimiento", async ({ page }) => {
+  test("guardar respuestas deja la inspección en ejecución y no muestra un cumplimiento mientras se edita", async ({ page }) => {
     await nuevaInspeccion(page)
 
     await responder(page, "Manómetro", "Bueno")
     await responder(page, "Sello", "Bueno")
-    await expect(textoVisible(page, "2 de 5 obligatorios · 2 de 10 totales")).toBeVisible()
-    // Previsto, entre paréntesis: la inspección todavía no se declaró
-    // ejecutada, así que el porcentaje no es el firmado.
-    await expect(textoVisible(page, "100%").first()).toBeVisible()
+    await expect(textoVisible(page, "2 de 5 obligatorios")).toBeVisible()
+    // Con 2 de 24 respondidos «100%» era una promesa falsa: el cumplimiento se muestra sólo
+    // después de declarar ejecutada, cuando el servidor lo firma.
+    await expect(textoVisible(page, "100%")).toHaveCount(0)
+    await expect(resumenDeLaInspeccion(page).getByText("Resultado normalizado")).toHaveCount(0)
 
     // El aviso "Guardado correctamente." no sirve de señal: `saveAnswers` le
     // pasa a `useOperation` un `onSuccess` propio, y en ese caso el hook no
@@ -126,7 +172,7 @@ test.describe("Inspecciones — ejecución en terreno", () => {
     await expect(textoVisible(page, "En ejecución").first()).toBeVisible({ timeout: 30_000 })
 
     await page.reload()
-    await expect(textoVisible(page, "2 de 5 obligatorios · 2 de 10 totales")).toBeVisible({ timeout: 15_000 })
+    await expect(textoVisible(page, "2 de 5 obligatorios")).toBeVisible({ timeout: 15_000 })
     await expect(textoVisible(page, "En ejecución").first()).toBeVisible()
   })
 
@@ -134,22 +180,39 @@ test.describe("Inspecciones — ejecución en terreno", () => {
    * B-03: la misma regla del CHECK `prevention_inspection_answer_requires_comment`,
    * evaluada antes de enviar. Sin esto Postgres reventaba el lote entero y el
    * usuario veía el texto crudo de la violación.
+   *
+   * P1-1: y la fila mala ya no frena el guardado de las demás. Se queda en el
+   * dispositivo, se nombra aparte («Respuestas que todavía no se guardan») y lo que
+   * bloquea es el cierre, no el botón «Guardar respuestas».
    */
-  test("un \"Malo\" sin motivo bloquea el guardado y con motivo lo desbloquea", async ({ page }) => {
+  test("un \"Malo\" sin motivo queda retenido sin frenar el guardado y bloquea el cierre", async ({ page }) => {
     await nuevaInspeccion(page)
 
     // La escala del ítem manda: los puntuables de esta plantilla son `bueno_malo_obs` y
     // no ofrecen escape. `validateAnswerRow` exige el mismo mínimo a "Malo" que a un
     // "No aplica" o un "Regular", así que la regla bajo prueba es la misma.
     await responder(page, "Certificado CECMEC", "Malo")
-    // Se afirma el problema puntual y el botón: el panel agrupa los problemas de fila con
-    // los bloqueadores de cierre, y esos siguen ahí mientras queden ítems sin responder.
-    const motivoFaltante = page.getByRole("button", { name: /Certificado CECMEC.*exige indicar el motivo/ })
-    await expect(motivoFaltante).toBeVisible()
-    await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeDisabled()
+    const retenida = page.getByRole("button", { name: /Certificado CECMEC.*exige indicar el motivo/ })
+    await expect(textoVisible(page, "Respuestas que todavía no se guardan")).toBeVisible()
+    await expect(retenida).toBeVisible()
+    // El pliegue del comentario se abrió solo porque la respuesta exige motivo, y el problema se dice en el ítem.
+    await expect(campoInspeccion(page, "Comentario de Certificado CECMEC")).toBeVisible()
+    await expect(textoVisible(page, "Falta el motivo: escribe al menos 3 caracteres.")).toBeVisible()
+    // Guardar sigue disponible: guarda lo que sí se puede y deja esta fila donde está.
+    await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeEnabled()
 
-    await campoInspeccion(page, "Comentario de Certificado CECMEC").fill("Certificado vencido hace ocho meses.")
-    await expect(motivoFaltante).toHaveCount(0)
+    // El cierre, en cambio, se bloquea y dice cuál es la fila.
+    await page.getByRole("button", { name: "Declarar ejecutada" }).click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog.getByText(/Certificado CECMEC.*exige indicar el motivo/)).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Declarar ejecutada" })).toBeDisabled()
+    await page.keyboard.press("Escape")
+    await expect(page.getByRole("dialog")).toHaveCount(0)
+
+    await (await abrirComentarioInspeccion(page, "Certificado CECMEC")).fill("Certificado vencido hace ocho meses.")
+    await expect(retenida).toHaveCount(0)
+    await expect(textoVisible(page, "Falta el motivo: escribe al menos 3 caracteres.")).toHaveCount(0)
+    await expect(textoVisible(page, "Respuestas que todavía no se guardan")).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeEnabled()
 
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
@@ -157,7 +220,8 @@ test.describe("Inspecciones — ejecución en terreno", () => {
 
     // El motivo es parte de la evidencia del hallazgo: tiene que sobrevivir.
     await page.reload()
-    await expect(campoInspeccion(page, "Comentario de Certificado CECMEC"))
+    // Con el motivo escrito el pliegue ya no se abre solo: se abre como lo haría una persona.
+    await expect(await abrirComentarioInspeccion(page, "Certificado CECMEC"))
       .toHaveValue("Certificado vencido hace ocho meses.", { timeout: 15_000 })
   })
 
@@ -183,9 +247,11 @@ test.describe("Inspecciones — ejecución en terreno", () => {
     await expect(hallazgo.getByText("Alta")).toBeVisible()
     await expect(hallazgo.getByText("Abierto")).toBeVisible()
 
-    // El acta queda firmada y en modo lectura junto al resultado declarado.
-    await expect(page.getByText("Con observaciones")).toBeVisible()
-    await expect(textoVisible(page, /prevencionista:\s*Admin E2E/i).first()).toBeVisible()
+    // El acta queda firmada y en modo lectura junto al resultado declarado: una fila por dato,
+    // rótulo («Resultado», «Prevencionista») y valor («Admin E2E · fecha y hora de la firma»).
+    const acta = page.locator("section#acta-cierre")
+    await expect(acta.getByText("Con observaciones", { exact: true })).toBeVisible()
+    await expect(acta.getByText(/^Admin E2E · \d{2}-\d{2}-\d{4}/)).toBeVisible()
   })
 
   /**
@@ -204,12 +270,12 @@ test.describe("Inspecciones — ejecución en terreno", () => {
 
     // Tres ítems respondidos y aún así no hay cumplimiento que calcular: lo
     // registrado no puntúa.
-    await expect(textoVisible(page, "0 de 5 obligatorios · 3 de 10 totales")).toBeVisible()
-    await expect(textoVisible(page, "Aún no calculable")).toBeVisible()
+    await expect(textoVisible(page, "0 de 5 obligatorios")).toBeVisible()
+    await expect(resumenDeLaInspeccion(page).getByText("Resultado normalizado")).toHaveCount(0)
     // Y el gate sigue exigiendo los cinco puntuables.
     await expect(page.getByRole("button", { name: "Declarar ejecutada" })).toBeVisible()
-    const aviso = page.locator("div").filter({ hasText: /^Corrige antes de guardar o declarar ejecutada:/ }).first()
-    await expect(aviso.getByRole("listitem").filter({ hasText: "Manómetro" })).toHaveCount(1)
+    const faltantes = await faltantesParaDeclarar(page)
+    await expect(faltantes.filter({ hasText: "Manómetro" })).toHaveCount(1)
 
     await responderTodo(page, "Manómetro")
     await firmarActa(page)
@@ -221,26 +287,38 @@ test.describe("Inspecciones — ejecución en terreno", () => {
   })
 
   /**
-   * Función #9: en terreno la conexión falla justo al cerrar. El envío queda en
-   * IndexedDB y se reintenta; el servidor ya era idempotente por
-   * `clientSubmissionId` y lo que faltaba era el cliente.
+   * Función #9: en terreno la conexión falla justo al cerrar. El cierre queda en
+   * IndexedDB y se envía solo al volver la señal; la idempotencia del reintento la da
+   * el servidor (devuelve éxito si el run ya quedó ejecutado por la misma persona).
+   *
+   * Ya no hay un botón siempre visible para «encolar»: sin conexión, el diálogo de
+   * cierre ofrece guardarlo en el dispositivo. Para llegar ahí se corta la red de verdad
+   * (`context.setOffline`), no se aprieta un atajo.
    */
-  test("guardar sin conexión encola el cierre y sincronizar lo entrega", async ({ page }) => {
+  test("sin conexión el cierre se guarda en el dispositivo y se entrega solo al volver la señal", async ({ page, context }) => {
     await nuevaInspeccion(page)
 
     await responderTodo(page, "Sello")
     await firmarActa(page, "Operativo")
+    // Lo último ya está en el servidor: así el único envío pendiente al cortar la red es el cierre.
+    await esperarGuardado(page)
 
-    await page.getByRole("button", { name: "Encolar cierre en este dispositivo" }).click()
-    await expect(page.getByText("Guardada en el dispositivo. Se enviará al recuperar conexión.")).toBeVisible({ timeout: 30_000 })
-    await expect(textoVisible(page, "1 cierre pendiente de sincronizar.")).toBeVisible()
+    await context.setOffline(true)
+    await page.getByRole("button", { name: "Declarar ejecutada" }).click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog.getByText(/Sin conexión\. Puedes guardar el cierre en este dispositivo/)).toBeVisible()
+    // Declarar de verdad no se puede sin red; lo que se ofrece es guardarlo.
+    await expect(dialog.getByRole("button", { name: "Declarar ejecutada" })).toBeDisabled()
+    await dialog.getByRole("button", { name: "Guardar cierre en este dispositivo" }).click()
 
-    // El aviso de éxito no se asserta: al aceptar el cierre el servidor
-    // revalida, la inspección deja de ser editable y todo el bloque offline
-    // —el aviso incluido— se desmonta. Lo que sí es estable es que la cola
-    // quede vacía y que la ejecución haya quedado declarada.
-    await page.getByRole("button", { name: "Sincronizar" }).click()
-    await expect(textoVisible(page, "1 cierre pendiente de sincronizar.")).toBeHidden({ timeout: 30_000 })
+    await expect(page.getByText("Cierre guardado en este dispositivo", { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole("button", { name: "Enviar ahora" })).toBeDisabled()
+    // Con un cierre pendiente la edición queda bloqueada: lo guardado es una foto del trabajo.
+    await expect((await grupoDeResultado(page, "Manómetro")).getByRole("radio", { name: "Bueno", exact: true })).toBeDisabled()
+
+    // Al volver la señal se envía solo; el aviso se retira sin que nadie toque nada.
+    await context.setOffline(false)
+    await expect(page.getByText("Cierre guardado en este dispositivo", { exact: true })).toBeHidden({ timeout: 30_000 })
 
     await page.reload()
     await expect(textoVisible(page, "Pendiente de revisión").first()).toBeVisible({ timeout: 15_000 })
@@ -317,6 +395,8 @@ test.describe("Inspecciones — ubicación de la ejecución", () => {
     await login(page)
     await nuevaInspeccion(page)
 
+    // La ubicación es un dato de apoyo: vive en «Ver más datos», no ocupa la cabecera.
+    await abrirMasDatos(page)
     await page.getByRole("button", { name: "Capturar ubicación" }).click()
     await expect(page.getByText("No se pudo obtener la ubicación. La inspección se registra igual."))
       .toBeVisible({ timeout: 30_000 })

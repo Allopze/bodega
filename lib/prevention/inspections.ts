@@ -7,12 +7,49 @@ export const INSPECTION_KIND_LABELS: Record<string, string> = {
   audit: "Auditoría",
 }
 
+/**
+ * Estados de una ejecución, con el vocabulario de la bandeja y del detalle: lo
+ * que describe es el trabajo pendiente, no el verbo. Antes el acta impresa y el
+ * Excel decían «Planificada» y «Ejecutada» mientras la pantalla decía
+ * «Pendiente de ejecución» y «Pendiente de revisión»: quien filtraba una cosa y
+ * exportaba leía otra. Hay UN mapa; `inspectionTaskStatusLabel` lo reexpone.
+ */
 export const INSPECTION_RUN_STATUS_LABELS: Record<string, string> = {
-  planned: "Planificada",
+  planned: "Pendiente de ejecución",
   in_progress: "En ejecución",
-  completed: "Ejecutada",
+  completed: "Pendiente de revisión",
   reviewed: "Revisada y cerrada",
   cancelled: "Cancelada",
+}
+
+/** Estados de una versión de plantilla. «Retirada» es un `superseded` que nadie reemplazó. */
+export const INSPECTION_TEMPLATE_STATUS_LABELS: Record<string, string> = {
+  draft: "Borrador",
+  approved: "Aprobada",
+  superseded: "Reemplazada",
+}
+
+/**
+ * Una plantilla retirada queda en `superseded` sin `supersededByTemplateId`:
+ * «Reemplazada» afirma que existe una versión nueva y no existe.
+ */
+export function inspectionTemplateStatusLabel(status: string, supersededByTemplateId?: string | null): string {
+  if (status === "superseded" && !supersededByTemplateId) return "Retirada"
+  return INSPECTION_TEMPLATE_STATUS_LABELS[status] ?? status
+}
+
+/** De dónde viene el contenido de la plantilla. */
+export const INSPECTION_PROVENANCE_LABELS: Record<string, string> = {
+  platform_definition: "Definición de plataforma",
+  official_document: "Documento oficial",
+}
+
+/** Daño potencial declarado de un ítem o de una desviación. */
+export const DANO_POTENCIAL_LABELS: Record<string, string> = {
+  leve: "Leve",
+  moderado: "Moderado",
+  grave: "Grave",
+  fatal: "Fatal",
 }
 
 export const INSPECTION_RESULT_LABELS: Record<string, string> = {
@@ -388,18 +425,18 @@ export function validateAnswerRow(
       ? `"${item.label}" se responde ${admitido.join(", ")}.`
       : `"${item.label}" no admite esa respuesta.`
   }
-  if (answer.result === "not_applicable" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
-    return `"${item.label}": un "No aplica" exige indicar el motivo (mínimo ${ANSWER_COMMENT_MIN_LENGTH} caracteres).`
-  }
-  if (answer.result === "partial" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
-    return `"${item.label}": un "Regular" exige justificarse por escrito (mínimo ${ANSWER_COMMENT_MIN_LENGTH} caracteres).`
-  }
-  // El resultado más consecuente tenía el piso más bajo del formulario: un "No
-  // cumple" genera un hallazgo (deriveFindings) y dispara CAPA obligatoria en
-  // alto/crítico (CAPA_REQUIRED_CRITICALITIES), y hasta acá podía describirse
-  // sólo con la etiqueta del ítem. Mismo mínimo que "No aplica"/"Regular".
-  if (answer.result === "non_conforming" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
-    return `"${item.label}": un "No cumple" exige indicar el motivo (mínimo ${ANSWER_COMMENT_MIN_LENGTH} caracteres).`
+  // Una sola regla para los tres resultados que piden explicación: 'No aplica'
+  // saca el ítem del denominador, 'Regular' puntúa 0,5 y 'No cumple' genera el
+  // hallazgo (deriveFindings) y dispara CAPA obligatoria en alto/crítico
+  // (CAPA_REQUIRED_CRITICALITIES) — el resultado más consecuente tenía el piso
+  // más bajo del formulario hasta I-05. Mismo mínimo para los tres.
+  //
+  // El nombre del resultado es el de la ESCALA del ítem: en un B/R/M la persona
+  // eligió «Malo», y decirle que «un "No cumple" exige…» la obliga a traducir
+  // entre el botón que apretó y el aviso que lee (P1-13).
+  const needsReason = answer.result === "not_applicable" || answer.result === "partial" || answer.result === "non_conforming"
+  if (needsReason && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
+    return `"${item.label}": un "${inspectionResultLabel(item.kind, answer.result)}" exige indicar el motivo (mínimo ${ANSWER_COMMENT_MIN_LENGTH} caracteres).`
   }
   return null
 }
@@ -604,13 +641,16 @@ export function closingActFromDefinition(definition: {
  */
 export function validateClosingAct(spec: ClosingActSpec, act: ClosingActInput | null | undefined): string | null {
   if (!act) return `Falta completar el acta de cierre "${spec.title}".`
+  // «Sin elegir» no es «inválido»: lo primero lo corrige quien ejecuta; lo segundo es de la plantilla.
+  if (!act.result || act.result.trim().length === 0) return `Falta elegir el resultado del acta de cierre "${spec.title}".`
   if (!spec.resultOptions.some((option) => option.value === act.result)) {
     return `El resultado del acta no corresponde a las opciones de la plantilla.`
   }
   const signed = new Set(act.signatures.filter((item) => item.name.trim().length > 0).map((item) => item.role))
   const missing = spec.signatureRoles.filter((role) => !signed.has(role))
   if (missing.length > 0) {
-    return `Faltan firmas del acta: ${missing.join(", ")}.`
+    // «Jefe area», no `jefe_area`: la clave cruda es del catálogo, no de quien firma.
+    return `Faltan firmas del acta: ${missing.map(formatSignatureRole).join(", ")}.`
   }
   return null
 }

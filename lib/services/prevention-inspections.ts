@@ -14,12 +14,15 @@
 
 export { type InspectionAccess, assertInspectionOperationEnabled } from "./prevention-inspections/module-toggle"
 
+export { InspectionRunError, inspectionErrorCodeOf } from "./prevention-inspections/errors"
+
 export {
   itemsFromDefinition,
   contentHashOf,
   importInspectionTemplate,
   setInspectionTemplatePdtpActivities,
   setInspectionTemplateParity,
+  linkInspectionTemplateSource,
   approveInspectionTemplate,
   rollbackInspectionTemplate,
   retireInspectionTemplate,
@@ -74,6 +77,7 @@ export {
   listInspectionTemplates,
   listInspectionDocumentSources,
   listInspectionPrograms,
+  countOverdueInspectionPrograms,
   listInspectionWorksites,
   type InspectionAssignee,
   listInspectionAssignees,

@@ -7,60 +7,54 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  buildInspectionFollowupExportQuery,
+  followupFilterIsActive,
+  parseInspectionFollowupQuery,
+} from "@/lib/prevention/inspection-followup-query"
 import { listInspectionFollowup } from "@/lib/services/prevention-inspection-followup"
-import { formatDate } from "@/lib/utils"
+import { listInspectionWorksites } from "@/lib/services/prevention-inspections"
+import { todayInChile } from "@/lib/utils"
+import { FollowupTable } from "./followup-table"
 
 export const metadata: Metadata = { title: "Seguimiento de inspecciones" }
 
-export default async function InspectionFollowupPage() {
+export default async function InspectionFollowupPage({ searchParams }: {
+  /** Filtros: `q`, `faena`, `estado` y `tipo`. Viajan al SQL y al enlace de descarga. */
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   let session
   try { session = await requirePermission("prevention:inspections:view") }
   catch { redirect("/forbidden?desde=%2Fprevencion%2Finspecciones%2Fseguimiento") }
   const access = { userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
-  const rows = await listInspectionFollowup(access)
+  const filter = parseInspectionFollowupQuery(await searchParams)
+  // El mismo día para clasificar en el servidor y para rotular «Vencida» en la pantalla.
+  const today = todayInChile()
+  const [rows, worksites] = await Promise.all([
+    listInspectionFollowup(access, filter, { order: "attention", today }),
+    // Las faenas del alcance y no las de las filas: con una faena elegida las filas sólo traen esa.
+    listInspectionWorksites(access),
+  ])
   const canExport = session.user.permissions.includes("prevention:inspections:export")
+  const canViewCapa = session.user.permissions.includes("prevention:capa:view")
 
   return <PageContainer>
     <PageHeader
       title="Seguimiento de inspecciones"
-      description="Vista derivada de hallazgos, acciones CAPA y sus seguimientos. No mantiene una base paralela."
+      description="Hallazgos con su acción CAPA y su avance, por faena."
       breadcrumb={<Breadcrumbs items={[
         { label: "Inicio", href: "/dashboard" },
         { label: "Prevención" },
         { label: "Inspecciones", href: "/prevencion/inspecciones" },
         { label: "Seguimiento" },
       ]} />}
-      actions={canExport ? <Button asChild variant="secondary"><Link href="/api/prevencion/inspecciones/seguimiento/export" prefetch={false}>Exportar Excel</Link></Button> : undefined}
+      // `<a download>` y no `<Link>`: es un archivo, no una ruta de la app, y lleva los filtros de la pantalla.
+      actions={canExport ? <Button asChild variant="secondary"><a href={`/api/prevencion/inspecciones/seguimiento/export${buildInspectionFollowupExportQuery(filter)}`} download>Exportar Excel</a></Button> : undefined}
     />
-    {rows.length === 0 ? <EmptyState
+    {rows.length === 0 && !followupFilterIsActive(filter) ? <EmptyState
       title="Aún no hay hallazgos para seguir"
       description="Cuando una inspección u observación levante una desviación, aparecerá aquí junto con su acción correctiva."
       action={<Button asChild><Link href="/prevencion/inspecciones">Ir a inspecciones</Link></Button>}
-    /> : <div
-      // Una region que se desplaza con el raton tiene que poder
-      // desplazarse con el teclado: sin `tabIndex` no recibe foco y su
-      // contenido queda inalcanzable (axe `scrollable-region-focusable`).
-      tabIndex={0}
-      role="region"
-      aria-label="Seguimiento de inspecciones"
-      className="overflow-x-auto rounded-2xl border border-slate-200/70 bg-white shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
-    >
-      <Table>
-        <TableHeader><TableRow>
-          <TableHead>Fecha</TableHead><TableHead>Área</TableHead><TableHead>Desviación</TableHead>
-          <TableHead>Medida correctiva</TableHead><TableHead>Responsable</TableHead><TableHead>Fecha ejecución MC</TableHead>
-          <TableHead>Estado</TableHead><TableHead>% Cumplimiento</TableHead><TableHead>Comentarios</TableHead>
-        </TableRow></TableHeader>
-        <TableBody>{rows.map((row) => <TableRow key={row.findingId}>
-          <TableCell>{row.date ? formatDate(row.date) : "—"}</TableCell>
-          <TableCell>{row.area}</TableCell><TableCell className="min-w-64 whitespace-normal">{row.deviation}</TableCell>
-          <TableCell className="min-w-64 whitespace-normal">{row.correctiveMeasure || "Sin CAPA"}</TableCell>
-          <TableCell>{row.responsible || "Sin asignar"}</TableCell><TableCell>{row.targetDate ? formatDate(row.targetDate) : "—"}</TableCell>
-          <TableCell>{row.status}</TableCell><TableCell>{row.progress}%</TableCell>
-          <TableCell className="min-w-72 whitespace-pre-wrap">{row.comments || "—"}</TableCell>
-        </TableRow>)}</TableBody>
-      </Table>
-    </div>}
+    /> : <FollowupTable rows={rows} worksites={worksites} filter={filter} today={today} canViewCapa={canViewCapa} />}
   </PageContainer>
 }

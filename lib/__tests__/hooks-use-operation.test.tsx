@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vitest"
 
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
 vi.mock("@/lib/toast", () => ({ toast }))
+const reportBoundaryError = vi.hoisted(() => vi.fn())
+vi.mock("@/lib/observability/sentry-client", () => ({ reportBoundaryError }))
 
 import { useOperation } from "@/lib/hooks/use-operation"
 
@@ -68,5 +70,109 @@ describe("useOperation", () => {
     act(() => result.current.run(async () => ({ ok: true })))
     await waitFor(() => expect(result.current.message).toBe("Guardado correctamente."))
     expect(result.current.fieldErrors).toEqual({})
+  })
+
+  /*
+   * Sin conexión, la Server Action no responde `ok: false`: el fetch rechaza. Sin
+   * try/catch la excepción subía hasta el error boundary de la página y la
+   * pantalla se reemplazaba por «Algo salió mal», con todo lo escrito dentro.
+   */
+  describe("cuando la acción lanza", () => {
+    function setOnline(value: boolean) {
+      Object.defineProperty(window.navigator, "onLine", { configurable: true, value })
+    }
+
+    it("sin conexión no relanza: avisa, no llama onSuccess y entrega offline a onFailure", async () => {
+      const onSuccess = vi.fn()
+      const onFailure = vi.fn()
+      const { result } = renderHook(() => useOperation())
+      act(() => result.current.run(async () => { throw new TypeError("Failed to fetch") }, onSuccess, onFailure))
+      await waitFor(() => expect(result.current.message).toMatch(/Sin conexión/))
+      expect(result.current.messageTone).toBe("error")
+      expect(onSuccess).not.toHaveBeenCalled()
+      expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ ok: false, offline: true }))
+    })
+
+    it("con el navegador sin red, cualquier excepción cuenta como sin conexión", async () => {
+      setOnline(false)
+      try {
+        const onFailure = vi.fn()
+        const { result } = renderHook(() => useOperation())
+        act(() => result.current.run(async () => { throw new Error("boom") }, undefined, onFailure))
+        await waitFor(() => expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ offline: true })))
+      } finally {
+        setOnline(true)
+      }
+    })
+
+    it("un error que no es de red no dice «Sin conexión»", async () => {
+      const onFailure = vi.fn()
+      const { result } = renderHook(() => useOperation())
+      act(() => result.current.run(async () => { throw new TypeError("Cannot read properties of undefined") }, undefined, onFailure))
+      await waitFor(() => expect(result.current.message).toBe("No se pudo completar la acción. Inténtalo de nuevo."))
+      expect(result.current.message).not.toMatch(/Sin conexión/)
+      expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ ok: false, offline: false }))
+    })
+
+    /*
+     * Antes la excepción llegaba a app/(app)/error.tsx, que la registra en la consola
+     * y en Sentry. El hook la absorbe para no tirar la pantalla, pero no puede
+     * dejarla sin rastro: quien depura sólo vería «No se pudo completar la acción».
+     */
+    it("un error que no es de red queda en la consola y se reporta", async () => {
+      const consola = vi.spyOn(console, "error").mockImplementation(() => {})
+      reportBoundaryError.mockClear()
+      const fallo = new TypeError("Cannot read properties of undefined")
+      const { result } = renderHook(() => useOperation())
+      act(() => result.current.run(async () => { throw fallo }))
+      await waitFor(() => expect(result.current.message).toBe("No se pudo completar la acción. Inténtalo de nuevo."))
+      expect(consola).toHaveBeenCalledWith(fallo)
+      expect(reportBoundaryError).toHaveBeenCalledWith(fallo)
+      consola.mockRestore()
+    })
+
+    it("un fallo de red no se reporta como defecto", async () => {
+      const consola = vi.spyOn(console, "error").mockImplementation(() => {})
+      reportBoundaryError.mockClear()
+      const { result } = renderHook(() => useOperation())
+      act(() => result.current.run(async () => { throw new TypeError("Failed to fetch") }))
+      await waitFor(() => expect(result.current.message).toMatch(/Sin conexión/))
+      expect(reportBoundaryError).not.toHaveBeenCalled()
+      expect(consola).not.toHaveBeenCalled()
+      consola.mockRestore()
+    })
+
+    it("en modo toast lo avisa con toast.error", async () => {
+      toast.error.mockClear()
+      const { result } = renderHook(() => useOperation({ feedback: "toast" }))
+      act(() => result.current.run(async () => { throw new TypeError("Failed to fetch") }))
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/Sin conexión/)))
+      expect(result.current.message).toBe("")
+    })
+  })
+
+  describe("tono del mensaje", () => {
+    it("distingue el aviso de éxito del error y del texto que pone quien llama", async () => {
+      const { result } = renderHook(() => useOperation())
+      act(() => result.current.run(async () => ({ ok: true })))
+      await waitFor(() => expect(result.current.messageTone).toBe("success"))
+
+      act(() => result.current.run(async () => ({ ok: false, message: "No se pudo" })))
+      await waitFor(() => expect(result.current.messageTone).toBe("error"))
+
+      act(() => result.current.setMessage("Recordatorio enviado."))
+      expect(result.current.messageTone).toBe("neutral")
+      act(() => result.current.setMessage("Algo falló", "error"))
+      expect(result.current.messageTone).toBe("error")
+      act(() => result.current.setMessage(""))
+      expect(result.current.messageTone).toBe("neutral")
+    })
+
+    it("onFailure también recibe los rechazos normales de la acción", async () => {
+      const onFailure = vi.fn()
+      const { result } = renderHook(() => useOperation())
+      act(() => result.current.run(async () => ({ ok: false, message: "Versión desactualizada" }), undefined, onFailure))
+      await waitFor(() => expect(onFailure).toHaveBeenCalledWith({ ok: false, message: "Versión desactualizada" }))
+    })
   })
 })

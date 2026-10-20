@@ -34,6 +34,12 @@ const buttonVariants = cva(
           "bg-[var(--color-danger)] text-white",
           "hover:bg-[var(--color-danger-ink)]",
         ],
+        // Acción destructiva de bajo peso (retirar, cancelar): sin relleno hasta el hover. Antes
+        // cada pantalla la reconstruía con una clase local sobre `ghost`.
+        "ghost-danger": [
+          "text-[var(--color-danger-ink)]",
+          "hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger-ink)]",
+        ],
         signal: [
           "bg-[var(--color-signal-tint)] text-[var(--color-signal-ink)]",
           "border border-[var(--color-signal-line)]",

@@ -3,6 +3,7 @@
 import * as React from "react"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,7 @@ import {
 } from "../../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { toast } from "@/lib/toast"
 import type { FindingInfo } from "./types"
 import { FindingEvidence } from "./inspection-evidence"
 
@@ -44,52 +46,122 @@ import { FindingEvidence } from "./inspection-evidence"
  * en la cola que Prevención resuelve desde el creador.
  */
 
-export function PreventiveActionsPanel({ runId, actions, assignees, editable }: {
+/**
+ * Lo que el padre necesita de un registro: registrar una desviación o una acción
+ * puede pasar la ejecución de `planned` a `in_progress` y subir su versión, y si
+ * el cliente no se entera su siguiente guardado choca con su propio bloqueo
+ * optimista. La versión viaja en `result.data.version`.
+ */
+type VersionResult = { data?: Record<string, unknown> }
+
+/** Un error del servidor, en el sitio donde ocurrió y dicho como alerta. */
+function OperationError({ operation }: { operation: { message: string; messageTone: string } }) {
+  if (operation.messageTone !== "error" || !operation.message) return null
+  return <Callout tone="danger" role="alert">{operation.message}</Callout>
+}
+
+export function PreventiveActionsPanel({ runId, actions, assignees, editable, onVersion }: {
   runId: string
   actions: FindingInfo[]
   assignees: { id: string; name: string }[]
   editable: boolean
+  /** Recibe el resultado de registrar: trae la versión nueva de la ejecución. */
+  onVersion?: (result: VersionResult) => void
 }) {
   const [open, setOpen] = React.useState(false)
   const [responsibleUserId, setResponsibleUserId] = React.useState("")
   const [targetDate, setTargetDate] = React.useState("")
   const operation = useOperation()
+
+  function changeOpen(next: boolean) {
+    operation.setMessage("")
+    setOpen(next)
+  }
+
   return <section className="space-y-3">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="text-sm font-semibold">Acciones preventivas ({actions.length}/6)</h2>
       {editable && actions.length < 6 && <Button type="button" size="sm" variant="secondary" onClick={() => setOpen(true)}>Agregar acción</Button>}
     </div>
     {actions.length === 0 ? <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin acciones preventivas acordadas.</p> : <ol className="space-y-2">{actions.map((action, index) => <li key={action.id} className="rounded-lg border border-[var(--color-border)] p-3 text-sm"><span className="font-semibold">{index + 1}.</span> {action.description} {action.capaActionId && <MetaBadge meta={{ label: "CAPA creada", variant: "success" }} className="ml-2" />}</li>)}</ol>}
-    <Dialog open={open} onOpenChange={setOpen}><DialogContent><form className="space-y-4" onSubmit={(event) => {
+    <Dialog open={open} onOpenChange={changeOpen}><DialogContent><form className="space-y-4" onSubmit={(event) => {
       event.preventDefault()
       const actionDescription = String(new FormData(event.currentTarget).get("actionDescription") ?? "")
       // El panel sigue montado tras guardar: la acción siguiente parte de cero.
-      operation.run(() => registerInspectionPreventiveActionAction({ runId, actionDescription, responsibleUserId, targetDate }), () => {
-        setOpen(false)
+      operation.run(() => registerInspectionPreventiveActionAction({ runId, actionDescription, responsibleUserId, targetDate }), (result) => {
+        onVersion?.(result)
+        toast.success("Acción preventiva creada en CAPA.")
+        changeOpen(false)
         setResponsibleUserId("")
         setTargetDate("")
       })
     }}>
       <DialogHeader><DialogTitle>Acción preventiva</DialogTitle><DialogDescription>La acción quedará creada directamente en CAPA/PDTP con responsable y fecha de control.</DialogDescription></DialogHeader>
-      <Field label="Acción acordada" required><Textarea name="actionDescription" required minLength={10} maxLength={3000} /></Field>
-      <Field label="Responsable" required><Select value={responsibleUserId} onValueChange={setResponsibleUserId}><SelectTrigger aria-label="Responsable de la acción"><SelectValue placeholder="Selecciona responsable" /></SelectTrigger><SelectContent>{assignees.map((person) => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent></Select></Field>
-      <Field label="Fecha de control" required><DatePicker value={targetDate} onChange={setTargetDate} /></Field>
-      {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-      <DialogFooter><Button type="submit" disabled={operation.pending || !responsibleUserId || !targetDate}>Crear acción CAPA</Button></DialogFooter>
+      <Field label="Acción acordada" required error={operation.fieldError("actionDescription")}><Textarea name="actionDescription" required minLength={10} maxLength={3000} /></Field>
+      <Field label="Responsable" required error={operation.fieldError("responsibleUserId")}><Select value={responsibleUserId} onValueChange={setResponsibleUserId}><SelectTrigger aria-label="Responsable de la acción"><SelectValue placeholder="Selecciona responsable" /></SelectTrigger><SelectContent>{assignees.map((person) => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent></Select></Field>
+      <Field label="Fecha de control" required error={operation.fieldError("targetDate")}><DatePicker value={targetDate} onChange={setTargetDate} /></Field>
+      <OperationError operation={operation} />
+      <DialogFooter><Button type="submit" loading={operation.pending} disabled={!responsibleUserId || !targetDate}>Crear acción CAPA</Button></DialogFooter>
     </form></DialogContent></Dialog>
   </section>
 }
 
-export function ParticipantsPanel({ runId, participants, editable }: {
+type ParticipantRow = { id: string; name: string; position: string; userId: string | null }
+
+/**
+ * Clave de comparación entre lo que hay en pantalla y lo último guardado. Ignora
+ * el `id`: las filas nuevas lo generan en el cliente y el servidor las reasigna
+ * al guardar, así que compararlo daría «sin guardar» para siempre.
+ */
+function participantsKey(rows: readonly ParticipantRow[]) {
+  return JSON.stringify(rows.map((row) => [row.name.trim(), row.position.trim(), row.userId]))
+}
+
+export function ParticipantsPanel({ runId, participants, editable, initialRows, onRowsChange }: {
   runId: string
   participants: { id: string; name: string; position: string; userId: string | null }[]
   editable: boolean
+  /**
+   * Filas que reemplazan a las del servidor, p. ej. las que sobrevivieron en el
+   * dispositivo. Se adoptan cada vez que su contenido cambia; es el padre quien
+   * decide cuándo (la restauración ocurre tras el montaje, no durante él).
+   */
+  initialRows?: ParticipantRow[]
+  /**
+   * Avisa cada vez que la persona cambia las filas o las guarda, con si difieren
+   * de lo guardado. El detalle lo usa para el espejo del dispositivo y para no
+   * dejar declarar ejecutada con participantes sin guardar.
+   */
+  onRowsChange?: (rows: ParticipantRow[], dirty: boolean) => void
 }) {
-  const [rows, setRows] = React.useState(() => participants.map(({ id, name, position, userId }) => ({ id, name, position, userId })))
+  const [rows, setRows] = React.useState<ParticipantRow[]>(() => initialRows ?? participants.map(({ id, name, position, userId }) => ({ id, name, position, userId })))
+  const [savedKey, setSavedKey] = React.useState(() => participantsKey(participants))
+  // Lo último que el padre mandó adoptar, por contenido y no por referencia: un
+  // arreglo armado en cada render no debe pisar lo que la persona está escribiendo.
+  const [seed, setSeed] = React.useState(() => (initialRows ? JSON.stringify(initialRows) : null))
+  // Las filas más recientes, para el callback de éxito, que corre tras un `await`
+  // con las filas que había al pulsar «Guardar».
+  const rowsRef = React.useRef(rows)
+  React.useEffect(() => { rowsRef.current = rows }, [rows])
   const operation = useOperation()
+  const dirty = participantsKey(rows) !== savedKey
+
+  // Un `initialRows` distinto es una orden del padre de adoptarlas. Se ajusta
+  // durante el render, con lo anterior guardado en estado, y no en un efecto: así
+  // no hay un cuadro intermedio con las filas viejas.
+  const incomingSeed = initialRows ? JSON.stringify(initialRows) : null
+  if (incomingSeed !== seed) {
+    setSeed(incomingSeed)
+    if (initialRows) setRows(initialRows)
+  }
+
+  function commit(next: ParticipantRow[]) {
+    setRows(next)
+    onRowsChange?.(next, participantsKey(next) !== savedKey)
+  }
 
   function updateRow(index: number, patch: Partial<{ name: string; position: string }>) {
-    setRows((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
+    commit(rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
   }
 
   return (
@@ -97,7 +169,7 @@ export function ParticipantsPanel({ runId, participants, editable }: {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Participantes ({rows.length})</h2>
         {editable && (
-          <Button type="button" size="sm" variant="secondary" onClick={() => setRows((current) => [...current, { id: `participant-${Date.now()}-${current.length}`, name: "", position: "", userId: null }])}>
+          <Button type="button" size="sm" variant="secondary" onClick={() => commit([...rows, { id: `participant-${Date.now()}-${rows.length}`, name: "", position: "", userId: null }])}>
             Agregar participante
           </Button>
         )}
@@ -114,7 +186,7 @@ export function ParticipantsPanel({ runId, participants, editable }: {
                 <>
                   <Field label={`Nombre ${index + 1}`} required><Input value={row.name} onChange={(event) => updateRow(index, { name: event.target.value })} /></Field>
                   <Field label="Cargo" required><Input value={row.position} onChange={(event) => updateRow(index, { position: event.target.value })} /></Field>
-                  <Button type="button" size="sm" variant="ghost" className="self-end" onClick={() => setRows((current) => current.filter((_, rowIndex) => rowIndex !== index))}>Quitar</Button>
+                  <Button type="button" size="sm" variant="ghost" className="self-end" onClick={() => commit(rows.filter((_, rowIndex) => rowIndex !== index))}>Quitar</Button>
                 </>
               ) : (
                 <p className="md:col-span-3"><span className="font-medium">{row.name}</span> · {row.position}</p>
@@ -124,16 +196,30 @@ export function ParticipantsPanel({ runId, participants, editable }: {
         </div>
       )}
       {editable && (
-        <Button
-          type="button"
-          size="sm"
-          disabled={operation.pending || rows.length === 0 || rows.some((row) => row.name.trim().length < 2 || row.position.trim().length < 2)}
-          onClick={() => operation.run(() => saveInspectionParticipantsAction({ runId, participants: rows }))}
-        >
-          {operation.pending ? "Guardando…" : "Guardar participantes"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            size="sm"
+            loading={operation.pending}
+            disabled={rows.length === 0 || rows.some((row) => row.name.trim().length < 2 || row.position.trim().length < 2)}
+            onClick={() => {
+              const sent = rows
+              operation.run(() => saveInspectionParticipantsAction({ runId, participants: sent }), () => {
+                // Lo enviado es ahora lo guardado; si la persona siguió escribiendo
+                // mientras tanto, esas filas quedan «sin guardar» otra vez.
+                const sentKey = participantsKey(sent)
+                setSavedKey(sentKey)
+                onRowsChange?.(rowsRef.current, participantsKey(rowsRef.current) !== sentKey)
+                toast.success("Participantes guardados.")
+              })
+            }}
+          >
+            {operation.pending ? "Guardando…" : "Guardar participantes"}
+          </Button>
+          {dirty && <span role="status" className="text-xs font-medium text-[var(--color-warning-ink)]">Participantes sin guardar</span>}
+        </div>
       )}
-      {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+      <OperationError operation={operation} />
     </section>
   )
 }
@@ -145,13 +231,15 @@ const DEVIATION_PLAZO: Record<string, string> = {
   low: "30 días",
 }
 
-export function DeviationsPanel({ runId, editable, canExecute, catalog, registered, narrative }: {
+export function DeviationsPanel({ runId, editable, canExecute, catalog, registered, narrative, onVersion }: {
   runId: string
   editable: boolean
   canExecute: boolean
   catalog: { id: string; label: string; danoPotencial: string; criticality: string }[]
   registered: FindingInfo[]
   narrative: boolean
+  /** Recibe el resultado de registrar: trae la versión nueva de la ejecución. */
+  onVersion?: (result: VersionResult) => void
 }) {
   const [entryId, setEntryId] = React.useState("")
   const [otherOpen, setOtherOpen] = React.useState(false)
@@ -184,7 +272,11 @@ export function DeviationsPanel({ runId, editable, canExecute, catalog, register
                   disabled={operation.pending || !entryId}
                   onClick={() => operation.run(
                     () => registerDeviationAction({ runId, catalogEntryId: entryId }),
-                    () => setEntryId(""),
+                    (result) => {
+                      onVersion?.(result)
+                      toast.success("Desviación registrada.")
+                      setEntryId("")
+                    },
                   )}
                 >
                   Registrar
@@ -243,7 +335,10 @@ export function DeviationsPanel({ runId, editable, canExecute, catalog, register
                           size="sm"
                           variant="ghost"
                           disabled={operation.pending}
-                          onClick={() => operation.run(() => removeDeviationAction({ findingId: finding.id }))}
+                          onClick={() => operation.run(
+                            () => removeDeviationAction({ findingId: finding.id }),
+                            () => toast.success("Desviación quitada."),
+                          )}
                         >
                           Quitar
                         </Button>
@@ -269,9 +364,9 @@ export function DeviationsPanel({ runId, editable, canExecute, catalog, register
           </Table>
         </div>
       )}
-      {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+      <OperationError operation={operation} />
 
-      <OtherDeviationDialog runId={runId} open={otherOpen} onOpenChange={setOtherOpen} narrative={narrative} />
+      <OtherDeviationDialog runId={runId} open={otherOpen} onOpenChange={setOtherOpen} narrative={narrative} onVersion={onVersion} />
     </section>
   )
 }
@@ -281,17 +376,24 @@ export function DeviationsPanel({ runId, editable, canExecute, catalog, register
  * Queda sin entrada de catálogo, y por eso aparece en la cola de clasificación
  * del creador para que Prevención la incorpore con la gravedad oficial.
  */
-function OtherDeviationDialog({ runId, open, onOpenChange, narrative }: {
+function OtherDeviationDialog({ runId, open, onOpenChange, narrative, onVersion }: {
   runId: string
   open: boolean
   onOpenChange: (next: boolean) => void
   narrative: boolean
+  onVersion?: (result: VersionResult) => void
 }) {
   const [dano, setDano] = React.useState("moderado")
   const operation = useOperation()
 
+  function changeOpen(next: boolean) {
+    // Un error de un intento anterior no debe esperar a quien vuelve a abrir.
+    operation.setMessage("")
+    onOpenChange(next)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent>
         <form
           className="space-y-4"
@@ -308,10 +410,12 @@ function OtherDeviationDialog({ runId, open, onOpenChange, narrative }: {
                 immediateMeasure: narrative ? String(form.get("immediateMeasure") ?? "").trim() : undefined,
                 applicableLaw: narrative ? String(form.get("applicableLaw") ?? "").trim() : undefined,
               }),
-              () => {
+              (result) => {
+                onVersion?.(result)
+                toast.success("Desviación registrada.")
                 // El diálogo sigue montado: la desviación siguiente parte de la gravedad por defecto.
                 setDano("moderado")
-                onOpenChange(false)
+                changeOpen(false)
               },
             )
           }}
@@ -324,23 +428,23 @@ function OtherDeviationDialog({ runId, open, onOpenChange, narrative }: {
                 : "Para lo que no está en el catálogo. Prevención la revisará y, si corresponde, la incorporará con su gravedad oficial — hasta entonces rige la que elijas acá."}
             </DialogDescription>
           </DialogHeader>
-          <Field label="Qué se encontró" required>
+          <Field label="Qué se encontró" required error={operation.fieldError("description")}>
             <Textarea name="description" required minLength={3} maxLength={3000} rows={3} aria-label="Descripción de la desviación" />
           </Field>
           {narrative && (
             <>
-              <Field label="Descripción narrativa del daño potencial" required>
+              <Field label="Descripción narrativa del daño potencial" required error={operation.fieldError("potentialDamageDescription")}>
                 <Textarea name="potentialDamageDescription" required minLength={3} maxLength={3000} rows={3} />
               </Field>
-              <Field label="Medida preventiva" required>
+              <Field label="Medida preventiva" required error={operation.fieldError("immediateMeasure")}>
                 <Textarea name="immediateMeasure" required minLength={3} maxLength={3000} rows={3} />
               </Field>
-              <Field label="Normativa legal aplicable" required>
+              <Field label="Normativa legal aplicable" required error={operation.fieldError("applicableLaw")}>
                 <Input name="applicableLaw" required minLength={2} maxLength={1000} />
               </Field>
             </>
           )}
-          <Field label="Gravedad" required>
+          <Field label="Gravedad" required error={operation.fieldError("danoPotencial")}>
             <Select value={dano} onValueChange={setDano}>
               <SelectTrigger aria-label="Gravedad de la desviación"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -351,8 +455,8 @@ function OtherDeviationDialog({ runId, open, onOpenChange, narrative }: {
               </SelectContent>
             </Select>
           </Field>
-          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending}>Registrar</Button></DialogFooter>
+          <OperationError operation={operation} />
+          <DialogFooter><Button type="submit" loading={operation.pending}>Registrar</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

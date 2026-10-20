@@ -9,6 +9,8 @@ import { listWorksiteAssignableUsers } from "@/lib/services/prevention-capa"
 import { closingActFromDefinition, reviewerIsExecutorOfRecord } from "@/lib/prevention/inspections"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { InspectionRunDetail } from "./inspection-run-detail"
+import { RunRecordActions } from "./_components/run-record-actions"
+import { recordActionsAvailability } from "./_components/run-view-helpers"
 
 export const metadata: Metadata = { title: "Inspección" }
 
@@ -44,6 +46,12 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
   })
   const reviewers = reviewBlocked ? await listInspectionReviewers(access, detail.run.worksiteId) : []
   const definition = detail.definitionSnapshot as unknown as ChecklistDefinition
+  const canReview = auth.user.permissions.includes("prevention:inspections:review")
+  const canManage = auth.user.permissions.includes("prevention:inspections:manage")
+  // Acta PDF, Reabrir y Cancelar son del registro, no de la lista de ítems: van en
+  // el encabezado de la página (regla 5 de AGENTS.md), en captura y en lectura.
+  const recordActions = recordActionsAvailability(detail.run.status, { canReview, canManage })
+  const hasRecordActions = recordActions.pdf || recordActions.reopen || recordActions.cancel
 
   return (
     <PageContainer>
@@ -56,6 +64,16 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           { label: "Inspecciones", href: "/prevencion/inspecciones" },
           { label: detail.run.code },
         ]} />}
+        actions={hasRecordActions ? (
+          <RunRecordActions
+            runId={detail.run.id}
+            code={detail.run.code}
+            status={detail.run.status}
+            version={detail.run.version}
+            canReview={canReview}
+            canManage={canManage}
+          />
+        ) : undefined}
       />
       <InspectionRunDetail
         run={{
@@ -99,6 +117,9 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
         assigneeName={detail.assigneeName}
         executorName={detail.executorName}
         reviewerName={detail.reviewerName}
+        cancellation={detail.run.status === "cancelled" && detail.run.cancelledAt
+          ? { byName: detail.cancelledByName, at: detail.run.cancelledAt, reason: detail.run.cancellationReason }
+          : null}
         /* Piso de seguridad ante un `definitionSnapshot` sin `sections` (fixture
            legado insertado a mano, como INSP-DEMO) — mismo criterio que ya
            aplican `itemsFromDefinition` (prevention-inspections.ts) y el acta
@@ -158,8 +179,8 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           createdAt: item.createdAt,
         }))}
         canExecute={canExecute}
-        canReview={auth.user.permissions.includes("prevention:inspections:review")}
-        canManage={auth.user.permissions.includes("prevention:inspections:manage")}
+        canReview={canReview}
+        canManage={canManage}
         canRequestRecharge={auth.user.permissions.includes("admin:worksite_inventory_service")}
         physicalSourceRequired={detail.sourceDefinitionCode === "reporte_equipos"}
       />

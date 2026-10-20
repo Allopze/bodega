@@ -1,7 +1,8 @@
 import ExcelJS from "exceljs"
 import type { Session } from "next-auth"
 import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
-import type { ReportData, ReportSheet } from "./types"
+import { EXCEL_DATETIME_FORMAT } from "@/lib/reports/excel-dates"
+import type { ReportCell, ReportData, ReportSheet } from "./types"
 
 /**
  * Contexto opcional de trazabilidad del archivo.
@@ -32,7 +33,7 @@ export async function buildXlsxBuffer(report: ReportData, context?: XlsxBuildCon
   // mismo les pasaba a valorización de bodega, cobranza y analítica. `report.rows` se
   // calculaba, se contaba para la bitácora de exportación y se tiraba.
   const primarySheet = report.headers.length > 0
-    ? [{ worksheetName: report.worksheetName, headers: report.headers, rows: report.rows }]
+    ? [{ worksheetName: report.worksheetName, headers: report.headers, rows: report.rows, columnFormats: report.columnFormats }]
     : []
   const sheets = [...primarySheet, ...(report.sheets ?? [])]
 
@@ -162,10 +163,30 @@ export async function xlsxToBase64(workbook: ExcelJS.Workbook): Promise<string> 
   return Buffer.from(buffer).toString("base64")
 }
 
+/** Un `Date` válido pasa tal cual; uno inválido queda vacío; el resto se sanea como siempre. */
+function toWorksheetCell(value: ReportCell): string | number | boolean | Date {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : value
+  return sanitizeCell(value)
+}
+
+/** Ancho de una columna de fecha con hora (`dd-mm-yyyy hh:mm`). */
+const DATE_COLUMN_WIDTH = 17
+
 function addWorksheet(workbook: ExcelJS.Workbook, sheet: ReportSheet) {
   const worksheet = workbook.addWorksheet(sheet.worksheetName)
   worksheet.addRow(sheet.headers)
-  for (const row of sheet.rows) worksheet.addRow(row.map(sanitizeCell))
+  for (const row of sheet.rows) worksheet.addRow(row.map(toWorksheetCell))
+
+  // Formato por columna, celda por celda: asignarlo a la columna no siempre alcanza a las filas
+  // ya escritas. Una fecha sin formato explícito se muestra con fecha y hora, no como número.
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return
+    row.eachCell({ includeEmpty: false }, (cell, columnNumber) => {
+      const format = sheet.columnFormats?.[columnNumber - 1]
+      if (format) cell.numFmt = format
+      else if (cell.value instanceof Date) cell.numFmt = EXCEL_DATETIME_FORMAT
+    })
+  })
 
   const headerRow = worksheet.getRow(1)
   headerRow.font = { bold: true }
@@ -175,7 +196,9 @@ function addWorksheet(workbook: ExcelJS.Workbook, sheet: ReportSheet) {
     const header = sheet.headers[index] ?? ""
     let width = Math.max(12, header.length + 2)
     column.eachCell?.({ includeEmpty: true }, (cell) => {
-      width = Math.max(width, String(cell.value ?? "").length + 2)
+      // `String(Date)` mide unos 60 caracteres y ensanchaba la columna al tope.
+      const length = cell.value instanceof Date ? DATE_COLUMN_WIDTH : String(cell.value ?? "").length + 2
+      width = Math.max(width, length)
     })
     column.width = Math.min(width, 42)
   })

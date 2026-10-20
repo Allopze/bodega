@@ -1,7 +1,9 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import {
@@ -10,17 +12,18 @@ import {
   listInspectionSubjectsByWorksite,
   listInspectionTemplates,
   listInspectionWorksites,
-  listRiskEntriesForWorksite,
 } from "@/lib/services/prevention-inspections"
+// Directo del submódulo: el barril de `prevention-inspections` lo mantiene la
+// sesión principal y esta función es nueva.
+import { listRiskEntriesByWorksite } from "@/lib/services/prevention-inspections/programs"
 import type { InspectionSubjectOption } from "@/lib/prevention/inspection-list-query"
-import { InspectionProgramsPanel, ProgramDialog } from "../inspection-catalog"
+import { ProgramDialog } from "./_components/program-dialogs"
+import { InspectionProgramsPanel } from "./_components/programs-panel"
 
 export const metadata: Metadata = { title: "Programación de inspecciones" }
 
 /** Cuándo se pregunta: el calendario del que nacen las inspecciones planificadas. */
-export default async function ProgramacionInspeccionPage({ searchParams }: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>
-}) {
+export default async function ProgramacionInspeccionPage() {
   let session
   try { session = await requirePermission("prevention:inspections:view") }
   catch { redirect("/forbidden") }
@@ -31,8 +34,6 @@ export default async function ProgramacionInspeccionPage({ searchParams }: {
     permissions: session.user.permissions,
   }
   const canManage = session.user.permissions.includes("prevention:inspections:manage")
-  const rawView = (await searchParams).vista
-  const initialView = (Array.isArray(rawView) ? rawView[0] : rawView) === "vencidas" ? "overdue" as const : "all" as const
 
   const [programs, templates, worksites, assignees] = await Promise.all([
     listInspectionPrograms(access),
@@ -43,7 +44,7 @@ export default async function ProgramacionInspeccionPage({ searchParams }: {
 
   // A-09: el diálogo pedía escribir el ID del peligro MIPER a mano. Se precarga
   // por faena porque el picker debe cambiar al cambiar la faena seleccionada, y
-  // son pocas faenas por usuario.
+  // son pocas faenas por usuario. Una consulta para todas (P2-19), no una por faena.
   const riskEntriesByWorksite: Record<string, { id: string; hazardCode: string; hazard: string }[]> = {}
   /* INS-04: el sujeto del programa existía en el esquema, en el servicio y en
    * el materializador, y ningún formulario lo escribía — así que TODA
@@ -54,11 +55,11 @@ export default async function ProgramacionInspeccionPage({ searchParams }: {
   if (canManage) {
     const worksiteIds = worksites.map((worksite) => worksite.id)
     const [risks, subjects] = await Promise.all([
-      Promise.all(worksiteIds.map(async (id) => [id, await listRiskEntriesForWorksite(id, access)] as const)),
+      listRiskEntriesByWorksite(worksiteIds, access),
       // Una consulta por tabla para todas las faenas, no dos por faena (INS-12).
       listInspectionSubjectsByWorksite(worksiteIds, access),
     ])
-    for (const [worksiteId, rows] of risks) riskEntriesByWorksite[worksiteId] = rows.map((row) => ({ ...row, hazard: row.hazard ?? "Sin peligro descrito" }))
+    for (const [worksiteId, rows] of Object.entries(risks)) riskEntriesByWorksite[worksiteId] = rows.map((row) => ({ ...row, hazard: row.hazard ?? "Sin peligro descrito" }))
     subjectsByWorksite = subjects
   }
 
@@ -66,14 +67,23 @@ export default async function ProgramacionInspeccionPage({ searchParams }: {
     ? [{ id: item.id, name: item.name, versionLabel: item.versionLabel, kind: item.kind, sourceDefinitionCode: item.sourceDefinitionCode }]
     : [])
 
+  const programDialog = canManage && approvedTemplates.length > 0 && worksites.length > 0
+    ? <ProgramDialog templates={approvedTemplates} worksites={worksites} assignees={assignees} riskEntriesByWorksite={riskEntriesByWorksite} subjectsByWorksite={subjectsByWorksite} />
+    : undefined
+  /* El estado vacío (A4) nombra lo que falta y ofrece la acción real: crear la
+   * primera programación, o —si no hay con qué— ir a aprobar una plantilla. Antes
+   * mandaba a un botón del encabezado sin ofrecerlo. */
+  const needsApprovedTemplate = canManage && approvedTemplates.length === 0
+  const emptyAction = needsApprovedTemplate
+    ? <Button asChild variant="secondary"><Link href="/prevencion/inspecciones/plantillas">Ir a Plantillas</Link></Button>
+    : programDialog
+
   return (
     <PageContainer>
       <PageHeader
         title="Programación de inspecciones"
-        description="Qué instrumento se ejecuta, en qué faena y con qué frecuencia. El barrido diario crea las inspecciones vencidas; «Crear y abrir inspección» usa el mismo camino."
-        actions={canManage && approvedTemplates.length > 0 && worksites.length > 0
-          ? <ProgramDialog templates={approvedTemplates} worksites={worksites} assignees={assignees} riskEntriesByWorksite={riskEntriesByWorksite} subjectsByWorksite={subjectsByWorksite} />
-          : undefined}
+        description="Qué instrumento se ejecuta, en qué faena y cada cuánto."
+        actions={programDialog}
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
@@ -98,6 +108,8 @@ export default async function ProgramacionInspeccionPage({ searchParams }: {
             ? `${row.riskHazardCode ? `${row.riskHazardCode} · ` : ""}${row.riskHazard}`
             : null,
           subjectType: row.program.subjectType,
+          // El sujeto del inventario que se eligió, ya con su nombre.
+          subjectLabel: row.subjectLabel,
           subjectResourceId: row.program.subjectResourceId,
           subjectVehicleId: row.program.subjectVehicleId,
           subjectContainerId: row.program.subjectContainerId,
@@ -112,7 +124,8 @@ export default async function ProgramacionInspeccionPage({ searchParams }: {
         subjectsByWorksite={subjectsByWorksite}
         riskEntriesByWorksite={riskEntriesByWorksite}
         canManage={canManage}
-        initialView={initialView}
+        emptyAction={emptyAction}
+        emptyDescription={needsApprovedTemplate ? "Para programar necesitas al menos una plantilla aprobada." : undefined}
       />
     </PageContainer>
   )

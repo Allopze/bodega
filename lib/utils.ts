@@ -444,6 +444,20 @@ function chileOffsetMs(instant: Date): number {
 }
 
 /**
+ * Un `Date` cuya hora UTC es la hora de pared de Chile en ese instante.
+ *
+ * ExcelJS escribe una celda de fecha a partir de los campos UTC del `Date`, sin
+ * conocer zonas: pasarle el instante real mostraba 18:34 donde la plataforma dice
+ * 15:34. Solo sirve para escribir celdas de fecha; no es un instante.
+ */
+export function chileWallClockDate(instant: Date): Date {
+  // `chileOffsetMs` descarta los milisegundos del instante al medir la hora de pared, así que
+  // devuelve el desfase menos esa fracción: se redondea al minuto, que es la unidad real.
+  const offset = Math.round(chileOffsetMs(instant) / 60_000) * 60_000
+  return new Date(instant.getTime() + offset)
+}
+
+/**
  * Convierte un valor de `<input type="datetime-local">` a un instante UTC sin
  * fijar -03/-04: Chile cambia el desfase por horario de verano.
  */

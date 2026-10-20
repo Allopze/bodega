@@ -14,7 +14,10 @@ import {
   createFindingCapa,
   createInspectionProgram,
   createInspectionRun,
+  deleteAnswerEvidence,
   importInspectionTemplate,
+  inspectionErrorCodeOf,
+  linkInspectionTemplateSource,
   registerDeviation,
   registerInspectionPreventiveAction,
   remindInspectionReview,
@@ -49,6 +52,16 @@ function accessFromSession(session: Awaited<ReturnType<typeof guardPermission>>[
   return { userId: session.user.id, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
 }
 
+/**
+ * Qué se invalida tras una operación. Por defecto todo lo operacional
+ * (`/dashboard`, `/pendientes` y los contadores del menú), que es lo correcto
+ * cuando la operación cambia una etapa de trabajo. Guardar respuestas de una
+ * inspección que ya está en ejecución no cambia ninguna: invalidarlo en cada
+ * autoguardado (~1,2 s) recalculaba el centro operacional para nada.
+ */
+type RevalidateDecision = { operational: boolean; worksiteId?: string | null }
+type RunOptions = { revalidate?: (result: unknown) => RevalidateDecision }
+
 // La autorización se resuelve en cada acción, no dentro de este helper; el
 // toggle del submódulo sí, que es uno solo para todo el motor.
 async function run(
@@ -61,20 +74,32 @@ async function run(
    * el guardado sube la versión (C-02).
    */
   extract?: (result: unknown) => ActionState["data"],
+  options?: RunOptions,
 ): Promise<ActionState> {
   try {
     await assertInspectionOperationEnabled()
     const result = await operation(access)
-    revalidateOperationalViews([BASE, `${BASE}/plantillas`, `${BASE}/programacion`])
+    const decision = options?.revalidate?.(result) ?? { operational: true }
+    if (decision.operational) {
+      revalidateOperationalViews([BASE, `${BASE}/plantillas`, `${BASE}/programacion`], { worksiteId: decision.worksiteId })
+    } else {
+      revalidatePath(BASE)
+    }
     // Sin esto una respuesta, un cierre o una revisión recién guardada sigue
     // mostrando el valor anterior al volver al detalle, porque la ruta
     // dinámica no la cubre `BASE`.
     // La ruta dinámica conserva su propia invalidación explícita; los
-    // detalles no comparten un identificador estable en este helper.
+    // detalles no comparten un identificador estable en este helper. También
+    // sincroniza `run.version` y las respuestas guardadas del cliente: se
+    // mantiene aunque la operación no sea operacional.
     revalidatePath(`${BASE}/[runId]`, "page")
     return { ok: true, data: extract?.(result) }
   } catch (error) {
-    return actionErrorResult(error, "No se pudo completar la operación.")
+    const failure = actionErrorResult(error, "No se pudo completar la operación.")
+    // Un rechazo con código deja al cliente distinguir un conflicto de versión
+    // (se arregla recuperando) de un error que reintentar no corrige.
+    const code = inspectionErrorCodeOf(error)
+    return code ? { ...failure, data: { code } } : failure
   }
 }
 
@@ -82,6 +107,16 @@ async function run(
 function versionOf(result: unknown): ActionState["data"] {
   const version = (result as { version?: number; run?: { version?: number } } | null)?.version
     ?? (result as { run?: { version?: number } } | null)?.run?.version
+  return typeof version === "number" ? { version } : undefined
+}
+
+/**
+ * Las acciones que pueden pasar la ejecución de `planned` a `in_progress` (registrar una
+ * desviación o una acción preventiva) devuelven la versión resultante como `runVersion`,
+ * para que el cliente no choque con su propio bloqueo optimista en el siguiente guardado.
+ */
+function runVersionOf(result: unknown): ActionState["data"] {
+  const version = (result as { runVersion?: unknown } | null)?.runVersion
   return typeof version === "number" ? { version } : undefined
 }
 
@@ -125,6 +160,20 @@ export async function setInspectionTemplateParityAction(input: unknown): Promise
   return run(accessFromSession(guard.session), (access) => setInspectionTemplateParity(input, access))
 }
 
+/**
+ * Vincula la planilla oficial de un borrador que se incorporó sin ella.
+ *
+ * Con `inspections:manage` y no con `approve`, a diferencia de la paridad: elegir
+ * qué archivo respalda al instrumento es administrarlo; contrastarlo con el
+ * papel y habilitarlo es lo que pide el permiso de aprobación. Cambiar la fuente
+ * deja la paridad pendiente otra vez.
+ */
+export async function linkInspectionTemplateSourceAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => linkInspectionTemplateSource(input, access))
+}
+
 export async function approveInspectionTemplateAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:approve")
   if (guard.error) return guard.error
@@ -138,13 +187,40 @@ export async function approveInspectionTemplateAction(input: unknown): Promise<A
 export async function retireInspectionTemplateAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:approve")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => retireInspectionTemplate(input, access))
+  return run(
+    accessFromSession(guard.session),
+    (access) => retireInspectionTemplate(input, access),
+    // El resultado decide el mensaje: borrada sin uso, o retirada con sus
+    // ejecuciones conservadas y sus programaciones activas dejando de generar.
+    (result) => {
+      const info = result as { outcome?: unknown; runs?: unknown; programs?: unknown; activePrograms?: unknown } | null
+      const outcome = info?.outcome
+      return {
+        outcome: outcome === "deleted" || outcome === "superseded" ? outcome : undefined,
+        runs: typeof info?.runs === "number" ? info.runs : undefined,
+        programs: typeof info?.programs === "number" ? info.programs : undefined,
+        activePrograms: typeof info?.activePrograms === "number" ? info.activePrograms : undefined,
+      }
+    },
+  )
 }
 
 export async function rollbackInspectionTemplateAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:approve")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => rollbackInspectionTemplate(input, access))
+  return run(
+    accessFromSession(guard.session),
+    (access) => rollbackInspectionTemplate(input, access),
+    // Cuántas programaciones y ejecuciones planificadas pasaron a la versión restaurada.
+    (result) => {
+      const info = result as { restored?: unknown; programs?: unknown; plannedRuns?: unknown } | null
+      return {
+        restored: typeof info?.restored === "string" ? info.restored : undefined,
+        programs: typeof info?.programs === "number" ? info.programs : undefined,
+        plannedRuns: typeof info?.plannedRuns === "number" ? info.plannedRuns : undefined,
+      }
+    },
+  )
 }
 
 export async function createInspectionProgramAction(input: unknown): Promise<ActionState> {
@@ -208,7 +284,23 @@ export async function createInspectionRunAction(input: unknown): Promise<ActionS
 export async function saveInspectionAnswersAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => saveInspectionAnswers(input, access), versionAndAnswerRefsOf)
+  return run(
+    accessFromSession(guard.session),
+    (access) => saveInspectionAnswers(input, access),
+    versionAndAnswerRefsOf,
+    {
+      // Solo la primera vez, cuando la ejecución pasa de planificada a en curso, cambia algo que
+      // vea el centro operacional. Si el servicio no informa `statusChanged`, se invalida (lo
+      // conservador); lo que se evita es invalidarlo en cada autoguardado.
+      revalidate: (result) => {
+        const info = result as { statusChanged?: unknown; worksiteId?: unknown } | null
+        return {
+          operational: info?.statusChanged !== false,
+          worksiteId: typeof info?.worksiteId === "string" ? info.worksiteId : undefined,
+        }
+      },
+    },
+  )
 }
 
 export async function saveInspectionParticipantsAction(input: unknown): Promise<ActionState> {
@@ -220,7 +312,17 @@ export async function saveInspectionParticipantsAction(input: unknown): Promise<
 export async function completeInspectionRunAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
-  const state = await run(accessFromSession(guard.session), (access) => completeInspectionRun(input, access), versionOf)
+  const state = await run(
+    accessFromSession(guard.session),
+    (access) => completeInspectionRun(input, access),
+    versionOf,
+    {
+      revalidate: (result) => {
+        const worksiteId = (result as { run?: { worksiteId?: unknown } } | null)?.run?.worksiteId
+        return { operational: true, worksiteId: typeof worksiteId === "string" ? worksiteId : undefined }
+      },
+    },
+  )
   // El informe se imprime con esta sesión después de responder (Cloudreve).
   if (state.ok) await scheduleGeneratedDocumentDrain(guard.session.user.id)
   return state
@@ -344,17 +446,42 @@ export async function promoteUnclassifiedDeviationAction(input: unknown): Promis
 export async function registerDeviationAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => registerDeviation(input, access))
+  return run(accessFromSession(guard.session), (access) => registerDeviation(input, access), runVersionOf)
 }
 
 export async function registerInspectionPreventiveActionAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => registerInspectionPreventiveAction(input, access))
+  return run(accessFromSession(guard.session), (access) => registerInspectionPreventiveAction(input, access), runVersionOf)
 }
 
 export async function removeDeviationAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => removeDeviation(input, access))
+}
+
+/* ── Evidencia fotográfica de una respuesta ───────────────────────────────
+ * Quitar una foto es editar la inspección (`:execute`), igual que adjuntarla.
+ * Hasta ahora el servicio existía y ninguna pantalla lo llamaba: una foto
+ * equivocada dejaba el ítem imposible de corregir, porque el servidor exige
+ * quitar las fotografías antes de dejar una respuesta sin contestar.
+ */
+
+export async function removeAnswerEvidenceAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:execute")
+  if (guard.error) return guard.error
+  return run(
+    accessFromSession(guard.session),
+    (access) => deleteAnswerEvidence(input as { evidenceId: string }, access),
+    (result) => {
+      const info = result as { answerId?: unknown; remaining?: unknown } | null
+      return {
+        answerId: typeof info?.answerId === "string" ? info.answerId : undefined,
+        remaining: typeof info?.remaining === "number" ? info.remaining : undefined,
+      }
+    },
+    // Quitar una foto no cambia ninguna etapa de trabajo.
+    { revalidate: () => ({ operational: false }) },
+  )
 }

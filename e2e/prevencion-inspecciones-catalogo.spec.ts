@@ -1,5 +1,5 @@
 import { test, expect, type Locator, type Page } from "@playwright/test"
-import { expectPageTitle, login } from "./helpers"
+import { PLANTILLA_INSPECCION, expectPageTitle, login } from "./helpers"
 
 /**
  * E2E: plantillas (`/prevencion/inspecciones/plantillas`) y programación
@@ -35,8 +35,23 @@ const DEFINICION = "Inspección de Contenedores"
 const DEFINICION_LIBRE = "Inspección de área de trabajo"
 const RUN = Date.now().toString(36).toUpperCase().slice(-5)
 
-function filaPlantilla(page: Page, version: string, definicion: string = DEFINICION) {
-  return page.getByRole("row").filter({ hasText: definicion }).filter({ hasText: version })
+/**
+ * La fila de una versión. Se ancla por la etiqueta de versión y no por el
+ * nombre: el catálogo tiene una fila por instrumento, y un borrador que convive
+ * con una versión aprobada es una SUBFILA («Nueva versión en borrador») que no
+ * repite el nombre. La etiqueta lleva la marca de la corrida, así que es única.
+ */
+function filaPlantilla(page: Page, version: string) {
+  return page.getByRole("row").filter({ hasText: version })
+}
+
+/**
+ * Una acción de la fila que no es su siguiente paso vive en «Más acciones de …».
+ * El menú no es modal (abre diálogos), así que se abre con un clic y se elige el ítem.
+ */
+async function elegirAccion(page: Page, fila: Locator, accion: string | RegExp) {
+  await fila.getByRole("button", { name: /^Más acciones de/ }).click()
+  await page.getByRole("menuitem", { name: accion }).click()
 }
 
 /** Abre el alta de programación, esté la pestaña vacía o con filas. */
@@ -80,6 +95,22 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
   })
 
   /**
+   * P1-12: antes se aprobaba y se declaraba la paridad sin poder leer una sola
+   * pregunta. El nombre del instrumento abre su cuestionario en una hoja de solo
+   * lectura, con el acta y el detalle técnico (hashes, planilla) plegado.
+   */
+  test("el nombre del instrumento abre su cuestionario, y el detalle técnico viene plegado", async ({ page }) => {
+    await page.getByRole("button", { name: "Inspección de Estado de Extintores", exact: true }).first().click()
+    const hoja = page.getByRole("dialog", { name: "Inspección de Estado de Extintores" })
+    await expect(hoja.getByText("Cierre de inspección del extintor")).toBeVisible({ timeout: 15_000 })
+    await expect(hoja.getByText("Prevencionista · Supervisor")).toBeVisible()
+    const tecnico = hoja.locator("details").filter({ hasText: "Detalle técnico" })
+    await expect(tecnico).not.toHaveAttribute("open", "")
+    await hoja.getByRole("button", { name: "Cerrar" }).click()
+    await expect(hoja).toHaveCount(0)
+  })
+
+  /**
    * `listImportableDefinitions` excluye dos familias por motivos distintos:
    * las evaluaciones de personas pertenecen al módulo de Evaluaciones, y el
    * Anexo 7 no tiene un solo ítem puntuable, así que en este motor no podría
@@ -105,8 +136,10 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
     await page.reload()
-    const fila = filaPlantilla(page, version, DEFINICION_LIBRE)
-    await expect(fila.getByText("Borrador")).toBeVisible({ timeout: 15_000 })
+    const fila = filaPlantilla(page, version)
+    // `exact`: la subfila de un borrador que convive con una versión aprobada
+    // dice además «Nueva versión en borrador».
+    await expect(fila.getByText("Borrador", { exact: true })).toBeVisible({ timeout: 15_000 })
 
     // Programar exige una plantilla aprobada, y el picker sólo lista esas: el
     // borrador recién incorporado no debe aparecer todavía.
@@ -132,7 +165,7 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
     await page.reload()
-    await expect(fila.getByText("Aprobada")).toBeVisible({ timeout: 15_000 })
+    await expect(fila.getByText("Aprobada", { exact: true })).toBeVisible({ timeout: 15_000 })
     await expect(fila.getByRole("button", { name: "Aprobar" })).toHaveCount(0)
 
     // Y ahora sí es programable.
@@ -147,30 +180,50 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
    * La contracara del test anterior. Los anexos del SGI
    * (`OFFICIAL_INSPECTION_SOURCES`) nacen `provenanceKind: "official_document"`
    * y `approveInspectionTemplate` les exige una versión de la Biblioteca SST
-   * vinculada, con paridad declarada y el checksum del binario original. Sin
-   * eso el borrador no se habilita: la pantalla lo dice y el diálogo no cierra.
+   * vinculada, con paridad declarada y el checksum del binario original.
+   *
+   * La pantalla ya no ofrece «Aprobar» ni «Declarar paridad» cuando el servidor
+   * los va a rechazar (patrón I-04): dice qué falta y ofrece «Vincular fuente».
+   * Antes el botón estaba, el diálogo se llenaba, y sólo al confirmar aparecía
+   * «no puede aprobarse sin una versión oficial vinculada».
    */
-  test("un anexo oficial no se aprueba sin su fuente documental vinculada", async ({ page }) => {
+  test("un anexo oficial incompleto no ofrece Aprobar: dice que falta vincular la planilla", async ({ page }) => {
     const version = `E2E-${RUN}-E`
     await incorporar(page, version)
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
     await page.reload()
     const fila = filaPlantilla(page, version)
-    await expect(fila.getByText("Borrador")).toBeVisible({ timeout: 15_000 })
+    await expect(fila.getByText("Borrador", { exact: true })).toBeVisible({ timeout: 15_000 })
 
-    await fila.getByRole("button", { name: "Aprobar" }).click()
-    const aprobar = page.getByRole("dialog", { name: `Aprobar ${DEFINICION}` })
-    await aprobar.locator('textarea[name="reason"]').fill("Intento de habilitar el anexo sin su respaldo documental.")
-    await aprobar.getByRole("button", { name: "Aprobar" }).click()
+    await expect(fila.getByText("Falta vincular la planilla oficial.")).toBeVisible()
+    await expect(fila.getByRole("button", { name: "Aprobar" })).toHaveCount(0)
+    await expect(fila.getByRole("button", { name: "Declarar paridad" })).toHaveCount(0)
+    // Lo que sí se puede hacer: vincular la planilla, que es el siguiente paso de la fila.
+    await expect(fila.getByRole("button", { name: "Vincular fuente" })).toBeVisible()
+  })
 
-    await expect(aprobar.getByRole("status"))
-      .toContainText("no puede aprobarse sin una versión oficial vinculada", { timeout: 30_000 })
-    await expect(aprobar).toBeVisible()
+  /**
+   * El diálogo de incorporar dice la verdad sobre la fuente: es obligatoria
+   * para un anexo oficial, y si la Biblioteca SST no tiene el archivo con el
+   * checksum del anexo lo avisa en vez de pedir lo imposible. La Biblioteca del
+   * entorno E2E no tiene ese archivo, así que acá se ve el aviso.
+   */
+  test("incorporar un anexo oficial avisa que la planilla es obligatoria y que la Biblioteca no la tiene", async ({ page }) => {
+    await page.getByRole("button", { name: "Incorporar borrador" }).click()
+    const dialog = page.getByRole("dialog", { name: "Incorporar nueva versión como borrador" })
+    await dialog.getByLabel("Definición del catálogo SST").click()
+    await page.getByRole("option", { name: DEFINICION, exact: true }).click()
 
-    await page.keyboard.press("Escape")
-    await page.reload()
-    await expect(fila.getByText("Borrador")).toBeVisible({ timeout: 15_000 })
+    // R-04: sin el archivo en la Biblioteca la fuente no se marca obligatoria (sería pedir lo imposible).
+    await expect(dialog.getByText("Opcional por ahora: todavía no hay un archivo que vincular.")).toBeVisible()
+    await expect(dialog.getByText("Obligatoria: este instrumento transcribe un anexo oficial.")).toHaveCount(0)
+    await expect(dialog.getByText(/No hay en la Biblioteca SST una versión vigente con el checksum del anexo oficial/)).toBeVisible()
+    await expect(dialog.getByText(/alguien con permiso de aprobación —puedes ser tú—/)).toBeVisible()
+    // Sin el archivo no hay con qué cumplirla: el borrador se puede incorporar y la planilla se vincula después.
+    await expect(dialog.getByRole("button", { name: "Incorporar como borrador" })).toBeEnabled()
+    await dialog.getByRole("button", { name: "Cancelar" }).click()
+    await expect(page.locator('[role="dialog"]')).not.toBeVisible()
   })
 
   /**
@@ -183,8 +236,9 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     await incorporar(page, version)
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
+    // El rechazo es un aviso del propio diálogo (`role="alert"`), que sigue abierto.
     const dialog = await incorporar(page, version)
-    await expect(dialog.getByRole("status")).toContainText(`Ya existe la versión "${version}"`, { timeout: 30_000 })
+    await expect(dialog.getByRole("alert")).toContainText(`Ya existe la versión "${version}"`, { timeout: 30_000 })
     await expect(dialog).toBeVisible()
   })
 
@@ -201,6 +255,7 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     await page.reload()
 
     const fila = filaPlantilla(page, version)
+    // La celda es corta a propósito («N° 29»); el nombre de la actividad va en su tooltip.
     await expect(fila.getByText("N° 29")).toBeVisible({ timeout: 15_000 })
 
     /* Corregir la acreditación ya no es marcar números del programa anual: desde
@@ -213,8 +268,14 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
      * Los dos selectores son popovers de `PdtpActivityPicker`, con el mismo
      * rótulo accesible en su disparador ("N actividades seleccionadas"): el
      * primero es "Al declarar ejecutada" y el segundo "Al revisar y cerrar". */
-    await fila.getByRole("button", { name: "Acreditación PDTP" }).click()
+    await elegirAccion(page, fila, "Acreditación PDTP")
     const dialog = page.getByRole("dialog")
+    // El fixture E2E no da identidad de catálogo a las actividades del programa:
+    // la plantilla acredita por número y el diálogo lo dice, y avisa que ese
+    // número no tiene equivalente. Sin cambios todavía, «Guardar» no se ofrece.
+    await expect(dialog.getByText(/Hoy acredita por número de actividad \(N° 29\)/)).toBeVisible()
+    await expect(dialog.getByText(/N° 29 no tiene actividad en el catálogo corporativo/)).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Guardar" })).toBeDisabled()
     const ejecucion = dialog.getByRole("button", { name: /actividades? seleccionadas?/ }).first()
     await ejecucion.click()
     await page.getByRole("option", { name: /Inspección de contenedores E2E/ }).click()
@@ -226,7 +287,7 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
 
     // Releer desde la base: el diálogo abre con las dos identidades cableadas.
     await page.reload()
-    await fila.getByRole("button", { name: "Acreditación PDTP" }).click()
+    await elegirAccion(page, fila, "Acreditación PDTP")
     await expect(
       page.getByRole("dialog").getByRole("button", { name: /actividades? seleccionadas?/ }).first(),
     ).toHaveText(/2 actividades seleccionadas/, { timeout: 15_000 })
@@ -247,14 +308,111 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     const fila = filaPlantilla(page, version)
     await expect(fila).toHaveCount(1, { timeout: 15_000 })
 
-    await fila.getByRole("button", { name: "Retirar" }).click()
+    // «Retirar…» es la acción destructiva: va aparte, al pie del menú «Más acciones de …».
+    await elegirAccion(page, fila, "Retirar…")
     const dialog = page.getByRole("dialog")
     await dialog.locator('textarea[name="reason"]').fill("Instrumento incorporado por error durante la prueba E2E.")
-    await dialog.getByRole("button", { name: "Retirar" }).click()
+    // El botón que confirma el acto destructivo se llama como el acto.
+    await dialog.getByRole("button", { name: "Retirar plantilla" }).click()
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+    // El mensaje de resultado («Plantilla eliminada: …») es un toast de 4 s: se afirma
+    // el efecto persistido, que es lo que no caduca.
 
     await page.reload()
     await expect(fila).toHaveCount(0, { timeout: 15_000 })
+  })
+
+  /**
+   * La tabla es UNA fila por instrumento, no una por versión: la que está en uso es la fila y
+   * lo reemplazado o retirado sólo se lee en el historial de la vista previa. Un instrumento con
+   * varias versiones ocupaba varias filas con el mismo nombre y la vigente se perdía entre ellas.
+   */
+  test("hay una sola fila por instrumento y las versiones viejas no se listan", async ({ page }) => {
+    const nombre = page.getByRole("button", { name: PLANTILLA_INSPECCION, exact: true })
+    await expect(nombre).toHaveCount(1, { timeout: 15_000 })
+    const fila = page.getByRole("row").filter({ has: nombre })
+    await expect(fila).toHaveCount(1)
+    await expect(fila.getByText("Aprobada", { exact: true })).toBeVisible()
+    // La vigente no cuelga ninguna subfila.
+    await expect(fila.getByText("Nueva versión en borrador")).toHaveCount(0)
+    // «Reemplazadas o retiradas» es una opción del filtro de estado, no filas mezcladas con las vigentes.
+    await page.getByRole("combobox", { name: "Filtrar plantillas por estado" }).click()
+    await expect(page.getByRole("option", { name: "Reemplazadas o retiradas", exact: true })).toBeVisible()
+  })
+
+  /**
+   * Un borrador nuevo de un instrumento que ya tiene una versión aprobada no es otro instrumento:
+   * es «la nueva versión», y se pinta como subfila de la principal (que no repite el nombre).
+   */
+  test("un borrador nuevo de un instrumento vigente cuelga como subfila «Nueva versión en borrador»", async ({ page }) => {
+    const vigente = `E2E-${RUN}-F`
+    const nueva = `E2E-${RUN}-G`
+    await incorporar(page, vigente, DEFINICION_LIBRE)
+    await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+    await page.reload()
+    await filaPlantilla(page, vigente).getByRole("button", { name: "Aprobar" }).click()
+    const aprobar = page.getByRole("dialog")
+    await aprobar.locator('textarea[name="reason"]').fill("Instrumento revisado y habilitado para la faena E2E.")
+    await aprobar.getByRole("button", { name: "Aprobar" }).click()
+    await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+
+    await incorporar(page, nueva, DEFINICION_LIBRE)
+    await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+    await page.reload()
+
+    const subfila = filaPlantilla(page, nueva)
+    await expect(subfila).toHaveCount(1, { timeout: 15_000 })
+    await expect(subfila.getByText("Nueva versión en borrador")).toBeVisible()
+    await expect(subfila.getByText("Borrador", { exact: true })).toBeVisible()
+    // La principal es la aprobada, y es la única que lleva el nombre del instrumento.
+    const principal = filaPlantilla(page, vigente)
+    await expect(principal).toHaveCount(1)
+    await expect(principal.getByText("Aprobada", { exact: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Inspección de área de trabajo", exact: true })).toHaveCount(1)
+  })
+
+  /**
+   * «Ver cuestionario» está en «Más acciones de …»: el menú no es modal (abre una hoja o un
+   * diálogo) y la hoja muestra las secciones del instrumento, que es lo que se decide al aprobar.
+   * Escape la cierra y devuelve el foco al disparador.
+   */
+  test("«Más acciones» → «Ver cuestionario» abre la hoja con las secciones y Escape la cierra", async ({ page }) => {
+    const fila = page.getByRole("row").filter({ has: page.getByRole("button", { name: PLANTILLA_INSPECCION, exact: true }) })
+    await expect(fila).toHaveCount(1, { timeout: 15_000 })
+    const disparador = fila.getByRole("button", { name: `Más acciones de ${PLANTILLA_INSPECCION}`, exact: true })
+    await elegirAccion(page, fila, "Ver cuestionario")
+
+    const hoja = page.getByRole("dialog", { name: PLANTILLA_INSPECCION })
+    for (const seccion of ["1. Inventario del extintor", "2. Estado del extintor", "3. Observaciones generales"]) {
+      await expect(hoja.getByRole("heading", { name: seccion })).toBeVisible({ timeout: 15_000 })
+    }
+    await expect(hoja.getByText("Manómetro: aguja en zona verde.")).toBeVisible()
+    await expect(hoja.getByText("Cierre de inspección del extintor")).toBeVisible()
+
+    await page.keyboard.press("Escape")
+    await expect(hoja).toHaveCount(0)
+    await expect(disparador).toBeFocused()
+  })
+
+  /**
+   * «Retirar…» es la acción destructiva y va aparte, al pie del menú. Abre su diálogo con la
+   * consecuencia dicha y un motivo obligatorio; acá sólo se cancela (retirar la plantilla de
+   * extintores la dejaría sin instrumento a los demás specs).
+   */
+  test("«Retirar…» abre su diálogo destructivo con la consecuencia y «Cancelar» no retira nada", async ({ page }) => {
+    const fila = page.getByRole("row").filter({ has: page.getByRole("button", { name: PLANTILLA_INSPECCION, exact: true }) })
+    await expect(fila).toHaveCount(1, { timeout: 15_000 })
+
+    await elegirAccion(page, fila, "Retirar…")
+    const dialog = page.getByRole("dialog", { name: `Retirar ${PLANTILLA_INSPECCION}` })
+    await expect(dialog.getByText(/Deja de poder programarse y ejecutarse/)).toBeVisible()
+    await expect(dialog.locator('textarea[name="reason"]')).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Retirar plantilla" })).toBeVisible()
+
+    await dialog.getByRole("button", { name: "Cancelar" }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(fila).toHaveCount(1)
+    await expect(fila.getByText("Aprobada", { exact: true })).toBeVisible()
   })
 })
 
@@ -375,7 +533,7 @@ test.describe("Inspecciones — programación por faena y frecuencia", () => {
     const detener = page.getByRole("dialog", { name: "¿Detener esta programación?" })
     await detener.locator('textarea[name="reason"]').fill("Programa detenido al terminar su ciclo de prueba E2E.")
     await detener.getByRole("button", { name: "Detener programación" }).click()
-    await expect(fila.getByRole("cell", { name: "No", exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(fila.getByRole("cell", { name: "Detenida", exact: true })).toBeVisible({ timeout: 15_000 })
     await expect(fila.getByRole("button", { name: "Reactivar" })).toBeVisible()
     await expect(fila.getByRole("button", { name: "Crear y abrir inspección" })).toHaveCount(0)
   })

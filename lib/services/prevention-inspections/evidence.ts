@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/db/schema"
 import { history, NOT_FOUND, requireAccess, type Client, type InspectionAccess } from "@/lib/services/prevention-inspections-access"
 import { nanoid } from "@/lib/id"
+import { InspectionRunError } from "./errors"
 
 /* ── Evidencia fotográfica (función #1) ───────────────────────────────────
  * `evidenceReference` existía en el esquema y en el export desde el principio,
@@ -30,7 +31,7 @@ async function requireEditableAnswer(client: Client, answerId: string, access: I
   // Mismo criterio que `saveAnswersWithClient`: sin esto se podría adjuntar o
   // borrar evidencia de una inspección ya revisada.
   if (!["planned", "in_progress"].includes(row.run.status)) {
-    throw new Error("No se puede modificar la evidencia de una inspección ya ejecutada.")
+    throw new InspectionRunError("not_editable", "No se puede modificar la evidencia de una inspección ya ejecutada.")
   }
   return row
 }
@@ -196,21 +197,41 @@ export async function addFindingEvidence(input: {
   return created
 }
 
-export async function deleteAnswerEvidence(input: { evidenceId: string }, access: InspectionAccess) {
+/**
+ * Quita una fotografía de una respuesta.
+ *
+ * El borrado y su historial van en una sola transacción: una foto quitada sin su
+ * `evidence_removed` dejaría el hueco sin autor ni motivo, y un historial sin
+ * borrado afirmaría algo que no pasó. Devuelve cuántas quedan en la respuesta
+ * para que la pantalla actualice su contador sin recargar.
+ */
+export async function deleteAnswerEvidence(input: unknown, access: InspectionAccess) {
   const data = z.object({ evidenceId: z.string().min(1) }).parse(input)
-  const [evidence] = await db.select().from(preventionInspectionAnswerEvidence)
-    .where(eq(preventionInspectionAnswerEvidence.id, data.evidenceId)).limit(1)
-  if (!evidence) throw new Error(NOT_FOUND)
-  const row = await requireEditableAnswer(db, evidence.answerId, access)
+  return db.transaction(async (tx) => {
+    const [evidence] = await tx.select().from(preventionInspectionAnswerEvidence)
+      .where(eq(preventionInspectionAnswerEvidence.id, data.evidenceId)).limit(1)
+    if (!evidence) throw new Error(NOT_FOUND)
+    const row = await requireEditableAnswer(tx, evidence.answerId, access)
 
-  await db.delete(preventionInspectionAnswerEvidence)
-    .where(eq(preventionInspectionAnswerEvidence.id, data.evidenceId))
-  // El archivo físico no se borra aquí: lo recoge el GC de evidencias, que ya
-  // recorre el directorio comparándolo contra las referencias en BD.
-  await history(db, {
-    entityType: "answer", entityId: evidence.answerId, worksiteId: row.run.worksiteId,
-    changeType: "evidence_removed", reason: `Evidencia eliminada de "${row.answer.itemLabel}"`,
-    actorUserId: access.userId,
+    // El archivo físico no se borra aquí: lo recoge el GC de evidencias, que ya
+    // recorre el directorio comparándolo contra las referencias en BD.
+    const removed = await tx.delete(preventionInspectionAnswerEvidence)
+      .where(eq(preventionInspectionAnswerEvidence.id, data.evidenceId))
+      .returning({ id: preventionInspectionAnswerEvidence.id })
+    // Otra sesión la quitó entre la lectura y el borrado: no hay nada que informar.
+    if (removed.length === 0) throw new Error(NOT_FOUND)
+
+    const [counted] = await tx.select({
+      remaining: sql<number>`count(*)::int`,
+    }).from(preventionInspectionAnswerEvidence)
+      .where(eq(preventionInspectionAnswerEvidence.answerId, evidence.answerId))
+    const remaining = counted?.remaining ?? 0
+
+    await history(tx, {
+      entityType: "answer", entityId: evidence.answerId, worksiteId: row.run.worksiteId,
+      changeType: "evidence_removed", reason: `Evidencia eliminada de "${row.answer.itemLabel}"`,
+      actorUserId: access.userId,
+    })
+    return { deleted: 1 as const, answerId: evidence.answerId, remaining }
   })
-  return { deleted: 1 }
 }

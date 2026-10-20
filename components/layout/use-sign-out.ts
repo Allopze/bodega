@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { getSession, signOut } from "next-auth/react"
+import { clearAllInspectionDrafts } from "@/lib/prevention/inspection-draft-storage"
 
 /**
  * Vacía las colas offline del dispositivo. Import dinámico para no arrastrar
@@ -17,6 +18,20 @@ async function clearOfflineQueues() {
       import("@/app/(app)/prevencion/inspecciones/[runId]/offline-inspection-queue"),
     ])
     await Promise.allSettled([clearIncidentReportQueue(), clearPpaQueue(), clearInspectionSubmissionQueue()])
+  } catch {
+    /* no-op: cerrar sesión nunca se bloquea por la limpieza local */
+  }
+}
+
+/**
+ * Vacía el espejo local de las inspecciones en curso (`localStorage`). Es
+ * síncrono, sin dependencias y no lanza, así que va estático y fuera de
+ * `clearOfflineQueues`: que un import dinámico de esas colas falle no puede
+ * dejar las respuestas de un inspector en un equipo de faena compartido.
+ */
+function clearLocalInspectionDrafts() {
+  try {
+    clearAllInspectionDrafts()
   } catch {
     /* no-op: cerrar sesión nunca se bloquea por la limpieza local */
   }
@@ -52,6 +67,7 @@ export function useSignOut() {
       // de incidentes con personas, RUT y nombre en los PPA). En un dispositivo
       // de faena compartido no pueden sobrevivir al cambio de usuario. Es
       // best-effort: si falla, no bloquea el cierre de sesión.
+      clearLocalInspectionDrafts()
       await clearOfflineQueues()
       await signOut({ redirect: false })
       // Tercera lección (2026-08-06): el middleware re-emite la cookie de

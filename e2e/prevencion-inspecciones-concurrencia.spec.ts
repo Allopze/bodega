@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test"
-import { campoInspeccion, crearInspeccion as crearInspeccionE2E, login, textoVisible } from "./helpers"
+import { crearInspeccion as crearInspeccionE2E, expectResultadoItem, login, responderItemInspeccion, textoVisible } from "./helpers"
+import { esperarGuardado, estadoDeGuardado } from "./inspecciones-captura-helpers"
 
 /**
  * E2E Spec: Control de Concurrencia Optimista (CAS) en Inspecciones.
@@ -8,6 +9,8 @@ import { campoInspeccion, crearInspeccion as crearInspeccionE2E, login, textoVis
  *   • Incremento ordenado de versión al guardar respuestas y cerrar.
  *   • Detección y manejo de conflictos de versión entre dos pestañas concurrentes.
  *   • Protección contra sobreescritura accidental de respuestas.
+ *   • Que quien choca con otra sesión no pierda lo suyo: la alerta ofrece recuperar o
+ *     descartar, y lo recuperado se aplica sobre lo que guardó la otra persona.
  */
 
 const crearInspeccion = (page: Page) => crearInspeccionE2E(page, { prefijo: "E2E-CAS" })
@@ -21,14 +24,12 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
     await crearInspeccion(page)
 
     // Guardado 1: Ítem Manómetro
-    await campoInspeccion(page, "Resultado de Manómetro").click()
-    await page.getByRole("option", { name: "Bueno", exact: true }).click()
+    await responderItemInspeccion(page, "Manómetro", "Bueno")
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
     await expect(textoVisible(page, "En ejecución").first()).toBeVisible({ timeout: 30_000 })
 
     // Guardado 2: Ítem Sello inmediatamente después (usando la nueva versión interna sin recargar toda la página)
-    await campoInspeccion(page, "Resultado de Sello").click()
-    await page.getByRole("option", { name: "Bueno", exact: true }).click()
+    await responderItemInspeccion(page, "Sello", "Bueno")
     /* Esperar a que la server action responda ANTES de recargar. Sin esto la
      * recarga abortaba el guardado en vuelo y sólo persistía el primer ítem: el
      * test fallaba mostrando "1 de 10" y parecía un conflicto de CAS que en
@@ -44,12 +45,23 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
     await guardado
 
+    // Un solo editor guardando en secuencia nunca choca consigo mismo.
+    await expect(page.getByRole("alert").filter({ hasText: "La inspección cambió en otra sesión" })).toHaveCount(0)
+
     // Recargar y comprobar que ambos ítems persistieron correctamente
     await page.reload()
-    await expect(textoVisible(page, "2 de 5 obligatorios · 2 de 10 totales")).toBeVisible({ timeout: 15_000 })
+    await expect(textoVisible(page, "2 de 5 obligatorios")).toBeVisible({ timeout: 15_000 })
   })
 
-  test("edición concurrente en dos sesiones detecta la versión obsoleta", async ({ page, context }) => {
+  /**
+   * Dos pestañas sobre la misma ejecución. La segunda se abrió antes de que la primera guardara, así
+   * que tiene la versión vieja: su autoguardado tiene que chocar contra el control optimista, decirlo
+   * («La inspección cambió en otra sesión») y NO perder su respuesta ni pisar la de la otra.
+   *
+   * Antes el test sólo recargaba la pestaña 2 y miraba «En ejecución»: pasaba igual si el conflicto
+   * nunca se detectaba. Ahora se afirma la alerta, sus dos salidas y el resultado final.
+   */
+  test("edición concurrente en dos sesiones detecta la versión obsoleta y permite recuperar lo propio", async ({ page, context }) => {
     const { url } = await crearInspeccion(page)
 
     // Abrir la misma inspección en una segunda pestaña/página
@@ -58,19 +70,32 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
     await expect(textoVisible(page2, "Pendiente de ejecución").first()).toBeVisible({ timeout: 15_000 })
 
     // En la página 1 guardamos cambios (avanzando la versión del registro en BD)
-    await campoInspeccion(page, "Resultado de Manómetro").click()
-    await page.getByRole("option", { name: "Bueno", exact: true }).click()
+    await responderItemInspeccion(page, "Manómetro", "Bueno")
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
     await expect(textoVisible(page, "En ejecución").first()).toBeVisible({ timeout: 30_000 })
+    await esperarGuardado(page)
 
-    // En la página 2 (que tiene la versión vieja cargada), intentamos guardar otra respuesta
-    await campoInspeccion(page2, "Resultado de Sello").click()
-    await page2.getByRole("option", { name: "Bueno", exact: true }).click()
-    await page2.getByRole("button", { name: "Guardar respuestas" }).click()
+    // En la página 2 (que tiene la versión vieja cargada) respondemos otro ítem: el autoguardado choca.
+    await responderItemInspeccion(page2, "Sello", "Bueno")
 
-    // El servidor o la UI debe rechazar la versión obsoleta o informar la inconsistencia
+    const alerta = page2.getByRole("alert").filter({ hasText: "La inspección cambió en otra sesión" })
+    await expect(alerta).toBeVisible({ timeout: 30_000 })
+    await expect(estadoDeGuardado(page2)).toHaveAttribute("data-save-state", "conflict")
+    await expect(alerta.getByText("Tus cambios sin guardar siguen en este dispositivo.")).toBeVisible()
+    await expect(alerta.getByRole("button", { name: "Descartar mis cambios" })).toBeVisible()
+    // Lo propio sigue en pantalla: el choque no vació la respuesta.
+    await expectResultadoItem(page2, "Sello", "Bueno")
+
+    // Recuperar aplica lo propio encima de lo que guardó la otra persona, y vuelve a guardar.
+    await alerta.getByRole("button", { name: "Recuperar mis cambios" }).click()
+    await expect(alerta).toHaveCount(0, { timeout: 30_000 })
+    await esperarGuardado(page2)
+
+    // Tras recargar están las dos: la de la pestaña 1 no se pisó y la de la 2 no se perdió.
     await page2.reload()
-    await expect(textoVisible(page2, "En ejecución").first()).toBeVisible()
+    await expect(textoVisible(page2, "2 de 5 obligatorios")).toBeVisible({ timeout: 15_000 })
+    await expectResultadoItem(page2, "Manómetro", "Bueno")
+    await expectResultadoItem(page2, "Sello", "Bueno")
     await page2.close()
   })
 })

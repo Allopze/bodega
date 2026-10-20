@@ -2095,4 +2095,200 @@ describe("declarar qué actividades PDTP acredita una plantilla", () => {
       ACCESS,
     )).rejects.toThrow(/reemplazada/i)
   })
+
+  /*
+   * P2-13 (auditoría UI/UX de Inspecciones, 2026-10-19). Guardar el diálogo de
+   * «Acreditación PDTP» sin tocar un eje lo vaciaba —el esquema exigía los
+   * números de ejecución y la revisión se conservaba sólo si no llegaban—, y la
+   * plantilla dejaba de acreditar sin que nadie lo notara.
+   */
+  it("guardar sin tocar un eje lo conserva: sólo cambia lo que se mandó", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_carros" }, ACCESS)
+    const conAmbos = await service.setInspectionTemplatePdtpActivities(
+      { templateId: template.id, expectedVersion: template.version, pdtpActivityNumbers: [34], pdtpReviewActivityNumbers: [26] },
+      ACCESS,
+    )
+    expect(conAmbos.pdtpActivityNumbers).toEqual([34])
+    expect(conAmbos.pdtpReviewActivityNumbers).toEqual([26])
+
+    // Sólo el eje de revisión: la ejecución sigue como estaba.
+    const soloRevision = await service.setInspectionTemplatePdtpActivities(
+      { templateId: conAmbos.id, expectedVersion: conAmbos.version, pdtpReviewActivityNumbers: [27] },
+      ACCESS,
+    )
+    expect(soloRevision.pdtpActivityNumbers).toEqual([34])
+    expect(soloRevision.pdtpReviewActivityNumbers).toEqual([27])
+
+    // Sólo el eje de ejecución: la revisión sigue como estaba.
+    const soloEjecucion = await service.setInspectionTemplatePdtpActivities(
+      { templateId: soloRevision.id, expectedVersion: soloRevision.version, pdtpActivityNumbers: [33] },
+      ACCESS,
+    )
+    expect(soloEjecucion.pdtpActivityNumbers).toEqual([33])
+    expect(soloEjecucion.pdtpReviewActivityNumbers).toEqual([27])
+
+    // Y sin mandar ningún eje, ninguno se vacía.
+    const sinTocar = await service.setInspectionTemplatePdtpActivities(
+      { templateId: soloEjecucion.id, expectedVersion: soloEjecucion.version },
+      ACCESS,
+    )
+    expect(sinTocar.pdtpActivityNumbers).toEqual([33])
+    expect(sinTocar.pdtpReviewActivityNumbers).toEqual([27])
+    expect(sinTocar.version).toBe(soloEjecucion.version + 1)
+  })
+
+  it("el diálogo que manda sólo un eje por catálogo no apaga el otro", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_carros" }, ACCESS)
+    const conAmbos = await service.setInspectionTemplatePdtpActivities(
+      { templateId: template.id, expectedVersion: template.version, pdtpActivityNumbers: [34], pdtpReviewActivityNumbers: [26] },
+      ACCESS,
+    )
+
+    const soloEjecucionPorCatalogo = await service.setInspectionTemplatePdtpActivities(
+      { templateId: conAmbos.id, expectedVersion: conAmbos.version, catalogActivityIds: [await catalogIdentity("solo-exec")] },
+      ACCESS,
+    )
+    // La ejecución conserva su snapshot numérico (hay identidad) y la revisión,
+    // que no se tocó, no pierde nada.
+    expect(soloEjecucionPorCatalogo.pdtpActivityNumbers).toEqual([34])
+    expect(soloEjecucionPorCatalogo.pdtpReviewActivityNumbers).toEqual([26])
+  })
+
+  it("vaciar el catálogo de revisión apaga también los números de revisión", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_carros" }, ACCESS)
+    const conRevision = await service.setInspectionTemplatePdtpActivities(
+      { templateId: template.id, expectedVersion: template.version, pdtpActivityNumbers: [34], pdtpReviewActivityNumbers: [26] },
+      ACCESS,
+    )
+
+    // El eje de revisión era el asimétrico: sólo miraba los números, así que
+    // destildar su catálogo dejaba vivos los números y el fallback de
+    // `resolvePdtpAccreditationTarget` seguía acreditando lo destildado.
+    const vaciado = await service.setInspectionTemplatePdtpActivities(
+      { templateId: conRevision.id, expectedVersion: conRevision.version, reviewCatalogActivityIds: [] },
+      ACCESS,
+    )
+    expect(vaciado.pdtpReviewActivityNumbers).toBeNull()
+    expect(vaciado.pdtpActivityNumbers).toEqual([34])
+  })
+
+  describe("incorporar enlaza la acreditación al catálogo corporativo", () => {
+    /** La actividad N° 29 del programa vigente, con identidad de catálogo. */
+    async function programaConActividad29() {
+      const catalogActivityId = await catalogIdentity("n29")
+      const stamp = new Date().toISOString()
+      await inMemoryDb.insert(schema.pdtpActivities).values({
+        id: `${PROGRAM_ID}-a-029`,
+        programId: PROGRAM_ID,
+        n: 29,
+        catalogActivityId,
+        catalogRevision: 1,
+        activity: "Inspección de contenedores",
+        program: "Prevención PDTP 2026",
+        responsibleSlugs: ["prevencionista"],
+        responsibleDisplay: "Prevencionista",
+        scheduleMode: "triggered",
+        scheduleClassificationStatus: "confirmed",
+        sourceSheetRow: 3,
+        createdAt: stamp,
+        updatedAt: stamp,
+      })
+      return catalogActivityId
+    }
+
+    async function activeBindings(templateId: string) {
+      const { listPdtpAccreditationBindings } = await import("@/lib/services/pdtp/accreditation-bindings")
+      const rows = await listPdtpAccreditationBindings({ sourceType: "inspeccion", sourceIds: [templateId] })
+      return rows.filter((row) => row.isActive)
+    }
+
+    it("con la N° 29 en el programa vigente crea el binding y conserva el número de respaldo", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const catalogActivityId = await programaConActividad29()
+
+      const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_contenedores" }, ACCESS)
+
+      expect(template.pdtpActivityNumbers).toEqual([29])
+      expect(await activeBindings(template.id)).toEqual([
+        expect.objectContaining({ eventType: "execute", catalogActivityId }),
+      ])
+    })
+
+    it("sin identidad para su número nace sólo con números, como hasta ahora", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      // El programa de prueba sólo trae las N° 42 y 43: la 29 no está.
+      const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_contenedores" }, ACCESS)
+
+      expect(template.pdtpActivityNumbers).toEqual([29])
+      expect(await activeBindings(template.id)).toEqual([])
+    })
+
+    it("si un número está en dos programas activos gana el del año más reciente; una identidad retirada no se enlaza", async () => {
+      const { loadPdtpActivityIdentityMap, resolvePdtpNumbersToCatalogIds } =
+        await import("@/lib/services/prevention-inspections/pdtp-identity")
+      const stamp = new Date().toISOString()
+      const actual = await catalogIdentity("map-actual")
+      const siguiente = await catalogIdentity("map-siguiente")
+      const retirada = await catalogIdentity("map-retirada")
+      await inMemoryDb.update(schema.pdtpCatalogActivities).set({
+        status: "retired", retiredReason: "Retirada en la prueba de identidad", retiredAt: stamp,
+      }).where(eq(schema.pdtpCatalogActivities.id, retirada))
+
+      // PREV-C03.6: en diciembre-enero conviven dos programas activos.
+      const nextProgramId = `pdtp-${PROGRAM_YEAR + 1}-v1`
+      await inMemoryDb.insert(schema.pdtpPrograms).values({
+        id: nextProgramId, version: 1, year: PROGRAM_YEAR + 1, title: "Programa siguiente", status: "active",
+        appliesToAllWorksites: true,
+        elaboratedByName: "Prevencionista Test", elaboratedByTitle: "Experto en Prevención", creationMode: "blank",
+        complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
+        createdAt: stamp, updatedAt: stamp,
+      })
+      const activity = (id: string, programId: string, n: number, catalogActivityId: string, row: number) => ({
+        id, programId, n, catalogActivityId, catalogRevision: 1,
+        activity: `Actividad ${n}`, program: "Prevención PDTP", responsibleSlugs: ["prevencionista"],
+        responsibleDisplay: "Prevencionista", scheduleMode: "triggered", scheduleClassificationStatus: "confirmed",
+        sourceSheetRow: row, createdAt: stamp, updatedAt: stamp,
+      })
+      await inMemoryDb.insert(schema.pdtpActivities).values([
+        activity(`${PROGRAM_ID}-a-029`, PROGRAM_ID, 29, actual, 10),
+        activity(`${PROGRAM_ID}-a-030`, PROGRAM_ID, 30, retirada, 11),
+        activity(`${nextProgramId}-a-029`, nextProgramId, 29, siguiente, 12),
+      ])
+
+      const identities = await loadPdtpActivityIdentityMap()
+
+      expect(identities.byNumber.get(29)?.catalogActivityId).toBe(siguiente)
+      expect(identities.byCatalogId.get(actual)?.n).toBe(29)
+      // La N° 30 tiene identidad pero está retirada, y la N° 31 no existe: ninguna
+      // puede enlazarse (`replacePdtpAccreditationBindings` rechazaría la retirada).
+      expect(resolvePdtpNumbersToCatalogIds([29, 30, 31], identities)).toEqual({
+        catalogActivityIds: [siguiente],
+        unmappedNumbers: [30, 31],
+      })
+    })
+
+    it("no enlaza un eje a medias: un binding parcial apagaría el número que falta", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      // reporte_equipos acredita las N° 25 y 26. Sólo la 25 tiene identidad.
+      const catalogActivityId = await catalogIdentity("n25")
+      const stamp = new Date().toISOString()
+      await inMemoryDb.insert(schema.pdtpActivities).values({
+        id: `${PROGRAM_ID}-a-025`, programId: PROGRAM_ID, n: 25, catalogActivityId, catalogRevision: 1,
+        activity: "Reporte de uso diario de equipos", program: "Prevención PDTP 2026",
+        responsibleSlugs: ["jefe_terreno"], responsibleDisplay: "JT",
+        scheduleMode: "triggered", scheduleClassificationStatus: "confirmed", sourceSheetRow: 4,
+        createdAt: stamp, updatedAt: stamp,
+      })
+
+      const template = await service.importInspectionTemplate({ definitionCode: "reporte_equipos" }, ACCESS)
+
+      expect(template.pdtpActivityNumbers).toEqual([25, 26])
+      // Con un binding sólo a la 25, `resolvePdtpAccreditationTarget` ignoraría
+      // los números y la 26 dejaría de acreditar.
+      expect(await activeBindings(template.id)).toEqual([])
+    })
+  })
 })

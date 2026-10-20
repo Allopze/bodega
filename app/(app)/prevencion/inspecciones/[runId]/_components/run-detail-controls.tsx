@@ -2,22 +2,14 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { remindInspectionReviewAction } from "../../actions"
-import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { toast } from "@/lib/toast"
 import type { ItemInfo } from "./types"
 
 /**
@@ -33,78 +25,115 @@ export function RemindReviewButton({ runId }: { runId: string }) {
         type="button"
         size="sm"
         variant="secondary"
-        disabled={operation.pending}
+        loading={operation.pending}
         onClick={() => operation.run(
           () => remindInspectionReviewAction({ runId }),
           (result) => {
             const names = result.data?.notified
-            if (Array.isArray(names) && names.length > 0) operation.setMessage(`Recordatorio enviado a ${names.join(", ")}.`)
+            toast.success(Array.isArray(names) && names.length > 0 ? `Recordatorio enviado a ${names.join(", ")}.` : "Recordatorio enviado.")
           },
         )}
       >
         {operation.pending ? "Enviando…" : "Recordar a quien revisa"}
       </Button>
       <p className="text-xs text-[var(--color-text-subtle)]">Se envía como máximo un recordatorio al día.</p>
-      {operation.message && <p role="status" className="text-xs">{operation.message}</p>}
+      {operation.messageTone === "error" && operation.message && <p role="alert" className="text-xs text-[var(--color-danger-ink)]">{operation.message}</p>}
     </div>
   )
 }
 
 /**
- * I-20: las 4 acciones destructivas del módulo (Cancelar, Detener, Cerrar,
- * Retirar) se veían como texto plano indistinguible de una acción neutra —
- * "ghost" a secas. Un ghost coloreado en rojo tenue es lo bastante discreto
- * para convivir con la acción primaria y lo bastante visible para no
- * confundirse con "Reabrir para rectificar", que no lo es.
- */
-const GHOST_DANGER_CLASS = "text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger-ink)]"
-
-/**
  * Diálogo genérico de "acción con motivo obligatorio": cancelar, reabrir,
  * cerrar hallazgo. Las tres son la misma interacción, y el servicio exige el
  * mismo mínimo de 10 caracteres en todas.
+ *
+ * Se arma sobre `ConfirmDialog` y no con un formulario propio (P2-4): el botón
+ * que confirma una cancelación se llamaba «Cancelar» y el que la descartaba
+ * «Cerrar». Ahora confirmar repite la acción del disparador y descartar es
+ * «Volver». I-20: la acción destructiva se pinta con `ghost-danger` —lo bastante
+ * discreta para convivir con la primaria y lo bastante visible para no
+ * confundirse con «Reabrir para rectificar», que no lo es—.
  */
-export function ReasonDialog({ trigger, title, description, action, onDone, variant = "ghost", confirmLabel }: {
-  trigger: string
+export function ReasonDialog({
+  trigger,
+  title,
+  description,
+  action,
+  onDone,
+  variant = "ghost",
+  confirmLabel,
+  cancelLabel = "Volver",
+  reasonLabel = "Motivo",
+  confirmVariant,
+  successMessage = "Cambio registrado.",
+  open: controlledOpen,
+  onOpenChange,
+}: {
+  /** Texto del botón que abre el diálogo. `null` no pinta ninguno (modo controlado). */
+  trigger: string | null
   title: string
   description: string
   action: (reason: string) => Promise<{ ok: boolean; message?: string; data?: Record<string, unknown> }>
   onDone?: (result: { data?: Record<string, unknown> }) => void
   variant?: "ghost" | "secondary" | "ghost-danger"
   confirmLabel?: string
+  cancelLabel?: string
+  reasonLabel?: string
+  /** Peso del botón que confirma. Por omisión sigue al disparador: `ghost-danger` confirma en rojo. */
+  confirmVariant?: "destructive" | "warning" | "default"
+  /** Aviso de éxito (toast); el diálogo se cierra, así que el resultado no puede quedarse dentro. */
+  successMessage?: string
+  /**
+   * Modo controlado: quien lo monta decide cuándo está abierto, y lo monta una
+   * sola vez para una lista entera (p. ej. «Cerrar hallazgo» de cada fila).
+   */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
-  const [open, setOpen] = React.useState(false)
+  const [innerOpen, setInnerOpen] = React.useState(false)
+  const open = controlledOpen ?? innerOpen
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setInnerOpen(next)
+    onOpenChange?.(next)
+  }
   const operation = useOperation()
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" variant={variant === "ghost-danger" ? "ghost" : variant} className={variant === "ghost-danger" ? GHOST_DANGER_CLASS : undefined}>{trigger}</Button>
-      </DialogTrigger>
-      <DialogContent>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault()
-            const reason = String(new FormData(event.currentTarget).get("reason") ?? "")
-            operation.run(() => action(reason), (result) => {
-              onDone?.(result)
-              setOpen(false)
-            })
+    <>
+      {trigger !== null && (
+        <Button
+          type="button"
+          size="sm"
+          variant={variant}
+          onClick={() => {
+            // Un error de un intento anterior no debe esperar a quien vuelve a abrir.
+            operation.setMessage("")
+            setOpen(true)
           }}
-          className="space-y-4"
         >
-          <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>{description}</DialogDescription>
-          </DialogHeader>
-          <Field label="Motivo" hint="Mínimo 10 caracteres.">
-            <Textarea name="reason" required minLength={10} maxLength={3000} />
-          </Field>
-          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending}>{confirmLabel ?? trigger}</Button></DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+          {trigger}
+        </Button>
+      )}
+      <ConfirmDialog
+        open={open}
+        // Mientras la acción corre no se cierra: sin saber si se aplicó, quien
+        // desiste podría repetirla o darla por hecha.
+        onOpenChange={(next) => { if (next || !operation.pending) setOpen(next) }}
+        title={title}
+        description={description}
+        confirmLabel={confirmLabel ?? trigger ?? undefined}
+        cancelLabel={cancelLabel}
+        variant={confirmVariant ?? (variant === "ghost-danger" ? "destructive" : "default")}
+        reasonLabel={reasonLabel}
+        loading={operation.pending}
+        error={operation.messageTone === "error" ? operation.message : undefined}
+        onConfirm={(reason) => operation.run(() => action(reason), (result) => {
+          onDone?.(result)
+          toast.success(successMessage)
+          setOpen(false)
+        })}
+      />
+    </>
   )
 }
 

@@ -5,10 +5,16 @@ import { ArrowLeft, DownloadSimple, SpinnerGap } from "@phosphor-icons/react"
 
 export function PrintTrigger({
   backHref,
+  backLabel = "Volver al Acta",
   pdfHref,
   suggestedFilename,
 }: {
   backHref: string
+  /**
+   * El enlace de vuelta nombra el destino: «Volver al Acta» es cierto para la
+   * acta SST, pero la impresión de una inspección vuelve a la inspección.
+   */
+  backLabel?: string
   pdfHref: string
   suggestedFilename: string
 }) {
@@ -59,7 +65,7 @@ export function PrintTrigger({
       </button>
       <a href={backHref} className="print-action print-action-secondary">
         <ArrowLeft size={15} weight="bold" aria-hidden />
-        Volver al Acta
+        {backLabel}
       </a>
       <span className="print-filename">Nombre del archivo: {suggestedFilename}</span>
       {error && (

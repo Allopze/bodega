@@ -14,6 +14,8 @@ import {
   resultBadgeVariant,
   summarizeCompliance,
   validateAnswerRow,
+  validateClosingAct,
+  type ClosingActSpec,
   type InspectionAnswerInput,
   type InspectionItemSpec,
 } from "@/lib/prevention/inspections"
@@ -451,12 +453,113 @@ describe("validación de una respuesta contra su ítem", () => {
     expect(validateAnswerRow(
       item({ kind: "bueno_regular_malo_obs" }),
       answer({ result: "partial" }),
-    )).toMatch(/justificarse por escrito/)
+    )).toMatch(/exige indicar el motivo/)
   })
 
   it("la escala manda sobre la justificación: un ítem que no admite Regular se rechaza por eso, no por el comentario", () => {
     expect(validateAnswerRow(item({ kind: "cumple_nocumple_na_obs" }), answer({ result: "partial" })))
       .toMatch(/se responde/)
+  })
+})
+
+/**
+ * P1-13 (auditoría UI/UX 2026-10-19): el aviso decía «un "No cumple" exige…»
+ * sobre un ítem de escala Bueno/Regular/Malo, donde el botón que la persona
+ * apretó se llama «Malo». El mensaje nombra el resultado con la etiqueta de la
+ * escala del ítem, y los tres resultados que piden explicación comparten una
+ * sola plantilla.
+ */
+describe("el motivo exigido se nombra con la etiqueta de la escala del ítem", () => {
+  const frenos = item({ kind: "bueno_regular_malo_obs", label: "Frenos" })
+
+  it("un 'Malo' sin motivo dice «Malo», no «No cumple»", () => {
+    const problem = validateAnswerRow(frenos, answer({ result: "non_conforming" }))
+    expect(problem).toBe('"Frenos": un "Malo" exige indicar el motivo (mínimo 3 caracteres).')
+    expect(problem).not.toContain("No cumple")
+  })
+
+  it("un 'Regular' sin motivo usa la misma plantilla que los otros dos", () => {
+    expect(validateAnswerRow(frenos, answer({ result: "partial", comment: "  " })))
+      .toBe('"Frenos": un "Regular" exige indicar el motivo (mínimo 3 caracteres).')
+  })
+
+  it("un 'No aplica' de una escala con escape conserva su nombre", () => {
+    expect(validateAnswerRow(
+      item({ kind: "bueno_regular_malo_na_obs", label: "Casco" }),
+      answer({ result: "not_applicable", comment: "no" }),
+    )).toBe('"Casco": un "No aplica" exige indicar el motivo (mínimo 3 caracteres).')
+  })
+
+  it("en una escala Cumple/No cumple el resultado sigue llamándose «No cumple»", () => {
+    expect(validateAnswerRow(item({ kind: "cumple_nocumple_na_obs", label: "Sello" }), answer({ result: "non_conforming" })))
+      .toBe('"Sello": un "No cumple" exige indicar el motivo (mínimo 3 caracteres).')
+  })
+
+  it("en una escala Entregado/No entregado dice «No entregado»", () => {
+    expect(validateAnswerRow(item({ kind: "entregado_obs", label: "Chaleco" }), answer({ result: "non_conforming" })))
+      .toBe('"Chaleco": un "No entregado" exige indicar el motivo (mínimo 3 caracteres).')
+  })
+
+  it("un ítem sin kind (snapshot heredado) usa el vocabulario histórico", () => {
+    expect(validateAnswerRow(item({ kind: undefined }), answer({ result: "non_conforming" })))
+      .toContain('un "No cumple" exige indicar el motivo')
+  })
+
+  it("un motivo suficiente deja pasar a los tres resultados", () => {
+    expect(validateAnswerRow(frenos, answer({ result: "non_conforming", comment: "Pastillas gastadas." }))).toBeNull()
+    expect(validateAnswerRow(frenos, answer({ result: "partial", comment: "Desgaste menor." }))).toBeNull()
+  })
+})
+
+/**
+ * P2-2 (auditoría UI/UX 2026-10-19): «Faltan firmas del acta: jefe_area» le
+ * mostraba al usuario la clave del catálogo.
+ */
+describe("validación del acta de cierre", () => {
+  const spec: ClosingActSpec = {
+    title: "Acta de cierre",
+    resultOptions: [{ value: "apto", label: "Apto" }],
+    hasRestrictions: false,
+    signatureRoles: ["jefe_area", "supervisor"],
+  }
+
+  it("nombra los roles que faltan con su etiqueta, no con la clave del catálogo", () => {
+    const problem = validateClosingAct(spec, { result: "apto", signatures: [] })
+    expect(problem).toBe("Faltan firmas del acta: Jefe area, Supervisor.")
+    expect(problem).not.toContain("jefe_area")
+  })
+
+  it("lista solo los roles sin firmar; una firma en blanco no cuenta", () => {
+    expect(validateClosingAct(spec, {
+      result: "apto",
+      signatures: [{ role: "supervisor", name: "Ana Soto" }, { role: "jefe_area", name: "   " }],
+    })).toBe("Faltan firmas del acta: Jefe area.")
+  })
+
+  it("con todas las firmas no hay problema", () => {
+    expect(validateClosingAct(spec, {
+      result: "apto",
+      signatures: [{ role: "supervisor", name: "Ana Soto" }, { role: "jefe_area", name: "Luis Rojas" }],
+    })).toBeNull()
+  })
+
+  it("sin acta pide completarla y un resultado ajeno a la plantilla se rechaza", () => {
+    expect(validateClosingAct(spec, null)).toContain('Falta completar el acta de cierre "Acta de cierre"')
+    expect(validateClosingAct(spec, { result: "otro", signatures: [] })).toMatch(/no corresponde a las opciones/)
+  })
+
+  /**
+   * R-01 (reauditoría 2026-10-20): con el resultado sin elegir, el bloqueo decía
+   * «no corresponde a las opciones de la plantilla», un error de plantilla que
+   * la persona no puede corregir, cuando lo único que falta es elegirlo.
+   */
+  it("un resultado sin elegir pide elegirlo; no lo confunde con uno ajeno a la plantilla", () => {
+    const esperado = 'Falta elegir el resultado del acta de cierre "Acta de cierre".'
+    expect(validateClosingAct(spec, { result: "", signatures: [] })).toBe(esperado)
+    expect(validateClosingAct(spec, { result: "   ", signatures: [] })).toBe(esperado)
+    // Con el resultado sin elegir, el problema es ése aunque también falten firmas.
+    expect(validateClosingAct(spec, { result: "", signatures: [{ role: "supervisor", name: "Ana Soto" }] })).toBe(esperado)
+    expect(validateClosingAct(spec, { result: "otro", signatures: [] })).not.toMatch(/Falta elegir/)
   })
 })
 

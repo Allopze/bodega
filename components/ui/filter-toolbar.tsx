@@ -143,7 +143,10 @@ export function FilterToolbar({
                 <button
                   type="button"
                   onClick={() => onRemoveChip(chip.key)}
-                  className="ml-0.5 text-[var(--color-text-subtle)] hover:text-[var(--color-text)] transition-colors"
+                  // La «×» mide 11 px. En el teléfono su caja crece a 44×44 con padding y un
+                  // margen negativo igual: el objetivo táctil es el correcto y el chip no se
+                  // mueve ni cambia de tamaño. Desde `md` vuelve al ícono suelto.
+                  className="-my-[16.5px] -mr-[16.5px] -ml-[calc(16.5px-0.125rem)] p-[16.5px] text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)] md:m-0 md:ml-0.5 md:p-0"
                   aria-label={`Eliminar filtro ${chip.label}`}
                 >
                   <X size={11} weight="bold" />

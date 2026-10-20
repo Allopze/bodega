@@ -2,15 +2,16 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowRight, CalendarBlank, CheckCircle, Clock, Play } from "@phosphor-icons/react"
+import { ArrowRight, CalendarBlank, CaretDown, CaretUp, CheckCircle, Clock, Play, Warning } from "@phosphor-icons/react"
 import { startPdtpScheduledInstanceAction } from "@/app/(app)/prevencion/pdtp/actions/scheduled-instances"
 import type { PdtpExecutableInstanceRow } from "@/lib/services/pdtp/executable-instances"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import { Checkbox } from "@/components/ui/checkbox"
 import { EmptyState } from "@/components/ui/empty-state"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { formatDate } from "@/lib/utils"
+import { formatDate, todayInChile } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 
@@ -29,10 +30,6 @@ function statusVariant(status: string): "default" | "success" | "warning" | "dan
   if (status === "in_progress" || status === "submitted" || status === "reported") return "warning"
   if (status === "completed") return "success"
   return "default"
-}
-
-function chileToday(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" })
 }
 
 function addCivilDays(isoDate: string, days: number): string {
@@ -72,10 +69,22 @@ function StartButton({ row }: { row: PdtpExecutableInstanceRow }) {
   )
 }
 
+/** Cuántas actividades hay y cuántas de ellas están vencidas, para el resumen. */
+function summaryText(total: number, overdue: number, connectorLabel: string): string {
+  const where = connectorLabel.toLocaleLowerCase("es-CL")
+  const base = total === 1
+    ? `1 actividad del Programa Preventivo pendiente en ${where}`
+    : `${total} actividades del Programa Preventivo pendientes en ${where}`
+  if (overdue === 0) return base
+  return `${base} · ${overdue} ${overdue === 1 ? "vencida" : "vencidas"}`
+}
+
 export function PdtpScheduledActivityPanel({
   rows,
   connectorLabel,
   searchQuery: searchOverride,
+  worksiteId,
+  presentation = "panel",
 }: {
   rows: PdtpExecutableInstanceRow[]
   connectorLabel: string
@@ -90,21 +99,41 @@ export function PdtpScheduledActivityPanel({
    * ambiente que puede no existir.
    */
   searchQuery?: string
+  /**
+   * Faena que la pantalla ya eligió. Acota el bloque a ella y esconde su propio
+   * selector «Faena»: dos controles para la misma dimensión (A5), y el segundo
+   * contradecía al primero. Sin ella el bloque se comporta como siempre.
+   */
+  worksiteId?: string
+  /**
+   * `panel` (por defecto): el bloque completo, como en las demás pantallas que lo
+   * usan. `summary`: un aviso de una línea que sólo existe cuando hay trabajo
+   * pendiente y que despliega el bloque a pedido, para que no empuje la lista que
+   * es el objeto de la página.
+   */
+  presentation?: "panel" | "summary"
 }) {
   const [worksite, setWorksite] = React.useState("all")
   const [status, setStatus] = React.useState("all")
   const [period, setPeriod] = React.useState<PeriodFilter>("30")
   const [assignedToMe, setAssignedToMe] = React.useState(false)
+  const [expanded, setExpanded] = React.useState(false)
+  const bodyId = React.useId()
   const { searchQuery: shellSearchQuery } = useSafeShellHeader()
   const searchQuery = searchOverride ?? shellSearchQuery
   const needle = searchQuery.trim().toLocaleLowerCase("es-CL")
-  const today = chileToday()
+  const today = todayInChile()
   const periodEnd = period === "all" ? null : addCivilDays(today, Number(period))
+  // El universo del bloque: con una faena elegida por la pantalla, sólo la suya.
+  const blockRows = React.useMemo(
+    () => (worksiteId ? rows.filter((row) => row.worksiteId === worksiteId) : rows),
+    [rows, worksiteId],
+  )
   const worksites = React.useMemo(
-    () => [...new Map(rows.map((row) => [row.worksiteId, row.worksiteName] as const)).entries()]
+    () => [...new Map(blockRows.map((row) => [row.worksiteId, row.worksiteName] as const)).entries()]
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, "es-CL")),
-    [rows],
+    [blockRows],
   )
   function resetFilters() {
     setWorksite("all")
@@ -118,8 +147,9 @@ export function PdtpScheduledActivityPanel({
       .toLocaleLowerCase("es-CL").includes(needle)
   }
   /** Cuántas sobreviven a la búsqueda de la pantalla, sin los filtros del bloque. */
-  const searchMatchCount = rows.filter(matchesSearch).length
-  const visibleRows = rows.filter((row) => {
+  const searchMatches = blockRows.filter(matchesSearch)
+  const searchMatchCount = searchMatches.length
+  const visibleRows = blockRows.filter((row) => {
     if (!matchesSearch(row)) return false
     if (worksite !== "all" && row.worksiteId !== worksite) return false
     if (status !== "all" && row.status !== status) return false
@@ -128,11 +158,14 @@ export function PdtpScheduledActivityPanel({
     return true
   })
 
+  // Resumen: sin trabajo no hay nada que avisar, y no se pinta ni un renglón.
+  if (presentation === "summary" && searchMatchCount === 0) return null
+
   // Sin nada programado el bloque ocupaba media pantalla —encabezado, tres
   // filtros y un estado vacío ilustrado— para empujar hacia abajo la lista que
   // es el objeto de la página. Colapsado dice lo mismo en un renglón, y no
   // ofrece filtros para un conjunto vacío.
-  if (rows.length === 0) {
+  if (blockRows.length === 0) {
     return (
       <section
         aria-labelledby={`pdtp-programmed-${connectorLabel}`}
@@ -146,8 +179,8 @@ export function PdtpScheduledActivityPanel({
     )
   }
 
-  return (
-    <section aria-labelledby={`pdtp-programmed-${connectorLabel}`} className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xs md:p-5">
+  const panel = (
+    <section id={presentation === "summary" ? bodyId : undefined} aria-labelledby={`pdtp-programmed-${connectorLabel}`} className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xs md:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id={`pdtp-programmed-${connectorLabel}`} className="text-h3 text-[var(--color-text)]">Actividades programadas</h2>
@@ -157,13 +190,15 @@ export function PdtpScheduledActivityPanel({
       </div>
 
       <div className="flex flex-wrap items-center gap-2" aria-label="Filtros de actividades programadas">
-        <Select value={worksite} onValueChange={setWorksite}>
-          <SelectTrigger aria-label="Faena"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas las faenas</SelectItem>
-            {worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        {!worksiteId && (
+          <Select value={worksite} onValueChange={setWorksite}>
+            <SelectTrigger aria-label="Faena"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas las faenas</SelectItem>
+              {worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger aria-label="Estado"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -193,7 +228,7 @@ export function PdtpScheduledActivityPanel({
             compact
             icon={<CheckCircle size={20} />}
             title={`Ninguna actividad coincide con «${searchQuery.trim()}»`}
-            description={`La búsqueda de la pantalla también acota este bloque. Bórrala para volver a ver ${rows.length === 1 ? "la actividad programada" : `las ${rows.length} actividades programadas`}.`}
+            description={`La búsqueda de la pantalla también acota este bloque. Bórrala para volver a ver ${blockRows.length === 1 ? "la actividad programada" : `las ${blockRows.length} actividades programadas`}.`}
           />
         ) : (
           <EmptyState
@@ -227,5 +262,36 @@ export function PdtpScheduledActivityPanel({
         </div>
       )}
     </section>
+  )
+
+  if (presentation !== "summary") return panel
+
+  // Las vencidas se cuentan sobre lo que la búsqueda deja pasar: el aviso habla
+  // de lo mismo que la pantalla muestra, no de un universo que no se ve.
+  const overdueCount = searchMatches.filter((row) => row.status === "overdue").length
+  return (
+    <div className="space-y-3">
+      <Callout
+        tone={overdueCount > 0 ? "danger" : "info"}
+        role="none"
+        icon={overdueCount > 0 ? <Warning size={18} weight="fill" /> : <CalendarBlank size={18} />}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <p className="font-medium">{summaryText(searchMatchCount, overdueCount, connectorLabel)}</p>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            aria-expanded={expanded}
+            aria-controls={expanded ? bodyId : undefined}
+            onClick={() => setExpanded((open) => !open)}
+          >
+            Ver actividades
+            {expanded ? <CaretUp size={14} aria-hidden /> : <CaretDown size={14} aria-hidden />}
+          </Button>
+        </div>
+      </Callout>
+      {expanded && panel}
+    </div>
   )
 }

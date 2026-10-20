@@ -12,9 +12,14 @@ import {
   listUnclassifiedDeviationsFor,
 } from "@/lib/services/prevention-inspections"
 import { listTemplateDeviationSelections } from "@/lib/services/prevention-deviations"
-import { ImportTemplateDialog, InspectionTemplatesPanel, type TemplateItem } from "../inspection-catalog"
+import { loadPdtpActivityIdentityMap } from "@/lib/services/prevention-inspections/pdtp-identity"
+import { officialInspectionSourceFor } from "@/lib/sst/official-inspection-sources"
+import type { TemplateItem } from "../_components/catalog-types"
+import { ImportTemplateDialog } from "./_components/import-template-dialog"
+import { InspectionTemplatesPanel } from "./_components/templates-panel"
 import { listCatalogActivities } from "@/lib/services/pdtp/catalog-activities"
 import { listPdtpAccreditationBindings } from "@/lib/services/pdtp/accreditation-bindings"
+import { buildTemplatePdtpAccreditation } from "./pdtp-accreditation"
 
 export const metadata: Metadata = { title: "Plantillas de inspección" }
 
@@ -52,18 +57,29 @@ export default async function PlantillasInspeccionPage() {
   // La selección cuelga del CÓDIGO del instrumento, no de la fila de su versión.
   const deviationTemplateCodes = [...new Set(deviationTemplates.map((row) => row.code))]
   const deviationTemplateIds = deviationTemplates.map((row) => row.id)
+  const recordsDeviationsIds = new Set(deviationTemplateIds)
   // Sólo para quien administra: quien únicamente mira no tiene qué hacer con ellas.
   // Los bindings también cuelgan sólo de los ids de plantilla: van en esta
   // misma tanda en vez de sumar un viaje propio antes de ella.
-  const [bindings, deviationsByCode, unclassifiedByTemplate] = await Promise.all([
+  const [bindings, deviationsByCode, unclassifiedByTemplate, identities] = await Promise.all([
     listPdtpAccreditationBindings({ sourceType: "inspeccion", sourceIds: templates.map((template) => template.id) }),
     canManage ? listTemplateDeviationSelections(deviationTemplateCodes, access) : Promise.resolve(new Map()),
     canManage ? listUnclassifiedDeviationsFor(deviationTemplateIds, access) : Promise.resolve(new Map()),
+    // Identidad corporativa de cada actividad del programa vigente: con ella la
+    // tabla y el diálogo dicen lo mismo de lo que una plantilla acredita.
+    loadPdtpActivityIdentityMap(),
   ]) as [
     Awaited<ReturnType<typeof listPdtpAccreditationBindings>>,
     Awaited<ReturnType<typeof listTemplateDeviationSelections>>,
     Awaited<ReturnType<typeof listUnclassifiedDeviationsFor>>,
+    Awaited<ReturnType<typeof loadPdtpActivityIdentityMap>>,
   ]
+  const nameByNumber = new Map(pdtpOptions.map((option) => [option.n, option.name]))
+  const catalogTitleById = new Map(catalogActivities.map((activity) => [activity.id, activity.title]))
+  /** Vínculos vigentes por plantilla y eje; los inactivos son historia, no acreditación. */
+  const bindingIdsOf = (templateId: string, eventType: "execute" | "review") => bindings
+    .filter((binding) => binding.sourceId === templateId && binding.eventType === eventType && binding.isActive)
+    .map((binding) => binding.catalogActivityId)
   const templateItems: TemplateItem[] = templates.map((row) => ({
     id: row.id,
     code: row.code,
@@ -71,18 +87,31 @@ export default async function PlantillasInspeccionPage() {
     name: row.name,
     kind: row.kind,
     status: row.status,
+    // Retirada a propósito = `superseded` sin versión que la reemplace.
+    supersededByTemplateId: row.supersededByTemplateId,
     authorUserId: row.authorUserId,
     version: row.version,
     coverage: row.coverage,
     pdtpActivityNumbers: row.pdtpActivityNumbers,
     pdtpReviewActivityNumbers: row.pdtpReviewActivityNumbers,
-    pdtpCatalogActivityIds: bindings.filter((binding) => binding.sourceId === row.id && binding.eventType === "execute" && binding.isActive).map((binding) => binding.catalogActivityId),
-    pdtpReviewCatalogActivityIds: bindings.filter((binding) => binding.sourceId === row.id && binding.eventType === "review" && binding.isActive).map((binding) => binding.catalogActivityId),
+    ...buildTemplatePdtpAccreditation({
+      numbers: { execute: row.pdtpActivityNumbers, review: row.pdtpReviewActivityNumbers },
+      bindingIds: { execute: bindingIdsOf(row.id, "execute"), review: bindingIdsOf(row.id, "review") },
+      identities,
+      nameByNumber,
+      catalogTitleById,
+    }),
+    // El catálogo de desviaciones sólo existe donde el instrumento las registra.
+    recordsDeviations: recordsDeviationsIds.has(row.id),
     sourceDefinitionCode: row.sourceDefinitionCode,
     executorOfRecord: row.executorOfRecord,
     definitionDrifted: row.definitionDrifted,
     definitionMissing: row.definitionMissing,
     provenanceKind: row.provenanceKind,
+    // Un anexo oficial no se aprueba sin su planilla; el checksum del archivo
+    // oficial deja ofrecer en la Biblioteca sólo el que coincide.
+    needsOfficialSource: row.provenanceKind === "official_document",
+    officialChecksumSha256: row.sourceDefinitionCode ? officialInspectionSourceFor(row.sourceDefinitionCode)?.sha256 ?? null : null,
     sourceDocumentVersionId: row.sourceDocumentVersionId,
     sourceSnapshot: row.sourceSnapshot,
     parityReport: row.parityReport,
@@ -107,26 +136,41 @@ export default async function PlantillasInspeccionPage() {
     unclassifiedDeviations: unclassifiedByTemplate.get(row.id) ?? [],
   }))
   const importable = canManage ? listImportableDefinitions() : []
+  // El mismo botón del encabezado llena el catálogo vacío (A4): una acción real, no una ruta pegada como texto.
+  const importAction = canManage && importable.length > 0
+    ? <ImportTemplateDialog importable={importable} templates={templateItems} documentSources={documentSources} />
+    : undefined
 
   return (
     <PageContainer>
       <PageHeader
         title="Plantillas de inspección"
-        description="Los instrumentos versionados del catálogo SST —inspecciones, observaciones y la auditoría del Sistema de Gestión (DS 44 art. 22 n°4)—: qué se pregunta, con qué gravedad por ítem y qué actividad del programa anual acredita."
+        description="Instrumentos versionados: qué se pregunta y qué acredita."
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Inspecciones", href: "/prevencion/inspecciones" },
           { label: "Plantillas" },
         ]} />}
-        actions={canManage && importable.length > 0 ? <ImportTemplateDialog importable={importable} templates={templateItems} documentSources={documentSources} /> : undefined}
+        actions={importAction}
       />
       <InspectionTemplatesPanel
         templates={templateItems}
-        pdtpOptions={pdtpOptions}
-        catalogActivities={catalogActivities.map((activity) => ({ id: activity.id, code: activity.code, title: activity.title, description: activity.description, status: activity.status as "draft" | "active" | "retired" }))}
+        // El número anual de cada actividad acompaña al título en el selector: es
+        // como se la reconoce cuando una plantilla todavía acredita por número.
+        catalogActivities={catalogActivities.map((activity) => ({
+          id: activity.id,
+          code: activity.code,
+          title: activity.title,
+          description: activity.description,
+          status: activity.status as "draft" | "active" | "retired",
+          annualNumber: identities.byCatalogId.get(activity.id)?.n ?? null,
+        }))}
+        documentSources={documentSources}
         canManage={canManage}
         canApprove={session.user.permissions.includes("prevention:inspections:approve")}
+        currentUserId={session.user.id}
+        emptyAction={importAction}
       />
     </PageContainer>
   )
