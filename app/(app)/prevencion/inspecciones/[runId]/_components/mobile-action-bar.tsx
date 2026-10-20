@@ -2,14 +2,12 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
-import { ReviewDialog } from "./review-dialog"
 import { RunSaveStatus } from "./run-status"
 import type { RunViewModel } from "./run-view-types"
 
 export type MobileActionBarModel = Pick<
   RunViewModel,
-  | "run" | "editable" | "canExecute" | "canCurrentUserReview" | "showMobileActionBar"
-  | "currentUserId" | "assignees" | "findings" | "channel"
+  "editable" | "canCurrentUserReview" | "showMobileActionBar" | "channel"
 >
 
 /**
@@ -17,13 +15,21 @@ export type MobileActionBarModel = Pick<
  * [Guardar] [Declarar ejecutada] al editar, o [Revisar y cerrar] al revisar. No
  * pinta nada si no hay acción que ofrecer (`showMobileActionBar`).
  *
- * «Declarar ejecutada» no monta el diálogo: avisa con `onDeclare` y la vista de
- * captura lo abre, para que exista una sola copia (la cabecera de trabajo del
- * escritorio abre la misma). Las acciones del registro (Acta PDF, Reabrir,
- * Cancelar) ya no viven aquí: están en el encabezado de la página.
+ * Ninguno de los dos diálogos se monta aquí: «Declarar ejecutada» avisa con
+ * `onDeclare` y «Revisar y cerrar» con `onReview`, y la vista que corresponda
+ * (captura o lectura) los abre, para que exista una sola copia de cada uno (el
+ * botón de la cabecera del escritorio abre el mismo). Las acciones del registro
+ * (Acta PDF, Reabrir, Cancelar) ya no viven aquí: están en el encabezado de la
+ * página.
  */
-export function MobileActionBar({ model, onDeclare }: { model: MobileActionBarModel; onDeclare?: () => void }) {
-  const { run, editable, canExecute, canCurrentUserReview, showMobileActionBar, currentUserId, assignees, findings, channel } = model
+export function MobileActionBar({ model, onDeclare, onReview, reviewLabel }: {
+  model: MobileActionBarModel
+  onDeclare?: () => void
+  onReview?: () => void
+  /** «Revisar y cerrar» o «Revisar y cerrar · 2 bloqueos». */
+  reviewLabel?: string
+}) {
+  const { editable, canCurrentUserReview, showMobileActionBar, channel } = model
   if (!showMobileActionBar) return null
   return (
     <div role="group" aria-label="Acciones de la inspección en el teléfono" className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 grid grid-cols-2 gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-[var(--shadow-lg)] md:hidden">
@@ -35,7 +41,7 @@ export function MobileActionBar({ model, onDeclare }: { model: MobileActionBarMo
           <Button type="button" disabled={channel.locked || !onDeclare} onClick={onDeclare}>Declarar ejecutada</Button>
         </>
       ) : canCurrentUserReview ? (
-        <div className="col-span-2"><ReviewDialog run={run} findings={findings} currentUserId={currentUserId} version={channel.version} assignees={assignees} canExecute={canExecute} /></div>
+        <div className="col-span-2"><Button type="button" className="w-full" disabled={!onReview} onClick={onReview}>{reviewLabel ?? "Revisar y cerrar"}</Button></div>
       ) : null}
     </div>
   )

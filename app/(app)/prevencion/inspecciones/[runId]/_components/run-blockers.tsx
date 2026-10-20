@@ -47,7 +47,7 @@ export type ReviewBlockedNoticeModel = Pick<RunViewModel, "run" | "reviewers" | 
 export function ReviewBlockedNotice({ model }: { model: ReviewBlockedNoticeModel }) {
   const { run, reviewers, selfReviewBlocked } = model
   return (
-    <div className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">
+    <Callout tone="warning" role="none">
       <p>
         {selfReviewBlocked
           ? "Tú ejecutaste esta inspección: debe revisarla y cerrarla otra persona con permiso de revisión."
@@ -56,6 +56,6 @@ export function ReviewBlockedNotice({ model }: { model: ReviewBlockedNoticeModel
       </p>
       {reviewers.length > 0 && <RemindReviewButton runId={run.id} />}
       {reviewers.length === 0 && <p className="mt-1">Nadie con permiso de revisión está asignado a esta faena. Avisa a Prevención.</p>}
-    </div>
+    </Callout>
   )
 }

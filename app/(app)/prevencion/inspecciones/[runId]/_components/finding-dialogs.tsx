@@ -31,11 +31,11 @@ import type { FindingInfo } from "./types"
 /* ── Derivar hallazgo a CAPA ──────────────────────────────────────────────── */
 
 /**
- * Puede usarse de dos maneras: con su propio botón (`trigger` por omisión, que
- * es como lo usa la tabla de hallazgos) o controlado desde afuera
- * (`open`/`onOpenChange`, y `trigger={null}` para no pintar ninguno), que es
- * como lo usa el diálogo de revisión: ahí hay un solo `CapaDialog` y no uno por
- * bloqueo, y vive fuera del `<form>` de la revisión.
+ * Puede usarse de dos maneras: con su propio botón (`trigger` por omisión) o
+ * controlado desde afuera (`open`/`onOpenChange`, y `trigger={null}` para no
+ * pintar ninguno), que es como lo usan la lista de hallazgos y el diálogo de
+ * revisión: ahí hay un solo `CapaDialog` y no uno por fila o por bloqueo, y el
+ * de la revisión vive fuera del `<form>` de la revisión.
  */
 export function CapaDialog({ finding, assignees, hasVehicle, open, onOpenChange, trigger }: {
   finding: FindingInfo
@@ -130,13 +130,22 @@ export function CapaDialog({ finding, assignees, hasVehicle, open, onOpenChange,
  * para la faena: lo decide quien administra la flota, no quien digita el
  * reporte, y exige dejar dicho por qué.
  */
-export function StopVehicleDialog({ finding, subjectLabel }: { finding: FindingInfo; subjectLabel: string | null }) {
-  const [open, setOpen] = React.useState(false)
+export function StopVehicleDialog({ finding, subjectLabel, open, onOpenChange, trigger }: {
+  finding: FindingInfo
+  subjectLabel: string | null
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** Botón que lo abre. `null` no pinta ninguno (modo controlado). */
+  trigger?: React.ReactElement | null
+}) {
+  const [innerOpen, setInnerOpen] = React.useState(false)
   const operation = useOperation()
+  const isOpen = open ?? innerOpen
 
   function changeOpen(next: boolean) {
     operation.setMessage("")
-    setOpen(next)
+    if (open === undefined) setInnerOpen(next)
+    onOpenChange?.(next)
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -154,8 +163,10 @@ export function StopVehicleDialog({ finding, subjectLabel }: { finding: FindingI
   }
 
   return (
-    <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="secondary">Sacar de servicio</Button></DialogTrigger>
+    <Dialog open={isOpen} onOpenChange={changeOpen}>
+      {trigger !== null && (
+        <DialogTrigger asChild>{trigger ?? <Button size="sm" variant="secondary">Sacar de servicio</Button>}</DialogTrigger>
+      )}
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>

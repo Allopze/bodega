@@ -66,8 +66,11 @@ export function ReasonDialog({
   reasonLabel = "Motivo",
   confirmVariant,
   successMessage = "Cambio registrado.",
+  open: controlledOpen,
+  onOpenChange,
 }: {
-  trigger: string
+  /** Texto del botón que abre el diálogo. `null` no pinta ninguno (modo controlado). */
+  trigger: string | null
   title: string
   description: string
   action: (reason: string) => Promise<{ ok: boolean; message?: string; data?: Record<string, unknown> }>
@@ -80,24 +83,37 @@ export function ReasonDialog({
   confirmVariant?: "destructive" | "warning" | "default"
   /** Aviso de éxito (toast); el diálogo se cierra, así que el resultado no puede quedarse dentro. */
   successMessage?: string
+  /**
+   * Modo controlado: quien lo monta decide cuándo está abierto, y lo monta una
+   * sola vez para una lista entera (p. ej. «Cerrar hallazgo» de cada fila).
+   */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
-  const [open, setOpen] = React.useState(false)
+  const [innerOpen, setInnerOpen] = React.useState(false)
+  const open = controlledOpen ?? innerOpen
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setInnerOpen(next)
+    onOpenChange?.(next)
+  }
   const operation = useOperation()
 
   return (
     <>
-      <Button
-        type="button"
-        size="sm"
-        variant={variant}
-        onClick={() => {
-          // Un error de un intento anterior no debe esperar a quien vuelve a abrir.
-          operation.setMessage("")
-          setOpen(true)
-        }}
-      >
-        {trigger}
-      </Button>
+      {trigger !== null && (
+        <Button
+          type="button"
+          size="sm"
+          variant={variant}
+          onClick={() => {
+            // Un error de un intento anterior no debe esperar a quien vuelve a abrir.
+            operation.setMessage("")
+            setOpen(true)
+          }}
+        >
+          {trigger}
+        </Button>
+      )}
       <ConfirmDialog
         open={open}
         // Mientras la acción corre no se cierra: sin saber si se aplicó, quien
@@ -105,7 +121,7 @@ export function ReasonDialog({
         onOpenChange={(next) => { if (next || !operation.pending) setOpen(next) }}
         title={title}
         description={description}
-        confirmLabel={confirmLabel ?? trigger}
+        confirmLabel={confirmLabel ?? trigger ?? undefined}
         cancelLabel={cancelLabel}
         variant={confirmVariant ?? (variant === "ghost-danger" ? "destructive" : "default")}
         reasonLabel={reasonLabel}

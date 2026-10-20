@@ -1,12 +1,10 @@
 "use client"
 
 import * as React from "react"
-import { MetaBadge } from "@/components/states/state-badge"
 import { Tooltip } from "@/components/ui/tooltip"
 import {
   INSPECTION_KIND_LABELS,
   INSPECTION_ORIGIN_LABELS,
-  runStatusBadgeVariant,
 } from "@/lib/prevention/inspections"
 import {
   formatComplianceBasisPoints,
@@ -101,54 +99,6 @@ export function FactLabel({ fact }: { fact: Pick<RunFact, "label" | "hint"> }) {
         <span tabIndex={0} className="cursor-help underline decoration-dotted underline-offset-2">{hint.term}</span>
       </Tooltip>
       {label.slice(at + hint.term.length)}
-    </>
-  )
-}
-
-/**
- * La ficha de contexto: en el teléfono una tarjeta con «Ver contexto completo»
- * plegado; desde `md`, una rejilla con todos los datos. Son dos nodos hermanos
- * (uno oculto por CSS), así que el componente devuelve un fragmento.
- */
-export function RunFacts({ model }: { model: RunFactsModel }) {
-  const { run, worksiteName, assigneeName, requiredItems, answeredRequired, answeredCount, items } = model
-  const facts = buildRunFacts(model)
-  return (
-    <>
-      <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:hidden">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-eyebrow">Trabajo actual</p>
-            <p className="mt-1 text-base font-semibold">{worksiteName}{run.subjectLabel ? ` · ${run.subjectLabel}` : ""}</p>
-          </div>
-          <MetaBadge meta={{ label: `${inspectionTaskStatusLabel(run.status)}`, variant: runStatusBadgeVariant(run.status) }} />
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
-          <div><span className="block text-[var(--color-text-subtle)]">Responsable</span><span className="mt-0.5 block font-medium">{assigneeName ?? "Sin asignar"}</span></div>
-          {/* I-02: sin obligatorios efectivos (instrumento de un solo ítem de
-              texto libre) "0 de N obligatorios" mentía igual que antes, sólo
-              que al revés — se muestra el avance total en su lugar. */}
-          <div>
-            <span className="block text-[var(--color-text-subtle)]">{requiredItems.length > 0 ? "Avance obligatorio" : "Avance"}</span>
-            <span className="mt-0.5 block font-medium">{requiredItems.length > 0 ? `${answeredRequired} de ${requiredItems.length}` : `${answeredCount} de ${items.length}`}</span>
-          </div>
-        </div>
-        <details className="mt-3 border-t border-[var(--color-border)] pt-3 text-sm">
-          <summary className="cursor-pointer font-medium">Ver contexto completo</summary>
-          <dl className="mt-3 grid grid-cols-2 gap-3">
-            {facts.slice(1).map((fact) => <div key={fact.id}><dt className="text-xs text-[var(--color-text-subtle)]"><FactLabel fact={fact} /></dt><dd className="mt-0.5 text-xs font-medium">{fact.value}</dd></div>)}
-          </dl>
-        </details>
-      </section>
-
-      <div className="hidden grid-cols-2 gap-px overflow-hidden border-y border-[var(--color-border)] bg-[var(--color-border)] md:grid md:grid-cols-4">
-        {facts.map((fact) => (
-          <div key={fact.id} className="bg-[var(--color-surface)] px-4 py-3">
-            <span className="text-eyebrow"><FactLabel fact={fact} /></span>
-            <span className="mt-1 block text-sm font-medium">{fact.value}</span>
-          </div>
-        ))}
-      </div>
     </>
   )
 }

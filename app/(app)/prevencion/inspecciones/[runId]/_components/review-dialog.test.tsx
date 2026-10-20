@@ -15,6 +15,7 @@
  * de la revisión, el formulario de CAPA lo disparaba también.
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import * as React from "react"
 import type { FormEvent } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { FindingInfo, RunInfo } from "./types"
@@ -34,7 +35,7 @@ vi.mock("@/lib/toast", () => ({
   toast: { success: toastSuccess, error: vi.fn() },
 }))
 
-const { ReviewDialog } = await import("./review-dialog")
+const { ReviewDialog, assessReviewForRun, reviewActionLabel } = await import("./review-dialog")
 const { CapaDialog, StopVehicleDialog } = await import("./finding-dialogs")
 
 beforeEach(() => {
@@ -71,13 +72,43 @@ function finding(overrides: Partial<FindingInfo> = {}): FindingInfo {
   }
 }
 
+/**
+ * El diálogo es controlado: lo abre un botón que vive afuera (en la pantalla real,
+ * el de la cabecera o el de la barra del teléfono). Este arnés hace de esa
+ * pantalla: un botón con el rótulo que calcula `reviewActionLabel` y UN diálogo.
+ */
+function ReviewHarness({ run: current, findings, currentUserId, assignees, canExecute }: {
+  run: RunInfo
+  findings: FindingInfo[]
+  currentUserId: string
+  assignees: { id: string; name: string }[]
+  canExecute: boolean
+}) {
+  const [open, setOpen] = React.useState(false)
+  const review = assessReviewForRun({ run: current, findings, currentUserId })
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>{reviewActionLabel(review)}</button>
+      <ReviewDialog
+        run={current}
+        findings={findings}
+        currentUserId={currentUserId}
+        version={current.version}
+        assignees={assignees}
+        canExecute={canExecute}
+        open={open}
+        onOpenChange={setOpen}
+      />
+    </>
+  )
+}
+
 function renderDialog(props: { run: RunInfo; findings?: FindingInfo[] }) {
   render(
-    <ReviewDialog
+    <ReviewHarness
       run={props.run}
       findings={props.findings ?? []}
       currentUserId={TRANSCRIPTOR}
-      version={props.run.version}
       assignees={[]}
       canExecute={false}
     />,
@@ -112,11 +143,10 @@ const REVIEWER = "user-revisor"
 
 function renderAsReviewer(findings: FindingInfo[]) {
   render(
-    <ReviewDialog
+    <ReviewHarness
       run={run()}
       findings={findings}
       currentUserId={REVIEWER}
-      version={3}
       assignees={[{ id: "user-ana", name: "Ana Pérez" }]}
       canExecute
     />,
@@ -127,6 +157,33 @@ async function openReview() {
   fireEvent.click(screen.getByRole("button", { name: /Revisar y cerrar/ }))
   return screen.findByRole("dialog", { name: "Revisar y cerrar INS-1" })
 }
+
+describe("ReviewDialog — controlado", () => {
+  it("cerrado no pinta nada y se abre y cierra desde afuera", async () => {
+    renderAsReviewer([])
+    expect(screen.queryByRole("dialog")).toBeNull()
+
+    const review = await openReview()
+    expect(review).toBeInTheDocument()
+
+    fireEvent.keyDown(review, { key: "Escape" })
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+  })
+
+  it("el rótulo del botón cuenta los bloqueos con la misma regla que el diálogo", () => {
+    expect(reviewActionLabel({ allowed: true, blockers: [] })).toBe("Revisar y cerrar")
+    expect(reviewActionLabel({ allowed: false, blockers: [{}] })).toBe("Revisar y cerrar · 1 bloqueo")
+    expect(reviewActionLabel({ allowed: false, blockers: [{}, {}] })).toBe("Revisar y cerrar · 2 bloqueos")
+  })
+
+  it("el diálogo lista el mismo bloqueo que anuncia el botón", async () => {
+    renderAsReviewer([finding()])
+    expect(screen.getByRole("button", { name: "Revisar y cerrar · 1 bloqueo" })).toBeInTheDocument()
+    const review = await openReview()
+    expect(within(review).getByText("No se puede cerrar:")).toBeInTheDocument()
+    expect(within(review).getAllByRole("listitem")).toHaveLength(1)
+  })
+})
 
 describe("ReviewDialog — derivar a CAPA (P1-3)", () => {
   it("el submit del formulario de CAPA crea la CAPA y no envía la revisión", async () => {

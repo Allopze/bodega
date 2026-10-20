@@ -10,7 +10,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { assessRunReview } from "@/lib/prevention/inspections"
@@ -23,7 +22,37 @@ import { CapaDialog } from "./finding-dialogs"
 
 /* ── Revisar y cerrar ─────────────────────────────────────────────────────── */
 
-export function ReviewDialog({ run, findings, currentUserId, version, assignees, canExecute }: {
+/**
+ * Lo que el servidor va a exigir para cerrar (`assessRunReview`), visto desde la
+ * pantalla. Lo usan el diálogo (para listar los bloqueos) y los botones que lo
+ * abren (para decir cuántos hay), así que los dos evalúan lo mismo.
+ */
+export function assessReviewForRun(args: {
+  run: Pick<RunInfo, "executedByUserId" | "executorOfRecord">
+  findings: readonly FindingInfo[]
+  currentUserId: string
+}) {
+  const { run, findings, currentUserId } = args
+  return assessRunReview({
+    executedByUserId: run.executedByUserId,
+    reviewerUserId: currentUserId,
+    findings: findings.map((item) => ({ id: item.id, description: item.description, criticality: item.criticality, capaActionId: item.capaActionId, status: item.status })),
+    // Sin esto la vista pedía una independencia que el servidor no exige (#47).
+    executorOfRecord: run.executorOfRecord,
+  })
+}
+
+/** El rótulo del botón que abre la revisión: «Revisar y cerrar» o «Revisar y cerrar · 2 bloqueos». */
+export function reviewActionLabel(review: { allowed: boolean; blockers: readonly unknown[] }): string {
+  return `Revisar y cerrar${!review.allowed ? ` · ${review.blockers.length} bloqueo${review.blockers.length === 1 ? "" : "s"}` : ""}`
+}
+
+/**
+ * El diálogo de revisión, CONTROLADO: la vista de lectura lo monta una sola vez y
+ * lo abren el botón de la cabecera (escritorio) y el de la barra fija (teléfono).
+ * Antes cada uno montaba el suyo, con su propio estado y su propio comentario.
+ */
+export function ReviewDialog({ run, findings, currentUserId, version, assignees, canExecute, open, onOpenChange }: {
   run: RunInfo
   findings: FindingInfo[]
   currentUserId: string
@@ -32,31 +61,28 @@ export function ReviewDialog({ run, findings, currentUserId, version, assignees,
   /** I-07: para poder derivar a CAPA sin salir del diálogo de revisión. */
   assignees: { id: string; name: string }[]
   canExecute: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
-  const [open, setOpen] = React.useState(false)
   // Hallazgo que se está derivando. Un solo `CapaDialog` para toda la lista de
   // bloqueos, y fuera del `<form>`: anidado dentro, su `submit` se propagaba por
   // el árbol de React hasta el formulario de revisión (P1-3).
   const [capaFindingId, setCapaFindingId] = React.useState<string | null>(null)
   const operation = useOperation()
-  const review = React.useMemo(() => assessRunReview({
-    executedByUserId: run.executedByUserId,
-    reviewerUserId: currentUserId,
-    findings: findings.map((item) => ({ id: item.id, description: item.description, criticality: item.criticality, capaActionId: item.capaActionId, status: item.status })),
-    // Sin esto la vista pedía una independencia que el servidor no exige (#47).
-    executorOfRecord: run.executorOfRecord,
-  }), [run.executedByUserId, run.executorOfRecord, currentUserId, findings])
+  const review = React.useMemo(
+    () => assessReviewForRun({ run: { executedByUserId: run.executedByUserId, executorOfRecord: run.executorOfRecord }, findings, currentUserId }),
+    [run.executedByUserId, run.executorOfRecord, currentUserId, findings],
+  )
   const capaFinding = capaFindingId ? findings.find((item) => item.id === capaFindingId) : undefined
 
   function changeOpen(next: boolean) {
     operation.setMessage("")
     if (!next) setCapaFindingId(null)
-    setOpen(next)
+    onOpenChange(next)
   }
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="secondary">Revisar y cerrar{!review.allowed ? ` · ${review.blockers.length} bloqueo${review.blockers.length === 1 ? "" : "s"}` : ""}</Button></DialogTrigger>
       <DialogContent>
         <form
           onSubmit={(event) => {
