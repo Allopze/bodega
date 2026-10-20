@@ -284,3 +284,25 @@ describe("vista «pendientes de revisión» — la lista abre exactamente lo que
     expect(exportadas).toEqual(await idsOf(REVISOR, { view: "pending_review" }))
   })
 })
+
+/**
+ * R-02 (reauditoría 2026-10-20): cancelar exige un motivo y lo guarda, pero la ficha no lo mostraba.
+ * El detalle trae quién canceló, para leerlo como «Cancelada por {nombre} el {fecha}: {motivo}».
+ */
+describe("detalle de una inspección cancelada — quién, cuándo y por qué (R-02)", () => {
+  it("trae el nombre de quien canceló junto a la fecha y el motivo guardados", async () => {
+    const detalle = await service.getInspectionRunDetail(RUN.cancelada, REVISOR)
+
+    expect(detalle?.run.status).toBe("cancelled")
+    expect(detalle?.cancelledByName).toBe("Yo Revisor")
+    expect(detalle?.run.cancelledAt).toBeTruthy()
+    expect(detalle?.run.cancellationReason).toBe("Se programó en la faena equivocada")
+  })
+
+  it("una inspección que no se canceló no inventa un autor", async () => {
+    const detalle = await service.getInspectionRunDetail(RUN.enCurso, REVISOR)
+
+    expect(detalle?.cancelledByName).toBeNull()
+    expect(detalle?.run.cancellationReason).toBeNull()
+  })
+})

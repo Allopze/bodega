@@ -415,6 +415,27 @@ describe("acta de cierre y casos sin respuestas", () => {
     expect(screen.getByText("No tiene cumplimiento ni hallazgos.")).toBeInTheDocument()
   })
 
+  /**
+   * R-02 (reauditoría 2026-10-20): cancelar exige un motivo de 10 caracteres y lo
+   * guarda, pero nadie lo veía después. El resumen dice quién, cuándo y por qué.
+   */
+  it("una inspección cancelada dice quién la canceló, cuándo y por qué", async () => {
+    await montar({
+      answers: [],
+      findings: [],
+      run: { ...propsDelDetalle().run, status: "cancelled", executedAt: null },
+      executorName: null,
+      cancellation: { byName: "Marta Rojas", at: "2026-10-20T15:30:00.000Z", reason: "Se programó dos veces por error." },
+    })
+    const resumen = screen.getByRole("region", { name: "Resumen de la inspección" })
+    expect(within(resumen).getByText("Cancelada por Marta Rojas el 20-10-2026: Se programó dos veces por error.")).toBeInTheDocument()
+  })
+
+  it("el aviso de cancelación sólo aparece cuando está cancelada", async () => {
+    await montar({ cancellation: { byName: "Marta Rojas", at: "2026-10-20T15:30:00.000Z", reason: "Se programó dos veces por error." } })
+    expect(screen.queryByText(/Cancelada por/)).toBeNull()
+  })
+
   it("una inspección sin hallazgos lo dice y no pinta tabla", async () => {
     await montar({ findings: [] })
     expect(screen.getByText("Sin hallazgos: todos los ítems evaluables cumplieron.")).toBeInTheDocument()

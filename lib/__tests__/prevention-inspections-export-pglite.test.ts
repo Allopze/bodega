@@ -106,10 +106,11 @@ beforeAll(async () => {
 
   await seedTemplate({ id: TPL_EXT, code: "extintores", name: "Inspección de extintores", definitionSnapshot: EXTINTORES })
   // Una retirada (`superseded` que nadie reemplazó) y una reemplazada de verdad.
-  await seedTemplate({ id: TPL_RETIRADA, code: "retirada", name: "Instrumento retirado", status: "superseded", approvedByUserId: null, approvedAt: null })
+  // Su definición de origen ya no está en el catálogo (R-11): la columna «Origen» no tiene nombre que mostrar.
+  await seedTemplate({ id: TPL_RETIRADA, code: "retirada", name: "Instrumento retirado", status: "superseded", approvedByUserId: null, approvedAt: null, sourceDefinitionCode: "definicion_retirada_del_catalogo" })
   await seedTemplate({ id: TPL_REEMPLAZADA, code: "reemplazada", name: "Instrumento reemplazado", status: "superseded", supersededByTemplateId: TPL_EXT, approvedByUserId: null, approvedAt: null })
   await seedTemplate({ id: TPL_OFICIAL, code: "oficial", name: "Anexo oficial", status: "draft", provenanceKind: "official_document", approvedByUserId: null, approvedAt: null })
-  await seedTemplate({ id: TPL_OBS, code: "observacion", name: "Observación planeada", kind: "observation" })
+  await seedTemplate({ id: TPL_OBS, code: "observacion", name: "Observación planeada", kind: "observation", sourceDefinitionCode: "caminata_seguridad" })
 
   await testDb.insert(schema.preventionInspectionRuns).values([
     {
@@ -345,6 +346,21 @@ describe("Excel de Inspecciones — hojas de detalle", () => {
     expect(extintores["Procedencia"]!.value).toBe("Definición de plataforma")
     expect(wallClock(extintores["Aprobada"]!)).toBe("2026-06-15T08:00")
     expect(extintores["Aprobada"]!.numFmt).toBe("dd-mm-yyyy hh:mm")
+  })
+
+  /**
+   * R-11 (reauditoría 2026-10-20): la columna «Origen» traía el código interno de la definición
+   * (`caminata_seguridad`). Se lee con el nombre con que el catálogo la conoce.
+   */
+  it("«Plantillas» rotula «Origen» con el nombre de la definición, no con su código interno", async () => {
+    const { workbook } = await inspectionsWorkbook()
+    const rows = rowsOf(workbook.getWorksheet("Plantillas")!)
+
+    expect(rowWhere(rows, "Código", "observacion")["Origen"]!.value).toBe("Caminata de seguridad")
+    // Sin definición de origen no hay nada que rotular; una que ya no existe cae a su código legible.
+    expect(rowWhere(rows, "Código", "extintores")["Origen"]!.value || "").toBe("")
+    expect(rowWhere(rows, "Código", "retirada")["Origen"]!.value).toBe("Definicion retirada del catalogo")
+    for (const row of rows) expect(String(row["Origen"]!.value ?? "")).not.toMatch(/_/)
   })
 
   it("«Programación» lleva la frecuencia en español, «Próxima» como fecha y el sujeto al final", async () => {

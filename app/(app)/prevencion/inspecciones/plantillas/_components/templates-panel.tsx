@@ -19,6 +19,7 @@ import {
 import { classifyPdtp2026InspectionWiring } from "@/lib/prevention/inspection-wiring"
 import { templateActionState } from "@/lib/prevention/inspection-catalog-logic"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
+import { cn } from "@/lib/utils"
 import type { PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 import {
   coverageLabel,
@@ -73,7 +74,7 @@ export function InspectionTemplatesPanel({ templates, catalogActivities = [], do
   emptyAction?: React.ReactNode
 }) {
   // I-16: filtros en la URL, mismo patrón que la bandeja — se perdían al refrescar.
-  const { getFilter, setFilters } = useUrlFilters()
+  const { getFilter, setFilters, isPending } = useUrlFilters()
   const kind = getFilter("tipo")
   const status = getFilter("estado") || "all"
   const urlQuery = getFilter("q")
@@ -206,6 +207,9 @@ export function InspectionTemplatesPanel({ templates, catalogActivities = [], do
         </Callout>
       )}
 
+      {/* `aria-busy` mientras la URL nueva se resuelve en el servidor: la lista vieja sigue en
+          pantalla y, sin esto, nada dice que ya se pidió otra (R-07). */}
+      <div aria-busy={isPending || undefined} className={cn("space-y-4", isPending && "opacity-60")}>
       {groups.length === 0 ? (
         <TemplatesEmpty
           hasTemplates={templates.length > 0}
@@ -268,6 +272,7 @@ export function InspectionTemplatesPanel({ templates, catalogActivities = [], do
           )}
         </>
       )}
+      </div>
 
       <TemplateDialogs
         active={active}

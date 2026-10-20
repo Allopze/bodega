@@ -9,12 +9,13 @@ import {
   formatInspectionSubject,
 } from "@/lib/prevention/inspection-answer-format"
 import { inspectionTaskStatusLabel } from "@/lib/prevention/inspection-list-query"
-import { formatDateTime } from "@/lib/utils"
+import { formatDate, formatDateTime } from "@/lib/utils"
 import { buildRunFacts, FactLabel, type RunFactId, type RunFactsModel } from "./run-facts"
 import { progressText } from "./run-progress"
 import type { RunViewModel } from "./run-view-types"
+import type { CancellationInfo } from "./types"
 
-export type RunReadSummaryModel = RunFactsModel & Pick<RunViewModel, "findings" | "closingAct" | "reviewerName">
+export type RunReadSummaryModel = RunFactsModel & Pick<RunViewModel, "findings" | "closingAct" | "reviewerName" | "cancellation">
 
 /** Lo que el resumen ya dice (o tiene su propio lugar) y no se repite entre «Ver más datos». */
 const SHOWN_ELSEWHERE: ReadonlySet<RunFactId> = new Set([
@@ -44,6 +45,12 @@ export function findingsSummaryText(findings: readonly { status: string }[]): st
   return `${open} ${open === 1 ? "abierto" : "abiertos"} de ${findings.length}`
 }
 
+/** «Cancelada por Ana Soto el 20-10-2026: Se duplicó la inspección.» */
+export function cancellationText(cancellation: CancellationInfo): string {
+  const reason = cancellation.reason?.trim()
+  return `Cancelada por ${cancellation.byName ?? "—"} el ${formatDate(cancellation.at)}${reason ? `: ${reason}` : "."}`
+}
+
 /* 44 px de alto en el teléfono con padding y margen negativo: el objetivo crece sin mover el texto. */
 const GROUP_LINK_CLASS = "-my-3.5 block rounded-[var(--radius-sm)] py-3.5 underline underline-offset-2 md:-my-1.5 md:py-1.5"
 
@@ -61,7 +68,7 @@ export function RunReadSummary({ model, onReview, reviewLabel }: {
   onReview?: () => void
   reviewLabel?: string
 }) {
-  const { run, worksiteName, assigneeName, executorName, reviewerName, summary, coords, findings, closingAct } = model
+  const { run, worksiteName, assigneeName, executorName, reviewerName, summary, coords, findings, closingAct, cancellation } = model
   const closed = isClosed(run.status)
   const facts = buildRunFacts(model).filter((fact) => !SHOWN_ELSEWHERE.has(fact.id))
   const where = [worksiteName, formatInspectionSubject(run.subjectType, run.subjectLabel, "")].filter(Boolean).join(" · ")
@@ -120,9 +127,15 @@ export function RunReadSummary({ model, onReview, reviewLabel }: {
           )}
         </dl>
       ) : (
-        <p className="mt-3 border-t border-[var(--color-border)] pt-3 text-sm text-[var(--color-text-muted)]">
-          {run.status === "cancelled" ? "No tiene cumplimiento ni hallazgos." : progressText(model)}
-        </p>
+        <div className="mt-3 border-t border-[var(--color-border)] pt-3 text-sm">
+          <p className="text-[var(--color-text-muted)]">
+            {run.status === "cancelled" ? "No tiene cumplimiento ni hallazgos." : progressText(model)}
+          </p>
+          {/* R-02: el motivo que se obliga a escribir al cancelar, con su autor y su fecha. */}
+          {run.status === "cancelled" && cancellation && (
+            <p className="mt-1 whitespace-pre-wrap break-words font-medium">{cancellationText(cancellation)}</p>
+          )}
+        </div>
       )}
 
       <p className="mt-3 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-[var(--color-text-muted)]">

@@ -24,7 +24,7 @@ import {
 } from "@/lib/prevention/inspection-followup-query"
 import { INSPECTION_KIND_LABELS } from "@/lib/prevention/inspections"
 import type { InspectionFollowupRow } from "@/lib/services/prevention-inspection-followup"
-import { formatDate } from "@/lib/utils"
+import { cn, formatDate } from "@/lib/utils"
 
 /** `DataTable` identifica cada fila por `id`; el servicio la entrega con `findingId`. */
 type FollowupTableRow = InspectionFollowupRow & { id: string }
@@ -131,8 +131,13 @@ function ProgressBar({ row }: { row: InspectionFollowupRow }) {
   )
 }
 
-function FollowupFilters({ worksites, filter }: { worksites: Array<{ id: string; name: string }>; filter: InspectionFollowupFilter }) {
-  const { setFilter, clearFilters } = useUrlFilters()
+function FollowupFilters({ worksites, filter, setFilter, clearFilters }: {
+  worksites: Array<{ id: string; name: string }>
+  filter: InspectionFollowupFilter
+  /** Del `useUrlFilters` de la tabla: así `isPending` ve los cambios que hacen estos controles. */
+  setFilter: ReturnType<typeof useUrlFilters>["setFilter"]
+  clearFilters: ReturnType<typeof useUrlFilters>["clearFilters"]
+}) {
 
   // Quitar un filtro es borrar su parámetro; el buscador se resincroniza solo con la URL.
   const chips: ActiveFilterChip[] = []
@@ -199,12 +204,15 @@ export function FollowupTable({ rows, worksites, filter, today, canViewCapa }: {
   canViewCapa: boolean
 }) {
   const tableRows = React.useMemo<FollowupTableRow[]>(() => rows.map((row) => ({ ...row, id: row.findingId })), [rows])
-  const { clearFilters } = useUrlFilters()
+  const { setFilter, clearFilters, isPending } = useUrlFilters()
   const isFiltered = followupFilterIsActive(filter)
 
   return (
     <>
-      <FollowupFilters worksites={worksites} filter={filter} />
+      <FollowupFilters worksites={worksites} filter={filter} setFilter={setFilter} clearFilters={clearFilters} />
+      {/* `aria-busy` mientras la URL nueva se resuelve en el servidor: la tabla vieja sigue en
+          pantalla y, sin esto, nada dice que ya se pidió otra (R-07). */}
+      <div aria-busy={isPending || undefined} className={cn(isPending && "opacity-60")}>
       <DataTable
         caption={`Hallazgos de las inspecciones con su acción correctiva, primero los que piden acción. Plazo: ${DUE_DATE_HINT}.`}
         columns={COLUMNS}
@@ -232,7 +240,10 @@ export function FollowupTable({ rows, worksites, filter, today, canViewCapa }: {
               status={<MetaBadge meta={statusMeta(row)} />}
               actions={
                 <>
-                  <Button asChild variant="secondary" size="sm"><Link href={`/prevencion/inspecciones/${row.runId}`}>Ver inspección</Link></Button>
+                  <Button asChild variant="secondary" size="sm">
+                    {/* Hay una por hallazgo: el nombre dice de cuál inspección y cuál hallazgo (R-03). */}
+                    <Link href={`/prevencion/inspecciones/${row.runId}`} aria-label={`Ver inspección ${row.runCode}: ${row.deviation}`}>Ver inspección</Link>
+                  </Button>
                   {canViewCapa && row.actionId && (
                     <Button asChild variant="secondary" size="sm"><Link href={`/prevencion/capa/${row.actionId}`}>Ver acción {row.actionCode}</Link></Button>
                   )}
@@ -305,6 +316,7 @@ export function FollowupTable({ rows, worksites, filter, today, canViewCapa }: {
           </TableRow>
         )}
       />
+      </div>
     </>
   )
 }

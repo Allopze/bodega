@@ -52,11 +52,14 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
   const [sourceEdit, setSourceEdit] = React.useState<{ code: string; id: string } | null>(null)
   /** Actividad elegida cuando la definición sirve a más de una. */
   const [activityEdit, setActivityEdit] = React.useState<{ code: string; value: string } | null>(null)
+  /** Lo que se lleva escrito en «Etiqueta de versión»: con él se sabe si choca con una existente. */
+  const [versionLabelDraft, setVersionLabelDraft] = React.useState("")
   const { open, changeOpen, operation } = useFormDialog(() => {
     setCode(importable[0]?.code ?? "")
     setKindEdit(null)
     setSourceEdit(null)
     setActivityEdit(null)
+    setVersionLabelDraft("")
   })
   const definition = importable.find((item) => item.code === code)
   const existing = versionsByDefinition.get(code)
@@ -73,6 +76,20 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
   // Un anexo oficial llega con su planilla elegida si la Biblioteca la tiene.
   const sourceVersionId = sourceEdit?.code === code ? sourceEdit.id : officialSourceGate({ ...gateInput, selectedId: "" }).preselectedId
   const gate = officialSourceGate({ ...gateInput, selectedId: sourceVersionId })
+  // Sin el archivo en la Biblioteca no hay con qué cumplirla: marcarla obligatoria y a la vez avisar
+  // que se vincula después eran dos señales contradictorias (R-04).
+  const sourceRequired = gate.required && !gate.noMatch
+
+  /* «Ya existe …» sólo ante un choque real: la etiqueta que se enviaría —lo escrito o, si está vacío, la
+   * de la definición— ya la usa una versión del mismo instrumento. En una definición que sirve a más de
+   * una actividad el código depende de la elegida (el servidor lo resuelve); sin elegir no se afirma nada. */
+  const sameInstrument = ambiguous
+    ? activity === NO_ACTIVITY
+      ? []
+      : templates.filter((item) => item.sourceDefinitionCode === code && item.pdtpActivityNumbers?.includes(Number(activity)))
+    : templates.filter((item) => item.sourceDefinitionCode === code)
+  const chosenLabel = versionLabelDraft.trim() || definition?.version || ""
+  const labelTaken = chosenLabel !== "" && sameInstrument.some((item) => item.versionLabel === chosenLabel)
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -116,10 +133,12 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
               buscar por él, que suele ser lo que la persona recuerda. */}
           <Field
             label="Fuente documental de la Biblioteca SST"
-            required={gate.required}
-            hint={gate.required
+            required={sourceRequired}
+            hint={sourceRequired
               ? "Obligatoria: este instrumento transcribe un anexo oficial."
-              : "Opcional: este instrumento no transcribe un anexo oficial."}
+              : gate.noMatch
+                ? "Opcional por ahora: todavía no hay un archivo que vincular."
+                : "Opcional: este instrumento no transcribe un anexo oficial."}
             error={operation.fieldError("sourceDocumentVersionId")}
           >
             <Combobox
@@ -133,7 +152,7 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
               onChange={(value) => setSourceEdit({ code, id: value })}
               placeholder="Buscar por código o nombre de archivo…"
               // Obligatoria no se puede dejar vacía: sin «limpiar», sólo se cambia de archivo.
-              clearLabel={gate.required ? undefined : "Sin fuente vinculada"}
+              clearLabel={sourceRequired ? undefined : "Sin fuente vinculada"}
             />
           </Field>
           {gate.noMatch && (
@@ -193,12 +212,12 @@ export function ImportTemplateDialog({ importable, templates, documentSources }:
             </Field>
             <Field
               label="Etiqueta de versión"
-              hint={existing?.latest
-                ? `Ya existe ${existing.latest.versionLabel}; usa otra etiqueta.`
+              hint={labelTaken
+                ? `Ya existe ${chosenLabel}; usa otra etiqueta.`
                 : `Vacío = ${definition?.version ?? "versión de la definición"}.`}
               error={operation.fieldError("versionLabel")}
             >
-              <Input name="versionLabel" maxLength={80} />
+              <Input name="versionLabel" maxLength={80} value={versionLabelDraft} onChange={(event) => setVersionLabelDraft(event.target.value)} />
             </Field>
           </div>
           <OperationError operation={operation} />

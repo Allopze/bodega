@@ -217,6 +217,8 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
 
     await page.reload()
     await expect(page.getByText("Cancelada", { exact: true }).filter({ visible: true }).first()).toBeVisible({ timeout: 15_000 })
+    // R-02: el motivo que se obligó a escribir se lee después, con quién canceló y cuándo.
+    await expect(page.getByText(/Cancelada por .+ el \d{2}-\d{2}-\d{4}: La faena retiró el extintor de bodega antes de inspeccionarlo\./)).toBeVisible()
     // Cancelada deja de ser editable y de ofrecer transiciones.
     await expect(page.getByRole("button", { name: "Guardar respuestas" })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Cancelar inspección", exact: true })).toHaveCount(0)

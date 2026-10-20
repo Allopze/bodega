@@ -78,7 +78,7 @@ export function InspectionProgramsPanel({
 }) {
   // I-16: filtros en la URL, mismo patrón que la bandeja. La búsqueda la escribe
   // `FilterSearchInput` (con rebote, y se vacía sola si la URL cambia por fuera).
-  const { getFilter, setFilters } = useUrlFilters()
+  const { getFilter, setFilters, isPending } = useUrlFilters()
   const today = todayInChile()
   const { status, overdueView } = normalizeProgramFilters({ estado: getFilter("estado"), vista: getFilter("vista") })
   const stateFilter: StateFilter = overdueView ? "overdue" : status
@@ -162,6 +162,9 @@ export function InspectionProgramsPanel({
         </FilterToolbar>
       )}
 
+      {/* `aria-busy` mientras la URL nueva se resuelve en el servidor: la lista vieja sigue en
+          pantalla y, sin esto, nada dice que ya se pidió otra (R-07). */}
+      <div aria-busy={isPending || undefined} className={cn("space-y-4", isPending && "opacity-60")}>
       {visiblePrograms.length === 0 ? (
         <EmptyState
           icon={<ClipboardText size={20} />}
@@ -180,9 +183,7 @@ export function InspectionProgramsPanel({
       ) : (
         <>
           <div className="space-y-3 md:hidden">
-            {visiblePrograms.map((item) => {
-              const overdue = inspectionProgramIsOverdue(item, today)
-              return (
+            {visiblePrograms.map((item) => (
                 <ResponsiveDataListCard
                   key={item.id}
                   // El título de la tarjeta se recorta con elipsis y lo que distingue a
@@ -195,14 +196,12 @@ export function InspectionProgramsPanel({
                   <ResponsiveDataListField label="Cadencia">{cadenceLabel(item)}</ResponsiveDataListField>
                   <ResponsiveDataListField label="Próxima">
                     <span className="tabular-nums">{formatDate(item.nextDueOn)}</span>
-                    {overdue && <span className="ml-1.5 font-medium text-[var(--color-warning-ink)]">Vencida</span>}
                   </ResponsiveDataListField>
                   <ResponsiveDataListField label="Asignada a">{item.assigneeName ?? "Sin asignar"}</ResponsiveDataListField>
                   <ResponsiveDataListField label="Sujeto">{programSubjectLabel(item)}</ResponsiveDataListField>
                   {item.riskLabel && <ResponsiveDataListField label="Riesgo MIPER" className="col-span-2">{item.riskLabel}</ResponsiveDataListField>}
                 </ResponsiveDataListCard>
-              )
-            })}
+            ))}
           </div>
 
           {/* Seis columnas caben de `xl` en adelante; debajo, «Sujeto / riesgo» baja a una
@@ -221,7 +220,6 @@ export function InspectionProgramsPanel({
               </TableHeader>
               <TableBody>
                 {visiblePrograms.map((item) => {
-                  const overdue = inspectionProgramIsOverdue(item, today)
                   const subject = programSubjectLabel(item)
                   return (
                     <TableRow key={item.id}>
@@ -240,7 +238,6 @@ export function InspectionProgramsPanel({
                         {/* Sin partir: «18-09-/2026» y «cada 30 / días» en 4 líneas eran ilegibles. */}
                         <span className="block whitespace-nowrap tabular-nums">{formatDate(item.nextDueOn)}</span>
                         <span className="block whitespace-nowrap text-xs text-[var(--color-text-muted)]">{cadenceLabel(item)}</span>
-                        {overdue && <span className="block text-xs font-medium text-[var(--color-warning-ink)]">Vencida</span>}
                       </TableCell>
                       <TableCell className="px-3 align-top">
                         {item.assigneeName ?? <span className="text-[var(--color-text-subtle)]">Sin asignar</span>}
@@ -265,6 +262,7 @@ export function InspectionProgramsPanel({
           </TableRoot>
         </>
       )}
+      </div>
     </div>
   )
 }

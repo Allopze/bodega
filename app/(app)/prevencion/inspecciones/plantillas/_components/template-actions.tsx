@@ -69,11 +69,25 @@ export function describeTemplateActions(
 }
 
 /**
+ * El nombre accesible de la acción principal de una fila: dice sobre qué instrumento
+ * actúa. Hay una por fila y «Aprobar» a secas, repetido cinco veces, no deja distinguir
+ * cuál se aprueba (R-03). Siempre empieza por el texto visible.
+ */
+function primaryActionName(action: PrimaryAction, instrument: string): string {
+  if (action.kind === "approve") return `${action.label} ${instrument}`
+  return `${action.label} de ${instrument}`
+}
+
+/**
  * I-15: quien incorpora un borrador (`manage`) puede no tener `approve` — sin
  * esto podía crear una plantilla que nunca podría habilitar ella misma, sin
  * forma de avisarle a quien sí puede.
  */
-export function RequestApprovalButton({ templateId }: { templateId: string }) {
+export function RequestApprovalButton({ templateId, accessibleName }: {
+  templateId: string
+  /** Sobre qué instrumento actúa, para quien lo oye en una lista de botones iguales. */
+  accessibleName?: string
+}) {
   const operation = useOperation()
   return (
     <div className="text-right">
@@ -82,6 +96,8 @@ export function RequestApprovalButton({ templateId }: { templateId: string }) {
         size="sm"
         variant="secondary"
         loading={operation.pending}
+        // Mientras envía, el texto visible cambia a «Enviando…»: el nombre accesible no lo contradice.
+        aria-label={operation.pending ? undefined : accessibleName}
         onClick={() => operation.run(
           () => remindTemplateApprovalAction({ templateId }),
           (result) => {
@@ -123,14 +139,14 @@ export function TemplateRowActions({ item, ctx, previous, onOpen, menuLabelOf, m
 
   return (
     <div className={mobile ? "flex flex-wrap items-center justify-end gap-2" : "flex items-center justify-end gap-1.5"}>
-      {primary?.kind === "request" && <RequestApprovalButton templateId={item.id} />}
+      {primary?.kind === "request" && <RequestApprovalButton templateId={item.id} accessibleName={primaryActionName(primary, menuLabelOf)} />}
       {primary && directKind && (
-        <Button type="button" size="sm" variant="secondary" onClick={() => onOpen(directKind, item)}>
+        <Button type="button" size="sm" variant="secondary" aria-label={primaryActionName(primary, menuLabelOf)} onClick={() => onOpen(directKind, item)}>
           {primary.label}
         </Button>
       )}
       {onlyPreview ? (
-        <Button type="button" size="sm" variant="ghost" onClick={() => onOpen("preview", item)}>
+        <Button type="button" size="sm" variant="ghost" aria-label={`Ver cuestionario de ${menuLabelOf}`} onClick={() => onOpen("preview", item)}>
           Ver cuestionario
         </Button>
       ) : (

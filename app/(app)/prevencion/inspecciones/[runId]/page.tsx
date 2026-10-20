@@ -117,6 +117,9 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
         assigneeName={detail.assigneeName}
         executorName={detail.executorName}
         reviewerName={detail.reviewerName}
+        cancellation={detail.run.status === "cancelled" && detail.run.cancelledAt
+          ? { byName: detail.cancelledByName, at: detail.run.cancelledAt, reason: detail.run.cancellationReason }
+          : null}
         /* Piso de seguridad ante un `definitionSnapshot` sin `sections` (fixture
            legado insertado a mano, como INSP-DEMO) — mismo criterio que ya
            aplican `itemsFromDefinition` (prevention-inspections.ts) y el acta

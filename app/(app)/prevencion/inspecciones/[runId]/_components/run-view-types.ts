@@ -8,7 +8,7 @@ import type { summarizeCompletion } from "@/lib/prevention/inspection-capture"
 import type { InspectionDraftApi } from "../_hooks/use-inspection-draft"
 import type { useInspectionSaveChannel } from "../_hooks/use-inspection-save-channel"
 import type { useGeolocation } from "../_hooks/use-geolocation"
-import type { AnswerInfo, FindingInfo, RunDocumentInfo, RunInfo, SectionInfo } from "./types"
+import type { AnswerInfo, CancellationInfo, FindingInfo, RunDocumentInfo, RunInfo, SectionInfo } from "./types"
 
 /**
  * El modelo que `InspectionRunDetail` arma una vez y entrega a UNA de las dos
@@ -60,6 +60,8 @@ export interface RunViewModel {
   assigneeName: string | null
   executorName: string | null
   reviewerName: string | null
+  /** Sólo en una inspección cancelada: quién, cuándo y por qué (R-02). */
+  cancellation: CancellationInfo | null
   sections: SectionInfo[]
   /** Los ítems de todas las secciones, aplanados y con `sectionId`/`itemId`. */
   items: InspectionItemSpec[]

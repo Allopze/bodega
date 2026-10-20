@@ -19,6 +19,14 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/prevencion/inspecciones/plantillas",
 }))
 
+// El hook real, con `isPending` fijable: con un `router.replace` síncrono la transición
+// termina antes de que una prueba pueda mirarla.
+const urlFilters = vi.hoisted(() => ({ pending: false }))
+vi.mock("@/lib/hooks/use-url-filters", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/hooks/use-url-filters")>()
+  return { ...actual, useUrlFilters: (...args: Parameters<typeof actual.useUrlFilters>) => ({ ...actual.useUrlFilters(...args), isPending: urlFilters.pending }) }
+})
+
 const actions = vi.hoisted(() => ({
   approveInspectionTemplateAction: vi.fn(),
   retireInspectionTemplateAction: vi.fn(),
@@ -41,6 +49,7 @@ const fetchMock = vi.hoisted(() => vi.fn())
 beforeEach(() => {
   nav.params = new URLSearchParams()
   nav.replace.mockReset()
+  urlFilters.pending = false
   toastMock.success.mockReset()
   toastMock.error.mockReset()
   fetchMock.mockReset()
@@ -156,35 +165,35 @@ describe("plantillas: estado y acciones que el servidor rechazaría", () => {
   it("un anexo oficial sin planilla dice qué falta en vez de ofrecer Aprobar y Declarar paridad", () => {
     renderTemplates([officialDraft()], { documentSources: [source("v1", "abc")] })
     expect(table().getByText("Falta vincular la planilla oficial.")).toBeTruthy()
-    expect(table().queryByRole("button", { name: "Aprobar" })).toBeNull()
-    expect(table().queryByRole("button", { name: "Declarar paridad" })).toBeNull()
-    expect(table().getByRole("button", { name: "Vincular fuente" })).toBeTruthy()
+    expect(table().queryByRole("button", { name: /^Aprobar\b/ })).toBeNull()
+    expect(table().queryByRole("button", { name: /^Declarar paridad\b/ })).toBeNull()
+    expect(table().getByRole("button", { name: /^Vincular fuente\b/ })).toBeTruthy()
   })
 
   it("con la planilla vinculada ofrece Declarar paridad y avisa que aprobar espera", () => {
     renderTemplates([officialDraft({ sourceDocumentVersionId: "v1" })])
     expect(table().getByText("Se aprueba después de declarar la paridad sin diferencias.")).toBeTruthy()
-    expect(table().getByRole("button", { name: "Declarar paridad" })).toBeTruthy()
-    expect(table().queryByRole("button", { name: "Aprobar" })).toBeNull()
+    expect(table().getByRole("button", { name: /^Declarar paridad\b/ })).toBeTruthy()
+    expect(table().queryByRole("button", { name: /^Aprobar\b/ })).toBeNull()
   })
 
   it("quien incorporó la plantilla no ve Declarar paridad: se le dice que la declara otra persona", () => {
     renderTemplates([officialDraft({ sourceDocumentVersionId: "v1" })], { currentUserId: "autor" })
     expect(table().getByText("La paridad la declara otra persona con permiso de aprobación.")).toBeTruthy()
-    expect(table().queryByRole("button", { name: "Declarar paridad" })).toBeNull()
+    expect(table().queryByRole("button", { name: /^Declarar paridad\b/ })).toBeNull()
   })
 
   it("con la paridad aprobada sin diferencias ya se puede aprobar", () => {
     renderTemplates([officialDraft({ sourceDocumentVersionId: "v1", parityReport: { status: "passed", differences: [] } })])
-    expect(table().getByRole("button", { name: "Aprobar" })).toBeTruthy()
+    expect(table().getByRole("button", { name: /^Aprobar\b/ })).toBeTruthy()
     expect(table().queryByText(/Falta vincular/)).toBeNull()
   })
 
   it("quien sólo mira no ve avisos ni botones de gestión", () => {
     renderTemplates([officialDraft()], { canManage: false, canApprove: false })
     expect(screen.queryByText("Falta vincular la planilla oficial.")).toBeNull()
-    expect(screen.queryByRole("button", { name: "Vincular fuente" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Aprobar" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /^Vincular fuente\b/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: /^Aprobar\b/ })).toBeNull()
     expect(screen.queryByRole("button", { name: "Retirar" })).toBeNull()
   })
 
@@ -309,7 +318,7 @@ describe("plantillas: lo que acredita", () => {
 describe("plantillas: vincular fuente", () => {
   it("abre con el archivo del anexo oficial preseleccionado y vincula con él", async () => {
     renderTemplates([officialDraft()], { documentSources: [source("v1", "abc"), source("v2", "zzz")] })
-    fireEvent.click(table().getByRole("button", { name: "Vincular fuente" }))
+    fireEvent.click(table().getByRole("button", { name: /^Vincular fuente\b/ }))
     const dialog = screen.getByRole("dialog")
     expect(within(dialog).getByText("Vincular planilla oficial · Inspección de Contenedores")).toBeTruthy()
     expect(within(dialog).getByText("La paridad se declara contra este archivo. Cambiarlo deja la paridad pendiente otra vez.")).toBeTruthy()
@@ -326,7 +335,7 @@ describe("plantillas: vincular fuente", () => {
 
   it("si la Biblioteca no tiene el archivo avisa y no deja vincular", () => {
     renderTemplates([officialDraft()], { documentSources: [source("v2", "zzz")] })
-    fireEvent.click(table().getByRole("button", { name: "Vincular fuente" }))
+    fireEvent.click(table().getByRole("button", { name: /^Vincular fuente\b/ }))
     const dialog = screen.getByRole("dialog")
     expect(within(dialog).getByText(/No hay en la Biblioteca SST una versión vigente con el checksum del anexo oficial/)).toBeTruthy()
     expect(within(dialog).getByRole("button", { name: "Vincular" })).toHaveProperty("disabled", true)
@@ -335,7 +344,7 @@ describe("plantillas: vincular fuente", () => {
   it("un rechazo del servidor queda dentro del diálogo, como alerta", async () => {
     actions.linkInspectionTemplateSourceAction.mockResolvedValue({ ok: false, message: "Sólo un borrador puede cambiar su fuente documental." })
     renderTemplates([officialDraft()], { documentSources: [source("v1", "abc")] })
-    fireEvent.click(table().getByRole("button", { name: "Vincular fuente" }))
+    fireEvent.click(table().getByRole("button", { name: /^Vincular fuente\b/ }))
     const dialog = screen.getByRole("dialog")
     fireEvent.click(within(dialog).getByRole("button", { name: "Vincular" }))
     const alert = await within(dialog).findByRole("alert")
@@ -423,8 +432,8 @@ describe("incorporar una plantilla", () => {
     ...over,
   })
 
-  function openImport(importable: ImportableDefinition[], sources: ReturnType<typeof source>[]) {
-    render(<ImportTemplateDialog importable={importable} templates={[]} documentSources={sources} />)
+  function openImport(importable: ImportableDefinition[], sources: ReturnType<typeof source>[], templates: TemplateItem[] = []) {
+    render(<ImportTemplateDialog importable={importable} templates={templates} documentSources={sources} />)
     fireEvent.click(screen.getByRole("button", { name: "Incorporar borrador" }))
     return screen.getByRole("dialog")
   }
@@ -458,6 +467,55 @@ describe("incorporar una plantilla", () => {
     fireEvent.click(submit)
     await waitFor(() => expect(actions.importInspectionTemplateAction).toHaveBeenCalledTimes(1))
     expect(actions.importInspectionTemplateAction.mock.calls[0]?.[0]).toMatchObject({ definitionCode: "inspeccion_contenedores", sourceDocumentVersionId: undefined })
+  })
+
+  /**
+   * R-04 (reauditoría 2026-10-20): el diálogo marcaba la fuente con asterisco y «Obligatoria» mientras
+   * avisaba que no hay ninguna en la Biblioteca y que se vincula después. Eran dos señales contrarias
+   * sobre si se podía enviar.
+   */
+  it("sin el archivo en la Biblioteca la fuente no se marca obligatoria: ni asterisco ni «Obligatoria»", () => {
+    const dialog = openImport([definition()], [source("v2", "zzz")])
+    expect(within(dialog).getByText("Fuente documental de la Biblioteca SST").textContent).not.toContain("*")
+    expect(within(dialog).queryByText(/^Obligatoria/)).toBeNull()
+    expect(within(dialog).getByText("Opcional por ahora: todavía no hay un archivo que vincular.")).toBeTruthy()
+  })
+
+  it("con el archivo en la Biblioteca la fuente sigue obligatoria, con su asterisco", () => {
+    const dialog = openImport([definition()], [source("v1", "abc")])
+    expect(within(dialog).getByText("Fuente documental de la Biblioteca SST").textContent).toContain("*")
+    expect(within(dialog).getByText("Obligatoria: este instrumento transcribe un anexo oficial.")).toBeTruthy()
+  })
+
+  it("«Ya existe …; usa otra etiqueta» sólo aparece ante un choque real, y avisa de cuál", () => {
+    // La definición trae la versión 1.0 y ya hay una 0.9: dejar la etiqueta vacía no choca.
+    const dialog = openImport([definition({ needsOfficialSource: false })], [], [template({ versionLabel: "0.9", status: "approved" })])
+    expect(within(dialog).queryByText(/Ya existe/)).toBeNull()
+    expect(within(dialog).getByText("Vacío = 1.0.")).toBeTruthy()
+
+    const etiqueta = within(dialog).getByRole("textbox", { name: "Etiqueta de versión" })
+    fireEvent.change(etiqueta, { target: { value: "0.9" } })
+    expect(within(dialog).getByText("Ya existe 0.9; usa otra etiqueta.")).toBeTruthy()
+
+    fireEvent.change(etiqueta, { target: { value: "0.95" } })
+    expect(within(dialog).queryByText(/Ya existe/)).toBeNull()
+  })
+
+  it("si lo que se enviaría vacío ya existe (la versión de la definición), lo dice sin esperar a escribir", () => {
+    const dialog = openImport([definition({ needsOfficialSource: false })], [], [template({ versionLabel: "1.0", status: "approved" })])
+    expect(within(dialog).getByText("Ya existe 1.0; usa otra etiqueta.")).toBeTruthy()
+
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Etiqueta de versión" }), { target: { value: "1.1" } })
+    expect(within(dialog).queryByText(/Ya existe/)).toBeNull()
+  })
+
+  it("una versión de OTRO instrumento con la misma etiqueta no es un choque", () => {
+    const dialog = openImport(
+      [definition({ needsOfficialSource: false })],
+      [],
+      [template({ code: "otro", sourceDefinitionCode: "otro_instrumento", versionLabel: "1.0", status: "approved" })],
+    )
+    expect(within(dialog).queryByText(/Ya existe/)).toBeNull()
   })
 
   it("sin checksum conocido la fuente es obligatoria y no se incorpora hasta elegirla", () => {
@@ -621,7 +679,7 @@ describe("plantillas: la acción de la fila es el siguiente paso, y el resto va 
 
   it("un anexo oficial sin planilla: «Vincular fuente» es la acción visible y no se repite en el menú", () => {
     renderTemplates([officialDraft()], { documentSources: [source("v1", "abc")] })
-    expect(table().getByRole("button", { name: "Vincular fuente" })).toBeTruthy()
+    expect(table().getByRole("button", { name: /^Vincular fuente\b/ })).toBeTruthy()
     const items = within(openMenu()).getAllByRole("menuitem").map((item) => item.textContent)
     expect(items).not.toContain("Vincular fuente")
     expect(items).not.toContain("Aprobar")
@@ -629,7 +687,7 @@ describe("plantillas: la acción de la fila es el siguiente paso, y el resto va 
 
   it("con la paridad lista, «Aprobar» es la acción y declarar la paridad otra vez o cambiar la fuente van al menú", () => {
     renderTemplates([officialDraft({ sourceDocumentVersionId: "v1", parityReport: { status: "passed", differences: [] } })])
-    expect(table().getByRole("button", { name: "Aprobar" })).toBeTruthy()
+    expect(table().getByRole("button", { name: /^Aprobar\b/ })).toBeTruthy()
     const items = within(openMenu()).getAllByRole("menuitem").map((item) => item.textContent)
     expect(items).toEqual(expect.arrayContaining(["Declarar paridad", "Cambiar fuente", "Retirar…"]))
   })
@@ -637,7 +695,7 @@ describe("plantillas: la acción de la fila es el siguiente paso, y el resto va 
   it("quien administra pero no aprueba tiene «Solicitar aprobación» como acción y avisa a quien sí puede", async () => {
     actions.remindTemplateApprovalAction.mockResolvedValue({ ok: true, data: { notified: ["Ana Pérez"] } })
     renderTemplates([template({ status: "draft" })], { canApprove: false })
-    fireEvent.click(table().getByRole("button", { name: "Solicitar aprobación" }))
+    fireEvent.click(table().getByRole("button", { name: /^Solicitar aprobación\b/ }))
     await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Solicitud enviada a Ana Pérez."))
     expect(actions.remindTemplateApprovalAction).toHaveBeenCalledWith({ templateId: "t1" })
   })
@@ -645,14 +703,59 @@ describe("plantillas: la acción de la fila es el siguiente paso, y el resto va 
   it("si avisar falla, el motivo queda como alerta junto a la fila", async () => {
     actions.remindTemplateApprovalAction.mockResolvedValue({ ok: false, message: "No hay nadie con permiso para aprobar." })
     renderTemplates([template({ status: "draft" })], { canApprove: false })
-    fireEvent.click(table().getByRole("button", { name: "Solicitar aprobación" }))
+    fireEvent.click(table().getByRole("button", { name: /^Solicitar aprobación\b/ }))
     expect((await table().findByRole("alert")).textContent).toBe("No hay nadie con permiso para aprobar.")
   })
 
   it("quien sólo mira no tiene menú: «Ver cuestionario» es el botón", () => {
     renderTemplates([template({ status: "approved" })], { canManage: false, canApprove: false })
     expect(table().queryByRole("button", { name: /^Más acciones/ })).toBeNull()
-    expect(table().getByRole("button", { name: "Ver cuestionario" })).toBeTruthy()
+    expect(table().getByRole("button", { name: /^Ver cuestionario\b/ })).toBeTruthy()
+  })
+
+  /**
+   * R-03 (reauditoría 2026-10-20): con tres borradores había tres «Aprobar» y cinco «Ver cuestionario»
+   * indistinguibles para un lector de pantalla, y «Aprobar» muta datos. El texto visible no cambia;
+   * el nombre dice de cuál instrumento es.
+   */
+  it("la acción visible de cada fila dice de qué instrumento es, sin cambiar lo que se lee", () => {
+    renderTemplates([
+      template({ id: "a", code: "uno", name: "Inspección de Contenedores", status: "approved" }),
+      template({ id: "b", code: "dos", name: "Inspección de Extintores", status: "approved" }),
+      template({ id: "c", code: "tres", name: "Inspección de Botiquines", status: "approved" }),
+    ], { canManage: false, canApprove: false })
+
+    const botones = table().getAllByRole("button", { name: /^Ver cuestionario de / })
+    expect(botones.map((boton) => boton.getAttribute("aria-label")).sort()).toEqual([
+      "Ver cuestionario de Inspección de Botiquines",
+      "Ver cuestionario de Inspección de Contenedores",
+      "Ver cuestionario de Inspección de Extintores",
+    ])
+    expect(botones.every((boton) => boton.textContent === "Ver cuestionario")).toBe(true)
+  })
+
+  it("«Aprobar», «Vincular fuente» y «Solicitar aprobación» también nombran el instrumento", () => {
+    const { unmount } = renderTemplates([template({ status: "draft" })])
+    expect(table().getByRole("button", { name: "Aprobar Inspección de Contenedores" }).textContent).toBe("Aprobar")
+    unmount()
+
+    const otra = renderTemplates([officialDraft()], { documentSources: [source("v1", "abc")] })
+    expect(table().getByRole("button", { name: "Vincular fuente de Inspección de Contenedores" }).textContent).toBe("Vincular fuente")
+    otra.unmount()
+
+    renderTemplates([template({ status: "draft" })], { canApprove: false })
+    expect(table().getByRole("button", { name: "Solicitar aprobación de Inspección de Contenedores" }).textContent).toBe("Solicitar aprobación")
+  })
+
+  it("dos versiones del mismo instrumento se distinguen por su versión", () => {
+    nav.params = new URLSearchParams("estado=draft")
+    renderTemplates([
+      template({ id: "a", versionLabel: "v2-borrador", status: "draft" }),
+      template({ id: "b", versionLabel: "v1-borrador", status: "draft" }),
+    ])
+    const nombres = table().getAllByRole("button", { name: /^Aprobar\b/ }).map((boton) => boton.getAttribute("aria-label"))
+    expect(nombres).toHaveLength(2)
+    expect(new Set(nombres).size).toBe(2)
   })
 
   it("un diálogo se abre desde el menú (que ya no existe cuando el diálogo está abierto) y se cierra con «Cancelar»", async () => {
@@ -662,6 +765,17 @@ describe("plantillas: la acción de la fila es el siguiente paso, y el resto va 
     const dialog = screen.getByRole("dialog", { name: /Acreditación PDTP/ })
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }))
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+  })
+})
+
+describe("plantillas: la lista avisa mientras se filtra (R-07)", () => {
+  it("marca aria-busy mientras la URL nueva se resuelve, y no antes", () => {
+    const { rerender } = renderTemplates([template({ status: "approved" })])
+    expect(screen.getByRole("table").closest("[aria-busy]")).toBeNull()
+
+    urlFilters.pending = true
+    rerender(<InspectionTemplatesPanel templates={[template({ status: "approved" })]} catalogActivities={catalogActivities} documentSources={[]} canManage canApprove currentUserId="otra-persona" />)
+    expect(screen.getByRole("table").closest("[aria-busy]")).toHaveAttribute("aria-busy", "true")
   })
 })
 
@@ -706,7 +820,7 @@ describe("plantillas: tarjetas móviles", () => {
   it("la acción es el siguiente paso y «Más» abre el menú de acciones del instrumento", () => {
     renderTemplates([officialDraft()])
     const card = within(cards()[0]!)
-    expect(card.getByRole("button", { name: "Vincular fuente" })).toBeTruthy()
+    expect(card.getByRole("button", { name: /^Vincular fuente\b/ })).toBeTruthy()
     fireEvent.pointerDown(card.getByRole("button", { name: "Más acciones de Inspección de Contenedores" }), { button: 0, ctrlKey: false })
     expect(screen.getByRole("menuitem", { name: "Ver cuestionario" })).toBeTruthy()
   })
@@ -891,7 +1005,7 @@ describe("plantillas: vista previa del cuestionario", () => {
   it("desde el diálogo de aprobar se abre apilada y no cierra el diálogo", async () => {
     fetchMock.mockResolvedValue(respond(payload()))
     renderTemplates([template({ status: "draft" })])
-    fireEvent.click(table().getByRole("button", { name: "Aprobar" }))
+    fireEvent.click(table().getByRole("button", { name: /^Aprobar\b/ }))
     const approve = screen.getByRole("dialog", { name: /Aprobar Inspección de Contenedores/ })
     fireEvent.click(within(approve).getByRole("button", { name: "Ver el cuestionario" }))
 
@@ -906,7 +1020,7 @@ describe("plantillas: vista previa del cuestionario", () => {
   it("y desde el de paridad también", async () => {
     fetchMock.mockResolvedValue(respond(payload()))
     renderTemplates([officialDraft({ sourceDocumentVersionId: "v1" })])
-    fireEvent.click(table().getByRole("button", { name: "Declarar paridad" }))
+    fireEvent.click(table().getByRole("button", { name: /^Declarar paridad\b/ }))
     const parity = screen.getByRole("dialog", { name: /Paridad de/ })
     fireEvent.click(within(parity).getByRole("button", { name: "Ver el cuestionario" }))
     expect(await screen.findByText("Puertas y bisagras")).toBeTruthy()

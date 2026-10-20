@@ -293,6 +293,8 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
   const assignee = alias(users, "inspection_assignee")
   const executor = alias(users, "inspection_executor")
   const reviewer = alias(users, "inspection_reviewer")
+  // R-02: quien canceló, para que el motivo que se obliga a escribir se lea con su autor.
+  const canceller = alias(users, "inspection_canceller")
   const [run] = await db.select({
     run: preventionInspectionRuns,
     templateName: preventionInspectionTemplates.name,
@@ -311,6 +313,7 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     assigneeName: assignee.name,
     executorName: executor.name,
     reviewerName: reviewer.name,
+    cancelledByName: canceller.name,
   })
     .from(preventionInspectionRuns)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
@@ -318,6 +321,7 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     .leftJoin(assignee, eq(preventionInspectionRuns.assignedToUserId, assignee.id))
     .leftJoin(executor, eq(preventionInspectionRuns.executedByUserId, executor.id))
     .leftJoin(reviewer, eq(preventionInspectionRuns.reviewedByUserId, reviewer.id))
+    .leftJoin(canceller, eq(preventionInspectionRuns.cancelledByUserId, canceller.id))
     .where(eq(preventionInspectionRuns.id, runId)).limit(1)
   if (!run || !scopeAllows(access.scope, run.run.worksiteId)) return null
 

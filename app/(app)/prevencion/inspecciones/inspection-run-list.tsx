@@ -451,7 +451,8 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
                 status={<MetaBadge meta={{ label: inspectionTaskStatusLabel(item.status), variant: runStatusBadgeVariant(item.status) }} />}
                 actions={
                   <Button asChild className="w-full" variant={item.status === "planned" || item.status === "in_progress" ? "primary" : "secondary"}>
-                    <Link href={`/prevencion/inspecciones/${item.id}`}>{runAction(item.status)}</Link>
+                    {/* Hay una por tarjeta: el nombre dice de cuál inspección es (R-03). */}
+                    <Link href={`/prevencion/inspecciones/${item.id}`} aria-label={`${runAction(item.status)} ${item.code}, ${item.templateName}`}>{runAction(item.status)}</Link>
                   </Button>
                 }
               >

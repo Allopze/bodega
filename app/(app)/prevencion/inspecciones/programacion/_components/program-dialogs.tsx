@@ -27,6 +27,15 @@ import type { ProgramItem } from "../../_components/catalog-types"
 import { FormDialogFooter, InlineError, OperationError, ReasonField, useFormDialog } from "../../_components/form-dialog"
 import { SubjectSelectField, selectableSubjects } from "../../_components/subject-select-field"
 
+/**
+ * Cómo se nombra una programación fuera de su fila: el instrumento, la faena y, si lo
+ * tiene, el sujeto. Hay un botón «Editar», «Detener» y «Crear y abrir inspección» por
+ * fila, y sin esto un lector de pantalla los oye todos iguales (R-03).
+ */
+export function programAccessibleName(program: Pick<ProgramItem, "templateName" | "worksiteName" | "subjectLabel">) {
+  return `${program.templateName} en ${program.worksiteName}${program.subjectLabel ? ` (${program.subjectLabel})` : ""}`
+}
+
 /* ── Gestión de una programación existente ────────────────────────────────
  * A-10/A-11: el diálogo de alta no ofrecía `intervalDays` (pese a que el Zod y
  * el CHECK lo soportan) y, una vez creada, la programación no se podía editar,
@@ -86,7 +95,9 @@ export function EditProgramDialog({ program, assignees, subjects, riskEntries }:
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="ghost">Editar</Button></DialogTrigger>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="ghost" aria-label={`Editar programación de ${programAccessibleName(program)}`}>Editar</Button>
+      </DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
@@ -153,7 +164,14 @@ export function ToggleProgramButton({ program }: { program: ProgramItem }) {
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger asChild>
         {/* I-20: "Detener" es destructivo (frena la generación futura); "Reactivar" no. */}
-        <Button type="button" size="sm" variant={program.isActive ? "ghost-danger" : "ghost"}>{program.isActive ? "Detener" : "Reactivar"}</Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={program.isActive ? "ghost-danger" : "ghost"}
+          aria-label={`${program.isActive ? "Detener" : "Reactivar"} programación de ${programAccessibleName(program)}`}
+        >
+          {program.isActive ? "Detener" : "Reactivar"}
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <form className="space-y-4" onSubmit={(event) => {
@@ -220,6 +238,8 @@ export function RunProgramNowButton({ program }: { program: ProgramItem }) {
         size="sm"
         variant="secondary"
         disabled={operation.pending}
+        // Mientras crea, el texto visible cambia a «Creando…»: el nombre accesible no lo contradice.
+        aria-label={operation.pending ? undefined : `Crear y abrir inspección de ${programAccessibleName(program)}`}
         onClick={() => (outOfCycle ? setConfirming(true) : create())}
       >
         {operation.pending ? "Creando…" : "Crear y abrir inspección"}

@@ -395,6 +395,43 @@ describe("«Declarar ejecutada»: un solo diálogo para los dos botones", () => 
     expect(within(dialogo).getByRole("button", { name: "Ir al primero" })).toBeInTheDocument()
     expect(within(dialogo).getByRole("button", { name: "Declarar ejecutada" })).toBeDisabled()
   })
+
+  /**
+   * R-01 (reauditoría 2026-10-20): con todo respondido y el resultado del acta sin
+   * elegir, el diálogo decía «no corresponde a las opciones de la plantilla» y no
+   * llevaba a ningún lado. Ahora dice qué falta y salta al acta, como los chips.
+   */
+  it("con solo el resultado del acta sin elegir, lo dice y lleva al acta", async () => {
+    await montar({
+      closingAct: { title: "Acta de cierre", resultOptions: [{ value: "apto", label: "Apto" }], hasRestrictions: false, signatureRoles: [] },
+    })
+    elegir("Casco", "Cumple")
+    elegir("Guantes", "Cumple")
+    elegir("Lentes", "Cumple")
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Declarar ejecutada" })[0]!)
+    const dialogo = screen.getByRole("dialog")
+    expect(within(dialogo).getByText(/Falta elegir el resultado del acta de cierre "Acta de cierre"\./)).toBeInTheDocument()
+    expect(within(dialogo).queryByText(/no corresponde a las opciones/)).toBeNull()
+    expect(within(dialogo).getByRole("button", { name: "Declarar ejecutada" })).toBeDisabled()
+    // No hay ítem al que ir: el único atajo es el del acta.
+    expect(within(dialogo).queryByRole("button", { name: "Ir al primero" })).toBeNull()
+
+    scrollIntoView.mockClear()
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Ir al acta" }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect((scrollIntoView.mock.contexts.at(-1) as HTMLElement).id).toBe("acta-cierre")
+  })
+
+  it("el diálogo dice «crea un hallazgo», no «materializa»", async () => {
+    await montar()
+    fireEvent.click(screen.getAllByRole("button", { name: "Declarar ejecutada" })[0]!)
+    const dialogo = screen.getByRole("dialog")
+    expect(within(dialogo).getByText(/crea un hallazgo por cada incumplimiento/)).toBeInTheDocument()
+    expect(within(dialogo).queryByText(/materializa/i)).toBeNull()
+  })
 })
 
 describe("la matriz de EPP", () => {

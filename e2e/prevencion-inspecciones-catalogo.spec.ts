@@ -215,7 +215,9 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     await dialog.getByLabel("Definición del catálogo SST").click()
     await page.getByRole("option", { name: DEFINICION, exact: true }).click()
 
-    await expect(dialog.getByText("Obligatoria: este instrumento transcribe un anexo oficial.")).toBeVisible()
+    // R-04: sin el archivo en la Biblioteca la fuente no se marca obligatoria (sería pedir lo imposible).
+    await expect(dialog.getByText("Opcional por ahora: todavía no hay un archivo que vincular.")).toBeVisible()
+    await expect(dialog.getByText("Obligatoria: este instrumento transcribe un anexo oficial.")).toHaveCount(0)
     await expect(dialog.getByText(/No hay en la Biblioteca SST una versión vigente con el checksum del anexo oficial/)).toBeVisible()
     await expect(dialog.getByText(/alguien con permiso de aprobación —puedes ser tú—/)).toBeVisible()
     // Sin el archivo no hay con qué cumplirla: el borrador se puede incorporar y la planilla se vincula después.

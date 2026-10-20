@@ -470,7 +470,17 @@ describe("bandeja de inspecciones — la tarjeta móvil (P2-18)", () => {
     expect(tarjeta.getByText("Observación de Seguridad: Camión Ampliroll")).toBeTruthy()
     expect(tarjeta.getByText("En ejecución")).toBeTruthy()
     // Se conserva la acción de siempre: continuar lo que está en curso.
-    expect(tarjeta.getByRole("link", { name: "Continuar" })).toHaveAttribute("href", "/prevencion/inspecciones/run-1")
+    expect(tarjeta.getByRole("link", { name: /^Continuar\b/ })).toHaveAttribute("href", "/prevencion/inspecciones/run-1")
+  })
+
+  /**
+   * R-03 (reauditoría 2026-10-20): «Continuar» ×2 y «Ver detalle» ×2 a 390 px. El texto visible no
+   * cambia; el nombre accesible dice de cuál inspección es.
+   */
+  it("la acción de la tarjeta dice de qué inspección es y empieza por lo que se ve", () => {
+    renderList({ status: "in_progress" })
+    const accion = within(tarjetas()).getByText("Continuar").closest("a")!
+    expect(accion.getAttribute("aria-label")).toBe("Continuar INSP-2026-MEX_JILF, Observación de Seguridad: Camión Ampliroll")
   })
 
   it("dice quién es el responsable, el tipo y la faena con su sujeto", () => {

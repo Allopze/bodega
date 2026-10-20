@@ -32,6 +32,13 @@ export interface RunInfo {
   version: number
 }
 
+/** Quién canceló la inspección, cuándo y con qué motivo (R-02): lo que se obliga a escribir al cancelar. */
+export interface CancellationInfo {
+  byName: string | null
+  at: string
+  reason: string | null
+}
+
 export interface ItemInfo {
   id: string
   label: string

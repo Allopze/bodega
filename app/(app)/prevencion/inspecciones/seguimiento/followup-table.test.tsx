@@ -18,9 +18,18 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/prevencion/inspecciones/seguimiento",
 }))
 
+// El hook real, con `isPending` fijable: con un `router.replace` síncrono la transición
+// termina antes de que una prueba pueda mirarla.
+const urlFilters = vi.hoisted(() => ({ pending: false }))
+vi.mock("@/lib/hooks/use-url-filters", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/hooks/use-url-filters")>()
+  return { ...actual, useUrlFilters: (...args: Parameters<typeof actual.useUrlFilters>) => ({ ...actual.useUrlFilters(...args), isPending: urlFilters.pending }) }
+})
+
 beforeEach(() => {
   nav.params = new URLSearchParams()
   nav.replace.mockReset()
+  urlFilters.pending = false
 })
 
 afterEach(() => {
@@ -222,8 +231,25 @@ describe("Seguimiento de inspecciones — tarjetas móviles", () => {
     expect(within(card).getByText("Pendiente")).toBeTruthy()
     expect(within(card).getByText("Vencida hace 12 días")).toBeTruthy()
     expect(within(card).getByText("Cambiar la manguera")).toBeTruthy()
-    expect(within(card).getByRole("link", { name: "Ver inspección" })).toHaveAttribute("href", "/prevencion/inspecciones/run-venc")
+    expect(within(card).getByRole("link", { name: /^Ver inspección\b/ })).toHaveAttribute("href", "/prevencion/inspecciones/run-venc")
     expect(within(card).getByRole("link", { name: "Ver acción CAPA-2026-VENC" })).toHaveAttribute("href", "/prevencion/capa/act-venc")
+  })
+
+  /**
+   * R-03 (reauditoría 2026-10-20): ocho tarjetas, ocho «Ver inspección» iguales. Dos hallazgos de la
+   * misma inspección comparten el código, así que el nombre lleva también el hallazgo.
+   */
+  it("«Ver inspección» dice de qué inspección y de qué hallazgo es, y se lee igual que antes", () => {
+    renderTable([
+      VENCIDA,
+      row({ findingId: "fnd-otro", runId: "run-venc", runCode: "INS-2026-VENC", deviation: "Extintor sin presión" }),
+    ])
+    const enlaces = screen.getAllByRole("article").map((card) => within(card).getByText("Ver inspección").closest("a")!)
+
+    expect(enlaces.map((enlace) => enlace.getAttribute("aria-label")).sort()).toEqual([
+      "Ver inspección INS-2026-VENC: Extintor sin presión",
+      "Ver inspección INS-2026-VENC: Manguera con grietas",
+    ])
   })
 
   it("sin permiso para ver CAPA la tarjeta no ofrece «Ver acción»", () => {
@@ -240,6 +266,17 @@ describe("Seguimiento de inspecciones — tarjetas móviles", () => {
     expect(card.textContent).not.toContain("Plazo")
     expect(card.textContent).not.toContain("0 %")
     expect(within(card).queryByRole("link", { name: /Ver acción/ })).toBeNull()
+  })
+})
+
+describe("Seguimiento de inspecciones — la tabla avisa mientras se filtra (R-07)", () => {
+  it("marca aria-busy mientras la URL nueva se resuelve, y no antes", () => {
+    const { rerender } = renderTable([row()])
+    expect(screen.getByRole("table").closest("[aria-busy]")).toBeNull()
+
+    urlFilters.pending = true
+    rerender(<FollowupTable rows={[row()]} worksites={WORKSITES} filter={{}} today={TODAY} canViewCapa />)
+    expect(screen.getByRole("table").closest("[aria-busy]")).toHaveAttribute("aria-busy", "true")
   })
 })
 

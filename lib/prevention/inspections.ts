@@ -641,6 +641,8 @@ export function closingActFromDefinition(definition: {
  */
 export function validateClosingAct(spec: ClosingActSpec, act: ClosingActInput | null | undefined): string | null {
   if (!act) return `Falta completar el acta de cierre "${spec.title}".`
+  // «Sin elegir» no es «inválido»: lo primero lo corrige quien ejecuta; lo segundo es de la plantilla.
+  if (!act.result || act.result.trim().length === 0) return `Falta elegir el resultado del acta de cierre "${spec.title}".`
   if (!spec.resultOptions.some((option) => option.value === act.result)) {
     return `El resultado del acta no corresponde a las opciones de la plantilla.`
   }

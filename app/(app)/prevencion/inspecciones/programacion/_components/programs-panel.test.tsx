@@ -18,6 +18,14 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/prevencion/inspecciones/programacion",
 }))
 
+// El hook real, con `isPending` fijable: con un `router.replace` síncrono la transición
+// termina antes de que una prueba pueda mirarla.
+const urlFilters = vi.hoisted(() => ({ pending: false }))
+vi.mock("@/lib/hooks/use-url-filters", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/hooks/use-url-filters")>()
+  return { ...actual, useUrlFilters: (...args: Parameters<typeof actual.useUrlFilters>) => ({ ...actual.useUrlFilters(...args), isPending: urlFilters.pending }) }
+})
+
 const actions = vi.hoisted(() => ({
   createInspectionProgramAction: vi.fn(),
   runProgramNowAction: vi.fn(),
@@ -30,6 +38,7 @@ vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 beforeEach(() => {
   nav.params = new URLSearchParams()
   nav.replace.mockReset()
+  urlFilters.pending = false
   for (const action of Object.values(actions)) action.mockReset().mockResolvedValue({ ok: true })
 })
 
@@ -249,11 +258,11 @@ describe("programación: la tabla", () => {
   it("quien sólo mira no ve la columna «Acción» ni botones de gestión", () => {
     renderPanel([program()], { canManage: false })
     expect(table().queryByRole("columnheader", { name: "Acción" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Editar" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Detener" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /^Editar/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: /^Detener/ })).toBeNull()
   })
 
-  it("«Próxima» junta la fecha, «Mensual · cada N días» y, si venció, «Vencida»", () => {
+  it("«Próxima» junta la fecha y «Mensual · cada N días»; el vencimiento lo dice sólo el estado", () => {
     renderPanel([
       program({ id: "a", templateName: "Programa al día", nextDueOn: "2099-03-05", intervalDays: 30 }),
       program({ id: "b", templateName: "Programa atrasado", nextDueOn: OVERDUE, frequency: "daily", intervalDays: 1 }),
@@ -266,8 +275,21 @@ describe("programación: la tabla", () => {
     expect(within(alDia!).queryByText("Vencida")).toBeNull()
     expect(within(vencida!).getByText("01-01-2020")).toBeTruthy()
     expect(within(vencida!).getByText("Diaria · cada 1 día")).toBeTruthy()
-    // En la fila vencida «Vencida» está dos veces: bajo la fecha y como estado.
-    expect(within(vencida!).getAllByText("Vencida")).toHaveLength(2)
+    // R-06: «Vencida» estaba dos veces en la fila, bajo la fecha y como estado. Queda una: la insignia.
+    expect(within(vencida!).getAllByText("Vencida")).toHaveLength(1)
+    expect(within(vencida!).getByText("Vencida").className).toContain("radius-full")
+  })
+
+  it("la tarjeta móvil tampoco repite «Vencida» bajo la fecha", () => {
+    renderPanel([program({ nextDueOn: OVERDUE })])
+    const tarjeta = within(screen.getByRole("article"))
+    expect(tarjeta.getAllByText("Vencida")).toHaveLength(1)
+    expect(tarjeta.getByText("01-01-2020").parentElement).toHaveTextContent(/^01-01-2020$/)
+  })
+
+  it("una programación con la plantilla reemplazada y fecha pasada no dice «Vencida»: no se vence lo que no corre", () => {
+    renderPanel([program({ nextDueOn: OVERDUE, templateApproved: false })])
+    expect(screen.queryByText("Vencida")).toBeNull()
   })
 
   it("el sujeto elegido del inventario se muestra por su nombre, no como «No especificado»", () => {
@@ -334,23 +356,61 @@ describe("programación: la tabla", () => {
   it("la fila ofrece «Crear y abrir inspección», «Editar» y «Detener» (nombres que el E2E usa)", () => {
     renderPanel([program()], { canManage: true })
     const row = table().getByText("Inspección de Estado de Extintores").closest("tr") as HTMLElement
-    for (const name of ["Crear y abrir inspección", "Editar", "Detener"]) {
+    for (const name of [/Crear y abrir inspección/, /Editar/, /Detener/]) {
       expect(within(row).getByRole("button", { name })).toBeTruthy()
     }
+  })
+
+  /**
+   * R-03 (reauditoría 2026-10-20): con cinco programaciones había cinco «Editar», cuatro
+   * «Detener» y cuatro «Crear y abrir inspección» indistinguibles en la lista de controles de un
+   * lector de pantalla, y «Detener» muta datos. El texto visible no cambia; el nombre dice de cuál.
+   */
+  it("cada botón de la fila dice de qué programación es, y el texto visible sigue siendo el de siempre", () => {
+    renderPanel([
+      program({ id: "a", templateName: "Inspección de EPP", worksiteName: "Teno" }),
+      program({ id: "b", templateName: "Inspección de EPP", worksiteName: "Arauco", subjectLabel: "KA122" }),
+      program({ id: "c", templateName: "Inspección de EPP", worksiteName: "Arauco", isActive: false, subjectLabel: "KA200" }),
+    ], { canManage: true })
+
+    const botones = within(screen.getByRole("table")).getAllByRole("button")
+    const nombres = botones.map((boton) => boton.getAttribute("aria-label") ?? boton.textContent)
+    expect(new Set(nombres).size).toBe(nombres.length)
+    expect(nombres).toContain("Detener programación de Inspección de EPP en Teno")
+    expect(nombres).toContain("Editar programación de Inspección de EPP en Arauco (KA122)")
+    expect(nombres).toContain("Crear y abrir inspección de Inspección de EPP en Arauco (KA122)")
+    expect(nombres).toContain("Reactivar programación de Inspección de EPP en Arauco (KA200)")
+    // Label in Name (WCAG 2.5.3): el nombre accesible empieza por lo que se ve.
+    for (const boton of botones) {
+      const visible = boton.textContent?.trim() ?? ""
+      expect(boton.getAttribute("aria-label")?.startsWith(visible)).toBe(true)
+    }
+    expect(within(screen.getByRole("table")).getAllByText("Detener")).toHaveLength(2)
+  })
+
+  it("mientras crea la inspección el nombre accesible no contradice el «Creando…» visible", async () => {
+    let terminar: (value: { ok: true; data: { runId: string } }) => void = () => undefined
+    actions.runProgramNowAction.mockReturnValue(new Promise((resolve) => { terminar = resolve }))
+    renderPanel([program({ nextDueOn: OVERDUE })], { canManage: true })
+    const fila = within(table().getByText("Inspección de Estado de Extintores").closest("tr") as HTMLElement)
+
+    fireEvent.click(fila.getByRole("button", { name: /Crear y abrir inspección/ }))
+    expect(await fila.findByRole("button", { name: "Creando…" })).toBeTruthy()
+    await act(async () => { terminar({ ok: true, data: { runId: "run-1" } }) })
   })
 
   it("una detenida ofrece «Reactivar» y ya no «Crear y abrir inspección»", () => {
     renderPanel([program({ isActive: false })], { canManage: true })
     const row = table().getByText("Inspección de Estado de Extintores").closest("tr") as HTMLElement
-    expect(within(row).getByRole("button", { name: "Reactivar" })).toBeTruthy()
-    expect(within(row).queryByRole("button", { name: "Crear y abrir inspección" })).toBeNull()
-    expect(within(row).queryByRole("button", { name: "Detener" })).toBeNull()
+    expect(within(row).getByRole("button", { name: /^Reactivar/ })).toBeTruthy()
+    expect(within(row).queryByRole("button", { name: /^Crear y abrir inspección/ })).toBeNull()
+    expect(within(row).queryByRole("button", { name: /^Detener/ })).toBeNull()
   })
 
   it("con la plantilla ya no aprobada el texto dice por qué no produce inspecciones, en vez de un botón que fallaría", () => {
     renderPanel([program({ templateApproved: false })], { canManage: true })
     const row = table().getByText("Inspección de Estado de Extintores").closest("tr") as HTMLElement
-    expect(within(row).queryByRole("button", { name: "Crear y abrir inspección" })).toBeNull()
+    expect(within(row).queryByRole("button", { name: /^Crear y abrir inspección/ })).toBeNull()
     expect(within(row).getByText(/No generará inspecciones: su plantilla ya no está aprobada/)).toBeTruthy()
   })
 
@@ -358,7 +418,7 @@ describe("programación: la tabla", () => {
     actions.runProgramNowAction.mockResolvedValue({ ok: true, data: { runId: "run-9" } })
     renderPanel([program({ nextDueOn: OVERDUE })], { canManage: true })
     const row = table().getByText("Inspección de Estado de Extintores").closest("tr") as HTMLElement
-    await act(async () => { fireEvent.click(within(row).getByRole("button", { name: "Crear y abrir inspección" })) })
+    await act(async () => { fireEvent.click(within(row).getByRole("button", { name: /^Crear y abrir inspección/ })) })
     expect(actions.runProgramNowAction).toHaveBeenCalledWith({ programId: "p1" })
   })
 })
@@ -375,9 +435,20 @@ describe("programación: la tarjeta móvil", () => {
     expect(card.getByText("KA122")).toBeTruthy()
     expect(card.getByText("R-014 · Atropello")).toBeTruthy()
     expect(card.getByText("Admin E2E")).toBeTruthy()
-    for (const name of ["Crear y abrir inspección", "Editar", "Detener"]) {
+    for (const name of [/^Crear y abrir inspección/, /^Editar/, /^Detener/]) {
       expect(card.getByRole("button", { name })).toBeTruthy()
     }
+  })
+})
+
+describe("programación: la lista avisa mientras se filtra (R-07)", () => {
+  it("marca aria-busy mientras la URL nueva se resuelve, y no antes", () => {
+    const { rerender } = renderPanel([program()])
+    expect(screen.getByRole("table").closest("[aria-busy]")).toBeNull()
+
+    urlFilters.pending = true
+    rerender(<InspectionProgramsPanel programs={[program()]} assignees={[]} canManage={false} />)
+    expect(screen.getByRole("table").closest("[aria-busy]")).toHaveAttribute("aria-busy", "true")
   })
 })
 

@@ -13,6 +13,7 @@ import type { ChecklistDefinition } from "@/lib/sst/types"
 import { normalizeAnswer, summarizeCompletion } from "@/lib/prevention/inspection-capture"
 import { inspectionTaskStatusLabel } from "@/lib/prevention/inspection-list-query"
 import type {
+  CancellationInfo,
   RunInfo,
   SectionInfo,
   AnswerInfo,
@@ -46,6 +47,8 @@ interface Props {
   assigneeName: string | null
   executorName: string | null
   reviewerName: string | null
+  /** Sólo en una inspección cancelada: quién, cuándo y por qué (R-02). */
+  cancellation?: CancellationInfo | null
   sections: SectionInfo[]
   answers: AnswerInfo[]
   findings: FindingInfo[]
@@ -75,7 +78,7 @@ interface Props {
 export function InspectionRunDetail({
   run, templateKind, recordsDeviations, recordsPreventiveActions, deviationCatalog,
   pdtpActivityNumbers, pdtpReviewActivityNumbers,
-  worksiteName, assigneeName, executorName, reviewerName,
+  worksiteName, assigneeName, executorName, reviewerName, cancellation = null,
   sections, answers, findings, isUnplannedInspection, participants, currentUserId, assignees, reviewers, canExecute, canReview, canManage, canStopVehicle, canRequestRecharge,
   documents, canIngest, closingAct,
   scoringPolicy,
@@ -172,7 +175,7 @@ export function InspectionRunDetail({
   const showFindings = run.status === "completed" || run.status === "reviewed"
 
   const model: RunViewModel = {
-    run, templateKind, worksiteName, assigneeName, executorName, reviewerName,
+    run, templateKind, worksiteName, assigneeName, executorName, reviewerName, cancellation,
     sections, items, answers, findings, documents, closingAct,
     recordsDeviations, recordsPreventiveActions, deviationCatalog, isUnplannedInspection,
     participants, currentUserId, assignees, reviewers,

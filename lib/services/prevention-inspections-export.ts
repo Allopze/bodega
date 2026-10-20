@@ -21,6 +21,7 @@ import {
 } from "@/lib/prevention/inspections"
 import { formatInspectionAnswerValue } from "@/lib/prevention/inspection-answer-format"
 import { inspectionSubjectTypeLabel } from "@/lib/prevention/inspection-list-query"
+import { CHECKLIST_DEFINITIONS } from "@/lib/sst/definitions"
 import type { ChecklistDefinition, FieldKind, SelectOption } from "@/lib/sst/types"
 import type { ReportCell, ReportData, ReportSheet } from "@/lib/reports/export"
 import {
@@ -65,6 +66,19 @@ function sheet(
 function label(map: Record<string, string>, key: string | null | undefined) {
   if (!key) return ""
   return map[key] ?? key
+}
+
+/**
+ * De dónde viene la plantilla, como lo lee una persona: el nombre con que el catálogo conoce su
+ * definición («Caminata de seguridad»), no el código interno (`caminata_seguridad`). Una definición
+ * que ya no está en el catálogo no tiene nombre que mostrar, así que cae a su código sin guiones bajos.
+ */
+function definitionOriginLabel(code: string | null | undefined) {
+  if (!code) return ""
+  const title = CHECKLIST_DEFINITIONS[code]?.title
+  if (title) return title
+  const spaced = code.replace(/_/g, " ").trim()
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }
 
 const VIEW_LABELS: Record<NonNullable<InspectionListFilters["view"]>, string> = {
@@ -266,7 +280,7 @@ export async function buildInspectionExport(
         safeCell(row.code), safeCell(row.versionLabel), safeCell(row.name), label(INSPECTION_KIND_LABELS, row.kind),
         // «Retirada» y no «Reemplazada»: una plantilla retirada no tiene versión que la reemplace.
         inspectionTemplateStatusLabel(row.status, row.supersededByTemplateId),
-        safeCell(row.sourceDefinitionCode), safeCell(row.contentHash),
+        safeCell(definitionOriginLabel(row.sourceDefinitionCode)), safeCell(row.contentHash),
         row.definitionMissing
           ? "Definición retirada del catálogo"
           : row.definitionDrifted ? "Sí: el código difiere del snapshot" : "No",

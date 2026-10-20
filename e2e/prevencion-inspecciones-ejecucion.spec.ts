@@ -133,9 +133,12 @@ test.describe("Inspecciones — ejecución en terreno", () => {
       await expect(faltantes.filter({ hasText: item })).toHaveCount(1)
     }
     // El acta entra al gate por su resultado: `validateClosingAct` corta en el
-    // primer problema, y con el resultado sin declarar ése es el que aparece.
+    // primer problema, y con el resultado sin declarar ése es el que aparece. Dice que falta
+    // elegirlo (R-01); «no corresponde a las opciones» es de un resultado ajeno a la plantilla.
     await expect(faltantes
-      .filter({ hasText: "El resultado del acta no corresponde a las opciones de la plantilla." })).toHaveCount(1)
+      .filter({ hasText: /Falta elegir el resultado del acta de cierre/ })).toHaveCount(1)
+    await expect(faltantes
+      .filter({ hasText: "no corresponde a las opciones de la plantilla" })).toHaveCount(0)
 
     await page.getByRole("button", { name: "Declarar ejecutada" }).click()
     const dialog = page.getByRole("dialog")
@@ -143,6 +146,11 @@ test.describe("Inspecciones — ejecución en terreno", () => {
     // disparador queda fuera del diálogo, así que se acota con `dialog`.
     await expect(dialog.getByText("Para declarar ejecutada falta:")).toBeVisible()
     await expect(dialog.getByRole("button", { name: "Declarar ejecutada" })).toBeDisabled()
+    // El acta que falta lleva su propio atajo, como los chips «5 sin responder» (R-01).
+    await expect(dialog.getByRole("listitem").filter({ hasText: /Falta elegir el resultado del acta de cierre/ })).toHaveCount(1)
+    await dialog.getByRole("button", { name: "Ir al acta" }).click()
+    await expect(page.getByRole("dialog")).toHaveCount(0)
+    await expect(page.getByRole("combobox", { name: "Resultado del acta" })).toBeFocused()
   })
 
   test("guardar respuestas deja la inspección en ejecución y no muestra un cumplimiento mientras se edita", async ({ page }) => {

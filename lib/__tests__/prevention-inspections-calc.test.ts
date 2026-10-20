@@ -547,6 +547,20 @@ describe("validación del acta de cierre", () => {
     expect(validateClosingAct(spec, null)).toContain('Falta completar el acta de cierre "Acta de cierre"')
     expect(validateClosingAct(spec, { result: "otro", signatures: [] })).toMatch(/no corresponde a las opciones/)
   })
+
+  /**
+   * R-01 (reauditoría 2026-10-20): con el resultado sin elegir, el bloqueo decía
+   * «no corresponde a las opciones de la plantilla», un error de plantilla que
+   * la persona no puede corregir, cuando lo único que falta es elegirlo.
+   */
+  it("un resultado sin elegir pide elegirlo; no lo confunde con uno ajeno a la plantilla", () => {
+    const esperado = 'Falta elegir el resultado del acta de cierre "Acta de cierre".'
+    expect(validateClosingAct(spec, { result: "", signatures: [] })).toBe(esperado)
+    expect(validateClosingAct(spec, { result: "   ", signatures: [] })).toBe(esperado)
+    // Con el resultado sin elegir, el problema es ése aunque también falten firmas.
+    expect(validateClosingAct(spec, { result: "", signatures: [{ role: "supervisor", name: "Ana Soto" }] })).toBe(esperado)
+    expect(validateClosingAct(spec, { result: "otro", signatures: [] })).not.toMatch(/Falta elegir/)
+  })
 })
 
 /**

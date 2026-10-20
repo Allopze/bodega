@@ -14,6 +14,7 @@ import {
 import type { OperationResult } from "@/lib/hooks/use-operation"
 import { summarizeCompletion, type HeldRow } from "@/lib/prevention/inspection-capture"
 import type { CompletionBlocker } from "@/lib/prevention/inspections"
+import { jumpToClosingAct } from "./run-view-helpers"
 import type { RunInfo } from "./types"
 
 /* ── Declarar ejecutada ───────────────────────────────────────────────────── */
@@ -108,12 +109,15 @@ export function CompleteDialog({
     }
   }
 
+  /** Cierra el diálogo y salta; Radix devuelve el foco al elemento que lo tenía al cerrar, así que se espera a que lo haga. */
+  function closeAndJump(jump: () => void) {
+    onOpenChange(false)
+    window.setTimeout(jump, 150)
+  }
+
   function jumpToFirst() {
     const key = summary.firstKey
-    if (!key) return
-    onOpenChange(false)
-    // Radix devuelve el foco al elemento que lo tenía al cerrar: se espera a que lo haga.
-    window.setTimeout(() => onJump(key), 150)
+    if (key) closeAndJump(() => onJump(key))
   }
 
   return (
@@ -129,7 +133,7 @@ export function CompleteDialog({
           <DialogHeader>
             <DialogTitle>Declarar ejecutada {run.code}</DialogTitle>
             <DialogDescription>
-              Guarda las respuestas en pantalla, calcula el cumplimiento y materializa un hallazgo por cada incumplimiento.
+              Guarda las respuestas en pantalla, calcula el cumplimiento y crea un hallazgo por cada incumplimiento.
             </DialogDescription>
           </DialogHeader>
 
@@ -137,7 +141,24 @@ export function CompleteDialog({
             <div className="space-y-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
               <p className="font-medium">Para declarar ejecutada falta:</p>
               <ul className="list-disc space-y-1 pl-4">
-                {summary.lines.slice(0, MAX_SUMMARY_LINES).map((line) => <li key={`${line.key ?? "acta"}:${line.text}`}>{line.text}</li>)}
+                {summary.lines.slice(0, MAX_SUMMARY_LINES).map((line) => (
+                  <li key={`${line.key ?? "acta"}:${line.text}`}>
+                    {line.text}
+                    {/* Lo único que no cuelga de un ítem es el acta de cierre: se llega a ella como a un ítem (R-01). */}
+                    {line.key === null && (
+                      <>
+                        {" "}
+                        <button
+                          type="button"
+                          className="min-h-11 rounded-[var(--radius-sm)] px-1 font-medium text-[var(--color-primary-ink)] underline underline-offset-2 md:min-h-8"
+                          onClick={() => closeAndJump(jumpToClosingAct)}
+                        >
+                          Ir al acta
+                        </button>
+                      </>
+                    )}
+                  </li>
+                ))}
                 {summary.lines.length > MAX_SUMMARY_LINES && <li>y {summary.lines.length - MAX_SUMMARY_LINES} más…</li>}
               </ul>
               {summary.firstKey && (
