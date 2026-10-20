@@ -5,7 +5,7 @@ import {
   foldedSectionLabel,
   hasAnyAnswer,
 } from "./read-view-helpers"
-import type { Draft, ItemInfo } from "./types"
+import type { Draft, ItemInfo, ResultValue } from "./types"
 
 const SCORABLE = { kind: "cumple_nocumple_na_obs" as const, required: false, countsForCompliance: true, danoPotencial: null }
 const item = (id: string, extra: Partial<ItemInfo> = {}): ItemInfo => ({ id, label: `Ítem ${id}`, ...SCORABLE, ...extra })
@@ -20,7 +20,7 @@ describe("classifyReadItem", () => {
   it("lo conforme, lo que no aplica y lo sin responder se pliegan", () => {
     expect(classifyReadItem(item("a"), draft({ result: "conforming" }), 0)).toBe("conforming")
     expect(classifyReadItem(item("a"), draft({ result: "not_applicable" }), 0)).toBe("not_applicable")
-    expect(classifyReadItem(item("a"), draft({ result: "not_present" }), 0)).toBe("not_applicable")
+    expect(classifyReadItem(item("a"), draft({ result: "not_present" as unknown as ResultValue }), 0)).toBe("not_applicable")
     expect(classifyReadItem(item("a"), draft(), 0)).toBe("unanswered")
   })
 
